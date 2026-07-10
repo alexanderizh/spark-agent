@@ -4,6 +4,7 @@ export type CanvasPromptMentionItem = {
   id: string
   label: string
   marker: string
+  token: string
   node: CanvasNode
 }
 
@@ -18,7 +19,8 @@ export function buildCanvasPromptMentionItems(nodes: CanvasNode[]): CanvasPrompt
   return nodes.map((node, index) => ({
     id: node.id,
     label: node.title?.trim() || defaultCanvasMentionLabel(node, index + 1),
-    marker: `@${index + 1}`,
+    marker: `参考图${index + 1}`,
+    token: buildCanvasPromptMentionToken(node, index + 1),
     node,
   }))
 }
@@ -47,7 +49,7 @@ export function insertCanvasPromptMention(
   item: CanvasPromptMentionItem,
 ): { value: string; cursor: number } {
   const hasFollowingWhitespace = /\s/.test(value[mention.end] ?? '')
-  const token = hasFollowingWhitespace ? item.marker : `${item.marker} `
+  const token = hasFollowingWhitespace ? item.token : `${item.token} `
   const nextValue = `${value.slice(0, mention.start)}${token}${value.slice(mention.end)}`
   return {
     value: nextValue,
@@ -63,10 +65,23 @@ export function filterCanvasPromptMentionItems(
   if (!normalized) return items
   return items.filter(
     (item) =>
-      item.marker.slice(1).includes(normalized) ||
+      item.marker.toLowerCase().includes(normalized) ||
       item.label.toLowerCase().includes(normalized) ||
       item.id.toLowerCase().includes(normalized),
   )
+}
+
+export function extractCanvasPromptMentionTokens(value: string): Array<{
+  label: string
+  nodeId: string
+}> {
+  const result: Array<{ label: string; nodeId: string }> = []
+  const pattern = /@\[([^\]]+)\]\(node:([^)]+)\)/g
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(value)) != null) {
+    result.push({ label: match[1] ?? '', nodeId: match[2] ?? '' })
+  }
+  return result
 }
 
 function inactiveMentionQuery(cursor: number): CanvasPromptMentionQuery {
@@ -84,4 +99,9 @@ function defaultCanvasMentionLabel(node: CanvasNode, fallbackIndex: number): str
   if (node.type === 'audio') return `音频 ${fallbackIndex}`
   if (node.type === 'text' || node.type === 'prompt') return `文本 ${fallbackIndex}`
   return `资产 ${fallbackIndex}`
+}
+
+function buildCanvasPromptMentionToken(node: CanvasNode, fallbackIndex: number): string {
+  const title = node.title?.trim() || defaultCanvasMentionLabel(node, fallbackIndex)
+  return `@[参考图${fallbackIndex}:${title}](node:${node.id})`
 }

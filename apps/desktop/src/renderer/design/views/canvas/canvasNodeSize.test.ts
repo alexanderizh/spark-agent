@@ -85,8 +85,8 @@ describe('canvasNodeSize', () => {
   })
 
   describe('fitCanvasImageNodeSize', () => {
-    it('横图按真实纵横比收紧高度，不再被旧卡片高度兜底撑大', () => {
-      expect(fitCanvasImageNodeSize(1920, 1080)).toEqual({ width: 580, height: 326 })
+    it('横图按真实纵横比收紧高度，并把内嵌头部计入节点总高度', () => {
+      expect(fitCanvasImageNodeSize(1920, 1080)).toEqual({ width: 580, height: 350 })
     })
 
     it('超宽图片仍保留当前图片节点最小可用高度', () => {
@@ -96,8 +96,8 @@ describe('canvasNodeSize', () => {
       })
     })
 
-    it('竖图仍保持原有缩放上限逻辑', () => {
-      expect(fitCanvasImageNodeSize(800, 1200)).toEqual({ width: 480, height: 720 })
+    it('竖图仍保持原有正文缩放上限逻辑，并把内嵌头部计入节点总高度', () => {
+      expect(fitCanvasImageNodeSize(800, 1200)).toEqual({ width: 480, height: 744 })
     })
   })
 })

@@ -67,10 +67,7 @@ import {
   writeProductionBible,
   writeStyleBible,
 } from './canvasPipeline'
-import {
-  applyCanvasStyleToTask,
-  buildCanvasStyleContext,
-} from './canvasStyleContext'
+import { applyCanvasStyleToTask, buildCanvasStyleContext } from './canvasStyleContext'
 import { buildStoryboardGridPrompt, buildStoryboardNodePrompt } from './canvasStoryboardGrid'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
@@ -102,6 +99,11 @@ import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace } from './canvas.store'
 import { canvasApi, isCanvasDirty, operationLabel, revertProject, saveCanvas } from './canvas.api'
+import {
+  buildTaskInputFiles,
+  type CanvasTaskInputRoleSelection,
+} from './canvasTaskInputFiles'
+import { summarizeCanvasSelectionContext } from './canvasContextMenuModel'
 import {
   mergeCanvasOperationPresetNegativePrompt,
   mergeCanvasOperationPresetPrompt,
@@ -136,7 +138,6 @@ import type {
 } from 'react'
 import './CanvasWorkspaceView.less'
 
-type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
 type CanvasPoint = { x: number; y: number }
 type TrackedCanvasWorkflowResult = {
   count?: number
@@ -167,6 +168,25 @@ type CharacterSubviewEditorContext = {
 type CanvasSaveMode = 'manual' | 'auto'
 type CanvasPersistResult = 'saved' | 'failed' | 'skipped'
 
+function findLatestCreatedOperationNode(
+  nodes: CanvasNode[],
+  operation: CanvasOperationType,
+  existingNodeIds: Set<string>,
+): CanvasNode | null {
+  const candidates = nodes.filter(
+    (item) =>
+      !existingNodeIds.has(item.id) && item.data?.operation === operation && isOperationNode(item),
+  )
+  if (candidates.length === 0) return null
+  return (
+    [...candidates].sort((left, right) => {
+      const timeDelta = Date.parse(right.createdAt) - Date.parse(left.createdAt)
+      if (timeDelta !== 0) return timeDelta
+      return right.zIndex - left.zIndex
+    })[0] ?? null
+  )
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -186,6 +206,11 @@ function readShotDirectorDraft(
 function cssEscape(value: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(value)
   return value.replace(/["\\]/g, '\\$&')
+}
+
+function canvasTaskFailureMessage(task: CanvasTask): string {
+  const detail = (task.errorDetail ?? task.errorMsg ?? '').trim()
+  return detail ? `任务失败：${detail}` : '任务失败，请检查任务详情后重试'
 }
 
 // html2canvas 1.4.1 只认 hsl/hsla/rgb/rgba 颜色函数，遇到 color()/oklch()/oklab()/color-mix()
@@ -439,6 +464,23 @@ function collectGroupDescendantNodes(nodes: CanvasNode[], groupId: string): Canv
   return descendants
 }
 
+function findGroupContainingNodes(nodes: CanvasNode[], nodeIds: string[]): CanvasNode | null {
+  const expectedIds = new Set(nodeIds)
+  if (expectedIds.size === 0) return null
+  const groups = nodes.filter((node) => node.type === 'group')
+  return (
+    groups.find((group) => {
+      const childIds = new Set(
+        nodes.filter((node) => node.parentNodeId === group.id).map((node) => node.id),
+      )
+      for (const nodeId of expectedIds) {
+        if (!childIds.has(nodeId)) return false
+      }
+      return true
+    }) ?? null
+  )
+}
+
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
@@ -615,22 +657,35 @@ function getFloatingEditorGeometry(
   node: CanvasNode,
   viewport: CanvasStageViewport | null,
 ): { toolbar: CSSProperties; panel: CSSProperties } | null {
-  if (!viewport || viewport.width <= 0 || viewport.height <= 0 || viewport.zoom <= 0) return null
+  const effectiveViewport: CanvasStageViewport =
+    viewport && viewport.width > 0 && viewport.height > 0 && viewport.zoom > 0
+      ? viewport
+      : {
+          x: viewport?.x ?? 0,
+          y: viewport?.y ?? 0,
+          zoom: viewport?.zoom && viewport.zoom > 0 ? viewport.zoom : 1,
+          width: typeof window === 'undefined' ? 1024 : Math.max(640, window.innerWidth || 1024),
+          height: typeof window === 'undefined' ? 720 : Math.max(480, window.innerHeight || 720),
+        }
 
-  const nodeLeft = viewport.x + node.x * viewport.zoom
-  const nodeTop = viewport.y + node.y * viewport.zoom
-  const nodeRight = viewport.x + (node.x + node.width) * viewport.zoom
-  const nodeBottom = viewport.y + (node.y + node.height) * viewport.zoom
+  const nodeLeft = effectiveViewport.x + node.x * effectiveViewport.zoom
+  const nodeTop = effectiveViewport.y + node.y * effectiveViewport.zoom
+  const nodeRight = effectiveViewport.x + (node.x + node.width) * effectiveViewport.zoom
+  const nodeBottom = effectiveViewport.y + (node.y + node.height) * effectiveViewport.zoom
   const nodeCenterX = nodeLeft + (nodeRight - nodeLeft) / 2
-  const floatingWidth = Math.min(920, Math.max(480, viewport.width - 96))
-  const toolbarLeft = clampPosition(nodeCenterX, 180, viewport.width - 180)
+  const floatingWidth = Math.min(920, Math.max(480, effectiveViewport.width - 96))
+  const toolbarLeft = clampPosition(nodeCenterX, 180, effectiveViewport.width - 180)
   const panelLeft = clampPosition(
     nodeCenterX,
     floatingWidth / 2 + 16,
-    viewport.width - floatingWidth / 2 - 16,
+    effectiveViewport.width - floatingWidth / 2 - 16,
   )
-  const toolbarTop = clampPosition(nodeTop - 68, 14, Math.max(14, viewport.height - 160))
-  const panelTop = clampPosition(nodeBottom + 18, 112, Math.max(112, viewport.height - 250))
+  const toolbarTop = clampPosition(nodeTop - 68, 14, Math.max(14, effectiveViewport.height - 160))
+  const panelTop = clampPosition(
+    nodeBottom + 18,
+    112,
+    Math.max(112, effectiveViewport.height - 250),
+  )
 
   return {
     toolbar: { left: toolbarLeft, top: toolbarTop },
@@ -680,49 +735,11 @@ function buildFloatingDetailSheetNineGridPrompt(node: CanvasNode): string {
     .join('\n')
 }
 
-function buildTaskInputFiles(
-  nodes: CanvasNode[],
-  inputRoles?: Record<string, CanvasTaskInputRole>,
-): CanvasMediaTaskInputFile[] {
-  let imageIndex = 0
-  return nodes
-    .map((node) => {
-      if (!node.data.url) return null
-      const type =
-        node.type === 'image'
-          ? ('image' as const)
-          : node.type === 'audio'
-            ? ('audio' as const)
-            : node.type === 'video'
-              ? ('video' as const)
-              : ('file' as const)
-      const currentImageIndex = node.type === 'image' ? imageIndex++ : -1
-      const role =
-        inputRoles?.[node.id] ??
-        (currentImageIndex >= 0
-          ? currentImageIndex === 0
-            ? ('first_frame' as const)
-            : currentImageIndex === 1
-              ? ('last_frame' as const)
-              : ('reference' as const)
-          : ('input' as const))
-      return {
-        type,
-        role,
-        ...(node.data.url.startsWith('data:')
-          ? { dataUrl: node.data.url }
-          : { url: node.data.url }),
-        ...(node.data.mimeType ? { mimeType: node.data.mimeType } : {}),
-      }
-    })
-    .filter((file): file is NonNullable<typeof file> => file !== null)
-}
-
 function buildStoryboardReferenceInputRoles(
   nodes: CanvasNode[],
-  inputRoles?: Record<string, CanvasTaskInputRole>,
-): Record<string, CanvasTaskInputRole> {
-  const roles: Record<string, CanvasTaskInputRole> = { ...(inputRoles ?? {}) }
+  inputRoles?: Record<string, CanvasTaskInputRoleSelection>,
+): Record<string, CanvasTaskInputRoleSelection> {
+  const roles: Record<string, CanvasTaskInputRoleSelection> = { ...(inputRoles ?? {}) }
   for (const node of nodes) {
     if (node.type === 'image' && node.data.url) roles[node.id] = 'reference'
   }
@@ -732,7 +749,7 @@ function buildStoryboardReferenceInputRoles(
 async function buildCloudTaskInputFiles(
   nodes: CanvasNode[],
   inputTransport: CanvasInputTransport | undefined,
-  inputRoles?: Record<string, CanvasTaskInputRole>,
+  inputRoles?: Record<string, CanvasTaskInputRoleSelection>,
 ): Promise<CanvasMediaTaskInputFile[]> {
   const files = buildTaskInputFiles(nodes, inputRoles)
   if (files.length === 0) return files
@@ -1633,6 +1650,10 @@ export function CanvasWorkspaceView({
     'details',
   )
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
+  const [inlinePanelFocusRequest, setInlinePanelFocusRequest] = useState<{
+    nodeId: string
+    nonce: number
+  } | null>(null)
   const [panoramaPreviewNodeId, setPanoramaPreviewNodeId] = useState<string | null>(null)
   const [annotatingImageNodeId, setAnnotatingImageNodeId] = useState<string | null>(null)
   const [gridSplitImageNodeId, setGridSplitImageNodeId] = useState<string | null>(null)
@@ -1685,6 +1706,8 @@ export function CanvasWorkspaceView({
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
   const pendingImageConnectionRef = useRef<PendingCanvasConnection | null>(null)
+  const pendingAssetConnectionRef = useRef<PendingCanvasConnection | null>(null)
+  const pendingAssetPositionRef = useRef<CanvasPoint | null>(null)
   const mergingGroupImageIdsRef = useRef(new Set<string>())
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true)
@@ -2107,33 +2130,88 @@ export function CanvasWorkspaceView({
   const inlinePanelNode = activeOperationNode ?? editingNode
   const inlinePanelNodeId = inlinePanelNode?.id ?? null
   const inlinePanelIsOperation = Boolean(activeOperationNode)
+  const [inlineOperationFullscreen, setInlineOperationFullscreen] = useState(false)
+  const activeOperationTask = activeOperationNode?.taskId
+    ? (snapshot?.tasks.find((task) => task.id === activeOperationNode.taskId) ?? null)
+    : null
+  const activeOperationTaskSettled =
+    activeOperationTask?.status === 'completed' ||
+    activeOperationTask?.status === 'failed' ||
+    activeOperationTask?.status === 'cancelled'
+  const inlinePanelFocusRequested = inlinePanelFocusRequest?.nodeId === inlinePanelNodeId
+  const shouldFocusInlinePanel =
+    inlinePanelNodeId != null &&
+    (inlinePanelFocusRequested || !(activeOperationNode != null && activeOperationTaskSettled))
   const inlinePanelPreferredWidth = inlinePanelNode
     ? pickInlineEditorMinWidth(inlinePanelNode, inlinePanelIsOperation)
     : 0
+  const inlinePanelFocusPadding = useMemo(
+    () => pickInlineEditorFocusPadding(inlinePanelIsOperation),
+    [inlinePanelIsOperation],
+  )
+  const previousTaskStatusRef = useRef<Map<string, CanvasTask['status']> | null>(null)
+
+  useEffect(() => {
+    setInlineOperationFullscreen(false)
+  }, [inlinePanelNodeId])
 
   const {
-    geometry: floatingEditorGeometry,
     viewportRef: canvasViewportRef,
     onViewportChange: handleCanvasViewportChange,
   } = useFloatingViewportGeometry(inlinePanelNode, getFloatingEditorGeometry)
 
   useEffect(() => {
-    if (!inlinePanelNodeId) return undefined
+    const tasks = snapshot?.tasks ?? []
+    const nextTaskStatus = new Map(tasks.map((task) => [task.id, task.status] as const))
+    const previousTaskStatus = previousTaskStatusRef.current
+    previousTaskStatusRef.current = nextTaskStatus
+    if (!snapshot || !previousTaskStatus) return
+
+    const newlyFailedTasks = tasks.filter((task) => {
+      if (task.status !== 'failed') return false
+      const previousStatus = previousTaskStatus.get(task.id)
+      return previousStatus != null && previousStatus !== 'failed'
+    })
+    if (newlyFailedTasks.length === 0) return
+
+    for (const task of newlyFailedTasks) {
+      message.error({
+        key: `canvas-task-failed:${task.id}`,
+        content: canvasTaskFailureMessage(task),
+      })
+    }
+  }, [snapshot])
+
+  useEffect(() => {
+    if (!inlinePanelNodeId || !shouldFocusInlinePanel) return undefined
     let firstFrame: number | null = null
     let secondFrame: number | null = null
     firstFrame = window.requestAnimationFrame(() => {
       secondFrame = window.requestAnimationFrame(() => {
         canvasViewportControlsRef.current?.focusNodes([inlinePanelNodeId], {
           preferredWidth: inlinePanelPreferredWidth,
+          padding: inlinePanelFocusPadding,
           maxZoom: 1.08,
         })
+        if (inlinePanelFocusRequested) {
+          setInlinePanelFocusRequest((current) =>
+            current?.nonce === inlinePanelFocusRequest?.nonce ? null : current,
+          )
+        }
       })
     })
     return () => {
       if (firstFrame != null) window.cancelAnimationFrame(firstFrame)
       if (secondFrame != null) window.cancelAnimationFrame(secondFrame)
     }
-  }, [inlinePanelNodeId, inlinePanelPreferredWidth])
+  }, [
+    inlinePanelFocusRequest?.nonce,
+    inlinePanelFocusRequested,
+    inlinePanelNodeId,
+    inlinePanelFocusPadding,
+    inlinePanelPreferredWidth,
+    shouldFocusInlinePanel,
+  ])
 
   const snapshotRef = useRef(snapshot)
   snapshotRef.current = snapshot
@@ -2174,12 +2252,14 @@ export function CanvasWorkspaceView({
     () => selectedNodes.filter((node) => Boolean(node.parentNodeId)),
     [selectedNodes],
   )
-  const canCreateGroup =
-    selectedNodes.length >= 2 &&
-    selectedNodes.every((node) => node.type !== 'group' && !node.parentNodeId)
-  const canAddToGroup = selectedGroups.length === 1 && selectedTopLevelNodes.length > 0
-  const canRemoveFromGroup = selectedGroupedNodes.length > 0
-  const canDissolveGroup = selectedGroups.length === 1
+  const selectionContextSummary = useMemo(
+    () => summarizeCanvasSelectionContext(selectedNodes),
+    [selectedNodes],
+  )
+  const canCreateGroup = selectionContextSummary.canCreateGroup
+  const canAddToGroup = selectionContextSummary.canAddToGroup
+  const canRemoveFromGroup = selectionContextSummary.canRemoveFromGroup
+  const canDissolveGroup = selectionContextSummary.canDissolveGroup
   const shotDirectorDraft = useMemo(
     () => (snapshot ? readShotDirectorDraft(snapshot.project.metadata, snapshot.board.id) : null),
     [snapshot],
@@ -2218,6 +2298,7 @@ export function CanvasWorkspaceView({
     ) => {
       if (except !== 'inline-ai') setInlineAiOpen(false)
       if (except !== 'operation') setActiveOperationPanelNodeId(null)
+      if (except !== 'operation' && except !== 'node-edit') setInlinePanelFocusRequest(null)
       if (except !== 'film-center') setFilmCenterOpen(false)
       if (except !== 'character-library') setCharacterLibraryOpen(false)
       if (except !== 'shot-director') setShotDirectorOpen(false)
@@ -2387,13 +2468,13 @@ export function CanvasWorkspaceView({
   )
 
   const handleMergeGroupToImage = useCallback(
-    async (groupId: string) => {
+    async (groupId: string, sourceSnapshot?: typeof snapshot) => {
       if (mergingGroupImageIdsRef.current.has(groupId)) {
         message.info('正在合成该组，请稍候')
         return
       }
 
-      const currentSnapshot = snapshot
+      const currentSnapshot = sourceSnapshot ?? snapshotRef.current ?? snapshot
       const groupNode = currentSnapshot?.nodes.find(
         (node) => node.id === groupId && node.type === 'group',
       )
@@ -2562,6 +2643,28 @@ export function CanvasWorkspaceView({
     void createGroupNode(selectedTopLevelNodes.map((node) => node.id))
   }, [createGroupNode, selectedTopLevelNodes])
 
+  const handleMergeSelectionToImage = useCallback(async () => {
+    const summary = summarizeCanvasSelectionContext(selectedNodes)
+    if (summary.mergeGroupId) {
+      await handleMergeGroupToImage(summary.mergeGroupId)
+      return
+    }
+    if (!summary.canCreateGroup) {
+      message.warning('请选择多个未入组的内容节点，或选择一个组节点')
+      return
+    }
+
+    const nextSnapshot = await createGroupNode(summary.topLevelNodeIds)
+    const groupNode = findGroupContainingNodes(nextSnapshot.nodes, summary.topLevelNodeIds)
+    if (!groupNode) {
+      message.warning('已创建组，但未能定位新组节点，请选中组后再次合成')
+      return
+    }
+    setSelectedNodeIds([groupNode.id])
+    await nextFrame()
+    await handleMergeGroupToImage(groupNode.id, nextSnapshot)
+  }, [createGroupNode, handleMergeGroupToImage, selectedNodes])
+
   const handleAddSelectionToGroup = useCallback(
     (groupId?: string) => {
       const targetGroupId = groupId ?? selectedGroups[0]?.id
@@ -2608,6 +2711,7 @@ export function CanvasWorkspaceView({
       const node = snapshot?.nodes.find((item) => item.id === nodeId)
       if (node && isOperationNode(node)) {
         closeCanvasFloatPanels('operation')
+        setInlinePanelFocusRequest({ nodeId, nonce: Date.now() })
         setSelectedNodeIds([nodeId])
         setActiveOperationPanelNodeId(nodeId)
         return
@@ -2625,6 +2729,7 @@ export function CanvasWorkspaceView({
         return
       }
       closeCanvasFloatPanels('node-edit')
+      setInlinePanelFocusRequest({ nodeId, nonce: Date.now() })
       setSelectedNodeIds([nodeId])
       setEditingNodeId(nodeId)
     },
@@ -2797,6 +2902,24 @@ export function CanvasWorkspaceView({
     [createTextNode],
   )
 
+  const addPrompt = useCallback(
+    async (preferredPosition?: CanvasPoint) => {
+      const position = preferredPosition
+        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+        : positionNodeInViewport(canvasViewportRef.current, TEXT_NODE_DEFAULT_SIZE, {
+            x: 140,
+            y: 120,
+          })
+      return createTextNode({
+        kind: 'prompt',
+        text: '',
+        x: position.x,
+        y: position.y,
+      })
+    },
+    [createTextNode],
+  )
+
   const addDirectorStage = useCallback(
     async (preferredPosition?: CanvasPoint) => {
       const position = preferredPosition
@@ -2877,10 +3000,16 @@ export function CanvasWorkspaceView({
   const handleInsertAsset = useCallback(
     async (assetId: string) => {
       if (!snapshot) return
-      const position = positionNodeInViewport(canvasViewportRef.current, IMAGE_NODE_DEFAULT_SIZE, {
-        x: 220,
-        y: 180,
-      })
+      const pendingPosition = pendingAssetPositionRef.current
+      const pendingConnection = pendingAssetConnectionRef.current
+      pendingAssetPositionRef.current = null
+      pendingAssetConnectionRef.current = null
+      const position = pendingPosition
+        ? { x: Math.round(pendingPosition.x), y: Math.round(pendingPosition.y) }
+        : positionNodeInViewport(canvasViewportRef.current, IMAGE_NODE_DEFAULT_SIZE, {
+            x: 220,
+            y: 180,
+          })
       const node = await insertAsset({
         assetId,
         boardId: snapshot.board.id,
@@ -2893,9 +3022,13 @@ export function CanvasWorkspaceView({
       if (node && role) {
         await updateNodeData(node.id, { pipelineRole: role })
       }
+      if (node && pendingConnection) {
+        await connectNodes({ sourceNodeId: pendingConnection.sourceNodeId, targetNodeId: node.id })
+      }
       message.success('已插入资产到当前视口')
+      return node
     },
-    [insertAsset, snapshot, updateNodeData],
+    [connectNodes, insertAsset, snapshot, updateNodeData],
   )
 
   const handleInsertCharacterImage = useCallback(
@@ -3886,7 +4019,7 @@ export function CanvasWorkspaceView({
     modelId?: string
     modelParams?: Record<string, unknown>
     inputTransport?: CanvasInputTransport
-    inputRoles?: Record<string, CanvasTaskInputRole>
+    inputRoles?: Record<string, CanvasTaskInputRoleSelection>
     agentId?: string
     skillIds?: string[]
     taskTitle?: string
@@ -3990,7 +4123,7 @@ export function CanvasWorkspaceView({
       },
     })
     writeCanvasLastUsedPresetTarget(presetTargetId, {
-      prompt,
+      ...(prompt.trim() ? { prompt } : {}),
       ...(negativePrompt != null ? { negativePrompt } : {}),
       ...(providerProfileId != null ? { providerProfileId } : {}),
       ...(manifestId != null ? { manifestId } : {}),
@@ -4120,8 +4253,10 @@ export function CanvasWorkspaceView({
       ...(params.outputPipelineRole ? { outputPipelineRole: params.outputPipelineRole } : {}),
       ...(params.outputTitle ? { outputTitle: params.outputTitle } : {}),
     })
-    const created = next?.nodes.find(
-      (item) => !existingNodeIds.has(item.id) && item.data?.operation === params.operation,
+    const created = findLatestCreatedOperationNode(
+      next?.nodes ?? [],
+      params.operation,
+      existingNodeIds,
     )
     if (created) {
       if (params.openPanel !== false) {
@@ -4495,9 +4630,7 @@ export function CanvasWorkspaceView({
       ...(outputTitle ? { outputTitle } : {}),
       ...runtime,
     })
-    const created = next?.nodes.find(
-      (item) => !existingNodeIds.has(item.id) && item.type === operation,
-    )
+    const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
     if (created) {
       openOperationPanelForNode(created.id)
       message.info('已创建操作节点，请确认配置后点击开始任务')
@@ -4691,9 +4824,14 @@ export function CanvasWorkspaceView({
     },
     [],
   )
-  const onInsertAssetFromPaneStable = useCallback(() => {
-    setSidePanelTab('assets')
-  }, [])
+  const onInsertAssetFromPaneStable = useCallback(
+    (position: CanvasPoint, pendingConnection?: PendingCanvasConnection | null) => {
+      pendingAssetPositionRef.current = { x: Math.round(position.x), y: Math.round(position.y) }
+      pendingAssetConnectionRef.current = pendingConnection ?? null
+      setSidePanelTab('assets')
+    },
+    [],
+  )
 
   const inlinePanelNodeRef = useRef(inlinePanelNode)
   inlinePanelNodeRef.current = inlinePanelNode
@@ -4701,6 +4839,7 @@ export function CanvasWorkspaceView({
   const closeFloatingEditorStable = useCallback(() => {
     setActiveOperationPanelNodeId(null)
     setEditingNodeId(null)
+    setInlinePanelFocusRequest(null)
     setSelectedNodeIds([])
   }, [])
   const focusInlinePanelNodeStable = useCallback(() => {
@@ -5096,9 +5235,7 @@ export function CanvasWorkspaceView({
       y: Math.round(position.y),
       message: '请在操作面板填写 Prompt / 连接输入节点后点击开始任务',
     })
-    const created = next?.nodes.find(
-      (item) => !existingNodeIds.has(item.id) && item.data?.operation === operation,
-    )
+    const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
     if (created) {
       openOperationPanelForNode(created.id)
       message.info('已创建操作节点，请填写参数后连接输入并运行')
@@ -5149,9 +5286,7 @@ export function CanvasWorkspaceView({
         ? { modelParams: { workflow: `extract_${op.extractKind}`, responseFormat: 'json' } }
         : {}),
     })
-    const created = next?.nodes.find(
-      (item) => !existingNodeIds.has(item.id) && item.data?.operation === operation,
-    )
+    const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
     if (created) {
       openOperationPanelForNode(created.id)
       message.info(`已创建「${op.label}」节点，请连接上游文本节点后运行`)
@@ -5775,6 +5910,8 @@ export function CanvasWorkspaceView({
               node={opNode}
               snapshot={operationPanelSnapshot ?? snapshot}
               placement="inline"
+              fullscreen={inlineOperationFullscreen}
+              onFullscreenChange={setInlineOperationFullscreen}
               {...(opTask ? { task: opTask } : {})}
               onClose={() => {
                 setActiveOperationPanelNodeId(null)
@@ -5887,7 +6024,7 @@ export function CanvasWorkspaceView({
                   styleContext,
                 )
                 writeCanvasLastUsedPresetTarget(presetTargetId, {
-                  prompt: params.prompt,
+                  ...(params.prompt.trim() ? { prompt: params.prompt } : {}),
                   ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
                   ...(params.agentId ? { agentId: params.agentId } : {}),
                   ...(params.providerProfileId
@@ -5920,6 +6057,7 @@ export function CanvasWorkspaceView({
                     ...(Object.keys(styledTask.modelParams).length > 0
                       ? { modelParams: styledTask.modelParams }
                       : {}),
+                    userPrompt: params.prompt,
                   })
                 } finally {
                   restoreCanvasViewport(viewportBeforeRun)
@@ -5940,7 +6078,7 @@ export function CanvasWorkspaceView({
                 await patchNodes([opNode.id], { title: params.title })
                 await updateNodeData(opNode.id, {
                   ...opNode.data,
-                  prompt: params.prompt,
+                  ...(params.prompt.trim() ? { prompt: params.prompt } : {}),
                   negativePrompt: params.negativePrompt,
                   message: params.message,
                   modelParams: params.modelParams,
@@ -5953,7 +6091,7 @@ export function CanvasWorkspaceView({
                   ...(params.skillIds ? { skillIds: params.skillIds } : {}),
                 })
                 writeCanvasLastUsedPresetTarget(presetTargetId, {
-                  prompt: params.prompt,
+                  ...(params.prompt.trim() ? { prompt: params.prompt } : {}),
                   ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
                   ...(params.agentId ? { agentId: params.agentId } : {}),
                   ...(params.providerProfileId
@@ -6083,10 +6221,14 @@ export function CanvasWorkspaceView({
             onToggleLockNode={handleToggleLockNode}
             onBringNodeToFront={handleBringNodeToFront}
             onMergeGroupToImage={handleMergeGroupToImage}
+            onMergeSelectionToImage={() => void handleMergeSelectionToImage()}
             onCreateGroupFromSelection={handleCreateGroup}
             onAddSelectionToGroup={handleAddSelectionToGroup}
             onRemoveNodeFromGroup={(nodeId) => handleRemoveFromGroup([nodeId])}
             onDissolveGroup={handleDissolveGroup}
+            onDuplicateSelectedNodes={() => void duplicateNodes(selectedNodeIds)}
+            onToggleLockSelectedNodes={() => void handleToggleLock()}
+            onBringSelectedNodesToFront={() => void handleBringToFront()}
             onOpenAiComposer={handleOpenInlineAi}
             onEditNode={handleEditNode}
             onPreviewPanorama={handlePreviewPanorama}
@@ -6099,7 +6241,7 @@ export function CanvasWorkspaceView({
             onSetProductionState={onSetProductionStateStable}
             onAddTextAtPosition={addText}
             onAddImageAtPosition={uploadFirstImage}
-            onAddPromptAtPosition={addText}
+            onAddPromptAtPosition={addPrompt}
             onAddDirectorStageAtPosition={addDirectorStage}
             onAddDirectorStage3DAtPosition={addDirectorStage3D}
             onInsertAssetFromPane={onInsertAssetFromPaneStable}
@@ -6110,17 +6252,18 @@ export function CanvasWorkspaceView({
             onViewportControlsChange={handleCanvasViewportControlsChange}
             onDeleteSelectedNodes={handleDeleteSelectedNodes}
           />
-          {inlinePanelNode && floatingEditorGeometry && floatingEditorPanel && (
-            <>
-              <div
-                className="canvas-node-floating-toolbar nodrag nopan"
-                style={floatingEditorGeometry.toolbar}
-                onMouseDown={(event) => event.stopPropagation()}
-                onPointerDown={(event) => event.stopPropagation()}
-              >
+          {inlinePanelNode && floatingEditorPanel && (
+            <div
+              className="canvas-node-bottom-editor nodrag nopan"
+              onMouseDown={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <div className="canvas-node-bottom-editor-toolbar">
                 <CanvasFloatingNodeToolbar
                   node={inlinePanelNode}
                   isOperation={Boolean(activeOperationNode)}
+                  operationFullscreen={inlineOperationFullscreen}
+                  onOperationFullscreenChange={setInlineOperationFullscreen}
                   onClose={closeFloatingEditorStable}
                   onFocus={focusInlinePanelNodeStable}
                   onDuplicate={duplicateInlinePanelNodeStable}
@@ -6142,15 +6285,10 @@ export function CanvasWorkspaceView({
                   onDissolveGroup={dissolveInlinePanelGroupStable}
                 />
               </div>
-              <div
-                className="canvas-node-floating-panel nodrag nopan"
-                style={floatingEditorGeometry.panel}
-                onMouseDown={(event) => event.stopPropagation()}
-                onPointerDown={(event) => event.stopPropagation()}
-              >
+              <div className="canvas-node-bottom-editor-panel canvas-node-floating-panel">
                 {floatingEditorPanel}
               </div>
-            </>
+            </div>
           )}
           <CanvasBottomDock
             activeTool={activeTool}
@@ -6672,6 +6810,20 @@ function pickInlineEditorMinWidth(node: CanvasNode, isOperation: boolean): numbe
   return 720
 }
 
+function pickInlineEditorFocusPadding(isOperation: boolean): {
+  top: number
+  right: number
+  bottom: number
+  left: number
+} {
+  return {
+    top: 92,
+    right: 48,
+    bottom: isOperation ? 640 : 560,
+    left: 48,
+  }
+}
+
 function CanvasProjectInfoPanel({
   project,
   configuredPresetCount,
@@ -6858,6 +7010,8 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   onSetProductionState,
   onMergeGroup,
   onDissolveGroup,
+  operationFullscreen = false,
+  onOperationFullscreenChange,
 }: {
   node: CanvasNode
   isOperation: boolean
@@ -6883,6 +7037,8 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   onSetProductionState: (state: CanvasProductionState) => void
   onMergeGroup: () => void
   onDissolveGroup: () => void
+  operationFullscreen?: boolean
+  onOperationFullscreenChange?: (nextFullscreen: boolean) => void
 }) {
   const isMedia = node.type === 'image' || node.type === 'video'
   const isImage = node.type === 'image'
@@ -6895,6 +7051,18 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
     (isOperation
       ? operationLabel((node.data.operation ?? node.type) as CanvasOperationType)
       : node.type)
+  const operationTitle = isOperation
+    ? operationLabel((node.data.operation ?? node.type) as CanvasOperationType)
+    : title
+  const operationStatus = node.data.status ?? 'pending'
+  const operationStatusColor =
+    operationStatus === 'completed'
+      ? 'green'
+      : operationStatus === 'failed'
+        ? 'red'
+        : operationStatus === 'running'
+          ? 'blue'
+          : 'default'
   const createImageOutpaintTask = () =>
     onCreateOperationChild('image_edit', {
       title: '图片扩图',
@@ -6997,37 +7165,35 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
     <div className="canvas-floating-toolbar-shell" role="toolbar" aria-label={`${title} 编辑工具`}>
       <div className="canvas-floating-toolbar-title">
         {isOperation ? <Icons.Sparkles size={14} /> : <Icons.Edit size={14} />}
-        <span>{isOperation ? '操作配置' : title}</span>
+        <span>{isOperation ? operationTitle : title}</span>
+        {isOperation && (
+          <Tag color={operationStatusColor} bordered>
+            {floatingOperationStatusLabel(operationStatus)}
+          </Tag>
+        )}
       </div>
       <div className="canvas-floating-toolbar-divider" />
       <Tooltip title="聚焦节点">
-        <Button size="middle" type="text" icon={<Icons.Maximize size={14} />} onClick={onFocus}>
+        <Button size="middle" type="text" icon={<Icons.Crosshair size={14} />} onClick={onFocus}>
           聚焦
         </Button>
       </Tooltip>
-      {!isGroup &&
-        (isOperation ? (
-          <Tooltip title="打开操作面板">
-            <Button size="middle" type="text" icon={<Icons.Edit size={14} />} onClick={onEditNode}>
-              配置
-            </Button>
-          </Tooltip>
-        ) : (
-          <Popover
-            trigger="hover"
-            mouseEnterDelay={0.08}
-            mouseLeaveDelay={0.18}
-            placement="bottomLeft"
-            arrow={false}
-            overlayClassName="canvas-floating-toolbar-popover"
-            content={aiOperationMenu}
-          >
-            <Button size="middle" type="text" icon={<Icons.Sparkles size={14} />}>
-              AI 操作
-            </Button>
-          </Popover>
-        ))}
-      {!isGroup && (
+      {!isGroup && !isOperation && (
+        <Popover
+          trigger="hover"
+          mouseEnterDelay={0.08}
+          mouseLeaveDelay={0.18}
+          placement="bottomLeft"
+          arrow={false}
+          overlayClassName="canvas-floating-toolbar-popover"
+          content={aiOperationMenu}
+        >
+          <Button size="middle" type="text" icon={<Icons.Sparkles size={14} />}>
+            AI 操作
+          </Button>
+        </Popover>
+      )}
+      {!isGroup && !isOperation && (
         <Popover
           trigger="hover"
           mouseEnterDelay={0.08}
@@ -7062,37 +7228,55 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           </Button>
         </Popover>
       )}
-      <Popover
-        trigger="hover"
-        mouseEnterDelay={0.08}
-        mouseLeaveDelay={0.18}
-        placement="bottom"
-        content={
-          <div className="canvas-floating-menu">
-            <div className="canvas-floating-menu-title">媒体 / 素材</div>
-            {isMedia && menuButton('下载到本地', <Icons.Download size={14} />, onDownload)}
-            {isImage && (
-              <>
-                {menuButton('提取子视图', <Icons.Crop size={14} />, onExtractCharacterSubview)}
-                {menuButton('图片标注', <Icons.Crop size={14} />, onAnnotate)}
-                {menuButton('宫格切分', <Icons.Grid size={14} />, onSplitGrid)}
-              </>
-            )}
-            {isPanorama360 && menuButton('全景预览', <Icons.Globe size={14} />, onPreviewPanorama)}
-            {node.type === 'group' && (
-              <>
-                {menuButton('多图合并', <Icons.Image size={14} />, onMergeGroup)}
-                {menuButton('解散组', <Icons.FolderOpen size={14} />, onDissolveGroup)}
-              </>
-            )}
-            {menuButton('保存到资源库', <Icons.Folder size={14} />, onSaveToLibrary)}
-          </div>
-        }
-      >
-        <Button size="middle" type="text" icon={<Icons.Folder size={14} />}>
-          素材
-        </Button>
-      </Popover>
+      {!isOperation && (
+        <Popover
+          trigger="hover"
+          mouseEnterDelay={0.08}
+          mouseLeaveDelay={0.18}
+          placement="bottom"
+          content={
+            <div className="canvas-floating-menu">
+              <div className="canvas-floating-menu-title">媒体 / 素材</div>
+              {isMedia && menuButton('下载到本地', <Icons.Download size={14} />, onDownload)}
+              {isImage && (
+                <>
+                  {menuButton('提取子视图', <Icons.Crop size={14} />, onExtractCharacterSubview)}
+                  {menuButton('图片标注', <Icons.Crop size={14} />, onAnnotate)}
+                  {menuButton('宫格切分', <Icons.Grid size={14} />, onSplitGrid)}
+                </>
+              )}
+              {isPanorama360 &&
+                menuButton('全景预览', <Icons.Globe size={14} />, onPreviewPanorama)}
+              {node.type === 'group' && (
+                <>
+                  {menuButton('多图合并', <Icons.Image size={14} />, onMergeGroup)}
+                  {menuButton('解散组', <Icons.FolderOpen size={14} />, onDissolveGroup)}
+                </>
+              )}
+              {menuButton('保存到资源库', <Icons.Folder size={14} />, onSaveToLibrary)}
+            </div>
+          }
+        >
+          <Button size="middle" type="text" icon={<Icons.Folder size={14} />}>
+            素材
+          </Button>
+        </Popover>
+      )}
+      <div className="canvas-floating-toolbar-spacer" />
+      {isOperation && (
+        <Tooltip title={operationFullscreen ? '退出全屏' : '全屏展示'}>
+          <Button
+            size="middle"
+            type="text"
+            icon={
+              operationFullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />
+            }
+            onClick={() => onOperationFullscreenChange?.(!operationFullscreen)}
+          >
+            {operationFullscreen ? '退出全屏' : '全屏'}
+          </Button>
+        </Tooltip>
+      )}
       <Popover
         trigger="hover"
         mouseEnterDelay={0.08}
@@ -7127,6 +7311,14 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
     </div>
   )
 })
+
+function floatingOperationStatusLabel(status: CanvasTask['status']): string {
+  if (status === 'completed') return '已完成'
+  if (status === 'failed') return '失败'
+  if (status === 'cancelled') return '已取消'
+  if (status === 'running') return '运行中'
+  return '待提交'
+}
 
 function resolveCanvasFloatingIcon(iconKey: string | undefined, size = 14): React.ReactNode {
   const map = Icons as unknown as Record<string, (p: { size?: number }) => React.ReactNode>
@@ -7622,9 +7814,6 @@ function CanvasNodeEditModal({
                 onClick={toggleFullscreen}
               />
             </Tooltip>
-            <Button size="middle" onClick={onClose}>
-              取消
-            </Button>
             <Button size="middle" type="primary" loading={saving} onClick={() => void save()}>
               保存
             </Button>
@@ -7678,7 +7867,6 @@ function CanvasNodeEditModal({
                   onClick={() => setEditFullscreen(true)}
                 />
               </Tooltip>
-              <Button size="middle" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
             </div>
           </div>
 
@@ -7746,9 +7934,6 @@ function CanvasNodeEditModal({
             </div>
             <div className="canvas-node-text-composer-save">
               <span>{text.trim().length} 字符</span>
-              <Button size="middle" onClick={onClose}>
-                取消
-              </Button>
               <Button size="middle" type="primary" loading={saving} onClick={() => void save()}>
                 保存
               </Button>
@@ -7878,9 +8063,11 @@ function CanvasNodeEditModal({
                   onClick={toggleFullscreen}
                 />
               </Tooltip>
-              <Button size="middle" onClick={onClose}>
-                取消
-              </Button>
+              {placement !== 'inline' && (
+                <Button size="middle" onClick={onClose}>
+                  取消
+                </Button>
+              )}
               <Button size="middle" type="primary" loading={saving} onClick={() => void save()}>
                 保存
               </Button>

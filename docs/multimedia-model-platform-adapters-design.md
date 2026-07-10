@@ -1,6 +1,6 @@
 # APIMart / xAI / Agnes 多媒体模型适配开发设计
 
-> 状态: 已落地（manifest 驱动的 TemplateMediaAdapter 已在 MediaRouterService 中接入；APIMart / xAI / Agnes / Volcengine / Google Gemini/Veo/Omni / Midjourney 网关专用与 seed manifest 均已纳入；Contract V2（paramPolicy / errorContract / 严格裁剪 / dry-run 预览）已在 M1–M9 中落地。） | 最后核对: 2026-07-05
+> 状态: 已落地（manifest 驱动的 TemplateMediaAdapter 已在 MediaRouterService 中接入；APIMart / xAI / Agnes / Volcengine / Google Gemini/Veo/Omni / Midjourney 网关专用与 seed manifest 均已纳入；Contract V2（paramPolicy / errorContract / 严格裁剪 / dry-run 预览）已在 M1–M9 中落地。） | 最后核对: 2026-07-09
 >
 > 日期: 2026-06-14
 > 目标: 让 APIMart 与 xAI 的图片、语音、视频模型可以在 Spark Agent 中完成模型录入、作为 agent 技能调用，并让无限画布能直接通过平台适配器调用这些模型生成多媒体资产。
@@ -29,8 +29,12 @@ Provider 高级设置在 `mediaProvider=custom` 时会为新模型生成同步 J
 
 模板适配器的 `{{var}}` 插值无法表达对象数组结构，故新增 `VolcengineArkMediaAdapter`（`packages/agent-runtime/src/services/media/adapters/volcengine-ark-media.adapter.ts`），注册到 `MediaRouterService`。当 `mediaProvider='volcengine-ark'` 且该 adapter `supports(capability)` 为真时，路由（`media-router.service.ts` 的 `shouldUseManifestAdapter` 判定）优先走专用 adapter 而非模板适配器——manifest 的 `requestTemplate` 不再生效，但 `paramSchema`/`defaults`/`aliases` 仍驱动 Provider 表单与画布参数面板。
 
-- **视频**：`POST {apiEndpoint}/contents/generations/tasks`，按 `inputFiles` 的 role 聚合 `content[]`（text → first_frame → last_frame → reference_image → reference_video → reference_audio），响应取 `id` 轮询 `GET .../tasks/{id}` → `content.video_url`。
+- **视频**：`POST {apiEndpoint}/contents/generations/tasks`，按 `inputFiles` 的 role 聚合 `content[]`（text → first_frame → last_frame → reference_image → reference_video → reference_audio），响应取 `id` 轮询 `GET .../tasks/{id}` → `content.video_url`。Seedance 2.0 的 `video.generate` 在 manifest 中声明为“文生视频 / 多模态参考”，`video.image_to_video` 声明为“图生视频（首尾帧 / 参考图）”，均支持 0–9 张参考图；画布节点顶部缩略图区只展示参考多模态资源，首帧/尾帧改由底部参数栏指定，避免参考图与关键帧语义混用。
 - **图片**：`POST {apiEndpoint}/images/generations`，同步返回 `data[].url`/`data[].b64_json`。
+
+### Canvas 多媒体资源选择容错（2026-07-09）
+
+画布媒体选择器不再按 manifest 的 `maxImages` 硬禁选或截断参考图。`maxImages` 只作为“模型声明支持数量”的风险提示；用户选择的所有参考资源都会进入任务输入，由模型 adapter 按各自协议映射为首帧、尾帧、参考图、参考视频或参考音频。平台不支持时允许请求失败并回传错误，不在前端提前丢弃资源，避免 manifest 配置滞后导致模型真实能力不可用。
 
 模型清单见 `BUILTIN_MEDIA_MODEL_MANIFESTS`：`volcengine:doubao-seedance-2-0-260128` / `-fast-260128` / `-mini-260615`（视频）、`volcengine:doubao-seedream-4-5-251128` / `doubao-seedream-5-0-260128`（图片）。预设见 `provider-presets.ts`：`volcengine-seedance-video`、`volcengine-seedream-image`。
 

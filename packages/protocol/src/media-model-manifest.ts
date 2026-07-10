@@ -2497,8 +2497,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       },
       {
         id: 'video.image_to_video',
-        label: '图生视频（首帧/首尾帧）',
-        input: { required: ['prompt', 'image'], maxImages: 2, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        label: '图生视频（首尾帧 / 参考图）',
+        input: { required: ['prompt', 'image'], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: volcengineSeedanceVideoSchema,
         defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },
@@ -2569,8 +2569,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       },
       {
         id: 'video.image_to_video',
-        label: '图生视频（首帧/首尾帧）',
-        input: { required: ['prompt', 'image'], maxImages: 2, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        label: '图生视频（首尾帧 / 参考图）',
+        input: { required: ['prompt', 'image'], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: { ...volcengineSeedanceVideoSchema, properties: { ...volcengineSeedanceVideoSchema.properties, resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' } } },
         defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },
@@ -2636,8 +2636,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       },
       {
         id: 'video.image_to_video',
-        label: '图生视频（首帧/首尾帧）',
-        input: { required: ['prompt', 'image'], maxImages: 2, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        label: '图生视频（首尾帧 / 参考图）',
+        input: { required: ['prompt', 'image'], maxImages: 9, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: { ...volcengineSeedanceVideoSchema, properties: { ...volcengineSeedanceVideoSchema.properties, resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' } } },
         defaults: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', generateAudio: true, watermark: true, returnLastFrame: false, seed: -1, serviceTier: '' },

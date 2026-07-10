@@ -11,6 +11,7 @@ import {
 } from '../schemas/index.js'
 import { BUILTIN_MEDIA_MODEL_MANIFESTS, MediaModelManifestSchema } from '../media-model-manifest.js'
 import { validateMediaModelManifestSemantics } from '../media-model-manifest-validation.js'
+import { inferRolePolicy } from '../media-config.js'
 
 describe('IPC schemas', () => {
   it('does not hard-code runtime permission defaults during session creation', () => {
@@ -169,6 +170,28 @@ describe('IPC schemas', () => {
     expect(BUILTIN_MEDIA_MODEL_MANIFESTS.length).toBeGreaterThan(5)
     for (const manifest of BUILTIN_MEDIA_MODEL_MANIFESTS) {
       expect(() => MediaModelManifestSchema.parse(manifest)).not.toThrow()
+    }
+  })
+
+  it('Seedance 2.0 image_to_video exposes reference-image input roles', () => {
+    const seedance2Ids = [
+      'volcengine:doubao-seedance-2-0-260128',
+      'volcengine:doubao-seedance-2-0-fast-260128',
+      'volcengine:doubao-seedance-2-0-mini-260615',
+    ]
+
+    for (const id of seedance2Ids) {
+      const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === id)
+      expect(manifest, `missing manifest ${id}`).toBeDefined()
+      const capability = manifest!.capabilities.find((item) => item.id === 'video.image_to_video')
+      expect(capability, `missing image_to_video for ${id}`).toBeDefined()
+      expect(capability!.label).toContain('参考图')
+      expect(capability!.input.maxImages).toBe(9)
+      expect(inferRolePolicy(capability!).imageRoles).toEqual([
+        'first_frame',
+        'last_frame',
+        'reference_image',
+      ])
     }
   })
 

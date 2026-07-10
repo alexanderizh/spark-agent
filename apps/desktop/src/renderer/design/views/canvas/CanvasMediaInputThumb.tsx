@@ -65,7 +65,7 @@ export function CanvasMediaInputThumb({
   removeDisabled?: boolean
   /** 当前图片被分配的角色；不传则不显示角色徽章（向后兼容）。 */
   role?: CanvasMediaInputRole | undefined
-  /** 当前图片的使用状态：used=已分配角色；unused=未被任何角色选中；overflow=超出 maxImages 将被丢弃。 */
+  /** 当前图片的使用状态：used=已分配角色；unused=未被任何角色选中；overflow=超出模型声明上限但仍尝试传递。 */
   usageStatus?: CanvasMediaInputUsageStatus | undefined
 }) {
   const rootClass =
@@ -120,7 +120,7 @@ export function CanvasMediaInputThumb({
         </div>
       ) : null}
       {isUnused ? <CornerBadge text="未使用" bg="rgba(0,0,0,0.6)" color="#fff" /> : null}
-      {isOverflow ? <CornerBadge text="将被丢弃" bg="#ff4d4f" color="#fff" /> : null}
+      {isOverflow ? <CornerBadge text="可能不支持" bg="#ff4d4f" color="#fff" /> : null}
       {variant === 'panel' && label ? (
         <div className="canvas-operation-panel-input-name">{label}</div>
       ) : null}
@@ -175,7 +175,7 @@ export function CanvasMediaInputThumb({
             <div style={{ marginTop: 4, fontSize: 12, color: badge.bg }}>
               角色：{badge.label}
               {isUnused ? '（未使用）' : ''}
-              {isOverflow ? '（超出上限，将被丢弃）' : ''}
+              {isOverflow ? '（超出模型声明，仍会尝试传递）' : ''}
             </div>
           ) : null}
         </div>

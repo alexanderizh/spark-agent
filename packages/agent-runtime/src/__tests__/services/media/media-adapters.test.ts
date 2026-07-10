@@ -2120,7 +2120,7 @@ describe('VolcengineArkMediaAdapter', () => {
     expect((firstFrame!.image_url as { url: string }).url).toBe('https://cdn/first.png')
   })
 
-  it('Seedance image_to_video with two role-less images infers first_frame + last_frame', async () => {
+  it('Seedance image_to_video with role-less images infers first_frame + last_frame + references', async () => {
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
     const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
       (entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128',
@@ -2161,10 +2161,11 @@ describe('VolcengineArkMediaAdapter', () => {
         capability: 'video.image_to_video',
         outputDir: tmpDir,
         prompt: '首尾帧过渡',
-        // 两张无 role 图：i2v 兜底应分别作 first_frame / last_frame
+        // 无 role 图：i2v 兜底应分别作 first_frame / last_frame，其余作为 reference_image。
         inputFiles: [
           { type: 'image', url: 'https://cdn/start.png' },
           { type: 'image', url: 'https://cdn/end.png' },
+          { type: 'image', url: 'https://cdn/ref.png' },
         ],
       },
       {
@@ -2190,9 +2191,9 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(lastFrame).toBeDefined()
     expect((firstFrame!.image_url as { url: string }).url).toBe('https://cdn/start.png')
     expect((lastFrame!.image_url as { url: string }).url).toBe('https://cdn/end.png')
-    // 这两张不应再重复作为 reference_image
     const refs = content.filter((item) => item.role === 'reference_image')
-    expect(refs).toHaveLength(0)
+    expect(refs).toHaveLength(1)
+    expect((refs[0]!.image_url as { url: string }).url).toBe('https://cdn/ref.png')
   })
 
   it('Seedream image.edit (multi-image fusion): passes image[] array and honors searchEnabled alias', async () => {

@@ -16,10 +16,10 @@ describe('CanvasMediaInputHint', () => {
       },
     })
 
-    expect(hint).toContain('当前模型最多使用 2 张图片')
+    expect(hint).toContain('当前模型声明支持 2 张图片')
     expect(hint).toContain('第一张作为首帧、第二张作为尾帧')
     expect(hint).toContain('已选 4 张')
-    expect(hint).toContain('超出 2 张将被丢弃')
+    expect(hint).toContain('超出 2 张仍会尝试传递')
     expect(hint).toContain('建议显式选择')
   })
 
@@ -35,13 +35,13 @@ describe('CanvasMediaInputHint', () => {
       },
     })
 
-    expect(hint).toContain('当前模型最多使用 9 张图片')
+    expect(hint).toContain('当前模型声明支持 9 张图片')
     expect(hint).toContain('未手动指定时，已选图片均作为参考图')
     expect(hint).toContain('已选 3 张')
     expect(hint).not.toContain('首帧')
   })
 
-  it('renders unsupported-image state for media operations without image roles', () => {
+  it('renders compact unsupported-image state without visible hint copy', () => {
     const html = renderToStaticMarkup(
       <CanvasMediaInputHint
         mode="panel"
@@ -51,6 +51,8 @@ describe('CanvasMediaInputHint', () => {
       />,
     )
 
-    expect(html).toContain('当前能力不支持图片输入')
+    expect(html).toContain('canvas-media-input-hint')
+    expect(html).toContain('is-unsupported')
+    expect(html).not.toContain(['canvas-media-input-hint', 'main'].join('-'))
   })
 })

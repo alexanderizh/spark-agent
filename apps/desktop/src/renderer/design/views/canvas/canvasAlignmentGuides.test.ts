@@ -57,6 +57,7 @@ function createFlowNode(
         toggleLockNode: () => undefined,
         bringNodeToFront: () => undefined,
         mergeGroupToImage: () => undefined,
+        mergeSelectionToImage: () => undefined,
         createGroupFromSelection: () => undefined,
         addSelectionToGroup: () => undefined,
         removeNodeFromGroup: () => undefined,

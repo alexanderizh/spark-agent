@@ -1811,13 +1811,19 @@ function AssetEditor({
           kind === 'effect') && (
           <label className="canvas-film-editor-field">
             <span>默认生成提示词（AI 生图/生视频时复用）</span>
-            <Input.TextArea
-              rows={5}
-              autoSize={{ minRows: 5, maxRows: 16 }}
-              value={prompt}
-              placeholder="如：电影感、高质量、精细细节..."
-              onChange={(e) => setPrompt(e.target.value)}
-            />
+            <div className="canvas-film-editor-prompt-count-wrap">
+              <Input.TextArea
+                className="canvas-film-editor-prompt-input"
+                rows={5}
+                autoSize={{ minRows: 5, maxRows: 16 }}
+                value={prompt}
+                placeholder="如：电影感、高质量、精细细节..."
+                onChange={(e) => setPrompt(e.target.value)}
+              />
+              <span className="canvas-film-editor-prompt-count">
+                {prompt.trim().length.toLocaleString()} 字符
+              </span>
+            </div>
           </label>
         )}
 

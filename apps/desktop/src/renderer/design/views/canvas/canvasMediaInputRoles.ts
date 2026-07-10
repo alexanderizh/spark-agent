@@ -37,7 +37,7 @@ export type ComputeMediaInputRoleMapArgs = {
  *    firstFrame/lastFrame/referenceFrame 映射 role；未分配到角色的 image 标 unused/overflow。
  *  - 纯参考图路径（supportsImageRoles 但非帧角色，即 video.generate 多模态参考 /
  *    image.edit / image.variations / image.compose）：所有 selectedInputNodeIds 里的 image
- *    标 reference_image，按 maxImages 截断，超出标 overflow；未勾选标 unused。
+ *    标 reference_image/used；maxImages 仅作为 UI 风险提示，不在这里截断或标记丢弃。
  *
  * 之前 mediaInputRoleMap 在 !supportsVideoFrameRoles 时直接返回空 map，导致纯参考图场景
  * （文生视频拉了一堆参考图）缩略图无徽章、无用量判定——用户"不知道哪些图被用到"的根因。
@@ -51,11 +51,9 @@ export function computeMediaInputRoleMap(
     supportsFrameRoles,
     supportsImageRoles,
     policy,
-    maxImages,
     firstFrameNodeId,
     lastFrameNodeId,
     referenceFrameNodeIds,
-    explicitFrameNodeIds,
   } = args
   const map = new Map<string, MediaInputRoleEntry>()
 
@@ -68,7 +66,6 @@ export function computeMediaInputRoleMap(
   const audioRole = policy.audioRoles?.[0]
 
   if (supportsFrameRoles) {
-    const overflow = explicitFrameNodeIds.length >= maxImages
     for (const node of mediaInputs) {
       if (node.type !== 'image') {
         map.set(node.id, videoRole ? { role: videoRole, usageStatus: 'used' } : { usageStatus: 'used' })
@@ -81,7 +78,7 @@ export function computeMediaInputRoleMap(
       } else if (referenceFrameNodeIds.includes(node.id)) {
         map.set(node.id, { role: 'reference_image', usageStatus: 'used' })
       } else {
-        map.set(node.id, { usageStatus: overflow ? 'overflow' : 'unused' })
+        map.set(node.id, { usageStatus: 'unused' })
       }
     }
     return map
@@ -89,16 +86,10 @@ export function computeMediaInputRoleMap(
 
   // 纯参考图路径
   const selectedSet = new Set(selectedInputNodeIds)
-  let usedCount = 0
   for (const node of mediaInputs) {
     if (node.type === 'image') {
       if (selectedSet.has(node.id)) {
-        if (usedCount < maxImages) {
-          map.set(node.id, { role: 'reference_image', usageStatus: 'used' })
-          usedCount += 1
-        } else {
-          map.set(node.id, { role: 'reference_image', usageStatus: 'overflow' })
-        }
+        map.set(node.id, { role: 'reference_image', usageStatus: 'used' })
       } else {
         map.set(node.id, { usageStatus: 'unused' })
       }

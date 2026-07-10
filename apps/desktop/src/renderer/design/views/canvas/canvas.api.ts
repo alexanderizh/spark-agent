@@ -42,6 +42,7 @@ import {
 import type { ChapterSplitMode, ParsedChapter } from './canvasManuscript'
 import {
   AUDIO_NODE_DEFAULT_SIZE,
+  CANVAS_NODE_META_BAR_HEIGHT,
   GROUP_NODE_DEFAULT_SIZE,
   IMAGE_NODE_DEFAULT_SIZE,
   OPERATION_NODE_DEFAULT_SIZE,
@@ -1073,6 +1074,49 @@ function createNodeBase(input: {
   }
 }
 
+type CanvasTaskNodeLookup = {
+  node: CanvasNode
+  ownsTask: boolean
+}
+
+function findCanvasTaskNode(
+  db: CanvasDb,
+  projectId: string,
+  taskId: string,
+): CanvasTaskNodeLookup | null {
+  const directNode = db.nodes.find(
+    (item) => item.taskId === taskId && item.projectId === projectId,
+  )
+  if (directNode) return { node: directNode, ownsTask: true }
+
+  const edgeTargetIds = db.edges
+    .filter(
+      (edge) =>
+        edge.projectId === projectId && edge.taskId === taskId && edge.type === 'used_as_input',
+    )
+    .map((edge) => edge.targetNodeId)
+  for (const nodeId of edgeTargetIds) {
+    const node = db.nodes.find((item) => item.id === nodeId && item.projectId === projectId)
+    if (node) return { node, ownsTask: false }
+  }
+
+  const generatedSourceId = db.edges.find(
+    (edge) => edge.projectId === projectId && edge.taskId === taskId && edge.type === 'generated',
+  )?.sourceNodeId
+  if (generatedSourceId) {
+    const node = db.nodes.find(
+      (item) => item.id === generatedSourceId && item.projectId === projectId,
+    )
+    if (node) return { node, ownsTask: false }
+  }
+
+  return null
+}
+
+function canPatchCanvasTaskNode(lookup: CanvasTaskNodeLookup, taskId: string): boolean {
+  return lookup.ownsTask || lookup.node.taskId == null || lookup.node.taskId === taskId
+}
+
 function defaultCanvasNodeTitle(type: CanvasNode['type'], sequence: number): string {
   const labelByType: Partial<Record<CanvasNode['type'], string>> = {
     image: '图片',
@@ -1247,7 +1291,7 @@ function fitMediaNodeSize(
       }
       return {
         width: Math.round(nodeWidth),
-        height: Math.max(220, bodyHeight),
+        height: Math.max(220, bodyHeight + CANVAS_NODE_META_BAR_HEIGHT),
       }
     }
     return VIDEO_NODE_DEFAULT_SIZE
@@ -2143,6 +2187,17 @@ export const canvasApi = {
     const idMap = new Map<string, string>()
     for (const node of sourceNodes) idMap.set(node.id, uid('canvas_node'))
     for (const node of sourceNodes) {
+      const operationClonePatch = isOperationNode(node)
+        ? {
+            taskId: null,
+            data: {
+              ...node.data,
+              status: 'pending' as const,
+              progress: 0,
+              message: '复制任务，需确认配置后重新提交',
+            },
+          }
+        : {}
       db.nodes.push({
         ...node,
         id: idMap.get(node.id)!,
@@ -2155,6 +2210,7 @@ export const canvasApi = {
         ...(node.parentNodeId && idMap.has(node.parentNodeId)
           ? { parentNodeId: idMap.get(node.parentNodeId)! }
           : { parentNodeId: null }),
+        ...operationClonePatch,
       })
     }
     // 复制选中节点之间的内部 edge
@@ -2165,12 +2221,14 @@ export const canvasApi = {
         selected.has(edge.targetNodeId),
     )
     for (const edge of sourceEdges) {
+      const targetNode = db.nodes.find((node) => node.id === idMap.get(edge.targetNodeId))
       db.edges.push({
         ...edge,
         id: uid('canvas_edge'),
         boardId: targetBoardId,
         sourceNodeId: idMap.get(edge.sourceNodeId)!,
         targetNodeId: idMap.get(edge.targetNodeId)!,
+        taskId: targetNode && isOperationNode(targetNode) ? null : (edge.taskId ?? null),
         createdAt: at,
       })
     }
@@ -2989,29 +3047,31 @@ export const canvasApi = {
     text: string
     x: number
     y: number
+    kind?: 'text' | 'prompt'
   }): Promise<CanvasNode> {
     const db = readDb()
     const maxZ = Math.max(
       0,
       ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
     )
+    const kind = input.kind ?? 'text'
     const node = createNodeBase({
       projectId: input.projectId,
       boardId: input.boardId,
-      type: 'text',
-      title: 'Text note',
+      type: kind,
+      title: kind === 'prompt' ? 'Prompt' : 'Text note',
       x: input.x,
       y: input.y,
       // 长文本节点（剧本/文稿等）默认放大尺寸，卡片内支持滚动（canvasNodeSize.ts）
       ...pickTextNodeSize(input.text),
-      data: { text: input.text, format: 'plain' },
+      data: { text: input.text, format: kind === 'prompt' ? 'prompt' : 'plain' },
     })
     node.zIndex = maxZ + 1
     const asset: CanvasAsset = {
       id: uid('canvas_asset'),
       projectId: input.projectId,
       userId: USER_ID,
-      type: 'text',
+      type: kind,
       source: 'manual',
       title: node.title ?? null,
       contentText: input.text,
@@ -3559,6 +3619,17 @@ export const canvasApi = {
     const clones = sourceNodes.map((node) => {
       const nextId = uid('canvas_node')
       idMap.set(node.id, nextId)
+      const operationClonePatch = isOperationNode(node)
+        ? {
+            taskId: null,
+            data: {
+              ...node.data,
+              status: 'pending' as const,
+              progress: 0,
+              message: '复制任务，需确认配置后重新提交',
+            },
+          }
+        : {}
       return {
         ...node,
         id: nextId,
@@ -3568,17 +3639,23 @@ export const canvasApi = {
         title: node.title ? `${node.title} copy` : null,
         createdAt: at,
         updatedAt: at,
+        ...operationClonePatch,
       }
     })
     const clonedEdges = db.edges
       .filter((edge) => selected.has(edge.sourceNodeId) && selected.has(edge.targetNodeId))
-      .map((edge) => ({
-        ...edge,
-        id: uid('canvas_edge'),
-        sourceNodeId: idMap.get(edge.sourceNodeId) ?? edge.sourceNodeId,
-        targetNodeId: idMap.get(edge.targetNodeId) ?? edge.targetNodeId,
-        createdAt: at,
-      }))
+      .map((edge) => {
+        const targetNodeId = idMap.get(edge.targetNodeId) ?? edge.targetNodeId
+        const targetClone = clones.find((node) => node.id === targetNodeId)
+        return {
+          ...edge,
+          id: uid('canvas_edge'),
+          sourceNodeId: idMap.get(edge.sourceNodeId) ?? edge.sourceNodeId,
+          targetNodeId,
+          taskId: targetClone && isOperationNode(targetClone) ? null : (edge.taskId ?? null),
+          createdAt: at,
+        }
+      })
 
     db.nodes.push(...clones)
     db.edges.push(...clonedEdges)
@@ -3848,7 +3925,9 @@ export const canvasApi = {
   ): Promise<CanvasSnapshot> {
     const db = readDb()
     const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
-    const taskNode = db.nodes.find((item) => item.taskId === taskId && item.projectId === projectId)
+    const taskNodeLookup = findCanvasTaskNode(db, projectId, taskId)
+    const taskNode = taskNodeLookup?.node ?? null
+    const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
     if (!task || !taskNode) return this.openSnapshot(projectId)
 
     const at = now()
@@ -3874,13 +3953,15 @@ export const canvasApi = {
         : status === 'cancelled'
           ? '任务已取消'
           : `失败：${task.errorDetail ?? task.errorMsg ?? '本地画布工作流失败'}`
-    taskNode.data = {
-      ...taskNode.data,
-      status,
-      progress,
-      message: result.message ?? defaultMessage,
+    if (patchTaskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status,
+        progress,
+        message: result.message ?? defaultMessage,
+      }
+      taskNode.updatedAt = at
     }
-    taskNode.updatedAt = at
 
     for (const outputNodeId of task.outputNodeIds) {
       if (
@@ -3963,8 +4044,9 @@ export const canvasApi = {
       .map((n) => n.data.text ?? '')
       .filter(Boolean)
       .join('\n\n')
+    const explicitPrompt = nonEmptyString(input.prompt)
     const inheritedPrompt =
-      nonEmptyString(input.prompt) ||
+      explicitPrompt ||
       promptContext ||
       inputNodes
         .map((node) => nonEmptyString(node.data.prompt))
@@ -3981,7 +4063,7 @@ export const canvasApi = {
       workflow: input.modelParams?.workflow,
     })
     const operationPreset = readCanvasResolvedPresetTarget(presetTargetId)
-    const basePrompt = nonEmptyString(input.prompt) ?? inheritedPrompt
+    const basePrompt = explicitPrompt ?? inheritedPrompt
     const promptWithPreset = mergeCanvasOperationPresetPrompt(basePrompt, operationPreset.prompt)
     const prompt = buildCanvasOperationPrompt(input.operation, promptWithPreset)
     const inheritedNegativePrompt =
@@ -4049,7 +4131,7 @@ export const canvasApi = {
         status: 'pending',
         progress: 0,
         message: input.message ?? '点击下方编辑面板调整参数后运行',
-        ...(prompt ? { prompt } : {}),
+        ...(explicitPrompt ? { prompt: explicitPrompt } : {}),
         ...(negativePrompt ? { negativePrompt } : {}),
         ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
         ...(providerProfileId ? { providerProfileId } : {}),
@@ -4182,6 +4264,7 @@ export const canvasApi = {
       reasoningEffort?: SessionReasoningEffort
       modelParams?: Record<string, unknown>
       skillIds?: string[]
+      userPrompt?: string
     },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
@@ -4257,13 +4340,21 @@ export const canvasApi = {
       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
     }
     return isTextModelOperation(request.operation)
-      ? this.createTextTask(projectId, request, { bindToNodeId: nodeId })
-      : this.createMediaTask(projectId, request, { bindToNodeId: nodeId })
+      ? this.createTextTask(projectId, request, {
+          bindToNodeId: nodeId,
+          ...(params.userPrompt !== undefined ? { userPrompt: params.userPrompt } : {}),
+        })
+      : this.createMediaTask(projectId, request, {
+          bindToNodeId: nodeId,
+          ...(params.userPrompt !== undefined ? { userPrompt: params.userPrompt } : {}),
+        })
   },
   async cancelTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
     const db = readDb()
     const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
-    const taskNode = db.nodes.find((item) => item.taskId === taskId && item.projectId === projectId)
+    const taskNodeLookup = findCanvasTaskNode(db, projectId, taskId)
+    const taskNode = taskNodeLookup?.node ?? null
+    const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
     if (!task) return this.openSnapshot(projectId)
     // 强制取消：completed/cancelled 已是终态无需再动；failed/running/pending 一律允许取消，
     // 避免任务因 runtime 报错卡在 running 而无法清理。
@@ -4290,7 +4381,7 @@ export const canvasApi = {
     task.errorDetail = '任务已由用户在画布任务队列中取消。'
     task.updatedAt = at
     task.completedAt = at
-    if (taskNode) {
+    if (taskNode && patchTaskNode) {
       taskNode.data = {
         ...taskNode.data,
         status: 'cancelled',
@@ -4341,6 +4432,7 @@ export const canvasApi = {
     },
     options?: {
       bindToNodeId?: string
+      userPrompt?: string
     },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
@@ -4370,7 +4462,7 @@ export const canvasApi = {
       buildCanvasInputTextContext(request.inputNodeIds, db),
     )
     const requestPrompt = buildCanvasOperationPrompt(request.operation, requestPromptWithContext)
-    if (requestPrompt != null) taskNodeData.prompt = requestPrompt
+    if (requestPrompt != null && options?.bindToNodeId == null) taskNodeData.prompt = requestPrompt
     if (request.negativePrompt != null) taskNodeData.negativePrompt = request.negativePrompt
     if (request.agentId != null) taskNodeData.agentId = request.agentId
     if (request.providerProfileId != null) taskNodeData.providerProfileId = request.providerProfileId
@@ -4407,6 +4499,14 @@ export const canvasApi = {
         : null
     if (bindNode) {
       bindNode.data = { ...bindNode.data, ...taskNodeData }
+      if (options != null && 'userPrompt' in options) {
+        const userPrompt = options.userPrompt?.trim() ?? ''
+        if (userPrompt) {
+          bindNode.data.prompt = userPrompt
+        } else {
+          delete bindNode.data.prompt
+        }
+      }
       bindNode.taskId = taskId
       bindNode.updatedAt = at
       taskNode = bindNode
@@ -4522,6 +4622,7 @@ export const canvasApi = {
     },
     options?: {
       bindToNodeId?: string
+      userPrompt?: string
     },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
@@ -4540,7 +4641,7 @@ export const canvasApi = {
       message: '调用文本模型中…',
     }
     const requestPrompt = buildCanvasOperationPrompt(request.operation, request.prompt)
-    if (requestPrompt != null) taskNodeData.prompt = requestPrompt
+    if (requestPrompt != null && options?.bindToNodeId == null) taskNodeData.prompt = requestPrompt
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)
@@ -4571,6 +4672,14 @@ export const canvasApi = {
         : null
     if (bindNode) {
       bindNode.data = { ...bindNode.data, ...taskNodeData }
+      if (options != null && 'userPrompt' in options) {
+        const userPrompt = options.userPrompt?.trim() ?? ''
+        if (userPrompt) {
+          bindNode.data.prompt = userPrompt
+        } else {
+          delete bindNode.data.prompt
+        }
+      }
       bindNode.taskId = taskId
       bindNode.updatedAt = at
       taskNode = bindNode
@@ -4682,8 +4791,10 @@ export const canvasApi = {
     response: CanvasTextTaskCreateResponse,
   ): Promise<CanvasSnapshot> {
     const db = readDb()
-    const task = db.tasks.find((item) => item.id === taskId)
-    const taskNode = db.nodes.find((item) => item.taskId === taskId)
+    const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
+    const taskNodeLookup = findCanvasTaskNode(db, projectId, taskId)
+    const taskNode = taskNodeLookup?.node ?? null
+    const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
     if (!task || !taskNode) return this.openSnapshot(projectId)
     if (task.status === 'cancelled') return this.openSnapshot(projectId)
 
@@ -4701,13 +4812,15 @@ export const canvasApi = {
       task.requestCall = response.requestCall ?? task.requestCall ?? null
       if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
       task.updatedAt = now()
-      taskNode.data = {
-        ...taskNode.data,
-        status: 'failed',
-        progress: 100,
-        message: `失败：${task.errorDetail}`,
+      if (patchTaskNode) {
+        taskNode.data = {
+          ...taskNode.data,
+          status: 'failed',
+          progress: 100,
+          message: `失败：${task.errorDetail}`,
+        }
+        taskNode.updatedAt = now()
       }
-      taskNode.updatedAt = now()
       updateProjectCounts(db, projectId)
       writeDb(db)
       return this.openSnapshot(projectId)
@@ -4767,13 +4880,15 @@ export const canvasApi = {
     if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
     task.outputAssetIds.push(asset.id)
     task.outputNodeIds.push(resultNode.id)
-    taskNode.data = {
-      ...taskNode.data,
-      status: 'completed',
-      progress: 100,
-      message: '文本已生成',
+    if (patchTaskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'completed',
+        progress: 100,
+        message: '文本已生成',
+      }
+      taskNode.updatedAt = at
     }
-    taskNode.updatedAt = at
     db.assets.push(asset)
     db.nodes.push(resultNode)
     db.edges.push({
@@ -4799,8 +4914,10 @@ export const canvasApi = {
     response: CanvasMediaTaskCreateResponse,
   ): Promise<CanvasSnapshot> {
     const db = readDb()
-    const task = db.tasks.find((item) => item.id === taskId)
-    const taskNode = db.nodes.find((item) => item.taskId === taskId)
+    const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
+    const taskNodeLookup = findCanvasTaskNode(db, projectId, taskId)
+    const taskNode = taskNodeLookup?.node ?? null
+    const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
     if (!task || !taskNode) return this.openSnapshot(projectId)
     if (task.status === 'cancelled') return this.openSnapshot(projectId)
     if (task.status === 'completed' || task.status === 'failed') return this.openSnapshot(projectId)
@@ -4812,13 +4929,15 @@ export const canvasApi = {
     task.modelId = response.model || task.modelId || null
     task.requestCall = response.requestCall ?? task.requestCall ?? null
     task.updatedAt = now()
-    taskNode.data = {
-      ...taskNode.data,
-      status: 'running',
-      progress: task.progress,
-      message: '后台任务已提交，等待 provider 返回产物',
+    if (patchTaskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'running',
+        progress: task.progress,
+        message: '后台任务已提交，等待 provider 返回产物',
+      }
+      taskNode.updatedAt = now()
     }
-    taskNode.updatedAt = now()
     updateProjectCounts(db, projectId)
     writeDb(db)
     return this.openSnapshot(projectId)
@@ -4831,8 +4950,10 @@ export const canvasApi = {
     response: CanvasMediaTaskCreateResponse,
   ): Promise<CanvasSnapshot> {
     const db = readDb()
-    const task = db.tasks.find((item) => item.id === taskId)
-    const taskNode = db.nodes.find((item) => item.taskId === taskId)
+    const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
+    const taskNodeLookup = findCanvasTaskNode(db, projectId, taskId)
+    const taskNode = taskNodeLookup?.node ?? null
+    const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
     if (!task || !taskNode) return this.openSnapshot(projectId)
     if (task.status === 'cancelled') return this.openSnapshot(projectId)
 
@@ -4858,13 +4979,15 @@ export const canvasApi = {
       )
       task.requestId = responseRequestId
       task.updatedAt = now()
-      taskNode.data = {
-        ...taskNode.data,
-        status: task.status,
-        progress: 100,
-        message: isCancelled ? '任务已取消' : `失败：${task.errorDetail}`,
+      if (patchTaskNode) {
+        taskNode.data = {
+          ...taskNode.data,
+          status: task.status,
+          progress: 100,
+          message: isCancelled ? '任务已取消' : `失败：${task.errorDetail}`,
+        }
+        taskNode.updatedAt = now()
       }
-      taskNode.updatedAt = now()
       updateProjectCounts(db, projectId)
       writeDb(db)
       return this.openSnapshot(projectId)
@@ -5043,13 +5166,15 @@ export const canvasApi = {
       })
     }
 
-    taskNode.data = {
-      ...taskNode.data,
-      status: 'completed',
-      progress: 100,
-      message: `${response.assets.length} 个产物已写回画布`,
+    if (patchTaskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'completed',
+        progress: 100,
+        message: `${response.assets.length} 个产物已写回画布`,
+      }
+      taskNode.updatedAt = now()
     }
-    taskNode.updatedAt = now()
     updateProjectCounts(db, projectId)
     writeDb(db)
     return this.openSnapshot(projectId)

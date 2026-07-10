@@ -121,6 +121,8 @@ export type CanvasWorkspaceActions = {
       modelId?: string
       reasoningEffort?: SessionReasoningEffort
       modelParams?: Record<string, unknown>
+      skillIds?: string[]
+      userPrompt?: string
     },
   ) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>

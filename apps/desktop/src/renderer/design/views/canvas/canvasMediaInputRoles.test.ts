@@ -28,7 +28,7 @@ describe('computeMediaInputRoleMap', () => {
     expect([...map.values()].every((v) => v.usageStatus === 'used')).toBe(true)
   })
 
-  it('纯参考图路径：image.edit maxImages=2，5 张图全选 → 前 2 used，后 3 overflow', () => {
+  it('纯参考图路径：image.edit maxImages=2，5 张图全选 → 全部尝试作为 reference_image 使用', () => {
     const map = computeMediaInputRoleMap({
       mediaInputs: ['img1', 'img2', 'img3', 'img4', 'img5'].map(image),
       selectedInputNodeIds: ['img1', 'img2', 'img3', 'img4', 'img5'],
@@ -43,8 +43,8 @@ describe('computeMediaInputRoleMap', () => {
     })
     expect(map.get('img1')).toEqual({ role: 'reference_image', usageStatus: 'used' })
     expect(map.get('img2')).toEqual({ role: 'reference_image', usageStatus: 'used' })
-    expect(map.get('img3')).toEqual({ role: 'reference_image', usageStatus: 'overflow' })
-    expect(map.get('img5')).toEqual({ role: 'reference_image', usageStatus: 'overflow' })
+    expect(map.get('img3')).toEqual({ role: 'reference_image', usageStatus: 'used' })
+    expect(map.get('img5')).toEqual({ role: 'reference_image', usageStatus: 'used' })
   })
 
   it('纯参考图路径：未勾选的 image 标 unused', () => {
@@ -64,7 +64,7 @@ describe('computeMediaInputRoleMap', () => {
     expect(map.get('img3')).toEqual({ usageStatus: 'unused' })
   })
 
-  it('帧角色路径：image_to_video maxImages=2，首帧+尾帧+多余图 → 多余图 overflow', () => {
+  it('帧角色路径：image_to_video maxImages=2，首帧+尾帧+未指定图 → 未指定图 unused', () => {
     const map = computeMediaInputRoleMap({
       mediaInputs: ['A', 'B', 'C'].map(image),
       selectedInputNodeIds: ['A', 'B', 'C'],
@@ -82,7 +82,7 @@ describe('computeMediaInputRoleMap', () => {
     })
     expect(map.get('A')).toEqual({ role: 'first_frame', usageStatus: 'used' })
     expect(map.get('B')).toEqual({ role: 'last_frame', usageStatus: 'used' })
-    expect(map.get('C')).toEqual({ usageStatus: 'overflow' })
+    expect(map.get('C')).toEqual({ usageStatus: 'unused' })
   })
 
   it('帧角色路径：未达到上限时，未分配角色的图片标 unused 而不是 overflow', () => {

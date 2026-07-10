@@ -40,6 +40,10 @@ import { CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { getOperationVisual } from './canvasOperationIcons'
 import { readCharacterSubviews } from './canvasCharacterLibrary'
 import {
+  calculateCanvasContextMenuPosition,
+  summarizeCanvasSelectionContext,
+} from './canvasContextMenuModel'
+import {
   buildPendingConnectionInput,
   type PendingCanvasConnection,
 } from './canvasPendingConnection'
@@ -118,6 +122,7 @@ export type CanvasNodeInlineExtension = {
 type PaneContextMenuState = {
   left: number
   top: number
+  maxHeight: number
   openSubmenusLeft: boolean
   openSubmenusUp: boolean
   flowPosition: CanvasStagePoint
@@ -256,6 +261,20 @@ function isCanvasZoomWheelEvent(event: ReactWheelEvent<HTMLDivElement>): boolean
   )
 }
 
+function canvasNodeWheelBoundary(event: ReactWheelEvent<HTMLDivElement>): HTMLElement | null {
+  if (isCanvasZoomWheelEvent(event)) return null
+  const target = event.target
+  if (!(target instanceof Element)) return null
+  const element = target.closest<HTMLElement>(
+    '.canvas-node-text, .canvas-node-task-msg, .canvas-node-shot-table-wrap, .canvas-node-inline-panel',
+  )
+  if (!element) return null
+
+  const canScrollY = element.scrollHeight - element.clientHeight > 1
+  const canScrollX = element.scrollWidth - element.clientWidth > 1
+  return canScrollY || canScrollX ? element : null
+}
+
 export function CanvasStage({
   snapshot,
   activeTool,
@@ -270,10 +289,14 @@ export function CanvasStage({
   onToggleLockNode,
   onBringNodeToFront,
   onMergeGroupToImage,
+  onMergeSelectionToImage,
   onCreateGroupFromSelection,
   onAddSelectionToGroup,
   onRemoveNodeFromGroup,
   onDissolveGroup,
+  onDuplicateSelectedNodes,
+  onToggleLockSelectedNodes,
+  onBringSelectedNodesToFront,
   onOpenAiComposer,
   onEditNode,
   onSaveNodeToLibrary,
@@ -312,10 +335,14 @@ export function CanvasStage({
   onToggleLockNode: (nodeId: string) => void
   onBringNodeToFront: (nodeId: string) => void
   onMergeGroupToImage: (groupId: string) => void
+  onMergeSelectionToImage: () => void
   onCreateGroupFromSelection: () => void
   onAddSelectionToGroup: (groupId: string) => void
   onRemoveNodeFromGroup: (nodeId: string) => void
   onDissolveGroup: (groupId: string) => void
+  onDuplicateSelectedNodes?: () => void
+  onToggleLockSelectedNodes?: () => void
+  onBringSelectedNodesToFront?: () => void
   onOpenAiComposer: (nodeId: string) => void
   onEditNode: (nodeId: string) => void
   onSaveNodeToLibrary: (nodeId: string) => void
@@ -343,7 +370,10 @@ export function CanvasStage({
   /** 空白右键：新建真·3D 导演台节点 */
   onAddDirectorStage3DAtPosition?: CanvasStageCreateAction
   /** 空白右键：从资产插入（打开资产面板） */
-  onInsertAssetFromPane?: () => void
+  onInsertAssetFromPane?: (
+    position: CanvasStagePoint,
+    pendingConnection?: PendingCanvasConnection | null,
+  ) => void
   /** 空白右键：删除当前选中的节点 */
   onDeleteSelectedNodes?: () => void
   /** 空白右键：创建 AI 操作节点（无上游，由用户后续连线） */
@@ -371,6 +401,7 @@ export function CanvasStage({
       toggleLockNode: onToggleLockNode,
       bringNodeToFront: onBringNodeToFront,
       mergeGroupToImage: onMergeGroupToImage,
+      mergeSelectionToImage: onMergeSelectionToImage,
       createGroupFromSelection: onCreateGroupFromSelection,
       addSelectionToGroup: onAddSelectionToGroup,
       removeNodeFromGroup: onRemoveNodeFromGroup,
@@ -396,6 +427,7 @@ export function CanvasStage({
       onDuplicateNode,
       onEditNode,
       onMergeGroupToImage,
+      onMergeSelectionToImage,
       onOpenAiComposer,
       onAnnotateImage,
       onExtractCharacterSubview,
@@ -410,6 +442,10 @@ export function CanvasStage({
     ],
   )
   const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds])
+  const selectedContext = useMemo(
+    () => summarizeCanvasSelectionContext(snapshot.nodes.filter((node) => selectedNodeIdSet.has(node.id))),
+    [selectedNodeIdSet, snapshot.nodes],
+  )
   const lineageSummaries = useMemo(() => buildLineageSummaries(snapshot.edges), [snapshot.edges])
   const assetSubviewCountById = useMemo(
     () =>
@@ -471,11 +507,13 @@ export function CanvasStage({
   const pendingPointerRef = useRef<{ clientX: number; clientY: number } | null>(null)
   const viewportInteractingRef = useRef(false)
   const pendingConnectionRef = useRef<PendingCanvasConnection | null>(null)
+  const suppressNextPaneClickRef = useRef(false)
   const nodeDragStateRef = useRef<{ nodeId: string | null; dragging: boolean; endedAt: number }>({
     nodeId: null,
     dragging: false,
     endedAt: 0,
   })
+  const nodeResizingRef = useRef(false)
   const pendingNodesSyncRef = useRef<Node<CanvasFlowNodeData>[] | null>(null)
   // 记录上一次「已应用到画布」的外部选中集合，用于区分：
   // - 选中态确实由外部变化（用户点选落定 / 程序化选中）→ 用外部值覆盖
@@ -660,7 +698,7 @@ export function CanvasStage({
           )
         })()
 
-    if (viewportInteractingRef.current) {
+    if (viewportInteractingRef.current || nodeResizingRef.current) {
       pendingNodesSyncRef.current = nextNodes
       return
     }
@@ -752,25 +790,21 @@ export function CanvasStage({
       const instance = flowInstanceRef.current
       if (!rect || !instance) return false
 
-      const menuWidth = 320
-      const menuHeight = 520
-      const minInset = 8
       const rawLeft = point.clientX - rect.left
       const rawTop = point.clientY - rect.top
-      const left = Math.min(
-        Math.max(rawLeft, minInset),
-        Math.max(rect.width - menuWidth - minInset, minInset),
-      )
-      const top = Math.min(
-        Math.max(rawTop, minInset),
-        Math.max(rect.height - menuHeight - minInset, minInset),
-      )
+      const menuPosition = calculateCanvasContextMenuPosition({
+        point: { x: rawLeft, y: rawTop },
+        container: { width: rect.width, height: rect.height },
+        menu: { width: 280, height: 520 },
+        submenu: { width: 300 },
+      })
 
       setPaneContextMenu({
-        left,
-        top,
-        openSubmenusLeft: rawLeft > rect.width - 420,
-        openSubmenusUp: rawTop > rect.height / 2,
+        left: menuPosition.left,
+        top: menuPosition.top,
+        maxHeight: menuPosition.maxHeight,
+        openSubmenusLeft: menuPosition.openSubmenusLeft,
+        openSubmenusUp: menuPosition.openSubmenusUp,
         flowPosition: instance.screenToFlowPosition({
           x: point.clientX,
           y: point.clientY,
@@ -796,6 +830,10 @@ export function CanvasStage({
   }, [])
 
   const handlePaneClick = useCallback(() => {
+    if (suppressNextPaneClickRef.current) {
+      suppressNextPaneClickRef.current = false
+      return
+    }
     closePaneContextMenu()
     setEdgeContextMenu(null)
   }, [closePaneContextMenu])
@@ -805,6 +843,10 @@ export function CanvasStage({
       const instance = flowInstanceRef.current
       const stage = stageRef.current
       if (!instance || !stage) return
+      if (canvasNodeWheelBoundary(event)) {
+        event.stopPropagation()
+        return
+      }
 
       event.preventDefault()
       event.stopPropagation()
@@ -954,8 +996,10 @@ export function CanvasStage({
 
   const handleInsertAssetFromPane = useCallback(() => {
     if (!paneContextMenu) return
+    const position = paneContextMenu.flowPosition
+    const pendingConnection = paneContextMenu.pendingConnection
     closePaneContextMenu()
-    onInsertAssetFromPane?.()
+    onInsertAssetFromPane?.(position, pendingConnection)
   }, [closePaneContextMenu, onInsertAssetFromPane, paneContextMenu])
 
   const handleCreateOperationFromPane = useCallback(
@@ -994,6 +1038,14 @@ export function CanvasStage({
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node<CanvasFlowNodeData>>[]) => {
+      const resizingStarted = changes.some(
+        (change) => change.type === 'dimensions' && change.resizing === true,
+      )
+      const resizingEnded = changes.some(
+        (change) => change.type === 'dimensions' && change.resizing === false,
+      )
+      if (resizingStarted) nodeResizingRef.current = true
+
       const nextFlowNodes = applyNodeChanges(changes, flowNodesRef.current)
       flowNodesRef.current = nextFlowNodes
       setFlowNodes(nextFlowNodes)
@@ -1030,6 +1082,11 @@ export function CanvasStage({
       )
       if (nextPersistedNodes) {
         onNodesPersist(nextPersistedNodes)
+      }
+
+      if (resizingEnded) {
+        nodeResizingRef.current = false
+        pendingNodesSyncRef.current = null
       }
     },
     [nodeInlineExtension, onInlinePanelResize, onNodesPersist, snapshot.nodes],
@@ -1114,6 +1171,7 @@ export function CanvasStage({
       const point = getClientPoint(event)
       if (!point) return
       event.preventDefault()
+      suppressNextPaneClickRef.current = true
       openPaneContextMenuAt(point, pendingConnection)
     },
     [openPaneContextMenuAt],
@@ -1196,6 +1254,38 @@ export function CanvasStage({
     [onNodeSelectIntent],
   )
 
+  const handleNodeDoubleClick = useCallback(
+    (event: ReactMouseEvent, node: Node<CanvasFlowNodeData>) => {
+      event.stopPropagation()
+      onEditNode(node.id)
+    },
+    [onEditNode],
+  )
+
+  const handleNodeContextMenu = useCallback(
+    (event: ReactMouseEvent, node: Node<CanvasFlowNodeData>) => {
+      if (selectedNodeIds.length <= 1 || !selectedNodeIdSet.has(node.id)) return
+      event.preventDefault()
+      event.stopPropagation()
+      openPaneContextMenuAt(event)
+    },
+    [openPaneContextMenuAt, selectedNodeIdSet, selectedNodeIds.length],
+  )
+
+  const handleStageDoubleClickCapture = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const nodeElement = target.closest<HTMLElement>('[data-canvas-node-id]')
+      const nodeId = nodeElement?.dataset.canvasNodeId
+      if (!nodeId) return
+      event.preventDefault()
+      event.stopPropagation()
+      onEditNode(nodeId)
+    },
+    [onEditNode],
+  )
+
   const handleSelectionChange = useCallback(
     ({
       nodes: selected,
@@ -1259,6 +1349,7 @@ export function CanvasStage({
           ref={stageRef}
           onPointerMove={handleStagePointerMove}
           onPointerLeave={handleStagePointerLeave}
+          onDoubleClickCapture={handleStageDoubleClickCapture}
           onWheelCapture={handleStageWheelCapture}
         >
           <div className="canvas-stage-dot-aura" aria-hidden>
@@ -1292,6 +1383,7 @@ export function CanvasStage({
             panOnDrag={activeTool === 'pan'}
             panOnScroll={false}
             zoomOnScroll={false}
+            zoomOnDoubleClick={false}
             zoomActivationKeyCode="Control"
             multiSelectionKeyCode={['Meta', 'Control']}
             selectionMode={SelectionMode.Partial}
@@ -1310,6 +1402,8 @@ export function CanvasStage({
             onMove={handleViewportMove}
             onMoveEnd={handleViewportMoveEnd}
             onNodeClick={handleNodeClick}
+            onNodeContextMenu={handleNodeContextMenu}
+            onNodeDoubleClick={handleNodeDoubleClick}
             onEdgeContextMenu={handleEdgeContextMenu}
             onSelectionChange={handleSelectionChange}
           >
@@ -1398,21 +1492,141 @@ export function CanvasStage({
               className={`canvas-pane-context-menu${
                 paneContextMenu.openSubmenusLeft ? ' canvas-pane-context-menu-submenus-left' : ''
               }${paneContextMenu.openSubmenusUp ? ' canvas-pane-context-menu-submenus-up' : ''}`}
-              style={{ left: paneContextMenu.left, top: paneContextMenu.top }}
+              style={{
+                left: paneContextMenu.left,
+                top: paneContextMenu.top,
+                maxHeight: paneContextMenu.maxHeight,
+              }}
               role="menu"
               onContextMenu={(event) => event.preventDefault()}
               onMouseDown={(event) => event.stopPropagation()}
             >
-              {selectedNodeIds.length > 0 && onDeleteSelectedNodes && (
+              {selectedNodeIds.length > 0 && (
                 <>
                   <div className="canvas-pane-context-section-title">选中节点</div>
-                  <button type="button" role="menuitem" onClick={onDeleteSelectedNodes}>
-                    <Icons.Trash size={14} />
-                    <span>
-                      删除选中节点
-                      {selectedNodeIds.length > 1 ? `（${selectedNodeIds.length}）` : ''}
-                    </span>
+                  {onDuplicateSelectedNodes && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        onDuplicateSelectedNodes()
+                      }}
+                    >
+                      <Icons.Copy size={14} />
+                      <span>
+                        复制选中节点
+                        {selectedNodeIds.length > 1 ? `（${selectedNodeIds.length}）` : ''}
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!selectedContext.canCreateGroup}
+                    onClick={() => {
+                      closePaneContextMenu()
+                      onCreateGroupFromSelection()
+                    }}
+                  >
+                    <Icons.Layers size={14} />
+                    <span>创建组</span>
                   </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!selectedContext.canMergeSelectionToImage}
+                    onClick={() => {
+                      closePaneContextMenu()
+                      onMergeSelectionToImage()
+                    }}
+                  >
+                    <Icons.Image size={14} />
+                    <span>合并为组合图</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!selectedContext.canAddToGroup}
+                    onClick={() => {
+                      closePaneContextMenu()
+                      const groupId = selectedContext.selectedGroupIds[0]
+                      if (groupId) onAddSelectionToGroup(groupId)
+                    }}
+                  >
+                    <Icons.Plus size={14} />
+                    <span>加入选中的组</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!selectedContext.canRemoveFromGroup}
+                    onClick={() => {
+                      closePaneContextMenu()
+                      selectedContext.groupedNodeIds.forEach((nodeId) => onRemoveNodeFromGroup(nodeId))
+                    }}
+                  >
+                    <Icons.ArrowUp size={14} />
+                    <span>移出组</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!selectedContext.canDissolveGroup}
+                    onClick={() => {
+                      closePaneContextMenu()
+                      const groupId = selectedContext.selectedGroupIds[0]
+                      if (groupId) onDissolveGroup(groupId)
+                    }}
+                  >
+                    <Icons.FolderOpen size={14} />
+                    <span>解散组</span>
+                  </button>
+                  {(onToggleLockSelectedNodes || onBringSelectedNodesToFront) && (
+                    <div className="canvas-pane-context-divider" />
+                  )}
+                  {onToggleLockSelectedNodes && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        onToggleLockSelectedNodes()
+                      }}
+                    >
+                      <Icons.Lock size={14} />
+                      <span>锁定 / 解锁</span>
+                    </button>
+                  )}
+                  {onBringSelectedNodesToFront && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        onBringSelectedNodesToFront()
+                      }}
+                    >
+                      <Icons.Layers size={14} />
+                      <span>置于顶层</span>
+                    </button>
+                  )}
+                  {onDeleteSelectedNodes && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        onDeleteSelectedNodes()
+                      }}
+                    >
+                      <Icons.Trash size={14} />
+                      <span>
+                        删除选中节点
+                        {selectedNodeIds.length > 1 ? `（${selectedNodeIds.length}）` : ''}
+                      </span>
+                    </button>
+                  )}
                   <div className="canvas-pane-context-divider" />
                 </>
               )}

@@ -34,7 +34,6 @@ import { pruneModelParamsForCanvas } from './canvasMediaContract'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
 import {
   mergeCanvasOperationPresetNegativePrompt,
-  mergeCanvasOperationPresetPrompt,
   readBuiltinCanvasOperationPreset,
   readCanvasResolvedPresetTarget,
   resolveCanvasPresetTarget,
@@ -42,6 +41,7 @@ import {
 } from './canvasOperationPresets'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasMediaInputHint } from './CanvasMediaInputHint'
+import { buildReferenceImageInputRoles } from './canvasTaskInputFiles'
 import type {
   CanvasInputTransport,
   CanvasNode,
@@ -51,6 +51,7 @@ import type {
 
 const COMPOSER_CACHE_KEY = 'spark-canvas:inline-ai-composer:v1'
 type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
+type CanvasTaskInputRoleSelection = CanvasTaskInputRole | CanvasTaskInputRole[]
 const EMPTY_MEDIA_INPUT_ROLE_POLICY: MediaInputRolePolicy = { defaultRoleAssignment: 'none' }
 
 export function CanvasInlineAiComposer({
@@ -78,7 +79,7 @@ export function CanvasInlineAiComposer({
     modelId?: string
     modelParams?: Record<string, unknown>
     inputTransport?: CanvasInputTransport
-    inputRoles?: Record<string, CanvasTaskInputRole>
+    inputRoles?: Record<string, CanvasTaskInputRoleSelection>
     /** 文本类操作可指定专属 agent（应用内 agent 管理配置的 ManagedAgent） */
     agentId?: string
     /** Contract V2 裁剪产物：被丢弃的字段及原因，供任务详情展示。 */
@@ -239,7 +240,7 @@ export function CanvasInlineAiComposer({
     const nextOperation = recommended?.operation ?? operation
     const nextPreset = readCanvasResolvedPresetTarget(resolveCanvasPresetTarget({ operation: nextOperation }))
     if (recommended) setOperation(recommended.operation)
-    setPrompt(mergeCanvasOperationPresetPrompt(nodePromptContext, nextPreset.prompt))
+    setPrompt(nodePromptContext)
     setNegativePrompt(mergeCanvasOperationPresetNegativePrompt('', nextPreset.negativePrompt))
   }, [capabilities, nodePromptContext, open, nodeCacheKey])
 
@@ -299,18 +300,22 @@ export function CanvasInlineAiComposer({
     () => (selectedCapability ? inferRolePolicy(selectedCapability) : EMPTY_MEDIA_INPUT_ROLE_POLICY),
     [selectedCapability],
   )
-  const referenceFrameCapacity = Math.max(
-    0,
-    videoFrameMaxImages - (firstFrameNodeId ? 1 : 0) - (lastFrameNodeId ? 1 : 0),
-  )
   const frameImageOptions = useMemo(
     () =>
       frameCandidateImageNodes.map((node, index) => ({
         value: node.id,
-        label: frameNodeLabel(
+        title: frameNodeLabelText(
           node,
           index,
           selectedImageNodes.some((item) => item.id === node.id),
+        ),
+        label: renderFrameNodeOptionLabel(
+          node,
+          frameNodeLabelText(
+            node,
+            index,
+            selectedImageNodes.some((item) => item.id === node.id),
+          ),
         ),
       })),
     [frameCandidateImageNodes, selectedImageNodes],
@@ -414,22 +419,17 @@ export function CanvasInlineAiComposer({
         : (preferredNodes[0]?.id ?? ''),
     )
     setLastFrameNodeId((prev) =>
-      videoFrameMaxImages > 1 && prev && candidateIds.has(prev) && prev !== firstFrameNodeId
+      videoFrameMaxImages > 1 && prev && candidateIds.has(prev)
         ? prev
         : videoFrameMaxImages > 1
           ? (preferredNodes[1]?.id ?? '')
           : '',
     )
     setReferenceFrameNodeIds((prev) =>
-      prev
-        .filter((id) => candidateIds.has(id) && id !== firstFrameNodeId && id !== lastFrameNodeId)
-        .slice(0, referenceFrameCapacity),
+      prev.filter((id) => candidateIds.has(id)),
     )
   }, [
-    firstFrameNodeId,
     frameCandidateImageNodes,
-    lastFrameNodeId,
-    referenceFrameCapacity,
     selectedImageNodes,
     supportsVideoFrameRoles,
     videoFrameMaxImages,
@@ -736,12 +736,9 @@ export function CanvasInlineAiComposer({
                   onChange={(value) => {
                     const next = value == null ? '' : String(value)
                     setFirstFrameNodeId(next)
-                    if (next && next === lastFrameNodeId) setLastFrameNodeId('')
-                    if (next) {
-                      setReferenceFrameNodeIds((prev) => prev.filter((id) => id !== next))
-                    }
                   }}
                   options={frameImageOptions}
+                  optionFilterProp="title"
                   showSearch
                 />
               </div>
@@ -753,12 +750,10 @@ export function CanvasInlineAiComposer({
                   disabled={!canUseLastFrame}
                   onChange={(value) => {
                     const next = value == null ? '' : String(value)
-                    setLastFrameNodeId(next && next !== firstFrameNodeId ? next : '')
-                    if (next) {
-                      setReferenceFrameNodeIds((prev) => prev.filter((id) => id !== next))
-                    }
+                    setLastFrameNodeId(next)
                   }}
                   options={frameImageOptions}
+                  optionFilterProp="title"
                   placeholder={canUseLastFrame ? undefined : '当前模型仅 1 张图'}
                   showSearch
                 />
@@ -771,24 +766,13 @@ export function CanvasInlineAiComposer({
                   mode="multiple"
                   value={referenceFrameNodeIds}
                   allowClear
-                  disabled={referenceFrameCapacity <= 0}
                   onChange={(value) => {
                     const values = Array.isArray(value) ? value.map(String) : []
-                    setReferenceFrameNodeIds(
-                      values
-                        .filter((id) => id !== firstFrameNodeId && id !== lastFrameNodeId)
-                        .slice(0, referenceFrameCapacity),
-                    )
+                    setReferenceFrameNodeIds(values)
                   }}
-                  options={frameImageOptions.filter(
-                    (option) =>
-                      option.value !== firstFrameNodeId && option.value !== lastFrameNodeId,
-                  )}
-                  placeholder={
-                    referenceFrameCapacity > 0
-                      ? `最多再选 ${referenceFrameCapacity} 张`
-                      : '已达上限'
-                  }
+                  options={frameImageOptions}
+                  optionFilterProp="title"
+                  placeholder="可多选，超出模型声明可能失败"
                   showSearch
                 />
               </div>
@@ -1105,7 +1089,6 @@ export function CanvasInlineAiComposer({
                     firstFrameNodeId,
                     lastFrameNodeId,
                     referenceFrameNodeIds,
-                    videoFrameMaxImages,
                   )
                 : []
               const inputRoles = supportsVideoFrameRoles
@@ -1115,7 +1098,9 @@ export function CanvasInlineAiComposer({
                     lastFrameNodeId,
                     referenceFrameNodeIds,
                   )
-                : undefined
+                : selectedCapabilityRolePolicy.imageRoles?.includes('reference_image')
+                  ? buildReferenceImageInputRoles(selectedImageNodes.map((node) => node.id))
+                  : undefined
               const inputNodeIds = supportsVideoFrameRoles
                 ? buildTaskInputNodeIds(selectedNodes, videoFrameNodeIds)
                 : undefined
@@ -1129,7 +1114,7 @@ export function CanvasInlineAiComposer({
                 modelId?: string
                 modelParams?: Record<string, unknown>
                 inputTransport?: CanvasInputTransport
-                inputRoles?: Record<string, CanvasTaskInputRole>
+                inputRoles?: Record<string, CanvasTaskInputRoleSelection>
                 agentId?: string
                 droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string }>
                 modelParamWarnings?: Array<{ code: string; message: string }>
@@ -1163,7 +1148,7 @@ export function CanvasInlineAiComposer({
               // 任务创建：保留跨节点模型偏好，清除本节点集合的草稿缓存
               if (selectedModelKey) writeLastModelKey(operation, selectedModelKey)
               writeCanvasLastUsedPresetTarget(resolveCanvasPresetTarget({ operation }), {
-                prompt,
+                ...(prompt.trim() ? { prompt } : {}),
                 negativePrompt,
                 ...(selectedModel?.providerProfileId
                   ? { providerProfileId: selectedModel.providerProfileId }
@@ -1285,19 +1270,22 @@ function buildVideoFrameInputRoles(
   firstFrameNodeId: string,
   lastFrameNodeId: string,
   referenceFrameNodeIds: string[],
-): Record<string, CanvasTaskInputRole> {
-  const roles: Record<string, CanvasTaskInputRole> = {}
+): Record<string, CanvasTaskInputRoleSelection> {
+  const roles: Record<string, CanvasTaskInputRoleSelection> = {}
   const referenceIds = new Set(referenceFrameNodeIds)
+  const addRole = (nodeId: string, role: CanvasTaskInputRole) => {
+    const current = roles[nodeId]
+    if (!current) {
+      roles[nodeId] = role
+      return
+    }
+    const currentList = Array.isArray(current) ? current : [current]
+    if (!currentList.includes(role)) roles[nodeId] = [...currentList, role]
+  }
   for (const nodeId of imageNodeIds) {
-    if (nodeId === firstFrameNodeId) {
-      roles[nodeId] = 'first_frame'
-      continue
-    }
-    if (nodeId === lastFrameNodeId) {
-      roles[nodeId] = 'last_frame'
-      continue
-    }
-    if (referenceIds.has(nodeId)) roles[nodeId] = 'reference'
+    if (nodeId === firstFrameNodeId) addRole(nodeId, 'first_frame')
+    if (nodeId === lastFrameNodeId) addRole(nodeId, 'last_frame')
+    if (referenceIds.has(nodeId)) addRole(nodeId, 'reference')
   }
   return roles
 }
@@ -1306,11 +1294,10 @@ function normalizeVideoFrameNodeIds(
   firstFrameNodeId: string,
   lastFrameNodeId: string,
   referenceFrameNodeIds: string[],
-  maxImages: number,
 ): string[] {
   const result: string[] = []
   const push = (id: string) => {
-    if (!id || result.includes(id) || result.length >= maxImages) return
+    if (!id || result.includes(id)) return
     result.push(id)
   }
   push(firstFrameNodeId)
@@ -1330,9 +1317,21 @@ function buildTaskInputNodeIds(selectedNodes: CanvasNode[], extraNodeIds: string
   return result
 }
 
-function frameNodeLabel(node: CanvasNode, index: number, selected: boolean): string {
+function frameNodeLabelText(node: CanvasNode, index: number, selected: boolean): string {
   const title = node.title?.trim() || `图片 ${index + 1}`
   return selected ? `${title} / 已选中` : title
+}
+
+function renderFrameNodeOptionLabel(node: CanvasNode, label: string) {
+  const previewUrl = node.data.thumbnailUrl ?? node.data.url
+  return (
+    <span className="canvas-operation-media-option-label">
+      <span className="canvas-operation-media-option-thumb">
+        {previewUrl ? <img src={previewUrl} alt="" /> : <Icons.Image size={16} />}
+      </span>
+      <span className="canvas-operation-media-option-name">{label}</span>
+    </span>
+  )
 }
 
 export type SchemaField = {

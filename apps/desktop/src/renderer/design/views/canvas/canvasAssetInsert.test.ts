@@ -71,6 +71,25 @@ describe('canvas asset insertion', () => {
     seedProject()
   })
 
+  it('creates prompt nodes when requested by the canvas menu', async () => {
+    const node = await canvasApi.createTextNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      kind: 'prompt',
+      text: '',
+      x: 32,
+      y: 48,
+    })
+
+    const snapshot = await canvasApi.openSnapshot('project-1')
+    const asset = snapshot.assets.find((item) => item.id === node.assetId)
+
+    expect(node.type).toBe('prompt')
+    expect(node.title).toBe('Prompt')
+    expect(node.data.format).toBe('prompt')
+    expect(asset?.type).toBe('prompt')
+  })
+
   it('keeps screenplay text after inserting a film asset and tagging pipeline role', async () => {
     const scriptText = longAssetText('剧本')
     const asset = await canvasApi.createFilmAsset('project-1', {
@@ -164,7 +183,7 @@ describe('canvas asset insertion', () => {
     expect(node?.data.text).toBe(prompt)
   })
 
-  it('fits portrait image assets without adding the retired card header height', async () => {
+  it('fits portrait image assets with enough height for the embedded node header', async () => {
     const asset = await canvasApi.createImageAsset({
       projectId: 'project-1',
       file: new File([new Uint8Array([1, 2, 3])], 'portrait.png', { type: 'image/png' }),
@@ -183,7 +202,7 @@ describe('canvas asset insertion', () => {
 
     expect(node?.type).toBe('image')
     expect(node?.width).toBe(480)
-    expect(node?.height).toBe(720)
+    expect(node?.height).toBe(744)
   })
 
   it('fits landscape image assets to their visible content height', async () => {
@@ -205,6 +224,6 @@ describe('canvas asset insertion', () => {
 
     expect(node?.type).toBe('image')
     expect(node?.width).toBe(580)
-    expect(node?.height).toBe(326)
+    expect(node?.height).toBe(350)
   })
 })

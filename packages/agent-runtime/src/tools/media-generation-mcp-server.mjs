@@ -576,7 +576,11 @@ function inferRolePolicyMjs(capability) {
   switch (capability?.id) {
     case 'video.image_to_video':
       return {
-        imageRoles: maxImages >= 2 ? ['first_frame', 'last_frame'] : ['first_frame'],
+        imageRoles: [
+          'first_frame',
+          ...(maxImages >= 2 ? ['last_frame'] : []),
+          ...(maxImages > 2 ? ['reference_image'] : []),
+        ],
         defaultRoleAssignment: 'first_then_last_then_reference',
       }
     case 'video.edit':

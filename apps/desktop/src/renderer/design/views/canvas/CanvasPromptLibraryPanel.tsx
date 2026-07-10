@@ -327,7 +327,7 @@ export function CanvasPromptLibraryPanel({
                 </div>
                 <div className="canvas-prompt-library-entry-actions">
                   <Button
-                    size="middle"
+                    size="small"
                     type="text"
                     className="canvas-prompt-library-entry-copy"
                     onClick={() => void handleCopy(entry)}
@@ -335,7 +335,7 @@ export function CanvasPromptLibraryPanel({
                     复制提示词
                   </Button>
                   <Button
-                    size="middle"
+                    size="small"
                     type="primary"
                     className="canvas-prompt-library-entry-apply"
                     onClick={() => void onApply(entry)}
