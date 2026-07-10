@@ -389,6 +389,7 @@ describe('Renderer Smoke Tests', () => {
       }),
     }))
     vi.doMock('../design/auth/AuthContext', () => ({
+      AuthProvider: ({ children }: { children: React.ReactNode }) => children,
       useAuth: () => ({ isAuthenticated: false, user: null }),
     }))
   }
@@ -991,6 +992,7 @@ describe('Renderer Smoke Tests', () => {
       }),
     }))
     vi.doMock('../design/auth/AuthContext', () => ({
+      AuthProvider: ({ children }: { children: React.ReactNode }) => children,
       useAuth: () => ({ isAuthenticated: false, user: null }),
     }))
 

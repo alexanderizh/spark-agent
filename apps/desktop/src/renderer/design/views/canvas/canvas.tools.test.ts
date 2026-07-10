@@ -24,4 +24,12 @@ describe('canvas agent tool schemas', () => {
     expect(schemas.canvas_find_nodes?.inputSchema).not.toHaveProperty('properties.boardId')
     expect(schemas.canvas_insert_asset?.inputSchema).not.toHaveProperty('properties.boardId')
   })
+
+  it('exposes operation inspection and persistent configuration tools', () => {
+    const schemas = Object.fromEntries(getCanvasToolSchemas().map((tool) => [tool.name, tool]))
+
+    expect(schemas.canvas_get_operation_config).toBeDefined()
+    expect(schemas.canvas_update_operation_config).toBeDefined()
+    expect(schemas.canvas_run_operation?.inputSchema).toHaveProperty('required', ['nodeId'])
+  })
 })

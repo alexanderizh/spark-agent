@@ -144,10 +144,16 @@ function snapshotFixture(): CanvasSnapshot {
   }
 }
 
+function operationFixtureNode(snapshot: CanvasSnapshot) {
+  const node = snapshot.nodes[0]
+  if (!node) throw new Error('missing operation fixture node')
+  return node
+}
+
 describe('canvas operation run views', () => {
   it('groups historical generated outputs under the stable operation node', () => {
     const snapshot = snapshotFixture()
-    const runs = buildCanvasOperationRunViews(snapshot.nodes[0]!, snapshot)
+    const runs = buildCanvasOperationRunViews(operationFixtureNode(snapshot), snapshot)
 
     expect(runs.map((run) => run.taskId)).toEqual(['task-2', 'task-1'])
     expect(runs[0]?.outputs[0]).toMatchObject({
@@ -169,5 +175,94 @@ describe('canvas operation run views', () => {
     )
 
     expect(after).not.toBe(before)
+  })
+
+  it('keeps asset-only workflow outputs available to the operation workbench', () => {
+    const snapshot = snapshotFixture()
+    snapshot.nodes[0]!.taskId = 'task-assets'
+    snapshot.assets.push({
+      id: 'asset-character',
+      projectId: 'project-1',
+      userId: 1,
+      type: 'text',
+      source: 'ai_generated',
+      title: '角色 · 魏德',
+      contentText: '六十出头的清瘦老人。',
+      metadata: { filmKind: 'character' },
+      createdAt: '2026-07-10T00:03:00.000Z',
+      updatedAt: '2026-07-10T00:03:00.000Z',
+    })
+    snapshot.tasks.push({
+      id: 'task-assets',
+      projectId: 'project-1',
+      boardId: 'board-1',
+      userId: 1,
+      operation: 'text_generate',
+      status: 'completed',
+      progress: 100,
+      inputNodeIds: [],
+      inputAssetIds: [],
+      outputNodeIds: [],
+      outputAssetIds: ['asset-character'],
+      modelParams: { workflow: 'script_breakdown' },
+      createdAt: '2026-07-10T00:03:00.000Z',
+      updatedAt: '2026-07-10T00:03:00.000Z',
+    })
+
+    const operationNode = snapshot.nodes[0]
+    if (!operationNode) throw new Error('missing operation fixture node')
+    const runs = buildCanvasOperationRunViews(operationNode, snapshot)
+
+    expect(runs[0]?.outputs[0]).toMatchObject({
+      assetId: 'asset-character',
+      type: 'text',
+      title: '角色 · 魏德',
+      text: '六十出头的清瘦老人。',
+      pipelineRole: 'character',
+    })
+    expect(runs[0]?.outputs[0]?.nodeId).toBeUndefined()
+  })
+
+  it('keeps prompt-type film scene assets readable in operation previews', () => {
+    const snapshot = snapshotFixture()
+    snapshot.nodes[0]!.taskId = 'task-scenes'
+    snapshot.assets.push({
+      id: 'asset-scene',
+      projectId: 'project-1',
+      userId: 1,
+      type: 'prompt',
+      source: 'manual',
+      title: '精神病院开放阳台',
+      contentText: '二层外挑式长条开放阳台，灰色水泥栏杆，阳光从侧面打来。',
+      metadata: { kind: 'scene', prompt: 'wide scene reference' },
+      createdAt: '2026-07-10T00:03:00.000Z',
+      updatedAt: '2026-07-10T00:03:00.000Z',
+    })
+    snapshot.tasks.push({
+      id: 'task-scenes',
+      projectId: 'project-1',
+      boardId: 'board-1',
+      userId: 1,
+      operation: 'text_generate',
+      status: 'completed',
+      progress: 100,
+      inputNodeIds: [],
+      inputAssetIds: [],
+      outputNodeIds: [],
+      outputAssetIds: ['asset-scene'],
+      modelParams: { workflow: 'extract_scene' },
+      createdAt: '2026-07-10T00:03:00.000Z',
+      updatedAt: '2026-07-10T00:03:00.000Z',
+    })
+
+    const runs = buildCanvasOperationRunViews(operationFixtureNode(snapshot), snapshot)
+
+    expect(runs[0]?.outputs[0]).toMatchObject({
+      assetId: 'asset-scene',
+      type: 'prompt',
+      title: '精神病院开放阳台',
+      text: '二层外挑式长条开放阳台，灰色水泥栏杆，阳光从侧面打来。',
+      pipelineRole: 'scene',
+    })
   })
 })

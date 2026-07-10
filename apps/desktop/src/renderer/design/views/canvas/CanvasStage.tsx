@@ -35,6 +35,12 @@ import { Icons } from '../../Icons'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
 import { mergeFlowNodes } from './canvasStageNodeSync'
 import { computeCanvasAlignmentGuides, type CanvasAlignmentGuide } from './canvasAlignmentGuides'
+import {
+  arrangeCanvasNodes,
+  type CanvasAutoLayoutMode,
+  type CanvasAutoLayoutNode,
+  type CanvasAutoLayoutSpacing,
+} from './canvasAutoLayout'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import { CANVAS_CAPABILITIES, isOperationNode } from './canvas.capabilities'
 import { CANVAS_NODE_META_BAR_HEIGHT, OPERATION_NODE_DEFAULT_SIZE } from './canvasNodeSize'
@@ -46,6 +52,7 @@ import {
   canvasOperationRunsFingerprint,
   type CanvasOperationRunView,
 } from './canvasOperationRuns'
+import { resolveCanvasOperationOutputState } from './canvasOperationOutputModel'
 import { buildCanvasOperationProjection } from './canvasOperationProjection'
 import {
   calculateCanvasContextMenuPosition,
@@ -148,6 +155,11 @@ export type CanvasStageViewportControls = {
   zoomBy: (delta: number) => void
   panBy: (delta: { x: number; y: number }) => void
   setViewport: (viewport: Viewport, options?: { duration?: number }) => void
+  arrangeNodes: (options: {
+    mode: CanvasAutoLayoutMode
+    spacing: CanvasAutoLayoutSpacing
+    nodeIds?: string[]
+  }) => Promise<boolean>
   centerNodes: (nodeIds: string[]) => boolean
   focusNodes: (
     nodeIds: string[],
@@ -167,7 +179,7 @@ function operationNodePresentationHeight(
   runs: CanvasOperationRunView[],
 ): number {
   if (!isOperationNode(node)) return node.height
-  const output = runs.find((run) => run.outputs.length > 0)?.outputs[0]
+  const output = resolveCanvasOperationOutputState(node, runs).primaryOutput
   if (!output || (output.type !== 'image' && output.type !== 'video')) {
     return Math.max(node.height, OPERATION_NODE_DEFAULT_SIZE.height)
   }
@@ -177,6 +189,30 @@ function operationNodePresentationHeight(
     output.width && output.height ? output.width / output.height : fallbackAspectRatio
   const mediaHeight = Math.min(720, Math.max(160, Math.round(node.width / aspectRatio)))
   return Math.max(node.height, mediaHeight + CANVAS_NODE_META_BAR_HEIGHT + OPERATION_RUN_NAV_HEIGHT)
+}
+
+function flowNodeToAutoLayoutNode(node: Node<CanvasFlowNodeData>): CanvasAutoLayoutNode {
+  const width =
+    typeof node.measured?.width === 'number'
+      ? node.measured.width
+      : typeof node.width === 'number'
+        ? node.width
+        : node.data.canvasNode.width
+  const height =
+    typeof node.measured?.height === 'number'
+      ? node.measured.height
+      : typeof node.height === 'number'
+        ? node.height
+        : node.data.canvasNode.height
+  const hasInlineExtension = Boolean(node.data.inlineToolbar || node.data.inlinePanel)
+  return {
+    id: node.id,
+    x: node.position.x,
+    y: node.position.y,
+    width,
+    height,
+    headerHeight: hasInlineExtension ? 0 : CANVAS_NODE_META_BAR_HEIGHT,
+  }
 }
 
 function toFlowNode(
@@ -367,7 +403,7 @@ function CanvasStageInner({
   activeTool: 'select' | 'pan'
   selectedNodeIds: string[]
   onSelectionChange: (nodeIds: string[]) => void
-  onNodesPersist: (nodes: SparkCanvasNode[]) => void
+  onNodesPersist: (nodes: SparkCanvasNode[]) => MaybePromise<void>
   onConnectNodes: (input: { sourceNodeId: string; targetNodeId: string }) => MaybePromise<void>
   onDeleteEdges: (edgeIds: string[]) => void
   onDuplicateNode: (nodeId: string) => void
@@ -702,6 +738,66 @@ function CanvasStageInner({
         void instance.setViewport(viewport, options)
         notifyViewportChange(viewport)
       },
+      arrangeNodes: async ({ mode, spacing, nodeIds }) => {
+        if (!nodesInitialized) return false
+
+        const currentFlowNodes = flowNodesRef.current
+        const liveSelectedIds = new Set(
+          currentFlowNodes.filter((node) => node.selected).map((node) => node.id),
+        )
+        const requestedIds = new Set(nodeIds ?? [])
+        const partialLayout = requestedIds.size > 1
+        const targetIds = partialLayout && liveSelectedIds.size > 1 ? liveSelectedIds : requestedIds
+        const movableNodes = currentFlowNodes.filter((node) => {
+          if (node.data.canvasNode.locked) return false
+          if (partialLayout) return targetIds.has(node.id)
+          return true
+        })
+        if (movableNodes.length === 0) return false
+
+        const movableIds = new Set(movableNodes.map((node) => node.id))
+        const positionsById = new Map<string, { x: number; y: number }>()
+        const parentKeys = new Set(movableNodes.map((node) => node.parentId ?? ''))
+
+        for (const parentKey of parentKeys) {
+          const nodesInScope = movableNodes.filter((node) => (node.parentId ?? '') === parentKey)
+          const obstacles = currentFlowNodes.filter(
+            (node) => (node.parentId ?? '') === parentKey && !movableIds.has(node.id),
+          )
+          const positions = arrangeCanvasNodes(
+            nodesInScope.map(flowNodeToAutoLayoutNode),
+            {
+              mode,
+              spacing,
+              obstacles: obstacles.map(flowNodeToAutoLayoutNode),
+            },
+          )
+          positions.forEach((position) => positionsById.set(position.id, position))
+        }
+
+        const nextFlowNodes = currentFlowNodes.map((node) => {
+          const position = positionsById.get(node.id)
+          return position ? { ...node, position: { x: position.x, y: position.y } } : node
+        })
+        const nextPersistedNodes = snapshot.nodes.map((node) => {
+          const position = positionsById.get(node.id)
+          return position ? { ...node, x: position.x, y: position.y } : node
+        })
+
+        flowNodesRef.current = nextFlowNodes
+        setFlowNodes(nextFlowNodes)
+        await onNodesPersist(nextPersistedNodes)
+        window.requestAnimationFrame(() => {
+          if (partialLayout) return
+          void flowInstanceRef.current?.fitView({
+            padding: 0.2,
+            minZoom: CANVAS_FIT_MIN_ZOOM,
+            maxZoom: CANVAS_FIT_MAX_ZOOM,
+            duration: 260,
+          })
+        })
+        return true
+      },
       centerNodes: (nodeIds: string[]) => {
         const bounds = resolveNodeBounds(nodeIds)
         if (!bounds) return false
@@ -746,7 +842,7 @@ function CanvasStageInner({
       },
     })
     return () => onViewportControlsChange(null)
-  }, [notifyViewportChange, onViewportControlsChange])
+  }, [nodesInitialized, notifyViewportChange, onNodesPersist, onViewportControlsChange, snapshot.nodes])
 
   const cancelScheduledSync = useCallback(() => {
     if (syncFrameRef.current == null) return

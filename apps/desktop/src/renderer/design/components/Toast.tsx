@@ -32,7 +32,7 @@ export type ToastOptions = {
   actions?: ToastAction[]
 }
 
-type ToastFn = {
+export type ToastFn = {
   (type: ToastType, message: string, options?: ToastOptions): string
   success: (message: string, options?: ToastOptions) => string
   error: (message: string, options?: ToastOptions) => string
@@ -40,7 +40,7 @@ type ToastFn = {
   warning: (message: string, options?: ToastOptions) => string
 }
 
-type ToastCtx = {
+export type ToastCtx = {
   toasts: ToastItem[]
   toast: ToastFn
   dismiss: (id: string) => void
@@ -134,6 +134,10 @@ export function useToast(): ToastCtx {
   const v = useContext(Ctx)
   if (!v) throw new Error('useToast must be inside <ToastProvider>')
   return v
+}
+
+export function useOptionalToast(): ToastCtx | null {
+  return useContext(Ctx)
 }
 
 export function ToastContainer() {

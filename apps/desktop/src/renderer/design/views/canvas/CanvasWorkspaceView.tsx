@@ -36,12 +36,25 @@ import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel, buildOperationPanelSnapshotSignature } from './CanvasOperationPanel'
+import { shouldFocusCanvasInlinePanel } from './canvasInlinePanelFocus'
+import { CanvasOperationWorkbench } from './CanvasOperationWorkbench'
+import {
+  resolveCanvasOperationResourceNode,
+  resolveCanvasOperationOutputState,
+  selectCanvasOperationOutputs,
+} from './canvasOperationOutputModel'
+import { planCanvasOperationOutputMaterialization } from './canvasOperationOutputMaterialization'
+import {
+  buildCanvasOperationRunViews,
+  type CanvasOperationOutputView,
+} from './canvasOperationRuns'
 import { CanvasOperationPresetModal } from './CanvasOperationPresetModal'
 import { CanvasPanoramaViewerModal } from './CanvasPanoramaViewerModal'
 import { CanvasImageAnnotationModal } from './CanvasImageAnnotationModal'
 import { CanvasGridSplitModal, type CanvasGridSplitTile } from './CanvasGridSplitModal'
 import { useFloatingViewportGeometry } from './useFloatingViewportGeometry'
 import { CanvasPresetHubEntry } from './CanvasPresetHubEntry'
+import { CanvasProjectInfoPanel } from './CanvasProjectInfoPanel'
 import {
   CanvasShotDirectorPanel,
   type CanvasShotDirectorDraft,
@@ -54,7 +67,7 @@ import {
 } from './CanvasDirectorStageModal'
 import { CanvasDirectorStage3DModal } from './stage3d/CanvasDirectorStage3DModal'
 import { createDefaultStage3DData, type Stage3DData } from './stage3d/stage3d.types'
-import { isOperationNode } from './canvas.capabilities'
+import { isCanvasImageContentNode, isOperationNode } from './canvas.capabilities'
 import {
   readAssetKind,
   readFilmData,
@@ -97,13 +110,14 @@ import {
   placeAutoNodeToRight,
   stackAutoNodesToRight,
 } from './canvasAutoPlacement'
+import type { CanvasAutoLayoutMode, CanvasAutoLayoutSpacing } from './canvasAutoLayout'
 import {
-  AUDIO_NODE_DEFAULT_SIZE,
   GROUP_NODE_DEFAULT_SIZE,
   IMAGE_NODE_DEFAULT_SIZE,
   OPERATION_NODE_DEFAULT_SIZE,
   TEXT_NODE_DEFAULT_SIZE,
   VIDEO_NODE_DEFAULT_SIZE,
+  fitCanvasGroupedImageNodeSize,
   fitCanvasImageNodeSize,
 } from './canvasNodeSize'
 import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
@@ -179,6 +193,20 @@ type PreparedImageUpload = {
   imageWidth: number
   imageHeight: number
   title?: string
+}
+type LayoutBounds = {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+type InsertPreparedImagesResult = {
+  createdNodeCount: number
+  grouped: boolean
+  createdNodeIds: string[]
+  selectedNodeIds: string[]
+  occupiedBounds?: LayoutBounds
+  groupNodeId?: string
 }
 type CharacterSubviewEditorContext = {
   node: CanvasNode
@@ -569,14 +597,7 @@ function fitImageNodeSize(width: number, height: number): { width: number; heigh
 }
 
 function fitGroupedImageNodeSize(width: number, height: number): { width: number; height: number } {
-  const nodeWidth = 220
-  if (!width || !height) return { width: nodeWidth, height: 196 }
-  const aspect = height / width
-  const bodyHeight = Math.min(Math.max(Math.round(nodeWidth * aspect), 120), 260)
-  return {
-    width: nodeWidth,
-    height: bodyHeight,
-  }
+  return fitCanvasGroupedImageNodeSize(width, height)
 }
 
 function getImageGridColumns(count: number): number {
@@ -641,6 +662,34 @@ function layoutGroupedImages(
       y: Math.round(groupPosition.y + GROUP_IMAGE_HEADER_HEIGHT + (rowOffsets[row] ?? 0)),
     }
   })
+}
+
+function mergeBounds(bounds: LayoutBounds[]): LayoutBounds {
+  return {
+    left: Math.min(...bounds.map((item) => item.left)),
+    top: Math.min(...bounds.map((item) => item.top)),
+    right: Math.max(...bounds.map((item) => item.right)),
+    bottom: Math.max(...bounds.map((item) => item.bottom)),
+  }
+}
+
+function boundsForPlacements(
+  positions: Array<{ x: number; y: number }>,
+  size: { width: number; height: number },
+): LayoutBounds {
+  return {
+    left: Math.min(...positions.map((position) => position.x)),
+    top: Math.min(...positions.map((position) => position.y)),
+    right: Math.max(...positions.map((position) => position.x + size.width)),
+    bottom: Math.max(...positions.map((position) => position.y + size.height)),
+  }
+}
+
+function nextOriginAfterBounds(bounds: LayoutBounds): CanvasPoint {
+  return {
+    x: Math.round(bounds.right + 72),
+    y: Math.round(bounds.top),
+  }
 }
 
 function clampPosition(value: number, min: number, max: number): number {
@@ -1696,29 +1745,26 @@ export function CanvasWorkspaceView({
   const [characterSubviewEditorNodeId, setCharacterSubviewEditorNodeId] = useState<string | null>(
     null,
   )
+  const resolveCanvasResourceActionNode = useCallback(
+    (nodeId: string) => {
+      if (!snapshot) return null
+      const node = snapshot.nodes.find((item) => item.id === nodeId)
+      if (!node) return null
+      return isOperationNode(node) ? resolveCanvasOperationResourceNode(node, snapshot) : node
+    },
+    [snapshot],
+  )
   const annotatingImageNode = useMemo(
-    () =>
-      annotatingImageNodeId
-        ? (snapshot?.nodes.find(
-            (node) => node.id === annotatingImageNodeId && node.type === 'image',
-          ) ?? null)
-        : null,
-    [annotatingImageNodeId, snapshot?.nodes],
+    () => (annotatingImageNodeId ? resolveCanvasResourceActionNode(annotatingImageNodeId) : null),
+    [annotatingImageNodeId, resolveCanvasResourceActionNode],
   )
   const gridSplitImageNode = useMemo(
-    () =>
-      gridSplitImageNodeId
-        ? (snapshot?.nodes.find(
-            (node) => node.id === gridSplitImageNodeId && node.type === 'image',
-          ) ?? null)
-        : null,
-    [gridSplitImageNodeId, snapshot?.nodes],
+    () => (gridSplitImageNodeId ? resolveCanvasResourceActionNode(gridSplitImageNodeId) : null),
+    [gridSplitImageNodeId, resolveCanvasResourceActionNode],
   )
   const characterSubviewEditorContext = useMemo<CharacterSubviewEditorContext | null>(() => {
     if (!characterSubviewEditorNodeId || !snapshot) return null
-    const node = snapshot.nodes.find(
-      (item) => item.id === characterSubviewEditorNodeId && item.type === 'image',
-    )
+    const node = resolveCanvasResourceActionNode(characterSubviewEditorNodeId)
     if (!node?.assetId) return null
     const sourceImageAsset =
       snapshot.assets.find((item) => item.id === node.assetId && item.type === 'image') ?? null
@@ -1735,7 +1781,7 @@ export function CanvasWorkspaceView({
       ownerAsset,
       subviews: readCharacterSubviews(ownerAsset.metadata),
     }
-  }, [characterSubviewEditorNodeId, snapshot])
+  }, [characterSubviewEditorNodeId, resolveCanvasResourceActionNode, snapshot])
   const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
   const [directorStage3DNodeId, setDirectorStage3DNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
@@ -1761,6 +1807,7 @@ export function CanvasWorkspaceView({
   }, [])
   const [dirty, setDirty] = useState(() => isCanvasDirty(projectId))
   const [saving, setSaving] = useState(false)
+  const [arrangingCanvas, setArrangingCanvas] = useState(false)
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => readCanvasAutoSaveEnabled(projectId))
   const [autoSaving, setAutoSaving] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
@@ -2171,20 +2218,21 @@ export function CanvasWorkspaceView({
     [activeOperationPanelNodeId, snapshot?.nodes],
   )
   const inlinePanelNode = activeOperationNode ?? editingNode
+  const inlinePanelResourceNode = useMemo(
+    () =>
+      activeOperationNode && snapshot
+        ? resolveCanvasOperationResourceNode(activeOperationNode, snapshot)
+        : inlinePanelNode,
+    [activeOperationNode, inlinePanelNode, snapshot],
+  )
   const inlinePanelNodeId = inlinePanelNode?.id ?? null
   const inlinePanelIsOperation = Boolean(activeOperationNode)
   const [inlineOperationFullscreen, setInlineOperationFullscreen] = useState(false)
-  const activeOperationTask = activeOperationNode?.taskId
-    ? (snapshot?.tasks.find((task) => task.id === activeOperationNode.taskId) ?? null)
-    : null
-  const activeOperationTaskSettled =
-    activeOperationTask?.status === 'completed' ||
-    activeOperationTask?.status === 'failed' ||
-    activeOperationTask?.status === 'cancelled'
   const inlinePanelFocusRequested = inlinePanelFocusRequest?.nodeId === inlinePanelNodeId
-  const shouldFocusInlinePanel =
-    inlinePanelNodeId != null &&
-    (inlinePanelFocusRequested || !(activeOperationNode != null && activeOperationTaskSettled))
+  const shouldFocusInlinePanel = shouldFocusCanvasInlinePanel({
+    inlinePanelNodeId,
+    requestedNodeId: inlinePanelFocusRequest?.nodeId ?? null,
+  })
   const inlinePanelPreferredWidth = inlinePanelNode
     ? pickInlineEditorMinWidth(inlinePanelNode, inlinePanelIsOperation)
     : 0
@@ -2280,8 +2328,8 @@ export function CanvasWorkspaceView({
   }, [projectId, canvasViewportRef])
 
   const panoramaPreviewNode = useMemo(
-    () => snapshot?.nodes.find((node) => node.id === panoramaPreviewNodeId) ?? null,
-    [panoramaPreviewNodeId, snapshot?.nodes],
+    () => (panoramaPreviewNodeId ? resolveCanvasResourceActionNode(panoramaPreviewNodeId) : null),
+    [panoramaPreviewNodeId, resolveCanvasResourceActionNode],
   )
   const selectedGroups = useMemo(
     () => selectedNodes.filter((node) => node.type === 'group'),
@@ -2444,6 +2492,35 @@ export function CanvasWorkspaceView({
     const centered = canvasViewportControlsRef.current?.centerNodes(selectedNodeIds)
     if (!centered) message.warning('未找到选中节点')
   }, [selectedNodeIds])
+
+  const handleArrangeCanvas = useCallback(
+    async (options: { mode: CanvasAutoLayoutMode; spacing: CanvasAutoLayoutSpacing }) => {
+      const controls = canvasViewportControlsRef.current
+      if (!controls) {
+        message.warning('画布仍在初始化，请稍后重试')
+        return
+      }
+      setArrangingCanvas(true)
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+      try {
+        const partialLayout = selectedNodeIds.length > 1
+        const arranged = await controls.arrangeNodes({
+          ...options,
+          ...(partialLayout ? { nodeIds: selectedNodeIds } : {}),
+        })
+        if (!arranged) {
+          message.info('没有可整理的节点')
+          return
+        }
+        message.success(partialLayout ? `已整理所选 ${selectedNodeIds.length} 个节点` : '已整理全画布')
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '整理画布失败')
+      } finally {
+        setArrangingCanvas(false)
+      }
+    },
+    [selectedNodeIds],
+  )
 
   const handleDeleteNode = useCallback(
     (nodeId: string) => {
@@ -2786,17 +2863,22 @@ export function CanvasWorkspaceView({
   // 360 全景产物节点的「全景预览」入口（由右键菜单触发，与「编辑」解耦）。
   const handlePreviewPanorama = useCallback(
     (nodeId: string) => {
+      const node = resolveCanvasResourceActionNode(nodeId)
+      if (!node?.data.panorama360) {
+        message.warning('当前节点没有可预览的全景图内容')
+        return
+      }
       closeCanvasFloatPanels('node-edit')
       setSelectedNodeIds([nodeId])
       setPanoramaPreviewNodeId(nodeId)
     },
-    [closeCanvasFloatPanels],
+    [closeCanvasFloatPanels, resolveCanvasResourceActionNode],
   )
 
   const handleOpenCharacterSubviewEditorFromNode = useCallback(
     (nodeId: string) => {
       if (!snapshot) return
-      const node = snapshot.nodes.find((item) => item.id === nodeId && item.type === 'image')
+      const node = resolveCanvasResourceActionNode(nodeId)
       if (!node?.assetId) {
         message.warning('当前节点没有可裁切的图片资源')
         return
@@ -2811,14 +2893,14 @@ export function CanvasWorkspaceView({
       setSelectedNodeIds([nodeId])
       setCharacterSubviewEditorNodeId(nodeId)
     },
-    [closeCanvasFloatPanels, snapshot],
+    [closeCanvasFloatPanels, resolveCanvasResourceActionNode, snapshot],
   )
 
   const handleDownloadMediaNode = useCallback(
     async (nodeId: string) => {
       if (!snapshot) return
-      const node = snapshot.nodes.find((item) => item.id === nodeId)
-      if (!node || (node.type !== 'image' && node.type !== 'video')) {
+      const node = resolveCanvasResourceActionNode(nodeId)
+      if (!node || (!isCanvasImageContentNode(node) && node.type !== 'video')) {
         message.warning('当前节点没有可下载的图片或视频内容')
         return
       }
@@ -2827,7 +2909,7 @@ export function CanvasWorkspaceView({
         : null
       await downloadCanvasResource({
         id: linkedAsset?.id ?? node.id,
-        type: linkedAsset?.type ?? node.type,
+        type: linkedAsset?.type ?? (node.type === 'video' ? 'video' : 'image'),
         title: linkedAsset?.title ?? node.title ?? null,
         mimeType: linkedAsset?.mimeType ?? node.data.mimeType ?? null,
         storageKey: linkedAsset?.storageKey ?? null,
@@ -2836,7 +2918,7 @@ export function CanvasWorkspaceView({
         contentText: linkedAsset?.contentText ?? null,
       })
     },
-    [snapshot],
+    [resolveCanvasResourceActionNode, snapshot],
   )
 
   const handleSaveNodeEdit = useCallback(
@@ -2846,6 +2928,106 @@ export function CanvasWorkspaceView({
       setEditingNodeId(null)
     },
     [patchNodes, updateNodeData],
+  )
+
+  const handleSetOperationPrimaryOutput = useCallback(
+    async (operationNodeId: string, output: CanvasOperationOutputView) => {
+      await updateNodeData(operationNodeId, {
+        primaryOutputId: output.id,
+        primaryOutputSelection: 'manual',
+      })
+      message.success(output.type === 'text' ? '已设为默认预览产物' : '已设为主产物')
+    },
+    [updateNodeData],
+  )
+
+  const handleExpandOperationOutputs = useCallback(
+    async (operationNodeId: string, outputs: CanvasOperationOutputView[]) => {
+      const current = snapshotRef.current
+      if (!current || outputs.length === 0) return
+      const operationNode = current.nodes.find(
+        (node) => node.id === operationNodeId && isOperationNode(node),
+      )
+      if (!operationNode) return
+      const plan = planCanvasOperationOutputMaterialization({
+        operationNode,
+        outputs,
+        existingNodes: current.nodes,
+      })
+      const materializedNodeIds = [...plan.existingNodeIds]
+
+      for (const item of plan.items) {
+        if (!item.output.assetId) continue
+        const created = await insertAsset({
+          assetId: item.output.assetId,
+          boardId: current.board.id,
+          x: item.x,
+          y: item.y,
+        })
+        if (!created) continue
+        await updateNodeData(created.id, {
+          origin: 'asset',
+          ...(item.output.pipelineRole ? { pipelineRole: item.output.pipelineRole } : {}),
+          ...(item.output.productionState
+            ? { productionState: item.output.productionState }
+            : {}),
+          ...(item.output.panorama360 ? { panorama360: item.output.panorama360 } : {}),
+          materializedOutput: {
+            operationNodeId,
+            outputId: item.output.id,
+            materializedAt: new Date().toISOString(),
+          },
+        })
+        await connectNodes({
+          sourceNodeId: operationNodeId,
+          targetNodeId: created.id,
+          type: 'references',
+        })
+        materializedNodeIds.push(created.id)
+      }
+
+      if (plan.unsupportedOutputIds.length > 0) {
+        message.warning(`${plan.unsupportedOutputIds.length} 个产物尚未关联资产，暂不能展开`)
+      }
+      if (materializedNodeIds.length > 0) {
+        setSelectedNodeIds(materializedNodeIds)
+        requestAnimationFrame(() => {
+          canvasViewportControlsRef.current?.focusNodes(materializedNodeIds, {
+            padding: { top: 96, right: 96, bottom: 96, left: 96 },
+            maxZoom: 1,
+          })
+        })
+        message.success(
+          plan.items.length > 0
+            ? `已展开 ${plan.items.length} 个资产引用节点`
+            : '这些产物已经在画布中展开',
+        )
+      }
+    },
+    [connectNodes, insertAsset, updateNodeData],
+  )
+
+  const handleExpandOperationOutputScope = useCallback(
+    (operationNodeId: string, scope: 'primary' | 'latest_run' | 'all') => {
+      const current = snapshotRef.current
+      if (!current) return
+      const operationNode = current.nodes.find(
+        (node) => node.id === operationNodeId && isOperationNode(node),
+      )
+      if (!operationNode) return
+      const runs = buildCanvasOperationRunViews(operationNode, current)
+      const outputState = resolveCanvasOperationOutputState(operationNode, runs)
+      const outputs =
+        scope === 'primary'
+          ? outputState.primaryOutput
+            ? [outputState.primaryOutput]
+            : []
+          : scope === 'latest_run'
+            ? (runs.find((run) => run.outputs.length > 0)?.outputs ?? [])
+            : selectCanvasOperationOutputs(runs, { scope: 'all' })
+      void handleExpandOperationOutputs(operationNodeId, outputs)
+    },
+    [handleExpandOperationOutputs],
   )
 
   const createPanoramaCaptureNode = useCallback(
@@ -4029,11 +4211,18 @@ export function CanvasWorkspaceView({
       )
       const result = await insertPreparedImages(preparedImages, preferredPosition)
       const targetNodeId = result.groupNodeId ?? result.createdNodeIds[0]
+      if (result.selectedNodeIds.length > 0) setSelectedNodeIds(result.selectedNodeIds)
       if (pendingConnection && targetNodeId) {
         await connectNodes({ sourceNodeId: pendingConnection.sourceNodeId, targetNodeId })
       }
-      if (result.createdNodeCount > 1 && result.grouped) {
-        message.success(`已添加 ${result.createdNodeCount} 张图片并成组`)
+      if (result.createdNodeCount > 0) {
+        message.success(
+          result.createdNodeCount === 1
+            ? '已添加图片到画布'
+            : result.grouped
+              ? `已添加 ${result.createdNodeCount} 张图片并成组`
+              : `已添加 ${result.createdNodeCount} 张图片到画布`,
+        )
       }
     } catch (error) {
       message.error(error instanceof Error ? error.message : '添加图片失败')
@@ -4635,6 +4824,7 @@ export function CanvasWorkspaceView({
 
   const openOperationPanelForNode = (nodeId: string) => {
     closeCanvasFloatPanels('operation')
+    setInlinePanelFocusRequest({ nodeId, nonce: Date.now() })
     setSelectedNodeIds([nodeId])
     setActiveOperationPanelNodeId(nodeId)
   }
@@ -4846,16 +5036,21 @@ export function CanvasWorkspaceView({
       if (!snap) return
       const parent = snap.nodes.find((item) => item.id === parentId)
       if (!parent) return
-      void createOperationNode({
-        boardId: snap.board.id,
-        operation,
-        inputNodeIds: [parentId],
-        x: parent.x + parent.width + 60,
-        y: parent.y,
-        ...(options?.title ? { title: options.title } : {}),
-        ...(options?.prompt ? { prompt: options.prompt } : {}),
-        ...(options?.modelParams ? { modelParams: options.modelParams } : {}),
-      })
+      void (async () => {
+        const existingNodeIds = new Set(snap.nodes.map((item) => item.id))
+        const next = await createOperationNode({
+          boardId: snap.board.id,
+          operation,
+          inputNodeIds: [parentId],
+          x: parent.x + parent.width + 60,
+          y: parent.y,
+          ...(options?.title ? { title: options.title } : {}),
+          ...(options?.prompt ? { prompt: options.prompt } : {}),
+          ...(options?.modelParams ? { modelParams: options.modelParams } : {}),
+        })
+        const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
+        if (created) openOperationPanelForNode(created.id)
+      })()
     },
     [createOperationNode],
   )
@@ -4885,6 +5080,8 @@ export function CanvasWorkspaceView({
 
   const inlinePanelNodeRef = useRef(inlinePanelNode)
   inlinePanelNodeRef.current = inlinePanelNode
+  const inlinePanelResourceNodeRef = useRef(inlinePanelResourceNode)
+  inlinePanelResourceNodeRef.current = inlinePanelResourceNode
 
   const closeFloatingEditorStable = useCallback(() => {
     setActiveOperationPanelNodeId(null)
@@ -4909,15 +5106,15 @@ export function CanvasWorkspaceView({
     if (nodeId) handleBringNodeToFront(nodeId)
   }, [handleBringNodeToFront])
   const downloadInlinePanelNodeStable = useCallback(() => {
-    const nodeId = inlinePanelNodeRef.current?.id
+    const nodeId = inlinePanelResourceNodeRef.current?.id
     if (nodeId) void handleDownloadMediaNode(nodeId)
   }, [handleDownloadMediaNode])
   const previewInlinePanelPanoramaStable = useCallback(() => {
-    const nodeId = inlinePanelNodeRef.current?.id
+    const nodeId = inlinePanelResourceNodeRef.current?.id
     if (nodeId) handlePreviewPanorama(nodeId)
   }, [handlePreviewPanorama])
   const extractCharacterSubviewInlinePanelStable = useCallback(() => {
-    const nodeId = inlinePanelNodeRef.current?.id
+    const nodeId = inlinePanelResourceNodeRef.current?.id
     if (nodeId) handleOpenCharacterSubviewEditorFromNode(nodeId)
   }, [handleOpenCharacterSubviewEditorFromNode])
   const openInlinePanelAiStable = useCallback(() => {
@@ -4944,22 +5141,27 @@ export function CanvasWorkspaceView({
       const node = inlinePanelNodeRef.current
       const snap = snapshotRef.current
       if (!node || !snap) return
-      void createOperationNode({
-        boardId: snap.board.id,
-        operation,
-        inputNodeIds: [node.id],
-        x: node.x + node.width + 60,
-        y: node.y,
-        ...(options?.title ? { title: options.title } : {}),
-        ...(options?.prompt ? { prompt: options.prompt } : {}),
-        ...(options?.modelParams ? { modelParams: options.modelParams } : {}),
-      })
+      void (async () => {
+        const existingNodeIds = new Set(snap.nodes.map((item) => item.id))
+        const next = await createOperationNode({
+          boardId: snap.board.id,
+          operation,
+          inputNodeIds: [node.id],
+          x: node.x + node.width + 60,
+          y: node.y,
+          ...(options?.title ? { title: options.title } : {}),
+          ...(options?.prompt ? { prompt: options.prompt } : {}),
+          ...(options?.modelParams ? { modelParams: options.modelParams } : {}),
+        })
+        const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
+        if (created) openOperationPanelForNode(created.id)
+      })()
     },
     [createOperationNode],
   )
   const setProductionStateInlinePanelStable = useCallback(
     (state: import('./canvas.types').CanvasProductionState) => {
-      const nodeId = inlinePanelNodeRef.current?.id
+      const nodeId = inlinePanelResourceNodeRef.current?.id
       if (nodeId) void handleSetProductionStateRef.current(nodeId, state)
     },
     [],
@@ -4972,15 +5174,15 @@ export function CanvasWorkspaceView({
     handleDissolveGroup()
   }, [handleDissolveGroup])
   const saveInlinePanelToLibraryStable = useCallback(() => {
-    const nodeId = inlinePanelNodeRef.current?.id
+    const nodeId = inlinePanelResourceNodeRef.current?.id
     if (nodeId) setSaveToLibraryNodeId(nodeId)
   }, [])
   const annotateInlinePanelStable = useCallback(() => {
-    const nodeId = inlinePanelNodeRef.current?.id
+    const nodeId = inlinePanelResourceNodeRef.current?.id
     if (nodeId) setAnnotatingImageNodeId(nodeId)
   }, [])
   const splitInlinePanelGridStable = useCallback(() => {
-    const nodeId = inlinePanelNodeRef.current?.id
+    const nodeId = inlinePanelResourceNodeRef.current?.id
     if (nodeId) setGridSplitImageNodeId(nodeId)
   }, [])
 
@@ -5112,13 +5314,28 @@ export function CanvasWorkspaceView({
   )
 
   const insertPreparedImages = useCallback(
-    async (preparedImages: PreparedImageUpload[], preferredPosition?: CanvasPoint | null) => {
+    async (
+      preparedImages: PreparedImageUpload[],
+      preferredPosition?: CanvasPoint | null,
+    ): Promise<InsertPreparedImagesResult> => {
       if (preparedImages.length === 0) {
-        return { createdNodeCount: 0, grouped: false, createdNodeIds: [] as string[] }
+        return {
+          createdNodeCount: 0,
+          grouped: false,
+          createdNodeIds: [],
+          selectedNodeIds: [],
+        }
       }
       if (preparedImages.length === 1) {
         const [image] = preparedImages
-        if (!image) return { createdNodeCount: 0, grouped: false, createdNodeIds: [] as string[] }
+        if (!image) {
+          return {
+            createdNodeCount: 0,
+            grouped: false,
+            createdNodeIds: [],
+            selectedNodeIds: [],
+          }
+        }
         const position = preferredPosition
           ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
           : positionNodeInViewport(
@@ -5139,11 +5356,21 @@ export function CanvasWorkspaceView({
           imageWidth: image.imageWidth,
           imageHeight: image.imageHeight,
         })
-        if (node) setSelectedNodeIds([node.id])
         return {
           createdNodeCount: node ? 1 : 0,
           grouped: false,
           createdNodeIds: node ? [node.id] : [],
+          selectedNodeIds: node ? [node.id] : [],
+          ...(node
+            ? {
+                occupiedBounds: {
+                  left: position.x,
+                  top: position.y,
+                  right: position.x + image.width,
+                  bottom: position.y + image.height,
+                },
+              }
+            : {}),
         }
       }
 
@@ -5163,6 +5390,7 @@ export function CanvasWorkspaceView({
           })
       const placedImages = layoutGroupedImages(preparedImages, groupPosition)
       const createdNodeIds: string[] = []
+      const createdBounds: LayoutBounds[] = []
       let groupNodeId: string | undefined
       for (const image of placedImages) {
         const node = await createImageNode({
@@ -5175,8 +5403,17 @@ export function CanvasWorkspaceView({
           imageWidth: image.imageWidth,
           imageHeight: image.imageHeight,
         })
-        if (node) createdNodeIds.push(node.id)
+        if (node) {
+          createdNodeIds.push(node.id)
+          createdBounds.push({
+            left: image.x,
+            top: image.y,
+            right: image.x + image.width,
+            bottom: image.y + image.height,
+          })
+        }
       }
+      let selectedNodeIds = createdNodeIds.length === 1 ? createdNodeIds : []
       if (createdNodeIds.length > 1) {
         const nextSnapshot = await createGroupNode(createdNodeIds)
         const createdIdSet = new Set(createdNodeIds)
@@ -5191,14 +5428,26 @@ export function CanvasWorkspaceView({
           )
         })
         groupNodeId = groupNode?.id
-        setSelectedNodeIds(groupNode ? [groupNode.id] : createdNodeIds)
-      } else if (createdNodeIds.length === 1) {
-        setSelectedNodeIds(createdNodeIds)
+        selectedNodeIds = groupNode ? [groupNode.id] : createdNodeIds
       }
       return {
         createdNodeCount: createdNodeIds.length,
         grouped: createdNodeIds.length > 1,
         createdNodeIds,
+        selectedNodeIds,
+        ...(createdBounds.length > 0
+          ? {
+              occupiedBounds:
+                groupNodeId || createdNodeIds.length > 1
+                  ? {
+                      left: groupPosition.x,
+                      top: groupPosition.y,
+                      right: groupPosition.x + groupSize.width,
+                      bottom: groupPosition.y + groupSize.height,
+                    }
+                  : mergeBounds(createdBounds),
+            }
+          : {}),
         ...(groupNodeId ? { groupNodeId } : {}),
       }
     },
@@ -5237,6 +5486,7 @@ export function CanvasWorkspaceView({
             )
             const result = await insertPreparedImages(preparedImages, preferredPosition)
             if (result.createdNodeCount > 0) {
+              if (result.selectedNodeIds.length > 0) setSelectedNodeIds(result.selectedNodeIds)
               message.success(
                 result.createdNodeCount === 1
                   ? '已粘贴图片到画布'
@@ -5295,6 +5545,8 @@ export function CanvasWorkspaceView({
       }
 
       const createdNodeIds: string[] = []
+      let selectionNodeIds: string[] = []
+      let nextOrigin = origin
 
       try {
         // ── 图片：复用现有上传管线（含多图分组） ──────────────────────────
@@ -5304,13 +5556,16 @@ export function CanvasWorkspaceView({
               prepareCanvasImageUpload(file, { grouped: images.length > 1 }),
             ),
           )
-          const result = await insertPreparedImages(prepared, origin)
+          const result = await insertPreparedImages(prepared, nextOrigin)
           for (const id of result.createdNodeIds) createdNodeIds.push(id)
+          if (result.selectedNodeIds.length > 0) selectionNodeIds = result.selectedNodeIds
+          if (result.occupiedBounds) nextOrigin = nextOriginAfterBounds(result.occupiedBounds)
         }
 
         // ── 文本：浏览器 File.text() 直接读，无需 IPC ──────────────────────
         if (texts.length > 0) {
-          const positions = layoutDroppedFiles(texts.length, origin, TEXT_NODE_DEFAULT_SIZE)
+          const positions = layoutDroppedFiles(texts.length, nextOrigin, TEXT_NODE_DEFAULT_SIZE)
+          const successfulTextIds = Array<string | null>(texts.length).fill(null)
           await Promise.all(
             texts.map(async (file, index) => {
               const text = await file.text()
@@ -5321,13 +5576,28 @@ export function CanvasWorkspaceView({
                 y: positions[index]!.y,
                 ...(format === 'markdown' ? { format: 'markdown' } : {}),
               })
-              if (node) createdNodeIds.push(node.id)
+              if (node) {
+                createdNodeIds.push(node.id)
+                successfulTextIds[index] = node.id
+              }
             }),
           )
+          const orderedTextIds = successfulTextIds.filter((id): id is string => Boolean(id))
+          if (orderedTextIds.length > 0) {
+            selectionNodeIds = [orderedTextIds[orderedTextIds.length - 1]!]
+            const successfulTextPositions = successfulTextIds.flatMap((id, index) =>
+              id ? [positions[index]!] : [],
+            )
+            nextOrigin = nextOriginAfterBounds(
+              boundsForPlacements(successfulTextPositions, TEXT_NODE_DEFAULT_SIZE),
+            )
+          }
         }
 
         // ── 视频/音频：复制进项目 assets 目录后建节点 ─────────────────────
         if (media.length > 0) {
+          const mediaPositions = layoutDroppedFiles(media.length, nextOrigin, VIDEO_NODE_DEFAULT_SIZE)
+          const successfulMediaIds = Array<string | null>(media.length).fill(null)
           await Promise.all(
             media.map(async (entry, index) => {
               const electronPath = (entry.file as File & { path?: string }).path
@@ -5350,10 +5620,7 @@ export function CanvasWorkspaceView({
                 mediaHeight = dims.height || undefined
                 durationMs = dims.durationMs
               }
-              const defaultSize =
-                entry.kind === 'video' ? VIDEO_NODE_DEFAULT_SIZE : AUDIO_NODE_DEFAULT_SIZE
-              const positions = layoutDroppedFiles(1, origin, defaultSize)
-              const basePos = positions[index] ?? origin
+              const basePos = mediaPositions[index] ?? nextOrigin
               const node = await createMediaNode({
                 kind: entry.kind,
                 fileName: entry.file.name,
@@ -5366,21 +5633,27 @@ export function CanvasWorkspaceView({
                 ...(mediaHeight ? { mediaHeight } : {}),
                 ...(durationMs ? { durationMs } : {}),
               })
-              if (node) createdNodeIds.push(node.id)
+              if (node) {
+                createdNodeIds.push(node.id)
+                successfulMediaIds[index] = node.id
+              }
             }),
           )
+          const orderedMediaIds = successfulMediaIds.filter((id): id is string => Boolean(id))
+          if (orderedMediaIds.length > 0) {
+            selectionNodeIds = [orderedMediaIds[orderedMediaIds.length - 1]!]
+          }
         }
       } catch (error) {
         message.error(error instanceof Error ? error.message : '拖入文件到画布失败')
       }
 
-      const totalSupported = images.length + texts.length + media.length
-      if (totalSupported > 0) {
-        if (createdNodeIds.length > 0) setSelectedNodeIds(createdNodeIds.slice(-1))
+      if (createdNodeIds.length > 0) {
+        if (selectionNodeIds.length > 0) setSelectedNodeIds(selectionNodeIds)
         message.success(
-          totalSupported === 1
+          createdNodeIds.length === 1
             ? '已添加文件到画布'
-            : `已添加 ${totalSupported} 个文件到画布`,
+            : `已添加 ${createdNodeIds.length} 个文件到画布`,
         )
       }
       if (unsupportedCount > 0) {
@@ -6088,18 +6361,29 @@ export function CanvasWorkspaceView({
             ? snapshot.tasks.find((task) => task.id === opNode.taskId)
             : null
           return (
-            <CanvasOperationPanel
+            <CanvasOperationWorkbench
+              key={opNode.id}
               node={opNode}
-              snapshot={operationPanelSnapshot ?? snapshot}
-              placement="inline"
-              fullscreen={inlineOperationFullscreen}
-              onFullscreenChange={setInlineOperationFullscreen}
-              {...(opTask ? { task: opTask } : {})}
-              onClose={() => {
-                setActiveOperationPanelNodeId(null)
-                setSelectedNodeIds([])
-              }}
-              onRun={async (params) => {
+              snapshot={snapshot}
+              onSaveOutput={handleSaveNodeEdit}
+              onDownloadOutput={(nodeId) => void handleDownloadMediaNode(nodeId)}
+              onPreviewPanoramaOutput={handlePreviewPanorama}
+              onOpenAssetLibrary={() => setSidePanelTab('assets')}
+              onSetPrimaryOutput={(output) => handleSetOperationPrimaryOutput(opNode.id, output)}
+              onExpandOutputs={(outputs) => handleExpandOperationOutputs(opNode.id, outputs)}
+              configPanel={
+                <CanvasOperationPanel
+                  node={opNode}
+                  snapshot={operationPanelSnapshot ?? snapshot}
+                  placement="inline"
+                  fullscreen={inlineOperationFullscreen}
+                  onFullscreenChange={setInlineOperationFullscreen}
+                  {...(opTask ? { task: opTask } : {})}
+                  onClose={() => {
+                    setActiveOperationPanelNodeId(null)
+                    setSelectedNodeIds([])
+                  }}
+                  onRun={async (params) => {
                 const viewportBeforeRun = await persistCurrentCanvasViewport()
                 const taskInputNodes = resolveCanvasInputNodes(params.inputNodeIds, snapshot.nodes)
                 const hydratedTaskInputNodes = hydrateTextInputNodes(
@@ -6244,12 +6528,12 @@ export function CanvasWorkspaceView({
                 } finally {
                   restoreCanvasViewport(viewportBeforeRun)
                 }
-              }}
-              onRetry={() => void retryOperationNode(opNode.id)}
-              onCancelTask={async (taskId) => {
-                await cancelTask(taskId)
-              }}
-              onSaveDraft={async (params) => {
+                  }}
+                  onRetry={() => void retryOperationNode(opNode.id)}
+                  onCancelTask={async (taskId) => {
+                    await cancelTask(taskId)
+                  }}
+                  onSaveDraft={async (params) => {
                 const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
                 const presetTargetId = resolveCanvasPresetTarget({
                   operation,
@@ -6284,7 +6568,9 @@ export function CanvasWorkspaceView({
                   ...(params.skillIds ? { skillIds: params.skillIds } : {}),
                   ...(params.modelParams ? { modelParams: params.modelParams } : {}),
                 })
-              }}
+                  }}
+                />
+              }
             />
           )
         })()
@@ -6358,6 +6644,9 @@ export function CanvasWorkspaceView({
         </div>
         <CanvasToolbar
           saveState={{ dirty, saving, autoSaving, autoSaveEnabled }}
+          selectedCount={selectedNodeIds.length}
+          arranging={arrangingCanvas}
+          onArrange={handleArrangeCanvas}
           onSave={() => void doSave()}
           onAutoSaveChange={handleAutoSaveToggle}
           onExport={() => void handleExportProject()}
@@ -6394,7 +6683,7 @@ export function CanvasWorkspaceView({
             activeTool={activeTool === 'pan' ? 'pan' : 'select'}
             selectedNodeIds={selectedNodeIds}
             onSelectionChange={handleSelectionChange}
-            onNodesPersist={(nodes) => void updateNodes(nodes)}
+            onNodesPersist={(nodes) => updateNodes(nodes)}
             onConnectNodes={connectNodes}
             onDeleteEdges={(edgeIds) => void deleteEdges(edgeIds)}
             onDuplicateNode={handleDuplicateNode}
@@ -6444,6 +6733,7 @@ export function CanvasWorkspaceView({
               <div className="canvas-node-bottom-editor-toolbar">
                 <CanvasFloatingNodeToolbar
                   node={inlinePanelNode}
+                  resourceNode={inlinePanelResourceNode ?? undefined}
                   isOperation={Boolean(activeOperationNode)}
                   operationFullscreen={inlineOperationFullscreen}
                   onOperationFullscreenChange={setInlineOperationFullscreen}
@@ -7007,172 +7297,9 @@ function pickInlineEditorFocusPadding(isOperation: boolean): {
   }
 }
 
-function CanvasProjectInfoPanel({
-  project,
-  configuredPresetCount,
-  onOpenProjectFolder,
-  onOpenPresetCenter,
-  onSave,
-  onSaveStyleBible,
-}: {
-  project: CanvasProject
-  configuredPresetCount: number
-  onOpenProjectFolder: () => Promise<void>
-  onOpenPresetCenter: () => void
-  onSave: (settings: CanvasProjectSettings) => Promise<void>
-  onSaveStyleBible: (styleBible: string) => Promise<void>
-}) {
-  const [prompt, setPrompt] = useState(project.settings?.prompt ?? '')
-  const [negativePrompt, setNegativePrompt] = useState(project.settings?.negativePrompt ?? '')
-  const [styleBible, setStyleBible] = useState(readStyleBible(project.metadata))
-  const [savingStyle, setSavingStyle] = useState(false)
-  const [saving, setSaving] = useState(false)
-
-  const saveStyleBible = async () => {
-    setSavingStyle(true)
-    try {
-      await onSaveStyleBible(styleBible)
-      message.success('视觉总设定已更新')
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存视觉总设定失败')
-    } finally {
-      setSavingStyle(false)
-    }
-  }
-
-  const save = async () => {
-    setSaving(true)
-    try {
-      await onSave({ prompt, negativePrompt })
-      message.success('项目提示词已更新')
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存项目提示词失败')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="canvas-side-panel-content canvas-side-panel-content-project">
-      <CanvasPresetHubEntry
-        configuredPresetCount={configuredPresetCount}
-        onOpen={onOpenPresetCenter}
-        variant="panel"
-      />
-      <section className="canvas-panel-section">
-        <div className="canvas-panel-title-row">
-          <h3>项目基础信息</h3>
-          <Tag color={project.status === 'active' ? 'green' : 'default'} bordered>
-            {project.status}
-          </Tag>
-        </div>
-        <div className="canvas-project-info-grid">
-          <CanvasProjectInfoItem label="项目名" value={project.title} />
-          <CanvasProjectInfoItem label="节点" value={project.nodeCount} />
-          <CanvasProjectInfoItem label="素材" value={project.assetCount} />
-          <CanvasProjectInfoItem label="任务" value={project.taskCount} />
-        </div>
-        <div className="canvas-project-folder-card canvas-project-folder-card-inline">
-          <div className="canvas-project-folder-info">
-            <span>项目文件夹</span>
-            <Tooltip title={project.rootPath || '默认位置'} placement="topLeft">
-              <strong>{project.rootPath || '默认位置'}</strong>
-            </Tooltip>
-          </div>
-          <Button
-            size="middle"
-            icon={<Icons.Folder size={14} />}
-            onClick={() => void onOpenProjectFolder()}
-          >
-            打开
-          </Button>
-        </div>
-      </section>
-      <section className="canvas-panel-section">
-        <div className="canvas-panel-title-row">
-          <h3>视觉总设定 (Style Bible)</h3>
-          <Tag color={styleBible.trim() ? 'purple' : 'default'} bordered>
-            {styleBible.trim() ? '已设定' : '未设定'}
-          </Tag>
-        </div>
-        <div className="canvas-form-row">
-          <label>全片视觉风格（被角色图/分镜/关键帧等所有生成继承）</label>
-          <Input.TextArea
-            value={styleBible}
-            rows={5}
-            placeholder="例如：日系动画风格，电影级布光，冷色调，胶片颗粒，2.39:1 宽银幕，统一美术与材质语言"
-            onChange={(event) => setStyleBible(event.target.value)}
-          />
-        </div>
-        <div className="canvas-project-prompt-actions">
-          <Button size="middle" onClick={() => setStyleBible(readStyleBible(project.metadata))}>
-            重置
-          </Button>
-          <Button
-            size="middle"
-            type="primary"
-            loading={savingStyle}
-            onClick={() => void saveStyleBible()}
-          >
-            保存设定
-          </Button>
-        </div>
-      </section>
-      <section className="canvas-panel-section">
-        <div className="canvas-panel-title-row">
-          <h3>AI 提示词设置</h3>
-          <Tag color={prompt.trim() || negativePrompt.trim() ? 'blue' : 'default'} bordered>
-            {prompt.trim() || negativePrompt.trim() ? '已配置' : '未配置'}
-          </Tag>
-        </div>
-        <div className="canvas-form-row">
-          <label>项目统一提示词</label>
-          <Input.TextArea
-            value={prompt}
-            rows={6}
-            placeholder="例如：统一品牌语气、画面风格、构图偏好、输出格式等"
-            onChange={(event) => setPrompt(event.target.value)}
-          />
-        </div>
-        <div className="canvas-form-row">
-          <label>反向提示词</label>
-          <Input.TextArea
-            value={negativePrompt}
-            rows={5}
-            placeholder="例如：不要出现的元素、不能做的动作、需要规避的风格或内容"
-            onChange={(event) => setNegativePrompt(event.target.value)}
-          />
-        </div>
-        <div className="canvas-project-prompt-actions">
-          <Button
-            size="middle"
-            onClick={() => {
-              setPrompt(project.settings?.prompt ?? '')
-              setNegativePrompt(project.settings?.negativePrompt ?? '')
-            }}
-          >
-            重置
-          </Button>
-          <Button size="middle" type="primary" loading={saving} onClick={() => void save()}>
-            保存设置
-          </Button>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function CanvasProjectInfoItem({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="canvas-project-info-item">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  )
-}
-
 const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   node,
+  resourceNode,
   isOperation,
   onClose,
   onFocus,
@@ -7197,6 +7324,8 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   onOperationFullscreenChange,
 }: {
   node: CanvasNode
+  /** 操作节点当前主产物；资源动作作用于它，节点管理仍作用于稳定步骤节点。 */
+  resourceNode?: CanvasNode | undefined
   isOperation: boolean
   onClose: () => void
   onFocus: () => void
@@ -7223,12 +7352,14 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   operationFullscreen?: boolean
   onOperationFullscreenChange?: (nextFullscreen: boolean) => void
 }) {
-  const isMedia = node.type === 'image' || node.type === 'video'
-  const isImage = node.type === 'image'
+  const contentNode = resourceNode ?? node
+  const hasResource = !isOperation || Boolean(resourceNode)
+  const isMedia = contentNode.type === 'image' || contentNode.type === 'video'
+  const isImage = isCanvasImageContentNode(contentNode)
   const isGroup = node.type === 'group'
-  const isPanorama360 = Boolean(node.data.panorama360)
-  const pipelineActions = isOperation ? [] : getNodePipelineActions(node)
-  const canEditNode = node.type !== 'image' || isOperation
+  const isPanorama360 = Boolean(contentNode.data.panorama360)
+  const pipelineActions = hasResource ? getNodePipelineActions(contentNode) : []
+  const canEditNode = contentNode.type !== 'image' || isOperation
   const title =
     node.title ??
     (isOperation
@@ -7249,13 +7380,13 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   const createImageOutpaintTask = () =>
     onCreateOperationChild('image_edit', {
       title: '图片扩图',
-      prompt: buildFloatingImageOutpaintPrompt(node),
+      prompt: buildFloatingImageOutpaintPrompt(contentNode),
       modelParams: { aspect_ratio: '2:1' },
     })
   const createDetailSheetTask = () =>
-    onCreateOperationChild(node.type === 'image' ? 'image_edit' : 'text_to_image', {
+    onCreateOperationChild(contentNode.type === 'image' ? 'image_edit' : 'text_to_image', {
       title: '细节设定图（九宫格）',
-      prompt: buildFloatingDetailSheetNineGridPrompt(node),
+      prompt: buildFloatingDetailSheetNineGridPrompt(contentNode),
       modelParams: { aspect_ratio: '2:1' },
     })
   const createStyleExtractionTask = () =>
@@ -7264,7 +7395,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
       prompt: FLOATING_IMAGE_STYLE_EXTRACTION_PROMPT,
     })
   const contextualAiActions = [
-    ...(isImage && !isOperation
+    ...(isImage && hasResource
       ? [
           {
             key: 'outpaint-image',
@@ -7280,7 +7411,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           },
         ]
       : []),
-    ...((node.type === 'image' || node.type === 'text' || node.type === 'prompt') && !isOperation
+    ...((contentNode.type === 'image' || contentNode.type === 'text' || contentNode.type === 'prompt') && hasResource
       ? [
           {
             key: 'detail-sheet-nine-grid',

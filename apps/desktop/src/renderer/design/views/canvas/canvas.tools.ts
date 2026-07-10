@@ -22,6 +22,7 @@ import type {
 } from './canvas.types'
 import type { CreateFilmAssetInput, ShotGroup, ShotSegment } from './canvasFilmAssets'
 import type { SessionReasoningEffort } from '@spark/protocol'
+import { getCanvasCapability, isOperationNode, nodeOperation } from './canvas.capabilities'
 
 type JSONSchema = Record<string, unknown>
 
@@ -236,6 +237,44 @@ const summarizeTask = (t: CanvasTask) => ({
   errorMsg: t.errorMsg,
 })
 
+const summarizeOperationConfig = (snap: CanvasSnapshot, node: CanvasNode) => {
+  const operation = nodeOperation(node)
+  const task = node.taskId ? snap.tasks.find((item) => item.id === node.taskId) ?? null : null
+  const inputNodeIds = snap.edges
+    .filter((edge) => edge.targetNodeId === node.id && edge.type === 'used_as_input')
+    .map((edge) => edge.sourceNodeId)
+  const inputNodes = inputNodeIds
+    .map((id) => snap.nodes.find((candidate) => candidate.id === id))
+    .filter((candidate): candidate is CanvasNode => candidate != null)
+    .map(summarizeNode)
+  const capability = operation ? getCanvasCapability(operation) : undefined
+  return {
+    nodeId: node.id,
+    operation,
+    configuration: {
+      prompt: node.data.prompt ?? task?.prompt ?? null,
+      negativePrompt: node.data.negativePrompt ?? task?.negativePrompt ?? null,
+      modelParams: node.data.modelParams ?? task?.modelParams ?? {},
+      agentId: node.data.agentId ?? task?.agentId ?? null,
+      providerProfileId: node.data.providerProfileId ?? task?.providerProfileId ?? null,
+      manifestId: node.data.manifestId ?? task?.manifestId ?? null,
+      modelId: node.data.modelId ?? task?.modelId ?? null,
+      reasoningEffort: node.data.reasoningEffort ?? task?.reasoningEffort ?? null,
+      skillIds: node.data.skillIds ?? task?.skillIds ?? [],
+    },
+    inputNodes,
+    capability: capability
+      ? {
+          id: capability.id,
+          inputTypes: capability.inputTypes,
+          outputTypes: capability.outputTypes,
+          paramsSchema: capability.paramsSchema,
+        }
+      : null,
+    task: task ? summarizeTask(task) : null,
+  }
+}
+
 // ─── Schema helpers ────────────────────────────────────────────────────────
 const string = (description: string, required = true): JSONSchema => ({
   type: 'string',
@@ -417,6 +456,22 @@ const tools: CanvasToolDescriptor[] = [
     },
   },
   {
+    name: 'canvas_get_operation_config',
+    description:
+      '读取 AI 操作节点的持久化配置、关联任务、已连接输入和操作能力约束；精细调参前调用。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeId'],
+      properties: { nodeId: string('AI 操作节点 id') },
+    },
+    handler: async (ctx, input: { nodeId: string }) => {
+      const snap = requireSnapshot(ctx)
+      const node = findNode(snap, input.nodeId)
+      if (!isOperationNode(node)) throw new Error(`节点 ${input.nodeId} 不是 AI 操作节点`)
+      return summarizeOperationConfig(snap, node)
+    },
+  },
+  {
     name: 'canvas_find_nodes',
     description:
       '在当前画布内按文本搜索节点（匹配 title / data.text / data.prompt）。返回匹配的节点摘要。',
@@ -540,6 +595,8 @@ const tools: CanvasToolDescriptor[] = [
             providerProfileId: string('多模态/文本任务使用的 provider profile id', false),
             manifestId: string('多模态模型 manifest id', false),
             modelId: string('模型 id', false),
+            reasoningEffort: enumOf(['medium', 'high', 'xhigh', 'max'], '统一推理强度'),
+            skillIds: array(string('Skill id'), '文本任务使用的 Skill id 列表'),
             pipelineRole: enumOf(
               PIPELINE_ROLES as unknown as string[],
               '节点在影视流水线中的语义角色',
@@ -598,6 +655,35 @@ const tools: CanvasToolDescriptor[] = [
     ) => {
       await ctx.workspace.patchNodes(input.nodeIds, input.patch)
       return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_update_operation_config',
+    description:
+      '持久化更新 AI 操作节点配置，并同步关联任务；后续 retry 会使用新参数。modelParams 为完整替换值。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeId', 'config'],
+      properties: {
+        nodeId: string('AI 操作节点 id'),
+        title: string('节点标题（可选）', false),
+        config: {
+          type: 'object',
+          additionalProperties: true,
+          description: '只传需要修改的配置字段；修改前先读取 canvas_get_operation_config。',
+        },
+      },
+    },
+    handler: async (
+      ctx,
+      input: { nodeId: string; title?: string; config: Partial<CanvasNodeData> },
+    ) => {
+      const snap = requireSnapshot(ctx)
+      const node = findNode(snap, input.nodeId)
+      if (!isOperationNode(node)) throw new Error(`节点 ${input.nodeId} 不是 AI 操作节点`)
+      await ctx.workspace.updateNodeData(input.nodeId, input.config)
+      if (input.title != null) await ctx.workspace.patchNodes([input.nodeId], { title: input.title })
+      return { ok: true, nodeId: input.nodeId, taskId: node.taskId ?? null }
     },
   },
   {
@@ -950,10 +1036,10 @@ const tools: CanvasToolDescriptor[] = [
     description: '运行已存在的 AI 操作节点（提交 prompt + 输入，调用对应模型生成结果）。',
     paramsSchema: {
       type: 'object',
-      required: ['nodeId', 'prompt'],
+      required: ['nodeId'],
       properties: {
         nodeId: string('操作节点 id'),
-        prompt: string('提示词'),
+        prompt: string('提示词；省略时使用节点已保存的 prompt', false),
         negativePrompt: string('负面提示词', false),
         inputNodeIds: array(string('节点 id'), '覆盖默认输入节点（可选）'),
         inputAssetIds: array(string('资产 id'), '直接用项目资产作为输入（可选）'),
@@ -977,7 +1063,7 @@ const tools: CanvasToolDescriptor[] = [
       ctx,
       input: {
         nodeId: string
-        prompt: string
+        prompt?: string
         negativePrompt?: string
         inputNodeIds?: string[]
         inputAssetIds?: string[]
@@ -989,8 +1075,14 @@ const tools: CanvasToolDescriptor[] = [
         modelParams?: Record<string, unknown>
       },
     ) => {
+      const snap = requireSnapshot(ctx)
+      const node = findNode(snap, input.nodeId)
+      if (!isOperationNode(node)) throw new Error(`节点 ${input.nodeId} 不是 AI 操作节点`)
+      const savedPrompt = node.data.prompt ?? (node.taskId ? snap.tasks.find((t) => t.id === node.taskId)?.prompt : null)
+      const prompt = input.prompt ?? savedPrompt
+      if (!prompt?.trim()) throw new Error('操作节点没有可运行的 prompt，请先更新配置或传入 prompt。')
       const { nodeId, ...params } = input
-      await ctx.workspace.runOperationNode(nodeId, params)
+      await ctx.workspace.runOperationNode(nodeId, { ...params, prompt })
       return { ok: true, nodeId }
     },
   },

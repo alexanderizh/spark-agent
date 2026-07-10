@@ -1,6 +1,8 @@
-import { Button, Tag, Tooltip } from '@lobehub/ui'
-import { Switch } from 'antd'
+import { useState } from 'react'
+import { Button, Segmented, Tag, Tooltip } from '@lobehub/ui'
+import { Popover, Switch } from 'antd'
 import { Icons } from '../../Icons'
+import type { CanvasAutoLayoutMode, CanvasAutoLayoutSpacing } from './canvasAutoLayout'
 
 export type CanvasTool = 'select' | 'pan' | 'text' | 'image'
 
@@ -17,6 +19,9 @@ export function CanvasToolbar({
   onSave,
   onAutoSaveChange,
   onExport,
+  selectedCount = 0,
+  arranging = false,
+  onArrange,
 }: {
   activeTool?: CanvasTool
   onToolChange?: (tool: CanvasTool) => void
@@ -42,7 +47,20 @@ export function CanvasToolbar({
   onSave: () => void
   onAutoSaveChange: (enabled: boolean) => void
   onExport: () => void
+  arranging?: boolean
+  onArrange: (options: {
+    mode: CanvasAutoLayoutMode
+    spacing: CanvasAutoLayoutSpacing
+  }) => Promise<void>
 }) {
+  const [arrangeOpen, setArrangeOpen] = useState(false)
+  const [layoutMode, setLayoutMode] = useState<CanvasAutoLayoutMode>('grid')
+  const [layoutSpacing, setLayoutSpacing] = useState<CanvasAutoLayoutSpacing>('medium')
+  const partialLayout = selectedCount > 1
+  const arrangeScopeLabel = partialLayout
+    ? `仅整理所选 ${selectedCount} 个节点`
+    : '整理全画布（单选仍按全画布处理）'
+
   return (
     <div className="canvas-toolbar" role="toolbar" aria-label="Canvas toolbar">
       <div className="canvas-toolbar-group canvas-toolbar-save">
@@ -79,6 +97,65 @@ export function CanvasToolbar({
         <Button size="middle" icon={<Icons.Download size={15} />} onClick={onExport}>
           导出
         </Button>
+        <Popover
+          trigger="click"
+          placement="bottomRight"
+          open={arrangeOpen}
+          onOpenChange={(open) => !arranging && setArrangeOpen(open)}
+          content={
+            <div className="canvas-auto-layout-popover">
+              <div className="canvas-auto-layout-title">自动整理画布</div>
+              <div className="canvas-auto-layout-scope">{arrangeScopeLabel}</div>
+              <label>
+                <span>排列方式</span>
+                <Segmented
+                  value={layoutMode}
+                  onChange={(value) => setLayoutMode(value as CanvasAutoLayoutMode)}
+                  options={[
+                    { label: '横向', value: 'horizontal' },
+                    { label: '纵向', value: 'vertical' },
+                    { label: '宫格', value: 'grid' },
+                  ]}
+                />
+              </label>
+              <label>
+                <span>节点间距</span>
+                <Segmented
+                  value={layoutSpacing}
+                  onChange={(value) => setLayoutSpacing(value as CanvasAutoLayoutSpacing)}
+                  options={[
+                    { label: '小', value: 'small' },
+                    { label: '中', value: 'medium' },
+                    { label: '大', value: 'large' },
+                    { label: '超大', value: 'extra-large' },
+                  ]}
+                />
+              </label>
+              <Button
+                type="primary"
+                block
+                loading={arranging}
+                icon={<Icons.Grid size={15} />}
+                onClick={() =>
+                  void onArrange({ mode: layoutMode, spacing: layoutSpacing }).then(() =>
+                    setArrangeOpen(false),
+                  )
+                }
+              >
+                开始整理
+              </Button>
+            </div>
+          }
+        >
+          <Button
+            size="middle"
+            loading={arranging}
+            icon={<Icons.Grid size={15} />}
+            aria-label="自动整理画布"
+          >
+            自动整理
+          </Button>
+        </Popover>
       </div>
     </div>
   )

@@ -18,6 +18,9 @@ export type CanvasOperationOutputView = {
   mimeType?: string
   width?: number
   height?: number
+  pipelineRole?: CanvasNode['data']['pipelineRole']
+  productionState?: CanvasNode['data']['productionState']
+  panorama360?: CanvasNode['data']['panorama360']
   createdAt: string
   updatedAt: string
 }
@@ -30,6 +33,7 @@ export type CanvasOperationRunView = {
   completedAt?: string
   provider?: string
   modelId?: string
+  workflow?: string
   outputs: CanvasOperationOutputView[]
 }
 
@@ -37,6 +41,39 @@ function outputTypeForNode(node: CanvasNode | undefined, asset: CanvasAsset | un
   if (asset) return asset.type
   if (node?.type === 'image' || node?.type === 'audio' || node?.type === 'video') return node.type
   return 'text' as const
+}
+
+function outputPipelineRole(
+  node: CanvasNode | undefined,
+  asset: CanvasAsset | undefined,
+): CanvasNode['data']['pipelineRole'] {
+  if (node?.data.pipelineRole) return node.data.pipelineRole
+  const assetKind = asset?.metadata.kind
+  if (
+    assetKind === 'character' ||
+    assetKind === 'scene' ||
+    assetKind === 'prop' ||
+    assetKind === 'effect'
+  ) {
+    return assetKind
+  }
+  const filmKind = asset?.metadata.filmKind
+  if (
+    filmKind === 'character' ||
+    filmKind === 'scene' ||
+    filmKind === 'prop' ||
+    filmKind === 'effect' ||
+    filmKind === 'camera' ||
+    filmKind === 'frame' ||
+    filmKind === 'action' ||
+    filmKind === 'design_card' ||
+    filmKind === 'shot' ||
+    filmKind === 'keyframe' ||
+    filmKind === 'clip'
+  ) {
+    return filmKind
+  }
+  return undefined
 }
 
 function operationOutputView(
@@ -50,6 +87,7 @@ function operationOutputView(
   const mimeType = node?.data.mimeType ?? asset?.mimeType ?? undefined
   const width = asset?.width ?? undefined
   const height = asset?.height ?? undefined
+  const pipelineRole = outputPipelineRole(node, asset)
   return {
     id: node?.id ?? asset?.id ?? fallbackId,
     ...(node ? { nodeId: node.id } : {}),
@@ -62,6 +100,9 @@ function operationOutputView(
     ...(mimeType ? { mimeType } : {}),
     ...(width ? { width } : {}),
     ...(height ? { height } : {}),
+    ...(pipelineRole ? { pipelineRole } : {}),
+    ...(node?.data.productionState ? { productionState: node.data.productionState } : {}),
+    ...(node?.data.panorama360 ? { panorama360: node.data.panorama360 } : {}),
     createdAt: node?.createdAt ?? asset?.createdAt ?? '',
     updatedAt: node?.updatedAt ?? asset?.updatedAt ?? '',
   }
@@ -122,6 +163,9 @@ export function buildCanvasOperationRunViews(
         ...(task.completedAt ? { completedAt: task.completedAt } : {}),
         ...(task.provider ? { provider: task.provider } : {}),
         ...(task.modelId ? { modelId: task.modelId } : {}),
+        ...(typeof task.modelParams?.workflow === 'string'
+          ? { workflow: task.modelParams.workflow }
+          : {}),
         outputs,
       }
     })

@@ -1,0 +1,56 @@
+.canvas-operation-output-storyboard {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.canvas-operation-output-storyboard .canvas-node-shot-table-wrap {
+  height: 100%;
+}
+
+.canvas-operation-output-json {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: auto;
+  padding: 16px 18px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.canvas-operation-output-json.is-detail {
+  padding: 24px 28px;
+  font-size: 13px;
+}
+
+.canvas-operation-output-media.is-detail {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #080a0e;
+}
+
+.canvas-operation-output-text.is-detail {
+  align-items: flex-start;
+  gap: 16px;
+  padding: 26px 30px;
+  font-size: 14px;
+  line-height: 1.75;
+  text-align: left;
+  white-space: pre-wrap;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.canvas-operation-output-audio.is-detail,
+.canvas-operation-output-empty.is-detail {
+  min-height: 320px;
+}

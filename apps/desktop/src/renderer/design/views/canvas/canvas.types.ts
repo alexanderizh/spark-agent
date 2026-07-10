@@ -54,6 +54,10 @@ export type CanvasOperationType =
 
 export type CanvasInputTransport = 'auto' | 'cloud_url' | 'base64'
 
+/** 操作步骤的产物组织语义；UI 合一，但运行历史与产物集合仍保留明确结构。 */
+export type CanvasOperationOutputMode = 'single' | 'candidates' | 'collection' | 'bundle'
+export type CanvasOperationOutputSelectionPolicy = 'auto_latest' | 'manual'
+
 /**
  * 流水线语义角色（设计 §6 节点模型）。
  * 与底层 CanvasNodeType 解耦：用 data.pipelineRole 标记节点在
@@ -152,6 +156,19 @@ export type CanvasNodeData = {
   thumbnailUrl?: string
   mimeType?: string
   operation?: CanvasOperationType
+  /** 单产物 / 候选 / 集合 / 角色包；缺省时由工作流和最近一次运行自动推断。 */
+  outputMode?: CanvasOperationOutputMode
+  /** 默认资源操作与候选型下游传参所使用的主产物。可匹配 output/node/asset id。 */
+  primaryOutputId?: string
+  /** 主产物选择策略；手动选择后即使再次运行也保留采用项。 */
+  primaryOutputSelection?: CanvasOperationOutputSelectionPolicy
+  /** 从操作节点展开出的资产引用节点；同一 outputId 重复展开时复用现有引用。 */
+  materializedOutput?: {
+    operationNodeId: string
+    outputId: string
+    taskId?: string
+    materializedAt: string
+  }
   status?: CanvasTaskStatus
   progress?: number
   message?: string
@@ -169,6 +186,8 @@ export type CanvasNodeData = {
   agentId?: string
   /** 上次保存/运行时选择的文本 Skills，仅文本节点任务使用 */
   skillIds?: string[]
+  /** 与关联 CanvasTask 同步的统一推理强度。 */
+  reasoningEffort?: SessionReasoningEffort
   /** UI 表现层子类型（如 'script'），不改变底层 node type */
   subtype?: string
   /** 节点展示分类，用于添加节点菜单分组：内容 / 任务 / 资源 */

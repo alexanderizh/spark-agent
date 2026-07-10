@@ -144,6 +144,49 @@ function writeCanvasAgentPrefs(
   }
 }
 
+const CANVAS_AGENT_DRAFTS_KEY = 'spark-agent:canvas-agent-input-drafts'
+
+function readCanvasAgentDrafts(): Record<string, string> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(CANVAS_AGENT_DRAFTS_KEY)
+    if (raw == null) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (parsed == null || typeof parsed !== 'object') return {}
+    const drafts: Record<string, string> = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === 'string') drafts[key] = value
+    }
+    return drafts
+  } catch {
+    return {}
+  }
+}
+
+function readCanvasAgentDraft(projectId: string): string {
+  return readCanvasAgentDrafts()[projectId] ?? ''
+}
+
+function writeCanvasAgentDraft(projectId: string, text: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    const drafts = readCanvasAgentDrafts()
+    if (text.length === 0) {
+      delete drafts[projectId]
+    } else {
+      drafts[projectId] = text
+    }
+    const keys = Object.keys(drafts)
+    if (keys.length === 0) {
+      window.localStorage.removeItem(CANVAS_AGENT_DRAFTS_KEY)
+    } else {
+      window.localStorage.setItem(CANVAS_AGENT_DRAFTS_KEY, JSON.stringify(drafts))
+    }
+  } catch {
+    // 草稿持久化是 best effort，失败不影响输入
+  }
+}
+
 function pickCanvasAgent(
   agents: ManagedAgent[],
   preferredId: string | null | undefined,
@@ -296,6 +339,11 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
   const manualSessionChoiceRef = useRef(false)
   const appliedRuntimeSessionRef = useRef<string | null>(null)
   const sessionCacheRef = useRef<Map<string, CanvasAgentProjectCache>>(new Map())
+  const [draftInput, setDraftInput] = useState(() => readCanvasAgentDraft(projectId))
+  // 渲染期同步最新值，供防抖/卸载 flush 取值，避免 closure 陷阱
+  const draftPersistRef = useRef({ projectId, draftInput })
+  draftPersistRef.current = { projectId, draftInput }
+  const prevProjectIdRef = useRef(projectId)
 
   useCanvasToolHost({
     sessionId,
@@ -417,6 +465,12 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
   )
 
   useEffect(() => {
+    const prevId = prevProjectIdRef.current
+    if (prevId !== projectId) {
+      // 切项目：先 flush 旧项目未落盘草稿（此时 closure 的 draftInput 仍是旧项目值）
+      writeCanvasAgentDraft(prevId, draftInput)
+      prevProjectIdRef.current = projectId
+    }
     const cached = sessionCacheRef.current.get(projectId)
     const prefs = readCanvasAgentPrefs()
     manualSessionChoiceRef.current = false
@@ -428,10 +482,28 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
     setDraftProviderId(prefs.draftProviderId ?? cached?.draftProviderId ?? '')
     setDraftModelId(prefs.draftModelId ?? cached?.draftModelId ?? '')
     setSelectedExtraSkillIds(prefs.selectedExtraSkillIds ?? cached?.selectedExtraSkillIds ?? [])
+    setDraftInput(readCanvasAgentDraft(projectId))
     setRunning(false)
     firstTurnRef.current = cached?.firstTurnSent !== true
     setError(null)
+    // draftInput 用于切项目时 flush 旧项目草稿，故不放入依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
+
+  // 草稿防抖落盘（300ms），用 ref 取最新值避免 closure 陷阱
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      writeCanvasAgentDraft(draftPersistRef.current.projectId, draftPersistRef.current.draftInput)
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [draftInput, projectId])
+
+  // 卸载时 flush 最新草稿（离开画布工作区等场景）
+  useEffect(() => {
+    return () => {
+      writeCanvasAgentDraft(draftPersistRef.current.projectId, draftPersistRef.current.draftInput)
+    }
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -1028,6 +1100,8 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
           error={error}
           composer={composerBar}
           onSend={handleSend}
+          initialInput={draftInput}
+          onDraftChange={setDraftInput}
           agents={agents}
           fallbackAssistant={fallbackAssistant}
           persistedSessionStatus={selectedProjectSession?.status ?? null}

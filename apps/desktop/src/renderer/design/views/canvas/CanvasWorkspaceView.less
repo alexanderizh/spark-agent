@@ -386,6 +386,34 @@
   white-space: nowrap;
 }
 
+.canvas-auto-layout-popover {
+  display: grid;
+  width: 320px;
+  gap: 14px;
+}
+
+.canvas-auto-layout-title {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.canvas-auto-layout-scope {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.canvas-auto-layout-popover label {
+  display: grid;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.canvas-auto-layout-popover .ant-segmented {
+  width: 100%;
+}
+
 .canvas-stage {
   --canvas-dot-grid-size: 28px;
   --canvas-dot-grid-offset: 14px;
@@ -966,6 +994,12 @@
   border-color: transparent;
 }
 
+.canvas-node-meta-chip-output {
+  color: #d9e3ef;
+  background: rgba(148, 163, 184, 0.14);
+  border-color: transparent;
+}
+
 .canvas-node-body {
   min-height: 0;
   flex: 1;
@@ -1133,6 +1167,300 @@
   gap: 9px;
   padding: 12px;
   background: var(--canvas-node-body-bg);
+}
+
+/* ─── 操作节点即步骤节点：运行状态与产物共用一张制作台卡片 ─────────── */
+.canvas-node-operation {
+  position: relative;
+  gap: 0;
+  padding: 0;
+  background: #15191f;
+}
+
+.canvas-operation-output-deck {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0;
+}
+
+.canvas-operation-output-stage {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #191d23;
+  box-shadow: none;
+}
+
+.canvas-operation-output-media {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: block;
+  object-fit: contain;
+  background: #0e1116;
+}
+
+.canvas-operation-output-audio,
+.canvas-operation-output-empty,
+.canvas-operation-output-text {
+  width: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  color: rgba(226, 232, 240, 0.78);
+}
+
+.canvas-operation-output-audio,
+.canvas-operation-output-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  text-align: center;
+}
+
+.canvas-operation-output-audio audio {
+  width: min(360px, 88%);
+}
+
+.canvas-operation-output-text {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  padding: 18px 20px 36px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.canvas-operation-output-text > svg {
+  margin-top: 2px;
+  color: rgba(148, 163, 184, 0.68);
+}
+
+.canvas-operation-output-stage-label {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 18px 12px 8px;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(180deg, transparent, rgba(9, 12, 16, 0.9));
+  color: rgba(241, 245, 249, 0.88);
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.canvas-operation-output-stage-label > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-operation-output-stage-label > span:last-child {
+  flex: none;
+  color: rgba(203, 213, 225, 0.66);
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-operation-output-nav {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 8px 5px;
+  background: #15191f;
+  color: rgba(203, 213, 225, 0.68);
+  font-size: 10px;
+}
+
+.canvas-operation-run-nav {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.canvas-operation-run-nav > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-operation-run-nav button {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.82);
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.canvas-operation-run-nav button:hover:not(:disabled) {
+  color: #fff;
+}
+
+.canvas-operation-run-nav button:disabled {
+  opacity: 0.26;
+  cursor: default;
+}
+
+.canvas-operation-output-dots {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+
+.canvas-operation-output-dots button {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.36);
+  cursor: pointer;
+  transition:
+    width 0.14s ease,
+    border-radius 0.14s ease,
+    background 0.14s ease;
+}
+
+.canvas-operation-output-dots button.is-active {
+  width: 17px;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.9);
+}
+
+.canvas-operation-run-status {
+  flex: none;
+  color: rgba(203, 213, 225, 0.64);
+}
+
+.canvas-operation-run-status.is-completed {
+  color: color-mix(in srgb, var(--success) 74%, #dce9df);
+}
+
+.canvas-operation-run-status.is-failed {
+  color: color-mix(in srgb, var(--danger) 72%, #f1d6d6);
+}
+
+.canvas-operation-empty-state {
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px 18px;
+}
+
+.canvas-operation-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(148, 163, 184, 0.54);
+}
+
+.canvas-operation-empty-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* ─── 独立产物节点：保留现有拖拽/连线能力，升级为深色资源卡 ────────── */
+.canvas-node-resource-output {
+  border-color: rgba(203, 213, 225, 0.07);
+  background: #15191f;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+}
+
+.canvas-node-resource-output.canvas-node-selected {
+  border-color: rgba(226, 232, 240, 0.62);
+}
+
+.canvas-node-resource-output .canvas-node-meta-bar {
+  border-bottom-color: transparent;
+  background: #1b2027;
+}
+
+.canvas-node-resource-output .canvas-node-body {
+  padding: 0;
+  background: #15191f;
+}
+
+.canvas-node-resource-output .canvas-node-image-wrap,
+.canvas-node-resource-output > .canvas-node-core .canvas-node-image,
+.canvas-node-resource-output .canvas-node-image-placeholder,
+.canvas-node-resource-text {
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #191d23;
+  box-shadow: none;
+}
+
+.canvas-node-resource-output .canvas-node-image {
+  background: #101318;
+}
+
+.canvas-node-resource-text {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  color: rgba(226, 232, 240, 0.82);
+}
+
+.canvas-node-resource-text-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(148, 163, 184, 0.54);
+}
+
+.canvas-node-resource-text-content {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
 }
 
 /* ─── 操作节点即步骤节点：运行状态与产物共用一张制作台卡片 ─────────── */
@@ -10391,6 +10719,23 @@ body.canvas-agent-panel-resizing {
   display: flex;
   flex-direction: column;
   gap: 14px;
+
+  // antd dark algorithm 会把 solid Radio 选中态背景浅化，配默认浅色文字会糊成一团；
+  // 这里强制主色实底 + 白字，绕开浅化，保证选中态对比度。
+  .ant-radio-group-solid {
+    .ant-radio-button-wrapper-checked,
+    .ant-radio-button-wrapper-checked:hover,
+    .ant-radio-button-wrapper-checked:focus {
+      background: var(--primary, #6366f1);
+      color: #ffffff;
+      border-color: var(--primary, #6366f1);
+      // 抬高层级，避免选中态边框被相邻按钮遮住
+      z-index: 2;
+    }
+    .ant-radio-button-wrapper-checked + .ant-radio-button-wrapper {
+      border-inline-start-color: var(--primary, #6366f1);
+    }
+  }
 }
 
 [data-theme='light'] .canvas-film-save-dialog {

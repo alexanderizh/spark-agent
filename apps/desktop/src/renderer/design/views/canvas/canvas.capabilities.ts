@@ -166,6 +166,16 @@ export function isOperationNode(node: { type: CanvasNodeType }): boolean {
   return OPERATION_NODE_TYPES.has(node.type) || node.type === 'task'
 }
 
+/**
+ * 判断节点是否承载可操作的图片内容。
+ *
+ * 任务与产物合并后，360 全景图会保留 `panorama_360` 操作类型，而不是退回
+ * `image`。图片工具应基于实际内容能力，而不是持久化的节点类型。
+ */
+export function isCanvasImageContentNode(node: Pick<CanvasNode, 'type' | 'data'>): boolean {
+  return node.type === 'image' || Boolean(node.data.panorama360)
+}
+
 /** 取操作节点的 operation 名（优先 data.operation，回退 node.type，旧 task 回退 'text_generate'） */
 export function nodeOperation(node: {
   type: CanvasNodeType
