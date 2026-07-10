@@ -34,23 +34,14 @@ export function buildCanvasOperationProjection(
   const embeddedOutputNodeIds = new Set(producerByOutputNodeId.keys())
   const visibleNodes = nodes.filter((node) => !embeddedOutputNodeIds.has(node.id))
   const visibleEdges: CanvasEdge[] = []
-  const seenEdgeKeys = new Set<string>()
 
   for (const edge of edges) {
-    const targetProducerId = producerByOutputNodeId.get(edge.targetNodeId)
-    // 产物已嵌入其生产者操作节点，画布上看不到该产物；所有指向它的 generated 边都消失，
-    // 包括同一产物被多个操作生成时非首选生产者的那条（否则会折叠成操作节点之间的怪异连线）。
-    if (edge.type === 'generated' && targetProducerId) continue
+    const producerId = producerByOutputNodeId.get(edge.targetNodeId)
+    if (edge.type === 'generated' && producerId === edge.sourceNodeId) continue
 
     const sourceNodeId = producerByOutputNodeId.get(edge.sourceNodeId) ?? edge.sourceNodeId
-    const targetNodeId = targetProducerId ?? edge.targetNodeId
+    const targetNodeId = producerId ?? edge.targetNodeId
     if (sourceNodeId === targetNodeId) continue
-    // 一个操作产出多个产物（如「提取角色」一次产出多个角色节点）且都被同一下游引用时，
-    // 多条 used_as_input 边折叠后会得到端点完全相同的连线。ReactFlow 按 edge.id 区分连线，
-    // 不去重就会画出多条重叠曲线；这里按 (source, target, type) 去重，仅保留首条作为可见连线。
-    const edgeKey = `${sourceNodeId}|${targetNodeId}|${edge.type}`
-    if (seenEdgeKeys.has(edgeKey)) continue
-    seenEdgeKeys.add(edgeKey)
     visibleEdges.push(
       sourceNodeId === edge.sourceNodeId && targetNodeId === edge.targetNodeId
         ? edge

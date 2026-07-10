@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { canvasApi, isMediaOperation, isTextModelOperation } from './canvas.api'
 import type {
   CanvasBoard,
+  CanvasEdge,
   CanvasNode,
   CanvasProject,
   CanvasProjectSettings,
@@ -234,7 +235,7 @@ export function useCanvasWorkspace(projectId: string) {
   )
 
   const connectNodes = useCallback(
-    async (input: { sourceNodeId: string; targetNodeId: string }) => {
+    async (input: { sourceNodeId: string; targetNodeId: string; type?: CanvasEdge['type'] }) => {
       setSnapshot(await canvasApi.connectNodes(projectId, input))
     },
     [projectId],

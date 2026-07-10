@@ -6,7 +6,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { useIpcInvoke } from './hooks/useIpc'
-import { useToast } from './components/Toast'
+import { useOptionalToast, type ToastFn } from './components/Toast'
 import { useApp } from './AppContext'
 import { useI18n } from './i18n'
 import type {
@@ -369,7 +369,17 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     activeRef.current = active
   }, [active])
-  const { toast } = useToast()
+  const optionalToast = useOptionalToast()
+  const fallbackToast = useMemo<ToastFn>(() => {
+    const noop = () => ''
+    return Object.assign(noop, {
+      success: noop,
+      error: noop,
+      info: noop,
+      warning: noop,
+    })
+  }, [])
+  const toast = optionalToast?.toast ?? fallbackToast
   const { requestConfirm, requestPrompt } = useApp()
   const { t } = useI18n()
 
@@ -396,8 +406,9 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const refreshTerminalActivity = useCallback(async () => {
     try {
       const res = await listActiveTerminals({})
+      const sessions = Array.isArray(res.sessions) ? res.sessions : []
       setSessionTerminalActivity(
-        Object.fromEntries(res.sessions.map((item) => [item.sessionId, item] as const)),
+        Object.fromEntries(sessions.map((item) => [item.sessionId, item] as const)),
       )
     } catch (err) {
       console.warn('[terminal] list-active failed:', err)

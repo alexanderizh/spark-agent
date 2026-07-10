@@ -12,19 +12,24 @@ import { Dropdown } from '@lobehub/ui'
 import { Progress } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
+import { MarkdownText } from '../chat/ChatMarkdown'
 import { canvasFlowNodeDataEqual } from './canvasStageNodeSync'
 import { operationLabel } from './canvas.api'
-import { isOperationNode, nodeOperation } from './canvas.capabilities'
-import { isLongText, pickCanvasNodeMinSize } from './canvasNodeSize'
+import { isCanvasImageContentNode, isOperationNode, nodeOperation } from './canvas.capabilities'
+import {
+  isLongText,
+  keepsCanvasMediaNodeAspectRatio,
+  pickCanvasNodeMinSize,
+} from './canvasNodeSize'
 import { getNodePipelineActions } from './canvasPipeline'
 import { buildCanvasOperationParamSummary } from './canvasOperationParamSummary'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import { CanvasOperationOutputPreview } from './CanvasOperationOutputPreview'
+import { CanvasShotScriptTable } from './CanvasShotScriptTable'
+import { resolveCanvasOperationOutputState } from './canvasOperationOutputModel'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 import type { CanvasOperationType } from './canvas.types'
-import type {
-  CanvasOperationOutputView,
-  CanvasOperationRunView,
-} from './canvasOperationRuns'
+import type { CanvasOperationRunView } from './canvasOperationRuns'
 
 /** 把 op 的图标 key 映射为 Icons 组件（找不到回退 Workflow） */
 function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.ReactNode {
@@ -205,69 +210,6 @@ function operationRuntimeSummary(node: SparkCanvasNode): string | null {
   return provider ? `Provider ${provider}` : null
 }
 
-function OperationOutputPreview({ output }: { output: CanvasOperationOutputView }) {
-  const normalizedUrl = output.url ? normalizeEduAssetUrl(output.url) : ''
-  const normalizedThumbnail = output.thumbnailUrl
-    ? normalizeEduAssetUrl(output.thumbnailUrl)
-    : normalizedUrl
-
-  if (output.type === 'image' && normalizedThumbnail) {
-    return (
-      <img
-        className="canvas-operation-output-media"
-        src={normalizedThumbnail}
-        alt={output.title}
-        loading="lazy"
-        decoding="async"
-      />
-    )
-  }
-  if (output.type === 'video' && normalizedUrl) {
-    return (
-      <video
-        className="canvas-operation-output-media nodrag nopan"
-        src={normalizedUrl}
-        controls
-        preload="metadata"
-      />
-    )
-  }
-  if (output.type === 'audio' && normalizedUrl) {
-    return (
-      <div className="canvas-operation-output-audio">
-        <Icons.Play size={28} />
-        <audio
-          className="nodrag nopan"
-          src={normalizedUrl}
-          controls
-          preload="metadata"
-        />
-      </div>
-    )
-  }
-  if (output.type === 'text' && output.text) {
-    return (
-      <div className="canvas-operation-output-text nowheel">
-        <Icons.File size={24} />
-        <div>{output.text}</div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="canvas-operation-output-empty">
-      {output.type === 'video' || output.type === 'audio' ? (
-        <Icons.Play size={30} />
-      ) : output.type === 'image' ? (
-        <Icons.Image size={30} />
-      ) : (
-        <Icons.File size={30} />
-      )}
-      <span>{output.title}</span>
-    </div>
-  )
-}
-
 function OperationOutputDeck({
   runs,
   fallback,
@@ -295,7 +237,7 @@ function OperationOutputDeck({
   return (
     <div className="canvas-operation-output-deck">
       <div className="canvas-operation-output-stage">
-        {activeOutput ? <OperationOutputPreview output={activeOutput} /> : fallback}
+        {activeOutput ? <CanvasOperationOutputPreview output={activeOutput} /> : fallback}
         <div className="canvas-operation-output-stage-label">
           <span>{activeOutput?.title ?? operationStatusLabel(activeRun.status)}</span>
           {outputs.length > 1 ? (
@@ -417,6 +359,42 @@ export type CanvasFlowNodeData = {
   }
 }
 
+function operationOutputNodeForCapabilities(
+  operationNode: SparkCanvasNode,
+  output: CanvasOperationRunView['outputs'][number] | null,
+): SparkCanvasNode | null {
+  if (!output) return null
+  const type: SparkCanvasNode['type'] =
+    output.type === 'image' || output.type === 'video' || output.type === 'audio'
+      ? output.type
+      : output.type === 'prompt'
+        ? 'prompt'
+        : 'text'
+
+  return {
+    ...operationNode,
+    type,
+    title: output.title,
+    assetId: output.assetId ?? null,
+    data:
+      type === 'text' || type === 'prompt'
+        ? {
+            text: output.text ?? '',
+            format: type === 'prompt' ? 'prompt' : 'plain',
+            origin: 'task_output',
+            ...(output.pipelineRole ? { pipelineRole: output.pipelineRole } : {}),
+          }
+        : {
+            ...(output.url ? { url: output.url } : {}),
+            ...(output.thumbnailUrl ? { thumbnailUrl: output.thumbnailUrl } : {}),
+            ...(output.mimeType ? { mimeType: output.mimeType } : {}),
+            origin: 'task_output',
+            ...(output.pipelineRole ? { pipelineRole: output.pipelineRole } : {}),
+            ...(output.panorama360 ? { panorama360: output.panorama360 } : {}),
+          },
+  }
+}
+
 const PRODUCTION_STATE_BADGE: Partial<
   Record<NonNullable<SparkCanvasNode['data']['productionState']>, { label: string; color: string }>
 > = {
@@ -495,77 +473,6 @@ function buildDetailSheetNineGridPrompt(node: SparkCanvasNode): string {
     .join('\n')
 }
 
-/**
- * 分镜脚本产物节点的传统分镜脚本表渲染。
- * 仅展示，不带操作按钮（节点交互仍走顶部工具栏/右键菜单）。
- * 触发条件是「内容像分镜表」（见 CanvasNode 内 shotScriptRows 判定），与节点角色无关。
- * 数据来自分镜 agent 输出，parseShotTable 优先解析 JSON shots/groups.segments，兼容 Markdown 表格。
- */
-function ShotScriptTable({ rows }: { rows: ParsedShotRow[] }) {
-  const totalSec = rows.reduce((sum, row) => sum + (row.durationSec ?? 0), 0)
-  const hasDuration = rows.some((row) => row.durationSec != null)
-  return (
-    <div className="canvas-node-shot-table-wrap nowheel">
-      <table className="canvas-node-shot-table">
-        <colgroup>
-          <col className="canvas-node-shot-col-idx" />
-          {hasDuration ? <col className="canvas-node-shot-col-dur" /> : null}
-          <col className="canvas-node-shot-col-size" />
-          <col className="canvas-node-shot-col-move" />
-          <col />
-          <col className="canvas-node-shot-col-line" />
-          <col className="canvas-node-shot-col-char" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>镜号</th>
-            {hasDuration ? <th>时长</th> : null}
-            <th>景别</th>
-            <th>运镜</th>
-            <th>画面 / 动作</th>
-            <th>对白</th>
-            <th>角色</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, displayIndex) => (
-            <tr key={displayIndex}>
-              <td className="canvas-node-shot-idx">#{row.index ?? displayIndex + 1}</td>
-              {hasDuration ? (
-                <td className="canvas-node-shot-dur">
-                  {row.durationSec != null ? `${row.durationSec}s` : '—'}
-                </td>
-              ) : null}
-              <td className="canvas-node-shot-size">{row.shotSize || '—'}</td>
-              <td className="canvas-node-shot-move">{row.movement || '—'}</td>
-              <td className="canvas-node-shot-desc">
-                {row.title ? <div className="canvas-node-shot-title">{row.title}</div> : null}
-                {row.description || row.narration ? (
-                  <div>
-                    {row.description}
-                    {row.narration ? (
-                      <span className="canvas-node-shot-narr">旁白：{row.narration}</span>
-                    ) : null}
-                  </div>
-                ) : null}
-              </td>
-              <td className="canvas-node-shot-line">{row.dialogue || '—'}</td>
-              <td className="canvas-node-shot-char">
-                {row.characterNames && row.characterNames.length > 0
-                  ? row.characterNames.join('、')
-                  : '—'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="canvas-node-shot-foot">
-        共 {rows.length} 镜{hasDuration ? ` · 总时长 ${totalSec}s` : ''}
-      </div>
-    </div>
-  )
-}
-
 export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps) {
   const {
     actions,
@@ -581,6 +488,14 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const locked = Boolean(node.locked)
   const isGroup = node.type === 'group'
   const isTask = isOperationNode(node)
+  const operationOutputState = useMemo(
+    () => resolveCanvasOperationOutputState(node, operationRuns),
+    [node, operationRuns],
+  )
+  const contentNode = useMemo(
+    () => (isTask ? operationOutputNodeForCapabilities(node, operationOutputState.primaryOutput) : node),
+    [isTask, node, operationOutputState.primaryOutput],
+  )
   const roleMeta = node.data.pipelineRole ? PIPELINE_ROLE_META[node.data.pipelineRole] : undefined
   const displayType = node.type === 'prompt' ? 'text' : node.type
   const metaTypeLabel = roleMeta
@@ -610,9 +525,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
   const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
 
-  const pipelineActions = isTask ? [] : getNodePipelineActions(node)
-  const isPanorama360 = Boolean(node.data.panorama360)
-  const canExtractCharacterSubview = node.type === 'image' && !isTask
+  const hasOperationOutput = !isTask || Boolean(operationOutputState.primaryOutput)
+  const pipelineActions = contentNode ? getNodePipelineActions(contentNode) : []
+  const isPanorama360 = Boolean(contentNode?.data.panorama360 ?? node.data.panorama360)
+  const isImageContent = contentNode ? isCanvasImageContentNode(contentNode) : false
+  const canExtractCharacterSubview = isImageContent && hasOperationOutput
   // 分镜脚本产物节点：把 agent 输出的 JSON / Markdown 分镜表渲染成传统分镜脚本表。
   // 不依赖 pipelineRole（分镜脚本文本产物节点故意不打 shot 角色，避免右键出现不适用的
   // 关键帧/视频操作），改为「文本节点 + 内容像分镜表 + 能解析出多行」的内容判定，
@@ -634,19 +551,23 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const createImageOutpaintTask = () =>
     actions.createOperationChild(node.id, 'image_edit', {
       title: '图片扩图',
-      prompt: buildImageOutpaintPrompt(node),
+      prompt: buildImageOutpaintPrompt(contentNode ?? node),
       modelParams: { aspect_ratio: '2:1' },
     })
   const createDetailSheetTask = () =>
-    actions.createOperationChild(node.id, node.type === 'image' ? 'image_edit' : 'text_to_image', {
-      title: '细节设定图（九宫格）',
-      prompt: buildDetailSheetNineGridPrompt(node),
-      modelParams: { aspect_ratio: '2:1' },
-    })
+    actions.createOperationChild(
+      node.id,
+      isImageContent ? 'image_edit' : 'text_to_image',
+      {
+        title: '细节设定图（九宫格）',
+        prompt: buildDetailSheetNineGridPrompt(contentNode ?? node),
+        modelParams: { aspect_ratio: '2:1' },
+      },
+    )
   // AI 操作子菜单里「上下文专属」的快捷操作（带图标）。
   const contextualAiActions = useMemo(
     () => [
-      ...(node.type === 'image' && !isTask
+      ...(isImageContent
         ? [
             {
               key: 'outpaint-image',
@@ -668,7 +589,12 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             },
           ]
         : []),
-      ...((node.type === 'image' || node.type === 'text' || node.type === 'prompt') && !isTask
+      ...((isImageContent ||
+        Boolean(
+          hasOperationOutput &&
+            contentNode &&
+            (contentNode.type === 'text' || contentNode.type === 'prompt'),
+        ))
         ? [
             {
               key: 'detail-sheet-nine-grid',
@@ -682,7 +608,14 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           ]
         : []),
     ],
-    [createDetailSheetTask, createImageOutpaintTask, isTask, node.type, runImageStyleExtraction],
+    [
+      contentNode,
+      createDetailSheetTask,
+      createImageOutpaintTask,
+      hasOperationOutput,
+      isImageContent,
+      runImageStyleExtraction,
+    ],
   )
   const menu = useMemo(
     () => ({
@@ -733,7 +666,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           ),
           onClick: () => actions.duplicateNode(node.id),
         },
-        ...(node.type === 'image' && !isTask
+        ...(isImageContent && hasOperationOutput
           ? []
           : [
               {
@@ -746,7 +679,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 onClick: () => actions.editNode(node.id),
               },
             ]),
-        ...(node.type === 'image' && !isTask
+        ...(isImageContent && hasOperationOutput
           ? [
               ...(canExtractCharacterSubview
                 ? [
@@ -859,7 +792,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 ],
               },
             ]),
-        ...((node.type === 'image' || node.type === 'video') && !isTask
+        ...(((isImageContent || contentNode?.type === 'video') && hasOperationOutput)
           ? [
               {
                 key: 'download-media',
@@ -978,8 +911,12 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       isTask,
       locked,
       canExtractCharacterSubview,
+      contentNode,
+      hasOperationOutput,
+      isImageContent,
       node.id,
       node.type,
+      operationOutputState.primaryOutput,
       pipelineActions,
     ],
   )
@@ -1105,6 +1042,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             isVisible={showResizer}
             minWidth={minSize.width}
             minHeight={minSize.height}
+            keepAspectRatio={keepsCanvasMediaNodeAspectRatio(node.type)}
             handleClassName="canvas-node-resize-handle"
             lineClassName="canvas-node-resize-line"
           />
@@ -1243,19 +1181,19 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                   />
                 </div>
               ) : renderShotTable ? (
-                <ShotScriptTable rows={shotScriptRows} />
+                <CanvasShotScriptTable rows={shotScriptRows} />
               ) : isResourceOutput && (node.type === 'text' || node.type === 'prompt') ? (
                 <div className="canvas-node-resource-text nowheel">
                   <div className="canvas-node-resource-text-icon">
                     <Icons.File size={26} />
                   </div>
-                  <div className="canvas-node-resource-text-content">
-                    {node.data.text ?? node.data.message ?? '空文本产物'}
+                  <div className="canvas-node-resource-text-content md-surface">
+                    <MarkdownText content={node.data.text ?? node.data.message ?? '空文本产物'} />
                   </div>
                 </div>
               ) : (
-                <div className={`canvas-node-text${isTextLong ? ' canvas-node-text-long' : ''}`}>
-                  {node.data.text ?? node.data.message ?? 'Empty'}
+                <div className={`canvas-node-text md-surface${isTextLong ? ' canvas-node-text-long' : ''}`}>
+                  <MarkdownText content={node.data.text ?? node.data.message ?? 'Empty'} />
                 </div>
               )}
             </div>

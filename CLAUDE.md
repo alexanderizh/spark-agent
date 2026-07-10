@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **spark-agent** (33304 symbols, 56934 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **spark-agent** (33726 symbols, 57608 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -67,3 +67,6 @@ This project is indexed by GitNexus as **spark-agent** (33304 symbols, 56934 rel
 不适用：`docs/adr/`（ADR 一旦记录通常不变）、`docs/reviews/`（带日期的历史复盘快照）、`README.md`、`CHANGELOG.md`、纯参考类文档（如 `agents-workflows.md`、`remote-connections.md` 等若仅描述当前能力且与代码同步维护，可不带状态行）。
 
 判定原则：**只要文档描述的是「打算做的事」而不是「当前是什么」，就必须带状态行。**
+
+
+写代码时控制好单文件的大小长度，如果一个代码文件超过了3000行，就不要在单文件上直接加东西了，能拆分为独立组件、工具、枚举数据等文件的都拆分出去使用模块导入，避免单文件过大；

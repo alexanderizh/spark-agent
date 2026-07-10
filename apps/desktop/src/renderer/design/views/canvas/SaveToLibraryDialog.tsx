@@ -29,12 +29,19 @@ const KINDS_FOR_NODE: FilmAssetKind[] = ['character', 'scene', 'prop', 'effect',
 function defaultKindForNode(node: CanvasNode): FilmAssetKind {
   // 文本类节点默认归入 prompt_library
   if (node.type === 'text' || node.type === 'prompt') return 'prompt_library'
-  // task 节点看 operation 名
-  if (node.type === 'task') {
-    const op = node.data?.operation
+  // 任务与产物合一后，操作类型不再固定挂在旧 task 节点上。
+  const op = node.data?.operation
+  if (op) {
     if (op === 'image_to_image' || op === 'image_edit') return 'prop'
-    if (op === 'image_to_video' || op === 'text_to_video' || op === 'video_edit' || op === 'video_extend') return 'scene'
-    if (op === 'text_generate' || op === 'text_rewrite' || op === 'prompt_optimize') return 'prompt_library'
+    if (
+      op === 'image_to_video' ||
+      op === 'text_to_video' ||
+      op === 'video_edit' ||
+      op === 'video_extend'
+    )
+      return 'scene'
+    if (op === 'text_generate' || op === 'text_rewrite' || op === 'prompt_optimize')
+      return 'prompt_library'
     if (op === 'text_to_audio' || op === 'audio_transcribe') return 'prop'
   }
   // 视频/音频节点默认 prop
@@ -71,6 +78,7 @@ export function SaveToLibraryDialog({
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const outputAsset = useMemo(() => resolveNodeOutputAsset(node, snapshot), [node, snapshot])
 
   // 节点变化时重置表单
   useEffect(() => {
@@ -83,9 +91,7 @@ export function SaveToLibraryDialog({
   // 预填的 references（仅显示，不让编辑）
   const prefilledRefs = useMemo<FilmReference[]>(() => {
     if (!node) return []
-    const linkedAsset = node.assetId
-      ? snapshot.assets.find((a) => a.id === node.assetId)
-      : null
+    const linkedAsset = outputAsset
     if (linkedAsset && (linkedAsset.type === 'image' || linkedAsset.url)) {
       return [
         {
@@ -98,7 +104,7 @@ export function SaveToLibraryDialog({
       ]
     }
     return []
-  }, [node, snapshot.assets])
+  }, [node, outputAsset])
 
   if (!node) return null
 
@@ -151,7 +157,7 @@ export function SaveToLibraryDialog({
     >
       <div className="canvas-film-save-dialog">
         <div className="canvas-film-save-preview">
-          <NodePreview node={node} linkedAsset={node.assetId ? snapshot.assets.find((a) => a.id === node.assetId) : undefined} />
+          <NodePreview node={node} linkedAsset={outputAsset ?? undefined} />
         </div>
 
         <div className="canvas-film-save-field">
@@ -217,11 +223,39 @@ export function SaveToLibraryDialog({
 function guessDescription(node: CanvasNode, snapshot: CanvasSnapshot): string {
   if (typeof node.data?.text === 'string' && node.data.text.trim()) return node.data.text
   if (typeof node.data?.prompt === 'string' && node.data.prompt.trim()) return node.data.prompt
-  if (node.assetId) {
-    const linked = snapshot.assets.find((a) => a.id === node.assetId)
-    if (linked?.contentText) return linked.contentText
-  }
+  const linked = resolveNodeOutputAsset(node, snapshot)
+  if (linked?.contentText) return linked.contentText
   return ''
+}
+
+function resolveNodeOutputAsset(node: CanvasNode | null, snapshot: CanvasSnapshot): CanvasAsset | null {
+  if (!node) return null
+  if (node.assetId) return snapshot.assets.find((asset) => asset.id === node.assetId) ?? null
+  if (!node.taskId) return null
+  const task = snapshot.tasks.find((item) => item.id === node.taskId)
+  if (!task) return null
+
+  const primaryOutputId = node.data?.primaryOutputId
+  if (primaryOutputId) {
+    const primaryAsset = snapshot.assets.find((asset) => asset.id === primaryOutputId)
+    if (primaryAsset) return primaryAsset
+    const primaryNode = snapshot.nodes.find((item) => item.id === primaryOutputId)
+    if (primaryNode?.assetId) {
+      return snapshot.assets.find((asset) => asset.id === primaryNode.assetId) ?? null
+    }
+  }
+
+  const outputNode = task.outputNodeIds
+    .map((nodeId) => snapshot.nodes.find((item) => item.id === nodeId))
+    .find((item) => Boolean(item?.assetId))
+  if (outputNode?.assetId) {
+    return snapshot.assets.find((asset) => asset.id === outputNode.assetId) ?? null
+  }
+
+  const outputAssetId = task.outputAssetIds[0]
+  return outputAssetId
+    ? (snapshot.assets.find((asset) => asset.id === outputAssetId) ?? null)
+    : null
 }
 
 function NodePreview({ node, linkedAsset }: { node: CanvasNode; linkedAsset: CanvasAsset | undefined }) {

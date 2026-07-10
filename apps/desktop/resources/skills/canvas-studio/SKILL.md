@@ -102,8 +102,10 @@ CanvasProject
 ### 节点 / 连线 / 分组
 
 - `canvas_list_nodes(type?, includeHidden?)`、`canvas_get_node(nodeId)`、`canvas_find_nodes(query)`、`canvas_list_group_members(groupId)`。
+- `canvas_get_operation_config(nodeId)`：读取 AI 操作节点的当前配置、关联任务、连线输入和能力约束。
 - `canvas_create_text_node(text, x?, y?)`、`canvas_create_prompt_node(prompt, title?, x?, y?)`。
-- `canvas_update_node_data(nodeId, data)`：可写 `text/prompt/negativePrompt/modelParams/agentId/providerProfileId/manifestId/modelId/pipelineRole/outputPipelineRole/productionState/shotGroupId/shotSegmentId` 等字段。
+- `canvas_update_node_data(nodeId, data)`：可写 `text/prompt/negativePrompt/modelParams/agentId/providerProfileId/manifestId/modelId/reasoningEffort/skillIds/pipelineRole/outputPipelineRole/productionState/shotGroupId/shotSegmentId` 等字段。
+- `canvas_update_operation_config(nodeId, config, title?)`：持久化更新操作节点配置并同步关联任务，适合精确调参。
 - `canvas_patch_nodes(nodeIds, patch)`：批量改坐标、尺寸、标题、锁定、隐藏、层级。
 - `canvas_delete_nodes`、`canvas_duplicate_nodes`、`canvas_connect_nodes`。
 - `canvas_create_group`、`canvas_dissolve_group`、`canvas_add_to_group`、`canvas_remove_from_group`。
@@ -123,7 +125,7 @@ CanvasProject
 - `canvas_list_capabilities`：查看已启用能力和输入/输出类型。
 - `canvas_list_media_models(enabledOnly?)`：选择 `providerProfileId/manifestId/modelId`。
 - `canvas_create_operation_node(operation, inputNodeIds?, title?, prompt?, negativePrompt?, modelParams?, agentId?, providerProfileId?, manifestId?, modelId?, taskPipelineRole?, outputPipelineRole?, x?, y?)`：创建但不运行。
-- `canvas_run_operation(nodeId, prompt, negativePrompt?, inputNodeIds?, inputAssetIds?, agentId?, providerProfileId?, manifestId?, modelId?, modelParams?)`：运行已有操作节点。
+- `canvas_run_operation(nodeId, prompt?, negativePrompt?, inputNodeIds?, inputAssetIds?, agentId?, providerProfileId?, manifestId?, modelId?, modelParams?)`：运行已有操作节点；省略 prompt 时使用节点已保存值。
 - `canvas_retry_operation(nodeId)`、`canvas_cancel_task(taskId)`、`canvas_list_tasks(status?)`。
 
 ### 分镜
@@ -165,7 +167,7 @@ CanvasProject
 
 ## 操作节点的参数与任务提交（关键，务必理解）
 
-**Agent 完全可以改节点参数并提交任务**——但要分清操作节点的三层参数与各自的持久化范围，否则会出现「我以为改了，但 retry 又变回去」的问题。
+**Agent 完全可以精确改节点参数并提交任务**。先用 `canvas_get_operation_config` 获取当前值；持久化修改优先使用 `canvas_update_operation_config`，它会同步节点和关联任务。
 
 ### 三层参数
 

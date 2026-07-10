@@ -54,6 +54,10 @@ export interface ChatPanelProps {
    * ChatPanel 会捕获并显示 sendError。未传则走默认的 session:send-turn。
    */
   onSend?: (text: string, attachments: SessionAttachment[]) => Promise<void>
+  /** 可选：输入草稿初始值（父组件持久化未发送的输入，关闭重开可恢复） */
+  initialInput?: string
+  /** 可选：输入文本变化通知（父组件据此持久化草稿） */
+  onDraftChange?: (text: string) => void
   /** 可选：输入区上方的配置条（agent/provider/model/权限选择器等） */
   composer?: React.ReactNode
   /** 可选：当前可用 agent 列表，用于解析 assistant 头像 */
@@ -89,13 +93,27 @@ export function ChatPanel({
   onAfterSend,
   toolNamePrefixFilter,
   onSend,
+  initialInput,
+  onDraftChange,
   composer,
   agents = [],
   fallbackAssistant,
   persistedSessionStatus,
 }: ChatPanelProps): React.ReactElement {
   const [messages, setMessages] = useState<UIMessage[]>([])
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(initialInput ?? '')
+  const applyInput = useCallback(
+    (next: string) => {
+      setInput(next)
+      onDraftChange?.(next)
+    },
+    [onDraftChange],
+  )
+  // 父组件草稿变化时同步回输入框；用户主动输入时 prev===initialInput，不会被覆盖
+  useEffect(() => {
+    if (initialInput == null) return
+    setInput((prev) => (prev === initialInput ? prev : initialInput))
+  }, [initialInput])
   const [attachments, setAttachments] = useState<ChatPanelAttachment[]>([])
   const [status, setStatus] = useState<AssistantStatus>('idle')
   const [cancelling, setCancelling] = useState(false)
@@ -315,7 +333,7 @@ export function ChatPanel({
     if ((text.length === 0 && turnAttachments.length === 0) || status !== 'idle') return
     if (onSend == null && sessionId == null) return
     const rawText = text || '请查看附件。'
-    setInput('')
+    applyInput('')
     setAttachments([])
     setStatus('sending')
     setSendError(null)
@@ -336,7 +354,7 @@ export function ChatPanel({
       }
       onAfterSend?.(rawText)
     } catch (err) {
-      setInput(rawText === '请查看附件。' && text.length === 0 ? '' : rawText)
+      applyInput(rawText === '请查看附件。' && text.length === 0 ? '' : rawText)
       setAttachments(
         pendingAttachmentsToComposer(turnAttachments).concat(
           attachments.filter(
@@ -354,7 +372,7 @@ export function ChatPanel({
       setPendingUserAttachments([])
       setShowAssistantPending(false)
     }
-  }, [attachments, input, onAfterSend, onSend, sessionId, status])
+  }, [applyInput, attachments, input, onAfterSend, onSend, sessionId, status])
 
   const handleCancel = useCallback(async () => {
     if (sessionId == null || status === 'idle' || cancelling) return
@@ -453,8 +471,10 @@ export function ChatPanel({
           value={input}
           placeholder={inputPlaceholder}
           disabled={disabled}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => applyInput(e.target.value)}
           onKeyDown={(e) => {
+            const nativeEvent = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
+            if (nativeEvent.isComposing || e.keyCode === 229) return
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
               void handleSend()

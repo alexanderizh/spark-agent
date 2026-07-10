@@ -3678,6 +3678,29 @@ export const canvasApi = {
       node.data = nextData
       node.updatedAt = at
 
+      // Operation node data is the editable configuration shown to the user/Agent.
+      // Keep the bound task aligned so retry uses the latest persisted values.
+      const task = node.taskId
+        ? db.tasks.find((item) => item.id === node.taskId && item.projectId === projectId)
+        : null
+      if (task) {
+        if (Object.prototype.hasOwnProperty.call(data, 'prompt')) task.prompt = data.prompt ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'negativePrompt'))
+          task.negativePrompt = data.negativePrompt ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'modelParams'))
+          task.modelParams = data.modelParams ?? {}
+        if (Object.prototype.hasOwnProperty.call(data, 'agentId')) task.agentId = data.agentId ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'providerProfileId'))
+          task.providerProfileId = data.providerProfileId ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'manifestId'))
+          task.manifestId = data.manifestId ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'modelId')) task.modelId = data.modelId ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'skillIds')) task.skillIds = data.skillIds ?? []
+        if (Object.prototype.hasOwnProperty.call(data, 'reasoningEffort'))
+          task.reasoningEffort = data.reasoningEffort ?? null
+        task.updatedAt = at
+      }
+
       const asset = node.assetId ? db.assets.find((item) => item.id === node.assetId) : null
       if (
         asset &&
