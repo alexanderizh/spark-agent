@@ -31,10 +31,10 @@
 - Test: `packages/storage/src/repositories/event.repository.test.ts`
 - Test: `packages/agent-runtime/src/__tests__/services/session-event-sequencer.test.ts`
 
-- [ ] Add `nextSeqBySession()` using `COALESCE(MAX(seq), -1) + 1` and prove it survives deleted rows and hidden delta rows.
-- [ ] Centralize sequence reservation so command, normal turn, restart recovery, imported session continuation, and out-of-band events seed from persisted max seq.
-- [ ] Persist before publishing; add bounded handling and structured logging for SQLite failures so an event is never shown as durable when insertion failed.
-- [ ] Review affected execution flows and commit the storage/sequence fix.
+- [x] Add `nextSeqBySession()` using `COALESCE(MAX(seq), -1) + 1` and prove it survives deleted rows and hidden delta rows.
+- [x] Centralize sequence reservation so command, normal turn, restart recovery, imported session continuation, and out-of-band events seed from persisted max seq.
+- [x] Persist before publishing; fail closed with structured logging so an event is never shown as durable when insertion failed.
+- [x] Review affected execution flows and commit the storage/sequence fix.
 
 ### Task 3: Cancellation And Restart Stream Finalization
 

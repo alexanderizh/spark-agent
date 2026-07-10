@@ -312,6 +312,15 @@ export class EventRepository extends BaseRepository {
     return row.count
   }
 
+  /** 从已持久化的最大 seq 分配下一个序号，不受删除行或 delta 过滤影响。 */
+  nextSeqBySession(sessionId: string): number {
+    const stmt = this.raw.prepare(
+      'SELECT COALESCE(MAX(seq), -1) + 1 AS nextSeq FROM agent_events WHERE session_id = ?',
+    )
+    const row = stmt.get(sessionId) as { nextSeq: number }
+    return row.nextSeq
+  }
+
   /** 批量统计多个 session 的事件数量，避免会话列表刷新时 N+1 查询。 */
   countBySessions(sessionIds: string[]): Map<string, number> {
     if (sessionIds.length === 0) return new Map()
