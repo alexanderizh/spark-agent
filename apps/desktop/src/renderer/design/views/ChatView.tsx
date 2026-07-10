@@ -196,6 +196,11 @@ import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useAppearanceSettings, readAppearance } from '../hooks/useAppearance'
 import { MessageBuilder } from '../services/event-mapper'
+import {
+  LiveAgentEventBuffer,
+  createAgentEventIdSet,
+  mergeAgentEvents,
+} from '../services/live-agent-event-buffer'
 import { filterTurnSummaryIgnoredPaths } from '../services/turn-summary-filter'
 import {
   isComposerSessionWorking,
@@ -2395,11 +2400,12 @@ function ChatStream({
   const [hasMoreHistory, setHasMoreHistory] = useState(false)
   const [isLoadingOlder, setIsLoadingOlder] = useState(false)
   const builderRef = useRef(new MessageBuilder())
-  const rafRef = useRef<number | null>(null)
   const isStreamingRef = useRef(false)
   const userScrolledRef = useRef(false)
   const hydratingRef = useRef(false)
   const bufferedEventsRef = useRef<AgentEvent[]>([])
+  const liveEventBufferRef = useRef<LiveAgentEventBuffer | null>(null)
+  const processLiveEventBatchRef = useRef<(events: AgentEvent[]) => void>(() => {})
   const historyLoadIdRef = useRef(0)
   // 死循环护栏/探针：切换会话时历史加载 effect 正常只应跑 1 次。若同一会话 1s 内高频
   // 重跑，说明该 effect 的依赖数组又混入了不稳定引用（历史回归见 commit 870de386b：
@@ -2445,6 +2451,7 @@ function ChatStream({
   // loadedEventsRef：当前已加载到内存的历史 + 实时 event；既用于删除消息时同步剔除，
   // 也作为「加载更早」时增量重建消息的唯一数据源。
   const loadedEventsRef = useRef<AgentEvent[]>([])
+  const loadedEventIdsRef = useRef<Set<string>>(new Set())
   // 窗口化：当前已加载最旧 event 的 seq（向上翻页 beforeSeq）、是否还有更早、是否正在翻页
   const oldestSeqRef = useRef<number | undefined>(undefined)
   const hasMoreHistoryRef = useRef(false)
@@ -2482,28 +2489,15 @@ function ChatStream({
   }
 
   const flushMessages = useCallback(() => {
-    rafRef.current = null
     const nextMessages = [...builderRef.current.getAllMessages()]
     setMessages(nextMessages)
     viewCallbacksRef.current.onMessagesChange(nextMessages)
   }, [])
 
-  const scheduleFlush = useCallback(() => {
-    if (rafRef.current != null) return
-    rafRef.current = requestAnimationFrame(flushMessages)
-  }, [flushMessages])
-
-  // 清理 RAF
-  useEffect(() => {
-    return () => {
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
-    }
-  }, [])
-
   const processLiveEvent = useCallback(
-    (event: AgentEvent) => {
-      if (event.sessionId !== sessionId) return
-      if (loadedEventsRef.current.some((loadedEvent) => loadedEvent.id === event.id)) return
+    (event: AgentEvent): boolean => {
+      if (event.sessionId !== sessionId) return false
+      if (loadedEventIdsRef.current.has(event.id)) return false
       const callbacks = viewCallbacksRef.current
       // /clear 等清空历史的命令在写入新事件前会先发这条「分隔符」事件，
       // renderer 收到后把本地缓存（消息/usage/context/状态）全部丢弃，
@@ -2511,6 +2505,7 @@ function ChatStream({
       if (event.type === 'session_history_reset') {
         builderRef.current.processEvent(event) // 内部已调用 clearAll
         loadedEventsRef.current = [event]
+        loadedEventIdsRef.current = new Set([event.id])
         usageRef.current = {
           inputTokens: 0,
           outputTokens: 0,
@@ -2530,10 +2525,11 @@ function ChatStream({
         callbacks.onStatusChange('')
         setAgentIsRunning(false)
         isStreamingRef.current = false
-        return
+        return false
       }
       builderRef.current.processEvent(event)
       loadedEventsRef.current.push(event)
+      loadedEventIdsRef.current.add(event.id)
 
       if (event.type === 'agent_status') {
         setAgentIsRunning(isRunningAgentStatus(event.status))
@@ -2645,41 +2641,56 @@ function ChatStream({
         callbacks.onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
       }
 
-      if (
-        (event.type === 'assistant_message' && event.mode === 'delta') ||
-        (event.type === 'agent_thinking' && event.mode === 'delta')
-      ) {
-        if (rafRef.current != null) {
-          cancelAnimationFrame(rafRef.current)
-          rafRef.current = null
-        }
-        const nextMessages = [...builderRef.current.getAllMessages()]
-        setMessages(nextMessages)
-        callbacks.onMessagesChange(nextMessages)
-        return
-      }
-
-      scheduleFlush()
+      return true
     },
-    [scheduleFlush, sessionId],
+    [sessionId],
   )
+
+  const processLiveEventBatch = useCallback(
+    (events: AgentEvent[]) => {
+      let shouldFlushMessages = false
+      for (const event of events) {
+        if (processLiveEvent(event)) shouldFlushMessages = true
+      }
+      if (shouldFlushMessages) flushMessages()
+    },
+    [flushMessages, processLiveEvent],
+  )
+  useLayoutEffect(() => {
+    processLiveEventBatchRef.current = processLiveEventBatch
+  }, [processLiveEventBatch])
+
+  useEffect(() => {
+    const buffer = new LiveAgentEventBuffer({
+      onFlush: (events) => processLiveEventBatchRef.current(events),
+      requestFrame: (callback) => requestAnimationFrame(callback),
+      cancelFrame: (frameId) => cancelAnimationFrame(frameId),
+    })
+    liveEventBufferRef.current = buffer
+    return () => {
+      buffer.dispose()
+      if (liveEventBufferRef.current === buffer) liveEventBufferRef.current = null
+    }
+  }, [])
+
+  const enqueueLiveEvent = useCallback((event: AgentEvent) => {
+    const buffer = liveEventBufferRef.current
+    if (buffer == null) {
+      processLiveEventBatchRef.current([event])
+      return
+    }
+    buffer.enqueue(event)
+  }, [])
 
   const drainBufferedLiveEvents = useCallback(
     (loadId: number) => {
       if (historyLoadIdRef.current !== loadId) return
       const buffered = bufferedEventsRef.current
       bufferedEventsRef.current = []
-      for (const event of buffered) processLiveEvent(event)
+      for (const event of buffered) enqueueLiveEvent(event)
     },
-    [processLiveEvent],
+    [enqueueLiveEvent],
   )
-  // 用 ref 持有最新 drainBufferedLiveEvents，使历史加载 effect 不必把它列进依赖。
-  // 否则：drainBufferedLiveEvents 依赖 processLiveEvent，processLiveEvent 又依赖父级
-  // 内联回调（如 onPlanProposed，每次渲染新引用）→ 历史加载 effect 依赖每轮翻新 →
-  // 「加载完 setState → 重渲染 → 依赖变 → effect 重跑 → 再加载」死循环（撞爆
-  // Maximum update depth，表现为 session:get-history 无限重发）。与 loadOlderRef 同一手法。
-  const drainBufferedLiveEventsRef = useRef(drainBufferedLiveEvents)
-  drainBufferedLiveEventsRef.current = drainBufferedLiveEvents
 
   /**
    * commitEventsToView — 把一段已加载的 event 窗口构建成消息并渲染。
@@ -2792,8 +2803,10 @@ function ChatStream({
       }
     }
     hydratingRef.current = true
+    liveEventBufferRef.current?.clear()
     bufferedEventsRef.current = []
     loadedEventsRef.current = []
+    loadedEventIdsRef.current.clear()
     oldestSeqRef.current = undefined
     hasMoreHistoryRef.current = false
     loadingOlderRef.current = false
@@ -2818,8 +2831,9 @@ function ChatStream({
         if (cancelled || historyLoadIdRef.current !== loadId) return
         const bufferedAtStart = bufferedEventsRef.current
         bufferedEventsRef.current = []
-        const events = mergeSessionEvents(pageEvents, bufferedAtStart)
+        const events = mergeAgentEvents(pageEvents, bufferedAtStart)
         loadedEventsRef.current = events
+        loadedEventIdsRef.current = createAgentEventIdSet(events)
         oldestSeqRef.current = events[0]?.seq
         hasMoreHistoryRef.current = hasMore
         setHasMoreHistory(hasMore)
@@ -2830,7 +2844,7 @@ function ChatStream({
         })
         if (!cancelled && historyLoadIdRef.current === loadId) {
           hydratingRef.current = false
-          drainBufferedLiveEventsRef.current(loadId)
+          drainBufferedLiveEvents(loadId)
         }
       })
       .catch((err) => {
@@ -2840,14 +2854,16 @@ function ChatStream({
           const bufferedEvents = bufferedEventsRef.current
           bufferedEventsRef.current = []
           if (bufferedEvents.length > 0) {
-            loadedEventsRef.current = [...bufferedEvents]
+            const fallbackEvents = mergeAgentEvents([], bufferedEvents)
+            loadedEventsRef.current = fallbackEvents
+            loadedEventIdsRef.current = createAgentEventIdSet(fallbackEvents)
             scrollToBottomPendingRef.current = true
-            return commitEventsToView(bufferedEvents, true, {
+            return commitEventsToView(fallbackEvents, true, {
               shouldContinue: () => !cancelled && historyLoadIdRef.current === loadId,
             }).then(() => {
               if (!cancelled && historyLoadIdRef.current === loadId) {
                 hydratingRef.current = false
-                drainBufferedLiveEventsRef.current(loadId)
+                drainBufferedLiveEvents(loadId)
               }
             })
           }
@@ -2857,7 +2873,7 @@ function ChatStream({
       .finally(() => {
         if (!cancelled && historyLoadIdRef.current === loadId) {
           hydratingRef.current = false
-          drainBufferedLiveEventsRef.current(loadId)
+          drainBufferedLiveEvents(loadId)
           setIsLoadingHistory(false)
           viewCallbacksRef.current.onLoadingChange?.(false)
         }
@@ -2868,9 +2884,10 @@ function ChatStream({
       if (historyLoadIdRef.current === loadId) {
         hydratingRef.current = false
         bufferedEventsRef.current = []
+        liveEventBufferRef.current?.clear()
       }
     }
-  }, [getHistory, commitEventsToView, sessionId])
+  }, [getHistory, commitEventsToView, drainBufferedLiveEvents, sessionId])
 
   // 加载更早一页历史（用户滚动到顶部时触发）。prepend 后锚定 scrollTop，避免内容跳动。
   const loadOlderHistory = useCallback(() => {
@@ -2889,18 +2906,20 @@ function ChatStream({
         if (historyLoadIdRef.current !== loadIdAtRequest) return
         let commitPromise: Promise<unknown> = Promise.resolve()
         if (olderEvents.length > 0) {
-          const merged = mergeSessionEvents(olderEvents, loadedEventsRef.current)
+          const merged = mergeAgentEvents(olderEvents, loadedEventsRef.current)
           loadedEventsRef.current = merged
+          loadedEventIdsRef.current = createAgentEventIdSet(merged)
           oldestSeqRef.current = merged[0]?.seq ?? oldestSeqRef.current
           // 只重建消息，保留 live 维护的 usage/status
+          const pendingLiveEvents = liveEventBufferRef.current?.drainNow() ?? []
           hydratingRef.current = true
-          bufferedEventsRef.current = []
+          bufferedEventsRef.current = pendingLiveEvents
           commitPromise = commitEventsToView(merged, false, {
             shouldContinue: () => historyLoadIdRef.current === loadIdAtRequest,
           }).then(() => {
             if (historyLoadIdRef.current !== loadIdAtRequest) return
             hydratingRef.current = false
-            drainBufferedLiveEventsRef.current(loadIdAtRequest)
+            drainBufferedLiveEvents(loadIdAtRequest)
             // 下一帧（DOM 已更新）按高度增量恢复 scrollTop，保持视觉锚点不动
             requestAnimationFrame(() => {
               const el2 = streamRef.current
@@ -2918,11 +2937,11 @@ function ChatStream({
       .finally(() => {
         if (historyLoadIdRef.current !== loadIdAtRequest) return
         hydratingRef.current = false
-        drainBufferedLiveEventsRef.current(loadIdAtRequest)
+        drainBufferedLiveEvents(loadIdAtRequest)
         loadingOlderRef.current = false
         setIsLoadingOlder(false)
       })
-  }, [getHistory, commitEventsToView, sessionId])
+  }, [getHistory, commitEventsToView, drainBufferedLiveEvents, sessionId])
   // 让滚动处理（[] deps、闭包固定）始终调用到最新的 loadOlderHistory
   useEffect(() => {
     loadOlderRef.current = loadOlderHistory
@@ -2931,8 +2950,10 @@ function ChatStream({
   // 外部触发清空消息
   useEffect(() => {
     if (clearTrigger === undefined || clearTrigger === 0) return
+    liveEventBufferRef.current?.clear()
     builderRef.current.clearAll()
     loadedEventsRef.current = []
+    loadedEventIdsRef.current.clear()
     setMessages([])
     onMessagesChange([])
     onStatusChange('')
@@ -3010,9 +3031,9 @@ function ChatStream({
         bufferedEventsRef.current.push(event)
         return
       }
-      processLiveEvent(event)
+      enqueueLiveEvent(event)
     },
-    [processLiveEvent, sessionId],
+    [enqueueLiveEvent, sessionId],
   )
 
   // 智能自动滚动：
@@ -3203,6 +3224,7 @@ function ChatStream({
         const removed = new Set(eventIds)
         for (const msg of selectedMessages) builderRef.current.removeMessage(msg.id)
         loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
+        for (const eventId of removed) loadedEventIdsRef.current.delete(eventId)
         const nextMessages = builderRef.current
           .getAllMessages()
           .filter((msg) => !selected.has(msg.id))
@@ -3222,6 +3244,7 @@ function ChatStream({
           if (eventIds.length > 0) {
             const removed = new Set(eventIds)
             loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
+            for (const eventId of removed) loadedEventIdsRef.current.delete(eventId)
           }
           const nextMessages = builderRef.current.getAllMessages()
           setMessages(nextMessages)
@@ -3241,6 +3264,7 @@ function ChatStream({
           builderRef.current.removeEventsFromMessage(msgId, eventIds)
           const removed = new Set(eventIds)
           loadedEventsRef.current = loadedEventsRef.current.filter((e) => !removed.has(e.id))
+          for (const eventId of removed) loadedEventIdsRef.current.delete(eventId)
           const nextMessages = builderRef.current.getAllMessages()
           setMessages(nextMessages)
           onMessagesChange(nextMessages)
@@ -3516,14 +3540,6 @@ async function loadSessionHistoryPage(
   return { events: res.events, hasMore: res.hasMore }
 }
 
-function mergeSessionEvents(historyEvents: AgentEvent[], liveEvents: AgentEvent[]): AgentEvent[] {
-  const byIdentity = new Map<string, AgentEvent>()
-  for (const event of [...historyEvents, ...liveEvents]) {
-    byIdentity.set(event.id, event)
-  }
-  return [...byIdentity.values()].sort(compareAgentEvents)
-}
-
 function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => {
     if (typeof MessageChannel !== 'undefined') {
@@ -3538,13 +3554,6 @@ function yieldToBrowser(): Promise<void> {
     }
     window.setTimeout(resolve, 0)
   })
-}
-
-function compareAgentEvents(a: AgentEvent, b: AgentEvent): number {
-  if (a.seq !== b.seq) return a.seq - b.seq
-  const timeDiff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-  if (timeDiff !== 0) return timeDiff
-  return a.id.localeCompare(b.id)
 }
 
 function getLatestContextUsageEvent(
