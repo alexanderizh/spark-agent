@@ -166,6 +166,80 @@ describe('ClaudeSDKExecutor', () => {
     }))
   })
 
+  it('finalizes streamed text before emitting cancellation events', async () => {
+    queryMock.mockReturnValue(messages([
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'partial answer' },
+        },
+      },
+      { type: 'result', subtype: 'success', result: 'ignored', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const events: AgentEvent[] = []
+    const executor = new ClaudeSDKExecutor()
+    executor.onEvent((event) => {
+      events.push(event)
+      if (event.type === 'assistant_message' && event.mode === 'delta') executor.cancel()
+    })
+
+    await executor.executeTurn('sess-1', 'turn-1', 'hello', baseConfig())
+
+    const completedIndex = events.findIndex((event) =>
+      event.type === 'assistant_message' && event.mode === 'complete',
+    )
+    const abortedIndex = events.findIndex((event) =>
+      event.type === 'agent_error' && event.code === 'ABORTED',
+    )
+    const cancelledIndex = events.findIndex((event) =>
+      event.type === 'agent_status' && event.status === 'cancelled',
+    )
+    expect(events[completedIndex]).toEqual(expect.objectContaining({
+      content: 'partial answer',
+      segmentId: expect.any(String),
+    }))
+    expect(completedIndex).toBeGreaterThan(-1)
+    expect(completedIndex).toBeLessThan(abortedIndex)
+    expect(abortedIndex).toBeLessThan(cancelledIndex)
+  })
+
+  it('finalizes streamed text before an SDK error result', async () => {
+    queryMock.mockReturnValue(messages([
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'partial before failure' },
+        },
+      },
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        usage: { input_tokens: 1, output_tokens: 1 },
+        total_cost_usd: 0,
+        errors: ['provider failed'],
+      },
+    ]))
+    const events: AgentEvent[] = []
+    const executor = new ClaudeSDKExecutor()
+    executor.onEvent((event) => events.push(event))
+
+    await executor.executeTurn('sess-1', 'turn-1', 'hello', baseConfig())
+
+    const completedIndex = events.findIndex((event) =>
+      event.type === 'assistant_message' && event.mode === 'complete',
+    )
+    const errorIndex = events.findIndex((event) =>
+      event.type === 'agent_error' && event.code === 'ERROR_DURING_EXECUTION',
+    )
+    expect(events[completedIndex]).toEqual(expect.objectContaining({
+      content: 'partial before failure',
+    }))
+    expect(completedIndex).toBeGreaterThan(-1)
+    expect(completedIndex).toBeLessThan(errorIndex)
+  })
+
   it('automatically extends max turns and resumes once when the SDK reports max turns', async () => {
     queryMock
       .mockReturnValueOnce(messages([

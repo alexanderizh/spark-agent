@@ -15,6 +15,7 @@ import type { AgentEvent } from '@spark/protocol'
 import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
 import { toCodexReasoningEffort } from './reasoning-effort.js'
+import { StreamTerminalizer } from './stream-terminalizer.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 
 type Listener = (event: AgentEvent) => void
@@ -71,6 +72,7 @@ export class CodexSdkExecutor {
   private listeners = new Set<Listener>()
   private abortController: AbortController | null = null
   private thread: CodexThread | null = null
+  private streamTerminalizer: StreamTerminalizer | null = null
 
   onEvent(listener: Listener): void {
     this.listeners.add(listener)
@@ -100,7 +102,9 @@ export class CodexSdkExecutor {
     const prompt = buildCodexSdkPrompt(buildCodexGoalPrompt(userMessage, config), config)
     const input = buildCodexSdkInput(prompt, config.attachments)
     const controller = new AbortController()
+    const streamTerminalizer = new StreamTerminalizer()
     this.abortController = controller
+    this.streamTerminalizer = streamTerminalizer
 
     this.emit({
       ...makeBase(),
@@ -179,6 +183,7 @@ export class CodexSdkExecutor {
       })
     } catch (err) {
       const aborted = controller.signal.aborted
+      for (const event of streamTerminalizer.finalize(makeBase)) this.emit(event)
       this.emit({
         ...makeBase(),
         type: 'agent_error',
@@ -200,6 +205,7 @@ export class CodexSdkExecutor {
       if (!aborted) throw err
     } finally {
       if (this.abortController === controller) this.abortController = null
+      if (this.streamTerminalizer === streamTerminalizer) this.streamTerminalizer = null
       this.thread = null
     }
   }
@@ -566,6 +572,7 @@ export class CodexSdkExecutor {
   }
 
   private emit(event: AgentEvent): void {
+    this.streamTerminalizer?.observe(event)
     for (const listener of this.listeners) listener(event)
   }
 }

@@ -277,6 +277,17 @@ export class EventRepository extends BaseRepository {
     return stmt.all(sessionId) as AgentEventRow[]
   }
 
+  /** 查询指定 turn 的正文/思考流事件，包括不会进入可渲染历史页的 delta。 */
+  queryStreamEventsByTurn(sessionId: string, turnId: string): AgentEventRow[] {
+    const stmt = this.raw.prepare(
+      `SELECT * FROM agent_events
+       WHERE session_id = ? AND turn_id = ?
+         AND event_type IN ('assistant_message', 'agent_thinking', 'team_member_message')
+       ORDER BY seq ASC, created_at ASC, rowid ASC`,
+    )
+    return stmt.all(sessionId, turnId) as AgentEventRow[]
+  }
+
   /**
    * 查询用于构建「对话历史」的事件，按 seq 正序返回。
    *

@@ -108,6 +108,29 @@ class FailedCodexProcess extends EventEmitter {
   kill = vi.fn()
 }
 
+class CancellableCodexProcess extends EventEmitter {
+  stdout = new EventEmitter()
+  stderr = new EventEmitter()
+  stdin: EventEmitter & { end: ReturnType<typeof vi.fn> }
+
+  constructor() {
+    super()
+    this.stdin = Object.assign(new EventEmitter(), {
+      end: vi.fn(() => {
+        this.stdout.emit(
+          'data',
+          Buffer.from('{"type":"response.output_text.delta","delta":"partial CLI answer"}\n'),
+        )
+      }),
+    })
+  }
+
+  kill = vi.fn(() => {
+    this.emit('close', 143)
+    return true
+  })
+}
+
 function makeConfig(overrides: Partial<SDKExecutorConfig> = {}): SDKExecutorConfig {
   return {
     apiKey: '',
@@ -298,6 +321,52 @@ describe('CodexCliExecutor', () => {
     expect(events[0]?.message).toContain('failed to connect to websocket')
     expect(events[0]?.message).toContain('os error 10013')
     expect(events[0]?.rawError).toContain('stream disconnected before completion')
+  })
+
+  it('finalizes partial text and reports cancellation when SIGTERM stops the CLI', async () => {
+    spawnMock.mockImplementation(() => new CancellableCodexProcess())
+    const events: Array<{
+      type: string
+      mode?: string
+      content?: string
+      code?: string
+      status?: string
+      segmentId?: string
+    }> = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'assistant_message') {
+        events.push({
+          type: event.type,
+          mode: event.mode,
+          content: event.content,
+          ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+        })
+        if (event.mode === 'delta') executor.cancel()
+      } else if (event.type === 'agent_error') {
+        events.push({ type: event.type, code: event.code })
+      } else if (event.type === 'agent_status') {
+        events.push({ type: event.type, status: event.status })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    const completedIndex = events.findIndex(
+      (event) => event.type === 'assistant_message' && event.mode === 'complete',
+    )
+    const errorIndex = events.findIndex((event) => event.code === 'CODEX_CLI_CANCELLED')
+    const cancelledIndex = events.findIndex((event) => event.status === 'cancelled')
+    expect(events[completedIndex]).toEqual(
+      expect.objectContaining({
+        content: 'partial CLI answer',
+        segmentId: 'codex-turn-1-text-1',
+      }),
+    )
+    expect(events.some((event) => event.code === 'CODEX_CLI_ERROR')).toBe(false)
+    expect(completedIndex).toBeGreaterThan(-1)
+    expect(completedIndex).toBeLessThan(errorIndex)
+    expect(errorIndex).toBeLessThan(cancelledIndex)
   })
 
   it('forwards explicit Codex CLI compaction JSONL without synthesizing a summary', async () => {

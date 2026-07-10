@@ -44,16 +44,21 @@
 - Modify: `packages/agent-runtime/src/sdk/codex-sdk-executor.ts`
 - Modify: `packages/agent-runtime/src/sdk/codex-cli-executor.ts`
 - Modify: `packages/agent-runtime/src/services/session.service.ts`
+- Modify: `packages/storage/src/repositories/event.repository.ts`
+- Test: `packages/agent-runtime/src/__tests__/sdk/stream-terminalizer.test.ts`
 - Test: `packages/agent-runtime/src/__tests__/sdk/claude-sdk-executor.test.ts`
 - Test: `packages/agent-runtime/src/__tests__/sdk/codex-sdk-executor.test.ts`
 - Test: `packages/agent-runtime/src/__tests__/sdk/codex-cli-executor.test.ts`
 - Test: `packages/agent-runtime/src/__tests__/services/session.service.test.ts`
+- Test: `packages/agent-runtime/src/__tests__/services/session-runtime-config.test.ts`
+- Test: `packages/agent-runtime/src/__tests__/services/session-goal-budget.test.ts`
+- Test: `packages/storage/src/repositories/repositories.test.ts`
 
-- [ ] Track streamed assistant/thinking segments and emit `mode=complete` snapshots before cancelled/error terminal status.
-- [ ] Classify Codex CLI SIGTERM as cancelled and preserve already streamed text.
-- [ ] On app restart, synthesize complete events for the latest interrupted turn before `APP_RESTARTED` and seed recovery seq from persisted max.
-- [ ] Skip post-turn workspace snapshots and memory/title follow-ups when the terminal status is cancelled.
-- [ ] Review and commit the cancellation/restart fix.
+- [x] Track streamed assistant/thinking segments and emit `mode=complete` snapshots before cancelled/error terminal status.
+- [x] Classify Codex CLI SIGTERM as cancelled and preserve already streamed text.
+- [x] On app restart, synthesize complete events for the latest interrupted turn before `APP_RESTARTED` and seed recovery seq from persisted max.
+- [x] Skip post-turn workspace snapshots and memory/title follow-ups when the terminal status is cancelled.
+- [x] Review and commit the cancellation/restart fix.
 
 ### Task 4: Ordered And Batched Live Event Consumption
 

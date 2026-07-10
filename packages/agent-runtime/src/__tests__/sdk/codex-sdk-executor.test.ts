@@ -634,6 +634,56 @@ describe('CodexSdkExecutor', () => {
     ])
   })
 
+  it('finalizes partial text before reporting an aborted SDK stream', async () => {
+    async function* abortedStream() {
+      yield { type: 'response.output_text.delta', delta: 'partial Codex answer' }
+      throw new Error('stream aborted')
+    }
+    runStreamed.mockResolvedValue({ events: abortedStream() })
+
+    const events: Array<{
+      type: string
+      mode?: string
+      content?: string
+      code?: string
+      status?: string
+      segmentId?: string
+    }> = []
+    const executor = new CodexSdkExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'assistant_message') {
+        events.push({
+          type: event.type,
+          mode: event.mode,
+          content: event.content,
+          ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+        })
+        if (event.mode === 'delta') executor.cancel()
+      } else if (event.type === 'agent_error') {
+        events.push({ type: event.type, code: event.code })
+      } else if (event.type === 'agent_status') {
+        events.push({ type: event.type, status: event.status })
+      }
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    const completedIndex = events.findIndex(
+      (event) => event.type === 'assistant_message' && event.mode === 'complete',
+    )
+    const errorIndex = events.findIndex((event) => event.code === 'CODEX_SDK_CANCELLED')
+    const cancelledIndex = events.findIndex((event) => event.status === 'cancelled')
+    expect(events[completedIndex]).toEqual(
+      expect.objectContaining({
+        content: 'partial Codex answer',
+        segmentId: 'codex-sdk-turn-1-text-1',
+      }),
+    )
+    expect(completedIndex).toBeGreaterThan(-1)
+    expect(completedIndex).toBeLessThan(errorIndex)
+    expect(errorIndex).toBeLessThan(cancelledIndex)
+  })
+
   it('starts a new Codex SDK assistant segment after a tool even if item id is reused', async () => {
     runStreamed.mockResolvedValue({
       events: streamFrom([
