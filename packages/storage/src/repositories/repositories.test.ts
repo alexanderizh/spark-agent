@@ -377,6 +377,40 @@ describe('EventRepository', () => {
     )
   })
 
+  it('allocates the next seq from the persisted maximum after rows are deleted', () => {
+    repo.insertBatch([
+      {
+        id: 'evt-next-low',
+        sessionId: 'sess-seq',
+        eventType: 'assistant_message',
+        eventJson: JSON.stringify({ seq: 2, mode: 'complete', content: 'low' }),
+      },
+      {
+        id: 'evt-next-high',
+        sessionId: 'sess-seq',
+        eventType: 'assistant_message',
+        eventJson: JSON.stringify({ seq: 9, mode: 'complete', content: 'high' }),
+      },
+    ])
+    repo.deleteEventsByIds(['evt-next-low'])
+
+    expect(repo.countBySession('sess-seq')).toBe(1)
+    expect(repo.nextSeqBySession('sess-seq')).toBe(10)
+  })
+
+  it('includes hidden delta rows when allocating the next persisted seq', () => {
+    repo.insert({
+      id: 'evt-hidden-delta',
+      sessionId: 'sess-delta-seq',
+      eventType: 'assistant_message',
+      eventJson: JSON.stringify({ seq: 41, mode: 'delta', content: 'partial' }),
+    })
+
+    expect(repo.queryRenderablePage({ sessionId: 'sess-delta-seq' }).events).toHaveLength(0)
+    expect(repo.nextSeqBySession('sess-delta-seq')).toBe(42)
+    expect(repo.nextSeqBySession('sess-empty')).toBe(0)
+  })
+
   it('should query events with pagination', () => {
     // 插入 5 个事件
     for (let i = 0; i < 5; i++) {

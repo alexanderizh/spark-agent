@@ -149,6 +149,12 @@ import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
 import { MemoryConsolidationService } from './memory/memory-consolidation.service.js'
 import { MediaModelCatalogService } from './media/media-model-catalog.service.js'
 import { resolveProfileMediaModels, type MediaProfileLike } from './media/media-model-resolver.js'
+import {
+  AgentEventPersistenceError,
+  SessionEventSequencer,
+  persistAndPublishAgentEvent,
+  persistAndPublishAgentEvents,
+} from './session-event-sequencer.js'
 import type { ProviderMediaModelRef } from '@spark/protocol'
 import {
   createLogger,
@@ -484,7 +490,7 @@ export class SessionService {
   private userSkillsDir: string | null = null
   /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
   private pendingPlanApprovals = new Set<string>()
-  private seqCounters = new Map<string, number>()
+  private readonly eventSequencer = new SessionEventSequencer()
   /**
    * 当前 turn 该会话实际生效的对话模型 — 含 @mention agent 切换。
    * runFirstTurn 每解析一次 effective provider/model 就覆写一次，供
@@ -959,7 +965,7 @@ export class SessionService {
       },
       clearSessionEvents: async (id) => {
         eventRepo.deleteBySession(id)
-        this.seqCounters.delete(id)
+        this.eventSequencer.clear(id)
         this.clearUsageLedgerTurnState(id)
       },
       getProviderName: (id) => {
@@ -1153,7 +1159,7 @@ export class SessionService {
       },
       clearSessionEvents: async (id) => {
         eventRepo.deleteBySession(id)
-        this.seqCounters.delete(id)
+        this.eventSequencer.clear(id)
         this.clearUsageLedgerTurnState(id)
       },
       getProviderName: (id) => providerRepo.get(id)?.name ?? null,
@@ -1291,13 +1297,11 @@ export class SessionService {
     const shouldEmitCompleted = !hasFollowUpPrompt && !hasActiveLoopAfterHandler
     const wipeHistory = result.wipeHistory === true
     const turnId = crypto.randomUUID()
-    const seq0 = this.seqCounters.get(params.sessionId) ?? 0
     // wipeHistory 的命令（典型 /clear）会先 emit 一条 SessionHistoryResetEvent，
     // 让 renderer 在新 user/assistant 事件到达前清空本地缓存。
     const baseEventCount = shouldEmitCompleted ? 3 : 2
     const totalEventCount = baseEventCount + (wipeHistory ? 1 : 0)
-    this.seqCounters.set(params.sessionId, seq0 + totalEventCount)
-
+    const seq0 = this.eventSequencer.reserve(params.sessionId, eventRepo, totalEventCount)
     const commandEvents: AgentEvent[] = []
     let seqOffset = 0
     if (wipeHistory) {
@@ -1358,19 +1362,17 @@ export class SessionService {
       commandEvents.push(completedEvent)
     }
 
-    for (const event of commandEvents) {
-      this.onEvent(event)
-      try {
-        eventRepo.insert({
-          id: event.id,
+    try {
+      persistAndPublishAgentEvents(eventRepo, commandEvents, this.onEvent)
+    } catch (err) {
+      if (err instanceof AgentEventPersistenceError) {
+        log.error('Failed to persist command events', {
           sessionId: params.sessionId,
           turnId,
-          eventType: event.type,
-          eventJson: JSON.stringify(event),
+          error: err.message,
         })
-      } catch {
-        /* non-fatal */
       }
+      throw err
     }
 
     if (hasFollowUpPrompt) {
@@ -1568,7 +1570,7 @@ export class SessionService {
     }
 
     const existingEventCount = eventRepo.countBySession(sessionId)
-    const currentSeq = this.seqCounters.get(sessionId) ?? existingEventCount
+    const currentSeq = this.eventSequencer.peek(sessionId, eventRepo)
     // Team Mode：构造 agentId→displayName 映射，让 conversation history 把 team_member_message
     // 也纳入历史（每条 member 发言前缀 [<name>]）。Mention 路径继承上下文的关键步骤。
     const agentNameById: Record<string, string> = {}
@@ -2219,11 +2221,6 @@ export class SessionService {
       debugMcpServer != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
       sparkWebToolEnabled ? SPARK_WEB_TOOL_SYSTEM_PROMPT : undefined,
     )
-
-    // Initialize seq counter from existing event count
-    if (!this.seqCounters.has(sessionId)) {
-      this.seqCounters.set(sessionId, existingEventCount)
-    }
 
     // ── SDK Execution Path ─────────────────────────────────────────────────
     // Claude execution is SDK-only. If the SDK is missing or cannot load, fail
@@ -3703,7 +3700,7 @@ export class SessionService {
       const memoryRepo = new MemoryRepository(this.db)
       const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
       const eventRepo = new EventRepository(this.db)
-      const currentSeq = this.seqCounters.get(sessionId) ?? eventRepo.countBySession(sessionId)
+      const currentSeq = this.eventSequencer.peek(sessionId, eventRepo)
       const recentSummary = buildMemoryExtractionRecentContext(
         eventRepo,
         this.db,
@@ -6082,23 +6079,25 @@ export class SessionService {
     event: AgentEvent,
     eventRepo: EventRepository,
   ): void {
-    const seq = this.seqCounters.get(sessionId) ?? 0
-    this.seqCounters.set(sessionId, seq + 1)
+    const seq = this.eventSequencer.reserve(sessionId, eventRepo)
     const sequenced = { ...event, seq }
-    this.onEvent(sequenced)
+    try {
+      persistAndPublishAgentEvent(eventRepo, sequenced, this.onEvent)
+    } catch (err) {
+      if (err instanceof AgentEventPersistenceError) {
+        log.error('Failed to persist session event', {
+          sessionId,
+          turnId,
+          eventId: sequenced.id,
+          eventType: sequenced.type,
+          seq,
+          error: err.message,
+        })
+      }
+      throw err
+    }
     if (event.type === 'usage_update') {
       this.recordUsageUpdate(sessionId, turnId, event)
-    }
-    try {
-      eventRepo.insert({
-        id: sequenced.id,
-        sessionId,
-        turnId,
-        eventType: sequenced.type,
-        eventJson: JSON.stringify(sequenced),
-      })
-    } catch {
-      // Non-fatal: persistence failure should not crash the stream
     }
 
     // 触发 hook：检测 agent_status 事件的关键状态变化
@@ -6872,7 +6871,7 @@ export class SessionService {
     this.activeLoops.delete(sessionId)
     this.pendingTurns.delete(sessionId)
     this.pendingPlanApprovals.delete(sessionId)
-    this.seqCounters.delete(sessionId)
+    this.eventSequencer.clear(sessionId)
     this.iterationOverrides.delete(sessionId)
     TodoStore.clear(sessionId)
     this.onApprovalCancel?.(sessionId)
@@ -7555,7 +7554,7 @@ function getLatestAgentStatusFromEvents(
 function appendInterruptedTurnEvents(eventRepo: EventRepository, sessionId: string): void {
   const turnId = getLatestTurnIdFromEvents(eventRepo, sessionId)
   const timestamp = new Date().toISOString()
-  const seq = eventRepo.countBySession(sessionId)
+  const seq = eventRepo.nextSeqBySession(sessionId)
   const events = createInterruptedTurnEvents(sessionId, turnId, seq, timestamp)
 
   eventRepo.insertBatch(
