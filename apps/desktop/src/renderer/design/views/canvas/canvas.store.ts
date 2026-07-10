@@ -249,7 +249,13 @@ export function useCanvasWorkspace(projectId: string) {
   )
 
   const createTextNode = useCallback(
-    async (input: { text: string; x: number; y: number; kind?: 'text' | 'prompt' }) => {
+    async (input: {
+      text: string
+      x: number
+      y: number
+      kind?: 'text' | 'prompt'
+      format?: 'plain' | 'markdown' | 'prompt'
+    }) => {
       const current = snapshot
       if (!current) return
       const node = await canvasApi.createTextNode({
@@ -305,6 +311,35 @@ export function useCanvasWorkspace(projectId: string) {
       const current = snapshot
       if (!current) return
       const node = await canvasApi.createImageNode({
+        projectId,
+        boardId: current.board.id,
+        ...input,
+      })
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+      return node
+    },
+    [projectId, snapshot],
+  )
+
+  /** 创建视频/音频节点（拖入外部媒体文件时使用），与 createImageNode 对称。 */
+  const createMediaNode = useCallback(
+    async (input: {
+      kind: 'video' | 'audio'
+      fileName: string
+      fileMimeType?: string
+      fileSize?: number
+      filePath: string
+      x: number
+      y: number
+      width?: number
+      height?: number
+      mediaWidth?: number
+      mediaHeight?: number
+      durationMs?: number
+    }) => {
+      const current = snapshot
+      if (!current) return
+      const node = await canvasApi.createMediaNode({
         projectId,
         boardId: current.board.id,
         ...input,
@@ -821,6 +856,7 @@ export function useCanvasWorkspace(projectId: string) {
     deleteEdges,
     createTextNode,
     createImageNode,
+    createMediaNode,
     uploadImageAsset,
     createGroupNode,
     dissolveGroupNode,

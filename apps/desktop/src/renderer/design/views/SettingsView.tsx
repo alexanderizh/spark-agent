@@ -441,6 +441,18 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
   return (
     <div className="settings-layout">
       <div className="settings-nav scroll">
+        <button
+          type="button"
+          className="settings-nav-return"
+          onClick={() => {
+            // workspace 已废弃，返回当前标准主会话页面。
+            setTweak('chatMode', 'vibe')
+            setTweak('view', 'chat')
+          }}
+        >
+          <Icons.ArrowLeft size={16} />
+          <span>返回工作台</span>
+        </button>
         {nav.map((g) => (
           <div key={g.group}>
             <div className="settings-nav-h">{g.group}</div>
@@ -1712,7 +1724,7 @@ function AppearanceSection() {
             max={20}
             step={1}
             value={a.fontSize}
-            onChange={(v) => setA({ fontSize: typeof v === 'number' ? v : 14 })}
+            onChange={(v) => setA({ fontSize: typeof v === 'number' ? v : 15 })}
             addonAfter="px"
             className="font-size-input"
           />

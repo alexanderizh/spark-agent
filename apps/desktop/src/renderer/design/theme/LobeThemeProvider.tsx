@@ -1,5 +1,6 @@
 import React from 'react'
 import { ThemeProvider } from '@lobehub/ui'
+import { App as AntdApp, ConfigProvider as AntdConfigProvider } from 'antd'
 import type { ThemeAppearance } from 'antd-style'
 import '@lobehub/webfont-geist/css/index.css'
 import '@lobehub/webfont-geist-mono/css/index.css'
@@ -87,35 +88,51 @@ export function LobeThemeProvider({
   // which renders default buttons with a near-black background that clashes
   // with the app's `--panel` palette — the root cause of the
   // "black download buttons" in dark mode.
-  const token = {
-    colorPrimary: primary,
-    colorInfo: primary,
-    colorLink: primary,
-    // default Button / Input / Select surface — map to app panel color
-    colorBgContainer: p.panel,
-    colorBgContainerSolid: p.panelElev,
-    colorBgElevated: p.panelElev,
-    colorBgLayout: p.bg,
-    colorBgSpotlight: p.panelElev,
-    // text colors
-    colorText: p.text,
-    colorTextSecondary: p.textMuted,
-    colorTextTertiary: p.textFaint,
-    colorTextHeading: p.textStrong,
-    // borders
-    colorBorder: p.border,
-    colorBorderSecondary: p.divider,
-    // hover / active for text-style controls (text Button, ActionIcon hover)
-    colorBgTextHover: p.hover,
-    colorBgTextActive: p.active,
-    // danger / success / warning aligned with app palette
-    colorError: p.danger,
-    colorErrorBg: p.dangerBg,
-    colorSuccess: p.success,
-    colorSuccessBg: p.successBg,
-    colorWarning: p.warning,
-    colorWarningBg: p.warningBg,
-  }
+  const token = React.useMemo(
+    () => ({
+      colorPrimary: primary,
+      colorInfo: primary,
+      colorLink: primary,
+      // default Button / Input / Select surface — map to app panel color
+      colorBgContainer: p.panel,
+      colorBgContainerSolid: p.panelElev,
+      colorBgElevated: p.panelElev,
+      colorBgLayout: p.bg,
+      colorBgSpotlight: p.panelElev,
+      // text colors
+      colorText: p.text,
+      colorTextSecondary: p.textMuted,
+      colorTextTertiary: p.textFaint,
+      colorTextHeading: p.textStrong,
+      // borders
+      colorBorder: p.border,
+      colorBorderSecondary: p.divider,
+      // hover / active for text-style controls (text Button, ActionIcon hover)
+      colorBgTextHover: p.hover,
+      colorBgTextActive: p.active,
+      // danger / success / warning aligned with app palette
+      colorError: p.danger,
+      colorErrorBg: p.dangerBg,
+      colorSuccess: p.success,
+      colorSuccessBg: p.successBg,
+      colorWarning: p.warning,
+      colorWarningBg: p.warningBg,
+    }),
+    [p, primary],
+  )
+
+  React.useEffect(() => {
+    // Static message/notification APIs render outside the component tree.
+    // Give them the same App context so antd does not fall back to its
+    // context-less static holder (and emit the dynamic-theme warning).
+    AntdConfigProvider.config({
+      holderRender: (holder: React.ReactNode) => (
+        <AntdConfigProvider theme={{ token }}>
+          <AntdApp component={false}>{holder}</AntdApp>
+        </AntdConfigProvider>
+      ),
+    })
+  }, [token])
 
   return (
     <ThemeProvider

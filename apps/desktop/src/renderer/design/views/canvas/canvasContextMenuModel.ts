@@ -29,6 +29,12 @@ export type CanvasSelectionContextSummary = {
   mergeGroupId: string | null
 }
 
+export type CanvasSelectionContextMenuTarget = {
+  selectedNodeIds: readonly string[]
+  targetNodeId?: string | null
+  isEditableTarget?: boolean
+}
+
 function clamp(value: number, min: number, max: number): number {
   if (max < min) return min
   return Math.min(Math.max(value, min), max)
@@ -85,4 +91,14 @@ export function summarizeCanvasSelectionContext(
     canMergeSelectionToImage: Boolean(mergeGroupId) || canCreateGroup,
     mergeGroupId,
   }
+}
+
+export function shouldOpenCanvasSelectionContextMenu({
+  selectedNodeIds,
+  targetNodeId,
+  isEditableTarget = false,
+}: CanvasSelectionContextMenuTarget): boolean {
+  if (isEditableTarget || selectedNodeIds.length === 0) return false
+  if (!targetNodeId) return true
+  return selectedNodeIds.length > 1 && selectedNodeIds.includes(targetNodeId)
 }

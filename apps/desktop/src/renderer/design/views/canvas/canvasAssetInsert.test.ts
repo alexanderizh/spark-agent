@@ -3,7 +3,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { canvasApi } from './canvas.api'
 import type { CanvasDb } from './canvas.api'
-import type { CanvasNode } from './canvas.types'
+import { fitMediaNodeSize, fitTextNodeSize, readAssetTextForNode } from './canvas.api'
+import type { CanvasAsset, CanvasNode } from './canvas.types'
 import type { FilmAssetKind } from './canvasFilmAssets'
 
 const STORAGE_KEY = 'spark-canvas:v1'
@@ -226,4 +227,84 @@ describe('canvas asset insertion', () => {
     expect(node?.width).toBe(580)
     expect(node?.height).toBe(350)
   })
+
+  // 居中落点依赖 resolveAssetInsertSize 算出的尺寸与 insertAssetToBoard 最终节点
+  // 尺寸完全一致。这里镜像 CanvasWorkspaceView.resolveAssetInsertSize 的分支逻辑，
+  // 验证对图片/视频/文本资产，两种算法结果相同——否则插入位置会偏出视口中心。
+  it.each([
+    { type: 'image', width: 800, height: 1200 },
+    { type: 'image', width: 1920, height: 1080 },
+    { type: 'video', width: 1280, height: 720 },
+  ] as Array<{ type: CanvasAsset['type']; width: number; height: number }>)(
+    'resolveAssetInsertSize matches insertAssetToBoard node size for $type $widthx$height',
+    async ({ type, width, height }) => {
+      const db = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!) as CanvasDb
+      const asset: CanvasAsset = {
+        id: `${type}-asset-1`,
+        projectId: 'project-1',
+        userId: 0,
+        type,
+        source: 'upload',
+        title: `${type} asset`,
+        width,
+        height,
+        metadata: {},
+        createdAt: at,
+        updatedAt: at,
+      }
+      db.assets.push(asset)
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+
+      const node = await canvasApi.insertAssetToBoard({
+        projectId: 'project-1',
+        boardId: 'board-1',
+        assetId: asset.id,
+        x: 0,
+        y: 0,
+      })
+
+      const resolved = resolveAssetInsertSize(asset)
+      expect(resolved.width).toBe(node?.width)
+      expect(resolved.height).toBe(node?.height)
+    },
+  )
+
+  it('resolveAssetInsertSize matches text asset node size', async () => {
+    const text = longAssetText('文本')
+    const db = JSON.parse(window.localStorage.getItem(STORAGE_KEY)!) as CanvasDb
+    const asset: CanvasAsset = {
+      id: 'text-asset-1',
+      projectId: 'project-1',
+      userId: 0,
+      type: 'text',
+      source: 'manual',
+      title: '文本资产',
+      contentText: text,
+      metadata: {},
+      createdAt: at,
+      updatedAt: at,
+    }
+    db.assets.push(asset)
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+
+    const node = await canvasApi.insertAssetToBoard({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      assetId: asset.id,
+      x: 0,
+      y: 0,
+    })
+
+    const resolved = resolveAssetInsertSize(asset)
+    expect(resolved.width).toBe(node?.width)
+    expect(resolved.height).toBe(node?.height)
+  })
 })
+
+/** 镜像 CanvasWorkspaceView.resolveAssetInsertSize：插入前预测节点尺寸。 */
+function resolveAssetInsertSize(asset: CanvasAsset): { width: number; height: number } {
+  if (asset.type === 'text' || asset.type === 'prompt') {
+    return fitTextNodeSize(readAssetTextForNode(asset))
+  }
+  return fitMediaNodeSize(asset.type, asset.width, asset.height)
+}

@@ -46,8 +46,8 @@ export const AUDIO_NODE_DEFAULT_SIZE = { width: 500, height: 200 } as const
 /** 节点内嵌 meta 头部高度；媒体节点尺寸计算需要把它计入节点总高度。 */
 export const CANVAS_NODE_META_BAR_HEIGHT = 24
 
-/** AI 操作节点默认尺寸：加宽以容纳操作名、状态和提示摘要。 */
-export const OPERATION_NODE_DEFAULT_SIZE = { width: 560, height: 230 } as const
+/** AI 操作节点默认尺寸：为头部、产物预览和运行切换保留舒展高度。 */
+export const OPERATION_NODE_DEFAULT_SIZE = { width: 560, height: 360 } as const
 
 /** 分组节点默认尺寸 */
 export const GROUP_NODE_DEFAULT_SIZE = { width: 620, height: 320 } as const
@@ -58,7 +58,7 @@ export const CANVAS_NODE_MIN_SIZE = {
   image: { width: 380, height: 220 },
   video: { width: 400, height: 220 },
   audio: { width: 360, height: 150 },
-  operation: { width: 400, height: 170 },
+  operation: { width: 400, height: 260 },
   group: { width: 440, height: 260 },
 } as const
 

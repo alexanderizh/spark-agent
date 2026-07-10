@@ -25,7 +25,8 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
   uiZoom: UI_ZOOM_DEFAULT,
   codeLigature: false,
   windowCorners: 'soft',
-  backdropBlur: false,
+  // Keep the navigation panel translucent by default; users can still disable it.
+  backdropBlur: true,
   autoCollapseTools: true,
   inlineTokenCount: false,
   syntaxHighlight: true,

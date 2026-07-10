@@ -460,6 +460,17 @@ describe('IPC schemas', () => {
     expect(downloadRequest.suggestedFileName).toBe('result.png')
   })
 
+  it('validates canvas asset batch download payload', () => {
+    const batchRequest = IpcSchemaRegistry['canvas:asset:download-batch'].parse({
+      items: [
+        { sourceUrl: 'https://example.com/a.png', type: 'image', suggestedFileName: 'a.png' },
+        { contentText: 'hello', type: 'text', suggestedFileName: 'b.txt' },
+      ],
+    })
+    expect(batchRequest.items).toHaveLength(2)
+    expect(batchRequest.items[0]!.suggestedFileName).toBe('a.png')
+  })
+
   it('validates inline-manifest dry-run payload for canvas media contract preview', () => {
     const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
       (item) => item.modelId === 'doubao-seedream-5-0-lite',

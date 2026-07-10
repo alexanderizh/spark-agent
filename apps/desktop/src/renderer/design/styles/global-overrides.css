@@ -110,3 +110,49 @@ textarea::-moz-selection,
 .remote-form-grid .ant-select .ant-select-selection-placeholder {
   line-height: calc(var(--form-control-h) - 2px);
 }
+
+/* Chat content is the only native scrollbar exception. This file loads last,
+   so it can safely override the global scrollbar hiding rules in styles.css. */
+.chat-main-active > .chat-stream-viewport > .chat-stream {
+  scrollbar-width: auto !important;
+  scrollbar-color: auto !important;
+}
+
+.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar {
+  display: block !important;
+  width: 10px !important;
+  height: 10px !important;
+  max-width: 10px !important;
+  max-height: 10px !important;
+  background: transparent !important;
+  -webkit-appearance: none !important;
+}
+
+.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-track,
+.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-track-piece {
+  display: block !important;
+  width: 10px !important;
+  background: transparent !important;
+}
+
+.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-thumb {
+  display: block !important;
+  min-height: 36px;
+  border: 2px solid transparent !important;
+  border-radius: 999px !important;
+  background: var(--border-strong) !important;
+  background-clip: content-box !important;
+  -webkit-appearance: none !important;
+}
+
+.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint) !important;
+  background-clip: content-box !important;
+}
+
+.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-button,
+.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}

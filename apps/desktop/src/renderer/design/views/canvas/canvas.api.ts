@@ -1272,7 +1272,7 @@ function refreshGroupLayout(db: CanvasDb, groupNode: CanvasNode, at: string): vo
   applyGroupLayout(groupNode, members, at)
 }
 
-function fitMediaNodeSize(
+export function fitMediaNodeSize(
   type: CanvasAssetType,
   width?: number | null,
   height?: number | null,
@@ -1308,7 +1308,7 @@ function textDisplayColumns(text: string): number {
   return columns
 }
 
-function fitTextNodeSize(text: string): { width: number; height: number } {
+export function fitTextNodeSize(text: string): { width: number; height: number } {
   const normalized = text.replace(/\r\n?/g, '\n').trim()
   if (!normalized) return TEXT_NODE_DEFAULT_SIZE
   if (isShotScriptText(normalized)) return pickTextNodeSize(normalized)
@@ -1330,7 +1330,7 @@ function fitTextNodeSize(text: string): { width: number; height: number } {
   return { width, height }
 }
 
-function readAssetTextForNode(asset: CanvasAsset): string {
+export function readAssetTextForNode(asset: CanvasAsset): string {
   const contentText = nonEmptyString(asset.contentText)
   if (contentText) return contentText
 
@@ -3048,6 +3048,8 @@ export const canvasApi = {
     x: number
     y: number
     kind?: 'text' | 'prompt'
+    /** 渲染格式；不传时 prompt→'prompt'，其余→'plain'。拖入 .md 文件时可显式传 'markdown' */
+    format?: 'plain' | 'markdown' | 'prompt'
   }): Promise<CanvasNode> {
     const db = readDb()
     const maxZ = Math.max(
@@ -3055,6 +3057,7 @@ export const canvasApi = {
       ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
     )
     const kind = input.kind ?? 'text'
+    const format = input.format ?? (kind === 'prompt' ? 'prompt' : 'plain')
     const node = createNodeBase({
       projectId: input.projectId,
       boardId: input.boardId,
@@ -3064,7 +3067,7 @@ export const canvasApi = {
       y: input.y,
       // 长文本节点（剧本/文稿等）默认放大尺寸，卡片内支持滚动（canvasNodeSize.ts）
       ...pickTextNodeSize(input.text),
-      data: { text: input.text, format: kind === 'prompt' ? 'prompt' : 'plain' },
+      data: { text: input.text, format },
     })
     node.zIndex = maxZ + 1
     const asset: CanvasAsset = {
@@ -3177,6 +3180,88 @@ export const canvasApi = {
       width: input.width ?? fittedSize.width,
       height: input.height ?? fittedSize.height,
       data: { url: fileUrl, thumbnailUrl: fileUrl, mimeType: input.file.type },
+    })
+    node.zIndex = maxZ + 1
+    db.assets.push(asset)
+    db.nodes.push(node)
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return node
+  },
+
+  /**
+   * 创建视频/音频节点（拖入外部视频/音频文件时使用）。
+   *
+   * 与 {@link createImageNode} 对称：构建 CanvasAsset（source='upload'，按磁盘路径编码
+   * safe-file URL）+ CanvasNode。音频没有尺寸概念，直接用默认尺寸。
+   */
+  async createMediaNode(input: {
+    projectId: string
+    boardId: string
+    kind: 'video' | 'audio'
+    fileName: string
+    fileMimeType?: string
+    fileSize?: number
+    filePath: string
+    x: number
+    y: number
+    width?: number
+    height?: number
+    mediaWidth?: number
+    mediaHeight?: number
+    durationMs?: number
+  }): Promise<CanvasNode> {
+    const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
+    const fileUrl = encodeToSafeFileUrl(input.filePath)
+    const mimeType = input.fileMimeType
+    const fittedSize = fitMediaNodeSize(
+      input.kind,
+      input.mediaWidth,
+      input.mediaHeight,
+    )
+    const asset: CanvasAsset = {
+      id: uid('canvas_asset'),
+      projectId: input.projectId,
+      userId: USER_ID,
+      type: input.kind,
+      source: 'upload',
+      title: input.fileName,
+      ...(mimeType ? { mimeType } : {}),
+      storageKey: input.filePath,
+      url: fileUrl,
+      thumbnailUrl: fileUrl,
+      ...(input.mediaWidth ? { width: input.mediaWidth } : {}),
+      ...(input.mediaHeight ? { height: input.mediaHeight } : {}),
+      ...(input.fileSize ? { sizeBytes: input.fileSize } : {}),
+      metadata: {
+        storageAdapter: 'local-file',
+        filePath: input.filePath,
+        ...(input.durationMs ? { durationMs: input.durationMs } : {}),
+      },
+      createdAt: now(),
+      updatedAt: now(),
+    }
+    const data: CanvasNode['data'] = {
+      url: fileUrl,
+      thumbnailUrl: fileUrl,
+      ...(mimeType ? { mimeType } : {}),
+      origin: 'asset',
+    }
+    const node = createNodeBase({
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: input.kind,
+      title: input.fileName,
+      assetId: asset.id,
+      x: input.x,
+      y: input.y,
+      width: input.width ?? fittedSize.width,
+      height: input.height ?? fittedSize.height,
+      data,
     })
     node.zIndex = maxZ + 1
     db.assets.push(asset)

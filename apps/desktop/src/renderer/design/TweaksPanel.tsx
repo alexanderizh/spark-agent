@@ -220,6 +220,7 @@ export function TweaksPanel() {
           />
         </Row>
         <Row label="会话模式">
+          {/* workspace 仅为历史状态兼容保留，已废弃；新入口统一使用 vibe。 */}
           <Seg value={t.chatMode} options={['vibe', 'workspace']} onChange={(v) => setTweak('chatMode', v)} />
         </Row>
 

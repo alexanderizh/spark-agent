@@ -1219,12 +1219,14 @@ function Shell() {
   const activeUserQuestion =
     sessionCtx.activeSessionId != null ? (userQuestions[sessionCtx.activeSessionId] ?? null) : null
 
+  // workspace 是历史遗留模式，仅保留兼容渲染；当前工作台使用 vibe + chat。
   const showInlineApproval = t.view === 'chat' && t.chatMode !== 'workspace'
   // Default view is chat (no more home). Render elements directly so the chat
   // tree keeps a stable component identity across Shell re-renders.
   const viewElement = (() => {
     switch (t.view) {
       case 'chat':
+        // 已废弃：不要把 workspace 当作当前工作台入口。新导航统一进入 vibe 模式。
         return t.chatMode === 'workspace' ? (
           <ProjectView />
         ) : (
@@ -1280,9 +1282,13 @@ function Shell() {
     }
   })()
 
+  // 设置页是独立工作区：临时收起主菜单栏，但不改写用户持久化的侧栏偏好。
+  const isSettingsWorkspace = t.view === 'settings' || t.view === 'memory'
+  const sidebarHidden = t.sidebarHidden || isSettingsWorkspace
+
   // Compute dynamic margin for main content area based on sidebar state.
   // Flat sidebar is flush to the window edge, so it should only offset by its own width.
-  const sidebarOffset = t.sidebarHidden
+  const sidebarOffset = sidebarHidden
     ? 0
     : t.floatingSidebarWidth + (t.sidebarStyle === 'flat' ? 0 : SIDEBAR_VISIBLE_GUTTER)
   const useIntegratedTitlebar = t.view === 'chat' && t.chatMode !== 'workspace'
@@ -1311,7 +1317,7 @@ function Shell() {
     <ErrorBoundary level="global" name="Shell">
       <div
         ref={scaleRef}
-        className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${t.sidebarHidden ? ' sidebar-hidden' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}`}
+        className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${sidebarHidden ? ' sidebar-hidden' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}`}
         style={
           {
             '--primary': primary,
@@ -1329,7 +1335,7 @@ function Shell() {
           <OnboardingView />
         ) : (
           <>
-            <FloatingSidebar onNewTask={handleNewBlankSession} />
+            {!isSettingsWorkspace && <FloatingSidebar onNewTask={handleNewBlankSession} />}
             {/* macOS / Linux: unified shell title bar when sidebar is hidden.
                   Mirrors win-titlebar so every view (including chat) gets the expand
                   button; on macOS the left padding reserves space for traffic lights.
@@ -1337,7 +1343,7 @@ function Shell() {
                   此处不再渲染以免两个头重叠。 */}
             {!useIntegratedTitlebar &&
               !isPlatformWin32 &&
-              t.sidebarHidden &&
+              sidebarHidden &&
               !(t.view === 'canvas' && canvasWorkspaceActive) && (
                 <div
                   className={`shell-titlebar${isPlatformDarwin ? ' shell-titlebar-darwin' : ''}`}
@@ -1345,7 +1351,7 @@ function Shell() {
                     window.spark?.invoke('window:maximize', {}).catch(() => {})
                   }}
                 >
-                  <SidebarExpandButton onExpand={handleExpandSidebar} />
+                  {t.sidebarHidden && <SidebarExpandButton onExpand={handleExpandSidebar} />}
                 </div>
               )}
             <div
@@ -1371,7 +1377,7 @@ function Shell() {
                   takes over. 画布工作区自带 canvas-workspace-header，此处不再渲染以免重叠。 */}
               {!useIntegratedTitlebar &&
                 isPlatformDarwin &&
-                !t.sidebarHidden &&
+                !sidebarHidden &&
                 !(t.view === 'canvas' && canvasWorkspaceActive) && (
                   <MacWindowDragHeader />
                 )}

@@ -37,6 +37,9 @@ export function flowNodeContentEqual(
   if (prevWidth !== nextWidth || prevHeight !== nextHeight) return false
   if (prev.data.actions !== next.data.actions) return false
   if (prev.data.lineage !== next.data.lineage) return false
+  if (prev.data.operationRunsFingerprint !== next.data.operationRunsFingerprint) return false
+  if (prev.data.isGeneratedOutput !== next.data.isGeneratedOutput) return false
+  if (prev.data.baseRenderedHeight !== next.data.baseRenderedHeight) return false
   if (prev.data.inlineToolbar !== next.data.inlineToolbar) return false
   if (prev.data.inlinePanel !== next.data.inlinePanel) return false
   if (prev.data.inlinePanelExtraHeight !== next.data.inlinePanelExtraHeight) return false
@@ -73,6 +76,9 @@ export function canvasFlowNodeDataEqual(
 ): boolean {
   if (prev.actions !== next.actions) return false
   if (prev.lineage !== next.lineage) return false
+  if (prev.operationRunsFingerprint !== next.operationRunsFingerprint) return false
+  if (prev.isGeneratedOutput !== next.isGeneratedOutput) return false
+  if (prev.baseRenderedHeight !== next.baseRenderedHeight) return false
   if (prev.inlineToolbar !== next.inlineToolbar) return false
   if (prev.inlinePanel !== next.inlinePanel) return false
   if (prev.inlinePanelExtraHeight !== next.inlinePanelExtraHeight) return false

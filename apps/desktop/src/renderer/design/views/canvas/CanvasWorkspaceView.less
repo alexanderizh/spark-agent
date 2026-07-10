@@ -415,6 +415,29 @@
   pointer-events: none;
 }
 
+// 外部文件拖入画布时的高亮遮罩：提示当前是合法放置目标。
+.canvas-stage-drop-active::after {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  border: 2px dashed color-mix(in srgb, var(--accent, #4f8cf0) 70%, transparent);
+  background: color-mix(in srgb, var(--accent, #4f8cf0) 12%, transparent);
+  border-radius: 10px;
+  content: '';
+  pointer-events: none;
+  animation: canvas-drop-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes canvas-drop-pulse {
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .canvas-stage-dot-aura {
   position: absolute;
   z-index: 0;
@@ -930,6 +953,12 @@
   border-color: color-mix(in srgb, var(--border-strong) 52%, transparent);
 }
 
+.canvas-node-meta-chip-output {
+  color: #d9e3ef;
+  background: rgba(148, 163, 184, 0.14);
+  border-color: transparent;
+}
+
 .canvas-node-body {
   min-height: 0;
   flex: 1;
@@ -1097,6 +1126,331 @@
   gap: 9px;
   padding: 12px;
   background: var(--canvas-node-body-bg);
+}
+
+/* ─── 操作节点即步骤节点：运行状态与产物共用一张制作台卡片 ─────────── */
+.canvas-node-operation {
+  position: relative;
+  gap: 0;
+  padding: 0;
+  background: #15191f;
+}
+
+.canvas-operation-output-deck {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0;
+}
+
+.canvas-operation-output-stage {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #191d23;
+  box-shadow: none;
+}
+
+.canvas-operation-output-media {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: block;
+  object-fit: contain;
+  background: #0e1116;
+}
+
+.canvas-operation-output-audio,
+.canvas-operation-output-empty,
+.canvas-operation-output-text {
+  width: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  color: rgba(226, 232, 240, 0.78);
+}
+
+.canvas-operation-output-audio,
+.canvas-operation-output-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  text-align: center;
+}
+
+.canvas-operation-output-audio audio {
+  width: min(360px, 88%);
+}
+
+.canvas-operation-output-text {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  padding: 18px 20px 36px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.canvas-operation-output-text > svg {
+  margin-top: 2px;
+  color: rgba(148, 163, 184, 0.68);
+}
+
+.canvas-operation-output-stage-label {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 18px 12px 8px;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(180deg, transparent, rgba(9, 12, 16, 0.9));
+  color: rgba(241, 245, 249, 0.88);
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.canvas-operation-output-stage-label > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-operation-output-stage-label > span:last-child {
+  flex: none;
+  color: rgba(203, 213, 225, 0.66);
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-operation-output-nav {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 8px 5px;
+  background: #15191f;
+  color: rgba(203, 213, 225, 0.68);
+  font-size: 10px;
+}
+
+.canvas-operation-run-nav {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.canvas-operation-run-nav > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-operation-run-nav button {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.82);
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.canvas-operation-run-nav button:hover:not(:disabled) {
+  color: #fff;
+}
+
+.canvas-operation-run-nav button:disabled {
+  opacity: 0.26;
+  cursor: default;
+}
+
+.canvas-operation-output-dots {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+
+.canvas-operation-output-dots button {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.36);
+  cursor: pointer;
+  transition:
+    width 0.14s ease,
+    border-radius 0.14s ease,
+    background 0.14s ease;
+}
+
+.canvas-operation-output-dots button.is-active {
+  width: 17px;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.9);
+}
+
+.canvas-operation-run-status {
+  flex: none;
+  color: rgba(203, 213, 225, 0.64);
+}
+
+.canvas-operation-run-status.is-completed {
+  color: color-mix(in srgb, var(--success) 74%, #dce9df);
+}
+
+.canvas-operation-run-status.is-failed {
+  color: color-mix(in srgb, var(--danger) 72%, #f1d6d6);
+}
+
+.canvas-operation-empty-state {
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px 18px;
+}
+
+.canvas-operation-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 5px;
+  color: rgba(148, 163, 184, 0.66);
+}
+
+.canvas-operation-empty-icon svg {
+  width: 48px;
+  height: 48px;
+  stroke-width: 1.5;
+}
+
+.canvas-operation-param-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 14px;
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.canvas-operation-param-summary > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.canvas-operation-param-summary > span > span {
+  color: rgba(148, 163, 184, 0.58);
+}
+
+.canvas-operation-param-summary strong {
+  overflow: hidden;
+  color: rgba(226, 232, 240, 0.88);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── 独立产物节点：保留现有拖拽/连线能力，升级为深色资源卡 ────────── */
+.canvas-node-resource-output {
+  border-color: rgba(203, 213, 225, 0.07);
+  background: #15191f;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+}
+
+.canvas-node-resource-output.canvas-node-selected {
+  border-color: rgba(226, 232, 240, 0.62);
+}
+
+.canvas-node-resource-output .canvas-node-meta-bar {
+  border-bottom-color: transparent;
+  background: #1b2027;
+}
+
+.canvas-node-resource-output .canvas-node-body {
+  padding: 0;
+  background: #15191f;
+}
+
+.canvas-node-resource-output .canvas-node-image-wrap,
+.canvas-node-resource-output > .canvas-node-core .canvas-node-image,
+.canvas-node-resource-output .canvas-node-image-placeholder,
+.canvas-node-resource-text {
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #191d23;
+  box-shadow: none;
+}
+
+.canvas-node-resource-output .canvas-node-image {
+  background: #101318;
+}
+
+.canvas-node-resource-text {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  color: rgba(226, 232, 240, 0.82);
+}
+
+.canvas-node-resource-text-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(148, 163, 184, 0.54);
+}
+
+.canvas-node-resource-text-content {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
 }
 
 .canvas-node-task-msg {
@@ -4806,7 +5160,7 @@ body.canvas-side-panel-resizing {
   justify-content: space-between;
   gap: 6px;
   padding: 6px 10px;
-  background: var(--primary-soft);
+  background: transparent;
   border-bottom: 1px solid var(--divider);
 }
 
@@ -4815,10 +5169,8 @@ body.canvas-side-panel-resizing {
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--divider) 86%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--primary) 6%, transparent), transparent),
-    color-mix(in srgb, var(--canvas-panel-bg, var(--bg-body)) 92%, transparent);
+  border-bottom: 1px solid var(--divider);
+  background: transparent;
 }
 
 .canvas-asset-subview-library-head {
@@ -4840,9 +5192,10 @@ body.canvas-side-panel-resizing {
     line-height: 1.5;
   }
 
-  .ant-tag {
-    margin: 0;
+  .canvas-asset-subview-library-count {
     flex-shrink: 0;
+    font-size: 11px;
+    color: var(--primary);
   }
 }
 
@@ -4858,22 +5211,18 @@ body.canvas-side-panel-resizing {
   gap: 10px;
   width: 100%;
   padding: 8px;
-  border: 1px solid color-mix(in srgb, var(--divider) 88%, transparent);
-  border-radius: var(--r-lg);
-  background: color-mix(in srgb, var(--bg-container) 94%, transparent);
+  border: 1px solid var(--divider);
+  border-radius: var(--r-md);
+  background: var(--bg-container);
   text-align: left;
   cursor: pointer;
   transition:
-    transform 0.12s ease,
     border-color 0.12s ease,
-    box-shadow 0.12s ease,
     background 0.12s ease;
 
   &:hover {
-    transform: translateY(-1px);
-    border-color: color-mix(in srgb, var(--primary) 48%, transparent);
-    background: color-mix(in srgb, var(--primary-soft) 78%, var(--bg-container));
-    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+    border-color: var(--primary);
+    background: var(--hover);
   }
 }
 
@@ -4882,8 +5231,8 @@ body.canvas-side-panel-resizing {
   height: 56px;
   flex-shrink: 0;
   overflow: hidden;
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--bg-sunken) 92%, transparent);
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
 }
 
 .canvas-asset-subview-card-main {
@@ -4913,7 +5262,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-asset-subview-card-source {
-  color: color-mix(in srgb, var(--text-muted) 92%, var(--primary));
+  color: var(--text-muted);
 }
 
 .canvas-asset-subview-card-action {
@@ -4923,14 +5272,12 @@ body.canvas-side-panel-resizing {
   width: 24px;
   height: 24px;
   flex-shrink: 0;
-  border-radius: 999px;
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--text-muted);
 }
 
 .canvas-asset-manager-batchbar-count {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text);
   flex-shrink: 0;
 }
@@ -4972,18 +5319,21 @@ body.canvas-side-panel-resizing {
 .canvas-asset-manager-row-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px;
   align-items: center;
   margin-top: 3px;
   font-size: 10px;
   color: var(--text-muted);
+}
 
-  .ant-tag {
-    margin: 0;
-    font-size: 10px !important;
-    padding: 0 4px !important;
-    line-height: 16px !important;
-  }
+.canvas-asset-meta-sep {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.canvas-asset-meta-type {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .canvas-asset-ref-count {
@@ -4991,6 +5341,9 @@ body.canvas-side-panel-resizing {
 }
 .canvas-asset-origin-task {
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .canvas-asset-manager-grid {
@@ -5059,6 +5412,12 @@ body.canvas-side-panel-resizing {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.canvas-asset-grid-refs {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--primary);
 }
 
 // ── 资产详情浮层 ─────────────────────────────────────────────────────────

@@ -90,3 +90,39 @@ export function readImageDimensions(src: string): Promise<{ width: number; heigh
     image.src = src
   })
 }
+
+/**
+ * 读视频源尺寸与时长。
+ *
+ * 用于拖入视频生成节点时取宽高（决定节点卡片大小）。
+ * 加载失败（格式不支持 / 文件损坏）时返回 0，由调用方回退到默认尺寸，
+ * 不会阻塞节点创建流程。
+ */
+export function readVideoDimensions(
+  src: string,
+): Promise<{ width: number; height: number; durationMs?: number }> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    const cleanup = () => {
+      video.removeAttribute('src')
+      video.load()
+    }
+    video.onloadedmetadata = () => {
+      const result = {
+        width: video.videoWidth || 0,
+        height: video.videoHeight || 0,
+        ...(Number.isFinite(video.duration) && video.duration > 0
+          ? { durationMs: Math.round(video.duration * 1000) }
+          : {}),
+      }
+      cleanup()
+      resolve(result)
+    }
+    video.onerror = () => {
+      cleanup()
+      resolve({ width: 0, height: 0 })
+    }
+    video.src = src
+  })
+}

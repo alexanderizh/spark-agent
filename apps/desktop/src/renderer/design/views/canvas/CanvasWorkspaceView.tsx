@@ -20,7 +20,18 @@ import { CanvasCharacterLibraryPanel } from './CanvasCharacterLibraryPanel'
 import { CanvasCharacterSubviewEditor } from './CanvasCharacterSubviewEditor'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
 import { SaveToLibraryDialog } from './SaveToLibraryDialog'
-import { dataUrlToFile, readFileAsDataUrl, readImageDimensions } from './canvas-safe-file'
+import {
+  dataUrlToFile,
+  encodeToSafeFileUrl,
+  readFileAsDataUrl,
+  readImageDimensions,
+  readVideoDimensions,
+} from './canvas-safe-file'
+import {
+  classifyDroppedFile,
+  layoutDroppedFiles,
+  textFormatFromFileName,
+} from './canvasFileDrop'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
@@ -87,6 +98,7 @@ import {
   stackAutoNodesToRight,
 } from './canvasAutoPlacement'
 import {
+  AUDIO_NODE_DEFAULT_SIZE,
   GROUP_NODE_DEFAULT_SIZE,
   IMAGE_NODE_DEFAULT_SIZE,
   OPERATION_NODE_DEFAULT_SIZE,
@@ -98,7 +110,16 @@ import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace } from './canvas.store'
-import { canvasApi, isCanvasDirty, operationLabel, revertProject, saveCanvas } from './canvas.api'
+import {
+  canvasApi,
+  fitMediaNodeSize,
+  fitTextNodeSize,
+  isCanvasDirty,
+  operationLabel,
+  readAssetTextForNode,
+  revertProject,
+  saveCanvas,
+} from './canvas.api'
 import {
   buildTaskInputFiles,
   type CanvasTaskInputRoleSelection,
@@ -651,6 +672,20 @@ function positionNodeInViewport(
       clampPosition(centerY - size.height / 2, visibleTop + 24, visibleBottom - size.height - 24),
     ),
   }
+}
+
+/**
+ * 计算资产插入画布后节点的真实尺寸。
+ *
+ * 必须与 `canvasApi.insertAssetToBoard` 内部的尺寸逻辑完全一致——
+ * 两者用同样的分支（媒体按比例拟合 / 文本按字数拟合），否则居中位置会
+ * 因尺寸偏差而落点不准。这里复用 canvas.api 导出的拟合函数，保证同步。
+ */
+function resolveAssetInsertSize(asset: CanvasAsset): { width: number; height: number } {
+  if (asset.type === 'text' || asset.type === 'prompt') {
+    return fitTextNodeSize(readAssetTextForNode(asset))
+  }
+  return fitMediaNodeSize(asset.type, asset.width, asset.height)
 }
 
 function getFloatingEditorGeometry(
@@ -1573,6 +1608,7 @@ export function CanvasWorkspaceView({
     deleteEdges,
     createTextNode,
     createImageNode,
+    createMediaNode,
     uploadImageAsset,
     createGroupNode,
     dissolveGroupNode,
@@ -3004,9 +3040,14 @@ export function CanvasWorkspaceView({
       const pendingConnection = pendingAssetConnectionRef.current
       pendingAssetPositionRef.current = null
       pendingAssetConnectionRef.current = null
+      // 影视资产插入后打上流水线角色，使画布右键出现「下一步」编排动作（设计 §7）
+      const asset = snapshot.assets.find((item) => item.id === assetId)
+      // 用资产真实类型/尺寸拟合节点尺寸，保证居中落点与最终节点尺寸一致
+      // （之前固定用 IMAGE_NODE_DEFAULT_SIZE，视频/文本资产会偏出视口中心）
+      const nodeSize = asset ? resolveAssetInsertSize(asset) : IMAGE_NODE_DEFAULT_SIZE
       const position = pendingPosition
         ? { x: Math.round(pendingPosition.x), y: Math.round(pendingPosition.y) }
-        : positionNodeInViewport(canvasViewportRef.current, IMAGE_NODE_DEFAULT_SIZE, {
+        : positionNodeInViewport(canvasViewportRef.current, nodeSize, {
             x: 220,
             y: 180,
           })
@@ -3016,8 +3057,6 @@ export function CanvasWorkspaceView({
         x: position.x,
         y: position.y,
       })
-      // 影视资产插入后打上流水线角色，使画布右键出现「下一步」编排动作（设计 §7）
-      const asset = snapshot.assets.find((item) => item.id === assetId)
       const role = asset ? filmKindToPipelineRole(readAssetKind(asset)) : undefined
       if (node && role) {
         await updateNodeData(node.id, { pipelineRole: role })
@@ -5216,6 +5255,138 @@ export function CanvasWorkspaceView({
   }, [createTextNode, insertPreparedImages, prepareCanvasImageUpload])
 
   /**
+   * 拖入外部文件到画布：按类型路由成节点。
+   *  - 图片 → 复用图片上传管线（dataUrl → 入库 → 图片节点）
+   *  - 文本（txt/md/json/源码…）→ 读出文字 → 文本节点
+   *  - 视频/音频 → 复制进项目 assets → 媒体节点
+   *  - 其余（pdf/docx…）→ 跳过并提示
+   * 多文件按 drop 点原点级联排布。
+   */
+  const handleDropFiles = useCallback(
+    async (position: CanvasPoint, files: File[]) => {
+      const current = snapshotRef.current
+      if (!current || files.length === 0) return
+      closeCanvasFloatPanels()
+      const origin = { x: Math.round(position.x), y: Math.round(position.y) }
+      const projectRootPath = current.project.rootPath || undefined
+
+      const images: File[] = []
+      const texts: File[] = []
+      const media: Array<{ file: File; kind: 'video' | 'audio' }> = []
+      let unsupportedCount = 0
+      for (const file of files) {
+        const kind = classifyDroppedFile(file)
+        if (kind === 'image') images.push(file)
+        else if (kind === 'text') texts.push(file)
+        else if (kind === 'video') media.push({ file, kind: 'video' })
+        else if (kind === 'audio') media.push({ file, kind: 'audio' })
+        else unsupportedCount += 1
+      }
+
+      const createdNodeIds: string[] = []
+
+      try {
+        // ── 图片：复用现有上传管线（含多图分组） ──────────────────────────
+        if (images.length > 0) {
+          const prepared = await Promise.all(
+            images.map((file) =>
+              prepareCanvasImageUpload(file, { grouped: images.length > 1 }),
+            ),
+          )
+          const result = await insertPreparedImages(prepared, origin)
+          for (const id of result.createdNodeIds) createdNodeIds.push(id)
+        }
+
+        // ── 文本：浏览器 File.text() 直接读，无需 IPC ──────────────────────
+        if (texts.length > 0) {
+          const positions = layoutDroppedFiles(texts.length, origin, TEXT_NODE_DEFAULT_SIZE)
+          await Promise.all(
+            texts.map(async (file, index) => {
+              const text = await file.text()
+              const format = textFormatFromFileName(file.name)
+              const node = await createTextNode({
+                text,
+                x: positions[index]!.x,
+                y: positions[index]!.y,
+                ...(format === 'markdown' ? { format: 'markdown' } : {}),
+              })
+              if (node) createdNodeIds.push(node.id)
+            }),
+          )
+        }
+
+        // ── 视频/音频：复制进项目 assets 目录后建节点 ─────────────────────
+        if (media.length > 0) {
+          await Promise.all(
+            media.map(async (entry, index) => {
+              const electronPath = (entry.file as File & { path?: string }).path
+              if (!electronPath) return // 非 Electron 环境拿不到磁盘路径，跳过
+              const copyResult = await window.spark.invoke('canvas:asset:copy-to-project', {
+                projectId,
+                ...(projectRootPath ? { projectRootPath } : {}),
+                sourcePath: electronPath,
+                type: entry.kind,
+              })
+              if (copyResult.error || !copyResult.filePath) return
+              const filePath = copyResult.filePath as string
+              const fileUrl = encodeToSafeFileUrl(filePath)
+              let mediaWidth: number | undefined
+              let mediaHeight: number | undefined
+              let durationMs: number | undefined
+              if (entry.kind === 'video') {
+                const dims = await readVideoDimensions(fileUrl)
+                mediaWidth = dims.width || undefined
+                mediaHeight = dims.height || undefined
+                durationMs = dims.durationMs
+              }
+              const defaultSize =
+                entry.kind === 'video' ? VIDEO_NODE_DEFAULT_SIZE : AUDIO_NODE_DEFAULT_SIZE
+              const positions = layoutDroppedFiles(1, origin, defaultSize)
+              const basePos = positions[index] ?? origin
+              const node = await createMediaNode({
+                kind: entry.kind,
+                fileName: entry.file.name,
+                ...(entry.file.type ? { fileMimeType: entry.file.type } : {}),
+                fileSize: entry.file.size,
+                filePath,
+                x: basePos.x,
+                y: basePos.y,
+                ...(mediaWidth ? { mediaWidth } : {}),
+                ...(mediaHeight ? { mediaHeight } : {}),
+                ...(durationMs ? { durationMs } : {}),
+              })
+              if (node) createdNodeIds.push(node.id)
+            }),
+          )
+        }
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '拖入文件到画布失败')
+      }
+
+      const totalSupported = images.length + texts.length + media.length
+      if (totalSupported > 0) {
+        if (createdNodeIds.length > 0) setSelectedNodeIds(createdNodeIds.slice(-1))
+        message.success(
+          totalSupported === 1
+            ? '已添加文件到画布'
+            : `已添加 ${totalSupported} 个文件到画布`,
+        )
+      }
+      if (unsupportedCount > 0) {
+        message.warning(`已跳过 ${unsupportedCount} 个不支持的文件`)
+      }
+    },
+    [
+      projectId,
+      closeCanvasFloatPanels,
+      createTextNode,
+      createMediaNode,
+      insertPreparedImages,
+      prepareCanvasImageUpload,
+    ],
+  )
+
+  /**
    * 空白处右键 → 创建一个无上游的 AI 操作节点（用户后续自己连线）。
    * 不绑定 inputNodeIds，prompt 留空，由用户在操作面板填完后再运行。
    */
@@ -6241,6 +6412,7 @@ export function CanvasWorkspaceView({
             onSetProductionState={onSetProductionStateStable}
             onAddTextAtPosition={addText}
             onAddImageAtPosition={uploadFirstImage}
+            onDropFiles={handleDropFiles}
             onAddPromptAtPosition={addPrompt}
             onAddDirectorStageAtPosition={addDirectorStage}
             onAddDirectorStage3DAtPosition={addDirectorStage3D}

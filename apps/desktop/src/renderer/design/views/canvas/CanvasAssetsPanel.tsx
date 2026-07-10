@@ -192,3 +192,73 @@ export async function downloadCanvasResource(resource: CanvasDownloadResource): 
 export async function downloadAsset(asset: CanvasAsset): Promise<void> {
   await downloadCanvasResource(asset)
 }
+
+/**
+ * 把单个资产解析为批量下载所需的 payload（与 downloadCanvasResource 同款逻辑）。
+ * 没有可下载内容的资产返回 null，由调用方跳过。
+ */
+function toBatchDownloadItem(resource: CanvasDownloadResource): {
+  sourcePath?: string
+  sourceUrl?: string
+  contentText?: string
+  mimeType?: string | null
+  type?: CanvasDownloadResource['type']
+  suggestedFileName?: string
+} | null {
+  const sourceUrl = resource.url ?? resource.thumbnailUrl ?? undefined
+  const normalizedUrl = sourceUrl ? normalizeEduAssetUrl(sourceUrl) : undefined
+  const isAbsolutePath =
+    typeof resource.storageKey === 'string' &&
+    (resource.storageKey.startsWith('/') || /^[A-Za-z]:[\\/]/.test(resource.storageKey))
+  const canDownload = Boolean(
+    resource.url || resource.thumbnailUrl || resource.contentText || isAbsolutePath,
+  )
+  if (!canDownload) return null
+  const storagePath = isAbsolutePath ? (resource.storageKey as string) : undefined
+  return {
+    ...(storagePath ? { sourcePath: storagePath } : {}),
+    ...(normalizedUrl ? { sourceUrl: normalizedUrl } : {}),
+    ...(resource.contentText != null ? { contentText: resource.contentText } : {}),
+    ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+    type: resource.type,
+    suggestedFileName: resource.title?.trim() || `canvas-${resource.type}-${resource.id}`,
+  }
+}
+
+/**
+ * 批量下载：只弹一次目录选择对话框，把所有资产一次性写入该目录。
+ * （之前逐个 downloadAsset 会每个资产弹一次保存对话框，体验极差。）
+ * @returns 实际成功下载的数量
+ */
+export async function downloadCanvasResourceBatch(
+  resources: CanvasDownloadResource[],
+): Promise<number> {
+  const items: NonNullable<ReturnType<typeof toBatchDownloadItem>>[] = []
+  for (const resource of resources) {
+    const item = toBatchDownloadItem(resource)
+    if (item) items.push(item)
+  }
+  if (items.length === 0) {
+    message.warning('所选资产均无可下载内容')
+    return 0
+  }
+  try {
+    const result = await window.spark.invoke('canvas:asset:download-batch', { items })
+    if (result.canceled) return 0
+    if (result.failed > 0) {
+      message.warning(
+        `已下载 ${result.succeeded} 个，${result.failed} 个失败${
+          result.targetDirectory ? `（保存到 ${result.targetDirectory}）` : ''
+        }`,
+      )
+    } else {
+      message.success(
+        `已下载 ${result.succeeded} 个资产${result.targetDirectory ? `到 ${result.targetDirectory}` : ''}`,
+      )
+    }
+    return result.succeeded
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '批量下载资产失败')
+    return 0
+  }
+}
