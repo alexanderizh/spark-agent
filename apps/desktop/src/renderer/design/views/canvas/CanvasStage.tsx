@@ -33,6 +33,12 @@ import {
 import '@xyflow/react/dist/style.css'
 import { Icons } from '../../Icons'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
+import type { CanvasNodeData } from './canvas.types'
+import {
+  getNodeSubtypeOptions,
+  getNodeCurrentSubtype,
+  isSubtypeSwitchable,
+} from './canvasNodeSubtypeSwitch'
 import { mergeFlowNodes } from './canvasStageNodeSync'
 import { computeCanvasAlignmentGuides, type CanvasAlignmentGuide } from './canvasAlignmentGuides'
 import {
@@ -358,6 +364,7 @@ function CanvasStageInner({
   selectedNodeIds,
   onSelectionChange,
   onNodesPersist,
+  onUpdateNodeData,
   onConnectNodes,
   onDeleteEdges,
   onDuplicateNode,
@@ -405,6 +412,7 @@ function CanvasStageInner({
   selectedNodeIds: string[]
   onSelectionChange: (nodeIds: string[]) => void
   onNodesPersist: (nodes: SparkCanvasNode[]) => MaybePromise<void>
+  onUpdateNodeData?: (nodeId: string, data: Partial<CanvasNodeData>) => void
   onConnectNodes: (input: { sourceNodeId: string; targetNodeId: string }) => MaybePromise<void>
   onDeleteEdges: (edgeIds: string[]) => void
   onDuplicateNode: (nodeId: string) => void
@@ -648,7 +656,7 @@ function CanvasStageInner({
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenuState | null>(null)
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([])
-  const [minimapOpen, setMinimapOpen] = useState(false)
+  const [minimapOpen, setMinimapOpen] = useState(true)
   const [edgeContextMenu, setEdgeContextMenu] = useState<{
     edgeId: string
     left: number
@@ -1997,6 +2005,42 @@ function CanvasStageInner({
                   </button>
                 )}
                 <div className="canvas-pane-context-divider" />
+                {selectedNodeIds.length === 1 &&
+                  (() => {
+                    const node = snapshot.nodes.find((n) => n.id === selectedNodeIds[0])
+                    if (!node || !isSubtypeSwitchable(node)) return null
+                    const current = getNodeCurrentSubtype(node)
+                    const options = getNodeSubtypeOptions(node)
+                    return (
+                      <div className="canvas-pane-context-submenu" role="none">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="canvas-pane-context-submenu-trigger"
+                        >
+                          <Icons.Refresh size={14} />
+                          <span>切换类型</span>
+                          <Icons.ChevronRight size={14} />
+                        </button>
+                        <div className="canvas-pane-context-submenu-panel" role="menu">
+                          {options.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                closePaneContextMenu()
+                                onUpdateNodeData?.(node.id, option.apply as Partial<CanvasNodeData>)
+                              }}
+                            >
+                              <span>{option.label}</span>
+                              {current === option.value ? <Icons.Check size={14} /> : null}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
               </>
             )}
             <div className="canvas-pane-context-section-title">资源内容节点</div>

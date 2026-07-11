@@ -218,7 +218,11 @@
 }
 
 .chat-panel-message-assistant .chat-panel-text {
+  padding: 8px 12px;
   color: var(--text);
+  background: var(--bg-sunken);
+  border-radius: var(--r-md);
+  border-left: 2px solid color-mix(in srgb, var(--primary) 40%, transparent);
 }
 
 .chat-panel-message-pending {
@@ -370,6 +374,22 @@
     max-height: 220px;
     overflow-y: auto;
     color: var(--text-muted);
+  }
+}
+
+.chat-panel-tool-secondary {
+  margin-top: 6px;
+  font-size: var(--font-sm);
+
+  summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    user-select: none;
+  }
+
+  .chat-panel-tool-input,
+  .chat-panel-tool-output {
+    margin-top: 4px;
   }
 }
 

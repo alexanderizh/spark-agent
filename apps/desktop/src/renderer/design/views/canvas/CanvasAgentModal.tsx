@@ -43,7 +43,8 @@ import {
   getPreferredProviderForAdapter,
   isProviderCompatibleWithAdapter,
 } from '../../utils/provider-adapter'
-import type { CanvasSnapshot } from './canvas.types'
+import type { CanvasNode, CanvasSnapshot } from './canvas.types'
+import { buildSelectedNodesContext } from './canvasAgentContextBuilder'
 import {
   buildCanvasAgentModelOptions,
   getCanvasAgentProviderModels,
@@ -55,6 +56,8 @@ interface Props {
   open: boolean
   onClose: () => void
   snapshot: CanvasSnapshot
+  /** 当前选中节点：每轮注入会话上下文，让 agent 能用 node id 定位用户所指节点 */
+  selectedNodes: CanvasNode[]
   /** 画布 store actions（由 CanvasWorkspaceView 把 useCanvasWorkspace 结果传入） */
   workspace: CanvasToolHostOptions['workspace']
 }
@@ -232,7 +235,12 @@ function clampPanelHeight(height: number): number {
   return Math.round(Math.min(MAX_PANEL_HEIGHT, Math.max(MIN_PANEL_HEIGHT, height)))
 }
 
-function buildCanvasBindingMessage(snapshot: CanvasSnapshot, text: string): string {
+function buildCanvasBindingMessage(
+  snapshot: CanvasSnapshot,
+  text: string,
+  selectedNodes: CanvasNode[] = [],
+): string {
+  const nodesContext = buildSelectedNodesContext(selectedNodes)
   return [
     '[画布绑定]',
     `canvasProjectId: ${snapshot.project.id}`,
@@ -241,7 +249,7 @@ function buildCanvasBindingMessage(snapshot: CanvasSnapshot, text: string): stri
     `当前会话已启用 ${REQUIRED_CANVAS_SKILL_ID}。`,
     '不要依赖聊天里的旧画布描述；每次需要查看或修改画布时，先调用画布工具获取最新状态。',
     '',
-    '---',
+    nodesContext ? `---\n${nodesContext}\n---` : '---',
     '',
     text,
   ].join('\n')
@@ -311,7 +319,7 @@ function useComposerDropdownPlacement(
   return placement
 }
 
-export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) {
+export function CanvasAgentModal({ open, onClose, snapshot, selectedNodes, workspace }: Props) {
   const projectId = snapshot.project.id
   const [fullscreen, setFullscreen] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -938,13 +946,17 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
         await syncSessionSkills(sid as string, effectiveSkillIds)
 
         let message = text
+        const nodesContext = buildSelectedNodesContext(selectedNodes)
         if (isFirst && firstTurnRef.current) {
           firstTurnRef.current = false
           updateProjectCache({
             sessionId: sid as string,
             firstTurnSent: true,
           })
-          message = buildCanvasBindingMessage(snapshot, text)
+          message = buildCanvasBindingMessage(snapshot, text, selectedNodes)
+        } else if (nodesContext) {
+          // 后续轮：有选中节点时注入，让 agent 能用 node id 定位用户所指节点
+          message = `${nodesContext}\n\n---\n\n${text}`
         }
 
         await window.spark.invoke('session:send-turn', {
@@ -971,6 +983,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
       updateProjectCache,
       refreshProjectSessions,
       selectedProvider,
+      selectedNodes,
       sessionId,
       snapshot,
       syncSessionSkills,
@@ -1020,11 +1033,9 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
     </>
   )
 
-  if (!open) return null
-
   return (
     <section
-      className={`canvas-bottom-floating-panel canvas-agent-panel${fullscreen ? ' is-fullscreen' : ''}${resizing ? ' is-resizing' : ''}`}
+      className={`canvas-bottom-floating-panel canvas-agent-panel canvas-agent-side-panel-inner${!open ? ' is-collapsed' : ''}${fullscreen ? ' is-fullscreen' : ''}${resizing ? ' is-resizing' : ''}`}
       style={panelStyle}
       onMouseDown={(event) => event.stopPropagation()}
       onMouseMove={(event) => event.stopPropagation()}
@@ -1066,13 +1077,14 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
       )}
 
       <div className="canvas-bottom-floating-head">
-        <div>
+        <div className="canvas-agent-head-info">
           <strong className="canvas-agent-title">
             <Icons.Sparkles size={15} />
             画布 Agent 助手
           </strong>
           <span title={contextSummary}>实时取数 · 固定全权模式 · 画布 skill 常驻</span>
         </div>
+        <div className="canvas-agent-head-composer">{composerBar}</div>
         <div className="canvas-agent-head-actions">
           <Tooltip title={fullscreen ? '退出全屏' : '全屏对话'}>
             <Button
@@ -1098,7 +1110,6 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
           sessionId={sessionId}
           loading={loadingConfig}
           error={error}
-          composer={composerBar}
           onSend={handleSend}
           initialInput={draftInput}
           onDraftChange={setDraftInput}
@@ -1110,6 +1121,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, workspace }: Props) 
               <Icons.Layers size={13} />
               <span>
                 已接入画布：{snapshot.project.title} · {snapshot.board.name}
+                {selectedNodes.length > 0 && ` · 已选 ${selectedNodes.length} 节点`}
               </span>
             </>
           }
