@@ -128,6 +128,8 @@ export function ChatPanel({
 
   const builderRef = useRef<MessageBuilder>(new MessageBuilder())
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const isAtBottomRef = useRef(true)
   const preservePendingOnSessionBindRef = useRef(false)
   const preservePendingHistoryLoadRef = useRef(false)
   const liveEventsRef = useRef<AgentEvent[]>([])
@@ -245,10 +247,18 @@ export function ChatPanel({
     return unsubscribe
   }, [sessionId])
 
-  // 自动滚动
+  // 智能滚动：仅在用户已处于底部附近时自动跟随，上滑查看历史时不强制拉回
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (isAtBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [messages, pendingUserAttachments, pendingUserText, showAssistantPending])
+
+  const handleMessagesScroll = useCallback(() => {
+    const el = messagesContainerRef.current
+    if (!el) return
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+  }, [])
 
   const appendAttachments = useCallback(
     (nextAttachments: ChatPanelAttachment[]) => {
@@ -429,7 +439,7 @@ export function ChatPanel({
       )}
 
       {!loading && contextBadge && <div className="chat-panel-context">{contextBadge}</div>}
-      <div className="chat-panel-messages">
+      <div className="chat-panel-messages" ref={messagesContainerRef} onScroll={handleMessagesScroll}>
         {messages.length === 0 &&
           pendingUserText == null &&
           !showAssistantPending &&
@@ -588,7 +598,6 @@ function BlockView({
     summaries: UserQuestionAnswerSummary[],
   ) => void
 }): React.ReactElement | null {
-  void toolNamePrefixFilter
   switch (block.kind) {
     case 'text':
       return (
@@ -609,9 +618,32 @@ function BlockView({
     case 'tool_call': {
       const displayName = block.toolName.replace(/^mcp__[^_]+__/, '')
       const isCanvas = block.toolName.startsWith('mcp__spark_canvas__')
-      // 如果设了前缀过滤，只显示该前缀；其他工具显示在折叠内
+      // 设了前缀过滤时，匹配的工具(画布操作)完整展示参数与结果；
+      // 其他工具(内部读取/思考等)折叠为"详情"，默认收起、可展开
       const matchesFilter = !toolNamePrefixFilter || block.toolName.startsWith(toolNamePrefixFilter)
       const statusClass = `chat-panel-tool-${block.status}`
+      const inputDetails =
+        Object.keys(block.toolInput).length > 0 ? (
+          <details className="chat-panel-tool-input">
+            <summary>参数</summary>
+            <pre>{JSON.stringify(block.toolInput, null, 2)}</pre>
+          </details>
+        ) : null
+      const errorBlock = block.error ? (
+        <div className="chat-panel-tool-error">{block.error}</div>
+      ) : null
+      const outputDetails =
+        block.output && block.status === 'success' ? (
+          <details className="chat-panel-tool-output">
+            <summary>结果</summary>
+            <pre>
+              {block.output.length > 4000
+                ? block.output.slice(0, 4000) + '\n…(已截断)'
+                : block.output}
+            </pre>
+          </details>
+        ) : null
+      const hasDetail = inputDetails != null || errorBlock != null || outputDetails != null
       return (
         <div
           className={`chat-panel-tool ${statusClass} ${isCanvas ? 'chat-panel-tool-canvas' : ''}`}
@@ -633,23 +665,20 @@ function BlockView({
               <span className="chat-panel-tool-duration">{block.durationMs}ms</span>
             )}
           </div>
-          {matchesFilter && Object.keys(block.toolInput).length > 0 && (
-            <details className="chat-panel-tool-input">
-              <summary>参数</summary>
-              <pre>{JSON.stringify(block.toolInput, null, 2)}</pre>
+          {matchesFilter ? (
+            <>
+              {inputDetails}
+              {errorBlock}
+              {outputDetails}
+            </>
+          ) : hasDetail ? (
+            <details className="chat-panel-tool-secondary">
+              <summary>详情</summary>
+              {inputDetails}
+              {errorBlock}
+              {outputDetails}
             </details>
-          )}
-          {block.error && <div className="chat-panel-tool-error">{block.error}</div>}
-          {block.output && block.status === 'success' && (
-            <details className="chat-panel-tool-output">
-              <summary>结果</summary>
-              <pre>
-                {block.output.length > 800
-                  ? block.output.slice(0, 800) + '\n…(已截断)'
-                  : block.output}
-              </pre>
-            </details>
-          )}
+          ) : null}
         </div>
       )
     }

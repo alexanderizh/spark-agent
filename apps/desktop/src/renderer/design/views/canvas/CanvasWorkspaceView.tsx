@@ -542,6 +542,11 @@ const CANVAS_SIDE_PANEL_DEFAULT_WIDTH = 400
 const CANVAS_SIDE_PANEL_MIN_WIDTH = 400
 const CANVAS_SIDE_PANEL_MAX_WIDTH = 640
 const CANVAS_SIDE_PANEL_KEYBOARD_STEP = 24
+const CANVAS_AGENT_PANEL_WIDTH_KEY = 'spark-canvas:agent-panel-width'
+const CANVAS_AGENT_PANEL_OPEN_KEY = 'spark-canvas:agent-panel-open'
+const CANVAS_AGENT_PANEL_DEFAULT_WIDTH = 380
+const CANVAS_AGENT_PANEL_MIN_WIDTH = 320
+const CANVAS_AGENT_PANEL_MAX_WIDTH = 560
 const CANVAS_AUTO_SAVE_DEBOUNCE_MS = 1200
 const CANVAS_AUTO_SAVE_THROTTLE_MS = 30_000
 // 自动保存失败时的退避：失败时 delay = min(30s, 1.2s * 2^failCount)，
@@ -565,6 +570,29 @@ function readSidePanelWidth(): number {
     return Number.isFinite(parsed) ? clampSidePanelWidth(parsed) : CANVAS_SIDE_PANEL_DEFAULT_WIDTH
   } catch {
     return CANVAS_SIDE_PANEL_DEFAULT_WIDTH
+  }
+}
+
+function clampAgentPanelWidth(width: number): number {
+  return Math.min(Math.max(width, CANVAS_AGENT_PANEL_MIN_WIDTH), CANVAS_AGENT_PANEL_MAX_WIDTH)
+}
+
+function readAgentPanelWidth(): number {
+  if (typeof window === 'undefined') return CANVAS_AGENT_PANEL_DEFAULT_WIDTH
+  try {
+    const parsed = Number(window.localStorage.getItem(CANVAS_AGENT_PANEL_WIDTH_KEY))
+    return Number.isFinite(parsed) ? clampAgentPanelWidth(parsed) : CANVAS_AGENT_PANEL_DEFAULT_WIDTH
+  } catch {
+    return CANVAS_AGENT_PANEL_DEFAULT_WIDTH
+  }
+}
+
+function readAgentPanelOpen(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.localStorage.getItem(CANVAS_AGENT_PANEL_OPEN_KEY) === '1'
+  } catch {
+    return false
   }
 }
 
@@ -1716,7 +1744,7 @@ export function CanvasWorkspaceView({
   const [filmCenterInitialTab, setFilmCenterInitialTab] = useState<FilmCenterTab | undefined>(
     undefined,
   )
-  const [agentOpen, setAgentOpen] = useState(false)
+  const [agentOpen, setAgentOpen] = useState(readAgentPanelOpen)
   // 进入画布默认为平移模式：避免误触发框选/拖拽节点，更符合「先浏览」的直觉。
   const [activeTool, setActiveTool] = useState<CanvasTool>('pan')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
@@ -1793,6 +1821,7 @@ export function CanvasWorkspaceView({
   const mergingGroupImageIdsRef = useRef(new Set<string>())
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true)
+  const [agentPanelWidth, setAgentPanelWidth] = useState(readAgentPanelWidth)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
   const activeToolRef = useRef<CanvasTool>('pan')
@@ -1825,8 +1854,9 @@ export function CanvasWorkspaceView({
     () =>
       ({
         '--canvas-side-panel-width': sidePanelCollapsed ? '0px' : `${sidePanelWidth}px`,
+        '--canvas-agent-panel-width': agentOpen ? `${agentPanelWidth}px` : '0px',
       }) as CSSProperties,
-    [sidePanelCollapsed, sidePanelWidth],
+    [sidePanelCollapsed, sidePanelWidth, agentOpen, agentPanelWidth],
   )
 
   useEffect(() => {
@@ -1837,6 +1867,22 @@ export function CanvasWorkspaceView({
     }
   }, [sidePanelWidth])
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CANVAS_AGENT_PANEL_WIDTH_KEY, String(agentPanelWidth))
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [agentPanelWidth])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CANVAS_AGENT_PANEL_OPEN_KEY, agentOpen ? '1' : '0')
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [agentOpen])
+
   useEffect(
     () => () => {
       document.body.classList.remove('canvas-side-panel-resizing')
@@ -1846,6 +1892,10 @@ export function CanvasWorkspaceView({
 
   const updateSidePanelWidth = useCallback((width: number) => {
     setSidePanelWidth(Math.round(clampSidePanelWidth(width)))
+  }, [])
+
+  const updateAgentPanelWidth = useCallback((width: number) => {
+    setAgentPanelWidth(Math.round(clampAgentPanelWidth(width)))
   }, [])
 
   const clearAutoSaveTimer = useCallback(() => {
@@ -1880,6 +1930,33 @@ export function CanvasWorkspaceView({
       window.addEventListener('pointercancel', handlePointerUp)
     },
     [sidePanelWidth, updateSidePanelWidth],
+  )
+
+  const handleAgentPanelResizeStart = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      const startX = event.clientX
+      const startWidth = agentPanelWidth
+      const body = document.body
+      body.classList.add('canvas-agent-panel-resizing')
+
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        updateAgentPanelWidth(startWidth + moveEvent.clientX - startX)
+      }
+
+      const handlePointerUp = () => {
+        body.classList.remove('canvas-agent-panel-resizing')
+        window.removeEventListener('pointermove', handlePointerMove)
+        window.removeEventListener('pointerup', handlePointerUp)
+        window.removeEventListener('pointercancel', handlePointerUp)
+      }
+
+      window.addEventListener('pointermove', handlePointerMove)
+      window.addEventListener('pointerup', handlePointerUp)
+      window.addEventListener('pointercancel', handlePointerUp)
+    },
+    [agentPanelWidth, updateAgentPanelWidth],
   )
 
   const handleSidePanelResizeKeyDown = useCallback(
@@ -6654,6 +6731,66 @@ export function CanvasWorkspaceView({
       </header>
 
       <div className="canvas-workspace-body" style={sidePanelStyle}>
+        <button
+          type="button"
+          className={`canvas-agent-side-panel-collapse-toggle${agentOpen ? '' : ' is-collapsed'}`}
+          onClick={() => setAgentOpen((current) => !current)}
+          aria-label={agentOpen ? '折叠画布助手' : '展开画布助手'}
+          title={agentOpen ? '折叠画布助手' : '展开画布助手'}
+        >
+          {agentOpen ? <Icons.ChevronLeft size={16} /> : <Icons.Sparkles size={16} />}
+        </button>
+        <aside className={`canvas-agent-side-panel${agentOpen ? '' : ' is-collapsed'}`}>
+          <div
+            aria-label="调整助手面板宽度"
+            aria-orientation="vertical"
+            className="canvas-agent-side-panel-resize-handle"
+            onPointerDown={handleAgentPanelResizeStart}
+          />
+          <CanvasAgentModal
+            open={agentOpen}
+            onClose={() => setAgentOpen(false)}
+            snapshot={snapshot}
+            selectedNodes={selectedNodes}
+            workspace={{
+              createTextNode,
+              createImageNode,
+              uploadImageAsset,
+              createGroupNode,
+              dissolveGroupNode,
+              addNodesToGroup,
+              removeNodesFromGroup,
+              deleteNodes,
+              duplicateNodes,
+              patchNodes,
+              updateNodeData,
+              connectNodes,
+              deleteEdges,
+              createBoard,
+              renameBoard,
+              deleteBoard,
+              duplicateBoard,
+              switchBoard,
+              copyNodesToBoard,
+              insertAsset,
+              createFilmAsset,
+              updateFilmAsset,
+              deleteFilmAsset,
+              createShotGroup,
+              updateShotGroup,
+              deleteShotGroup,
+              createShotSegment,
+              updateShotSegment,
+              deleteShotSegment,
+              createOperationNode,
+              retryOperationNode,
+              runOperationNode,
+              cancelTask,
+              updateProjectSettings,
+              refresh,
+            }}
+          />
+        </aside>
         <div
           className={`canvas-stage-area${agentOpen ? ' is-agent-open' : ''}`}
           onPointerMoveCapture={suppressCanvasGestureWhileAgentOpen}
@@ -6684,6 +6821,7 @@ export function CanvasWorkspaceView({
             selectedNodeIds={selectedNodeIds}
             onSelectionChange={handleSelectionChange}
             onNodesPersist={(nodes) => updateNodes(nodes)}
+            onUpdateNodeData={(nodeId, data) => void updateNodeData(nodeId, data)}
             onConnectNodes={connectNodes}
             onDeleteEdges={(edgeIds) => void deleteEdges(edgeIds)}
             onDuplicateNode={handleDuplicateNode}
@@ -6856,48 +6994,6 @@ export function CanvasWorkspaceView({
             onSaveDraft={handleSaveShotDirectorDraft}
             onInsertPrompt={handleInsertShotDirectorPrompt}
             onInsertScreenshot={handleInsertShotDirectorScreenshot}
-          />
-          <CanvasAgentModal
-            open={agentOpen}
-            onClose={() => setAgentOpen(false)}
-            snapshot={snapshot}
-            workspace={{
-              createTextNode,
-              createImageNode,
-              uploadImageAsset,
-              createGroupNode,
-              dissolveGroupNode,
-              addNodesToGroup,
-              removeNodesFromGroup,
-              deleteNodes,
-              duplicateNodes,
-              patchNodes,
-              updateNodeData,
-              connectNodes,
-              deleteEdges,
-              createBoard,
-              renameBoard,
-              deleteBoard,
-              duplicateBoard,
-              switchBoard,
-              copyNodesToBoard,
-              insertAsset,
-              createFilmAsset,
-              updateFilmAsset,
-              deleteFilmAsset,
-              createShotGroup,
-              updateShotGroup,
-              deleteShotGroup,
-              createShotSegment,
-              updateShotSegment,
-              deleteShotSegment,
-              createOperationNode,
-              retryOperationNode,
-              runOperationNode,
-              cancelTask,
-              updateProjectSettings,
-              refresh,
-            }}
           />
           <CanvasPanoramaViewerModal
             node={panoramaPreviewNode}
@@ -7089,6 +7185,9 @@ export function CanvasWorkspaceView({
                   canDissolveGroup={canDissolveGroup}
                   onPatchNode={(node, patch) => {
                     void patchNodes([node.id], patch)
+                  }}
+                  onPatchNodeData={(node, data) => {
+                    void updateNodeData(node.id, data)
                   }}
                 />
               </div>

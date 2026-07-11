@@ -1,7 +1,18 @@
 import { useState } from 'react'
 import { Button, Tag } from '@lobehub/ui'
-import { Descriptions, Empty, Input, Space } from 'antd'
-import type { CanvasAsset, CanvasEdge, CanvasNode, CanvasTask } from './canvas.types'
+import { Descriptions, Empty, Input, Select, Space } from 'antd'
+import type {
+  CanvasAsset,
+  CanvasEdge,
+  CanvasNode,
+  CanvasNodeData,
+  CanvasTask,
+} from './canvas.types'
+import {
+  getNodeSubtypeOptions,
+  getNodeCurrentSubtype,
+  isSubtypeSwitchable,
+} from './canvasNodeSubtypeSwitch'
 
 export function CanvasInspector({
   selectedNodes,
@@ -21,6 +32,7 @@ export function CanvasInspector({
   canRemoveFromGroup,
   canDissolveGroup,
   onPatchNode,
+  onPatchNodeData,
 }: {
   selectedNodes: CanvasNode[]
   nodes: CanvasNode[]
@@ -39,6 +51,7 @@ export function CanvasInspector({
   canRemoveFromGroup: boolean
   canDissolveGroup: boolean
   onPatchNode: (node: CanvasNode, patch: Partial<CanvasNode>) => void
+  onPatchNodeData?: (node: CanvasNode, data: Partial<CanvasNodeData>) => void
 }) {
   if (selectedNodes.length === 0) {
     return (
@@ -160,6 +173,7 @@ export function CanvasInspector({
         key={`${node.id}:${node.updatedAt}:layout`}
         node={node}
         onPatchNode={onPatchNode}
+        onPatchNodeData={onPatchNodeData}
       />
       {asset && <AssetInspector asset={asset} />}
       {node.type === 'group' && <GroupInspector group={node} childNodes={childNodes} />}
@@ -172,11 +186,16 @@ export function CanvasInspector({
 function NodeLayoutEditor({
   node,
   onPatchNode,
+  onPatchNodeData,
 }: {
   node: CanvasNode
   onPatchNode: (node: CanvasNode, patch: Partial<CanvasNode>) => void
+  onPatchNodeData?: ((node: CanvasNode, data: Partial<CanvasNodeData>) => void) | undefined
 }) {
   const [title, setTitle] = useState(node.title ?? '')
+  const switchable = isSubtypeSwitchable(node)
+  const currentSubtype = switchable ? getNodeCurrentSubtype(node) : ''
+  const subtypeOptions = switchable ? getNodeSubtypeOptions(node) : []
 
   const saveLayout = () => {
     onPatchNode(node, {
@@ -192,6 +211,23 @@ function NodeLayoutEditor({
           <span>标题</span>
           <Input size="middle" value={title} onChange={(event) => setTitle(event.target.value)} />
         </label>
+        {switchable && (
+          <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+            <span>节点类型</span>
+            <Select
+              size="middle"
+              value={currentSubtype}
+              options={subtypeOptions.map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
+              onChange={(value) => {
+                const option = subtypeOptions.find((item) => item.value === value)
+                if (option) onPatchNodeData?.(node, option.apply as Partial<CanvasNodeData>)
+              }}
+            />
+          </label>
+        )}
       </div>
       <Button size="middle" type="primary" onClick={saveLayout}>
         保存属性

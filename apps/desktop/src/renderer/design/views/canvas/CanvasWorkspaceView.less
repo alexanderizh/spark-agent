@@ -195,8 +195,9 @@
   min-height: 0;
   overflow: hidden;
   --canvas-side-panel-width: 360px;
-  // 两列布局：主画布 | 右信息面板（文档 §6）
-  grid-template-columns: minmax(0, 1fr) var(--canvas-side-panel-width);
+  --canvas-agent-panel-width: 0px;
+  // 三列布局：左助手面板 | 主画布 | 右信息面板
+  grid-template-columns: var(--canvas-agent-panel-width) minmax(0, 1fr) var(--canvas-side-panel-width);
   background:
     linear-gradient(
       90deg,
@@ -3024,6 +3025,135 @@ body.canvas-side-panel-resizing {
     0 20px 48px rgba(0, 0, 0, 0.3),
     0 2px 10px rgba(0, 0, 0, 0.18);
   transform: translateX(-50%);
+}
+
+// 画布助手左侧面板（保活：CSS 隐藏不卸载，保留 ChatPanel 流式订阅与历史）
+.canvas-agent-side-panel {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--divider);
+  background: var(--panel);
+  transition: width 0.18s ease;
+}
+.canvas-agent-side-panel.is-collapsed {
+  width: 0 !important;
+  border-right: none;
+  overflow: hidden;
+  pointer-events: none;
+}
+// 覆盖 canvas-bottom-floating-panel 的悬浮定位，让助手填充左侧 aside
+.canvas-agent-side-panel-inner {
+  position: relative !important;
+  bottom: auto !important;
+  left: auto !important;
+  top: auto !important;
+  z-index: auto !important;
+  display: flex !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+  max-height: none !important;
+  flex-direction: column !important;
+  border-radius: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.canvas-agent-side-panel-inner.is-collapsed {
+  display: none !important;
+}
+.canvas-agent-side-panel-inner.is-fullscreen {
+  position: fixed !important;
+  inset: 12px !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  z-index: 1200 !important;
+  border-radius: var(--r-xl) !important;
+  border: 1px solid var(--border-strong) !important;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.3) !important;
+}
+// 顶栏重组：配置选择器移入 head，输入区上方腾空，消息区获得全高
+.canvas-agent-side-panel-inner .canvas-bottom-floating-head {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.canvas-agent-side-panel-inner .canvas-agent-head-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.canvas-agent-side-panel-inner .canvas-agent-head-composer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  flex: 1 1 100%;
+}
+// 隐藏助手面板内部悬浮 resize handles（宽度由外层 aside resize handle 控制）
+.canvas-agent-side-panel-inner .canvas-agent-resize-handle {
+  display: none !important;
+}
+.canvas-agent-side-panel-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 10;
+  cursor: col-resize;
+}
+.canvas-agent-side-panel-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 2px;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.canvas-agent-side-panel-resize-handle:hover::after,
+.canvas-agent-side-panel-resize-handle:focus-visible::after {
+  background: var(--primary);
+}
+body.canvas-agent-panel-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
+  background: var(--primary);
+}
+.canvas-agent-side-panel-collapse-toggle {
+  position: absolute;
+  top: 12px;
+  left: var(--canvas-agent-panel-width);
+  z-index: 11;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: -12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-elev);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: left 0.18s ease, color 0.15s ease, background 0.15s ease;
+}
+.canvas-agent-side-panel-collapse-toggle:hover {
+  color: var(--text);
+  background: var(--bg-sunken);
+}
+.canvas-agent-side-panel-collapse-toggle.is-collapsed {
+  left: 0;
+  margin-left: 12px;
 }
 
 .canvas-node-edit-bottom-panel {
