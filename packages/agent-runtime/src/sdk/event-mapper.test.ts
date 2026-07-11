@@ -208,6 +208,63 @@ describe('mapSDKMessageToEvents', () => {
     ])
   })
 
+  it('routes extended Claude content blocks through the public message mapper', () => {
+    const events = mapSDKMessageToEvents({
+      type: 'assistant',
+      uuid: 'assistant-extended',
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'server_tool_use', id: 'search-1', name: 'web_search', input: { query: 'Spark Agent' } },
+          {
+            type: 'web_search_tool_result',
+            tool_use_id: 'search-1',
+            content: [{ type: 'web_search_result', title: 'Spark', url: 'https://example.com' }],
+          },
+        ],
+      },
+    }, { sessionId: 'session-1', turnId: 'turn-1', toolNamesById: new Map() })
+
+    expect(events).toEqual([
+      expect.objectContaining({ type: 'tool_call', toolCallId: 'search-1', toolName: 'web_search' }),
+      expect.objectContaining({ type: 'tool_result', toolCallId: 'search-1', toolName: 'web_search' }),
+    ])
+  })
+
+  it('redacts encrypted payloads nested inside regular tool results', () => {
+    const secret = 'nested-encrypted-secret'
+    const events = mapSDKMessageToEvents({
+      type: 'user',
+      uuid: 'user-encrypted-result',
+      session_id: 'sdk-session',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'tool-1',
+          content: [{
+            type: 'code_execution_tool_result',
+            tool_use_id: 'nested-code-1',
+            content: {
+              type: 'encrypted_code_execution_result',
+              encrypted_stdout: secret,
+              stderr: '',
+              return_code: 0,
+              content: [],
+            },
+          }],
+        }],
+      },
+    }, { sessionId: 'session-1', turnId: 'turn-1' })
+
+    expect(JSON.stringify(events)).not.toContain(secret)
+    expect(events).toEqual([
+      expect.objectContaining({ type: 'tool_result', output: expect.stringContaining('[redacted]') }),
+    ])
+  })
+
   it('maps SDK result checkpoint metadata', () => {
     const result: SDKResultMessage = {
       type: 'result',
