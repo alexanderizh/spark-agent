@@ -72,6 +72,12 @@ export interface HistoryImportDeps {
   onProgress?: (progress: HistoryImportProgress) => void
   /** 宿主机 home 目录（测试可注入） */
   homeDir?: string
+  /**
+   * 将任意 git 路径（含 worktree）推导为主仓库根路径。
+   * 用于导入时把 worktree cwd 归一化到主仓库，使 worktree 会话归并到主项目分组。
+   * 非 git 目录或推导失败时应返回 null（调用方回落到原始 cwd）。测试可注入 mock。
+   */
+  resolveMainRepoRoot?: (cwd: string) => Promise<string | null>
 }
 
 interface ScannedFile {
@@ -83,6 +89,11 @@ interface ScannedFile {
 
 export class HistoryImportService {
   private readonly home: string
+  /**
+   * cwd → mainRepoRoot 的实例级缓存，避免对同一 cwd（尤其同一主仓库的多个 worktree）
+   * 重复 spawn git 进程做归一化。在一次 import 批次内有效。
+   */
+  private readonly mainRootCache = new Map<string, string | null>()
 
   constructor(private readonly deps: HistoryImportDeps) {
     this.home = deps.homeDir ?? homedir()
@@ -333,7 +344,7 @@ export class HistoryImportService {
 
     const provider = await this.deps.resolveProvider(sel.source)
     const cwd = sel.cwd ?? probe.meta.cwd
-    const workspaceId = this.resolveWorkspaceId(cwd, workspaceCache)
+    const workspaceId = await this.resolveWorkspaceId(cwd, workspaceCache)
 
     const { sessionId } = await this.deps.createSession({
       title: sel.title || probe.meta.title,
@@ -396,9 +407,40 @@ export class HistoryImportService {
     return parseCodexRollout(text, { sessionId, sourceSessionId, threadName: null, fallbackTimestamp })
   }
 
-  /** cwd → workspaceId（缓存）；cwd 不可用 / 无效时归入「导入历史」工作区 */
-  private resolveWorkspaceId(cwd: string | null, cache: Map<string, string>): string {
-    const key = cwd != null && cwd.trim().length > 0 ? cwd.trim() : IMPORTED_WORKSPACE_ROOT
+  /**
+   * cwd → workspaceId（缓存）；cwd 不可用 / 无效时归入「导入历史」工作区。
+   *
+   * 若注入了 resolveMainRepoRoot，会先把 worktree 路径归一化到主仓库根——
+   * 这样 worktree 中产生的会话不会单独成项目，而是归并到主仓库 workspace 分组下。
+   * mainRootCache 避免对同一 cwd 重复 spawn git 进程。
+   */
+  private async resolveWorkspaceId(
+    cwd: string | null,
+    cache: Map<string, string>,
+  ): Promise<string> {
+    const rawKey = cwd != null && cwd.trim().length > 0 ? cwd.trim() : IMPORTED_WORKSPACE_ROOT
+
+    // worktree 归一化：尝试把 cwd 推导为主仓库根路径（带实例级缓存避免重复 spawn git）
+    let key = rawKey
+    if (this.deps.resolveMainRepoRoot != null && rawKey !== IMPORTED_WORKSPACE_ROOT) {
+      let mainRoot: string | null
+      const cachedRoot = this.mainRootCache.get(rawKey)
+      if (cachedRoot !== undefined) {
+        mainRoot = cachedRoot
+      } else {
+        try {
+          mainRoot = await this.deps.resolveMainRepoRoot(rawKey)
+        } catch {
+          // 非 git 目录或 git 不可用：回落到原始 cwd
+          mainRoot = null
+        }
+        this.mainRootCache.set(rawKey, mainRoot)
+      }
+      if (mainRoot != null && mainRoot.trim().length > 0 && mainRoot !== rawKey) {
+        key = mainRoot.trim()
+      }
+    }
+
     const cached = cache.get(key)
     if (cached != null) return cached
 

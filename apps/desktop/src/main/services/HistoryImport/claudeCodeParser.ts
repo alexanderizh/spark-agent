@@ -144,6 +144,10 @@ export function parseClaudeCodeTranscript(
   let lastTs: string | null = null
   let messageCount = 0
   let sawFirstUserTurn = false
+  // turn 级别的文本段索引：同一 turn 内被工具调用分隔的多个 text block 各自需要
+  // 独立 segmentId，否则 conversation-summarizer 的 addSegment 会因 segmentId 重复而覆盖。
+  let textSegIndex = 0
+  let thinkSegIndex = 0
 
   for (const l of lines) {
     if (l.cwd != null && cwd == null) cwd = l.cwd
@@ -189,18 +193,23 @@ export function parseClaudeCodeTranscript(
 
       builder.newTurn()
       sawFirstUserTurn = true
+      textSegIndex = 0
+      thinkSegIndex = 0
       builder.push({ type: 'user_message', content: userText, timestamp: ts })
       messageCount++
       continue
     }
 
     if (l.type === 'assistant') {
-      if (!sawFirstUserTurn) builder.newTurn()
+      if (!sawFirstUserTurn) {
+        builder.newTurn()
+        textSegIndex = 0
+        thinkSegIndex = 0
+      }
       const content = l.message?.content
       const provider = 'claude'
       const blocks = Array.isArray(content) ? content : []
       const ts = l.timestamp ?? null
-      let segIndex = 0
       let emittedText = false
 
       for (const block of blocks) {
@@ -209,7 +218,7 @@ export function parseClaudeCodeTranscript(
             type: 'agent_thinking',
             mode: 'complete',
             content: block.thinking,
-            segmentId: `${builder.currentTurnId}:think:${segIndex++}`,
+            segmentId: `${builder.currentTurnId}:think:${thinkSegIndex++}`,
             timestamp: ts,
           })
         } else if (block.type === 'text' && typeof block.text === 'string' && block.text.trim().length > 0) {
@@ -218,8 +227,14 @@ export function parseClaudeCodeTranscript(
             mode: 'complete',
             content: block.text,
             provider,
-            isFinal: true,
-            segmentId: `${builder.currentTurnId}:text:${segIndex++}`,
+            // isFinal=false：导入的每个 text block 都是一段独立完整正文，不是"整轮拼接的
+            // 最终 result"。运行时约定一个 turn 只有一个 isFinal=true（整轮汇总文本），
+            // 若每段都标 true，conversation-summarizer 的 addSegment 会互相覆盖、只留最后一段。
+            // 设 false 让历史重建走 segmentId 路径正确累加多段正文。
+            isFinal: false,
+            // textSegIndex 在 turn 级别递增，确保同一 turn 内多个 assistant 行的 text block
+            // 各有独立 segmentId（而非每行都从 0 开始导致重复覆盖）。
+            segmentId: `${builder.currentTurnId}:text:${textSegIndex++}`,
             timestamp: ts,
           })
           emittedText = true
