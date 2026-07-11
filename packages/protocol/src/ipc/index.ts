@@ -3661,6 +3661,106 @@ export interface PlaywrightSetEnabledResponse {
   enabled: boolean
 }
 
+// ─── FFmpeg Integrity & Video Processing Channels ────────────────────────────
+
+/**
+ * FFmpeg 二进制完整性状态。由 `FfmpegIntegrityService` 产出，供设置-完整性面板展示。
+ */
+export interface FfmpegStatusRequest {}
+
+export interface FfmpegStatusResponse {
+  /** ffmpeg 是否可用 */
+  ffmpegReady: boolean
+  /** 'managed' = 从 minio 下载的；'system' = 系统 PATH；'none' = 不可用 */
+  ffmpegSource: 'managed' | 'system' | 'none'
+  /** ffmpeg 版本号（从 `ffmpeg -version` 解析） */
+  ffmpegVersion: string | null
+  /** ffprobe 是否可用（关键帧时间戳解析需要） */
+  ffprobeReady: boolean
+  /** ffmpeg 可执行文件路径 */
+  binaryPath: string | null
+  /** 上次安装/检测的错误信息 */
+  lastError: string | null
+}
+
+export interface FfmpegInstallRequest {
+  /** 可选：指定 manifest 里的 artifactId；缺省按当前平台自动选 */
+  artifactId?: string
+}
+
+export interface FfmpegInstallResponse {
+  success: boolean
+  message?: string
+}
+
+export interface FfmpegInstallProgress {
+  state: 'starting' | 'downloading' | 'installing' | 'verifying' | 'done' | 'error'
+  /** 0~100；null 表示无法计算（如纯 JS 解压阶段） */
+  percent: number | null
+  message: string
+  logLine: string | null
+}
+
+/**
+ * 视频处理操作请求（通用 invoke，覆盖 probe/抽帧/剪辑/转码/画面处理）。
+ *
+ * 每个 operation 对应 FfmpegRunner 的一个方法，params 是该方法参数的序列化形式。
+ * 进度通过 `stream:video:process-progress` 推送（按 requestId 关联）。
+ */
+export interface VideoProcessRequest {
+  /** 操作类型 */
+  operation:
+    | 'probe'
+    | 'extractKeyframes'
+    | 'extractFramesAtTimes'
+    | 'generateThumbnail'
+    | 'trim'
+    | 'concat'
+    | 'segment'
+    | 'transcode'
+    | 'adjustSpeed'
+    | 'reverse'
+    | 'crop'
+    | 'watermark'
+    | 'burnSubtitle'
+  /** 源视频文件绝对路径 */
+  input: string
+  /** 各操作的参数（结构因 operation 而异） */
+  params: Record<string, unknown>
+  /** 用于关联进度推送的唯一 id */
+  requestId: string
+}
+
+export interface VideoProcessResponse {
+  success: boolean
+  /** 操作结果（结构因 operation 而异，如 probe 返回 VideoProbeInfo、抽帧返回帧列表） */
+  result?: unknown
+  error?: string
+}
+
+export interface VideoProcessProgress {
+  requestId: string
+  percent: number
+  stage: string
+}
+
+/** 通用二进制产物安装（ffmpeg 等非技能包） */
+export interface BinaryInstallRequest {
+  artifactId: string
+}
+
+export interface BinaryInstallResponse {
+  success: boolean
+  destPath?: string
+  message?: string
+}
+
+export interface BinaryInstallProgress {
+  artifactId: string
+  downloaded: number
+  total: number
+}
+
 export interface BrowserOpenExternalRequest {
   url?: string
 }
@@ -5393,6 +5493,13 @@ export interface IpcChannelMap {
   'playwright:set-mode': [PlaywrightSetModeRequest, PlaywrightSetModeResponse]
   'playwright:set-enabled': [PlaywrightSetEnabledRequest, PlaywrightSetEnabledResponse]
 
+  // FFmpeg Integrity & Video Processing
+  'ffmpeg:status': [FfmpegStatusRequest, FfmpegStatusResponse]
+  'ffmpeg:install': [FfmpegInstallRequest, FfmpegInstallResponse]
+  'video:probe': [VideoProcessRequest, VideoProcessResponse]
+  'video:process': [VideoProcessRequest, VideoProcessResponse]
+  'binary:install': [BinaryInstallRequest, BinaryInstallResponse]
+
   // Browser helpers
   'browser:open-external': [BrowserOpenExternalRequest, BrowserOpenExternalResponse]
 
@@ -5635,6 +5742,14 @@ export interface IpcStreamChannelMap {
   'stream:playwright:status': PlaywrightStatusResponse
   /** Playwright MCP / Chromium 安装进度推送 */
   'stream:playwright:install-progress': PlaywrightInstallProgress
+  /** FFmpeg 状态变化推送（启动自检 + 安装后刷新）*/
+  'stream:ffmpeg:status': FfmpegStatusResponse
+  /** FFmpeg 下载安装进度推送 */
+  'stream:ffmpeg:install-progress': FfmpegInstallProgress
+  /** 视频处理进度推送（按 requestId 关联请求）*/
+  'stream:video:process-progress': VideoProcessProgress
+  /** 通用二进制产物下载进度推送 */
+  'stream:binary:install-progress': BinaryInstallProgress
   /** Embedded browser view screenshot/page update (Renderer listens for live preview) */
   'stream:playwright:view': {
     title: string | null
