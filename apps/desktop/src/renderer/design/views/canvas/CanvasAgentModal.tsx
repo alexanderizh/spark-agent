@@ -37,6 +37,7 @@ import { ChatPanel, type ChatPanelNodeReference } from '../../components/ChatPan
 import { SkillsPickerModal, type SkillItemForPicker } from '../../components/SkillsPickerModal'
 import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../../avatar'
 import { useCanvasToolHost } from './canvas-tool-host'
+import './CanvasAgentPicker.less'
 import type { CanvasToolHostOptions } from './canvas-tool-host'
 import {
   getProviderAdapterKind,
@@ -1453,6 +1454,7 @@ export function AgentPickerInline({
   return (
     <Dropdown
       menu={{ items: [] }}
+      overlayClassName="canvas-agent-picker-dropdown"
       open={open}
       trigger={openOnHover ? ['hover'] : ['click']}
       placement={placement}
