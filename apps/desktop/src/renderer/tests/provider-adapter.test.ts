@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ProviderProfile } from '@spark/protocol'
 import {
+  getProviderAdapterKind,
   getPreferredProviderForAdapter,
   isProviderCompatibleWithAdapter,
 } from '../design/utils/provider-adapter'
@@ -38,6 +39,16 @@ describe('provider adapter selection', () => {
     name: 'DeepSeek API',
     provider: 'anthropic',
   })
+  const sparkManagedProvider = profile({
+    id: 'spark-platform-newapi',
+    name: 'Spark 平台官方模型',
+    provider: 'anthropic',
+    defaultModel: 'glm-4.5',
+    modelIds: ['glm-4.5', 'deepseek-v4'],
+    managed: true,
+    managedType: 'newapi',
+    managedOwnerUserId: '42',
+  })
 
   it('keeps local Claude and local Codex on their own adapters', () => {
     expect(isProviderCompatibleWithAdapter(localClaude, 'claude-sdk')).toBe(true)
@@ -54,5 +65,11 @@ describe('provider adapter selection', () => {
     )
     expect(selected?.id).toBe('local-codex-cli')
     expect(selected?.defaultModel).toBe('codex cli')
+  })
+
+  it('routes the official Spark managed provider to Claude SDK', () => {
+    expect(isProviderCompatibleWithAdapter(sparkManagedProvider, 'claude-sdk')).toBe(true)
+    expect(isProviderCompatibleWithAdapter(sparkManagedProvider, 'codex')).toBe(false)
+    expect(getProviderAdapterKind(sparkManagedProvider)).toBe('claude-sdk')
   })
 })

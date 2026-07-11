@@ -73,6 +73,7 @@ function makeRepo() {
       if (!current) return null
       const next = {
         ...current,
+        ...(patch.providerType !== undefined && { provider_type: patch.providerType }),
         ...(patch.name !== undefined && { name: patch.name }),
         ...(patch.enabled !== undefined && { enabled: patch.enabled ? 1 : 0 }),
         ...(patch.keystoreRef !== undefined && { keystore_ref: patch.keystoreRef }),
@@ -1187,6 +1188,7 @@ describe('ProviderService', () => {
 
     expect(profile).toMatchObject({
       id: 'spark-platform-newapi',
+      provider: 'anthropic',
       managed: true,
       managedType: 'newapi',
       managedOwnerUserId: '42',
@@ -1196,6 +1198,45 @@ describe('ProviderService', () => {
       'newapi-spark-user-42-api-key',
       'sk-platform-secret',
     )
+  })
+
+  it('migrates an existing official provider from codex-chat to anthropic claude-sdk semantics', async () => {
+    repo.rows.set('spark-platform-newapi', {
+      id: 'spark-platform-newapi',
+      provider_type: 'openai',
+      name: 'Spark 平台官方模型',
+      config_json: JSON.stringify({
+        defaultModel: 'glm-4.5',
+        modelIds: ['glm-4.5'],
+        availableModelIds: ['glm-4.5'],
+        apiEndpoint: 'https://newapi.example/v1',
+        codexApiKind: 'chat',
+        modelType: 'text',
+        managed: true,
+        managedType: 'newapi',
+        managedOwnerUserId: '42',
+        credentialState: 'ready',
+      }),
+      enabled: 1,
+      keystore_ref: 'newapi-spark-user-42-api-key',
+      is_default: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+
+    const profile = await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-4.5', 'deepseek-v4'],
+      apiKey: 'sk-platform-secret',
+    })
+
+    expect(profile.provider).toBe('anthropic')
+    expect(profile).not.toHaveProperty('codexApiKind')
+    expect(repo.update).toHaveBeenCalledWith('spark-platform-newapi', expect.objectContaining({
+      providerType: 'anthropic',
+      config: expect.not.objectContaining({ codexApiKind: 'chat' }),
+    }))
   })
 
   it('preserves local managed model preferences when the platform model list refreshes', async () => {

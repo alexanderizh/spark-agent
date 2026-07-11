@@ -64,6 +64,10 @@ import {
 } from '@spark/protocol'
 import { EMPTY_COMPOSER_DRAFT } from './ChatComposerTypes'
 import { ReasoningMaxParticles } from './ReasoningMaxParticles'
+import {
+  prioritizeManagedProviderGroups,
+  resolveManagedPlatformVendor,
+} from './provider-model-picker-utils'
 import type {
   AgentAdapter,
   BranchState,
@@ -4245,40 +4249,42 @@ function ProviderModelPicker({
   )
   // 模糊搜索：命中供应商名/厂商名则保留其全部模型，否则只保留模型名命中的
   const normalizedSearch = search.trim().toLowerCase()
-  const filteredProviderGroups = conversationalProviders
-    .map((provider) => {
-      const configuredModels = provider.modelIds.length
-        ? provider.modelIds
-        : provider.defaultModel
-          ? [provider.defaultModel]
-          : []
-      const routeModels = modelCards
-        .filter(
-          (model) =>
-            isAutoRouterProvider(provider) &&
-            model.enabled &&
-            model.providerId === provider.id &&
-            isRoutingModelCard(model),
-        )
-        .map((model) => model.id)
-      const models = Array.from(new Set([...configuredModels, ...routeModels]))
-      if (normalizedSearch === '') return { provider, models }
-      const vendorName = resolveProviderVendor(provider)?.name ?? ''
-      const providerMatches =
-        provider.name.toLowerCase().includes(normalizedSearch) ||
-        vendorName.toLowerCase().includes(normalizedSearch)
-      const matchedModels = providerMatches
-        ? models
-        : models.filter(
-            (modelId) =>
-              modelId.toLowerCase().includes(normalizedSearch) ||
-              getPickerModelDisplayLabel(provider, modelId, modelNameById)
-                .toLowerCase()
-                .includes(normalizedSearch),
+  const filteredProviderGroups = prioritizeManagedProviderGroups(
+    conversationalProviders
+      .map((provider) => {
+        const configuredModels = provider.modelIds.length
+          ? provider.modelIds
+          : provider.defaultModel
+            ? [provider.defaultModel]
+            : []
+        const routeModels = modelCards
+          .filter(
+            (model) =>
+              isAutoRouterProvider(provider) &&
+              model.enabled &&
+              model.providerId === provider.id &&
+              isRoutingModelCard(model),
           )
-      return { provider, models: matchedModels }
-    })
-    .filter((group) => group.models.length > 0)
+          .map((model) => model.id)
+        const models = Array.from(new Set([...configuredModels, ...routeModels]))
+        if (normalizedSearch === '') return { provider, models }
+        const vendorName = resolveProviderVendor(provider)?.name ?? ''
+        const providerMatches =
+          provider.name.toLowerCase().includes(normalizedSearch) ||
+          vendorName.toLowerCase().includes(normalizedSearch)
+        const matchedModels = providerMatches
+          ? models
+          : models.filter(
+              (modelId) =>
+                modelId.toLowerCase().includes(normalizedSearch) ||
+                getPickerModelDisplayLabel(provider, modelId, modelNameById)
+                  .toLowerCase()
+                  .includes(normalizedSearch),
+            )
+        return { provider, models: matchedModels }
+      })
+      .filter((group) => group.models.length > 0),
+  )
   const selectedProviderById = providers.find((provider) => provider.id === selectedProviderId)
   const selectedProviderByModel = findProviderForModel(conversationalProviders, selectedModelId)
   const selectedProvider =
@@ -5021,6 +5027,8 @@ const PROTOCOL_VENDOR_MAP: Record<string, VendorMeta> = {
 
 function resolveProviderVendor(provider: ProviderProfile | null | undefined): VendorMeta | null {
   if (!provider) return null
+  const managedVendor = resolveManagedPlatformVendor(provider)
+  if (managedVendor) return managedVendor
   if (isAutoRouterProvider(provider)) {
     return isClaudeAutoRouterProvider(provider)
       ? CLAUDE_AUTO_ROUTER_VENDOR
