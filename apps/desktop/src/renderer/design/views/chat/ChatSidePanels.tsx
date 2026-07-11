@@ -55,6 +55,26 @@ function clampPanelWidth(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
+// 统一侧边面板宽度边界
+const MIN_SIDE_CHAT_WIDTH = 360
+const MAX_SIDE_CHAT_WIDTH = 1200
+
+// 视口保护：面板最宽不超过 72vw，避免挤占主聊天区
+export function maxSideChatWidthForViewport(): number {
+  if (typeof window === 'undefined') return MAX_SIDE_CHAT_WIDTH
+  return Math.min(MAX_SIDE_CHAT_WIDTH, Math.floor(window.innerWidth * 0.72))
+}
+
+// 默认宽度按窗口宽度分档：大屏更宽，小屏保底 500。
+// 仅作为 lazy initial state 在挂载时取一次，用户手动拖过后保留，不会被 resize 冲掉。
+export function defaultUnifiedSidePanelWidth(): number {
+  if (typeof window === 'undefined') return 560
+  const vw = window.innerWidth
+  if (vw >= 1700) return 600
+  if (vw >= 1280) return 560
+  return 500
+}
+
 export function UnifiedSessionSidePanel({
   tabs,
   activeTab,
@@ -84,7 +104,13 @@ export function UnifiedSessionSidePanel({
   const handleResizeMove = (event: React.PointerEvent<HTMLDivElement>) => {
     if (dragRef.current == null) return
     const delta = dragRef.current.startX - event.clientX
-    onWidthChange(clampPanelWidth(dragRef.current.startWidth + delta, 360, 900))
+    onWidthChange(
+      clampPanelWidth(
+        dragRef.current.startWidth + delta,
+        MIN_SIDE_CHAT_WIDTH,
+        maxSideChatWidthForViewport(),
+      ),
+    )
   }
   const handleResizeEnd = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = null

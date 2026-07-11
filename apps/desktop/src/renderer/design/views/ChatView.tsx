@@ -89,6 +89,8 @@ import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
 
 export { MarkdownText } from './chat/ChatMarkdown'
 import {
+  defaultUnifiedSidePanelWidth,
+  maxSideChatWidthForViewport,
   SideChatPanel,
   UnifiedSessionSidePanel,
   UnifiedSidePanelPicker,
@@ -399,8 +401,8 @@ export function ChatView({
   const [showInspector, setShowInspector] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
-  // 侧边聊天面板宽度：可拖拽伸缩，默认值 470
-  const [sideChatWidth, setSideChatWidth] = useState(470)
+  // 侧边聊天面板宽度：可拖拽伸缩，默认值按窗口宽度分档（见 defaultUnifiedSidePanelWidth）
+  const [sideChatWidth, setSideChatWidth] = useState(defaultUnifiedSidePanelWidth)
   // 内置终端面板：会话级 dock，按钮在 ChatTabbar 右上。
   // 仅在有活跃会话且绑定 workspace 时启用；切会话会保留各自的 terminals（后端负责）。
   const [showTerminalPanel, setShowTerminalPanel] = useState(false)
@@ -1234,7 +1236,8 @@ export function ChatView({
 
   const handleOpenGitReview = useCallback(() => {
     openUnifiedSidePanel('review')
-    setSideChatWidth((width) => Math.max(width, 520))
+    // review 内容较宽，保底 520；但极窄窗下要受视口上限约束，避免 state 与渲染不一致
+    setSideChatWidth((width) => Math.max(width, Math.min(520, maxSideChatWidthForViewport())))
     setShowInspector(false)
   }, [openUnifiedSidePanel])
 
