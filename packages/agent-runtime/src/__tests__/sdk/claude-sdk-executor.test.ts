@@ -397,6 +397,7 @@ describe('ClaudeSDKExecutor', () => {
     const result = await options.canUseTool?.('Bash', input, {
       signal: new AbortController().signal,
       toolUseID: 'tool-1',
+      requestId: 'request-tool-1',
     })
 
     expect(result).toEqual({
@@ -405,6 +406,135 @@ describe('ClaudeSDKExecutor', () => {
       toolUseID: 'tool-1',
       decisionClassification: 'user_temporary',
     })
+  })
+
+  it('passes SDK request metadata through and returns scoped permission updates', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const approvalCallback = vi.fn(async () => ({ allowed: true, scope: 'project' as const }))
+    const suggestion = {
+      type: 'addRules' as const,
+      rules: [{ toolName: 'Bash', ruleContent: 'git status' }],
+      behavior: 'allow' as const,
+      destination: 'session' as const,
+    }
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      approvalCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const result = await options.canUseTool?.('Bash', { command: 'git status' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-1',
+      requestId: 'control-request-1',
+      suggestions: [suggestion],
+    })
+
+    expect(approvalCallback).toHaveBeenCalledWith(
+      'sess-1',
+      'Bash',
+      { command: 'git status' },
+      expect.objectContaining({
+        requestId: 'control-request-1',
+        toolUseID: 'tool-1',
+        suggestions: [suggestion],
+      }),
+    )
+    expect(result).toEqual({
+      behavior: 'allow',
+      updatedInput: { command: 'git status' },
+      updatedPermissions: [{ ...suggestion, destination: 'projectSettings' }],
+      toolUseID: 'tool-1',
+      decisionClassification: 'user_permanent',
+    })
+  })
+
+  it('maps permission update destinations only for explicitly persistent approvals', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    let scope: 'once' | 'session' | 'project' | 'global' = 'once'
+    const approvalCallback = vi.fn(async () => ({ allowed: true, scope }))
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      approvalCallback,
+    })
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const suggestion = {
+      type: 'setMode' as const,
+      mode: 'acceptEdits' as const,
+      destination: 'session' as const,
+    }
+
+    for (const testCase of [
+      { scope: 'once' as const, destination: undefined, classification: 'user_temporary' },
+      { scope: 'session' as const, destination: 'session', classification: 'user_permanent' },
+      { scope: 'project' as const, destination: 'projectSettings', classification: 'user_permanent' },
+      { scope: 'global' as const, destination: 'userSettings', classification: 'user_permanent' },
+    ]) {
+      scope = testCase.scope
+      const result = await options.canUseTool?.('Edit', { file_path: 'README.md' }, {
+        signal: new AbortController().signal,
+        toolUseID: `tool-${scope}`,
+        requestId: `request-${scope}`,
+        suggestions: [suggestion],
+      })
+      expect(result).toEqual(
+        expect.objectContaining({ decisionClassification: testCase.classification }),
+      )
+      if (testCase.destination == null) {
+        expect(result).not.toHaveProperty('updatedPermissions')
+      } else {
+        expect(result).toHaveProperty('updatedPermissions.0.destination', testCase.destination)
+      }
+    }
+  })
+
+  it('updates the active SDK Query permission mode while retaining the local fallback', async () => {
+    let releaseQuery!: () => void
+    const queryGate = new Promise<void>((resolve) => {
+      releaseQuery = resolve
+    })
+    async function* controlledMessages() {
+      await queryGate
+      yield {
+        type: 'result',
+        subtype: 'success',
+        result: 'ok',
+        usage: { input_tokens: 1, output_tokens: 1 },
+        total_cost_usd: 0,
+      }
+    }
+    const setPermissionMode = vi.fn(async () => undefined)
+    queryMock.mockReturnValue(Object.assign(controlledMessages(), { setPermissionMode }))
+    const executor = new ClaudeSDKExecutor()
+    const turn = executor.executeTurn('sess-1', 'turn-1', 'hello', baseConfig())
+
+    try {
+      await vi.waitFor(() => expect(queryMock).toHaveBeenCalledTimes(1))
+      await executor.setPermissionMode('claude-auto-edits')
+      expect(setPermissionMode).toHaveBeenCalledWith('acceptEdits')
+    } finally {
+      releaseQuery()
+      await turn
+    }
+  })
+
+  it('enables strict MCP configuration validation', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      mcpServers: { docs: { type: 'stdio', command: 'docs-server' } },
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    expect(options.strictMcpConfig).toBe(true)
   })
 
   it('routes bare allowed tools through canUseTool when Spark installs a permission callback', async () => {
@@ -431,6 +561,7 @@ describe('ClaudeSDKExecutor', () => {
     await expect(options.canUseTool?.('mcp__spark_platform__skills_list', mcpInput, {
       signal: new AbortController().signal,
       toolUseID: 'tool-mcp',
+      requestId: 'request-tool-mcp',
     })).resolves.toEqual({
       behavior: 'allow',
       updatedInput: mcpInput,
@@ -458,6 +589,7 @@ describe('ClaudeSDKExecutor', () => {
     await expect(options.canUseTool?.('exit_plan_mode', input, {
       signal: new AbortController().signal,
       toolUseID: 'tool-plan',
+      requestId: 'request-tool-plan',
     })).resolves.toEqual({
       behavior: 'allow',
       updatedInput: input,
@@ -467,6 +599,7 @@ describe('ClaudeSDKExecutor', () => {
     await expect(options.canUseTool?.('AskUserQuestion', { question: 'Proceed?', questions: [{ question: 'Proceed?', header: 'Confirm', options: [{ label: 'Yes', description: 'Proceed' }] }] }, {
       signal: new AbortController().signal,
       toolUseID: 'tool-question',
+      requestId: 'request-tool-question',
     })).resolves.toEqual(expect.objectContaining({ behavior: 'allow' }))
     expect(approvalCallback).not.toHaveBeenCalled()
     expect(questionCallback).toHaveBeenCalledWith('sess-1', [
@@ -497,6 +630,7 @@ describe('ClaudeSDKExecutor', () => {
     }, {
       signal: new AbortController().signal,
       toolUseID: 'tool-question',
+      requestId: 'request-tool-question',
     })
 
     expect(result).toEqual(expect.objectContaining({
@@ -526,6 +660,7 @@ describe('ClaudeSDKExecutor', () => {
     }, {
       signal: new AbortController().signal,
       toolUseID: 'tool-question',
+      requestId: 'request-tool-question',
     })
 
     expect(typeof options.canUseTool).toBe('function')
@@ -557,6 +692,7 @@ describe('ClaudeSDKExecutor', () => {
     }, {
       signal: new AbortController().signal,
       toolUseID: 'tool-question',
+      requestId: 'request-tool-question',
     })
 
     expect(result).toEqual(expect.objectContaining({
@@ -606,6 +742,7 @@ describe('ClaudeSDKExecutor', () => {
     }, {
       signal: new AbortController().signal,
       toolUseID: 'tool-question-2',
+      requestId: 'request-tool-question-2',
     })
 
     expect(questionCallback).toHaveBeenLastCalledWith('sess-1', [
@@ -661,6 +798,7 @@ describe('ClaudeSDKExecutor', () => {
     }, {
       signal: new AbortController().signal,
       toolUseID: 'tool-question-multi',
+      requestId: 'request-tool-question-multi',
     })
 
     expect(questionCallback).toHaveBeenLastCalledWith('sess-1', [
@@ -722,10 +860,12 @@ describe('ClaudeSDKExecutor', () => {
     const editResult = await options.canUseTool?.('Edit', input, {
       signal: new AbortController().signal,
       toolUseID: 'tool-edit',
+      requestId: 'request-tool-edit',
     })
     const bashResult = await options.canUseTool?.('Bash', { command: 'npm test' }, {
       signal: new AbortController().signal,
       toolUseID: 'tool-bash',
+      requestId: 'request-tool-bash',
     })
 
     expect(editResult).toEqual({
@@ -735,7 +875,12 @@ describe('ClaudeSDKExecutor', () => {
       decisionClassification: 'user_temporary',
     })
     expect(approvalCallback).toHaveBeenCalledTimes(1)
-    expect(approvalCallback).toHaveBeenCalledWith('sess-1', 'Bash', { command: 'npm test' })
+    expect(approvalCallback).toHaveBeenCalledWith(
+      'sess-1',
+      'Bash',
+      { command: 'npm test' },
+      expect.objectContaining({ requestId: 'request-tool-bash' }),
+    )
     expect(bashResult).toEqual(expect.objectContaining({ behavior: 'allow' }))
   })
 

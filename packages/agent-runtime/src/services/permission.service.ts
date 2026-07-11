@@ -86,6 +86,8 @@ interface RequestApprovalOptions {
   forcePrompt?: boolean
   projectId?: string
   workspaceIds?: string[]
+  sdkRequestId?: string
+  onDecision?: (decision: PermissionApprovalDecision) => void
 }
 
 // Risk level per action
@@ -280,8 +282,10 @@ export class PermissionService {
     })
     let grantDecision = result
 
-    if (isDenyDecision(result))
+    if (isDenyDecision(result)) {
+      options.onDecision?.(result)
       return this.applyDenyDecision(result, sessionId, options, action, toolName)
+    }
 
     if (mode === 'ask-twice') {
       const second = await this.promptForApproval({
@@ -292,10 +296,14 @@ export class PermissionService {
         pushFn,
         options,
       })
-      if (isDenyDecision(second))
+      if (isDenyDecision(second)) {
+        options.onDecision?.(second)
         return this.applyDenyDecision(second, sessionId, options, action, toolName)
+      }
       grantDecision = selectGrantDecision(result, second)
     }
+
+    options.onDecision?.(grantDecision)
 
     if (grantDecision === 'allow-session') {
       // 只在内存中给该 session 临时放行，不再写穿数据库
@@ -367,6 +375,9 @@ export class PermissionService {
       this._approvalSessions.set(requestId, params.sessionId)
       params.pushFn({
         requestId,
+        ...(params.options.sdkRequestId != null
+          ? { sdkRequestId: params.options.sdkRequestId }
+          : {}),
         sessionId: params.sessionId,
         toolName: params.toolName,
         action: params.action,

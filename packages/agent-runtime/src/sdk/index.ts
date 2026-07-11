@@ -18,6 +18,8 @@ export type {
   SDKQueryOptions,
   SDKTurnAttachment,
   SDKPermissionMode,
+  SDKPermissionRequestContext,
+  SDKApprovalResult,
   SDKEffort,
   SparkPermissionMode,
 } from './types.js'

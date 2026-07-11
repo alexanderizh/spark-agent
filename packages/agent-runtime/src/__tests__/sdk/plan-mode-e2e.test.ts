@@ -212,7 +212,11 @@ describe('Plan mode E2E', () => {
     const result = await options.canUseTool?.(
       'ExitPlanMode',
       { plan: '# My Plan' },
-      { signal: new AbortController().signal, toolUseID: 'tool-1' },
+      {
+        signal: new AbortController().signal,
+        toolUseID: 'tool-1',
+        requestId: 'request-tool-1',
+      },
     )
 
     // ExitPlanMode must be DENIED in plan mode — allowing it would make the CLI
@@ -242,7 +246,11 @@ describe('Plan mode E2E', () => {
     const result = await options.canUseTool?.(
       'ExitPlanMode',
       { plan: '# My Plan' },
-      { signal: new AbortController().signal, toolUseID: 'tool-1' },
+      {
+        signal: new AbortController().signal,
+        toolUseID: 'tool-1',
+        requestId: 'request-tool-1',
+      },
     )
 
     expect(result).toEqual({
@@ -291,7 +299,11 @@ describe('Plan mode E2E', () => {
     const codeEdit = await options.canUseTool?.(
       'Edit',
       { file_path: 'src/index.ts', old_string: 'a', new_string: 'b' },
-      { signal: new AbortController().signal, toolUseID: 'tool-1' },
+      {
+        signal: new AbortController().signal,
+        toolUseID: 'tool-1',
+        requestId: 'request-tool-1',
+      },
     )
     expect(codeEdit).toEqual(expect.objectContaining({ behavior: 'deny' }))
     expect(approvalCallback).not.toHaveBeenCalled()
@@ -300,7 +312,11 @@ describe('Plan mode E2E', () => {
     const planWrite = await options.canUseTool?.(
       'Write',
       { file_path: '/home/u/.claude/plans/abc-plan.md', content: '# Plan\n1. Step' },
-      { signal: new AbortController().signal, toolUseID: 'tool-2' },
+      {
+        signal: new AbortController().signal,
+        toolUseID: 'tool-2',
+        requestId: 'request-tool-2',
+      },
     )
     expect(planWrite).toEqual(
       expect.objectContaining({

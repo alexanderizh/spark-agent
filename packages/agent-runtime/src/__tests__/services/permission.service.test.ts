@@ -315,6 +315,24 @@ describe('PermissionService', () => {
   })
 
   describe('remembered project/global decisions', () => {
+    it('reports the selected approval scope to adapter callers', async () => {
+      const repo = makeMockRepo([{ id: 'r1', action: 'command_exec', mode: 'ask' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+      const onDecision = vi.fn()
+
+      const approval = svc.requestApproval('sess-A', 'Bash', { command: 'git status' }, push, {
+        projectId: 'project-1',
+        sdkRequestId: 'control-request-1',
+        onDecision,
+      })
+      expect(push.mock.calls[0]![0]).toMatchObject({ sdkRequestId: 'control-request-1' })
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-project')
+
+      await expect(approval).resolves.toBe(true)
+      expect(onDecision).toHaveBeenCalledWith('allow-project')
+    })
+
     it('allow-project persists an action/tool decision and skips the next approval in the same project', async () => {
       const repo = makeMockRepo([{ id: 'r1', action: 'command_exec', mode: 'ask' }])
       const svc = new PermissionService(repo)

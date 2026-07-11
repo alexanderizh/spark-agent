@@ -147,6 +147,7 @@ import type {
 } from '@spark/protocol'
 import type {
   CanvasAssetDownloadBatchResultItem,
+  PermissionApprovalDecision,
   SessionListResponse,
   SystemNotificationNavigateRequest,
 } from '@spark/protocol'
@@ -1808,23 +1809,53 @@ async function sendRemoteTurnReplyFromHistory(
   return true
 }
 
+function toSDKApprovalScope(
+  decision: PermissionApprovalDecision | undefined,
+): 'once' | 'session' | 'project' | 'global' | undefined {
+  switch (decision) {
+    case 'allow-once':
+      return 'once'
+    case 'allow-session':
+      return 'session'
+    case 'allow-project':
+      return 'project'
+    case 'allow-global':
+      return 'global'
+    default:
+      return undefined
+  }
+}
+
 function getSessionService(): SessionService {
   if (_sessionService == null) {
     const onEvent: SessionEventHandler = (event) => {
       pushStreamEvent('stream:session:agent-event', event)
       handleRemoteTurnEvent(event)
     }
-    const onApproval: ApprovalHandler = (sessionId, toolName, toolInput) => {
+    const onApproval: ApprovalHandler = async (sessionId, toolName, toolInput, sdkContext) => {
+      let selectedDecision: PermissionApprovalDecision | undefined
       const permissionContext = getSessionPermissionContext(sessionId)
-      return getPermissionService().requestApproval(
+      const allowed = await getPermissionService().requestApproval(
         sessionId,
         toolName,
         toolInput,
         (req) => {
           pushStreamEvent('stream:permission:approval-request', req)
         },
-        { forcePrompt: true, ...permissionContext },
+        {
+          forcePrompt: true,
+          ...permissionContext,
+          sdkRequestId: sdkContext.requestId,
+          onDecision: (decision) => {
+            selectedDecision = decision
+          },
+        },
       )
+      const scope = toSDKApprovalScope(selectedDecision)
+      return {
+        allowed,
+        ...(scope != null ? { scope } : {}),
+      }
     }
     const onApprovalCancel = (sessionId: string) => {
       getPermissionService().cancelPendingApprovals(sessionId)
