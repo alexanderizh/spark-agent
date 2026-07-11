@@ -52,6 +52,13 @@ export function VideoWorkbenchEditPanel({
   // 分割
   const [segSec, setSegSec] = useState(10)
 
+  // 画面处理
+  const [speedFactor, setSpeedFactor] = useState(2)
+  const [cropW, setCropW] = useState(probe?.width ?? 0)
+  const [cropH, setCropH] = useState(probe?.height ?? 0)
+  const [cropX, setCropX] = useState(0)
+  const [cropY, setCropY] = useState(0)
+
   const handleTrim = async (): Promise<void> => {
     if (trimEnd <= trimStart) {
       message.error('结束时间必须大于起始时间')
@@ -106,6 +113,56 @@ export function VideoWorkbenchEditPanel({
       onOutput?.(`分割 ${paths.length} 段 × ${segSec}s`, paths[0] ?? '')
     } else {
       message.error(res.error ?? '分割失败')
+    }
+  }
+
+  const handleSpeed = async (): Promise<void> => {
+    const reqId = Math.random().toString(36).slice(2, 10)
+    const res = await onProcess('adjustSpeed', { factor: speedFactor }, (p) => {
+      message.loading({ content: `变速中 ${Math.round(p.percent)}%`, key: reqId, duration: 0 })
+    })
+    message.destroy(reqId)
+    if (res.success && res.result) {
+      const { path } = res.result as { path: string }
+      const label = speedFactor >= 1 ? `${speedFactor}x 加速` : `${speedFactor}x 慢放`
+      message.success(`已${label}`)
+      onOutput?.(`变速 ${label}`, path)
+    } else {
+      message.error(res.error ?? '变速失败')
+    }
+  }
+
+  const handleReverse = async (): Promise<void> => {
+    const reqId = Math.random().toString(36).slice(2, 10)
+    const res = await onProcess('reverse', { reverseAudio: true }, (p) => {
+      message.loading({ content: `倒放中 ${Math.round(p.percent)}%`, key: reqId, duration: 0 })
+    })
+    message.destroy(reqId)
+    if (res.success && res.result) {
+      const { path } = res.result as { path: string }
+      message.success('已生成倒放视频')
+      onOutput?.('倒放', path)
+    } else {
+      message.error(res.error ?? '倒放失败')
+    }
+  }
+
+  const handleCrop = async (): Promise<void> => {
+    if (cropW <= 0 || cropH <= 0) {
+      message.error('裁剪宽高必须大于 0')
+      return
+    }
+    const reqId = Math.random().toString(36).slice(2, 10)
+    const res = await onProcess('crop', { w: cropW, h: cropH, x: cropX, y: cropY }, (p) => {
+      message.loading({ content: `裁剪画面中 ${Math.round(p.percent)}%`, key: reqId, duration: 0 })
+    })
+    message.destroy(reqId)
+    if (res.success && res.result) {
+      const { path } = res.result as { path: string }
+      message.success(`已裁剪画面为 ${cropW}×${cropH}`)
+      onOutput?.(`画面裁剪 ${cropW}×${cropH}`, path)
+    } else {
+      message.error(res.error ?? '画面裁剪失败')
     }
   }
 
@@ -275,6 +332,63 @@ export function VideoWorkbenchEditPanel({
           </div>
           <Button block onClick={handleSegment} loading={busy} icon={<Icons.Scissors size={14} />}>
             分割视频
+          </Button>
+        </div>
+      </div>
+
+      {/* ── 画面处理 ── */}
+      <div className="vwb-section">
+        <div className="vwb-section-title">画面处理</div>
+
+        {/* 变速 */}
+        <div className="vwb-effect-row">
+          <div className="vwb-tc-param">
+            <label>播放速度</label>
+            <Slider
+              min={0.25}
+              max={4}
+              step={0.25}
+              value={speedFactor}
+              onChange={setSpeedFactor}
+              tooltip={{ formatter: (v) => `${v}x` }}
+            />
+          </div>
+          <Button size="small" onClick={handleSpeed} loading={busy} disabled={busy}>
+            {speedFactor >= 1 ? '加速' : '慢放'}
+          </Button>
+        </div>
+
+        {/* 倒放 */}
+        <div className="vwb-effect-row">
+          <span className="vwb-effect-label">视频倒放</span>
+          <Button size="small" onClick={handleReverse} loading={busy} disabled={busy}>
+            生成倒放
+          </Button>
+        </div>
+
+        {/* 画面裁剪 */}
+        <div className="vwb-crop-controls">
+          <label>画面裁剪区域</label>
+          <div className="vwb-crop-grid">
+            <div className="vwb-crop-field">
+              <span>X</span>
+              <InputNumber size="small" min={0} max={probe.width} value={cropX} onChange={(v) => setCropX(Number(v) || 0)} />
+            </div>
+            <div className="vwb-crop-field">
+              <span>Y</span>
+              <InputNumber size="small" min={0} max={probe.height} value={cropY} onChange={(v) => setCropY(Number(v) || 0)} />
+            </div>
+            <div className="vwb-crop-field">
+              <span>宽</span>
+              <InputNumber size="small" min={1} max={probe.width} value={cropW} onChange={(v) => setCropW(Number(v) || 0)} />
+            </div>
+            <div className="vwb-crop-field">
+              <span>高</span>
+              <InputNumber size="small" min={1} max={probe.height} value={cropH} onChange={(v) => setCropH(Number(v) || 0)} />
+            </div>
+          </div>
+          <Button size="small" block onClick={handleCrop} loading={busy} disabled={busy}>
+            裁剪画面
           </Button>
         </div>
       </div>
