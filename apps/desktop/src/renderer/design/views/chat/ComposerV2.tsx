@@ -63,6 +63,7 @@ import {
   type VendorMeta,
 } from '@spark/protocol'
 import { EMPTY_COMPOSER_DRAFT } from './ChatComposerTypes'
+import { ReasoningMaxParticles } from './ReasoningMaxParticles'
 import type {
   AgentAdapter,
   BranchState,
@@ -3432,6 +3433,7 @@ function ComposerReasoningSlider({
             }}
           >
             <span className="composer-reasoning-slider-fill" />
+            {isMax && <ReasoningMaxParticles />}
             {options.map((option, index) => (
               <button
                 key={option.value}
