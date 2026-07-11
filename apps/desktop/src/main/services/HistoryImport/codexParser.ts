@@ -166,6 +166,8 @@ export function parseCodexRollout(
   const builder = new EventSeqBuilder(params.sessionId, params.fallbackTimestamp)
   const toolNameById = new Map<string, string>()
   let sawFirstUserTurn = false
+  // 同 turn 内多条 assistant message 的段索引，确保各自有独立 segmentId
+  let segIndex = 0
 
   for (const l of lines) {
     if (l.type !== 'response_item') continue
@@ -180,17 +182,25 @@ export function parseCodexRollout(
       if (p.role === 'user') {
         if (isInjectedContext(text2)) continue
         builder.newTurn()
+        segIndex = 0
         sawFirstUserTurn = true
         builder.push({ type: 'user_message', content: text2, timestamp: ts })
       } else if (p.role === 'assistant') {
-        if (!sawFirstUserTurn) builder.newTurn()
+        if (!sawFirstUserTurn) {
+          builder.newTurn()
+          segIndex = 0
+        }
         builder.push({
           type: 'assistant_message',
           mode: 'complete',
           content: text2,
           provider: 'codex',
-          isFinal: true,
-          segmentId: `${builder.currentTurnId}:text`,
+          // isFinal=false：导入的每条 assistant message 都是一段独立完整正文，不是"整轮拼接
+          // 的最终 result"。运行时约定一个 turn 只有一个 isFinal=true（整轮汇总文本），
+          // 若每条都标 true，conversation-summarizer 的 addSegment 会互相覆盖、只留最后一条。
+          // 设 false 让历史重建走 segmentId 路径正确累加多段正文。
+          isFinal: false,
+          segmentId: `${builder.currentTurnId}:text:${segIndex++}`,
           timestamp: ts,
         })
       }
@@ -199,7 +209,10 @@ export function parseCodexRollout(
     }
 
     if (p.type === 'function_call' || p.type === 'custom_tool_call' || p.type === 'local_shell_call') {
-      if (!sawFirstUserTurn) builder.newTurn()
+      if (!sawFirstUserTurn) {
+        builder.newTurn()
+        segIndex = 0
+      }
       const toolName = p.name ?? (p.type === 'local_shell_call' ? 'shell' : 'tool')
       const callId = p.call_id ?? ''
       if (callId !== '') toolNameById.set(callId, toolName)

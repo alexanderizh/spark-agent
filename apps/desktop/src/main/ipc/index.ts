@@ -1963,6 +1963,7 @@ async function resolveImportProvider(
 function createHistoryImportService(
   onProgress?: (progress: HistoryImportProgress) => void,
 ): HistoryImportService {
+  const gitWorktreeService = new GitWorktreeService()
   return new HistoryImportService({
     db: getDatabase(),
     resolveProvider: resolveImportProvider,
@@ -1976,6 +1977,15 @@ function createHistoryImportService(
         ...(params.modelId != null ? { modelId: params.modelId } : {}),
       })
       return { sessionId: created.sessionId }
+    },
+    // worktree 归一化：把 worktree cwd 推导为主仓库根，使 worktree 会话归并到主项目分组。
+    // 非 git 目录或 git 不可用时返回 null，调用方回落到原始 cwd。
+    resolveMainRepoRoot: async (cwd: string) => {
+      try {
+        return await gitWorktreeService.resolveMainRepoRoot(cwd)
+      } catch {
+        return null
+      }
     },
     ...(onProgress != null ? { onProgress } : {}),
   })
