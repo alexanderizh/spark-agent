@@ -108,22 +108,22 @@ Team Mode lets a **Host agent** delegate focused subtasks to **Member agents** d
 
 ### Enabling
 
-In the Composer's agent picker, choose **团队模式（多 Agent 协作）**. The picker label becomes `团队模式 · <Host>`, a **成员 N** chip appears, and the Inspector shows a **团队成员** section where you toggle which agents may be dispatched in this session.
+For a new empty session, use the top-left **Agent / 团队** launcher. Selecting **团队** restores the most recently valid saved team or the first available team, hides the Composer's bottom Agent picker, and exposes the team selector. If no valid team exists, the launcher shows **创建第一个团队** and sending remains disabled until a team is selected. Existing conversations do not show this launcher and keep their current session-level Team Mode behavior.
 
 Team config is stored per session in `sessions.metadata.team` (`enabled / hostAgentId / memberAgentIds / maxDepth / allowNesting / maxDiscussionRounds / enablePeerMessaging`) and mirrored to `composer-prefs` as the global last-used default. It is also submitted with each turn via `session:send-turn`'s `teamConfig`.
 
-Saved teams are stored separately in `agent_teams`. They can be created from the Agents view's Teams tab or by the platform management tools, then selected from the Agent Picker as reusable Team Mode presets.
+Saved teams are stored separately in `agent_teams`. They can be created from the Agents view's Teams tab or by the platform management tools, then selected from the empty-session team selector as reusable Team Mode presets.
 
 ### Tools (the `spark_team` MCP server)
 
 The Host turn injects an in-process MCP server `spark_team` (name kept for compat; planned rename to `spark_orchestrate` under unified-orchestration-kernel M6), exposing the tools defined in `packages/agent-runtime/src/services/team-tool-names.ts`:
 
-| Tool | Purpose |
-|---|---|
-| `agent_dispatch` / `agent_dispatch_batch` | Host (or a member with `allowNesting`) delegates a focused subtask to one or more members; blocks until the member returns a structured reply. |
-| `agent_message` | Peer message between members (and member→Host). Three forms: **broadcast** (no `targetAgentId`, only writes the shared thread, does not trigger execution), **directed `call`** (triggers one synchronous turn for the target), **directed `note`** (async, writes thread only). Gated by `enablePeerMessaging`. |
-| `team_round_advance` | Host explicitly advances the discussion to the next round (state machine). |
-| `team_conclude` | Host concludes the discussion thread. |
+| Tool                                      | Purpose                                                                                                                                                                                                                                                                                                          |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent_dispatch` / `agent_dispatch_batch` | Host (or a member with `allowNesting`) delegates a focused subtask to one or more members; blocks until the member returns a structured reply.                                                                                                                                                                   |
+| `agent_message`                           | Peer message between members (and member→Host). Three forms: **broadcast** (no `targetAgentId`, only writes the shared thread, does not trigger execution), **directed `call`** (triggers one synchronous turn for the target), **directed `note`** (async, writes thread only). Gated by `enablePeerMessaging`. |
+| `team_round_advance`                      | Host explicitly advances the discussion to the next round (state machine).                                                                                                                                                                                                                                       |
+| `team_conclude`                           | Host concludes the discussion thread.                                                                                                                                                                                                                                                                            |
 
 A `[Team Roster]` system-prompt section lists available members and a four-mode collaboration handbook (directly answer / consult then answer / handoff / leave a note). The built-in `Task` tool is disabled so all A2A goes through the dispatcher. **codex members** consume the same tool surface over an HTTP bridge (`127.0.0.1` + Bearer token, Phase 0b) rather than in-process MCP, so claude and codex adapters can be mixed in one team.
 

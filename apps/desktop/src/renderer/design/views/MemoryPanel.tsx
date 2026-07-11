@@ -311,7 +311,7 @@ function MemoryRow({ entry: e, selected, onToggleSelect, onOpen }: {
         <div className="mp_row_desc">{e.description}</div>
       </div>
       <div className="mp_row_meta">
-        <span>命中 {e.hitCount}</span>
+        {/* <span>命中 {e.hitCount}</span> */}
         <span>{new Date(e.updatedAt).toLocaleDateString()}</span>
       </div>
     </div>

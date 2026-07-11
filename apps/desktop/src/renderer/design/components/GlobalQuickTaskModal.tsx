@@ -39,10 +39,39 @@ function readBlobAsDataUrl(blob: Blob): Promise<string> {
   })
 }
 
+/**
+ * 把绝对路径编码成 `safe-file://` URL。
+ *
+ * Electron 渲染进程 webSecurity=true，无法直接通过 `file://` 读取本地图片
+ * （会被同源策略拦截，显示破图）。本应用注册了特权协议 `safe-file://`
+ * （见 main/services/SafeFileProtocol.ts），渲染端拿到 `safe-file://x/<base64>`
+ * 后即可直接给 `<img src>` 使用。与 BoardView / ComposerV2 保持一致。
+ */
+function encodeToSafeFileUrl(absolutePath: string): string {
+  const encoded = btoa(unescape(encodeURIComponent(absolutePath)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `safe-file://x/${encoded}`
+}
+
 function resolveImageSrc(filePath: string): string {
-  if (!filePath) return ''
-  if (filePath.startsWith('file://') || filePath.startsWith('data:')) return filePath
-  return `file://${filePath}`
+  if (!filePath) return filePath
+  const trimmed = filePath.trim()
+  const lower = trimmed.toLowerCase()
+  if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('data:') || lower.startsWith('safe-file:') || lower.startsWith('blob:')) return trimmed
+  if (lower.startsWith('file://')) {
+    try {
+      const decoded = decodeURI(trimmed.replace(/^file:\/\//, ''))
+      return encodeToSafeFileUrl(decoded.startsWith('/') ? decoded : `/${decoded}`)
+    } catch {
+      return trimmed
+    }
+  }
+  if (trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)) {
+    return encodeToSafeFileUrl(trimmed)
+  }
+  return trimmed
 }
 
 function getInitialPosition() {

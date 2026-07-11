@@ -22,6 +22,12 @@ import { SkillsPickerModal } from '../components/SkillsPickerModal'
 import { getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
 import { DEFAULT_AGENT_AVATAR_ID } from '../builtinAvatars'
 import { TeamsPanel } from './TeamsPanel'
+import {
+  AGENTS_TARGET_TAB_EVENT,
+  AGENTS_TARGET_TAB_STORAGE_KEY,
+  readAgentsTargetTab,
+  type AgentsTargetTab,
+} from '../teamNavigation'
 import { countExistingRefs, resolveExistingRefs } from './agent-config-counts'
 import { NO_PROJECT_WORKSPACE_NAME, useSessionSidebar } from '../SessionSidebarContext'
 import {
@@ -195,22 +201,35 @@ const EMPTY_DRAFT: AgentDraft = {
  * Agents Tab 渲染 AgentsTabContent，Teams Tab 渲染 TeamsPanel。
  */
 export function AgentsView() {
-  const [tab, setTab] = useState<'agents' | 'teams'>('agents')
+  const [tab, setTab] = useState<AgentsTargetTab>(readAgentsTargetTab)
   const [agentsForTeams, setAgentsForTeams] = useState<ManagedAgent[]>([])
+  useEffect(() => {
+    const handleTargetTab = (event: Event) => {
+      const next = (event as CustomEvent<{ tab?: AgentsTargetTab }>).detail?.tab
+      if (next === 'agents' || next === 'teams') setTab(next)
+    }
+    window.addEventListener(AGENTS_TARGET_TAB_EVENT, handleTargetTab)
+    return () => window.removeEventListener(AGENTS_TARGET_TAB_EVENT, handleTargetTab)
+  }, [])
+
+  const selectTab = (next: AgentsTargetTab) => {
+    window.localStorage.setItem(AGENTS_TARGET_TAB_STORAGE_KEY, next)
+    setTab(next)
+  }
   return (
     <div className="agents-view">
       <div className="agents-view-tabs">
         <button
           type="button"
           className={`agents-view-tab${tab === 'agents' ? ' active' : ''}`}
-          onClick={() => setTab('agents')}
+          onClick={() => selectTab('agents')}
         >
           <Icons.Bot size={13} /> Agents
         </button>
         <button
           type="button"
           className={`agents-view-tab${tab === 'teams' ? ' active' : ''}`}
-          onClick={() => setTab('teams')}
+          onClick={() => selectTab('teams')}
         >
           <Icons.Team size={13} /> Teams
         </button>
@@ -304,15 +323,16 @@ function AgentsTabContent({
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const [agentRes, providerRes, modelRes, skillRes, mcpRes, ruleRes, workflowRes] = await Promise.all([
-        listAgents({ includeDisabled: true }),
-        listProviders({}),
-        listModels({}),
-        listSkills({}),
-        listMcp({}),
-        listRules({}),
-        listWorkflows({ includeArchived: true }),
-      ])
+      const [agentRes, providerRes, modelRes, skillRes, mcpRes, ruleRes, workflowRes] =
+        await Promise.all([
+          listAgents({ includeDisabled: true }),
+          listProviders({}),
+          listModels({}),
+          listSkills({}),
+          listMcp({}),
+          listRules({}),
+          listWorkflows({ includeArchived: true }),
+        ])
       setAgents(agentRes.agents)
       onAgentsChange?.(agentRes.agents)
       setProviders(providerRes.profiles)
@@ -327,7 +347,9 @@ function AgentsTabContent({
         const selected = agentRes.agents.find((a) => a.id === currentId)
         if (selected != null) {
           setSelectedId(selected.id)
-          const provider = providerRes.profiles.find((item) => item.id === (selected.providerProfileId ?? ''))
+          const provider = providerRes.profiles.find(
+            (item) => item.id === (selected.providerProfileId ?? ''),
+          )
           const next = normalizeDraftForProvider(agentToDraft(selected), provider)
           setDraft(next)
           setBaseline(next)
@@ -341,7 +363,16 @@ function AgentsTabContent({
     } finally {
       setLoading(false)
     }
-  }, [listAgents, listMcp, listModels, listProviders, listRules, listSkills, listWorkflows, onAgentsChange])
+  }, [
+    listAgents,
+    listMcp,
+    listModels,
+    listProviders,
+    listRules,
+    listSkills,
+    listWorkflows,
+    onAgentsChange,
+  ])
 
   useRefreshable(refresh)
 
@@ -355,7 +386,8 @@ function AgentsTabContent({
   useEffect(() => {
     return (
       window.spark?.on?.('stream:config:changed', (event) => {
-        if (event.scope === 'agent' || event.scope === 'provider' || event.scope === 'model') void refresh()
+        if (event.scope === 'agent' || event.scope === 'provider' || event.scope === 'model')
+          void refresh()
       }) ?? (() => {})
     )
   }, [refresh])
@@ -411,17 +443,20 @@ function AgentsTabContent({
     setQuickChatProjectPath('')
   }, [quickChatBusy])
 
-  const openAgent = useCallback((agent: ManagedAgent) => {
-    screenRef.current = 'detail'
-    selectedIdRef.current = agent.id
-    setSelectedId(agent.id)
-    setScreen('detail')
-    const provider = providers.find((item) => item.id === (agent.providerProfileId ?? ''))
-    const next = normalizeDraftForProvider(agentToDraft(agent), provider)
-    setDraft(next)
-    setBaseline(next)
-    setPendingNew(false)
-  }, [providers])
+  const openAgent = useCallback(
+    (agent: ManagedAgent) => {
+      screenRef.current = 'detail'
+      selectedIdRef.current = agent.id
+      setSelectedId(agent.id)
+      setScreen('detail')
+      const provider = providers.find((item) => item.id === (agent.providerProfileId ?? ''))
+      const next = normalizeDraftForProvider(agentToDraft(agent), provider)
+      setDraft(next)
+      setBaseline(next)
+      setPendingNew(false)
+    },
+    [providers],
+  )
 
   // 跨视图跳转：外部（如技能详情 chip）请求打开某 Agent 详情。
   // agents 数据需等加载完成，故用 pending 暂存，加载后消费。
@@ -474,12 +509,15 @@ function AgentsTabContent({
   const createDraft = () => {
     const provider = providers[0]
     const defaultName = EMPTY_DRAFT.name
-    const next = normalizeDraftForProvider({
-      ...EMPTY_DRAFT,
-      avatar: getAgentAvatarConfig(undefined, '', defaultName),
-      providerProfileId: provider?.id ?? '',
-      modelId: getDefaultAgentModelForProvider(provider),
-    }, provider)
+    const next = normalizeDraftForProvider(
+      {
+        ...EMPTY_DRAFT,
+        avatar: getAgentAvatarConfig(undefined, '', defaultName),
+        providerProfileId: provider?.id ?? '',
+        modelId: getDefaultAgentModelForProvider(provider),
+      },
+      provider,
+    )
     screenRef.current = 'detail'
     selectedIdRef.current = null
     setSelectedId(null)
@@ -553,7 +591,10 @@ function AgentsTabContent({
     try {
       const provider = providers.find((item) => item.id === (agent.providerProfileId ?? ''))
       const cloned = normalizeDraftForProvider(agentToDraft(agent), provider)
-      const payload = draftToPayload({ ...cloned, name: `${agent.name} 副本`, isDefault: false }, provider)
+      const payload = draftToPayload(
+        { ...cloned, name: `${agent.name} 副本`, isDefault: false },
+        provider,
+      )
       await createAgent(payload)
       toast.success(`已复制「${agent.name}」`)
       await refresh()
@@ -1369,10 +1410,7 @@ function AgentsTabContent({
                 <LobeSelect
                   value={draft.modelId}
                   onChange={(value) => updateDraft('modelId', String(value))}
-                  options={[
-                    { label: 'Provider 默认', value: '' },
-                    ...modelOptions,
-                  ]}
+                  options={[{ label: 'Provider 默认', value: '' }, ...modelOptions]}
                   style={agentSelectStyle}
                 />
               )}
@@ -1601,9 +1639,7 @@ function QuickChatProjectModal({
             <Icons.Chat size={13} />
             <span>临时会话</span>
           </span>
-          <span className="agents-quickchat-option-path">
-            不切到已有项目，直接进入临时目录会话
-          </span>
+          <span className="agents-quickchat-option-path">不切到已有项目，直接进入临时目录会话</span>
         </div>
       ),
     },
@@ -1656,9 +1692,7 @@ function QuickChatProjectModal({
               optionFilterProp="displayName"
               showSearch
               options={selectOptions}
-              notFoundContent={
-                projects.length === 0 ? '还没有可用项目，可直接新建' : '没有匹配项'
-              }
+              notFoundContent={projects.length === 0 ? '还没有可用项目，可直接新建' : '没有匹配项'}
               popupMatchSelectWidth
             />
             {projects.length === 0 && (

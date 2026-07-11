@@ -49,23 +49,12 @@ import {
   persistQuestionAnswerSummaries,
   readPersistedQuestionAnswerSummaries,
 } from './chat/QuestionAnswerCache'
-import {
-  buildAgentCommitMessage,
-  buildDefaultCommitMessage,
-} from './chat/ChatGitUtils'
-import {
-  GitBranchDialog,
-  GitCommitDialog,
-  GitCreateBranchDialog,
-} from './chat/ChatGitDialogs'
+import { buildAgentCommitMessage, buildDefaultCommitMessage } from './chat/ChatGitUtils'
+import { GitBranchDialog, GitCommitDialog, GitCreateBranchDialog } from './chat/ChatGitDialogs'
 import { GitEnvPanel } from './chat/ChatGitEnv'
 import { FileChipIcon } from './chat/ChatFileIcon'
 import { GitReviewPanel } from './chat/ChatGitReview'
-import {
-  HeroTipsTicker,
-  SingleAgentEmptyHero,
-  TeamModeEmptyHero,
-} from './chat/ChatHero'
+import { HeroTipsTicker, SingleAgentEmptyHero, TeamModeEmptyHero } from './chat/ChatHero'
 import { ChatTabbar } from './chat/ChatTabbar'
 import {
   DocumentOutputCard,
@@ -86,6 +75,11 @@ import {
   type ToolLogGroupKind,
 } from './chat/ChatActivitySegments'
 import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
+import { EmptySessionModeLauncher } from './chat/EmptySessionModeLauncher'
+import {
+  persistThenSyncTeamSelection,
+  preserveExplicitEmptySessionTeamConfig,
+} from './chat/emptySessionTeamMode'
 
 export { MarkdownText } from './chat/ChatMarkdown'
 import {
@@ -157,18 +151,11 @@ import {
   extractRunningTeamAgentIds,
   extractRunningTeamMemberIds,
 } from './chat/ChatTeamActivityUtils'
-import {
-  GitDiffContent,
-  parseUnifiedDiff,
-  type DiffHunk,
-} from './chat/ChatDiffUtils'
+import { GitDiffContent, parseUnifiedDiff, type DiffHunk } from './chat/ChatDiffUtils'
 import { useApp } from '../AppContext'
 import { useAuth } from '../auth/AuthContext'
 import { Icons } from '../Icons'
-import {
-  useSessionSidebar,
-  type SessionSummary,
-} from '../SessionSidebarContext'
+import { useSessionSidebar, type SessionSummary } from '../SessionSidebarContext'
 import {
   ErrorCard,
   FilePermCard,
@@ -185,16 +172,9 @@ import {
   TurnFileSummaryCard,
 } from '../ChatInteractions'
 import { ImagePreviewModal } from '../components/ImagePreviewModal'
-import {
-  ClickableFilePath,
-  type PreviewFileType,
-} from '../components/ClickableFilePath'
+import { ClickableFilePath, type PreviewFileType } from '../components/ClickableFilePath'
 import { FilePreviewPanel } from '../components/FilePreviewPanel'
-import {
-  FileTypeIcon,
-  getFileTypeBadge,
-  getPreviewFileType,
-} from '../components/FileDisplay'
+import { FileTypeIcon, getFileTypeBadge, getPreviewFileType } from '../components/FileDisplay'
 import { TeamDispatchCard } from '../components/TeamDispatchCard'
 import { TeamMemberBubble } from '../components/TeamMemberBubble'
 import { TeamInspectorSection } from '../components/TeamInspectorSection'
@@ -207,6 +187,7 @@ import { AvatarImage } from '../components/AvatarImage'
 import { SkillsPickerModal } from '../components/SkillsPickerModal'
 import { ComposerActionsMenu } from '../components/ComposerActionsMenu'
 import { SKILL_STORE_TARGET_TAB_EVENT, SKILL_STORE_TARGET_TAB_STORAGE_KEY } from './SkillStoreView'
+import { requestAgentsTargetTab } from '../teamNavigation'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useAppearanceSettings, readAppearance } from '../hooks/useAppearance'
@@ -570,22 +551,27 @@ export function ChatView({
     }
   }, [agents])
   const [teamConfig, setTeamConfig] = useState<TeamModeConfig>(defaultTeamConfig)
+  const teamConfigRef = useRef(teamConfig)
+  const teamConfigRevisionRef = useRef(0)
+  useEffect(() => {
+    teamConfigRef.current = teamConfig
+  }, [teamConfig])
   const updateTeamConfig = useCallback(
-    (patch: Partial<TeamModeConfig>) => {
-      setTeamConfig((prev) => {
-        const next = { ...prev, ...patch }
-        // 仅缓存 host/members 作为「下次显式开启团队」时的便捷预填；
-        // 不再缓存 enabled —— team 是否启用一律以会话级 metadata 为准（见 defaultTeamConfig）。
-        writeComposerPrefs({
-          teamHostAgentId: next.hostAgentId,
-          teamMemberAgentIds: next.memberAgentIds,
-        })
-        // 有活跃会话时，把配置写入该会话 metadata（供运行时与重开会话恢复）
-        if (active != null) {
-          void persistTeamConfig({ sessionId: active as SessionId, config: next }).catch(() => {})
-        }
-        return next
+    async (patch: Partial<TeamModeConfig>): Promise<void> => {
+      const next = { ...teamConfigRef.current, ...patch }
+      teamConfigRevisionRef.current += 1
+      teamConfigRef.current = next
+      setTeamConfig(next)
+      // 仅缓存 host/members 作为「下次显式开启团队」时的便捷预填；
+      // 不再缓存 enabled —— team 是否启用一律以会话级 metadata 为准（见 defaultTeamConfig）。
+      writeComposerPrefs({
+        teamHostAgentId: next.hostAgentId,
+        teamMemberAgentIds: next.memberAgentIds,
       })
+      // 有活跃会话时，先等待 metadata 落库，避免后续运行时更新触发回读旧团队。
+      if (active != null) {
+        await persistTeamConfig({ sessionId: active as SessionId, config: next }).catch(() => {})
+      }
     },
     [active, persistTeamConfig],
   )
@@ -618,10 +604,14 @@ export function ChatView({
   // 历史团队会话能正常恢复底部参数与右侧 Inspector 的团队信息。
   const reloadActiveTeamConfig = useCallback(async () => {
     if (active == null) {
-      setTeamConfig(defaultTeamConfig())
+      setTeamConfig((current) =>
+        preserveExplicitEmptySessionTeamConfig(current, defaultTeamConfig()),
+      )
       return
     }
+    const requestRevision = teamConfigRevisionRef.current
     const res = await listTeamMembers({ sessionId: active as SessionId })
+    if (teamConfigRevisionRef.current !== requestRevision) return
     if (res.config != null) setTeamConfig(res.config)
     else setTeamConfig(defaultTeamConfig())
   }, [active, defaultTeamConfig, listTeamMembers])
@@ -629,14 +619,18 @@ export function ChatView({
   useEffect(() => {
     let cancelled = false
     if (active == null) {
-      setTeamConfig(defaultTeamConfig())
+      setTeamConfig((current) =>
+        preserveExplicitEmptySessionTeamConfig(current, defaultTeamConfig()),
+      )
       return () => {
         cancelled = true
       }
     }
+    const requestRevision = teamConfigRevisionRef.current
     void listTeamMembers({ sessionId: active as SessionId })
       .then((res) => {
         if (cancelled) return
+        if (teamConfigRevisionRef.current !== requestRevision) return
         if (res.config != null) setTeamConfig(res.config)
         else setTeamConfig(defaultTeamConfig())
       })
@@ -653,7 +647,9 @@ export function ChatView({
       window.spark?.on?.('stream:config:changed', (event) => {
         if (event.scope !== 'team') return
         if (active == null) {
-          setTeamConfig(defaultTeamConfig())
+          setTeamConfig((current) =>
+            preserveExplicitEmptySessionTeamConfig(current, defaultTeamConfig()),
+          )
           return
         }
         if (
@@ -1737,6 +1733,57 @@ export function ChatView({
     },
     [setTweak],
   )
+  const openTeamManager = useCallback(() => {
+    requestAgentsTargetTab('teams')
+    setTweak('view', 'agents')
+  }, [setTweak])
+
+  const useSoloModeForEmptySession = useCallback(() => {
+    const soloAgentId =
+      agents.find((agent) => agent.id === effectiveHostAgentId)?.id ??
+      agents.find((agent) => agent.id === teamConfig.hostAgentId)?.id ??
+      agents[0]?.id ??
+      teamConfig.hostAgentId
+    updateTeamConfig({ enabled: false, teamId: undefined, hostAgentId: soloAgentId })
+    if (active != null) void syncSessionRuntimeToAgent(soloAgentId)
+  }, [
+    active,
+    agents,
+    effectiveHostAgentId,
+    syncSessionRuntimeToAgent,
+    teamConfig.hostAgentId,
+    updateTeamConfig,
+  ])
+
+  const useEmptyTeamModeForEmptySession = useCallback(() => {
+    const hostAgentId =
+      agents.find((agent) => agent.id === teamConfig.hostAgentId)?.id ??
+      agents[0]?.id ??
+      teamConfig.hostAgentId
+    updateTeamConfig({ enabled: true, teamId: undefined, hostAgentId })
+  }, [agents, teamConfig.hostAgentId, updateTeamConfig])
+
+  const applyTeamForEmptySession = useCallback(
+    (team: ManagedTeam) => {
+      void persistThenSyncTeamSelection(
+        () =>
+          updateTeamConfig({
+            enabled: true,
+            hostAgentId: team.hostAgentId,
+            memberAgentIds: team.memberAgentIds,
+            maxDepth: team.maxDepth,
+            allowNesting: team.allowNesting,
+            maxDiscussionRounds: team.maxDiscussionRounds ?? 6,
+            enablePeerMessaging: team.enablePeerMessaging === true,
+            teamId: team.id,
+          }),
+        async () => {
+          if (active != null) await syncSessionRuntimeToAgent(team.hostAgentId)
+        },
+      )
+    },
+    [active, syncSessionRuntimeToAgent, updateTeamConfig],
+  )
 
   const hideComposerBranchSelect = active != null && !showEmptyHero && isGitRepo
   const composerNode =
@@ -1946,6 +1993,17 @@ export function ChatView({
           </div>
         )}
         {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />}
+        {showEmptyHero && (
+          <EmptySessionModeLauncher
+            agents={agents}
+            config={teamConfig}
+            activeTeamName={activeTeamName}
+            onUseSolo={useSoloModeForEmptySession}
+            onUseEmptyTeamMode={useEmptyTeamModeForEmptySession}
+            onApplyTeam={applyTeamForEmptySession}
+            onManageTeams={openTeamManager}
+          />
+        )}
         {showEmptyHero && teamConfig.enabled ? (
           <TeamModeEmptyHero
             agents={agents}
@@ -2100,7 +2158,10 @@ export function ChatView({
           contextInputTokens={contextInputTokens}
           providerContextWindow={activeProviderContextWindow}
           turnPromptSnapshots={turnPromptSnapshots}
-          runningTeamAgentIds={extractRunningTeamMemberIds(activeMessages, getBlockTeamMemberContext)}
+          runningTeamAgentIds={extractRunningTeamMemberIds(
+            activeMessages,
+            getBlockTeamMemberContext,
+          )}
           width={inspectorWidth}
           onWidthChange={setInspectorWidth}
           teamConfig={teamConfig}
@@ -2329,8 +2390,6 @@ export function ChatView({
     </div>
   )
 }
-
-
 
 function ChatStream({
   sessionId,
@@ -3867,9 +3926,7 @@ function renderBlocks(
       case 'subagent': {
         return (
           <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
-            <SubagentCard
-              {...block}
-            />
+            <SubagentCard {...block} />
           </div>
         )
       }
@@ -5288,7 +5345,6 @@ function InlineContextMenu({
     </div>
   )
 }
-
 
 function SelectionQuoteContextMenu({
   onQuote,

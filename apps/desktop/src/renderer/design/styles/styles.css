@@ -1343,12 +1343,11 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
     padding-right 0.18s ease;
 }
 
-/* Sidebar hidden: keep breathing room on wide windows, but give narrow
-   chat/browser layouts their space back. The 8px floor matches the chat
-   content gutters so a fully collapsed shell never becomes edge-to-edge. */
+/* Sidebar hidden: content takes the full width, edge-to-edge. Individual
+   view bodies manage their own inner gutters. */
 .app.sidebar-hidden .main-content-area {
-  padding-left: clamp(8px, 3vw, 0px);
-  padding-right: clamp(8px, 3vw, 0px);
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .app.sidebar-hidden .main-content-area.main-content-canvas-workspace {
