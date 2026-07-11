@@ -1037,7 +1037,6 @@ export class ProviderService {
       modelIds,
       availableModelIds,
       apiEndpoint: `${params.baseUrl.replace(/\/+$/, '')}/v1`,
-      codexApiKind: 'chat',
       modelType: 'text',
       managed: true,
       managedType: 'newapi',
@@ -1046,6 +1045,7 @@ export class ProviderService {
     })
     if (existing) {
       this.repo.update(PLATFORM_NEWAPI_PROVIDER_ID, {
+        providerType: 'anthropic',
         name: 'Spark 平台官方模型',
         config,
         enabled: true,
@@ -1057,7 +1057,7 @@ export class ProviderService {
     }
     return rowToProfile(this.repo.create({
       id: PLATFORM_NEWAPI_PROVIDER_ID,
-      providerType: 'openai',
+      providerType: 'anthropic',
       name: 'Spark 平台官方模型',
       config,
       keystoreRef,

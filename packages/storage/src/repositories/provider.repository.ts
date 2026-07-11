@@ -64,6 +64,7 @@ export class ProviderProfileRepository extends BaseRepository {
   update(
     id: string,
     fields: Partial<{
+      providerType: string
       name: string
       config: Record<string, unknown>
       enabled: boolean
@@ -74,6 +75,7 @@ export class ProviderProfileRepository extends BaseRepository {
     const sets: string[] = ['updated_at = ?']
     const values: unknown[] = [now]
 
+    if (fields.providerType !== undefined) { sets.push('provider_type = ?'); values.push(fields.providerType) }
     if (fields.name !== undefined) { sets.push('name = ?'); values.push(fields.name) }
     if (fields.config !== undefined) { sets.push('config_json = ?'); values.push(this.toJson(fields.config)) }
     if (fields.enabled !== undefined) { sets.push('enabled = ?'); values.push(fields.enabled ? 1 : 0) }
