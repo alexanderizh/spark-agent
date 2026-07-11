@@ -1275,6 +1275,11 @@ body.sidebar-resizing {
   gap: 10px;
 }
 
+.msg-agent.without-avatar {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
 .msg-bubble {
   max-width: 100%;
   position: relative;

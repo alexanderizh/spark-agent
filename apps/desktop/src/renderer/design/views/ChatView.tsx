@@ -153,7 +153,6 @@ import {
 } from './chat/ChatTeamActivityUtils'
 import { GitDiffContent, parseUnifiedDiff, type DiffHunk } from './chat/ChatDiffUtils'
 import { useApp } from '../AppContext'
-import { useAuth } from '../auth/AuthContext'
 import { Icons } from '../Icons'
 import { useSessionSidebar, type SessionSummary } from '../SessionSidebarContext'
 import {
@@ -214,6 +213,7 @@ import {
   serializeMessagesToMarkdown,
 } from './chat-copy'
 import { hasVisibleTeamMemberActivityBlocks } from './chat-team-visibility'
+import { shouldShowAssistantIdentity } from './chat/chat-message-avatar'
 import { getLatestAgentStatus, isRunningAgentStatus } from './chat-session-status'
 import {
   canReuseComposerSession,
@@ -231,7 +231,6 @@ import {
 } from '../utils/provider-adapter'
 import {
   getAgentAvatarConfig,
-  getUserAvatarConfig,
   hasCustomAvatar,
   resolveAvatarSrc,
 } from '../avatar'
@@ -291,7 +290,6 @@ import {
 import { normalizeEduAssetUrl, resolveProviderContextWindow } from '@spark/shared'
 import { ProviderLogo } from '../components/ProviderLogo'
 
-const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
 const LOCAL_CODEX_CLI_MODEL_DISPLAY = 'codex cli'
 
@@ -2510,7 +2508,6 @@ function ChatStream({
   })
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
   const { invoke: deleteMessageEvents } = useIpcInvoke('session:delete-message')
-  const userAvatarSrc = useUserAvatarSrc()
   const { sessions, agents } = useSessionSidebar()
   const session = sessions.find((item) => item.id === sessionId)
   const assistantAgentId = teamConfig.enabled
@@ -3465,7 +3462,6 @@ function ChatStream({
                   key={msg.id}
                   timestamp={msg.timestamp}
                   blocks={msg.blocks}
-                  avatarSrc={userAvatarSrc}
                   {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
                   {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
                     ? {
@@ -3518,6 +3514,11 @@ function ChatStream({
                       assistantId={identity.id}
                       assistantName={identity.name}
                       assistantAvatarSrc={identity.avatarSrc}
+                      showIdentity={shouldShowAssistantIdentity(
+                        teamConfig.enabled,
+                        identity.id,
+                        assistantAgentId,
+                      )}
                       {...(onFilePreview != null ? { onFilePreview } : {})}
                       {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
                       {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
@@ -3562,6 +3563,11 @@ function ChatStream({
               assistantId={placeholderIdentity.id}
               assistantName={placeholderIdentity.name}
               assistantAvatarSrc={placeholderIdentity.avatarSrc}
+              showIdentity={shouldShowAssistantIdentity(
+                teamConfig.enabled,
+                placeholderIdentity.id,
+                assistantAgentId,
+              )}
               {...(onFilePreview != null ? { onFilePreview } : {})}
             />
           )}
@@ -5426,7 +5432,6 @@ const UserMsg = React.memo(
     children,
     timestamp,
     blocks,
-    avatarSrc,
     attachments = [],
     onDelete,
     mentionAgentName,
@@ -5440,7 +5445,6 @@ const UserMsg = React.memo(
     children: ReactNode
     timestamp?: string | undefined
     blocks: UIBlock[]
-    avatarSrc: string
     attachments?: MessageAttachment[]
     onDelete?: () => void
     /** 团队模式：用户 @ 指定的 Agent 名称（已解析）；用于显示"→ 已直接由 @X 处理"提示 */
@@ -5566,9 +5570,6 @@ const UserMsg = React.memo(
           <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
             <div className="msg-content">{children}</div>
           </div>
-          <div className="msg-user-avatar">
-            <AvatarImage src={avatarSrc} seed="spark-user" name="User" alt="用户头像" />
-          </div>
         </div>
         {mentionAgentName != null && mentionAgentName.length > 0 && (
           <div className="msg-user-mention-hint">
@@ -5598,7 +5599,6 @@ const UserMsg = React.memo(
     // 但 selectionMode/selected 必须比较，否则进入多选时 memo 判定 props 未变 → 勾选框不挂载。
     return (
       prev.blocks === next.blocks &&
-      prev.avatarSrc === next.avatarSrc &&
       prev.attachments === next.attachments &&
       prev.mentionAgentName === next.mentionAgentName &&
       prev.timestamp === next.timestamp &&
@@ -5607,53 +5607,6 @@ const UserMsg = React.memo(
     )
   },
 )
-
-function useUserAvatarSrc(): string {
-  // 已登录用户优先使用账户头像（来自 edu-server /me.avatarUrl），
-  // 未登录或账户未设置头像时，回退到本地自定义头像，再回退到平台默认头像。
-  const { user } = useAuth()
-  const loginAvatar = user?.avatarUrl?.trim() ?? ''
-
-  const readLocal = useCallback(() => {
-    try {
-      const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
-      if (raw == null) return resolveAvatarSrc(getUserAvatarConfig(null))
-      return resolveAvatarSrc(
-        getUserAvatarConfig((JSON.parse(raw) as Record<string, unknown>).userAvatar),
-      )
-    } catch {
-      return resolveAvatarSrc(getUserAvatarConfig(null))
-    }
-  }, [])
-  const [src, setSrc] = useState(readLocal)
-
-  useEffect(() => {
-    let cancelled = false
-    setSrc(readLocal())
-    window.spark
-      ?.invoke('settings:get', { category: 'general', key: 'data' })
-      .then((res) => {
-        if (cancelled) return
-        const value =
-          res.value != null && typeof res.value === 'object'
-            ? (res.value as Record<string, unknown>).userAvatar
-            : null
-        setSrc(resolveAvatarSrc(getUserAvatarConfig(value)))
-      })
-      .catch(() => {})
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === SETTINGS_GENERAL_KEY) setSrc(readLocal())
-    }
-    window.addEventListener('storage', handleStorage)
-    return () => {
-      cancelled = true
-      window.removeEventListener('storage', handleStorage)
-    }
-  }, [readLocal])
-
-  // 登录头像存在时始终优先，覆盖本地自定义 / 默认头像
-  return loginAvatar || src
-}
 
 function resolveAssistantIdentity(
   msg: UIMessage,
@@ -5849,6 +5802,8 @@ type AssistantRowCompareProps = {
   assistantId: string
   assistantName: string
   assistantAvatarSrc: string
+  showIdentity?: boolean
+  running?: boolean
   selectionMode?: boolean
   selected?: boolean
   onRetry?: () => void
@@ -5868,6 +5823,7 @@ function assistantRowsPropsAreEqual(
     prev.assistantId === next.assistantId &&
     prev.assistantName === next.assistantName &&
     prev.assistantAvatarSrc === next.assistantAvatarSrc &&
+    prev.showIdentity === next.showIdentity &&
     prev.timestamp === next.timestamp &&
     prev.selectionMode === next.selectionMode &&
     prev.selected === next.selected &&
@@ -5885,6 +5841,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   assistantId,
   assistantName,
   assistantAvatarSrc,
+  showIdentity,
   onDelete,
   onReply,
   onFilePreview,
@@ -5906,6 +5863,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   assistantId: string
   assistantName: string
   assistantAvatarSrc: string
+  showIdentity: boolean
   onDelete?: () => void
   onReply?: (selectedText?: string) => void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
@@ -6001,6 +5959,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             assistantId={assistantId}
             assistantName={assistantName}
             assistantAvatarSrc={assistantAvatarSrc}
+            showIdentity={showIdentity}
             running={segmentStreaming}
             {...(onFilePreview != null ? { onFilePreview } : {})}
             {...(segmentStreaming ? { status: 'running' as const } : {})}
@@ -6154,6 +6113,7 @@ const AgentMsg = React.memo(function AgentMsg({
   assistantId,
   assistantName,
   assistantAvatarSrc,
+  showIdentity = true,
   running,
   onDelete,
   onReply,
@@ -6173,6 +6133,7 @@ const AgentMsg = React.memo(function AgentMsg({
   assistantId: string
   assistantName: string
   assistantAvatarSrc: string
+  showIdentity?: boolean
   running?: boolean
   onDelete?: () => void
   onReply?: (selectedText?: string) => void
@@ -6349,7 +6310,7 @@ const AgentMsg = React.memo(function AgentMsg({
 
   return (
     <div
-      className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}${selectionMode ? ' is-selecting' : ''}${selected ? ' is-selected' : ''}`}
+      className={`msg msg-agent${showIdentity ? '' : ' without-avatar'} ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}${selectionMode ? ' is-selecting' : ''}${selected ? ' is-selected' : ''}`}
       data-running-agent-id={assistantId}
       data-running={running === true ? 'true' : 'false'}
       onClick={handleRowClick}
@@ -6367,13 +6328,17 @@ const AgentMsg = React.memo(function AgentMsg({
           <Icons.Check className="msg-select-checkmark" size={14} />
         </label>
       )}
-      <div className="msg-agent-avatar">
-        <AvatarImage src={assistantAvatarSrc} seed={assistantId} name={assistantName} />
-      </div>
-      <div className="msg-agent-main">
-        <div className="msg-agent-head">
-          <span className="msg-agent-name">{assistantName}</span>
+      {showIdentity && (
+        <div className="msg-agent-avatar">
+          <AvatarImage src={assistantAvatarSrc} seed={assistantId} name={assistantName} />
         </div>
+      )}
+      <div className="msg-agent-main">
+        {showIdentity && (
+          <div className="msg-agent-head">
+            <span className="msg-agent-name">{assistantName}</span>
+          </div>
+        )}
         <div
           className={`msg-bubble msg-bubble-agent${hideToolLogs ? ' tool-logs-hidden' : ''}`}
           onContextMenu={handleContextMenu}
