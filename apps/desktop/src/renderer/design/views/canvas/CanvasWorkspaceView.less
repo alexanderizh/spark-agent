@@ -10424,6 +10424,29 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   min-height: 0;
 }
 
+// 画布 Agent 会话面板：assistant 消息去除头像与气泡框，内容直接铺在面板内。
+// 用户消息保持原样（右侧气泡 + 鼠标指针头像）。此作用域仅命中画布面板，
+// 不影响 SideChatPanel 等其他复用 ChatPanel 的场景。
+.canvas-agent-modal {
+  .chat-panel-message-assistant {
+    .chat-panel-message-avatar {
+      display: none;
+    }
+
+    .chat-panel-message-body {
+      max-width: 100%;
+    }
+
+    .chat-panel-text {
+      padding: 0;
+      background: transparent;
+      border: 0;
+      border-left: 0;
+      border-radius: 0;
+    }
+  }
+}
+
 .canvas-agent-panel.is-fullscreen .canvas-agent-modal {
   height: 100%;
 }
