@@ -6219,55 +6219,106 @@ body.inspector-resizing {
   color: var(--danger);
 }
 
-/* --- Streaming error marker (inline, non-blocking) --- */
+/* --- Actionable provider/runtime signal --- */
 .streaming-error-card {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-left: 3px solid var(--text-muted);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  color: var(--text);
+}
+.streaming-error-card.is-warning {
+  border-left-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 7%, var(--panel));
+}
+.streaming-error-card.is-error {
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--panel));
+}
+.streaming-error-card-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 7px;
   min-width: 0;
-  margin: 8px 0;
-  padding: 0;
-  color: var(--text-faint);
 }
-.streaming-error-line {
-  flex: 1 1 32px;
-  height: 1px;
-  min-width: 24px;
-  background: color-mix(in srgb, var(--divider) 72%, transparent);
+.streaming-error-card-head svg {
+  flex: 0 0 auto;
+  color: var(--text-muted);
 }
-.streaming-error-code {
-  display: inline-block;
+.streaming-error-card.is-warning .streaming-error-card-head svg {
+  color: var(--warning);
+}
+.streaming-error-card.is-error .streaming-error-card-head svg {
+  color: var(--danger);
+}
+.streaming-error-card-head strong {
   min-width: 0;
-  max-width: min(460px, 62%);
+  font-size: 12px;
+  font-weight: 600;
+}
+.streaming-error-card-head code {
+  margin-left: auto;
+  max-width: 45%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-  line-height: 1.4;
-  font-size: 11px;
   color: var(--text-faint);
-  cursor: help;
+  font-size: 10px;
 }
-.streaming-error-card.is-network .streaming-error-code,
-.streaming-error-card.is-timeout .streaming-error-code,
-.streaming-error-card.is-max-iter .streaming-error-code {
-  color: color-mix(in srgb, var(--text-muted) 82%, var(--text-faint));
-}
-.streaming-error-tooltip {
-  max-width: min(520px, 70vw);
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.streaming-error-tooltip-code {
-  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.streaming-error-tooltip-message {
-  margin-top: 6px;
-  color: color-mix(in srgb, currentColor 78%, transparent);
+.streaming-error-card > p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
   font-size: 12px;
   line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.streaming-error-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 6px 12px;
+  margin: 8px 0 0;
+}
+.streaming-error-details > div {
+  min-width: 0;
+}
+.streaming-error-details dt {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.streaming-error-details dd {
+  margin: 1px 0 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.streaming-error-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.streaming-error-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+.streaming-error-actions button:hover {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 /* --- Stopped marker (shown after cancel) --- */
@@ -6336,10 +6387,19 @@ body.inspector-resizing {
 
 @media (max-width: 640px) {
   .streaming-error-card {
-    gap: 8px;
+    padding: 9px 10px;
   }
-  .streaming-error-code {
-    max-width: 64vw;
+  .streaming-error-card-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .streaming-error-card-head code {
+    width: 100%;
+    max-width: 100%;
+    margin-left: 22px;
+  }
+  .streaming-error-actions {
+    align-items: flex-start;
   }
 }
 

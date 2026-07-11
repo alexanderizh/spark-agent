@@ -19,6 +19,7 @@ import {
   type UIBlock,
   type UserQuestionAnswerSummary,
 } from '../services/event-mapper'
+import { StreamingErrorCard } from '../views/chat/StreamingErrorCard'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -662,10 +663,27 @@ function BlockView({
       )
     case 'error':
       return (
-        <div className="chat-panel-block-error">
-          <Icons.X size={12} />
-          <span>{block.message}</span>
-        </div>
+        <StreamingErrorCard
+          code={block.code}
+          title={block.title ?? 'Agent 执行失败'}
+          message={block.message}
+          level="error"
+          retryable={block.retryable}
+          {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
+          {...(block.details != null ? { details: block.details } : {})}
+        />
+      )
+    case 'runtime_signal':
+      return (
+        <StreamingErrorCard
+          title={block.title}
+          message={block.message}
+          level={block.level}
+          retryable={block.retryable}
+          {...(block.code != null ? { code: block.code } : {})}
+          {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
+          {...(block.details != null ? { details: block.details } : {})}
+        />
       )
     default:
       // 其他 block（file_change/plan_proposed/checkpoint 等）在 modal 场景不展开

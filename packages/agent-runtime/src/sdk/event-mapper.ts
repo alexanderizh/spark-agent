@@ -15,6 +15,9 @@ import type { AgentEvent } from '@spark/protocol'
 import type {
   SDKMessage,
   SDKAssistantMessage,
+  SDKAssistantMessageError,
+  SDKAuthStatusMessage,
+  SDKRateLimitEvent,
   SDKResultMessage,
   SDKSystemMessage,
   SDKStreamEvent,
@@ -30,6 +33,8 @@ interface EventContext {
   toolResultsById?: Map<string, string>
   /** SDK async Task launch receipts map internal agent ids back to the original Agent tool call. */
   asyncSubagentLaunchesByAgentId?: Map<string, { toolCallId: string; name: string }>
+  /** SDK message UUID -> emitted Spark event IDs, used by refusal fallback retractions. */
+  sdkEventIdsByMessageId?: Map<string, string[]>
 }
 
 /**
@@ -85,23 +90,214 @@ function baseEvent(ctx: EventContext) {
  * Called once for each message yielded by the SDK's AsyncGenerator.
  */
 export function mapSDKMessageToEvents(message: SDKMessage, ctx: EventContext): AgentEvent[] {
+  let events: AgentEvent[]
   switch (message.type) {
     case 'system':
-      return mapSystemMessage(message as SDKSystemMessage, ctx)
+      events = mapSystemMessage(message as SDKSystemMessage, ctx)
+      break
     case 'assistant':
-      return mapAssistantMessage(message as SDKAssistantMessage, ctx)
+      events = mapAssistantMessage(message as SDKAssistantMessage, ctx)
+      break
     case 'stream_event':
-      return mapStreamEvent(message as SDKStreamEvent, ctx)
+      events = mapStreamEvent(message as SDKStreamEvent, ctx)
+      break
     case 'result':
-      return mapResultMessage(message as SDKResultMessage, ctx)
+      events = mapResultMessage(message as SDKResultMessage, ctx)
+      break
     case 'user':
-      return mapUserMessage(message as SDKUserMessage, ctx)
+      events = mapUserMessage(message as SDKUserMessage, ctx)
+      break
+    case 'auth_status':
+      events = mapAuthStatusMessage(message as SDKAuthStatusMessage, ctx)
+      break
+    case 'rate_limit_event':
+      events = mapRateLimitMessage(message as SDKRateLimitEvent, ctx)
+      break
     default:
-      return []
+      events = []
   }
+
+  const retraction = buildTranscriptRetraction(message, ctx)
+  if (retraction != null) events.unshift(retraction)
+  rememberSDKMessageEvents(message, events, ctx)
+  return events
 }
 
 function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[] {
+  if (msg.subtype === 'api_retry') {
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'runtime_signal',
+        signal: 'api_retry',
+        level: 'warning',
+        title: 'Claude API 正在重试',
+        message: describeClaudeAssistantError(msg.error).message,
+        code: `CLAUDE_API_RETRY_${msg.error.toUpperCase()}`,
+        actionHint: 'SDK 会自动重试，无需重复发送。',
+        details: [
+          { label: '重试进度', value: `${msg.attempt}/${msg.max_retries}` },
+          { label: '等待时间', value: `${msg.retry_delay_ms} ms` },
+          ...(msg.error_status != null
+            ? [{ label: 'HTTP 状态', value: String(msg.error_status) }]
+            : []),
+        ],
+      },
+    ]
+  }
+
+  if (msg.subtype === 'permission_denied') {
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'runtime_signal',
+        signal: 'permission_denied',
+        level: 'warning',
+        title: '工具权限已拒绝',
+        message: msg.message,
+        code: 'CLAUDE_PERMISSION_DENIED',
+        actionHint: '调整会话权限模式或项目规则后再试。',
+        details: [
+          { label: '工具', value: msg.tool_name },
+          ...(msg.decision_reason_type != null
+            ? [{ label: '拒绝来源', value: msg.decision_reason_type }]
+            : []),
+          ...(msg.decision_reason != null ? [{ label: '原因', value: msg.decision_reason }] : []),
+        ],
+      },
+    ]
+  }
+
+  if (msg.subtype === 'session_state_changed') {
+    const status =
+      msg.state === 'idle'
+        ? 'completed'
+        : msg.state === 'requires_action'
+          ? 'waiting_user'
+          : 'thinking'
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'agent_status',
+        status,
+        message:
+          msg.state === 'idle'
+            ? 'Claude session is idle'
+            : msg.state === 'requires_action'
+              ? 'Claude session requires action'
+              : 'Claude session is running',
+      },
+    ]
+  }
+
+  if (msg.subtype === 'model_refusal_fallback') {
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'runtime_signal',
+        signal: 'model_refusal_fallback',
+        level: 'warning',
+        title: '主模型拒绝，已切换备用模型',
+        message: msg.content,
+        code: 'CLAUDE_MODEL_REFUSAL_FALLBACK',
+        actionHint: '备用模型正在继续本轮请求。',
+        details: [
+          { label: '原模型', value: msg.original_model },
+          { label: '备用模型', value: msg.fallback_model },
+          ...(msg.api_refusal_category != null
+            ? [{ label: '拒绝类别', value: msg.api_refusal_category }]
+            : []),
+        ],
+      },
+    ]
+  }
+
+  if (msg.subtype === 'model_refusal_no_fallback') {
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'agent_error',
+        code: 'CLAUDE_MODEL_REFUSAL',
+        title: '模型拒绝了本次请求',
+        message: msg.content,
+        retryable: true,
+        actionHint: '可改写请求、缩小范围或切换模型后重试。',
+        details: [
+          { label: '模型', value: msg.original_model },
+          ...(msg.api_refusal_category != null
+            ? [{ label: '拒绝类别', value: msg.api_refusal_category }]
+            : []),
+          ...(msg.api_refusal_explanation != null
+            ? [{ label: '说明', value: msg.api_refusal_explanation }]
+            : []),
+        ],
+      },
+      {
+        ...baseEvent(ctx),
+        type: 'agent_status',
+        status: 'error',
+        message: 'Claude model refused the request without a fallback.',
+      },
+    ]
+  }
+
+  if (msg.subtype === 'notification') {
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'runtime_signal',
+        signal: 'notification',
+        level: msg.priority === 'high' || msg.priority === 'immediate' ? 'warning' : 'info',
+        title: 'Claude 运行通知',
+        message: msg.text,
+        code: msg.key,
+        details: [{ label: '优先级', value: msg.priority }],
+      },
+    ]
+  }
+
+  if (msg.subtype === 'mirror_error') {
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'runtime_signal',
+        signal: 'mirror_error',
+        level: 'error',
+        title: '会话镜像写入失败',
+        message: msg.error,
+        code: 'CLAUDE_MIRROR_ERROR',
+        actionHint: '本地会话仍可继续，但外部镜像可能缺少这批记录。',
+        details: [
+          { label: '项目', value: msg.key.projectKey },
+          { label: 'SDK 会话', value: msg.key.sessionId },
+        ],
+      },
+    ]
+  }
+
+  if (msg.subtype === 'worker_shutting_down') {
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'runtime_signal',
+        signal: 'worker_shutdown',
+        level: 'error',
+        title: 'Claude worker 已停止',
+        message: `Worker shutdown reason: ${msg.reason}`,
+        code: 'CLAUDE_WORKER_SHUTDOWN',
+        retryable: true,
+        actionHint: '重新发送上一条消息可启动新的 worker。',
+        details: [{ label: '原因', value: msg.reason }],
+      },
+      {
+        ...baseEvent(ctx),
+        type: 'agent_status',
+        status: 'error',
+        message: `Claude worker stopped: ${msg.reason}`,
+      },
+    ]
+  }
+
   if (msg.subtype === 'status') {
     const events: AgentEvent[] = []
     if (msg.status === 'compacting') {
@@ -148,8 +344,12 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
         phase: 'boundary',
         trigger: msg.compact_metadata.trigger,
         preTokens: msg.compact_metadata.pre_tokens,
-        ...(msg.compact_metadata.post_tokens != null ? { postTokens: msg.compact_metadata.post_tokens } : {}),
-        ...(msg.compact_metadata.duration_ms != null ? { durationMs: msg.compact_metadata.duration_ms } : {}),
+        ...(msg.compact_metadata.post_tokens != null
+          ? { postTokens: msg.compact_metadata.post_tokens }
+          : {}),
+        ...(msg.compact_metadata.duration_ms != null
+          ? { durationMs: msg.compact_metadata.duration_ms }
+          : {}),
         rawType: 'system/compact_boundary',
       },
     ]
@@ -190,6 +390,26 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
     events.push(...mapContentBlock(block, ctx))
   }
   if (!isSubagentMessage) closeSegments(ctx)
+
+  if (msg.error != null) {
+    const error = describeClaudeAssistantError(msg.error)
+    events.push({
+      ...baseEvent(ctx),
+      type: 'agent_error',
+      code: `CLAUDE_${msg.error.toUpperCase()}`,
+      title: error.title,
+      message: error.message,
+      retryable: error.retryable,
+      actionHint: error.actionHint,
+      rawError: msg.error,
+    })
+    events.push({
+      ...baseEvent(ctx),
+      type: 'agent_status',
+      status: 'error',
+      message: error.title,
+    })
+  }
 
   // Emit usage if available
   if (msg.message.usage) {
@@ -341,19 +561,27 @@ function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[
         isFinal: true,
       })
     }
-    events.push({
-      ...baseEvent(ctx),
-      type: 'agent_status',
-      status: 'completed',
-    })
   } else {
     const errorMsg = msg.errors?.join('; ') ?? `Turn ended: ${msg.subtype}`
+    const nonRetryable =
+      msg.subtype === 'error_max_budget_usd' ||
+      msg.subtype === 'error_max_structured_output_retries'
     events.push({
       ...baseEvent(ctx),
       type: 'agent_error',
       code: msg.subtype.toUpperCase(),
+      title:
+        msg.subtype === 'error_max_structured_output_retries'
+          ? '结构化输出校验失败'
+          : 'Claude 执行失败',
       message: errorMsg,
-      retryable: msg.subtype !== 'error_max_budget_usd',
+      retryable: !nonRetryable,
+      actionHint:
+        msg.subtype === 'error_max_structured_output_retries'
+          ? '调整结构化输出约束或模型后重试。'
+          : msg.subtype === 'error_max_budget_usd'
+            ? '提高预算上限或缩小任务范围。'
+            : '可重新发送上一条消息。',
     })
     events.push({
       ...baseEvent(ctx),
@@ -363,6 +591,197 @@ function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[
   }
 
   return events
+}
+
+function mapAuthStatusMessage(msg: SDKAuthStatusMessage, ctx: EventContext): AgentEvent[] {
+  const hasError = msg.error != null && msg.error.length > 0
+  const message = hasError
+    ? (msg.error ?? 'Claude authentication failed.')
+    : msg.output.join('\n') || 'Authentication state updated.'
+  return [
+    {
+      ...baseEvent(ctx),
+      type: 'runtime_signal',
+      signal: 'auth_status',
+      level: hasError ? 'error' : 'info',
+      title: hasError
+        ? 'Claude 认证失败'
+        : msg.isAuthenticating
+          ? 'Claude 正在认证'
+          : 'Claude 认证完成',
+      message,
+      code: hasError ? 'CLAUDE_AUTH_STATUS_ERROR' : 'CLAUDE_AUTH_STATUS',
+      actionHint: hasError ? '重新登录或检查本地 Claude 凭据。' : '按提示完成认证流程。',
+    },
+  ]
+}
+
+function mapRateLimitMessage(msg: SDKRateLimitEvent, ctx: EventContext): AgentEvent[] {
+  const info = msg.rate_limit_info
+  const rejected = info.status === 'rejected' || info.overageStatus === 'rejected'
+  const warning = info.status === 'allowed_warning' || info.overageStatus === 'allowed_warning'
+  const details = [
+    ...(info.rateLimitType != null ? [{ label: '额度窗口', value: info.rateLimitType }] : []),
+    ...(info.utilization != null
+      ? [
+          {
+            label: '使用率',
+            value: `${Math.round(info.utilization <= 1 ? info.utilization * 100 : info.utilization)}%`,
+          },
+        ]
+      : []),
+    ...(info.resetsAt != null
+      ? [{ label: '重置时间', value: formatSDKTimestamp(info.resetsAt) }]
+      : []),
+    ...(info.overageDisabledReason != null
+      ? [{ label: '超额不可用', value: info.overageDisabledReason }]
+      : []),
+  ]
+
+  return [
+    {
+      ...baseEvent(ctx),
+      type: 'runtime_signal',
+      signal: 'rate_limit',
+      level: rejected ? 'error' : warning ? 'warning' : 'info',
+      title: rejected ? 'Claude 额度已用尽' : warning ? 'Claude 额度即将用尽' : 'Claude 额度状态',
+      message: rejected
+        ? '当前额度窗口拒绝了新请求。'
+        : warning
+          ? '当前额度窗口接近上限。'
+          : '当前请求仍在额度范围内。',
+      code: rejected
+        ? 'CLAUDE_RATE_LIMIT_REJECTED'
+        : warning
+          ? 'CLAUDE_RATE_LIMIT_WARNING'
+          : 'CLAUDE_RATE_LIMIT_ALLOWED',
+      retryable: rejected,
+      actionHint: rejected ? '额度重置后重试，或购买/启用额外额度。' : '可继续当前任务。',
+      details,
+    },
+  ]
+}
+
+function describeClaudeAssistantError(error: SDKAssistantMessageError): {
+  title: string
+  message: string
+  retryable: boolean
+  actionHint: string
+} {
+  const descriptions: Record<
+    SDKAssistantMessageError,
+    {
+      title: string
+      message: string
+      retryable: boolean
+      actionHint: string
+    }
+  > = {
+    authentication_failed: {
+      title: 'Claude 认证失败',
+      message: 'Claude 无法验证当前凭据。',
+      retryable: false,
+      actionHint: '重新登录或检查 API 凭据。',
+    },
+    oauth_org_not_allowed: {
+      title: '当前组织不允许 Claude Code',
+      message: 'OAuth 账号所属组织未开放 Claude Code。',
+      retryable: false,
+      actionHint: '切换到已授权的组织账号。',
+    },
+    billing_error: {
+      title: 'Claude 账户额度不可用',
+      message: '账单或额度状态阻止了本次请求。',
+      retryable: false,
+      actionHint: '检查账单、套餐或余额设置。',
+    },
+    rate_limit: {
+      title: 'Claude 请求受到限流',
+      message: '当前请求超过了 Claude 的额度或速率限制。',
+      retryable: true,
+      actionHint: '等待额度窗口重置后重试。',
+    },
+    overloaded: {
+      title: 'Claude 服务繁忙',
+      message: 'Claude 当前负载过高，暂时无法完成请求。',
+      retryable: true,
+      actionHint: '稍后重试，或切换到其他可用模型。',
+    },
+    invalid_request: {
+      title: 'Claude 请求无效',
+      message: '当前模型或请求参数不被 Claude 接受。',
+      retryable: false,
+      actionHint: '检查模型、上下文和请求配置。',
+    },
+    model_not_found: {
+      title: 'Claude 模型不可用',
+      message: '配置的 Claude 模型不存在或当前账号无权使用。',
+      retryable: false,
+      actionHint: '切换到账号可用的模型。',
+    },
+    server_error: {
+      title: 'Claude 服务端错误',
+      message: 'Claude 服务端未能完成本次请求。',
+      retryable: true,
+      actionHint: '稍后重新发送上一条消息。',
+    },
+    unknown: {
+      title: 'Claude 返回未知错误',
+      message: 'Claude SDK 未提供更具体的错误分类。',
+      retryable: true,
+      actionHint: '可重试；若持续失败，请检查运行日志。',
+    },
+    max_output_tokens: {
+      title: 'Claude 输出达到上限',
+      message: '模型在完成回答前达到了最大输出 token。',
+      retryable: true,
+      actionHint: '缩小请求范围，或继续下一轮让模型补全。',
+    },
+  }
+  return descriptions[error] ?? descriptions.unknown
+}
+
+function formatSDKTimestamp(value: number): string {
+  if (!Number.isFinite(value)) return String(value)
+  const epochMs = value < 1_000_000_000_000 ? value * 1000 : value
+  const date = new Date(epochMs)
+  return Number.isNaN(date.getTime()) ? String(value) : date.toISOString()
+}
+
+function buildTranscriptRetraction(message: SDKMessage, ctx: EventContext): AgentEvent | null {
+  const sdkMessageIds =
+    message.type === 'assistant' && Array.isArray(message.supersedes)
+      ? message.supersedes
+      : message.type === 'system' &&
+          message.subtype === 'model_refusal_fallback' &&
+          Array.isArray(message.retracted_message_uuids)
+        ? message.retracted_message_uuids
+        : []
+  if (sdkMessageIds.length === 0) return null
+
+  const eventIds = sdkMessageIds.flatMap(
+    (messageId) => ctx.sdkEventIdsByMessageId?.get(messageId) ?? [],
+  )
+  if (eventIds.length === 0) return null
+  return {
+    ...baseEvent(ctx),
+    type: 'transcript_retraction',
+    eventIds: [...new Set(eventIds)],
+    reason: 'model_refusal_fallback',
+  }
+}
+
+function rememberSDKMessageEvents(
+  message: SDKMessage,
+  events: AgentEvent[],
+  ctx: EventContext,
+): void {
+  if (typeof message.uuid !== 'string') return
+  if (ctx.sdkEventIdsByMessageId == null) ctx.sdkEventIdsByMessageId = new Map()
+  ctx.sdkEventIdsByMessageId.set(
+    message.uuid,
+    events.filter((event) => event.type !== 'transcript_retraction').map((event) => event.id),
+  )
 }
 
 function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[] {
@@ -488,7 +907,7 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
             toolCallId: block.tool_use_id,
             name,
             status: isError ? 'error' : 'success',
-            resultSummary: isError ? (content || 'Subagent failed') : summary,
+            resultSummary: isError ? content || 'Subagent failed' : summary,
             output: content || '',
             ...(usage != null
               ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
@@ -507,7 +926,7 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
             toolCallId: asyncSubagent.toolCallId,
             name: asyncSubagent.name,
             status: isError ? 'error' : 'success',
-            resultSummary: isError ? (content || 'Subagent failed') : summary,
+            resultSummary: isError ? content || 'Subagent failed' : summary,
             output: content || '',
           },
         ]

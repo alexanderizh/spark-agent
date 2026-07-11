@@ -3,6 +3,154 @@ import { mapSDKMessageToEvents } from './event-mapper.js'
 import type { SDKAssistantMessage, SDKResultMessage, SDKUserMessage } from './types.js'
 
 describe('mapSDKMessageToEvents', () => {
+  it.each([
+    ['authentication_failed', 'CLAUDE_AUTHENTICATION_FAILED', false],
+    ['oauth_org_not_allowed', 'CLAUDE_OAUTH_ORG_NOT_ALLOWED', false],
+    ['billing_error', 'CLAUDE_BILLING_ERROR', false],
+    ['rate_limit', 'CLAUDE_RATE_LIMIT', true],
+    ['overloaded', 'CLAUDE_OVERLOADED', true],
+    ['invalid_request', 'CLAUDE_INVALID_REQUEST', false],
+    ['model_not_found', 'CLAUDE_MODEL_NOT_FOUND', false],
+    ['server_error', 'CLAUDE_SERVER_ERROR', true],
+    ['unknown', 'CLAUDE_UNKNOWN', true],
+    ['max_output_tokens', 'CLAUDE_MAX_OUTPUT_TOKENS', true],
+  ])('maps Claude assistant error %s', (error, code, retryable) => {
+    const events = mapSDKMessageToEvents({
+      type: 'assistant',
+      uuid: 'assistant-error',
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      error,
+      message: { role: 'assistant', content: [] },
+    }, { sessionId: 'session-1', turnId: 'turn-1' })
+
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'agent_error', code, retryable,
+        title: expect.any(String), actionHint: expect.any(String),
+      }),
+      expect.objectContaining({ type: 'agent_status', status: 'error' }),
+    ]))
+  })
+
+  it('treats structured output retry exhaustion as non-retryable', () => {
+    const events = mapSDKMessageToEvents({
+      type: 'result',
+      subtype: 'error_max_structured_output_retries',
+      uuid: 'result-structured-error',
+      session_id: 'sdk-session',
+      duration_ms: 10,
+      duration_api_ms: 5,
+      is_error: true,
+      num_turns: 2,
+      total_cost_usd: 0.01,
+      usage: {
+        input_tokens: 100,
+        output_tokens: 20,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+      errors: ['schema mismatch'],
+    }, { sessionId: 'session-1', turnId: 'turn-1' })
+
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'agent_error',
+        code: 'ERROR_MAX_STRUCTURED_OUTPUT_RETRIES',
+        retryable: false,
+      }),
+    ]))
+  })
+
+  it('maps Claude runtime signals without silent drops', () => {
+    const ctx = { sessionId: 'session-1', turnId: 'turn-1' }
+    const messages = [
+      { type: 'system', subtype: 'api_retry', attempt: 2, max_retries: 4,
+        retry_delay_ms: 1500, error_status: 529, error: 'overloaded',
+        uuid: 'retry-1', session_id: 'sdk-session' },
+      { type: 'system', subtype: 'permission_denied', tool_name: 'Bash',
+        tool_use_id: 'tool-1', decision_reason_type: 'rule',
+        decision_reason: 'Denied by project rule', message: 'Command blocked',
+        uuid: 'permission-1', session_id: 'sdk-session' },
+      { type: 'auth_status', isAuthenticating: true,
+        output: ['Open the browser to continue'], uuid: 'auth-1', session_id: 'sdk-session' },
+      { type: 'rate_limit_event', rate_limit_info: {
+        status: 'allowed_warning', rateLimitType: 'five_hour',
+        utilization: 0.92, resetsAt: 1_800_000_000,
+      }, uuid: 'rate-1', session_id: 'sdk-session' },
+      { type: 'system', subtype: 'model_refusal_fallback',
+        original_model: 'claude-opus', fallback_model: 'claude-sonnet',
+        request_id: 'request-fallback', content: 'Continuing with the fallback model.',
+        uuid: 'fallback-1', session_id: 'sdk-session' },
+      { type: 'system', subtype: 'model_refusal_no_fallback',
+        original_model: 'claude-opus', request_id: 'request-1',
+        content: 'The model declined this request.', uuid: 'refusal-1', session_id: 'sdk-session' },
+      { type: 'system', subtype: 'notification', key: 'background-ready',
+        text: 'Background work finished', priority: 'high',
+        uuid: 'notification-1', session_id: 'sdk-session' },
+      { type: 'system', subtype: 'mirror_error', error: 'mirror timed out',
+        key: { projectKey: 'project-1', sessionId: 'sdk-session' },
+        uuid: 'mirror-1', session_id: 'sdk-session' },
+      { type: 'system', subtype: 'worker_shutting_down', reason: 'host_exit',
+        uuid: 'worker-1', session_id: 'sdk-session' },
+    ]
+
+    const events = messages.flatMap((message) => mapSDKMessageToEvents(message, ctx))
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'runtime_signal', signal: 'api_retry' }),
+      expect.objectContaining({ type: 'runtime_signal', signal: 'permission_denied' }),
+      expect.objectContaining({ type: 'runtime_signal', signal: 'auth_status' }),
+      expect.objectContaining({ type: 'runtime_signal', signal: 'rate_limit' }),
+      expect.objectContaining({ type: 'runtime_signal', signal: 'model_refusal_fallback' }),
+      expect.objectContaining({ type: 'agent_error', code: 'CLAUDE_MODEL_REFUSAL' }),
+      expect.objectContaining({ type: 'runtime_signal', signal: 'notification' }),
+      expect.objectContaining({ type: 'runtime_signal', signal: 'mirror_error' }),
+      expect.objectContaining({ type: 'runtime_signal', signal: 'worker_shutdown' }),
+      expect.objectContaining({ type: 'agent_status', status: 'error' }),
+    ]))
+  })
+
+  it('uses session idle as the authoritative completion signal', () => {
+    const ctx = { sessionId: 'session-1', turnId: 'turn-1' }
+    const resultEvents = mapSDKMessageToEvents({
+      type: 'result', subtype: 'success', uuid: 'result-1', session_id: 'sdk-session',
+      duration_ms: 10, duration_api_ms: 5, is_error: false, num_turns: 1,
+      result: 'done', total_cost_usd: 0.01,
+      usage: { input_tokens: 100, output_tokens: 20,
+        cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    }, ctx)
+    const idleEvents = mapSDKMessageToEvents({
+      type: 'system', subtype: 'session_state_changed', state: 'idle',
+      uuid: 'state-1', session_id: 'sdk-session',
+    }, ctx)
+
+    expect(resultEvents).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'agent_status', status: 'completed' }),
+    ]))
+    expect(idleEvents).toEqual([
+      expect.objectContaining({ type: 'agent_status', status: 'completed' }),
+    ])
+  })
+
+  it('retracts superseded Claude messages before rendering a fallback replacement', () => {
+    const ctx = { sessionId: 'session-1', turnId: 'turn-1' }
+    const refusedEvents = mapSDKMessageToEvents({
+      type: 'assistant', uuid: 'assistant-refused', session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: { role: 'assistant', content: [{ type: 'text', text: 'stale partial' }] },
+    }, ctx)
+    const replacementEvents = mapSDKMessageToEvents({
+      type: 'assistant', uuid: 'assistant-fallback', session_id: 'sdk-session',
+      parent_tool_use_id: null, supersedes: ['assistant-refused'],
+      message: { role: 'assistant', content: [{ type: 'text', text: 'canonical answer' }] },
+    }, ctx)
+
+    expect(replacementEvents[0]).toEqual(expect.objectContaining({
+      type: 'transcript_retraction',
+      eventIds: expect.arrayContaining(refusedEvents.map((event) => event.id)),
+    }))
+  })
+
   it('keeps SDK tool result names and emits file changes for write tools', () => {
     const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById: new Map<string, string>() }
     const assistant: SDKAssistantMessage = {

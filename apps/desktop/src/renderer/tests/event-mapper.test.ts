@@ -25,6 +25,54 @@ function statusEvent(status: AgentStatusValue): AgentEvent {
 }
 
 describe('MessageBuilder', () => {
+  it('keeps actionable Claude runtime signals as structured blocks', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('runtime_signal'),
+      type: 'runtime_signal',
+      signal: 'rate_limit',
+      level: 'warning',
+      title: '额度即将用尽',
+      message: '当前五小时窗口已使用 92%。',
+      code: 'CLAUDE_RATE_LIMIT_WARNING',
+      retryable: false,
+      actionHint: '额度重置后可继续。',
+      details: [{ label: '重置时间', value: '2027-01-15T08:00:00.000Z' }],
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toEqual([
+      expect.objectContaining({
+        kind: 'runtime_signal',
+        signal: 'rate_limit',
+        level: 'warning',
+        actionHint: '额度重置后可继续。',
+      }),
+    ])
+  })
+
+  it('removes messages retracted by Claude refusal fallback', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'stale-event',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: 'stale partial',
+      provider: 'claude',
+      isFinal: false,
+    })
+
+    builder.processEvent({
+      ...baseEvent('transcript_retraction'),
+      type: 'transcript_retraction',
+      eventIds: ['stale-event'],
+      reason: 'model_refusal_fallback',
+    })
+
+    expect(builder.getAllMessages()).toEqual([])
+  })
+
   it('keeps reasoning token usage on assistant messages', () => {
     const builder = new MessageBuilder()
 

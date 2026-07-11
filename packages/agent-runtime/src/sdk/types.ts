@@ -25,12 +25,30 @@ export interface SDKAssistantMessage {
     usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
   }
   parent_tool_use_id: string | null
-  error?: string
+  error?: SDKAssistantMessageError
+  supersedes?: string[]
 }
+
+export type SDKAssistantMessageError =
+  | 'authentication_failed'
+  | 'oauth_org_not_allowed'
+  | 'billing_error'
+  | 'rate_limit'
+  | 'overloaded'
+  | 'invalid_request'
+  | 'model_not_found'
+  | 'server_error'
+  | 'unknown'
+  | 'max_output_tokens'
 
 export interface SDKResultMessage {
   type: 'result'
-  subtype: 'success' | 'error_max_turns' | 'error_during_execution' | 'error_max_budget_usd'
+  subtype:
+    | 'success'
+    | 'error_max_turns'
+    | 'error_during_execution'
+    | 'error_max_budget_usd'
+    | 'error_max_structured_output_retries'
   uuid: string
   session_id: string
   duration_ms: number
@@ -65,7 +83,18 @@ export interface SDKCheckpointInfo {
   files?: string[]
 }
 
-export type SDKSystemMessage = SDKInitSystemMessage | SDKStatusSystemMessage | SDKCompactBoundarySystemMessage
+export type SDKSystemMessage =
+  | SDKInitSystemMessage
+  | SDKStatusSystemMessage
+  | SDKCompactBoundarySystemMessage
+  | SDKApiRetrySystemMessage
+  | SDKPermissionDeniedSystemMessage
+  | SDKSessionStateChangedSystemMessage
+  | SDKModelRefusalFallbackSystemMessage
+  | SDKModelRefusalNoFallbackSystemMessage
+  | SDKNotificationSystemMessage
+  | SDKMirrorErrorSystemMessage
+  | SDKWorkerShuttingDownSystemMessage
 
 export interface SDKInitSystemMessage {
   type: 'system'
@@ -99,6 +128,120 @@ export interface SDKCompactBoundarySystemMessage {
     pre_tokens: number
     post_tokens?: number
     duration_ms?: number
+  }
+  uuid: string
+  session_id: string
+}
+
+export interface SDKApiRetrySystemMessage {
+  type: 'system'
+  subtype: 'api_retry'
+  attempt: number
+  max_retries: number
+  retry_delay_ms: number
+  error_status: number | null
+  error: SDKAssistantMessageError
+  uuid: string
+  session_id: string
+}
+
+export interface SDKPermissionDeniedSystemMessage {
+  type: 'system'
+  subtype: 'permission_denied'
+  tool_name: string
+  tool_use_id: string
+  agent_id?: string
+  decision_reason_type?: string
+  decision_reason?: string
+  message: string
+  uuid: string
+  session_id: string
+}
+
+export interface SDKSessionStateChangedSystemMessage {
+  type: 'system'
+  subtype: 'session_state_changed'
+  state: 'idle' | 'running' | 'requires_action'
+  uuid: string
+  session_id: string
+}
+
+export interface SDKModelRefusalFallbackSystemMessage {
+  type: 'system'
+  subtype: 'model_refusal_fallback'
+  original_model: string
+  fallback_model: string
+  request_id: string | null
+  api_refusal_category?: string | null
+  api_refusal_explanation?: string | null
+  retracted_message_uuids?: string[]
+  content: string
+  uuid: string
+  session_id: string
+}
+
+export interface SDKModelRefusalNoFallbackSystemMessage {
+  type: 'system'
+  subtype: 'model_refusal_no_fallback'
+  original_model: string
+  request_id: string | null
+  api_refusal_category?: string | null
+  api_refusal_explanation?: string | null
+  content: string
+  uuid: string
+  session_id: string
+}
+
+export interface SDKNotificationSystemMessage {
+  type: 'system'
+  subtype: 'notification'
+  key: string
+  text: string
+  priority: 'low' | 'medium' | 'high' | 'immediate'
+  color?: string
+  timeout_ms?: number
+  uuid: string
+  session_id: string
+}
+
+export interface SDKMirrorErrorSystemMessage {
+  type: 'system'
+  subtype: 'mirror_error'
+  error: string
+  key: { projectKey: string; sessionId: string; subpath?: string }
+  uuid: string
+  session_id: string
+}
+
+export interface SDKWorkerShuttingDownSystemMessage {
+  type: 'system'
+  subtype: 'worker_shutting_down'
+  reason: string
+  uuid: string
+  session_id: string
+}
+
+export interface SDKAuthStatusMessage {
+  type: 'auth_status'
+  isAuthenticating: boolean
+  output: string[]
+  error?: string
+  uuid: string
+  session_id: string
+}
+
+export interface SDKRateLimitEvent {
+  type: 'rate_limit_event'
+  rate_limit_info: {
+    status: 'allowed' | 'allowed_warning' | 'rejected'
+    resetsAt?: number
+    rateLimitType?: string
+    utilization?: number
+    overageStatus?: 'allowed' | 'allowed_warning' | 'rejected'
+    overageResetsAt?: number
+    overageDisabledReason?: string
+    errorCode?: 'credits_required'
+    canUserPurchaseCredits?: boolean
   }
   uuid: string
   session_id: string
@@ -141,6 +284,8 @@ export type SDKMessage =
   | SDKSystemMessage
   | SDKStreamEvent
   | SDKUserMessage
+  | SDKAuthStatusMessage
+  | SDKRateLimitEvent
   | { type: string; [key: string]: unknown }
 
 // ── SDK Query API ───────────────────────────────────────────────────────────

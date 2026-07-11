@@ -226,7 +226,13 @@ export interface TeamA2AReply {
     durationMs: number
   }
   error?: {
-    code: 'timeout' | 'denied' | 'depth_exceeded' | 'member_disabled' | 'invalid_member' | 'internal'
+    code:
+      | 'timeout'
+      | 'denied'
+      | 'depth_exceeded'
+      | 'member_disabled'
+      | 'invalid_member'
+      | 'internal'
     message: string
   }
 }
@@ -377,7 +383,13 @@ export interface WorkflowProgressEvent extends BaseEvent {
 // ─── 权限类事件 ──────────────────────────────────────────────────────────────
 
 export type PermissionRiskLevel = 'safe' | 'moderate' | 'high' | 'critical'
-export type PermissionAction = 'file_read' | 'file_write' | 'command_exec' | 'network' | 'mcp' | 'git'
+export type PermissionAction =
+  | 'file_read'
+  | 'file_write'
+  | 'command_exec'
+  | 'network'
+  | 'mcp'
+  | 'git'
 
 /** Agent 请求权限（需用户审批时触发）*/
 export interface PermissionRequestEvent extends BaseEvent {
@@ -532,9 +544,25 @@ export interface AgentThinkingEvent extends BaseEvent {
   agentName?: string
 }
 
-
-export type GoalEventStatus = 'active' | 'paused' | 'completed' | 'failed' | 'cleared' | 'stopped_by_budget' | 'pending_contract'
-export type GoalEventType = 'goal_started' | 'goal_progress' | 'goal_paused' | 'goal_resumed' | 'goal_completed' | 'goal_failed' | 'goal_cleared' | 'goal_budget_stopped' | 'goal_contract_drafting' | 'goal_contract_proposed'
+export type GoalEventStatus =
+  | 'active'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cleared'
+  | 'stopped_by_budget'
+  | 'pending_contract'
+export type GoalEventType =
+  | 'goal_started'
+  | 'goal_progress'
+  | 'goal_paused'
+  | 'goal_resumed'
+  | 'goal_completed'
+  | 'goal_failed'
+  | 'goal_cleared'
+  | 'goal_budget_stopped'
+  | 'goal_contract_drafting'
+  | 'goal_contract_proposed'
 
 /** 验收门槛（Gate）：编排者起草、待用户确认的目标验收契约。 */
 export interface ProposedGoalContract {
@@ -752,12 +780,51 @@ export interface AgentErrorEvent extends BaseEvent {
   type: 'agent_error'
   /** 错误码 */
   code: string
+  /** 面向用户的短标题 */
+  title?: string
   /** 错误消息 */
   message: string
   /** 是否可重试 */
   retryable: boolean
+  /** 建议用户采取的下一步 */
+  actionHint?: string
+  /** 可展示的结构化诊断信息 */
+  details?: RuntimeSignalDetail[]
   /** 原始错误（调试用，不显示给普通用户）*/
   rawError?: string
+}
+
+export interface RuntimeSignalDetail {
+  label: string
+  value: string
+}
+
+/** Provider/SDK 运行时信号，不一定代表整轮失败。 */
+export interface RuntimeSignalEvent extends BaseEvent {
+  type: 'runtime_signal'
+  signal:
+    | 'api_retry'
+    | 'permission_denied'
+    | 'auth_status'
+    | 'rate_limit'
+    | 'model_refusal_fallback'
+    | 'notification'
+    | 'mirror_error'
+    | 'worker_shutdown'
+  level: 'info' | 'warning' | 'error'
+  title: string
+  message: string
+  code?: string
+  retryable?: boolean
+  actionHint?: string
+  details?: RuntimeSignalDetail[]
+}
+
+/** 撤回 provider 已明确标记为被替代的旧事件。 */
+export interface TranscriptRetractionEvent extends BaseEvent {
+  type: 'transcript_retraction'
+  eventIds: string[]
+  reason: 'model_refusal_fallback'
 }
 
 // ─── 白盒调试类事件 ───────────────────────────────────────────────────────────
@@ -837,6 +904,8 @@ export type AgentEvent =
   | GoalEvent
   | UsageUpdateEvent
   | AgentErrorEvent
+  | RuntimeSignalEvent
+  | TranscriptRetractionEvent
   | PlanProposedEvent
   | PlanRejectedEvent
   | ContextUsageEvent
