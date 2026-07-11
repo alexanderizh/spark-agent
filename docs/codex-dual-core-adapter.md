@@ -1,6 +1,6 @@
 # Codex Dual Core Adapter
 
-> 状态: 已落地 | 最后核对: 2026-07-08
+> 状态: 已落地 | 最后核对: 2026-07-11
 
 ## 目标
 
@@ -84,7 +84,7 @@ CLI 模型切换是独立能力，当前未启用。本地 Claude CLI / Codex CL
 - `file_change`: 映射为 Spark 文件变更事件。
 - `web_search`: 映射为内置工具调用结果。
 - `todo_list`: 映射为计划/待办工具调用结果。
-- `turn.completed`: 映射为 usage 更新。
+- `turn.completed`: 映射 input/output/cache-hit/reasoning-output usage 更新。
 - `turn.failed` 和 `error`: 映射为 agent 错误事件。
 
 Codex SDK API-backed 路径按 Codex SDK / CLI streaming 事件映射正文、reasoning、工具调用、MCP 调用、文件变更与用量。`CodexOpenAIExecutor` 仅作为兼容类名委托到 `CodexSdkExecutor`，不再维护纯 OpenAI Responses/Chat stream 解析分支。
@@ -98,6 +98,8 @@ Codex SDK API-backed 路径按 Codex SDK / CLI streaming 事件映射正文、re
 - `reasoning` / `agent_reasoning` 与 `response.reasoning_*` delta 映射为 `agent_thinking`。
 - `command_execution` 映射为 `tool_call(bash)`、`terminal_output`、`tool_result`，从而在时间线中展示命令、输出和退出状态。
 - `tool_call`、`mcp_tool_call`、`web_search` 尽量映射为结构化 `tool_call` / `tool_result`，优先展示工具名、参数和结果，而不是退回到进度摘要。
+- `file_change`、`todo_list` 和 item-level `error` 与 SDK executor 使用同一 Spark 事件语义。
+- `turn.completed` 同步 `cached_input_tokens` 与 `reasoning_output_tokens`；取消和异常会先固化已有正文/思考段，刷新后不会丢失部分输出。
 
 ## 上下文适配
 
@@ -112,25 +114,31 @@ Codex SDK 路径复用 Spark 现有会话上下文:
 
 ## 推理强度枚举
 
-Spark UI 和会话持久化只保存统一四档 `medium | high | xhigh | max`，进入具体 adapter 前必须转换成目标接口支持的枚举:
+Spark UI 和会话持久化保存统一六档 `minimal | low | medium | high | xhigh | max`，进入具体 adapter 前转换成目标接口支持的枚举:
 
 | 目标路径                                        | 发送字段                 | 映射规则                                                                                           |
 | ----------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------- |
-| Claude SDK                                      | `effort`                 | `medium -> medium`，`high -> high`，`xhigh/max -> max`                                             |
-| Codex SDK                                       | `modelReasoningEffort`   | `medium -> medium`，`high -> high`，`xhigh/max -> xhigh`                                           |
-| Codex CLI                                       | `model_reasoning_effort` | `medium -> medium`，`high -> high`，`xhigh/max -> xhigh`                                           |
-| OpenAI Responses（画布文本生成 responses 模式） | `reasoning.effort`       | `medium -> medium`，`high/xhigh/max -> high`                                                       |
+| Claude SDK                                      | `effort`                 | `minimal -> low`；`low/medium/high/xhigh/max` 原样保留                                             |
+| Codex SDK                                       | `modelReasoningEffort`   | `minimal/low/medium/high/xhigh` 原样保留；`max -> xhigh`                                           |
+| Codex CLI                                       | `model_reasoning_effort` | `minimal/low/medium/high/xhigh` 原样保留；`max -> xhigh`                                           |
+| OpenAI Responses（画布文本生成 responses 模式） | `reasoning.effort`       | `minimal/low/medium/high/xhigh` 原样保留；`max -> xhigh`                                           |
 | OpenAI Chat Completions                         | 不发送                   | Chat Completions 路径不注入 `reasoning`，避免把 Responses-only 参数发给 chat-compatible provider。 |
 
-平台管理工具和历史数据读取会先把外部值归一成 Spark 四档；兼容旧输入 `low` 时按 `medium` 处理，未知值回落 `max`。
+平台管理工具和历史数据读取会把合法外部值归一成 Spark 六档，未知值回落 `max`。
 
 MCP 配置会转成 Codex config 中的 `mcp_servers`。stdio、sse、http 配置会尽量按 Codex 可识别的字段透传。Codex HTTP MCP 不消费通用 `headers.Authorization`；当 Spark MCP 配置里出现 `Authorization: Bearer <token>` 时，Codex SDK/CLI 适配器会把 token 注入子进程环境变量，并在 config 中写入 `bearer_token_env_var`，避免初始化请求丢鉴权，也避免把 token 暴露在 CLI 参数里。对 `spark_*` 内置 MCP，适配器会额外写入 `default_tools_approval_mode = "approve"`，让 Codex CLI/SDK 的非交互执行可以直接调用平台工具；普通用户 MCP 不会被自动放行。
 
 `spark_platform` 是内置 stdio MCP server，当前主要暴露 tools。为了兼容 Codex 启动阶段主动枚举 MCP resources / resource templates / prompts 的行为，server 会对这些可选 list 方法返回空列表，而不是保持沉默导致客户端等待超时。
 
+## 运行时控制与能力边界
+
+- Codex SDK 和 CLI 都显式接收网络访问与 web search 模式；默认关闭网络和搜索，只有运行时配置明确开启时才放行。
+- 两条路径都采用 turn 级执行、持久化事件和 SDK/CLI resume。不会为追求上游字段覆盖率引入没有会话生命周期、背压和恢复 UI 的长驻输入流。
+- Spark 不暴露没有产品合同的结构化 `outputFormat` 或实验性 beta 开关。新增上游能力需要先定义配置、权限、错误恢复和 UI 展示语义。
+- Adapter 不在执行失败后自动切换 provider/model。自动路由只发生在 turn 开始前，避免对已经产生工具副作用的 turn 进行隐式重放。
+
 ## 已知后续工作
 
 - Codex CLI 的 JSONL 事件已经覆盖常见工具、终端输出和思考流，但仍需持续跟踪上游 schema 变化与新增 item 类型。
-- 流式输出目前仍依赖主事件持久化链路，后续应对高频 delta 做批处理或节流，减少 UI 卡顿。
 - 插件和技能已通过 prompt/catalog 注入适配到 Codex SDK，但还需要把 Codex 原生插件/技能能力与 Spark 技能商店做更深的状态联动。
 - Codex SDK 依赖 `@openai/codex-sdk`，该包内部会携带并启动 `@openai/codex` CLI。版本升级需要同时关注 npm 供应链延迟策略和 CLI 事件 schema 变化。
