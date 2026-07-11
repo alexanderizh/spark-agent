@@ -1134,7 +1134,7 @@ function PendingAssistantMessageView({
       </div>
       <div className="chat-panel-message-body">
         <div className="chat-panel-assistant-loading">
-          <Spin size="middle" />
+          <Spin size="small" />
           <span>{identity.name} 正在执行...</span>
         </div>
       </div>
