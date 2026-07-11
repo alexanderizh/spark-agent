@@ -721,3 +721,59 @@
     color: #60a5fa;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// 画面处理区块
+// ═══════════════════════════════════════════════════════════════
+
+.vwb-effect-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+
+  .vwb-tc-param {
+    flex: 1;
+    margin: 0;
+  }
+}
+
+.vwb-effect-label {
+  flex: 1;
+  font-size: 11px;
+  color: #a1a1aa;
+}
+
+.vwb-crop-controls {
+  margin-top: 8px;
+
+  > label {
+    display: block;
+    font-size: 11px;
+    color: #a1a1aa;
+    margin-bottom: 4px;
+  }
+}
+
+.vwb-crop-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.vwb-crop-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  span {
+    font-size: 10px;
+    color: #71717a;
+    width: 14px;
+  }
+
+  .ant-input-number {
+    flex: 1;
+  }
+}

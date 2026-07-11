@@ -18,6 +18,11 @@ import {
   concatVideos,
   segmentVideo,
   transcodeVideo,
+  adjustSpeed,
+  reverseVideo,
+  cropVideo,
+  addWatermark,
+  burnSubtitle,
   type FfmpegProgress,
   type KeyframeStrategy,
   type TranscodeOpts,
@@ -139,13 +144,49 @@ async function dispatch(
       return transcodeVideo(input, outputPath, opts, onProgress)
     }
 
-    // ── 画面处理在 P4 实现 ───────────────────────────────────────
-    case 'adjustSpeed':
-    case 'reverse':
-    case 'crop':
-    case 'watermark':
-    case 'burnSubtitle':
-      throw new Error(`操作 "${operation}" 尚未实现（计划在 P4 阶段开发）`)
+    // ── 画面处理 ─────────────────────────────────────────────────
+    case 'adjustSpeed': {
+      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      const factor = asNumber(params.factor, 1)!
+      return adjustSpeed(input, outputPath, factor, onProgress)
+    }
+
+    case 'reverse': {
+      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      return reverseVideo(input, outputPath, {
+        reverseAudio: params.reverseAudio === true,
+        onProgress,
+      })
+    }
+
+    case 'crop': {
+      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      return cropVideo(input, outputPath, {
+        w: asNumber(params.w, 0)!,
+        h: asNumber(params.h, 0)!,
+        x: asNumber(params.x, 0)!,
+        y: asNumber(params.y, 0)!,
+        onProgress,
+      })
+    }
+
+    case 'watermark': {
+      const logoPath = params.logoPath as string
+      if (!logoPath) throw new Error('水印操作需要 logoPath 参数')
+      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      return addWatermark(input, logoPath, outputPath, {
+        position: (params.position as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center') ?? 'bottom-right',
+        scale: asNumber(params.scale, 0.2),
+        onProgress,
+      })
+    }
+
+    case 'burnSubtitle': {
+      const srtPath = params.srtPath as string
+      if (!srtPath) throw new Error('烧录字幕需要 srtPath 参数')
+      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      return burnSubtitle(input, srtPath, outputPath, onProgress)
+    }
 
     default:
       throw new Error(`未知的视频处理操作: ${operation}`)

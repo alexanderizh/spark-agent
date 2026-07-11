@@ -881,7 +881,168 @@ async function transcodeToGif(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 导出 escapeFilterValue 供 P4 复用（拼接 filter_complex 时用到）
+// 6. 画面处理
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 调整播放速度。
+ *
+ * 视频: setpts=1/{factor}*PTS（factor>1 加速，<1 减速）
+ * 音频: atempo={factor}（范围 0.5~2，超出则串接，如 3x → atempo=2,atempo=1.5）
+ */
+export async function adjustSpeed(
+  input: string,
+  outputPath: string,
+  factor: number,
+  onProgress?: (p: FfmpegProgress) => void,
+): Promise<{ path: string }> {
+  if (factor <= 0) throw new Error(`无效的速度倍率: ${factor}`)
+  const probe = await probeVideo(input)
+  const videoFilter = `setpts=${(1 / factor).toFixed(4)}*PTS`
+  // atempo 链：0.5~2 一个单元，超出串接
+  const atempoChain = buildAtempoChain(factor)
+  const hasAudio = probe.hasAudio
+  const args = hasAudio
+    ? ['-i', input, '-filter_complex', `[0:v]${videoFilter}[v];[0:a]${atempoChain}[a]`, '-map', '[v]', '-map', '[a]']
+    : ['-i', input, '-vf', videoFilter]
+  args.push('-c:v', 'libx264', ...(hasAudio ? ['-c:a', 'aac'] : ['-an']), '-y', outputPath)
+
+  const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress })
+  if (result.code !== 0) {
+    throw new Error(`变速失败: ${result.stderr.slice(-300)}`)
+  }
+  return { path: outputPath }
+}
+
+/** 构造 atempo 滤镜链，处理超出 0.5~2 范围的倍率 */
+function buildAtempoChain(factor: number): string {
+  const parts: string[] = []
+  let remaining = factor
+  while (remaining > 2) {
+    parts.push('atempo=2')
+    remaining /= 2
+  }
+  while (remaining < 0.5) {
+    parts.push('atempo=0.5')
+    remaining /= 0.5
+  }
+  parts.push(`atempo=${remaining.toFixed(4)}`)
+  return parts.join(',')
+}
+
+/**
+ * 视频倒放（画面 + 可选音频）。
+ */
+export async function reverseVideo(
+  input: string,
+  outputPath: string,
+  opts: { reverseAudio?: boolean; onProgress?: (p: FfmpegProgress) => void } = {},
+): Promise<{ path: string }> {
+  const probe = await probeVideo(input)
+  const audioPart = opts.reverseAudio && probe.hasAudio ? ';[0:a]areverse[a]' : ''
+  const args = audioPart
+    ? ['-i', input, '-filter_complex', `[0:v]reverse[v]${audioPart}`, '-map', '[v]', '-map', '[a]']
+    : ['-i', input, '-vf', 'reverse']
+  args.push('-c:v', 'libx264', ...(audioPart ? ['-c:a', 'aac'] : ['-an']), '-y', outputPath)
+
+  const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress: opts.onProgress })
+  if (result.code !== 0) {
+    throw new Error(`倒放失败: ${result.stderr.slice(-300)}`)
+  }
+  return { path: outputPath }
+}
+
+/**
+ * 画面裁剪（指定区域）。
+ */
+export async function cropVideo(
+  input: string,
+  outputPath: string,
+  opts: { w: number; h: number; x: number; y: number; onProgress?: (p: FfmpegProgress) => void },
+): Promise<{ path: string }> {
+  const probe = await probeVideo(input)
+  const args = [
+    '-i', input,
+    '-vf', `crop=${opts.w}:${opts.h}:${opts.x}:${opts.y}`,
+    '-c:v', 'libx264', '-c:a', 'aac',
+    '-y', outputPath,
+  ]
+  const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress: opts.onProgress })
+  if (result.code !== 0) {
+    throw new Error(`画面裁剪失败: ${result.stderr.slice(-300)}`)
+  }
+  return { path: outputPath }
+}
+
+/**
+ * 添加图片水印。
+ *
+ * @param opts.position 九宫格位置
+ * @param opts.scale 水印相对视频宽度的比例（如 0.2 = 水印宽度为视频的 20%）
+ */
+export async function addWatermark(
+  input: string,
+  logoPath: string,
+  outputPath: string,
+  opts: {
+    position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
+    scale?: number
+    onProgress?: (p: FfmpegProgress) => void
+  },
+): Promise<{ path: string }> {
+  const probe = await probeVideo(input)
+  const scale = opts.scale ?? 0.2
+  const overlayExpr = {
+    'top-left': '10:10',
+    'top-right': 'W-w-10:10',
+    'bottom-left': '10:H-h-10',
+    'bottom-right': 'W-w-10:H-h-10',
+    center: '(W-w)/2:(H-h)/2',
+  }[opts.position]
+
+  const args = [
+    '-i', input,
+    '-i', logoPath,
+    '-filter_complex', `[1:v]scale=iw*${scale}:-1[wm];[0:v][wm]overlay=${overlayExpr}`,
+    '-c:v', 'libx264', '-c:a', 'copy',
+    '-y', outputPath,
+  ]
+  const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress: opts.onProgress })
+  if (result.code !== 0) {
+    throw new Error(`添加水印失败: ${result.stderr.slice(-300)}`)
+  }
+  return { path: outputPath }
+}
+
+/**
+ * 烧录字幕（硬字幕，字幕嵌入画面）。
+ *
+ * @param srtPath .srt 字幕文件路径
+ */
+export async function burnSubtitle(
+  input: string,
+  srtPath: string,
+  outputPath: string,
+  onProgress?: (p: FfmpegProgress) => void,
+): Promise<{ path: string }> {
+  const probe = await probeVideo(input)
+  // subtitles 滤镜里的路径在 Windows 需转义冒号和反斜杠
+  const escapedSrt = escapeFilterValue(srtPath)
+  const args = [
+    '-i', input,
+    '-vf', `subtitles='${escapedSrt}'`,
+    '-c:v', 'libx264', '-c:a', 'copy',
+    '-y', outputPath,
+  ]
+  const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress })
+  if (result.code !== 0) {
+    throw new Error(`烧录字幕失败: ${result.stderr.slice(-300)}`)
+  }
+  return { path: outputPath }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 导出 escapeFilterValue（供 burnSubtitle 等内部使用，也供未来扩展）
 // ═══════════════════════════════════════════════════════════════════════════
 
 export { escapeFilterValue }
