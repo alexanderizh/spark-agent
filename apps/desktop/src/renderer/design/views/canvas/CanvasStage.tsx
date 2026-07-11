@@ -757,6 +757,9 @@ function CanvasStageInner({
         if (movableNodes.length === 0) return false
 
         const movableIds = new Set(movableNodes.map((node) => node.id))
+        const arrangedNodeIds = partialLayout
+          ? Array.from(targetIds).filter((nodeId) => movableIds.has(nodeId))
+          : []
         const positionsById = new Map<string, { x: number; y: number }>()
         const parentKeys = new Set(movableNodes.map((node) => node.parentId ?? ''))
 
@@ -802,7 +805,20 @@ function CanvasStageInner({
         setFlowNodes(nextFlowNodes)
         await onNodesPersist(nextPersistedNodes)
         window.requestAnimationFrame(() => {
-          if (partialLayout) return
+          if (partialLayout) {
+            if (arrangedNodeIds.length === 0) return
+            window.requestAnimationFrame(() => {
+              void flowInstanceRef.current?.fitView({
+                nodes: arrangedNodeIds.map((id) => ({ id })),
+                padding: 0.24,
+                minZoom: CANVAS_FIT_MIN_ZOOM,
+                maxZoom: CANVAS_FIT_MAX_ZOOM,
+                duration: 280,
+              })
+            })
+            return
+          }
+
           void flowInstanceRef.current?.fitView({
             padding: 0.2,
             minZoom: CANVAS_FIT_MIN_ZOOM,
