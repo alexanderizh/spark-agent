@@ -321,11 +321,54 @@ export type SDKPermissionDecisionClassification =
   | 'user_permanent'
   | 'user_reject'
 
+export type SDKPermissionUpdateDestination =
+  | 'userSettings'
+  | 'projectSettings'
+  | 'localSettings'
+  | 'session'
+  | 'cliArg'
+
+export type SDKPermissionUpdate =
+  | {
+      type: 'addRules' | 'replaceRules' | 'removeRules'
+      rules: Array<{ toolName: string; ruleContent?: string }>
+      behavior: 'allow' | 'deny' | 'ask'
+      destination: SDKPermissionUpdateDestination
+    }
+  | {
+      type: 'setMode'
+      mode: SDKPermissionMode
+      destination: SDKPermissionUpdateDestination
+    }
+  | {
+      type: 'addDirectories' | 'removeDirectories'
+      directories: string[]
+      destination: SDKPermissionUpdateDestination
+    }
+
+export interface SDKPermissionRequestContext {
+  signal: AbortSignal
+  suggestions?: SDKPermissionUpdate[]
+  blockedPath?: string
+  decisionReason?: string
+  title?: string
+  displayName?: string
+  description?: string
+  toolUseID: string
+  agentID?: string
+  requestId: string
+}
+
+export interface SDKApprovalResult {
+  allowed: boolean
+  scope?: 'once' | 'session' | 'project' | 'global'
+}
+
 export type SDKPermissionResult =
   | {
       behavior: 'allow'
       updatedInput?: Record<string, unknown>
-      updatedPermissions?: unknown[]
+      updatedPermissions?: SDKPermissionUpdate[]
       toolUseID?: string
       decisionClassification?: SDKPermissionDecisionClassification
     }
@@ -375,6 +418,7 @@ export interface SDKQueryOptions {
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined
   mcpServers?: Record<string, SDKMcpServerConfig> | undefined
+  strictMcpConfig?: boolean | undefined
   skills?: string[] | 'all' | undefined
   systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string | undefined } | undefined
   toolConfig?: SDKToolConfig | undefined
@@ -394,18 +438,8 @@ export interface SDKQueryOptions {
   canUseTool?: ((
     toolName: string,
     input: Record<string, unknown>,
-    options: {
-      signal: AbortSignal
-      suggestions?: unknown[]
-      blockedPath?: string
-      decisionReason?: string
-      title?: string
-      displayName?: string
-      description?: string
-      toolUseID: string
-      agentID?: string
-    },
-  ) => Promise<SDKPermissionResult>) | undefined
+    options: SDKPermissionRequestContext,
+  ) => Promise<SDKPermissionResult | null>) | undefined
   agents?: Record<string, {
     description: string
     prompt: string
@@ -421,6 +455,7 @@ export interface SDKQueryOptions {
  */
 export interface SDKQuery extends AsyncGenerator<SDKMessage, void> {
   interrupt(): Promise<void>
+  setPermissionMode?(mode: SDKPermissionMode): Promise<void>
   close(): void
 }
 
@@ -529,7 +564,12 @@ export interface SDKExecutorConfig {
   enableCheckpoints?: boolean | undefined
   sdkSessionId?: string | undefined
   continueSession?: boolean | undefined
-  approvalCallback?: ((sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>) | undefined
+  approvalCallback?: ((
+    sessionId: string,
+    toolName: string,
+    toolInput: Record<string, unknown>,
+    context: SDKPermissionRequestContext,
+  ) => Promise<boolean | SDKApprovalResult>) | undefined
   /** Callback for AskUserQuestion tool - returns user's answers to the questions */
   questionCallback?: ((sessionId: string, questions: UserQuestionPrompt[]) => Promise<Record<string, unknown>>) | undefined
   goal?: {

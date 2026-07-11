@@ -40,10 +40,13 @@ import { mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
 import type {
+  SDKApprovalResult,
   SDKExecutorConfig,
   SDKMcpServerConfig,
   SDKMessage,
+  SDKPermissionRequestContext,
   SDKPermissionResult,
+  SDKPermissionUpdate,
   SDKQuery,
   SDKQueryFunction,
   SDKQueryOptions,
@@ -246,6 +249,7 @@ export class ClaudeSDKExecutor {
    * permission-mode switch in the UI takes effect immediately.
    */
   private livePermissionMode: SDKExecutorConfig['permissionMode'] | null = null
+  private activeQuery: SDKQuery | null = null
 
   onEvent(listener: (event: AgentEvent) => void): void {
     this.emitter.on(listener)
@@ -264,9 +268,24 @@ export class ClaudeSDKExecutor {
    * Takes effect on the next `canUseTool` callback — i.e. the very next
    * tool invocation the SDK agent performs.
    */
-  setPermissionMode(mode: SDKExecutorConfig['permissionMode']): void {
+  async setPermissionMode(mode: SDKExecutorConfig['permissionMode']): Promise<void> {
     this.livePermissionMode = mode
-    log.info('Live permission mode updated', { mode })
+    const sdkMode = mapPermissionMode(mode).permissionMode
+    const activeQuery = this.activeQuery
+    let nativeUpdated = false
+    if (typeof activeQuery?.setPermissionMode === 'function') {
+      try {
+        await activeQuery.setPermissionMode(sdkMode)
+        nativeUpdated = true
+      } catch (error) {
+        log.warn('SDK permission mode update failed; local policy fallback remains active', {
+          mode,
+          sdkMode,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    log.info('Live permission mode updated', { mode, sdkMode, nativeUpdated })
   }
 
   /**
@@ -573,6 +592,7 @@ export class ClaudeSDKExecutor {
           ? { disallowedTools: mergedPerms.disallowedTools }
           : {}),
         ...(config.mcpServers != null ? { mcpServers: config.mcpServers } : {}),
+        strictMcpConfig: true,
         // 本地技能插件（托管技能目录）→ 启用 SDK 原生技能发现 + 渐进式披露。
         ...(config.skillPlugins != null && config.skillPlugins.length > 0
           ? { plugins: config.skillPlugins.map((p) => ({ type: 'local' as const, path: p })) }
@@ -686,9 +706,18 @@ export class ClaudeSDKExecutor {
                   const approvalCallback = config.approvalCallback
                   if (approvalCallback == null)
                     return denyTool('Permission check failed', callbackOptions.toolUseID)
-                  const allowed = await approvalCallback(sessionId, toolName, input)
-                  return allowed
-                    ? allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+                  const approval = normalizeApprovalResult(
+                    await approvalCallback(sessionId, toolName, input, callbackOptions),
+                  )
+                  return approval.allowed
+                    ? allowTool(
+                        input,
+                        callbackOptions.toolUseID,
+                        approval.scope != null && approval.scope !== 'once'
+                          ? 'user_permanent'
+                          : 'user_temporary',
+                        scopePermissionUpdates(callbackOptions.suggestions, approval.scope),
+                      )
                     : denyTool('User denied tool execution', callbackOptions.toolUseID)
                 } catch {
                   return denyTool('Permission check failed', callbackOptions.toolUseID)
@@ -729,47 +758,52 @@ export class ClaudeSDKExecutor {
         const queryResult = sdk.query({ prompt, options })
         let maxTurnsResult: SDKResultMessage | null = null
 
-        for await (const message of queryResult) {
-          if (this.abortController.signal.aborted) break
-          if (message.type === 'system' && 'subtype' in message && message.subtype === 'init') {
-            log.debug('Claude Code init message received', {
-              sparkSessionId: sessionId,
-              sdkSessionId,
-              initModel: message.model,
-              initPermissionMode: message.permissionMode,
-              initCwd: message.cwd,
-              initTools: Array.isArray(message.tools) ? message.tools.length : null,
-            })
-          }
-
-          // 注：checkpoint 还原点由 SessionService 的内容快照方案产出（见 checkpoint-content.service），
-          // 不再从 SDK user-message uuid 发锚点——SDK 文件 checkpoint 跨会话 resume 取不到（已证伪）。
-
-          if (isMaxTurnsResultMessage(message)) {
-            maxTurnsResult = message
-          }
-
-          const events = mapSDKMessageToEvents(message, ctx)
-          for (const event of events) {
-            if (
-              maxTurnsResult === message &&
-              event.type !== 'usage_update' &&
-              event.type !== 'checkpoint'
-            ) {
-              continue
+        this.activeQuery = queryResult
+        try {
+          for await (const message of queryResult) {
+            if (this.abortController.signal.aborted) break
+            if (message.type === 'system' && 'subtype' in message && message.subtype === 'init') {
+              log.debug('Claude Code init message received', {
+                sparkSessionId: sessionId,
+                sdkSessionId,
+                initModel: message.model,
+                initPermissionMode: message.permissionMode,
+                initCwd: message.cwd,
+                initTools: Array.isArray(message.tools) ? message.tools.length : null,
+              })
             }
-            if (
-              event.type === 'agent_error' ||
-              (event.type === 'agent_status' && isTerminalAgentStatus(event.status))
-            ) {
-              emitStreamCompletions()
+
+            // 注：checkpoint 还原点由 SessionService 的内容快照方案产出（见 checkpoint-content.service），
+            // 不再从 SDK user-message uuid 发锚点——SDK 文件 checkpoint 跨会话 resume 取不到（已证伪）。
+
+            if (isMaxTurnsResultMessage(message)) {
+              maxTurnsResult = message
             }
-            if (event.type === 'agent_status' && isTerminalAgentStatus(event.status)) {
-              terminalStatusEmitted = true
+
+            const events = mapSDKMessageToEvents(message, ctx)
+            for (const event of events) {
+              if (
+                maxTurnsResult === message &&
+                event.type !== 'usage_update' &&
+                event.type !== 'checkpoint'
+              ) {
+                continue
+              }
+              if (
+                event.type === 'agent_error' ||
+                (event.type === 'agent_status' && isTerminalAgentStatus(event.status))
+              ) {
+                emitStreamCompletions()
+              }
+              if (event.type === 'agent_status' && isTerminalAgentStatus(event.status)) {
+                terminalStatusEmitted = true
+              }
+              streamTerminalizer.observe(event)
+              this.emitter.emit(event)
             }
-            streamTerminalizer.observe(event)
-            this.emitter.emit(event)
           }
+        } finally {
+          if (this.activeQuery === queryResult) this.activeQuery = null
         }
 
         if (this.abortController.signal.aborted) {
@@ -1014,13 +1048,36 @@ function allowTool(
   input: Record<string, unknown>,
   toolUseID: string | undefined,
   decisionClassification: SDKPermissionResult['decisionClassification'],
+  updatedPermissions?: SDKPermissionUpdate[],
 ): SDKPermissionResult {
   return {
     behavior: 'allow',
     updatedInput: input,
+    ...(updatedPermissions != null && updatedPermissions.length > 0
+      ? { updatedPermissions }
+      : {}),
     ...(toolUseID != null ? { toolUseID } : {}),
     ...(decisionClassification != null ? { decisionClassification } : {}),
   }
+}
+
+function normalizeApprovalResult(result: boolean | SDKApprovalResult): SDKApprovalResult {
+  return typeof result === 'boolean' ? { allowed: result } : result
+}
+
+function scopePermissionUpdates(
+  suggestions: SDKPermissionRequestContext['suggestions'],
+  scope: SDKApprovalResult['scope'],
+): SDKPermissionUpdate[] | undefined {
+  if (suggestions == null || suggestions.length === 0 || scope == null || scope === 'once') {
+    return undefined
+  }
+  const destination = {
+    session: 'session',
+    project: 'projectSettings',
+    global: 'userSettings',
+  }[scope] as SDKPermissionUpdate['destination']
+  return suggestions.map((suggestion) => ({ ...suggestion, destination }))
 }
 
 function denyTool(message: string, toolUseID: string | undefined): SDKPermissionResult {

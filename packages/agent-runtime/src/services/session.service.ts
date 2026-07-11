@@ -127,7 +127,13 @@ import {
   CodexSdkExecutor,
   isSDKAvailable,
 } from '../sdk/index.js'
-import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
+import type {
+  SDKApprovalResult,
+  SDKExecutorConfig,
+  SDKMcpServerConfig,
+  SDKPermissionRequestContext,
+  SDKTurnAttachment,
+} from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import type { CanvasToolSchema } from './canvas-mcp-server.js'
 import {
@@ -192,7 +198,8 @@ export type ApprovalHandler = (
   sessionId: string,
   toolName: string,
   toolInput: Record<string, unknown>,
-) => Promise<boolean>
+  context: SDKPermissionRequestContext,
+) => Promise<boolean | SDKApprovalResult>
 /** session 被取消时调用：用于拒绝该 session 下所有挂起的 approval 请求，避免 agent 永久挂起 */
 export type ApprovalCancelHandler = (sessionId: string) => void
 /** Hook 触发处理器：在关键节点触发提示音/通知等 */
@@ -210,7 +217,7 @@ type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
 type ActiveExecution = {
   cancel(): void
   /** Hot-swap the permission mode for the currently executing turn. */
-  setPermissionMode?(mode: SessionPermissionMode): void
+  setPermissionMode?(mode: SessionPermissionMode): void | Promise<void>
 }
 
 export function createCodexExecutorForConfig(
@@ -2531,10 +2538,11 @@ export class SessionService {
                 sid: string,
                 toolName: string,
                 toolInput: Record<string, unknown>,
+                context: SDKPermissionRequestContext,
               ) => {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_permission')
                 try {
-                  return await this.onApproval!(sid, toolName, toolInput)
+                  return await this.onApproval!(sid, toolName, toolInput, context)
                 } finally {
                   this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
                 }
@@ -5897,10 +5905,11 @@ export class SessionService {
               sid: string,
               toolName: string,
               toolInput: Record<string, unknown>,
+              context: SDKPermissionRequestContext,
             ) => {
               this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_permission')
               try {
-                return await this.onApproval!(sid, toolName, toolInput)
+                return await this.onApproval!(sid, toolName, toolInput, context)
               } finally {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
               }
@@ -7112,7 +7121,7 @@ export class SessionService {
     // takes effect on the very next tool call within the current turn.
     if (params.permissionMode !== undefined) {
       const active = this.activeLoops.get(params.sessionId)
-      active?.setPermissionMode?.(params.permissionMode)
+      void active?.setPermissionMode?.(params.permissionMode)
     }
 
     if (

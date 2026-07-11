@@ -1223,6 +1223,8 @@ export type PermissionDecisionScope = 'project' | 'global'
 // Tool approval flow (main → renderer push, then renderer → main respond)
 export interface PermissionApprovalRequest {
   requestId: string
+  /** Claude SDK control_request id, retained for out-of-band audit/correlation. */
+  sdkRequestId?: string
   sessionId: string
   toolName: string
   action: string
