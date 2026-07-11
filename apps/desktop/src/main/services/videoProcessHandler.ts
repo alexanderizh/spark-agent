@@ -14,8 +14,13 @@ import {
   extractKeyframes,
   extractFramesAtTimes,
   generateThumbnail,
+  trimVideo,
+  concatVideos,
+  segmentVideo,
+  transcodeVideo,
   type FfmpegProgress,
   type KeyframeStrategy,
+  type TranscodeOpts,
 } from './FfmpegRunner.js'
 
 /** 视频产物落盘根目录：{userData}/.spark-artifacts/media/video-workbench/ */
@@ -95,17 +100,52 @@ async function dispatch(
       })
     }
 
-    // ── 以下剪辑/转码/画面处理在 P3/P4 实现 ────────────────────────
-    case 'trim':
-    case 'concat':
-    case 'segment':
-    case 'transcode':
+    // ── 剪辑 ─────────────────────────────────────────────────────
+    case 'trim': {
+      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      return trimVideo(input, outputPath, {
+        startSec: asNumber(params.startSec, 0)!,
+        endSec: asNumber(params.endSec, 0)!,
+        copy: params.copy !== false,
+        onProgress,
+      })
+    }
+
+    case 'concat': {
+      const inputs = [input, ...(params.additionalInputs as string[] ?? [])]
+      const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
+      return concatVideos(inputs, outputPath, { onProgress })
+    }
+
+    case 'segment': {
+      const segSec = asNumber(params.segmentSec, 10)!
+      const pattern = join(getVideoArtifactDir(), `seg_${req.requestId}_%03d.mp4`)
+      return segmentVideo(input, pattern, { segmentSec: segSec, onProgress })
+    }
+
+    // ── 转码 ─────────────────────────────────────────────────────
+    case 'transcode': {
+      const format = (params.format as string) ?? 'mp4'
+      const outputPath = (params.outputPath as string) ?? makeOutputPath(format)
+      const opts: TranscodeOpts = {
+        ...(format ? { format: format as TranscodeOpts['format'] } : {}),
+        ...(params.videoCodec ? { videoCodec: params.videoCodec as TranscodeOpts['videoCodec'] } : {}),
+        ...(params.audioCodec ? { audioCodec: params.audioCodec as TranscodeOpts['audioCodec'] } : {}),
+        ...(params.resolution ? { resolution: params.resolution as { w: number; h: number } } : {}),
+        ...(params.bitrate ? { bitrate: params.bitrate as string } : {}),
+        ...(params.crf != null ? { crf: asNumber(params.crf, 23) } : {}),
+        ...(params.fps != null ? { fps: asNumber(params.fps) } : {}),
+      }
+      return transcodeVideo(input, outputPath, opts, onProgress)
+    }
+
+    // ── 画面处理在 P4 实现 ───────────────────────────────────────
     case 'adjustSpeed':
     case 'reverse':
     case 'crop':
     case 'watermark':
     case 'burnSubtitle':
-      throw new Error(`操作 "${operation}" 尚未实现（计划在 P3/P4 阶段开发）`)
+      throw new Error(`操作 "${operation}" 尚未实现（计划在 P4 阶段开发）`)
 
     default:
       throw new Error(`未知的视频处理操作: ${operation}`)

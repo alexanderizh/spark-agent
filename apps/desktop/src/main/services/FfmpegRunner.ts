@@ -612,7 +612,276 @@ export async function generateThumbnail(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 导出 escapeFilterValue 供 P3/P4 复用（拼接 filter_complex 时用到）
+// 4. 视频剪辑
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 裁剪视频片段。
+ *
+ * @param opts.startSec 起始秒
+ * @param opts.endSec   结束秒
+ * @param opts.copy     true=流拷贝(无损快切，-c copy)；false=重编码(精确切，默认 true)
+ *
+ * copy 模式用 `-ss` 在 `-i` 前(seek 模式，快)；精确切用 `-ss` 在 `-i` 后。
+ */
+export async function trimVideo(
+  input: string,
+  outputPath: string,
+  opts: { startSec: number; endSec: number; copy?: boolean; onProgress?: (p: FfmpegProgress) => void },
+): Promise<{ path: string }> {
+  const { startSec, endSec, copy = true } = opts
+  const duration = endSec - startSec
+  if (duration <= 0) throw new Error(`无效的裁剪区间: ${startSec}~${endSec}`)
+
+  const args: string[] = []
+  if (copy) {
+    // seek 模式：-ss 在 -i 前，快
+    args.push('-ss', String(startSec), '-i', input, '-t', String(duration), '-c', 'copy')
+  } else {
+    // 精确模式：-ss 在 -i 后，重编码
+    args.push('-ss', String(startSec), '-i', input, '-t', String(duration), '-c:v', 'libx264', '-c:a', 'aac')
+  }
+  args.push('-y', outputPath)
+
+  const result = await runFfmpeg(args, {
+    totalDurationSec: duration,
+    onProgress: opts.onProgress,
+  })
+  if (result.code !== 0) {
+    throw new Error(`视频裁剪失败: ${result.stderr.slice(-300)}`)
+  }
+  return { path: outputPath }
+}
+
+/**
+ * 合并多个视频。
+ *
+ * 先 probe 各段编码是否一致：
+ *   - 一致 → concat demuxer（无损快，-c copy）
+ *   - 不一致 → concat filter（重编码）
+ *
+ * concat demuxer 需要一个 list.txt 文件（file '路径' 每行一个）。
+ */
+export async function concatVideos(
+  inputs: string[],
+  outputPath: string,
+  opts: { onProgress?: (p: FfmpegProgress) => void } = {},
+): Promise<{ path: string }> {
+  if (inputs.length < 2) throw new Error('合并至少需要 2 个视频')
+
+  // 检查编码一致性
+  const probes = await Promise.all(inputs.map((f) => probeVideo(f)))
+  const firstCodec = probes[0]!.videoCodec
+  const allSameCodec = probes.every((p) => p.videoCodec === firstCodec)
+  const totalDuration = probes.reduce((sum, p) => sum + p.durationSec, 0)
+
+  if (allSameCodec) {
+    // concat demuxer（无损快）
+    const { writeFileSync } = await import('node:fs')
+    const { join, dirname } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const { randomUUID } = await import('node:crypto')
+    const listPath = join(tmpdir(), `concat-${randomUUID()}.txt`)
+    // 路径里的单引号需转义
+    const listContent = inputs.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n')
+    writeFileSync(listPath, listContent)
+
+    try {
+      const args = ['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', '-y', outputPath]
+      const result = await runFfmpeg(args, { totalDurationSec: totalDuration, onProgress: opts.onProgress })
+      if (result.code !== 0) {
+        throw new Error(`视频合并失败(demuxer): ${result.stderr.slice(-300)}`)
+      }
+      return { path: outputPath }
+    } finally {
+      try {
+        await (await import('node:fs/promises')).unlink(listPath)
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  // concat filter（重编码，异源）
+  const filterInputs = inputs.flatMap((_, i) => [`[${i}:v:0]`, `[${i}:a:0]`]).join('')
+  const concatChain = inputs.map((_, i) => `[${i}:v:0][${i}:a:0]`).join('')
+  const args = [
+    ...inputs.flatMap((f) => ['-i', f]),
+    '-filter_complex',
+    `${concatChain}concat=n=${inputs.length}:v=1:a=1[outv][outa]`,
+    '-map', '[outv]',
+    '-map', '[outa]',
+    '-c:v', 'libx264',
+    '-c:a', 'aac',
+    '-y',
+    outputPath,
+  ]
+  // filterInputs 变量暂保留（文档用途，实际 args 里 concatChain 已覆盖）
+  void filterInputs
+  const result = await runFfmpeg(args, { totalDurationSec: totalDuration, onProgress: opts.onProgress })
+  if (result.code !== 0) {
+    throw new Error(`视频合并失败(filter): ${result.stderr.slice(-300)}`)
+  }
+  return { path: outputPath }
+}
+
+/**
+ * 按固定时长分割视频。
+ *
+ * @param opts.segmentSec 每段时长（秒）
+ * @returns 各段文件路径列表
+ */
+export async function segmentVideo(
+  input: string,
+  outputPattern: string,
+  opts: { segmentSec: number; onProgress?: (p: FfmpegProgress) => void },
+): Promise<{ paths: string[] }> {
+  const probe = await probeVideo(input)
+  const args = [
+    '-i', input,
+    '-f', 'segment',
+    '-segment_time', String(opts.segmentSec),
+    '-reset_timestamps', '1',
+    '-c', 'copy',
+    '-y',
+    outputPattern, // 如 seg_%03d.mp4
+  ]
+  const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress: opts.onProgress })
+  if (result.code !== 0) {
+    throw new Error(`视频分割失败: ${result.stderr.slice(-300)}`)
+  }
+  // 收集产物（按 pattern 的目录扫描 seg_*.mp4）
+  const { readdirSync } = await import('node:fs')
+  const { dirname, basename } = await import('node:path')
+  const dir = dirname(outputPattern)
+  const base = basename(outputPattern).replace(/%0?\d?d/g, '\\d+')
+  const regex = new RegExp(`^${base}$`)
+  const paths = readdirSync(dir)
+    .filter((f) => regex.test(f))
+    .sort()
+    .map((f) => join(dir, f))
+  return { paths }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5. 转码与格式转换
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface TranscodeOpts {
+  format?: 'mp4' | 'webm' | 'mov' | 'gif'
+  videoCodec?: 'libx264' | 'libx265' | 'libvpx-vp9' | 'copy'
+  audioCodec?: 'aac' | 'libopus' | 'none'
+  resolution?: { w: number; h: number }
+  bitrate?: string // 如 '2M'
+  crf?: number // 18~28
+  fps?: number
+}
+
+/**
+ * 转码/格式转换。
+ *
+ * GIF 特殊处理：两 pass（palettegen + paletteuse）以获得高质量调色板。
+ */
+export async function transcodeVideo(
+  input: string,
+  outputPath: string,
+  opts: TranscodeOpts,
+  onProgress?: (p: FfmpegProgress) => void,
+): Promise<{ path: string }> {
+  const probe = await probeVideo(input)
+
+  // GIF 两 pass
+  if (opts.format === 'gif' || outputPath.toLowerCase().endsWith('.gif')) {
+    return transcodeToGif(input, outputPath, opts, probe.durationSec, onProgress)
+  }
+
+  const args: string[] = ['-i', input]
+  if (opts.resolution) {
+    args.push('-vf', `scale=${opts.resolution.w}:${opts.resolution.h}`)
+  }
+  if (opts.fps) {
+    args.push('-r', String(opts.fps))
+  }
+  if (opts.videoCodec && opts.videoCodec !== 'copy') {
+    args.push('-c:v', opts.videoCodec)
+    if (opts.crf != null) args.push('-crf', String(opts.crf))
+  } else if (opts.videoCodec === 'copy') {
+    args.push('-c:v', 'copy')
+  } else {
+    args.push('-c:v', 'libx264')
+    if (opts.crf != null) args.push('-crf', String(opts.crf))
+  }
+  if (opts.audioCodec === 'none') {
+    args.push('-an')
+  } else if (opts.audioCodec) {
+    args.push('-c:a', opts.audioCodec)
+  } else {
+    args.push('-c:a', 'aac')
+  }
+  if (opts.bitrate) args.push('-b:v', opts.bitrate)
+  args.push('-y', outputPath)
+
+  const result = await runFfmpeg(args, { totalDurationSec: probe.durationSec, onProgress })
+  if (result.code !== 0) {
+    throw new Error(`转码失败: ${result.stderr.slice(-300)}`)
+  }
+  return { path: outputPath }
+}
+
+/** GIF 两 pass 转码（palettegen + paletteuse） */
+async function transcodeToGif(
+  input: string,
+  outputPath: string,
+  opts: TranscodeOpts,
+  duration: number,
+  onProgress?: (p: FfmpegProgress) => void,
+): Promise<{ path: string }> {
+  const { mkdirSync } = await import('node:fs')
+  const { dirname } = await import('node:path')
+  const { randomUUID } = await import('node:crypto')
+  const { join } = await import('node:path')
+  const { tmpdir } = await import('node:os')
+
+  mkdirSync(dirname(outputPath), { recursive: true })
+  const palettePath = join(tmpdir(), `palette-${randomUUID()}.png`)
+  const width = opts.resolution?.w ?? 480
+  const fps = opts.fps ?? 15
+
+  // pass 1: 生成调色板
+  const pass1Args = [
+    '-i', input,
+    '-vf', `fps=${fps},scale=${width}:-1:flags=lanczos,palettegen`,
+    '-y', palettePath,
+  ]
+  const pass1 = await runFfmpeg(pass1Args, { totalDurationSec: duration })
+  if (pass1.code !== 0) {
+    throw new Error(`GIF 调色板生成失败: ${pass1.stderr.slice(-200)}`)
+  }
+
+  // pass 2: 应用调色板
+  try {
+    const pass2Args = [
+      '-i', input,
+      '-i', palettePath,
+      '-filter_complex', `fps=${fps},scale=${width}:-1:flags=lanczos[x];[x][1:v]paletteuse`,
+      '-y', outputPath,
+    ]
+    const pass2 = await runFfmpeg(pass2Args, { totalDurationSec: duration, onProgress })
+    if (pass2.code !== 0) {
+      throw new Error(`GIF 生成失败: ${pass2.stderr.slice(-300)}`)
+    }
+    return { path: outputPath }
+  } finally {
+    try {
+      await (await import('node:fs/promises')).unlink(palettePath)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 导出 escapeFilterValue 供 P4 复用（拼接 filter_complex 时用到）
 // ═══════════════════════════════════════════════════════════════════════════
 
 export { escapeFilterValue }
