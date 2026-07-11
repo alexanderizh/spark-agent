@@ -215,7 +215,14 @@ const COLUMNS: { key: TaskStatus; label: string; color: string; icon: string; he
 
 const BOARD_COLUMNS_STORAGE_KEY = 'board-visible-columns'
 
-/** Load visible columns from localStorage, fallback to all columns */
+/**
+ * 首次打开 / 无用户偏好时的默认可见列。
+ * 精简为核心四列:待办 → 进行中 → 已完成 → 已关闭。
+ * 用户在「面板」下拉里的自定义会覆盖此默认值。
+ */
+const DEFAULT_VISIBLE_COLUMNS: TaskStatus[] = ['todo', 'in-progress', 'done', 'closed']
+
+/** Load visible columns from localStorage, fallback to DEFAULT_VISIBLE_COLUMNS */
 function loadVisibleColumns(): TaskStatus[] {
   try {
     const stored = localStorage.getItem(BOARD_COLUMNS_STORAGE_KEY)
@@ -227,8 +234,7 @@ function loadVisibleColumns(): TaskStatus[] {
       if (validParsed.length > 0) return validParsed
     }
   } catch { /* ignore */ }
-  // Default: show all columns
-  return COLUMNS.map(c => c.key)
+  return DEFAULT_VISIBLE_COLUMNS
 }
 
 /** Save visible columns to localStorage */
