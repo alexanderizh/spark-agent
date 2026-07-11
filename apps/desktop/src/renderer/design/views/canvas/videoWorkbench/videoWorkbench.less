@@ -1,0 +1,573 @@
+// 视频工作台样式。
+// 设计语言：与 stage3d.less 保持一致的全屏 overlay + 深色专业工作台风格。
+
+// ═══════════════════════════════════════════════════════════════
+// Overlay & Shell
+// ═══════════════════════════════════════════════════════════════
+
+.vwb-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  animation: vwb-fade-in 0.18s ease-out;
+}
+
+@keyframes vwb-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.vwb-shell {
+  flex: 1;
+  margin: 28px 28px 28px 28px;
+  border-radius: 14px;
+  background: #1a1a1e;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #e4e4e7;
+}
+
+// ── 顶栏 ──
+
+.vwb-topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, #222227 0%, #1d1d22 100%);
+
+  &.darwin {
+    padding-left: 78px; // 红绿灯安全区
+  }
+}
+
+.vwb-titlebox {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vwb-kicker {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #71717a;
+  font-weight: 600;
+}
+
+.vwb-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f4f4f5;
+}
+
+.vwb-topbar-info {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  margin-right: 8px;
+}
+
+.vwb-info-chip {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #a1a1aa;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+}
+
+.vwb-topbar-actions {
+  display: flex;
+  gap: 4px;
+}
+
+// ── ffmpeg 警告条 ──
+
+.vwb-ffmpeg-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  background: rgba(245, 158, 11, 0.12);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+  font-size: 12px;
+
+  a {
+    color: #60a5fa;
+    margin-left: auto;
+    cursor: pointer;
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Body 布局
+// ═══════════════════════════════════════════════════════════════
+
+.vwb-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+// ── 左侧：预览 + 时间线 ──
+
+.vwb-preview-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: #0f0f12;
+}
+
+.vwb-video-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.vwb-video {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.vwb-video-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #52525b;
+
+  span {
+    font-size: 13px;
+  }
+}
+
+// ── 时间线 ──
+
+.vwb-timeline {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 10px 16px 12px;
+  background: #18181b;
+}
+
+.vwb-timeline-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #a1a1aa;
+}
+
+.vwb-timeline-time {
+  color: #f4f4f5;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.vwb-timeline-divider {
+  color: #52525b;
+}
+
+.vwb-timeline-duration {
+  color: #71717a;
+}
+
+// 时间线轨道
+.vwb-timeline-track {
+  position: relative;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.vwb-timeline-played {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.25), rgba(96, 165, 250, 0.4));
+  transition: width 0.1s linear;
+}
+
+// 关键帧标记（缩略图提取的点）
+.vwb-timeline-kf {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: #fbbf24;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: transform 0.1s;
+
+  &:hover {
+    transform: scaleX(2);
+    background: #fcd34d;
+  }
+}
+
+// 手动标记点
+.vwb-timeline-mark {
+  position: absolute;
+  top: -2px;
+  width: 12px;
+  height: 36px;
+  transform: translateX(-50%);
+  cursor: pointer;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: #60a5fa;
+    border-bottom: 0;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    bottom: 0;
+    background: #60a5fa;
+  }
+}
+
+.vwb-timeline-mark-remove {
+  position: absolute;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: #ef4444;
+  display: none;
+}
+
+.vwb-timeline-mark:hover .vwb-timeline-mark-remove {
+  display: block;
+}
+
+// 手动标记 chips 列表
+.vwb-manual-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.vwb-mark-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 8px;
+  border-radius: 4px;
+  background: rgba(96, 165, 250, 0.12);
+  color: #93c5fd;
+  font-size: 10px;
+  font-family: 'SF Mono', monospace;
+  cursor: pointer;
+
+  i {
+    font-style: normal;
+    color: #71717a;
+    &:hover {
+      color: #ef4444;
+    }
+  }
+}
+
+// ── 右侧：Tab 面板 ──
+
+.vwb-side-pane {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  background: #18181b;
+  min-height: 0;
+
+  .ant-segmented {
+    margin: 10px;
+  }
+}
+
+.vwb-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #52525b;
+  padding: 32px;
+  text-align: center;
+
+  p {
+    margin: 0;
+    font-size: 13px;
+    color: #71717a;
+  }
+
+  .muted {
+    font-size: 11px;
+    color: #52525b;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Frame Panel
+// ═══════════════════════════════════════════════════════════════
+
+.vwb-frame-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 10px 10px;
+}
+
+.vwb-section {
+  padding: 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.vwb-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vwb-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #d4d4d8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+
+  em {
+    font-style: normal;
+    color: #60a5fa;
+    margin-left: 4px;
+  }
+}
+
+.vwb-strategy-desc {
+  font-size: 11px;
+  color: #71717a;
+  margin: 6px 0 10px;
+  line-height: 1.4;
+}
+
+.vwb-param {
+  margin: 10px 0;
+
+  label {
+    display: block;
+    font-size: 11px;
+    color: #a1a1aa;
+    margin-bottom: 4px;
+  }
+
+  .ant-slider {
+    margin: 0 4px;
+  }
+}
+
+// ── 进度条 ──
+
+.vwb-progress {
+  margin-top: 8px;
+}
+
+.vwb-progress-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.vwb-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #60a5fa, #3b82f6);
+  transition: width 0.2s;
+}
+
+.vwb-progress-stage {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: #71717a;
+  font-family: 'SF Mono', monospace;
+}
+
+// ── 缩略图墙 ──
+
+.vwb-frames-section {
+  border-bottom: none;
+}
+
+.vwb-frames-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 32px 12px;
+  color: #52525b;
+
+  span {
+    font-size: 12px;
+  }
+
+  .muted {
+    font-size: 10px;
+    color: #3f3f46;
+    text-align: center;
+    max-width: 220px;
+  }
+}
+
+.vwb-frame-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.vwb-frame-card {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #0f0f12;
+  transition: transform 0.12s;
+
+  &:hover {
+    transform: scale(1.02);
+
+    .vwb-frame-remove {
+      opacity: 1;
+    }
+  }
+}
+
+.vwb-frame-thumb {
+  position: relative;
+  cursor: pointer;
+  aspect-ratio: 16 / 9;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+}
+
+.vwb-frame-time {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 2px 6px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  color: #fff;
+  font-size: 10px;
+  font-family: 'SF Mono', monospace;
+}
+
+.vwb-frame-imported {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  color: #34d399;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+  padding: 2px;
+}
+
+.vwb-frame-remove {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(239, 68, 68, 0.9);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 画布节点上的 Mini 预览（与 stage3d 的 .canvas-node-stage3d 对称）
+// ═══════════════════════════════════════════════════════════════
+
+.canvas-node-video-workbench {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.canvas-node-vwb-thumb {
+  width: 100%;
+  max-height: 60%;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.canvas-node-vwb-nothumb {
+  color: #71717a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.canvas-node-vwb-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: #a1a1aa;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+}
+
+.canvas-node-vwb-hint {
+  font-size: 10px;
+  color: #52525b;
+}

@@ -319,6 +319,12 @@ export const Icons = {
       <path d="M7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 17h5M17 7h5" />
     </IconBase>
   ),
+  Video: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="m22 8-6 4 6 4V8Z" />
+      <rect width="14" height="12" x="2" y="6" rx="2" ry="2" />
+    </IconBase>
+  ),
   Scissors: (p: IconProps) => (
     <IconBase {...p}>
       <circle cx="6" cy="6" r="3" />
