@@ -89,9 +89,10 @@ export class NewApiClient {
   }
 
   async getUsage(): Promise<PlatformModelUsage> {
-    const [self, logsValue] = await Promise.all([
+    const [self, logsValue, display] = await Promise.all([
       this.dashboardGet<Record<string, unknown>>('/api/user/self'),
       this.dashboardGet<unknown>('/api/log/self?p=1&page_size=10'),
+      this.getQuotaDisplaySettings(),
     ])
     const rows = Array.isArray(logsValue)
       ? logsValue
@@ -100,17 +101,44 @@ export class NewApiClient {
         : isRecord(logsValue) && Array.isArray(logsValue.logs)
           ? logsValue.logs
           : []
+    const convertQuota = (quota: unknown): number => Number(quota ?? 0) / display.quotaPerUnit * display.rate
     return {
-      walletQuota: Number(self.quota ?? 0),
-      cumulativeUsedQuota: Number(self.used_quota ?? self.usedQuota ?? 0),
+      walletQuota: convertQuota(self.quota),
+      cumulativeUsedQuota: convertQuota(self.used_quota ?? self.usedQuota),
+      currencySymbol: display.symbol,
       logs: rows.filter(isRecord).map(item => ({
         id: Number(item.id),
         createdAt: Number(item.created_at ?? item.createdAt ?? 0),
         model: String(item.model_name ?? item.model ?? ''),
         promptTokens: Number(item.prompt_tokens ?? item.promptTokens ?? 0),
         completionTokens: Number(item.completion_tokens ?? item.completionTokens ?? 0),
-        quota: Number(item.quota ?? 0),
+        quota: convertQuota(item.quota),
       })),
+    }
+  }
+
+  private async getQuotaDisplaySettings(): Promise<{ quotaPerUnit: number; rate: number; symbol: string }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/status`, { headers: { Accept: 'application/json' } })
+      const json = await parseEnvelope<Record<string, unknown>>(response)
+      assertSuccess(response, json, '读取平台额度展示设置失败')
+      const status = json.data ?? {}
+      const quotaPerUnit = positiveNumber(status.quota_per_unit, 500_000)
+      const type = String(status.quota_display_type ?? (status.display_in_currency ? 'USD' : 'TOKENS')).toUpperCase()
+      if (type === 'TOKENS') return { quotaPerUnit: 1, rate: 1, symbol: '' }
+      if (type === 'CNY') {
+        return { quotaPerUnit, rate: positiveNumber(status.usd_exchange_rate, 7.3), symbol: '¥' }
+      }
+      if (type === 'CUSTOM') {
+        return {
+          quotaPerUnit,
+          rate: positiveNumber(status.custom_currency_exchange_rate, 1),
+          symbol: String(status.custom_currency_symbol ?? '¤'),
+        }
+      }
+      return { quotaPerUnit, rate: 1, symbol: '$' }
+    } catch {
+      return { quotaPerUnit: 500_000, rate: 1, symbol: '$' }
     }
   }
 
@@ -283,4 +311,9 @@ function normalizeSubscription(value: unknown): PlatformModelSubscription | null
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function positiveNumber(value: unknown, fallback: number): number {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? number : fallback
 }

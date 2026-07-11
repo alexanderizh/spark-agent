@@ -68,7 +68,19 @@ function makeRepo() {
     }),
     get: vi.fn((id: string) => rows.get(id) ?? null),
     listAll: vi.fn(() => [...rows.values()]),
-    update: vi.fn(),
+    update: vi.fn((id: string, patch: Record<string, unknown>) => {
+      const current = rows.get(id)
+      if (!current) return null
+      const next = {
+        ...current,
+        ...(patch.name !== undefined && { name: patch.name }),
+        ...(patch.enabled !== undefined && { enabled: patch.enabled ? 1 : 0 }),
+        ...(patch.keystoreRef !== undefined && { keystore_ref: patch.keystoreRef }),
+        ...(patch.config !== undefined && { config_json: JSON.stringify(patch.config) }),
+      }
+      rows.set(id, next)
+      return next
+    }),
     delete: vi.fn((id: string) => { rows.delete(id); return true }),
     setDefault: vi.fn(),
     findByProviderType: vi.fn(() => []),
@@ -1184,6 +1196,49 @@ describe('ProviderService', () => {
       'newapi-spark-user-42-api-key',
       'sk-platform-secret',
     )
+  })
+
+  it('preserves local managed model preferences when the platform model list refreshes', async () => {
+    await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5', 'deepseek-v4', 'MiniMax-M3'],
+      apiKey: 'sk-platform-secret',
+    })
+    await service.updateManagedNewApiModelPreferences({
+      modelIds: ['deepseek-v4', 'MiniMax-M3'],
+      defaultModel: 'MiniMax-M3',
+    })
+
+    const refreshed = await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5', 'deepseek-v4', 'MiniMax-M3', 'qwen3.6-plus'],
+      apiKey: 'sk-platform-secret',
+    })
+
+    expect(refreshed.modelIds).toEqual(['MiniMax-M3', 'deepseek-v4'])
+    expect(refreshed.defaultModel).toBe('MiniMax-M3')
+    expect(refreshed.availableModelIds).toEqual([
+      'glm-5',
+      'deepseek-v4',
+      'MiniMax-M3',
+      'qwen3.6-plus',
+    ])
+  })
+
+  it('requires at least one platform model to stay enabled', async () => {
+    await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5'],
+      apiKey: 'sk-platform-secret',
+    })
+
+    await expect(service.updateManagedNewApiModelPreferences({
+      modelIds: [],
+      defaultModel: '',
+    })).rejects.toThrow('至少启用一个')
   })
 
   it('blocks editing, deleting and revealing an official managed provider', async () => {

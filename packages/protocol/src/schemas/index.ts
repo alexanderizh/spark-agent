@@ -19,6 +19,8 @@ import { ProviderMediaModelRefSchema, MediaModelManifestSchema } from '../media-
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '../local-cli-provider.js'
 import { CLAUDE_AUTO_ROUTER_PROVIDER_ID, CODEX_AUTO_ROUTER_PROVIDER_ID } from '../auto-router-provider.js'
 
+const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
+
 // ─── 基础 Schema ─────────────────────────────────────────────────────────────
 
 export const SessionIdSchema = z.string().uuid()
@@ -29,6 +31,7 @@ export const ProfileIdSchema = z.union([
   z.literal(LOCAL_CODEX_CLI_PROVIDER_ID),
   z.literal(CLAUDE_AUTO_ROUTER_PROVIDER_ID),
   z.literal(CODEX_AUTO_ROUTER_PROVIDER_ID),
+  z.literal(PLATFORM_NEWAPI_PROVIDER_ID),
 ])
 export const RuleIdSchema = z.string().uuid()
 
@@ -676,6 +679,10 @@ export const IpcSchemaRegistry = {
   'provider:test-connection': ProviderConnectionTestRequestSchema,
   'provider:fetch-models': ProviderFetchModelsRequestSchema,
   'provider:reveal-key': ProviderRevealKeyRequestSchema,
+  'platform-model:update-model-preferences': z.object({
+    modelIds: z.array(z.string().min(1).max(200)).min(1).max(200),
+    defaultModel: z.string().min(1).max(200),
+  }),
   'github-connector:verify': GitHubConnectorVerifyRequestSchema,
   'github-connector:get': z.object({}),
   'github-connector:connect': GitHubConnectorConnectRequestSchema,

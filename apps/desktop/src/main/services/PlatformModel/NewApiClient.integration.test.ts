@@ -92,6 +92,7 @@ describe('NewApiClient HTTP integration', () => {
     await expect(deviceA.getUsage()).resolves.toEqual({
       walletQuota: 150,
       cumulativeUsedQuota: 25,
+      currencySymbol: '',
       logs: [
         {
           id: 9001,
@@ -150,6 +151,14 @@ async function handleMockNewApiRequest(
   state: MockState,
 ): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://mock-newapi.local')
+
+  if (request.method === 'GET' && url.pathname === '/api/status') {
+    sendJson(response, 200, {
+      success: true,
+      data: { quota_per_unit: 500_000, quota_display_type: 'TOKENS' },
+    })
+    return
+  }
 
   if (request.method === 'POST' && url.pathname === '/api/user/login') {
     const body = await readJsonBody(request)

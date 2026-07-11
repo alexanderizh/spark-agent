@@ -83,6 +83,16 @@ export class PlatformModelService {
     return (await this.readyClient()).getUsage()
   }
 
+  async updateModelPreferences(params: {
+    modelIds: string[]
+    defaultModel: string
+  }): Promise<{ modelIds: string[]; defaultModel: string }> {
+    const profile = await this.providerService().updateManagedNewApiModelPreferences(params)
+    this.status = { ...this.status, models: [...profile.modelIds] }
+    this.emitProviderChanged('update')
+    return { modelIds: profile.modelIds, defaultModel: profile.defaultModel }
+  }
+
   async redeem(code: string): Promise<PlatformModelRedeemResponse> {
     const normalized = code.trim()
     if (!normalized) throw new Error('请输入兑换码')
@@ -207,7 +217,7 @@ export class PlatformModelService {
     ])
     await store.setApiKey(apiKey)
     this.lastValidatedApiKeys.set(sparkUserId, { value: apiKey, expiresAt: Date.now() + 60_000 })
-    await this.providerService().ensureManagedNewApiProvider({
+    const profile = await this.providerService().ensureManagedNewApiProvider({
       ownerUserId: sparkUserId,
       baseUrl: credentials.baseUrl,
       modelIds: models,
@@ -221,7 +231,7 @@ export class PlatformModelService {
       providerReady: true,
       sessionConflict: false,
       credentialState: 'ready',
-      models,
+      models: profile.modelIds,
       ...(pendingPayment ? { pendingPayment } : {}),
     }
     return this.getStatus()

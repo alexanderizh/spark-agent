@@ -75,6 +75,7 @@ import type {
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
 import { ProviderManifestContractEditor } from '../components/ProviderManifestContractEditor'
+import { ManagedModelPreferencesModal } from './platform-model/ManagedModelPreferencesModal'
 import './ProvidersView.less'
 
 type ProviderKind = 'anthropic' | 'openai'
@@ -806,6 +807,7 @@ function ProvidersView() {
   const [profiles, setProfiles] = useState<ProviderProfile[]>([])
   const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [managedEditingProfile, setManagedEditingProfile] = useState<ProviderProfile | null>(null)
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthCheckResponse>>({})
   const [showPresetCatalog, setShowPresetCatalog] = useState(false)
   const [showRouteModels, setShowRouteModels] = useState(false)
@@ -1316,6 +1318,7 @@ function ProvidersView() {
                 const h = healthMap[p.id]
                 const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
                 const vendor =
+                  resolveManagedPlatformVendor(p) ??
                   resolveAutoRouterVendor(p) ??
                   resolveBuiltinLocalCliVendor(p) ??
                   vendorForMediaProvider(p.mediaProvider ?? p.imageProvider ?? undefined) ??
@@ -1347,7 +1350,7 @@ function ProvidersView() {
                   <ProviderCardX
                     key={p.id}
                     vendor={vendor}
-                    icon={resolveProviderIconForProfile(p, vendor)}
+                    icon={p.managed ? null : resolveProviderIconForProfile(p, vendor)}
                     name={p.name}
                     desc={
                       p.managed
@@ -1370,8 +1373,11 @@ function ProvidersView() {
                     canHealthCheck={!isAutoRouterProvider(p)}
                     onToggleSelect={() => toggleSelected(p.id)}
                     onEdit={() => {
-                      setEditingId(p.id)
-                      setTweak('showProviderEdit', true)
+                      if (p.managed) setManagedEditingProfile(p)
+                      else {
+                        setEditingId(p.id)
+                        setTweak('showProviderEdit', true)
+                      }
                     }}
                     onDelete={() => void handleDelete(p.id)}
                     onHealthCheck={() => void handleHealthCheck(p.id)}
@@ -1434,6 +1440,15 @@ function ProvidersView() {
         onClose={() => setShowRouteModels(false)}
         onChanged={refresh}
       />
+
+      {managedEditingProfile ? (
+        <ManagedModelPreferencesModal
+          key={managedEditingProfile.id}
+          profile={managedEditingProfile}
+          onClose={() => setManagedEditingProfile(null)}
+          onSaved={refresh}
+        />
+      ) : null}
 
       {/* Provider 编辑面板 */}
       {showProviderEdit && (
@@ -1512,6 +1527,19 @@ const LOCAL_CODEX_CLI_VENDOR: VendorMeta = {
   color: '#10a37f',
   desc: '',
   logoPath: '',
+}
+
+const SPARK_PLATFORM_VENDOR: VendorMeta = {
+  id: 'spark-platform',
+  name: 'Spark 平台官方模型',
+  emoji: 'SP',
+  color: '#ffffff',
+  desc: '',
+  logoPath: 'providers/spark-platform.png',
+}
+
+function resolveManagedPlatformVendor(provider: ProviderProfile): VendorMeta | null {
+  return provider.managed === true ? SPARK_PLATFORM_VENDOR : null
 }
 
 /**
@@ -1728,7 +1756,14 @@ function ProviderCardX({
             />
           </div>
         )}
-        <ProviderLogo vendor={fallbackVendor} icon={icon} size={44} shape="rounded" />
+        <ProviderLogo
+          vendor={fallbackVendor}
+          icon={icon}
+          size={44}
+          shape="rounded"
+          className={isManaged ? 'pv_managed_provider_logo' : ''}
+          {...(isManaged ? { style: { background: '#fff', padding: 4 } } : {})}
+        />
         <div className="pv_card_top_info">
           <div className="pv_card_name_row">
             <span className="pv_card_name">{name}</span>
@@ -1803,12 +1838,12 @@ function ProviderCardX({
                 aria-label="健康检查"
               />
             )}
-            {!isBuiltin && !isManaged && (
+            {!isBuiltin && (
               <ActionIcon
                 icon={Icons.Edit}
                 size="small"
                 variant="borderless"
-                title="编辑"
+                title={isManaged ? '设置本机启用模型' : '编辑'}
                 onClick={onEdit}
               />
             )}

@@ -187,7 +187,7 @@ export function PlatformModelAccountPanel(): React.ReactElement {
         <div className="platform-model-panel__usage">
           <div className="platform-model-panel__metric">
             <strong>对话额度与最近消耗</strong>
-            <span>当前钱包额度 {formatQuota(usage.walletQuota)}</span>
+            <span>当前钱包额度 {formatUsageQuota(usage.walletQuota, usage.currencySymbol)}</span>
           </div>
           {usage.logs.length > 0 ? usage.logs.slice(0, 5).map(log => (
             <div className="platform-model-panel__log" key={log.id}>
@@ -215,6 +215,13 @@ function formatPrice(value: number, currency = 'USD'): string {
 
 function formatQuota(value: number): string {
   return new Intl.NumberFormat('zh-CN').format(value)
+}
+
+function formatUsageQuota(value: number, symbol: string): string {
+  return `${symbol}${new Intl.NumberFormat('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  }).format(value)}`
 }
 
 function formatTime(value: number): string {
