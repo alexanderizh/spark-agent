@@ -1,4 +1,5 @@
 import type { UIBlock } from '../../services/event-mapper'
+import { filterDocumentOutputFiles } from './ChatDocumentOutput'
 
 export type ToolLogGroupKind = 'read' | 'write' | 'command' | 'tool'
 
@@ -74,14 +75,10 @@ export function getToolLogGroupKind(
 }
 
 export function isChatActivityBlock(block: UIBlock): block is ChatActivityBlock {
-  if (
-    block.kind === 'thinking' ||
-    block.kind === 'terminal' ||
-    block.kind === 'file_change' ||
-    block.kind === 'checkpoint'
-  ) {
+  if (block.kind === 'thinking' || block.kind === 'terminal' || block.kind === 'checkpoint') {
     return true
   }
+  if (block.kind === 'file_change') return block.diff != null && block.diff.trim().length > 0
   return block.kind === 'tool_call' && getToolLogGroupKind(block, 'main') != null
 }
 
@@ -95,7 +92,7 @@ function stableBlockIdentity(block: UIBlock, index: number): string {
     return `${prefix}:${block.toolCallId}`
   }
   if (block.kind === 'checkpoint') return `checkpoint:${block.checkpointId}`
-  if (block.kind === 'file_change') return `file:${block.path}`
+  if (block.kind === 'file_change') return `file:${block.path}:${index}`
   return `${block.kind}-index:${index}`
 }
 
@@ -104,6 +101,14 @@ export function splitChatActivitySegments(blocks: UIBlock[]): ChatActivityTimeli
   let activity: Extract<ChatActivityTimelineItem, { kind: 'activity' }> | null = null
 
   blocks.forEach((block, index) => {
+    if (
+      block.kind === 'context_ledger' ||
+      (block.kind === 'file_change' && (block.diff == null || block.diff.trim().length === 0)) ||
+      (block.kind === 'presented_files' && filterDocumentOutputFiles(block.files).length === 0)
+    ) {
+      return
+    }
+
     if (isChatActivityBlock(block)) {
       if (activity == null) {
         activity = {

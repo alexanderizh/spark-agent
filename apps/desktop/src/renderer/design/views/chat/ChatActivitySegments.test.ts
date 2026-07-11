@@ -109,6 +109,49 @@ describe('ChatActivitySegments', () => {
     expect(withFallback[1]).toMatchObject({ key: 'activity:thinking-index:1' })
   })
 
+  it('keeps repeated file paths distinct across separate activity segments', () => {
+    const fileChange = (): Extract<UIBlock, { kind: 'file_change' }> => ({
+      kind: 'file_change',
+      changeType: 'modify',
+      path: 'src/repeated.ts',
+      diff: '@@ -1 +1 @@',
+    })
+    const items = splitChatActivitySegments([
+      fileChange(),
+      text('第一段完成', 'text-1'),
+      fileChange(),
+    ])
+
+    expect(items[0]).toMatchObject({ key: 'activity:file:src/repeated.ts:0' })
+    expect(items[2]).toMatchObject({ key: 'activity:file:src/repeated.ts:2' })
+  })
+
+  it('ignores invisible metadata instead of sealing visible activity', () => {
+    const items = splitChatActivitySegments([
+      tool('read-1', 'Read', 'success'),
+      {
+        kind: 'file_change',
+        changeType: 'modify',
+        path: 'src/no-diff.ts',
+        diff: undefined,
+      },
+      {
+        kind: 'context_ledger',
+        sections: [],
+        totalEstimatedTokens: 0,
+        softLimitTokens: 0,
+        contextWindowTokens: 0,
+        usagePercent: 0,
+      },
+      {
+        kind: 'presented_files',
+        files: [{ path: 'output/preview.png' }],
+      },
+    ])
+
+    expect(items).toMatchObject([{ kind: 'activity', sealed: false }])
+  })
+
   it('classifies tool groups with the existing read, command, write and generic semantics', () => {
     expect(getToolLogGroupKind(tool('read', 'Grep', 'success'), 'main')).toBe('read')
     expect(getToolLogGroupKind(tool('command', 'run_command', 'success'), 'main')).toBe('command')

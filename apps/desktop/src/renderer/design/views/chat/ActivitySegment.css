@@ -4,11 +4,16 @@
   color: var(--text-faint);
 }
 
+/* 整轮日志隐藏只控制可见性，不改写单段的 disclosure 状态。 */
+.msg-bubble-agent.tool-logs-hidden .chat-activity-segment {
+  display: none;
+}
+
 .chat-activity-segment-toggle {
   display: flex;
   align-items: center;
   gap: 7px;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   min-height: 26px;
   padding: 0;
@@ -33,6 +38,7 @@
 }
 
 .chat-activity-segment-summary {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
