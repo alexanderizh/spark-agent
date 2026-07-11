@@ -96,7 +96,7 @@ describe('ChatActivitySegments', () => {
     expect(items[2]).toMatchObject({ sealed: false })
   })
 
-  it('uses stable block identities and only falls back to the turn-local index', () => {
+  it('uses stable block identities and only falls back to a turn-local segment ordinal', () => {
     const withStableIdentity = splitChatActivitySegments([tool('tool-stable', 'Read', 'success')])
     const legacyThinking: Extract<UIBlock, { kind: 'thinking' }> = {
       kind: 'thinking',
@@ -104,9 +104,22 @@ describe('ChatActivitySegments', () => {
       isStreaming: false,
     }
     const withFallback = splitChatActivitySegments([text('before', 'text-1'), legacyThinking])
+    const withoutInvisiblePrefix = splitChatActivitySegments([legacyThinking])
+    const withInvisiblePrefix = splitChatActivitySegments([
+      {
+        kind: 'context_ledger',
+        sections: [],
+        totalEstimatedTokens: 0,
+        softLimitTokens: 0,
+        contextWindowTokens: 0,
+        usagePercent: 0,
+      },
+      legacyThinking,
+    ])
 
     expect(withStableIdentity[0]).toMatchObject({ key: 'activity:tool:tool-stable' })
     expect(withFallback[1]).toMatchObject({ key: 'activity:thinking-index:1' })
+    expect(withInvisiblePrefix[0]?.key).toBe(withoutInvisiblePrefix[0]?.key)
   })
 
   it('keeps repeated file paths distinct across separate activity segments', () => {
@@ -121,9 +134,14 @@ describe('ChatActivitySegments', () => {
       text('第一段完成', 'text-1'),
       fileChange(),
     ])
+    const withUnrelatedPrefix = splitChatActivitySegments([
+      text('前置正文', 'text-prefix'),
+      fileChange(),
+    ])
 
-    expect(items[0]).toMatchObject({ key: 'activity:file:src/repeated.ts:0' })
+    expect(items[0]).toMatchObject({ key: 'activity:file:src/repeated.ts' })
     expect(items[2]).toMatchObject({ key: 'activity:file:src/repeated.ts:2' })
+    expect(withUnrelatedPrefix[1]).toMatchObject({ key: 'activity:file:src/repeated.ts' })
   })
 
   it('ignores invisible metadata instead of sealing visible activity', () => {
@@ -165,6 +183,7 @@ describe('ChatActivitySegments', () => {
       thinking('think-1', false),
       tool('read-1', 'Read', 'success'),
       tool('read-2', 'Grep', 'success'),
+      terminal('command-1', false),
       tool('command-1', 'Bash', 'success'),
       tool('write-1', 'Edit', 'success'),
       {
