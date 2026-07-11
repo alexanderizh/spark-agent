@@ -1036,7 +1036,9 @@ export class ProviderService {
       defaultModel,
       modelIds,
       availableModelIds,
-      apiEndpoint: `${params.baseUrl.replace(/\/+$/, '')}/v1`,
+      // Claude/Anthropic SDK appends /v1/messages itself. Keeping the OpenAI-style
+      // /v1 suffix here would send managed models to /v1/v1/messages.
+      apiEndpoint: params.baseUrl.replace(/\/+$/, ''),
       modelType: 'text',
       managed: true,
       managedType: 'newapi',
@@ -1046,7 +1048,7 @@ export class ProviderService {
     if (existing) {
       this.repo.update(PLATFORM_NEWAPI_PROVIDER_ID, {
         providerType: 'anthropic',
-        name: 'Spark 平台官方模型',
+        name: 'Spark 平台模型',
         config,
         enabled: true,
         keystoreRef,
@@ -1058,7 +1060,7 @@ export class ProviderService {
     return rowToProfile(this.repo.create({
       id: PLATFORM_NEWAPI_PROVIDER_ID,
       providerType: 'anthropic',
-      name: 'Spark 平台官方模型',
+      name: 'Spark 平台模型',
       config,
       keystoreRef,
       isDefault: false,

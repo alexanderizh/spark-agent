@@ -125,7 +125,7 @@ export function PlatformModelAccountPanel(): React.ReactElement {
     <div className="account-panel platform-model-panel">
       <div className="account-panel-head platform-model-panel__head">
         <div>
-          <h4>Spark 平台官方模型</h4>
+          <h4>Spark 平台模型</h4>
           <p>无需配置 API Key。它会作为一个可选 Provider 与你的第三方模型并存。</p>
         </div>
         <Button type="text" loading={loading} onClick={() => void refresh(false)}>刷新</Button>

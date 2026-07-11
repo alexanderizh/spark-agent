@@ -1,8 +1,8 @@
-# Spark 平台官方模型订阅
+# Spark 平台模型订阅
 
 > 状态: 实施中 | 最后核对: 2026-07-12
 
-Spark 平台官方模型以受管 `ProviderProfile` 接入现有 Provider 体系，与用户自行配置的第三方 Provider 并存，不自动成为默认模型。用户可在对话中自主选择是否使用官方模型。
+Spark 平台模型以受管 `ProviderProfile` 接入现有 Provider 体系，与用户自行配置的第三方 Provider 并存，不自动成为默认模型。用户可在对话中自主选择是否使用平台模型。
 
 ## 当前实现
 
@@ -16,6 +16,7 @@ Spark 平台官方模型以受管 `ProviderProfile` 接入现有 Provider 体系
 - 账号中心支持套餐购买与续费；支付入口仅保留 NewAPI 自带的支付宝、微信支付，并支持重启后恢复到账轮询、额度、最近消耗、对话额度兑换码和订阅兑换码。
 - 受管 Provider 在主进程禁止编辑、删除、Key 回显及导入导出覆盖，渲染端显示“平台官方”徽章。
 - 受管 Provider 现在以 `anthropic` 类型落库，官方文本模型默认锁定 `claude-sdk` 适配器；不再按 Codex OpenAI `wire_api=chat` 生成配置。
+- 受管 Provider 的 Anthropic `apiEndpoint` 保存平台根地址，由 Claude SDK 拼接 `/v1/messages`；平台刷新会自动修复旧版误存的 `/v1` 后缀。
 - 对话模型选择器使用 Spark 官方品牌图标展示受管 Provider；当官方模型可用时，其模型分组稳定置顶，其他供应商保持原有顺序。
 - 受管 Provider 允许用户在本机选择启用模型及默认模型；偏好只写入本机 Provider 配置，不修改 NewAPI 账号、令牌模型白名单、地址或 API Key。平台模型清单刷新时会过滤已下架项并保留仍有效的本机选择。
 - 钱包与最近消耗读取 NewAPI `/api/status` 的 `quota_per_unit`、`quota_display_type` 和对应汇率，按 NewAPI 控制台相同口径展示，不直接暴露内部额度点数。

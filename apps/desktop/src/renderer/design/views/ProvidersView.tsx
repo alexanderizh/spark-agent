@@ -755,6 +755,24 @@ function isBuiltInPinned(profile: ProviderProfile): boolean {
   return isAutoRouterProvider(profile) || isBuiltInLocalCliProvider(profile)
 }
 
+export function sortProviderProfilesForCards(
+  profiles: ProviderProfile[],
+  sortBy: 'default' | 'nameAsc' | 'nameDesc',
+): ProviderProfile[] {
+  return [...profiles].sort((a, b) => {
+    const aManaged = a.managed === true
+    const bManaged = b.managed === true
+    if (aManaged !== bManaged) return aManaged ? -1 : 1
+    if (aManaged || sortBy === 'default') return 0
+    const aPinned = isBuiltInPinned(a)
+    const bPinned = isBuiltInPinned(b)
+    if (aPinned !== bPinned) return aPinned ? -1 : 1
+    if (aPinned) return 0
+    const cmp = NAME_COLLATOR.compare(a.name, b.name)
+    return sortBy === 'nameAsc' ? cmp : -cmp
+  })
+}
+
 /**
  * 推导一张 Provider 卡片归属的类型（用于右上角 tag + 筛选）。
  *
@@ -1092,8 +1110,8 @@ function ProvidersView() {
    *
    * - 类型过滤：'all' 放行，否则按 resolveProviderCardKind 精确匹配。
    * - 名称模糊匹配：trim+lowercase 的 includes，空串放行。
-   * - 排序：'default' 保持原序；nameAsc/nameDesc 用名称排序，
-   *   但 router/cli 内置项始终钉在最前（便于在大量自定义项里快速定位）。
+   * - 排序：平台受管项始终最前；'default' 下其余项保持原序；nameAsc/nameDesc
+   *   下 router/cli 内置项其次，其他项按名称排序。
    */
   const visibleProfiles = useMemo(() => {
     const keyword = cardSearch.trim().toLowerCase()
@@ -1102,16 +1120,7 @@ function ProvidersView() {
       if (keyword && !p.name.toLowerCase().includes(keyword)) return false
       return true
     })
-    if (cardSortBy === 'default') return filtered
-    return [...filtered].sort((a, b) => {
-      // 内置项（router/cli）钉在前，且彼此保持 stable 顺序
-      const aPinned = isBuiltInPinned(a)
-      const bPinned = isBuiltInPinned(b)
-      if (aPinned !== bPinned) return aPinned ? -1 : 1
-      if (aPinned) return 0
-      const cmp = NAME_COLLATOR.compare(a.name, b.name)
-      return cardSortBy === 'nameAsc' ? cmp : -cmp
-    })
+    return sortProviderProfilesForCards(filtered, cardSortBy)
   }, [profiles, cardSearch, cardKindFilter, cardSortBy])
 
   /** 点击 vendor 卡片 → 直接以 Anthropic 格式打开编辑面板 */
@@ -1531,7 +1540,7 @@ const LOCAL_CODEX_CLI_VENDOR: VendorMeta = {
 
 const SPARK_PLATFORM_VENDOR: VendorMeta = {
   id: 'spark-platform',
-  name: 'Spark 平台官方模型',
+  name: 'Spark 平台模型',
   emoji: 'SP',
   color: '#ffffff',
   desc: '',
