@@ -51,6 +51,41 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('replaces Claude background task snapshots instead of stacking status cards', () => {
+    const builder = new MessageBuilder()
+    const backgroundSnapshot = (id: string, count: number, tasks: string[]): AgentEvent => ({
+      ...baseEvent('runtime_signal'),
+      id,
+      type: 'runtime_signal',
+      signal: 'background_tasks',
+      level: 'info',
+      title: count > 0 ? '后台任务正在运行' : '后台任务已结束',
+      message: count > 0 ? `${count} 个后台任务仍在运行。` : '当前没有运行中的后台任务。',
+      code: 'CLAUDE_BACKGROUND_TASKS_CHANGED',
+      retryable: false,
+      details: [
+        { label: '运行中', value: String(count) },
+        ...(tasks.length > 0 ? [{ label: '任务', value: tasks.join('; ') }] : []),
+      ],
+    })
+
+    builder.processEvent(backgroundSnapshot('background-1', 1, ['检查会话面板']))
+    builder.processEvent(backgroundSnapshot('background-2', 2, ['检查会话面板', '检查画布小地图']))
+    builder.processEvent(backgroundSnapshot('background-3', 0, []))
+
+    const message = builder.getAllMessages()[0]
+    expect(message?.eventIds).toEqual(['background-1', 'background-2', 'background-3'])
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({
+        kind: 'runtime_signal',
+        signal: 'background_tasks',
+        title: '后台任务已结束',
+        message: '当前没有运行中的后台任务。',
+        details: [{ label: '运行中', value: '0' }],
+      }),
+    ])
+  })
+
   it('removes messages retracted by Claude refusal fallback', () => {
     const builder = new MessageBuilder()
     builder.processEvent({

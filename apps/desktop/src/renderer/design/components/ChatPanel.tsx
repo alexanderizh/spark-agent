@@ -20,6 +20,7 @@ import {
   type UserQuestionAnswerSummary,
 } from '../services/event-mapper'
 import { StreamingErrorCard } from '../views/chat/StreamingErrorCard'
+import { RuntimeSignalCard } from '../views/chat/RuntimeSignalCard'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -674,17 +675,7 @@ function BlockView({
         />
       )
     case 'runtime_signal':
-      return (
-        <StreamingErrorCard
-          title={block.title}
-          message={block.message}
-          level={block.level}
-          retryable={block.retryable}
-          {...(block.code != null ? { code: block.code } : {})}
-          {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
-          {...(block.details != null ? { details: block.details } : {})}
-        />
-      )
+      return <RuntimeSignalCard block={block} />
     default:
       // 其他 block（file_change/plan_proposed/checkpoint 等）在 modal 场景不展开
       return null
