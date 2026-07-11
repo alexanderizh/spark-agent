@@ -82,7 +82,7 @@ export function isChatActivityBlock(block: UIBlock): block is ChatActivityBlock 
   return block.kind === 'tool_call' && getToolLogGroupKind(block, 'main') != null
 }
 
-function stableBlockIdentity(block: UIBlock, index: number): string {
+function stableBlockIdentity(block: UIBlock, fallbackOrdinal: number): string {
   if ((block.kind === 'thinking' || block.kind === 'text') && block.segmentId != null) {
     return `${block.kind}:${block.segmentId}`
   }
@@ -92,15 +92,24 @@ function stableBlockIdentity(block: UIBlock, index: number): string {
     return `${prefix}:${block.toolCallId}`
   }
   if (block.kind === 'checkpoint') return `checkpoint:${block.checkpointId}`
-  if (block.kind === 'file_change') return `file:${block.path}:${index}`
-  return `${block.kind}-index:${index}`
+  if (block.kind === 'file_change') return `file:${block.path}`
+  return `${block.kind}-index:${fallbackOrdinal}`
+}
+
+function uniqueTimelineKey(baseKey: string, occurrences: Map<string, number>): string {
+  const occurrence = (occurrences.get(baseKey) ?? 0) + 1
+  occurrences.set(baseKey, occurrence)
+  return occurrence === 1 ? baseKey : `${baseKey}:${occurrence}`
 }
 
 export function splitChatActivitySegments(blocks: UIBlock[]): ChatActivityTimelineItem[] {
   const items: ChatActivityTimelineItem[] = []
+  const keyOccurrences = new Map<string, number>()
   let activity: Extract<ChatActivityTimelineItem, { kind: 'activity' }> | null = null
+  let activityOrdinal = 0
+  let contentOrdinal = 0
 
-  blocks.forEach((block, index) => {
+  blocks.forEach((block) => {
     if (
       block.kind === 'context_ledger' ||
       (block.kind === 'file_change' && (block.diff == null || block.diff.trim().length === 0)) ||
@@ -111,9 +120,13 @@ export function splitChatActivitySegments(blocks: UIBlock[]): ChatActivityTimeli
 
     if (isChatActivityBlock(block)) {
       if (activity == null) {
+        activityOrdinal += 1
         activity = {
           kind: 'activity',
-          key: `activity:${stableBlockIdentity(block, index)}`,
+          key: uniqueTimelineKey(
+            `activity:${stableBlockIdentity(block, activityOrdinal)}`,
+            keyOccurrences,
+          ),
           blocks: [],
           sealed: false,
         }
@@ -125,9 +138,13 @@ export function splitChatActivitySegments(blocks: UIBlock[]): ChatActivityTimeli
 
     if (activity != null) activity.sealed = true
     activity = null
+    contentOrdinal += 1
     items.push({
       kind: 'content',
-      key: `content:${stableBlockIdentity(block, index)}`,
+      key: uniqueTimelineKey(
+        `content:${stableBlockIdentity(block, contentOrdinal)}`,
+        keyOccurrences,
+      ),
       block,
     })
   })
@@ -165,14 +182,21 @@ export function summarizeChatActivitySegment(blocks: UIBlock[]): string {
       continue
     }
     if (block.kind === 'terminal') {
-      if (!commandToolCallIds.has(block.toolCallId)) counts.command += 1
+      if (!commandToolCallIds.has(block.toolCallId)) {
+        counts.command += 1
+        commandToolCallIds.add(block.toolCallId)
+      }
       continue
     }
     if (block.kind !== 'tool_call') continue
     const kind = getToolLogGroupKind(block, 'main')
     if (kind == null) continue
-    counts[kind] += 1
-    if (kind === 'command') commandToolCallIds.add(block.toolCallId)
+    if (kind === 'command') {
+      if (!commandToolCallIds.has(block.toolCallId)) counts.command += 1
+      commandToolCallIds.add(block.toolCallId)
+    } else {
+      counts[kind] += 1
+    }
   }
 
   if (counts.write === 0) counts.write = changedPaths.size
