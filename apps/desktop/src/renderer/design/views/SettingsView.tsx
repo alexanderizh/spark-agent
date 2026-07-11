@@ -28,6 +28,7 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { ModelCapabilityRegistry } from '@spark/shared'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
+import { FfmpegStatusCard } from './FfmpegStatusCard'
 import { clearOnboardingState } from './OnboardingView'
 import { canvasApi } from './canvas/canvas.api'
 import { resolveSupportedLanguage, SUPPORTED_LANGUAGES, useI18n } from '../i18n'
@@ -5502,6 +5503,9 @@ function IntegritySection() {
           <span className="badge dot">必需</span>
         </div>
       </div>
+
+      {/* ── FFmpeg (视频处理工作台依赖) ── */}
+      <FfmpegStatusCard />
     </div>
   )
 }

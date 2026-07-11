@@ -220,6 +220,131 @@ export async function installFromZip(params: ZipInstallParams): Promise<TarballI
   }
 }
 
+// ─── Binary archive 安装（ffmpeg 等可执行二进制，不要求 SKILL.md）────────
+
+export interface BinaryArchiveInstallParams {
+  /** zip / tar.gz 下载 URL */
+  url: string
+  /** 备用下载 URL，主 URL 失败时顺序尝试 */
+  fallbackUrls?: string[]
+  /** 可选 SHA256；提供时下载后必须匹配 */
+  sha256?: string
+  /** 归档格式；缺省按 URL 扩展名推断（.tar.gz → tar.gz，其余 → zip） */
+  format?: 'zip' | 'tar.gz'
+  /**
+   * 归档解压后的有效内容子目录。
+   * 例如 gyan.dev 的 Windows ffmpeg zip 解压后有 `bin/` 子目录，设为 "bin"
+   * 后只会把 `bin/` 下的文件复制到目标目录。缺省取归档根目录（或唯一顶层目录）。
+   */
+  contentRoot?: string
+  /** 落盘目标目录（绝对路径）；已存在时先删除再重建 */
+  destDir: string
+  /** 进度回调（已下载字节数 / 总字节数，总字节数未知时为 0） */
+  onProgress?: (downloaded: number, total: number) => void
+}
+
+export interface BinaryArchiveInstallResult {
+  /** 最终落盘目录 */
+  destPath: string
+  /** 解压出的文件数 */
+  fileCount: number
+  /** 落盘目录下的顶层条目名（用于后续 chmod 等） */
+  entries: string[]
+}
+
+/**
+ * 下载并解压一个二进制归档（如 ffmpeg/ffprobe）到指定目录。
+ *
+ * 与 {@link installFromZip} 的区别：不要求归档内含 `SKILL.md`，落盘目录由调用方指定
+ * （通常是 `{userData}/bin/<name>/` 而非 skills 目录），并返回落盘后的文件条目列表
+ * 以便调用方对可执行文件设置权限。
+ *
+ * 复用与技能安装相同的下载（含回退源）、SHA256 校验、解压（系统 tar 优先，纯 JS 兜底）
+ * 流程，保证弱网/无 bsdtar 环境下的一致体验。
+ */
+export async function installBinaryArchive(
+  params: BinaryArchiveInstallParams,
+): Promise<BinaryArchiveInstallResult> {
+  const { url, fallbackUrls, sha256, destDir, onProgress } = params
+  const format =
+    params.format ?? (url.toLowerCase().endsWith('.tar.gz') ? 'tar.gz' : 'zip')
+
+  const workId = randomUUID()
+  const tmpDir = join(tmpdir(), `spark-binary-${workId}`)
+  mkdirSync(tmpDir, { recursive: true })
+  const archivePath = join(tmpDir, format === 'tar.gz' ? 'archive.tar.gz' : 'archive.zip')
+  const extractDir = join(tmpDir, 'extracted')
+
+  try {
+    await downloadFromZipCandidates([url, ...(fallbackUrls ?? [])], archivePath, sha256, onProgress)
+
+    mkdirSync(extractDir, { recursive: true })
+    let extracted = false
+    // zip 与 tar.gz 都先尝试系统 tar（bsdtar 按 magic 自动识别）；失败回落纯 JS。
+    try {
+      extracted = await extractWithSystemTar(archivePath, extractDir, ['-xf'])
+    } catch {
+      extracted = false
+    }
+    if (!extracted && format === 'zip') {
+      try {
+        await extractZipWithPureJs(archivePath, extractDir)
+        extracted = true
+      } catch {
+        extracted = false
+      }
+    }
+    if (!extracted && format === 'tar.gz') {
+      try {
+        await extractWithPureJs(archivePath, extractDir)
+        extracted = true
+      } catch {
+        extracted = false
+      }
+    }
+    if (!extracted) {
+      throw new Error(
+        'Failed to extract binary archive (system tar unavailable and pure-JS fallback failed).',
+      )
+    }
+
+    const contentPath = resolveBinaryContentRoot(extractDir, params.contentRoot)
+    const fileCount = await countFilesAsync(contentPath)
+
+    // 落盘：先清后拷
+    mkdirSync(destDir, { recursive: true })
+    if (existsSync(destDir)) {
+      await fsp.rm(destDir, { recursive: true, force: true })
+    }
+    await fsp.mkdir(destDir, { recursive: true })
+    await copyDirAsync(contentPath, destDir)
+
+    const entries = readdirSync(destDir)
+    return { destPath: destDir, fileCount, entries }
+  } finally {
+    await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+/**
+ * 定位二进制归档解压后的有效内容根：
+ *   1. 显式 contentRoot（如 "bin"）→ 安全拼接
+ *   2. 解压根本身直接含可执行文件 → 取解压根
+ *   3. 唯一顶层目录（如 `ffmpeg-7.0.2-amd64-static/`）→ 取该目录
+ *   4. 兜底取解压根
+ */
+function resolveBinaryContentRoot(extractDir: string, contentRoot?: string): string {
+  if (contentRoot && contentRoot !== '.') {
+    const resolved = safeJoinWithin(resolve(extractDir), contentRoot)
+    if (!resolved) throw new Error(`Invalid contentRoot in binary archive: ${contentRoot}`)
+    return resolved
+  }
+  // 若解压根直接含二进制（ffmpeg/ffmpeg.exe），直接用
+  if (readdirSync(extractDir).some((n) => /^ffmpeg(\.exe)?$/i.test(n))) return extractDir
+  const top = findSingleTopLevelDir(extractDir)
+  return top ?? extractDir
+}
+
 /** 定位 zip 解压后含 SKILL.md 的技能根：显式路径优先，其次解压根本身，最后唯一顶层目录。 */
 function resolveSkillRoot(extractDir: string, explicitSkillRoot?: string): string {
   if (explicitSkillRoot && explicitSkillRoot !== '.') {

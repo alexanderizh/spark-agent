@@ -31,6 +31,7 @@ import {
   resolveArtifactUrlString,
 } from './artifact-manifest.js'
 import {
+  installBinaryArchive,
   installFromGithubTarball,
   installFromZip,
   tarballSourceFingerprint,
@@ -94,10 +95,14 @@ export class SkillRegistryService {
    * @param userSkillsDir 用户技能落盘目录（来自 AppSkillsManager.userDir）。
    *   提供时，从市场安装的技能会把 SKILL.md 写到真实磁盘目录，使其能被 agent 运行时
    *   实际加载/原生发现；不提供时回落到虚拟 registry:// 路径（仅元数据，无法加载）。
+   * @param binaryDir   通用二进制产物落盘根目录（如 `{userData}/bin`）。
+   *   用于 installBinaryArtifact()（ffmpeg 等非技能二进制包）。每个产物会落在
+   *   `<binaryDir>/<artifact.name>/` 下；不提供时 installBinaryArtifact 会抛错。
    */
   constructor(
     private readonly db: SparkDatabase,
     private readonly userSkillsDir?: string,
+    private readonly binaryDir?: string,
   ) {
     this.registryRepo = new SkillRegistryRepository(db)
     this.skillRepo = new SkillRepository(db)
@@ -797,6 +802,69 @@ export class SkillRegistryService {
       enabled: true,
     })
     return toSkillItem(row)
+  }
+
+  // ─── 通用二进制产物安装（ffmpeg 等非技能包）─────────────────────────
+
+  /**
+   * 从 Spark 自建安装源下载并安装一个二进制产物（type: 'binary'）。
+   *
+   * 与技能安装（installCatalogArtifact）的区别：
+   *   - 不要求归档含 SKILL.md
+   *   - 落盘到 `<binaryDir>/<artifact.name>/`（而非 skills 目录），避免被技能扫描器误识别
+   *   - 返回落盘路径与文件条目（供调用方 chmod / 探测可执行文件）
+   *
+   * 复用与技能安装相同的下载（含 fallbackUrls 回退）、SHA256 校验、解压流程。
+   *
+   * @param artifactId manifest 中的产物 id（如 `binary.ffmpeg-7.0.2.darwin-arm64`）
+   * @param opts.onProgress 下载进度回调（已下载字节 / 总字节）
+   * @returns 落盘信息（destPath 绝对路径 + 解压出的条目列表）
+   */
+  async installBinaryArtifact(
+    artifactId: string,
+    opts: { onProgress?: (downloaded: number, total: number) => void } = {},
+  ): Promise<{ destPath: string; fileCount: number; entries: string[] }> {
+    if (!this.binaryDir) {
+      throw new Error('Binary install directory not configured; cannot install binary artifact.')
+    }
+    const manifest = await fetchSparkInstallManifest()
+    const artifact = findSparkInstallArtifact(manifest, artifactId)
+    if (artifact.type !== 'binary') {
+      throw new Error(`Spark install artifact is not a binary package: ${artifact.id}`)
+    }
+    const resolvedUrl = resolveArtifactUrl(manifest, artifact)
+    const fallbackUrls = artifact.fallbackUrls?.map((u) => resolveArtifactUrlString(manifest, u))
+
+    // 落盘目录：<binaryDir>/<artifact.name>。artifact.name 形如
+    // "FFmpeg 7.0.2 (macOS Apple Silicon)"，sanitize 成安全目录名。
+    const safeName = artifact.name
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/\(|\)/g, '')
+    const destDir = join(this.binaryDir, safeName || artifact.id)
+
+    const result = await installBinaryArchive({
+      url: resolvedUrl,
+      ...(fallbackUrls?.length ? { fallbackUrls } : {}),
+      ...(artifact.sha256 !== undefined ? { sha256: artifact.sha256 } : {}),
+      ...(artifact.archive?.format ? { format: artifact.archive.format } : {}),
+      ...(artifact.archive?.contentRoot !== undefined
+        ? { contentRoot: artifact.archive.contentRoot }
+        : {}),
+      destDir,
+      ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
+    })
+
+    return { destPath: result.destPath, fileCount: result.fileCount, entries: result.entries }
+  }
+
+  /**
+   * 拉取 Spark 安装清单（index.json）供外部查询（如按平台选 ffmpeg 包）。
+   * 返回原始 manifest 对象，调用方自行过滤 artifacts。
+   */
+  async fetchSparkManifestForQuery() {
+    return fetchSparkInstallManifest()
   }
 
   // ─── GitHub 安装 ────────────────────────────────────────────────────
