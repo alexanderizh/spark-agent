@@ -245,6 +245,20 @@ describe('CodexCliExecutor', () => {
     expect(lastProfileConfig).toContain("model_reasoning_effort='xhigh'")
   })
 
+  it('maps Spark minimal reasoning to Codex CLI low effort', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
+
+    const executor = new CodexCliExecutor()
+    await executor.executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({ reasoningEffort: 'minimal' }),
+    )
+
+    expect(lastProfileConfig).toContain("model_reasoning_effort='low'")
+  })
+
   it('keeps reasoning visible and writes explicit network controls without an effort override', async () => {
     spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
 

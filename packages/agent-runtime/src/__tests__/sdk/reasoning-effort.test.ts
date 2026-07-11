@@ -34,7 +34,7 @@ describe('reasoning effort mapping', () => {
   })
 
   it('maps Spark effort to Codex native levels', () => {
-    expect(toCodexReasoningEffort('minimal')).toBe('minimal')
+    expect(toCodexReasoningEffort('minimal')).toBe('low')
     expect(toCodexReasoningEffort('low')).toBe('low')
     expect(toCodexReasoningEffort('medium')).toBe('medium')
     expect(toCodexReasoningEffort('high')).toBe('high')
