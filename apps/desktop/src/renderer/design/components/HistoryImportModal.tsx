@@ -206,15 +206,25 @@ export function HistoryImportModal() {
       className="history-import-modal"
     >
       {phase === 'scanning' && (
-        <div className="hi-state">
-          <Icons.Download size={28} />
+        <div className="hi-state hi-scanning" aria-live="polite">
+          <div className="hi-scan-visual" aria-hidden="true">
+            <span className="hi-scan-ring hi-scan-ring-outer" />
+            <span className="hi-scan-ring hi-scan-ring-inner" />
+            <span className="hi-scan-beam" />
+            <span className="hi-scan-center"><Icons.Search size={22} /></span>
+          </div>
           <div className="hi-state-title">正在扫描宿主机对话历史…</div>
           <div className="hi-state-desc">检测 Claude Code 与 Codex 的本地会话记录</div>
+          <div className="hi-scan-sources"><span>Claude Code</span><span>Codex</span></div>
         </div>
       )}
 
       {phase === 'select' && (
         <div className="hi-select">
+          <div className="hi-overview">
+            <div><strong>{items.length}</strong><span>个会话已找到</span></div>
+            <span className="hi-overview-note">已导入的会话会自动跳过</span>
+          </div>
           <div className="hi-toolbar">
             <Segmented
               value={sourceTab}
@@ -258,6 +268,13 @@ export function HistoryImportModal() {
                         key={it.filePath}
                         className={`hi-row${isActive ? ' is-active' : ''}${it.alreadyImported ? ' is-imported' : ''}`}
                         onClick={() => void loadPreview(it)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return
+                          event.preventDefault()
+                          void loadPreview(it)
+                        }}
                       >
                         <div className="hi-row-check" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
@@ -296,7 +313,10 @@ export function HistoryImportModal() {
               ) : (
                 <>
                   <div className="hi-preview-head">
-                    <span className="hi-preview-title">{previewItem.title}</span>
+                    <div className="hi-preview-heading">
+                      <span className="hi-preview-kicker">会话预览</span>
+                      <span className="hi-preview-title">{previewItem.title}</span>
+                    </div>
                     <Tag>{SOURCE_LABEL[previewItem.source]}</Tag>
                   </div>
                   {previewItem.cwd && <div className="hi-preview-cwd">{previewItem.cwd}</div>}
@@ -307,7 +327,7 @@ export function HistoryImportModal() {
                       previewMsgs.map((m, i) => (
                         <div key={i} className={`hi-msg hi-msg-${m.role}`}>
                           <span className="hi-msg-role">{roleLabel(m.role)}</span>
-                          <span className="hi-msg-text">{m.text}</span>
+                          <div className="hi-msg-bubble"><span className="hi-msg-text">{m.text}</span></div>
                         </div>
                       ))
                     )}

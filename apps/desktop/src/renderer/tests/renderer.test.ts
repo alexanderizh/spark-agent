@@ -2192,6 +2192,9 @@ describe('Renderer Smoke Tests', () => {
     expect(composer).not.toBeNull()
     expect(inlineCard?.compareDocumentPosition(composer!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(container.querySelector('.modal-backdrop')).toBeNull()
+    expect(inlineCard?.textContent).toContain('运行命令')
+    expect(inlineCard?.textContent).toContain('git log --oneline -20')
+    expect(inlineCard?.textContent).toContain('查看技术详情')
 
     const approvalButtons = Array.from(
       container.querySelectorAll<HTMLButtonElement>('.composer-approval-btn'),

@@ -7,6 +7,7 @@ import { MentionPopover, type MentionCandidate } from '../../components/MentionP
 import { ComposerActionsMenu } from '../../components/ComposerActionsMenu'
 import { AvatarImage } from '../../components/AvatarImage'
 import { FileTypeIcon, getFileTypeBadge } from '../../components/FileDisplay'
+import { PermissionRequestDetails } from '../../components/PermissionRequestDetails'
 import { ProviderLogo } from '../../components/ProviderLogo'
 import { Icons } from '../../Icons'
 import { useIpcInvoke } from '../../hooks/useIpc'
@@ -269,7 +270,6 @@ function InlineApprovalRequest({
   const riskLabel = { low: '低', medium: '中', high: '高' }[request.riskLevel]
   const riskTone =
     request.riskLevel === 'high' ? 'high' : request.riskLevel === 'medium' ? 'medium' : 'low'
-  const inputPreview = JSON.stringify(request.toolInput, null, 2)
 
   const respond = useCallback(
     async (decision: PermissionApprovalDecision) => {
@@ -354,7 +354,7 @@ function InlineApprovalRequest({
             </button>
           </div>
         </div>
-        <pre className="composer-approval-preview">{inputPreview}</pre>
+        <PermissionRequestDetails request={request} />
       </div>
     </div>
   )
