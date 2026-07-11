@@ -72,6 +72,7 @@ import type {
 } from '@spark/storage'
 import {
   ProviderService,
+  resolveProviderApiKeyForProfile,
   RulesService,
   RuleCompositionEngine,
   SessionService,
@@ -172,6 +173,7 @@ import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.j
 import { getTerminalService } from '../services/TerminalService.js'
 import { registerTerminalIpc } from './registerTerminalIpc.js'
 import { registerProviderIpc } from '../services/Provider/registerProviderIpc.js'
+import { registerPlatformModelIpc } from '../services/PlatformModel/registerPlatformModelIpc.js'
 import { getUntrackedFilesLineStats } from './git-status-utils.js'
 import {
   getShellEnvironmentStatus,
@@ -858,7 +860,7 @@ async function resolveCanvasMediaProviders(): Promise<MediaProviderProfileRuntim
     if (!isMediaModel && caps.length === 0 && mediaModelManifests.length === 0) continue
     if (!profile.keystoreRef) continue
     try {
-      const apiKey = await keystore.getSecret(profile.keystoreRef as keystore.KeystoreRef)
+      const apiKey = await resolveProviderApiKeyForProfile(profile)
       if (!apiKey || apiKey.trim().length === 0) continue
       result.push({
         id: profile.id,
@@ -3315,7 +3317,7 @@ export function registerAllIpcHandlers(): void {
         if (preferredProviderId == null && !isTextProvider(profile)) continue
         if (!profile.keystoreRef) continue
         try {
-          const apiKey = await keystore.getSecret(profile.keystoreRef as keystore.KeystoreRef)
+          const apiKey = await resolveProviderApiKeyForProfile(profile)
           if (apiKey && apiKey.trim().length > 0) {
             chosen = { profile, apiKey }
             break
@@ -7318,6 +7320,9 @@ export function registerAllIpcHandlers(): void {
   // ─── Provider 编辑辅助通道（如 reveal-key）注册入口 ─────────────────────
   registerProviderIpc()
 
+  // ─── Spark 平台官方模型（NewAPI 受管 Provider）──────────────────────────
+  registerPlatformModelIpc()
+
   // ─── GitHub Connector 持久化与验证通道 ─────────────────────────────────
   registerGitHubConnectorIpc()
 
@@ -7527,7 +7532,7 @@ async function resolveWorktreeBranchName(req: {
         (p) => p.id === req.providerProfileId,
       )
       if (profile != null && profile.keystoreRef) {
-        const apiKey = await keystore.getSecret(profile.keystoreRef as keystore.KeystoreRef)
+        const apiKey = await resolveProviderApiKeyForProfile(profile)
         const model = req.model?.trim() || profile.defaultModel
         if (apiKey != null && apiKey.trim() !== '' && model != null && model !== '') {
           const slug = await generateWorktreeName({

@@ -166,6 +166,10 @@ const SECRET_MASK_KEYS = new Set([
   'refreshToken',
   'authorizationToken',
   'authorization_token',
+  'password',
+  'initialPassword',
+  'session',
+  'sessionCookie',
 ])
 const LOG_TRUNCATE_MAX = 50
 

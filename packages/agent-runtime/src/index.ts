@@ -1,5 +1,12 @@
 export { ProviderService } from './services/provider.service.js'
 export {
+  resolveProviderApiKey,
+  resolveProviderApiKeyForProfile,
+  setManagedCredentialRecoveryHandler,
+  type ManagedCredentialRecoveryHandler,
+  type ManagedCredentialRecoveryRequest,
+} from './services/provider-credential-resolver.js'
+export {
   CanvasTextProviderError,
   generateCanvasText,
   type GenerateCanvasTextParams,

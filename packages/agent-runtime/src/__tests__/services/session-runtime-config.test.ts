@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AgentEvent } from '@spark/protocol'
+import * as keystore from '@spark/shared/keystore'
 import {
   SessionService,
   buildMediaGenerationSystemPrompt,
@@ -932,6 +933,30 @@ describe('SessionService runtime provider/model resolution', () => {
       keystore_ref: 'key-anthropic',
       is_default: 0,
     })
+  })
+
+  it('persists a terminal error when a provider credential cannot be resolved before start', async () => {
+    vi.mocked(keystore.getSecret).mockResolvedValueOnce(null)
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      agentAdapter: 'claude-sdk',
+      title: 'Missing credential session',
+    })
+
+    await expect(service.sendTurn({ sessionId, message: 'hello' }))
+      .rejects.toThrow('API key not found')
+    expect(events.map(event => event.type)).toEqual([
+      'user_message',
+      'agent_error',
+      'agent_status',
+    ])
+    expect(events.find(event => event.type === 'agent_error')).toMatchObject({
+      code: 'TURN_START_FAILED',
+      retryable: true,
+    })
+    expect(mockState.sessions.get(sessionId)?.status).toBe('error')
   })
 
   it('records usage_update deltas to the usage ledger without double-counting cumulative updates', async () => {

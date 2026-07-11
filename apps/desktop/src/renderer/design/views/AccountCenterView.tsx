@@ -7,8 +7,8 @@
  * 功能：
  *  - 未登录：渲染 AuthGate（登录/注册）
  *  - 已登录：左右双栏响应式
- *    · 左栏：大头像（可点击上传）+ 昵称（内联编辑）+ account + tier + 注册/最近登录
- *    · 右栏：头像编辑、账号与安全（密码）、绑定方式、云端服务地址、退出登录
+ *    · 左栏：大头像（可点击上传）+ 昵称（内联编辑）+ account + 注册/最近登录
+ *    · 右栏：账号与安全（密码）、绑定方式、云端服务地址、退出登录
  *
  * 参考实现：edu-web 的 ProfilePage.tsx；头像裁剪复用 AvatarCropperModal。
  */
@@ -23,6 +23,7 @@ import { useToast } from '../components/Toast'
 import { AuthGate } from '../auth/AuthGate'
 import { AvatarImage } from '../components/AvatarImage'
 import { AvatarCropperModal } from '../components/AvatarCropperModal'
+import { PlatformModelAccountPanel } from './platform-model/PlatformModelAccountPanel'
 import './AccountCenterView.less'
 
 interface BindStatus {
@@ -273,11 +274,6 @@ function AccountCenter(): React.ReactElement {
               </div>
 
               <div className="account-profile-tags">
-                {auth.user?.tier && (
-                  <span className={`account-tier ${auth.user.tier.isPaid ? 'paid' : 'free'}`}>
-                    {auth.user.tier.name}
-                  </span>
-                )}
                 <span className="account-role">{userRoleLabel}</span>
                 <span className="account-service-chip" title={auth.baseUrl}>{baseUrlLabel}</span>
               </div>
@@ -297,18 +293,7 @@ function AccountCenter(): React.ReactElement {
 
           {/* ── 右栏：设置区块 ── */}
           <section className="account-center-right">
-            {/* 头像 */}
-            <div className="account-panel">
-              <div className="account-panel-head">
-                <div>
-                  <h4>头像</h4>
-                  <p>支持 PNG / JPG / GIF / WebP，单张不超过 5MB。上传后自动裁剪为圆形。</p>
-                </div>
-                <Button type="text" loading={uploadingAvatar} onClick={triggerPickAvatar}>
-                  更换头像
-                </Button>
-              </div>
-            </div>
+            <PlatformModelAccountPanel />
 
             {/* 账号与安全 */}
             <div className="account-panel">

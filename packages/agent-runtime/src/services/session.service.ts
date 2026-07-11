@@ -34,6 +34,7 @@ import type {
   ProviderProfileRow,
 } from '@spark/storage'
 import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
+import { resolveProviderApiKey } from './provider-credential-resolver.js'
 import type {
   AgentEvent,
   SessionCancelQueuedTurnResponse,
@@ -96,7 +97,6 @@ import type {
   CommandListItem,
   CustomCommandConfig,
 } from '../core/index.js'
-import * as keystore from '@spark/shared/keystore'
 import { MANAGED_MCP_SCOPE, McpService } from './mcp-server.service.js'
 import type { McpOAuthTokenProvider } from './mcp-server.service.js'
 import { resolveMcpConfig } from '../mcp/index.js'
@@ -1507,16 +1507,33 @@ export class SessionService {
       }
     }
 
-    await this.startTurn(
-      sessionId,
-      turnId,
-      message,
-      runtimePatch,
-      skillId,
-      skillParams,
-      attachments,
-      mentionAgentId,
-    )
+    try {
+      await this.startTurn(
+        sessionId,
+        turnId,
+        message,
+        runtimePatch,
+        skillId,
+        skillParams,
+        attachments,
+        mentionAgentId,
+      )
+    } catch (error) {
+      this.handleQueuedTurnStartFailure(
+        sessionId,
+        this.makePendingTurn(
+          turnId,
+          message,
+          runtimePatch,
+          skillId,
+          skillParams,
+          attachments,
+          mentionAgentId,
+        ),
+        error,
+      )
+      throw error
+    }
     return { turnId, started: true }
   }
 
@@ -1677,9 +1694,7 @@ export class SessionService {
       throw new Error(`Provider ${provider.id} has no keystore ref`)
     }
 
-    const apiKey = isLocalCli
-      ? ''
-      : ((await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)) ?? '')
+    const apiKey = isLocalCli ? '' : await resolveProviderApiKey(provider)
     if (!isLocalCli && apiKey.length === 0) {
       throw new Error(`API key not found for provider ${provider.id}`)
     }
@@ -4149,8 +4164,8 @@ export class SessionService {
     })
     if (imageProvider == null || imageProvider.keystore_ref == null) return null
 
-    const apiKey = await keystore.getSecret(imageProvider.keystore_ref as keystore.KeystoreRef)
-    if (apiKey == null || apiKey.trim().length === 0) return null
+    const apiKey = await resolveProviderApiKey(imageProvider)
+    if (apiKey.trim().length === 0) return null
 
     const config = JSON.parse(imageProvider.config_json) as {
       defaultModel?: string
@@ -4260,8 +4275,8 @@ export class SessionService {
     })
     if (selectedProvider == null || selectedProvider.keystore_ref == null) return null
 
-    const apiKey = await keystore.getSecret(selectedProvider.keystore_ref as keystore.KeystoreRef)
-    if (apiKey == null || apiKey.trim().length === 0) return null
+    const apiKey = await resolveProviderApiKey(selectedProvider)
+    if (apiKey.trim().length === 0) return null
 
     const config = JSON.parse(selectedProvider.config_json) as {
       defaultModel?: string
@@ -5721,9 +5736,7 @@ export class SessionService {
     }
     if (!isLocalCli && provider.keystore_ref == null)
       throw new Error('Member provider has no keystore ref')
-    const apiKey = isLocalCli
-      ? ''
-      : ((await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)) ?? '')
+    const apiKey = isLocalCli ? '' : await resolveProviderApiKey(provider)
     if (!isLocalCli && apiKey.length === 0) throw new Error('Member provider API key not found')
     // 成员 adapter：member 显式配置优先，否则回落会话级（与 Host mention 分支同款取数）。
     const memberAdapter = getAgentAdapterFromSession(
@@ -6357,7 +6370,67 @@ export class SessionService {
       next.skillParams,
       next.attachments,
       next.mentionAgentId,
-    )
+    ).catch(error => this.handleQueuedTurnStartFailure(sessionId, next, error))
+  }
+
+  private handleQueuedTurnStartFailure(
+    sessionId: string,
+    turn: PendingTurn,
+    error: unknown,
+  ): void {
+    const eventRepo = new EventRepository(this.db)
+    const sessionRepo = new SessionRepository(this.db)
+    const existing = eventRepo.queryBySession({ sessionId, turnId: turn.turnId, limit: 200 }).events
+    const eventTypes = new Set(existing.map(item => item.event_type))
+    const hasTerminalStatus = existing.some(item => {
+      if (item.event_type !== 'agent_status') return false
+      try {
+        const status = (JSON.parse(item.event_json) as { status?: string }).status
+        return status === 'completed' || status === 'error' || status === 'cancelled'
+      } catch {
+        return false
+      }
+    })
+    if (hasTerminalStatus) return
+    const message = error instanceof Error ? error.message : String(error)
+    const isPlatformCredentialError =
+      message.includes('平台模型') ||
+      message.includes('平台账户') ||
+      message.includes('spark-platform-newapi')
+    const base = () => ({
+      id: crypto.randomUUID(),
+      sessionId,
+      turnId: turn.turnId,
+      timestamp: new Date().toISOString(),
+      seq: 0,
+    })
+    if (!eventTypes.has('user_message')) {
+      this.emitAndPersist(sessionId, turn.turnId, {
+        ...base(),
+        type: 'user_message',
+        content: turn.message,
+        ...(turn.attachments ? { attachments: turn.attachments } : {}),
+      }, eventRepo)
+    }
+    if (!eventTypes.has('agent_error')) {
+      this.emitAndPersist(sessionId, turn.turnId, {
+        ...base(),
+        type: 'agent_error',
+        code: isPlatformCredentialError ? 'PLATFORM_CREDENTIAL_UNAVAILABLE' : 'TURN_START_FAILED',
+        message,
+        retryable: true,
+      }, eventRepo)
+    }
+    this.emitAndPersist(sessionId, turn.turnId, {
+      ...base(),
+      type: 'agent_status',
+      status: 'error',
+      message: isPlatformCredentialError
+        ? '平台模型凭据暂不可用，请在账号中心选择“在本机继续”后重试'
+        : 'Queued turn failed to start',
+    }, eventRepo)
+    sessionRepo.updateStatus(sessionId, 'error')
+    log.error('queued turn failed to start', { sessionId, turnId: turn.turnId, error: message })
   }
 
   private queueSnapshot(sessionId: string): SessionGetQueueResponse {
@@ -7368,8 +7441,8 @@ export class SessionService {
     if (providerProfileId == null) throw new Error('会话未配置 provider，无法还原 checkpoint。')
     const provider = providerRepo.get(providerProfileId)
     if (provider?.keystore_ref == null) throw new Error('Provider 缺少 keystore ref，无法还原。')
-    const apiKey = await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)
-    if (apiKey == null) throw new Error('未找到 Provider 的 API key，无法还原。')
+    const apiKey = await resolveProviderApiKey(provider)
+    if (!apiKey) throw new Error('未找到 Provider 的 API key，无法还原。')
     const providerConfig = JSON.parse(provider.config_json) as {
       defaultModel?: string
       model?: string

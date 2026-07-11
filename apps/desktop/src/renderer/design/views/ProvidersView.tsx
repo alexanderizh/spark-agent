@@ -1350,7 +1350,9 @@ function ProvidersView() {
                     icon={resolveProviderIconForProfile(p, vendor)}
                     name={p.name}
                     desc={
-                      builtin
+                      p.managed
+                        ? `平台官方 · 默认 ${p.defaultModel} · 与第三方 Provider 并存`
+                        : builtin
                         ? builtinDesc
                         : isMediaProvider
                           ? `${mediaProviderDisplayName(p.mediaProvider ?? p.imageProvider ?? undefined)} · 默认 ${p.defaultModel}`
@@ -1360,9 +1362,10 @@ function ProvidersView() {
                     modelIds={builtin ? [] : cardModelIds}
                     defaultModel={p.defaultModel}
                     isBuiltin={builtin}
+                    isManaged={p.managed === true}
                     isDefault={p.isDefault}
                     cardKind={resolveProviderCardKind(p)}
-                    multiSelect={multiSelect && !builtin}
+                    multiSelect={multiSelect && !builtin && p.managed !== true}
                     selected={selectedIds.has(p.id)}
                     canHealthCheck={!isAutoRouterProvider(p)}
                     onToggleSelect={() => toggleSelected(p.id)}
@@ -1622,6 +1625,7 @@ function ProviderCardX({
   modelIds,
   defaultModel,
   isBuiltin = false,
+  isManaged = false,
   isDefault = false,
   cardKind,
   multiSelect = false,
@@ -1641,6 +1645,8 @@ function ProviderCardX({
   defaultModel: string
   /** 内置 provider：隐藏编辑/删除按钮，多选时不可勾选 */
   isBuiltin?: boolean
+  /** 平台官方受管 provider：由系统维护，禁止编辑、删除和批量导出。 */
+  isManaged?: boolean
   /** 默认 Provider：用更明显的标签提示 */
   isDefault?: boolean
   /** 卡片类型（名称行 tag + 筛选用）；多选模式下隐藏 tag */
@@ -1727,6 +1733,7 @@ function ProviderCardX({
           <div className="pv_card_name_row">
             <span className="pv_card_name">{name}</span>
             {isBuiltin && <Tag size="middle" color="gray">内置</Tag>}
+            {isManaged && <Tag size="middle" color="arcoblue">平台官方</Tag>}
           </div>
           <div className="pv_card_tags_row">
             {isDefault && (
@@ -1775,7 +1782,7 @@ function ProviderCardX({
           <div className="pv_card_actions" onClick={(e) => e.stopPropagation()}>
             
             
-            {!isBuiltin && (
+            {!isBuiltin && !isManaged && (
               <ActionIcon
                 icon={Icons.Trash}
                 size="small"
@@ -1796,7 +1803,7 @@ function ProviderCardX({
                 aria-label="健康检查"
               />
             )}
-            {!isBuiltin && (
+            {!isBuiltin && !isManaged && (
               <ActionIcon
                 icon={Icons.Edit}
                 size="small"

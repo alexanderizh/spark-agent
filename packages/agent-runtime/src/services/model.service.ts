@@ -1,7 +1,7 @@
 import type { ModelProfileRepository, ModelProfileRow, ProviderProfileRepository, ProviderProfileRow } from '@spark/storage'
 import type { ModelProfile } from '@spark/protocol'
-import * as keystore from '@spark/shared/keystore'
 import { createLogger } from '@spark/shared'
+import { resolveProviderApiKey } from './provider-credential-resolver.js'
 
 const log = createLogger('model.service')
 
@@ -103,10 +103,7 @@ export class ModelService {
         return { available: false, reason: `embedding provider not found: ${providerId}` }
       }
 
-      let apiKey = ''
-      if (provider.keystore_ref != null && provider.keystore_ref.length > 0) {
-        apiKey = (await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef))?.trim() ?? ''
-      }
+      const apiKey = await resolveProviderApiKey(provider)
 
       let apiEndpoint: string | undefined
       try {
@@ -256,10 +253,7 @@ export class ModelService {
         return { available: false, reason: `extraction provider not found: ${providerId}` }
       }
 
-      let apiKey = ''
-      if (provider.keystore_ref != null && provider.keystore_ref.length > 0) {
-        apiKey = (await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef))?.trim() ?? ''
-      }
+      const apiKey = await resolveProviderApiKey(provider)
 
       let apiEndpoint: string | undefined
       try {
