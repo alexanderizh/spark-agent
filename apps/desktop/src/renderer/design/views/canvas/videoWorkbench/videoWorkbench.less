@@ -571,3 +571,153 @@
   font-size: 10px;
   color: #52525b;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// 剪辑面板 (VideoWorkbenchEditPanel)
+// ═══════════════════════════════════════════════════════════════
+
+.vwb-edit-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 10px 10px;
+}
+
+.vwb-trim-controls,
+.vwb-tc-controls,
+.vwb-seg-controls {
+  margin-top: 8px;
+}
+
+.vwb-trim-field {
+  margin-bottom: 8px;
+
+  label {
+    display: block;
+    font-size: 11px;
+    color: #a1a1aa;
+    margin-bottom: 4px;
+  }
+}
+
+.vwb-trim-input-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.vwb-trim-duration {
+  font-size: 11px;
+  color: #60a5fa;
+  font-family: 'SF Mono', monospace;
+  margin-bottom: 8px;
+}
+
+.vwb-trim-copy-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+
+  .ant-btn {
+    flex: 1;
+    font-size: 11px;
+  }
+}
+
+.vwb-tc-row {
+  display: flex;
+  gap: 8px;
+}
+
+.vwb-tc-field {
+  flex: 1;
+
+  label {
+    display: block;
+    font-size: 11px;
+    color: #a1a1aa;
+    margin-bottom: 4px;
+  }
+}
+
+.vwb-tc-param {
+  margin: 8px 0;
+
+  label {
+    display: block;
+    font-size: 11px;
+    color: #a1a1aa;
+    margin-bottom: 4px;
+  }
+}
+
+.vwb-tc-res-hint {
+  display: block;
+  font-size: 10px;
+  color: #71717a;
+  font-family: 'SF Mono', monospace;
+  margin-top: 2px;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 产物面板
+// ═══════════════════════════════════════════════════════════════
+
+.vwb-output-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 10px 10px;
+}
+
+.vwb-output-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.vwb-output-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+.vwb-output-icon {
+  color: #60a5fa;
+  display: flex;
+  align-items: center;
+}
+
+.vwb-output-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.vwb-output-summary {
+  font-size: 12px;
+  color: #e4e4e7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vwb-output-time {
+  font-size: 10px;
+  color: #52525b;
+}
+
+.vwb-output-play {
+  color: #71717a;
+  padding: 4px;
+
+  &:hover {
+    color: #60a5fa;
+  }
+}

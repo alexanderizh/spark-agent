@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { Button, Segmented, Slider, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
+import type { VideoProcessRequest } from '@spark/protocol'
 import { Icons } from '../../../Icons'
 import type { CanvasNode } from '../canvas.types'
 import {
@@ -26,6 +27,7 @@ import {
   type WorkbenchKeyframe,
 } from './videoWorkbench.types'
 import { VideoWorkbenchFramePanel } from './VideoWorkbenchFramePanel'
+import { VideoWorkbenchEditPanel } from './VideoWorkbenchEditPanel'
 import './videoWorkbench.less'
 
 /** macOS 无边框窗口红绿灯安全区 */
@@ -249,6 +251,55 @@ export function CanvasVideoWorkbenchModal({
     await onExportKeyframes(draft.keyframes, node.id)
   }, [node, onExportKeyframes, draft.keyframes])
 
+  // ── 通用视频处理（剪辑/转码/分割等），产物记录到 draft.outputs ──
+  const handleProcess = useCallback(
+    async (
+      operation: string,
+      params: Record<string, unknown>,
+      _onProgress: (p: { percent: number; stage: string }) => void,
+    ): Promise<{ success: boolean; result?: unknown; error?: string }> => {
+      if (!node) return { success: false, error: '未关联视频节点' }
+      const sourcePath = (node.data as { url?: string }).url ?? ''
+      if (!sourcePath) return { success: false, error: '源视频路径缺失' }
+      try {
+        const reqId = shortId()
+        const res = await window.spark.invoke('video:process', {
+          operation: operation as VideoProcessRequest['operation'],
+          input: sourcePath,
+          params,
+          requestId: reqId,
+        })
+        return res as { success: boolean; result?: unknown; error?: string }
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+    [node],
+  )
+
+  /** 产物生成后记录到 draft.outputs 并持久化 */
+  const recordOutput = useCallback(
+    (summary: string, outputPath: string) => {
+      setDraft((d) => {
+        const outputs = [
+          {
+            id: shortId(),
+            type: 'trim' as const,
+            outputPath,
+            outputUrl: normalizeEduAssetUrl(`safe-file://${outputPath}`),
+            createdAt: Date.now(),
+            summary,
+          },
+          ...d.outputs,
+        ].slice(0, 20) // 保留最近 20 条
+        const next = { ...d, outputs, activeTab: 'output' as const }
+        void onSave(next)
+        return next
+      })
+    },
+    [onSave],
+  )
+
   // ── Esc 关闭 ──
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -440,18 +491,51 @@ export function CanvasVideoWorkbenchModal({
             )}
 
             {activeTab === 'edit' && (
-              <div className="vwb-placeholder">
-                <Icons.Scissors size={32} />
-                <p>剪辑工具区（P3 阶段实现）</p>
-                <p className="muted">将支持：时间区间裁剪、多段合并、视频分割</p>
-              </div>
+              <VideoWorkbenchEditPanel
+                sourceVideoPath={sourceVideoUrl}
+                probe={probe}
+                busy={busy}
+                currentTime={currentTime}
+                onProcess={handleProcess}
+                onOutput={recordOutput}
+              />
             )}
 
             {activeTab === 'output' && (
-              <div className="vwb-placeholder">
-                <Icons.Package size={32} />
-                <p>产物区（P3/P4 阶段实现）</p>
-                <p className="muted">剪辑/转码/画面处理的产物会在这里展示并可回填画布</p>
+              <div className="vwb-output-panel">
+                {draft.outputs.length === 0 ? (
+                  <div className="vwb-placeholder">
+                    <Icons.Package size={28} />
+                    <span>暂无产物</span>
+                    <span className="muted">剪辑/转码/分割的产物会在这里展示</span>
+                  </div>
+                ) : (
+                  <div className="vwb-output-list">
+                    {draft.outputs.map((out) => (
+                      <div key={out.id} className="vwb-output-item">
+                        <div className="vwb-output-icon">
+                          <Icons.Video size={16} />
+                        </div>
+                        <div className="vwb-output-info">
+                          <div className="vwb-output-summary">{out.summary}</div>
+                          <div className="vwb-output-time">
+                            {new Date(out.createdAt).toLocaleTimeString()}
+                          </div>
+                        </div>
+                        {out.outputUrl && (
+                          <a
+                            className="vwb-output-play"
+                            href={out.outputUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <Icons.Play size={14} />
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
