@@ -17,7 +17,7 @@ import React, {
 import './ChatView.less'
 import './ToolDropdown.less'
 import type { ReactNode, RefObject } from 'react'
-import { Button, Dropdown, Popover, Tag as LobeTag, Tooltip } from '@lobehub/ui'
+import { Button } from '@lobehub/ui'
 import {
   CheckCircle,
   Copy,
@@ -74,6 +74,8 @@ import {
 } from './chat/ChatDocumentOutput'
 import { MarkdownText } from './chat/ChatMarkdown'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
+import { StreamingErrorCard } from './chat/StreamingErrorCard'
+import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
 
 export { MarkdownText } from './chat/ChatMarkdown'
 import {
@@ -3432,6 +3434,7 @@ function ChatStream({
                     assistantName,
                     assistantAvatarSrc,
                   )
+                  const retryPayload = buildErrorRetryPayload(messages, index)
                   return (
                     <AssistantMessageRows
                       key={msg.id}
@@ -3460,6 +3463,9 @@ function ChatStream({
                             onReply: (selectedText?: string) =>
                               onReplyTo(msg, identity.id, identity.name, selectedText),
                           }
+                        : {})}
+                      {...(retryPayload != null && onResendMessage != null
+                        ? { onRetry: () => onResendMessage(retryPayload) }
                         : {})}
                       {...(msg.status !== 'streaming' && onReplyToMember != null
                         ? {
@@ -5794,6 +5800,7 @@ type AssistantRowCompareProps = {
   assistantAvatarSrc: string
   selectionMode?: boolean
   selected?: boolean
+  onRetry?: () => void
 }
 
 function assistantRowsPropsAreEqual(
@@ -5812,7 +5819,8 @@ function assistantRowsPropsAreEqual(
     prev.assistantAvatarSrc === next.assistantAvatarSrc &&
     prev.timestamp === next.timestamp &&
     prev.selectionMode === next.selectionMode &&
-    prev.selected === next.selected
+    prev.selected === next.selected &&
+    (prev.onRetry != null) === (next.onRetry != null)
   )
 }
 
@@ -5836,6 +5844,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   selected,
   onToggleSelected,
   onStartMultiSelect,
+  onRetry,
 }: {
   sessionId: SessionId
   status?: 'running'
@@ -5862,6 +5871,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   selected?: boolean
   onToggleSelected?: () => void
   onStartMultiSelect?: () => void
+  onRetry?: () => void
 }) {
   const segments = splitAssistantMessageBlocks(blocks)
   if (segments.length === 0) return null
@@ -5951,6 +5961,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             {...(selected !== undefined ? { selected } : {})}
             {...(onToggleSelected != null ? { onToggleSelected } : {})}
             {...(onStartMultiSelect != null ? { onStartMultiSelect } : {})}
+            {...(onRetry != null ? { onRetry } : {})}
           />
         )
       })}
@@ -6100,6 +6111,7 @@ const AgentMsg = React.memo(function AgentMsg({
   selected = false,
   onToggleSelected,
   onStartMultiSelect,
+  onRetry,
 }: {
   sessionId: SessionId
   status?: 'running'
@@ -6118,6 +6130,7 @@ const AgentMsg = React.memo(function AgentMsg({
   selected?: boolean
   onToggleSelected?: () => void
   onStartMultiSelect?: () => void
+  onRetry?: () => void
 }) {
   // 首个"内容块"出现前的连续思考 → 顶部思考模块；其后穿插的阶段性思考保留在内容流里
   // 就地渲染（表现为类似工具日志的「思考过程」模块），避免把一个 turn 内多段思考全部堆到开头。
@@ -6125,6 +6138,7 @@ const AgentMsg = React.memo(function AgentMsg({
     (b) =>
       b.kind !== 'thinking' &&
       b.kind !== 'error' &&
+      b.kind !== 'runtime_signal' &&
       b.kind !== 'terminal' &&
       !isHiddenTimelineBlock(b),
   )
@@ -6138,6 +6152,7 @@ const AgentMsg = React.memo(function AgentMsg({
       (b, i) =>
         !isLeadingThinking(b, i) &&
         b.kind !== 'error' &&
+        b.kind !== 'runtime_signal' &&
         b.kind !== 'terminal' &&
         !isHiddenTimelineBlock(b),
     ),
@@ -6147,6 +6162,7 @@ const AgentMsg = React.memo(function AgentMsg({
       b.kind === 'tool_call' && !isHiddenTimelineBlock(b),
   )
   const errorBlocks = blocks.filter((b) => b.kind === 'error')
+  const runtimeSignalBlocks = blocks.filter((b) => b.kind === 'runtime_signal')
   const isStreaming = status === 'running'
   const hasContent = leadingThinkingBlocks.length > 0 || contentBlocks.length > 0
   // Count active (pending/running) tool calls for parallel indicator
@@ -6348,8 +6364,27 @@ const AgentMsg = React.memo(function AgentMsg({
           {errorBlocks.map((block, i) => (
             <StreamingErrorCard
               key={`error-${i}`}
-              message={(block as Extract<UIBlock, { kind: 'error' }>).message}
-              code={(block as Extract<UIBlock, { kind: 'error' }>).code}
+              message={block.message}
+              code={block.code}
+              title={block.title ?? 'Agent 执行失败'}
+              level="error"
+              retryable={block.retryable}
+              {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
+              {...(block.details != null ? { details: block.details } : {})}
+              {...(block.retryable && onRetry != null ? { onRetry } : {})}
+            />
+          ))}
+          {runtimeSignalBlocks.map((block, i) => (
+            <StreamingErrorCard
+              key={`runtime-signal-${i}`}
+              message={block.message}
+              title={block.title}
+              level={block.level}
+              retryable={block.retryable}
+              {...(block.code != null ? { code: block.code } : {})}
+              {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
+              {...(block.details != null ? { details: block.details } : {})}
+              {...(block.retryable && onRetry != null ? { onRetry } : {})}
             />
           ))}
           {isCancelled && <StoppedMarker />}
@@ -6879,35 +6914,6 @@ function getToolLogIcon(name: string): ReactNode {
 
 function TerminalBlock({ children }: { children: ReactNode }) {
   return <div className="terminal mono-sm">{children}</div>
-}
-
-function StreamingErrorCard({ message, code }: { message: string; code: string }) {
-  const isNetworkError =
-    code === 'NETWORK_ERROR' || code === 'ECONNRESET' || code === 'ECONNREFUSED'
-  const isTimeout = code === 'TIMEOUT' || code === 'ETIMEDOUT'
-  const isAborted = code === 'ABORTED'
-  const isMaxIter = code === 'MAX_ITERATIONS' || code === 'ERROR_MAX_TURNS'
-  const visibleCode = code || 'UNKNOWN_ERROR'
-  const tooltipTitle = (
-    <div className="streaming-error-tooltip">
-      <div className="streaming-error-tooltip-code">{visibleCode}</div>
-      {message && message !== visibleCode && (
-        <div className="streaming-error-tooltip-message">{message}</div>
-      )}
-    </div>
-  )
-
-  return (
-    <div
-      className={`streaming-error-card ${isNetworkError ? 'is-network' : ''} ${isTimeout ? 'is-timeout' : ''} ${isAborted ? 'is-aborted' : ''} ${isMaxIter ? 'is-max-iter' : ''}`}
-    >
-      <span className="streaming-error-line" />
-      <Tooltip title={tooltipTitle} placement="top" mouseEnterDelay={0.2}>
-        <span className="streaming-error-code">{visibleCode}</span>
-      </Tooltip>
-      <span className="streaming-error-line" />
-    </div>
-  )
 }
 
 /**

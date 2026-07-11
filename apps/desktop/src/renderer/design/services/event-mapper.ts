@@ -67,7 +67,26 @@ export type UIBlock =
       durationMs: number | undefined
       teamMemberContext?: TeamMemberEventContext
     }
-  | { kind: 'error'; code: string; message: string; retryable: boolean }
+  | {
+      kind: 'error'
+      code: string
+      title?: string
+      message: string
+      retryable: boolean
+      actionHint?: string
+      details?: Array<{ label: string; value: string }>
+    }
+  | {
+      kind: 'runtime_signal'
+      signal: string
+      level: 'info' | 'warning' | 'error'
+      title: string
+      message: string
+      code?: string
+      retryable: boolean
+      actionHint?: string
+      details?: Array<{ label: string; value: string }>
+    }
   | {
       kind: 'file_change'
       changeType: string
@@ -325,6 +344,26 @@ export class MessageBuilder {
         this.latestPlanProposed = null
         break
       }
+      case 'transcript_retraction': {
+        const retracted = new Set(event.eventIds)
+        const previousCount = this.messages.length
+        this.messages = this.messages.filter(
+          (message) => !message.eventIds.some((eventId) => retracted.has(eventId)),
+        )
+        if (this.messages.length !== previousCount) {
+          this.currentTurnFileChanges = []
+          this.currentTurnCheckpointId = undefined
+          this.turnSummaryEmitted = false
+        }
+        if (
+          this.currentAssistantId != null &&
+          !this.messages.some((message) => message.id === this.currentAssistantId)
+        ) {
+          this.currentAssistantId =
+            [...this.messages].reverse().find((message) => message.role === 'assistant')?.id ?? null
+        }
+        break
+      }
       case 'user_message': {
         // 新用户消息抵达 = 上一个待审批的 plan 已被处理（批准发送 send-turn 或被取消后用户重新发言）
         this.latestPlanProposed = null
@@ -529,8 +568,28 @@ export class MessageBuilder {
         msg.blocks.push({
           kind: 'error',
           code: event.code,
+          ...(event.title != null ? { title: event.title } : {}),
           message: event.message,
           retryable: event.retryable,
+          ...(event.actionHint != null ? { actionHint: event.actionHint } : {}),
+          ...(event.details != null ? { details: event.details } : {}),
+        })
+        break
+      }
+
+      case 'runtime_signal': {
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+        msg.blocks.push({
+          kind: 'runtime_signal',
+          signal: event.signal,
+          level: event.level,
+          title: event.title,
+          message: event.message,
+          ...(event.code != null ? { code: event.code } : {}),
+          retryable: event.retryable === true,
+          ...(event.actionHint != null ? { actionHint: event.actionHint } : {}),
+          ...(event.details != null ? { details: event.details } : {}),
         })
         break
       }

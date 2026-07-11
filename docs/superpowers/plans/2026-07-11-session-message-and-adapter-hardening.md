@@ -138,10 +138,10 @@
 - Test: `apps/desktop/src/renderer/tests/event-mapper.test.ts`
 - Test: `apps/desktop/src/renderer/design/views/chat/StreamingErrorCard.test.tsx`
 
-- [ ] Map all Claude assistant error codes and `error_max_structured_output_retries` with correct retryability.
-- [ ] Map rate limits, permission denials, auth status, API retry, session state, refusal fallback/no-fallback, notification, mirror error, and worker shutdown without silent drops.
-- [ ] Render actionable status/error details and make retryable failures invoke the existing resend flow.
-- [ ] Review and commit Claude signal handling.
+- [x] Map all Claude assistant error codes and `error_max_structured_output_retries` with correct retryability.
+- [x] Map rate limits, permission denials, auth status, API retry, session state, refusal fallback/no-fallback, notification, mirror error, and worker shutdown without silent drops.
+- [x] Render actionable status/error details and make retryable failures invoke the existing resend flow.
+- [x] Review and commit Claude signal handling.
 
 ### Task 9: Claude Content Blocks, Tools, And Diff Quality
 
