@@ -489,7 +489,6 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
 function GeneralSection() {
   const { setTweak } = useApp()
   const { t: tr } = useI18n()
-  const { setHistoryImportOpen } = useSessionSidebar()
   const [s, set] = usePersistedSettings(SETTINGS_GENERAL_KEY, DEFAULT_GENERAL)
   const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
   const [autoStartSupported, setAutoStartSupported] = useState(true)
@@ -729,24 +728,6 @@ function GeneralSection() {
               checked={s.notifyNewVersion}
               onChange={(v) => set({ notifyNewVersion: v })}
             />
-          }
-        />
-      </div>
-
-      <div className="subsec-h">数据迁移</div>
-      <div className="settings-card">
-        <SettingsRow
-          title={tr('app.sidebar.importHistory')}
-          desc="检测并导入宿主机 Claude Code / Codex 对话历史"
-          right={
-            <Button
-              size="middle"
-              type="text"
-              icon={<Icons.Upload size={11} />}
-              onClick={() => setHistoryImportOpen(true)}
-            >
-              导入
-            </Button>
           }
         />
       </div>
@@ -4589,6 +4570,7 @@ function StorageSection() {
   const { toast } = useToast()
   const { requestConfirm } = useApp()
   const { t: tr } = useI18n()
+  const { setHistoryImportOpen } = useSessionSidebar()
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: closeWorkspace } = useIpcInvoke('workspace:close')
@@ -4879,6 +4861,20 @@ function StorageSection() {
           right={
             <Button size="middle" type="text" icon={<Icons.Download size={11} />}>
               导出
+            </Button>
+          }
+        />
+        <SettingsRow
+          title={tr('app.sidebar.importHistory')}
+          desc="检测并导入宿主机 Claude Code / Codex 对话历史"
+          right={
+            <Button
+              size="middle"
+              type="text"
+              icon={<Icons.Upload size={11} />}
+              onClick={() => setHistoryImportOpen(true)}
+            >
+              导入
             </Button>
           }
         />

@@ -2547,9 +2547,12 @@ body.sidebar-resizing {
 }
 .diff-stats .add {
   color: var(--success);
+  min-width: 50px;
 }
 .diff-stats .del {
   color: var(--danger);
+  min-width: 50px;
+
 }
 .diff-body {
   padding: 6px 0;
@@ -14352,13 +14355,6 @@ body.inspector-resizing {
 }
 .provider-logo-circle {
   border-radius: 50% !important;
-}
-.provider-logo-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  padding: 0;
-  display: block;
 }
 .provider-logo-fallback {
   font-size: 0.6em;

@@ -5275,6 +5275,9 @@ export function registerAllIpcHandlers(): void {
                 ? team.maxDiscussionRounds
                 : DEFAULT_MAX_DISCUSSION_ROUNDS,
             enablePeerMessaging: team.enablePeerMessaging === true,
+            ...(typeof team.teamId === 'string' && team.teamId.length > 0
+              ? { teamId: team.teamId }
+              : {}),
           }
         : null
     return { hostAgentId, members, candidates, config }

@@ -1,11 +1,5 @@
-import React, {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import './ComposerInlineMenus.less'
 import type { ReactNode, RefObject } from 'react'
 import { Button, Dropdown, Popover, Tag as LobeTag, Tooltip } from '@lobehub/ui'
 import { ImagePreviewModal } from '../../components/ImagePreviewModal'
@@ -19,13 +13,19 @@ import { useIpcInvoke } from '../../hooks/useIpc'
 import { useAppearanceSettings, readAppearance } from '../../hooks/useAppearance'
 import { formatShortcut } from '../../hooks/useKeyboard'
 import { useToast } from '../../components/Toast'
-import { buildComposerAttachmentsFromPaths, getDataTransferFilePaths, hasFileDataTransfer } from '../../services/composer-attachments'
 import {
-  canReuseComposerSession,
-  canShowComposerWorktreeToggle,
-} from '../chat-session-routing'
+  buildComposerAttachmentsFromPaths,
+  getDataTransferFilePaths,
+  hasFileDataTransfer,
+} from '../../services/composer-attachments'
+import { canReuseComposerSession, canShowComposerWorktreeToggle } from '../chat-session-routing'
 import { resolveComposerRunningAgentIds } from '../../services/composer-working-state'
-import { getPreferredProviderForAdapter, getProviderAdapterKind, isClaudeAdapter, isProviderCompatibleWithAdapter } from '../../utils/provider-adapter'
+import {
+  getPreferredProviderForAdapter,
+  getProviderAdapterKind,
+  isClaudeAdapter,
+  isProviderCompatibleWithAdapter,
+} from '../../utils/provider-adapter'
 import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../../avatar'
 import { countExistingMembers } from '../../teamMembership'
 import { normalizeEduAssetUrl, resolveProviderContextWindow } from '@spark/shared'
@@ -124,7 +124,17 @@ const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
 const LOCAL_CODEX_CLI_MODEL_DISPLAY = 'codex cli'
 
-function InlineContextMenu({ x, y, items, onClose }: { x: number; y: number; items: ContextMenuItem[]; onClose: () => void }) {
+function InlineContextMenu({
+  x,
+  y,
+  items,
+  onClose,
+}: {
+  x: number
+  y: number
+  items: ContextMenuItem[]
+  onClose: () => void
+}) {
   const ref = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -168,7 +178,10 @@ function InlineContextMenu({ x, y, items, onClose }: { x: number; y: number; ite
   )
 }
 
-async function editTextSelection(target: HTMLTextAreaElement | HTMLInputElement, action: 'cut' | 'copy' | 'paste'): Promise<void> {
+async function editTextSelection(
+  target: HTMLTextAreaElement | HTMLInputElement,
+  action: 'cut' | 'copy' | 'paste',
+): Promise<void> {
   target.focus()
   if (action === 'paste') {
     try {
@@ -186,7 +199,9 @@ function insertTextIntoControl(target: HTMLTextAreaElement | HTMLInputElement, t
   const start = target.selectionStart ?? target.value.length
   const end = target.selectionEnd ?? start
   target.setRangeText(text, start, end, 'end')
-  target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }))
+  target.dispatchEvent(
+    new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }),
+  )
 }
 
 function TextEditContextMenu({ menu, onClose }: { menu: TextEditMenuState; onClose: () => void }) {
@@ -195,14 +210,44 @@ function TextEditContextMenu({ menu, onClose }: { menu: TextEditMenuState; onClo
     const result: ContextMenuItem[] = []
     if (isEditable) {
       result.push(
-        { key: 'cut', label: '剪切', icon: <Icons.Edit size={14} />, disabled: !hasSelection, onClick: () => void editTextSelection(target, 'cut') },
-        { key: 'copy', label: '复制', icon: <Icons.Copy size={14} />, disabled: !hasSelection, onClick: () => void editTextSelection(target, 'copy') },
-        { key: 'paste', label: '粘贴', icon: <Icons.FilePlus size={14} />, onClick: () => void editTextSelection(target, 'paste') },
+        {
+          key: 'cut',
+          label: '剪切',
+          icon: <Icons.Edit size={14} />,
+          disabled: !hasSelection,
+          onClick: () => void editTextSelection(target, 'cut'),
+        },
+        {
+          key: 'copy',
+          label: '复制',
+          icon: <Icons.Copy size={14} />,
+          disabled: !hasSelection,
+          onClick: () => void editTextSelection(target, 'copy'),
+        },
+        {
+          key: 'paste',
+          label: '粘贴',
+          icon: <Icons.FilePlus size={14} />,
+          onClick: () => void editTextSelection(target, 'paste'),
+        },
       )
     } else if (hasSelection) {
-      result.push({ key: 'copy', label: '复制', icon: <Icons.Copy size={14} />, onClick: () => void editTextSelection(target, 'copy') })
+      result.push({
+        key: 'copy',
+        label: '复制',
+        icon: <Icons.Copy size={14} />,
+        onClick: () => void editTextSelection(target, 'copy'),
+      })
     }
-    result.push({ key: 'select-all', label: '全选', icon: <Icons.CheckSquare size={14} />, onClick: () => { target.focus(); target.select() } })
+    result.push({
+      key: 'select-all',
+      label: '全选',
+      icon: <Icons.CheckSquare size={14} />,
+      onClick: () => {
+        target.focus()
+        target.select()
+      },
+    })
     return result
   }, [hasSelection, isEditable, target])
   return <InlineContextMenu x={menu.x} y={menu.y} items={items} onClose={onClose} />
@@ -569,7 +614,6 @@ function ContextMeterWithPopup({
  * 设计：渐变消失的网格背景 + 居中标题 + 居中输入区
  */
 
-
 export function ComposerV2({
   session,
   workspace,
@@ -815,8 +859,7 @@ export function ComposerV2({
     concreteSessionModelProvider != null &&
     session?.modelId != null &&
     session.modelId.trim().length > 0 &&
-    (sessionProvider == null ||
-      sessionProvider.id !== concreteSessionModelProvider.id) &&
+    (sessionProvider == null || sessionProvider.id !== concreteSessionModelProvider.id) &&
     (!sessionProviderMatchesModel || isAutoRouterProvider(sessionProvider))
   const draftProvider =
     session == null ? compatibleProviders.find((item) => item.id === selectedProviderId) : undefined
@@ -905,10 +948,12 @@ export function ComposerV2({
   // 发送前置条件：用户输入了内容、供应商 + 模型已选好。
   // session / workspace 不在这里卡—— handleNewSession 内部对 null 做了 no-project fallback，
   // 真正发送时再做详细校验（toast 提示）
+  const needsTeamSelection = isNewSessionComposer && teamConfig.enabled && teamConfig.teamId == null
   const canSubmit =
     (value.trim().length > 0 || attachments.length > 0) &&
     selectedProvider != null &&
-    effectiveModelId.length > 0
+    effectiveModelId.length > 0 &&
+    !needsTeamSelection
   const showTaskQueue = queuedMessages.length > 0
   const runningTeamAgents = useMemo(() => {
     const uniqueIds = resolveComposerRunningAgentIds({
@@ -1059,7 +1104,8 @@ export function ComposerV2({
       adapter: nextAdapter,
       providerProfileId: selectedProvider.id,
       modelId: nextModel,
-      permissionMode: needsAdapter || needsPermission ? nextPermissionMode : effectivePermissionMode,
+      permissionMode:
+        needsAdapter || needsPermission ? nextPermissionMode : effectivePermissionMode,
     })
     void persistRuntimePatch({
       providerProfileId: selectedProvider.id,
@@ -2461,6 +2507,16 @@ export function ComposerV2({
     }
   }
 
+  useEffect(() => {
+    if (!isNewSessionComposer || !teamConfig.enabled) return
+    const hostAgentId =
+      agents.find((agent) => agent.id === teamConfig.hostAgentId)?.id ??
+      agents.find((agent) => teamConfig.memberAgentIds.includes(agent.id))?.id
+    if (hostAgentId != null) void applyAgentRuntime(hostAgentId)
+    // 团队启动栏位于 Composer 外部，这里把 Host 选择同步回新会话草稿运行时。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNewSessionComposer, teamConfig.enabled, teamConfig.hostAgentId, teamConfig.teamId])
+
   /**
    * React to external composer prefill requests:
    * - historical "resend" writes text and attachments back into the draft;
@@ -2951,7 +3007,7 @@ export function ComposerV2({
             </div>
             <button
               className={`composer-send-round ${sending ? 'is-sending' : ''} ${isWorking ? 'is-stopping' : ''}`}
-              title={isWorking ? '停止会话' : '发送'}
+              title={isWorking ? '停止会话' : needsTeamSelection ? '请先创建并选择团队' : '发送'}
               onClick={() => void handlePrimaryAction()}
               disabled={isWorking ? session?.id == null : !canSubmit}
             >
@@ -2974,64 +3030,66 @@ export function ComposerV2({
             // 仅在发送瞬间禁用（防重复提交）；任务执行中允许继续挂附件/插技能（只改下一轮草稿，不影响运行中的会话）
             disabled={sending}
           />
-          <AgentPicker
-            agents={agents}
-            selectedAgentId={effectiveAgentId}
-            onChange={(agentId) => void handleAgentChange(agentId)}
-            teamConfig={teamConfig}
-            activeTeamName={activeTeamName ?? null}
-            onEnableTeamMode={() => {
-              // 启用团队模式时，若当前 effectiveAgentId 在 agents 中存在则保留，
-              // 否则回退到第一个可用 agent，避免后端拿到无效 host 而无法调度
-              const fallbackHost =
-                agents.find((a) => a.id === effectiveAgentId)?.id ??
-                agents[0]?.id ??
-                effectiveAgentId
-              onChangeTeamConfig({ enabled: true, hostAgentId: fallbackHost, teamId: undefined })
-              // 开启团队模式：把会话适配器/模型同步为主持人的配置（与单 agent 切换一致）
-              void applyAgentRuntime(fallbackHost)
-            }}
-            onDisableTeamMode={() => {
-              // 退出团队模式：当前主持人作为单 agent 接续会话（对话历史保留在该 host 的会话里）。
-              // 显式把会话运行时同步为该 host，避免 session.agentId 漂移导致退出后落到非主持人。
-              const soloAgent =
-                agents.find((a) => a.id === effectiveHostAgentId)?.id ??
-                agents.find((a) => a.id === teamConfig.hostAgentId)?.id ??
-                effectiveAgentId
-              onChangeTeamConfig({ enabled: false, teamId: undefined })
-              void applyAgentRuntime(soloAgent)
-            }}
-            onChangeHost={(agentId) => {
-              // 切换主持人：旧主持人转为成员，新主持人从成员中移除，保持花名册成员不丢失。
-              if (agentId === teamConfig.hostAgentId) return
-              const nextMembers = new Set(teamConfig.memberAgentIds)
-              nextMembers.delete(agentId)
-              if (teamConfig.hostAgentId) nextMembers.add(teamConfig.hostAgentId)
-              onChangeTeamConfig({
-                hostAgentId: agentId,
-                memberAgentIds: Array.from(nextMembers),
-                teamId: undefined,
-              })
-              // 主持人变更：会话适配器/模型跟随新主持人配置
-              void applyAgentRuntime(agentId)
-            }}
-            locked={!isNewSessionComposer}
-            onApplyTeam={(team) => {
-              onChangeTeamConfig({
-                enabled: true,
-                hostAgentId: team.hostAgentId,
-                memberAgentIds: team.memberAgentIds,
-                maxDepth: team.maxDepth,
-                allowNesting: team.allowNesting,
-                maxDiscussionRounds: team.maxDiscussionRounds ?? 6,
-                enablePeerMessaging: team.enablePeerMessaging === true,
-                teamId: team.id,
-              })
-              // 应用已保存团队：会话适配器/模型跟随该团队主持人配置
-              void applyAgentRuntime(team.hostAgentId)
-            }}
-            disabled={isBusy}
-          />
+          {!(isNewSessionComposer && teamConfig.enabled) && (
+            <AgentPicker
+              agents={agents}
+              selectedAgentId={effectiveAgentId}
+              onChange={(agentId) => void handleAgentChange(agentId)}
+              teamConfig={teamConfig}
+              activeTeamName={activeTeamName ?? null}
+              onEnableTeamMode={() => {
+                // 启用团队模式时，若当前 effectiveAgentId 在 agents 中存在则保留，
+                // 否则回退到第一个可用 agent，避免后端拿到无效 host 而无法调度
+                const fallbackHost =
+                  agents.find((a) => a.id === effectiveAgentId)?.id ??
+                  agents[0]?.id ??
+                  effectiveAgentId
+                onChangeTeamConfig({ enabled: true, hostAgentId: fallbackHost, teamId: undefined })
+                // 开启团队模式：把会话适配器/模型同步为主持人的配置（与单 agent 切换一致）
+                void applyAgentRuntime(fallbackHost)
+              }}
+              onDisableTeamMode={() => {
+                // 退出团队模式：当前主持人作为单 agent 接续会话（对话历史保留在该 host 的会话里）。
+                // 显式把会话运行时同步为该 host，避免 session.agentId 漂移导致退出后落到非主持人。
+                const soloAgent =
+                  agents.find((a) => a.id === effectiveHostAgentId)?.id ??
+                  agents.find((a) => a.id === teamConfig.hostAgentId)?.id ??
+                  effectiveAgentId
+                onChangeTeamConfig({ enabled: false, teamId: undefined })
+                void applyAgentRuntime(soloAgent)
+              }}
+              onChangeHost={(agentId) => {
+                // 切换主持人：旧主持人转为成员，新主持人从成员中移除，保持花名册成员不丢失。
+                if (agentId === teamConfig.hostAgentId) return
+                const nextMembers = new Set(teamConfig.memberAgentIds)
+                nextMembers.delete(agentId)
+                if (teamConfig.hostAgentId) nextMembers.add(teamConfig.hostAgentId)
+                onChangeTeamConfig({
+                  hostAgentId: agentId,
+                  memberAgentIds: Array.from(nextMembers),
+                  teamId: undefined,
+                })
+                // 主持人变更：会话适配器/模型跟随新主持人配置
+                void applyAgentRuntime(agentId)
+              }}
+              locked={!isNewSessionComposer}
+              onApplyTeam={(team) => {
+                onChangeTeamConfig({
+                  enabled: true,
+                  hostAgentId: team.hostAgentId,
+                  memberAgentIds: team.memberAgentIds,
+                  maxDepth: team.maxDepth,
+                  allowNesting: team.allowNesting,
+                  maxDiscussionRounds: team.maxDiscussionRounds ?? 6,
+                  enablePeerMessaging: team.enablePeerMessaging === true,
+                  teamId: team.id,
+                })
+                // 应用已保存团队：会话适配器/模型跟随该团队主持人配置
+                void applyAgentRuntime(team.hostAgentId)
+              }}
+              disabled={isBusy}
+            />
+          )}
           <ComposerMenuSelect
             icon={activePermissionOption?.icon ?? <Icons.Shield size={14} />}
             value={effectivePermissionMode}
@@ -3387,7 +3445,6 @@ function ComposerReasoningSlider({
               <span>推理强度</span>
               <strong>{activeOption?.label ?? value}</strong>
             </div>
-            
           </div>
           <div className="composer-reasoning-axis" aria-hidden="true">
             <span>更快</span>
@@ -4800,7 +4857,9 @@ function normalizeRuntimePermissionPrefs(value: unknown): {
   }
 }
 
-export function normalizeComposerReasoningEffort(value: unknown): SessionReasoningEffort | undefined {
+export function normalizeComposerReasoningEffort(
+  value: unknown,
+): SessionReasoningEffort | undefined {
   if (value == null) return undefined
   return value === 'minimal' ||
     value === 'low' ||
