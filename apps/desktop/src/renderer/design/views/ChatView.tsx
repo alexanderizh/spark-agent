@@ -76,6 +76,15 @@ import { MarkdownText } from './chat/ChatMarkdown'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 import { StreamingErrorCard } from './chat/StreamingErrorCard'
 import { RuntimeSignalCard } from './chat/RuntimeSignalCard'
+import { ActivitySegment } from './chat/ActivitySegment'
+import {
+  getToolLogGroupKind,
+  isChatActivitySegmentRunning,
+  splitChatActivitySegments,
+  summarizeChatActivitySegment,
+  type ChatActivityBlock,
+  type ToolLogGroupKind,
+} from './chat/ChatActivitySegments'
 import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
 
 export { MarkdownText } from './chat/ChatMarkdown'
@@ -3980,8 +3989,6 @@ function renderBlocks(
   })
 }
 
-type ToolLogGroupKind = 'read' | 'write' | 'command' | 'tool'
-
 function renderBlocksGrouped(
   blocks: UIBlock[],
   options: {
@@ -3990,6 +3997,35 @@ function renderBlocksGrouped(
     autoCollapseTools?: boolean
     onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   } = {},
+): ReactNode {
+  const autoCollapseEnabled = readAppearance().autoCollapseTools
+  return splitChatActivitySegments(blocks).map((item) => {
+    if (item.kind === 'content') {
+      return <Fragment key={item.key}>{renderBlocks([item.block], options)}</Fragment>
+    }
+
+    return (
+      <ActivitySegment
+        key={item.key}
+        summary={summarizeChatActivitySegment(item.blocks)}
+        running={isChatActivitySegmentRunning(item.blocks)}
+        sealed={item.sealed}
+        autoCollapseEnabled={autoCollapseEnabled}
+      >
+        {renderActivityBlocks(item.blocks, options)}
+      </ActivitySegment>
+    )
+  })
+}
+
+function renderActivityBlocks(
+  blocks: ChatActivityBlock[],
+  options: {
+    surface?: 'main' | 'inspector'
+    sessionId?: SessionId
+    autoCollapseTools?: boolean
+    onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  },
 ): ReactNode {
   const surface = options.surface ?? 'main'
   const nodes: ReactNode[] = []
@@ -4045,46 +4081,6 @@ function reorderTurnSummaryBlocks(blocks: UIBlock[]): UIBlock[] {
     .map((b, i) => ({ b, i }))
     .sort((x, y) => rank(x.b) - rank(y.b) || x.i - y.i)
     .map((entry) => entry.b)
-}
-
-function getToolLogGroupKind(
-  block: UIBlock,
-  surface: 'main' | 'inspector',
-): ToolLogGroupKind | null {
-  if (block.kind === 'terminal') return surface === 'inspector' ? 'command' : null
-  if (block.kind !== 'tool_call' || isHiddenTimelineBlock(block)) return null
-  const name = normalizeToolName(block.toolName)
-  if (name === 'todo_write') return null
-  if (
-    name === 'bash' ||
-    name === 'run_command' ||
-    name.includes('shell') ||
-    name.includes('terminal')
-  ) {
-    return 'command'
-  }
-  if (
-    name === 'read' ||
-    name === 'read_file' ||
-    name === 'grep' ||
-    name === 'grep_files' ||
-    name === 'list' ||
-    name === 'ls' ||
-    name.includes('search')
-  ) {
-    return 'read'
-  }
-  if (
-    name === 'edit' ||
-    name === 'edit_file' ||
-    name === 'write' ||
-    name === 'write_file' ||
-    name === 'apply_patch' ||
-    name.includes('replace')
-  ) {
-    return 'write'
-  }
-  return 'tool'
 }
 
 function normalizeToolName(name: string): string {
