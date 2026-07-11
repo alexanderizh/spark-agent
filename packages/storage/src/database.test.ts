@@ -9,8 +9,35 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SparkDatabase } from './database.js'
 import { BaseRepository } from './repository.js'
 import { join } from 'path'
-import { mkdirSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
+
+function applyMigrationsThrough(
+  db: SparkDatabase,
+  migrationsDir: string,
+  maxVersion: number,
+): void {
+  db.raw.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+  const insertMigration = db.raw.prepare(
+    'INSERT INTO schema_migrations (version, name) VALUES (?, ?)',
+  )
+  const files = readdirSync(migrationsDir)
+    .filter((name) => name.endsWith('.sql'))
+    .sort()
+
+  for (const name of files) {
+    const version = Number.parseInt(name, 10)
+    if (!Number.isFinite(version) || version > maxVersion) continue
+    db.raw.exec(readFileSync(join(migrationsDir, name), 'utf8'))
+    insertMigration.run(version, name)
+  }
+}
 
 describe('SparkDatabase', () => {
   let db: SparkDatabase
@@ -123,39 +150,7 @@ describe('SparkDatabase', () => {
     const migrationsDir = join(process.cwd(), 'migrations')
 
     db = new SparkDatabase(dbPath)
-    db.raw.exec(`
-      CREATE TABLE schema_migrations (
-        version INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE usage_ledger (
-        id TEXT PRIMARY KEY,
-        session_id TEXT,
-        run_id TEXT,
-        turn_id TEXT,
-        workflow_node_id TEXT,
-        agent_id TEXT,
-        provider_id TEXT NOT NULL,
-        model_profile_id TEXT NOT NULL,
-        operation TEXT NOT NULL,
-        token_usage_json TEXT NOT NULL DEFAULT '{}',
-        media_usage_json TEXT,
-        cost_json TEXT NOT NULL DEFAULT '{}',
-        latency_json TEXT NOT NULL DEFAULT '{}',
-        source TEXT NOT NULL DEFAULT 'api',
-        raw_usage_json TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-    `)
-
-    const insertMigration = db.raw.prepare(
-      'INSERT INTO schema_migrations (version, name) VALUES (?, ?)',
-    )
-    for (let version = 1; version <= 10; version += 1) {
-      insertMigration.run(version, `${String(version).padStart(3, '0')}_legacy.sql`)
-    }
+    applyMigrationsThrough(db, migrationsDir, 10)
 
     db.runMigrations(migrationsDir)
 
@@ -175,34 +170,8 @@ describe('SparkDatabase', () => {
     const migrationsDir = join(process.cwd(), 'migrations')
 
     db = new SparkDatabase(dbPath)
-    db.raw.exec(`
-      CREATE TABLE schema_migrations (
-        version INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE sessions (
-        id TEXT PRIMARY KEY,
-        kind TEXT NOT NULL,
-        title TEXT NOT NULL,
-        status TEXT NOT NULL,
-        project_id TEXT NOT NULL,
-        workspace_ids_json TEXT NOT NULL DEFAULT '[]',
-        rule_bundle_id TEXT,
-        permission_profile_id TEXT,
-        metadata_json TEXT NOT NULL DEFAULT '{}',
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-    `)
-
-    const insertMigration = db.raw.prepare(
-      'INSERT INTO schema_migrations (version, name) VALUES (?, ?)',
-    )
-    for (let version = 1; version <= 17; version += 1) {
-      insertMigration.run(version, `${String(version).padStart(3, '0')}_legacy.sql`)
-    }
+    applyMigrationsThrough(db, migrationsDir, 17)
+    db.raw.exec("ALTER TABLE sessions ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
 
     db.runMigrations(migrationsDir)
 
@@ -217,31 +186,12 @@ describe('SparkDatabase', () => {
     const migrationsDir = join(process.cwd(), 'migrations')
 
     db = new SparkDatabase(dbPath)
+    applyMigrationsThrough(db, migrationsDir, 47)
     db.raw.exec(`
-      CREATE TABLE schema_migrations (
-        version INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE agent_events (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        run_id TEXT,
-        turn_id TEXT,
-        event_type TEXT NOT NULL,
-        event_json TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        seq INTEGER GENERATED ALWAYS AS (CAST(json_extract(event_json, '$.seq') AS INTEGER)) VIRTUAL
-      );
+      ALTER TABLE agent_events
+        ADD COLUMN seq INTEGER
+        GENERATED ALWAYS AS (CAST(json_extract(event_json, '$.seq') AS INTEGER)) VIRTUAL
     `)
-
-    const insertMigration = db.raw.prepare(
-      'INSERT INTO schema_migrations (version, name) VALUES (?, ?)',
-    )
-    for (let version = 1; version <= 47; version += 1) {
-      insertMigration.run(version, `${String(version).padStart(3, '0')}_legacy.sql`)
-    }
 
     db.runMigrations(migrationsDir)
 
@@ -271,29 +221,8 @@ describe('SparkDatabase', () => {
     const migrationsDir = join(process.cwd(), 'migrations')
 
     db = new SparkDatabase(dbPath)
+    applyMigrationsThrough(db, migrationsDir, 45)
     db.raw.exec(`
-      CREATE TABLE schema_migrations (
-        version INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE agent_teams (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        description TEXT NOT NULL DEFAULT '',
-        built_in INTEGER NOT NULL DEFAULT 0,
-        enabled INTEGER NOT NULL DEFAULT 1,
-        host_agent_id TEXT NOT NULL,
-        member_agent_ids_json TEXT NOT NULL DEFAULT '[]',
-        max_depth INTEGER NOT NULL DEFAULT 1,
-        allow_nesting INTEGER NOT NULL DEFAULT 0,
-        prompt TEXT NOT NULL DEFAULT '',
-        metadata_json TEXT NOT NULL DEFAULT '{}',
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-
       INSERT INTO agent_teams (
         id, name, description, host_agent_id, member_agent_ids_json,
         max_depth, allow_nesting, prompt, metadata_json, created_at, updated_at
@@ -302,13 +231,6 @@ describe('SparkDatabase', () => {
         1, 0, '', '{}', datetime('now'), datetime('now')
       );
     `)
-
-    const insertMigration = db.raw.prepare(
-      'INSERT INTO schema_migrations (version, name) VALUES (?, ?)',
-    )
-    for (let version = 1; version <= 45; version += 1) {
-      insertMigration.run(version, `${String(version).padStart(3, '0')}_legacy.sql`)
-    }
 
     db.runMigrations(migrationsDir)
 

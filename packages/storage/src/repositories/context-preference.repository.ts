@@ -65,9 +65,11 @@ export class ContextPreferenceRepository extends BaseRepository {
   }
 
   getByPath(workspaceId: string, filePath: string): ContextPreferenceRow | null {
-    return this.raw
-      .prepare('SELECT * FROM context_preferences WHERE workspace_id = ? AND file_path = ?')
-      .get(workspaceId, filePath) as ContextPreferenceRow | null
+    return (
+      (this.raw
+        .prepare('SELECT * FROM context_preferences WHERE workspace_id = ? AND file_path = ?')
+        .get(workspaceId, filePath) as ContextPreferenceRow | undefined) ?? null
+    )
   }
 
   /**
@@ -113,9 +115,7 @@ export class ContextPreferenceRepository extends BaseRepository {
   /**
    * Get the pinned and excluded file paths for a workspace as two sets.
    */
-  getOverrides(
-    workspaceId: string,
-  ): { pinnedPaths: Set<string>; excludedPaths: Set<string> } {
+  getOverrides(workspaceId: string): { pinnedPaths: Set<string>; excludedPaths: Set<string> } {
     const rows = this.list({ workspaceId, enabledOnly: true })
     const pinnedPaths = new Set<string>()
     const excludedPaths = new Set<string>()
