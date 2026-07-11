@@ -31,6 +31,7 @@ import type {
   SessionId,
 } from '@spark/protocol'
 import { useSessionSidebar } from '../SessionSidebarContext'
+import { PermissionRequestDetails } from '../components/PermissionRequestDetails'
 
 /* ============================================================
    Types
@@ -991,7 +992,7 @@ export function PermissionModal({
           </div>
         </div>
         <div className="modal-body">
-          <div className="cmd-preview mono-sm">{JSON.stringify(request.toolInput, null, 2)}</div>
+          <PermissionRequestDetails request={request} />
         </div>
         <div className="modal-foot">
           <span className="muted overlay-muted-sm">
