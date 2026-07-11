@@ -172,6 +172,7 @@ describe('mapSDKMessageToEvents', () => {
       type: 'user',
       uuid: 'user-1',
       session_id: 'sdk-session',
+      parent_tool_use_id: null,
       message: {
         role: 'user',
         content: [{
@@ -239,6 +240,7 @@ describe('mapSDKMessageToEvents', () => {
       type: 'user',
       uuid: 'user-encrypted-result',
       session_id: 'sdk-session',
+      parent_tool_use_id: null,
       message: {
         role: 'user',
         content: [{
@@ -360,6 +362,7 @@ describe('mapSDKMessageToEvents', () => {
       type: 'user',
       uuid: 'user-1',
       session_id: 'sdk-session',
+      parent_tool_use_id: null,
       message: {
         role: 'user',
         content: [{
@@ -410,6 +413,7 @@ describe('mapSDKMessageToEvents', () => {
       type: 'user',
       uuid: 'user-1',
       session_id: 'sdk-session',
+      parent_tool_use_id: null,
       message: {
         role: 'user',
         content: [{
@@ -450,6 +454,7 @@ describe('mapSDKMessageToEvents', () => {
       type: 'user',
       uuid: 'user-send-result',
       session_id: 'sdk-session',
+      parent_tool_use_id: null,
       message: {
         role: 'user',
         content: [{
@@ -527,6 +532,7 @@ describe('mapSDKMessageToEvents', () => {
       type: 'user',
       uuid: 'user-1',
       session_id: 'sdk-session',
+      parent_tool_use_id: null,
       message: {
         role: 'user',
         content: [{
@@ -576,6 +582,7 @@ describe('mapSDKMessageToEvents', () => {
       type: 'user',
       uuid: 'user-1',
       session_id: 'sdk-session',
+      parent_tool_use_id: null,
       message: {
         role: 'user',
         content: [{
@@ -628,6 +635,7 @@ describe('mapSDKMessageToEvents', () => {
       type: 'user',
       uuid: 'user-1',
       session_id: 'sdk-session',
+      parent_tool_use_id: null,
       message: {
         role: 'user',
         content: [{

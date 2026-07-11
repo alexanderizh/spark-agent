@@ -10,7 +10,7 @@
  */
 
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages'
-import type { UserQuestionPrompt } from '@spark/protocol'
+import type { HookNode, UserQuestionPrompt } from '@spark/protocol'
 import type { SparkReasoningEffort } from './reasoning-effort.js'
 
 // ── SDK Message Types ───────────────────────────────────────────────────────
@@ -96,6 +96,11 @@ export type SDKSystemMessage =
   | SDKNotificationSystemMessage
   | SDKMirrorErrorSystemMessage
   | SDKWorkerShuttingDownSystemMessage
+  | SDKTaskStartedMessage
+  | SDKTaskUpdatedMessage
+  | SDKTaskProgressMessage
+  | SDKTaskNotificationMessage
+  | SDKBackgroundTasksChangedMessage
 
 export interface SDKInitSystemMessage {
   type: 'system'
@@ -222,6 +227,73 @@ export interface SDKWorkerShuttingDownSystemMessage {
   session_id: string
 }
 
+export interface SDKTaskStartedMessage {
+  type: 'system'
+  subtype: 'task_started'
+  task_id: string
+  tool_use_id?: string
+  description: string
+  subagent_type?: string
+  task_type?: string
+  workflow_name?: string
+  prompt?: string
+  skip_transcript?: boolean
+  uuid: string
+  session_id: string
+}
+
+export interface SDKTaskUpdatedMessage {
+  type: 'system'
+  subtype: 'task_updated'
+  task_id: string
+  patch: {
+    status?: 'pending' | 'running' | 'completed' | 'failed' | 'killed' | 'paused'
+    description?: string
+    end_time?: number
+    total_paused_ms?: number
+    error?: string
+    is_backgrounded?: boolean
+  }
+  uuid: string
+  session_id: string
+}
+
+export interface SDKTaskProgressMessage {
+  type: 'system'
+  subtype: 'task_progress'
+  task_id: string
+  tool_use_id?: string
+  description: string
+  subagent_type?: string
+  usage: { total_tokens: number; tool_uses: number; duration_ms: number }
+  last_tool_name?: string
+  summary?: string
+  uuid: string
+  session_id: string
+}
+
+export interface SDKTaskNotificationMessage {
+  type: 'system'
+  subtype: 'task_notification'
+  task_id: string
+  tool_use_id?: string
+  status: 'completed' | 'failed' | 'stopped'
+  output_file: string
+  summary: string
+  usage?: { total_tokens: number; tool_uses: number; duration_ms: number }
+  skip_transcript?: boolean
+  uuid: string
+  session_id: string
+}
+
+export interface SDKBackgroundTasksChangedMessage {
+  type: 'system'
+  subtype: 'background_tasks_changed'
+  tasks: Array<{ task_id: string; task_type: string; description: string }>
+  uuid: string
+  session_id: string
+}
+
 export interface SDKAuthStatusMessage {
   type: 'auth_status'
   isAuthenticating: boolean
@@ -265,8 +337,9 @@ export interface SDKStreamEvent {
 
 export interface SDKUserMessage {
   type: 'user'
-  uuid: string
-  session_id: string
+  uuid?: string
+  session_id?: string
+  parent_tool_use_id: string | null
   message: {
     role: 'user'
     content: string | SDKContentBlock[]
@@ -419,6 +492,15 @@ export interface SDKQueryOptions {
   disallowedTools?: string[] | undefined
   mcpServers?: Record<string, SDKMcpServerConfig> | undefined
   strictMcpConfig?: boolean | undefined
+  forwardSubagentText?: boolean | undefined
+  agentProgressSummaries?: boolean | undefined
+  disableWorkflows?: boolean | undefined
+  workflowKeywordTriggerEnabled?: boolean | undefined
+  hooks?: Partial<Record<SDKHookEvent, SDKHookCallbackMatcher[]>> | undefined
+  onElicitation?: ((
+    request: SDKElicitationRequest,
+    options: { signal: AbortSignal },
+  ) => Promise<SDKElicitationResult>) | undefined
   skills?: string[] | 'all' | undefined
   systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string | undefined } | undefined
   toolConfig?: SDKToolConfig | undefined
@@ -448,6 +530,46 @@ export interface SDKQueryOptions {
     maxTurns?: number | undefined
   }> | undefined
 }
+
+export type SDKHookEvent = 'PermissionRequest'
+
+export interface SDKPermissionRequestHookInput {
+  hook_event_name: 'PermissionRequest'
+  session_id: string
+  transcript_path: string
+  cwd: string
+  tool_name: string
+  tool_input: unknown
+  permission_suggestions?: SDKPermissionUpdate[]
+}
+
+export type SDKHookCallback = (
+  input: SDKPermissionRequestHookInput,
+  toolUseID: string | undefined,
+  options: { signal: AbortSignal },
+) => Promise<{ continue?: boolean; suppressOutput?: boolean }>
+
+export interface SDKHookCallbackMatcher {
+  matcher?: string
+  hooks: SDKHookCallback[]
+  timeout?: number
+}
+
+export interface SDKElicitationRequest {
+  serverName: string
+  message: string
+  mode?: 'form' | 'url'
+  url?: string
+  elicitationId?: string
+  requestedSchema?: Record<string, unknown>
+  title?: string
+  displayName?: string
+  description?: string
+}
+
+export type SDKElicitationResult =
+  | { action: 'accept'; content?: Record<string, unknown> }
+  | { action: 'decline' | 'cancel' }
 
 /**
  * The Query object returned by the SDK's query() function.
@@ -572,6 +694,12 @@ export interface SDKExecutorConfig {
   ) => Promise<boolean | SDKApprovalResult>) | undefined
   /** Callback for AskUserQuestion tool - returns user's answers to the questions */
   questionCallback?: ((sessionId: string, questions: UserQuestionPrompt[]) => Promise<Record<string, unknown>>) | undefined
+  /** Bridge for the small set of application notification hooks Spark exposes. */
+  applicationHookCallback?: ((
+    sessionId: string,
+    node: Extract<HookNode, 'permission_request'>,
+    context: { title?: string; body?: string },
+  ) => void | Promise<void>) | undefined
   goal?: {
     id: string
     objective: string

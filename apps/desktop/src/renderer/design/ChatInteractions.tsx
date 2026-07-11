@@ -633,14 +633,28 @@ export function SubagentCard({
   status,
   tokens,
   output,
+  progressSummary,
+  lastToolName,
+  toolUses,
+  durationMs,
+  transcript,
   onClick,
 }: {
   name: string
   role: string
   task: string
-  status: 'running' | 'done'
+  status: 'running' | 'done' | 'error' | 'stopped' | 'paused'
   tokens: string
   output?: string | undefined
+  progressSummary?: string | undefined
+  lastToolName?: string | undefined
+  toolUses?: number | undefined
+  durationMs?: number | undefined
+  transcript?: Array<{
+    kind: 'text' | 'thinking'
+    content: string
+    segmentId: string
+  }> | undefined
   onClick?: (() => void) | undefined
 }) {
   const { t } = useI18n()
@@ -654,14 +668,35 @@ export function SubagentCard({
       ? t('chat.subagent.derived', { name: instanceTitle })
       : t('chat.subagent.defaultName')
   const taskPreview = taskText.length > 0 ? clipSubagentLabel(firstTaskLine(taskText), 86) : ''
-  const metaText = [roleText, taskPreview]
+  const progressText = progressSummary?.trim() ?? ''
+  const activityText = [progressText, lastToolName]
+    .filter((item, index, items) => item != null && item.length > 0 && items.indexOf(item) === index)
+    .join(' · ')
+  const metaText = [activityText, roleText, taskPreview]
     .filter((item, index, items) => item.length > 0 && items.indexOf(item) === index)
     .join(' · ')
   const outputText = output?.trim() ?? ''
   const hasInternalOutput = outputText.length > 0 && isAsyncSubagentLaunchMetadata(outputText)
   const displayOutput = hasInternalOutput ? '' : outputText
   const hasDisplayOutput = displayOutput.length > 0
-  const isExpandable = taskText.length > 0 || hasDisplayOutput || hasInternalOutput
+  const transcriptEntries = transcript?.filter((entry) => entry.content.trim().length > 0) ?? []
+  const hasTranscript = transcriptEntries.length > 0
+  const isExpandable =
+    taskText.length > 0 || hasDisplayOutput || hasInternalOutput || progressText.length > 0 || hasTranscript
+  const statusLabel =
+    status === 'done'
+      ? t('chat.subagent.done')
+      : status === 'error'
+        ? t('chat.subagent.failed')
+        : status === 'stopped'
+          ? t('chat.subagent.stopped')
+          : status === 'paused'
+            ? t('chat.subagent.paused')
+            : t('chat.subagent.running')
+  const activityStats = [
+    toolUses != null ? t('chat.subagent.toolUses', { count: toolUses }) : '',
+    durationMs != null ? t('chat.subagent.duration', { seconds: Math.max(1, Math.round(durationMs / 1000)) }) : '',
+  ].filter(Boolean).join(' · ')
 
   const toggleExpanded = () => {
     if (isExpandable) {
@@ -706,16 +741,19 @@ export function SubagentCard({
             {metaText || t('chat.subagent.expandHint')}
           </div>
         </div>
-        {status === 'running' && (
+        {(status === 'running' || status === 'paused') && (
           <span className="live">
             <Icons.Spinner size={11} />
-            {t('chat.subagent.running')}
+            {statusLabel}
           </span>
         )}
-        {status === 'done' && (
-          <span className="live" style={{ color: 'var(--success)' }}>
-            <Icons.Check size={11} />
-            {t('chat.subagent.done')}
+        {(status === 'done' || status === 'error' || status === 'stopped') && (
+          <span
+            className="live"
+            style={{ color: status === 'done' ? 'var(--success)' : 'var(--warning)' }}
+          >
+            {status === 'done' ? <Icons.Check size={11} /> : <Icons.AlertTriangle size={11} />}
+            {statusLabel}
             {tokens ? ` · ${t('chat.subagent.tokenUsage', { tokens })}` : ''}
           </span>
         )}
@@ -726,6 +764,33 @@ export function SubagentCard({
             <section className="subagent-detail-section">
               <div className="subagent-detail-label">{t('chat.subagent.taskLabel')}</div>
               <div className="subagent-task-full">{taskText}</div>
+            </section>
+          )}
+          {progressText.length > 0 && (
+            <section className="subagent-detail-section">
+              <div className="subagent-detail-label">{t('chat.subagent.progressLabel')}</div>
+              <div className="subagent-task-full">{progressText}</div>
+              {activityStats.length > 0 && <div className="subagent-status-note">{activityStats}</div>}
+            </section>
+          )}
+          {hasTranscript && (
+            <section className="subagent-detail-section">
+              <div className="subagent-detail-label">{t('chat.subagent.transcriptLabel')}</div>
+              {transcriptEntries.map((entry) => (
+                <div
+                  key={`${entry.kind}:${entry.segmentId}`}
+                  className={`subagent-transcript-entry ${entry.kind}`}
+                >
+                  <div className="subagent-transcript-kind">
+                    {entry.kind === 'thinking'
+                      ? t('chat.subagent.thinkingLabel')
+                      : t('chat.subagent.messageLabel')}
+                  </div>
+                  <div className="subagent-output-content md-surface">
+                    <MarkdownText content={entry.content} />
+                  </div>
+                </div>
+              ))}
             </section>
           )}
           {hasDisplayOutput && (
@@ -739,7 +804,7 @@ export function SubagentCard({
           {!hasDisplayOutput && hasInternalOutput && (
             <div className="subagent-status-note">{t('chat.subagent.internalOutputHidden')}</div>
           )}
-          {!hasDisplayOutput && !hasInternalOutput && status === 'running' && (
+          {!hasDisplayOutput && !hasInternalOutput && !hasTranscript && status === 'running' && (
             <div className="subagent-status-note">{t('chat.subagent.waitingForResult')}</div>
           )}
         </div>

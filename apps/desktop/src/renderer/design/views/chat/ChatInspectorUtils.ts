@@ -40,7 +40,7 @@ export interface InspectorSubagent {
   name: string
   role: string
   task: string
-  status: 'running' | 'done'
+  status: 'running' | 'done' | 'error' | 'stopped' | 'paused'
   output?: string | undefined
 }
 

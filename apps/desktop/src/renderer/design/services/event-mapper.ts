@@ -130,11 +130,21 @@ export type UIBlock =
   | {
       kind: 'subagent'
       toolCallId: string
+      taskId?: string
       name: string
       role: string
       task: string
-      status: 'running' | 'done'
+      status: 'running' | 'done' | 'error' | 'stopped' | 'paused'
       tokens: string
+      progressSummary?: string
+      lastToolName?: string
+      toolUses?: number
+      durationMs?: number
+      transcript?: Array<{
+        kind: 'text' | 'thinking'
+        content: string
+        segmentId: string
+      }>
       /** Full output (available when status=done) */
       output?: string
     }
@@ -280,6 +290,26 @@ export interface OrchestrationSnapshot {
   hostAgentId: string
   hostAgentName: string
   memberCount: number
+}
+
+const SUBAGENT_TRANSCRIPT_MAX_CHARS = 24_000
+
+function trimSubagentTranscript(
+  transcript: Array<{ kind: 'text' | 'thinking'; content: string; segmentId: string }>,
+): void {
+  let overflow =
+    transcript.reduce((total, entry) => total + entry.content.length, 0) -
+    SUBAGENT_TRANSCRIPT_MAX_CHARS
+  while (overflow > 0 && transcript.length > 0) {
+    const first = transcript[0]!
+    if (first.content.length <= overflow) {
+      overflow -= first.content.length
+      transcript.shift()
+    } else {
+      first.content = first.content.slice(overflow)
+      overflow = 0
+    }
+  }
 }
 
 export class MessageBuilder {
@@ -799,16 +829,74 @@ export class MessageBuilder {
       }
 
       case 'subagent_started': {
-        const saMsg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
-        saMsg.blocks.push({
-          kind: 'subagent',
-          toolCallId: event.toolCallId,
-          name: event.name,
-          role: event.role,
-          task: event.task,
-          status: 'running',
-          tokens: '',
-        })
+        const existing = this.findSubagentBlock(event.toolCallId)
+        if (existing != null) {
+          existing.block.name = event.name
+          existing.block.role = event.role
+          existing.block.task = event.task
+          existing.block.status = 'running'
+          if (event.taskId != null) existing.block.taskId = event.taskId
+          if (!existing.message.eventIds.includes(event.id)) existing.message.eventIds.push(event.id)
+        } else {
+          const saMsg = this.getOrCreateAssistant(event.id, event.timestamp, {
+            turnId: event.turnId,
+          })
+          saMsg.blocks.push({
+            kind: 'subagent',
+            toolCallId: event.toolCallId,
+            ...(event.taskId != null ? { taskId: event.taskId } : {}),
+            name: event.name,
+            role: event.role,
+            task: event.task,
+            status: 'running',
+            tokens: '',
+          })
+        }
+        break
+      }
+
+      case 'subagent_progress': {
+        const { message, block } = this.getOrCreateSubagentBlock(event)
+        if (event.taskId != null) block.taskId = event.taskId
+        if (event.description != null) block.task = event.description
+        if (event.summary != null) block.progressSummary = event.summary
+        if (event.lastToolName != null) block.lastToolName = event.lastToolName
+        if (event.totalTokens != null) block.tokens = event.totalTokens.toLocaleString()
+        if (event.toolUses != null) block.toolUses = event.toolUses
+        if (event.durationMs != null) block.durationMs = event.durationMs
+        if (event.status != null) {
+          block.status =
+            event.status === 'completed'
+              ? 'done'
+              : event.status === 'failed'
+                ? 'error'
+                : event.status === 'pending'
+                  ? 'running'
+                  : event.status
+        }
+        if (!message.eventIds.includes(event.id)) message.eventIds.push(event.id)
+        break
+      }
+
+      case 'subagent_message': {
+        const { message, block } = this.getOrCreateSubagentBlock(event)
+        const transcript = (block.transcript ??= [])
+        const existing = transcript.find(
+          (entry) => entry.kind === event.contentKind && entry.segmentId === event.segmentId,
+        )
+        if (existing == null) {
+          transcript.push({
+            kind: event.contentKind,
+            content: event.content,
+            segmentId: event.segmentId,
+          })
+        } else if (event.mode === 'delta') {
+          existing.content += event.content
+        } else {
+          existing.content = event.content
+        }
+        trimSubagentTranscript(transcript)
+        if (!message.eventIds.includes(event.id)) message.eventIds.push(event.id)
         break
       }
 
@@ -819,10 +907,19 @@ export class MessageBuilder {
             (b) => b.kind === 'subagent' && b.toolCallId === event.toolCallId,
           )
           if (block && block.kind === 'subagent') {
-            const tokenCount = (event.inputTokens ?? 0) + (event.outputTokens ?? 0)
-            ;(block as Record<string, unknown>).status = 'done'
-            ;(block as Record<string, unknown>).tokens = `${tokenCount.toLocaleString()}`
-            ;(block as Record<string, unknown>).output = event.output
+            const tokenCount =
+              event.totalTokens ?? (event.inputTokens ?? 0) + (event.outputTokens ?? 0)
+            block.status =
+              event.status === 'success'
+                ? 'done'
+                : event.status === 'stopped'
+                  ? 'stopped'
+                  : 'error'
+            block.tokens = tokenCount > 0 ? tokenCount.toLocaleString() : ''
+            block.output = event.output
+            block.progressSummary = event.resultSummary
+            if (event.toolUses != null) block.toolUses = event.toolUses
+            if (event.durationMs != null) block.durationMs = event.durationMs
             if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
             break
           }
@@ -1132,6 +1229,45 @@ export class MessageBuilder {
 
   getAllMessages(): UIMessage[] {
     return [...this.messages]
+  }
+
+  private findSubagentBlock(toolCallId: string): {
+    message: UIMessage
+    block: Extract<UIBlock, { kind: 'subagent' }>
+  } | null {
+    for (const message of this.messages) {
+      const block = message.blocks.find(
+        (candidate): candidate is Extract<UIBlock, { kind: 'subagent' }> =>
+          candidate.kind === 'subagent' && candidate.toolCallId === toolCallId,
+      )
+      if (block != null) return { message, block }
+    }
+    return null
+  }
+
+  private getOrCreateSubagentBlock(event: {
+    id: string
+    timestamp: string
+    turnId: string
+    toolCallId: string
+  }): {
+    message: UIMessage
+    block: Extract<UIBlock, { kind: 'subagent' }>
+  } {
+    const existing = this.findSubagentBlock(event.toolCallId)
+    if (existing != null) return existing
+    const message = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+    const block: Extract<UIBlock, { kind: 'subagent' }> = {
+      kind: 'subagent',
+      toolCallId: event.toolCallId,
+      name: 'Subagent',
+      role: '',
+      task: '',
+      status: 'running',
+      tokens: '',
+    }
+    message.blocks.push(block)
+    return { message, block }
   }
 
   removeMessage(messageId: string): void {

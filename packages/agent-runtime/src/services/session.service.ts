@@ -2532,6 +2532,9 @@ export class SessionService {
         enableCheckpoints: true,
         sdkSessionId,
         continueSession: canResumeSdkSession,
+        ...(this.onHookTrigger != null
+          ? { applicationHookCallback: this.onHookTrigger }
+          : {}),
         ...(this.onApproval != null
           ? {
               approvalCallback: async (
@@ -5899,6 +5902,9 @@ export class SessionService {
       enableCheckpoints: false,
       sdkSessionId: memberSdkSessionId,
       continueSession: canContinueDiscussionSession,
+      ...(this.onHookTrigger != null
+        ? { applicationHookCallback: this.onHookTrigger }
+        : {}),
       ...(this.onApproval != null
         ? {
             approvalCallback: async (

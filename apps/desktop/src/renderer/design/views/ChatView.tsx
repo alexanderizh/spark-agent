@@ -3855,12 +3855,7 @@ function renderBlocks(
         return (
           <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
             <SubagentCard
-              name={block.name}
-              role={block.role}
-              task={block.task}
-              status={block.status}
-              tokens={block.tokens}
-              output={block.output}
+              {...block}
             />
           </div>
         )

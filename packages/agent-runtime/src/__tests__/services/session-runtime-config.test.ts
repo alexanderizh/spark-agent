@@ -1050,6 +1050,30 @@ describe('SessionService runtime provider/model resolution', () => {
     }))
   })
 
+  it('passes the application hook bridge into Claude SDK turns', async () => {
+    const onHookTrigger = vi.fn()
+    const service = new SessionService(
+      {} as never,
+      (event) => events.push(event),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      onHookTrigger,
+    )
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Hook bridge',
+    })
+
+    await service.sendTurn({ sessionId, message: 'request a tool' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    expect(mockState.sdkConfigs[0]?.applicationHookCallback).toBe(onHookTrigger)
+  })
+
   it('does not expose user-added app MCP servers until they are bound to the current agent', async () => {
     mockState.mcpServers.push({
       id: 'mcp-search',

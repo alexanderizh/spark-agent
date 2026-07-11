@@ -5,6 +5,7 @@ type TerminalizableEvent =
   | Extract<AgentEvent, { type: 'assistant_message' }>
   | Extract<AgentEvent, { type: 'agent_thinking' }>
   | Extract<AgentEvent, { type: 'team_member_message' }>
+  | Extract<AgentEvent, { type: 'subagent_message' }>
 
 type ActiveSegment = {
   event: TerminalizableEvent
@@ -18,7 +19,11 @@ export class StreamTerminalizer {
 
   observe(event: AgentEvent): void {
     if (!isTerminalizableEvent(event)) return
-    if (event.mode === 'complete' && event.type !== 'agent_thinking' && event.isFinal) {
+    if (
+      event.mode === 'complete' &&
+      (event.type === 'assistant_message' || event.type === 'team_member_message') &&
+      event.isFinal
+    ) {
       this.completeActiveScope(event)
     }
     if (event.segmentId == null) return
@@ -68,13 +73,22 @@ function isTerminalizableEvent(event: AgentEvent): event is TerminalizableEvent 
   return (
     event.type === 'assistant_message' ||
     event.type === 'agent_thinking' ||
-    event.type === 'team_member_message'
+    event.type === 'team_member_message' ||
+    event.type === 'subagent_message'
   )
 }
 
 function segmentKey(event: TerminalizableEvent): string {
   if (event.type === 'team_member_message') {
     return JSON.stringify([event.type, event.dispatchId, event.memberAgentId, event.segmentId])
+  }
+  if (event.type === 'subagent_message') {
+    return JSON.stringify([
+      event.type,
+      event.toolCallId,
+      event.contentKind,
+      event.segmentId,
+    ])
   }
   return JSON.stringify([event.type, event.segmentId])
 }
@@ -110,6 +124,15 @@ function toCompleteEvent(segment: ActiveSegment, base: EventBase): AgentEvent {
       mode: 'complete',
       content: segment.content,
       isFinal: false,
+    }
+  }
+  if (segment.event.type === 'subagent_message') {
+    return {
+      ...segment.event,
+      ...base,
+      type: 'subagent_message',
+      mode: 'complete',
+      content: segment.content,
     }
   }
   return {

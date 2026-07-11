@@ -593,6 +593,14 @@ export class ClaudeSDKExecutor {
           : {}),
         ...(config.mcpServers != null ? { mcpServers: config.mcpServers } : {}),
         strictMcpConfig: true,
+        forwardSubagentText: true,
+        agentProgressSummaries: true,
+        // Spark owns workflow/team orchestration. Keep the SDK's ultracode keyword
+        // trigger from starting a second, invisible orchestration layer.
+        disableWorkflows: true,
+        workflowKeywordTriggerEnabled: false,
+        ...buildApplicationHooks(config, sessionId),
+        ...buildElicitationHandler(config, sessionId),
         // 本地技能插件（托管技能目录）→ 启用 SDK 原生技能发现 + 渐进式披露。
         ...(config.skillPlugins != null && config.skillPlugins.length > 0
           ? { plugins: config.skillPlugins.map((p) => ({ type: 'local' as const, path: p })) }
@@ -1063,6 +1071,160 @@ function allowTool(
 
 function normalizeApprovalResult(result: boolean | SDKApprovalResult): SDKApprovalResult {
   return typeof result === 'boolean' ? { allowed: result } : result
+}
+
+function buildApplicationHooks(
+  config: SDKExecutorConfig,
+  sessionId: string,
+): Pick<SDKQueryOptions, 'hooks'> | Record<string, never> {
+  const callback = config.applicationHookCallback
+  if (callback == null) return {}
+  return {
+    hooks: {
+      PermissionRequest: [
+        {
+          hooks: [
+            async (input) => {
+              try {
+                await callback(sessionId, 'permission_request', {
+                  title: 'Spark Agent - 权限请求',
+                  body: `Claude 请求使用 ${input.tool_name}`,
+                })
+              } catch (error) {
+                log.warn('Application permission hook failed', {
+                  sessionId,
+                  toolName: input.tool_name,
+                  error: error instanceof Error ? error.message : String(error),
+                })
+              }
+              return { continue: true }
+            },
+          ],
+        },
+      ],
+    },
+  }
+}
+
+interface ElicitationField {
+  key: string
+  schema: Record<string, unknown>
+  prompt: UserQuestionPrompt
+}
+
+function buildElicitationHandler(
+  config: SDKExecutorConfig,
+  sessionId: string,
+): Pick<SDKQueryOptions, 'onElicitation'> | Record<string, never> {
+  const questionCallback = config.questionCallback
+  if (questionCallback == null || config.unattended === true) return {}
+  return {
+    onElicitation: async (request, options) => {
+      if (options.signal.aborted) return { action: 'cancel' }
+      if (request.mode !== 'form') return { action: 'decline' }
+      const fields = elicitationFields(request.requestedSchema, request.serverName)
+      if (fields.length === 0) return { action: 'decline' }
+      const answerPayload = await questionCallback(
+        sessionId,
+        fields.map((field) => field.prompt),
+      )
+      if (answerPayload.cancelled === true || answerPayload.declined === true) {
+        return { action: 'decline' }
+      }
+      const content: Record<string, unknown> = {}
+      for (const [index, field] of fields.entries()) {
+        const rawAnswer = findRawQuestionAnswer(answerPayload.answers, field.prompt, index)
+        const value = elicitationAnswerValue(rawAnswer, field.schema)
+        if (value === undefined && field.prompt.required === true) {
+          return { action: 'decline' }
+        }
+        if (value !== undefined) content[field.key] = value
+      }
+      return { action: 'accept', content }
+    },
+  }
+}
+
+function elicitationFields(
+  requestedSchema: Record<string, unknown> | undefined,
+  serverName: string,
+): ElicitationField[] {
+  const properties = requestedSchema?.properties
+  if (typeof properties !== 'object' || properties == null || Array.isArray(properties)) return []
+  const required = new Set(
+    Array.isArray(requestedSchema?.required)
+      ? requestedSchema.required.filter((key): key is string => typeof key === 'string')
+      : [],
+  )
+  const fields: ElicitationField[] = []
+  for (const [key, rawSchema] of Object.entries(properties)) {
+    if (typeof rawSchema !== 'object' || rawSchema == null || Array.isArray(rawSchema)) continue
+    const schema = rawSchema as Record<string, unknown>
+    const title = typeof schema.title === 'string' && schema.title.trim().length > 0
+      ? schema.title
+      : key
+    const description = typeof schema.description === 'string' ? schema.description : ''
+    const enumValues = Array.isArray(schema.enum) ? schema.enum : []
+    const isArrayEnum =
+      schema.type === 'array' &&
+      typeof schema.items === 'object' &&
+      schema.items != null &&
+      !Array.isArray(schema.items) &&
+      Array.isArray((schema.items as Record<string, unknown>).enum)
+    const choices = isArrayEnum
+      ? ((schema.items as Record<string, unknown>).enum as unknown[])
+      : enumValues
+    const options: UserQuestionOption[] = choices.map((value) => ({
+      label: String(value),
+      ...(description.length > 0 ? { description } : {}),
+    }))
+    fields.push({
+      key,
+      schema,
+      prompt: {
+        id: key,
+        question: title,
+        header: serverName.slice(0, 24),
+        type: options.length > 0 ? (isArrayEnum ? 'multi_choice' : 'single_choice') : 'text',
+        required: required.has(key),
+        ...(description.length > 0 && options.length === 0 ? { placeholder: description } : {}),
+        ...(options.length > 0 ? { options } : {}),
+        ...(isArrayEnum ? { multiSelect: true } : {}),
+        ...(!required.has(key) ? { allowSkip: true } : {}),
+      },
+    })
+  }
+  return fields
+}
+
+function elicitationAnswerValue(
+  rawAnswer: unknown,
+  schema: Record<string, unknown>,
+): unknown {
+  const answerRecord =
+    typeof rawAnswer === 'object' && rawAnswer != null && !Array.isArray(rawAnswer)
+      ? (rawAnswer as Record<string, unknown>)
+      : null
+  const rawValue =
+    answerRecord?.value ?? answerRecord?.answer ?? answerRecord?.text ?? rawAnswer
+  if (rawValue == null || rawValue === '') return undefined
+  if (schema.type === 'array') {
+    if (Array.isArray(rawValue)) return rawValue
+    return String(rawValue)
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+  }
+  const text = typeof rawValue === 'string' ? rawValue : String(rawValue)
+  if (schema.type === 'boolean') return text.toLowerCase() === 'true'
+  if (schema.type === 'number' || schema.type === 'integer') {
+    const numeric = Number(text)
+    return Number.isFinite(numeric) ? numeric : undefined
+  }
+  if (Array.isArray(schema.enum)) {
+    return schema.enum.find((value) => String(value) === text) ?? text
+  }
+  return text
 }
 
 function scopePermissionUpdates(

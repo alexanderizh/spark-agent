@@ -999,10 +999,12 @@ export function ChatInspector({
                 >
                   <div className="runtime-skill-main min-w-0">
                     <div className="runtime-skill-name truncate">
-                      {sa.status === 'running' ? (
+                      {sa.status === 'running' || sa.status === 'paused' ? (
                         <Icons.Spinner size={10} className="thinking-spinner" />
-                      ) : (
+                      ) : sa.status === 'done' ? (
                         <Icons.Check size={10} style={{ color: 'var(--c-ok, #22c55e)' }} />
+                      ) : (
+                        <Icons.AlertTriangle size={10} style={{ color: 'var(--warning)' }} />
                       )}{' '}
                       {sa.name}
                     </div>
