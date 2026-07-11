@@ -170,6 +170,38 @@ function Stage3DMini({ data }: { data: SparkCanvasNode['data'] }) {
   )
 }
 
+/** 视频工作台节点卡片：源视频缩略图 + 关键帧计数 + 提示。 */
+function VideoWorkbenchMini({ data }: { data: SparkCanvasNode['data'] }) {
+  const raw = data.videoWorkbench as Record<string, unknown> | undefined
+  const keyframeCount = Array.isArray(raw?.keyframes) ? (raw!.keyframes as unknown[]).length : 0
+  const probe = raw?.probeInfo as { durationSec?: number; width?: number; height?: number } | undefined
+  const thumb = data.thumbnailUrl ?? ''
+  const normalizedThumb = thumb ? normalizeEduAssetUrl(thumb) : ''
+  return (
+    <div className="canvas-node-video-workbench">
+      {normalizedThumb ? (
+        <img className="canvas-node-vwb-thumb" src={normalizedThumb} alt="视频工作台预览" />
+      ) : (
+        <div className="canvas-node-vwb-nothumb">
+          <Icons.Video size={28} />
+        </div>
+      )}
+      <div className="canvas-node-vwb-stats">
+        {probe?.durationSec ? <span>时长 {formatVwbDuration(probe.durationSec)}</span> : null}
+        <span>关键帧 {keyframeCount}</span>
+      </div>
+      <div className="canvas-node-vwb-hint">双击进入视频工作台</div>
+    </div>
+  )
+}
+
+/** mm:ss 时长格式化（VideoWorkbenchMini 专用，避免循环依赖 videoWorkbench.types） */
+function formatVwbDuration(sec: number): string {
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec % 60)
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
 /** 操作节点图标：按 operation 类型映射 */
 function operationNodeIcon(operation: CanvasOperationType | null): React.ReactNode {
   if (!operation) return <Icons.Sparkles size={13} />
@@ -509,6 +541,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       : (node.title ?? metaTypeLabel)
   const isDirectorStage = node.data.subtype === 'director_stage'
   const isDirectorStage3D = node.data.subtype === 'director_stage_3d'
+  const isVideoWorkbench = node.data.subtype === 'video_workbench'
   const isResourceOutput =
     !isTask && (isGeneratedOutput || node.data.origin === 'task_output')
   const isGroupedChild = Boolean(node.parentNodeId)
@@ -1131,6 +1164,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 </div>
               ) : isDirectorStage3D ? (
                 <Stage3DMini data={node.data} />
+              ) : isVideoWorkbench ? (
+                <VideoWorkbenchMini data={node.data} />
               ) : isDirectorStage ? (
                 <div className="canvas-node-director-stage">
                   <DirectorStageMini data={node.data} nodeId={node.id} />
