@@ -115,6 +115,34 @@ describe('NewApiClient', () => {
     })
   })
 
+  it('converts quota points with the NewAPI public display settings', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/api/status')) {
+        return envelope({
+          quota_per_unit: 500_000,
+          quota_display_type: 'CNY',
+          usd_exchange_rate: 7.3,
+        })
+      }
+      if (url.endsWith('/api/user/self')) {
+        return envelope({ quota: 1_369_863, used_quota: 500_000 })
+      }
+      if (url.includes('/api/log/self')) {
+        return envelope({ items: [{ id: 1, quota: 250_000 }] })
+      }
+      throw new Error(`unexpected mock request: ${url}`)
+    }))
+
+    const client = new NewApiClient('https://newapi.example', 42, 'management-token')
+    await expect(client.getUsage()).resolves.toMatchObject({
+      walletQuota: 19.9999998,
+      cumulativeUsedQuota: 7.3,
+      currencySymbol: '¥',
+      logs: [{ quota: 3.65 }],
+    })
+  })
+
   it('returns an external EPay POST form without leaking signed fields into a URL', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
@@ -186,7 +214,11 @@ describe('NewApiClient', () => {
     await expect(client.getSubscription()).resolves.toMatchObject({ planId: 3, status: 'active' })
     await expect(client.createPayment(3, 'alipay')).resolves.toMatchObject({ mode: 'browser' })
     await expect(client.redeemQuota('QUOTA-CODE')).resolves.toBe(5000)
-    await expect(client.getUsage()).resolves.toMatchObject({ walletQuota: 5000, cumulativeUsedQuota: 1200 })
+    await expect(client.getUsage()).resolves.toMatchObject({
+      walletQuota: 0.01,
+      cumulativeUsedQuota: 0.0024,
+      currencySymbol: '$',
+    })
     expect(requests).toEqual(expect.arrayContaining([
       'POST /api/user/login',
       'GET /api/user/token',

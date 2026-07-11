@@ -25,6 +25,14 @@ describe('IPC schemas', () => {
     expect(request.reasoningEffort).toBe('max')
   })
 
+  it('accepts the managed Spark platform provider id during session creation', () => {
+    const request = SessionCreateRequestSchema.parse({
+      providerProfileId: 'spark-platform-newapi',
+    })
+
+    expect(request.providerProfileId).toBe('spark-platform-newapi')
+  })
+
   it('preserves selected agent fields during session creation', () => {
     const request = SessionCreateRequestSchema.parse({
       providerProfileId: '00000000-0000-4000-8000-000000000001',

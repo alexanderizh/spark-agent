@@ -504,6 +504,8 @@ export interface ProviderProfile {
   provider: string
   defaultModel: string
   modelIds: string[]
+  /** 受管 Provider 从服务端同步到的完整模型清单；modelIds 仅表示本机启用项。 */
+  availableModelIds?: string[]
   /** Provider 列表和模型配置表单里展示的 LobeHub 图标配置。 */
   providerIcon?: ProviderIconConfig
   /** 自定义 API Endpoint */
@@ -608,6 +610,16 @@ export interface PlatformModelPayResponse {
   paid: boolean
 }
 
+export interface PlatformModelUpdatePreferencesRequest {
+  modelIds: string[]
+  defaultModel: string
+}
+
+export interface PlatformModelUpdatePreferencesResponse {
+  modelIds: string[]
+  defaultModel: string
+}
+
 export interface PlatformModelUsageLog {
   id: number
   createdAt: number
@@ -620,6 +632,8 @@ export interface PlatformModelUsageLog {
 export interface PlatformModelUsage {
   walletQuota: number
   cumulativeUsedQuota: number
+  /** 与 NewAPI 控制台额度展示设置一致的货币符号；TOKENS 模式为空。 */
+  currencySymbol: string
   logs: PlatformModelUsageLog[]
 }
 
@@ -5020,6 +5034,10 @@ export interface IpcChannelMap {
   'platform-model:redeem': [PlatformModelRedeemRequest, PlatformModelRedeemResponse]
   'platform-model:pay': [PlatformModelPayRequest, PlatformModelPayResponse]
   'platform-model:get-usage': [void, PlatformModelUsage]
+  'platform-model:update-model-preferences': [
+    PlatformModelUpdatePreferencesRequest,
+    PlatformModelUpdatePreferencesResponse,
+  ]
 
   // History Import（检测 + 导入宿主机 Claude Code / Codex 对话历史）
   'history-import:scan': [HistoryImportScanRequest, HistoryImportScanResponse]

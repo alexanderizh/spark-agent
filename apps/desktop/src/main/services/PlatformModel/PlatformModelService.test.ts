@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   recoverApiKey: vi.fn(),
   getSubscription: vi.fn(),
   ensureManagedProvider: vi.fn(),
+  updateManagedModelPreferences: vi.fn(),
   disableManagedProvider: vi.fn(),
   setManagedCredentialState: vi.fn(),
   openExternal: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock('@spark/shared/keystore', () => ({
 vi.mock('@spark/agent-runtime', () => ({
   ProviderService: class {
     ensureManagedNewApiProvider = mocks.ensureManagedProvider
+    updateManagedNewApiModelPreferences = mocks.updateManagedModelPreferences
     disableManagedNewApiProvider = mocks.disableManagedProvider
     setManagedNewApiCredentialState = mocks.setManagedCredentialState
   },
@@ -112,8 +114,34 @@ describe('PlatformModelService delivery boundaries', () => {
     mocks.validateSession.mockResolvedValue(undefined)
     mocks.getModels.mockResolvedValue(['gpt-5.4-mini'])
     mocks.ensureApiKey.mockResolvedValue('sk-current')
+    mocks.ensureManagedProvider.mockResolvedValue({
+      modelIds: ['gpt-5.4-mini'],
+      defaultModel: 'gpt-5.4-mini',
+    })
     mocks.recoverApiKey.mockImplementation(async (current: string | null) => current ?? 'sk-recovered')
     mocks.getSubscription.mockResolvedValue(null)
+    mocks.updateManagedModelPreferences.mockResolvedValue({
+      modelIds: ['MiniMax-M3', 'deepseek-v4'],
+      defaultModel: 'MiniMax-M3',
+    })
+  })
+
+  it('updates only the local managed model preferences', async () => {
+    const service = new PlatformModelService()
+
+    await expect(service.updateModelPreferences({
+      modelIds: ['deepseek-v4', 'MiniMax-M3'],
+      defaultModel: 'MiniMax-M3',
+    })).resolves.toMatchObject({
+      modelIds: ['MiniMax-M3', 'deepseek-v4'],
+      defaultModel: 'MiniMax-M3',
+    })
+
+    expect(mocks.updateManagedModelPreferences).toHaveBeenCalledWith({
+      modelIds: ['deepseek-v4', 'MiniMax-M3'],
+      defaultModel: 'MiniMax-M3',
+    })
+    expect(service.getStatus().models).toEqual(['MiniMax-M3', 'deepseek-v4'])
   })
 
   it('singleflights concurrent inference-key recovery requests', async () => {

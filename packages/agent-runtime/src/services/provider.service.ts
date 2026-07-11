@@ -303,6 +303,7 @@ function rowToProfile(row: {
     provider: normalizeProviderType(row.provider_type),
     defaultModel: config.defaultModel,
     modelIds: config.modelIds,
+    ...(config.availableModelIds !== undefined && { availableModelIds: config.availableModelIds }),
     ...(config.providerIcon !== undefined && { providerIcon: config.providerIcon }),
     ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
@@ -1018,14 +1019,23 @@ export class ProviderService {
     apiKey: string
     credentialState?: 'ready' | 'session_conflict' | 'quota_exhausted' | 'unavailable'
   }): Promise<ProviderProfile> {
-    const modelIds = [...new Set(params.modelIds.map(model => model.trim()).filter(Boolean))]
-    const defaultModel = modelIds[0]
+    const availableModelIds = [...new Set(params.modelIds.map(model => model.trim()).filter(Boolean))]
+    const existing = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
+    const existingConfig = existing && isManagedProviderRow(existing)
+      ? normalizeProviderConfig(JSON.parse(existing.config_json) as ProviderConfig)
+      : null
+    const preferredModelIds = existingConfig?.modelIds.filter(model => availableModelIds.includes(model)) ?? []
+    const modelIds = preferredModelIds.length > 0 ? preferredModelIds : availableModelIds
+    const defaultModel = existingConfig && modelIds.includes(existingConfig.defaultModel)
+      ? existingConfig.defaultModel
+      : modelIds[0]
     if (!defaultModel) throw new Error('平台账户当前没有可用模型')
     const keystoreRef = keystore.makeKeystoreRef('newapi', `spark-user-${params.ownerUserId}-api-key`)
     await keystore.setSecret(keystoreRef, params.apiKey)
     const config = normalizeProviderConfig({
       defaultModel,
       modelIds,
+      availableModelIds,
       apiEndpoint: `${params.baseUrl.replace(/\/+$/, '')}/v1`,
       codexApiKind: 'chat',
       modelType: 'text',
@@ -1034,7 +1044,6 @@ export class ProviderService {
       managedOwnerUserId: params.ownerUserId,
       credentialState: params.credentialState ?? 'ready',
     })
-    const existing = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
     if (existing) {
       this.repo.update(PLATFORM_NEWAPI_PROVIDER_ID, {
         name: 'Spark 平台官方模型',
@@ -1054,6 +1063,28 @@ export class ProviderService {
       keystoreRef,
       isDefault: false,
     }))
+  }
+
+  async updateManagedNewApiModelPreferences(params: {
+    modelIds: string[]
+    defaultModel: string
+  }): Promise<ProviderProfile> {
+    const row = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
+    if (!row || !isManagedProviderRow(row)) throw new Error('平台官方 Provider 尚未就绪')
+    const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+    const availableModelIds = config.availableModelIds ?? config.modelIds
+    const selected = [...new Set(params.modelIds.map(model => model.trim()).filter(model => availableModelIds.includes(model)))]
+    const firstSelected = selected[0]
+    if (!firstSelected) throw new Error('至少启用一个平台模型')
+    const requestedDefault = params.defaultModel.trim()
+    const defaultModel = selected.includes(requestedDefault) ? requestedDefault : firstSelected
+    const modelIds = normalizeModelIds(defaultModel, selected)
+    this.repo.update(PLATFORM_NEWAPI_PROVIDER_ID, {
+      config: { ...config, defaultModel, modelIds, availableModelIds },
+    })
+    const updated = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
+    if (!updated) throw new Error('平台官方 Provider 更新后无法读取')
+    return rowToProfile(updated)
   }
 
   async disableManagedNewApiProvider(ownerUserId?: string): Promise<void> {
@@ -1302,6 +1333,7 @@ interface ProviderConfig {
   defaultModel?: string
   model?: string
   modelIds?: string[]
+  availableModelIds?: string[]
   apiEndpoint?: string
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   supportsMillionContext?: boolean
