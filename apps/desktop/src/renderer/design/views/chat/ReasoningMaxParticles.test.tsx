@@ -3,12 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { ReasoningMaxParticles } from './ReasoningMaxParticles'
 
 describe('ReasoningMaxParticles', () => {
-  it('renders a denser particle field on the stronger side', () => {
+  it('renders short comet particles with more activity on the stronger side', () => {
     const html = renderToStaticMarkup(<ReasoningMaxParticles />)
 
     expect(html).toContain('aria-hidden="true"')
-    expect(html.match(/data-reasoning-particle=/g)).toHaveLength(20)
-    expect(html.match(/data-particle-zone="left"/g)).toHaveLength(5)
-    expect(html.match(/data-particle-zone="right"/g)).toHaveLength(15)
+    expect(html).toContain('composer-reasoning-comet')
+    expect(html.match(/data-reasoning-particle=/g)).toHaveLength(8)
+    expect(html.match(/data-particle-zone="left"/g)).toHaveLength(3)
+    expect(html.match(/data-particle-zone="right"/g)).toHaveLength(5)
   })
 })
