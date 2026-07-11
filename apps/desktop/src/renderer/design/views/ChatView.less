@@ -3229,7 +3229,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   cursor: ew-resize;
   outline: none;
   overflow: hidden;
-  box-shadow: inset 0 0 0 1px var(--divider);
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
 .composer-reasoning-slider:focus-visible {
@@ -3243,26 +3243,33 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   inset: 0 auto 0 0;
   width: var(--reasoning-fill-width);
   border-radius: inherit;
-  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--primary) 48%, #168ff5),
+    var(--primary) 58%,
+    color-mix(in srgb, var(--primary) 62%, #f346d2)
+  );
+  box-shadow: 0 0 12px color-mix(in srgb, var(--primary) 24%, transparent);
   pointer-events: none;
 }
 
 .composer-reasoning-menu.is-max .composer-reasoning-slider {
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--primary) 2%, var(--panel)) 0%,
-    color-mix(in srgb, var(--primary) 8%, var(--panel)) 52%,
-    color-mix(in srgb, var(--primary) 14%, var(--panel)) 100%
+    color-mix(in srgb, var(--primary) 50%, #168ff5),
+    var(--primary) 50%,
+    color-mix(in srgb, var(--primary) 62%, #f346d2)
   );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text) 12%, transparent),
+    inset 0 -4px 8px color-mix(in srgb, var(--primary) 18%, transparent),
+    0 3px 14px color-mix(in srgb, var(--primary) 28%, transparent);
 }
 
 .composer-reasoning-menu.is-max .composer-reasoning-slider-fill {
   width: 100%;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--primary) 1%, transparent),
-    color-mix(in srgb, var(--primary) 8%, transparent)
-  );
+  background: transparent;
+  box-shadow: none;
 }
 
 .composer-reasoning-particles {
@@ -3273,27 +3280,19 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   pointer-events: none;
 }
 
-.composer-reasoning-particle {
+.composer-reasoning-comet {
   position: absolute;
   left: var(--reasoning-particle-x);
   top: var(--reasoning-particle-y);
-  width: var(--reasoning-particle-size);
+  width: var(--reasoning-particle-tail);
   height: var(--reasoning-particle-size);
   border-radius: 999px;
   opacity: var(--reasoning-particle-opacity);
-  background: color-mix(in srgb, var(--primary) 58%, var(--panel));
-  box-shadow: 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
-  animation: composer-reasoning-particle-drift var(--reasoning-particle-duration) ease-in-out
-    var(--reasoning-particle-delay) infinite alternate;
-}
-
-.composer-reasoning-particle:nth-child(3n) {
-  background: color-mix(in srgb, var(--primary) 66%, var(--panel));
-}
-
-.composer-reasoning-particle:nth-child(5n) {
-  background: color-mix(in srgb, var(--primary) 72%, var(--panel));
-  box-shadow: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.94));
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.48));
+  transform: rotate(-5deg);
+  animation: composer-reasoning-comet-flight var(--reasoning-particle-duration)
+    cubic-bezier(0.4, 0, 0.2, 1) var(--reasoning-particle-delay) infinite;
 }
 
 .composer-reasoning-step {
@@ -3340,10 +3339,10 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 .composer-reasoning-thumb {
   position: absolute;
   left: var(--reasoning-step-left);
-  top: 0;
+  top: 4px;
   z-index: 3;
   width: 16px;
-  height: 24px;
+  height: 16px;
   border-radius: var(--r-sm);
   background: var(--panel);
   box-shadow:
@@ -3358,27 +3357,27 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 }
 
 .composer-reasoning-menu.is-max .composer-reasoning-thumb {
-  background: color-mix(in srgb, var(--primary) 9%, var(--panel));
+  background: color-mix(in srgb, var(--text) 8%, var(--panel));
   box-shadow:
-    -3px 0 9px color-mix(in srgb, var(--primary) 7%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent);
+    -4px 0 13px color-mix(in srgb, var(--primary) 30%, transparent),
+    0 3px 9px rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
 }
 
-@keyframes composer-reasoning-particle-drift {
+@keyframes composer-reasoning-comet-flight {
   0% {
-    transform: translate3d(-4px, 0, 0);
-    filter: brightness(0.78);
+    transform: translate3d(-24px, 2px, 0) rotate(-5deg);
+    opacity: 0;
   }
-  48% {
-    filter: brightness(1);
+  25% {
+    opacity: var(--reasoning-particle-opacity);
+  }
+  78% {
+    opacity: var(--reasoning-particle-opacity);
   }
   100% {
-    transform: translate3d(
-      var(--reasoning-particle-drift-x),
-      var(--reasoning-particle-drift-y),
-      0
-    );
-    filter: brightness(0.88);
+    transform: translate3d(34px, -2px, 0) rotate(-5deg);
+    opacity: 0;
   }
 }
 
@@ -3395,7 +3394,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 
 @media (prefers-reduced-motion: reduce) {
   .composer-reasoning-thumb,
-  .composer-reasoning-particle,
+  .composer-reasoning-comet,
   .composer-reasoning-select.is-max .composer-select-label-ticker-item.is-current {
     transition: none;
     animation: none;
