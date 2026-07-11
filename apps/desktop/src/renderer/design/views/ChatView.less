@@ -3171,8 +3171,27 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 }
 
 .composer-reasoning-menu.is-max .composer-reasoning-title strong {
-  color: var(--primary);
+  color: color-mix(in srgb, var(--primary) 78%, var(--panel));
   text-shadow: none;
+}
+
+.composer-reasoning-select.is-max .composer-select-label-ticker-item.is-current {
+  color: var(--primary);
+  background: linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--primary) 82%, var(--panel)) 0%,
+      color-mix(in srgb, var(--primary) 68%, var(--panel)) 43%,
+      color-mix(in srgb, var(--primary) 76%, var(--text)) 51%,
+      color-mix(in srgb, var(--primary) 72%, var(--panel)) 61%,
+      color-mix(in srgb, var(--primary) 82%, var(--panel)) 100%
+    )
+    0 0 / 240% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation:
+    composer-label-ticker-in 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both,
+    composer-reasoning-max-label-flow 5.2s ease-in-out 0.24s infinite;
 }
 
 .composer-reasoning-help {
@@ -3229,31 +3248,52 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 }
 
 .composer-reasoning-menu.is-max .composer-reasoning-slider {
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--text) 7%, var(--panel)) 0%,
-      color-mix(in srgb, var(--primary) 18%, var(--panel)) 48%,
-      color-mix(in srgb, var(--primary) 34%, var(--panel)) 100%
-    ),
-    color-mix(in srgb, var(--text) 7%, var(--panel));
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--primary) 2%, var(--panel)) 0%,
+    color-mix(in srgb, var(--primary) 8%, var(--panel)) 52%,
+    color-mix(in srgb, var(--primary) 14%, var(--panel)) 100%
+  );
 }
 
 .composer-reasoning-menu.is-max .composer-reasoning-slider-fill {
   width: 100%;
-  background:
-    radial-gradient(
-        circle at center,
-        color-mix(in srgb, var(--primary) 52%, var(--panel)) 0 1.5px,
-        transparent 1.8px
-      )
-      0 0 / 8px 8px,
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--text) 4%, transparent),
-      color-mix(in srgb, var(--primary) 24%, transparent)
-    );
-  mask-image: linear-gradient(90deg, transparent 0%, #000 34%, #000 100%);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--primary) 1%, transparent),
+    color-mix(in srgb, var(--primary) 8%, transparent)
+  );
+}
+
+.composer-reasoning-particles {
+  position: absolute;
+  z-index: 1;
+  inset: 0 17px 0 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.composer-reasoning-particle {
+  position: absolute;
+  left: var(--reasoning-particle-x);
+  top: var(--reasoning-particle-y);
+  width: var(--reasoning-particle-size);
+  height: var(--reasoning-particle-size);
+  border-radius: 999px;
+  opacity: var(--reasoning-particle-opacity);
+  background: color-mix(in srgb, var(--primary) 58%, var(--panel));
+  box-shadow: 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
+  animation: composer-reasoning-particle-drift var(--reasoning-particle-duration) ease-in-out
+    var(--reasoning-particle-delay) infinite alternate;
+}
+
+.composer-reasoning-particle:nth-child(3n) {
+  background: color-mix(in srgb, var(--primary) 66%, var(--panel));
+}
+
+.composer-reasoning-particle:nth-child(5n) {
+  background: color-mix(in srgb, var(--primary) 72%, var(--panel));
+  box-shadow: none;
 }
 
 .composer-reasoning-step {
@@ -3294,7 +3334,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 }
 
 .composer-reasoning-menu.is-max .composer-reasoning-dot {
-  background: color-mix(in srgb, var(--primary) 64%, var(--panel));
+  opacity: 0;
 }
 
 .composer-reasoning-thumb {
@@ -3318,12 +3358,47 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 }
 
 .composer-reasoning-menu.is-max .composer-reasoning-thumb {
-  background: color-mix(in srgb, var(--primary) 12%, var(--panel));
+  background: color-mix(in srgb, var(--primary) 9%, var(--panel));
+  box-shadow:
+    -3px 0 9px color-mix(in srgb, var(--primary) 7%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+@keyframes composer-reasoning-particle-drift {
+  0% {
+    transform: translate3d(-4px, 0, 0);
+    filter: brightness(0.78);
+  }
+  48% {
+    filter: brightness(1);
+  }
+  100% {
+    transform: translate3d(
+      var(--reasoning-particle-drift-x),
+      var(--reasoning-particle-drift-y),
+      0
+    );
+    filter: brightness(0.88);
+  }
+}
+
+@keyframes composer-reasoning-max-label-flow {
+  0%,
+  18% {
+    background-position: 0 0;
+  }
+  74%,
+  100% {
+    background-position: 240% 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .composer-reasoning-thumb {
+  .composer-reasoning-thumb,
+  .composer-reasoning-particle,
+  .composer-reasoning-select.is-max .composer-select-label-ticker-item.is-current {
     transition: none;
+    animation: none;
   }
 }
 
