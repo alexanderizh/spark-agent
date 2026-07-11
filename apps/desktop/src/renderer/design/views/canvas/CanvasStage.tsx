@@ -37,6 +37,7 @@ import { mergeFlowNodes } from './canvasStageNodeSync'
 import { computeCanvasAlignmentGuides, type CanvasAlignmentGuide } from './canvasAlignmentGuides'
 import {
   arrangeCanvasNodes,
+  type CanvasAutoLayoutLink,
   type CanvasAutoLayoutMode,
   type CanvasAutoLayoutNode,
   type CanvasAutoLayoutSpacing,
@@ -761,14 +762,27 @@ function CanvasStageInner({
 
         for (const parentKey of parentKeys) {
           const nodesInScope = movableNodes.filter((node) => (node.parentId ?? '') === parentKey)
+          const nodeIdsInScope = new Set(nodesInScope.map((node) => node.id))
           const obstacles = currentFlowNodes.filter(
             (node) => (node.parentId ?? '') === parentKey && !movableIds.has(node.id),
           )
+          const linksInScope: CanvasAutoLayoutLink[] = operationProjection.visibleEdges
+            .filter(
+              (edge) =>
+                edge.type !== 'group_contains' &&
+                nodeIdsInScope.has(edge.sourceNodeId) &&
+                nodeIdsInScope.has(edge.targetNodeId),
+            )
+            .map((edge) => ({
+              sourceId: edge.sourceNodeId,
+              targetId: edge.targetNodeId,
+            }))
           const positions = arrangeCanvasNodes(
             nodesInScope.map(flowNodeToAutoLayoutNode),
             {
               mode,
               spacing,
+              links: linksInScope,
               obstacles: obstacles.map(flowNodeToAutoLayoutNode),
             },
           )
@@ -842,7 +856,14 @@ function CanvasStageInner({
       },
     })
     return () => onViewportControlsChange(null)
-  }, [nodesInitialized, notifyViewportChange, onNodesPersist, onViewportControlsChange, snapshot.nodes])
+  }, [
+    nodesInitialized,
+    notifyViewportChange,
+    onNodesPersist,
+    onViewportControlsChange,
+    operationProjection.visibleEdges,
+    snapshot.nodes,
+  ])
 
   const cancelScheduledSync = useCallback(() => {
     if (syncFrameRef.current == null) return

@@ -61,6 +61,60 @@ describe('arrangeCanvasNodes', () => {
     ])
   })
 
+  it('lays connected nodes vertically by graph depth columns', () => {
+    const result = arrangeCanvasNodes(
+      [
+        { id: 'root', x: 0, y: 10, width: 100, height: 50, headerHeight: 10 },
+        { id: 'child-a', x: 200, y: 10, width: 80, height: 40, headerHeight: 10 },
+        { id: 'child-b', x: 200, y: 100, width: 80, height: 60, headerHeight: 10 },
+        { id: 'grandchild', x: 400, y: 100, width: 120, height: 30, headerHeight: 10 },
+      ],
+      {
+        mode: 'vertical',
+        spacing: 'small',
+        links: [
+          { sourceId: 'root', targetId: 'child-a' },
+          { sourceId: 'root', targetId: 'child-b' },
+          { sourceId: 'child-b', targetId: 'grandchild' },
+        ],
+      },
+    )
+
+    expect(result).toEqual([
+      { id: 'root', x: 0, y: 56 },
+      { id: 'child-a', x: 132, y: 10 },
+      { id: 'child-b', x: 132, y: 92 },
+      { id: 'grandchild', x: 244, y: 107 },
+    ])
+  })
+
+  it('lays connected nodes horizontally by graph depth rows', () => {
+    const result = arrangeCanvasNodes(
+      [
+        { id: 'root', x: 0, y: 10, width: 100, height: 50, headerHeight: 10 },
+        { id: 'child-a', x: 200, y: 10, width: 80, height: 40, headerHeight: 10 },
+        { id: 'child-b', x: 200, y: 100, width: 80, height: 60, headerHeight: 10 },
+        { id: 'grandchild', x: 400, y: 100, width: 120, height: 30, headerHeight: 10 },
+      ],
+      {
+        mode: 'horizontal',
+        spacing: 'small',
+        links: [
+          { sourceId: 'root', targetId: 'child-a' },
+          { sourceId: 'root', targetId: 'child-b' },
+          { sourceId: 'child-b', targetId: 'grandchild' },
+        ],
+      },
+    )
+
+    expect(result).toEqual([
+      { id: 'root', x: 66, y: 10 },
+      { id: 'child-a', x: 0, y: 102 },
+      { id: 'child-b', x: 132, y: 102 },
+      { id: 'grandchild', x: 112, y: 204 },
+    ])
+  })
+
   it('exposes four increasing spacing levels', () => {
     expect([
       canvasAutoLayoutGap('small'),
