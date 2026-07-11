@@ -417,7 +417,9 @@ describe('EventRepository', () => {
       ['evt-1', 'turn-1', 1, 'assistant_message', 'delta'],
       ['evt-tool', 'turn-1', 2, 'tool_call', null],
       ['evt-2', 'turn-1', 3, 'agent_thinking', 'delta'],
-      ['evt-3', 'turn-2', 4, 'assistant_message', 'complete'],
+      ['evt-subagent-delta', 'turn-1', 4, 'subagent_message', 'delta'],
+      ['evt-subagent-complete', 'turn-1', 5, 'subagent_message', 'complete'],
+      ['evt-3', 'turn-2', 6, 'assistant_message', 'complete'],
     ] as const) {
       repo.insert({
         id,
@@ -437,8 +439,16 @@ describe('EventRepository', () => {
     }
 
     expect(repo.queryStreamEventsByTurn('sess-turn-events', 'turn-1').map((row) => row.id)).toEqual(
-      ['evt-1', 'evt-2'],
+      ['evt-1', 'evt-2', 'evt-subagent-delta', 'evt-subagent-complete'],
     )
+    const renderablePageIds = repo
+      .queryRenderablePage({ sessionId: 'sess-turn-events' })
+      .events.map((row) => row.id)
+    expect(renderablePageIds).toContain('evt-subagent-complete')
+    expect(renderablePageIds).not.toContain('evt-subagent-delta')
+    expect(
+      repo.queryRenderableTurns({ sessionId: 'sess-turn-events' }).events.map((row) => row.id),
+    ).not.toContain('evt-subagent-delta')
   })
 
   it('should query events with pagination', () => {

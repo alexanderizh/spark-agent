@@ -153,7 +153,7 @@ export class EventRepository extends BaseRepository {
    * 按 session 分页查询「可渲染」事件（用于 UI 历史加载，支持向上翻页）。
    *
    * 与 queryBySession 的关键区别：在 SQL 层**排除流式 delta 行**
-   * （assistant_message / agent_thinking / team_member_message 的 mode='delta'）。
+   * （assistant_message / agent_thinking / team_member_message / subagent_message 的 mode='delta'）。
    * 一个长回复会产生成百上千条 delta 行，但承载完整文本的是对应的 mode='complete' 行；
    * 渲染历史只需 complete + 其余所有事件类型（tool_call/file_change/terminal/...）。
    * 排除 delta 后，单页事件数与载荷骤降，避免大会话/1M 上下文加载时主线程被
@@ -177,7 +177,7 @@ export class EventRepository extends BaseRepository {
     // 排除流式增量行，保留 complete 与所有非流式事件类型。
     // COALESCE 兜底：无 mode 字段（json_extract 返回 NULL）的行视为非 delta，保留。
     conditions.push(
-      `NOT (event_type IN ('assistant_message', 'agent_thinking', 'team_member_message') ` +
+      `NOT (event_type IN ('assistant_message', 'agent_thinking', 'team_member_message', 'subagent_message') ` +
         `AND COALESCE(event_mode, '') = 'delta')`,
     )
     const whereClause = `WHERE ${conditions.join(' AND ')}`
@@ -212,7 +212,7 @@ export class EventRepository extends BaseRepository {
     const { sessionId, turnLimit = 6, eventLimit, beforeSeq } = params
     const seqExpr = 'seq'
     const deltaExclude =
-      `NOT (event_type IN ('assistant_message', 'agent_thinking', 'team_member_message') ` +
+      `NOT (event_type IN ('assistant_message', 'agent_thinking', 'team_member_message', 'subagent_message') ` +
       `AND COALESCE(event_mode, '') = 'delta')`
 
     // 1) 选出最近的 turnLimit(+1 探测 hasMore) 个轮次（按轮次最大 seq 倒序）
@@ -282,7 +282,7 @@ export class EventRepository extends BaseRepository {
     const stmt = this.raw.prepare(
       `SELECT * FROM agent_events
        WHERE session_id = ? AND turn_id = ?
-         AND event_type IN ('assistant_message', 'agent_thinking', 'team_member_message')
+         AND event_type IN ('assistant_message', 'agent_thinking', 'team_member_message', 'subagent_message')
        ORDER BY seq ASC, created_at ASC, rowid ASC`,
     )
     return stmt.all(sessionId, turnId) as AgentEventRow[]

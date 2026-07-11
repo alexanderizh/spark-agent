@@ -156,4 +156,39 @@ describe('StreamTerminalizer', () => {
       }),
     ])
   })
+
+  it('finalizes unfinished nested subagent transcript segments', () => {
+    const terminalizer = new StreamTerminalizer()
+    terminalizer.observe(
+      event({
+        type: 'subagent_message',
+        toolCallId: 'tool-1',
+        contentKind: 'text',
+        mode: 'delta',
+        content: 'Checking ',
+        segmentId: 'subagent-text-1',
+      }),
+    )
+    terminalizer.observe(
+      event({
+        type: 'subagent_message',
+        toolCallId: 'tool-1',
+        contentKind: 'text',
+        mode: 'delta',
+        content: 'permissions',
+        segmentId: 'subagent-text-1',
+      }),
+    )
+
+    expect(terminalizer.finalize(() => event({}))).toEqual([
+      expect.objectContaining({
+        type: 'subagent_message',
+        toolCallId: 'tool-1',
+        contentKind: 'text',
+        mode: 'complete',
+        content: 'Checking permissions',
+        segmentId: 'subagent-text-1',
+      }),
+    ])
+  })
 })

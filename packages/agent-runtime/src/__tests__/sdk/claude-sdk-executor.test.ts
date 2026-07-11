@@ -537,6 +537,156 @@ describe('ClaudeSDKExecutor', () => {
     expect(options.strictMcpConfig).toBe(true)
   })
 
+  it('enables bounded subagent visibility and disables conflicting native workflows', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', baseConfig())
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    expect(options).toMatchObject({
+      forwardSubagentText: true,
+      agentProgressSummaries: true,
+      disableWorkflows: true,
+      workflowKeywordTriggerEnabled: false,
+    })
+  })
+
+  it('bridges only SDK permission-request hooks into Spark application hooks', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const applicationHookCallback = vi.fn(async () => undefined)
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      applicationHookCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    expect(Object.keys(options.hooks ?? {})).toEqual(['PermissionRequest'])
+    const hook = options.hooks?.PermissionRequest?.[0]?.hooks[0]
+    await expect(hook?.({
+      hook_event_name: 'PermissionRequest',
+      session_id: 'sdk-session-1',
+      transcript_path: '/private/transcript.jsonl',
+      cwd: '/tmp',
+      tool_name: 'Bash',
+      tool_input: { command: 'pnpm test' },
+    }, 'tool-1', { signal: new AbortController().signal })).resolves.toEqual({ continue: true })
+    expect(applicationHookCallback).toHaveBeenCalledWith('sess-1', 'permission_request', {
+      title: 'Spark Agent - 权限请求',
+      body: 'Claude 请求使用 Bash',
+    })
+  })
+
+  it('bridges form MCP elicitations through the existing structured question UI', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const questionCallback = vi.fn(async () => ({
+      answers: [
+        { id: 'environment', answer: 'staging' },
+        { id: 'notes', answer: 'Run a dry check first' },
+      ],
+    }))
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      questionCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    await expect(options.onElicitation?.({
+      serverName: 'deploy',
+      message: 'Deployment parameters',
+      mode: 'form',
+      requestedSchema: {
+        type: 'object',
+        required: ['environment'],
+        properties: {
+          environment: {
+            type: 'string',
+            title: 'Environment',
+            description: 'Choose a target',
+            enum: ['staging', 'production'],
+          },
+          notes: { type: 'string', title: 'Notes', description: 'Optional details' },
+        },
+      },
+    }, { signal: new AbortController().signal })).resolves.toEqual({
+      action: 'accept',
+      content: { environment: 'staging', notes: 'Run a dry check first' },
+    })
+    expect(questionCallback).toHaveBeenCalledWith('sess-1', [
+      expect.objectContaining({
+        id: 'environment',
+        question: 'Environment',
+        type: 'single_choice',
+        required: true,
+        options: [
+          { label: 'staging', description: 'Choose a target' },
+          { label: 'production', description: 'Choose a target' },
+        ],
+      }),
+      expect.objectContaining({
+        id: 'notes',
+        question: 'Notes',
+        type: 'text',
+        required: false,
+      }),
+    ])
+  })
+
+  it('declines form MCP elicitations when a required field has no usable answer', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const questionCallback = vi.fn(async () => ({ answers: [] }))
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      questionCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    await expect(options.onElicitation?.({
+      serverName: 'deploy',
+      message: 'Deployment parameters',
+      mode: 'form',
+      requestedSchema: {
+        type: 'object',
+        required: ['environment'],
+        properties: {
+          environment: { type: 'string', title: 'Environment' },
+          notes: { type: 'string', title: 'Notes' },
+        },
+      },
+    }, { signal: new AbortController().signal })).resolves.toEqual({ action: 'decline' })
+  })
+
+  it('declines unsupported URL elicitations instead of silently accepting authorization', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const questionCallback = vi.fn(async () => ({ answers: [] }))
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      questionCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    await expect(options.onElicitation?.({
+      serverName: 'oauth-server',
+      message: 'Authorize access',
+      mode: 'url',
+      url: 'https://example.com/oauth',
+    }, { signal: new AbortController().signal })).resolves.toEqual({ action: 'decline' })
+    expect(questionCallback).not.toHaveBeenCalled()
+  })
+
   it('routes bare allowed tools through canUseTool when Spark installs a permission callback', async () => {
     queryMock.mockReturnValue(messages([
       { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },

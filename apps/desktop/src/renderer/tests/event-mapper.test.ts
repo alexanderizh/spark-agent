@@ -790,4 +790,144 @@ describe('MessageBuilder', () => {
       output: 'Found 3 null pointer issues in auth module.',
     })
   })
+
+  it('upserts task progress and bounded transcript into the existing subagent block', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      type: 'subagent_started',
+      toolCallId: 'sa-1',
+      taskId: 'task-1',
+      name: 'Researcher',
+      role: 'Finds bugs',
+      task: 'Audit permission handling',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      id: 'subagent-started-2',
+      type: 'subagent_started',
+      toolCallId: 'sa-1',
+      taskId: 'task-1',
+      name: 'researcher',
+      role: 'Audit permission handling',
+      task: 'Find permission regressions',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_progress'),
+      type: 'subagent_progress',
+      toolCallId: 'sa-1',
+      taskId: 'task-1',
+      summary: 'Reviewing callbacks',
+      lastToolName: 'read_file',
+      totalTokens: 321,
+      toolUses: 4,
+      durationMs: 1_500,
+      status: 'running',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_message'),
+      type: 'subagent_message',
+      toolCallId: 'sa-1',
+      contentKind: 'text',
+      mode: 'delta',
+      content: 'Checking ',
+      segmentId: 'segment-1',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_message'),
+      id: 'subagent-message-2',
+      type: 'subagent_message',
+      toolCallId: 'sa-1',
+      contentKind: 'text',
+      mode: 'complete',
+      content: 'Checking authentication.',
+      segmentId: 'segment-1',
+    })
+
+    const blocks = builder.getAllMessages().flatMap((message) => message.blocks)
+    const subagents = blocks.filter((block) => block.kind === 'subagent')
+    expect(subagents).toHaveLength(1)
+    expect(subagents[0]).toMatchObject({
+      kind: 'subagent',
+      toolCallId: 'sa-1',
+      taskId: 'task-1',
+      task: 'Find permission regressions',
+      status: 'running',
+      progressSummary: 'Reviewing callbacks',
+      lastToolName: 'read_file',
+      tokens: '321',
+      toolUses: 4,
+      durationMs: 1_500,
+      transcript: [{ kind: 'text', content: 'Checking authentication.', segmentId: 'segment-1' }],
+    })
+  })
+
+  it('preserves stopped and failed background task outcomes', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      type: 'subagent_started',
+      toolCallId: 'sa-1',
+      name: 'Researcher',
+      role: 'Finds bugs',
+      task: 'Audit permission handling',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_completed'),
+      type: 'subagent_completed',
+      toolCallId: 'sa-1',
+      name: 'Researcher',
+      status: 'stopped',
+      resultSummary: 'Stopped by user',
+      output: 'Stopped by user',
+      totalTokens: 99,
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toContainEqual(expect.objectContaining({
+      kind: 'subagent',
+      status: 'stopped',
+      tokens: '99',
+      output: 'Stopped by user',
+    }))
+  })
+
+  it('bounds nested subagent transcripts to the newest 24k characters', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      type: 'subagent_started',
+      toolCallId: 'sa-1',
+      name: 'Researcher',
+      role: 'Finds bugs',
+      task: 'Audit permission handling',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_message'),
+      type: 'subagent_message',
+      toolCallId: 'sa-1',
+      contentKind: 'text',
+      mode: 'complete',
+      content: `old:${'a'.repeat(13_000)}`,
+      segmentId: 'segment-old',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_message'),
+      id: 'subagent-message-new',
+      type: 'subagent_message',
+      toolCallId: 'sa-1',
+      contentKind: 'text',
+      mode: 'complete',
+      content: `new:${'b'.repeat(13_000)}`,
+      segmentId: 'segment-new',
+    })
+
+    const block = builder.getAllMessages()[0]?.blocks.find((item) => item.kind === 'subagent')
+    expect(block?.kind).toBe('subagent')
+    if (block?.kind !== 'subagent') return
+    const transcript = block.transcript ?? []
+    expect(transcript.reduce((total, entry) => total + entry.content.length, 0)).toBe(24_000)
+    expect(transcript.at(-1)?.content).toBe(`new:${'b'.repeat(13_000)}`)
+    expect(transcript[0]?.content.startsWith('old:')).toBe(false)
+  })
 })

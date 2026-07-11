@@ -1049,6 +1049,21 @@
   line-height: 1.6;
 }
 
+.subagent-card .subagent-transcript-entry + .subagent-transcript-entry {
+  margin-top: 10px;
+}
+
+.subagent-card .subagent-transcript-entry.thinking {
+  color: var(--text-muted);
+}
+
+.subagent-card .subagent-transcript-kind {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
 /* === MCP tool call (with server tag) === */
 .tool-call-head .mcp-tag {
   font-size: 9.5px;

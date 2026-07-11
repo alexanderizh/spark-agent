@@ -38,6 +38,17 @@ interface EventContext {
   asyncSubagentLaunchesByAgentId?: Map<string, { toolCallId: string; name: string }>
   /** SDK message UUID -> emitted Spark event IDs, used by refusal fallback retractions. */
   sdkEventIdsByMessageId?: Map<string, string[]>
+  /** SDK task id -> stable Spark subagent card identity. */
+  subagentTasksById?: Map<string, SubagentTaskState>
+  /** Per-subagent streaming segments keep nested transcripts out of host segments. */
+  subagentSegments?: Map<string, SegmentState>
+}
+
+interface SubagentTaskState {
+  toolCallId: string
+  name: string
+  description: string
+  skipTranscript: boolean
 }
 
 /**
@@ -76,6 +87,53 @@ function closeSegments(ctx: EventContext): void {
   const state = getSegmentState(ctx)
   state.currentText = null
   state.currentThinking = null
+}
+
+function getSubagentSegmentState(ctx: EventContext, toolCallId: string): SegmentState {
+  const states = (ctx.subagentSegments ??= new Map())
+  let state = states.get(toolCallId)
+  if (state == null) {
+    state = { currentText: null, currentThinking: null }
+    states.set(toolCallId, state)
+  }
+  return state
+}
+
+function currentSubagentSegment(
+  ctx: EventContext,
+  toolCallId: string,
+  kind: 'text' | 'thinking',
+): string {
+  const state = getSubagentSegmentState(ctx, toolCallId)
+  const key = kind === 'text' ? 'currentText' : 'currentThinking'
+  if (state[key] == null) state[key] = randomUUID()
+  return state[key]
+}
+
+function closeSubagentSegments(ctx: EventContext, toolCallId: string): void {
+  ctx.subagentSegments?.delete(toolCallId)
+}
+
+function getSubagentTasks(ctx: EventContext): Map<string, SubagentTaskState> {
+  return (ctx.subagentTasksById ??= new Map())
+}
+
+function subagentTaskIdentity(
+  ctx: EventContext,
+  taskId: string,
+  toolUseId?: string,
+  fallback?: Partial<SubagentTaskState>,
+): SubagentTaskState {
+  const tasks = getSubagentTasks(ctx)
+  const previous = tasks.get(taskId)
+  const next = {
+    toolCallId: toolUseId ?? previous?.toolCallId ?? `claude-task:${taskId}`,
+    name: fallback?.name ?? previous?.name ?? 'Subagent',
+    description: fallback?.description ?? previous?.description ?? 'Background task',
+    skipTranscript: fallback?.skipTranscript ?? previous?.skipTranscript ?? false,
+  }
+  tasks.set(taskId, next)
+  return next
 }
 
 function baseEvent(ctx: EventContext) {
@@ -127,6 +185,123 @@ export function mapSDKMessageToEvents(message: SDKMessage, ctx: EventContext): A
 }
 
 function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[] {
+  if (msg.subtype === 'task_started') {
+    const task = subagentTaskIdentity(ctx, msg.task_id, msg.tool_use_id, {
+      name: msg.subagent_type ?? msg.workflow_name ?? msg.task_type ?? 'Subagent',
+      description: msg.description,
+      skipTranscript: msg.skip_transcript === true,
+    })
+    if (task.skipTranscript) return []
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'subagent_started',
+        toolCallId: task.toolCallId,
+        taskId: msg.task_id,
+        name: task.name,
+        role: msg.description,
+        task: msg.prompt ?? msg.description,
+      },
+    ]
+  }
+
+  if (msg.subtype === 'task_progress') {
+    const task = subagentTaskIdentity(ctx, msg.task_id, msg.tool_use_id, {
+      ...(msg.subagent_type != null ? { name: msg.subagent_type } : {}),
+      description: msg.description,
+    })
+    if (task.skipTranscript) return []
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'subagent_progress',
+        toolCallId: task.toolCallId,
+        taskId: msg.task_id,
+        description: msg.description,
+        ...(msg.summary != null ? { summary: msg.summary } : {}),
+        ...(msg.last_tool_name != null
+          ? { lastToolName: mapSDKToolName(msg.last_tool_name) }
+          : {}),
+        totalTokens: msg.usage.total_tokens,
+        toolUses: msg.usage.tool_uses,
+        durationMs: msg.usage.duration_ms,
+        status: 'running',
+      },
+    ]
+  }
+
+  if (msg.subtype === 'task_updated') {
+    const task = subagentTaskIdentity(ctx, msg.task_id, undefined, {
+      ...(msg.patch.description != null ? { description: msg.patch.description } : {}),
+    })
+    if (task.skipTranscript) return []
+    const status =
+      msg.patch.status === 'killed'
+        ? 'stopped'
+        : msg.patch.status
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'subagent_progress',
+        toolCallId: task.toolCallId,
+        taskId: msg.task_id,
+        ...(msg.patch.description != null ? { description: msg.patch.description } : {}),
+        ...(msg.patch.error != null ? { summary: msg.patch.error } : {}),
+        ...(status != null ? { status } : {}),
+      },
+    ]
+  }
+
+  if (msg.subtype === 'task_notification') {
+    const task = subagentTaskIdentity(ctx, msg.task_id, msg.tool_use_id, {
+      skipTranscript: msg.skip_transcript === true,
+    })
+    if (task.skipTranscript) return []
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'subagent_completed',
+        toolCallId: task.toolCallId,
+        name: task.name,
+        status:
+          msg.status === 'completed' ? 'success' : msg.status === 'stopped' ? 'stopped' : 'error',
+        resultSummary: msg.summary,
+        output: msg.summary,
+        ...(msg.usage != null
+          ? {
+              totalTokens: msg.usage.total_tokens,
+              toolUses: msg.usage.tool_uses,
+              durationMs: msg.usage.duration_ms,
+            }
+          : {}),
+      },
+    ]
+  }
+
+  if (msg.subtype === 'background_tasks_changed') {
+    const descriptions = msg.tasks.map((task) => task.description).filter(Boolean)
+    return [
+      {
+        ...baseEvent(ctx),
+        type: 'runtime_signal',
+        signal: 'background_tasks',
+        level: 'info',
+        title: msg.tasks.length > 0 ? '后台任务正在运行' : '后台任务已结束',
+        message:
+          msg.tasks.length > 0
+            ? `${msg.tasks.length} 个后台任务仍在运行。`
+            : '当前没有运行中的后台任务。',
+        code: 'CLAUDE_BACKGROUND_TASKS_CHANGED',
+        details: [
+          { label: '运行中', value: String(msg.tasks.length) },
+          ...(descriptions.length > 0
+            ? [{ label: '任务', value: descriptions.join('; ') }]
+            : []),
+        ],
+      },
+    ]
+  }
+
   if (msg.subtype === 'api_retry') {
     return [
       {
@@ -387,12 +562,25 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
   }
 
   for (const block of content) {
-    // Subagent 的正文/思考属于其内部过程，不能混入主时间线（会覆盖 Host 正文）；
-    // 其产出统一由 subagent_completed 的 output 呈现。工具事件仍透传（执行日志）。
-    if (isSubagentMessage && (block.type === 'text' || block.type === 'thinking')) continue
+    if (isSubagentMessage && (block.type === 'text' || block.type === 'thinking')) {
+      const content = block.type === 'text' ? block.text : block.thinking
+      if (content.length > 0) {
+        events.push({
+          ...baseEvent(ctx),
+          type: 'subagent_message',
+          toolCallId: msg.parent_tool_use_id!,
+          contentKind: block.type,
+          mode: 'complete',
+          content,
+          segmentId: currentSubagentSegment(ctx, msg.parent_tool_use_id!, block.type),
+        })
+      }
+      continue
+    }
     events.push(...mapContentBlock(block, ctx))
   }
-  if (!isSubagentMessage) closeSegments(ctx)
+  if (isSubagentMessage) closeSubagentSegments(ctx, msg.parent_tool_use_id!)
+  else closeSegments(ctx)
 
   if (msg.error != null) {
     const error = describeClaudeAssistantError(msg.error)
@@ -434,10 +622,40 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
 }
 
 function mapUserMessage(msg: SDKUserMessage, ctx: EventContext): AgentEvent[] {
-  if (!Array.isArray(msg.message.content)) return []
-  const events = msg.message.content.flatMap((block) => mapContentBlock(block, ctx))
+  const parentToolUseId = msg.parent_tool_use_id
+  if (typeof msg.message.content === 'string') {
+    if (parentToolUseId == null || msg.message.content.length === 0) return []
+    const event: AgentEvent = {
+      ...baseEvent(ctx),
+      type: 'subagent_message',
+      toolCallId: parentToolUseId,
+      contentKind: 'text',
+      mode: 'complete',
+      content: msg.message.content,
+      segmentId: currentSubagentSegment(ctx, parentToolUseId, 'text'),
+    }
+    closeSubagentSegments(ctx, parentToolUseId)
+    return [event]
+  }
+  const events = msg.message.content.flatMap((block) => {
+    if (parentToolUseId != null && block.type === 'text') {
+      return [
+        {
+          ...baseEvent(ctx),
+          type: 'subagent_message' as const,
+          toolCallId: parentToolUseId,
+          contentKind: 'text' as const,
+          mode: 'complete' as const,
+          content: block.text,
+          segmentId: currentSubagentSegment(ctx, parentToolUseId, 'text'),
+        },
+      ]
+    }
+    return mapContentBlock(block, ctx)
+  })
   // user 消息（工具结果等）到达即意味着上一段 assistant 输出已结束
-  closeSegments(ctx)
+  if (parentToolUseId != null) closeSubagentSegments(ctx, parentToolUseId)
+  else closeSegments(ctx)
   return events
 }
 
@@ -445,9 +663,36 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
   const event = msg.event
   if (event == null) return []
 
-  // Subagent 的流式增量不进入主时间线（与 mapAssistantMessage 的过滤保持一致），
-  // 否则 Host 正文会被并行运行的 subagent 文本污染。
-  if (msg.parent_tool_use_id != null && event.type === 'content_block_delta') return []
+  if (msg.parent_tool_use_id != null && event.type === 'content_block_delta') {
+    const delta = event.delta
+    if (delta?.type === 'text_delta' && delta.text != null) {
+      return [
+        {
+          ...baseEvent(ctx),
+          type: 'subagent_message',
+          toolCallId: msg.parent_tool_use_id,
+          contentKind: 'text',
+          mode: 'delta',
+          content: delta.text,
+          segmentId: currentSubagentSegment(ctx, msg.parent_tool_use_id, 'text'),
+        },
+      ]
+    }
+    if (delta?.type === 'thinking_delta' && delta.thinking != null) {
+      return [
+        {
+          ...baseEvent(ctx),
+          type: 'subagent_message',
+          toolCallId: msg.parent_tool_use_id,
+          contentKind: 'thinking',
+          mode: 'delta',
+          content: delta.thinking,
+          segmentId: currentSubagentSegment(ctx, msg.parent_tool_use_id, 'thinking'),
+        },
+      ]
+    }
+    return []
+  }
 
   switch (event.type) {
     case 'content_block_delta': {

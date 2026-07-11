@@ -145,6 +145,32 @@ export interface SubagentStartedEvent extends BaseEvent {
   role: string
   /** 分配给子 Agent 的任务描述 */
   task: string
+  /** Claude SDK 后台任务 ID。同步子 Agent 可能没有该字段。 */
+  taskId?: string
+}
+
+/** 子 Agent / 后台任务的增量进度。 */
+export interface SubagentProgressEvent extends BaseEvent {
+  type: 'subagent_progress'
+  toolCallId: string
+  taskId?: string
+  description?: string
+  summary?: string
+  lastToolName?: string
+  totalTokens?: number
+  toolUses?: number
+  durationMs?: number
+  status?: 'pending' | 'running' | 'completed' | 'failed' | 'stopped' | 'paused'
+}
+
+/** 转发到父会话的子 Agent 正文/思考，仅供嵌套 transcript 使用。 */
+export interface SubagentMessageEvent extends BaseEvent {
+  type: 'subagent_message'
+  toolCallId: string
+  contentKind: 'text' | 'thinking'
+  mode: 'delta' | 'complete'
+  content: string
+  segmentId: string
 }
 
 /** 子 Agent 执行完成 */
@@ -155,7 +181,7 @@ export interface SubagentCompletedEvent extends BaseEvent {
   /** 子 Agent 名称 */
   name: string
   /** 完成状态 */
-  status: 'success' | 'error'
+  status: 'success' | 'error' | 'stopped'
   /** 结果摘要 */
   resultSummary: string
   /** 完整输出（可展开查看）*/
@@ -163,6 +189,9 @@ export interface SubagentCompletedEvent extends BaseEvent {
   /** Token 用量 */
   inputTokens?: number
   outputTokens?: number
+  /** SDK 后台任务仅提供合计 token 时使用。 */
+  totalTokens?: number
+  toolUses?: number
   /** 执行耗时 ms */
   durationMs?: number
 }
@@ -811,6 +840,7 @@ export interface RuntimeSignalEvent extends BaseEvent {
     | 'notification'
     | 'mirror_error'
     | 'worker_shutdown'
+    | 'background_tasks'
   level: 'info' | 'warning' | 'error'
   title: string
   message: string
@@ -916,6 +946,8 @@ export type AgentEvent =
   | ContextCompactionEvent
   | RetryTrailEvent
   | SubagentStartedEvent
+  | SubagentProgressEvent
+  | SubagentMessageEvent
   | SubagentCompletedEvent
   | TeamDispatchRequestedEvent
   | TeamMemberMessageEvent
