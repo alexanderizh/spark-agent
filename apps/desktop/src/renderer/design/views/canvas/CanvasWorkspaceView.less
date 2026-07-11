@@ -196,8 +196,8 @@
   overflow: hidden;
   --canvas-side-panel-width: 360px;
   --canvas-agent-panel-width: 0px;
-  // 三列布局：左助手面板 | 主画布 | 右信息面板
-  grid-template-columns: var(--canvas-agent-panel-width) minmax(0, 1fr) var(--canvas-side-panel-width);
+  // 两列布局：主画布 | 右信息面板（Agent 面板改为 overlay 叠加，不占画布空间）
+  grid-template-columns: minmax(0, 1fr) var(--canvas-side-panel-width);
   background:
     linear-gradient(
       90deg,
@@ -665,6 +665,21 @@
   width: 17px;
   height: 17px;
   stroke-width: 1.9;
+}
+
+/* 放大 / 缩小按钮之间的缩放比例显示（只读，与按钮同高，等宽避免抖动） */
+.canvas-controls-zoom-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  height: 32px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--canvas-float-icon-strong);
+  user-select: none;
+  white-space: nowrap;
 }
 
 .canvas-minimap-toggle svg {
@@ -3027,24 +3042,37 @@ body.canvas-side-panel-resizing {
   transform: translateX(-50%);
 }
 
-// 画布助手左侧面板（保活：CSS 隐藏不卸载，保留 ChatPanel 流式订阅与历史）
+// 画布助手面板（overlay 模式：叠在画布上层，不占用画布空间）
+// 保活：CSS 隐藏不卸载，保留 ChatPanel 流式订阅与历史
+// 注意：不做 width transition——面板内部 ChatPanel 内容重，宽度动画每帧都会重排导致卡顿。
+//       改为瞬间切换 width + opacity 淡入（opacity 不触发 layout 重排）。
 .canvas-agent-side-panel {
-  position: relative;
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 8px;
+  width: var(--canvas-agent-panel-width, 0px);
   display: flex;
   min-width: 0;
   min-height: 0;
-  height: 100%;
   flex-direction: column;
   overflow: hidden;
-  border-right: 1px solid var(--divider);
+  border: 1px solid var(--divider);
+  border-radius: var(--r-lg);
   background: var(--panel);
-  transition: width 0.18s ease;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18);
+  z-index: 50;
+  opacity: 1;
+  transition: opacity 0.15s ease;
 }
 .canvas-agent-side-panel.is-collapsed {
   width: 0 !important;
-  border-right: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   overflow: hidden;
   pointer-events: none;
+  opacity: 0;
 }
 // 覆盖 canvas-bottom-floating-panel 的悬浮定位，让助手填充左侧 aside
 .canvas-agent-side-panel-inner {
@@ -3054,9 +3082,13 @@ body.canvas-side-panel-resizing {
   top: auto !important;
   z-index: auto !important;
   display: flex !important;
+  // 关键：.canvas-agent-panel 设了 min-width: 560px，会撑破 320~560px 的侧栏轨道，
+  // 导致内容从右侧溢出。这里强制 min-width: 0，让面板严格贴合 aside 宽度。
   width: 100% !important;
+  min-width: 0 !important;
   max-width: none !important;
   height: 100% !important;
+  min-height: 0 !important;
   max-height: none !important;
   flex-direction: column !important;
   border-radius: 0 !important;
@@ -3067,34 +3099,79 @@ body.canvas-side-panel-resizing {
 .canvas-agent-side-panel-inner.is-collapsed {
   display: none !important;
 }
+// 宽屏模式：不再用 fixed 全屏覆盖，仅由父层 grid 宽度撑到半屏，保持侧栏布局不变。
 .canvas-agent-side-panel-inner.is-fullscreen {
-  position: fixed !important;
-  inset: 12px !important;
-  width: auto !important;
-  height: auto !important;
-  max-width: none !important;
-  max-height: none !important;
-  z-index: 1200 !important;
-  border-radius: var(--r-xl) !important;
-  border: 1px solid var(--border-strong) !important;
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.3) !important;
+  // 占位：保留 class 驱动内部逻辑（隐藏悬浮 resize handle 等），视觉无额外变化。
 }
 // 顶栏重组：配置选择器移入 head，输入区上方腾空，消息区获得全高
+// 极简头部：只保留标题 + 操作按钮
 .canvas-agent-side-panel-inner .canvas-bottom-floating-head {
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 2px 10px;
+  min-height: 28px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--divider);
 }
 .canvas-agent-side-panel-inner .canvas-agent-head-info {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
 }
-.canvas-agent-side-panel-inner .canvas-agent-head-composer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  flex: 1 1 100%;
+.canvas-agent-side-panel-inner .canvas-agent-title {
+  font-size: 13px;
+  white-space: nowrap;
 }
+// 头部会话选择器：紧凑胶囊
+.canvas-agent-side-panel-inner .canvas-agent-head-composer {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  .composer-select {
+    height: 24px;
+    max-width: 100%;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: none;
+    font-size: 11.5px;
+  }
+  .composer-select-trigger {
+    max-width: 100%;
+    gap: 3px;
+    font-size: 11.5px;
+  }
+  .composer-select-trigger span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+// 底部 Agent / 模型选择器图标：圆形 + 缩小 + 加大与文字间距
+.canvas-agent-side-panel-inner .chat-panel-composer-below {
+  .composer-select-icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+    margin-right: 4px;
+    svg,
+    img {
+      width: 11px;
+      height: 11px;
+      object-fit: contain;
+    }
+  }
+  .composer-agent-picker-avatar {
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+  }
+}
+
 // 隐藏助手面板内部悬浮 resize handles（宽度由外层 aside resize handle 控制）
 .canvas-agent-side-panel-inner .canvas-agent-resize-handle {
   display: none !important;
@@ -3104,15 +3181,15 @@ body.canvas-side-panel-resizing {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 6px;
-  z-index: 10;
+  width: 8px;
+  z-index: 20;
   cursor: col-resize;
 }
 .canvas-agent-side-panel-resize-handle::after {
   content: '';
   position: absolute;
-  top: 0;
-  right: 2px;
+  top: 50px;
+  right: 0px;
   bottom: 0;
   width: 2px;
   background: transparent;
@@ -3129,31 +3206,33 @@ body.canvas-agent-panel-resizing {
 body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   background: var(--primary);
 }
+// Agent 面板折叠/展开按钮（canvas-workspace-body 子元素，不受 aside overflow 裁切）
+// 面板 left:8px，展开态按钮 = 面板左偏移 + 面板宽度；折叠态 = 面板左偏移
 .canvas-agent-side-panel-collapse-toggle {
   position: absolute;
-  top: 12px;
-  left: var(--canvas-agent-panel-width);
-  z-index: 11;
+  z-index: 51;
+  top: 50%;
+  left: calc(8px + var(--canvas-agent-panel-width, 0px));
   display: inline-flex;
+  width: 28px;
+  height: 48px;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  margin-left: -12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel-elev);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-left: 0;
+  border-radius: 0 14px 14px 0;
+  background: color-mix(in srgb, var(--panel-elev) 92%, transparent);
   color: var(--text-muted);
   cursor: pointer;
-  transition: left 0.18s ease, color 0.15s ease, background 0.15s ease;
+  transform: translateY(-50%);
+  transition: color 0.15s ease, background 0.15s ease;
 }
 .canvas-agent-side-panel-collapse-toggle:hover {
-  color: var(--text);
-  background: var(--bg-sunken);
+  color: var(--primary);
+  background: var(--panel);
 }
 .canvas-agent-side-panel-collapse-toggle.is-collapsed {
-  left: 0;
-  margin-left: 12px;
+  left: 0px;
 }
 
 .canvas-node-edit-bottom-panel {
@@ -6943,8 +7022,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 .canvas-node-floating-panel .canvas-operation-composer-params .composer-select-icon {
   display: inline-flex;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
@@ -10404,6 +10483,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   align-items: center;
   gap: 6px;
   pointer-events: auto;
+  padding-right: 10px;
   -webkit-app-region: no-drag;
 }
 

@@ -33,7 +33,7 @@ import { Button, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { AvatarImage } from '../../components/AvatarImage'
 import { ProviderLogo } from '../../components/ProviderLogo'
-import { ChatPanel } from '../../components/ChatPanel'
+import { ChatPanel, type ChatPanelNodeReference } from '../../components/ChatPanel'
 import { SkillsPickerModal, type SkillItemForPicker } from '../../components/SkillsPickerModal'
 import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../../avatar'
 import { useCanvasToolHost } from './canvas-tool-host'
@@ -60,6 +60,14 @@ interface Props {
   selectedNodes: CanvasNode[]
   /** 画布 store actions（由 CanvasWorkspaceView 把 useCanvasWorkspace 结果传入） */
   workspace: CanvasToolHostOptions['workspace']
+  /** 用户显式「添加到 Agent 对话」的引用节点；为空时不注入节点上下文 */
+  nodeRefs: CanvasNode[]
+  /** 移除单个引用节点 */
+  onRemoveNodeRef?: (nodeId: string) => void
+  /** 清空全部引用节点 */
+  onClearNodeRefs?: () => void
+  /** 宽屏切换回调：父组件据此时将侧栏宽度设为屏幕一半 / 恢复原宽 */
+  onWideModeChange?: (wide: boolean) => void
 }
 
 type CanvasAgentComposerMenu = 'session' | 'agent' | 'model'
@@ -319,7 +327,17 @@ function useComposerDropdownPlacement(
   return placement
 }
 
-export function CanvasAgentModal({ open, onClose, snapshot, selectedNodes, workspace }: Props) {
+export function CanvasAgentModal({
+  open,
+  onClose,
+  snapshot,
+  selectedNodes,
+  workspace,
+  nodeRefs,
+  onRemoveNodeRef,
+  onClearNodeRefs,
+  onWideModeChange,
+}: Props) {
   const projectId = snapshot.project.id
   const [fullscreen, setFullscreen] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -946,16 +964,17 @@ export function CanvasAgentModal({ open, onClose, snapshot, selectedNodes, works
         await syncSessionSkills(sid as string, effectiveSkillIds)
 
         let message = text
-        const nodesContext = buildSelectedNodesContext(selectedNodes)
+        // 以用户显式引用的节点为准（右键「添加到 Agent 对话」）；为空时不注入节点上下文
+        const nodesContext = buildSelectedNodesContext(nodeRefs)
         if (isFirst && firstTurnRef.current) {
           firstTurnRef.current = false
           updateProjectCache({
             sessionId: sid as string,
             firstTurnSent: true,
           })
-          message = buildCanvasBindingMessage(snapshot, text, selectedNodes)
+          message = buildCanvasBindingMessage(snapshot, text, nodeRefs)
         } else if (nodesContext) {
-          // 后续轮：有选中节点时注入，让 agent 能用 node id 定位用户所指节点
+          // 后续轮：有引用节点时注入，让 agent 能用 node id 定位用户所指节点
           message = `${nodesContext}\n\n---\n\n${text}`
         }
 
@@ -983,7 +1002,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, selectedNodes, works
       updateProjectCache,
       refreshProjectSessions,
       selectedProvider,
-      selectedNodes,
+      nodeRefs,
       sessionId,
       snapshot,
       syncSessionSkills,
@@ -995,17 +1014,22 @@ export function CanvasAgentModal({ open, onClose, snapshot, selectedNodes, works
     [projectSessions, sessionId],
   )
 
-  const composerBar = (
+  // 头部会话选择器（单独渲染在标题与操作按钮之间）
+  const headerSessionPicker = (
+    <SessionPickerInline
+      sessions={projectSessions}
+      selectedSessionId={sessionId}
+      loading={sessionsLoading}
+      disabled={running || creating}
+      open={openMenu === 'session'}
+      onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'session' : null)}
+      onChange={handleSelectSession}
+    />
+  )
+
+  // 底部参数行：Agent / 模型 / 技能选择器
+  const composerBelowBar = (
     <>
-      <SessionPickerInline
-        sessions={projectSessions}
-        selectedSessionId={sessionId}
-        loading={sessionsLoading}
-        disabled={running || creating}
-        open={openMenu === 'session'}
-        onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'session' : null)}
-        onChange={handleSelectSession}
-      />
       <AgentPickerInline
         agents={agents}
         selectedId={draftAgentId}
@@ -1076,27 +1100,30 @@ export function CanvasAgentModal({ open, onClose, snapshot, selectedNodes, works
         </>
       )}
 
-      <div className="canvas-bottom-floating-head">
+      <div className="canvas-bottom-floating-head canvas-agent-head-minimal">
         <div className="canvas-agent-head-info">
           <strong className="canvas-agent-title">
-            <Icons.Sparkles size={15} />
-            画布 Agent 助手
+            <Icons.Sparkles size={14} />
+            画布助手
           </strong>
-          <span title={contextSummary}>实时取数 · 固定全权模式 · 画布 skill 常驻</span>
         </div>
-        <div className="canvas-agent-head-composer">{composerBar}</div>
+        <div className="canvas-agent-head-composer">{headerSessionPicker}</div>
         <div className="canvas-agent-head-actions">
-          <Tooltip title={fullscreen ? '退出全屏' : '全屏对话'}>
+          <Tooltip title={fullscreen ? '恢复宽度' : '展开到半屏'}>
             <Button
-              size="middle"
+              size="small"
               type="text"
               icon={fullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
-              aria-label={fullscreen ? '退出全屏' : '全屏对话'}
-              onClick={() => setFullscreen((current) => !current)}
+              aria-label={fullscreen ? '恢复宽度' : '展开到半屏'}
+              onClick={() => setFullscreen((current) => {
+                const next = !current
+                onWideModeChange?.(next)
+                return next
+              })}
             />
           </Tooltip>
           <Button
-            size="middle"
+            size="small"
             type="text"
             icon={<Icons.X size={14} />}
             aria-label="关闭画布 Agent 助手"
@@ -1113,18 +1140,26 @@ export function CanvasAgentModal({ open, onClose, snapshot, selectedNodes, works
           onSend={handleSend}
           initialInput={draftInput}
           onDraftChange={setDraftInput}
+          composerBelow={composerBelowBar}
           agents={agents}
           fallbackAssistant={fallbackAssistant}
           persistedSessionStatus={selectedProjectSession?.status ?? null}
           contextBadge={
             <>
-              <Icons.Layers size={13} />
-              <span>
-                已接入画布：{snapshot.project.title} · {snapshot.board.name}
-                {selectedNodes.length > 0 && ` · 已选 ${selectedNodes.length} 节点`}
+              <Icons.Layers size={12} />
+              <span title={contextSummary}>
+                {snapshot.project.title} · {snapshot.board.name}
+                {nodeRefs.length > 0 && ` · 已引用 ${nodeRefs.length} 节点`}
               </span>
             </>
           }
+          nodeReferences={nodeRefs.map((node) => {
+            const ref: ChatPanelNodeReference = { id: node.id, type: node.type }
+            if (node.title) ref.title = node.title
+            return ref
+          })}
+          {...(onRemoveNodeRef ? { onRemoveNodeReference: onRemoveNodeRef } : {})}
+          {...(onClearNodeRefs ? { onClearNodeReferences: onClearNodeRefs } : {})}
           emptyState={
             <>
               <Icons.Sparkles size={32} />
@@ -1135,7 +1170,7 @@ export function CanvasAgentModal({ open, onClose, snapshot, selectedNodes, works
               </p>
             </>
           }
-          placeholder="输入消息，让 agent 读取最新画布后再执行（Enter 发送，Shift+Enter 换行）"
+          placeholder="输入消息，让 agent 操作画布..."
           toolNamePrefixFilter="mcp__spark_canvas__"
         />
       </div>
@@ -1411,9 +1446,9 @@ export function AgentPickerInline({
         alt={`${selected.name} 头像`}
       />
     ) : selected?.builtIn ? (
-      <Icons.Code size={13} />
+      <Icons.Code size={11} />
     ) : (
-      <Icons.Bot size={13} />
+      <Icons.Bot size={11} />
     )
   return (
     <Dropdown
@@ -1588,9 +1623,9 @@ export function ProviderModelPickerInline({
       >
         <span className="composer-select-icon">
           {vendor ? (
-            <ProviderLogo vendor={vendor} size={18} shape="rounded" />
+            <ProviderLogo vendor={vendor} size={16} shape="circle" />
           ) : (
-            <Icons.Sparkles size={13} />
+            <Icons.Sparkles size={11} />
           )}
         </span>
         <button

@@ -100,5 +100,6 @@ export function shouldOpenCanvasSelectionContextMenu({
 }: CanvasSelectionContextMenuTarget): boolean {
   if (isEditableTarget || selectedNodeIds.length === 0) return false
   if (!targetNodeId) return true
-  return selectedNodeIds.length > 1 && selectedNodeIds.includes(targetNodeId)
+  // 右键点中的节点在当前选区内即弹菜单（含单选），让用户能直接对单个节点操作。
+  return selectedNodeIds.includes(targetNodeId)
 }
