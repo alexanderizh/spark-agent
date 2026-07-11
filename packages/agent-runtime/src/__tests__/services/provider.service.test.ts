@@ -1164,4 +1164,57 @@ describe('ProviderService', () => {
       expect(seen).toContain('/bin/zsh')
     })
   })
+
+  it('creates an official managed provider without making it the default', async () => {
+    const profile = await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5', 'deepseek-v4'],
+      apiKey: 'sk-platform-secret',
+    })
+
+    expect(profile).toMatchObject({
+      id: 'spark-platform-newapi',
+      managed: true,
+      managedType: 'newapi',
+      managedOwnerUserId: '42',
+      isDefault: false,
+    })
+    expect(keystore.setSecret).toHaveBeenCalledWith(
+      'newapi-spark-user-42-api-key',
+      'sk-platform-secret',
+    )
+  })
+
+  it('blocks editing, deleting and revealing an official managed provider', async () => {
+    await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5'],
+      apiKey: 'sk-platform-secret',
+    })
+
+    await expect(service.updateProvider({ id: 'spark-platform-newapi', name: 'hijacked' }))
+      .rejects.toThrow('不能手动编辑')
+    await expect(service.deleteProvider('spark-platform-newapi')).rejects.toThrow('不能删除')
+    await expect(service.revealApiKey('spark-platform-newapi')).rejects.toThrow('不允许回显')
+  })
+
+  it('checks an official provider credential without consuming model quota', async () => {
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-platform-secret')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5'],
+      apiKey: 'sk-platform-secret',
+    })
+
+    await expect(service.healthCheck('spark-platform-newapi')).resolves.toEqual({
+      healthy: true,
+      latencyMs: 0,
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })

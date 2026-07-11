@@ -46,6 +46,9 @@ export class AuthService {
   private readonly client: EduServerClient
   private readonly config: AuthServiceConfig
   private baseUrlSource: BaseUrlSource = 'default'
+  private readonly logoutHooks = new Set<(userId: string | null) => Promise<void>>()
+  private readonly loginHooks = new Set<(userId: string) => Promise<void>>()
+  private sessionExpiryCleanup: Promise<void> | null = null
 
   constructor(config: AuthServiceConfig) {
     this.config = config
@@ -87,6 +90,7 @@ export class AuthService {
     try {
       const me = await this.client.get<AuthMeResponse>('/me')
       this.emitStateChanged(true, me.id.toString())
+      await this.notifyLoginHooks(me.id.toString())
       return { isAuthenticated: true, user: me, baseUrl: this.client.getBaseUrl() }
     } catch (e) {
       const msg = (e as Error).message
@@ -151,11 +155,19 @@ export class AuthService {
   }
 
   logout = async (): Promise<{ ok: true }> => {
+    const userId = this.getCurrentUserId()
     try {
       // 通知服务端撤销 session；失败也继续清本地
       await this.client.post('/auth/logout', {})
     } catch (e) {
       log.warn(`logout server-side failed: ${(e as Error).message}`)
+    }
+    for (const hook of this.logoutHooks) {
+      try {
+        await hook(userId)
+      } catch (error) {
+        log.warn(`logout hook failed: ${(error as Error).message}`)
+      }
     }
     await this.tokenStore.clear()
     this.emitStateChanged(false)
@@ -164,6 +176,28 @@ export class AuthService {
 
   getMe = async (): Promise<AuthMeResponse> => {
     return this.client.get<AuthMeResponse>('/me')
+  }
+
+  getCurrentUserId(): string | null {
+    return this.tokenStore.get().userId ?? null
+  }
+
+  addLogoutHook(hook: (userId: string | null) => Promise<void>): () => void {
+    this.logoutHooks.add(hook)
+    return () => this.logoutHooks.delete(hook)
+  }
+
+  addLoginHook(hook: (userId: string) => Promise<void>): () => void {
+    this.loginHooks.add(hook)
+    return () => this.loginHooks.delete(hook)
+  }
+
+  platformGet<T>(path: string): Promise<T> {
+    return this.client.get<T>(path)
+  }
+
+  platformPost<T>(path: string, body?: unknown): Promise<T> {
+    return this.client.post<T>(path, body)
   }
 
   getBindStatus = async (): Promise<AuthBindStatusResponse> => {
@@ -319,8 +353,30 @@ export class AuthService {
   // ─── 内部 ─────────────────────────────────────────────────────────────────────
 
   private async afterLoginSuccess(session: AuthSession): Promise<void> {
+    if (this.sessionExpiryCleanup) await this.sessionExpiryCleanup
+    const previousUserId = this.getCurrentUserId()
+    if (previousUserId && previousUserId !== session.userId) {
+      for (const hook of this.logoutHooks) {
+        try {
+          await hook(previousUserId)
+        } catch (error) {
+          log.warn(`account-switch cleanup hook failed: ${(error as Error).message}`)
+        }
+      }
+    }
     await this.tokenStore.save(session)
     this.emitStateChanged(true, session.userId)
+    await this.notifyLoginHooks(session.userId)
+  }
+
+  private async notifyLoginHooks(userId: string): Promise<void> {
+    await Promise.all([...this.loginHooks].map(async hook => {
+      try {
+        await hook(userId)
+      } catch (error) {
+        log.warn(`login hook failed: ${(error as Error).message}`)
+      }
+    }))
   }
 
   private handleTokenRefreshed(session: AuthSession): void {
@@ -332,10 +388,23 @@ export class AuthService {
   }
 
   private handleSessionExpired(): void {
-    // 清空本地凭证
-    void this.tokenStore.clear()
-    this.emitStateChanged(false)
-    this.emitStream('stream:auth:session-expired', {})
+    if (this.sessionExpiryCleanup) return
+    const userId = this.getCurrentUserId()
+    const cleanup = (async () => {
+      await Promise.all([...this.logoutHooks].map(async hook => {
+        try {
+          await hook(userId)
+        } catch (error) {
+          log.warn(`session-expired hook failed: ${(error as Error).message}`)
+        }
+      }))
+      await this.tokenStore.clear()
+      this.emitStateChanged(false)
+      this.emitStream('stream:auth:session-expired', {})
+    })().finally(() => {
+      if (this.sessionExpiryCleanup === cleanup) this.sessionExpiryCleanup = null
+    })
+    this.sessionExpiryCleanup = cleanup
   }
 
   private emitStateChanged(isAuthenticated: boolean, userId?: string): void {

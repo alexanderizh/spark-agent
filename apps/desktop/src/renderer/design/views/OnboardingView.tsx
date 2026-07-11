@@ -1087,14 +1087,17 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
             <span>适合已经安装 Claude Code / Codex 的高级用户。</span>
           </div>
         </button>
-        {/* 平台内置模型入口尚未开放：置灰放最后，徽章标「开发中」，待上线后再启用 */}
-        <button type="button" className="source-card" disabled>
+        <button
+          type="button"
+          className="source-card"
+          onClick={() => dispatch({ type: 'set-model-source', modelSource: 'spark-account', step: 'spark-account' })}
+        >
           <Icons.User size={22} />
           <div>
             <strong>使用 Spark 账号模型</strong>
-            <span>适合大多数用户，未来登录后即可使用。</span>
+            <span>适合大多数用户，登录后可直接购买、兑换并使用。</span>
           </div>
-          <em>开发中</em>
+          <em>推荐</em>
         </button>
       </div>
       <div className="button-row">
@@ -1117,34 +1120,45 @@ function SparkAccountStep({
   account: string
   dispatch: React.Dispatch<Action>
 }) {
+  const { toast } = useToast()
+  const [opening, setOpening] = useState(false)
+
+  const openPlatformModel = async (): Promise<void> => {
+    if (!isAuthenticated) {
+      toast.error('请先登录 Spark 账号')
+      return
+    }
+    setOpening(true)
+    try {
+      await window.spark.invoke('platform-model:bootstrap', undefined)
+      toast.success('Spark 平台官方模型已就绪')
+      dispatch({ type: 'set-step', step: 'agent-template' })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '平台模型开通失败')
+    } finally {
+      setOpening(false)
+    }
+  }
+
   return (
     <>
       <p className="eyebrow">平台内置模型</p>
-      <h1>这里已为 Spark 账号模型服务留好入口</h1>
+      <h1>使用 Spark 平台官方模型</h1>
       <p className="lead">
-        后续平台订阅上线后，用户将不必自己申请 API Key，登录本账号即可使用内置模型。
+        不必申请或配置 API Key。平台模型作为一个可选 Provider，与你的第三方模型配置并存。
       </p>
       <div className="notice-card">
         {isAuthenticated
           ? `当前已登录：${account || 'Spark 账号'}`
-          : '当前未登录。平台模型订阅上线后，这里会展示登录 / 注册入口和套餐额度。'}
+          : '当前未登录。请先登录或注册 Spark 账号，再开通平台模型。'}
       </div>
       <div className="button-row">
         <Button onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}>
           返回选择
         </Button>
         <SkipStepButton dispatch={dispatch} target="agent-template" />
-        <Button
-          type="primary"
-          onClick={() =>
-            dispatch({
-              type: 'set-model-source',
-              modelSource: 'third-party-provider',
-              step: 'third-party-provider',
-            })
-          }
-        >
-          先配置第三方模型
+        <Button type="primary" loading={opening} disabled={!isAuthenticated || opening} onClick={() => void openPlatformModel()}>
+          开通平台官方模型
         </Button>
       </div>
     </>

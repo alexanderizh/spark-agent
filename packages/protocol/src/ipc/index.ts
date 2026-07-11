@@ -540,7 +540,87 @@ export interface ProviderProfile {
   keystoreRef: string
   /** 是否为默认 Profile */
   isDefault: boolean
+  /** 平台官方受管 Provider；普通 Provider 省略。 */
+  managed?: boolean
+  managedType?: 'newapi'
+  /** 受管凭据所属 Spark 用户，防止切换账号后串用。 */
+  managedOwnerUserId?: string
+  credentialState?: 'ready' | 'session_conflict' | 'quota_exhausted' | 'unavailable'
   createdAt: string
+}
+
+// ─── Platform Model Subscription ─────────────────────────────────────────────
+
+export interface PlatformModelStatus {
+  bound: boolean
+  providerReady: boolean
+  sessionConflict: boolean
+  credentialState: 'unbound' | 'ready' | 'session_conflict' | 'quota_exhausted' | 'unavailable'
+  models: string[]
+  message?: string
+  pendingPayment?: {
+    planId: number
+    createdAt: number
+    baselineSubscriptionId?: number
+    baselineExpiresAt?: number
+  }
+}
+
+export interface PlatformModelPlan {
+  id: number
+  title: string
+  subtitle?: string
+  priceAmount: number
+  currency?: string
+  durationValue?: number
+  durationUnit?: string
+  totalAmount?: number
+  allowBalancePay?: boolean
+}
+
+export interface PlatformModelSubscription {
+  id: number
+  planId: number
+  planTitle?: string
+  status: string
+  startsAt?: number
+  expiresAt?: number
+  amountTotal: number
+  amountUsed: number
+  nextResetTime?: number
+}
+
+export interface PlatformModelRedeemRequest { code: string }
+export interface PlatformModelRedeemResponse {
+  benefitType: 'quota' | 'subscription'
+  quotaAdded?: number
+  planId?: number
+  message: string
+}
+
+export interface PlatformModelPayRequest {
+  planId: number
+  paymentMethod: 'alipay' | 'wxpay'
+}
+
+export interface PlatformModelPayResponse {
+  mode: 'browser'
+  paid: boolean
+}
+
+export interface PlatformModelUsageLog {
+  id: number
+  createdAt: number
+  model: string
+  promptTokens: number
+  completionTokens: number
+  quota: number
+}
+
+export interface PlatformModelUsage {
+  walletQuota: number
+  cumulativeUsedQuota: number
+  logs: PlatformModelUsageLog[]
 }
 
 export interface ProviderListRequest {}
@@ -4930,6 +5010,16 @@ export interface IpcChannelMap {
   'provider:import': [ProviderImportRequest, ProviderImportResponse]
   'provider:export-to-file': [ProviderExportToFileRequest, ProviderExportToFileResponse]
   'provider:import-from-file': [ProviderImportFromFileRequest, ProviderImportFromFileResponse]
+
+  // Spark 平台官方模型（NewAPI 受管 Provider）
+  'platform-model:get-status': [void, PlatformModelStatus]
+  'platform-model:bootstrap': [void, PlatformModelStatus]
+  'platform-model:continue-on-this-device': [void, PlatformModelStatus]
+  'platform-model:get-plans': [void, { plans: PlatformModelPlan[] }]
+  'platform-model:get-subscription': [void, { subscription: PlatformModelSubscription | null }]
+  'platform-model:redeem': [PlatformModelRedeemRequest, PlatformModelRedeemResponse]
+  'platform-model:pay': [PlatformModelPayRequest, PlatformModelPayResponse]
+  'platform-model:get-usage': [void, PlatformModelUsage]
 
   // History Import（检测 + 导入宿主机 Claude Code / Codex 对话历史）
   'history-import:scan': [HistoryImportScanRequest, HistoryImportScanResponse]

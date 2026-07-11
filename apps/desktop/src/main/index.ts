@@ -67,6 +67,7 @@ import type { UpdateInfo, UpdateStatus } from '@spark/protocol'
 import { SettingsService } from '@spark/agent-runtime'
 import { SettingsRepository } from '@spark/storage'
 import { initAuthService, getAuthService } from './services/Auth/AuthService.js'
+import { getPlatformModelService } from './services/PlatformModel/index.js'
 
 const log = createLogger('main')
 let tray: Tray | null = null
@@ -596,6 +597,7 @@ async function initializeApp(): Promise<void> {
       requestTimeoutMs: 30_000,
     })
     await getAuthService().start()
+    getPlatformModelService()
     clearPersistedEduServerBaseUrl()
     log.info('Cloud auth service started')
   } catch (err) {

@@ -46,6 +46,7 @@ import {
 import { ProviderProfileRepository } from '@spark/storage'
 import * as keystore from '@spark/shared/keystore'
 import { createLogger } from '@spark/shared'
+import { resolveProviderApiKey } from './provider-credential-resolver.js'
 
 const log = createLogger('provider.service')
 const execFileAsync = promisify(execFile)
@@ -61,6 +62,7 @@ const LOCAL_CLI_CHECK_TTL_MS = 10_000
 const PROVIDER_HTTP_TIMEOUT_MS = 8_000
 const PROVIDER_CONNECTION_TIMEOUT_MS = 15_000
 const MODELS_ERROR_BODY_MAX_CHARS = 512
+export const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
 /**
  * Windows 下 npm 全局包生成的可执行 shim 实际是 `claude.cmd` / `claude.ps1`，
@@ -317,6 +319,10 @@ function rowToProfile(row: {
     ...(config.mediaCapabilities !== undefined && { mediaCapabilities: config.mediaCapabilities }),
     ...(config.mediaDefaults !== undefined && { mediaDefaults: config.mediaDefaults }),
     ...(config.mediaModelRefs !== undefined && { mediaModelRefs: config.mediaModelRefs }),
+    ...(config.managed === true && { managed: true }),
+    ...(config.managedType !== undefined && { managedType: config.managedType }),
+    ...(config.managedOwnerUserId !== undefined && { managedOwnerUserId: config.managedOwnerUserId }),
+    ...(config.credentialState !== undefined && { credentialState: config.credentialState }),
     keystoreRef: row.keystore_ref ?? '',
     isDefault: row.is_default === 1,
     createdAt: row.created_at,
@@ -621,6 +627,9 @@ export class ProviderService {
   }): Promise<ProviderProfile> {
     const existing = this.repo.get(params.id)
     if (!existing) throw new Error(`Provider not found: ${params.id}`)
+    if (isManagedProviderRow(existing)) {
+      throw new Error('平台官方 Provider 由系统管理，不能手动编辑')
+    }
 
     if (params.apiKey !== undefined) {
       const ref = existing.keystore_ref ?? keystore.makeKeystoreRef(existing.provider_type, params.id)
@@ -766,6 +775,7 @@ export class ProviderService {
     }
     const row = this.repo.get(id)
     if (!row) throw new Error(`Provider not found: ${id}`)
+    if (isManagedProviderRow(row)) throw new Error('平台官方 Provider 由系统管理，不能删除')
 
     if (row.keystore_ref) {
       await keystore.deleteSecret(row.keystore_ref as keystore.KeystoreRef)
@@ -796,6 +806,20 @@ export class ProviderService {
       return available
         ? { healthy: true, latencyMs: 0 }
         : { healthy: false, errorMessage: 'Local codex CLI not found' }
+    }
+
+    if (isManagedProviderRow(row)) {
+      try {
+        const apiKey = await resolveProviderApiKey(row)
+        return apiKey
+          ? { healthy: true, latencyMs: 0 }
+          : { healthy: false, errorMessage: '平台模型凭据尚未就绪' }
+      } catch (error) {
+        return {
+          healthy: false,
+          errorMessage: error instanceof Error ? error.message : '平台模型凭据恢复失败',
+        }
+      }
     }
 
     if (!row.keystore_ref) {
@@ -980,7 +1004,83 @@ export class ProviderService {
 
   /** 读取指定 profile 在 Keychain 中保存的明文 API Key；未配置时返回空串。 */
   async revealApiKey(id: string): Promise<string> {
+    const row = this.repo.get(id)
+    if (row && isManagedProviderRow(row)) {
+      throw new Error('平台官方 Provider 的 API Key 不允许回显')
+    }
     return this.resolveProviderApiKey(id, undefined)
+  }
+
+  async ensureManagedNewApiProvider(params: {
+    ownerUserId: string
+    baseUrl: string
+    modelIds: string[]
+    apiKey: string
+    credentialState?: 'ready' | 'session_conflict' | 'quota_exhausted' | 'unavailable'
+  }): Promise<ProviderProfile> {
+    const modelIds = [...new Set(params.modelIds.map(model => model.trim()).filter(Boolean))]
+    const defaultModel = modelIds[0]
+    if (!defaultModel) throw new Error('平台账户当前没有可用模型')
+    const keystoreRef = keystore.makeKeystoreRef('newapi', `spark-user-${params.ownerUserId}-api-key`)
+    await keystore.setSecret(keystoreRef, params.apiKey)
+    const config = normalizeProviderConfig({
+      defaultModel,
+      modelIds,
+      apiEndpoint: `${params.baseUrl.replace(/\/+$/, '')}/v1`,
+      codexApiKind: 'chat',
+      modelType: 'text',
+      managed: true,
+      managedType: 'newapi',
+      managedOwnerUserId: params.ownerUserId,
+      credentialState: params.credentialState ?? 'ready',
+    })
+    const existing = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
+    if (existing) {
+      this.repo.update(PLATFORM_NEWAPI_PROVIDER_ID, {
+        name: 'Spark 平台官方模型',
+        config,
+        enabled: true,
+        keystoreRef,
+      })
+      const updated = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
+      if (!updated) throw new Error('平台官方 Provider 更新后无法读取')
+      return rowToProfile(updated)
+    }
+    return rowToProfile(this.repo.create({
+      id: PLATFORM_NEWAPI_PROVIDER_ID,
+      providerType: 'openai',
+      name: 'Spark 平台官方模型',
+      config,
+      keystoreRef,
+      isDefault: false,
+    }))
+  }
+
+  async disableManagedNewApiProvider(ownerUserId?: string): Promise<void> {
+    const row = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
+    if (!row || !isManagedProviderRow(row)) return
+    const config = JSON.parse(row.config_json) as ProviderConfig
+    if (ownerUserId && config.managedOwnerUserId !== ownerUserId) return
+    if (row.keystore_ref) {
+      await keystore.deleteSecret(row.keystore_ref as keystore.KeystoreRef)
+    }
+    this.repo.update(PLATFORM_NEWAPI_PROVIDER_ID, {
+      enabled: false,
+      config: { ...config, credentialState: 'unavailable' },
+    })
+  }
+
+  setManagedNewApiCredentialState(
+    ownerUserId: string,
+    credentialState: 'ready' | 'session_conflict' | 'quota_exhausted' | 'unavailable',
+  ): void {
+    const row = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
+    if (!row || !isManagedProviderRow(row)) return
+    const config = JSON.parse(row.config_json) as ProviderConfig
+    if (config.managedOwnerUserId !== ownerUserId) return
+    this.repo.update(PLATFORM_NEWAPI_PROVIDER_ID, {
+      config: { ...config, credentialState },
+    })
   }
 
   private async resolveProviderApiKey(id: string | undefined, apiKey: string | undefined): Promise<string> {
@@ -1016,6 +1116,7 @@ export class ProviderService {
     const profiles: ProviderExportProfile[] = []
     for (const row of rows) {
       if (idSet !== null && !idSet.has(row.id)) continue
+      if (isManagedProviderRow(row)) continue
       const apiKey = row.keystore_ref
         ? await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef)
         : null
@@ -1055,6 +1156,11 @@ export class ProviderService {
       try {
         const match = existing.get(profile.name)
         if (match != null) {
+          if (isManagedProviderRow(match)) {
+            result.skipped += 1
+            result.errors.push(`平台官方 Provider「${profile.name}」不能被导入覆盖`)
+            continue
+          }
           if (mode === 'merge') {
             result.skipped += 1
             continue
@@ -1222,6 +1328,18 @@ interface ProviderConfig {
   mediaModelRefs?: ProviderMediaModelRef[]
   /** Provider 列表和模型配置表单里展示的 LobeHub 图标配置。 */
   providerIcon?: { id?: unknown; style?: unknown }
+  managed?: boolean
+  managedType?: 'newapi'
+  managedOwnerUserId?: string
+  credentialState?: 'ready' | 'session_conflict' | 'quota_exhausted' | 'unavailable'
+}
+
+function isManagedProviderRow(row: { config_json: string }): boolean {
+  try {
+    return (JSON.parse(row.config_json) as ProviderConfig).managed === true
+  } catch {
+    return false
+  }
 }
 
 interface ModelsListResponse {
