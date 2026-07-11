@@ -3114,7 +3114,7 @@ export function ComposerV2({
                   <input
                     className="form-input composer-worktree-branch-input"
                     type="text"
-                    placeholder="分支名（留空 AI 自动命名）"
+                    placeholder="留空自动生成"
                     value={worktreeBranch}
                     onChange={(e) => setWorktreeBranch(e.target.value)}
                   />
@@ -3382,9 +3382,7 @@ function ComposerReasoningSlider({
               <span>推理强度</span>
               <strong>{activeOption?.label ?? value}</strong>
             </div>
-            <span className="composer-reasoning-help" title="更高强度会更聪明，也可能更慢">
-              <Icons.HelpCircle size={16} />
-            </span>
+            
           </div>
           <div className="composer-reasoning-axis" aria-hidden="true">
             <span>更快</span>

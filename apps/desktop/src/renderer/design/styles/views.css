@@ -1486,7 +1486,7 @@ body.sidebar-resizing {
   font-weight: 500;
   color: inherit;
   overflow-wrap: anywhere;
-  line-height: 1.9;
+  line-height: 2.1;
   --md-heading: var(--text-strong);
   --md-muted: var(--text-muted);
   --md-accent: color-mix(in srgb, var(--primary) 72%, var(--text-strong));
