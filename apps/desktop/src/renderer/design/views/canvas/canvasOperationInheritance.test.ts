@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { canvasApi } from './canvas.api'
+import { canvasApi, __resetCanvasHotCache } from './canvas.api'
 import type { CanvasDb } from './canvas.api'
 
 const STORAGE_KEY = 'spark-canvas:v1'
@@ -9,6 +9,8 @@ const STORAGE_KEY = 'spark-canvas:v1'
 const at = '2026-06-18T00:00:00.000Z'
 
 function seedCanvasDb(db: CanvasDb) {
+  // 清除内存缓存，确保 readDb 读到刚写入 localStorage 的最新数据
+  __resetCanvasHotCache()
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
 }
 

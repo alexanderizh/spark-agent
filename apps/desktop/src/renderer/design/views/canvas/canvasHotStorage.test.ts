@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { canvasApi } from './canvas.api'
+import { canvasApi, __resetCanvasHotCache } from './canvas.api'
 import type { CanvasDb } from './canvas.api'
 import type { ParsedChapter } from './canvasManuscript'
 
@@ -60,6 +60,7 @@ function hugeChapters(count: number, charsEach: number): ParsedChapter[] {
 describe('canvas 热存储：大文稿内存兜底', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    __resetCanvasHotCache()
     vi.stubGlobal('window', window)
     Object.assign(window, {
       spark: { invoke: vi.fn().mockResolvedValue({ rootPath: '/tmp/project-1' }) },

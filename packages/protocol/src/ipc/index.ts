@@ -5376,6 +5376,8 @@ export interface IpcChannelMap {
   'canvas:host-detach': [CanvasHostDetachRequest, CanvasHostDetachResponse]
   /** 渲染端把工具调用结果回报给主进程 */
   'canvas:tool-result': [CanvasToolResultRequest, CanvasToolResultResponse]
+  /** 渲染端确认已收到工具调用，即将开始执行（主进程据此启动超时计时器） */
+  'canvas:tool-ack': [CanvasToolAckRequest, CanvasToolAckResponse]
 }
 
 // ─── Canvas Agent Bridge Types ─────────────────────────────────────────────
@@ -5409,6 +5411,14 @@ export interface CanvasToolResultRequest {
   error?: string
 }
 export interface CanvasToolResultResponse {
+  ok: true
+}
+
+/** 渲染端 → 主进程：确认已收到工具调用并即将开始执行（用于精确计时） */
+export interface CanvasToolAckRequest {
+  requestId: string
+}
+export interface CanvasToolAckResponse {
   ok: true
 }
 

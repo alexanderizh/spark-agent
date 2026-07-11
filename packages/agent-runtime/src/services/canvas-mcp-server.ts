@@ -103,7 +103,42 @@ export interface CreateCanvasMcpServerOptions {
 }
 
 /**
+ * Shape 缓存：jsonSchemaToShape 是纯函数，相同 inputSchema 产出相同 Zod shape。
+ * 画布工具集在一次会话内几乎不变（除非 attach 时重新 setToolSchemas），
+ * 因此缓存 shape 转换结果可避免每个 turn 重复构造 40 个工具的 Zod schema。
+ *
+ * key = schema JSON 的稳定序列化串；value = 转换后的 shape map。
+ */
+const shapeCache = new Map<string, Record<string, z.ZodTypeAny>>()
+const SHAPE_CACHE_MAX = 64
+
+function getOrComputeShape(inputSchema: Record<string, unknown>): Record<string, z.ZodTypeAny> {
+  // 用 JSON 序列化做稳定 key；schema 来自 canvas.tools.ts 静态定义，内容稳定
+  let key: string
+  try {
+    key = JSON.stringify(inputSchema)
+  } catch {
+    // 含不可序列化内容时回退为每次计算（极罕见）
+    return jsonSchemaToShape(inputSchema)
+  }
+  const hit = shapeCache.get(key)
+  if (hit != null) return hit
+  const shape = jsonSchemaToShape(inputSchema)
+  if (shapeCache.size >= SHAPE_CACHE_MAX) {
+    // LRU 粗略淘汰：删最早的 key
+    const firstKey = shapeCache.keys().next().value
+    if (firstKey != null) shapeCache.delete(firstKey)
+  }
+  shapeCache.set(key, shape)
+  return shape
+}
+
+/**
  * 构造 spark_canvas in-process MCP server。SDK 不可用时返回 null。
+ *
+ * 性能优化：工具的 Zod shape 转换结果会被 getOrComputeShape 缓存，
+ * 因此同一组 toolSchemas 在后续 turn 中不再重复做 40 次 jsonSchemaToShape。
+ * tool() 闭包仍需每次构造（绑定 sessionId），但那只是函数包装，成本远低于 Zod 解析。
  */
 export async function createCanvasMcpServer(
   opts: CreateCanvasMcpServerOptions,
@@ -113,7 +148,7 @@ export async function createCanvasMcpServer(
   const { createSdkMcpServer, tool } = factory
 
   const tools = opts.toolSchemas.map((schema) => {
-    const shape = jsonSchemaToShape(schema.inputSchema)
+    const shape = getOrComputeShape(schema.inputSchema)
     return tool(
       schema.name,
       schema.description,

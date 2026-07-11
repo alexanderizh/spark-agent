@@ -1324,4 +1324,7 @@ export const IpcSchemaRegistry = {
     result: z.unknown().optional(),
     error: z.string().max(8000).optional(),
   }),
+  'canvas:tool-ack': z.object({
+    requestId: z.string().min(1).max(200),
+  }),
 } as const

@@ -30,10 +30,17 @@ interface Attachment {
 interface PendingCall {
   resolve: (value: unknown) => void
   reject: (reason: Error) => void
-  timer: NodeJS.Timeout
+  /** ACK 宽限期计时器（dispatch 后等待渲染端确认收到） */
+  ackTimer: NodeJS.Timeout | null
+  /** 实际执行超时计时器（ACK 后启动，只计执行时间，不含队列等待） */
+  timer: NodeJS.Timeout | null
+  /** 是否已 ACK（用于区分 ack 超时 vs 执行超时） */
+  acked: boolean
 }
 
 const TOOL_CALL_TIMEOUT_MS = 60_000
+/** IPC dispatch 后等待渲染端 ACK 的宽限期；超时未 ACK 视为渲染端卡死 */
+const TOOL_CALL_ACK_GRACE_MS = 5_000
 
 export class CanvasHostBridge implements CanvasToolCallBridge {
   /** sessionId → 渲染端窗口 + 画布项目 id */
@@ -94,15 +101,27 @@ export class CanvasHostBridge implements CanvasToolCallBridge {
       `canvas tool call dispatch: sessionId=${sessionId} projectId=${attachment.projectId} tool=${toolName} requestId=${requestId}`,
     )
     const promise = new Promise<unknown>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      // ACK 宽限期：dispatch 后只等渲染端确认「收到了，即将执行」。
+      // 这样 60s 执行超时不包含渲染端队列等待时间，消除级联超时。
+      const ackTimer = setTimeout(() => {
         if (this.pendingCalls.delete(requestId)) {
           log.warn(
-            `canvas tool call timeout: sessionId=${sessionId} tool=${toolName} requestId=${requestId} timeoutMs=${TOOL_CALL_TIMEOUT_MS}`,
+            `canvas tool ack timeout: sessionId=${sessionId} tool=${toolName} requestId=${requestId} graceMs=${TOOL_CALL_ACK_GRACE_MS}`,
           )
-          reject(new Error(`画布工具 ${toolName} 超时未响应（${TOOL_CALL_TIMEOUT_MS}ms）`))
+          reject(
+            new Error(
+              `画布工具 ${toolName} 在 ${TOOL_CALL_ACK_GRACE_MS}ms 内未确认接收，渲染端可能卡死`,
+            ),
+          )
         }
-      }, TOOL_CALL_TIMEOUT_MS)
-      this.pendingCalls.set(requestId, { resolve, reject, timer })
+      }, TOOL_CALL_ACK_GRACE_MS)
+      this.pendingCalls.set(requestId, {
+        resolve,
+        reject,
+        ackTimer,
+        timer: null,
+        acked: false,
+      })
     })
 
     attachment.webContents.send('stream:canvas:tool-call', {
@@ -113,6 +132,35 @@ export class CanvasHostBridge implements CanvasToolCallBridge {
     })
 
     return promise
+  }
+
+  /**
+   * 渲染端确认已收到工具调用（canvas:tool-ack IPC）。
+   * 收到 ACK 后清除宽限期计时器，启动真正的 60s 执行超时。
+   */
+  handleToolAck(requestId: string): void {
+    const pending = this.pendingCalls.get(requestId)
+    if (pending == null) {
+      log.warn(`canvas tool ack ignored (no pending call): requestId=${requestId}`)
+      return
+    }
+    if (pending.acked) return // 已 ack（重复 ack 防御）
+    pending.acked = true
+    if (pending.ackTimer != null) {
+      clearTimeout(pending.ackTimer)
+      pending.ackTimer = null
+    }
+    // 启动执行超时：从此刻起计 60s，不含之前的队列等待时间
+    pending.timer = setTimeout(() => {
+      if (this.pendingCalls.delete(requestId)) {
+        log.warn(
+          `canvas tool call timeout (post-ack): requestId=${requestId} timeoutMs=${TOOL_CALL_TIMEOUT_MS}`,
+        )
+        pending.reject(
+          new Error(`画布工具执行超时（${TOOL_CALL_TIMEOUT_MS}ms）`),
+        )
+      }
+    }, TOOL_CALL_TIMEOUT_MS)
   }
 
   /** 渲染端通过 canvas:tool-result IPC 回报结果 */
@@ -128,7 +176,8 @@ export class CanvasHostBridge implements CanvasToolCallBridge {
       return
     }
     this.pendingCalls.delete(payload.requestId)
-    clearTimeout(pending.timer)
+    if (pending.ackTimer != null) clearTimeout(pending.ackTimer)
+    if (pending.timer != null) clearTimeout(pending.timer)
     if (payload.ok) {
       log.info(`canvas tool call ok: requestId=${payload.requestId}`)
       pending.resolve(payload.result)
