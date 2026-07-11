@@ -9,6 +9,7 @@
  * Package: @anthropic-ai/claude-agent-sdk ^0.3.152
  */
 
+import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages'
 import type { UserQuestionPrompt } from '@spark/protocol'
 import type { SparkReasoningEffort } from './reasoning-effort.js'
 
@@ -273,10 +274,11 @@ export interface SDKUserMessage {
 }
 
 export type SDKContentBlock =
-  | { type: 'text'; text: string }
+  | BetaContentBlock
+  | { type: 'text'; text: string; citations?: unknown[] }
+  | { type: 'thinking'; thinking: string; signature?: string }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; tool_use_id: string; content: string | SDKContentBlock[]; is_error?: boolean }
-  | { type: 'thinking'; thinking: string }
 
 export type SDKMessage =
   | SDKAssistantMessage

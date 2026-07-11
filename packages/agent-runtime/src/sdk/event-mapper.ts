@@ -24,6 +24,9 @@ import type {
   SDKContentBlock,
   SDKUserMessage,
 } from './types.js'
+import { mapExtendedContentBlock, serializePublicContent } from './content-block-mapper.js'
+import { mapSDKToolName } from './tool-name-mapper.js'
+import { buildUnifiedDiff } from './unified-diff.js'
 
 interface EventContext {
   sessionId: string
@@ -950,7 +953,7 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
     }
 
     default:
-      return []
+      return mapExtendedContentBlock(block, ctx)
   }
 }
 
@@ -1147,41 +1150,6 @@ function generateWriteFileDiff(
   return buildUnifiedDiff(filePath, [], newLines)
 }
 
-/** 构建 unified diff 格式 */
-function buildUnifiedDiff(filePath: string, oldLines: string[], newLines: string[]): string | null {
-  if (oldLines.length === 0 && newLines.length === 0) return null
-
-  // 简单的 diff 生成：当新旧内容完全不同时，显示为全量替换
-  // 这不是精确的行级 diff，但足以让 UI 展示变更概览
-
-  const diffLines: string[] = []
-
-  // diff 头部
-  diffLines.push(`--- a/${filePath}`)
-  diffLines.push(`+++ b/${filePath}`)
-
-  // 计算 hunks
-  const oldStart = 1
-  const newStart = 1
-  const oldCount = oldLines.length
-  const newCount = newLines.length
-
-  // hunk header
-  diffLines.push(`@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`)
-
-  // 添加删除的行
-  for (const line of oldLines) {
-    diffLines.push(`-${line}`)
-  }
-
-  // 添加新增的行
-  for (const line of newLines) {
-    diffLines.push(`+${line}`)
-  }
-
-  return diffLines.join('\n')
-}
-
 function findToolInput(toolCallId: string, ctx: EventContext): Record<string, unknown> | null {
   const toolInputs = getToolInputs(ctx)
   return toolInputs.get(toolCallId) ?? null
@@ -1250,37 +1218,6 @@ function getAsyncSubagentLaunches(
   return ctx.asyncSubagentLaunchesByAgentId
 }
 
-/**
- * The SDK uses tool names like "Read", "Edit", "Bash", "mcp__server__tool".
- * Map them to Spark's display naming for the UI.
- */
-function mapSDKToolName(sdkName: string): string {
-  const mapping: Record<string, string> = {
-    Read: 'read_file',
-    Write: 'write_file',
-    Edit: 'edit_file',
-    MultiEdit: 'multi_edit',
-    Bash: 'bash',
-    Glob: 'search_files',
-    Grep: 'grep',
-    TodoRead: 'todo_read',
-    TodoWrite: 'todo_write',
-    WebFetch: 'web_fetch',
-    WebSearch: 'web_search',
-    Agent: 'subagent',
-    ExitPlanMode: 'exit_plan_mode',
-    EnterPlanMode: 'enter_plan_mode',
-    AskUserQuestion: 'ask_user_question',
-    TaskCreate: 'task_create',
-    TaskUpdate: 'task_update',
-    TaskGet: 'task_get',
-    TaskList: 'task_list',
-    TaskOutput: 'task_output',
-    TaskStop: 'task_stop',
-  }
-  return mapping[sdkName] ?? sdkName
-}
-
 function isPlanProposalTool(name: string): boolean {
   return name === 'ExitPlanMode' || mapSDKToolName(name) === 'exit_plan_mode'
 }
@@ -1323,10 +1260,5 @@ function stringField(input: Record<string, unknown> | null, key: string): string
 }
 
 function flattenContentBlocks(blocks: SDKContentBlock[]): string {
-  return blocks
-    .map((b) => {
-      if (b.type === 'text') return b.text
-      return JSON.stringify(b)
-    })
-    .join('\n')
+  return serializePublicContent(blocks)
 }

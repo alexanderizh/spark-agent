@@ -21,6 +21,7 @@
     "@spark/protocol": "workspace:*",
     "@spark/shared": "workspace:*",
     "@spark/storage": "workspace:*",
+    "diff": "8.0.3",
     "openai": "^6.39.0",
     "zod": "^3.23.0"
   },

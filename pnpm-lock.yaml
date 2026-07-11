@@ -307,6 +307,9 @@ importers:
       '@spark/storage':
         specifier: workspace:*
         version: link:../storage
+      diff:
+        specifier: 8.0.3
+        version: 8.0.3
       openai:
         specifier: ^6.39.0
         version: 6.39.0(ws@8.21.0)(zod@3.25.76)
