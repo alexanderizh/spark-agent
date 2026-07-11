@@ -9,6 +9,7 @@ import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { MessageBuilder, type UIBlock, type UIMessage } from '../services/event-mapper'
 import { StreamingErrorCard } from './chat/StreamingErrorCard'
+import { RuntimeSignalCard } from './chat/RuntimeSignalCard'
 import { useSessionSidebar } from '../SessionSidebarContext'
 
 /** File change status tracked via file_change agent events */
@@ -650,18 +651,7 @@ function renderBlock(block: UIBlock, index: number): ReactNode {
         />
       )
     case 'runtime_signal':
-      return (
-        <StreamingErrorCard
-          key={index}
-          title={block.title}
-          message={block.message}
-          level={block.level}
-          retryable={block.retryable}
-          {...(block.code != null ? { code: block.code } : {})}
-          {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
-          {...(block.details != null ? { details: block.details } : {})}
-        />
-      )
+      return <RuntimeSignalCard key={index} block={block} />
     case 'file_change': {
       const diffCounts = countBlockDiffLines(block.diff)
       return (

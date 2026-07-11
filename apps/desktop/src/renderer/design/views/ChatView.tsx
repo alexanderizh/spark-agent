@@ -75,6 +75,7 @@ import {
 import { MarkdownText } from './chat/ChatMarkdown'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 import { StreamingErrorCard } from './chat/StreamingErrorCard'
+import { RuntimeSignalCard } from './chat/RuntimeSignalCard'
 import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
 
 export { MarkdownText } from './chat/ChatMarkdown'
@@ -6370,15 +6371,9 @@ const AgentMsg = React.memo(function AgentMsg({
             />
           ))}
           {runtimeSignalBlocks.map((block, i) => (
-            <StreamingErrorCard
+            <RuntimeSignalCard
               key={`runtime-signal-${i}`}
-              message={block.message}
-              title={block.title}
-              level={block.level}
-              retryable={block.retryable}
-              {...(block.code != null ? { code: block.code } : {})}
-              {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
-              {...(block.details != null ? { details: block.details } : {})}
+              block={block}
               {...(block.retryable && onRetry != null ? { onRetry } : {})}
             />
           ))}

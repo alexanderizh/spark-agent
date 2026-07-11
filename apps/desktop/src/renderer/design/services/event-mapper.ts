@@ -610,7 +610,7 @@ export class MessageBuilder {
       case 'runtime_signal': {
         const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
-        msg.blocks.push({
+        const nextBlock: Extract<UIBlock, { kind: 'runtime_signal' }> = {
           kind: 'runtime_signal',
           signal: event.signal,
           level: event.level,
@@ -620,7 +620,17 @@ export class MessageBuilder {
           retryable: event.retryable === true,
           ...(event.actionHint != null ? { actionHint: event.actionHint } : {}),
           ...(event.details != null ? { details: event.details } : {}),
-        })
+        }
+        if (event.signal === 'background_tasks') {
+          const currentSnapshot = msg.blocks.find(
+            (block): block is Extract<UIBlock, { kind: 'runtime_signal' }> =>
+              block.kind === 'runtime_signal' && block.signal === 'background_tasks',
+          )
+          if (currentSnapshot != null) Object.assign(currentSnapshot, nextBlock)
+          else msg.blocks.push(nextBlock)
+        } else {
+          msg.blocks.push(nextBlock)
+        }
         break
       }
 
