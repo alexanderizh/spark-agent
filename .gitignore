@@ -132,3 +132,5 @@ model-api-doc/
 minio/
 .worktrees/
 .zcode/
+.superpowers/
+.spark-agent/
