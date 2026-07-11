@@ -2548,13 +2548,15 @@ export function CanvasWorkspaceView({
 
   const handleNodeSelectIntent = useCallback(
     (nodeId: string) => {
-      const node = snapshot?.nodes.find((item) => item.id === nodeId)
+      // 从 ref 读取最新节点，避免把 snapshot?.nodes 放进依赖导致引用抖动
+      // （否则每次 snapshot 变更都会让 nodeActions memo 失效，连带所有可见节点重渲染）
+      const node = snapshotRef.current?.nodes.find((item) => item.id === nodeId)
       if (!node) return
 
       if (activeOperationPanelNodeId === nodeId || editingNodeId === nodeId) return
       closeCanvasFloatPanels()
     },
-    [activeOperationPanelNodeId, closeCanvasFloatPanels, editingNodeId, snapshot?.nodes],
+    [activeOperationPanelNodeId, closeCanvasFloatPanels, editingNodeId],
   )
 
   const handleCanvasViewportControlsChange = useCallback(
@@ -2691,20 +2693,21 @@ export function CanvasWorkspaceView({
 
   const handleToggleLockNode = useCallback(
     (nodeId: string) => {
-      const node = snapshot?.nodes.find((item) => item.id === nodeId)
+      // 从 ref 读取，避免 snapshot?.nodes 引用抖动传导到 nodeActions（导致全节点重渲染）
+      const node = snapshotRef.current?.nodes.find((item) => item.id === nodeId)
       if (!node) return
       void patchNodes([nodeId], { locked: !node.locked })
     },
-    [patchNodes, snapshot?.nodes],
+    [patchNodes],
   )
 
   const handleBringNodeToFront = useCallback(
     (nodeId: string) => {
-      const nodes = snapshot?.nodes ?? []
+      const nodes = snapshotRef.current?.nodes ?? []
       const maxZ = Math.max(0, ...nodes.map((node) => node.zIndex))
       void patchNodes([nodeId], { zIndex: maxZ + 1 })
     },
-    [patchNodes, snapshot?.nodes],
+    [patchNodes],
   )
 
   const handleMergeGroupToImage = useCallback(
@@ -2948,7 +2951,8 @@ export function CanvasWorkspaceView({
 
   const handleEditNode = useCallback(
     (nodeId: string) => {
-      const node = snapshot?.nodes.find((item) => item.id === nodeId)
+      // 从 ref 读取，避免 snapshot?.nodes 引用抖动传导到 nodeActions（导致全节点重渲染）
+      const node = snapshotRef.current?.nodes.find((item) => item.id === nodeId)
       if (node && isOperationNode(node)) {
         closeCanvasFloatPanels('operation')
         setInlinePanelFocusRequest({ nodeId, nonce: Date.now() })
@@ -2973,14 +2977,21 @@ export function CanvasWorkspaceView({
       setSelectedNodeIds([nodeId])
       setEditingNodeId(nodeId)
     },
-    [closeCanvasFloatPanels, snapshot?.nodes],
+    [closeCanvasFloatPanels],
   )
 
   // 360 全景产物节点的「全景预览」入口（由右键菜单触发，与「编辑」解耦）。
   const handlePreviewPanorama = useCallback(
     (nodeId: string) => {
-      const node = resolveCanvasResourceActionNode(nodeId)
-      if (!node?.data.panorama360) {
+      // 从 ref 读取，避免 snapshot 引用抖动传导到 nodeActions
+      const currentSnapshot = snapshotRef.current
+      if (!currentSnapshot) return
+      const node = currentSnapshot.nodes.find((item) => item.id === nodeId)
+      if (!node) return
+      const resolved = isOperationNode(node)
+        ? resolveCanvasOperationResourceNode(node, currentSnapshot)
+        : node
+      if (!resolved?.data.panorama360) {
         message.warning('当前节点没有可预览的全景图内容')
         return
       }
@@ -2988,19 +2999,27 @@ export function CanvasWorkspaceView({
       setSelectedNodeIds([nodeId])
       setPanoramaPreviewNodeId(nodeId)
     },
-    [closeCanvasFloatPanels, resolveCanvasResourceActionNode],
+    [closeCanvasFloatPanels],
   )
 
   const handleOpenCharacterSubviewEditorFromNode = useCallback(
     (nodeId: string) => {
-      if (!snapshot) return
-      const node = resolveCanvasResourceActionNode(nodeId)
-      if (!node?.assetId) {
+      // 从 ref 读取，避免 snapshot 引用抖动传导到 nodeActions
+      const currentSnapshot = snapshotRef.current
+      if (!currentSnapshot) return
+      const node = currentSnapshot.nodes.find((item) => item.id === nodeId)
+      if (!node) return
+      const resolved = isOperationNode(node)
+        ? resolveCanvasOperationResourceNode(node, currentSnapshot)
+        : node
+      if (!resolved?.assetId) {
         message.warning('当前节点没有可裁切的图片资源')
         return
       }
       const sourceImageAsset =
-        snapshot.assets.find((item) => item.id === node.assetId && item.type === 'image') ?? null
+        currentSnapshot.assets.find(
+          (item) => item.id === resolved.assetId && item.type === 'image',
+        ) ?? null
       if (!sourceImageAsset) {
         message.warning('当前节点没有可用的图片资源')
         return
@@ -3009,32 +3028,38 @@ export function CanvasWorkspaceView({
       setSelectedNodeIds([nodeId])
       setCharacterSubviewEditorNodeId(nodeId)
     },
-    [closeCanvasFloatPanels, resolveCanvasResourceActionNode, snapshot],
+    [closeCanvasFloatPanels],
   )
 
   const handleDownloadMediaNode = useCallback(
     async (nodeId: string) => {
-      if (!snapshot) return
-      const node = resolveCanvasResourceActionNode(nodeId)
-      if (!node || (!isCanvasImageContentNode(node) && node.type !== 'video')) {
+      // 从 ref 读取，避免 snapshot/resolveCanvasResourceActionNode 引用抖动传导到 nodeActions
+      const currentSnapshot = snapshotRef.current
+      if (!currentSnapshot) return
+      const node = currentSnapshot.nodes.find((item) => item.id === nodeId)
+      if (!node) return
+      const resolved = isOperationNode(node)
+        ? resolveCanvasOperationResourceNode(node, currentSnapshot)
+        : node
+      if (!resolved || (!isCanvasImageContentNode(resolved) && resolved.type !== 'video')) {
         message.warning('当前节点没有可下载的图片或视频内容')
         return
       }
-      const linkedAsset = node.assetId
-        ? (snapshot.assets.find((item) => item.id === node.assetId) ?? null)
+      const linkedAsset = resolved.assetId
+        ? (currentSnapshot.assets.find((item) => item.id === resolved.assetId) ?? null)
         : null
       await downloadCanvasResource({
-        id: linkedAsset?.id ?? node.id,
-        type: linkedAsset?.type ?? (node.type === 'video' ? 'video' : 'image'),
-        title: linkedAsset?.title ?? node.title ?? null,
-        mimeType: linkedAsset?.mimeType ?? node.data.mimeType ?? null,
+        id: linkedAsset?.id ?? resolved.id,
+        type: linkedAsset?.type ?? (resolved.type === 'video' ? 'video' : 'image'),
+        title: linkedAsset?.title ?? resolved.title ?? null,
+        mimeType: linkedAsset?.mimeType ?? resolved.data.mimeType ?? null,
         storageKey: linkedAsset?.storageKey ?? null,
-        url: node.data.url ?? linkedAsset?.url ?? null,
-        thumbnailUrl: node.data.thumbnailUrl ?? linkedAsset?.thumbnailUrl ?? null,
+        url: resolved.data.url ?? linkedAsset?.url ?? null,
+        thumbnailUrl: resolved.data.thumbnailUrl ?? linkedAsset?.thumbnailUrl ?? null,
         contentText: linkedAsset?.contentText ?? null,
       })
     },
-    [resolveCanvasResourceActionNode, snapshot],
+    [],
   )
 
   const handleSaveNodeEdit = useCallback(

@@ -2763,6 +2763,11 @@ export function registerAllIpcHandlers(): void {
     return { ok: true } as const
   })
 
+  typedIpcHandle('canvas:tool-ack', async (req) => {
+    getCanvasHostBridge().handleToolAck(req.requestId)
+    return { ok: true } as const
+  })
+
   // ─── Session Handlers ──────────────────────────────────────────────────
 
   typedIpcHandle('session:create', async (req) => {

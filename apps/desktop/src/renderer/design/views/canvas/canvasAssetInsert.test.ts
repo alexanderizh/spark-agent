@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { canvasApi } from './canvas.api'
+import { canvasApi, __resetCanvasHotCache } from './canvas.api'
 import type { CanvasDb } from './canvas.api'
 import { fitMediaNodeSize, fitTextNodeSize, readAssetTextForNode } from './canvas.api'
 import type { CanvasAsset, CanvasNode } from './canvas.types'
@@ -65,6 +65,7 @@ function longAssetText(label: string): string {
 describe('canvas asset insertion', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    __resetCanvasHotCache()
     vi.stubGlobal('window', window)
     Object.assign(window, {
       spark: { invoke: vi.fn().mockResolvedValue({ rootPath: '/tmp/project-1' }) },

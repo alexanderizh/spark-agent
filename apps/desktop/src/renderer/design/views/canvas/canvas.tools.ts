@@ -202,6 +202,26 @@ const summarizeNode = (n: CanvasNode) => ({
   },
 })
 
+/**
+ * 轻量节点摘要：用于列表/查询类工具返回。
+ * 只含定位与标识字段，不含 data 详情——Agent 需要详情时再调 canvas_get_node。
+ * 减少 Agent token 消耗，加速推理。
+ */
+const summarizeNodeLite = (n: CanvasNode) => ({
+  id: n.id,
+  type: n.type,
+  title: n.title ?? null,
+  subtype: n.data.subtype ?? null,
+  x: n.x,
+  y: n.y,
+  width: n.width,
+  height: n.height,
+  status: n.data.status ?? null,
+  operation: n.data.operation ?? null,
+  assetId: n.assetId ?? null,
+  taskId: n.taskId ?? null,
+})
+
 const summarizeAsset = (a: CanvasAsset) => ({
   id: a.id,
   type: a.type,
@@ -429,7 +449,7 @@ const tools: CanvasToolDescriptor[] = [
         .filter((n) => n.boardId === bid)
         .filter((n) => input.includeHidden || !n.hidden)
         .filter((n) => !input.type || n.type === input.type)
-        .map(summarizeNode)
+        .map(summarizeNodeLite)
       return { nodes, count: nodes.length }
     },
   },
@@ -494,7 +514,7 @@ const tools: CanvasToolDescriptor[] = [
             (n.data.text ?? '').toLowerCase().includes(q) ||
             (n.data.prompt ?? '').toLowerCase().includes(q),
         )
-        .map(summarizeNode)
+        .map(summarizeNodeLite)
       return { nodes, count: nodes.length }
     },
   },
@@ -1421,6 +1441,353 @@ const tools: CanvasToolDescriptor[] = [
         if (input.title) await ctx.workspace.patchNodes([node.id], { title: input.title })
       }
       return { nodeId: node?.id ?? null }
+    },
+  },
+
+  // ───────── 批量 / 高级操作（C3 增强）─────────
+  {
+    name: 'canvas_batch_create_nodes',
+    description:
+      '一次性批量创建多个文本/Prompt 节点，并可指定它们之间的连线。大幅减少往返次数。返回所有创建的节点 id。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodes'],
+      properties: {
+        nodes: {
+          type: 'array',
+          description: '要创建的节点列表',
+          items: {
+            type: 'object',
+            properties: {
+              text: string('文本内容（text 节点必填）', false),
+              prompt: string('Prompt 内容（prompt 节点用）', false),
+              type: enumOf(['text', 'prompt'], '节点类型（默认 text）'),
+              title: string('节点标题（可选）', false),
+              x: number('画布坐标 x（可选，省略时自动排列）'),
+              y: number('画布坐标 y（可选）'),
+            },
+          },
+        },
+        connections: {
+          type: 'array',
+          description: '节点之间的连线，用 nodes 数组的索引（从 0 开始）指定',
+          items: {
+            type: 'object',
+            properties: {
+              fromIndex: number('源节点在 nodes 数组中的索引'),
+              toIndex: number('目标节点在 nodes 数组中的索引'),
+            },
+          },
+        },
+        startX: number('自动排列起始 x（可选，默认空白处）'),
+        startY: number('自动排列起始 y（可选）'),
+        spacing: number('自动排列间距（默认 360px）'),
+      },
+    },
+    handler: async (
+      ctx,
+      input: {
+        nodes: Array<{ text?: string; prompt?: string; type?: 'text' | 'prompt'; title?: string; x?: number; y?: number }>
+        connections?: Array<{ fromIndex: number; toIndex: number }>
+        startX?: number
+        startY?: number
+        spacing?: number
+      },
+    ) => {
+      if (input.nodes.length === 0) return { nodeIds: [], connectionCount: 0 }
+      const snap = requireSnapshot(ctx)
+      const bid = activeBoardId(ctx)
+      const spacing = input.spacing ?? 360
+      let cursorX = input.startX
+      let cursorY = input.startY
+      if (cursorX == null || cursorY == null) {
+        const spot = findEmptySpot(snap, bid)
+        cursorX = cursorX ?? spot.x
+        cursorY = cursorY ?? spot.y
+      }
+      const createdIds: string[] = []
+      for (let i = 0; i < input.nodes.length; i++) {
+        const spec = input.nodes[i]
+        if (!spec) continue
+        const isPrompt = spec.type === 'prompt' || spec.prompt != null
+        const content = isPrompt ? (spec.prompt ?? '') : (spec.text ?? '')
+        const x = spec.x ?? cursorX + i * spacing
+        const y = spec.y ?? cursorY
+        const node = await ctx.workspace.createTextNode({ text: content, x, y })
+        if (node) {
+          createdIds.push(node.id)
+          if (isPrompt) {
+            await ctx.workspace.updateNodeData(node.id, { prompt: spec.prompt ?? content, format: 'prompt' })
+          }
+          if (spec.title) await ctx.workspace.patchNodes([node.id], { title: spec.title })
+        }
+      }
+      // 建立连线
+      let connectionCount = 0
+      if (input.connections && createdIds.length > 0) {
+        for (const conn of input.connections) {
+          const sourceId = createdIds[conn.fromIndex]
+          const targetId = createdIds[conn.toIndex]
+          if (sourceId && targetId && sourceId !== targetId) {
+            await ctx.workspace.connectNodes({ sourceNodeId: sourceId, targetNodeId: targetId })
+            connectionCount++
+          }
+        }
+      }
+      return { nodeIds: createdIds, connectionCount }
+    },
+  },
+  {
+    name: 'canvas_align_nodes',
+    description:
+      '把多个节点对齐到指定方向（left/right/top/bottom/center-h/center-v）。只改 x/y，不改尺寸。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeIds', 'direction'],
+      properties: {
+        nodeIds: array(string('节点 id'), '要对齐的节点 id 列表（≥2）'),
+        direction: enumOf(
+          ['left', 'right', 'top', 'bottom', 'center-h', 'center-v'],
+          '对齐方向：left=左边缘对齐，center-h=水平居中，center-v=垂直居中',
+        ),
+      },
+    },
+    handler: async (
+      ctx,
+      input: { nodeIds: string[]; direction: 'left' | 'right' | 'top' | 'bottom' | 'center-h' | 'center-v' },
+    ) => {
+      const snap = requireSnapshot(ctx)
+      const targets = input.nodeIds
+        .map((id) => snap.nodes.find((n) => n.id === id))
+        .filter((n): n is CanvasNode => n != null)
+      if (targets.length < 2) throw new Error('对齐至少需要 2 个节点')
+      // 计算基准线
+      const left = Math.min(...targets.map((n) => n.x))
+      const right = Math.max(...targets.map((n) => n.x + n.width))
+      const top = Math.min(...targets.map((n) => n.y))
+      const bottom = Math.max(...targets.map((n) => n.y + n.height))
+      const centerX = (left + right) / 2
+      const centerY = (top + bottom) / 2
+      // 逐个 patch
+      for (const n of targets) {
+        let patch: { x?: number; y?: number } = {}
+        switch (input.direction) {
+          case 'left': patch = { x: left }; break
+          case 'right': patch = { x: right - n.width }; break
+          case 'top': patch = { y: top }; break
+          case 'bottom': patch = { y: bottom - n.height }; break
+          case 'center-h': patch = { x: centerX - n.width / 2 }; break
+          case 'center-v': patch = { y: centerY - n.height / 2 }; break
+        }
+        await ctx.workspace.patchNodes([n.id], patch)
+      }
+      return { ok: true, aligned: targets.length, direction: input.direction }
+    },
+  },
+  {
+    name: 'canvas_distribute_nodes',
+    description: '把多个节点等距分布（水平或垂直方向）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeIds', 'axis'],
+      properties: {
+        nodeIds: array(string('节点 id'), '要分布的节点 id 列表（≥3）'),
+        axis: enumOf(['horizontal', 'vertical'], '分布轴'),
+        gap: number('节点间最小间距（像素，可选，默认自动）'),
+      },
+    },
+    handler: async (
+      ctx,
+      input: { nodeIds: string[]; axis: 'horizontal' | 'vertical'; gap?: number },
+    ) => {
+      const snap = requireSnapshot(ctx)
+      const targets = input.nodeIds
+        .map((id) => snap.nodes.find((n) => n.id === id))
+        .filter((n): n is CanvasNode => n != null)
+      if (targets.length < 3) throw new Error('分布至少需要 3 个节点')
+      const isH = input.axis === 'horizontal'
+      // 按位置排序
+      const sorted = [...targets].sort((a, b) => (isH ? a.x - b.x : a.y - b.y))
+      const first = sorted[0]
+      const last = sorted[sorted.length - 1]
+      if (!first || !last) throw new Error('分布节点排序失败')
+      const start = isH ? first.x : first.y
+      const end = isH ? last.x + last.width : last.y + last.height
+      const totalSpan = end - start
+      const itemSizes = sorted.reduce((sum, n) => sum + (isH ? n.width : n.height), 0)
+      const gap = input.gap ?? Math.max(20, (totalSpan - itemSizes) / (sorted.length - 1))
+      let cursor = start
+      for (const n of sorted) {
+        const size = isH ? n.width : n.height
+        const patch = isH ? { x: Math.round(cursor) } : { y: Math.round(cursor) }
+        await ctx.workspace.patchNodes([n.id], patch)
+        cursor += size + gap
+      }
+      return { ok: true, distributed: sorted.length, axis: input.axis, gap }
+    },
+  },
+  {
+    name: 'canvas_bring_to_front',
+    description: '把节点置顶（zIndex 设为当前画布最大值 + 1）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeIds'],
+      properties: { nodeIds: array(string('节点 id'), '要置顶的节点 id 列表') },
+    },
+    handler: async (ctx, input: { nodeIds: string[] }) => {
+      const snap = requireSnapshot(ctx)
+      const maxZ = snap.nodes.reduce((max, n) => Math.max(max, n.zIndex), 0)
+      // 逐个递增，保持列表顺序
+      let i = 0
+      for (const id of input.nodeIds) {
+        await ctx.workspace.patchNodes([id], { zIndex: maxZ + 1 + i })
+        i++
+      }
+      return { ok: true, broughtToFront: input.nodeIds.length, maxZBefore: maxZ }
+    },
+  },
+  {
+    name: 'canvas_send_to_back',
+    description: '把节点置底（zIndex 设为当前画布最小值 - 1）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeIds'],
+      properties: { nodeIds: array(string('节点 id'), '要置底的节点 id 列表') },
+    },
+    handler: async (ctx, input: { nodeIds: string[] }) => {
+      const snap = requireSnapshot(ctx)
+      const minZ = snap.nodes.reduce((min, n) => Math.min(min, n.zIndex), 0)
+      let i = 0
+      for (const id of input.nodeIds) {
+        await ctx.workspace.patchNodes([id], { zIndex: minZ - 1 - i })
+        i++
+      }
+      return { ok: true, sentToBack: input.nodeIds.length, minZBefore: minZ }
+    },
+  },
+  {
+    name: 'canvas_update_model_param',
+    description:
+      '细粒度更新操作节点的单个 modelParams 参数（如 aspect_ratio / seed / steps），不需要整块替换 data.modelParams。不存在的 key 会自动新增。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeId', 'params'],
+      properties: {
+        nodeId: string('操作节点 id'),
+        params: {
+          type: 'object',
+          description: '要设置/更新的参数键值对（合并写入，不删除其他已有参数）',
+          additionalProperties: true,
+        },
+        removeKeys: array(string('参数名'), '要从 modelParams 中删除的 key（可选）'),
+      },
+    },
+    handler: async (
+      ctx,
+      input: { nodeId: string; params: Record<string, unknown>; removeKeys?: string[] },
+    ) => {
+      const snap = requireSnapshot(ctx)
+      const node = findNode(snap, input.nodeId)
+      const existing = (node.data.modelParams as Record<string, unknown>) ?? {}
+      const next = { ...existing, ...input.params }
+      if (input.removeKeys) {
+        for (const key of input.removeKeys) delete next[key]
+      }
+      await ctx.workspace.updateNodeData(input.nodeId, { modelParams: next })
+      return { ok: true, nodeId: input.nodeId, modelParams: next }
+    },
+  },
+  {
+    name: 'canvas_query_nodes',
+    description:
+      '按多维条件查询节点：类型、任务状态、坐标范围、是否有连线、资产关联等。比 list_nodes/find_nodes 更强大。',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        types: array(enumOf(NODE_TYPES, '类型'), '限定节点类型（任一匹配）'),
+        status: enumOf(['pending', 'running', 'completed', 'failed', 'cancelled'], '任务状态筛选'),
+        inBbox: {
+          type: 'object',
+          description: '坐标范围筛选（节点中心点在此框内）',
+          properties: {
+            minX: number('框左边界'),
+            maxX: number('框右边界'),
+            minY: number('框上边界'),
+            maxY: number('框下边界'),
+          },
+        },
+        hasAsset: boolean('只返回有 asset 关联的节点（true）或无关联的（false）'),
+        hasInputs: boolean('只返回有输入连线的操作节点'),
+        hasOutputs: boolean('只返回有输出连线的操作节点'),
+        pipelineRole: enumOf(PIPELINE_ROLES as unknown as string[], '流水线角色筛选'),
+        productionState: enumOf(PRODUCTION_STATES as unknown as string[], '生产状态筛选'),
+        limit: number('返回上限（默认 50）'),
+        boardId: string('限定画布 id（可选，默认当前激活画布）', false),
+      },
+    },
+    handler: async (
+      ctx,
+      input: {
+        types?: CanvasNodeType[]
+        status?: string
+        inBbox?: { minX: number; maxX: number; minY: number; maxY: number }
+        hasAsset?: boolean
+        hasInputs?: boolean
+        hasOutputs?: boolean
+        pipelineRole?: string
+        productionState?: string
+        limit?: number
+        boardId?: string
+      },
+    ) => {
+      const snap = requireSnapshot(ctx)
+      const bid = input.boardId ?? activeBoardId(ctx)
+      let result = snap.nodes.filter((n) => n.boardId === bid && !n.hidden)
+      if (input.types && input.types.length > 0) {
+        const typeSet = new Set(input.types)
+        result = result.filter((n) => typeSet.has(n.type))
+      }
+      if (input.status) {
+        result = result.filter((n) => n.data.status === input.status)
+      }
+      if (input.pipelineRole) {
+        result = result.filter((n) => n.data.pipelineRole === input.pipelineRole)
+      }
+      if (input.productionState) {
+        result = result.filter((n) => n.data.productionState === input.productionState)
+      }
+      if (input.hasAsset != null) {
+        result = result.filter((n) => Boolean(n.assetId) === input.hasAsset)
+      }
+      if (input.inBbox) {
+        const { minX, maxX, minY, maxY } = input.inBbox
+        result = result.filter((n) => {
+          const cx = n.x + n.width / 2
+          const cy = n.y + n.height / 2
+          return cx >= minX && cx <= maxX && cy >= minY && cy <= maxY
+        })
+      }
+      if (input.hasInputs != null) {
+        const nodesWithInputs = new Set(
+          snap.edges.filter((e) => e.type === 'used_as_input').map((e) => e.targetNodeId),
+        )
+        result = result.filter((n) => nodesWithInputs.has(n.id) === input.hasInputs)
+      }
+      if (input.hasOutputs != null) {
+        const nodesWithOutputs = new Set(
+          snap.edges.filter((e) => e.type === 'generated' || e.type === 'derived_from').map((e) => e.sourceNodeId),
+        )
+        result = result.filter((n) => nodesWithOutputs.has(n.id) === input.hasOutputs)
+      }
+      const limit = input.limit ?? 50
+      const truncated = result.length > limit
+      const finalResult = truncated ? result.slice(0, limit) : result
+      return {
+        nodes: finalResult.map(summarizeNodeLite),
+        count: finalResult.length,
+        totalMatches: result.length,
+        truncated,
+      }
     },
   },
 ]

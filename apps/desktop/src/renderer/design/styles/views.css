@@ -837,7 +837,7 @@ body.sidebar-resizing {
   color: var(--sidebar-text, var(--text));
 }
 .chat-item-compact.active .chat-item-title-compact {
-  color: var(--primary);
+  /* color: var(--primary); */
 }
 .chat-item-compact .chat-item-title-compact.session-title-small {
   font-size: var(--font-sm);

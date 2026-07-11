@@ -284,7 +284,11 @@ async function persistAllProjects(db: CanvasDb): Promise<{
  */
 async function flushPersist(): Promise<boolean> {
   await persistInFlight
-  persistInFlight = persistAllProjects(readDb())
+  // 确保防抖的 localStorage 写入已落盘（与 SQLite 保持一致）
+  flushHotPersist()
+  // readDb 现在返回内存缓存引用（非深拷贝）；persistAllProjects 内部有跨 project 的 await，
+  // 期间可能被其他 mutation 修改，所以这里做一次快照拷贝保证落库数据一致性。
+  persistInFlight = persistAllProjects(cloneDb(readDb()))
   const { attempted, failed } = await persistInFlight
   for (const id of attempted) {
     if (!failed.has(id)) {
@@ -340,6 +344,20 @@ export async function revertProject(projectId: string): Promise<void> {
 
 export function isCanvasDirty(projectId: string): boolean {
   return dirtyProjectIds.has(projectId)
+}
+
+/**
+ * 清除热存储内存缓存（测试用）。
+ * 测试 beforeEach 里 localStorage.clear() 后需调用此函数，
+ * 否则模块级 hotMemory 会跨测试残留旧数据。
+ */
+export function __resetCanvasHotCache(): void {
+  hotMemory = null
+  hotOverflow = null
+  if (hotPersistTimer != null) {
+    clearTimeout(hotPersistTimer)
+    hotPersistTimer = null
+  }
 }
 
 /** 构造 CanvasSnapshotSaveRequest.meta，跳过 undefined 字段（exactOptionalPropertyTypes） */
@@ -455,19 +473,25 @@ async function ensureCanvasProjectDirectory(input: {
 }
 
 /**
- * 热存储内存兜底。
+ * 热存储内存缓存（性能优化）。
  *
- * localStorage 单源约 5MB 配额，导入长篇小说（动辄数 MB 正文）等大数据会
- * QuotaExceededError，导致写入/加载直接失败。一旦热存储装不进 localStorage，
- * 就把整库放进这个内存镜像，readDb 改读内存。
+ * 原实现每次 readDb 都 JSON.parse 全库、每次 writeDb 都 JSON.stringify 全库写 localStorage，
+ * 在 Agent 高频调用工具时（一轮几十次读写）成为严重瓶颈。
  *
- * 这不影响持久化：SQLite 才是画布的权威存储（见文件顶部说明），重新打开项目时
- * openSnapshot 会在 canvasDirty=false 时从 SQLite 重建热存储。localStorage 仅是
- * 同会话内的快速热缓存，换成内存镜像无 durability 回退。
+ * 优化后：首次从 localStorage 加载到 hotMemory，后续 readDb 直接返回内存引用（O(1)），
+ * writeDb 只更新内存引用 + 标记 dirty，localStorage 落盘走防抖（persistHotDbDebounced）。
+ *
+ * 这不影响持久化：SQLite 才是画布的权威存储（见文件顶部说明）。
+ * localStorage 仅是同会话内的快速热缓存，防抖延迟写不影响 durability。
  */
+let hotMemory: CanvasDb | null = null
+/** localStorage 配额超限时的内存兜底标志（保留向后兼容） */
 let hotOverflow: CanvasDb | null = null
 /** 留余量给 localStorage ~5MB 配额，超过即直接走内存，避免无谓的序列化+异常 */
 const HOT_LOCALSTORAGE_LIMIT = 4_000_000
+/** localStorage 防抖落盘间隔：合并多次 writeDb 为一次 localStorage.setItem */
+const HOT_PERSIST_DEBOUNCE_MS = 500
+let hotPersistTimer: ReturnType<typeof setTimeout> | null = null
 
 function cloneDb(db: CanvasDb): CanvasDb {
   if (typeof structuredClone === 'function') return structuredClone(db)
@@ -475,15 +499,10 @@ function cloneDb(db: CanvasDb): CanvasDb {
 }
 
 /**
- * 把热存储落地：能塞进 localStorage 就用 localStorage（清掉内存兜底），
- * 否则整库转内存镜像。返回是否落到了 localStorage。
+ * 把热存储同步落地到 localStorage（实际序列化 + setItem）。
+ * 仅由 persistHotDbDebounced 防抖调用，或 flushPersist / revertProject 等需要立即落盘的场景调用。
  */
-function persistHotDb(db: CanvasDb): void {
-  // 本会话已超配额：直接换内存引用，O(1)，不再反复序列化/触发配额异常
-  if (hotOverflow) {
-    hotOverflow = db
-    return
-  }
+function persistHotDbSync(db: CanvasDb): void {
   let serialized: string
   try {
     serialized = JSON.stringify(db)
@@ -510,21 +529,73 @@ function persistHotDb(db: CanvasDb): void {
   }
 }
 
+/**
+ * 防抖落盘：合并多次 writeDb 为一次 localStorage.setItem。
+ * Agent 一轮调用 10 次工具 → 只落盘 1 次（最后一次的状态）。
+ */
+function persistHotDbDebounced(): void {
+  if (hotPersistTimer != null) clearTimeout(hotPersistTimer)
+  hotPersistTimer = setTimeout(() => {
+    hotPersistTimer = null
+    if (hotMemory != null) persistHotDbSync(hotMemory)
+  }, HOT_PERSIST_DEBOUNCE_MS)
+}
+
+/**
+ * 立即落盘（用于 flushPersist / revertProject / 离开页面等需要保证 localStorage 一致的场景）。
+ */
+function flushHotPersist(): void {
+  if (hotPersistTimer != null) {
+    clearTimeout(hotPersistTimer)
+    hotPersistTimer = null
+  }
+  if (hotMemory != null) persistHotDbSync(hotMemory)
+}
+
+/**
+ * 把热存储落地：更新内存引用 + 防抖写 localStorage。
+ * 能塞进 localStorage 就用 localStorage（清掉内存兜底），否则整库转内存镜像。
+ */
+function persistHotDb(db: CanvasDb): void {
+  // 始终更新内存缓存（O(1)）
+  hotMemory = db
+  if (hotOverflow) {
+    // 本会话已超配额：直接换内存引用，不再反复序列化/触发配额异常
+    hotOverflow = db
+    return
+  }
+  // 防抖落盘：合并高频写
+  persistHotDbDebounced()
+}
+
 function readDb(): CanvasDb {
+  // 内存缓存优先：首次加载后不再重复 JSON.parse（性能关键路径）
+  if (hotMemory != null) {
+    migrateFilmAssetDbInPlace(hotMemory)
+    return hotMemory
+  }
   // 内存兜底优先：此时 localStorage 是不完整/过期的
   if (hotOverflow) {
     const parsed = { ...emptyDb(), ...cloneDb(hotOverflow) }
+    hotMemory = parsed
     migrateFilmAssetDbInPlace(parsed)
     return parsed
   }
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return emptyDb()
+    if (!raw) {
+      const empty = emptyDb()
+      hotMemory = empty
+      return empty
+    }
     const parsed = { ...emptyDb(), ...JSON.parse(raw) } as CanvasDb
+    hotMemory = parsed
     migrateFilmAssetDbInPlace(parsed)
     return parsed
   } catch {
-    return emptyDb()
+    const empty = emptyDb()
+    hotMemory = empty
+    return empty
   }
 }
 
