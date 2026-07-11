@@ -1,10 +1,12 @@
 # Spark Agent Desktop Development Guide
 
-> 状态: 实施中 | 最后核对: 2026-07-08
+> 状态: 实施中 | 最后核对: 2026-07-11
 
 版本: 0.2  
 日期: 2026-05-27  
 目标: 设计并逐步实现一个综合性的桌面端 agent 程序，融合 Claude Agent SDK 与 Codex SDK 的能力，支持 ACP、MCP、Skills、多层规则、工作流、可视化多 agent、团队协作与高性能本地执行。
+
+> 当前适配器能力合同以 [§5.6.1](#561-双内核当前能力合同2026-07-11) 为准；本文后半部的阶段表和早期差距清单是历史实施快照。
 
 ---
 
@@ -1115,6 +1117,27 @@ Codex Adapter 特殊能力:
 - 支持长任务队列。
 - 支持以代码项目为中心的多 agent 执行。
 - 支持将 Codex 的计划、diff、命令输出以 Codex Desktop 类似体验展示。
+
+#### 5.6.1 双内核当前能力合同（2026-07-11）
+
+| 能力 | Claude Agent SDK | Codex SDK / CLI |
+|---|---|---|
+| 正文、思考与取消恢复 | 分段流式映射；取消、异常、重启前固化已有输出 | SDK/CLI 分段映射；取消、异常前固化已有输出 |
+| 工具与内容 | 内置/MCP/server tools、17 类 Content Block 显式映射或安全审计降级 | command/MCP/web/file/todo/item error 对齐统一事件 |
+| 用量 | input/output/cache usage | input/output/cache/reasoning-output usage |
+| 权限 | Spark 审批 + SDK 原生模式热切换 + session/project/global 持久授权 | Codex sandbox/approval 模式与内置 MCP 预批准策略 |
+| 运行时信号 | 认证、限流、重试、权限拒绝、refusal fallback、session/task 状态 | turn/item error、取消、终端和文件状态 |
+| 子 Agent / 编排 | 后台任务进度、嵌套 transcript；SDK Workflow 禁用，Spark DAG/Team 为唯一编排入口 | Spark Team/DAG 通过统一 MCP 与 member executor 编排 |
+| MCP elicitation / hooks | form elicitation 与 `PermissionRequest` 通知 Hook | 无对应产品入口 |
+
+统一约束:
+
+- Spark 保存 `minimal/low/medium/high/xhigh/max` 六档 reasoning effort；按目标 SDK 的合法枚举做显式降级，不混淆 Claude `xhigh` 与 `max`。
+- 不猜测 `fallbackModel`。后备模型必须先有可审计的 provider/model 配置和副作用重放策略。
+- 不强制 Claude SDK `thinking` 选项；应用传递 effort，具体 thinking 模式由 SDK 和模型默认值决定，以兼容旧模型与自定义端点。
+- 当前是“每 turn 一个执行实例 + 持久化 session/resume”，不接入无产品生命周期的长驻 `streamInput`。
+- `outputFormat`、实验性 betas 等只有在配置、校验、权限、恢复和 UI 合同完整后才接入。
+- URL elicitation 在没有浏览器授权回调前明确拒绝；form elicitation 的必填字段缺失同样拒绝。
 
 ### 5.7 Skill 系统
 

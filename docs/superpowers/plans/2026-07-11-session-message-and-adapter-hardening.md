@@ -1,6 +1,6 @@
 # Session Message and Adapter Hardening Implementation Plan
 
-> 状态: 实施中 | 最后核对: 2026-07-11
+> 状态: 已落地 | 最后核对: 2026-07-11
 >
 > **For agentic workers:** Execute inline in the current goal. Each task must follow impact analysis, TDD red/green, focused verification, five-axis self-review, `gitnexus detect-changes --scope staged`, and one standalone commit.
 
@@ -152,10 +152,10 @@
 - Test: `packages/agent-runtime/src/sdk/content-block-mapper.test.ts`
 - Test: `packages/agent-runtime/src/sdk/unified-diff.test.ts`
 
-- [ ] Map server tool use, web search/fetch results, MCP tool use/results, redacted thinking, code execution, container upload, advisor, compaction, and fallback blocks to structured events or explicit audit notices.
-- [ ] Extend SDK tool display-name normalization for resource, workflow, scheduling, worktree, artifact, project, and review tools.
-- [ ] Replace all-delete/all-add diff generation with a real line diff and retain bounded output for large files.
-- [ ] Review and commit content/tool mapping.
+- [x] Map server tool use, web search/fetch results, MCP tool use/results, redacted thinking, code execution, container upload, advisor, compaction, and fallback blocks to structured events or explicit audit notices.
+- [x] Extend SDK tool display-name normalization for resource, workflow, scheduling, worktree, artifact, project, and review tools.
+- [x] Replace all-delete/all-add diff generation with a real line diff and retain bounded output for large files.
+- [x] Review and commit content/tool mapping.
 
 ### Task 10: Claude Permission And Query Controls
 
@@ -169,10 +169,10 @@
 - Test: `packages/agent-runtime/src/__tests__/services/session.service.test.ts`
 - Test: `packages/agent-runtime/src/services/permission.service.test.ts`
 
-- [ ] Keep the active SDK Query reference and call native `setPermissionMode()` when available, with the existing live callback as fallback.
-- [ ] Type and preserve `requestId`, `PermissionUpdate[]`, nullable permission results, and the UI's allow-session/project/global decision scope.
-- [ ] Set `strictMcpConfig`, disable native workflows that conflict with Spark orchestration, and expose supported MCP/task controls through bounded executor methods.
-- [ ] Review and commit permission/query control parity.
+- [x] Keep the active SDK Query reference and call native `setPermissionMode()` when available, with the existing live callback as fallback.
+- [x] Type and preserve `requestId`, `PermissionUpdate[]`, nullable permission results, and the UI's allow-session/project/global decision scope.
+- [x] Set `strictMcpConfig`, disable native workflows that conflict with Spark orchestration, and expose supported MCP/task controls through bounded executor methods.
+- [x] Review and commit permission/query control parity.
 
 ### Task 11: Subagent Progress And SDK Hook Bridge
 
@@ -190,10 +190,11 @@
 - Test: `packages/agent-runtime/src/services/hook.service.test.ts`
 - Test: `apps/desktop/src/renderer/design/views/chat/SubagentActivityCard.test.tsx`
 
-- [ ] Enable forwarded subagent text and map task started/updated/progress/notification/background membership into expandable progress/transcript data.
-- [ ] Bridge selected SDK hooks (`PermissionRequest`, `PermissionDenied`, `SessionStart/End`, `SubagentStart/Stop`, compaction, elicitation, file/cwd changes) into Spark events/hooks without executing duplicate business logic.
-- [ ] Trigger the existing `permission_request` application hook at the actual approval boundary.
-- [ ] Review and commit subagent/hook integration.
+- [x] Enable forwarded subagent text and map task started/updated/progress/notification/background membership into expandable progress/transcript data.
+- [x] Bridge only SDK `PermissionRequest` into Spark application hooks; keep completion/failure/question/compaction/subagent signals on the normalized event stream to avoid duplicate business logic.
+- [x] Support MCP form elicitation through the existing structured question UI, reject incomplete required fields, and explicitly decline URL elicitation until a browser authorization product callback exists.
+- [x] Trigger the existing `permission_request` application hook without changing the SDK permission decision.
+- [x] Review and commit subagent/hook integration.
 
 ### Task 12: Capability Documentation And Final Verification
 
@@ -203,6 +204,16 @@
 - Modify: `docs/reviews/2026-07-11-会话消息乱序消失与适配器审计.md`
 - Modify: this plan status/checklist
 
-- [ ] Document implemented adapter capabilities and deliberate non-support for long-lived `streamInput`, structured output, and experimental betas where no product contract exists.
-- [ ] Run targeted suites after every task, then full workspace typecheck, unit tests, lint, and desktop build.
-- [ ] Run `gitnexus detect-changes --scope compare --base-ref master`, refresh the GitNexus index, mark documents `已落地`, review, and commit final documentation/metadata.
+- [x] Document implemented adapter capabilities and deliberate non-support for long-lived `streamInput`, structured output, and experimental betas where no product contract exists.
+- [x] Run targeted suites after every task, then full workspace typecheck, unit tests, lint, and desktop build.
+- [x] Run `gitnexus detect-changes --scope compare --base-ref a488fa37f`, refresh the GitNexus index, mark documents `已落地`, review, and commit final documentation/metadata.
+
+### Final Verification Record
+
+- Targeted Task 11 suites: agent-runtime 108/108, renderer event mapper 25/25, storage repository 29/29.
+- Full workspace typecheck: passed for all seven runnable workspace projects.
+- Full agent-runtime unit suite: 89 files, 1110/1110 tests passed.
+- Desktop production build: passed. Full desktop unit run completed with 822 passed, 25 failed, and 4 todo; failures are existing test-harness/fixture baselines (Toast/Theme/AppDialog mocks, JSON import attributes, Windows path assertions, and stale package metadata expectations), outside the changed adapter/event tests.
+- Full storage run completed with 165 passed and 6 existing failures: four legacy migration fixtures omit prerequisite tables, and two ContextPreference tests expect `null` while the repository returns `undefined`.
+- Full lint reached two existing `no-require-imports` errors in `packages/shared/src/logger/index.ts`; focused lint over the changed files, excluding the documented oversized-file baselines, passed with zero errors.
+- GitNexus compare against `a488fa37f` reported CRITICAL because the implementation intentionally changes central stream terminalization, persisted-history queries, session startup, and renderer event flows. The refreshed index contains 19,545 nodes, 46,090 edges, and 300 flows.
