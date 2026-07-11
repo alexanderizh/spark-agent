@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@spark/protocol'
 import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
-import { toCodexReasoningEffort } from './reasoning-effort.js'
+import { toCodexReasoningEffort, type CodexReasoningEffort } from './reasoning-effort.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
 
@@ -515,12 +515,12 @@ function buildCodexModelProviderConfigArgs(config: SDKExecutorConfig): string[] 
 
 /**
  * 把 Spark 的 reasoningEffort 档位映射成 Codex CLI 接受的值。
- * Codex CLI 没有 `max`（封顶 xhigh），也没有 `off`（最低 minimal）。
+ * Codex CLI 没有 `minimal`（降级 low）和 `max`（封顶 xhigh）。
  * 与 teamagentx getCodexReasoningEffort (codex-sdk.executor.ts:281-294) 一致。
  */
 function mapCodexReasoningEffort(
   effort: SDKExecutorConfig['reasoningEffort'],
-): 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null {
+): CodexReasoningEffort | null {
   return toCodexReasoningEffort(effort) ?? null
 }
 

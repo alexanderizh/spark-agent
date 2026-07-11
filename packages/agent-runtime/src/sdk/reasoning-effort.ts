@@ -1,6 +1,6 @@
 export type SparkReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type ClaudeReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
 export type OpenAIResponsesReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 export function normalizeSparkReasoningEffort(
@@ -31,6 +31,7 @@ export function toCodexReasoningEffort(
   effort: SparkReasoningEffort | undefined,
 ): CodexReasoningEffort | undefined {
   if (effort == null) return undefined
+  if (effort === 'minimal') return 'low'
   return effort === 'max' ? 'xhigh' : effort
 }
 

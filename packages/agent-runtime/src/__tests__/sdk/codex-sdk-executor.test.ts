@@ -237,6 +237,23 @@ describe('CodexSdkExecutor', () => {
     )
   })
 
+  it('maps Spark minimal reasoning to Codex SDK low effort', async () => {
+    runStreamed.mockResolvedValue({ events: streamFrom([]) })
+
+    await new CodexSdkExecutor().executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({ reasoningEffort: 'minimal' }),
+    )
+
+    expect(startThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelReasoningEffort: 'low',
+      }),
+    )
+  })
+
   it('passes explicit network and web search controls to Codex threads', async () => {
     runStreamed.mockResolvedValue({ events: streamFrom([]) })
 
