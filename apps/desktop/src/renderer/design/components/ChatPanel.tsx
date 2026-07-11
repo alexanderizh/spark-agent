@@ -9,7 +9,7 @@
  * 这里只承担"嵌入式会话面板"职责。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Spin } from 'antd'
+import { Spin } from 'antd'
 import type { AgentEvent, ManagedAgent, SessionAttachment } from '@spark/protocol'
 import type { UserQuestionOption, UserQuestionPrompt } from '@spark/protocol'
 import { Icons } from '../Icons'
@@ -62,6 +62,14 @@ export interface ChatPanelProps {
   onDraftChange?: (text: string) => void
   /** 可选：输入区上方的配置条（agent/provider/model/权限选择器等） */
   composer?: React.ReactNode
+  /** 可选：输入框下方的参数行（会话/Agent/模型/技能选择器 + 附件按钮） */
+  composerBelow?: React.ReactNode
+  /** 可选：输入框上方展示的「已引用节点」chip 列表（如画布右键"添加到 Agent 对话"） */
+  nodeReferences?: ChatPanelNodeReference[]
+  /** 可选：移除某个引用节点 */
+  onRemoveNodeReference?: (id: string) => void
+  /** 可选：清空全部引用节点 */
+  onClearNodeReferences?: () => void
   /** 可选：当前可用 agent 列表，用于解析 assistant 头像 */
   agents?: ManagedAgent[]
   /** 可选：assistant 回退身份（用于首条 loading / 无 agent snapshot 的气泡） */
@@ -71,6 +79,12 @@ export interface ChatPanelProps {
 type AssistantStatus = 'idle' | 'sending' | 'streaming'
 type ChatPanelDisplayAttachment = SessionAttachment & { name?: string }
 type ChatPanelAttachment = SessionAttachment & { id: string; name: string }
+/** 输入框上方引用的画布节点 chip */
+export type ChatPanelNodeReference = {
+  id: string
+  type: string
+  title?: string
+}
 type UserQuestionDraft = {
   skipped?: boolean
   selectedLabel?: string
@@ -98,6 +112,10 @@ export function ChatPanel({
   initialInput,
   onDraftChange,
   composer,
+  composerBelow,
+  nodeReferences,
+  onRemoveNodeReference,
+  onClearNodeReferences,
   agents = [],
   fallbackAssistant,
   persistedSessionStatus,
@@ -129,6 +147,20 @@ export function ChatPanel({
   const builderRef = useRef<MessageBuilder>(new MessageBuilder())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // textarea 自适应高度：输入时自动撑高，上限 160px 后滚动
+  const autoResizeTextarea = useCallback(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  }, [])
+
+  // 输入值变化、初始值同步时都触发自适应
+  useEffect(() => {
+    autoResizeTextarea()
+  }, [input, autoResizeTextarea])
   const isAtBottomRef = useRef(true)
   const preservePendingOnSessionBindRef = useRef(false)
   const preservePendingHistoryLoadRef = useRef(false)
@@ -475,57 +507,81 @@ export function ChatPanel({
             <span>{sendError}</span>
           </div>
         )}
-        {attachments.length > 0 && (
-          <ComposerAttachmentsStrip attachments={attachments} onRemove={handleRemoveAttachment} />
-        )}
-        <textarea
-          className="chat-panel-input"
-          value={input}
-          placeholder={inputPlaceholder}
-          disabled={disabled}
-          onChange={(e) => applyInput(e.target.value)}
-          onKeyDown={(e) => {
-            const nativeEvent = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
-            if (nativeEvent.isComposing || e.keyCode === 229) return
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              void handleSend()
-            }
-          }}
-          rows={3}
-        />
-        <div className="chat-panel-input-actions">
-          <div className="chat-panel-input-attach-actions">
-            <Button
-              icon={<Icons.FilePlus size={14} />}
+        {/* 圆角浮岛输入框：chip 区 + textarea + 内嵌发送按钮 */}
+        <div className="chat-panel-input-box">
+          {nodeReferences && nodeReferences.length > 0 && (
+            <ComposerNodeRefsStrip
+              refs={nodeReferences}
+              {...(onRemoveNodeReference ? { onRemove: onRemoveNodeReference } : {})}
+              {...(onClearNodeReferences ? { onClear: onClearNodeReferences } : {})}
+            />
+          )}
+          {attachments.length > 0 && (
+            <ComposerAttachmentsStrip attachments={attachments} onRemove={handleRemoveAttachment} />
+          )}
+          <div className="chat-panel-input-row">
+            <textarea
+              ref={textareaRef}
+              className="chat-panel-input"
+              value={input}
+              placeholder={inputPlaceholder}
               disabled={disabled}
-              onClick={() => void handleAddContextFiles()}
+              onChange={(e) => applyInput(e.target.value)}
+              onKeyDown={(e) => {
+                const nativeEvent = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
+                if (nativeEvent.isComposing || e.keyCode === 229) return
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void handleSend()
+                }
+              }}
+              rows={1}
+            />
+            <button
+              type="button"
+              className={`chat-panel-send-btn${isWorking ? ' is-stop' : ''}`}
+              disabled={isWorking ? !canCancel || cancelling : !canSubmit}
+              aria-label={isWorking ? '终止' : '发送'}
+              title={isWorking ? '终止' : '发送 (Enter)'}
+              onClick={() => {
+                if (isWorking) {
+                  void handleCancel()
+                  return
+                }
+                void handleSend()
+              }}
             >
-              添加文件
-            </Button>
-            <Button
-              icon={<Icons.FolderPlus size={14} />}
-              disabled={disabled}
-              onClick={() => void handleAddContextDirectory()}
-            >
-              添加目录
-            </Button>
+              {isWorking ? (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              ) : (
+                <Icons.Send size={15} />
+              )}
+            </button>
           </div>
-          <Button
-            {...(isWorking ? { danger: true } : { type: 'primary' as const })}
-            icon={isWorking ? <Icons.X size={14} /> : <Icons.Send size={14} />}
-            disabled={isWorking ? !canCancel || cancelling : !canSubmit}
-            loading={cancelling || status === 'sending'}
-            onClick={() => {
-              if (isWorking) {
-                void handleCancel()
-                return
-              }
-              void handleSend()
-            }}
+        </div>
+        {/* 底部附件按钮行（始终渲染，composerBelow 可选追加更多参数项） */}
+        <div className="chat-panel-composer-below">
+          <button
+            type="button"
+            className="chat-panel-attach-icon"
+            disabled={disabled}
+            title="添加文件"
+            onClick={() => void handleAddContextFiles()}
           >
-            {isWorking ? '终止' : '发送'}
-          </Button>
+            <Icons.FilePlus size={13} />
+          </button>
+          <button
+            type="button"
+            className="chat-panel-attach-icon"
+            disabled={disabled}
+            title="添加目录"
+            onClick={() => void handleAddContextDirectory()}
+          >
+            <Icons.FolderPlus size={13} />
+          </button>
+          {composerBelow}
         </div>
       </div>
     </div>
@@ -1193,6 +1249,96 @@ function ComposerAttachmentsStrip({
           onClick={() => setExpanded((current) => !current)}
         >
           {expanded ? '收起' : `还有 ${hiddenCount} 个`}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function nodeRefIcon(type: string) {
+  switch (type) {
+    case 'image':
+      return <Icons.Image size={13} />
+    case 'prompt':
+      return <Icons.Edit size={13} />
+    case 'task':
+      return <Icons.Workflow size={13} />
+    case 'group':
+      return <Icons.Layers size={13} />
+    case 'text':
+    default:
+      return <Icons.FileText size={13} />
+  }
+}
+
+function nodeRefLabel(ref: ChatPanelNodeReference) {
+  const label = ref.title?.trim()
+  if (label) return label
+  const fallback: Record<string, string> = {
+    text: '文本节点',
+    image: '图片节点',
+    prompt: 'Prompt 节点',
+    task: '任务节点',
+    group: '组节点',
+  }
+  return fallback[ref.type] ?? '节点'
+}
+
+function ComposerNodeRefsStrip({
+  refs,
+  onRemove,
+  onClear,
+}: {
+  refs: ChatPanelNodeReference[]
+  onRemove?: (id: string) => void
+  onClear?: () => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const hiddenCount = Math.max(0, refs.length - CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
+  const visibleRefs = expanded || hiddenCount === 0 ? refs : refs.slice(0, CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
+  return (
+    <div className="chat-panel-node-refs">
+      <div className="chat-panel-node-refs-chips">
+        {visibleRefs.map((ref) => (
+          <div key={ref.id} className="chat-panel-node-ref-chip" title={nodeRefLabel(ref)}>
+            {nodeRefIcon(ref.type)}
+            <span>{nodeRefLabel(ref)}</span>
+            {onRemove && (
+              <button
+                type="button"
+                className="chat-panel-attachment-remove"
+                aria-label={`移除 ${nodeRefLabel(ref)}`}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onRemove(ref.id)
+                }}
+              >
+                <Icons.X size={12} />
+              </button>
+            )}
+          </div>
+        ))}
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            className="chat-panel-node-ref-chip chat-panel-attachment-more"
+            onClick={() => setExpanded((current) => !current)}
+          >
+            {expanded ? '收起' : `还有 ${hiddenCount} 个`}
+          </button>
+        )}
+      </div>
+      {onClear && refs.length > 1 && (
+        <button
+          type="button"
+          className="chat-panel-node-refs-clear"
+          onClick={() => {
+            setExpanded(false)
+            onClear()
+          }}
+        >
+          清空
         </button>
       )}
     </div>

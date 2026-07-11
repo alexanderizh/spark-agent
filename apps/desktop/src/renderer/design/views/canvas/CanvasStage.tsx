@@ -12,7 +12,6 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import {
-  Controls,
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
@@ -33,6 +32,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { Icons } from '../../Icons'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
+import { CanvasZoomControls } from './CanvasZoomControls'
 import type { CanvasNodeData } from './canvas.types'
 import {
   getNodeSubtypeOptions,
@@ -381,6 +381,7 @@ function CanvasStageInner({
   onDuplicateSelectedNodes,
   onToggleLockSelectedNodes,
   onBringSelectedNodesToFront,
+  onAddNodesToAgent,
   onOpenAiComposer,
   onEditNode,
   onSaveNodeToLibrary,
@@ -429,6 +430,8 @@ function CanvasStageInner({
   onDuplicateSelectedNodes?: () => void
   onToggleLockSelectedNodes?: () => void
   onBringSelectedNodesToFront?: () => void
+  /** 右键选中节点 → 加入画布 Agent 对话的引用列表 */
+  onAddNodesToAgent?: () => void
   onOpenAiComposer: (nodeId: string) => void
   onEditNode: (nodeId: string) => void
   onSaveNodeToLibrary: (nodeId: string) => void
@@ -1589,7 +1592,8 @@ function CanvasStageInner({
 
   const handleNodeContextMenu = useCallback(
     (event: ReactMouseEvent, node: Node<CanvasFlowNodeData>) => {
-      if (selectedNodeIds.length <= 1 || !selectedNodeIdSet.has(node.id)) return
+      // 至少选中 1 个节点且点中的节点在选区内时弹出菜单（含单选场景）
+      if (selectedNodeIds.length < 1 || !selectedNodeIdSet.has(node.id)) return
       event.preventDefault()
       event.stopPropagation()
       openPaneContextMenuAt(event)
@@ -1824,7 +1828,7 @@ function CanvasStageInner({
               maskStrokeWidth={1}
             />
           )}
-          <Controls className="canvas-controls" />
+          <CanvasZoomControls className="canvas-controls" />
         </ReactFlow>
         <button
           type="button"
@@ -1879,6 +1883,22 @@ function CanvasStageInner({
             {selectedNodeIds.length > 0 && (
               <>
                 <div className="canvas-pane-context-section-title">选中节点</div>
+                {onAddNodesToAgent && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      closePaneContextMenu()
+                      onAddNodesToAgent()
+                    }}
+                  >
+                    <Icons.MessageSquarePlus size={14} />
+                    <span>
+                      添加到 Agent 对话
+                      {selectedNodeIds.length > 1 ? `（${selectedNodeIds.length}）` : ''}
+                    </span>
+                  </button>
+                )}
                 {onDuplicateSelectedNodes && (
                   <button
                     type="button"

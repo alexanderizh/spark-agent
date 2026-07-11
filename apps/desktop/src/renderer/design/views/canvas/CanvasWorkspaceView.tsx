@@ -545,8 +545,8 @@ const CANVAS_SIDE_PANEL_KEYBOARD_STEP = 24
 const CANVAS_AGENT_PANEL_WIDTH_KEY = 'spark-canvas:agent-panel-width'
 const CANVAS_AGENT_PANEL_OPEN_KEY = 'spark-canvas:agent-panel-open'
 const CANVAS_AGENT_PANEL_DEFAULT_WIDTH = 380
-const CANVAS_AGENT_PANEL_MIN_WIDTH = 320
-const CANVAS_AGENT_PANEL_MAX_WIDTH = 560
+const CANVAS_AGENT_PANEL_MIN_WIDTH = 300
+const CANVAS_AGENT_PANEL_MAX_WIDTH = 1200
 const CANVAS_AUTO_SAVE_DEBOUNCE_MS = 1200
 const CANVAS_AUTO_SAVE_THROTTLE_MS = 30_000
 // 自动保存失败时的退避：失败时 delay = min(30s, 1.2s * 2^failCount)，
@@ -1822,6 +1822,8 @@ export function CanvasWorkspaceView({
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true)
   const [agentPanelWidth, setAgentPanelWidth] = useState(readAgentPanelWidth)
+  /** 用户显式「添加到 Agent 对话」的引用节点；与画布选区解耦，发送时以这里为准 */
+  const [agentNodeRefs, setAgentNodeRefs] = useState<CanvasNode[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
   const activeToolRef = useRef<CanvasTool>('pan')
@@ -1941,18 +1943,20 @@ export function CanvasWorkspaceView({
       const body = document.body
       body.classList.add('canvas-agent-panel-resizing')
 
+      // 用 capture 阶段监听，避免被内部 section 的 stopPropagation 拦截
       const handlePointerMove = (moveEvent: PointerEvent) => {
+        moveEvent.preventDefault()
         updateAgentPanelWidth(startWidth + moveEvent.clientX - startX)
       }
 
       const handlePointerUp = () => {
         body.classList.remove('canvas-agent-panel-resizing')
-        window.removeEventListener('pointermove', handlePointerMove)
+        window.removeEventListener('pointermove', handlePointerMove, true)
         window.removeEventListener('pointerup', handlePointerUp)
         window.removeEventListener('pointercancel', handlePointerUp)
       }
 
-      window.addEventListener('pointermove', handlePointerMove)
+      window.addEventListener('pointermove', handlePointerMove, true)
       window.addEventListener('pointerup', handlePointerUp)
       window.addEventListener('pointercancel', handlePointerUp)
     },
@@ -2477,13 +2481,16 @@ export function CanvasWorkspaceView({
     [],
   )
 
+  // Agent 面板改为 overlay 后不再全局抑制画布手势——面板自身的 pointer-events 会阻挡覆盖区域的交互，
+  // 面板之外的画布区域可正常平移/缩放。仅阻止拖拽文件落到面板下方的画布区域。
   const suppressCanvasGestureWhileAgentOpen = useCallback(
     (event: ReactPointerEvent<HTMLDivElement> | ReactDragEvent<HTMLDivElement>) => {
       if (!agentOpen) return
+      if (!('dataTransfer' in event)) return
       const target = event.target
       if (target instanceof Element && target.closest('.canvas-agent-panel')) return
       event.stopPropagation()
-      if ('dataTransfer' in event) event.preventDefault()
+      event.preventDefault()
     },
     [agentOpen],
   )
@@ -2642,6 +2649,38 @@ export function CanvasWorkspaceView({
       },
     })
   }, [closeCanvasFloatPanels, deleteNodes, selectedNodes])
+
+  /** 右键「添加到 Agent 对话」：把当前选中节点去重合并进引用列表，并自动展开 Agent 面板 */
+  const handleAddSelectedToAgent = useCallback(() => {
+    if (selectedNodes.length === 0) return
+    setAgentNodeRefs((prev) => {
+      const existing = new Set(prev.map((node) => node.id))
+      const merged = [...prev]
+      for (const node of selectedNodes) {
+        if (!existing.has(node.id)) {
+          merged.push(node)
+          existing.add(node.id)
+        }
+      }
+      return merged
+    })
+    setAgentOpen(true)
+  }, [selectedNodes])
+
+  /** 宽屏切换：展开到屏幕一半宽度 / 恢复之前的宽度 */
+  const agentPrevWidthRef = useRef(CANVAS_AGENT_PANEL_DEFAULT_WIDTH)
+  const handleAgentWideMode = useCallback(
+    (wide: boolean) => {
+      if (wide) {
+        agentPrevWidthRef.current = agentPanelWidth
+        const halfScreen = Math.floor(window.innerWidth / 2)
+        updateAgentPanelWidth(Math.min(halfScreen, CANVAS_AGENT_PANEL_MAX_WIDTH))
+      } else {
+        updateAgentPanelWidth(agentPrevWidthRef.current)
+      }
+    },
+    [agentPanelWidth, updateAgentPanelWidth],
+  )
 
   const handleDuplicateNode = useCallback(
     (nodeId: string) => {
@@ -6738,7 +6777,7 @@ export function CanvasWorkspaceView({
           aria-label={agentOpen ? '折叠画布助手' : '展开画布助手'}
           title={agentOpen ? '折叠画布助手' : '展开画布助手'}
         >
-          {agentOpen ? <Icons.ChevronLeft size={16} /> : <Icons.Sparkles size={16} />}
+          {agentOpen ? <Icons.ChevronLeft size={16} /> : <Icons.ChevronRight size={16} />}
         </button>
         <aside className={`canvas-agent-side-panel${agentOpen ? '' : ' is-collapsed'}`}>
           <div
@@ -6752,6 +6791,12 @@ export function CanvasWorkspaceView({
             onClose={() => setAgentOpen(false)}
             snapshot={snapshot}
             selectedNodes={selectedNodes}
+            nodeRefs={agentNodeRefs}
+            onRemoveNodeRef={(nodeId) =>
+              setAgentNodeRefs((prev) => prev.filter((node) => node.id !== nodeId))
+            }
+            onClearNodeRefs={() => setAgentNodeRefs([])}
+            onWideModeChange={handleAgentWideMode}
             workspace={{
               createTextNode,
               createImageNode,
@@ -6838,6 +6883,7 @@ export function CanvasWorkspaceView({
             onDuplicateSelectedNodes={() => void duplicateNodes(selectedNodeIds)}
             onToggleLockSelectedNodes={() => void handleToggleLock()}
             onBringSelectedNodesToFront={() => void handleBringToFront()}
+            onAddNodesToAgent={handleAddSelectedToAgent}
             onOpenAiComposer={handleOpenInlineAi}
             onEditNode={handleEditNode}
             onPreviewPanorama={handlePreviewPanorama}

@@ -3995,9 +3995,7 @@ body.sidebar-resizing {
   cursor: default;
 }
 .composer-menu {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 6px);
+  /* 不再强制 bottom 定位——由 antd Dropdown 的 placement 控制方向，菜单在 popup 容器内正常排列 */
   z-index: 30;
   width: max-content;
   min-width: 158px;

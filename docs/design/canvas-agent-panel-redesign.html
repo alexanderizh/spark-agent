@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>画布 Agent 助手 — 对话窗口升级设计稿 v2</title>
+<style>
+  /* ===== 设计 Token（与项目 styles.css 对齐） ===== */
+  :root {
+    --primary: #6366f1;
+    --primary-hover: #4f46e5;
+    --primary-soft: rgba(99, 102, 241, 0.12);
+    --primary-fg: #ffffff;
+    --r-xs: 4px; --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-xl: 16px;
+  }
+  [data-theme="dark"] {
+    --bg: #262626; --bg-soft: #2c2c2c; --bg-sunken: #1a1a1a;
+    --panel: #303030; --panel-elev: #383838;
+    --border: #3d3d3d; --border-strong: #4a4a4a; --divider: #383838;
+    --text: #e4e4e7; --text-strong: #fafafa;
+    --text-muted: #9ca3af; --text-faint: #6b7280;
+    --success: #22c55e; --warning: #f59e0b; --danger: #f87171;
+    --canvas-edit-bg: #1e1e1e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 24px 60px;
+    gap: 40px;
+  }
+  .page-title { font-size: 18px; font-weight: 700; color: var(--text-strong); }
+  .page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
+  .design-row { display: flex; gap: 32px; flex-wrap: wrap; justify-content: center; }
+  .design-wrapper { position: relative; }
+  .design-caption {
+    position: absolute; top: -26px; left: 0;
+    font-size: 12px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .design-caption .badge {
+    font-size: 10px; padding: 2px 8px; border-radius: 999px; font-weight: 700;
+  }
+  .badge.new { background: var(--primary-soft); color: var(--primary); }
+  .badge.state { background: rgba(34,197,94,0.16); color: var(--success); }
+  .badge.state.stop { background: rgba(248,113,113,0.16); color: var(--danger); }
+  .badge.state.empty { background: rgba(155,148,137,0.18); color: var(--text-muted); }
+  .badge.state.err { background: rgba(248,113,113,0.16); color: var(--danger); }
+  .badge.state.q { background: rgba(245,158,11,0.16); color: var(--warning); }
+
+  /* ===== 画布工作区外壳 ===== */
+  .canvas-workspace {
+    display: flex; width: 860px; max-width: 100%; height: 600px;
+    border-radius: var(--r-lg); overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px var(--border-strong);
+    background: var(--bg-sunken);
+  }
+  .agent-side-panel {
+    width: 380px; min-width: 380px;
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--divider);
+    background: var(--panel);
+  }
+  .canvas-stage {
+    flex: 1; position: relative;
+    background: radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0);
+    background-size: 24px 24px;
+    background-color: var(--bg-sunken);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .canvas-stage::after { content: '画布主区域'; color: var(--text-faint); font-size: 13px; }
+
+  /* ===== 极简头部 ===== */
+  .agent-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--divider);
+    flex-shrink: 0; min-height: 38px;
+  }
+  .agent-header-title {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 13px; font-weight: 600; color: var(--text-strong);
+  }
+  .agent-header-title svg { color: var(--primary); }
+  .agent-header-actions { display: flex; align-items: center; gap: 2px; }
+  .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px;
+    border: none; border-radius: var(--r-sm);
+    background: transparent; color: var(--text-muted);
+    cursor: pointer; transition: background 0.15s, color 0.15s;
+  }
+  .icon-btn:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+
+  /* 上下文徽章 */
+  .context-badge {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px;
+    font-size: 11px; color: var(--text-muted);
+    border-bottom: 1px solid color-mix(in srgb, var(--divider) 60%, transparent);
+    flex-shrink: 0;
+  }
+  .context-badge svg { opacity: 0.6; flex-shrink: 0; }
+  .context-badge .ref-count { color: var(--primary); font-weight: 600; }
+
+  /* ===== 消息列表区 ===== */
+  .message-list {
+    flex: 1; overflow-y: auto;
+    padding: 14px 10px;
+    display: flex; flex-direction: column; gap: 16px;
+    min-height: 0;
+  }
+  .message-list::-webkit-scrollbar { width: 5px; }
+  .message-list::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+
+  .msg { display: flex; gap: 9px; align-items: flex-start; }
+  .msg-avatar {
+    width: 24px; height: 24px; border-radius: 999px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700;
+  }
+  .msg-user .msg-avatar { background: color-mix(in srgb, var(--primary) 20%, transparent); color: var(--primary); }
+  .msg-assistant .msg-avatar { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); }
+  .msg-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; max-width: calc(100% - 35px); }
+  .msg-bubble { font-size: 13px; line-height: 1.55; word-break: break-word; }
+  .msg-user .msg-bubble {
+    background: color-mix(in srgb, var(--primary) 13%, transparent);
+    color: var(--text-strong);
+    padding: 6px 11px;
+    border-radius: var(--r-md) var(--r-md) var(--r-xs) var(--r-md);
+    align-self: flex-end;
+  }
+  .msg-assistant .msg-bubble {
+    background: var(--bg-soft); color: var(--text);
+    padding: 7px 11px;
+    border-radius: var(--r-md) var(--r-md) var(--r-md) var(--r-xs);
+    border-left: 2px solid color-mix(in srgb, var(--primary) 40%, transparent);
+  }
+  .msg-bubble code {
+    font-family: 'SF Mono', monospace; font-size: 11.5px;
+    background: color-mix(in srgb, var(--primary) 14%, transparent);
+    color: var(--primary); padding: 1px 5px; border-radius: 4px;
+  }
+  .cursor-blink { display: inline-block; width: 7px; color: var(--primary); animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* 工具调用卡片 */
+  .tool-card {
+    background: var(--bg-soft);
+    border: 1px solid var(--divider);
+    border-radius: var(--r-sm);
+    overflow: hidden;
+    font-size: 11.5px;
+  }
+  .tool-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 8px;
+    color: var(--text-muted);
+    font-family: 'SF Mono', monospace;
+  }
+  .tool-head .dot { width: 6px; height: 6px; border-radius: 999px; flex-shrink: 0; background: var(--success); }
+  .tool-head .dot.running { background: var(--warning); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+  .tool-head .name { color: var(--text); font-weight: 500; }
+  .tool-head .dur { margin-left: auto; opacity: 0.7; }
+  .tool-detail {
+    padding: 4px 8px;
+    border-top: 1px solid var(--divider);
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+  .tool-detail .label { color: var(--text-faint); }
+
+  /* 用户问题卡片 */
+  .question-card {
+    background: color-mix(in srgb, var(--warning) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+    border-radius: var(--r-md);
+    padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .q-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-strong); }
+  .q-head .q-icon { color: var(--warning); }
+  .q-head .q-badge { margin-left: auto; font-size: 10px; padding: 1px 7px; border-radius: 999px; background: rgba(245,158,11,0.18); color: var(--warning); }
+  .q-body { font-size: 12px; color: var(--text); line-height: 1.5; }
+  .q-options { display: flex; flex-direction: column; gap: 5px; }
+  .q-opt {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px;
+    border: 1px solid var(--divider);
+    border-radius: var(--r-sm);
+    font-size: 12px; color: var(--text); cursor: pointer;
+  }
+  .q-opt:hover { border-color: var(--primary); }
+  .q-opt.selected { border-color: var(--primary); background: var(--primary-soft); }
+  .q-opt.selected .q-check { color: var(--primary); }
+  .q-footer { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+  .q-dots { display: flex; gap: 4px; }
+  .q-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--border-strong); }
+  .q-dot.done { background: var(--success); }
+  .q-dot.cur { background: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+  .q-spacer { flex: 1; }
+  .q-btn {
+    padding: 3px 10px; border-radius: var(--r-sm);
+    border: 1px solid var(--border-strong); background: transparent;
+    color: var(--text-muted); font-size: 11.5px; cursor: pointer;
+  }
+  .q-btn:hover { color: var(--text); border-color: var(--text-muted); }
+  .q-btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); font-weight: 500; }
+
+  /* 空状态 */
+  .empty-state {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center; padding: 32px 24px; gap: 10px;
+  }
+  .empty-state svg { color: var(--primary); opacity: 0.5; }
+  .empty-state h4 { font-size: 13px; color: var(--text); }
+  .empty-state p { font-size: 11px; color: var(--text-faint); line-height: 1.6; max-width: 240px; }
+  .empty-state .hint { font-size: 10.5px; color: var(--primary); background: var(--primary-soft); padding: 4px 10px; border-radius: 999px; }
+
+  /* loading / error 覆盖 */
+  .panel-overlay {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px;
+  }
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border-strong);
+    border-top-color: var(--primary);
+    border-radius: 999px;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .overlay-text { font-size: 12px; color: var(--text-muted); }
+  .error-card {
+    text-align: center; padding: 16px;
+  }
+  .error-card .err-icon { color: var(--danger); margin-bottom: 4px; }
+  .error-card h4 { font-size: 13px; color: var(--danger); margin-bottom: 4px; }
+  .error-card p { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
+  /* ===== 底部输入区（核心） ===== */
+  .input-zone {
+    padding: 6px 10px 8px;
+    border-top: 1px solid var(--divider);
+    flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  /* 错误提示条 */
+  .send-error {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 8px;
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+    border-radius: var(--r-sm);
+    color: var(--danger); font-size: 11.5px;
+  }
+  /* 浮岛输入框 */
+  .input-box {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-lg);
+    background: color-mix(in srgb, var(--panel-elev) 45%, var(--bg-soft));
+    transition: border-color 0.15s, box-shadow 0.15s;
+    overflow: hidden; position: relative;
+  }
+  .input-box.is-focused {
+    border-color: color-mix(in srgb, var(--primary) 50%, var(--border-strong));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent);
+  }
+  /* chip 区（框内顶部） */
+  .input-chips {
+    display: flex; flex-wrap: wrap; gap: 5px;
+    padding: 7px 9px 0;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 22px; padding: 0 4px 0 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    max-width: 160px;
+  }
+  .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip svg { flex-shrink: 0; opacity: 0.7; }
+  .chip.ref {
+    border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+    background: color-mix(in srgb, var(--primary) 9%, transparent);
+    color: var(--text);
+  }
+  .chip.att {
+    border: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
+    background: color-mix(in srgb, var(--panel) 60%, transparent);
+    color: var(--text-muted);
+  }
+  .chip .x {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px;
+    border: none; border-radius: 999px; background: transparent;
+    color: var(--text-muted); cursor: pointer; padding: 0; flex-shrink: 0;
+  }
+  .chip .x:hover { background: color-mix(in srgb, var(--text) 14%, transparent); color: var(--text); }
+  .chip-more {
+    height: 22px; padding: 0 8px;
+    border-radius: 999px; border: 1px dashed var(--border-strong);
+    background: transparent; color: var(--text-muted);
+    font-size: 11px; cursor: pointer;
+  }
+  /* textarea + 发送 */
+  .input-textarea-wrap { display: flex; align-items: flex-end; gap: 6px; padding: 6px 9px 7px; }
+  .input-textarea {
+    flex: 1; border: none; background: transparent;
+    color: var(--text); font-size: 13px; line-height: 1.5; font-family: inherit;
+    resize: none; outline: none; min-height: 20px; caret-color: var(--primary);
+  }
+  .input-textarea::placeholder { color: var(--text-faint); }
+  .input-textarea:disabled { color: var(--text-muted); }
+  .send-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px;
+    border: none; border-radius: var(--r-sm);
+    background: var(--primary); color: var(--primary-fg);
+    cursor: pointer; flex-shrink: 0;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .send-btn:hover { background: var(--primary-hover); }
+  .send-btn:disabled { background: var(--border-strong); color: var(--text-faint); cursor: not-allowed; }
+  .send-btn:active:not(:disabled) { transform: scale(0.92); }
+  .send-btn.stop { background: var(--danger); }
+  .send-btn.stop:hover { background: color-mix(in srgb, var(--danger) 85%, #000); }
+
+  /* 参数行 */
+  .param-row {
+    display: flex; align-items: center; gap: 4px;
+    overflow-x: auto; padding: 0 1px;
+  }
+  .param-row::-webkit-scrollbar { display: none; }
+  .param-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 24px; padding: 0 8px;
+    border: none; border-radius: 999px;
+    background: transparent; color: var(--text-muted);
+    font-size: 11.5px; cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .param-chip:hover { background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
+  .param-chip .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 76px; }
+  .param-chip .chev { opacity: 0.4; flex-shrink: 0; }
+  .param-chip.icon-only { width: 24px; padding: 0; justify-content: center; }
+  .param-chip .count {
+    background: var(--primary-soft); color: var(--primary);
+    font-size: 10px; font-weight: 700;
+    padding: 0 5px; border-radius: 999px; line-height: 15px;
+  }
+  .param-divider { width: 1px; height: 14px; background: var(--divider); flex-shrink: 0; margin: 0 2px; }
+  .param-spacer { flex: 1 0 auto; min-width: 4px; }
+  .input-hint { font-size: 10px; color: var(--text-faint); white-space: nowrap; flex-shrink: 0; line-height: 24px; }
+
+  /* ===== 宽度阈值示意 ===== */
+  .width-demo { display: flex; gap: 12px; align-items: flex-end; }
+  .width-bar {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .width-bar .bar {
+    background: var(--panel);
+    border: 1px solid var(--divider);
+    border-radius: var(--r-sm);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: var(--text-muted);
+    height: 120px;
+  }
+  .width-bar .label { font-size: 11px; color: var(--text-muted); }
+  .width-bar .label strong { color: var(--text); }
+  .width-bar.min .bar { width: 300px; }
+  .width-bar.def .bar { width: 400px; }
+  .width-bar.max .bar { width: 560px; }
+
+  /* 对比说明 */
+  .info-cards { width: 860px; max-width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .info-card { background: var(--panel); border: 1px solid var(--divider); border-radius: var(--r-lg); padding: 18px 20px; }
+  .info-card h3 { font-size: 13px; color: var(--text-strong); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .info-card h3 .tag { font-size: 10px; padding: 2px 8px; border-radius: 999px; font-weight: 700; }
+  .info-card h3 .tag.req { background: var(--primary-soft); color: var(--primary); }
+  .info-card ul { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+  .info-card li { font-size: 12px; color: var(--text-muted); line-height: 1.5; padding-left: 18px; position: relative; }
+  .info-card li::before { position: absolute; left: 0; font-size: 11px; line-height: 1.7; }
+  .info-card li.done::before { content: '✓'; color: var(--success); }
+  .info-card li.todo::before { content: '○'; color: var(--text-faint); }
+  .info-card li strong { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div style="text-align:center;">
+  <div class="page-title">画布 Agent 助手 — 对话窗口升级设计稿 v2</div>
+  <div class="page-subtitle">扁平化 · 参数胶囊 · 底部浮岛 · 宽阈值 · 功能完整</div>
+</div>
+
+<!-- ========== A: 空闲态（有引用+附件） ========== -->
+<div class="design-row">
+  <div class="design-wrapper">
+    <div class="design-caption">A · 空闲态 <span class="badge state">有引用+附件</span></div>
+    <div class="canvas-workspace">
+      <div class="agent-side-panel">
+        <div class="agent-header">
+          <div class="agent-header-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg>
+            画布助手
+          </div>
+          <div class="agent-header-actions">
+            <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+            <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          </div>
+        </div>
+        <div class="context-badge">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          <span>赛博朋克短片 · 主画板 · 已引用 <span class="ref-count">2</span> 节点</span>
+        </div>
+        <div class="message-list">
+          <div class="msg msg-user">
+            <div class="msg-avatar">我</div>
+            <div class="msg-body"><div class="msg-bubble">帮我把引用的这两个节点合并成一张角色定妆图</div></div>
+          </div>
+          <div class="msg msg-assistant">
+            <div class="msg-avatar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg></div>
+            <div class="msg-body">
+              <div class="msg-bubble">好的，已读取节点内容，准备生成定妆图。</div>
+              <div class="tool-card">
+                <div class="tool-head"><span class="dot"></span><span class="name">画布操作 · read_nodes</span><span class="dur">0.8s</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- 输入区 -->
+        <div class="input-zone">
+          <div class="input-box is-focused">
+            <!-- 引用 chip + 附件 chip（框内顶部） -->
+            <div class="input-chips">
+              <div class="chip ref"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span>角色设定</span><button class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+              <div class="chip ref"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span>场景描述</span><button class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+              <div class="chip att"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span>/assets/styles</span><button class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+            </div>
+            <div class="input-textarea-wrap">
+              <textarea class="input-textarea" rows="1">按赛博朋克风格生成</textarea>
+              <button class="send-btn" title="发送 (Enter)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+            </div>
+          </div>
+          <!-- 参数行 -->
+          <div class="param-row">
+            <button class="param-chip icon-only" title="添加文件"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+            <button class="param-chip icon-only" title="添加目录"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg></button>
+            <span class="param-divider"></span>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="label">新会话</span><svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8M4 8h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z"/><path d="M2 14h20M12 8v8"/></svg><span class="label">画布助手</span><svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg><span class="label">GLM-4.6</span><svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg><span class="label">技能</span><span class="count">3</span></button>
+            <div class="param-spacer"></div>
+            <span class="input-hint">Enter 发送</span>
+          </div>
+        </div>
+      </div>
+      <div class="canvas-stage"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== B: 生成中 + 流式回复 ========== -->
+<div class="design-row">
+  <div class="design-wrapper">
+    <div class="design-caption">B · 生成中 <span class="badge state stop">流式回复</span></div>
+    <div class="canvas-workspace">
+      <div class="agent-side-panel">
+        <div class="agent-header">
+          <div class="agent-header-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg>
+            画布助手
+          </div>
+          <div class="agent-header-actions">
+            <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+            <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          </div>
+        </div>
+        <div class="context-badge">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          <span>赛博朋克短片 · 主画板 · 已引用 <span class="ref-count">2</span> 节点</span>
+        </div>
+        <div class="message-list">
+          <div class="msg msg-assistant">
+            <div class="msg-avatar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg></div>
+            <div class="msg-body">
+              <div class="msg-bubble">正在生成赛博朋克角色定妆图，使用霓虹粉+电光蓝配色<span class="cursor-blink">▋</span></div>
+              <div class="tool-card">
+                <div class="tool-head"><span class="dot running"></span><span class="name">画布操作 · generate_image</span><span class="dur">运行中…</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="input-zone">
+          <div class="input-box">
+            <div class="input-textarea-wrap">
+              <textarea class="input-textarea" rows="1" placeholder="agent 正在回复..." disabled></textarea>
+              <button class="send-btn stop" title="终止"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+            </div>
+          </div>
+          <div class="param-row">
+            <button class="param-chip icon-only"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+            <button class="param-chip icon-only"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg></button>
+            <span class="param-divider"></span>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="label">新会话</span><svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg><span class="label">GLM-4.6</span><svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg><span class="label">技能</span><span class="count">3</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="canvas-stage"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== C: 用户问题卡片（多题交互） ========== -->
+<div class="design-row">
+  <div class="design-wrapper">
+    <div class="design-caption">C · 用户问题卡片 <span class="badge state q">多题导航</span></div>
+    <div class="canvas-workspace">
+      <div class="agent-side-panel">
+        <div class="agent-header">
+          <div class="agent-header-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg>
+            画布助手
+          </div>
+          <div class="agent-header-actions">
+            <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+            <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          </div>
+        </div>
+        <div class="context-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span>赛博朋克短片 · 主画板</span></div>
+        <div class="message-list">
+          <div class="msg msg-assistant">
+            <div class="msg-avatar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg></div>
+            <div class="msg-body">
+              <div class="question-card">
+                <div class="q-head">
+                  <svg class="q-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
+                  Agent 正在等您回复
+                  <span class="q-badge">1 / 3</span>
+                </div>
+                <div class="q-body">你希望生成几张备选定妆图？</div>
+                <div class="q-options">
+                  <div class="q-opt selected"><svg class="q-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>1 张（精细）</div>
+                  <div class="q-opt"><span style="width:12px"></span>3 张（备选）</div>
+                  <div class="q-opt"><span style="width:12px"></span>5 张（多样）</div>
+                </div>
+                <div class="q-footer">
+                  <div class="q-dots"><span class="q-dot cur"></span><span class="q-dot"></span><span class="q-dot"></span></div>
+                  <div class="q-spacer"></div>
+                  <button class="q-btn">跳过</button>
+                  <button class="q-btn primary">下一题</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="input-zone">
+          <div class="input-box">
+            <div class="input-textarea-wrap">
+              <textarea class="input-textarea" rows="1" placeholder="正在等待问题回复..." disabled></textarea>
+              <button class="send-btn" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+            </div>
+          </div>
+          <div class="param-row">
+            <button class="param-chip icon-only"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+            <button class="param-chip icon-only"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg></button>
+            <span class="param-divider"></span>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="label">新会话</span><svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg><span class="label">GLM-4.6</span><svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg><span class="label">技能</span><span class="count">3</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="canvas-stage"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== D: 发送错误 + 空状态 ========== -->
+<div class="design-row">
+  <div class="design-wrapper">
+    <div class="design-caption">D · 发送错误态 <span class="badge state err">sendError 提示</span></div>
+    <div class="canvas-workspace">
+      <div class="agent-side-panel">
+        <div class="agent-header">
+          <div class="agent-header-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg>画布助手</div>
+          <div class="agent-header-actions">
+            <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+            <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          </div>
+        </div>
+        <div class="context-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span>赛博朋克短片 · 主画板</span></div>
+        <div class="message-list">
+          <div class="msg msg-user"><div class="msg-avatar">我</div><div class="msg-body"><div class="msg-bubble">生成定妆图</div></div></div>
+        </div>
+        <div class="input-zone">
+          <!-- sendError 提示条 -->
+          <div class="send-error">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+            <span>发送失败：请先选择供应商和模型</span>
+          </div>
+          <div class="input-box">
+            <div class="input-textarea-wrap">
+              <textarea class="input-textarea" rows="1">生成定妆图</textarea>
+              <button class="send-btn" title="重试发送"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+            </div>
+          </div>
+          <div class="param-row">
+            <button class="param-chip icon-only"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+            <button class="param-chip icon-only"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg></button>
+            <span class="param-divider"></span>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="label">新会话</span><svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg><span class="label">未选择</span><svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="param-spacer"></div>
+            <span class="input-hint">Enter 发送</span>
+          </div>
+        </div>
+      </div>
+      <div class="canvas-stage"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== E: 空状态 + Loading ========== -->
+<div class="design-row" style="gap:16px;">
+  <div class="design-wrapper">
+    <div class="design-caption">E · 空状态 <span class="badge state empty">引导提示</span></div>
+    <div class="canvas-workspace" style="width:420px;height:600px;">
+      <div class="agent-side-panel">
+        <div class="agent-header">
+          <div class="agent-header-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg>画布助手</div>
+          <div class="agent-header-actions">
+            <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+            <button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          </div>
+        </div>
+        <div class="context-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span>赛博朋克短片 · 主画板</span></div>
+        <div class="message-list">
+          <div class="empty-state">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg>
+            <h4>开始对话</h4>
+            <p>选好 Agent、模型和附加 Skills 后发送消息，agent 会通过实时画布工具操作项目</p>
+            <div class="hint">💡 右键节点 → 添加到对话</div>
+          </div>
+        </div>
+        <div class="input-zone">
+          <div class="input-box">
+            <div class="input-textarea-wrap">
+              <textarea class="input-textarea" rows="1" placeholder="输入消息，让 agent 操作画布..."></textarea>
+              <button class="send-btn" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+            </div>
+          </div>
+          <div class="param-row">
+            <button class="param-chip icon-only"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+            <button class="param-chip icon-only"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg></button>
+            <span class="param-divider"></span>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="label">新会话</span><svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+            <button class="param-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg><span class="label">GLM-4.6</span><svg class="chev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="design-wrapper">
+    <div class="design-caption">F · 加载中 <span class="badge state">面板级覆盖</span></div>
+    <div class="canvas-workspace" style="width:420px;height:600px;">
+      <div class="agent-side-panel">
+        <div class="agent-header">
+          <div class="agent-header-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg>画布助手</div>
+          <div class="agent-header-actions"><button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+        </div>
+        <div class="panel-overlay">
+          <div class="spinner"></div>
+          <div class="overlay-text">正在加载 Agent 配置...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="design-wrapper">
+    <div class="design-caption">G · 致命错误 <span class="badge state err">error 覆盖</span></div>
+    <div class="canvas-workspace" style="width:420px;height:600px;">
+      <div class="agent-side-panel">
+        <div class="agent-header">
+          <div class="agent-header-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg>画布助手</div>
+          <div class="agent-header-actions"><button class="icon-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+        </div>
+        <div class="panel-overlay">
+          <div class="error-card">
+            <div class="err-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></div>
+            <h4>无法加载配置</h4>
+            <p>画布项目未关联目录，无法启动 agent。请先保存项目到磁盘。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 宽度阈值示意 ========== -->
+<div class="design-wrapper" style="margin-top:8px;">
+  <div class="design-caption">H · 面板宽度阈值 <span class="badge new">扩大范围</span></div>
+  <div class="width-demo">
+    <div class="width-bar min">
+      <div class="bar">MIN 300px</div>
+      <div class="label"><strong>300px</strong>（旧 320）</div>
+    </div>
+    <div class="width-bar def">
+      <div class="bar">DEFAULT 400px</div>
+      <div class="label"><strong>400px</strong>（旧 380）</div>
+    </div>
+    <div class="width-bar max">
+      <div class="bar">MAX 560px</div>
+      <div class="label"><strong>560px</strong>（不变）</div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 功能完整性审查清单 ========== -->
+<div class="info-cards">
+  <div class="info-card">
+    <h3>功能完整性审查 <span class="tag req">全部覆盖</span></h3>
+    <ul>
+      <li class="done"><strong>发送/终止双态按钮</strong>：空闲=箭头发送 / 运行中=红色方块终止</li>
+      <li class="done"><strong>动态 placeholder</strong>：初始化中/发送中/回复中/终止中/等待回复</li>
+      <li class="done"><strong>sendError 错误条</strong>：浮岛上方红色提示（画面 D）</li>
+      <li class="done"><strong>节点引用 chip</strong>：框内顶部，主色调（画面 A）</li>
+      <li class="done"><strong>文件附件 chip</strong>：框内顶部，中性色，与引用区分（画面 A）</li>
+      <li class="done"><strong>附件折叠</strong>：超 3 个折叠为「还有 N 个」</li>
+      <li class="done"><strong>用户问题卡片</strong>：多题导航/选项/圆点/跳过（画面 C）</li>
+      <li class="done"><strong>工具调用卡片</strong>：running/完成/折叠详情态</li>
+      <li class="done"><strong>空状态</strong>：引导文案 + 操作提示（画面 E）</li>
+      <li class="done"><strong>loading/error 覆盖</strong>：面板级（画面 F/G）</li>
+      <li class="done"><strong>流式光标</strong>：回复中末尾闪烁 ▋（画面 B）</li>
+      <li class="done"><strong>全屏/关闭按钮</strong>：头部右侧</li>
+      <li class="done"><strong>4 个参数选择器</strong>：会话/Agent/模型/技能 → 底部胶囊</li>
+    </ul>
+  </div>
+  <div class="info-card">
+    <h3>三个注意点落实 <span class="tag req">v2 改进</span></h3>
+    <ul>
+      <li class="done"><strong>① 扁平化</strong>：参数 chip 去掉背景色（transparent → hover 浮灰），chip 高度 26→24px，头部 40→38px，消息 padding 14→10px</li>
+      <li class="done"><strong>① 扁平化</strong>：附件按钮文字→纯图标 24px，发送按钮 30→28px，输入区 padding 收紧</li>
+      <li class="done"><strong>② 宽阈值</strong>：MIN 320→300px，DEFAULT 380→400px，MAX 保持 560px，整体可拉伸范围 260px</li>
+      <li class="done"><strong>② 宽阈值</strong>：300px 窄态下参数行可横向滚动，不挤压输入框</li>
+      <li class="done"><strong>③ 完整性</strong>：补齐 v1 遗漏的 sendError / 动态 placeholder / 附件 chip / 问题卡片 / 空状态 / loading-error 覆盖</li>
+      <li class="todo"><strong>③ 完整性</strong>：开发时需保留 pending 消息、草稿持久化、IME 组合判断、滚动控制等非视觉逻辑</li>
+    </ul>
+  </div>
+</div>
+
+</body>
+</html>
