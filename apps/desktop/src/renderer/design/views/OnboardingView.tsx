@@ -1131,7 +1131,7 @@ function SparkAccountStep({
     setOpening(true)
     try {
       await window.spark.invoke('platform-model:bootstrap', undefined)
-      toast.success('Spark 平台官方模型已就绪')
+      toast.success('Spark 平台模型已就绪')
       dispatch({ type: 'set-step', step: 'agent-template' })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '平台模型开通失败')
@@ -1143,7 +1143,7 @@ function SparkAccountStep({
   return (
     <>
       <p className="eyebrow">平台内置模型</p>
-      <h1>使用 Spark 平台官方模型</h1>
+      <h1>使用 Spark 平台模型</h1>
       <p className="lead">
         不必申请或配置 API Key。平台模型作为一个可选 Provider，与你的第三方模型配置并存。
       </p>

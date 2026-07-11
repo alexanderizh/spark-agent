@@ -41,7 +41,7 @@ describe('provider adapter selection', () => {
   })
   const sparkManagedProvider = profile({
     id: 'spark-platform-newapi',
-    name: 'Spark 平台官方模型',
+    name: 'Spark 平台模型',
     provider: 'anthropic',
     defaultModel: 'glm-4.5',
     modelIds: ['glm-4.5', 'deepseek-v4'],

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ProviderProfile } from '@spark/protocol'
 import {
+  getProviderPickerLogoSize,
   prioritizeManagedProviderGroups,
   resolveManagedPlatformVendor,
 } from './provider-model-picker-utils'
@@ -25,7 +26,7 @@ describe('provider model picker utilities', () => {
   it('uses the Spark brand for an official managed provider regardless of wire protocol', () => {
     const official = provider({
       id: 'spark-platform-newapi',
-      name: 'Spark 平台官方模型',
+      name: 'Spark 平台模型',
       provider: 'anthropic',
       managed: true,
       managedType: 'newapi',
@@ -53,5 +54,10 @@ describe('provider model picker utilities', () => {
       openai,
       anthropic,
     ])
+  })
+
+  it('visually compensates the official PNG logo without enlarging other providers', () => {
+    expect(getProviderPickerLogoSize(provider({ managed: true, managedType: 'newapi' }))).toBe(18)
+    expect(getProviderPickerLogoSize(provider({ id: 'openai' }))).toBe(14)
   })
 })

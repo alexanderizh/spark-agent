@@ -1188,7 +1188,9 @@ describe('ProviderService', () => {
 
     expect(profile).toMatchObject({
       id: 'spark-platform-newapi',
+      name: 'Spark 平台模型',
       provider: 'anthropic',
+      apiEndpoint: 'https://newapi.example',
       managed: true,
       managedType: 'newapi',
       managedOwnerUserId: '42',
@@ -1232,10 +1234,12 @@ describe('ProviderService', () => {
     })
 
     expect(profile.provider).toBe('anthropic')
+    expect(profile.name).toBe('Spark 平台模型')
+    expect(profile.apiEndpoint).toBe('https://newapi.example')
     expect(profile).not.toHaveProperty('codexApiKind')
     expect(repo.update).toHaveBeenCalledWith('spark-platform-newapi', expect.objectContaining({
       providerType: 'anthropic',
-      config: expect.not.objectContaining({ codexApiKind: 'chat' }),
+      config: expect.objectContaining({ apiEndpoint: 'https://newapi.example' }),
     }))
   })
 

@@ -65,6 +65,7 @@ import {
 import { EMPTY_COMPOSER_DRAFT } from './ChatComposerTypes'
 import { ReasoningMaxParticles } from './ReasoningMaxParticles'
 import {
+  getProviderPickerLogoSize,
   prioritizeManagedProviderGroups,
   resolveManagedPlatformVendor,
 } from './provider-model-picker-utils'
@@ -4367,7 +4368,11 @@ function ProviderModelPicker({
                   <div className="composer-model-group-title">
                     {vendor && (
                       <span className="composer-model-group-icon">
-                        <ProviderLogo vendor={vendor} size={14} shape="rounded" />
+                        <ProviderLogo
+                          vendor={vendor}
+                          size={getProviderPickerLogoSize(provider)}
+                          shape="rounded"
+                        />
                       </span>
                     )}
                     <span>{provider.name}</span>

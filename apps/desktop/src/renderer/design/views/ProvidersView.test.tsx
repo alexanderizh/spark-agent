@@ -4,7 +4,12 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ProviderEditPanel, resolveCodexApiKind, resolveProviderCardKind } from './ProvidersView'
+import {
+  ProviderEditPanel,
+  resolveCodexApiKind,
+  resolveProviderCardKind,
+  sortProviderProfilesForCards,
+} from './ProvidersView'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const mocks = vi.hoisted(() => ({
@@ -957,5 +962,27 @@ describe('resolveProviderCardKind', () => {
     // auto-router 的 id 永远不等于 local-cli，这里只是回归保护
     expect(resolveProviderCardKind(profile('claude-auto-router'))).toBe('router')
     expect(resolveProviderCardKind(profile('local-cli'))).toBe('cli')
+  })
+})
+
+describe('sortProviderProfilesForCards', () => {
+  const profile = (id: string, name: string, managed = false) =>
+    ({ id, name, managed } as unknown as Parameters<typeof sortProviderProfilesForCards>[0][number])
+
+  it('keeps the Spark managed card first in default and name sorting', () => {
+    const custom = profile('custom', 'A Provider')
+    const official = profile('spark-platform-newapi', 'Spark 平台模型', true)
+    const localCli = profile('local-cli', '本地 Claude CLI')
+
+    expect(sortProviderProfilesForCards([custom, official, localCli], 'default')).toEqual([
+      official,
+      custom,
+      localCli,
+    ])
+    expect(sortProviderProfilesForCards([custom, official, localCli], 'nameAsc')).toEqual([
+      official,
+      localCli,
+      custom,
+    ])
   })
 })
