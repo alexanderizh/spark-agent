@@ -42,6 +42,12 @@ import ProvidersView from './design/views/ProvidersView'
 import { LobePreviewView } from './design/theme/LobePreviewView'
 import { BrowserPanelView } from './design/views/BrowserPanelView'
 import { OnboardingView, shouldShowOnboardingAsync } from './design/views/OnboardingView'
+import { PlatformQuotaGuideModal } from './design/views/platform-model/PlatformQuotaGuideModal'
+import {
+  isManagedPlatformQuotaError,
+  PLATFORM_QUOTA_GUIDE_EVENT,
+  type PlatformQuotaGuideReason,
+} from './design/views/platform-model/platform-quota-guide'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
 import { MacWindowDragHeader } from './design/components/MacWindowDragHeader'
@@ -762,6 +768,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
 
 function Shell() {
   const { t, setTweak, hasDialogOpen } = useApp()
+  const auth = useAuth()
   const { t: tr } = useI18n()
   const { toast } = useToast()
   const scaleRef = useRef<HTMLDivElement>(null)
@@ -772,6 +779,8 @@ function Shell() {
   const [userQuestions, setUserQuestions] = useState<Record<string, UserQuestionRequest>>({})
   const [errorDetails, setErrorDetails] = useState<RuntimeErrorDetails | null>(null)
   const [canvasWorkspaceActive, setCanvasWorkspaceActive] = useState(false)
+  const [quotaGuideReason, setQuotaGuideReason] = useState<PlatformQuotaGuideReason | null>(null)
+  const lowBalanceCheckedAccountRef = useRef<string | null>(null)
   const wasCanvasWorkspaceActiveRef = useRef(false)
   const sidebarHiddenRef = useRef(t.sidebarHidden)
   const autoSidebarCollapsedRef = useRef(false)
@@ -795,6 +804,39 @@ function Shell() {
   useEffect(() => {
     activeSessionRef.current = sessionCtx.activeSessionId
   }, [sessionCtx.activeSessionId])
+
+  useEffect(() => {
+    const handleGuideRequest = (event: Event) => {
+      const reason = (event as CustomEvent<{ reason?: PlatformQuotaGuideReason }>).detail?.reason
+      if (reason) setQuotaGuideReason(reason)
+    }
+    window.addEventListener(PLATFORM_QUOTA_GUIDE_EVENT, handleGuideRequest)
+    return () => window.removeEventListener(PLATFORM_QUOTA_GUIDE_EVENT, handleGuideRequest)
+  }, [])
+
+  useEffect(() => {
+    if (!auth.isAuthenticated) {
+      lowBalanceCheckedAccountRef.current = null
+      return
+    }
+    if (t.view === 'onboarding') return
+    if (!sessionCtx.providers.some(provider => provider.managed === true)) return
+    const accountKey = auth.user?.account ?? '__authenticated__'
+    if (lowBalanceCheckedAccountRef.current === accountKey) return
+    lowBalanceCheckedAccountRef.current = accountKey
+    const key = 'spark:platform-quota-guide:last-low-balance'
+    const lastShownAt = Number(window.localStorage.getItem(key) ?? 0)
+    if (Date.now() - lastShownAt < 24 * 60 * 60 * 1000) return
+    let cancelled = false
+    window.spark.invoke('platform-model:get-usage', undefined)
+      .then((usage) => {
+        if (cancelled || usage.walletQuota > 0) return
+        window.localStorage.setItem(key, String(Date.now()))
+        setQuotaGuideReason('low-balance')
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [auth.isAuthenticated, auth.user?.account, sessionCtx.providers, t.view])
 
   useEffect(() => {
     sidebarHiddenRef.current = t.sidebarHidden
@@ -1183,6 +1225,13 @@ function Shell() {
     const api = window.spark
     if (!api?.on) return
     return api.on('stream:session:agent-event', (event: AgentEvent) => {
+      if (event.type === 'agent_error') {
+        const session = sessionCtx.sessions.find(item => item.id === event.sessionId)
+        if (isManagedPlatformQuotaError(event, session?.providerProfileId, sessionCtx.providers)) {
+          setQuotaGuideReason('quota-exhausted')
+        }
+        return
+      }
       if (event.type !== 'plan_proposed') return
       const isVisibleInCurrentSession =
         viewRef.current === 'chat' &&
@@ -1206,7 +1255,7 @@ function Shell() {
         ],
       })
     })
-  }, [getSessionNotificationTitle, navigateToSession, toast, tr])
+  }, [getSessionNotificationTitle, navigateToSession, sessionCtx.providers, sessionCtx.sessions, toast, tr])
 
   const primary = t.primary
   const info = PRIMARIES[primary]
@@ -1408,6 +1457,19 @@ function Shell() {
         {/* Overlays */}
         <GlobalQuickTaskModal open={quickTaskOpen} onClose={() => setQuickTaskOpen(false)} />
         <HistoryImportModal />
+        <PlatformQuotaGuideModal
+          open={quotaGuideReason != null}
+          reason={quotaGuideReason ?? 'low-balance'}
+          onClose={() => setQuotaGuideReason(null)}
+          onOpenAccount={() => {
+            setQuotaGuideReason(null)
+            setTweak('view', 'account-center')
+          }}
+          onConfigureProviders={() => {
+            setQuotaGuideReason(null)
+            setTweak('view', 'providers')
+          }}
+        />
         {t.showPalette && (
           <CommandPalette
             onClose={() => setTweak('showPalette', false)}
