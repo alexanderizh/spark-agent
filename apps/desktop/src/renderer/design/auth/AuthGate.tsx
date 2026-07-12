@@ -9,6 +9,7 @@ import { LoginForm } from './LoginForm'
 import { RegisterForm } from './RegisterForm'
 import { AuthBaseUrlBadge } from './AuthBaseUrlBadge'
 import { Icons } from '../Icons'
+import sparkLogo from '../../assets/spark-logo.png'
 import './Auth.less'
 
 export function AuthGate(): React.ReactElement {
@@ -19,9 +20,17 @@ export function AuthGate(): React.ReactElement {
       <div className="auth-shell">
         <div className="auth-card">
           <div className="auth-panel-head">
-            <div className="auth-panel-title">登录你的账号</div>
+            <div className="auth-panel-brand">
+              <img src={sparkLogo} alt="" className="auth-panel-logo" />
+              <div>
+                <div className="auth-panel-product">Spark Agent</div>
+                <div className="auth-panel-title">
+                  {auth.flow === 'login' ? '欢迎回来' : '创建 Spark 账号'}
+                </div>
+              </div>
+            </div>
             <div className="auth-panel-subtitle">
-              登录后可使用云端临时文件存储，供大模型中介式访问文件，其他功能有待开发
+              登录后可直接使用 Spark 平台模型，也可以继续使用你配置的第三方模型。
             </div>
           </div>
 

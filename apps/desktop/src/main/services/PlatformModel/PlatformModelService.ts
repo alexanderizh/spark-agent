@@ -1,5 +1,6 @@
 import type {
   PlatformModelPlan,
+  PlatformModelPurchaseLink,
   PlatformModelRedeemResponse,
   PlatformModelStatus,
   PlatformModelSubscription,
@@ -81,6 +82,26 @@ export class PlatformModelService {
 
   async getUsage() {
     return (await this.readyClient()).getUsage()
+  }
+
+  async getPurchaseLinks(): Promise<PlatformModelPurchaseLink[]> {
+    const links = await getAuthService().platformGet<PlatformModelPurchaseLink[]>('/wallet/purchase-links')
+    return Array.isArray(links)
+      ? links
+        .filter(link => Number.isInteger(Number(link.id)) && typeof link.name === 'string' && typeof link.url === 'string')
+        .sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0))
+      : []
+  }
+
+  async openPurchaseLink(id: number): Promise<{ ok: true }> {
+    const link = (await this.getPurchaseLinks()).find(item => Number(item.id) === id)
+    if (!link) throw new Error('购买渠道不存在或已停用')
+    const target = new URL(link.url)
+    if (target.protocol !== 'https:' && target.protocol !== 'http:') {
+      throw new Error('购买地址协议不安全')
+    }
+    await shell.openExternal(target.toString())
+    return { ok: true }
   }
 
   async updateModelPreferences(params: {

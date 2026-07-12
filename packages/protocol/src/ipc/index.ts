@@ -610,6 +610,18 @@ export interface PlatformModelPayResponse {
   paid: boolean
 }
 
+export interface PlatformModelPurchaseLink {
+  id: number
+  name: string
+  url: string
+  description?: string
+  sortOrder: number
+}
+
+export interface PlatformModelOpenPurchaseLinkRequest {
+  id: number
+}
+
 export interface PlatformModelUpdatePreferencesRequest {
   modelIds: string[]
   defaultModel: string
@@ -5131,6 +5143,8 @@ export interface IpcChannelMap {
   'platform-model:continue-on-this-device': [void, PlatformModelStatus]
   'platform-model:get-plans': [void, { plans: PlatformModelPlan[] }]
   'platform-model:get-subscription': [void, { subscription: PlatformModelSubscription | null }]
+  'platform-model:get-purchase-links': [void, { links: PlatformModelPurchaseLink[] }]
+  'platform-model:open-purchase-link': [PlatformModelOpenPurchaseLinkRequest, { ok: true }]
   'platform-model:redeem': [PlatformModelRedeemRequest, PlatformModelRedeemResponse]
   'platform-model:pay': [PlatformModelPayRequest, PlatformModelPayResponse]
   'platform-model:get-usage': [void, PlatformModelUsage]

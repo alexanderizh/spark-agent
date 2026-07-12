@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   addLoginHook: vi.fn(),
   addLogoutHook: vi.fn(),
   platformPost: vi.fn(),
+  platformGet: vi.fn(),
   validateSession: vi.fn(),
   getModels: vi.fn(),
   ensureApiKey: vi.fn(),
@@ -78,6 +79,7 @@ vi.mock('../Auth/AuthService.js', () => ({
     addLogoutHook: mocks.addLogoutHook,
     getCurrentUserId: () => mocks.currentUserId,
     platformPost: mocks.platformPost,
+    platformGet: mocks.platformGet,
   }),
 }))
 
@@ -131,6 +133,7 @@ describe('PlatformModelService delivery boundaries', () => {
       password: 'derived-password',
       baseUrl: 'https://newapi.example',
     })
+    mocks.platformGet.mockResolvedValue([])
     mocks.validateSession.mockResolvedValue(undefined)
     mocks.getModels.mockResolvedValue(['gpt-5.4-mini'])
     mocks.ensureApiKey.mockResolvedValue('sk-current')
@@ -162,6 +165,32 @@ describe('PlatformModelService delivery boundaries', () => {
       defaultModel: 'MiniMax-M3',
     })
     expect(service.getStatus().models).toEqual(['MiniMax-M3', 'deepseek-v4'])
+  })
+
+  it('loads enabled purchase channels and only opens a server-provided safe URL', async () => {
+    mocks.platformGet.mockResolvedValue([
+      { id: 2, name: '渠道 B', url: 'https://shop.example/b', sortOrder: 20 },
+      { id: 1, name: '渠道 A', url: 'https://shop.example/a', sortOrder: 10 },
+    ])
+    const service = new PlatformModelService()
+
+    await expect(service.getPurchaseLinks()).resolves.toEqual([
+      { id: 1, name: '渠道 A', url: 'https://shop.example/a', sortOrder: 10 },
+      { id: 2, name: '渠道 B', url: 'https://shop.example/b', sortOrder: 20 },
+    ])
+    await expect(service.openPurchaseLink(1)).resolves.toEqual({ ok: true })
+    expect(mocks.platformGet).toHaveBeenCalledWith('/wallet/purchase-links')
+    expect(mocks.openExternal).toHaveBeenCalledWith('https://shop.example/a')
+  })
+
+  it('rejects an unsafe purchase channel URL', async () => {
+    mocks.platformGet.mockResolvedValue([
+      { id: 1, name: '不安全渠道', url: 'file:///tmp/code.txt', sortOrder: 0 },
+    ])
+    const service = new PlatformModelService()
+
+    await expect(service.openPurchaseLink(1)).rejects.toThrow('购买地址协议不安全')
+    expect(mocks.openExternal).not.toHaveBeenCalled()
   })
 
   it('singleflights concurrent inference-key recovery requests', async () => {

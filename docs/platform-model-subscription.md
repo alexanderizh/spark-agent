@@ -14,6 +14,9 @@ Spark 平台模型以受管 `ProviderProfile` 接入现有 Provider 体系，与
 - 模型 API Key 按固定令牌名查找并恢复完整 Key，不先删后建。明确 401/403 才恢复；429、配额、网络和 5xx 不轮换 Key。
 - 统一 CredentialResolver 已接入 Host/团队对话、记忆嵌入与抽取、Agent 图片/多媒体、Canvas 文本/多媒体及 worktree 命名入口。
 - 账号中心支持套餐购买与续费；支付入口仅保留 NewAPI 自带的支付宝、微信支付，并支持重启后恢复到账轮询、额度、最近消耗、对话额度兑换码和订阅兑换码。
+- 账号中心从 edu-server 动态读取已启用的购码渠道，渠道 URL 不写死在客户端；主进程只允许打开 `http/https` 地址。
+- 安装包注册 `spark-agent://redeem?code=...` 回跳协议。第三方卖码平台支持成功跳转时可拉起客户端自动核销；未登录时在当前进程暂存，登录后继续处理。
+- 退出 Spark 账号会清理受管凭据、禁用平台 Provider，并从所有可选 Provider 列表中隐藏凭据状态为 `unavailable` 的受管平台项。
 - 受管 Provider 在主进程禁止编辑、删除、Key 回显及导入导出覆盖，渲染端显示“平台官方”徽章。
 - 受管 Provider 现在以 `anthropic` 类型落库，官方文本模型默认锁定 `claude-sdk` 适配器；不再按 Codex OpenAI `wire_api=chat` 生成配置。
 - 受管 Provider 的 Anthropic `apiEndpoint` 保存平台根地址，由 Claude SDK 拼接 `/v1/messages`；平台刷新会自动修复旧版误存的 `/v1` 后缀。
@@ -29,6 +32,7 @@ NewAPI 的服务端 callback 地址不是每单可配置的桌面 deep link。�
 
 - NewAPI 原生兑换码：`POST /api/user/topup`，增加对话钱包额度。
 - Spark 订阅兑换码：edu-server 使用数据库行锁、发放租约和远端订阅 ID 对账后调用 NewAPI 管理员绑定接口。并发请求不重复 bind；远端成功、本地写回前崩溃时，同一码重试会先对账再落账。
+- 第三方购码渠道由 edu-admin 配置并通过 `/api/v1/wallet/purchase-links` 下发。支持自定义成功跳转的平台可使用 `spark-agent://redeem?code={兑换码}`；不支持时仍由用户复制兑换码到账号中心。
 
 浏览器支付的待确认套餐和发起时间按 Spark userId 存入本地 SQLite。账号中心重新打开或应用重启后，bootstrap 会恢复有限轮询；余额支付成功或订阅到账后清除待确认状态。
 

@@ -3,6 +3,7 @@ import { Input } from 'antd'
 import { Button } from '@lobehub/ui'
 import type {
   PlatformModelPlan,
+  PlatformModelPurchaseLink,
   PlatformModelStatus,
   PlatformModelSubscription,
   PlatformModelUsage,
@@ -18,6 +19,7 @@ export function PlatformModelAccountPanel(): React.ReactElement {
   const [plans, setPlans] = useState<PlatformModelPlan[]>([])
   const [subscription, setSubscription] = useState<PlatformModelSubscription | null>(null)
   const [usage, setUsage] = useState<PlatformModelUsage | null>(null)
+  const [purchaseLinks, setPurchaseLinks] = useState<PlatformModelPurchaseLink[]>([])
   const [loading, setLoading] = useState(true)
   const [redeemCode, setRedeemCode] = useState('')
   const [redeeming, setRedeeming] = useState(false)
@@ -61,14 +63,16 @@ export function PlatformModelAccountPanel(): React.ReactElement {
       )
       setStatus(nextStatus)
       if (!nextStatus.sessionConflict) {
-        const [planResult, subscriptionResult, usageResult] = await Promise.all([
+        const [planResult, subscriptionResult, usageResult, purchaseLinkResult] = await Promise.all([
           window.spark.invoke('platform-model:get-plans', undefined),
           window.spark.invoke('platform-model:get-subscription', undefined),
           window.spark.invoke('platform-model:get-usage', undefined),
+          window.spark.invoke('platform-model:get-purchase-links', undefined),
         ])
         setPlans(planResult.plans)
         setSubscription(subscriptionResult.subscription)
         setUsage(usageResult)
+        setPurchaseLinks(purchaseLinkResult.links)
         const refreshedStatus = nextStatus.pendingPayment
           ? await window.spark.invoke('platform-model:get-status', undefined)
           : nextStatus
@@ -116,6 +120,14 @@ export function PlatformModelAccountPanel(): React.ReactElement {
       toast.error(error instanceof Error ? error.message : '发起支付失败')
     } finally {
       setPayingPlanId(null)
+    }
+  }
+
+  const openPurchaseLink = async (id: number): Promise<void> => {
+    try {
+      await window.spark.invoke('platform-model:open-purchase-link', { id })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '打开购买渠道失败')
     }
   }
 
@@ -190,6 +202,19 @@ export function PlatformModelAccountPanel(): React.ReactElement {
         <Button type="primary" loading={redeeming} disabled={!redeemCode.trim()} onClick={() => void redeem()}>兑换</Button>
       </div>
       <p className="platform-model-panel__hint">对话额度码增加可用余额；订阅码开通或延长对应套餐。</p>
+      {purchaseLinks.length > 0 ? (
+        <div className="platform-model-panel__purchase-links">
+          <strong>购买兑换码</strong>
+          <div className="platform-model-panel__purchase-actions">
+            {purchaseLinks.map(link => (
+              <Button key={link.id} onClick={() => void openPurchaseLink(link.id)} title={link.description}>
+                {link.name}
+              </Button>
+            ))}
+          </div>
+          <span>购买完成后返回此处输入兑换码。</span>
+        </div>
+      ) : null}
       {usage ? (
         <div className="platform-model-panel__usage">
           <div className="platform-model-panel__metric">
