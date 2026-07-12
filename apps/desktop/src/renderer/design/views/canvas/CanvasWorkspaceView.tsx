@@ -3012,19 +3012,43 @@ export function CanvasWorkspaceView({
   )
 
   // 视频节点的「视频编辑」入口（由右键菜单触发，打开视频工作台）。
-  // 对普通视频节点(type='video')和 video_workbench 节点都生效。
+  // 覆盖：普通视频节点 / video_workbench 节点 / 视频操作节点的产物视频。
   const handleEditVideo = useCallback(
     (nodeId: string) => {
-      const node = snapshotRef.current?.nodes.find((item) => item.id === nodeId)
+      const snap = snapshotRef.current
+      if (!snap) return
+      const node = snap.nodes.find((item) => item.id === nodeId)
       if (!node) return
-      const isVideo = node.type === 'video' || node.data.subtype === 'video_workbench'
-      if (!isVideo) {
-        message.warning('该节点不是视频节点')
+
+      // 情况1: 直接是视频节点或 video_workbench 节点
+      if (node.type === 'video' || node.data.subtype === 'video_workbench') {
+        closeCanvasFloatPanels('node-edit')
+        setSelectedNodeIds([nodeId])
+        setVideoWorkbenchNodeId(nodeId)
         return
       }
-      closeCanvasFloatPanels('node-edit')
-      setSelectedNodeIds([nodeId])
-      setVideoWorkbenchNodeId(nodeId)
+
+      // 情况2: 操作节点 → 通过 outputNodeIds 找产物视频节点
+      const outputIds = (node.data.outputNodeIds as string[] | undefined) ?? []
+      const videoOutput = snap.nodes.find(
+        (n) => outputIds.includes(n.id) && n.type === 'video' && typeof n.data.url === 'string',
+      )
+      if (videoOutput) {
+        closeCanvasFloatPanels('node-edit')
+        setSelectedNodeIds([videoOutput.id])
+        setVideoWorkbenchNodeId(videoOutput.id)
+        return
+      }
+
+      // 情况3: 操作节点自身有产物 url（老版本合并模式，url 直接在 data 上）
+      if (typeof node.data.url === 'string' && node.data.url) {
+        closeCanvasFloatPanels('node-edit')
+        setSelectedNodeIds([nodeId])
+        setVideoWorkbenchNodeId(nodeId)
+        return
+      }
+
+      message.warning('该节点没有可编辑的视频内容')
     },
     [closeCanvasFloatPanels],
   )

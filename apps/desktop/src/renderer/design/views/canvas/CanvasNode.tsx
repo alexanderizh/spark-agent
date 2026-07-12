@@ -707,8 +707,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                     <Icons.Video size={14} /> 视频编辑
                   </span>
                 ),
-                // 操作节点传其产物视频节点 id；普通视频节点传自身 id
-                onClick: () => actions.editVideo!(contentNode?.type === 'video' ? contentNode.id : node.id),
+                // 统一传 node.id；handleEditVideo 内部自动解析操作节点的产物视频
+                onClick: () => actions.editVideo!(node.id),
               },
               { type: 'divider' as const },
             ]
