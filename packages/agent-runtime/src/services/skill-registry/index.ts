@@ -6,7 +6,7 @@
 
 import crypto from 'node:crypto'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import type {
   RemoteSkillItem,
   SkillHubShowcaseSection,
@@ -837,12 +837,30 @@ export class SkillRegistryService {
 
     // 落盘目录：<binaryDir>/<artifact.name>。artifact.name 形如
     // "FFmpeg 7.0.2 (macOS Apple Silicon)"，sanitize 成安全目录名。
-    const safeName = artifact.name
+    // 安全：artifact.name 来自远程 manifest（不可信），sanitize 后必须确保
+    // 不含路径分隔符或 .. 段，否则 join() 会逃出 binaryDir。
+    const rawName = artifact.name
       .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
       .trim()
       .replace(/\s+/g, '-')
-      .replace(/\(|\)/g, '')
-    const destDir = join(this.binaryDir, safeName || artifact.id)
+      .replace(/[()]/g, '')
+    if (
+      rawName === '.' ||
+      rawName === '..' ||
+      rawName.includes('/') ||
+      rawName.includes('\\') ||
+      rawName.includes('..')
+    ) {
+      throw new Error(`Unsafe artifact name from manifest, refusing to install: ${JSON.stringify(artifact.name)}`)
+    }
+    const safeName = rawName || artifact.id.replace(/[^a-zA-Z0-9._-]/g, '-')
+    const destDir = join(this.binaryDir, safeName)
+    // 二次防御：解析后的绝对路径必须在 binaryDir 下
+    const resolved = resolve(destDir)
+    const resolvedRoot = resolve(this.binaryDir)
+    if (!resolved.startsWith(resolvedRoot + sep) && resolved !== resolvedRoot) {
+      throw new Error(`Resolved destDir escapes binaryDir: ${resolved}`)
+    }
 
     const result = await installBinaryArchive({
       url: resolvedUrl,

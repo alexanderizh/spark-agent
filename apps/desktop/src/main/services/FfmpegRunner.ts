@@ -235,6 +235,20 @@ function escapeFilterValue(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 }
 
+/**
+ * 专供 subtitles 滤镜的路径转义。
+ *
+ * subtitles= 滤镜对路径有严格转义要求，比通用 filter 多一项冒号转义
+ * （Windows 盘符 `C:\` 的冒号会被 libavfilter 误认为 filtergraph stream label）。
+ * 转义顺序：先反斜杠，再冒号，最后单引号。
+ */
+function escapeSubtitlePath(p: string): string {
+  return p
+    .replace(/\\/g, '\\\\')  // 反斜杠先转义（后续转义产生的 \ 不会再被处理）
+    .replace(/:/g, '\\:')     // 冒号转义（Windows 盘符关键）
+    .replace(/'/g, "\\'")     // 单引号转义
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. 探测 (probe)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1017,6 +1031,12 @@ export async function addWatermark(
 /**
  * 烧录字幕（硬字幕，字幕嵌入画面）。
  *
+ * subtitles 滤镜的路径转义要求严格（ffmpeg 文档）：
+ *   - 反斜杠 `\` → `\\`
+ *   - 单引号 `'` → `\'`
+ *   - 冒号 `:` → `\:` （Windows 盘符 C:\ 必须转义，否则被当 filtergraph stream label）
+ *   - 整个表达式用单引号包裹
+ *
  * @param srtPath .srt 字幕文件路径
  */
 export async function burnSubtitle(
@@ -1026,8 +1046,7 @@ export async function burnSubtitle(
   onProgress?: (p: FfmpegProgress) => void,
 ): Promise<{ path: string }> {
   const probe = await probeVideo(input)
-  // subtitles 滤镜里的路径在 Windows 需转义冒号和反斜杠
-  const escapedSrt = escapeFilterValue(srtPath)
+  const escapedSrt = escapeSubtitlePath(srtPath)
   const args = [
     '-i', input,
     '-vf', `subtitles='${escapedSrt}'`,
