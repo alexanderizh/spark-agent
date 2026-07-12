@@ -169,8 +169,8 @@ describe('PlatformModelService delivery boundaries', () => {
 
   it('loads enabled purchase channels and only opens a server-provided safe URL', async () => {
     mocks.platformGet.mockResolvedValue([
-      { id: 2, name: '渠道 B', url: 'https://shop.example/b', sortOrder: 20 },
-      { id: 1, name: '渠道 A', url: 'https://shop.example/a', sortOrder: 10 },
+      { id: '2', name: '渠道 B', url: 'https://shop.example/b', sortOrder: '20' },
+      { id: '1', name: '渠道 A', url: 'https://shop.example/a', sortOrder: '10' },
     ])
     const service = new PlatformModelService()
 

@@ -17,6 +17,7 @@
   z-index: 20;
   height: 34px;
   -webkit-app-region: drag;
+  background: var(--bg);
 }
 
 .onboarding-shell :where(
@@ -48,7 +49,7 @@
 
 .onboarding-steps {
   position: relative;
-  z-index: 1;
+  z-index: 20;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -87,8 +88,14 @@
 .onboarding-brand img {
   width: 28px;
   height: 28px;
+  box-sizing: border-box;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: 8px;
-  box-shadow: var(--shadow-sm);
+  background: #fff;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #000 5%, transparent),
+    0 4px 12px color-mix(in srgb, #000 16%, transparent);
 }
 
 .onboarding-back {
@@ -272,7 +279,7 @@
 
 .onboarding-main {
   position: relative;
-  z-index: 1;
+  z-index: 30;
   min-width: 0;
   min-height: 0;
   padding: 0;
@@ -304,7 +311,7 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: 52px 28px 28px 30px;
+  padding: 58px clamp(28px, 3vw, 48px) 32px;
   overflow-y: auto;
 }
 
@@ -314,16 +321,16 @@
   min-height: 100%;
   flex: 1 1 auto;
   overflow: visible;
-  padding: 2px 0 40px;
+  padding: 0 0 40px;
   box-sizing: border-box;
   max-width: 960px;
 }
 
 .onboarding-copy h1 {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   max-width: 820px;
   color: var(--text-strong);
-  font-size: 40px;
+  font-size: clamp(34px, 3vw, 40px);
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -0.015em;
@@ -357,7 +364,7 @@
 
 .lead {
   max-width: 720px;
-  margin: 0 0 16px;
+  margin: 0 0 20px;
   color: var(--text-muted);
   font-size: 14.5px;
   line-height: 1.7;
@@ -537,7 +544,7 @@
 .source-list-minimal {
   gap: 0;
   max-width: 760px;
-  margin-top: 26px;
+  margin-top: 18px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -709,6 +716,56 @@
 .onboarding-auth-embed {
   margin: var(--pad-sm) 0 var(--pad-xs);
   max-width: 460px;
+}
+
+// 引导页的通用表单皮肤会再次装饰 antd 内层控件；认证表单已有自己的外框，
+// 在 embed 范围内清掉内层边框，避免输入框出现双层描边。
+.onboarding-copy-inner .auth-page--embed
+  :where(.auth-input--flat, .captcha-btn-box)
+  :where(input, .ant-input, .ant-input-affix-wrapper, .ant-select-selector) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.onboarding-copy-inner .auth-page--embed .auth-input--flat .ant-select {
+  min-height: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.onboarding-auth-embed + .button-row {
+  width: 100%;
+  margin-top: var(--pad-lg);
+}
+
+.onboarding-auth-embed + .button-row > .ant-btn:first-child {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-md);
+  width: 100%;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
+.onboarding-auth-embed + .button-row > .ant-btn:first-child::before,
+.onboarding-auth-embed + .button-row > .ant-btn:first-child::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.onboarding-auth-embed + .button-row > .ant-btn:first-child:hover {
+  color: var(--primary);
+  background: transparent;
 }
 
 .model-source-back {
@@ -1113,8 +1170,9 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: 52px 28px 24px;
+  justify-content: flex-start;
+  gap: 24px;
+  padding: 60px 28px 28px;
 }
 
 .visual-topline {
@@ -1132,9 +1190,9 @@
 .visual-preview {
   position: relative;
   aspect-ratio: auto;
-  height: clamp(320px, 52vh, 560px);
+  height: clamp(280px, 52vh, 560px);
   min-height: 0;
-  margin: 10px 0 18px;
+  margin: 0;
   border-radius: 8px;
   box-shadow: none;
   background: transparent;
@@ -1159,7 +1217,7 @@
 .visual-points {
   display: grid;
   gap: 0;
-  margin: 12px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -1274,16 +1332,13 @@ html[data-theme='dark'] .onboarding-shell,
   }
 
   .onboarding-copy {
-    padding-right: 22px;
+    padding-inline: 30px;
   }
 
   .visual-stage {
     padding-inline: 22px;
   }
 
-  .onboarding-copy h1 {
-    font-size: 42px;
-  }
 }
 
 @media (max-width: 1120px) {
@@ -1300,7 +1355,7 @@ html[data-theme='dark'] .onboarding-shell,
   }
 
   .onboarding-copy {
-    padding: 46px 20px 24px 22px;
+    padding: 50px 24px 24px;
   }
 
   .onboarding-copy h1 {
@@ -1308,7 +1363,7 @@ html[data-theme='dark'] .onboarding-shell,
   }
 
   .visual-preview {
-    height: clamp(240px, 44vh, 430px);
+    height: clamp(240px, 46vh, 430px);
   }
 
   .visual-points {

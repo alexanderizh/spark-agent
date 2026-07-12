@@ -85,11 +85,29 @@ export class PlatformModelService {
   }
 
   async getPurchaseLinks(): Promise<PlatformModelPurchaseLink[]> {
-    const links = await getAuthService().platformGet<PlatformModelPurchaseLink[]>('/wallet/purchase-links')
+    const links = await getAuthService().platformGet<Array<{
+      id?: unknown
+      name?: unknown
+      url?: unknown
+      description?: unknown
+      sortOrder?: unknown
+    }>>('/wallet/purchase-links')
     return Array.isArray(links)
       ? links
-        .filter(link => Number.isInteger(Number(link.id)) && typeof link.name === 'string' && typeof link.url === 'string')
-        .sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0))
+        .filter((link): link is typeof link & { name: string; url: string } => (
+          Number.isInteger(Number(link.id))
+          && Number(link.id) > 0
+          && typeof link.name === 'string'
+          && typeof link.url === 'string'
+        ))
+        .map(link => ({
+          id: Number(link.id),
+          name: link.name,
+          url: link.url,
+          ...(typeof link.description === 'string' ? { description: link.description } : {}),
+          sortOrder: Number.isFinite(Number(link.sortOrder)) ? Number(link.sortOrder) : 0,
+        }))
+        .sort((left, right) => left.sortOrder - right.sortOrder)
       : []
   }
 
