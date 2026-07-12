@@ -1248,6 +1248,33 @@ export const IpcSchemaRegistry = {
     enabled: z.boolean(),
   }),
 
+  // ─── FFmpeg & Video Processing ─────────────────────────────────────────
+  'ffmpeg:status': z.object({}),
+  'ffmpeg:install': z.object({
+    artifactId: z.string().min(1).max(200).optional(),
+  }),
+  'binary:install': z.object({
+    artifactId: z.string().min(1).max(200),
+  }),
+  // video:probe 与 video:process 共享 VideoProcessRequest 结构。
+  // params 是宽松的 Record（具体校验在主进程 videoProcessHandler 做路径白名单 + 数值范围）。
+  'video:probe': z.object({
+    operation: z.string().min(1).max(50),
+    input: z.string().min(1).max(4096),
+    params: z.record(z.unknown()),
+    requestId: z.string().min(1).max(100),
+  }),
+  'video:process': z.object({
+    operation: z.enum([
+      'probe', 'extractKeyframes', 'extractFramesAtTimes', 'generateThumbnail',
+      'trim', 'concat', 'segment', 'transcode',
+      'adjustSpeed', 'reverse', 'crop', 'watermark', 'burnSubtitle',
+    ]),
+    input: z.string().min(1).max(4096),
+    params: z.record(z.unknown()),
+    requestId: z.string().min(1).max(100),
+  }),
+
   // ─── Cloud Auth ────────────────────────────────────────────────────────
   'auth:captcha': z.object({
     fresh: z.boolean().optional(),

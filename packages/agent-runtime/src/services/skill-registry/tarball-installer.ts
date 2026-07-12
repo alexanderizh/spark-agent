@@ -308,21 +308,59 @@ export async function installBinaryArchive(
       )
     }
 
+    // zip-slip 防御：扫描解压目录，断言所有条目都在 extractDir 内。
+    // 纯 JS 解压已有 safeJoinWithin 防护，但系统 tar 路径（bsdtar）依赖 OS 行为，
+    // 被篡改的归档可能写入 extractDir 之外。复制到 destDir 前必须拦截。
+    assertNoPathTraversal(extractDir)
+
     const contentPath = resolveBinaryContentRoot(extractDir, params.contentRoot)
     const fileCount = await countFilesAsync(contentPath)
 
-    // 落盘：先清后拷
-    mkdirSync(destDir, { recursive: true })
+    // 落盘：先清后拷（copyDirAsync 内部会 mkdir，无需预先创建）
     if (existsSync(destDir)) {
       await fsp.rm(destDir, { recursive: true, force: true })
     }
-    await fsp.mkdir(destDir, { recursive: true })
     await copyDirAsync(contentPath, destDir)
 
     const entries = readdirSync(destDir)
     return { destPath: destDir, fileCount, entries }
   } finally {
     await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+/**
+ * Zip-slip / 路径穿越防御：递归扫描 extractDir，断言解析后的每个条目路径
+ * 都以 extractDir 为前缀。系统 tar 解压的归档（来自不可信远程源）可能含
+ * `../../../etc/passwd` 这类条目，bsdtar 通常会拒绝但行为随版本/平台变化，
+ * 这里做确定性兜底。
+ */
+function assertNoPathTraversal(extractDir: string): void {
+  const root = resolve(extractDir)
+  const stack = [root]
+  while (stack.length > 0) {
+    const dir = stack.pop()!
+    let entries: import('node:fs').Dirent[]
+    try {
+      entries = readdirSync(dir, { withFileTypes: true }) as import('node:fs').Dirent[]
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      const entryName = typeof entry.name === 'string' ? entry.name : String(entry.name)
+      const entryPath = resolve(dir, entryName)
+      // 断言：entryPath 必须在 root 下
+      if (!entryPath.startsWith(root + sep) && entryPath !== root) {
+        throw new Error(`Path traversal detected in extracted archive: ${entryName} resolves outside ${root}`)
+      }
+      try {
+        if (entry.isDirectory() && !entry.isSymbolicLink()) {
+          stack.push(entryPath)
+        }
+      } catch {
+        /* lstat 失败忽略 */
+      }
+    }
   }
 }
 
