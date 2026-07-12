@@ -121,6 +121,9 @@ async function detectSystemFfmpeg(): Promise<{
     const path = stdout.trim().split(/[\r\n]/)[0]
     if (!path) return null
     const version = await readBinaryVersion(path)
+    // version 为 null 说明 ffmpeg 虽存在但无法正常执行（如 dyld 库缺失崩溃），
+    // 视为不可用——否则会误判 ffmpegReady=true 但实际所有操作都失败。
+    if (!version) return null
     return { path, version }
   } catch {
     return null
@@ -214,7 +217,8 @@ async function doDetectFfmpegIntegrity(): Promise<FfmpegIntegrityState> {
 
   // 2. 系统 PATH
   const systemFfmpeg = await detectSystemFfmpeg()
-  if (systemFfmpeg) {
+  if (systemFfmpeg?.version) {
+    // version 非空说明 ffmpeg 能正常执行 -version（而非 dyld 崩溃等）
     const systemFfprobe = await detectSystemFfprobe()
     const state: FfmpegIntegrityState = {
       ffmpegReady: true,
