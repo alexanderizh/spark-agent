@@ -3028,10 +3028,12 @@ export function CanvasWorkspaceView({
         return
       }
 
-      // 情况2: 操作节点 → 通过 outputNodeIds 找产物视频节点
-      const outputIds = (node.data.outputNodeIds as string[] | undefined) ?? []
+      // 情况2: 操作节点 → 通过 generated edge 找产物视频节点
+      const generatedTargetIds = snap.edges
+        .filter((e) => e.sourceNodeId === nodeId && e.type === 'generated')
+        .map((e) => e.targetNodeId)
       const videoOutput = snap.nodes.find(
-        (n) => outputIds.includes(n.id) && n.type === 'video' && typeof n.data.url === 'string',
+        (n) => generatedTargetIds.includes(n.id) && n.type === 'video' && typeof n.data.url === 'string',
       )
       if (videoOutput) {
         closeCanvasFloatPanels('node-edit')
