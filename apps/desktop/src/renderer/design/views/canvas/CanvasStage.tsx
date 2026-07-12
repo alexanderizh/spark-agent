@@ -34,11 +34,6 @@ import { Icons } from '../../Icons'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
 import { CanvasZoomControls } from './CanvasZoomControls'
 import type { CanvasNodeData } from './canvas.types'
-import {
-  getNodeSubtypeOptions,
-  getNodeCurrentSubtype,
-  isSubtypeSwitchable,
-} from './canvasNodeSubtypeSwitch'
 import { mergeFlowNodes } from './canvasStageNodeSync'
 import { computeCanvasAlignmentGuides, type CanvasAlignmentGuide } from './canvasAlignmentGuides'
 import {
@@ -382,6 +377,8 @@ function CanvasStageInner({
   onToggleLockSelectedNodes,
   onBringSelectedNodesToFront,
   onAddNodesToAgent,
+  /** 单节点右键：把该节点加入画布 Agent 对话引用列表（节点富菜单入口） */
+  onAddNodeToAgent,
   onOpenAiComposer,
   onEditNode,
   onSaveNodeToLibrary,
@@ -433,6 +430,8 @@ function CanvasStageInner({
   onBringSelectedNodesToFront?: () => void
   /** 右键选中节点 → 加入画布 Agent 对话的引用列表 */
   onAddNodesToAgent?: () => void
+  /** 单节点右键 → 加入画布 Agent 对话（节点富菜单入口） */
+  onAddNodeToAgent?: (nodeId: string) => void
   onOpenAiComposer: (nodeId: string) => void
   onEditNode: (nodeId: string) => void
   onSaveNodeToLibrary: (nodeId: string) => void
@@ -501,6 +500,7 @@ function CanvasStageInner({
       addSelectionToGroup: onAddSelectionToGroup,
       removeNodeFromGroup: onRemoveNodeFromGroup,
       dissolveGroup: onDissolveGroup,
+      ...(onAddNodeToAgent ? { addNodeToAgent: onAddNodeToAgent } : {}),
       openAiComposer: onOpenAiComposer,
       editNode: onEditNode,
       saveToLibrary: onSaveNodeToLibrary,
@@ -512,6 +512,7 @@ function CanvasStageInner({
       createOperationChild: onCreateOperationChild,
       pipelineAction: onPipelineAction,
       setProductionState: onSetProductionState,
+      ...(onUpdateNodeData ? { updateNodeData: onUpdateNodeData } : {}),
     }),
     [
       onAddSelectionToGroup,
@@ -531,11 +532,13 @@ function CanvasStageInner({
       onPreviewPanorama,
       onEditVideo,
       onRemoveNodeFromGroup,
+      onAddNodeToAgent,
       onCreateOperationChild,
       onPipelineAction,
       onSetProductionState,
       onSaveNodeToLibrary,
       onToggleLockNode,
+      onUpdateNodeData,
     ],
   )
   const operationProjection = useMemo(
@@ -1597,8 +1600,8 @@ function CanvasStageInner({
 
   const handleNodeContextMenu = useCallback(
     (event: ReactMouseEvent, node: Node<CanvasFlowNodeData>) => {
-      // 至少选中 1 个节点且点中的节点在选区内时弹出菜单（含单选场景）
-      if (selectedNodeIds.length < 1 || !selectedNodeIdSet.has(node.id)) return
+      // 多选(≥2)且点中的节点在选区内时弹批量面板菜单；单选交给节点 Dropdown。
+      if (selectedNodeIds.length < 2 || !selectedNodeIdSet.has(node.id)) return
       event.preventDefault()
       event.stopPropagation()
       openPaneContextMenuAt(event)
@@ -1920,73 +1923,83 @@ function CanvasStageInner({
                     </span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={!selectedContext.canCreateGroup}
-                  onClick={() => {
-                    closePaneContextMenu()
-                    onCreateGroupFromSelection()
-                  }}
-                >
-                  <Icons.Layers size={14} />
-                  <span>创建组</span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={!selectedContext.canMergeSelectionToImage}
-                  onClick={() => {
-                    closePaneContextMenu()
-                    onMergeSelectionToImage()
-                  }}
-                >
-                  <Icons.Image size={14} />
-                  <span>合并为组合图</span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={!selectedContext.canAddToGroup}
-                  onClick={() => {
-                    closePaneContextMenu()
-                    const groupId = selectedContext.selectedGroupIds[0]
-                    if (groupId) onAddSelectionToGroup(groupId)
-                  }}
-                >
-                  <Icons.Plus size={14} />
-                  <span>加入选中的组</span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={!selectedContext.canRemoveFromGroup}
-                  onClick={() => {
-                    closePaneContextMenu()
-                    selectedContext.groupedNodeIds.forEach((nodeId) =>
-                      onRemoveNodeFromGroup(nodeId),
-                    )
-                  }}
-                >
-                  <Icons.ArrowUp size={14} />
-                  <span>移出组</span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={!selectedContext.canDissolveGroup}
-                  onClick={() => {
-                    closePaneContextMenu()
-                    const groupId = selectedContext.selectedGroupIds[0]
-                    if (groupId) onDissolveGroup(groupId)
-                  }}
-                >
-                  <Icons.FolderOpen size={14} />
-                  <span>解散组</span>
-                </button>
-                {(onToggleLockSelectedNodes || onBringSelectedNodesToFront) && (
-                  <div className="canvas-pane-context-divider" />
+                {selectedContext.canCreateGroup && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      closePaneContextMenu()
+                      onCreateGroupFromSelection()
+                    }}
+                  >
+                    <Icons.Layers size={14} />
+                    <span>创建组</span>
+                  </button>
                 )}
+                {selectedContext.canMergeSelectionToImage && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      closePaneContextMenu()
+                      onMergeSelectionToImage()
+                    }}
+                  >
+                    <Icons.Image size={14} />
+                    <span>合并为组合图</span>
+                  </button>
+                )}
+                {selectedContext.canAddToGroup && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      closePaneContextMenu()
+                      const groupId = selectedContext.selectedGroupIds[0]
+                      if (groupId) onAddSelectionToGroup(groupId)
+                    }}
+                  >
+                    <Icons.Plus size={14} />
+                    <span>加入选中的组</span>
+                  </button>
+                )}
+                {selectedContext.canRemoveFromGroup && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      closePaneContextMenu()
+                      selectedContext.groupedNodeIds.forEach((nodeId) =>
+                        onRemoveNodeFromGroup(nodeId),
+                      )
+                    }}
+                  >
+                    <Icons.ArrowUp size={14} />
+                    <span>移出组</span>
+                  </button>
+                )}
+                {selectedContext.canDissolveGroup && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      closePaneContextMenu()
+                      const groupId = selectedContext.selectedGroupIds[0]
+                      if (groupId) onDissolveGroup(groupId)
+                    }}
+                  >
+                    <Icons.FolderOpen size={14} />
+                    <span>解散组</span>
+                  </button>
+                )}
+                {(selectedContext.canCreateGroup ||
+                  selectedContext.canMergeSelectionToImage ||
+                  selectedContext.canAddToGroup ||
+                  selectedContext.canRemoveFromGroup ||
+                  selectedContext.canDissolveGroup) &&
+                  (onToggleLockSelectedNodes || onBringSelectedNodesToFront) && (
+                    <div className="canvas-pane-context-divider" />
+                  )}
                 {onToggleLockSelectedNodes && (
                   <button
                     type="button"
@@ -2029,43 +2042,6 @@ function CanvasStageInner({
                     </span>
                   </button>
                 )}
-                <div className="canvas-pane-context-divider" />
-                {selectedNodeIds.length === 1 &&
-                  (() => {
-                    const node = snapshot.nodes.find((n) => n.id === selectedNodeIds[0])
-                    if (!node || !isSubtypeSwitchable(node)) return null
-                    const current = getNodeCurrentSubtype(node)
-                    const options = getNodeSubtypeOptions(node)
-                    return (
-                      <div className="canvas-pane-context-submenu" role="none">
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="canvas-pane-context-submenu-trigger"
-                        >
-                          <Icons.Refresh size={14} />
-                          <span>切换类型</span>
-                          <Icons.ChevronRight size={14} />
-                        </button>
-                        <div className="canvas-pane-context-submenu-panel" role="menu">
-                          {options.map((option) => (
-                            <button
-                              key={option.value}
-                              type="button"
-                              role="menuitem"
-                              onClick={() => {
-                                closePaneContextMenu()
-                                onUpdateNodeData?.(node.id, option.apply as Partial<CanvasNodeData>)
-                              }}
-                            >
-                              <span>{option.label}</span>
-                              {current === option.value ? <Icons.Check size={14} /> : null}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })()}
               </>
             )}
             <div className="canvas-pane-context-section-title">资源内容节点</div>

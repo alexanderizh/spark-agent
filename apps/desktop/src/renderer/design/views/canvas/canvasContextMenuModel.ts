@@ -98,8 +98,10 @@ export function shouldOpenCanvasSelectionContextMenu({
   targetNodeId,
   isEditableTarget = false,
 }: CanvasSelectionContextMenuTarget): boolean {
-  if (isEditableTarget || selectedNodeIds.length === 0) return false
+  // 单选(≤1)右键交给节点 Dropdown（节点富菜单）；只有多选(≥2)才走批量面板菜单。
+  // 这样同一个节点选中/未选中时右键菜单保持一致，避免菜单分叉。
+  if (isEditableTarget || selectedNodeIds.length < 2) return false
   if (!targetNodeId) return true
-  // 右键点中的节点在当前选区内即弹菜单（含单选），让用户能直接对单个节点操作。
+  // 右键点中的节点在当前选区内即弹批量菜单。
   return selectedNodeIds.includes(targetNodeId)
 }
