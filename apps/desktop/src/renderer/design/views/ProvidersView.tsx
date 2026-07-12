@@ -734,12 +734,12 @@ const CARD_KIND_META: Record<ProviderCardKind, { label: string; icon: ComponentT
   image: { label: '图片', icon: Icons.Image, kindClass: 'pv_kind--image' },
   video: { label: '视频', icon: Icons.Film, kindClass: 'pv_kind--video' },
   voice: { label: '语音', icon: Icons.Mic, kindClass: 'pv_kind--voice' },
-  text: { label: '文本', icon: Icons.Chat, kindClass: 'pv_kind--text' },
+  text: { label: '通用模型', icon: Icons.Chat, kindClass: 'pv_kind--text' },
 }
 
 /** 筛选下拉里与 CARD_KIND_META 对齐的类别选项（不含 'all'） */
 const CARD_KIND_FILTER_OPTIONS: Array<{ value: ProviderCardKind; label: string }> = [
-  { value: 'text', label: '文本 / 对话' },
+  { value: 'text', label: '通用模型' },
   { value: 'image', label: '图片' },
   { value: 'video', label: '视频' },
   { value: 'voice', label: '语音' },

@@ -134,7 +134,7 @@ export class PlatformModelService {
     }
 
     const quotaAdded = await (await this.readyClient()).redeemQuota(normalized)
-    return { benefitType: 'quota', quotaAdded, message: '对话额度已到账' }
+    return { benefitType: 'quota', quotaAdded, message: '通用额度已到账' }
   }
 
   async pay(planId: number, paymentMethod: 'alipay' | 'wxpay') {

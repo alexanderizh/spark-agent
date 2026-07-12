@@ -197,11 +197,11 @@ export function PlatformModelAccountPanel(): React.ReactElement {
           value={redeemCode}
           onChange={event => setRedeemCode(event.target.value)}
           onPressEnter={() => void redeem()}
-          placeholder="输入对话额度码或订阅兑换码"
+          placeholder="输入兑换码"
         />
         <Button type="primary" loading={redeeming} disabled={!redeemCode.trim()} onClick={() => void redeem()}>兑换</Button>
       </div>
-      <p className="platform-model-panel__hint">对话额度码增加可用余额；订阅码开通或延长对应套餐。</p>
+      <p className="platform-model-panel__hint">兑换码可增加可用余额。</p>
       {purchaseLinks.length > 0 ? (
         <div className="platform-model-panel__purchase-links">
           <strong>购买兑换码</strong>
@@ -218,7 +218,7 @@ export function PlatformModelAccountPanel(): React.ReactElement {
       {usage ? (
         <div className="platform-model-panel__usage">
           <div className="platform-model-panel__metric">
-            <strong>对话额度</strong>
+            <strong>通用额度</strong>
             <span className="platform-model-panel__balance">{formatUsageQuota(usage.walletQuota)}</span>
           </div>
           <button type="button" className="platform-model-panel__usage-link" onClick={goToUsageStats}>
