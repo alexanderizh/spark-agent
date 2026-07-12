@@ -835,6 +835,12 @@ export const Icons = {
       <path d="M4 21c0-4 4-7 8-7s8 3 8 7" />
     </IconBase>
   ),
+  Phone: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="6" y="2" width="12" height="20" rx="2" />
+      <path d="M10 18h4" />
+    </IconBase>
+  ),
   Wrench: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M14.7 6.3a4.5 4.5 0 0 0-5.4 5.7l-6.6 6.6a2 2 0 0 0 2.8 2.8L12 14.8a4.5 4.5 0 0 0 5.7-5.4l-2.7 2.7-2.8-.7-.7-2.8 2.7-2.7z" />

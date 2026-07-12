@@ -18,6 +18,7 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useRef,
   useState,
 } from 'react'
 import { Form, Input, Spin } from 'antd'
@@ -27,6 +28,8 @@ import { Icons } from '../Icons'
 interface CaptchaFieldProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   form: any
+  /** 禁止用户手动刷新；父表单发送验证码期间使用。 */
+  disabled?: boolean
 }
 
 export interface CaptchaFieldHandle {
@@ -35,10 +38,11 @@ export interface CaptchaFieldHandle {
 }
 
 export const CaptchaField = forwardRef<CaptchaFieldHandle, CaptchaFieldProps>(
-  function CaptchaField({ form }, ref): React.ReactElement {
+  function CaptchaField({ form, disabled = false }, ref): React.ReactElement {
     const auth = useAuth()
     const [svg, setSvg] = useState('')
     const [loading, setLoading] = useState(false)
+    const refreshingRef = useRef(false)
     const isDataImage = svg.startsWith('data:image')
 
     const stretchSvg = useCallback((raw: string): string => {
@@ -51,6 +55,8 @@ export const CaptchaField = forwardRef<CaptchaFieldHandle, CaptchaFieldProps>(
     }, [])
 
     const refresh = useCallback(async () => {
+      if (refreshingRef.current) return
+      refreshingRef.current = true
       try {
         setLoading(true)
         const res = await auth.fetchCaptcha(true)
@@ -59,6 +65,7 @@ export const CaptchaField = forwardRef<CaptchaFieldHandle, CaptchaFieldProps>(
       } catch {
         setSvg('')
       } finally {
+        refreshingRef.current = false
         setLoading(false)
       }
     }, [auth, form, stretchSvg])
@@ -77,6 +84,7 @@ export const CaptchaField = forwardRef<CaptchaFieldHandle, CaptchaFieldProps>(
         <Form.Item
           name="captchaText"
           label="图片验证码"
+          className="auth-field-row"
           rules={[{ required: true, message: '请填写图片验证码' }]}
         >
           <Input
@@ -87,9 +95,12 @@ export const CaptchaField = forwardRef<CaptchaFieldHandle, CaptchaFieldProps>(
               <div
                 className="captcha-svg-btn"
                 style={{
-                  cursor: loading ? 'not-allowed': 'pointer',
+                  cursor: loading || disabled ? 'not-allowed': 'pointer',
                 }}
-                onClick={() => loading ? null : void refresh()}
+                onClick={() => {
+                  if (!disabled) void refresh()
+                }}
+                aria-disabled={loading || disabled}
                 aria-label="刷新图片验证码"
               >
                 {loading ? (

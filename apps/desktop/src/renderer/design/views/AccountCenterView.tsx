@@ -7,13 +7,13 @@
  * 功能：
  *  - 未登录：渲染 AuthGate（登录/注册）
  *  - 已登录：左右双栏响应式
- *    · 左栏：大头像（可点击上传）+ 昵称（内联编辑）+ account + 注册/最近登录
- *    · 右栏：账号与安全（密码）、绑定方式、云端服务地址、退出登录
+ *    · 左栏：大头像（可点击上传）+ 昵称（内联编辑）+ account + 注册/最近登录 + 账号与安全
+ *    · 右栏：平台模型、退出登录
  *
  * 参考实现：edu-web 的 ProfilePage.tsx；头像裁剪复用 AvatarCropperModal。
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Form, Input, Modal } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../Icons'
@@ -177,15 +177,6 @@ function AccountCenter(): React.ReactElement {
   const userRoleLabel = formatRoleLabel(auth.user?.role)
   const lastLoginLabel = formatTimeLabel(auth.user?.lastLoginAt)
   const createdLabel = formatTimeLabel(auth.user?.createdAt) || '—'
-  const baseUrlLabel = useMemo(() => {
-    try {
-      const url = new URL(auth.baseUrl)
-      return url.host
-    } catch {
-      return auth.baseUrl
-    }
-  }, [auth.baseUrl])
-
   return (
     <div className="account-center">
       <input
@@ -275,7 +266,6 @@ function AccountCenter(): React.ReactElement {
 
               <div className="account-profile-tags">
                 <span className="account-role">{userRoleLabel}</span>
-                <span className="account-service-chip" title={auth.baseUrl}>{baseUrlLabel}</span>
               </div>
 
               <div className="account-profile-meta">
@@ -289,18 +279,13 @@ function AccountCenter(): React.ReactElement {
                 </div>
               </div>
             </div>
-          </aside>
 
-          {/* ── 右栏：设置区块 ── */}
-          <section className="account-center-right">
-            <PlatformModelAccountPanel />
-
-            {/* 账号与安全 */}
-            <div className="account-panel">
+            {/* 账号与安全：合并原账号安全与绑定方式 */}
+            <div className="account-panel account-security-panel">
               <div className="account-panel-head">
                 <div>
                   <h4>账号与安全</h4>
-                  <p>管理登录密码与第三方绑定，保障账号安全。</p>
+                  <p>管理登录密码与账号绑定。</p>
                 </div>
               </div>
               <div className="account-bind-list">
@@ -310,6 +295,14 @@ function AccountCenter(): React.ReactElement {
                   </span>
                   <span className="account-bind-value">
                     {bindStatus?.hasEmail ? bindStatus.account || '已绑定' : '未绑定'}
+                  </span>
+                </div>
+                <div className="account-bind-item">
+                  <span className="account-bind-label">
+                    <Icons.Phone size={14} /> 手机号
+                  </span>
+                  <span className="account-bind-value">
+                    {bindStatus?.hasPhone ? '已绑定' : '未绑定'}
                   </span>
                 </div>
                 <div className="account-bind-item">
@@ -326,10 +319,7 @@ function AccountCenter(): React.ReactElement {
                   </span>
                   <span className="account-bind-value">
                     {bindStatus?.hasPassword ? (
-                      <Button
-                        type="text"
-                        onClick={() => setPasswordModal(true)}
-                      >
+                      <Button type="text" onClick={() => setPasswordModal(true)}>
                         修改密码
                       </Button>
                     ) : (
@@ -339,43 +329,11 @@ function AccountCenter(): React.ReactElement {
                 </div>
               </div>
             </div>
+          </aside>
 
-            {/* 绑定方式 */}
-            <div className="account-panel">
-              <div className="account-panel-head">
-                <div>
-                  <h4>绑定方式</h4>
-                  <p>查看当前账号的绑定状态，便于后续找回和登录。</p>
-                </div>
-              </div>
-              <div className="account-bind-list">
-                <div className="account-bind-item">
-                  <span className="account-bind-label">邮箱</span>
-                  <span className="account-bind-value">
-                    {bindStatus?.hasEmail ? '已绑定' : '未绑定'}
-                  </span>
-                </div>
-                <div className="account-bind-item">
-                  <span className="account-bind-label">手机号</span>
-                  <span className="account-bind-value">
-                    {bindStatus?.hasPhone ? '已绑定' : '未绑定'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* 云端服务地址 */}
-            <div className="account-panel">
-              <div className="account-panel-head">
-                <div>
-                  <h4>云端服务地址</h4>
-                  <p>当前桌面端连接的账号服务地址。</p>
-                </div>
-              </div>
-              <div className="account-baseurl-row">
-                <code>{auth.baseUrl}</code>
-              </div>
-            </div>
+          {/* ── 右栏：设置区块 ── */}
+          <section className="account-center-right">
+            <PlatformModelAccountPanel />
 
             {/* 退出登录 */}
             <div className="account-panel account-panel--danger">
