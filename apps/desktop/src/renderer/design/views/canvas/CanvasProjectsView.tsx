@@ -342,7 +342,7 @@ export function CanvasProjectsView({
               title={sortDir === 'desc' ? '当前降序，点击切换升序' : '当前升序，点击切换降序'}
             />
           </div>
-          <div className="canvas-projects-stats">
+          {/* <div className="canvas-projects-stats">
             <Tag color="blue">{projects.length} projects</Tag>
             <Tag color="green">
               {projects.reduce((sum, project) => sum + project.taskCount, 0)} tasks
@@ -350,7 +350,7 @@ export function CanvasProjectsView({
             <Tag color="orange">
               {projects.reduce((sum, project) => sum + project.assetCount, 0)} assets
             </Tag>
-          </div>
+          </div> */}
         </div>
       </div>
 

@@ -74,7 +74,7 @@
   top: 52px;
   right: 10px;
   z-index: 25;
-  width: min(260px, calc(100% - 8px));
+  width: min(280px, calc(100% - 8px));
   max-height: min(480px, calc(100% - 76px));
   overflow: auto;
   padding: 4px;
@@ -4233,11 +4233,23 @@ body.side-chat-resizing {
   min-width: 360px;
   max-width: min(1200px, 72vw);
   height: 100vh;
-  flex: 0 0 auto;
+  // 窄窗口下优先压缩到 360px 下限，避免与主聊天区的最小宽度相加后撑宽整个布局。
+  flex: 0 1 var(--side-chat-width, min(44vw, 620px));
   position: relative;
   display: flex;
   flex-direction: column;
   background: color-mix(in srgb, var(--panel) 96%, var(--bg));
+}
+
+// 当窗口窄到连「主区最小宽 + 面板最小宽」也放不下时，主区继续收缩；
+// 横向滚动会导致整个应用内容左右漂移，因此统一侧面板打开时禁止该方向溢出。
+.chat-layout:has(> .unified-side-panel) {
+  overflow-x: hidden;
+}
+
+.chat-layout:has(> .unified-side-panel) > .chat-main {
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 // .platform-win32 .unified-side-panel {
