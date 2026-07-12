@@ -7,9 +7,17 @@
 
 import { DEFAULT_SPARK_INSTALL_MANIFEST_URL } from './installable-catalog.js'
 
+export type SparkInstallArtifactType =
+  | 'skill'
+  | 'runtime'
+  | 'python-wheelhouse'
+  | 'npm-store'
+  | 'archive'
+  | 'binary'
+
 export interface SparkInstallArtifact {
   id: string
-  type: 'skill' | 'runtime' | 'python-wheelhouse' | 'npm-store' | 'archive'
+  type: SparkInstallArtifactType
   name: string
   version: string
   url: string
@@ -21,6 +29,13 @@ export interface SparkInstallArtifact {
     format: 'zip' | 'tar.gz'
     /** 技能目录在归档解压后的相对路径；"." 表示归档根目录 */
     skillRoot?: string
+    /**
+     * 归档解压后的有效内容子目录（仅 binary/archive 类型使用）。
+     * 例如 gyan.dev 的 Windows ffmpeg zip 解压后有 `bin/` 子目录，
+     * 设为 "bin" 后只会把 `bin/` 下的文件复制到目标目录。
+     * 缺省时取归档根目录。
+     */
+    contentRoot?: string
   }
   dependencies?: string[]
   fallbackUrls?: string[]

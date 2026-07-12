@@ -55,6 +55,7 @@ import { ensureRegistered as ensurePlaywrightRegistered, readRegistration as rea
 import { detectIntegrity as detectPlaywrightIntegrity, installBrowser as autoInstallBrowser, invalidateCache as invalidatePlaywrightCache } from './services/PlaywrightIntegrityService.js'
 import { getInternalBrowserService } from './services/InternalBrowserService.js'
 import { ensureBundledBrowserEnv, resetBundledBrowsersPathCache } from './services/PlaywrightEnvironment.js'
+import { detectFfmpegIntegrity } from './services/FfmpegIntegrityService.js'
 import {
   registerSafeFileProtocol,
   registerSafeFileSchemes,
@@ -749,6 +750,23 @@ async function initializeApp(): Promise<void> {
       }
     }
   }, 6_000)
+
+  // 8. 检测 FFmpeg 完整性并推送状态（延迟 8 秒，排在 Playwright 之后）
+  //    仅检测不自动下载——ffmpeg 按需安装（首次使用视频工作台时提示）
+  setTimeout(() => {
+    void detectFfmpegIntegrity().then((state) => {
+      sendToMainWindow('stream:ffmpeg:status', {
+        ffmpegReady: state.ffmpegReady,
+        ffmpegSource: state.ffmpegSource,
+        ffmpegVersion: state.ffmpegVersion,
+        ffprobeReady: state.ffprobeReady,
+        binaryPath: state.binaryPath,
+        lastError: state.lastError,
+      })
+    }).catch((err) => {
+      log.warn(`FFmpeg integrity check failed: ${String(err)}`)
+    })
+  }, 8_000)
 
   log.info('Spark Agent initialized')
 }
