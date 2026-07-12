@@ -3013,6 +3013,8 @@ export function CanvasWorkspaceView({
 
   // 视频节点的「视频编辑」入口（由右键菜单触发，打开视频工作台）。
   // 覆盖：普通视频节点 / video_workbench 节点 / 视频操作节点的产物视频。
+  // 对操作节点用 resolveCanvasOperationResourceNode 解析主产物（与菜单显示条件、
+  // handlePreviewPanorama/handleDownloadMediaNode 的解析方式一致）。
   const handleEditVideo = useCallback(
     (nodeId: string) => {
       const snap = snapshotRef.current
@@ -3020,33 +3022,21 @@ export function CanvasWorkspaceView({
       const node = snap.nodes.find((item) => item.id === nodeId)
       if (!node) return
 
-      // 情况1: 直接是视频节点或 video_workbench 节点
-      if (node.type === 'video' || node.data.subtype === 'video_workbench') {
-        closeCanvasFloatPanels('node-edit')
-        setSelectedNodeIds([nodeId])
-        setVideoWorkbenchNodeId(nodeId)
-        return
-      }
+      // 统一解析：操作节点取其主产物资源节点，非操作节点取自身
+      const resolved = isOperationNode(node)
+        ? resolveCanvasOperationResourceNode(node, snap)
+        : node
+      const target = resolved ?? node
 
-      // 情况2: 操作节点 → 通过 generated edge 找产物视频节点
-      const generatedTargetIds = snap.edges
-        .filter((e) => e.sourceNodeId === nodeId && e.type === 'generated')
-        .map((e) => e.targetNodeId)
-      const videoOutput = snap.nodes.find(
-        (n) => generatedTargetIds.includes(n.id) && n.type === 'video' && typeof n.data.url === 'string',
-      )
-      if (videoOutput) {
+      // 目标是视频节点或有视频 url → 打开工作台
+      if (
+        target.type === 'video' ||
+        target.data.subtype === 'video_workbench' ||
+        (typeof target.data.url === 'string' && target.data.url)
+      ) {
         closeCanvasFloatPanels('node-edit')
-        setSelectedNodeIds([videoOutput.id])
-        setVideoWorkbenchNodeId(videoOutput.id)
-        return
-      }
-
-      // 情况3: 操作节点自身有产物 url（老版本合并模式，url 直接在 data 上）
-      if (typeof node.data.url === 'string' && node.data.url) {
-        closeCanvasFloatPanels('node-edit')
-        setSelectedNodeIds([nodeId])
-        setVideoWorkbenchNodeId(nodeId)
+        setSelectedNodeIds([target.id])
+        setVideoWorkbenchNodeId(target.id)
         return
       }
 
@@ -4056,18 +4046,25 @@ export function CanvasWorkspaceView({
     [videoWorkbenchNodeId, snapshot?.nodes],
   )
 
-  /** 画布上所有可用作工作台源的视频节点（供工作台「从画布选择」） */
+  /** 画布上所有可用作工作台源的视频节点（供工作台「从画布选择」）。
+   *  排除当前工作台节点自身和易失效的操作产物(task_output)。 */
   const videoNodesForWorkbench = useMemo(
     () =>
       (snapshot?.nodes ?? [])
-        .filter((n) => n.type === 'video' && typeof n.data.url === 'string')
+        .filter(
+          (n) =>
+            n.type === 'video' &&
+            typeof n.data.url === 'string' &&
+            n.id !== videoWorkbenchNodeId &&
+            n.data.origin !== 'task_output',
+        )
         .map((n) => ({
           id: n.id,
           title: n.title ?? '视频',
           url: n.data.url as string,
           ...(n.data.thumbnailUrl ? { thumbnailUrl: n.data.thumbnailUrl as string } : {}),
         })),
-    [snapshot?.nodes],
+    [snapshot?.nodes, videoWorkbenchNodeId],
   )
 
   const handleSaveVideoWorkbench = useCallback(
