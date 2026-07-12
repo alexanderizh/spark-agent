@@ -258,7 +258,12 @@ export function CanvasVideoWorkbenchModal({
 
   const handleExportKeyframes = useCallback(async () => {
     if (!node || !onExportKeyframes || draft.keyframes.length === 0) return
-    await onExportKeyframes(draft.keyframes, node.id)
+    setBusy(true)
+    try {
+      await onExportKeyframes(draft.keyframes, node.id)
+    } finally {
+      setBusy(false)
+    }
   }, [node, onExportKeyframes, draft.keyframes])
 
   // ── 通用视频处理（剪辑/转码/分割等），产物记录到 draft.outputs ──
@@ -266,11 +271,12 @@ export function CanvasVideoWorkbenchModal({
     async (
       operation: string,
       params: Record<string, unknown>,
-      _onProgress: (p: { percent: number; stage: string }) => void,
     ): Promise<{ success: boolean; result?: unknown; error?: string }> => {
       if (!node) return { success: false, error: '未关联视频节点' }
       const sourcePath = (node.data as { url?: string }).url ?? ''
       if (!sourcePath) return { success: false, error: '源视频路径缺失' }
+      setBusy(true)
+      setProgress(null)
       try {
         const reqId = shortId()
         const res = await window.spark.invoke('video:process', {
@@ -282,6 +288,8 @@ export function CanvasVideoWorkbenchModal({
         return res as { success: boolean; result?: unknown; error?: string }
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) }
+      } finally {
+        setBusy(false)
       }
     },
     [node],
@@ -505,6 +513,7 @@ export function CanvasVideoWorkbenchModal({
                 sourceVideoPath={sourceVideoUrl}
                 probe={probe}
                 busy={busy}
+                progress={progress}
                 currentTime={currentTime}
                 onProcess={handleProcess}
                 onOutput={recordOutput}

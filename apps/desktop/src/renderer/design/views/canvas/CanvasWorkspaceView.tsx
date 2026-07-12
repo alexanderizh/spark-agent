@@ -4008,38 +4008,51 @@ export function CanvasWorkspaceView({
       if (!snapshot || frames.length === 0) return
       const source = snapshot.nodes.find((n) => n.id === sourceNodeId)
       const createdIds: string[] = []
-      for (let i = 0; i < frames.length; i += 1) {
-        const kf = frames[i]!
-        // 关键帧已是磁盘 jpg/png 文件；构造轻量 File 对象（createImageNode 仅取 name/mime）
-        const fileName = `keyframe_${String(kf.index + 1).padStart(3, '0')}.jpg`
-        const file = new File([], fileName, { type: 'image/jpeg' })
-        const nodeSize = { width: 320, height: 180 }
-        const col = i % 4
-        const row = Math.floor(i / 4)
-        const baseX = source ? source.x + source.width + 60 : 260
-        const baseY = source ? source.y : 200
-        const position = {
-          x: baseX + col * (nodeSize.width + 24),
-          y: baseY + row * (nodeSize.height + 24),
-        }
-        const imageNode = await createImageNode({
-          file,
-          filePath: kf.path,
-          x: position.x,
-          y: position.y,
-          width: nodeSize.width,
-          height: nodeSize.height,
-        })
-        if (imageNode) {
-          await patchNodes([imageNode.id], { title: `关键帧 ${String(kf.index + 1).padStart(2, '0')}` })
-          if (source) await connectNodes({ sourceNodeId: source.id, targetNodeId: imageNode.id })
-          createdIds.push(imageNode.id)
+      const nodeSize = { width: 320, height: 180 }
+      const baseX = source ? source.x + source.width + 60 : 260
+      const baseY = source ? source.y : 200
+
+      // 分批并行 createImageNode（每批 5 个），降低串行 IPC 等待
+      const BATCH = 5
+      const loadingKey = `export-kf-${Date.now()}`
+      message.loading({ content: `正在导入 ${frames.length} 个关键帧…`, key: loadingKey, duration: 0 })
+      for (let start = 0; start < frames.length; start += BATCH) {
+        const batch = frames.slice(start, start + BATCH)
+        const imageNodes = await Promise.all(
+          batch.map(async (kf, j) => {
+            const i = start + j
+            const fileName = `keyframe_${String(kf.index + 1).padStart(3, '0')}.jpg`
+            const file = new File([], fileName, { type: 'image/jpeg' })
+            const col = i % 4
+            const row = Math.floor(i / 4)
+            return createImageNode({
+              file,
+              filePath: kf.path,
+              x: baseX + col * (nodeSize.width + 24),
+              y: baseY + row * (nodeSize.height + 24),
+              width: nodeSize.width,
+              height: nodeSize.height,
+            })
+          }),
+        )
+        // patchNodes + connectNodes 串行（涉及 DB 写入，避免竞态）
+        for (let j = 0; j < imageNodes.length; j++) {
+          const imageNode = imageNodes[j]
+          const kf = batch[j]!
+          if (imageNode) {
+            await patchNodes([imageNode.id], {
+              title: `关键帧 ${String(kf.index + 1).padStart(2, '0')}`,
+            })
+            if (source) await connectNodes({ sourceNodeId: source.id, targetNodeId: imageNode.id })
+            createdIds.push(imageNode.id)
+          }
         }
       }
+      message.destroy(loadingKey)
       if (createdIds.length > 0) setSelectedNodeIds(createdIds)
       message.success(`已导入 ${createdIds.length} 个关键帧到画布`)
     },
-    [connectNodes, patchNodes, snapshot],
+    [connectNodes, createImageNode, patchNodes, snapshot],
   )
 
   const handleAnnotateImageComplete = useCallback(
