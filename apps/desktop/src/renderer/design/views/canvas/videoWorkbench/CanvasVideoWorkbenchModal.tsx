@@ -173,9 +173,11 @@ export function CanvasVideoWorkbenchModal({
             timestampSec: f.timestampSec,
             index: f.index,
           }))
-          const next = { ...draft, keyframes: frames }
-          setDraft(next)
-          void onSave(next)
+          setDraft((d) => {
+            const next = { ...d, keyframes: frames }
+            void onSave(next)
+            return next
+          })
           message.success(`提取了 ${frames.length} 个关键帧`)
         } else {
           message.error(res.error ?? '关键帧提取失败')
@@ -234,9 +236,11 @@ export function CanvasVideoWorkbenchModal({
           timestampSec: f.timestampSec,
           index: f.index,
         }))
-        const next = { ...draft, keyframes: [...draft.keyframes, ...frames] }
-        setDraft(next)
-        void onSave(next)
+        setDraft((d) => {
+          const next = { ...d, keyframes: [...d.keyframes, ...frames] }
+          void onSave(next)
+          return next
+        })
         message.success(`提取了 ${frames.length} 个标记帧`)
       }
     } catch (err) {
@@ -318,23 +322,26 @@ export function CanvasVideoWorkbenchModal({
     [onSave],
   )
 
-  // ── Esc 关闭 ──
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
+  // ── Esc 关闭（全局监听，不依赖 overlay 获得焦点）──
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
+        e.stopPropagation()
         onClose()
       }
-    },
-    [onClose],
-  )
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [open, onClose])
 
   if (!open) return null
 
   const duration = probe?.durationSec ?? 0
 
   return (
-    <div className="vwb-modal-overlay" onKeyDown={handleKeyDown} tabIndex={-1}>
+    <div className="vwb-modal-overlay">
       <div className="vwb-shell">
         {/* ── 顶栏 ── */}
         <div className={`vwb-topbar${isPlatformDarwin ? ' darwin' : ''}`}>
@@ -494,16 +501,20 @@ export function CanvasVideoWorkbenchModal({
                 ffmpegReady={ffmpegReady}
                 onExtract={extractKeyframes}
                 onConfigChange={(cfg) => {
-                  const next = { ...draft, extractConfig: cfg }
-                  setDraft(next)
-                  void onSave(next)
+                  setDraft((d) => {
+                    const next = { ...d, extractConfig: cfg }
+                    void onSave(next)
+                    return next
+                  })
                 }}
                 onSeek={seekTo}
                 onExport={handleExportKeyframes}
                 onRemoveKeyframe={(idx) => {
-                  const next = { ...draft, keyframes: draft.keyframes.filter((k) => k.index !== idx) }
-                  setDraft(next)
-                  void onSave(next)
+                  setDraft((d) => {
+                    const next = { ...d, keyframes: d.keyframes.filter((k) => k.index !== idx) }
+                    void onSave(next)
+                    return next
+                  })
                 }}
               />
             )}

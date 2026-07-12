@@ -3993,9 +3993,9 @@ export function CanvasWorkspaceView({
   const handleSaveVideoWorkbench = useCallback(
     async (data: VideoWorkbenchData) => {
       if (!videoWorkbenchNode) return
+      // updateNodeData 是 merge 语义（{...node.data, ...data}），
+      // 只传 videoWorkbench 字段即可，无需展开闭包里的 node.data（避免覆盖并发改动）。
       await updateNodeData(videoWorkbenchNode.id, {
-        ...videoWorkbenchNode.data,
-        subtype: 'video_workbench',
         videoWorkbench: data as unknown as Record<string, unknown>,
       })
     },
