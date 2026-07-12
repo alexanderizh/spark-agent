@@ -18,7 +18,7 @@ import { useSessionSidebar } from '../SessionSidebarContext'
 import { useToast } from '../components/Toast'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { Icons } from '../Icons'
-import { showPlatformQuotaGuide } from './platform-model/platform-quota-guide'
+import { OnboardingPlatformFunding } from './platform-model/OnboardingPlatformFunding'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import {
   getVendorMeta,
@@ -1128,31 +1128,6 @@ function SparkAccountStep({
   account: string
   dispatch: React.Dispatch<Action>
 }) {
-  const { toast } = useToast()
-  const [opening, setOpening] = useState(false)
-
-  const openPlatformModel = async (): Promise<void> => {
-    if (!isAuthenticated) {
-      toast.error('请先登录 Spark 账号')
-      return
-    }
-    setOpening(true)
-    try {
-      await window.spark.invoke('platform-model:bootstrap', undefined)
-      const usage = await window.spark.invoke('platform-model:get-usage', undefined)
-      if (usage.walletQuota <= 0) {
-        showPlatformQuotaGuide('onboarding')
-      } else {
-        toast.success('Spark 平台模型已就绪')
-        dispatch({ type: 'set-step', step: 'agent-template' })
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '平台模型开通失败')
-    } finally {
-      setOpening(false)
-    }
-  }
-
   return (
     <>
       <button
@@ -1170,15 +1145,17 @@ function SparkAccountStep({
         <div className="onboarding-auth-embed">
           <AuthGate variant="embed" />
         </div>
+      ) : (
+        <OnboardingPlatformFunding
+          account={account}
+          onContinue={() => dispatch({ type: 'set-step', step: 'agent-template' })}
+        />
+      )}
+      {!isAuthenticated ? (
+        <div className="button-row">
+          <SkipStepButton dispatch={dispatch} target="agent-template" />
+        </div>
       ) : null}
-      <div className="button-row">
-        <SkipStepButton dispatch={dispatch} target="agent-template" />
-        {isAuthenticated ? (
-          <Button type="primary" loading={opening} disabled={opening} onClick={() => void openPlatformModel()}>
-            检查额度并继续
-          </Button>
-        ) : null}
-      </div>
     </>
   )
 }
