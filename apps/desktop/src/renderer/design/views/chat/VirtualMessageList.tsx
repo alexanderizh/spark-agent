@@ -13,6 +13,7 @@ interface VirtualMessageListProps<T> {
   scrollElementRef: React.RefObject<HTMLElement | null>
   getItemKey: (item: T, index: number) => React.Key
   renderItem: (item: T, index: number) => React.ReactNode
+  renderAfterItem?: (item: T, index: number) => React.ReactNode
   estimateSize?: (item: T, index: number) => number
   virtualizeAt?: number
   overscan?: number
@@ -30,7 +31,7 @@ function VirtualMessageListInner<T>(
 }
 
 function StaticMessageListInner<T>(
-  { items, scrollElementRef, getItemKey, renderItem }: VirtualMessageListProps<T>,
+  { items, scrollElementRef, getItemKey, renderItem, renderAfterItem }: VirtualMessageListProps<T>,
   ref: React.ForwardedRef<VirtualMessageListHandle>,
 ) {
   useImperativeHandle(
@@ -51,6 +52,7 @@ function StaticMessageListInner<T>(
       {items.map((item, index) => (
         <div key={getItemKey(item, index)} data-virtual-message-index={index} role="listitem">
           {renderItem(item, index)}
+          {renderAfterItem?.(item, index)}
         </div>
       ))}
     </div>
@@ -67,6 +69,7 @@ function VirtualizedMessageListInner<T>(
     scrollElementRef,
     getItemKey,
     renderItem,
+    renderAfterItem,
     estimateSize = () => DEFAULT_ESTIMATED_ROW_SIZE,
     overscan = 6,
   }: VirtualMessageListProps<T>,
@@ -121,6 +124,7 @@ function VirtualizedMessageListInner<T>(
             style={{ transform: `translateY(${virtualRow.start}px)` }}
           >
             {renderItem(item, virtualRow.index)}
+            {renderAfterItem?.(item, virtualRow.index)}
           </div>
         )
       })}
