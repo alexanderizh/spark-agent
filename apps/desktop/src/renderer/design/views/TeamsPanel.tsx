@@ -13,6 +13,7 @@ import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import {
+  Button,
   Checkbox as LobeCheckbox,
   Input as LobeInput,
   Select as LobeSelect,
@@ -237,12 +238,23 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
             </div>
           </div>
           <div className="teams-panel-actions">
-            <button className="btn ghost sm" onClick={() => void refresh()} disabled={loading}>
-              {loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} 刷新
-            </button>
-            <button className="btn primary sm" onClick={openNew}>
-              <Icons.Plus size={12} /> 新建团队
-            </button>
+            <Button
+              size="middle"
+              type="text"
+              onClick={() => void refresh()}
+              disabled={loading}
+              icon={loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />}
+            >
+              刷新
+            </Button>
+            <Button
+              size="middle"
+              type="primary"
+              onClick={openNew}
+              icon={<Icons.Plus size={12} />}
+            >
+              新建团队
+            </Button>
           </div>
         </div>
 
