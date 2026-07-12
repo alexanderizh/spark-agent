@@ -1,5 +1,5 @@
 export function MacWindowDragHeader() {
-  if (typeof window === 'undefined' || window.spark?.platform !== 'darwin') return null
+  if (typeof window === 'undefined') return null
 
   return (
     <div

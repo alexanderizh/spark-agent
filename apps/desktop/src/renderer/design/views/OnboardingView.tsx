@@ -9,6 +9,7 @@ import {
 } from '@lobehub/ui'
 import './OnboardingView.less'
 import sparkLogo from '../../assets/spark-logo.png'
+import { ONBOARDING_POSTERS } from './onboardingPosters'
 import { useApp } from '../AppContext'
 import { useAuth } from '../auth/AuthContext'
 import { AuthGate } from '../auth/AuthGate'
@@ -34,7 +35,7 @@ import type {
   SessionPermissionMode,
 } from '@spark/protocol'
 
-type OnboardingStep =
+export type OnboardingStep =
   | 'welcome'
   | 'model-source'
   | 'spark-account'
@@ -45,9 +46,7 @@ type OnboardingStep =
   | 'first-session'
   | 'canvas-guide'
   | 'skills-guide'
-  | 'tools-guide'
   | 'workflows-guide'
-  | 'board-guide'
   | 'media-guide'
   | 'done'
 type ModelSource = 'spark-account' | 'third-party-provider' | 'local-cli'
@@ -240,10 +239,8 @@ function previousStep(state: OnboardingState): OnboardingStep {
   if (state.step === 'first-session') return 'agent-template'
   if (state.step === 'canvas-guide') return 'first-session'
   if (state.step === 'skills-guide') return 'canvas-guide'
-  if (state.step === 'tools-guide') return 'skills-guide'
-  if (state.step === 'workflows-guide') return 'tools-guide'
-  if (state.step === 'board-guide') return 'workflows-guide'
-  if (state.step === 'media-guide') return 'board-guide'
+  if (state.step === 'workflows-guide') return 'skills-guide'
+  if (state.step === 'media-guide') return 'workflows-guide'
   if (state.step === 'done') return 'media-guide'
   return 'first-session'
 }
@@ -333,13 +330,9 @@ const providerPresets = PROVIDER_PRESETS.filter(
     preset.modelType !== 'video',
 )
 
-type IconType = typeof Icons.Rocket
-
 const visualByStep: Record<
   OnboardingStep,
   {
-    icon: IconType
-    accent: [string, string]
     kicker: string
     title: string
     caption: string
@@ -348,8 +341,6 @@ const visualByStep: Record<
   }
 > = {
   welcome: {
-    icon: Icons.Rocket,
-    accent: ['#6366f1', '#8b5cf6'],
     kicker: 'Start',
     title: '把第一次配置拆成 4 步',
     caption: '先选目标，再接模型，最后直接进入第一轮对话。',
@@ -357,30 +348,20 @@ const visualByStep: Record<
     points: ['按你的用途推荐助手模板', '配置项只在需要时出现', '跳过后不会再次自动打开'],
   },
   'model-source': {
-    icon: Icons.Cpu,
-    accent: ['#06b6d4', '#6366f1'],
     kicker: 'Model',
-    title: '选择模型来源',
-    caption: 'Spark 账号、第三方服务或本机 CLI 都从这里进入。',
-    stat: '01',
-    points: [
-      '第三方 API 适合已有模型账号',
-      '本机 CLI 可复用 Claude Code / Codex 登录',
-      '平台模型入口会在订阅上线后启用',
-    ],
+    title: '一个账号，直接开始',
+    caption: '登录后即可使用 Spark 模型。',
+    stat: '',
+    points: [],
   },
   'spark-account': {
-    icon: Icons.User,
-    accent: ['#8b5cf6', '#ec4899'],
     kicker: 'Account',
-    title: '预留平台模型入口',
-    caption: '后续登录 Spark 账号即可使用内置模型额度。',
-    stat: 'Soon',
-    points: ['当前先保留入口', '以后可直接用账号额度', '现在建议走第三方或本机 CLI'],
+    title: '使用 Spark 平台模型',
+    caption: '登录账号即可使用，无需配置 API Key。',
+    stat: '可用',
+    points: ['直接使用账号额度', '无需填写 API Key', '可与其他模型同时使用'],
   },
   'third-party-provider': {
-    icon: Icons.Server,
-    accent: ['#06b6d4', '#3b82f6'],
     kicker: 'Provider',
     title: '保存服务商与密钥',
     caption: '配置会写入本机安全存储，并立即做健康检查。',
@@ -388,8 +369,6 @@ const visualByStep: Record<
     points: ['优先选择常见 Anthropic 兼容服务', '密钥只保存在本机', '测试通过后再创建助手'],
   },
   'local-cli': {
-    icon: Icons.Terminal,
-    accent: ['#64748b', '#6366f1'],
     kicker: 'Local',
     title: '连接本机 AI 工具',
     caption: '适合已经配置 Claude Code 或 Codex 的用户。',
@@ -397,8 +376,6 @@ const visualByStep: Record<
     points: ['自动检测本机可用工具', '不需要重新填写 API Key', '适合项目代码和自动化任务'],
   },
   'connection-test': {
-    icon: Icons.Zap,
-    accent: ['#10b981', '#06b6d4'],
     kicker: 'Check',
     title: '确认模型已响应',
     caption: '测试通过后再创建助手，避免后续第一条消息失败。',
@@ -406,8 +383,6 @@ const visualByStep: Record<
     points: ['失败时可返回修改模型', '本机 CLI 会检查可执行文件', '第三方模型会做一次健康检查'],
   },
   'agent-template': {
-    icon: Icons.Bot,
-    accent: ['#6366f1', '#8b5cf6'],
     kicker: 'Agent',
     title: '选择你的助手类型',
     caption: '通用、文档、工作、开发四类模板覆盖常见任务。',
@@ -419,8 +394,6 @@ const visualByStep: Record<
     ],
   },
   'first-session': {
-    icon: Icons.Chat,
-    accent: ['#8b5cf6', '#06b6d4'],
     kicker: 'Chat',
     title: '发出第一条消息',
     caption: '用一条真实请求完成初始化，而不是停在空白页面。',
@@ -428,8 +401,6 @@ const visualByStep: Record<
     points: ['可以直接选示例问题', '发送后会创建新会话', '接下来是可跳过的能力导览'],
   },
   'canvas-guide': {
-    icon: Icons.Canvas,
-    accent: ['#06b6d4', '#10b981'],
     kicker: 'Canvas',
     title: '画布 = 多媒体创作工作台',
     caption: '按项目组织剧本、角色、分镜、参考图和生成结果。',
@@ -441,30 +412,13 @@ const visualByStep: Record<
     ],
   },
   'skills-guide': {
-    icon: Icons.Skills,
-    accent: ['#f59e0b', '#f97316'],
     kicker: 'Skills',
     title: 'Skill 给 Agent 增加专门能力',
     caption: '内置、推荐、SkillHub 市场、本地检测四种来源，按需启用。',
     stat: 'Guide',
     points: ['内置 Skill 开箱即用', '推荐 / SkillHub 市场可安装更多', '本地 Skill 会被自动检测到'],
   },
-  'tools-guide': {
-    icon: Icons.Wrench,
-    accent: ['#64748b', '#8b5cf6'],
-    kicker: 'Tools',
-    title: 'Agent 自带的常用工具',
-    caption: '终端、检索、编辑和 Spark Web Tool 内容生成等能力开箱即用。',
-    stat: 'Guide',
-    points: [
-      '终端 / 检索 / 编辑，默认启用不用额外安装',
-      '改代码时可先看 diff，并回到最近的代码还原点',
-      'Spark Web Tool 一键出课件、讲解、数据分析报告',
-    ],
-  },
   'workflows-guide': {
-    icon: Icons.Workflow,
-    accent: ['#6366f1', '#06b6d4'],
     kicker: 'Workflows',
     title: '把多步任务编排成工作流',
     caption: '节点 + 边的图编辑器，让 Agent 按流程自动执行；代码任务跑偏时还能回到还原点。',
@@ -475,18 +429,7 @@ const visualByStep: Record<
       '可保存为模板，并结合代码还原点更稳地迭代',
     ],
   },
-  'board-guide': {
-    icon: Icons.Board,
-    accent: ['#8b5cf6', '#6366f1'],
-    kicker: 'Board',
-    title: '任务面板：拖一拖就能推进',
-    caption: '类飞书看板视图，可触发 Agent 自动执行。',
-    stat: 'Guide',
-    points: ['拖拽卡片改变状态', '可绑定会话或自动执行', '支持附件、评论与回收站'],
-  },
   'media-guide': {
-    icon: Icons.Film,
-    accent: ['#ec4899', '#8b5cf6'],
     kicker: 'Media',
     title: '多媒体模型也能在对话里使用',
     caption: '当服务商支持图片、视频或语音模型时，可以在对话和画布里调用它们。',
@@ -498,8 +441,6 @@ const visualByStep: Record<
     ],
   },
   done: {
-    icon: Icons.CheckCircle,
-    accent: ['#10b981', '#06b6d4'],
     kicker: 'Done',
     title: '配置完成',
     caption: '以后可以在模型与助手设置中继续扩展能力。',
@@ -530,9 +471,7 @@ const ONBOARDING_STEP_ITEMS = [
   { label: '第一次对话', step: 'first-session' },
   { label: '画布', step: 'canvas-guide' },
   { label: 'Skill', step: 'skills-guide' },
-  { label: '内置工具', step: 'tools-guide' },
   { label: '工作流', step: 'workflows-guide' },
-  { label: '任务面板', step: 'board-guide' },
   { label: '多媒体', step: 'media-guide' },
   { label: '完成', step: 'done' },
 ] as const satisfies ReadonlyArray<{ label: string; step: OnboardingStep }>
@@ -554,11 +493,9 @@ function getActiveStepIndex(step: OnboardingStep): number {
   if (step === 'first-session') return 3
   if (step === 'canvas-guide') return 4
   if (step === 'skills-guide') return 5
-  if (step === 'tools-guide') return 6
-  if (step === 'workflows-guide') return 7
-  if (step === 'board-guide') return 8
-  if (step === 'media-guide') return 9
-  return 10
+  if (step === 'workflows-guide') return 6
+  if (step === 'media-guide') return 7
+  return 8
 }
 
 function completeOnboarding(): void {
@@ -610,15 +547,19 @@ export function OnboardingView(): React.ReactElement {
   const [apiKey, setApiKey] = useState('')
   const [customEndpoint, setCustomEndpoint] = useState(defaultProviderPreset.apiEndpoint)
   const [customModel, setCustomModel] = useState(defaultProviderPreset.defaultModel)
+  const [fetchedProviderModelIds, setFetchedProviderModelIds] = useState<string[]>([])
+  const [fetchingProviderModels, setFetchingProviderModels] = useState(false)
   const [connectionTestOutput, setConnectionTestOutput] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setErrorMessage] = useState('')
+  const [errorStep, setErrorStep] = useState<OnboardingStep | null>(null)
   const { setTweak } = useApp()
   const auth = useAuth()
   const sessionCtx = useSessionSidebar()
   const { toast } = useToast()
   const { invoke: createProvider } = useIpcInvoke('provider:create')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
+  const { invoke: fetchProviderModels } = useIpcInvoke('provider:fetch-models')
   const { invoke: createAgent } = useIpcInvoke('agent:create')
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
   const { invoke: healthCheck } = useIpcInvoke('provider:health-check')
@@ -628,7 +569,13 @@ export function OnboardingView(): React.ReactElement {
     const preset = providerPresets.find((item) => item.id === id) ?? defaultProviderPreset
     setCustomModel(preset.defaultModel)
     setCustomEndpoint(preset.apiEndpoint)
+    setFetchedProviderModelIds([])
   }, [])
+
+  const setError = useCallback((message: string) => {
+    setErrorMessage(message)
+    setErrorStep(message ? state.step : null)
+  }, [state.step])
 
   // finishedRef: 标记用户是否已"主动结束"引导（点了稍后再说 / 跳过讲解 / 进入会话）。
   // 所有主动结束路径都经过下面的 goChat()，所以把 set 放进 goChat 即可覆盖全部。
@@ -646,6 +593,45 @@ export function OnboardingView(): React.ReactElement {
     toast.info('已跳过新手引导，可稍后从设置中重新打开。')
     goChat()
   }, [goChat, toast])
+
+  const handleFetchProviderModels = useCallback(async () => {
+    const preset =
+      providerPresets.find((item) => item.id === providerPresetId) ?? defaultProviderPreset
+    const key = apiKey.trim()
+    if (!key) {
+      setError('获取模型列表需要先填写 API Key。')
+      return
+    }
+
+    setFetchingProviderModels(true)
+    setError('')
+    try {
+      const endpoint = customEndpoint.trim() || preset.apiEndpoint
+      const result = await fetchProviderModels({
+        provider: preset.provider,
+        apiEndpoint: endpoint || null,
+        apiKey: key,
+      })
+      const ids = Array.from(
+        new Set(
+          result.models
+            .map((model) => model.id.trim())
+            .filter((id): id is string => id.length > 0),
+        ),
+      )
+      setFetchedProviderModelIds(ids)
+      if (ids.length === 0) {
+        setError('没有获取到可用模型，请检查服务商地址或稍后重试。')
+        return
+      }
+      toast.success(`已获取 ${ids.length} 个模型，可在模型 ID 中选择。`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setError(`获取模型失败：${message}`)
+    } finally {
+      setFetchingProviderModels(false)
+    }
+  }, [apiKey, customEndpoint, fetchProviderModels, providerPresetId, setError, toast])
 
   // 用户在引导页关闭窗口 / 刷新时，若尚未主动结束引导，视为跳过 —
   // 否则下次启动还会再次自动打开。
@@ -719,6 +705,7 @@ export function OnboardingView(): React.ReactElement {
     customModel,
     healthCheck,
     providerPresetId,
+    setError,
     sessionCtx,
     toast,
   ])
@@ -767,7 +754,7 @@ export function OnboardingView(): React.ReactElement {
         setBusy(false)
       }
     },
-    [healthCheck, listProviders, sessionCtx, toast],
+    [healthCheck, listProviders, sessionCtx, setError, toast],
   )
 
   const handleCreateAgent = useCallback(async () => {
@@ -822,6 +809,7 @@ export function OnboardingView(): React.ReactElement {
     state.modelId,
     state.providerProfileId,
     state.templateId,
+    setError,
     toast,
   ])
 
@@ -856,6 +844,7 @@ export function OnboardingView(): React.ReactElement {
     state.firstPrompt,
     state.modelId,
     state.providerProfileId,
+    setError,
     toast,
   ])
 
@@ -946,11 +935,20 @@ export function OnboardingView(): React.ReactElement {
                     providerPresetId={providerPresetId}
                     setProviderPresetId={setProviderPresetId}
                     apiKey={apiKey}
-                    setApiKey={setApiKey}
+                    setApiKey={(value) => {
+                      setApiKey(value)
+                      setFetchedProviderModelIds([])
+                    }}
                     customEndpoint={customEndpoint}
-                    setCustomEndpoint={setCustomEndpoint}
+                    setCustomEndpoint={(value) => {
+                      setCustomEndpoint(value)
+                      setFetchedProviderModelIds([])
+                    }}
                     customModel={customModel}
                     setCustomModel={setCustomModel}
+                    fetchedModelIds={fetchedProviderModelIds}
+                    onFetchModels={handleFetchProviderModels}
+                    fetchingModels={fetchingProviderModels}
                     onSubmit={handleCreateProvider}
                     busy={busy}
                     dispatch={dispatch}
@@ -981,20 +979,16 @@ export function OnboardingView(): React.ReactElement {
                 {state.step === 'skills-guide' && (
                   <SkillsGuideStep dispatch={dispatch} onFinish={goChat} />
                 )}
-                {state.step === 'tools-guide' && (
-                  <ToolsGuideStep dispatch={dispatch} onFinish={goChat} />
-                )}
                 {state.step === 'workflows-guide' && (
                   <WorkflowsGuideStep dispatch={dispatch} onFinish={goChat} />
-                )}
-                {state.step === 'board-guide' && (
-                  <BoardGuideStep dispatch={dispatch} onFinish={goChat} />
                 )}
                 {state.step === 'media-guide' && (
                   <MediaGuideStep dispatch={dispatch} onFinish={goChat} />
                 )}
                 {state.step === 'done' && <DoneStep onDone={goChat} />}
-                {error && <div className="onboarding-error">{error}</div>}
+                {error && errorStep === state.step && (
+                  <div className="onboarding-error">{error}</div>
+                )}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -1008,23 +1002,22 @@ export function OnboardingView(): React.ReactElement {
 function WelcomeStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
   return (
     <>
-      <p className="eyebrow">安装后 3 分钟配置</p>
       <h1>欢迎使用 Spark Agent</h1>
       <p className="lead">
         不用理解复杂技术名词，我们会一步一步帮你连接模型、创建第一个 AI 助手，并完成第一次对话。
       </p>
-      <div className="choice-grid">
+      <div className="welcome-use-cases">
         {useCases.map((item) => (
-          <div key={item.id} className="choice-card choice-card--static">
-            <span className="choice-card-mark" aria-hidden="true" />
+          <div key={item.id} className="welcome-use-case">
             <strong>{item.title}</strong>
             <span>{item.desc}</span>
           </div>
         ))}
       </div>
       <Button
+        className="welcome-start-button"
         type="primary"
-        size="large"
+        size="middle"
         onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}
       >
         开始设置
@@ -1053,15 +1046,34 @@ function SkipStepButton({
 function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
   return (
     <>
-      <p className="eyebrow">第一步：准备 AI 模型</p>
-      <h1>你想怎么使用 AI 模型？</h1>
-      <p className="lead">
-        未来可直接登录 Spark 账号使用平台内置模型。现在也可以配置你已有的第三方模型服务。
-      </p>
-      <div className="source-list">
+      <h1>选择你的 AI 模型</h1>
+      <p className="lead">推荐使用 Spark 账号，也可以接入已有模型。</p>
+      <div className="source-list source-list-minimal">
+        <div className="source-primary">
+          <Icons.User size={22} />
+          <div className="source-primary-copy">
+            <div className="source-primary-title">
+              <strong>Spark 账号</strong>
+              <em>推荐</em>
+            </div>
+            <span>登录即可使用，无需配置</span>
+          </div>
+          <Button
+            type="primary"
+            onClick={() =>
+              dispatch({
+                type: 'set-model-source',
+                modelSource: 'spark-account',
+                step: 'spark-account',
+              })
+            }
+          >
+            登录并继续
+          </Button>
+        </div>
         <button
           type="button"
-          className="source-card"
+          className="source-card source-row"
           onClick={() =>
             dispatch({
               type: 'set-model-source',
@@ -1072,43 +1084,37 @@ function ModelSourceStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
         >
           <Icons.Server size={22} />
           <div>
-            <strong>使用第三方模型</strong>
-            <span>已有 OpenAI、Anthropic、OpenRouter 等账号时选择。</span>
+            <strong>第三方模型</strong>
+            <span>使用已有 API Key</span>
           </div>
+          <span className="source-row-arrow" aria-hidden="true">
+            ›
+          </span>
         </button>
         <button
           type="button"
-          className="source-card"
+          className="source-card source-row"
           onClick={() =>
             dispatch({ type: 'set-model-source', modelSource: 'local-cli', step: 'local-cli' })
           }
         >
           <Icons.Terminal size={22} />
           <div>
-            <strong>使用本机 AI 工具</strong>
-            <span>适合已经安装 Claude Code / Codex 的高级用户。</span>
+            <strong>本机 AI 工具</strong>
+            <span>连接 Claude Code 或 Codex</span>
           </div>
-        </button>
-        <button
-          type="button"
-          className="source-card"
-          onClick={() => dispatch({ type: 'set-model-source', modelSource: 'spark-account', step: 'spark-account' })}
-        >
-          <Icons.User size={22} />
-          <div>
-            <strong>使用 Spark 账号模型</strong>
-            <span>适合大多数用户，登录后可直接购买、兑换并使用。</span>
-          </div>
-          <em>推荐</em>
+          <span className="source-row-arrow" aria-hidden="true">
+            ›
+          </span>
         </button>
       </div>
-      <div className="button-row">
-        <SkipStepButton
-          dispatch={dispatch}
-          target="agent-template"
-          label="跳过本步，先去创建助手"
-        />
-      </div>
+      <button
+        type="button"
+        className="source-skip"
+        onClick={() => dispatch({ type: 'set-step', step: 'agent-template' })}
+      >
+        暂时跳过
+      </button>
     </>
   )
 }
@@ -1149,25 +1155,23 @@ function SparkAccountStep({
 
   return (
     <>
-      <p className="eyebrow">平台内置模型</p>
+      <button
+        type="button"
+        className="model-source-back"
+        onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}
+      >
+        <Icons.ArrowLeft size={14} /> 切换模型方式
+      </button>
       <h1>使用 Spark 平台模型</h1>
       <p className="lead">
         不必申请或配置 API Key。平台模型作为一个可选 Provider，与你的第三方模型配置并存。
       </p>
-      <div className="notice-card">
-        {isAuthenticated
-          ? `当前已登录：${account || 'Spark 账号'}`
-          : '当前未登录。请先登录或注册 Spark 账号，再开通平台模型。'}
-      </div>
       {!isAuthenticated ? (
         <div className="onboarding-auth-embed">
           <AuthGate />
         </div>
       ) : null}
       <div className="button-row">
-        <Button onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}>
-          返回选择
-        </Button>
         <SkipStepButton dispatch={dispatch} target="agent-template" />
         {isAuthenticated ? (
           <Button type="primary" loading={opening} disabled={opening} onClick={() => void openPlatformModel()}>
@@ -1247,7 +1251,13 @@ function LocalCliStep({
 
   return (
     <>
-      <p className="eyebrow">本机 AI 工具</p>
+      <button
+        type="button"
+        className="model-source-back"
+        onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}
+      >
+        <Icons.ArrowLeft size={14} /> 切换模型方式
+      </button>
       <h1>连接本机的 Claude Code 或 Codex</h1>
       <p className="lead">
         选中后会直接复用你本机已登录的 Claude Code / Codex 配置，不需要再填写 API Key。
@@ -1287,9 +1297,6 @@ function LocalCliStep({
         })}
       </div>
       <div className="button-row">
-        <Button onClick={() => dispatch({ type: 'set-step', step: 'model-source' })}>
-          返回选择
-        </Button>
         <Button onClick={handleRedetect} disabled={busy}>
           重新检测
         </Button>
@@ -1322,13 +1329,24 @@ function ProviderStep(props: {
   setCustomEndpoint: (v: string) => void
   customModel: string
   setCustomModel: (v: string) => void
+  fetchedModelIds: string[]
+  onFetchModels: () => void
+  fetchingModels: boolean
   onSubmit: () => void
   busy: boolean
   dispatch?: React.Dispatch<Action>
 }) {
   return (
     <>
-      <p className="eyebrow">连接第三方模型</p>
+      {props.dispatch && (
+        <button
+          type="button"
+          className="model-source-back"
+          onClick={() => props.dispatch?.({ type: 'set-step', step: 'model-source' })}
+        >
+          <Icons.ArrowLeft size={14} /> 切换模型方式
+        </button>
+      )}
       <h1>填写你的模型服务信息</h1>
       <p className="lead">
         “密钥”就是模型服务商给你的使用凭证。Spark Agent 会把它安全保存在你的电脑里。
@@ -1365,27 +1383,44 @@ function ProviderStep(props: {
           placeholder="粘贴 API Key"
         />
       </label>
-      <details>
-        <summary>URL 和模型设置</summary>
-        <label>
-          模型 ID
-          <LobeInput
-            value={props.customModel}
-            onChange={(e) => props.setCustomModel(e.target.value)}
-          />
-        </label>
-        <label>
-          API URL
-          <LobeInput
-            value={props.customEndpoint}
-            onChange={(e) => props.setCustomEndpoint(e.target.value)}
-            placeholder="默认可留空"
-          />
-        </label>
-      </details>
+      <label>
+        模型 ID
+        <div className="provider-model-row">
+          {props.fetchedModelIds.length > 0 ? (
+            <LobeSelect
+              showSearch
+              value={props.customModel || undefined}
+              onChange={(value) => props.setCustomModel(String(value))}
+              placeholder="选择模型"
+              options={props.fetchedModelIds.map((id) => ({ label: id, value: id }))}
+            />
+          ) : (
+            <LobeInput
+              value={props.customModel}
+              onChange={(e) => props.setCustomModel(e.target.value)}
+            />
+          )}
+          <Button
+            type="default"
+            onClick={props.onFetchModels}
+            loading={props.fetchingModels}
+            disabled={props.busy}
+          >
+            {props.fetchedModelIds.length > 0 ? '重新获取' : '获取模型'}
+          </Button>
+        </div>
+      </label>
+      <label>
+        API URL
+        <LobeInput
+          value={props.customEndpoint}
+          onChange={(e) => props.setCustomEndpoint(e.target.value)}
+          placeholder="默认可留空"
+        />
+      </label>
       <div className="button-row">
         {props.dispatch && <SkipStepButton dispatch={props.dispatch} target="agent-template" />}
-        <Button type="primary" size="large" onClick={props.onSubmit} loading={props.busy}>
+        <Button type="primary" size="middle" onClick={props.onSubmit} loading={props.busy}>
           {props.busy ? '正在测试并保存…' : '测试并保存'}
         </Button>
       </div>
@@ -1406,7 +1441,6 @@ function AgentTemplateStep({
 }) {
   return (
     <>
-      <p className="eyebrow">创建第一个助手</p>
       <h1>选择你的 AI 助手类型</h1>
       <div className="choice-grid templates">
         {Object.entries(templates).map(([id, item]) => (
@@ -1426,7 +1460,7 @@ function AgentTemplateStep({
         <div className="guide-item">
           <Icons.Skills size={22} />
           <div>
-            <strong>创建后可挂载技能</strong>
+            <strong>挂载技能</strong>
             <span>
               模板只带一个默认提示词。去助手详情页的「技能」Tab，挂载已安装或从技能市场装的技能，让它掌握写
               PPT、查资料等具体流程。
@@ -1436,19 +1470,10 @@ function AgentTemplateStep({
         <div className="guide-item">
           <Icons.Workflow size={22} />
           <div>
-            <strong>还可以绑定工作流</strong>
+            <strong>绑定工作流</strong>
             <span>
               把"先做 A、再做 B、最后做
               C"这类多步任务编排成工作流后绑定到助手，收到匹配任务时会自动跑完整个流程。
-            </span>
-          </div>
-        </div>
-        <div className="guide-item">
-          <Icons.Edit size={22} />
-          <div>
-            <strong>随时改写提示词</strong>
-            <span>
-              上面选的模板提示词不是最终版本，在助手设置里可以随时调整语气、边界和默认行为，不用重新创建助手。
             </span>
           </div>
         </div>
@@ -1477,7 +1502,6 @@ function FirstSessionStep({
 }) {
   return (
     <>
-      <p className="eyebrow">第一次对话</p>
       <h1>试着发出第一条消息</h1>
       <p className="lead">发送后会创建新会话，然后进入几页可跳过的功能导览。</p>
       <div className="prompt-list">
@@ -1521,7 +1545,6 @@ function CanvasGuideStep({
 }) {
   return (
     <>
-      <p className="eyebrow">可跳过教学：画布</p>
       <h1>画布是你的多媒体创作工作台</h1>
       <p className="lead">
         画布是按"项目"组织的多媒体创作空间，把剧本、角色、场景、分镜、参考图、提示词和生成结果都摆在一张可平移、可缩放的画布上。它不是聊天窗口的延伸，而是真正动手做东西的地方。
@@ -1573,23 +1596,12 @@ function SkillsGuideStep({
 }) {
   return (
     <>
-      <p className="eyebrow">可跳过教学：Skill</p>
       <h1>Skill 让 Agent 一次上手新能力</h1>
       <p className="lead">
         Skill 像是给 Agent 的任务手册：里面写好了应对特定场景的流程、模板、提示词与工具用法。Spark
         Agent 通过四种来源为你提供 Skill，按需取用即可。
       </p>
       <div className="guide-panel">
-        <div className="guide-item">
-          <Icons.Star size={22} />
-          <div>
-            <strong>推荐技能</strong>
-            <span>
-              「精选技能」Tab
-              展示官方与社区挑选的常用扩展，适合不确定该装什么的时候翻一翻，踩坑更少。
-            </span>
-          </div>
-        </div>
         <div className="guide-item">
           <Icons.Globe size={22} />
           <div>
@@ -1623,8 +1635,11 @@ function SkillsGuideStep({
         <Button onClick={() => dispatch({ type: 'set-step', step: 'canvas-guide' })}>
           返回画布
         </Button>
-        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'tools-guide' })}>
-          继续了解内置工具
+        <Button
+          type="primary"
+          onClick={() => dispatch({ type: 'set-step', step: 'workflows-guide' })}
+        >
+          继续了解工作流
         </Button>
       </div>
     </>
@@ -1640,7 +1655,6 @@ function MediaGuideStep({
 }) {
   return (
     <>
-      <p className="eyebrow">可跳过教学：多媒体模型</p>
       <h1>图片、视频、语音也可以进入对话</h1>
       <p className="lead">
         当你配置的服务商支持多媒体模型时，Spark Agent
@@ -1664,8 +1678,8 @@ function MediaGuideStep({
       </div>
       <div className="button-row">
         <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
-        <Button onClick={() => dispatch({ type: 'set-step', step: 'board-guide' })}>
-          返回任务面板
+        <Button onClick={() => dispatch({ type: 'set-step', step: 'workflows-guide' })}>
+          返回工作流
         </Button>
         <Button
           type="primary"
@@ -1681,75 +1695,6 @@ function MediaGuideStep({
   )
 }
 
-function ToolsGuideStep({
-  dispatch,
-  onFinish,
-}: {
-  dispatch: React.Dispatch<Action>
-  onFinish: () => void
-}) {
-  return (
-    <>
-      <p className="eyebrow">可跳过教学：内置工具</p>
-      <h1>Agent 自带常用的内置工具</h1>
-      <p className="lead">
-        不用装任何 Skill 或 MCP，Agent
-        就能调用以下内置能力处理终端、检索、编辑和内容生成。你可以在输入框里直接让 Agent 使用它们。
-      </p>
-      <div className="guide-panel">
-        <div className="guide-item">
-          <Icons.Terminal size={22} />
-          <div>
-            <strong>终端命令</strong>
-            <span>
-              运行 shell 命令：构建、测试、安装依赖、查日志由 Agent 直接处理，使用前会先征得你同意。
-            </span>
-          </div>
-        </div>
-        <div className="guide-item">
-          <Icons.Search size={22} />
-          <div>
-            <strong>本地 + 联网检索</strong>
-            <span>在本地文件、项目和公开网络上检索信息，把结果带回到对话和画布里。</span>
-          </div>
-        </div>
-        <div className="guide-item">
-          <Icons.Code size={22} />
-          <div>
-            <strong>编辑 / Diff / 代码还原点</strong>
-            <span>
-              对代码和文档做精确修改：先看 diff
-              再确认；关键改动会保留代码还原点，跑偏时可恢复到最近的稳定版本。
-            </span>
-          </div>
-        </div>
-        <div className="guide-item">
-          <Icons.Book size={22} />
-          <div>
-            <strong>Spark Web Tool：一键出内容产物</strong>
-            <span>
-              内置技能：课件、专题讲解、数据分析报告三类任务，先和你确认内容与视觉方向，再产出 PPTX
-              / HTML / DOCX / Markdown 等格式。
-            </span>
-          </div>
-        </div>
-      </div>
-      <div className="button-row">
-        <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
-        <Button onClick={() => dispatch({ type: 'set-step', step: 'skills-guide' })}>
-          返回 Skill
-        </Button>
-        <Button
-          type="primary"
-          onClick={() => dispatch({ type: 'set-step', step: 'workflows-guide' })}
-        >
-          继续了解工作流
-        </Button>
-      </div>
-    </>
-  )
-}
-
 function WorkflowsGuideStep({
   dispatch,
   onFinish,
@@ -1759,7 +1704,6 @@ function WorkflowsGuideStep({
 }) {
   return (
     <>
-      <p className="eyebrow">可跳过教学：工作流</p>
       <h1>把多步任务编排成工作流</h1>
       <p className="lead">
         工作流是一张节点 + 边的 DAG 图：把"先做 A、再做 B、最后做 C"这种多步任务可视化、可复用。
@@ -1798,65 +1742,8 @@ function WorkflowsGuideStep({
       </div>
       <div className="button-row">
         <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
-        <Button onClick={() => dispatch({ type: 'set-step', step: 'tools-guide' })}>
-          返回内置工具
-        </Button>
-        <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'board-guide' })}>
-          继续了解任务面板
-        </Button>
-      </div>
-    </>
-  )
-}
-
-function BoardGuideStep({
-  dispatch,
-  onFinish,
-}: {
-  dispatch: React.Dispatch<Action>
-  onFinish: () => void
-}) {
-  return (
-    <>
-      <p className="eyebrow">可跳过教学：任务面板</p>
-      <h1>用任务面板把待办变成可执行项</h1>
-      <p className="lead">
-        任务面板是类飞书看板：把要做的事拆成一张张卡片按列推进，状态变化时可以一键交给 Agent 处理，
-        也能开启自动执行让 Agent 接管。
-      </p>
-      <div className="guide-panel">
-        <div className="guide-item">
-          <Icons.Board size={22} />
-          <div>
-            <strong>拖一拖就能推进</strong>
-            <span>
-              待办 / 进行中 / 已完成 / 失败 等状态按列排列，拖卡片就能换状态，多选也能批量移动。
-            </span>
-          </div>
-        </div>
-        <div className="guide-item">
-          <Icons.Play size={22} />
-          <div>
-            <strong>一键交给 Agent</strong>
-            <span>
-              卡片可绑定到会话：点一下就开新会话处理；也可开启自动执行，状态变化即触发 Agent。
-            </span>
-          </div>
-        </div>
-        <div className="guide-item">
-          <Icons.ListTodo size={22} />
-          <div>
-            <strong>附件 / 评论 / 回收站</strong>
-            <span>
-              每张卡片可以挂附件、留评论、设置优先级；删除后进入回收站，需要时可恢复或彻底删除。
-            </span>
-          </div>
-        </div>
-      </div>
-      <div className="button-row">
-        <Button onClick={() => finishGuide(onFinish)}>跳过讲解，进入会话</Button>
-        <Button onClick={() => dispatch({ type: 'set-step', step: 'workflows-guide' })}>
-          返回工作流
+        <Button onClick={() => dispatch({ type: 'set-step', step: 'skills-guide' })}>
+          返回 Skill
         </Button>
         <Button type="primary" onClick={() => dispatch({ type: 'set-step', step: 'media-guide' })}>
           继续了解多媒体模型
@@ -1875,7 +1762,6 @@ function ConnectionTestStep({
 }) {
   return (
     <>
-      <p className="eyebrow">连接测试</p>
       <h1>已用"你好"测试模型</h1>
       <p className="lead">下面是本次模型连接测试结果。若失败，可以返回重新选择方案或修改密钥。</p>
       <pre className="test-output">{output || '等待测试结果…'}</pre>
@@ -1893,39 +1779,9 @@ function ConnectionTestStep({
   )
 }
 
-/**
- * 统一的抽象化插画场景：用同一套「光斑 + 旋转光环 + 图标徽章 + 声波」语言
- * 替换过去 5 张风格各异的静态贴图，只随每一步的 icon/accent 变化，
- * 既保证视觉连贯，也天然自带动效。
- */
-function IllustrationScene({ icon: Icon, accent }: { icon: IconType; accent: [string, string] }) {
-  const sceneStyle = { '--accent-a': accent[0], '--accent-b': accent[1] } as React.CSSProperties
-  return (
-    <div className="onb-scene" style={sceneStyle}>
-      <div className="onb-scene-grid" />
-      <span className="onb-scene-blob onb-scene-blob-a" />
-      <span className="onb-scene-blob onb-scene-blob-b" />
-      <span className="onb-scene-blob onb-scene-blob-c" />
-      <div className="onb-scene-orbit onb-scene-orbit-1">
-        <span />
-      </div>
-      <div className="onb-scene-orbit onb-scene-orbit-2">
-        <span />
-      </div>
-      <div className="onb-scene-badge">
-        <Icon size={32} />
-      </div>
-      <div className="onb-scene-wave">
-        {Array.from({ length: 7 }).map((_, i) => (
-          <span key={i} style={{ animationDelay: `${i * 0.11}s` }} />
-        ))}
-      </div>
-    </div>
-  )
-}
-
 function OnboardingVisual({ step }: { step: OnboardingStep }) {
   const visual = visualByStep[step]
+  const poster = ONBOARDING_POSTERS[step]
   return (
     <div className="onboarding-visual" aria-hidden="true">
       <div className="visual-stage">
@@ -1942,22 +1798,17 @@ function OnboardingVisual({ step }: { step: OnboardingStep }) {
               exit={{ opacity: 0, scale: 0.97 }}
               transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
             >
-              <IllustrationScene icon={visual.icon} accent={visual.accent} />
+              <img className="visual-poster" src={poster} alt="" draggable={false} />
             </motion.div>
           </AnimatePresence>
         </div>
-        <div className="visual-summary">
-          <div>
-            <strong>{visual.title}</strong>
-            <span>{visual.caption}</span>
-          </div>
-          <em>{visual.stat}</em>
-        </div>
-        <ul className="visual-points">
-          {visual.points.map((point) => (
-            <li key={point}>{point}</li>
-          ))}
-        </ul>
+        {visual.points.length > 0 && (
+          <ul className="visual-points">
+            {visual.points.map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   )
@@ -1966,7 +1817,6 @@ function OnboardingVisual({ step }: { step: OnboardingStep }) {
 function DoneStep({ onDone }: { onDone: () => void }) {
   return (
     <>
-      <p className="eyebrow">完成</p>
       <h1>设置完成！</h1>
       <p className="lead">以后你可以直接从左侧新建会话开始使用，也可以继续添加更多模型和助手。</p>
       <div className="guide-panel">

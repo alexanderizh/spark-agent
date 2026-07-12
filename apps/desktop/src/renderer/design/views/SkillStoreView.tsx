@@ -2129,7 +2129,7 @@ my-skill/
           <div className="row" style={{ gap: '8px', justifyContent: 'center' }}>
             <Button
               type="primary"
-              size="large"
+              size="middle"
               disabled={creating}
               loading={creating}
               icon={<Icons.File size={14} />}
@@ -2139,7 +2139,7 @@ my-skill/
             </Button>
             <Button
               type="text"
-              size="large"
+              size="middle"
               disabled={creating}
               loading={creating}
               icon={<Icons.FolderOpen size={14} />}

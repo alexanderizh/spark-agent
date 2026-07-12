@@ -79,9 +79,9 @@ html[data-theme="light"],
   --info-bg: rgba(59, 130, 246, 0.1);
 
   --shadow-xs: 0 0 2px rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 0 0 1px rgba(0, 0, 0, 0.01), 0 2px 8px rgba(0, 0, 0, 0.02);
-  --shadow-md: 0 0 0 1px rgba(0, 0, 0, 0.03), 0 4px 16px rgba(0, 0, 0, 0.07);
-  --shadow-lg: 0 0 0 1px rgba(0, 0, 0, 0.03), 0 8px 32px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 0 0 1px rgba(0, 0, 0, 0.03), 0 2px 8px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 8px 32px rgba(0, 0, 0, 0.12);
   --window-shadow: 0 0 28px rgba(15, 23, 42, 0.08);
 
   --diff-add-bg: rgba(16, 185, 129, 0.08);
