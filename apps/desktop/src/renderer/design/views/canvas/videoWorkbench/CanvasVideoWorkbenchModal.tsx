@@ -40,6 +40,27 @@ function shortId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
+/**
+ * 把 node.data.url（可能是 safe-file:// 编码 URL 或原始路径）解码为磁盘绝对路径。
+ * ffmpeg 需要磁盘路径，不能接受 safe-file:// URL。
+ * 解码逻辑与 CanvasWorkspaceView.decodeSafeFileUrl 一致。
+ */
+function resolveDiskPath(url: string): string {
+  if (!url) return ''
+  if (!url.startsWith('safe-file://')) return url
+  try {
+    const rest = url.slice('safe-file://'.length)
+    const slashIndex = rest.indexOf('/')
+    if (slashIndex < 0) return url
+    const encoded = rest.slice(slashIndex + 1)
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/')
+    const padding = base64.length % 4 === 0 ? '' : '='.repeat(4 - (base64.length % 4))
+    return decodeURIComponent(escape(atob(base64 + padding)))
+  } catch {
+    return url
+  }
+}
+
 /** 画布上可选作源视频的节点（从画布选择用） */
 interface CanvasVideoOption {
   id: string
@@ -134,7 +155,7 @@ export function CanvasVideoWorkbenchModal({
   const probeAndUpdate = useCallback(
     async (n: CanvasNode) => {
       if (probingRef.current) return
-      const sourcePath = (n.data as { url?: string }).url ?? ''
+      const sourcePath = resolveDiskPath((n.data as { url?: string }).url ?? '')
       if (!sourcePath) return // 未关联视频文件，跳过探测（预览区已展示"未关联视频"）
       probingRef.current = true
       setBusy(true)
@@ -176,7 +197,7 @@ export function CanvasVideoWorkbenchModal({
         const reqId = shortId()
         const res = await window.spark.invoke('video:process', {
           operation: 'extractKeyframes',
-          input: (node.data as { url?: string }).url ?? '',
+          input: resolveDiskPath((node.data as { url?: string }).url ?? ''),
           params: {
             strategy,
             threshold: draft.extractConfig.threshold,
@@ -297,7 +318,7 @@ export function CanvasVideoWorkbenchModal({
       params: Record<string, unknown>,
     ): Promise<{ success: boolean; result?: unknown; error?: string }> => {
       if (!node) return { success: false, error: '未关联视频节点' }
-      const sourcePath = (node.data as { url?: string }).url ?? ''
+      const sourcePath = resolveDiskPath((node.data as { url?: string }).url ?? '')
       if (!sourcePath) return { success: false, error: '源视频路径缺失' }
       setBusy(true)
       setProgress(null)
