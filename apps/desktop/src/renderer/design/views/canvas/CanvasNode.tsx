@@ -1165,6 +1165,10 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                     src={normalizedVideoSrc}
                     controls
                     preload="metadata"
+                    onContextMenu={(e) => {
+                      // 阻止 <video> 原生右键菜单，让事件冒泡到外层 Dropdown 的 contextMenu trigger
+                      e.preventDefault()
+                    }}
                   />
                 ) : (
                   <div className="canvas-node-image-placeholder">

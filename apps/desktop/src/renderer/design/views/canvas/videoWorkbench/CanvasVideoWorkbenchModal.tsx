@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { Button, Segmented, Slider, message } from 'antd'
+import { Button, Dropdown, Segmented, Slider, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { encodeToSafeFileUrl } from '../canvas-safe-file'
 import type { VideoProcessRequest } from '@spark/protocol'
@@ -40,6 +40,14 @@ function shortId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
+/** 画布上可选作源视频的节点（从画布选择用） */
+interface CanvasVideoOption {
+  id: string
+  title: string
+  url: string
+  thumbnailUrl?: string
+}
+
 interface Props {
   node: CanvasNode | null
   open: boolean
@@ -49,6 +57,10 @@ interface Props {
   onExportKeyframes?: (frames: WorkbenchKeyframe[], sourceNodeId: string) => Promise<void>
   /** 添加/切换源视频（文件选择器 → 落盘 → 写回 node.data.url） */
   onAddVideo?: () => Promise<void>
+  /** 从画布选择视频作为源（传入画布视频节点的 url） */
+  onSelectVideo?: (url: string) => Promise<void>
+  /** 画布上可用的视频节点列表（从画布选择用） */
+  videoNodes?: CanvasVideoOption[]
 }
 
 export function CanvasVideoWorkbenchModal({
@@ -58,6 +70,8 @@ export function CanvasVideoWorkbenchModal({
   onSave,
   onExportKeyframes,
   onAddVideo,
+  onSelectVideo,
+  videoNodes,
 }: Props): ReactElement | null {
   const initial = useMemo(
     () => (node?.data?.videoWorkbench
@@ -368,15 +382,36 @@ export function CanvasVideoWorkbenchModal({
             )}
           </div>
           <div className="vwb-topbar-actions">
-            {onAddVideo && (
-              <Button
-                size="small"
-                type={sourceVideoUrl ? 'default' : 'primary'}
-                onClick={() => void onAddVideo()}
-                icon={<Icons.Video size={14} />}
+            {(onAddVideo || (onSelectVideo && videoNodes && videoNodes.length > 0)) && (
+              <Dropdown
+                trigger={['click']}
+                placement="bottomRight"
+                menu={{
+                  items: [
+                    ...(onAddVideo
+                      ? [{ key: 'from-file', label: '从文件添加…', onClick: () => void onAddVideo() }]
+                      : []),
+                    ...(onSelectVideo && videoNodes && videoNodes.length > 0
+                      ? [
+                          { type: 'divider' as const },
+                          ...videoNodes.map((v) => ({
+                            key: `pick-${v.id}`,
+                            label: v.title,
+                            onClick: () => void onSelectVideo(v.url),
+                          })),
+                        ]
+                      : []),
+                  ],
+                }}
               >
-                {sourceVideoUrl ? '更换视频' : '添加视频'}
-              </Button>
+                <Button
+                  size="small"
+                  type={sourceVideoUrl ? 'default' : 'primary'}
+                  icon={<Icons.Video size={14} />}
+                >
+                  {sourceVideoUrl ? '更换视频' : '添加视频'}
+                </Button>
+              </Dropdown>
             )}
             <Button size="small" type="text" onClick={onClose} icon={<Icons.X size={16} />}>
               关闭

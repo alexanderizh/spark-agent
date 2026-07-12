@@ -4015,6 +4015,20 @@ export function CanvasWorkspaceView({
     [videoWorkbenchNodeId, snapshot?.nodes],
   )
 
+  /** 画布上所有可用作工作台源的视频节点（供工作台「从画布选择」） */
+  const videoNodesForWorkbench = useMemo(
+    () =>
+      (snapshot?.nodes ?? [])
+        .filter((n) => n.type === 'video' && typeof n.data.url === 'string')
+        .map((n) => ({
+          id: n.id,
+          title: n.title ?? '视频',
+          url: n.data.url as string,
+          ...(n.data.thumbnailUrl ? { thumbnailUrl: n.data.thumbnailUrl as string } : {}),
+        })),
+    [snapshot?.nodes],
+  )
+
   const handleSaveVideoWorkbench = useCallback(
     async (data: VideoWorkbenchData) => {
       if (!videoWorkbenchNode) return
@@ -4056,6 +4070,19 @@ export function CanvasWorkspaceView({
       message.success('视频已导入工作台')
     },
     [videoWorkbenchNode, projectId, snapshot?.project.rootPath, updateNodeData],
+  )
+
+  // 从画布选择视频作为工作台源视频（直接用已有节点的 url，无需重新落盘）
+  const handleSelectVideoFromCanvas = useCallback(
+    async (url: string) => {
+      if (!videoWorkbenchNode) return
+      await updateNodeData(videoWorkbenchNode.id, {
+        url,
+        videoWorkbench: createDefaultVideoWorkbenchData() as unknown as Record<string, unknown>,
+      })
+      message.success('已切换源视频')
+    },
+    [videoWorkbenchNode, updateNodeData],
   )
 
   /** 把关键帧导出为画布图片节点（批量），连线到源视频工作台节点 */
@@ -7296,6 +7323,8 @@ export function CanvasWorkspaceView({
             onSave={handleSaveVideoWorkbench}
             onExportKeyframes={handleExportKeyframes}
             onAddVideo={handleAddVideoToWorkbench}
+            onSelectVideo={handleSelectVideoFromCanvas}
+            videoNodes={videoNodesForWorkbench}
           />
           <CanvasFilmAssetCenter
             open={filmCenterOpen}
