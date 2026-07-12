@@ -7273,7 +7273,19 @@ export function registerAllIpcHandlers(): void {
               a.platform === process.platform &&
               a.arch === process.arch,
           )
-          .sort((a, b) => (a.version < b.version ? 1 : -1))
+          .sort((a, b) => {
+            // 语义版本比较：解析为数字元组，避免字符串比较 "7.10" < "7.9" 的错误
+            const parseVer = (s: string): number[] =>
+              s.split('.').map((seg) => parseInt(seg.replace(/\D/g, ''), 10) || 0)
+            const va = parseVer(a.version)
+            const vb = parseVer(b.version)
+            const len = Math.max(va.length, vb.length)
+            for (let i = 0; i < len; i++) {
+              const d = (vb[i] ?? 0) - (va[i] ?? 0)
+              if (d !== 0) return d
+            }
+            return 0
+          })
         if (candidates.length === 0) {
           return {
             success: false,
