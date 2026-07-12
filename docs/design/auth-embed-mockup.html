@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>引导页嵌入态 · 登录注册重设计</title>
+<style>
+/* 项目主题令牌（对齐 styles.css，浅色默认） */
+:root {
+  --primary: #6366f1; --primary-hover: #4f46e5; --primary-soft: rgba(99,102,241,0.12); --primary-fg: #ffffff;
+  --r-xs:4px; --r-sm:6px; --r-md:8px; --r-lg:12px; --r-xl:16px;
+  --pad-xs:6px; --pad-sm:8px; --pad-md:12px; --pad-lg:16px; --pad-xl:20px;
+  --font-xs:11px; --font-sm:12px; --font-base:13px; --font-lg:14px;
+  --font-sans: "Geist","SF Pro Text","HarmonyOS Sans SC","MiSans","PingFang SC","Segoe UI",-apple-system,BlinkMacSystemFont,ui-sans-serif,system-ui,sans-serif;
+  --font-mono: "SFMono-Regular","Cascadia Code",Menlo,Consolas,monospace;
+  --shadow-sm: 0 0 0 1px rgba(0,0,0,0.03), 0 2px 8px rgba(0,0,0,0.05);
+  --success:#10b981; --danger:#ef4444;
+}
+[data-theme='light'] {
+  --bg:#fff; --bg-soft:#fefefe; --bg-sunken:#f7f6f4;
+  --panel:#ffffff; --panel-elev:#ffffff;
+  --hover:rgba(36,32,27,0.045); --active:rgba(36,32,27,0.07);
+  --border:#f6f3ec; --border-strong:#d7d2c9; --divider:#efede8;
+  --text:#23231f; --text-strong:#11100e; --text-muted:#b2a997; --text-faint:#9b9489; --text-inverse:#ffffff;
+}
+[data-theme='dark'] {
+  --bg:#0d0d10; --bg-soft:#131318; --bg-sunken:#0a0a0d;
+  --panel:#16161b; --panel-elev:#1c1c22;
+  --hover:rgba(255,255,255,0.04); --active:rgba(255,255,255,0.07);
+  --border:#26262d; --border-strong:#34343c; --divider:#202027;
+  --text:#e4e4e7; --text-strong:#fafafa; --text-muted:#9ca3af; --text-faint:#6b7280; --text-inverse:#09090b;
+  --shadow-sm: 0 0 0 1px rgba(0,0,0,0.32), 0 2px 8px rgba(0,0,0,0.42);
+}
+
+* { box-sizing:border-box; margin:0; padding:0; }
+html, body { font-family:var(--font-sans); background:#1a1a1f; color:var(--text); -webkit-font-smoothing:antialiased; }
+
+.board { display:grid; grid-template-columns:1fr 1fr; gap:24px; padding:24px; }
+
+/* 模拟引导页的主内容区（onboarding-copy） */
+.scene {
+  position:relative;
+  background: var(--bg);
+  border-radius:12px;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,0.06);
+  min-height: 580px;
+  display:flex;
+}
+.onboarding-copy {
+  flex: 1;
+  padding: 40px 36px 28px;
+  display:flex;
+  flex-direction:column;
+  min-width: 0;
+}
+.scene-tag {
+  position:absolute; top:12px; left:12px; z-index:50;
+  padding:4px 10px; border-radius:9999px;
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  backdrop-filter: blur(10px);
+  border:1px solid var(--border);
+  font-size:10px; font-weight:700; letter-spacing:0.05em;
+  color: var(--text-muted); text-transform:uppercase;
+}
+.scene-tag em { font-style:normal; color: var(--primary); margin-left:4px; }
+
+/* 引导页标题区（模拟 SparkAccountStep 的头部） */
+.ob-back {
+  display:inline-flex; align-items:center; gap:6px;
+  width:fit-content; margin-bottom:18px;
+  padding:5px 0; border:0; background:transparent;
+  color: var(--text-muted); font-size: var(--font-sm); font-weight:600;
+  cursor:pointer;
+}
+.ob-back svg { width:14px; height:14px; }
+.ob-eyebrow {
+  display:inline-flex; align-items:center; gap:6px;
+  margin:0 0 12px; padding:5px 10px 5px 8px;
+  color: color-mix(in srgb, var(--primary) 92%, var(--text-strong));
+  font-weight:800; letter-spacing:0.02em; font-size:11.5px;
+  border-radius:9999px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+.ob-eyebrow::before { content:''; width:6px; height:6px; border-radius:9999px; background: var(--primary); }
+.ob-h1 {
+  margin:0 0 12px; color: var(--text-strong);
+  font-size:34px; font-weight:800; line-height:1.1; letter-spacing:-0.015em;
+}
+.ob-lead {
+  max-width:560px; margin:0 0 20px;
+  color: var(--text-muted); font-size:14px; line-height:1.7;
+}
+
+/* ════════════════════════════════════════════════════════════
+   嵌入态登录组件：融入引导页，无独立装饰
+   ════════════════════════════════════════════════════════════ */
+.auth-embed {
+  display:flex;
+  flex-direction:column;
+  gap: var(--pad-md);
+  max-width: 420px;
+}
+
+/* 登录/注册 + 方式：合并成一行紧凑切换器 */
+.auth-embed-switcher {
+  display:flex;
+  align-items:center;
+  gap: 2px;
+  padding-bottom: var(--pad-md);
+  border-bottom: 1px solid var(--border);
+}
+.auth-embed-switcher .label {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  margin-right: var(--pad-sm);
+  font-weight:600;
+}
+.switcher-item {
+  padding: 4px 10px;
+  border:0; background:transparent;
+  font:inherit; font-size: var(--font-sm); font-weight:500;
+  color: var(--text-muted);
+  border-radius: var(--r-sm);
+  cursor:pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+.switcher-item:hover:not(.active) { color: var(--text); background: var(--hover); }
+.switcher-item.active { color: var(--primary); background: var(--primary-soft); font-weight:600; }
+
+/* 底部 登录/注册 切换：极简文字链接 + 顶部横线 */
+.embed-switch-flow {
+  margin-top: var(--pad-md);
+  padding-top: var(--pad-md);
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.embed-switch-flow a {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+.embed-switch-flow a:hover { text-decoration: underline; }
+
+/* 输入框：完全继承引导页风格（边框 + panel 背景 + 圆角） */
+.embed-field {
+  display:flex;
+  flex-direction:column;
+  gap: var(--pad-sm);
+}
+.embed-field-row {
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--pad-md);
+}
+.embed-label {
+  font-size: var(--font-sm);
+  font-weight:700;
+  color: var(--text-strong);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+.embed-label .opt { color: var(--text-faint); font-weight:400; font-size: var(--font-xs); }
+.embed-input {
+  display:flex;
+  align-items:center;
+  height: 42px;
+  padding: 0 var(--pad-md);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.embed-input:hover { border-color: var(--border-strong); }
+.embed-input.focused {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.embed-input.error {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.embed-input > svg {
+  width:16px; height:16px;
+  color: var(--text-faint);
+  margin-right: var(--pad-sm);
+  flex-shrink:0;
+}
+.embed-input.focused > svg { color: var(--primary); }
+.embed-input input {
+  flex:1; min-width:0;
+  border:0; background:transparent;
+  font:inherit; font-size: var(--font-base);
+  color: var(--text-strong);
+  outline:none;
+}
+.embed-input input::placeholder { color: var(--text-faint); }
+.embed-input .trail {
+  display:inline-flex; align-items:center;
+  border:0; background:transparent;
+  color: var(--primary); cursor:pointer;
+  font:inherit; font-size: var(--font-sm); font-weight:600;
+  padding: 4px var(--pad-sm);
+  border-left: 1px solid var(--divider);
+  margin-right: calc(-1 * var(--pad-md));
+  margin-left: var(--pad-sm);
+  padding-right: var(--pad-md);
+  height: 100%;
+  white-space:nowrap;
+  transition: background 120ms ease;
+}
+.embed-input .trail:hover { background: var(--primary-soft); }
+.embed-input .trail.disabled { color: var(--text-faint); cursor:not-allowed; }
+
+.captcha-thumb {
+  height: 30px;
+  padding: 0 var(--pad-sm);
+  border-radius: var(--r-sm);
+  background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--primary) 22%, var(--panel)) 0 5px, color-mix(in srgb, var(--primary) 10%, var(--panel)) 5px 10px);
+  display:inline-flex; align-items:center;
+  font-family: var(--font-mono); font-size: var(--font-base); font-weight:700;
+  letter-spacing: 0.12em; color: var(--text-strong);
+  cursor:pointer;
+  border: 1px solid var(--divider);
+  margin-right: calc(-1 * var(--pad-md));
+  margin-left: var(--pad-sm);
+  padding-right: var(--pad-md);
+  user-select:none;
+}
+
+.field-error {
+  font-size: var(--font-xs);
+  color: var(--danger);
+  display:flex; align-items:center; gap:4px;
+}
+.field-error svg { width:12px; height:12px; }
+
+/* 按钮：继承引导页按钮（圆角 9px，非胶囊） */
+.embed-actions {
+  display:flex;
+  gap: var(--pad-md);
+  margin-top: var(--pad-xs);
+  align-items:center;
+}
+.embed-btn-primary {
+  display:inline-flex; align-items:center; justify-content:center; gap: var(--pad-sm);
+  min-width: 140px;
+  height: 40px;
+  border:0;
+  border-radius: 9px;
+  background: var(--primary);
+  color: var(--primary-fg);
+  font:inherit; font-size: var(--font-base); font-weight:600;
+  cursor:pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+.embed-btn-primary:hover { background: var(--primary-hover); }
+.embed-btn-primary:active { transform: translateY(1px); }
+.embed-btn-primary svg { width:16px; height:16px; }
+.embed-btn-primary.loading { opacity:0.7; pointer-events:none; }
+.embed-btn-primary .spinner {
+  width:14px; height:14px;
+  border:2px solid rgba(255,255,255,0.35); border-top-color:#fff;
+  border-radius:50%; animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+.embed-aux {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.embed-aux a { color: var(--primary); text-decoration:none; font-weight:500; }
+.embed-aux a:hover { text-decoration:underline; }
+
+.sms-hint {
+  padding: var(--pad-sm) var(--pad-md);
+  font-size: var(--font-sm);
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--primary-soft);
+  border-radius: var(--r-md);
+  border-left: 2px solid var(--primary);
+}
+
+.theme-toggle {
+  position:absolute; bottom:12px; right:12px; z-index:50;
+  padding:5px 11px; border-radius:9999px;
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  backdrop-filter: blur(10px);
+  border:1px solid var(--border);
+  font-size:11px; font-weight:600; color: var(--text-muted);
+  cursor:pointer;
+}
+.theme-toggle:hover { color: var(--text-strong); }
+
+@media (max-width: 1100px) { .board { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+<div class="board">
+
+  <!-- ════════ 场景 1：登录 · 密码模式 ════════ -->
+  <section class="scene" data-theme="light">
+    <span class="scene-tag">浅色 <em>· 登录 · 密码</em></span>
+    <button class="theme-toggle" onclick="toggleTheme(this)">暗色</button>
+    <div class="onboarding-copy">
+      <button class="ob-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>切换模型方式</button>
+      <span class="ob-eyebrow">平台内置模型</span>
+      <h1 class="ob-h1">使用 Spark 平台模型</h1>
+      <p class="ob-lead">不必申请或配置 API Key。平台模型作为一个可选 Provider，与你的第三方模型配置并存。</p>
+
+      <!-- ▼ 嵌入态登录组件 ▼ -->
+      <div class="auth-embed">
+        <div class="auth-embed-switcher">
+          <span class="label">方式</span>
+          <button class="switcher-item active">密码</button>
+          <button class="switcher-item">验证码</button>
+          <button class="switcher-item">手机号</button>
+        </div>
+
+        <div class="embed-field">
+          <label class="embed-label">邮箱或手机号</label>
+          <div class="embed-input focused">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>
+            <input value="zhang@spark.com" />
+          </div>
+        </div>
+
+        <div class="embed-field-row">
+          <div class="embed-field">
+            <label class="embed-label">密码</label>
+            <div class="embed-input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+              <input type="password" value="••••••••" />
+            </div>
+          </div>
+          <div class="embed-field">
+            <label class="embed-label">图片验证码</label>
+            <div class="embed-input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+              <input placeholder="输入验证码" maxlength="8" />
+              <div class="captcha-thumb">A7K9</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="embed-actions">
+          <button class="embed-btn-primary">登录<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+          <span class="embed-aux"><a href="#">忘记密码？</a></span>
+        </div>
+
+        <div class="embed-switch-flow">没有账号？<a href="#">去注册 →</a></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════ 场景 2：注册 · 邮箱 ════════ -->
+  <section class="scene" data-theme="light">
+    <span class="scene-tag">浅色 <em>· 注册 · 邮箱</em></span>
+    <button class="theme-toggle" onclick="toggleTheme(this)">暗色</button>
+    <div class="onboarding-copy">
+      <button class="ob-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>切换模型方式</button>
+      <span class="ob-eyebrow">平台内置模型</span>
+      <h1 class="ob-h1">使用 Spark 平台模型</h1>
+      <p class="ob-lead">不必申请或配置 API Key。平台模型作为一个可选 Provider，与你的第三方模型配置并存。</p>
+
+      <div class="auth-embed">
+        <div class="auth-embed-switcher">
+          <span class="label">方式</span>
+          <button class="switcher-item active">邮箱</button>
+          <button class="switcher-item">手机号</button>
+        </div>
+
+        <div class="embed-field">
+          <label class="embed-label">邮箱</label>
+          <div class="embed-input">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>
+            <input placeholder="example@spark.com" />
+          </div>
+        </div>
+
+        <div class="embed-field">
+          <label class="embed-label">图片验证码</label>
+          <div class="embed-input">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            <input placeholder="输入验证码" maxlength="8" />
+            <div class="captcha-thumb">3XQM</div>
+          </div>
+        </div>
+
+        <div class="embed-field-row">
+          <div class="embed-field">
+            <label class="embed-label">邮箱验证码</label>
+            <div class="embed-input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 6l-10 7L2 6"/><rect x="2" y="4" width="20" height="16" rx="2"/></svg>
+              <input placeholder="6 位" maxlength="6" />
+              <button class="trail" type="button">发送</button>
+            </div>
+          </div>
+          <div class="embed-field">
+            <label class="embed-label">设置密码 <span class="opt">至少 6 位</span></label>
+            <div class="embed-input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+              <input type="password" placeholder="设置密码" />
+            </div>
+          </div>
+        </div>
+
+        <div class="embed-actions">
+          <button class="embed-btn-primary">注册并登录<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+        </div>
+
+        <div class="embed-switch-flow">已有账号？<a href="#">去登录 →</a></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════ 场景 3：登录 · 手机号 · 错误+加载 ════════ -->
+  <section class="scene" data-theme="light">
+    <span class="scene-tag">浅色 <em>· 登录 · 手机号 · 错误+加载</em></span>
+    <button class="theme-toggle" onclick="toggleTheme(this)">暗色</button>
+    <div class="onboarding-copy">
+      <button class="ob-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>切换模型方式</button>
+      <span class="ob-eyebrow">平台内置模型</span>
+      <h1 class="ob-h1">使用 Spark 平台模型</h1>
+      <p class="ob-lead">不必申请或配置 API Key。平台模型作为一个可选 Provider，与你的第三方模型配置并存。</p>
+
+      <div class="auth-embed">
+        <div class="auth-embed-switcher">
+          <span class="label">方式</span>
+          <button class="switcher-item">密码</button>
+          <button class="switcher-item">验证码</button>
+          <button class="switcher-item active">手机号</button>
+        </div>
+
+        <div class="embed-field">
+          <label class="embed-label">手机号</label>
+          <div class="embed-input error">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
+            <input value="138 0000 123" maxlength="11" />
+          </div>
+          <div class="field-error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>请填写有效的 11 位手机号</div>
+        </div>
+
+        <div class="embed-field">
+          <label class="embed-label">图片验证码</label>
+          <div class="embed-input">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            <input placeholder="输入验证码" maxlength="8" />
+            <div class="captcha-thumb">P2R8</div>
+          </div>
+        </div>
+
+        <div class="embed-field">
+          <label class="embed-label">短信验证码</label>
+          <div class="embed-input">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            <input placeholder="6 位" maxlength="6" />
+            <button class="trail disabled" type="button" disabled>58s</button>
+          </div>
+        </div>
+
+        <div class="sms-hint">首次使用手机号登录将自动完成注册</div>
+
+        <div class="embed-actions">
+          <button class="embed-btn-primary loading"><span class="spinner"></span>登录中</button>
+        </div>
+
+        <div class="embed-switch-flow">没有账号？<a href="#">去注册 →</a></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════ 场景 4：暗色 · 登录 · 密码 ════════ -->
+  <section class="scene" data-theme="dark">
+    <span class="scene-tag">暗色 <em>· 登录 · 密码</em></span>
+    <button class="theme-toggle" onclick="toggleTheme(this)">浅色</button>
+    <div class="onboarding-copy">
+      <button class="ob-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>切换模型方式</button>
+      <span class="ob-eyebrow">平台内置模型</span>
+      <h1 class="ob-h1">使用 Spark 平台模型</h1>
+      <p class="ob-lead">不必申请或配置 API Key。平台模型作为一个可选 Provider，与你的第三方模型配置并存。</p>
+
+      <div class="auth-embed">
+        <div class="auth-embed-switcher">
+          <span class="label">方式</span>
+          <button class="switcher-item active">密码</button>
+          <button class="switcher-item">验证码</button>
+          <button class="switcher-item">手机号</button>
+        </div>
+
+        <div class="embed-field">
+          <label class="embed-label">邮箱或手机号</label>
+          <div class="embed-input">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>
+            <input placeholder="邮箱或手机号" />
+          </div>
+        </div>
+
+        <div class="embed-field-row">
+          <div class="embed-field">
+            <label class="embed-label">密码</label>
+            <div class="embed-input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+              <input type="password" placeholder="请输入密码" />
+            </div>
+          </div>
+          <div class="embed-field">
+            <label class="embed-label">图片验证码</label>
+            <div class="embed-input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+              <input placeholder="输入验证码" maxlength="8" />
+              <div class="captcha-thumb">A7K9</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="embed-actions">
+          <button class="embed-btn-primary">登录<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+          <span class="embed-aux"><a href="#">忘记密码？</a></span>
+        </div>
+
+        <div class="embed-switch-flow">没有账号？<a href="#">去注册 →</a></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+function toggleTheme(btn) {
+  const scene = btn.closest('.scene');
+  const cur = scene.getAttribute('data-theme');
+  const next = cur === 'light' ? 'dark' : 'light';
+  scene.setAttribute('data-theme', next);
+  btn.textContent = next === 'light' ? '暗色' : '浅色';
+}
+</script>
+
+</body>
+</html>

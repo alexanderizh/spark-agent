@@ -1168,7 +1168,7 @@ function SparkAccountStep({
       </p>
       {!isAuthenticated ? (
         <div className="onboarding-auth-embed">
-          <AuthGate />
+          <AuthGate variant="embed" />
         </div>
       ) : null}
       <div className="button-row">

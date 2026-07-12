@@ -372,18 +372,18 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     {
       group: '通用',
       items: [
-        { id: 'general', icon: <Icons.Settings />, label: '通用' },
-        { id: 'appearance', icon: <Icons.Sparkles />, label: '外观' },
-        { id: 'shortcuts', icon: <Icons.Command />, label: '快捷键' },
+        { id: 'general', icon: <Icons.Settings  size={13} />, label: '通用' },
+        { id: 'appearance', icon: <Icons.Sparkles  size={13} />, label: '外观' },
+        { id: 'shortcuts', icon: <Icons.Command  size={13} />, label: '快捷键' },
       ],
     },
     {
       group: 'Agent',
       items: [
-        { id: 'rules', icon: <Icons.Beaker />, label: '规则' },
-        { id: 'custom-commands', icon: <Icons.Command />, label: '自定义命令' },
-        { id: 'permissions', icon: <Icons.Shield />, label: '权限策略' },
-        { id: 'memory', icon: <Icons.Brain />, label: '记忆' },
+        { id: 'rules', icon: <Icons.Beaker  size={13} />, label: '规则' },
+        { id: 'custom-commands', icon: <Icons.Command  size={13} />, label: '自定义命令' },
+        { id: 'permissions', icon: <Icons.Shield  size={13} />, label: '权限策略' },
+        { id: 'memory', icon: <Icons.Brain  size={13} />, label: '记忆' },
       ],
     },
     {
@@ -391,8 +391,8 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
       items: [
         // MCP 设置暂未完全实现，隐藏导航项
         // { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
-        { id: 'remote-connections', icon: <Icons.Globe />, label: '远程连接' },
-        { id: 'system-prompt', icon: <Icons.Chat />, label: '系统提示词' },
+        { id: 'remote-connections', icon: <Icons.Globe  size={13} />, label: '远程连接' },
+        { id: 'system-prompt', icon: <Icons.Chat  size={13} />, label: '系统提示词' },
         // 工作流模板暂未实现，隐藏导航项
         // { id: 'workflows', icon: <Icons.Workflow />, label: '工作流模板' },
       ],
@@ -400,15 +400,15 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     {
       group: '系统',
       items: [
-        { id: 'integrity', icon: <Icons.Shield />, label: '完整性' },
-        { id: 'playwright', icon: <Icons.Globe />, label: '浏览器自动化' },
-        { id: 'usage', icon: <Icons.Activity />, label: '用量统计' },
-        { id: 'telemetry', icon: <Icons.Activity />, label: '遥测与日志' },
-        { id: 'hooks', icon: <Icons.Bell />, label: 'Hooks' },
-        { id: 'storage', icon: <Icons.Database />, label: '存储与备份' },
-        { id: 'archived', icon: <Icons.Archive />, label: '已归档' },
-        { id: 'updates', icon: <Icons.Refresh />, label: '更新' },
-        { id: 'about', icon: <Icons.Sparkles />, label: '关于' },
+        { id: 'integrity', icon: <Icons.Shield  size={13} />, label: '完整性' },
+        { id: 'playwright', icon: <Icons.Globe  size={13} />, label: '浏览器自动化' },
+        { id: 'usage', icon: <Icons.Activity  size={13} />, label: '用量统计' },
+        { id: 'telemetry', icon: <Icons.Activity  size={13} />, label: '遥测与日志' },
+        { id: 'hooks', icon: <Icons.Bell  size={13} />, label: 'Hooks' },
+        { id: 'storage', icon: <Icons.Database  size={13} />, label: '存储与备份' },
+        { id: 'archived', icon: <Icons.Archive  size={13} />, label: '已归档' },
+        { id: 'updates', icon: <Icons.Refresh  size={13} />, label: '更新' },
+        { id: 'about', icon: <Icons.Sparkles  size={13} />, label: '关于' },
       ],
     },
   ]
@@ -609,7 +609,7 @@ function GeneralSection() {
             onChange={(e) => set({ defaultWorkspace: e.target.value })}
             placeholder="点击浏览选择…"
           />
-          <Button size="middle" type="text" icon={<Icons.Folder size={12} />} onClick={() => void handleBrowseWorkspace()}>
+          <Button size="middle" type="text" icon={<Icons.Folder  size={13} />} onClick={() => void handleBrowseWorkspace()}>
             浏览…
           </Button>
         </div>
@@ -1205,7 +1205,7 @@ function RemoteConnectionsSection() {
               size="middle"
               loading={busy === 'test'}
               disabled={!draft.id}
-              icon={<Icons.Refresh size={12} />}
+              icon={<Icons.Refresh  size={13} />}
               onClick={() => void testConnection()}
             >
               测试配置
@@ -1955,7 +1955,7 @@ function ShortcutsSection() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索动作或按键..."
         />
-        <Button size="middle" type="text" icon={<Icons.Refresh size={12} />} onClick={resetShortcuts}>
+        <Button size="middle" type="text" icon={<Icons.Refresh  size={13} />} onClick={resetShortcuts}>
           重置全部
         </Button>
       </div>
@@ -2111,7 +2111,7 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
           <Button size="middle" type="text" onClick={onClose}>
             取消
           </Button>
-          <Button size="middle" type="primary" icon={<Icons.Check size={12} />} onClick={onClose}>
+          <Button size="middle" type="primary" icon={<Icons.Check  size={13} />} onClick={onClose}>
             保存
           </Button>
         </div>
@@ -2272,7 +2272,7 @@ function ModelsSection() {
                     onChange={() => void handleToggle(m)}
                   />
                   <button className="icon-btn" title="删除" onClick={() => void handleDelete(m.id)}>
-                    <Icons.X size={12} />
+                    <Icons.X  size={13} />
                   </button>
                 </div>
               )
@@ -2516,10 +2516,10 @@ function RuleLayer({
             {!readOnly && (
               <>
                 <button className="icon-btn" title="编辑" onClick={() => onEdit(rule)}>
-                  <Icons.Edit size={12} />
+                  <Icons.Edit  size={13} />
                 </button>
                 <button className="icon-btn" title="删除" onClick={() => onDelete(rule.id)}>
-                  <Icons.X size={12} />
+                  <Icons.X  size={13} />
                 </button>
               </>
             )}
@@ -2626,7 +2626,7 @@ function RuleEditPanel({
           <Button size="middle" type="text" onClick={onClose}>
             取消
           </Button>
-          <Button size="middle" type="primary" loading={saving} icon={<Icons.Check size={12} />} onClick={handleSave} disabled={saving}>
+          <Button size="middle" type="primary" loading={saving} icon={<Icons.Check  size={13} />} onClick={handleSave} disabled={saving}>
             保存
           </Button>
         </div>
@@ -2715,7 +2715,7 @@ function CustomCommandsSection() {
         <div className="row info-banner">
           <Icons.Command size={14} className="color-primary flex-shrink-0" />
           <div className="flex1 info-banner-text"><strong>{enabledCount} 个启用</strong> · {commands.length} 个自定义命令 · 会显示在会话输入框的「工具」分组。</div>
-          <Button size="middle" type="primary" icon={<Icons.Plus size={12} />} onClick={() => setEditing(createCustomCommandDraft())}>新增命令</Button>
+          <Button size="middle" type="primary" icon={<Icons.Plus  size={13} />} onClick={() => setEditing(createCustomCommandDraft())}>新增命令</Button>
         </div>
         <div className="custom-command-toolbar">
           <Input
@@ -3135,7 +3135,7 @@ function McpSection() {
         </span>
         <Button
           type="primary"
-          icon={<Icons.Plus size={12} />}
+          icon={<Icons.Plus  size={13} />}
           onClick={openAddForm}
           style={{ marginLeft: 10 }} /* dynamic */
         >
@@ -3215,7 +3215,7 @@ function McpSection() {
                       </Button>
                     )}
                     <button className="icon-btn" title="编辑" onClick={() => openEditForm(server)}>
-                      <Icons.Edit size={12} />
+                      <Icons.Edit  size={13} />
                     </button>
                     <button
                       className="icon-btn"
@@ -3446,7 +3446,7 @@ function McpSection() {
                         onClick={() => removeEnvPair(idx)}
                         title="删除"
                       >
-                        <Icons.X size={12} />
+                        <Icons.X  size={13} />
                       </button>
                     </div>
                   ))}
@@ -3463,7 +3463,7 @@ function McpSection() {
                 size="middle"
                 type="primary"
                 loading={formSaving}
-                icon={<Icons.Check size={12} />}
+                icon={<Icons.Check  size={13} />}
                 onClick={() => void handleFormSave()}
                 disabled={formSaving}
               >
@@ -3611,7 +3611,7 @@ function SystemPromptSection() {
             size="middle"
             type="primary"
             loading={savingPrompt}
-            icon={<Icons.Check size={12} />}
+            icon={<Icons.Check  size={13} />}
             onClick={() => void saveSystemPrompt()}
             disabled={savingPrompt || !isDirty}
           >
@@ -4752,7 +4752,7 @@ function StorageSection() {
             value={stats?.userDataPath ?? '加载中...'}
             readOnly
           />
-          <Button size="middle" type="text" icon={<Icons.Folder size={12} />} onClick={handleOpenDataDir}>
+          <Button size="middle" type="text" icon={<Icons.Folder  size={13} />} onClick={handleOpenDataDir}>
             打开
           </Button>
         </div>
@@ -4762,7 +4762,7 @@ function StorageSection() {
         </label>
         <div className="control">
           <Input className="flex1" size="middle" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
-          <Button size="middle" type="text" icon={<Icons.Folder size={12} />} onClick={handleOpenWorkspace}>
+          <Button size="middle" type="text" icon={<Icons.Folder  size={13} />} onClick={handleOpenWorkspace}>
             选择
           </Button>
           <Button
@@ -4780,7 +4780,7 @@ function StorageSection() {
         </label>
         <div className="control">
           <Input className="flex1" size="middle" value={canvasProjectsRoot || stats?.canvasProjectsRoot || '加载中...'} readOnly />
-          <Button size="middle" type="text" icon={<Icons.Folder size={12} />} onClick={() => void handleChooseCanvasRoot()}>
+          <Button size="middle" type="text" icon={<Icons.Folder  size={13} />} onClick={() => void handleChooseCanvasRoot()}>
             选择
           </Button>
         </div>
@@ -5327,7 +5327,7 @@ function IntegritySection() {
             type="text"
             loading={isChecking}
             disabled={isChecking || isCheckingLatest}
-            icon={<Icons.Refresh size={12} className={isChecking ? 'spin' : ''} />}
+            icon={<Icons.Refresh  size={13} className={isChecking ? 'spin' : ''} />}
             onClick={() => void handleCheck(false)}
           >
             立即检测
@@ -5337,7 +5337,7 @@ function IntegritySection() {
             type="text"
             loading={isCheckingLatest}
             disabled={isChecking || isCheckingLatest}
-            icon={<Icons.Globe size={12} className={isCheckingLatest ? 'spin' : ''} />}
+            icon={<Icons.Globe  size={13} className={isCheckingLatest ? 'spin' : ''} />}
             onClick={() => void handleCheck(true)}
           >
             检查最新版本
@@ -5357,7 +5357,7 @@ function IntegritySection() {
           <Button
             size="middle"
             type="text"
-            icon={<Icons.X size={12} />}
+            icon={<Icons.X  size={13} />}
             onClick={() => setInstallResult(null)}
             style={{ marginLeft: 'auto', padding: '0 4px', height: 20 }}
           />
@@ -5388,7 +5388,7 @@ function IntegritySection() {
                 <Button
                   size="middle"
                   type="text"
-                  icon={<Icons.ExternalLink size={12} />}
+                  icon={<Icons.ExternalLink  size={13} />}
                   href={tool.downloadUrl}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -5431,7 +5431,7 @@ function IntegritySection() {
                     type="primary"
                     loading={installingPkg === sdk.packageName}
                     disabled={isInstallingSdk}
-                    icon={<Icons.Download size={12} />}
+                    icon={<Icons.Download  size={13} />}
                     onClick={() => void handleInstall(sdk.packageName)}
                   >
                     {installingPkg != null && installingPkg !== sdk.packageName

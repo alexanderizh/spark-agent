@@ -1369,6 +1369,11 @@ function Shell() {
     ? 0
     : t.floatingSidebarWidth + (t.sidebarStyle === 'flat' ? 0 : SIDEBAR_VISIBLE_GUTTER)
   const useIntegratedTitlebar = t.view === 'chat' && t.chatMode !== 'workspace'
+  // Keep the shared drag strip, but allow full-bleed views to extend their
+  // surface into it. This preserves the native-window hit area while avoiding
+  // a disconnected default-colour band above settings and the auth gate.
+  const usesSettingsTitlebarSurface = isSettingsWorkspace
+  const usesAuthTitlebarSurface = t.view === 'account-center' && !auth.isAuthenticated
 
   // Global-search palette menu items: derive from NAV_ITEMS so the search reflects
   // whatever the sidebar exposes today (and respects pinned items if we add that later).
@@ -1394,7 +1399,7 @@ function Shell() {
     <ErrorBoundary level="global" name="Shell">
       <div
         ref={scaleRef}
-        className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${sidebarHidden ? ' sidebar-hidden' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}`}
+        className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${sidebarHidden ? ' sidebar-hidden' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}${usesSettingsTitlebarSurface ? ' titlebar-surface-settings' : ''}${usesAuthTitlebarSurface ? ' titlebar-surface-auth' : ''}`}
         style={
           {
             '--primary': primary,
