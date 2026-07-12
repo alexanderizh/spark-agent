@@ -8,10 +8,12 @@ import type {
   PlatformModelUsage,
 } from '@spark/protocol'
 import { useToast } from '../../components/Toast'
+import { useApp } from '../../AppContext'
 import './PlatformModelAccountPanel.less'
 
 export function PlatformModelAccountPanel(): React.ReactElement {
   const { toast } = useToast()
+  const { setTweak } = useApp()
   const [status, setStatus] = useState<PlatformModelStatus | null>(null)
   const [plans, setPlans] = useState<PlatformModelPlan[]>([])
   const [subscription, setSubscription] = useState<PlatformModelSubscription | null>(null)
@@ -121,6 +123,11 @@ export function PlatformModelAccountPanel(): React.ReactElement {
     ? Math.min(100, Math.round(subscription.amountUsed / subscription.amountTotal * 100))
     : 0
 
+  const goToUsageStats = (): void => {
+    setTweak('view', 'settings')
+    setTweak('settingsSection', 'usage')
+  }
+
   return (
     <div className="account-panel platform-model-panel">
       <div className="account-panel-head platform-model-panel__head">
@@ -186,16 +193,12 @@ export function PlatformModelAccountPanel(): React.ReactElement {
       {usage ? (
         <div className="platform-model-panel__usage">
           <div className="platform-model-panel__metric">
-            <strong>对话额度与最近消耗</strong>
-            <span>当前钱包额度 {formatUsageQuota(usage.walletQuota, usage.currencySymbol)}</span>
+            <strong>对话额度</strong>
+            <span className="platform-model-panel__balance">{formatUsageQuota(usage.walletQuota)}</span>
           </div>
-          {usage.logs.length > 0 ? usage.logs.slice(0, 5).map(log => (
-            <div className="platform-model-panel__log" key={log.id}>
-              <span>{log.model || '未知模型'}</span>
-              <span>{formatQuota(log.promptTokens + log.completionTokens)} tokens</span>
-              <span>{formatTime(log.createdAt)}</span>
-            </div>
-          )) : <span className="platform-model-panel__empty">暂无调用记录</span>}
+          <button type="button" className="platform-model-panel__usage-link" onClick={goToUsageStats}>
+            最近消耗 →
+          </button>
         </div>
       ) : null}
     </div>
@@ -217,11 +220,11 @@ function formatQuota(value: number): string {
   return new Intl.NumberFormat('zh-CN').format(value)
 }
 
-function formatUsageQuota(value: number, symbol: string): string {
-  return `${symbol}${new Intl.NumberFormat('zh-CN', {
+function formatUsageQuota(value: number): string {
+  return new Intl.NumberFormat('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 6,
-  }).format(value)}`
+  }).format(value)
 }
 
 function formatTime(value: number): string {
