@@ -1,5 +1,9 @@
 appId: com.spark-agent.desktop
 productName: Spark Agent
+protocols:
+  - name: Spark Agent redemption
+    schemes:
+      - spark-agent
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 # pnpm hoisted 布局下 electron 装在 monorepo 根 node_modules，electron-builder 在
 # apps/desktop 目录运行时无法解析 ^31.0.0 范围版本，需显式指定与 lockfile 一致的版本。

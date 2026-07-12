@@ -69,6 +69,10 @@ import { SettingsService } from '@spark/agent-runtime'
 import { SettingsRepository } from '@spark/storage'
 import { initAuthService, getAuthService } from './services/Auth/AuthService.js'
 import { getPlatformModelService } from './services/PlatformModel/index.js'
+import {
+  findPlatformModelRedeemCode,
+  parsePlatformModelRedeemDeepLink,
+} from './services/PlatformModel/PlatformModelDeepLink.js'
 
 const log = createLogger('main')
 let tray: Tray | null = null
@@ -115,7 +119,55 @@ function showMainWindow(): void {
   createWindow()
 }
 
-const ownsSingleInstanceLock = installSingleInstanceLock(app, showMainWindow)
+const pendingRedeemCodes = new Set<string>()
+let platformRedeemReady = false
+
+function queuePlatformRedeemDeepLink(value: string): void {
+  const code = parsePlatformModelRedeemDeepLink(value)
+  if (!code) return
+  pendingRedeemCodes.add(code)
+  if (app.isReady()) showMainWindow()
+  if (platformRedeemReady) void processPendingPlatformRedeemCodes()
+}
+
+async function processPendingPlatformRedeemCodes(): Promise<void> {
+  if (!platformRedeemReady || !getAuthService().getCurrentUserId()) return
+  for (const code of [...pendingRedeemCodes]) {
+    pendingRedeemCodes.delete(code)
+    try {
+      const result = await getPlatformModelService().redeem(code)
+      if (Notification.isSupported()) {
+        new Notification({ title: '兑换成功', body: result.message }).show()
+      }
+    } catch (error) {
+      if (Notification.isSupported()) {
+        new Notification({
+          title: '兑换未完成',
+          body: error instanceof Error ? error.message : '请打开账户中心后手动兑换',
+        }).show()
+      }
+    }
+  }
+}
+
+if (is.dev && process.argv[1]) {
+  app.setAsDefaultProtocolClient('spark-agent', process.execPath, [process.argv[1]])
+} else {
+  app.setAsDefaultProtocolClient('spark-agent')
+}
+
+app.on('open-url', (event, value) => {
+  event.preventDefault()
+  queuePlatformRedeemDeepLink(value)
+})
+
+const ownsSingleInstanceLock = installSingleInstanceLock(app, showMainWindow, (commandLine) => {
+  const code = findPlatformModelRedeemCode(commandLine)
+  if (code) queuePlatformRedeemDeepLink(`spark-agent://redeem?code=${encodeURIComponent(code)}`)
+})
+
+const initialRedeemCode = findPlatformModelRedeemCode(process.argv)
+if (initialRedeemCode) pendingRedeemCodes.add(initialRedeemCode)
 
 function isAppZoomShortcut(input: Electron.Input): 'in' | 'out' | 'reset' | null {
   const hasModifier = process.platform === 'darwin' ? input.meta : input.control
@@ -599,6 +651,9 @@ async function initializeApp(): Promise<void> {
     })
     await getAuthService().start()
     getPlatformModelService()
+    getAuthService().addLoginHook(async () => processPendingPlatformRedeemCodes())
+    platformRedeemReady = true
+    await processPendingPlatformRedeemCodes()
     clearPersistedEduServerBaseUrl()
     log.info('Cloud auth service started')
   } catch (err) {

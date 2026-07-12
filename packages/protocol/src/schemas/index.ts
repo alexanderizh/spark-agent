@@ -1335,6 +1335,10 @@ export const IpcSchemaRegistry = {
     mimeType: z.string().max(160).optional(),
   }),
 
+  'platform-model:open-purchase-link': z.object({
+    id: z.number().int().positive(),
+  }),
+
   // Canvas Agent Bridge
   'canvas:host-attach': z.object({
     sessionId: z.string().min(1).max(200),

@@ -1202,6 +1202,21 @@ describe('ProviderService', () => {
     )
   })
 
+  it('hides the managed platform provider after logout disables its credentials', async () => {
+    await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5'],
+      apiKey: 'sk-platform-secret',
+    })
+
+    expect((await service.listProviders()).map(profile => profile.id)).toContain('spark-platform-newapi')
+
+    await service.disableManagedNewApiProvider('42')
+
+    expect((await service.listProviders()).map(profile => profile.id)).not.toContain('spark-platform-newapi')
+  })
+
   it('migrates an existing official provider from codex-chat to anthropic claude-sdk semantics', async () => {
     repo.rows.set('spark-platform-newapi', {
       id: 'spark-platform-newapi',

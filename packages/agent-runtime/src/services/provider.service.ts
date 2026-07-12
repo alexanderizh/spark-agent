@@ -376,6 +376,7 @@ export class ProviderService {
     const visibleProfiles = profiles.filter((profile) => {
       if (profile.id === LOCAL_CLI_PROVIDER_ID) return claudeAvailable
       if (profile.id === LOCAL_CODEX_CLI_PROVIDER_ID) return codexAvailable
+      if (profile.managed === true && profile.credentialState === 'unavailable') return false
       return true
     })
     const routers: ProviderProfile[] = []

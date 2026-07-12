@@ -9,6 +9,12 @@ export function registerPlatformModelIpc(): void {
   typedIpcHandle('platform-model:get-subscription', async () => ({
     subscription: await getPlatformModelService().getSubscription(),
   }))
+  typedIpcHandle('platform-model:get-purchase-links', async () => ({
+    links: await getPlatformModelService().getPurchaseLinks(),
+  }))
+  typedIpcHandle('platform-model:open-purchase-link', async (req) => (
+    getPlatformModelService().openPurchaseLink(req.id)
+  ))
   typedIpcHandle('platform-model:redeem', async (req) => getPlatformModelService().redeem(req.code))
   typedIpcHandle('platform-model:pay', async (req) => getPlatformModelService().pay(req.planId, req.paymentMethod))
   typedIpcHandle('platform-model:get-usage', async () => getPlatformModelService().getUsage())

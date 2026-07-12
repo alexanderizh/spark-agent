@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { installSingleInstanceLock } from './single-instance.js'
 
-type SecondInstanceHandler = () => void
+type SecondInstanceHandler = (event: unknown, commandLine: string[]) => void
 
 function createFakeApp(hasLock: boolean): {
   app: {
@@ -51,8 +51,22 @@ describe('single instance lock', () => {
     expect(app.quit).not.toHaveBeenCalled()
     expect(app.on).toHaveBeenCalledWith('second-instance', expect.any(Function))
 
-    getSecondInstanceHandler()?.()
+    getSecondInstanceHandler()?.({}, [])
 
     expect(revealPrimaryWindow).toHaveBeenCalledOnce()
+  })
+
+  it('forwards second-instance launch arguments before revealing the window', () => {
+    const { app, getSecondInstanceHandler } = createFakeApp(true)
+    const order: string[] = []
+    const revealPrimaryWindow = vi.fn(() => order.push('reveal'))
+    const handleArguments = vi.fn(() => order.push('arguments'))
+    installSingleInstanceLock(app, revealPrimaryWindow, handleArguments)
+
+    const commandLine = ['Spark Agent.exe', 'spark-agent://redeem?code=CODE-1']
+    getSecondInstanceHandler()?.({}, commandLine)
+
+    expect(handleArguments).toHaveBeenCalledWith(commandLine)
+    expect(order).toEqual(['arguments', 'reveal'])
   })
 })
