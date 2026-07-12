@@ -108,7 +108,8 @@ export function CanvasVideoWorkbenchModal({
 
   // ── 首次打开自动 probe（若 probeInfo 缺失且 ffmpeg 可用）─────────
   useEffect(() => {
-    if (!open || !node || draft.probeInfo || ffmpegReady !== true || probingRef.current) return
+    const sourceUrl = (node?.data as { url?: string } | undefined)?.url ?? ''
+    if (!open || !node || !sourceUrl || draft.probeInfo || ffmpegReady !== true || probingRef.current) return
     void probeAndUpdate(node)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, node, ffmpegReady])
@@ -116,6 +117,8 @@ export function CanvasVideoWorkbenchModal({
   const probeAndUpdate = useCallback(
     async (n: CanvasNode) => {
       if (probingRef.current) return
+      const sourcePath = (n.data as { url?: string }).url ?? ''
+      if (!sourcePath) return // 未关联视频文件，跳过探测（预览区已展示"未关联视频"）
       probingRef.current = true
       setBusy(true)
       setProgress(null)
@@ -123,7 +126,7 @@ export function CanvasVideoWorkbenchModal({
         const reqId = shortId()
         const res = await window.spark.invoke('video:probe', {
           operation: 'probe',
-          input: (n.data as { url?: string }).url ?? '',
+          input: sourcePath,
           params: {},
           requestId: reqId,
         })
