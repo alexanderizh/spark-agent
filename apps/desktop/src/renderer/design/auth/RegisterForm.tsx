@@ -8,32 +8,50 @@
  * 图片验证码 + 邮箱验证码并排，密码 + 邀请码并排，压缩纵向层级。
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { AutoComplete, Button, Form, Input } from 'antd'
+import React, { useEffect, useRef, useState } from 'react'
+import { Button, Form, Input } from 'antd'
 import { useAuth } from './AuthContext'
 import { useToast } from '../components/Toast'
 import { CaptchaField, type CaptchaFieldHandle } from './CaptchaField'
-import { getRecentEmails, rememberEmail } from './recentEmails'
+import { rememberEmail } from './recentEmails'
 import { matchFieldError } from './errorMapping'
+import { EMAIL_RE, inferIdentifierKind, PHONE_RE } from './identifier'
 import { Icons } from '../Icons'
 
-type RegisterMode = 'email' | 'phone'
-
-const PHONE_RE = /^1[3-9]\d{9}$/
-
-export function RegisterForm(): React.ReactElement {
+export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): React.ReactElement {
   const auth = useAuth()
   const { toast } = useToast()
   const [form] = Form.useForm()
   const captchaRef = useRef<CaptchaFieldHandle>(null)
   const [submitting, setSubmitting] = useState(false)
   const [countdown, setCountdown] = useState(0)
-  const [recentEmails, setRecentEmails] = useState<string[]>(() => getRecentEmails())
+  const [sendingCode, setSendingCode] = useState(false)
+  const sendingCodeRef = useRef(false)
+  const submittingRef = useRef(false)
 
   const smsEnabled = auth.authCapabilities?.smsEnabled === true
-  const [mode, setMode] = useState<RegisterMode>('email')
-  // sms 能力未开启时，回退展示 email 模式（渲染期派生，避免 effect 内同步 setState）
-  const activeMode: RegisterMode = mode === 'phone' && !smsEnabled ? 'email' : mode
+  const account = Form.useWatch('account', form)
+  const emailCode = Form.useWatch('emailCode', form)
+  const smsCode = Form.useWatch('smsCode', form)
+  const password = Form.useWatch('password', form)
+  const confirmPassword = Form.useWatch('confirmPassword', form)
+  const captchaId = Form.useWatch('captchaId', form)
+  const captchaText = Form.useWatch('captchaText', form)
+  const identifierKind = inferIdentifierKind(account, smsEnabled)
+  const usesPhone = identifierKind === 'phone'
+  const normalizedAccount = String(account ?? '').trim()
+  const accountValid = usesPhone
+    ? PHONE_RE.test(normalizedAccount)
+    : EMAIL_RE.test(normalizedAccount)
+  const captchaReady = Boolean(captchaId && String(captchaText ?? '').trim())
+  const canSubmit =
+    accountValid &&
+    captchaReady &&
+    (usesPhone
+      ? String(smsCode ?? '').trim().length === 6
+      : String(emailCode ?? '').trim().length === 6 &&
+        String(password ?? '').length >= 6 &&
+        password === confirmPassword)
 
   useEffect(() => {
     if (countdown <= 0) return
@@ -41,20 +59,18 @@ export function RegisterForm(): React.ReactElement {
     return () => clearTimeout(t)
   }, [countdown])
 
-  const handleModeChange = (value: RegisterMode): void => {
-    setMode(value)
-    form.resetFields(['account', 'emailCode', 'password', 'phone', 'smsCode', 'captchaText'])
-  }
-
   const setFieldError = (name: string, message: string): void => {
     form.setFields([{ name, errors: [message] }])
   }
 
   const handleSendCode = async (): Promise<void> => {
+    if (sendingCodeRef.current || countdown > 0) return
+    sendingCodeRef.current = true
+    setSendingCode(true)
     try {
       const values = await form.validateFields(['account', 'captchaId', 'captchaText'])
       await auth.sendCode({
-        account: values.account,
+        account: values.account.trim(),
         type: 'register',
         captchaId: values.captchaId,
         captchaText: values.captchaText,
@@ -70,20 +86,26 @@ export function RegisterForm(): React.ReactElement {
       } else {
         toast.error(msg)
       }
+    } finally {
+      sendingCodeRef.current = false
+      setSendingCode(false)
     }
   }
 
   // ─── 手机号注册：发送短信验证码 ──────────────────────────────────────────────
   const handleSendSms = async (): Promise<void> => {
+    if (sendingCodeRef.current || countdown > 0) return
+    sendingCodeRef.current = true
+    setSendingCode(true)
     try {
-      const values = await form.validateFields(['phone', 'captchaId', 'captchaText'])
-      const phone = (values.phone ?? '').trim()
+      const values = await form.validateFields(['account', 'captchaId', 'captchaText'])
+      const phone = (values.account ?? '').trim()
       if (!phone) {
-        setFieldError('phone', '请填写手机号')
+        setFieldError('account', '请填写手机号')
         return
       }
       if (!PHONE_RE.test(phone)) {
-        setFieldError('phone', '请填写有效的手机号')
+        setFieldError('account', '请填写有效的手机号')
         return
       }
       await auth.sendSmsCode({
@@ -96,25 +118,30 @@ export function RegisterForm(): React.ReactElement {
       setCountdown(60)
     } catch (e) {
       const msg = (e as Error).message ?? '发送失败'
-      const target = matchFieldError(msg, ['phone', 'captchaText'])
+      const target = matchFieldError(msg, ['account', 'captchaText'])
       if (target) {
         setFieldError(target, msg)
         if (target === 'captchaText') void captchaRef.current?.refresh()
       } else {
         toast.error(msg)
       }
+    } finally {
+      sendingCodeRef.current = false
+      setSendingCode(false)
     }
   }
 
   const handleSubmit = async (): Promise<void> => {
+    if (submittingRef.current) return
+    submittingRef.current = true
     try {
       setSubmitting(true)
       const values = await form.validateFields()
 
-      if (activeMode === 'phone') {
+      if (usesPhone) {
         // 手机号注册复用 login-sms（自动注册）
         await auth.loginBySms({
-          phone: (values.phone ?? '').trim(),
+          phone: (values.account ?? '').trim(),
           smsCode: values.smsCode,
         })
         toast.success('注册成功，已自动登录')
@@ -122,21 +149,23 @@ export function RegisterForm(): React.ReactElement {
       }
 
       await auth.register({
-        account: values.account,
+        account: values.account.trim(),
         password: values.password,
         code: values.emailCode,
         ...(values.inviteCode ? { inviteCode: values.inviteCode } : {}),
       })
-      rememberEmail(values.account)
-      setRecentEmails(getRecentEmails())
+      const normalizedAccount = values.account.trim()
+      if (EMAIL_RE.test(normalizedAccount)) {
+        rememberEmail(normalizedAccount)
+      }
       toast.success('注册成功，已自动登录')
     } catch (e) {
       const msg = (e as Error).message ?? '注册失败'
       const candidates: Array<
         'account' | 'emailCode' | 'password' | 'captchaText' | 'phone' | 'smsCode'
       > =
-        activeMode === 'phone'
-          ? ['smsCode', 'phone', 'captchaText']
+        usesPhone
+          ? ['smsCode', 'account', 'captchaText']
           : ['emailCode', 'password', 'captchaText', 'account']
       const target = matchFieldError(msg, candidates)
       if (target) {
@@ -146,45 +175,18 @@ export function RegisterForm(): React.ReactElement {
         toast.error(msg)
       }
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }
-
-  const accountSuggestions = useMemo(
-    () => recentEmails.map((email) => ({ value: email })),
-    [recentEmails],
-  )
 
   return (
     <div className="auth-form">
       <div className="auth-form-head">
         <h2 className="auth-form-title">创建账号</h2>
         <p className="auth-form-greet">
-          {activeMode === 'phone'
-            ? '输入手机号，验证后即完成注册'
-            : '填写邮箱与密码，或切换到手机号快速注册'}
+          输入邮箱或手机号，系统会自动选择注册方式
         </p>
-      </div>
-
-      {/* 注册方式：内联文字链，非 Segmented */}
-      <div className="auth-methods">
-        <span className="auth-methods-label">方式</span>
-        <button
-          type="button"
-          className={`auth-method ${activeMode === 'email' ? 'active' : ''}`}
-          onClick={() => handleModeChange('email')}
-        >
-          邮箱
-        </button>
-        {smsEnabled && (
-          <button
-            type="button"
-            className={`auth-method ${activeMode === 'phone' ? 'active' : ''}`}
-            onClick={() => handleModeChange('phone')}
-          >
-            手机号
-          </button>
-        )}
       </div>
 
       <Form
@@ -194,23 +196,27 @@ export function RegisterForm(): React.ReactElement {
         requiredMark={false}
         onFinish={handleSubmit}
       >
-        {activeMode === 'phone' ? (
-          <>
-            <Form.Item
-              name="phone"
-              className="auth-field-row"
-              rules={[
-                { required: true, message: '请填写手机号' },
-                { pattern: PHONE_RE, message: '请填写有效的手机号' },
-              ]}
-            >
-              <div className="auth-input auth-input--flat">
-                <Icons.Mail size={17} className="auth-input-icon" />
-                <Input placeholder="请输入手机号" maxLength={11} autoComplete="tel" />
-              </div>
-            </Form.Item>
+        <Form.Item
+          name="account"
+          className="auth-field-row"
+          rules={[
+            {
+              required: true,
+              validator: async (_rule, value: string) => {
+                const normalized = (value ?? '').trim()
+                if (!normalized) throw new Error('请填写邮箱或手机号')
+                if (usesPhone ? PHONE_RE.test(normalized) : EMAIL_RE.test(normalized)) return
+                throw new Error(usesPhone ? '请填写有效的手机号' : '请填写有效邮箱')
+              },
+            },
+          ]}
+        >
+          <AccountInput />
+        </Form.Item>
 
-            <CaptchaField ref={captchaRef} form={form} />
+        {usesPhone ? (
+          <>
+            <CaptchaField ref={captchaRef} form={form} disabled={sendingCode} />
 
             <Form.Item
               name="smsCode"
@@ -220,6 +226,7 @@ export function RegisterForm(): React.ReactElement {
               <CodeInput
                 placeholder="6 位短信验证码"
                 countdown={countdown}
+                sending={sendingCode}
                 onSend={() => void handleSendSms()}
               />
             </Form.Item>
@@ -228,56 +235,49 @@ export function RegisterForm(): React.ReactElement {
           </>
         ) : (
           <>
+            <CaptchaField ref={captchaRef} form={form} disabled={sendingCode} />
+
             <Form.Item
-              name="account"
+              name="emailCode"
               className="auth-field-row"
-              rules={[{ required: true, type: 'email', message: '请填写有效邮箱' }]}
+              rules={[{ required: true, message: '请填写邮箱验证码' }]}
             >
-              <div className="auth-input auth-input--flat">
-                <Icons.Mail size={17} className="auth-input-icon" />
-                <AutoComplete
-                  placeholder="example@spark.com"
-                  options={accountSuggestions}
-                  allowClear
-                  {...({ autoComplete: 'email' } as any)}
-                  filterOption={(inputValue, option) => {
-                    const v = (option as { value?: string })?.value ?? ''
-                    return v.toLowerCase().includes(inputValue.toLowerCase())
-                  }}
-                />
-              </div>
+              <CodeInput
+                placeholder="邮箱验证码"
+                countdown={countdown}
+                sending={sendingCode}
+                onSend={() => void handleSendCode()}
+              />
             </Form.Item>
 
-            <CaptchaField ref={captchaRef} form={form} />
-
-            {/* 邮箱验证码 + 密码并排 */}
-            <div className="auth-field-row auth-field-row--cols2">
-              <Form.Item
-                name="emailCode"
-                className="auth-field"
-                rules={[{ required: true, message: '请填写邮箱验证码' }]}
-              >
-                <CodeInput
-                  placeholder="邮箱验证码"
-                  countdown={countdown}
-                  onSend={() => void handleSendCode()}
-                />
-              </Form.Item>
-              <Form.Item
-                name="password"
-                className="auth-field"
-                rules={[{ required: true, min: 6, message: '至少 6 位' }]}
-              >
-                <PasswordInput placeholder="设置登录密码" autoComplete="new-password" />
-              </Form.Item>
-            </div>
-
-            <Form.Item name="inviteCode" className="auth-field-row">
-              <div className="auth-input auth-input--flat">
-                <Icons.Sparkles size={17} className="auth-input-icon" />
-                <Input placeholder="邀请码（选填）" autoComplete="off" />
-              </div>
+            <Form.Item
+              name="password"
+              className="auth-field-row"
+              rules={[{ required: true, min: 6, message: '至少 6 位' }]}
+            >
+              <PasswordInput placeholder="设置登录密码" autoComplete="new-password" />
             </Form.Item>
+
+            <Form.Item
+              name="confirmPassword"
+              className="auth-field-row"
+              dependencies={['password']}
+              rules={[
+                { required: true, message: '请再次输入登录密码' },
+                ({ getFieldValue }) => ({
+                  validator: async (_rule, value: string) => {
+                    if (!value || getFieldValue('password') === value) return
+                    throw new Error('两次输入的密码不一致')
+                  },
+                }),
+              ]}
+            >
+              <PasswordInput placeholder="再次输入登录密码" autoComplete="new-password" />
+            </Form.Item>
+
+            {/* <Form.Item name="inviteCode" className="auth-field-row">
+              <InviteCodeInput />
+            </Form.Item> */}
           </>
         )}
 
@@ -287,14 +287,18 @@ export function RegisterForm(): React.ReactElement {
             type="primary"
             htmlType="submit"
             loading={submitting}
+            disabled={!canSubmit || submitting}
           >
             {submitting ? '处理中' : '注册并登录'}
             {!submitting && <Icons.ArrowRight size={18} />}
           </Button>
         </Form.Item>
 
-        <div className="auth-tos-line">
-          注册即同意 <a href="#">服务协议</a> 与 <a href="#">隐私政策</a>
+        <div className={`auth-footer-row ${flowSwitch ? 'auth-footer-row--split' : ''}`}>
+          <div className="auth-tos-line">
+            注册即同意 <a href="#">服务协议</a> 与 <a href="#">隐私政策</a>
+          </div>
+          {flowSwitch}
         </div>
       </Form>
     </div>
@@ -303,21 +307,44 @@ export function RegisterForm(): React.ReactElement {
 
 // ─── 字段子组件：统一扁平底线输入样式 ──────────────────────────────────────────
 
+type ControlledInputProps = Pick<React.ComponentProps<typeof Input>, 'value' | 'onChange'>
+
+function AccountInput({ value, onChange }: ControlledInputProps): React.ReactElement {
+  return (
+    <div className="auth-input auth-input--flat">
+      <Icons.Mail size={17} className="auth-input-icon" />
+      <Input value={value} onChange={onChange} placeholder="邮箱或手机号" allowClear autoComplete="username" />
+    </div>
+  )
+}
+
+function InviteCodeInput({ value, onChange }: ControlledInputProps): React.ReactElement {
+  return (
+    <div className="auth-input auth-input--flat">
+      <Icons.Sparkles size={17} className="auth-input-icon" />
+      <Input value={value} onChange={onChange} placeholder="邀请码（选填）" autoComplete="off" />
+    </div>
+  )
+}
+
 function PasswordInput({
   placeholder,
   autoComplete,
+  value,
+  onChange,
 }: {
   placeholder: string
   autoComplete?: string
-}): React.ReactElement {
+} & ControlledInputProps): React.ReactElement {
   const [visible, setVisible] = useState(false)
   return (
     <div className="auth-input auth-input--flat">
       <Icons.Lock size={17} className="auth-input-icon" />
-      <Input.Password
+      <Input
         placeholder={placeholder}
+        value={value}
+        onChange={onChange}
         autoComplete={autoComplete ?? 'current-password'}
-        visibilityToggle={false}
         type={visible ? 'text' : 'password'}
       />
       <button
@@ -335,22 +362,26 @@ function PasswordInput({
 function CodeInput({
   placeholder,
   countdown,
+  sending,
   onSend,
+  value,
+  onChange,
 }: {
   placeholder: string
   countdown: number
+  sending: boolean
   onSend: () => void
-}): React.ReactElement {
+} & ControlledInputProps): React.ReactElement {
   return (
     <div className="auth-input auth-input--flat auth-input--with-action">
-      <Input placeholder={placeholder} maxLength={6} />
+      <Input value={value} onChange={onChange} placeholder={placeholder} maxLength={6} />
       <button
         type="button"
-        className={`auth-input-action auth-input-action--send ${countdown > 0 ? 'disabled' : ''}`}
-        onClick={() => countdown <= 0 && onSend()}
-        disabled={countdown > 0}
+        className={`auth-input-action auth-input-action--send ${countdown > 0 || sending ? 'disabled' : ''}`}
+        onClick={() => countdown <= 0 && !sending && onSend()}
+        disabled={countdown > 0 || sending}
       >
-        {countdown > 0 ? `${countdown}s` : '发送'}
+        {sending ? '发送中' : countdown > 0 ? `${countdown}s` : '发送'}
       </button>
     </div>
   )

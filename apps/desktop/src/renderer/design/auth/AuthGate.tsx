@@ -15,7 +15,6 @@ import { Alert } from 'antd'
 import { useAuth } from './AuthContext'
 import { LoginForm } from './LoginForm'
 import { RegisterForm } from './RegisterForm'
-import { AuthBaseUrlBadge } from './AuthBaseUrlBadge'
 import { Icons } from '../Icons'
 import sparkLogo from '../../assets/spark-logo.png'
 import './Auth.less'
@@ -28,6 +27,18 @@ export interface AuthGateProps {
 export function AuthGate({ variant = 'full' }: AuthGateProps): React.ReactElement {
   const auth = useAuth()
   const isEmbed = variant === 'embed'
+  const flowSwitch = isEmbed ? (
+    <div className="auth-switch-flow">
+      <span>{auth.flow === 'login' ? '没有账号？' : '已有账号？'}</span>
+      <button
+        type="button"
+        className="auth-switch-flow-link"
+        onClick={() => auth.setFlow(auth.flow === 'login' ? 'register' : 'login')}
+      >
+        {auth.flow === 'login' ? '去注册 →' : '去登录 →'}
+      </button>
+    </div>
+  ) : undefined
 
   return (
     <div className={`auth-page ${isEmbed ? 'auth-page--embed' : 'auth-page--full'}`}>
@@ -141,40 +152,12 @@ export function AuthGate({ variant = 'full' }: AuthGateProps): React.ReactElemen
           )}
 
           <div className="auth-form-content">
-            {auth.flow === 'login' ? <LoginForm /> : <RegisterForm />}
+            {auth.flow === 'login' ? (
+              <LoginForm flowSwitch={flowSwitch} />
+            ) : (
+              <RegisterForm flowSwitch={flowSwitch} />
+            )}
           </div>
-
-          {/* 嵌入态：底部「去注册/去登录」文字链接 */}
-          {isEmbed && (
-            <div className="auth-switch-flow">
-              {auth.flow === 'login' ? (
-                <>
-                  没有账号？
-                  <button
-                    type="button"
-                    className="auth-switch-flow-link"
-                    onClick={() => auth.setFlow('register')}
-                  >
-                    去注册 →
-                  </button>
-                </>
-              ) : (
-                <>
-                  已有账号？
-                  <button
-                    type="button"
-                    className="auth-switch-flow-link"
-                    onClick={() => auth.setFlow('login')}
-                  >
-                    去登录 →
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* base url 徽章：仅 full 形态显示 */}
-          {!isEmbed && <AuthBaseUrlBadge />}
         </div>
       </div>
     </div>

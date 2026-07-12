@@ -65,9 +65,9 @@
 
 .account-center-grid {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 340px minmax(0, 1fr);
   gap: 20px;
-  max-width: 980px;
+  max-width: 1120px;
   margin: 0 auto;
   align-items: start;
 }
@@ -77,6 +77,9 @@
 .account-center-left {
   position: sticky;
   top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .account-profile-card {
@@ -202,8 +205,7 @@
   flex-wrap: wrap;
 }
 
-.account-role,
-.account-service-chip {
+.account-role {
   display: inline-flex;
   align-items: center;
   min-height: 22px;
@@ -216,15 +218,6 @@
 .account-role {
   background: var(--color-fill-1, var(--bg-soft, #f8fafc));
   color: var(--color-text-2, var(--text-muted, #475569));
-}
-
-.account-service-chip {
-  max-width: 160px;
-  background: var(--color-fill-1, var(--hover, rgba(15, 23, 42, 0.05)));
-  color: var(--color-text-3, var(--text-faint, #64748b));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .account-profile-meta {
@@ -331,6 +324,14 @@
 
 .account-bind-value {
   color: var(--color-text-3, var(--text-muted, #64748b));
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-security-panel .account-bind-item {
+  padding-inline: 12px;
 }
 
 .account-inline-action {
@@ -345,28 +346,6 @@
   &:hover {
     color: var(--primary-hover, #4f46e5);
     text-decoration: underline;
-  }
-}
-
-.account-baseurl-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-
-  code {
-    flex: 1;
-    min-width: 0;
-    padding: 8px 10px;
-    border-radius: 8px;
-    background: var(--color-fill-2, var(--bg-soft, #f1f5f9));
-    font-family: var(--font-mono, 'SF Mono', Menlo, monospace);
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--color-text-2, var(--text, #475569));
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 }
 

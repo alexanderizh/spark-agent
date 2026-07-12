@@ -34,7 +34,7 @@
 
 .auth-flat {
   display: grid;
-  grid-template-columns: 5fr 6fr;
+  grid-template-columns: 1fr 1fr;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -52,7 +52,7 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: var(--pad-xl) var(--pad-xl) var(--pad-lg);
+  padding: calc(var(--pad-xl) + var(--pad-lg)) var(--pad-xl) var(--pad-lg);
   overflow: hidden;
   background:
     radial-gradient(520px 380px at 18% 8%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 65%),
@@ -100,7 +100,7 @@
 .auth-brand-headline {
   position: relative;
   z-index: 1;
-  margin-top: auto;
+  margin-top: var(--pad-xl);
 }
 
 .auth-brand-eyebrow {
@@ -111,14 +111,14 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--primary);
+  color: var(--text-muted);
   margin-bottom: var(--pad-md);
 }
 
 .auth-brand-eyebrow-line {
   width: 16px;
   height: 1px;
-  background: var(--primary);
+  background: var(--text-muted);
 }
 
 .auth-brand-h {
@@ -195,7 +195,10 @@
   display: flex;
   align-items: center;
   gap: var(--pad-sm);
-  margin-top: var(--pad-lg);
+  // 由 foot 占用剩余空间，把 mark+headline 整体顶到上半部，
+  // 修复「品牌内容被推到下面」的视觉问题。
+  margin-top: auto;
+  padding-top: var(--pad-lg);
   font-size: var(--font-xs);
   color: var(--text-faint);
 }
@@ -299,6 +302,10 @@
   margin: auto;
 }
 
+.auth-page--full .auth-form {
+  max-width: 380px;
+}
+
 .auth-form-content {
   flex: 1;
   min-height: 0;
@@ -339,11 +346,6 @@
   font-size: var(--font-sm);
 }
 
-.auth-methods-label {
-  color: var(--text-faint);
-  margin-right: var(--pad-xs);
-}
-
 .auth-method {
   padding: var(--pad-xs) var(--pad-md);
   border: 0;
@@ -373,6 +375,7 @@
 .auth-form-body--flat {
   display: flex;
   flex-direction: column;
+  margin-bottom: 16px;
 }
 
 // 重置 antd Form.Item 默认间距，由 auth-field-row 统一控制
@@ -380,7 +383,7 @@
   margin-bottom: 0;
 }
 
-.auth-field-row {
+.auth-form-body--flat .auth-field-row {
   margin-bottom: var(--pad-lg);
 }
 
@@ -546,7 +549,7 @@
 // ─── 主按钮 ───────────────────────────────────────────────────────────────────
 
 .auth-submit-row {
-  margin-top: var(--pad-xs);
+  margin-top: var(--pad-md);
 }
 
 .auth-submit-btn {
@@ -589,7 +592,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: var(--pad-lg);
   font-size: var(--font-sm);
   color: var(--text-muted);
 }
@@ -610,9 +612,20 @@
 
 .auth-tos-line {
   text-align: center;
-  margin-top: var(--pad-md);
   font-size: var(--font-xs);
   color: var(--text-faint);
+}
+
+.auth-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pad-lg);
+  margin-top: var(--pad-lg);
+}
+
+.auth-footer-row--split {
+  justify-content: space-between;
 }
 
 .auth-tos-line a {
@@ -622,54 +635,6 @@
 
 .auth-tos-line a:hover {
   color: var(--primary);
-}
-
-// ─── base url 徽章（底部） ─────────────────────────────────────────────────────
-
-.auth-baseurl-badge {
-  display: flex;
-  align-items: center;
-  gap: var(--pad-sm);
-  margin-top: auto;
-  padding-top: var(--pad-md);
-  border-top: 1px solid var(--divider);
-  font-size: var(--font-xs);
-  color: var(--text-muted);
-}
-
-.auth-page--embed .auth-baseurl-badge {
-  border-top: 0;
-  padding-top: var(--pad-sm);
-}
-
-.auth-baseurl-label {
-  white-space: nowrap;
-  opacity: 0.7;
-}
-
-.auth-baseurl-value {
-  flex: 1;
-  min-width: 0;
-  padding: var(--pad-xs) var(--pad-sm);
-  border-radius: var(--r-sm);
-  background: var(--bg-sunken);
-  font-family: var(--font-mono);
-  font-size: var(--font-xs);
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background 120ms ease;
-}
-
-.auth-baseurl-value:hover {
-  background: var(--hover);
-}
-
-.auth-baseurl-value:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
 }
 
 // ─── 图片验证码（CaptchaField 内的按钮） ──────────────────────────────────────
@@ -736,6 +701,23 @@
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
+}
+
+.auth-page--embed .captcha-btn-box > .ant-input-wrapper,
+.auth-page--embed .captcha-btn-box > .ant-input-group-wrapper,
+.auth-page--embed .captcha-btn-box .ant-input-group {
+  width: 100%;
+  height: 100%;
+}
+
+.auth-page--embed .captcha-btn-box .ant-input,
+.auth-page--embed .captcha-btn-box .ant-input-group-addon {
+  height: 100%;
+  vertical-align: middle;
+}
+
+.auth-page--embed .captcha-btn-box .ant-input-group-addon {
+  display: table-cell;
 }
 
 .auth-page--embed .captcha-btn-box::after {
@@ -913,10 +895,10 @@
 
 // 嵌入态：底部「去注册/去登录」文字链接
 .auth-switch-flow {
-  margin-top: var(--pad-md);
-  padding-top: var(--pad-md);
-  border-top: 1px solid var(--border);
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-xs);
+  flex-shrink: 0;
   font-size: var(--font-sm);
   color: var(--text-muted);
 }
