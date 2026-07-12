@@ -1071,7 +1071,7 @@ function TaskFormPage({ task, onClose }: {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="例如：每日代码审查"
-                  size="large"
+                  size="middle"
                 />
               </div>
 
@@ -1094,7 +1094,7 @@ function TaskFormPage({ task, onClose }: {
                     value={tags}
                     onChange={(v) => setTags(v as string[])}
                     placeholder="输入后回车添加"
-                    size="large"
+                    size="middle"
                   />
                 </div>
                 <div className="st-form-field st-form-field--half">
@@ -1170,7 +1170,7 @@ function TaskFormPage({ task, onClose }: {
                     max={86400}
                     suffix="秒"
                     style={{ flex: 1 }}
-                    size="large"
+                    size="middle"
                   />
                   <span className="st-interval-hint">
                     {intervalSeconds < 60 ? `每 ${intervalSeconds} 秒`
@@ -1209,7 +1209,7 @@ function TaskFormPage({ task, onClose }: {
                   value={cronExpression}
                   onChange={(e) => setCronExpression(e.target.value)}
                   placeholder="0 */2 * * *"
-                  size="large"
+                  size="middle"
                 />
                 <div className="st-quick-intervals">
                   {[
@@ -1239,7 +1239,7 @@ function TaskFormPage({ task, onClose }: {
                   type="datetime-local"
                   value={runAt}
                   onChange={(e) => setRunAt(e.target.value)}
-                  size="large"
+                  size="middle"
                 />
               </div>
             )}
@@ -1272,7 +1272,7 @@ function TaskFormPage({ task, onClose }: {
                     (option?.props?.children ?? '').toLowerCase().includes(input.toLowerCase())
                   }
                   options={agentOptions}
-                  size="large"
+                  size="middle"
                   notFoundContent="暂无可用 Agent"
                 />
               </div>
@@ -1291,7 +1291,7 @@ function TaskFormPage({ task, onClose }: {
                     (option?.props?.children ?? '').toLowerCase().includes(input.toLowerCase())
                   }
                   options={teamOptions}
-                  size="large"
+                  size="middle"
                   notFoundContent="暂无可用团队"
                 />
               </div>
@@ -1313,7 +1313,7 @@ function TaskFormPage({ task, onClose }: {
                     (option?.props?.children ?? '').toLowerCase().includes(input.toLowerCase())
                   }
                   options={modelOptions}
-                  size="large"
+                  size="middle"
                   notFoundContent="暂无可用模型"
                 />
               </div>
@@ -1332,7 +1332,7 @@ function TaskFormPage({ task, onClose }: {
                     (option?.props?.children ?? '').toLowerCase().includes(input.toLowerCase())
                   }
                   options={workspaceOptions}
-                  size="large"
+                  size="middle"
                   notFoundContent="暂无可用工作区"
                 />
               </div>
@@ -1379,7 +1379,7 @@ function TaskFormPage({ task, onClose }: {
                   max={7200}
                   suffix="秒"
                   style={{ width: '100%' }}
-                  size="large"
+                  size="middle"
                 />
               </div>
               <div className="st-form-field st-form-field--third">
@@ -1391,7 +1391,7 @@ function TaskFormPage({ task, onClose }: {
                   max={10}
                   suffix="次"
                   style={{ width: '100%' }}
-                  size="large"
+                  size="middle"
                 />
               </div>
               <div className="st-form-field st-form-field--third">
@@ -1406,7 +1406,7 @@ function TaskFormPage({ task, onClose }: {
                     { label: 'Auto（自动批准）', value: 'auto' },
                     { label: 'Bypass（完全放行）', value: 'bypass' },
                   ]}
-                  size="large"
+                  size="middle"
                   style={{ width: '100%' }}
                 />
               </div>

@@ -162,7 +162,7 @@ export function PlatformQuotaGuideModal({
             {!auth.isAuthenticated ? (
               <Button
                 type="primary"
-                size="large"
+                size="middle"
                 onClick={onOpenAccount}
                 icon={<Icons.User size={17} />}
               >
@@ -171,7 +171,7 @@ export function PlatformQuotaGuideModal({
             ) : primaryPurchaseLink ? (
               <Button
                 type="primary"
-                size="large"
+                size="middle"
                 onClick={() => void openPurchaseLink(primaryPurchaseLink)}
                 icon={<Icons.ExternalLink size={17} />}
               >
@@ -180,7 +180,7 @@ export function PlatformQuotaGuideModal({
             ) : (
               <Button
                 type="primary"
-                size="large"
+                size="middle"
                 onClick={onOpenAccount}
                 icon={<Icons.User size={17} />}
               >
@@ -189,7 +189,7 @@ export function PlatformQuotaGuideModal({
             )}
             {auth.isAuthenticated ? (
               <Button
-                size="large"
+                size="middle"
                 onClick={() => setRedeemOpen((value) => !value)}
                 icon={<Icons.Edit size={17} />}
               >
@@ -198,7 +198,7 @@ export function PlatformQuotaGuideModal({
             ) : null}
             <Button
               type="text"
-              size="large"
+              size="middle"
               onClick={onConfigureProviders}
               icon={<Icons.Server size={17} />}
             >

@@ -402,7 +402,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'session.deleteFailed': 'Failed to delete session',
     'session.clearAll': 'Clear all',
     'session.clearAllConfirm': 'Clear',
-    'session.clearAllDesc': 'This will delete all {{count}} sessions in this group. Active sessions are skipped.',
+    'session.clearAllDesc':
+      'This will delete all {{count}} sessions in this group. Active sessions are skipped.',
     'session.clearAllNone': 'No clearable sessions (all active)',
     'session.clearAllDone': 'Cleared {{count}} sessions',
     'session.clearAllSkipped': 'Skipped {{count}} active session(s)',
@@ -590,14 +591,13 @@ export function normalizeSupportedLanguage(language: string | undefined): Suppor
 
 export function getHostLanguage(): SupportedLanguage {
   if (typeof window === 'undefined') return DEFAULT_LANGUAGE
-  const hostLanguages = [
-    ...(window.navigator?.languages ?? []),
-    window.navigator?.language ?? '',
-  ]
+  const hostLanguages = [...(window.navigator?.languages ?? []), window.navigator?.language ?? '']
   const supportedLanguages = hostLanguages
     .map((language) => normalizeSupportedLanguage(language))
     .filter((language): language is SupportedLanguage => language != null)
-  return supportedLanguages.includes('zh-CN') ? 'zh-CN' : supportedLanguages[0] ?? DEFAULT_LANGUAGE
+  return supportedLanguages.includes('zh-CN')
+    ? 'zh-CN'
+    : (supportedLanguages[0] ?? DEFAULT_LANGUAGE)
 }
 
 export function resolveSupportedLanguage(language: string | undefined): SupportedLanguage {
