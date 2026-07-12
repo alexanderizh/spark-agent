@@ -3014,37 +3014,6 @@ export function CanvasWorkspaceView({
     [closeCanvasFloatPanels],
   )
 
-  // 工作台「添加/更换视频」：文件选择器 → 复制进项目 → 写回当前工作台节点的 data.url
-  const handleAddVideoToWorkbench = useCallback(
-    async () => {
-      if (!videoWorkbenchNode || !projectId) return
-      const picked = await window.spark.invoke('dialog:open-file', {
-        title: '选择视频',
-        multiple: false,
-        filters: [{ name: '视频', extensions: ['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv'] }],
-      })
-      if (picked.canceled || !picked.filePath) return
-      const projectRootPath = snapshot?.project.rootPath
-      const copyResult = await window.spark.invoke('canvas:asset:copy-to-project', {
-        projectId,
-        ...(projectRootPath ? { projectRootPath } : {}),
-        sourcePath: picked.filePath,
-        type: 'video',
-      })
-      if (copyResult.error || !copyResult.filePath) {
-        message.error('视频导入失败')
-        return
-      }
-      const fileUrl = encodeToSafeFileUrl(copyResult.filePath as string)
-      await updateNodeData(videoWorkbenchNode.id, {
-        url: fileUrl,
-        videoWorkbench: createDefaultVideoWorkbenchData() as unknown as Record<string, unknown>,
-      })
-      message.success('视频已导入工作台')
-    },
-    [videoWorkbenchNode, projectId, snapshot?.project.rootPath, updateNodeData],
-  )
-
   // 360 全景产物节点的「全景预览」入口（由右键菜单触发，与「编辑」解耦）。
   const handlePreviewPanorama = useCallback(
     (nodeId: string) => {
@@ -4056,6 +4025,37 @@ export function CanvasWorkspaceView({
       })
     },
     [videoWorkbenchNode, updateNodeData],
+  )
+
+  // 工作台「添加/更换视频」：文件选择器 → 复制进项目 → 写回当前工作台节点的 data.url
+  const handleAddVideoToWorkbench = useCallback(
+    async () => {
+      if (!videoWorkbenchNode || !projectId) return
+      const picked = await window.spark.invoke('dialog:open-file', {
+        title: '选择视频',
+        multiple: false,
+        filters: [{ name: '视频', extensions: ['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv'] }],
+      })
+      if (picked.canceled || !picked.filePath) return
+      const projectRootPath = snapshot?.project.rootPath
+      const copyResult = await window.spark.invoke('canvas:asset:copy-to-project', {
+        projectId,
+        ...(projectRootPath ? { projectRootPath } : {}),
+        sourcePath: picked.filePath,
+        type: 'video',
+      })
+      if (copyResult.error || !copyResult.filePath) {
+        message.error('视频导入失败')
+        return
+      }
+      const fileUrl = encodeToSafeFileUrl(copyResult.filePath as string)
+      await updateNodeData(videoWorkbenchNode.id, {
+        url: fileUrl,
+        videoWorkbench: createDefaultVideoWorkbenchData() as unknown as Record<string, unknown>,
+      })
+      message.success('视频已导入工作台')
+    },
+    [videoWorkbenchNode, projectId, snapshot?.project.rootPath, updateNodeData],
   )
 
   /** 把关键帧导出为画布图片节点（批量），连线到源视频工作台节点 */
