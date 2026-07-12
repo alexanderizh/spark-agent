@@ -1,4 +1,6 @@
 import * as keystore from '@spark/shared/keystore'
+import { SettingsRepository } from '@spark/storage'
+import { getDatabase } from '../../db.js'
 
 export interface PendingPlatformPayment {
   planId: number
@@ -8,7 +10,14 @@ export interface PendingPlatformPayment {
 }
 
 export class PlatformCredentialStore {
-  constructor(private readonly sparkUserId: string) {}
+  private readonly settings: SettingsRepository
+
+  constructor(
+    private readonly sparkUserId: string,
+    settings?: SettingsRepository,
+  ) {
+    this.settings = settings ?? new SettingsRepository(getDatabase())
+  }
 
   async getAccessToken(): Promise<string | null> {
     return keystore.getSecret(this.ref('access-token'))
@@ -27,28 +36,40 @@ export class PlatformCredentialStore {
   }
 
   async getNewApiUserId(): Promise<number | null> {
-    const value = await keystore.getSecret(this.ref('user-id'))
-    const parsed = value ? Number(value) : NaN
+    const parsed = Number(this.settings.get(this.category(), 'user-id'))
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null
   }
 
   async setNewApiUserId(value: number): Promise<void> {
-    await keystore.setSecret(this.ref('user-id'), String(value))
+    this.settings.set(this.category(), 'user-id', value)
   }
 
   async getBaseUrl(): Promise<string | null> {
-    return keystore.getSecret(this.ref('base-url'))
+    const value = this.settings.get(this.category(), 'base-url')
+    return typeof value === 'string' ? value : null
   }
 
   async setBaseUrl(value: string): Promise<void> {
-    await keystore.setSecret(this.ref('base-url'), value)
+    this.settings.set(this.category(), 'base-url', value)
   }
 
   async getPendingPayment(): Promise<PendingPlatformPayment | null> {
-    const value = await keystore.getSecret(this.ref('pending-payment'))
-    if (!value) return null
+    let value = this.settings.get(this.category(), 'pending-payment')
+    if (!value) {
+      const legacy = await keystore.getSecret(this.ref('pending-payment'))
+      if (legacy) {
+        try {
+          value = JSON.parse(legacy) as unknown
+          this.settings.set(this.category(), 'pending-payment', value)
+          await keystore.deleteSecret(this.ref('pending-payment'))
+        } catch {
+          return null
+        }
+      }
+    }
+    if (!value || typeof value !== 'object') return null
     try {
-      const parsed = JSON.parse(value) as Record<string, unknown>
+      const parsed = value as Record<string, unknown>
       const planId = Number(parsed.planId)
       const createdAt = Number(parsed.createdAt)
       if (!Number.isInteger(planId) || planId <= 0 || !Number.isFinite(createdAt)) return null
@@ -70,11 +91,11 @@ export class PlatformCredentialStore {
   }
 
   async setPendingPayment(value: PendingPlatformPayment): Promise<void> {
-    await keystore.setSecret(this.ref('pending-payment'), JSON.stringify(value))
+    this.settings.set(this.category(), 'pending-payment', value)
   }
 
   async clearPendingPayment(): Promise<void> {
-    await keystore.deleteSecret(this.ref('pending-payment'))
+    this.settings.delete(this.category(), 'pending-payment')
   }
 
   async clearSession(): Promise<void> {
@@ -85,10 +106,8 @@ export class PlatformCredentialStore {
     await Promise.all([
       keystore.deleteSecret(this.ref('access-token')),
       keystore.deleteSecret(this.ref('api-key')),
-      keystore.deleteSecret(this.ref('user-id')),
-      keystore.deleteSecret(this.ref('base-url')),
-      keystore.deleteSecret(this.ref('pending-payment')),
     ])
+    this.settings.deleteByCategory(this.category())
   }
 
   apiKeyRef(): keystore.KeystoreRef {
@@ -97,5 +116,9 @@ export class PlatformCredentialStore {
 
   private ref(kind: string): keystore.KeystoreRef {
     return keystore.makeKeystoreRef('newapi', `spark-user-${this.sparkUserId}-${kind}`)
+  }
+
+  private category(): string {
+    return `platform-model:${this.sparkUserId}`
   }
 }

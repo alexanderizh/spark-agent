@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   currentUserId: 'spark-user-1' as string | null,
   secrets: new Map<string, string>(),
+  settings: new Map<string, unknown>(),
   recoveryHandler: null as null | ((request: {
     ownerUserId: string
     currentSecret: string | null
@@ -46,6 +47,18 @@ vi.mock('@spark/agent-runtime', () => ({
 
 vi.mock('@spark/storage', () => ({
   ProviderProfileRepository: class {},
+  SettingsRepository: class {
+    get(category: string, key: string) { return mocks.settings.get(`${category}:${key}`) ?? null }
+    set(category: string, key: string, value: unknown) { mocks.settings.set(`${category}:${key}`, value) }
+    delete(category: string, key: string) { return mocks.settings.delete(`${category}:${key}`) }
+    deleteByCategory(category: string) {
+      let count = 0
+      for (const key of mocks.settings.keys()) {
+        if (key.startsWith(`${category}:`)) { mocks.settings.delete(key); count++ }
+      }
+      return count
+    }
+  },
 }))
 
 vi.mock('electron', () => ({
@@ -95,7 +108,13 @@ function seedReadyCredentials(overrides: Partial<Record<'base-url' | 'user-id' |
     'api-key': 'sk-current',
     ...overrides,
   }
-  for (const [kind, value] of Object.entries(values)) mocks.secrets.set(ref(kind), value)
+  for (const [kind, value] of Object.entries(values)) {
+    if (kind === 'base-url' || kind === 'user-id') {
+      mocks.settings.set(`platform-model:spark-user-1:${kind}`, kind === 'user-id' ? Number(value) : value)
+    } else {
+      mocks.secrets.set(ref(kind), value)
+    }
+  }
 }
 
 describe('PlatformModelService delivery boundaries', () => {
@@ -103,6 +122,7 @@ describe('PlatformModelService delivery boundaries', () => {
     vi.clearAllMocks()
     mocks.currentUserId = 'spark-user-1'
     mocks.secrets.clear()
+    mocks.settings.clear()
     mocks.recoveryHandler = null
     mocks.platformPost.mockResolvedValue({
       bound: true,
@@ -211,7 +231,7 @@ describe('PlatformModelService delivery boundaries', () => {
   it('restores a pending browser payment after restart and clears it only after activation', async () => {
     seedReadyCredentials()
     const pending = { planId: 8, createdAt: 12345 }
-    mocks.secrets.set(ref('pending-payment'), JSON.stringify(pending))
+    mocks.settings.set('platform-model:spark-user-1:pending-payment', pending)
     mocks.getSubscription.mockResolvedValue({
       id: 9,
       planId: 8,
@@ -228,7 +248,7 @@ describe('PlatformModelService delivery boundaries', () => {
     await expect(service.bootstrap()).resolves.toMatchObject({ pendingPayment: pending })
     await expect(service.getSubscription()).resolves.toMatchObject({ planId: 8, status: 'active' })
 
-    expect(mocks.secrets.has(ref('pending-payment'))).toBe(false)
+    expect(mocks.settings.has('platform-model:spark-user-1:pending-payment')).toBe(false)
     expect(service.getStatus().pendingPayment).toBeUndefined()
   })
 
@@ -240,7 +260,7 @@ describe('PlatformModelService delivery boundaries', () => {
       baselineSubscriptionId: 9,
       baselineExpiresAt: 200,
     }
-    mocks.secrets.set(ref('pending-payment'), JSON.stringify(pending))
+    mocks.settings.set('platform-model:spark-user-1:pending-payment', pending)
     const unchanged = {
       id: 9,
       planId: 8,

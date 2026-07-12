@@ -13,7 +13,7 @@ Spark Agent 需要代表用户存储多个 AI Provider 的 API Key（Anthropic�
 
 ## 决策
 
-**使用操作系统原生 Keychain 存储所有 API Key，SQLite 中只存储 Keychain 引用 ID（非明文 Key）。**
+**使用操作系统原生安全存储保存所有敏感凭据；macOS 将凭据集中到单个 Keychain vault，SQLite 只存引用和非敏感运行状态。**
 
 ### 实现方案
 
@@ -28,7 +28,8 @@ Spark Agent 需要代表用户存储多个 AI Provider 的 API Key（Anthropic�
 ```
 用户输入 API Key
       ↓
-keytar.setPassword(service, account, key)
+macOS: keytar.setPassword(service, "credential-vault-v1", vaultJson)
+Windows/Linux: keytar.setPassword(service, account, key)
       ↓
 OS Keychain 加密存储
       ↓
@@ -39,7 +40,8 @@ SQLite provider_profiles.keychain_ref = "anthropic-default"
 
 读取时：
 ```
-keytar.getPassword(service, account)  →  返回明文 Key（仅在内存中使用）
+macOS: 读取一次 credential-vault-v1 → 在主进程内存中按 ref 解析
+Windows/Linux: keytar.getPassword(service, account) → 返回明文 Key（仅在内存中使用）
 ```
 
 ### macOS Keychain 授权弹窗控制
@@ -48,8 +50,13 @@ macOS 会在应用读取 Keychain 项时校验访问方身份。开发包、签�
 
 为降低用户干扰：
 
-- Provider API Key 读取后会缓存在 Electron 主进程内存中；同一次应用运行期间，新会话、媒体能力解析、健康检查等重复读取不会再次访问 Keychain。
-- Provider API Key 的持久化来源仍然是 OS Keychain，SQLite 只保存 `keystore_ref`。
+- 安装版首次读取前必须由应用主动解释：平台不保存用户 API Key、密钥仅存在本机安全存储，并提示用户在系统窗口选择“始终允许”。
+- 用户拒绝或系统安全存储暂时不可用时，启动预读降级为凭据不可用并记录日志，不得阻断 Spark 账号登录；用户可稍后在使用相关 Provider 时重新授权。
+- macOS 的 Provider、平台模型和连接器敏感值集中存入一个 `credential-vault-v1` 条目；启动时一次读取并缓存，避免按 Provider 重复弹窗。
+- 旧版独立 Keychain 条目在启动预读时迁入 vault；迁移完成后不再读取旧条目。
+- Windows Credential Manager 对单条凭据大小有限制，继续保持每个 ref 一个条目；Windows 正常读取不会出现 macOS 式逐条密码授权窗口。
+- `base-url`、平台用户 ID、待支付恢复状态等非敏感字段保存在 SQLite `app_settings`，不占用 Keychain 条目。
+- SQLite 的 `provider_profiles.keystore_ref` 仍只保存引用，不保存 API Key 明文。
 - Cloud Auth 登录态保留 `safeStorage` 加密备份；启动时优先读取加密备份，备份缺失时再访问 Keychain，用于减少应用启动阶段的钥匙串授权请求。
 
 ### keytar 的原生模块处理
@@ -72,7 +79,7 @@ CI 流水线中需要：
 
 ## 被拒绝的方案
 
-### 方案 A：加密存储在 SQLite
+### 方案 A：将敏感值加密存储在 SQLite
 - 需要自实现加密，密钥管理本身又是个鸡生蛋问题
 - 不如 OS Keychain 安全
 - **拒绝理由**：引入额外复杂度，安全性不如 OS 原生方案
@@ -88,7 +95,7 @@ CI 流水线中需要：
 
 ## 约束
 
-- `packages/shared/src/keystore.ts` 是唯一合法的 keytar 调用入口，其他模块不得直接 import keytar
+- `packages/shared/src/keystore/index.ts` 是 Provider/连接器凭据唯一合法的 keytar 调用入口，其他模块不得绕过 vault 直接增加条目
 - 所有包含 API Key 的字段在日志、错误信息中必须做掩码处理（只显示前4位）
 - `.gitignore` 必须排除 `.env`、`*.key`、`secrets.json` 等敏感文件
 
