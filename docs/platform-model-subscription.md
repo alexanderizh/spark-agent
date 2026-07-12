@@ -17,6 +17,9 @@ Spark 平台模型以受管 `ProviderProfile` 接入现有 Provider 体系，与
 - 账号中心从 edu-server 动态读取已启用的购码渠道，渠道 URL 不写死在客户端；主进程只允许打开 `http/https` 地址。
 - 安装包注册 `spark-agent://redeem?code=...` 回跳协议。第三方卖码平台支持成功跳转时可拉起客户端自动核销；未登录时在当前进程暂存，登录后继续处理。
 - 退出 Spark 账号会清理受管凭据、禁用平台 Provider，并从所有可选 Provider 列表中隐藏凭据状态为 `unavailable` 的受管平台项。
+- 新手引导的 Spark 账号步骤内直接提供登录/注册，不再让未登录用户停留在禁用按钮；登录后检查平台通用额度，有余额则继续创建助手，余额为零则打开购买兑换引导。
+- 全局平台额度引导使用海报式弹窗，统一提供余额刷新、动态购码渠道、兑换码输入和第三方模型配置出口。登录后零余额提示有 24 小时冷却，避免重复打扰。
+- 平台受管 Provider 的对话若返回 Claude SDK billing error，或明确包含 402 / insufficient quota / 余额不足信号，渲染层会识别为平台额度不足并自动打开引导；第三方 Provider 的账单错误不拦截。
 - 受管 Provider 在主进程禁止编辑、删除、Key 回显及导入导出覆盖，渲染端显示“平台官方”徽章。
 - 受管 Provider 现在以 `anthropic` 类型落库，官方文本模型默认锁定 `claude-sdk` 适配器；不再按 Codex OpenAI `wire_api=chat` 生成配置。
 - 受管 Provider 的 Anthropic `apiEndpoint` 保存平台根地址，由 Claude SDK 拼接 `/v1/messages`；平台刷新会自动修复旧版误存的 `/v1` 后缀。
