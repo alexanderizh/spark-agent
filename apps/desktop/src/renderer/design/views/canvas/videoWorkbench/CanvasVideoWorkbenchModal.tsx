@@ -111,6 +111,12 @@ export function CanvasVideoWorkbenchModal({
   const videoRef = useRef<HTMLVideoElement>(null)
   /** probe in-flight 哨兵，防止自动 probe 重复触发 */
   const probingRef = useRef(false)
+  /** probe 失败标记（无 ffmpeg / 路径问题），用于区分「探测中」和「探测失败」 */
+  const [probeFailed, setProbeFailed] = useState(false)
+  /** 是否正在播放 */
+  const [isPlaying, setIsPlaying] = useState(false)
+  /** video 元素的 duration（probe 失败时兜底用） */
+  const [videoMetaDuration, setVideoMetaDuration] = useState(0)
   /** 当前播放位置（秒），用于手动标记 */
   const [currentTime, setCurrentTime] = useState(0)
 
@@ -161,6 +167,7 @@ export function CanvasVideoWorkbenchModal({
       probingRef.current = true
       setBusy(true)
       setProgress(null)
+      setProbeFailed(false)
       try {
         const reqId = shortId()
         const res = await window.spark.invoke('video:probe', {
@@ -176,9 +183,14 @@ export function CanvasVideoWorkbenchModal({
             void onSave(next)
             return next
           })
+        } else {
+          // probe 返回失败（路径校验/ffmpeg 执行错误）—— 不阻塞，用 video 元素信息降级
+          console.warn('[video-workbench] probe failed:', res.error)
+          setProbeFailed(true)
         }
       } catch (err) {
-        message.error(`视频探测失败: ${err instanceof Error ? err.message : String(err)}`)
+        console.warn('[video-workbench] probe error:', err)
+        setProbeFailed(true)
       } finally {
         setBusy(false)
         probingRef.current = false
@@ -382,7 +394,7 @@ export function CanvasVideoWorkbenchModal({
 
   if (!open) return null
 
-  const duration = probe?.durationSec ?? 0
+  const duration = probe?.durationSec ?? videoMetaDuration ?? 0
 
   return (
     <div className="vwb-modal-overlay">
@@ -470,9 +482,14 @@ export function CanvasVideoWorkbenchModal({
                 <video
                   ref={videoRef}
                   src={sourceVideoUrl}
-                  controls
                   preload="metadata"
                   onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                  onLoadedMetadata={(e) => {
+                    const d = e.currentTarget.duration
+                    if (Number.isFinite(d) && d > 0) setVideoMetaDuration(d)
+                  }}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
                   className="vwb-video"
                 />
               ) : (
@@ -482,6 +499,66 @@ export function CanvasVideoWorkbenchModal({
                 </div>
               )}
             </div>
+
+            {/* 自定义播放控制条 */}
+            {sourceVideoUrl && (
+              <div className="vwb-player-controls">
+                <button
+                  className="vwb-player-btn"
+                  onClick={() => {
+                    const v = videoRef.current
+                    if (!v) return
+                    // 逐帧后退（1/fps，默认 1/30）
+                    const fps = probe?.fps ?? 30
+                    v.pause()
+                    v.currentTime = Math.max(0, v.currentTime - 1 / fps)
+                  }}
+                  title="上一帧"
+                >
+                  <Icons.ChevronLeft size={16} />
+                </button>
+                <button
+                  className="vwb-player-btn vwb-player-play"
+                  onClick={() => {
+                    const v = videoRef.current
+                    if (!v) return
+                    if (v.paused) void v.play()
+                    else v.pause()
+                  }}
+                  title={isPlaying ? '暂停' : '播放'}
+                >
+                  {isPlaying ? <Icons.Pause size={18} /> : <Icons.Play size={18} />}
+                </button>
+                <button
+                  className="vwb-player-btn"
+                  onClick={() => {
+                    const v = videoRef.current
+                    if (!v) return
+                    const fps = probe?.fps ?? 30
+                    v.pause()
+                    v.currentTime = Math.min(v.duration || 0, v.currentTime + 1 / fps)
+                  }}
+                  title="下一帧"
+                >
+                  <Icons.ChevronRight size={16} />
+                </button>
+                <span className="vwb-player-time">{formatTimestamp(currentTime)}</span>
+                <span className="vwb-player-divider">/</span>
+                <span className="vwb-player-duration">{formatTimestamp(duration)}</span>
+                <div className="vwb-player-spacer" />
+                <button
+                  className="vwb-player-btn"
+                  onClick={() => {
+                    const v = videoRef.current
+                    if (!v) return
+                    v.currentTime = 0
+                  }}
+                  title="回到开头"
+                >
+                  <Icons.RotateCcw size={14} />
+                </button>
+              </div>
+            )}
 
             {/* 专业视频轨道 */}
             <VideoTimeline
@@ -544,6 +621,9 @@ export function CanvasVideoWorkbenchModal({
                 probe={probe}
                 busy={busy}
                 progress={progress}
+                ffmpegReady={ffmpegReady}
+                probeFailed={probeFailed}
+                fallbackDuration={videoMetaDuration}
                 currentTime={currentTime}
                 onProcess={handleProcess}
                 onOutput={recordOutput}
