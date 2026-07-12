@@ -704,26 +704,11 @@
   background: var(--primary);
 }
 
+// 嵌入态：AuthGate variant="embed" 的样式全部在 Auth.less 内置，
+// 这里只补一层外边距，让登录区与引导页其它内容拉开呼吸距离。
 .onboarding-auth-embed {
-  margin: 0 0 4px;
-  padding-bottom: 4px;
-}
-
-.onboarding-auth-embed .auth-page {
-  min-height: 0;
-  padding: 0;
-}
-
-.onboarding-auth-embed .auth-shell {
-  max-width: none;
-}
-
-.onboarding-auth-embed .auth-card {
-  gap: 18px;
-  padding: 0 0 12px;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
+  margin: var(--pad-sm) 0 var(--pad-xs);
+  max-width: 460px;
 }
 
 .model-source-back {

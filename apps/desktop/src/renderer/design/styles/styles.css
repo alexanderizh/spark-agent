@@ -663,6 +663,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   width: 16px; height: 16px; flex-shrink: 0;
   color: var(--sidebar-text, var(--text));
 }
+
 .nav-item:hover .nav-icon { color: var(--sidebar-text, var(--text)); }
 .nav-item .nav-label {
   flex: 1;
@@ -671,7 +672,9 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   text-overflow: ellipsis;
   font-size: var(--font-base);
 }
-
+.settings-nav .nav-item .nav-label{
+  font-weight: 400;
+}
 /* "新建任务" was previously styled with a special trigger look; it now uses
    the standard .nav-item style shared with Workflows/Agents/Skills/Providers. */
 
@@ -1306,6 +1309,25 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
 /* macOS hiddenInset: traffic lights at x≈22, ~60px wide — keep content clear */
 .shell-titlebar-darwin {
   padding-left: 90px;
+}
+/*
+ * Full-bleed pages still use the shared titlebar as their drag target. Give
+ * that target the same surface as the page below it instead of making it
+ * transparent: transparent titlebars expose the native vibrancy/background
+ * and recreate the seam on macOS.
+ */
+.app.titlebar-surface-settings .shell-titlebar,
+.app.titlebar-surface-settings .win-titlebar {
+  background: linear-gradient(to right, var(--bg-sunken) 0 216px, var(--bg) 216px 100%);
+}
+.app.titlebar-surface-auth .mac-window-drag-header,
+.app.titlebar-surface-auth .win-titlebar {
+  /* The 5:6 split matches .auth-flat. The brand-side gradient is deliberately
+     repeated here so the draggable strip reads as part of the login page. */
+  background:
+    radial-gradient(520px 380px at 18% 8%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 65%)
+      left / 45.4545% 100% no-repeat,
+    var(--bg);
 }
 /* Sidebar hidden: page-level drag strips are redundant; shell title bar covers it */
 .app.sidebar-hidden.platform-darwin .mac-window-drag-header,

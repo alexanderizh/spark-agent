@@ -1,885 +1,408 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Spark Agent · 登录注册扁平化重设计 v2</title>
+<title>Spark Agent · 登录注册（实际实现预览）</title>
 <style>
-/* =====================================================================
-   Tokens（对齐项目）
-   ===================================================================== */
+/* 项目主题令牌（对齐 styles.css 浅色默认主题） */
 :root {
-  --bg: #0d0d10; --bg-soft: #131318; --bg-sunken: #0a0a0d;
-  --panel: #16161b; --panel-elev: #1c1c22;
-  --border: #26262d; --border-strong: #34343c; --divider: #202027;
-  --hover: rgba(255,255,255,0.04); --active: rgba(255,255,255,0.07);
-  --text-strong: #fafafa; --text: #e4e4e7; --text-muted: #9ca3af; --text-faint: #6b7280;
   --primary: #6366f1; --primary-hover: #4f46e5; --primary-soft: rgba(99,102,241,0.12); --primary-fg: #ffffff;
-  --success: #22c55e; --warning: #f59e0b; --danger: #f87171; --danger-bg: rgba(248,113,113,0.14);
-  --font-sans: "SF Pro Text","SF Pro Display","HarmonyOS Sans SC","MiSans","PingFang SC","Hiragino Sans GB","Microsoft YaHei UI","Segoe UI",-apple-system,BlinkMacSystemFont,ui-sans-serif,system-ui,sans-serif;
-  --font-mono: ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
-  --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-full: 9999px;
-  --tf: 140ms cubic-bezier(0.4,0,0.2,1); --tn: 220ms cubic-bezier(0.16,1,0.3,1);
+  --r-xs:4px; --r-sm:6px; --r-md:8px; --r-lg:12px; --r-xl:16px;
+  --pad-xs:6px; --pad-sm:8px; --pad-md:12px; --pad-lg:16px; --pad-xl:20px;
+  --font-xs:11px; --font-sm:12px; --font-base:13px; --font-lg:14px;
+  --font-sans: "Geist","SF Pro Text","SF Pro Display","HarmonyOS Sans SC","MiSans","PingFang SC","Hiragino Sans GB","Microsoft YaHei UI","Segoe UI",-apple-system,BlinkMacSystemFont,ui-sans-serif,system-ui,sans-serif;
+  --font-mono: "SFMono-Regular","Cascadia Code","JetBrains Mono","Fira Code",Consolas,"Liberation Mono",Menlo,ui-monospace,monospace;
+  --shadow-xs:0 0 2px rgba(0,0,0,0.05); --shadow-sm:0 0 0 1px rgba(0,0,0,0.03),0 2px 8px rgba(0,0,0,0.05); --shadow-md:0 0 0 1px rgba(0,0,0,0.05),0 4px 16px rgba(0,0,0,0.08); --shadow-lg:0 0 0 1px rgba(0,0,0,0.07),0 8px 32px rgba(0,0,0,0.12);
+  --success:#10b981; --danger:#ef4444; --info:#3b82f6;
 }
 [data-theme='light'] {
-  --bg: #fdfdfc; --bg-soft: #fefefe; --bg-sunken: #f7f6f4;
-  --panel: #ffffff; --panel-elev: #ffffff;
-  --border: #f1efea; --border-strong: #d7d2c9; --divider: #efede8;
-  --hover: rgba(36,32,27,0.045); --active: rgba(36,32,27,0.07);
-  --text-strong: #11100e; --text: #20201d; --text-muted: #6f6a61; --text-faint: #9b9489;
-  --primary-soft: rgba(99,102,241,0.10); --danger-bg: rgba(248,113,113,0.08);
+  --bg:#fff; --bg-soft:#fefefe; --bg-sunken:#f7f6f4;
+  --panel:#ffffff; --panel-elev:#ffffff;
+  --hover:rgba(36,32,27,0.045); --active:rgba(36,32,27,0.07);
+  --border:#f6f3ec; --border-strong:#d7d2c9; --divider:#efede8;
+  --text:#23231f; --text-strong:#11100e; --text-muted:#b2a997; --text-faint:#9b9489; --text-inverse:#ffffff;
+}
+[data-theme='dark'] {
+  --bg:#0d0d10; --bg-soft:#131318; --bg-sunken:#0a0a0d;
+  --panel:#16161b; --panel-elev:#1c1c22;
+  --hover:rgba(255,255,255,0.04); --active:rgba(255,255,255,0.07);
+  --border:#26262d; --border-strong:#34343c; --divider:#202027;
+  --text:#e4e4e7; --text-strong:#fafafa; --text-muted:#9ca3af; --text-faint:#6b7280; --text-inverse:#09090b;
+  --shadow-sm:0 0 0 1px rgba(0,0,0,0.32),0 2px 8px rgba(0,0,0,0.42); --shadow-lg:0 0 0 1px rgba(0,0,0,0.36),0 8px 32px rgba(0,0,0,0.6);
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { font-family: var(--font-sans); background: #060608; color: var(--text); -webkit-font-smoothing: antialiased; }
+* { box-sizing:border-box; margin:0; padding:0; }
+html, body { font-family:var(--font-sans); background:#060608; color:var(--text); -webkit-font-smoothing:antialiased; }
 
-/* =====================================================================
-   设计稿画板
-   ===================================================================== */
-.board {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 28px;
-  padding: 32px;
-}
-.scene {
-  position: relative;
-  min-height: 680px;
-  border-radius: 18px;
-  overflow: hidden;
-  background: var(--bg);
-  border: 1px solid rgba(255,255,255,0.05);
-}
-.scene-tag {
-  position: absolute; top: 14px; left: 14px; z-index: 50;
-  padding: 5px 11px; border-radius: var(--r-full);
-  background: color-mix(in srgb, var(--panel) 85%, transparent);
-  backdrop-filter: blur(10px); border: 1px solid var(--border);
-  font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em;
-  color: var(--text-muted); text-transform: uppercase;
-}
-.scene-tag em { font-style: normal; color: var(--primary); margin-left: 5px; }
+.board { display:grid; grid-template-columns:1fr 1fr; gap:24px; padding:24px; }
+.scene { position:relative; height:680px; border-radius:12px; overflow:hidden; background:var(--bg); border:1px solid rgba(255,255,255,0.06); }
+[data-theme='dark'] .scene { border-color:rgba(255,255,255,0.05); }
+.scene-tag { position:absolute; top:12px; left:12px; z-index:50; padding:4px 10px; border-radius:9999px; background:color-mix(in srgb, var(--panel) 85%, transparent); backdrop-filter:blur(10px); border:1px solid var(--border); font-size:10px; font-weight:700; letter-spacing:0.05em; color:var(--text-muted); text-transform:uppercase; }
+.scene-tag em { font-style:normal; color:var(--primary); margin-left:4px; }
 
-/* =====================================================================
-   v2 核心：扁平化横向布局
-   - 左侧 42% 品牌叙事（大字 + 价值点 + 状态卡）
-   - 右侧 58% 表单（横向并排字段，压缩层级）
-   - 整个区域只有 2 层：背景叙事层 + 表单层
-   ===================================================================== */
-.auth-flat {
-  position: relative;
-  width: 100%; height: 100%;
-  display: grid;
-  grid-template-columns: 42% 58%;
-  min-height: 680px;
-}
+/* ===== AuthGate：页面即全容器，无卡片 ===== */
+.auth-page { width:100%; height:100%; display:flex; align-items:stretch; justify-content:stretch; }
+.auth-flat { display:grid; grid-template-columns:5fr 6fr; width:100%; height:100%; }
 
-/* ── 左侧品牌叙事区 ─────────────────────────────────────────── */
-.brand-side {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 40px 36px 32px;
-  overflow: hidden;
-  background:
-    radial-gradient(480px 360px at 20% 10%, color-mix(in srgb, var(--primary) 22%, transparent), transparent 65%);
+/* 左侧品牌区 */
+.auth-brand-side {
+  position:relative; display:flex; flex-direction:column; justify-content:space-between;
+  padding:var(--pad-xl) var(--pad-xl) var(--pad-lg);
+  overflow:hidden;
+  background:radial-gradient(520px 380px at 18% 8%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 65%), var(--bg-soft);
+  border-right:1px solid var(--border);
 }
-.brand-side::before {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--border) 30%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--border) 30%, transparent) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(ellipse 80% 60% at 30% 30%, black, transparent 75%);
-  opacity: 0.5;
+.auth-brand-side::before {
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background-image:linear-gradient(color-mix(in srgb, var(--border) 50%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--border) 50%, transparent) 1px, transparent 1px);
+  background-size:32px 32px;
+  mask-image:radial-gradient(ellipse 80% 60% at 30% 30%, black, transparent 75%);
+  opacity:0.6;
 }
+.auth-brand-mark { position:relative; z-index:1; display:flex; align-items:center; gap:var(--pad-sm); }
+.auth-brand-logo { width:28px; height:28px; border-radius:var(--r-sm); background:linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 40%, var(--info))); display:grid; place-items:center; color:#fff; }
+.auth-brand-logo svg { width:18px; height:18px; }
+.auth-brand-name { font-size:var(--font-lg); font-weight:700; color:var(--text-strong); letter-spacing:-0.01em; }
+.auth-brand-headline { position:relative; z-index:1; margin-top:auto; }
+.auth-brand-eyebrow { display:inline-flex; align-items:center; gap:var(--pad-sm); font-size:var(--font-xs); font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:var(--primary); margin-bottom:var(--pad-md); }
+.auth-brand-eyebrow-line { width:16px; height:1px; background:var(--primary); }
+.auth-brand-h { margin:0 0 var(--pad-sm); font-size:28px; font-weight:700; line-height:1.1; letter-spacing:-0.02em; color:var(--text-strong); }
+.auth-brand-accent { background:linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 50%, var(--info))); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.auth-brand-sub { margin:0; font-size:var(--font-base); line-height:1.6; color:var(--text-muted); max-width:32ch; }
+.auth-brand-features { display:flex; flex-direction:column; margin-top:var(--pad-xl); border-top:1px solid var(--border); }
+.auth-brand-feat { display:flex; align-items:center; gap:var(--pad-md); padding:var(--pad-md) 0; border-bottom:1px solid var(--border); }
+.auth-brand-feat > svg { width:18px; height:18px; color:var(--text-muted); flex-shrink:0; }
+.auth-brand-feat-text { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.auth-brand-feat-text strong { font-weight:600; color:var(--text-strong); font-size:var(--font-base); line-height:1.3; }
+.auth-brand-feat-text span { color:var(--text-muted); font-size:var(--font-sm); line-height:1.3; }
+.auth-brand-foot { position:relative; z-index:1; display:flex; align-items:center; gap:var(--pad-sm); margin-top:var(--pad-lg); font-size:var(--font-xs); color:var(--text-faint); }
+.auth-brand-dot { width:6px; height:6px; border-radius:50%; background:var(--success); box-shadow:0 0 0 3px color-mix(in srgb, var(--success) 20%, transparent); }
 
-.brand-mark {
-  position: relative; z-index: 1;
-  display: flex; align-items: center; gap: 11px;
-}
-.brand-logo {
-  width: 36px; height: 36px; border-radius: 9px;
-  display: grid; place-items: center;
-  background: linear-gradient(135deg, var(--primary), #818cf8);
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--primary) 45%, transparent), inset 0 1px 0 rgba(255,255,255,0.4);
-  color: #fff;
-}
-.brand-logo svg { width: 20px; height: 20px; }
-.brand-name {
-  font-size: 15px; font-weight: 700; color: var(--text-strong);
-  letter-spacing: -0.01em;
-}
+/* 右侧表单区 */
+.auth-form-side { position:relative; display:flex; flex-direction:column; padding:var(--pad-xl) var(--pad-xl) var(--pad-lg); background:var(--bg); min-width:0; }
+.auth-mode-switch { position:absolute; top:var(--pad-lg); right:var(--pad-xl); display:inline-flex; padding:3px; border-radius:9999px; background:var(--bg-sunken); border:1px solid var(--border); z-index:2; }
+.auth-mode-switch button { padding:var(--pad-xs) var(--pad-md); border:0; background:transparent; font:inherit; font-size:var(--font-sm); font-weight:600; color:var(--text-muted); border-radius:9999px; cursor:pointer; transition:color 120ms ease, background 120ms ease; }
+.auth-mode-switch button:hover { color:var(--text-strong); }
+.auth-mode-switch button.active { background:var(--panel-elev); color:var(--text-strong); box-shadow:var(--shadow-sm); }
+.auth-form-content { flex:1; min-height:0; display:flex; align-items:center; }
+.auth-form { display:flex; flex-direction:column; width:100%; max-width:360px; margin:auto; }
+.auth-form-head { margin-bottom:var(--pad-lg); }
+.auth-form-title { margin:0 0 var(--pad-xs); font-size:18px; font-weight:700; color:var(--text-strong); letter-spacing:-0.015em; }
+.auth-form-greet { margin:0; font-size:var(--font-base); color:var(--text-muted); line-height:1.5; }
+.auth-methods { display:flex; align-items:center; gap:var(--pad-xs); margin-bottom:var(--pad-xl); font-size:var(--font-sm); }
+.auth-methods-label { color:var(--text-faint); margin-right:var(--pad-xs); }
+.auth-method { padding:var(--pad-xs) var(--pad-md); border:0; background:transparent; font:inherit; font-size:var(--font-sm); font-weight:500; color:var(--text-muted); border-radius:var(--r-sm); cursor:pointer; transition:color 120ms ease, background 120ms ease; }
+.auth-method:hover:not(.active) { color:var(--text); background:var(--hover); }
+.auth-method.active { color:var(--primary); background:var(--primary-soft); font-weight:600; }
 
-.brand-headline {
-  position: relative; z-index: 1;
-  margin-top: auto;
-}
-.brand-eyebrow {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em;
-  text-transform: uppercase; color: var(--primary);
-  margin-bottom: 14px;
-}
-.brand-eyebrow::before {
-  content: ''; width: 16px; height: 1px; background: var(--primary);
-}
-.brand-h {
-  font-size: 38px; font-weight: 800; line-height: 1.05;
-  letter-spacing: -0.025em; color: var(--text-strong);
-  margin-bottom: 10px;
-}
-.brand-h .accent {
-  background: linear-gradient(135deg, var(--primary), #a5b4fc);
-  -webkit-background-clip: text; background-clip: text;
-  color: transparent;
-}
-.brand-sub {
-  font-size: 13.5px; line-height: 1.6; color: var(--text-muted);
-  max-width: 30ch;
-}
+/* 扁平底线输入 */
+.auth-form-body { display:flex; flex-direction:column; }
+.auth-field-row { margin-bottom:var(--pad-lg); }
+.auth-field-row--cols2 { display:grid; grid-template-columns:1fr 1fr; gap:var(--pad-lg); margin-bottom:var(--pad-lg); }
+.auth-input { position:relative; display:flex; align-items:center; padding:var(--pad-xs) 0 var(--pad-sm); border-bottom:1px solid var(--border-strong); transition:border-color 120ms ease; }
+.auth-input::after { content:''; position:absolute; left:0; bottom:-1px; width:100%; height:1px; background:var(--primary); transform:scaleX(0); transform-origin:left; transition:transform 200ms ease; }
+.auth-input:focus-within { border-bottom-color:transparent; }
+.auth-input:focus-within::after { transform:scaleX(1); }
+.auth-input.error { border-bottom-color:var(--danger); }
+.auth-input.error::after { background:var(--danger); transform:scaleX(1); }
+.auth-input > svg { width:16px; height:16px; color:var(--text-faint); margin-right:var(--pad-sm); flex-shrink:0; transition:color 120ms ease; }
+.auth-input:focus-within > svg { color:var(--primary); }
+.auth-input input { flex:1; min-width:0; border:0; background:transparent; font:inherit; font-size:var(--font-base); color:var(--text-strong); outline:none; }
+.auth-input input::placeholder { color:var(--text-faint); }
+.auth-input .trail { display:inline-flex; align-items:center; justify-content:center; border:0; background:transparent; color:var(--text-faint); cursor:pointer; font:inherit; font-size:var(--font-sm); font-weight:600; padding:var(--pad-xs) var(--pad-sm); border-radius:var(--r-sm); transition:color 120ms ease, background 120ms ease; flex-shrink:0; }
+.auth-input .trail:hover { color:var(--primary); background:var(--primary-soft); }
+.auth-input .trail.send { color:var(--primary); min-width:48px; }
+.auth-input .trail.disabled { color:var(--text-faint); cursor:not-allowed; background:transparent; }
+.captcha-thumb { height:28px; padding:0 var(--pad-sm); border-radius:var(--r-sm); background:repeating-linear-gradient(45deg, color-mix(in srgb, var(--primary) 22%, var(--panel)) 0 5px, color-mix(in srgb, var(--primary) 10%, var(--panel)) 5px 10px); display:inline-flex; align-items:center; font-family:var(--font-mono); font-size:var(--font-base); font-weight:700; letter-spacing:0.12em; color:var(--text-strong); cursor:pointer; border:1px solid var(--divider); user-select:none; }
+.field-error { font-size:var(--font-xs); color:var(--danger); display:flex; align-items:center; gap:4px; margin-top:var(--pad-xs); }
+.field-error svg { width:12px; height:12px; }
+.sms-hint { margin:calc(-1 * var(--pad-md)) 0 var(--pad-md); padding:var(--pad-sm) var(--pad-md); font-size:var(--font-sm); line-height:1.55; color:var(--text); background:var(--primary-soft); border-radius:var(--r-md); border-left:2px solid var(--primary); }
 
-.brand-features {
-  position: relative; z-index: 1;
-  display: flex; flex-direction: column; gap: 0;
-  margin-top: 28px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-}
-.brand-feat {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  font-size: 13px; color: var(--text);
-}
-.brand-feat-icon {
-  width: 28px; height: 28px; border-radius: 7px;
-  display: grid; place-items: center; flex-shrink: 0;
-  background: var(--primary-soft); color: var(--primary);
-}
-.brand-feat-icon svg { width: 15px; height: 15px; }
-.brand-feat strong { font-weight: 600; color: var(--text-strong); }
-.brand-feat span { color: var(--text-muted); margin-left: auto; font-size: 11.5px; }
+/* 主按钮 */
+.submit-row { margin-top:var(--pad-xs); }
+.btn-submit { position:relative; display:inline-flex; align-items:center; justify-content:center; gap:var(--pad-sm); width:100%; height:40px; border:0; border-radius:var(--r-md); background:var(--primary); color:var(--primary-fg); font:inherit; font-size:var(--font-base); font-weight:600; box-shadow:var(--shadow-sm); cursor:pointer; transition:background 120ms ease, transform 120ms ease; }
+.btn-submit:hover { background:var(--primary-hover); }
+.btn-submit:active { transform:translateY(1px); }
+.btn-submit svg { width:16px; height:16px; }
+.btn-submit.loading { opacity:0.7; pointer-events:none; }
+.btn-submit .spinner { width:14px; height:14px; border:2px solid rgba(255,255,255,0.35); border-top-color:#fff; border-radius:50%; animation:spin 0.7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
 
-/* 底部状态条 */
-.brand-foot {
-  position: relative; z-index: 1;
-  display: flex; align-items: center; gap: 8px;
-  margin-top: 24px;
-  font-size: 11px; color: var(--text-faint);
-}
-.brand-foot .dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--success);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 20%, transparent);
-}
+/* 底部 */
+.foot-line { display:flex; align-items:center; justify-content:center; margin-top:var(--pad-lg); font-size:var(--font-sm); color:var(--text-muted); }
+.foot-line a { color:var(--primary); text-decoration:none; font-weight:500; }
+.foot-line a:hover { text-decoration:underline; }
+.tos-line { text-align:center; margin-top:var(--pad-md); font-size:var(--font-xs); color:var(--text-faint); }
+.tos-line a { color:var(--text-muted); text-decoration:none; }
+.auth-baseurl-badge { display:flex; align-items:center; gap:var(--pad-sm); margin-top:auto; padding-top:var(--pad-md); border-top:1px solid var(--divider); font-size:var(--font-xs); color:var(--text-muted); }
+.auth-baseurl-label { white-space:nowrap; opacity:0.7; }
+.auth-baseurl-value { flex:1; min-width:0; padding:var(--pad-xs) var(--pad-sm); border-radius:var(--r-sm); background:var(--bg-sunken); font-family:var(--font-mono); font-size:var(--font-xs); color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-/* ── 右侧表单区 ─────────────────────────────────────────────── */
-.form-side {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 48px 44px;
-  background: var(--bg);
-}
+.theme-toggle { position:absolute; bottom:12px; right:12px; z-index:50; padding:5px 11px; border-radius:9999px; background:color-mix(in srgb, var(--panel) 85%, transparent); backdrop-filter:blur(10px); border:1px solid var(--border); font-size:11px; font-weight:600; color:var(--text-muted); cursor:pointer; }
+.theme-toggle:hover { color:var(--text-strong); }
 
-/* 登录/注册切换：不是顶部 Tab，而是右上角极简切换器 */
-.mode-switch {
-  position: absolute;
-  top: 28px; right: 32px;
-  display: inline-flex;
-  padding: 3px;
-  border-radius: var(--r-full);
-  background: var(--bg-sunken);
-  border: 1px solid var(--border);
-}
-.mode-switch button {
-  padding: 6px 16px;
-  border: 0; background: transparent;
-  font: inherit; font-size: 12px; font-weight: 600;
-  color: var(--text-muted);
-  border-radius: var(--r-full);
-  cursor: pointer;
-  transition: color var(--tf), background var(--tf);
-}
-.mode-switch button.active {
-  background: var(--panel-elev);
-  color: var(--text-strong);
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.1));
-}
-
-.form-title {
-  font-size: 24px; font-weight: 700; color: var(--text-strong);
-  letter-spacing: -0.015em;
-  margin-bottom: 6px;
-}
-.form-greet {
-  font-size: 13px; color: var(--text-muted);
-  margin-bottom: 28px;
-}
-
-/* ── 扁平字段：无边框，仅底线，横排 ────────────────────────── */
-.field-row {
-  display: grid;
-  gap: 18px;
-  margin-bottom: 22px;
-}
-.field-row.cols-2 { grid-template-columns: 1fr 1fr; }
-.field-row.cols-3 { grid-template-columns: 1.2fr 0.9fr 1fr; }
-
-.field {
-  display: flex; flex-direction: column; gap: 8px;
-  position: relative;
-}
-.field-label {
-  font-size: 11.5px; font-weight: 600;
-  color: var(--text-muted);
-  letter-spacing: 0.02em;
-  display: flex; align-items: center; gap: 6px;
-}
-.field-label .opt { color: var(--text-faint); font-weight: 400; font-size: 10.5px; }
-
-/* 扁平输入：无边框无背景，只有底线 */
-.flat-input {
-  position: relative;
-  display: flex; align-items: center;
-  padding: 4px 0 10px;
-  border-bottom: 1.5px solid var(--border-strong);
-  transition: border-color var(--tf);
-}
-.flat-input::after {
-  content: ''; position: absolute; left: 0; bottom: -1.5px;
-  width: 100%; height: 1.5px;
-  background: var(--primary);
-  transform: scaleX(0); transform-origin: left;
-  transition: transform var(--tn);
-}
-.flat-input.focused { border-bottom-color: transparent; }
-.flat-input.focused::after { transform: scaleX(1); }
-.flat-input.error { border-bottom-color: var(--danger); }
-.flat-input.error::after { background: var(--danger); transform: scaleX(1); }
-
-.flat-input input {
-  flex: 1; min-width: 0;
-  border: 0; background: transparent;
-  font: inherit; font-size: 15px;
-  color: var(--text-strong);
-  outline: none;
-  padding: 0 8px 0 0;
-}
-.flat-input input::placeholder { color: var(--text-faint); }
-.flat-input .lead-icon {
-  width: 17px; height: 17px; color: var(--text-faint);
-  margin-right: 10px; flex-shrink: 0;
-  transition: color var(--tf);
-}
-.flat-input.focused .lead-icon { color: var(--primary); }
-.flat-input .trail {
-  display: inline-flex; align-items: center; gap: 4px;
-  border: 0; background: transparent;
-  color: var(--text-faint); cursor: pointer;
-  font: inherit; font-size: 12px; font-weight: 600;
-  padding: 4px 8px; border-radius: var(--r-sm);
-  transition: color var(--tf), background var(--tf);
-}
-.flat-input .trail:hover { color: var(--primary); background: var(--primary-soft); }
-.flat-input .trail.disabled { color: var(--text-faint); cursor: not-allowed; }
-.flat-input .trail svg { width: 15px; height: 15px; }
-
-/* 图片验证码：小型 inline */
-.captcha-inline {
-  height: 30px; padding: 0 10px;
-  border-radius: var(--r-sm);
-  background:
-    repeating-linear-gradient(45deg, color-mix(in srgb, var(--primary) 25%, var(--panel)) 0 5px, color-mix(in srgb, var(--primary) 12%, var(--panel)) 5px 10px);
-  display: inline-flex; align-items: center;
-  font-family: var(--font-mono); font-size: 13px; font-weight: 700;
-  letter-spacing: 0.15em; color: var(--text-strong);
-  cursor: pointer; border: 1px solid var(--divider);
-  user-select: none;
-}
-
-.field-error {
-  font-size: 11px; color: var(--danger);
-  display: flex; align-items: center; gap: 4px;
-  margin-top: -2px;
-}
-.field-error svg { width: 12px; height: 12px; }
-
-/* 登录方式切换：内联文字链，不是 Tab */
-.login-methods {
-  display: flex; align-items: center; gap: 4px;
-  margin-bottom: 24px;
-  font-size: 12px;
-}
-.login-methods .label { color: var(--text-faint); margin-right: 4px; }
-.login-methods a {
-  padding: 5px 11px;
-  border-radius: var(--r-sm);
-  color: var(--text-muted); text-decoration: none; font-weight: 500;
-  transition: color var(--tf), background var(--tf);
-}
-.login-methods a.active { color: var(--primary); background: var(--primary-soft); font-weight: 600; }
-.login-methods a:hover:not(.active) { color: var(--text); background: var(--hover); }
-
-/* 主按钮：胶囊，大号 */
-.submit-row {
-  display: flex; align-items: center; gap: 16px;
-  margin-top: 8px;
-}
-.btn-submit {
-  flex: 1;
-  position: relative;
-  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-  height: 52px;
-  border: 0; border-radius: var(--r-full);
-  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
-  color: var(--primary-fg);
-  font: inherit; font-size: 15px; font-weight: 600;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--primary) 38%, transparent), inset 0 1px 0 rgba(255,255,255,0.3);
-  transition: transform var(--tf), box-shadow var(--tf), filter var(--tf);
-}
-.btn-submit:hover { filter: brightness(1.08); box-shadow: 0 12px 32px color-mix(in srgb, var(--primary) 50%, transparent), inset 0 1px 0 rgba(255,255,255,0.35); }
-.btn-submit:active { transform: translateY(1px) scale(0.995); }
-.btn-submit svg { width: 18px; height: 18px; transition: transform var(--tf); }
-.btn-submit:hover svg { transform: translateX(3px); }
-.btn-submit.loading { pointer-events: none; opacity: 0.85; }
-.btn-submit .spinner {
-  width: 17px; height: 17px;
-  border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;
-  border-radius: 50%; animation: spin 0.7s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .btn-submit .spinner { animation: none; } }
-
-.btn-ghost {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 52px; padding: 0 22px;
-  border: 1.5px solid var(--border-strong);
-  background: transparent;
-  color: var(--text); font: inherit; font-size: 14px; font-weight: 600;
-  border-radius: var(--r-full); cursor: pointer;
-  transition: border-color var(--tf), color var(--tf), background var(--tf);
-}
-.btn-ghost:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
-.btn-ghost svg { width: 15px; height: 15px; }
-
-/* 底部单行：辅助信息全部压缩到一行 */
-.foot-line {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-top: 28px;
-  padding-top: 18px;
-  border-top: 1px solid var(--divider);
-  font-size: 11.5px; color: var(--text-muted);
-}
-.foot-line a { color: var(--primary); text-decoration: none; font-weight: 500; }
-.foot-line a:hover { text-decoration: underline; }
-.foot-line .baseurl {
-  font-family: var(--font-mono); font-size: 10.5px;
-  color: var(--text-faint);
-  padding: 3px 8px; border-radius: var(--r-sm);
-  background: var(--bg-sunken);
-}
-
-/* 协议行 */
-.tos-line {
-  font-size: 11px; color: var(--text-faint);
-  text-align: center; margin-top: 14px;
-}
-.tos-line a { color: var(--text-muted); }
-
-/* 浅色微调 */
-[data-theme='light'] .brand-side {
-  background:
-    radial-gradient(480px 360px at 20% 10%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 65%),
-    var(--bg-soft);
-}
-[data-theme='light'] .brand-side::before { opacity: 0.4; }
-[data-theme='light'] .mode-switch button.active { box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
-[data-theme='light'] .flat-input { border-bottom-color: var(--border-strong); }
-
-/* 响应式 */
-@media (max-width: 1100px) {
-  .board { grid-template-columns: 1fr; }
-}
-@media (max-width: 760px) {
-  .auth-flat { grid-template-columns: 1fr; min-height: auto; }
-  .brand-side { padding: 32px 24px 24px; min-height: 280px; }
-  .brand-h { font-size: 30px; }
-  .form-side { padding: 32px 24px; }
-  .field-row.cols-2, .field-row.cols-3 { grid-template-columns: 1fr; }
-  .mode-switch { top: 20px; right: 20px; }
-}
+@media (max-width:1100px) { .board { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
 
-<div class="board">
+<div class="board" id="board">
 
-  <!-- ════════════════════════════════════════════════════════════
-       场景 1：暗色 · 登录（密码模式 · 聚焦态）
-       ════════════════════════════════════════════════════════════ -->
-  <section class="scene" data-theme="dark">
-    <span class="scene-tag">暗色 <em>· 登录 · 密码</em></span>
-    <div class="auth-flat">
-
-      <!-- 左侧品牌叙事 -->
-      <aside class="brand-side">
-        <div class="brand-mark">
-          <div class="brand-logo">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 9.2L21 11L13.8 12.8L12 20L10.2 12.8L3 11L10.2 9.2L12 2Z" fill="currentColor"/></svg>
+  <!-- 场景 1：浅色 · 登录（密码模式） -->
+  <section class="scene" data-theme="light">
+    <span class="scene-tag">浅色 <em>· 登录 · 密码</em></span>
+    <button class="theme-toggle" onclick="toggleTheme(this)">暗色</button>
+    <div class="auth-page">
+      <div class="auth-flat">
+        <aside class="auth-brand-side">
+          <div class="auth-brand-mark">
+            <div class="auth-brand-logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 9.2L21 11L13.8 12.8L12 20L10.2 12.8L3 11L10.2 9.2L12 2Z" fill="currentColor"/></svg></div>
+            <span class="auth-brand-name">Spark Agent</span>
           </div>
-          <div class="brand-name">Spark Agent</div>
-        </div>
-
-        <div class="brand-headline">
-          <div class="brand-eyebrow">Welcome back</div>
-          <h1 class="brand-h">让 AI <span class="accent">真正</span><br/>为你工作</h1>
-          <p class="brand-sub">登录后即可使用平台模型，也可接入你已有的第三方模型。</p>
-
-          <div class="brand-features">
-            <div class="brand-feat">
-              <div class="brand-feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
-              <strong>3 分钟开箱即用</strong>
-              <span>无需复杂配置</span>
-            </div>
-            <div class="brand-feat">
-              <div class="brand-feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
-              <strong>密钥本机安全存储</strong>
-              <span>不上传云端</span>
-            </div>
-            <div class="brand-feat">
-              <div class="brand-feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
-              <strong>多模型并存</strong>
-              <span>平台 + 第三方</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="brand-foot">
-          <span class="dot"></span>
-          <span>平台模型服务正常</span>
-        </div>
-      </aside>
-
-      <!-- 右侧表单 -->
-      <div class="form-side">
-        <div class="mode-switch">
-          <button class="active">登录</button>
-          <button>注册</button>
-        </div>
-
-        <h2 class="form-title">欢迎回来</h2>
-        <p class="form-greet">输入账号继续，或切换到验证码 / 手机号登录</p>
-
-        <!-- 登录方式：内联文字链，非 Tab -->
-        <div class="login-methods">
-          <span class="label">方式</span>
-          <a href="#" class="active">密码</a>
-          <a href="#">邮箱验证码</a>
-          <a href="#">手机号</a>
-        </div>
-
-        <!-- 字段横排：账号一行，密码+验证码并排 -->
-        <form onsubmit="event.preventDefault()">
-          <div class="field-row">
-            <div class="field">
-              <label class="field-label">账号</label>
-              <div class="flat-input focused">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>
-                <input type="text" placeholder="邮箱或手机号" value="zhang@spark.com" />
-                <button class="trail" aria-label="清除">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                </button>
+          <div class="auth-brand-headline">
+            <div class="auth-brand-eyebrow"><span class="auth-brand-eyebrow-line"></span>Welcome back</div>
+            <h1 class="auth-brand-h">让 AI <span class="auth-brand-accent">真正</span><br/>为你工作</h1>
+            <p class="auth-brand-sub">登录后即可使用平台模型，也可接入你已有的第三方模型。</p>
+            <div class="auth-brand-features">
+              <div class="auth-brand-feat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                <div class="auth-brand-feat-text"><strong>3 分钟开箱即用</strong><span>无需复杂配置</span></div>
+              </div>
+              <div class="auth-brand-feat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                <div class="auth-brand-feat-text"><strong>密钥本机安全存储</strong><span>不上传云端</span></div>
+              </div>
+              <div class="auth-brand-feat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L13.8 9.2L21 11L13.8 12.8L12 20L10.2 12.8L3 11L10.2 9.2L12 2Z"/></svg>
+                <div class="auth-brand-feat-text"><strong>可随时扩展能力</strong><span>技能 / 工作流 / MCP</span></div>
               </div>
             </div>
           </div>
-
-          <div class="field-row cols-2">
-            <div class="field">
-              <label class="field-label">密码</label>
-              <div class="flat-input">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
-                <input type="password" placeholder="请输入密码" value="••••••••" />
-                <button class="trail" aria-label="显示密码">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-              </div>
+          <div class="auth-brand-foot"><span class="auth-brand-dot"></span><span>开箱即用，无需复杂配置</span></div>
+        </aside>
+        <div class="auth-form-side">
+          <div class="auth-mode-switch"><button class="active">登录</button><button>注册</button></div>
+          <div class="auth-form-content">
+            <div class="auth-form">
+              <div class="auth-form-head"><h2 class="auth-form-title">欢迎回来</h2><p class="auth-form-greet">输入账号继续，或切换到验证码 / 手机号登录</p></div>
+              <div class="auth-methods"><span class="auth-methods-label">方式</span><button class="auth-method active">密码</button><button class="auth-method">邮箱验证码</button><button class="auth-method">手机号</button></div>
+              <form class="auth-form-body" onsubmit="event.preventDefault()">
+                <div class="auth-field-row">
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg><input placeholder="邮箱或手机号" value="zhang@spark.com"/></div>
+                </div>
+                <div class="auth-field-row">
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg><input type="password" placeholder="请输入密码" value="••••••••"/><button class="trail" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+                </div>
+                <div class="auth-field-row">
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><input placeholder="图片验证码" maxlength="8"/><div class="captcha-thumb">A7K9</div></div>
+                </div>
+                <div class="submit-row"><button class="btn-submit">登录<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>
+                <div class="foot-line"><span><span style="color:var(--text-faint)">忘记密码？</span> <a href="#">用验证码登录</a></span></div>
+              </form>
             </div>
-            <div class="field">
-              <label class="field-label">图片验证码</label>
-              <div class="flat-input">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-                <input type="text" placeholder="输入" maxlength="8" />
-                <div class="captcha-inline">A7K9</div>
-              </div>
-            </div>
           </div>
-
-          <div class="submit-row">
-            <button class="btn-submit" type="submit">
-              登录
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-            </button>
-          </div>
-
-          <div class="foot-line">
-            <span>记住账号 · <a href="#">忘记密码？</a></span>
-            <span class="baseurl">api.spark-agent.com</span>
-          </div>
-        </form>
+          <div class="auth-baseurl-badge"><span class="auth-baseurl-label">云端服务</span><code class="auth-baseurl-value">api.spark-agent.com</code></div>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- ════════════════════════════════════════════════════════════
-       场景 2：暗色 · 注册（邮箱 · 含邀请码）
-       ════════════════════════════════════════════════════════════ -->
-  <section class="scene" data-theme="dark">
-    <span class="scene-tag">暗色 <em>· 注册 · 邮箱</em></span>
-    <div class="auth-flat">
-
-      <aside class="brand-side">
-        <div class="brand-mark">
-          <div class="brand-logo">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 9.2L21 11L13.8 12.8L12 20L10.2 12.8L3 11L10.2 9.2L12 2Z" fill="currentColor"/></svg>
+  <!-- 场景 2：浅色 · 注册（邮箱） -->
+  <section class="scene" data-theme="light">
+    <span class="scene-tag">浅色 <em>· 注册 · 邮箱</em></span>
+    <button class="theme-toggle" onclick="toggleTheme(this)">暗色</button>
+    <div class="auth-page">
+      <div class="auth-flat">
+        <aside class="auth-brand-side">
+          <div class="auth-brand-mark">
+            <div class="auth-brand-logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 9.2L21 11L13.8 12.8L12 20L10.2 12.8L3 11L10.2 9.2L12 2Z" fill="currentColor"/></svg></div>
+            <span class="auth-brand-name">Spark Agent</span>
           </div>
-          <div class="brand-name">Spark Agent</div>
-        </div>
-
-        <div class="brand-headline">
-          <div class="brand-eyebrow">Get started</div>
-          <h1 class="brand-h">几秒创建<br/><span class="accent">你的账号</span></h1>
-          <p class="brand-sub">注册即享平台模型额度，密钥安全保存在本机。</p>
-
-          <div class="brand-features">
-            <div class="brand-feat">
-              <div class="brand-feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
-              <strong>注册即自动登录</strong>
-              <span>无需二次验证</span>
-            </div>
-            <div class="brand-feat">
-              <div class="brand-feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg></div>
-              <strong>开箱即用助手模板</strong>
-              <span>通用/文档/工作/开发</span>
-            </div>
-            <div class="brand-feat">
-              <div class="brand-feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div>
-              <strong>可随时扩展能力</strong>
-              <span>技能 / 工作流 / MCP</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="brand-foot">
-          <span class="dot"></span>
-          <span>开箱即用，无需复杂配置</span>
-        </div>
-      </aside>
-
-      <div class="form-side">
-        <div class="mode-switch">
-          <button>登录</button>
-          <button class="active">注册</button>
-        </div>
-
-        <h2 class="form-title">创建账号</h2>
-        <p class="form-greet">填写邮箱与密码，或切换到手机号快速注册</p>
-
-        <div class="login-methods">
-          <span class="label">方式</span>
-          <a href="#" class="active">邮箱</a>
-          <a href="#">手机号</a>
-        </div>
-
-        <form onsubmit="event.preventDefault()">
-          <div class="field-row">
-            <div class="field">
-              <label class="field-label">邮箱</label>
-              <div class="flat-input">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>
-                <input type="email" placeholder="example@spark.com" />
+          <div class="auth-brand-headline">
+            <div class="auth-brand-eyebrow"><span class="auth-brand-eyebrow-line"></span>Get started</div>
+            <h1 class="auth-brand-h">几秒创建<br/><span class="auth-brand-accent">你的账号</span></h1>
+            <p class="auth-brand-sub">注册即享平台模型额度，密钥安全保存在本机。</p>
+            <div class="auth-brand-features">
+              <div class="auth-brand-feat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                <div class="auth-brand-feat-text"><strong>注册即自动登录</strong><span>无需二次验证</span></div>
+              </div>
+              <div class="auth-brand-feat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                <div class="auth-brand-feat-text"><strong>密钥本机安全存储</strong><span>不上传云端</span></div>
+              </div>
+              <div class="auth-brand-feat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+                <div class="auth-brand-feat-text"><strong>可随时扩展能力</strong><span>技能 / 工作流 / MCP</span></div>
               </div>
             </div>
           </div>
-
-          <div class="field-row cols-2">
-            <div class="field">
-              <label class="field-label">图片验证码</label>
-              <div class="flat-input">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-                <input type="text" placeholder="输入" maxlength="8" />
-                <div class="captcha-inline">3XQM</div>
-              </div>
-            </div>
-            <div class="field">
-              <label class="field-label">邮箱验证码</label>
-              <div class="flat-input">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 6l-10 7L2 6"/><rect x="2" y="4" width="20" height="16" rx="2"/></svg>
-                <input type="text" placeholder="6 位" maxlength="6" />
-                <button class="trail" type="button">发送</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="field-row cols-2">
-            <div class="field">
-              <label class="field-label">设置密码 <span class="opt">至少 6 位</span></label>
-              <div class="flat-input">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
-                <input type="password" placeholder="设置登录密码" />
-              </div>
-            </div>
-            <div class="field">
-              <label class="field-label">邀请码 <span class="opt">选填</span></label>
-              <div class="flat-input">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7"/></svg>
-                <input type="text" placeholder="有则填写" />
-              </div>
+          <div class="auth-brand-foot"><span class="auth-brand-dot"></span><span>开箱即用，无需复杂配置</span></div>
+        </aside>
+        <div class="auth-form-side">
+          <div class="auth-mode-switch"><button>登录</button><button class="active">注册</button></div>
+          <div class="auth-form-content">
+            <div class="auth-form">
+              <div class="auth-form-head"><h2 class="auth-form-title">创建账号</h2><p class="auth-form-greet">填写邮箱与密码，或切换到手机号快速注册</p></div>
+              <div class="auth-methods"><span class="auth-methods-label">方式</span><button class="auth-method active">邮箱</button><button class="auth-method">手机号</button></div>
+              <form class="auth-form-body" onsubmit="event.preventDefault()">
+                <div class="auth-field-row">
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg><input placeholder="example@spark.com"/></div>
+                </div>
+                <div class="auth-field-row">
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><input placeholder="图片验证码" maxlength="8"/><div class="captcha-thumb">3XQM</div></div>
+                </div>
+                <div class="auth-field-row--cols2">
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 6l-10 7L2 6"/><rect x="2" y="4" width="20" height="16" rx="2"/></svg><input placeholder="邮箱验证码" maxlength="6"/><button class="trail send" type="button">发送</button></div>
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg><input type="password" placeholder="设置密码"/></div>
+                </div>
+                <div class="auth-field-row">
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L13.8 9.2L21 11L13.8 12.8L12 20L10.2 12.8L3 11L10.2 9.2L12 2Z"/></svg><input placeholder="邀请码（选填）"/></div>
+                </div>
+                <div class="submit-row"><button class="btn-submit">注册并登录<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>
+                <div class="tos-line">注册即同意 <a href="#">服务协议</a> 与 <a href="#">隐私政策</a></div>
+              </form>
             </div>
           </div>
-
-          <div class="submit-row">
-            <button class="btn-submit" type="submit">
-              注册并登录
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-            </button>
-          </div>
-
-          <div class="tos-line">注册即同意 <a href="#">服务协议</a> 与 <a href="#">隐私政策</a></div>
-
-          <div class="foot-line">
-            <span>已有账号？ <a href="#">立即登录</a></span>
-            <span class="baseurl">api.spark-agent.com</span>
-          </div>
-        </form>
+          <div class="auth-baseurl-badge"><span class="auth-baseurl-label">云端服务</span><code class="auth-baseurl-value">api.spark-agent.com</code></div>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- ════════════════════════════════════════════════════════════
-       场景 3：浅色 · 登录（手机号 · 错误态 + 加载态）
-       ════════════════════════════════════════════════════════════ -->
+  <!-- 场景 3：浅色 · 登录（手机号 · 错误+加载） -->
   <section class="scene" data-theme="light">
     <span class="scene-tag">浅色 <em>· 登录 · 手机号 · 错误+加载</em></span>
-    <div class="auth-flat">
-
-      <aside class="brand-side">
-        <div class="brand-mark">
-          <div class="brand-logo">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 9.2L21 11L13.8 12.8L12 20L10.2 12.8L3 11L10.2 9.2L12 2Z" fill="currentColor"/></svg>
+    <button class="theme-toggle" onclick="toggleTheme(this)">暗色</button>
+    <div class="auth-page">
+      <div class="auth-flat">
+        <aside class="auth-brand-side">
+          <div class="auth-brand-mark">
+            <div class="auth-brand-logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 9.2L21 11L13.8 12.8L12 20L10.2 12.8L3 11L10.2 9.2L12 2Z" fill="currentColor"/></svg></div>
+            <span class="auth-brand-name">Spark Agent</span>
           </div>
-          <div class="brand-name">Spark Agent</div>
-        </div>
-
-        <div class="brand-headline">
-          <div class="brand-eyebrow">Welcome back</div>
-          <h1 class="brand-h">让 AI <span class="accent">真正</span><br/>为你工作</h1>
-          <p class="brand-sub">登录后即可使用平台模型，也可接入你已有的第三方模型。</p>
-
-          <div class="brand-features">
-            <div class="brand-feat">
-              <div class="brand-feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
-              <strong>3 分钟开箱即用</strong>
-              <span>无需复杂配置</span>
-            </div>
-            <div class="brand-feat">
-              <div class="brand-feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
-              <strong>密钥本机安全存储</strong>
-              <span>不上传云端</span>
-            </div>
-            <div class="brand-feat">
-              <div class="brand-feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
-              <strong>多模型并存</strong>
-              <span>平台 + 第三方</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="brand-foot">
-          <span class="dot"></span>
-          <span>平台模型服务正常</span>
-        </div>
-      </aside>
-
-      <div class="form-side">
-        <div class="mode-switch">
-          <button class="active">登录</button>
-          <button>注册</button>
-        </div>
-
-        <h2 class="form-title">欢迎回来</h2>
-        <p class="form-greet">输入手机号与短信验证码继续</p>
-
-        <div class="login-methods">
-          <span class="label">方式</span>
-          <a href="#">密码</a>
-          <a href="#">邮箱验证码</a>
-          <a href="#" class="active">手机号</a>
-        </div>
-
-        <form onsubmit="event.preventDefault()">
-          <div class="field-row">
-            <div class="field">
-              <label class="field-label">手机号</label>
-              <div class="flat-input error">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
-                <input type="tel" placeholder="请输入手机号" value="138 0000 123" maxlength="11" />
+          <div class="auth-brand-headline">
+            <div class="auth-brand-eyebrow"><span class="auth-brand-eyebrow-line"></span>Welcome back</div>
+            <h1 class="auth-brand-h">让 AI <span class="auth-brand-accent">真正</span><br/>为你工作</h1>
+            <p class="auth-brand-sub">登录后即可使用平台模型，也可接入你已有的第三方模型。</p>
+            <div class="auth-brand-features">
+              <div class="auth-brand-feat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                <div class="auth-brand-feat-text"><strong>3 分钟开箱即用</strong><span>无需复杂配置</span></div>
               </div>
-              <div class="field-error">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-                请填写有效的 11 位手机号
+              <div class="auth-brand-feat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                <div class="auth-brand-feat-text"><strong>密钥本机安全存储</strong><span>不上传云端</span></div>
+              </div>
+              <div class="auth-brand-feat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L13.8 9.2L21 11L13.8 12.8L12 20L10.2 12.8L3 11L10.2 9.2L12 2Z"/></svg>
+                <div class="auth-brand-feat-text"><strong>可随时扩展能力</strong><span>技能 / 工作流 / MCP</span></div>
               </div>
             </div>
           </div>
-
-          <div class="field-row cols-2">
-            <div class="field">
-              <label class="field-label">图片验证码</label>
-              <div class="flat-input">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-                <input type="text" placeholder="输入" maxlength="8" />
-                <div class="captcha-inline">P2R8</div>
-              </div>
+          <div class="auth-brand-foot"><span class="auth-brand-dot"></span><span>开箱即用，无需复杂配置</span></div>
+        </aside>
+        <div class="auth-form-side">
+          <div class="auth-mode-switch"><button class="active">登录</button><button>注册</button></div>
+          <div class="auth-form-content">
+            <div class="auth-form">
+              <div class="auth-form-head"><h2 class="auth-form-title">欢迎回来</h2><p class="auth-form-greet">输入手机号与短信验证码继续</p></div>
+              <div class="auth-methods"><span class="auth-methods-label">方式</span><button class="auth-method">密码</button><button class="auth-method">邮箱验证码</button><button class="auth-method active">手机号</button></div>
+              <form class="auth-form-body" onsubmit="event.preventDefault()">
+                <div class="auth-field-row">
+                  <div class="auth-input error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg><input placeholder="请输入手机号" value="138 0000 123" maxlength="11"/></div>
+                  <div class="field-error"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>请填写有效的 11 位手机号</div>
+                </div>
+                <div class="auth-field-row">
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><input placeholder="图片验证码" maxlength="8"/><div class="captcha-thumb">P2R8</div></div>
+                </div>
+                <div class="auth-field-row">
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><input placeholder="6 位短信验证码" maxlength="6"/><button class="trail send disabled" type="button" disabled>58s</button></div>
+                </div>
+                <div class="sms-hint">首次使用手机号登录将自动完成注册</div>
+                <div class="submit-row"><button class="btn-submit loading"><span class="spinner"></span>登录中</button></div>
+                <div class="foot-line"><a href="#">返回密码登录</a></div>
+              </form>
             </div>
-            <div class="field">
-              <label class="field-label">短信验证码</label>
-              <div class="flat-input">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-                <input type="text" placeholder="6 位" maxlength="6" />
-                <button class="trail disabled" type="button">58s</button>
-              </div>
-            </div>
           </div>
-
-          <div class="submit-row">
-            <button class="btn-submit loading" type="submit" disabled>
-              <span class="spinner"></span>
-              登录中
-            </button>
-          </div>
-
-          <div class="foot-line">
-            <span>首次手机登录将自动注册</span>
-            <span class="baseurl">api.spark-agent.com</span>
-          </div>
-        </form>
+          <div class="auth-baseurl-badge"><span class="auth-baseurl-label">云端服务</span><code class="auth-baseurl-value">api.spark-agent.com</code></div>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- ════════════════════════════════════════════════════════════
-       场景 4：浅色 · 注册（手机号 · 倒计时）
-       ════════════════════════════════════════════════════════════ -->
+  <!-- 场景 4：浅色 · 注册（手机号 · 倒计时） -->
   <section class="scene" data-theme="light">
     <span class="scene-tag">浅色 <em>· 注册 · 手机号 · 倒计时</em></span>
-    <div class="auth-flat">
-
-      <aside class="brand-side">
-        <div class="brand-mark">
-          <div class="brand-logo">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 9.2L21 11L13.8 12.8L12 20L10.2 12.8L3 11L10.2 9.2L12 2Z" fill="currentColor"/></svg>
+    <button class="theme-toggle" onclick="toggleTheme(this)">暗色</button>
+    <div class="auth-page">
+      <div class="auth-flat">
+        <aside class="auth-brand-side">
+          <div class="auth-brand-mark">
+            <div class="auth-brand-logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 9.2L21 11L13.8 12.8L12 20L10.2 12.8L3 11L10.2 9.2L12 2Z" fill="currentColor"/></svg></div>
+            <span class="auth-brand-name">Spark Agent</span>
           </div>
-          <div class="brand-name">Spark Agent</div>
-        </div>
-
-        <div class="brand-headline">
-          <div class="brand-eyebrow">Get started</div>
-          <h1 class="brand-h">几秒创建<br/><span class="accent">你的账号</span></h1>
-          <p class="brand-sub">注册即享平台模型额度，密钥安全保存在本机。</p>
-
-          <div class="brand-features">
-            <div class="brand-feat">
-              <div class="brand-feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
-              <strong>注册即自动登录</strong>
-              <span>无需二次验证</span>
-            </div>
-            <div class="brand-feat">
-              <div class="brand-feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg></div>
-              <strong>开箱即用助手模板</strong>
-              <span>通用/文档/工作/开发</span>
-            </div>
-            <div class="brand-feat">
-              <div class="brand-feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg></div>
-              <strong>可随时扩展能力</strong>
-              <span>技能 / 工作流 / MCP</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="brand-foot">
-          <span class="dot"></span>
-          <span>开箱即用，无需复杂配置</span>
-        </div>
-      </aside>
-
-      <div class="form-side">
-        <div class="mode-switch">
-          <button>登录</button>
-          <button class="active">注册</button>
-        </div>
-
-        <h2 class="form-title">创建账号</h2>
-        <p class="form-greet">输入手机号，验证后即完成注册</p>
-
-        <div class="login-methods">
-          <span class="label">方式</span>
-          <a href="#">邮箱</a>
-          <a href="#" class="active">手机号</a>
-        </div>
-
-        <form onsubmit="event.preventDefault()">
-          <div class="field-row">
-            <div class="field">
-              <label class="field-label">手机号</label>
-              <div class="flat-input focused">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
-                <input type="tel" placeholder="请输入手机号" value="139 8888 6666" maxlength="11" />
+          <div class="auth-brand-headline">
+            <div class="auth-brand-eyebrow"><span class="auth-brand-eyebrow-line"></span>Get started</div>
+            <h1 class="auth-brand-h">几秒创建<br/><span class="auth-brand-accent">你的账号</span></h1>
+            <p class="auth-brand-sub">注册即享平台模型额度，密钥安全保存在本机。</p>
+            <div class="auth-brand-features">
+              <div class="auth-brand-feat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                <div class="auth-brand-feat-text"><strong>注册即自动登录</strong><span>无需二次验证</span></div>
+              </div>
+              <div class="auth-brand-feat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                <div class="auth-brand-feat-text"><strong>密钥本机安全存储</strong><span>不上传云端</span></div>
+              </div>
+              <div class="auth-brand-feat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+                <div class="auth-brand-feat-text"><strong>可随时扩展能力</strong><span>技能 / 工作流 / MCP</span></div>
               </div>
             </div>
           </div>
-
-          <div class="field-row cols-2">
-            <div class="field">
-              <label class="field-label">图片验证码</label>
-              <div class="flat-input">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-                <input type="text" placeholder="输入" maxlength="8" />
-                <div class="captcha-inline">9W4E</div>
-              </div>
+          <div class="auth-brand-foot"><span class="auth-brand-dot"></span><span>开箱即用，无需复杂配置</span></div>
+        </aside>
+        <div class="auth-form-side">
+          <div class="auth-mode-switch"><button>登录</button><button class="active">注册</button></div>
+          <div class="auth-form-content">
+            <div class="auth-form">
+              <div class="auth-form-head"><h2 class="auth-form-title">创建账号</h2><p class="auth-form-greet">输入手机号，验证后即完成注册</p></div>
+              <div class="auth-methods"><span class="auth-methods-label">方式</span><button class="auth-method">邮箱</button><button class="auth-method active">手机号</button></div>
+              <form class="auth-form-body" onsubmit="event.preventDefault()">
+                <div class="auth-field-row">
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg><input placeholder="请输入手机号" value="139 8888 6666" maxlength="11"/></div>
+                </div>
+                <div class="auth-field-row">
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><input placeholder="图片验证码" maxlength="8"/><div class="captcha-thumb">9W4E</div></div>
+                </div>
+                <div class="auth-field-row">
+                  <div class="auth-input"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><input placeholder="6 位短信验证码" maxlength="6"/><button class="trail send disabled" type="button" disabled>42s</button></div>
+                </div>
+                <div class="sms-hint">输入手机号验证后即完成注册</div>
+                <div class="submit-row"><button class="btn-submit">注册并登录<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>
+                <div class="tos-line">注册即同意 <a href="#">服务协议</a> 与 <a href="#">隐私政策</a></div>
+              </form>
             </div>
-            <div class="field">
-              <label class="field-label">短信验证码</label>
-              <div class="flat-input">
-                <svg class="lead-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-                <input type="text" placeholder="6 位" maxlength="6" />
-                <button class="trail disabled" type="button">42s</button>
-              </div>
-            </div>
           </div>
-
-          <div class="submit-row">
-            <button class="btn-submit" type="submit">
-              注册并登录
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-            </button>
-          </div>
-
-          <div class="tos-line">注册即同意 <a href="#">服务协议</a> 与 <a href="#">隐私政策</a></div>
-
-          <div class="foot-line">
-            <span>已有账号？ <a href="#">立即登录</a></span>
-            <span class="baseurl">api.spark-agent.com</span>
-          </div>
-        </form>
+          <div class="auth-baseurl-badge"><span class="auth-baseurl-label">云端服务</span><code class="auth-baseurl-value">api.spark-agent.com</code></div>
+        </div>
       </div>
     </div>
   </section>
 
 </div>
+
+<script>
+function toggleTheme(btn) {
+  const scene = btn.closest('.scene');
+  const cur = scene.getAttribute('data-theme');
+  const next = cur === 'light' ? 'dark' : 'light';
+  scene.setAttribute('data-theme', next);
+  btn.textContent = next === 'light' ? '暗色' : '浅色';
+}
+</script>
 
 </body>
 </html>

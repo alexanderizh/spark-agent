@@ -7215,7 +7215,7 @@ body.inspector-resizing {
 .settings-nav {
   width: 216px;
   flex-shrink: 0;
-  background: color-mix(in srgb, var(--bg-soft) 78%, var(--panel));
+  background: var(--bg-sunken);
   padding: var(--pad-md);
   display: flex;
   flex-direction: column;
@@ -7247,7 +7247,7 @@ body.inspector-resizing {
 }
 .settings-nav-h {
   font-size: 10.5px;
-  font-weight: 600;
+  font-weight: 400;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -7257,6 +7257,7 @@ body.inspector-resizing {
   flex: 1;
   overflow: auto;
   padding: var(--pad-xl);
+  padding-top: 5px;
   min-width: 0;
 }
 .settings-drag-header {
@@ -13053,6 +13054,7 @@ body.inspector-resizing {
   flex-direction: column;
   gap: 16px;
   padding: 20px;
+  padding-top: 5px;
   overflow: auto;
   background: var(--bg-soft);
 }
