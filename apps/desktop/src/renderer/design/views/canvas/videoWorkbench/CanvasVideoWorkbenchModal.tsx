@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { Button, Segmented, Slider, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
+import { encodeToSafeFileUrl } from '../canvas-safe-file'
 import type { VideoProcessRequest } from '@spark/protocol'
 import { Icons } from '../../../Icons'
 import type { CanvasNode } from '../canvas.types'
@@ -25,6 +26,7 @@ import {
   type VideoProbeInfo,
   type VideoWorkbenchData,
   type WorkbenchKeyframe,
+  type WorkbenchOutput,
 } from './videoWorkbench.types'
 import { VideoWorkbenchFramePanel } from './VideoWorkbenchFramePanel'
 import { VideoWorkbenchEditPanel } from './VideoWorkbenchEditPanel'
@@ -159,7 +161,7 @@ export function CanvasVideoWorkbenchModal({
           const result = res.result as { frames: Array<{ path: string; timestampSec: number; index: number }> }
           const frames: WorkbenchKeyframe[] = result.frames.map((f) => ({
             path: f.path,
-            previewUrl: normalizeEduAssetUrl(`safe-file://${f.path}`),
+            previewUrl: encodeToSafeFileUrl(f.path),
             timestampSec: f.timestampSec,
             index: f.index,
           }))
@@ -220,7 +222,7 @@ export function CanvasVideoWorkbenchModal({
         const result = res.result as Array<{ path: string; timestampSec: number; index: number }>
         const frames: WorkbenchKeyframe[] = result.map((f) => ({
           path: f.path,
-          previewUrl: normalizeEduAssetUrl(`safe-file://${f.path}`),
+          previewUrl: encodeToSafeFileUrl(f.path),
           timestampSec: f.timestampSec,
           index: f.index,
         }))
@@ -279,14 +281,14 @@ export function CanvasVideoWorkbenchModal({
 
   /** 产物生成后记录到 draft.outputs 并持久化 */
   const recordOutput = useCallback(
-    (summary: string, outputPath: string) => {
+    (summary: string, outputPath: string, type: WorkbenchOutput['type']) => {
       setDraft((d) => {
         const outputs = [
           {
             id: shortId(),
-            type: 'trim' as const,
+            type,
             outputPath,
-            outputUrl: normalizeEduAssetUrl(`safe-file://${outputPath}`),
+            outputUrl: encodeToSafeFileUrl(outputPath),
             createdAt: Date.now(),
             summary,
           },

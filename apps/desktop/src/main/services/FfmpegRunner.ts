@@ -66,14 +66,21 @@ async function acquireSlot(): Promise<void> {
     runningCount++
     return
   }
+  // 等待槽位；releaseSlot 会调用 resolver 把槽位「让渡」给本调用方。
+  // 关键：runningCount 在 release 时不递减，而是由被唤醒的 acquire 不再递增
+  // （槽位已让渡）。这样避免了「resolve 后 runningCount++ 尚未执行」的竞态窗口，
+  // 以及「await 期间被 abort 丢弃 → resolver 触发但没人 ++ → 永久泄漏」的问题。
   await new Promise<void>((resolve) => waitQueue.push(resolve))
-  runningCount++
 }
 
 function releaseSlot(): void {
-  runningCount--
   const next = waitQueue.shift()
-  if (next) next()
+  if (next) {
+    // 槽位直接让渡给等待者，runningCount 不变
+    next()
+  } else {
+    runningCount--
+  }
 }
 
 // ─── 核心执行器 ──────────────────────────────────────────────────────────────

@@ -3373,29 +3373,43 @@ export function CanvasWorkspaceView({
             x: 180,
             y: 160,
           })
+      // 若当前选中节点是视频，自动绑定为其源视频
+      const selected = snapshot?.nodes.find((n) => selectedNodeIds.includes(n.id))
+      const sourceVideoUrl =
+        selected && selected.type === 'video' && typeof selected.data.url === 'string'
+          ? (selected.data.url as string)
+          : undefined
+      const sourceVideoAssetId = sourceVideoUrl ? (selected?.assetId ?? undefined) : undefined
       const node = await createTextNode({
-        text: '视频工作台：双击打开，提取关键帧、剪辑、转码。',
+        text: sourceVideoUrl
+          ? '视频工作台：双击打开，提取关键帧、剪辑、转码。'
+          : '视频工作台：双击打开。请拖入视频或关联视频节点。',
         x: position.x,
         y: position.y,
       })
       if (!node) return
       await patchNodes([node.id], {
-        title: '视频工作台',
+        title: sourceVideoUrl ? `视频工作台 — ${selected?.title ?? '视频'}` : '视频工作台',
         width: VIDEO_NODE_DEFAULT_SIZE.width,
         height: VIDEO_NODE_DEFAULT_SIZE.height,
       })
+      const wbData = createDefaultVideoWorkbenchData()
+      if (sourceVideoAssetId) wbData.sourceVideoAssetId = sourceVideoAssetId
       await updateNodeData(node.id, {
         ...node.data,
         subtype: 'video_workbench',
         displayCategory: 'content',
-        videoWorkbench: createDefaultVideoWorkbenchData() as unknown as Record<string, unknown>,
-        text: '视频工作台：双击打开，提取关键帧、剪辑、转码。',
+        ...(sourceVideoUrl ? { url: sourceVideoUrl } : {}),
+        videoWorkbench: wbData as unknown as Record<string, unknown>,
+        text: sourceVideoUrl
+          ? '视频工作台：双击打开，提取关键帧、剪辑、转码。'
+          : '视频工作台：双击打开。请拖入视频或关联视频节点。',
       })
       setSelectedNodeIds([node.id])
       setVideoWorkbenchNodeId(node.id)
       return node
     },
-    [createTextNode, patchNodes, updateNodeData],
+    [createTextNode, patchNodes, updateNodeData, snapshot, selectedNodeIds],
   )
 
   const uploadFirstImage = useCallback(

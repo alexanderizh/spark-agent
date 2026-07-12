@@ -45,6 +45,8 @@ export interface FfmpegIntegrityState {
 }
 
 let cachedState: FfmpegIntegrityState | null = null
+/** in-flight 检测去重：并发调用 detectFfmpegIntegrity 只跑一次实际检测 */
+let detectInFlight: Promise<FfmpegIntegrityState> | null = null
 
 // ─── Path Resolution ────────────────────────────────────────────────────────
 
@@ -155,7 +157,10 @@ export async function resolveFfmpegBin(): Promise<{ ffmpeg: string; ffprobe: str
   let ffprobe = state.ffprobePath
   if (!ffprobe) {
     const managedDir = resolveManagedBinaryDir()
-    if (managedDir) ffprobe = join(managedDir, FFPROBE_EXE)
+    if (managedDir) {
+      const candidate = join(managedDir, FFPROBE_EXE)
+      if (existsSync(candidate)) ffprobe = candidate
+    }
   }
   if (!ffprobe) ffprobe = await detectSystemFfprobe()
   if (!ffprobe) {
@@ -173,8 +178,17 @@ export function getCachedFfmpegIntegrity(): FfmpegIntegrityState | null {
  * 检测当前 ffmpeg 完整性状态，刷新缓存并返回。
  *
  * 优先级：managed 目录 > 系统 PATH > none。
+ * 并发安全：多次调用共享同一个 in-flight promise，避免检测风暴。
  */
-export async function detectFfmpegIntegrity(): Promise<FfmpegIntegrityState> {
+export function detectFfmpegIntegrity(): Promise<FfmpegIntegrityState> {
+  if (detectInFlight) return detectInFlight
+  detectInFlight = doDetectFfmpegIntegrity().finally(() => {
+    detectInFlight = null
+  })
+  return detectInFlight
+}
+
+async function doDetectFfmpegIntegrity(): Promise<FfmpegIntegrityState> {
   // 1. managed 目录（我们从 minio 下载的）
   const managedDir = resolveManagedBinaryDir()
   if (managedDir) {
