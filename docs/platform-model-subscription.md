@@ -8,7 +8,7 @@ Spark 平台模型以受管 `ProviderProfile` 接入现有 Provider 体系，与
 
 - 桌面主进程通过 spark-edugen 的 `/api/v1/platform-model/bootstrap` 获取当前 Spark 用户对应的 NewAPI 影子账户凭据。
 - NewAPI 密码只由 spark-edugen 强制加密托管；桌面端仅在主进程短时使用，不长期保存密码。
-- NewAPI management access token、模型 API Key 和 base URL 按 Spark userId 隔离存入系统 Keychain。
+- NewAPI management access token、模型 API Key 按 Spark userId 隔离存入系统安全存储；macOS 使用集中 Keychain vault。base URL 和平台 userId 作为非敏感字段存入本地 SQLite。
 - management access token 被另一设备覆盖时，仅把平台 Dashboard 标为会话冲突；Spark 登录和第三方 Provider 不退出。用户可主动选择“在本机继续”。
 - 登录、注册和恢复登录态后会后台初始化官方 Provider；切换账号时先清理旧账号的官方凭据和 Provider。
 - 模型 API Key 按固定令牌名查找并恢复完整 Key，不先删后建。明确 401/403 才恢复；429、配额、网络和 5xx 不轮换 Key。
@@ -30,7 +30,7 @@ NewAPI 的服务端 callback 地址不是每单可配置的桌面 deep link。�
 - NewAPI 原生兑换码：`POST /api/user/topup`，增加对话钱包额度。
 - Spark 订阅兑换码：edu-server 使用数据库行锁、发放租约和远端订阅 ID 对账后调用 NewAPI 管理员绑定接口。并发请求不重复 bind；远端成功、本地写回前崩溃时，同一码重试会先对账再落账。
 
-浏览器支付的待确认套餐和发起时间按 Spark userId 存入主进程 Keychain。账号中心重新打开或应用重启后，bootstrap 会恢复有限轮询；余额支付成功或订阅到账后清除待确认状态。
+浏览器支付的待确认套餐和发起时间按 Spark userId 存入本地 SQLite。账号中心重新打开或应用重启后，bootstrap 会恢复有限轮询；余额支付成功或订阅到账后清除待确认状态。
 
 ## 模型类型边界
 

@@ -6,8 +6,50 @@
  */
 
 import { typedIpcHandle } from '../../ipc/typed-ipc.js'
-import { SparkError } from '@spark/shared'
+import { createLogger, SparkError } from '@spark/shared'
 import { getAuthService } from './AuthService'
+import { app, dialog } from 'electron'
+import {
+  ConnectorConnectionRepository,
+  ProviderProfileRepository,
+  SettingsRepository,
+} from '@spark/storage'
+import { getDatabase } from '../../db.js'
+import { preloadSecrets, type KeystoreRef } from '@spark/shared/keystore'
+
+const KEYCHAIN_DISCLOSURE_VERSION = 1
+const log = createLogger('auth:keychain-preload')
+
+async function showKeychainDisclosureOnce(): Promise<void> {
+  if (process.platform !== 'darwin') return
+  const settings = new SettingsRepository(getDatabase())
+  if (settings.get('privacy', 'keychain-disclosure-version') === KEYCHAIN_DISCLOSURE_VERSION) return
+
+  await dialog.showMessageBox({
+    type: 'info',
+    title: '为什么 Spark Agent 需要访问钥匙串？',
+    message: '您的模型密钥只保存在这台电脑上',
+    detail:
+      'Spark Agent 不会把您的 API Key 上传或保存到平台服务器。为了避免明文保存，安装版会使用 macOS“登录”钥匙串保护这些机密信息。\n\n接下来如果 macOS 询问访问“spark-agent”机密信息，请选择“始终允许”，这样以后启动时就不会重复询问。',
+    buttons: ['我知道了，继续'],
+    defaultId: 0,
+    noLink: true,
+  })
+  settings.set('privacy', 'keychain-disclosure-version', KEYCHAIN_DISCLOSURE_VERSION)
+}
+
+function configuredSecretRefs(): KeystoreRef[] {
+  const database = getDatabase()
+  const providerRefs = new ProviderProfileRepository(database)
+    .listAll()
+    .map(row => row.keystore_ref)
+    .filter((ref): ref is string => typeof ref === 'string' && ref.length > 0)
+  const connectorRefs = new ConnectorConnectionRepository(database)
+    .listAll()
+    .map(row => row.keystore_ref)
+    .filter((ref): ref is string => typeof ref === 'string' && ref.length > 0)
+  return [...new Set([...providerRefs, ...connectorRefs])] as KeystoreRef[]
+}
 
 export function registerAuthIpc(): void {
   const auth = () => getAuthService()
@@ -117,7 +159,18 @@ export function registerAuthIpc(): void {
 
   typedIpcHandle('auth:get-base-url', async () => auth().getBaseUrl())
 
-  typedIpcHandle('auth:bootstrap', async () => auth().bootstrap())
+  typedIpcHandle('auth:bootstrap', async () => {
+    try {
+      const refs = configuredSecretRefs()
+      const willReadSecrets = refs.length > 0 || auth().getCurrentUserId() != null
+      if (app.isPackaged && willReadSecrets) await showKeychainDisclosureOnce()
+      await preloadSecrets(refs)
+    } catch (error) {
+      // 用户可以拒绝 macOS Keychain 授权；本地 DB/系统凭证库暂不可用也不应阻断 Spark 登录。
+      log.warn(`credential startup preparation skipped: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    return auth().bootstrap()
+  })
 
   typedIpcHandle('auth:upload-file', async (req) =>
     auth().uploadFile({
