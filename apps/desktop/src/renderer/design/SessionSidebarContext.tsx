@@ -597,12 +597,14 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       return
     }
     if (sessions.length === 0) return
-    if (justCreatedSessionRef.current === active) {
-      justCreatedSessionRef.current = null
-      workspaceSyncedSessionRef.current = active
-      return
-    }
     const found = sessions.find((s) => s.id === active)
+    if (justCreatedSessionRef.current === active) {
+      // session:create 可能与一轮更早发起的 session:list 并行。Windows 上旧列表
+      // 较晚返回时仍不包含新会话，不能因此清空刚激活的 active；只有权威列表
+      // 真正包含该会话后，才结束这段保护期。
+      if (found == null) return
+      justCreatedSessionRef.current = null
+    }
     const id = window.setTimeout(() => {
       if (!found) {
         workspaceSyncedSessionRef.current = null
