@@ -70,6 +70,8 @@ export function CanvasVideoWorkbenchModal({
   const [progress, setProgress] = useState<number | null>(null)
   const [progressStage, setProgressStage] = useState('')
   const videoRef = useRef<HTMLVideoElement>(null)
+  /** probe in-flight 哨兵，防止自动 probe 重复触发 */
+  const probingRef = useRef(false)
   /** 当前播放位置（秒），用于手动标记 */
   const [currentTime, setCurrentTime] = useState(0)
 
@@ -106,13 +108,15 @@ export function CanvasVideoWorkbenchModal({
 
   // ── 首次打开自动 probe（若 probeInfo 缺失且 ffmpeg 可用）─────────
   useEffect(() => {
-    if (!open || !node || draft.probeInfo || ffmpegReady !== true) return
+    if (!open || !node || draft.probeInfo || ffmpegReady !== true || probingRef.current) return
     void probeAndUpdate(node)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, node, ffmpegReady])
 
   const probeAndUpdate = useCallback(
     async (n: CanvasNode) => {
+      if (probingRef.current) return
+      probingRef.current = true
       setBusy(true)
       setProgress(null)
       try {
@@ -125,16 +129,20 @@ export function CanvasVideoWorkbenchModal({
         })
         if (res.success && res.result) {
           const probeInfo = res.result as VideoProbeInfo
-          setDraft((d) => ({ ...d, probeInfo }))
-          void onSave({ ...draft, probeInfo })
+          setDraft((d) => {
+            const next = { ...d, probeInfo }
+            void onSave(next)
+            return next
+          })
         }
       } catch (err) {
         message.error(`视频探测失败: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
         setBusy(false)
+        probingRef.current = false
       }
     },
-    [draft, onSave],
+    [onSave],
   )
 
   // ── 自动提取关键帧（首次打开 + keyframes 为空）──────────────────
