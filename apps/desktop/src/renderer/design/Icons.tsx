@@ -179,6 +179,11 @@ export const Icons = {
       <path d="M12 5v14M5 12h14" />
     </IconBase>
   ),
+  Minus: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M5 12h14" />
+    </IconBase>
+  ),
   X: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M6 6l12 12M18 6L6 18" />
