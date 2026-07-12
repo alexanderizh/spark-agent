@@ -229,6 +229,182 @@ describe('SessionSidebarContext', () => {
     ).toBe(1)
   })
 
+  it('keeps a newly created session active when an older refresh resolves late', async () => {
+    const workspace = {
+      id: 'workspace-1',
+      name: 'Alpha',
+      rootPath: '/tmp/alpha',
+      projectKind: 'node',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-12T00:00:00.000Z',
+      updatedAt: '2026-07-12T00:00:00.000Z',
+    }
+    const providerId = 'provider-1'
+    const agentId = 'platform-manager-agent'
+    const oldSession = {
+      id: 'session-old',
+      title: 'Old session',
+      projectId: workspace.id,
+      workspaceIds: [workspace.id],
+      providerProfileId: providerId,
+      modelId: null,
+      agentId,
+      agentAdapter: 'claude',
+      permissionMode: 'claude-ask',
+      chatMode: 'agent',
+      reasoningEffort: 'medium',
+      status: 'idle',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-11T00:00:00.000Z',
+      updatedAt: '2026-07-11T00:00:00.000Z',
+      messageCount: 1,
+    }
+    const createdSession = {
+      ...oldSession,
+      id: 'session-created',
+      title: 'New session',
+      createdAt: '2026-07-12T00:00:00.000Z',
+      updatedAt: '2026-07-12T00:00:00.000Z',
+      messageCount: 0,
+    }
+    let sessionCreated = false
+    let sessionCreatedHandler: ((event: Record<string, unknown>) => void) | null = null
+    let blockNextRefresh = false
+    let releaseRefresh!: () => void
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve
+    })
+
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        if (blockNextRefresh) {
+          blockNextRefresh = false
+          await refreshGate
+        }
+        return { workspaces: [workspace], total: 1 }
+      }
+      if (channel === 'session:list') {
+        const sessions = sessionCreated ? [createdSession, oldSession] : [oldSession]
+        return { sessions, total: sessions.length }
+      }
+      if (channel === 'workspace:get-current') return { workspace }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: providerId,
+              name: 'Claude',
+              provider: 'anthropic',
+              defaultModel: 'claude-3-5-sonnet',
+              modelIds: ['claude-3-5-sonnet'],
+              apiEndpoint: 'https://api.example.com',
+              keystoreRef: providerId,
+              isDefault: true,
+              createdAt: '2026-07-12T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'agent:list') {
+        return {
+          agents: [
+            {
+              id: agentId,
+              name: 'Platform Manager',
+              description: 'host',
+              enabled: true,
+              builtIn: true,
+              isDefault: true,
+              providerProfileId: providerId,
+              modelId: null,
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              reasoningEffort: 'medium',
+            },
+          ],
+        }
+      }
+      if (channel === 'session:create') {
+        sessionCreated = true
+        sessionCreatedHandler?.({ sessionId: createdSession.id })
+        return { sessionId: createdSession.id, createdAt: createdSession.createdAt }
+      }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:session:created') sessionCreatedHandler = callback
+        return vi.fn()
+      }),
+    })
+    localStorage.setItem(
+      'spark-agent:composer-prefs',
+      JSON.stringify({ providerProfileId: providerId }),
+    )
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    blockNextRefresh = true
+    const sessionListCallsBeforeRefresh = invoke.mock.calls.filter(
+      ([channel]) => channel === 'session:list',
+    ).length
+    let staleRefresh: Promise<void> | undefined
+    act(() => {
+      staleRefresh = latestCtxRef.current?.refreshData()
+    })
+    await vi.waitFor(() => {
+      expect(invoke.mock.calls.filter(([channel]) => channel === 'session:list')).toHaveLength(
+        sessionListCallsBeforeRefresh + 1,
+      )
+    })
+
+    await act(async () => {
+      await latestCtxRef.current?.handleNewSession(workspace.id)
+    })
+    expect(latestCtxRef.current?.activeSessionId).toBe(createdSession.id)
+
+    await act(async () => {
+      releaseRefresh()
+      await staleRefresh
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(latestCtxRef.current?.sessions.some((session) => session.id === createdSession.id)).toBe(
+      true,
+    )
+    expect(latestCtxRef.current?.activeSessionId).toBe(createdSession.id)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    sessionCreated = false
+    await act(async () => {
+      await latestCtxRef.current?.refreshData()
+    })
+    await vi.waitFor(() => {
+      expect(latestCtxRef.current?.activeSessionId).toBeNull()
+    })
+  })
+
   it('coalesces concurrent refresh requests into one IPC batch', async () => {
     const workspace = {
       id: 'workspace-1',
