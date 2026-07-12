@@ -8,7 +8,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { Button, Input, InputNumber, Modal, Segmented, Select, Tag, TextArea } from '@lobehub/ui'
 // TODO(lobe-migration): @lobehub/ui 没有 Switch 命名导出;从 antd 引用,与项目其他 view 保持一致
-import { Switch } from 'antd'
+import { Space, Switch } from 'antd'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
@@ -662,15 +662,17 @@ function GeneralSection() {
           检查点保留<span className="sub">每个会话保留多少历史检查点</span>
         </label>
         <div className="control">
-          <InputNumber
-            min={10}
-            max={500}
-            step={10}
-            value={s.checkpointRetention}
-            onChange={(v) => set({ checkpointRetention: typeof v === 'number' ? v : 50 })}
-            addonAfter="个"
-            className="input-w-sm"
-          />
+          <Space.Compact>
+            <InputNumber
+              min={10}
+              max={500}
+              step={10}
+              value={s.checkpointRetention}
+              onChange={(v) => set({ checkpointRetention: typeof v === 'number' ? v : 50 })}
+              className="input-w-sm"
+            />
+            <Button className="input-suffix-addon">个</Button>
+          </Space.Compact>
           <span className="muted text-xs-12">超出后按时间淘汰</span>
         </div>
       </div>
@@ -1701,15 +1703,17 @@ function AppearanceSection() {
           字号<span className="sub">基础字号，其他字号按比例缩放</span>
         </label>
         <div className="control">
-          <InputNumber
-            min={10}
-            max={20}
-            step={1}
-            value={a.fontSize}
-            onChange={(v) => setA({ fontSize: typeof v === 'number' ? v : 15 })}
-            addonAfter="px"
-            className="font-size-input"
-          />
+          <Space.Compact>
+            <InputNumber
+              min={10}
+              max={20}
+              step={1}
+              value={a.fontSize}
+              onChange={(v) => setA({ fontSize: typeof v === 'number' ? v : 15 })}
+              className="font-size-input"
+            />
+            <Button className="input-suffix-addon">px</Button>
+          </Space.Compact>
         </div>
 
         <label>
@@ -1719,22 +1723,24 @@ function AppearanceSection() {
           </span>
         </label>
         <div className="control ui-zoom-control">
-          <InputNumber
-            min={80}
-            max={150}
-            step={5}
-            value={a.uiZoom ?? 100}
-            onChange={(v) => {
-              if (typeof v !== 'number') {
-                setA({ uiZoom: 100 })
-                return
-              }
-              const stepped = Math.round(v / UI_ZOOM_STEP) * UI_ZOOM_STEP
-              setA({ uiZoom: Math.min(UI_ZOOM_MAX, Math.max(UI_ZOOM_MIN, stepped)) })
-            }}
-            addonAfter="%"
-            className="ui-zoom-input"
-          />
+          <Space.Compact>
+            <InputNumber
+              min={80}
+              max={150}
+              step={5}
+              value={a.uiZoom ?? 100}
+              onChange={(v) => {
+                if (typeof v !== 'number') {
+                  setA({ uiZoom: 100 })
+                  return
+                }
+                const stepped = Math.round(v / UI_ZOOM_STEP) * UI_ZOOM_STEP
+                setA({ uiZoom: Math.min(UI_ZOOM_MAX, Math.max(UI_ZOOM_MIN, stepped)) })
+              }}
+              className="ui-zoom-input"
+            />
+            <Button className="input-suffix-addon">%</Button>
+          </Space.Compact>
         </div>
 
         <label>

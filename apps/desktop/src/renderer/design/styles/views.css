@@ -1002,6 +1002,7 @@ body.sidebar-resizing {
 }
 .chat-tabbar .sidebar-expand-btn {
   flex-shrink: 0;
+  margin-left: 12px;
 }
 .chat-titlebar-start {
   display: flex;
@@ -9568,10 +9569,32 @@ body.inspector-resizing {
 .font-size-input {
   width: 140px;
 }
+/* InputNumber 后缀单位（个 / px / %）：取代已废弃的 InputNumber.addonAfter，
+   用 Space.Compact + 不可点按钮模拟 addon 单元格外观。
+   border-radius: 0 与左侧 InputNumber 拼接，Space.Compact 负责去掉接缝圆角。 */
+.settings-content .ant-input-number.input-w-sm,
 .settings-content .ant-input-number.font-size-input,
 .settings-content .ant-input-number.ui-zoom-input {
   border-top-right-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
+}
+.input-suffix-addon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: auto;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid transparent !important;
+  border-left-color: transparent !important;
+  border-radius: 0 var(--r-md) var(--r-md) 0 !important;
+  background: var(--bg-sunken) !important;
+  color: var(--text-muted) !important;
+  font-size: 12px;
+  font-weight: 400;
+  cursor: default;
+  pointer-events: none;
 }
 .text-xs-12 {
   font-size: 12px;
