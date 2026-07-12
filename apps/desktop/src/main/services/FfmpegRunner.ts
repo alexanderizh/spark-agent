@@ -511,7 +511,7 @@ async function runKeyframePass(
   const args = [
     '-i', input,
     '-vf', filter,
-    '-vsync', 'vfr',
+    '-fps_mode', 'vfr', // ffmpeg 5.1+ 语法（替代已移除的 -vsync vfr）
     '-q:v', String(p.quality),
     '-an', // 丢弃音频（抽帧不需要）
     p.pattern,
