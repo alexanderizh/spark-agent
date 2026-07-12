@@ -605,6 +605,11 @@ export async function extractFramesAtTimes(
       log.warn(`时间点 ${t}s 提取失败: ${result.stderr.slice(-200)}`)
       continue
     }
+    // 校验产物文件确实存在（seek 模式下可能 exit 0 但未生成文件）
+    if (!existsSync(outPath)) {
+      log.warn(`时间点 ${t}s 提取后文件不存在: ${outPath}`)
+      continue
+    }
     results.push({ path: outPath, timestampSec: t, index: i })
   }
   return results
