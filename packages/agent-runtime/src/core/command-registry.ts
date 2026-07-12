@@ -10,7 +10,6 @@
  *   session / model / context / permission / workflow / agent / mcp / skill / resource / team / git / utility / system
  */
 
-import { existsSync, readFileSync } from 'node:fs'
 import { rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -223,22 +222,6 @@ export function isValidCustomCommandName(name: string): boolean {
 
 function clipCommandSectionOutput(output: string, maxLength = 4000): string {
   return output.length > maxLength ? `${output.slice(0, maxLength)}\n... output truncated ...` : output
-}
-
-function formatDiffSection(title: string, diff: string): string {
-  const body = diff.trim()
-  if (!body) {
-    return `## ${title}\n\n_No changes._`
-  }
-  return `## ${title}\n\n\`\`\`diff\n${clipCommandSectionOutput(body)}\n\`\`\``
-}
-
-function formatUntrackedFilesSection(files: string): string {
-  const body = files.trim()
-  if (!body) {
-    return '## Untracked files\n\n_No untracked files._'
-  }
-  return `## Untracked files\n\n\`\`\`\n${clipCommandSectionOutput(body)}\n\`\`\``
 }
 
 /* ============================================================
@@ -526,19 +509,13 @@ function registerSdkCommands(registry: CommandRegistry): void {
         '▸ **会话管理**',
         '`/help [command]` — 显示帮助',
         '`/status` — 显示当前会话状态',
-        '`/model [model-id]` — 切换模型',
         '`/rename <title>` — 重命名会话',
         '`/clear` — 清空会话消息',
         '`/compact [instructions]` — 交给 Agent 总结/压缩上下文（不会清空会话）',
         '`/checkpoint list|restore` — 管理快照',
         '',
         '▸ **工具与诊断**',
-        '`/diff` — 查看 git diff',
         '`/doctor` — 环境诊断',
-        '`/validate [command]` — 运行项目验证脚本',
-        '`/usage` — 查看 token/cost 统计',
-        '`/init` — 初始化项目配置',
-        '`/approval <on|off>` — 开关工具审批',
         '',
         '▸ **Git 操作**',
         '`/git status` — 查看状态',
@@ -551,11 +528,8 @@ function registerSdkCommands(registry: CommandRegistry): void {
         '`/git pull` — 拉取远程（交给 AI 执行）',
         '',
         '▸ **Agent 交互**',
-        '`/plan [task]` — 进入 Plan 模式',
         '`/review [instructions]` — 代码审查',
-        '`/memory` — 管理记忆文件',
         '`/skill list|run` — Skill 管理',
-        '`/add-dir <path>` — 添加工作目录',
         '`/goal <objective>` — 设置任务目标',
         '',
         '▸ **Agent 技能命令** (Layer 3)',
@@ -659,40 +633,6 @@ function registerSdkCommands(registry: CommandRegistry): void {
   })
 
   registry.register({
-    id: 'sdk:claude:model',
-    name: 'model',
-    aliases: [],
-    layer: 'sdk',
-    group: 'model',
-    description: '切换当前会话使用的模型',
-    scope: 'session',
-    risk: 'low',
-    usage: '/model [model-id]',
-    handler: async (cmd, ctx, deps) => {
-      const session = deps.getSession(ctx.sessionId)
-      const modelId = cmd.args[0]
-      if (modelId == null || modelId.length === 0) {
-        const current = session?.modelId ?? '（使用 Provider 默认）'
-        return { success: true, message: `当前模型：${current}\n用法：/model <model-id>` }
-      }
-      if (session == null) {
-        return { success: false, message: '当前会话不存在，无法切换模型。' }
-      }
-      const providerModels = deps.getProviderModelIds?.(session.providerProfileId) ?? []
-      if (providerModels.length > 0 && !providerModels.includes(modelId)) {
-        const providerName = deps.getProviderName(session.providerProfileId) ?? session.providerProfileId
-        return {
-          success: false,
-          message: `模型 \`${modelId}\` 不属于当前 Provider（${providerName}）。请在模型选择器中切换到对应 Provider，或使用当前 Provider 支持的模型：${providerModels.join(', ')}`,
-          data: { modelId, providerProfileId: session.providerProfileId, providerModels },
-        }
-      }
-      await deps.updateSession(ctx.sessionId, { modelId })
-      return { success: true, message: `模型已切换为 \`${modelId}\``, data: { modelId } }
-    },
-  })
-
-  registry.register({
     id: 'sdk:claude:compact',
     name: 'compact',
     aliases: [],
@@ -719,47 +659,6 @@ function registerSdkCommands(registry: CommandRegistry): void {
     handler: async (_cmd, ctx, deps) => {
       await deps.clearSessionEvents(ctx.sessionId)
       return { success: true, message: '会话消息已全部清空。', wipeHistory: true }
-    },
-  })
-
-  registry.register({
-    id: 'sdk:codex:diff',
-    name: 'diff',
-    aliases: [],
-    layer: 'sdk',
-    group: 'git',
-    description: '查看当前 git diff（含未跟踪文件）',
-    scope: 'workspace',
-    risk: 'none',
-    usage: '/diff',
-    handler: async (_cmd, _ctx, deps) => {
-      const cwd = deps.getWorkspacePath?.()
-      if (!cwd) {
-        return { success: false, message: '未打开工作区，无法执行 git diff。' }
-      }
-      if (!deps.execShell) {
-        return { success: false, message: 'Shell 执行不可用。' }
-      }
-      try {
-        const [workingTreeDiff, stagedDiff, untrackedFiles] = await Promise.all([
-          deps.execShell('git diff', cwd),
-          deps.execShell('git diff --cached', cwd),
-          deps.execShell('git ls-files --others --exclude-standard', cwd),
-        ])
-        if (!workingTreeDiff.stdout.trim() && !stagedDiff.stdout.trim() && !untrackedFiles.stdout.trim()) {
-          return { success: true, message: '没有文件变更。' }
-        }
-        return {
-          success: true,
-          message: [
-            formatDiffSection('Working tree diff', workingTreeDiff.stdout),
-            formatDiffSection('Staged diff', stagedDiff.stdout),
-            formatUntrackedFilesSection(untrackedFiles.stdout),
-          ].join('\n\n'),
-        }
-      } catch (err) {
-        return { success: false, message: `执行 git diff 失败：${err instanceof Error ? err.message : String(err)}` }
-      }
     },
   })
 
@@ -848,186 +747,6 @@ function registerSdkCommands(registry: CommandRegistry): void {
   })
 
   registry.register({
-    id: 'builtin:validate',
-    name: 'validate',
-    aliases: ['verify'],
-    layer: 'builtin',
-    group: 'utility',
-    description: '运行项目验证脚本',
-    scope: 'workspace',
-    risk: 'medium',
-    usage: '/validate [pnpm run typecheck] [--repair]',
-    handler: async (cmd, _ctx, deps) => {
-      const cwd = deps.getWorkspacePath?.()
-      if (!cwd) return { success: false, message: '未打开工作区，无法运行验证。' }
-      if (!deps.execShell) return { success: false, message: 'Shell 执行不可用。' }
-
-      const scripts = readWorkspaceScripts(cwd)
-      const validationScripts = Object.keys(scripts).filter(isValidationScriptName)
-      if (validationScripts.length === 0) {
-        return { success: false, message: '当前工作区 package.json 中没有发现 typecheck/test/lint 类验证脚本。' }
-      }
-
-      if (cmd.args.length === 0) {
-        const pm = detectWorkspacePackageManager(cwd)
-        const lines = [
-          '**可用验证脚本**',
-          '',
-          ...validationScripts.map((script) => `- \`${pm} run ${script}\``),
-        ]
-        return { success: true, message: lines.join('\n') }
-      }
-
-      const requestedCommand = cmd.args.join(' ')
-      const parsed = parseValidationRunCommand(requestedCommand)
-      if (parsed == null || !validationScripts.includes(parsed.scriptName)) {
-        return {
-          success: false,
-          message: `只允许运行 package.json 中的验证脚本：${validationScripts.map((script) => `\`${script}\``).join('、')}。`,
-        }
-      }
-
-      const startedAt = Date.now()
-      const result = await deps.execShell(requestedCommand, cwd)
-      const elapsed = Date.now() - startedAt
-      const output = [result.stdout, result.stderr].filter((part) => part.trim().length > 0).join('\n')
-      const clippedOutput = output.length > 8000 ? `${output.slice(0, 8000)}\n... output truncated ...` : output
-      const statusLine = result.exitCode === 0 ? '验证通过' : '验证失败'
-      const body = clippedOutput.trim().length > 0 ? `\n\n\`\`\`\n${clippedOutput.trim()}\n\`\`\`` : ''
-      const repairRequested = cmd.flags.repair === 'true'
-      const repairAttempt = parsePositiveInt(cmd.flags.attempt, 1)
-      const maxRepairAttempts = parsePositiveInt(cmd.flags['max-retries'] ?? cmd.flags.maxRetries, 3)
-      const repairCanContinue = result.exitCode !== 0 && repairRequested && repairAttempt < maxRepairAttempts
-      const repairStopped = result.exitCode !== 0 && repairRequested && !repairCanContinue
-      const followUpPrompt = repairCanContinue
-        ? buildValidationRepairPrompt({
-            command: requestedCommand,
-            exitCode: result.exitCode,
-            output: clippedOutput,
-            attempt: repairAttempt,
-            maxAttempts: maxRepairAttempts,
-            nextAttempt: repairAttempt + 1,
-          })
-        : undefined
-      const repairNote = followUpPrompt != null ? '\n\n已把失败摘要交给 Agent 继续修复。' : ''
-      const repairLoopNote = followUpPrompt != null
-        ? `\n\n已把失败摘要交给 Agent 继续修复（attempt ${repairAttempt}/${maxRepairAttempts}）。`
-        : (repairStopped ? `\n\n修复循环已停止：达到最大重试次数 ${maxRepairAttempts}。` : repairNote)
-      const repairLoopNoteText = followUpPrompt != null
-        ? `\n\nRepair summary queued for Agent (attempt ${repairAttempt}/${maxRepairAttempts}).`
-        : (repairStopped ? `\n\nRepair loop stopped: max retries ${maxRepairAttempts} reached.` : repairLoopNote)
-      return {
-        success: result.exitCode === 0,
-        message: `**${statusLine}** \`${requestedCommand}\` (${elapsed}ms, exit ${result.exitCode})${body}${repairLoopNoteText}`,
-        data: {
-          command: requestedCommand,
-          exitCode: result.exitCode,
-          durationMs: elapsed,
-          repairQueued: followUpPrompt != null,
-          validationRepair: {
-            requested: repairRequested,
-            attempt: repairAttempt,
-            maxAttempts: maxRepairAttempts,
-            nextAttempt: repairCanContinue ? repairAttempt + 1 : null,
-            stopped: repairStopped,
-            stopReason: repairStopped ? 'max_retries_exhausted' : null,
-          },
-        },
-        ...(followUpPrompt != null ? { followUpPrompt } : {}),
-      }
-    },
-  })
-
-  registry.register({
-    id: 'sdk:claude:usage',
-    name: 'usage',
-    aliases: ['cost'],
-    layer: 'sdk',
-    group: 'utility',
-    description: '查看当前会话 token/cost 统计',
-    scope: 'session',
-    risk: 'none',
-    usage: '/usage',
-    handler: async (_cmd, ctx, deps) => {
-      const usage = deps.getSessionUsage?.(ctx.sessionId)
-      if (!usage) {
-        return { success: true, message: '当前会话暂无用量数据。' }
-      }
-      const lines = [
-        '**会话用量统计**',
-        `- 输入 Token：${usage.totalInputTokens.toLocaleString()}`,
-        `- 输出 Token：${usage.totalOutputTokens.toLocaleString()}`,
-        `- 总成本：$${usage.totalCost.toFixed(4)}`,
-      ]
-      return { success: true, message: lines.join('\n') }
-    },
-  })
-
-  registry.register({
-    id: 'sdk:claude:init',
-    name: 'init',
-    aliases: [],
-    layer: 'sdk',
-    group: 'utility',
-    description: '初始化项目配置文件',
-    scope: 'workspace',
-    risk: 'low',
-    usage: '/init',
-    handler: async (_cmd, _ctx, deps) => {
-      const cwd = deps.getWorkspacePath?.()
-      if (!cwd) {
-        return { success: false, message: '未打开工作区。' }
-      }
-      if (!deps.execShell) {
-        return { success: false, message: 'Shell 执行不可用。' }
-      }
-      try {
-        const { stdout } = await deps.execShell('test -d .claude/commands && echo "exists" || echo "not_found"', cwd)
-        if (stdout.trim() === 'exists') {
-          return { success: true, message: '项目配置已存在。如需重新初始化，请先删除 `.claude/` 目录。' }
-        }
-        await deps.execShell('mkdir -p .claude/commands', cwd)
-        return { success: true, message: '已创建 `.claude/commands/` 目录。可在其中添加自定义命令。' }
-      } catch (err) {
-        return { success: false, message: `初始化失败：${err instanceof Error ? err.message : String(err)}` }
-      }
-    },
-  })
-
-  registry.register({
-    id: 'sdk:claude:add-dir',
-    name: 'add-dir',
-    aliases: [],
-    layer: 'sdk',
-    group: 'utility',
-    description: '添加工作目录',
-    scope: 'workspace',
-    risk: 'low',
-    palette: { hidden: true },
-    usage: '/add-dir <path>',
-    handler: async () => forwardToAgent(),
-  })
-
-  // `/memory` 是 Claude Code 原生命令，forward 给宿主处理：编辑的是项目/用户级的
-  // CLAUDE.md（项目规则文件，git 跟踪、手动维护）。它与「应用长期记忆」
-  //（~/.spark-agent/memory/ + 桌面端「设置 → Agent → 记忆」面板、后台自动抽取）
-  // 是两套不同的记忆机制——见 system prompt 里的 [Memory Behavior] 段。此处保留
-  // forward 行为以维持与 SDK 一致，仅靠描述和提示词层区分两者语义。
-  registry.register({
-    id: 'sdk:claude:memory',
-    name: 'memory',
-    aliases: ['memories'],
-    layer: 'sdk',
-    group: 'utility',
-    description: '管理项目记忆文件（CLAUDE.md，Claude Code 原生；与应用长期记忆不同）',
-    scope: 'workspace',
-    risk: 'none',
-    palette: { hidden: true },
-    usage: '/memory',
-    handler: async () => forwardToAgent(),
-  })
-
-  registry.register({
     id: 'sdk:codex:review',
     name: 'review',
     aliases: [],
@@ -1040,96 +759,12 @@ function registerSdkCommands(registry: CommandRegistry): void {
     usage: '/review [instructions]',
     handler: async () => forwardToAgent(),
   })
-
-  registry.register({
-    id: 'sdk:codex:plan',
-    name: 'plan',
-    aliases: [],
-    layer: 'sdk',
-    group: 'utility',
-    description: '进入 Plan 模式',
-    scope: 'session',
-    risk: 'none',
-    palette: { hidden: true },
-    usage: '/plan [task]',
-    handler: async () => forwardToAgent(),
-  })
 }
 
 function isAgentForwardedCommand(def: CommandDefinition): boolean {
-  const forwardedCommands = new Set(['compact', 'add-dir', 'memory', 'review', 'plan'])
+  const forwardedCommands = new Set(['compact', 'review'])
   if (forwardedCommands.has(def.name)) return true
   return def.name === 'git'
-}
-
-function readWorkspaceScripts(cwd: string): Record<string, string> {
-  try {
-    const raw = readFileSync(path.join(cwd, 'package.json'), 'utf8')
-    const parsed = JSON.parse(raw) as unknown
-    if (!isRecord(parsed) || !isRecord(parsed.scripts)) return {}
-    const scripts: Record<string, string> = {}
-    for (const [name, value] of Object.entries(parsed.scripts)) {
-      if (typeof value === 'string') scripts[name] = value
-    }
-    return scripts
-  } catch {
-    return {}
-  }
-}
-
-function detectWorkspacePackageManager(cwd: string): 'pnpm' | 'yarn' | 'npm' {
-  if (existsSync(path.join(cwd, 'pnpm-lock.yaml'))) return 'pnpm'
-  if (existsSync(path.join(cwd, 'yarn.lock'))) return 'yarn'
-  return 'npm'
-}
-
-function isValidationScriptName(name: string): boolean {
-  return /(typecheck|check|tsc|test|vitest|lint|format:check|eslint)/i.test(name)
-}
-
-function parseValidationRunCommand(command: string): { packageManager: string; scriptName: string } | null {
-  const tokens = command.trim().split(/\s+/).filter(Boolean)
-  if (tokens.length < 3) return null
-  const packageManager = tokens[0]
-  if (packageManager !== 'pnpm' && packageManager !== 'npm' && packageManager !== 'yarn') return null
-
-  const runIndex = tokens.indexOf('run')
-  if (runIndex < 0 || runIndex + 1 >= tokens.length) return null
-  const scriptName = tokens[runIndex + 1]
-  if (scriptName == null || scriptName.startsWith('-')) return null
-  return { packageManager, scriptName }
-}
-
-function parsePositiveInt(value: string | undefined, fallback: number): number {
-  if (value == null) return fallback
-  const parsed = Number.parseInt(value, 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-}
-
-function buildValidationRepairPrompt(params: {
-  command: string
-  exitCode: number
-  output: string
-  attempt: number
-  maxAttempts: number
-  nextAttempt: number
-}): string {
-  const output = params.output.trim()
-  const clipped = output.length > 6000 ? `${output.slice(0, 6000)}\n... output truncated ...` : output
-  return [
-    '上一次代码验证失败，请基于下面的验证结果继续修复项目。',
-    '',
-    `验证命令: ${params.command}`,
-    `退出码: ${params.exitCode}`,
-    '',
-    '请先定位失败原因，修改必要代码，然后再次给出或触发合适的验证命令。不要回退无关改动。',
-    '',
-    clipped.length > 0 ? `验证输出:\n\`\`\`\n${clipped}\n\`\`\`` : '验证输出为空。',
-  ].join('\n')
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
 }
 
 /* ============================================================
@@ -1138,27 +773,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function registerBuiltinCommands(registry: CommandRegistry): void {
   // ── Session ──
-
-  registry.register({
-    id: 'builtin:approval',
-    name: 'approval',
-    aliases: [],
-    layer: 'builtin',
-    group: 'permission',
-    description: '开关工具审批模式',
-    scope: 'session',
-    risk: 'medium',
-    usage: '/approval <on|off>',
-    handler: async (cmd, ctx, deps) => {
-      const arg = cmd.args[0]?.toLowerCase()
-      if (arg !== 'on' && arg !== 'off') {
-        return { success: false, message: '用法：/approval <on|off>' }
-      }
-      const enabled = arg === 'on'
-      deps.setApprovalMode(ctx.sessionId, enabled)
-      return { success: true, message: `工具审批已${enabled ? '开启' : '关闭'}。` }
-    },
-  })
 
   registry.register({
     id: 'builtin:rename',

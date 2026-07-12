@@ -376,6 +376,8 @@ export type CanvasFlowNodeData = {
     extractCharacterSubview?: (nodeId: string) => void
     /** 360 全景产物节点：右键 → 全景预览（与普通图片「编辑」解耦） */
     previewPanorama: (nodeId: string) => void
+    /** 视频节点：右键 → 视频编辑（打开视频工作台） */
+    editVideo?: (nodeId: string) => void
     createOperationChild: (
       parentId: string,
       operation: import('./canvas.types').CanvasOperationType,
@@ -665,6 +667,21 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                   </span>
                 ),
                 onClick: () => actions.previewPanorama(node.id),
+              },
+              { type: 'divider' as const },
+            ]
+          : []),
+        // 视频节点 / 视频工作台节点：右键 → 视频编辑（打开视频工作台）
+        ...((node.type === 'video' || isVideoWorkbench) && actions.editVideo
+          ? [
+              {
+                key: 'edit-video',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Video size={14} /> 视频编辑
+                  </span>
+                ),
+                onClick: () => actions.editVideo!(node.id),
               },
               { type: 'divider' as const },
             ]

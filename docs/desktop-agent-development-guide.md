@@ -1,6 +1,6 @@
 # Spark Agent Desktop Development Guide
 
-> 状态: 实施中 | 最后核对: 2026-07-11
+> 状态: 实施中 | 最后核对: 2026-07-12
 
 版本: 0.2  
 日期: 2026-05-27  
@@ -637,7 +637,6 @@ Team:
 
 Git:
 
-- `/diff`: 查看当前 git diff（含未跟踪文件）。
 - `/git status`: 查看 git 状态。
 - `/git log [n]`: 查看最近 n 条提交记录。
 - `/git stash`: 暂存当前变更。
@@ -646,12 +645,7 @@ Utility:
 
 - `/copy`: 复制上次 agent 输出为 Markdown。
 - `/doctor`: 运行环境诊断。
-- `/init`: 初始化项目配置文件（AGENTS.md / .claude/）。
-- `/add-dir <path>`: 添加工作目录。
-- `/memory`: 管理记忆文件。
-- `/plan [task]`: 进入 Plan 模式。
 - `/review [instructions]`: 代码审查。
-- `/usage`: 查看当前会话 token/cost 统计。
 
 ##### Layer 3: Agent 技能命令
 
@@ -666,7 +660,7 @@ Layer 3 命令随 Agent 切换而变化（Agent 切换功能后续开发）。
 
 输入 `/` 后弹出命令面板:
 
-- 支持模糊搜索，例如输入 `/mod` 匹配 `/model`。
+- 支持模糊搜索，例如输入 `/rev` 匹配 `/review`。
 - 命令按三层+分组展示: SDK 原生命令 → 程序内置命令（按 Session/Model/Context/Permission/Workflow/Agent/MCP/Skill/Resource/Team/Git/Utility 分组） → Agent 技能命令。
 - 每个命令显示描述、来源层（SDK/程序/技能）、作用域、风险等级、快捷参数。
 - 命令有参数时，支持 inline 参数和表单参数两种方式。
@@ -682,8 +676,6 @@ Layer 3 命令随 Agent 切换而变化（Agent 切换功能后续开发）。
 示例:
 
 ```text
-/model coder codex-high
-/approval workspace-write
 /context mode surgical @src/runtime
 /compact --keep decisions,artifacts
 /workflow run feature-development --from plan
@@ -692,7 +684,6 @@ Layer 3 命令随 Agent 切换而变化（Agent 切换功能后续开发）。
 /skill install ./skills/code-review
 /resource eco
 /team request-approval @alex "允许执行数据库迁移检查"
-/diff
 /doctor
 ```
 
@@ -785,9 +776,10 @@ Spark 支持命令后追加自然语言，用于给 agent 提供上下文:
 
 #### 当前实现状态与升级路线
 
-**当前已实现**（6 个命令）:
-- `/help`, `/status`, `/model`, `/compact`, `/clear`, `/approval`
+**当前已实现**（11 个命令）:
+- `/help`, `/status`, `/goal`, `/compact`, `/clear`, `/doctor`, `/review`, `/rename`, `/checkpoint`, `/skill`, `/git`
 - 命令面板模糊搜索 + 键盘导航 + IPC 执行
+- 置顶/常用排序（输入框 `/` 弹窗）
 
 **升级为三层架构的步骤**:
 1. 升级 `CommandDefinition` 类型 → 扩展为 `SlashCommand` 类型（增加 layer、aliases、subcommand、scope、risk 枚举）

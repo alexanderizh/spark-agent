@@ -1,5 +1,3 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import path from 'node:path'
 import { describe, it, expect, vi } from 'vitest'
 import { CommandRegistry, createBuiltinRegistry } from '../../core/command-registry.js'
 import type { CommandDeps } from '../../core/command-registry.js'
@@ -39,7 +37,6 @@ describe('CommandRegistry', () => {
     const cmds = registry.list()
     expect(cmds.map((c) => c.name)).toContain('help')
     expect(cmds.map((c) => c.name)).toContain('status')
-    expect(cmds.map((c) => c.name)).toContain('model')
   })
 
   it('has two-layer architecture commands', () => {
@@ -47,7 +44,7 @@ describe('CommandRegistry', () => {
     const cmds = registry.list()
     // Layer 1: SDK commands
     const sdkCmds = cmds.filter((c) => c.layer === 'sdk')
-    expect(sdkCmds.length).toBeGreaterThan(10)
+    expect(sdkCmds.length).toBeGreaterThan(0)
     // Layer 2: Builtin commands
     const builtinCmds = cmds.filter((c) => c.layer === 'builtin')
     expect(builtinCmds.length).toBeGreaterThan(0)
@@ -55,16 +52,16 @@ describe('CommandRegistry', () => {
 
   it('supports command aliases', () => {
     const registry = createBuiltinRegistry()
-    // 'cost' is an alias for 'usage'
-    const cmd = registry.get('cost')
+    // 'check' is an alias for 'doctor'
+    const cmd = registry.get('check')
     expect(cmd).toBeDefined()
-    expect(cmd?.name).toBe('usage')
+    expect(cmd?.name).toBe('doctor')
   })
 
   it('lists items with layer and group info', () => {
     const registry = createBuiltinRegistry()
     const items = registry.listItems()
-    expect(items.length).toBeGreaterThanOrEqual(20)
+    expect(items.length).toBeGreaterThanOrEqual(10)
     expect(items[0]).toHaveProperty('layer')
     expect(items[0]).toHaveProperty('group')
     expect(items[0]).toHaveProperty('risk')
@@ -74,7 +71,7 @@ describe('CommandRegistry', () => {
     const registry = createBuiltinRegistry()
     const items = registry.listItems()
     const hiddenNames = items.filter((item) => item.palette?.hidden === true).map((item) => item.name)
-    expect(hiddenNames).toEqual(expect.arrayContaining(['help', 'compact', 'add-dir', 'memory', 'review', 'plan']))
+    expect(hiddenNames).toEqual(expect.arrayContaining(['help', 'compact', 'review']))
     expect(items.find((item) => item.name === 'status')?.palette?.hidden).not.toBe(true)
   })
 
@@ -239,41 +236,6 @@ describe('Built-in commands', () => {
     expect(result.message).toContain('sess-1')
   })
 
-  it('/usage shows session token and cost totals from deps', async () => {
-    const result = await registry.execute(parse('/usage'), ctx, makeDeps({
-      getSessionUsage: vi.fn(() => ({ totalInputTokens: 1234, totalOutputTokens: 567, totalCost: 0.0425 })),
-    }))
-    expect(result.success).toBe(true)
-    expect(result.message).toContain('1,234')
-    expect(result.message).toContain('567')
-    expect(result.message).toContain('$0.0425')
-  })
-
-  it('/model with arg updates model', async () => {
-    const deps = makeDeps()
-    const result = await registry.execute(parse('/model gpt-4o'), ctx, deps)
-    expect(result.success).toBe(true)
-    expect(deps.updateSession).toHaveBeenCalledWith('sess-1', { modelId: 'gpt-4o' })
-  })
-
-  it('/model rejects models outside the current provider to avoid runtime mismatch', async () => {
-    const deps = makeDeps({
-      getSession: vi.fn(() => ({ title: 'Test', status: 'idle', modelId: 'glm-5', providerProfileId: 'tencent-provider' })),
-      getProviderName: vi.fn(() => 'Tencent Coding'),
-      getProviderModelIds: vi.fn(() => ['glm-5']),
-    })
-    const result = await registry.execute(parse('/model mimo-v2.5-pro'), ctx, deps)
-    expect(result.success).toBe(false)
-    expect(result.message).toContain('不属于当前 Provider')
-    expect(deps.updateSession).not.toHaveBeenCalled()
-  })
-
-  it('/model without arg shows current', async () => {
-    const result = await registry.execute(parse('/model'), ctx, makeDeps())
-    expect(result.success).toBe(true)
-    expect(result.message).toContain('Provider 默认')
-  })
-
   it('/clear calls clearSessionEvents', async () => {
     const deps = makeDeps()
     const result = await registry.execute(parse('/clear'), ctx, deps)
@@ -349,18 +311,6 @@ describe('Built-in commands', () => {
     expect(result.message).toContain('/goal confirm')
   })
 
-  it('/approval on enables approval', async () => {
-    const deps = makeDeps()
-    const result = await registry.execute(parse('/approval on'), ctx, deps)
-    expect(result.success).toBe(true)
-    expect(deps.setApprovalMode).toHaveBeenCalledWith('sess-1', true)
-  })
-
-  it('/approval with invalid arg returns error', async () => {
-    const result = await registry.execute(parse('/approval maybe'), ctx, makeDeps())
-    expect(result.success).toBe(false)
-  })
-
   it('/rename updates session title', async () => {
     const deps = makeDeps()
     const result = await registry.execute(parse('/rename New Title'), ctx, deps)
@@ -429,76 +379,6 @@ describe('Built-in commands', () => {
     const result = await registry.execute(parse('/git status'), ctx, deps)
     expect(result.success).toBe(true)
     expect(result.message).toContain('M src/app.ts')
-  })
-
-  it('/diff shows only unstaged working tree diff', async () => {
-    const execShell = vi.fn(async (command: string) => {
-      if (command === 'git diff') {
-        return { stdout: 'diff --git a/src/app.ts b/src/app.ts\n+unstaged', stderr: '', exitCode: 0 }
-      }
-      return { stdout: '', stderr: '', exitCode: 0 }
-    })
-    const result = await registry.execute(parse('/diff'), ctx, makeDeps({
-      getWorkspacePath: () => '/fake/workspace',
-      execShell,
-    }))
-
-    expect(result.success).toBe(true)
-    expect(result.message).toContain('## Working tree diff')
-    expect(result.message).toContain('```diff\n')
-    expect(result.message).toContain('+unstaged')
-    expect(result.message).toContain('## Staged diff')
-    expect(result.message).toContain('## Untracked files')
-    expect(execShell).toHaveBeenCalledWith('git diff', '/fake/workspace')
-    expect(execShell).toHaveBeenCalledWith('git diff --cached', '/fake/workspace')
-    expect(execShell).toHaveBeenCalledWith('git ls-files --others --exclude-standard', '/fake/workspace')
-  })
-
-  it('/diff shows only staged diff', async () => {
-    const execShell = vi.fn(async (command: string) => {
-      if (command === 'git diff --cached') {
-        return { stdout: 'diff --git a/src/app.ts b/src/app.ts\n+staged', stderr: '', exitCode: 0 }
-      }
-      return { stdout: '', stderr: '', exitCode: 0 }
-    })
-    const result = await registry.execute(parse('/diff'), ctx, makeDeps({
-      getWorkspacePath: () => '/fake/workspace',
-      execShell,
-    }))
-
-    expect(result.success).toBe(true)
-    expect(result.message).toContain('## Working tree diff')
-    expect(result.message).toContain('## Staged diff')
-    expect(result.message).toContain('+staged')
-    expect(result.message).toContain('## Untracked files')
-  })
-
-  it('/diff shows only untracked files outside diff fences', async () => {
-    const execShell = vi.fn(async (command: string) => {
-      if (command === 'git ls-files --others --exclude-standard') {
-        return { stdout: 'notes.txt\nsrc/new-file.ts\n', stderr: '', exitCode: 0 }
-      }
-      return { stdout: '', stderr: '', exitCode: 0 }
-    })
-    const result = await registry.execute(parse('/diff'), ctx, makeDeps({
-      getWorkspacePath: () => '/fake/workspace',
-      execShell,
-    }))
-
-    expect(result.success).toBe(true)
-    expect(result.message).toContain('## Untracked files')
-    expect(result.message).toContain('```\nnotes.txt\nsrc/new-file.ts\n```')
-    expect(result.message).not.toContain('```diff\nnotes.txt')
-  })
-
-  it('/diff returns no changes when working tree, staged, and untracked are empty', async () => {
-    const result = await registry.execute(parse('/diff'), ctx, makeDeps({
-      getWorkspacePath: () => '/fake/workspace',
-      execShell: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
-    }))
-
-    expect(result.success).toBe(true)
-    expect(result.message).toBe('没有文件变更。')
   })
 
   it('/doctor reports missing workspace', async () => {
@@ -652,40 +532,6 @@ describe('Built-in commands', () => {
     expect(deps.execShell).not.toHaveBeenCalled()
   })
 
-  it('/init returns existing project config when .claude/commands directory exists', async () => {
-    const execShell = vi.fn(async () => ({ stdout: 'exists\n', stderr: '', exitCode: 0 }))
-    const deps = makeDeps({
-      getWorkspacePath: () => '/fake/workspace',
-      execShell,
-    })
-
-    const result = await registry.execute(parse('/init'), ctx, deps)
-
-    expect(result.success).toBe(true)
-    expect(result.message).toContain('项目配置已存在')
-    expect(execShell).toHaveBeenCalledTimes(1)
-    expect(execShell).toHaveBeenCalledWith('test -d .claude/commands && echo "exists" || echo "not_found"', '/fake/workspace')
-  })
-
-  it('/init creates .claude/commands directory for an empty workspace', async () => {
-    const execShell = vi.fn(async (command: string) => ({
-      stdout: command.startsWith('test -d ') ? 'not_found\n' : '',
-      stderr: '',
-      exitCode: 0,
-    }))
-    const deps = makeDeps({
-      getWorkspacePath: () => '/fake/workspace',
-      execShell,
-    })
-
-    const result = await registry.execute(parse('/init'), ctx, deps)
-
-    expect(result.success).toBe(true)
-    expect(result.message).toContain('已创建 `.claude/commands/` 目录')
-    expect(execShell).toHaveBeenNthCalledWith(1, 'test -d .claude/commands && echo "exists" || echo "not_found"', '/fake/workspace')
-    expect(execShell).toHaveBeenNthCalledWith(2, 'mkdir -p .claude/commands', '/fake/workspace')
-  })
-
   it('/skill run selects a skill for the follow-up turn', async () => {
     const result = await registry.execute(parse('/skill run skill:review inspect changes'), ctx, makeDeps({
       listSkills: () => [{
@@ -700,81 +546,6 @@ describe('Built-in commands', () => {
     expect(result.success).toBe(true)
     expect(result.followUpSkillId).toBe('skill:review')
     expect(result.followUpPrompt).toBe('inspect changes')
-  })
-
-  it('/validate lists and runs workspace validation scripts', async () => {
-    const cwd = makeWorkspace({ typecheck: 'tsc --noEmit', dev: 'vite' })
-    try {
-      const deps = makeDeps({
-        getWorkspacePath: () => cwd,
-        execShell: vi.fn(async () => ({ stdout: 'ok', stderr: '', exitCode: 0 })),
-      })
-      const list = await registry.execute(parse('/validate'), ctx, deps)
-      expect(list.success).toBe(true)
-      expect(list.message).toContain('npm run typecheck')
-
-      const run = await registry.execute(parse('/validate npm run typecheck'), ctx, deps)
-      expect(run.success).toBe(true)
-      expect(deps.execShell).toHaveBeenCalledWith('npm run typecheck', cwd)
-    } finally {
-      rmSync(cwd, { recursive: true, force: true })
-    }
-  })
-
-  it('/validate refuses non-validation scripts', async () => {
-    const cwd = makeWorkspace({ typecheck: 'tsc --noEmit', postinstall: 'node unsafe.js' })
-    try {
-      const deps = makeDeps({
-        getWorkspacePath: () => cwd,
-        execShell: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
-      })
-      const result = await registry.execute(parse('/validate npm run postinstall'), ctx, deps)
-      expect(result.success).toBe(false)
-      expect(deps.execShell).not.toHaveBeenCalled()
-    } finally {
-      rmSync(cwd, { recursive: true, force: true })
-    }
-  })
-
-  it('/validate --repair returns a follow-up prompt when validation fails', async () => {
-    const cwd = makeWorkspace({ typecheck: 'tsc --noEmit' })
-    try {
-      const deps = makeDeps({
-        getWorkspacePath: () => cwd,
-        execShell: vi.fn(async () => ({ stdout: '', stderr: 'src/app.ts(1,1): error TS2322', exitCode: 2 })),
-      })
-      const result = await registry.execute(parse('/validate "npm run typecheck" --repair'), ctx, deps)
-      expect(result.success).toBe(false)
-      expect(result.message).toContain('Repair summary queued for Agent')
-      expect(result.data).toMatchObject({
-        repairQueued: true,
-        validationRepair: { attempt: 1, maxAttempts: 3, nextAttempt: 2, stopped: false },
-      })
-      expect(result.followUpPrompt).toContain('验证命令: npm run typecheck')
-      expect(result.followUpPrompt).toContain('error TS2322')
-    } finally {
-      rmSync(cwd, { recursive: true, force: true })
-    }
-  })
-
-  it('/validate --repair stops when max retries are exhausted', async () => {
-    const cwd = makeWorkspace({ typecheck: 'tsc --noEmit' })
-    try {
-      const deps = makeDeps({
-        getWorkspacePath: () => cwd,
-        execShell: vi.fn(async () => ({ stdout: '', stderr: 'still failing', exitCode: 2 })),
-      })
-      const result = await registry.execute(parse('/validate "npm run typecheck" --repair --attempt 2 --max-retries 2'), ctx, deps)
-      expect(result.success).toBe(false)
-      expect(result.message).toContain('Repair loop stopped')
-      expect(result.data).toMatchObject({
-        repairQueued: false,
-        validationRepair: { attempt: 2, maxAttempts: 2, nextAttempt: null, stopped: true, stopReason: 'max_retries_exhausted' },
-      })
-      expect(result.followUpPrompt).toBeUndefined()
-    } finally {
-      rmSync(cwd, { recursive: true, force: true })
-    }
   })
 
   it('/checkpoint list shows session checkpoints', async () => {
@@ -846,9 +617,3 @@ describe('Command Parser', () => {
     expect(cmd?.name).toBe('checkpoint')
   })
 })
-
-function makeWorkspace(scripts: Record<string, string>): string {
-  const cwd = mkdtempSync(path.join(process.cwd(), 'tmp-command-registry-'))
-  writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ scripts }, null, 2))
-  return cwd
-}

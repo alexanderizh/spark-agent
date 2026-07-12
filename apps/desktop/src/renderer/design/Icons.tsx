@@ -661,6 +661,19 @@ export const Icons = {
       <path d="M6 4.5A2.5 2.5 0 0 1 8.5 2h7A2.5 2.5 0 0 1 18 4.5v17l-6-4-6 4v-17z" />
     </IconBase>
   ),
+  PinFill: ({ size = 16, className = '', style }: IconProps) => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      style={style}
+    >
+      <path d="M6 4.5A2.5 2.5 0 0 1 8.5 2h7A2.5 2.5 0 0 1 18 4.5v17l-6-4-6 4v-17z" />
+    </svg>
+  ),
   Star: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M12 2l3 7 7.5.8-5.6 5 1.6 7.4L12 18.5 5.5 22.2 7 14.8 1.5 9.8 9 9l3-7z" />

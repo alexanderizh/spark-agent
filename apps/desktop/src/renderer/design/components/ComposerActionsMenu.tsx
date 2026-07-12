@@ -20,6 +20,8 @@ interface ComposerActionsMenuProps {
   onAddContextFiles?: () => void
   /** 把技能名作为 `@技能名 ` 插入到输入框（由父组件实现光标位置） */
   onInsertSkillMention: (skill: SkillItem) => void
+  /** 触发斜杠命令菜单：等同在输入框键入 `/` */
+  onInsertSlashCommand?: () => void
   /** 打开技能管理页面，可指定目标 tab */
   onOpenSkillStore?: (tab: 'installed' | 'create') => void
   /** 是否在运行中（运行中禁用整个菜单） */
@@ -32,6 +34,7 @@ export function ComposerActionsMenu({
   onAddAttachments,
   onAddContextFiles,
   onInsertSkillMention,
+  onInsertSlashCommand,
   onOpenSkillStore,
   disabled = false,
 }: ComposerActionsMenuProps) {
@@ -46,28 +49,6 @@ export function ComposerActionsMenu({
   const [skillSearch, setSkillSearch] = useState('')
   const { invoke: listSkills } = useIpcInvoke('skill:list')
   const { toast } = useToast()
-  const closeTimer = useRef<number | null>(null)
-  // 搜索框聚焦期间锁定关闭，避免输入到一半鼠标移出菜单导致搜索中断
-  const searchFocusedRef = useRef(false)
-
-  // 关闭弹窗（带一点延迟，避免子菜单 hover 离开时立即消失）
-  const closeSoon = () => {
-    // 搜索框聚焦时不排队关闭，仍可被外部点击关闭（pointerdown 监听独立工作）
-    if (searchFocusedRef.current) return
-    if (closeTimer.current != null) {
-      window.clearTimeout(closeTimer.current)
-    }
-    closeTimer.current = window.setTimeout(() => {
-      setOpen(false)
-      setSkillSubOpen(false)
-    }, 120)
-  }
-  const cancelClose = () => {
-    if (closeTimer.current != null) {
-      window.clearTimeout(closeTimer.current)
-      closeTimer.current = null
-    }
-  }
 
   const updateSkillSubPlacement = useCallback(() => {
     const item = skillItemRef.current
@@ -158,6 +139,12 @@ export function ComposerActionsMenu({
     onAddContextFiles?.()
   }
 
+  const handleCommandClick = () => {
+    setOpen(false)
+    setSkillSubOpen(false)
+    onInsertSlashCommand?.()
+  }
+
   const handleSkillClick = (skill: SkillItem) => {
     setOpen(false)
     setSkillSubOpen(false)
@@ -174,8 +161,6 @@ export function ComposerActionsMenu({
     <div
       ref={rootRef}
       className={`composer-actions-menu${open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}`}
-      onMouseLeave={closeSoon}
-      onMouseEnter={cancelClose}
     >
       <button
         type="button"
@@ -210,6 +195,19 @@ export function ComposerActionsMenu({
                 <Icons.FolderPlus size={14} />
               </span>
               <span className="composer-actions-item-label">添加相关文件或目录</span>
+            </button>
+          )}
+          {onInsertSlashCommand && (
+            <button
+              type="button"
+              className="composer-actions-item"
+              onClick={handleCommandClick}
+              onMouseEnter={() => setSkillSubOpen(false)}
+            >
+              <span className="composer-actions-item-icon">
+                <Icons.Command size={14} />
+              </span>
+              <span className="composer-actions-item-label">命令</span>
             </button>
           )}
           <div
@@ -247,13 +245,6 @@ export function ComposerActionsMenu({
                     placeholder="搜索技能"
                     onChange={(e) => setSkillSearch(e.target.value)}
                     onKeyDown={(e) => e.stopPropagation()}
-                    onFocus={() => {
-                      searchFocusedRef.current = true
-                      cancelClose()
-                    }}
-                    onBlur={() => {
-                      searchFocusedRef.current = false
-                    }}
                   />
                 </div>
                 {skillsLoading ? (

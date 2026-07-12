@@ -3116,6 +3116,40 @@ body.sidebar-resizing {
   background: var(--warning-bg);
   color: var(--warning);
 }
+/* 置顶按钮：默认隐藏，hover 行或已置顶时显示；点击置顶/取消置顶 */
+.slash-cmd-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: var(--r-xs);
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.slash-cmd-item:hover .slash-cmd-pin,
+.slash-cmd-item.selected .slash-cmd-pin,
+.slash-cmd-pin.is-pinned {
+  opacity: 1;
+}
+.slash-cmd-pin:hover {
+  color: var(--text-strong);
+  background: var(--hover);
+}
+.slash-cmd-pin.is-pinned {
+  color: var(--primary);
+}
+/* 有 pin 按钮的行：risk 标签不再独占右贴边，pin 接管 margin-left:auto */
+.slash-cmd-item.has-pin .slash-cmd-risk {
+  margin-left: 0;
+}
 
 .composer-queue-panel {
   display: grid;
@@ -16208,7 +16242,62 @@ body.inspector-resizing {
   color: var(--primary);
   font-family: var(--font-mono);
 }
-.custom-command-textarea { min-height: 120px; }
+
+/* ─── Custom command editor (enhanced) ───────────────────────────────────── */
+/* 提示词 / 脚本脱离 form-grid 的两列结构，改为全宽竖排块，输入框拿到面板最大宽度 */
+.custom-command-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 18px;
+}
+.custom-command-field > label {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+.custom-command-field > label .sub {
+  display: block;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-top: 2px;
+  line-height: 1.45;
+}
+/* 放大的提示词输入框 */
+.custom-command-prompt {
+  min-height: 140px;
+  resize: vertical;
+}
+/* 脚本区工具栏：左侧操作按钮 + 右侧计数 */
+.custom-command-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.custom-command-count {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* 脚本编辑容器：支持拖拽高亮 */
+.custom-command-editor-wrap {
+  border-radius: var(--r-md);
+  transition: box-shadow 0.15s;
+}
+.custom-command-editor-wrap.is-dragging {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+/* 放大的脚本输入框：等宽字体、大高度、行高 */
+.custom-command-editor {
+  min-height: 320px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  line-height: 1.6;
+}
 
 /* ─── Telemetry: Log Viewer ───────────────────────────────────────────────── */
 .log-viewer-toolbar {

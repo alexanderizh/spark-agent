@@ -2996,6 +2996,55 @@ export function CanvasWorkspaceView({
     [closeCanvasFloatPanels],
   )
 
+  // 视频节点的「视频编辑」入口（由右键菜单触发，打开视频工作台）。
+  // 对普通视频节点(type='video')和 video_workbench 节点都生效。
+  const handleEditVideo = useCallback(
+    (nodeId: string) => {
+      const node = snapshotRef.current?.nodes.find((item) => item.id === nodeId)
+      if (!node) return
+      const isVideo = node.type === 'video' || node.data.subtype === 'video_workbench'
+      if (!isVideo) {
+        message.warning('该节点不是视频节点')
+        return
+      }
+      closeCanvasFloatPanels('node-edit')
+      setSelectedNodeIds([nodeId])
+      setVideoWorkbenchNodeId(nodeId)
+    },
+    [closeCanvasFloatPanels],
+  )
+
+  // 工作台「添加/更换视频」：文件选择器 → 复制进项目 → 写回当前工作台节点的 data.url
+  const handleAddVideoToWorkbench = useCallback(
+    async () => {
+      if (!videoWorkbenchNode || !projectId) return
+      const picked = await window.spark.invoke('dialog:open-file', {
+        title: '选择视频',
+        multiple: false,
+        filters: [{ name: '视频', extensions: ['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv'] }],
+      })
+      if (picked.canceled || !picked.filePath) return
+      const projectRootPath = snapshot?.project.rootPath
+      const copyResult = await window.spark.invoke('canvas:asset:copy-to-project', {
+        projectId,
+        ...(projectRootPath ? { projectRootPath } : {}),
+        sourcePath: picked.filePath,
+        type: 'video',
+      })
+      if (copyResult.error || !copyResult.filePath) {
+        message.error('视频导入失败')
+        return
+      }
+      const fileUrl = encodeToSafeFileUrl(copyResult.filePath as string)
+      await updateNodeData(videoWorkbenchNode.id, {
+        url: fileUrl,
+        videoWorkbench: createDefaultVideoWorkbenchData() as unknown as Record<string, unknown>,
+      })
+      message.success('视频已导入工作台')
+    },
+    [videoWorkbenchNode, projectId, snapshot?.project.rootPath, updateNodeData],
+  )
+
   // 360 全景产物节点的「全景预览」入口（由右键菜单触发，与「编辑」解耦）。
   const handlePreviewPanorama = useCallback(
     (nodeId: string) => {
@@ -7045,6 +7094,7 @@ export function CanvasWorkspaceView({
             onAddNodesToAgent={handleAddSelectedToAgent}
             onOpenAiComposer={handleOpenInlineAi}
             onEditNode={handleEditNode}
+            onEditVideo={handleEditVideo}
             onPreviewPanorama={handlePreviewPanorama}
             onSaveNodeToLibrary={onSaveNodeToLibraryStable}
             onAnnotateImage={onAnnotateImageStable}
@@ -7129,14 +7179,12 @@ export function CanvasWorkspaceView({
             }}
             onAddVideoWorkbench={() => {
               closeCanvasFloatPanels()
-              // 优先打开选中视频节点的工作台；未选视频时提示用户
+              // 选中视频节点时直接打开其工作台；否则新建空工作台（进去后点「添加视频」）
               const selected = snapshot?.nodes.find((n) => selectedNodeIds.includes(n.id))
-              if (selected && selected.type === 'video' && typeof selected.data.url === 'string') {
-                setVideoWorkbenchNodeId(selected.id)
-              } else if (selected?.data.subtype === 'video_workbench') {
+              if (selected && (selected.type === 'video' || selected.data.subtype === 'video_workbench')) {
                 setVideoWorkbenchNodeId(selected.id)
               } else {
-                message.info('请先选中一个视频节点，或双击视频节点打开工作台')
+                void addVideoWorkbench()
               }
             }}
             onOpenAgent={() => {
@@ -7247,6 +7295,7 @@ export function CanvasWorkspaceView({
             onClose={() => setVideoWorkbenchNodeId(null)}
             onSave={handleSaveVideoWorkbench}
             onExportKeyframes={handleExportKeyframes}
+            onAddVideo={handleAddVideoToWorkbench}
           />
           <CanvasFilmAssetCenter
             open={filmCenterOpen}
