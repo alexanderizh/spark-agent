@@ -126,17 +126,7 @@ const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const PINNED_COMMANDS_CATEGORY = 'slash-commands'
 const PINNED_COMMANDS_KEY = 'pinned'
 // 常用命令名单：在「/ 弹窗」中默认靠前展示（自定义命令 layer==='custom' 也归入此区）
-const COMMON_COMMAND_NAMES = new Set([
-  'review',
-  'goal',
-  'status',
-  'clear',
-  'rename',
-  'checkpoint',
-  'skill',
-  'git',
-  'doctor',
-])
+const COMMON_COMMAND_NAMES = new Set(['goal', 'review', 'clear'])
 const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
 const LOCAL_CODEX_CLI_MODEL_DISPLAY = 'codex cli'
 
