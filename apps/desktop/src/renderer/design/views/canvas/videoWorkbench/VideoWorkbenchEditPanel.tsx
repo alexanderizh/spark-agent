@@ -7,24 +7,23 @@
  *   - 分割：按固定时长切段
  *   - 合并：选择画布上其他视频节点（需从外部传入可选节点）
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { ReactElement } from 'react'
 import { Button, InputNumber, Select, Slider, message } from 'antd'
 import { Icons } from '../../../Icons'
 import { formatTimestamp, type VideoProbeInfo, type WorkbenchOutput } from './videoWorkbench.types'
 
-type ProgressCb = (p: { percent: number; stage: string }) => void
-
 interface Props {
   sourceVideoPath: string
   probe: VideoProbeInfo | undefined
   busy: boolean
+  /** 当前操作进度 0~100，null 表示无活动 */
+  progress: number | null
   /** 当前时间线位置（秒），用于「设为起点/终点」 */
   currentTime: number
   onProcess: (
     operation: string,
     params: Record<string, unknown>,
-    onProgress: ProgressCb,
   ) => Promise<{ success: boolean; result?: unknown; error?: string }>
   /** 转码/裁剪产物生成后的回调（用于刷新产物列表） */
   onOutput?: (summary: string, outputPath: string, type: WorkbenchOutput['type']) => void
@@ -34,6 +33,7 @@ export function VideoWorkbenchEditPanel({
   sourceVideoPath,
   probe,
   busy,
+  progress,
   currentTime,
   onProcess,
   onOutput,
@@ -45,7 +45,7 @@ export function VideoWorkbenchEditPanel({
 
   // 转码
   const [tcFormat, setTcFormat] = useState<'mp4' | 'webm' | 'mov' | 'gif'>('mp4')
-  const [tcCodec, setTcCodec] = useState<'libx264' | 'libx265' | 'libvpx-vp9' | 'copy'>('libx264')
+  const [tcCodec, setTcCodec] = useState<'libx264' | 'libx265' | 'libvpx-vp9'>('libx264')
   const [tcCrf, setTcCrf] = useState(23)
   const [tcScale, setTcScale] = useState(100) // 百分比
 
@@ -59,6 +59,9 @@ export function VideoWorkbenchEditPanel({
   const [cropX, setCropX] = useState(0)
   const [cropY, setCropY] = useState(0)
 
+  // 当前操作的 loading 文案（busy 时显示）
+  const [doingLabel, setDoingLabel] = useState('')
+
   // probe 到达后同步一次默认值（组件首次挂载时 probe 多为 undefined）
   useEffect(() => {
     if (probe) {
@@ -68,111 +71,105 @@ export function VideoWorkbenchEditPanel({
     }
   }, [probe?.durationSec, probe?.width, probe?.height])
 
-  const handleTrim = async (): Promise<void> => {
-    if (trimEnd <= trimStart) {
-      message.error('结束时间必须大于起始时间')
-      return
-    }
-    const reqId = Math.random().toString(36).slice(2, 10)
-    const res = await onProcess('trim', { startSec: trimStart, endSec: trimEnd, copy: trimCopy }, (p) => {
-      message.loading({ content: `裁剪中 ${Math.round(p.percent)}%`, key: reqId, duration: 0 })
-    })
-    message.destroy(reqId)
-    if (res.success && res.result) {
-      const { path } = res.result as { path: string }
-      message.success(`已裁剪 ${formatTimestamp(trimStart)} ~ ${formatTimestamp(trimEnd)}`)
-      onOutput?.(`裁剪 ${formatTimestamp(trimStart)}-${formatTimestamp(trimEnd)}`, path, 'trim')
+  // busy 时显示进度 loading，结束时销毁
+  useEffect(() => {
+    if (busy && doingLabel) {
+      const pct = progress != null ? ` ${Math.round(progress)}%` : ''
+      message.loading({ content: `${doingLabel}${pct}…`, key: 'vwb-op', duration: 0 })
     } else {
-      message.error(res.error ?? '裁剪失败')
+      message.destroy('vwb-op')
     }
-  }
+  }, [busy, doingLabel, progress])
 
-  const handleTranscode = async (): Promise<void> => {
+  /**
+   * 通用操作执行器：抽取 6 个 handler 的公共模式。
+   * 显示 loading → 调 IPC → 成功记录产物 + toast / 失败 toast。
+   */
+  const runOp = useCallback(
+    async (
+      operation: string,
+      params: Record<string, unknown>,
+      label: string,
+      successMsg: string,
+      outputSummary: string,
+      outputType: WorkbenchOutput['type'],
+      extractPath: (r: unknown) => string,
+    ): Promise<void> => {
+      setDoingLabel(label)
+      try {
+        const res = await onProcess(operation, params)
+        if (res.success && res.result) {
+          const path = extractPath(res.result)
+          message.success(successMsg)
+          if (path) onOutput?.(outputSummary, path, outputType)
+        } else {
+          message.error(res.error ?? `${label}失败`)
+        }
+      } catch (err) {
+        message.error(`${label}失败: ${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setDoingLabel('')
+      }
+    },
+    [onProcess, onOutput],
+  )
+
+  const handleTrim = (): Promise<void> =>
+    runOp(
+      'trim',
+      { startSec: trimStart, endSec: trimEnd, copy: trimCopy },
+      '裁剪',
+      `已裁剪 ${formatTimestamp(trimStart)} ~ ${formatTimestamp(trimEnd)}`,
+      `裁剪 ${formatTimestamp(trimStart)}-${formatTimestamp(trimEnd)}`,
+      'trim',
+      (r) => (r as { path: string }).path,
+    )
+
+  const handleTranscode = (): Promise<void> => {
     const resolution = tcScale !== 100 && probe
       ? { w: Math.round((probe.width * tcScale) / 100), h: Math.round((probe.height * tcScale) / 100) }
       : undefined
-    const reqId = Math.random().toString(36).slice(2, 10)
-    const res = await onProcess(
+    const label = tcFormat === 'gif' ? 'GIF' : `${tcFormat.toUpperCase()}`
+    return runOp(
       'transcode',
       { format: tcFormat, videoCodec: tcCodec, crf: tcCrf, ...(resolution ? { resolution } : {}) },
-      (p) => {
-        message.loading({ content: `转码中 ${Math.round(p.percent)}%`, key: reqId, duration: 0 })
+      tcFormat === 'gif' ? '生成 GIF' : `转码 ${label}`,
+      `已转码为 ${label}`,
+      `转码 ${label}${tcScale !== 100 ? ` ${tcScale}%` : ''}`,
+      'transcode',
+      (r) => (r as { path: string }).path,
+    )
+  }
+
+  const handleSegment = (): Promise<void> =>
+    runOp(
+      'segment',
+      { segmentSec: segSec },
+      '分割',
+      '', // 成功消息在 extractPath 后动态生成
+      `分割 × ${segSec}s`,
+      'concat',
+      (r) => {
+        const paths = (r as { paths: string[] }).paths
+        message.success(`已分割为 ${paths.length} 段（每段 ${segSec}s）`)
+        return paths[0] ?? ''
       },
     )
-    message.destroy(reqId)
-    if (res.success && res.result) {
-      const { path } = res.result as { path: string }
-      const label = tcFormat === 'gif' ? 'GIF' : `${tcFormat.toUpperCase()} (${tcCodec})`
-      message.success(`已转码为 ${label}`)
-      onOutput?.(`转码 ${label}${tcScale !== 100 ? ` ${tcScale}%` : ''}`, path, 'transcode')
-    } else {
-      message.error(res.error ?? '转码失败')
-    }
+
+  const handleSpeed = (): Promise<void> => {
+    const label = speedFactor >= 1 ? `${speedFactor}x 加速` : `${speedFactor}x 慢放`
+    return runOp('adjustSpeed', { factor: speedFactor }, `变速`, `已${label}`, `变速 ${label}`, 'effect', (r) => (r as { path: string }).path)
   }
 
-  const handleSegment = async (): Promise<void> => {
-    const reqId = Math.random().toString(36).slice(2, 10)
-    const res = await onProcess('segment', { segmentSec: segSec }, (p) => {
-      message.loading({ content: `分割中 ${Math.round(p.percent)}%`, key: reqId, duration: 0 })
-    })
-    message.destroy(reqId)
-    if (res.success && res.result) {
-      const { paths } = res.result as { paths: string[] }
-      message.success(`已分割为 ${paths.length} 段（每段 ${segSec}s）`)
-      onOutput?.(`分割 ${paths.length} 段 × ${segSec}s`, paths[0] ?? '', 'concat')
-    } else {
-      message.error(res.error ?? '分割失败')
-    }
-  }
+  const handleReverse = (): Promise<void> =>
+    runOp('reverse', { reverseAudio: true }, '倒放', '已生成倒放视频', '倒放', 'effect', (r) => (r as { path: string }).path)
 
-  const handleSpeed = async (): Promise<void> => {
-    const reqId = Math.random().toString(36).slice(2, 10)
-    const res = await onProcess('adjustSpeed', { factor: speedFactor }, (p) => {
-      message.loading({ content: `变速中 ${Math.round(p.percent)}%`, key: reqId, duration: 0 })
-    })
-    message.destroy(reqId)
-    if (res.success && res.result) {
-      const { path } = res.result as { path: string }
-      const label = speedFactor >= 1 ? `${speedFactor}x 加速` : `${speedFactor}x 慢放`
-      message.success(`已${label}`)
-      onOutput?.(`变速 ${label}`, path, 'effect')
-    } else {
-      message.error(res.error ?? '变速失败')
-    }
-  }
-
-  const handleReverse = async (): Promise<void> => {
-    const reqId = Math.random().toString(36).slice(2, 10)
-    const res = await onProcess('reverse', { reverseAudio: true }, (p) => {
-      message.loading({ content: `倒放中 ${Math.round(p.percent)}%`, key: reqId, duration: 0 })
-    })
-    message.destroy(reqId)
-    if (res.success && res.result) {
-      const { path } = res.result as { path: string }
-      message.success('已生成倒放视频')
-      onOutput?.('倒放', path, 'effect')
-    } else {
-      message.error(res.error ?? '倒放失败')
-    }
-  }
-
-  const handleCrop = async (): Promise<void> => {
+  const handleCrop = (): Promise<void> => {
     if (cropW <= 0 || cropH <= 0) {
       message.error('裁剪宽高必须大于 0')
-      return
+      return Promise.resolve()
     }
-    const reqId = Math.random().toString(36).slice(2, 10)
-    const res = await onProcess('crop', { w: cropW, h: cropH, x: cropX, y: cropY }, (p) => {
-      message.loading({ content: `裁剪画面中 ${Math.round(p.percent)}%`, key: reqId, duration: 0 })
-    })
-    message.destroy(reqId)
-    if (res.success && res.result) {
-      const { path } = res.result as { path: string }
-      message.success(`已裁剪画面为 ${cropW}×${cropH}`)
-      onOutput?.(`画面裁剪 ${cropW}×${cropH}`, path, 'effect')
-    } else {
-      message.error(res.error ?? '画面裁剪失败')
-    }
+    return runOp('crop', { w: cropW, h: cropH, x: cropX, y: cropY }, '画面裁剪', `已裁剪画面为 ${cropW}×${cropH}`, `画面裁剪 ${cropW}×${cropH}`, 'effect', (r) => (r as { path: string }).path)
   }
 
   if (!probe) {
