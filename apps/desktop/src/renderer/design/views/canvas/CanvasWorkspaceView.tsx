@@ -2981,6 +2981,13 @@ export function CanvasWorkspaceView({
         setVideoWorkbenchNodeId(nodeId)
         return
       }
+      // 普通视频节点双击 → 直接打开视频工作台（源视频就是该节点本身）
+      if (node?.type === 'video' && typeof node.data.url === 'string') {
+        closeCanvasFloatPanels('node-edit')
+        setSelectedNodeIds([nodeId])
+        setVideoWorkbenchNodeId(nodeId)
+        return
+      }
       closeCanvasFloatPanels('node-edit')
       setInlinePanelFocusRequest({ nodeId, nonce: Date.now() })
       setSelectedNodeIds([nodeId])
@@ -7122,7 +7129,15 @@ export function CanvasWorkspaceView({
             }}
             onAddVideoWorkbench={() => {
               closeCanvasFloatPanels()
-              void addVideoWorkbench()
+              // 优先打开选中视频节点的工作台；未选视频时提示用户
+              const selected = snapshot?.nodes.find((n) => selectedNodeIds.includes(n.id))
+              if (selected && selected.type === 'video' && typeof selected.data.url === 'string') {
+                setVideoWorkbenchNodeId(selected.id)
+              } else if (selected?.data.subtype === 'video_workbench') {
+                setVideoWorkbenchNodeId(selected.id)
+              } else {
+                message.info('请先选中一个视频节点，或双击视频节点打开工作台')
+              }
             }}
             onOpenAgent={() => {
               closeCanvasFloatPanels('agent')
