@@ -11,7 +11,7 @@ import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { Button, InputNumber, Select, Slider, message } from 'antd'
 import { Icons } from '../../../Icons'
-import { formatTimestamp, type VideoProbeInfo } from './videoWorkbench.types'
+import { formatTimestamp, type VideoProbeInfo, type WorkbenchOutput } from './videoWorkbench.types'
 
 type ProgressCb = (p: { percent: number; stage: string }) => void
 
@@ -27,7 +27,7 @@ interface Props {
     onProgress: ProgressCb,
   ) => Promise<{ success: boolean; result?: unknown; error?: string }>
   /** 转码/裁剪产物生成后的回调（用于刷新产物列表） */
-  onOutput?: (summary: string, outputPath: string) => void
+  onOutput?: (summary: string, outputPath: string, type: WorkbenchOutput['type']) => void
 }
 
 export function VideoWorkbenchEditPanel({
@@ -72,7 +72,7 @@ export function VideoWorkbenchEditPanel({
     if (res.success && res.result) {
       const { path } = res.result as { path: string }
       message.success(`已裁剪 ${formatTimestamp(trimStart)} ~ ${formatTimestamp(trimEnd)}`)
-      onOutput?.(`裁剪 ${formatTimestamp(trimStart)}-${formatTimestamp(trimEnd)}`, path)
+      onOutput?.(`裁剪 ${formatTimestamp(trimStart)}-${formatTimestamp(trimEnd)}`, path, 'trim')
     } else {
       message.error(res.error ?? '裁剪失败')
     }
@@ -95,7 +95,7 @@ export function VideoWorkbenchEditPanel({
       const { path } = res.result as { path: string }
       const label = tcFormat === 'gif' ? 'GIF' : `${tcFormat.toUpperCase()} (${tcCodec})`
       message.success(`已转码为 ${label}`)
-      onOutput?.(`转码 ${label}${tcScale !== 100 ? ` ${tcScale}%` : ''}`, path)
+      onOutput?.(`转码 ${label}${tcScale !== 100 ? ` ${tcScale}%` : ''}`, path, 'transcode')
     } else {
       message.error(res.error ?? '转码失败')
     }
@@ -110,7 +110,7 @@ export function VideoWorkbenchEditPanel({
     if (res.success && res.result) {
       const { paths } = res.result as { paths: string[] }
       message.success(`已分割为 ${paths.length} 段（每段 ${segSec}s）`)
-      onOutput?.(`分割 ${paths.length} 段 × ${segSec}s`, paths[0] ?? '')
+      onOutput?.(`分割 ${paths.length} 段 × ${segSec}s`, paths[0] ?? '', 'concat')
     } else {
       message.error(res.error ?? '分割失败')
     }
@@ -126,7 +126,7 @@ export function VideoWorkbenchEditPanel({
       const { path } = res.result as { path: string }
       const label = speedFactor >= 1 ? `${speedFactor}x 加速` : `${speedFactor}x 慢放`
       message.success(`已${label}`)
-      onOutput?.(`变速 ${label}`, path)
+      onOutput?.(`变速 ${label}`, path, 'effect')
     } else {
       message.error(res.error ?? '变速失败')
     }
@@ -141,7 +141,7 @@ export function VideoWorkbenchEditPanel({
     if (res.success && res.result) {
       const { path } = res.result as { path: string }
       message.success('已生成倒放视频')
-      onOutput?.('倒放', path)
+      onOutput?.('倒放', path, 'effect')
     } else {
       message.error(res.error ?? '倒放失败')
     }
@@ -160,7 +160,7 @@ export function VideoWorkbenchEditPanel({
     if (res.success && res.result) {
       const { path } = res.result as { path: string }
       message.success(`已裁剪画面为 ${cropW}×${cropH}`)
-      onOutput?.(`画面裁剪 ${cropW}×${cropH}`, path)
+      onOutput?.(`画面裁剪 ${cropW}×${cropH}`, path, 'effect')
     } else {
       message.error(res.error ?? '画面裁剪失败')
     }
