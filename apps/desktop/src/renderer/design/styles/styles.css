@@ -116,6 +116,8 @@ html[data-theme="dark"],
   --text-muted: #9ca3af;
   --text-faint: #6b7280;
   --text-inverse: #09090b;
+  /* 品牌主色按钮在暗色界面始终使用浅色前景，避免组件库暗色算法改成深色文字。 */
+  --primary-fg: #ffffff;
 
   --code-bg: #303030;
   --code-fg: #d4d4d8;
@@ -142,6 +144,50 @@ html[data-theme="dark"],
 
   --term-bg: #08080a;
   --term-fg: #d4d4d8;
+}
+
+/* Ant/Lobe 会在运行时注入按钮主题色；暗色模式统一由产品主题变量接管前景色。 */
+html[data-theme="dark"] .ant-btn-primary:not(:disabled),
+.app.theme-dark .ant-btn-primary:not(:disabled) {
+  border-color: var(--primary) !important;
+  background: var(--primary) !important;
+  color: var(--primary-fg) !important;
+}
+
+html[data-theme="dark"] .ant-btn-primary:not(:disabled):hover,
+.app.theme-dark .ant-btn-primary:not(:disabled):hover {
+  border-color: var(--primary-hover) !important;
+  background: var(--primary-hover) !important;
+}
+
+html[data-theme="dark"] .ant-btn-primary:not(:disabled):active,
+.app.theme-dark .ant-btn-primary:not(:disabled):active {
+  border-color: color-mix(in srgb, var(--primary-hover) 78%, #000) !important;
+  background: color-mix(in srgb, var(--primary-hover) 78%, #000) !important;
+}
+
+html[data-theme="dark"] .ant-btn-primary:not(:disabled) :where(svg, span),
+.app.theme-dark .ant-btn-primary:not(:disabled) :where(svg, span) {
+  color: inherit !important;
+  stroke: currentColor;
+}
+
+html[data-theme="dark"] .ant-btn-primary:disabled,
+html[data-theme="dark"] .ant-btn-primary.ant-btn-disabled,
+.app.theme-dark .ant-btn-primary:disabled,
+.app.theme-dark .ant-btn-primary.ant-btn-disabled {
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--border)) !important;
+  background: color-mix(in srgb, var(--primary) 18%, var(--panel)) !important;
+  color: color-mix(in srgb, var(--primary-fg) 42%, var(--text-muted)) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] .ant-btn-primary:disabled :where(svg, span),
+html[data-theme="dark"] .ant-btn-primary.ant-btn-disabled :where(svg, span),
+.app.theme-dark .ant-btn-primary:disabled :where(svg, span),
+.app.theme-dark .ant-btn-primary.ant-btn-disabled :where(svg, span) {
+  color: inherit !important;
+  stroke: currentColor;
 }
 
 /* ---------- DENSITY MODES ---------- */
@@ -1320,14 +1366,15 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
 .app.titlebar-surface-settings .win-titlebar {
   background: linear-gradient(to right, var(--bg-sunken) 0 216px, var(--bg) 216px 100%);
 }
+.app.titlebar-surface-auth .shell-titlebar,
 .app.titlebar-surface-auth .mac-window-drag-header,
 .app.titlebar-surface-auth .win-titlebar {
   /* The 5:6 split matches .auth-flat. The brand-side gradient is deliberately
      repeated here so the draggable strip reads as part of the login page. */
   background:
     radial-gradient(520px 380px at 18% 8%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 65%)
-      left / 45.4545% 100% no-repeat,
-    var(--bg);
+      left / 50% 100% no-repeat,
+    linear-gradient(to right, var(--bg-soft) 0 50%, var(--bg) 50% 100%);
 }
 /* Sidebar hidden: page-level drag strips are redundant; shell title bar covers it */
 .app.sidebar-hidden.platform-darwin .mac-window-drag-header,
