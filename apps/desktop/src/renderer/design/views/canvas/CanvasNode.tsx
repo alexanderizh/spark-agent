@@ -671,8 +671,9 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               { type: 'divider' as const },
             ]
           : []),
-        // 视频节点 / 视频工作台节点：右键 → 视频编辑（打开视频工作台）
-        ...((node.type === 'video' || isVideoWorkbench) && actions.editVideo
+        // 视频节点 / 视频工作台节点 / 产物为视频的操作节点：右键 → 视频编辑
+        ...((node.type === 'video' || isVideoWorkbench || contentNode?.type === 'video') &&
+        actions.editVideo
           ? [
               {
                 key: 'edit-video',
@@ -681,7 +682,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                     <Icons.Video size={14} /> 视频编辑
                   </span>
                 ),
-                onClick: () => actions.editVideo!(node.id),
+                // 操作节点传其产物视频节点 id；普通视频节点传自身 id
+                onClick: () => actions.editVideo!(contentNode?.type === 'video' ? contentNode.id : node.id),
               },
               { type: 'divider' as const },
             ]
