@@ -122,8 +122,26 @@ const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 const COMPOSER_DRAFTS_KEY = 'spark-agent:composer-drafts'
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
+// 用户置顶的斜杠命令：复用通用 settings IPC 持久化（与 custom-commands 同一套机制）
+const PINNED_COMMANDS_CATEGORY = 'slash-commands'
+const PINNED_COMMANDS_KEY = 'pinned'
+// 常用命令名单：在「/ 弹窗」中默认靠前展示（自定义命令 layer==='custom' 也归入此区）
+const COMMON_COMMAND_NAMES = new Set([
+  'review',
+  'goal',
+  'status',
+  'clear',
+  'rename',
+  'checkpoint',
+  'skill',
+  'git',
+  'doctor',
+])
 const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
 const LOCAL_CODEX_CLI_MODEL_DISPLAY = 'codex cli'
+
+// 菜单距视口边缘的安全留白，防止紧贴/贴边显示
+const CONTEXT_MENU_VIEWPORT_MARGIN = 8
 
 function InlineContextMenu({
   x,
@@ -137,6 +155,8 @@ function InlineContextMenu({
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement | null>(null)
+  // 钳制后的最终坐标；首次渲染用原始 x/y，layout effect 同步修正避免闪烁
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       if (ref.current != null && !ref.current.contains(event.target as Node)) onClose()
@@ -151,11 +171,25 @@ function InlineContextMenu({
       window.removeEventListener('keydown', handleEscape)
     }
   }, [onClose])
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el == null) return
+    const { width, height } = el.getBoundingClientRect()
+    const left = Math.max(
+      CONTEXT_MENU_VIEWPORT_MARGIN,
+      Math.min(x, window.innerWidth - width - CONTEXT_MENU_VIEWPORT_MARGIN),
+    )
+    const top = Math.max(
+      CONTEXT_MENU_VIEWPORT_MARGIN,
+      Math.min(y, window.innerHeight - height - CONTEXT_MENU_VIEWPORT_MARGIN),
+    )
+    setPos({ left, top })
+  }, [x, y])
   return (
     <div
       ref={ref}
       className="action-menu context-action-menu"
-      style={{ position: 'fixed', left: x, top: y, zIndex: 10000 }}
+      style={{ position: 'fixed', left: pos?.left ?? x, top: pos?.top ?? y, zIndex: 10000 }}
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
@@ -775,6 +809,9 @@ export function ComposerV2({
   const [slashOpen, setSlashOpen] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
   const slashListRef = useRef<HTMLDivElement | null>(null)
+  // 用户置顶的命令 id 列表（持久化到 settings；顺序即展示顺序）
+  const [pinnedCmdIds, setPinnedCmdIds] = useState<string[]>([])
+  const pinnedLoadedRef = useRef(false)
   const [draftAdapter, setDraftAdapter] = useState<AgentAdapter>(
     initialPrefs.adapter ?? DEFAULT_AGENT_ADAPTER,
   )
@@ -1877,17 +1914,39 @@ export function ComposerV2({
     'system',
   ]
 
+  // 排序：置顶区 → 常用区 → 其余（按原分组顺序）
   const groupedSlashCmds = (() => {
-    const map = new Map<string, CommandListItem[]>()
-    for (const cmd of filteredSlashCmds) {
-      const arr = map.get(cmd.group) ?? []
+    // 1) 置顶区：按 pinnedCmdIds 顺序，保留过滤后仍存在的命令
+    const pinnedSet = new Set(pinnedCmdIds)
+    const pinnedCmds = pinnedCmdIds
+      .map((id) => filteredSlashCmds.find((c) => c.id === id))
+      .filter((c): c is CommandListItem => c != null)
+    // 已展示在置顶区的，不再重复出现在常用/其余区
+    const remaining = filteredSlashCmds.filter((c) => !pinnedSet.has(c.id))
+
+    // 2) 常用区：名单内 + 自定义命令（layer==='custom'）
+    const commonCmds = remaining.filter(
+      (c) => COMMON_COMMAND_NAMES.has(c.name) || c.layer === 'custom',
+    )
+    const restCmds = remaining.filter((c) => !COMMON_COMMAND_NAMES.has(c.name) && c.layer !== 'custom')
+
+    // 3) 其余：按原 SLASH_GROUP_ORDER 分组
+    const restMap = new Map<string, CommandListItem[]>()
+    for (const cmd of restCmds) {
+      const arr = restMap.get(cmd.group) ?? []
       arr.push(cmd)
-      map.set(cmd.group, arr)
+      restMap.set(cmd.group, arr)
     }
-    return SLASH_GROUP_ORDER.flatMap((key) => {
-      const cmds = map.get(key)
+    const restGroups = SLASH_GROUP_ORDER.flatMap((key) => {
+      const cmds = restMap.get(key)
       return cmds && cmds.length > 0 ? [{ key, label: SLASH_GROUP_LABELS[key] ?? key, cmds }] : []
     })
+
+    const groups: Array<{ key: string; label: string; cmds: CommandListItem[] }> = []
+    if (pinnedCmds.length > 0) groups.push({ key: 'pinned', label: '已置顶', cmds: pinnedCmds })
+    if (commonCmds.length > 0) groups.push({ key: 'common', label: '常用', cmds: commonCmds })
+    groups.push(...restGroups)
+    return groups
   })()
 
   const flatSlashList = groupedSlashCmds.flatMap((g) => g.cmds)
@@ -1916,6 +1975,54 @@ export function ComposerV2({
       setValue(`/${cmd.name} `)
     },
     [closeSlashPopup, setValue],
+  )
+
+  // 持久化置顶命令 id 列表（settings IPC → SQLite）
+  const persistPinnedCmdIds = useCallback(async (ids: string[]) => {
+    try {
+      await window.spark.invoke('settings:set', {
+        category: PINNED_COMMANDS_CATEGORY,
+        key: PINNED_COMMANDS_KEY,
+        value: JSON.stringify(ids),
+      })
+    } catch {
+      // 持久化失败不影响当前会话内的置顶体验
+    }
+  }, [])
+
+  // 首次打开斜杠弹窗时加载已置顶命令
+  useEffect(() => {
+    if (pinnedLoadedRef.current) return
+    pinnedLoadedRef.current = true
+    void (async () => {
+      try {
+        const res = await window.spark.invoke('settings:get', {
+          category: PINNED_COMMANDS_CATEGORY,
+          key: PINNED_COMMANDS_KEY,
+        })
+        const raw = res?.value
+        if (typeof raw === 'string' && raw.length > 0) {
+          const parsed = JSON.parse(raw)
+          if (Array.isArray(parsed)) {
+            setPinnedCmdIds(parsed.filter((id): id is string => typeof id === 'string'))
+          }
+        }
+      } catch {
+        // 读取失败按空列表处理
+      }
+    })()
+  }, [persistPinnedCmdIds])
+
+  /** 切换某命令的置顶状态：已置顶则取消，否则置顶到列表头部 */
+  const togglePinSlashCmd = useCallback(
+    (cmdId: string) => {
+      setPinnedCmdIds((prev) => {
+        const next = prev.includes(cmdId) ? prev.filter((id) => id !== cmdId) : [cmdId, ...prev]
+        void persistPinnedCmdIds(next)
+        return next
+      })
+    },
+    [persistPinnedCmdIds],
   )
 
   // ── Mention 候选构造：Host 优先，其次启用的 Members ──
@@ -2686,10 +2793,11 @@ export function ComposerV2({
                   {group.cmds.map((cmd) => {
                     flatIdx++
                     const idx = flatIdx
+                    const isPinned = pinnedCmdIds.includes(cmd.id)
                     return (
                       <div
                         key={cmd.id}
-                        className={`slash-cmd-item${idx === slashIndex ? ' selected' : ''}`}
+                        className={`slash-cmd-item has-pin${idx === slashIndex ? ' selected' : ''}`}
                         onMouseEnter={() => setSlashIndex(idx)}
                         onMouseDown={(e) => {
                           e.preventDefault()
@@ -2716,6 +2824,18 @@ export function ComposerV2({
                         {cmd.risk === 'medium' && (
                           <span className="slash-cmd-risk medium">注意</span>
                         )}
+                        <button
+                          type="button"
+                          className={`slash-cmd-pin${isPinned ? ' is-pinned' : ''}`}
+                          title={isPinned ? '取消置顶' : '置顶'}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            togglePinSlashCmd(cmd.id)
+                          }}
+                        >
+                          {isPinned ? <Icons.PinFill size={12} /> : <Icons.Pin size={12} />}
+                        </button>
                       </div>
                     )
                   })}
@@ -3027,6 +3147,11 @@ export function ComposerV2({
             onInsertSkillMention={handleInsertSkillMention}
             onOpenSkillStore={onOpenSkillStore}
             onAddContextFiles={() => void handleAddContextFiles()}
+            onInsertSlashCommand={() => {
+              // 等同键入 `/`：经 handleValueChange 触发斜杠命令弹窗
+              handleValueChange('/')
+              requestAnimationFrame(() => textareaRef.current?.focus())
+            }}
             // 仅在发送瞬间禁用（防重复提交）；任务执行中允许继续挂附件/插技能（只改下一轮草稿，不影响运行中的会话）
             disabled={sending}
           />

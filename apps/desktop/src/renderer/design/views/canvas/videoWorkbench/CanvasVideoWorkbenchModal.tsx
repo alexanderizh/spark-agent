@@ -47,6 +47,8 @@ interface Props {
   onSave: (data: VideoWorkbenchData) => Promise<void>
   /** 把关键帧导出为画布图片节点 */
   onExportKeyframes?: (frames: WorkbenchKeyframe[], sourceNodeId: string) => Promise<void>
+  /** 添加/切换源视频（文件选择器 → 落盘 → 写回 node.data.url） */
+  onAddVideo?: () => Promise<void>
 }
 
 export function CanvasVideoWorkbenchModal({
@@ -55,6 +57,7 @@ export function CanvasVideoWorkbenchModal({
   onClose,
   onSave,
   onExportKeyframes,
+  onAddVideo,
 }: Props): ReactElement | null {
   const initial = useMemo(
     () => (node?.data?.videoWorkbench
@@ -365,6 +368,16 @@ export function CanvasVideoWorkbenchModal({
             )}
           </div>
           <div className="vwb-topbar-actions">
+            {onAddVideo && (
+              <Button
+                size="small"
+                type={sourceVideoUrl ? 'default' : 'primary'}
+                onClick={() => void onAddVideo()}
+                icon={<Icons.Video size={14} />}
+              >
+                {sourceVideoUrl ? '更换视频' : '添加视频'}
+              </Button>
+            )}
             <Button size="small" type="text" onClick={onClose} icon={<Icons.X size={16} />}>
               关闭
             </Button>
