@@ -7,7 +7,7 @@
  *   - 分割：按固定时长切段
  *   - 合并：选择画布上其他视频节点（需从外部传入可选节点）
  */
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { ReactElement } from 'react'
 import { Button, InputNumber, Select, Slider, message } from 'antd'
 import { Icons } from '../../../Icons'
@@ -58,6 +58,15 @@ export function VideoWorkbenchEditPanel({
   const [cropH, setCropH] = useState(probe?.height ?? 0)
   const [cropX, setCropX] = useState(0)
   const [cropY, setCropY] = useState(0)
+
+  // probe 到达后同步一次默认值（组件首次挂载时 probe 多为 undefined）
+  useEffect(() => {
+    if (probe) {
+      setTrimEnd((prev) => (prev === 0 ? probe.durationSec : prev))
+      setCropW((prev) => (prev === 0 ? probe.width : prev))
+      setCropH((prev) => (prev === 0 ? probe.height : prev))
+    }
+  }, [probe?.durationSec, probe?.width, probe?.height])
 
   const handleTrim = async (): Promise<void> => {
     if (trimEnd <= trimStart) {
