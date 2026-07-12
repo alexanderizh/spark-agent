@@ -19,6 +19,12 @@ interface Props {
   busy: boolean
   /** 当前操作进度 0~100，null 表示无活动 */
   progress: number | null
+  /** ffmpeg 是否可用（null=检测中 false=不可用 true=可用） */
+  ffmpegReady: boolean | null
+  /** probe 是否失败（无 ffmpeg / 路径问题） */
+  probeFailed: boolean
+  /** 视频时长（秒），probe 失败时从 video 元素兜底 */
+  fallbackDuration: number
   /** 当前时间线位置（秒），用于「设为起点/终点」 */
   currentTime: number
   onProcess: (
@@ -34,11 +40,14 @@ export function VideoWorkbenchEditPanel({
   probe,
   busy,
   progress,
+  ffmpegReady,
+  probeFailed,
+  fallbackDuration,
   currentTime,
   onProcess,
   onOutput,
 }: Props): ReactElement {
-  const duration = probe?.durationSec ?? 0
+  const duration = probe?.durationSec ?? fallbackDuration ?? 0
   const [trimStart, setTrimStart] = useState(0)
   const [trimEnd, setTrimEnd] = useState(duration)
   const [trimCopy, setTrimCopy] = useState(true)
@@ -172,7 +181,31 @@ export function VideoWorkbenchEditPanel({
     return runOp('crop', { w: cropW, h: cropH, x: cropX, y: cropY }, '画面裁剪', `已裁剪画面为 ${cropW}×${cropH}`, `画面裁剪 ${cropW}×${cropH}`, 'effect', (r) => (r as { path: string }).path)
   }
 
-  if (!probe) {
+  // ffmpeg 不可用时的提示
+  if (ffmpegReady === false) {
+    return (
+      <div className="vwb-placeholder">
+        <Icons.AlertTriangle size={32} />
+        <p>FFmpeg 未安装</p>
+        <p className="muted">请在「设置 → 完整性」下载 FFmpeg 后使用剪辑功能</p>
+      </div>
+    )
+  }
+
+  // probe 失败但有视频时长（video 元素兜底）—— 部分功能可用
+  if (!probe && probeFailed) {
+    return (
+      <div className="vwb-placeholder">
+        <Icons.Video size={32} />
+        <p>视频信息探测失败</p>
+        <p className="muted">剪辑/转码需要 FFmpeg，关键帧提取可能受限</p>
+        <p className="muted">请确认 FFmpeg 已安装，或检查视频文件是否有效</p>
+      </div>
+    )
+  }
+
+  // probe 进行中（非失败）
+  if (!probe && !probeFailed) {
     return (
       <div className="vwb-placeholder">
         <Icons.Video size={32} />
@@ -378,19 +411,19 @@ export function VideoWorkbenchEditPanel({
           <div className="vwb-crop-grid">
             <div className="vwb-crop-field">
               <span>X</span>
-              <InputNumber size="small" min={0} max={probe.width} value={cropX} onChange={(v) => setCropX(Number(v) || 0)} />
+              <InputNumber size="small" min={0} max={probe?.width ?? 9999} value={cropX} onChange={(v) => setCropX(Number(v) || 0)} />
             </div>
             <div className="vwb-crop-field">
               <span>Y</span>
-              <InputNumber size="small" min={0} max={probe.height} value={cropY} onChange={(v) => setCropY(Number(v) || 0)} />
+              <InputNumber size="small" min={0} max={probe?.height ?? 9999} value={cropY} onChange={(v) => setCropY(Number(v) || 0)} />
             </div>
             <div className="vwb-crop-field">
               <span>宽</span>
-              <InputNumber size="small" min={1} max={probe.width} value={cropW} onChange={(v) => setCropW(Number(v) || 0)} />
+              <InputNumber size="small" min={1} max={probe?.width ?? 9999} value={cropW} onChange={(v) => setCropW(Number(v) || 0)} />
             </div>
             <div className="vwb-crop-field">
               <span>高</span>
-              <InputNumber size="small" min={1} max={probe.height} value={cropH} onChange={(v) => setCropH(Number(v) || 0)} />
+              <InputNumber size="small" min={1} max={probe?.height ?? 9999} value={cropH} onChange={(v) => setCropH(Number(v) || 0)} />
             </div>
           </div>
           <Button size="small" block onClick={handleCrop} loading={busy} disabled={busy}>
