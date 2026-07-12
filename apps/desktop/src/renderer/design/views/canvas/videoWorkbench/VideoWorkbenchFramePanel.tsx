@@ -92,9 +92,9 @@ export function VideoWorkbenchFramePanel({
           <div className="vwb-param">
             <label>采样间隔（秒）</label>
             <Slider
-              min={1}
+              min={0.5}
               max={60}
-              step={1}
+              step={0.5}
               value={cfg.intervalSec}
               onChange={(v) => onConfigChange({ ...cfg, intervalSec: v })}
               tooltip={{ formatter: (v) => `${v}秒一帧` }}
