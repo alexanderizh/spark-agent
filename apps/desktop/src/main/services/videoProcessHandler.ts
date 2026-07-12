@@ -100,6 +100,7 @@ export async function handleVideoProcess(
     return { success: true, result }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
+    console.error('[video-workbench] handleVideoProcess error:', message, err instanceof Error ? err.stack : '')
     return { success: false, error: message }
   }
 }
@@ -109,6 +110,7 @@ async function dispatch(
   onProgress?: (p: FfmpegProgress) => void,
 ): Promise<unknown> {
   const { operation, input, params } = req
+  console.log('[video-workbench] dispatch:', { operation, input: input.slice(0, 100), paramKeys: Object.keys(params) })
 
   // ── 统一输入校验：路径白名单 + 数值范围 ──────────────────────────
   assertPathAllowed(input, 'read')

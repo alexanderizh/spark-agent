@@ -234,6 +234,7 @@ export function CanvasVideoWorkbenchModal({
           })
           message.success(`提取了 ${frames.length} 个关键帧`)
         } else {
+          console.error('[video-workbench] extractKeyframes failed:', res.error)
           message.error(res.error ?? '关键帧提取失败')
         }
       } catch (err) {
