@@ -22,6 +22,11 @@
  */
 
 import { spawn } from 'node:child_process'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { unlink } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
 import { createLogger } from '@spark/shared'
 import { resolveFfmpegBin } from './FfmpegIntegrityService.js'
 
@@ -115,6 +120,7 @@ async function runFfmpeg(args: string[], opts: RunOpts = {}): Promise<ExecResult
 
       let stdout = ''
       let stderr = ''
+      let settled = false
       let timedOut = false
       let aborted = false
 
@@ -155,11 +161,15 @@ async function runFfmpeg(args: string[], opts: RunOpts = {}): Promise<ExecResult
       })
 
       child.on('error', (err) => {
+        if (settled) return
+        settled = true
         clearTimeout(timer)
         opts.signal?.removeEventListener('abort', onAbort)
         reject(err)
       })
       child.on('close', (code) => {
+        if (settled) return
+        settled = true
         clearTimeout(timer)
         opts.signal?.removeEventListener('abort', onAbort)
         if (timedOut) {
@@ -201,34 +211,46 @@ function gracefulKill(child: { kill: (signal?: NodeJS.Signals) => boolean }): vo
 async function runFfprobe(args: string[]): Promise<string> {
   const { ffprobe } = await resolveFfmpegBin()
   log.info(`ffprobe ${args.join(' ')}`)
-  return new Promise<string>((resolve, reject) => {
-    const child = spawn(ffprobe, args, {
-      shell: false,
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+  await acquireSlot()
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      const child = spawn(ffprobe, args, {
+        shell: false,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      let settled = false
+      let stdout = ''
+      let stderr = ''
+      const timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        gracefulKill(child)
+        reject(new Error('ffprobe 执行超时（15s）'))
+      }, 15_000)
+      child.stdout?.on('data', (b: Buffer) => {
+        stdout += b.toString()
+      })
+      child.stderr?.on('data', (b: Buffer) => {
+        stderr += b.toString()
+      })
+      child.on('error', (err) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        reject(err)
+      })
+      child.on('close', (code) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (code === 0) resolve(stdout)
+        else reject(new Error(`ffprobe 失败 (退出码 ${code}): ${stderr.trim()}`))
+      })
     })
-    let stdout = ''
-    let stderr = ''
-    const timer = setTimeout(() => {
-      gracefulKill(child)
-      reject(new Error('ffprobe 执行超时（15s）'))
-    }, 15_000)
-    child.stdout?.on('data', (b: Buffer) => {
-      stdout += b.toString()
-    })
-    child.stderr?.on('data', (b: Buffer) => {
-      stderr += b.toString()
-    })
-    child.on('error', (err) => {
-      clearTimeout(timer)
-      reject(err)
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      if (code === 0) resolve(stdout)
-      else reject(new Error(`ffprobe 失败 (退出码 ${code}): ${stderr.trim()}`))
-    })
-  })
+  } finally {
+    releaseSlot()
+  }
 }
 
 // ─── 转义辅助（filter 表达式内的特殊字符）────────────────────────────────────
@@ -394,9 +416,6 @@ export async function extractKeyframes(
   input: string,
   opts: ExtractKeyframesOpts,
 ): Promise<ExtractKeyframesResult> {
-  const { existsSync, mkdirSync } = await import('node:fs')
-  const { join } = await import('node:path')
-  const { randomUUID } = await import('node:crypto')
 
   const probe = await probeVideo(input)
   const duration = probe.durationSec
@@ -433,7 +452,7 @@ export async function extractKeyframes(
     // 清理第一次的产物
     for (const f of firstPass.outputFiles) {
       try {
-        await (await import('node:fs/promises')).unlink(f)
+        await unlink(f)
       } catch {
         /* ignore */
       }
@@ -475,8 +494,6 @@ async function runKeyframePass(
     onProgress?: (prog: FfmpegProgress) => void
   },
 ): Promise<{ timestamps: number[]; outputFiles: string[] }> {
-  const { readdirSync } = await import('node:fs')
-  const { dirname } = await import('node:path')
 
   let filter: string
   switch (p.strategy) {
@@ -558,9 +575,6 @@ export async function extractFramesAtTimes(
   outputDir: string,
   opts: { format?: 'jpg' | 'png'; quality?: number; onProgress?: (p: FfmpegProgress) => void } = {},
 ): Promise<ExtractedKeyframe[]> {
-  const { mkdirSync } = await import('node:fs')
-  const { join } = await import('node:path')
-  const { randomUUID } = await import('node:crypto')
 
   mkdirSync(outputDir, { recursive: true })
   const format = opts.format ?? 'jpg'
@@ -609,8 +623,6 @@ export async function generateThumbnail(
   outputPath: string,
   opts: { atSec?: number; width?: number } = {},
 ): Promise<{ path: string }> {
-  const { dirname } = await import('node:path')
-  const { mkdirSync } = await import('node:fs')
   mkdirSync(dirname(outputPath), { recursive: true })
 
   const atSec = opts.atSec ?? 1
@@ -698,10 +710,6 @@ export async function concatVideos(
 
   if (allSameCodec) {
     // concat demuxer（无损快）
-    const { writeFileSync } = await import('node:fs')
-    const { join, dirname } = await import('node:path')
-    const { tmpdir } = await import('node:os')
-    const { randomUUID } = await import('node:crypto')
     const listPath = join(tmpdir(), `concat-${randomUUID()}.txt`)
     // 路径里的单引号需转义
     const listContent = inputs.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n')
@@ -716,7 +724,7 @@ export async function concatVideos(
       return { path: outputPath }
     } finally {
       try {
-        await (await import('node:fs/promises')).unlink(listPath)
+        await unlink(listPath)
       } catch {
         /* ignore */
       }
@@ -724,21 +732,24 @@ export async function concatVideos(
   }
 
   // concat filter（重编码，异源）
-  const filterInputs = inputs.flatMap((_, i) => [`[${i}:v:0]`, `[${i}:a:0]`]).join('')
-  const concatChain = inputs.map((_, i) => `[${i}:v:0][${i}:a:0]`).join('')
+  // 根据是否所有输入都有音频，决定 concat 是否带音频流
+  const allHaveAudio = probes.every((p) => p.hasAudio)
+  const inputLabels = inputs
+    .map((_, i) => `[${i}:v:0]${allHaveAudio ? `[${i}:a:0]` : ''}`)
+    .join('')
   const args = [
     ...inputs.flatMap((f) => ['-i', f]),
     '-filter_complex',
-    `${concatChain}concat=n=${inputs.length}:v=1:a=1[outv][outa]`,
+    allHaveAudio
+      ? `${inputLabels}concat=n=${inputs.length}:v=1:a=1[outv][outa]`
+      : `${inputLabels}concat=n=${inputs.length}:v=1:a=0[outv]`,
     '-map', '[outv]',
-    '-map', '[outa]',
+    ...(allHaveAudio ? ['-map', '[outa]'] : []),
     '-c:v', 'libx264',
-    '-c:a', 'aac',
+    ...(allHaveAudio ? ['-c:a', 'aac'] : ['-an']),
     '-y',
     outputPath,
   ]
-  // filterInputs 变量暂保留（文档用途，实际 args 里 concatChain 已覆盖）
-  void filterInputs
   const result = await runFfmpeg(args, { totalDurationSec: totalDuration, onProgress: opts.onProgress })
   if (result.code !== 0) {
     throw new Error(`视频合并失败(filter): ${result.stderr.slice(-300)}`)
@@ -772,8 +783,6 @@ export async function segmentVideo(
     throw new Error(`视频分割失败: ${result.stderr.slice(-300)}`)
   }
   // 收集产物（按 pattern 的目录扫描 seg_*.mp4）
-  const { readdirSync } = await import('node:fs')
-  const { dirname, basename } = await import('node:path')
   const dir = dirname(outputPattern)
   const base = basename(outputPattern).replace(/%0?\d?d/g, '\\d+')
   const regex = new RegExp(`^${base}$`)
@@ -857,11 +866,6 @@ async function transcodeToGif(
   duration: number,
   onProgress?: (p: FfmpegProgress) => void,
 ): Promise<{ path: string }> {
-  const { mkdirSync } = await import('node:fs')
-  const { dirname } = await import('node:path')
-  const { randomUUID } = await import('node:crypto')
-  const { join } = await import('node:path')
-  const { tmpdir } = await import('node:os')
 
   mkdirSync(dirname(outputPath), { recursive: true })
   const palettePath = join(tmpdir(), `palette-${randomUUID()}.png`)
@@ -894,7 +898,7 @@ async function transcodeToGif(
     return { path: outputPath }
   } finally {
     try {
-      await (await import('node:fs/promises')).unlink(palettePath)
+      await unlink(palettePath)
     } catch {
       /* ignore */
     }

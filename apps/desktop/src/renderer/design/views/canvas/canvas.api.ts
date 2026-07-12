@@ -5480,12 +5480,18 @@ export function operationLabel(operation: CanvasOperationType): string {
  * fire-and-forget：调用方不 await，失败静默（CanvasAssetThumbnail 的 Play 占位图标兜底）。
  * 仅当 ffmpeg 可用时执行；不可用时留空，完整性面板下载 ffmpeg 后可手动刷新。
  */
+/** 正在生成缩略图的 assetId 集合，防止同一视频并发重复生成 */
+const thumbnailsInFlight = new Set<string>()
+
 async function ensureVideoThumbnail(
   projectId: string,
   assetId: string,
   nodeId: string,
   videoFilePath: string,
 ): Promise<void> {
+  // 去重：同一 assetId 已在生成中则跳过
+  if (thumbnailsInFlight.has(assetId)) return
+  thumbnailsInFlight.add(assetId)
   try {
     // 先检测 ffmpeg 是否可用；不可用则跳过（不报错）
     const status = await window.spark.invoke('ffmpeg:status', {})
@@ -5512,5 +5518,7 @@ async function ensureVideoThumbnail(
     writeDb(db)
   } catch {
     // 静默失败——缩略图不是关键功能，Play 占位图标兜底
+  } finally {
+    thumbnailsInFlight.delete(assetId)
   }
 }
