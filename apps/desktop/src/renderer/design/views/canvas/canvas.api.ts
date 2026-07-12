@@ -5497,7 +5497,9 @@ async function ensureVideoThumbnail(
     const status = await window.spark.invoke('ffmpeg:status', {})
     if (!(status as { ffmpegReady?: boolean }).ffmpegReady) return
 
-    const thumbDir = `${videoFilePath.substring(0, videoFilePath.lastIndexOf('/'))}/.thumbs`
+    // 取视频所在目录（兼容 Windows \ 和 Unix / 路径分隔符）
+    const videoDir = videoFilePath.replace(/[/\\][^/\\]+$/, '')
+    const thumbDir = `${videoDir}/.thumbs`
     const outputPath = `${thumbDir}/${assetId}.jpg`
     const res = await window.spark.invoke('video:process', {
       operation: 'generateThumbnail',

@@ -105,10 +105,10 @@ export function createDefaultVideoWorkbenchData(): VideoWorkbenchData {
 
 /** 把秒数格式化为 mm:ss 或 hh:mm:ss */
 export function formatTimestamp(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) sec = 0
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  const s = Math.floor(sec % 60)
+  const safe = !Number.isFinite(sec) || sec < 0 ? 0 : sec
+  const h = Math.floor(safe / 3600)
+  const m = Math.floor((safe % 3600) / 60)
+  const s = Math.floor(safe % 60)
   const pad = (n: number) => String(n).padStart(2, '0')
   return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
 }
