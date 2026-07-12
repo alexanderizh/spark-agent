@@ -228,35 +228,46 @@ async function getCroppedImg(
   size: number,
 ): Promise<Blob | null> {
   const image = await createImage(imageSrc)
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return null
+  if (!image.width || !image.height) return null
 
   const safeSize = Math.max(size, 1)
   const rotRad = getRadianAngle(rotation)
 
-  // 计算旋转后图片的包围盒
-  const boundingRect = getBoundingBoxAfterRotation(image.width, image.height, rotRad)
+  // 1. 旋转后的包围盒画布——与 react-easy-crop 的 croppedAreaPixels 坐标系一致。
+  //    react-easy-crop 在 rotation 下给出的 pixelCrop 是相对「旋转后包围盒」的坐标，
+  //    因此先把原图旋转绘制到包围盒尺寸的画布上，再按 pixelCrop 抠图。
+  const bBox = getBoundingBoxAfterRotation(image.width, image.height, rotRad)
+  const rotCanvas = document.createElement('canvas')
+  const rotCtx = rotCanvas.getContext('2d')
+  if (!rotCtx) return null
+  rotCanvas.width = Math.max(1, Math.round(bBox.width))
+  rotCanvas.height = Math.max(1, Math.round(bBox.height))
 
-  canvas.width = boundingRect.width
-  canvas.height = boundingRect.height
+  rotCtx.translate(rotCanvas.width / 2, rotCanvas.height / 2)
+  rotCtx.rotate(rotRad)
+  rotCtx.translate(-image.width / 2, -image.height / 2)
+  rotCtx.drawImage(image, 0, 0)
 
-  // 旋转到包围盒中心，再把图片画上去
-  ctx.translate(boundingRect.width / 2, boundingRect.height / 2)
-  ctx.rotate(rotRad)
-  ctx.translate(-image.width / 2, -image.height / 2)
-  ctx.drawImage(image, 0, 0)
-
-  // 从旋转后的画布抠出 pixelCrop 区域（pixelCrop 已是相对原图未旋转坐标，
-  // 与上述绘制顺序一致），再缩放到目标尺寸
-  const data = ctx.getImageData(pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height)
-
+  // 2. 输出画布：固定 safeSize×safeSize。
+  //    必须用 drawImage（9 参数版）从 rotCanvas 的 pixelCrop 区域缩放到目标尺寸——
+  //    原实现用 getImageData + putImageData，而 putImageData 是 1:1 像素拷贝、不缩放，
+  //    会把 pixelCrop.width×pixelCrop.height 的像素原样塞进 safeSize×safeSize 画布左上角，
+  //    只拷出左上角一块、剩余区域透明 → JPEG 烘成黑色，导致「预览是整图、上传是局部特写」。
+  //    先填白底：restrictPosition={false} 下越界的透明区域在 JPEG 里会变黑，白底可避免。
   const out = document.createElement('canvas')
   const outCtx = out.getContext('2d')
   if (!outCtx) return null
   out.width = safeSize
   out.height = safeSize
-  outCtx.putImageData(data, 0, 0)
+  outCtx.imageSmoothingQuality = 'high'
+  outCtx.fillStyle = '#ffffff'
+  outCtx.fillRect(0, 0, safeSize, safeSize)
+
+  outCtx.drawImage(
+    rotCanvas,
+    pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
+    0, 0, safeSize, safeSize,
+  )
 
   return new Promise<Blob | null>((resolve) => {
     out.toBlob(
