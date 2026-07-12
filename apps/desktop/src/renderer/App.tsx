@@ -216,6 +216,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const [contactModalOpen, setContactModalOpen] = useState(false)
   const [navMoreOpen, setNavMoreOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
+  const [appVersion, setAppVersion] = useState<string | null>(null)
   const [pinnedNavIds, setPinnedNavIds] = useState<string[]>(() => {
     if (typeof window === 'undefined') return []
     try {
@@ -256,6 +257,19 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     return () => {
       cancelled = true
       unsub?.()
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    window.spark
+      ?.invoke('app:get-info', {})
+      .then((res: { appVersion?: string } | undefined) => {
+        if (!cancelled && res?.appVersion) setAppVersion(res.appVersion)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
     }
   }, [])
 
@@ -592,27 +606,28 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                         ),
                       })),
                     },
-                  ],
-                },
-                {
-                  key: 'sidebar-style',
-                  label: menuLabel(<Icons.PanelLeft size={14} />, tr('app.sidebar.style')),
-                  children: [
+                    { type: 'divider' as const },
                     {
-                      key: 'sidebar-style-floating',
-                      label: menuLabel(
-                        <Icons.SidebarShow size={14} />,
-                        tr('app.sidebar.styleFloating'),
-                        t.sidebarStyle === 'floating',
-                      ),
-                    },
-                    {
-                      key: 'sidebar-style-flat',
-                      label: menuLabel(
-                        <Icons.PanelLeft size={14} />,
-                        tr('app.sidebar.styleFlat'),
-                        t.sidebarStyle === 'flat',
-                      ),
+                      key: 'sidebar-style',
+                      label: menuLabel(<Icons.PanelLeft size={14} />, tr('app.sidebar.style')),
+                      children: [
+                        {
+                          key: 'sidebar-style-floating',
+                          label: menuLabel(
+                            <Icons.SidebarShow size={14} />,
+                            tr('app.sidebar.styleFloating'),
+                            t.sidebarStyle === 'floating',
+                          ),
+                        },
+                        {
+                          key: 'sidebar-style-flat',
+                          label: menuLabel(
+                            <Icons.PanelLeft size={14} />,
+                            tr('app.sidebar.styleFlat'),
+                            t.sidebarStyle === 'flat',
+                          ),
+                        },
+                      ],
                     },
                   ],
                 },
@@ -645,6 +660,13 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                   children: [
                     { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
                     { key: 'website', label: menuLabel(<Icons.Home size={14} />, tr('app.user.website')) },
+                    {
+                      key: 'app-version',
+                      label: menuLabel(
+                        <Icons.Hash size={14} />,
+                        `${tr('app.user.version')} ${appVersion ? `v${appVersion}` : '--'}`,
+                      ),
+                    },
                   ],
                 },
               ],
@@ -682,6 +704,9 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                       handleOpenExternal(REPOSITORY_URL)
                     } else if (key === 'website') {
                       handleOpenExternal(OFFICIAL_SITE_URL)
+                    } else if (key === 'app-version') {
+                      setTweak('view', 'settings')
+                      setTweak('settingsSection', 'updates')
                     } else if (key === 'lobe-preview') {
                       setTweak('view', 'lobe-preview')
                     } else if (key === 'contact-qq') {
