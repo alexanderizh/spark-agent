@@ -266,19 +266,21 @@ export function CanvasVideoWorkbenchModal({
       const reqId = shortId()
       const res = await window.spark.invoke('video:process', {
         operation: 'extractFramesAtTimes',
-        input: (node.data as { url?: string }).url ?? '',
+        input: resolveDiskPath((node.data as { url?: string }).url ?? ''),
         params: { timesSec: draft.manualMarks },
         requestId: reqId,
       })
       if (res.success && res.result) {
         const result = res.result as Array<{ path: string; timestampSec: number; index: number }>
-        const frames: WorkbenchKeyframe[] = result.map((f) => ({
-          path: f.path,
-          previewUrl: encodeToSafeFileUrl(f.path),
-          timestampSec: f.timestampSec,
-          index: f.index,
-        }))
         setDraft((d) => {
+          // 重新分配全局唯一 index，避免与已有 keyframes 的 index 冲突
+          const baseIdx = d.keyframes.length
+          const frames: WorkbenchKeyframe[] = result.map((f, i) => ({
+            path: f.path,
+            previewUrl: encodeToSafeFileUrl(f.path),
+            timestampSec: f.timestampSec,
+            index: baseIdx + i,
+          }))
           const next = { ...d, keyframes: [...d.keyframes, ...frames] }
           void onSave(next)
           return next

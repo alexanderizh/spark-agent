@@ -69,6 +69,9 @@ export function VideoTimeline({
   const trackRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(1) // 1x ~ 20x
   const [dragging, setDragging] = useState(false)
+  /** currentTime 的 ref，避免键盘 effect 依赖 currentTime 导致高频重注册 */
+  const currentTimeRef = useRef(currentTime)
+  currentTimeRef.current = currentTime
 
   // 缩放后的轨道宽度（按 duration 和 zoom 计算）
   const trackWidth = useMemo(() => {
@@ -80,15 +83,33 @@ export function VideoTimeline({
   const pixelsPerSec = duration > 0 ? trackWidth / duration : 0
   const tickInterval = pickTickInterval(pixelsPerSec)
 
-  // 刻度线列表
+  // 可视区间（用于 ticks 虚拟化，避免长视频生成数千 DOM 节点）
+  const [viewRange, setViewRange] = useState<{ start: number; end: number }>({ start: 0, end: Infinity })
+  useEffect(() => {
+    const el = trackRef.current
+    if (!el || duration <= 0) return
+    const update = () => {
+      const startT = (el.scrollLeft / trackWidth) * duration
+      const endT = ((el.scrollLeft + el.clientWidth) / trackWidth) * duration
+      setViewRange({ start: startT, end: endT })
+    }
+    update()
+    el.addEventListener('scroll', update, { passive: true })
+    return () => el.removeEventListener('scroll', update)
+  }, [trackWidth, duration])
+
+  // 刻度线列表（仅渲染可视区间 ± 1 个间隔的 tick）
   const ticks = useMemo(() => {
     if (duration <= 0) return []
     const result: number[] = []
-    for (let t = 0; t <= duration; t += tickInterval) {
+    const start = Math.max(0, viewRange.start - tickInterval)
+    const end = Math.min(duration, viewRange.end + tickInterval)
+    const firstTick = Math.ceil(start / tickInterval) * tickInterval
+    for (let t = firstTick; t <= end; t += tickInterval) {
       result.push(t)
     }
     return result
-  }, [duration, tickInterval])
+  }, [duration, tickInterval, viewRange.start, viewRange.end])
 
   /** 把鼠标 X 坐标转换为时间（秒） */
   const xToTime = useCallback(
@@ -111,7 +132,8 @@ export function VideoTimeline({
       setDragging(true)
       const t = xToTime(e.clientX)
       onSeek(t)
-      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+      // 用 currentTarget（绑 handler 的 canvas），而非 target（可能命中的子元素）
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     },
     [xToTime, onSeek],
   )
@@ -137,22 +159,34 @@ export function VideoTimeline({
     setZoom((z) => Math.max(1, Math.min(20, z + delta)))
   }, [])
 
-  // 键盘左右箭头微调
+  // 键盘左右箭头微调（用 ref 读最新 currentTime，effect 只注册一次）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (duration <= 0) return
       const step = e.shiftKey ? 5 : 0.1 // Shift+箭头 = 5s，普通 = 0.1s
+      const cur = currentTimeRef.current
       if (e.key === 'ArrowLeft') {
         e.preventDefault()
-        onSeek(Math.max(0, currentTime - step))
+        onSeek(Math.max(0, cur - step))
       } else if (e.key === 'ArrowRight') {
         e.preventDefault()
-        onSeek(Math.min(duration, currentTime + step))
+        onSeek(Math.min(duration, cur + step))
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [currentTime, duration, onSeek])
+  }, [duration, onSeek])
+
+  // 缩放/播放时自动滚动跟随播放头（仅当播放头即将离开视口才滚动）
+  const playheadX = duration > 0 ? (currentTime / duration) * trackWidth : 0
+  useEffect(() => {
+    const el = trackRef.current
+    if (!el || dragging) return // 拖拽时不抢占滚动
+    const target = playheadX - el.clientWidth / 2
+    if (target < el.scrollLeft || target > el.scrollLeft + el.clientWidth) {
+      el.scrollLeft = Math.max(0, target)
+    }
+  }, [playheadX, dragging])
 
   if (duration <= 0) {
     return (
@@ -161,8 +195,6 @@ export function VideoTimeline({
       </div>
     )
   }
-
-  const playheadX = (currentTime / duration) * trackWidth
 
   return (
     <div className="vwb-timeline">

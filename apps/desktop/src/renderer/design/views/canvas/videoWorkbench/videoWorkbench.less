@@ -378,6 +378,12 @@
   transition: left 0.05s linear;
 }
 
+// 拖拽时禁用 transition，避免播放头滞后鼠标导致抖动
+.vwb-timeline-canvas.dragging .vwb-timeline-playhead,
+.vwb-timeline-canvas.dragging .vwb-timeline-played {
+  transition: none !important;
+}
+
 .vwb-timeline-playhead-handle {
   position: absolute;
   top: -2px;
