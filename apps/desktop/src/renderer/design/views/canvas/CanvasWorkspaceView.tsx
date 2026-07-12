@@ -2672,6 +2672,21 @@ export function CanvasWorkspaceView({
     setAgentOpen(true)
   }, [selectedNodes])
 
+  /** 单节点右键「添加到 Agent 对话」：把指定节点合并进引用列表并展开 Agent 面板。
+   *  即使节点一时找不到（snapshot 尚未刷新），也保证面板展开，给用户即时反馈。 */
+  const handleAddNodeToAgent = useCallback(
+    (nodeId: string) => {
+      const node = snapshotNodeById.get(nodeId) ?? snapshotRef.current?.nodes.find((n) => n.id === nodeId)
+      setAgentOpen(true)
+      if (!node) return
+      setAgentNodeRefs((prev) => {
+        if (prev.some((item) => item.id === nodeId)) return prev
+        return [...prev, node]
+      })
+    },
+    [snapshotNodeById],
+  )
+
   /** 宽屏切换：展开到屏幕一半宽度 / 恢复之前的宽度 */
   const agentPrevWidthRef = useRef(CANVAS_AGENT_PANEL_DEFAULT_WIDTH)
   const handleAgentWideMode = useCallback(
@@ -7119,6 +7134,7 @@ export function CanvasWorkspaceView({
             onToggleLockSelectedNodes={() => void handleToggleLock()}
             onBringSelectedNodesToFront={() => void handleBringToFront()}
             onAddNodesToAgent={handleAddSelectedToAgent}
+            onAddNodeToAgent={handleAddNodeToAgent}
             onOpenAiComposer={handleOpenInlineAi}
             onEditNode={handleEditNode}
             onEditVideo={handleEditVideo}

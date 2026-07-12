@@ -99,6 +99,25 @@ describe('canvasContextMenuModel', () => {
       ).toBe(true)
     })
 
+    it('does not replace the node menu when only one node is selected', () => {
+      // 单选右键交给节点富菜单，避免选中/未选中时菜单不一致。
+      expect(
+        shouldOpenCanvasSelectionContextMenu({
+          selectedNodeIds: ['node-1'],
+          targetNodeId: 'node-1',
+        }),
+      ).toBe(false)
+    })
+
+    it('does not replace the node menu when nothing is selected', () => {
+      expect(
+        shouldOpenCanvasSelectionContextMenu({
+          selectedNodeIds: [],
+          targetNodeId: 'node-1',
+        }),
+      ).toBe(false)
+    })
+
     it('does not replace the normal node menu for an unselected node', () => {
       expect(
         shouldOpenCanvasSelectionContextMenu({

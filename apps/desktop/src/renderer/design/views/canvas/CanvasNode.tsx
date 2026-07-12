@@ -23,12 +23,18 @@ import {
 } from './canvasNodeSize'
 import { getNodePipelineActions } from './canvasPipeline'
 import { buildCanvasOperationParamSummary } from './canvasOperationParamSummary'
+import {
+  getNodeCurrentSubtype,
+  getNodeSubtypeOptions,
+  isSubtypeSwitchable,
+} from './canvasNodeSubtypeSwitch'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import { CanvasOperationOutputPreview } from './CanvasOperationOutputPreview'
 import { CanvasShotScriptTable } from './CanvasShotScriptTable'
 import { resolveCanvasOperationOutputState } from './canvasOperationOutputModel'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 import type { CanvasOperationType } from './canvas.types'
+import type { CanvasNodeData } from './canvas.types'
 import type { CanvasOperationRunView } from './canvasOperationRuns'
 
 /** 把 op 的图标 key 映射为 Icons 组件（找不到回退 Workflow） */
@@ -369,6 +375,8 @@ export type CanvasFlowNodeData = {
     addSelectionToGroup: (groupId: string) => void
     removeNodeFromGroup: (nodeId: string) => void
     dissolveGroup: (groupId: string) => void
+    /** 单节点右键：把该节点加入画布 Agent 对话引用列表 */
+    addNodeToAgent?: (nodeId: string) => void
     openAiComposer: (nodeId: string) => void
     saveToLibrary: (nodeId: string) => void
     annotateImage?: (nodeId: string) => void
@@ -390,6 +398,8 @@ export type CanvasFlowNodeData = {
       nodeId: string,
       state: import('./canvas.types').CanvasProductionState,
     ) => void
+    /** 单节点右键：切换节点子类型（image/text 等），仅改 data 层 */
+    updateNodeData?: (nodeId: string, data: Partial<CanvasNodeData>) => void
   }
 }
 
@@ -436,6 +446,13 @@ const PRODUCTION_STATE_BADGE: Partial<
   stale: { label: '待更新', color: 'orange' },
   draft: { label: '草稿', color: 'default' },
 }
+
+/**
+ * 是否在节点右键菜单显示「确认（采用）/ 标记待更新」。
+ * 暂时关闭：浮动工具栏已提供这两个入口，右键菜单更聚焦。
+ * 需要恢复时改为 true。
+ */
+const PRODUCTION_STATE_MENU_ENABLED = false
 
 /** 流水线角色 → 显示标签 + 主题色（让画布像一条生产流水线） */
 const PIPELINE_ROLE_META: Partial<
@@ -563,6 +580,14 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const hasOperationOutput = !isTask || Boolean(operationOutputState.primaryOutput)
   const canCreateOperationFromNode = !isTask || hasOperationOutput
   const pipelineActions = contentNode ? getNodePipelineActions(contentNode) : []
+  // 子类型切换（仅 image/text）：当前子类型 + 可选项，供右键菜单「切换类型」渲染。
+  const subtypeSwitch = useMemo(() => {
+    if (!isSubtypeSwitchable(node)) return null
+    return {
+      current: getNodeCurrentSubtype(node),
+      options: getNodeSubtypeOptions(node),
+    }
+  }, [node])
   const isPanorama360 = Boolean(contentNode?.data.panorama360 ?? node.data.panorama360)
   const isImageContent = contentNode ? isCanvasImageContentNode(contentNode) : false
   const canExtractCharacterSubview = isImageContent && hasOperationOutput
@@ -719,19 +744,21 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           ),
           onClick: () => actions.duplicateNode(node.id),
         },
-        ...(isImageContent && hasOperationOutput
-          ? []
-          : [
+        // 非操作节点（task）才显示「编辑节点」；操作节点改由双击打开工作台，
+        // 右键不再提供单独的「打开操作面板」入口。
+        ...(!isTask && !(isImageContent && hasOperationOutput)
+          ? [
               {
                 key: 'edit',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.Edit size={14} /> {isTask ? '打开操作面板' : '编辑节点'}
+                    <Icons.Edit size={14} /> 编辑节点
                   </span>
                 ),
                 onClick: () => actions.editNode(node.id),
               },
-            ]),
+            ]
+          : []),
         ...(isImageContent && hasOperationOutput
           ? [
               ...(canExtractCharacterSubview
@@ -867,6 +894,43 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           ),
           onClick: () => actions.saveToLibrary(node.id),
         },
+        // ── 组与引用：单节点语境下有意义的 Agent / 切换类型 / 分组操作 ──
+        ...(actions.addNodeToAgent
+          ? [
+              {
+                key: 'add-to-agent',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.MessageSquarePlus size={14} /> 添加到 Agent 对话
+                  </span>
+                ),
+                onClick: () => actions.addNodeToAgent?.(node.id),
+              },
+            ]
+          : []),
+        ...(subtypeSwitch
+          ? [
+              {
+                key: 'switch-subtype',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Refresh size={14} /> 切换类型
+                  </span>
+                ),
+                children: subtypeSwitch.options.map((option) => ({
+                  key: `subtype-${option.value}`,
+                  label: (
+                    <span className="canvas-menu-item">
+                      {option.label}
+                      {subtypeSwitch.current === option.value ? <Icons.Check size={14} /> : null}
+                    </span>
+                  ),
+                  onClick: () =>
+                    actions.updateNodeData?.(node.id, option.apply as Partial<CanvasNodeData>),
+                })),
+              },
+            ]
+          : []),
         ...(isGroup
           ? [
               {
@@ -902,9 +966,10 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               },
             ]
           : []),
-        ...(isGroup
-          ? []
-          : [
+        // 生产状态（确认（采用）/ 标记待更新）暂时隐藏：浮动工具栏仍提供这两个入口。
+        // 需要恢复时把 PRODUCTION_STATE_MENU_ENABLED 改回 true。
+        ...(PRODUCTION_STATE_MENU_ENABLED && !isGroup
+          ? [
               { type: 'divider' as const },
               {
                 key: 'confirm',
@@ -925,7 +990,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 onClick: () => actions.setProductionState(node.id, 'stale'),
               },
               { type: 'divider' as const },
-            ]),
+            ]
+          : []),
         {
           key: 'lock',
           label: (
@@ -962,6 +1028,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       isGroupedChild,
       isPanorama360,
       isTask,
+      isVideoWorkbench,
       locked,
       canExtractCharacterSubview,
       canCreateOperationFromNode,
@@ -972,6 +1039,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       node.type,
       operationOutputState.primaryOutput,
       pipelineActions,
+      subtypeSwitch,
     ],
   )
 
