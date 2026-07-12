@@ -145,6 +145,10 @@ import type {
   MemoryType,
   SkillInstallJobSource,
   SkillInstallStatusItem,
+  FfmpegInstallProgress,
+  VideoProcessRequest,
+  VideoProcessResponse,
+  VideoProcessProgress,
 } from '@spark/protocol'
 import type {
   CanvasAssetDownloadBatchResultItem,
@@ -185,6 +189,12 @@ import {
   installBrowser,
   invalidateCache,
 } from '../services/PlaywrightIntegrityService.js'
+import {
+  detectFfmpegIntegrity,
+  installFfmpeg,
+  getCachedFfmpegIntegrity,
+} from '../services/FfmpegIntegrityService.js'
+import { handleVideoProcess } from '../services/videoProcessHandler.js'
 import {
   ensureRegistered,
   readRegistration,
@@ -1413,7 +1423,12 @@ function getUsageLedgerService(): UsageLedgerService {
 let _skillRegistryService: SkillRegistryService | null = null
 function getSkillRegistryService(): SkillRegistryService {
   if (_skillRegistryService == null) {
-    _skillRegistryService = new SkillRegistryService(getDatabase(), getAppSkillsManager().userDir)
+    const binaryDir = path.join(app.getPath('userData'), 'bin')
+    _skillRegistryService = new SkillRegistryService(
+      getDatabase(),
+      getAppSkillsManager().userDir,
+      binaryDir,
+    )
     _skillRegistryService.initialize()
   }
   return _skillRegistryService
@@ -7211,6 +7226,163 @@ export function registerAllIpcHandlers(): void {
     setPlaywrightEnabled(getDatabase(), req.enabled)
     pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
     return { success: true, enabled: req.enabled }
+  })
+
+  // ─── FFmpeg & Video Processing Handlers ─────────────────────────────
+
+  /** 构建 ffmpeg 状态响应（从缓存或重新检测） */
+  function buildFfmpegStatus(): import('@spark/protocol').FfmpegStatusResponse {
+    const state = getCachedFfmpegIntegrity()
+    return {
+      ffmpegReady: state?.ffmpegReady ?? false,
+      ffmpegSource: state?.ffmpegSource ?? 'none',
+      ffmpegVersion: state?.ffmpegVersion ?? null,
+      ffprobeReady: state?.ffprobeReady ?? false,
+      binaryPath: state?.binaryPath ?? null,
+      lastError: state?.lastError ?? null,
+    }
+  }
+
+  typedIpcHandle('ffmpeg:status', async () => {
+    // 主动检测一次，保证返回最新状态
+    const state = await detectFfmpegIntegrity()
+    return {
+      ffmpegReady: state.ffmpegReady,
+      ffmpegSource: state.ffmpegSource,
+      ffmpegVersion: state.ffmpegVersion,
+      ffprobeReady: state.ffprobeReady,
+      binaryPath: state.binaryPath,
+      lastError: state.lastError,
+    }
+  })
+
+  typedIpcHandle('ffmpeg:install', async (req) => {
+    log.info(`ffmpeg:install requested, artifactId=${req.artifactId ?? '(auto)'}`)
+
+    // 自动选 artifactId：从 manifest 找当前平台的最新 binary.ffmpeg 条目
+    let artifactId = req.artifactId
+    if (!artifactId) {
+      try {
+        const manifest = await getSkillRegistryService().fetchSparkManifestForQuery()
+        const platformArch = `${process.platform}-${process.arch}`
+        const candidates = (manifest.artifacts ?? [])
+          .filter(
+            (a) =>
+              a.type === 'binary' &&
+              a.id.startsWith('binary.ffmpeg') &&
+              a.platform === process.platform &&
+              a.arch === process.arch,
+          )
+          .sort((a, b) => {
+            // 语义版本比较：解析为数字元组，避免字符串比较 "7.10" < "7.9" 的错误
+            const parseVer = (s: string): number[] =>
+              s.split('.').map((seg) => parseInt(seg.replace(/\D/g, ''), 10) || 0)
+            const va = parseVer(a.version)
+            const vb = parseVer(b.version)
+            const len = Math.max(va.length, vb.length)
+            for (let i = 0; i < len; i++) {
+              const d = (vb[i] ?? 0) - (va[i] ?? 0)
+              if (d !== 0) return d
+            }
+            return 0
+          })
+        if (candidates.length === 0) {
+          return {
+            success: false,
+            message: `当前平台 (${platformArch}) 暂无可用的 FFmpeg 安装包。请在 minio 仓库的 index.json 中添加对应条目。`,
+          }
+        }
+        artifactId = candidates[0].id
+      } catch (err) {
+        return {
+          success: false,
+          message: `无法获取安装清单: ${err instanceof Error ? err.message : String(err)}`,
+        }
+      }
+    }
+
+    const emitProgress = (
+      state: FfmpegInstallProgress['state'],
+      percent: number | null,
+      message: string,
+      logLine: string | null = null,
+    ) => {
+      pushStreamEvent('stream:ffmpeg:install-progress', {
+        state,
+        percent,
+        message,
+        logLine,
+      })
+    }
+    emitProgress('starting', 0, `准备下载 ${artifactId}`)
+
+    const result = await installFfmpeg(
+      async (id, onProgress) => {
+        emitProgress('downloading', 0, '正在下载 FFmpeg 二进制包')
+        return getSkillRegistryService().installBinaryArtifact(id, {
+          onProgress: (downloaded, total) => {
+            const percent = total > 0 ? Math.round((downloaded / total) * 100) : null
+            emitProgress('downloading', percent, `下载中 ${percent ?? '?'}%`)
+            onProgress?.(downloaded, total)
+          },
+        })
+      },
+      {
+        artifactId,
+        onLog: (line) => {
+          const text = line.trim()
+          if (text) log.info(`[ffmpeg-install] ${text}`)
+        },
+      },
+    )
+
+    emitProgress('verifying', null, '校验安装结果')
+    const nextState = await detectFfmpegIntegrity()
+    pushStreamEvent('stream:ffmpeg:status', buildFfmpegStatus())
+    emitProgress(
+      result.success ? 'done' : 'error',
+      result.success ? 100 : null,
+      result.success ? `FFmpeg 安装成功 (版本 ${nextState.ffmpegVersion ?? '?'})` : result.message ?? '安装失败',
+    )
+    return result
+  })
+
+  typedIpcHandle('binary:install', async (req) => {
+    log.info(`binary:install requested, artifactId=${req.artifactId}`)
+    const emitProgress = (downloaded: number, total: number) => {
+      pushStreamEvent('stream:binary:install-progress', {
+        artifactId: req.artifactId,
+        downloaded,
+        total,
+      })
+    }
+    try {
+      const result = await getSkillRegistryService().installBinaryArtifact(req.artifactId, {
+        onProgress: emitProgress,
+      })
+      return { success: true, destPath: result.destPath }
+    } catch (err) {
+      return {
+        success: false,
+        message: err instanceof Error ? err.message : String(err),
+      }
+    }
+  })
+
+  /** 通用视频处理 handler：按 operation 分派到 FfmpegRunner 方法 */
+  typedIpcHandle('video:process', async (req: VideoProcessRequest): Promise<VideoProcessResponse> => {
+    return handleVideoProcess(req, (progress) => {
+      pushStreamEvent('stream:video:process-progress', {
+        requestId: req.requestId,
+        percent: progress.percent,
+        stage: `frame=${progress.frame} fps=${progress.fps}`,
+      })
+    })
+  })
+
+  /** 视频探测专用通道（只读，无进度） */
+  typedIpcHandle('video:probe', async (req: VideoProcessRequest): Promise<VideoProcessResponse> => {
+    return handleVideoProcess(req)
   })
 
   typedIpcHandle('browser:open-external', async (req) => {

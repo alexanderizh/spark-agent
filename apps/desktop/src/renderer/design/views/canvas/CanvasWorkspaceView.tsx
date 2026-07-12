@@ -67,6 +67,8 @@ import {
 } from './CanvasDirectorStageModal'
 import { CanvasDirectorStage3DModal } from './stage3d/CanvasDirectorStage3DModal'
 import { createDefaultStage3DData, type Stage3DData } from './stage3d/stage3d.types'
+import { CanvasVideoWorkbenchModal } from './videoWorkbench/CanvasVideoWorkbenchModal'
+import { createDefaultVideoWorkbenchData, type VideoWorkbenchData, type WorkbenchKeyframe } from './videoWorkbench/videoWorkbench.types'
 import { isCanvasImageContentNode, isOperationNode } from './canvas.capabilities'
 import {
   readAssetKind,
@@ -1812,6 +1814,7 @@ export function CanvasWorkspaceView({
   }, [characterSubviewEditorNodeId, resolveCanvasResourceActionNode, snapshot])
   const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
   const [directorStage3DNodeId, setDirectorStage3DNodeId] = useState<string | null>(null)
+  const [videoWorkbenchNodeId, setVideoWorkbenchNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
@@ -2972,6 +2975,12 @@ export function CanvasWorkspaceView({
         setDirectorStage3DNodeId(nodeId)
         return
       }
+      if (node?.data.subtype === 'video_workbench') {
+        closeCanvasFloatPanels('node-edit')
+        setSelectedNodeIds([nodeId])
+        setVideoWorkbenchNodeId(nodeId)
+        return
+      }
       closeCanvasFloatPanels('node-edit')
       setInlinePanelFocusRequest({ nodeId, nonce: Date.now() })
       setSelectedNodeIds([nodeId])
@@ -3354,6 +3363,53 @@ export function CanvasWorkspaceView({
       return node
     },
     [createTextNode, patchNodes, updateNodeData],
+  )
+
+  const addVideoWorkbench = useCallback(
+    async (preferredPosition?: CanvasPoint) => {
+      const position = preferredPosition
+        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+        : positionNodeInViewport(canvasViewportRef.current, VIDEO_NODE_DEFAULT_SIZE, {
+            x: 180,
+            y: 160,
+          })
+      // 若当前选中节点是视频，自动绑定为其源视频
+      const selected = snapshot?.nodes.find((n) => selectedNodeIds.includes(n.id))
+      const sourceVideoUrl =
+        selected && selected.type === 'video' && typeof selected.data.url === 'string'
+          ? (selected.data.url as string)
+          : undefined
+      const sourceVideoAssetId = sourceVideoUrl ? (selected?.assetId ?? undefined) : undefined
+      const node = await createTextNode({
+        text: sourceVideoUrl
+          ? '视频工作台：双击打开，提取关键帧、剪辑、转码。'
+          : '视频工作台：双击打开。请拖入视频或关联视频节点。',
+        x: position.x,
+        y: position.y,
+      })
+      if (!node) return
+      await patchNodes([node.id], {
+        title: sourceVideoUrl ? `视频工作台 — ${selected?.title ?? '视频'}` : '视频工作台',
+        width: VIDEO_NODE_DEFAULT_SIZE.width,
+        height: VIDEO_NODE_DEFAULT_SIZE.height,
+      })
+      const wbData = createDefaultVideoWorkbenchData()
+      if (sourceVideoAssetId) wbData.sourceVideoAssetId = sourceVideoAssetId
+      await updateNodeData(node.id, {
+        ...node.data,
+        subtype: 'video_workbench',
+        displayCategory: 'content',
+        ...(sourceVideoUrl ? { url: sourceVideoUrl } : {}),
+        videoWorkbench: wbData as unknown as Record<string, unknown>,
+        text: sourceVideoUrl
+          ? '视频工作台：双击打开，提取关键帧、剪辑、转码。'
+          : '视频工作台：双击打开。请拖入视频或关联视频节点。',
+      })
+      setSelectedNodeIds([node.id])
+      setVideoWorkbenchNodeId(node.id)
+      return node
+    },
+    [createTextNode, patchNodes, updateNodeData, snapshot, selectedNodeIds],
   )
 
   const uploadFirstImage = useCallback(
@@ -3926,6 +3982,77 @@ export function CanvasWorkspaceView({
       message.success('已插入 3D 画面提示词节点')
     },
     [createTextNode, patchNodes, snapshot],
+  )
+
+  // ─── 视频工作台（subtype video_workbench）───
+  const videoWorkbenchNode = useMemo(
+    () => snapshot?.nodes.find((item) => item.id === videoWorkbenchNodeId) ?? null,
+    [videoWorkbenchNodeId, snapshot?.nodes],
+  )
+
+  const handleSaveVideoWorkbench = useCallback(
+    async (data: VideoWorkbenchData) => {
+      if (!videoWorkbenchNode) return
+      // updateNodeData 是 merge 语义（{...node.data, ...data}），
+      // 只传 videoWorkbench 字段即可，无需展开闭包里的 node.data（避免覆盖并发改动）。
+      await updateNodeData(videoWorkbenchNode.id, {
+        videoWorkbench: data as unknown as Record<string, unknown>,
+      })
+    },
+    [videoWorkbenchNode, updateNodeData],
+  )
+
+  /** 把关键帧导出为画布图片节点（批量），连线到源视频工作台节点 */
+  const handleExportKeyframes = useCallback(
+    async (frames: WorkbenchKeyframe[], sourceNodeId: string) => {
+      if (!snapshot || frames.length === 0) return
+      const source = snapshot.nodes.find((n) => n.id === sourceNodeId)
+      const createdIds: string[] = []
+      const nodeSize = { width: 320, height: 180 }
+      const baseX = source ? source.x + source.width + 60 : 260
+      const baseY = source ? source.y : 200
+
+      // 分批并行 createImageNode（每批 5 个），降低串行 IPC 等待
+      const BATCH = 5
+      const loadingKey = `export-kf-${Date.now()}`
+      message.loading({ content: `正在导入 ${frames.length} 个关键帧…`, key: loadingKey, duration: 0 })
+      for (let start = 0; start < frames.length; start += BATCH) {
+        const batch = frames.slice(start, start + BATCH)
+        const imageNodes = await Promise.all(
+          batch.map(async (kf, j) => {
+            const i = start + j
+            const fileName = `keyframe_${String(kf.index + 1).padStart(3, '0')}.jpg`
+            const file = new File([], fileName, { type: 'image/jpeg' })
+            const col = i % 4
+            const row = Math.floor(i / 4)
+            return createImageNode({
+              file,
+              filePath: kf.path,
+              x: baseX + col * (nodeSize.width + 24),
+              y: baseY + row * (nodeSize.height + 24),
+              width: nodeSize.width,
+              height: nodeSize.height,
+            })
+          }),
+        )
+        // patchNodes + connectNodes 串行（涉及 DB 写入，避免竞态）
+        for (let j = 0; j < imageNodes.length; j++) {
+          const imageNode = imageNodes[j]
+          const kf = batch[j]!
+          if (imageNode) {
+            await patchNodes([imageNode.id], {
+              title: `关键帧 ${String(kf.index + 1).padStart(2, '0')}`,
+            })
+            if (source) await connectNodes({ sourceNodeId: source.id, targetNodeId: imageNode.id })
+            createdIds.push(imageNode.id)
+          }
+        }
+      }
+      message.destroy(loadingKey)
+      if (createdIds.length > 0) setSelectedNodeIds(createdIds)
+      message.success(`已导入 ${createdIds.length} 个关键帧到画布`)
+    },
+    [connectNodes, createImageNode, patchNodes, snapshot],
   )
 
   const handleAnnotateImageComplete = useCallback(
@@ -6993,6 +7120,10 @@ export function CanvasWorkspaceView({
               closeCanvasFloatPanels()
               void addDirectorStage3D()
             }}
+            onAddVideoWorkbench={() => {
+              closeCanvasFloatPanels()
+              void addVideoWorkbench()
+            }}
             onOpenAgent={() => {
               closeCanvasFloatPanels('agent')
               setAgentOpen(true)
@@ -7093,6 +7224,14 @@ export function CanvasWorkspaceView({
             onInsertPrompt={handleInsertStage3DPrompt}
             onExportScreenshot={handleInsertStage3DScreenshot}
             onExportScreenshots={handleInsertStage3DScreenshots}
+          />
+          <CanvasVideoWorkbenchModal
+            key={videoWorkbenchNode?.id}
+            node={videoWorkbenchNode}
+            open={Boolean(videoWorkbenchNode)}
+            onClose={() => setVideoWorkbenchNodeId(null)}
+            onSave={handleSaveVideoWorkbench}
+            onExportKeyframes={handleExportKeyframes}
           />
           <CanvasFilmAssetCenter
             open={filmCenterOpen}

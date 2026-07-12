@@ -3304,7 +3304,9 @@ export const canvasApi = {
       ...(mimeType ? { mimeType } : {}),
       storageKey: input.filePath,
       url: fileUrl,
-      thumbnailUrl: fileUrl,
+      // 视频/音频不能用文件 url 当缩略图（<img> 加载视频会失败）；
+      // 留空，由 ensureVideoThumbnail 异步生成首帧缩略图后回填（仅 video）。
+      thumbnailUrl: null,
       ...(input.mediaWidth ? { width: input.mediaWidth } : {}),
       ...(input.mediaHeight ? { height: input.mediaHeight } : {}),
       ...(input.fileSize ? { sizeBytes: input.fileSize } : {}),
@@ -3318,7 +3320,8 @@ export const canvasApi = {
     }
     const data: CanvasNode['data'] = {
       url: fileUrl,
-      thumbnailUrl: fileUrl,
+      // 不设 thumbnailUrl（undefined）——由 ensureVideoThumbnail 异步回填。
+      // node.data.thumbnailUrl 类型是 string（非 nullable），留 undefined 表示「无」。
       ...(mimeType ? { mimeType } : {}),
       origin: 'asset',
     }
@@ -3339,6 +3342,10 @@ export const canvasApi = {
     db.nodes.push(node)
     updateProjectCounts(db, input.projectId)
     writeDb(db)
+    // 视频类型异步生成首帧缩略图（fire-and-forget，不阻塞节点创建）
+    if (input.kind === 'video') {
+      void ensureVideoThumbnail(input.projectId, asset.id, node.id, input.filePath)
+    }
     return node
   },
 
@@ -5345,6 +5352,17 @@ export const canvasApi = {
       })
     }
 
+    // AI 产物的视频类型异步生成首帧缩略图（与 createMediaNode 对称）
+    for (const output of preparedOutputs) {
+      if (output.nodeType !== 'video') continue
+      const fp = output.asset.metadata?.filePath
+      if (typeof fp !== 'string' || !fp) continue
+      const node = db.nodes.find((n) => n.assetId === output.asset.id)
+      if (node) {
+        void ensureVideoThumbnail(projectId, output.asset.id, node.id, fp)
+      }
+    }
+
     if (patchTaskNode) {
       taskNode.data = {
         ...taskNode.data,
@@ -5451,4 +5469,58 @@ export const canvasApi = {
 
 export function operationLabel(operation: CanvasOperationType): string {
   return getCanvasCapability(operation)?.label ?? operation
+}
+
+/**
+ * 异步为视频资产生成首帧缩略图。
+ *
+ * 修复视频节点 thumbnailUrl 缺失问题：视频文件 url 不能直接当 <img> src（加载失败），
+ * 需用 ffmpeg 提取一帧 jpg 作为缩略图。生成成功后回填 asset.thumbnailUrl 和 node.data.thumbnailUrl。
+ *
+ * fire-and-forget：调用方不 await，失败静默（CanvasAssetThumbnail 的 Play 占位图标兜底）。
+ * 仅当 ffmpeg 可用时执行；不可用时留空，完整性面板下载 ffmpeg 后可手动刷新。
+ */
+/** 正在生成缩略图的 assetId 集合，防止同一视频并发重复生成 */
+const thumbnailsInFlight = new Set<string>()
+
+async function ensureVideoThumbnail(
+  projectId: string,
+  assetId: string,
+  nodeId: string,
+  videoFilePath: string,
+): Promise<void> {
+  // 去重：同一 assetId 已在生成中则跳过
+  if (thumbnailsInFlight.has(assetId)) return
+  thumbnailsInFlight.add(assetId)
+  try {
+    // 先检测 ffmpeg 是否可用；不可用则跳过（不报错）
+    const status = await window.spark.invoke('ffmpeg:status', {})
+    if (!(status as { ffmpegReady?: boolean }).ffmpegReady) return
+
+    // 取视频所在目录（兼容 Windows \ 和 Unix / 路径分隔符）
+    const videoDir = videoFilePath.replace(/[/\\][^/\\]+$/, '')
+    const thumbDir = `${videoDir}/.thumbs`
+    const outputPath = `${thumbDir}/${assetId}.jpg`
+    const res = await window.spark.invoke('video:process', {
+      operation: 'generateThumbnail',
+      input: videoFilePath,
+      params: { atSec: 1, outputPath, width: 480 },
+      requestId: `thumb_${assetId}`,
+    })
+    if (!res.success || !res.result) return
+    const { path: thumbPath } = res.result as { path: string }
+    const thumbUrl = encodeToSafeFileUrl(thumbPath)
+
+    // 回填 DB（asset + node）
+    const db = readDb()
+    const asset = db.assets.find((a) => a.id === assetId)
+    if (asset) asset.thumbnailUrl = thumbUrl
+    const node = db.nodes.find((n) => n.id === nodeId)
+    if (node) node.data.thumbnailUrl = thumbUrl
+    writeDb(db)
+  } catch {
+    // 静默失败——缩略图不是关键功能，Play 占位图标兜底
+  } finally {
+    thumbnailsInFlight.delete(assetId)
+  }
 }

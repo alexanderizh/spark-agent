@@ -24,6 +24,7 @@ export function CanvasBottomDock({
   onOpenFilmCenter,
   onOpenCharacterLibrary,
   onAddDirectorStage3D,
+  onAddVideoWorkbench,
   onOpenAgent,
   onDeleteSelected,
   onUndo,
@@ -47,6 +48,8 @@ export function CanvasBottomDock({
   onOpenShotDirector?: () => void
   /** 底部工具栏「3D 导演台」入口：新建 3D 导演台节点并打开（2D 版走空白右键菜单） */
   onAddDirectorStage3D: () => void
+  /** 底部工具栏「视频工作台」入口：新建视频工作台节点并打开 */
+  onAddVideoWorkbench: () => void
   onOpenAgent: () => void
   onDeleteSelected: () => void
   onUndo: () => void
@@ -164,6 +167,15 @@ export function CanvasBottomDock({
               icon={<Icons.Film size={15} />}
               aria-label="3D 导演台"
               onClick={() => closeAddMenuAndRun(onAddDirectorStage3D)}
+            />
+          </Tooltip>
+          <Tooltip title="视频工作台（关键帧提取 / 剪辑 / 转码）" placement="top">
+            <Button
+              size="middle"
+              type="text"
+              icon={<Icons.Video size={15} />}
+              aria-label="视频工作台"
+              onClick={() => closeAddMenuAndRun(onAddVideoWorkbench)}
             />
           </Tooltip>
           <Tooltip title="画布 Agent 助手（对话操作画布）" placement="top">
