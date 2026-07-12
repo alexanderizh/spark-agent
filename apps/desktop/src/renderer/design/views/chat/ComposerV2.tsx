@@ -681,6 +681,7 @@ export function ComposerV2({
   focusTrigger = 0,
   resendRequest = null,
   onDispatchStateChange,
+  onModelSwitch,
   paletteCommandRequest = null,
 }: {
   session: SessionSummary | null
@@ -762,6 +763,7 @@ export function ComposerV2({
   // 暴露发送中状态给父组件。父组件用它在发送期间抑制 hero，
   // 覆盖 createSession→sendTurn→status=running 之间 hero 闪现的窗口。
   onDispatchStateChange?: (dispatching: boolean) => void
+  onModelSwitch?: (change: { fromModel: string; toModel: string; afterMessageId: string }) => void
   paletteCommandRequest?: { id: number; commandText: string } | null
 }) {
   const { toast } = useToast()
@@ -2476,6 +2478,7 @@ export function ComposerV2({
     setDraftPermissionMode(nextPermissionMode)
     setSelectedProviderId(providerId)
     const nextModel = getProviderDefaultModel(provider, provider.modelIds[0])
+    const previousModel = effectiveModelId.trim()
     setDraftModelId(nextModel)
     writeComposerPrefs({
       adapter: nextAdapter,
@@ -2490,6 +2493,10 @@ export function ComposerV2({
         agentAdapter: nextAdapter,
         permissionMode: nextPermissionMode,
       })
+      const afterMessageId = messages.at(-1)?.id
+      if (afterMessageId != null && previousModel.length > 0 && previousModel !== nextModel) {
+        onModelSwitch?.({ fromModel: previousModel, toModel: nextModel, afterMessageId })
+      }
     }
   }
 
@@ -2505,6 +2512,7 @@ export function ComposerV2({
       normalizeModelForProvider(modelId, provider) ||
       getProviderDefaultModel(provider, provider.modelIds[0]) ||
       modelId
+    const previousModel = effectiveModelId.trim()
 
     setDraftAdapter(nextAdapter)
     setDraftPermissionMode(nextPermissionMode)
@@ -2523,6 +2531,10 @@ export function ComposerV2({
         agentAdapter: nextAdapter,
         permissionMode: nextPermissionMode,
       })
+      const afterMessageId = messages.at(-1)?.id
+      if (afterMessageId != null && previousModel.length > 0 && previousModel !== nextModel) {
+        onModelSwitch?.({ fromModel: previousModel, toModel: nextModel, afterMessageId })
+      }
     }
   }
 
@@ -2687,12 +2699,19 @@ export function ComposerV2({
   const handleAgentChange = (agentId: string) => applyAgentRuntime(agentId)
 
   const handleModelChange = async (modelId: string) => {
+    const previousModel = effectiveModelId.trim()
     setDraftModelId(modelId)
     writeComposerPrefs({
       ...(selectedProvider?.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
       modelId,
     })
-    if (session != null) await persistRuntimePatch({ modelId })
+    if (session != null) {
+      await persistRuntimePatch({ modelId })
+      const afterMessageId = messages.at(-1)?.id
+      if (afterMessageId != null && previousModel.length > 0 && previousModel !== modelId) {
+        onModelSwitch?.({ fromModel: previousModel, toModel: modelId, afterMessageId })
+      }
+    }
   }
 
   const handleReasoningChange = async (reasoningEffort: SessionReasoningEffort) => {

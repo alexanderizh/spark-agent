@@ -63,6 +63,14 @@ import {
 } from './chat/ChatDocumentOutput'
 import { MarkdownText } from './chat/ChatMarkdown'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
+import {
+  ModelSwitchNotice,
+} from './chat/ModelSwitchNotice'
+import {
+  readModelSwitchMarkers,
+  saveModelSwitchMarker,
+  type ModelSwitchMarker,
+} from './chat/ModelSwitchMarkers'
 import { StreamingErrorCard } from './chat/StreamingErrorCard'
 import { RuntimeSignalCard } from './chat/RuntimeSignalCard'
 import { ActivitySegment } from './chat/ActivitySegment'
@@ -763,6 +771,27 @@ export function ChatView({
   const chatLayoutRef = useRef<HTMLDivElement | null>(null)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
+  const storedModelSwitchMarkers = useMemo(() => readModelSwitchMarkers(active), [active])
+  const [modelSwitchState, setModelSwitchState] = useState<{
+    sessionId: SessionId | null
+    markers: ModelSwitchMarker[]
+  }>({ sessionId: active, markers: storedModelSwitchMarkers })
+  const modelSwitchMarkers =
+    modelSwitchState.sessionId === active ? modelSwitchState.markers : storedModelSwitchMarkers
+
+  const handleModelSwitch = useCallback(
+    (change: Omit<ModelSwitchMarker, 'createdAt'>) => {
+      if (active == null) return
+      setModelSwitchState({
+        sessionId: active,
+        markers: saveModelSwitchMarker(active, {
+          ...change,
+          createdAt: new Date().toISOString(),
+        }),
+      })
+    },
+    [active],
+  )
   const [activeSessionGoal, setActiveSessionGoal] = useState<GoalSnapshot | null>(null)
   const [activeSessionOrchestration, setActiveSessionOrchestration] =
     useState<OrchestrationSnapshot | null>(null)
@@ -1835,6 +1864,7 @@ export function ChatView({
         onOpenSkillStore={openSkillStore}
         replyTo={null}
         onDispatchStateChange={setComposerDispatching}
+        onModelSwitch={handleModelSwitch}
         paletteCommandRequest={paletteCommandRequest}
       />
     ) : (
@@ -1889,6 +1919,7 @@ export function ChatView({
         replyTo={showEmptyHero ? null : replyTo}
         onClearReply={() => setReplyTo(null)}
         onDispatchStateChange={setComposerDispatching}
+        onModelSwitch={handleModelSwitch}
         paletteCommandRequest={paletteCommandRequest}
       />
     )
@@ -2107,6 +2138,7 @@ export function ChatView({
               onResendMessage={handleResendMessage}
               onLoadingChange={setActiveSessionLoading}
               emptyStateVariant="loading"
+              modelSwitchMarkers={modelSwitchMarkers}
             />
             {userQuestion != null && (
               <UserQuestionDock
@@ -2414,6 +2446,7 @@ function ChatStream({
   onResendMessage,
   onLoadingChange,
   emptyStateVariant = 'hint',
+  modelSwitchMarkers = [],
 }: {
   sessionId: SessionId
   /** 当前会话工作区 ID。非 null 时用于过滤 turn_file_summary 中被 .gitignore 忽略的路径 */
@@ -2461,6 +2494,7 @@ function ChatStream({
    *    此时 hero 已隐藏、stream 已显形但 messages 仍为空，用 loading 取代静态空态避免「空会话」闪现。
    */
   emptyStateVariant?: 'hint' | 'loading'
+  modelSwitchMarkers?: ModelSwitchMarker[]
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const virtualMessageListRef = useRef<VirtualMessageListHandle | null>(null)
@@ -3456,6 +3490,10 @@ function ChatStream({
             scrollElementRef={streamRef}
             getItemKey={(msg) => msg.id}
             estimateSize={(msg) => (msg.role === 'user' ? 120 : 220)}
+            renderAfterItem={(msg) => {
+              const marker = modelSwitchMarkers.find((item) => item.afterMessageId === msg.id)
+              return marker == null ? null : <ModelSwitchNotice marker={marker} />
+            }}
             renderItem={(msg, index) =>
               msg.role === 'user' ? (
                 <UserMsg
