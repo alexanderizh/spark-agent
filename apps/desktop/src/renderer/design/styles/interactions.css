@@ -390,6 +390,11 @@
   flex-direction: column;
   gap: 2px;
 }
+.turn-summary-more {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+}
 .turn-summary-file-row {
   display: flex;
   align-items: center;

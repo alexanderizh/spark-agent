@@ -18,6 +18,8 @@ import {
 import { SessionFileOpenPicker } from './components/SessionFileOpenPicker'
 import { MarkdownText } from './views/ChatView'
 
+const TURN_SUMMARY_VISIBLE_FILE_LIMIT = 10
+
 export function FilePermCard({
   path,
   scope,
@@ -384,9 +386,14 @@ export function TurnFileSummaryCard({
 }) {
   const { t } = useI18n()
   const [expanded, setExpanded] = useState(true)
+  const [showAllFiles, setShowAllFiles] = useState(false)
   const [undoState, setUndoState] = useState<'idle' | 'undoing' | 'undone' | 'reapplying'>('idle')
   const { toast } = useToast()
   const fileCount = files.length
+  const hiddenFileCount = Math.max(0, fileCount - TURN_SUMMARY_VISIBLE_FILE_LIMIT)
+  const hasHiddenFiles = hiddenFileCount > 0
+  const visibleFiles =
+    hasHiddenFiles && !showAllFiles ? files.slice(0, TURN_SUMMARY_VISIBLE_FILE_LIMIT) : files
 
   const handleUndo = useCallback(
     async (e: React.MouseEvent) => {
@@ -474,7 +481,7 @@ export function TurnFileSummaryCard({
       {expanded && (
         <div className="chat-card-body">
           <div className="turn-summary-files">
-            {files.map((file, i) => {
+            {visibleFiles.map((file, i) => {
               const canOpen = file.changeType !== 'delete'
               const fileType = getTurnSummaryFileType(file.path)
               return (
@@ -502,6 +509,19 @@ export function TurnFileSummaryCard({
               )
             })}
           </div>
+          {hasHiddenFiles && (
+            <div className="turn-summary-more">
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => setShowAllFiles((prev) => !prev)}
+              >
+                {showAllFiles
+                  ? t('chat.summary.showLessFiles')
+                  : t('chat.summary.showMoreFiles', { count: hiddenFileCount })}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
