@@ -30,6 +30,7 @@ import {
 } from './videoWorkbench.types'
 import { VideoWorkbenchFramePanel } from './VideoWorkbenchFramePanel'
 import { VideoWorkbenchEditPanel } from './VideoWorkbenchEditPanel'
+import { VideoTimeline } from './VideoTimeline'
 import './videoWorkbench.less'
 
 /** macOS 无边框窗口红绿灯安全区 */
@@ -480,74 +481,18 @@ export function CanvasVideoWorkbenchModal({
               )}
             </div>
 
-            {/* 时间线 / 手动标记区 */}
-            <div className="vwb-timeline">
-              <div className="vwb-timeline-head">
-                <span className="vwb-timeline-time">{formatTimestamp(currentTime)}</span>
-                <span className="vwb-timeline-divider">/</span>
-                <span className="vwb-timeline-duration">{formatTimestamp(duration)}</span>
-                <Button
-                  size="small"
-                  type="default"
-                  onClick={addManualMark}
-                  icon={<Icons.Pin size={12} />}
-                  disabled={!sourceVideoUrl}
-                >
-                  标记当前帧
-                </Button>
-                <Button
-                  size="small"
-                  type="primary"
-                  onClick={extractManualMarks}
-                  loading={busy}
-                  disabled={draft.manualMarks.length === 0}
-                  icon={<Icons.Download size={12} />}
-                >
-                  提取标记 ({draft.manualMarks.length})
-                </Button>
-              </div>
-              {duration > 0 && (
-                <div className="vwb-timeline-track">
-                  {/* 已播放 */}
-                  <div
-                    className="vwb-timeline-played"
-                    style={{ width: `${(currentTime / duration) * 100}%` }}
-                  />
-                  {/* 关键帧标记点 */}
-                  {draft.keyframes.map((kf) => (
-                    <div
-                      key={kf.index}
-                      className="vwb-timeline-kf"
-                      style={{ left: `${(kf.timestampSec / duration) * 100}%` }}
-                      title={`${formatTimestamp(kf.timestampSec)}`}
-                      onClick={() => seekTo(kf.timestampSec)}
-                    />
-                  ))}
-                  {/* 手动标记点 */}
-                  {draft.manualMarks.map((t) => (
-                    <div
-                      key={t}
-                      className="vwb-timeline-mark"
-                      style={{ left: `${(t / duration) * 100}%` }}
-                      title={formatTimestamp(t)}
-                      onClick={() => seekTo(t)}
-                    >
-                      <span className="vwb-timeline-mark-remove" onClick={(e) => { e.stopPropagation(); removeManualMark(t) }}>×</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {draft.manualMarks.length > 0 && (
-                <div className="vwb-manual-marks">
-                  {draft.manualMarks.map((t) => (
-                    <span key={t} className="vwb-mark-chip" onClick={() => seekTo(t)}>
-                      {formatTimestamp(t)}
-                      <i onClick={(e) => { e.stopPropagation(); removeManualMark(t) }}>×</i>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* 专业视频轨道 */}
+            <VideoTimeline
+              duration={duration}
+              currentTime={currentTime}
+              keyframes={draft.keyframes}
+              manualMarks={draft.manualMarks}
+              onSeek={seekTo}
+              onMark={addManualMark}
+              onRemoveMark={removeManualMark}
+              onExtractMarks={extractManualMarks}
+              busy={busy}
+            />
           </div>
 
           {/* 右侧：Tab 面板 */}
