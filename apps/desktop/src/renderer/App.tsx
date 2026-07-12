@@ -540,7 +540,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                   ? [
                       {
                         key: 'account',
-                        label: menuLabel(<Icons.User size={14} />, tr('app.user.account')),
+                        label: menuLabel(<Icons.User size={14} />, tr('app.user.accountRecharge')),
                       },
                       { type: 'divider' as const },
                     ]
@@ -633,8 +633,14 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                     },
                   ],
                 },
-                { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
-                { key: 'website', label: menuLabel(<Icons.Home size={14} />, tr('app.user.website')) },
+                {
+                  key: 'about-spark',
+                  label: menuLabel(<Icons.Sparkles size={14} />, tr('app.user.aboutSpark')),
+                  children: [
+                    { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
+                    { key: 'website', label: menuLabel(<Icons.Home size={14} />, tr('app.user.website')) },
+                  ],
+                },
               ],
               onClick: ({ key }: { key: string }) => {
                 switch (key) {
