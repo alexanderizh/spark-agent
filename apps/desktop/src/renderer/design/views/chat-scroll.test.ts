@@ -18,6 +18,7 @@ describe('chat scroll controls', () => {
     const innerBlock = stylesheet.match(/\.chat-stream-inner\s*\{[^}]*\}/)?.[0] ?? ''
 
     expect(streamBlock).toContain('overflow-y: auto')
+    expect(streamBlock).toContain('scrollbar-gutter: stable both-edges')
     expect(innerBlock).not.toContain('overflow-y: auto')
   })
 
