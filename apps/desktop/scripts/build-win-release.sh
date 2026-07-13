@@ -15,7 +15,7 @@
 #   ./scripts/build-win-release.sh x64 --publish always
 #
 # If WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD are missing, the build continues
-# unsigned so Windows installer packaging can still be tested locally and in CI.
+# unsigned for local packaging tests unless REQUIRE_WINDOWS_SIGNING=1.
 set -euo pipefail
 
 # Windows hardened environments may export NoDefaultCurrentDirectoryInExePath,
@@ -77,7 +77,15 @@ builder_cert_path() {
 prepare_windows_signing() {
   step "1/4 Windows signing environment"
 
-  if [ -z "${WIN_CSC_LINK:-}" ] || [ -z "${WIN_CSC_KEY_PASSWORD:-}" ]; then
+  if { [ -n "${WIN_CSC_LINK:-}" ] && [ -z "${WIN_CSC_KEY_PASSWORD:-}" ]; } \
+    || { [ -z "${WIN_CSC_LINK:-}" ] && [ -n "${WIN_CSC_KEY_PASSWORD:-}" ]; }; then
+    fail "Windows signing is partially configured; both WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD are required"
+  fi
+
+  if [ -z "${WIN_CSC_LINK:-}" ]; then
+    if [ "${REQUIRE_WINDOWS_SIGNING:-0}" = "1" ]; then
+      fail "Signed Windows release required, but WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD are missing"
+    fi
     warn "WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD not set; Windows installer will be built unsigned"
     unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD
     export -n WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD 2>/dev/null || true
@@ -187,8 +195,60 @@ if ($sig.SignerCertificate) {
   Write-Host ("  Subject: {0}" -f $sig.SignerCertificate.Subject)
   Write-Host ("  Issuer : {0}" -f $sig.SignerCertificate.Issuer)
 }
+if ($sig.TimeStamperCertificate) {
+  Write-Host ("  Timestamp signer: {0}" -f $sig.TimeStamperCertificate.Subject)
+}
+
+if (($sig.Status -eq "UnknownError" -or $sig.Status -eq "NotTrusted") -and
+    $sig.SignerCertificate -and
+    $sig.SignerCertificate.Subject -eq $sig.SignerCertificate.Issuer) {
+  # A self-signed certificate proves that the artifact was signed, but a clean
+  # CI runner does not trust it as a root CA. Temporarily trust only its public
+  # certificate and run Authenticode verification again so hash/signature
+  # failures still fail the build. Never persist this trust beyond the check.
+  Write-Host "  Self-signed certificate detected; verifying with temporary CurrentUser trust"
+  $certificate = $sig.SignerCertificate
+  $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+    [System.Security.Cryptography.X509Certificates.StoreName]::Root,
+    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+  )
+  $certificateAdded = $false
+
+  try {
+    $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+    $existing = $store.Certificates.Find(
+      [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
+      $certificate.Thumbprint,
+      $false
+    )
+    if ($existing.Count -eq 0) {
+      $store.Add($certificate)
+      $certificateAdded = $true
+    }
+    $store.Close()
+
+    $sig = Get-AuthenticodeSignature -LiteralPath $path
+    Write-Host ("  Trusted status : {0}" -f $sig.Status)
+    Write-Host ("  Trusted message: {0}" -f $sig.StatusMessage)
+  }
+  finally {
+    try {
+      if ($certificateAdded) {
+        $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+        $store.Remove($certificate)
+      }
+    }
+    finally {
+      $store.Close()
+    }
+  }
+}
+
 if ($sig.Status -ne "Valid") {
-  exit 1
+  throw "Authenticode signature verification failed: $($sig.Status) - $($sig.StatusMessage)"
+}
+if (-not $sig.TimeStamperCertificate) {
+  throw "Authenticode signature is valid but has no RFC 3161 timestamp"
 }
 ' "$verify_path"
   ok "Authenticode signature is valid"

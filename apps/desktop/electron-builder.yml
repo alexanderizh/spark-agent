@@ -34,9 +34,16 @@ mac:
   entitlementsInherit: resources/entitlements.mac.plist
   # 优先匹配 Developer ID Application 证书；
   # 若环境里没有，electron-builder 会回退到 ad-hoc 签名（仅本地开发用）
-  identity: "Developer ID Application"
+  identity: 'Developer ID Application'
 win:
   icon: resources/icon.ico
+  # Windows 10+ / Electron 31 仅使用 SHA-256。RFC 3161 时间戳让已签名版本在
+  # 自签名证书到期后仍可验证其签名时点；时间戳服务本身不改变证书信任级别。
+  publisherName: Spark Foundation
+  requestedExecutionLevel: asInvoker
+  signingHashAlgorithms:
+    - sha256
+  rfc3161TimeStampServer: http://timestamp.digicert.com
 linux:
   icon: resources/icon.png
 asar: true
