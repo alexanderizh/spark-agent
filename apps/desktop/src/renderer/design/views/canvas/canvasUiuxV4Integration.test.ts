@@ -31,8 +31,12 @@ describe('canvas UI/UX V4 integration', () => {
     const node = readCanvasSource('./CanvasNode.tsx')
     const addMenu = readCanvasSource('./CanvasAddNodeMenu.tsx')
     const dock = readCanvasSource('./CanvasBottomDock.tsx')
+    const legacyStyles = readCanvasSource('./CanvasWorkspaceView.less')
     const nodeStyles = readCanvasSource('./uiux-v4/nodes.less')
     const panelStyles = readCanvasSource('./uiux-v4/panels.less')
+    const placeholderStyleBlock = nodeStyles.match(
+      /\.canvas-node-image-placeholder,[\s\S]*?\.canvas-node-group-body\s*\{([\s\S]*?)\n  \}/,
+    )?.[1]
 
     expect(node).toContain('canvas-node-content-title')
     expect(node).toContain('<div className="canvas-node-meta-bar">')
@@ -41,6 +45,9 @@ describe('canvas UI/UX V4 integration', () => {
     expect(node).not.toContain('双击可快速打开')
     expect(nodeStyles).toContain('.canvas-node-body > .canvas-node-operation')
     expect(nodeStyles).toContain('flex: 0 0 35px')
+    expect(placeholderStyleBlock).toBeDefined()
+    expect(placeholderStyleBlock).not.toContain('padding: 20px;')
+    expect(legacyStyles).not.toMatch(/\.canvas-node-task\s*\{[^}]*padding:\s*12px/s)
     expect(panelStyles).toContain('.canvas-agent-side-panel-collapse-toggle.is-collapsed')
     expect(panelStyles).toContain('display: none')
     expect(addMenu).toContain('canvas-dock-labeled-action')

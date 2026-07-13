@@ -45,6 +45,7 @@ import {
 } from './canvasAutoLayout'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import { CANVAS_CAPABILITIES, isOperationNode } from './canvas.capabilities'
+import { canvasNodeChromeExtraHeight } from './canvasNodeChrome'
 import { CANVAS_NODE_META_BAR_HEIGHT, OPERATION_NODE_DEFAULT_SIZE } from './canvasNodeSize'
 import { CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { getOperationVisual } from './canvasOperationIcons'
@@ -228,7 +229,9 @@ function toFlowNode(
   isGeneratedOutput = false,
 ): Node<CanvasFlowNodeData> {
   const inlineToolbarHeight = inlineExtension?.toolbar ? INLINE_NODE_TOOLBAR_HEIGHT : 0
-  const baseRenderedHeight = operationNodePresentationHeight(node, operationRuns)
+  const cardChromeExtraHeight = canvasNodeChromeExtraHeight(node)
+  const baseRenderedHeight =
+    operationNodePresentationHeight(node, operationRuns) + cardChromeExtraHeight
   const data: CanvasFlowNodeData = {
     actions,
     canvasNode: node,
@@ -241,6 +244,7 @@ function toFlowNode(
       : {}),
     ...(isGeneratedOutput ? { isGeneratedOutput: true } : {}),
     ...(baseRenderedHeight !== node.height ? { baseRenderedHeight } : {}),
+    cardChromeExtraHeight,
     ...(lineage ? { lineage } : {}),
     ...(inlineExtension?.toolbar ? { inlineToolbar: inlineExtension.toolbar } : {}),
     ...(inlineExtension?.panel ? { inlinePanel: inlineExtension.panel } : {}),

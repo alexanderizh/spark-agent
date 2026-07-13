@@ -13,6 +13,7 @@ function fromFlowNodes(
     const inlineExtraHeight = flow.data.inlinePanelExtraHeight ?? 0
     const inlineToolbarHeight = flow.data.inlineToolbarHeight ?? 0
     const inlineExtraWidth = flow.data.inlinePanelExtraWidth ?? 0
+    const cardChromeExtraHeight = flow.data.cardChromeExtraHeight ?? 0
     const measuredWidth =
       typeof flow.measured?.width === 'number'
         ? flow.measured.width
@@ -33,7 +34,10 @@ function fromFlowNodes(
         inlineExtraWidth > 0 && Math.abs(measuredWidth - (node.width + inlineExtraWidth)) <= 1
           ? node.width
           : measuredWidth,
-      height: inlineExtraHeight > 0 || inlineToolbarHeight > 0 ? node.height : measuredHeight,
+      height:
+        inlineExtraHeight > 0 || inlineToolbarHeight > 0
+          ? node.height
+          : Math.max(1, measuredHeight - cardChromeExtraHeight),
     }
   })
 }

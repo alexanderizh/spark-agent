@@ -350,6 +350,8 @@ export type CanvasFlowNodeData = {
   operationRunsFingerprint?: string
   /** 依据产物比例计算的视图高度；不改写持久化节点尺寸。 */
   baseRenderedHeight?: number
+  /** V4 标题行与底栏占用的视图高度；持久化尺寸不包含这部分。 */
+  cardChromeExtraHeight?: number
   /** 该资源节点由操作节点 generated edge 产出。 */
   isGeneratedOutput?: boolean
   lineage?: {
@@ -535,6 +537,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     operationRuns = [],
     isGeneratedOutput = false,
     baseRenderedHeight = node.height,
+    cardChromeExtraHeight = 0,
     inlinePanel,
     inlinePanelExtraHeight,
     inlineToolbar,
@@ -1233,12 +1236,12 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           }}
         >
           {nodeMetaBar}
-          {/* 缩放锚点只在节点实际选中时挂载，避免所有节点常驻 resize 控件。 */}
+          {/* 悬浮、选中或正在拉伸时显示缩放控件。 */}
           <NodeResizer
             color="var(--primary)"
             isVisible={showResizer}
             minWidth={minSize.width}
-            minHeight={minSize.height}
+            minHeight={minSize.height + cardChromeExtraHeight}
             keepAspectRatio={keepsCanvasMediaNodeAspectRatio(node.type)}
             handleClassName="canvas-node-resize-handle"
             lineClassName="canvas-node-resize-line"
