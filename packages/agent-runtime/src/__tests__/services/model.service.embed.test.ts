@@ -7,7 +7,7 @@
  *
  * embed() 的契约：永不抛异常，鉴权/网络/解析失败一律返回 { available: false, reason }。
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { ModelService } from '../../services/model.service.js'
 
 vi.mock('@spark/shared', () => ({
@@ -17,6 +17,10 @@ vi.mock('@spark/shared', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   }),
+}))
+
+vi.mock('@spark/shared/keystore', () => ({
+  getSecret: vi.fn(async () => 'test-key'),
 }))
 
 // ─── 测试夹具 ────────────────────────────────────────────────────────────
@@ -59,16 +63,7 @@ function jsonResponse(status: number, body: unknown): Response {
 // ─── 测试用例 ────────────────────────────────────────────────────────────
 
 describe('ModelService.embed — embeddings response parsing', () => {
-  beforeEach(() => {
-    // keystore 在 embed() 内通过动态 import 引入；mock 其默认导出
-    vi.doMock('@spark/storage', () => ({
-      keystore: {
-        getSecret: async () => API_KEY,
-      },
-    }))
-  })
   afterEach(() => {
-    vi.doUnmock('@spark/storage')
     vi.restoreAllMocks()
   })
 

@@ -63,7 +63,7 @@ export class MemorySearchService {
     }
 
     // ── FTS 路径 ──
-    let ftsEntries: MemoryEntryRow[] | null = null
+    let ftsEntries: MemoryEntryRow[] | null
     try {
       ftsEntries = this.searchRepo.searchBm25(query, channelOpts).map((h) => h.entry)
     } catch (err) {

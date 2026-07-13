@@ -10,7 +10,7 @@ export function parsePlatformModelRedeemDeepLink(value: string): string | null {
   }
   if (target.protocol !== REDEEM_PROTOCOL || target.hostname !== 'redeem') return null
   const code = target.searchParams.get('code')?.trim() ?? ''
-  if (!code || code.length > MAX_REDEEM_CODE_LENGTH || /[\s\u0000-\u001f]/.test(code)) return null
+  if (!code || code.length > MAX_REDEEM_CODE_LENGTH || /[\s\p{Cc}]/u.test(code)) return null
   return code
 }
 

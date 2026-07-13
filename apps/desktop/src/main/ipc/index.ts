@@ -1520,7 +1520,7 @@ async function resolveScheduledTaskRuntime(params: {
 
   let providerProfileId: string | null = null
   let modelId: string | null = params.modelId ?? null
-  let agentId: string | null = params.agentId ?? null
+  const agentId: string | null = params.agentId ?? null
   let agentAdapterHint: SessionAgentAdapter | null = null
 
   // 1. 任务里挑了 modelId：找拥有这个 model 的 provider
@@ -3019,6 +3019,11 @@ export function registerAllIpcHandlers(): void {
     return { profiles }
   })
 
+  typedIpcHandle('provider:get-api-key', async (req) => {
+    const apiKey = await getProviderService().getProviderApiKey(req.id)
+    return { apiKey }
+  })
+
   typedIpcHandle('provider:create', async (req) => {
     log.info(`provider:create requested, provider=${req.provider}, name=${req.name}`)
     const profile = await getProviderService().createProvider(req)
@@ -4154,7 +4159,7 @@ export function registerAllIpcHandlers(): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`provider:export-to-file write failed: ${message}`)
-      throw new Error(`写入文件失败：${message}`)
+      throw new Error(`写入文件失败：${message}`, { cause: err })
     }
   })
 
@@ -4184,7 +4189,7 @@ export function registerAllIpcHandlers(): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`provider:import-from-file read failed: ${message}`)
-      throw new Error(`读取文件失败：${message}`)
+      throw new Error(`读取文件失败：${message}`, { cause: err })
     }
 
     let json: unknown
@@ -4193,7 +4198,7 @@ export function registerAllIpcHandlers(): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`provider:import-from-file parse failed: ${message}`)
-      throw new Error(`JSON 解析失败：${message}`)
+      throw new Error(`JSON 解析失败：${message}`, { cause: err })
     }
 
     // 用 protocol 提供的 zod schema 做运行时校验，version 不匹配会抛 ZodError
@@ -4766,9 +4771,13 @@ export function registerAllIpcHandlers(): void {
                 try {
                   if (e.isDirectory()) t += await size(f)
                   else if (e.isFile()) t += (await fs.stat(f)).size
-                } catch {}
+                } catch {
+                  // 缓存可能在统计过程中被 Chromium 并发删除，忽略该条目。
+                }
               }
-            } catch {}
+            } catch {
+              // 无法读取的缓存目录按 0 字节处理，删除步骤仍会继续。
+            }
             return t
           })(full)
           await fs.rm(full, { recursive: true, force: true })
@@ -5251,7 +5260,7 @@ export function registerAllIpcHandlers(): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`agent:export-to-file write failed: ${message}`)
-      throw new Error(`写入文件失败：${message}`)
+      throw new Error(`写入文件失败：${message}`, { cause: err })
     }
   })
 
@@ -5281,7 +5290,7 @@ export function registerAllIpcHandlers(): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`agent:import-from-file read failed: ${message}`)
-      throw new Error(`读取文件失败：${message}`)
+      throw new Error(`读取文件失败：${message}`, { cause: err })
     }
 
     let json: unknown
@@ -5290,7 +5299,7 @@ export function registerAllIpcHandlers(): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`agent:import-from-file parse failed: ${message}`)
-      throw new Error(`JSON 解析失败：${message}`)
+      throw new Error(`JSON 解析失败：${message}`, { cause: err })
     }
 
     // Basic runtime validation
@@ -6656,7 +6665,7 @@ export function registerAllIpcHandlers(): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`scheduled-task:export-to-file write failed: ${message}`)
-      throw new Error(`写入文件失败：${message}`)
+      throw new Error(`写入文件失败：${message}`, { cause: err })
     }
   })
 
@@ -6684,7 +6693,7 @@ export function registerAllIpcHandlers(): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`scheduled-task:import-from-file read failed: ${message}`)
-      throw new Error(`读取文件失败：${message}`)
+      throw new Error(`读取文件失败：${message}`, { cause: err })
     }
 
     let json: unknown
@@ -6693,7 +6702,7 @@ export function registerAllIpcHandlers(): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`scheduled-task:import-from-file parse failed: ${message}`)
-      throw new Error(`JSON 解析失败：${message}`)
+      throw new Error(`JSON 解析失败：${message}`, { cause: err })
     }
 
     const { ScheduledTaskExportPayloadSchema } = await import('@spark/protocol')
@@ -7351,13 +7360,14 @@ export function registerAllIpcHandlers(): void {
             }
             return 0
           })
-        if (candidates.length === 0) {
+        const candidate = candidates[0]
+        if (!candidate) {
           return {
             success: false,
             message: `当前平台 (${platformArch}) 暂无可用的 FFmpeg 安装包。请在 minio 仓库的 index.json 中添加对应条目。`,
           }
         }
-        artifactId = candidates[0].id
+        artifactId = candidate.id
       } catch (err) {
         return {
           success: false,
@@ -7530,7 +7540,7 @@ export function registerAllIpcHandlers(): void {
       }
     }
 
-    let nextWidth = bounds.width
+    let nextWidth: number
     if (bounds.width < targetWidth) {
       if (!allowGrow) {
         // 用户已经主动把窗口拖到比目标小（例如拖窄窗口去腾出桌面空间），

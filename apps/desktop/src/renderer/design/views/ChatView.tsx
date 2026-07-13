@@ -4527,8 +4527,6 @@ function TeamMemberActivityBlockView({
   const memberName = member?.name ?? memberAgentId
   const avatar = getAgentAvatarConfig(member?.metadata, memberAgentId, memberName)
 
-  if (!hasVisibleTeamMemberActivityBlocks(blocks)) return null
-
   // 该成员气泡的纯文本（复制内容）+ 源 event id（删除）。只取 team_member_message block。
   const memberTextBlocks = useMemo(
     () =>
@@ -4550,6 +4548,8 @@ function TeamMemberActivityBlockView({
     () => memberTextBlocks.flatMap((b) => b.eventIds ?? []),
     [memberTextBlocks],
   )
+
+  if (!hasVisibleTeamMemberActivityBlocks(blocks)) return null
 
   return (
     <>

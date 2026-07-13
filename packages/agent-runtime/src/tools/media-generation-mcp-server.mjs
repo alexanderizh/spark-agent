@@ -305,8 +305,8 @@ function handleCancelTask(args) {
 }
 
 function configFromEnv() {
-  let mediaDefaults = {}
-  let manifests = []
+  let mediaDefaults
+  let manifests
   try {
     mediaDefaults = env.SPARK_MEDIA_DEFAULTS_JSON ? JSON.parse(env.SPARK_MEDIA_DEFAULTS_JSON) : {}
   } catch {
@@ -465,7 +465,7 @@ function parseHttpError(err) {
   if (!match) return { statusCode: undefined, rawText: message }
   const statusCode = Number.parseInt(match[1], 10)
   const rawText = match[2] ?? ''
-  let body = null
+  let body
   try { body = rawText ? JSON.parse(rawText) : null } catch { body = rawText }
   return { statusCode, rawText, body }
 }

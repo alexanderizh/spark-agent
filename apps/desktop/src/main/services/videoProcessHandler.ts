@@ -194,8 +194,8 @@ async function dispatch(
     case 'trim': {
       const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
       return trimVideo(input, outputPath, {
-        startSec: asNumber(params.startSec, 0)!,
-        endSec: asNumber(params.endSec, 0)!,
+        startSec: asNumber(params.startSec, 0),
+        endSec: asNumber(params.endSec, 0),
         copy: params.copy !== false,
         onProgress,
       })
@@ -208,17 +208,17 @@ async function dispatch(
     }
 
     case 'segment': {
-      const segSec = asNumber(params.segmentSec, 10)!
+      const segSec = asNumber(params.segmentSec, 10)
       const pattern = join(getVideoArtifactDir(), `seg_${req.requestId}_%03d.mp4`)
       return segmentVideo(input, pattern, { segmentSec: segSec, onProgress })
     }
 
     // ── 转码 ─────────────────────────────────────────────────────
     case 'transcode': {
-      const format = (params.format as string) ?? 'mp4'
+      const format = (params.format as TranscodeOpts['format']) ?? 'mp4'
       const outputPath = (params.outputPath as string) ?? makeOutputPath(format)
       const opts: TranscodeOpts = {
-        ...(format ? { format: format as TranscodeOpts['format'] } : {}),
+        format,
         ...(params.videoCodec ? { videoCodec: params.videoCodec as TranscodeOpts['videoCodec'] } : {}),
         ...(params.audioCodec ? { audioCodec: params.audioCodec as TranscodeOpts['audioCodec'] } : {}),
         ...(params.resolution ? { resolution: params.resolution as { w: number; h: number } } : {}),
@@ -232,7 +232,7 @@ async function dispatch(
     // ── 画面处理 ─────────────────────────────────────────────────
     case 'adjustSpeed': {
       const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
-      const factor = asNumber(params.factor, 1)!
+      const factor = asNumber(params.factor, 1)
       return adjustSpeed(input, outputPath, factor, onProgress)
     }
 
@@ -247,10 +247,10 @@ async function dispatch(
     case 'crop': {
       const outputPath = (params.outputPath as string) ?? makeOutputPath('mp4')
       return cropVideo(input, outputPath, {
-        w: asNumber(params.w, 0)!,
-        h: asNumber(params.h, 0)!,
-        x: asNumber(params.x, 0)!,
-        y: asNumber(params.y, 0)!,
+        w: asNumber(params.w, 0),
+        h: asNumber(params.h, 0),
+        x: asNumber(params.x, 0),
+        y: asNumber(params.y, 0),
         onProgress,
       })
     }
@@ -279,6 +279,8 @@ async function dispatch(
 }
 
 /** 安全的数字参数解析：undefined → defaultValue */
+function asNumber(val: unknown, defaultValue: number): number
+function asNumber(val: unknown, defaultValue?: undefined): number | undefined
 function asNumber(val: unknown, defaultValue?: number): number | undefined {
   if (val == null) return defaultValue
   const n = typeof val === 'string' ? parseFloat(val) : (val as number)

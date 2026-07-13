@@ -1677,7 +1677,7 @@ export class SessionService {
     }
     const autoRouterAdapter = getAutoRouterAdapterForProviderId(effectiveRuntimeProviderProfileId)
     let provider: ProviderProfileRow
-    let isLocalCli = false
+    let isLocalCli: boolean
 
     let config: {
       defaultModel?: string
@@ -4174,7 +4174,7 @@ export class SessionService {
       log.warn('Debug mode MCP server script not found')
       return null
     }
-    let port = 0
+    let port: number
     try {
       port = await getDebugLogServer().start()
     } catch (err) {
@@ -5734,7 +5734,7 @@ export class SessionService {
     const providersForRouting = providerRowsForModelRouter(providerRepo.listAll())
     const autoRouterAdapter = getAutoRouterAdapterForProviderId(providerProfileId)
     let provider: ProviderProfileRow
-    let isLocalCli = false
+    let isLocalCli: boolean
     let providerConfig: {
       defaultModel?: string
       model?: string

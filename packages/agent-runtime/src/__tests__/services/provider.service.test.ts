@@ -539,6 +539,41 @@ describe('ProviderService', () => {
     expect(repo.delete).toHaveBeenCalledWith('id-1')
   })
 
+  it('getProviderApiKey returns the saved plaintext key for one editable provider', async () => {
+    repo.rows.set('id-key-echo', {
+      id: 'id-key-echo',
+      provider_type: 'openai',
+      name: 'Echo',
+      config_json: '{"defaultModel":"gpt-5","modelIds":["gpt-5"]}',
+      enabled: 1,
+      keystore_ref: 'openai-id-key-echo',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+    vi.mocked(keystore.getSecret).mockResolvedValueOnce('sk-plaintext-echo')
+
+    await expect(service.getProviderApiKey('id-key-echo')).resolves.toBe('sk-plaintext-echo')
+    expect(keystore.getSecret).toHaveBeenCalledWith('openai-id-key-echo')
+  })
+
+  it('getProviderApiKey returns an empty value when the provider has no credential ref', async () => {
+    repo.rows.set('id-no-key', {
+      id: 'id-no-key',
+      provider_type: 'openai',
+      name: 'No Key',
+      config_json: '{"defaultModel":"gpt-5","modelIds":["gpt-5"]}',
+      enabled: 1,
+      keystore_ref: '',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+
+    await expect(service.getProviderApiKey('id-no-key')).resolves.toBe('')
+    expect(keystore.getSecret).not.toHaveBeenCalled()
+  })
+
   it('updateProvider with apiKey updates keystore', async () => {
     repo.rows.set('id-2', {
       id: 'id-2',
@@ -555,6 +590,28 @@ describe('ProviderService', () => {
     await service.updateProvider({ id: 'id-2', apiKey: 'new-key' })
 
     expect(keystore.setSecret).toHaveBeenCalledWith('openai-id-2', 'new-key')
+  })
+
+  it('updateProvider creates and persists a credential ref when adding a key to an old provider', async () => {
+    repo.rows.set('id-key-added', {
+      id: 'id-key-added',
+      provider_type: 'openai',
+      name: 'Pending Key',
+      config_json: '{"defaultModel":"gpt-5","modelIds":["gpt-5"]}',
+      enabled: 1,
+      keystore_ref: '',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+
+    await service.updateProvider({ id: 'id-key-added', apiKey: 'newly-added-key' })
+
+    expect(keystore.setSecret).toHaveBeenCalledWith('openai-id-key-added', 'newly-added-key')
+    expect(repo.update).toHaveBeenCalledWith('id-key-added', {
+      keystoreRef: 'openai-id-key-added',
+    })
+    expect(repo.rows.get('id-key-added')?.keystore_ref).toBe('openai-id-key-added')
   })
 
   it('updateProvider without apiKey does NOT call keystore', async () => {
@@ -1344,6 +1401,7 @@ describe('ProviderService', () => {
 
     await expect(service.updateProvider({ id: 'spark-platform-newapi', name: 'hijacked' }))
       .rejects.toThrow('不能手动编辑')
+    await expect(service.getProviderApiKey('spark-platform-newapi')).rejects.toThrow('不能读取凭据')
     await expect(service.deleteProvider('spark-platform-newapi')).rejects.toThrow('不能删除')
   })
 

@@ -31,7 +31,7 @@ const SENSITIVE_PATTERNS: ReadonlyArray<RegExp> = [
   // GitHub tokens
   /gh[pou]_[A-Za-z0-9]{30,}/,
   // Anthropic tokens
-  /sk-ant-[A-Za-z0-9\-]{20,}/,
+  /sk-ant-[A-Za-z0-9-]{20,}/,
 ]
 
 /**

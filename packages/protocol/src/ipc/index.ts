@@ -685,6 +685,18 @@ export interface ProviderListResponse {
   profiles: ProviderProfile[]
 }
 
+/**
+ * 仅供 Provider 编辑界面按需回显当前凭据。不得并入 provider:list，
+ * 避免一次性把所有明文凭据发送到 Renderer。
+ */
+export interface ProviderGetApiKeyRequest {
+  id: string
+}
+
+export interface ProviderGetApiKeyResponse {
+  apiKey: string
+}
+
 export interface ProviderCreateRequest {
   name: string
   provider: string
@@ -5137,6 +5149,7 @@ export interface IpcChannelMap {
 
   // Provider
   'provider:list': [ProviderListRequest, ProviderListResponse]
+  'provider:get-api-key': [ProviderGetApiKeyRequest, ProviderGetApiKeyResponse]
   'provider:create': [ProviderCreateRequest, ProviderCreateResponse]
   'provider:update': [ProviderUpdateRequest, ProviderUpdateResponse]
   'provider:delete': [ProviderDeleteRequest, ProviderDeleteResponse]

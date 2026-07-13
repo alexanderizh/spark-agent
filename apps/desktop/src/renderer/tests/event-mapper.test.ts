@@ -56,7 +56,6 @@ describe('MessageBuilder', () => {
 
     builder.processEvent({
       ...statusEvent('cancelled'),
-      message: 'Stopped by user',
     })
 
     expect(builder.getAllMessages()[0]).toMatchObject({
@@ -78,7 +77,6 @@ describe('MessageBuilder', () => {
     builder.processEvent({
       ...statusEvent('cancelled'),
       id: 'restart-cancelled',
-      message: 'Stopped after app restart',
     })
 
     const message = builder.getAllMessages()[0]

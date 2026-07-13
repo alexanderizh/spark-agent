@@ -1388,13 +1388,13 @@ export class PlatformBridgeService {
   /** Parse attachmentsJson/commentsJson into arrays for API responses */
   private normalizeBoardTask(raw: any): any {
     const attachmentsRaw = raw.attachmentsJson ?? raw.attachments ?? '[]'
-    let attachments: any[] = []
+    let attachments: any[]
     try {
       attachments = typeof attachmentsRaw === 'string' ? JSON.parse(attachmentsRaw) : (Array.isArray(attachmentsRaw) ? attachmentsRaw : [])
     } catch { attachments = [] }
 
     const commentsRaw = raw.commentsJson ?? raw.comments ?? '[]'
-    let comments: any[] = []
+    let comments: any[]
     try {
       comments = typeof commentsRaw === 'string' ? JSON.parse(commentsRaw) : (Array.isArray(commentsRaw) ? commentsRaw : [])
     } catch { comments = [] }

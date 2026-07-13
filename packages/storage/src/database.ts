@@ -254,7 +254,7 @@ export class SparkDatabase {
       log.info(`Migration ${version} applied successfully via compatibility handler`)
     } catch (err) {
       log.error(`Migration ${version} compatibility handler failed: ${String(err)}`)
-      throw new Error(`Migration ${version} (${file.name}) failed: ${String(err)}`)
+      throw new Error(`Migration ${version} (${file.name}) failed: ${String(err)}`, { cause: err })
     }
 
     return true
@@ -299,7 +299,7 @@ export class SparkDatabase {
       log.info(`Migration ${version} applied successfully`)
     } catch (err) {
       log.error(`Migration ${version} failed: ${String(err)}`)
-      throw new Error(`Migration ${version} (${file.name}) failed: ${String(err)}`)
+      throw new Error(`Migration ${version} (${file.name}) failed: ${String(err)}`, { cause: err })
     }
   }
 }

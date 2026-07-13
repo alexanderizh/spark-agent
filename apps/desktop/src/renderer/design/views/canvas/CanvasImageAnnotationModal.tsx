@@ -114,9 +114,9 @@ function clamp(v: number, min: number, max: number) {
 /** 判断颜色是否偏浅（白色等），用于决定文字是否需要描边提升对比度。支持 #hex 与 rgb()。 */
 function isLightColor(color: string): boolean {
   const c = color.trim()
-  let r = 0
-  let g = 0
-  let b = 0
+  let r: number
+  let g: number
+  let b: number
   if (c.startsWith('#')) {
     const hex = c.slice(1)
     const full =

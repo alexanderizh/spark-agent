@@ -9,6 +9,10 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { ModelService } from './model.service.js'
 import type { ProviderProfileRepository, ModelProfileRepository, ProviderProfileRow } from '@spark/storage'
 
+vi.mock('@spark/shared/keystore', () => ({
+  getSecret: vi.fn(async () => 'test-key'),
+}))
+
 /** 构造一个配好 extraction provider 的 ModelService（settings 可覆盖） */
 function makeService(
   settings: Record<string, unknown> = {},

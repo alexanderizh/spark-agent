@@ -393,6 +393,20 @@ export class ProviderService {
     return [...visibleProfiles, ...routers]
   }
 
+  /**
+   * 按需返回单个可编辑 Provider 的明文 Key，供受信任的编辑界面回显。
+   * 调用方不得记录、持久化或批量请求返回值。
+   */
+  async getProviderApiKey(id: string): Promise<string> {
+    const row = this.repo.get(id)
+    if (!row) throw new Error(`Provider not found: ${id}`)
+    if (isManagedProviderRow(row)) {
+      throw new Error('平台官方 Provider 由系统管理，不能读取凭据')
+    }
+    if (!row.keystore_ref) return ''
+    return (await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef)) ?? ''
+  }
+
   async isLocalCliAvailable(options: { forceRefresh?: boolean } = {}): Promise<boolean> {
     const now = Date.now()
     if (
@@ -653,9 +667,11 @@ export class ProviderService {
       throw new Error('平台官方 Provider 由系统管理，不能手动编辑')
     }
 
+    let updatedKeystoreRef: string | undefined
     if (params.apiKey !== undefined) {
-      const ref = existing.keystore_ref ?? keystore.makeKeystoreRef(existing.provider_type, params.id)
+      const ref = existing.keystore_ref || keystore.makeKeystoreRef(existing.provider_type, params.id)
       await keystore.setSecret(ref as keystore.KeystoreRef, params.apiKey)
+      updatedKeystoreRef = ref
       log.info(`Updated API key for id=${params.id} key=${keystore.maskSecret(params.apiKey)}`)
     }
 
@@ -781,6 +797,7 @@ export class ProviderService {
     this.repo.update(params.id, {
       ...(params.name !== undefined && { name: params.name }),
       ...(newConfig !== undefined && { config: newConfig }),
+      ...(updatedKeystoreRef !== undefined && { keystoreRef: updatedKeystoreRef }),
     })
 
     if (params.isDefault) {

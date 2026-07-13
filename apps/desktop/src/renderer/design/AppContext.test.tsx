@@ -44,6 +44,22 @@ describe('AppContext visual tweak persistence', () => {
     vi.unstubAllGlobals()
   })
 
+  it('uses the dark theme by default when no theme has been persisted', async () => {
+    function ThemeHarness() {
+      const { t } = useApp()
+      return <span data-testid="theme">{t.theme}</span>
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<AppProvider><ThemeHarness /></AppProvider>)
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('dark')
+    expect(document.documentElement.dataset.theme).toBe('dark')
+  })
+
   it('hydrates visual tweaks from persisted appearance settings', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'settings:get') {

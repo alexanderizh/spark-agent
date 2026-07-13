@@ -100,6 +100,7 @@ let fileState: FileLoggerState = null
 function getFs(): typeof import('node:fs') | null {
   try {
     // logger 运行在主进程（Node 环境），但避免在渲染进程/打包边界硬依赖
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require('node:fs')
   } catch {
     return null
@@ -108,6 +109,7 @@ function getFs(): typeof import('node:fs') | null {
 
 function getPath(): typeof import('node:path') | null {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require('node:path')
   } catch {
     return null

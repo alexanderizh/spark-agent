@@ -15,7 +15,12 @@ import {
   SettingsRepository,
 } from '@spark/storage'
 import { getDatabase } from '../../db.js'
-import { preloadSecrets, type KeystoreRef } from '@spark/shared/keystore'
+import {
+  configureCredentialVaultPersistence,
+  preloadSecrets,
+  type KeystoreRef,
+} from '@spark/shared/keystore'
+import { createCredentialVaultPersistence } from '../CredentialVaultPersistence.js'
 
 const KEYCHAIN_DISCLOSURE_VERSION = 1
 const log = createLogger('auth:keychain-preload')
@@ -52,6 +57,7 @@ function configuredSecretRefs(): KeystoreRef[] {
 }
 
 export function registerAuthIpc(): void {
+  configureCredentialVaultPersistence(createCredentialVaultPersistence())
   const auth = () => getAuthService()
 
   typedIpcHandle('auth:captcha', async () => auth().getCaptcha())

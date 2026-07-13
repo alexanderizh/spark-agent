@@ -13,7 +13,7 @@ Spark Agent 需要代表用户存储多个 AI Provider 的 API Key（Anthropic�
 
 ## 决策
 
-**使用操作系统原生安全存储保存所有敏感凭据；macOS 将凭据集中到单个 Keychain vault，SQLite 只存引用和非敏感运行状态。**
+**使用操作系统原生安全存储保存所有敏感凭据；macOS 将凭据集中到单个 vault，并在首次 Keychain 导入后使用 Electron `safeStorage` 加密的应用本地文件作为运行时主存储。SQLite 只存引用和非敏感运行状态。**
 
 ### 实现方案
 
@@ -28,7 +28,7 @@ Spark Agent 需要代表用户存储多个 AI Provider 的 API Key（Anthropic�
 ```
 用户输入 API Key
       ↓
-macOS: keytar.setPassword(service, "credential-vault-v1", vaultJson)
+macOS: safeStorage.encryptString(vaultJson) → userData/credential-vault-v1.enc
 Windows/Linux: keytar.setPassword(service, account, key)
       ↓
 OS Keychain 加密存储
@@ -40,7 +40,8 @@ SQLite provider_profiles.keychain_ref = "anthropic-default"
 
 读取时：
 ```
-macOS: 读取一次 credential-vault-v1 → 在主进程内存中按 ref 解析
+macOS: 优先读取 safeStorage 加密 vault → 在主进程内存中按 ref 解析
+       加密 vault 不存在时，仅从 Keychain 的 credential-vault-v1 导入一次
 Windows/Linux: keytar.getPassword(service, account) → 返回明文 Key（仅在内存中使用）
 ```
 
@@ -52,8 +53,9 @@ macOS 会在应用读取 Keychain 项时校验访问方身份。开发包、签�
 
 - 安装版首次读取前必须由应用主动解释：平台不保存用户 API Key、密钥仅存在本机安全存储，并提示用户在系统窗口选择“始终允许”。
 - 用户拒绝或系统安全存储暂时不可用时，启动预读降级为凭据不可用并记录日志，不得阻断 Spark 账号登录；用户可稍后在使用相关 Provider 时重新授权。
-- macOS 的 Provider、平台模型和连接器敏感值集中存入一个 `credential-vault-v1` 条目；启动时一次读取并缓存，避免按 Provider 重复弹窗。
-- 旧版独立 Keychain 条目在启动预读时迁入 vault；迁移完成后不再读取旧条目。
+- macOS 的 Provider、平台模型和连接器敏感值集中存入一个 vault；首次从 Keychain 的 `credential-vault-v1` 导入后，写入 Electron `safeStorage` 加密的应用文件，后续启动不再访问 `spark-agent` Keychain 条目。
+- 启动预读只加载集中 vault，严禁逐条探测旧 Keychain 条目。旧版独立条目仅在实际使用对应 Provider/连接器时按需迁移一次，避免启动阶段产生连续授权窗口。
+- 加密 vault 只存在于 Electron 主进程可访问的 `userData` 目录，文件权限限制为当前用户；明文通常只在主进程内存中短暂存在。Provider 编辑界面可通过独立的 `provider:get-api-key` IPC 按需读取当前单个 Provider 的明文用于回显，但不得通过列表接口批量返回，不得进入 SQLite、localStorage、日志或错误信息，抽屉关闭后由 Renderer 状态释放。
 - Windows Credential Manager 对单条凭据大小有限制，继续保持每个 ref 一个条目；Windows 正常读取不会出现 macOS 式逐条密码授权窗口。
 - `base-url`、平台用户 ID、待支付恢复状态等非敏感字段保存在 SQLite `app_settings`，不占用 Keychain 条目。
 - SQLite 的 `provider_profiles.keystore_ref` 仍只保存引用，不保存 API Key 明文。
@@ -97,9 +99,11 @@ CI 流水线中需要：
 
 - `packages/shared/src/keystore/index.ts` 是 Provider/连接器凭据唯一合法的 keytar 调用入口，其他模块不得绕过 vault 直接增加条目
 - 所有包含 API Key 的字段在日志、错误信息中必须做掩码处理（只显示前4位）
+- Renderer 仅允许在用户打开单个 Provider 编辑界面时按需获取该 Key；普通列表、导入导出、配置变更事件不得携带明文
+- 回显后的 Key 必须维护独立的 dirty 状态；用户没有修改 Key 时，保存模型配置不得在更新请求中重复携带或写回 Key
 - `.gitignore` 必须排除 `.env`、`*.key`、`secrets.json` 等敏感文件
 
 ## 后续
 
 - P0-04 中的 `packages/shared/src/keystore.ts` 实现此接口
-- P1-09 的 Provider 配置 UI 通过 IPC 调用 keystore，不直接接触 API Key 明文
+- P1-09 的 Provider 配置 UI 仅通过受控 IPC 按需接触当前 Provider 的 API Key 明文，不直接调用 keystore

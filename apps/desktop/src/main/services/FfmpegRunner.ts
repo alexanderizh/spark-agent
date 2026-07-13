@@ -47,7 +47,7 @@ export interface RunOpts {
   /** 超时毫秒，默认 180_000（3 分钟） */
   timeoutMs?: number
   /** 进度回调（仅 ffmpeg 有意义；ffprobe 不触发） */
-  onProgress?: (p: FfmpegProgress) => void
+  onProgress?: ((p: FfmpegProgress) => void) | undefined
   /** 视频总时长（秒），用于换算 percent；不提供时 percent 为 -1 */
   totalDurationSec?: number
   /** 取消信号 */
@@ -144,16 +144,21 @@ async function runFfmpeg(args: string[], opts: RunOpts = {}): Promise<ExecResult
         // 进度解析
         if (opts.onProgress) {
           const m = text.match(PROGRESS_REGEX)
-          if (m) {
-            const currentTimeSec = parseTimeToSec(m[1], m[2], m[3])
+          const frameText = m?.[1]
+          const fpsText = m?.[2]
+          const hoursText = m?.[3]
+          const minutesText = m?.[4]
+          const secondsText = m?.[5]
+          if (frameText && fpsText && hoursText && minutesText && secondsText) {
+            const currentTimeSec = parseTimeToSec(hoursText, minutesText, secondsText)
             const percent =
               opts.totalDurationSec && opts.totalDurationSec > 0
                 ? Math.min(100, (currentTimeSec / opts.totalDurationSec) * 100)
                 : -1
             opts.onProgress({
               percent,
-              frame: parseInt(m[1], 10),
-              fps: parseFloat(m[2]),
+              frame: parseInt(frameText, 10),
+              fps: parseFloat(fpsText),
               currentTimeSec,
             })
           }
@@ -328,7 +333,9 @@ export async function probeVideo(input: string): Promise<VideoProbeInfo> {
   let fps = 0
   if (videoStream?.r_frame_rate) {
     const [num, den] = videoStream.r_frame_rate.split('/').map(Number)
-    if (den && !Number.isNaN(num)) fps = Math.round((num / den) * 100) / 100
+    if (num !== undefined && den && !Number.isNaN(num)) {
+      fps = Math.round((num / den) * 100) / 100
+    }
   }
 
   return {
@@ -354,19 +361,19 @@ export interface ExtractKeyframesOpts {
   /** 提取策略 */
   strategy: KeyframeStrategy
   /** scene 模式阈值 0~1，默认 0.3（越小越敏感） */
-  threshold?: number
+  threshold?: number | undefined
   /** uniform 模式采样间隔（秒），如 10 表示每 10 秒一帧 */
-  intervalSec?: number
+  intervalSec?: number | undefined
   /** 上限保护：超过此数退化均匀采样。默认 20 */
-  maxFrames?: number
+  maxFrames?: number | undefined
   /** 输出目录（绝对路径） */
   outputDir: string
   /** 输出格式 */
-  format?: 'jpg' | 'png'
+  format?: 'jpg' | 'png' | undefined
   /** 质量 -q:v，2~31，默认 2（高质量） */
-  quality?: number
+  quality?: number | undefined
   /** 进度回调 */
-  onProgress?: (p: FfmpegProgress) => void
+  onProgress?: ((p: FfmpegProgress) => void) | undefined
 }
 
 export interface ExtractedKeyframe {
@@ -396,7 +403,8 @@ function parseShowinfoTimestamps(stderr: string): number[] {
   let m: RegExpExecArray | null
   PTS_TIME_REGEX.lastIndex = 0
   while ((m = PTS_TIME_REGEX.exec(stderr)) !== null) {
-    timestamps.push(parseFloat(m[1]))
+    const timestamp = m[1]
+    if (timestamp !== undefined) timestamps.push(parseFloat(timestamp))
   }
   return timestamps
 }
@@ -491,7 +499,7 @@ async function runKeyframePass(
     format: 'jpg' | 'png'
     quality: number
     duration: number
-    onProgress?: (prog: FfmpegProgress) => void
+    onProgress?: ((prog: FfmpegProgress) => void) | undefined
   },
 ): Promise<{ timestamps: number[]; outputFiles: string[] }> {
 
@@ -552,15 +560,19 @@ function buildKeyframeList(
   const len = Math.min(timestamps.length, files.length)
   const result: ExtractedKeyframe[] = []
   for (let i = 0; i < len; i++) {
+    const path = files[i]
+    const timestampSec = timestamps[i]
+    if (path === undefined || timestampSec === undefined) continue
     result.push({
-      path: files[i],
-      timestampSec: timestamps[i],
+      path,
+      timestampSec,
       index: i,
     })
   }
   // 文件数多于时间戳时（罕见），补 0 时间戳
   for (let i = len; i < files.length; i++) {
-    result.push({ path: files[i], timestampSec: 0, index: i })
+    const path = files[i]
+    if (path !== undefined) result.push({ path, timestampSec: 0, index: i })
   }
   return result
 }
@@ -573,7 +585,11 @@ export async function extractFramesAtTimes(
   input: string,
   timesSec: number[],
   outputDir: string,
-  opts: { format?: 'jpg' | 'png'; quality?: number; onProgress?: (p: FfmpegProgress) => void } = {},
+  opts: {
+    format?: 'jpg' | 'png' | undefined
+    quality?: number | undefined
+    onProgress?: ((p: FfmpegProgress) => void) | undefined
+  } = {},
 ): Promise<ExtractedKeyframe[]> {
 
   mkdirSync(outputDir, { recursive: true })
@@ -585,6 +601,7 @@ export async function extractFramesAtTimes(
   const results: ExtractedKeyframe[] = []
   for (let i = 0; i < timesSec.length; i++) {
     const t = timesSec[i]
+    if (t === undefined) continue
     const outPath = join(outputDir, `manual_${sessionId}_${String(i).padStart(4, '0')}.${format}`)
     // -ss 在 -i 前是 seek 模式（快），单帧提取用此
     const args = [
@@ -626,7 +643,7 @@ export async function extractFramesAtTimes(
 export async function generateThumbnail(
   input: string,
   outputPath: string,
-  opts: { atSec?: number; width?: number } = {},
+  opts: { atSec?: number | undefined; width?: number | undefined } = {},
 ): Promise<{ path: string }> {
   mkdirSync(dirname(outputPath), { recursive: true })
 
@@ -665,7 +682,12 @@ export async function generateThumbnail(
 export async function trimVideo(
   input: string,
   outputPath: string,
-  opts: { startSec: number; endSec: number; copy?: boolean; onProgress?: (p: FfmpegProgress) => void },
+  opts: {
+    startSec: number
+    endSec: number
+    copy?: boolean | undefined
+    onProgress?: ((p: FfmpegProgress) => void) | undefined
+  },
 ): Promise<{ path: string }> {
   const { startSec, endSec, copy = true } = opts
   const duration = endSec - startSec
@@ -703,7 +725,7 @@ export async function trimVideo(
 export async function concatVideos(
   inputs: string[],
   outputPath: string,
-  opts: { onProgress?: (p: FfmpegProgress) => void } = {},
+  opts: { onProgress?: ((p: FfmpegProgress) => void) | undefined } = {},
 ): Promise<{ path: string }> {
   if (inputs.length < 2) throw new Error('合并至少需要 2 个视频')
 
@@ -771,7 +793,7 @@ export async function concatVideos(
 export async function segmentVideo(
   input: string,
   outputPattern: string,
-  opts: { segmentSec: number; onProgress?: (p: FfmpegProgress) => void },
+  opts: { segmentSec: number; onProgress?: ((p: FfmpegProgress) => void) | undefined },
 ): Promise<{ paths: string[] }> {
   const probe = await probeVideo(input)
   const args = [
@@ -803,13 +825,13 @@ export async function segmentVideo(
 // ═══════════════════════════════════════════════════════════════════════════
 
 export interface TranscodeOpts {
-  format?: 'mp4' | 'webm' | 'mov' | 'gif'
-  videoCodec?: 'libx264' | 'libx265' | 'libvpx-vp9' | 'copy'
-  audioCodec?: 'aac' | 'libopus' | 'none'
-  resolution?: { w: number; h: number }
-  bitrate?: string // 如 '2M'
-  crf?: number // 18~28
-  fps?: number
+  format?: 'mp4' | 'webm' | 'mov' | 'gif' | undefined
+  videoCodec?: 'libx264' | 'libx265' | 'libvpx-vp9' | 'copy' | undefined
+  audioCodec?: 'aac' | 'libopus' | 'none' | undefined
+  resolution?: { w: number; h: number } | undefined
+  bitrate?: string | undefined // 如 '2M'
+  crf?: number | undefined // 18~28
+  fps?: number | undefined
 }
 
 /**
@@ -966,7 +988,10 @@ function buildAtempoChain(factor: number): string {
 export async function reverseVideo(
   input: string,
   outputPath: string,
-  opts: { reverseAudio?: boolean; onProgress?: (p: FfmpegProgress) => void } = {},
+  opts: {
+    reverseAudio?: boolean | undefined
+    onProgress?: ((p: FfmpegProgress) => void) | undefined
+  } = {},
 ): Promise<{ path: string }> {
   const probe = await probeVideo(input)
   const audioPart = opts.reverseAudio && probe.hasAudio ? ';[0:a]areverse[a]' : ''
@@ -988,7 +1013,13 @@ export async function reverseVideo(
 export async function cropVideo(
   input: string,
   outputPath: string,
-  opts: { w: number; h: number; x: number; y: number; onProgress?: (p: FfmpegProgress) => void },
+  opts: {
+    w: number
+    h: number
+    x: number
+    y: number
+    onProgress?: ((p: FfmpegProgress) => void) | undefined
+  },
 ): Promise<{ path: string }> {
   const probe = await probeVideo(input)
   const args = [
@@ -1016,8 +1047,8 @@ export async function addWatermark(
   outputPath: string,
   opts: {
     position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
-    scale?: number
-    onProgress?: (p: FfmpegProgress) => void
+    scale?: number | undefined
+    onProgress?: ((p: FfmpegProgress) => void) | undefined
   },
 ): Promise<{ path: string }> {
   const probe = await probeVideo(input)
