@@ -920,6 +920,10 @@ function isBenignCodexSdkError(message: string): boolean {
     message.includes('unexpected status 404 Not Found: endpoint not supported') &&
     message.includes('/v1/responses') &&
     (message.includes('ws://') || message.includes('WebSockets') || message.includes('WebSocket'))
+  const isUnsupportedServiceTierWarning =
+    message.includes('Configured service tier `') &&
+    message.includes('` is not advertised as supported for model `') &&
+    message.includes('` and will be omitted from requests.')
   const isMissingModelMetadataWarning =
     message.includes('Model metadata for `') &&
     message.includes('not found. Defaulting to fallback metadata')
@@ -929,6 +933,7 @@ function isBenignCodexSdkError(message: string): boolean {
     message.includes('events')
   return (
     message.includes('Skill descriptions were shortened to fit the 2% skills context budget') ||
+    isUnsupportedServiceTierWarning ||
     isMissingModelMetadataWarning ||
     isEventStreamLagWarning ||
     isUnsupportedResponsesWebSocket

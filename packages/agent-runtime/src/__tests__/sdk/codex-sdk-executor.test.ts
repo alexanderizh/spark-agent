@@ -484,6 +484,15 @@ describe('CodexSdkExecutor', () => {
         {
           type: 'item.completed',
           item: {
+            id: 'service-tier-warning-1',
+            type: 'error',
+            message:
+              'Configured service tier `priority` is not advertised as supported for model `glm-5.2` and will be omitted from requests.',
+          },
+        },
+        {
+          type: 'item.completed',
+          item: {
             id: 'event-stream-lag-1',
             type: 'error',
             message: 'in-process app-server event stream lagged; dropped 6 events',
