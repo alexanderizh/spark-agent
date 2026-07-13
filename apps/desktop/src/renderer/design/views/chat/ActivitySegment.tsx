@@ -8,7 +8,6 @@ type DisclosureChoice = 'auto' | 'open' | 'closed'
 export function ActivitySegment({
   summary,
   running,
-  sealed,
   autoCollapseEnabled,
   children,
 }: {
@@ -19,7 +18,7 @@ export function ActivitySegment({
   children: ReactNode
 }) {
   const [choice, setChoice] = useState<DisclosureChoice>('auto')
-  const automaticallyOpen = running || !sealed || !autoCollapseEnabled
+  const automaticallyOpen = !autoCollapseEnabled
   const open = choice === 'auto' ? automaticallyOpen : choice === 'open'
 
   const toggle = () => {

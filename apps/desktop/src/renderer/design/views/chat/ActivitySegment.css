@@ -72,7 +72,7 @@
 .chat-activity-segment-body {
   min-width: 0;
   margin: 4px 0 0 8px;
-  padding: 2px 0 2px 18px;
+  padding: 2px 0;
   border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
@@ -93,10 +93,5 @@
 @media (max-width: 640px) {
   .chat-activity-segment-live {
     font-size: 10px;
-  }
-
-  .chat-activity-segment-body {
-    margin-left: 4px;
-    padding-left: 14px;
   }
 }
