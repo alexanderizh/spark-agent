@@ -12,8 +12,14 @@
   }
 
   .canvas-agent-side-panel-collapse-toggle {
-    width: 24px;
-    height: 44px;
+    display: none;
+  }
+
+  .canvas-agent-side-panel-collapse-toggle.is-collapsed {
+    left: 0;
+    display: inline-flex;
+    width: 26px;
+    height: 42px;
     border-color: var(--canvas-v4-border);
     border-radius: 0 var(--canvas-v4-radius-sm) var(--canvas-v4-radius-sm) 0;
     background: var(--canvas-v4-surface-raised);
