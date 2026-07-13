@@ -34,6 +34,10 @@ import {
   getProviderAdapterKind,
   isProviderCompatibleWithAdapter,
 } from './utils/provider-adapter'
+import { sortSessionsByPinned, toTime } from './sidebar-session-sort'
+
+// 供 SidebarSessionList 等消费方在本地排序时复用（与后端 listSessions 排序对齐）。
+export { sortSessionsByPinned }
 
 export type SessionSummary = SessionListResponse['sessions'][number]
 
@@ -186,13 +190,6 @@ function isSessionActive(
   return status != null && ACTIVE_AGENT_STATUSES.has(status)
 }
 
-/** 把 ISO 时间字符串解析为可比较的时间戳，非法/缺失时回落到 0。 */
-function toTime(value: string | null | undefined): number {
-  if (value == null) return 0
-  const t = new Date(value).getTime()
-  return Number.isFinite(t) ? t : 0
-}
-
 /** 取项目分组下最新一条会话的更新时间；无会话时回落到 workspace 自身的 updatedAt。 */
 function latestSessionAt(group: ProjectGroup): number {
   let latest = 0
@@ -242,7 +239,7 @@ export function buildProjectGroups(
 
   const groups = groupWorkspaces.map((workspace) => ({
     workspace,
-    sessions: sessionsByGroup.get(workspace.id) ?? [],
+    sessions: sortSessionsByPinned(sessionsByGroup.get(workspace.id) ?? []),
   }))
 
   // 排序：置顶项目始终在前（内部按 pinnedAt 倒序，与后端 listAll 一致）；
