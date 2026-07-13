@@ -285,10 +285,10 @@ async function promptForDownloadedUpdate(info: UpdateInfo, autoInstall: boolean)
   showUpdateNotification(
     '更新已下载完成',
     process.platform === 'darwin'
-      ? `Spark Agent v${info.version} 安装镜像已下载完成`
+      ? `SparkWork v${info.version} 安装镜像已下载完成`
       : autoInstall
-        ? `Spark Agent v${info.version} 已准备好，退出应用时会自动启动安装器`
-        : `Spark Agent v${info.version} 安装包已下载完成`,
+        ? `SparkWork v${info.version} 已准备好，退出应用时会自动启动安装器`
+        : `SparkWork v${info.version} 安装包已下载完成`,
   )
 
   const mainWindow = BrowserWindow.getAllWindows()[0] ?? null
@@ -300,7 +300,7 @@ async function promptForDownloadedUpdate(info: UpdateInfo, autoInstall: boolean)
       : '安装更新'
   const detail =
     process.platform === 'darwin'
-      ? '现在打开 dmg 安装镜像，随后请将 Spark Agent 拖到 Applications 并替换现有版本。'
+      ? '现在打开 dmg 安装镜像，随后请将镜像中的应用拖到 Applications 并替换现有版本。'
       : autoInstall
         ? '现在启动安装器，或稍后退出应用时自动启动安装器。'
         : '现在启动安装器，或稍后手动安装。'
@@ -308,7 +308,7 @@ async function promptForDownloadedUpdate(info: UpdateInfo, autoInstall: boolean)
   const result = await dialog.showMessageBox(mainWindow, {
     type: 'info',
     title: '更新已就绪',
-    message: `Spark Agent v${info.version} 安装包已下载完成`,
+    message: `SparkWork v${info.version} 安装包已下载完成`,
     detail,
     buttons:
       process.platform === 'darwin'
@@ -339,7 +339,7 @@ function createTray(): void {
   }
 
   tray = new Tray(image)
-  tray.setToolTip('Spark Agent')
+  tray.setToolTip('SparkWork')
   refreshTrayMenu().catch((err) => log.warn('Failed to refresh tray menu on init', err))
   tray.on('click', () => {
     // 每次点击前刷新菜单（最近会话变化），再展示主窗口
@@ -375,7 +375,7 @@ async function refreshTrayMenu(): Promise<void> {
       }))
 
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: '打开 Spark Agent', click: showMainWindow },
+    { label: '打开 SparkWork', click: showMainWindow },
     { type: 'separator' },
     {
       label: '新建会话',
@@ -486,6 +486,7 @@ function createWindow(): BrowserWindow {
   const isDarwin = process.platform === 'darwin'
 
   const mainWindow = new BrowserWindow({
+    title: 'SparkWork',
     width: 1310,
     height: 800,
     minWidth: 800,

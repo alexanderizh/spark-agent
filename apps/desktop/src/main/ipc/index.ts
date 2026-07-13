@@ -2617,7 +2617,7 @@ async function executeRemoteCommand(
         : [
             {
               id: String(mainWindow.id),
-              label: mainWindow.getTitle() || 'Spark Agent',
+              label: mainWindow.getTitle() || 'SparkWork',
               meta: mainWindow.isFocused() ? 'focused' : 'background',
             },
           ]
@@ -8131,15 +8131,15 @@ function parseHookConfig(
 function getNodeDefaultTitle(node: HookNode): string {
   switch (node) {
     case 'permission_request':
-      return 'Spark Agent - 权限请求'
+      return 'SparkWork - 权限请求'
     case 'ask_user_question':
-      return 'Spark Agent - 需要您的输入'
+      return 'SparkWork - 需要您的输入'
     case 'session_end':
-      return 'Spark Agent - 任务完成'
+      return 'SparkWork - 任务完成'
     case 'session_fail':
-      return 'Spark Agent - 任务失败'
+      return 'SparkWork - 任务失败'
     default:
-      return 'Spark Agent'
+      return 'SparkWork'
   }
 }
 

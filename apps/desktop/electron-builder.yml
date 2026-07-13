@@ -1,7 +1,9 @@
 appId: com.spark-agent.desktop
+# Keep productName stable: it controls the executable, .app bundle and artifact names.
+# User-facing branding is configured per platform below.
 productName: Spark Agent
 protocols:
-  - name: Spark Agent redemption
+  - name: SparkWork redemption
     schemes:
       - spark-agent
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
@@ -21,6 +23,8 @@ afterSign: scripts/notarize.js
 mac:
   icon: resources/icon.icns
   category: public.app-category.developer-tools
+  extendInfo:
+    CFBundleDisplayName: SparkWork
   target:
     - dmg
   # 公证的前置条件：开启 hardened runtime
@@ -44,8 +48,13 @@ win:
   signingHashAlgorithms:
     - sha256
   rfc3161TimeStampServer: http://timestamp.digicert.com
+nsis:
+  shortcutName: SparkWork
+  uninstallDisplayName: SparkWork ${version}
 linux:
   icon: resources/icon.png
+  desktop:
+    Name: SparkWork
 asar: true
 asarUnpack:
   - '**/*.node'

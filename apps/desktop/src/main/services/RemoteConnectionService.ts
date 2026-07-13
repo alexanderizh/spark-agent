@@ -258,7 +258,7 @@ const CHANNEL_META: Record<
     requiredFields: ['botToken'],
     instructions: [
       '在 BotFather 中创建 bot 并复制 bot token。',
-      '回到 Spark Agent 填入 bot token，生成配对码后发送给 bot。',
+      '回到 SparkWork 填入 bot token，生成配对码后发送给 bot。',
       '可选：在 Telegram 命令配置中同步 /help、/sessions、/models、/agents。',
     ],
   },
@@ -268,8 +268,8 @@ const CHANNEL_META: Record<
     requiredFields: ['appId', 'appSecret'],
     instructions: [
       '使用飞书 openclaw 快捷入口创建自建应用并预选机器人能力。',
-      '复制 App ID 和 App Secret 到 Spark Agent。',
-      'Spark Agent 会用飞书 WebSocket 长连接接收消息，无需公网 webhook。',
+      '复制 App ID 和 App Secret 到 SparkWork。',
+      'SparkWork 会用飞书 WebSocket 长连接接收消息，无需公网 webhook。',
     ],
   },
   qq: {
@@ -288,7 +288,7 @@ const CHANNEL_META: Record<
     consoleUrl: 'https://spark.yiqibyte.com/docs/remote-connections',
     requiredFields: ['clawEndpoint', 'clawAccessToken'],
     instructions: [
-      '启动微信 Claw 网关，并确认 Spark Agent 可访问网关地址。',
+      '启动微信 Claw 网关，并确认 SparkWork 可访问网关地址。',
       '填入 Claw Endpoint 与 Access Token。',
       '生成配对码或二维码负载，在 Claw 会话内完成绑定。',
     ],
@@ -980,7 +980,7 @@ export class RemoteConnectionService {
       await this.sendDirectMessage(
         latest,
         message.externalId,
-        '该远程会话尚未绑定。请先在 Spark Agent 设置里生成配对码，然后发送 /bind 配对码。',
+        '该远程会话尚未绑定。请先在 SparkWork 设置里生成配对码，然后发送 /bind 配对码。',
       )
       return
     }
@@ -1039,7 +1039,7 @@ export class RemoteConnectionService {
       await this.sendDirectMessage(
         latest,
         externalId,
-        '已绑定 Spark Agent。后续消息会进入该连接的默认会话，发送 /help 查看命令。',
+        '已绑定 SparkWork。后续消息会进入该连接的默认会话，发送 /help 查看命令。',
       )
     } catch (err) {
       await this.sendDirectMessage(

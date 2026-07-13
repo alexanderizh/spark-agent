@@ -862,7 +862,7 @@ export function CommandPalette({
             <span className="kbd">esc</span> 关闭
           </span>
           <div className="flex1" />
-          <span className="seg muted">{paletteHint} · Spark Agent</span>
+          <span className="seg muted">{paletteHint} · SparkWork</span>
         </div>
       </div>
     </div>

@@ -853,7 +853,7 @@ export function OnboardingView(): React.ReactElement {
       <MacWindowDragHeader />
       <aside className="onboarding-steps" aria-label="新手引导步骤">
         <div className="onboarding-brand">
-          <img src={sparkLogo} alt="" aria-hidden="true" draggable={false} /> Spark Agent
+          <img src={sparkLogo} alt="" aria-hidden="true" draggable={false} /> SparkWork
         </div>
         <button
           className="onboarding-back"
@@ -1002,7 +1002,7 @@ export function OnboardingView(): React.ReactElement {
 function WelcomeStep({ dispatch }: { dispatch: React.Dispatch<Action> }) {
   return (
     <>
-      <h1>欢迎使用 Spark Agent</h1>
+      <h1>欢迎使用 SparkWork</h1>
       <p className="lead">
         不用理解复杂技术名词，我们会一步一步帮你连接模型、创建第一个 AI 助手，并完成第一次对话。
       </p>
@@ -1326,7 +1326,7 @@ function ProviderStep(props: {
       )}
       <h1>填写你的模型服务信息</h1>
       <p className="lead">
-        “密钥”就是模型服务商给你的使用凭证。Spark Agent 会把它安全保存在你的电脑里。
+        “密钥”就是模型服务商给你的使用凭证。SparkWork 会把它安全保存在你的电脑里。
       </p>
       <label>
         服务商
@@ -1634,7 +1634,7 @@ function MediaGuideStep({
     <>
       <h1>图片、视频、语音也可以进入对话</h1>
       <p className="lead">
-        当你配置的服务商支持多媒体模型时，Spark Agent
+        当你配置的服务商支持多媒体模型时，SparkWork
         会按模型类型组织能力。你可以在对话里描述要生成的画面，也可以把参考素材带进画布继续加工。
       </p>
       <div className="guide-panel">

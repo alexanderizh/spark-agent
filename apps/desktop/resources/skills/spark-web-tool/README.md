@@ -3,7 +3,7 @@
 > 内置 skill ID: `builtin:spark-web-tool`
 > 位置：`apps/desktop/resources/skills/spark-web-tool/`
 
-将原 `edu-task-agent` 服务中的内容生成能力抽离为可被 Spark Agent 调用的本地 skill。
+将原 `edu-task-agent` 服务中的内容生成能力抽离为可被 SparkWork 调用的本地 skill。
 
 ## 覆盖能力
 
@@ -17,7 +17,7 @@
 
 - `exam`（试卷出题）— 后端有专门管线
 - `material`（创作素材）— 后端有专门管线
-- 多账号/多供应商 LLM 轮询（运行时由 Spark Agent 的 agent-runtime 负责）
+- 多账号/多供应商 LLM 轮询（运行时由 SparkWork 的 agent-runtime 负责）
 
 ## 目录结构
 

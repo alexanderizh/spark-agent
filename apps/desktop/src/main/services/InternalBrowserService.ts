@@ -9,7 +9,7 @@ const DEFAULT_URL = 'data:text/html;charset=utf-8,' + encodeURIComponent(`
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Spark Browser</title>
+  <title>SparkWork Browser</title>
   <style>
     html, body { height: 100%; margin: 0; }
     body {
@@ -26,7 +26,7 @@ const DEFAULT_URL = 'data:text/html;charset=utf-8,' + encodeURIComponent(`
 </head>
 <body>
   <main>
-    <h1>Spark Browser</h1>
+    <h1>SparkWork Browser</h1>
     <p>Visible browser window controlled by the built-in spark_browser MCP tools.</p>
   </main>
 </body>
@@ -186,7 +186,7 @@ export class InternalBrowserService {
     const win = new BrowserWindow({
       width: 1280,
       height: 820,
-      title: 'Spark Browser',
+      title: 'SparkWork Browser',
       show: opts.show !== false,
       autoHideMenuBar: true,
       backgroundColor: '#171717',

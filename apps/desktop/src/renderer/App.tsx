@@ -776,7 +776,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         <div className="user-contact-qq-card">
           <div className="user-contact-qq-brand">
             <img src={sparkLogo} alt="" aria-hidden="true" className="user-contact-qq-brand-mark" />
-            <span className="user-contact-qq-brand-name">SparkAgent</span>
+            <span className="user-contact-qq-brand-name">SparkWork</span>
           </div>
           <div className="user-contact-qq-title">{tr('app.user.qqScanTitle')}</div>
           <div className="user-contact-qq-qr">

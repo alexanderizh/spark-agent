@@ -165,7 +165,7 @@ export class AppSkillsManager {
         {
           name: 'spark-managed-skills',
           version: '1.0.0',
-          description: 'Spark Agent 托管技能集合（内置 / 应用内安装 / 宿主软链）',
+          description: 'SparkWork 托管技能集合（内置 / 应用内安装 / 宿主软链）',
         },
         null,
         2,

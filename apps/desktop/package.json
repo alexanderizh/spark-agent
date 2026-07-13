@@ -1,8 +1,8 @@
 {
   "name": "@spark/desktop",
   "version": "0.4.6",
-  "description": "Spark Agent desktop application — Electron + React + TypeScript",
-  "author": "Spark Agent Team",
+  "description": "SparkWork desktop application — Electron + React + TypeScript",
+  "author": "SparkWork Team",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
