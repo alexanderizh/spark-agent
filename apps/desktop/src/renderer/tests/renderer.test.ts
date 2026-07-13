@@ -1517,7 +1517,7 @@ describe('Renderer Smoke Tests', () => {
     expectRunningTaskTag()
   })
 
-  it('shows a running indicator while waiting for the first agent reply', async () => {
+  it('restores the running indicator before the first agent status is persisted', async () => {
     localStorage.setItem('spark-agent:last-active-session', 'session-1')
     const historyEvents = [
       {
@@ -1528,15 +1528,6 @@ describe('Renderer Smoke Tests', () => {
         timestamp: '2026-05-27T00:00:00.000Z',
         seq: 1,
         content: '当前有没有未提交的代码',
-      },
-      {
-        id: 'status-1',
-        type: 'agent_status',
-        sessionId: 'session-1',
-        turnId: 'turn-1',
-        timestamp: '2026-05-27T00:00:01.000Z',
-        seq: 2,
-        status: 'thinking',
       },
     ]
     const invoke = vi.fn(async (channel: string) => {
