@@ -110,6 +110,8 @@ export function RuntimeSignalCard({
       {...(block.code != null ? { code: block.code } : {})}
       {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
       {...(block.details != null ? { details: block.details } : {})}
+      {...(block.origin != null ? { origin: block.origin } : {})}
+      {...(block.occurrenceCount != null ? { occurrenceCount: block.occurrenceCount } : {})}
       {...(onRetry != null ? { onRetry } : {})}
     />
   )

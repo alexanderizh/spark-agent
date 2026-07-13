@@ -86,6 +86,109 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('updates repeated SDK retries in place and keeps the latest attempt', () => {
+    const builder = new MessageBuilder()
+    const retryEvent = (id: string, attempt: number): AgentEvent => ({
+      ...baseEvent('runtime_signal'),
+      id,
+      type: 'runtime_signal',
+      signal: 'api_retry',
+      level: 'warning',
+      title: 'Claude API 正在重试',
+      message: '当前请求超过了 Claude 的额度或速率限制。',
+      code: 'CLAUDE_API_RETRY_RATE_LIMIT',
+      retryable: false,
+      origin: { kind: 'runtime', name: 'Claude SDK' },
+      details: [{ label: '重试进度', value: `${attempt}/10` }],
+    })
+
+    builder.processEvent(retryEvent('retry-1', 1))
+    builder.processEvent(retryEvent('retry-2', 2))
+    builder.processEvent(retryEvent('retry-3', 3))
+
+    const message = builder.getAllMessages()[0]
+    expect(message?.eventIds).toEqual(['retry-1', 'retry-2', 'retry-3'])
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({
+        kind: 'runtime_signal',
+        occurrenceCount: 3,
+        details: [{ label: '重试进度', value: '3/10' }],
+      }),
+    ])
+  })
+
+  it('does not merge permission denials for different tools', () => {
+    const builder = new MessageBuilder()
+    const permissionDenied = (id: string, tool: string): AgentEvent => ({
+      ...baseEvent('runtime_signal'),
+      id,
+      type: 'runtime_signal',
+      signal: 'permission_denied',
+      level: 'warning',
+      title: '工具权限已拒绝',
+      message: '当前工具请求未获批准。',
+      code: 'CLAUDE_PERMISSION_DENIED',
+      retryable: false,
+      details: [{ label: '工具', value: tool }],
+    })
+
+    builder.processEvent(permissionDenied('permission-bash', 'Bash'))
+    builder.processEvent(permissionDenied('permission-write', 'Write'))
+
+    expect(builder.getAllMessages()[0]?.blocks).toEqual([
+      expect.objectContaining({
+        kind: 'runtime_signal',
+        occurrenceCount: 1,
+        details: [{ label: '工具', value: 'Bash' }],
+      }),
+      expect.objectContaining({
+        kind: 'runtime_signal',
+        occurrenceCount: 1,
+        details: [{ label: '工具', value: 'Write' }],
+      }),
+    ])
+  })
+
+  it('keeps repeated subagent errors on their card without failing the host message', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      id: 'subagent-started-1',
+      type: 'subagent_started',
+      toolCallId: 'tool-researcher',
+      name: 'researcher',
+      role: 'Research',
+      task: 'Inspect the SDK',
+    })
+    const error = (id: string): AgentEvent => ({
+      ...baseEvent('agent_error'),
+      id,
+      type: 'agent_error',
+      code: 'CLAUDE_RATE_LIMIT',
+      title: 'Claude 请求受到限流',
+      message: '当前请求超过了 Claude 的额度或速率限制。',
+      retryable: true,
+      origin: { kind: 'subagent', toolCallId: 'tool-researcher', name: 'researcher' },
+    })
+    builder.processEvent(error('subagent-error-1'))
+    builder.processEvent(error('subagent-error-2'))
+
+    const message = builder.getAllMessages()[0]
+    expect(message?.status).toBe('streaming')
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({
+        kind: 'subagent',
+        toolCallId: 'tool-researcher',
+        status: 'error',
+      }),
+      expect.objectContaining({
+        kind: 'error',
+        occurrenceCount: 2,
+        origin: { kind: 'subagent', toolCallId: 'tool-researcher', name: 'researcher' },
+      }),
+    ])
+  })
+
   it('removes messages retracted by Claude refusal fallback', () => {
     const builder = new MessageBuilder()
     builder.processEvent({
