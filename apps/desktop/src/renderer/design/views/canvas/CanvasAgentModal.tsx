@@ -343,6 +343,7 @@ export function CanvasAgentModal({
   const [fullscreen, setFullscreen] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [projectSessions, setProjectSessions] = useState<CanvasAgentSessionSummary[]>([])
+  const projectWorkspaceIdRef = useRef<string | null>(null)
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
@@ -469,6 +470,7 @@ export function CanvasAgentModal({
     try {
       const wsRes = await window.spark.invoke('workspace:open', { rootPath })
       const workspaceId = wsRes.workspace.id
+      projectWorkspaceIdRef.current = workspaceId
       const sessionRes = await window.spark.invoke('session:list', {
         workspaceId,
         includeArchived: false,
@@ -535,7 +537,7 @@ export function CanvasAgentModal({
   useEffect(() => {
     if (!open) return
     void refreshProjectSessions()
-  }, [open, refreshProjectSessions])
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -663,8 +665,17 @@ export function CanvasAgentModal({
 
   useEffect(() => {
     if (!open) return
-    const unsubscribeCreated = window.spark.on('stream:session:created', () => {
-      void refreshProjectSessions()
+    const unsubscribeCreated = window.spark.on('stream:session:created', (payload) => {
+      const created = payload.session
+      if (
+        created == null ||
+        created.archivedAt != null ||
+        !created.workspaceIds.includes(projectWorkspaceIdRef.current ?? '')
+      ) return
+      setProjectSessions((current) => [
+        created,
+        ...current.filter((session) => session.id !== created.id),
+      ])
     })
     const unsubscribeRenamed = window.spark.on(
       'stream:session:renamed',
@@ -721,12 +732,12 @@ export function CanvasAgentModal({
     if (latest == null) return
     setSessionId(latest.id)
     setRunning(latest.status === 'running')
-    firstTurnRef.current = latest.messageCount === 0
+    firstTurnRef.current = (latest.turnCount ?? latest.messageCount) === 0
     applySessionRuntimeDraft(latest)
     appliedRuntimeSessionRef.current = providers.length > 0 ? latest.id : null
     updateProjectCache({
       sessionId: latest.id,
-      firstTurnSent: latest.messageCount > 0,
+      firstTurnSent: (latest.turnCount ?? latest.messageCount) > 0,
     })
   }, [
     applySessionRuntimeDraft,
@@ -785,13 +796,15 @@ export function CanvasAgentModal({
       const selected = projectSessions.find((session) => session.id === nextSessionId)
       setSessionId(nextSessionId)
       setRunning(selected?.status === 'running')
-      firstTurnRef.current = selected == null ? false : selected.messageCount === 0
+      firstTurnRef.current = selected == null
+        ? false
+        : (selected.turnCount ?? selected.messageCount) === 0
       if (selected != null) {
         applySessionRuntimeDraft(selected)
         appliedRuntimeSessionRef.current = providers.length > 0 ? selected.id : null
         updateProjectCache({
           sessionId: selected.id,
-          firstTurnSent: selected.messageCount > 0,
+          firstTurnSent: (selected.turnCount ?? selected.messageCount) > 0,
         })
       }
     },
@@ -954,12 +967,19 @@ export function CanvasAgentModal({
             title: `画布助手 · ${snapshot.project.title}`,
           })
           sid = sessionRes.sessionId
+          if (sessionRes.session != null) {
+            setProjectSessions((current) => [
+              sessionRes.session,
+              ...current.filter((session) => session.id !== sessionRes.session.id),
+            ])
+          } else {
+            await refreshProjectSessions()
+          }
           setSessionId(sid)
           updateProjectCache({
             sessionId: sid,
             firstTurnSent: false,
           })
-          void refreshProjectSessions()
         }
 
         await syncSessionSkills(sid as string, effectiveSkillIds)
@@ -979,7 +999,7 @@ export function CanvasAgentModal({
           message = `${nodesContext}\n\n---\n\n${text}`
         }
 
-        await window.spark.invoke('session:send-turn', {
+        await window.spark.invoke('session:submit-turn', {
           sessionId: sid as never,
           message,
           ...(attachments.length > 0 ? { attachments } : {}),

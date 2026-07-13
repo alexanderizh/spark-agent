@@ -898,7 +898,7 @@ export function ChatView({
   const { invoke: commitGitChanges } = useIpcInvoke('workspace:git-commit')
   const { invoke: pushGitChanges } = useIpcInvoke('workspace:git-push')
   // 留空提交信息时，把提交请求作为消息发给当前会话的 agent，由 agent 分析 diff 并提交。
-  const { invoke: sendTurnToAgent } = useIpcInvoke('session:send-turn')
+  const { invoke: sendTurnToAgent } = useIpcInvoke('session:submit-turn')
   const { invoke: createBranch } = useIpcInvoke('workspace:create-branch')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
@@ -7104,7 +7104,7 @@ function PlanApprovalPanel({
     if (busy) return
     setBusy(true)
     try {
-      await window.spark.invoke('session:send-turn', {
+      await window.spark.invoke('session:submit-turn', {
         sessionId,
         message: `批准上述计划。请按如下计划继续执行：\n\n${draft}`,
         permissionMode: 'claude-auto-edits',

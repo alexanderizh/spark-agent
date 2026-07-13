@@ -37,6 +37,8 @@ export interface SessionRow {
   reasoning_effort: string
   pinned_at: string | null
   archived_at: string | null
+  turn_count: number
+  logical_message_count: number
   metadata_json: string
   created_at: string
   updated_at: string

@@ -104,6 +104,10 @@ export default defineConfig({
         external: ['better-sqlite3', 'keytar', '@anthropic-ai/claude-agent-sdk'],
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
+          'background-maintenance-worker': resolve(
+            __dirname,
+            'src/main/workers/background-maintenance.worker.ts',
+          ),
         },
       },
     },

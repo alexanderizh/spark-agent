@@ -501,10 +501,6 @@ export const ProviderFetchModelsRequestSchema = z.object({
   isFullUrl: z.boolean().optional(),
 })
 
-export const ProviderRevealKeyRequestSchema = z.object({
-  id: ProfileIdSchema,
-})
-
 export const GitHubConnectorVerifyRequestSchema = z.object({
   token: z.string().min(1).max(2000),
   apiBaseUrl: z.string().url().max(1000).optional(),
@@ -650,6 +646,7 @@ export const RulesComposeRequestSchema = z.object({
 export const IpcSchemaRegistry = {
   'session:create': SessionCreateRequestSchema,
   'session:send-turn': SessionSendTurnRequestSchema,
+  'session:submit-turn': SessionSendTurnRequestSchema,
   'session:get-queue': SessionGetQueueRequestSchema,
   'session:cancel-queued-turn': SessionCancelQueuedTurnRequestSchema,
   'session:cancel': SessionCancelRequestSchema,
@@ -678,7 +675,6 @@ export const IpcSchemaRegistry = {
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,
   'provider:fetch-models': ProviderFetchModelsRequestSchema,
-  'provider:reveal-key': ProviderRevealKeyRequestSchema,
   'platform-model:update-model-preferences': z.object({
     modelIds: z.array(z.string().min(1).max(200)).min(1).max(200),
     defaultModel: z.string().min(1).max(200),

@@ -27,10 +27,7 @@ interface EventBatchWriter {
 }
 
 export class AgentEventPersistenceError extends Error {
-  constructor(
-    message: string,
-    options: { cause: unknown },
-  ) {
+  constructor(message: string, options: { cause: unknown }) {
     super(message, options)
     this.name = 'AgentEventPersistenceError'
   }
@@ -63,6 +60,10 @@ export function persistAndPublishAgentEvent(
   event: AgentEvent,
   publish: (event: AgentEvent) => void,
 ): void {
+  if (isTransientDelta(event)) {
+    publish(event)
+    return
+  }
   try {
     repo.insert(toInsertParams(event))
   } catch (err) {
@@ -79,8 +80,11 @@ export function persistAndPublishAgentEvents(
   events: AgentEvent[],
   publish: (event: AgentEvent) => void,
 ): void {
+  const persistentEvents = events.filter((event) => !isTransientDelta(event))
   try {
-    repo.insertBatch(events.map(toInsertParams))
+    if (persistentEvents.length > 0) {
+      repo.insertBatch(persistentEvents.map(toInsertParams))
+    }
   } catch (err) {
     throw new AgentEventPersistenceError(
       `Failed to persist ${events.length} agent events: ${errorMessage(err)}`,
@@ -88,6 +92,17 @@ export function persistAndPublishAgentEvents(
     )
   }
   for (const event of events) publish(event)
+}
+
+function isTransientDelta(event: AgentEvent): boolean {
+  return (
+    (event.type === 'assistant_message' ||
+      event.type === 'agent_thinking' ||
+      event.type === 'team_member_message' ||
+      event.type === 'subagent_message') &&
+    'mode' in event &&
+    event.mode === 'delta'
+  )
 }
 
 function errorMessage(err: unknown): string {

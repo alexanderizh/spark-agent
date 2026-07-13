@@ -390,6 +390,33 @@ export class EventRepository extends BaseRepository {
     return result.changes
   }
 
+  /** Delete historical high-volume stream deltas in small, event-loop-friendly batches. */
+  deleteTransientDeltasBatch(batchSize: number = 1000): number {
+    const safeBatchSize = Math.max(1, Math.min(5000, Math.floor(batchSize)))
+    const rows = this.raw
+      .prepare(
+        `
+        SELECT rowid
+        FROM agent_events
+        WHERE event_type IN (
+          'assistant_message',
+          'agent_thinking',
+          'team_member_message',
+          'subagent_message'
+        )
+          AND event_mode = 'delta'
+        LIMIT ?
+      `,
+      )
+      .all(safeBatchSize) as Array<{ rowid: number }>
+    if (rows.length === 0) return 0
+    const placeholders = rows.map(() => '?').join(',')
+    const result = this.raw
+      .prepare(`DELETE FROM agent_events WHERE rowid IN (${placeholders})`)
+      .run(...rows.map((row) => row.rowid))
+    return result.changes
+  }
+
   /** 按 ID 列表批量删除事件 */
   deleteEventsByIds(ids: string[]): number {
     if (ids.length === 0) return 0
