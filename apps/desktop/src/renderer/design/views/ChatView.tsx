@@ -89,6 +89,7 @@ import { EmptySessionModeLauncher } from './chat/EmptySessionModeLauncher'
 import {
   persistThenSyncTeamSelection,
   preserveExplicitEmptySessionTeamConfig,
+  shouldResetEmptySessionTeamTouched,
 } from './chat/emptySessionTeamMode'
 
 export { MarkdownText } from './chat/ChatMarkdown'
@@ -561,14 +562,53 @@ export function ChatView({
   const [teamConfig, setTeamConfig] = useState<TeamModeConfig>(defaultTeamConfig)
   const teamConfigRef = useRef(teamConfig)
   const teamConfigRevisionRef = useRef(0)
+  const emptySessionTeamTouchedRef = useRef(false)
+  const prevActiveForTeamRef = useRef<string | null>(active)
   useEffect(() => {
     teamConfigRef.current = teamConfig
   }, [teamConfig])
+  useEffect(() => {
+    if (shouldResetEmptySessionTeamTouched(prevActiveForTeamRef.current, active)) {
+      teamConfigRevisionRef.current += 1
+      emptySessionTeamTouchedRef.current = false
+      prevActiveForTeamRef.current = active
+    }
+  }, [active])
   const updateTeamConfig = useCallback(
     async (patch: Partial<TeamModeConfig>): Promise<void> => {
-      const next = { ...teamConfigRef.current, ...patch }
-      teamConfigRevisionRef.current += 1
+      if (active == null && patch.enabled !== undefined) {
+        emptySessionTeamTouchedRef.current = true
+      }
+      const previous = teamConfigRef.current
+      const next = { ...previous, ...patch }
+      const revision = teamConfigRevisionRef.current + 1
+      teamConfigRevisionRef.current = revision
       teamConfigRef.current = next
+      // 活跃会话先等待 metadata 落库再更新 UI，保证发送时的可见模式与执行态一致。
+      if (active != null) {
+        try {
+          await persistTeamConfig({ sessionId: active as SessionId, config: next })
+        } catch (error) {
+          if (teamConfigRevisionRef.current === revision) {
+            try {
+              const res = await listTeamMembers({ sessionId: active as SessionId })
+              if (teamConfigRevisionRef.current === revision) {
+                const authoritative = res.config ?? defaultTeamConfig()
+                teamConfigRef.current = authoritative
+                setTeamConfig(authoritative)
+              }
+            } catch {
+              if (teamConfigRevisionRef.current === revision) {
+                teamConfigRef.current = previous
+                setTeamConfig(previous)
+              }
+            }
+          }
+          console.error('Persist team config failed', error)
+          return
+        }
+        if (teamConfigRevisionRef.current !== revision) return
+      }
       setTeamConfig(next)
       // 仅缓存 host/members 作为「下次显式开启团队」时的便捷预填；
       // 不再缓存 enabled —— team 是否启用一律以会话级 metadata 为准（见 defaultTeamConfig）。
@@ -576,12 +616,8 @@ export function ChatView({
         teamHostAgentId: next.hostAgentId,
         teamMemberAgentIds: next.memberAgentIds,
       })
-      // 有活跃会话时，先等待 metadata 落库，避免后续运行时更新触发回读旧团队。
-      if (active != null) {
-        await persistTeamConfig({ sessionId: active as SessionId, config: next }).catch(() => {})
-      }
     },
-    [active, persistTeamConfig],
+    [active, defaultTeamConfig, listTeamMembers, persistTeamConfig],
   )
   // 团队模式下，最终用于指派的主持 Agent（hostAgentId 解析结果）；
   // hostAgentId 可能因为旧 host 被删除而失效，因此渲染/sendTurn 都用此值。
@@ -613,7 +649,11 @@ export function ChatView({
   const reloadActiveTeamConfig = useCallback(async () => {
     if (active == null) {
       setTeamConfig((current) =>
-        preserveExplicitEmptySessionTeamConfig(current, defaultTeamConfig()),
+        preserveExplicitEmptySessionTeamConfig(
+          current,
+          defaultTeamConfig(),
+          emptySessionTeamTouchedRef.current,
+        ),
       )
       return
     }
@@ -628,7 +668,11 @@ export function ChatView({
     let cancelled = false
     if (active == null) {
       setTeamConfig((current) =>
-        preserveExplicitEmptySessionTeamConfig(current, defaultTeamConfig()),
+        preserveExplicitEmptySessionTeamConfig(
+          current,
+          defaultTeamConfig(),
+          emptySessionTeamTouchedRef.current,
+        ),
       )
       return () => {
         cancelled = true
@@ -656,7 +700,11 @@ export function ChatView({
         if (event.scope !== 'team') return
         if (active == null) {
           setTeamConfig((current) =>
-            preserveExplicitEmptySessionTeamConfig(current, defaultTeamConfig()),
+            preserveExplicitEmptySessionTeamConfig(
+              current,
+              defaultTeamConfig(),
+              emptySessionTeamTouchedRef.current,
+            ),
           )
           return
         }

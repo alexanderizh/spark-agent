@@ -642,6 +642,7 @@ describe('SessionSidebarContext', () => {
     const nextProviderId = 'next-provider'
     const agentId = 'platform-manager-agent'
     const updatedSessions: Record<string, unknown>[] = []
+    const updatedTeamConfigs: Record<string, unknown>[] = []
 
     const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
       if (channel === 'workspace:list') return { workspaces: [workspace], total: 1 }
@@ -743,6 +744,10 @@ describe('SessionSidebarContext', () => {
           },
         }
       }
+      if (channel === 'team:update') {
+        updatedTeamConfigs.push(request ?? {})
+        return { config: request?.config }
+      }
       if (channel === 'terminal:list-active') return { sessions: [] }
       return {}
     })
@@ -805,6 +810,20 @@ describe('SessionSidebarContext', () => {
     )
     expect(latestCtxRef.current?.activeSessionId).toBe('unused-session')
     expect(latestCtxRef.current?.selectedProviderId).toBe(nextProviderId)
+    expect(updatedTeamConfigs).toEqual([
+      {
+        sessionId: 'unused-session',
+        config: {
+          enabled: false,
+          hostAgentId: agentId,
+          memberAgentIds: [],
+          maxDepth: 1,
+          allowNesting: false,
+          maxDiscussionRounds: 6,
+          enablePeerMessaging: false,
+        },
+      },
+    ])
   })
 
   it('keeps the created session model aligned with the selected provider', async () => {

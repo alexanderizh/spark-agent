@@ -4,6 +4,7 @@ import {
   persistThenSyncTeamSelection,
   preserveExplicitEmptySessionTeamConfig,
   selectInitialTeam,
+  shouldResetEmptySessionTeamTouched,
 } from './emptySessionTeamMode'
 
 const team = (id: string, hostAgentId: string, enabled = true): ManagedTeam =>
@@ -51,13 +52,13 @@ describe('preserveExplicitEmptySessionTeamConfig', () => {
     }
     const fallback = { ...current, enabled: false, teamId: undefined }
 
-    expect(preserveExplicitEmptySessionTeamConfig(current, fallback)).toBe(current)
+    expect(preserveExplicitEmptySessionTeamConfig(current, fallback, true)).toBe(current)
   })
 
-  it('未开启团队时仍允许刷新默认 Agent 配置', () => {
+  it('保留用户在空会话显式选择的单 Agent 模式', () => {
     const current = {
       enabled: false,
-      hostAgentId: 'stale-host',
+      hostAgentId: 'selected-host',
       memberAgentIds: [],
       maxDepth: 1,
       allowNesting: false,
@@ -66,7 +67,37 @@ describe('preserveExplicitEmptySessionTeamConfig', () => {
     }
     const fallback = { ...current, hostAgentId: 'valid-host' }
 
-    expect(preserveExplicitEmptySessionTeamConfig(current, fallback)).toBe(fallback)
+    expect(preserveExplicitEmptySessionTeamConfig(current, fallback, true)).toBe(current)
+  })
+
+  it('未显式选择时不继承刚离开的历史团队配置', () => {
+    const current = {
+      enabled: true,
+      hostAgentId: 'historical-host',
+      memberAgentIds: ['historical-member'],
+      maxDepth: 1,
+      allowNesting: false,
+      maxDiscussionRounds: 6,
+      enablePeerMessaging: false,
+      teamId: 'historical-team',
+    }
+    const fallback = { ...current, enabled: false, teamId: undefined }
+
+    expect(preserveExplicitEmptySessionTeamConfig(current, fallback, false)).toBe(fallback)
+  })
+})
+
+describe('shouldResetEmptySessionTeamTouched', () => {
+  it('离开历史会话进入空 composer 时清理临时选择', () => {
+    expect(shouldResetEmptySessionTeamTouched('historical-session', null)).toBe(true)
+  })
+
+  it('空 composer 进入实际 session 时清理临时选择', () => {
+    expect(shouldResetEmptySessionTeamTouched(null, 'created-session')).toBe(true)
+  })
+
+  it('active session 未变化时保留当前 touched 状态', () => {
+    expect(shouldResetEmptySessionTeamTouched(null, null)).toBe(false)
   })
 })
 
