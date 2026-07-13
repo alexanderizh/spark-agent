@@ -1,24 +1,23 @@
 .canvas-workspace.canvas-uiux-v4 {
   .canvas-node-shell {
-    border-radius: var(--canvas-v4-radius-md);
+    border-radius: 8px;
   }
 
   .canvas-node {
     --canvas-node-meta-height: 39px;
     overflow: hidden;
     border: 1px solid var(--canvas-v4-border);
-    border-radius: var(--canvas-v4-radius-md);
+    border-radius: 8px;
     background: var(--canvas-v4-surface);
-    box-shadow: 0 3px 12px color-mix(in srgb, var(--shadow-color, #000) 10%, transparent);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow-color, #000) 14%, transparent);
     transition:
       border-color var(--canvas-v4-motion-fast) ease-out,
-      box-shadow var(--canvas-v4-motion-fast) ease-out,
-      transform var(--canvas-v4-motion-fast) ease-out;
+      box-shadow var(--canvas-v4-motion-fast) ease-out;
 
     &:hover {
       border-color: color-mix(in srgb, var(--border-strong) 92%, var(--primary) 8%);
       box-shadow: var(--canvas-v4-hover-shadow);
-      transform: translateY(-2px);
+      transform: none;
     }
 
     &.canvas-node-selected {
@@ -28,7 +27,9 @@
   }
 
   .canvas-node-meta-bar {
+    height: 39px;
     min-height: 39px;
+    flex: 0 0 39px;
     padding: 0 11px;
     border-bottom: 1px solid var(--canvas-v4-divider);
     background: var(--canvas-v4-surface);
@@ -77,26 +78,59 @@
   }
 
   .canvas-node-meta-chip-status.is-running {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     color: var(--primary);
-    background: color-mix(in srgb, var(--primary) 10%, transparent);
+    background: transparent;
+
+    &::before {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 7px currentColor;
+      content: '';
+    }
   }
 
   .canvas-node-core,
   .canvas-node-body {
+    padding: 0;
     border-radius: 0;
     background: var(--canvas-v4-surface);
   }
 
-  .canvas-node-operation,
+  .canvas-node-body > .canvas-node-operation {
+    width: 100%;
+    margin: 0;
+    gap: 0;
+    padding: 0;
+    background: var(--canvas-v4-surface);
+  }
+
   .canvas-operation-output-nav {
     background: var(--canvas-v4-surface);
   }
 
+  .canvas-operation-output-deck {
+    width: 100%;
+    margin: 0;
+    gap: 0;
+    padding: 0;
+  }
+
   .canvas-operation-output-stage {
+    width: 100%;
+    margin: 0;
+    padding: 0;
     background: var(--canvas-v4-surface-muted);
   }
 
   .canvas-operation-output-media {
+    margin: 0;
+    padding: 0;
+    border: 0;
     background: var(--bg-sunken);
   }
 
@@ -152,8 +186,9 @@
 
   .canvas-node-quick-footer {
     display: flex;
-    min-height: var(--canvas-v4-node-footer-height);
-    flex: 0 0 var(--canvas-v4-node-footer-height);
+    height: 35px;
+    min-height: 35px;
+    flex: 0 0 35px;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
