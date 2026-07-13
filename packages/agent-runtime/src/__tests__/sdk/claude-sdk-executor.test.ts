@@ -89,6 +89,49 @@ describe('ClaudeSDKExecutor', () => {
     )
   })
 
+  it('keeps streaming input open so a late ExitPlanMode control request can complete', async () => {
+    let inputClosed = false
+    let exitResult: unknown
+
+    queryMock.mockImplementation(({ prompt, options }) => (async function* () {
+      expect(typeof prompt).not.toBe('string')
+      const iterator = (prompt as AsyncIterable<SDKUserMessage>)[Symbol.asyncIterator]()
+      await iterator.next()
+      const waitingForClose = iterator.next().then((result) => {
+        inputClosed = result.done === true
+      })
+      await Promise.resolve()
+      expect(inputClosed).toBe(false)
+
+      exitResult = await options.canUseTool?.('ExitPlanMode', { plan: '# Plan' }, {
+        signal: new AbortController().signal,
+        toolUseID: 'late-exit-plan',
+        requestId: 'late-exit-request',
+      })
+
+      yield {
+        type: 'result',
+        subtype: 'success',
+        result: 'ok',
+        usage: { input_tokens: 1, output_tokens: 1 },
+        total_cost_usd: 0,
+      }
+      await waitingForClose
+    })())
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'plan this', {
+      ...baseConfig(),
+      permissionMode: 'claude-plan',
+      approvalCallback: vi.fn(async () => false),
+    })
+
+    expect(inputClosed).toBe(true)
+    expect(exitResult).toEqual(expect.objectContaining({
+      behavior: 'deny',
+      toolUseID: 'late-exit-plan',
+    }))
+  })
+
   it('uses a fixed session id for the first turn and resume for later turns', async () => {
     queryMock.mockReturnValue(messages([
       { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
