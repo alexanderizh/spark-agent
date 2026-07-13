@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Popconfirm, Tag, Tooltip, message } from 'antd'
 import { Button, SearchBar as LobeSearchBar, Select as LobeSelect, Segmented } from '@lobehub/ui'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { downloadCanvasResourceBatch } from './CanvasAssetsPanel'
 import { CanvasCharacterSubviewPreview } from './CanvasCharacterSubviewPreview'
@@ -273,9 +274,7 @@ export function CanvasAssetManagerPanel({
               <strong>图片子视图库</strong>
               <span>项目里已保存的子视图，可直接插回画布继续使用。</span>
             </div>
-            <span className="canvas-asset-subview-library-count">
-              {subviewEntries.length} 个
-            </span>
+            <span className="canvas-asset-subview-library-count">{subviewEntries.length} 个</span>
           </div>
           <div className="canvas-asset-subview-library-grid">
             {subviewEntries.map((entry) => (
@@ -283,7 +282,9 @@ export function CanvasAssetManagerPanel({
                 key={entry.key}
                 type="button"
                 className="canvas-asset-subview-card"
-                onClick={() => void onInsertSubview(entry.ownerAsset, entry.sourceImageAsset, entry.subview)}
+                onClick={() =>
+                  void onInsertSubview(entry.ownerAsset, entry.sourceImageAsset, entry.subview)
+                }
               >
                 <div className="canvas-asset-subview-card-thumb">
                   <CanvasCharacterSubviewPreview
@@ -295,7 +296,10 @@ export function CanvasAssetManagerPanel({
                 <div className="canvas-asset-subview-card-main">
                   <strong title={entry.subview.label}>{entry.subview.label}</strong>
                   <span>{CHARACTER_SUBVIEW_KIND_LABELS[entry.subview.kind]}</span>
-                  <span className="canvas-asset-subview-card-source" title={entry.ownerAsset.title ?? entry.sourceImageAsset.title ?? '未命名图片'}>
+                  <span
+                    className="canvas-asset-subview-card-source"
+                    title={entry.ownerAsset.title ?? entry.sourceImageAsset.title ?? '未命名图片'}
+                  >
                     来自 {entry.ownerAsset.title ?? entry.sourceImageAsset.title ?? '未命名图片'}
                   </span>
                 </div>
@@ -334,7 +338,12 @@ export function CanvasAssetManagerPanel({
               onConfirm={() => void handleBatchDownload()}
             >
               <Tooltip title="批量下载">
-                <Button size="middle" type="text" shape="circle" icon={<Icons.Download size={13} />} />
+                <Button
+                  size="middle"
+                  type="text"
+                  shape="circle"
+                  icon={<Icons.Download size={13} />}
+                />
               </Tooltip>
             </Popconfirm>
             <Popconfirm
@@ -345,7 +354,13 @@ export function CanvasAssetManagerPanel({
               onConfirm={() => void handleBatchRemove()}
             >
               <Tooltip title="移除节点引用（不删文件）">
-                <Button size="middle" type="text" danger shape="circle" icon={<Icons.Trash size={13} />} />
+                <Button
+                  size="middle"
+                  type="text"
+                  danger
+                  shape="circle"
+                  icon={<Icons.Trash size={13} />}
+                />
               </Tooltip>
             </Popconfirm>
           </div>
@@ -365,10 +380,7 @@ export function CanvasAssetManagerPanel({
           >
             {gridRowVirtualizer.getVirtualItems().map((virtualRow) => {
               const startIndex = virtualRow.index * GRID_COLUMN_COUNT
-              const rowAssets = filteredAssets.slice(
-                startIndex,
-                startIndex + GRID_COLUMN_COUNT,
-              )
+              const rowAssets = filteredAssets.slice(startIndex, startIndex + GRID_COLUMN_COUNT)
               return (
                 <div
                   key={virtualRow.key}
@@ -456,12 +468,12 @@ export function CanvasAssetManagerPanel({
       {(() => {
         const originTask = detailAsset ? originTaskByAsset.get(detailAsset.id) : undefined
         return (
-      <AssetDetailModal
-        asset={detailAsset}
-        references={detailAsset ? referencesByAsset.get(detailAsset.id) ?? [] : []}
-        {...(originTask ? { originTask } : {})}
-        onClose={() => setDetailAsset(null)}
-      />
+          <AssetDetailModal
+            asset={detailAsset}
+            references={detailAsset ? (referencesByAsset.get(detailAsset.id) ?? []) : []}
+            {...(originTask ? { originTask } : {})}
+            onClose={() => setDetailAsset(null)}
+          />
         )
       })()}
     </div>
@@ -524,10 +536,7 @@ function AssetManagerRow({
   onDownloadOne: (asset: CanvasAsset) => Promise<void>
 }) {
   return (
-    <div
-      className={`canvas-asset-manager-row${selected ? ' selected' : ''}`}
-      onClick={onToggle}
-    >
+    <div className={`canvas-asset-manager-row${selected ? ' selected' : ''}`} onClick={onToggle}>
       <div className="canvas-asset-mini-thumb">
         <AssetThumbnail asset={asset} />
       </div>
@@ -546,7 +555,10 @@ function AssetManagerRow({
             </>
           )}
           {originTask && (
-            <span className="canvas-asset-origin-task" title={originTask.title ?? originTask.operation}>
+            <span
+              className="canvas-asset-origin-task"
+              title={originTask.title ?? originTask.operation}
+            >
               · 由 {originTask.title ?? originTask.operation} 生成
             </span>
           )}
@@ -554,21 +566,36 @@ function AssetManagerRow({
       </div>
       <div className="canvas-asset-manager-row-actions">
         <Tooltip title="插入到当前视口">
-          <Button size="middle" type="text" icon={<Icons.Plus size={13} />} onClick={(event) => {
-            event.stopPropagation()
-            onInsertOne(asset.id)
-          }} />
+          <Button
+            size="middle"
+            type="text"
+            icon={<Icons.Plus size={13} />}
+            onClick={(event) => {
+              event.stopPropagation()
+              onInsertOne(asset.id)
+            }}
+          />
         </Tooltip>
         <Tooltip title="下载">
-          <Button size="middle" type="text" icon={<Icons.Download size={13} />} onClick={(event) => {
-            event.stopPropagation()
-            void onDownloadOne(asset)
-          }} />
+          <Button
+            size="middle"
+            type="text"
+            icon={<Icons.Download size={13} />}
+            onClick={(event) => {
+              event.stopPropagation()
+              void onDownloadOne(asset)
+            }}
+          />
         </Tooltip>
-        <Button size="middle" type="text" icon={<Icons.Search size={13} />} onClick={(event) => {
-          event.stopPropagation()
-          onShowDetail()
-        }} />
+        <Button
+          size="middle"
+          type="text"
+          icon={<Icons.Search size={13} />}
+          onClick={(event) => {
+            event.stopPropagation()
+            onShowDetail()
+          }}
+        />
       </div>
     </div>
   )
@@ -587,33 +614,59 @@ function AssetDetailModal({
   originTask?: CanvasTask
   onClose: () => void
 }) {
+  useEffect(() => {
+    if (!asset) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [asset, onClose])
+
   return (
     <>
       {asset && (
-        <div className="canvas-asset-detail-overlay">
-          <div className="canvas-asset-detail-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="canvas-asset-detail-overlay" onClick={onClose}>
+          <div
+            className="canvas-asset-detail-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${asset.title ?? asset.type}资产预览`}
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="canvas-asset-detail-head">
-              <h4>{asset.title ?? asset.type}</h4>
+              <div>
+                <span>资产预览</span>
+                <h4>{asset.title ?? asset.type}</h4>
+              </div>
               <Button size="middle" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
             </div>
             <div className="canvas-asset-detail-body">
+              <div className="canvas-asset-detail-preview">
+                <AssetDetailPreview asset={asset} />
+                <span>{asset.type}</span>
+              </div>
               <DetailItem label="类型" value={asset.type} />
               <DetailItem label="来源" value={asset.source} />
               {asset.mimeType && <DetailItem label="MIME" value={asset.mimeType} />}
-              {asset.storageKey && (
-                <DetailItem label="落盘路径" value={asset.storageKey} mono />
-              )}
+              {asset.storageKey && <DetailItem label="落盘路径" value={asset.storageKey} mono />}
               {asset.sizeBytes != null && (
                 <DetailItem label="大小" value={`${(asset.sizeBytes / 1024).toFixed(1)} KB`} />
               )}
               <div className="canvas-asset-detail-section">
-                <div className="canvas-asset-detail-section-title">引用节点（{references.length}）</div>
+                <div className="canvas-asset-detail-section-title">
+                  引用节点（{references.length}）
+                </div>
                 {references.length === 0 ? (
                   <div className="canvas-asset-detail-empty">无节点引用</div>
                 ) : (
                   references.map((node) => (
                     <div key={node.id} className="canvas-asset-detail-ref">
-                      <Tag color="default" bordered>{node.type}</Tag>
+                      <Tag color="default" bordered>
+                        {node.type}
+                      </Tag>
                       <span>{node.title ?? node.id}</span>
                     </div>
                   ))
@@ -623,7 +676,9 @@ function AssetDetailModal({
                 <div className="canvas-asset-detail-section">
                   <div className="canvas-asset-detail-section-title">生成任务</div>
                   <div className="canvas-asset-detail-ref">
-                    <Tag color="green" bordered>{originTask.operation}</Tag>
+                    <Tag color="green" bordered>
+                      {originTask.operation}
+                    </Tag>
                     <span>{originTask.title ?? originTask.id}</span>
                   </div>
                 </div>
@@ -636,11 +691,29 @@ function AssetDetailModal({
   )
 }
 
+function AssetDetailPreview({ asset }: { asset: CanvasAsset }) {
+  const source = asset.url ? normalizeEduAssetUrl(asset.url) : null
+
+  if (asset.type === 'image' && source) {
+    return <img src={source} alt={asset.title ?? '图片资产预览'} />
+  }
+  if (asset.type === 'video' && source) {
+    return <video src={source} controls preload="metadata" />
+  }
+  if (asset.type === 'audio' && source) {
+    return <audio src={source} controls preload="metadata" />
+  }
+  return <AssetThumbnail asset={asset} />
+}
+
 function DetailItem({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="canvas-asset-detail-item">
       <span className="canvas-asset-detail-label">{label}</span>
-      <span className={mono ? 'canvas-asset-detail-value mono' : 'canvas-asset-detail-value'} title={value}>
+      <span
+        className={mono ? 'canvas-asset-detail-value mono' : 'canvas-asset-detail-value'}
+        title={value}
+      >
         {value}
       </span>
     </div>

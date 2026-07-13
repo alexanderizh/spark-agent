@@ -118,12 +118,14 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-group">
           <CanvasDockAddDropdown
             label="添加资源内容节点"
+            shortLabel="资源"
             icon={<Icons.FileText size={15} />}
             items={grouped.resource}
             onSelect={(item) => closeAddMenuAndRun(() => handleAddNodeItem(item))}
           />
           <CanvasDockAddDropdown
             label="添加任务节点"
+            shortLabel="任务"
             icon={<Icons.Sparkles size={15} />}
             items={grouped.task}
             onSelect={(item) => closeAddMenuAndRun(() => handleAddNodeItem(item))}

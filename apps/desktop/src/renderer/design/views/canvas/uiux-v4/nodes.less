@@ -27,24 +27,60 @@
   }
 
   .canvas-node-meta-bar {
-    min-height: 38px;
-    padding: 0 11px;
+    min-height: 48px;
+    padding: 6px 10px;
     border-bottom: 1px solid var(--canvas-v4-divider);
     background: var(--canvas-v4-surface);
   }
 
   .canvas-node-meta-title {
-    gap: 7px;
+    gap: 8px;
     min-width: 0;
-    color: var(--text-muted);
-    font-size: 11px;
-    font-weight: 520;
+    color: var(--text);
 
-    > span:last-child {
+    > .canvas-node-meta-copy {
       overflow: hidden;
+    }
+  }
+
+  .canvas-node-meta-icon {
+    display: inline-grid;
+    width: 27px;
+    height: 27px;
+    flex: 0 0 27px;
+    place-items: center;
+    border: 1px solid var(--canvas-v4-divider);
+    border-radius: var(--canvas-v4-radius-sm);
+    background: var(--canvas-v4-surface-muted);
+    color: var(--text-muted);
+  }
+
+  .canvas-node-meta-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+    line-height: 1.15;
+
+    strong {
+      overflow: hidden;
+      color: var(--text-strong);
+      font-size: 11px;
+      font-weight: 640;
+      letter-spacing: -0.005em;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+  }
+
+  .canvas-node-kind-label {
+    overflow: hidden;
+    color: var(--text-faint);
+    font-size: 8px;
+    font-weight: 560;
+    letter-spacing: 0.045em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .canvas-node-meta-tags {
@@ -52,14 +88,14 @@
   }
 
   .canvas-node-meta-chip {
-    min-height: 18px;
-    padding: 0 5px;
-    border: 0;
+    min-height: 19px;
+    padding: 0 6px;
+    border: 1px solid var(--canvas-v4-divider);
     border-radius: var(--canvas-v4-radius-xs);
     background: var(--canvas-v4-surface-muted);
     color: var(--text-faint);
-    font-size: 9px;
-    line-height: 18px;
+    font-size: 8px;
+    line-height: 17px;
   }
 
   .canvas-node-meta-chip-status.is-running {
@@ -73,11 +109,50 @@
     background: var(--canvas-v4-surface);
   }
 
+  .canvas-node-quick-footer {
+    display: flex;
+    min-height: var(--canvas-v4-node-footer-height);
+    flex: 0 0 var(--canvas-v4-node-footer-height);
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 10px;
+    border-top: 1px solid var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+
+    > span {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--text-faint);
+      font-size: 8px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    > button {
+      flex: none;
+      padding: 3px 0;
+      border: 0;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font: inherit;
+      font-size: 9px;
+      font-weight: 560;
+
+      &:hover,
+      &:focus-visible {
+        color: var(--primary);
+      }
+    }
+  }
+
   .canvas-node-text {
-    padding: 14px 15px 16px;
+    padding: 15px 16px 18px;
     color: var(--text);
-    font-size: 12px;
-    line-height: 1.62;
+    font-size: 12.5px;
+    line-height: 1.66;
+    background: var(--canvas-v4-surface);
   }
 
   .canvas-node-text-long {
@@ -92,6 +167,10 @@
   .canvas-node-task,
   .canvas-node-group-body {
     border-radius: 0;
+  }
+
+  .canvas-node-image {
+    background: color-mix(in srgb, var(--bg-sunken) 92%, #000);
   }
 
   // 统一占位图：沿用 3D 导演台的单线图标 + 两行信息 + 安静留白。
@@ -167,6 +246,17 @@
     box-shadow: none;
   }
 
+  .canvas-node-group {
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--text-muted) 32%, transparent);
+    background: color-mix(in srgb, var(--panel) 72%, transparent);
+
+    .canvas-node-meta-bar,
+    .canvas-node-quick-footer {
+      background: color-mix(in srgb, var(--panel) 94%, var(--bg));
+    }
+  }
+
   .canvas-node-selected .canvas-node-handle,
   .canvas-node-handle:hover {
     background: var(--primary);
@@ -182,19 +272,21 @@
       inset: -1px;
       z-index: 8;
       border-radius: inherit;
-      padding: 2px;
+      padding: 2.5px;
       pointer-events: none;
       background: conic-gradient(
         from var(--canvas-running-angle, 0deg),
-        transparent 0 64%,
-        color-mix(in srgb, var(--primary) 92%, white 8%) 74%,
-        transparent 85%
+        transparent 0 12%,
+        color-mix(in srgb, var(--primary) 92%, white 8%) 20%,
+        transparent 31% 58%,
+        color-mix(in srgb, var(--primary) 78%, white 22%) 68%,
+        transparent 80%
       );
       mask:
         linear-gradient(#000 0 0) content-box,
         linear-gradient(#000 0 0);
       mask-composite: exclude;
-      animation: canvas-v4-running-border 1.8s linear infinite;
+      animation: canvas-v4-running-border 1.45s linear infinite;
     }
 
     &::after {
@@ -204,7 +296,9 @@
       z-index: 7;
       border-radius: inherit;
       pointer-events: none;
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent);
+      box-shadow:
+        inset 0 0 0 1px color-mix(in srgb, var(--primary) 34%, transparent),
+        0 0 18px color-mix(in srgb, var(--primary) 10%, transparent);
       animation: canvas-v4-running-pulse 1.25s ease-in-out infinite alternate;
     }
   }
