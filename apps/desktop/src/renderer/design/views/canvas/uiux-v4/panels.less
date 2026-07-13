@@ -1,0 +1,219 @@
+.canvas-workspace.canvas-uiux-v4 {
+  // Agent 始终在画布左侧；面板关闭后仍保活，避免流式会话丢失。
+  .canvas-agent-side-panel {
+    top: 8px;
+    bottom: 8px;
+    left: 8px;
+    border-color: var(--canvas-v4-border);
+    border-radius: var(--canvas-v4-radius-md);
+    background: var(--canvas-v4-surface);
+    box-shadow: 6px 0 24px color-mix(in srgb, var(--shadow-color, #000) 18%, transparent);
+  }
+
+  .canvas-agent-side-panel-collapse-toggle {
+    width: 24px;
+    height: 44px;
+    border-color: var(--canvas-v4-border);
+    border-radius: 0 var(--canvas-v4-radius-sm) var(--canvas-v4-radius-sm) 0;
+    background: var(--canvas-v4-surface-raised);
+    box-shadow: none;
+  }
+
+  .canvas-agent-side-panel-inner .canvas-bottom-floating-head {
+    min-height: 42px;
+    padding: 0 10px;
+    border-bottom-color: var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+  }
+
+  .canvas-agent-side-panel-inner .canvas-agent-title {
+    font-size: 12px;
+    font-weight: 620;
+  }
+
+  .canvas-agent-side-panel-inner .composer-select {
+    border-radius: var(--canvas-v4-radius-sm) !important;
+    background: var(--canvas-v4-surface-muted);
+  }
+
+  // 画布助手内不显示任何对话头像；角色通过文字、对齐和底色识别。
+  .canvas-agent-modal .chat-panel-message-avatar {
+    display: none !important;
+  }
+
+  .canvas-agent-modal .chat-panel-message-body {
+    max-width: 92%;
+  }
+
+  .canvas-agent-modal .chat-panel-message-assistant .chat-panel-message-body {
+    max-width: 100%;
+  }
+
+  .canvas-agent-modal .chat-panel-messages {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .canvas-agent-modal .chat-panel-text {
+    border-radius: var(--canvas-v4-radius-sm);
+  }
+
+  .canvas-agent-modal .chat-panel-message-user .chat-panel-text {
+    padding: 7px 10px;
+    background: color-mix(in srgb, var(--primary) 12%, var(--canvas-v4-surface-muted));
+  }
+
+  .canvas-agent-modal .chat-panel-context {
+    min-height: 36px;
+    padding: 0 10px;
+    border-bottom-color: var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface-muted);
+  }
+
+  .canvas-agent-modal .chat-panel-composer {
+    border-top-color: var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+  }
+
+  .canvas-side-panel {
+    border-left-color: var(--canvas-v4-border);
+    background: var(--canvas-v4-surface);
+    box-shadow: none;
+  }
+
+  .canvas-side-tabs {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+
+    .ant-segmented,
+    [class*='segmented'] {
+      border-radius: var(--canvas-v4-radius-sm);
+      background: var(--canvas-v4-surface-muted);
+    }
+  }
+
+  .canvas-side-panel-content {
+    background: var(--canvas-v4-surface);
+  }
+
+  .canvas-side-panel-footer {
+    gap: 4px;
+    padding: 7px 10px;
+    border-color: var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+  }
+
+  .canvas-side-utility-btn {
+    min-height: 32px;
+    border-radius: var(--canvas-v4-radius-sm);
+
+    &:hover {
+      background: var(--canvas-v4-surface-muted);
+    }
+  }
+
+  .canvas-side-panel-collapse-toggle {
+    border-radius: var(--canvas-v4-radius-sm) 0 0 var(--canvas-v4-radius-sm);
+    background: var(--canvas-v4-surface-raised);
+    box-shadow: none;
+  }
+
+  .canvas-asset-card,
+  .canvas-film-asset-card,
+  .canvas-character-card,
+  .canvas-asset-grid-card,
+  .canvas-asset-subview-card,
+  .canvas-film-manuscript-card,
+  .canvas-film-chapter-card,
+  .canvas-film-segment-card {
+    border-radius: var(--canvas-v4-radius-md);
+    box-shadow: none;
+    transition:
+      border-color var(--canvas-v4-motion-fast) ease-out,
+      box-shadow var(--canvas-v4-motion-fast) ease-out,
+      transform var(--canvas-v4-motion-fast) ease-out;
+
+    &:hover {
+      box-shadow: var(--canvas-v4-hover-shadow);
+      transform: translateY(-2px);
+    }
+  }
+
+  .canvas-assets-panel-filters,
+  .canvas-asset-manager-filters,
+  .canvas-film-asset-toolbar,
+  .canvas-film-asset-list-head,
+  .canvas-film-editor-head {
+    border-color: var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+  }
+
+  .canvas-asset-mini,
+  .canvas-asset-manager-row,
+  .canvas-asset-grid-card,
+  .canvas-asset-subview-card,
+  .canvas-film-asset-card,
+  .canvas-film-manuscript-card,
+  .canvas-film-chapter-card,
+  .canvas-film-segment-card {
+    border-color: var(--canvas-v4-divider);
+    border-radius: var(--canvas-v4-radius-sm);
+    background: var(--canvas-v4-surface-muted);
+  }
+
+  .canvas-asset-grid-thumb,
+  .canvas-asset-mini-thumb,
+  .canvas-asset-subview-card-thumb,
+  .canvas-film-asset-card-thumb {
+    border-radius: var(--canvas-v4-radius-xs);
+    background: var(--bg-sunken);
+  }
+
+  .canvas-asset-manager-batchbar {
+    border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--canvas-v4-divider));
+    border-radius: var(--canvas-v4-radius-sm);
+    background: color-mix(in srgb, var(--primary) 7%, var(--canvas-v4-surface));
+  }
+
+  .canvas-asset-detail-modal {
+    overflow: hidden;
+    border: 1px solid var(--canvas-v4-border);
+    border-radius: var(--canvas-v4-radius-md);
+    background: var(--canvas-v4-surface);
+    box-shadow: 0 20px 60px color-mix(in srgb, var(--shadow-color, #000) 32%, transparent);
+  }
+
+  .canvas-asset-detail-head,
+  .canvas-asset-detail-section,
+  .canvas-asset-detail-ref {
+    border-color: var(--canvas-v4-divider);
+  }
+
+  .canvas-film-center-panel {
+    overflow: hidden;
+    border: 1px solid var(--canvas-v4-border);
+    border-radius: var(--canvas-v4-radius-md);
+    background: var(--canvas-v4-surface);
+    box-shadow: 0 -12px 40px color-mix(in srgb, var(--shadow-color, #000) 20%, transparent);
+  }
+
+  .canvas-film-center-tabs {
+    border-color: var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface-muted);
+  }
+
+  .canvas-film-center-tab {
+    border-radius: var(--canvas-v4-radius-sm);
+
+    &.active {
+      background: var(--canvas-v4-surface);
+      box-shadow: none;
+    }
+  }
+
+  .canvas-film-editor-form :where(input, textarea, .ant-select-selector),
+  .canvas-film-asset-toolbar :where(input, .ant-select-selector) {
+    border-radius: var(--canvas-v4-radius-sm) !important;
+  }
+}

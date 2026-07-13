@@ -58,7 +58,8 @@ function seedProject(): void {
 function longAssetText(label: string): string {
   return Array.from(
     { length: 8 },
-    (_, index) => `${label}第${index + 1}段：角色在雨夜街口停下，霓虹和雾气压低画面，动作、情绪、环境细节都需要保留在画布节点中。`,
+    (_, index) =>
+      `${label}第${index + 1}段：角色在雨夜街口停下，霓虹和雾气压低画面，动作、情绪、环境细节都需要保留在画布节点中。`,
   ).join('\n')
 }
 
@@ -204,7 +205,7 @@ describe('canvas asset insertion', () => {
 
     expect(node?.type).toBe('image')
     expect(node?.width).toBe(480)
-    expect(node?.height).toBe(744)
+    expect(node?.height).toBe(758)
   })
 
   it('fits landscape image assets to their visible content height', async () => {
@@ -225,8 +226,8 @@ describe('canvas asset insertion', () => {
     })
 
     expect(node?.type).toBe('image')
-    expect(node?.width).toBe(580)
-    expect(node?.height).toBe(350)
+    expect(node?.width).toBe(540)
+    expect(node?.height).toBe(342)
   })
 
   // 居中落点依赖 resolveAssetInsertSize 算出的尺寸与 insertAssetToBoard 最终节点

@@ -1,0 +1,54 @@
+// Canvas UI/UX V4：只消费应用主题变量，不建立脱离主题的硬编码皮肤。
+.canvas-workspace.canvas-uiux-v4 {
+  --canvas-v4-radius-xs: 4px;
+  --canvas-v4-radius-sm: 6px;
+  --canvas-v4-radius-md: 9px;
+  --canvas-v4-border: color-mix(in srgb, var(--border-strong) 76%, transparent);
+  --canvas-v4-divider: color-mix(in srgb, var(--divider) 74%, transparent);
+  --canvas-v4-surface: color-mix(in srgb, var(--panel) 96%, var(--bg));
+  --canvas-v4-surface-raised: color-mix(in srgb, var(--panel-elev) 92%, var(--panel));
+  --canvas-v4-surface-muted: color-mix(in srgb, var(--bg-sunken) 82%, var(--panel));
+  --canvas-v4-hover-shadow: 0 12px 28px
+    color-mix(in srgb, var(--shadow-color, #000) 18%, transparent);
+  --canvas-v4-selected-shadow:
+    0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent),
+    0 16px 34px color-mix(in srgb, var(--shadow-color, #000) 22%, transparent);
+  --canvas-v4-motion-fast: 150ms;
+  --canvas-v4-motion-standard: 240ms;
+
+  color: var(--text);
+  background: var(--bg);
+
+  :where(button, [role='button'], input, textarea, select):focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--primary) 70%, transparent);
+    outline-offset: 2px;
+  }
+
+  :where(.ant-btn, button) {
+    border-radius: var(--canvas-v4-radius-sm);
+  }
+
+  :where(.ant-input, .ant-input-affix-wrapper, .ant-select-selector, textarea) {
+    border-radius: var(--canvas-v4-radius-sm) !important;
+  }
+
+  .canvas-workspace-header {
+    background: var(--canvas-v4-surface);
+    border-bottom-color: var(--canvas-v4-divider);
+    box-shadow: none;
+  }
+
+  .canvas-workspace-body {
+    background-color: var(--bg-sunken);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-workspace.canvas-uiux-v4 *,
+  .canvas-workspace.canvas-uiux-v4 *::before,
+  .canvas-workspace.canvas-uiux-v4 *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,200 @@
+.canvas-workspace.canvas-uiux-v4 {
+  // 3D 中央视口及 Scene3D 交互保持原样；这里只收敛外框、顶栏和两侧工具区。
+  .stage3d-shell,
+  .vwb-shell {
+    border: 1px solid var(--canvas-v4-border);
+    border-radius: var(--canvas-v4-radius-md);
+    background: var(--canvas-v4-surface);
+    box-shadow: 0 24px 72px color-mix(in srgb, var(--shadow-color, #000) 36%, transparent);
+  }
+
+  .stage3d-shell {
+    width: min(96vw, 1760px);
+    height: min(94vh, 1080px);
+  }
+
+  .stage3d-topbar,
+  .vwb-topbar {
+    min-height: 54px;
+    padding-block: 7px;
+    border-bottom: 1px solid var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+    -webkit-app-region: drag;
+
+    > * {
+      -webkit-app-region: no-drag;
+    }
+  }
+
+  .stage3d-kicker,
+  .vwb-kicker {
+    color: var(--text-faint);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+  }
+
+  .stage3d-title,
+  .vwb-title {
+    color: var(--text-strong);
+    font-size: 13px;
+    font-weight: 620;
+  }
+
+  .stage3d-tools,
+  .stage3d-inspector,
+  .vwb-side-pane {
+    border-color: var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+  }
+
+  .stage3d-tools {
+    width: 248px;
+  }
+
+  .stage3d-inspector {
+    width: 286px;
+  }
+
+  .stage3d-section-title,
+  .vwb-section-title {
+    color: var(--text-faint);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+  }
+
+  .stage3d-panel-collapse,
+  .stage3d-panel-rail {
+    border-radius: var(--canvas-v4-radius-sm);
+    background: var(--canvas-v4-surface-raised);
+    box-shadow: none;
+  }
+
+  .stage3d-object-list button,
+  .stage3d-shot-row,
+  .stage3d-field input,
+  .stage3d-field textarea,
+  .stage3d-field .ant-select-selector {
+    border-radius: var(--canvas-v4-radius-sm) !important;
+  }
+
+  // 视频工作台采用与应用主题一致的扁平外壳；预览区仍保持中性暗底，避免影响画面判断。
+  .vwb-shell {
+    margin: 24px;
+    color: var(--text);
+  }
+
+  .vwb-topbar-info {
+    gap: 4px;
+  }
+
+  .vwb-info-chip {
+    padding: 2px 6px;
+    border: 0;
+    border-radius: var(--canvas-v4-radius-xs);
+    background: var(--canvas-v4-surface-muted);
+    color: var(--text-muted);
+  }
+
+  .vwb-preview-pane {
+    background: color-mix(in srgb, var(--bg-sunken) 92%, #000);
+  }
+
+  .vwb-video-stage {
+    padding: 12px;
+  }
+
+  .vwb-video {
+    border-radius: var(--canvas-v4-radius-sm);
+    box-shadow: none;
+  }
+
+  .vwb-player-controls,
+  .vwb-timeline {
+    border-color: var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface-muted);
+  }
+
+  .vwb-player-time,
+  .vwb-timeline-time-current,
+  .vwb-section-title,
+  .vwb-output-summary {
+    color: var(--text);
+  }
+
+  .vwb-player-divider,
+  .vwb-player-duration,
+  .vwb-timeline-divider,
+  .vwb-timeline-duration,
+  .vwb-timeline-zoom-label,
+  .vwb-strategy-desc,
+  .vwb-progress-stage,
+  .vwb-trim-field > span,
+  .vwb-tc-field > span,
+  .vwb-tc-param > span,
+  .vwb-output-time {
+    color: var(--text-faint);
+  }
+
+  .vwb-player-btn {
+    border-radius: var(--canvas-v4-radius-sm);
+    color: var(--text-muted);
+
+    &:hover {
+      background: var(--canvas-v4-surface-raised);
+      color: var(--text);
+    }
+  }
+
+  .vwb-player-play {
+    border-radius: var(--canvas-v4-radius-sm);
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    color: var(--primary);
+  }
+
+  .vwb-side-pane {
+    width: 340px;
+    padding: 10px;
+  }
+
+  .vwb-side-pane > .ant-segmented {
+    border-radius: var(--canvas-v4-radius-sm);
+    background: var(--canvas-v4-surface-muted);
+  }
+
+  .vwb-section {
+    border-bottom-color: var(--canvas-v4-divider);
+  }
+
+  .vwb-frame-card,
+  .vwb-timeline-scroll,
+  .vwb-timeline-lane {
+    border-radius: var(--canvas-v4-radius-sm);
+    background: var(--canvas-v4-surface-muted);
+  }
+
+  .vwb-frame-card:hover {
+    box-shadow: 0 8px 20px color-mix(in srgb, var(--shadow-color, #000) 18%, transparent);
+  }
+
+  .vwb-placeholder,
+  .vwb-video-empty {
+    min-height: 180px;
+    justify-content: center;
+    color: var(--text-faint);
+    background:
+      radial-gradient(
+        circle at 50% 45%,
+        color-mix(in srgb, var(--text-muted) 8%, transparent),
+        transparent 56%
+      ),
+      transparent;
+  }
+
+  .vwb-output-item {
+    border-color: var(--canvas-v4-divider);
+    border-radius: var(--canvas-v4-radius-sm);
+    background: var(--canvas-v4-surface-muted);
+  }
+}

@@ -180,7 +180,9 @@ function Stage3DMini({ data }: { data: SparkCanvasNode['data'] }) {
 function VideoWorkbenchMini({ data }: { data: SparkCanvasNode['data'] }) {
   const raw = data.videoWorkbench as Record<string, unknown> | undefined
   const keyframeCount = Array.isArray(raw?.keyframes) ? (raw!.keyframes as unknown[]).length : 0
-  const probe = raw?.probeInfo as { durationSec?: number; width?: number; height?: number } | undefined
+  const probe = raw?.probeInfo as
+    | { durationSec?: number; width?: number; height?: number }
+    | undefined
   const thumb = data.thumbnailUrl ?? ''
   const normalizedThumb = thumb ? normalizeEduAssetUrl(thumb) : ''
   return (
@@ -546,7 +548,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     [node, operationRuns],
   )
   const contentNode = useMemo(
-    () => (isTask ? operationOutputNodeForCapabilities(node, operationOutputState.primaryOutput) : node),
+    () =>
+      isTask ? operationOutputNodeForCapabilities(node, operationOutputState.primaryOutput) : node,
     [isTask, node, operationOutputState.primaryOutput],
   )
   const roleMeta = node.data.pipelineRole ? PIPELINE_ROLE_META[node.data.pipelineRole] : undefined
@@ -563,8 +566,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const isDirectorStage = node.data.subtype === 'director_stage'
   const isDirectorStage3D = node.data.subtype === 'director_stage_3d'
   const isVideoWorkbench = node.data.subtype === 'video_workbench'
-  const isResourceOutput =
-    !isTask && (isGeneratedOutput || node.data.origin === 'task_output')
+  const isResourceOutput = !isTask && (isGeneratedOutput || node.data.origin === 'task_output')
   const isGroupedChild = Boolean(node.parentNodeId)
   // 长文本节点（剧本/文稿等）：NodeResizer 拖拽下限放宽；渲染时套 long 修饰类。
   // 渲染条件用当前 text 长度判断，旧节点编辑后内容变长也能自动应用阅读样式，
@@ -622,15 +624,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       modelParams: { aspect_ratio: '2:1' },
     })
   const createDetailSheetTask = () =>
-    actions.createOperationChild(
-      node.id,
-      isImageContent ? 'image_edit' : 'text_to_image',
-      {
-        title: '细节设定图（九宫格）',
-        prompt: buildDetailSheetNineGridPrompt(contentNode ?? node),
-        modelParams: { aspect_ratio: '2:1' },
-      },
-    )
+    actions.createOperationChild(node.id, isImageContent ? 'image_edit' : 'text_to_image', {
+      title: '细节设定图（九宫格）',
+      prompt: buildDetailSheetNineGridPrompt(contentNode ?? node),
+      modelParams: { aspect_ratio: '2:1' },
+    })
   // AI 操作子菜单里「上下文专属」的快捷操作（带图标）。
   const contextualAiActions = useMemo(
     () => [
@@ -656,12 +654,12 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             },
           ]
         : []),
-      ...((isImageContent ||
-        Boolean(
-          hasOperationOutput &&
-            contentNode &&
-            (contentNode.type === 'text' || contentNode.type === 'prompt'),
-        ))
+      ...(isImageContent ||
+      Boolean(
+        hasOperationOutput &&
+        contentNode &&
+        (contentNode.type === 'text' || contentNode.type === 'prompt'),
+      )
         ? [
             {
               key: 'detail-sheet-nine-grid',
@@ -891,7 +889,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               },
             ]
           : []),
-        ...(((isImageContent || contentNode?.type === 'video') && hasOperationOutput)
+        ...((isImageContent || contentNode?.type === 'video') && hasOperationOutput
           ? [
               {
                 key: 'download-media',
@@ -1161,12 +1159,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   )
 
   return (
-    <Dropdown
-      trigger={['contextMenu']}
-      menu={menu}
-      placement="bottomLeft"
-      autoAdjustOverflow
-    >
+    <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft" autoAdjustOverflow>
       <div className="canvas-node-shell">
         <div
           data-canvas-node-id={node.id}
@@ -1227,7 +1220,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 ) : (
                   <div className="canvas-node-image-placeholder">
                     <Icons.Image size={30} />
-                    <span>{node.data.message ?? '等待图片 URL'}</span>
+                    <strong>{node.data.message ?? '暂无图片'}</strong>
+                    <span>双击节点添加内容</span>
                   </div>
                 )
               ) : node.type === 'audio' ? (
@@ -1245,7 +1239,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 ) : (
                   <div className="canvas-node-image-placeholder">
                     <Icons.Play size={30} />
-                    <span>{node.data.message ?? '等待音频结果'}</span>
+                    <strong>{node.data.message ?? '暂无音频'}</strong>
+                    <span>运行任务后在这里预览</span>
                   </div>
                 )
               ) : node.type === 'video' ? (
@@ -1263,7 +1258,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 ) : (
                   <div className="canvas-node-image-placeholder">
                     <Icons.Play size={30} />
-                    <span>{node.data.message ?? '等待视频结果'}</span>
+                    <strong>{node.data.message ?? '暂无视频'}</strong>
+                    <span>运行任务后在这里预览</span>
                   </div>
                 )
               ) : node.type === 'group' ? (
@@ -1340,8 +1336,12 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                   </div>
                 </div>
               ) : (
-                <div className={`canvas-node-text md-surface${isTextLong ? ' canvas-node-text-long' : ''}`}>
-                  <MarkdownText content={node.data.text ?? node.data.message ?? 'Empty'} />
+                <div
+                  className={`canvas-node-text md-surface${isTextLong ? ' canvas-node-text-long' : ''}`}
+                >
+                  <MarkdownText
+                    content={node.data.text ?? node.data.message ?? '空节点 · 双击编辑'}
+                  />
                 </div>
               )}
             </div>

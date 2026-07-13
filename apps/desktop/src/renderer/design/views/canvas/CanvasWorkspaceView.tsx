@@ -27,11 +27,7 @@ import {
   readImageDimensions,
   readVideoDimensions,
 } from './canvas-safe-file'
-import {
-  classifyDroppedFile,
-  layoutDroppedFiles,
-  textFormatFromFileName,
-} from './canvasFileDrop'
+import { classifyDroppedFile, layoutDroppedFiles, textFormatFromFileName } from './canvasFileDrop'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
@@ -44,10 +40,7 @@ import {
   selectCanvasOperationOutputs,
 } from './canvasOperationOutputModel'
 import { planCanvasOperationOutputMaterialization } from './canvasOperationOutputMaterialization'
-import {
-  buildCanvasOperationRunViews,
-  type CanvasOperationOutputView,
-} from './canvasOperationRuns'
+import { buildCanvasOperationRunViews, type CanvasOperationOutputView } from './canvasOperationRuns'
 import { CanvasOperationPresetModal } from './CanvasOperationPresetModal'
 import { CanvasPanoramaViewerModal } from './CanvasPanoramaViewerModal'
 import { CanvasImageAnnotationModal } from './CanvasImageAnnotationModal'
@@ -68,7 +61,11 @@ import {
 import { CanvasDirectorStage3DModal } from './stage3d/CanvasDirectorStage3DModal'
 import { createDefaultStage3DData, type Stage3DData } from './stage3d/stage3d.types'
 import { CanvasVideoWorkbenchModal } from './videoWorkbench/CanvasVideoWorkbenchModal'
-import { createDefaultVideoWorkbenchData, type VideoWorkbenchData, type WorkbenchKeyframe } from './videoWorkbench/videoWorkbench.types'
+import {
+  createDefaultVideoWorkbenchData,
+  type VideoWorkbenchData,
+  type WorkbenchKeyframe,
+} from './videoWorkbench/videoWorkbench.types'
 import { isCanvasImageContentNode, isOperationNode } from './canvas.capabilities'
 import {
   readAssetKind,
@@ -136,10 +133,7 @@ import {
   revertProject,
   saveCanvas,
 } from './canvas.api'
-import {
-  buildTaskInputFiles,
-  type CanvasTaskInputRoleSelection,
-} from './canvasTaskInputFiles'
+import { buildTaskInputFiles, type CanvasTaskInputRoleSelection } from './canvasTaskInputFiles'
 import { summarizeCanvasSelectionContext } from './canvasContextMenuModel'
 import {
   mergeCanvasOperationPresetNegativePrompt,
@@ -174,6 +168,7 @@ import type {
   WheelEvent as ReactWheelEvent,
 } from 'react'
 import './CanvasWorkspaceView.less'
+import './uiux-v4/index.less'
 
 type CanvasPoint = { x: number; y: number }
 type TrackedCanvasWorkflowResult = {
@@ -2330,10 +2325,8 @@ export function CanvasWorkspaceView({
     setInlineOperationFullscreen(false)
   }, [inlinePanelNodeId])
 
-  const {
-    viewportRef: canvasViewportRef,
-    onViewportChange: handleCanvasViewportChange,
-  } = useFloatingViewportGeometry(inlinePanelNode, getFloatingEditorGeometry)
+  const { viewportRef: canvasViewportRef, onViewportChange: handleCanvasViewportChange } =
+    useFloatingViewportGeometry(inlinePanelNode, getFloatingEditorGeometry)
 
   useEffect(() => {
     const tasks = snapshot?.tasks ?? []
@@ -2601,7 +2594,9 @@ export function CanvasWorkspaceView({
           message.info('没有可整理的节点')
           return
         }
-        message.success(partialLayout ? `已整理所选 ${selectedNodeIds.length} 个节点` : '已整理全画布')
+        message.success(
+          partialLayout ? `已整理所选 ${selectedNodeIds.length} 个节点` : '已整理全画布',
+        )
       } catch (error) {
         message.error(error instanceof Error ? error.message : '整理画布失败')
       } finally {
@@ -2676,7 +2671,8 @@ export function CanvasWorkspaceView({
    *  即使节点一时找不到（snapshot 尚未刷新），也保证面板展开，给用户即时反馈。 */
   const handleAddNodeToAgent = useCallback(
     (nodeId: string) => {
-      const node = snapshotNodeById.get(nodeId) ?? snapshotRef.current?.nodes.find((n) => n.id === nodeId)
+      const node =
+        snapshotNodeById.get(nodeId) ?? snapshotRef.current?.nodes.find((n) => n.id === nodeId)
       setAgentOpen(true)
       if (!node) return
       setAgentNodeRefs((prev) => {
@@ -3023,9 +3019,7 @@ export function CanvasWorkspaceView({
       if (!node) return
 
       // 统一解析：操作节点取其主产物资源节点，非操作节点取自身
-      const resolved = isOperationNode(node)
-        ? resolveCanvasOperationResourceNode(node, snap)
-        : node
+      const resolved = isOperationNode(node) ? resolveCanvasOperationResourceNode(node, snap) : node
       const target = resolved ?? node
 
       // 目标是视频节点或有视频 url → 打开工作台
@@ -3096,36 +3090,33 @@ export function CanvasWorkspaceView({
     [closeCanvasFloatPanels],
   )
 
-  const handleDownloadMediaNode = useCallback(
-    async (nodeId: string) => {
-      // 从 ref 读取，避免 snapshot/resolveCanvasResourceActionNode 引用抖动传导到 nodeActions
-      const currentSnapshot = snapshotRef.current
-      if (!currentSnapshot) return
-      const node = currentSnapshot.nodes.find((item) => item.id === nodeId)
-      if (!node) return
-      const resolved = isOperationNode(node)
-        ? resolveCanvasOperationResourceNode(node, currentSnapshot)
-        : node
-      if (!resolved || (!isCanvasImageContentNode(resolved) && resolved.type !== 'video')) {
-        message.warning('当前节点没有可下载的图片或视频内容')
-        return
-      }
-      const linkedAsset = resolved.assetId
-        ? (currentSnapshot.assets.find((item) => item.id === resolved.assetId) ?? null)
-        : null
-      await downloadCanvasResource({
-        id: linkedAsset?.id ?? resolved.id,
-        type: linkedAsset?.type ?? (resolved.type === 'video' ? 'video' : 'image'),
-        title: linkedAsset?.title ?? resolved.title ?? null,
-        mimeType: linkedAsset?.mimeType ?? resolved.data.mimeType ?? null,
-        storageKey: linkedAsset?.storageKey ?? null,
-        url: resolved.data.url ?? linkedAsset?.url ?? null,
-        thumbnailUrl: resolved.data.thumbnailUrl ?? linkedAsset?.thumbnailUrl ?? null,
-        contentText: linkedAsset?.contentText ?? null,
-      })
-    },
-    [],
-  )
+  const handleDownloadMediaNode = useCallback(async (nodeId: string) => {
+    // 从 ref 读取，避免 snapshot/resolveCanvasResourceActionNode 引用抖动传导到 nodeActions
+    const currentSnapshot = snapshotRef.current
+    if (!currentSnapshot) return
+    const node = currentSnapshot.nodes.find((item) => item.id === nodeId)
+    if (!node) return
+    const resolved = isOperationNode(node)
+      ? resolveCanvasOperationResourceNode(node, currentSnapshot)
+      : node
+    if (!resolved || (!isCanvasImageContentNode(resolved) && resolved.type !== 'video')) {
+      message.warning('当前节点没有可下载的图片或视频内容')
+      return
+    }
+    const linkedAsset = resolved.assetId
+      ? (currentSnapshot.assets.find((item) => item.id === resolved.assetId) ?? null)
+      : null
+    await downloadCanvasResource({
+      id: linkedAsset?.id ?? resolved.id,
+      type: linkedAsset?.type ?? (resolved.type === 'video' ? 'video' : 'image'),
+      title: linkedAsset?.title ?? resolved.title ?? null,
+      mimeType: linkedAsset?.mimeType ?? resolved.data.mimeType ?? null,
+      storageKey: linkedAsset?.storageKey ?? null,
+      url: resolved.data.url ?? linkedAsset?.url ?? null,
+      thumbnailUrl: resolved.data.thumbnailUrl ?? linkedAsset?.thumbnailUrl ?? null,
+      contentText: linkedAsset?.contentText ?? null,
+    })
+  }, [])
 
   const handleSaveNodeEdit = useCallback(
     async (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => {
@@ -3161,6 +3152,7 @@ export function CanvasWorkspaceView({
         existingNodes: current.nodes,
       })
       const materializedNodeIds = [...plan.existingNodeIds]
+      const createdNodeIds: string[] = []
 
       for (const item of plan.items) {
         if (!item.output.assetId) continue
@@ -3174,9 +3166,7 @@ export function CanvasWorkspaceView({
         await updateNodeData(created.id, {
           origin: 'asset',
           ...(item.output.pipelineRole ? { pipelineRole: item.output.pipelineRole } : {}),
-          ...(item.output.productionState
-            ? { productionState: item.output.productionState }
-            : {}),
+          ...(item.output.productionState ? { productionState: item.output.productionState } : {}),
           ...(item.output.panorama360 ? { panorama360: item.output.panorama360 } : {}),
           materializedOutput: {
             operationNodeId,
@@ -3190,6 +3180,13 @@ export function CanvasWorkspaceView({
           type: 'references',
         })
         materializedNodeIds.push(created.id)
+        createdNodeIds.push(created.id)
+      }
+
+      // 多产物保持批次网格布局，并自动收进一个组；组是可操作的真实画布对象，
+      // 不是仅在任务节点预览里的视觉假象。
+      if (createdNodeIds.length > 1) {
+        await createGroupNode(createdNodeIds)
       }
 
       if (plan.unsupportedOutputIds.length > 0) {
@@ -3210,7 +3207,7 @@ export function CanvasWorkspaceView({
         )
       }
     },
-    [connectNodes, insertAsset, updateNodeData],
+    [connectNodes, createGroupNode, insertAsset, updateNodeData],
   )
 
   const handleExpandOperationOutputScope = useCallback(
@@ -4087,35 +4084,32 @@ export function CanvasWorkspaceView({
   )
 
   // 工作台「添加/更换视频」：文件选择器 → 复制进项目 → 写回当前工作台节点的 data.url
-  const handleAddVideoToWorkbench = useCallback(
-    async () => {
-      if (!videoWorkbenchNode || !projectId) return
-      const picked = await window.spark.invoke('dialog:open-file', {
-        title: '选择视频',
-        multiple: false,
-        filters: [{ name: '视频', extensions: ['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv'] }],
-      })
-      if (picked.canceled || !picked.filePath) return
-      const projectRootPath = snapshot?.project.rootPath
-      const copyResult = await window.spark.invoke('canvas:asset:copy-to-project', {
-        projectId,
-        ...(projectRootPath ? { projectRootPath } : {}),
-        sourcePath: picked.filePath,
-        type: 'video',
-      })
-      if (copyResult.error || !copyResult.filePath) {
-        message.error('视频导入失败')
-        return
-      }
-      const fileUrl = encodeToSafeFileUrl(copyResult.filePath as string)
-      await updateNodeData(videoWorkbenchNode.id, {
-        url: fileUrl,
-        videoWorkbench: createDefaultVideoWorkbenchData() as unknown as Record<string, unknown>,
-      })
-      message.success('视频已导入工作台')
-    },
-    [videoWorkbenchNode, projectId, snapshot?.project.rootPath, updateNodeData],
-  )
+  const handleAddVideoToWorkbench = useCallback(async () => {
+    if (!videoWorkbenchNode || !projectId) return
+    const picked = await window.spark.invoke('dialog:open-file', {
+      title: '选择视频',
+      multiple: false,
+      filters: [{ name: '视频', extensions: ['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv'] }],
+    })
+    if (picked.canceled || !picked.filePath) return
+    const projectRootPath = snapshot?.project.rootPath
+    const copyResult = await window.spark.invoke('canvas:asset:copy-to-project', {
+      projectId,
+      ...(projectRootPath ? { projectRootPath } : {}),
+      sourcePath: picked.filePath,
+      type: 'video',
+    })
+    if (copyResult.error || !copyResult.filePath) {
+      message.error('视频导入失败')
+      return
+    }
+    const fileUrl = encodeToSafeFileUrl(copyResult.filePath as string)
+    await updateNodeData(videoWorkbenchNode.id, {
+      url: fileUrl,
+      videoWorkbench: createDefaultVideoWorkbenchData() as unknown as Record<string, unknown>,
+    })
+    message.success('视频已导入工作台')
+  }, [videoWorkbenchNode, projectId, snapshot?.project.rootPath, updateNodeData])
 
   // 从画布选择视频作为工作台源视频（直接用已有节点的 url，无需重新落盘）
   const handleSelectVideoFromCanvas = useCallback(
@@ -4143,7 +4137,11 @@ export function CanvasWorkspaceView({
       // 分批并行 createImageNode（每批 5 个），降低串行 IPC 等待
       const BATCH = 5
       const loadingKey = `export-kf-${Date.now()}`
-      message.loading({ content: `正在导入 ${frames.length} 个关键帧…`, key: loadingKey, duration: 0 })
+      message.loading({
+        content: `正在导入 ${frames.length} 个关键帧…`,
+        key: loadingKey,
+        duration: 0,
+      })
       for (let start = 0; start < frames.length; start += BATCH) {
         const batch = frames.slice(start, start + BATCH)
         const imageNodes = await Promise.all(
@@ -5444,7 +5442,11 @@ export function CanvasWorkspaceView({
           ...(options?.prompt ? { prompt: options.prompt } : {}),
           ...(options?.modelParams ? { modelParams: options.modelParams } : {}),
         })
-        const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
+        const created = findLatestCreatedOperationNode(
+          next?.nodes ?? [],
+          operation,
+          existingNodeIds,
+        )
         if (created) openOperationPanelForNode(created.id)
       })()
     },
@@ -5549,7 +5551,11 @@ export function CanvasWorkspaceView({
           ...(options?.prompt ? { prompt: options.prompt } : {}),
           ...(options?.modelParams ? { modelParams: options.modelParams } : {}),
         })
-        const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
+        const created = findLatestCreatedOperationNode(
+          next?.nodes ?? [],
+          operation,
+          existingNodeIds,
+        )
         if (created) openOperationPanelForNode(created.id)
       })()
     },
@@ -5948,9 +5954,7 @@ export function CanvasWorkspaceView({
         // ── 图片：复用现有上传管线（含多图分组） ──────────────────────────
         if (images.length > 0) {
           const prepared = await Promise.all(
-            images.map((file) =>
-              prepareCanvasImageUpload(file, { grouped: images.length > 1 }),
-            ),
+            images.map((file) => prepareCanvasImageUpload(file, { grouped: images.length > 1 })),
           )
           const result = await insertPreparedImages(prepared, nextOrigin)
           for (const id of result.createdNodeIds) createdNodeIds.push(id)
@@ -5992,7 +5996,11 @@ export function CanvasWorkspaceView({
 
         // ── 视频/音频：复制进项目 assets 目录后建节点 ─────────────────────
         if (media.length > 0) {
-          const mediaPositions = layoutDroppedFiles(media.length, nextOrigin, VIDEO_NODE_DEFAULT_SIZE)
+          const mediaPositions = layoutDroppedFiles(
+            media.length,
+            nextOrigin,
+            VIDEO_NODE_DEFAULT_SIZE,
+          )
           const successfulMediaIds = Array<string | null>(media.length).fill(null)
           await Promise.all(
             media.map(async (entry, index) => {
@@ -6780,190 +6788,198 @@ export function CanvasWorkspaceView({
                     setSelectedNodeIds([])
                   }}
                   onRun={async (params) => {
-                const viewportBeforeRun = await persistCurrentCanvasViewport()
-                const taskInputNodes = resolveCanvasInputNodes(params.inputNodeIds, snapshot.nodes)
-                const hydratedTaskInputNodes = hydrateTextInputNodes(
-                  taskInputNodes,
-                  snapshot.assets,
-                )
-                const workflow =
-                  opTask && typeof opTask.modelParams?.workflow === 'string'
-                    ? opTask.modelParams.workflow
-                    : ''
-                // 统一行为：先收起弹窗，再继续执行任务，避免提交后弹窗长时间不关。
-                const closePanel = () => {
-                  setActiveOperationPanelNodeId(null)
-                  setSelectedNodeIds([])
-                }
-                if (workflow === 'extract_character' || workflow === 'extract_scene') {
-                  const sourceNode = hydratedTaskInputNodes[0]
-                  if (!sourceNode) {
-                    message.warning('该抽取节点缺少原始输入，无法重新执行')
-                    return
-                  }
-                  const sourceText = hydratedTaskInputNodes
-                    .map((inputNode) => {
-                      const asset = inputNode.assetId
-                        ? snapshot.assets.find((item) => item.id === inputNode.assetId)
-                        : undefined
-                      return (asset?.contentText ?? inputNode.data.text ?? '').trim()
+                    const viewportBeforeRun = await persistCurrentCanvasViewport()
+                    const taskInputNodes = resolveCanvasInputNodes(
+                      params.inputNodeIds,
+                      snapshot.nodes,
+                    )
+                    const hydratedTaskInputNodes = hydrateTextInputNodes(
+                      taskInputNodes,
+                      snapshot.assets,
+                    )
+                    const workflow =
+                      opTask && typeof opTask.modelParams?.workflow === 'string'
+                        ? opTask.modelParams.workflow
+                        : ''
+                    // 统一行为：先收起弹窗，再继续执行任务，避免提交后弹窗长时间不关。
+                    const closePanel = () => {
+                      setActiveOperationPanelNodeId(null)
+                      setSelectedNodeIds([])
+                    }
+                    if (workflow === 'extract_character' || workflow === 'extract_scene') {
+                      const sourceNode = hydratedTaskInputNodes[0]
+                      if (!sourceNode) {
+                        message.warning('该抽取节点缺少原始输入，无法重新执行')
+                        return
+                      }
+                      const sourceText = hydratedTaskInputNodes
+                        .map((inputNode) => {
+                          const asset = inputNode.assetId
+                            ? snapshot.assets.find((item) => item.id === inputNode.assetId)
+                            : undefined
+                          return (asset?.contentText ?? inputNode.data.text ?? '').trim()
+                        })
+                        .filter(Boolean)
+                        .join('\n\n')
+                      const extractPrompt =
+                        mergePromptWithNodeContext(params.prompt, hydratedTaskInputNodes) ||
+                        (sourceText
+                          ? fallbackPromptForOperation(
+                              (opNode.data.operation ?? opNode.type) as CanvasOperationType,
+                            )
+                          : '')
+                      closePanel()
+                      void handleExtractEntities(
+                        sourceNode,
+                        sourceText,
+                        workflow === 'extract_character' ? 'character' : 'scene',
+                        {
+                          prompt: extractPrompt,
+                          ...(params.agentId ? { agentId: params.agentId } : {}),
+                          ...(params.providerProfileId
+                            ? { providerProfileId: params.providerProfileId }
+                            : {}),
+                          ...(params.modelId ? { modelId: params.modelId } : {}),
+                          ...(params.reasoningEffort
+                            ? { reasoningEffort: params.reasoningEffort }
+                            : {}),
+                          ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                          ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                          bindToNodeId: opNode.id,
+                          inputNodeIds: taskInputNodes.map((item) => item.id),
+                          inputAssetIds: taskInputNodes
+                            .map((item) => item.assetId)
+                            .filter((id): id is string => Boolean(id)),
+                        },
+                      )
+                      restoreCanvasViewport(viewportBeforeRun)
+                      return
+                    }
+                    // 普通操作（文本/图片/视频生成等）：先收起弹窗，再异步提交任务。
+                    closePanel()
+                    const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
+                    const presetTargetId = resolveCanvasPresetTarget({
+                      operation,
+                      taskPipelineRole: opNode.data.pipelineRole ?? null,
+                      outputPipelineRole: opNode.data.outputPipelineRole ?? null,
+                      workflow: params.modelParams?.workflow ?? opNode.data.modelParams?.workflow,
                     })
-                    .filter(Boolean)
-                    .join('\n\n')
-                  const extractPrompt =
-                    mergePromptWithNodeContext(params.prompt, hydratedTaskInputNodes) ||
-                    (sourceText
-                      ? fallbackPromptForOperation(
-                          (opNode.data.operation ?? opNode.type) as CanvasOperationType,
-                        )
-                      : '')
-                  closePanel()
-                  void handleExtractEntities(
-                    sourceNode,
-                    sourceText,
-                    workflow === 'extract_character' ? 'character' : 'scene',
-                    {
-                      prompt: extractPrompt,
+                    const effectiveInputRoles =
+                      operation === 'storyboard_grid'
+                        ? buildStoryboardReferenceInputRoles(
+                            hydratedTaskInputNodes,
+                            params.inputRoles,
+                          )
+                        : params.inputRoles
+                    const inputFiles = await buildCloudTaskInputFiles(
+                      hydratedTaskInputNodes,
+                      params.inputTransport,
+                      effectiveInputRoles,
+                    )
+                    const effectivePrompt =
+                      (operation === 'storyboard_grid'
+                        ? buildStoryboardNodePrompt({
+                            prompt: params.prompt,
+                            inputNodes: hydratedTaskInputNodes,
+                          })
+                        : mergePromptWithNodeContext(params.prompt, hydratedTaskInputNodes)) ||
+                      (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
+                    const styleContext = buildCanvasStyleContext(snapshot, {
+                      ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                      ...(params.modelParams && Object.keys(params.modelParams).length > 0
+                        ? { modelParams: params.modelParams }
+                        : {}),
+                    })
+                    const styledTask = applyCanvasStyleToTask(
+                      operation,
+                      {
+                        prompt: effectivePrompt,
+                        ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                        ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                      },
+                      styleContext,
+                    )
+                    writeCanvasLastUsedPresetTarget(presetTargetId, {
+                      ...(params.prompt.trim() ? { prompt: params.prompt } : {}),
+                      ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
                       ...(params.agentId ? { agentId: params.agentId } : {}),
                       ...(params.providerProfileId
                         ? { providerProfileId: params.providerProfileId }
                         : {}),
+                      ...(params.manifestId ? { manifestId: params.manifestId } : {}),
                       ...(params.modelId ? { modelId: params.modelId } : {}),
                       ...(params.reasoningEffort
                         ? { reasoningEffort: params.reasoningEffort }
                         : {}),
                       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
                       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
-                      bindToNodeId: opNode.id,
-                      inputNodeIds: taskInputNodes.map((item) => item.id),
-                      inputAssetIds: taskInputNodes
-                        .map((item) => item.assetId)
-                        .filter((id): id is string => Boolean(id)),
-                    },
-                  )
-                  restoreCanvasViewport(viewportBeforeRun)
-                  return
-                }
-                // 普通操作（文本/图片/视频生成等）：先收起弹窗，再异步提交任务。
-                closePanel()
-                const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
-                const presetTargetId = resolveCanvasPresetTarget({
-                  operation,
-                  taskPipelineRole: opNode.data.pipelineRole ?? null,
-                  outputPipelineRole: opNode.data.outputPipelineRole ?? null,
-                  workflow: params.modelParams?.workflow ?? opNode.data.modelParams?.workflow,
-                })
-                const effectiveInputRoles =
-                  operation === 'storyboard_grid'
-                    ? buildStoryboardReferenceInputRoles(hydratedTaskInputNodes, params.inputRoles)
-                    : params.inputRoles
-                const inputFiles = await buildCloudTaskInputFiles(
-                  hydratedTaskInputNodes,
-                  params.inputTransport,
-                  effectiveInputRoles,
-                )
-                const effectivePrompt =
-                  (operation === 'storyboard_grid'
-                    ? buildStoryboardNodePrompt({
-                        prompt: params.prompt,
-                        inputNodes: hydratedTaskInputNodes,
+                    })
+                    try {
+                      await runOperationNode(opNode.id, {
+                        prompt: styledTask.prompt,
+                        ...(styledTask.negativePrompt
+                          ? { negativePrompt: styledTask.negativePrompt }
+                          : {}),
+                        inputNodeIds: taskInputNodes.map((item) => item.id),
+                        inputAssetIds: taskInputNodes
+                          .map((item) => item.assetId)
+                          .filter((id): id is string => Boolean(id)),
+                        ...(inputFiles.length > 0 ? { inputFiles } : {}),
+                        ...(params.agentId ? { agentId: params.agentId } : {}),
+                        ...(params.providerProfileId
+                          ? { providerProfileId: params.providerProfileId }
+                          : {}),
+                        ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                        ...(params.modelId ? { modelId: params.modelId } : {}),
+                        ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                        ...(Object.keys(styledTask.modelParams).length > 0
+                          ? { modelParams: styledTask.modelParams }
+                          : {}),
+                        userPrompt: params.prompt,
                       })
-                    : mergePromptWithNodeContext(params.prompt, hydratedTaskInputNodes)) ||
-                  (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
-                const styleContext = buildCanvasStyleContext(snapshot, {
-                  ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
-                  ...(params.modelParams && Object.keys(params.modelParams).length > 0
-                    ? { modelParams: params.modelParams }
-                    : {}),
-                })
-                const styledTask = applyCanvasStyleToTask(
-                  operation,
-                  {
-                    prompt: effectivePrompt,
-                    ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
-                    ...(params.modelParams ? { modelParams: params.modelParams } : {}),
-                  },
-                  styleContext,
-                )
-                writeCanvasLastUsedPresetTarget(presetTargetId, {
-                  ...(params.prompt.trim() ? { prompt: params.prompt } : {}),
-                  ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
-                  ...(params.agentId ? { agentId: params.agentId } : {}),
-                  ...(params.providerProfileId
-                    ? { providerProfileId: params.providerProfileId }
-                    : {}),
-                  ...(params.manifestId ? { manifestId: params.manifestId } : {}),
-                  ...(params.modelId ? { modelId: params.modelId } : {}),
-                  ...(params.reasoningEffort ? { reasoningEffort: params.reasoningEffort } : {}),
-                  ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                  ...(params.modelParams ? { modelParams: params.modelParams } : {}),
-                })
-                try {
-                  await runOperationNode(opNode.id, {
-                    prompt: styledTask.prompt,
-                    ...(styledTask.negativePrompt
-                      ? { negativePrompt: styledTask.negativePrompt }
-                      : {}),
-                    inputNodeIds: taskInputNodes.map((item) => item.id),
-                    inputAssetIds: taskInputNodes
-                      .map((item) => item.assetId)
-                      .filter((id): id is string => Boolean(id)),
-                    ...(inputFiles.length > 0 ? { inputFiles } : {}),
-                    ...(params.agentId ? { agentId: params.agentId } : {}),
-                    ...(params.providerProfileId
-                      ? { providerProfileId: params.providerProfileId }
-                      : {}),
-                    ...(params.manifestId ? { manifestId: params.manifestId } : {}),
-                    ...(params.modelId ? { modelId: params.modelId } : {}),
-                    ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                    ...(Object.keys(styledTask.modelParams).length > 0
-                      ? { modelParams: styledTask.modelParams }
-                      : {}),
-                    userPrompt: params.prompt,
-                  })
-                } finally {
-                  restoreCanvasViewport(viewportBeforeRun)
-                }
+                    } finally {
+                      restoreCanvasViewport(viewportBeforeRun)
+                    }
                   }}
                   onRetry={() => void retryOperationNode(opNode.id)}
                   onCancelTask={async (taskId) => {
                     await cancelTask(taskId)
                   }}
                   onSaveDraft={async (params) => {
-                const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
-                const presetTargetId = resolveCanvasPresetTarget({
-                  operation,
-                  taskPipelineRole: opNode.data.pipelineRole ?? null,
-                  outputPipelineRole: opNode.data.outputPipelineRole ?? null,
-                  workflow: params.modelParams?.workflow ?? opNode.data.modelParams?.workflow,
-                })
-                await patchNodes([opNode.id], { title: params.title })
-                await updateNodeData(opNode.id, {
-                  ...opNode.data,
-                  ...(params.prompt.trim() ? { prompt: params.prompt } : {}),
-                  negativePrompt: params.negativePrompt,
-                  message: params.message,
-                  modelParams: params.modelParams,
-                  ...(params.agentId ? { agentId: params.agentId } : {}),
-                  ...(params.providerProfileId
-                    ? { providerProfileId: params.providerProfileId }
-                    : {}),
-                  ...(params.manifestId ? { manifestId: params.manifestId } : {}),
-                  ...(params.modelId ? { modelId: params.modelId } : {}),
-                  ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                })
-                writeCanvasLastUsedPresetTarget(presetTargetId, {
-                  ...(params.prompt.trim() ? { prompt: params.prompt } : {}),
-                  ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
-                  ...(params.agentId ? { agentId: params.agentId } : {}),
-                  ...(params.providerProfileId
-                    ? { providerProfileId: params.providerProfileId }
-                    : {}),
-                  ...(params.manifestId ? { manifestId: params.manifestId } : {}),
-                  ...(params.modelId ? { modelId: params.modelId } : {}),
-                  ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                  ...(params.modelParams ? { modelParams: params.modelParams } : {}),
-                })
+                    const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
+                    const presetTargetId = resolveCanvasPresetTarget({
+                      operation,
+                      taskPipelineRole: opNode.data.pipelineRole ?? null,
+                      outputPipelineRole: opNode.data.outputPipelineRole ?? null,
+                      workflow: params.modelParams?.workflow ?? opNode.data.modelParams?.workflow,
+                    })
+                    await patchNodes([opNode.id], { title: params.title })
+                    await updateNodeData(opNode.id, {
+                      ...opNode.data,
+                      ...(params.prompt.trim() ? { prompt: params.prompt } : {}),
+                      negativePrompt: params.negativePrompt,
+                      message: params.message,
+                      modelParams: params.modelParams,
+                      ...(params.agentId ? { agentId: params.agentId } : {}),
+                      ...(params.providerProfileId
+                        ? { providerProfileId: params.providerProfileId }
+                        : {}),
+                      ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                      ...(params.modelId ? { modelId: params.modelId } : {}),
+                      ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                    })
+                    writeCanvasLastUsedPresetTarget(presetTargetId, {
+                      ...(params.prompt.trim() ? { prompt: params.prompt } : {}),
+                      ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                      ...(params.agentId ? { agentId: params.agentId } : {}),
+                      ...(params.providerProfileId
+                        ? { providerProfileId: params.providerProfileId }
+                        : {}),
+                      ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                      ...(params.modelId ? { modelId: params.modelId } : {}),
+                      ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                      ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                    })
                   }}
                 />
               }
@@ -6988,7 +7004,7 @@ export function CanvasWorkspaceView({
 
   if (loading) {
     return (
-      <div className="canvas-workspace canvas-workspace-loading">
+      <div className="canvas-workspace canvas-uiux-v4 canvas-workspace-loading">
         <Spin description="正在加载画布..." />
       </div>
     )
@@ -6996,14 +7012,14 @@ export function CanvasWorkspaceView({
 
   if (!snapshot) {
     return (
-      <div className="canvas-workspace canvas-workspace-loading">
+      <div className="canvas-workspace canvas-uiux-v4 canvas-workspace-loading">
         <Empty description="画布不存在" />
       </div>
     )
   }
 
   return (
-    <div className="canvas-workspace">
+    <div className="canvas-workspace canvas-uiux-v4">
       <header
         className="canvas-workspace-header"
         onDoubleClick={() => {
@@ -7255,7 +7271,10 @@ export function CanvasWorkspaceView({
               closeCanvasFloatPanels()
               // 选中视频节点时直接打开其工作台；否则新建空工作台（进去后点「添加视频」）
               const selected = snapshot?.nodes.find((n) => selectedNodeIds.includes(n.id))
-              if (selected && (selected.type === 'video' || selected.data.subtype === 'video_workbench')) {
+              if (
+                selected &&
+                (selected.type === 'video' || selected.data.subtype === 'video_workbench')
+              ) {
                 setVideoWorkbenchNodeId(selected.id)
               } else {
                 void addVideoWorkbench()
@@ -7860,7 +7879,10 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           },
         ]
       : []),
-    ...((contentNode.type === 'image' || contentNode.type === 'text' || contentNode.type === 'prompt') && hasResource
+    ...((contentNode.type === 'image' ||
+      contentNode.type === 'text' ||
+      contentNode.type === 'prompt') &&
+    hasResource
       ? [
           {
             key: 'detail-sheet-nine-grid',
@@ -8031,9 +8053,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           <Button
             size="middle"
             type="text"
-            icon={
-              operationFullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />
-            }
+            icon={operationFullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
             onClick={() => onOperationFullscreenChange?.(!operationFullscreen)}
           >
             {operationFullscreen ? '退出全屏' : '全屏'}

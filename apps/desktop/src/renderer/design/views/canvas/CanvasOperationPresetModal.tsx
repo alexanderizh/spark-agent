@@ -50,6 +50,7 @@ import {
   sameModelParamDraft,
 } from './canvasModelParamDraftState'
 import type { CanvasOperationType } from './canvas.types'
+import { useCanvasUnsavedChangesGuard } from './useCanvasUnsavedChangesGuard'
 
 type RuntimePickerMenu = 'agent' | 'model' | 'bulk-agent' | 'bulk-model' | null
 
@@ -89,6 +90,7 @@ export function CanvasOperationPresetModal({
   const [bulkMediaModelKey, setBulkMediaModelKey] = useState('')
   const modelParamDraftEditedRef = useRef(false)
   const customParamsEditedRef = useRef(false)
+  const baselineDraftsSignatureRef = useRef('')
 
   const activeTarget = useMemo(
     () => getCanvasPresetTargetDefinition(activeTargetId),
@@ -108,10 +110,7 @@ export function CanvasOperationPresetModal({
     () => drafts[activeTargetId] ?? readCanvasResolvedPresetTarget(activeTargetId),
     [activeTargetId, drafts],
   )
-  const activePresetOnly = useMemo(
-    () => readCanvasPresetTarget(activeTargetId),
-    [activeTargetId],
-  )
+  const activePresetOnly = useMemo(() => readCanvasPresetTarget(activeTargetId), [activeTargetId])
 
   useEffect(() => {
     if (!open) return
@@ -122,6 +121,7 @@ export function CanvasOperationPresetModal({
       CANVAS_PRESET_TARGETS.map((target) => [target.id, readCanvasResolvedPresetTarget(target.id)]),
     ) as Record<string, CanvasOperationPreset>
     setDrafts(nextDrafts)
+    baselineDraftsSignatureRef.current = JSON.stringify(nextDrafts)
     setActiveTargetId((current) =>
       CANVAS_PRESET_TARGETS.some((target) => target.id === current) ? current : INITIAL_TARGET,
     )
@@ -186,11 +186,16 @@ export function CanvasOperationPresetModal({
     }
   }, [open])
 
-  const mediaCapabilityIds = useMemo(() => capabilityForOperation(activeOperation), [activeOperation])
+  const mediaCapabilityIds = useMemo(
+    () => capabilityForOperation(activeOperation),
+    [activeOperation],
+  )
   const supportedMediaModels = useMemo(() => {
     if (mediaCapabilityIds.length === 0) return []
     return mediaModels.filter((model) =>
-      model.capabilities.some((item) => (mediaCapabilityIds as readonly string[]).includes(item.id)),
+      model.capabilities.some((item) =>
+        (mediaCapabilityIds as readonly string[]).includes(item.id),
+      ),
     )
   }, [mediaCapabilityIds, mediaModels])
   const modelOptions = useMemo(
@@ -235,20 +240,17 @@ export function CanvasOperationPresetModal({
     [activeOperation, selectedCapability, selectedModel],
   )
 
-  const loadDraftIntoForm = useCallback(
-    (draft: CanvasOperationPreset) => {
-      modelParamDraftEditedRef.current = false
-      customParamsEditedRef.current = false
-      setPrompt(draft.prompt)
-      setNegativePrompt(draft.negativePrompt)
-      setSelectedAgentId(draft.agentId ?? '')
-      setSelectedTextProviderId(draft.providerProfileId ?? '')
-      setSelectedTextModelId(draft.modelId ?? '')
-      setSelectedSkillIds(draft.skillIds)
-      setSelectedModelKey('')
-    },
-    [],
-  )
+  const loadDraftIntoForm = useCallback((draft: CanvasOperationPreset) => {
+    modelParamDraftEditedRef.current = false
+    customParamsEditedRef.current = false
+    setPrompt(draft.prompt)
+    setNegativePrompt(draft.negativePrompt)
+    setSelectedAgentId(draft.agentId ?? '')
+    setSelectedTextProviderId(draft.providerProfileId ?? '')
+    setSelectedTextModelId(draft.modelId ?? '')
+    setSelectedSkillIds(draft.skillIds)
+    setSelectedModelKey('')
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -259,19 +261,21 @@ export function CanvasOperationPresetModal({
     if (!open || !isTextOperation || runtimeLoading) return
     const preferredAgent =
       (activeStoredPreset.agentId
-        ? agents.find((agent) => agent.id === activeStoredPreset.agentId) ?? null
+        ? (agents.find((agent) => agent.id === activeStoredPreset.agentId) ?? null)
         : null) ?? pickDefaultTextAgent(agents)
     const preferredProvider = pickDefaultTextProvider(
       textProviders,
       activeStoredPreset.providerProfileId ?? preferredAgent?.providerProfileId,
     )
     setSelectedAgentId((current) =>
-      current && agents.some((agent) => agent.id === current) ? current : preferredAgent?.id ?? '',
+      current && agents.some((agent) => agent.id === current)
+        ? current
+        : (preferredAgent?.id ?? ''),
     )
     setSelectedTextProviderId((current) =>
       current && textProviders.some((provider) => provider.id === current)
         ? current
-        : preferredProvider?.id ?? '',
+        : (preferredProvider?.id ?? ''),
     )
     setSelectedTextModelId((current) => {
       if (current && getProviderTextModels(preferredProvider).includes(current)) return current
@@ -338,7 +342,9 @@ export function CanvasOperationPresetModal({
         }) ?? ''
     }
     setModelParamDraft((prev) => {
-      const candidate = modelParamDraftEditedRef.current ? mergeSeededModelParamDraft(prev, next) : next
+      const candidate = modelParamDraftEditedRef.current
+        ? mergeSeededModelParamDraft(prev, next)
+        : next
       return sameModelParamDraft(prev, candidate) ? prev : candidate
     })
     setCustomParams((prev) => {
@@ -495,6 +501,13 @@ export function CanvasOperationPresetModal({
     mediaModels,
   ])
 
+  const isDirty = JSON.stringify(composeNextDrafts()) !== baselineDraftsSignatureRef.current
+  const requestClose = useCanvasUnsavedChangesGuard({
+    dirty: isDirty,
+    onClose,
+    subject: '节点预设',
+  })
+
   const saveAllPresets = useCallback(async () => {
     setSaving(true)
     try {
@@ -514,6 +527,7 @@ export function CanvasOperationPresetModal({
       }
       const nextCount = Object.keys(readCanvasPresetTargetOverrides()).length
       onPresetCountChange?.(nextCount)
+      baselineDraftsSignatureRef.current = JSON.stringify(nextDrafts)
       message.success('节点预设已统一保存，新建节点将按这套预设初始化')
       onClose()
     } catch (error) {
@@ -523,13 +537,27 @@ export function CanvasOperationPresetModal({
     }
   }, [composeNextDrafts, onClose, onPresetCountChange])
 
+  useEffect(() => {
+    if (!open) return
+    const onShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return
+      event.preventDefault()
+      event.stopPropagation()
+      void saveAllPresets()
+    }
+    window.addEventListener('keydown', onShortcut, true)
+    return () => window.removeEventListener('keydown', onShortcut, true)
+  }, [open, saveAllPresets])
+
   const resetCurrentPreset = useCallback(async () => {
     setSaving(true)
     try {
       resetCanvasPresetTarget(activeTargetId)
       resetCanvasLastUsedPresetTarget(activeTargetId)
       const nextPreset = readCanvasResolvedPresetTarget(activeTargetId)
-      setDrafts((prev) => ({ ...prev, [activeTargetId]: nextPreset }))
+      const nextDrafts = { ...composeNextDrafts(), [activeTargetId]: nextPreset }
+      setDrafts(nextDrafts)
+      baselineDraftsSignatureRef.current = JSON.stringify(nextDrafts)
       loadDraftIntoForm(nextPreset)
       const nextCount = Object.keys(readCanvasPresetTargetOverrides()).length
       onPresetCountChange?.(nextCount)
@@ -539,7 +567,7 @@ export function CanvasOperationPresetModal({
     } finally {
       setSaving(false)
     }
-  }, [activeTarget, activeTargetId, loadDraftIntoForm, onPresetCountChange])
+  }, [activeTarget, activeTargetId, composeNextDrafts, loadDraftIntoForm, onPresetCountChange])
 
   const runtimeSummary = useMemo(() => {
     if (!isTextOperation) {
@@ -605,7 +633,7 @@ export function CanvasOperationPresetModal({
       footer={null}
       centered
       styles={{ body: { padding: 0 } }}
-      onCancel={onClose}
+      onCancel={requestClose}
     >
       <div className="canvas-operation-preset-modal-shell">
         <div className="canvas-operation-preset-topbar">
@@ -624,7 +652,7 @@ export function CanvasOperationPresetModal({
             type="text"
             icon={<Icons.X size={15} />}
             aria-label="关闭预设中心"
-            onClick={onClose}
+            onClick={requestClose}
           />
         </div>
         <div className="canvas-operation-preset-scroll">
@@ -660,7 +688,9 @@ export function CanvasOperationPresetModal({
                 <div>
                   <h3>{targetLabel(activeTarget)}</h3>
                   <p>
-                    这里管理后续同类型新节点的默认值。优先级为「最近一次使用配置 {'>'} 这里保存的预设 {'>'} 平台默认值」；点保存后会清掉旧值，新建节点将按这套预设初始化。
+                    这里管理后续同类型新节点的默认值。优先级为「最近一次使用配置 {'>'}{' '}
+                    这里保存的预设 {'>'}{' '}
+                    平台默认值」；点保存后会清掉旧值，新建节点将按这套预设初始化。
                   </p>
                 </div>
                 <Tag color="blue" bordered>
@@ -680,7 +710,9 @@ export function CanvasOperationPresetModal({
                       selectedId={bulkAgentId}
                       disabled={runtimeLoading || agents.length === 0}
                       open={openRuntimeMenu === 'bulk-agent'}
-                      onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'bulk-agent' : null)}
+                      onOpenChange={(nextOpen) =>
+                        setOpenRuntimeMenu(nextOpen ? 'bulk-agent' : null)
+                      }
                       onChange={setBulkAgentId}
                     />
                     <ProviderModelPickerInline
@@ -689,7 +721,9 @@ export function CanvasOperationPresetModal({
                       selectedModelId={bulkTextModelId}
                       disabled={runtimeLoading || textProviders.length === 0}
                       open={openRuntimeMenu === 'bulk-model'}
-                      onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'bulk-model' : null)}
+                      onOpenChange={(nextOpen) =>
+                        setOpenRuntimeMenu(nextOpen ? 'bulk-model' : null)
+                      }
                       onChange={(providerId, modelId) => {
                         setBulkTextProviderId(providerId)
                         setBulkTextModelId(modelId)
@@ -769,7 +803,9 @@ export function CanvasOperationPresetModal({
                         value={selectedModelKey || undefined}
                         placeholder={modelsLoading ? '加载模型目录...' : '选择默认模型'}
                         options={modelOptions}
-                        onChange={(value) => setSelectedModelKey(value == null ? '' : String(value))}
+                        onChange={(value) =>
+                          setSelectedModelKey(value == null ? '' : String(value))
+                        }
                       />
                     </label>
                   </div>
@@ -863,7 +899,10 @@ export function CanvasOperationPresetModal({
                                   .includes(input.toLowerCase())
                               }
                               onChange={(value) =>
-                                handleModelParamDraftChange(field.name, value == null ? '' : String(value))
+                                handleModelParamDraftChange(
+                                  field.name,
+                                  value == null ? '' : String(value),
+                                )
                               }
                             />
                           ) : (
@@ -873,7 +912,10 @@ export function CanvasOperationPresetModal({
                               value={modelParamDraft[field.name] || undefined}
                               options={field.enumValues.map((value) => ({ value, label: value }))}
                               onChange={(value) =>
-                                handleModelParamDraftChange(field.name, value == null ? '' : String(value))
+                                handleModelParamDraftChange(
+                                  field.name,
+                                  value == null ? '' : String(value),
+                                )
                               }
                             />
                           )
@@ -887,16 +929,25 @@ export function CanvasOperationPresetModal({
                               { value: 'false', label: 'false' },
                             ]}
                             onChange={(value) =>
-                              handleModelParamDraftChange(field.name, value == null ? '' : String(value))
+                              handleModelParamDraftChange(
+                                field.name,
+                                value == null ? '' : String(value),
+                              )
                             }
                           />
                         ) : (
                           <Input
                             size="middle"
-                            type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
+                            type={
+                              field.type === 'integer' || field.type === 'number'
+                                ? 'number'
+                                : 'text'
+                            }
                             placeholder={field.placeholder}
                             value={modelParamDraft[field.name] ?? ''}
-                            onChange={(event) => handleModelParamDraftChange(field.name, event.target.value)}
+                            onChange={(event) =>
+                              handleModelParamDraftChange(field.name, event.target.value)
+                            }
                           />
                         )}
                       </label>
@@ -931,7 +982,9 @@ export function CanvasOperationPresetModal({
                           size="middle"
                           value={param.name}
                           placeholder="字段名"
-                          onChange={(event) => handleCustomParamPatch(param.id, { name: event.target.value })}
+                          onChange={(event) =>
+                            handleCustomParamPatch(param.id, { name: event.target.value })
+                          }
                         />
                         <Select
                           size="middle"
@@ -944,7 +997,9 @@ export function CanvasOperationPresetModal({
                             { value: 'json', label: 'JSON' },
                           ]}
                           onChange={(value) =>
-                            handleCustomParamPatch(param.id, { type: String(value) as CustomParamType })
+                            handleCustomParamPatch(param.id, {
+                              type: String(value) as CustomParamType,
+                            })
                           }
                         />
                         {param.type === 'boolean' ? (
@@ -968,8 +1023,14 @@ export function CanvasOperationPresetModal({
                             size="middle"
                             value={param.value}
                             placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
-                            type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
-                            onChange={(event) => handleCustomParamPatch(param.id, { value: event.target.value })}
+                            type={
+                              param.type === 'integer' || param.type === 'number'
+                                ? 'number'
+                                : 'text'
+                            }
+                            onChange={(event) =>
+                              handleCustomParamPatch(param.id, { value: event.target.value })
+                            }
                           />
                         )}
                         <Button
@@ -986,7 +1047,11 @@ export function CanvasOperationPresetModal({
 
                 <label className="canvas-operation-preset-field">
                   <span>当前默认参数预览</span>
-                  <Input.TextArea value={formatCanvasOperationPresetModelParams(buildCurrentModelParams())} rows={6} readOnly />
+                  <Input.TextArea
+                    value={formatCanvasOperationPresetModelParams(buildCurrentModelParams())}
+                    rows={6}
+                    readOnly
+                  />
                 </label>
               </section>
             </div>
@@ -1000,10 +1065,15 @@ export function CanvasOperationPresetModal({
             <Button size="middle" loading={saving} onClick={() => void resetCurrentPreset()}>
               恢复当前项默认
             </Button>
-            <Button size="middle" onClick={onClose}>
+            <Button size="middle" onClick={requestClose}>
               取消
             </Button>
-            <Button size="middle" type="primary" loading={saving} onClick={() => void saveAllPresets()}>
+            <Button
+              size="middle"
+              type="primary"
+              loading={saving}
+              onClick={() => void saveAllPresets()}
+            >
               保存全部预设
             </Button>
           </div>
@@ -1039,7 +1109,9 @@ function samePreset(left: CanvasOperationPreset, right: CanvasOperationPreset): 
 }
 
 function isTextModelOperation(operation: CanvasOperationType): boolean {
-  return operation === 'text_generate' || operation === 'text_rewrite' || operation === 'prompt_optimize'
+  return (
+    operation === 'text_generate' || operation === 'text_rewrite' || operation === 'prompt_optimize'
+  )
 }
 
 function isTextProviderProfile(provider: ProviderProfile): boolean {

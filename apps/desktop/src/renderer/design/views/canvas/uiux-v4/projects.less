@@ -1,0 +1,52 @@
+.canvas-projects-view.canvas-uiux-v4-projects {
+  --canvas-v4-radius-sm: 6px;
+  --canvas-v4-radius-md: 9px;
+  --canvas-v4-border: color-mix(in srgb, var(--border-strong) 76%, transparent);
+  --canvas-v4-surface: color-mix(in srgb, var(--panel) 96%, var(--bg));
+  --canvas-v4-surface-muted: color-mix(in srgb, var(--bg-sunken) 82%, var(--panel));
+
+  background: var(--bg);
+
+  .canvas-projects-header,
+  .canvas-projects-toolbar {
+    background: var(--canvas-v4-surface);
+    border-color: var(--divider);
+  }
+
+  .canvas-projects-grid {
+    gap: 14px;
+  }
+
+  .canvas-project-card {
+    overflow: hidden;
+    border: 1px solid var(--canvas-v4-border);
+    border-radius: var(--canvas-v4-radius-md);
+    background: var(--canvas-v4-surface);
+    box-shadow: none;
+    transition:
+      border-color 150ms ease-out,
+      box-shadow 150ms ease-out,
+      transform 150ms ease-out;
+
+    &:hover {
+      border-color: color-mix(in srgb, var(--primary) 30%, var(--border-strong));
+      box-shadow: 0 14px 30px color-mix(in srgb, var(--shadow-color, #000) 18%, transparent);
+      transform: translateY(-2px);
+    }
+  }
+
+  .canvas-project-cover,
+  .canvas-project-cover-placeholder {
+    border-radius: 0;
+    background: var(--canvas-v4-surface-muted);
+  }
+
+  .canvas-project-card-menu,
+  .canvas-project-pin-button {
+    border-radius: var(--canvas-v4-radius-sm);
+  }
+
+  :where(.ant-btn, button, input, textarea, .ant-input, .ant-modal-content) {
+    border-radius: var(--canvas-v4-radius-sm);
+  }
+}

@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Dropdown, Empty, Modal, Tag } from '@lobehub/ui'
 import { Modal as AntdModal, Spin, message } from 'antd'
 import { Icons } from '../../Icons'
-import { Input as LobeInput, SearchBar as LobeSearchBar, TextArea as LobeTextArea } from '@lobehub/ui'
+import {
+  Input as LobeInput,
+  SearchBar as LobeSearchBar,
+  TextArea as LobeTextArea,
+} from '@lobehub/ui'
 import { canvasApi } from './canvas.api'
 import {
   CANVAS_PROJECT_SORT_LABELS as SORT_LABELS,
@@ -13,6 +17,7 @@ import {
 import { useCanvasProjects } from './canvas.store'
 import { openCanvasProjectWindow } from './canvas-window-client'
 import './CanvasProjectsView.less'
+import './uiux-v4/projects.less'
 
 export function CanvasProjectsView({
   onWorkspaceActiveChange,
@@ -67,7 +72,8 @@ export function CanvasProjectsView({
       await refresh()
     } catch (error) {
       const text = error instanceof Error ? error.message : '打开 Canvas 项目失败'
-      const code = typeof error === 'object' && error != null ? (error as { code?: unknown }).code : null
+      const code =
+        typeof error === 'object' && error != null ? (error as { code?: unknown }).code : null
       if (code === 'VALIDATION_FAILED') message.warning(text)
       else message.error(text)
     } finally {
@@ -82,7 +88,8 @@ export function CanvasProjectsView({
     setCoverFile(null)
     setCoverPreviewUrl(null)
     setCoverRemoved(false)
-    void canvasApi.getDefaultProjectsRoot()
+    void canvasApi
+      .getDefaultProjectsRoot()
       .then(setProjectParentDirectory)
       .catch(() => setProjectParentDirectory(''))
     setCreateOpen(true)
@@ -287,17 +294,23 @@ export function CanvasProjectsView({
   }
 
   return (
-    <div className="canvas-projects-view">
+    <div className="canvas-projects-view canvas-uiux-v4-projects">
       <header className="canvas-projects-header">
         <div>
           <h2>Canvas Projects</h2>
           <p>以项目为入口管理无限画布、素材、任务和生成血缘。</p>
         </div>
         <div className="canvas-projects-header-actions">
-          <Button size='medium' type="text" icon={<Icons.Upload size={15} />} loading={importing} onClick={() => void handleImportProject()}>
+          <Button
+            size="medium"
+            type="text"
+            icon={<Icons.Upload size={15} />}
+            loading={importing}
+            onClick={() => void handleImportProject()}
+          >
             导入项目
           </Button>
-          <Button  size='medium' type="primary" icon={<Icons.Plus size={15} />} onClick={openCreate}>
+          <Button size="medium" type="primary" icon={<Icons.Plus size={15} />} onClick={openCreate}>
             新建项目
           </Button>
         </div>
@@ -337,7 +350,9 @@ export function CanvasProjectsView({
             <Button
               size="middle"
               type="text"
-              icon={sortDir === 'desc' ? <Icons.ArrowDown size={13} /> : <Icons.ArrowUp size={13} />}
+              icon={
+                sortDir === 'desc' ? <Icons.ArrowDown size={13} /> : <Icons.ArrowUp size={13} />
+              }
               onClick={() => setSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
               title={sortDir === 'desc' ? '当前降序，点击切换升序' : '当前升序，点击切换降序'}
             />
@@ -425,11 +440,31 @@ export function CanvasProjectsView({
                               label: project.pinned ? '取消置顶' : '置顶',
                               onClick: () => void handleTogglePin(project.id),
                             },
-                            { key: 'rename', label: '基础信息', onClick: () => openEdit(project.id) },
-                            { key: 'open-folder', label: '打开文件夹', onClick: () => void handleOpenProjectFolder(project.id) },
-                            { key: 'export', label: '导出', onClick: () => void handleExportProject(project.id) },
-                            { key: 'archive', label: project.status === 'archived' ? '恢复' : '归档', onClick: () => void handleArchiveProject(project.id) },
-                            { key: 'delete', label: '删除', onClick: () => void handleDeleteProject(project.id) },
+                            {
+                              key: 'rename',
+                              label: '基础信息',
+                              onClick: () => openEdit(project.id),
+                            },
+                            {
+                              key: 'open-folder',
+                              label: '打开文件夹',
+                              onClick: () => void handleOpenProjectFolder(project.id),
+                            },
+                            {
+                              key: 'export',
+                              label: '导出',
+                              onClick: () => void handleExportProject(project.id),
+                            },
+                            {
+                              key: 'archive',
+                              label: project.status === 'archived' ? '恢复' : '归档',
+                              onClick: () => void handleArchiveProject(project.id),
+                            },
+                            {
+                              key: 'delete',
+                              label: '删除',
+                              onClick: () => void handleDeleteProject(project.id),
+                            },
                           ],
                         }}
                       >
@@ -526,10 +561,7 @@ export function CanvasProjectsView({
           <label>
             项目位置
             <div className="canvas-create-location">
-              <LobeInput
-                value={projectParentDirectory || '使用默认 Canvas 项目根目录'}
-                readOnly
-              />
+              <LobeInput value={projectParentDirectory || '使用默认 Canvas 项目根目录'} readOnly />
               <Button
                 type="text"
                 icon={<Icons.Folder size={14} />}
