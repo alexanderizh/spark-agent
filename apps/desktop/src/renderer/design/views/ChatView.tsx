@@ -73,6 +73,7 @@ import {
 } from './chat/ModelSwitchMarkers'
 import { StreamingErrorCard } from './chat/StreamingErrorCard'
 import { RuntimeSignalCard } from './chat/RuntimeSignalCard'
+import { CancellationNotice } from './chat/CancellationNotice'
 import { groupChatMessageTimeline } from './chat/chat-message-timeline'
 import { ActivitySegment } from './chat/ActivitySegment'
 import {
@@ -3909,6 +3910,8 @@ function renderBlocks(
         // 错误卡由 AgentMsg 单独渲染（可获得 sessionId 上下文以支持调高迭代上限按钮），
         // 这里跳过避免重复渲染。
         return null
+      case 'cancelled':
+        return <CancellationNotice key={i} message={block.message} />
       case 'terminal':
         if (surface === 'main') return null
         return (
@@ -6232,8 +6235,7 @@ const AgentMsg = React.memo(function AgentMsg({
   const activeToolCount = toolCallBlocks.filter(
     (b) => b.status === 'pending' || b.status === 'running',
   ).length
-  // Cancelled: streaming ended with error status but has rendered content
-  const isCancelled = messageStatus === 'error' && !isStreaming && hasContent
+  const isCancelled = messageStatus === 'cancelled' && !isStreaming
   // Pure error: no content, only error blocks
   const isPureError =
     messageStatus === 'error' && !isStreaming && !hasContent && errorBlocks.length > 0

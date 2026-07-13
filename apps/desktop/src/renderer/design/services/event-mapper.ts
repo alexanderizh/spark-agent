@@ -15,7 +15,7 @@ export interface UIMessage {
   id: string
   turnId?: string
   role: 'user' | 'assistant'
-  status: 'streaming' | 'completed' | 'error'
+  status: 'streaming' | 'completed' | 'error' | 'cancelled'
   blocks: UIBlock[]
   attachments?: Array<{
     type: 'image' | 'file' | 'directory'
@@ -57,6 +57,7 @@ export interface UserQuestionAnswerSummary {
 export type UIBlock =
   | { kind: 'text'; content: string; isStreaming: boolean; segmentId?: string }
   | { kind: 'thinking'; content: string; isStreaming: boolean; segmentId?: string }
+  | { kind: 'cancelled'; message: string }
   | {
       kind: 'tool_call'
       toolCallId: string
@@ -359,6 +360,12 @@ function agentErrorAggregationKey(error: {
   ])
 }
 
+const CANCELLATION_ERROR_CODES = new Set(['ABORTED', 'CODEX_CLI_CANCELLED', 'CODEX_SDK_CANCELLED'])
+
+function isCancellationErrorCode(code: string): boolean {
+  return CANCELLATION_ERROR_CODES.has(code.trim().toUpperCase())
+}
+
 export class MessageBuilder {
   private messages: UIMessage[] = []
   private processedEventIds = new Set<string>()
@@ -615,7 +622,11 @@ export class MessageBuilder {
         // （切换/重开会话）走到 completed 时会把待审批计划抹掉，导致审批面板消失、只剩
         // 「历史计划」。待审批状态只应由 user_message（已批准/已重新发言）或
         // session_history_reset 清除。
-        const msg = this.findAssistantForEvent(event)
+        const msg =
+          this.findAssistantForEvent(event) ??
+          (event.status === 'cancelled'
+            ? this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+            : null)
         if (msg) {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           this.applyAgentSnapshot(msg, event)
@@ -624,10 +635,24 @@ export class MessageBuilder {
             this.finishStreamingBlocks(msg, 'completed')
             // 在 turn 完成时生成文件变更汇总
             this.appendTurnSummary(msg)
-          } else if (event.status === 'error' || event.status === 'cancelled') {
+          } else if (event.status === 'error') {
             msg.status = 'error'
             this.finishStreamingBlocks(msg, 'error')
             // 即使出错也生成文件变更汇总
+            this.appendTurnSummary(msg)
+          } else if (event.status === 'cancelled') {
+            this.finishStreamingBlocks(msg, 'error')
+            const hasHostFailure = msg.blocks.some(
+              (block) => block.kind === 'error' && block.origin?.kind !== 'subagent',
+            )
+            if (hasHostFailure) {
+              msg.status = 'error'
+            } else {
+              msg.status = 'cancelled'
+              if (!msg.blocks.some((block) => block.kind === 'cancelled')) {
+                msg.blocks.push({ kind: 'cancelled', message: '已取消本次任务' })
+              }
+            }
             this.appendTurnSummary(msg)
           }
         }
@@ -635,6 +660,19 @@ export class MessageBuilder {
       }
 
       case 'agent_error': {
+        if (event.origin?.kind !== 'subagent' && isCancellationErrorCode(event.code)) {
+          const msg =
+            this.findAssistantForEvent(event) ??
+            this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+          if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+          msg.status = 'cancelled'
+          this.finishStreamingBlocks(msg, 'error')
+          if (!msg.blocks.some((block) => block.kind === 'cancelled')) {
+            msg.blocks.push({ kind: 'cancelled', message: '已取消本次任务' })
+          }
+          break
+        }
+
         const aggregationKey = agentErrorAggregationKey(event)
         const existing = this.findRuntimeIssueBlock(
           event.turnId,

@@ -10,6 +10,7 @@ import { useToast } from '../components/Toast'
 import { MessageBuilder, type UIBlock, type UIMessage } from '../services/event-mapper'
 import { StreamingErrorCard } from './chat/StreamingErrorCard'
 import { RuntimeSignalCard } from './chat/RuntimeSignalCard'
+import { CancellationNotice } from './chat/CancellationNotice'
 import { useSessionSidebar } from '../SessionSidebarContext'
 
 /** File change status tracked via file_change agent events */
@@ -654,6 +655,8 @@ function renderBlock(block: UIBlock, index: number): ReactNode {
       )
     case 'runtime_signal':
       return <RuntimeSignalCard key={index} block={block} />
+    case 'cancelled':
+      return <CancellationNotice key={index} message={block.message} />
     case 'file_change': {
       const diffCounts = countBlockDiffLines(block.diff)
       return (
