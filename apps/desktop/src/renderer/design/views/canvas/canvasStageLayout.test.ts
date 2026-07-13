@@ -146,4 +146,31 @@ describe('persistCanvasNodeLayoutChanges', () => {
     expect(nextNodes?.[0]?.width).toBe(240)
     expect(nextNodes?.[0]?.height).toBe(180)
   })
+
+  it('subtracts V4 card chrome when persisting a resized node', () => {
+    const node = createCanvasNode()
+    const baseFlowNode = createFlowNode(node)
+    const changes = [
+      {
+        id: node.id,
+        type: 'dimensions',
+        dimensions: { width: 240, height: 267 },
+        resizing: false,
+      },
+    ] as NodeChange<Node<CanvasFlowNodeData>>[]
+
+    const nextNodes = persistCanvasNodeLayoutChanges(
+      [node],
+      [
+        createFlowNode(node, {
+          measured: { width: 240, height: 267 },
+          data: { ...baseFlowNode.data, cardChromeExtraHeight: 87 },
+        }),
+      ],
+      changes,
+    )
+
+    expect(nextNodes?.[0]?.width).toBe(240)
+    expect(nextNodes?.[0]?.height).toBe(180)
+  })
 })
