@@ -152,3 +152,10 @@ A `[Team Roster]` system-prompt section lists available members and a four-mode 
 ### Events
 
 Team Mode adds these events to the `AgentEvent` union, distinct from the SDK's built-in `subagent_*` events: `team_dispatch_requested`, `team_member_message`, `team_member_status`, `team_dispatch_completed`, `team_peer_message` (with optional `delivery: 'call' | 'note'`), `team_round_advanced`, `team_discussion_concluded`. History can be queried via `team:list-dispatches`.
+
+### Native Claude subagents and diagnostics
+
+- Claude SDK adapters expose the native `Task`/`Agent` subagent tool on ordinary host turns. Spark does not impose a numeric native-subagent concurrency limit; the SDK/provider capacity and Claude's own tool behavior are the effective limits. This is separate from Team Mode's 10-dispatch turn budget and nesting limits above.
+- `SUBAGENT_USAGE_HINT_SYSTEM_PROMPT` is injected on Claude adapters. It is an advisory prompt that encourages delegation for independent, parallel, or context-heavy work and explicitly advises skipping delegation for small or tightly sequential tasks. This prompt influences willingness to spawn, but does not force a minimum or maximum count.
+- Assistant errors carrying `parent_tool_use_id` are attributed to the matching native subagent and do not mark the Host message failed. Claude `api_retry` system messages do not contain a parent ID: Spark attributes them only when exactly one native subagent is active; otherwise the UI labels the source as `Claude SDK（协作来源未明确）` rather than blaming the Host.
+- Repeated diagnostics with the same turn, source, signal/error code are updated in place and expose an occurrence count. Diagnostic cards are compact and collapsed by default. They retain the position of their first event in the message timeline, so later normal output appears after them and naturally scrolls them upward.

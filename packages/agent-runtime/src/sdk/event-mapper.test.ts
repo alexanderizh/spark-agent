@@ -33,6 +33,153 @@ describe('mapSDKMessageToEvents', () => {
     ]))
   })
 
+  it('attributes a subagent assistant error without failing the host status', () => {
+    const events = mapSDKMessageToEvents(
+      {
+        type: 'assistant',
+        uuid: 'subagent-error',
+        session_id: 'sdk-session',
+        parent_tool_use_id: 'tool-researcher',
+        subagent_type: 'researcher',
+        error: 'rate_limit',
+        message: { role: 'assistant', content: [] },
+      },
+      { sessionId: 'session-1', turnId: 'turn-1' },
+    )
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'agent_error',
+        code: 'CLAUDE_RATE_LIMIT',
+        origin: {
+          kind: 'subagent',
+          toolCallId: 'tool-researcher',
+          name: 'researcher',
+        },
+      }),
+    )
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'agent_status' }))
+  })
+
+  it('attributes retries only while exactly one subagent is active', () => {
+    const context = { sessionId: 'session-1', turnId: 'turn-1' }
+    mapSDKMessageToEvents(
+      {
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'task-researcher',
+        tool_use_id: 'tool-researcher',
+        description: 'Research SDK behavior',
+        subagent_type: 'researcher',
+        uuid: 'task-started-researcher',
+        session_id: 'sdk-session',
+      },
+      context,
+    )
+
+    const singleSubagentRetry = mapSDKMessageToEvents(
+      {
+        type: 'system',
+        subtype: 'api_retry',
+        attempt: 1,
+        max_retries: 10,
+        retry_delay_ms: 500,
+        error: 'rate_limit',
+        error_status: 429,
+        uuid: 'retry-single-subagent',
+        session_id: 'sdk-session',
+      },
+      context,
+    )
+    expect(singleSubagentRetry).toContainEqual(
+      expect.objectContaining({
+        type: 'runtime_signal',
+        origin: {
+          kind: 'subagent',
+          toolCallId: 'tool-researcher',
+          name: 'researcher',
+        },
+      }),
+    )
+
+    mapSDKMessageToEvents(
+      {
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'task-reviewer',
+        tool_use_id: 'tool-reviewer',
+        description: 'Review SDK behavior',
+        subagent_type: 'reviewer',
+        uuid: 'task-started-reviewer',
+        session_id: 'sdk-session',
+      },
+      context,
+    )
+    const ambiguousRetry = mapSDKMessageToEvents(
+      {
+        type: 'system',
+        subtype: 'api_retry',
+        attempt: 2,
+        max_retries: 10,
+        retry_delay_ms: 1000,
+        error: 'rate_limit',
+        error_status: 429,
+        uuid: 'retry-ambiguous',
+        session_id: 'sdk-session',
+      },
+      context,
+    )
+    expect(ambiguousRetry).toContainEqual(
+      expect.objectContaining({
+        type: 'runtime_signal',
+        origin: { kind: 'runtime', name: 'Claude SDK（协作来源未明确）' },
+      }),
+    )
+
+    mapSDKMessageToEvents(
+      {
+        type: 'system',
+        subtype: 'task_updated',
+        task_id: 'task-researcher',
+        patch: { status: 'completed' },
+        uuid: 'task-updated-researcher',
+        session_id: 'sdk-session',
+      },
+      context,
+    )
+    mapSDKMessageToEvents(
+      {
+        type: 'system',
+        subtype: 'task_updated',
+        task_id: 'task-reviewer',
+        patch: { status: 'failed' },
+        uuid: 'task-updated-reviewer',
+        session_id: 'sdk-session',
+      },
+      context,
+    )
+    const postCompletionRetry = mapSDKMessageToEvents(
+      {
+        type: 'system',
+        subtype: 'api_retry',
+        attempt: 3,
+        max_retries: 10,
+        retry_delay_ms: 1500,
+        error: 'rate_limit',
+        error_status: 429,
+        uuid: 'retry-after-completion',
+        session_id: 'sdk-session',
+      },
+      context,
+    )
+    expect(postCompletionRetry).toContainEqual(
+      expect.objectContaining({
+        type: 'runtime_signal',
+        origin: { kind: 'runtime', name: 'Claude SDK' },
+      }),
+    )
+  })
+
   it('treats structured output retry exhaustion as non-retryable', () => {
     const events = mapSDKMessageToEvents({
       type: 'result',

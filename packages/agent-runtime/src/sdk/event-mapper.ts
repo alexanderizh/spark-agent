@@ -11,7 +11,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import type { AgentEvent } from '@spark/protocol'
+import type { AgentEvent, RuntimeEventOrigin } from '@spark/protocol'
 import type {
   SDKMessage,
   SDKAssistantMessage,
@@ -42,6 +42,8 @@ interface EventContext {
   subagentTasksById?: Map<string, SubagentTaskState>
   /** Per-subagent streaming segments keep nested transcripts out of host segments. */
   subagentSegments?: Map<string, SegmentState>
+  /** Running SDK subagents used to attribute provider signals that omit parent_tool_use_id. */
+  activeSubagents?: Map<string, { name: string }>
 }
 
 interface SubagentTaskState {
@@ -118,6 +120,47 @@ function getSubagentTasks(ctx: EventContext): Map<string, SubagentTaskState> {
   return (ctx.subagentTasksById ??= new Map())
 }
 
+function registerActiveSubagent(ctx: EventContext, toolCallId: string, name: string): void {
+  const active = (ctx.activeSubagents ??= new Map())
+  active.set(toolCallId, { name })
+}
+
+function unregisterActiveSubagent(ctx: EventContext, toolCallId: string): void {
+  ctx.activeSubagents?.delete(toolCallId)
+}
+
+function subagentEventOrigin(
+  ctx: EventContext,
+  toolCallId: string,
+  fallbackName?: string,
+): RuntimeEventOrigin {
+  return {
+    kind: 'subagent',
+    toolCallId,
+    name: fallbackName ?? ctx.activeSubagents?.get(toolCallId)?.name ?? 'Subagent',
+  }
+}
+
+function providerSignalOrigin(ctx: EventContext, agentId?: string): RuntimeEventOrigin {
+  const correlated = agentId != null ? ctx.asyncSubagentLaunchesByAgentId?.get(agentId) : undefined
+  if (correlated != null) {
+    return {
+      kind: 'subagent',
+      toolCallId: correlated.toolCallId,
+      name: correlated.name,
+    }
+  }
+  const active = [...(ctx.activeSubagents?.entries() ?? [])]
+  if (active.length === 1) {
+    const [toolCallId, subagent] = active[0]!
+    return { kind: 'subagent', toolCallId, name: subagent.name }
+  }
+  return {
+    kind: 'runtime',
+    name: active.length > 1 ? 'Claude SDK（协作来源未明确）' : 'Claude SDK',
+  }
+}
+
 function subagentTaskIdentity(
   ctx: EventContext,
   taskId: string,
@@ -191,6 +234,7 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
       description: msg.description,
       skipTranscript: msg.skip_transcript === true,
     })
+    registerActiveSubagent(ctx, task.toolCallId, task.name)
     if (task.skipTranscript) return []
     return [
       {
@@ -210,6 +254,7 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
       ...(msg.subagent_type != null ? { name: msg.subagent_type } : {}),
       description: msg.description,
     })
+    registerActiveSubagent(ctx, task.toolCallId, task.name)
     if (task.skipTranscript) return []
     return [
       {
@@ -219,9 +264,7 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
         taskId: msg.task_id,
         description: msg.description,
         ...(msg.summary != null ? { summary: msg.summary } : {}),
-        ...(msg.last_tool_name != null
-          ? { lastToolName: mapSDKToolName(msg.last_tool_name) }
-          : {}),
+        ...(msg.last_tool_name != null ? { lastToolName: mapSDKToolName(msg.last_tool_name) } : {}),
         totalTokens: msg.usage.total_tokens,
         toolUses: msg.usage.tool_uses,
         durationMs: msg.usage.duration_ms,
@@ -234,11 +277,13 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
     const task = subagentTaskIdentity(ctx, msg.task_id, undefined, {
       ...(msg.patch.description != null ? { description: msg.patch.description } : {}),
     })
+    const status = msg.patch.status === 'killed' ? 'stopped' : msg.patch.status
+    if (status === 'completed' || status === 'failed' || status === 'stopped') {
+      unregisterActiveSubagent(ctx, task.toolCallId)
+    } else if (status === 'pending' || status === 'running' || status === 'paused') {
+      registerActiveSubagent(ctx, task.toolCallId, task.name)
+    }
     if (task.skipTranscript) return []
-    const status =
-      msg.patch.status === 'killed'
-        ? 'stopped'
-        : msg.patch.status
     return [
       {
         ...baseEvent(ctx),
@@ -256,6 +301,7 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
     const task = subagentTaskIdentity(ctx, msg.task_id, msg.tool_use_id, {
       skipTranscript: msg.skip_transcript === true,
     })
+    unregisterActiveSubagent(ctx, task.toolCallId)
     if (task.skipTranscript) return []
     return [
       {
@@ -294,9 +340,7 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
         code: 'CLAUDE_BACKGROUND_TASKS_CHANGED',
         details: [
           { label: '运行中', value: String(msg.tasks.length) },
-          ...(descriptions.length > 0
-            ? [{ label: '任务', value: descriptions.join('; ') }]
-            : []),
+          ...(descriptions.length > 0 ? [{ label: '任务', value: descriptions.join('; ') }] : []),
         ],
       },
     ]
@@ -312,6 +356,7 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
         title: 'Claude API 正在重试',
         message: describeClaudeAssistantError(msg.error).message,
         code: `CLAUDE_API_RETRY_${msg.error.toUpperCase()}`,
+        origin: providerSignalOrigin(ctx),
         actionHint: 'SDK 会自动重试，无需重复发送。',
         details: [
           { label: '重试进度', value: `${msg.attempt}/${msg.max_retries}` },
@@ -334,6 +379,7 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
         title: '工具权限已拒绝',
         message: msg.message,
         code: 'CLAUDE_PERMISSION_DENIED',
+        origin: providerSignalOrigin(ctx, msg.agent_id),
         actionHint: '调整会话权限模式或项目规则后再试。',
         details: [
           { label: '工具', value: msg.tool_name },
@@ -592,14 +638,25 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
       message: error.message,
       retryable: error.retryable,
       actionHint: error.actionHint,
+      ...(isSubagentMessage
+        ? {
+            origin: subagentEventOrigin(
+              ctx,
+              msg.parent_tool_use_id!,
+              msg.subagent_type ?? msg.task_description,
+            ),
+          }
+        : {}),
       rawError: msg.error,
     })
-    events.push({
-      ...baseEvent(ctx),
-      type: 'agent_status',
-      status: 'error',
-      message: error.title,
-    })
+    if (!isSubagentMessage) {
+      events.push({
+        ...baseEvent(ctx),
+        type: 'agent_status',
+        status: 'error',
+        message: error.title,
+      })
+    }
   }
 
   // Emit usage if available
@@ -1074,12 +1131,14 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
       }
       // Intercept Agent tool calls → emit SubagentStartedEvent
       if (block.name === 'Agent' || mapSDKToolName(block.name) === 'subagent') {
+        const name = typeof toolInput.agent === 'string' ? toolInput.agent : 'Subagent'
+        registerActiveSubagent(ctx, block.id, name)
         return [
           {
             ...baseEvent(ctx),
             type: 'subagent_started',
             toolCallId: block.id,
-            name: typeof toolInput.agent === 'string' ? toolInput.agent : 'Subagent',
+            name,
             role: typeof toolInput.description === 'string' ? toolInput.description : '',
             task: typeof toolInput.prompt === 'string' ? toolInput.prompt : '',
           },
@@ -1146,6 +1205,7 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
           }
           return []
         }
+        unregisterActiveSubagent(ctx, block.tool_use_id)
         const summary = content.length > 200 ? `${content.slice(0, 197)}...` : content
         const usage = getSubagentUsage(ctx).get(block.tool_use_id)
         return [
@@ -1166,6 +1226,7 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
 
       const asyncSubagent = findAsyncSubagentForSendMessage(ctx, block.tool_use_id, toolName)
       if (asyncSubagent != null) {
+        unregisterActiveSubagent(ctx, asyncSubagent.toolCallId)
         const summary = content.length > 200 ? `${content.slice(0, 197)}...` : content
         return [
           {

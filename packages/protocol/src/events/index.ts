@@ -804,6 +804,18 @@ export interface PlanRejectedEvent extends BaseEvent {
 
 // ─── 错误类事件 ──────────────────────────────────────────────────────────────
 
+/** Provider 运行时错误/信号的来源。省略时表示当前 Host Agent。 */
+export type RuntimeEventOrigin =
+  | {
+      kind: 'subagent'
+      toolCallId: string
+      name: string
+    }
+  | {
+      kind: 'runtime'
+      name: string
+    }
+
 /** Agent 运行时错误 */
 export interface AgentErrorEvent extends BaseEvent {
   type: 'agent_error'
@@ -819,6 +831,8 @@ export interface AgentErrorEvent extends BaseEvent {
   actionHint?: string
   /** 可展示的结构化诊断信息 */
   details?: RuntimeSignalDetail[]
+  /** 协作 Agent 或 Provider SDK 来源；避免把子任务错误误认为 Host 错误。 */
+  origin?: RuntimeEventOrigin
   /** 原始错误（调试用，不显示给普通用户）*/
   rawError?: string
 }
@@ -848,6 +862,8 @@ export interface RuntimeSignalEvent extends BaseEvent {
   retryable?: boolean
   actionHint?: string
   details?: RuntimeSignalDetail[]
+  /** 协作 Agent 或 Provider SDK 来源；Provider 未提供关联 ID 时使用 runtime。 */
+  origin?: RuntimeEventOrigin
 }
 
 /** 撤回 provider 已明确标记为被替代的旧事件。 */
