@@ -1,11 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { CheckCircle, Save } from 'lucide-react'
 import { Popover } from '@lobehub/ui'
@@ -90,7 +83,12 @@ function EnvVarRow({ item, onUpdate, onRemove, onBlurPersist }: EnvVarRowProps) 
         onChange={(event) => onUpdate({ description: event.target.value })}
         onBlur={onBlurPersist}
       />
-      <button type="button" className="btn ghost sm runtime-env-remove" onClick={onRemove} title="删除">
+      <button
+        type="button"
+        className="btn ghost sm runtime-env-remove"
+        onClick={onRemove}
+        title="删除"
+      >
         <Icons.Trash size={12} />
       </button>
     </div>
@@ -1238,7 +1236,13 @@ const PromptSectionBlock = React.memo(function PromptSectionBlock({
   )
 })
 
-export function PlanSummary({ plan, renderMarkdown }: { plan: SidebarPlan; renderMarkdown: MarkdownTextComponent }) {
+export function PlanSummary({
+  plan,
+  renderMarkdown,
+}: {
+  plan: SidebarPlan
+  renderMarkdown: MarkdownTextComponent
+}) {
   const MarkdownRenderer = renderMarkdown
   const completed = plan.items.filter((item) => item.status === 'done').length
   const total = plan.items.length
@@ -1252,9 +1256,12 @@ export function PlanSummary({ plan, renderMarkdown }: { plan: SidebarPlan; rende
           {completed}/{total}
         </span>
       </div>
-      <div className="inspector-progress">
-        <span style={{ width: `${percent}%` }} />
-      </div>
+      {percent && percent > 0 ? (
+        <div className="inspector-progress">
+          <span style={{ width: `${percent}%` }} />
+        </div>
+      ) : null}
+
       {plan.explanation && (
         <div className="inspector-plan-note md-surface">
           <MarkdownRenderer content={plan.explanation} />
@@ -1271,57 +1278,6 @@ export function PlanSummary({ plan, renderMarkdown }: { plan: SidebarPlan; rende
             </span>
             <span className="text">{renderPlanInline(item.text)}</span>
           </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/**
- * TaskListSection — 渲染 TaskCreate / TaskUpdate 维护的当前任务列表。
- * 复用 inspector-plan 样式以与 todo_write 的"计划"区块保持视觉一致。
- */
-function TaskListSection({ tasks }: { tasks: InspectorTask[] }) {
-  const completed = tasks.filter((t) => t.status === 'completed').length
-  const running = tasks.filter((t) => t.status === 'in_progress').length
-  const pending = tasks.filter((t) => t.status === 'pending').length
-  const total = tasks.length
-  const percent = total === 0 ? 0 : Math.round((completed / total) * 100)
-  const inProgress = tasks.find((t) => t.status === 'in_progress')
-
-  return (
-    <div className="inspector-plan">
-      <div className="inspector-plan-head">
-        <span className="strong truncate">
-          {inProgress ? (inProgress.activeForm ?? inProgress.subject) : '任务进度'}
-        </span>
-        <span className="mono-sm">
-          {completed}/{total}
-        </span>
-      </div>
-      <div className="inspector-progress">
-        <span style={{ width: `${percent}%` }} />
-      </div>
-      <div className="inspector-task-counts">
-        {running > 0 && (
-          <span className="inspector-task-count running" title="进行中">
-            <Icons.Spinner size={10} /> {running} 进行中
-          </span>
-        )}
-        {pending > 0 && (
-          <span className="inspector-task-count pending" title="待运行">
-            <span className="inspector-task-dot" /> {pending} 待运行
-          </span>
-        )}
-        {completed > 0 && (
-          <span className="inspector-task-count done" title="已完成">
-            <Icons.Check size={10} /> {completed} 完成
-          </span>
-        )}
-      </div>
-      <div className="inspector-plan-items">
-        {tasks.map((task) => (
-          <TaskListItem key={task.id} task={task} />
         ))}
       </div>
     </div>

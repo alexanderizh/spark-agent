@@ -5253,7 +5253,6 @@ body.inspector-resizing {
 
 .inspector-plan {
   padding: 10px;
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
 }
