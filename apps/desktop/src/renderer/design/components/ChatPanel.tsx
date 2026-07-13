@@ -796,6 +796,7 @@ function InlineUserQuestionCard({
   const canGoNext = currentIndex < total - 1
   const canSubmit =
     !block.answered &&
+    block.error == null &&
     block.questions.every((question, index) => isQuestionReadyForSubmit(question, drafts[index]))
   const answerByQuestion = new Map<string, UserQuestionAnswerSummary>()
   for (const summary of block.answerSummary ?? []) {
@@ -813,7 +814,7 @@ function InlineUserQuestionCard({
   }
 
   const handleSelectOption = (option: UserQuestionOption) => {
-    if (currentQuestion == null || block.answered || submitting) return
+    if (currentQuestion == null || block.answered || block.error != null || submitting) return
     if (isMultiChoiceQuestion(currentQuestion)) {
       const prevLabels = currentDraft.selectedLabels ?? []
       const prevValues = currentDraft.selectedValues ?? []
@@ -860,7 +861,7 @@ function InlineUserQuestionCard({
   }
 
   const submitAnswers = async (answers: Record<string, unknown>) => {
-    if (submitting || block.answered) return
+    if (submitting || block.answered || block.error != null) return
     if (sessionId == null) {
       setError('会话尚未就绪，暂时无法提交答案')
       return
@@ -868,7 +869,7 @@ function InlineUserQuestionCard({
     setSubmitting(true)
     setError(null)
     try {
-      await answerQuestion({ questionId: block.toolCallId, answers })
+      await answerQuestion({ sessionId, questionId: block.toolCallId, answers })
       const summaries = buildQuestionAnswerSummaries(block.questions, answers)
       if (summaries.length > 0) {
         onAnswered(block.questions, summaries)
@@ -903,15 +904,28 @@ function InlineUserQuestionCard({
         <div>
           <div className="chat-panel-question-title">Agent 正在等您回复</div>
           <div className="chat-panel-question-subtitle">
-            {block.answered ? '已提交答案' : '可在画布对话框内直接作答'}
+            {block.error != null
+              ? '提问工具未能完成'
+              : block.answered
+                ? '已提交答案'
+                : '可在画布对话框内直接作答'}
           </div>
         </div>
         <span className={`chat-panel-question-badge${block.answered ? ' is-done' : ''}`}>
-          {block.answered ? '已回答' : `${Math.min(currentIndex + 1, total)} / ${total}`}
+          {block.error != null
+            ? '失败'
+            : block.answered
+              ? '已回答'
+              : `${Math.min(currentIndex + 1, total)} / ${total}`}
         </span>
       </div>
 
-      {block.answered ? (
+      {block.error != null ? (
+        <div className="chat-panel-question-error">
+          <Icons.X size={12} />
+          <span>{block.error}</span>
+        </div>
+      ) : block.answered ? (
         <div className="chat-panel-question-summary-list">
           {block.questions.map((question, index) => {
             const summary =

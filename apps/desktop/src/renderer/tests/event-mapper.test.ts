@@ -894,6 +894,67 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('keeps a failed AskUserQuestion unresolved and exposes its transport error', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'question-error',
+      toolName: 'AskUserQuestion',
+      toolInput: { questions: [{ header: '确认', question: '继续吗？' }] },
+      source: 'builtin',
+    })
+    builder.processEvent({
+      ...baseEvent('tool_result'),
+      id: 'tool-result-error',
+      type: 'tool_result',
+      toolCallId: 'question-error',
+      toolName: 'AskUserQuestion',
+      status: 'error',
+      error: 'Tool permission request failed: Stream closed',
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toContainEqual(
+      expect.objectContaining({
+        kind: 'user_question',
+        answered: false,
+        error: 'Tool permission request failed: Stream closed',
+      }),
+    )
+  })
+
+  it('marks AskUserQuestion answered only after a successful tool result', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'question-success',
+      toolName: 'AskUserQuestion',
+      toolInput: { questions: [{ header: '确认', question: '继续吗？' }] },
+      source: 'builtin',
+    })
+    builder.processEvent({
+      ...baseEvent('tool_result'),
+      id: 'tool-result-success',
+      type: 'tool_result',
+      toolCallId: 'question-success',
+      toolName: 'AskUserQuestion',
+      status: 'success',
+      output: JSON.stringify({ answers: [{ question: '继续吗？', answer: '继续' }] }),
+    })
+
+    const questionBlock = builder
+      .getAllMessages()[0]
+      ?.blocks.find((block) => block.kind === 'user_question')
+    expect(questionBlock).toEqual(
+      expect.objectContaining({
+        kind: 'user_question',
+        answered: true,
+      }),
+    )
+    expect(questionBlock).not.toHaveProperty('error')
+  })
+
   it('updates subagent UIBlock on subagent_completed event', () => {
     const builder = new MessageBuilder()
 
@@ -1022,12 +1083,14 @@ describe('MessageBuilder', () => {
       totalTokens: 99,
     })
 
-    expect(builder.getAllMessages()[0]?.blocks).toContainEqual(expect.objectContaining({
-      kind: 'subagent',
-      status: 'stopped',
-      tokens: '99',
-      output: 'Stopped by user',
-    }))
+    expect(builder.getAllMessages()[0]?.blocks).toContainEqual(
+      expect.objectContaining({
+        kind: 'subagent',
+        status: 'stopped',
+        tokens: '99',
+        output: 'Stopped by user',
+      }),
+    )
   })
 
   it('bounds nested subagent transcripts to the newest 24k characters', () => {

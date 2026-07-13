@@ -94,18 +94,21 @@ type MockWorkflowItem = {
 const mockState = vi.hoisted(() => ({
   sessions: new Map<string, SessionRow>(),
   providers: new Map<string, ProviderRow>(),
-  mediaManifests: new Map<string, {
-    id: string
-    provider_kind: string
-    model_id: string
-    display_name: string
-    version: string | null
-    manifest_json: string
-    built_in: number
-    enabled: number
-    source_urls_json: string
-    last_checked_at: string | null
-  }>(),
+  mediaManifests: new Map<
+    string,
+    {
+      id: string
+      provider_kind: string
+      model_id: string
+      display_name: string
+      version: string | null
+      manifest_json: string
+      built_in: number
+      enabled: number
+      source_urls_json: string
+      last_checked_at: string | null
+    }
+  >(),
   providerMediaModels: [] as Array<{
     provider_profile_id: string
     manifest_id: string
@@ -137,17 +140,20 @@ const mockState = vi.hoisted(() => ({
   >(),
   agents: new Map<string, MockAgentItem>(),
   workflows: new Map<string, MockWorkflowItem>(),
-  discussions: new Map<string, {
-    id: string
-    session_id: string
-    host_agent_id: string
-    topic: string | null
-    round_index: number
-    max_rounds: number
-    state: 'active' | 'concluded' | 'canceled'
-    started_at: string
-    ended_at: string | null
-  }>(),
+  discussions: new Map<
+    string,
+    {
+      id: string
+      session_id: string
+      host_agent_id: string
+      topic: string | null
+      round_index: number
+      max_rounds: number
+      state: 'active' | 'concluded' | 'canceled'
+      started_at: string
+      ended_at: string | null
+    }
+  >(),
   threadMessages: [] as Array<{
     id: string
     discussion_id: string
@@ -159,26 +165,52 @@ const mockState = vi.hoisted(() => ({
     dispatch_id: string | null
     created_at: string
   }>,
-  workflowRuns: new Map<string, {
-    id: string
-    session_id: string
-    turn_id: string
-    workflow_id: string
-    status: 'working' | 'completed' | 'failed' | 'canceled'
-    objective: string
-    graph_json: string
-    state_json: string
-    executions_json: string
-    atomic_executions_json: string
-    completed_node_ids_json: string
-    failed_node_json: string | null
-    started_at: string
-    updated_at: string
-    ended_at: string | null
-  }>(),
+  workflowRuns: new Map<
+    string,
+    {
+      id: string
+      session_id: string
+      turn_id: string
+      workflow_id: string
+      status: 'working' | 'completed' | 'failed' | 'canceled'
+      objective: string
+      graph_json: string
+      state_json: string
+      executions_json: string
+      atomic_executions_json: string
+      completed_node_ids_json: string
+      failed_node_json: string | null
+      started_at: string
+      updated_at: string
+      ended_at: string | null
+    }
+  >(),
   nextSdkTurnErrors: [] as string[],
   nextSdkTurnStatuses: [] as Array<'completed' | 'cancelled' | 'error'>,
-  usageRecords: [] as Array<{ sessionId: string; providerId: string; modelId: string; inputTokens: number; outputTokens: number; reasoningOutputTokens?: number; cacheReadTokens?: number; costUsd?: number; requestTimestamp?: string }>,
+  turnRequests: new Map<
+    string,
+    {
+      id: string
+      session_id: string
+      payload_json: string
+      status: 'accepted' | 'running' | 'completed' | 'failed' | 'cancelled'
+      error_message: string | null
+      created_at: string
+      updated_at: string
+    }
+  >(),
+  settings: new Map<string, string>(),
+  usageRecords: [] as Array<{
+    sessionId: string
+    providerId: string
+    modelId: string
+    inputTokens: number
+    outputTokens: number
+    reasoningOutputTokens?: number
+    cacheReadTokens?: number
+    costUsd?: number
+    requestTimestamp?: string
+  }>,
 }))
 
 vi.mock('@spark/shared/keystore', () => ({
@@ -271,15 +303,18 @@ vi.mock('@spark/storage', () => {
       row.updated_at = now()
     }
 
-    updateRuntime(id: string, params: {
-      providerProfileId?: string
-      modelId?: string | null
-      agentId?: string
-      agentAdapter?: string
-      permissionMode?: string
-      chatMode?: string
-      reasoningEffort?: string
-    }): void {
+    updateRuntime(
+      id: string,
+      params: {
+        providerProfileId?: string
+        modelId?: string | null
+        agentId?: string
+        agentAdapter?: string
+        permissionMode?: string
+        chatMode?: string
+        reasoningEffort?: string
+      },
+    ): void {
       const row = this.findByIdOrFail(id)
       if (params.providerProfileId !== undefined) row.provider_profile_id = params.providerProfileId
       if (params.modelId !== undefined) row.model_id = params.modelId
@@ -291,9 +326,13 @@ vi.mock('@spark/storage', () => {
       row.updated_at = now()
     }
 
-    list(params: { status?: string; limit?: number } = {}): { sessions: SessionRow[]; total: number } {
-      const rows = Array.from(mockState.sessions.values())
-        .filter((row) => params.status == null || row.status === params.status)
+    list(params: { status?: string; limit?: number } = {}): {
+      sessions: SessionRow[]
+      total: number
+    } {
+      const rows = Array.from(mockState.sessions.values()).filter(
+        (row) => params.status == null || row.status === params.status,
+      )
       const limit = params.limit ?? rows.length
       return { sessions: rows.slice(0, limit), total: rows.length }
     }
@@ -353,8 +392,9 @@ vi.mock('@spark/storage', () => {
       enabled: boolean
       defaultsJson: string
     }): void {
-      const existingIndex = mockState.providerMediaModels.findIndex((item) =>
-        item.provider_profile_id === row.providerProfileId && item.manifest_id === row.manifestId,
+      const existingIndex = mockState.providerMediaModels.findIndex(
+        (item) =>
+          item.provider_profile_id === row.providerProfileId && item.manifest_id === row.manifestId,
       )
       const next = {
         provider_profile_id: row.providerProfileId,
@@ -368,12 +408,24 @@ vi.mock('@spark/storage', () => {
     }
 
     listProviderModels(providerProfileId: string) {
-      return mockState.providerMediaModels.filter((row) => row.provider_profile_id === providerProfileId)
+      return mockState.providerMediaModels.filter(
+        (row) => row.provider_profile_id === providerProfileId,
+      )
     }
   }
 
   class UsageLedgerRepository {
-    record(params: { sessionId: string; providerId: string; modelId: string; inputTokens: number; outputTokens: number; reasoningOutputTokens?: number; cacheReadTokens?: number; costUsd?: number; requestTimestamp?: string }): string {
+    record(params: {
+      sessionId: string
+      providerId: string
+      modelId: string
+      inputTokens: number
+      outputTokens: number
+      reasoningOutputTokens?: number
+      cacheReadTokens?: number
+      costUsd?: number
+      requestTimestamp?: string
+    }): string {
       mockState.usageRecords.push(params)
       return `usage-${mockState.usageRecords.length}`
     }
@@ -498,8 +550,10 @@ vi.mock('@spark/storage', () => {
       order?: 'asc' | 'desc'
     }): { messages: unknown[]; total: number } {
       let rows = mockState.threadMessages.filter((row) => row.discussion_id === params.discussionId)
-      if (params.roundIndex != null) rows = rows.filter((row) => row.round_index === params.roundIndex)
-      if (params.senderAgentId != null) rows = rows.filter((row) => row.sender_agent_id === params.senderAgentId)
+      if (params.roundIndex != null)
+        rows = rows.filter((row) => row.round_index === params.roundIndex)
+      if (params.senderAgentId != null)
+        rows = rows.filter((row) => row.sender_agent_id === params.senderAgentId)
       const total = rows.length
       if (params.order === 'desc') rows = [...rows].reverse()
       const offset = params.offset ?? 0
@@ -547,7 +601,13 @@ vi.mock('@spark/storage', () => {
       return (seqs.length > 0 ? Math.max(...seqs) : -1) + 1
     }
 
-    insert(params: { id: string; sessionId: string; turnId?: string; eventType: string; eventJson: string }): void {
+    insert(params: {
+      id: string
+      sessionId: string
+      turnId?: string
+      eventType: string
+      eventJson: string
+    }): void {
       mockState.events.push({
         id: params.id,
         session_id: params.sessionId,
@@ -560,11 +620,22 @@ vi.mock('@spark/storage', () => {
       })
     }
 
-    insertBatch(rows: Array<{ id: string; sessionId: string; turnId?: string; eventType: string; eventJson: string }>): void {
+    insertBatch(
+      rows: Array<{
+        id: string
+        sessionId: string
+        turnId?: string
+        eventType: string
+        eventJson: string
+      }>,
+    ): void {
       for (const row of rows) this.insert(row)
     }
 
-    queryBySession(params: { sessionId: string; eventType?: string; limit?: number }): { events: EventRow[]; hasMore: boolean } {
+    queryBySession(params: { sessionId: string; eventType?: string; limit?: number }): {
+      events: EventRow[]
+      hasMore: boolean
+    } {
       const rows = mockState.events
         .filter((row) => row.session_id === params.sessionId)
         .filter((row) => params.eventType == null || row.event_type === params.eventType)
@@ -596,7 +667,11 @@ vi.mock('@spark/storage', () => {
     }
   }
 
-  class RulesRepository { list(): unknown[] { return [] } }
+  class RulesRepository {
+    list(): unknown[] {
+      return []
+    }
+  }
   class WorkspaceRepository {
     get(id: string): {
       id: string
@@ -617,19 +692,35 @@ vi.mock('@spark/storage', () => {
       return mockState.mcpServers.filter((server) => server.scope === scope)
     }
   }
-  class SettingsRepository { get(): null { return null } }
+  class SettingsRepository {
+    get(scope?: string, key?: string): string | null {
+      return mockState.settings.get(`${scope ?? ''}:${key ?? ''}`) ?? null
+    }
+  }
   class SkillRepository {
-    list(): unknown[] { return [] }
-    get(): null { return null }
+    list(): unknown[] {
+      return []
+    }
+    get(): null {
+      return null
+    }
   }
   class SkillRegistryRepository {
     ensureDefaults(): void {}
-    listEnabled(): unknown[] { return [] }
-    list(): unknown[] { return [] }
-    update(): null { return null }
+    listEnabled(): unknown[] {
+      return []
+    }
+    list(): unknown[] {
+      return []
+    }
+    update(): null {
+      return null
+    }
   }
   class TeamDefinitionRepository {
-    get(): null { return null }
+    get(): null {
+      return null
+    }
   }
   class AgentRepository {
     get(id: string): MockAgentItem | null {
@@ -673,20 +764,30 @@ vi.mock('@spark/storage', () => {
     }
 
     findLatestResumable(sessionId: string, workflowId: string) {
-      return [...mockState.workflowRuns.values()]
-        .filter((row) => row.session_id === sessionId && row.workflow_id === workflowId && (row.status === 'working' || row.status === 'failed'))
-        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null
+      return (
+        [...mockState.workflowRuns.values()]
+          .filter(
+            (row) =>
+              row.session_id === sessionId &&
+              row.workflow_id === workflowId &&
+              (row.status === 'working' || row.status === 'failed'),
+          )
+          .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null
+      )
     }
 
-    updateSnapshot(id: string, params: {
-      status: 'working' | 'completed' | 'failed' | 'canceled'
-      state: Record<string, unknown>
-      executions: unknown[]
-      atomicExecutions: unknown[]
-      completedNodeIds: string[]
-      failedNode?: unknown
-      endedAt?: string | null
-    }) {
+    updateSnapshot(
+      id: string,
+      params: {
+        status: 'working' | 'completed' | 'failed' | 'canceled'
+        state: Record<string, unknown>
+        executions: unknown[]
+        atomicExecutions: unknown[]
+        completedNodeIds: string[]
+        failedNode?: unknown
+        endedAt?: string | null
+      },
+    ) {
       const row = mockState.workflowRuns.get(id)
       if (row == null) return null
       row.status = params.status
@@ -694,32 +795,102 @@ vi.mock('@spark/storage', () => {
       row.executions_json = JSON.stringify(params.executions)
       row.atomic_executions_json = JSON.stringify(params.atomicExecutions)
       row.completed_node_ids_json = JSON.stringify(params.completedNodeIds)
-      row.failed_node_json = params.failedNode === undefined ? null : JSON.stringify(params.failedNode)
+      row.failed_node_json =
+        params.failedNode === undefined ? null : JSON.stringify(params.failedNode)
       row.updated_at = now()
       row.ended_at = params.endedAt ?? null
       return row
     }
   }
   class ContextPreferenceRepository {
-    getPreference(): null { return null }
-    getOverrides(): { pinnedPaths: string[]; excludedPaths: string[] } { return { pinnedPaths: [], excludedPaths: [] } }
+    getPreference(): null {
+      return null
+    }
+    getOverrides(): { pinnedPaths: string[]; excludedPaths: string[] } {
+      return { pinnedPaths: [], excludedPaths: [] }
+    }
     upsertPreference(): void {}
   }
   class SessionSummaryRepository {
-    getLatest(): null { return null }
+    getLatest(): null {
+      return null
+    }
     create(): void {}
   }
   class GoalRepository {
-    getCurrent(): null { return null }
+    getCurrent(): null {
+      return null
+    }
   }
-  class MemoryRepository { ensureSchema(): void {} }
-  class MemorySearchRepository { ensureSchema(): void {} }
-  class MemoryEntityRepository { ensureSchema(): void {} }
+  class MemoryRepository {
+    ensureSchema(): void {}
+  }
+  class MemorySearchRepository {
+    ensureSchema(): void {}
+  }
+  class MemoryEntityRepository {
+    ensureSchema(): void {}
+  }
   class ModelProfileRepository {
     ensureSchema(): void {}
-    list(): [] { return [] }
+    list(): [] {
+      return []
+    }
   }
   class ConnectorConnectionRepository {}
+  class TurnRequestRepository {
+    create(params: {
+      id: string
+      sessionId: string
+      payloadJson: string
+      createdAt: string
+    }): void {
+      mockState.turnRequests.set(params.id, {
+        id: params.id,
+        session_id: params.sessionId,
+        payload_json: params.payloadJson,
+        status: 'accepted',
+        error_message: null,
+        created_at: params.createdAt,
+        updated_at: params.createdAt,
+      })
+    }
+    get(id: string) {
+      return mockState.turnRequests.get(id) ?? null
+    }
+    listRecoverable() {
+      return [...mockState.turnRequests.values()].filter(
+        (row) => row.status === 'accepted' || row.status === 'running',
+      )
+    }
+    markRunning(id: string): boolean {
+      return this.update(id, 'running', ['accepted'])
+    }
+    markCompleted(id: string): boolean {
+      return this.update(id, 'completed', ['accepted', 'running'])
+    }
+    markFailed(id: string, error: string): boolean {
+      const row = mockState.turnRequests.get(id)
+      if (row == null || (row.status !== 'accepted' && row.status !== 'running')) return false
+      row.status = 'failed'
+      row.error_message = error
+      return true
+    }
+    cancel(id: string): boolean {
+      return this.update(id, 'cancelled', ['accepted', 'running'])
+    }
+    private update(
+      id: string,
+      status: 'running' | 'completed' | 'cancelled',
+      from: Array<'accepted' | 'running'>,
+    ): boolean {
+      const row = mockState.turnRequests.get(id)
+      if (row == null || !from.includes(row.status as 'accepted' | 'running')) return false
+      row.status = status
+      row.error_message = null
+      return true
+    }
+  }
 
   return {
     SessionRepository,
@@ -747,6 +918,7 @@ vi.mock('@spark/storage', () => {
     MemoryEntityRepository,
     ModelProfileRepository,
     ConnectorConnectionRepository,
+    TurnRequestRepository,
   }
 })
 
@@ -760,7 +932,12 @@ vi.mock('../../sdk/index.js', () => {
 
     cancel(): void {}
 
-    async executeTurn(sessionId: string, turnId: string, message: string, config: Record<string, unknown>): Promise<void> {
+    async executeTurn(
+      sessionId: string,
+      turnId: string,
+      message: string,
+      config: Record<string, unknown>,
+    ): Promise<void> {
       mockState.sdkTurns.push({ sessionId, turnId, message })
       mockState.sdkConfigs.push(config)
       const nextError = mockState.nextSdkTurnErrors.shift()
@@ -797,7 +974,12 @@ vi.mock('../../sdk/index.js', () => {
         name: opts.name,
         instance: { tools: opts.tools },
       }),
-      tool: (name: string, _description: string, _inputSchema: Record<string, unknown>, handler: unknown) => ({
+      tool: (
+        name: string,
+        _description: string,
+        _inputSchema: Record<string, unknown>,
+        handler: unknown,
+      ) => ({
         name,
         handler,
       }),
@@ -823,7 +1005,9 @@ function seedProvider(row: Omit<ProviderRow, 'enabled' | 'created_at' | 'updated
   })
 }
 
-function makeAgent(params: Partial<MockAgentItem> & Pick<MockAgentItem, 'id' | 'name'>): MockAgentItem {
+function makeAgent(
+  params: Partial<MockAgentItem> & Pick<MockAgentItem, 'id' | 'name'>,
+): MockAgentItem {
   return {
     id: params.id,
     name: params.name,
@@ -894,7 +1078,10 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.workflowRuns.clear()
     mockState.nextSdkTurnErrors.length = 0
     mockState.nextSdkTurnStatuses.length = 0
+    mockState.turnRequests.clear()
+    mockState.settings.clear()
     mockState.usageRecords.length = 0
+    vi.mocked(keystore.getSecret).mockClear().mockResolvedValue('test-api-key')
     events = []
 
     seedProvider({
@@ -945,18 +1132,91 @@ describe('SessionService runtime provider/model resolution', () => {
       title: 'Missing credential session',
     })
 
-    await expect(service.sendTurn({ sessionId, message: 'hello' }))
-      .rejects.toThrow('API key not found')
-    expect(events.map(event => event.type)).toEqual([
+    await expect(service.sendTurn({ sessionId, message: 'hello' })).rejects.toThrow(
+      'API key not found',
+    )
+    expect(events.map((event) => event.type)).toEqual([
       'user_message',
       'agent_error',
       'agent_status',
     ])
-    expect(events.find(event => event.type === 'agent_error')).toMatchObject({
+    expect(events.find((event) => event.type === 'agent_error')).toMatchObject({
       code: 'TURN_START_FAILED',
       retryable: true,
     })
     expect(mockState.sessions.get(sessionId)?.status).toBe('error')
+    expect(mockState.turnRequests.size).toBe(0)
+  })
+
+  it('durably accepts an interactive turn before background preflight finishes', async () => {
+    vi.mocked(keystore.getSecret).mockResolvedValueOnce(null)
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      agentAdapter: 'claude-sdk',
+      title: 'Durable submit session',
+    })
+
+    const result = await service.submitTurn({ sessionId, message: 'hello' })
+
+    expect(result).toMatchObject({ accepted: true, started: true })
+    expect(mockState.turnRequests.get(result.turnId)?.status).toBe('accepted')
+    await vi.waitFor(() => {
+      expect(mockState.turnRequests.get(result.turnId)?.status).toBe('failed')
+    })
+  })
+
+  it('serializes background preflight for rapid interactive submissions in one session', async () => {
+    let releaseCredential!: (value: string) => void
+    const credential = new Promise<string>((resolve) => {
+      releaseCredential = resolve
+    })
+    vi.mocked(keystore.getSecret).mockImplementation(() => credential)
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      agentAdapter: 'claude-sdk',
+      title: 'Serialized submit session',
+    })
+
+    const first = await service.submitTurn({ sessionId, message: 'first' })
+    const second = await service.submitTurn({ sessionId, message: 'second' })
+
+    await vi.waitFor(() => expect(keystore.getSecret).toHaveBeenCalledTimes(1))
+    expect(service.getQueueState({ sessionId }).running).toBe(true)
+    expect(mockState.turnRequests.get(first.turnId)?.status).toBe('running')
+    expect(mockState.turnRequests.get(second.turnId)?.status).toBe('accepted')
+    releaseCredential('test-api-key')
+    await vi.waitFor(() => expect(mockState.sdkTurns).toHaveLength(2))
+    expect(mockState.sdkTurns.map((turn) => turn.message)).toEqual(['first', 'second'])
+  })
+
+  it('accepts a durable turn before workspace preparation settles', async () => {
+    let finishWorkspacePreparation!: () => void
+    const workspaceReady = new Promise<void>((resolve) => {
+      finishWorkspacePreparation = resolve
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      agentAdapter: 'claude-sdk',
+      title: 'Deferred workspace preparation',
+    })
+
+    const result = await service.submitTurn(
+      { sessionId, message: 'hello after workspace is ready' },
+      { startAfter: workspaceReady },
+    )
+
+    expect(result.accepted).toBe(true)
+    expect(mockState.turnRequests.get(result.turnId)?.status).toBe('accepted')
+    expect(keystore.getSecret).not.toHaveBeenCalled()
+
+    finishWorkspacePreparation()
+    await vi.waitFor(() => expect(keystore.getSecret).toHaveBeenCalledTimes(1))
   })
 
   it('records usage_update deltas to the usage ledger without double-counting cumulative updates', async () => {
@@ -969,17 +1229,19 @@ describe('SessionService runtime provider/model resolution', () => {
       title: 'Usage ledger session',
     })
     const eventRepo = { insert: vi.fn(), nextSeqBySession: vi.fn(() => 0) }
-    const persist = (service as unknown as {
-      emitAndPersist: (
-        sessionId: string,
-        turnId: string,
-        event: AgentEvent,
-        eventRepo: {
-          insert: ReturnType<typeof vi.fn>
-          nextSeqBySession: ReturnType<typeof vi.fn>
-        },
-      ) => void
-    }).emitAndPersist.bind(service)
+    const persist = (
+      service as unknown as {
+        emitAndPersist: (
+          sessionId: string,
+          turnId: string,
+          event: AgentEvent,
+          eventRepo: {
+            insert: ReturnType<typeof vi.fn>
+            nextSeqBySession: ReturnType<typeof vi.fn>
+          },
+        ) => void
+      }
+    ).emitAndPersist.bind(service)
 
     persist(
       sessionId,
@@ -1046,7 +1308,6 @@ describe('SessionService runtime provider/model resolution', () => {
     ])
   })
 
-
   it('uses the session provider default model when an old session has no model id', async () => {
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({
@@ -1067,12 +1328,14 @@ describe('SessionService runtime provider/model resolution', () => {
       permissionMode: 'claude-plan',
       continueSession: false,
     })
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'turn_prompt_snapshot',
-      providerProfileId: 'tencent-provider',
-      model: 'glm-5',
-      permissionMode: 'claude-plan',
-    }))
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'turn_prompt_snapshot',
+        providerProfileId: 'tencent-provider',
+        model: 'glm-5',
+        permissionMode: 'claude-plan',
+      }),
+    )
   })
 
   it('passes the application hook bridge into Claude SDK turns', async () => {
@@ -1109,12 +1372,15 @@ describe('SessionService runtime provider/model resolution', () => {
       created_at: '2026-05-28T00:00:00.000Z',
       updated_at: '2026-05-28T00:00:00.000Z',
     })
-    mockState.agents.set('plain-agent', makeAgent({
-      id: 'plain-agent',
-      name: 'Plain Agent',
-      providerProfileId: 'tencent-provider',
-      mcpServerIds: [],
-    }))
+    mockState.agents.set(
+      'plain-agent',
+      makeAgent({
+        id: 'plain-agent',
+        name: 'Plain Agent',
+        providerProfileId: 'tencent-provider',
+        mcpServerIds: [],
+      }),
+    )
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({
       providerProfileId: 'tencent-provider',
@@ -1196,7 +1462,11 @@ describe('SessionService runtime provider/model resolution', () => {
           'video.image_to_video',
         ],
         mediaModelRefs: [
-          { manifestId: 'agnes:agnes-image-2.0-flash', modelId: 'agnes-image-2.0-flash', enabled: true },
+          {
+            manifestId: 'agnes:agnes-image-2.0-flash',
+            modelId: 'agnes-image-2.0-flash',
+            enabled: true,
+          },
           { manifestId: 'agnes:agnes-video-v2.0', modelId: 'agnes-video-v2.0', enabled: true },
         ],
       }),
@@ -1221,13 +1491,17 @@ describe('SessionService runtime provider/model resolution', () => {
       spark_media: expect.objectContaining({ type: 'stdio' }),
     })
     expect(config?.mcpServers).not.toHaveProperty('spark_image')
-    expect(config?.allowedTools).toEqual(expect.arrayContaining([
-      'mcp__spark_media__generate_image',
-      'mcp__spark_media__generate_video',
-    ]))
-    const mediaServer = (config?.mcpServers as {
-      spark_media: { env: Record<string, string> }
-    }).spark_media
+    expect(config?.allowedTools).toEqual(
+      expect.arrayContaining([
+        'mcp__spark_media__generate_image',
+        'mcp__spark_media__generate_video',
+      ]),
+    )
+    const mediaServer = (
+      config?.mcpServers as {
+        spark_media: { env: Record<string, string> }
+      }
+    ).spark_media
     expect(mediaServer.env.SPARK_MEDIA_PROVIDER).toBe('agnes')
     expect(mediaServer.env.SPARK_MEDIA_MODEL).toBe('agnes-2.0-flash')
     expect(mediaServer.env.SPARK_MEDIA_MANIFESTS_JSON).toContain('agnes:agnes-image-2.0-flash')
@@ -1249,7 +1523,11 @@ describe('SessionService runtime provider/model resolution', () => {
         mediaApiType: 'auto',
         mediaCapabilities: ['image.generate', 'video.generate'],
         mediaModelRefs: [
-          { manifestId: 'agnes:agnes-image-2.0-flash', modelId: 'agnes-image-2.0-flash', enabled: true },
+          {
+            manifestId: 'agnes:agnes-image-2.0-flash',
+            modelId: 'agnes-image-2.0-flash',
+            enabled: true,
+          },
           { manifestId: 'agnes:agnes-video-v2.0', modelId: 'agnes-video-v2.0', enabled: true },
         ],
       }),
@@ -1294,8 +1572,9 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.nextSdkTurnStatuses.push('cancelled')
     const service = new SessionService({} as never, (event) => events.push(event))
     const writeMemory = vi.fn(async () => undefined)
-    ;(service as unknown as { maybeWriteMemoryFromTurn: typeof writeMemory })
-      .maybeWriteMemoryFromTurn = writeMemory
+    ;(
+      service as unknown as { maybeWriteMemoryFromTurn: typeof writeMemory }
+    ).maybeWriteMemoryFromTurn = writeMemory
     const { sessionId } = await service.createSession({
       providerProfileId: 'cancelled-codex-provider',
       agentAdapter: 'codex',
@@ -1306,10 +1585,12 @@ describe('SessionService runtime provider/model resolution', () => {
     await service.sendTurn({ sessionId, message: 'stop this turn' })
 
     await vi.waitFor(() => {
-      expect(events).toContainEqual(expect.objectContaining({
-        type: 'agent_status',
-        status: 'cancelled',
-      }))
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'agent_status',
+          status: 'cancelled',
+        }),
+      )
     })
     expect(writeMemory).not.toHaveBeenCalled()
   })
@@ -1402,16 +1683,20 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(result).toMatchObject({ isCommand: true, forwardToAgent: false, started: false })
     expect(mockState.sessions.get(sessionId)?.title).toBe('New command title')
     expect(mockState.sdkTurns).toHaveLength(0)
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'assistant_message',
-      provider: 'spark',
-      isFinal: true,
-    }))
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'agent_status',
-      status: 'completed',
-      message: '/rename completed',
-    }))
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'assistant_message',
+        provider: 'spark',
+        isFinal: true,
+      }),
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'agent_status',
+        status: 'completed',
+        message: '/rename completed',
+      }),
+    )
   })
 
   it('does not inject command completed before /validate --repair follow-up Agent turn', async () => {
@@ -1419,6 +1704,20 @@ describe('SessionService runtime provider/model resolution', () => {
     writeFileSync(
       path.join(workspaceRoot, 'package.json'),
       JSON.stringify({ scripts: { typecheck: 'node -e "process.exit(1)"' } }),
+    )
+    mockState.settings.set(
+      'custom-commands:items',
+      JSON.stringify([
+        {
+          id: 'validate',
+          name: '/validate',
+          description: 'Validate the current workspace command output and repair if needed',
+          prompt: '验证命令:',
+          script: '',
+          scriptLanguage: 'javascript',
+          enabled: true,
+        },
+      ]),
     )
     mockState.workspaces.set('repair-workspace', {
       id: 'repair-workspace',
@@ -1445,28 +1744,28 @@ describe('SessionService runtime provider/model resolution', () => {
 
       expect(result).toMatchObject({ isCommand: true, forwardToAgent: false, started: true })
       expect(mockState.sdkTurns).toHaveLength(1)
-      expect(mockState.sdkTurns[0]?.message).toContain('验证命令: npm run typecheck')
-      expect(events).toContainEqual(expect.objectContaining({
-        type: 'assistant_message',
-        provider: 'spark',
-        isFinal: true,
-      }))
-      const sparkCommandCompleted = events.find((event) =>
-        event.type === 'agent_status' &&
-        event.status === 'completed' &&
-        event.message === '/validate completed'
+      expect(mockState.sdkTurns[0]?.message).toContain('验证命令:')
+      expect(mockState.sdkTurns[0]?.message).toContain('npm run typecheck')
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'assistant_message',
+          provider: 'spark',
+          isFinal: true,
+        }),
+      )
+      const sparkCommandCompleted = events.find(
+        (event) =>
+          event.type === 'agent_status' &&
+          event.status === 'completed' &&
+          event.message === '/validate completed',
       )
       expect(sparkCommandCompleted).toBeUndefined()
-      expect(events).toContainEqual(expect.objectContaining({
-        type: 'agent_status',
-        status: 'completed',
-      }))
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true })
     }
   })
 
-  it('renders /usage from persisted usage_update events when ledger is empty', async () => {
+  it('renders /status usage totals from persisted usage_update events when ledger is empty', async () => {
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({
       providerProfileId: 'tencent-provider',
@@ -1475,61 +1774,73 @@ describe('SessionService runtime provider/model resolution', () => {
       title: 'Usage session',
     })
 
-    mockState.events.push({
-      id: 'usage-1',
-      session_id: sessionId,
-      run_id: null,
-      turn_id: 'turn-1',
-      event_type: 'usage_update',
-      event_json: JSON.stringify({
+    mockState.events.push(
+      {
         id: 'usage-1',
-        sessionId,
-        turnId: 'turn-1',
-        timestamp: '2026-05-28T00:00:00.000Z',
+        session_id: sessionId,
+        run_id: null,
+        turn_id: 'turn-1',
+        event_type: 'usage_update',
+        event_json: JSON.stringify({
+          id: 'usage-1',
+          sessionId,
+          turnId: 'turn-1',
+          timestamp: '2026-05-28T00:00:00.000Z',
+          seq: 0,
+          type: 'usage_update',
+          provider: 'claude',
+          model: 'glm-5',
+          inputTokens: 100,
+          outputTokens: 40,
+          estimatedCostUsd: 0.0123,
+        }),
         seq: 0,
-        type: 'usage_update',
-        provider: 'claude',
-        model: 'glm-5',
-        inputTokens: 100,
-        outputTokens: 40,
-        estimatedCostUsd: 0.0123,
-      }),
-      seq: 0,
-      created_at: '2026-05-28T00:00:00.000Z',
-    }, {
-      id: 'usage-2',
-      session_id: sessionId,
-      run_id: null,
-      turn_id: 'turn-2',
-      event_type: 'usage_update',
-      event_json: JSON.stringify({
+        created_at: '2026-05-28T00:00:00.000Z',
+      },
+      {
         id: 'usage-2',
-        sessionId,
-        turnId: 'turn-2',
-        timestamp: '2026-05-28T00:00:00.000Z',
+        session_id: sessionId,
+        run_id: null,
+        turn_id: 'turn-2',
+        event_type: 'usage_update',
+        event_json: JSON.stringify({
+          id: 'usage-2',
+          sessionId,
+          turnId: 'turn-2',
+          timestamp: '2026-05-28T00:00:00.000Z',
+          seq: 1,
+          type: 'usage_update',
+          provider: 'claude',
+          model: 'glm-5',
+          inputTokens: 25,
+          outputTokens: 10,
+          estimatedCostUsd: 0.0032,
+        }),
         seq: 1,
-        type: 'usage_update',
-        provider: 'claude',
-        model: 'glm-5',
-        inputTokens: 25,
-        outputTokens: 10,
-        estimatedCostUsd: 0.0032,
-      }),
-      seq: 1,
-      created_at: '2026-05-28T00:00:00.000Z',
-    })
+        created_at: '2026-05-28T00:00:00.000Z',
+      },
+    )
 
-    const result = await service.executeCommandAsEvents({ sessionId, message: '/usage' })
+    const result = await service.executeCommandAsEvents({ sessionId, message: '/status' })
 
     expect(result).toMatchObject({ isCommand: true, forwardToAgent: false, started: false })
-    const assistant = events.slice().reverse().find((event: AgentEvent) => event.type === 'assistant_message')
-    expect(assistant).toEqual(expect.objectContaining({
-      type: 'assistant_message',
-      provider: 'spark',
-      content: expect.stringContaining('125'),
-    }))
-    expect((assistant as Extract<AgentEvent, { type: 'assistant_message' }> | undefined)?.content).toContain('50')
-    expect((assistant as Extract<AgentEvent, { type: 'assistant_message' }> | undefined)?.content).toContain('$0.0155')
+    const assistant = events
+      .slice()
+      .reverse()
+      .find((event: AgentEvent) => event.type === 'assistant_message')
+    expect(assistant).toEqual(
+      expect.objectContaining({
+        type: 'assistant_message',
+        provider: 'spark',
+        content: expect.stringContaining('125'),
+      }),
+    )
+    expect(
+      (assistant as Extract<AgentEvent, { type: 'assistant_message' }> | undefined)?.content,
+    ).toContain('50')
+    expect(
+      (assistant as Extract<AgentEvent, { type: 'assistant_message' }> | undefined)?.content,
+    ).toContain('$0.0155')
   })
 
   it('passes selected attachments into the Claude SDK turn config', async () => {
@@ -1560,10 +1871,12 @@ describe('SessionService runtime provider/model resolution', () => {
         }),
       ],
     })
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'turn_prompt_snapshot',
-      userMessage: expect.stringContaining('package.json'),
-    }))
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'turn_prompt_snapshot',
+        userMessage: expect.stringContaining('package.json'),
+      }),
+    )
   })
 
   it('marks scheduled automation turns as unattended in the SDK config', async () => {
@@ -1635,16 +1948,22 @@ describe('SessionService runtime provider/model resolution', () => {
   })
 
   it('constrains team host tools to dispatch when resolved members exist', async () => {
-    mockState.agents.set('host-agent', makeAgent({
-      id: 'host-agent',
-      name: 'Host',
-      providerProfileId: 'tencent-provider',
-    }))
-    mockState.agents.set('worker-1', makeAgent({
-      id: 'worker-1',
-      name: 'Worker One',
-      providerProfileId: 'tencent-provider',
-    }))
+    mockState.agents.set(
+      'host-agent',
+      makeAgent({
+        id: 'host-agent',
+        name: 'Host',
+        providerProfileId: 'tencent-provider',
+      }),
+    )
+    mockState.agents.set(
+      'worker-1',
+      makeAgent({
+        id: 'worker-1',
+        name: 'Worker One',
+        providerProfileId: 'tencent-provider',
+      }),
+    )
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({
       providerProfileId: 'tencent-provider',
@@ -1670,10 +1989,12 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(mockState.sdkConfigs[0]?.mcpServers).toMatchObject({
       spark_team: expect.objectContaining({ type: 'sdk', name: 'spark_team' }),
     })
-    expect(mockState.sdkConfigs[0]?.allowedTools).toEqual(expect.arrayContaining([
-      'mcp__spark_team__agent_dispatch',
-      'mcp__spark_team__agent_dispatch_batch',
-    ]))
+    expect(mockState.sdkConfigs[0]?.allowedTools).toEqual(
+      expect.arrayContaining([
+        'mcp__spark_team__agent_dispatch',
+        'mcp__spark_team__agent_dispatch_batch',
+      ]),
+    )
     // 产品决策（2026-07-04）：编排宿主不再硬剥离工具，「优先派发」只靠提示词引导。
     const hostDisallowed = (mockState.sdkConfigs[0]?.disallowedTools as string[] | undefined) ?? []
     expect(hostDisallowed).not.toContain('Edit')
@@ -1697,18 +2018,24 @@ describe('SessionService runtime provider/model resolution', () => {
       keystore_ref: 'key-codex',
       is_default: 0,
     })
-    mockState.agents.set('codex-host', makeAgent({
-      id: 'codex-host',
-      name: 'Codex Host',
-      providerProfileId: 'codex-provider',
-      agentAdapter: 'codex',
-      permissionMode: 'codex-default',
-    }))
-    mockState.agents.set('worker-1', makeAgent({
-      id: 'worker-1',
-      name: 'Worker One',
-      providerProfileId: 'anthropic-provider',
-    }))
+    mockState.agents.set(
+      'codex-host',
+      makeAgent({
+        id: 'codex-host',
+        name: 'Codex Host',
+        providerProfileId: 'codex-provider',
+        agentAdapter: 'codex',
+        permissionMode: 'codex-default',
+      }),
+    )
+    mockState.agents.set(
+      'worker-1',
+      makeAgent({
+        id: 'worker-1',
+        name: 'Worker One',
+        providerProfileId: 'anthropic-provider',
+      }),
+    )
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({
       providerProfileId: 'codex-provider',
@@ -1732,10 +2059,11 @@ describe('SessionService runtime provider/model resolution', () => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
     // codex Host 不能消费 in-process server，必须拿到 http 桥接形态（127.0.0.1 + Bearer token）
-    const teamServer = (mockState.sdkConfigs[0]?.mcpServers as Record<
-      string,
-      { type?: string; url?: string; headers?: Record<string, string> }
-    > | undefined)?.spark_team
+    const teamServer = (
+      mockState.sdkConfigs[0]?.mcpServers as
+        | Record<string, { type?: string; url?: string; headers?: Record<string, string> }>
+        | undefined
+    )?.spark_team
     expect(teamServer).toBeDefined()
     expect(teamServer?.type).toBe('http')
     expect(String(teamServer?.url)).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/)
@@ -1743,16 +2071,22 @@ describe('SessionService runtime provider/model resolution', () => {
   })
 
   it('exposes peer messaging + round controls, and dispatched members respect the resume-safety gate', async () => {
-    mockState.agents.set('host-agent', makeAgent({
-      id: 'host-agent',
-      name: 'Host',
-      providerProfileId: 'anthropic-provider',
-    }))
-    mockState.agents.set('worker-1', makeAgent({
-      id: 'worker-1',
-      name: 'Worker One',
-      providerProfileId: 'anthropic-provider',
-    }))
+    mockState.agents.set(
+      'host-agent',
+      makeAgent({
+        id: 'host-agent',
+        name: 'Host',
+        providerProfileId: 'anthropic-provider',
+      }),
+    )
+    mockState.agents.set(
+      'worker-1',
+      makeAgent({
+        id: 'worker-1',
+        name: 'Worker One',
+        providerProfileId: 'anthropic-provider',
+      }),
+    )
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({
       providerProfileId: 'anthropic-provider',
@@ -1778,16 +2112,18 @@ describe('SessionService runtime provider/model resolution', () => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
     const config = mockState.sdkConfigs[0]
-    const teamServer = (config?.mcpServers as {
-      spark_team: {
-        instance: {
-          tools: Array<{
-            name: string
-            handler: (args: Record<string, unknown>) => Promise<unknown>
-          }>
+    const teamServer = (
+      config?.mcpServers as {
+        spark_team: {
+          instance: {
+            tools: Array<{
+              name: string
+              handler: (args: Record<string, unknown>) => Promise<unknown>
+            }>
+          }
         }
       }
-    }).spark_team
+    ).spark_team
     expect(teamServer.instance.tools.map((tool) => tool.name)).toEqual([
       'agent_dispatch',
       'agent_dispatch_batch',
@@ -1796,14 +2132,16 @@ describe('SessionService runtime provider/model resolution', () => {
       'team_conclude',
       'team_thread_read',
     ])
-    expect(config?.allowedTools).toEqual(expect.arrayContaining([
-      'mcp__spark_team__agent_dispatch',
-      'mcp__spark_team__agent_dispatch_batch',
-      'mcp__spark_team__agent_message',
-      'mcp__spark_team__team_round_advance',
-      'mcp__spark_team__team_conclude',
-      'mcp__spark_team__team_thread_read',
-    ]))
+    expect(config?.allowedTools).toEqual(
+      expect.arrayContaining([
+        'mcp__spark_team__agent_dispatch',
+        'mcp__spark_team__agent_dispatch_batch',
+        'mcp__spark_team__agent_message',
+        'mcp__spark_team__team_round_advance',
+        'mcp__spark_team__team_conclude',
+        'mcp__spark_team__team_thread_read',
+      ]),
+    )
 
     const dispatchTool = teamServer.instance.tools.find((tool) => tool.name === 'agent_dispatch')
     if (dispatchTool == null) throw new Error('expected agent_dispatch tool')
@@ -1831,16 +2169,22 @@ describe('SessionService runtime provider/model resolution', () => {
   })
 
   it('grants members agent_message (and only it) when peer messaging is on and nesting is off', async () => {
-    mockState.agents.set('host-agent', makeAgent({
-      id: 'host-agent',
-      name: 'Host',
-      providerProfileId: 'anthropic-provider',
-    }))
-    mockState.agents.set('worker-1', makeAgent({
-      id: 'worker-1',
-      name: 'Worker One',
-      providerProfileId: 'anthropic-provider',
-    }))
+    mockState.agents.set(
+      'host-agent',
+      makeAgent({
+        id: 'host-agent',
+        name: 'Host',
+        providerProfileId: 'anthropic-provider',
+      }),
+    )
+    mockState.agents.set(
+      'worker-1',
+      makeAgent({
+        id: 'worker-1',
+        name: 'Worker One',
+        providerProfileId: 'anthropic-provider',
+      }),
+    )
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({
       providerProfileId: 'anthropic-provider',
@@ -1865,17 +2209,21 @@ describe('SessionService runtime provider/model resolution', () => {
     await vi.waitFor(() => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
-    const hostTeamServer = (mockState.sdkConfigs[0]?.mcpServers as {
-      spark_team: {
-        instance: {
-          tools: Array<{
-            name: string
-            handler: (args: Record<string, unknown>) => Promise<unknown>
-          }>
+    const hostTeamServer = (
+      mockState.sdkConfigs[0]?.mcpServers as {
+        spark_team: {
+          instance: {
+            tools: Array<{
+              name: string
+              handler: (args: Record<string, unknown>) => Promise<unknown>
+            }>
+          }
         }
       }
-    }).spark_team
-    const dispatchTool = hostTeamServer.instance.tools.find((tool) => tool.name === 'agent_dispatch')
+    ).spark_team
+    const dispatchTool = hostTeamServer.instance.tools.find(
+      (tool) => tool.name === 'agent_dispatch',
+    )
     if (dispatchTool == null) throw new Error('expected agent_dispatch tool')
 
     await dispatchTool.handler({ targetAgentId: 'worker-1', instruction: 'first pass' })
@@ -1892,32 +2240,52 @@ describe('SessionService runtime provider/model resolution', () => {
     // 把话带回 Host 转发）。
     expect(memberPrompt).toContain('mcp__spark_team__agent_message')
     expect(memberPrompt).toContain('Do NOT immediately ping back')
-    const memberTeamServer = (memberConfig?.mcpServers as {
-      spark_team?: { instance: { tools: Array<{ name: string }> } }
-    } | undefined)?.spark_team
+    const memberTeamServer = (
+      memberConfig?.mcpServers as
+        | {
+            spark_team?: { instance: { tools: Array<{ name: string }> } }
+          }
+        | undefined
+    )?.spark_team
     expect(memberTeamServer).toBeDefined()
     // 嵌套关着：只有 agent_message + 只读 team_thread_read，不能越权获得 dispatch / 轮次控制工具
-    expect(memberTeamServer?.instance.tools.map((tool) => tool.name)).toEqual(['agent_message', 'team_thread_read'])
-    expect(memberConfig?.allowedTools).toEqual(expect.arrayContaining(['mcp__spark_team__agent_message']))
-    expect(memberConfig?.allowedTools).not.toEqual(expect.arrayContaining(['mcp__spark_team__agent_dispatch']))
+    expect(memberTeamServer?.instance.tools.map((tool) => tool.name)).toEqual([
+      'agent_message',
+      'team_thread_read',
+    ])
+    expect(memberConfig?.allowedTools).toEqual(
+      expect.arrayContaining(['mcp__spark_team__agent_message']),
+    )
+    expect(memberConfig?.allowedTools).not.toEqual(
+      expect.arrayContaining(['mcp__spark_team__agent_dispatch']),
+    )
   })
 
   it('gives an @-mentioned member the roster + agent_message tools without stripping its work tools', async () => {
-    mockState.agents.set('host-agent', makeAgent({
-      id: 'host-agent',
-      name: 'Host',
-      providerProfileId: 'anthropic-provider',
-    }))
-    mockState.agents.set('worker-1', makeAgent({
-      id: 'worker-1',
-      name: 'Worker One',
-      providerProfileId: 'anthropic-provider',
-    }))
-    mockState.agents.set('worker-2', makeAgent({
-      id: 'worker-2',
-      name: 'Worker Two',
-      providerProfileId: 'anthropic-provider',
-    }))
+    mockState.agents.set(
+      'host-agent',
+      makeAgent({
+        id: 'host-agent',
+        name: 'Host',
+        providerProfileId: 'anthropic-provider',
+      }),
+    )
+    mockState.agents.set(
+      'worker-1',
+      makeAgent({
+        id: 'worker-1',
+        name: 'Worker One',
+        providerProfileId: 'anthropic-provider',
+      }),
+    )
+    mockState.agents.set(
+      'worker-2',
+      makeAgent({
+        id: 'worker-2',
+        name: 'Worker Two',
+        providerProfileId: 'anthropic-provider',
+      }),
+    )
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({
       providerProfileId: 'anthropic-provider',
@@ -1936,7 +2304,11 @@ describe('SessionService runtime provider/model resolution', () => {
       },
     })
 
-    await service.sendTurn({ sessionId, message: '去问问 Worker Two 的结论', mentionAgentId: 'worker-1' })
+    await service.sendTurn({
+      sessionId,
+      message: '去问问 Worker Two 的结论',
+      mentionAgentId: 'worker-1',
+    })
 
     await vi.waitFor(() => {
       expect(mockState.sdkConfigs).toHaveLength(1)
@@ -1947,12 +2319,19 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(prompt).toContain('a MEMBER of Host')
     expect(prompt).toContain('id: worker-2')
     expect(prompt).toContain('mcp__spark_team__agent_message')
-    const teamServer = (config?.mcpServers as {
-      spark_team?: { instance: { tools: Array<{ name: string }> } }
-    } | undefined)?.spark_team
+    const teamServer = (
+      config?.mcpServers as
+        | {
+            spark_team?: { instance: { tools: Array<{ name: string }> } }
+          }
+        | undefined
+    )?.spark_team
     expect(teamServer).toBeDefined()
     // 只可对话（agent_message）+ 只读翻线程（team_thread_read），不可派发
-    expect(teamServer?.instance.tools.map((tool) => tool.name)).toEqual(['agent_message', 'team_thread_read'])
+    expect(teamServer?.instance.tools.map((tool) => tool.name)).toEqual([
+      'agent_message',
+      'team_thread_read',
+    ])
     // 关键回归：peer-only server 不得触发编排模式工具剥离（成员还要 Edit/Write/Bash 干活）
     const disallowed = (config?.disallowedTools as string[] | undefined) ?? []
     expect(disallowed).not.toContain('Edit')
@@ -1960,28 +2339,36 @@ describe('SessionService runtime provider/model resolution', () => {
   })
 
   it('exposes workflow_run for a managed host with an enabled explicit workflow worker', async () => {
-    mockState.agents.set('workflow-host', makeAgent({
-      id: 'workflow-host',
-      name: 'Workflow Host',
-      providerProfileId: 'tencent-provider',
-      workflowId: 'workflow-1',
-    }))
-    mockState.agents.set('workflow-worker', makeAgent({
-      id: 'workflow-worker',
-      name: 'Workflow Worker',
-      providerProfileId: 'tencent-provider',
-    }))
+    mockState.agents.set(
+      'workflow-host',
+      makeAgent({
+        id: 'workflow-host',
+        name: 'Workflow Host',
+        providerProfileId: 'tencent-provider',
+        workflowId: 'workflow-1',
+      }),
+    )
+    mockState.agents.set(
+      'workflow-worker',
+      makeAgent({
+        id: 'workflow-worker',
+        name: 'Workflow Worker',
+        providerProfileId: 'tencent-provider',
+      }),
+    )
     mockState.workflows.set('workflow-1', {
       id: 'workflow-1',
       name: 'Sequential workflow',
       description: 'Run the configured worker.',
       graph: {
-        nodes: [{
-          id: 'work',
-          kind: 'agent',
-          title: 'Do the work',
-          config: { agentId: 'workflow-worker', outputKey: 'result' },
-        }],
+        nodes: [
+          {
+            id: 'work',
+            kind: 'agent',
+            title: 'Do the work',
+            config: { agentId: 'workflow-worker', outputKey: 'result' },
+          },
+        ],
         edges: [],
       },
     })
@@ -2003,13 +2390,13 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(config?.mcpServers).toMatchObject({
       spark_team: expect.objectContaining({ type: 'sdk', name: 'spark_team' }),
     })
-    const teamServer = (config?.mcpServers as {
-      spark_team: { instance: { tools: Array<{ name: string }> } }
-    }).spark_team
+    const teamServer = (
+      config?.mcpServers as {
+        spark_team: { instance: { tools: Array<{ name: string }> } }
+      }
+    ).spark_team
     expect(teamServer.instance.tools.map((tool) => tool.name)).toEqual(['workflow_run'])
-    expect(config?.allowedTools).toEqual(expect.arrayContaining([
-      'mcp__spark_team__workflow_run',
-    ]))
+    expect(config?.allowedTools).toEqual(expect.arrayContaining(['mcp__spark_team__workflow_run']))
     // 产品决策（2026-07-04）：挂工作流的宿主同样保留全量工具，不再硬剥离。
     const workflowHostDisallowed = (config?.disallowedTools as string[] | undefined) ?? []
     expect(workflowHostDisallowed).not.toContain('Edit')
@@ -2020,12 +2407,15 @@ describe('SessionService runtime provider/model resolution', () => {
   })
 
   it('uses the host agent for unbound or unavailable workflow agent nodes', async () => {
-    mockState.agents.set('workflow-host', makeAgent({
-      id: 'workflow-host',
-      name: 'Workflow Host',
-      providerProfileId: 'tencent-provider',
-      workflowId: 'workflow-host-fallback',
-    }))
+    mockState.agents.set(
+      'workflow-host',
+      makeAgent({
+        id: 'workflow-host',
+        name: 'Workflow Host',
+        providerProfileId: 'tencent-provider',
+        workflowId: 'workflow-host-fallback',
+      }),
+    )
     mockState.workflows.set('workflow-host-fallback', {
       id: 'workflow-host-fallback',
       name: 'Host fallback workflow',
@@ -2062,18 +2452,20 @@ describe('SessionService runtime provider/model resolution', () => {
     await vi.waitFor(() => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
-    const tool = ((mockState.sdkConfigs[0]?.mcpServers as {
-      spark_team: {
-        instance: {
-          tools: Array<{
-            name: string
-            handler: (args: Record<string, unknown>) => Promise<{
-              structuredContent: unknown
+    const tool = (
+      mockState.sdkConfigs[0]?.mcpServers as {
+        spark_team: {
+          instance: {
+            tools: Array<{
+              name: string
+              handler: (args: Record<string, unknown>) => Promise<{
+                structuredContent: unknown
+              }>
             }>
-          }>
+          }
         }
       }
-    }).spark_team.instance.tools).find((item) => item.name === 'workflow_run')
+    ).spark_team.instance.tools.find((item) => item.name === 'workflow_run')
     if (tool == null) throw new Error('expected workflow_run tool')
 
     const response = await tool.handler({ objective: 'exercise host fallback' })
@@ -2086,33 +2478,42 @@ describe('SessionService runtime provider/model resolution', () => {
       ],
     })
     expect(mockState.sdkConfigs).toHaveLength(3)
-    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).toContain('Agent: Workflow Host (workflow-host)')
-    expect(String(mockState.sdkConfigs[2]?.systemPrompt ?? '')).toContain('Agent: Workflow Host (workflow-host)')
+    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).toContain(
+      'Agent: Workflow Host (workflow-host)',
+    )
+    expect(String(mockState.sdkConfigs[2]?.systemPrompt ?? '')).toContain(
+      'Agent: Workflow Host (workflow-host)',
+    )
   })
 
   it('exposes workflow_run for a managed host with a temporary subagent workflow worker', async () => {
-    mockState.agents.set('workflow-host', makeAgent({
-      id: 'workflow-host',
-      name: 'Workflow Host',
-      providerProfileId: 'tencent-provider',
-      workflowId: 'workflow-subagent',
-    }))
+    mockState.agents.set(
+      'workflow-host',
+      makeAgent({
+        id: 'workflow-host',
+        name: 'Workflow Host',
+        providerProfileId: 'tencent-provider',
+        workflowId: 'workflow-subagent',
+      }),
+    )
     mockState.workflows.set('workflow-subagent', {
       id: 'workflow-subagent',
       name: 'Subagent workflow',
       description: 'Run a temporary subagent worker.',
       graph: {
-        nodes: [{
-          id: 'draft-temp',
-          kind: 'subagent',
-          title: 'Draft Temp',
-          config: {
-            prompt: 'Draft the section',
-            outputKey: 'section',
-            modelId: 'glm-5',
-            providerProfileId: 'tencent-provider',
+        nodes: [
+          {
+            id: 'draft-temp',
+            kind: 'subagent',
+            title: 'Draft Temp',
+            config: {
+              prompt: 'Draft the section',
+              outputKey: 'section',
+              modelId: 'glm-5',
+              providerProfileId: 'tencent-provider',
+            },
           },
-        }],
+        ],
         edges: [],
       },
     })
@@ -2131,33 +2532,38 @@ describe('SessionService runtime provider/model resolution', () => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
     const config = mockState.sdkConfigs[0]
-    const teamServer = (config?.mcpServers as {
-      spark_team: { instance: { tools: Array<{ name: string }> } }
-    }).spark_team
+    const teamServer = (
+      config?.mcpServers as {
+        spark_team: { instance: { tools: Array<{ name: string }> } }
+      }
+    ).spark_team
     expect(teamServer.instance.tools.map((tool) => tool.name)).toEqual(['workflow_run'])
-    expect(config?.allowedTools).toEqual(expect.arrayContaining([
-      'mcp__spark_team__workflow_run',
-    ]))
+    expect(config?.allowedTools).toEqual(expect.arrayContaining(['mcp__spark_team__workflow_run']))
   })
 
   it('exposes workflow_run for an atomic-only workflow so the host can execute it reliably', async () => {
-    mockState.agents.set('workflow-host', makeAgent({
-      id: 'workflow-host',
-      name: 'Workflow Host',
-      providerProfileId: 'tencent-provider',
-      workflowId: 'workflow-atomic',
-    }))
+    mockState.agents.set(
+      'workflow-host',
+      makeAgent({
+        id: 'workflow-host',
+        name: 'Workflow Host',
+        providerProfileId: 'tencent-provider',
+        workflowId: 'workflow-atomic',
+      }),
+    )
     mockState.workflows.set('workflow-atomic', {
       id: 'workflow-atomic',
       name: 'Atomic workflow',
       description: 'Run host-side atomic nodes.',
       graph: {
-        nodes: [{
-          id: 'brief',
-          kind: 'input',
-          title: 'Brief',
-          config: { prompt: 'Atomic brief', outputKey: 'brief' },
-        }],
+        nodes: [
+          {
+            id: 'brief',
+            kind: 'input',
+            title: 'Brief',
+            config: { prompt: 'Atomic brief', outputKey: 'brief' },
+          },
+        ],
         edges: [],
       },
     })
@@ -2176,38 +2582,46 @@ describe('SessionService runtime provider/model resolution', () => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
     const config = mockState.sdkConfigs[0]
-    const teamServer = (config?.mcpServers as {
-      spark_team: { instance: { tools: Array<{ name: string }> } }
-    }).spark_team
+    const teamServer = (
+      config?.mcpServers as {
+        spark_team: { instance: { tools: Array<{ name: string }> } }
+      }
+    ).spark_team
     expect(teamServer.instance.tools.map((tool) => tool.name)).toEqual(['workflow_run'])
-    expect(config?.allowedTools).toEqual(expect.arrayContaining([
-      'mcp__spark_team__workflow_run',
-    ]))
+    expect(config?.allowedTools).toEqual(expect.arrayContaining(['mcp__spark_team__workflow_run']))
   })
 
   it('returns a structured failed workflow_run result when a workflow worker fails', async () => {
-    mockState.agents.set('workflow-host', makeAgent({
-      id: 'workflow-host',
-      name: 'Workflow Host',
-      providerProfileId: 'tencent-provider',
-      workflowId: 'workflow-fail',
-    }))
-    mockState.agents.set('workflow-worker', makeAgent({
-      id: 'workflow-worker',
-      name: 'Workflow Worker',
-      providerProfileId: 'tencent-provider',
-    }))
+    mockState.agents.set(
+      'workflow-host',
+      makeAgent({
+        id: 'workflow-host',
+        name: 'Workflow Host',
+        providerProfileId: 'tencent-provider',
+        workflowId: 'workflow-fail',
+      }),
+    )
+    mockState.agents.set(
+      'workflow-worker',
+      makeAgent({
+        id: 'workflow-worker',
+        name: 'Workflow Worker',
+        providerProfileId: 'tencent-provider',
+      }),
+    )
     mockState.workflows.set('workflow-fail', {
       id: 'workflow-fail',
       name: 'Failing workflow',
       description: 'Exercise failed worker responses.',
       graph: {
-        nodes: [{
-          id: 'work',
-          kind: 'agent',
-          title: 'Do the work',
-          config: { agentId: 'workflow-worker', retryCount: 1, outputKey: 'result' },
-        }],
+        nodes: [
+          {
+            id: 'work',
+            kind: 'agent',
+            title: 'Do the work',
+            config: { agentId: 'workflow-worker', retryCount: 1, outputKey: 'result' },
+          },
+        ],
         edges: [],
       },
     })
@@ -2225,19 +2639,21 @@ describe('SessionService runtime provider/model resolution', () => {
     await vi.waitFor(() => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
-    const tool = ((mockState.sdkConfigs[0]?.mcpServers as {
-      spark_team: {
-        instance: {
-          tools: Array<{
-            name: string
-            handler: (args: Record<string, unknown>) => Promise<{
-              content: Array<{ text: string }>
-              structuredContent: unknown
+    const tool = (
+      mockState.sdkConfigs[0]?.mcpServers as {
+        spark_team: {
+          instance: {
+            tools: Array<{
+              name: string
+              handler: (args: Record<string, unknown>) => Promise<{
+                content: Array<{ text: string }>
+                structuredContent: unknown
+              }>
             }>
-          }>
+          }
         }
       }
-    }).spark_team.instance.tools).find((item) => item.name === 'workflow_run')
+    ).spark_team.instance.tools.find((item) => item.name === 'workflow_run')
     if (tool == null) throw new Error('expected workflow_run tool')
     mockState.nextSdkTurnErrors.push('member failure', 'member failure')
 
@@ -2256,38 +2672,46 @@ describe('SessionService runtime provider/model resolution', () => {
   })
 
   it('applies workflow agent node runtime overrides to the dispatched member turn', async () => {
-    mockState.agents.set('workflow-host', makeAgent({
-      id: 'workflow-host',
-      name: 'Workflow Host',
-      providerProfileId: 'tencent-provider',
-      workflowId: 'workflow-overrides',
-    }))
-    mockState.agents.set('workflow-worker', makeAgent({
-      id: 'workflow-worker',
-      name: 'Workflow Worker',
-      providerProfileId: 'tencent-provider',
-      modelId: 'glm-5',
-      permissionMode: 'claude-plan',
-      prompt: 'Persisted worker prompt',
-    }))
+    mockState.agents.set(
+      'workflow-host',
+      makeAgent({
+        id: 'workflow-host',
+        name: 'Workflow Host',
+        providerProfileId: 'tencent-provider',
+        workflowId: 'workflow-overrides',
+      }),
+    )
+    mockState.agents.set(
+      'workflow-worker',
+      makeAgent({
+        id: 'workflow-worker',
+        name: 'Workflow Worker',
+        providerProfileId: 'tencent-provider',
+        modelId: 'glm-5',
+        permissionMode: 'claude-plan',
+        prompt: 'Persisted worker prompt',
+      }),
+    )
     mockState.workflows.set('workflow-overrides', {
       id: 'workflow-overrides',
       name: 'Override workflow',
       description: 'Dispatch with node-level runtime config.',
       graph: {
-        nodes: [{
-          id: 'work',
-          kind: 'agent',
-          title: 'Do override work',
-          config: {
-            agentId: 'workflow-worker',
-            prompt: 'Node prompt wins',
-            modelId: 'mimo-v2.5-pro',
-            providerProfileId: 'xiaomi-provider',
-            permissionMode: 'claude-auto',
-            outputKey: 'result',
+        nodes: [
+          {
+            id: 'work',
+            kind: 'agent',
+            title: 'Do override work',
+            config: {
+              agentId: 'workflow-worker',
+              prompt: 'Node prompt wins',
+              modelId: 'mimo-v2.5-pro',
+              providerProfileId: 'xiaomi-provider',
+              permissionMode: 'claude-auto',
+              outputKey: 'result',
+            },
           },
-        }],
+        ],
         edges: [],
       },
     })
@@ -2305,16 +2729,18 @@ describe('SessionService runtime provider/model resolution', () => {
     await vi.waitFor(() => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
-    const tool = ((mockState.sdkConfigs[0]?.mcpServers as {
-      spark_team: {
-        instance: {
-          tools: Array<{
-            name: string
-            handler: (args: Record<string, unknown>) => Promise<unknown>
-          }>
+    const tool = (
+      mockState.sdkConfigs[0]?.mcpServers as {
+        spark_team: {
+          instance: {
+            tools: Array<{
+              name: string
+              handler: (args: Record<string, unknown>) => Promise<unknown>
+            }>
+          }
         }
       }
-    }).spark_team.instance.tools).find((item) => item.name === 'workflow_run')
+    ).spark_team.instance.tools.find((item) => item.name === 'workflow_run')
     if (tool == null) throw new Error('expected workflow_run tool')
 
     await tool.handler({ objective: 'exercise overrides' })
@@ -2325,7 +2751,9 @@ describe('SessionService runtime provider/model resolution', () => {
     })
     expect(String(mockState.sdkConfigs[1]?.apiEndpoint ?? '')).toContain('/xiaomi/')
     expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).toContain('Node prompt wins')
-    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).not.toContain('Persisted worker prompt')
+    expect(String(mockState.sdkConfigs[1]?.systemPrompt ?? '')).not.toContain(
+      'Persisted worker prompt',
+    )
   })
 
   it('runs workflow verify node commands through workflow_run atomic execution', async () => {
@@ -2338,17 +2766,23 @@ describe('SessionService runtime provider/model resolution', () => {
         project_kind: 'node',
         worktree_meta_json: null,
       })
-      mockState.agents.set('workflow-host', makeAgent({
-        id: 'workflow-host',
-        name: 'Workflow Host',
-        providerProfileId: 'tencent-provider',
-        workflowId: 'workflow-verify',
-      }))
-      mockState.agents.set('workflow-worker', makeAgent({
-        id: 'workflow-worker',
-        name: 'Workflow Worker',
-        providerProfileId: 'tencent-provider',
-      }))
+      mockState.agents.set(
+        'workflow-host',
+        makeAgent({
+          id: 'workflow-host',
+          name: 'Workflow Host',
+          providerProfileId: 'tencent-provider',
+          workflowId: 'workflow-verify',
+        }),
+      )
+      mockState.agents.set(
+        'workflow-worker',
+        makeAgent({
+          id: 'workflow-worker',
+          name: 'Workflow Worker',
+          providerProfileId: 'tencent-provider',
+        }),
+      )
       mockState.workflows.set('workflow-verify', {
         id: 'workflow-verify',
         name: 'Verify workflow',
@@ -2386,20 +2820,22 @@ describe('SessionService runtime provider/model resolution', () => {
       await vi.waitFor(() => {
         expect(mockState.sdkConfigs).toHaveLength(1)
       })
-      const tool = ((mockState.sdkConfigs[0]?.mcpServers as {
-        spark_team: {
-          instance: {
-            tools: Array<{
-              name: string
-              handler: (args: Record<string, unknown>) => Promise<{
-                structuredContent: {
-                  atomicExecutions?: Array<{ nodeId: string; content: string; state: string }>
-                }
+      const tool = (
+        mockState.sdkConfigs[0]?.mcpServers as {
+          spark_team: {
+            instance: {
+              tools: Array<{
+                name: string
+                handler: (args: Record<string, unknown>) => Promise<{
+                  structuredContent: {
+                    atomicExecutions?: Array<{ nodeId: string; content: string; state: string }>
+                  }
+                }>
               }>
-            }>
+            }
           }
         }
-      }).spark_team.instance.tools).find((item) => item.name === 'workflow_run')
+      ).spark_team.instance.tools.find((item) => item.name === 'workflow_run')
       if (tool == null) throw new Error('expected workflow_run tool')
 
       const response = await tool.handler({ objective: 'exercise verify commands' })
@@ -2417,33 +2853,44 @@ describe('SessionService runtime provider/model resolution', () => {
   })
 
   it('exposes both team dispatch and workflow_run when a managed host has team members and workflow workers', async () => {
-    mockState.agents.set('hybrid-host', makeAgent({
-      id: 'hybrid-host',
-      name: 'Hybrid Host',
-      providerProfileId: 'tencent-provider',
-      workflowId: 'workflow-hybrid',
-    }))
-    mockState.agents.set('team-worker', makeAgent({
-      id: 'team-worker',
-      name: 'Team Worker',
-      providerProfileId: 'tencent-provider',
-    }))
-    mockState.agents.set('workflow-worker', makeAgent({
-      id: 'workflow-worker',
-      name: 'Workflow Worker',
-      providerProfileId: 'tencent-provider',
-    }))
+    mockState.agents.set(
+      'hybrid-host',
+      makeAgent({
+        id: 'hybrid-host',
+        name: 'Hybrid Host',
+        providerProfileId: 'tencent-provider',
+        workflowId: 'workflow-hybrid',
+      }),
+    )
+    mockState.agents.set(
+      'team-worker',
+      makeAgent({
+        id: 'team-worker',
+        name: 'Team Worker',
+        providerProfileId: 'tencent-provider',
+      }),
+    )
+    mockState.agents.set(
+      'workflow-worker',
+      makeAgent({
+        id: 'workflow-worker',
+        name: 'Workflow Worker',
+        providerProfileId: 'tencent-provider',
+      }),
+    )
     mockState.workflows.set('workflow-hybrid', {
       id: 'workflow-hybrid',
       name: 'Hybrid workflow',
       description: 'Dispatch through the managed workflow.',
       graph: {
-        nodes: [{
-          id: 'workflow-step',
-          kind: 'agent',
-          title: 'Workflow step',
-          config: { agentId: 'workflow-worker', outputKey: 'result' },
-        }],
+        nodes: [
+          {
+            id: 'workflow-step',
+            kind: 'agent',
+            title: 'Workflow step',
+            config: { agentId: 'workflow-worker', outputKey: 'result' },
+          },
+        ],
         edges: [],
       },
     })
@@ -2471,9 +2918,11 @@ describe('SessionService runtime provider/model resolution', () => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
     const config = mockState.sdkConfigs[0]
-    const teamServer = (config?.mcpServers as {
-      spark_team: { instance: { tools: Array<{ name: string }> } }
-    }).spark_team
+    const teamServer = (
+      config?.mcpServers as {
+        spark_team: { instance: { tools: Array<{ name: string }> } }
+      }
+    ).spark_team
     expect(teamServer.instance.tools.map((tool) => tool.name)).toEqual([
       'agent_dispatch',
       'agent_dispatch_batch',
@@ -2482,29 +2931,37 @@ describe('SessionService runtime provider/model resolution', () => {
       'team_thread_read',
       'workflow_run',
     ])
-    expect(config?.allowedTools).toEqual(expect.arrayContaining([
-      'mcp__spark_team__agent_dispatch',
-      'mcp__spark_team__agent_dispatch_batch',
-      'mcp__spark_team__team_round_advance',
-      'mcp__spark_team__team_conclude',
-      'mcp__spark_team__team_thread_read',
-      'mcp__spark_team__workflow_run',
-    ]))
+    expect(config?.allowedTools).toEqual(
+      expect.arrayContaining([
+        'mcp__spark_team__agent_dispatch',
+        'mcp__spark_team__agent_dispatch_batch',
+        'mcp__spark_team__team_round_advance',
+        'mcp__spark_team__team_conclude',
+        'mcp__spark_team__team_thread_read',
+        'mcp__spark_team__workflow_run',
+      ]),
+    )
   })
 
   it('exposes workflow_run and falls back to host when explicit workers are blank, disabled, or missing', async () => {
-    mockState.agents.set('workflow-host', makeAgent({
-      id: 'workflow-host',
-      name: 'Workflow Host',
-      providerProfileId: 'tencent-provider',
-      workflowId: 'workflow-fallback',
-    }))
-    mockState.agents.set('disabled-worker', makeAgent({
-      id: 'disabled-worker',
-      name: 'Disabled Worker',
-      enabled: false,
-      providerProfileId: 'tencent-provider',
-    }))
+    mockState.agents.set(
+      'workflow-host',
+      makeAgent({
+        id: 'workflow-host',
+        name: 'Workflow Host',
+        providerProfileId: 'tencent-provider',
+        workflowId: 'workflow-fallback',
+      }),
+    )
+    mockState.agents.set(
+      'disabled-worker',
+      makeAgent({
+        id: 'disabled-worker',
+        name: 'Disabled Worker',
+        enabled: false,
+        providerProfileId: 'tencent-provider',
+      }),
+    )
     mockState.workflows.set('workflow-fallback', {
       id: 'workflow-fallback',
       name: 'Fallback workflow',
@@ -2512,7 +2969,12 @@ describe('SessionService runtime provider/model resolution', () => {
       graph: {
         nodes: [
           { id: 'blank', kind: 'agent', title: 'Blank', config: {} },
-          { id: 'disabled', kind: 'agent', title: 'Disabled', config: { agentId: 'disabled-worker' } },
+          {
+            id: 'disabled',
+            kind: 'agent',
+            title: 'Disabled',
+            config: { agentId: 'disabled-worker' },
+          },
           { id: 'missing', kind: 'agent', title: 'Missing', config: { agentId: 'missing-worker' } },
         ],
         edges: [],
@@ -2532,35 +2994,43 @@ describe('SessionService runtime provider/model resolution', () => {
     await vi.waitFor(() => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
-    const teamServer = (mockState.sdkConfigs[0]?.mcpServers as {
-      spark_team?: { instance: { tools: Array<{ name: string }> } }
-    } | undefined)?.spark_team
+    const teamServer = (
+      mockState.sdkConfigs[0]?.mcpServers as
+        | {
+            spark_team?: { instance: { tools: Array<{ name: string }> } }
+          }
+        | undefined
+    )?.spark_team
     expect(teamServer?.instance.tools.map((tool) => tool.name)).toEqual(['workflow_run'])
-    expect(mockState.sdkConfigs[0]?.allowedTools).toEqual(expect.arrayContaining([
-      'mcp__spark_team__workflow_run',
-    ]))
-    expect(mockState.sdkConfigs[0]?.disallowedTools).not.toEqual(expect.arrayContaining([
-      'Edit',
-      'Write',
-      'Bash',
-    ]))
+    expect(mockState.sdkConfigs[0]?.allowedTools).toEqual(
+      expect.arrayContaining(['mcp__spark_team__workflow_run']),
+    )
+    expect(mockState.sdkConfigs[0]?.disallowedTools).not.toEqual(
+      expect.arrayContaining(['Edit', 'Write', 'Bash']),
+    )
     expect(String(mockState.sdkConfigs[0]?.systemPrompt ?? '')).toContain(
       'call `mcp__spark_team__workflow_run` exactly once with the current user objective',
     )
   })
 
   it('does not add orchestrator host restrictions when team members do not resolve', async () => {
-    mockState.agents.set('host-agent', makeAgent({
-      id: 'host-agent',
-      name: 'Host',
-      providerProfileId: 'tencent-provider',
-    }))
-    mockState.agents.set('worker-1', makeAgent({
-      id: 'worker-1',
-      name: 'Disabled Worker',
-      enabled: false,
-      providerProfileId: 'tencent-provider',
-    }))
+    mockState.agents.set(
+      'host-agent',
+      makeAgent({
+        id: 'host-agent',
+        name: 'Host',
+        providerProfileId: 'tencent-provider',
+      }),
+    )
+    mockState.agents.set(
+      'worker-1',
+      makeAgent({
+        id: 'worker-1',
+        name: 'Disabled Worker',
+        enabled: false,
+        providerProfileId: 'tencent-provider',
+      }),
+    )
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({
       providerProfileId: 'tencent-provider',
@@ -2584,15 +3054,15 @@ describe('SessionService runtime provider/model resolution', () => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
     expect(mockState.sdkConfigs[0]?.mcpServers).not.toHaveProperty('spark_team')
-    expect(mockState.sdkConfigs[0]?.allowedTools).not.toEqual(expect.arrayContaining([
-      'mcp__spark_team__agent_dispatch',
-      'mcp__spark_team__agent_dispatch_batch',
-    ]))
-    expect(mockState.sdkConfigs[0]?.disallowedTools).not.toEqual(expect.arrayContaining([
-      'Edit',
-      'Write',
-      'Bash',
-    ]))
+    expect(mockState.sdkConfigs[0]?.allowedTools).not.toEqual(
+      expect.arrayContaining([
+        'mcp__spark_team__agent_dispatch',
+        'mcp__spark_team__agent_dispatch_batch',
+      ]),
+    )
+    expect(mockState.sdkConfigs[0]?.disallowedTools).not.toEqual(
+      expect.arrayContaining(['Edit', 'Write', 'Bash']),
+    )
   })
 
   it('applies provider and model overrides atomically on send-turn', async () => {

@@ -423,14 +423,30 @@ export interface UserQuestionPrompt {
   multiSelect?: boolean
 }
 
+export interface UserQuestionRequest {
+  questionId: string
+  sessionId: string
+  questions: UserQuestionPrompt[]
+  createdAt: string
+}
+
 /** Answer to an AskUserQuestion tool call */
 export interface SessionAnswerQuestionRequest {
+  sessionId: string
   questionId: string
   answers: Record<string, unknown>
 }
 
 export interface SessionAnswerQuestionResponse {
   ok: boolean
+}
+
+export interface SessionListPendingQuestionsRequest {
+  sessionId?: string
+}
+
+export interface SessionListPendingQuestionsResponse {
+  questions: UserQuestionRequest[]
 }
 
 /**
@@ -5114,6 +5130,10 @@ export interface IpcChannelMap {
   ]
   'session:delete-message': [SessionDeleteMessageRequest, SessionDeleteMessageResponse]
   'session:answer-question': [SessionAnswerQuestionRequest, SessionAnswerQuestionResponse]
+  'session:list-pending-questions': [
+    SessionListPendingQuestionsRequest,
+    SessionListPendingQuestionsResponse,
+  ]
 
   // Provider
   'provider:list': [ProviderListRequest, ProviderListResponse]
@@ -5681,10 +5701,12 @@ export interface IpcStreamChannelMap {
     session?: SessionListResponse['sessions'][number]
   }
   /** 用户问题请求（AskUserQuestion 工具，主进程推送，渲染进程显示选择界面）*/
-  'stream:session:user-question': {
+  'stream:session:user-question': UserQuestionRequest
+  /** 用户问题已回答、取消或随会话终止，渲染进程应移除对应问题。 */
+  'stream:session:user-question-closed': {
     questionId: string
     sessionId: string
-    questions: UserQuestionPrompt[]
+    reason: 'answered' | 'cancelled' | 'aborted'
   }
   /** 系统通知被点击，请渲染进程跳转到对应目标 */
   'stream:system-notification:navigate': SystemNotificationNavigateRequest

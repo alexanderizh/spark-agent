@@ -19,6 +19,7 @@ export type {
   SDKTurnAttachment,
   SDKPermissionMode,
   SDKPermissionRequestContext,
+  SDKQuestionRequestContext,
   SDKApprovalResult,
   SDKEffort,
   SparkPermissionMode,

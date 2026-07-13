@@ -133,6 +133,7 @@ import type {
   SDKExecutorConfig,
   SDKMcpServerConfig,
   SDKPermissionRequestContext,
+  SDKQuestionRequestContext,
   SDKTurnAttachment,
 } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
@@ -213,6 +214,7 @@ export type HookTriggerHandler = (
 export type QuestionHandler = (
   sessionId: string,
   questions: UserQuestionPrompt[],
+  context: SDKQuestionRequestContext,
 ) => Promise<Record<string, unknown>>
 type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
 type ActiveExecution = {
@@ -2611,10 +2613,14 @@ export class SessionService {
           : {}),
         ...(this.onQuestion != null && !automation.unattended
           ? {
-              questionCallback: async (sid: string, questions: UserQuestionPrompt[]) => {
+              questionCallback: async (
+                sid: string,
+                questions: UserQuestionPrompt[],
+                context: SDKQuestionRequestContext,
+              ) => {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
                 try {
-                  return await this.onQuestion!(sid, questions)
+                  return await this.onQuestion!(sid, questions, context)
                 } finally {
                   this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
                 }
@@ -5542,7 +5548,7 @@ export class SessionService {
       allowSkip: true,
     }
     try {
-      const answers = await this.onQuestion(sessionId, [decisionQuestion, commentQuestion])
+      const answers = await this.onQuestion(sessionId, [decisionQuestion, commentQuestion], {})
       // 决策按既有 onQuestion 答案解析方式判断（参见 claude-sdk-executor 的
       // findRawQuestionAnswer / extractQuestionAnswerText）：answers.answers 可能是
       // 以 question/id/index 定位的对象数组，单条答案的取值候选为 answer/text/optionLabel/optionValue/value。
@@ -5979,10 +5985,14 @@ export class SessionService {
         : {}),
       ...(this.onQuestion != null
         ? {
-            questionCallback: async (sid: string, questions: UserQuestionPrompt[]) => {
+            questionCallback: async (
+              sid: string,
+              questions: UserQuestionPrompt[],
+              context: SDKQuestionRequestContext,
+            ) => {
               this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
               try {
-                return await this.onQuestion!(sid, questions)
+                return await this.onQuestion!(sid, questions, context)
               } finally {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
               }
