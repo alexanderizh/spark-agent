@@ -569,18 +569,8 @@ export class MessageBuilder {
 
       case 'tool_result': {
         // 优先在「包含该 toolCall block 的消息」上更新（member 工具结果可能不在当前消息）
-        const owner = this.messages.find((m) =>
-          m.blocks.some(
-            (b) =>
-              (b.kind === 'tool_call' || b.kind === 'user_question') &&
-              b.toolCallId === event.toolCallId,
-          ),
-        )
-        const msg =
-          owner ??
-          (this.currentAssistantId
-            ? this.messages.find((m) => m.id === this.currentAssistantId)
-            : null)
+        const owner = this.findToolEventOwner(event.turnId, event.toolCallId)
+        const msg = owner ?? this.findAssistantForEvent(event)
         if (msg) {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           // Update user_question block answered state
@@ -730,9 +720,9 @@ export class MessageBuilder {
       }
 
       case 'terminal_output': {
-        const msg = this.currentAssistantId
-          ? this.messages.find((m) => m.id === this.currentAssistantId)
-          : null
+        const msg =
+          this.findToolEventOwner(event.turnId, event.toolCallId) ??
+          this.findAssistantForEvent(event)
         if (msg) {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           const block = msg.blocks.find(
@@ -1543,6 +1533,24 @@ export class MessageBuilder {
       if (hit) return msg
     }
     return undefined
+  }
+
+  /**
+   * Tool call IDs are only unique within a provider turn. Codex reuses IDs such as
+   * `item_6` across turns, so matching without the turn would update stale history.
+   */
+  private findToolEventOwner(turnId: string, toolCallId: string): UIMessage | undefined {
+    return this.messages.find(
+      (message) =>
+        message.turnId === turnId &&
+        message.blocks.some(
+          (block) =>
+            (block.kind === 'tool_call' ||
+              block.kind === 'user_question' ||
+              block.kind === 'terminal') &&
+            block.toolCallId === toolCallId,
+        ),
+    )
   }
 
   /** delta：追加到同 segment 的流式块；无 segmentId（历史事件）退回最近流式块 */

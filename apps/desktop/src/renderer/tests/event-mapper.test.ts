@@ -955,6 +955,87 @@ describe('MessageBuilder', () => {
     expect(questionBlock).not.toHaveProperty('error')
   })
 
+  it('scopes reused Codex tool call IDs to their originating turn', () => {
+    const builder = new MessageBuilder()
+    const toolCall = (turnId: string, id: string, command: string): AgentEvent => ({
+      ...baseEvent('tool_call'),
+      id,
+      turnId,
+      type: 'tool_call',
+      toolCallId: 'item_6',
+      toolName: 'bash',
+      toolInput: { command },
+      source: 'builtin',
+    })
+    const terminalOutput = (turnId: string, id: string, data: string): AgentEvent => ({
+      ...baseEvent('terminal_output'),
+      id,
+      turnId,
+      type: 'terminal_output',
+      toolCallId: 'item_6',
+      stream: 'stdout',
+      data,
+      isFinal: true,
+      exitCode: 0,
+    })
+    const toolResult = (turnId: string, id: string, output: string): AgentEvent => ({
+      ...baseEvent('tool_result'),
+      id,
+      turnId,
+      type: 'tool_result',
+      toolCallId: 'item_6',
+      toolName: 'bash',
+      status: 'success',
+      output,
+    })
+
+    builder.processEvent(toolCall('turn-1', 'turn-1-call', 'printf old'))
+    builder.processEvent(terminalOutput('turn-1', 'turn-1-terminal', 'old output'))
+    builder.processEvent(toolResult('turn-1', 'turn-1-result', 'old output'))
+    builder.processEvent(toolCall('turn-2', 'turn-2-call', 'printf new'))
+    builder.processEvent(terminalOutput('turn-2', 'turn-2-terminal', 'new output'))
+    builder.processEvent(toolResult('turn-2', 'turn-2-result', 'new output'))
+
+    const messagesByTurn = new Map(
+      builder.getAllMessages().map((message) => [message.turnId, message]),
+    )
+    const firstTurnBlocks = messagesByTurn.get('turn-1')?.blocks ?? []
+    const secondTurnBlocks = messagesByTurn.get('turn-2')?.blocks ?? []
+
+    expect(firstTurnBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'tool_call',
+          toolCallId: 'item_6',
+          status: 'success',
+          output: 'old output',
+        }),
+        expect.objectContaining({
+          kind: 'terminal',
+          toolCallId: 'item_6',
+          stdout: 'old output',
+          isStreaming: false,
+        }),
+      ]),
+    )
+    expect(secondTurnBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'tool_call',
+          toolCallId: 'item_6',
+          status: 'success',
+          output: 'new output',
+        }),
+        expect.objectContaining({
+          kind: 'terminal',
+          toolCallId: 'item_6',
+          stdout: 'new output',
+          isStreaming: false,
+        }),
+      ]),
+    )
+  })
+
   it('updates subagent UIBlock on subagent_completed event', () => {
     const builder = new MessageBuilder()
 
