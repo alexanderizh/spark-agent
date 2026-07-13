@@ -69,6 +69,11 @@ describe('RuntimeSignalCard', () => {
     act(() => root.render(<RuntimeSignalCard block={block} />))
 
     expect(container.querySelector('.runtime-diagnostic-card')).not.toBeNull()
+    expect(container.textContent).not.toContain('CLAUDE_RATE_LIMIT_WARNING')
+    const detailButton = container.querySelector<HTMLButtonElement>(
+      '.runtime-diagnostic-detail-toggle',
+    )
+    act(() => detailButton?.click())
     expect(container.textContent).toContain('CLAUDE_RATE_LIMIT_WARNING')
   })
 
@@ -96,7 +101,7 @@ describe('RuntimeSignalCard', () => {
     expect(container.textContent).toContain('重试 7/10')
     expect(container.textContent).toContain('累计 7 次')
     expect(container.textContent).not.toContain('等待时间')
-    const toggle = container.querySelector<HTMLButtonElement>('.runtime-diagnostic-summary')
+    const toggle = container.querySelector<HTMLButtonElement>('.runtime-diagnostic-detail-toggle')
     expect(toggle?.getAttribute('aria-expanded')).toBe('false')
 
     act(() => toggle?.click())

@@ -2162,6 +2162,33 @@ body.git-review-tree-resizing {
 
 .chat-main-active {
   padding-bottom: 14px;
+  background:
+    radial-gradient(
+      circle 210px at calc(100% + 54px) 72px,
+      color-mix(in srgb, var(--primary, #5876d8) 7%, transparent) 0 99%,
+      transparent 100%
+    ),
+    radial-gradient(
+      circle 240px at -84px calc(100% - 96px),
+      color-mix(in srgb, var(--danger, #df5965) 5%, transparent) 0 99%,
+      transparent 100%
+    ),
+    var(--bg);
+}
+
+.app.theme-dark .chat-main-active {
+  background:
+    radial-gradient(
+      circle 210px at calc(100% + 54px) 72px,
+      color-mix(in srgb, var(--primary, #7f9cff) 5%, transparent) 0 99%,
+      transparent 100%
+    ),
+    radial-gradient(
+      circle 240px at -84px calc(100% - 96px),
+      color-mix(in srgb, var(--danger, #ef7a84) 4%, transparent) 0 99%,
+      transparent 100%
+    ),
+    var(--bg);
 }
 
 .chat-main-active .composer-inner {
