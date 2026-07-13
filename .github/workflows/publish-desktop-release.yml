@@ -218,6 +218,8 @@ jobs:
           # Windows 签名
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          # 官网发布以可下载安装为优先：签名不可用时降级为未签名安装包。
+          ALLOW_UNSIGNED_WINDOWS_RELEASE: '1'
           # 手动触发时由 workflow_dispatch 输入决定是否发布；push 时默认发布
           PUBLISH_FLAG: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_release == 'true') || github.event_name == 'push' }}
         shell: bash
@@ -288,7 +290,7 @@ jobs:
           }
 
           if [ "${{ matrix.platform }}" = "win" ]; then
-            REQUIRE_WINDOWS_SIGNING=1 bash apps/desktop/scripts/build-win-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT}
+            bash apps/desktop/scripts/build-win-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT}
           else
             run_mac_build_with_retry
           fi
