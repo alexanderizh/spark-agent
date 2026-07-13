@@ -31,7 +31,11 @@ export function buildCanvasOperationProjection(
     }
   }
 
-  const embeddedOutputNodeIds = new Set(producerByOutputNodeId.keys())
+  // 未物化的产物继续内嵌在操作节点中；一旦产物进入真实 group，就作为组内节点显示。
+  // 这样任务节点仍保留多产物预览，同时自动展开的产物组不会成为空壳。
+  const embeddedOutputNodeIds = new Set(
+    [...producerByOutputNodeId.keys()].filter((nodeId) => !nodeById.get(nodeId)?.parentNodeId),
+  )
   const visibleNodes = nodes.filter((node) => !embeddedOutputNodeIds.has(node.id))
   const visibleEdges: CanvasEdge[] = []
 

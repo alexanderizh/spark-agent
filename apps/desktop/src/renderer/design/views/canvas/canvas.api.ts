@@ -29,10 +29,7 @@ import {
   type ShotSegment,
   type FilmProjectData,
 } from './canvasFilmAssets'
-import {
-  writeCharacterSubviews,
-  type FilmCharacterSubview,
-} from './canvasCharacterLibrary'
+import { writeCharacterSubviews, type FilmCharacterSubview } from './canvasCharacterLibrary'
 import type { FilmReference, ManuscriptChapterRef } from './canvasFilmTypes'
 import {
   upsertManuscriptChapters,
@@ -53,7 +50,11 @@ import {
 } from './canvasNodeSize'
 import { pruneModelParamsForCanvas } from './canvasMediaContract'
 import { isShotScriptText } from './canvasShotTableParse'
-import { placeAutoNodeToRight, stackAutoNodesToRight } from './canvasAutoPlacement'
+import { placeAutoNodeToRight } from './canvasAutoPlacement'
+import {
+  resolveCollisionFreeBatchPositions,
+  resolveCollisionFreeNodePosition,
+} from './canvasCollisionPlacement'
 import type {
   CanvasMediaTaskCreateRequest,
   CanvasMediaTaskCreateResponse,
@@ -119,7 +120,10 @@ function formatCanvasTextNodeContext(node: CanvasNode, assets: CanvasAsset[]): s
   return `【${canvasTextNodeContextKind(node, content)}｜${name}】\n${content}`
 }
 
-function buildCanvasInputTextContext(inputNodeIds: readonly string[] | undefined, db: CanvasDb): string {
+function buildCanvasInputTextContext(
+  inputNodeIds: readonly string[] | undefined,
+  db: CanvasDb,
+): string {
   if (!inputNodeIds || inputNodeIds.length === 0) return ''
   const inputIdSet = new Set(inputNodeIds)
   return db.nodes
@@ -129,7 +133,10 @@ function buildCanvasInputTextContext(inputNodeIds: readonly string[] | undefined
     .join('\n\n')
 }
 
-function mergeCanvasPromptWithInputTextContext(prompt: string | undefined, context: string): string | undefined {
+function mergeCanvasPromptWithInputTextContext(
+  prompt: string | undefined,
+  context: string,
+): string | undefined {
   const trimmedPrompt = (prompt ?? '').trim()
   const trimmedContext = context.trim()
   if (!trimmedContext) return trimmedPrompt || undefined
@@ -1155,9 +1162,7 @@ function findCanvasTaskNode(
   projectId: string,
   taskId: string,
 ): CanvasTaskNodeLookup | null {
-  const directNode = db.nodes.find(
-    (item) => item.taskId === taskId && item.projectId === projectId,
-  )
+  const directNode = db.nodes.find((item) => item.taskId === taskId && item.projectId === projectId)
   if (directNode) return { node: directNode, ownsTask: true }
 
   const edgeTargetIds = db.edges
@@ -2501,6 +2506,12 @@ export const canvasApi = {
       nodeType === 'text' || nodeType === 'prompt'
         ? fitTextNodeSize(assetText)
         : fitMediaNodeSize(asset.type, asset.width, asset.height)
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+    })
     const data: CanvasNode['data'] =
       nodeType === 'text' || nodeType === 'prompt'
         ? {
@@ -2520,8 +2531,8 @@ export const canvasApi = {
       type: nodeType,
       title: asset.title ?? asset.type,
       assetId: asset.id,
-      x: input.x,
-      y: input.y,
+      x: position.x,
+      y: position.y,
       width: size.width,
       height: size.height,
       data,
@@ -3129,15 +3140,22 @@ export const canvasApi = {
     )
     const kind = input.kind ?? 'text'
     const format = input.format ?? (kind === 'prompt' ? 'prompt' : 'plain')
+    const size = pickTextNodeSize(input.text)
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+    })
     const node = createNodeBase({
       projectId: input.projectId,
       boardId: input.boardId,
       type: kind,
       title: kind === 'prompt' ? 'Prompt' : 'Text note',
-      x: input.x,
-      y: input.y,
+      x: position.x,
+      y: position.y,
       // 长文本节点（剧本/文稿等）默认放大尺寸，卡片内支持滚动（canvasNodeSize.ts）
-      ...pickTextNodeSize(input.text),
+      ...size,
       data: { text: input.text, format },
     })
     node.zIndex = maxZ + 1
@@ -3207,21 +3225,33 @@ export const canvasApi = {
     imageWidth?: number
     imageHeight?: number
   }): Promise<CanvasNode> {
-    const db = readDb()
-    const maxZ = Math.max(
-      0,
-      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
-    )
     const fileUrl = encodeToSafeFileUrl(input.filePath)
     const imageDimensions =
       input.imageWidth && input.imageHeight
         ? { width: input.imageWidth, height: input.imageHeight }
         : await readDisplayImageDimensions(fileUrl)
+    // 尺寸探测是异步的；必须在 await 之后读取最新 DB，避免批量并发导入用同一旧快照
+    // 写回，造成节点丢失或碰撞检测漏掉同批前序节点。
+    const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
     const fittedSize = fitMediaNodeSize(
       'image',
       imageDimensions?.width ?? input.imageWidth,
       imageDimensions?.height ?? input.imageHeight,
     )
+    const size = {
+      width: input.width ?? fittedSize.width,
+      height: input.height ?? fittedSize.height,
+    }
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+    })
     const asset: CanvasAsset = {
       id: uid('canvas_asset'),
       projectId: input.projectId,
@@ -3246,10 +3276,10 @@ export const canvasApi = {
       type: 'image',
       title: input.file.name,
       assetId: asset.id,
-      x: input.x,
-      y: input.y,
-      width: input.width ?? fittedSize.width,
-      height: input.height ?? fittedSize.height,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
       data: { url: fileUrl, thumbnailUrl: fileUrl, mimeType: input.file.type },
     })
     node.zIndex = maxZ + 1
@@ -3289,11 +3319,17 @@ export const canvasApi = {
     )
     const fileUrl = encodeToSafeFileUrl(input.filePath)
     const mimeType = input.fileMimeType
-    const fittedSize = fitMediaNodeSize(
-      input.kind,
-      input.mediaWidth,
-      input.mediaHeight,
-    )
+    const fittedSize = fitMediaNodeSize(input.kind, input.mediaWidth, input.mediaHeight)
+    const size = {
+      width: input.width ?? fittedSize.width,
+      height: input.height ?? fittedSize.height,
+    }
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+    })
     const asset: CanvasAsset = {
       id: uid('canvas_asset'),
       projectId: input.projectId,
@@ -3331,10 +3367,10 @@ export const canvasApi = {
       type: input.kind,
       title: input.fileName,
       assetId: asset.id,
-      x: input.x,
-      y: input.y,
-      width: input.width ?? fittedSize.width,
-      height: input.height ?? fittedSize.height,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
       data,
     })
     node.zIndex = maxZ + 1
@@ -3351,9 +3387,6 @@ export const canvasApi = {
 
   async createGroupNode(projectId: string, nodeIds: string[]): Promise<CanvasSnapshot> {
     const db = readDb()
-    const board = db.boards.find((item) => item.projectId === projectId)
-    if (!board) throw new Error('Canvas board not found')
-
     const selected = new Set(nodeIds)
     const sourceNodes = db.nodes.filter(
       (node) =>
@@ -3364,6 +3397,10 @@ export const canvasApi = {
         selected.has(node.id),
     )
     if (sourceNodes.length < 2) return this.openSnapshot(projectId)
+    const board = db.boards.find(
+      (item) => item.id === sourceNodes[0]?.boardId && item.projectId === projectId,
+    )
+    if (!board) throw new Error('Canvas board not found')
 
     const at = now()
     const maxZ = Math.max(
@@ -3420,7 +3457,7 @@ export const canvasApi = {
     )
     updateProjectCounts(db, projectId)
     writeDb(db)
-    return this.openSnapshot(projectId)
+    return this.openSnapshot(projectId, board.id)
   },
 
   async dissolveGroupNode(projectId: string, groupId: string): Promise<CanvasSnapshot> {
@@ -3767,13 +3804,16 @@ export const canvasApi = {
           task.negativePrompt = data.negativePrompt ?? null
         if (Object.prototype.hasOwnProperty.call(data, 'modelParams'))
           task.modelParams = data.modelParams ?? {}
-        if (Object.prototype.hasOwnProperty.call(data, 'agentId')) task.agentId = data.agentId ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'agentId'))
+          task.agentId = data.agentId ?? null
         if (Object.prototype.hasOwnProperty.call(data, 'providerProfileId'))
           task.providerProfileId = data.providerProfileId ?? null
         if (Object.prototype.hasOwnProperty.call(data, 'manifestId'))
           task.manifestId = data.manifestId ?? null
-        if (Object.prototype.hasOwnProperty.call(data, 'modelId')) task.modelId = data.modelId ?? null
-        if (Object.prototype.hasOwnProperty.call(data, 'skillIds')) task.skillIds = data.skillIds ?? []
+        if (Object.prototype.hasOwnProperty.call(data, 'modelId'))
+          task.modelId = data.modelId ?? null
+        if (Object.prototype.hasOwnProperty.call(data, 'skillIds'))
+          task.skillIds = data.skillIds ?? []
         if (Object.prototype.hasOwnProperty.call(data, 'reasoningEffort'))
           task.reasoningEffort = data.reasoningEffort ?? null
         task.updatedAt = at
@@ -3910,8 +3950,15 @@ export const canvasApi = {
     if (!board || !project) throw new Error('Canvas board not found')
     const at = now()
     const taskId = uid('canvas_task')
-    const x = request.outputPlacement?.x ?? 360
-    const y = request.outputPlacement?.y ?? 320
+    const { x, y } = resolveCollisionFreeNodePosition({
+      preferred: {
+        x: request.outputPlacement?.x ?? 360,
+        y: request.outputPlacement?.y ?? 320,
+      },
+      size: OPERATION_NODE_DEFAULT_SIZE,
+      nodes: db.nodes,
+      boardId: board.id,
+    })
     const taskNodeData: CanvasNode['data'] = {
       operation: request.operation,
       status: 'pending',
@@ -4003,8 +4050,15 @@ export const canvasApi = {
     const at = now()
     const taskId = uid('canvas_task')
     const operation = request.operation ?? 'text_generate'
-    const x = request.outputPlacement?.x ?? 360
-    const y = request.outputPlacement?.y ?? 320
+    const { x, y } = resolveCollisionFreeNodePosition({
+      preferred: {
+        x: request.outputPlacement?.x ?? 360,
+        y: request.outputPlacement?.y ?? 320,
+      },
+      size: OPERATION_NODE_DEFAULT_SIZE,
+      nodes: db.nodes,
+      boardId: board.id,
+    })
     const progress = request.progress ?? 8
     const messageText = request.message ?? '本地画布工作流执行中'
     const taskNodeData: CanvasNode['data'] = {
@@ -4207,7 +4261,7 @@ export const canvasApi = {
     outputPipelineRole?: CreateCanvasTaskRequest['outputPipelineRole']
     outputTitle?: CreateCanvasTaskRequest['outputTitle']
   }): Promise<CanvasSnapshot> {
-    const db = readDb()
+    let db = readDb()
     const at = now()
     const taskId = uid('canvas_task')
     const board = db.boards.find(
@@ -4283,6 +4337,9 @@ export const canvasApi = {
       ...(providerProfileId != null ? { providerProfileId } : {}),
       modelParams: mergedModelParams,
     })
+    // 参数裁剪可能走异步 IPC；创建前重新读取最新快照，避免菜单/Agent 同时添加操作节点时
+    // 后写入者覆盖前一个节点，也确保统一碰撞检测包含刚落下的节点。
+    db = readDb()
     const modelParams = pruned.modelParams
     const modelId = input.modelId ?? operationPreset.modelId ?? null
     const agentId = input.agentId ?? operationPreset.agentId ?? null
@@ -4297,6 +4354,12 @@ export const canvasApi = {
       0,
       ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex),
     )
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size: OPERATION_NODE_DEFAULT_SIZE,
+      nodes: db.nodes,
+      boardId: input.boardId,
+    })
     const node = createNodeBase({
       projectId: input.projectId,
       boardId: input.boardId,
@@ -4308,8 +4371,8 @@ export const canvasApi = {
           input.operation as CanvasNodeType,
           nextCanvasNodeSequence(db, input.projectId, input.operation as CanvasNodeType),
         ),
-      x: input.x,
-      y: input.y,
+      x: position.x,
+      y: position.y,
       width: OPERATION_NODE_DEFAULT_SIZE.width,
       height: OPERATION_NODE_DEFAULT_SIZE.height,
       data: {
@@ -4633,8 +4696,15 @@ export const canvasApi = {
     }
     const at = now()
     const taskId = uid('canvas_task')
-    const x = request.outputPlacement?.x ?? 360
-    const y = request.outputPlacement?.y ?? 320
+    const { x, y } = resolveCollisionFreeNodePosition({
+      preferred: {
+        x: request.outputPlacement?.x ?? 360,
+        y: request.outputPlacement?.y ?? 320,
+      },
+      size: OPERATION_NODE_DEFAULT_SIZE,
+      nodes: db.nodes,
+      boardId: board.id,
+    })
 
     // optimistic task node
     const taskNodeData: CanvasNode['data'] = {
@@ -4651,7 +4721,8 @@ export const canvasApi = {
     if (requestPrompt != null && options?.bindToNodeId == null) taskNodeData.prompt = requestPrompt
     if (request.negativePrompt != null) taskNodeData.negativePrompt = request.negativePrompt
     if (request.agentId != null) taskNodeData.agentId = request.agentId
-    if (request.providerProfileId != null) taskNodeData.providerProfileId = request.providerProfileId
+    if (request.providerProfileId != null)
+      taskNodeData.providerProfileId = request.providerProfileId
     if (request.manifestId != null) taskNodeData.manifestId = request.manifestId
     if (request.modelId != null) taskNodeData.modelId = request.modelId
     if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
@@ -4817,8 +4888,15 @@ export const canvasApi = {
     if (!board || !project) throw new Error('Canvas board not found')
     const at = now()
     const taskId = uid('canvas_task')
-    const x = request.outputPlacement?.x ?? 360
-    const y = request.outputPlacement?.y ?? 320
+    const { x, y } = resolveCollisionFreeNodePosition({
+      preferred: {
+        x: request.outputPlacement?.x ?? 360,
+        y: request.outputPlacement?.y ?? 320,
+      },
+      size: OPERATION_NODE_DEFAULT_SIZE,
+      nodes: db.nodes,
+      boardId: board.id,
+    })
 
     const taskNodeData: CanvasNode['data'] = {
       operation: request.operation,
@@ -5031,11 +5109,18 @@ export const canvasApi = {
       updatedAt: at,
     }
     const outputRole = taskNode.data.outputPipelineRole
-    const resultNodePlacement = placeAutoNodeToRight({
+    const preferredResultNodePlacement = placeAutoNodeToRight({
       x: taskNode.x,
       y: taskNode.y,
       width: taskNode.width,
       height: taskNode.height,
+    })
+    const resultNodeSize = pickTextNodeSize(response.text)
+    const resultNodePlacement = resolveCollisionFreeNodePosition({
+      preferred: preferredResultNodePlacement,
+      size: resultNodeSize,
+      nodes: db.nodes,
+      boardId: task.boardId,
     })
     const resultNode = createNodeBase({
       projectId,
@@ -5045,8 +5130,8 @@ export const canvasApi = {
       assetId: asset.id,
       x: resultNodePlacement.x,
       y: resultNodePlacement.y,
-      width: TEXT_NODE_DEFAULT_SIZE.width,
-      height: Math.max(TEXT_NODE_DEFAULT_SIZE.height, 220),
+      width: resultNodeSize.width,
+      height: resultNodeSize.height,
       data: {
         text: response.text,
         format: 'markdown',
@@ -5309,15 +5394,17 @@ export const canvasApi = {
       })
     }
 
-    const outputPlacements = stackAutoNodesToRight(
-      {
+    const outputPlacements = resolveCollisionFreeBatchPositions({
+      preferred: placeAutoNodeToRight({
         x: taskNode.x,
         y: taskNode.y,
         width: taskNode.width,
         height: taskNode.height,
-      },
-      preparedOutputs.map((item) => item.resultNodeSize),
-    )
+      }),
+      sizes: preparedOutputs.map((item) => item.resultNodeSize),
+      nodes: db.nodes,
+      boardId: task.boardId,
+    })
 
     for (const [index, output] of preparedOutputs.entries()) {
       const placement = outputPlacements[index]
@@ -5374,6 +5461,9 @@ export const canvasApi = {
     }
     updateProjectCounts(db, projectId)
     writeDb(db)
+    if (task.outputNodeIds.length > 1) {
+      return this.createGroupNode(projectId, task.outputNodeIds)
+    }
     return this.openSnapshot(projectId)
   },
 
