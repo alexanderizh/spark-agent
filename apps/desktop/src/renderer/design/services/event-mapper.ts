@@ -5,6 +5,7 @@ import type {
   TeamA2AReply,
   TeamMemberEventContext,
   TurnPromptSnapshotEvent,
+  RuntimeEventOrigin,
   UserQuestionOption,
   UserQuestionPrompt,
   WorkflowProgressNode,
@@ -75,6 +76,8 @@ export type UIBlock =
       retryable: boolean
       actionHint?: string
       details?: Array<{ label: string; value: string }>
+      origin?: RuntimeEventOrigin
+      occurrenceCount?: number
     }
   | {
       kind: 'runtime_signal'
@@ -86,6 +89,8 @@ export type UIBlock =
       retryable: boolean
       actionHint?: string
       details?: Array<{ label: string; value: string }>
+      origin?: RuntimeEventOrigin
+      occurrenceCount?: number
     }
   | {
       kind: 'file_change'
@@ -310,6 +315,47 @@ function trimSubagentTranscript(
       overflow = 0
     }
   }
+}
+
+function runtimeEventOriginKey(origin: RuntimeEventOrigin | undefined): string {
+  if (origin == null) return 'host'
+  return origin.kind === 'subagent' ? `subagent:${origin.toolCallId}` : `runtime:${origin.name}`
+}
+
+function runtimeSignalAggregationKey(signal: {
+  signal: string
+  code?: string
+  message: string
+  details?: Array<{ label: string; value: string }>
+  origin?: RuntimeEventOrigin
+}): string {
+  const stableDetails =
+    signal.signal === 'api_retry'
+      ? signal.details?.filter(
+          (detail) => detail.label !== '重试进度' && detail.label !== '等待时间',
+        )
+      : signal.details
+  return JSON.stringify([
+    signal.signal,
+    signal.code ?? '',
+    runtimeEventOriginKey(signal.origin),
+    signal.message,
+    stableDetails ?? [],
+  ])
+}
+
+function agentErrorAggregationKey(error: {
+  code: string
+  message: string
+  details?: Array<{ label: string; value: string }>
+  origin?: RuntimeEventOrigin
+}): string {
+  return JSON.stringify([
+    error.code,
+    runtimeEventOriginKey(error.origin),
+    error.message,
+    error.details ?? [],
+  ])
 }
 
 export class MessageBuilder {
@@ -592,10 +638,32 @@ export class MessageBuilder {
       }
 
       case 'agent_error': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
-        msg.status = 'error'
-        this.finishStreamingBlocks(msg, 'error')
-        msg.blocks.push({
+        const aggregationKey = agentErrorAggregationKey(event)
+        const existing = this.findRuntimeIssueBlock(
+          event.turnId,
+          (block) =>
+            block.kind === 'error' &&
+            agentErrorAggregationKey(block) === aggregationKey,
+        )
+        const relatedSubagent =
+          event.origin?.kind === 'subagent' ? this.findSubagentBlock(event.origin.toolCallId) : null
+        const msg =
+          existing?.message ??
+          relatedSubagent?.message ??
+          this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+
+        if (event.origin?.kind === 'subagent') {
+          if (relatedSubagent != null) {
+            relatedSubagent.block.status = 'error'
+            relatedSubagent.block.progressSummary = event.message
+          }
+        } else {
+          msg.status = 'error'
+          this.finishStreamingBlocks(msg, 'error')
+        }
+
+        const nextBlock: Extract<UIBlock, { kind: 'error' }> = {
           kind: 'error',
           code: event.code,
           ...(event.title != null ? { title: event.title } : {}),
@@ -603,12 +671,28 @@ export class MessageBuilder {
           retryable: event.retryable,
           ...(event.actionHint != null ? { actionHint: event.actionHint } : {}),
           ...(event.details != null ? { details: event.details } : {}),
-        })
+          ...(event.origin != null ? { origin: event.origin } : {}),
+          occurrenceCount: (existing?.block.occurrenceCount ?? 0) + 1,
+        }
+        if (existing != null) this.replaceRuntimeIssueBlock(existing.block, nextBlock)
+        else msg.blocks.push(nextBlock)
         break
       }
 
       case 'runtime_signal': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
+        const aggregationKey = runtimeSignalAggregationKey(event)
+        const existing = this.findRuntimeIssueBlock(
+          event.turnId,
+          (block) =>
+            block.kind === 'runtime_signal' &&
+            runtimeSignalAggregationKey(block) === aggregationKey,
+        )
+        const relatedSubagent =
+          event.origin?.kind === 'subagent' ? this.findSubagentBlock(event.origin.toolCallId) : null
+        const msg =
+          existing?.message ??
+          relatedSubagent?.message ??
+          this.getOrCreateAssistant(event.id, event.timestamp, { turnId: event.turnId })
         if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
         const nextBlock: Extract<UIBlock, { kind: 'runtime_signal' }> = {
           kind: 'runtime_signal',
@@ -620,14 +704,18 @@ export class MessageBuilder {
           retryable: event.retryable === true,
           ...(event.actionHint != null ? { actionHint: event.actionHint } : {}),
           ...(event.details != null ? { details: event.details } : {}),
+          ...(event.origin != null ? { origin: event.origin } : {}),
+          occurrenceCount: (existing?.block.occurrenceCount ?? 0) + 1,
         }
         if (event.signal === 'background_tasks') {
           const currentSnapshot = msg.blocks.find(
             (block): block is Extract<UIBlock, { kind: 'runtime_signal' }> =>
               block.kind === 'runtime_signal' && block.signal === 'background_tasks',
           )
-          if (currentSnapshot != null) Object.assign(currentSnapshot, nextBlock)
+          if (currentSnapshot != null) this.replaceRuntimeIssueBlock(currentSnapshot, nextBlock)
           else msg.blocks.push(nextBlock)
+        } else if (existing != null) {
+          this.replaceRuntimeIssueBlock(existing.block, nextBlock)
         } else {
           msg.blocks.push(nextBlock)
         }
@@ -1253,6 +1341,36 @@ export class MessageBuilder {
       if (block != null) return { message, block }
     }
     return null
+  }
+
+  private findRuntimeIssueBlock(
+    turnId: string,
+    predicate: (block: Extract<UIBlock, { kind: 'error' | 'runtime_signal' }>) => boolean,
+  ): {
+    message: UIMessage
+    block: Extract<UIBlock, { kind: 'error' | 'runtime_signal' }>
+  } | null {
+    for (const message of this.messages) {
+      if (message.turnId !== turnId) continue
+      const block = message.blocks.find(
+        (candidate): candidate is Extract<UIBlock, { kind: 'error' | 'runtime_signal' }> =>
+          (candidate.kind === 'error' || candidate.kind === 'runtime_signal') &&
+          predicate(candidate),
+      )
+      if (block != null) return { message, block }
+    }
+    return null
+  }
+
+  private replaceRuntimeIssueBlock(
+    current: Extract<UIBlock, { kind: 'error' | 'runtime_signal' }>,
+    next: Extract<UIBlock, { kind: 'error' | 'runtime_signal' }>,
+  ): void {
+    delete current.title
+    delete current.actionHint
+    delete current.details
+    delete current.origin
+    Object.assign(current, next)
   }
 
   private getOrCreateSubagentBlock(event: {

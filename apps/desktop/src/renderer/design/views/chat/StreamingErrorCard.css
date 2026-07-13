@@ -1,0 +1,161 @@
+.runtime-diagnostic-card {
+  margin: 8px 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--text-muted, #8b93a1) 20%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--text-muted, #8b93a1) 72%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-raised, #25272b) 92%, transparent);
+  color: var(--text-primary, #e6e8eb);
+}
+
+.runtime-diagnostic-card.is-warning {
+  border-left-color: var(--warning, #f59e0b);
+  background: color-mix(in srgb, var(--warning, #f59e0b) 8%, var(--surface-raised, #25272b));
+}
+
+.runtime-diagnostic-card.is-error {
+  border-left-color: var(--danger, #ef6464);
+  background: color-mix(in srgb, var(--danger, #ef6464) 7%, var(--surface-raised, #25272b));
+}
+
+.runtime-diagnostic-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.runtime-diagnostic-summary:hover {
+  background: color-mix(in srgb, currentColor 4%, transparent);
+}
+
+.runtime-diagnostic-status-icon {
+  color: var(--text-muted, #8b93a1);
+}
+
+.is-warning .runtime-diagnostic-status-icon {
+  color: var(--warning, #f59e0b);
+}
+
+.is-error .runtime-diagnostic-status-icon {
+  color: var(--danger, #ef6464);
+}
+
+.runtime-diagnostic-heading {
+  min-width: 0;
+}
+
+.runtime-diagnostic-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.runtime-diagnostic-title-row strong {
+  flex: 0 1 auto;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-diagnostic-meta {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  color: var(--text-secondary, #aeb4bf);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.runtime-diagnostic-preview {
+  display: block;
+  overflow: hidden;
+  margin-top: 1px;
+  color: var(--text-muted, #8b93a1);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-diagnostic-summary code {
+  max-width: 230px;
+  overflow: hidden;
+  color: var(--text-muted, #8b93a1);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-diagnostic-body {
+  padding: 0 14px 12px 38px;
+  border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.runtime-diagnostic-body > p {
+  margin: 10px 0;
+  color: var(--text-secondary, #aeb4bf);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.runtime-diagnostic-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+}
+
+.runtime-diagnostic-details dt {
+  color: var(--text-muted, #8b93a1);
+  font-size: 11px;
+}
+
+.runtime-diagnostic-details dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary, #aeb4bf);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+
+.runtime-diagnostic-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  color: var(--text-muted, #8b93a1);
+  font-size: 12px;
+}
+
+.runtime-diagnostic-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  color: var(--text-primary, #e6e8eb);
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .runtime-diagnostic-summary code,
+  .runtime-diagnostic-meta:not(:first-of-type) {
+    display: none;
+  }
+}

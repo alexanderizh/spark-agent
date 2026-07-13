@@ -73,6 +73,7 @@ import {
 } from './chat/ModelSwitchMarkers'
 import { StreamingErrorCard } from './chat/StreamingErrorCard'
 import { RuntimeSignalCard } from './chat/RuntimeSignalCard'
+import { groupChatMessageTimeline } from './chat/chat-message-timeline'
 import { ActivitySegment } from './chat/ActivitySegment'
 import {
   getToolLogGroupKind,
@@ -6197,22 +6198,20 @@ const AgentMsg = React.memo(function AgentMsg({
   const leadingThinkingBlocks = blocks.filter((b, i): b is Extract<UIBlock, { kind: 'thinking' }> =>
     isLeadingThinking(b, i),
   )
-  const contentBlocks = reorderTurnSummaryBlocks(
+  const timelineBlocks = reorderTurnSummaryBlocks(
     blocks.filter(
-      (b, i) =>
-        !isLeadingThinking(b, i) &&
-        b.kind !== 'error' &&
-        b.kind !== 'runtime_signal' &&
-        b.kind !== 'terminal' &&
-        !isHiddenTimelineBlock(b),
+      (b, i) => !isLeadingThinking(b, i) && b.kind !== 'terminal' && !isHiddenTimelineBlock(b),
     ),
+  )
+  const timelineGroups = groupChatMessageTimeline(timelineBlocks)
+  const contentBlocks = timelineBlocks.filter(
+    (block) => block.kind !== 'error' && block.kind !== 'runtime_signal',
   )
   const toolCallBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'tool_call' }> =>
       b.kind === 'tool_call' && !isHiddenTimelineBlock(b),
   )
   const errorBlocks = blocks.filter((b) => b.kind === 'error')
-  const runtimeSignalBlocks = blocks.filter((b) => b.kind === 'runtime_signal')
   const isStreaming = status === 'running'
   const hasContent = leadingThinkingBlocks.length > 0 || contentBlocks.length > 0
   // Count active (pending/running) tool calls for parallel indicator
@@ -6346,6 +6345,46 @@ const AgentMsg = React.memo(function AgentMsg({
       }
     : undefined
 
+  const timelineContent = timelineGroups.map((group) => {
+    if (group.kind === 'content') {
+      return (
+        <div className="msg-content-run" key={group.key}>
+          {renderBlocksGrouped(
+            group.blocks,
+            onFilePreview != null
+              ? { sessionId, onFilePreview, autoCollapseTools: !isStreaming }
+              : { sessionId, autoCollapseTools: !isStreaming },
+          )}
+        </div>
+      )
+    }
+    if (group.kind === 'error') {
+      const block = group.block
+      return (
+        <StreamingErrorCard
+          key={group.key}
+          message={block.message}
+          code={block.code}
+          title={block.title ?? 'Agent 执行失败'}
+          level="error"
+          retryable={block.retryable}
+          {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
+          {...(block.details != null ? { details: block.details } : {})}
+          {...(block.origin != null ? { origin: block.origin } : {})}
+          {...(block.occurrenceCount != null ? { occurrenceCount: block.occurrenceCount } : {})}
+          {...(block.retryable && onRetry != null ? { onRetry } : {})}
+        />
+      )
+    }
+    return (
+      <RuntimeSignalCard
+        key={group.key}
+        block={group.block}
+        {...(group.block.retryable && onRetry != null ? { onRetry } : {})}
+      />
+    )
+  })
+
   return (
     <div
       className={`msg msg-agent${showIdentity ? '' : ' without-avatar'} ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}${selectionMode ? ' is-selecting' : ''}${selected ? ' is-selected' : ''}`}
@@ -6393,48 +6432,14 @@ const AgentMsg = React.memo(function AgentMsg({
               <span>{activeToolCount} 个工具并行执行</span>
             </div>
           )}
-          {contentBlocks.length > 0 && isLatest && (
-            <div className="msg-content">
-              {renderBlocksGrouped(
-                contentBlocks,
-                onFilePreview != null
-                  ? { sessionId, onFilePreview, autoCollapseTools: !isStreaming }
-                  : { sessionId, autoCollapseTools: !isStreaming },
-              )}
-            </div>
+          {timelineGroups.length > 0 && (isLatest || contentBlocks.length === 0) && (
+            <div className="msg-content">{timelineContent}</div>
           )}
-          {contentBlocks.length > 0 && !isLatest && (
+          {timelineGroups.length > 0 && !isLatest && contentBlocks.length > 0 && (
             <CollapsibleContent maxHeight={500} streaming={isStreaming}>
-              <div className="msg-content">
-                {renderBlocksGrouped(
-                  contentBlocks,
-                  onFilePreview != null
-                    ? { sessionId, onFilePreview, autoCollapseTools: !isStreaming }
-                    : { sessionId, autoCollapseTools: !isStreaming },
-                )}
-              </div>
+              <div className="msg-content">{timelineContent}</div>
             </CollapsibleContent>
           )}
-          {errorBlocks.map((block, i) => (
-            <StreamingErrorCard
-              key={`error-${i}`}
-              message={block.message}
-              code={block.code}
-              title={block.title ?? 'Agent 执行失败'}
-              level="error"
-              retryable={block.retryable}
-              {...(block.actionHint != null ? { actionHint: block.actionHint } : {})}
-              {...(block.details != null ? { details: block.details } : {})}
-              {...(block.retryable && onRetry != null ? { onRetry } : {})}
-            />
-          ))}
-          {runtimeSignalBlocks.map((block, i) => (
-            <RuntimeSignalCard
-              key={`runtime-signal-${i}`}
-              block={block}
-              {...(block.retryable && onRetry != null ? { onRetry } : {})}
-            />
-          ))}
           {isCancelled && <StoppedMarker />}
           {isFinished && textContent && (
             <MessageHoverBar
