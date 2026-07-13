@@ -32,10 +32,10 @@ async function showKeychainDisclosureOnce(): Promise<void> {
 
   await dialog.showMessageBox({
     type: 'info',
-    title: '为什么 Spark Agent 需要访问钥匙串？',
+    title: '为什么 SparkWork 需要访问钥匙串？',
     message: '您的模型密钥只保存在这台电脑上',
     detail:
-      'Spark Agent 不会把您的 API Key 上传或保存到平台服务器。为了避免明文保存，安装版会使用 macOS“登录”钥匙串保护这些机密信息。\n\n接下来如果 macOS 询问访问“spark-agent”机密信息，请选择“始终允许”，这样以后启动时就不会重复询问。',
+      'SparkWork 不会把您的 API Key 上传或保存到平台服务器。为了避免明文保存，安装版会使用 macOS“登录”钥匙串保护这些机密信息。\n\n接下来如果 macOS 询问访问“spark-agent”机密信息，请选择“始终允许”，这样以后启动时就不会重复询问。',
     buttons: ['我知道了，继续'],
     defaultId: 0,
     noLink: true,

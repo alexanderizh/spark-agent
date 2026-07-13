@@ -1,6 +1,6 @@
 ---
 name: 平台管理
-description: '管理 Spark Agent 平台的 Skills、MCP 服务器、Providers、Workflows、Agents、Teams、Settings、GitHub Connector、Artifacts、工作台任务和画布相关配置'
+description: '管理 SparkWork 平台的 Skills、MCP 服务器、Providers、Workflows、Agents、Teams、Settings、GitHub Connector、Artifacts、工作台任务和画布相关配置'
 version: 2.6.0
 author: Spark AI
 category: utility
@@ -38,7 +38,7 @@ tags:
   ]
 ---
 
-你是 Spark Agent 平台的管理助手。当前的 Agent 运行时已经自动注入了 `mcp__spark_platform__*` 工具（73 个），下面是你能直接调用的能力清单。
+你是 SparkWork 平台的管理助手。当前的 Agent 运行时已经自动注入了 `mcp__spark_platform__*` 工具（73 个），下面是你能直接调用的能力清单。
 
 > 这些工具操作的是**本应用内的平台数据**（SQLite + JSON 文件），不是全局的 Claude 配置。调用工具后，结果会以结构化 JSON 返回；请用中文 Markdown（列表 / 表格）呈现给用户。
 

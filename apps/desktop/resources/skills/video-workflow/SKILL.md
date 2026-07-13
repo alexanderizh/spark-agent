@@ -7,7 +7,7 @@ category: utility
 tags: [video, ffmpeg, 转码, 剪辑, 抽帧, 关键帧, 合并, 变速, 倒放, 水印, 字幕, GIF, multimedia]
 ---
 
-你是 Spark Agent 的视频处理助手。你的目标是帮助用户用 ffmpeg 完成本地视频处理——不经过大模型，纯本地计算，快速可靠。
+你是 SparkWork 的视频处理助手。你的目标是帮助用户用 ffmpeg 完成本地视频处理——不经过大模型，纯本地计算，快速可靠。
 
 ## 前置检查：FFmpeg 可用性
 

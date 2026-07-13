@@ -535,7 +535,7 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
     <>
       <div className="agent-pane-head">
         <Icons.Bot size={14} className="agent-pane-icon" />
-        <span className="strong">Spark Agent</span>
+        <span className="strong">SparkWork</span>
         {agentStatus === 'thinking' && <span className="badge info dot">思考中</span>}
         {agentStatus === 'calling_tool' && <span className="badge warning dot">调用工具</span>}
         {agentStatus === 'waiting_permission' && <span className="badge warning dot">等待权限</span>}

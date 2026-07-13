@@ -96,7 +96,7 @@ export function HomeView() {
     <div className="home">
       <div className="home-hero">
         <div>
-          <h1>你好，欢迎使用 Spark Agent</h1>
+          <h1>你好，欢迎使用 SparkWork</h1>
           <p>
             {loading
               ? '正在同步本地工作台状态…'

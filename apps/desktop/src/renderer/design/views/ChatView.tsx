@@ -2605,7 +2605,7 @@ function ChatStream({
     ? teamConfig.hostAgentId
     : (session?.agentId ?? 'platform-manager-agent')
   const assistantAgent = agents.find((item) => item.id === assistantAgentId)
-  const assistantName = assistantAgent?.name ?? 'Spark Agent'
+  const assistantName = assistantAgent?.name ?? 'SparkWork'
   const assistantAvatar = getAgentAvatarConfig(
     assistantAgent?.metadata,
     assistantAgentId,

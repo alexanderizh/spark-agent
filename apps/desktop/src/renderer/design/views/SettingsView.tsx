@@ -626,7 +626,7 @@ function GeneralSection() {
         <label>
           开机自启动
           <span className="sub">
-            {autoStartSupported ? '登录系统后自动启动 Spark Agent' : '当前系统环境不支持读取登录项'}
+            {autoStartSupported ? '登录系统后自动启动 SparkWork' : '当前系统环境不支持读取登录项'}
           </span>
         </label>
         <Switch
@@ -1069,7 +1069,7 @@ function RemoteConnectionsSection() {
         <div>
           <h2>远程连接</h2>
           <div className="lede">
-            通过 Telegram、飞书从远程桌面或移动端与 Spark Agent 通信。
+            通过 Telegram、飞书从远程桌面或移动端与 SparkWork 通信。
           </div>
         </div>
         <div className="remote-runtime-summary">
@@ -5633,14 +5633,14 @@ function UpdatesSection() {
   return (
     <div className="settings-section">
       <h2>更新</h2>
-      <div className="lede">保持 Spark Agent 最新版本以获得最新模型与安全修复。</div>
+      <div className="lede">保持 SparkWork 最新版本以获得最新模型与安全修复。</div>
 
       <div className="card update-card">
         <div className={`update-icon ${getStatusClass()}`}>{getStatusIcon()}</div>
         <div className="flex1">
           <div className="strong update-version">{getStatusLabel()}</div>
           <div className="muted update-meta">
-            Spark Agent {currentVersion}
+            SparkWork {currentVersion}
             {lastChecked ? ` · 上次检查 ${lastChecked}` : ''}
           </div>
           <div className="update-source-line">
@@ -5774,7 +5774,7 @@ function UpdatesSection() {
       <div className="subsec-h">版本</div>
       <div className="card">
         <SettingsRow
-          title="Spark Agent"
+          title="SparkWork"
           desc={`${currentVersion}`}
           right={
             <span className={hasUpdate ? 'badge warning dot' : 'badge success dot'}>
@@ -5922,7 +5922,7 @@ function AboutSection() {
   return (
     <div className="settings-section">
       <div className="about-header">
-        <div className="about-title">Spark Agent</div>
+        <div className="about-title">SparkWork</div>
         <div className="about-subtitle">AI Agent 工作台</div>
         <div className="about-version">版本 {sysInfo?.appVersion ?? '0.1.0'} (MVP)</div>
       </div>
@@ -6026,7 +6026,7 @@ function AboutSection() {
         />
       </div>
 
-      <div className="about-footer">© 2026 Spark Agent Team. All rights reserved.</div>
+      <div className="about-footer">© 2026 SparkWork Team. All rights reserved.</div>
     </div>
   )
 }
