@@ -2565,6 +2565,8 @@ function ChatStream({
   const [isLoadingOlder, setIsLoadingOlder] = useState(false)
   const builderRef = useRef(new MessageBuilder())
   const isStreamingRef = useRef(false)
+  const persistedSessionStatusRef = useRef(persistedSessionStatus)
+  persistedSessionStatusRef.current = persistedSessionStatus
   const userScrolledRef = useRef(false)
   const hydratingRef = useRef(false)
   const bufferedEventsRef = useRef<AgentEvent[]>([])
@@ -2910,7 +2912,10 @@ function ChatStream({
       const historyUsage = buildUsageDataFromEvents(events)
       usageRef.current = historyUsage
       callbacks.onUsageDataChange(historyUsage)
-      const latestStatus = getLatestAgentStatus(events, persistedSessionStatus ?? undefined)
+      const latestStatus = getLatestAgentStatus(
+        events,
+        persistedSessionStatusRef.current ?? undefined,
+      )
       setAgentIsRunning(isRunningAgentStatus(latestStatus))
       if (latestStatus != null) {
         applyAgentStatus(
@@ -3291,7 +3296,8 @@ function ChatStream({
 
   // 是否有正在流式传输的消息
   const hasStreamingMsg = messages.some((m) => m.status === 'streaming')
-  const showWaitingAgent = agentIsRunning && !hasStreamingMsg
+  const showWaitingAgent =
+    (agentIsRunning || persistedSessionStatus === 'running') && !hasStreamingMsg
 
   // 团队模式 @ 指定成员时，该 turn 由被 @ 的成员直接执行（见后端 mention 路由）。
   // 「等待中」占位用最近一条用户消息的 @ 指定成员，避免「先显示主持人、流式开始后又切回成员」的视差。
