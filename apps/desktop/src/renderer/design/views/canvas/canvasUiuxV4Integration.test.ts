@@ -26,8 +26,11 @@ describe('canvas UI/UX V4 integration', () => {
     const addMenu = readCanvasSource('./CanvasAddNodeMenu.tsx')
     const dock = readCanvasSource('./CanvasBottomDock.tsx')
 
-    expect(node).toContain('canvas-node-meta-copy')
+    expect(node).toContain('canvas-node-content-title')
+    expect(node).toContain('<div className="canvas-node-meta-bar">')
     expect(node).toContain('canvas-node-quick-footer')
+    expect(node).toContain('shouldShowOutputNavigation')
+    expect(node).not.toContain('双击可快速打开')
     expect(addMenu).toContain('canvas-dock-labeled-action')
     expect(dock).toContain('shortLabel="资源"')
     expect(dock).toContain('shortLabel="任务"')
