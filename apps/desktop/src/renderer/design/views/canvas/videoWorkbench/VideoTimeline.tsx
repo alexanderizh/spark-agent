@@ -1,50 +1,51 @@
 /**
- * VideoTimeline — 专业视频时间轨道组件。
+ * VideoTimeline — 可直接剪辑的单视频轨道。
  *
- * 功能：
- *   - 可拖拽播放头（点击/拖动轨道跳转视频位置）
- *   - 缩放控制（1x~20x，滚轮或按钮，影响时间刻度密度）
- *   - 时间刻度（根据缩放自动选择 1s/5s/10s/30s/1min 间隔）
- *   - 关键帧标记（scene/iframe 提取的帧，黄色竖线）
- *   - 手动标记点（蓝色旗帜，可删除）
- *   - 选区拖拽（用于裁剪，灰色半透明区域）
- *
- * 交互：
- *   - 点击轨道 → 播放头跳到该位置
- *   - 拖动播放头 → 实时 seek
- *   - Ctrl/滚轮 → 缩放
- *   - 点击关键帧/标记 → seek 到该时间
- *   - 标记点 hover → 显示删除按钮
+ * 交互遵循桌面 NLE 的核心习惯：
+ *   - 点击/拖动空白区域移动播放头
+ *   - 拖动片段左右手柄设置入点/出点
+ *   - I / O 设置入点和出点，Cmd/Ctrl+B 在播放头处分割
+ *   - 选区可直接快切/精切导出，分割会导出播放头两侧片段
+ *   - Ctrl/Cmd + 滚轮缩放，方向键微调播放头
  */
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
-import type { ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactElement,
+} from 'react'
 import { Button, Tooltip } from 'antd'
 import { Icons } from '../../../Icons'
 import { formatTimestamp, type WorkbenchKeyframe } from './videoWorkbench.types'
+import {
+  MIN_TIMELINE_RANGE_SEC,
+  moveTimelineRangeEdge,
+  normalizeTimelineRange,
+  splitTimelineRange,
+  type TimelineRange,
+  type TimelineRangeEdge,
+} from './videoTimelineModel'
 
 interface Props {
-  /** 视频总时长（秒） */
   duration: number
-  /** 当前播放位置（秒） */
   currentTime: number
-  /** 已提取的关键帧 */
   keyframes: WorkbenchKeyframe[]
-  /** 手动标记的时间点（秒） */
   manualMarks: number[]
-  /** seek 到指定时间 */
+  range: TimelineRange
+  trimCopy: boolean
+  processingReady: boolean
   onSeek: (sec: number) => void
-  /** 标记当前帧 */
+  onRangeChange: (range: TimelineRange) => void
+  onTrimCopyChange: (copy: boolean) => void
+  onApplyTrim: () => void
+  onSplit: () => void
   onMark: () => void
-  /** 删除标记 */
   onRemoveMark: (sec: number) => void
-  /** 提取标记帧 */
   onExtractMarks: () => void
   busy: boolean
 }
 
-/** 根据缩放级别选择合适的刻度间隔（秒） */
 function pickTickInterval(pixelsPerSec: number): number {
-  // 每个刻度至少 50px 间隔
   if (pixelsPerSec > 50) return 1
   if (pixelsPerSec > 20) return 2
   if (pixelsPerSec > 10) return 5
@@ -53,38 +54,51 @@ function pickTickInterval(pixelsPerSec: number): number {
   return 60
 }
 
-const MIN_TRACK_WIDTH = 400 // 最小轨道宽度 px（用于计算缩放）
+const MIN_TRACK_WIDTH = 400
 
 export function VideoTimeline({
   duration,
   currentTime,
   keyframes,
   manualMarks,
+  range,
+  trimCopy,
+  processingReady,
   onSeek,
+  onRangeChange,
+  onTrimCopyChange,
+  onApplyTrim,
+  onSplit,
   onMark,
   onRemoveMark,
   onExtractMarks,
   busy,
 }: Props): ReactElement {
+  const timelineRootRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
-  const [zoom, setZoom] = useState(1) // 1x ~ 20x
-  const [dragging, setDragging] = useState(false)
-  /** currentTime 的 ref，避免键盘 effect 依赖 currentTime 导致高频重注册 */
-  const currentTimeRef = useRef(currentTime)
-  currentTimeRef.current = currentTime
+  const [zoom, setZoom] = useState(1)
+  const [draggingPlayhead, setDraggingPlayhead] = useState(false)
+  const [draggingEdge, setDraggingEdge] = useState<TimelineRangeEdge | null>(null)
 
-  // 缩放后的轨道宽度（按 duration 和 zoom 计算）
+  const normalizedRange = useMemo(() => normalizeTimelineRange(range, duration), [duration, range])
+  const selectedDuration = Math.max(0, normalizedRange.endSec - normalizedRange.startSec)
+  const canSplit = splitTimelineRange(normalizedRange, currentTime, duration) !== null
+
   const trackWidth = useMemo(() => {
     if (duration <= 0) return MIN_TRACK_WIDTH
-    // 基础：每秒 8px（1x），zoom 放大
     return Math.max(MIN_TRACK_WIDTH, duration * 8 * zoom)
   }, [duration, zoom])
 
   const pixelsPerSec = duration > 0 ? trackWidth / duration : 0
   const tickInterval = pickTickInterval(pixelsPerSec)
+  const playheadX = duration > 0 ? (currentTime / duration) * trackWidth : 0
+  const rangeStartX = duration > 0 ? (normalizedRange.startSec / duration) * trackWidth : 0
+  const rangeEndX = duration > 0 ? (normalizedRange.endSec / duration) * trackWidth : trackWidth
 
-  // 可视区间（用于 ticks 虚拟化，避免长视频生成数千 DOM 节点）
-  const [viewRange, setViewRange] = useState<{ start: number; end: number }>({ start: 0, end: Infinity })
+  const [viewRange, setViewRange] = useState<{ start: number; end: number }>({
+    start: 0,
+    end: Infinity,
+  })
   useEffect(() => {
     const el = trackRef.current
     if (!el || duration <= 0) return
@@ -98,95 +112,153 @@ export function VideoTimeline({
     return () => el.removeEventListener('scroll', update)
   }, [trackWidth, duration])
 
-  // 刻度线列表（仅渲染可视区间 ± 1 个间隔的 tick）
   const ticks = useMemo(() => {
     if (duration <= 0) return []
     const result: number[] = []
     const start = Math.max(0, viewRange.start - tickInterval)
     const end = Math.min(duration, viewRange.end + tickInterval)
     const firstTick = Math.ceil(start / tickInterval) * tickInterval
-    for (let t = firstTick; t <= end; t += tickInterval) {
-      result.push(t)
-    }
+    for (let t = firstTick; t <= end; t += tickInterval) result.push(t)
     return result
   }, [duration, tickInterval, viewRange.start, viewRange.end])
 
-  /** 把鼠标 X 坐标转换为时间（秒） */
   const xToTime = useCallback(
     (clientX: number): number => {
       const el = trackRef.current
       if (!el || duration <= 0) return 0
       const rect = el.getBoundingClientRect()
-      const scrollLeft = el.scrollLeft
-      const x = clientX - rect.left + scrollLeft
-      const ratio = Math.max(0, Math.min(1, x / trackWidth))
-      return ratio * duration
+      const x = clientX - rect.left + el.scrollLeft
+      return Math.max(0, Math.min(duration, (x / trackWidth) * duration))
     },
     [duration, trackWidth],
   )
 
-  // 拖拽播放头
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      e.preventDefault()
-      setDragging(true)
-      const t = xToTime(e.clientX)
-      onSeek(t)
-      // 用 currentTarget（绑 handler 的 canvas），而非 target（可能命中的子元素）
-      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  const handleCanvasPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      timelineRootRef.current?.focus({ preventScroll: true })
+      setDraggingPlayhead(true)
+      onSeek(xToTime(event.clientX))
+      event.currentTarget.setPointerCapture(event.pointerId)
     },
-    [xToTime, onSeek],
+    [onSeek, xToTime],
   )
 
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!dragging) return
-      const t = xToTime(e.clientX)
-      onSeek(t)
+  const handleCanvasPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (draggingPlayhead) onSeek(xToTime(event.clientX))
     },
-    [dragging, xToTime, onSeek],
+    [draggingPlayhead, onSeek, xToTime],
   )
 
-  const handlePointerUp = useCallback(() => {
-    setDragging(false)
+  const stopPlayheadDrag = useCallback(() => setDraggingPlayhead(false), [])
+
+  const handleTrimPointerDown = useCallback(
+    (edge: TimelineRangeEdge, event: ReactPointerEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      event.stopPropagation()
+      timelineRootRef.current?.focus({ preventScroll: true })
+      setDraggingEdge(edge)
+      event.currentTarget.setPointerCapture(event.pointerId)
+    },
+    [],
+  )
+
+  const handleTrimPointerMove = useCallback(
+    (edge: TimelineRangeEdge, event: ReactPointerEvent<HTMLDivElement>) => {
+      if (draggingEdge !== edge) return
+      event.preventDefault()
+      event.stopPropagation()
+      onRangeChange(moveTimelineRangeEdge(normalizedRange, edge, xToTime(event.clientX), duration))
+    },
+    [draggingEdge, duration, normalizedRange, onRangeChange, xToTime],
+  )
+
+  const stopTrimDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setDraggingEdge(null)
   }, [])
 
-  // 滚轮缩放（Ctrl + 滚轮）
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (!e.ctrlKey && !e.metaKey) return
-    e.preventDefault()
-    const delta = e.deltaY > 0 ? -1 : 1
-    setZoom((z) => Math.max(1, Math.min(20, z + delta)))
-  }, [])
+  const moveEdgeFromKeyboard = useCallback(
+    (edge: TimelineRangeEdge, delta: number) => {
+      const current = edge === 'start' ? normalizedRange.startSec : normalizedRange.endSec
+      onRangeChange(moveTimelineRangeEdge(normalizedRange, edge, current + delta, duration))
+    },
+    [duration, normalizedRange, onRangeChange],
+  )
 
-  // 键盘左右箭头微调（用 ref 读最新 currentTime，effect 只注册一次）
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (duration <= 0) return
-      const step = e.shiftKey ? 5 : 0.1 // Shift+箭头 = 5s，普通 = 0.1s
-      const cur = currentTimeRef.current
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        onSeek(Math.max(0, cur - step))
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault()
-        onSeek(Math.min(duration, cur + step))
+  const handleEdgeKeyDown = useCallback(
+    (edge: TimelineRangeEdge, event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      event.preventDefault()
+      event.stopPropagation()
+      const step = event.shiftKey ? 1 : 0.1
+      moveEdgeFromKeyboard(edge, event.key === 'ArrowLeft' ? -step : step)
+    },
+    [moveEdgeFromKeyboard],
+  )
+
+  const handleTimelineKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement
+      if (target.closest('button, input, textarea, [contenteditable="true"]')) return
+
+      const step = event.shiftKey ? 5 : 0.1
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        onSeek(Math.max(0, currentTime - step))
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        onSeek(Math.min(duration, currentTime + step))
+      } else if (event.key.toLowerCase() === 'i') {
+        event.preventDefault()
+        onRangeChange(moveTimelineRangeEdge(normalizedRange, 'start', currentTime, duration))
+      } else if (event.key.toLowerCase() === 'o') {
+        event.preventDefault()
+        onRangeChange(moveTimelineRangeEdge(normalizedRange, 'end', currentTime, duration))
+      } else if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === 'b' &&
+        canSplit &&
+        processingReady &&
+        !busy
+      ) {
+        event.preventDefault()
+        onSplit()
       }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [duration, onSeek])
+    },
+    [
+      busy,
+      canSplit,
+      currentTime,
+      duration,
+      normalizedRange,
+      onRangeChange,
+      onSeek,
+      onSplit,
+      processingReady,
+    ],
+  )
 
-  // 缩放/播放时自动滚动跟随播放头（仅当播放头即将离开视口才滚动）
-  const playheadX = duration > 0 ? (currentTime / duration) * trackWidth : 0
+  const handleWheel = useCallback((event: React.WheelEvent) => {
+    if (!event.ctrlKey && !event.metaKey) return
+    event.preventDefault()
+    setZoom((value) => Math.max(1, Math.min(20, value + (event.deltaY > 0 ? -1 : 1))))
+  }, [])
+
   useEffect(() => {
     const el = trackRef.current
-    if (!el || dragging) return // 拖拽时不抢占滚动
+    if (!el || draggingPlayhead || draggingEdge) return
     const target = playheadX - el.clientWidth / 2
-    if (target < el.scrollLeft || target > el.scrollLeft + el.clientWidth) {
+    const edgePadding = 24
+    if (
+      playheadX < el.scrollLeft + edgePadding ||
+      playheadX > el.scrollLeft + el.clientWidth - edgePadding
+    ) {
       el.scrollLeft = Math.max(0, target)
     }
-  }, [playheadX, dragging])
+  }, [draggingEdge, draggingPlayhead, playheadX])
 
   if (duration <= 0) {
     return (
@@ -197,144 +269,276 @@ export function VideoTimeline({
   }
 
   return (
-    <div className="vwb-timeline">
-      {/* 工具栏 */}
+    <div
+      ref={timelineRootRef}
+      className="vwb-timeline"
+      role="region"
+      aria-label="视频剪辑时间轴"
+      tabIndex={0}
+      onKeyDown={handleTimelineKeyDown}
+    >
       <div className="vwb-timeline-toolbar">
-        <span className="vwb-timeline-time-current">{formatTimestamp(currentTime)}</span>
-        <span className="vwb-timeline-divider">/</span>
-        <span className="vwb-timeline-duration">{formatTimestamp(duration)}</span>
+        <div className="vwb-timeline-timecode" aria-label="当前时间与总时长">
+          <span className="vwb-timeline-time-current">{formatTimestamp(currentTime)}</span>
+          <span className="vwb-timeline-divider">/</span>
+          <span className="vwb-timeline-duration">{formatTimestamp(duration)}</span>
+        </div>
+
+        <div className="vwb-timeline-edit-actions" aria-label="轨道剪辑工具">
+          <Button
+            size="small"
+            onClick={() =>
+              onRangeChange(moveTimelineRangeEdge(normalizedRange, 'start', currentTime, duration))
+            }
+            disabled={busy || currentTime >= normalizedRange.endSec - MIN_TIMELINE_RANGE_SEC}
+            title="设置入点（I）"
+          >
+            入点
+          </Button>
+          <Button
+            size="small"
+            onClick={() =>
+              onRangeChange(moveTimelineRangeEdge(normalizedRange, 'end', currentTime, duration))
+            }
+            disabled={busy || currentTime <= normalizedRange.startSec + MIN_TIMELINE_RANGE_SEC}
+            title="设置出点（O）"
+          >
+            出点
+          </Button>
+          <Button
+            size="small"
+            icon={<Icons.Scissors size={13} />}
+            onClick={onSplit}
+            disabled={busy || !processingReady || !canSplit}
+            title="在播放头处分割并导出两段（Cmd/Ctrl+B）"
+          >
+            分割
+          </Button>
+          <div className="vwb-timeline-cut-mode" aria-label="剪切精度">
+            <button
+              type="button"
+              className={trimCopy ? 'is-active' : ''}
+              aria-pressed={trimCopy}
+              onClick={() => onTrimCopyChange(true)}
+              title="按关键帧快速无损裁切"
+            >
+              快切
+            </button>
+            <button
+              type="button"
+              className={!trimCopy ? 'is-active' : ''}
+              aria-pressed={!trimCopy}
+              onClick={() => onTrimCopyChange(false)}
+              title="重新编码，精确到所选时间"
+            >
+              精切
+            </button>
+          </div>
+          <Button
+            size="small"
+            type="primary"
+            icon={<Icons.Download size={13} />}
+            onClick={onApplyTrim}
+            loading={busy}
+            disabled={!processingReady || selectedDuration <= 0}
+          >
+            导出选区
+          </Button>
+        </div>
+
         <div className="vwb-timeline-spacer" />
-        <span className="vwb-timeline-zoom-label">{zoom}x</span>
-        <Button
-          size="small"
-          type="text"
-          icon={<Icons.Minus size={12} />}
-          onClick={() => setZoom((z) => Math.max(1, z - 1))}
-          disabled={zoom <= 1}
-        />
-        <Button
-          size="small"
-          type="text"
-          icon={<Icons.Plus size={12} />}
-          onClick={() => setZoom((z) => Math.min(20, z + 1))}
-          disabled={zoom >= 20}
-        />
-        <Button
-          size="small"
-          type="default"
-          onClick={onMark}
-          icon={<Icons.Pin size={12} />}
-        >
-          标记帧
-        </Button>
-        <Button
-          size="small"
-          type="primary"
-          onClick={onExtractMarks}
-          loading={busy}
-          disabled={manualMarks.length === 0}
-          icon={<Icons.Download size={12} />}
-        >
-          提取标记({manualMarks.length})
-        </Button>
+
+        <div className="vwb-timeline-secondary-actions">
+          <Tooltip title="标记当前帧">
+            <Button
+              size="small"
+              type="text"
+              aria-label="标记当前帧"
+              icon={<Icons.Pin size={13} />}
+              onClick={onMark}
+            />
+          </Tooltip>
+          <Tooltip title={`提取 ${manualMarks.length} 个标记帧`}>
+            <Button
+              size="small"
+              type="text"
+              aria-label="提取标记帧"
+              icon={<Icons.Download size={13} />}
+              onClick={onExtractMarks}
+              loading={busy}
+              disabled={manualMarks.length === 0}
+            />
+          </Tooltip>
+          <span className="vwb-timeline-zoom-label">{zoom}x</span>
+          <Button
+            size="small"
+            type="text"
+            aria-label="缩小时间轴"
+            icon={<Icons.Minus size={12} />}
+            onClick={() => setZoom((value) => Math.max(1, value - 1))}
+            disabled={zoom <= 1}
+          />
+          <Button
+            size="small"
+            type="text"
+            aria-label="放大时间轴"
+            icon={<Icons.Plus size={12} />}
+            onClick={() => setZoom((value) => Math.min(20, value + 1))}
+            disabled={zoom >= 20}
+          />
+        </div>
       </div>
 
-      {/* 可滚动轨道区 */}
-      <div
-        className="vwb-timeline-scroll"
-        ref={trackRef}
-        onWheel={handleWheel}
-      >
+      <div className="vwb-timeline-selection-summary" aria-live="polite">
+        <span>V1 · 源视频</span>
+        <strong>
+          {formatTimestamp(normalizedRange.startSec)} – {formatTimestamp(normalizedRange.endSec)}
+        </strong>
+        <span>选区 {formatTimestamp(selectedDuration)}</span>
+      </div>
+
+      <div className="vwb-timeline-scroll" ref={trackRef} onWheel={handleWheel}>
         <div
-          className={`vwb-timeline-canvas${dragging ? ' dragging' : ''}`}
+          className={`vwb-timeline-canvas${draggingPlayhead ? ' dragging' : ''}${draggingEdge ? ' trimming' : ''}`}
           style={{ width: `${trackWidth}px` }}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
+          onPointerDown={handleCanvasPointerDown}
+          onPointerMove={handleCanvasPointerMove}
+          onPointerUp={stopPlayheadDrag}
+          onPointerCancel={stopPlayheadDrag}
         >
-          {/* 时间刻度 */}
-          <div className="vwb-timeline-ticks">
-            {ticks.map((t) => (
+          <div className="vwb-timeline-ticks" aria-hidden="true">
+            {ticks.map((time) => (
               <div
-                key={t}
+                key={time}
                 className="vwb-timeline-tick"
-                style={{ left: `${(t / duration) * trackWidth}px` }}
+                style={{ left: `${(time / duration) * trackWidth}px` }}
               >
-                <span className="vwb-timeline-tick-label">{formatTimestamp(t)}</span>
+                <span className="vwb-timeline-tick-label">{formatTimestamp(time)}</span>
               </div>
             ))}
           </div>
 
-          {/* 轨道主体 */}
           <div className="vwb-timeline-lane">
-            {/* 已播放区域 */}
+            <div className="vwb-timeline-muted-range" style={{ width: `${rangeStartX}px` }} />
             <div
-              className="vwb-timeline-played"
-              style={{ width: `${playheadX}px` }}
+              className="vwb-timeline-muted-range is-after"
+              style={{ left: `${rangeEndX}px`, width: `${trackWidth - rangeEndX}px` }}
             />
 
-            {/* 关键帧标记 */}
-            {keyframes.map((kf) => (
-              <Tooltip
-                key={kf.index}
-                title={`${formatTimestamp(kf.timestampSec)} · 关键帧 ${kf.index + 1}`}
+            <div
+              className="vwb-timeline-clip"
+              style={{
+                left: `${rangeStartX}px`,
+                width: `${Math.max(2, rangeEndX - rangeStartX)}px`,
+              }}
+            >
+              <div className="vwb-timeline-clip-fill" />
+              <div className="vwb-timeline-clip-label">
+                <Icons.Video size={13} />
+                <span>源视频</span>
+                <span className="vwb-timeline-clip-duration">
+                  {formatTimestamp(selectedDuration)}
+                </span>
+              </div>
+              <div
+                className="vwb-timeline-trim-handle is-start"
+                role="slider"
+                aria-label="片段入点"
+                aria-valuemin={0}
+                aria-valuemax={normalizedRange.endSec}
+                aria-valuenow={normalizedRange.startSec}
+                tabIndex={0}
+                onKeyDown={(event) => handleEdgeKeyDown('start', event)}
+                onPointerDown={(event) => handleTrimPointerDown('start', event)}
+                onPointerMove={(event) => handleTrimPointerMove('start', event)}
+                onPointerUp={stopTrimDrag}
+                onPointerCancel={stopTrimDrag}
               >
-                <div
+                <span />
+              </div>
+              <div
+                className="vwb-timeline-trim-handle is-end"
+                role="slider"
+                aria-label="片段出点"
+                aria-valuemin={normalizedRange.startSec}
+                aria-valuemax={duration}
+                aria-valuenow={normalizedRange.endSec}
+                tabIndex={0}
+                onKeyDown={(event) => handleEdgeKeyDown('end', event)}
+                onPointerDown={(event) => handleTrimPointerDown('end', event)}
+                onPointerMove={(event) => handleTrimPointerMove('end', event)}
+                onPointerUp={stopTrimDrag}
+                onPointerCancel={stopTrimDrag}
+              >
+                <span />
+              </div>
+            </div>
+
+            <div className="vwb-timeline-played" style={{ width: `${playheadX}px` }} />
+
+            {keyframes.map((keyframe) => (
+              <Tooltip
+                key={keyframe.index}
+                title={`${formatTimestamp(keyframe.timestampSec)} · 关键帧 ${keyframe.index + 1}`}
+              >
+                <button
+                  type="button"
                   className="vwb-timeline-kf"
-                  style={{ left: `${(kf.timestampSec / duration) * trackWidth}px` }}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSeek(kf.timestampSec)
-                  }}
+                  style={{ left: `${(keyframe.timestampSec / duration) * trackWidth}px` }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => onSeek(keyframe.timestampSec)}
+                  aria-label={`跳到关键帧 ${formatTimestamp(keyframe.timestampSec)}`}
                 >
-                  <img src={kf.previewUrl} alt="" />
-                </div>
+                  <img src={keyframe.previewUrl} alt="" />
+                </button>
               </Tooltip>
             ))}
 
-            {/* 手动标记点 */}
-            {manualMarks.map((t) => (
-              <Tooltip key={t} title={formatTimestamp(t)}>
+            {manualMarks.map((time) => (
+              <Tooltip key={time} title={formatTimestamp(time)}>
                 <div
                   className="vwb-timeline-mark"
-                  style={{ left: `${(t / duration) * trackWidth}px` }}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSeek(t)
-                  }}
+                  style={{ left: `${(time / duration) * trackWidth}px` }}
+                  onPointerDown={(event) => event.stopPropagation()}
                 >
-                  <span
+                  <button
+                    type="button"
+                    className="vwb-timeline-mark-seek"
+                    onClick={() => onSeek(time)}
+                    aria-label={`跳到标记 ${formatTimestamp(time)}`}
+                  />
+                  <button
+                    type="button"
                     className="vwb-timeline-mark-remove"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onRemoveMark(t)
+                    aria-label={`删除标记 ${formatTimestamp(time)}`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onRemoveMark(time)
                     }}
                   >
                     ×
-                  </span>
+                  </button>
                 </div>
               </Tooltip>
             ))}
 
-            {/* 播放头 */}
-            <div
-              className="vwb-timeline-playhead"
-              style={{ left: `${playheadX}px` }}
-            >
+            <div className="vwb-timeline-playhead" style={{ left: `${playheadX}px` }}>
               <div className="vwb-timeline-playhead-handle" />
             </div>
           </div>
         </div>
       </div>
 
-      {/* 提示 */}
       <div className="vwb-timeline-hints">
-        <span>点击/拖动轨道定位</span>
+        <span>拖动黄色手柄修剪</span>
+        <span>·</span>
+        <span>I / O 设入出点</span>
+        <span>·</span>
+        <span>Cmd/Ctrl+B 分割</span>
         <span>·</span>
         <span>Ctrl+滚轮缩放</span>
         <span>·</span>
-        <span>←/→ 微调（Shift 跳 5s）</span>
+        <span>←/→ 微调</span>
       </div>
     </div>
   )

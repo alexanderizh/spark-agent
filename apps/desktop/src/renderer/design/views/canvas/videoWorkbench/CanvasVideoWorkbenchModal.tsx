@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { Button, Dropdown, Segmented, Slider, message } from 'antd'
+import { Button, Dropdown, Segmented, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { encodeToSafeFileUrl } from '../canvas-safe-file'
 import type { FfmpegInstallProgress, VideoProcessRequest } from '@spark/protocol'
@@ -31,6 +31,11 @@ import {
 import { VideoWorkbenchFramePanel } from './VideoWorkbenchFramePanel'
 import { VideoWorkbenchEditPanel } from './VideoWorkbenchEditPanel'
 import { VideoTimeline } from './VideoTimeline'
+import {
+  normalizeTimelineRange,
+  splitTimelineRange,
+  type TimelineRange,
+} from './videoTimelineModel'
 import './videoWorkbench.less'
 
 /** macOS 无边框窗口红绿灯安全区 */
@@ -95,17 +100,16 @@ export function CanvasVideoWorkbenchModal({
   onSelectVideo,
   videoNodes,
 }: Props): ReactElement | null {
-  const initial = useMemo(
-    () => (node?.data?.videoWorkbench
-      ? readVideoWorkbenchData(node.data.videoWorkbench as Record<string, unknown>)
-      : createDefaultVideoWorkbenchData()),
-    [node?.id],
-  )
+  const initial = node?.data?.videoWorkbench
+    ? readVideoWorkbenchData(node.data.videoWorkbench as Record<string, unknown>)
+    : createDefaultVideoWorkbenchData()
   const [draft, setDraft] = useState<VideoWorkbenchData>(initial)
   const [activeTab, setActiveTab] = useState<'frames' | 'edit' | 'output'>(initial.activeTab)
   const [ffmpegReady, setFfmpegReady] = useState<boolean | null>(null)
   const [ffmpegInstalling, setFfmpegInstalling] = useState(false)
-  const [ffmpegInstallProgress, setFfmpegInstallProgress] = useState<FfmpegInstallProgress | null>(null)
+  const [ffmpegInstallProgress, setFfmpegInstallProgress] = useState<FfmpegInstallProgress | null>(
+    null,
+  )
   const [busy, setBusy] = useState(false)
   /** 进度 0~100，null 表示无活动 */
   const [progress, setProgress] = useState<number | null>(null)
@@ -121,6 +125,13 @@ export function CanvasVideoWorkbenchModal({
   const [videoMetaDuration, setVideoMetaDuration] = useState(0)
   /** 当前播放位置（秒），用于手动标记 */
   const [currentTime, setCurrentTime] = useState(0)
+  /** 时间轴选区与源地址绑定，切换源视频后自然回到全长选区。 */
+  const [timelineSelection, setTimelineSelection] = useState<{
+    sourceUrl: string
+    range: TimelineRange
+  }>({ sourceUrl: '', range: { startSec: 0, endSec: 0 } })
+  /** true=关键帧无损快切，false=重新编码精确切 */
+  const [trimCopy, setTrimCopy] = useState(true)
 
   const sourceVideoUrl = useMemo(() => {
     const raw = node?.data?.url as string | undefined
@@ -128,6 +139,21 @@ export function CanvasVideoWorkbenchModal({
   }, [node?.data?.url])
 
   const probe = draft.probeInfo
+  const duration = probe?.durationSec ?? videoMetaDuration ?? 0
+  const timelineRange = useMemo(
+    () =>
+      normalizeTimelineRange(
+        timelineSelection.sourceUrl === sourceVideoUrl
+          ? timelineSelection.range
+          : { startSec: 0, endSec: 0 },
+        duration,
+      ),
+    [duration, sourceVideoUrl, timelineSelection],
+  )
+  const handleTimelineRangeChange = useCallback(
+    (range: TimelineRange) => setTimelineSelection({ sourceUrl: sourceVideoUrl, range }),
+    [sourceVideoUrl],
+  )
 
   // ── 检测 ffmpeg 可用性 ──────────────────────────────────────────
   useEffect(() => {
@@ -148,9 +174,8 @@ export function CanvasVideoWorkbenchModal({
         if (next.state === 'done') setFfmpegReady(true)
       },
     )
-    const unsubStatus = window.spark?.on(
-      'stream:ffmpeg:status',
-      (next: { ffmpegReady: boolean }) => setFfmpegReady(next.ffmpegReady),
+    const unsubStatus = window.spark?.on('stream:ffmpeg:status', (next: { ffmpegReady: boolean }) =>
+      setFfmpegReady(next.ffmpegReady),
     )
     return () => {
       unsubProgress?.()
@@ -187,14 +212,6 @@ export function CanvasVideoWorkbenchModal({
       unsub?.()
     }
   }, [open])
-
-  // ── 首次打开自动 probe（若 probeInfo 缺失且 ffmpeg 可用）─────────
-  useEffect(() => {
-    const sourceUrl = (node?.data as { url?: string } | undefined)?.url ?? ''
-    if (!open || !node || !sourceUrl || draft.probeInfo || ffmpegReady !== true || probingRef.current) return
-    void probeAndUpdate(node)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, node, ffmpegReady])
 
   const probeAndUpdate = useCallback(
     async (n: CanvasNode) => {
@@ -236,6 +253,21 @@ export function CanvasVideoWorkbenchModal({
     [onSave],
   )
 
+  // ── 首次打开自动 probe（若 probeInfo 缺失且 ffmpeg 可用）─────────
+  useEffect(() => {
+    const sourceUrl = (node?.data as { url?: string } | undefined)?.url ?? ''
+    if (
+      !open ||
+      !node ||
+      !sourceUrl ||
+      draft.probeInfo ||
+      ffmpegReady !== true ||
+      probingRef.current
+    )
+      return
+    void probeAndUpdate(node)
+  }, [draft.probeInfo, ffmpegReady, node, open, probeAndUpdate])
+
   // ── 自动提取关键帧（首次打开 + keyframes 为空）──────────────────
   const extractKeyframes = useCallback(
     async (strategy: KeyframeStrategy) => {
@@ -257,7 +289,9 @@ export function CanvasVideoWorkbenchModal({
           requestId: reqId,
         })
         if (res.success && res.result) {
-          const result = res.result as { frames: Array<{ path: string; timestampSec: number; index: number }> }
+          const result = res.result as {
+            frames: Array<{ path: string; timestampSec: number; index: number }>
+          }
           const frames: WorkbenchKeyframe[] = result.frames.map((f) => ({
             path: f.path,
             previewUrl: encodeToSafeFileUrl(f.path),
@@ -393,19 +427,21 @@ export function CanvasVideoWorkbenchModal({
     [node],
   )
 
-  /** 产物生成后记录到 draft.outputs 并持久化 */
-  const recordOutput = useCallback(
-    (summary: string, outputPath: string, type: WorkbenchOutput['type']) => {
+  /** 批量记录产物，保证一次操作只触发一次持久化，避免并发保存覆盖。 */
+  const recordOutputs = useCallback(
+    (entries: Array<{ summary: string; outputPath: string; type: WorkbenchOutput['type'] }>) => {
+      if (entries.length === 0) return
+      setActiveTab('output')
       setDraft((d) => {
         const outputs = [
-          {
+          ...entries.map((entry) => ({
             id: shortId(),
-            type,
-            outputPath,
-            outputUrl: encodeToSafeFileUrl(outputPath),
+            type: entry.type,
+            outputPath: entry.outputPath,
+            outputUrl: encodeToSafeFileUrl(entry.outputPath),
             createdAt: Date.now(),
-            summary,
-          },
+            summary: entry.summary,
+          })),
           ...d.outputs,
         ].slice(0, 20) // 保留最近 20 条
         const next = { ...d, outputs, activeTab: 'output' as const }
@@ -415,6 +451,86 @@ export function CanvasVideoWorkbenchModal({
     },
     [onSave],
   )
+
+  const recordOutput = useCallback(
+    (summary: string, outputPath: string, type: WorkbenchOutput['type']) => {
+      recordOutputs([{ summary, outputPath, type }])
+    },
+    [recordOutputs],
+  )
+
+  const handleApplyTimelineTrim = useCallback(async () => {
+    const range = normalizeTimelineRange(timelineRange, duration)
+    const res = await handleProcess('trim', {
+      startSec: range.startSec,
+      endSec: range.endSec,
+      copy: trimCopy,
+    })
+    if (!res.success || !res.result) {
+      message.error(res.error ?? '选区导出失败')
+      return
+    }
+
+    const path = (res.result as { path?: string }).path ?? ''
+    if (!path) {
+      message.error('选区导出失败：未返回产物路径')
+      return
+    }
+    recordOutput(
+      `轨道裁剪 ${formatTimestamp(range.startSec)}-${formatTimestamp(range.endSec)}`,
+      path,
+      'trim',
+    )
+    message.success(`已导出 ${formatTimestamp(range.endSec - range.startSec)} 片段`)
+  }, [duration, handleProcess, recordOutput, timelineRange, trimCopy])
+
+  const handleSplitTimeline = useCallback(async () => {
+    const ranges = splitTimelineRange(timelineRange, currentTime, duration)
+    if (!ranges) {
+      message.warning('请把播放头放在选区内部后再分割')
+      return
+    }
+
+    const jobs = [
+      { range: ranges[0], label: '前段' },
+      { range: ranges[1], label: '后段' },
+    ] as const
+    const outputs: Array<{ path: string; range: TimelineRange; label: string }> = []
+    const persistSuccessfulOutputs = () => {
+      recordOutputs(
+        outputs.map((output) => ({
+          summary: `轨道分割·${output.label} ${formatTimestamp(output.range.startSec)}-${formatTimestamp(output.range.endSec)}`,
+          outputPath: output.path,
+          type: 'trim' as const,
+        })),
+      )
+    }
+    for (const job of jobs) {
+      const { range, label } = job
+      const res = await handleProcess('trim', {
+        startSec: range.startSec,
+        endSec: range.endSec,
+        copy: trimCopy,
+      })
+      if (!res.success || !res.result) {
+        persistSuccessfulOutputs()
+        const reason = res.error ?? `${label}分割失败`
+        message.error(outputs.length > 0 ? `${reason}，已保留成功片段` : reason)
+        return
+      }
+      const path = (res.result as { path?: string }).path ?? ''
+      if (!path) {
+        persistSuccessfulOutputs()
+        const reason = `${label}分割失败：未返回产物路径`
+        message.error(outputs.length > 0 ? `${reason}，已保留成功片段` : reason)
+        return
+      }
+      outputs.push({ path, range, label })
+    }
+
+    persistSuccessfulOutputs()
+    message.success(`已在 ${formatTimestamp(currentTime)} 分割并导出 2 个片段`)
+  }, [currentTime, duration, handleProcess, recordOutputs, timelineRange, trimCopy])
 
   // ── Esc 关闭（全局监听，不依赖 overlay 获得焦点）──
   useEffect(() => {
@@ -431,8 +547,6 @@ export function CanvasVideoWorkbenchModal({
   }, [open, onClose])
 
   if (!open) return null
-
-  const duration = probe?.durationSec ?? videoMetaDuration ?? 0
 
   return (
     <div className="vwb-modal-overlay">
@@ -463,7 +577,13 @@ export function CanvasVideoWorkbenchModal({
                 menu={{
                   items: [
                     ...(onAddVideo
-                      ? [{ key: 'from-file', label: '从文件添加…', onClick: () => void onAddVideo() }]
+                      ? [
+                          {
+                            key: 'from-file',
+                            label: '从文件添加…',
+                            onClick: () => void onAddVideo(),
+                          },
+                        ]
                       : []),
                     ...(onSelectVideo && videoNodes && videoNodes.length > 0
                       ? [
@@ -608,7 +728,14 @@ export function CanvasVideoWorkbenchModal({
               currentTime={currentTime}
               keyframes={draft.keyframes}
               manualMarks={draft.manualMarks}
+              range={timelineRange}
+              trimCopy={trimCopy}
+              processingReady={ffmpegReady === true}
               onSeek={seekTo}
+              onRangeChange={handleTimelineRangeChange}
+              onTrimCopyChange={setTrimCopy}
+              onApplyTrim={() => void handleApplyTimelineTrim()}
+              onSplit={() => void handleSplitTimeline()}
               onMark={addManualMark}
               onRemoveMark={removeManualMark}
               onExtractMarks={extractManualMarks}
@@ -666,14 +793,12 @@ export function CanvasVideoWorkbenchModal({
 
             {activeTab === 'edit' && (
               <VideoWorkbenchEditPanel
-                sourceVideoPath={sourceVideoUrl}
                 probe={probe}
                 busy={busy}
                 progress={progress}
                 ffmpegReady={ffmpegReady}
                 probeFailed={probeFailed}
                 fallbackDuration={videoMetaDuration}
-                currentTime={currentTime}
                 onProcess={handleProcess}
                 onOutput={recordOutput}
               />

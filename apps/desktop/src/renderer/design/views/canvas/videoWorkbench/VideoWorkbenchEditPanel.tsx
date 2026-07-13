@@ -1,20 +1,18 @@
 /**
  * VideoWorkbenchEditPanel — 视频剪辑工具面板。
  *
- * 包含：
- *   - 裁剪：起止时间区间（从时间线手动标记或输入）→ 无损快切/精确切
+ * 时间型剪辑已移动到轨道直接操作；本面板仅保留参数型处理：
  *   - 转码：格式选择(mp4/webm/mov/gif) + 编码 + 分辨率 + CRF
  *   - 分割：按固定时长切段
- *   - 合并：选择画布上其他视频节点（需从外部传入可选节点）
+ *   - 变速、倒放与画面裁剪
  */
 import { useState, useEffect, useCallback } from 'react'
 import type { ReactElement } from 'react'
 import { Button, InputNumber, Select, Slider, message } from 'antd'
 import { Icons } from '../../../Icons'
-import { formatTimestamp, type VideoProbeInfo, type WorkbenchOutput } from './videoWorkbench.types'
+import type { VideoProbeInfo, WorkbenchOutput } from './videoWorkbench.types'
 
 interface Props {
-  sourceVideoPath: string
   probe: VideoProbeInfo | undefined
   busy: boolean
   /** 当前操作进度 0~100，null 表示无活动 */
@@ -25,8 +23,6 @@ interface Props {
   probeFailed: boolean
   /** 视频时长（秒），probe 失败时从 video 元素兜底 */
   fallbackDuration: number
-  /** 当前时间线位置（秒），用于「设为起点/终点」 */
-  currentTime: number
   onProcess: (
     operation: string,
     params: Record<string, unknown>,
@@ -36,21 +32,16 @@ interface Props {
 }
 
 export function VideoWorkbenchEditPanel({
-  sourceVideoPath,
   probe,
   busy,
   progress,
   ffmpegReady,
   probeFailed,
   fallbackDuration,
-  currentTime,
   onProcess,
   onOutput,
 }: Props): ReactElement {
   const duration = probe?.durationSec ?? fallbackDuration ?? 0
-  const [trimStart, setTrimStart] = useState(0)
-  const [trimEnd, setTrimEnd] = useState(duration)
-  const [trimCopy, setTrimCopy] = useState(true)
 
   // 转码
   const [tcFormat, setTcFormat] = useState<'mp4' | 'webm' | 'mov' | 'gif'>('mp4')
@@ -67,18 +58,11 @@ export function VideoWorkbenchEditPanel({
   const [cropH, setCropH] = useState(probe?.height ?? 0)
   const [cropX, setCropX] = useState(0)
   const [cropY, setCropY] = useState(0)
+  const resolvedCropW = cropW || probe?.width || 0
+  const resolvedCropH = cropH || probe?.height || 0
 
   // 当前操作的 loading 文案（busy 时显示）
   const [doingLabel, setDoingLabel] = useState('')
-
-  // probe 到达后同步一次默认值（组件首次挂载时 probe 多为 undefined）
-  useEffect(() => {
-    if (probe) {
-      setTrimEnd((prev) => (prev === 0 ? probe.durationSec : prev))
-      setCropW((prev) => (prev === 0 ? probe.width : prev))
-      setCropH((prev) => (prev === 0 ? probe.height : prev))
-    }
-  }, [probe?.durationSec, probe?.width, probe?.height])
 
   // busy 时显示进度 loading，结束时销毁
   useEffect(() => {
@@ -109,7 +93,7 @@ export function VideoWorkbenchEditPanel({
         const res = await onProcess(operation, params)
         if (res.success && res.result) {
           const path = extractPath(res.result)
-          message.success(successMsg)
+          if (successMsg) message.success(successMsg)
           if (path) onOutput?.(outputSummary, path, outputType)
         } else {
           message.error(res.error ?? `${label}失败`)
@@ -123,21 +107,14 @@ export function VideoWorkbenchEditPanel({
     [onProcess, onOutput],
   )
 
-  const handleTrim = (): Promise<void> =>
-    runOp(
-      'trim',
-      { startSec: trimStart, endSec: trimEnd, copy: trimCopy },
-      '裁剪',
-      `已裁剪 ${formatTimestamp(trimStart)} ~ ${formatTimestamp(trimEnd)}`,
-      `裁剪 ${formatTimestamp(trimStart)}-${formatTimestamp(trimEnd)}`,
-      'trim',
-      (r) => (r as { path: string }).path,
-    )
-
   const handleTranscode = (): Promise<void> => {
-    const resolution = tcScale !== 100 && probe
-      ? { w: Math.round((probe.width * tcScale) / 100), h: Math.round((probe.height * tcScale) / 100) }
-      : undefined
+    const resolution =
+      tcScale !== 100 && probe
+        ? {
+            w: Math.round((probe.width * tcScale) / 100),
+            h: Math.round((probe.height * tcScale) / 100),
+          }
+        : undefined
     const label = tcFormat === 'gif' ? 'GIF' : `${tcFormat.toUpperCase()}`
     return runOp(
       'transcode',
@@ -167,18 +144,42 @@ export function VideoWorkbenchEditPanel({
 
   const handleSpeed = (): Promise<void> => {
     const label = speedFactor >= 1 ? `${speedFactor}x 加速` : `${speedFactor}x 慢放`
-    return runOp('adjustSpeed', { factor: speedFactor }, `变速`, `已${label}`, `变速 ${label}`, 'effect', (r) => (r as { path: string }).path)
+    return runOp(
+      'adjustSpeed',
+      { factor: speedFactor },
+      `变速`,
+      `已${label}`,
+      `变速 ${label}`,
+      'effect',
+      (r) => (r as { path: string }).path,
+    )
   }
 
   const handleReverse = (): Promise<void> =>
-    runOp('reverse', { reverseAudio: true }, '倒放', '已生成倒放视频', '倒放', 'effect', (r) => (r as { path: string }).path)
+    runOp(
+      'reverse',
+      { reverseAudio: true },
+      '倒放',
+      '已生成倒放视频',
+      '倒放',
+      'effect',
+      (r) => (r as { path: string }).path,
+    )
 
   const handleCrop = (): Promise<void> => {
-    if (cropW <= 0 || cropH <= 0) {
+    if (resolvedCropW <= 0 || resolvedCropH <= 0) {
       message.error('裁剪宽高必须大于 0')
       return Promise.resolve()
     }
-    return runOp('crop', { w: cropW, h: cropH, x: cropX, y: cropY }, '画面裁剪', `已裁剪画面为 ${cropW}×${cropH}`, `画面裁剪 ${cropW}×${cropH}`, 'effect', (r) => (r as { path: string }).path)
+    return runOp(
+      'crop',
+      { w: resolvedCropW, h: resolvedCropH, x: cropX, y: cropY },
+      '画面裁剪',
+      `已裁剪画面为 ${resolvedCropW}×${resolvedCropH}`,
+      `画面裁剪 ${resolvedCropW}×${resolvedCropH}`,
+      'effect',
+      (r) => (r as { path: string }).path,
+    )
   }
 
   // ffmpeg 不可用时的提示
@@ -216,74 +217,9 @@ export function VideoWorkbenchEditPanel({
 
   return (
     <div className="vwb-edit-panel">
-      {/* ── 裁剪 ── */}
-      <div className="vwb-section">
-        <div className="vwb-section-title">裁剪片段</div>
-        <div className="vwb-trim-controls">
-          <div className="vwb-trim-field">
-            <label>起点</label>
-            <div className="vwb-trim-input-row">
-              <InputNumber
-                size="small"
-                min={0}
-                max={duration}
-                step={0.1}
-                value={trimStart}
-                onChange={(v) => setTrimStart(Number(v) || 0)}
-                style={{ flex: 1 }}
-              />
-              <Button size="small" type="text" onClick={() => setTrimStart(Math.round(currentTime * 10) / 10)}>
-                设为当前
-              </Button>
-            </div>
-          </div>
-          <div className="vwb-trim-field">
-            <label>终点</label>
-            <div className="vwb-trim-input-row">
-              <InputNumber
-                size="small"
-                min={trimStart}
-                max={duration}
-                step={0.1}
-                value={trimEnd}
-                onChange={(v) => setTrimEnd(Number(v) || duration)}
-                style={{ flex: 1 }}
-              />
-              <Button size="small" type="text" onClick={() => setTrimEnd(Math.round(currentTime * 10) / 10)}>
-                设为当前
-              </Button>
-            </div>
-          </div>
-          <div className="vwb-trim-duration">
-            时长：{formatTimestamp(trimEnd - trimStart)}
-          </div>
-          <div className="vwb-trim-copy-toggle">
-            <Button
-              size="small"
-              type={trimCopy ? 'primary' : 'default'}
-              onClick={() => setTrimCopy(true)}
-            >
-              无损快切
-            </Button>
-            <Button
-              size="small"
-              type={!trimCopy ? 'primary' : 'default'}
-              onClick={() => setTrimCopy(false)}
-            >
-              精确切
-            </Button>
-          </div>
-          <Button
-            type="primary"
-            block
-            onClick={handleTrim}
-            loading={busy}
-            disabled={trimEnd <= trimStart}
-            icon={<Icons.Scissors size={14} />}
-          >
-            裁剪
-          </Button>
-        </div>
+      <div className="vwb-edit-panel-hint">
+        <Icons.Scissors size={14} />
+        <span>时间裁剪、入出点与分割请直接在下方 V1 轨道操作。</span>
       </div>
 
       {/* ── 转码 ── */}
@@ -340,7 +276,8 @@ export function VideoWorkbenchEditPanel({
             />
             {tcScale !== 100 && probe && (
               <span className="vwb-tc-res-hint">
-                → {Math.round((probe.width * tcScale) / 100)}×{Math.round((probe.height * tcScale) / 100)}
+                → {Math.round((probe.width * tcScale) / 100)}×
+                {Math.round((probe.height * tcScale) / 100)}
               </span>
             )}
           </div>
@@ -364,9 +301,7 @@ export function VideoWorkbenchEditPanel({
             <label>每段时长（秒）</label>
             <Slider min={2} max={120} step={1} value={segSec} onChange={setSegSec} />
             {duration > 0 && (
-              <span className="vwb-tc-res-hint">
-                将切分为约 {Math.ceil(duration / segSec)} 段
-              </span>
+              <span className="vwb-tc-res-hint">将切分为约 {Math.ceil(duration / segSec)} 段</span>
             )}
           </div>
           <Button block onClick={handleSegment} loading={busy} icon={<Icons.Scissors size={14} />}>
@@ -411,19 +346,43 @@ export function VideoWorkbenchEditPanel({
           <div className="vwb-crop-grid">
             <div className="vwb-crop-field">
               <span>X</span>
-              <InputNumber size="small" min={0} max={probe?.width ?? 9999} value={cropX} onChange={(v) => setCropX(Number(v) || 0)} />
+              <InputNumber
+                size="small"
+                min={0}
+                max={probe?.width ?? 9999}
+                value={cropX}
+                onChange={(v) => setCropX(Number(v) || 0)}
+              />
             </div>
             <div className="vwb-crop-field">
               <span>Y</span>
-              <InputNumber size="small" min={0} max={probe?.height ?? 9999} value={cropY} onChange={(v) => setCropY(Number(v) || 0)} />
+              <InputNumber
+                size="small"
+                min={0}
+                max={probe?.height ?? 9999}
+                value={cropY}
+                onChange={(v) => setCropY(Number(v) || 0)}
+              />
             </div>
             <div className="vwb-crop-field">
               <span>宽</span>
-              <InputNumber size="small" min={1} max={probe?.width ?? 9999} value={cropW} onChange={(v) => setCropW(Number(v) || 0)} />
+              <InputNumber
+                size="small"
+                min={1}
+                max={probe?.width ?? 9999}
+                value={resolvedCropW}
+                onChange={(v) => setCropW(Number(v) || 0)}
+              />
             </div>
             <div className="vwb-crop-field">
               <span>高</span>
-              <InputNumber size="small" min={1} max={probe?.height ?? 9999} value={cropH} onChange={(v) => setCropH(Number(v) || 0)} />
+              <InputNumber
+                size="small"
+                min={1}
+                max={probe?.height ?? 9999}
+                value={resolvedCropH}
+                onChange={(v) => setCropH(Number(v) || 0)}
+              />
             </div>
           </div>
           <Button size="small" block onClick={handleCrop} loading={busy} disabled={busy}>
