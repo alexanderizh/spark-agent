@@ -3,10 +3,7 @@ import { Button, Tag, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { CANVAS_CAPABILITIES } from './canvas.capabilities'
 import { getOperationVisual } from './canvasOperationIcons'
-import type {
-  CanvasNodeData,
-  CanvasOperationType,
-} from './canvas.types'
+import type { CanvasNodeData, CanvasOperationType } from './canvas.types'
 
 /**
  * 画布节点创建约定（文档 §7.7）：
@@ -127,7 +124,9 @@ export function useAddNodeMenuItems(): AddNodeMenuItem[] {
 }
 
 /** 按 category 分组，供菜单/底栏分组渲染 */
-export function groupAddNodeItems(items: AddNodeMenuItem[]): Record<AddNodeMenuCategory, AddNodeMenuItem[]> {
+export function groupAddNodeItems(
+  items: AddNodeMenuItem[],
+): Record<AddNodeMenuCategory, AddNodeMenuItem[]> {
   return {
     resource: items.filter((item) => item.category === 'resource'),
     task: items.filter((item) => item.category === 'task'),
@@ -164,11 +163,13 @@ function AddNodeMenuGrid({
  */
 export function CanvasDockAddDropdown({
   label,
+  shortLabel,
   icon,
   items,
   onSelect,
 }: {
   label: string
+  shortLabel?: string
   icon: React.ReactNode
   items: AddNodeMenuItem[]
   onSelect: (item: AddNodeMenuItem) => void
@@ -176,7 +177,15 @@ export function CanvasDockAddDropdown({
   return (
     <div className="canvas-dock-add-dropdown">
       <Tooltip title={label} placement="top">
-        <Button size="middle" type="text" icon={icon} aria-label={label} />
+        <Button
+          size="middle"
+          type="text"
+          icon={icon}
+          {...(shortLabel ? { className: 'canvas-dock-labeled-action' } : {})}
+          aria-label={label}
+        >
+          {shortLabel}
+        </Button>
       </Tooltip>
       <div className="canvas-dock-add-dropdown-panel" role="menu" aria-label={label}>
         <div className="canvas-dock-add-dropdown-title">{label}</div>

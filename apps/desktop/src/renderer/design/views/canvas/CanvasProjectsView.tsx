@@ -18,6 +18,7 @@ import { useCanvasProjects } from './canvas.store'
 import { openCanvasProjectWindow } from './canvas-window-client'
 import './CanvasProjectsView.less'
 import './uiux-v4/projects.less'
+import './uiux-v4/modals.less'
 
 export function CanvasProjectsView({
   onWorkspaceActiveChange,
@@ -296,8 +297,9 @@ export function CanvasProjectsView({
   return (
     <div className="canvas-projects-view canvas-uiux-v4-projects">
       <header className="canvas-projects-header">
-        <div>
-          <h2>Canvas Projects</h2>
+        <div className="canvas-projects-heading">
+          <span>PROJECT CANVAS</span>
+          <h2>画布项目</h2>
           <p>以项目为入口管理无限画布、素材、任务和生成血缘。</p>
         </div>
         <div className="canvas-projects-header-actions">
@@ -401,8 +403,12 @@ export function CanvasProjectsView({
                     />
                   ) : (
                     <>
-                      <Icons.Canvas size={34} />
                       <div className="canvas-project-cover-grid" />
+                      <div className="canvas-project-cover-empty">
+                        <Icons.Canvas size={30} />
+                        <strong>暂无封面预览</strong>
+                        <span>进入项目开始创作</span>
+                      </div>
                     </>
                   )}
                   {project.pinned && (
@@ -490,6 +496,7 @@ export function CanvasProjectsView({
       </main>
 
       <Modal
+        className="canvas-project-modal"
         title={editingProjectId == null ? '新建 Canvas 项目' : '编辑 Canvas 项目'}
         open={createOpen}
         onCancel={() => setCreateOpen(false)}

@@ -1105,6 +1105,22 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const operationParamSummary = isOperationNode(node)
     ? buildCanvasOperationParamSummary(node.data.modelParams, 4)
     : []
+  const nodeActionLabel = isDirectorStage3D
+    ? '打开导演台'
+    : isVideoWorkbench
+      ? '打开工作台'
+      : isTask
+        ? '查看任务'
+        : node.type === 'image' || node.type === 'audio' || node.type === 'video'
+          ? '预览'
+          : '打开编辑'
+  const nodeFooterLabel = operationSummary
+    ? operationSummary
+    : isResourceOutput
+      ? '画布产物'
+      : node.type === 'group'
+        ? '成组排列'
+        : '双击可快速打开'
   const nodeStyle = {
     ...(roleMeta ? { ['--role-color' as string]: roleMeta.color } : {}),
     ...(hasInlineExtension
@@ -1114,29 +1130,32 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const nodeMetaBar = (
     <div className="canvas-node-meta-bar nodrag nopan">
       <span className="canvas-node-meta-title">
-        {node.type === 'image' &&
-          (node.data.panorama360 ? <Icons.Globe size={12} /> : <Icons.Image size={12} />)}
-        {node.type === 'audio' && <Icons.Play size={12} />}
-        {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={12} />}
-        {isDirectorStage ? (
-          <Icons.Play size={12} />
-        ) : isOperationNode(node) ? (
-          operationNodeIcon(nodeOperation(node))
-        ) : node.type === 'task' ? (
-          <Icons.Activity size={12} />
-        ) : null}
-        {node.type === 'video' && <Icons.Play size={12} />}
-        {node.type === 'group' && <Icons.Layers size={12} />}
-        <span title={node.data.panorama360 ? `360全景 · ${title}` : title}>
-          {node.data.panorama360 ? `360全景 · ${title}` : title}
+        <span className="canvas-node-meta-icon" aria-hidden="true">
+          {node.type === 'image' &&
+            (node.data.panorama360 ? <Icons.Globe size={14} /> : <Icons.Image size={14} />)}
+          {node.type === 'audio' && <Icons.Play size={14} />}
+          {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={14} />}
+          {isDirectorStage ? (
+            <Icons.Play size={14} />
+          ) : isOperationNode(node) ? (
+            operationNodeIcon(nodeOperation(node))
+          ) : node.type === 'task' ? (
+            <Icons.Activity size={14} />
+          ) : null}
+          {node.type === 'video' && <Icons.Play size={14} />}
+          {node.type === 'group' && <Icons.Layers size={14} />}
+        </span>
+        <span className="canvas-node-meta-copy">
+          <span className="canvas-node-kind-label">
+            {node.data.panorama360 ? `360全景 · ${metaTypeLabel}` : metaTypeLabel}
+          </span>
+          <strong title={node.data.panorama360 ? `360全景 · ${title}` : title}>{title}</strong>
         </span>
       </span>
       <span className="canvas-node-meta-tags">
         {roleMeta ? (
           <span className="canvas-node-meta-chip canvas-node-meta-chip-role">{roleMeta.label}</span>
-        ) : (
-          <span className="canvas-node-meta-chip">{metaTypeLabel}</span>
-        )}
+        ) : null}
         {operationStatus ? (
           <span
             className={`canvas-node-meta-chip canvas-node-meta-chip-status is-${operationStatus}`}
@@ -1344,6 +1363,19 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                   />
                 </div>
               )}
+            </div>
+            <div className="canvas-node-quick-footer nodrag nopan">
+              <span title={nodeFooterLabel}>{nodeFooterLabel}</span>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  actions.editNode(node.id)
+                }}
+              >
+                {nodeActionLabel}
+              </button>
             </div>
           </div>
           {renderedInlinePanel ? (
