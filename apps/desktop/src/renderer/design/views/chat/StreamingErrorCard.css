@@ -1,52 +1,56 @@
 .runtime-diagnostic-card {
-  margin: 8px 0;
+  --diagnostic-accent: var(--text-muted, #8b93a1);
+  --diagnostic-accent-soft: color-mix(in srgb, var(--diagnostic-accent) 10%, transparent);
+  position: relative;
+  margin: 10px 0;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--text-muted, #8b93a1) 20%, transparent);
-  border-left: 3px solid color-mix(in srgb, var(--text-muted, #8b93a1) 72%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface-raised, #25272b) 92%, transparent);
-  color: var(--text-primary, #e6e8eb);
+  border: 1px solid color-mix(in srgb, var(--border, #dfe3e8) 78%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--panel, #ffffff) 96%, var(--bg, #ffffff));
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  color: var(--text, #20242a);
+}
+
+.runtime-diagnostic-card::before {
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 10px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--diagnostic-accent);
+  content: '';
 }
 
 .runtime-diagnostic-card.is-warning {
-  border-left-color: var(--warning, #f59e0b);
-  background: color-mix(in srgb, var(--warning, #f59e0b) 8%, var(--surface-raised, #25272b));
+  --diagnostic-accent: var(--warning, #d9920b);
 }
 
 .runtime-diagnostic-card.is-error {
-  border-left-color: var(--danger, #ef6464);
-  background: color-mix(in srgb, var(--danger, #ef6464) 7%, var(--surface-raised, #25272b));
+  --diagnostic-accent: var(--danger, #df5965);
 }
 
 .runtime-diagnostic-summary {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   width: 100%;
-  min-height: 48px;
-  gap: 10px;
-  padding: 8px 12px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
+  min-height: 72px;
+  gap: 12px;
+  padding: 14px 16px 14px 28px;
 }
 
-.runtime-diagnostic-summary:hover {
-  background: color-mix(in srgb, currentColor 4%, transparent);
+.runtime-diagnostic-icon-shell {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--diagnostic-accent-soft);
 }
 
 .runtime-diagnostic-status-icon {
-  color: var(--text-muted, #8b93a1);
-}
-
-.is-warning .runtime-diagnostic-status-icon {
-  color: var(--warning, #f59e0b);
-}
-
-.is-error .runtime-diagnostic-status-icon {
-  color: var(--danger, #ef6464);
+  color: var(--diagnostic-accent);
 }
 
 .runtime-diagnostic-heading {
@@ -63,8 +67,8 @@
 .runtime-diagnostic-title-row strong {
   flex: 0 1 auto;
   overflow: hidden;
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -73,8 +77,8 @@
   flex: 0 0 auto;
   padding: 1px 6px;
   border-radius: 999px;
-  background: color-mix(in srgb, currentColor 8%, transparent);
-  color: var(--text-secondary, #aeb4bf);
+  background: color-mix(in srgb, var(--text-muted, #8b93a1) 9%, transparent);
+  color: var(--text-muted, #747b86);
   font-size: 11px;
   line-height: 16px;
 }
@@ -83,32 +87,112 @@
   display: block;
   overflow: hidden;
   margin-top: 1px;
-  color: var(--text-muted, #8b93a1);
+  color: var(--text-muted, #777e89);
   font-size: 12px;
   line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.runtime-diagnostic-summary code {
-  max-width: 230px;
-  overflow: hidden;
-  color: var(--text-muted, #8b93a1);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.runtime-diagnostic-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runtime-diagnostic-header-actions button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.runtime-diagnostic-header-actions button:active {
+  transform: translateY(1px);
+}
+
+.runtime-diagnostic-header-actions button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary, #5876d8) 62%, transparent);
+  outline-offset: 2px;
+}
+
+.runtime-diagnostic-retry {
+  background: color-mix(in srgb, var(--primary, #5876d8) 10%, transparent);
+  color: var(--primary, #5876d8);
+}
+
+.runtime-diagnostic-retry:hover {
+  background: color-mix(in srgb, var(--primary, #5876d8) 16%, transparent);
+}
+
+.runtime-diagnostic-detail-toggle {
+  border-color: color-mix(in srgb, var(--text, #20242a) 12%, transparent) !important;
+  background: var(--text, #22262d);
+  color: var(--bg, #ffffff);
+}
+
+.runtime-diagnostic-detail-toggle:hover {
+  background: color-mix(in srgb, var(--text, #22262d) 88%, var(--bg, #ffffff));
+}
+
+.app.theme-dark .runtime-diagnostic-card {
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);
+}
+
+.app.theme-dark .runtime-diagnostic-detail-toggle {
+  border-color: color-mix(in srgb, var(--text, #f3f4f6) 14%, transparent) !important;
+  background: color-mix(in srgb, var(--panel-elev, #383838) 92%, var(--bg, #262626));
+  color: var(--text, #f3f4f6);
+}
+
+.app.theme-dark .runtime-diagnostic-detail-toggle:hover {
+  background: color-mix(in srgb, var(--panel-elev, #383838) 78%, var(--text, #f3f4f6));
 }
 
 .runtime-diagnostic-body {
-  padding: 0 14px 12px 38px;
-  border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+  margin: 0 16px 0 28px;
+  padding: 12px 0 16px 50px;
+  border-top: 1px solid color-mix(in srgb, var(--text, #20242a) 8%, transparent);
 }
 
 .runtime-diagnostic-body > p {
   margin: 10px 0;
-  color: var(--text-secondary, #aeb4bf);
+  color: var(--text-muted, #747b86);
   font-size: 13px;
   line-height: 1.55;
+}
+
+.runtime-diagnostic-code-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  color: var(--text-faint, #9ba0a9);
+  font-size: 11px;
+}
+
+.runtime-diagnostic-code-row code {
+  max-width: min(100%, 360px);
+  overflow: hidden;
+  padding: 4px 9px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text, #20242a) 6%, transparent);
+  color: var(--text-muted, #616873);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .runtime-diagnostic-details {
@@ -126,7 +210,7 @@
 .runtime-diagnostic-details dd {
   margin: 2px 0 0;
   overflow-wrap: anywhere;
-  color: var(--text-secondary, #aeb4bf);
+  color: var(--text-muted, #747b86);
   font-family: var(--font-mono, monospace);
   font-size: 12px;
 }
@@ -134,28 +218,27 @@
 .runtime-diagnostic-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   margin-top: 10px;
   color: var(--text-muted, #8b93a1);
   font-size: 12px;
 }
 
-.runtime-diagnostic-actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 9px;
-  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
-  border-radius: 7px;
-  background: color-mix(in srgb, currentColor 5%, transparent);
-  color: var(--text-primary, #e6e8eb);
-  cursor: pointer;
-}
-
 @media (max-width: 720px) {
-  .runtime-diagnostic-summary code,
+  .runtime-diagnostic-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .runtime-diagnostic-header-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
   .runtime-diagnostic-meta:not(:first-of-type) {
     display: none;
+  }
+
+  .runtime-diagnostic-body {
+    padding-left: 0;
   }
 }

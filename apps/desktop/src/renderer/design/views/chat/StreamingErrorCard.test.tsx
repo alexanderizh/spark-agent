@@ -44,18 +44,16 @@ describe('StreamingErrorCard', () => {
     expect(container.textContent).not.toContain('重置时间')
     expect(container.textContent).not.toContain('额度重置后再试。')
 
-    const summaryButton = container.querySelector<HTMLButtonElement>(
-      '.runtime-diagnostic-summary',
+    const detailButton = container.querySelector<HTMLButtonElement>(
+      '.runtime-diagnostic-detail-toggle',
     )
-    expect(summaryButton?.getAttribute('aria-expanded')).toBe('false')
-    act(() => summaryButton?.click())
+    expect(detailButton?.getAttribute('aria-expanded')).toBe('false')
+    act(() => detailButton?.click())
 
     expect(container.textContent).toContain('重置时间')
     expect(container.textContent).toContain('额度重置后再试。')
-    expect(summaryButton?.getAttribute('aria-expanded')).toBe('true')
-    const retryButton = container.querySelector<HTMLButtonElement>(
-      '.runtime-diagnostic-actions button',
-    )
+    expect(detailButton?.getAttribute('aria-expanded')).toBe('true')
+    const retryButton = container.querySelector<HTMLButtonElement>('.runtime-diagnostic-retry')
     act(() => retryButton?.click())
     expect(onRetry).toHaveBeenCalledOnce()
   })
@@ -73,10 +71,10 @@ describe('StreamingErrorCard', () => {
       )
     })
 
-    const summaryButton = container.querySelector<HTMLButtonElement>(
-      '.runtime-diagnostic-summary',
+    const detailButton = container.querySelector<HTMLButtonElement>(
+      '.runtime-diagnostic-detail-toggle',
     )
-    act(() => summaryButton?.click())
-    expect(container.querySelector('.runtime-diagnostic-actions button')).toBeNull()
+    act(() => detailButton?.click())
+    expect(container.querySelector('.runtime-diagnostic-retry')).toBeNull()
   })
 })
