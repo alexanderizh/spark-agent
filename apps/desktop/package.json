@@ -13,6 +13,7 @@
     "build:unpack": "pnpm run build && pnpm run rebuild:native && electron-builder --dir",
     "build:prod": "pnpm run build && pnpm run rebuild:native && electron-builder",
     "build:win": "bash scripts/build-win-release.sh x64 --publish never",
+    "cert:win:self-signed": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-windows-self-signed-cert.ps1",
     "build:mac": "pnpm run build && pnpm run rebuild:native -- arm64 && electron-builder --mac --arm64 && pnpm run rebuild:native -- x64 && electron-builder --mac --x64",
     "build:mac:arm64": "pnpm run build && pnpm run rebuild:native -- arm64 && electron-builder --mac --arm64",
     "build:mac:x64": "pnpm run build && pnpm run rebuild:native -- x64 && electron-builder --mac --x64",

@@ -288,7 +288,7 @@ jobs:
           }
 
           if [ "${{ matrix.platform }}" = "win" ]; then
-            bash apps/desktop/scripts/build-win-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT}
+            REQUIRE_WINDOWS_SIGNING=1 bash apps/desktop/scripts/build-win-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT}
           else
             run_mac_build_with_retry
           fi

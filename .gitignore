@@ -48,6 +48,7 @@ playwright-report/
 *.pem
 *.p12
 *.pfx
+*.pfx.base64.txt
 api-keys.json
 secrets.json
 
