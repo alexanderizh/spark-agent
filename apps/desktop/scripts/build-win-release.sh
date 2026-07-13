@@ -79,11 +79,19 @@ prepare_windows_signing() {
 
   if { [ -n "${WIN_CSC_LINK:-}" ] && [ -z "${WIN_CSC_KEY_PASSWORD:-}" ]; } \
     || { [ -z "${WIN_CSC_LINK:-}" ] && [ -n "${WIN_CSC_KEY_PASSWORD:-}" ]; }; then
+    if [ "${ALLOW_UNSIGNED_WINDOWS_RELEASE:-0}" = "1" ]; then
+      warn "Windows signing is partially configured; continuing with an unsigned package"
+      unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD
+      export -n WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD 2>/dev/null || true
+      WINDOWS_SIGNING_MODE="unsigned"
+      return
+    fi
     fail "Windows signing is partially configured; both WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD are required"
   fi
 
   if [ -z "${WIN_CSC_LINK:-}" ]; then
-    if [ "${REQUIRE_WINDOWS_SIGNING:-0}" = "1" ]; then
+    if [ "${REQUIRE_WINDOWS_SIGNING:-0}" = "1" ] \
+      && [ "${ALLOW_UNSIGNED_WINDOWS_RELEASE:-0}" != "1" ]; then
       fail "Signed Windows release required, but WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD are missing"
     fi
     warn "WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD not set; Windows installer will be built unsigned"
@@ -189,6 +197,7 @@ if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
   throw "Windows artifact does not exist: $path"
 }
 $sig = Get-AuthenticodeSignature -LiteralPath $path
+$allowUnsignedRelease = $env:ALLOW_UNSIGNED_WINDOWS_RELEASE -eq "1"
 Write-Host ("  Status : {0}" -f $sig.Status)
 Write-Host ("  Message: {0}" -f $sig.StatusMessage)
 if ($sig.SignerCertificate) {
@@ -202,6 +211,11 @@ if ($sig.TimeStamperCertificate) {
 if (($sig.Status -eq "UnknownError" -or $sig.Status -eq "NotTrusted") -and
     $sig.SignerCertificate -and
     $sig.SignerCertificate.Subject -eq $sig.SignerCertificate.Issuer) {
+  if ($allowUnsignedRelease) {
+    Write-Warning "The self-signed signature is not trusted on this runner; skipping temporary root-store trust because unsigned Windows releases are allowed"
+    exit 0
+  }
+
   # A self-signed certificate proves that the artifact was signed, but a clean
   # CI runner does not trust it as a root CA. Temporarily trust only its public
   # certificate and run Authenticode verification again so hash/signature
@@ -245,13 +259,40 @@ if (($sig.Status -eq "UnknownError" -or $sig.Status -eq "NotTrusted") -and
 }
 
 if ($sig.Status -ne "Valid") {
+  if ($allowUnsignedRelease) {
+    Write-Warning ("Authenticode verification failed, but the Windows release may continue: {0} - {1}" -f $sig.Status, $sig.StatusMessage)
+    exit 0
+  }
   throw "Authenticode signature verification failed: $($sig.Status) - $($sig.StatusMessage)"
 }
 if (-not $sig.TimeStamperCertificate) {
+  if ($allowUnsignedRelease) {
+    Write-Warning "Authenticode signature has no RFC 3161 timestamp, but the Windows release may continue"
+    exit 0
+  }
   throw "Authenticode signature is valid but has no RFC 3161 timestamp"
 }
 ' "$verify_path"
-  ok "Authenticode signature is valid"
+  if [ "${ALLOW_UNSIGNED_WINDOWS_RELEASE:-0}" = "1" ]; then
+    ok "Windows signature verification step completed (unsigned fallback is allowed)"
+  else
+    ok "Authenticode signature is valid"
+  fi
+}
+
+retry_windows_package_without_signing() {
+  warn "Signed Windows packaging failed; retrying once without code signing"
+
+  unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD
+  export -n WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD 2>/dev/null || true
+  WINDOWS_SIGNING_MODE="unsigned"
+
+  # Remove only Windows outputs so a partial signed attempt cannot be uploaded
+  # or mistaken for the unsigned retry result.
+  rm -rf dist/win-unpacked dist/win-ia32-unpacked dist/win-arm64-unpacked
+  rm -f dist/*.exe dist/*.exe.blockmap dist/latest.yml
+
+  pnpm exec electron-builder --win "--$ARCH" "${BUILDER_ARGS[@]}"
 }
 
 step "0/5 Build parameters"
@@ -300,7 +341,14 @@ step "3/5 Rebuild and verify Electron native modules"
 pnpm run rebuild:native -- "$ARCH"
 
 step "4/5 electron-builder Windows package + sign"
-pnpm exec electron-builder --win "--$ARCH" "${BUILDER_ARGS[@]}"
+if ! pnpm exec electron-builder --win "--$ARCH" "${BUILDER_ARGS[@]}"; then
+  if [ "$WINDOWS_SIGNING_MODE" = "signed" ] \
+    && [ "${ALLOW_UNSIGNED_WINDOWS_RELEASE:-0}" = "1" ]; then
+    retry_windows_package_without_signing
+  else
+    fail "Windows packaging failed"
+  fi
+fi
 ok "Windows package complete"
 
 verify_windows_signature

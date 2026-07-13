@@ -38,7 +38,7 @@ Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 官网�
 - 更新状态会显示实际检查来源和下载来源：官网版本中心或 GitHub Releases
 - 侧边栏顶部折叠按钮旁提供全局更新入口：检查、下载、下载中状态、安装
 - 发布 workflow 会在调用 `electron-builder` 前清理空的签名 secret，避免空 `CSC_LINK` / `WIN_CSC_LINK` 被解析成工作目录路径导致构建失败
-- Windows Release 构建统一走 [build-win-release.sh](/Users/zhangyang/spark_ai_project/Spark-Agent/apps/desktop/scripts/build-win-release.sh)，本地和 CI 都使用同一套 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` 处理逻辑；正式 CI 强制要求证书，本地调试未提供证书时仍可产出未签名安装包。有证书时会在 Windows runner 上用 `Get-AuthenticodeSignature` 校验；自签名证书仅在校验期间临时加入当前用户的受信任根证书存储，复验完成后立即移除
+- Windows Release 构建统一走 [build-win-release.sh](/Users/zhangyang/spark_ai_project/Spark-Agent/apps/desktop/scripts/build-win-release.sh)，本地和 CI 都使用同一套 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` 处理逻辑。正式 CI 会优先签名，但证书缺失、签名失败或复验不可信时允许降级为未签名安装包，保证 GitHub Release 与官网版本中心仍能收到 Windows 产物；本地默认保持严格行为，可显式设置 `ALLOW_UNSIGNED_WINDOWS_RELEASE=1` 启用相同降级策略
 
 ## 开发调试
 
@@ -51,7 +51,7 @@ Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 官网�
 
 - Windows Authenticode 签名不要求 Microsoft 开发者账户。免费的自签名证书可以证明安装包未被签名后篡改，但无法让未导入该证书的公网用户自动信任发布者；微软将自签名证书的首次 SmartScreen 体验归类为与未签名应用相同
 - Windows 构建固定使用 SHA-256 和 DigiCert 的免费 RFC 3161 时间戳服务。时间戳能让已发布版本在签名证书到期后继续验证，但不能把自签名证书升级为受信任证书
-- 正式 CI 必须配置 `WIN_CSC_LINK` 和 `WIN_CSC_KEY_PASSWORD`，缺少任意一个都会立即终止 Windows Release，避免误发未签名安装包。`WIN_CSC_LINK` 可以是 `.pfx` 文件的 base64 内容，也可以是 `https://` / `data:...;base64,...` 形式；workflow 会在 Windows runner 中解码并交给 `electron-builder` 签名
+- 正式 CI 建议配置 `WIN_CSC_LINK` 和 `WIN_CSC_KEY_PASSWORD`。`WIN_CSC_LINK` 可以是 `.pfx` 文件的 base64 内容，也可以是 `https://` / `data:...;base64,...` 形式；workflow 会在 Windows runner 中解码并交给 `electron-builder` 签名。CI 设置了 `ALLOW_UNSIGNED_WINDOWS_RELEASE=1`：证书缺失或签名失败时会清理签名尝试产生的 Windows 文件并重新打包一次未签名安装包；若无签名重试也失败，构建仍会终止
 - 在自己的 Windows 电脑上用 PowerShell 生成长期使用的 RSA-4096、SHA-256、Code Signing EKU 自签名证书：
 
 ```powershell
@@ -87,7 +87,7 @@ pnpm run build:win:release -- --publish never
 ```
 
 - 若本地不想把证书落盘，也可以把 `.pfx` base64 后传入 `WIN_CSC_LINK`。脚本会写入临时目录，构建结束自动删除
-- 只有提供了 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` 时，脚本才会要求最终 `.exe` 的 Authenticode 状态为 `Valid` 且存在 RFC 3161 时间戳。若证书为自签名证书，干净的 Windows runner 首次检查会因根证书不受信任而失败；脚本会临时信任该证书并再次检查文件哈希和签名，随后移除临时信任
+- 只有提供了 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` 且未开启 unsigned fallback 时，脚本才会要求最终 `.exe` 的 Authenticode 状态为 `Valid` 且存在 RFC 3161 时间戳。若开启 `ALLOW_UNSIGNED_WINDOWS_RELEASE=1`，自签名证书在干净 runner 上不受信任时只记录警告，不再向 CurrentUser Root 证书库写入临时信任，从而避免无人值守 CI 被 Windows 根证书确认卡住
 
 ### 免费方案能减少哪些警告
 
@@ -114,11 +114,11 @@ Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\TrustedP
   - `APPLE_ID`
   - `APPLE_APP_SPECIFIC_PASSWORD`
   - `APPLE_TEAM_ID`
-  - `WIN_CSC_LINK`：Windows 代码签名 `.pfx` 的路径、URL、data URL，或 base64 内容；正式 CI 必须配置
+  - `WIN_CSC_LINK`：Windows 代码签名 `.pfx` 的路径、URL、data URL，或 base64 内容；正式 CI 建议配置，缺失时会发布未签名安装包
   - `WIN_CSC_KEY_PASSWORD`：上述 `.pfx` 的导出密码
 - macOS CI 会在导入证书后校验 `Developer ID Application` identity；如果 secret 误填成开发证书，会立即失败，避免后续公证阶段才报未签名或 adhoc 签名错误
 - `NOTARIZE_MAX_ATTEMPTS` 可覆盖 macOS 公证上传重试次数，默认 3 次；正式 CI 通常无需设置
-- Windows CI 会校验 `.exe` 的 Authenticode 状态为 `Valid` 且带时间戳；自签名证书会通过临时信任后的二次校验确认签名和文件完整性，证书配置缺失时直接终止发布
+- Windows CI 会检查 `.exe` 的 Authenticode 状态与时间戳；检查失败会产生警告但不阻断发布。签名打包本身失败时会自动重试一次未签名打包，确保官网上传链路优先获得可安装产物
 
 ## 更新通道
 
