@@ -1380,7 +1380,6 @@ body.sidebar-resizing {
 /* 用户消息：hover bar 右对齐（气泡外右下角） */
 .msg-hover-right {
   justify-content: flex-end;
-  margin-right: 46px;
 }
 
 /* Agent 消息：hover bar 左对齐（气泡内左下角） */
@@ -2258,6 +2257,10 @@ body.sidebar-resizing {
   margin-left: auto;
   margin-right: auto;
 }
+/* 用户气泡底色为 --primary-soft（非页面 --bg），折叠渐变需对齐气泡自身底色，避免底部出现异色补丁 */
+.msg-bubble-user .collapsible-content.is-collapsed::after {
+  background: linear-gradient(transparent, var(--primary-soft));
+}
 
 /* Tool call block */
 .tool-call {
@@ -2391,8 +2394,7 @@ body.sidebar-resizing {
 }
 .tool-log-body {
   margin: 4px 0 10px 2px;
-  padding-left: 20px;
-  border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  padding-left: 0;
   max-width: 100%;
   max-height: 100vh;
   overflow-y: auto;
@@ -5251,7 +5253,6 @@ body.inspector-resizing {
 
 .inspector-plan {
   padding: 10px;
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
 }

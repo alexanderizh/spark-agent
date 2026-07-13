@@ -787,7 +787,7 @@ export function ComposerV2({
   // 允许勾选 worktree——worktree 必须在会话产生消息前绑定。
   const isNewSessionComposer = canShowComposerWorktreeToggle({
     sessionId: session?.id,
-    sessionMessageCount: session?.messageCount,
+    sessionMessageCount: session == null ? undefined : (session.turnCount ?? session.messageCount),
     sessionStatus: session?.status,
     loadedMessageCount: messages.length,
   })
@@ -853,7 +853,7 @@ export function ComposerV2({
   // ── Escape double-press interrupt ──
   const escapeTimestampRef = useRef(0)
   const [escapeConfirm, setEscapeConfirm] = useState(false)
-  const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
+  const { invoke: sendTurn } = useIpcInvoke('session:submit-turn')
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
   const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
   const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')

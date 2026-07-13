@@ -561,7 +561,7 @@ export function OnboardingView(): React.ReactElement {
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const { invoke: fetchProviderModels } = useIpcInvoke('provider:fetch-models')
   const { invoke: createAgent } = useIpcInvoke('agent:create')
-  const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
+  const { invoke: sendTurn } = useIpcInvoke('session:submit-turn')
   const { invoke: healthCheck } = useIpcInvoke('provider:health-check')
 
   const setProviderPresetId = useCallback((id: string) => {

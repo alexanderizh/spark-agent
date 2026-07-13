@@ -53,13 +53,10 @@ export function StreamingErrorCard({
       role="group"
       aria-label={`${title}${code != null ? ` (${code})` : ''}`}
     >
-      <button
-        type="button"
-        className="runtime-diagnostic-summary"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <StatusIcon className="runtime-diagnostic-status-icon" size={16} aria-hidden="true" />
+      <div className="runtime-diagnostic-summary">
+        <span className="runtime-diagnostic-icon-shell" aria-hidden="true">
+          <StatusIcon className="runtime-diagnostic-status-icon" size={17} />
+        </span>
         <span className="runtime-diagnostic-heading">
           <span className="runtime-diagnostic-title-row">
             <strong>{title}</strong>
@@ -71,16 +68,37 @@ export function StreamingErrorCard({
           </span>
           {!expanded && <span className="runtime-diagnostic-preview">{message}</span>}
         </span>
-        {code != null && code.length > 0 && <code>{code}</code>}
-        {expanded ? (
-          <ChevronDown size={15} aria-hidden="true" />
-        ) : (
-          <ChevronRight size={15} aria-hidden="true" />
-        )}
-      </button>
+        <span className="runtime-diagnostic-header-actions">
+          {retryable && onRetry != null && (
+            <button type="button" className="runtime-diagnostic-retry" onClick={onRetry}>
+              <RefreshCw size={13} aria-hidden="true" />
+              重新尝试
+            </button>
+          )}
+          <button
+            type="button"
+            className="runtime-diagnostic-detail-toggle"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? '收起详情' : '查看详情'}
+            {expanded ? (
+              <ChevronDown size={14} aria-hidden="true" />
+            ) : (
+              <ChevronRight size={14} aria-hidden="true" />
+            )}
+          </button>
+        </span>
+      </div>
       {expanded && (
         <div className="runtime-diagnostic-body">
           <p>{message}</p>
+          {code != null && code.length > 0 && (
+            <div className="runtime-diagnostic-code-row">
+              <span>诊断代码</span>
+              <code>{code}</code>
+            </div>
+          )}
           {details.length > 0 && (
             <dl className="runtime-diagnostic-details">
               {details.map((detail, index) => (
@@ -91,15 +109,9 @@ export function StreamingErrorCard({
               ))}
             </dl>
           )}
-          {(actionHint != null || (retryable && onRetry != null)) && (
+          {actionHint != null && (
             <div className="runtime-diagnostic-actions">
-              {actionHint != null && <span>{actionHint}</span>}
-              {retryable && onRetry != null && (
-                <button type="button" onClick={onRetry}>
-                  <RefreshCw size={13} aria-hidden="true" />
-                  重试
-                </button>
-              )}
+              <span>{actionHint}</span>
             </div>
           )}
         </div>

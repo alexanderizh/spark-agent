@@ -1113,6 +1113,39 @@ describe('ProviderService', () => {
       expect(seen).not.toContain('claude.cmd')
     })
 
+    it('coalesces concurrent claude CLI availability checks and reuses the cached result', async () => {
+      setPlatform('darwin')
+      const seen: string[] = []
+      cliExecMock.resolve = (cmd) => {
+        seen.push(cmd)
+        return cmd === 'claude'
+      }
+      vi.resetModules()
+      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const fresh = new FreshProviderService(repo as never)
+
+      await expect(Promise.all([
+        fresh.isLocalCliAvailable(),
+        fresh.isLocalCliAvailable(),
+      ])).resolves.toEqual([true, true])
+      await expect(fresh.isLocalCliAvailable()).resolves.toBe(true)
+
+      expect(seen.filter((cmd) => cmd === 'claude')).toHaveLength(1)
+    })
+
+    it('force refresh bypasses the cached CLI availability result', async () => {
+      setPlatform('win32')
+      cliExecMock.resolve = (cmd) => cmd.includes('claude.cmd')
+      vi.resetModules()
+      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const fresh = new FreshProviderService(repo as never)
+
+      await expect(fresh.isLocalCliAvailable()).resolves.toBe(true)
+      cliExecMock.resolve = () => false
+      await expect(fresh.isLocalCliAvailable()).resolves.toBe(true)
+      await expect(fresh.isLocalCliAvailable({ forceRefresh: true })).resolves.toBe(false)
+    })
+
     it('unix: falls back to login shell when bare claude and which both miss', async () => {
       // 复现最常见的现场：用户把 claude 装在 nvm/Volta/Hoembrew 等用户级目录，
       // 这些目录不在 GUI 进程的 PATH 里，所以 'claude' 和 `which claude` 都失败。
@@ -1301,7 +1334,7 @@ describe('ProviderService', () => {
     })).rejects.toThrow('至少启用一个')
   })
 
-  it('blocks editing, deleting and revealing an official managed provider', async () => {
+  it('blocks editing and deleting an official managed provider', async () => {
     await service.ensureManagedNewApiProvider({
       ownerUserId: '42',
       baseUrl: 'https://newapi.example',
@@ -1312,7 +1345,6 @@ describe('ProviderService', () => {
     await expect(service.updateProvider({ id: 'spark-platform-newapi', name: 'hijacked' }))
       .rejects.toThrow('不能手动编辑')
     await expect(service.deleteProvider('spark-platform-newapi')).rejects.toThrow('不能删除')
-    await expect(service.revealApiKey('spark-platform-newapi')).rejects.toThrow('不允许回显')
   })
 
   it('checks an official provider credential without consuming model quota', async () => {

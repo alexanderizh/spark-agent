@@ -32,6 +32,8 @@ interface EventContext {
   sessionId: string
   turnId: string
   toolNamesById?: Map<string, string>
+  /** Last plan emitted in this turn, used to collapse identical ExitPlanMode retries. */
+  lastPlanProposal?: string
   /** 存储工具调用结果，用于提取 diff */
   toolResultsById?: Map<string, string>
   /** SDK async Task launch receipts map internal agent ids back to the original Agent tool call. */
@@ -1147,15 +1149,7 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
       if (isPlanProposalTool(block.name)) {
         // 优先用 ExitPlanMode input.plan；取不到则回退到本 turn 追踪到的计划文件内容。
         const plan = extractPlanText(toolInput) ?? getLastPlanWrite(ctx).content
-        return plan != null && plan.trim().length > 0
-          ? [
-              {
-                ...baseEvent(ctx),
-                type: 'plan_proposed',
-                plan,
-              },
-            ]
-          : []
+        return mapPlanProposal(plan, ctx)
       }
       return [
         {
@@ -1183,15 +1177,7 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
 
       if (toolName === 'exit_plan_mode') {
         const plan = extractPlanTextFromToolResult(content)
-        return plan != null
-          ? [
-              {
-                ...baseEvent(ctx),
-                type: 'plan_proposed',
-                plan,
-              },
-            ]
-          : []
+        return mapPlanProposal(plan, ctx)
       }
 
       // Intercept subagent tool results → emit SubagentCompletedEvent
@@ -1526,6 +1512,18 @@ function getAsyncSubagentLaunches(
 
 function isPlanProposalTool(name: string): boolean {
   return name === 'ExitPlanMode' || mapSDKToolName(name) === 'exit_plan_mode'
+}
+
+function mapPlanProposal(plan: string | null, ctx: EventContext): AgentEvent[] {
+  if (plan == null || plan.trim().length === 0 || ctx.lastPlanProposal === plan) return []
+  ctx.lastPlanProposal = plan
+  return [
+    {
+      ...baseEvent(ctx),
+      type: 'plan_proposed',
+      plan,
+    },
+  ]
 }
 
 function extractPlanText(input: Record<string, unknown>): string | null {

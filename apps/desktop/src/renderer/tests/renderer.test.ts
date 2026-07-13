@@ -2905,7 +2905,8 @@ describe('Renderer Smoke Tests', () => {
           },
         }
       }
-      if (channel === 'session:send-turn') return { turnId: 'turn-continue', started: true }
+      if (channel === 'session:submit-turn')
+        return { turnId: 'turn-continue', accepted: true, started: true }
       return {}
     })
     const onApprovalClose = vi.fn()
@@ -2997,7 +2998,7 @@ describe('Renderer Smoke Tests', () => {
     })
 
     expect(invoke).toHaveBeenCalledWith(
-      'session:send-turn',
+      'session:submit-turn',
       expect.objectContaining({
         sessionId: 'session-1',
         message: expect.stringContaining('1. inspect\n2. patch\n3. verify'),
@@ -3006,7 +3007,7 @@ describe('Renderer Smoke Tests', () => {
       }),
     )
     const sendTurnIndex = invoke.mock.calls.findIndex(
-      ([channel]) => channel === 'session:send-turn',
+      ([channel]) => channel === 'session:submit-turn',
     )
     const runtimeUpdateIndex = invoke.mock.calls.findIndex(
       ([channel, request]) =>
@@ -3128,7 +3129,8 @@ describe('Renderer Smoke Tests', () => {
       if (channel === 'session:get-history') return { events: [], hasMore: false }
       if (channel === 'session:get-queue')
         return { sessionId: 'session-1', running: false, queuedTurns: [] }
-      if (channel === 'session:send-turn') return { turnId: 'turn-1', started: true }
+      if (channel === 'session:submit-turn')
+        return { turnId: 'turn-1', accepted: true, started: true }
       return {}
     })
     vi.stubGlobal('spark', {
@@ -3180,7 +3182,7 @@ describe('Renderer Smoke Tests', () => {
     })
 
     expect(invoke).toHaveBeenCalledWith(
-      'session:send-turn',
+      'session:submit-turn',
       expect.objectContaining({
         sessionId: 'session-1',
         providerProfileId: 'tencent-provider',
@@ -3295,7 +3297,8 @@ describe('Renderer Smoke Tests', () => {
       if (channel === 'session:get-history') return { events: [], hasMore: false }
       if (channel === 'session:get-queue')
         return { sessionId: 'session-1', running: false, queuedTurns: [] }
-      if (channel === 'session:send-turn') return { turnId: 'turn-1', started: true }
+      if (channel === 'session:submit-turn')
+        return { turnId: 'turn-1', accepted: true, started: true }
       return {}
     })
     vi.stubGlobal('spark', {
@@ -3344,7 +3347,7 @@ describe('Renderer Smoke Tests', () => {
     })
 
     expect(invoke).toHaveBeenCalledWith(
-      'session:send-turn',
+      'session:submit-turn',
       expect.objectContaining({
         sessionId: 'session-1',
         providerProfileId: 'tencent-provider',

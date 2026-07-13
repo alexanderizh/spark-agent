@@ -53,6 +53,35 @@ describe.runIf(process.platform === 'darwin')('consolidated credential vault', (
     expect(keytar.getPassword).toHaveBeenCalledTimes(1)
   })
 
+  it('does not write the keychain again when a cached secret is unchanged', async () => {
+    const keytar = (await import('keytar')).default
+    const keystore = await import('./index')
+    mocks.credentials.set('spark-agent:credential-vault-v1', JSON.stringify({
+      version: 1,
+      secrets: { 'openai-1': 'sk-one' },
+      legacyChecked: ['openai-1'],
+    }))
+
+    await keystore.preloadSecrets(['openai-1'] as KeystoreRef[])
+    await keystore.setSecret('openai-1' as KeystoreRef, 'sk-one')
+
+    expect(keytar.getPassword).toHaveBeenCalledTimes(1)
+    expect(keytar.setPassword).not.toHaveBeenCalled()
+  })
+
+  it('coalesces concurrent writes of the same secret after the first persistence', async () => {
+    const keytar = (await import('keytar')).default
+    const keystore = await import('./index')
+
+    await Promise.all([
+      keystore.setSecret('openai-1' as KeystoreRef, 'sk-one'),
+      keystore.setSecret('openai-1' as KeystoreRef, 'sk-one'),
+    ])
+
+    expect(keytar.getPassword).toHaveBeenCalledTimes(1)
+    expect(keytar.setPassword).toHaveBeenCalledTimes(1)
+  })
+
   it('migrates a legacy per-ref item into the vault once', async () => {
     const keytar = (await import('keytar')).default
     const keystore = await import('./index')

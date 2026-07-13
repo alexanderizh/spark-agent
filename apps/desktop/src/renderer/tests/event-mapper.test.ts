@@ -25,6 +25,70 @@ function statusEvent(status: AgentStatusValue): AgentEvent {
 }
 
 describe('MessageBuilder', () => {
+  it.each(['CODEX_SDK_CANCELLED', 'CODEX_CLI_CANCELLED', 'ABORTED'])(
+    'maps %s to a neutral cancellation block instead of an error card',
+    (code) => {
+      const builder = new MessageBuilder()
+
+      builder.processEvent({
+        ...baseEvent('agent_error'),
+        id: `cancel-error-${code}`,
+        type: 'agent_error',
+        code,
+        message: 'Provider run was cancelled',
+        retryable: false,
+      })
+      builder.processEvent({
+        ...statusEvent('cancelled'),
+        id: `cancel-status-${code}`,
+      })
+
+      const message = builder.getAllMessages()[0]
+      expect(message?.status).toBe('cancelled')
+      expect(message?.eventIds).toEqual([`cancel-error-${code}`, `cancel-status-${code}`])
+      expect(message?.blocks).toEqual([{ kind: 'cancelled', message: '已取消本次任务' }])
+      expect(message?.blocks.some((block) => block.kind === 'error')).toBe(false)
+    },
+  )
+
+  it('creates a neutral cancellation notice when only user-cancelled status is persisted', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...statusEvent('cancelled'),
+      message: 'Stopped by user',
+    })
+
+    expect(builder.getAllMessages()[0]).toMatchObject({
+      status: 'cancelled',
+      blocks: [{ kind: 'cancelled', message: '已取消本次任务' }],
+    })
+  })
+
+  it('keeps restart interruptions as failures when cancelled status follows an error', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('agent_error'),
+      type: 'agent_error',
+      code: 'APP_RESTARTED',
+      message: 'The previous turn stopped because the app restarted.',
+      retryable: true,
+    })
+    builder.processEvent({
+      ...statusEvent('cancelled'),
+      id: 'restart-cancelled',
+      message: 'Stopped after app restart',
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message?.status).toBe('error')
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({ kind: 'error', code: 'APP_RESTARTED' }),
+    ])
+    expect(message?.blocks.some((block) => block.kind === 'cancelled')).toBe(false)
+  })
+
   it('keeps actionable Claude runtime signals as structured blocks', () => {
     const builder = new MessageBuilder()
 
@@ -373,12 +437,16 @@ describe('MessageBuilder', () => {
     expect(message).toBeDefined()
     if (message == null) return
 
-    expect(message.status).toBe('error')
+    expect(message.status).toBe('cancelled')
     expect(message.blocks).toMatchObject([
       {
         kind: 'tool_call',
         toolCallId: 'tool-1',
         status: 'error',
+      },
+      {
+        kind: 'cancelled',
+        message: '已取消本次任务',
       },
     ])
   })
@@ -894,6 +962,148 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('keeps a failed AskUserQuestion unresolved and exposes its transport error', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'question-error',
+      toolName: 'AskUserQuestion',
+      toolInput: { questions: [{ header: '确认', question: '继续吗？' }] },
+      source: 'builtin',
+    })
+    builder.processEvent({
+      ...baseEvent('tool_result'),
+      id: 'tool-result-error',
+      type: 'tool_result',
+      toolCallId: 'question-error',
+      toolName: 'AskUserQuestion',
+      status: 'error',
+      error: 'Tool permission request failed: Stream closed',
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toContainEqual(
+      expect.objectContaining({
+        kind: 'user_question',
+        answered: false,
+        error: 'Tool permission request failed: Stream closed',
+      }),
+    )
+  })
+
+  it('marks AskUserQuestion answered only after a successful tool result', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'question-success',
+      toolName: 'AskUserQuestion',
+      toolInput: { questions: [{ header: '确认', question: '继续吗？' }] },
+      source: 'builtin',
+    })
+    builder.processEvent({
+      ...baseEvent('tool_result'),
+      id: 'tool-result-success',
+      type: 'tool_result',
+      toolCallId: 'question-success',
+      toolName: 'AskUserQuestion',
+      status: 'success',
+      output: JSON.stringify({ answers: [{ question: '继续吗？', answer: '继续' }] }),
+    })
+
+    const questionBlock = builder
+      .getAllMessages()[0]
+      ?.blocks.find((block) => block.kind === 'user_question')
+    expect(questionBlock).toEqual(
+      expect.objectContaining({
+        kind: 'user_question',
+        answered: true,
+      }),
+    )
+    expect(questionBlock).not.toHaveProperty('error')
+  })
+
+  it('scopes reused Codex tool call IDs to their originating turn', () => {
+    const builder = new MessageBuilder()
+    const toolCall = (turnId: string, id: string, command: string): AgentEvent => ({
+      ...baseEvent('tool_call'),
+      id,
+      turnId,
+      type: 'tool_call',
+      toolCallId: 'item_6',
+      toolName: 'bash',
+      toolInput: { command },
+      source: 'builtin',
+    })
+    const terminalOutput = (turnId: string, id: string, data: string): AgentEvent => ({
+      ...baseEvent('terminal_output'),
+      id,
+      turnId,
+      type: 'terminal_output',
+      toolCallId: 'item_6',
+      stream: 'stdout',
+      data,
+      isFinal: true,
+      exitCode: 0,
+    })
+    const toolResult = (turnId: string, id: string, output: string): AgentEvent => ({
+      ...baseEvent('tool_result'),
+      id,
+      turnId,
+      type: 'tool_result',
+      toolCallId: 'item_6',
+      toolName: 'bash',
+      status: 'success',
+      output,
+    })
+
+    builder.processEvent(toolCall('turn-1', 'turn-1-call', 'printf old'))
+    builder.processEvent(terminalOutput('turn-1', 'turn-1-terminal', 'old output'))
+    builder.processEvent(toolResult('turn-1', 'turn-1-result', 'old output'))
+    builder.processEvent(toolCall('turn-2', 'turn-2-call', 'printf new'))
+    builder.processEvent(terminalOutput('turn-2', 'turn-2-terminal', 'new output'))
+    builder.processEvent(toolResult('turn-2', 'turn-2-result', 'new output'))
+
+    const messagesByTurn = new Map(
+      builder.getAllMessages().map((message) => [message.turnId, message]),
+    )
+    const firstTurnBlocks = messagesByTurn.get('turn-1')?.blocks ?? []
+    const secondTurnBlocks = messagesByTurn.get('turn-2')?.blocks ?? []
+
+    expect(firstTurnBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'tool_call',
+          toolCallId: 'item_6',
+          status: 'success',
+          output: 'old output',
+        }),
+        expect.objectContaining({
+          kind: 'terminal',
+          toolCallId: 'item_6',
+          stdout: 'old output',
+          isStreaming: false,
+        }),
+      ]),
+    )
+    expect(secondTurnBlocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'tool_call',
+          toolCallId: 'item_6',
+          status: 'success',
+          output: 'new output',
+        }),
+        expect.objectContaining({
+          kind: 'terminal',
+          toolCallId: 'item_6',
+          stdout: 'new output',
+          isStreaming: false,
+        }),
+      ]),
+    )
+  })
+
   it('updates subagent UIBlock on subagent_completed event', () => {
     const builder = new MessageBuilder()
 
@@ -1022,12 +1232,14 @@ describe('MessageBuilder', () => {
       totalTokens: 99,
     })
 
-    expect(builder.getAllMessages()[0]?.blocks).toContainEqual(expect.objectContaining({
-      kind: 'subagent',
-      status: 'stopped',
-      tokens: '99',
-      output: 'Stopped by user',
-    }))
+    expect(builder.getAllMessages()[0]?.blocks).toContainEqual(
+      expect.objectContaining({
+        kind: 'subagent',
+        status: 'stopped',
+        tokens: '99',
+        output: 'Stopped by user',
+      }),
+    )
   })
 
   it('bounds nested subagent transcripts to the newest 24k characters', () => {

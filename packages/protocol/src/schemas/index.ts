@@ -501,10 +501,6 @@ export const ProviderFetchModelsRequestSchema = z.object({
   isFullUrl: z.boolean().optional(),
 })
 
-export const ProviderRevealKeyRequestSchema = z.object({
-  id: ProfileIdSchema,
-})
-
 export const GitHubConnectorVerifyRequestSchema = z.object({
   token: z.string().min(1).max(2000),
   apiBaseUrl: z.string().url().max(1000).optional(),
@@ -642,6 +638,16 @@ export const RulesComposeRequestSchema = z.object({
   conflictStrategy: z.enum(['override', 'merge']).optional(),
 })
 
+export const SessionAnswerQuestionRequestSchema = z.object({
+  sessionId: z.string().min(1).max(200),
+  questionId: z.string().min(1).max(500),
+  answers: z.record(z.string(), z.unknown()),
+})
+
+export const SessionListPendingQuestionsRequestSchema = z.object({
+  sessionId: z.string().min(1).max(200).optional(),
+})
+
 /**
  * IPC Schema 注册表
  *
@@ -650,6 +656,7 @@ export const RulesComposeRequestSchema = z.object({
 export const IpcSchemaRegistry = {
   'session:create': SessionCreateRequestSchema,
   'session:send-turn': SessionSendTurnRequestSchema,
+  'session:submit-turn': SessionSendTurnRequestSchema,
   'session:get-queue': SessionGetQueueRequestSchema,
   'session:cancel-queued-turn': SessionCancelQueuedTurnRequestSchema,
   'session:cancel': SessionCancelRequestSchema,
@@ -664,6 +671,8 @@ export const IpcSchemaRegistry = {
   'session:set-goal': SessionSetGoalRequestSchema,
   'session:get-goal': SessionGetGoalRequestSchema,
   'session:goal-control': SessionGoalControlRequestSchema,
+  'session:answer-question': SessionAnswerQuestionRequestSchema,
+  'session:list-pending-questions': SessionListPendingQuestionsRequestSchema,
   // Team Mode
   'team:update': TeamUpdateRequestSchema,
   'team:list-members': TeamListMembersRequestSchema,
@@ -678,7 +687,6 @@ export const IpcSchemaRegistry = {
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,
   'provider:fetch-models': ProviderFetchModelsRequestSchema,
-  'provider:reveal-key': ProviderRevealKeyRequestSchema,
   'platform-model:update-model-preferences': z.object({
     modelIds: z.array(z.string().min(1).max(200)).min(1).max(200),
     defaultModel: z.string().min(1).max(200),

@@ -73,6 +73,7 @@ import {
 } from './chat/ModelSwitchMarkers'
 import { StreamingErrorCard } from './chat/StreamingErrorCard'
 import { RuntimeSignalCard } from './chat/RuntimeSignalCard'
+import { CancellationNotice } from './chat/CancellationNotice'
 import { groupChatMessageTimeline } from './chat/chat-message-timeline'
 import { ActivitySegment } from './chat/ActivitySegment'
 import {
@@ -898,7 +899,7 @@ export function ChatView({
   const { invoke: commitGitChanges } = useIpcInvoke('workspace:git-commit')
   const { invoke: pushGitChanges } = useIpcInvoke('workspace:git-push')
   // 留空提交信息时，把提交请求作为消息发给当前会话的 agent，由 agent 分析 diff 并提交。
-  const { invoke: sendTurnToAgent } = useIpcInvoke('session:send-turn')
+  const { invoke: sendTurnToAgent } = useIpcInvoke('session:submit-turn')
   const { invoke: createBranch } = useIpcInvoke('workspace:create-branch')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
@@ -918,7 +919,11 @@ export function ChatView({
         const cacheKey = getQuestionAnswerCacheKey(userQuestion.questions, userQuestion.sessionId)
         persistQuestionAnswerSummaries(cacheKey, summaries)
       }
-      await answerQuestion({ questionId: userQuestion.questionId, answers })
+      await answerQuestion({
+        sessionId: userQuestion.sessionId,
+        questionId: userQuestion.questionId,
+        answers,
+      })
       onUserQuestionClose?.(userQuestion.sessionId, userQuestion.questionId)
     },
     [answerQuestion, onUserQuestionClose, userQuestion],
@@ -935,6 +940,7 @@ export function ChatView({
       )
     }
     answerQuestion({
+      sessionId: userQuestion.sessionId,
       questionId: userQuestion.questionId,
       answers,
     }).catch(console.error)
@@ -3904,6 +3910,8 @@ function renderBlocks(
         // 错误卡由 AgentMsg 单独渲染（可获得 sessionId 上下文以支持调高迭代上限按钮），
         // 这里跳过避免重复渲染。
         return null
+      case 'cancelled':
+        return <CancellationNotice key={i} message={block.message} />
       case 'terminal':
         if (surface === 'main') return null
         return (
@@ -4848,6 +4856,11 @@ function InlineQuestionCard({
             已回答
           </span>
         )}
+        {block.error != null && (
+          <span className="badge" style={{ marginLeft: 8, fontSize: 10, color: 'var(--c-err)' }}>
+            提问失败
+          </span>
+        )}
       </div>
       <div className="chat-card-body" style={{ gap: 10 }}>
         <div className="inline-question-answers">
@@ -4898,7 +4911,11 @@ function InlineQuestionCard({
             共 {total} 题
           </span>
           {!block.answered && (
-            <span style={{ fontSize: 12, color: 'var(--c-dim)' }}>请在底部问答面板中逐题作答</span>
+            <span
+              style={{ fontSize: 12, color: block.error != null ? 'var(--c-err)' : 'var(--c-dim)' }}
+            >
+              {block.error ?? '请在底部问答面板中逐题作答'}
+            </span>
           )}
         </div>
       </div>
@@ -5607,7 +5624,9 @@ const UserMsg = React.memo(
         {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
         <div className="msg-user-line">
           <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
-            <div className="msg-content">{children}</div>
+            <div className="msg-content">
+              <CollapsibleContent>{children}</CollapsibleContent>
+            </div>
           </div>
         </div>
         {mentionAgentName != null && mentionAgentName.length > 0 && (
@@ -6218,8 +6237,7 @@ const AgentMsg = React.memo(function AgentMsg({
   const activeToolCount = toolCallBlocks.filter(
     (b) => b.status === 'pending' || b.status === 'running',
   ).length
-  // Cancelled: streaming ended with error status but has rendered content
-  const isCancelled = messageStatus === 'error' && !isStreaming && hasContent
+  const isCancelled = messageStatus === 'cancelled' && !isStreaming
   // Pure error: no content, only error blocks
   const isPureError =
     messageStatus === 'error' && !isStreaming && !hasContent && errorBlocks.length > 0
@@ -7104,7 +7122,7 @@ function PlanApprovalPanel({
     if (busy) return
     setBusy(true)
     try {
-      await window.spark.invoke('session:send-turn', {
+      await window.spark.invoke('session:submit-turn', {
         sessionId,
         message: `批准上述计划。请按如下计划继续执行：\n\n${draft}`,
         permissionMode: 'claude-auto-edits',

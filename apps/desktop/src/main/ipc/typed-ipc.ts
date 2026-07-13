@@ -28,6 +28,7 @@ import { isSparkError } from '@spark/shared'
 import { ZodError } from 'zod'
 import { createLogger } from '@spark/shared'
 import { broadcastToAppWindows } from '../windows/index.js'
+import { ipcPerformanceTracker } from './ipc-performance.js'
 
 const log = createLogger('ipc')
 
@@ -66,25 +67,48 @@ export function typedIpcHandle<C extends IpcChannel>(
     ipcMain.removeHandler(channel)
   }
 
-  ipcMain.handle(channel, async (event, rawRequest: unknown): Promise<IpcResult<IpcResponse<C>>> => {
-    log.debug(`← ${channel}`, maskSensitiveData(rawRequest))
+  ipcMain.handle(
+    channel,
+    async (event, rawRequest: unknown): Promise<IpcResult<IpcResponse<C>>> => {
+      const startedAt = performance.now()
+      let outcome: 'ok' | 'error' = 'error'
+      log.debug(`← ${channel}`)
 
-    try {
-      // 1. Schema 校验（如果 channel 在注册表中有对应的 schema）
-      const schema = IpcSchemaRegistry[channel as keyof typeof IpcSchemaRegistry]
-      const validatedRequest = schema != null ? schema.parse(rawRequest) : rawRequest
+      try {
+        // 1. Schema 校验（如果 channel 在注册表中有对应的 schema）
+        const schema = IpcSchemaRegistry[channel as keyof typeof IpcSchemaRegistry]
+        const validatedRequest = schema != null ? schema.parse(rawRequest) : rawRequest
 
-      // 2. 调用业务 handler
-      const response = await handler(validatedRequest as IpcRequest<C>, event)
+        // 2. 调用业务 handler
+        const response = await handler(validatedRequest as IpcRequest<C>, event)
 
-      log.debug(`→ ${channel}: ok`)
-      return { ok: true, data: response }
-    } catch (err: unknown) {
-      const errorResponse = handleIpcError(channel, err)
-      log.warn(`→ ${channel}: error [${errorResponse.error.code}]`)
-      return { ok: false, error: errorResponse.error }
-    }
-  })
+        outcome = 'ok'
+        log.debug(`→ ${channel}: ok`)
+        return { ok: true, data: response }
+      } catch (err: unknown) {
+        const errorResponse = handleIpcError(channel, err)
+        log.warn(`→ ${channel}: error [${errorResponse.error.code}]`)
+        return { ok: false, error: errorResponse.error }
+      } finally {
+        const measurement = ipcPerformanceTracker.record(
+          channel,
+          performance.now() - startedAt,
+          outcome,
+        )
+        if (measurement.slow) {
+          log.warn('Slow interaction IPC', {
+            channel,
+            durationMs: measurement.durationMs,
+            budgetMs: measurement.budgetMs,
+            outcome,
+          })
+        }
+        if (measurement.report != null) {
+          log.info('IPC rolling performance summary', { channels: measurement.report })
+        }
+      }
+    },
+  )
 
   log.info(`Registered IPC handler: ${channel}`)
 }
@@ -138,77 +162,6 @@ function handleIpcError(
       message: '操作未完成，请稍后重试或查看详情。',
     },
   }
-}
-
-/**
- * 脱敏处理请求数据中的敏感/超长字段。
- *
- *   - apiKey：截断掩码，只保留前 4 位（避免日志泄露密钥）
- *   - dataUrl / previewDataUrl / thumbnailUrl / base64 等 base64 字段、以及任何
- *     `data:` 开头的字符串：只保留前 50 个字符。画布里图片/语音常以 base64 透传，
- *     一张图就能产出几万字符的 dataUrl，整段打印会淹没日志、拖慢排查。
- *
- * 递归处理嵌套对象与数组，返回新对象（不改入参）；用 WeakSet 防循环引用。
- */
-const SENSITIVE_TRUNCATABLE_KEYS = new Set([
-  'dataUrl',
-  'previewDataUrl',
-  'thumbnailUrl',
-  'base64',
-  'b64Json',
-  'b64_json',
-  'content',
-])
-const SECRET_MASK_KEYS = new Set([
-  'apiKey',
-  'token',
-  'accessToken',
-  'refreshToken',
-  'authorizationToken',
-  'authorization_token',
-  'password',
-  'initialPassword',
-  'session',
-  'sessionCookie',
-])
-const LOG_TRUNCATE_MAX = 50
-
-function truncateForLog(value: string): string {
-  if (value.length <= LOG_TRUNCATE_MAX) return value
-  return `${value.slice(0, LOG_TRUNCATE_MAX)}…<truncated, len=${value.length}>`
-}
-
-function maskSensitiveData(data: unknown): unknown {
-  return sanitizeForLog(data)
-}
-
-function sanitizeForLog(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
-  if (value == null) return value
-  if (typeof value === 'string') {
-    // 形如 data:image/png;base64,xxxx 的 data URL 整体截断
-    return value.startsWith('data:') ? truncateForLog(value) : value
-  }
-  if (typeof value !== 'object') return value
-  // 防循环引用
-  if (seen.has(value as object)) return '[Circular]'
-  seen.add(value as object)
-
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeForLog(item, seen))
-  }
-
-  const obj = value as Record<string, unknown>
-  const out: Record<string, unknown> = {}
-  for (const [key, val] of Object.entries(obj)) {
-    if (SECRET_MASK_KEYS.has(key) && typeof val === 'string') {
-      out[key] = val.length > 0 ? `${val.slice(0, 4)}****` : val
-    } else if (typeof val === 'string' && (SENSITIVE_TRUNCATABLE_KEYS.has(key) || val.startsWith('data:'))) {
-      out[key] = truncateForLog(val)
-    } else {
-      out[key] = sanitizeForLog(val, seen)
-    }
-  }
-  return out
 }
 
 // ─── 流式事件推送 ───────────────────────────────────────────────────────
