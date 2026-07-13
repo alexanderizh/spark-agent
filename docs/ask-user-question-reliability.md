@@ -1,10 +1,10 @@
-# 结构化提问可靠性设计
+# Claude 控制工具可靠性设计
 
 > 状态: 已落地 | 最后核对: 2026-07-13
 
 ## 问题
 
-Claude Agent SDK 的权限请求、Hooks、`canUseTool` 和运行中模式控制只在流式输入模式下保持控制通道。Spark 原先向 `query()` 传入单个字符串；长 turn 末尾触发 `AskUserQuestion` 时，SDK 可能已关闭输入控制通道，最终产生 `Tool permission request failed: Stream closed`。由于没有进入 Spark 的 `questionCallback`，主进程不会推送结构化提问弹窗。
+Claude Agent SDK 的权限请求、Hooks、`canUseTool` 和运行中模式控制只在流式输入模式下保持控制通道。Spark 原先向 `query()` 传入单个字符串；长 turn 末尾触发 `AskUserQuestion` 或 `ExitPlanMode` 时，SDK 可能已关闭输入控制通道，最终产生 `Tool permission request failed: Stream closed`。前者不会进入 Spark 的 `questionCallback`，后者无法完成计划审批提交。
 
 旧链路还有三个放大问题：
 
@@ -20,6 +20,7 @@ Claude Agent SDK 的权限请求、Hooks、`canUseTool` 和运行中模式控制
 4. 回答 IPC 同时校验 `sessionId` 和 `questionId`。问题不存在时返回 `NOT_FOUND`，不再静默成功。
 5. 渲染进程按会话维护问题队列，合并实时推送和启动重放；回答、取消或 abort 后通过关闭事件精确移除。
 6. `tool_result.status === 'success'` 才标记已回答；错误结果展示失败原因并禁用无效表单。
+7. 同一 turn 内完全相同的 `ExitPlanMode` 重试只产生一条 `plan_proposed` 事件；内容发生变化的修订计划仍正常展示，避免传输故障被放大成多张重复计划卡。
 
 ## 权限与模式边界
 
@@ -36,6 +37,8 @@ Claude Agent SDK 的权限请求、Hooks、`canUseTool` 和运行中模式控制
 ## 回归覆盖
 
 - 晚到的 `AskUserQuestion` 在 result 前仍能调用控制回调，result 后输入流关闭。
+- 晚到的 `ExitPlanMode` 在 result 前仍能调用控制回调，计划模式下返回宿主预期的等待审批结果。
+- 同一 turn 内相同计划去重，内容不同的修订计划保留。
 - 稳定 ID 去重、待处理列表重放、严格会话关联、abort 清理。
 - 实时事件与重放事件合并时不重复，多个问题按创建时间排队。
 - 提问成功与 `Stream closed` 失败分别映射为已回答和失败状态。
