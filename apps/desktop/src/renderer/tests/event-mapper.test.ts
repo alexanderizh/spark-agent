@@ -25,6 +25,70 @@ function statusEvent(status: AgentStatusValue): AgentEvent {
 }
 
 describe('MessageBuilder', () => {
+  it.each(['CODEX_SDK_CANCELLED', 'CODEX_CLI_CANCELLED', 'ABORTED'])(
+    'maps %s to a neutral cancellation block instead of an error card',
+    (code) => {
+      const builder = new MessageBuilder()
+
+      builder.processEvent({
+        ...baseEvent('agent_error'),
+        id: `cancel-error-${code}`,
+        type: 'agent_error',
+        code,
+        message: 'Provider run was cancelled',
+        retryable: false,
+      })
+      builder.processEvent({
+        ...statusEvent('cancelled'),
+        id: `cancel-status-${code}`,
+      })
+
+      const message = builder.getAllMessages()[0]
+      expect(message?.status).toBe('cancelled')
+      expect(message?.eventIds).toEqual([`cancel-error-${code}`, `cancel-status-${code}`])
+      expect(message?.blocks).toEqual([{ kind: 'cancelled', message: '已取消本次任务' }])
+      expect(message?.blocks.some((block) => block.kind === 'error')).toBe(false)
+    },
+  )
+
+  it('creates a neutral cancellation notice when only user-cancelled status is persisted', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...statusEvent('cancelled'),
+      message: 'Stopped by user',
+    })
+
+    expect(builder.getAllMessages()[0]).toMatchObject({
+      status: 'cancelled',
+      blocks: [{ kind: 'cancelled', message: '已取消本次任务' }],
+    })
+  })
+
+  it('keeps restart interruptions as failures when cancelled status follows an error', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('agent_error'),
+      type: 'agent_error',
+      code: 'APP_RESTARTED',
+      message: 'The previous turn stopped because the app restarted.',
+      retryable: true,
+    })
+    builder.processEvent({
+      ...statusEvent('cancelled'),
+      id: 'restart-cancelled',
+      message: 'Stopped after app restart',
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message?.status).toBe('error')
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({ kind: 'error', code: 'APP_RESTARTED' }),
+    ])
+    expect(message?.blocks.some((block) => block.kind === 'cancelled')).toBe(false)
+  })
+
   it('keeps actionable Claude runtime signals as structured blocks', () => {
     const builder = new MessageBuilder()
 
@@ -373,12 +437,16 @@ describe('MessageBuilder', () => {
     expect(message).toBeDefined()
     if (message == null) return
 
-    expect(message.status).toBe('error')
+    expect(message.status).toBe('cancelled')
     expect(message.blocks).toMatchObject([
       {
         kind: 'tool_call',
         toolCallId: 'tool-1',
         status: 'error',
+      },
+      {
+        kind: 'cancelled',
+        message: '已取消本次任务',
       },
     ])
   })

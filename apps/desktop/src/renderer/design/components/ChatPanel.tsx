@@ -2,7 +2,7 @@
  * 通用 ChatPanel：消息流 + 工具调用卡片 + 输入区
  *
  * 复用 MessageBuilder（services/event-mapper）做事件→UIMessage 转换；
- * 渲染 text / thinking / tool_call / error 四类 block（其他类型对
+ * 渲染 text / thinking / tool_call / error / cancelled 等会话 block（其他类型对
  * 弹窗/模态场景不重要，跳过）。
  *
  * 给画布 Agent 弹窗 / Board 内嵌等场景使用；ChatView 仍是主聊天页，
@@ -21,6 +21,7 @@ import {
 } from '../services/event-mapper'
 import { StreamingErrorCard } from '../views/chat/StreamingErrorCard'
 import { RuntimeSignalCard } from '../views/chat/RuntimeSignalCard'
+import { CancellationNotice } from '../views/chat/CancellationNotice'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -763,6 +764,8 @@ function BlockView({
       )
     case 'runtime_signal':
       return <RuntimeSignalCard block={block} />
+    case 'cancelled':
+      return <CancellationNotice message={block.message} />
     default:
       // 其他 block（file_change/plan_proposed/checkpoint 等）在 modal 场景不展开
       return null
