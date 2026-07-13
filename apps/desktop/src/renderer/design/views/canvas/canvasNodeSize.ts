@@ -5,8 +5,8 @@
  * 容纳不下，导致卡片内部需要大量滚动、阅读体验窄。
  *
  * 设计：
- * - 短文本（< LONG_TEXT_MIN_CHARS 个字符）：便签式尺寸 480×440（接近 1:1），行距紧凑。
- * - 长文本（≥ LONG_TEXT_MIN_CHARS 个字符）：阅读式尺寸 620×560，行距宽松。
+ * - 短文本（< LONG_TEXT_MIN_CHARS 个字符）：紧凑便签尺寸 400×320。
+ * - 长文本（≥ LONG_TEXT_MIN_CHARS 个字符）：阅读式尺寸 680×560。
  *   卡片内部 overflow:auto 已支持滚动（CanvasWorkspaceView.less），滚动条
  *   按 .canvas-node 作用域整体隐藏，滚轮 / 触控板 / 键盘照常工作。
  *
@@ -21,45 +21,45 @@ import { isShotScriptText, parseShotTable } from './canvasShotTableParse'
 export const LONG_TEXT_MIN_CHARS = 800
 
 /** 短文本（便签）默认尺寸：接近 1:1，避免长条状便签。 */
-export const TEXT_NODE_DEFAULT_SIZE = { width: 480, height: 440 } as const
+export const TEXT_NODE_DEFAULT_SIZE = { width: 400, height: 320 } as const
 
 /** 长文本（阅读）默认尺寸 */
-export const TEXT_NODE_LONG_SIZE = { width: 760, height: 640 } as const
+export const TEXT_NODE_LONG_SIZE = { width: 680, height: 560 } as const
 
 /** 分镜脚本表默认尺寸：表格列多，不能使用普通文本便签尺寸。 */
 export const SHOT_SCRIPT_NODE_SIZE = { width: 980, height: 620 } as const
 
 /** NodeResizer 默认最小尺寸（便签）：与默认尺寸同比例收窄，避免被压成扁条。 */
-export const TEXT_NODE_DEFAULT_MIN_SIZE = { width: 340, height: 300 } as const
+export const TEXT_NODE_DEFAULT_MIN_SIZE = { width: 300, height: 240 } as const
 
 /** NodeResizer 长文本最小尺寸（避免拖太窄） */
-export const TEXT_NODE_LONG_MIN_SIZE = { width: 560, height: 360 } as const
+export const TEXT_NODE_LONG_MIN_SIZE = { width: 520, height: 360 } as const
 
 /** 分镜脚本表最小尺寸 */
 export const SHOT_SCRIPT_NODE_MIN_SIZE = { width: 760, height: 460 } as const
 
 /** 媒体节点默认尺寸（新建节点使用，旧节点不批量迁移） */
-export const IMAGE_NODE_DEFAULT_SIZE = { width: 540, height: 340 } as const
-export const VIDEO_NODE_DEFAULT_SIZE = { width: 580, height: 320 } as const
-export const AUDIO_NODE_DEFAULT_SIZE = { width: 400, height: 380 } as const
+export const IMAGE_NODE_DEFAULT_SIZE = { width: 460, height: 300 } as const
+export const VIDEO_NODE_DEFAULT_SIZE = { width: 500, height: 300 } as const
+export const AUDIO_NODE_DEFAULT_SIZE = { width: 360, height: 280 } as const
 
 /** 节点内嵌 meta 头部高度；媒体节点尺寸计算需要把它计入节点总高度。 */
-export const CANVAS_NODE_META_BAR_HEIGHT = 24
+export const CANVAS_NODE_META_BAR_HEIGHT = 38
 
 /** AI 操作节点默认尺寸：接近 1:1，为头部、产物预览和运行切换保留舒展高度。 */
-export const OPERATION_NODE_DEFAULT_SIZE = { width: 520, height: 480 } as const
+export const OPERATION_NODE_DEFAULT_SIZE = { width: 460, height: 420 } as const
 
 /** 分组节点默认尺寸：偏方正（实际尺寸由 applyGroupLayout 按成员重算覆盖）。 */
-export const GROUP_NODE_DEFAULT_SIZE = { width: 560, height: 480 } as const
+export const GROUP_NODE_DEFAULT_SIZE = { width: 520, height: 440 } as const
 
 /** 通用 NodeResizer 最小尺寸：非媒体类型抬高下限，避免拖拽后变成长条。 */
 export const CANVAS_NODE_MIN_SIZE = {
-  default: { width: 340, height: 300 },
-  image: { width: 380, height: 220 },
-  video: { width: 400, height: 220 },
-  audio: { width: 340, height: 320 },
-  operation: { width: 420, height: 380 },
-  group: { width: 440, height: 380 },
+  default: { width: 300, height: 240 },
+  image: { width: 320, height: 218 },
+  video: { width: 360, height: 210 },
+  audio: { width: 300, height: 240 },
+  operation: { width: 360, height: 320 },
+  group: { width: 400, height: 320 },
 } as const
 
 /** 图片节点按素材比例拟合尺寸；返回值是节点总高度，正文区域按素材比例保留。 */
@@ -69,7 +69,7 @@ export function fitCanvasImageNodeSize(
 ): { width: number; height: number } {
   if (!width || !height) return IMAGE_NODE_DEFAULT_SIZE
   const aspect = height / width
-  let nodeWidth = Math.min(Math.max(width, IMAGE_NODE_DEFAULT_SIZE.width), 580)
+  let nodeWidth = Math.min(Math.max(width, IMAGE_NODE_DEFAULT_SIZE.width), 540)
   let bodyHeight = Math.round(nodeWidth * aspect)
   if (bodyHeight > 720) {
     bodyHeight = 720
@@ -121,7 +121,8 @@ export function pickTextNodeMinSize(text: string | null | undefined): {
   width: number
   height: number
 } {
-  if (isShotScriptText(text) && parseShotTable(text ?? '').length >= 2) return SHOT_SCRIPT_NODE_MIN_SIZE
+  if (isShotScriptText(text) && parseShotTable(text ?? '').length >= 2)
+    return SHOT_SCRIPT_NODE_MIN_SIZE
   return isLongText(text) ? TEXT_NODE_LONG_MIN_SIZE : TEXT_NODE_DEFAULT_MIN_SIZE
 }
 

@@ -1,0 +1,117 @@
+// Ant Modal 默认 portal 到 body，因此以唯一业务类名做隔离，不能依赖 workspace 祖先。
+:where(
+  .canvas-operation-preset-dialog,
+  .canvas-node-edit-modal,
+  .canvas-grid-split-modal,
+  .canvas-annotate-modal,
+  .canvas-media-input-picker-modal
+) {
+  --canvas-v4-radius-xs: 4px;
+  --canvas-v4-radius-sm: 6px;
+  --canvas-v4-radius-md: 9px;
+  --canvas-v4-border: color-mix(in srgb, var(--border-strong) 76%, transparent);
+  --canvas-v4-divider: color-mix(in srgb, var(--divider) 74%, transparent);
+  --canvas-v4-surface: color-mix(in srgb, var(--panel) 96%, var(--bg));
+  --canvas-v4-surface-muted: color-mix(in srgb, var(--bg-sunken) 82%, var(--panel));
+
+  .ant-modal-content {
+    overflow: hidden;
+    border: 1px solid var(--canvas-v4-border);
+    border-radius: var(--canvas-v4-radius-md);
+    background: var(--canvas-v4-surface);
+    box-shadow: 0 22px 64px color-mix(in srgb, var(--shadow-color, #000) 34%, transparent);
+  }
+
+  .ant-modal-header {
+    min-height: 54px;
+    border-bottom: 1px solid var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+  }
+
+  .ant-modal-body {
+    min-height: 0;
+    background: var(--canvas-v4-surface);
+  }
+
+  .ant-modal-footer {
+    min-height: 50px;
+    border-top: 1px solid var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+  }
+
+  :where(button, input, textarea, .ant-select-selector) {
+    border-radius: var(--canvas-v4-radius-sm) !important;
+  }
+}
+
+.canvas-operation-preset-dialog {
+  &.ant-modal {
+    max-width: calc(100vw - 40px);
+    padding-bottom: 0;
+  }
+
+  .ant-modal-content {
+    max-height: min(92vh, 780px);
+  }
+}
+
+.canvas-operation-preset-modal-shell,
+.canvas-operation-preset-topbar,
+.canvas-operation-preset-footer {
+  background: var(--canvas-v4-surface);
+}
+
+.canvas-operation-preset-topbar {
+  min-height: 60px;
+  border-bottom-color: var(--canvas-v4-divider);
+  -webkit-app-region: drag;
+
+  > * {
+    -webkit-app-region: no-drag;
+  }
+}
+
+.canvas-operation-preset-topbar-kicker {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.canvas-operation-preset-topbar-title-row h2 {
+  font-size: 17px;
+}
+
+.canvas-operation-preset-sidebar {
+  width: 238px;
+  border-right-color: var(--canvas-v4-divider);
+  background: var(--canvas-v4-surface-muted);
+}
+
+.canvas-operation-preset-sidebar-item,
+.canvas-operation-preset-banner,
+.canvas-operation-preset-section {
+  border-radius: var(--canvas-v4-radius-sm);
+}
+
+.canvas-operation-preset-sidebar-item.active {
+  background: color-mix(in srgb, var(--primary) 9%, var(--canvas-v4-surface));
+}
+
+.canvas-operation-preset-section {
+  border-color: var(--canvas-v4-divider);
+  box-shadow: none;
+}
+
+.canvas-operation-preset-footer {
+  min-height: 54px;
+  border-top-color: var(--canvas-v4-divider);
+}
+
+@media (max-width: 920px) {
+  .canvas-operation-preset-dialog.ant-modal {
+    max-width: calc(100vw - 20px);
+  }
+
+  .canvas-operation-preset-sidebar {
+    width: 190px;
+  }
+}

@@ -1,0 +1,253 @@
+.canvas-workspace.canvas-uiux-v4 {
+  .canvas-node-shell {
+    border-radius: var(--canvas-v4-radius-md);
+  }
+
+  .canvas-node {
+    overflow: hidden;
+    border: 1px solid var(--canvas-v4-border);
+    border-radius: var(--canvas-v4-radius-md);
+    background: var(--canvas-v4-surface);
+    box-shadow: 0 3px 12px color-mix(in srgb, var(--shadow-color, #000) 10%, transparent);
+    transition:
+      border-color var(--canvas-v4-motion-fast) ease-out,
+      box-shadow var(--canvas-v4-motion-fast) ease-out,
+      transform var(--canvas-v4-motion-fast) ease-out;
+
+    &:hover {
+      border-color: color-mix(in srgb, var(--border-strong) 92%, var(--primary) 8%);
+      box-shadow: var(--canvas-v4-hover-shadow);
+      transform: translateY(-2px);
+    }
+
+    &.canvas-node-selected {
+      border-color: color-mix(in srgb, var(--primary) 62%, var(--border-strong));
+      box-shadow: var(--canvas-v4-selected-shadow);
+    }
+  }
+
+  .canvas-node-meta-bar {
+    min-height: 38px;
+    padding: 0 11px;
+    border-bottom: 1px solid var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+  }
+
+  .canvas-node-meta-title {
+    gap: 7px;
+    min-width: 0;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 520;
+
+    > span:last-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .canvas-node-meta-tags {
+    gap: 5px;
+  }
+
+  .canvas-node-meta-chip {
+    min-height: 18px;
+    padding: 0 5px;
+    border: 0;
+    border-radius: var(--canvas-v4-radius-xs);
+    background: var(--canvas-v4-surface-muted);
+    color: var(--text-faint);
+    font-size: 9px;
+    line-height: 18px;
+  }
+
+  .canvas-node-meta-chip-status.is-running {
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+  }
+
+  .canvas-node-core,
+  .canvas-node-body {
+    border-radius: 0;
+    background: var(--canvas-v4-surface);
+  }
+
+  .canvas-node-text {
+    padding: 14px 15px 16px;
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.62;
+  }
+
+  .canvas-node-text-long {
+    padding: 18px 20px 22px;
+    font-size: 13px;
+    line-height: 1.72;
+  }
+
+  .canvas-node-image-wrap,
+  .canvas-node-image,
+  .canvas-node-audio,
+  .canvas-node-task,
+  .canvas-node-group-body {
+    border-radius: 0;
+  }
+
+  // 统一占位图：沿用 3D 导演台的单线图标 + 两行信息 + 安静留白。
+  .canvas-node-image-placeholder,
+  .canvas-operation-empty-state,
+  .canvas-node-stage3d,
+  .canvas-node-vwb-nothumb,
+  .canvas-node-group-body {
+    min-height: 148px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px;
+    background:
+      radial-gradient(
+        circle at 50% 44%,
+        color-mix(in srgb, var(--text-muted) 8%, transparent),
+        transparent 58%
+      ),
+      var(--canvas-v4-surface-muted);
+    color: var(--text-faint);
+    text-align: center;
+
+    svg {
+      color: color-mix(in srgb, var(--text-muted) 82%, var(--primary) 18%);
+      stroke-width: 1.6;
+    }
+
+    > strong {
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    > span,
+    .canvas-node-group-hint,
+    .canvas-node-task-msg {
+      color: var(--text-faint);
+      font-size: 10px;
+      line-height: 1.5;
+    }
+  }
+
+  .canvas-node-stage3d {
+    min-height: 174px;
+  }
+
+  .canvas-node-stage3d-stats {
+    gap: 10px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 560;
+  }
+
+  .canvas-node-stage3d-hint,
+  .canvas-node-vwb-hint {
+    color: var(--text-faint);
+    font-size: 10px;
+  }
+
+  .canvas-node-subview-chip {
+    border-radius: var(--canvas-v4-radius-sm);
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    box-shadow: none;
+  }
+
+  .canvas-node-handle {
+    width: 10px;
+    height: 10px;
+    border: 2px solid var(--panel);
+    background: var(--text-faint);
+    box-shadow: none;
+  }
+
+  .canvas-node-selected .canvas-node-handle,
+  .canvas-node-handle:hover {
+    background: var(--primary);
+  }
+
+  .canvas-node-task-running {
+    position: relative;
+    isolation: isolate;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      z-index: 8;
+      border-radius: inherit;
+      padding: 2px;
+      pointer-events: none;
+      background: conic-gradient(
+        from var(--canvas-running-angle, 0deg),
+        transparent 0 64%,
+        color-mix(in srgb, var(--primary) 92%, white 8%) 74%,
+        transparent 85%
+      );
+      mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+      mask-composite: exclude;
+      animation: canvas-v4-running-border 1.8s linear infinite;
+    }
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 7;
+      border-radius: inherit;
+      pointer-events: none;
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent);
+      animation: canvas-v4-running-pulse 1.25s ease-in-out infinite alternate;
+    }
+  }
+
+  .canvas-node-task-failed {
+    border-color: color-mix(in srgb, var(--danger) 56%, var(--border-strong));
+  }
+
+  .canvas-node-shot-script {
+    .canvas-node-meta-bar {
+      min-height: 42px;
+    }
+
+    .canvas-shot-script-table {
+      font-size: 12px;
+    }
+  }
+
+  .canvas-node-inline-toolbar,
+  .canvas-node-inline-panel {
+    border-color: var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+    box-shadow: none;
+  }
+}
+
+@property --canvas-running-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes canvas-v4-running-border {
+  to {
+    --canvas-running-angle: 360deg;
+  }
+}
+
+@keyframes canvas-v4-running-pulse {
+  from {
+    opacity: 0.42;
+  }
+  to {
+    opacity: 1;
+  }
+}

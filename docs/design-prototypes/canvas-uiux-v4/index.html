@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Spark Canvas UI/UX V4</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <svg class="svg-defs" aria-hidden="true">
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="m4.8 7.3 7.2-4 7.2 4v9.4l-7.2 4-7.2-4Z"/><path d="m5.2 7.4 6.8 3.9 6.8-3.9M12 11.4v8.8"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6h14M12 6v12M8.5 18h7"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="m5.5 17 4.3-4.5 3.2 3 2.2-2.2 3.3 3.7M16.2 8.3h.1"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9h4m10 0h4M3 15h4m10 0h4"/></symbol>
+    <symbol id="i-audio" viewBox="0 0 24 24"><path d="M4 13v-2m4 5V8m4 11V5m4 11V8m4 5v-2"/></symbol>
+    <symbol id="i-board" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 9v11m7-11v11"/></symbol>
+    <symbol id="i-agent" viewBox="0 0 24 24"><path d="M6 6.5h12v9H9l-4 3v-12Z"/><path d="M9 10h6m-6 3h4"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h7m4 0h5M4 17h5m4 0h7M11 4v6m2 4v6"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5h6l2-2h9v14h-17Z"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m9 7 8 5-8 5Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 9h2m2 0h2m2 0h2M7 13h10m-8 3h6"/></symbol>
+    <symbol id="i-warning" viewBox="0 0 24 24"><path d="m12 3 9 17H3Z"/><path d="M12 9v5m0 3h.01"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <aside class="review-nav">
+      <div class="brand"><span class="brand-mark">S</span><div><strong>Canvas V4</strong><small>Product UI review</small></div></div>
+      <nav>
+        <button data-view="nodes"><span>01</span>节点系统</button>
+        <button data-view="video"><span>02</span>视频工作台</button>
+        <button data-view="stage3d"><span>03</span>3D 外框架</button>
+        <button data-view="assets"><span>04</span>资产中心</button>
+        <button data-view="panels"><span>05</span>右侧与 Agent</button>
+        <button data-view="presets"><span>06</span>预设中心</button>
+        <button data-view="modals"><span>07</span>大型弹窗</button>
+        <button data-view="projects"><span>08</span>项目卡片</button>
+      </nav>
+      <div class="review-note"><strong>V4 设计原则</strong><p>少装饰、低层级、内容优先。文字操作优先于图标操作。</p></div>
+    </aside>
+
+    <main class="review-stage">
+      <header class="review-head">
+        <div><small>SPARK CANVAS / UIUX V4</small><h1 id="viewTitle">节点系统</h1></div>
+        <div class="head-actions"><button class="text-btn" id="shortcutBtn">快捷键</button><button class="text-btn" id="motionBtn">暂停动效</button><span class="review-badge">评审稿</span></div>
+      </header>
+
+      <section class="view" data-page="nodes">
+        <div class="canvas-bar"><div class="crumb">同频 / 主画布 <span>自动保存于 14:32</span></div><div><button>整理节点</button><button>适应画布</button><button class="solid">添加节点</button></div></div>
+        <div class="canvas-area">
+          <div class="canvas-grid"></div>
+          <article class="node node-text selected" style="--x:4%;--y:9%;--w:270px">
+            <header><span class="node-kind"><svg><use href="#i-text"/></svg>文本</span><span class="state ready">已就绪</span></header>
+            <div class="node-copy"><h3>雨夜站台人物小传</h3><p>林岚在末班车到站前收到一段来自未来的录音。她必须在十分钟内判断声音的来源。</p></div>
+            <footer><span>1,248 字</span><button>打开编辑</button></footer>
+          </article>
+
+          <article class="node node-task running" style="--x:28%;--y:30%;--w:290px">
+            <div class="run-edge"></div><header><span class="node-kind"><svg><use href="#i-agent"/></svg>生成任务</span><span class="state run"><i></i>运行中 64%</span></header>
+            <div class="node-visual empty compact"><svg><use href="#i-image"/></svg><strong>正在生成关键帧</strong><span>已完成 3 / 6</span><div class="progress"><i></i></div></div>
+            <footer><span>预计 18 秒</span><button>查看任务</button></footer>
+          </article>
+
+          <article class="node node-media" style="--x:56%;--y:7%;--w:260px">
+            <header><span class="node-kind"><svg><use href="#i-image"/></svg>图片</span><span class="state ready">已生成</span></header>
+            <div class="node-visual flat-art station"><span class="art-line line-a"></span><span class="art-line line-b"></span><span class="art-block block-a"></span><span class="art-block block-b"></span><small>16:9 · 2048 × 1152</small></div>
+            <div class="node-title"><h3>站台建立镜头</h3><p>夜景概念图 · V3</p></div>
+            <footer><span>刚刚更新</span><button>预览</button></footer>
+          </article>
+
+          <article class="node node-stage" style="--x:70%;--y:40%;--w:290px">
+            <header><span class="node-kind"><svg><use href="#i-box"/></svg>3D 导演台</span><span class="state neutral">草稿</span></header>
+            <div class="node-visual empty stage-empty"><svg><use href="#i-box"/></svg><strong>角色 1&nbsp;&nbsp;道具 0</strong><span>双击进入三维编排</span></div>
+            <footer><span>上次编辑 12 分钟前</span><button>打开导演台</button></footer>
+          </article>
+
+          <section class="output-group" style="--x:25%;--y:68%"><header><div><strong>关键帧候选</strong><span>来自“生成分镜关键帧”</span></div><button>收起产物</button></header><div class="output-row"><article class="mini-product active"><div class="flat-art face"></div><span>候选 01</span></article><article class="mini-product"><div class="flat-art station"></div><span>候选 02</span></article><article class="mini-product"><div class="node-visual empty mini"><svg><use href="#i-image"/></svg></div><span>等待生成</span></article></div></section>
+        </div>
+      </section>
+
+      <section class="view" data-page="video">
+        <div class="workbench-shell">
+          <header class="workbench-top safe-head"><div><small>视频工作台</small><strong>cut-03-v4.mp4</strong><span>02:14 · 3840 × 2160</span></div><div class="save-state">所有更改已保存</div><div><button>返回画布</button><button>导出</button><button class="solid">保存</button></div></header>
+          <div class="video-body"><aside class="flat-sidebar"><div class="section-title">素材</div><button class="list-row active"><span class="mini-thumb dark"></span><span><b>主视频</b><small>02:14</small></span></button><button class="list-row"><span class="mini-thumb lines"></span><span><b>关键帧包</b><small>12 张</small></span></button><div class="section-title spaced">视图</div><button class="nav-row active">播放器</button><button class="nav-row">关键帧</button><button class="nav-row">分析结果</button></aside>
+            <section class="video-main"><div class="video-preview"><div class="frame-art"><span class="horizon"></span><span class="platform"></span><span class="person"></span><button class="play"><svg><use href="#i-play"/></svg></button></div><div class="transport"><button>上一帧</button><span>00:48:12 / 02:14:08</span><button>下一帧</button><button>适应窗口</button></div></div><div class="timeline"><header><span>时间线</span><div><button>缩小</button><button>放大</button></div></header><div class="ruler"><span>00:00</span><span>00:30</span><span>01:00</span><span>01:30</span><span>02:00</span></div><div class="track"><b>视频</b><div class="clip"><i></i><span>cut-03-v4.mp4</span></div></div><div class="track"><b>关键帧</b><div class="markers"><i></i><i></i><i></i><i></i><i></i></div></div></div></section>
+            <aside class="property-panel"><div class="tabs"><button class="active">属性</button><button>分析</button><button>产物</button></div><section><div class="section-title">当前片段</div><label>入点<input value="00:42:08" readonly></label><label>出点<input value="00:56:14" readonly></label><label>速度<div class="segmented"><button class="active">1×</button><button>0.5×</button><button>2×</button></div></label></section><section><div class="section-title">画面</div><label>裁切方式<select><option>适应画面</option></select></label><label>旋转<input value="0°" readonly></label></section></aside></div>
+        </div>
+      </section>
+
+      <section class="view" data-page="stage3d">
+        <div class="stage-shell">
+          <header class="stage-top safe-head"><div><small>3D 导演台</small><strong>雨夜站台 · 镜头 03</strong></div><div class="scope-note">仅重设计画布外 UI，中央 3D 画布保持原逻辑与渲染</div><div><button>返回画布</button><button>取景视角</button><button>截图入画布</button><button class="solid">保存</button></div></header>
+          <div class="stage-body"><aside class="stage-list"><div class="stage-tabs"><button class="active">对象</button><button>素材</button></div><div class="search"><svg><use href="#i-search"/></svg>搜索场景对象</div><div class="section-title">场景对象</div><button class="object-row active"><span class="object-dot camera"></span><span><b>Camera A</b><small>当前取景</small></span><em>显示</em></button><button class="object-row"><span class="object-dot actor"></span><span><b>林岚</b><small>角色 · Hero</small></span><em>显示</em></button><button class="object-row"><span class="object-dot prop"></span><span><b>站台长椅</b><small>道具</small></span><em>显示</em></button><div class="stage-add"><button>添加角色</button><button>添加道具</button></div></aside>
+            <section class="untouched-viewport"><div class="lock-label">3D VIEWPORT · UNCHANGED</div><div class="grid-floor"></div><div class="camera-cone"></div><div class="scene-actor actor-a"></div><div class="scene-actor actor-b"></div><div class="axis"></div><div class="viewport-toolbar"><button>环绕</button><button>平移</button><button>吸附 开</button><button>参考线</button></div></section>
+            <aside class="stage-properties"><div class="stage-tabs"><button class="active">属性</button><button>镜头</button></div><div class="selected-summary"><span class="object-dot actor"></span><div><strong>林岚</strong><small>角色 · Hero</small></div></div><section><div class="section-title">变换</div><div class="field-grid"><label>X<input value="-1.25" readonly></label><label>Y<input value="0.00" readonly></label><label>Z<input value="2.40" readonly></label></div></section><section><div class="section-title">表演与姿势</div><label>姿势<select><option>迟疑回头</option></select></label><label>视线目标<select><option>苏烬</option></select></label><button class="wide">打开姿势编辑</button></section><section><div class="section-title">镜头列表</div><button class="shot-row active"><span>03</span><b>迟疑回头</b><em>当前</em></button><button class="shot-row"><span>04</span><b>列车进站</b><em>应用</em></button></section></aside></div>
+        </div>
+      </section>
+
+      <section class="view" data-page="assets">
+        <div class="asset-shell"><header class="asset-head"><div><small>资产中心</small><strong>项目与全局资产</strong></div><div class="search big"><svg><use href="#i-search"/></svg>搜索图片、视频、角色、场景</div><button>导入资产</button><button class="solid">新建资产</button></header>
+          <div class="asset-body"><aside class="asset-nav"><button class="active">全部资产 <span>126</span></button><button>图片 <span>64</span></button><button>视频 <span>18</span></button><button>音频 <span>12</span></button><button>角色与场景 <span>32</span></button><div class="section-title spaced">来源</div><button>当前项目 <span>48</span></button><button>我的资产 <span>51</span></button><button>共享资产 <span>27</span></button></aside>
+            <section class="asset-grid-area"><div class="filter-line"><div><button class="active">全部</button><button>最近使用</button><button>已收藏</button></div><div><button>最近更新</button><button>网格视图</button></div></div><div class="asset-grid"><article class="asset-card selected"><div class="flat-art station"><span class="asset-type">图片</span></div><div><h3>站台建立镜头</h3><p>2048 × 1152 · PNG</p></div></article><article class="asset-card"><div class="flat-art face"><span class="asset-type">角色</span></div><div><h3>林岚角色设定</h3><p>5 张参考图</p></div></article><article class="asset-card"><div class="node-visual empty"><svg><use href="#i-film"/></svg><strong>镜头 03 成片</strong><span>尚未生成预览</span></div><div><h3>镜头 03 成片</h3><p>00:00 · 视频</p></div></article><article class="asset-card"><div class="node-visual empty"><svg><use href="#i-audio"/></svg><strong>雨夜环境声</strong><span>48 kHz · 立体声</span></div><div><h3>雨夜环境声</h3><p>02:34 · WAV</p></div></article></div></section>
+            <aside class="asset-preview"><div class="preview-large flat-art station"></div><div class="preview-title"><div><h2>站台建立镜头</h2><p>项目资产 · V3</p></div><button>更多</button></div><div class="preview-actions"><button class="solid">插入画布</button><button>打开预览</button></div><dl><div><dt>尺寸</dt><dd>2048 × 1152</dd></div><div><dt>创建于</dt><dd>今天 14:28</dd></div><div><dt>引用</dt><dd>4 个节点</dd></div><div><dt>标签</dt><dd>夜景、站台、雨</dd></div></dl><button class="wide">查看版本与引用关系</button></aside></div></div>
+      </section>
+
+      <section class="view" data-page="panels">
+        <div class="panel-demo"><section class="canvas-slice"><div class="canvas-grid"></div><article class="node node-media selected center-node"><header><span class="node-kind"><svg><use href="#i-image"/></svg>图片</span><span class="state ready">已生成</span></header><div class="flat-art station"></div><div class="node-title"><h3>站台建立镜头</h3><p>V3 · 2K</p></div></article></section>
+          <aside class="agent-panel"><header><div><small>画布助手</small><strong>Agent</strong></div><button>收起</button></header><div class="agent-context"><span>当前上下文</span><b>已选择 1 个节点</b><button>清除</button></div><div class="messages"><div class="message agent"><b>Agent</b><p>已读取“站台建立镜头”。你可以让我分析构图、生成变体，或把它加入下一镜头。</p><div><button>分析构图</button><button>生成变体</button></div></div><div class="message user"><p>分析画面，并建议下一镜头。</p></div><div class="message agent"><b>Agent</b><p>画面以站台纵深作为主要引导线。下一镜头建议切到人物中近景，保持视线方向连续。</p><button>创建建议节点</button></div></div><div class="composer"><textarea placeholder="描述你想在画布上完成的操作"></textarea><div><button>引用节点</button><span>Enter 发送 · Shift+Enter 换行</span><button class="solid">发送</button></div></div></aside>
+          <aside class="right-panel"><div class="tabs" data-tabs="right"><button class="active" data-tab="detail">详情</button><button data-tab="task">任务</button><button data-tab="asset">资产</button><button data-tab="project">项目</button></div><div class="tab-content active" data-panel="detail"><section><div class="section-title">节点信息</div><label>名称<input value="站台建立镜头"></label><label>说明<textarea>雨夜站台的整体建立镜头</textarea></label></section><section><div class="section-title">输出</div><div class="key-row"><span>格式</span><b>PNG</b></div><div class="key-row"><span>尺寸</span><b>2048 × 1152</b></div></section><footer><button>删除节点</button><button class="solid">保存更改</button></footer></div><div class="tab-content" data-panel="task"><div class="task-row"><i class="done"></i><span><b>解析剧本</b><small>已完成 · 12 秒</small></span></div><div class="task-row"><i class="running"></i><span><b>生成镜头变体</b><small>运行中 · 64%</small></span></div></div><div class="tab-content" data-panel="asset"><div class="node-visual empty"><svg><use href="#i-folder"/></svg><strong>节点引用资产</strong><span>当前节点引用 3 项</span></div></div><div class="tab-content" data-panel="project"><section><div class="section-title">项目信息</div><div class="key-row"><span>画布</span><b>主画布</b></div><div class="key-row"><span>节点</span><b>24</b></div></section></div></aside></div>
+      </section>
+
+      <section class="view" data-page="presets">
+        <div class="modal-backdrop"><div class="preset-modal modal-frame large"><header class="modal-head safe-head"><div><small>应用级配置</small><strong>预设中心</strong><span>为新建节点设定默认运行方式</span></div><div class="dirty-state">2 项未保存</div><button data-action="close-dirty">关闭</button></header><div class="preset-body"><aside class="preset-types"><div class="search"><svg><use href="#i-search"/></svg>搜索节点类型</div><div class="section-title">生成节点</div><button class="active"><svg><use href="#i-text"/></svg><span>文本生成<small>已配置</small></span></button><button><svg><use href="#i-image"/></svg><span>图片生成<small>平台默认</small></span></button><button><svg><use href="#i-film"/></svg><span>视频生成<small>已配置</small></span></button><button><svg><use href="#i-audio"/></svg><span>音频生成<small>平台默认</small></span></button><div class="section-title spaced">流水线节点</div><button><svg><use href="#i-board"/></svg><span>分镜脚本<small>已配置</small></span></button><button><svg><use href="#i-box"/></svg><span>3D 导演台<small>仅外部配置</small></span></button></aside><section class="preset-main"><div class="preset-title"><div><h2>文本生成</h2><p>新建文本任务节点时自动载入，节点内仍可单独覆盖。</p></div><button>恢复平台默认</button></div><div class="form-section"><div class="section-title">运行配置</div><div class="form-two"><label>默认 Agent<select><option>创意编剧 Agent</option></select></label><label>模型<select><option>主线路 / claude-sonnet</option></select></label></div><label>Skills<div class="tag-input"><span>screenwriting <button>移除</button></span><span>shot-planning <button>移除</button></span><input placeholder="添加 Skill"></div></label></div><div class="form-section"><div class="section-title">提示词模板</div><label>前置提示词<textarea>保持角色设定与项目视觉风格一致。输出结构化、可直接用于下游节点的内容。</textarea><small>节点自己的提示词会追加在模板之后。</small></label><label>反向约束<textarea>避免空泛描述、重复段落与未经确认的新角色。</textarea></label></div><details><summary>高级模型参数 <span>3 项已修改</span></summary><div class="form-three"><label>Temperature<input value="0.7"></label><label>Max tokens<input value="4096"></label><label>Top P<input value="0.9"></label></div></details></section><aside class="preset-summary"><div class="section-title">生效范围</div><div class="summary-card"><strong>后续新建节点</strong><p>不会回写或覆盖画布中已有节点。</p></div><div class="mini-flow"><span>应用预设</span><i></i><span>新建节点</span><i></i><span>节点覆盖</span></div><div class="section-title spaced">配置状态</div><div class="key-row"><span>已配置</span><b>4 / 9</b></div><div class="key-row"><span>待保存</span><b>2 项</b></div></aside></div><footer class="modal-footer"><div><button>导入预设</button><button>导出预设</button></div><div><button data-action="close-dirty">取消</button><button class="solid" id="savePreset">保存全部更改</button></div></footer></div></div>
+      </section>
+
+      <section class="view" data-page="modals">
+        <div class="modal-guide"><aside class="modal-index"><div><small>大型弹窗规范</small><h2>统一框架</h2><p>控制尺寸、固定安全区、保护关键数据。</p></div><button class="active" data-modal-demo="config">生成配置</button><button data-modal-demo="guard">离开拦截</button><button data-modal-demo="shortcuts">快捷键</button><div class="size-spec"><span><b>M</b>720 × 640</span><span><b>L</b>960 × 720</span><span><b>XL</b>视口 92%</span></div></aside><section class="modal-canvas"><div class="config-modal-demo modal-frame large active" data-modal-panel="config"><header class="modal-head safe-head"><div><small>图片生成</small><strong>生成关键帧</strong><span>草稿已自动保存</span></div><button>关闭</button></header><div class="config-layout"><aside class="step-nav"><button class="done"><i>1</i><span>输入素材<small>3 个引用</small></span></button><button class="active"><i>2</i><span>模型参数<small>Flux Kontext</small></span></button><button><i>3</i><span>提示词<small>已填写</small></span></button><button><i>4</i><span>输出设置<small>4 个候选</small></span></button></aside><section class="config-form"><h2>模型与参数</h2><p>仅显示当前模型支持的字段。</p><label>生成模型<select><option>Flux Kontext Pro</option></select></label><div class="form-two"><label>输出比例<select><option>16:9</option></select></label><label>候选数量<input value="4"></label></div><label>参考图强度<div class="range"><i></i><b></b></div><small>当前 0.72，偏向保留人物特征。</small></label><details><summary>高级参数 <span>3 项</span></summary></details></section><aside class="run-summary"><div class="node-visual empty"><svg><use href="#i-image"/></svg><strong>输出预览</strong><span>16:9 · 2048 × 1152</span></div><div class="key-row"><span>预计耗时</span><b>28–46 秒</b></div><div class="key-row"><span>预计费用</span><b>¥0.84</b></div><p class="inline-note">产物会自动放置到任务节点右侧首个空闲区域。</p></aside></div><footer class="modal-footer"><span>Esc 取消 · Cmd+Enter 运行</span><div><button>保存为预设</button><button>取消</button><button class="solid">下一步</button></div></footer></div><div class="guard-card" data-modal-panel="guard"><svg><use href="#i-warning"/></svg><h2>有未保存的关键更改</h2><p>“雨夜站台 · 镜头 03”的机位、姿势和镜头列表尚未保存。直接离开会丢失这些更改。</p><div class="change-list"><span>机位与焦距 <b>已修改</b></span><span>角色姿势 <b>已修改</b></span><span>镜头列表 <b>新增 2 项</b></span></div><div><button>继续编辑</button><button>放弃更改</button><button class="solid">保存并离开</button></div></div><div class="shortcut-sheet" data-modal-panel="shortcuts"><header><div><small>当前作用域</small><h2>大型弹窗快捷键</h2></div><button>关闭</button></header><div class="shortcut-grid"><span>保存</span><kbd>Cmd S</kbd><span>确认 / 运行</span><kbd>Cmd Enter</kbd><span>关闭弹窗</span><kbd>Esc</kbd><span>撤销</span><kbd>Cmd Z</kbd><span>重做</span><kbd>Cmd Shift Z</kbd><span>查看快捷键</span><kbd>?</kbd></div><p>输入框聚焦时，除保存与关闭外，不触发画布级快捷键。</p></div></section></div>
+      </section>
+
+      <section class="view" data-page="projects">
+        <div class="projects-shell"><header><div><small>画布项目</small><h2>最近项目</h2></div><div class="search big"><svg><use href="#i-search"/></svg>搜索项目</div><button>导入项目</button><button class="solid">新建画布</button></header><div class="project-filters"><button class="active">全部</button><button>最近打开</button><button>已固定</button><button>共享给我</button></div><div class="project-grid"><article class="project-card featured"><div class="project-cover"><div class="project-map"><i></i><i></i><i></i><i></i><span></span><span></span><span></span></div><span class="project-state">进行中</span></div><div class="project-info"><div><h3>同频</h3><p>影视短片 · 24 个节点</p></div><button>更多</button><div class="project-meta"><span>刚刚编辑</span><span>6 个运行产物</span></div></div></article><article class="project-card"><div class="project-cover empty-cover"><svg><use href="#i-board"/></svg><strong>空白画布</strong><span>12 个节点</span></div><div class="project-info"><div><h3>产品宣传片</h3><p>广告视频 · 12 个节点</p></div><button>更多</button><div class="project-meta"><span>昨天编辑</span><span>无运行任务</span></div></div></article><article class="project-card"><div class="project-cover asset-cover"><div class="cover-grid"><i class="flat-art face"></i><i class="flat-art station"></i><i class="node-visual empty"><svg><use href="#i-film"/></svg></i></div><span class="project-state muted">已归档</span></div><div class="project-info"><div><h3>角色测试集</h3><p>资产画布 · 38 个节点</p></div><button>更多</button><div class="project-meta"><span>7 月 8 日</span><span>18 个资产</span></div></div></article></div></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="dialog-layer" id="dirtyDialog" hidden><div class="guard-card"><svg><use href="#i-warning"/></svg><h2>保存更改后再离开？</h2><p>预设中心还有 2 项关键配置未保存。</p><div><button data-dialog="cancel">继续编辑</button><button data-dialog="discard">放弃更改</button><button class="solid" data-dialog="save">保存并关闭</button></div></div></div>
+  <div class="dialog-layer" id="shortcutDialog" hidden><div class="shortcut-sheet"><header><div><small>Canvas V4</small><h2>快捷键</h2></div><button data-dialog="shortcut-close">关闭</button></header><div class="shortcut-grid"><span>保存</span><kbd>Cmd S</kbd><span>运行任务</span><kbd>Cmd Enter</kbd><span>关闭面板</span><kbd>Esc</kbd><span>搜索命令</span><kbd>Cmd K</kbd></div></div></div>
+  <script src="app.js"></script>
+</body>
+</html>

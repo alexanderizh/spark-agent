@@ -69,6 +69,7 @@ import {
 } from './propRegistry'
 import { buildStage3DPrompt } from './prompt'
 import { makeLocalModelProp, readStage3DLocalModelFile } from './localModelImport'
+import { useCanvasUnsavedChangesGuard } from '../useCanvasUnsavedChangesGuard'
 import './stage3d.less'
 
 const RAD = Math.PI / 180
@@ -120,6 +121,8 @@ export function CanvasDirectorStage3DModal({
 }) {
   const initial = useMemo(() => (node ? readStage3DData(node) : createDefaultStage3DData()), [node])
   const [draft, setDraft] = useState<Stage3DData>(initial)
+  const savedDraftSignatureRef = useRef(JSON.stringify(initial))
+  const loadedNodeIdRef = useRef<string | null | undefined>(undefined)
   const [cameraPreview, setCameraPreview] = useState(false)
   const [viewNavigationMode, setViewNavigationMode] = useState<'orbit' | 'pan'>('orbit')
   const [transformMode, setTransformMode] = useState<'translate' | 'rotate'>('translate')
@@ -141,6 +144,19 @@ export function CanvasDirectorStage3DModal({
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   const sceneRef = useRef<Scene3DHandle>(null)
   const localModelInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      loadedNodeIdRef.current = undefined
+      return
+    }
+    // 同一节点在后台快照刷新时会拿到新的对象引用，不能因此覆盖当前未保存草稿。
+    if (loadedNodeIdRef.current === (node?.id ?? null)) return
+    const next = node ? readStage3DData(node) : createDefaultStage3DData()
+    setDraft(next)
+    savedDraftSignatureRef.current = JSON.stringify(next)
+    loadedNodeIdRef.current = node?.id ?? null
+  }, [node, open])
 
   // ─────────── 姿势编辑撤销/重做（T3 4.1）：per-actor 栈，只记录 pose/joints 变更 ───────────
   const undoStackRef = useRef<PoseUndoEntry[]>([])
@@ -279,6 +295,12 @@ export function CanvasDirectorStage3DModal({
   }, [open, undoPose, redoPose])
 
   const prompt = useMemo(() => buildStage3DPrompt(draft), [draft])
+  const isDirty = JSON.stringify(draft) !== savedDraftSignatureRef.current
+  const requestClose = useCanvasUnsavedChangesGuard({
+    dirty: isDirty,
+    onClose,
+    subject: '3D 场景',
+  })
 
   const activeActor = draft.actors.find((a) => a.id === draft.activeId) ?? null
   const activeProp = draft.props.find((p) => p.id === draft.activeId) ?? null
@@ -588,8 +610,21 @@ export function CanvasDirectorStage3DModal({
     const next = { ...draft, prompt }
     await onSave(next, prompt)
     setDraft(next)
+    savedDraftSignatureRef.current = JSON.stringify(next)
     message.success('3D 导演台已保存')
   }, [draft, onSave, prompt])
+
+  useEffect(() => {
+    if (!open) return
+    const onShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return
+      event.preventDefault()
+      event.stopPropagation()
+      void save()
+    }
+    window.addEventListener('keydown', onShortcut, true)
+    return () => window.removeEventListener('keydown', onShortcut, true)
+  }, [open, save])
 
   const copyPrompt = useCallback(async () => {
     await navigator.clipboard.writeText(prompt)
@@ -803,7 +838,13 @@ export function CanvasDirectorStage3DModal({
             <Button size="small" type="text" icon={<Icons.Check size={14} />} onClick={save}>
               保存
             </Button>
-            <Button size="small" type="text" icon={<Icons.X size={16} />} onClick={onClose} />
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.X size={16} />}
+              onClick={requestClose}
+              title="关闭（有未保存内容时会提示）"
+            />
           </div>
         </div>
 

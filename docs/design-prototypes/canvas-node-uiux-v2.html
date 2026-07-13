@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Spark Canvas Node UI/UX V2</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --ink: #f4f3ee;
+        --ink-2: #c4c6c3;
+        --ink-3: #7f8584;
+        --canvas: #0b0e0e;
+        --surface: #151918;
+        --surface-2: #1b201f;
+        --surface-3: #242a28;
+        --edge: rgba(220, 231, 225, 0.13);
+        --edge-strong: rgba(220, 231, 225, 0.28);
+        --mint: #8ae6bd;
+        --mint-dim: #406e5b;
+        --amber: #f0be68;
+        --rose: #ff827d;
+        --cyan: #76cfe1;
+        --lavender: #b8a7ee;
+        --grid: rgba(209, 226, 218, 0.055);
+        --shadow: 0 18px 44px rgba(0, 0, 0, 0.36), 0 2px 5px rgba(0, 0, 0, 0.45);
+        --ease: cubic-bezier(0.2, 0.78, 0.2, 1);
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body { width: 100%; min-height: 100%; margin: 0; }
+
+      body {
+        overflow: hidden;
+        background: #090b0b;
+        color: var(--ink);
+        font-family: "HarmonyOS Sans SC", "Noto Sans CJK SC", sans-serif;
+      }
+
+      button { font: inherit; }
+
+      .app {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        min-width: 1180px;
+        min-height: 720px;
+        overflow: hidden;
+        background:
+          radial-gradient(ellipse at 20% 0%, rgba(62, 104, 85, 0.14), transparent 32%),
+          radial-gradient(ellipse at 90% 78%, rgba(102, 78, 45, 0.08), transparent 34%),
+          var(--canvas);
+      }
+
+      .app::before {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(var(--grid) 1px, transparent 1px),
+          linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+          radial-gradient(circle at 50% 50%, rgba(255,255,255,.025) 1px, transparent 1.4px);
+        background-size: 40px 40px, 40px 40px, 8px 8px;
+        mask-image: radial-gradient(circle at 52% 47%, black 25%, rgba(0,0,0,.7) 62%, transparent 96%);
+        content: "";
+        pointer-events: none;
+      }
+
+      .topbar {
+        position: absolute;
+        z-index: 30;
+        top: 18px;
+        left: 22px;
+        right: 22px;
+        height: 46px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 9px 0 16px;
+        border: 1px solid var(--edge);
+        border-radius: 14px;
+        background: rgba(18, 22, 21, 0.92);
+        box-shadow: 0 10px 28px rgba(0,0,0,.2);
+      }
+
+      .brand, .top-actions, .segmented, .cluster-title, .node-title, .node-actions,
+      .status-pill, .meta-row, .mini-output-strip, .group-head, .group-actions,
+      .stage-label, .footer, .footer-left, .dock, .legend, .legend-item {
+        display: flex;
+        align-items: center;
+      }
+
+      .brand { gap: 11px; min-width: 320px; }
+      .brand-mark {
+        width: 25px;
+        height: 25px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--mint);
+        color: #10231c;
+        font: 800 14px/1 ui-monospace, monospace;
+        box-shadow: 0 0 0 4px rgba(138,230,189,.08);
+      }
+      .brand strong { font-size: 13px; letter-spacing: .01em; }
+      .brand span { color: var(--ink-3); font-size: 11px; }
+
+      .segmented { gap: 3px; padding: 3px; border-radius: 9px; background: #0e1110; }
+      .segmented button, .top-actions button, .group-actions button, .node-action,
+      .dock button, .zoom-chip {
+        border: 0;
+        color: var(--ink-2);
+        background: transparent;
+        cursor: pointer;
+      }
+      .segmented button {
+        height: 27px;
+        padding: 0 10px;
+        border-radius: 7px;
+        font-size: 10px;
+      }
+      .segmented button.active { color: #13231d; background: var(--mint); font-weight: 700; }
+      .top-actions { justify-content: flex-end; gap: 6px; min-width: 320px; }
+      .top-actions button {
+        height: 30px;
+        padding: 0 11px;
+        border: 1px solid var(--edge);
+        border-radius: 8px;
+        font-size: 10px;
+        transition: .18s var(--ease);
+      }
+      .top-actions button:hover { border-color: var(--edge-strong); color: var(--ink); background: var(--surface-3); }
+
+      .canvas {
+        position: absolute;
+        inset: 80px 0 64px;
+        transform-origin: 50% 50%;
+        transition: transform .32s var(--ease);
+      }
+
+      .connector-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+      .connector { fill: none; stroke: rgba(186, 204, 196, .25); stroke-width: 1.5; }
+      .connector.active { stroke: var(--mint-dim); stroke-width: 2; }
+      .connector-dash { fill: none; stroke: rgba(138,230,189,.3); stroke-width: 1.5; stroke-dasharray: 5 8; animation: march 1.2s linear infinite; }
+      @keyframes march { to { stroke-dashoffset: -26; } }
+
+      .node {
+        position: absolute;
+        z-index: 4;
+        display: flex;
+        min-width: 260px;
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid var(--edge-strong);
+        border-radius: 12px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        transition: border-color .18s ease, transform .18s var(--ease), box-shadow .18s ease;
+      }
+      .node:hover { transform: translateY(-2px); border-color: rgba(220,231,225,.43); }
+      .node.selected { border-color: rgba(138,230,189,.82); box-shadow: 0 0 0 3px rgba(138,230,189,.10), var(--shadow); }
+      .node.selected::after {
+        position: absolute;
+        inset: 0;
+        border: 1px solid rgba(138,230,189,.32);
+        border-radius: inherit;
+        content: "";
+        pointer-events: none;
+      }
+
+      .node-head {
+        position: relative;
+        z-index: 2;
+        height: 39px;
+        flex: 0 0 39px;
+        display: grid;
+        grid-template-columns: minmax(0,1fr) auto;
+        align-items: center;
+        gap: 8px;
+        padding: 0 9px 0 11px;
+        border-bottom: 1px solid var(--edge);
+        background: #181d1b;
+      }
+      .node-head::before {
+        position: absolute;
+        top: 9px;
+        bottom: 9px;
+        left: 0;
+        width: 2px;
+        border-radius: 0 2px 2px 0;
+        background: var(--type, var(--ink-3));
+        content: "";
+      }
+      .node-title { min-width: 0; gap: 7px; }
+      .type-icon {
+        width: 20px;
+        height: 20px;
+        display: grid;
+        flex: 0 0 20px;
+        place-items: center;
+        border: 1px solid color-mix(in srgb, var(--type) 34%, transparent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--type) 10%, transparent);
+        color: var(--type);
+        font: 700 10px/1 ui-monospace, monospace;
+      }
+      .title-stack { min-width: 0; }
+      .title-stack strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 1.1; }
+      .title-stack span { display: block; margin-top: 3px; color: var(--ink-3); font: 9px/1 ui-monospace, monospace; }
+      .node-actions { gap: 3px; }
+      .node-action {
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border-radius: 6px;
+        color: var(--ink-3);
+        font-size: 13px;
+      }
+      .node-action:hover { color: var(--ink); background: var(--surface-3); }
+      .status-pill { gap: 5px; height: 22px; padding: 0 7px; border-radius: 999px; color: var(--ink-2); background: rgba(255,255,255,.045); font-size: 9px; white-space: nowrap; }
+      .status-pill::before { width: 6px; height: 6px; border-radius: 50%; background: var(--status, var(--ink-3)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status) 12%, transparent); content: ""; }
+
+      .port { position: absolute; z-index: 9; top: 50%; width: 10px; height: 18px; transform: translateY(-50%); border: 2px solid #0b0e0e; border-radius: 5px; background: #6b7470; }
+      .port.in { left: -5px; }
+      .port.out { right: -5px; }
+      .selected .port.out { background: var(--mint); box-shadow: 0 0 0 3px rgba(138,230,189,.12); }
+
+      .task-node { --type: var(--mint); left: 6.5%; top: 7%; width: 330px; height: 276px; overflow: visible; }
+      .task-node > * { position: relative; }
+      .task-node .node-head, .task-node .node-body { overflow: hidden; }
+      .task-node .node-head { border-radius: 11px 11px 0 0; }
+      .task-node .node-body { border-radius: 0 0 11px 11px; }
+      .task-node.running::before {
+        position: absolute;
+        z-index: 0;
+        inset: -1px;
+        padding: 1px;
+        border-radius: 13px;
+        background: conic-gradient(from var(--beam), transparent 0 72%, rgba(138,230,189,.18) 80%, var(--mint) 89%, transparent 96%);
+        content: "";
+        animation: orbit 2.4s linear infinite;
+        mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        mask-composite: exclude;
+      }
+      @property --beam { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+      @keyframes orbit { to { --beam: 360deg; } }
+
+      .node-body { min-height: 0; flex: 1; background: #121615; }
+      .task-preview { height: 112px; position: relative; overflow: hidden; background: #0d1110; }
+      .preview-art {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(90deg, transparent 49.7%, rgba(255,255,255,.08) 50%, transparent 50.3%),
+          linear-gradient(0deg, transparent 49.7%, rgba(255,255,255,.08) 50%, transparent 50.3%),
+          radial-gradient(circle at 62% 43%, rgba(250,216,166,.64) 0 3%, transparent 3.5%),
+          linear-gradient(152deg, #34413b 0 31%, #725e42 31.4% 43%, #202c27 43.4% 63%, #101514 63%);
+        filter: saturate(.75) contrast(1.05);
+        opacity: .8;
+      }
+      .scanline { position: absolute; left: 0; right: 0; top: -20%; height: 44%; background: linear-gradient(transparent, rgba(138,230,189,.06), transparent); animation: scan 2.2s ease-in-out infinite; }
+      @keyframes scan { 50%, 100% { transform: translateY(320%); } }
+      .stage-label { position: absolute; left: 10px; right: 10px; bottom: 9px; justify-content: space-between; color: rgba(255,255,255,.72); font-size: 9px; }
+      .stage-label span { padding: 4px 6px; border-radius: 5px; background: rgba(6,9,8,.72); }
+
+      .task-detail { padding: 11px 12px 10px; }
+      .meta-row { justify-content: space-between; gap: 8px; color: var(--ink-3); font-size: 9px; }
+      .meta-row strong { color: var(--ink-2); font-size: 9px; }
+      .progress-track { height: 3px; margin-top: 9px; overflow: hidden; border-radius: 3px; background: #29302d; }
+      .progress-bar { width: 68%; height: 100%; border-radius: inherit; background: var(--mint); box-shadow: 0 0 10px rgba(138,230,189,.34); transition: width .4s var(--ease); }
+      .task-copy { margin: 8px 0 0; overflow: hidden; color: #aeb4b1; font-size: 9px; line-height: 1.55; text-overflow: ellipsis; white-space: nowrap; }
+      .mini-output-strip { gap: 6px; margin-top: 9px; }
+      .mini-thumb { width: 30px; height: 22px; border: 1px solid var(--edge); border-radius: 4px; background: linear-gradient(145deg,#5c604d,#1d2a25); }
+      .mini-thumb:nth-child(2) { background: linear-gradient(145deg,#2f4f53,#5b4938); }
+      .mini-thumb:nth-child(3) { background: linear-gradient(145deg,#685b4c,#262f2c); }
+      .mini-thumb:nth-child(4) { background: linear-gradient(145deg,#282d38,#635844); }
+      .output-count { margin-left: auto; color: var(--mint); font-size: 9px; }
+
+      .output-group {
+        position: absolute;
+        z-index: 2;
+        left: 34%;
+        top: 3%;
+        width: 560px;
+        height: 376px;
+        border: 1px dashed rgba(138,230,189,.28);
+        border-radius: 16px;
+        background: rgba(41, 64, 54, .08);
+        transition: width .36s var(--ease), height .36s var(--ease), background .2s ease;
+      }
+      .output-group::before { position: absolute; inset: 8px; border: 1px solid rgba(255,255,255,.025); border-radius: 10px; content: ""; pointer-events: none; }
+      .group-head { height: 45px; justify-content: space-between; padding: 0 11px 0 14px; }
+      .cluster-title { gap: 8px; }
+      .cluster-title i { width: 7px; height: 7px; border-radius: 2px; background: var(--mint); box-shadow: 0 0 0 4px rgba(138,230,189,.08); }
+      .cluster-title strong { font-size: 10px; }
+      .cluster-title span { color: var(--ink-3); font-size: 9px; }
+      .group-actions { gap: 3px; }
+      .group-actions button { height: 25px; padding: 0 8px; border-radius: 6px; font-size: 9px; }
+      .group-actions button:hover { color: var(--ink); background: rgba(255,255,255,.06); }
+      .group-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 0 14px 14px; transition: opacity .18s ease, transform .25s var(--ease); }
+      .output-card {
+        position: relative;
+        height: 145px;
+        overflow: hidden;
+        border: 1px solid rgba(220,231,225,.18);
+        border-radius: 9px;
+        background: #171b1a;
+        box-shadow: 0 10px 22px rgba(0,0,0,.22);
+      }
+      .output-card::before { position: absolute; inset: 0; background: var(--art); content: ""; filter: saturate(.72); }
+      .output-card:nth-child(1) { --art: linear-gradient(155deg,#3a4a43 0 31%,#765e42 32% 49%,#202c27 50%); }
+      .output-card:nth-child(2) { --art: radial-gradient(circle at 62% 42%,#c9ad83 0 6%,transparent 7%),linear-gradient(135deg,#263e40,#5c4938 57%,#171c1a); }
+      .output-card:nth-child(3) { --art: linear-gradient(25deg,#171c1a 0 34%,#5a594b 35% 57%,#2a3c36 58%); }
+      .output-card:nth-child(4) { --art: radial-gradient(ellipse at 42% 52%,#78664a 0 18%,transparent 19%),linear-gradient(150deg,#34433c,#151a18); }
+      .output-card .card-foot { position: absolute; left: 0; right: 0; bottom: 0; height: 29px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; background: rgba(13,16,15,.88); font-size: 8px; }
+      .output-card .card-foot span:last-child { color: var(--ink-3); }
+      .output-card.primary { border-color: rgba(240,190,104,.62); }
+      .primary-mark { position: absolute; top: 7px; right: 7px; padding: 4px 6px; border-radius: 5px; color: #211707; background: var(--amber); font-size: 8px; font-weight: 800; }
+      .output-group.collapsed { width: 250px; height: 45px; background: rgba(41,64,54,.15); }
+      .output-group.collapsed .group-grid { opacity: 0; pointer-events: none; transform: translateY(-8px) scale(.98); }
+
+      .story-node { --type: var(--cyan); left: 6.5%; top: 56%; width: 620px; height: 250px; }
+      .story-table { height: 100%; padding: 9px 11px 11px; overflow: hidden; }
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8.5px; }
+      th { height: 25px; padding: 0 7px; border-bottom: 1px solid var(--edge-strong); color: var(--ink-3); text-align: left; font-weight: 500; }
+      td { height: 38px; padding: 5px 7px; border-bottom: 1px solid var(--edge); color: #adb3b0; vertical-align: middle; }
+      td:first-child { color: var(--cyan); font: 700 9px/1 ui-monospace, monospace; }
+      .shot-thumb { display: inline-block; width: 35px; height: 22px; margin-right: 6px; border-radius: 3px; vertical-align: middle; background: linear-gradient(145deg,#4f5c55,#242c29); }
+      .shot-bar { width: 78%; height: 3px; margin-top: 4px; border-radius: 2px; background: #3a4440; }
+
+      .empty-node { --type: var(--lavender); left: 78%; top: 54%; width: 275px; height: 190px; }
+      .empty-state { height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 9px; padding: 18px; text-align: center; }
+      .empty-symbol { width: 42px; height: 42px; display: grid; place-items: center; border: 1px dashed rgba(184,167,238,.5); border-radius: 13px; color: var(--lavender); background: rgba(184,167,238,.06); font-size: 18px; }
+      .empty-state strong { font-size: 10px; }
+      .empty-state p { max-width: 190px; margin: 0; color: var(--ink-3); font-size: 8.5px; line-height: 1.55; }
+      .empty-state button { height: 27px; padding: 0 10px; border: 1px solid rgba(184,167,238,.36); border-radius: 7px; color: #d8cff7; background: rgba(184,167,238,.08); font-size: 9px; cursor: pointer; }
+
+      .failure-node { --type: var(--rose); left: 65%; top: 68%; width: 250px; height: 140px; }
+      .failure-node .node-body { display: flex; align-items: center; gap: 11px; padding: 13px; background: linear-gradient(135deg,rgba(255,130,125,.055),transparent 55%),#121615; }
+      .error-glyph { width: 30px; height: 30px; display: grid; flex: 0 0 30px; place-items: center; border-radius: 9px; color: var(--rose); background: rgba(255,130,125,.09); font-weight: 800; }
+      .error-copy { min-width: 0; }
+      .error-copy strong { display: block; color: #f2beb9; font-size: 9px; }
+      .error-copy span { display: block; margin-top: 5px; overflow: hidden; color: var(--ink-3); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+      .error-copy button { margin-top: 8px; padding: 0; border: 0; color: var(--rose); background: transparent; font-size: 8.5px; cursor: pointer; }
+
+      .annotation {
+        position: absolute;
+        z-index: 20;
+        top: 88px;
+        right: 22px;
+        width: 202px;
+        padding: 13px;
+        border: 1px solid var(--edge);
+        border-radius: 12px;
+        background: rgba(15,18,17,.9);
+        box-shadow: 0 12px 34px rgba(0,0,0,.24);
+      }
+      .annotation h2 { margin: 0 0 10px; font-size: 11px; }
+      .annotation ol { margin: 0; padding: 0 0 0 17px; color: var(--ink-3); font-size: 8.5px; line-height: 1.55; }
+      .annotation li + li { margin-top: 6px; }
+      .annotation strong { color: var(--ink-2); }
+
+      .footer { position: absolute; z-index: 30; left: 22px; right: 22px; bottom: 13px; height: 42px; justify-content: space-between; pointer-events: none; }
+      .footer-left { gap: 8px; }
+      .legend { gap: 10px; height: 32px; padding: 0 11px; border: 1px solid var(--edge); border-radius: 9px; background: rgba(18,22,21,.92); pointer-events: auto; }
+      .legend-item { gap: 5px; color: var(--ink-3); font-size: 8px; }
+      .legend-item i { width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+      .zoom-chip { height: 32px; padding: 0 11px; border: 1px solid var(--edge); border-radius: 9px; background: rgba(18,22,21,.92); font-size: 9px; pointer-events: auto; }
+      .dock { gap: 4px; height: 38px; padding: 4px; border: 1px solid var(--edge); border-radius: 11px; background: rgba(18,22,21,.94); box-shadow: 0 10px 28px rgba(0,0,0,.26); pointer-events: auto; }
+      .dock button { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; font-size: 13px; }
+      .dock button:hover, .dock button.active { color: #102019; background: var(--mint); }
+
+      .state-completed .task-node { --type: var(--mint); }
+      .state-completed .task-node::before { display: none; }
+      .state-completed .scanline { display: none; }
+      .state-completed .progress-bar { width: 100%; }
+      .state-failed .task-node { --type: var(--rose); border-color: rgba(255,130,125,.62); }
+      .state-failed .task-node::before { display: none; }
+      .state-failed .scanline { display: none; }
+      .state-failed .progress-bar { width: 38%; background: var(--rose); }
+      .state-failed .task-preview { filter: grayscale(.6); }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app" id="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">S</div>
+          <div><strong>短片《同频》</strong><br /><span>节点系统 V2 · 设计审阅稿</span></div>
+        </div>
+        <div class="segmented" aria-label="任务状态演示">
+          <button class="active" data-state="running">运行中</button>
+          <button data-state="completed">已完成</button>
+          <button data-state="failed">失败</button>
+        </div>
+        <div class="top-actions">
+          <button id="arrangeButton">整理画布</button>
+          <button id="toggleGroupButton">收起产物组</button>
+          <button>分享审阅</button>
+        </div>
+      </header>
+
+      <section class="canvas" id="canvas" aria-label="无限画布节点设计稿">
+        <svg class="connector-layer" viewBox="0 0 1600 820" preserveAspectRatio="none" aria-hidden="true">
+          <path class="connector-dash" d="M 434 160 C 480 160, 490 140, 544 140" />
+          <path class="connector active" d="M 434 210 C 490 210, 494 215, 544 215" />
+          <path class="connector" d="M 434 260 C 490 260, 494 290, 544 290" />
+          <path class="connector" d="M 1098 312 C 1150 312, 1160 635, 1248 635" />
+          <path class="connector" d="M 686 620 C 760 620, 772 690, 1040 690" />
+        </svg>
+
+        <article class="node task-node running selected" id="taskNode">
+          <span class="port in"></span><span class="port out"></span>
+          <header class="node-head">
+            <div class="node-title"><span class="type-icon">AI</span><div class="title-stack"><strong>生成分镜关键帧</strong><span>TEXT → IMAGE · RUN 04</span></div></div>
+            <div class="node-actions"><span class="status-pill" id="statusPill" style="--status:var(--mint)">运行中 · 68%</span><button class="node-action">•••</button></div>
+          </header>
+          <div class="node-body">
+            <div class="task-preview"><div class="preview-art"></div><div class="scanline"></div><div class="stage-label"><span>正在生成第 3 / 4 张</span><span>00:18</span></div></div>
+            <div class="task-detail">
+              <div class="meta-row"><span>Seed 82731 · 16:9 · 2K</span><strong>Flux Kontext</strong></div>
+              <div class="progress-track"><div class="progress-bar"></div></div>
+              <p class="task-copy">雨夜车站，林岚回头，冷绿灯光与暖色站台形成层次…</p>
+              <div class="mini-output-strip"><i class="mini-thumb"></i><i class="mini-thumb"></i><i class="mini-thumb"></i><i class="mini-thumb"></i><span class="output-count">4 个产物 · 已展开</span></div>
+            </div>
+          </div>
+        </article>
+
+        <section class="output-group" id="outputGroup">
+          <header class="group-head">
+            <div class="cluster-title"><i></i><strong>生成分镜关键帧 · 产物组</strong><span>4 items · RUN 04</span></div>
+            <div class="group-actions"><button>设为资产</button><button id="groupCollapse">⌃</button></div>
+          </header>
+          <div class="group-grid">
+            <article class="output-card primary"><span class="primary-mark">主产物</span><div class="card-foot"><span>关键帧 A</span><span>2048×1152</span></div></article>
+            <article class="output-card"><div class="card-foot"><span>关键帧 B</span><span>2048×1152</span></div></article>
+            <article class="output-card"><div class="card-foot"><span>关键帧 C</span><span>2048×1152</span></div></article>
+            <article class="output-card"><div class="card-foot"><span>关键帧 D</span><span>2048×1152</span></div></article>
+          </div>
+        </section>
+
+        <article class="node story-node">
+          <span class="port in"></span><span class="port out"></span>
+          <header class="node-head"><div class="node-title"><span class="type-icon">镜</span><div class="title-stack"><strong>03 场 · 雨夜车站分镜脚本</strong><span>STORYBOARD TABLE · 8 SHOTS</span></div></div><div class="node-actions"><span class="status-pill" style="--status:var(--amber)">待确认</span><button class="node-action">•••</button></div></header>
+          <div class="node-body story-table">
+            <table><thead><tr><th style="width:8%">镜号</th><th style="width:23%">画面</th><th style="width:12%">时长</th><th style="width:19%">镜头</th><th>动作 / 对白</th></tr></thead>
+              <tbody>
+                <tr><td>S03-01</td><td><i class="shot-thumb"></i>远景建立</td><td>3.0s<div class="shot-bar"></div></td><td>24mm · 缓推</td><td>雨幕掠过空站台，列车灯由远至近</td></tr>
+                <tr><td>S03-02</td><td><i class="shot-thumb"></i>人物入画</td><td>4.0s<div class="shot-bar" style="width:100%"></div></td><td>50mm · 跟拍</td><td>林岚跑入画面，停下，克制地回头</td></tr>
+                <tr><td>S03-03</td><td><i class="shot-thumb"></i>情绪特写</td><td>2.5s<div class="shot-bar" style="width:62%"></div></td><td>85mm · 静止</td><td>眼神从迟疑转为确认：「等一下。」</td></tr>
+                <tr><td>S03-04</td><td><i class="shot-thumb"></i>反打</td><td>3.5s<div class="shot-bar" style="width:88%"></div></td><td>50mm · 微摇</td><td>车门关闭前一秒，苏烬抬头看向她</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="node failure-node">
+          <span class="port in"></span><span class="port out"></span>
+          <header class="node-head"><div class="node-title"><span class="type-icon">!</span><div class="title-stack"><strong>视频延展</strong><span>VIDEO EXTEND</span></div></div><span class="status-pill" style="--status:var(--rose)">失败</span></header>
+          <div class="node-body"><div class="error-glyph">!</div><div class="error-copy"><strong>模型拒绝了参考帧</strong><span>首帧比例与当前模型不兼容</span><button>修复参数并重试 →</button></div></div>
+        </article>
+
+        <article class="node empty-node">
+          <span class="port in"></span><span class="port out"></span>
+          <header class="node-head"><div class="node-title"><span class="type-icon">文</span><div class="title-stack"><strong>空白提示词</strong><span>PROMPT · EMPTY</span></div></div><button class="node-action">•••</button></header>
+          <div class="node-body empty-state"><div class="empty-symbol">＋</div><strong>从一个意图开始</strong><p>输入文字、拖入素材，或连接上游节点。系统会根据内容给出下一步建议。</p><button>开始编辑</button></div>
+        </article>
+      </section>
+
+      <aside class="annotation">
+        <h2>这版的核心变化</h2>
+        <ol>
+          <li><strong>标题栏成为控制面</strong>：类型、运行、版本和主操作一眼可见。</li>
+          <li><strong>运行状态进入节点结构</strong>：进度、当前阶段、耗时与产物数不再只靠徽标。</li>
+          <li><strong>多产物默认成组展开</strong>：任务保留摘要，组内结果等权排列并可设主产物。</li>
+          <li><strong>尺寸按内容语义分档</strong>：普通、媒体、长文档、分镜表、产物组分别定义。</li>
+          <li><strong>错误和空态可行动</strong>：都提供明确的下一步，而不是空白占位。</li>
+        </ol>
+      </aside>
+
+      <footer class="footer">
+        <div class="footer-left">
+          <div class="legend"><span class="legend-item" style="--c:var(--mint)"><i></i>运行/完成</span><span class="legend-item" style="--c:var(--amber)"><i></i>待确认</span><span class="legend-item" style="--c:var(--rose)"><i></i>需处理</span></div>
+          <button class="zoom-chip" id="zoomButton">72%</button>
+        </div>
+        <nav class="dock"><button class="active">↖</button><button>＋</button><button>□</button><button>◇</button><button>⌘</button></nav>
+      </footer>
+    </main>
+
+    <script>
+      const app = document.getElementById('app')
+      const taskNode = document.getElementById('taskNode')
+      const statusPill = document.getElementById('statusPill')
+      const outputGroup = document.getElementById('outputGroup')
+      const toggleGroupButton = document.getElementById('toggleGroupButton')
+      const groupCollapse = document.getElementById('groupCollapse')
+
+      function setState(state) {
+        document.querySelectorAll('[data-state]').forEach((button) => button.classList.toggle('active', button.dataset.state === state))
+        app.classList.toggle('state-completed', state === 'completed')
+        app.classList.toggle('state-failed', state === 'failed')
+        taskNode.classList.toggle('running', state === 'running')
+        const labels = { running: '运行中 · 68%', completed: '已完成 · 100%', failed: '失败 · 38%' }
+        statusPill.textContent = labels[state]
+        statusPill.style.setProperty('--status', state === 'failed' ? 'var(--rose)' : 'var(--mint)')
+      }
+
+      function toggleGroup() {
+        const collapsed = outputGroup.classList.toggle('collapsed')
+        toggleGroupButton.textContent = collapsed ? '展开产物组' : '收起产物组'
+        groupCollapse.textContent = collapsed ? '⌄' : '⌃'
+      }
+
+      document.querySelectorAll('[data-state]').forEach((button) => button.addEventListener('click', () => setState(button.dataset.state)))
+      toggleGroupButton.addEventListener('click', toggleGroup)
+      groupCollapse.addEventListener('click', toggleGroup)
+
+      document.getElementById('arrangeButton').addEventListener('click', () => {
+        document.querySelectorAll('.node, .output-group').forEach((node, index) => {
+          node.animate([{ transform: 'translateY(0)' }, { transform: `translateY(${index % 2 ? -6 : 6}px)` }, { transform: 'translateY(0)' }], { duration: 520, easing: 'cubic-bezier(.2,.8,.2,1)' })
+        })
+      })
+
+      let zoomed = false
+      document.getElementById('zoomButton').addEventListener('click', (event) => {
+        zoomed = !zoomed
+        document.getElementById('canvas').style.transform = zoomed ? 'scale(.88)' : 'scale(1)'
+        event.currentTarget.textContent = zoomed ? '63%' : '72%'
+      })
+    </script>
+  </body>
+</html>

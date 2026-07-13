@@ -41,12 +41,12 @@ describe('canvasNodeSize', () => {
   })
 
   describe('pickTextNodeSize', () => {
-    it('短文本使用便签默认尺寸 480×440', () => {
+    it('短文本使用紧凑便签默认尺寸 400×320', () => {
       expect(pickTextNodeSize('hello world')).toEqual(TEXT_NODE_DEFAULT_SIZE)
       expect(pickTextNodeSize(undefined)).toEqual(TEXT_NODE_DEFAULT_SIZE)
     })
 
-    it('长文本使用阅读尺寸 760×640', () => {
+    it('长文本使用阅读尺寸 680×560', () => {
       const longText = 'x'.repeat(LONG_TEXT_MIN_CHARS + 100)
       expect(pickTextNodeSize(longText)).toEqual(TEXT_NODE_LONG_SIZE)
     })
@@ -60,11 +60,11 @@ describe('canvasNodeSize', () => {
   })
 
   describe('pickTextNodeMinSize', () => {
-    it('短文本 NodeResizer 最小 340×300', () => {
+    it('短文本 NodeResizer 最小 300×240', () => {
       expect(pickTextNodeMinSize('')).toEqual(TEXT_NODE_DEFAULT_MIN_SIZE)
     })
 
-    it('长文本 NodeResizer 最小 560×360', () => {
+    it('长文本 NodeResizer 最小 520×360', () => {
       const longText = 'x'.repeat(LONG_TEXT_MIN_CHARS + 50)
       expect(pickTextNodeMinSize(longText)).toEqual(TEXT_NODE_LONG_MIN_SIZE)
     })
@@ -72,10 +72,10 @@ describe('canvasNodeSize', () => {
 
   describe('pickCanvasNodeMinSize', () => {
     it('为不同节点类型提供可用的最小尺寸', () => {
-      expect(pickCanvasNodeMinSize('image')).toEqual({ width: 380, height: 220 })
-      expect(pickCanvasNodeMinSize('video')).toEqual({ width: 400, height: 220 })
-      expect(pickCanvasNodeMinSize('text_to_image')).toEqual({ width: 420, height: 380 })
-      expect(pickCanvasNodeMinSize('group')).toEqual({ width: 440, height: 380 })
+      expect(pickCanvasNodeMinSize('image')).toEqual({ width: 320, height: 218 })
+      expect(pickCanvasNodeMinSize('video')).toEqual({ width: 360, height: 210 })
+      expect(pickCanvasNodeMinSize('text_to_image')).toEqual({ width: 360, height: 320 })
+      expect(pickCanvasNodeMinSize('group')).toEqual({ width: 400, height: 320 })
     })
 
     it('文本节点最小尺寸跟随长短文本切换', () => {
@@ -88,28 +88,28 @@ describe('canvasNodeSize', () => {
 
   describe('fitCanvasImageNodeSize', () => {
     it('横图按真实纵横比收紧高度，并把内嵌头部计入节点总高度', () => {
-      expect(fitCanvasImageNodeSize(1920, 1080)).toEqual({ width: 580, height: 350 })
+      expect(fitCanvasImageNodeSize(1920, 1080)).toEqual({ width: 540, height: 342 })
     })
 
     it('超宽图片仍保留当前图片节点最小可用高度', () => {
       expect(fitCanvasImageNodeSize(2400, 800)).toEqual({
-        width: 580,
+        width: 540,
         height: CANVAS_NODE_MIN_SIZE.image.height,
       })
     })
 
     it('竖图仍保持原有正文缩放上限逻辑，并把内嵌头部计入节点总高度', () => {
-      expect(fitCanvasImageNodeSize(800, 1200)).toEqual({ width: 480, height: 744 })
+      expect(fitCanvasImageNodeSize(800, 1200)).toEqual({ width: 480, height: 758 })
     })
   })
 
   describe('fitCanvasGroupedImageNodeSize', () => {
     it('把图片正文和 meta 头部都计入多选导入的节点高度', () => {
-      expect(fitCanvasGroupedImageNodeSize(440, 220)).toEqual({ width: 220, height: 144 })
+      expect(fitCanvasGroupedImageNodeSize(440, 220)).toEqual({ width: 220, height: 158 })
     })
 
     it('对未知尺寸也保留 meta 头部空间', () => {
-      expect(fitCanvasGroupedImageNodeSize()).toEqual({ width: 220, height: 220 })
+      expect(fitCanvasGroupedImageNodeSize()).toEqual({ width: 220, height: 234 })
     })
   })
 
