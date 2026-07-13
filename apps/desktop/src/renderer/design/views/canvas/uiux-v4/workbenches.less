@@ -182,7 +182,8 @@
   // 视频工作台采用与应用主题一致的扁平外壳；预览区仍保持中性暗底，避免影响画面判断。
   .vwb-shell {
     width: min(calc(100vw - 32px), 1580px);
-    height: min(calc(100vh - 32px), 980px);
+    height: calc(100dvh - 32px);
+    max-height: none;
     margin: 0;
     color: var(--text);
   }
@@ -238,11 +239,37 @@
   .vwb-timeline-zoom-label,
   .vwb-strategy-desc,
   .vwb-progress-stage,
-  .vwb-trim-field > span,
   .vwb-tc-field > span,
   .vwb-tc-param > span,
   .vwb-output-time {
     color: var(--text-faint);
+  }
+
+  .vwb-timeline-selection-summary {
+    color: var(--text-faint);
+
+    strong,
+    span:last-child {
+      color: var(--text-muted);
+    }
+  }
+
+  .vwb-timeline-cut-mode {
+    border-color: var(--canvas-v4-divider);
+    background: var(--canvas-v4-surface);
+
+    button {
+      color: var(--text-faint);
+
+      &:hover {
+        color: var(--text);
+      }
+
+      &.is-active {
+        background: color-mix(in srgb, var(--primary) 14%, var(--canvas-v4-surface-raised));
+        color: var(--primary);
+      }
+    }
   }
 
   .vwb-player-btn {
@@ -296,6 +323,12 @@
   .vwb-timeline-lane {
     border-radius: var(--canvas-v4-radius-sm);
     background: var(--canvas-v4-surface-muted);
+  }
+
+  .vwb-edit-panel-hint {
+    border-color: color-mix(in srgb, var(--primary) 20%, var(--canvas-v4-divider));
+    background: color-mix(in srgb, var(--primary) 7%, var(--canvas-v4-surface-muted));
+    color: var(--text-muted);
   }
 
   .vwb-frame-card:hover {

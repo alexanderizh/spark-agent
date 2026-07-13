@@ -192,7 +192,9 @@
   background: transparent;
   color: #d4d4d8;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s;
 
   &:hover {
     background: rgba(255, 255, 255, 0.1);
@@ -243,6 +245,11 @@
   padding: 8px 12px 10px;
   background: #18181b;
   user-select: none;
+  outline: none;
+
+  &:focus-visible {
+    box-shadow: inset 0 0 0 2px rgba(96, 165, 250, 0.72);
+  }
 }
 
 .vwb-timeline-empty {
@@ -252,14 +259,34 @@
   font-size: 12px;
 }
 
-// 工具栏
 .vwb-timeline-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-family: 'SF Mono', 'JetBrains Mono', monospace;
   font-size: 11px;
+
+  .ant-btn {
+    min-height: 28px;
+  }
+}
+
+.vwb-timeline-timecode,
+.vwb-timeline-edit-actions,
+.vwb-timeline-secondary-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vwb-timeline-edit-actions {
+  margin-left: 8px;
+}
+
+.vwb-timeline-secondary-actions {
+  margin-left: auto;
 }
 
 .vwb-timeline-time-current {
@@ -286,39 +313,93 @@
   text-align: right;
 }
 
-// 可滚动轨道容器
+.vwb-timeline-cut-mode {
+  display: inline-flex;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.18);
+
+  button {
+    min-width: 36px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: #71717a;
+    font-size: 10px;
+    cursor: pointer;
+
+    &:hover {
+      color: #d4d4d8;
+    }
+
+    &.is-active {
+      background: rgba(96, 165, 250, 0.2);
+      color: #93c5fd;
+    }
+
+    &:focus-visible {
+      outline: 2px solid #60a5fa;
+      outline-offset: 1px;
+    }
+  }
+}
+
+.vwb-timeline-selection-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  color: #71717a;
+  font-size: 10px;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+
+  strong {
+    color: #d4d4d8;
+    font-weight: 600;
+  }
+
+  span:last-child {
+    color: #a1a1aa;
+  }
+}
+
 .vwb-timeline-scroll {
   overflow-x: auto;
   overflow-y: hidden;
   border-radius: 4px;
   background: #0f0f12;
+
   &::-webkit-scrollbar {
     height: 6px;
   }
+
   &::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.15);
     border-radius: 3px;
   }
 }
 
-// 轨道画布（缩放后宽度）
 .vwb-timeline-canvas {
   position: relative;
-  height: 56px;
+  height: 90px;
   cursor: pointer;
 
   &.dragging {
     cursor: grabbing;
   }
+
+  &.trimming {
+    cursor: col-resize;
+  }
 }
 
-// 时间刻度
 .vwb-timeline-ticks {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 16px;
+  inset: 0 0 auto;
+  height: 18px;
 }
 
 .vwb-timeline-tick {
@@ -329,10 +410,10 @@
   &::before {
     content: '';
     position: absolute;
-    top: 8px;
+    top: 9px;
     left: 0;
     width: 1px;
-    height: 6px;
+    height: 7px;
     background: rgba(255, 255, 255, 0.15);
   }
 }
@@ -347,62 +428,182 @@
   white-space: nowrap;
 }
 
-// 轨道主体
 .vwb-timeline-lane {
   position: absolute;
-  top: 16px;
+  top: 18px;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.03);
-  border-radius: 3px;
 }
 
-// 已播放区域
+.vwb-timeline-muted-range {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 2;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(0, 0, 0, 0.34),
+    rgba(0, 0, 0, 0.34) 4px,
+    rgba(0, 0, 0, 0.48) 4px,
+    rgba(0, 0, 0, 0.48) 8px
+  );
+  pointer-events: none;
+
+  &.is-after {
+    right: auto;
+  }
+}
+
+.vwb-timeline-clip {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  z-index: 2;
+  min-width: 2px;
+  overflow: visible;
+  border: 1px solid #fbbf24;
+  border-radius: 4px;
+  background: #24324b;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.vwb-timeline-clip-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background:
+    linear-gradient(180deg, rgba(96, 165, 250, 0.2), rgba(37, 99, 235, 0.1)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.035),
+      rgba(255, 255, 255, 0.035) 24px,
+      transparent 24px,
+      transparent 48px
+    );
+  pointer-events: none;
+}
+
+.vwb-timeline-clip-label {
+  position: absolute;
+  inset: 0 14px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: #e0f2fe;
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+
+  > span:not(.vwb-timeline-clip-duration) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.vwb-timeline-clip-duration {
+  margin-left: auto;
+  color: rgba(224, 242, 254, 0.72);
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  font-weight: 500;
+}
+
+.vwb-timeline-trim-handle {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  z-index: 6;
+  width: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fbbf24;
+  color: #422006;
+  cursor: col-resize;
+  touch-action: none;
+
+  &.is-start {
+    left: -1px;
+    border-radius: 4px 0 0 4px;
+  }
+
+  &.is-end {
+    right: -1px;
+    border-radius: 0 4px 4px 0;
+  }
+
+  span {
+    width: 2px;
+    height: 16px;
+    border-radius: 1px;
+    background: currentColor;
+    box-shadow: 4px 0 0 currentColor;
+    transform: translateX(-2px);
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: #fde047;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+  }
+}
+
 .vwb-timeline-played {
   position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  background: linear-gradient(90deg, rgba(96, 165, 250, 0.15), rgba(96, 165, 250, 0.25));
-  border-right: 1px solid rgba(96, 165, 250, 0.4);
+  inset: 0 auto 0 0;
+  z-index: 1;
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.04), rgba(96, 165, 250, 0.1));
+  border-right: 1px solid rgba(96, 165, 250, 0.28);
+  pointer-events: none;
   transition: width 0.05s linear;
 }
 
-// 关键帧标记（带缩略图）
 .vwb-timeline-kf {
   position: absolute;
-  top: 2px;
-  bottom: 2px;
-  width: 28px;
+  top: 7px;
+  bottom: 7px;
+  z-index: 3;
+  width: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   transform: translateX(-50%);
   cursor: pointer;
-  z-index: 2;
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    border-radius: 2px;
     border: 1px solid rgba(251, 191, 36, 0.6);
+    border-radius: 2px;
   }
 
-  &:hover img {
+  &:hover img,
+  &:focus-visible img {
     border-color: #fcd34d;
-    transform: scale(1.15);
+    transform: scale(1.1);
   }
 }
 
-// 手动标记点
 .vwb-timeline-mark {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
-  transform: translateX(-50%);
+  z-index: 4;
+  width: 3px;
   background: #60a5fa;
+  transform: translateX(-50%);
   cursor: pointer;
-  z-index: 3;
 
   &::before {
     content: '';
@@ -416,40 +617,55 @@
   }
 }
 
+.vwb-timeline-mark-seek {
+  position: absolute;
+  inset: 0 -5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 1px;
+  }
+}
+
 .vwb-timeline-mark-remove {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
   width: 14px;
   height: 14px;
-  line-height: 12px;
-  text-align: center;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
   background: rgba(239, 68, 68, 0.9);
   color: #fff;
   font-size: 11px;
+  transform: translate(-50%, -50%);
   cursor: pointer;
-  display: none;
 }
 
-.vwb-timeline-mark:hover .vwb-timeline-mark-remove {
-  display: block;
+.vwb-timeline-mark:hover .vwb-timeline-mark-remove,
+.vwb-timeline-mark:focus-within .vwb-timeline-mark-remove {
+  display: flex;
 }
 
-// 播放头
 .vwb-timeline-playhead {
   position: absolute;
   top: 0;
   bottom: 0;
+  z-index: 8;
   width: 2px;
   background: #ef4444;
-  z-index: 5;
   pointer-events: none;
   transition: left 0.05s linear;
 }
 
-// 拖拽时禁用 transition，避免播放头滞后鼠标导致抖动
 .vwb-timeline-canvas.dragging .vwb-timeline-playhead,
 .vwb-timeline-canvas.dragging .vwb-timeline-played {
   transition: none !important;
@@ -459,22 +675,22 @@
   position: absolute;
   top: -2px;
   left: 50%;
-  transform: translateX(-50%);
   width: 10px;
   height: 10px;
+  border: 2px solid #fff;
   border-radius: 50%;
   background: #ef4444;
-  border: 2px solid #fff;
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+  transform: translateX(-50%);
 }
 
-// 操作提示
 .vwb-timeline-hints {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 4px;
-  font-size: 9px;
   color: #3f3f46;
+  font-size: 9px;
 
   span:nth-child(even) {
     color: #27272a;
@@ -782,45 +998,29 @@
   padding: 0 10px 10px;
 }
 
-.vwb-trim-controls,
+.vwb-edit-panel-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 4px 8px 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  border-radius: 6px;
+  background: rgba(96, 165, 250, 0.08);
+  color: #a1a1aa;
+  font-size: 11px;
+  line-height: 1.45;
+
+  svg {
+    flex: 0 0 auto;
+    margin-top: 1px;
+    color: #60a5fa;
+  }
+}
+
 .vwb-tc-controls,
 .vwb-seg-controls {
   margin-top: 8px;
-}
-
-.vwb-trim-field {
-  margin-bottom: 8px;
-
-  label {
-    display: block;
-    font-size: 11px;
-    color: #a1a1aa;
-    margin-bottom: 4px;
-  }
-}
-
-.vwb-trim-input-row {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-
-.vwb-trim-duration {
-  font-size: 11px;
-  color: #60a5fa;
-  font-family: 'SF Mono', monospace;
-  margin-bottom: 8px;
-}
-
-.vwb-trim-copy-toggle {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 8px;
-
-  .ant-btn {
-    flex: 1;
-    font-size: 11px;
-  }
 }
 
 .vwb-tc-row {
