@@ -638,6 +638,16 @@ export const RulesComposeRequestSchema = z.object({
   conflictStrategy: z.enum(['override', 'merge']).optional(),
 })
 
+export const SessionAnswerQuestionRequestSchema = z.object({
+  sessionId: z.string().min(1).max(200),
+  questionId: z.string().min(1).max(500),
+  answers: z.record(z.string(), z.unknown()),
+})
+
+export const SessionListPendingQuestionsRequestSchema = z.object({
+  sessionId: z.string().min(1).max(200).optional(),
+})
+
 /**
  * IPC Schema 注册表
  *
@@ -661,6 +671,8 @@ export const IpcSchemaRegistry = {
   'session:set-goal': SessionSetGoalRequestSchema,
   'session:get-goal': SessionGetGoalRequestSchema,
   'session:goal-control': SessionGoalControlRequestSchema,
+  'session:answer-question': SessionAnswerQuestionRequestSchema,
+  'session:list-pending-questions': SessionListPendingQuestionsRequestSchema,
   // Team Mode
   'team:update': TeamUpdateRequestSchema,
   'team:list-members': TeamListMembersRequestSchema,

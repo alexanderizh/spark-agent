@@ -50,8 +50,10 @@ import type {
   SDKQuery,
   SDKQueryFunction,
   SDKQueryOptions,
+  SDKQuestionRequestContext,
   SDKResultMessage,
   SDKSettings,
+  SDKUserMessage,
 } from './types.js'
 import { classifyResumeError, ResumeCircuitBreaker } from './types.js'
 
@@ -96,6 +98,54 @@ const DEFAULT_SDK_MAX_TURNS = 200
 const DEFAULT_MAX_TURN_EXTENSION_RETRIES = 6
 const DEFAULT_MAX_TURN_EXTENSION_CAP = 2000
 const MAX_TURNS_ERROR_PATTERN = /reached\s+maximum\s+number\s+of\s+turns/i
+
+type InteractivePrompt = {
+  stream: AsyncIterable<SDKUserMessage>
+  close: () => void
+}
+
+/**
+ * The Agent SDK only supports host control requests (canUseTool, hooks,
+ * setPermissionMode) while its input is in streaming mode. Keep the input
+ * iterator open for the lifetime of the turn, then close it as soon as the
+ * terminal result arrives.
+ */
+export function createInteractivePromptStream(
+  prompt: string,
+  signal?: AbortSignal,
+): InteractivePrompt {
+  let closed = false
+  let resolveClosed: (() => void) | undefined
+  const closedPromise = new Promise<void>((resolve) => {
+    resolveClosed = resolve
+  })
+  const close = () => {
+    if (closed) return
+    closed = true
+    resolveClosed?.()
+  }
+  if (signal?.aborted === true) close()
+  else signal?.addEventListener('abort', close, { once: true })
+
+  return {
+    stream: {
+      async *[Symbol.asyncIterator]() {
+        try {
+          yield {
+            type: 'user',
+            session_id: '',
+            parent_tool_use_id: null,
+            message: { role: 'user', content: prompt },
+          }
+          await closedPromise
+        } finally {
+          signal?.removeEventListener('abort', close)
+        }
+      },
+    },
+    close,
+  }
+}
 
 let sdkModule: SDKModule | null = null
 let sdkLoadAttempted = false
@@ -650,7 +700,12 @@ export class ClaudeSDKExecutor {
                       // Extract questions from input
                       const questions = extractQuestionsFromInput(input)
                       // Wait for user to answer questions
-                      const answers = await questionCallback(sessionId, questions)
+                      const questionContext: SDKQuestionRequestContext = {
+                        questionId: callbackOptions.toolUseID,
+                        requestId: callbackOptions.requestId,
+                        signal: callbackOptions.signal,
+                      }
+                      const answers = await questionCallback(sessionId, questions, questionContext)
                       // Return SDK-compatible answers keyed by question text.
                       return allowTool(
                         buildAskUserQuestionInputWithAnswers(input, questions, answers),
@@ -762,14 +817,16 @@ export class ClaudeSDKExecutor {
         additionalDirectories: options.additionalDirectories ?? null,
       })
 
+      const interactivePrompt = createInteractivePromptStream(prompt, this.abortController.signal)
       try {
-        const queryResult = sdk.query({ prompt, options })
+        const queryResult = sdk.query({ prompt: interactivePrompt.stream, options })
         let maxTurnsResult: SDKResultMessage | null = null
 
         this.activeQuery = queryResult
         try {
           for await (const message of queryResult) {
             if (this.abortController.signal.aborted) break
+            if (message.type === 'result') interactivePrompt.close()
             if (message.type === 'system' && 'subtype' in message && message.subtype === 'init') {
               log.debug('Claude Code init message received', {
                 sparkSessionId: sessionId,
@@ -811,6 +868,7 @@ export class ClaudeSDKExecutor {
             }
           }
         } finally {
+          interactivePrompt.close()
           if (this.activeQuery === queryResult) this.activeQuery = null
         }
 
@@ -855,6 +913,7 @@ export class ClaudeSDKExecutor {
         }
         return
       } catch (err) {
+        interactivePrompt.close()
         if (this.abortController.signal.aborted) {
           // Cancellation events already emitted by the abort signal listener.
           return
@@ -1127,6 +1186,10 @@ function buildElicitationHandler(
       const answerPayload = await questionCallback(
         sessionId,
         fields.map((field) => field.prompt),
+        {
+          ...(request.elicitationId != null ? { questionId: request.elicitationId } : {}),
+          signal: options.signal,
+        },
       )
       if (answerPayload.cancelled === true || answerPayload.declined === true) {
         return { action: 'decline' }

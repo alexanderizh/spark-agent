@@ -178,6 +178,110 @@ describe('Claude SDK event mapper', () => {
     expect(events).not.toContainEqual(expect.objectContaining({ type: 'assistant_message' }))
   })
 
+  it('attributes subagent errors without marking the host agent as failed', () => {
+    const events = mapSDKMessageToEvents({
+      type: 'assistant',
+      uuid: 'subagent-error-1',
+      session_id: 'session-1',
+      parent_tool_use_id: 'tool-researcher',
+      subagent_type: 'researcher',
+      error: 'rate_limit',
+      message: { role: 'assistant', content: [] },
+    } as SDKMessage, { sessionId: 'session-1', turnId: 'turn-1' })
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'agent_error',
+      code: 'CLAUDE_RATE_LIMIT',
+      origin: { kind: 'subagent', toolCallId: 'tool-researcher', name: 'researcher' },
+    }))
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'agent_status',
+      status: 'error',
+    }))
+  })
+
+  it('attributes provider signals only when the active subagent is unambiguous', () => {
+    const context = { sessionId: 'session-1', turnId: 'turn-1' }
+    mapSDKMessageToEvents({
+      type: 'assistant',
+      uuid: 'spawn-1',
+      session_id: 'session-1',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'tool-researcher',
+          name: 'Agent',
+          input: { agent: 'researcher', description: 'Research', prompt: 'Inspect the SDK' },
+        }],
+      },
+    } as SDKMessage, context)
+
+    const attributed = mapSDKMessageToEvents({
+      type: 'system',
+      subtype: 'api_retry',
+      attempt: 3,
+      max_retries: 10,
+      retry_delay_ms: 2_000,
+      error_status: 429,
+      error: 'rate_limit',
+      uuid: 'retry-1',
+      session_id: 'session-1',
+    } as SDKMessage, context)
+    expect(attributed).toContainEqual(expect.objectContaining({
+      type: 'runtime_signal',
+      signal: 'api_retry',
+      origin: { kind: 'subagent', toolCallId: 'tool-researcher', name: 'researcher' },
+    }))
+
+    const permissionDenied = mapSDKMessageToEvents({
+      type: 'system',
+      subtype: 'permission_denied',
+      tool_name: 'Bash',
+      tool_use_id: 'bash-1',
+      message: 'Classifier unavailable',
+      uuid: 'permission-denied-1',
+      session_id: 'session-1',
+    } as SDKMessage, context)
+    expect(permissionDenied).toContainEqual(expect.objectContaining({
+      type: 'runtime_signal',
+      signal: 'permission_denied',
+      origin: { kind: 'subagent', toolCallId: 'tool-researcher', name: 'researcher' },
+    }))
+
+    mapSDKMessageToEvents({
+      type: 'assistant',
+      uuid: 'spawn-2',
+      session_id: 'session-1',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'tool-reviewer',
+          name: 'Agent',
+          input: { agent: 'reviewer', description: 'Review', prompt: 'Review the SDK' },
+        }],
+      },
+    } as SDKMessage, context)
+    const ambiguous = mapSDKMessageToEvents({
+      type: 'system',
+      subtype: 'api_retry',
+      attempt: 4,
+      max_retries: 10,
+      retry_delay_ms: 4_000,
+      error_status: 429,
+      error: 'rate_limit',
+      uuid: 'retry-2',
+      session_id: 'session-1',
+    } as SDKMessage, context)
+    expect(ambiguous).toContainEqual(expect.objectContaining({
+      type: 'runtime_signal',
+      origin: { kind: 'runtime', name: 'Claude SDK（协作来源未明确）' },
+    }))
+  })
+
   it('maps Claude Code compact status messages from real SDK fields', () => {
     const started = mapSDKMessageToEvents({
       type: 'system',

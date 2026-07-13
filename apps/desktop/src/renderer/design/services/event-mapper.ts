@@ -171,6 +171,7 @@ export type UIBlock =
       questions: UserQuestionPrompt[]
       answered: boolean
       answerSummary?: UserQuestionAnswerSummary[]
+      error?: string
     }
   | {
       kind: 'context_ledger'
@@ -587,14 +588,20 @@ export class MessageBuilder {
             (b) => b.kind === 'user_question' && b.toolCallId === event.toolCallId,
           ) as Extract<UIBlock, { kind: 'user_question' }> | undefined
           if (questionBlock) {
-            questionBlock.answered = true
-            // Only overwrite answerSummary if we don't already have one
-            // (answers may have been populated when the user submitted via the dock)
-            if (!questionBlock.answerSummary || questionBlock.answerSummary.length === 0) {
-              questionBlock.answerSummary = extractQuestionAnswerSummary(
-                event.output,
-                questionBlock.questions,
-              )
+            if (event.status === 'success') {
+              questionBlock.answered = true
+              delete questionBlock.error
+              // Only overwrite answerSummary if we don't already have one
+              // (answers may have been populated when the user submitted via the dock)
+              if (!questionBlock.answerSummary || questionBlock.answerSummary.length === 0) {
+                questionBlock.answerSummary = extractQuestionAnswerSummary(
+                  event.output,
+                  questionBlock.questions,
+                )
+              }
+            } else {
+              questionBlock.answered = false
+              questionBlock.error = event.error ?? '提问工具未能完成'
             }
           }
           // Update tool_call block

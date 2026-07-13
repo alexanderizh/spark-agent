@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
-import type { SDKQueryOptions } from '../../sdk/types.js'
+import type { SDKQueryOptions, SDKUserMessage } from '../../sdk/types.js'
 
 const queryMock = vi.hoisted(() => vi.fn())
 
@@ -23,11 +23,70 @@ async function* messages(items: unknown[]) {
   for (const item of items) yield item
 }
 
+async function readPromptText(prompt: string | AsyncIterable<SDKUserMessage>): Promise<string> {
+  if (typeof prompt === 'string') return prompt
+  const first = await prompt[Symbol.asyncIterator]().next()
+  const content = first.value?.message.content
+  return typeof content === 'string' ? content : JSON.stringify(content)
+}
+
 describe('ClaudeSDKExecutor', () => {
   beforeEach(() => {
     queryMock.mockReset()
     resetSDKLoadState()
     getResumeCircuitBreaker().reset()
+  })
+
+  it('keeps streaming input open so a late AskUserQuestion control request can complete', async () => {
+    const questionCallback = vi.fn(async () => ({
+      answers: [{ question: 'Proceed?', answer: 'Yes' }],
+    }))
+    let inputClosed = false
+
+    queryMock.mockImplementation(({ prompt, options }) => (async function* () {
+      expect(typeof prompt).not.toBe('string')
+      const iterator = (prompt as AsyncIterable<SDKUserMessage>)[Symbol.asyncIterator]()
+      const first = await iterator.next()
+      expect(first.value).toMatchObject({
+        type: 'user',
+        parent_tool_use_id: null,
+        message: { role: 'user', content: 'hello' },
+      })
+      const waitingForClose = iterator.next().then((result) => {
+        inputClosed = result.done === true
+      })
+      await Promise.resolve()
+      expect(inputClosed).toBe(false)
+
+      await options.canUseTool?.('AskUserQuestion', {
+        questions: [{ question: 'Proceed?', header: 'Confirm', options: [{ label: 'Yes' }] }],
+      }, {
+        signal: new AbortController().signal,
+        toolUseID: 'late-question',
+        requestId: 'late-request',
+      })
+
+      yield {
+        type: 'result',
+        subtype: 'success',
+        result: 'ok',
+        usage: { input_tokens: 1, output_tokens: 1 },
+        total_cost_usd: 0,
+      }
+      await waitingForClose
+    })())
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      questionCallback,
+    })
+
+    expect(inputClosed).toBe(true)
+    expect(questionCallback).toHaveBeenCalledWith(
+      'sess-1',
+      expect.any(Array),
+      expect.objectContaining({ questionId: 'late-question', requestId: 'late-request' }),
+    )
   })
 
   it('uses a fixed session id for the first turn and resume for later turns', async () => {
@@ -288,7 +347,9 @@ describe('ClaudeSDKExecutor', () => {
     expect(queryMock).toHaveBeenCalledTimes(2)
     expect(firstOptions).toMatchObject({ sessionId: 'sess-1', maxTurns: 25 })
     expect(secondOptions).toMatchObject({ resume: 'sess-1', maxTurns: 50 })
-    expect(queryMock.mock.calls[1]?.[0]?.prompt).toContain('Continue the previous task')
+    await expect(readPromptText(queryMock.mock.calls[1]?.[0]?.prompt)).resolves.toContain(
+      'Continue the previous task',
+    )
     expect(events).toContainEqual(expect.objectContaining({
       type: 'agent_status',
       status: 'thinking',
@@ -636,7 +697,7 @@ describe('ClaudeSDKExecutor', () => {
         type: 'text',
         required: false,
       }),
-    ])
+    ], expect.objectContaining({ signal: expect.anything() }))
   })
 
   it('declines form MCP elicitations when a required field has no usable answer', async () => {
@@ -760,7 +821,11 @@ describe('ClaudeSDKExecutor', () => {
         required: true,
         options: [{ label: 'Yes', description: 'Proceed' }],
       },
-    ])
+    ], expect.objectContaining({
+      questionId: 'tool-question',
+      requestId: 'request-tool-question',
+      signal: expect.anything(),
+    }))
   })
 
   it('registers AskUserQuestion callback even without Spark approval callback', async () => {
@@ -791,6 +856,30 @@ describe('ClaudeSDKExecutor', () => {
       },
     }))
     expect(questionCallback).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the structured question callback installed in every interactive Claude mode', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const questionCallback = vi.fn(async () => ({ answers: [] }))
+    const modes = [
+      'claude-ask',
+      'claude-auto-edits',
+      'claude-plan',
+      'claude-auto',
+      'claude-bypass',
+    ] as const
+
+    for (const [index, permissionMode] of modes.entries()) {
+      await new ClaudeSDKExecutor().executeTurn(`sess-${index}`, 'turn-1', 'hello', {
+        ...baseConfig(),
+        permissionMode,
+        questionCallback,
+      })
+      const options = queryMock.mock.calls[index]?.[0]?.options as SDKQueryOptions
+      expect(typeof options.canUseTool, permissionMode).toBe('function')
+    }
   })
 
   it('denies AskUserQuestion during unattended automation turns', async () => {
@@ -914,7 +1003,11 @@ describe('ClaudeSDKExecutor', () => {
         multiline: true,
         placeholder: '例如：报错、预期行为、复现步骤',
       },
-    ])
+    ], expect.objectContaining({
+      questionId: 'tool-question-2',
+      requestId: 'request-tool-question-2',
+      signal: expect.anything(),
+    }))
   })
 
   it('normalizes multiSelect AskUserQuestion prompts to multi_choice', async () => {
@@ -965,7 +1058,11 @@ describe('ClaudeSDKExecutor', () => {
           { label: 'Svelte' },
         ],
       },
-    ])
+    ], expect.objectContaining({
+      questionId: 'tool-question-multi',
+      requestId: 'request-tool-question-multi',
+      signal: expect.anything(),
+    }))
   })
 
   it('lets SDK-native auto and bypass modes own tool permissions without Spark canUseTool', async () => {

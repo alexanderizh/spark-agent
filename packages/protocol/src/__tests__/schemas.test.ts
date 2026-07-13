@@ -108,6 +108,23 @@ describe('IPC schemas', () => {
     })
   })
 
+  it('requires session-scoped correlation when answering a structured question', () => {
+    expect(
+      IpcSchemaRegistry['session:answer-question'].parse({
+        sessionId: 'session-1',
+        questionId: 'tool-use-1',
+        answers: { answers: [{ question: '继续吗？', answer: '继续' }] },
+      }),
+    ).toMatchObject({ sessionId: 'session-1', questionId: 'tool-use-1' })
+    expect(() =>
+      IpcSchemaRegistry['session:answer-question'].parse({
+        questionId: 'tool-use-1',
+        answers: {},
+      }),
+    ).toThrow()
+    expect(IpcSchemaRegistry['session:list-pending-questions'].parse({})).toEqual({})
+  })
+
   it('accepts auto router provider ids for routing model profile cards', () => {
     const create = IpcSchemaRegistry['model:create'].parse({
       providerId: 'codex-auto-router',

@@ -918,7 +918,11 @@ export function ChatView({
         const cacheKey = getQuestionAnswerCacheKey(userQuestion.questions, userQuestion.sessionId)
         persistQuestionAnswerSummaries(cacheKey, summaries)
       }
-      await answerQuestion({ questionId: userQuestion.questionId, answers })
+      await answerQuestion({
+        sessionId: userQuestion.sessionId,
+        questionId: userQuestion.questionId,
+        answers,
+      })
       onUserQuestionClose?.(userQuestion.sessionId, userQuestion.questionId)
     },
     [answerQuestion, onUserQuestionClose, userQuestion],
@@ -935,6 +939,7 @@ export function ChatView({
       )
     }
     answerQuestion({
+      sessionId: userQuestion.sessionId,
       questionId: userQuestion.questionId,
       answers,
     }).catch(console.error)
@@ -4848,6 +4853,11 @@ function InlineQuestionCard({
             已回答
           </span>
         )}
+        {block.error != null && (
+          <span className="badge" style={{ marginLeft: 8, fontSize: 10, color: 'var(--c-err)' }}>
+            提问失败
+          </span>
+        )}
       </div>
       <div className="chat-card-body" style={{ gap: 10 }}>
         <div className="inline-question-answers">
@@ -4898,7 +4908,11 @@ function InlineQuestionCard({
             共 {total} 题
           </span>
           {!block.answered && (
-            <span style={{ fontSize: 12, color: 'var(--c-dim)' }}>请在底部问答面板中逐题作答</span>
+            <span
+              style={{ fontSize: 12, color: block.error != null ? 'var(--c-err)' : 'var(--c-dim)' }}
+            >
+              {block.error ?? '请在底部问答面板中逐题作答'}
+            </span>
           )}
         </div>
       </div>

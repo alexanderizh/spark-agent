@@ -11,6 +11,7 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
+import { PendingUserQuestionStore } from './user-question-store.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
 import { app, clipboard, dialog, shell, Notification, screen } from 'electron'
@@ -1768,7 +1769,18 @@ function getWorkspaceService(): WorkspaceService {
 }
 
 let _sessionService: SessionService | null = null
-let pendingQuestionResolvers = new Map<string, (answers: Record<string, unknown>) => void>()
+const pendingUserQuestions = new PendingUserQuestionStore({
+  onRequest: (request) => {
+    pushStreamEvent('stream:session:user-question', request)
+  },
+  onClose: (request, reason) => {
+    pushStreamEvent('stream:session:user-question-closed', {
+      questionId: request.questionId,
+      sessionId: request.sessionId,
+      reason,
+    })
+  },
+})
 const remoteTurnTargets = new Map<string, { connectionId: string; externalId: string }>()
 
 function registerRemoteTurn(
@@ -1878,19 +1890,17 @@ function getSessionService(): SessionService {
     }
     const onApprovalCancel = (sessionId: string) => {
       getPermissionService().cancelPendingApprovals(sessionId)
+      pendingUserQuestions.cancelSession(sessionId)
     }
     const onQueueChanged: SessionQueueChangedHandler = (snapshot) => {
       pushStreamEvent('stream:session:queue-changed', snapshot)
     }
-    const onQuestion: QuestionHandler = async (sessionId, questions) => {
-      return new Promise((resolve) => {
-        const questionId = `${sessionId}:${Date.now()}`
-        pendingQuestionResolvers.set(questionId, resolve)
-        pushStreamEvent('stream:session:user-question', {
-          questionId,
-          sessionId,
-          questions,
-        })
+    const onQuestion: QuestionHandler = async (sessionId, questions, context) => {
+      return pendingUserQuestions.request({
+        questionId: context.questionId ?? crypto.randomUUID(),
+        sessionId,
+        questions,
+        ...(context.signal != null ? { signal: context.signal } : {}),
       })
     }
     const onHookTrigger: HookTriggerHandler = (sessionId, node, context) => {
@@ -2009,12 +2019,12 @@ function createHistoryImportService(
 }
 
 /** Resolve a pending user question with the provided answers */
-export function resolveUserQuestion(questionId: string, answers: Record<string, unknown>): void {
-  const resolver = pendingQuestionResolvers.get(questionId)
-  if (resolver) {
-    pendingQuestionResolvers.delete(questionId)
-    resolver(answers)
-  }
+export function resolveUserQuestion(
+  sessionId: string,
+  questionId: string,
+  answers: Record<string, unknown>,
+): boolean {
+  return pendingUserQuestions.resolve(sessionId, questionId, answers)
 }
 
 function getSessionNotificationTitle(sessionId: string, fallback: string): string {
@@ -2981,9 +2991,17 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('session:answer-question', async (req) => {
-    log.info(`session:answer-question requested, questionId=${req.questionId}`)
-    resolveUserQuestion(req.questionId, req.answers)
+    log.info(
+      `session:answer-question requested, sessionId=${req.sessionId} questionId=${req.questionId}`,
+    )
+    if (!resolveUserQuestion(req.sessionId, req.questionId, req.answers)) {
+      throw new SparkError('NOT_FOUND', '该提问已结束或不属于当前会话，请刷新后重试。')
+    }
     return { ok: true }
+  })
+
+  typedIpcHandle('session:list-pending-questions', async (req) => {
+    return { questions: pendingUserQuestions.list(req.sessionId) }
   })
 
   // ─── Provider Handlers ─────────────────────────────────────────────────
