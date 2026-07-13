@@ -1,4 +1,14 @@
-import { AlertCircle, Info, RefreshCw, TriangleAlert } from 'lucide-react'
+import { useState } from 'react'
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Info,
+  RefreshCw,
+  TriangleAlert,
+} from 'lucide-react'
+import type { RuntimeEventOrigin } from '@spark/protocol'
+import './StreamingErrorCard.css'
 
 export interface StreamingErrorCardProps {
   code?: string
@@ -8,6 +18,8 @@ export interface StreamingErrorCardProps {
   retryable: boolean
   actionHint?: string
   details?: Array<{ label: string; value: string }>
+  origin?: RuntimeEventOrigin
+  occurrenceCount?: number
   onRetry?: () => void
 }
 
@@ -19,39 +31,76 @@ export function StreamingErrorCard({
   retryable,
   actionHint,
   details = [],
+  origin,
+  occurrenceCount = 1,
   onRetry,
 }: StreamingErrorCardProps) {
+  const [expanded, setExpanded] = useState(false)
   const StatusIcon = level === 'error' ? AlertCircle : level === 'warning' ? TriangleAlert : Info
+  const sourceLabel = origin?.kind === 'subagent' ? `协作 Agent · ${origin.name}` : origin?.name
+  const retryProgress = details.find((detail) => detail.label === '重试进度')?.value
+  const httpStatus = details.find((detail) => detail.label === 'HTTP 状态')?.value
+  const compactMeta = [
+    sourceLabel,
+    retryProgress != null ? `重试 ${retryProgress}` : undefined,
+    httpStatus != null ? `HTTP ${httpStatus}` : undefined,
+    occurrenceCount > 1 ? `累计 ${occurrenceCount} 次` : undefined,
+  ].filter((value): value is string => value != null)
+
   return (
     <section
-      className={`streaming-error-card is-${level}`}
+      className={`runtime-diagnostic-card is-${level}${expanded ? ' is-expanded' : ''}`}
       role="group"
       aria-label={`${title}${code != null ? ` (${code})` : ''}`}
     >
-      <div className="streaming-error-card-head">
-        <StatusIcon size={15} aria-hidden="true" />
-        <strong>{title}</strong>
+      <button
+        type="button"
+        className="runtime-diagnostic-summary"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <StatusIcon className="runtime-diagnostic-status-icon" size={16} aria-hidden="true" />
+        <span className="runtime-diagnostic-heading">
+          <span className="runtime-diagnostic-title-row">
+            <strong>{title}</strong>
+            {compactMeta.map((item) => (
+              <span className="runtime-diagnostic-meta" key={item}>
+                {item}
+              </span>
+            ))}
+          </span>
+          {!expanded && <span className="runtime-diagnostic-preview">{message}</span>}
+        </span>
         {code != null && code.length > 0 && <code>{code}</code>}
-      </div>
-      <p>{message}</p>
-      {details.length > 0 && (
-        <dl className="streaming-error-details">
-          {details.map((detail, index) => (
-            <div key={`${detail.label}:${detail.value}:${index}`}>
-              <dt>{detail.label}</dt>
-              <dd>{detail.value}</dd>
+        {expanded ? (
+          <ChevronDown size={15} aria-hidden="true" />
+        ) : (
+          <ChevronRight size={15} aria-hidden="true" />
+        )}
+      </button>
+      {expanded && (
+        <div className="runtime-diagnostic-body">
+          <p>{message}</p>
+          {details.length > 0 && (
+            <dl className="runtime-diagnostic-details">
+              {details.map((detail, index) => (
+                <div key={`${detail.label}:${detail.value}:${index}`}>
+                  <dt>{detail.label}</dt>
+                  <dd>{detail.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {(actionHint != null || (retryable && onRetry != null)) && (
+            <div className="runtime-diagnostic-actions">
+              {actionHint != null && <span>{actionHint}</span>}
+              {retryable && onRetry != null && (
+                <button type="button" onClick={onRetry}>
+                  <RefreshCw size={13} aria-hidden="true" />
+                  重试
+                </button>
+              )}
             </div>
-          ))}
-        </dl>
-      )}
-      {(actionHint != null || (retryable && onRetry != null)) && (
-        <div className="streaming-error-actions">
-          {actionHint != null && <span>{actionHint}</span>}
-          {retryable && onRetry != null && (
-            <button type="button" onClick={onRetry}>
-              <RefreshCw size={13} aria-hidden="true" />
-              重试
-            </button>
           )}
         </div>
       )}

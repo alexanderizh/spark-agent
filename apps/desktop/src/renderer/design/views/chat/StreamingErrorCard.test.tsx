@@ -41,10 +41,21 @@ describe('StreamingErrorCard', () => {
 
     expect(container.textContent).toContain('请求受到限流')
     expect(container.textContent).toContain('当前额度窗口已耗尽。')
+    expect(container.textContent).not.toContain('重置时间')
+    expect(container.textContent).not.toContain('额度重置后再试。')
+
+    const summaryButton = container.querySelector<HTMLButtonElement>(
+      '.runtime-diagnostic-summary',
+    )
+    expect(summaryButton?.getAttribute('aria-expanded')).toBe('false')
+    act(() => summaryButton?.click())
+
     expect(container.textContent).toContain('重置时间')
     expect(container.textContent).toContain('额度重置后再试。')
-    const retryButton = container.querySelector<HTMLButtonElement>('button')
-    expect(retryButton?.textContent).toContain('重试')
+    expect(summaryButton?.getAttribute('aria-expanded')).toBe('true')
+    const retryButton = container.querySelector<HTMLButtonElement>(
+      '.runtime-diagnostic-actions button',
+    )
     act(() => retryButton?.click())
     expect(onRetry).toHaveBeenCalledOnce()
   })
@@ -62,6 +73,10 @@ describe('StreamingErrorCard', () => {
       )
     })
 
-    expect(container.querySelector('button')).toBeNull()
+    const summaryButton = container.querySelector<HTMLButtonElement>(
+      '.runtime-diagnostic-summary',
+    )
+    act(() => summaryButton?.click())
+    expect(container.querySelector('.runtime-diagnostic-actions button')).toBeNull()
   })
 })

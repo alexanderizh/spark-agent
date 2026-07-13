@@ -68,8 +68,41 @@ describe('RuntimeSignalCard', () => {
 
     act(() => root.render(<RuntimeSignalCard block={block} />))
 
-    expect(container.querySelector('.streaming-error-card')).not.toBeNull()
+    expect(container.querySelector('.runtime-diagnostic-card')).not.toBeNull()
     expect(container.textContent).toContain('CLAUDE_RATE_LIMIT_WARNING')
+  })
+
+  it('keeps retry details collapsed while showing source and latest progress', () => {
+    const block: RuntimeSignalBlock = {
+      kind: 'runtime_signal',
+      signal: 'api_retry',
+      level: 'warning',
+      title: 'Claude API 正在重试',
+      message: '当前请求超过了 Claude 的额度或速率限制。',
+      code: 'CLAUDE_API_RETRY_RATE_LIMIT',
+      retryable: false,
+      origin: { kind: 'subagent', toolCallId: 'tool-1', name: 'researcher' },
+      occurrenceCount: 7,
+      details: [
+        { label: '重试进度', value: '7/10' },
+        { label: '等待时间', value: '30000 ms' },
+        { label: 'HTTP 状态', value: '429' },
+      ],
+    }
+
+    act(() => root.render(<RuntimeSignalCard block={block} />))
+
+    expect(container.textContent).toContain('协作 Agent · researcher')
+    expect(container.textContent).toContain('重试 7/10')
+    expect(container.textContent).toContain('累计 7 次')
+    expect(container.textContent).not.toContain('等待时间')
+    const toggle = container.querySelector<HTMLButtonElement>('.runtime-diagnostic-summary')
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false')
+
+    act(() => toggle?.click())
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+    expect(container.textContent).toContain('等待时间')
+    expect(container.textContent).toContain('30000 ms')
   })
 
   it('renders the completed snapshot without an expandable empty section', () => {

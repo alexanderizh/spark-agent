@@ -27,6 +27,8 @@ export interface SDKAssistantMessage {
   }
   parent_tool_use_id: string | null
   error?: SDKAssistantMessageError
+  subagent_type?: string
+  task_description?: string
   supersedes?: string[]
 }
 
