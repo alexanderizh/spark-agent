@@ -5,7 +5,8 @@
 
   .canvas-node {
     --canvas-node-meta-height: 39px;
-    overflow: hidden;
+    // 锚点与 NodeResizer 位于节点边界外；内容裁切由 .canvas-node-core 负责。
+    overflow: visible;
     border: 1px solid var(--canvas-v4-border);
     border-radius: 8px;
     background: var(--canvas-v4-surface);
@@ -99,6 +100,19 @@
     padding: 0;
     border-radius: 0;
     background: var(--canvas-v4-surface);
+  }
+
+  .canvas-node-core {
+    overflow: hidden;
+    border-radius: 0 0 7px 7px;
+  }
+
+  .canvas-node-resize-line {
+    z-index: 9 !important;
+  }
+
+  .canvas-node-resize-handle {
+    z-index: 10 !important;
   }
 
   .canvas-node-body > .canvas-node-operation {
@@ -315,11 +329,31 @@
   }
 
   .canvas-node-handle {
-    width: 10px;
-    height: 10px;
-    border: 2px solid var(--panel);
-    background: var(--text-faint);
+    --canvas-node-handle-scale: 1;
+    display: flex;
+    width: 28px;
+    height: 28px;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
     box-shadow: none;
+    opacity: 1;
+
+    &::after {
+      width: 10px;
+      height: 10px;
+      border: 2px solid var(--panel);
+      border-radius: 50%;
+      background: var(--text-faint);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent);
+      content: '';
+      pointer-events: none;
+      transition:
+        width var(--canvas-v4-motion-fast) ease-out,
+        height var(--canvas-v4-motion-fast) ease-out,
+        background var(--canvas-v4-motion-fast) ease-out;
+    }
   }
 
   .canvas-node-group {
@@ -335,6 +369,15 @@
 
   .canvas-node-selected .canvas-node-handle,
   .canvas-node-handle:hover {
+    --canvas-node-handle-scale: 1;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .canvas-node-selected .canvas-node-handle::after,
+  .canvas-node-handle:hover::after {
+    width: 12px;
+    height: 12px;
     background: var(--primary);
   }
 

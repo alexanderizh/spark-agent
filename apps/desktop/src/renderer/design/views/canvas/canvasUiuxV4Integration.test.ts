@@ -9,7 +9,13 @@ describe('canvas UI/UX V4 integration', () => {
   it('loads the modular V4 stylesheet from the real workspace and scopes it locally', () => {
     const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
     const stylesheetEntry = readCanvasSource('./uiux-v4/index.less')
-    const scopedModules = ['theme.less', 'nodes.less', 'panels.less', 'workbenches.less']
+    const scopedModules = [
+      'theme.less',
+      'stage.less',
+      'nodes.less',
+      'panels.less',
+      'workbenches.less',
+    ]
 
     expect(workspace).toContain("import './uiux-v4/index.less'")
     expect(workspace).toContain('className="canvas-workspace canvas-uiux-v4"')
