@@ -1208,32 +1208,48 @@ function SkillHubMarketTab({
   const hubCategories = useSkillHubCategories()
   const [selectedCategoryKey, setSelectedCategoryKey] = useState('all')
   const featured = useSkillHubFeatured({ section: hubSection, category: selectedCategoryKey })
+  const refreshFeatured = featured.refresh
   const [hubQuery, setHubQuery] = useState('')
-  const hubSearch = useSkillHubSearch(hubQuery, 18, { category: selectedCategoryKey })
-  const hubSearching = hubSearch.searching
   const [hubPage, setHubPage] = useState(1)
+  const hubSearch = useSkillHubSearch(hubQuery, SKILLHUB_PAGE_SIZE, {
+    category: selectedCategoryKey,
+    offset: (hubPage - 1) * SKILLHUB_PAGE_SIZE,
+  })
+  const refreshHubSearch = hubSearch.refresh
+  const hubSearching = hubSearch.searching
   const { invoke: installRemote } = useIpcInvoke('skill:install-remote')
   const { invoke: uninstallRemote } = useIpcInvoke('skill-registry:uninstall')
   const { requestConfirm } = useApp()
   const { toast } = useToast()
 
-  // 外部 skill 变更（如其他 Tab 安装/卸载）时，只刷新 featured 的 installed 标记，
+  const refreshMarketplace = useCallback(() => {
+    refreshFeatured()
+    refreshHubSearch()
+  }, [refreshFeatured, refreshHubSearch])
+
+  // 外部 skill 变更（如其他 Tab 安装/卸载）时，刷新当前市场数据的 installed 标记，
   // 不重置搜索/分类/分页等 UI state —— 本 Tab 已脱离父级 refreshKey 重挂载机制。
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
-    const refresh = featured.refresh
     return (
       window.spark?.on?.('stream:config:changed', (event) => {
-        if (event.scope === 'skill') refresh()
+        if (event.scope === 'skill') refreshMarketplace()
       }) ?? (() => {})
     )
-  }, [featured.refresh])
+  }, [refreshMarketplace])
 
   const filteredFeatured = featured.skills
-  const hubTotal = hubSearching ? hubSearch.skills.length : filteredFeatured.length
+  const hubTotal = hubSearching ? hubSearch.total : filteredFeatured.length
   const hubDisplay = hubSearching
     ? hubSearch.skills
     : paginate(filteredFeatured, hubPage, SKILLHUB_PAGE_SIZE)
+
+  useEffect(() => {
+    const lastPage = Math.max(1, Math.ceil(hubTotal / SKILLHUB_PAGE_SIZE))
+    if (hubPage <= lastPage) return undefined
+    const timer = window.setTimeout(() => setHubPage(lastPage), 0)
+    return () => window.clearTimeout(timer)
+  }, [hubPage, hubTotal])
 
   const handleInstallRemote = useCallback(
     async (skill: RemoteSkillItem) => {
@@ -1244,7 +1260,7 @@ function SkillHubMarketTab({
       try {
         const res = await installRemote({ registryId: skill.registryId, slug })
         toast.success(`已安装「${skill.name}」`)
-        featured.refresh()
+        refreshMarketplace()
         onInstalled()
         onSkillReady({ id: res.skill.id, name: res.skill.name })
       } catch (err) {
@@ -1257,7 +1273,7 @@ function SkillHubMarketTab({
         })
       }
     },
-    [installRemote, featured, onInstalled, onSkillReady, setProgress, toast],
+    [installRemote, refreshMarketplace, onInstalled, onSkillReady, setProgress, toast],
   )
 
   const handleUninstallRemote = useCallback(
@@ -1273,13 +1289,13 @@ function SkillHubMarketTab({
       try {
         await uninstallRemote({ localSkillId: skill.localId })
         toast.success(`已卸载「${skill.name}」`)
-        featured.refresh()
+        refreshMarketplace()
         onInstalled()
       } catch (err) {
         toast.error(err instanceof Error ? err.message : `卸载「${skill.name}」失败`)
       }
     },
-    [uninstallRemote, featured, onInstalled, requestConfirm, toast],
+    [uninstallRemote, refreshMarketplace, onInstalled, requestConfirm, toast],
   )
 
   const handleHubSectionChange = useCallback(
@@ -1321,7 +1337,10 @@ function SkillHubMarketTab({
             <SearchBar
               placeholder="搜索 SkillHub 技能..."
               value={hubQuery}
-              onInputChange={(value) => setHubQuery(value)}
+              onInputChange={(value) => {
+                setHubQuery(value)
+                setHubPage(1)
+              }}
               allowClear
             />
             <ActionIcon
@@ -1409,7 +1428,7 @@ function SkillHubMarketTab({
                 )
               })}
             </div>
-            {!hubSearching && hubTotal > SKILLHUB_PAGE_SIZE && (
+            {hubTotal > SKILLHUB_PAGE_SIZE && (
               <Pagination
                 className="skill-store-pagination"
                 size="middle"

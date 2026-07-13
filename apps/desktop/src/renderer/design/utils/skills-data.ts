@@ -4,7 +4,7 @@
  * Provides a unified data layer for skill management views.
  * All data flows through the real IPC layer (skill:list / skill:update / etc.).
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   InstallableSkillCatalogItem,
   LocalSkillCandidate,
@@ -141,14 +141,15 @@ export function getCandidateSources(candidates: LocalSkillCandidate[]): string[]
 /** Default page size for skill lists */
 export const SKILL_PAGE_SIZE = 20
 
-/** Page size for the SkillHub featured grid (richer cards → fewer per page) */
-export const SKILLHUB_PAGE_SIZE = 12
+/** Page size for SkillHub marketplace lists and searches */
+export const SKILLHUB_PAGE_SIZE = 20
 
 /**
  * Slice a list for paginated display.
  */
 export function paginate<T>(items: T[], page: number, pageSize: number): T[] {
-  return items.slice(0, page * pageSize)
+  const start = (page - 1) * pageSize
+  return items.slice(start, start + pageSize)
 }
 
 /* ────────── useSkills hook ────────── */
@@ -317,6 +318,7 @@ export function useSkillHubFeatured(
 } {
   const [skills, setSkills] = useState<RemoteSkillItem[]>([])
   const [error, setError] = useState('')
+  const requestIdRef = useRef(0)
   const { invoke: featured, loading } = useIpcInvoke('skill-registry:featured')
 
   const section: SkillHubShowcaseSection = opts.section ?? 'recommended'
@@ -324,6 +326,8 @@ export function useSkillHubFeatured(
   const category = opts.category && opts.category !== 'all' ? opts.category : ''
 
   const refresh = useCallback(() => {
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
     setError('')
     featured({
       registryId: 'skillhub',
@@ -332,9 +336,11 @@ export function useSkillHubFeatured(
       ...(category ? { category } : {}),
     })
       .then((res) => {
+        if (requestId !== requestIdRef.current) return
         setSkills(deduplicateRemoteSkills(res.skills ?? []))
       })
       .catch((err) => {
+        if (requestId !== requestIdRef.current) return
         setError(err instanceof Error ? err.message : '加载 SkillHub 推荐失败')
         setSkills([])
       })
@@ -404,25 +410,31 @@ export function useSkillHubCategories(): {
  */
 export function useSkillHubSearch(
   query: string,
-  limit = 18,
-  opts: { category?: string } = {},
+  limit = SKILLHUB_PAGE_SIZE,
+  opts: { category?: string; offset?: number } = {},
 ): {
   skills: RemoteSkillItem[]
+  total: number
   loading: boolean
   error: string
   searching: boolean
+  refresh: () => void
 } {
   const [skills, setSkills] = useState<RemoteSkillItem[]>([])
+  const [total, setTotal] = useState(0)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
   const { invoke: search } = useIpcInvoke('skill-registry:search')
 
   const term = query.trim()
   const category = opts.category && opts.category !== 'all' ? opts.category : ''
+  const offset = Math.max(0, opts.offset ?? 0)
 
   useEffect(() => {
     if (!term) {
       setSkills([])
+      setTotal(0)
       setError('')
       setLoading(false)
       return
@@ -435,16 +447,19 @@ export function useSkillHubSearch(
         registryId: 'skillhub',
         query: term,
         limit,
+        offset,
         ...(category ? { category } : {}),
       })
         .then((res) => {
           if (cancelled) return
           setSkills(deduplicateRemoteSkills(res.skills ?? []))
+          setTotal(res.total)
         })
         .catch((err) => {
           if (cancelled) return
           setError(err instanceof Error ? err.message : '搜索 SkillHub 技能失败')
           setSkills([])
+          setTotal(0)
         })
         .finally(() => {
           if (!cancelled) setLoading(false)
@@ -455,7 +470,11 @@ export function useSkillHubSearch(
       cancelled = true
       clearTimeout(timer)
     }
-  }, [term, limit, category, search])
+  }, [term, limit, offset, category, search, refreshKey])
 
-  return { skills, loading, error, searching: term.length > 0 }
+  const refresh = useCallback(() => {
+    setRefreshKey((key) => key + 1)
+  }, [])
+
+  return { skills, total, loading, error, searching: term.length > 0, refresh }
 }
