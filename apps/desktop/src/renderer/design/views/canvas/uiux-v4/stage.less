@@ -1,0 +1,16 @@
+.canvas-workspace.canvas-uiux-v4 {
+  // 可见连线保持稳定的屏幕像素宽度，低缩放下也不会细成发丝。
+  .react-flow__edge .react-flow__edge-path {
+    stroke-width: 2px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .react-flow__edge.selected .react-flow__edge-path {
+    stroke-width: 3px;
+  }
+
+  // 透明交互路径独立于可见路径；避免选中态的 stroke-width 覆盖命中宽度。
+  .react-flow__edge .react-flow__edge-interaction {
+    stroke-width: 36px;
+  }
+}

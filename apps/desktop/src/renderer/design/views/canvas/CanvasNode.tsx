@@ -572,9 +572,10 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   // 但旧节点的物理尺寸不会自动放大（仅影响新建，参见 canvasNodeSize.ts 顶部说明）。
   const isTextLong = isLongText(node.data.text)
   const minSize = pickCanvasNodeMinSize(node.type, node.data.text)
-  // 仅选中节点挂载缩放控件。此前依赖全局选中数量 Context，任何一次点选都会
-  // 广播并强制所有 CanvasNode 绕过 memo 重渲染。
-  const showResizer = !locked && selected
+  const [resizeHovered, setResizeHovered] = useState(false)
+  const [resizing, setResizing] = useState(false)
+  // 未锁定节点在选中或悬浮时挂载缩放控件，无需先点击，同时避免所有节点常驻控件。
+  const showResizer = !locked && (selected || resizeHovered || resizing)
   const imageSrc = node.data.thumbnailUrl ?? node.data.url
   const normalizedImageSrc = imageSrc ? normalizeEduAssetUrl(imageSrc) : ''
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
@@ -1224,6 +1225,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           data-canvas-node-id={node.id}
           className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && node.data.status === 'running' ? ' canvas-node-task-running' : ''}${isTask && node.data.status === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}`}
           style={nodeStyle}
+          onPointerEnter={() => setResizeHovered(true)}
+          onPointerLeave={() => setResizeHovered(false)}
           onDoubleClick={(event) => {
             event.stopPropagation()
             actions.editNode(node.id)
@@ -1239,6 +1242,8 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             keepAspectRatio={keepsCanvasMediaNodeAspectRatio(node.type)}
             handleClassName="canvas-node-resize-handle"
             lineClassName="canvas-node-resize-line"
+            onResizeStart={() => setResizing(true)}
+            onResizeEnd={() => setResizing(false)}
           />
           <Handle type="target" position={Position.Left} className="canvas-node-handle" />
           {inlineToolbar ? (
