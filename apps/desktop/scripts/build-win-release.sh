@@ -172,9 +172,15 @@ verify_windows_signature() {
     verify_path="$(cygpath -w "$exe_path")"
   fi
 
-  "$ps_cmd" -NoProfile -Command '
-param([string]$Path)
-$sig = Get-AuthenticodeSignature -FilePath $Path
+  VERIFY_WINDOWS_SIGNATURE_PATH="$verify_path" "$ps_cmd" -NoProfile -Command '
+$path = $env:VERIFY_WINDOWS_SIGNATURE_PATH
+if ([string]::IsNullOrWhiteSpace($path)) {
+  throw "VERIFY_WINDOWS_SIGNATURE_PATH is empty"
+}
+if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+  throw "Windows artifact does not exist: $path"
+}
+$sig = Get-AuthenticodeSignature -LiteralPath $path
 Write-Host ("  Status : {0}" -f $sig.Status)
 Write-Host ("  Message: {0}" -f $sig.StatusMessage)
 if ($sig.SignerCertificate) {
