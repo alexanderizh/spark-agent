@@ -2257,6 +2257,10 @@ body.sidebar-resizing {
   margin-left: auto;
   margin-right: auto;
 }
+/* 用户气泡底色为 --primary-soft（非页面 --bg），折叠渐变需对齐气泡自身底色，避免底部出现异色补丁 */
+.msg-bubble-user .collapsible-content.is-collapsed::after {
+  background: linear-gradient(transparent, var(--primary-soft));
+}
 
 /* Tool call block */
 .tool-call {
