@@ -5624,7 +5624,9 @@ const UserMsg = React.memo(
         {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
         <div className="msg-user-line">
           <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
-            <div className="msg-content">{children}</div>
+            <div className="msg-content">
+              <CollapsibleContent>{children}</CollapsibleContent>
+            </div>
           </div>
         </div>
         {mentionAgentName != null && mentionAgentName.length > 0 && (
