@@ -1,7 +1,7 @@
 .canvas-operation-workbench {
   display: flex;
   width: 100%;
-  min-height: 0;
+  min-height: clamp(440px, 56vh, 620px);
   max-height: min(72vh, 780px);
   flex: 1 1 auto;
   flex-direction: column;
@@ -70,7 +70,7 @@
 
 .canvas-operation-workbench-content {
   display: flex;
-  min-height: 0;
+  min-height: 380px;
   flex: 1 1 auto;
   flex-direction: column;
   overflow: hidden;

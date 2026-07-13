@@ -17,7 +17,7 @@ import './CanvasImageAnnotationModal.less'
 
 type Point = { x: number; y: number }
 type DrawTool = 'rect' | 'ellipse' | 'arrow' | 'pen' | 'eraser' | 'mosaic' | 'text' | 'crop'
-type Tool = 'select' | DrawTool
+type Tool = 'select' | 'pan' | DrawTool
 type WidthKey = 'thin' | 'medium' | 'thick'
 /** 手柄方位 */
 type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -61,14 +61,30 @@ const WIDTH_OPTIONS: Array<{ key: WidthKey; label: string; value: number }> = [
 ]
 
 const TOOL_ITEMS: Array<{ key: Tool; label: string; hotkey: string; icon: ReactNode }> = [
-  { key: 'select', label: '选择 (V) · 拖动/缩放/删除', hotkey: 'V', icon: <Icons.MousePointer size={17} /> },
+  {
+    key: 'select',
+    label: '选择 (V) · 拖动/缩放/删除',
+    hotkey: 'V',
+    icon: <Icons.MousePointer size={17} />,
+  },
+  { key: 'pan', label: '移动画布 (H)', hotkey: 'H', icon: <Icons.Hand size={17} /> },
   { key: 'rect', label: '矩形 (R)', hotkey: 'R', icon: <Icons.Square size={17} /> },
   { key: 'ellipse', label: '圆形 (O)', hotkey: 'O', icon: <Icons.Circle size={17} /> },
   { key: 'arrow', label: '箭头 (A)', hotkey: 'A', icon: <Icons.ArrowUpRight size={17} /> },
   { key: 'pen', label: '画笔 (P)', hotkey: 'P', icon: <Icons.Pencil size={17} /> },
   { key: 'text', label: '文字 (T) · 点击即输入', hotkey: 'T', icon: <Icons.Type size={17} /> },
-  { key: 'mosaic', label: '马赛克 (M)', hotkey: 'M', icon: <span className="canvas-annotate-tool-glyph mosaic" /> },
-  { key: 'eraser', label: '橡皮擦 (E) · 擦除为透明', hotkey: 'E', icon: <Icons.Eraser size={17} /> },
+  {
+    key: 'mosaic',
+    label: '马赛克 (M)',
+    hotkey: 'M',
+    icon: <span className="canvas-annotate-tool-glyph mosaic" />,
+  },
+  {
+    key: 'eraser',
+    label: '橡皮擦 (E) · 擦除为透明',
+    hotkey: 'E',
+    icon: <Icons.Eraser size={17} />,
+  },
   { key: 'crop', label: '裁切 (C)', hotkey: 'C', icon: <Icons.Crop size={17} /> },
 ]
 
@@ -80,7 +96,10 @@ let shapeIdSeq = 0
 const nextId = () => `s${++shapeIdSeq}`
 
 /** DOM 坐标 → canvas 内部分辨率坐标 */
-function canvasPoint(event: React.PointerEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement): Point {
+function canvasPoint(
+  event: React.PointerEvent<HTMLCanvasElement>,
+  canvas: HTMLCanvasElement,
+): Point {
   const rect = canvas.getBoundingClientRect()
   return {
     x: ((event.clientX - rect.left) / rect.width) * canvas.width,
@@ -100,7 +119,13 @@ function isLightColor(color: string): boolean {
   let b = 0
   if (c.startsWith('#')) {
     const hex = c.slice(1)
-    const full = hex.length === 3 ? hex.split('').map((x) => x + x).join('') : hex
+    const full =
+      hex.length === 3
+        ? hex
+            .split('')
+            .map((x) => x + x)
+            .join('')
+        : hex
     r = parseInt(full.slice(0, 2), 16)
     g = parseInt(full.slice(2, 4), 16)
     b = parseInt(full.slice(4, 6), 16)
@@ -137,19 +162,38 @@ function drawArrow(ctx: CanvasRenderingContext2D, from: Point, to: Point, lineWi
   ctx.stroke()
   ctx.beginPath()
   ctx.moveTo(to.x, to.y)
-  ctx.lineTo(to.x - headLength * Math.cos(angle - Math.PI / 6), to.y - headLength * Math.sin(angle - Math.PI / 6))
+  ctx.lineTo(
+    to.x - headLength * Math.cos(angle - Math.PI / 6),
+    to.y - headLength * Math.sin(angle - Math.PI / 6),
+  )
   ctx.moveTo(to.x, to.y)
-  ctx.lineTo(to.x - headLength * Math.cos(angle + Math.PI / 6), to.y - headLength * Math.sin(angle + Math.PI / 6))
+  ctx.lineTo(
+    to.x - headLength * Math.cos(angle + Math.PI / 6),
+    to.y - headLength * Math.sin(angle + Math.PI / 6),
+  )
   ctx.stroke()
 }
 
 /** 把归一化 points(0~1) 按 shape 包围盒还原为 canvas 绝对坐标 */
-function absPoints(shape: { x: number; y: number; w: number; h: number; points: Point[] }): Point[] {
+function absPoints(shape: {
+  x: number
+  y: number
+  w: number
+  h: number
+  points: Point[]
+}): Point[] {
   return shape.points.map((p) => ({ x: shape.x + p.x * shape.w, y: shape.y + p.y * shape.h }))
 }
 
 /** 单点马赛克 */
-function mosaicBlock(ctx: CanvasRenderingContext2D, bg: CanvasImageSource, bgW: number, bgH: number, point: Point, size: number) {
+function mosaicBlock(
+  ctx: CanvasRenderingContext2D,
+  bg: CanvasImageSource,
+  bgW: number,
+  bgH: number,
+  point: Point,
+  size: number,
+) {
   const x = clamp(Math.round(point.x - size / 2), 0, bgW)
   const y = clamp(Math.round(point.y - size / 2), 0, bgH)
   const w = Math.min(size, bgW - x)
@@ -206,7 +250,15 @@ function drawShape(
     ctx.strokeRect(s.x, s.y, s.w, s.h)
   } else if (s.type === 'ellipse') {
     ctx.beginPath()
-    ctx.ellipse(s.x + s.w / 2, s.y + s.h / 2, Math.abs(s.w / 2), Math.abs(s.h / 2), 0, 0, Math.PI * 2)
+    ctx.ellipse(
+      s.x + s.w / 2,
+      s.y + s.h / 2,
+      Math.abs(s.w / 2),
+      Math.abs(s.h / 2),
+      0,
+      0,
+      Math.PI * 2,
+    )
     ctx.stroke()
   } else if (s.type === 'arrow') {
     drawArrow(ctx, { x: s.x, y: s.y }, { x: s.x + s.w, y: s.y + s.h }, s.width)
@@ -305,7 +357,12 @@ function hitShape(p: Point, s: Shape): boolean {
     const pts = absPoints(s)
     const thresh = Math.max(8, s.width * 2)
     const first = pts[0]
-    if (p.x < nx - thresh || p.x > nx + nw + thresh || p.y < ny - thresh || p.y > ny + nh + thresh) {
+    if (
+      p.x < nx - thresh ||
+      p.x > nx + nw + thresh ||
+      p.y < ny - thresh ||
+      p.y > ny + nh + thresh
+    ) {
       if (pts.length === 1 && first) return Math.hypot(p.x - first.x, p.y - first.y) <= thresh
       return false
     }
@@ -382,6 +439,13 @@ export function CanvasImageAnnotationModal({
   /** 背景图（原图） */
   const bgRef = useRef<HTMLImageElement | null>(null)
   const interactionRef = useRef<Interaction>({ mode: 'idle' })
+  const panInteractionRef = useRef<{
+    pointerId: number
+    clientX: number
+    clientY: number
+    originX: number
+    originY: number
+  } | null>(null)
 
   const [tool, setTool] = useState<Tool>('select')
   const [color, setColor] = useState<string>(DEFAULT_ANNOTATION_COLOR)
@@ -390,6 +454,10 @@ export function CanvasImageAnnotationModal({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [history, setHistory] = useState<Shape[][]>([[]])
   const [cursor, setCursor] = useState(0)
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 })
+  const [isPanning, setIsPanning] = useState(false)
+  const [minimized, setMinimized] = useState(false)
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
   const [readySrc, setReadySrc] = useState<string | null>(null)
   /** 文字浮层 */
@@ -401,11 +469,27 @@ export function CanvasImageAnnotationModal({
   const [, setRenderTick] = useState(0)
   const bumpRender = useCallback(() => setRenderTick((n) => n + 1), [])
 
-  const src = useMemo(() => normalizeEduAssetUrl(node?.data.thumbnailUrl ?? node?.data.url ?? ''), [node])
+  const src = useMemo(
+    () => normalizeEduAssetUrl(node?.data.thumbnailUrl ?? node?.data.url ?? ''),
+    [node],
+  )
   const strokeWidth = WIDTH_OPTIONS.find((w) => w.key === widthKey)?.value ?? 4
-  const selectedShape = useMemo(() => shapes.find((s) => s.id === selectedId) ?? null, [shapes, selectedId])
+  const selectedShape = useMemo(
+    () => shapes.find((s) => s.id === selectedId) ?? null,
+    [shapes, selectedId],
+  )
   const canUndo = cursor > 0
   const canRedo = cursor >= 0 && cursor < history.length - 1
+  const hasUnsavedChanges = cursor > 0 || shapes.length > 0 || textDraft.trim().length > 0
+
+  const resetView = useCallback(() => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }, [])
+
+  const updateZoom = useCallback((nextZoom: number) => {
+    setZoom(clamp(nextZoom, 0.25, 4))
+  }, [])
 
   /** 把当前 shapes 记为新历史节点：截断 cursor 之后并 push */
   const commit = useCallback(
@@ -478,6 +562,8 @@ export function CanvasImageAnnotationModal({
     setSelectedId(null)
     setHistory([[]])
     setCursor(0)
+    resetView()
+    setMinimized(false)
     setTextEditing(false)
     const image = new Image()
     image.crossOrigin = 'anonymous'
@@ -495,7 +581,7 @@ export function CanvasImageAnnotationModal({
       message.error('图片加载失败，无法标注')
     }
     image.src = src
-  }, [open, src])
+  }, [open, resetView, src])
 
   // 画布尺寸/状态变化时重绘
   useEffect(() => {
@@ -519,6 +605,19 @@ export function CanvasImageAnnotationModal({
     (event: React.PointerEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current
       if (!canvas || readySrc !== src || status !== 'idle') return
+
+      if (tool === 'pan') {
+        panInteractionRef.current = {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          originX: pan.x,
+          originY: pan.y,
+        }
+        setIsPanning(true)
+        canvas.setPointerCapture(event.pointerId)
+        return
+      }
       const p = canvasPoint(event, canvas)
 
       // 文字工具：点击即输入
@@ -534,7 +633,12 @@ export function CanvasImageAnnotationModal({
         if (selectedShape) {
           const h = hitHandle(p, selectedShape)
           if (h) {
-            interactionRef.current = { mode: 'resize', handle: h, start: p, orig: { ...selectedShape } }
+            interactionRef.current = {
+              mode: 'resize',
+              handle: h,
+              start: p,
+              orig: { ...selectedShape },
+            }
             canvas.setPointerCapture(event.pointerId)
             return
           }
@@ -552,7 +656,16 @@ export function CanvasImageAnnotationModal({
 
       // 裁切：用矩形选区临时交互，up 时执行像素裁切
       if (tool === 'crop') {
-        const shape: Shape = { id: nextId(), type: 'rect', color: DEFAULT_ANNOTATION_COLOR, width: 1, x: p.x, y: p.y, w: 0, h: 0 }
+        const shape: Shape = {
+          id: nextId(),
+          type: 'rect',
+          color: DEFAULT_ANNOTATION_COLOR,
+          width: 1,
+          x: p.x,
+          y: p.y,
+          w: 0,
+          h: 0,
+        }
         interactionRef.current = { mode: 'draw', shape }
         canvas.setPointerCapture(event.pointerId)
         return
@@ -571,50 +684,63 @@ export function CanvasImageAnnotationModal({
       interactionRef.current = { mode: 'draw', shape, absPts: [p] }
       canvas.setPointerCapture(event.pointerId)
     },
-    [color, pickShape, readySrc, selectedShape, src, status, strokeWidth, tool],
+    [color, pan.x, pan.y, pickShape, readySrc, selectedShape, src, status, strokeWidth, tool],
   )
 
-  const handlePointerMove = useCallback(
-    (event: React.PointerEvent<HTMLCanvasElement>) => {
-      const canvas = canvasRef.current
-      if (!canvas) return
-      const inter = interactionRef.current
-      if (inter.mode === 'idle') return
-      const p = canvasPoint(event, canvas)
+  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const panInteraction = panInteractionRef.current
+    if (panInteraction?.pointerId === event.pointerId) {
+      setPan({
+        x: panInteraction.originX + event.clientX - panInteraction.clientX,
+        y: panInteraction.originY + event.clientY - panInteraction.clientY,
+      })
+      return
+    }
+    const inter = interactionRef.current
+    if (inter.mode === 'idle') return
+    const p = canvasPoint(event, canvas)
 
-      if (inter.mode === 'draw') {
-        const s = inter.shape
-        if (s.type === 'pen' || s.type === 'mosaic' || s.type === 'eraser') {
-          appendDrawStroke(s, inter.absPts ?? [p], p)
-          setShapes((prev) => mergeDrawTemp(prev, s))
-        } else {
-          s.w = p.x - s.x
-          s.h = p.y - s.y
-          setShapes((prev) => mergeDrawTemp(prev, s))
-        }
-        return
+    if (inter.mode === 'draw') {
+      const s = inter.shape
+      if (s.type === 'pen' || s.type === 'mosaic' || s.type === 'eraser') {
+        appendDrawStroke(s, inter.absPts ?? [p], p)
+        setShapes((prev) => mergeDrawTemp(prev, s))
+      } else {
+        s.w = p.x - s.x
+        s.h = p.y - s.y
+        setShapes((prev) => mergeDrawTemp(prev, s))
       }
+      return
+    }
 
-      if (inter.mode === 'move') {
-        const dx = p.x - inter.start.x
-        const dy = p.y - inter.start.y
-        const moved = { ...inter.orig, x: inter.orig.x + dx, y: inter.orig.y + dy } as Shape
-        setShapes((prev) => replaceShape(prev, moved))
-        return
-      }
+    if (inter.mode === 'move') {
+      const dx = p.x - inter.start.x
+      const dy = p.y - inter.start.y
+      const moved = { ...inter.orig, x: inter.orig.x + dx, y: inter.orig.y + dy } as Shape
+      setShapes((prev) => replaceShape(prev, moved))
+      return
+    }
 
-      if (inter.mode === 'resize') {
-        const resized = resizeShape(inter.orig, inter.handle, p)
-        if (resized) setShapes((prev) => replaceShape(prev, resized))
-        return
-      }
-    },
-    [],
-  )
+    if (inter.mode === 'resize') {
+      const resized = resizeShape(inter.orig, inter.handle, p)
+      if (resized) setShapes((prev) => replaceShape(prev, resized))
+      return
+    }
+  }, [])
 
   const handlePointerUp = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current
+      const panInteraction = panInteractionRef.current
+      if (panInteraction?.pointerId === event.pointerId) {
+        panInteractionRef.current = null
+        setIsPanning(false)
+        if (canvas?.hasPointerCapture(event.pointerId))
+          canvas.releasePointerCapture(event.pointerId)
+        return
+      }
       const inter = interactionRef.current
       if (!canvas || inter.mode === 'idle') return
       interactionRef.current = { mode: 'idle' }
@@ -762,7 +888,10 @@ export function CanvasImageAnnotationModal({
   // 删除选中
   const deleteSelected = useCallback(() => {
     if (!selectedId) return
-    commit(shapes.filter((s) => s.id !== selectedId), null)
+    commit(
+      shapes.filter((s) => s.id !== selectedId),
+      null,
+    )
   }, [commit, selectedId, shapes])
 
   const complete = useCallback(() => {
@@ -771,6 +900,21 @@ export function CanvasImageAnnotationModal({
     if (!dataUrl || !canvas || !node) return
     onComplete({ dataUrl, width: canvas.width, height: canvas.height, sourceNode: node })
   }, [bake, node, onComplete])
+
+  const requestClose = useCallback(() => {
+    if (!hasUnsavedChanges) {
+      onCancel()
+      return
+    }
+    Modal.confirm({
+      title: '退出图片标注？',
+      content: '当前有未保存的标注，退出后这些修改会丢失。',
+      okText: '放弃并退出',
+      cancelText: '继续标注',
+      okButtonProps: { danger: true },
+      onOk: onCancel,
+    })
+  }, [hasUnsavedChanges, onCancel])
 
   // 提交文字浮层 → 生成 text 对象
   const commitText = useCallback(() => {
@@ -809,6 +953,7 @@ export function CanvasImageAnnotationModal({
     }
     commit([...shapesRef.current, shape], shape.id)
     setTextDraft('')
+    setTool('select')
   }, [color, commit, strokeWidth, textAnchor, textDraft])
 
   // 文字浮层打开时聚焦
@@ -848,7 +993,11 @@ export function CanvasImageAnnotationModal({
           setSelectedId(null)
           return
         }
-        onCancel()
+        if (tool !== 'select') {
+          setTool('select')
+          return
+        }
+        requestClose()
         return
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -868,170 +1017,263 @@ export function CanvasImageAnnotationModal({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [open, undo, redo, complete, onCancel, textEditing, selectedId, deleteSelected])
+  }, [open, undo, redo, complete, textEditing, selectedId, deleteSelected, requestClose, tool])
 
   // 光标样式
   const cursorClass = useMemo(() => {
     if (tool === 'select') return selectedShape ? 'is-select-hit' : 'is-select'
+    if (tool === 'pan') return isPanning ? 'is-panning' : 'is-pan'
     if (tool === 'text') return 'is-text'
     return 'is-draw'
-  }, [tool, selectedShape])
+  }, [isPanning, tool, selectedShape])
 
   // 文字浮层定位
   const overlayStyle = useMemo<React.CSSProperties | null>(() => {
     const canvas = canvasRef.current
     const anchor = textAnchor
     if (!canvas || !anchor) return null
-    const rect = canvas.getBoundingClientRect()
     return {
-      left: (anchor.x / canvas.width) * rect.width,
-      top: (anchor.y / canvas.height) * rect.height,
+      left: (anchor.x / canvas.width) * canvas.clientWidth,
+      top: (anchor.y / canvas.height) * canvas.clientHeight,
     }
   }, [textAnchor, textEditing])
 
   return (
-    <Modal
-      open={open}
-      footer={null}
-      onCancel={onCancel}
-      width="96vw"
-      centered
-      className="canvas-image-annotation-modal"
-      wrapClassName="canvas-image-annotation-wrap"
-      destroyOnHidden
-    >
-      <div className="canvas-annotate-shell">
-        {/* 顶部工具栏 */}
-        <div className="canvas-annotate-toolbar">
-          <div className="canvas-annotate-tool-group">
-            {TOOL_ITEMS.map((item) => (
-              <Tooltip title={item.label} key={item.key}>
+    <>
+      <Modal
+        open={open && !minimized}
+        footer={null}
+        onCancel={requestClose}
+        width="96vw"
+        centered
+        className="canvas-image-annotation-modal"
+        wrapClassName="canvas-image-annotation-wrap"
+        destroyOnHidden={false}
+      >
+        <div className="canvas-annotate-shell">
+          {/* 顶部工具栏 */}
+          <div className="canvas-annotate-toolbar">
+            <div className="canvas-annotate-tool-group">
+              {TOOL_ITEMS.map((item) => (
+                <Tooltip title={item.label} key={item.key}>
+                  <button
+                    type="button"
+                    className={`canvas-annotate-tool${tool === item.key ? ' active' : ''}`}
+                    onClick={() => setTool(item.key)}
+                  >
+                    {item.icon}
+                  </button>
+                </Tooltip>
+              ))}
+            </div>
+            <span className="canvas-annotate-divider" />
+            <div className="canvas-annotate-colors">
+              {COLORS.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  className={`canvas-annotate-color${color === item ? ' active' : ''}`}
+                  style={{ background: item }}
+                  onClick={() => setColor(item)}
+                />
+              ))}
+            </div>
+            <span className="canvas-annotate-divider" />
+            <div className="canvas-annotate-widths">
+              {WIDTH_OPTIONS.map((item) => (
+                <Tooltip title={`粗细：${item.label}`} key={item.key}>
+                  <button
+                    type="button"
+                    className={`canvas-annotate-width${widthKey === item.key ? ' active' : ''}`}
+                    onClick={() => setWidthKey(item.key)}
+                  >
+                    <span
+                      className="canvas-annotate-width-dot"
+                      style={{ width: item.value * 1.6, height: item.value * 1.6 }}
+                    />
+                  </button>
+                </Tooltip>
+              ))}
+            </div>
+            <span className="canvas-annotate-divider" />
+            <div className="canvas-annotate-view-controls">
+              <Tooltip title="缩小">
                 <button
                   type="button"
-                  className={`canvas-annotate-tool${tool === item.key ? ' active' : ''}`}
-                  onClick={() => setTool(item.key)}
+                  className="canvas-annotate-tool"
+                  onClick={() => updateZoom(zoom - 0.25)}
                 >
-                  {item.icon}
+                  <Icons.Minus size={17} />
                 </button>
               </Tooltip>
-            ))}
-          </div>
-          <span className="canvas-annotate-divider" />
-          <div className="canvas-annotate-colors">
-            {COLORS.map((item) => (
               <button
-                key={item}
                 type="button"
-                className={`canvas-annotate-color${color === item ? ' active' : ''}`}
-                style={{ background: item }}
-                onClick={() => setColor(item)}
-              />
-            ))}
-          </div>
-          <span className="canvas-annotate-divider" />
-          <div className="canvas-annotate-widths">
-            {WIDTH_OPTIONS.map((item) => (
-              <Tooltip title={`粗细：${item.label}`} key={item.key}>
+                className="canvas-annotate-zoom-value"
+                onClick={resetView}
+                title="重置视图"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <Tooltip title="放大">
                 <button
                   type="button"
-                  className={`canvas-annotate-width${widthKey === item.key ? ' active' : ''}`}
-                  onClick={() => setWidthKey(item.key)}
+                  className="canvas-annotate-tool"
+                  onClick={() => updateZoom(zoom + 0.25)}
                 >
-                  <span className="canvas-annotate-width-dot" style={{ width: item.value * 1.6, height: item.value * 1.6 }} />
+                  <Icons.Plus size={17} />
                 </button>
               </Tooltip>
-            ))}
+              <Tooltip title="重置视图">
+                <button type="button" className="canvas-annotate-tool" onClick={resetView}>
+                  <Icons.Maximize size={17} />
+                </button>
+              </Tooltip>
+              <Tooltip title="暂时收起，返回画布查看">
+                <button
+                  type="button"
+                  className="canvas-annotate-tool"
+                  onClick={() => setMinimized(true)}
+                >
+                  <Icons.Minimize size={17} />
+                </button>
+              </Tooltip>
+            </div>
           </div>
-        </div>
 
-        {/* 画布舞台 */}
-        <div className="canvas-annotate-stage">
-          <div className={`canvas-annotate-canvas-wrap ${cursorClass}`}>
-            <canvas
-              ref={canvasRef}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-            />
-            {textEditing && overlayStyle && (
-              <textarea
-                ref={textAreaRef}
-                className="canvas-annotate-text-overlay"
-                style={overlayStyle}
-                value={textDraft}
-                onChange={(e) => setTextDraft(e.target.value)}
-                onBlur={commitText}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    commitText()
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault()
-                    setTextEditing(false)
-                  }
-                }}
-                placeholder="输入文字…"
-                rows={1}
+          {/* 画布舞台 */}
+          <div
+            className="canvas-annotate-stage"
+            onWheel={(event) => {
+              event.preventDefault()
+              updateZoom(zoom + (event.deltaY < 0 ? 0.15 : -0.15))
+            }}
+          >
+            <div
+              className={`canvas-annotate-canvas-wrap ${cursorClass}`}
+              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+            >
+              <canvas
+                ref={canvasRef}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
               />
+              {textEditing && overlayStyle && (
+                <textarea
+                  ref={textAreaRef}
+                  className="canvas-annotate-text-overlay"
+                  style={overlayStyle}
+                  value={textDraft}
+                  onChange={(e) => setTextDraft(e.target.value)}
+                  onBlur={commitText}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      commitText()
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault()
+                      setTextEditing(false)
+                    }
+                  }}
+                  placeholder="输入文字…"
+                  rows={1}
+                />
+              )}
+            </div>
+            {status === 'loading' && (
+              <div className="canvas-annotate-status">
+                <Icons.Spinner size={28} />
+                <span>加载中…</span>
+              </div>
+            )}
+            {status === 'error' && (
+              <div className="canvas-annotate-status is-error">
+                <Icons.Image size={40} />
+                <span>图片加载失败，无法标注</span>
+              </div>
             )}
           </div>
-          {status === 'loading' && (
-            <div className="canvas-annotate-status">
-              <Icons.Spinner size={28} />
-              <span>加载中…</span>
-            </div>
-          )}
-          {status === 'error' && (
-            <div className="canvas-annotate-status is-error">
-              <Icons.Image size={40} />
-              <span>图片加载失败，无法标注</span>
-            </div>
-          )}
-        </div>
 
-        {/* 底部操作栏 */}
-        <div className="canvas-annotate-actions">
-          <div className="canvas-annotate-actions-left">
-            <button type="button" className="canvas-annotate-action" onClick={undo} disabled={!canUndo} title="撤销 (Cmd/Ctrl+Z)">
-              <Icons.Undo2 size={16} />
-              <span>撤销</span>
-            </button>
-            <button type="button" className="canvas-annotate-action" onClick={redo} disabled={!canRedo} title="重做 (Cmd/Ctrl+Shift+Z)">
-              <Icons.Redo2 size={16} />
-              <span>重做</span>
-            </button>
-            <button type="button" className="canvas-annotate-action" onClick={resetOriginal} title="清空所有标注">
-              <Icons.Refresh size={16} />
-              <span>重置</span>
-            </button>
-            <button
-              type="button"
-              className="canvas-annotate-action"
-              onClick={deleteSelected}
-              disabled={!selectedId}
-              title="删除选中 (Delete)"
-            >
-              <Icons.Trash size={16} />
-              <span>删除</span>
-            </button>
-          </div>
-          <div className="canvas-annotate-actions-right">
-            <button type="button" className="canvas-annotate-action is-ghost" onClick={onCancel} title="取消 (Esc)">
-              取消
-            </button>
-            <button
-              type="button"
-              className="canvas-annotate-action is-primary"
-              onClick={complete}
-              disabled={readySrc !== src || status !== 'idle'}
-              title="完成 (Cmd/Ctrl+Enter)"
-            >
-              <Icons.Check size={16} />
-              <span>完成</span>
-            </button>
+          {/* 底部操作栏 */}
+          <div className="canvas-annotate-actions">
+            <div className="canvas-annotate-actions-left">
+              <button
+                type="button"
+                className="canvas-annotate-action"
+                onClick={undo}
+                disabled={!canUndo}
+                title="撤销 (Cmd/Ctrl+Z)"
+              >
+                <Icons.Undo2 size={16} />
+                <span>撤销</span>
+              </button>
+              <button
+                type="button"
+                className="canvas-annotate-action"
+                onClick={redo}
+                disabled={!canRedo}
+                title="重做 (Cmd/Ctrl+Shift+Z)"
+              >
+                <Icons.Redo2 size={16} />
+                <span>重做</span>
+              </button>
+              <button
+                type="button"
+                className="canvas-annotate-action"
+                onClick={resetOriginal}
+                title="清空所有标注"
+              >
+                <Icons.Refresh size={16} />
+                <span>重置</span>
+              </button>
+              <button
+                type="button"
+                className="canvas-annotate-action"
+                onClick={deleteSelected}
+                disabled={!selectedId}
+                title="删除选中 (Delete)"
+              >
+                <Icons.Trash size={16} />
+                <span>删除</span>
+              </button>
+            </div>
+            <div className="canvas-annotate-actions-right">
+              <button
+                type="button"
+                className="canvas-annotate-action is-ghost"
+                onClick={requestClose}
+                title="取消 (Esc)"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="canvas-annotate-action is-primary"
+                onClick={complete}
+                disabled={readySrc !== src || status !== 'idle'}
+                title="完成 (Cmd/Ctrl+Enter)"
+              >
+                <Icons.Check size={16} />
+                <span>完成</span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    </Modal>
+      </Modal>
+      {open && minimized && (
+        <div className="canvas-annotate-minimized" role="status">
+          <div>
+            <strong>图片标注已暂时收起</strong>
+            <span>{hasUnsavedChanges ? '修改尚未保存' : '可以随时继续'}</span>
+          </div>
+          <button type="button" onClick={() => setMinimized(false)}>
+            <Icons.Edit size={15} /> 继续标注
+          </button>
+          <button type="button" className="is-close" onClick={requestClose} aria-label="退出标注">
+            <Icons.X size={15} />
+          </button>
+        </div>
+      )}
+    </>
   )
 }

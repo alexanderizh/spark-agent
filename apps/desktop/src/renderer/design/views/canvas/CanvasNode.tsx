@@ -384,6 +384,7 @@ export type CanvasFlowNodeData = {
     saveToLibrary: (nodeId: string) => void
     annotateImage?: (nodeId: string) => void
     splitGridImage?: (nodeId: string) => void
+    splitStoryboard?: (nodeId: string) => void
     extractCharacterSubview?: (nodeId: string) => void
     /** 360 全景产物节点：右键 → 全景预览（与普通图片「编辑」解耦） */
     previewPanorama: (nodeId: string) => void
@@ -814,6 +815,19 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               },
             ]
           : []),
+        ...(renderShotTable && actions.splitStoryboard
+          ? [
+              {
+                key: 'split-storyboard-by-shot',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Scissors size={14} /> 按镜拆分
+                  </span>
+                ),
+                onClick: () => actions.splitStoryboard?.(node.id),
+              },
+            ]
+          : []),
         ...(canCreateOperationFromNode
           ? [
               {
@@ -1060,6 +1074,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       node.type,
       operationOutputState.primaryOutput,
       pipelineActions,
+      renderShotTable,
       subtypeSwitch,
     ],
   )

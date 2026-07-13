@@ -7,6 +7,7 @@ import {
   selectCanvasOperationOutputs,
 } from './canvasOperationOutputModel'
 import { buildCanvasOperationRunViews } from './canvasOperationRuns'
+import { expandCanvasInputNodes } from './canvasWorkspaceTaskInput'
 import type { CanvasAsset, CanvasNode, CanvasSnapshot, CanvasTask } from './canvas.types'
 
 const at = '2026-07-10T00:00:00.000Z'
@@ -150,6 +151,16 @@ function snapshotFixture(): CanvasSnapshot {
     ],
   }
 }
+
+describe('canvas operation input expansion', () => {
+  it('passes an upstream operation primary image to the next detail or video task', () => {
+    const snapshot = snapshotFixture()
+    const operation = snapshot.nodes.find((node) => node.id === 'operation-1')!
+    const expanded = expandCanvasInputNodes([operation], snapshot)
+    expect(expanded).toHaveLength(1)
+    expect(expanded[0]).toMatchObject({ id: 'output-a', type: 'image' })
+  })
+})
 
 describe('canvas operation output model', () => {
   it('treats generic multi-output media runs as candidates and defaults to the newest first output', () => {

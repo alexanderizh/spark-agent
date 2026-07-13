@@ -47,7 +47,8 @@
 
 .canvas-annotate-tool-group,
 .canvas-annotate-colors,
-.canvas-annotate-widths {
+.canvas-annotate-widths,
+.canvas-annotate-view-controls {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -164,6 +165,8 @@
   line-height: 0;
   max-width: 100%;
   max-height: 100%;
+  transform-origin: center center;
+  transition: transform 0.08s ease-out;
 }
 .canvas-annotate-canvas-wrap canvas {
   display: block;
@@ -186,6 +189,21 @@
 }
 .canvas-annotate-canvas-wrap.is-select-hit canvas {
   cursor: move;
+}
+.canvas-annotate-canvas-wrap.is-pan canvas {
+  cursor: grab;
+}
+.canvas-annotate-canvas-wrap.is-panning canvas {
+  cursor: grabbing;
+}
+
+.canvas-annotate-zoom-value {
+  width: 54px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
 }
 
 /* 文字浮层：定位锚点相对 canvas 显示区域 */
@@ -297,4 +315,49 @@
 .canvas-annotate-action.is-primary:hover:not(:disabled) {
   background: var(--primary-hover);
   border-color: var(--primary-hover);
+}
+
+.canvas-annotate-minimized {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg, 12px);
+  background: var(--panel-elev);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+}
+.canvas-annotate-minimized > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.canvas-annotate-minimized span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.canvas-annotate-minimized button {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--primary);
+  border-radius: var(--r-md, 8px);
+  background: var(--primary);
+  color: var(--primary-fg);
+  cursor: pointer;
+}
+.canvas-annotate-minimized button.is-close {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
 }

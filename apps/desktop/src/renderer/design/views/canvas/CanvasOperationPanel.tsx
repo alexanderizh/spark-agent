@@ -35,6 +35,12 @@ import {
   type MediaInputPickerItem,
 } from './CanvasMediaInputPickerModal'
 import { canvasApi } from './canvas.api'
+import { expandCanvasInputNodes } from './canvasWorkspaceTaskInput'
+import {
+  formatCanvasTextInputContext,
+  readCanvasTextInputContent,
+} from './canvasTextInputPresentation'
+import { confirmVideoSubmission, isVideoSubmissionOperation } from './canvasVideoSubmissionGate'
 import {
   buildCustomModelParams,
   buildModelParams,
@@ -204,29 +210,14 @@ export function readCanvasOperationPanelTextInputContent(
   node: CanvasNode,
   assets: CanvasSnapshot['assets'],
 ): string {
-  if (node.type !== 'text' && node.type !== 'prompt') return ''
-  const assetText = node.assetId
-    ? assets.find((asset) => asset.id === node.assetId)?.contentText
-    : undefined
-  return node.data.text?.trim() || assetText?.trim() || ''
-}
-
-function canvasOperationPanelTextInputKind(node: CanvasNode, content: string): string {
-  if (node.data.pipelineRole === 'shot') return '分镜脚本'
-  if (node.data.pipelineRole === 'screenplay') return '剧本'
-  if (node.type === 'prompt') return '提示词节点'
-  if (content.includes('| 镜号 |') || content.includes('|镜号|')) return '分镜脚本'
-  return '文本节点'
+  return readCanvasTextInputContent(node, assets)
 }
 
 function formatOperationPanelTextInputContext(
   node: CanvasNode,
   assets: CanvasSnapshot['assets'],
 ): string {
-  const content = readCanvasOperationPanelTextInputContent(node, assets)
-  if (!content) return ''
-  const name = node.title?.trim() || '未命名'
-  return `【${canvasOperationPanelTextInputKind(node, content)}｜${name}】\n${content}`
+  return formatCanvasTextInputContext(node, assets)
 }
 
 export function mergeOperationPanelPromptWithInputContext(
@@ -369,8 +360,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     return snapshot.nodes.filter((n) => inputIds.has(n.id) && !n.hidden)
   }, [snapshot.edges, snapshot.nodes, node.id])
   const expandedSourceInputNodes = useMemo(
-    () => expandOperationInputNodes(sourceInputNodes, snapshot.nodes),
-    [sourceInputNodes, snapshot.nodes],
+    () => expandCanvasInputNodes(sourceInputNodes, snapshot),
+    [sourceInputNodes, snapshot],
   )
   const editableSourceMediaNodes = useMemo(
     () =>
@@ -770,10 +761,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     [mediaInputOptions],
   )
   const sourceReferenceImageNodeIds = useMemo(
-    () =>
-      editableSourceMediaNodes
-        .filter((item) => item.type === 'image')
-        .map((item) => item.id),
+    () => editableSourceMediaNodes.filter((item) => item.type === 'image').map((item) => item.id),
     [editableSourceMediaNodes],
   )
   const hasExplicitFrameInput =
@@ -782,18 +770,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const explicitFrameNodeIds = useMemo(
     () =>
       supportsVideoFrameRoles
-        ? normalizeVideoFrameNodeIds(
-            firstFrameNodeId,
-            lastFrameNodeId,
-            referenceFrameNodeIds,
-          )
+        ? normalizeVideoFrameNodeIds(firstFrameNodeId, lastFrameNodeId, referenceFrameNodeIds)
         : [],
-    [
-      firstFrameNodeId,
-      lastFrameNodeId,
-      referenceFrameNodeIds,
-      supportsVideoFrameRoles,
-    ],
+    [firstFrameNodeId, lastFrameNodeId, referenceFrameNodeIds, supportsVideoFrameRoles],
   )
   const allParameterFields = useMemo(
     () =>
@@ -857,11 +836,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         frameImageOptions.map((option) => String(option.value)),
       ),
     )
-  }, [
-    frameImageOptions,
-    sourceReferenceImageNodeIds,
-    supportsVideoFrameRoles,
-  ])
+  }, [frameImageOptions, sourceReferenceImageNodeIds, supportsVideoFrameRoles])
 
   useEffect(() => {
     const defaults = selectedCapability?.defaults ?? {}
@@ -1094,6 +1069,16 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         type: item.type,
       })),
     })
+    if (isVideoSubmissionOperation(operation)) {
+      const proceed = await confirmVideoSubmission({
+        prompt: prompt.trim(),
+        imageCount: runInputNodeIds.filter((id) =>
+          mediaInputOptions.some((option) => option.value === id && option.type === 'image'),
+        ).length,
+        modelParams: nextModelParams,
+      })
+      if (!proceed) return
+    }
     setSubmitting(true)
     setRunning(true)
     try {
@@ -1132,6 +1117,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     capability,
     buildCurrentModelParams,
     negativePrompt,
+    operation,
     node.data.status,
     onRun,
     prompt,
@@ -1229,7 +1215,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     const selectedSet = new Set(selectedInputNodeIds)
     return mediaInputs.filter((item) => item.type === 'image' && selectedSet.has(item.id)).length
   }, [mediaInputs, selectedFrameCount, selectedInputNodeIds, supportsVideoFrameRoles])
-  const showMediaInputHint = selectedCapability != null && (supportsImageRoles || canEditMediaInputs)
+  const showMediaInputHint =
+    selectedCapability != null && (supportsImageRoles || canEditMediaInputs)
   // 当前命中的 capability 标识：让用户一眼看出当前节点命中 manifest 的哪个能力
   // （如"图生视频（首帧/首尾帧）"、"文生视频 / 多模态参考"），hover 看图片上限/必填输入/支持角色。
   const capabilityTag = useMemo(() => {
@@ -1310,15 +1297,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           .filter((option) => option.type === 'image')
           .map((option) => String(option.value)),
       )
-      setReferenceFrameNodeIds(
-        values.filter((id) => imageValueSet.has(id)),
-      )
+      setReferenceFrameNodeIds(values.filter((id) => imageValueSet.has(id)))
       setSelectedInputNodeIds(values.filter((id) => !imageValueSet.has(id)))
     },
-    [
-      mediaInputOptions,
-      supportsVideoFrameRoles,
-    ],
+    [mediaInputOptions, supportsVideoFrameRoles],
   )
   const handleRemoveMediaInput = useCallback(
     (nodeId: string) => {
@@ -1329,25 +1311,22 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     },
     [firstFrameNodeId, lastFrameNodeId],
   )
-  const promptMentionNodes = useMemo(
-    () => {
-      const mentionIds = supportsVideoFrameRoles
-        ? referenceFrameNodeIds
-        : selectedInputNodeIds.filter((id) =>
-            mediaInputOptions.some((option) => String(option.value) === id),
-          )
-      return Array.from(new Set(mentionIds))
-        .map((id) => nodeById.get(id))
-        .filter((item): item is CanvasNode => item != null && !item.hidden)
-    },
-    [
-      mediaInputOptions,
-      nodeById,
-      referenceFrameNodeIds,
-      selectedInputNodeIds,
-      supportsVideoFrameRoles,
-    ],
-  )
+  const promptMentionNodes = useMemo(() => {
+    const mentionIds = supportsVideoFrameRoles
+      ? referenceFrameNodeIds
+      : selectedInputNodeIds.filter((id) =>
+          mediaInputOptions.some((option) => String(option.value) === id),
+        )
+    return Array.from(new Set(mentionIds))
+      .map((id) => nodeById.get(id))
+      .filter((item): item is CanvasNode => item != null && !item.hidden)
+  }, [
+    mediaInputOptions,
+    nodeById,
+    referenceFrameNodeIds,
+    selectedInputNodeIds,
+    supportsVideoFrameRoles,
+  ])
   const handlePromptMentionSelect = useCallback(
     (selectedNode: CanvasNode) => {
       if (!canEditMediaInputs || running) return false
@@ -1362,11 +1341,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       )
       return true
     },
-    [
-      canEditMediaInputs,
-      running,
-      supportsVideoFrameRoles,
-    ],
+    [canEditMediaInputs, running, supportsVideoFrameRoles],
   )
   const textInputs = expandedSourceInputNodes.filter(
     (n) => n.type === 'text' || n.type === 'prompt',
@@ -2118,9 +2093,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       ? '选择参考图片 / 视频节点'
                       : '选择或调整参考图片/视频节点'
                   }
-                  options={
-                    mediaInputOptions
-                  }
+                  options={mediaInputOptions}
                   optionFilterProp="label"
                   optionRender={(option) =>
                     renderMediaOptionLabel(
@@ -2293,9 +2266,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     label: '尾帧',
                     valueText: lastFrameNodeId
                       ? frameLabel(lastFrameNodeId)
-                        : canUseLastFrame
-                          ? '未选择'
-                          : '仅 1 张图',
+                      : canUseLastFrame
+                        ? '未选择'
+                        : '仅 1 张图',
                     disabled: running || !canUseLastFrame,
                     content: renderSingleOptionList(
                       frameImageOptions.map((option) => ({
@@ -2591,44 +2564,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     </div>
   )
 })
-
-function expandOperationInputNodes(
-  sourceNodes: CanvasNode[],
-  allNodes: CanvasNode[],
-): CanvasNode[] {
-  const byId = new Map(allNodes.map((item) => [item.id, item]))
-  const seen = new Set<string>()
-  const result: CanvasNode[] = []
-  const push = (item: CanvasNode) => {
-    const latest = byId.get(item.id) ?? item
-    if (latest.hidden || seen.has(latest.id)) return
-    seen.add(latest.id)
-    result.push(latest)
-  }
-
-  for (const source of sourceNodes) {
-    if (source.type !== 'group') {
-      push(source)
-      continue
-    }
-    const members = allNodes
-      .filter((item) => item.parentNodeId === source.id && !item.hidden)
-      .sort((left, right) => {
-        const leftX = source.x + left.x
-        const rightX = source.x + right.x
-        const leftY = source.y + left.y
-        const rightY = source.y + right.y
-        return leftX - rightX || leftY - rightY || left.zIndex - right.zIndex
-      })
-    if (members.length === 0) {
-      push(source)
-      continue
-    }
-    for (const member of members) push(member)
-  }
-
-  return result
-}
 
 function isSupportedMediaInputNode(node: CanvasNode, inputTypes: readonly string[]): boolean {
   if (node.type === 'image') return inputTypes.includes('image')

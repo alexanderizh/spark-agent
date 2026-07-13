@@ -160,7 +160,16 @@ describe('MediaRouterService', () => {
   })
 
   it('registers built-in media adapters', () => {
-    expect(router.listAdapters()).toEqual(expect.arrayContaining(['apimart', 'agnes', 'xai', 'google-generative-ai', 'omni', 'midjourney']))
+    expect(router.listAdapters()).toEqual(
+      expect.arrayContaining([
+        'apimart',
+        'agnes',
+        'xai',
+        'google-generative-ai',
+        'omni',
+        'midjourney',
+      ]),
+    )
     expect(router.getAdapter('agnes')).toBeInstanceOf(AgnesMediaAdapter)
     expect(router.getAdapter('apimart')).toBeInstanceOf(ApimartMediaAdapter)
     expect(router.getAdapter('xai')).toBeInstanceOf(XaiMediaAdapter)
@@ -244,12 +253,21 @@ describe('MediaRouterService', () => {
               response_format: 'url',
             },
           })
-          return { ok: true, status: 200, body: { data: [{ url: `${APIMART_ENDPOINT}/agnes-image.png` }] } }
+          return {
+            ok: true,
+            status: 200,
+            body: { data: [{ url: `${APIMART_ENDPOINT}/agnes-image.png` }] },
+          }
         },
       },
       {
         match: '/agnes-image.png',
-        respond: () => ({ ok: true, status: 200, body: '', binary: Buffer.from(PNG_PIXEL, 'base64') }),
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: '',
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
       },
     ])
     const { output } = await router.invoke(
@@ -261,13 +279,15 @@ describe('MediaRouterService', () => {
         inputFiles: [{ type: 'image', url: 'https://example.com/input.png' }],
       },
       {
-        providers: [makeProvider({
-          name: 'Agnes Media',
-          defaultModel: 'agnes-image-2.0-flash',
-          apiEndpoint: APIMART_ENDPOINT,
-          mediaProvider: 'agnes',
-          mediaCapabilities: ['image.generate', 'image.edit', 'video.generate'],
-        })],
+        providers: [
+          makeProvider({
+            name: 'Agnes Media',
+            defaultModel: 'agnes-image-2.0-flash',
+            apiEndpoint: APIMART_ENDPOINT,
+            mediaProvider: 'agnes',
+            mediaCapabilities: ['image.generate', 'image.edit', 'video.generate'],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
@@ -324,19 +344,75 @@ describe('MediaRouterService', () => {
         prompt: 'a cat walking on the beach',
       },
       {
-        providers: [makeProvider({
-          name: 'Agnes Video',
-          defaultModel: 'agnes-video-v2.0',
-          apiEndpoint: agnesEndpoint,
-          mediaProvider: 'agnes',
-          mediaApiType: 'auto',
-          mediaCapabilities: ['video.generate', 'video.image_to_video'],
-        })],
+        providers: [
+          makeProvider({
+            name: 'Agnes Video',
+            defaultModel: 'agnes-video-v2.0',
+            apiEndpoint: agnesEndpoint,
+            mediaProvider: 'agnes',
+            mediaApiType: 'auto',
+            mediaCapabilities: ['video.generate', 'video.image_to_video'],
+          }),
+        ],
         fetch: fetchMock,
       },
     )
     expect(output.mode).toBe('async')
     expect(output.requestId).toBe('task-123')
+    expect(output.assets).toHaveLength(1)
+    expect(existsSync(output.assets[0]?.filePath ?? '')).toBe(true)
+  })
+
+  it('Agnes video.image_to_video: preserves prompt, reference image and frame parameters', async () => {
+    const agnesEndpoint = 'https://apihub.agnes-ai.com/v1'
+    const fetchMock = makeFetch([
+      {
+        match: '/videos',
+        respond: (init) => {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          expect(body).toMatchObject({
+            model: 'agnes-video-v2.0',
+            prompt: 'close-up portrait, slow camera push-in, warm rim light',
+            image: 'https://cdn.example.com/character.png',
+            frame_rate: 24,
+            num_frames: 121,
+          })
+          return {
+            ok: true,
+            status: 200,
+            body: { video_url: `${agnesEndpoint}/reference-result.mp4` },
+          }
+        },
+      },
+      {
+        match: '/reference-result.mp4',
+        respond: () => ({ ok: true, status: 200, body: '', binary: Buffer.from('video-bytes') }),
+      },
+    ])
+    const { output } = await router.invoke(
+      {
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        outputDir: tmpDir,
+        prompt: 'close-up portrait, slow camera push-in, warm rim light',
+        inputFiles: [
+          { type: 'image', role: 'first_frame', url: 'https://cdn.example.com/character.png' },
+        ],
+        modelParams: { durationSeconds: 5, fps: 24, resolution: '720p', aspectRatio: '16:9' },
+      },
+      {
+        providers: [
+          makeProvider({
+            name: 'Agnes Video',
+            defaultModel: 'agnes-video-v2.0',
+            apiEndpoint: agnesEndpoint,
+            mediaProvider: 'agnes',
+            mediaCapabilities: ['video.generate', 'video.image_to_video'],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
     expect(output.assets).toHaveLength(1)
     expect(existsSync(output.assets[0]?.filePath ?? '')).toBe(true)
   })
@@ -1637,7 +1713,11 @@ describe('MediaRouterService', () => {
     const fetchMock = makeFetch([
       {
         match: '/template/images',
-        respond: () => ({ ok: true, status: 200, body: { data: [{ url: 'https://cdn/template.png' }] } }),
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { data: [{ url: 'https://cdn/template.png' }] },
+        }),
       },
     ])
 
@@ -2333,7 +2413,11 @@ describe('VolcengineArkMediaAdapter', () => {
         match: '/images/generations',
         respond: (init) => {
           postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-          return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/seedream-safe.png' }] } }
+          return {
+            ok: true,
+            status: 200,
+            body: { data: [{ url: 'https://cdn/seedream-safe.png' }] },
+          }
         },
       },
       {
@@ -2391,7 +2475,12 @@ describe('VolcengineArkMediaAdapter', () => {
       },
       {
         match: 'https://cdn/lite.png',
-        respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }),
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
       },
     ])
 
@@ -2444,7 +2533,12 @@ describe('VolcengineArkMediaAdapter', () => {
       },
       {
         match: 'https://cdn/main.png',
-        respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }),
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
       },
     ])
 
@@ -2687,7 +2781,12 @@ describe('VolcengineArkMediaAdapter', () => {
       },
       {
         match: 'https://cdn/seed5.png',
-        respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }),
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
       },
     ])
 
@@ -2741,7 +2840,12 @@ describe('VolcengineArkMediaAdapter', () => {
       },
       {
         match: 'https://cdn/custom.png',
-        respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }),
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
       },
     ])
 
@@ -2840,7 +2944,13 @@ describe('VolcengineArkMediaAdapter', () => {
             done: true,
             response: {
               generateVideoResponse: {
-                generatedSamples: [{ video: { uri: 'https://generativelanguage.googleapis.com/v1beta/files/video.mp4' } }],
+                generatedSamples: [
+                  {
+                    video: {
+                      uri: 'https://generativelanguage.googleapis.com/v1beta/files/video.mp4',
+                    },
+                  },
+                ],
               },
             },
           },
@@ -2897,11 +3007,20 @@ describe('VolcengineArkMediaAdapter', () => {
       },
       {
         match: '/tasks/mj-1',
-        respond: () => ({ ok: true, status: 200, body: { status: 'completed', image_url: 'https://cdn.example/mj.png' } }),
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { status: 'completed', image_url: 'https://cdn.example/mj.png' },
+        }),
       },
       {
         match: 'https://cdn.example/mj.png',
-        respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }),
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
       },
     ])
 
@@ -2935,9 +3054,15 @@ describe('VolcengineArkMediaAdapter', () => {
   })
 
   it('Google Omni and Midjourney manifests are registered', () => {
-    expect(BUILTIN_MEDIA_MODEL_MANIFESTS.some((entry) => entry.id === 'omni:gemini-omni-flash-preview')).toBe(true)
-    expect(BUILTIN_MEDIA_MODEL_MANIFESTS.some((entry) => entry.id === 'midjourney:gateway')).toBe(true)
-    expect(BUILTIN_MEDIA_MODEL_MANIFESTS.some((entry) => entry.id === 'google:gemini-3.1-flash-image')).toBe(true)
+    expect(
+      BUILTIN_MEDIA_MODEL_MANIFESTS.some((entry) => entry.id === 'omni:gemini-omni-flash-preview'),
+    ).toBe(true)
+    expect(BUILTIN_MEDIA_MODEL_MANIFESTS.some((entry) => entry.id === 'midjourney:gateway')).toBe(
+      true,
+    )
+    expect(
+      BUILTIN_MEDIA_MODEL_MANIFESTS.some((entry) => entry.id === 'google:gemini-3.1-flash-image'),
+    ).toBe(true)
   })
 
   it('HappyHorse 1.0 i2v manifest exists with media[] structure', () => {
@@ -2988,7 +3113,10 @@ describe('media adapters reject unknown params under Contract V2', () => {
   let tmpDir: string
 
   beforeEach(() => {
-    tmpDir = path.join(os.tmpdir(), `spark-media-m8-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    tmpDir = path.join(
+      os.tmpdir(),
+      `spark-media-m8-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    )
     mkdirSync(tmpDir, { recursive: true })
   })
   afterEach(() => {
@@ -3007,7 +3135,9 @@ describe('media adapters reject unknown params under Contract V2', () => {
         },
       },
     ])
-    const xaiManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((m) => m.id === 'xai:grok-imagine-image')!
+    const xaiManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (m) => m.id === 'xai:grok-imagine-image',
+    )!
     expect(xaiManifest).toBeDefined()
 
     const router = new MediaRouterService()
@@ -3059,7 +3189,9 @@ describe('media adapters reject unknown params under Contract V2', () => {
         },
       },
     ])
-    const apimartManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((m) => m.id === 'apimart:gpt-image-2')!
+    const apimartManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (m) => m.id === 'apimart:gpt-image-2',
+    )!
     expect(apimartManifest).toBeDefined()
 
     const router = new MediaRouterService()
@@ -3124,7 +3256,12 @@ describe('media adapters reject unknown params under Contract V2', () => {
       },
       {
         match: 'https://ark/seedream.png',
-        respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }),
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
       },
     ])
     const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
