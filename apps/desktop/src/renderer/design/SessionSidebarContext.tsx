@@ -136,6 +136,22 @@ function resolveModelForProvider(
   )
 }
 
+function resolveNewSessionTeamConfig(
+  teamConfig: unknown,
+  hostAgentId: string,
+): TeamModeConfig {
+  if (teamConfig != null) return teamConfig as TeamModeConfig
+  return {
+    enabled: false,
+    hostAgentId,
+    memberAgentIds: [],
+    maxDepth: 1,
+    allowNesting: false,
+    maxDiscussionRounds: 6,
+    enablePeerMessaging: false,
+  }
+}
+
 function getBasename(path: string): string {
   return path.split(/[/\\]/).pop() ?? ''
 }
@@ -841,6 +857,10 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
               ? { chatMode: options.chatMode as SessionChatMode }
               : {}),
             reasoningEffort,
+          })
+          await persistTeamConfig({
+            sessionId: unusedSession.id,
+            config: resolveNewSessionTeamConfig(options.teamConfig, agentId),
           })
           updateSessionInList(unusedSession.id, updated.session)
           if (options.activate !== false) setActive(unusedSession.id)

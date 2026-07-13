@@ -11,8 +11,16 @@ export async function persistThenSyncTeamSelection(
 export function preserveExplicitEmptySessionTeamConfig(
   current: TeamModeConfig,
   fallback: TeamModeConfig,
+  wasExplicitlyTouched: boolean,
 ): TeamModeConfig {
-  return current.enabled ? current : fallback
+  return wasExplicitlyTouched ? current : fallback
+}
+
+export function shouldResetEmptySessionTeamTouched(
+  previousActive: string | null,
+  active: string | null,
+): boolean {
+  return previousActive !== active
 }
 
 export function selectInitialTeam(
