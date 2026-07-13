@@ -271,6 +271,7 @@ function OperationOutputDeck({
   const outputs = activeRun?.outputs ?? []
   const activeOutput = outputs[Math.min(outputIndex, Math.max(0, outputs.length - 1))]
   const displayRunNumber = activeRun ? runs.length - runIndex : 0
+  const shouldShowOutputNavigation = runs.length > 1 || outputs.length > 1
 
   if (!activeRun) return <>{fallback}</>
 
@@ -287,58 +288,56 @@ function OperationOutputDeck({
           ) : null}
         </div>
       </div>
-      <div className="canvas-operation-output-nav nodrag nopan">
-        <div className="canvas-operation-run-nav">
-          <button
-            type="button"
-            aria-label="查看更新的一次运行"
-            disabled={runIndex === 0}
-            onClick={(event) => {
-              event.stopPropagation()
-              setRunIndex((current) => Math.max(0, current - 1))
-              setOutputIndex(0)
-            }}
-          >
-            <Icons.ChevronLeft size={13} />
-          </button>
-          <span>
-            第 {displayRunNumber} 次运行
-            {runs.length > 1 ? ` / 共 ${runs.length} 次` : ''}
-          </span>
-          <button
-            type="button"
-            aria-label="查看更早的一次运行"
-            disabled={runIndex >= runs.length - 1}
-            onClick={(event) => {
-              event.stopPropagation()
-              setRunIndex((current) => Math.min(runs.length - 1, current + 1))
-              setOutputIndex(0)
-            }}
-          >
-            <Icons.ChevronRight size={13} />
-          </button>
-        </div>
-        {outputs.length > 1 ? (
-          <div className="canvas-operation-output-dots" aria-label="本次运行产物">
-            {outputs.map((output, index) => (
-              <button
-                key={output.id}
-                type="button"
-                className={index === outputIndex ? 'is-active' : ''}
-                aria-label={`查看产物 ${index + 1}：${output.title}`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  setOutputIndex(index)
-                }}
-              />
-            ))}
+      {shouldShowOutputNavigation ? (
+        <div className="canvas-operation-output-nav nodrag nopan">
+          <div className="canvas-operation-run-nav">
+            <button
+              type="button"
+              aria-label="查看更新的一次运行"
+              disabled={runIndex === 0}
+              onClick={(event) => {
+                event.stopPropagation()
+                setRunIndex((current) => Math.max(0, current - 1))
+                setOutputIndex(0)
+              }}
+            >
+              <Icons.ChevronLeft size={13} />
+            </button>
+            <span>
+              第 {displayRunNumber} 次运行
+              {runs.length > 1 ? ` / 共 ${runs.length} 次` : ''}
+            </span>
+            <button
+              type="button"
+              aria-label="查看更早的一次运行"
+              disabled={runIndex >= runs.length - 1}
+              onClick={(event) => {
+                event.stopPropagation()
+                setRunIndex((current) => Math.min(runs.length - 1, current + 1))
+                setOutputIndex(0)
+              }}
+            >
+              <Icons.ChevronRight size={13} />
+            </button>
           </div>
-        ) : (
-          <span className={`canvas-operation-run-status is-${activeRun.status}`}>
-            {operationStatusLabel(activeRun.status)}
-          </span>
-        )}
-      </div>
+          {outputs.length > 1 ? (
+            <div className="canvas-operation-output-dots" aria-label="本次运行产物">
+              {outputs.map((output, index) => (
+                <button
+                  key={output.id}
+                  type="button"
+                  className={index === outputIndex ? 'is-active' : ''}
+                  aria-label={`查看产物 ${index + 1}：${output.title}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setOutputIndex(index)
+                  }}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -1114,13 +1113,63 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
         : node.type === 'image' || node.type === 'audio' || node.type === 'video'
           ? '预览'
           : '打开编辑'
+  const isTextContentNode =
+    (node.type === 'text' || node.type === 'prompt') && !isOperationNode(node) && !renderShotTable
+  const isMediaContentNode =
+    (node.type === 'image' || node.type === 'audio' || node.type === 'video') &&
+    !isOperationNode(node)
+  const shouldShowContentTitle = isTextContentNode || isMediaContentNode
+  const contentTitleMeta = isResourceOutput
+    ? '画布产物'
+    : roleMeta?.label
+      ? `${roleMeta.label}资产`
+      : node.type === 'image'
+        ? node.data.panorama360
+          ? '360° 全景资产'
+          : '图片资产'
+        : node.type === 'video'
+          ? '视频资产'
+          : node.type === 'audio'
+            ? '音频资产'
+            : '双击打开编辑器'
+  const passiveStatusLabel = isResourceOutput
+    ? '产物'
+    : productionBadge?.label
+      ? productionBadge.label
+      : isDirectorStage
+        ? '草稿'
+        : node.type === 'group'
+          ? '节点组'
+          : isMediaContentNode
+            ? node.data.url
+              ? '已生成'
+              : '待添加'
+            : isTextContentNode
+              ? '可编辑'
+              : '已就绪'
   const nodeFooterLabel = operationSummary
     ? operationSummary
-    : isResourceOutput
-      ? '画布产物'
-      : node.type === 'group'
-        ? '成组排列'
-        : '双击可快速打开'
+    : isOperationNode(node)
+      ? '运行记录'
+      : isResourceOutput
+        ? '画布产物'
+        : node.type === 'group'
+          ? '成组排列'
+          : isDirectorStage3D
+            ? '导演场景'
+            : isVideoWorkbench
+              ? '视频工程'
+              : node.type === 'image'
+                ? node.data.panorama360
+                  ? '360° 全景'
+                  : '图片资产'
+                : node.type === 'video'
+                  ? '视频资产'
+                  : node.type === 'audio'
+                    ? '音频资产'
+                    : isTextContentNode
+                      ? `${(node.data.text ?? node.data.message ?? '').length} 字`
+                      : '可编辑'
   const nodeStyle = {
     ...(roleMeta ? { ['--role-color' as string]: roleMeta.color } : {}),
     ...(hasInlineExtension
@@ -1128,7 +1177,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       : {}),
   } as CSSProperties
   const nodeMetaBar = (
-    <div className="canvas-node-meta-bar nodrag nopan">
+    <div className="canvas-node-meta-bar">
       <span className="canvas-node-meta-title">
         <span className="canvas-node-meta-icon" aria-hidden="true">
           {node.type === 'image' &&
@@ -1136,7 +1185,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           {node.type === 'audio' && <Icons.Play size={14} />}
           {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={14} />}
           {isDirectorStage ? (
-            <Icons.Play size={14} />
+            <Icons.Box size={14} />
           ) : isOperationNode(node) ? (
             operationNodeIcon(nodeOperation(node))
           ) : node.type === 'task' ? (
@@ -1145,17 +1194,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           {node.type === 'video' && <Icons.Play size={14} />}
           {node.type === 'group' && <Icons.Layers size={14} />}
         </span>
-        <span className="canvas-node-meta-copy">
-          <span className="canvas-node-kind-label">
-            {node.data.panorama360 ? `360全景 · ${metaTypeLabel}` : metaTypeLabel}
-          </span>
-          <strong title={node.data.panorama360 ? `360全景 · ${title}` : title}>{title}</strong>
+        <span className="canvas-node-kind-label">
+          {node.data.panorama360 ? `360全景 · ${metaTypeLabel}` : metaTypeLabel}
         </span>
       </span>
       <span className="canvas-node-meta-tags">
-        {roleMeta ? (
-          <span className="canvas-node-meta-chip canvas-node-meta-chip-role">{roleMeta.label}</span>
-        ) : null}
         {operationStatus ? (
           <span
             className={`canvas-node-meta-chip canvas-node-meta-chip-status is-${operationStatus}`}
@@ -1163,14 +1206,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             {operationStatusLabel(operationStatus)}
           </span>
         ) : null}
-        {isResourceOutput ? (
-          <span className="canvas-node-meta-chip canvas-node-meta-chip-output">产物</span>
-        ) : null}
-        {productionBadge ? (
+        {!operationStatus ? (
           <span
-            className={`canvas-node-meta-chip canvas-node-meta-chip-state is-${node.data.productionState}`}
+            className={`canvas-node-meta-chip canvas-node-meta-chip-state${productionBadge ? ` is-${node.data.productionState}` : ''}`}
           >
-            {productionBadge.label}
+            {passiveStatusLabel}
           </span>
         ) : null}
       </span>
@@ -1205,6 +1245,12 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             <div className="canvas-node-inline-toolbar nodrag nopan">{inlineToolbar}</div>
           ) : null}
           <div className="canvas-node-core">
+            {shouldShowContentTitle && isTextContentNode ? (
+              <div className="canvas-node-content-title canvas-node-content-title-text">
+                <strong title={title}>{title}</strong>
+                <span>{contentTitleMeta}</span>
+              </div>
+            ) : null}
             {/* nowheel：阻止画布 d3-zoom 抢走滚轮做缩放。
               需要滚动的节点由内部内容区（如 .canvas-node-text / .canvas-node-task-msg）
               自己处理原生滚动；react-flow 靠事件祖先链上的 nowheel 类跳过缩放。 */}
@@ -1364,6 +1410,12 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 </div>
               )}
             </div>
+            {shouldShowContentTitle && isMediaContentNode ? (
+              <div className="canvas-node-content-title canvas-node-content-title-media">
+                <strong title={title}>{title}</strong>
+                <span>{contentTitleMeta}</span>
+              </div>
+            ) : null}
             <div className="canvas-node-quick-footer nodrag nopan">
               <span title={nodeFooterLabel}>{nodeFooterLabel}</span>
               <button

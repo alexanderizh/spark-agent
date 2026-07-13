@@ -4,6 +4,7 @@
   }
 
   .canvas-node {
+    --canvas-node-meta-height: 39px;
     overflow: hidden;
     border: 1px solid var(--canvas-v4-border);
     border-radius: var(--canvas-v4-radius-md);
@@ -27,58 +28,35 @@
   }
 
   .canvas-node-meta-bar {
-    min-height: 48px;
-    padding: 6px 10px;
+    min-height: 39px;
+    padding: 0 11px;
     border-bottom: 1px solid var(--canvas-v4-divider);
     background: var(--canvas-v4-surface);
   }
 
   .canvas-node-meta-title {
-    gap: 8px;
+    gap: 7px;
     min-width: 0;
     color: var(--text);
-
-    > .canvas-node-meta-copy {
-      overflow: hidden;
-    }
   }
 
   .canvas-node-meta-icon {
-    display: inline-grid;
-    width: 27px;
-    height: 27px;
-    flex: 0 0 27px;
-    place-items: center;
-    border: 1px solid var(--canvas-v4-divider);
-    border-radius: var(--canvas-v4-radius-sm);
-    background: var(--canvas-v4-surface-muted);
+    display: inline-flex;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    align-items: center;
+    justify-content: center;
     color: var(--text-muted);
   }
 
-  .canvas-node-meta-copy {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: 2px;
-    line-height: 1.15;
-
-    strong {
-      overflow: hidden;
-      color: var(--text-strong);
-      font-size: 11px;
-      font-weight: 640;
-      letter-spacing: -0.005em;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-  }
-
   .canvas-node-kind-label {
+    min-width: 0;
     overflow: hidden;
-    color: var(--text-faint);
-    font-size: 8px;
-    font-weight: 560;
-    letter-spacing: 0.045em;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 580;
+    letter-spacing: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -88,14 +66,14 @@
   }
 
   .canvas-node-meta-chip {
-    min-height: 19px;
-    padding: 0 6px;
-    border: 1px solid var(--canvas-v4-divider);
-    border-radius: var(--canvas-v4-radius-xs);
-    background: var(--canvas-v4-surface-muted);
+    min-height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
     color: var(--text-faint);
-    font-size: 8px;
-    line-height: 17px;
+    font-size: 10px;
+    line-height: 18px;
   }
 
   .canvas-node-meta-chip-status.is-running {
@@ -107,6 +85,69 @@
   .canvas-node-body {
     border-radius: 0;
     background: var(--canvas-v4-surface);
+  }
+
+  .canvas-node-operation,
+  .canvas-operation-output-nav {
+    background: var(--canvas-v4-surface);
+  }
+
+  .canvas-operation-output-stage {
+    background: var(--canvas-v4-surface-muted);
+  }
+
+  .canvas-operation-output-media {
+    background: var(--bg-sunken);
+  }
+
+  .canvas-operation-output-stage-label {
+    background: linear-gradient(
+      180deg,
+      transparent,
+      color-mix(in srgb, var(--bg-sunken) 92%, transparent)
+    );
+  }
+
+  .canvas-node-content-title {
+    display: flex;
+    min-width: 0;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 12px 11px;
+    background: var(--canvas-v4-surface);
+
+    strong,
+    span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    strong {
+      color: var(--text-strong);
+      font-size: 12px;
+      font-weight: 640;
+      line-height: 1.35;
+    }
+
+    span {
+      color: var(--text-faint);
+      font-size: 9px;
+      line-height: 1.35;
+    }
+  }
+
+  .canvas-node-content-title-text {
+    padding: 13px 14px 5px;
+
+    strong {
+      font-size: 13px;
+    }
+  }
+
+  .canvas-node-content-title-media {
+    border-top: 1px solid var(--canvas-v4-divider);
   }
 
   .canvas-node-quick-footer {
@@ -124,7 +165,7 @@
       min-width: 0;
       overflow: hidden;
       color: var(--text-faint);
-      font-size: 8px;
+      font-size: 10px;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -137,8 +178,8 @@
       color: var(--text-muted);
       cursor: pointer;
       font: inherit;
-      font-size: 9px;
-      font-weight: 560;
+      font-size: 10px;
+      font-weight: 580;
 
       &:hover,
       &:focus-visible {
