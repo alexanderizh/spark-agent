@@ -1380,7 +1380,6 @@ body.sidebar-resizing {
 /* 用户消息：hover bar 右对齐（气泡外右下角） */
 .msg-hover-right {
   justify-content: flex-end;
-  margin-right: 46px;
 }
 
 /* Agent 消息：hover bar 左对齐（气泡内左下角） */
