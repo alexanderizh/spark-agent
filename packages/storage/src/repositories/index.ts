@@ -16,6 +16,8 @@ export type {
   UpsertCanvasProjectParams,
 } from './canvas.repository.js'
 export { EventRepository } from './event.repository.js'
+export { TurnRequestRepository } from './turn-request.repository.js'
+export type { TurnRequestRow, TurnRequestStatus } from './turn-request.repository.js'
 export { ConnectorConnectionRepository } from './connector.repository.js'
 export type {
   ConnectorConnectionRow,

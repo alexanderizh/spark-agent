@@ -51,9 +51,9 @@ export interface ChatPanelProps {
   /** 可选：限制工具卡片的标签前缀（如只显示 mcp__spark_canvas__） */
   toolNamePrefixFilter?: string
   /**
-   * 可选：接管发送逻辑。传入后 ChatPanel 不再自行调 session:send-turn，
+   * 可选：接管发送逻辑。传入后 ChatPanel 不再自行调 session:submit-turn，
    * 而是把待发送文本交给父组件（父组件负责建会/发消息）；发送失败请抛异常，
-   * ChatPanel 会捕获并显示 sendError。未传则走默认的 session:send-turn。
+   * ChatPanel 会捕获并显示 sendError。未传则走默认的 session:submit-turn。
    */
   onSend?: (text: string, attachments: SessionAttachment[]) => Promise<void>
   /** 可选：输入草稿初始值（父组件持久化未发送的输入，关闭重开可恢复） */
@@ -390,7 +390,7 @@ export function ChatPanel({
         // 父组件接管发送（如画布弹窗需要先建会、注入上下文等）
         await onSend(rawText, turnAttachments)
       } else {
-        await window.spark.invoke('session:send-turn', {
+        await window.spark.invoke('session:submit-turn', {
           sessionId: sessionId as never,
           message: rawText,
           ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),

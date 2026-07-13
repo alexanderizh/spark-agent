@@ -44,6 +44,7 @@ app.commandLine.appendSwitch('disable-features', 'OverlayScrollbar,OverlayScroll
 
 import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
+import { startBackgroundMaintenanceWorker } from './services/background-maintenance-worker.js'
 import { registerAllIpcHandlers, ensureNoProjectDirectoryExists } from './ipc/index.js'
 import { setMainWindow, sendToMainWindow } from './windows/index.js'
 import { getFileWatcherService } from './services/FileWatcherService.js'
@@ -616,6 +617,7 @@ async function initializeApp(): Promise<void> {
     const migrationsDir = is.dev ? undefined : join(process.resourcesPath, 'migrations')
     const db = createDatabase(dbPath, migrationsDir)
     setDatabaseInstance(db)
+    const backgroundMaintenanceWorker = startBackgroundMaintenanceWorker(dbPath)
     log.info('Database initialized successfully')
 
     // 关闭数据库连接在应用退出时
@@ -628,6 +630,7 @@ async function initializeApp(): Promise<void> {
       }
       getFileWatcherService().stopAll()
       getUpdateService().destroy()
+      backgroundMaintenanceWorker.dispose()
       closeDatabase()
     })
   } catch (err) {

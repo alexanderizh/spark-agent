@@ -58,7 +58,9 @@ type TextProviderKind = 'anthropic' | 'openai' | 'deepseek' | 'ollama' | 'openai
 const PROVIDER_MODEL_TYPES = new Set<ProviderModelType>(['image', 'text', 'multimodal', 'voice', 'video'])
 const IMAGE_API_TYPES = new Set<ImageGenApiType>(['sync', 'async', 'auto'])
 const TEXT_PROVIDER_KINDS = new Set<TextProviderKind>(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible'])
-const LOCAL_CLI_CHECK_TTL_MS = 10_000
+// CLI 安装状态很少在应用运行中变化。短 TTL 会让 Provider 列表刷新频繁拉起
+// login shell；采用与主流 Agent 凭据 helper 相近的 5 分钟缓存窗口。
+const LOCAL_CLI_CHECK_TTL_MS = 5 * 60_000
 const PROVIDER_HTTP_TIMEOUT_MS = 8_000
 const PROVIDER_CONNECTION_TIMEOUT_MS = 15_000
 const MODELS_ERROR_BODY_MAX_CHARS = 512
@@ -173,6 +175,8 @@ async function resolveCliFromLoginShell(binaryName: string): Promise<string | nu
 
 let localCliAvailabilityCache: { checkedAt: number; available: boolean } | null = null
 let localCodexCliAvailabilityCache: { checkedAt: number; available: boolean } | null = null
+let localCliAvailabilityCheck: Promise<boolean> | null = null
+let localCodexCliAvailabilityCheck: Promise<boolean> | null = null
 
 /**
  * 解析 `claude` CLI 的实际可执行路径（用于校验存在性，不执行它）。
@@ -389,44 +393,60 @@ export class ProviderService {
     return [...visibleProfiles, ...routers]
   }
 
-  async isLocalCliAvailable(): Promise<boolean> {
+  async isLocalCliAvailable(options: { forceRefresh?: boolean } = {}): Promise<boolean> {
     const now = Date.now()
     if (
+      options.forceRefresh !== true &&
       localCliAvailabilityCache != null &&
       now - localCliAvailabilityCache.checkedAt < LOCAL_CLI_CHECK_TTL_MS
     ) {
       return localCliAvailabilityCache.available
     }
+    if (localCliAvailabilityCheck) return localCliAvailabilityCheck
 
-    const available = await checkClaudeCliAvailable()
-    localCliAvailabilityCache = { checkedAt: now, available }
-    if (!available) {
-      log.warn(
-        `Local claude CLI not found. Tried candidates [${CLAUDE_CLI_CANDIDATES.join(', ')}]` +
-        ` and ${isWin ? 'where' : 'which'} resolution.`,
-      )
-    }
-    return available
+    localCliAvailabilityCheck = checkClaudeCliAvailable()
+      .then((available) => {
+        localCliAvailabilityCache = { checkedAt: Date.now(), available }
+        if (!available) {
+          log.warn(
+            `Local claude CLI not found. Tried candidates [${CLAUDE_CLI_CANDIDATES.join(', ')}]` +
+            ` and ${isWin ? 'where' : 'which'} resolution.`,
+          )
+        }
+        return available
+      })
+      .finally(() => {
+        localCliAvailabilityCheck = null
+      })
+    return localCliAvailabilityCheck
   }
 
-  async isLocalCodexCliAvailable(): Promise<boolean> {
+  async isLocalCodexCliAvailable(options: { forceRefresh?: boolean } = {}): Promise<boolean> {
     const now = Date.now()
     if (
+      options.forceRefresh !== true &&
       localCodexCliAvailabilityCache != null &&
       now - localCodexCliAvailabilityCache.checkedAt < LOCAL_CLI_CHECK_TTL_MS
     ) {
       return localCodexCliAvailabilityCache.available
     }
+    if (localCodexCliAvailabilityCheck) return localCodexCliAvailabilityCheck
 
-    const available = await checkCodexCliAvailable()
-    localCodexCliAvailabilityCache = { checkedAt: now, available }
-    if (!available) {
-      log.warn(
-        `Local codex CLI not found. Tried candidates [${CODEX_CLI_CANDIDATES.join(', ')}]` +
-        ` and ${isWin ? 'where' : 'which'} resolution.`,
-      )
-    }
-    return available
+    localCodexCliAvailabilityCheck = checkCodexCliAvailable()
+      .then((available) => {
+        localCodexCliAvailabilityCache = { checkedAt: Date.now(), available }
+        if (!available) {
+          log.warn(
+            `Local codex CLI not found. Tried candidates [${CODEX_CLI_CANDIDATES.join(', ')}]` +
+            ` and ${isWin ? 'where' : 'which'} resolution.`,
+          )
+        }
+        return available
+      })
+      .finally(() => {
+        localCodexCliAvailabilityCheck = null
+      })
+    return localCodexCliAvailabilityCheck
   }
 
   /**
@@ -796,14 +816,14 @@ export class ProviderService {
     // Local CLI provider 走宿主 claude CLI 的本地凭证，没有可检测的 endpoint —
     // 视为始终可用；真正的鉴权失败会在 turn 启动时由 SDK 抛错。
     if (id === LOCAL_CLI_PROVIDER_ID) {
-      const available = await this.isLocalCliAvailable()
+      const available = await this.isLocalCliAvailable({ forceRefresh: true })
       log.info(`healthCheck local-cli, id=${id}, available=${available}`)
       return available
         ? { healthy: true, latencyMs: 0 }
         : { healthy: false, errorMessage: 'Local claude CLI not found' }
     }
     if (id === LOCAL_CODEX_CLI_PROVIDER_ID) {
-      const available = await this.isLocalCodexCliAvailable()
+      const available = await this.isLocalCodexCliAvailable({ forceRefresh: true })
       log.info(`healthCheck local-codex-cli, id=${id}, available=${available}`)
       return available
         ? { healthy: true, latencyMs: 0 }
@@ -1002,15 +1022,6 @@ export class ProviderService {
       + `lastNotFound=${lastNotFound ?? '(none)'}`,
     )
     throw new Error(`All model endpoints failed: ${lastNotFound ?? 'no candidates'}`)
-  }
-
-  /** 读取指定 profile 在 Keychain 中保存的明文 API Key；未配置时返回空串。 */
-  async revealApiKey(id: string): Promise<string> {
-    const row = this.repo.get(id)
-    if (row && isManagedProviderRow(row)) {
-      throw new Error('平台官方 Provider 的 API Key 不允许回显')
-    }
-    return this.resolveProviderApiKey(id, undefined)
   }
 
   async ensureManagedNewApiProvider(params: {

@@ -176,6 +176,8 @@ export interface SessionCreateRequest {
 export interface SessionCreateResponse {
   sessionId: SessionId
   createdAt: string
+  /** Complete summary for immediate renderer upsert without session:list. */
+  session: SessionListResponse['sessions'][number]
 }
 
 export interface SessionSendTurnRequest {
@@ -210,6 +212,13 @@ export interface SessionSendTurnResponse {
   turnId: string
   /** Turn 是否立即开始执行（false 表示排队中） */
   started: boolean
+}
+
+export type SessionSubmitTurnRequest = SessionSendTurnRequest
+
+export interface SessionSubmitTurnResponse extends SessionSendTurnResponse {
+  /** The request is durably stored and can be recovered after a process restart. */
+  accepted: true
 }
 
 export interface SessionQueuedTurn {
@@ -480,6 +489,11 @@ export interface SessionListResponse {
     archivedAt: string | null
     createdAt: string
     updatedAt: string
+    /** Number of user-submitted turns. Always populated by current desktop versions. */
+    turnCount?: number
+    /** User messages plus completed assistant messages. */
+    logicalMessageCount?: number
+    /** @deprecated Compatibility alias for logicalMessageCount. */
     messageCount: number
     /** 若该会话由宿主机历史导入而来，标记来源（用于侧边栏来源徽标）*/
     importedFrom?: HistoryImportSource
@@ -789,28 +803,6 @@ export interface ProviderFetchModelsRequest {
 
 export interface ProviderFetchModelsResponse {
   models: ProviderFetchedModel[]
-}
-
-/**
- * `provider:reveal-key` — 返回指定 Profile 在 Keychain 里存储的明文 API Key。
- *
- * 设计意图：编辑 Provider 时 UI 需要把 key 字段回显给用户；之前的做法是初始化
- * 为空、placeholder 写 `••••••••（留空不更新）`，导致用户无法在编辑时确认 key
- * 是否正确、也无法在不重输的情况下保留。
- *
- * 安全边界：
- *   - 仅在 Electron 主进程内执行（`keystore.getSecret` 走 OS Keychain，IPC 通道
- *     暴露给 renderer，调用方为当前用户自己）。
- *   - 仅返回 id 指定的单个 profile 的明文 key，不做批量导出。
- *   - 渲染层只在编辑抽屉打开时调用一次，不写入本地存储。
- */
-export interface ProviderRevealKeyRequest {
-  id: string
-}
-
-export interface ProviderRevealKeyResponse {
-  /** Keychain 中保存的明文 key；若该 profile 未配置 key 则返回空串。 */
-  apiKey: string
 }
 
 // ─── Provider Import/Export Channels ──────────────────────────────────────────
@@ -5092,6 +5084,7 @@ export interface IpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]
+  'session:submit-turn': [SessionSubmitTurnRequest, SessionSubmitTurnResponse]
   'session:get-queue': [SessionGetQueueRequest, SessionGetQueueResponse]
   'session:cancel-queued-turn': [SessionCancelQueuedTurnRequest, SessionCancelQueuedTurnResponse]
   'session:send-queued-turn-now': [
@@ -5130,7 +5123,6 @@ export interface IpcChannelMap {
   'provider:health-check': [ProviderHealthCheckRequest, ProviderHealthCheckResponse]
   'provider:test-connection': [ProviderConnectionTestRequest, ProviderHealthCheckResponse]
   'provider:fetch-models': [ProviderFetchModelsRequest, ProviderFetchModelsResponse]
-  'provider:reveal-key': [ProviderRevealKeyRequest, ProviderRevealKeyResponse]
   // Provider 导入/导出（多选 + 文件 IO + JSON 序列化）
   'provider:export': [ProviderExportRequest, ProviderExportResponse]
   'provider:import': [ProviderImportRequest, ProviderImportResponse]
@@ -5683,7 +5675,11 @@ export interface IpcStreamChannelMap {
   /** Session 标题被异步重命名（首轮完成后 LLM 总结）*/
   'stream:session:renamed': { sessionId: string; title: string }
   /** Session created outside the renderer session sidebar flow */
-  'stream:session:created': { sessionId: string }
+  'stream:session:created': {
+    sessionId: string
+    /** Optional for compatibility with older main processes. */
+    session?: SessionListResponse['sessions'][number]
+  }
   /** 用户问题请求（AskUserQuestion 工具，主进程推送，渲染进程显示选择界面）*/
   'stream:session:user-question': {
     questionId: string
