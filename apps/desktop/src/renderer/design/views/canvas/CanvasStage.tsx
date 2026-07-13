@@ -387,6 +387,7 @@ function CanvasStageInner({
   onExtractCharacterSubview,
   onPreviewPanorama,
   onEditVideo,
+  onExpandOperationOutputs,
   onCreateOperationChild,
   onPipelineAction,
   onSetProductionState,
@@ -442,6 +443,8 @@ function CanvasStageInner({
   onPreviewPanorama: (nodeId: string) => void
   /** 视频节点右键 → 视频编辑（打开视频工作台） */
   onEditVideo: (nodeId: string) => void
+  /** 多产物操作节点右键 → 展开最近一次运行的全部产物 */
+  onExpandOperationOutputs: (nodeId: string) => void
   onCreateOperationChild: (
     parentId: string,
     operation: import('./canvas.types').CanvasOperationType,
@@ -509,6 +512,7 @@ function CanvasStageInner({
       ...(onExtractCharacterSubview ? { extractCharacterSubview: onExtractCharacterSubview } : {}),
       previewPanorama: onPreviewPanorama,
       ...(onEditVideo ? { editVideo: onEditVideo } : {}),
+      expandOperationOutputs: onExpandOperationOutputs,
       createOperationChild: onCreateOperationChild,
       pipelineAction: onPipelineAction,
       setProductionState: onSetProductionState,
@@ -531,6 +535,7 @@ function CanvasStageInner({
       onSplitGridImage,
       onPreviewPanorama,
       onEditVideo,
+      onExpandOperationOutputs,
       onRemoveNodeFromGroup,
       onAddNodeToAgent,
       onCreateOperationChild,

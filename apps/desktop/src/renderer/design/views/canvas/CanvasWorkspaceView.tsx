@@ -3236,6 +3236,13 @@ export function CanvasWorkspaceView({
     [handleExpandOperationOutputs],
   )
 
+  const handleExpandLatestOperationOutputs = useCallback(
+    (operationNodeId: string) => {
+      handleExpandOperationOutputScope(operationNodeId, 'latest_run')
+    },
+    [handleExpandOperationOutputScope],
+  )
+
   const createPanoramaCaptureNode = useCallback(
     async (
       dataUrl: string,
@@ -7161,6 +7168,7 @@ export function CanvasWorkspaceView({
             onOpenAiComposer={handleOpenInlineAi}
             onEditNode={handleEditNode}
             onEditVideo={handleEditVideo}
+            onExpandOperationOutputs={handleExpandLatestOperationOutputs}
             onPreviewPanorama={handlePreviewPanorama}
             onSaveNodeToLibrary={onSaveNodeToLibraryStable}
             onAnnotateImage={onAnnotateImageStable}

@@ -386,6 +386,8 @@ export type CanvasFlowNodeData = {
     previewPanorama: (nodeId: string) => void
     /** 视频节点：右键 → 视频编辑（打开视频工作台） */
     editVideo?: (nodeId: string) => void
+    /** 多产物操作节点：右键一键展开最近一次运行的全部产物节点 */
+    expandOperationOutputs?: (nodeId: string) => void
     createOperationChild: (
       parentId: string,
       operation: import('./canvas.types').CanvasOperationType,
@@ -591,6 +593,10 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const isPanorama360 = Boolean(contentNode?.data.panorama360 ?? node.data.panorama360)
   const isImageContent = contentNode ? isCanvasImageContentNode(contentNode) : false
   const canExtractCharacterSubview = isImageContent && hasOperationOutput
+  const latestOperationOutputCount =
+    operationRuns.find((run) => run.outputs.length > 0)?.outputs.length ?? 0
+  const canExpandOperationOutputs =
+    isTask && Boolean(actions.expandOperationOutputs) && latestOperationOutputCount > 1
   // 分镜脚本产物节点：把 agent 输出的 JSON / Markdown 分镜表渲染成传统分镜脚本表。
   // 不依赖 pipelineRole（分镜脚本文本产物节点故意不打 shot 角色，避免右键出现不适用的
   // 关键帧/视频操作），改为「文本节点 + 内容像分镜表 + 能解析出多行」的内容判定，
@@ -733,6 +739,19 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 })),
               },
               { type: 'divider' as const },
+            ]
+          : []),
+        ...(canExpandOperationOutputs
+          ? [
+              {
+                key: 'expand-operation-outputs',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Layers size={14} /> 展开产物
+                  </span>
+                ),
+                onClick: () => actions.expandOperationOutputs?.(node.id),
+              },
             ]
           : []),
         {
@@ -1031,6 +1050,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       isVideoWorkbench,
       locked,
       canExtractCharacterSubview,
+      canExpandOperationOutputs,
       canCreateOperationFromNode,
       contentNode,
       hasOperationOutput,
