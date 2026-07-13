@@ -15,7 +15,7 @@ import type { ReactElement } from 'react'
 import { Button, Dropdown, Segmented, Slider, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { encodeToSafeFileUrl } from '../canvas-safe-file'
-import type { VideoProcessRequest } from '@spark/protocol'
+import type { FfmpegInstallProgress, VideoProcessRequest } from '@spark/protocol'
 import { Icons } from '../../../Icons'
 import type { CanvasNode } from '../canvas.types'
 import {
@@ -104,6 +104,8 @@ export function CanvasVideoWorkbenchModal({
   const [draft, setDraft] = useState<VideoWorkbenchData>(initial)
   const [activeTab, setActiveTab] = useState<'frames' | 'edit' | 'output'>(initial.activeTab)
   const [ffmpegReady, setFfmpegReady] = useState<boolean | null>(null)
+  const [ffmpegInstalling, setFfmpegInstalling] = useState(false)
+  const [ffmpegInstallProgress, setFfmpegInstallProgress] = useState<FfmpegInstallProgress | null>(null)
   const [busy, setBusy] = useState(false)
   /** 进度 0~100，null 表示无活动 */
   const [progress, setProgress] = useState<number | null>(null)
@@ -135,6 +137,41 @@ export function CanvasVideoWorkbenchModal({
       .then((s: { ffmpegReady: boolean }) => setFfmpegReady(s.ffmpegReady))
       .catch(() => setFfmpegReady(false))
   }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const unsubProgress = window.spark?.on(
+      'stream:ffmpeg:install-progress',
+      (next: FfmpegInstallProgress) => {
+        setFfmpegInstallProgress(next)
+        setFfmpegInstalling(next.state !== 'done' && next.state !== 'error')
+        if (next.state === 'done') setFfmpegReady(true)
+      },
+    )
+    const unsubStatus = window.spark?.on(
+      'stream:ffmpeg:status',
+      (next: { ffmpegReady: boolean }) => setFfmpegReady(next.ffmpegReady),
+    )
+    return () => {
+      unsubProgress?.()
+      unsubStatus?.()
+    }
+  }, [open])
+
+  const installFfmpeg = useCallback(async () => {
+    setFfmpegInstalling(true)
+    setFfmpegInstallProgress(null)
+    try {
+      const result = await window.spark.invoke('ffmpeg:install', {})
+      setFfmpegReady(result.success)
+      if (result.success) message.success(result.message ?? 'FFmpeg 安装成功，视频能力已就绪')
+      else message.error(result.message ?? 'FFmpeg 安装失败')
+    } catch (error) {
+      message.error(`FFmpeg 安装失败：${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setFfmpegInstalling(false)
+    }
+  }, [])
 
   // ── 订阅进度推送 ──────────────────────────────────────────────────
   useEffect(() => {
@@ -460,16 +497,20 @@ export function CanvasVideoWorkbenchModal({
         {ffmpegReady === false && (
           <div className="vwb-ffmpeg-warning">
             <Icons.AlertTriangle size={16} />
-            <span>FFmpeg 未安装，关键帧提取等能力不可用。请在「设置 → 完整性」中下载。</span>
+            <span>
+              {ffmpegInstallProgress?.message ?? 'FFmpeg 未安装，关键帧提取和本地剪辑暂不可用。'}
+              {ffmpegInstallProgress?.percent != null
+                ? ` ${Math.round(ffmpegInstallProgress.percent)}%`
+                : ''}
+            </span>
             <Button
               size="small"
-              type="link"
-              onClick={() => {
-                onClose()
-                message.info('请打开「设置 → 完整性」下载 FFmpeg')
-              }}
+              type="primary"
+              loading={ffmpegInstalling}
+              onClick={() => void installFfmpeg()}
+              icon={<Icons.Download size={14} />}
             >
-              去下载
+              {ffmpegInstalling ? '正在安装' : '下载并安装'}
             </Button>
           </div>
         )}
@@ -577,6 +618,13 @@ export function CanvasVideoWorkbenchModal({
 
           {/* 右侧：Tab 面板 */}
           <div className="vwb-side-pane">
+            <div className="vwb-workflow-strip" aria-label="视频工作流">
+              <span className={activeTab === 'frames' ? 'is-active' : ''}>01 素材分析</span>
+              <Icons.ChevronRight size={13} />
+              <span className={activeTab === 'edit' ? 'is-active' : ''}>02 剪辑处理</span>
+              <Icons.ChevronRight size={13} />
+              <span className={activeTab === 'output' ? 'is-active' : ''}>03 产物检查</span>
+            </div>
             <Segmented
               value={activeTab}
               onChange={(v) => setActiveTab(v as 'frames' | 'edit' | 'output')}

@@ -116,6 +116,11 @@
   }
 }
 
+.vwb-ffmpeg-warning > span {
+  min-width: 0;
+  flex: 1;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Body 布局
 // ═══════════════════════════════════════════════════════════════
@@ -498,6 +503,21 @@
   .ant-segmented {
     margin: 10px;
   }
+}
+
+.vwb-workflow-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 2px 0 8px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.vwb-workflow-strip span.is-active {
+  color: var(--primary);
 }
 
 .vwb-placeholder {

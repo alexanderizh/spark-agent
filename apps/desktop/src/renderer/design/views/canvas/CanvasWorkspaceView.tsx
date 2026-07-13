@@ -93,6 +93,7 @@ import {
 import { applyCanvasStyleToTask, buildCanvasStyleContext } from './canvasStyleContext'
 import { buildStoryboardGridPrompt, buildStoryboardNodePrompt } from './canvasStoryboardGrid'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import { splitStoryboardNode } from './canvasStoryboardNodeSplit'
 import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEntityExtract'
 import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
@@ -2750,9 +2751,7 @@ export function CanvasWorkspaceView({
       const stageElement = document.querySelector<HTMLElement>('.canvas-stage-area')
       const contentElements = contentNodes
         .map((node) =>
-          document
-            .querySelector<HTMLElement>(`[data-canvas-node-id="${cssEscape(node.id)}"]`)
-            ?.querySelector<HTMLElement>('.canvas-node-body'),
+          document.querySelector<HTMLElement>(`[data-canvas-node-id="${cssEscape(node.id)}"]`),
         )
         .filter((element): element is HTMLElement => Boolean(element))
 
@@ -2825,7 +2824,7 @@ export function CanvasWorkspaceView({
               normalizeColorsForHtml2Canvas(clonedStageElement, clonedWindow)
             }
           },
-          scale: Math.min(2, window.devicePixelRatio || 1),
+          scale: Math.min(4, Math.max(2.5, window.devicePixelRatio || 1)),
         })
         const scaleX = renderedCanvas.width / stageRect.width
         const scaleY = renderedCanvas.height / stageRect.height
@@ -3357,6 +3356,27 @@ export function CanvasWorkspaceView({
       })
     },
     [createTextNode],
+  )
+
+  const handleSplitStoryboard = useCallback(
+    async (nodeId: string) => {
+      const source = snapshotRef.current?.nodes.find((item) => item.id === nodeId)
+      if (!source) return
+      const created = await splitStoryboardNode({
+        source,
+        allNodes: snapshotRef.current?.nodes ?? [],
+        createTextNode,
+        patchNodes,
+        connectNodes,
+      })
+      if (created.length === 0) {
+        message.warning('没有解析到可拆分的分镜')
+        return
+      }
+      setSelectedNodeIds(created.map((item) => item.id))
+      message.success(`已拆分为 ${created.length} 个分镜节点`)
+    },
+    [connectNodes, createTextNode, patchNodes],
   )
 
   const addDirectorStage = useCallback(
@@ -7189,6 +7209,7 @@ export function CanvasWorkspaceView({
             onSaveNodeToLibrary={onSaveNodeToLibraryStable}
             onAnnotateImage={onAnnotateImageStable}
             onSplitGridImage={onSplitGridImageStable}
+            onSplitStoryboard={(nodeId) => void handleSplitStoryboard(nodeId)}
             onExtractCharacterSubview={onExtractCharacterSubviewStable}
             onCreateOperationChild={onCreateOperationChildStable}
             onPipelineAction={onPipelineActionStable}

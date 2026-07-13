@@ -187,7 +187,7 @@ export function VideoWorkbenchEditPanel({
       <div className="vwb-placeholder">
         <Icons.AlertTriangle size={32} />
         <p>FFmpeg 未安装</p>
-        <p className="muted">请在「设置 → 完整性」下载 FFmpeg 后使用剪辑功能</p>
+        <p className="muted">可在工作台顶部直接下载并安装 FFmpeg</p>
       </div>
     )
   }

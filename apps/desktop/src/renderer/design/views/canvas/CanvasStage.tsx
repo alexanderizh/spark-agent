@@ -389,6 +389,7 @@ function CanvasStageInner({
   onSaveNodeToLibrary,
   onAnnotateImage,
   onSplitGridImage,
+  onSplitStoryboard,
   onExtractCharacterSubview,
   onPreviewPanorama,
   onEditVideo,
@@ -443,6 +444,7 @@ function CanvasStageInner({
   onSaveNodeToLibrary: (nodeId: string) => void
   onAnnotateImage: (nodeId: string) => void
   onSplitGridImage: (nodeId: string) => void
+  onSplitStoryboard: (nodeId: string) => void
   onExtractCharacterSubview?: (nodeId: string) => void
   /** 360 全景产物节点右键 → 全景预览 */
   onPreviewPanorama: (nodeId: string) => void
@@ -514,6 +516,7 @@ function CanvasStageInner({
       saveToLibrary: onSaveNodeToLibrary,
       annotateImage: onAnnotateImage,
       splitGridImage: onSplitGridImage,
+      splitStoryboard: onSplitStoryboard,
       ...(onExtractCharacterSubview ? { extractCharacterSubview: onExtractCharacterSubview } : {}),
       previewPanorama: onPreviewPanorama,
       ...(onEditVideo ? { editVideo: onEditVideo } : {}),
@@ -538,6 +541,7 @@ function CanvasStageInner({
       onAnnotateImage,
       onExtractCharacterSubview,
       onSplitGridImage,
+      onSplitStoryboard,
       onPreviewPanorama,
       onEditVideo,
       onExpandOperationOutputs,
@@ -809,15 +813,12 @@ function CanvasStageInner({
               sourceId: edge.sourceNodeId,
               targetId: edge.targetNodeId,
             }))
-          const positions = arrangeCanvasNodes(
-            nodesInScope.map(flowNodeToAutoLayoutNode),
-            {
-              mode,
-              spacing,
-              links: linksInScope,
-              obstacles: obstacles.map(flowNodeToAutoLayoutNode),
-            },
-          )
+          const positions = arrangeCanvasNodes(nodesInScope.map(flowNodeToAutoLayoutNode), {
+            mode,
+            spacing,
+            links: linksInScope,
+            obstacles: obstacles.map(flowNodeToAutoLayoutNode),
+          })
           positions.forEach((position) => positionsById.set(position.id, position))
         }
 

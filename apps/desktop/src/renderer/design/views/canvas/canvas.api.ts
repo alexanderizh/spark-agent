@@ -51,6 +51,7 @@ import {
 import { pruneModelParamsForCanvas } from './canvasMediaContract'
 import { isShotScriptText } from './canvasShotTableParse'
 import { placeAutoNodeToRight } from './canvasAutoPlacement'
+import { planGroupLayout } from './canvasGroupLayout'
 import {
   resolveCollisionFreeBatchPositions,
   resolveCollisionFreeNodePosition,
@@ -1280,10 +1281,6 @@ function updateProjectCounts(db: CanvasDb, projectId: string): void {
   project.updatedAt = now()
 }
 
-const GROUP_PADDING_X = 28
-const GROUP_PADDING_BOTTOM = 28
-const GROUP_HEADER_HEIGHT = 56
-
 type GroupMemberLayout = {
   node: CanvasNode
   absoluteX: number
@@ -1303,24 +1300,20 @@ function applyGroupLayout(groupNode: CanvasNode, members: GroupMemberLayout[], a
     return
   }
 
-  const left = Math.min(...members.map((item) => item.absoluteX))
-  const top = Math.min(...members.map((item) => item.absoluteY))
-  const right = Math.max(...members.map((item) => item.absoluteX + item.node.width))
-  const bottom = Math.max(...members.map((item) => item.absoluteY + item.node.height))
-  const contentWidth = right - left
-  const contentHeight = bottom - top
-  const tallestNodeHeight = Math.max(...members.map((item) => item.node.height))
-  const groupX = left - GROUP_PADDING_X
-  const groupY = top - GROUP_HEADER_HEIGHT
-
-  groupNode.x = groupX
-  groupNode.y = groupY
-  groupNode.width = Math.max(360, contentWidth + GROUP_PADDING_X * 2)
-  groupNode.height = Math.max(
-    220,
-    GROUP_HEADER_HEIGHT + contentHeight + GROUP_PADDING_BOTTOM,
-    GROUP_HEADER_HEIGHT + tallestNodeHeight + GROUP_PADDING_BOTTOM,
+  const layout = planGroupLayout(
+    members.map((item) => ({
+      id: item.node.id,
+      width: item.node.width,
+      height: item.node.height,
+      absoluteX: item.absoluteX,
+      absoluteY: item.absoluteY,
+    })),
   )
+  if (!layout) return
+  groupNode.x = layout.x
+  groupNode.y = layout.y
+  groupNode.width = layout.width
+  groupNode.height = layout.height
   groupNode.data = {
     ...groupNode.data,
     text: `包含 ${members.length} 个节点`,
@@ -1328,10 +1321,13 @@ function applyGroupLayout(groupNode: CanvasNode, members: GroupMemberLayout[], a
   }
   groupNode.updatedAt = at
 
+  const positionById = new Map(layout.members.map((item) => [item.id, item]))
   for (const member of members) {
+    const position = positionById.get(member.node.id)
+    if (!position) continue
     member.node.parentNodeId = groupNode.id
-    member.node.x = member.absoluteX - groupNode.x
-    member.node.y = member.absoluteY - groupNode.y
+    member.node.x = position.x
+    member.node.y = position.y
     member.node.zIndex = groupNode.zIndex + 1
     member.node.updatedAt = at
   }

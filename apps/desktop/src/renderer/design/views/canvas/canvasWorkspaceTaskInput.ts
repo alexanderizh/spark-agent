@@ -1,9 +1,18 @@
 import type { CanvasMediaTaskInputFile } from '@spark/protocol'
 import { buildTaskInputFiles, type CanvasTaskInputRoleSelection } from './canvasTaskInputFiles'
-import type { CanvasAsset, CanvasInputTransport, CanvasNode, CanvasOperationType } from './canvas.types'
+import type {
+  CanvasAsset,
+  CanvasInputTransport,
+  CanvasNode,
+  CanvasOperationType,
+} from './canvas.types'
 import { readBuiltinCanvasOperationPreset } from './canvasOperationPresets'
 import { isOperationNode } from './canvas.capabilities'
 import { resolveCanvasOperationInputNodes } from './canvasOperationOutputModel'
+import {
+  formatCanvasTextInputContext,
+  presentCanvasTextForModel,
+} from './canvasTextInputPresentation'
 import type { CanvasSnapshot } from './canvas.types'
 
 export function buildStoryboardReferenceInputRoles(
@@ -131,7 +140,7 @@ export function buildPipelineSourceText(nodes: CanvasNode[], assets: CanvasAsset
     .filter((node) => node.type === 'text' || node.type === 'prompt')
     .map((node) => {
       const assetText = node.assetId ? byAssetId.get(node.assetId)?.contentText : undefined
-      return (assetText ?? node.data.text ?? '').trim()
+      return presentCanvasTextForModel((assetText ?? node.data.text ?? '').trim())
     })
     .filter((text): text is string => Boolean(text))
     .join('\n\n')
@@ -258,19 +267,4 @@ function buildPromptContext(nodes: CanvasNode[], assets: CanvasAsset[] = []): st
     .map((node) => formatCanvasTextInputContext(node))
     .filter((text): text is string => Boolean(text))
     .join('\n\n')
-}
-
-function canvasTextInputKind(node: CanvasNode, content: string): string {
-  if (node.data.pipelineRole === 'shot') return '分镜脚本'
-  if (node.data.pipelineRole === 'screenplay') return '剧本'
-  if (node.type === 'prompt') return '提示词节点'
-  if (content.includes('| 镜号 |') || content.includes('|镜号|')) return '分镜脚本'
-  return '文本节点'
-}
-
-function formatCanvasTextInputContext(node: CanvasNode): string {
-  const content = node.data.text?.trim() ?? ''
-  if (!content) return ''
-  const name = node.title?.trim() || '未命名'
-  return `【${canvasTextInputKind(node, content)}｜${name}】\n${content}`
 }
