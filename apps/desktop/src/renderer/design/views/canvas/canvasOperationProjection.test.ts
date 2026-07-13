@@ -86,4 +86,29 @@ describe('canvas operation projection', () => {
     expect(projection.visibleNodes).toHaveLength(2)
     expect(projection.visibleEdges).toHaveLength(1)
   })
+
+  it('shows generated outputs after they are materialized inside a real group', () => {
+    const operation = node('generate-frames', 'text_to_image')
+    const group = node('frame-group', 'group')
+    const first = { ...node('frame-a', 'image'), parentNodeId: group.id }
+    const second = { ...node('frame-b', 'image'), parentNodeId: group.id }
+    const nodes = [operation, group, first, second]
+    const edges = [
+      edge('generated-a', operation.id, first.id, 'generated'),
+      edge('generated-b', operation.id, second.id, 'generated'),
+      edge('contains-a', group.id, first.id, 'group_contains'),
+      edge('contains-b', group.id, second.id, 'group_contains'),
+    ]
+
+    const projection = buildCanvasOperationProjection(nodes, edges)
+
+    expect(projection.visibleNodes.map((item) => item.id)).toEqual([
+      operation.id,
+      group.id,
+      first.id,
+      second.id,
+    ])
+    expect(projection.embeddedOutputNodeIds).toEqual(new Set())
+    expect(projection.visibleEdges.map((item) => item.id)).toEqual(['contains-a', 'contains-b'])
+  })
 })

@@ -1,5 +1,14 @@
 import type { CanvasOperationOutputView } from './canvasOperationRuns'
 import type { CanvasNode } from './canvas.types'
+import { resolveCollisionFreeBatchPositions } from './canvasCollisionPlacement'
+import {
+  AUDIO_NODE_DEFAULT_SIZE,
+  IMAGE_NODE_DEFAULT_SIZE,
+  TEXT_NODE_DEFAULT_SIZE,
+  VIDEO_NODE_DEFAULT_SIZE,
+  fitCanvasImageNodeSize,
+  pickTextNodeSize,
+} from './canvasNodeSize'
 
 export type CanvasOperationOutputMaterializationPlan = {
   existingNodeIds: string[]
@@ -43,17 +52,29 @@ export function planCanvasOperationOutputMaterialization({
     }
   }
 
-  const startX = operationNode.x + operationNode.width + 60
-  const startY = operationNode.y
-  const columnStep = 360
-  const rowStep = 300
+  const sizes = missing.map((output) => {
+    if (output.type === 'image') return fitCanvasImageNodeSize(output.width, output.height)
+    if (output.type === 'video') return VIDEO_NODE_DEFAULT_SIZE
+    if (output.type === 'audio') return AUDIO_NODE_DEFAULT_SIZE
+    if (output.type === 'text' || output.type === 'prompt') return pickTextNodeSize(output.text)
+    return output.type === 'file' ? TEXT_NODE_DEFAULT_SIZE : IMAGE_NODE_DEFAULT_SIZE
+  })
+  const positions = resolveCollisionFreeBatchPositions({
+    preferred: {
+      x: operationNode.x + operationNode.width + 60,
+      y: operationNode.y,
+    },
+    sizes,
+    nodes: existingNodes,
+    boardId: operationNode.boardId,
+  })
   return {
     existingNodeIds,
     unsupportedOutputIds,
     items: missing.map((output, index) => ({
       output,
-      x: startX + (index % 3) * columnStep,
-      y: startY + Math.floor(index / 3) * rowStep,
+      x: positions[index]?.x ?? operationNode.x + operationNode.width + 60,
+      y: positions[index]?.y ?? operationNode.y,
     })),
   }
 }

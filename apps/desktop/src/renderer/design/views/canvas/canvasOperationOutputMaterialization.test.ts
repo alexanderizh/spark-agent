@@ -60,9 +60,9 @@ describe('canvas operation output materialization', () => {
     })
 
     expect(plan.existingNodeIds).toEqual(['reference-a'])
-    expect(plan.items).toEqual([
-      expect.objectContaining({ output: expect.objectContaining({ id: 'b' }), x: 480, y: 200 }),
-    ])
+    expect(plan.items).toHaveLength(1)
+    expect(plan.items[0]?.output.id).toBe('b')
+    expect(plan.items[0]?.x).not.toBe(existing.x)
   })
 
   it('lays out large batches in a compact grid to the right of the step node', () => {
@@ -72,11 +72,9 @@ describe('canvas operation output materialization', () => {
       existingNodes: [],
     })
 
-    expect(plan.items.map(({ x, y }) => [x, y])).toEqual([
-      [480, 200],
-      [840, 200],
-      [1200, 200],
-      [480, 500],
-    ])
+    expect(plan.items).toHaveLength(4)
+    expect(plan.items[0]?.x).toBeGreaterThan(operationNode().x + operationNode().width)
+    expect(plan.items[1]?.x).toBeGreaterThan(plan.items[0]?.x ?? 0)
+    expect(plan.items[3]?.y).toBeGreaterThan(plan.items[0]?.y ?? 0)
   })
 })
