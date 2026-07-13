@@ -200,6 +200,15 @@ export class DebugLogServer {
     return { cleared }
   }
 
+  /** Remove a debug session bucket entirely (called when the Spark session is deleted). */
+  deleteSession(sid: string): { cleared: number } {
+    const state = this.sessions.get(sid)
+    if (state == null) return { cleared: 0 }
+    const cleared = state.entries.length
+    this.sessions.delete(sid)
+    return { cleared }
+  }
+
   // ── HTTP handling ──
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {

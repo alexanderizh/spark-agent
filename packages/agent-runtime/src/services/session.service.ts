@@ -7074,6 +7074,7 @@ export class SessionService {
     this.eventSequencer.clear(sessionId)
     this.iterationOverrides.delete(sessionId)
     TodoStore.clear(sessionId)
+    getDebugLogServer().deleteSession(sessionId)
     this.onApprovalCancel?.(sessionId)
     this.emitQueueChanged(sessionId)
   }
