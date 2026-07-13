@@ -434,6 +434,13 @@ export interface SDKPermissionRequestContext {
   requestId: string
 }
 
+/** Correlation and cancellation metadata for a host-rendered user question. */
+export interface SDKQuestionRequestContext {
+  questionId?: string
+  requestId?: string
+  signal?: AbortSignal
+}
+
 export interface SDKApprovalResult {
   allowed: boolean
   scope?: 'once' | 'session' | 'project' | 'global'
@@ -584,7 +591,7 @@ export interface SDKQuery extends AsyncGenerator<SDKMessage, void> {
 }
 
 export interface SDKQueryFunction {
-  (params: { prompt: string; options?: SDKQueryOptions }): SDKQuery
+  (params: { prompt: string | AsyncIterable<SDKUserMessage>; options?: SDKQueryOptions }): SDKQuery
 }
 
 // ── Spark ↔ SDK Permission Mode Mapping ─────────────────────────────────────
@@ -695,7 +702,11 @@ export interface SDKExecutorConfig {
     context: SDKPermissionRequestContext,
   ) => Promise<boolean | SDKApprovalResult>) | undefined
   /** Callback for AskUserQuestion tool - returns user's answers to the questions */
-  questionCallback?: ((sessionId: string, questions: UserQuestionPrompt[]) => Promise<Record<string, unknown>>) | undefined
+  questionCallback?: ((
+    sessionId: string,
+    questions: UserQuestionPrompt[],
+    context: SDKQuestionRequestContext,
+  ) => Promise<Record<string, unknown>>) | undefined
   /** Bridge for the small set of application notification hooks Spark exposes. */
   applicationHookCallback?: ((
     sessionId: string,

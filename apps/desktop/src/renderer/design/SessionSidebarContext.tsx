@@ -362,12 +362,20 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const [unreviewedCompleted, setUnreviewedCompleted] = useState<Set<string>>(() => new Set())
   const justCreatedSessionRef = useRef<SessionId | null>(null)
   const pendingCreatedWorkspaceIdsRef = useRef(new Map<SessionId, string | null>())
+  const pinMutationsRef = useRef(new Map<SessionId, {
+    desiredPinned: boolean
+    confirmedPinnedAt: string | null
+    running: boolean
+  }>())
   const activeRef = useRef<SessionId | null>(active)
   const workspaceSyncedSessionRef = useRef<SessionId | null>(null)
   const manualWorkspaceSelectionRef = useRef<{
     sessionId: SessionId | null
     workspaceId: string | null
   } | null>(null)
+  const upsertSessionInList = useCallback((session: SessionSummary) => {
+    setSessions((prev) => [session, ...prev.filter((item) => item.id !== session.id)])
+  }, [])
   useEffect(() => {
     activeRef.current = active
   }, [active])
@@ -543,20 +551,17 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return (
-      window.spark?.on?.('stream:session:created', ({ sessionId }: { sessionId: string }) => {
+      window.spark?.on?.('stream:session:created', ({ sessionId, session }) => {
         const typedSessionId = sessionId as SessionId
-        refreshCoordinator
-          .invalidate()
-          .then(() => {
-            if (!pendingCreatedWorkspaceIdsRef.current.has(typedSessionId)) return
-            const workspaceId = pendingCreatedWorkspaceIdsRef.current.get(typedSessionId) ?? null
-            pendingCreatedWorkspaceIdsRef.current.delete(typedSessionId)
-            setActiveWorkspaceId(workspaceId)
-          })
-          .catch(console.error)
+        if (session != null) upsertSessionInList(session)
+        else void refreshCoordinator.invalidate().catch(console.error)
+        if (!pendingCreatedWorkspaceIdsRef.current.has(typedSessionId)) return
+        const workspaceId = pendingCreatedWorkspaceIdsRef.current.get(typedSessionId) ?? null
+        pendingCreatedWorkspaceIdsRef.current.delete(typedSessionId)
+        setActiveWorkspaceId(workspaceId)
       }) ?? (() => {})
     )
-  }, [refreshCoordinator])
+  }, [refreshCoordinator, upsertSessionInList])
 
   useEffect(() => {
     return (
@@ -579,12 +584,29 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         // team 配置变化由 ChatView 单独回读会话 metadata；这里若也全量 refresh，
         // 会把 activeWorkspaceId 再次用 workspace:get-current 覆盖，导致新建团队会话
         // 后项目选择器偶发跳回旧项目。
-        if (event.scope === 'provider' || event.scope === 'agent') {
-          refreshData().catch(console.error)
+        if (event.scope === 'provider') {
+          void listProviders({})
+            .then((res) => {
+              setProviders(res.profiles)
+              setSelectedProviderId((prev) =>
+                res.profiles.some((profile) => profile.id === prev)
+                  ? prev
+                  : (getPreferredProvider(
+                      res.profiles,
+                      readComposerPrefs(),
+                      DEFAULT_AGENT_ADAPTER,
+                    )?.id ?? ''),
+              )
+            })
+            .catch(console.error)
+        } else if (event.scope === 'agent') {
+          void listAgents({})
+            .then((res) => setAgents(Array.isArray(res.agents) ? res.agents : []))
+            .catch(console.error)
         }
       }) ?? (() => {})
     )
-  }, [refreshData])
+  }, [listAgents, listProviders])
 
   useEffect(() => {
     if (active) window.localStorage.setItem(LAST_SESSION_KEY, active)
@@ -650,7 +672,14 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const bumpSessionMessageCount = useCallback((sessionId: SessionId) => {
     setSessions((prev) =>
       prev.map((item) =>
-        item.id === sessionId ? { ...item, messageCount: item.messageCount + 1 } : item,
+        item.id === sessionId
+          ? {
+              ...item,
+              turnCount: (item.turnCount ?? item.messageCount) + 1,
+              logicalMessageCount: (item.logicalMessageCount ?? item.messageCount) + 1,
+              messageCount: item.messageCount + 1,
+            }
+          : item,
       ),
     )
   }, [])
@@ -794,7 +823,10 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         const shouldReuseUnusedSession = options.forceNew !== true
         const unusedSession = shouldReuseUnusedSession
           ? sessions.find(
-              (s) => s.workspaceIds.includes(wsId!) && s.messageCount === 0 && s.archivedAt == null,
+              (s) =>
+                s.workspaceIds.includes(wsId!) &&
+                (s.turnCount ?? s.messageCount) === 0 &&
+                s.archivedAt == null,
             )
           : undefined
         if (unusedSession) {
@@ -844,6 +876,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           reasoningEffort,
           workspaceId: wsId,
         })
+        if (res.session != null) upsertSessionInList(res.session)
+        else void refreshCoordinator.invalidate().catch(console.error)
         justCreatedSessionRef.current = res.sessionId
         pendingCreatedWorkspaceIdsRef.current.set(res.sessionId, uiWorkspaceId)
         // 团队模式下创建会话：在激活（setActive→ChatView 重新加载 team 配置）之前，
@@ -889,13 +923,13 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       listProviders,
       persistTeamConfig,
       providers,
-      refreshData,
       requestConfirm,
       selectedProviderId,
       sessions,
       toast,
       updateSession,
       updateSessionInList,
+      upsertSessionInList,
     ],
   )
 
@@ -1125,14 +1159,47 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   // Session actions
   const handleToggleSessionPinned = useCallback(
     async (session: SessionSummary) => {
-      try {
-        await updateSession({ sessionId: session.id, pinned: session.pinnedAt == null })
-        await refreshData()
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : t('session.pinUpdateFailed'))
+      const existing = pinMutationsRef.current.get(session.id)
+      if (existing) {
+        existing.desiredPinned = !existing.desiredPinned
+        updateSessionInList(session.id, {
+          pinnedAt: existing.desiredPinned ? new Date().toISOString() : null,
+        })
+        return
+      }
+
+      const state = {
+        desiredPinned: session.pinnedAt == null,
+        confirmedPinnedAt: session.pinnedAt,
+        running: true,
+      }
+      pinMutationsRef.current.set(session.id, state)
+      updateSessionInList(session.id, {
+        pinnedAt: state.desiredPinned ? new Date().toISOString() : null,
+      })
+
+      while (state.running) {
+        const requestedPinned = state.desiredPinned
+        try {
+          const updated = await updateSession({ sessionId: session.id, pinned: requestedPinned })
+          state.confirmedPinnedAt = updated.session.pinnedAt
+          if (state.desiredPinned === requestedPinned) {
+            state.running = false
+            pinMutationsRef.current.delete(session.id)
+            updateSessionInList(session.id, updated.session)
+          }
+        } catch (err) {
+          const confirmedPinned = state.confirmedPinnedAt != null
+          if (state.desiredPinned === requestedPinned || state.desiredPinned === confirmedPinned) {
+            state.running = false
+            pinMutationsRef.current.delete(session.id)
+            updateSessionInList(session.id, { pinnedAt: state.confirmedPinnedAt })
+          }
+          toast.error(err instanceof Error ? err.message : t('session.pinUpdateFailed'))
+        }
       }
     },
-    [refreshData, toast, updateSession],
+    [toast, updateSession, updateSessionInList],
   )
 
   const handleRenameSession = useCallback(
@@ -1147,13 +1214,13 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       )?.trim()
       if (!title || title === (session.title ?? '')) return
       try {
-        await updateSession({ sessionId: session.id, title })
-        await refreshData()
+        const updated = await updateSession({ sessionId: session.id, title })
+        updateSessionInList(session.id, updated.session)
       } catch (err) {
         toast.error(err instanceof Error ? err.message : t('session.renameFailed'))
       }
     },
-    [refreshData, requestPrompt, toast, updateSession],
+    [requestPrompt, toast, updateSession, updateSessionInList],
   )
 
   const handleDeleteSession = useCallback(
@@ -1201,7 +1268,6 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
             toast.error(err instanceof Error ? err.message : t('worktree.deleteFailed'))
           })
         }
-        void refreshData()
       } catch (err) {
         setSessions(previousSessions)
         if (shouldRemoveWorkspace) setWorkspaces(previousWorkspaces)
@@ -1214,7 +1280,6 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       active,
       activeWorkspaceId,
       deleteSession,
-      refreshData,
       removeWorktree,
       requestConfirm,
       sessions,
@@ -1249,7 +1314,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         if (results[i]?.status === 'fulfilled') deletedIds.add(target.id)
       })
       if (active != null && deletedIds.has(active)) setActive(null)
-      await refreshData()
+      setSessions((current) => current.filter((session) => !deletedIds.has(session.id)))
       if (failed === 0) {
         toast.success(t('session.clearAllDone', { count: targets.length }))
       } else if (failed === targets.length) {
@@ -1261,19 +1326,19 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         toast.info(t('session.clearAllSkipped', { count: skipped }))
       }
     },
-    [active, deleteSession, refreshData, requestConfirm, sessionAgentStatuses, toast],
+    [active, deleteSession, requestConfirm, sessionAgentStatuses, toast],
   )
 
   const handleArchiveSession = useCallback(
     async (session: SessionSummary) => {
       try {
         await updateSession({ sessionId: session.id, archived: true })
-        await refreshData()
+        setSessions((current) => current.filter((item) => item.id !== session.id))
       } catch (err) {
         toast.error(err instanceof Error ? err.message : t('session.archiveFailed'))
       }
     },
-    [refreshData, toast, updateSession],
+    [toast, updateSession],
   )
 
   const handleOpenSessionFolder = useCallback(

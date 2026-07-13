@@ -544,7 +544,7 @@ export async function executeTaskViaSession(
     const sessionId = createRes.sessionId
 
     // Send turn
-    const turnRes = await window.spark.invoke('session:send-turn', {
+    const turnRes = await window.spark.invoke('session:submit-turn', {
       sessionId,
       message: prompt,
       ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),

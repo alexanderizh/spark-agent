@@ -1,7 +1,14 @@
+## GitNexus 使用降级规则
+
+- GitNexus 仅作为可选的代码导航辅助，不能成为分析、开发、修复或交付的硬依赖。
+- GitNexus MCP 未暴露、索引过期、数据库版本不兼容、查询失败或结果不可信时，立即改用源码阅读、`rg`、测试、日志和 Git 历史继续工作，不要反复重试或阻塞任务。
+- GitNexus 不可用时，允许跳过下方 GitNexus 专属的 impact / detect_changes 步骤；改用直接调用点检索、相关测试和 `git diff` 完成影响范围与变更范围核对，并在交付说明中简要注明降级原因。
+- 简单任务默认不启动 GitNexus；只有复杂且调用关系不清晰的改动，且 GitNexus 当前健康可用时才考虑使用。
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **spark-agent** (36329 symbols, 62031 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **spark-agent** (36569 symbols, 62540 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

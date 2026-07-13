@@ -30,7 +30,7 @@ describe('ActivitySegment', () => {
     return button
   }
 
-  it('keeps the current segment open until a completed segment is sealed', () => {
+  it('auto-collapses the current segment while it is running', () => {
     act(() => {
       root.render(
         <ActivitySegment summary="查看了 2 个文件" running sealed={false} autoCollapseEnabled>
@@ -38,8 +38,8 @@ describe('ActivitySegment', () => {
         </ActivitySegment>,
       )
     })
-    expect(toggle().getAttribute('aria-expanded')).toBe('true')
-    expect(container.textContent).toContain('活动明细')
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect(container.textContent).not.toContain('活动明细')
 
     act(() => {
       root.render(
@@ -53,7 +53,7 @@ describe('ActivitySegment', () => {
         </ActivitySegment>,
       )
     })
-    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
 
     act(() => {
       root.render(
@@ -67,27 +67,30 @@ describe('ActivitySegment', () => {
   })
 
   it('gives a manually expanded segment permanent independent control', () => {
-    const render = (summary: string, running = false) => {
+    const render = (summary: string, running: boolean, sealed: boolean) => {
       root.render(
-        <ActivitySegment summary={summary} running={running} sealed autoCollapseEnabled>
+        <ActivitySegment summary={summary} running={running} sealed={sealed} autoCollapseEnabled>
           <div>活动明细</div>
         </ActivitySegment>,
       )
     }
 
-    act(() => render('查看了 1 个文件'))
+    act(() => render('查看了 1 个文件', true, false))
     expect(toggle().getAttribute('aria-expanded')).toBe('false')
 
     act(() => toggle().click())
     expect(toggle().getAttribute('aria-expanded')).toBe('true')
 
-    act(() => render('查看了 2 个文件'))
+    act(() => render('查看了 2 个文件', false, false))
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+
+    act(() => render('查看了 2 个文件', false, true))
     expect(toggle().getAttribute('aria-expanded')).toBe('true')
 
     act(() => toggle().click())
     expect(toggle().getAttribute('aria-expanded')).toBe('false')
 
-    act(() => render('查看了 3 个文件', true))
+    act(() => render('查看了 3 个文件', true, false))
     expect(toggle().getAttribute('aria-expanded')).toBe('false')
   })
 

@@ -23,6 +23,7 @@ import {
   UsageLedgerRepository,
   GoalRepository,
   ConnectorConnectionRepository,
+  TurnRequestRepository,
 } from '@spark/storage'
 import type {
   AgentItem,
@@ -132,6 +133,7 @@ import type {
   SDKExecutorConfig,
   SDKMcpServerConfig,
   SDKPermissionRequestContext,
+  SDKQuestionRequestContext,
   SDKTurnAttachment,
 } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
@@ -212,6 +214,7 @@ export type HookTriggerHandler = (
 export type QuestionHandler = (
   sessionId: string,
   questions: UserQuestionPrompt[],
+  context: SDKQuestionRequestContext,
 ) => Promise<Record<string, unknown>>
 type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
 type ActiveExecution = {
@@ -291,6 +294,24 @@ type PendingTurn = {
   skillParams?: Record<string, unknown>
   /** 团队模式：用户通过 @ 指定的直接处理 Agent ID（mention routing） */
   mentionAgentId?: string
+}
+
+type SendTurnParams = {
+  sessionId: string
+  message: string
+  providerProfileId?: string
+  modelId?: string | null
+  agentId?: string
+  agentAdapter?: AgentAdapterKind
+  permissionMode?: SessionPermissionMode
+  chatMode?: 'agent' | 'ask' | 'edit' | 'review'
+  reasoningEffort?: SparkReasoningEffort
+  skillId?: string
+  skillParams?: Record<string, unknown>
+  attachments?: SessionAttachment[]
+  teamConfig?: TeamModeConfig
+  mentionAgentId?: string
+  interruptActive?: boolean
 }
 
 const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
@@ -482,6 +503,8 @@ export type BrowserAutomationMcpProvider = (
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>() // sessionId → active execution
   private pendingTurns = new Map<string, PendingTurn[]>()
+  /** Guards the async preflight window before an executor is registered in activeLoops. */
+  private readonly startingSessions = new Set<string>()
   private readonly pendingSessionEventCleanups = new Set<string>()
   private orphanEventCleanupPending = false
   /** 画布 Agent MCP server 提供器（由主进程注入） */
@@ -620,6 +643,7 @@ export class SessionService {
       this.mcpVersion += 1
     })
     this.recoverInterruptedSessions()
+    this.recoverAcceptedTurnRequests()
     this.cleanupOrphanedSessionEventsInBackground()
   }
 
@@ -877,6 +901,32 @@ export class SessionService {
     return { recovered }
   }
 
+  private recoverAcceptedTurnRequests(): void {
+    const repo = new TurnRequestRepository(this.db)
+    const sessionsToStart = new Set<string>()
+    for (const row of repo.listRecoverable()) {
+      if (row.status === 'running') {
+        repo.markFailed(row.id, 'Turn interrupted by application restart')
+        continue
+      }
+      try {
+        const payload = JSON.parse(row.payload_json) as PendingTurn
+        if (typeof payload.message !== 'string') throw new Error('Invalid turn request payload')
+        this.enqueueTurn(row.session_id, {
+          ...payload,
+          turnId: row.id,
+          enqueuedAt: row.created_at,
+        })
+        sessionsToStart.add(row.session_id)
+      } catch (error) {
+        repo.markFailed(row.id, error instanceof Error ? error.message : String(error))
+      }
+    }
+    for (const sessionId of sessionsToStart) {
+      setTimeout(() => this.startNextQueuedTurn(sessionId), 0)
+    }
+  }
+
   async createSession(params: {
     providerProfileId: string
     modelId?: string
@@ -910,7 +960,8 @@ export class SessionService {
       ...(params.chatMode !== undefined ? { chatMode: params.chatMode } : {}),
       reasoningEffort: params.reasoningEffort ?? normalizeReasoningEffort(agent.reasoningEffort),
     })
-    return { sessionId: row.id as SessionId, createdAt: row.created_at }
+    const { session } = await this.updateSession({ sessionId: row.id })
+    return { sessionId: row.id as SessionId, createdAt: row.created_at, session }
   }
 
   async executeCommand(params: { sessionId: string; message: string }): Promise<
@@ -1425,32 +1476,23 @@ export class SessionService {
     }
   }
 
-  async sendTurn(params: {
-    sessionId: string
-    message: string
-    providerProfileId?: string
-    modelId?: string | null
-    agentId?: string
-    agentAdapter?: AgentAdapterKind
-    permissionMode?: SessionPermissionMode
-    chatMode?: 'agent' | 'ask' | 'edit' | 'review'
-    reasoningEffort?: SparkReasoningEffort
-    /** 可选：要使用的 Skill ID */
-    skillId?: string
-    /** 可选：Skill 参数 */
-    skillParams?: Record<string, unknown>
-    attachments?: SessionAttachment[]
-    /** 可选：团队模式配置（Team Mode 下随 turn 提交） */
-    teamConfig?: TeamModeConfig
-    /** 可选：团队模式 @ 路由——用户指定由该 Member 直接响应（替代 Host 主循环） */
-    mentionAgentId?: string
-    /**
-     * 可选：若为 true，则当中途存在活跃 loop（典型场景：plan 批准时上一个 plan turn
-     * 的 SDK 还没完全收尾）时，显式中断并立即起跑新 turn，而不是入队等待。
-     * 与 sendQueuedTurnNow 的中断语义一致，避免 plan 批准后被卡在队尾不自动执行。
-     */
-    interruptActive?: boolean
-  }): Promise<{ turnId: string; started: boolean }> {
+  async sendTurn(params: SendTurnParams): Promise<{ turnId: string; started: boolean }> {
+    return this.dispatchTurn(params, false)
+  }
+
+  async submitTurn(
+    params: SendTurnParams,
+    options: { startAfter?: Promise<unknown> } = {},
+  ): Promise<{ turnId: string; accepted: true; started: boolean }> {
+    const result = await this.dispatchTurn(params, true, options.startAfter)
+    return { ...result, accepted: true }
+  }
+
+  private async dispatchTurn(
+    params: SendTurnParams,
+    durable: boolean,
+    startAfter?: Promise<unknown>,
+  ): Promise<{ turnId: string; started: boolean }> {
     const { sessionId, message, skillId, skillParams, mentionAgentId } = params
     const attachments = normalizeTurnAttachments(params.attachments)
     const runtimePatch = getRuntimePatch(params)
@@ -1463,20 +1505,26 @@ export class SessionService {
     // 用户提交新 turn = 已对计划做出响应（批准/继续提问/拒绝后再次发送）。
     // 解除 plan 审批闸门，让被阻塞的队列后续可以恢复自动起跑。
     this.pendingPlanApprovals.delete(sessionId)
+    const pendingTurn = this.makePendingTurn(
+      turnId,
+      message,
+      runtimePatch,
+      skillId,
+      skillParams,
+      attachments,
+      mentionAgentId,
+    )
+    if (durable) {
+      new TurnRequestRepository(this.db).create({
+        id: turnId,
+        sessionId,
+        payloadJson: JSON.stringify(pendingTurn),
+        createdAt: pendingTurn.enqueuedAt,
+      })
+    }
     const currentGoal = new GoalRepository(this.db).getCurrent(sessionId)
     if (currentGoal?.status === 'active') {
-      this.enqueueTurn(
-        sessionId,
-        this.makePendingTurn(
-          turnId,
-          message,
-          runtimePatch,
-          skillId,
-          skillParams,
-          attachments,
-          mentionAgentId,
-        ),
-      )
+      this.enqueueTurn(sessionId, pendingTurn)
       return { turnId, started: false }
     }
 
@@ -1491,20 +1539,28 @@ export class SessionService {
         this.activeLoops.delete(sessionId)
         new SessionRepository(this.db).updateStatus(sessionId, 'idle')
       } else {
-        this.enqueueTurn(
-          sessionId,
-          this.makePendingTurn(
-            turnId,
-            message,
-            runtimePatch,
-            skillId,
-            skillParams,
-            attachments,
-            mentionAgentId,
-          ),
-        )
+        this.enqueueTurn(sessionId, pendingTurn)
         return { turnId, started: false }
       }
+    }
+
+    if (durable) {
+      this.enqueueTurn(sessionId, pendingTurn)
+      const scheduleStart = () => setTimeout(() => this.startNextQueuedTurn(sessionId), 0)
+      if (startAfter == null) {
+        scheduleStart()
+      } else {
+        void startAfter
+          .catch((error) => {
+            log.warn('Turn workspace preparation failed; runtime preflight will report the error', {
+              sessionId,
+              turnId,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          })
+          .finally(scheduleStart)
+      }
+      return { turnId, started: true }
     }
 
     try {
@@ -1519,19 +1575,7 @@ export class SessionService {
         mentionAgentId,
       )
     } catch (error) {
-      this.handleQueuedTurnStartFailure(
-        sessionId,
-        this.makePendingTurn(
-          turnId,
-          message,
-          runtimePatch,
-          skillId,
-          skillParams,
-          attachments,
-          mentionAgentId,
-        ),
-        error,
-      )
+      this.handleQueuedTurnStartFailure(sessionId, pendingTurn, error)
       throw error
     }
     return { turnId, started: true }
@@ -2569,10 +2613,14 @@ export class SessionService {
           : {}),
         ...(this.onQuestion != null && !automation.unattended
           ? {
-              questionCallback: async (sid: string, questions: UserQuestionPrompt[]) => {
+              questionCallback: async (
+                sid: string,
+                questions: UserQuestionPrompt[],
+                context: SDKQuestionRequestContext,
+              ) => {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
                 try {
-                  return await this.onQuestion!(sid, questions)
+                  return await this.onQuestion!(sid, questions, context)
                 } finally {
                   this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
                 }
@@ -5500,7 +5548,7 @@ export class SessionService {
       allowSkip: true,
     }
     try {
-      const answers = await this.onQuestion(sessionId, [decisionQuestion, commentQuestion])
+      const answers = await this.onQuestion(sessionId, [decisionQuestion, commentQuestion], {})
       // 决策按既有 onQuestion 答案解析方式判断（参见 claude-sdk-executor 的
       // findRawQuestionAnswer / extractQuestionAnswerText）：answers.answers 可能是
       // 以 question/id/index 定位的对象数组，单条答案的取值候选为 answer/text/optionLabel/optionValue/value。
@@ -5937,10 +5985,14 @@ export class SessionService {
         : {}),
       ...(this.onQuestion != null
         ? {
-            questionCallback: async (sid: string, questions: UserQuestionPrompt[]) => {
+            questionCallback: async (
+              sid: string,
+              questions: UserQuestionPrompt[],
+              context: SDKQuestionRequestContext,
+            ) => {
               this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
               try {
-                return await this.onQuestion!(sid, questions)
+                return await this.onQuestion!(sid, questions, context)
               } finally {
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
               }
@@ -6170,6 +6222,14 @@ export class SessionService {
     // 触发 hook：检测 agent_status 事件的关键状态变化
     if (event.type === 'agent_status') {
       const status = event.status
+      const turnRequests = new TurnRequestRepository(this.db)
+      if (status === 'completed' || status === 'idle') {
+        turnRequests.markCompleted(turnId)
+      } else if (status === 'cancelled') {
+        turnRequests.cancel(turnId)
+      } else if (status === 'error') {
+        turnRequests.markFailed(turnId, event.message ?? 'Turn failed')
+      }
       if (status === 'completed') {
         this.onHookTrigger?.(sessionId, 'session_end', {
           title: 'Spark Agent - 任务完成',
@@ -6254,7 +6314,10 @@ export class SessionService {
     const cancelled = nextQueue.length !== queue.length
     if (nextQueue.length === 0) this.pendingTurns.delete(params.sessionId)
     else this.pendingTurns.set(params.sessionId, nextQueue)
-    if (cancelled) this.emitQueueChanged(params.sessionId)
+    if (cancelled) {
+      new TurnRequestRepository(this.db).cancel(params.turnId)
+      this.emitQueueChanged(params.sessionId)
+    }
     return {
       cancelled,
       queuedTurns: this.queueSnapshot(params.sessionId).queuedTurns,
@@ -6279,20 +6342,11 @@ export class SessionService {
 
     // 没有正在执行的任务 → 直接启动
     if (!this.activeLoops.has(sessionId)) {
-      if (queue.length === 0) this.pendingTurns.delete(sessionId)
-      else this.pendingTurns.set(sessionId, queue)
+      queue.unshift(targetTurn)
+      this.pendingTurns.set(sessionId, queue)
       this.pendingPlanApprovals.delete(sessionId)
       this.emitQueueChanged(sessionId)
-      await this.startTurn(
-        sessionId,
-        targetTurn.turnId,
-        targetTurn.message,
-        targetTurn.runtimePatch,
-        targetTurn.skillId,
-        targetTurn.skillParams,
-        targetTurn.attachments,
-        targetTurn.mentionAgentId,
-      )
+      setTimeout(() => this.startNextQueuedTurn(sessionId), 0)
       return { started: true, queuedTurns: this.queueSnapshot(sessionId).queuedTurns }
     }
 
@@ -6352,6 +6406,10 @@ export class SessionService {
       this.emitQueueChanged(sessionId)
       return
     }
+    if (this.activeLoops.has(sessionId) || this.startingSessions.has(sessionId)) {
+      this.emitQueueChanged(sessionId)
+      return
+    }
     const queue = this.pendingTurns.get(sessionId)
     const next = queue?.shift()
     if (queue == null || next == null) {
@@ -6360,6 +6418,14 @@ export class SessionService {
       return
     }
     if (queue.length === 0) this.pendingTurns.delete(sessionId)
+    const requestRepo = new TurnRequestRepository(this.db)
+    const durableRequest = requestRepo.get(next.turnId)
+    if (durableRequest != null && !requestRepo.markRunning(next.turnId)) {
+      this.emitQueueChanged(sessionId)
+      setTimeout(() => this.startNextQueuedTurn(sessionId), 0)
+      return
+    }
+    this.startingSessions.add(sessionId)
     this.emitQueueChanged(sessionId)
     void this.startTurn(
       sessionId,
@@ -6370,7 +6436,12 @@ export class SessionService {
       next.skillParams,
       next.attachments,
       next.mentionAgentId,
-    ).catch(error => this.handleQueuedTurnStartFailure(sessionId, next, error))
+    )
+      .catch(error => this.handleQueuedTurnStartFailure(sessionId, next, error))
+      .finally(() => {
+        this.startingSessions.delete(sessionId)
+        if (!this.activeLoops.has(sessionId)) this.startNextQueuedTurn(sessionId)
+      })
   }
 
   private handleQueuedTurnStartFailure(
@@ -6430,13 +6501,14 @@ export class SessionService {
         : 'Queued turn failed to start',
     }, eventRepo)
     sessionRepo.updateStatus(sessionId, 'error')
+    new TurnRequestRepository(this.db).markFailed(turn.turnId, message)
     log.error('queued turn failed to start', { sessionId, turnId: turn.turnId, error: message })
   }
 
   private queueSnapshot(sessionId: string): SessionGetQueueResponse {
     return {
       sessionId: sessionId as SessionId,
-      running: this.activeLoops.has(sessionId),
+      running: this.activeLoops.has(sessionId) || this.startingSessions.has(sessionId),
       queuedTurns: this.toQueuedTurns(this.pendingTurns.get(sessionId) ?? []),
     }
   }
@@ -6996,6 +7068,7 @@ export class SessionService {
    */
   private clearSessionMemory(sessionId: string): void {
     this.activeLoops.delete(sessionId)
+    this.startingSessions.delete(sessionId)
     this.pendingTurns.delete(sessionId)
     this.pendingPlanApprovals.delete(sessionId)
     this.eventSequencer.clear(sessionId)
@@ -7052,9 +7125,7 @@ export class SessionService {
     includeArchived?: boolean
   }): Promise<SessionListResponse> {
     const sessionRepo = new SessionRepository(this.db)
-    const eventRepo = new EventRepository(this.db)
     const { sessions: rows, total } = sessionRepo.list(params ?? {})
-    const eventCounts = eventRepo.countBySessions(rows.map((row) => row.id))
     const sessions = rows.map((row) => ({
       id: row.id as SessionId,
       title: row.title,
@@ -7075,7 +7146,9 @@ export class SessionService {
       archivedAt: row.archived_at,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      messageCount: eventCounts.get(row.id) ?? 0,
+      turnCount: row.turn_count,
+      logicalMessageCount: row.logical_message_count,
+      messageCount: row.logical_message_count,
       ...(getImportedFromMetadata(row.metadata_json) != null
         ? { importedFrom: getImportedFromMetadata(row.metadata_json)! }
         : {}),
@@ -7162,7 +7235,6 @@ export class SessionService {
     debugMode?: boolean
   }): Promise<{ session: SessionListResponse['sessions'][number] }> {
     const sessionRepo = new SessionRepository(this.db)
-    const eventRepo = new EventRepository(this.db)
 
     // 调试模式开关存 metadata（per-session 能力开关，不新增列），与 team 配置同策略。
     // 切换会改变 MCP 工具集（挂/卸 spark_debug），bump mcpVersion 让下一 turn 起新
@@ -7249,7 +7321,9 @@ export class SessionService {
         archivedAt: row.archived_at,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
-        messageCount: eventRepo.countBySession(row.id),
+        turnCount: row.turn_count,
+        logicalMessageCount: row.logical_message_count,
+        messageCount: row.logical_message_count,
         debugMode: getDebugModeFromMetadata(row.metadata_json),
       },
     }

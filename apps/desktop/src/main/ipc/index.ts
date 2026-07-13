@@ -11,6 +11,7 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
+import { PendingUserQuestionStore } from './user-question-store.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
 import { app, clipboard, dialog, shell, Notification, screen } from 'electron'
@@ -176,7 +177,6 @@ import { detectExternalTools, openProjectInTool } from '../services/ExternalTool
 import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.js'
 import { getTerminalService } from '../services/TerminalService.js'
 import { registerTerminalIpc } from './registerTerminalIpc.js'
-import { registerProviderIpc } from '../services/Provider/registerProviderIpc.js'
 import { registerPlatformModelIpc } from '../services/PlatformModel/registerPlatformModelIpc.js'
 import { getUntrackedFilesLineStats } from './git-status-utils.js'
 import {
@@ -1602,7 +1602,10 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   })
 
   // Notify renderer to refresh session list (same as session:create IPC handler)
-  pushStreamEvent('stream:session:created', { sessionId: created.sessionId })
+  pushStreamEvent('stream:session:created', {
+    sessionId: created.sessionId,
+    session: created.session,
+  })
   // 让 ScheduledTaskService 立即拿到 sessionId（运行 turn 之前），
   // 这样 runNow 可以在 turn 还在跑时就把 sessionId 返回给前端用于跳转。
   params.onSessionCreated?.(created.sessionId)
@@ -1766,7 +1769,18 @@ function getWorkspaceService(): WorkspaceService {
 }
 
 let _sessionService: SessionService | null = null
-let pendingQuestionResolvers = new Map<string, (answers: Record<string, unknown>) => void>()
+const pendingUserQuestions = new PendingUserQuestionStore({
+  onRequest: (request) => {
+    pushStreamEvent('stream:session:user-question', request)
+  },
+  onClose: (request, reason) => {
+    pushStreamEvent('stream:session:user-question-closed', {
+      questionId: request.questionId,
+      sessionId: request.sessionId,
+      reason,
+    })
+  },
+})
 const remoteTurnTargets = new Map<string, { connectionId: string; externalId: string }>()
 
 function registerRemoteTurn(
@@ -1876,19 +1890,17 @@ function getSessionService(): SessionService {
     }
     const onApprovalCancel = (sessionId: string) => {
       getPermissionService().cancelPendingApprovals(sessionId)
+      pendingUserQuestions.cancelSession(sessionId)
     }
     const onQueueChanged: SessionQueueChangedHandler = (snapshot) => {
       pushStreamEvent('stream:session:queue-changed', snapshot)
     }
-    const onQuestion: QuestionHandler = async (sessionId, questions) => {
-      return new Promise((resolve) => {
-        const questionId = `${sessionId}:${Date.now()}`
-        pendingQuestionResolvers.set(questionId, resolve)
-        pushStreamEvent('stream:session:user-question', {
-          questionId,
-          sessionId,
-          questions,
-        })
+    const onQuestion: QuestionHandler = async (sessionId, questions, context) => {
+      return pendingUserQuestions.request({
+        questionId: context.questionId ?? crypto.randomUUID(),
+        sessionId,
+        questions,
+        ...(context.signal != null ? { signal: context.signal } : {}),
       })
     }
     const onHookTrigger: HookTriggerHandler = (sessionId, node, context) => {
@@ -2007,12 +2019,12 @@ function createHistoryImportService(
 }
 
 /** Resolve a pending user question with the provided answers */
-export function resolveUserQuestion(questionId: string, answers: Record<string, unknown>): void {
-  const resolver = pendingQuestionResolvers.get(questionId)
-  if (resolver) {
-    pendingQuestionResolvers.delete(questionId)
-    resolver(answers)
-  }
+export function resolveUserQuestion(
+  sessionId: string,
+  questionId: string,
+  answers: Record<string, unknown>,
+): boolean {
+  return pendingUserQuestions.resolve(sessionId, questionId, answers)
 }
 
 function getSessionNotificationTitle(sessionId: string, fallback: string): string {
@@ -2273,7 +2285,10 @@ async function createRemoteSession(
     ...(workspaceId != null ? { workspaceId } : {}),
     title: `远程会话 · ${connection.name}`,
   })
-  pushStreamEvent('stream:session:created', { sessionId: created.sessionId })
+  pushStreamEvent('stream:session:created', {
+    sessionId: created.sessionId,
+    session: created.session,
+  })
   remoteService.updateConnectionDefaults(connection.id, {
     defaultSessionId: created.sessionId,
     defaultProviderProfileId: provider.id,
@@ -2801,7 +2816,10 @@ export function registerAllIpcHandlers(): void {
     log.info(`session:create requested, providerProfileId=${req.providerProfileId}`)
     await ensureNoProjectDirectoryExists()
     const created = await getSessionService().createSession(applyRuntimePermissionDefaults(req))
-    pushStreamEvent('stream:session:created', { sessionId: created.sessionId })
+    pushStreamEvent('stream:session:created', {
+      sessionId: created.sessionId,
+      session: created.session,
+    })
     return created
   })
 
@@ -2826,6 +2844,45 @@ export function registerAllIpcHandlers(): void {
       ...(req.mentionAgentId != null ? { mentionAgentId: req.mentionAgentId } : {}),
       ...(req.interruptActive === true ? { interruptActive: true } : {}),
     })
+  })
+
+  typedIpcHandle('session:submit-turn', async (req) => {
+    log.info(`session:submit-turn requested, sessionId=${req.sessionId}`)
+    // 持久化接单不等待文件系统修复。准备工作与 DB 接单并行，SessionService
+    // 只在准备 Promise settled 后起跑该 turn，因此不会牺牲旧路径迁移的正确性。
+    const workspaceReady = Promise.all([
+      ensureNoProjectDirectoryExists(),
+      ensureSessionWorkspacePaths(req.sessionId),
+    ]).catch((error) => {
+      // 即使该 turn 因活跃 Goal/loop 先进入队列，准备 Promise 也必须就地收口，
+      // 避免没有进入 startAfter 分支时产生 unhandled rejection。
+      log.warn('session:submit-turn workspace preparation failed', {
+        sessionId: req.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    })
+    return getSessionService().submitTurn(
+      {
+        sessionId: req.sessionId,
+        message: req.message,
+        ...(req.providerProfileId !== undefined
+          ? { providerProfileId: req.providerProfileId }
+          : {}),
+        ...(req.modelId !== undefined ? { modelId: req.modelId } : {}),
+        ...(req.agentId !== undefined ? { agentId: req.agentId } : {}),
+        ...(req.agentAdapter !== undefined ? { agentAdapter: req.agentAdapter } : {}),
+        ...(req.permissionMode !== undefined ? { permissionMode: req.permissionMode } : {}),
+        ...(req.chatMode !== undefined ? { chatMode: req.chatMode } : {}),
+        ...(req.reasoningEffort !== undefined ? { reasoningEffort: req.reasoningEffort } : {}),
+        ...(req.skillId != null ? { skillId: req.skillId } : {}),
+        ...(req.skillParams != null ? { skillParams: req.skillParams } : {}),
+        ...(req.attachments != null ? { attachments: req.attachments } : {}),
+        ...(req.teamConfig != null ? { teamConfig: req.teamConfig } : {}),
+        ...(req.mentionAgentId != null ? { mentionAgentId: req.mentionAgentId } : {}),
+        ...(req.interruptActive === true ? { interruptActive: true } : {}),
+      },
+      { startAfter: workspaceReady },
+    )
   })
 
   typedIpcHandle('session:get-queue', async (req) => {
@@ -2934,9 +2991,17 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('session:answer-question', async (req) => {
-    log.info(`session:answer-question requested, questionId=${req.questionId}`)
-    resolveUserQuestion(req.questionId, req.answers)
+    log.info(
+      `session:answer-question requested, sessionId=${req.sessionId} questionId=${req.questionId}`,
+    )
+    if (!resolveUserQuestion(req.sessionId, req.questionId, req.answers)) {
+      throw new SparkError('NOT_FOUND', '该提问已结束或不属于当前会话，请刷新后重试。')
+    }
     return { ok: true }
+  })
+
+  typedIpcHandle('session:list-pending-questions', async (req) => {
+    return { questions: pendingUserQuestions.list(req.sessionId) }
   })
 
   // ─── Provider Handlers ─────────────────────────────────────────────────
@@ -7503,7 +7568,6 @@ export function registerAllIpcHandlers(): void {
   registerTerminalIpc()
 
   // ─── Provider 编辑辅助通道（如 reveal-key）注册入口 ─────────────────────
-  registerProviderIpc()
 
   // ─── Spark 平台官方模型（NewAPI 受管 Provider）──────────────────────────
   registerPlatformModelIpc()

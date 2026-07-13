@@ -2,7 +2,7 @@
  * 通用 ChatPanel：消息流 + 工具调用卡片 + 输入区
  *
  * 复用 MessageBuilder（services/event-mapper）做事件→UIMessage 转换；
- * 渲染 text / thinking / tool_call / error 四类 block（其他类型对
+ * 渲染 text / thinking / tool_call / error / cancelled 等会话 block（其他类型对
  * 弹窗/模态场景不重要，跳过）。
  *
  * 给画布 Agent 弹窗 / Board 内嵌等场景使用；ChatView 仍是主聊天页，
@@ -21,6 +21,7 @@ import {
 } from '../services/event-mapper'
 import { StreamingErrorCard } from '../views/chat/StreamingErrorCard'
 import { RuntimeSignalCard } from '../views/chat/RuntimeSignalCard'
+import { CancellationNotice } from '../views/chat/CancellationNotice'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -51,9 +52,9 @@ export interface ChatPanelProps {
   /** 可选：限制工具卡片的标签前缀（如只显示 mcp__spark_canvas__） */
   toolNamePrefixFilter?: string
   /**
-   * 可选：接管发送逻辑。传入后 ChatPanel 不再自行调 session:send-turn，
+   * 可选：接管发送逻辑。传入后 ChatPanel 不再自行调 session:submit-turn，
    * 而是把待发送文本交给父组件（父组件负责建会/发消息）；发送失败请抛异常，
-   * ChatPanel 会捕获并显示 sendError。未传则走默认的 session:send-turn。
+   * ChatPanel 会捕获并显示 sendError。未传则走默认的 session:submit-turn。
    */
   onSend?: (text: string, attachments: SessionAttachment[]) => Promise<void>
   /** 可选：输入草稿初始值（父组件持久化未发送的输入，关闭重开可恢复） */
@@ -390,7 +391,7 @@ export function ChatPanel({
         // 父组件接管发送（如画布弹窗需要先建会、注入上下文等）
         await onSend(rawText, turnAttachments)
       } else {
-        await window.spark.invoke('session:send-turn', {
+        await window.spark.invoke('session:submit-turn', {
           sessionId: sessionId as never,
           message: rawText,
           ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
@@ -763,6 +764,8 @@ function BlockView({
       )
     case 'runtime_signal':
       return <RuntimeSignalCard block={block} />
+    case 'cancelled':
+      return <CancellationNotice message={block.message} />
     default:
       // 其他 block（file_change/plan_proposed/checkpoint 等）在 modal 场景不展开
       return null
@@ -796,6 +799,7 @@ function InlineUserQuestionCard({
   const canGoNext = currentIndex < total - 1
   const canSubmit =
     !block.answered &&
+    block.error == null &&
     block.questions.every((question, index) => isQuestionReadyForSubmit(question, drafts[index]))
   const answerByQuestion = new Map<string, UserQuestionAnswerSummary>()
   for (const summary of block.answerSummary ?? []) {
@@ -813,7 +817,7 @@ function InlineUserQuestionCard({
   }
 
   const handleSelectOption = (option: UserQuestionOption) => {
-    if (currentQuestion == null || block.answered || submitting) return
+    if (currentQuestion == null || block.answered || block.error != null || submitting) return
     if (isMultiChoiceQuestion(currentQuestion)) {
       const prevLabels = currentDraft.selectedLabels ?? []
       const prevValues = currentDraft.selectedValues ?? []
@@ -860,7 +864,7 @@ function InlineUserQuestionCard({
   }
 
   const submitAnswers = async (answers: Record<string, unknown>) => {
-    if (submitting || block.answered) return
+    if (submitting || block.answered || block.error != null) return
     if (sessionId == null) {
       setError('会话尚未就绪，暂时无法提交答案')
       return
@@ -868,7 +872,7 @@ function InlineUserQuestionCard({
     setSubmitting(true)
     setError(null)
     try {
-      await answerQuestion({ questionId: block.toolCallId, answers })
+      await answerQuestion({ sessionId, questionId: block.toolCallId, answers })
       const summaries = buildQuestionAnswerSummaries(block.questions, answers)
       if (summaries.length > 0) {
         onAnswered(block.questions, summaries)
@@ -903,15 +907,28 @@ function InlineUserQuestionCard({
         <div>
           <div className="chat-panel-question-title">Agent 正在等您回复</div>
           <div className="chat-panel-question-subtitle">
-            {block.answered ? '已提交答案' : '可在画布对话框内直接作答'}
+            {block.error != null
+              ? '提问工具未能完成'
+              : block.answered
+                ? '已提交答案'
+                : '可在画布对话框内直接作答'}
           </div>
         </div>
         <span className={`chat-panel-question-badge${block.answered ? ' is-done' : ''}`}>
-          {block.answered ? '已回答' : `${Math.min(currentIndex + 1, total)} / ${total}`}
+          {block.error != null
+            ? '失败'
+            : block.answered
+              ? '已回答'
+              : `${Math.min(currentIndex + 1, total)} / ${total}`}
         </span>
       </div>
 
-      {block.answered ? (
+      {block.error != null ? (
+        <div className="chat-panel-question-error">
+          <Icons.X size={12} />
+          <span>{block.error}</span>
+        </div>
+      ) : block.answered ? (
         <div className="chat-panel-question-summary-list">
           {block.questions.map((question, index) => {
             const summary =

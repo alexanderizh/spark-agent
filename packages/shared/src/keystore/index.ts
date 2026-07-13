@@ -88,11 +88,13 @@ function mutateVault(operation: (vault: CredentialVault) => Promise<void>): Prom
 
 export async function setSecret(ref: KeystoreRef, secret: string): Promise<void> {
   if (!USE_CONSOLIDATED_VAULT) {
+    if (directSecretCache.has(ref) && directSecretCache.get(ref) === secret) return
     await keytar.setPassword(SERVICE_PREFIX, ref, secret)
     directSecretCache.set(ref, secret)
     return
   }
   await mutateVault(async vault => {
+    if (vault.secrets[ref] === secret && vault.legacyChecked.includes(ref)) return
     vault.secrets[ref] = secret
     if (!vault.legacyChecked.includes(ref)) vault.legacyChecked.push(ref)
     await persistVault(vault)

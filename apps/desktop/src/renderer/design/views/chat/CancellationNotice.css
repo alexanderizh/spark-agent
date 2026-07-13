@@ -1,0 +1,14 @@
+.cancellation-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 6px 0;
+  color: var(--text-muted, #7d8592);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.cancellation-notice svg {
+  flex: 0 0 auto;
+  opacity: 0.78;
+}

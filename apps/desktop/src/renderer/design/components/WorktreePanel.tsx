@@ -26,7 +26,7 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
   const { invoke: listWorktrees } = useIpcInvoke('workspace:list-worktrees')
   const { invoke: removeWorktree } = useIpcInvoke('workspace:remove-worktree')
   const { invoke: openFolder } = useIpcInvoke('workspace:open-folder')
-  const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
+  const { invoke: sendTurn } = useIpcInvoke('session:submit-turn')
 
   const [isGitRepo, setIsGitRepo] = useState(true)
   const [baseBranch, setBaseBranch] = useState<string | null>(null)

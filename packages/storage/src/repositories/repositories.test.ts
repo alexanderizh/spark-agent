@@ -12,6 +12,7 @@ import type { SessionRow } from '../repositories/session.repository.js'
 import { WorkspaceRepository } from '../repositories/workspace.repository.js'
 import type { WorkspaceRow } from '../repositories/workspace.repository.js'
 import { EventRepository } from '../repositories/event.repository.js'
+import { TurnRequestRepository } from '../repositories/turn-request.repository.js'
 import type { AgentEventRow } from '../repositories/event.repository.js'
 import { RulesRepository } from '../repositories/rules.repository.js'
 import { join } from 'path'
@@ -297,6 +298,85 @@ describe('SessionRepository', () => {
 
 // ─── EventRepository ──────────────────────────────────────────────────
 
+describe('TurnRequestRepository', () => {
+  let db: SparkDatabase
+  let repo: TurnRequestRepository
+  let testDir: string
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `spark-test-turn-request-${Date.now()}`)
+    mkdirSync(testDir, { recursive: true })
+    db = createTestDb(testDir)
+    new SessionRepository(db).create({
+      id: 'session-1',
+      kind: 'agent',
+      title: 'Session',
+      status: 'idle',
+      projectId: 'project-1',
+    })
+    repo = new TurnRequestRepository(db)
+  })
+
+  afterEach(() => {
+    db.close()
+    rmSync(testDir, { recursive: true, force: true })
+  })
+
+  it('persists and transitions a durable turn request', () => {
+    repo.create({
+      id: 'turn-1',
+      sessionId: 'session-1',
+      payloadJson: JSON.stringify({ turnId: 'turn-1', message: 'hello' }),
+      createdAt: '2026-07-13T00:00:00.000Z',
+    })
+
+    expect(repo.listRecoverable()).toHaveLength(1)
+    expect(repo.markRunning('turn-1')).toBe(true)
+    expect(repo.get('turn-1')?.status).toBe('running')
+    expect(repo.markCompleted('turn-1')).toBe(true)
+    expect(repo.get('turn-1')?.status).toBe('completed')
+    expect(repo.get('turn-1')?.payload_json).toBe('{}')
+    expect(repo.listRecoverable()).toHaveLength(0)
+  })
+
+  it('clears terminal payloads and prunes expired terminal requests in batches', () => {
+    for (const id of ['completed', 'failed', 'cancelled']) {
+      repo.create({
+        id,
+        sessionId: 'session-1',
+        payloadJson: JSON.stringify({ message: `secret-${id}` }),
+        createdAt: '2026-01-01T00:00:00.000Z',
+      })
+    }
+
+    expect(repo.markCompleted('completed')).toBe(true)
+    expect(repo.markFailed('failed', 'expected failure')).toBe(true)
+    expect(repo.cancel('cancelled')).toBe(true)
+    expect(repo.get('completed')?.payload_json).toBe('{}')
+    expect(repo.get('failed')?.payload_json).toBe('{}')
+    expect(repo.get('cancelled')?.payload_json).toBe('{}')
+
+    expect(repo.deleteTerminalBeforeBatch('2099-01-01T00:00:00.000Z', 2)).toBe(2)
+    expect(repo.deleteTerminalBeforeBatch('2099-01-01T00:00:00.000Z', 2)).toBe(1)
+    expect(repo.deleteTerminalBeforeBatch('2099-01-01T00:00:00.000Z', 2)).toBe(0)
+  })
+
+  it('cascades requests when their session is deleted', () => {
+    repo.create({
+      id: 'turn-1',
+      sessionId: 'session-1',
+      payloadJson: '{}',
+      createdAt: '2026-07-13T00:00:00.000Z',
+    })
+
+    new SessionRepository(db).delete('session-1')
+
+    expect(repo.get('turn-1')).toBeNull()
+  })
+})
+
+// ─── EventRepository ─────────────────────────────────
+
 describe('EventRepository', () => {
   let db: SparkDatabase
   let repo: EventRepository
@@ -375,6 +455,89 @@ describe('EventRepository', () => {
         ['sess-2', 1],
       ]),
     )
+  })
+
+  it('maintains persisted turn and logical message counters', () => {
+    const sessions = new SessionRepository(db)
+    for (const id of ['sess-1', 'sess-2']) {
+      sessions.create({
+        id,
+        kind: 'interactive',
+        title: id,
+        status: 'idle',
+        projectId: 'project-1',
+      })
+    }
+    repo.insertBatch([
+      {
+        id: 'evt-user-1',
+        sessionId: 'sess-1',
+        eventType: 'user_message',
+        eventJson: JSON.stringify({ seq: 1 }),
+      },
+      {
+        id: 'evt-thinking-1',
+        sessionId: 'sess-1',
+        eventType: 'agent_thinking',
+        eventJson: JSON.stringify({ seq: 2, mode: 'delta' }),
+      },
+      {
+        id: 'evt-assistant-1',
+        sessionId: 'sess-1',
+        eventType: 'assistant_message',
+        eventJson: JSON.stringify({ seq: 3, mode: 'complete' }),
+      },
+      {
+        id: 'evt-user-2',
+        sessionId: 'sess-2',
+        eventType: 'user_message',
+        eventJson: JSON.stringify({ seq: 1 }),
+      },
+    ])
+
+    expect(sessions.get('sess-1')).toMatchObject({
+      turn_count: 1,
+      logical_message_count: 2,
+    })
+    expect(sessions.get('sess-2')).toMatchObject({
+      turn_count: 1,
+      logical_message_count: 1,
+    })
+
+    expect(repo.deleteEventsByIds(['evt-user-1', 'evt-assistant-1'])).toBe(2)
+    expect(sessions.get('sess-1')).toMatchObject({
+      turn_count: 0,
+      logical_message_count: 0,
+    })
+  })
+
+  it('deletes every transient stream delta while retaining complete events', () => {
+    const transientTypes = [
+      'assistant_message',
+      'agent_thinking',
+      'team_member_message',
+      'subagent_message',
+    ]
+    repo.insertBatch([
+      ...transientTypes.map((eventType, index) => ({
+        id: `evt-transient-${index}`,
+        sessionId: 'sess-stream',
+        eventType,
+        eventJson: JSON.stringify({ seq: index + 1, mode: 'delta' }),
+      })),
+      {
+        id: 'evt-complete',
+        sessionId: 'sess-stream',
+        eventType: 'assistant_message',
+        eventJson: JSON.stringify({ seq: 5, mode: 'complete' }),
+      },
+    ])
+
+    expect(repo.deleteTransientDeltasBatch(2)).toBe(2)
+    expect(repo.deleteTransientDeltasBatch(10)).toBe(2)
+    expect(repo.deleteTransientDeltasBatch(10)).toBe(0)
+    expect(repo.queryBySession({ sessionId: 'sess-stream' }).events).toHaveLength(1)
+    expect(repo.queryBySession({ sessionId: 'sess-stream' }).events[0]?.id).toBe('evt-complete')
   })
 
   it('allocates the next seq from the persisted maximum after rows are deleted', () => {

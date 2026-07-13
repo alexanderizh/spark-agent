@@ -2422,7 +2422,6 @@ export function ProviderEditPanel({
   const { invoke: listMediaModels } = useIpcInvoke('canvas:media-models:list')
   const { invoke: testConnection } = useIpcInvoke('provider:test-connection')
   const { invoke: fetchProviderModels } = useIpcInvoke('provider:fetch-models')
-  const { invoke: revealProviderKey } = useIpcInvoke('provider:reveal-key')
 
   // 防抖更新 modelIds：只保留输入稳定后的默认模型，避免每次停顿留下半截 chip。
   const debouncedUpdateModelIds = useDebouncedCallback((next: string) => {
@@ -2578,17 +2577,8 @@ export function ProviderEditPanel({
             imageApiType: normalizeImageApiType(p.mediaApiType ?? p.imageApiType),
             ...profileMediaForm(p),
           })
-          // 编辑模式：回显 Keychain 里保存的明文 Key，让用户在不重输的情况下
-          // 也能确认 key 是否正确；留空则不更新、修改则覆盖。
-          revealProviderKey({ id: profileId })
-            .then((res) => {
-              if (res.apiKey) {
-                setForm((prev) => ({ ...prev, apiKey: res.apiKey }))
-              }
-            })
-            .catch((err) => {
-              console.warn('revealProviderKey failed', err)
-            })
+          // 已保存的密钥不自动读取到 Renderer。留空表示保持原值；只有用户输入
+          // 新值时才会在保存请求中携带 apiKey，从而避免普通模型配置修改触发 Keychain。
         }
       })
       .catch(console.error)

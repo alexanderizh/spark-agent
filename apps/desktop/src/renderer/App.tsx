@@ -20,7 +20,7 @@ import type {
   PermissionApprovalRequest,
   SessionId,
   UpdateStatus,
-  UserQuestionPrompt,
+  UserQuestionRequest,
 } from '@spark/protocol'
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
 import { isModalOverlayVisible } from './design/hooks/useAppDialogKeyboard'
@@ -64,6 +64,11 @@ import { Tooltip } from '@lobehub/ui'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { getSidebarAutoSyncAction } from './sidebarAutoSync'
 import { resolveSidebarActiveWorkspaceId } from './design/sidebar-session-routing'
+import {
+  enqueueUserQuestions,
+  removeUserQuestion,
+  type UserQuestionQueues,
+} from './user-question-queue'
 
 const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
 const isPlatformDarwin = sparkPlatform === 'darwin'
@@ -139,12 +144,6 @@ const SYSTEM_NOTIFICATION_VIEW_TARGETS = new Set<ViewId>([
 
 function isSystemNotificationViewTarget(view: string): view is ViewId {
   return SYSTEM_NOTIFICATION_VIEW_TARGETS.has(view as ViewId)
-}
-
-type UserQuestionRequest = {
-  questionId: string
-  sessionId: string
-  questions: UserQuestionPrompt[]
 }
 
 function getUpdateSourceLabel(source?: UpdateStatus['updateSource'] | UpdateStatus['downloadSource']): string {
@@ -801,7 +800,7 @@ function Shell() {
   const [approvalRequests, setApprovalRequests] = useState<
     Record<string, PermissionApprovalRequest>
   >({})
-  const [userQuestions, setUserQuestions] = useState<Record<string, UserQuestionRequest>>({})
+  const [userQuestions, setUserQuestions] = useState<UserQuestionQueues>({})
   const [errorDetails, setErrorDetails] = useState<RuntimeErrorDetails | null>(null)
   const [canvasWorkspaceActive, setCanvasWorkspaceActive] = useState(false)
   const [quotaGuideReason, setQuotaGuideReason] = useState<PlatformQuotaGuideReason | null>(null)
@@ -1041,14 +1040,7 @@ function Shell() {
   }, [])
 
   const dismissUserQuestion = useCallback((sessionId: string, questionId?: string) => {
-    setUserQuestions((current) => {
-      const existing = current[sessionId]
-      if (existing == null) return current
-      if (questionId != null && existing.questionId !== questionId) return current
-      const next = { ...current }
-      delete next[sessionId]
-      return next
-    })
+    setUserQuestions((current) => removeUserQuestion(current, sessionId, questionId))
   }, [])
 
   // Global error handlers
@@ -1228,8 +1220,8 @@ function Shell() {
   useEffect(() => {
     const api = window.spark
     if (!api?.on) return
-    return api.on('stream:session:user-question', (req) => {
-      setUserQuestions((current) => ({ ...current, [req.sessionId]: req }))
+    const offQuestion = api.on('stream:session:user-question', (req) => {
+      setUserQuestions((current) => enqueueUserQuestions(current, [req]))
 
       const isVisibleInCurrentSession =
         viewRef.current === 'chat' &&
@@ -1244,6 +1236,21 @@ function Shell() {
         ],
       })
     })
+    const offClosed = api.on('stream:session:user-question-closed', (req) => {
+      setUserQuestions((current) => removeUserQuestion(current, req.sessionId, req.questionId))
+    })
+    void api
+      .invoke('session:list-pending-questions', {})
+      .then((response) => {
+        setUserQuestions((current) => enqueueUserQuestions(current, response.questions))
+      })
+      .catch((error) => {
+        console.warn('Failed to replay pending user questions', error)
+      })
+    return () => {
+      offQuestion()
+      offClosed()
+    }
   }, [navigateToSession, toast, tr])
 
   useEffect(() => {
@@ -1294,7 +1301,9 @@ function Shell() {
       ? (approvalRequests[sessionCtx.activeSessionId] ?? null)
       : null
   const activeUserQuestion =
-    sessionCtx.activeSessionId != null ? (userQuestions[sessionCtx.activeSessionId] ?? null) : null
+    sessionCtx.activeSessionId != null
+      ? (userQuestions[sessionCtx.activeSessionId]?.[0] ?? null)
+      : null
 
   // workspace 是历史遗留模式，仅保留兼容渲染；当前工作台使用 vibe + chat。
   const showInlineApproval = t.view === 'chat' && t.chatMode !== 'workspace'

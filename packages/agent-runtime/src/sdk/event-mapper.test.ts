@@ -835,6 +835,34 @@ describe('mapSDKMessageToEvents', () => {
     ])
   })
 
+  it('collapses identical ExitPlanMode retries within one turn', () => {
+    const ctx = {
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      toolNamesById: new Map<string, string>(),
+    }
+    const exitPlan = (uuid: string, toolId: string, plan: string): SDKAssistantMessage => ({
+      type: 'assistant',
+      uuid,
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: toolId, name: 'ExitPlanMode', input: { plan } }],
+      },
+    })
+
+    const first = mapSDKMessageToEvents(exitPlan('assistant-1', 'tool-1', '# Plan'), ctx)
+    const duplicate = mapSDKMessageToEvents(exitPlan('assistant-2', 'tool-2', '# Plan'), ctx)
+    const revision = mapSDKMessageToEvents(exitPlan('assistant-3', 'tool-3', '# Revised plan'), ctx)
+
+    expect(first).toEqual([expect.objectContaining({ type: 'plan_proposed', plan: '# Plan' })])
+    expect(duplicate).toEqual([])
+    expect(revision).toEqual([
+      expect.objectContaining({ type: 'plan_proposed', plan: '# Revised plan' }),
+    ])
+  })
+
   it('falls back to the plan-file Write content when ExitPlanMode has no plan in input', () => {
     // 新版 CLI 计划模式：agent 先 Write 计划到 .claude/plans/*.md，ExitPlanMode
     // 的 input 不再带 plan 文本。event-mapper 应追踪这次写入，在 ExitPlanMode
