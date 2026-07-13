@@ -35,7 +35,7 @@ describe('canvas UI/UX V4 integration', () => {
     const nodeStyles = readCanvasSource('./uiux-v4/nodes.less')
     const panelStyles = readCanvasSource('./uiux-v4/panels.less')
     const placeholderStyleBlock = nodeStyles.match(
-      /\.canvas-node-image-placeholder,[\s\S]*?\.canvas-node-group-body\s*\{([\s\S]*?)\n  \}/,
+      /\.canvas-node-image-placeholder,[\s\S]*?\.canvas-node-group-body\s*\{([\s\S]*?)\n {2}\}/,
     )?.[1]
 
     expect(node).toContain('canvas-node-content-title')

@@ -688,7 +688,7 @@ export class GitHubConnectorService {
       throw new SparkError('KEYSTORE_KEY_NOT_FOUND', 'GitHub 连接缺少凭证引用')
     }
 
-    let token: string | null = null
+    let token: string | null
     try {
       token = await keystore.getSecret(ref as keystore.KeystoreRef)
     } catch (err) {

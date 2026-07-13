@@ -50,6 +50,23 @@ export default tseslint.config(
     },
   },
 
+  // Node 22 ESM tool servers run outside the browser. ESLint's base JavaScript
+  // config does not infer those runtime globals for .mjs files.
+  {
+    files: ['packages/agent-runtime/src/tools/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        AbortController: 'readonly',
+        Buffer: 'readonly',
+        URLSearchParams: 'readonly',
+        clearTimeout: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
+  },
+
   // React 组件文件 — 仅限 apps/desktop（主应用）
   {
     files: ['apps/desktop/src/**/*.tsx', 'apps/desktop/src/**/*.jsx'],
@@ -59,6 +76,22 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // React Hooks 7 folds React Compiler adoption diagnostics into the
+      // recommended preset. Keep them visible while the existing UI is
+      // migrated incrementally instead of turning the whole legacy renderer
+      // into lint failures. The correctness-critical hook rules stay errors.
+      'react-hooks/config': 'warn',
+      'react-hooks/error-boundaries': 'warn',
+      'react-hooks/gating': 'warn',
+      'react-hooks/globals': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
+      'react-hooks/purity': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/set-state-in-render': 'warn',
+      'react-hooks/static-components': 'warn',
+      'react-hooks/use-memo': 'warn',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },

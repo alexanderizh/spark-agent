@@ -331,7 +331,7 @@ function applyPolicyTransforms(
   capabilityId: string,
 ): { params: Record<string, unknown>; dropped: MediaDroppedParam[] } {
   if (!transforms || transforms.length === 0) return { params, dropped: [] }
-  let next = { ...params }
+  const next = { ...params }
   const dropped: MediaDroppedParam[] = []
   for (const rule of transforms) {
     if (rule.kind === 'rename') {

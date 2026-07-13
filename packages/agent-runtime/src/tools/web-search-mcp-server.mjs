@@ -125,7 +125,7 @@ function htmlToText(html) {
   s = s.replace(/<br\s*\/?>/gi, '\n')
   s = s.replace(/<[^>]+>/g, ' ')
   s = decodeEntities(s)
-  s = s.replace(/[ \t ]+/g, ' ')
+  s = s.replace(/[ \t\u00a0]+/g, ' ')
   s = s.replace(/\n{3,}/g, '\n\n')
   return s.split('\n').map((line) => line.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }

@@ -194,7 +194,7 @@ export class McpService {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`Failed to start MCP server ${row.name}: ${message}`)
-      throw new Error(`Failed to start MCP server ${row.name}: ${message}`)
+      throw new Error(`Failed to start MCP server ${row.name}: ${message}`, { cause: err })
     }
   }
 

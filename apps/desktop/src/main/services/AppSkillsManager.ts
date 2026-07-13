@@ -179,7 +179,7 @@ export class AppSkillsManager {
       const root = skill.rootPath
       if (!root || root.includes('://')) continue
       if (!this.isSkillDir(root)) continue
-      let dirName = sanitizeDirName(skill.name) || sanitizeDirName(basename(root))
+      const dirName = sanitizeDirName(skill.name) || sanitizeDirName(basename(root))
       if (!dirName) continue
       // 同名去重
       let unique = dirName

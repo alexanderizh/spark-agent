@@ -479,6 +479,10 @@ export const ProviderUpdateRequestSchema = z.object({
   mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
 })
 
+export const ProviderGetApiKeyRequestSchema = z.object({
+  id: ProfileIdSchema,
+})
+
 export const ProviderDeleteRequestSchema = z.object({
   id: ProfileIdSchema,
 })
@@ -683,6 +687,7 @@ export const IpcSchemaRegistry = {
   'team:update-def': TeamUpdateDefRequestSchema,
   'team:delete-def': TeamDeleteDefRequestSchema,
   'provider:create': ProviderCreateRequestSchema,
+  'provider:get-api-key': ProviderGetApiKeyRequestSchema,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,

@@ -157,13 +157,13 @@ function readPath(root: unknown, path: string): unknown {
       if (acc == null) return undefined
       if (Array.isArray(key)) return undefined
       // 支持 `error[0]` / `errors[]` 等数组写法：解析第一个数组元素。
-      const arrayMatch = /^([^\[\]]+)\[\]$/.exec(key)
+      const arrayMatch = /^(.+)\[\]$/.exec(key)
       if (arrayMatch) {
         const arr = readOwn(acc, arrayMatch[1] ?? '')
         if (Array.isArray(arr)) return arr[0]
         return undefined
       }
-      const indexMatch = /^([^\[\]]+)\[(\d+)\]$/.exec(key)
+      const indexMatch = /^(.+)\[(\d+)\]$/.exec(key)
       if (indexMatch) {
         const arr = readOwn(acc, indexMatch[1] ?? '')
         if (Array.isArray(arr)) return arr[Number(indexMatch[2])]

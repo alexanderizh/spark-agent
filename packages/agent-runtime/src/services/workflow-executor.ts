@@ -257,7 +257,7 @@ export function evaluateWorkflowEdgeCondition(
   if (condition.op === 'equals') return state[condition.key] === condition.value
   if (condition.op === 'not_equals') return state[condition.key] !== condition.value
   if (condition.op === 'truthy') return Boolean(state[condition.key])
-  if (condition.op === 'falsy') return !Boolean(state[condition.key])
+  if (condition.op === 'falsy') return !state[condition.key]
   return false
 }
 

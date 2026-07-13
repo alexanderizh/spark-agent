@@ -179,6 +179,76 @@ describe('ProviderEditPanel progressive configuration', () => {
     container.remove()
   })
 
+  it('echoes the saved key but only sends it back after the user edits it', async () => {
+    const profile = {
+      id: 'provider-key-echo',
+      name: 'Key Echo Provider',
+      provider: 'openai',
+      defaultModel: 'gpt-5',
+      modelIds: ['gpt-5'],
+      apiEndpoint: 'https://api.openai.com/v1',
+      codexApiKind: 'responses',
+      supportsMillionContext: false,
+      isDefault: false,
+      enabled: true,
+      keystoreRef: 'openai-provider-key-echo',
+      createdAt: '',
+      updatedAt: '',
+    }
+    mocks.invokers.set('provider:list', vi.fn(async () => ({ profiles: [profile] })))
+    const getApiKey = vi.fn(async () => ({ apiKey: 'sk-saved-plaintext' }))
+    mocks.invokers.set('provider:get-api-key', getApiKey)
+    const updateProvider = vi.fn(async (_request: Record<string, unknown>) => ({ profile }))
+    mocks.invokers.set('provider:update', updateProvider)
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel
+          visible
+          profileId="provider-key-echo"
+          onClose={() => undefined}
+        />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    expect(getApiKey).toHaveBeenCalledWith({ id: 'provider-key-echo' })
+    const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement | null
+    expect(apiKeyInput?.value).toBe('sk-saved-plaintext')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '保存',
+    )
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    expect(updateProvider).toHaveBeenCalledTimes(1)
+    expect(updateProvider.mock.calls[0]?.[0]).not.toHaveProperty('apiKey')
+
+    act(() => {
+      if (!apiKeyInput) return
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        apiKeyInput,
+        'sk-user-updated',
+      )
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    expect(updateProvider).toHaveBeenCalledTimes(2)
+    expect(updateProvider.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+      apiKey: 'sk-user-updated',
+    }))
+  })
+
   it('saves a manually selected provider icon and keeps it while other fields change', async () => {
     await act(async () => {
       root = createRoot(container)

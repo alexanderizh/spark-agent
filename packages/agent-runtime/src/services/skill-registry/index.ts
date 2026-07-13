@@ -442,7 +442,7 @@ export class SkillRegistryService {
 
     // 2. 下载 zip + 解压 + 落盘（主路径）；失败回落 SKILL.md 单文件
     let destPath = ''
-    let skillMd = ''
+    let skillMd: string
     try {
       const result = await installFromZip({
         url: adapter.buildDownloadUrl(slug),
@@ -840,7 +840,7 @@ export class SkillRegistryService {
     // 安全：artifact.name 来自远程 manifest（不可信），sanitize 后必须确保
     // 不含路径分隔符或 .. 段，否则 join() 会逃出 binaryDir。
     const rawName = artifact.name
-      .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
+      .replace(/[<>:"/\\|?*\p{Cc}]/gu, '')
       .trim()
       .replace(/\s+/g, '-')
       .replace(/[()]/g, '')

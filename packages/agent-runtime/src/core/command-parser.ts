@@ -52,8 +52,8 @@ export function parseCommand(input: string): ParsedCommand | null {
   const args: string[] = []
   const flags: Record<string, string> = {}
   const targets: string[] = []
-  let freeTextParts: string[] = []
-  let hitFreeText = false
+  const freeTextParts: string[] = []
+  const hitFreeText = false
 
   let i = 1
   while (i < tokens.length) {

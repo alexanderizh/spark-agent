@@ -2,10 +2,12 @@
  * @module keystore
  *
  * Spark Agent 凭证存储模块 — 唯一合法的 keytar 调用入口。
- * 敏感凭据集中存入一个 OS Keychain vault，避免 macOS 按 Provider 条目重复授权。
+ * macOS 敏感凭据集中存入一个 vault，并可由桌面端注入加密应用存储，
+ * 避免按 Provider 条目或每次启动重复请求 Keychain 授权。
  */
 
 import keytar from 'keytar'
+import { createLogger } from '../logger/index.js'
 
 const SERVICE_PREFIX = 'spark-agent'
 const VAULT_ACCOUNT = 'credential-vault-v1'
@@ -13,6 +15,7 @@ const VAULT_VERSION = 1
 const USE_CONSOLIDATED_VAULT = process.platform === 'darwin'
 const directSecretCache = new Map<string, string | null>()
 const directPendingReads = new Map<string, Promise<string | null>>()
+const log = createLogger('keystore')
 
 interface CredentialVault {
   version: typeof VAULT_VERSION
@@ -21,9 +24,21 @@ interface CredentialVault {
   legacyChecked: string[]
 }
 
+/**
+ * macOS 桌面端可注入的加密应用存储。
+ *
+ * 具体加密实现由 Electron 主进程提供，shared 包只处理已经序列化的 vault，
+ * 从而避免在通用运行时中直接依赖 Electron。
+ */
+export interface CredentialVaultPersistence {
+  load(): Promise<string | null>
+  save(value: string): Promise<void>
+}
+
 let vaultCache: CredentialVault | null = null
 let vaultLoad: Promise<CredentialVault> | null = null
 let mutationQueue: Promise<void> = Promise.resolve()
+let vaultPersistence: CredentialVaultPersistence | null = null
 
 export type KeystoreRef = string & { readonly __brand: 'KeystoreRef' }
 
@@ -61,10 +76,35 @@ function parseVault(raw: string | null): CredentialVault {
   }
 }
 
+function serializeVault(vault: CredentialVault): string {
+  return JSON.stringify(vault)
+}
+
+async function readVaultFromPersistenceOrKeychain(): Promise<CredentialVault> {
+  if (vaultPersistence) {
+    const persisted = await vaultPersistence.load()
+    if (persisted != null) return parseVault(persisted)
+  }
+
+  const vault = parseVault(await keytar.getPassword(SERVICE_PREFIX, VAULT_ACCOUNT))
+  // Keychain 只作为加密应用存储尚未建立时的一次性导入源。导入完成后，
+  // 后续启动直接读取应用存储，避免开发包/签名变化反复触发 macOS 授权。
+  if (vaultPersistence) {
+    try {
+      await vaultPersistence.save(serializeVault(vault))
+    } catch (error) {
+      // 加密应用文件写入失败不能让本次已成功读取的 vault 失效，否则同一进程
+      // 后续每次取密钥都会重新访问 Keychain 并再次触发系统授权。
+      log.warn(`failed to cache credential vault in app storage: ${String(error)}`)
+    }
+  }
+  return vault
+}
+
 async function loadVault(): Promise<CredentialVault> {
   if (vaultCache) return vaultCache
   if (vaultLoad) return vaultLoad
-  vaultLoad = keytar.getPassword(SERVICE_PREFIX, VAULT_ACCOUNT).then(parseVault)
+  vaultLoad = readVaultFromPersistenceOrKeychain()
   try {
     vaultCache = await vaultLoad
     return vaultCache
@@ -74,13 +114,17 @@ async function loadVault(): Promise<CredentialVault> {
 }
 
 async function persistVault(vault: CredentialVault): Promise<void> {
-  await keytar.setPassword(SERVICE_PREFIX, VAULT_ACCOUNT, JSON.stringify(vault))
+  if (vaultPersistence) {
+    await vaultPersistence.save(serializeVault(vault))
+  } else {
+    await keytar.setPassword(SERVICE_PREFIX, VAULT_ACCOUNT, serializeVault(vault))
+  }
   vaultCache = vault
 }
 
 function mutateVault(operation: (vault: CredentialVault) => Promise<void>): Promise<void> {
   // 始终在副本上修改。只有 persistVault 成功后才会替换 vaultCache，
-  // 避免 Keychain 写入失败时内存暴露未提交的凭据或意外丢失旧值。
+  // 避免持久化失败时内存暴露未提交的凭据或意外丢失旧值。
   const next = mutationQueue.then(async () => operation(cloneVault(await loadVault())))
   mutationQueue = next.catch(() => undefined)
   return next
@@ -158,9 +202,31 @@ export async function hasSecret(ref: KeystoreRef): Promise<boolean> {
   return (await getSecret(ref)) !== null
 }
 
-/** 启动时预读指定凭据，并触发旧版独立条目到集中 vault 的迁移。 */
+/**
+ * 启动时预读凭据。
+ *
+ * macOS 只加载一次集中 vault；绝不在启动阶段逐条探测旧 Keychain 项。
+ * 旧条目会在真正使用对应凭据时由 getSecret() 按需迁移。
+ */
 export async function preloadSecrets(refs: readonly KeystoreRef[]): Promise<void> {
+  if (USE_CONSOLIDATED_VAULT) {
+    await loadVault()
+    return
+  }
   await Promise.all(refs.map(ref => getSecret(ref)))
+}
+
+/**
+ * 注入 macOS 桌面端的加密应用存储。应在第一次凭据访问前调用。
+ * 传入 null 可恢复为仅使用系统 Keychain（主要用于测试和非 Electron 运行时）。
+ */
+export function configureCredentialVaultPersistence(
+  persistence: CredentialVaultPersistence | null,
+): void {
+  vaultPersistence = persistence
+  vaultCache = null
+  vaultLoad = null
+  mutationQueue = Promise.resolve()
 }
 
 /** Test/dev helper: clear only the in-process cache, not OS Keychain. */

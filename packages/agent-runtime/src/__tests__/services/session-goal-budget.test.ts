@@ -110,6 +110,7 @@ vi.mock('@spark/storage', () => {
     queryBySession(): { events: unknown[]; hasMore: boolean } { return { events: [], hasMore: false } }
     queryStreamEventsByTurn(): unknown[] { return [] }
     queryDialogueEvents(): unknown[] { return [] }
+    deleteOrphanedSessionEventsBatch(): number { return 0 }
   }
 
   class EmptyRepository {
@@ -137,6 +138,9 @@ vi.mock('@spark/storage', () => {
     AgentRepository: EmptyRepository,
     WorkflowRepository: EmptyRepository,
     TeamDispatchRepository: EmptyRepository,
+    TurnRequestRepository: class {
+      listRecoverable(): unknown[] { return [] }
+    },
     TeamDefinitionRepository: EmptyRepository,
     MediaModelManifestRepository: EmptyRepository,
     UsageLedgerRepository,

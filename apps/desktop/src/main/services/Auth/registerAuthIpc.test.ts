@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
+  configureCredentialVaultPersistence: vi.fn(),
   preloadSecrets: vi.fn(),
   bootstrap: vi.fn(async () => ({ isAuthenticated: true, baseUrl: 'https://spark.example' })),
   warn: vi.fn(),
@@ -24,7 +25,13 @@ vi.mock('@spark/storage', () => ({
   ConnectorConnectionRepository: class { listAll() { return [{ keystore_ref: 'connector-ref' }] } },
   SettingsRepository: class {},
 }))
-vi.mock('@spark/shared/keystore', () => ({ preloadSecrets: mocks.preloadSecrets }))
+vi.mock('@spark/shared/keystore', () => ({
+  configureCredentialVaultPersistence: mocks.configureCredentialVaultPersistence,
+  preloadSecrets: mocks.preloadSecrets,
+}))
+vi.mock('../CredentialVaultPersistence.js', () => ({
+  createCredentialVaultPersistence: () => ({ load: vi.fn(), save: vi.fn() }),
+}))
 vi.mock('@spark/shared', () => ({
   SparkError: class extends Error {},
   createLogger: () => ({ warn: mocks.warn }),
@@ -48,6 +55,7 @@ describe('auth bootstrap credential preload', () => {
     const bootstrapHandler = mocks.handlers.get('auth:bootstrap')
 
     await expect(bootstrapHandler?.()).resolves.toMatchObject({ isAuthenticated: true })
+    expect(mocks.configureCredentialVaultPersistence).toHaveBeenCalledOnce()
     expect(mocks.preloadSecrets).toHaveBeenCalledWith(['provider-ref', 'connector-ref'])
     expect(mocks.bootstrap).toHaveBeenCalledOnce()
     expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('User denied'))

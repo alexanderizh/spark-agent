@@ -2843,8 +2843,8 @@ function ShotSegmentEditor({
           <div className="canvas-film-segment-list" style={{ maxHeight: 220, overflow: 'auto' }}>
             {splitPreview.map((part, idx) => (
               <div key={idx} style={{ fontSize: 12, padding: '3px 0' }}>
-                <strong>{part.title}</strong>　{part.inSec}s–{part.outSec}s（{part.durationSec}s）
-                {part.dialogue ? `　台词：${part.dialogue}` : ''}
+                <strong>{part.title}</strong> {part.inSec}s–{part.outSec}s（{part.durationSec}s）
+                {part.dialogue ? ` 台词：${part.dialogue}` : ''}
               </div>
             ))}
           </div>

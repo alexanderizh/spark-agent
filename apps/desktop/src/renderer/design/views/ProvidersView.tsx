@@ -76,6 +76,10 @@ import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
 import { ProviderManifestContractEditor } from '../components/ProviderManifestContractEditor'
 import { ManagedModelPreferencesModal } from './platform-model/ManagedModelPreferencesModal'
+import {
+  editableProviderApiKeyPayload,
+  loadEditableProviderSnapshot,
+} from './providerApiKeyEcho'
 import './ProvidersView.less'
 
 type ProviderKind = 'anthropic' | 'openai'
@@ -2370,6 +2374,7 @@ export function ProviderEditPanel({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [apiKeyDirty, setApiKeyDirty] = useState(false)
   const [mediaCatalog, setMediaCatalog] = useState<CanvasMediaModelSummary[]>([])
   const [mediaCatalogLoading, setMediaCatalogLoading] = useState(false)
   const [customModelInput, setCustomModelInput] = useState('')
@@ -2419,6 +2424,7 @@ export function ProviderEditPanel({
   const { invoke: createProvider } = useIpcInvoke('provider:create')
   const { invoke: updateProvider } = useIpcInvoke('provider:update')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
+  const { invoke: getProviderApiKey } = useIpcInvoke('provider:get-api-key')
   const { invoke: listMediaModels } = useIpcInvoke('canvas:media-models:list')
   const { invoke: testConnection } = useIpcInvoke('provider:test-connection')
   const { invoke: fetchProviderModels } = useIpcInvoke('provider:fetch-models')
@@ -2489,6 +2495,7 @@ export function ProviderEditPanel({
         const preset = getProviderPresetById(initialPresetId)
         if (preset) {
           const id = window.setTimeout(() => {
+            setApiKeyDirty(false)
             setIsCustomContextWindow(false)
             // 模板自带的候选模型只自动启用默认模型；其余进「候选模型目录」，用户点选后才计入已启用列表。
             setFetchedModels(uniqPreserveOrder([preset.defaultModel, ...preset.modelIds]).map((modelId) => ({ id: modelId })))
@@ -2516,6 +2523,7 @@ export function ProviderEditPanel({
         }
       }
       const id = window.setTimeout(() => {
+        setApiKeyDirty(false)
         setIsCustomContextWindow(false)
         setForm({
           presetId: 'custom',
@@ -2539,9 +2547,10 @@ export function ProviderEditPanel({
       }, 0)
       return () => window.clearTimeout(id)
     }
-    listProviders({})
-      .then((r) => {
-        const p = r.profiles.find((x) => x.id === profileId)
+    let cancelled = false
+    loadEditableProviderSnapshot(profileId, listProviders, getProviderApiKey)
+      .then(({ profile: p, apiKey, apiKeyError }) => {
+        if (cancelled) return
         if (p) {
           // 旧数据兼容：只勾选 1M 开关而没写过 contextWindow 时，下拉应回显为 1M 而不是默认。
           const effectiveContextWindow =
@@ -2567,7 +2576,7 @@ export function ProviderEditPanel({
             codexApiKind: resolveCodexApiKind(normalizeProviderKind(p.provider), p.apiEndpoint, p.codexApiKind),
             supportsMillionContext: p.supportsMillionContext === true,
             contextWindow: effectiveContextWindow,
-            apiKey: '',
+            apiKey,
             isDefault: p.isDefault,
             haikuModel: p.haikuModel ?? '',
             sonnetModel: p.sonnetModel ?? '',
@@ -2577,12 +2586,17 @@ export function ProviderEditPanel({
             imageApiType: normalizeImageApiType(p.mediaApiType ?? p.imageApiType),
             ...profileMediaForm(p),
           })
-          // 已保存的密钥不自动读取到 Renderer。留空表示保持原值；只有用户输入
-          // 新值时才会在保存请求中携带 apiKey，从而避免普通模型配置修改触发 Keychain。
+          setApiKeyDirty(false)
+          if (apiKeyError) {
+            setError(apiKeyError instanceof Error ? `API Key 读取失败：${apiKeyError.message}` : 'API Key 读取失败')
+          }
         }
       })
       .catch(console.error)
-  }, [listProviders, profileId, initialPresetId, visible])
+    return () => {
+      cancelled = true
+    }
+  }, [getProviderApiKey, listProviders, profileId, initialPresetId, visible])
 
   useEffect(() => {
     if (!visible) return
@@ -2974,7 +2988,7 @@ export function ProviderEditPanel({
           ...buildMediaUpdateFields(form),
         }
         if (form.provider === 'openai') req.codexApiKind = form.codexApiKind
-        if (form.apiKey.trim()) req.apiKey = form.apiKey
+        Object.assign(req, editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty))
         await updateProvider(req)
       } else {
         await createProvider({
@@ -2983,7 +2997,7 @@ export function ProviderEditPanel({
           defaultModel: effectiveDefaultModel,
           modelIds,
           providerIcon: form.providerIcon,
-          apiKey: form.apiKey,
+          apiKey: form.apiKey.trim(),
           isDefault: form.isDefault,
           ...(endpoint.length > 0 && { apiEndpoint: endpoint }),
           ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
@@ -3016,7 +3030,7 @@ export function ProviderEditPanel({
     apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
     defaultModel: form.defaultModel.trim(),
     ...(form.provider === 'openai' ? { codexApiKind: form.codexApiKind } : {}),
-    ...(form.apiKey.trim().length > 0 ? { apiKey: form.apiKey.trim() } : {}),
+    ...editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty),
   })
 
   const applyFetchedProviderModels = useCallback((
@@ -3054,10 +3068,10 @@ export function ProviderEditPanel({
       ...(profileId ? { id: profileId } : {}),
       provider: form.provider,
       apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
-      ...(form.apiKey.trim().length > 0 ? { apiKey: form.apiKey.trim() } : {}),
+      ...editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty),
     })
     return applyFetchedProviderModels(result.models, options)
-  }, [applyFetchedProviderModels, fetchProviderModels, form.apiKey, form.endpoint, form.provider, profileId])
+  }, [apiKeyDirty, applyFetchedProviderModels, fetchProviderModels, form.apiKey, form.endpoint, form.provider, profileId])
 
   const autoFetchApiKey = form.apiKey
   const autoFetchEndpoint = form.endpoint
@@ -3406,10 +3420,13 @@ export function ProviderEditPanel({
               </label>
               <InputPassword
                 value={form.apiKey}
-                onChange={(e) => set('apiKey', e.target.value)}
+                onChange={(e) => {
+                  setApiKeyDirty(true)
+                  set('apiKey', e.target.value)
+                }}
                 placeholder={
                   profileId
-                    ? '已保存的 Key（留空不更新）'
+                    ? '已读取保存的 Key；修改后保存才会更新'
                     : isDedicatedMediaType
                     ? '媒体平台 API Key'
                     : 'sk-ant-...'

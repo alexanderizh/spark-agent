@@ -137,7 +137,7 @@ export class CheckpointGitService {
   /** 每会话只保留 keepIds 内的 checkpoint ref，删除其余。 */
   async prune(workspaceRoot: string, sessionId: string, keepIds: string[]): Promise<void> {
     const prefix = `refs/spark/checkpoints/${sanitizeRefPart(sessionId)}/`
-    let refs: string[] = []
+    let refs: string[]
     try {
       const out = (await this.git(workspaceRoot, ['for-each-ref', '--format=%(refname)', prefix])).trim()
       refs = out.length > 0 ? out.split('\n') : []

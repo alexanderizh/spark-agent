@@ -3035,7 +3035,6 @@ export function ComposerV2({
               <div className="composer-input-highlights" aria-hidden="true">
                 {composerHighlightParts.map((part, index) => (
                   <span
-                    // eslint-disable-next-line react/no-array-index-key
                     key={`${index}-${part.kind ?? 'text'}`}
                     className={
                       part.kind === 'agent'
