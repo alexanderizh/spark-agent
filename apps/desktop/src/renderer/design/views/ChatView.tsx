@@ -54,6 +54,7 @@ import { GitBranchDialog, GitCommitDialog, GitCreateBranchDialog } from './chat/
 import { GitEnvPanel } from './chat/ChatGitEnv'
 import { FileChipIcon } from './chat/ChatFileIcon'
 import { GitReviewPanel } from './chat/ChatGitReview'
+import { useLiveWorkspaceGitStatus } from './chat/useLiveWorkspaceGitStatus'
 import { HeroTipsTicker, SingleAgentEmptyHero, TeamModeEmptyHero } from './chat/ChatHero'
 import { ChatTabbar } from './chat/ChatTabbar'
 import {
@@ -280,7 +281,6 @@ import type {
   SessionAttachment,
   TeamModeConfig,
   TeamMemberEventContext,
-  WorkspaceGitStatusResponse,
 } from '@spark/protocol'
 import {
   LOCAL_CLI_DEFAULT_MODEL,
@@ -878,11 +878,9 @@ export function ChatView({
   )
   const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
-  const [gitStatus, setGitStatus] = useState<WorkspaceGitStatusResponse | null>(null)
   // 分支刷新触发器：窗口重新聚焦（用户可能在终端/IDE 里切了分支）或会话从 running 回到
   // idle（agent 自己切了分支）时 bump，让下方 listBranches effect 重新拉取最新分支。
   const [branchRefreshTick, setBranchRefreshTick] = useState(0)
-  const [gitRefreshTick, setGitRefreshTick] = useState(0)
   const [clearTrigger, setClearTrigger] = useState(0)
   // 用户发送消息时立即贴底（不等 user_message 事件从后端回来）：bump 这个计数器，
   // ChatStream 内部 effect 监听到变化即 scrollTop = scrollHeight。
@@ -943,7 +941,6 @@ export function ChatView({
   const { invoke: cancelSessionTurn } = useIpcInvoke('session:cancel')
   const { invoke: listBranches } = useIpcInvoke('workspace:list-branches')
   const { invoke: switchBranch } = useIpcInvoke('workspace:switch-branch')
-  const { invoke: getGitStatus } = useIpcInvoke('workspace:git-status')
   const { invoke: commitGitChanges } = useIpcInvoke('workspace:git-commit')
   const { invoke: pushGitChanges } = useIpcInvoke('workspace:git-push')
   // 留空提交信息时，把提交请求作为消息发给当前会话的 agent，由 agent 分析 diff 并提交。
@@ -1130,6 +1127,13 @@ export function ChatView({
     activeSessionWorkspace,
   })
   const gitWorkspaceId = gitWorkspace?.id ?? null
+  const { gitStatus, applyGitStatus, refreshGitStatus } = useLiveWorkspaceGitStatus({
+    workspaceId: gitWorkspaceId,
+    sessionId: active,
+    refreshSignal: branchRefreshTick,
+    live: showGitEnvPanel || showGitReviewPanel,
+    onBranchStateChange: setBranchState,
+  })
   const activeSessionTasks = useMemo(
     () => (active == null ? [] : extractSessionProgressTasks(activeMessages)),
     [active, activeMessages],
@@ -1149,7 +1153,6 @@ export function ChatView({
   useEffect(() => {
     if (gitWorkspaceId == null) {
       setBranchState({ currentBranch: null, branches: [] })
-      setGitStatus(null)
       return
     }
     let cancelled = false
@@ -1164,44 +1167,6 @@ export function ChatView({
       cancelled = true
     }
   }, [gitWorkspaceId, branchRefreshTick, listBranches])
-
-  const applyGitStatus = useCallback((status: WorkspaceGitStatusResponse | null) => {
-    setGitStatus(status)
-    if (status?.isGitRepo === true) {
-      setBranchState({ currentBranch: status.currentBranch, branches: status.branches })
-    }
-  }, [])
-
-  const refreshGitStatus = useCallback(async () => {
-    if (gitWorkspaceId == null) {
-      applyGitStatus(null)
-      return
-    }
-    try {
-      const status = await getGitStatus({ workspaceId: gitWorkspaceId })
-      applyGitStatus(status)
-    } catch {
-      applyGitStatus(null)
-    }
-  }, [gitWorkspaceId, applyGitStatus, getGitStatus])
-
-  useEffect(() => {
-    if (gitWorkspaceId == null) {
-      applyGitStatus(null)
-      return
-    }
-    let cancelled = false
-    getGitStatus({ workspaceId: gitWorkspaceId })
-      .then((status) => {
-        if (!cancelled) applyGitStatus(status)
-      })
-      .catch(() => {
-        if (!cancelled) applyGitStatus(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [gitWorkspaceId, applyGitStatus, branchRefreshTick, getGitStatus, gitRefreshTick])
 
   const isGitRepo = gitStatus?.isGitRepo === true
   // 右上角环境面板（git / 进程 / 目标）只要三者其一有内容即可展示，不再强依赖 git 仓库。
@@ -1509,7 +1474,7 @@ export function ChatView({
     try {
       const res = await switchBranch({ workspaceId: gitWorkspace.id, branch })
       setBranchState(res)
-      setGitRefreshTick((n) => n + 1)
+      await refreshGitStatus()
       toast.success(`已切换到 ${res.currentBranch}`)
       return true
     } catch (err) {
