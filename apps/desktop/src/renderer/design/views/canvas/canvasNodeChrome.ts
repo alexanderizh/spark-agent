@@ -1,13 +1,12 @@
 import { isOperationNode } from './canvas.capabilities'
-import { isShotScriptText, parseShotTable } from './canvasShotTableParse'
+import { isRenderableShotScriptText } from './canvasShotScriptPresentation'
 import type { CanvasNode } from './canvas.types'
 
 export const CANVAS_NODE_CONTENT_TITLE_HEIGHT = 52
 export const CANVAS_NODE_QUICK_FOOTER_HEIGHT = 35
 
 function isRenderedShotScript(node: CanvasNode): boolean {
-  if (node.type !== 'text' || !node.data.text || !isShotScriptText(node.data.text)) return false
-  return parseShotTable(node.data.text).length >= 2
+  return node.type === 'text' && isRenderableShotScriptText(node.data.text)
 }
 
 export function canvasNodeHasContentTitle(node: CanvasNode): boolean {

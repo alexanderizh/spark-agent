@@ -6,6 +6,12 @@ import {
 } from './canvasNodeChrome'
 import type { CanvasNode } from './canvas.types'
 
+const SINGLE_SHOT_STORYBOARD = [
+  '| 镜号 | 景别 | 画面/动作 |',
+  '| --- | --- | --- |',
+  '| 1 | 远景 | 城市夜景 |',
+].join('\n')
+
 function createNode(overrides: Partial<CanvasNode> = {}): CanvasNode {
   return {
     id: 'node-1',
@@ -56,6 +62,14 @@ describe('canvasNodeChromeExtraHeight', () => {
             }),
           },
         }),
+      ),
+    ).toBe(CANVAS_NODE_QUICK_FOOTER_HEIGHT)
+  })
+
+  it('uses storyboard chrome for a split node containing one shot', () => {
+    expect(
+      canvasNodeChromeExtraHeight(
+        createNode({ type: 'text', data: { text: SINGLE_SHOT_STORYBOARD } }),
       ),
     ).toBe(CANVAS_NODE_QUICK_FOOTER_HEIGHT)
   })

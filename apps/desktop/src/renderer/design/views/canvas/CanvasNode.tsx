@@ -28,7 +28,8 @@ import {
   getNodeSubtypeOptions,
   isSubtypeSwitchable,
 } from './canvasNodeSubtypeSwitch'
-import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
+import type { ParsedShotRow } from './canvasShotTableParse'
 import { CanvasOperationOutputPreview } from './CanvasOperationOutputPreview'
 import { CanvasShotScriptTable } from './CanvasShotScriptTable'
 import { resolveCanvasOperationOutputState } from './canvasOperationOutputModel'
@@ -620,15 +621,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     isTask && Boolean(actions.expandOperationOutputs) && latestOperationOutputCount > 1
   // 分镜脚本产物节点：把 agent 输出的 JSON / Markdown 分镜表渲染成传统分镜脚本表。
   // 不依赖 pipelineRole（分镜脚本文本产物节点故意不打 shot 角色，避免右键出现不适用的
-  // 关键帧/视频操作），改为「文本节点 + 内容像分镜表 + 能解析出多行」的内容判定，
+  // 关键帧/视频操作），改为「文本节点 + 内容像分镜表 + 能解析出镜头」的内容判定，
   // 既覆盖历史节点，又不会误伤普通文本便签。
   const shotScriptRows = useMemo<ParsedShotRow[]>(() => {
     if (node.type !== 'text' || !node.data.text) return []
-    const text = node.data.text
-    if (!isShotScriptText(text)) return []
-    const rows = parseShotTable(text)
-    // ≥2 行才算可信的分镜表，避免把含「segments」字眼的普通便签误判
-    return rows.length >= 2 ? rows : []
+    return readRenderableShotScriptRows(node.data.text)
   }, [node.type, node.data.text])
   const renderShotTable = shotScriptRows.length > 0
   const runImageStyleExtraction = () =>

@@ -1,4 +1,5 @@
-import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
+import type { ParsedShotRow } from './canvasShotTableParse'
 import type { CanvasAssetType } from './canvas.types'
 
 export type CanvasTextOutputPresentation =
@@ -29,10 +30,8 @@ function stripTextFence(text: string): string {
 /** 将文本产物分类为分镜表、普通 JSON 或普通文本，供卡片和详情工作台共用。 */
 export function resolveCanvasTextOutputPresentation(text: string): CanvasTextOutputPresentation {
   const displayText = stripTextFence(text)
-  if (isShotScriptText(displayText)) {
-    const rows = parseShotTable(displayText)
-    if (rows.length >= 2) return { kind: 'storyboard', rows }
-  }
+  const storyboardRows = readRenderableShotScriptRows(displayText)
+  if (storyboardRows.length > 0) return { kind: 'storyboard', rows: storyboardRows }
 
   const jsonSource = stripJsonFence(displayText)
   if (jsonSource.startsWith('{') || jsonSource.startsWith('[')) {

@@ -5,7 +5,8 @@ import { Icons } from '../../Icons'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasPromptLibraryPanel } from './CanvasPromptLibraryPanel'
 import { readAssetKind } from './canvasFilmAssets'
-import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import { parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import { isRenderableShotScriptText } from './canvasShotScriptPresentation'
 import { appendPromptFragment, buildPromptOptimizationInstruction } from './canvasPromptEditing'
 import type { CanvasAsset, CanvasNode, CanvasTask } from './canvas.types'
 
@@ -341,8 +342,7 @@ export function CanvasNodeEditModal({
   const isTextLike = node?.type === 'text' || node?.type === 'prompt'
   const isShotScriptNode =
     node?.type === 'text' &&
-    isShotScriptText(node.data.text) &&
-    parseShotTable(node.data.text ?? '').length >= 2
+    isRenderableShotScriptText(node.data.text)
 
   useEffect(() => {
     if (!node) return
