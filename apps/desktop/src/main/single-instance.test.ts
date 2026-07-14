@@ -28,6 +28,18 @@ function createFakeApp(hasLock: boolean): {
 }
 
 describe('single instance lock', () => {
+  it('skips the application lock when locking is disabled for development', () => {
+    const { app } = createFakeApp(false)
+    const revealPrimaryWindow = vi.fn()
+
+    const canStart = installSingleInstanceLock(app, revealPrimaryWindow, undefined, false)
+
+    expect(canStart).toBe(true)
+    expect(app.requestSingleInstanceLock).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
+    expect(app.on).not.toHaveBeenCalled()
+  })
+
   it('quits immediately when another app instance already owns the lock', () => {
     const { app } = createFakeApp(false)
     const revealPrimaryWindow = vi.fn()

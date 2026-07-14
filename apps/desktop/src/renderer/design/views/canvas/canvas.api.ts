@@ -4256,6 +4256,8 @@ export const canvasApi = {
     taskPipelineRole?: CreateCanvasTaskRequest['taskPipelineRole']
     outputPipelineRole?: CreateCanvasTaskRequest['outputPipelineRole']
     outputTitle?: CreateCanvasTaskRequest['outputTitle']
+    /** 分镜任务节点的时长配置（每镜最长时间 + 平均镜时），写入 node.data 供配置面板回显 */
+    shotScriptConfig?: { maxClipSec: number; pacingSecPerShot: number }
   }): Promise<CanvasSnapshot> {
     let db = readDb()
     const at = now()
@@ -4389,6 +4391,7 @@ export const canvasApi = {
           ? { outputPipelineRole: input.outputPipelineRole }
           : {}),
         ...(input.outputTitle != null ? { outputTitle: input.outputTitle } : {}),
+        ...(input.shotScriptConfig ? { shotScriptConfig: input.shotScriptConfig } : {}),
         ...(pruned.droppedParams.length > 0 ? { droppedModelParams: pruned.droppedParams } : {}),
         ...(pruned.warnings.length > 0 ? { modelParamWarnings: pruned.warnings } : {}),
         origin: 'manual',

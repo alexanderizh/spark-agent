@@ -1486,6 +1486,9 @@ body.sidebar-resizing {
   height: 20px;
   padding: 0 8px;
 }
+.msg-agent-main .md-surface{
+  margin-top: 10px;
+}
 .md-surface {
   min-width: 0;
   font-weight: 500;

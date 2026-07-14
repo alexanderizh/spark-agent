@@ -185,20 +185,35 @@ function VideoWorkbenchMini({ data }: { data: SparkCanvasNode['data'] }) {
     | undefined
   const thumb = data.thumbnailUrl ?? ''
   const normalizedThumb = thumb ? normalizeEduAssetUrl(thumb) : ''
+  const durationLabel = probe?.durationSec ? formatVwbDuration(probe.durationSec) : null
+  const resolutionLabel = probe?.width && probe?.height ? `${probe.width} × ${probe.height}` : null
   return (
     <div className="canvas-node-video-workbench">
-      {normalizedThumb ? (
-        <img className="canvas-node-vwb-thumb" src={normalizedThumb} alt="视频工作台预览" />
-      ) : (
-        <div className="canvas-node-vwb-nothumb">
-          <Icons.Video size={28} />
+      <div className="canvas-node-vwb-stage">
+        {normalizedThumb ? (
+          <img className="canvas-node-vwb-thumb" src={normalizedThumb} alt="视频工作台预览" />
+        ) : (
+          <div className="canvas-node-vwb-nothumb">
+            <Icons.Video size={30} />
+            <span>等待导入视频素材</span>
+          </div>
+        )}
+        <div className="canvas-node-vwb-shade" />
+        <div className="canvas-node-vwb-play">
+          <Icons.Play size={18} />
         </div>
-      )}
-      <div className="canvas-node-vwb-stats">
-        {probe?.durationSec ? <span>时长 {formatVwbDuration(probe.durationSec)}</span> : null}
-        <span>关键帧 {keyframeCount}</span>
+        <div className="canvas-node-vwb-badges">
+          {durationLabel ? <span>{durationLabel}</span> : null}
+          {resolutionLabel ? <span>{resolutionLabel}</span> : null}
+        </div>
       </div>
-      <div className="canvas-node-vwb-hint">双击进入视频工作台</div>
+      <div className="canvas-node-vwb-footer">
+        <div className="canvas-node-vwb-summary">
+          <span className="canvas-node-vwb-summary-dot" />
+          <span>{keyframeCount > 0 ? `${keyframeCount} 个关键帧` : '尚未提取关键帧'}</span>
+        </div>
+        <span className="canvas-node-vwb-hint">双击进入工作台</span>
+      </div>
     </div>
   )
 }

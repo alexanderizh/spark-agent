@@ -188,7 +188,12 @@ export function getOpsForNode(node: {
 /** 文本/抽取类 op 的提示词（图像/视频类返回空，由 workspace 用各自资产构建） */
 export function buildOpPrompt(
   id: string,
-  ctx: { upstreamText?: string; styleBible?: string; maxClipSec?: number } = {},
+  ctx: {
+    upstreamText?: string
+    styleBible?: string
+    maxClipSec?: number
+    keepShotScriptPlaceholders?: boolean
+  } = {},
 ): string {
   const op = getOp(id)
   if (!op) return ''
@@ -198,6 +203,7 @@ export function buildOpPrompt(
         ...(ctx.upstreamText ? { upstreamText: ctx.upstreamText } : {}),
         ...(ctx.styleBible ? { styleBible: ctx.styleBible } : {}),
         ...(ctx.maxClipSec ? { maxClipSec: ctx.maxClipSec } : {}),
+        ...(ctx.keepShotScriptPlaceholders ? { keepShotScriptPlaceholders: true } : {}),
       })
     case 'screenplay.extract_characters':
       return buildEntityExtractionPrompt('character', ctx.upstreamText ?? '', ctx.styleBible)
