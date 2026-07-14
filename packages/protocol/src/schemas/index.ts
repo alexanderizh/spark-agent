@@ -674,6 +674,8 @@ const CanvasPromptBlockSchema = z.discriminatedUnion('kind', [
     source: z.enum(['connection', 'manual']),
     sourceNodeId: z.string().max(200),
     relation: CanvasPromptRelationSchema,
+    connectionRelation: CanvasPromptRelationSchema.optional(),
+    disconnected: z.boolean().optional(),
     label: z.string().max(500),
     order: z.number().int().min(0),
     note: z.string().max(10_000).optional(),

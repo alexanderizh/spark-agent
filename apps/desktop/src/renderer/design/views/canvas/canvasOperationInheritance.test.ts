@@ -191,6 +191,34 @@ describe('canvas operation inheritance', () => {
     )
   })
 
+  it('retries media tasks with their relation-derived input roles', async () => {
+    const document = {
+      version: 2 as const,
+      blocks: [{ kind: 'reference' as const, id: 'r1', source: 'connection' as const, sourceNodeId: 'first', relation: 'first_frame' as const, connectionRelation: 'reference_image' as const, label: '首帧', order: 0 }],
+    }
+    seedCanvasDb({
+      projects: [{ id: 'project-1', userId: 0, title: 'Project', status: 'active', rootPath: '/tmp/project-1', nodeCount: 2, assetCount: 1, taskCount: 1, createdAt: at, updatedAt: at }],
+      boards: [{ id: 'board-1', projectId: 'project-1', userId: 0, name: 'Board', viewport: { x: 0, y: 0, zoom: 1 }, settings: {}, createdAt: at, updatedAt: at }],
+      assets: [{ id: 'asset-first', projectId: 'project-1', userId: 0, type: 'image', source: 'upload', title: '首帧', url: 'https://cdn/first.png', metadata: {}, createdAt: at, updatedAt: at }],
+      nodes: [
+        { id: 'first', projectId: 'project-1', boardId: 'board-1', userId: 0, type: 'image', title: '首帧', assetId: 'asset-first', taskId: null, parentNodeId: null, x: 0, y: 0, width: 200, height: 120, rotation: 0, zIndex: 1, locked: false, hidden: false, data: { url: 'https://cdn/first.png', mimeType: 'image/png' }, createdAt: at, updatedAt: at },
+        { id: 'node-op', projectId: 'project-1', boardId: 'board-1', userId: 0, type: 'image_to_video', title: '图片转视频', assetId: null, taskId: 'task-old', parentNodeId: null, x: 260, y: 0, width: 240, height: 160, rotation: 0, zIndex: 2, locked: false, hidden: false, data: { operation: 'image_to_video' }, createdAt: at, updatedAt: at },
+      ],
+      edges: [],
+      tasks: [{ id: 'task-old', projectId: 'project-1', boardId: 'board-1', userId: 0, operation: 'image_to_video', status: 'failed', progress: 100, title: '图片转视频', prompt: '[首帧 ref-1: 首帧]', inputNodeIds: ['first'], inputAssetIds: ['asset-first'], outputNodeIds: [], outputAssetIds: [], modelParams: {}, promptDocument: document, promptSnapshot: { ...document, capturedAt: at }, compiledUserText: '[首帧 ref-1: 首帧]', relationManifest: [{ blockId: 'r1', sourceNodeId: 'first', relation: 'first_frame', order: 0 }], inputSnapshots: [], createdAt: at, updatedAt: at }],
+    })
+    Object.assign(window, { spark: { invoke: vi.fn().mockResolvedValue({ status: 'running', assets: [] }) } })
+
+    await canvasApi.retryOperationNode('project-1', 'node-op')
+
+    expect(window.spark.invoke).toHaveBeenCalledWith(
+      'canvas:task:create-media',
+      expect.objectContaining({
+        inputFiles: [{ type: 'image', role: 'first_frame', url: 'https://cdn/first.png', mimeType: 'image/png' }],
+      }),
+    )
+  })
+
   it('syncs manually connected image inputs into typed operation tasks', async () => {
     seedCanvasDb({
       projects: [

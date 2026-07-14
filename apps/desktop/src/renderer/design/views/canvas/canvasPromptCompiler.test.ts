@@ -99,6 +99,32 @@ describe('canvasPromptCompiler', () => {
     expect(() => compileCanvasPromptDocument({ document, nodes: [], assets: [], operation: 'text_to_image' })).toThrow(CanvasPromptCompileError)
   })
 
+  it('blocks submission of disconnected references', () => {
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [{
+        kind: 'reference', id: 'r1', source: 'connection', sourceNodeId: 'hero', relation: 'character',
+        connectionRelation: 'reference_image', disconnected: true, label: '小满', order: 0,
+      }],
+    }
+    const hero = imageNode('hero', 'safe-file://hero.png', '小满')
+    expect(() => compileCanvasPromptDocument({ document, nodes: [hero], assets: [], operation: 'text_to_image' }))
+      .toThrow(CanvasPromptCompileError)
+  })
+
+  it('uses the original media url as the task-detail preview when no thumbnail exists', () => {
+    const hero = imageNode('hero', 'safe-file://hero.png', '小满')
+    delete hero.data.thumbnailUrl
+    const asset = imageAsset('asset-hero', 'safe-file://hero.png', '小满')
+    delete asset.thumbnailUrl
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [{ kind: 'reference', id: 'r1', source: 'manual', sourceNodeId: 'hero', relation: 'reference_image', label: '参考图', order: 0 }],
+    }
+    const result = compileCanvasPromptDocument({ document, nodes: [hero], assets: [asset], operation: 'text_to_image' })
+    expect(result.inputSnapshots[0]?.previewUrl).toBe('safe-file://hero.png')
+  })
+
   it('is deterministic for identical input and warns for empty documents', () => {
     const document: CanvasPromptDocument = { version: 2, blocks: [] }
     const a = compileCanvasPromptDocument({ document, nodes: [], assets: [], operation: 'text_generate' })

@@ -91,6 +91,10 @@ function compileBlock(input: {
     return `[参数/${block.parameter}] ${String(block.value)}${unit}${relation}`
   }
 
+  if (block.kind === 'reference' && block.disconnected) {
+    throw new CanvasPromptCompileError(block.id, `引用“${block.label}”已断开连接，请重新绑定后再提交`)
+  }
+
   const node = input.nodeById.get(block.sourceNodeId)
   if (!node) throw new CanvasPromptCompileError(block.id, `引用节点不存在：${block.sourceNodeId}`)
   const asset = node.assetId ? input.assetById.get(node.assetId) : undefined
@@ -160,7 +164,7 @@ function buildInputSnapshot(input: {
   const { node, asset, block, relation, order, label, content } = input
   const kind = inputKindForNode(node, asset, block)
   const sourceUrl = node.data.url ?? asset?.url ?? undefined
-  const previewUrl = node.data.thumbnailUrl ?? asset?.thumbnailUrl ?? undefined
+  const previewUrl = node.data.thumbnailUrl ?? asset?.thumbnailUrl ?? sourceUrl
   const mimeType = node.data.mimeType ?? asset?.mimeType ?? undefined
   const structuredData = block.kind === 'structured' ? parseJson(content) : undefined
   return {

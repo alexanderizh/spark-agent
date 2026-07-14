@@ -59,6 +59,20 @@ describe('canvasPromptConnections', () => {
     expect(result.document.blocks.map((block) => block.id)).toEqual(['hero', 'manual'])
   })
 
+  it('keeps user-edited automatic tags as disconnected references', () => {
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [{
+        kind: 'reference', id: 'connection-hero', source: 'connection', sourceNodeId: 'hero',
+        relation: 'character', connectionRelation: 'reference_image', label: '主角', order: 0,
+      }],
+    }
+    const result = reconcilePromptConnections(document, [])
+    expect(result.document.blocks).toEqual([
+      expect.objectContaining({ id: 'connection-hero', relation: 'character', disconnected: true }),
+    ])
+  })
+
   it('ensures all currently connected nodes are visible without duplicating existing tags', () => {
     const document: CanvasPromptDocument = { version: 2, blocks: [] }
     const result = ensureConnectionReferences(document, [node('hero'), node('scene', 'text'), node('hero')])
