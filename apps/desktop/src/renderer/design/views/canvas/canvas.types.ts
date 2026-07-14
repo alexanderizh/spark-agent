@@ -231,6 +231,13 @@ export type CanvasNodeData = {
     sourceOperation?: 'panorama_360'
     capturedFromNodeId?: string
   }
+  /** 分镜脚本任务的结构化时长配置（UI 可调，运行时替换 prompt 占位槽 {maxClip}） */
+  shotScriptConfig?: ShotScriptConfig
+}
+
+/** 分镜脚本任务的时长配置：每镜最长时间上限（秒），约束 LLM 生成的每镜 durationSec */
+export type ShotScriptConfig = {
+  maxClipSec: number
 }
 
 export type CanvasNode = {

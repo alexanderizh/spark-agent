@@ -96,7 +96,7 @@ import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasSh
 import { splitStoryboardNode } from './canvasStoryboardNodeSplit'
 import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEntityExtract'
-import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
+import { DEFAULT_SHOT_SCRIPT_CONFIG, applyShotScriptConfigToPrompt } from './canvasAgentPromptPresets'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import {
   characterSourceImageUrl,
@@ -159,6 +159,7 @@ import type {
   CanvasProject,
   CanvasProjectSettings,
   CanvasTask,
+  ShotScriptConfig,
 } from './canvas.types'
 import type { CanvasMediaTaskInputFile, SessionReasoningEffort } from '@spark/protocol'
 import type {
@@ -5253,6 +5254,7 @@ export function CanvasWorkspaceView({
     taskPipelineRole,
     outputPipelineRole,
     outputTitle,
+    shotScriptConfig,
   }: {
     sourceNode: CanvasNode
     operation: CanvasOperationType
@@ -5263,6 +5265,7 @@ export function CanvasWorkspaceView({
     taskPipelineRole?: CanvasPipelineRole
     outputPipelineRole?: CanvasPipelineRole
     outputTitle?: string
+    shotScriptConfig?: ShotScriptConfig
   }) => {
     const snapshot = snapshotRef.current
     if (!snapshot) return
@@ -5282,6 +5285,7 @@ export function CanvasWorkspaceView({
       ...(taskPipelineRole ? { taskPipelineRole } : {}),
       ...(outputPipelineRole ? { outputPipelineRole } : {}),
       ...(outputTitle ? { outputTitle } : {}),
+      ...(shotScriptConfig ? { shotScriptConfig } : {}),
       ...runtime,
     })
     const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
@@ -5623,12 +5627,13 @@ export function CanvasWorkspaceView({
       prompt: buildOpPrompt('screenplay.to_shot_script', {
         upstreamText: sourceText,
         ...(styleBible ? { styleBible } : {}),
-        maxClipSec: DEFAULT_MAX_CLIP_SEC,
+        keepShotScriptPlaceholders: true,
       }),
       title: '生成分镜脚本',
       nodeMessage: '确认分镜脚本 Prompt、Agent 与模型后点击开始任务',
       taskPipelineRole: 'shot',
       outputPipelineRole: 'shot',
+      shotScriptConfig: DEFAULT_SHOT_SCRIPT_CONFIG,
     })
   }
 
@@ -6146,7 +6151,7 @@ export function CanvasWorkspaceView({
         : op.id === 'screenplay.to_shot_script'
           ? buildOpPrompt('screenplay.to_shot_script', {
               upstreamText: '【请连接剧本/文本节点提供原文】',
-              maxClipSec: DEFAULT_MAX_CLIP_SEC,
+              keepShotScriptPlaceholders: true,
             })
           : op.id === 'chapter.to_screenplay'
             ? buildChapterToScreenplayInstruction('【请连接章节/文本节点提供原文】')
@@ -6161,6 +6166,9 @@ export function CanvasWorkspaceView({
       ...(promptPlaceholder ? { prompt: promptPlaceholder } : {}),
       message: '请连接上游文本节点并确认 Prompt 后开始任务',
       ...(op.produces ? { outputPipelineRole: op.produces } : {}),
+      ...(op.id === 'screenplay.to_shot_script'
+        ? { shotScriptConfig: DEFAULT_SHOT_SCRIPT_CONFIG }
+        : {}),
       ...(op.kind === 'extract'
         ? { modelParams: { workflow: `extract_${op.extractKind}`, responseFormat: 'json' } }
         : {}),
@@ -6904,6 +6912,10 @@ export function CanvasWorkspaceView({
                           })
                         : mergePromptWithNodeContext(params.prompt, hydratedTaskInputNodes)) ||
                       (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
+                    // 分镜任务：用用户配置的每镜最长时间替换 prompt 占位槽 {maxClip}。
+                    const finalPrompt = params.shotScriptConfig
+                      ? applyShotScriptConfigToPrompt(effectivePrompt, params.shotScriptConfig)
+                      : effectivePrompt
                     const styleContext = buildCanvasStyleContext(snapshot, {
                       ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
                       ...(params.modelParams && Object.keys(params.modelParams).length > 0
@@ -6913,7 +6925,7 @@ export function CanvasWorkspaceView({
                     const styledTask = applyCanvasStyleToTask(
                       operation,
                       {
-                        prompt: effectivePrompt,
+                        prompt: finalPrompt,
                         ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
                         ...(params.modelParams ? { modelParams: params.modelParams } : {}),
                       },
@@ -6960,6 +6972,14 @@ export function CanvasWorkspaceView({
                     } finally {
                       restoreCanvasViewport(viewportBeforeRun)
                     }
+                    // 分镜时长配置写回 node.data，保证下次打开面板回显用户选择
+                    // （runOperationNode 的 task 同步白名单不含 shotScriptConfig）。
+                    if (params.shotScriptConfig) {
+                      await updateNodeData(opNode.id, {
+                        ...opNode.data,
+                        shotScriptConfig: params.shotScriptConfig,
+                      })
+                    }
                   }}
                   onRetry={() => void retryOperationNode(opNode.id)}
                   onCancelTask={async (taskId) => {
@@ -6987,6 +7007,7 @@ export function CanvasWorkspaceView({
                       ...(params.manifestId ? { manifestId: params.manifestId } : {}),
                       ...(params.modelId ? { modelId: params.modelId } : {}),
                       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                      ...(params.shotScriptConfig ? { shotScriptConfig: params.shotScriptConfig } : {}),
                     })
                     writeCanvasLastUsedPresetTarget(presetTargetId, {
                       ...(params.prompt.trim() ? { prompt: params.prompt } : {}),

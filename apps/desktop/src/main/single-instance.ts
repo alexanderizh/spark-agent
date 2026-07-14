@@ -8,7 +8,10 @@ export function installSingleInstanceLock(
   app: SingleInstanceApp,
   revealPrimaryWindow: () => void,
   handleSecondInstanceArguments?: (commandLine: string[]) => void,
+  enabled = true,
 ): boolean {
+  if (!enabled) return true
+
   const ownsLock = app.requestSingleInstanceLock()
   if (!ownsLock) {
     app.quit()

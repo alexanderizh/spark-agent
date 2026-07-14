@@ -1,0 +1,52 @@
+.git-review-file-row-wrap,
+.git-review-tree-row-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.git-review-tree-stage-dot.committed {
+  background: var(--info, #3b82f6);
+}
+
+.git-review-file-row-wrap {
+  padding-right: 8px;
+
+  &:hover {
+    background: var(--hover);
+  }
+
+  > .git-review-file-row {
+    min-width: 0;
+    padding-right: 4px;
+
+    &:hover {
+      background: transparent;
+    }
+  }
+}
+
+.git-review-file-open,
+.git-review-tree-file-open {
+  margin-left: 4px;
+}
+
+.git-review-tree-row-wrap {
+  padding-right: 4px;
+  border-radius: var(--r-xs);
+
+  &:hover,
+  &.selected,
+  &:focus-within {
+    background: var(--hover);
+  }
+
+  > .git-review-tree-row {
+    min-width: 0;
+
+    &:hover,
+    &.selected {
+      background: transparent;
+    }
+  }
+}

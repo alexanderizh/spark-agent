@@ -4,6 +4,10 @@ import {
   buildAgentCommitMessage,
   buildDefaultExpandedTreeDirs,
   buildGitReviewTree,
+  getGitChangeStageLabel,
+  getGitReviewFileOpenPath,
+  getGitTreeStageClass,
+  isGitReviewFileOpenable,
   matchesGitReviewStageFilter,
   parseGitDiffViewSegments,
 } from './ChatGitUtils'
@@ -57,6 +61,39 @@ describe('ChatGitUtils', () => {
       src: true,
       'src/components': true,
     })
+  })
+
+  it('resolves reviewed files against the reviewed workspace root', () => {
+    expect(getGitReviewFileOpenPath('G:\\worktrees\\feature', 'src/app.ts')).toBe(
+      'G:\\worktrees\\feature\\src/app.ts',
+    )
+    expect(getGitReviewFileOpenPath('/worktrees/feature/', '/src/app.ts')).toBe(
+      '/worktrees/feature/src/app.ts',
+    )
+  })
+
+  it('does not offer opening for deleted review files', () => {
+    const modifiedChange = changes[0]
+    if (modifiedChange == null) throw new Error('missing modified change fixture')
+
+    expect(isGitReviewFileOpenable(modifiedChange)).toBe(true)
+    expect(isGitReviewFileOpenable({ ...modifiedChange, status: 'D' })).toBe(false)
+    expect(isGitReviewFileOpenable({ ...modifiedChange, status: 'AD' })).toBe(false)
+    expect(isGitReviewFileOpenable({ ...modifiedChange, status: 'DA' })).toBe(true)
+  })
+
+  it('labels baseline-only review changes as committed', () => {
+    const modifiedChange = changes[0]
+    if (modifiedChange == null) throw new Error('missing modified change fixture')
+    const committedChange = {
+      ...modifiedChange,
+      staged: false,
+      unstaged: false,
+      untracked: false,
+    }
+
+    expect(getGitChangeStageLabel(committedChange)).toBe('已提交')
+    expect(getGitTreeStageClass(committedChange)).toBe('committed')
   })
 
   it('preserves diff line numbers and collapses long context runs', () => {
