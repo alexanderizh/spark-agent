@@ -135,6 +135,8 @@ import {
   saveCanvas,
 } from './canvas.api'
 import { buildTaskInputFiles, type CanvasTaskInputRoleSelection } from './canvasTaskInputFiles'
+import { buildCanvasPromptSubmission } from './canvasPromptSubmission'
+import { migrateLegacyPrompt } from './canvasPromptDocument'
 import { summarizeCanvasSelectionContext } from './canvasContextMenuModel'
 import {
   mergeCanvasOperationPresetNegativePrompt,
@@ -144,6 +146,7 @@ import {
   readCanvasOperationPreset,
   readCanvasOperationPresetOverrides,
   readCanvasResolvedPresetTarget,
+  readCanvasOperationPresetPromptPrefix,
   resolveCanvasPresetTarget,
   writeCanvasLastUsedPresetTarget,
 } from './canvasOperationPresets'
@@ -6898,18 +6901,33 @@ export function CanvasWorkspaceView({
                             params.inputRoles,
                           )
                         : params.inputRoles
-                    const inputFiles = await buildCloudTaskInputFiles(
-                      hydratedTaskInputNodes,
-                      params.inputTransport,
-                      effectiveInputRoles,
-                    )
+                    const promptDocument =
+                      params.promptDocument ??
+                      migrateLegacyPrompt({
+                        prompt: params.prompt,
+                        nodes: snapshot.nodes,
+                        assets: snapshot.assets,
+                      })
+                    const resolvedPreset = readCanvasResolvedPresetTarget(presetTargetId)
+                    const systemPrompt = [
+                      readCanvasOperationPresetPromptPrefix(operation),
+                      resolvedPreset.prompt,
+                    ]
+                      .map((item) => item.trim())
+                      .filter(Boolean)
+                      .join('\n\n')
+                    const promptSubmission = await buildCanvasPromptSubmission({
+                      document: promptDocument,
+                      snapshot,
+                      operation,
+                      ...(systemPrompt ? { systemPrompt } : {}),
+                      ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                      ...(params.inputTransport ? { inputTransport: params.inputTransport } : {}),
+                      ...(effectiveInputRoles ? { inputRoles: effectiveInputRoles } : {}),
+                    })
+                    const inputFiles = promptSubmission.inputFiles ?? []
                     const effectivePrompt =
-                      (operation === 'storyboard_grid'
-                        ? buildStoryboardNodePrompt({
-                            prompt: params.prompt,
-                            inputNodes: hydratedTaskInputNodes,
-                          })
-                        : mergePromptWithNodeContext(params.prompt, hydratedTaskInputNodes)) ||
+                      promptSubmission.prompt ||
                       (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
                     // 分镜任务：用用户配置的每镜最长时间 / 平均镜时替换 prompt 占位槽 {maxClip}/{pacing}。
                     const finalPrompt = params.shotScriptConfig
@@ -6947,7 +6965,9 @@ export function CanvasWorkspaceView({
                     })
                     try {
                       await runOperationNode(opNode.id, {
+                        ...promptSubmission,
                         prompt: styledTask.prompt,
+                        compiledUserText: styledTask.prompt,
                         ...(styledTask.negativePrompt
                           ? { negativePrompt: styledTask.negativePrompt }
                           : {}),
