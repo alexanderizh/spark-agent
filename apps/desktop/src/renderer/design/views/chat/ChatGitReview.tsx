@@ -61,9 +61,11 @@ function GitReviewDiffLine({ line }: { line: GitDiffViewLine }) {
 function GitReviewFileDiff({
   workspaceId,
   change,
+  refreshToken,
 }: {
   workspaceId: string
   change: WorkspaceGitFileChange
+  refreshToken: WorkspaceGitStatusResponse | null
 }) {
   const { invoke: getFileDiff } = useIpcInvoke('workspace:git-file-diff')
   const [loading, setLoading] = useState(true)
@@ -76,8 +78,6 @@ function GitReviewFileDiff({
     let cancelled = false
     setLoading(true)
     setError(null)
-    setDiff('')
-    setIsBinary(false)
     setExpandedGaps({})
     getFileDiff({ workspaceId, path: change.path, untracked: change.untracked })
       .then((res) => {
@@ -100,11 +100,11 @@ function GitReviewFileDiff({
     return () => {
       cancelled = true
     }
-  }, [change.path, change.untracked, getFileDiff, workspaceId])
+  }, [change.path, change.untracked, getFileDiff, refreshToken, workspaceId])
 
   const segments = useMemo(() => parseGitDiffViewSegments(diff), [diff])
 
-  if (loading) {
+  if (loading && !diff.trim()) {
     return (
       <div className="git-review-diff-state">
         <Icons.Spinner size={14} />
@@ -566,7 +566,11 @@ export function GitReviewPanel({
                     </span>
                   </button>
                   {expanded && workspaceId != null && (
-                    <GitReviewFileDiff workspaceId={workspaceId} change={change} />
+                    <GitReviewFileDiff
+                      workspaceId={workspaceId}
+                      change={change}
+                      refreshToken={status}
+                    />
                   )}
                 </div>
               )
@@ -603,4 +607,3 @@ export function GitReviewPanel({
     </div>
   )
 }
-
