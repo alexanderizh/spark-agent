@@ -6,9 +6,17 @@ import type { WorkspaceGitStatusResponse } from '@spark/protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GitReviewPanel } from './ChatGitReview'
 
+vi.mock('../../components/SessionFileOpenPicker', () => ({
+  SessionFileOpenPicker: ({ filePath }: { filePath: string }) => (
+    <button type="button" data-testid="git-review-file-open">
+      {filePath}
+    </button>
+  ),
+}))
+
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-function createStatus(additions: number): WorkspaceGitStatusResponse {
+function createStatus(additions: number, fileStatus = 'M'): WorkspaceGitStatusResponse {
   return {
     isGitRepo: true,
     currentBranch: 'master',
@@ -29,7 +37,7 @@ function createStatus(additions: number): WorkspaceGitStatusResponse {
     files: [
       {
         path: 'src/prod.js',
-        status: 'M',
+        status: fileStatus,
         staged: true,
         unstaged: false,
         untracked: false,
@@ -78,6 +86,7 @@ describe('GitReviewPanel diff refresh', () => {
       root.render(
         <GitReviewPanel
           workspaceId="workspace-1"
+          workspaceRootPath={'G:\\worktrees\\feature'}
           status={createStatus(1)}
           width={520}
           onWidthChange={vi.fn()}
@@ -95,6 +104,7 @@ describe('GitReviewPanel diff refresh', () => {
       root.render(
         <GitReviewPanel
           workspaceId="workspace-1"
+          workspaceRootPath={'G:\\worktrees\\feature'}
           status={createStatus(2)}
           width={520}
           onWidthChange={vi.fn()}
@@ -106,5 +116,60 @@ describe('GitReviewPanel diff refresh', () => {
 
     await vi.waitFor(() => expect(container.textContent).toContain('refreshed value'))
     expect(diffCall).toBe(2)
+  })
+
+  it('offers the same absolute file target in the diff list and file tree', async () => {
+    vi.stubGlobal('spark', { invoke: vi.fn(async () => ({})), on: vi.fn(() => vi.fn()) })
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <GitReviewPanel
+          workspaceId="workspace-1"
+          workspaceRootPath={'G:\\worktrees\\feature'}
+          status={createStatus(1)}
+          width={640}
+          onWidthChange={vi.fn()}
+          onRefresh={vi.fn(async () => {})}
+          onClose={vi.fn()}
+        />,
+      )
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-pressed="false"]')?.click()
+    })
+
+    const openers = container.querySelectorAll('[data-testid="git-review-file-open"]')
+    expect(openers).toHaveLength(2)
+    expect(openers[0]?.closest('.git-review-file-row')).toBeNull()
+    expect(openers[1]?.closest('.git-review-tree-row')).toBeNull()
+    expect(Array.from(openers, (node) => node.textContent)).toEqual([
+      'G:\\worktrees\\feature\\src/prod.js',
+      'G:\\worktrees\\feature\\src/prod.js',
+    ])
+  })
+
+  it('does not offer opening for deleted files', async () => {
+    vi.stubGlobal('spark', { invoke: vi.fn(async () => ({})), on: vi.fn(() => vi.fn()) })
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <GitReviewPanel
+          workspaceId="workspace-1"
+          workspaceRootPath={'G:\\worktrees\\feature'}
+          status={createStatus(1, 'D')}
+          width={640}
+          onWidthChange={vi.fn()}
+          onRefresh={vi.fn(async () => {})}
+          onClose={vi.fn()}
+        />,
+      )
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-pressed="false"]')?.click()
+    })
+
+    expect(container.querySelector('[data-testid="git-review-file-open"]')).toBeNull()
   })
 })
