@@ -29,14 +29,12 @@ export type AgentPresetContext = {
   styleBible?: string
   /** 场次 / 段落标题，用于 prompt 抬头 */
   title?: string
-  /** 节奏基线：平均镜时（秒/镜），分镜 agent 切分用 */
-  pacingSecPerShot?: number
   /** 单段视频模型时长上限（秒）；分镜 agent 据此保证每镜不超模型上限 */
   maxClipSec?: number
   /**
-   * 分镜模板的 {maxClip}/{pacing} 占位槽是否保留（不替换成具体数值）。
+   * 分镜模板的 {maxClip} 占位槽是否保留（不替换成具体数值）。
    * 画布分镜任务节点创建时置 true，运行时再由 applyShotScriptConfigToPrompt 按用户
-   * 在配置面板上选的每镜最长时间 / 平均镜时替换，确保改值即时生效。
+   * 在配置面板上选的每镜最长时间替换，确保改值即时生效。
    */
   keepShotScriptPlaceholders?: boolean
 }
@@ -58,7 +56,7 @@ export type CanvasAgentPreset = {
   persona: string
   /**
    * 可编辑的指令模板（一键填入操作节点的「提示词」框）。
-   * `{upstream}` / `{title}` / `{style}` / `{pacing}` / `{maxClip}` 为占位槽，
+   * `{upstream}` / `{title}` / `{style}` / `{maxClip}` 为占位槽，
    * 由 buildAgentPresetPrompt 用上下文替换；未提供的槽给出占位说明，提示用户补全。
    */
   template: string
@@ -67,23 +65,17 @@ export type CanvasAgentPreset = {
 /** 默认单段视频时长上限（秒）——多数图生视频模型支持 4~10s，取保守上限 */
 export const DEFAULT_MAX_CLIP_SEC = 5
 
-/** 默认平均每镜时长（秒/镜）——分镜切分的节奏基线 */
-export const DEFAULT_PACING_SEC_PER_SHOT = 3
-
-/** 分镜脚本任务的默认时长配置（每镜最长 5s + 平均 3s/镜） */
+/** 分镜脚本任务的默认时长配置（每镜最长 5s） */
 export const DEFAULT_SHOT_SCRIPT_CONFIG: ShotScriptConfig = {
   maxClipSec: DEFAULT_MAX_CLIP_SEC,
-  pacingSecPerShot: DEFAULT_PACING_SEC_PER_SHOT,
 }
 
 /**
- * 用分镜时长配置替换 prompt 里的 {maxClip}/{pacing} 占位槽。
+ * 用分镜时长配置替换 prompt 里的 {maxClip} 占位槽。
  * 占位槽不存在时为 no-op（用户手编删了占位符 / 非分镜模板都能安全调用）。
  */
 export function applyShotScriptConfigToPrompt(prompt: string, cfg: ShotScriptConfig): string {
-  return prompt
-    .replaceAll('{maxClip}', String(cfg.maxClipSec))
-    .replaceAll('{pacing}', String(cfg.pacingSecPerShot))
+  return prompt.replaceAll('{maxClip}', String(cfg.maxClipSec))
 }
 
 /** 内置专属 agent 预设 */
@@ -125,7 +117,7 @@ export const CANVAS_AGENT_PRESETS: CanvasAgentPreset[] = [
       '【任务】把下面的场次剧本拆成「精确到秒、超详细」的分镜表。',
       '要求：每一镜都必须详细到可单独驱动 AI 图像/视频模型生成，包含完整的摄影、调度、表演、美术、光影信息，不放过任何一个细节。',
       '',
-      '【切分依据】对白按朗读时长估时（中文约5字/秒）+ 动作节拍 + 节奏基线（约 {pacing} 秒/镜）。',
+      '【切分依据】对白按朗读时长估时（中文约5字/秒）+ 动作节拍。',
       '【硬约束】单镜时长不得超过 {maxClip} 秒（视频模型上限）；超过则拆成多镜，并保证镜间画面可衔接。',
       '',
       '【输出格式】先输出一个完整的 JSON 对象（务必完整闭合 ```json 代码块），再输出 Markdown 表格。',
@@ -242,19 +234,18 @@ export function buildAgentPresetPrompt(role: CanvasAgentRoleId, ctx: AgentPreset
     ctx.upstreamText && ctx.upstreamText.trim().length > 0
       ? ctx.upstreamText.trim()
       : '（在此粘贴上游内容，或先选中上游节点再发起）'
-  const pacing = ctx.pacingSecPerShot && ctx.pacingSecPerShot > 0 ? String(ctx.pacingSecPerShot) : '3'
   const maxClip = ctx.maxClipSec && ctx.maxClipSec > 0 ? String(ctx.maxClipSec) : String(DEFAULT_MAX_CLIP_SEC)
   const style =
     ctx.styleBible && ctx.styleBible.trim().length > 0
       ? `【全片视觉总设定（须贯彻）】\n${ctx.styleBible.trim()}`
       : ''
 
-  // keepShotScriptPlaceholders=true 时保留 {maxClip}/{pacing} 占位槽（画布分镜任务节点用，
+  // keepShotScriptPlaceholders=true 时保留 {maxClip} 占位槽（画布分镜任务节点用，
   // 运行时由 applyShotScriptConfigToPrompt 按用户配置替换）；其余调用方默认替换成具体数值。
   const keepShotPlaceholders = ctx.keepShotScriptPlaceholders === true
   let result = preset.template.replaceAll('{upstream}', upstream).replaceAll('{style}', style)
   if (!keepShotPlaceholders) {
-    result = result.replaceAll('{pacing}', pacing).replaceAll('{maxClip}', maxClip)
+    result = result.replaceAll('{maxClip}', maxClip)
   }
 
   // title 槽位（可选，部分模板未使用）

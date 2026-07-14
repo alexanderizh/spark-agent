@@ -86,6 +86,15 @@ describe('canvasPipelineOps', () => {
       expect(prompt).toContain('场1 候车室')
       expect(prompt).toContain('不得超过 8 秒')
     })
+    it('keepShotScriptPlaceholders=true 透传到分镜预设，保留占位槽', () => {
+      const prompt = buildOpPrompt('screenplay.to_shot_script', {
+        upstreamText: '场1',
+        maxClipSec: 8,
+        keepShotScriptPlaceholders: true,
+      })
+      expect(prompt).toContain('{maxClip}')
+      expect(prompt).not.toContain('不得超过 8 秒')
+    })
     it('提取角色委托抽取提示词', () => {
       const prompt = buildOpPrompt('screenplay.extract_characters', { upstreamText: '林岚登场' })
       expect(prompt).toContain('抽取其中出现的全部角色')

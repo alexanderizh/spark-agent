@@ -51,14 +51,14 @@ describe('canvasAgentPromptPresets', () => {
       expect(prompt).toContain('在此粘贴上游内容')
     })
 
-    it('分镜预设带入节奏基线与时长上限', () => {
+    it('分镜预设带入时长上限，且不再含节奏基线', () => {
       const prompt = buildAgentPresetPrompt('storyboard', {
         upstreamText: '场1',
-        pacingSecPerShot: 4,
         maxClipSec: 8,
       })
-      expect(prompt).toContain('约 4 秒/镜')
       expect(prompt).toContain('不得超过 8 秒')
+      // 节奏基线（约 N 秒/镜）已移除，不应再出现
+      expect(prompt).not.toContain('秒/镜')
       expect(prompt).toContain('"shots"')
       expect(prompt).toContain('Markdown 表格')
     })
@@ -78,32 +78,27 @@ describe('canvasAgentPromptPresets', () => {
       expect(buildAgentPresetPrompt('unknown', {})).toBe('')
     })
 
-    it('keepShotScriptPlaceholders=true 时保留 {maxClip}/{pacing} 占位槽', () => {
+    it('keepShotScriptPlaceholders=true 时保留 {maxClip} 占位槽', () => {
       const prompt = buildAgentPresetPrompt('storyboard', {
         upstreamText: '场1',
-        pacingSecPerShot: 4,
         maxClipSec: 8,
         keepShotScriptPlaceholders: true,
       })
       expect(prompt).toContain('{maxClip}')
-      expect(prompt).toContain('{pacing}')
       // 占位槽未被替换成具体数值
       expect(prompt).not.toContain('不得超过 8 秒')
-      expect(prompt).not.toContain('约 4 秒/镜')
     })
   })
 
   describe('applyShotScriptConfigToPrompt', () => {
-    it('替换 {maxClip}/{pacing} 占位槽为配置值', () => {
+    it('替换 {maxClip} 占位槽为配置值', () => {
       const prompt = buildAgentPresetPrompt('storyboard', {
         upstreamText: '场1',
         keepShotScriptPlaceholders: true,
       })
-      const filled = applyShotScriptConfigToPrompt(prompt, { maxClipSec: 12, pacingSecPerShot: 6 })
+      const filled = applyShotScriptConfigToPrompt(prompt, { maxClipSec: 12 })
       expect(filled).toContain('不得超过 12 秒')
-      expect(filled).toContain('约 6 秒/镜')
       expect(filled).not.toContain('{maxClip}')
-      expect(filled).not.toContain('{pacing}')
     })
 
     it('占位槽不存在时为 no-op（非分镜模板 / 用户手编删除）', () => {
@@ -114,14 +109,13 @@ describe('canvasAgentPromptPresets', () => {
       expect(filled).toBe('没有任何占位符的普通文本')
     })
 
-    it('默认配置填入 5 秒 / 3 秒', () => {
+    it('默认配置填入 5 秒', () => {
       const prompt = buildAgentPresetPrompt('storyboard', {
         upstreamText: '场1',
         keepShotScriptPlaceholders: true,
       })
       const filled = applyShotScriptConfigToPrompt(prompt, DEFAULT_SHOT_SCRIPT_CONFIG)
       expect(filled).toContain('不得超过 5 秒')
-      expect(filled).toContain('约 3 秒/镜')
     })
   })
 })

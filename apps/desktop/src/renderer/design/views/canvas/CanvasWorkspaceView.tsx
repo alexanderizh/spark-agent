@@ -159,6 +159,7 @@ import type {
   CanvasProject,
   CanvasProjectSettings,
   CanvasTask,
+  ShotScriptConfig,
 } from './canvas.types'
 import type { CanvasMediaTaskInputFile, SessionReasoningEffort } from '@spark/protocol'
 import type {
@@ -5264,7 +5265,7 @@ export function CanvasWorkspaceView({
     taskPipelineRole?: CanvasPipelineRole
     outputPipelineRole?: CanvasPipelineRole
     outputTitle?: string
-    shotScriptConfig?: { maxClipSec: number; pacingSecPerShot: number }
+    shotScriptConfig?: ShotScriptConfig
   }) => {
     const snapshot = snapshotRef.current
     if (!snapshot) return
@@ -6911,7 +6912,7 @@ export function CanvasWorkspaceView({
                           })
                         : mergePromptWithNodeContext(params.prompt, hydratedTaskInputNodes)) ||
                       (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
-                    // 分镜任务：用用户配置的每镜最长时间 / 平均镜时替换 prompt 占位槽 {maxClip}/{pacing}。
+                    // 分镜任务：用用户配置的每镜最长时间替换 prompt 占位槽 {maxClip}。
                     const finalPrompt = params.shotScriptConfig
                       ? applyShotScriptConfigToPrompt(effectivePrompt, params.shotScriptConfig)
                       : effectivePrompt
