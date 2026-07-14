@@ -84,6 +84,30 @@ export function extractCanvasPromptMentionTokens(value: string): Array<{
   return result
 }
 
+export type CanvasPromptMentionTokenRange = {
+  raw: string
+  label: string
+  nodeId: string
+  start: number
+  end: number
+}
+
+export function scanCanvasPromptMentionTokens(value: string): CanvasPromptMentionTokenRange[] {
+  const result: CanvasPromptMentionTokenRange[] = []
+  const pattern = /@\[([^\]]+)\]\(node:([^)]+)\)/g
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(value)) != null) {
+    result.push({
+      raw: match[0],
+      label: match[1] ?? '',
+      nodeId: match[2] ?? '',
+      start: match.index,
+      end: match.index + match[0].length,
+    })
+  }
+  return result
+}
+
 function inactiveMentionQuery(cursor: number): CanvasPromptMentionQuery {
   return {
     active: false,
