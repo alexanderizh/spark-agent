@@ -44,7 +44,7 @@ export interface InspectorSubagent {
   output?: string | undefined
 }
 
-export type InspectorTaskStatus = 'pending' | 'in_progress' | 'completed'
+export type InspectorTaskStatus = 'pending' | 'in_progress' | 'completed' | 'interrupted'
 
 export interface InspectorTask {
   id: string
@@ -113,24 +113,55 @@ export function parseTodosFromInputOrOutput(
         .replace(/\n?```$/, '')
         .trim()
       const parsed = JSON.parse(cleaned) as { todos?: unknown }
-      if (Array.isArray(parsed.todos)) return parsed.todos.filter(isTodo)
+      if (Array.isArray(parsed.todos)) {
+        const normalized = normalizeTodos(parsed.todos)
+        if (normalized.length > 0 || parsed.todos.length === 0) return normalized
+      }
     } catch {
       // Fall through to the input payload when the tool output is not JSON.
     }
   }
   const todos = input['todos']
-  return Array.isArray(todos) ? todos.filter(isTodo) : []
+  return Array.isArray(todos) ? normalizeTodos(todos) : []
 }
 
-function isTodo(value: unknown): value is ParsedTodo {
-  if (value == null || typeof value !== 'object') return false
+function normalizeTodos(values: unknown[]): ParsedTodo[] {
+  return values.flatMap((value) => {
+    const todo = normalizeTodo(value)
+    return todo == null ? [] : [todo]
+  })
+}
+
+function normalizeTodo(value: unknown): ParsedTodo | null {
+  if (value == null || typeof value !== 'object') return null
   const todo = value as Record<string, unknown>
-  return (
+  const id = typeof todo['id'] === 'string' ? todo['id'] : undefined
+  const activeForm = typeof todo['activeForm'] === 'string' ? todo['activeForm'] : undefined
+  const status = todo['status']
+
+  if (
     typeof todo['content'] === 'string' &&
-    (todo['status'] === 'pending' ||
-      todo['status'] === 'in_progress' ||
-      todo['status'] === 'completed')
-  )
+    (status === 'pending' || status === 'in_progress' || status === 'completed')
+  ) {
+    return {
+      ...(id != null ? { id } : {}),
+      content: todo['content'],
+      status,
+      ...(activeForm != null ? { activeForm } : {}),
+    }
+  }
+
+  // Codex SDK/CLI 的 todo_list 使用 { text, completed }，而 Claude 的
+  // todo_write 使用 { content, status }。在展示边界统一为 ParsedTodo。
+  if (typeof todo['text'] === 'string' && typeof todo['completed'] === 'boolean') {
+    return {
+      ...(id != null ? { id } : {}),
+      content: todo['text'],
+      status: todo['completed'] ? 'completed' : 'pending',
+    }
+  }
+
+  return null
 }
 
 export function formatCheckpointReference(checkpointId: string): string {
@@ -259,28 +290,75 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function extractSessionProgressTasks(messages: UIMessage[]): InspectorTask[] {
   const latestTodos = extractLatestTodoProgressTasks(messages)
-  return latestTodos.length > 0 ? latestTodos : extractInspectorTasks(messages)
+  if (latestTodos != null) {
+    return settleFinishedProgress(latestTodos.tasks, latestTodos.messageStatus)
+  }
+
+  const tasks = extractInspectorTasks(messages, { includeTeamMemberTasks: false })
+  const messageStatus = findLatestHostTaskMessageStatus(messages)
+  return settleFinishedProgress(tasks, messageStatus)
 }
 
-function extractLatestTodoProgressTasks(messages: UIMessage[]): InspectorTask[] {
-  let latest: InspectorTask[] = []
+type SessionProgressSnapshot = {
+  tasks: InspectorTask[]
+  messageStatus: UIMessage['status']
+}
+
+function extractLatestTodoProgressTasks(messages: UIMessage[]): SessionProgressSnapshot | null {
+  let latest: SessionProgressSnapshot | null = null
 
   for (const message of messages) {
     for (const block of message.blocks) {
-      if (block.kind !== 'tool_call' || block.toolName !== 'todo_write') continue
+      if (
+        block.kind !== 'tool_call' ||
+        block.toolName !== 'todo_write' ||
+        block.teamMemberContext != null
+      ) {
+        continue
+      }
       const todos = parseTodosFromInputOrOutput(block.toolInput, block.output)
       if (todos.length === 0) continue
 
-      latest = todos.map((todo, index) => ({
-        id: typeof todo.id === 'string' && todo.id.length > 0 ? todo.id : String(index + 1),
-        subject: todo.content,
-        activeForm: todo.activeForm,
-        status: todo.status,
-        createdAt: index,
-      }))
+      latest = {
+        tasks: todos.map((todo, index) => ({
+          id: typeof todo.id === 'string' && todo.id.length > 0 ? todo.id : String(index + 1),
+          subject: todo.content,
+          activeForm: todo.activeForm,
+          status: todo.status,
+          createdAt: index,
+        })),
+        messageStatus: message.status,
+      }
     }
   }
 
+  return latest
+}
+
+function settleFinishedProgress(
+  tasks: InspectorTask[],
+  messageStatus: UIMessage['status'] | null,
+): InspectorTask[] {
+  if (messageStatus === 'streaming') return tasks
+  return tasks.map((task) =>
+    task.status === 'completed' ? task : { ...task, status: 'interrupted' },
+  )
+}
+
+function findLatestHostTaskMessageStatus(messages: UIMessage[]): UIMessage['status'] | null {
+  let latest: UIMessage['status'] | null = null
+  for (const message of messages) {
+    if (
+      message.blocks.some(
+        (block) =>
+          block.kind === 'tool_call' &&
+          block.teamMemberContext == null &&
+          isTaskToolName(block.toolName),
+      )
+    ) {
+      latest = message.status
+    }
+  }
   return latest
 }
 
@@ -336,14 +414,19 @@ function findTaskById(tasks: Map<string, InspectorTask>, rawId: string): Inspect
 }
 
 /** Aggregate the latest TaskCreate / TaskUpdate view for the session. */
-export function extractInspectorTasks(messages: UIMessage[]): InspectorTask[] {
+export function extractInspectorTasks(
+  messages: UIMessage[],
+  options: { includeTeamMemberTasks?: boolean } = {},
+): InspectorTask[] {
   const tasks = new Map<string, InspectorTask>()
   let nextSeq = 0
   let fallbackCounter = 0
+  const includeTeamMemberTasks = options.includeTeamMemberTasks ?? true
 
   for (const message of messages) {
     for (const block of message.blocks) {
       if (block.kind !== 'tool_call' || !isTaskToolName(block.toolName)) continue
+      if (!includeTeamMemberTasks && block.teamMemberContext != null) continue
 
       const lower = block.toolName.toLowerCase()
       const input = block.toolInput ?? {}
