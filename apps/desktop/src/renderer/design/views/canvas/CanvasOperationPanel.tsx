@@ -1366,22 +1366,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     },
     [firstFrameNodeId, lastFrameNodeId],
   )
-  const promptMentionNodes = useMemo(() => {
-    const mentionIds = supportsVideoFrameRoles
-      ? referenceFrameNodeIds
-      : selectedInputNodeIds.filter((id) =>
-          mediaInputOptions.some((option) => String(option.value) === id),
-        )
-    return Array.from(new Set(mentionIds))
-      .map((id) => nodeById.get(id))
-      .filter((item): item is CanvasNode => item != null && !item.hidden)
-  }, [
-    mediaInputOptions,
-    nodeById,
-    referenceFrameNodeIds,
-    selectedInputNodeIds,
-    supportsVideoFrameRoles,
-  ])
+  const promptConnectionNodes = useMemo(
+    () => Array.from(new Map(expandedSourceInputNodes.map((item) => [item.id, item])).values()),
+    [expandedSourceInputNodes],
+  )
+  const promptCandidateNodes = useMemo(
+    () => snapshot.nodes.filter((item) => !item.hidden && item.id !== node.id),
+    [node.id, snapshot.nodes],
+  )
   const handlePromptMentionSelect = useCallback(
     (selectedNode: CanvasNode) => {
       if (!canEditMediaInputs || running) return false
@@ -1695,7 +1687,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               rows={6}
               value={prompt}
               placeholder={`输入${operationText}的提示词...`}
-              mentionNodes={promptMentionNodes}
+              mentionNodes={promptCandidateNodes}
+              connectionNodes={promptConnectionNodes}
               assets={snapshot.assets}
               onChange={setPrompt}
               onMentionSelect={handlePromptMentionSelect}
@@ -2424,7 +2417,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               rows={4}
               value={prompt}
               placeholder={`输入${operationText}的提示词...`}
-              mentionNodes={promptMentionNodes}
+              mentionNodes={promptCandidateNodes}
+              connectionNodes={promptConnectionNodes}
               assets={snapshot.assets}
               onChange={setPrompt}
               onMentionSelect={handlePromptMentionSelect}
