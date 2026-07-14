@@ -133,6 +133,7 @@ export function getGitChangeStageLabel(change: WorkspaceGitFileChange): string {
   if (change.untracked) return '未跟踪'
   if (change.staged && change.unstaged) return '已暂存 + 工作区'
   if (change.staged) return '已暂存'
+  if (!change.unstaged) return '已提交'
   return '未暂存'
 }
 
@@ -224,6 +225,7 @@ export function getGitTreeStageClass(change: WorkspaceGitFileChange): string {
   if (change.untracked) return 'untracked'
   if (change.staged && change.unstaged) return 'mixed'
   if (change.staged) return 'staged'
+  if (!change.unstaged) return 'committed'
   return 'unstaged'
 }
 

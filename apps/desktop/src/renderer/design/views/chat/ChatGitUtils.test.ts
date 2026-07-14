@@ -4,7 +4,9 @@ import {
   buildAgentCommitMessage,
   buildDefaultExpandedTreeDirs,
   buildGitReviewTree,
+  getGitChangeStageLabel,
   getGitReviewFileOpenPath,
+  getGitTreeStageClass,
   isGitReviewFileOpenable,
   matchesGitReviewStageFilter,
   parseGitDiffViewSegments,
@@ -78,6 +80,20 @@ describe('ChatGitUtils', () => {
     expect(isGitReviewFileOpenable({ ...modifiedChange, status: 'D' })).toBe(false)
     expect(isGitReviewFileOpenable({ ...modifiedChange, status: 'AD' })).toBe(false)
     expect(isGitReviewFileOpenable({ ...modifiedChange, status: 'DA' })).toBe(true)
+  })
+
+  it('labels baseline-only review changes as committed', () => {
+    const modifiedChange = changes[0]
+    if (modifiedChange == null) throw new Error('missing modified change fixture')
+    const committedChange = {
+      ...modifiedChange,
+      staged: false,
+      unstaged: false,
+      untracked: false,
+    }
+
+    expect(getGitChangeStageLabel(committedChange)).toBe('已提交')
+    expect(getGitTreeStageClass(committedChange)).toBe('committed')
   })
 
   it('preserves diff line numbers and collapses long context runs', () => {
