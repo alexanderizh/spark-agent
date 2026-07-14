@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CanvasPromptDocument } from '@spark/protocol'
 import type { CanvasAsset, CanvasNode, CanvasSnapshot } from './canvas.types'
-import { buildCanvasPromptSubmission } from './canvasPromptSubmission'
+import { buildCanvasPromptDocumentForInputs, buildCanvasPromptSubmission } from './canvasPromptSubmission'
 
 function imageNode(): CanvasNode {
   return {
@@ -21,6 +21,18 @@ const snapshot = (): CanvasSnapshot => ({
 })
 
 describe('canvasPromptSubmission', () => {
+  it('represents selected upstream inputs as reference blocks instead of injected text', () => {
+    const document = buildCanvasPromptDocumentForInputs({
+      prompt: '保持人物一致',
+      nodes: [imageNode()],
+      assets: [asset],
+    })
+    expect(document.blocks).toEqual([
+      { kind: 'text', id: expect.any(String), text: '保持人物一致' },
+      expect.objectContaining({ kind: 'reference', sourceNodeId: 'hero', source: 'connection' }),
+    ])
+  })
+
   it('returns a compiled prompt, document, relation manifest and materialized image input', async () => {
     const document: CanvasPromptDocument = {
       version: 2,

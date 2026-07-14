@@ -166,6 +166,31 @@ describe('canvas operation inheritance', () => {
     )
   })
 
+  it('retries prompt-document tasks from the frozen submission fields', async () => {
+    const document = { version: 2 as const, blocks: [{ kind: 'text' as const, id: 't1', text: '冻结文本' }] }
+    seedCanvasDb({
+      projects: [{ id: 'project-1', userId: 0, title: 'Project', status: 'active', nodeCount: 1, assetCount: 0, taskCount: 1, createdAt: at, updatedAt: at }],
+      boards: [{ id: 'board-1', projectId: 'project-1', userId: 0, name: 'Board', viewport: { x: 0, y: 0, zoom: 1 }, settings: {}, createdAt: at, updatedAt: at }],
+      assets: [],
+      nodes: [{ id: 'node-op', projectId: 'project-1', boardId: 'board-1', userId: 0, type: 'text_generate', title: '生成文本', assetId: null, taskId: 'task-old', parentNodeId: null, x: 0, y: 0, width: 240, height: 160, rotation: 0, zIndex: 1, locked: false, hidden: false, data: { operation: 'text_generate' }, createdAt: at, updatedAt: at }],
+      edges: [],
+      tasks: [{ id: 'task-old', projectId: 'project-1', boardId: 'board-1', userId: 0, operation: 'text_generate', status: 'failed', progress: 100, title: '生成文本', prompt: '冻结文本', inputNodeIds: [], inputAssetIds: [], outputNodeIds: [], outputAssetIds: [], modelParams: {}, promptDocument: document, promptSnapshot: { ...document, capturedAt: at }, compiledUserText: '冻结文本', relationManifest: [], inputSnapshots: [], systemPrompt: '隐藏能力', createdAt: at, updatedAt: at }],
+    })
+    Object.assign(window, { spark: { invoke: vi.fn().mockResolvedValue({ status: 'running', providerProfileId: '', provider: '', model: '', text: '' }) } })
+
+    await canvasApi.retryOperationNode('project-1', 'node-op')
+
+    expect(window.spark.invoke).toHaveBeenCalledWith(
+      'canvas:task:generate-text',
+      expect.objectContaining({
+        prompt: '冻结文本',
+        promptDocument: document,
+        compiledUserText: '冻结文本',
+        systemPrompt: '隐藏能力',
+      }),
+    )
+  })
+
   it('syncs manually connected image inputs into typed operation tasks', async () => {
     seedCanvasDb({
       projects: [
