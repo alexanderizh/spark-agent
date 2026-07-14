@@ -1,4 +1,5 @@
 import type {
+  CanvasPromptDocument,
   CanvasPromptResponseFields,
   CanvasPromptTaskFields,
   SessionReasoningEffort,
@@ -177,6 +178,8 @@ export type CanvasNodeData = {
   progress?: number
   message?: string
   prompt?: string
+  /** Versioned user-authored prompt blocks. `prompt` remains the legacy fallback. */
+  promptDocument?: CanvasPromptDocument
   /** 继承/暂存的反向提示词；任务持久化仍以 CanvasTask.negativePrompt 为准 */
   negativePrompt?: string
   modelParams?: Record<string, unknown>

@@ -134,6 +134,38 @@ describe('canvas operation inheritance', () => {
     expect(operationNode?.data.modelParams).toEqual({ aspectRatio: '16:9', seed: 1234 })
   })
 
+  it('keeps compiled prompt documents out of the legacy operation prefix', async () => {
+    seedCanvasDb({
+      projects: [
+        { id: 'project-1', userId: 0, title: 'Project', status: 'active', nodeCount: 0, assetCount: 0, taskCount: 0, createdAt: at, updatedAt: at },
+      ],
+      boards: [
+        { id: 'board-1', projectId: 'project-1', userId: 0, name: 'Board', viewport: { x: 0, y: 0, zoom: 1 }, settings: {}, createdAt: at, updatedAt: at },
+      ],
+      assets: [],
+      nodes: [],
+      edges: [],
+      tasks: [],
+    })
+
+    const document = { version: 2 as const, blocks: [{ kind: 'text' as const, id: 'text-1', text: '用户输入' }] }
+    Object.assign(window, {
+      spark: {
+        invoke: vi.fn().mockResolvedValue({ status: 'running', assets: [] }),
+      },
+    })
+    await canvasApi.createMediaTask('project-1', {
+      operation: 'storyboard_grid',
+      prompt: '用户输入',
+      promptDocument: document,
+    })
+
+    expect(window.spark.invoke).toHaveBeenCalledWith(
+      'canvas:task:create-media',
+      expect.objectContaining({ prompt: '用户输入', promptDocument: document }),
+    )
+  })
+
   it('syncs manually connected image inputs into typed operation tasks', async () => {
     seedCanvasDb({
       projects: [

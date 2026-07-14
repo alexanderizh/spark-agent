@@ -16,6 +16,7 @@ export function CanvasPromptMentionTextArea({
   assets,
   onChange,
   onMentionSelect,
+  onDocumentChange,
 }: {
   value: string
   rows: number
@@ -27,6 +28,7 @@ export function CanvasPromptMentionTextArea({
   assets?: CanvasAsset[]
   onChange: (value: string) => void
   onMentionSelect?: (node: CanvasNode, marker: string) => boolean | void
+  onDocumentChange?: (document: CanvasPromptDocument) => void
 }) {
   const nodes = useMemo(() => mentionNodes ?? [], [mentionNodes])
   const connections = useMemo(() => connectionNodes ?? [], [connectionNodes])
@@ -78,15 +80,17 @@ export function CanvasPromptMentionTextArea({
       const legacy = toCanvasPromptLegacyText(next)
       emittedValueRef.current = legacy
       onChange(legacy)
+      onDocumentChange?.(next)
       return next
     })
-  }, [connections, onChange])
+  }, [connections, onChange, onDocumentChange])
 
   const handleChange = (next: CanvasPromptDocument) => {
     setDocument(next)
     const legacy = toCanvasPromptLegacyText(next)
     emittedValueRef.current = legacy
     onChange(legacy)
+    onDocumentChange?.(next)
   }
 
   return (

@@ -14,6 +14,7 @@ import type {
   CanvasMediaTaskInputFile,
   CanvasMediaTaskStreamPayload,
   CanvasTextTaskStreamPayload,
+  CanvasPromptTaskFields,
   SessionReasoningEffort,
 } from '@spark/protocol'
 
@@ -787,7 +788,7 @@ export function useCanvasWorkspace(projectId: string) {
         modelParams?: Record<string, unknown>
         skillIds?: string[]
         userPrompt?: string
-      },
+      } & CanvasPromptTaskFields,
     ) => {
       setSnapshot(await canvasApi.runOperationNode(projectId, nodeId, params))
     },

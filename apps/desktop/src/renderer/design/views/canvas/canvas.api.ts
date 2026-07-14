@@ -71,9 +71,11 @@ import type {
   CanvasMediaModelsListRequest,
   CanvasMediaModelsListResponse,
   CanvasProjectListItem,
+  CanvasPromptTaskFields,
   CanvasSnapshotSaveRequest,
   SessionReasoningEffort,
 } from '@spark/protocol'
+import { pickCanvasPromptTaskFields } from './canvasPromptTaskFields'
 import {
   buildCanvasOperationPrompt,
   mergeCanvasPresetTargetModelParams,
@@ -4513,7 +4515,7 @@ export const canvasApi = {
       modelParams?: Record<string, unknown>
       skillIds?: string[]
       userPrompt?: string
-    },
+    } & CanvasPromptTaskFields,
   ): Promise<CanvasSnapshot> {
     const db = readDb()
     const node = db.nodes.find((n) => n.id === nodeId && n.projectId === projectId && !n.hidden)
@@ -4586,6 +4588,7 @@ export const canvasApi = {
       ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+      ...pickCanvasPromptTaskFields(params),
     }
     return isTextModelOperation(request.operation)
       ? this.createTextTask(projectId, request, {
@@ -4712,12 +4715,17 @@ export const canvasApi = {
       progress: 24,
       message: '调用平台 adapter 中…',
     }
-    const requestPromptWithContext = mergeCanvasPromptWithInputTextContext(
-      request.prompt,
-      buildCanvasInputTextContext(request.inputNodeIds, db),
-    )
-    const requestPrompt = buildCanvasOperationPrompt(request.operation, requestPromptWithContext)
+    const requestPromptWithContext = request.promptDocument
+      ? request.prompt
+      : mergeCanvasPromptWithInputTextContext(
+          request.prompt,
+          buildCanvasInputTextContext(request.inputNodeIds, db),
+        )
+    const requestPrompt = request.promptDocument
+      ? request.prompt
+      : buildCanvasOperationPrompt(request.operation, requestPromptWithContext)
     if (requestPrompt != null && options?.bindToNodeId == null) taskNodeData.prompt = requestPrompt
+    if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
     if (request.negativePrompt != null) taskNodeData.negativePrompt = request.negativePrompt
     if (request.agentId != null) taskNodeData.agentId = request.agentId
     if (request.providerProfileId != null)
@@ -4807,6 +4815,7 @@ export const canvasApi = {
       modelId: request.modelId ?? null,
       reasoningEffort: request.reasoningEffort ?? null,
       modelParams: request.modelParams ?? {},
+      ...pickCanvasPromptTaskFields(request),
       createdAt: at,
       updatedAt: at,
     }
@@ -4843,6 +4852,7 @@ export const canvasApi = {
       ...(request.manifestId != null ? { manifestId: request.manifestId } : {}),
       ...(request.modelId != null ? { modelId: request.modelId } : {}),
       ...(request.modelParams != null ? { modelParams: request.modelParams } : {}),
+      ...pickCanvasPromptTaskFields(request),
       outputDir: `${project.rootPath}/assets`,
       waitForCompletion: false,
     }
@@ -4903,8 +4913,11 @@ export const canvasApi = {
       progress: 30,
       message: '调用文本模型中…',
     }
-    const requestPrompt = buildCanvasOperationPrompt(request.operation, request.prompt)
+    const requestPrompt = request.promptDocument
+      ? request.prompt
+      : buildCanvasOperationPrompt(request.operation, request.prompt)
     if (requestPrompt != null && options?.bindToNodeId == null) taskNodeData.prompt = requestPrompt
+    if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)
@@ -4988,6 +5001,7 @@ export const canvasApi = {
       modelId: request.modelId ?? null,
       reasoningEffort: request.reasoningEffort ?? null,
       modelParams: request.modelParams ?? {},
+      ...pickCanvasPromptTaskFields(request),
       createdAt: at,
       updatedAt: at,
     }
@@ -5027,6 +5041,7 @@ export const canvasApi = {
         ...(request.agentId != null ? { agentId: request.agentId } : {}),
         ...(request.reasoningEffort != null ? { reasoningEffort: request.reasoningEffort } : {}),
         ...(request.skillIds != null ? { skillIds: request.skillIds } : {}),
+        ...pickCanvasPromptTaskFields(request),
         waitForCompletion: false,
         projectId,
         clientTaskId: taskId,
