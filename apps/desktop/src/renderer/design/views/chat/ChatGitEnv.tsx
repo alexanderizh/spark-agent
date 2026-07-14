@@ -246,6 +246,7 @@ function GitGoalSection({
 function GitTaskProgressList({ tasks }: { tasks: InspectorTask[] }) {
   const completed = tasks.filter((task) => task.status === 'completed').length
   const total = tasks.length
+  const endedWithIncompleteTasks = tasks.some((task) => task.status === 'interrupted')
 
   if (total === 0) return null
 
@@ -255,6 +256,7 @@ function GitTaskProgressList({ tasks }: { tasks: InspectorTask[] }) {
       <div className="git-task-progress-head">
         <span>进程</span>
         <span>
+          {endedWithIncompleteTasks ? '已结束 · ' : ''}
           {completed}/{total}
         </span>
       </div>
@@ -270,6 +272,7 @@ function GitTaskProgressList({ tasks }: { tasks: InspectorTask[] }) {
 function GitTaskProgressItem({ task }: { task: InspectorTask }) {
   const isDone = task.status === 'completed'
   const isRunning = task.status === 'in_progress'
+  const isInterrupted = task.status === 'interrupted'
   const text = isRunning ? (task.activeForm ?? task.subject) : task.subject
   const popoverContent = (
     <div className="git-task-progress-popover">
@@ -286,7 +289,13 @@ function GitTaskProgressItem({ task }: { task: InspectorTask }) {
         className={`git-task-progress-item ${isDone ? 'done' : isRunning ? 'running' : 'pending'}`}
       >
         <span className="git-task-progress-icon">
-          {isDone ? <Icons.Check size={15} /> : isRunning ? <Icons.Spinner size={14} /> : null}
+          {isDone ? (
+            <Icons.Check size={15} />
+          ) : isRunning ? (
+            <Icons.Spinner size={14} />
+          ) : isInterrupted ? (
+            <Icons.X size={11} />
+          ) : null}
         </span>
         <span className="git-task-progress-text">{text}</span>
       </div>
