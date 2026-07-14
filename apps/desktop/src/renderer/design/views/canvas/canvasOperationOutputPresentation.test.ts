@@ -22,6 +22,15 @@ describe('canvas operation output presentation', () => {
     }
   })
 
+  it('recognizes a split storyboard output containing one shot', () => {
+    const result = resolveCanvasTextOutputPresentation(
+      '| 镜号 | 景别 | 画面/动作 |\n| --- | --- | --- |\n| 1 | 远景 | 城市夜景 |',
+    )
+
+    expect(result.kind).toBe('storyboard')
+    if (result.kind === 'storyboard') expect(result.rows).toHaveLength(1)
+  })
+
   it('formats non-storyboard JSON instead of treating it as a storyboard', () => {
     const result = resolveCanvasTextOutputPresentation('{"name":"魏德","age":68}')
 

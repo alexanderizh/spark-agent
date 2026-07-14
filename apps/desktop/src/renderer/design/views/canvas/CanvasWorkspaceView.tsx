@@ -8483,8 +8483,7 @@ function CanvasNodeEditModal({
   const isTextLike = node?.type === 'text' || node?.type === 'prompt'
   const isShotScriptNode =
     node?.type === 'text' &&
-    isShotScriptText(node.data.text) &&
-    parseShotTable(node.data.text ?? '').length >= 2
+    isShotScriptText(node.data.text) && parseShotTable(node.data.text ?? '').length > 0
 
   useEffect(() => {
     if (!node) return

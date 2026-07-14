@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   CANVAS_NODE_MIN_SIZE,
   LONG_TEXT_MIN_CHARS,
+  SHOT_SCRIPT_NODE_MIN_SIZE,
+  SHOT_SCRIPT_NODE_SIZE,
   TEXT_NODE_DEFAULT_MIN_SIZE,
   TEXT_NODE_DEFAULT_SIZE,
   TEXT_NODE_LONG_MIN_SIZE,
@@ -14,6 +16,12 @@ import {
   pickTextNodeMinSize,
   pickTextNodeSize,
 } from './canvasNodeSize'
+
+const SINGLE_SHOT_STORYBOARD = [
+  '| 镜号 | 景别 | 画面/动作 |',
+  '| --- | --- | --- |',
+  '| 1 | 远景 | 城市夜景 |',
+].join('\n')
 
 describe('canvasNodeSize', () => {
   describe('isLongText', () => {
@@ -57,6 +65,10 @@ describe('canvasNodeSize', () => {
       // 引用不同（as const 元组 + 字面量返回），但结构相同
       expect(a).toEqual(b)
     })
+
+    it('单镜分镜使用与多镜分镜相同的表格尺寸', () => {
+      expect(pickTextNodeSize(SINGLE_SHOT_STORYBOARD)).toEqual(SHOT_SCRIPT_NODE_SIZE)
+    })
   })
 
   describe('pickTextNodeMinSize', () => {
@@ -82,6 +94,12 @@ describe('canvasNodeSize', () => {
       expect(pickCanvasNodeMinSize('text', 'short')).toEqual(TEXT_NODE_DEFAULT_MIN_SIZE)
       expect(pickCanvasNodeMinSize('prompt', 'x'.repeat(LONG_TEXT_MIN_CHARS + 1))).toEqual(
         TEXT_NODE_LONG_MIN_SIZE,
+      )
+    })
+
+    it('单镜分镜使用与多镜分镜相同的最小尺寸', () => {
+      expect(pickCanvasNodeMinSize('text', SINGLE_SHOT_STORYBOARD)).toEqual(
+        SHOT_SCRIPT_NODE_MIN_SIZE,
       )
     })
   })

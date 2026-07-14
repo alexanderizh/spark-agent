@@ -15,7 +15,7 @@
  *   物理尺寸保持不变，但其渲染样式仍会按当前 text 长度切换，便于旧节点
  *   编辑后内容变长时自动应用阅读样式。
  */
-import { isShotScriptText, parseShotTable } from './canvasShotTableParse'
+import { isRenderableShotScriptText } from './canvasShotScriptPresentation'
 
 /** 升级为「长文本视图」的最小字符数（含中英文标点；不含格式标记） */
 export const LONG_TEXT_MIN_CHARS = 800
@@ -112,7 +112,7 @@ export function pickTextNodeSize(text: string | null | undefined): {
   width: number
   height: number
 } {
-  if (isShotScriptText(text) && parseShotTable(text ?? '').length >= 2) return SHOT_SCRIPT_NODE_SIZE
+  if (isRenderableShotScriptText(text)) return SHOT_SCRIPT_NODE_SIZE
   return isLongText(text) ? TEXT_NODE_LONG_SIZE : TEXT_NODE_DEFAULT_SIZE
 }
 
@@ -121,8 +121,7 @@ export function pickTextNodeMinSize(text: string | null | undefined): {
   width: number
   height: number
 } {
-  if (isShotScriptText(text) && parseShotTable(text ?? '').length >= 2)
-    return SHOT_SCRIPT_NODE_MIN_SIZE
+  if (isRenderableShotScriptText(text)) return SHOT_SCRIPT_NODE_MIN_SIZE
   return isLongText(text) ? TEXT_NODE_LONG_MIN_SIZE : TEXT_NODE_DEFAULT_MIN_SIZE
 }
 
