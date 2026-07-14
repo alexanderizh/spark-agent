@@ -2,12 +2,11 @@
  * 主进程数据库初始化入口
  *
  * 职责：
- *   - 提供数据库文件路径（开发/生产环境分离）
+ *   - 提供开发/生产环境共享的数据库文件路径
  *   - 导出单例数据库实例引用
  *
  * 数据库文件路径策略（ADR-002）：
- *   - 生产环境：{app.getPath('userData')}/spark.db
- *   - 开发环境：{app.getPath('userData')}/spark-dev.db
+ *   - 开发和生产环境：{app.getPath('userData')}/spark.db
  *   - WAL 模式 + NORMAL 同步 + 外键约束
  *
  * 注意：实际的 createDatabase() 调用在 main/index.ts 的 initializeApp() 中完成
@@ -15,18 +14,16 @@
 
 import { app } from 'electron'
 import { join } from 'path'
-import { is } from '@electron-toolkit/utils'
 import type { SparkDatabase } from '@spark/storage'
 
 /**
  * 获取数据库文件路径
  *
- * 开发和生产使用不同的数据库文件，避免开发数据污染生产数据
+ * 开发和生产使用同一个数据库文件，便于两个模式共享业务数据。
  */
 export function getDatabasePath(): string {
   const userDataPath = app.getPath('userData')
-  const filename = is.dev ? 'spark-dev.db' : 'spark.db'
-  return join(userDataPath, filename)
+  return join(userDataPath, 'spark.db')
 }
 
 /** 全局数据库实例引用（由 initializeApp() 初始化） */

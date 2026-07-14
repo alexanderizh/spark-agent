@@ -12,7 +12,7 @@
  * 是结构化创作任务，需要明确的角色身份 + 输入 + 输出格式约束。
  */
 
-import type { CanvasOperationType, CanvasPipelineRole } from './canvas.types'
+import type { CanvasOperationType, CanvasPipelineRole, ShotScriptConfig } from './canvas.types'
 
 /** 专属创作 agent 角色 id */
 export type CanvasAgentRoleId =
@@ -33,6 +33,12 @@ export type AgentPresetContext = {
   pacingSecPerShot?: number
   /** 单段视频模型时长上限（秒）；分镜 agent 据此保证每镜不超模型上限 */
   maxClipSec?: number
+  /**
+   * 分镜模板的 {maxClip}/{pacing} 占位槽是否保留（不替换成具体数值）。
+   * 画布分镜任务节点创建时置 true，运行时再由 applyShotScriptConfigToPrompt 按用户
+   * 在配置面板上选的每镜最长时间 / 平均镜时替换，确保改值即时生效。
+   */
+  keepShotScriptPlaceholders?: boolean
 }
 
 export type CanvasAgentPreset = {
@@ -60,6 +66,25 @@ export type CanvasAgentPreset = {
 
 /** 默认单段视频时长上限（秒）——多数图生视频模型支持 4~10s，取保守上限 */
 export const DEFAULT_MAX_CLIP_SEC = 5
+
+/** 默认平均每镜时长（秒/镜）——分镜切分的节奏基线 */
+export const DEFAULT_PACING_SEC_PER_SHOT = 3
+
+/** 分镜脚本任务的默认时长配置（每镜最长 5s + 平均 3s/镜） */
+export const DEFAULT_SHOT_SCRIPT_CONFIG: ShotScriptConfig = {
+  maxClipSec: DEFAULT_MAX_CLIP_SEC,
+  pacingSecPerShot: DEFAULT_PACING_SEC_PER_SHOT,
+}
+
+/**
+ * 用分镜时长配置替换 prompt 里的 {maxClip}/{pacing} 占位槽。
+ * 占位槽不存在时为 no-op（用户手编删了占位符 / 非分镜模板都能安全调用）。
+ */
+export function applyShotScriptConfigToPrompt(prompt: string, cfg: ShotScriptConfig): string {
+  return prompt
+    .replaceAll('{maxClip}', String(cfg.maxClipSec))
+    .replaceAll('{pacing}', String(cfg.pacingSecPerShot))
+}
 
 /** 内置专属 agent 预设 */
 export const CANVAS_AGENT_PRESETS: CanvasAgentPreset[] = [
@@ -224,11 +249,13 @@ export function buildAgentPresetPrompt(role: CanvasAgentRoleId, ctx: AgentPreset
       ? `【全片视觉总设定（须贯彻）】\n${ctx.styleBible.trim()}`
       : ''
 
-  let result = preset.template
-    .replaceAll('{upstream}', upstream)
-    .replaceAll('{pacing}', pacing)
-    .replaceAll('{maxClip}', maxClip)
-    .replaceAll('{style}', style)
+  // keepShotScriptPlaceholders=true 时保留 {maxClip}/{pacing} 占位槽（画布分镜任务节点用，
+  // 运行时由 applyShotScriptConfigToPrompt 按用户配置替换）；其余调用方默认替换成具体数值。
+  const keepShotPlaceholders = ctx.keepShotScriptPlaceholders === true
+  let result = preset.template.replaceAll('{upstream}', upstream).replaceAll('{style}', style)
+  if (!keepShotPlaceholders) {
+    result = result.replaceAll('{pacing}', pacing).replaceAll('{maxClip}', maxClip)
+  }
 
   // title 槽位（可选，部分模板未使用）
   result = result.replaceAll('{title}', ctx.title?.trim() ?? '')
