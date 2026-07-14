@@ -8,6 +8,7 @@ import './canvasPromptComposer.less'
 
 export function CanvasPromptMentionTextArea({
   value,
+  document: controlledDocument,
   placeholder,
   disabled,
   className,
@@ -19,6 +20,7 @@ export function CanvasPromptMentionTextArea({
   onDocumentChange,
 }: {
   value: string
+  document?: CanvasPromptDocument
   rows: number
   placeholder?: string
   disabled?: boolean
@@ -35,13 +37,20 @@ export function CanvasPromptMentionTextArea({
   const promptAssets = useMemo(() => assets ?? [], [assets])
   const emittedValueRef = useRef(value)
   const [document, setDocument] = useState<CanvasPromptDocument>(() =>
-    ensureConnectionReferences(
-      migrateLegacyPrompt({ prompt: value, nodes, assets: promptAssets }),
-      connections,
-    ),
+    controlledDocument ??
+      ensureConnectionReferences(
+        migrateLegacyPrompt({ prompt: value, nodes, assets: promptAssets }),
+        connections,
+      ),
   )
 
   useEffect(() => {
+    if (!controlledDocument) return
+    emittedValueRef.current = toCanvasPromptLegacyText(controlledDocument)
+  }, [controlledDocument])
+
+  useEffect(() => {
+    if (controlledDocument) return
     if (value === emittedValueRef.current) return
     emittedValueRef.current = value
     setDocument(
@@ -50,7 +59,7 @@ export function CanvasPromptMentionTextArea({
         connections,
       ),
     )
-  }, [connections, nodes, promptAssets, value])
+  }, [connections, controlledDocument, nodes, promptAssets, value])
 
   useEffect(() => {
     setDocument((current) => {
@@ -69,8 +78,7 @@ export function CanvasPromptMentionTextArea({
       const reconciled = reconcilePromptConnections(current, syntheticEdges).document
       const next = ensureConnectionReferences(reconciled, connections)
       if (
-        current.blocks.length === next.blocks.length &&
-        current.blocks.every((block, index) => block.id === next.blocks[index]?.id) &&
+        JSON.stringify(current.blocks) === JSON.stringify(next.blocks) &&
         Array.from(connectedIds).every((id) =>
           next.blocks.some((block) => block.kind === 'reference' && block.sourceNodeId === id),
         )
@@ -93,9 +101,10 @@ export function CanvasPromptMentionTextArea({
     onDocumentChange?.(next)
   }
 
+  const resolvedDocument = controlledDocument ?? document
   return (
     <CanvasPromptComposer
-      document={document}
+      document={resolvedDocument}
       mentionNodes={nodes}
       assets={promptAssets}
       {...(placeholder != null ? { placeholder } : {})}

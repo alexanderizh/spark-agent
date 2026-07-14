@@ -35,6 +35,10 @@ export type CanvasPromptReferenceBlock = {
   source: 'connection' | 'manual'
   sourceNodeId: string
   relation: CanvasPromptRelation
+  /** Relation assigned when the physical connection created this block. */
+  connectionRelation?: CanvasPromptRelation
+  /** Physical connection was removed after the user edited the automatic block. */
+  disconnected?: boolean
   label: string
   order: number
   note?: string

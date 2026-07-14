@@ -76,7 +76,9 @@ import type {
   CanvasSnapshotSaveRequest,
   SessionReasoningEffort,
 } from '@spark/protocol'
-import { pickCanvasPromptTaskFields } from './canvasPromptTaskFields'
+import { buildCanvasRetryInputRoles, pickCanvasPromptTaskFields } from './canvasPromptTaskFields'
+import { buildTaskInputFiles } from './canvasTaskInputFiles'
+import { materializeCanvasTaskInputFiles } from './canvasWorkspaceTaskInput'
 import {
   buildCanvasOperationPrompt,
   mergeCanvasPresetTargetModelParams,
@@ -4471,13 +4473,34 @@ export const canvasApi = {
         ? Math.max(...oldOutputNodes.map((n) => n.x + n.width)) + 60
         : node.x + node.width + 60
     const baseY = node.y
-    const request: CreateCanvasTaskRequest = {
+    const retryInputNodes = oldTask.inputNodeIds
+      .map((inputNodeId) => {
+        const inputNode = db.nodes.find((item) => item.id === inputNodeId && !item.hidden)
+        if (!inputNode || inputNode.data.url || !inputNode.assetId) return inputNode
+        const asset = db.assets.find((item) => item.id === inputNode.assetId)
+        if (!asset?.url) return inputNode
+        return {
+          ...inputNode,
+          data: {
+            ...inputNode.data,
+            url: asset.url,
+            ...(asset.mimeType && !inputNode.data.mimeType ? { mimeType: asset.mimeType } : {}),
+          },
+        }
+      })
+      .filter((item): item is CanvasNode => item != null)
+    const retryInputFiles = await materializeCanvasTaskInputFiles(
+      buildTaskInputFiles(retryInputNodes, buildCanvasRetryInputRoles(oldTask.relationManifest)),
+      oldTask.provider === 'xai' ? 'base64' : undefined,
+    )
+    const request: CreateCanvasTaskRequest & { inputFiles?: CanvasMediaTaskInputFile[] } = {
       boardId: node.boardId,
       operation: oldTask.operation,
       prompt: oldTask.prompt ?? '',
       ...(oldTask.negativePrompt ? { negativePrompt: oldTask.negativePrompt } : {}),
       inputNodeIds: oldTask.inputNodeIds,
       ...(oldTask.inputAssetIds.length > 0 ? { inputAssetIds: oldTask.inputAssetIds } : {}),
+      ...(retryInputFiles.length > 0 ? { inputFiles: retryInputFiles } : {}),
       outputPlacement: { x: baseX, y: baseY },
       ...(oldTask.modelParams && Object.keys(oldTask.modelParams).length > 0
         ? { modelParams: oldTask.modelParams }

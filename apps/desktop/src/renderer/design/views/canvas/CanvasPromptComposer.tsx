@@ -214,15 +214,21 @@ function renderAtomicBlock(input: {
   }
   const node = input.nodeById.get(block.sourceNodeId)
   const label = block.kind === 'reference' ? block.label : block.summary
-  const content = node ? previewNodeContent(node, input.assetById) : '引用节点已删除，请重新绑定后再提交。'
+  const disconnected = block.kind === 'reference' && block.disconnected === true
+  const invalid = !node || disconnected
+  const content = disconnected
+    ? '引用连接已断开，请重新绑定后再提交。'
+    : node
+      ? previewNodeContent(node, input.assetById)
+      : '引用节点已删除，请重新绑定后再提交。'
   const relation = block.kind === 'reference' ? block.relation : block.schema
   const thumbnail = node ? renderNodeThumbnail(node, input.assetById) : <span className="canvas-prompt-chip-icon">!</span>
   const chip = (
     <button
       key={block.id}
       type="button"
-      className={`canvas-prompt-chip${node ? '' : ' is-invalid'}`}
-      aria-invalid={!node}
+      className={`canvas-prompt-chip${invalid ? ' is-invalid' : ''}`}
+      aria-invalid={invalid}
       disabled={input.disabled}
       onClick={() => input.onBlockEdit?.(block.id)}
     >

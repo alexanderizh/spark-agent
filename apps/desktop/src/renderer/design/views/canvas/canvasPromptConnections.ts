@@ -16,6 +16,7 @@ export function addConnectionReference(
     source: 'connection',
     sourceNodeId: node.id,
     relation,
+    connectionRelation: relation,
     label: node.title?.trim() || node.id,
     order: document.blocks.filter((block) => block.kind === 'reference').length,
   }
@@ -41,11 +42,20 @@ export function reconcilePromptConnections(
   const connectedIds = new Set(
     edges.filter((edge) => edge.type === 'used_as_input').map((edge) => edge.sourceNodeId),
   )
-  const blocks = document.blocks.filter(
-    (block) => block.kind !== 'reference' || block.source !== 'connection' || connectedIds.has(block.sourceNodeId),
-  )
+  const blocks = document.blocks.flatMap((block) => {
+    if (block.kind !== 'reference' || block.source !== 'connection') return [cloneBlock(block)]
+    if (connectedIds.has(block.sourceNodeId)) {
+      const { disconnected: _disconnected, ...connectedBlock } = block
+      return [connectedBlock]
+    }
+    const wasEdited =
+      block.disconnected === true ||
+      Boolean(block.note?.trim()) ||
+      (block.connectionRelation != null && block.relation !== block.connectionRelation)
+    return wasEdited ? [{ ...block, disconnected: true }] : []
+  })
   return {
-    document: { version: 2, blocks: blocks.map(cloneBlock) },
+    document: { version: 2, blocks },
     inputNodeIds: Array.from(connectedIds),
   }
 }
