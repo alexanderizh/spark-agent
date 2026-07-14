@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { rmSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import { createCanvas } from '@napi-rs/canvas'
 import { MediaRouterService } from '../../../services/media/media-router.service.js'
 import type { MediaProviderProfile } from '../../../services/media/media-router.service.js'
 import { AgnesMediaAdapter } from '../../../services/media/adapters/agnes-media.adapter.js'
@@ -1037,21 +1038,16 @@ describe('MediaRouterService', () => {
     ).rejects.toThrow(/input video/)
   })
 
-  it('APIMart image.edit uploads dataUrl input before generation', async () => {
+  it('APIMart image.edit sends public URL and dataUrl directly in image_urls', async () => {
     const fetchMock = makeFetch([
-      {
-        match: '/uploads/images',
-        respond: () => ({
-          ok: true,
-          status: 200,
-          body: { data: [{ url: 'https://cdn/uploaded.png' }] },
-        }),
-      },
       {
         match: '/images/generations',
         respond: (init) => {
           const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
-          expect(body.image_urls).toEqual(['https://cdn/uploaded.png'])
+          expect(body.image_urls).toEqual([
+            'https://www.yiqibyte.com/edu-prod/uploads/reference.png',
+            `data:image/png;base64,${PNG_PIXEL}`,
+          ])
           return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
         },
       },
@@ -1062,7 +1058,10 @@ describe('MediaRouterService', () => {
         capability: 'image.edit',
         outputDir: tmpDir,
         prompt: 'refine this image',
-        inputFiles: [{ type: 'image', dataUrl: `data:image/png;base64,${PNG_PIXEL}` }],
+        inputFiles: [
+          { type: 'image', url: 'https://www.yiqibyte.com/edu-prod/uploads/reference.png' },
+          { type: 'image', dataUrl: `data:image/png;base64,${PNG_PIXEL}` },
+        ],
       },
       {
         providers: [makeProvider()],
@@ -1070,8 +1069,50 @@ describe('MediaRouterService', () => {
       },
     )
     expect(output.provider).toBe('apimart')
-    expect(fetchMock.calls.some((call) => call.url.includes('/uploads/images'))).toBe(true)
+    expect(fetchMock.calls.some((call) => call.url.includes('/uploads/images'))).toBe(false)
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
+  it('APIMart image.edit compresses oversized dataUrl in image_urls', async () => {
+    const dimension = 1280
+    const canvas = createCanvas(dimension, dimension)
+    const context = canvas.getContext('2d')
+    const imageData = context.createImageData(dimension, dimension)
+    let seed = 42
+    for (let index = 0; index < imageData.data.length; index += 4) {
+      seed = (seed * 1664525 + 1013904223) >>> 0
+      imageData.data[index] = seed & 0xff
+      imageData.data[index + 1] = (seed >>> 8) & 0xff
+      imageData.data[index + 2] = (seed >>> 16) & 0xff
+      imageData.data[index + 3] = 0xff
+    }
+    context.putImageData(imageData, 0, 0)
+    const oversizedDataUrl = canvas.toDataURL('image/png')
+    expect(oversizedDataUrl.length).toBeGreaterThan(3 * 1024 * 1024)
+
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          const body = JSON.parse(String(init?.body ?? '{}')) as { image_urls?: string[] }
+          expect(body.image_urls).toHaveLength(1)
+          expect(body.image_urls?.[0]).toMatch(/^data:image\/webp;base64,/)
+          expect(Buffer.byteLength(body.image_urls?.[0] ?? '', 'utf8')).toBeLessThanOrEqual(3 * 1024 * 1024)
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'image_edit',
+        capability: 'image.edit',
+        outputDir: tmpDir,
+        prompt: 'compress this reference image',
+        inputFiles: [{ type: 'image', dataUrl: oversizedDataUrl }],
+      },
+      { providers: [makeProvider()], fetch: fetchMock },
+    )
   })
 
   it('xAI does not support audio.transcription', () => {
