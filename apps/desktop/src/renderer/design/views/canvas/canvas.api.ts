@@ -4487,6 +4487,7 @@ export const canvasApi = {
       ...(oldTask.agentId ? { agentId: oldTask.agentId } : {}),
       ...(oldTask.reasoningEffort ? { reasoningEffort: oldTask.reasoningEffort } : {}),
       ...(oldTask.skillIds && oldTask.skillIds.length > 0 ? { skillIds: oldTask.skillIds } : {}),
+      ...pickCanvasPromptTaskFields(oldTask),
     }
     // 重试：绑定到原操作节点，不新建节点
     return isTextModelOperation(request.operation)

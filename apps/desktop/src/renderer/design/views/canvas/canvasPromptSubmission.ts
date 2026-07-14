@@ -3,14 +3,27 @@ import type {
   CanvasMediaTaskInputFile,
   CanvasPromptTaskFields,
 } from '@spark/protocol'
-import type { CanvasInputTransport, CanvasOperationType, CanvasSnapshot } from './canvas.types'
+import type { CanvasAsset, CanvasInputTransport, CanvasNode, CanvasOperationType, CanvasSnapshot } from './canvas.types'
 import type { CanvasTaskInputRoleSelection } from './canvasTaskInputFiles'
 import { compileCanvasPromptDocument } from './canvasPromptCompiler'
+import { ensureConnectionReferences } from './canvasPromptConnections'
+import { migrateLegacyPrompt } from './canvasPromptDocument'
 import { materializeCanvasTaskInputFiles } from './canvasWorkspaceTaskInput'
 
 export type CanvasPromptSubmission = CanvasPromptTaskFields & {
   prompt: string
   inputFiles?: CanvasMediaTaskInputFile[]
+}
+
+export function buildCanvasPromptDocumentForInputs(input: {
+  prompt: string
+  nodes: CanvasNode[]
+  assets: CanvasAsset[]
+}): NonNullable<CanvasPromptTaskFields['promptDocument']> {
+  return ensureConnectionReferences(
+    migrateLegacyPrompt({ prompt: input.prompt, nodes: input.nodes, assets: input.assets }),
+    input.nodes,
+  )
 }
 
 export async function buildCanvasPromptSubmission(input: {
