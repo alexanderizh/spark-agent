@@ -4,15 +4,21 @@ import {
   LONG_TEXT_MIN_CHARS,
   SHOT_SCRIPT_NODE_MIN_SIZE,
   SHOT_SCRIPT_NODE_SIZE,
+  SHOT_SCRIPT_OPERATION_NODE_MIN_SIZE,
+  SHOT_SCRIPT_OPERATION_NODE_SIZE,
   TEXT_NODE_DEFAULT_MIN_SIZE,
   TEXT_NODE_DEFAULT_SIZE,
   TEXT_NODE_LONG_MIN_SIZE,
   TEXT_NODE_LONG_SIZE,
   fitCanvasGroupedImageNodeSize,
   fitCanvasImageNodeSize,
+  fitCollectionOperationNodeSize,
+  fitShotScriptOperationNodeSize,
+  fitShotScriptTextNodeSize,
   isLongText,
   keepsCanvasMediaNodeAspectRatio,
   pickCanvasNodeMinSize,
+  pickOperationNodeInitialSize,
   pickTextNodeMinSize,
   pickTextNodeSize,
 } from './canvasNodeSize'
@@ -69,6 +75,39 @@ describe('canvasNodeSize', () => {
     it('单镜分镜使用与多镜分镜相同的表格尺寸', () => {
       expect(pickTextNodeSize(SINGLE_SHOT_STORYBOARD)).toEqual(SHOT_SCRIPT_NODE_SIZE)
     })
+
+    it('多镜分镜按镜头数有限增高，超过上限后交给表格滚动', () => {
+      const storyboard = JSON.stringify({
+        shots: Array.from({ length: 8 }, (_, index) => ({
+          index: index + 1,
+          durationSec: 3,
+          description: `镜头 ${index + 1}`,
+        })),
+      })
+      expect(pickTextNodeSize(storyboard)).toEqual({ width: 1080, height: 900 })
+      expect(fitShotScriptTextNodeSize(100).height).toBe(900)
+    })
+  })
+
+  describe('分镜任务节点尺寸', () => {
+    it('创建时使用专用大尺寸，普通任务尺寸保持不变', () => {
+      expect(pickOperationNodeInitialSize(true)).toEqual(SHOT_SCRIPT_OPERATION_NODE_SIZE)
+      expect(pickOperationNodeInitialSize(false)).toEqual({ width: 460, height: 420 })
+    })
+
+    it('完成后按镜头数有限增高', () => {
+      expect(fitShotScriptOperationNodeSize(1)).toEqual({ width: 1180, height: 640 })
+      expect(fitShotScriptOperationNodeSize(5)).toEqual({ width: 1180, height: 860 })
+      expect(fitShotScriptOperationNodeSize(30)).toEqual({ width: 1180, height: 920 })
+    })
+  })
+
+  describe('集合型任务节点尺寸', () => {
+    it('按产物数量扩大节点，并对超大集合设置高度上限', () => {
+      expect(fitCollectionOperationNodeSize(1)).toEqual({ width: 640, height: 420 })
+      expect(fitCollectionOperationNodeSize(5)).toEqual({ width: 640, height: 622 })
+      expect(fitCollectionOperationNodeSize(100)).toEqual({ width: 640, height: 920 })
+    })
   })
 
   describe('pickTextNodeMinSize', () => {
@@ -101,6 +140,12 @@ describe('canvasNodeSize', () => {
       expect(pickCanvasNodeMinSize('text', SINGLE_SHOT_STORYBOARD)).toEqual(
         SHOT_SCRIPT_NODE_MIN_SIZE,
       )
+    })
+
+    it('分镜任务节点使用专用拖拽下限', () => {
+      expect(
+        pickCanvasNodeMinSize('text_generate', undefined, { shotScriptOperation: true }),
+      ).toEqual(SHOT_SCRIPT_OPERATION_NODE_MIN_SIZE)
     })
   })
 

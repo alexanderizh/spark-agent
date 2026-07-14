@@ -1,11 +1,46 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it } from 'vitest'
-import { renderToStaticMarkup } from 'react-dom/server'
+import { act, useState } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  $createParagraphNode,
+  $createTextNode,
+  $getRoot,
+  $getSelection,
+  $isElementNode,
+  $isRangeSelection,
+  $isTextNode,
+  type LexicalEditor,
+} from 'lexical'
 import type { CanvasPromptDocument } from '@spark/protocol'
 import type { CanvasAsset, CanvasNode } from './canvas.types'
 import { CanvasPromptComposer } from './CanvasPromptComposer'
 import { CANVAS_PROMPT_HOVER_MAX_HEIGHT } from './CanvasPromptHoverCard'
+import './canvasPromptComposer.less'
+
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+if (!Range.prototype.getBoundingClientRect) {
+  Range.prototype.getBoundingClientRect = () => new DOMRect(0, 0, 1, 18)
+}
+if (!globalThis.ResizeObserver) {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}
+
+const mountedRoots: Array<{ root: Root; container: HTMLElement }> = []
+
+afterEach(async () => {
+  while (mountedRoots.length > 0) {
+    const mounted = mountedRoots.pop()!
+    await act(async () => mounted.root.unmount())
+    mounted.container.remove()
+  }
+})
 
 function imageNode(): CanvasNode {
   return {
@@ -23,28 +58,220 @@ const asset: CanvasAsset = {
   metadata: {}, createdAt: '', updatedAt: '',
 }
 
-function render(document: CanvasPromptDocument, nodes = [imageNode()]) {
-  return renderToStaticMarkup(
-    <CanvasPromptComposer document={document} mentionNodes={nodes} assets={[asset]} onChange={() => undefined} />,
-  )
+async function mountComposer(
+  initialDocument: CanvasPromptDocument,
+  nodes: CanvasNode[] = [imageNode()],
+) {
+  const container = window.document.createElement('div')
+  window.document.body.appendChild(container)
+  const root = createRoot(container)
+  mountedRoots.push({ root, container })
+  let currentDocument = initialDocument
+  let editor: LexicalEditor | null = null
+
+  function Harness() {
+    const [document, setDocument] = useState(initialDocument)
+    currentDocument = document
+    return (
+      <CanvasPromptComposer
+        document={document}
+        mentionNodes={nodes}
+        assets={[asset]}
+        placeholder="输入提示词"
+        onChange={setDocument}
+        onEditorReady={(nextEditor) => {
+          editor = nextEditor
+        }}
+      />
+    )
+  }
+
+  await act(async () => root.render(<Harness />))
+  await flushEditor()
+  return {
+    container,
+    getDocument: () => currentDocument,
+    getEditor: () => {
+      if (!editor) throw new Error('Lexical editor is not ready')
+      return editor
+    },
+  }
+}
+
+async function flushEditor() {
+  await act(async () => {
+    await Promise.resolve()
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+  })
+}
+
+async function replaceEditorText(editor: LexicalEditor, text: string) {
+  await act(async () => {
+    editor.update(() => {
+      const root = $getRoot()
+      root.clear()
+      const paragraph = $createParagraphNode()
+      paragraph.append($createTextNode(text))
+      root.append(paragraph)
+    })
+  })
+  await flushEditor()
 }
 
 describe('CanvasPromptComposer', () => {
-  it('renders image references as thumbnail chips', () => {
-    const html = render({ version: 2, blocks: [{ kind: 'reference', id: 'r1', source: 'manual', sourceNodeId: 'hero', relation: 'character', label: '小满', order: 0 }] })
-    expect(html).toContain('canvas-prompt-chip-thumb')
-    expect(html).toContain('hero-thumb.png')
-    expect(html).toContain('小满')
+  it('renders image references as thumbnail chips', async () => {
+    const mounted = await mountComposer({
+      version: 2,
+      blocks: [{ kind: 'reference', id: 'r1', source: 'manual', sourceNodeId: 'hero', relation: 'character', label: '小满', order: 0 }],
+    })
+    expect(
+      mounted.container.querySelector<HTMLImageElement>('.canvas-prompt-chip-thumb img')?.src,
+    ).toBe('https://example.com/hero-thumb.png')
+    expect(mounted.container.textContent).toContain('小满')
   })
 
-  it('renders structured and invalid references as atomic states', () => {
-    const html = render({ version: 2, blocks: [{ kind: 'structured', id: 's1', sourceNodeId: 'missing', schema: 'storyboard', summary: '镜头 03–06' }] }, [])
-    expect(html).toContain('镜头 03–06')
-    expect(html).toContain('is-invalid')
-    expect(html).toContain('aria-invalid="true"')
+  it('renders structured and invalid references as atomic states', async () => {
+    const mounted = await mountComposer(
+      { version: 2, blocks: [{ kind: 'structured', id: 's1', sourceNodeId: 'missing', schema: 'storyboard', summary: '镜头 03–06' }] },
+      [],
+    )
+    expect(mounted.container.textContent).toContain('镜头 03–06')
+    expect(mounted.container.querySelector('[aria-invalid="true"]')).not.toBeNull()
   })
 
   it('keeps long hover content inside a scrolling viewport', () => {
     expect(CANVAS_PROMPT_HOVER_MAX_HEIGHT).toBe(280)
+  })
+
+  it('accepts arbitrary text in a clean editor', async () => {
+    const mounted = await mountComposer({ version: 2, blocks: [] })
+    await replaceEditorText(mounted.getEditor(), '自定义镜头描述')
+    expect(mounted.getDocument().blocks).toEqual([
+      expect.objectContaining({ kind: 'text', text: '自定义镜头描述' }),
+    ])
+  })
+
+  it('inserts text at an arbitrary middle selection without jumping before tags', async () => {
+    const mounted = await mountComposer({
+      version: 2,
+      blocks: [
+        { kind: 'text', id: 'text-before-resource', text: '镜头中间文字' },
+        { kind: 'reference', id: 'reference-hero', source: 'manual', sourceNodeId: 'hero', relation: 'reference_image', label: '小满', order: 0 },
+      ],
+    })
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const paragraph = $getRoot().getFirstChild()
+        if (!$isElementNode(paragraph)) throw new Error('Missing prompt paragraph')
+        const textNode = paragraph.getFirstChild()
+        if (!$isTextNode(textNode)) throw new Error('Missing prompt text')
+        textNode.select(2, 2)
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) throw new Error('Missing range selection')
+        selection.insertText('新')
+      })
+    })
+    await flushEditor()
+    expect(mounted.getDocument().blocks[0]).toMatchObject({ text: '镜头新中间文字' })
+    expect(mounted.getDocument().blocks[1]).toMatchObject({ kind: 'reference', label: '小满' })
+  })
+
+  it('creates an editable parameter and focuses its value', async () => {
+    const mounted = await mountComposer({ version: 2, blocks: [] })
+    await act(async () => mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click())
+    const durationButton = Array.from(
+      mounted.container.querySelectorAll<HTMLButtonElement>('.canvas-prompt-parameter-menu > button'),
+    ).find((button) => button.textContent?.includes('镜头时长'))!
+    await act(async () => durationButton.click())
+    await flushEditor()
+
+    const input = mounted.container.querySelector<HTMLInputElement>('input[aria-label="设置时长"]')!
+    expect(window.document.activeElement).toBe(input)
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(input, '8')
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, data: '8' }))
+    })
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ kind: 'parameter', parameter: 'duration', value: '8', unit: '秒' }),
+    )
+  })
+
+  it('adds character and image resources from the insert menu', async () => {
+    const characterNode = { ...imageNode(), data: { ...imageNode().data, pipelineRole: 'character' as const } }
+    const mounted = await mountComposer({ version: 2, blocks: [] }, [characterNode])
+    await act(async () => mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click())
+    const resourceButton = Array.from(
+      mounted.container.querySelectorAll<HTMLButtonElement>('.canvas-prompt-resource-list button'),
+    ).find((button) => button.textContent?.includes('小满'))!
+    await act(async () => resourceButton.click())
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ kind: 'reference', sourceNodeId: 'hero', relation: 'character', label: '小满' }),
+    )
+  })
+
+  it('keeps a resource tag and following text in one Lexical paragraph', async () => {
+    const mounted = await mountComposer({
+      version: 2,
+      blocks: [
+        { kind: 'reference', id: 'reference-hero', source: 'manual', sourceNodeId: 'hero', relation: 'reference_image', label: '小满', order: 0 },
+        { kind: 'text', id: 'text-after-resource', text: '继续输入镜头描述' },
+      ],
+    })
+    const paragraph = mounted.container.querySelector('.canvas-prompt-lexical-paragraph')!
+    expect(paragraph.querySelector('.canvas-prompt-lexical-atomic')).not.toBeNull()
+    expect(paragraph.textContent).toContain('继续输入镜头描述')
+    expect(
+      window.getComputedStyle(paragraph.querySelector<HTMLElement>('.canvas-prompt-lexical-atomic')!).display,
+    ).toBe('inline')
+  })
+
+  it('deletes a manually inserted tag as one atomic unit', async () => {
+    const mounted = await mountComposer({
+      version: 2,
+      blocks: [{ kind: 'reference', id: 'manual-hero', source: 'manual', sourceNodeId: 'hero', relation: 'character', label: '小满', order: 0 }],
+    })
+    await act(async () => mounted.container.querySelector<HTMLButtonElement>('[aria-label="删除小满"]')!.click())
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toEqual([])
+  })
+
+  it('persists deletion of an automatic connection tag as a suppressed input', async () => {
+    const mounted = await mountComposer({
+      version: 2,
+      blocks: [{ kind: 'reference', id: 'connection-hero', source: 'connection', sourceNodeId: 'hero', relation: 'character', connectionRelation: 'character', label: '小满', order: 0 }],
+    })
+    await act(async () => mounted.container.querySelector<HTMLButtonElement>('[aria-label="删除小满"]')!.click())
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ id: 'connection-hero', suppressed: true }),
+    )
+    expect(mounted.container.querySelector('[aria-label="删除小满"]')).toBeNull()
+  })
+
+  it('opens @ suggestions and inserts the selected node as a tag', async () => {
+    const mounted = await mountComposer({ version: 2, blocks: [] })
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('@小')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+    const option = window.document.querySelector<HTMLButtonElement>('.canvas-prompt-mention-menu button')
+    expect(option?.textContent).toContain('小满')
+    await act(async () => option!.click())
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ kind: 'reference', sourceNodeId: 'hero', label: '小满' }),
+    )
   })
 })

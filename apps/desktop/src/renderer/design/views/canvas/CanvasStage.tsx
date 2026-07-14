@@ -46,7 +46,13 @@ import {
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import { CANVAS_CAPABILITIES, isOperationNode } from './canvas.capabilities'
 import { canvasNodeChromeExtraHeight } from './canvasNodeChrome'
-import { CANVAS_NODE_META_BAR_HEIGHT, OPERATION_NODE_DEFAULT_SIZE } from './canvasNodeSize'
+import {
+  CANVAS_NODE_META_BAR_HEIGHT,
+  OPERATION_NODE_DEFAULT_SIZE,
+  fitCollectionOperationNodeSize,
+  fitShotScriptOperationNodeSize,
+} from './canvasNodeSize'
+import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
 import { CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { getOperationVisual } from './canvasOperationIcons'
 import { readCharacterSubviews } from './canvasCharacterLibrary'
@@ -177,21 +183,50 @@ export type CanvasStageViewportControls = {
 
 const OPERATION_RUN_NAV_HEIGHT = 31
 
-function operationNodePresentationHeight(
+function operationNodePresentationSize(
   node: SparkCanvasNode,
   runs: CanvasOperationRunView[],
-): number {
-  if (!isOperationNode(node)) return node.height
-  const output = resolveCanvasOperationOutputState(node, runs).primaryOutput
+): { width: number; height: number } {
+  if (!isOperationNode(node)) return { width: node.width, height: node.height }
+  const outputState = resolveCanvasOperationOutputState(node, runs)
+  const output = outputState.primaryOutput
+  const latestOutputs =
+    outputState.latestRunWithOutputsIndex >= 0
+      ? (runs[outputState.latestRunWithOutputsIndex]?.outputs ?? [])
+      : []
+  if (outputState.mode === 'collection' && latestOutputs.length > 0) {
+    const fittedSize = fitCollectionOperationNodeSize(latestOutputs.length)
+    return {
+      width: node.width <= OPERATION_NODE_DEFAULT_SIZE.width ? fittedSize.width : node.width,
+      height: node.height <= OPERATION_NODE_DEFAULT_SIZE.height ? fittedSize.height : node.height,
+    }
+  }
+  const storyboardRows = readRenderableShotScriptRows(output?.text)
+  if (storyboardRows.length > 0) {
+    const fittedSize = fitShotScriptOperationNodeSize(storyboardRows.length)
+    return {
+      width: node.width <= OPERATION_NODE_DEFAULT_SIZE.width ? fittedSize.width : node.width,
+      height: node.height <= OPERATION_NODE_DEFAULT_SIZE.height ? fittedSize.height : node.height,
+    }
+  }
   if (!output || (output.type !== 'image' && output.type !== 'video')) {
-    return Math.max(node.height, OPERATION_NODE_DEFAULT_SIZE.height)
+    return {
+      width: node.width,
+      height: Math.max(node.height, OPERATION_NODE_DEFAULT_SIZE.height),
+    }
   }
 
   const fallbackAspectRatio = output.type === 'video' ? 16 / 9 : 1
   const aspectRatio =
     output.width && output.height ? output.width / output.height : fallbackAspectRatio
   const mediaHeight = Math.min(720, Math.max(160, Math.round(node.width / aspectRatio)))
-  return Math.max(node.height, mediaHeight + CANVAS_NODE_META_BAR_HEIGHT + OPERATION_RUN_NAV_HEIGHT)
+  return {
+    width: node.width,
+    height: Math.max(
+      node.height,
+      mediaHeight + CANVAS_NODE_META_BAR_HEIGHT + OPERATION_RUN_NAV_HEIGHT,
+    ),
+  }
 }
 
 function flowNodeToAutoLayoutNode(node: Node<CanvasFlowNodeData>): CanvasAutoLayoutNode {
@@ -230,8 +265,8 @@ function toFlowNode(
 ): Node<CanvasFlowNodeData> {
   const inlineToolbarHeight = inlineExtension?.toolbar ? INLINE_NODE_TOOLBAR_HEIGHT : 0
   const cardChromeExtraHeight = canvasNodeChromeExtraHeight(node)
-  const baseRenderedHeight =
-    operationNodePresentationHeight(node, operationRuns) + cardChromeExtraHeight
+  const presentationSize = operationNodePresentationSize(node, operationRuns)
+  const baseRenderedHeight = presentationSize.height + cardChromeExtraHeight
   const data: CanvasFlowNodeData = {
     actions,
     canvasNode: node,
@@ -251,7 +286,10 @@ function toFlowNode(
     ...(inlineExtension ? { inlinePanelExtraHeight: inlineExtension.extraHeight } : {}),
     ...(inlineToolbarHeight > 0 ? { inlineToolbarHeight } : {}),
   }
-  const renderedWidth = Math.max(node.width, inlineExtension?.minWidth ?? node.width)
+  const renderedWidth = Math.max(
+    presentationSize.width,
+    inlineExtension?.minWidth ?? presentationSize.width,
+  )
   const renderedHeight =
     baseRenderedHeight + inlineToolbarHeight + (inlineExtension?.extraHeight ?? 0)
   if (inlineExtension && renderedWidth > node.width) {
@@ -483,11 +521,13 @@ function CanvasStageInner({
   onCreateOperationAtPosition?: (
     operation: CanvasOperationType,
     position: CanvasStagePoint,
+    options?: { openPanel?: boolean },
   ) => MaybePromise<CanvasStageCreateResult>
   /** 空白右键：创建流水线编排节点（提取角色/场景、转剧本、生成分镜脚本等） */
   onCreatePipelineAtPosition?: (
     actionId: string,
     position: CanvasStagePoint,
+    options?: { openPanel?: boolean },
   ) => MaybePromise<CanvasStageCreateResult>
   /** 用户明确点击某个节点，用于恢复被手动关闭的节点面板 */
   onNodeSelectIntent?: (nodeId: string) => void
@@ -1084,6 +1124,8 @@ function CanvasStageInner({
         submenu: { width: 300 },
       })
 
+      // 画布菜单与连线菜单共享同一交互层，任何时刻只保留一个右键菜单。
+      setEdgeContextMenu(null)
       setPaneContextMenu({
         left: menuPosition.left,
         top: menuPosition.top,
@@ -1131,6 +1173,12 @@ function CanvasStageInner({
           isEditableTarget: isEditableEventTarget(event.target),
         })
       ) {
+        // 节点自己的 Dropdown 在后续冒泡阶段打开；先关闭画布/连线菜单，
+        // 避免“先开画布菜单，再右键节点”时两个菜单叠在一起。
+        if (nodeElement) {
+          setPaneContextMenu(null)
+          setEdgeContextMenu(null)
+        }
         return
       }
 
@@ -1334,7 +1382,10 @@ function CanvasStageInner({
       const position = paneContextMenu.flowPosition
       const pendingConnection = paneContextMenu.pendingConnection
       closePaneContextMenu()
-      const created = await onCreateOperationAtPosition?.(operation, position)
+      const created = await onCreateOperationAtPosition?.(operation, position, {
+        // 连线创建完成后还会异步写入边和选中态；此时自动开面板会被后续状态同步关掉。
+        openPanel: pendingConnection == null,
+      })
       await connectPendingConnectionToNode(created, pendingConnection)
     },
     [
@@ -1351,7 +1402,9 @@ function CanvasStageInner({
       const position = paneContextMenu.flowPosition
       const pendingConnection = paneContextMenu.pendingConnection
       closePaneContextMenu()
-      const created = await onCreatePipelineAtPosition?.(actionId, position)
+      const created = await onCreatePipelineAtPosition?.(actionId, position, {
+        openPanel: pendingConnection == null,
+      })
       await connectPendingConnectionToNode(created, pendingConnection)
     },
     [
@@ -1578,6 +1631,7 @@ function CanvasStageInner({
     if (!rect) return
     event.preventDefault()
     event.stopPropagation()
+    setPaneContextMenu(null)
     setSelectedEdgeIds([edge.id])
     setEdgeContextMenu({
       edgeId: edge.id,
@@ -1612,7 +1666,11 @@ function CanvasStageInner({
   const handleNodeContextMenu = useCallback(
     (event: ReactMouseEvent, node: Node<CanvasFlowNodeData>) => {
       // 多选(≥2)且点中的节点在选区内时弹批量面板菜单；单选交给节点 Dropdown。
-      if (selectedNodeIds.length < 2 || !selectedNodeIdSet.has(node.id)) return
+      if (selectedNodeIds.length < 2 || !selectedNodeIdSet.has(node.id)) {
+        setPaneContextMenu(null)
+        setEdgeContextMenu(null)
+        return
+      }
       event.preventDefault()
       event.stopPropagation()
       openPaneContextMenuAt(event)

@@ -30,7 +30,10 @@ afterEach(() => {
 
 describe('generateCanvasText multimodal', () => {
   it('OpenAI-compatible: 纯文本时 user content 仍是字符串', async () => {
-    const captured = stubFetch({ choices: [{ message: { content: '一段风格描述' } }] })
+    const captured = stubFetch({
+      choices: [{ message: { content: '一段风格描述' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+    })
     const result = await generateCanvasText({
       providerType: 'openai',
       apiKey: 'sk-x',
@@ -38,6 +41,8 @@ describe('generateCanvasText multimodal', () => {
       prompt: '分析风格',
     })
     expect(result.text).toBe('一段风格描述')
+    expect(result.finishReason).toBe('stop')
+    expect(result.usage).toEqual({ promptTokens: 12, completionTokens: 8, totalTokens: 20 })
     const messages = captured.lastBody().messages as Array<{ role: string; content: unknown }>
     const user = messages.find((m) => m.role === 'user')!
     expect(user.content).toBe('分析风格')
@@ -107,6 +112,57 @@ describe('generateCanvasText multimodal', () => {
       temperature: 0.2,
     })
     expect(captured.lastBody().temperature).toBe(0.2)
+  })
+
+  it('JSON output requests forward response_format to OpenAI-compatible chat providers', async () => {
+    const captured = stubFetch({ choices: [{ message: { content: '{"ok":true}' } }] })
+    await generateCanvasText({
+      providerType: 'openai-compatible',
+      apiKey: 'sk-x',
+      model: 'deepseek-v4-flash',
+      prompt: '只输出 JSON',
+      responseFormat: 'json',
+    })
+
+    expect(captured.lastBody().response_format).toEqual({ type: 'json_object' })
+  })
+
+  it('DeepSeek storyboard tasks can disable default thinking mode to avoid hidden reasoning consuming output tokens', async () => {
+    const captured = stubFetch({
+      choices: [{
+        finish_reason: 'length',
+        message: { content: '{"shots":[{"index":1}]}', reasoning_content: '思考'.repeat(3000) },
+      }],
+      usage: { prompt_tokens: 2000, completion_tokens: 30000, total_tokens: 32000 },
+    })
+    const result = await generateCanvasText({
+      providerType: 'openai-compatible',
+      apiEndpoint: 'https://api.deepseek.com',
+      apiKey: 'sk-x',
+      model: 'deepseek-v4-flash',
+      prompt: '输出分镜 JSON',
+      disableThinking: true,
+    })
+
+    expect(captured.lastBody().thinking).toEqual({ type: 'disabled' })
+    expect(result.finishReason).toBe('length')
+    expect(result.reasoningContentChars).toBe(6000)
+  })
+
+  it('GLM JSON tasks can also disable default thinking mode on OpenAI-compatible endpoints', async () => {
+    const captured = stubFetch({ choices: [{ message: { content: '{"ok":true}' } }] })
+    await generateCanvasText({
+      providerType: 'openai-compatible',
+      apiEndpoint: 'https://open.bigmodel.cn/api/paas/v4',
+      apiKey: 'sk-x',
+      model: 'glm-5.2',
+      prompt: '只输出 JSON',
+      disableThinking: true,
+      responseFormat: 'json',
+    })
+
+    expect(captured.lastBody().thinking).toEqual({ type: 'disabled' })
+    expect(captured.lastBody().response_format).toEqual({ type: 'json_object' })
   })
 
   it('OpenAI Responses API: 按 provider apiKind 发送到 /responses 并解析 output_text', async () => {

@@ -15,7 +15,7 @@
  *   物理尺寸保持不变，但其渲染样式仍会按当前 text 长度切换，便于旧节点
  *   编辑后内容变长时自动应用阅读样式。
  */
-import { isRenderableShotScriptText } from './canvasShotScriptPresentation'
+import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
 
 /** 升级为「长文本视图」的最小字符数（含中英文标点；不含格式标记） */
 export const LONG_TEXT_MIN_CHARS = 800
@@ -26,8 +26,14 @@ export const TEXT_NODE_DEFAULT_SIZE = { width: 400, height: 320 } as const
 /** 长文本（阅读）默认尺寸 */
 export const TEXT_NODE_LONG_SIZE = { width: 680, height: 560 } as const
 
-/** 分镜脚本表默认尺寸：表格列多，不能使用普通文本便签尺寸。 */
-export const SHOT_SCRIPT_NODE_SIZE = { width: 980, height: 620 } as const
+/** 分镜脚本产物节点默认尺寸：表格列多，不能使用普通文本便签尺寸。 */
+export const SHOT_SCRIPT_NODE_SIZE = { width: 1080, height: 640 } as const
+
+/** 分镜脚本任务在尚未产出表格时的初始尺寸。 */
+export const SHOT_SCRIPT_OPERATION_NODE_SIZE = { width: 960, height: 560 } as const
+
+/** 分镜任务允许用户手动缩放到的最小尺寸。 */
+export const SHOT_SCRIPT_OPERATION_NODE_MIN_SIZE = { width: 820, height: 500 } as const
 
 /** NodeResizer 默认最小尺寸（便签）：与默认尺寸同比例收窄，避免被压成扁条。 */
 export const TEXT_NODE_DEFAULT_MIN_SIZE = { width: 300, height: 240 } as const
@@ -48,6 +54,9 @@ export const CANVAS_NODE_META_BAR_HEIGHT = 38
 
 /** AI 操作节点默认尺寸：接近 1:1，为头部、产物预览和运行切换保留舒展高度。 */
 export const OPERATION_NODE_DEFAULT_SIZE = { width: 460, height: 420 } as const
+
+/** 集合型操作节点（角色/场景提取等）列表展示的默认宽度。 */
+export const COLLECTION_OPERATION_NODE_WIDTH = 640
 
 /** 分组节点默认尺寸：偏方正（实际尺寸由 applyGroupLayout 按成员重算覆盖）。 */
 export const GROUP_NODE_DEFAULT_SIZE = { width: 520, height: 440 } as const
@@ -112,8 +121,59 @@ export function pickTextNodeSize(text: string | null | undefined): {
   width: number
   height: number
 } {
-  if (isRenderableShotScriptText(text)) return SHOT_SCRIPT_NODE_SIZE
+  const shotRows = readRenderableShotScriptRows(text)
+  if (shotRows.length > 0) return fitShotScriptTextNodeSize(shotRows.length)
   return isLongText(text) ? TEXT_NODE_LONG_SIZE : TEXT_NODE_DEFAULT_SIZE
+}
+
+/**
+ * 分镜产物节点按镜头数有限自适应：少量镜头也保证完整可读，多镜头最多扩到
+ * 900px 高，剩余内容交给表格内部滚动，避免把无限画布布局整体撑散。
+ */
+export function fitShotScriptTextNodeSize(shotCount: number): { width: number; height: number } {
+  const normalizedCount = Math.max(1, Math.floor(shotCount))
+  return {
+    width: SHOT_SCRIPT_NODE_SIZE.width,
+    height: Math.min(900, Math.max(SHOT_SCRIPT_NODE_SIZE.height, 280 + normalizedCount * 88)),
+  }
+}
+
+/** 分镜任务完成后的展示尺寸；比独立产物更宽，便于直接查看完整制作字段。 */
+export function fitShotScriptOperationNodeSize(shotCount: number): {
+  width: number
+  height: number
+} {
+  const normalizedCount = Math.max(1, Math.floor(shotCount))
+  return {
+    width: 1180,
+    height: Math.min(920, Math.max(640, 310 + normalizedCount * 110)),
+  }
+}
+
+/**
+ * 多产物集合节点按条目数有限扩展，尽量一次展示完整列表；超大集合达到上限后
+ * 由列表内部滚动，避免单个节点无限拉长并破坏画布布局。
+ */
+export function fitCollectionOperationNodeSize(outputCount: number): {
+  width: number
+  height: number
+} {
+  const normalizedCount = Math.max(1, Math.floor(outputCount))
+  return {
+    width: COLLECTION_OPERATION_NODE_WIDTH,
+    height: Math.min(
+      920,
+      Math.max(OPERATION_NODE_DEFAULT_SIZE.height, 102 + normalizedCount * 104),
+    ),
+  }
+}
+
+/** 根据任务语义选择操作节点创建尺寸。 */
+export function pickOperationNodeInitialSize(isShotScript: boolean): {
+  width: number
+  height: number
+} {
+  return isShotScript ? { ...SHOT_SCRIPT_OPERATION_NODE_SIZE } : { ...OPERATION_NODE_DEFAULT_SIZE }
 }
 
 /** 给定文本，返回 NodeResizer 的最小宽高（用户拖拽下限） */
@@ -121,7 +181,7 @@ export function pickTextNodeMinSize(text: string | null | undefined): {
   width: number
   height: number
 } {
-  if (isRenderableShotScriptText(text)) return SHOT_SCRIPT_NODE_MIN_SIZE
+  if (readRenderableShotScriptRows(text).length > 0) return SHOT_SCRIPT_NODE_MIN_SIZE
   return isLongText(text) ? TEXT_NODE_LONG_MIN_SIZE : TEXT_NODE_DEFAULT_MIN_SIZE
 }
 
@@ -129,7 +189,9 @@ export function pickTextNodeMinSize(text: string | null | undefined): {
 export function pickCanvasNodeMinSize(
   type: string,
   text?: string | null,
+  options?: { shotScriptOperation?: boolean },
 ): { width: number; height: number } {
+  if (options?.shotScriptOperation) return SHOT_SCRIPT_OPERATION_NODE_MIN_SIZE
   if (type === 'text' || type === 'prompt') return pickTextNodeMinSize(text)
   if (type === 'group') return CANVAS_NODE_MIN_SIZE.group
   if (type === 'image') return CANVAS_NODE_MIN_SIZE.image

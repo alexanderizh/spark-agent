@@ -11,6 +11,15 @@ function imageNode(): CanvasNode {
   }
 }
 
+function textNode(): CanvasNode {
+  return {
+    id: 'script', projectId: 'p', boardId: 'b', userId: 1, type: 'text', title: '场次剧本',
+    assetId: null, taskId: null, parentNodeId: null, x: 0, y: 0, width: 100, height: 100,
+    rotation: 0, zIndex: 0, locked: false, hidden: false,
+    data: { text: '雨夜里，小满走进车站。', pipelineRole: 'screenplay' }, createdAt: '', updatedAt: '',
+  }
+}
+
 const asset: CanvasAsset = {
   id: 'hero-asset', projectId: 'p', userId: 1, type: 'image', source: 'upload', title: '小满',
   mimeType: 'image/png', metadata: {}, createdAt: '', updatedAt: '',
@@ -21,7 +30,7 @@ const snapshot = (): CanvasSnapshot => ({
 })
 
 describe('canvasPromptSubmission', () => {
-  it('represents selected upstream inputs as reference blocks instead of injected text', () => {
+  it('keeps media inputs out of the visible editor document', () => {
     const document = buildCanvasPromptDocumentForInputs({
       prompt: '保持人物一致',
       nodes: [imageNode()],
@@ -29,7 +38,54 @@ describe('canvasPromptSubmission', () => {
     })
     expect(document.blocks).toEqual([
       { kind: 'text', id: expect.any(String), text: '保持人物一致' },
-      expect.objectContaining({ kind: 'reference', sourceNodeId: 'hero', source: 'connection' }),
+    ])
+  })
+
+  it('injects a media-selector input into the executable request without exposing its tag', async () => {
+    const document = buildCanvasPromptDocumentForInputs({
+      prompt: '保持人物一致',
+      nodes: [imageNode()],
+      assets: [asset],
+    })
+    const result = await buildCanvasPromptSubmission({
+      document,
+      snapshot: snapshot(),
+      operation: 'text_to_image',
+      inputNodeIds: ['hero'],
+      inputTransport: 'base64',
+    })
+
+    expect(result.promptDocument).toEqual(document)
+    expect(result.prompt).toContain('[参考图 ref-1: 小满]')
+    expect(result.inputFiles).toEqual([
+      { type: 'image', role: 'reference', dataUrl: 'data:image/png;base64,AA==', mimeType: 'image/png' },
+    ])
+    expect(result.relationManifest).toEqual([
+      expect.objectContaining({ sourceNodeId: 'hero', relation: 'reference_image' }),
+    ])
+  })
+
+  it('compiles an upstream text tag into the model user prompt and relation manifest', async () => {
+    const script = textNode()
+    const document = buildCanvasPromptDocumentForInputs({
+      prompt: '提取主要场景：', nodes: [script], assets: [],
+    })
+    const textSnapshot: CanvasSnapshot = {
+      ...snapshot(), nodes: [script], assets: [],
+    }
+    const result = await buildCanvasPromptSubmission({
+      document, snapshot: textSnapshot, operation: 'text_generate', inputNodeIds: ['script'],
+    })
+
+    expect(result.promptDocument?.blocks).toEqual([
+      expect.objectContaining({ kind: 'text', text: '提取主要场景：' }),
+      expect.objectContaining({ kind: 'reference', sourceNodeId: 'script', relation: 'screenplay' }),
+      expect.objectContaining({ kind: 'text', text: '' }),
+    ])
+    expect(result.prompt).toContain('[剧本 ref-1: 场次剧本]')
+    expect(result.prompt).toContain('雨夜里，小满走进车站。')
+    expect(result.relationManifest).toEqual([
+      expect.objectContaining({ sourceNodeId: 'script', relation: 'screenplay' }),
     ])
   })
 

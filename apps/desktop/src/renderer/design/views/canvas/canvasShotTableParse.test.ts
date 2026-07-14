@@ -42,7 +42,20 @@ describe('canvasShotTableParse', () => {
             index: 1,
             durationSec: 3,
             shotSize: '近景',
+            angle: '低机位仰拍',
             movement: '推',
+            focalLength: '85mm',
+            aperture: 'f/2.0',
+            iso: '800',
+            lighting: '冷色侧逆光',
+            colorTone: '青蓝',
+            mood: '紧张',
+            sceneLayout: '窄巷纵深构图',
+            blocking: '少年前景，追兵后景',
+            microExpression: '眉头收紧',
+            costume: '黑色风衣',
+            groupName: '追逐段落',
+            sceneName: '雨夜窄巷',
             description: '少年握紧剑柄',
             dialogue: '住手！',
             characters: ['少年'],
@@ -58,6 +71,19 @@ describe('canvasShotTableParse', () => {
       description: '少年握紧剑柄',
       characterNames: ['少年'],
       shotPrompt: '近景，推镜',
+      angle: '低机位仰拍',
+      focalLength: '85mm',
+      aperture: 'f/2.0',
+      iso: '800',
+      lighting: '冷色侧逆光',
+      colorTone: '青蓝',
+      mood: '紧张',
+      sceneLayout: '窄巷纵深构图',
+      blocking: '少年前景，追兵后景',
+      performance: '眉头收紧',
+      costume: '黑色风衣',
+      groupName: '追逐段落',
+      sceneName: '雨夜窄巷',
     })
   })
 
@@ -86,7 +112,12 @@ describe('canvasShotTableParse', () => {
     const rows = parseShotTable(
       `| 画面/动作 | 对白 | 时长(秒) | 镜号 |\n| - | - | - | - |\n| 拔剑 | 喝！ | 2 | 7 |`,
     )
-    expect(rows[0]).toMatchObject({ index: 7, durationSec: 2, description: '拔剑', dialogue: '喝！' })
+    expect(rows[0]).toMatchObject({
+      index: 7,
+      durationSec: 2,
+      description: '拔剑',
+      dialogue: '喝！',
+    })
   })
 
   it('导演 agent 增强表（多出角度/镜头列）也能解析', () => {
@@ -153,11 +184,40 @@ describe('canvasShotTableParse', () => {
       dialogue: '住手！',
       characterNames: ['少年'],
       shotPrompt: '近景，推镜',
+      groupName: '开场',
+      sceneName: '街角',
     })
     expect(rows[1]).toMatchObject({
       index: 2,
       durationSec: 4.5,
       characterNames: ['黑衣人', '少年'],
+      groupName: '开场',
+    })
+  })
+
+  it('Markdown 增强表解析完整制作字段', () => {
+    const rows = parseShotTable(
+      `| 镜号 | 时长 | 场次 | 场景名 | 焦距 | 光圈 | ISO | 光照 | 色调 | 氛围 | 调度 | 表演 | 服装 | 画面 | 生成提示词 | 反向提示词 |\n` +
+        `| - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - |\n` +
+        `| 3 | 5s | 高潮 | 天台 | 35mm | f/4 | 400 | 夕阳逆光 | 金橙 | 决绝 | 两人对峙 | 眼神坚定 | 风衣 | 主角走向边缘 | 电影感广角镜头 | 文字、水印 |`,
+    )
+    expect(rows[0]).toMatchObject({
+      index: 3,
+      durationSec: 5,
+      groupName: '高潮',
+      sceneName: '天台',
+      focalLength: '35mm',
+      aperture: 'f/4',
+      iso: '400',
+      lighting: '夕阳逆光',
+      colorTone: '金橙',
+      mood: '决绝',
+      blocking: '两人对峙',
+      performance: '眼神坚定',
+      costume: '风衣',
+      description: '主角走向边缘',
+      shotPrompt: '电影感广角镜头',
+      negativePrompt: '文字、水印',
     })
   })
 

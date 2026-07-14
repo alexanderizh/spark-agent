@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from 'vitest'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { act, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { CanvasPromptDocument } from '@spark/protocol'
@@ -17,12 +16,14 @@ const node: CanvasNode = {
 }
 
 describe('CanvasPromptMentionTextArea', () => {
-  it('renders the persisted prompt document instead of remigrating the legacy value', () => {
+  it('renders the persisted prompt document instead of remigrating the legacy value', async () => {
     const document: CanvasPromptDocument = {
       version: 2,
       blocks: [{ kind: 'reference', id: 'r1', source: 'manual', sourceNodeId: 'hero', relation: 'character', label: '主角小满', order: 0 }],
     }
-    const html = renderToStaticMarkup(
+    const container = window.document.createElement('div')
+    const root = createRoot(container)
+    await act(async () => root.render(
       <CanvasPromptMentionTextArea
         value="旧字符串"
         document={document}
@@ -31,9 +32,10 @@ describe('CanvasPromptMentionTextArea', () => {
         assets={[]}
         onChange={() => undefined}
       />,
-    )
-    expect(html).toContain('主角小满')
-    expect(html).not.toContain('旧字符串')
+    ))
+    expect(container.textContent).toContain('主角小满')
+    expect(container.textContent).not.toContain('旧字符串')
+    await act(async () => root.unmount())
   })
 
   it('clears the disconnected state when the physical connection is restored', async () => {
@@ -62,6 +64,28 @@ describe('CanvasPromptMentionTextArea', () => {
     expect(container.querySelector('.is-invalid')).not.toBeNull()
     await act(async () => root.render(<Harness connectionNodes={[node]} />))
     expect(container.querySelector('.is-invalid')).toBeNull()
+    await act(async () => root.unmount())
+  })
+
+  it('does not restore a connected tag that the user suppressed', async () => {
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [{ kind: 'reference', id: 'connection-hero', source: 'connection', sourceNodeId: 'hero', relation: 'character', connectionRelation: 'character', suppressed: true, label: '主角小满', order: 0 }],
+    }
+    const container = window.document.createElement('div')
+    const root = createRoot(container)
+    await act(async () => root.render(
+      <CanvasPromptMentionTextArea
+        value=""
+        document={document}
+        rows={4}
+        mentionNodes={[node]}
+        connectionNodes={[node]}
+        assets={[]}
+        onChange={() => undefined}
+      />,
+    ))
+    expect(container.textContent).not.toContain('主角小满')
     await act(async () => root.unmount())
   })
 })

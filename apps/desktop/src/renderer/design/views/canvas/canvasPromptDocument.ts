@@ -71,7 +71,7 @@ export function toCanvasPromptPlainText(document: CanvasPromptDocument): string 
   return document.blocks
     .map((block) => {
       if (block.kind === 'text') return block.text
-      if (block.kind === 'reference') return `@${block.label}`
+      if (block.kind === 'reference') return block.suppressed ? '' : `@${block.label}`
       if (block.kind === 'structured') return `@${block.summary}`
       const unit = block.unit ? ` ${block.unit}` : ''
       return `${String(block.value)}${unit}`
@@ -83,7 +83,9 @@ export function toCanvasPromptLegacyText(document: CanvasPromptDocument): string
   return document.blocks
     .map((block) => {
       if (block.kind === 'text') return block.text
-      if (block.kind === 'reference') return `@[${block.label}](node:${block.sourceNodeId})`
+      if (block.kind === 'reference') {
+        return block.suppressed ? '' : `@[${block.label}](node:${block.sourceNodeId})`
+      }
       if (block.kind === 'structured') return `@[${block.summary}](node:${block.sourceNodeId})`
       const unit = block.unit ? ` ${block.unit}` : ''
       return `${String(block.value)}${unit}`

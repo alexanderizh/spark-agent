@@ -47,10 +47,13 @@ import {
   TEXT_NODE_DEFAULT_SIZE,
   VIDEO_NODE_DEFAULT_SIZE,
   fitCanvasImageNodeSize,
+  fitShotScriptOperationNodeSize,
+  pickOperationNodeInitialSize,
   pickTextNodeSize,
 } from './canvasNodeSize'
 import { pruneModelParamsForCanvas } from './canvasMediaContract'
 import { isShotScriptText } from './canvasShotTableParse'
+import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
 import { placeAutoNodeToRight } from './canvasAutoPlacement'
 import { planGroupLayout } from './canvasGroupLayout'
 import {
@@ -79,11 +82,13 @@ import type {
 import { buildCanvasRetryInputRoles, pickCanvasPromptTaskFields } from './canvasPromptTaskFields'
 import { buildTaskInputFiles } from './canvasTaskInputFiles'
 import { materializeCanvasTaskInputFiles } from './canvasWorkspaceTaskInput'
+import { buildCanvasVisiblePromptDocument } from './canvasPromptInitialization'
+import { reconcilePromptConnections } from './canvasPromptConnections'
 import {
+  buildCanvasOperationSystemPrompt,
   buildCanvasOperationPrompt,
   mergeCanvasPresetTargetModelParams,
   mergeCanvasOperationPresetNegativePrompt,
-  mergeCanvasOperationPresetPrompt,
   readCanvasResolvedPresetTarget,
   resolveCanvasPresetTarget,
 } from './canvasOperationPresets'
@@ -151,11 +156,46 @@ function mergeCanvasPromptWithInputTextContext(
   return `${trimmedPrompt}\n\n画布节点内容：\n${trimmedContext}`
 }
 
+function syncOperationPromptDocumentFromConnections(db: CanvasDb, target: CanvasNode): void {
+  if (!isOperationNode(target) && target.type !== 'task') return
+  const task = target.taskId
+    ? db.tasks.find((item) => item.id === target.taskId && item.projectId === target.projectId)
+    : undefined
+  const edges = db.edges.filter(
+    (edge) =>
+      edge.projectId === target.projectId &&
+      edge.targetNodeId === target.id &&
+      edge.type === 'used_as_input',
+  )
+  const connectedIds = new Set(edges.map((edge) => edge.sourceNodeId))
+  const connections = db.nodes.filter(
+    (node) => connectedIds.has(node.id) && node.projectId === target.projectId && !node.hidden,
+  )
+  const storedDocument = target.data.promptDocument ?? task?.promptDocument
+  const reconciledDocument = storedDocument
+    ? reconcilePromptConnections(storedDocument, edges).document
+    : undefined
+  const document = buildCanvasVisiblePromptDocument({
+    ...(reconciledDocument ? { document: reconciledDocument } : {}),
+    prompt: target.data.prompt ?? '',
+    nodes: db.nodes,
+    connections,
+    assets: db.assets,
+  })
+  target.data.promptDocument = document
+  target.updatedAt = now()
+  if (task) {
+    task.promptDocument = document
+    task.updatedAt = target.updatedAt
+  }
+}
+
 type CanvasWorkflowTaskStartRequest = {
   boardId?: string
   operation?: CanvasOperationType
   title: string
   prompt?: string
+  userPrompt?: string
   inputNodeIds?: string[]
   inputAssetIds?: string[]
   bindToNodeId?: string
@@ -167,8 +207,9 @@ type CanvasWorkflowTaskStartRequest = {
   provider?: string
   modelId?: string
   reasoningEffort?: SessionReasoningEffort
+  skillIds?: string[]
   modelParams?: Record<string, unknown>
-}
+} & CanvasPromptTaskFields
 
 type CanvasWorkflowTaskFinishRequest = {
   status?: Extract<CanvasTaskStatus, 'completed' | 'failed' | 'cancelled'>
@@ -3697,6 +3738,7 @@ export const canvasApi = {
         task.inputAssetIds.push(source.assetId)
       task.updatedAt = at
     }
+    if (edgeType === 'used_as_input') syncOperationPromptDocumentFromConnections(db, target)
     if (task && edgeType === 'generated') {
       if (!task.outputNodeIds.includes(target.id)) task.outputNodeIds.push(target.id)
       if (target.assetId && !task.outputAssetIds.includes(target.assetId))
@@ -3719,11 +3761,13 @@ export const canvasApi = {
 
     db.edges = db.edges.filter((edge) => !(edge.projectId === projectId && ids.has(edge.id)))
     const at = now()
+    const promptTargets = new Set<string>()
     for (const edge of removedEdges) {
       if (!edge.taskId || edge.type === 'group_contains') continue
       const task = db.tasks.find((item) => item.id === edge.taskId && item.projectId === projectId)
       if (!task) continue
       if (edge.type === 'used_as_input') {
+        promptTargets.add(edge.targetNodeId)
         task.inputNodeIds = task.inputNodeIds.filter((id) => id !== edge.sourceNodeId)
         const source = db.nodes.find((node) => node.id === edge.sourceNodeId)
         if (source?.assetId)
@@ -3736,6 +3780,12 @@ export const canvasApi = {
           task.outputAssetIds = task.outputAssetIds.filter((id) => id !== target.assetId)
       }
       task.updatedAt = at
+    }
+    for (const targetId of promptTargets) {
+      const target = db.nodes.find(
+        (node) => node.id === targetId && node.projectId === projectId && !node.hidden,
+      )
+      if (target) syncOperationPromptDocumentFromConnections(db, target)
     }
 
     updateProjectCounts(db, projectId)
@@ -3951,12 +4001,15 @@ export const canvasApi = {
     if (!board || !project) throw new Error('Canvas board not found')
     const at = now()
     const taskId = uid('canvas_task')
+    const taskNodeSize = pickOperationNodeInitialSize(
+      request.operation === 'text_generate' && request.taskPipelineRole === 'shot',
+    )
     const { x, y } = resolveCollisionFreeNodePosition({
       preferred: {
         x: request.outputPlacement?.x ?? 360,
         y: request.outputPlacement?.y ?? 320,
       },
-      size: OPERATION_NODE_DEFAULT_SIZE,
+      size: taskNodeSize,
       nodes: db.nodes,
       boardId: board.id,
     })
@@ -3965,9 +4018,17 @@ export const canvasApi = {
       status: 'pending',
       progress: 12,
       message: '任务已创建，等待 agent/provider 接入',
+      ...(request.taskPipelineRole != null ? { pipelineRole: request.taskPipelineRole } : {}),
+      ...(request.outputPipelineRole != null
+        ? { outputPipelineRole: request.outputPipelineRole }
+        : {}),
     }
-    const requestPrompt = buildCanvasOperationPrompt(request.operation, request.prompt)
-    if (requestPrompt != null) taskNodeData.prompt = requestPrompt
+    const requestPrompt = request.promptDocument
+      ? (request.compiledUserText ?? request.prompt)
+      : buildCanvasOperationPrompt(request.operation, request.prompt)
+    if (requestPrompt != null && request.promptDocument == null) taskNodeData.prompt = requestPrompt
+    if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
+    if (request.systemPrompt != null) taskNodeData.systemPrompt = request.systemPrompt
     if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
     const defaultTaskTitle =
       request.taskTitle ??
@@ -3985,8 +4046,8 @@ export const canvasApi = {
       title: defaultTaskTitle,
       x,
       y,
-      width: OPERATION_NODE_DEFAULT_SIZE.width,
-      height: OPERATION_NODE_DEFAULT_SIZE.height,
+      width: taskNodeSize.width,
+      height: taskNodeSize.height,
       data: taskNodeData,
       at,
     })
@@ -4012,6 +4073,7 @@ export const canvasApi = {
       modelId: request.modelId ?? null,
       reasoningEffort: request.reasoningEffort ?? null,
       modelParams: request.modelParams ?? {},
+      ...pickCanvasPromptTaskFields(request),
       createdAt: at,
       updatedAt: at,
     }
@@ -4068,8 +4130,11 @@ export const canvasApi = {
       progress,
       message: messageText,
     }
-    const requestPrompt = buildCanvasOperationPrompt(operation, request.prompt)
-    if (requestPrompt != null) taskNodeData.prompt = requestPrompt
+    const requestPrompt = request.compiledUserText ?? request.prompt
+    const visibleUserPrompt = request.userPrompt ?? (request.promptDocument ? undefined : request.prompt)
+    if (visibleUserPrompt != null) taskNodeData.prompt = visibleUserPrompt
+    if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
+    if (request.systemPrompt != null) taskNodeData.systemPrompt = request.systemPrompt
 
     let taskNode: CanvasNode
     const bindNode = request.bindToNodeId
@@ -4095,6 +4160,7 @@ export const canvasApi = {
       bindNode.taskId = taskId
       bindNode.title = request.title
       bindNode.data = { ...bindNode.data, ...taskNodeData }
+      if (request.promptDocument != null && !visibleUserPrompt) delete bindNode.data.prompt
       bindNode.updatedAt = at
       taskNode = bindNode
     } else {
@@ -4122,7 +4188,7 @@ export const canvasApi = {
       status: 'running',
       progress,
       title: request.title,
-      prompt: request.prompt ?? null,
+      prompt: requestPrompt ?? null,
       negativePrompt: null,
       inputNodeIds: request.inputNodeIds ?? [],
       inputAssetIds: request.inputAssetIds ?? [],
@@ -4130,11 +4196,13 @@ export const canvasApi = {
       outputAssetIds: [],
       provider: request.provider ?? 'canvas_workflow',
       agentId: request.agentId ?? null,
+      skillIds: request.skillIds ?? [],
       agentMode: 'local',
       providerProfileId: request.providerProfileId ?? null,
       modelId: request.modelId ?? null,
       reasoningEffort: request.reasoningEffort ?? null,
       modelParams: request.modelParams ?? {},
+      ...pickCanvasPromptTaskFields(request),
       createdAt: at,
       updatedAt: at,
     }
@@ -4250,6 +4318,7 @@ export const canvasApi = {
     title?: string
     message?: string
     prompt?: string
+    systemPrompt?: string
     negativePrompt?: string
     modelParams?: Record<string, unknown>
     agentId?: string
@@ -4282,23 +4351,7 @@ export const canvasApi = {
           : null,
       )
       .filter((task): task is CanvasTask => task != null)
-    const promptContext = inputNodes
-      .filter((n) => n.type === 'text' || n.type === 'prompt')
-      .map((n) => n.data.text ?? '')
-      .filter(Boolean)
-      .join('\n\n')
     const explicitPrompt = nonEmptyString(input.prompt)
-    const inheritedPrompt =
-      explicitPrompt ||
-      promptContext ||
-      inputNodes
-        .map((node) => nonEmptyString(node.data.prompt))
-        .find((value): value is string => value != null) ||
-      inputTasks
-        .map((task) => nonEmptyString(task.prompt))
-        .find((value): value is string => value != null) ||
-      nonEmptyString(project?.settings?.prompt) ||
-      ''
     const presetTargetId = resolveCanvasPresetTarget({
       operation: input.operation,
       taskPipelineRole: input.taskPipelineRole ?? null,
@@ -4306,9 +4359,18 @@ export const canvasApi = {
       workflow: input.modelParams?.workflow,
     })
     const operationPreset = readCanvasResolvedPresetTarget(presetTargetId)
-    const basePrompt = explicitPrompt ?? inheritedPrompt
-    const promptWithPreset = mergeCanvasOperationPresetPrompt(basePrompt, operationPreset.prompt)
-    const prompt = buildCanvasOperationPrompt(input.operation, promptWithPreset)
+    const systemPrompt = buildCanvasOperationSystemPrompt(
+      input.operation,
+      operationPreset.prompt,
+      project?.settings?.prompt,
+      input.systemPrompt,
+    )
+    const promptDocument = buildCanvasVisiblePromptDocument({
+      prompt: explicitPrompt ?? '',
+      nodes: db.nodes,
+      connections: inputNodes,
+      assets: db.assets,
+    })
     const inheritedNegativePrompt =
       inputTasks
         .map((task) => nonEmptyString(task.negativePrompt))
@@ -4357,9 +4419,13 @@ export const canvasApi = {
       0,
       ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex),
     )
+    const operationNodeSize = pickOperationNodeInitialSize(
+      Boolean(input.shotScriptConfig) ||
+        (input.operation === 'text_generate' && input.taskPipelineRole === 'shot'),
+    )
     const position = resolveCollisionFreeNodePosition({
       preferred: { x: input.x, y: input.y },
-      size: OPERATION_NODE_DEFAULT_SIZE,
+      size: operationNodeSize,
       nodes: db.nodes,
       boardId: input.boardId,
     })
@@ -4376,14 +4442,16 @@ export const canvasApi = {
         ),
       x: position.x,
       y: position.y,
-      width: OPERATION_NODE_DEFAULT_SIZE.width,
-      height: OPERATION_NODE_DEFAULT_SIZE.height,
+      width: operationNodeSize.width,
+      height: operationNodeSize.height,
       data: {
         operation: input.operation,
         status: 'pending',
         progress: 0,
         message: input.message ?? '点击下方编辑面板调整参数后运行',
         ...(explicitPrompt ? { prompt: explicitPrompt } : {}),
+        promptDocument,
+        ...(systemPrompt ? { systemPrompt } : {}),
         ...(negativePrompt ? { negativePrompt } : {}),
         ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
         ...(providerProfileId ? { providerProfileId } : {}),
@@ -4419,7 +4487,7 @@ export const canvasApi = {
           input.operation as CanvasNodeType,
           nextCanvasNodeSequence(db, input.projectId, input.operation as CanvasNodeType),
         ),
-      prompt: prompt || null,
+      prompt: explicitPrompt ?? null,
       negativePrompt: negativePrompt ?? null,
       inputNodeIds: input.inputNodeIds,
       inputAssetIds: inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id)),
@@ -4432,6 +4500,8 @@ export const canvasApi = {
       modelId,
       reasoningEffort,
       modelParams,
+      promptDocument,
+      ...(systemPrompt ? { systemPrompt } : {}),
       createdAt: at,
       updatedAt: at,
     }
@@ -4749,8 +4819,15 @@ export const canvasApi = {
     const requestPrompt = request.promptDocument
       ? request.prompt
       : buildCanvasOperationPrompt(request.operation, requestPromptWithContext)
-    if (requestPrompt != null && options?.bindToNodeId == null) taskNodeData.prompt = requestPrompt
+    if (
+      requestPrompt != null &&
+      request.promptDocument == null &&
+      options?.bindToNodeId == null
+    ) {
+      taskNodeData.prompt = requestPrompt
+    }
     if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
+    if (request.systemPrompt != null) taskNodeData.systemPrompt = request.systemPrompt
     if (request.negativePrompt != null) taskNodeData.negativePrompt = request.negativePrompt
     if (request.agentId != null) taskNodeData.agentId = request.agentId
     if (request.providerProfileId != null)
@@ -4922,12 +4999,15 @@ export const canvasApi = {
     if (!board || !project) throw new Error('Canvas board not found')
     const at = now()
     const taskId = uid('canvas_task')
+    const taskNodeSize = pickOperationNodeInitialSize(
+      request.operation === 'text_generate' && request.taskPipelineRole === 'shot',
+    )
     const { x, y } = resolveCollisionFreeNodePosition({
       preferred: {
         x: request.outputPlacement?.x ?? 360,
         y: request.outputPlacement?.y ?? 320,
       },
-      size: OPERATION_NODE_DEFAULT_SIZE,
+      size: taskNodeSize,
       nodes: db.nodes,
       boardId: board.id,
     })
@@ -4941,8 +5021,15 @@ export const canvasApi = {
     const requestPrompt = request.promptDocument
       ? request.prompt
       : buildCanvasOperationPrompt(request.operation, request.prompt)
-    if (requestPrompt != null && options?.bindToNodeId == null) taskNodeData.prompt = requestPrompt
+    if (
+      requestPrompt != null &&
+      request.promptDocument == null &&
+      options?.bindToNodeId == null
+    ) {
+      taskNodeData.prompt = requestPrompt
+    }
     if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
+    if (request.systemPrompt != null) taskNodeData.systemPrompt = request.systemPrompt
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)
@@ -4973,6 +5060,10 @@ export const canvasApi = {
         : null
     if (bindNode) {
       bindNode.data = { ...bindNode.data, ...taskNodeData }
+      if (request.operation === 'text_generate' && request.taskPipelineRole === 'shot') {
+        bindNode.width = Math.max(bindNode.width, taskNodeSize.width)
+        bindNode.height = Math.max(bindNode.height, taskNodeSize.height)
+      }
       if (options != null && 'userPrompt' in options) {
         const userPrompt = options.userPrompt?.trim() ?? ''
         if (userPrompt) {
@@ -4993,8 +5084,8 @@ export const canvasApi = {
         title: defaultTaskTitle,
         x,
         y,
-        width: OPERATION_NODE_DEFAULT_SIZE.width,
-        height: OPERATION_NODE_DEFAULT_SIZE.height,
+        width: taskNodeSize.width,
+        height: taskNodeSize.height,
         data: taskNodeData,
         at,
       })
@@ -5066,6 +5157,7 @@ export const canvasApi = {
         ...(request.agentId != null ? { agentId: request.agentId } : {}),
         ...(request.reasoningEffort != null ? { reasoningEffort: request.reasoningEffort } : {}),
         ...(request.skillIds != null ? { skillIds: request.skillIds } : {}),
+        ...(request.taskPipelineRole != null ? { taskPipelineRole: request.taskPipelineRole } : {}),
         ...pickCanvasPromptTaskFields(request),
         waitForCompletion: false,
         projectId,
@@ -5148,6 +5240,13 @@ export const canvasApi = {
       updatedAt: at,
     }
     const outputRole = taskNode.data.outputPipelineRole
+    const storyboardRows = readRenderableShotScriptRows(response.text)
+    if (patchTaskNode && storyboardRows.length > 0) {
+      const completedSize = fitShotScriptOperationNodeSize(storyboardRows.length)
+      taskNode.width = Math.max(taskNode.width, completedSize.width)
+      taskNode.height = Math.max(taskNode.height, completedSize.height)
+      taskNode.updatedAt = at
+    }
     const preferredResultNodePlacement = placeAutoNodeToRight({
       x: taskNode.x,
       y: taskNode.y,

@@ -6,9 +6,14 @@ import type {
 import type { CanvasAsset, CanvasInputTransport, CanvasNode, CanvasOperationType, CanvasSnapshot } from './canvas.types'
 import type { CanvasTaskInputRoleSelection } from './canvasTaskInputFiles'
 import { compileCanvasPromptDocument } from './canvasPromptCompiler'
-import { ensureConnectionReferences } from './canvasPromptConnections'
-import { migrateLegacyPrompt } from './canvasPromptDocument'
-import { materializeCanvasTaskInputFiles } from './canvasWorkspaceTaskInput'
+import {
+  buildCanvasSubmissionPromptDocument,
+  buildCanvasVisiblePromptDocument,
+} from './canvasPromptInitialization'
+import {
+  expandCanvasInputNodes,
+  materializeCanvasTaskInputFiles,
+} from './canvasWorkspaceTaskInput'
 
 export type CanvasPromptSubmission = CanvasPromptTaskFields & {
   prompt: string
@@ -20,10 +25,12 @@ export function buildCanvasPromptDocumentForInputs(input: {
   nodes: CanvasNode[]
   assets: CanvasAsset[]
 }): NonNullable<CanvasPromptTaskFields['promptDocument']> {
-  return ensureConnectionReferences(
-    migrateLegacyPrompt({ prompt: input.prompt, nodes: input.nodes, assets: input.assets }),
-    input.nodes,
-  )
+  return buildCanvasVisiblePromptDocument({
+    prompt: input.prompt,
+    nodes: input.nodes,
+    connections: input.nodes,
+    assets: input.assets,
+  })
 }
 
 export async function buildCanvasPromptSubmission(input: {
@@ -34,11 +41,25 @@ export async function buildCanvasPromptSubmission(input: {
   negativePrompt?: string
   inputTransport?: CanvasInputTransport
   inputRoles?: Record<string, CanvasTaskInputRoleSelection>
+  inputNodeIds?: string[]
 }): Promise<CanvasPromptSubmission> {
-  const document = applyInputRoles(input.document, input.inputRoles)
+  const inputNodeIds = new Set(input.inputNodeIds ?? [])
+  const selectedSourceNodes = input.snapshot.nodes.filter((node) => inputNodeIds.has(node.id))
+  const inputNodes = expandCanvasInputNodes(selectedSourceNodes, input.snapshot)
+  const resolved = resolveExecutableReferences(input.document, input.snapshot)
+  const visibleDocument = applyInputRoles(input.document, input.inputRoles)
+  const document = applyInputRoles(
+    buildCanvasSubmissionPromptDocument({ document: resolved.document, inputNodes }),
+    input.inputRoles,
+  )
+  const compilationNodes = Array.from(
+    new Map(
+      [...input.snapshot.nodes, ...resolved.nodes, ...inputNodes].map((node) => [node.id, node]),
+    ).values(),
+  )
   const compiled = compileCanvasPromptDocument({
     document,
-    nodes: input.snapshot.nodes,
+    nodes: compilationNodes,
     assets: input.snapshot.assets,
     operation: input.operation,
     capturedAt: new Date().toISOString(),
@@ -49,7 +70,7 @@ export async function buildCanvasPromptSubmission(input: {
   const inputFiles = await materializeCanvasTaskInputFiles(rawFiles, input.inputTransport)
   return {
     prompt: compiled.compiledUserText,
-    promptDocument: document,
+    promptDocument: visibleDocument,
     ...(compiled.promptSnapshot ? { promptSnapshot: compiled.promptSnapshot } : {}),
     compiledUserText: compiled.compiledUserText,
     inputSnapshots: compiled.inputSnapshots,
@@ -58,6 +79,41 @@ export async function buildCanvasPromptSubmission(input: {
     ...(compiled.systemPrompt ? { systemPrompt: compiled.systemPrompt } : {}),
     ...(inputFiles.length > 0 ? { inputFiles } : {}),
   }
+}
+
+function resolveExecutableReferences(
+  document: NonNullable<CanvasPromptTaskFields['promptDocument']>,
+  snapshot: CanvasSnapshot,
+): { document: NonNullable<CanvasPromptTaskFields['promptDocument']>; nodes: CanvasNode[] } {
+  const nodeById = new Map(snapshot.nodes.map((node) => [node.id, node]))
+  const resolvedNodes = new Map<string, CanvasNode>()
+  const blocks = document.blocks.flatMap<CanvasPromptBlock>((block) => {
+    if (block.kind !== 'reference' && block.kind !== 'structured') return [{ ...block }]
+    const source = nodeById.get(block.sourceNodeId)
+    if (!source) return [{ ...block }]
+    const expanded = expandCanvasInputNodes([source], snapshot)
+    if (expanded.length === 1 && expanded[0]?.id === source.id) return [{ ...block }]
+    if (expanded.length === 0) return [{ ...block }]
+    return expanded.map((node, index) => {
+      resolvedNodes.set(node.id, node)
+      if (block.kind === 'structured') {
+        return {
+          ...block,
+          id: `${block.id}-resolved-${index}`,
+          sourceNodeId: node.id,
+          summary: expanded.length > 1 ? `${block.summary} · ${node.title ?? index + 1}` : block.summary,
+        }
+      }
+      return {
+        ...block,
+        id: `${block.id}-resolved-${index}`,
+        sourceNodeId: node.id,
+        label: expanded.length > 1 ? `${block.label} · ${node.title ?? index + 1}` : block.label,
+        order: block.order + index,
+      }
+    })
+  })
+  return { document: { version: 2, blocks }, nodes: Array.from(resolvedNodes.values()) }
 }
 
 function applyInputRoles(

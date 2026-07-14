@@ -451,11 +451,9 @@ function TaskDetailModal({
   const taskNode = nodes.find((node) => node.taskId === task.id)
   const canCancel = isTaskActive(task)
   const raw = isRecord(task.rawResponse) ? task.rawResponse : null
-  const systemPrompt = task.systemPrompt || stringField(raw?.systemPrompt)
-  const rawPrompt = stringField(raw?.prompt)
   const outputText = stringField(raw?.outputText) || stringField(raw?.text)
   const parsedEntities = raw?.parsedEntities
-  const displayPrompt = task.compiledUserText || rawPrompt || task.prompt || ''
+  const displayPrompt = task.compiledUserText || task.prompt || ''
 
   return (
     <Modal
@@ -518,18 +516,6 @@ function TaskDetailModal({
             { label: '完成时间', children: task.completedAt ? formatTime(task.completedAt) : '-' },
           ]}
         />
-
-        {systemPrompt && (
-          <DetailBlock title="System / Agent 人设">
-            <pre>{systemPrompt}</pre>
-          </DetailBlock>
-        )}
-
-        {displayPrompt && (
-          <DetailBlock title="实际提交 Prompt">
-            <pre>{displayPrompt}</pre>
-          </DetailBlock>
-        )}
 
         {outputText && (
           <DetailBlock title="模型输出">

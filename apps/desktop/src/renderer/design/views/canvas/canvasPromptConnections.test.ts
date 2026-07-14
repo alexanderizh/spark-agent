@@ -30,6 +30,7 @@ describe('canvasPromptConnections', () => {
     const twice = addConnectionReference(once, node('hero'))
     expect(twice.blocks.filter((block) => block.kind === 'reference')).toHaveLength(1)
     expect(twice.blocks[1]).toMatchObject({ source: 'connection', sourceNodeId: 'hero', relation: 'reference_image' })
+    expect(twice.blocks.at(-1)).toMatchObject({ kind: 'text', text: '' })
   })
 
   it('removes only automatic references and preserves manual references', () => {
@@ -77,5 +78,19 @@ describe('canvasPromptConnections', () => {
     const document: CanvasPromptDocument = { version: 2, blocks: [] }
     const result = ensureConnectionReferences(document, [node('hero'), node('scene', 'text'), node('hero')])
     expect(result.blocks.filter((block) => block.kind === 'reference').map((block) => block.sourceNodeId)).toEqual(['hero', 'scene'])
+  })
+
+  it('does not recreate a connection reference explicitly suppressed by the user', () => {
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [{
+        kind: 'reference', id: 'connection-hero', source: 'connection', sourceNodeId: 'hero',
+        relation: 'reference_image', connectionRelation: 'reference_image', suppressed: true,
+        label: 'hero', order: 0,
+      }],
+    }
+    const result = ensureConnectionReferences(document, [node('hero')])
+    expect(result.blocks).toHaveLength(1)
+    expect(result.blocks[0]).toMatchObject({ suppressed: true })
   })
 })

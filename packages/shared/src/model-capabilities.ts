@@ -98,6 +98,16 @@ const CAPABILITIES: Record<string, ModelCapability> = {
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text'],
   },
+  'deepseek-v4-flash': {
+    contextWindow: 1_000_000, maxOutputTokens: 384_000,
+    supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text'],
+  },
+  'deepseek-v4-pro': {
+    contextWindow: 1_000_000, maxOutputTokens: 384_000,
+    supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text'],
+  },
   'deepseek-reasoner': {
     contextWindow: 64_000, maxOutputTokens: 8_000,
     supportsVision: false, supportsToolUse: false, supportsStreaming: true, supportsExtendedThinking: true,
@@ -122,6 +132,41 @@ const CAPABILITIES: Record<string, ModelCapability> = {
   },
 
   // ── 智谱 GLM ───────────────────────────────────────────────────────────────
+  'glm-5.2': {
+    contextWindow: 1_000_000, maxOutputTokens: 131_072,
+    supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text'],
+  },
+  'glm-5.1': {
+    contextWindow: 200_000, maxOutputTokens: 131_072,
+    supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text'],
+  },
+  'glm-5': {
+    contextWindow: 200_000, maxOutputTokens: 131_072,
+    supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text'],
+  },
+  'glm-5-turbo': {
+    contextWindow: 200_000, maxOutputTokens: 131_072,
+    supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text'],
+  },
+  'glm-4.7': {
+    contextWindow: 200_000, maxOutputTokens: 131_072,
+    supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text'],
+  },
+  'glm-4.6': {
+    contextWindow: 200_000, maxOutputTokens: 131_072,
+    supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text'],
+  },
+  'glm-4.5': {
+    contextWindow: 128_000, maxOutputTokens: 98_304,
+    supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text'],
+  },
   'glm-4': {
     contextWindow: 128_000, maxOutputTokens: 4_096,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
@@ -200,7 +245,11 @@ export function resolveModelContextWindow(modelId: string): number {
   if (normalized.includes('gemini-1.5')) return 2_097_152
   if (normalized.includes('gemini')) return 1_048_576
   if (normalized.includes('qwen')) return 131_072
+  if (normalized.includes('deepseek-v4')) return 1_000_000
   if (normalized.includes('deepseek')) return 64_000
+  if (normalized.includes('glm-5.2')) return 1_000_000
+  if (normalized.includes('glm-5') || normalized.includes('glm-4.7') || normalized.includes('glm-4.6')) return 200_000
+  if (normalized.includes('glm-4.5')) return 128_000
   if (normalized.includes('glm')) return 128_000
   if (normalized.includes('moonshot') || normalized.includes('kimi')) return 128_000
   return 128_000

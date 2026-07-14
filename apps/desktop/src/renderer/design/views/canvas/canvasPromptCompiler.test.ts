@@ -112,6 +112,42 @@ describe('canvasPromptCompiler', () => {
       .toThrow(CanvasPromptCompileError)
   })
 
+  it('ignores a connected input that the user suppressed in the prompt editor', () => {
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [{
+        kind: 'reference', id: 'r1', source: 'connection', sourceNodeId: 'hero', relation: 'character',
+        connectionRelation: 'character', suppressed: true, label: '小满', order: 0,
+      }],
+    }
+    const result = compileCanvasPromptDocument({
+      document,
+      nodes: [imageNode('hero', 'safe-file://hero.png', '小满')],
+      assets: [],
+      operation: 'text_to_image',
+    })
+    expect(result.compiledUserText).toBe('')
+    expect(result.inputFiles).toEqual([])
+    expect(result.relationManifest).toEqual([])
+  })
+
+  it('injects structured parameter chips into the executable user prompt', () => {
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [
+        { kind: 'text', id: 't1', text: '生成镜头' },
+        { kind: 'parameter', id: 'p1', parameter: 'duration', value: 8, unit: '秒' },
+        { kind: 'parameter', id: 'p2', parameter: 'dialogue', value: '别回头', relation: '角色台词' },
+      ],
+    }
+    const result = compileCanvasPromptDocument({
+      document, nodes: [], assets: [], operation: 'text_to_video',
+    })
+
+    expect(result.compiledUserText).toContain('[参数/duration] 8 秒')
+    expect(result.compiledUserText).toContain('[参数/dialogue] 别回头；关系：角色台词')
+  })
+
   it('uses the original media url as the task-detail preview when no thumbnail exists', () => {
     const hero = imageNode('hero', 'safe-file://hero.png', '小满')
     delete hero.data.thumbnailUrl

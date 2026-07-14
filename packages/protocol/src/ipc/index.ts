@@ -546,6 +546,8 @@ export interface ProviderProfile {
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens）。优先级高于 supportsMillionContext；<=0 / undefined 视为未配置。 */
   contextWindow?: number
+  /** 文本任务默认最大输出 tokens。<=0 / undefined 视为未配置。 */
+  maxTokens?: number
   /** Haiku 档（子 agent / Task 工具默认）；为空时回落 defaultModel */
   haikuModel?: string
   /** Sonnet 档（主对话默认）；为空时回落 defaultModel */
@@ -711,6 +713,8 @@ export interface ProviderCreateRequest {
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens）。<=0 / undefined 视为未配置；优先级高于 supportsMillionContext。 */
   contextWindow?: number
+  /** 文本任务默认最大输出 tokens。<=0 / undefined 视为未配置。 */
+  maxTokens?: number
   /** 档位映射：留空则回落 defaultModel */
   haikuModel?: string
   sonnetModel?: string
@@ -755,6 +759,8 @@ export interface ProviderUpdateRequest {
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens）。传 0 清除自定义；undefined 不修改；优先级高于 supportsMillionContext。 */
   contextWindow?: number
+  /** 文本任务默认最大输出 tokens。传 0 清除；undefined 不修改。 */
+  maxTokens?: number
   /** 档位映射：传 string 设置；传 null 清除（回落 defaultModel）；undefined 不修改 */
   haikuModel?: string | null
   sonnetModel?: string | null
@@ -4801,6 +4807,8 @@ export interface CanvasTextTaskCreateRequest {
   agentId?: string | null
   /** 文本任务额外启用的 Skill ID 列表；仅文本模型任务生效。 */
   skillIds?: string[]
+  /** 任务在画布流水线中的语义角色；用于主进程启用特定运行策略（如分镜输出预算）。 */
+  taskPipelineRole?: string | null
   /** false：立即返回 running，完成后通过 stream:canvas:text-task 推送（画布任务后台执行）。 */
   waitForCompletion?: boolean
   /** 后台模式：回写流事件时携带，供渲染端匹配到具体画布任务。 */

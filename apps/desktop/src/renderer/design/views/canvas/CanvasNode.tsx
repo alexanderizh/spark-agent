@@ -30,11 +30,14 @@ import {
 } from './canvasNodeSubtypeSwitch'
 import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
 import type { ParsedShotRow } from './canvasShotTableParse'
-import { CanvasOperationOutputPreview } from './CanvasOperationOutputPreview'
+import {
+  CanvasOperationOutputList,
+  CanvasOperationOutputPreview,
+} from './CanvasOperationOutputPreview'
 import { CanvasShotScriptTable } from './CanvasShotScriptTable'
 import { resolveCanvasOperationOutputState } from './canvasOperationOutputModel'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
-import type { CanvasOperationType } from './canvas.types'
+import type { CanvasOperationOutputMode, CanvasOperationType } from './canvas.types'
 import type { CanvasNodeData } from './canvas.types'
 import type { CanvasOperationRunView } from './canvasOperationRuns'
 
@@ -226,8 +229,13 @@ function formatVwbDuration(sec: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-/** 操作节点图标：按 operation 类型映射 */
-function operationNodeIcon(operation: CanvasOperationType | null): React.ReactNode {
+/** 操作节点图标：工作流语义优先于底层 operation 类型。 */
+function operationNodeIcon(
+  operation: CanvasOperationType | null,
+  workflow?: string,
+): React.ReactNode {
+  if (workflow === 'extract_character') return <Icons.User size={13} />
+  if (workflow === 'extract_scene') return <Icons.Box size={13} />
   if (!operation) return <Icons.Sparkles size={13} />
   if (
     operation.startsWith('text_to_image') ||
@@ -268,9 +276,11 @@ function operationRuntimeSummary(node: SparkCanvasNode): string | null {
 
 function OperationOutputDeck({
   runs,
+  mode,
   fallback,
 }: {
   runs: CanvasOperationRunView[]
+  mode: CanvasOperationOutputMode
   fallback: ReactNode
 }) {
   const [runIndex, setRunIndex] = useState(0)
@@ -287,22 +297,29 @@ function OperationOutputDeck({
   const outputs = activeRun?.outputs ?? []
   const activeOutput = outputs[Math.min(outputIndex, Math.max(0, outputs.length - 1))]
   const displayRunNumber = activeRun ? runs.length - runIndex : 0
-  const shouldShowOutputNavigation = runs.length > 1 || outputs.length > 1
+  const isCollection = mode === 'collection' && outputs.length > 0
+  const shouldShowOutputNavigation = runs.length > 1 || (!isCollection && outputs.length > 1)
 
   if (!activeRun) return <>{fallback}</>
 
   return (
     <div className="canvas-operation-output-deck">
-      <div className="canvas-operation-output-stage">
-        {activeOutput ? <CanvasOperationOutputPreview output={activeOutput} /> : fallback}
-        <div className="canvas-operation-output-stage-label">
-          <span>{activeOutput?.title ?? operationStatusLabel(activeRun.status)}</span>
-          {outputs.length > 1 ? (
-            <span>
-              {Math.min(outputIndex + 1, outputs.length)}/{outputs.length}
-            </span>
-          ) : null}
-        </div>
+      <div className={`canvas-operation-output-stage${isCollection ? ' is-collection' : ''}`}>
+        {isCollection ? (
+          <CanvasOperationOutputList outputs={outputs} />
+        ) : (
+          <>
+            {activeOutput ? <CanvasOperationOutputPreview output={activeOutput} /> : fallback}
+            <div className="canvas-operation-output-stage-label">
+              <span>{activeOutput?.title ?? operationStatusLabel(activeRun.status)}</span>
+              {outputs.length > 1 ? (
+                <span>
+                  {Math.min(outputIndex + 1, outputs.length)}/{outputs.length}
+                </span>
+              ) : null}
+            </div>
+          </>
+        )}
       </div>
       {shouldShowOutputNavigation ? (
         <div className="canvas-operation-output-nav nodrag nopan">
@@ -336,7 +353,7 @@ function OperationOutputDeck({
               <Icons.ChevronRight size={13} />
             </button>
           </div>
-          {outputs.length > 1 ? (
+          {!isCollection && outputs.length > 1 ? (
             <div className="canvas-operation-output-dots" aria-label="本次运行产物">
               {outputs.map((output, index) => (
                 <button
@@ -573,10 +590,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   )
   const roleMeta = node.data.pipelineRole ? PIPELINE_ROLE_META[node.data.pipelineRole] : undefined
   const displayType = node.type === 'prompt' ? 'text' : node.type
-  const metaTypeLabel = roleMeta
-    ? roleMeta.label
-    : isTask
-      ? operationLabel((node.data.operation ?? node.type) as CanvasOperationType)
+  const explicitNodeTitle = node.title?.trim()
+  const metaTypeLabel = isTask
+    ? explicitNodeTitle || operationLabel((node.data.operation ?? node.type) as CanvasOperationType)
+    : roleMeta
+      ? roleMeta.label
       : (NODE_TYPE_META_LABEL[displayType as SparkCanvasNode['type']] ?? displayType)
   const title =
     node.type === 'prompt' && (!node.title || node.title === 'Prompt')
@@ -591,7 +609,14 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   // 渲染条件用当前 text 长度判断，旧节点编辑后内容变长也能自动应用阅读样式，
   // 但旧节点的物理尺寸不会自动放大（仅影响新建，参见 canvasNodeSize.ts 顶部说明）。
   const isTextLong = isLongText(node.data.text)
-  const minSize = pickCanvasNodeMinSize(node.type, node.data.text)
+  const isShotScriptOperation =
+    isTask &&
+    (Boolean(node.data.shotScriptConfig) ||
+      (node.data.operation === 'text_generate' &&
+        (node.data.pipelineRole === 'shot' || node.data.outputPipelineRole === 'shot')))
+  const minSize = pickCanvasNodeMinSize(node.type, node.data.text, {
+    shotScriptOperation: isShotScriptOperation,
+  })
   const [resizeHovered, setResizeHovered] = useState(false)
   const [resizing, setResizing] = useState(false)
   // 未锁定节点在选中或悬浮时挂载缩放控件，无需先点击，同时避免所有节点常驻控件。
@@ -600,6 +625,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const normalizedImageSrc = imageSrc ? normalizeEduAssetUrl(imageSrc) : ''
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
   const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
+  const operationWorkflow = isTask
+    ? typeof node.data.modelParams?.workflow === 'string'
+      ? node.data.modelParams.workflow
+      : operationRuns.find((run) => run.workflow)?.workflow
+    : undefined
 
   const hasOperationOutput = !isTask || Boolean(operationOutputState.primaryOutput)
   const canCreateOperationFromNode = !isTask || hasOperationOutput
@@ -777,21 +807,17 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           ),
           onClick: () => actions.duplicateNode(node.id),
         },
-        // 非操作节点（task）才显示「编辑节点」；操作节点改由双击打开工作台，
-        // 右键不再提供单独的「打开操作面板」入口。
-        ...(!isTask && !(isImageContent && hasOperationOutput)
-          ? [
-              {
-                key: 'edit',
-                label: (
-                  <span className="canvas-menu-item">
-                    <Icons.Edit size={14} /> 编辑节点
-                  </span>
-                ),
-                onClick: () => actions.editNode(node.id),
-              },
-            ]
-          : []),
+        {
+          key: 'edit',
+          label: (
+            <span className="canvas-menu-item">
+              <Icons.Edit size={14} /> 编辑节点
+            </span>
+          ),
+          // 等下拉菜单先完成本次点击和关闭，避免其收尾事件立即关掉刚打开的面板。
+          // editNode 与节点双击共用同一入口：操作节点打开任务配置，内容节点打开内容编辑。
+          onClick: () => window.requestAnimationFrame(() => actions.editNode(node.id)),
+        },
         ...(isImageContent && hasOperationOutput
           ? [
               ...(canExtractCharacterSubview
@@ -1218,7 +1244,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           {isDirectorStage ? (
             <Icons.Box size={14} />
           ) : isOperationNode(node) ? (
-            operationNodeIcon(nodeOperation(node))
+            operationNodeIcon(nodeOperation(node), operationWorkflow)
           ) : node.type === 'task' ? (
             <Icons.Activity size={14} />
           ) : null}
@@ -1384,10 +1410,11 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 <div className="canvas-node-task canvas-node-operation">
                   <OperationOutputDeck
                     runs={operationRuns}
+                    mode={operationOutputState.mode}
                     fallback={
                       <div className="canvas-operation-empty-state">
                         <div className="canvas-operation-empty-icon">
-                          {operationNodeIcon(nodeOperation(node))}
+                          {operationNodeIcon(nodeOperation(node), operationWorkflow)}
                         </div>
                         {(node.data.status ?? 'pending') !== 'pending' ? (
                           <Progress
