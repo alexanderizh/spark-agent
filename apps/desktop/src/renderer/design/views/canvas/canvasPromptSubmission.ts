@@ -1,4 +1,5 @@
 import type {
+  CanvasPromptBlock,
   CanvasMediaTaskInputFile,
   CanvasPromptTaskFields,
 } from '@spark/protocol'
@@ -27,6 +28,7 @@ export async function buildCanvasPromptSubmission(input: {
     nodes: input.snapshot.nodes,
     assets: input.snapshot.assets,
     operation: input.operation,
+    capturedAt: new Date().toISOString(),
     ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}),
     ...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
   })
@@ -50,12 +52,12 @@ function applyInputRoles(
   inputRoles: Record<string, CanvasTaskInputRoleSelection> | undefined,
 ): NonNullable<CanvasPromptTaskFields['promptDocument']> {
   if (!inputRoles) return document
-  const blocks = document.blocks.flatMap((block) => {
+  const blocks = document.blocks.flatMap<CanvasPromptBlock>((block) => {
     if (block.kind !== 'reference') return [{ ...block }]
     const selected = inputRoles[block.sourceNodeId]
     if (!selected) return [{ ...block }]
     const roles = Array.isArray(selected) ? selected : [selected]
-    const mapped = roles.map((role) => {
+    const mapped = roles.map<Extract<CanvasPromptBlock, { kind: 'reference' }>['relation']>((role) => {
       if (role === 'first_frame' || role === 'last_frame') return role
       if (role === 'reference') return 'reference_image' as const
       return block.relation

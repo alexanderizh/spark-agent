@@ -34,6 +34,7 @@ describe('canvasPromptSubmission', () => {
     expect(result.prompt).toContain('[角色 ref-1: 小满]')
     expect(result.compiledUserText).toBe(result.prompt)
     expect(result.promptDocument).toEqual(document)
+    expect(result.promptSnapshot?.capturedAt).toEqual(expect.any(String))
     expect(result.systemPrompt).toBe('hidden')
     expect(result.inputFiles).toEqual([{ type: 'image', role: 'reference', dataUrl: 'data:image/png;base64,AA==', mimeType: 'image/png' }])
     expect(result.relationManifest?.[0]).toMatchObject({ relation: 'character', sourceNodeId: 'hero' })
