@@ -1,4 +1,8 @@
-import type { SessionReasoningEffort } from '@spark/protocol'
+import type {
+  CanvasPromptResponseFields,
+  CanvasPromptTaskFields,
+  SessionReasoningEffort,
+} from '@spark/protocol'
 
 export type CanvasProjectStatus = 'active' | 'archived' | 'deleted'
 
@@ -343,7 +347,8 @@ export type CanvasTask = {
   createdAt: string
   updatedAt: string
   completedAt?: string | null
-}
+} & CanvasPromptTaskFields &
+  CanvasPromptResponseFields
 
 export type CanvasEdge = {
   id: string
@@ -414,7 +419,7 @@ export type CreateCanvasTaskRequest = {
   droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
   /** Contract V2 裁剪产物：非阻断性提示（如 missing_param_policy、compat_passthrough）。 */
   modelParamWarnings?: Array<{ code: string; message: string }>
-}
+} & CanvasPromptTaskFields
 
 export type CanvasCapability = {
   id: string
