@@ -125,6 +125,42 @@ describe('IPC schemas', () => {
     expect(IpcSchemaRegistry['session:list-pending-questions'].parse({})).toEqual({})
   })
 
+  it('validates SMS authentication IPC payloads', () => {
+    expect(
+      IpcSchemaRegistry['auth:send-sms'].parse({
+        phone: '13800138000',
+        captchaId: 'captcha-id',
+        captchaText: 'abcd',
+        type: 'register',
+      }),
+    ).toEqual({
+      phone: '13800138000',
+      captchaId: 'captcha-id',
+      captchaText: 'abcd',
+    })
+    expect(
+      IpcSchemaRegistry['auth:login-sms'].parse({
+        phone: '13800138000',
+        smsCode: '123456',
+      }),
+    ).toEqual({ phone: '13800138000', smsCode: '123456' })
+    expect(IpcSchemaRegistry['auth:client-config'].parse({})).toEqual({})
+
+    expect(() =>
+      IpcSchemaRegistry['auth:send-sms'].parse({
+        phone: '1380013800',
+        captchaId: 'captcha-id',
+        captchaText: 'abcd',
+      }),
+    ).toThrow()
+    expect(() =>
+      IpcSchemaRegistry['auth:login-sms'].parse({
+        phone: '13800138000',
+        smsCode: '12345',
+      }),
+    ).toThrow()
+  })
+
   it('accepts auto router provider ids for routing model profile cards', () => {
     const create = IpcSchemaRegistry['model:create'].parse({
       providerId: 'codex-auto-router',

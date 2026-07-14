@@ -7,7 +7,6 @@ import { Form, Input } from 'antd'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LoginForm } from './LoginForm'
 import { RegisterForm } from './RegisterForm'
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -31,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   loginBySms: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
   smsEnabled: true,
+  captchaRefresh: vi.fn(),
 }))
 
 vi.mock('./AuthContext', () => ({
@@ -51,15 +51,29 @@ vi.mock('./CaptchaField', async () => {
   return {
     CaptchaField: ReactActual.forwardRef(function CaptchaFieldMock(
       props: { form: { setFieldsValue: (values: Record<string, string>) => void } },
-      _ref: React.ForwardedRef<{ refresh: () => Promise<void> }>,
+      ref: React.ForwardedRef<{ refresh: () => Promise<void> }>,
     ) {
+      ReactActual.useImperativeHandle(
+        ref,
+        () => ({
+          refresh: async () => {
+            mocks.captchaRefresh()
+            props.form.setFieldsValue({ captchaId: 'captcha-id-next', captchaText: '' })
+          },
+        }),
+        [props.form],
+      )
       ReactActual.useEffect(() => {
         props.form.setFieldsValue({ captchaId: 'captcha-id', captchaText: 'abcd' })
       }, [props.form])
       return (
         <>
-          <Form.Item name="captchaId"><Input type="hidden" /></Form.Item>
-          <Form.Item name="captchaText"><Input /></Form.Item>
+          <Form.Item name="captchaId">
+            <Input type="hidden" />
+          </Form.Item>
+          <Form.Item name="captchaText">
+            <Input />
+          </Form.Item>
         </>
       )
     }),
@@ -80,7 +94,10 @@ function inputByPlaceholder(container: HTMLElement, placeholder: string): HTMLIn
 }
 
 async function flush(): Promise<void> {
-  await act(async () => { await Promise.resolve(); await Promise.resolve() })
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
 }
 
 describe('authentication forms', () => {
@@ -95,6 +112,7 @@ describe('authentication forms', () => {
     mocks.sendCode.mockReset().mockResolvedValue({ expire_in: 60 })
     mocks.sendSmsCode.mockReset().mockResolvedValue({ expire_in: 60 })
     mocks.loginBySms.mockReset().mockResolvedValue({ isNew: false })
+    mocks.captchaRefresh.mockReset()
   })
 
   afterEach(() => {
@@ -103,76 +121,258 @@ describe('authentication forms', () => {
   })
 
   it('binds account and password, toggles visibility, and submits password login', async () => {
-    act(() => { root = createRoot(container); root.render(<LoginForm />) })
+    act(() => {
+      root = createRoot(container)
+      root.render(<LoginForm />)
+    })
     const account = inputByPlaceholder(container, '邮箱或手机号')
     const password = inputByPlaceholder(container, '请输入密码')
-    act(() => { setInput(account, ' user@example.com '); setInput(password, 'secret1') })
+    act(() => {
+      setInput(account, ' user@example.com ')
+      setInput(password, 'secret1')
+    })
     await flush()
 
     expect(password.type).toBe('password')
     act(() => container.querySelector<HTMLButtonElement>('button[aria-label="显示密码"]')?.click())
     expect(password.type).toBe('text')
 
-    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false)
+    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(
+      false,
+    )
     act(() => container.querySelector<HTMLButtonElement>('button[type="submit"]')?.click())
     await flush()
-    expect(mocks.login).toHaveBeenCalledWith(expect.objectContaining({
-      account: 'user@example.com', password: 'secret1', loginMode: 'password',
-    }))
+    expect(mocks.login).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account: 'user@example.com',
+        password: 'secret1',
+        loginMode: 'password',
+      }),
+    )
   })
 
   it('prevents duplicate email-code sends while the request is pending', async () => {
-    let resolveSend: (() => void) | undefined
-    mocks.sendCode.mockReturnValue(new Promise<void>((resolve) => { resolveSend = resolve }))
-    act(() => { root = createRoot(container); root.render(<LoginForm />) })
-    act(() => Array.from(container.querySelectorAll('button')).find((button) => button.textContent === '验证码')?.click())
+    let resolveSend: ((value: { expire_in: number }) => void) | undefined
+    mocks.sendCode.mockReturnValue(
+      new Promise<{ expire_in: number }>((resolve) => {
+        resolveSend = resolve
+      }),
+    )
+    act(() => {
+      root = createRoot(container)
+      root.render(<LoginForm />)
+    })
+    act(() =>
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === '验证码')
+        ?.click(),
+    )
     act(() => setInput(inputByPlaceholder(container, '邮箱或手机号'), 'user@example.com'))
-    const send = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent === '发送')
+    const send = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '发送',
+    )
     if (!send) throw new Error('Send button not found')
-    act(() => { send.click(); send.click() })
+    act(() => {
+      send.click()
+      send.click()
+    })
     await flush()
     expect(mocks.sendCode).toHaveBeenCalledTimes(1)
     expect(send.disabled).toBe(true)
-    await act(async () => { resolveSend?.(); await Promise.resolve() })
+    await act(async () => {
+      resolveSend?.({ expire_in: 300 })
+      await Promise.resolve()
+    })
+  })
+
+  it('does not apply a pending send cooldown to a newly entered account', async () => {
+    let resolveSend: ((value: { expire_in: number }) => void) | undefined
+    mocks.sendCode.mockReturnValue(
+      new Promise<{ expire_in: number }>((resolve) => {
+        resolveSend = resolve
+      }),
+    )
+    act(() => {
+      root = createRoot(container)
+      root.render(<LoginForm />)
+    })
+    act(() =>
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === '验证码')
+        ?.click(),
+    )
+    const account = inputByPlaceholder(container, '邮箱或手机号')
+    act(() => setInput(account, 'first@example.com'))
+    const send = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '发送',
+    )
+    act(() => send?.click())
+    await flush()
+    act(() => setInput(account, 'second@example.com'))
+    await act(async () => {
+      resolveSend?.({ expire_in: 300 })
+      await Promise.resolve()
+    })
+
+    expect(send?.disabled).toBe(false)
+    expect(send?.textContent).toBe('发送')
+    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
   })
 
   it('keeps login disabled until complete and submits a complete email-code login', async () => {
-    act(() => { root = createRoot(container); root.render(<LoginForm />) })
+    act(() => {
+      root = createRoot(container)
+      root.render(<LoginForm />)
+    })
     const submit = container.querySelector<HTMLButtonElement>('button[type="submit"]')
     if (!submit) throw new Error('Submit button not found')
     expect(submit.disabled).toBe(true)
 
-    act(() => Array.from(container.querySelectorAll('button')).find((button) => button.textContent === '验证码')?.click())
-    act(() => {
-      setInput(inputByPlaceholder(container, '邮箱或手机号'), 'user@example.com')
-      setInput(inputByPlaceholder(container, '6 位邮箱验证码'), '123456')
-    })
+    act(() =>
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === '验证码')
+        ?.click(),
+    )
+    act(() => setInput(inputByPlaceholder(container, '邮箱或手机号'), 'user@example.com'))
+    const send = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '发送',
+    )
+    act(() => send?.click())
     await flush()
-    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false)
+    act(() => setInput(inputByPlaceholder(container, '6 位邮箱验证码'), '123456'))
+    await flush()
+    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(
+      false,
+    )
 
     act(() => submit.click())
     await flush()
-    expect(mocks.login).toHaveBeenCalledWith(expect.objectContaining({
-      account: 'user@example.com', loginMode: 'code', emailCode: '123456',
-    }))
+    expect(mocks.login).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account: 'user@example.com',
+        loginMode: 'code',
+        emailCode: '123456',
+      }),
+    )
   })
 
-  it('binds registration passwords, confirmation and invitation code', async () => {
-    act(() => { root = createRoot(container); root.render(<RegisterForm />) })
+  it('binds registration passwords and confirmation after sending a code', async () => {
+    act(() => {
+      root = createRoot(container)
+      root.render(<RegisterForm />)
+    })
     act(() => {
       setInput(inputByPlaceholder(container, '邮箱或手机号'), 'user@example.com')
-      setInput(inputByPlaceholder(container, '邮箱验证码'), '123456')
       setInput(inputByPlaceholder(container, '设置登录密码'), 'secret1')
       setInput(inputByPlaceholder(container, '再次输入登录密码'), 'secret1')
-      // setInput(inputByPlaceholder(container, '邀请码（选填）'), 'invite')
     })
+    const send = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '发送',
+    )
+    act(() => send?.click())
+    await flush()
+    act(() => setInput(inputByPlaceholder(container, '邮箱验证码'), '123456'))
     await flush()
     const submit = container.querySelector<HTMLButtonElement>('button[type="submit"]')
-    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false)
+    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(
+      false,
+    )
     act(() => submit?.click())
     await flush()
     expect(mocks.register).toHaveBeenCalledWith({
-      account: 'user@example.com', password: 'secret1', code: '123456', inviteCode: 'invite',
+      account: 'user@example.com',
+      password: 'secret1',
+      code: '123456',
     })
+  })
+
+  it('uses the login SMS contract for phone registration and submits after captcha refresh', async () => {
+    act(() => {
+      root = createRoot(container)
+      root.render(<RegisterForm />)
+    })
+    act(() => setInput(inputByPlaceholder(container, '邮箱或手机号'), '13800138000'))
+    await flush()
+
+    const send = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '发送',
+    )
+    act(() => send?.click())
+    await flush()
+
+    expect(mocks.sendSmsCode).toHaveBeenCalledWith({
+      phone: '13800138000',
+      captchaId: 'captcha-id',
+      captchaText: 'abcd',
+    })
+    expect(mocks.captchaRefresh).toHaveBeenCalledOnce()
+
+    act(() => setInput(inputByPlaceholder(container, '6 位短信验证码'), '123456'))
+    await flush()
+    const submit = container.querySelector<HTMLButtonElement>('button[type="submit"]')
+    expect(submit?.disabled).toBe(false)
+    act(() => submit?.click())
+    await flush()
+    expect(mocks.loginBySms).toHaveBeenCalledWith({ phone: '13800138000', smsCode: '123456' })
+  })
+
+  it('sends and submits a phone SMS login with the same target', async () => {
+    act(() => {
+      root = createRoot(container)
+      root.render(<LoginForm />)
+    })
+    act(() =>
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === '验证码')
+        ?.click(),
+    )
+    act(() => setInput(inputByPlaceholder(container, '邮箱或手机号'), '13800138000'))
+    await flush()
+
+    const send = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '发送',
+    )
+    act(() => send?.click())
+    await flush()
+    expect(mocks.sendSmsCode).toHaveBeenCalledWith({
+      phone: '13800138000',
+      captchaId: 'captcha-id',
+      captchaText: 'abcd',
+    })
+
+    act(() => setInput(inputByPlaceholder(container, '6 位短信验证码'), '654321'))
+    await flush()
+    const submit = container.querySelector<HTMLButtonElement>('button[type="submit"]')
+    expect(submit?.disabled).toBe(false)
+    act(() => submit?.click())
+    await flush()
+    expect(mocks.loginBySms).toHaveBeenCalledWith({ phone: '13800138000', smsCode: '654321' })
+  })
+
+  it('invalidates a sent code when the account changes', async () => {
+    act(() => {
+      root = createRoot(container)
+      root.render(<LoginForm />)
+    })
+    act(() =>
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === '验证码')
+        ?.click(),
+    )
+    const account = inputByPlaceholder(container, '邮箱或手机号')
+    act(() => setInput(account, 'first@example.com'))
+    const send = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '发送',
+    )
+    act(() => send?.click())
+    await flush()
+    act(() => {
+      setInput(inputByPlaceholder(container, '6 位邮箱验证码'), '123456')
+      setInput(account, 'second@example.com')
+    })
+    await flush()
+
+    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+    expect(inputByPlaceholder(container, '6 位邮箱验证码').value).toBe('')
   })
 })

@@ -216,7 +216,6 @@ export class AuthService {
   /** 发送短信验证码（需先通过图片验证码）。POST /auth/send-sms */
   sendSmsCode = async (params: {
     phone: string
-    type?: 'login' | 'register'
     captchaId: string
     captchaText: string
   }): Promise<{ expire_in: number }> => {
@@ -224,7 +223,8 @@ export class AuthService {
       '/auth/send-sms',
       {
         phone: params.phone,
-        type: params.type ?? 'login',
+        // 短信登录接口同时承担首次注册，服务端校验键必须统一使用 login。
+        type: 'login',
         captchaId: params.captchaId,
         captchaText: params.captchaText,
       },

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   nextGet: undefined as unknown,
   nextPost: undefined as unknown,
   order: [] as string[],
+  posts: [] as Array<{ path: string; body: unknown }>,
   streams: [] as Array<{ channel: string; payload: unknown }>,
   clientOptions: undefined as { onSessionExpired: () => void } | undefined,
 }))
@@ -61,7 +62,8 @@ vi.mock('./EduServerClient', () => ({
       return mocks.nextGet as T
     }
 
-    async post<T>(): Promise<T> {
+    async post<T>(path: string, body: unknown): Promise<T> {
+      mocks.posts.push({ path, body })
       return mocks.nextPost as T
     }
   },
@@ -96,6 +98,7 @@ describe('AuthService base URL configuration', () => {
     mocks.nextGet = undefined
     mocks.nextPost = undefined
     mocks.order.length = 0
+    mocks.posts.length = 0
     mocks.streams.length = 0
     mocks.clientOptions = undefined
   })
@@ -113,6 +116,7 @@ describe('AuthService account lifecycle hooks', () => {
     mocks.nextGet = undefined
     mocks.nextPost = undefined
     mocks.order.length = 0
+    mocks.posts.length = 0
     mocks.streams.length = 0
     mocks.clientOptions = undefined
   })
@@ -251,5 +255,37 @@ describe('AuthService account lifecycle hooks', () => {
       'clear',
       'save:user-new',
     ])
+  })
+})
+
+describe('AuthService SMS verification contract', () => {
+  beforeEach(() => {
+    mocks.initialSession = {}
+    mocks.nextGet = undefined
+    mocks.nextPost = { expire_in: 300 }
+    mocks.order.length = 0
+    mocks.posts.length = 0
+    mocks.streams.length = 0
+    mocks.clientOptions = undefined
+  })
+
+  it('always sends SMS codes with the login purpose used by login-sms', async () => {
+    const auth = createAuth()
+
+    await auth.sendSmsCode({
+      phone: '13800138000',
+      captchaId: 'captcha-id',
+      captchaText: 'abcd',
+    })
+
+    expect(mocks.posts).toContainEqual({
+      path: '/auth/send-sms',
+      body: {
+        phone: '13800138000',
+        type: 'login',
+        captchaId: 'captcha-id',
+        captchaText: 'abcd',
+      },
+    })
   })
 })

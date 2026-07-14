@@ -8,3 +8,9 @@ export function inferIdentifierKind(value: unknown, smsEnabled: boolean): AuthId
   const normalized = String(value ?? '').trim()
   return /^1\d*$/.test(normalized) ? 'phone' : 'email'
 }
+
+/** Redis 验证码键对邮箱大小写不敏感，手机号保持原样。 */
+export function normalizeVerificationTarget(value: unknown): string {
+  const normalized = String(value ?? '').trim()
+  return normalized.includes('@') ? normalized.toLowerCase() : normalized
+}

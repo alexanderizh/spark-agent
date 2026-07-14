@@ -6039,8 +6039,6 @@ export type AuthUploadAvatarResponse = {
 export interface AuthSendSmsRequest {
   /** 手机号 */
   phone: string
-  /** 用途：登录/注册（短信登录本身即自动注册，二者服务端逻辑一致）*/
-  type?: 'login' | 'register'
   /** 图片验证码 ID（来自 auth:captcha）*/
   captchaId: string
   /** 图片验证码文本 */
