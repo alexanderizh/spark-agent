@@ -46,7 +46,7 @@ export type CanvasPromptParameterBlock = {
   parameter: 'duration' | 'dialogue' | 'blocking' | 'custom'
   value: string | number
   unit?: string
-  relation?: CanvasPromptRelation
+  relation?: string
 }
 
 export type CanvasPromptStructuredBlock = {
