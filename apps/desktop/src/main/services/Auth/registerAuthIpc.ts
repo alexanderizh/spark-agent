@@ -117,7 +117,6 @@ export function registerAuthIpc(): void {
   typedIpcHandle('auth:send-sms', async (req) =>
     auth().sendSmsCode({
       phone: req.phone,
-      ...(req.type !== undefined ? { type: req.type } : {}),
       captchaId: req.captchaId,
       captchaText: req.captchaText,
     }),

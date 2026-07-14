@@ -1322,6 +1322,16 @@ export const IpcSchemaRegistry = {
     oldPassword: z.string().min(1).max(100),
     newPassword: z.string().min(6).max(100),
   }),
+  'auth:send-sms': z.object({
+    phone: z.string().regex(/^1[3-9]\d{9}$/),
+    captchaId: z.string().min(1).max(100),
+    captchaText: z.string().min(1).max(20),
+  }),
+  'auth:login-sms': z.object({
+    phone: z.string().regex(/^1[3-9]\d{9}$/),
+    smsCode: z.string().regex(/^\d{6}$/),
+  }),
+  'auth:client-config': z.object({}),
   'auth:wechat-qr': z.object({}),
   'auth:wechat-poll': z.object({
     state: z.string().min(1).max(200),

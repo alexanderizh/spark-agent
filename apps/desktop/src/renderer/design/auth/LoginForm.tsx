@@ -17,7 +17,8 @@ import { useToast } from '../components/Toast'
 import { CaptchaField, type CaptchaFieldHandle } from './CaptchaField'
 import { rememberEmail } from './recentEmails'
 import { matchFieldError } from './errorMapping'
-import { EMAIL_RE, inferIdentifierKind, PHONE_RE } from './identifier'
+import { EMAIL_RE, inferIdentifierKind, normalizeVerificationTarget, PHONE_RE } from './identifier'
+import { useVerificationCodeTimer } from './useVerificationCodeTimer'
 import { Icons } from '../Icons'
 
 type LoginTab = 'password' | 'code'
@@ -47,13 +48,29 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
   const captchaRef = useRef<CaptchaFieldHandle>(null)
   const [submitting, setSubmitting] = useState(false)
   const [tab, setTab] = useState<LoginTab>('password')
-  const [countdown, setCountdown] = useState(0)
-  const [smsCountdown, setSmsCountdown] = useState(0)
+  const [emailCodeTarget, setEmailCodeTarget] = useState('')
+  const [smsCodeTarget, setSmsCodeTarget] = useState('')
   const [sendingEmailCode, setSendingEmailCode] = useState(false)
   const [sendingSmsCode, setSendingSmsCode] = useState(false)
   const sendingEmailRef = useRef(false)
   const sendingSmsRef = useRef(false)
   const submittingRef = useRef(false)
+  const {
+    resendCountdown: countdown,
+    isCodeActive: isEmailCodeActive,
+    isExpired: isEmailCodeExpired,
+    isActiveNow: isEmailCodeActiveNow,
+    start: startEmailCodeTimer,
+    reset: resetEmailCodeTimer,
+  } = useVerificationCodeTimer()
+  const {
+    resendCountdown: smsCountdown,
+    isCodeActive: isSmsCodeActive,
+    isExpired: isSmsCodeExpired,
+    isActiveNow: isSmsCodeActiveNow,
+    start: startSmsCodeTimer,
+    reset: resetSmsCodeTimer,
+  } = useVerificationCodeTimer()
 
   const smsEnabled = auth.authCapabilities?.smsEnabled === true
   const account = Form.useWatch('account', form)
@@ -65,30 +82,48 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
   const identifierKind = inferIdentifierKind(account, smsEnabled)
   const usesSmsCode = tab === 'code' && identifierKind === 'phone'
   const normalizedAccount = String(account ?? '').trim()
+  const verificationTarget = normalizeVerificationTarget(account)
   const accountValid =
     EMAIL_RE.test(normalizedAccount) ||
     ((tab === 'password' || usesSmsCode) && PHONE_RE.test(normalizedAccount))
   const captchaReady = Boolean(captchaId && String(captchaText ?? '').trim())
+  const hasActiveEmailCode = Boolean(
+    emailCodeTarget && emailCodeTarget === verificationTarget && isEmailCodeActive,
+  )
+  const hasActiveSmsCode = Boolean(
+    smsCodeTarget && smsCodeTarget === verificationTarget && isSmsCodeActive,
+  )
   const canSubmit =
     accountValid &&
-    captchaReady &&
     (tab === 'password'
-      ? String(password ?? '').length >= 6
+      ? captchaReady && String(password ?? '').length >= 6
       : usesSmsCode
-        ? String(smsCode ?? '').trim().length === 6
-        : String(emailCode ?? '').trim().length === 6)
+        ? hasActiveSmsCode && String(smsCode ?? '').trim().length === 6
+        : hasActiveEmailCode && String(emailCode ?? '').trim().length === 6)
+
+  const handleAccountChange = (nextValue: string): void => {
+    const nextTarget = normalizeVerificationTarget(nextValue)
+    if (emailCodeTarget && emailCodeTarget !== nextTarget) {
+      setEmailCodeTarget('')
+      resetEmailCodeTimer()
+      form.setFields([{ name: 'emailCode', value: '', errors: [] }])
+    }
+    if (smsCodeTarget && smsCodeTarget !== nextTarget) {
+      setSmsCodeTarget('')
+      resetSmsCodeTimer()
+      form.setFields([{ name: 'smsCode', value: '', errors: [] }])
+    }
+  }
 
   useEffect(() => {
-    if (countdown <= 0) return
-    const t = setTimeout(() => setCountdown(countdown - 1), 1000)
-    return () => clearTimeout(t)
-  }, [countdown])
+    if (!isEmailCodeExpired || !emailCodeTarget) return
+    form.setFields([{ name: 'emailCode', errors: ['验证码已过期，请重新获取'] }])
+  }, [emailCodeTarget, form, isEmailCodeExpired])
 
   useEffect(() => {
-    if (smsCountdown <= 0) return
-    const t = setTimeout(() => setSmsCountdown(smsCountdown - 1), 1000)
-    return () => clearTimeout(t)
-  }, [smsCountdown])
+    if (!isSmsCodeExpired || !smsCodeTarget) return
+    form.setFields([{ name: 'smsCode', errors: ['验证码已过期，请重新获取'] }])
+  }, [form, isSmsCodeExpired, smsCodeTarget])
 
   const handleTabChange = (key: string): void => {
     setTab(key as LoginTab)
@@ -97,6 +132,11 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
 
   const setFieldError = (name: string, message: string): void => {
     form.setFields([{ name, errors: [message] }])
+  }
+
+  const setCaptchaError = async (message: string): Promise<void> => {
+    await captchaRef.current?.refresh()
+    setFieldError('captchaText', message)
   }
 
   const handleSendCode = async (): Promise<void> => {
@@ -109,20 +149,35 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
         setFieldError('account', '请填写邮箱')
         return
       }
-      await auth.sendCode({
+      if (!values.captchaId || !String(values.captchaText ?? '').trim()) {
+        setFieldError('captchaText', '请填写图片验证码')
+        return
+      }
+      const requestedAt = Date.now()
+      const result = await auth.sendCode({
         account: values.account.trim(),
         type: 'login',
         captchaId: values.captchaId,
         captchaText: values.captchaText,
       })
-      toast.success('验证码已发送到邮箱')
-      setCountdown(60)
+      const sentTarget = normalizeVerificationTarget(values.account)
+      const isStillCurrentTarget =
+        normalizeVerificationTarget(form.getFieldValue('account')) === sentTarget
+      if (isStillCurrentTarget) {
+        setEmailCodeTarget(sentTarget)
+        startEmailCodeTimer(result.expire_in, requestedAt)
+        form.setFields([{ name: 'emailCode', value: '', errors: [] }])
+      }
+      void captchaRef.current?.refresh()
+      toast.success(
+        isStillCurrentTarget ? '验证码已发送到邮箱' : '验证码已发送到原邮箱，请重新获取',
+      )
     } catch (e) {
       const msg = (e as Error).message ?? '发送失败'
       const target = matchFieldError(msg, ['account', 'captchaText'])
       if (target) {
-        setFieldError(target, msg)
-        if (target === 'captchaText') void captchaRef.current?.refresh()
+        if (target === 'captchaText') await setCaptchaError(msg)
+        else setFieldError(target, msg)
       } else {
         toast.error(msg)
       }
@@ -148,20 +203,34 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
         setFieldError('account', '请填写有效的手机号')
         return
       }
-      await auth.sendSmsCode({
+      if (!values.captchaId || !String(values.captchaText ?? '').trim()) {
+        setFieldError('captchaText', '请填写图片验证码')
+        return
+      }
+      const requestedAt = Date.now()
+      const result = await auth.sendSmsCode({
         phone,
-        type: 'login',
         captchaId: values.captchaId,
         captchaText: values.captchaText,
       })
-      toast.success('短信验证码已发送')
-      setSmsCountdown(60)
+      const sentTarget = normalizeVerificationTarget(phone)
+      const isStillCurrentTarget =
+        normalizeVerificationTarget(form.getFieldValue('account')) === sentTarget
+      if (isStillCurrentTarget) {
+        setSmsCodeTarget(sentTarget)
+        startSmsCodeTimer(result.expire_in, requestedAt)
+        form.setFields([{ name: 'smsCode', value: '', errors: [] }])
+      }
+      void captchaRef.current?.refresh()
+      toast.success(
+        isStillCurrentTarget ? '短信验证码已发送' : '验证码已发送到原手机号，请重新获取',
+      )
     } catch (e) {
       const msg = (e as Error).message ?? '发送失败'
       const target = matchFieldError(msg, ['account', 'captchaText'])
       if (target) {
-        setFieldError(target, msg)
-        if (target === 'captchaText') void captchaRef.current?.refresh()
+        if (target === 'captchaText') await setCaptchaError(msg)
+        else setFieldError(target, msg)
       } else {
         toast.error(msg)
       }
@@ -179,6 +248,10 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
       const values = await form.validateFields()
 
       if (usesSmsCode) {
+        if (!hasActiveSmsCode || !isSmsCodeActiveNow()) {
+          setFieldError('smsCode', '请先获取有效验证码')
+          return
+        }
         const result = await auth.loginBySms({
           phone: (values.account ?? '').trim(),
           smsCode: values.smsCode,
@@ -197,6 +270,10 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
           captchaText: values.captchaText,
         })
       } else {
+        if (!hasActiveEmailCode || !isEmailCodeActiveNow()) {
+          setFieldError('emailCode', '请先获取有效验证码')
+          return
+        }
         result = await auth.login({
           account: values.account.trim(),
           loginMode: 'code',
@@ -221,8 +298,8 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
             : ['emailCode', 'account', 'captchaText']
       const target = matchFieldError(msg, candidates)
       if (target) {
-        setFieldError(target, msg)
-        if (target === 'captchaText') void captchaRef.current?.refresh()
+        if (target === 'captchaText') await setCaptchaError(msg)
+        else setFieldError(target, msg)
       } else {
         toast.error(msg)
       }
@@ -243,8 +320,8 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
         <h2 className="auth-form-title">欢迎回来</h2>
         <p className="auth-form-greet">
           {tab === 'code'
-              ? '输入邮箱或手机号，系统会自动选择验证码方式'
-              : '输入邮箱或手机号继续，也可以使用验证码登录'}
+            ? '输入邮箱或手机号，系统会自动选择验证码方式'
+            : '输入邮箱或手机号继续，也可以使用验证码登录'}
         </p>
       </div>
 
@@ -284,7 +361,7 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
             },
           ]}
         >
-          <AccountInput />
+          <AccountInput onAccountChange={handleAccountChange} />
         </Form.Item>
 
         {/* 密码（仅 password 模式） */}
@@ -303,6 +380,7 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
           ref={captchaRef}
           form={form}
           disabled={sendingEmailCode || sendingSmsCode}
+          required={tab === 'password' || (usesSmsCode ? !hasActiveSmsCode : !hasActiveEmailCode)}
         />
 
         {/* 邮箱验证码（code 模式） / 短信验证码（sms 模式） */}
@@ -386,13 +464,20 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
 
 type ControlledInputProps = Pick<React.ComponentProps<typeof Input>, 'value' | 'onChange'>
 
-function AccountInput({ value, onChange }: ControlledInputProps): React.ReactElement {
+function AccountInput({
+  value,
+  onChange,
+  onAccountChange,
+}: ControlledInputProps & { onAccountChange?: (value: string) => void }): React.ReactElement {
   return (
     <div className="auth-input auth-input--flat">
       <Icons.Mail size={17} className="auth-input-icon" />
       <Input
         value={value}
-        onChange={onChange}
+        onChange={(event) => {
+          onAccountChange?.(event.target.value)
+          onChange?.(event)
+        }}
         placeholder="邮箱或手机号"
         allowClear
         autoComplete="username"

@@ -15,7 +15,8 @@ import { useToast } from '../components/Toast'
 import { CaptchaField, type CaptchaFieldHandle } from './CaptchaField'
 import { rememberEmail } from './recentEmails'
 import { matchFieldError } from './errorMapping'
-import { EMAIL_RE, inferIdentifierKind, PHONE_RE } from './identifier'
+import { EMAIL_RE, inferIdentifierKind, normalizeVerificationTarget, PHONE_RE } from './identifier'
+import { useVerificationCodeTimer } from './useVerificationCodeTimer'
 import { Icons } from '../Icons'
 
 export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): React.ReactElement {
@@ -24,10 +25,18 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
   const [form] = Form.useForm()
   const captchaRef = useRef<CaptchaFieldHandle>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [countdown, setCountdown] = useState(0)
+  const [sentTarget, setSentTarget] = useState('')
   const [sendingCode, setSendingCode] = useState(false)
   const sendingCodeRef = useRef(false)
   const submittingRef = useRef(false)
+  const {
+    resendCountdown: countdown,
+    isCodeActive,
+    isExpired,
+    isActiveNow,
+    start: startCodeTimer,
+    reset: resetCodeTimer,
+  } = useVerificationCodeTimer()
 
   const smsEnabled = auth.authCapabilities?.smsEnabled === true
   const account = Form.useWatch('account', form)
@@ -35,32 +44,47 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
   const smsCode = Form.useWatch('smsCode', form)
   const password = Form.useWatch('password', form)
   const confirmPassword = Form.useWatch('confirmPassword', form)
-  const captchaId = Form.useWatch('captchaId', form)
-  const captchaText = Form.useWatch('captchaText', form)
   const identifierKind = inferIdentifierKind(account, smsEnabled)
   const usesPhone = identifierKind === 'phone'
   const normalizedAccount = String(account ?? '').trim()
+  const verificationTarget = normalizeVerificationTarget(account)
   const accountValid = usesPhone
     ? PHONE_RE.test(normalizedAccount)
     : EMAIL_RE.test(normalizedAccount)
-  const captchaReady = Boolean(captchaId && String(captchaText ?? '').trim())
+  const hasActiveCode = Boolean(sentTarget && sentTarget === verificationTarget && isCodeActive)
   const canSubmit =
     accountValid &&
-    captchaReady &&
+    hasActiveCode &&
     (usesPhone
       ? String(smsCode ?? '').trim().length === 6
       : String(emailCode ?? '').trim().length === 6 &&
         String(password ?? '').length >= 6 &&
         password === confirmPassword)
 
+  const handleAccountChange = (nextValue: string): void => {
+    const nextTarget = normalizeVerificationTarget(nextValue)
+    if (!sentTarget || sentTarget === nextTarget) return
+    setSentTarget('')
+    resetCodeTimer()
+    form.setFields([
+      { name: 'emailCode', value: '', errors: [] },
+      { name: 'smsCode', value: '', errors: [] },
+    ])
+  }
+
   useEffect(() => {
-    if (countdown <= 0) return
-    const t = setTimeout(() => setCountdown(countdown - 1), 1000)
-    return () => clearTimeout(t)
-  }, [countdown])
+    if (!isExpired || !sentTarget) return
+    const field = PHONE_RE.test(sentTarget) ? 'smsCode' : 'emailCode'
+    form.setFields([{ name: field, errors: ['验证码已过期，请重新获取'] }])
+  }, [form, isExpired, sentTarget])
 
   const setFieldError = (name: string, message: string): void => {
     form.setFields([{ name, errors: [message] }])
+  }
+
+  const setCaptchaError = async (message: string): Promise<void> => {
+    await captchaRef.current?.refresh()
+    setFieldError('captchaText', message)
   }
 
   const handleSendCode = async (): Promise<void> => {
@@ -69,20 +93,35 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
     setSendingCode(true)
     try {
       const values = await form.validateFields(['account', 'captchaId', 'captchaText'])
-      await auth.sendCode({
+      if (!values.captchaId || !String(values.captchaText ?? '').trim()) {
+        setFieldError('captchaText', '请填写图片验证码')
+        return
+      }
+      const requestedAt = Date.now()
+      const result = await auth.sendCode({
         account: values.account.trim(),
         type: 'register',
         captchaId: values.captchaId,
         captchaText: values.captchaText,
       })
-      toast.success('验证码已发送到邮箱')
-      setCountdown(60)
+      const sentTarget = normalizeVerificationTarget(values.account)
+      const isStillCurrentTarget =
+        normalizeVerificationTarget(form.getFieldValue('account')) === sentTarget
+      if (isStillCurrentTarget) {
+        setSentTarget(sentTarget)
+        startCodeTimer(result.expire_in, requestedAt)
+        form.setFields([{ name: 'emailCode', value: '', errors: [] }])
+      }
+      void captchaRef.current?.refresh()
+      toast.success(
+        isStillCurrentTarget ? '验证码已发送到邮箱' : '验证码已发送到原邮箱，请重新获取',
+      )
     } catch (e) {
       const msg = (e as Error).message ?? '发送失败'
       const target = matchFieldError(msg, ['account', 'captchaText'])
       if (target) {
-        setFieldError(target, msg)
-        if (target === 'captchaText') void captchaRef.current?.refresh()
+        if (target === 'captchaText') await setCaptchaError(msg)
+        else setFieldError(target, msg)
       } else {
         toast.error(msg)
       }
@@ -108,20 +147,34 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
         setFieldError('account', '请填写有效的手机号')
         return
       }
-      await auth.sendSmsCode({
+      if (!values.captchaId || !String(values.captchaText ?? '').trim()) {
+        setFieldError('captchaText', '请填写图片验证码')
+        return
+      }
+      const requestedAt = Date.now()
+      const result = await auth.sendSmsCode({
         phone,
-        type: 'register',
         captchaId: values.captchaId,
         captchaText: values.captchaText,
       })
-      toast.success('短信验证码已发送')
-      setCountdown(60)
+      const sentTarget = normalizeVerificationTarget(phone)
+      const isStillCurrentTarget =
+        normalizeVerificationTarget(form.getFieldValue('account')) === sentTarget
+      if (isStillCurrentTarget) {
+        setSentTarget(sentTarget)
+        startCodeTimer(result.expire_in, requestedAt)
+        form.setFields([{ name: 'smsCode', value: '', errors: [] }])
+      }
+      void captchaRef.current?.refresh()
+      toast.success(
+        isStillCurrentTarget ? '短信验证码已发送' : '验证码已发送到原手机号，请重新获取',
+      )
     } catch (e) {
       const msg = (e as Error).message ?? '发送失败'
       const target = matchFieldError(msg, ['account', 'captchaText'])
       if (target) {
-        setFieldError(target, msg)
-        if (target === 'captchaText') void captchaRef.current?.refresh()
+        if (target === 'captchaText') await setCaptchaError(msg)
+        else setFieldError(target, msg)
       } else {
         toast.error(msg)
       }
@@ -137,6 +190,11 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
     try {
       setSubmitting(true)
       const values = await form.validateFields()
+
+      if (!hasActiveCode || !isActiveNow()) {
+        setFieldError(usesPhone ? 'smsCode' : 'emailCode', '请先获取有效验证码')
+        return
+      }
 
       if (usesPhone) {
         // 手机号注册复用 login-sms（自动注册）
@@ -163,14 +221,13 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
       const msg = (e as Error).message ?? '注册失败'
       const candidates: Array<
         'account' | 'emailCode' | 'password' | 'captchaText' | 'phone' | 'smsCode'
-      > =
-        usesPhone
-          ? ['smsCode', 'account', 'captchaText']
-          : ['emailCode', 'password', 'captchaText', 'account']
+      > = usesPhone
+        ? ['smsCode', 'account', 'captchaText']
+        : ['emailCode', 'password', 'captchaText', 'account']
       const target = matchFieldError(msg, candidates)
       if (target) {
-        setFieldError(target, msg)
-        if (target === 'captchaText') void captchaRef.current?.refresh()
+        if (target === 'captchaText') await setCaptchaError(msg)
+        else setFieldError(target, msg)
       } else {
         toast.error(msg)
       }
@@ -184,9 +241,7 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
     <div className="auth-form">
       <div className="auth-form-head">
         <h2 className="auth-form-title">创建账号</h2>
-        <p className="auth-form-greet">
-          输入邮箱或手机号，系统会自动选择注册方式
-        </p>
+        <p className="auth-form-greet">输入邮箱或手机号，系统会自动选择注册方式</p>
       </div>
 
       <Form
@@ -211,12 +266,17 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
             },
           ]}
         >
-          <AccountInput />
+          <AccountInput onAccountChange={handleAccountChange} />
         </Form.Item>
 
         {usesPhone ? (
           <>
-            <CaptchaField ref={captchaRef} form={form} disabled={sendingCode} />
+            <CaptchaField
+              ref={captchaRef}
+              form={form}
+              disabled={sendingCode}
+              required={!hasActiveCode}
+            />
 
             <Form.Item
               name="smsCode"
@@ -231,11 +291,18 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
               />
             </Form.Item>
 
-            <div className="auth-sms-hint">输入手机号验证后即完成注册</div>
+            <div className="auth-sms-hint">
+              {hasActiveCode ? '验证码已发送，请在有效期内完成验证' : '输入手机号验证后即完成注册'}
+            </div>
           </>
         ) : (
           <>
-            <CaptchaField ref={captchaRef} form={form} disabled={sendingCode} />
+            <CaptchaField
+              ref={captchaRef}
+              form={form}
+              disabled={sendingCode}
+              required={!hasActiveCode}
+            />
 
             <Form.Item
               name="emailCode"
@@ -309,11 +376,24 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
 
 type ControlledInputProps = Pick<React.ComponentProps<typeof Input>, 'value' | 'onChange'>
 
-function AccountInput({ value, onChange }: ControlledInputProps): React.ReactElement {
+function AccountInput({
+  value,
+  onChange,
+  onAccountChange,
+}: ControlledInputProps & { onAccountChange?: (value: string) => void }): React.ReactElement {
   return (
     <div className="auth-input auth-input--flat">
       <Icons.Mail size={17} className="auth-input-icon" />
-      <Input value={value} onChange={onChange} placeholder="邮箱或手机号" allowClear autoComplete="username" />
+      <Input
+        value={value}
+        onChange={(event) => {
+          onAccountChange?.(event.target.value)
+          onChange?.(event)
+        }}
+        placeholder="邮箱或手机号"
+        allowClear
+        autoComplete="username"
+      />
     </div>
   )
 }

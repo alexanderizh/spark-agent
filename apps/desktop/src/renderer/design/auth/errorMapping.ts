@@ -21,6 +21,7 @@ const FIELD_PATTERNS: Record<string, RegExp[]> = {
     /email[\s-]*code/i,
     /验证码.*(已过期|失效|错误)/,
   ],
+  smsCode: [/短信验证码/, /sms[\s-]*code/i, /验证码.*(已过期|失效|错误)/],
   password: [
     /密码/,
     /password/i,

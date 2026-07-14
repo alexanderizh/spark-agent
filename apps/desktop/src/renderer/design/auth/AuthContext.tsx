@@ -88,7 +88,6 @@ export interface AuthContextValue {
   /** 发送短信验证码（POST /auth/send-sms，需图片验证码）*/
   sendSmsCode: (params: {
     phone: string
-    type?: 'login' | 'register'
     captchaId: string
     captchaText: string
   }) => Promise<{ expire_in: number }>
@@ -278,12 +277,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
   )
 
   const sendSmsCode = useCallback(
-    async (params: {
-      phone: string
-      type?: 'login' | 'register'
-      captchaId: string
-      captchaText: string
-    }) => {
+    async (params: { phone: string; captchaId: string; captchaText: string }) => {
       return (await window.spark!.invoke('auth:send-sms', params)) as { expire_in: number }
     },
     [],
