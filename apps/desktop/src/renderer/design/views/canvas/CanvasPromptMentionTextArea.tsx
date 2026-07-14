@@ -106,6 +106,7 @@ export function CanvasPromptMentionTextArea({
       <div className="canvas-prompt-mention-input-wrap">
         <Input.TextArea
           ref={textAreaRef}
+          autoSize
           rows={rows}
           value={value}
           {...(className != null ? { className } : {})}

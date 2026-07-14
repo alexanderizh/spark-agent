@@ -165,7 +165,7 @@ app.on('open-url', (event, value) => {
 const ownsSingleInstanceLock = installSingleInstanceLock(app, showMainWindow, (commandLine) => {
   const code = findPlatformModelRedeemCode(commandLine)
   if (code) queuePlatformRedeemDeepLink(`spark-agent://redeem?code=${encodeURIComponent(code)}`)
-})
+}, !is.dev)
 
 const initialRedeemCode = findPlatformModelRedeemCode(process.argv)
 if (initialRedeemCode) pendingRedeemCodes.add(initialRedeemCode)

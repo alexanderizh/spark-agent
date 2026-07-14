@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AutoComplete, Input, Popover, Select, Tag, Tooltip, message } from 'antd'
+import { AutoComplete, Input, InputNumber, Popover, Select, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import {
@@ -23,6 +23,7 @@ import {
   readCanvasResolvedPresetTarget,
   resolveCanvasPresetTarget,
 } from './canvasOperationPresets'
+import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 import { buildReferenceImageInputRoles } from './canvasTaskInputFiles'
 import { AgentPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
 import { CanvasMediaInputHint } from './CanvasMediaInputHint'
@@ -70,6 +71,7 @@ import type {
   CanvasOperationType,
   CanvasSnapshot,
   CanvasTask,
+  ShotScriptConfig,
 } from './canvas.types'
 
 /**
@@ -125,6 +127,9 @@ const COMMON_MODEL_PARAM_TITLE_PATTERNS = [
   '尾帧',
 ]
 
+/** 分镜「每镜最长时间」档位（秒） */
+const SHOT_MAX_CLIP_PRESETS = [4, 5, 8, 10]
+
 export type OperationRunParams = {
   prompt: string
   negativePrompt?: string
@@ -138,6 +143,8 @@ export type OperationRunParams = {
   reasoningEffort?: SessionReasoningEffort
   skillIds?: string[]
   modelParams?: Record<string, unknown>
+  /** 分镜任务的时长配置（每镜最长时间），运行时替换 prompt 占位槽 {maxClip} */
+  shotScriptConfig?: ShotScriptConfig
 }
 
 export type OperationDraftParams = {
@@ -151,6 +158,8 @@ export type OperationDraftParams = {
   manifestId?: string
   modelId?: string
   skillIds?: string[]
+  /** 分镜任务的时长配置，随草稿持久化到 node.data.shotScriptConfig */
+  shotScriptConfig?: ShotScriptConfig
 }
 
 export function buildOperationPanelSnapshotSignature(
@@ -318,6 +327,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
   const isTextOperation = isTextModelOperation(operation)
+  // 分镜脚本任务节点（带结构化时长配置）才渲染「每镜时长 / 平均镜时」控件。
+  const isShotScriptNode =
+    node.data.operation === 'text_generate' && node.data.shotScriptConfig != null
   const presetTargetId = useMemo(
     () =>
       resolveCanvasPresetTarget({
@@ -485,6 +497,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [showAllTextInputs, setShowAllTextInputs] = useState(false)
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false)
   const [activeTextPickerId, setActiveTextPickerId] = useState<string | null>(null)
+  // 分镜时长配置草稿：preset 命中档位则用档位值，否则 'custom' + 自定义数字字符串。
+  const [maxClipPreset, setMaxClipPreset] = useState<number | 'custom'>('custom')
+  const [maxClipCustom, setMaxClipCustom] = useState('')
   const modelParamDraftEditedRef = useRef(false)
   const customParamsEditedRef = useRef(false)
   const promptCharCount = useMemo(
@@ -520,6 +535,15 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     )
     setSelectedTextModelId(task?.modelId ?? node.data.modelId ?? operationPreset.modelId ?? '')
     setSelectedSkillIds(task?.skillIds ?? node.data.skillIds ?? operationPreset.skillIds)
+    // 分镜时长配置草稿：从 node.data.shotScriptConfig 解析到 preset/custom（随节点切换重置）。
+    // 兼容脏数据：持久化的 maxClipSec 非法（缺省 / 非有限 / ≤0）时回退默认值，避免回显 -1 这类异常。
+    const rawMaxClip = node.data.shotScriptConfig?.maxClipSec
+    const safeMaxClip =
+      typeof rawMaxClip === 'number' && Number.isFinite(rawMaxClip) && rawMaxClip > 0
+        ? rawMaxClip
+        : DEFAULT_MAX_CLIP_SEC
+    setMaxClipPreset(SHOT_MAX_CLIP_PRESETS.includes(safeMaxClip) ? safeMaxClip : 'custom')
+    setMaxClipCustom(SHOT_MAX_CLIP_PRESETS.includes(safeMaxClip) ? '' : String(safeMaxClip))
     // 只在切换节点时重载草稿，避免保存后的 snapshot 刷新把用户刚输入的配置重置掉。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id])
@@ -975,11 +999,22 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     ],
   )
 
+  // 把 preset/custom 草稿解析成结构化时长配置。
+  // 分镜节点永远返回合法值——非法输入（空 / 非正）回退默认，绝不放任 {maxClip} 占位槽裸奔泄漏给 LLM；
+  // 非分镜节点返回 null。
+  const resolveShotScriptConfig = useCallback((): ShotScriptConfig | null => {
+    if (!isShotScriptNode) return null
+    const parsed = maxClipPreset === 'custom' ? Number(maxClipCustom) : maxClipPreset
+    const maxClipSec = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_CLIP_SEC
+    return { maxClipSec }
+  }, [isShotScriptNode, maxClipPreset, maxClipCustom])
+
   const handleSaveDraft = useCallback(async () => {
     if (savingDraft) return
     setSavingDraft(true)
     try {
       const runtimeDraft = buildRuntimeDraft()
+      const shotConfig = resolveShotScriptConfig()
       await onSaveDraft({
         title: titleDraft.trim().length > 0 ? titleDraft.trim() : null,
         message: messageDraft.trim(),
@@ -987,6 +1022,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         negativePrompt: negativePrompt.trim(),
         modelParams: buildCurrentModelParams(),
         ...runtimeDraft,
+        ...(shotConfig ? { shotScriptConfig: shotConfig } : {}),
       })
       message.success('操作配置已保存')
     } catch (error) {
@@ -1002,6 +1038,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     negativePrompt,
     onSaveDraft,
     prompt,
+    resolveShotScriptConfig,
     savingDraft,
     titleDraft,
   ])
@@ -1079,6 +1116,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       })
       if (!proceed) return
     }
+    const resolvedShotScriptConfig = resolveShotScriptConfig()
     setSubmitting(true)
     setRunning(true)
     try {
@@ -1104,6 +1142,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             : {}),
         ...(Object.keys(nextModelParams).length > 0 ? { modelParams: nextModelParams } : {}),
         ...(inputRoles && Object.keys(inputRoles).length > 0 ? { inputRoles } : {}),
+        ...(resolvedShotScriptConfig ? { shotScriptConfig: resolvedShotScriptConfig } : {}),
       })
     } catch (error) {
       console.error('[CanvasOperationPanel] Failed to run operation node:', error)
@@ -1121,6 +1160,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     node.data.status,
     onRun,
     prompt,
+    resolveShotScriptConfig,
     selectedModel,
     running,
     submitting,
@@ -1687,6 +1727,39 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                     '清空 Skills',
                   ),
                 })}
+                {isShotScriptNode && (
+                  <div
+                    className="canvas-operation-shot-config"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>每镜最长</span>
+                    <Select<number | 'custom'>
+                      size="small"
+                      style={{ width: 92 }}
+                      value={maxClipPreset}
+                      onChange={(v) => setMaxClipPreset(v)}
+                      options={[
+                        ...SHOT_MAX_CLIP_PRESETS.map((s) => ({ value: s, label: `${s} 秒` })),
+                        { value: 'custom', label: '自定义' },
+                      ]}
+                    />
+                    {maxClipPreset === 'custom' && (
+                      <InputNumber
+                        size="small"
+                        min={1}
+                        style={{ width: 90 }}
+                        addonAfter="秒"
+                        value={maxClipCustom.trim() === '' ? null : Number(maxClipCustom)}
+                        onChange={(v) => setMaxClipCustom(v == null ? '' : String(v))}
+                      />
+                    )}
+                  </div>
+                )}
               </>
             )}
             {mediaCapabilityIds.length > 0 &&

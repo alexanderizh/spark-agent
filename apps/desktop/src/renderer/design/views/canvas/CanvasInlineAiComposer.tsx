@@ -25,7 +25,9 @@ import type {
 } from '@spark/protocol'
 import {
   CANVAS_AGENT_PRESETS,
+  applyShotScriptConfigToPrompt,
   buildAgentPresetPrompt,
+  DEFAULT_SHOT_SCRIPT_CONFIG,
   getAgentPreset,
   type CanvasAgentRoleId,
 } from './canvasAgentPromptPresets'
@@ -581,7 +583,14 @@ export function CanvasInlineAiComposer({
       const preset = getAgentPreset(role)
       if (!preset) return
       setOperation(preset.defaultOperation)
-      setPrompt(buildAgentPresetPrompt(role, { upstreamText: nodePromptContext }))
+      const presetPrompt = buildAgentPresetPrompt(role, { upstreamText: nodePromptContext })
+      // 分镜角色：把 {maxClip} 占位槽用默认值填好（内联编辑器不走结构化配置），
+      // 避免文本框里出现字面 {maxClip}。
+      setPrompt(
+        role === 'storyboard'
+          ? applyShotScriptConfigToPrompt(presetPrompt, DEFAULT_SHOT_SCRIPT_CONFIG)
+          : presetPrompt,
+      )
       if (!selectedAgentId) {
         const match = agents.find(
           (agent) =>
