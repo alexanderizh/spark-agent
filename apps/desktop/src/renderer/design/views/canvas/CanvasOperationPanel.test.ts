@@ -152,7 +152,7 @@ describe('CanvasOperationPanel negative prompt inheritance', () => {
         nodePrompt: '',
         upstreamTextContext: '【文本节点｜章节】\n雨夜巷口重逢',
       }),
-    ).toBe('【文本节点｜章节】\n雨夜巷口重逢')
+    ).toBe('')
     expect(
       resolveOperationPanelEditablePrompt({
         nodePrompt: '用户自己的补充要求',

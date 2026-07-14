@@ -501,12 +501,21 @@ describe('IPC schemas', () => {
     const taskRequest = IpcSchemaRegistry['canvas:task:create-media'].parse({
       operation: 'storyboard_grid',
       prompt: 'a polished product photo',
+      promptDocument: {
+        version: 2,
+        blocks: [{ kind: 'text', id: 'text-1', text: '用户输入' }],
+      },
+      systemPrompt: 'hidden capability',
+      relationManifest: [{ blockId: 'ref-1', sourceNodeId: 'node-1', relation: 'character', order: 0 }],
       providerProfileId: 'provider-media-1',
       modelId: 'gpt-image-2',
       modelParams: { size: '1024x1024' },
     })
     expect(taskRequest.operation).toBe('storyboard_grid')
     expect(taskRequest.modelId).toBe('gpt-image-2')
+    expect(taskRequest.promptDocument?.version).toBe(2)
+    expect(taskRequest.systemPrompt).toBe('hidden capability')
+    expect(taskRequest.relationManifest?.[0]?.relation).toBe('character')
 
     const deleteRequest = IpcSchemaRegistry['canvas:project:delete'].parse({
       projectId: 'canvas_project_1',

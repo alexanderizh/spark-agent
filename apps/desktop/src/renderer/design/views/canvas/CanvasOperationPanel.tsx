@@ -15,6 +15,7 @@ import {
   type SkillItem,
   type MediaInputRolePolicy,
   type SessionReasoningEffort,
+  type CanvasPromptDocument,
 } from '@spark/protocol'
 import { operationLabel } from './canvas.api'
 import { getCanvasCapability, nodeOperation } from './canvas.capabilities'
@@ -30,6 +31,7 @@ import { CanvasMediaInputHint } from './CanvasMediaInputHint'
 import { CanvasMediaInputThumb } from './CanvasMediaInputThumb'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import { CanvasPromptMentionTextArea } from './CanvasPromptMentionTextArea'
+import { migrateLegacyPrompt } from './canvasPromptDocument'
 import { computeMediaInputRoleMap } from './canvasMediaInputRoles'
 import {
   CanvasMediaInputPickerModal,
@@ -132,6 +134,7 @@ const SHOT_MAX_CLIP_PRESETS = [4, 5, 8, 10]
 
 export type OperationRunParams = {
   prompt: string
+  promptDocument?: CanvasPromptDocument
   negativePrompt?: string
   inputNodeIds?: string[]
   inputTransport?: CanvasInputTransport
@@ -151,6 +154,7 @@ export type OperationDraftParams = {
   title: string | null
   message: string
   prompt: string
+  promptDocument?: CanvasPromptDocument
   negativePrompt: string
   modelParams: Record<string, unknown>
   agentId?: string
@@ -245,10 +249,10 @@ export function resolveOperationPanelEditablePrompt(params: {
   nodePrompt?: string | null
   upstreamTextContext?: string | null
 }): string {
-  return mergeOperationPanelPromptWithInputContext(
-    params.nodePrompt ?? '',
-    params.upstreamTextContext ?? '',
-  )
+  // Connected text is represented by Prompt Document reference blocks. Keep the
+  // visible editor limited to authored text; the compiler resolves upstream
+  // content at submission time.
+  return (params.nodePrompt ?? '').trim()
 }
 
 export type OperationPanelEnumOption = {
@@ -421,9 +425,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     const nodePrompt = node.data.prompt
     return resolveOperationPanelEditablePrompt({
       ...(typeof nodePrompt === 'string' ? { nodePrompt } : {}),
-      upstreamTextContext,
     })
-  }, [node.data.prompt, upstreamTextContext])
+  }, [node.data.prompt])
 
   const inheritedNegativePrompt = useMemo(() => {
     const sourceNegativePrompts: string[] = []
@@ -452,6 +455,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
 
   // 参数状态：从 task、node.data、项目/上游继承值带入
   const [prompt, setPrompt] = useState(initialPrompt)
+  const [promptDocument, setPromptDocument] = useState<CanvasPromptDocument>(() =>
+    task?.promptDocument ??
+    node.data.promptDocument ??
+    migrateLegacyPrompt({ prompt: initialPrompt, nodes: snapshot.nodes, assets: snapshot.assets }),
+  )
   const [negativePrompt, setNegativePrompt] = useState(inheritedNegativePrompt)
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
@@ -523,6 +531,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     modelParamDraftEditedRef.current = false
     customParamsEditedRef.current = false
     setPrompt(initialPrompt)
+    setPromptDocument(
+      task?.promptDocument ??
+        node.data.promptDocument ??
+        migrateLegacyPrompt({ prompt: initialPrompt, nodes: snapshot.nodes, assets: snapshot.assets }),
+    )
     setNegativePrompt(inheritedNegativePrompt)
     setTitleDraft(node.title ?? '')
     setMessageDraft(node.data.message ?? '')
@@ -1019,6 +1032,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         title: titleDraft.trim().length > 0 ? titleDraft.trim() : null,
         message: messageDraft.trim(),
         prompt: prompt.trim(),
+        promptDocument,
         negativePrompt: negativePrompt.trim(),
         modelParams: buildCurrentModelParams(),
         ...runtimeDraft,
@@ -1038,6 +1052,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     negativePrompt,
     onSaveDraft,
     prompt,
+    promptDocument,
     resolveShotScriptConfig,
     savingDraft,
     titleDraft,
@@ -1122,6 +1137,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     try {
       await onRun({
         prompt: prompt.trim(),
+        promptDocument,
         ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
         inputNodeIds: runInputNodeIds,
         ...(isTextOperation && selectedAgentId ? { agentId: selectedAgentId } : {}),
@@ -1160,6 +1176,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     node.data.status,
     onRun,
     prompt,
+    promptDocument,
     resolveShotScriptConfig,
     selectedModel,
     running,
@@ -1351,22 +1368,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     },
     [firstFrameNodeId, lastFrameNodeId],
   )
-  const promptMentionNodes = useMemo(() => {
-    const mentionIds = supportsVideoFrameRoles
-      ? referenceFrameNodeIds
-      : selectedInputNodeIds.filter((id) =>
-          mediaInputOptions.some((option) => String(option.value) === id),
-        )
-    return Array.from(new Set(mentionIds))
-      .map((id) => nodeById.get(id))
-      .filter((item): item is CanvasNode => item != null && !item.hidden)
-  }, [
-    mediaInputOptions,
-    nodeById,
-    referenceFrameNodeIds,
-    selectedInputNodeIds,
-    supportsVideoFrameRoles,
-  ])
+  const promptConnectionNodes = useMemo(
+    () => Array.from(new Map(expandedSourceInputNodes.map((item) => [item.id, item])).values()),
+    [expandedSourceInputNodes],
+  )
+  const promptCandidateNodes = useMemo(
+    () => snapshot.nodes.filter((item) => !item.hidden && item.id !== node.id),
+    [node.id, snapshot.nodes],
+  )
   const handlePromptMentionSelect = useCallback(
     (selectedNode: CanvasNode) => {
       if (!canEditMediaInputs || running) return false
@@ -1680,9 +1689,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               rows={6}
               value={prompt}
               placeholder={`输入${operationText}的提示词...`}
-              mentionNodes={promptMentionNodes}
+              mentionNodes={promptCandidateNodes}
+              connectionNodes={promptConnectionNodes}
               assets={snapshot.assets}
               onChange={setPrompt}
+              onDocumentChange={setPromptDocument}
               onMentionSelect={handlePromptMentionSelect}
               disabled={running}
             />
@@ -2388,9 +2399,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               rows={4}
               value={prompt}
               placeholder={`输入${operationText}的提示词...`}
-              mentionNodes={promptMentionNodes}
+              mentionNodes={promptCandidateNodes}
+              connectionNodes={promptConnectionNodes}
               assets={snapshot.assets}
               onChange={setPrompt}
+              onDocumentChange={setPromptDocument}
               onMentionSelect={handlePromptMentionSelect}
               disabled={running}
             />

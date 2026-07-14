@@ -1,0 +1,194 @@
+.canvas-prompt-composer {
+  position: relative;
+  min-height: 132px;
+  border: 1px solid var(--spark-border, #dfe2ea);
+  border-radius: 14px;
+  background: var(--spark-surface, #fff);
+}
+
+.canvas-prompt-composer:focus-within {
+  border-color: #6765ff;
+  box-shadow: 0 0 0 2px rgba(103, 101, 255, 0.12);
+}
+
+.canvas-prompt-composer-toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 4px;
+  color: #9ba1af;
+  font-size: 12px;
+}
+
+.canvas-prompt-composer-add {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px dashed #d5d8e2;
+  border-radius: 10px;
+  background: #fafbfe;
+}
+
+.canvas-prompt-composer-body {
+  position: relative;
+  min-height: 82px;
+  padding: 8px 12px 14px;
+  color: #20232d;
+  font-size: 14px;
+  line-height: 2.25;
+  white-space: pre-wrap;
+}
+
+.canvas-prompt-text-block {
+  min-width: 3px;
+  outline: none;
+}
+
+.canvas-prompt-text-block:empty::before {
+  color: #b1b6c2;
+  content: attr(data-placeholder);
+}
+
+.canvas-prompt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  margin: 0 3px;
+  padding: 3px 9px 3px 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: #f0f1f5;
+  vertical-align: middle;
+}
+
+.canvas-prompt-chip:hover,
+.canvas-prompt-chip:focus-visible {
+  border-color: #6866ff;
+  background: #f0f0ff;
+}
+
+.canvas-prompt-chip.is-invalid {
+  border-color: #e6a2a2;
+  background: #fff1f1;
+  color: #9b4c4c;
+}
+
+.canvas-prompt-chip-thumb,
+.canvas-prompt-chip-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 7px;
+  background: #e6e7ff;
+  color: #5554e8;
+}
+
+.canvas-prompt-chip-thumb img,
+.canvas-prompt-chip-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-prompt-chip-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.2;
+}
+
+.canvas-prompt-chip-copy small {
+  color: #7f8492;
+  font-size: 10px;
+}
+
+.canvas-prompt-mention-menu,
+.canvas-prompt-parameter-menu {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 5px);
+  left: 8px;
+  display: grid;
+  min-width: 240px;
+  padding: 6px;
+  border: 1px solid #e1e4ec;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(34, 39, 75, 0.16);
+}
+
+.canvas-prompt-mention-menu button,
+.canvas-prompt-parameter-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.canvas-prompt-mention-menu button:hover,
+.canvas-prompt-parameter-menu button:hover {
+  background: #f2f3f7;
+}
+
+.canvas-prompt-hover-card {
+  width: min(360px, calc(100vw - 48px));
+}
+
+.canvas-prompt-hover-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.canvas-prompt-hover-preview {
+  width: 42px;
+  height: 42px;
+  overflow: hidden;
+  border-radius: 9px;
+}
+
+.canvas-prompt-hover-preview img,
+.canvas-prompt-hover-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-prompt-hover-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 9px;
+}
+
+.canvas-prompt-hover-meta span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #f0f1ff;
+  color: #5051cc;
+  font-size: 11px;
+}
+
+.canvas-prompt-hover-scroll {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 9px 10px;
+  border: 1px solid #edf0f5;
+  border-radius: 9px;
+  background: #fafbfc;
+  color: #535867;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
