@@ -73,6 +73,7 @@ import type {
   ProviderIconStyle,
 } from '@spark/protocol'
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
+import { canHealthCheckProviderCardKind, type ProviderCardKind } from './provider-card-actions'
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
 import { ProviderManifestContractEditor } from '../components/ProviderManifestContractEditor'
 import { ManagedModelPreferencesModal } from './platform-model/ManagedModelPreferencesModal'
@@ -729,8 +730,6 @@ function enumOptionsFromModels(
  * 判定优先级：router（自动路由虚拟项）→ cli（内置本地 CLI）→ 媒体（image/video/voice）→ text。
  * 一张卡片只归一类，避免与「默认 Provider」「内置」等已有 tag 语义重叠。
  */
-type ProviderCardKind = 'router' | 'cli' | 'image' | 'video' | 'voice' | 'text'
-
 /** 每个类别对应的图标（项目本地 Lucide 风格）、文案、胶囊 CSS 修饰类 */
 const CARD_KIND_META: Record<ProviderCardKind, { label: string; icon: ComponentType<{ size?: number }>; kindClass: string }> = {
   router: { label: '路由', icon: Icons.Shuffle, kindClass: 'pv_kind--router' },
@@ -1383,7 +1382,7 @@ function ProvidersView() {
                     cardKind={resolveProviderCardKind(p)}
                     multiSelect={multiSelect && !builtin && p.managed !== true}
                     selected={selectedIds.has(p.id)}
-                    canHealthCheck={!isAutoRouterProvider(p)}
+                    canHealthCheck={canHealthCheckProviderCardKind(resolveProviderCardKind(p))}
                     onToggleSelect={() => toggleSelected(p.id)}
                     onEdit={() => {
                       if (p.managed) setManagedEditingProfile(p)

@@ -1193,6 +1193,8 @@ export function CanvasAgentModal({
           }
           placeholder="输入消息，让 agent 操作画布..."
           toolNamePrefixFilter="mcp__spark_canvas__"
+          hideToolCalls
+          hideToolInputOutput
         />
       </div>
 

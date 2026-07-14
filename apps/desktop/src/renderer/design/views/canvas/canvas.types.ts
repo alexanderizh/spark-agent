@@ -1,4 +1,5 @@
 import type {
+  MediaRequestCall,
   CanvasPromptDocument,
   CanvasPromptResponseFields,
   CanvasPromptTaskFields,
@@ -58,6 +59,23 @@ export type CanvasOperationType =
   | 'video_extend'
 
 export type CanvasInputTransport = 'auto' | 'cloud_url' | 'base64'
+export type CanvasTaskInputPayloadField = 'url' | 'dataUrl' | 'path' | 'unknown'
+export type CanvasTaskInputTransportKind =
+  | 'remote_url'
+  | 'safe_file_url'
+  | 'base64_data_url'
+  | 'local_path'
+  | 'unknown'
+
+export type CanvasTaskInputDiagnostic = {
+  type: 'image' | 'audio' | 'video' | 'file'
+  role?: 'input' | 'first_frame' | 'last_frame' | 'reference' | 'mask'
+  payloadField: CanvasTaskInputPayloadField
+  transport: CanvasTaskInputTransportKind
+  mimeType?: string | null
+  format?: string | null
+  valuePreview?: string | null
+}
 
 /** 操作步骤的产物组织语义；UI 合一，但运行历史与产物集合仍保留明确结构。 */
 export type CanvasOperationOutputMode = 'single' | 'candidates' | 'collection' | 'bundle'
@@ -335,8 +353,10 @@ export type CanvasTask = {
   requestId?: string | null
   /** provider 原始响应摘要（不含敏感信息） */
   rawResponse?: unknown
-  /** 实际发给 provider 的请求摘要（method + url + 已截断 body），用于任务详情展示 */
-  requestCall?: { method: string; url: string; body?: unknown } | null
+  /** 提交时输入文件的诊断摘要，便于任务详情排查 url/base64/path 等传参方式。 */
+  inputFileDiagnostics?: CanvasTaskInputDiagnostic[]
+  /** 实际发给 provider 的 HTTP 调用摘要（请求 + 响应），用于任务详情展示。 */
+  requestCall?: MediaRequestCall | null
   agentId?: string | null
   skillIds?: string[]
   agentMode?: 'local' | 'cloud' | null

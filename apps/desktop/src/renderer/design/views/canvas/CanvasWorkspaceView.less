@@ -1955,7 +1955,8 @@
   text-transform: uppercase;
 }
 
-.canvas-pane-context-menu button {
+.canvas-pane-context-menu button,
+.canvas-pane-context-submenu-panel button {
   display: inline-flex;
   width: 100%;
   align-items: center;
@@ -1972,22 +1973,20 @@
   white-space: nowrap;
 }
 
-.canvas-pane-context-menu button:hover {
+.canvas-pane-context-menu button:hover,
+.canvas-pane-context-submenu-panel button:hover {
   background: var(--hover);
 }
 
-.canvas-pane-context-menu button:disabled {
+.canvas-pane-context-menu button:disabled,
+.canvas-pane-context-submenu-panel button:disabled {
   cursor: not-allowed;
   opacity: 0.44;
 }
 
-.canvas-pane-context-menu button:disabled:hover {
+.canvas-pane-context-menu button:disabled:hover,
+.canvas-pane-context-submenu-panel button:disabled:hover {
   background: transparent;
-}
-
-.canvas-pane-context-menu:has(.canvas-pane-context-submenu:hover),
-.canvas-pane-context-menu:has(.canvas-pane-context-submenu:focus-within) {
-  overflow: visible;
 }
 
 .canvas-pane-context-submenu {
@@ -2000,11 +1999,9 @@
 }
 
 .canvas-pane-context-submenu-panel {
-  position: absolute;
-  top: 0;
-  left: calc(100% - 4px);
-  z-index: 41;
-  display: none;
+  position: fixed;
+  z-index: 1001;
+  display: flex;
   min-width: 220px;
   max-width: 300px;
   max-height: min(440px, calc(100vh - 24px));
@@ -2018,22 +2015,8 @@
   overflow-y: auto;
 }
 
-.canvas-pane-context-submenu:hover .canvas-pane-context-submenu-panel,
-.canvas-pane-context-submenu:focus-within .canvas-pane-context-submenu-panel {
-  display: flex;
-}
-
-.canvas-pane-context-menu-submenus-left .canvas-pane-context-submenu-panel {
-  right: calc(100% - 4px);
-  left: auto;
-}
-
-.canvas-pane-context-menu-submenus-up .canvas-pane-context-submenu-panel {
-  top: auto;
-  bottom: 0;
-}
-
-.canvas-pane-context-menu .canvas-pane-context-op {
+.canvas-pane-context-menu .canvas-pane-context-op,
+.canvas-pane-context-submenu-panel .canvas-pane-context-op {
   &.canvas-op-color-image .canvas-pane-context-op-icon {
     color: var(--canvas-op-tint, #1677ff);
   }
@@ -2073,14 +2056,39 @@
 .canvas-node-handle {
   --canvas-node-handle-scale: 1;
   z-index: 8;
+  // React Flow 的临时线取中心、已有边取外缘；零尺寸让两种坐标都落在节点边界。
+  width: 0;
+  min-width: 0;
+  height: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+}
+
+.canvas-node-handle::before {
+  position: absolute;
+  top: 50%;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  content: '';
+  pointer-events: inherit;
+}
+
+.canvas-node-handle::after {
+  position: absolute;
+  top: 50%;
   width: 14px;
   height: 14px;
   border: 3px solid color-mix(in srgb, var(--panel) 90%, transparent);
+  border-radius: 50%;
   background: color-mix(in srgb, var(--primary) 86%, var(--text-strong));
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent),
     var(--shadow-xs);
+  content: '';
   opacity: 0.72;
+  pointer-events: inherit;
   transition:
     opacity 0.12s ease,
     transform 0.12s ease,
@@ -2088,20 +2096,56 @@
 }
 
 .canvas-node-handle.react-flow__handle-left {
+  transform: translateY(-50%);
+}
+
+.canvas-node-handle.react-flow__handle-left::after {
+  left: 0;
   transform: translate(-50%, -50%) scale(var(--canvas-node-handle-scale));
 }
 
+.canvas-node-handle.react-flow__handle-left::before {
+  left: 0;
+  transform: translate(-50%, -50%);
+}
+
 .canvas-node-handle.react-flow__handle-right {
+  transform: translateY(-50%);
+}
+
+.canvas-node-handle.react-flow__handle-right::after {
+  right: 0;
   transform: translate(50%, -50%) scale(var(--canvas-node-handle-scale));
+}
+
+.canvas-node-handle.react-flow__handle-right::before {
+  right: 0;
+  transform: translate(50%, -50%);
 }
 
 .canvas-node:hover .canvas-node-handle,
 .canvas-node-selected .canvas-node-handle,
 .canvas-node-handle:hover {
   --canvas-node-handle-scale: 1.22;
+}
+
+.canvas-node:hover .canvas-node-handle::after,
+.canvas-node-selected .canvas-node-handle::after,
+.canvas-node-handle:hover::after {
   opacity: 1;
   box-shadow:
     0 0 0 6px color-mix(in srgb, var(--primary) 12%, transparent),
+    var(--shadow-sm);
+}
+
+.canvas-node-handle.connectingto.valid {
+  --canvas-node-handle-scale: 1.34;
+}
+
+.canvas-node-handle.connectingto.valid::after {
+  opacity: 1;
+  box-shadow:
+    0 0 0 8px color-mix(in srgb, var(--primary) 18%, transparent),
     var(--shadow-sm);
 }
 
@@ -10497,6 +10541,23 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   flex: 1;
   height: auto;
   min-height: 0;
+
+  .chat-panel-input-row {
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .chat-panel-input {
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+    appearance: none;
+    -webkit-appearance: none;
+  }
 }
 
 // 画布 Agent 会话面板：assistant 消息去除头像与气泡框，内容直接铺在面板内。

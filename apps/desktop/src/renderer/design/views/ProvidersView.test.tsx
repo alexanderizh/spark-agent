@@ -10,6 +10,7 @@ import {
   resolveProviderCardKind,
   sortProviderProfilesForCards,
 } from './ProvidersView'
+import { canHealthCheckProviderCardKind } from './provider-card-actions'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const mocks = vi.hoisted(() => ({
@@ -1032,6 +1033,22 @@ describe('resolveProviderCardKind', () => {
     // auto-router 的 id 永远不等于 local-cli，这里只是回归保护
     expect(resolveProviderCardKind(profile('claude-auto-router'))).toBe('router')
     expect(resolveProviderCardKind(profile('local-cli'))).toBe('cli')
+  })
+})
+
+describe('canHealthCheckProviderCardKind', () => {
+  it('图片和视频模型卡不提供健康检查', () => {
+    expect(canHealthCheckProviderCardKind('image')).toBe(false)
+    expect(canHealthCheckProviderCardKind('video')).toBe(false)
+  })
+
+  it('对话和语音模型卡仍保留健康检查', () => {
+    expect(canHealthCheckProviderCardKind('text')).toBe(true)
+    expect(canHealthCheckProviderCardKind('voice')).toBe(true)
+  })
+
+  it('自动路由卡仍不提供健康检查', () => {
+    expect(canHealthCheckProviderCardKind('router')).toBe(false)
   })
 })
 

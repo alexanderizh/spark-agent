@@ -3,6 +3,7 @@ import { Button, Tag } from '@lobehub/ui'
 import { Descriptions, Empty, Modal, Progress, Space } from 'antd'
 import { Icons } from '../../Icons'
 import { operationLabel } from './canvas.api'
+import { buildCanvasTaskDetailParams } from './canvasTaskInputDiagnostics'
 import type { CanvasAsset, CanvasNode, CanvasTask, CanvasTaskStatus } from './canvas.types'
 import { CanvasTaskInputSnapshotList } from './CanvasTaskInputSnapshotList'
 
@@ -454,6 +455,13 @@ function TaskDetailModal({
   const outputText = stringField(raw?.outputText) || stringField(raw?.text)
   const parsedEntities = raw?.parsedEntities
   const displayPrompt = task.compiledUserText || task.prompt || ''
+  const detailParams = buildCanvasTaskDetailParams(task)
+  const httpResponse = task.requestCall?.response
+  const providerResponseText = task.rawResponse != null ? formatJson(task.rawResponse) : ''
+  const httpResponseBodyText = httpResponse?.body != null ? formatJson(httpResponse.body) : ''
+  const shouldShowProviderResponse =
+    task.rawResponse != null &&
+    (!httpResponseBodyText || providerResponseText !== httpResponseBodyText)
 
   return (
     <Modal
@@ -538,8 +546,8 @@ function TaskDetailModal({
           </div>
         </DetailBlock>
 
-        <DetailBlock title="参数">
-          <pre>{formatJson(task.modelParams)}</pre>
+        <DetailBlock title="任务配置参数">
+          <pre>{formatJson(detailParams)}</pre>
         </DetailBlock>
 
         {parsedEntities != null && (
@@ -549,7 +557,7 @@ function TaskDetailModal({
         )}
 
         {task.requestCall && (
-          <DetailBlock title="请求摘要">
+          <DetailBlock title="实际 HTTP 请求">
             <div className="canvas-task-request-call">
               <div className="canvas-task-request-line">
                 <Tag size="middle" color="blue">
@@ -557,7 +565,23 @@ function TaskDetailModal({
                 </Tag>
                 <code>{task.requestCall.url}</code>
               </div>
+              {task.requestCall.headers != null && <pre>{formatJson(task.requestCall.headers)}</pre>}
               {task.requestCall.body != null && <pre>{formatJson(task.requestCall.body)}</pre>}
+            </div>
+          </DetailBlock>
+        )}
+
+        {httpResponse && (
+          <DetailBlock title="实际 HTTP 响应">
+            <div className="canvas-task-request-call">
+              <div className="canvas-task-request-line">
+                <Tag size="middle" color={httpResponse.status >= 400 ? 'red' : 'green'}>
+                  {httpResponse.status}
+                </Tag>
+                <code>{httpResponse.statusText || 'response'}</code>
+              </div>
+              {httpResponse.headers != null && <pre>{formatJson(httpResponse.headers)}</pre>}
+              {httpResponse.body != null && <pre>{formatJson(httpResponse.body)}</pre>}
             </div>
           </DetailBlock>
         )}
@@ -601,8 +625,8 @@ function TaskDetailModal({
           </div>
         </DetailBlock>
 
-        {task.rawResponse != null && (
-          <DetailBlock title="原始响应摘要">
+        {shouldShowProviderResponse && (
+          <DetailBlock title="最终 Provider 响应">
             <pre>{formatJson(task.rawResponse)}</pre>
           </DetailBlock>
         )}

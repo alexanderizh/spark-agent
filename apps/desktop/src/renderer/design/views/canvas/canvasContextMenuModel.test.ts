@@ -55,6 +55,18 @@ describe('canvasContextMenuModel', () => {
       expect(result.openSubmenusLeft).toBe(true)
       expect(result.openSubmenusUp).toBe(false)
     })
+
+    it('pins an oversized menu to the viewport inset and lets the menu scroll', () => {
+      const result = calculateCanvasContextMenuPosition({
+        point: { x: 180, y: 64 },
+        container: { width: 800, height: 600 },
+        menu: { width: 280, height: 900 },
+      })
+
+      expect(result.top).toBe(8)
+      expect(result.maxHeight).toBe(584)
+      expect(result.top + result.maxHeight).toBe(592)
+    })
   })
 
   describe('summarizeCanvasSelectionContext', () => {

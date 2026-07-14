@@ -1553,6 +1553,8 @@ describe('MediaRouterService', () => {
     const reqBody = output.requestCall?.body as Record<string, unknown>
     expect(reqBody.model).toBe('grok-imagine-image')
     expect(reqBody.prompt).toBe('cleanup')
+    expect(output.requestCall?.response?.status).toBe(200)
+    expect(output.requestCall?.response?.body).toBeDefined()
     // requestCall 摘要不能保留完整 data URL，只记录 MIME、大小估算与哈希等诊断元数据。
     const summarized = String((reqBody.image as { url: string }).url)
     expect(summarized).toContain('[base64 mime=image/png')
@@ -1606,6 +1608,8 @@ describe('MediaRouterService', () => {
     expect(err?.requestCall).toBeDefined()
     expect(err?.requestCall?.url).toContain('/images/generations')
     expect((err?.requestCall?.body as Record<string, unknown>).prompt).toBe('cat')
+    expect(err?.requestCall?.response?.status).toBe(422)
+    expect(String(err?.requestCall?.response?.body)).toContain('expected struct ImageUrl')
   })
 
   it('respects explicit providerProfileId over capability match', async () => {

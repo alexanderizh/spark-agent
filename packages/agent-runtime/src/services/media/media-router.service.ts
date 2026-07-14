@@ -246,18 +246,35 @@ function createRequestCapture(fetchImpl?: typeof fetch): {
 } {
   const baseFetch = fetchImpl ?? fetch
   let captured: MediaRequestCall | undefined
-  const wrappedFetch: typeof fetch = (input, init) => {
+  const wrappedFetch: typeof fetch = async (input, init) => {
     const method = (init?.method ?? 'GET').toUpperCase()
+    const requestHeaders = summarizeHeaders(init?.headers)
     if (method === 'POST' && init?.body != null) {
-      captured = { method, url: String(input), body: summarizeRequestBody(init.body) }
+      captured = {
+        method,
+        url: String(input),
+        ...(requestHeaders ? { headers: requestHeaders } : {}),
+        body: summarizeRequestBody(init.body, requestHeaders),
+      }
     }
-    return baseFetch(input, init)
+    const response = await baseFetch(input, init)
+    if (captured && captured.url === String(input) && captured.method === method) {
+      captured = {
+        ...captured,
+        response: await summarizeResponse(response),
+      }
+    }
+    return response
   }
   return { fetch: wrappedFetch, getCaptured: () => captured }
 }
 
 /** 把请求体归一为可展示形式：JSON 解析后截断 base64；非 JSON 字符串整体截断；二进制给字节占位。 */
-function summarizeRequestBody(body: unknown): unknown {
+function summarizeRequestBody(
+  body: unknown,
+  headers?: Record<string, string>,
+): unknown {
+  const contentType = headers?.['content-type']?.toLowerCase() ?? ''
   if (typeof body === 'string') {
     const trimmed = body.trimStart()
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
@@ -270,6 +287,9 @@ function summarizeRequestBody(body: unknown): unknown {
     return truncateLongString(body)
   }
   if (body instanceof Uint8Array) {
+    if (contentType.includes('multipart/form-data')) {
+      return `[multipart/form-data ${body.byteLength} bytes]`
+    }
     return `[binary ${body.byteLength} bytes]`
   }
   return '[non-string body]'
@@ -278,6 +298,106 @@ function summarizeRequestBody(body: unknown): unknown {
 function truncateLongString(value: string): string {
   return value.length <= 200 ? value : `${value.slice(0, 120)}…<truncated, len=${value.length}>`
 }
+
+async function summarizeResponse(response: Response): Promise<NonNullable<MediaRequestCall['response']>> {
+  const headers = summarizeHeaders(response.headers)
+  const contentType = headers?.['content-type']?.toLowerCase() ?? ''
+  const summary: NonNullable<MediaRequestCall['response']> = {
+    status: response.status,
+    ...(response.statusText ? { statusText: response.statusText } : {}),
+    ...(headers ? { headers } : {}),
+  }
+  try {
+    const text = await response.clone().text()
+    if (isTextualContentType(contentType) || looksLikeTextPayload(text)) {
+      return { ...summary, ...(text.length > 0 ? { body: summarizeTextPayload(text, contentType) } : {}) }
+    }
+    const buffer = Buffer.from(await response.clone().arrayBuffer())
+    return {
+      ...summary,
+      body: `[binary${contentType ? ` ${contentType}` : ''} ${buffer.byteLength} bytes]`,
+    }
+  } catch (error) {
+    return {
+      ...summary,
+      body: `[response summary unavailable: ${error instanceof Error ? error.message : String(error)}]`,
+    }
+  }
+}
+
+function summarizeTextPayload(text: string, contentType: string): unknown {
+  if (contentType.includes('json')) {
+    try {
+      return compactForLog(JSON.parse(text))
+    } catch {
+      return truncateLargeText(text)
+    }
+  }
+  return truncateLargeText(text)
+}
+
+function truncateLargeText(value: string): string {
+  return value.length <= 4000
+    ? value
+    : `${value.slice(0, 2000)}\n…<truncated, len=${value.length}>\n${value.slice(-1000)}`
+}
+
+function isTextualContentType(contentType: string): boolean {
+  return (
+    contentType.includes('json') ||
+    contentType.startsWith('text/') ||
+    contentType.includes('xml') ||
+    contentType.includes('html') ||
+    contentType.includes('javascript') ||
+    contentType.includes('x-www-form-urlencoded')
+  )
+}
+
+function looksLikeTextPayload(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('<')) return true
+  const sample = trimmed.slice(0, 200)
+  let readable = 0
+  for (const char of sample) {
+    const code = char.charCodeAt(0)
+    if (code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126)) readable += 1
+  }
+  return readable / sample.length > 0.85
+}
+
+function summarizeHeaders(
+  headers: unknown,
+): Record<string, string> | undefined {
+  if (!headers) return undefined
+  const entries = normalizeHeaders(headers)
+  if (entries.length === 0) return undefined
+  const summarized = Object.fromEntries(
+    entries.map(([key, value]) => [key, SECRET_HEADER_PATTERN.test(key) ? '[REDACTED]' : truncateHeaderValue(value)]),
+  )
+  return Object.keys(summarized).length > 0 ? summarized : undefined
+}
+
+function normalizeHeaders(headers: unknown): Array<[string, string]> {
+  if (headers instanceof Headers) return Array.from(headers.entries())
+  if (Array.isArray(headers)) {
+    return headers.flatMap((entry) => {
+      if (!Array.isArray(entry) || entry.length < 2) return []
+      const [key, value] = entry
+      return [[String(key).toLowerCase(), String(value)]]
+    })
+  }
+  if (headers && typeof headers === 'object') {
+    return Object.entries(headers).map(([key, value]) => [key.toLowerCase(), String(value)])
+  }
+  return []
+}
+
+function truncateHeaderValue(value: string): string {
+  return value.length <= 300 ? value : `${value.slice(0, 180)}…<truncated, len=${value.length}>`
+}
+
+const SECRET_HEADER_PATTERN = /^(authorization|x-api-key|api-key)$/i
 
 /** 失败的 provider 调用：把 fetch 捕获到的请求摘要挂到 MediaProviderError 上，便于任务详情排查。 */
 function attachCapturedRequest(err: unknown, capture: { getCaptured: () => MediaRequestCall | undefined }): void {

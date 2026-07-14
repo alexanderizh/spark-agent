@@ -51,6 +51,10 @@ export interface ChatPanelProps {
   onAfterSend?: (text: string) => void
   /** 可选：限制工具卡片的标签前缀（如只显示 mcp__spark_canvas__） */
   toolNamePrefixFilter?: string
+  /** 可选：隐藏整块工具调用日志 */
+  hideToolCalls?: boolean
+  /** 可选：隐藏工具调用中的参数/结果块，仅保留标题与错误信息 */
+  hideToolInputOutput?: boolean
   /**
    * 可选：接管发送逻辑。传入后 ChatPanel 不再自行调 session:submit-turn，
    * 而是把待发送文本交给父组件（父组件负责建会/发消息）；发送失败请抛异常，
@@ -109,6 +113,8 @@ export function ChatPanel({
   placeholder,
   onAfterSend,
   toolNamePrefixFilter,
+  hideToolCalls,
+  hideToolInputOutput,
   onSend,
   initialInput,
   onDraftChange,
@@ -486,6 +492,8 @@ export function ChatPanel({
             onQuestionAnswered={handleQuestionAnswered}
             {...(fallbackAssistant != null ? { fallbackAssistant } : {})}
             {...(toolNamePrefixFilter !== undefined ? { toolNamePrefixFilter } : {})}
+            {...(hideToolCalls ? { hideToolCalls } : {})}
+            {...(hideToolInputOutput ? { hideToolInputOutput } : {})}
           />
         ))}
         {pendingUserText != null && (
@@ -595,6 +603,8 @@ function MessageView({
   agents,
   fallbackAssistant,
   toolNamePrefixFilter,
+  hideToolCalls,
+  hideToolInputOutput,
   onQuestionAnswered,
 }: {
   message: UIMessage
@@ -602,6 +612,8 @@ function MessageView({
   agents: ManagedAgent[]
   fallbackAssistant?: { agentId: string; agentName: string }
   toolNamePrefixFilter?: string
+  hideToolCalls?: boolean
+  hideToolInputOutput?: boolean
   onQuestionAnswered: (
     questions: UserQuestionPrompt[],
     summaries: UserQuestionAnswerSummary[],
@@ -632,6 +644,8 @@ function MessageView({
             sessionId={sessionId}
             onQuestionAnswered={onQuestionAnswered}
             {...(toolNamePrefixFilter !== undefined ? { toolNamePrefixFilter } : {})}
+            {...(hideToolCalls ? { hideToolCalls } : {})}
+            {...(hideToolInputOutput ? { hideToolInputOutput } : {})}
           />
         ))}
       </div>
@@ -644,12 +658,16 @@ function BlockView({
   role,
   sessionId,
   toolNamePrefixFilter,
+  hideToolCalls,
+  hideToolInputOutput,
   onQuestionAnswered,
 }: {
   block: UIBlock
   role: 'user' | 'assistant'
   sessionId: string | null
   toolNamePrefixFilter?: string
+  hideToolCalls?: boolean
+  hideToolInputOutput?: boolean
   onQuestionAnswered: (
     questions: UserQuestionPrompt[],
     summaries: UserQuestionAnswerSummary[],
@@ -673,14 +691,16 @@ function BlockView({
         </details>
       )
     case 'tool_call': {
+      if (hideToolCalls) return null
       const displayName = block.toolName.replace(/^mcp__[^_]+__/, '')
       const isCanvas = block.toolName.startsWith('mcp__spark_canvas__')
-      // 设了前缀过滤时，匹配的工具(画布操作)完整展示参数与结果；
+      // 设了前缀过滤时，匹配的工具(画布操作)优先展示；
+      // 若 hideToolInputOutput 开启，则仅保留工具标题与错误信息。
       // 其他工具(内部读取/思考等)折叠为"详情"，默认收起、可展开
       const matchesFilter = !toolNamePrefixFilter || block.toolName.startsWith(toolNamePrefixFilter)
       const statusClass = `chat-panel-tool-${block.status}`
       const inputDetails =
-        Object.keys(block.toolInput).length > 0 ? (
+        !hideToolInputOutput && Object.keys(block.toolInput).length > 0 ? (
           <details className="chat-panel-tool-input">
             <summary>参数</summary>
             <pre>{JSON.stringify(block.toolInput, null, 2)}</pre>
@@ -690,7 +710,7 @@ function BlockView({
         <div className="chat-panel-tool-error">{block.error}</div>
       ) : null
       const outputDetails =
-        block.output && block.status === 'success' ? (
+        !hideToolInputOutput && block.output && block.status === 'success' ? (
           <details className="chat-panel-tool-output">
             <summary>结果</summary>
             <pre>

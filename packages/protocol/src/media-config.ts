@@ -31,8 +31,15 @@ export type MediaProviderKind =
   | 'midjourney'
   | 'custom'
 
+export interface MediaResponseTrace {
+  status: number
+  statusText?: string
+  headers?: Record<string, string>
+  body?: unknown
+}
+
 /**
- * 一次 provider HTTP 调用的摘要，用于在任务详情里展示「请求地址 + 请求参数」。
+ * 一次 provider HTTP 调用的摘要，用于在任务详情里展示「真实请求 + HTTP 响应」。
  *
  * body 已经过脱敏/摘要处理（base64 / data: URI 压缩成 MIME、大小估算、
  * sha256 和短 preview），既避免一张图刷屏，也避免把大体积 base64 落进画布快照。
@@ -41,7 +48,9 @@ export type MediaProviderKind =
 export interface MediaRequestCall {
   method: string
   url: string
+  headers?: Record<string, string>
   body?: unknown
+  response?: MediaResponseTrace
 }
 /** 调用方式：同步 / 异步轮询 / 自动兼容 */
 export type MediaApiType = 'sync' | 'async' | 'auto'
