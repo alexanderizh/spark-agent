@@ -250,10 +250,10 @@ export function resolveOperationPanelEditablePrompt(params: {
   nodePrompt?: string | null
   upstreamTextContext?: string | null
 }): string {
-  return mergeOperationPanelPromptWithInputContext(
-    params.nodePrompt ?? '',
-    params.upstreamTextContext ?? '',
-  )
+  // Connected text is represented by Prompt Document reference blocks. Keep the
+  // visible editor limited to authored text; the compiler resolves upstream
+  // content at submission time.
+  return (params.nodePrompt ?? '').trim()
 }
 
 export type OperationPanelEnumOption = {
@@ -426,9 +426,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     const nodePrompt = node.data.prompt
     return resolveOperationPanelEditablePrompt({
       ...(typeof nodePrompt === 'string' ? { nodePrompt } : {}),
-      upstreamTextContext,
     })
-  }, [node.data.prompt, upstreamTextContext])
+  }, [node.data.prompt])
 
   const inheritedNegativePrompt = useMemo(() => {
     const sourceNegativePrompts: string[] = []

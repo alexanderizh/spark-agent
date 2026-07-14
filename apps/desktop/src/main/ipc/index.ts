@@ -11,6 +11,11 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
+import {
+  buildCanvasMediaProviderPrompt,
+  buildCanvasRuntimeRequest,
+  buildCanvasSystemPrompt,
+} from './canvas-prompt-runtime.js'
 import { PendingUserQuestionStore } from './user-question-store.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
@@ -3314,9 +3319,17 @@ export function registerAllIpcHandlers(): void {
     )
     // capability 由 router 按 operation 推导（input.capability 留空）
     try {
+      const runtimeRequest = buildCanvasRuntimeRequest(req)
       const input = {
         operation: req.operation,
-        ...(req.prompt != null ? { prompt: req.prompt } : {}),
+        ...(runtimeRequest.prompt || req.prompt != null
+          ? {
+              prompt: buildCanvasMediaProviderPrompt({
+                userPrompt: runtimeRequest.prompt,
+                ...(req.systemPrompt ? { systemPrompt: req.systemPrompt } : {}),
+              }),
+            }
+          : {}),
         ...(req.negativePrompt != null ? { negativePrompt: req.negativePrompt } : {}),
         ...(req.inputFiles != null
           ? {
@@ -3445,10 +3458,6 @@ export function registerAllIpcHandlers(): void {
         .filter(
           (prompt): prompt is string => typeof prompt === 'string' && prompt.trim().length > 0,
         )
-      const systemBaseWithSkills =
-        skillPrompts.length > 0
-          ? `${baseSystem}\n\n[Selected Skills]\n${skillPrompts.join('\n\n')}`
-          : baseSystem
       const responseFormat =
         typeof req.modelParams?.responseFormat === 'string'
           ? req.modelParams.responseFormat
@@ -3459,19 +3468,13 @@ export function registerAllIpcHandlers(): void {
         responseFormat.toLowerCase() === 'json'
           ? '\n\n输出格式硬约束：只返回合法 JSON，不要 Markdown，不要代码块，不要额外解释。'
           : ''
-      const system =
-        req.negativePrompt && req.negativePrompt.trim().length > 0
-          ? `${systemBaseWithSkills}\n\n约束（不可违反）：${req.negativePrompt.trim()}${jsonConstraint}`
-          : `${systemBaseWithSkills}${jsonConstraint}`
-      // 上游图片输入（如「提取风格」节点接的图）转成 vision 输入，随消息发给多模态模型。
-      const images = (req.inputFiles ?? [])
-        .filter((file) => file.type === 'image')
-        .map((file) => ({
-          ...(file.url != null ? { url: file.url } : {}),
-          ...(file.dataUrl != null ? { dataUrl: file.dataUrl } : {}),
-          ...(file.mimeType != null ? { mimeType: file.mimeType } : {}),
-        }))
-        .filter((image) => image.url != null || image.dataUrl != null)
+      const runtimeRequest = buildCanvasRuntimeRequest(req)
+      const system = buildCanvasSystemPrompt({
+        capabilityPrompt: [req.systemPrompt, jsonConstraint].filter(Boolean).join('\n\n'),
+        agentPrompt: baseSystem,
+        skillPrompts,
+        ...(req.negativePrompt ? { negativePrompt: req.negativePrompt } : {}),
+      })
       const temperature =
         typeof req.modelParams?.temperature === 'number' ? req.modelParams.temperature : undefined
       const maxTokens =
@@ -3503,8 +3506,8 @@ export function registerAllIpcHandlers(): void {
           ...(chosen.profile.apiEndpoint ? { apiEndpoint: chosen.profile.apiEndpoint } : {}),
           model,
           system,
-          prompt: req.prompt,
-          ...(images.length > 0 ? { images } : {}),
+          prompt: runtimeRequest.prompt,
+          ...(runtimeRequest.images.length > 0 ? { images: runtimeRequest.images } : {}),
           ...(temperature != null ? { temperature } : {}),
           ...(maxTokens != null ? { maxTokens } : {}),
           ...(reasoningEffort != null ? { reasoningEffort } : {}),
@@ -3524,7 +3527,8 @@ export function registerAllIpcHandlers(): void {
                 agentName: agent?.name ?? null,
                 skillIds: selectedSkillIds,
                 systemPrompt: system,
-                prompt: req.prompt,
+                prompt: runtimeRequest.prompt,
+                relationManifest: runtimeRequest.relationManifest,
                 statusCode: err.statusCode,
                 errorBody: err.responseBody,
               }
@@ -3538,7 +3542,8 @@ export function registerAllIpcHandlers(): void {
                 agentName: agent?.name ?? null,
                 skillIds: selectedSkillIds,
                 systemPrompt: system,
-                prompt: req.prompt,
+                prompt: runtimeRequest.prompt,
+                relationManifest: runtimeRequest.relationManifest,
               }
         return fail(
           err instanceof CanvasTextProviderError ? err.code : 'text_generation_failed',
@@ -3569,7 +3574,8 @@ export function registerAllIpcHandlers(): void {
           agentName: agent?.name ?? null,
           skillIds: selectedSkillIds,
           systemPrompt: system,
-          prompt: req.prompt,
+          prompt: runtimeRequest.prompt,
+          relationManifest: runtimeRequest.relationManifest,
           outputText: result.text,
         },
       }
