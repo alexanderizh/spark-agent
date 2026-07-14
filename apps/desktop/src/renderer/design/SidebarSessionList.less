@@ -298,10 +298,17 @@
 
 .sidebar-project-toolbar:hover .sidebar-project-toolbar-actions,
 .sidebar-project-toolbar:focus-within .sidebar-project-toolbar-actions,
-.sidebar-project-toolbar:has(.sidebar-filter-btn.is-open) .sidebar-project-toolbar-actions {
+.sidebar-project-toolbar:has(.sidebar-filter-btn.is-open) .sidebar-project-toolbar-actions,
+.sidebar-project-toolbar:has(.sidebar-filter-btn.is-active) .sidebar-project-toolbar-actions {
   opacity: 1;
   pointer-events: auto;
   transform: translateX(0);
+}
+
+.sidebar-project-toolbar:has(.sidebar-filter-btn.is-active):not(:hover):not(:focus-within)
+  .sidebar-project-toolbar-btn {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .sidebar-project-toolbar-btn,
