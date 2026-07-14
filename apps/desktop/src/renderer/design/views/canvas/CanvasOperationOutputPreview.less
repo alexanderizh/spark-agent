@@ -50,6 +50,119 @@
   overscroll-behavior: contain;
 }
 
+.canvas-operation-output-text.is-card {
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  padding-inline: 16px;
+}
+
+.canvas-operation-output-list {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--canvas-v4-surface-muted, var(--bg-sunken));
+  color: var(--text);
+}
+
+.canvas-operation-output-list-heading {
+  display: flex;
+  min-height: 38px;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--divider);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-operation-output-list-heading strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.canvas-operation-output-list-items {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding: 10px;
+  overscroll-behavior: contain;
+}
+
+.canvas-operation-output-list-item {
+  display: grid;
+  min-height: 86px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--canvas-v4-surface, var(--panel-elev));
+}
+
+.canvas-operation-output-list-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-operation-output-list-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-operation-output-list-copy {
+  min-width: 0;
+}
+
+.canvas-operation-output-list-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.canvas-operation-output-list-title strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-operation-output-list-title span {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.canvas-operation-output-list-copy p {
+  display: -webkit-box;
+  margin: 6px 0 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .canvas-operation-output-audio.is-detail,
 .canvas-operation-output-empty.is-detail {
   min-height: 320px;

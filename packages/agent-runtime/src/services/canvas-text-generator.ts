@@ -65,11 +65,22 @@ export interface GenerateCanvasTextParams {
   maxTokens?: number
   temperature?: number
   reasoningEffort?: SparkReasoningEffort
+  disableThinking?: boolean
+  responseFormat?: 'json' | 'text'
+}
+
+export interface CanvasTextTokenUsage {
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
 }
 
 export interface GenerateCanvasTextResult {
   text: string
   requestCall?: MediaRequestCall | undefined
+  finishReason?: string | undefined
+  usage?: CanvasTextTokenUsage | undefined
+  reasoningContentChars?: number | undefined
 }
 
 export async function generateCanvasText(
@@ -82,7 +93,15 @@ export async function generateCanvasText(
     : await callOpenAICompatible(params, prompt)
   const text = (result.text ?? '').trim()
   if (text.length === 0) throw new Error('empty completion')
-  return { text, requestCall: result.requestCall }
+  return {
+    text,
+    requestCall: result.requestCall,
+    ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}),
+    ...(result.usage !== undefined ? { usage: result.usage } : {}),
+    ...(result.reasoningContentChars !== undefined
+      ? { reasoningContentChars: result.reasoningContentChars }
+      : {}),
+  }
 }
 
 function isAnthropic(providerType: string): boolean {
@@ -123,6 +142,9 @@ function toOpenAiImageUrl(image: CanvasTextImageInput): string | null {
 type ProviderCallResult = {
   text: string | null
   requestCall: MediaRequestCall
+  finishReason?: string
+  usage?: CanvasTextTokenUsage
+  reasoningContentChars?: number
 }
 
 async function callAnthropic(
@@ -202,6 +224,10 @@ async function callOpenAIChatCompletions(
     max_tokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
     temperature: params.temperature ?? 0.7,
     messages,
+    ...(params.responseFormat === 'json' ? { response_format: { type: 'json_object' } } : {}),
+    ...(shouldSendThinkingToggle(params) && params.disableThinking === true
+      ? { thinking: { type: 'disabled' } }
+      : {}),
   }
   const requestCall = buildRequestCall('POST', url, body)
   const res = await fetchWithTimeout(url, {
@@ -218,10 +244,28 @@ async function callOpenAIChatCompletions(
     throw new CanvasTextProviderError(res.status, detail, requestCall)
   }
   const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
+    choices?: Array<{
+      finish_reason?: string
+      message?: { content?: string; reasoning_content?: string | null }
+    }>
+    usage?: {
+      prompt_tokens?: number
+      completion_tokens?: number
+      total_tokens?: number
+    }
   }
-  const text = data.choices?.[0]?.message?.content
-  return { text: typeof text === 'string' ? text : null, requestCall }
+  const choice = data.choices?.[0]
+  const text = choice?.message?.content
+  const reasoningContent = choice?.message?.reasoning_content
+  return {
+    text: typeof text === 'string' ? text : null,
+    requestCall,
+    ...(typeof choice?.finish_reason === 'string' ? { finishReason: choice.finish_reason } : {}),
+    ...(data.usage ? { usage: normalizeTokenUsage(data.usage) } : {}),
+    ...(typeof reasoningContent === 'string' && reasoningContent.length > 0
+      ? { reasoningContentChars: reasoningContent.length }
+      : {}),
+  }
 }
 
 async function callOpenAIResponses(
@@ -263,8 +307,17 @@ async function callOpenAIResponses(
         text?: string
       }>
     }>
+    usage?: {
+      input_tokens?: number
+      output_tokens?: number
+      total_tokens?: number
+    }
   }
-  return { text: extractResponsesText(data), requestCall }
+  return {
+    text: extractResponsesText(data),
+    requestCall,
+    ...(data.usage ? { usage: normalizeResponsesUsage(data.usage) } : {}),
+  }
 }
 
 function buildResponsesInput(prompt: string, images: CanvasTextImageInput[] | undefined): unknown {
@@ -324,6 +377,16 @@ function normalizeEndpoint(custom: string | undefined, fallback: string): string
   return (custom?.trim() || fallback).replace(/\/+$/, '')
 }
 
+function shouldSendThinkingToggle(params: GenerateCanvasTextParams): boolean {
+  const providerType = params.providerType.trim().toLowerCase()
+  if (providerType === 'deepseek') return true
+  const modelId = params.model.trim().toLowerCase()
+  if (modelId.startsWith('deepseek-')) return true
+  if (modelId.startsWith('glm-')) return true
+  const endpoint = params.apiEndpoint?.trim().toLowerCase() ?? ''
+  return endpoint.includes('api.deepseek.com') || endpoint.includes('bigmodel.cn')
+}
+
 function buildRequestCall(method: string, url: string, body: unknown): MediaRequestCall {
   return { method, url, body: sanitizeRequestBody(body) }
 }
@@ -365,5 +428,29 @@ async function safeText(res: Response): Promise<string> {
     return (await res.text()).slice(0, ERROR_DETAIL_MAX_LENGTH)
   } catch {
     return ''
+  }
+}
+
+function normalizeTokenUsage(usage: {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+}): CanvasTextTokenUsage {
+  return {
+    ...(typeof usage.prompt_tokens === 'number' ? { promptTokens: usage.prompt_tokens } : {}),
+    ...(typeof usage.completion_tokens === 'number' ? { completionTokens: usage.completion_tokens } : {}),
+    ...(typeof usage.total_tokens === 'number' ? { totalTokens: usage.total_tokens } : {}),
+  }
+}
+
+function normalizeResponsesUsage(usage: {
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+}): CanvasTextTokenUsage {
+  return {
+    ...(typeof usage.input_tokens === 'number' ? { promptTokens: usage.input_tokens } : {}),
+    ...(typeof usage.output_tokens === 'number' ? { completionTokens: usage.output_tokens } : {}),
+    ...(typeof usage.total_tokens === 'number' ? { totalTokens: usage.total_tokens } : {}),
   }
 }

@@ -55,6 +55,8 @@ export const ProviderExportProfileSchema = z.object({
   supportsMillionContext: z.boolean(),
   /** 自定义上下文窗口（tokens）；优先级高于 supportsMillionContext */
   contextWindow: z.number().int().min(0).max(10_000_000).optional(),
+  /** 文本任务默认最大输出 tokens */
+  maxTokens: z.number().int().min(0).max(10_000_000).optional(),
   isDefault: z.boolean(),
   /** 档位映射；缺失则回落 defaultModel */
   haikuModel: z.string().min(1).max(200).nullable().optional(),

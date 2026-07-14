@@ -4794,15 +4794,15 @@ function StorageSection() {
 
       {error !== null && <div className="card storage-card">{error}</div>}
 
-      <div className="subsec-h">
+      <div className="subsec-h" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'end'}}>
         存储用量
         <Button
-          size="middle"
+          size="small"
           type="text"
           loading={statsLoading}
           onClick={() => void refreshStats()}
           disabled={statsLoading}
-          style={{ marginLeft: 8 }}
+          style={{ marginLeft: 8, fontSize: 12 }}
         >
           刷新
         </Button>

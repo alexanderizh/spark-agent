@@ -43,6 +43,19 @@ export function CanvasPromptMentionTextArea({
         connections,
       ),
   )
+  const resolvedDocument = controlledDocument ?? document
+  const resolvedDocumentRef = useRef(resolvedDocument)
+  const knownConnectionIdsRef = useRef(
+    new Set(
+      resolvedDocument.blocks.flatMap((block) =>
+        block.kind === 'reference' && block.source === 'connection' ? [block.sourceNodeId] : [],
+      ),
+    ),
+  )
+
+  useEffect(() => {
+    resolvedDocumentRef.current = resolvedDocument
+  }, [resolvedDocument])
 
   useEffect(() => {
     if (!controlledDocument) return
@@ -62,35 +75,30 @@ export function CanvasPromptMentionTextArea({
   }, [connections, controlledDocument, nodes, promptAssets, value])
 
   useEffect(() => {
-    setDocument((current) => {
-      const connectedIds = new Set(connections.map((node) => node.id))
-      const syntheticEdges = connections.map((node, index) => ({
-        id: `composer-connection-${index}`,
-        projectId: node.projectId,
-        boardId: node.boardId,
-        userId: node.userId,
-        sourceNodeId: node.id,
-        targetNodeId: 'composer',
-        type: 'used_as_input' as const,
-        metadata: {},
-        createdAt: '',
-      }))
-      const reconciled = reconcilePromptConnections(current, syntheticEdges).document
-      const next = ensureConnectionReferences(reconciled, connections)
-      if (
-        JSON.stringify(current.blocks) === JSON.stringify(next.blocks) &&
-        Array.from(connectedIds).every((id) =>
-          next.blocks.some((block) => block.kind === 'reference' && block.sourceNodeId === id),
-        )
-      ) {
-        return current
-      }
-      const legacy = toCanvasPromptLegacyText(next)
-      emittedValueRef.current = legacy
-      onChange(legacy)
-      onDocumentChange?.(next)
-      return next
-    })
+    const current = resolvedDocumentRef.current
+    const connectedIds = new Set(connections.map((node) => node.id))
+    const newConnections = connections.filter((node) => !knownConnectionIdsRef.current.has(node.id))
+    const syntheticEdges = connections.map((node, index) => ({
+      id: `composer-connection-${index}`,
+      projectId: node.projectId,
+      boardId: node.boardId,
+      userId: node.userId,
+      sourceNodeId: node.id,
+      targetNodeId: 'composer',
+      type: 'used_as_input' as const,
+      metadata: {},
+      createdAt: '',
+    }))
+    const reconciled = reconcilePromptConnections(current, syntheticEdges).document
+    const next = ensureConnectionReferences(reconciled, newConnections)
+    knownConnectionIdsRef.current = connectedIds
+    if (JSON.stringify(current.blocks) === JSON.stringify(next.blocks)) return
+    setDocument(next)
+    resolvedDocumentRef.current = next
+    const legacy = toCanvasPromptLegacyText(next)
+    emittedValueRef.current = legacy
+    onChange(legacy)
+    onDocumentChange?.(next)
   }, [connections, onChange, onDocumentChange])
 
   const handleChange = (next: CanvasPromptDocument) => {
@@ -101,7 +109,6 @@ export function CanvasPromptMentionTextArea({
     onDocumentChange?.(next)
   }
 
-  const resolvedDocument = controlledDocument ?? document
   return (
     <CanvasPromptComposer
       document={resolvedDocument}

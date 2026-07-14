@@ -188,7 +188,7 @@ describe('canvasOperationPresets', () => {
     })
   })
 
-  it('prefers last used config over saved preset for the same target', () => {
+  it('keeps the configured system prompt while reusing runtime selections', () => {
     writeCanvasPresetTarget('chapter.to_screenplay', {
       prompt: '预设版转剧本',
       providerProfileId: 'provider:text',
@@ -207,7 +207,7 @@ describe('canvasOperationPresets', () => {
       modelParams: { temperature: 0.2 },
     })
     expect(readCanvasResolvedPresetTarget('chapter.to_screenplay')).toEqual({
-      prompt: '上次实际使用的转剧本配置',
+      prompt: '预设版转剧本',
       negativePrompt: '',
       providerProfileId: 'provider:text',
       modelId: 'gpt-5.1',

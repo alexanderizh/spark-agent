@@ -313,6 +313,7 @@ function rowToProfile(row: {
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
     supportsMillionContext: config.supportsMillionContext === true,
     ...(typeof config.contextWindow === 'number' && config.contextWindow > 0 && { contextWindow: config.contextWindow }),
+    ...(typeof config.maxTokens === 'number' && config.maxTokens > 0 && { maxTokens: config.maxTokens }),
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
     ...(config.opusModel !== undefined && { opusModel: config.opusModel }),
@@ -563,6 +564,7 @@ export class ProviderService {
     codexApiKind?: 'chat' | 'responses' | 'embedding'
     supportsMillionContext?: boolean
     contextWindow?: number
+    maxTokens?: number
     haikuModel?: string
     sonnetModel?: string
     opusModel?: string
@@ -611,6 +613,7 @@ export class ProviderService {
         ...(params.codexApiKind !== undefined && { codexApiKind: params.codexApiKind }),
         ...(params.supportsMillionContext !== undefined && { supportsMillionContext: params.supportsMillionContext }),
         ...(params.contextWindow !== undefined && params.contextWindow > 0 && { contextWindow: Math.floor(params.contextWindow) }),
+        ...(params.maxTokens !== undefined && params.maxTokens > 0 && { maxTokens: Math.floor(params.maxTokens) }),
         ...(params.haikuModel !== undefined && params.haikuModel.trim().length > 0 && { haikuModel: params.haikuModel.trim() }),
         ...(params.sonnetModel !== undefined && params.sonnetModel.trim().length > 0 && { sonnetModel: params.sonnetModel.trim() }),
         ...(params.opusModel !== undefined && params.opusModel.trim().length > 0 && { opusModel: params.opusModel.trim() }),
@@ -646,6 +649,8 @@ export class ProviderService {
     supportsMillionContext?: boolean
     /** 0 清除自定义窗口；正整数设置；undefined 不修改 */
     contextWindow?: number
+    /** 0 清除默认最大输出；正整数设置；undefined 不修改 */
+    maxTokens?: number
     /** null 清除该档自定义；string 设置；undefined 不修改 */
     haikuModel?: string | null
     sonnetModel?: string | null
@@ -698,6 +703,7 @@ export class ProviderService {
       params.codexApiKind !== undefined ||
       params.supportsMillionContext !== undefined ||
       params.contextWindow !== undefined ||
+      params.maxTokens !== undefined ||
       tierTouched ||
       params.modelType !== undefined ||
       params.imageProvider !== undefined ||
@@ -740,6 +746,13 @@ export class ProviderService {
         newConfig.contextWindow = Math.floor(params.contextWindow)
       } else {
         delete newConfig.contextWindow
+      }
+    }
+    if (newConfig !== undefined && params.maxTokens !== undefined) {
+      if (params.maxTokens > 0) {
+        newConfig.maxTokens = Math.floor(params.maxTokens)
+      } else {
+        delete newConfig.maxTokens
       }
     }
     if (newConfig !== undefined && params.haikuModel !== undefined) {
@@ -1791,6 +1804,7 @@ function rowToExportProfile(
     ...(config.providerIcon !== undefined && { providerIcon: config.providerIcon }),
     supportsMillionContext: config.supportsMillionContext === true,
     ...(typeof config.contextWindow === 'number' && config.contextWindow > 0 && { contextWindow: config.contextWindow }),
+    ...(typeof config.maxTokens === 'number' && config.maxTokens > 0 && { maxTokens: config.maxTokens }),
     isDefault: row.is_default === 1,
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
@@ -1822,6 +1836,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   supportsMillionContext?: boolean
   contextWindow?: number
+  maxTokens?: number
   haikuModel?: string
   sonnetModel?: string
   opusModel?: string
@@ -1842,6 +1857,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
     ...(profile.codexApiKind !== undefined && { codexApiKind: profile.codexApiKind }),
     supportsMillionContext: profile.supportsMillionContext,
     ...(typeof profile.contextWindow === 'number' && profile.contextWindow > 0 && { contextWindow: profile.contextWindow }),
+    ...(typeof profile.maxTokens === 'number' && profile.maxTokens > 0 && { maxTokens: profile.maxTokens }),
     ...(profile.haikuModel != null && profile.haikuModel.length > 0 && { haikuModel: profile.haikuModel }),
     ...(profile.sonnetModel != null && profile.sonnetModel.length > 0 && { sonnetModel: profile.sonnetModel }),
     ...(profile.opusModel != null && profile.opusModel.length > 0 && { opusModel: profile.opusModel }),

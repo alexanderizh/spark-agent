@@ -337,6 +337,17 @@ export function readCanvasOperationPresetPromptPrefix(operation: CanvasOperation
   return BUILTIN_PROMPT_PREFIXES[operation] ?? ''
 }
 
+/** Compose hidden capability instructions without leaking them into the user document. */
+export function buildCanvasOperationSystemPrompt(
+  operation: CanvasOperationType,
+  ...sections: Array<string | null | undefined>
+): string {
+  const values = [readCanvasOperationPresetPromptPrefix(operation), ...sections]
+    .map((section) => section?.trim() ?? '')
+    .filter(Boolean)
+  return values.filter((section, index) => values.indexOf(section) === index).join('\n\n')
+}
+
 export function buildCanvasOperationPrompt(
   operation: CanvasOperationType,
   prompt: string | undefined,
@@ -493,7 +504,10 @@ export function readCanvasResolvedPresetTarget(targetId: CanvasPresetTargetId): 
   const targetPreset = readCanvasPresetTarget(targetId)
   const lastUsed = readLastUsedStore()[targetId] ?? {}
   return {
-    prompt: lastUsed.prompt ?? targetPreset.prompt,
+    // 用户在任务面板中输入的内容不能反向覆盖功能节点的内置指令。
+    // 历史版本曾把 prompt 写进 last-used，这里固定以显式 preset 为准，
+    // 同时继续沿用上次选择的模型、Agent 与参数。
+    prompt: targetPreset.prompt,
     negativePrompt: lastUsed.negativePrompt ?? targetPreset.negativePrompt,
     ...((lastUsed.providerProfileId ?? targetPreset.providerProfileId)
       ? { providerProfileId: lastUsed.providerProfileId ?? targetPreset.providerProfileId }

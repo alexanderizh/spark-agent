@@ -85,6 +85,7 @@ function compileBlock(input: {
 }): string {
   const { block } = input
   if (block.kind === 'text') return block.text.trim()
+  if (block.kind === 'reference' && block.suppressed) return ''
   if (block.kind === 'parameter') {
     const unit = block.unit ? ` ${block.unit}` : ''
     const relation = block.relation ? `；关系：${block.relation}` : ''

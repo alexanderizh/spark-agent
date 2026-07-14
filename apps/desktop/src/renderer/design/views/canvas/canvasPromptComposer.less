@@ -1,14 +1,16 @@
 .canvas-prompt-composer {
   position: relative;
   min-height: 132px;
-  border: 1px solid var(--spark-border, #dfe2ea);
+  border: 1px solid var(--border-strong);
   border-radius: 14px;
-  background: var(--spark-surface, #fff);
+  background: var(--panel-elev);
+  color: var(--text);
+  font-family: var(--font-sans);
 }
 
 .canvas-prompt-composer:focus-within {
-  border-color: #6765ff;
-  box-shadow: 0 0 0 2px rgba(103, 101, 255, 0.12);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .canvas-prompt-composer-toolbar {
@@ -17,7 +19,7 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px 4px;
-  color: #9ba1af;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -26,67 +28,183 @@
   width: 34px;
   height: 34px;
   place-items: center;
-  border: 1px dashed #d5d8e2;
+  border: 1px dashed var(--border-strong);
   border-radius: 10px;
-  background: #fafbfe;
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.canvas-prompt-composer-add:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .canvas-prompt-composer-body {
   position: relative;
   min-height: 82px;
   padding: 8px 12px 14px;
-  color: #20232d;
+  color: var(--text);
   font-size: 14px;
   line-height: 2.25;
   white-space: pre-wrap;
+  cursor: text;
 }
 
 .canvas-prompt-text-block {
-  min-width: 3px;
   outline: none;
+  cursor: text;
 }
 
-.canvas-prompt-text-block:empty::before {
-  color: #b1b6c2;
-  content: attr(data-placeholder);
+.canvas-prompt-lexical-input {
+  display: block;
+  min-height: 82px;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  line-height: 2.25;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.canvas-prompt-lexical-paragraph {
+  min-height: 1lh;
+  margin: 0;
+}
+
+.canvas-prompt-lexical-placeholder {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.canvas-prompt-lexical-atomic {
+  display: inline;
+  vertical-align: middle;
+}
+
+.canvas-prompt-chip-shell {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  vertical-align: middle;
+}
+
+.canvas-prompt-chip-shell:hover,
+.canvas-prompt-chip-shell:focus-within {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.canvas-prompt-chip-shell.is-invalid {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border-strong));
+  background: var(--danger-bg);
+}
+
+.canvas-prompt-chip-shell > .canvas-prompt-chip {
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+
+.canvas-prompt-chip-shell > .canvas-prompt-chip-remove {
+  margin-right: 2px;
 }
 
 .canvas-prompt-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  margin: 0 3px;
-  padding: 3px 9px 3px 4px;
+  gap: 5px;
+  min-height: 28px;
+  margin: 0 2px;
+  padding: 2px 7px 2px 3px;
   border: 1px solid transparent;
-  border-radius: 10px;
-  background: #f0f1f5;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font: inherit;
   vertical-align: middle;
 }
 
 .canvas-prompt-chip:hover,
 .canvas-prompt-chip:focus-visible {
-  border-color: #6866ff;
-  background: #f0f0ff;
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .canvas-prompt-chip.is-invalid {
-  border-color: #e6a2a2;
-  background: #fff1f1;
-  color: #9b4c4c;
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border-strong));
+  background: var(--danger-bg);
+  color: var(--danger);
 }
 
 .canvas-prompt-chip-thumb,
 .canvas-prompt-chip-icon {
   display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
   place-items: center;
   overflow: hidden;
-  border-radius: 7px;
-  background: #e6e7ff;
-  color: #5554e8;
+  border-radius: 4px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-prompt-chip-icon svg {
+  display: block;
+}
+
+.canvas-prompt-chip.is-parameter {
+  padding-right: 4px;
+}
+
+.canvas-prompt-chip.is-parameter input {
+  min-width: 5ch;
+  max-width: 24ch;
+  padding: 0 2px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: 22px;
+}
+
+.canvas-prompt-chip.is-parameter input::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.canvas-prompt-chip-unit {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.canvas-prompt-chip-remove {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.canvas-prompt-chip-remove:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
 }
 
 .canvas-prompt-chip-thumb img,
@@ -104,7 +222,7 @@
 }
 
 .canvas-prompt-chip-copy small {
-  color: #7f8492;
+  color: var(--text-muted);
   font-size: 10px;
 }
 
@@ -116,11 +234,16 @@
   left: 8px;
   display: grid;
   min-width: 240px;
+  max-width: min(360px, calc(100vw - 48px));
   padding: 6px;
-  border: 1px solid #e1e4ec;
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 16px 40px rgba(34, 39, 75, 0.16);
+  background: var(--panel-elev);
+  box-shadow: var(--shadow-lg);
+}
+
+.canvas-prompt-parameter-menu {
+  width: 320px;
 }
 
 .canvas-prompt-mention-menu button,
@@ -132,12 +255,86 @@
   border: 0;
   border-radius: 8px;
   background: transparent;
+  color: var(--text);
+  font: inherit;
   text-align: left;
+  cursor: pointer;
 }
 
 .canvas-prompt-mention-menu button:hover,
+.canvas-prompt-mention-menu button.is-selected,
 .canvas-prompt-parameter-menu button:hover {
-  background: #f2f3f7;
+  background: var(--hover);
+}
+
+.canvas-prompt-menu-heading {
+  padding: 5px 8px 3px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+}
+
+.canvas-prompt-menu-heading.is-resources {
+  margin-top: 5px;
+  padding-top: 9px;
+  border-top: 1px solid var(--divider);
+}
+
+.canvas-prompt-menu-icon,
+.canvas-prompt-menu-thumb {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-prompt-menu-icon svg,
+.canvas-prompt-menu-thumb svg {
+  display: block;
+}
+
+.canvas-prompt-menu-thumb img,
+.canvas-prompt-menu-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-prompt-resource-list {
+  display: grid;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.canvas-prompt-menu-copy {
+  display: grid;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.canvas-prompt-menu-copy strong,
+.canvas-prompt-menu-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-prompt-menu-copy small {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.canvas-prompt-hover-popover,
+.canvas-prompt-hover-card {
+  color: var(--text);
+  font-family: var(--font-sans);
 }
 
 .canvas-prompt-hover-card {
@@ -175,8 +372,8 @@
 .canvas-prompt-hover-meta span {
   padding: 3px 7px;
   border-radius: 999px;
-  background: #f0f1ff;
-  color: #5051cc;
+  background: var(--primary-soft);
+  color: var(--primary);
   font-size: 11px;
 }
 
@@ -184,10 +381,10 @@
   max-height: 280px;
   overflow-y: auto;
   padding: 9px 10px;
-  border: 1px solid #edf0f5;
+  border: 1px solid var(--divider);
   border-radius: 9px;
-  background: #fafbfc;
-  color: #535867;
+  background: var(--bg-sunken);
+  color: var(--text);
   font-size: 12px;
   line-height: 1.65;
   white-space: pre-wrap;

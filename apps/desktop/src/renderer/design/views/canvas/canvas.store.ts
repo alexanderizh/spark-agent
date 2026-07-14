@@ -748,6 +748,7 @@ export function useCanvasWorkspace(projectId: string) {
       title?: string
       message?: string
       prompt?: string
+      systemPrompt?: string
       negativePrompt?: string
       modelParams?: Record<string, unknown>
       agentId?: string

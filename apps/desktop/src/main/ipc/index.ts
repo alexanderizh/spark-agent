@@ -16,6 +16,10 @@ import {
   buildCanvasRuntimeRequest,
   buildCanvasSystemPrompt,
 } from './canvas-prompt-runtime.js'
+import {
+  buildCanvasTextRawResponse,
+  resolveCanvasTextTokenBudget,
+} from './canvasTextTaskDiagnostics.js'
 import { PendingUserQuestionStore } from './user-question-store.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
@@ -3477,12 +3481,25 @@ export function registerAllIpcHandlers(): void {
       })
       const temperature =
         typeof req.modelParams?.temperature === 'number' ? req.modelParams.temperature : undefined
-      const maxTokens =
+      const requestedMaxTokens =
         typeof req.modelParams?.maxTokens === 'number'
           ? req.modelParams.maxTokens
           : typeof req.modelParams?.max_tokens === 'number'
             ? req.modelParams.max_tokens
             : undefined
+      const tokenBudget = resolveCanvasTextTokenBudget({
+        requestedMaxTokens,
+        providerMaxTokens: chosen.profile.maxTokens,
+        providerContextWindow: chosen.profile.contextWindow,
+        providerSupportsMillionContext: chosen.profile.supportsMillionContext,
+        model,
+        taskPipelineRole: req.taskPipelineRole,
+        prompt: runtimeRequest.prompt,
+      })
+      const maxTokens = tokenBudget.maxTokens
+      log.info(
+        `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} maxTokens=${maxTokens ?? '(provider-default)'} source=${tokenBudget.source ?? 'unset'} providerContext=${tokenBudget.providerContextWindow ?? '(n/a)'} modelContext=${tokenBudget.modelContextWindow ?? '(n/a)'} modelMaxOutput=${tokenBudget.modelMaxOutputTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate ?? '(n/a)'}`,
+      )
       const rawReasoningEffort =
         typeof req.reasoningEffort === 'string'
           ? req.reasoningEffort
@@ -3496,6 +3513,7 @@ export function registerAllIpcHandlers(): void {
         : agent?.reasoningEffort != null && isProtocolReasoning(agent.reasoningEffort)
           ? agent.reasoningEffort
           : undefined
+      const disableThinking = req.taskPipelineRole === 'shot' || responseFormat.toLowerCase() === 'json'
       const apiKind = chosen.profile.codexApiKind === 'responses' ? 'responses' : 'chat'
       let result: Awaited<ReturnType<typeof generateCanvasText>>
       try {
@@ -3511,40 +3529,37 @@ export function registerAllIpcHandlers(): void {
           ...(temperature != null ? { temperature } : {}),
           ...(maxTokens != null ? { maxTokens } : {}),
           ...(reasoningEffort != null ? { reasoningEffort } : {}),
+          ...(disableThinking ? { disableThinking: true } : {}),
+          ...(responseFormat.toLowerCase() === 'json' ? { responseFormat: 'json' as const } : {}),
         })
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         const requestCall = err instanceof CanvasTextProviderError ? err.requestCall : undefined
-        const rawResponse =
-          err instanceof CanvasTextProviderError
+        const rawResponse = buildCanvasTextRawResponse({
+          providerProfileId: chosen.profile.id,
+          provider: chosen.profile.provider,
+          providerName: chosen.profile.name,
+          model,
+          apiKind,
+          agentId: agent?.id ?? null,
+          agentName: agent?.name ?? null,
+          skillIds: selectedSkillIds,
+          relationManifest: runtimeRequest.relationManifest,
+          taskPipelineRole: req.taskPipelineRole,
+          effectiveMaxTokens: tokenBudget.maxTokens,
+          maxTokensSource: tokenBudget.source,
+          promptTokensEstimate: tokenBudget.promptTokensEstimate,
+          providerMaxTokens: tokenBudget.providerMaxTokens,
+          providerContextWindow: tokenBudget.providerContextWindow,
+          modelContextWindow: tokenBudget.modelContextWindow,
+          modelMaxOutputTokens: tokenBudget.modelMaxOutputTokens,
+          ...(err instanceof CanvasTextProviderError
             ? {
-                providerProfileId: chosen.profile.id,
-                provider: chosen.profile.provider,
-                providerName: chosen.profile.name,
-                model,
-                apiKind,
-                agentId: agent?.id ?? null,
-                agentName: agent?.name ?? null,
-                skillIds: selectedSkillIds,
-                systemPrompt: system,
-                prompt: runtimeRequest.prompt,
-                relationManifest: runtimeRequest.relationManifest,
                 statusCode: err.statusCode,
                 errorBody: err.responseBody,
               }
-            : {
-                providerProfileId: chosen.profile.id,
-                provider: chosen.profile.provider,
-                providerName: chosen.profile.name,
-                model,
-                apiKind,
-                agentId: agent?.id ?? null,
-                agentName: agent?.name ?? null,
-                skillIds: selectedSkillIds,
-                systemPrompt: system,
-                prompt: runtimeRequest.prompt,
-                relationManifest: runtimeRequest.relationManifest,
-              }
+            : {}),
+        })
         return fail(
           err instanceof CanvasTextProviderError ? err.code : 'text_generation_failed',
           message,
@@ -3564,7 +3579,7 @@ export function registerAllIpcHandlers(): void {
         model,
         text: result.text,
         ...(result.requestCall !== undefined ? { requestCall: result.requestCall } : {}),
-        rawResponse: {
+        rawResponse: buildCanvasTextRawResponse({
           providerProfileId: chosen.profile.id,
           provider: chosen.profile.provider,
           providerName: chosen.profile.name,
@@ -3573,11 +3588,20 @@ export function registerAllIpcHandlers(): void {
           agentId: agent?.id ?? null,
           agentName: agent?.name ?? null,
           skillIds: selectedSkillIds,
-          systemPrompt: system,
-          prompt: runtimeRequest.prompt,
           relationManifest: runtimeRequest.relationManifest,
+          taskPipelineRole: req.taskPipelineRole,
           outputText: result.text,
-        },
+          effectiveMaxTokens: tokenBudget.maxTokens,
+          maxTokensSource: tokenBudget.source,
+          promptTokensEstimate: tokenBudget.promptTokensEstimate,
+          providerMaxTokens: tokenBudget.providerMaxTokens,
+          providerContextWindow: tokenBudget.providerContextWindow,
+          modelContextWindow: tokenBudget.modelContextWindow,
+          modelMaxOutputTokens: tokenBudget.modelMaxOutputTokens,
+          providerFinishReason: result.finishReason,
+          usage: result.usage,
+          reasoningContentChars: result.reasoningContentChars,
+        }),
       }
     }
     if (req.waitForCompletion === false) {

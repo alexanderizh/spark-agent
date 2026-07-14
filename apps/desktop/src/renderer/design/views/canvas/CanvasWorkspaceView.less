@@ -3265,7 +3265,9 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   color: var(--text-muted);
   cursor: pointer;
   transform: translateY(-50%);
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
 }
 .canvas-agent-side-panel-collapse-toggle:hover {
   color: var(--primary);
@@ -7007,12 +7009,26 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-node-floating-panel .canvas-operation-composer-prompt {
+  display: flex;
+  flex-direction: column;
   min-height: 240px !important;
   max-height: 420px;
   resize: none;
   border-radius: 10px !important;
   font-size: 13px;
   line-height: 1.55;
+}
+
+.canvas-node-floating-panel .canvas-operation-composer-prompt .canvas-prompt-composer-toolbar {
+  flex: 0 0 auto;
+}
+
+.canvas-node-floating-panel .canvas-operation-composer-prompt .canvas-prompt-composer-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .canvas-node-floating-panel .canvas-operation-composer-bottom {
@@ -10182,8 +10198,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 // ── 分镜脚本节点（传统分镜脚本表）──────────────────────────────────
 // 用于「生成分镜脚本」产物节点，把 agent 输出的 JSON/Markdown 解析成结构化行后，
-// 按传统分镜脚本表展示。列宽用 <col> 元素控制：短文本列（镜号/时长/景别/运镜/角色）
-// 收窄，长文本列（画面·动作 / 对白）拿走剩余空间。
+// 按传统分镜脚本表展示。制作字段较多，表格保持足够的阅读宽度；节点负责有限放大，
+// 更宽或更多的内容由表格自身横向/纵向滚动承载，避免无限撑开画布布局。
 .canvas-node-shot-table-wrap {
   width: 100%;
   min-height: 0;
@@ -10196,6 +10212,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 .canvas-node-shot-table {
   width: 100%;
+  min-width: 2150px;
   border-collapse: collapse;
   font-size: 11px;
   line-height: 1.5;
@@ -10229,62 +10246,80 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
   // 列宽由 <colgroup> 的 <col> 元素锚定（table-layout:fixed 下最可靠）
   .canvas-node-shot-col-idx {
-    width: 34px;
+    width: 100px;
   }
-  .canvas-node-shot-col-dur {
-    width: 40px;
+  .canvas-node-shot-col-shot {
+    width: 160px;
   }
-  .canvas-node-shot-col-size,
-  .canvas-node-shot-col-move {
-    width: 48px;
+  .canvas-node-shot-col-visual {
+    width: 330px;
+  }
+  .canvas-node-shot-col-performance {
+    width: 250px;
+  }
+  .canvas-node-shot-col-camera {
+    width: 300px;
   }
   .canvas-node-shot-col-line {
-    width: 26%;
+    width: 240px;
   }
   .canvas-node-shot-col-char {
-    width: 64px;
+    width: 170px;
+  }
+  .canvas-node-shot-col-prompt {
+    width: 320px;
+  }
+  .canvas-node-shot-col-negative {
+    width: 280px;
   }
 
   .canvas-node-shot-idx {
-    white-space: nowrap;
-    font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
 
-  .canvas-node-shot-dur {
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-    color: var(--lobe-color-text-secondary, #888);
-  }
-
-  // 景别 / 运镜 / 角色：短文本，紧凑且不换行
-  .canvas-node-shot-size,
-  .canvas-node-shot-move {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--lobe-color-text-secondary, #888);
-  }
-
-  .canvas-node-shot-title {
-    font-weight: 600;
-  }
-
-  .canvas-node-shot-narr {
+  .canvas-node-shot-index-meta,
+  .canvas-node-shot-index-title {
     display: block;
-    margin-top: 2px;
+    margin-top: 3px;
     color: var(--lobe-color-text-secondary, #888);
   }
 
-  .canvas-node-shot-line {
-    color: var(--lobe-color-text-secondary, #888);
+  .canvas-node-shot-index-title {
+    font-size: 10px;
+    font-weight: 400;
   }
 
-  .canvas-node-shot-char {
+  .canvas-node-shot-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .canvas-node-shot-detail {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .canvas-node-shot-detail-label {
+    color: var(--lobe-color-text-secondary, #888);
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  }
+
+  .canvas-node-shot-detail-value {
+    min-width: 0;
+    white-space: pre-wrap;
+  }
+
+  .canvas-node-shot-empty,
+  .canvas-node-shot-prompt,
+  .canvas-node-shot-negative {
     color: var(--lobe-color-text-secondary, #888);
+  }
+
+  .canvas-node-shot-prompt,
+  .canvas-node-shot-negative {
+    white-space: pre-wrap;
   }
 }
 

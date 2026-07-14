@@ -25,6 +25,77 @@ describe('canvas operation inheritance', () => {
     })
   })
 
+  it('creates storyboard tasks large and grows them to the completed shot table size', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          settings: {},
+          nodeCount: 0,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [],
+      edges: [],
+      tasks: [],
+    })
+
+    const created = await canvasApi.createOperationNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      operation: 'text_generate',
+      inputNodeIds: [],
+      x: 100,
+      y: 100,
+      taskPipelineRole: 'shot',
+      outputPipelineRole: 'shot',
+      shotScriptConfig: { maxClipSec: 5 },
+    })
+    const taskNode = created.nodes.find((node) => node.type === 'text_generate')
+    expect(taskNode).toMatchObject({ width: 960, height: 560 })
+    if (!taskNode?.taskId) throw new Error('Storyboard task node was not created')
+
+    const shots = Array.from({ length: 5 }, (_, index) => ({
+      index: index + 1,
+      durationSec: 4,
+      description: `第 ${index + 1} 镜画面`,
+      shotPrompt: `第 ${index + 1} 镜生成提示词`,
+    }))
+    const completed = await canvasApi.applyTextTaskResult('project-1', taskNode.taskId, {
+      status: 'succeeded',
+      providerProfileId: 'provider-1',
+      provider: 'openai',
+      model: 'gpt-5',
+      text: JSON.stringify({ shots }),
+    })
+    const completedTaskNode = completed.nodes.find((node) => node.id === taskNode?.id)
+    const outputNode = completed.nodes.find(
+      (node) => node.data.origin === 'task_output' && node.type === 'text',
+    )
+
+    expect(completedTaskNode).toMatchObject({ width: 1180, height: 860 })
+    expect(outputNode).toMatchObject({ width: 1080, height: 720 })
+  })
+
   it('creates downstream operation nodes with inherited negative prompt and key model params', async () => {
     seedCanvasDb({
       projects: [
@@ -127,20 +198,143 @@ describe('canvas operation inheritance', () => {
     const operationNode = snapshot.nodes.find((node) => node.type === 'image_to_image')
     expect(operationNode).toBeDefined()
     const pendingTask = snapshot.tasks.find((task) => task.id === operationNode?.taskId)
-    expect(pendingTask?.prompt).toBe('cinematic portrait')
+    expect(pendingTask?.prompt).toBeNull()
+    expect(pendingTask?.systemPrompt).not.toContain('cinematic portrait')
+    expect(pendingTask?.promptDocument?.blocks).toEqual([])
     expect(pendingTask?.negativePrompt).toBe('blurry, low quality')
     expect(pendingTask?.modelParams).toEqual({ aspectRatio: '16:9', seed: 1234 })
     expect(operationNode?.data.negativePrompt).toBe('blurry, low quality')
     expect(operationNode?.data.modelParams).toEqual({ aspectRatio: '16:9', seed: 1234 })
   })
 
+  it('uses the same prompt-document initialization for right-click nodes and later connections', async () => {
+    seedCanvasDb({
+      projects: [{
+        id: 'project-1', userId: 0, title: 'Project', status: 'active', nodeCount: 1,
+        assetCount: 0, taskCount: 0, createdAt: at, updatedAt: at,
+      }],
+      boards: [{
+        id: 'board-1', projectId: 'project-1', userId: 0, name: 'Board',
+        viewport: { x: 0, y: 0, zoom: 1 }, settings: {}, createdAt: at, updatedAt: at,
+      }],
+      assets: [],
+      nodes: [{
+        id: 'source-text', projectId: 'project-1', boardId: 'board-1', userId: 0,
+        type: 'text', title: '场次剧本', assetId: null, taskId: null, parentNodeId: null,
+        x: 0, y: 0, width: 320, height: 200, rotation: 0, zIndex: 1, locked: false,
+        hidden: false, data: { text: '雨夜里，小满走入车站。', pipelineRole: 'screenplay' },
+        createdAt: at, updatedAt: at,
+      }],
+      edges: [],
+      tasks: [],
+    })
+
+    const created = await canvasApi.createOperationNode({
+      projectId: 'project-1', boardId: 'board-1', operation: 'text_generate',
+      inputNodeIds: [], x: 400, y: 0,
+    })
+    const operationNode = created.nodes.find((node) => node.type === 'text_generate')
+    if (!operationNode?.taskId) throw new Error('Operation node was not created')
+    expect(operationNode.data.promptDocument?.blocks).toEqual([])
+    expect(operationNode.data.prompt).toBeUndefined()
+    expect(operationNode.data.systemPrompt).toBeTruthy()
+
+    const connected = await canvasApi.connectNodes('project-1', {
+      sourceNodeId: 'source-text', targetNodeId: operationNode.id,
+    })
+    const connectedNode = connected.nodes.find((node) => node.id === operationNode.id)
+    const connectedTask = connected.tasks.find((task) => task.id === operationNode.taskId)
+    expect(connectedNode?.data.promptDocument?.blocks).toEqual([
+      expect.objectContaining({
+        kind: 'reference', source: 'connection', sourceNodeId: 'source-text', relation: 'screenplay',
+      }),
+      expect.objectContaining({ kind: 'text', text: '' }),
+    ])
+    expect(connectedTask?.promptDocument).toEqual(connectedNode?.data.promptDocument)
+    expect(connectedTask?.prompt).toBeNull()
+
+    const edge = connected.edges.find(
+      (item) => item.sourceNodeId === 'source-text' && item.targetNodeId === operationNode.id,
+    )
+    if (!edge) throw new Error('Input edge was not created')
+    const disconnected = await canvasApi.deleteEdges('project-1', [edge.id])
+    expect(
+      disconnected.nodes
+        .find((node) => node.id === operationNode.id)
+        ?.data.promptDocument?.blocks.some((block) => block.kind === 'reference'),
+    ).toBe(false)
+  })
+
+  it('keeps workflow compiled text and hidden system instructions out of the rebound editor', async () => {
+    seedCanvasDb({
+      projects: [{
+        id: 'project-1', userId: 0, title: 'Project', status: 'active', nodeCount: 0,
+        assetCount: 0, taskCount: 0, createdAt: at, updatedAt: at,
+      }],
+      boards: [{
+        id: 'board-1', projectId: 'project-1', userId: 0, name: 'Board',
+        viewport: { x: 0, y: 0, zoom: 1 }, settings: {}, createdAt: at, updatedAt: at,
+      }],
+      assets: [], nodes: [], edges: [], tasks: [],
+    })
+    const created = await canvasApi.createOperationNode({
+      projectId: 'project-1', boardId: 'board-1', operation: 'text_generate',
+      inputNodeIds: [], x: 100, y: 100,
+    })
+    const operationNode = created.nodes.find((node) => node.type === 'text_generate')
+    if (!operationNode) throw new Error('Operation node was not created')
+    const document = {
+      version: 2 as const,
+      blocks: [{ kind: 'text' as const, id: 'user-text', text: '只提取主要角色' }],
+    }
+
+    const started = await canvasApi.startWorkflowTask('project-1', {
+      boardId: 'board-1', operation: 'text_generate', title: '提取角色',
+      bindToNodeId: operationNode.id,
+      prompt: '[剧本 ref-1: 场次剧本]\n雨夜车站',
+      userPrompt: '只提取主要角色',
+      promptDocument: document,
+      compiledUserText: '[剧本 ref-1: 场次剧本]\n雨夜车站',
+      systemPrompt: '隐藏的角色提取规则',
+    })
+    const reboundNode = started.snapshot.nodes.find((node) => node.id === operationNode.id)
+    const reboundTask = started.snapshot.tasks.find((task) => task.id === started.taskId)
+
+    expect(reboundNode?.data.prompt).toBe('只提取主要角色')
+    expect(reboundNode?.data.promptDocument).toEqual(document)
+    expect(reboundNode?.data.systemPrompt).toBe('隐藏的角色提取规则')
+    expect(reboundNode?.data.prompt).not.toContain('隐藏的角色提取规则')
+    expect(reboundTask?.prompt).toBe('[剧本 ref-1: 场次剧本]\n雨夜车站')
+    expect(reboundTask?.promptDocument).toEqual(document)
+    expect(reboundTask?.systemPrompt).toBe('隐藏的角色提取规则')
+  })
+
   it('keeps compiled prompt documents out of the legacy operation prefix', async () => {
     seedCanvasDb({
       projects: [
-        { id: 'project-1', userId: 0, title: 'Project', status: 'active', nodeCount: 0, assetCount: 0, taskCount: 0, createdAt: at, updatedAt: at },
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          nodeCount: 0,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
       ],
       boards: [
-        { id: 'board-1', projectId: 'project-1', userId: 0, name: 'Board', viewport: { x: 0, y: 0, zoom: 1 }, settings: {}, createdAt: at, updatedAt: at },
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
       ],
       assets: [],
       nodes: [],
@@ -148,7 +342,10 @@ describe('canvas operation inheritance', () => {
       tasks: [],
     })
 
-    const document = { version: 2 as const, blocks: [{ kind: 'text' as const, id: 'text-1', text: '用户输入' }] }
+    const document = {
+      version: 2 as const,
+      blocks: [{ kind: 'text' as const, id: 'text-1', text: '用户输入' }],
+    }
     Object.assign(window, {
       spark: {
         invoke: vi.fn().mockResolvedValue({ status: 'running', assets: [] }),
@@ -167,16 +364,102 @@ describe('canvas operation inheritance', () => {
   })
 
   it('retries prompt-document tasks from the frozen submission fields', async () => {
-    const document = { version: 2 as const, blocks: [{ kind: 'text' as const, id: 't1', text: '冻结文本' }] }
+    const document = {
+      version: 2 as const,
+      blocks: [{ kind: 'text' as const, id: 't1', text: '冻结文本' }],
+    }
     seedCanvasDb({
-      projects: [{ id: 'project-1', userId: 0, title: 'Project', status: 'active', nodeCount: 1, assetCount: 0, taskCount: 1, createdAt: at, updatedAt: at }],
-      boards: [{ id: 'board-1', projectId: 'project-1', userId: 0, name: 'Board', viewport: { x: 0, y: 0, zoom: 1 }, settings: {}, createdAt: at, updatedAt: at }],
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          nodeCount: 1,
+          assetCount: 0,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
       assets: [],
-      nodes: [{ id: 'node-op', projectId: 'project-1', boardId: 'board-1', userId: 0, type: 'text_generate', title: '生成文本', assetId: null, taskId: 'task-old', parentNodeId: null, x: 0, y: 0, width: 240, height: 160, rotation: 0, zIndex: 1, locked: false, hidden: false, data: { operation: 'text_generate' }, createdAt: at, updatedAt: at }],
+      nodes: [
+        {
+          id: 'node-op',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_generate',
+          title: '生成文本',
+          assetId: null,
+          taskId: 'task-old',
+          parentNodeId: null,
+          x: 0,
+          y: 0,
+          width: 240,
+          height: 160,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { operation: 'text_generate' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
       edges: [],
-      tasks: [{ id: 'task-old', projectId: 'project-1', boardId: 'board-1', userId: 0, operation: 'text_generate', status: 'failed', progress: 100, title: '生成文本', prompt: '冻结文本', inputNodeIds: [], inputAssetIds: [], outputNodeIds: [], outputAssetIds: [], modelParams: {}, promptDocument: document, promptSnapshot: { ...document, capturedAt: at }, compiledUserText: '冻结文本', relationManifest: [], inputSnapshots: [], systemPrompt: '隐藏能力', createdAt: at, updatedAt: at }],
+      tasks: [
+        {
+          id: 'task-old',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_generate',
+          status: 'failed',
+          progress: 100,
+          title: '生成文本',
+          prompt: '冻结文本',
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          modelParams: {},
+          promptDocument: document,
+          promptSnapshot: { ...document, capturedAt: at },
+          compiledUserText: '冻结文本',
+          relationManifest: [],
+          inputSnapshots: [],
+          systemPrompt: '隐藏能力',
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
     })
-    Object.assign(window, { spark: { invoke: vi.fn().mockResolvedValue({ status: 'running', providerProfileId: '', provider: '', model: '', text: '' }) } })
+    Object.assign(window, {
+      spark: {
+        invoke: vi
+          .fn()
+          .mockResolvedValue({
+            status: 'running',
+            providerProfileId: '',
+            provider: '',
+            model: '',
+            text: '',
+          }),
+      },
+    })
 
     await canvasApi.retryOperationNode('project-1', 'node-op')
 
@@ -194,27 +477,152 @@ describe('canvas operation inheritance', () => {
   it('retries media tasks with their relation-derived input roles', async () => {
     const document = {
       version: 2 as const,
-      blocks: [{ kind: 'reference' as const, id: 'r1', source: 'connection' as const, sourceNodeId: 'first', relation: 'first_frame' as const, connectionRelation: 'reference_image' as const, label: '首帧', order: 0 }],
+      blocks: [
+        {
+          kind: 'reference' as const,
+          id: 'r1',
+          source: 'connection' as const,
+          sourceNodeId: 'first',
+          relation: 'first_frame' as const,
+          connectionRelation: 'reference_image' as const,
+          label: '首帧',
+          order: 0,
+        },
+      ],
     }
     seedCanvasDb({
-      projects: [{ id: 'project-1', userId: 0, title: 'Project', status: 'active', rootPath: '/tmp/project-1', nodeCount: 2, assetCount: 1, taskCount: 1, createdAt: at, updatedAt: at }],
-      boards: [{ id: 'board-1', projectId: 'project-1', userId: 0, name: 'Board', viewport: { x: 0, y: 0, zoom: 1 }, settings: {}, createdAt: at, updatedAt: at }],
-      assets: [{ id: 'asset-first', projectId: 'project-1', userId: 0, type: 'image', source: 'upload', title: '首帧', url: 'https://cdn/first.png', metadata: {}, createdAt: at, updatedAt: at }],
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 2,
+          assetCount: 1,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [
+        {
+          id: 'asset-first',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'image',
+          source: 'upload',
+          title: '首帧',
+          url: 'https://cdn/first.png',
+          metadata: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
       nodes: [
-        { id: 'first', projectId: 'project-1', boardId: 'board-1', userId: 0, type: 'image', title: '首帧', assetId: 'asset-first', taskId: null, parentNodeId: null, x: 0, y: 0, width: 200, height: 120, rotation: 0, zIndex: 1, locked: false, hidden: false, data: { url: 'https://cdn/first.png', mimeType: 'image/png' }, createdAt: at, updatedAt: at },
-        { id: 'node-op', projectId: 'project-1', boardId: 'board-1', userId: 0, type: 'image_to_video', title: '图片转视频', assetId: null, taskId: 'task-old', parentNodeId: null, x: 260, y: 0, width: 240, height: 160, rotation: 0, zIndex: 2, locked: false, hidden: false, data: { operation: 'image_to_video' }, createdAt: at, updatedAt: at },
+        {
+          id: 'first',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'image',
+          title: '首帧',
+          assetId: 'asset-first',
+          taskId: null,
+          parentNodeId: null,
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 120,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { url: 'https://cdn/first.png', mimeType: 'image/png' },
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'node-op',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'image_to_video',
+          title: '图片转视频',
+          assetId: null,
+          taskId: 'task-old',
+          parentNodeId: null,
+          x: 260,
+          y: 0,
+          width: 240,
+          height: 160,
+          rotation: 0,
+          zIndex: 2,
+          locked: false,
+          hidden: false,
+          data: { operation: 'image_to_video' },
+          createdAt: at,
+          updatedAt: at,
+        },
       ],
       edges: [],
-      tasks: [{ id: 'task-old', projectId: 'project-1', boardId: 'board-1', userId: 0, operation: 'image_to_video', status: 'failed', progress: 100, title: '图片转视频', prompt: '[首帧 ref-1: 首帧]', inputNodeIds: ['first'], inputAssetIds: ['asset-first'], outputNodeIds: [], outputAssetIds: [], modelParams: {}, promptDocument: document, promptSnapshot: { ...document, capturedAt: at }, compiledUserText: '[首帧 ref-1: 首帧]', relationManifest: [{ blockId: 'r1', sourceNodeId: 'first', relation: 'first_frame', order: 0 }], inputSnapshots: [], createdAt: at, updatedAt: at }],
+      tasks: [
+        {
+          id: 'task-old',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'image_to_video',
+          status: 'failed',
+          progress: 100,
+          title: '图片转视频',
+          prompt: '[首帧 ref-1: 首帧]',
+          inputNodeIds: ['first'],
+          inputAssetIds: ['asset-first'],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          modelParams: {},
+          promptDocument: document,
+          promptSnapshot: { ...document, capturedAt: at },
+          compiledUserText: '[首帧 ref-1: 首帧]',
+          relationManifest: [
+            { blockId: 'r1', sourceNodeId: 'first', relation: 'first_frame', order: 0 },
+          ],
+          inputSnapshots: [],
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
     })
-    Object.assign(window, { spark: { invoke: vi.fn().mockResolvedValue({ status: 'running', assets: [] }) } })
+    Object.assign(window, {
+      spark: { invoke: vi.fn().mockResolvedValue({ status: 'running', assets: [] }) },
+    })
 
     await canvasApi.retryOperationNode('project-1', 'node-op')
 
     expect(window.spark.invoke).toHaveBeenCalledWith(
       'canvas:task:create-media',
       expect.objectContaining({
-        inputFiles: [{ type: 'image', role: 'first_frame', url: 'https://cdn/first.png', mimeType: 'image/png' }],
+        inputFiles: [
+          {
+            type: 'image',
+            role: 'first_frame',
+            url: 'https://cdn/first.png',
+            mimeType: 'image/png',
+          },
+        ],
       }),
     )
   })
@@ -524,8 +932,9 @@ describe('canvas operation inheritance', () => {
 
     const operationNode = snapshot.nodes.find((node) => node.type === 'panorama_360')
     const pendingTask = snapshot.tasks.find((task) => task.id === operationNode?.taskId)
-    expect(pendingTask?.prompt).toContain('日落海边栈道，电影感氛围，真实云层与海浪')
-    expect(pendingTask?.prompt).toContain('2:1 等距柱状投影')
+    expect(pendingTask?.prompt).toBeNull()
+    expect(pendingTask?.systemPrompt).toContain('日落海边栈道，电影感氛围，真实云层与海浪')
+    expect(pendingTask?.systemPrompt).toContain('2:1 等距柱状投影')
     expect(pendingTask?.modelParams).toEqual({
       aspect_ratio: '2:1',
       resolution: '2k',
@@ -595,7 +1004,8 @@ describe('canvas operation inheritance', () => {
 
     const operationNode = snapshot.nodes.find((node) => node.type === 'text_generate')
     const pendingTask = snapshot.tasks.find((task) => task.id === operationNode?.taskId)
-    expect(pendingTask?.prompt).toBe('请输出三段式文案结构')
+    expect(pendingTask?.prompt).toBeNull()
+    expect(pendingTask?.systemPrompt).toContain('请输出三段式文案结构')
     expect(pendingTask?.agentId).toBe('agent:copywriter')
     expect(pendingTask?.providerProfileId).toBe('provider:text')
     expect(pendingTask?.modelId).toBe('gpt-5')
@@ -979,6 +1389,66 @@ describe('canvas operation inheritance', () => {
     })
     expect(failedTask?.rawResponse).toEqual({ errorBody: '{"error":{"message":"bad request"}}' })
     expect(failedTask?.errorDetail).toContain('bad request')
+  })
+
+  it('forwards task pipeline role when submitting storyboard text tasks', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 0,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [],
+      edges: [],
+      tasks: [],
+    })
+
+    Object.assign(window, {
+      spark: {
+        invoke: vi.fn().mockResolvedValue({
+          status: 'running',
+          providerProfileId: '',
+          provider: '',
+          model: '',
+          text: '',
+        }),
+      },
+    })
+
+    await canvasApi.createTextTask('project-1', {
+      operation: 'text_generate',
+      prompt: '把场次拆成分镜',
+      taskPipelineRole: 'shot',
+    })
+
+    expect(window.spark.invoke).toHaveBeenCalledWith(
+      'canvas:task:generate-text',
+      expect.objectContaining({
+        taskPipelineRole: 'shot',
+      }),
+    )
   })
 
   it('does not downgrade a completed media task when a late running acknowledgement arrives', async () => {

@@ -180,6 +180,8 @@ export type CanvasNodeData = {
   prompt?: string
   /** Versioned user-authored prompt blocks. `prompt` remains the legacy fallback. */
   promptDocument?: CanvasPromptDocument
+  /** 功能节点的隐藏内置指令；不进入用户可见 Prompt Document。 */
+  systemPrompt?: string
   /** 继承/暂存的反向提示词；任务持久化仍以 CanvasTask.negativePrompt 为准 */
   negativePrompt?: string
   modelParams?: Record<string, unknown>

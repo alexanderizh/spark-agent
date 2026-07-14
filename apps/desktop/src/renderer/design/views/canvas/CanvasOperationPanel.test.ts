@@ -48,14 +48,18 @@ vi.mock('./canvasOperationPresets', () => ({
 
 import {
   buildOperationPanelEnumOptions,
+  buildOperationPanelEditablePromptDocument,
   isCommonOperationModelParam,
+  isGeneratedCanvasFunctionalPrompt,
   buildOperationPanelRunInputNodeIds,
   buildVideoFrameInputRoles,
   mergeDefaultReferenceFrameNodeIds,
   mergeOperationPanelPromptWithInputContext,
   readCanvasOperationPanelTextInputContent,
+  readActiveOperationPromptNodeIds,
   resolveOperationPanelEditablePrompt,
   resolveCanvasOperationPanelNegativePrompt,
+  stripGeneratedCanvasFunctionalPromptInput,
 } from './CanvasOperationPanel'
 import { mergeSeededModelParamDraft } from './canvasModelParamDraftState'
 
@@ -159,6 +163,85 @@ describe('CanvasOperationPanel negative prompt inheritance', () => {
         upstreamTextContext: '',
       }),
     ).toBe('用户自己的补充要求')
+  })
+
+  it('hides generated functional prompts and initializes upstream content as a tag', () => {
+    const generatedPrompt = [
+      '【任务】把下面的场次剧本拆成「精确到秒、超详细」的分镜表。',
+      'JSON 顶层结构必须为：{"shots":[]}',
+      '【场次剧本】',
+      '这段上级正文只能通过 Tag 注入',
+    ].join('\n')
+    expect(isGeneratedCanvasFunctionalPrompt(generatedPrompt, 'screenplay.to_shot_script')).toBe(true)
+    expect(
+      resolveOperationPanelEditablePrompt({
+        nodePrompt: generatedPrompt,
+        hideFunctionalPrompt: true,
+      }),
+    ).toBe('')
+    expect(
+      stripGeneratedCanvasFunctionalPromptInput(generatedPrompt, 'screenplay.to_shot_script'),
+    ).toBe(
+      '【任务】把下面的场次剧本拆成「精确到秒、超详细」的分镜表。\nJSON 顶层结构必须为：{"shots":[]}',
+    )
+
+    const upstreamNode = {
+      id: 'scene-1', projectId: 'project-1', boardId: 'board-1', userId: 1,
+      type: 'text' as const, title: '分片 1 copy', assetId: null, taskId: null,
+      parentNodeId: null, x: 0, y: 0, width: 100, height: 100, rotation: 0, zIndex: 0,
+      locked: false, hidden: false, data: { text: '上级正文', pipelineRole: 'screenplay' as const },
+      createdAt: '', updatedAt: '',
+    }
+    const mediaNode = {
+      ...upstreamNode,
+      id: 'image-1',
+      type: 'image' as const,
+      title: '角色参考图',
+      data: { url: 'https://example.com/hero.png' },
+    }
+    const document = buildOperationPanelEditablePromptDocument({
+      document: {
+        version: 2,
+        blocks: [
+          { kind: 'text', id: 'builtin', text: generatedPrompt },
+          { kind: 'reference', id: 'legacy-image', source: 'connection', sourceNodeId: 'image-1', relation: 'reference_image', label: '角色参考图', order: 0 },
+        ],
+      },
+      editablePrompt: '',
+      hideFunctionalPrompt: true,
+      nodes: [upstreamNode, mediaNode],
+      connections: [upstreamNode, mediaNode],
+      assets: [],
+    })
+
+    expect(document.blocks.some((block) => block.kind === 'text' && block.text.length > 0)).toBe(false)
+    expect(document.blocks).toContainEqual(
+      expect.objectContaining({
+        kind: 'reference',
+        source: 'connection',
+        sourceNodeId: 'scene-1',
+        relation: 'screenplay',
+        label: '分片 1 copy',
+      }),
+    )
+    expect(document.blocks.at(-1)).toMatchObject({ kind: 'text', text: '' })
+    expect(
+      document.blocks.some(
+        (block) => block.kind === 'reference' && block.sourceNodeId === 'image-1',
+      ),
+    ).toBe(false)
+  })
+
+  it('excludes suppressed tags from active task inputs', () => {
+    expect(
+      readActiveOperationPromptNodeIds({
+        version: 2,
+        blocks: [
+          { kind: 'reference', id: 'active', source: 'manual', sourceNodeId: 'scene-1', relation: 'scene', label: '场景', order: 0 },
+          { kind: 'reference', id: 'suppressed', source: 'connection', sourceNodeId: 'text-2', relation: 'generic', suppressed: true, label: '已移除输入', order: 1 },
+        ],
+      }),
+    ).toEqual(['scene-1'])
   })
 
   it('frame-role submit keeps only assigned image frames plus non-image inputs', () => {

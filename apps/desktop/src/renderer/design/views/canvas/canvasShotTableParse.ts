@@ -29,8 +29,24 @@ export type ParsedShotRow = {
   lighting?: string
   /** 镜头参数（焦距/光圈/ISO/景深等） */
   cameraParams?: string
+  /** 镜头焦距 / 焦段 */
+  focalLength?: string
+  /** 光圈 / 景深 */
+  aperture?: string
+  /** 感光度 / 颗粒质感 */
+  iso?: string
+  /** 色调与色彩方案 */
+  colorTone?: string
+  /** 氛围与情绪基调 */
+  mood?: string
   /** 表情、微表情与细小动作 */
   performance?: string
+  /** 服装、造型与配饰 */
+  costume?: string
+  /** 场次 / 分组名 */
+  groupName?: string
+  /** 场景名 */
+  sceneName?: string
   /** 画面 / 动作描述 */
   description?: string
   /** 对白 */
@@ -67,7 +83,15 @@ type ColumnKey =
   | 'blocking'
   | 'lighting'
   | 'cameraParams'
+  | 'focalLength'
+  | 'aperture'
+  | 'iso'
+  | 'colorTone'
+  | 'mood'
   | 'performance'
+  | 'costume'
+  | 'groupName'
+  | 'sceneName'
   | 'shot'
   | 'description'
   | 'dialogue'
@@ -84,8 +108,16 @@ const HEADER_MATCHERS: Array<{ key: ColumnKey; test: (h: string) => boolean }> =
   { key: 'sceneLayout', test: (h) => /场景布局|场景描述|空间|scene\s*layout|setting/i.test(h) },
   { key: 'blocking', test: (h) => /站位|调度|走位|场面调度|blocking/i.test(h) },
   { key: 'lighting', test: (h) => /光照|灯光|光影|lighting/i.test(h) },
-  { key: 'cameraParams', test: (h) => /镜头参数|焦距|光圈|iso|camera\s*params|lens|焦段/i.test(h) },
+  { key: 'cameraParams', test: (h) => /镜头参数|camera\s*params|lens\s*params/i.test(h) },
+  { key: 'focalLength', test: (h) => /焦距|焦段|focal\s*length|^lens$/i.test(h) },
+  { key: 'aperture', test: (h) => /光圈|景深|aperture|depth\s*of\s*field/i.test(h) },
+  { key: 'iso', test: (h) => /^iso$|感光度|噪点|颗粒/i.test(h) },
+  { key: 'colorTone', test: (h) => /色调|色彩|色温|color\s*tone|palette/i.test(h) },
+  { key: 'mood', test: (h) => /氛围|情绪基调|mood|atmosphere/i.test(h) },
   { key: 'performance', test: (h) => /表情|微表情|动作细节|表演|performance|expression/i.test(h) },
+  { key: 'costume', test: (h) => /服装|造型|服饰|配饰|costume|wardrobe/i.test(h) },
+  { key: 'groupName', test: (h) => /分组|场次|group/i.test(h) },
+  { key: 'sceneName', test: (h) => /场景名|地点|scene\s*name|location/i.test(h) },
   { key: 'shot', test: (h) => /生成提示词|正向提示词|镜头语言|镜头$|^镜头|camera$/i.test(h) },
   { key: 'description', test: (h) => /画面|动作|描述|内容|场景描述|description|action/i.test(h) },
   { key: 'dialogue', test: (h) => /对白|台词|dialogue|line/i.test(h) },
@@ -140,7 +172,8 @@ function tryParseJsonObject(text: string): unknown | null {
   }
   const firstBrace = trimmed.indexOf('{')
   const lastBrace = trimmed.lastIndexOf('}')
-  if (firstBrace >= 0 && lastBrace > firstBrace) candidates.push(trimmed.slice(firstBrace, lastBrace + 1))
+  if (firstBrace >= 0 && lastBrace > firstBrace)
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1))
   for (const candidate of candidates) {
     try {
       return JSON.parse(candidate)
@@ -248,15 +281,29 @@ function mapShotItem(item: Record<string, unknown>, fallbackIndex: number): Pars
   const shotSize = stringField(item.shotSize ?? item['景别'])
   const angle = stringField(item.angle ?? item['角度'])
   const movement = stringField(item.movement ?? item['运镜'])
-  const sceneLayout = stringField(item.sceneLayout ?? item.sceneDescription ?? item['场景布局'] ?? item['场景描述'])
-  const blocking = stringField(item.blocking ?? item.staging ?? item['站位调度'] ?? item['场面调度'])
+  const sceneLayout = stringField(
+    item.sceneLayout ?? item.sceneDescription ?? item['场景布局'] ?? item['场景描述'],
+  )
+  const blocking = stringField(
+    item.blocking ?? item.staging ?? item['站位调度'] ?? item['场面调度'],
+  )
   const lighting = stringField(item.lighting ?? item['光照'])
-  const cameraParams = stringField(
-    item.cameraParams ?? item.focalLength ?? item.lens ?? item['镜头参数'] ?? item['焦距'],
-  )
+  const cameraParams = stringField(item.cameraParams ?? item['镜头参数'])
+  const focalLength = stringField(item.focalLength ?? item.lens ?? item['焦距'] ?? item['焦段'])
+  const aperture = stringField(item.aperture ?? item.depthOfField ?? item['光圈'] ?? item['景深'])
+  const iso = stringField(item.iso ?? item['感光度'] ?? item['ISO'])
+  const colorTone = stringField(item.colorTone ?? item.colorPalette ?? item['色调'] ?? item['色彩'])
+  const mood = stringField(item.mood ?? item.atmosphere ?? item['氛围'] ?? item['情绪基调'])
   const performance = stringField(
-    item.performance ?? item.microExpression ?? item.actionDetail ?? item['微表情动作'] ?? item['表演'],
+    item.performance ??
+      item.microExpression ??
+      item.actionDetail ??
+      item['微表情动作'] ??
+      item['表演'],
   )
+  const costume = stringField(item.costume ?? item.wardrobe ?? item['服装'] ?? item['造型'])
+  const groupName = stringField(item.groupName ?? item['分组'] ?? item['场次'])
+  const sceneName = stringField(item.sceneName ?? item.location ?? item['场景名'] ?? item['地点'])
   const shotPrompt = stringField(item.shotPrompt ?? item.shot ?? item['镜头语言'])
   const negativePrompt = stringField(item.negativePrompt ?? item.negative ?? item['反向提示词'])
   const rawCharacters = item.characters ?? item.characterNames ?? item['角色']
@@ -278,7 +325,15 @@ function mapShotItem(item: Record<string, unknown>, fallbackIndex: number): Pars
     ...(blocking ? { blocking } : {}),
     ...(lighting ? { lighting } : {}),
     ...(cameraParams ? { cameraParams } : {}),
+    ...(focalLength ? { focalLength } : {}),
+    ...(aperture ? { aperture } : {}),
+    ...(iso ? { iso } : {}),
+    ...(colorTone ? { colorTone } : {}),
+    ...(mood ? { mood } : {}),
     ...(performance ? { performance } : {}),
+    ...(costume ? { costume } : {}),
+    ...(groupName ? { groupName } : {}),
+    ...(sceneName ? { sceneName } : {}),
     ...(description ? { description } : {}),
     ...(dialogue ? { dialogue } : {}),
     ...(narration ? { narration } : {}),
@@ -303,8 +358,20 @@ function parseJsonShotRows(text: string): ParsedShotRow[] {
   if (Array.isArray(root.groups)) {
     for (const group of root.groups) {
       if (!group || typeof group !== 'object') continue
-      const segments = (group as Record<string, unknown>).segments
-      if (Array.isArray(segments)) candidates.push(...segments)
+      const groupRecord = group as Record<string, unknown>
+      const segments = groupRecord.segments
+      const groupName = stringField(groupRecord.name ?? groupRecord.groupName)
+      if (Array.isArray(segments)) {
+        for (const segment of segments) {
+          if (!segment || typeof segment !== 'object') continue
+          const segmentRecord = segment as Record<string, unknown>
+          candidates.push(
+            groupName && !stringField(segmentRecord.groupName)
+              ? { ...segmentRecord, groupName }
+              : segmentRecord,
+          )
+        }
+      }
     }
   }
 
@@ -391,7 +458,15 @@ export function parseShotTable(markdown: string): ParsedShotRow[] {
     const blocking = at(cells, 'blocking')
     const lighting = at(cells, 'lighting')
     const cameraParams = at(cells, 'cameraParams')
+    const focalLength = at(cells, 'focalLength')
+    const aperture = at(cells, 'aperture')
+    const iso = at(cells, 'iso')
+    const colorTone = at(cells, 'colorTone')
+    const mood = at(cells, 'mood')
     const performance = at(cells, 'performance')
+    const costume = at(cells, 'costume')
+    const groupName = at(cells, 'groupName')
+    const sceneName = at(cells, 'sceneName')
     const shotCol = at(cells, 'shot')
     const negativePrompt = at(cells, 'negativePrompt')
     const charactersCell = at(cells, 'characters')
@@ -419,7 +494,15 @@ export function parseShotTable(markdown: string): ParsedShotRow[] {
       ...(blocking ? { blocking } : {}),
       ...(lighting ? { lighting } : {}),
       ...(cameraParams ? { cameraParams } : {}),
+      ...(focalLength ? { focalLength } : {}),
+      ...(aperture ? { aperture } : {}),
+      ...(iso ? { iso } : {}),
+      ...(colorTone ? { colorTone } : {}),
+      ...(mood ? { mood } : {}),
       ...(performance ? { performance } : {}),
+      ...(costume ? { costume } : {}),
+      ...(groupName ? { groupName } : {}),
+      ...(sceneName ? { sceneName } : {}),
       ...(description ? { description } : {}),
       ...(dialogue ? { dialogue } : {}),
       ...(narration ? { narration } : {}),

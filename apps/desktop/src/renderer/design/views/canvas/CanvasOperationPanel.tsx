@@ -31,7 +31,12 @@ import { CanvasMediaInputHint } from './CanvasMediaInputHint'
 import { CanvasMediaInputThumb } from './CanvasMediaInputThumb'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import { CanvasPromptMentionTextArea } from './CanvasPromptMentionTextArea'
-import { migrateLegacyPrompt } from './canvasPromptDocument'
+import { toCanvasPromptPlainText } from './canvasPromptDocument'
+import {
+  buildCanvasVisiblePromptDocument,
+  isCanvasPromptInlineNode,
+  stripCanvasFunctionalPromptInput,
+} from './canvasPromptInitialization'
 import { computeMediaInputRoleMap } from './canvasMediaInputRoles'
 import {
   CanvasMediaInputPickerModal,
@@ -39,10 +44,7 @@ import {
 } from './CanvasMediaInputPickerModal'
 import { canvasApi } from './canvas.api'
 import { expandCanvasInputNodes } from './canvasWorkspaceTaskInput'
-import {
-  formatCanvasTextInputContext,
-  readCanvasTextInputContent,
-} from './canvasTextInputPresentation'
+import { readCanvasTextInputContent } from './canvasTextInputPresentation'
 import { confirmVideoSubmission, isVideoSubmissionOperation } from './canvasVideoSubmissionGate'
 import {
   buildCustomModelParams,
@@ -135,6 +137,8 @@ const SHOT_MAX_CLIP_PRESETS = [4, 5, 8, 10]
 export type OperationRunParams = {
   prompt: string
   promptDocument?: CanvasPromptDocument
+  /** 功能节点的隐藏指令；不进入用户可见提示词文档。 */
+  systemPrompt?: string
   negativePrompt?: string
   inputNodeIds?: string[]
   inputTransport?: CanvasInputTransport
@@ -155,6 +159,7 @@ export type OperationDraftParams = {
   message: string
   prompt: string
   promptDocument?: CanvasPromptDocument
+  systemPrompt?: string
   negativePrompt: string
   modelParams: Record<string, unknown>
   agentId?: string
@@ -226,13 +231,6 @@ export function readCanvasOperationPanelTextInputContent(
   return readCanvasTextInputContent(node, assets)
 }
 
-function formatOperationPanelTextInputContext(
-  node: CanvasNode,
-  assets: CanvasSnapshot['assets'],
-): string {
-  return formatCanvasTextInputContext(node, assets)
-}
-
 export function mergeOperationPanelPromptWithInputContext(
   prompt: string | null | undefined,
   context: string,
@@ -248,11 +246,80 @@ export function mergeOperationPanelPromptWithInputContext(
 export function resolveOperationPanelEditablePrompt(params: {
   nodePrompt?: string | null
   upstreamTextContext?: string | null
+  hideFunctionalPrompt?: boolean
 }): string {
   // Connected text is represented by Prompt Document reference blocks. Keep the
   // visible editor limited to authored text; the compiler resolves upstream
   // content at submission time.
+  if (params.hideFunctionalPrompt) return ''
   return (params.nodePrompt ?? '').trim()
+}
+
+export function isGeneratedCanvasFunctionalPrompt(
+  prompt: string | null | undefined,
+  presetTargetId: string,
+): boolean {
+  const value = prompt?.trim() ?? ''
+  if (!value) return false
+  if (presetTargetId === 'screenplay.to_shot_script') {
+    return value.includes('【任务】把下面的场次剧本拆成') && value.includes('JSON 顶层结构必须为')
+  }
+  if (presetTargetId === 'chapter.to_screenplay') {
+    return value.includes('请把下面的小说/长文稿章节改写为影视剧本') && value.includes('章节原文：')
+  }
+  if (presetTargetId === 'screenplay.extract_characters' || presetTargetId === 'screenplay.extract_scenes') {
+    return value.includes('【任务】你是资深影视美术/设定师') && value.includes('【剧本】')
+  }
+  return false
+}
+
+export function stripGeneratedCanvasFunctionalPromptInput(
+  prompt: string,
+  presetTargetId: string,
+): string {
+  return stripCanvasFunctionalPromptInput(prompt, presetTargetId)
+}
+
+export function buildOperationPanelEditablePromptDocument(params: {
+  document?: CanvasPromptDocument
+  editablePrompt: string
+  hideFunctionalPrompt: boolean
+  nodes: CanvasNode[]
+  connections: CanvasNode[]
+  assets: CanvasSnapshot['assets']
+}): CanvasPromptDocument {
+  return buildCanvasVisiblePromptDocument({
+    ...(params.document ? { document: params.document } : {}),
+    prompt: params.editablePrompt,
+    nodes: params.nodes,
+    connections: params.connections,
+    assets: params.assets,
+    ...(params.hideFunctionalPrompt ? { hideText: true } : {}),
+  })
+}
+
+export function isCanvasPromptInlineConnection(node: CanvasNode): boolean {
+  return isCanvasPromptInlineNode(node)
+}
+
+export function hasOperationPanelPromptContent(document: CanvasPromptDocument): boolean {
+  return document.blocks.some((block) => {
+    if (block.kind === 'text') return block.text.trim().length > 0
+    if (block.kind === 'reference') return block.suppressed !== true
+    return true
+  })
+}
+
+export function readActiveOperationPromptNodeIds(document: CanvasPromptDocument): string[] {
+  return Array.from(
+    new Set(
+      document.blocks.flatMap((block) => {
+        if (block.kind === 'structured') return [block.sourceNodeId]
+        if (block.kind === 'reference' && !block.suppressed) return [block.sourceNodeId]
+        return []
+      }),
+    ),
+  )
 }
 
 export type OperationPanelEnumOption = {
@@ -413,20 +480,62 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     const outputIds = new Set(outputEdges.map((edge) => edge.targetNodeId))
     return snapshot.nodes.filter((n) => outputIds.has(n.id) && !n.hidden)
   }, [snapshot.edges, snapshot.nodes, node.id])
-  const upstreamTextContext = useMemo(
+  const functionalPromptSource = useMemo(
+    () => node.data.prompt?.trim() || task?.prompt?.trim() || '',
+    [node.data.prompt, task?.prompt],
+  )
+  const hideFunctionalPrompt = useMemo(
     () =>
-      expandedSourceInputNodes
-        .map((sourceNode) => formatOperationPanelTextInputContext(sourceNode, snapshot.assets))
-        .filter((text): text is string => text.length > 0)
-        .join('\n\n'),
-    [expandedSourceInputNodes, snapshot.assets],
+      presetTargetId !== operation &&
+      isGeneratedCanvasFunctionalPrompt(functionalPromptSource, presetTargetId),
+    [functionalPromptSource, operation, presetTargetId],
+  )
+  const hiddenFunctionalSystemPrompt = useMemo(
+    () =>
+      task?.systemPrompt?.trim() ||
+      node.data.systemPrompt?.trim() ||
+      (hideFunctionalPrompt
+        ? stripGeneratedCanvasFunctionalPromptInput(functionalPromptSource, presetTargetId)
+        : ''),
+    [
+      functionalPromptSource,
+      hideFunctionalPrompt,
+      node.data.systemPrompt,
+      presetTargetId,
+      task?.systemPrompt,
+    ],
   )
   const initialPrompt = useMemo(() => {
     const nodePrompt = node.data.prompt
     return resolveOperationPanelEditablePrompt({
       ...(typeof nodePrompt === 'string' ? { nodePrompt } : {}),
+      ...(hideFunctionalPrompt ? { hideFunctionalPrompt: true } : {}),
     })
-  }, [node.data.prompt])
+  }, [hideFunctionalPrompt, node.data.prompt])
+  const initialPromptDocument = useMemo(
+    () =>
+      buildOperationPanelEditablePromptDocument({
+        ...(task?.promptDocument
+          ? { document: task.promptDocument }
+          : node.data.promptDocument
+            ? { document: node.data.promptDocument }
+            : {}),
+        editablePrompt: initialPrompt,
+        hideFunctionalPrompt,
+        nodes: snapshot.nodes,
+        connections: sourceInputNodes,
+        assets: snapshot.assets,
+      }),
+    [
+      sourceInputNodes,
+      hideFunctionalPrompt,
+      initialPrompt,
+      node.data.promptDocument,
+      snapshot.assets,
+      snapshot.nodes,
+      task?.promptDocument,
+    ],
+  )
 
   const inheritedNegativePrompt = useMemo(() => {
     const sourceNegativePrompts: string[] = []
@@ -455,11 +564,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
 
   // 参数状态：从 task、node.data、项目/上游继承值带入
   const [prompt, setPrompt] = useState(initialPrompt)
-  const [promptDocument, setPromptDocument] = useState<CanvasPromptDocument>(() =>
-    task?.promptDocument ??
-    node.data.promptDocument ??
-    migrateLegacyPrompt({ prompt: initialPrompt, nodes: snapshot.nodes, assets: snapshot.assets }),
-  )
+  const [promptDocument, setPromptDocument] = useState<CanvasPromptDocument>(initialPromptDocument)
   const [negativePrompt, setNegativePrompt] = useState(inheritedNegativePrompt)
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
@@ -511,8 +616,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const modelParamDraftEditedRef = useRef(false)
   const customParamsEditedRef = useRef(false)
   const promptCharCount = useMemo(
-    () => mergeOperationPanelPromptWithInputContext(prompt, upstreamTextContext).trim().length,
-    [prompt, upstreamTextContext],
+    () => toCanvasPromptPlainText(promptDocument).trim().length,
+    [promptDocument],
   )
 
   useEffect(() => {
@@ -531,11 +636,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     modelParamDraftEditedRef.current = false
     customParamsEditedRef.current = false
     setPrompt(initialPrompt)
-    setPromptDocument(
-      task?.promptDocument ??
-        node.data.promptDocument ??
-        migrateLegacyPrompt({ prompt: initialPrompt, nodes: snapshot.nodes, assets: snapshot.assets }),
-    )
+    setPromptDocument(initialPromptDocument)
     setNegativePrompt(inheritedNegativePrompt)
     setTitleDraft(node.title ?? '')
     setMessageDraft(node.data.message ?? '')
@@ -1033,6 +1134,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         message: messageDraft.trim(),
         prompt: prompt.trim(),
         promptDocument,
+        ...(hiddenFunctionalSystemPrompt
+          ? { systemPrompt: hiddenFunctionalSystemPrompt }
+          : {}),
         negativePrompt: negativePrompt.trim(),
         modelParams: buildCurrentModelParams(),
         ...runtimeDraft,
@@ -1053,6 +1157,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     onSaveDraft,
     prompt,
     promptDocument,
+    hiddenFunctionalSystemPrompt,
     resolveShotScriptConfig,
     savingDraft,
     titleDraft,
@@ -1073,7 +1178,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     // 旧实现仅拦 running，已完成(completed)节点重提会穿透 → 产生重复任务。
     if (running || submitting || node.data.status === 'running') return
     if (
-      !prompt.trim() &&
+      !hasOperationPanelPromptContent(promptDocument) &&
       !capability?.inputTypes.includes('image') &&
       !capability?.inputTypes.includes('video')
     ) {
@@ -1109,18 +1214,29 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           )
         : undefined
     const nextModelParams = buildCurrentModelParams()
-    const runInputNodeIds = buildOperationPanelRunInputNodeIds({
-      selectedInputNodeIds,
-      explicitFrameNodeIds,
-      textInputNodeIds: expandedSourceInputNodes
-        .filter((item) => item.type === 'text' || item.type === 'prompt')
-        .map((item) => item.id),
-      supportsVideoFrameRoles,
-      mediaInputOptions: mediaInputOptions.map((item) => ({
-        value: String(item.value),
-        type: item.type,
-      })),
-    })
+    const activePromptNodeIds = readActiveOperationPromptNodeIds(promptDocument)
+    const activePromptNodeIdSet = new Set(activePromptNodeIds)
+    const runInputNodeIds = Array.from(
+      new Set([
+        ...buildOperationPanelRunInputNodeIds({
+          selectedInputNodeIds,
+          explicitFrameNodeIds,
+          textInputNodeIds: expandedSourceInputNodes
+            .filter(
+              (item) =>
+                (item.type === 'text' || item.type === 'prompt') &&
+                activePromptNodeIdSet.has(item.id),
+            )
+            .map((item) => item.id),
+          supportsVideoFrameRoles,
+          mediaInputOptions: mediaInputOptions.map((item) => ({
+            value: String(item.value),
+            type: item.type,
+          })),
+        }),
+        ...activePromptNodeIds,
+      ]),
+    )
     if (isVideoSubmissionOperation(operation)) {
       const proceed = await confirmVideoSubmission({
         prompt: prompt.trim(),
@@ -1138,6 +1254,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       await onRun({
         prompt: prompt.trim(),
         promptDocument,
+        ...(hiddenFunctionalSystemPrompt
+          ? { systemPrompt: hiddenFunctionalSystemPrompt }
+          : {}),
         ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
         inputNodeIds: runInputNodeIds,
         ...(isTextOperation && selectedAgentId ? { agentId: selectedAgentId } : {}),
@@ -1177,6 +1296,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     onRun,
     prompt,
     promptDocument,
+    hiddenFunctionalSystemPrompt,
     resolveShotScriptConfig,
     selectedModel,
     running,
@@ -1369,8 +1489,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     [firstFrameNodeId, lastFrameNodeId],
   )
   const promptConnectionNodes = useMemo(
-    () => Array.from(new Map(expandedSourceInputNodes.map((item) => [item.id, item])).values()),
-    [expandedSourceInputNodes],
+    () =>
+      Array.from(new Map(sourceInputNodes.map((item) => [item.id, item])).values()).filter(
+        isCanvasPromptInlineConnection,
+      ),
+    [sourceInputNodes],
   )
   const promptCandidateNodes = useMemo(
     () => snapshot.nodes.filter((item) => !item.hidden && item.id !== node.id),
@@ -1378,16 +1501,18 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   )
   const handlePromptMentionSelect = useCallback(
     (selectedNode: CanvasNode) => {
-      if (!canEditMediaInputs || running) return false
-      if (supportsVideoFrameRoles && selectedNode.type === 'image') {
-        setReferenceFrameNodeIds((prev) =>
+      if (running) return false
+      if (canEditMediaInputs) {
+        if (supportsVideoFrameRoles && selectedNode.type === 'image') {
+          setReferenceFrameNodeIds((prev) =>
+            prev.includes(selectedNode.id) ? prev : [...prev, selectedNode.id],
+          )
+          return true
+        }
+        setSelectedInputNodeIds((prev) =>
           prev.includes(selectedNode.id) ? prev : [...prev, selectedNode.id],
         )
-        return true
       }
-      setSelectedInputNodeIds((prev) =>
-        prev.includes(selectedNode.id) ? prev : [...prev, selectedNode.id],
-      )
       return true
     },
     [canEditMediaInputs, running, supportsVideoFrameRoles],

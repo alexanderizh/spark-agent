@@ -39,6 +39,8 @@ export type CanvasPromptReferenceBlock = {
   connectionRelation?: CanvasPromptRelation
   /** Physical connection was removed after the user edited the automatic block. */
   disconnected?: boolean
+  /** User intentionally removed this connected input from the authored prompt. */
+  suppressed?: boolean
   label: string
   order: number
   note?: string
