@@ -4,6 +4,7 @@ import { Descriptions, Empty, Modal, Progress, Space } from 'antd'
 import { Icons } from '../../Icons'
 import { operationLabel } from './canvas.api'
 import type { CanvasAsset, CanvasNode, CanvasTask, CanvasTaskStatus } from './canvas.types'
+import { CanvasTaskInputSnapshotList } from './CanvasTaskInputSnapshotList'
 
 type TaskFilter = 'all' | 'active' | 'failed' | 'completed'
 type ClearTaskScope = 'active' | 'failed'
@@ -450,11 +451,11 @@ function TaskDetailModal({
   const taskNode = nodes.find((node) => node.taskId === task.id)
   const canCancel = isTaskActive(task)
   const raw = isRecord(task.rawResponse) ? task.rawResponse : null
-  const systemPrompt = stringField(raw?.systemPrompt)
+  const systemPrompt = task.systemPrompt || stringField(raw?.systemPrompt)
   const rawPrompt = stringField(raw?.prompt)
   const outputText = stringField(raw?.outputText) || stringField(raw?.text)
   const parsedEntities = raw?.parsedEntities
-  const displayPrompt = rawPrompt || task.prompt || ''
+  const displayPrompt = task.compiledUserText || rawPrompt || task.prompt || ''
 
   return (
     <Modal
@@ -533,6 +534,12 @@ function TaskDetailModal({
         {outputText && (
           <DetailBlock title="模型输出">
             <pre>{outputText}</pre>
+          </DetailBlock>
+        )}
+
+        {task.inputSnapshots && task.inputSnapshots.length > 0 && (
+          <DetailBlock title="提交快照输入">
+            <CanvasTaskInputSnapshotList snapshots={task.inputSnapshots} />
           </DetailBlock>
         )}
 

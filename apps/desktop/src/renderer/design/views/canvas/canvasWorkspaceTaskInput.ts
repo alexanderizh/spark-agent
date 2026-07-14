@@ -32,6 +32,13 @@ export async function buildCloudTaskInputFiles(
   inputRoles?: Record<string, CanvasTaskInputRoleSelection>,
 ): Promise<CanvasMediaTaskInputFile[]> {
   const files = buildTaskInputFiles(nodes, inputRoles)
+  return materializeCanvasTaskInputFiles(files, inputTransport)
+}
+
+export async function materializeCanvasTaskInputFiles(
+  files: CanvasMediaTaskInputFile[],
+  inputTransport: CanvasInputTransport | undefined,
+): Promise<CanvasMediaTaskInputFile[]> {
   if (files.length === 0) return files
   if (inputTransport === 'base64') {
     return Promise.all(files.map(materializeBase64Input))

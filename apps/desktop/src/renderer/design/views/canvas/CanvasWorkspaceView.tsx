@@ -135,6 +135,11 @@ import {
   saveCanvas,
 } from './canvas.api'
 import { buildTaskInputFiles, type CanvasTaskInputRoleSelection } from './canvasTaskInputFiles'
+import {
+  buildCanvasPromptDocumentForInputs,
+  buildCanvasPromptSubmission,
+} from './canvasPromptSubmission'
+import { migrateLegacyPrompt } from './canvasPromptDocument'
 import { summarizeCanvasSelectionContext } from './canvasContextMenuModel'
 import {
   mergeCanvasOperationPresetNegativePrompt,
@@ -144,6 +149,7 @@ import {
   readCanvasOperationPreset,
   readCanvasOperationPresetOverrides,
   readCanvasResolvedPresetTarget,
+  readCanvasOperationPresetPromptPrefix,
   resolveCanvasPresetTarget,
   writeCanvasLastUsedPresetTarget,
 } from './canvasOperationPresets'
@@ -4695,11 +4701,6 @@ export function CanvasWorkspaceView({
       operation === 'storyboard_grid'
         ? buildStoryboardReferenceInputRoles(hydratedTaskInputNodes, inputRoles)
         : inputRoles
-    const inputFiles = await buildCloudTaskInputFiles(
-      hydratedTaskInputNodes,
-      inputTransport,
-      effectiveInputRoles,
-    )
     const presetTargetId = resolveCanvasPresetTarget({
       operation,
       taskPipelineRole: taskPipelineRole ?? null,
@@ -4709,18 +4710,34 @@ export function CanvasWorkspaceView({
     const operationPreset = readCanvasResolvedPresetTarget(presetTargetId)
     const effectiveSkillIds =
       skillIds && skillIds.length > 0 ? skillIds : (operationPreset.skillIds ?? [])
-    const mergedPrompt =
-      operation === 'storyboard_grid'
-        ? buildStoryboardNodePrompt({ prompt, inputNodes: hydratedTaskInputNodes })
-        : mergePromptWithNodeContext(prompt, hydratedTaskInputNodes)
-    const effectivePrompt = mergedPrompt.trim()
-      ? mergeCanvasOperationPresetPrompt(mergedPrompt, operationPreset.prompt)
-      : operationPreset.prompt ||
-        (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
     const effectiveNegativePrompt = mergeCanvasOperationPresetNegativePrompt(
       negativePrompt ?? '',
       operationPreset.negativePrompt,
     )
+    const promptDocument = buildCanvasPromptDocumentForInputs({
+      prompt,
+      nodes: hydratedTaskInputNodes,
+      assets: snapshot.assets,
+    })
+    const systemPrompt = [
+      readCanvasOperationPresetPromptPrefix(operation),
+      operationPreset.prompt,
+    ]
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join('\n\n')
+    const promptSubmission = await buildCanvasPromptSubmission({
+      document: promptDocument,
+      snapshot,
+      operation,
+      ...(systemPrompt ? { systemPrompt } : {}),
+      ...(effectiveNegativePrompt ? { negativePrompt: effectiveNegativePrompt } : {}),
+      ...(inputTransport ? { inputTransport } : {}),
+      ...(effectiveInputRoles ? { inputRoles: effectiveInputRoles } : {}),
+    })
+    const inputFiles = promptSubmission.inputFiles ?? []
+    const effectivePrompt =
+      promptSubmission.prompt || (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
     const mergedModelParams = mergeCanvasPresetTargetModelParams(presetTargetId, modelParams)
     const styleContext = buildCanvasStyleContext(snapshot, {
       ...(effectiveNegativePrompt ? { negativePrompt: effectiveNegativePrompt } : {}),
@@ -4744,8 +4761,10 @@ export function CanvasWorkspaceView({
     )
 
     await createTask({
+      ...promptSubmission,
       operation,
       prompt: styledTask.prompt,
+      compiledUserText: styledTask.prompt,
       ...(styledTask.negativePrompt ? { negativePrompt: styledTask.negativePrompt } : {}),
       inputNodeIds: taskInputNodes.map((node) => node.id),
       inputAssetIds: taskInputNodes
@@ -6899,18 +6918,33 @@ export function CanvasWorkspaceView({
                             params.inputRoles,
                           )
                         : params.inputRoles
-                    const inputFiles = await buildCloudTaskInputFiles(
-                      hydratedTaskInputNodes,
-                      params.inputTransport,
-                      effectiveInputRoles,
-                    )
+                    const promptDocument =
+                      params.promptDocument ??
+                      migrateLegacyPrompt({
+                        prompt: params.prompt,
+                        nodes: snapshot.nodes,
+                        assets: snapshot.assets,
+                      })
+                    const resolvedPreset = readCanvasResolvedPresetTarget(presetTargetId)
+                    const systemPrompt = [
+                      readCanvasOperationPresetPromptPrefix(operation),
+                      resolvedPreset.prompt,
+                    ]
+                      .map((item) => item.trim())
+                      .filter(Boolean)
+                      .join('\n\n')
+                    const promptSubmission = await buildCanvasPromptSubmission({
+                      document: promptDocument,
+                      snapshot,
+                      operation,
+                      ...(systemPrompt ? { systemPrompt } : {}),
+                      ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                      ...(params.inputTransport ? { inputTransport: params.inputTransport } : {}),
+                      ...(effectiveInputRoles ? { inputRoles: effectiveInputRoles } : {}),
+                    })
+                    const inputFiles = promptSubmission.inputFiles ?? []
                     const effectivePrompt =
-                      (operation === 'storyboard_grid'
-                        ? buildStoryboardNodePrompt({
-                            prompt: params.prompt,
-                            inputNodes: hydratedTaskInputNodes,
-                          })
-                        : mergePromptWithNodeContext(params.prompt, hydratedTaskInputNodes)) ||
+                      promptSubmission.prompt ||
                       (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
                     // 分镜任务：用用户配置的每镜最长时间替换 prompt 占位槽 {maxClip}。
                     const finalPrompt = params.shotScriptConfig
@@ -6948,7 +6982,9 @@ export function CanvasWorkspaceView({
                     })
                     try {
                       await runOperationNode(opNode.id, {
+                        ...promptSubmission,
                         prompt: styledTask.prompt,
+                        compiledUserText: styledTask.prompt,
                         ...(styledTask.negativePrompt
                           ? { negativePrompt: styledTask.negativePrompt }
                           : {}),

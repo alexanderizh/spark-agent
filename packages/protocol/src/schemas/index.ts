@@ -652,6 +652,73 @@ export const SessionListPendingQuestionsRequestSchema = z.object({
   sessionId: z.string().min(1).max(200).optional(),
 })
 
+const CanvasPromptRelationSchema = z.enum([
+  'character',
+  'supporting_character',
+  'scene',
+  'prop',
+  'first_frame',
+  'last_frame',
+  'reference_image',
+  'reference_video',
+  'reference_audio',
+  'storyboard',
+  'screenplay',
+  'generic',
+])
+const CanvasPromptBlockSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('text'), id: z.string().max(200), text: z.string().max(100_000) }),
+  z.object({
+    kind: z.literal('reference'),
+    id: z.string().max(200),
+    source: z.enum(['connection', 'manual']),
+    sourceNodeId: z.string().max(200),
+    relation: CanvasPromptRelationSchema,
+    label: z.string().max(500),
+    order: z.number().int().min(0),
+    note: z.string().max(10_000).optional(),
+  }),
+  z.object({
+    kind: z.literal('parameter'),
+    id: z.string().max(200),
+    parameter: z.enum(['duration', 'dialogue', 'blocking', 'custom']),
+    value: z.union([z.string().max(10_000), z.number()]),
+    unit: z.string().max(80).optional(),
+    relation: z.string().max(200).optional(),
+  }),
+  z.object({
+    kind: z.literal('structured'),
+    id: z.string().max(200),
+    sourceNodeId: z.string().max(200),
+    schema: z.enum(['storyboard', 'screenplay', 'json', 'table']),
+    summary: z.string().max(10_000),
+  }),
+])
+const CanvasPromptDocumentSchema = z.object({
+  version: z.literal(2),
+  blocks: z.array(CanvasPromptBlockSchema).max(2_000),
+})
+const CanvasPromptTaskFieldsSchema = {
+  promptDocument: CanvasPromptDocumentSchema.optional(),
+  promptSnapshot: CanvasPromptDocumentSchema.extend({ capturedAt: z.string().max(80).optional() }).optional(),
+  compiledUserText: z.string().max(100_000).optional(),
+  inputSnapshots: z.array(z.record(z.unknown())).max(64).optional(),
+  relationManifest: z.array(z.object({
+    blockId: z.string().max(200),
+    sourceNodeId: z.string().max(200),
+    relation: CanvasPromptRelationSchema,
+    order: z.number().int().min(0),
+    label: z.string().max(500).optional(),
+    contentHash: z.string().max(200).optional(),
+  })).max(64).optional(),
+  promptWarnings: z.array(z.object({
+    code: z.string().max(200),
+    message: z.string().max(10_000),
+    blockId: z.string().max(200).optional(),
+  })).max(64).optional(),
+  systemPrompt: z.string().max(100_000).optional(),
+}
+
 /**
  * IPC Schema 注册表
  *
@@ -1036,6 +1103,7 @@ export const IpcSchemaRegistry = {
     modelParams: z.record(z.unknown()).optional(),
     waitForCompletion: z.boolean().optional(),
     outputDir: z.string().max(2000).optional(),
+    ...CanvasPromptTaskFieldsSchema,
   }),
   'canvas:task:cancel-media': z.object({
     runtimeTaskId: z.string().min(1).max(200),

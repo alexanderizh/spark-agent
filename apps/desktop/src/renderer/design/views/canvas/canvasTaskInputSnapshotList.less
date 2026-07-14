@@ -1,0 +1,91 @@
+.canvas-task-input-snapshots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.canvas-task-input-snapshot {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+}
+
+.canvas-task-input-snapshot-thumb,
+.canvas-task-input-snapshot-kind {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  border-radius: 10px;
+  background: var(--bg-sunken);
+}
+
+.canvas-task-input-snapshot-thumb {
+  display: block;
+  object-fit: cover;
+}
+
+.canvas-task-input-snapshot-kind {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.canvas-task-input-snapshot-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.canvas-task-input-snapshot-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.canvas-task-input-snapshot-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-task-input-snapshot-heading span {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.canvas-task-input-snapshot-meta {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-task-input-snapshot-content {
+  max-height: 280px;
+  margin: 2px 0 0;
+  overflow-y: auto;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
