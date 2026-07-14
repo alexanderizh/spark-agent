@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AutoComplete, Input, Popover, Select, Tag, Tooltip, message } from 'antd'
+import { AutoComplete, Input, InputNumber, Popover, Select, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import {
@@ -23,7 +23,7 @@ import {
   readCanvasResolvedPresetTarget,
   resolveCanvasPresetTarget,
 } from './canvasOperationPresets'
-import { DEFAULT_SHOT_SCRIPT_CONFIG } from './canvasAgentPromptPresets'
+import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 import { buildReferenceImageInputRoles } from './canvasTaskInputFiles'
 import { AgentPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
 import { CanvasMediaInputHint } from './CanvasMediaInputHint'
@@ -71,6 +71,7 @@ import type {
   CanvasOperationType,
   CanvasSnapshot,
   CanvasTask,
+  ShotScriptConfig,
 } from './canvas.types'
 
 /**
@@ -128,8 +129,6 @@ const COMMON_MODEL_PARAM_TITLE_PATTERNS = [
 
 /** 分镜「每镜最长时间」档位（秒） */
 const SHOT_MAX_CLIP_PRESETS = [4, 5, 8, 10]
-/** 分镜「平均镜时」档位（秒/镜） */
-const SHOT_PACING_PRESETS = [3, 4, 5]
 
 export type OperationRunParams = {
   prompt: string
@@ -144,8 +143,8 @@ export type OperationRunParams = {
   reasoningEffort?: SessionReasoningEffort
   skillIds?: string[]
   modelParams?: Record<string, unknown>
-  /** 分镜任务的时长配置（每镜最长时间 + 平均镜时），运行时替换 prompt 占位槽 */
-  shotScriptConfig?: { maxClipSec: number; pacingSecPerShot: number }
+  /** 分镜任务的时长配置（每镜最长时间），运行时替换 prompt 占位槽 {maxClip} */
+  shotScriptConfig?: ShotScriptConfig
 }
 
 export type OperationDraftParams = {
@@ -160,7 +159,7 @@ export type OperationDraftParams = {
   modelId?: string
   skillIds?: string[]
   /** 分镜任务的时长配置，随草稿持久化到 node.data.shotScriptConfig */
-  shotScriptConfig?: { maxClipSec: number; pacingSecPerShot: number }
+  shotScriptConfig?: ShotScriptConfig
 }
 
 export function buildOperationPanelSnapshotSignature(
@@ -501,8 +500,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   // 分镜时长配置草稿：preset 命中档位则用档位值，否则 'custom' + 自定义数字字符串。
   const [maxClipPreset, setMaxClipPreset] = useState<number | 'custom'>('custom')
   const [maxClipCustom, setMaxClipCustom] = useState('')
-  const [pacingPreset, setPacingPreset] = useState<number | 'custom'>('custom')
-  const [pacingCustom, setPacingCustom] = useState('')
   const modelParamDraftEditedRef = useRef(false)
   const customParamsEditedRef = useRef(false)
   const promptCharCount = useMemo(
@@ -539,23 +536,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     setSelectedTextModelId(task?.modelId ?? node.data.modelId ?? operationPreset.modelId ?? '')
     setSelectedSkillIds(task?.skillIds ?? node.data.skillIds ?? operationPreset.skillIds)
     // 分镜时长配置草稿：从 node.data.shotScriptConfig 解析到 preset/custom（随节点切换重置）。
-    const shotCfg = node.data.shotScriptConfig ?? DEFAULT_SHOT_SCRIPT_CONFIG
-    setMaxClipPreset(
-      SHOT_MAX_CLIP_PRESETS.includes(shotCfg.maxClipSec) ? shotCfg.maxClipSec : 'custom',
-    )
-    setMaxClipCustom(
-      SHOT_MAX_CLIP_PRESETS.includes(shotCfg.maxClipSec) ? '' : String(shotCfg.maxClipSec),
-    )
-    setPacingPreset(
-      SHOT_PACING_PRESETS.includes(shotCfg.pacingSecPerShot)
-        ? shotCfg.pacingSecPerShot
-        : 'custom',
-    )
-    setPacingCustom(
-      SHOT_PACING_PRESETS.includes(shotCfg.pacingSecPerShot)
-        ? ''
-        : String(shotCfg.pacingSecPerShot),
-    )
+    // 兼容脏数据：持久化的 maxClipSec 非法（缺省 / 非有限 / ≤0）时回退默认值，避免回显 -1 这类异常。
+    const rawMaxClip = node.data.shotScriptConfig?.maxClipSec
+    const safeMaxClip =
+      typeof rawMaxClip === 'number' && Number.isFinite(rawMaxClip) && rawMaxClip > 0
+        ? rawMaxClip
+        : DEFAULT_MAX_CLIP_SEC
+    setMaxClipPreset(SHOT_MAX_CLIP_PRESETS.includes(safeMaxClip) ? safeMaxClip : 'custom')
+    setMaxClipCustom(SHOT_MAX_CLIP_PRESETS.includes(safeMaxClip) ? '' : String(safeMaxClip))
     // 只在切换节点时重载草稿，避免保存后的 snapshot 刷新把用户刚输入的配置重置掉。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id])
@@ -1011,18 +999,15 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     ],
   )
 
-  // 把 preset/custom 草稿解析成结构化时长配置；非分镜节点或非法值（空/非正）返回 null（不注入）。
-  const resolveShotScriptConfig = useCallback(
-    (): { maxClipSec: number; pacingSecPerShot: number } | null => {
-      if (!isShotScriptNode) return null
-      const maxClipSec = maxClipPreset === 'custom' ? Number(maxClipCustom) : maxClipPreset
-      const pacingSecPerShot = pacingPreset === 'custom' ? Number(pacingCustom) : pacingPreset
-      if (!Number.isFinite(maxClipSec) || maxClipSec <= 0) return null
-      if (!Number.isFinite(pacingSecPerShot) || pacingSecPerShot <= 0) return null
-      return { maxClipSec, pacingSecPerShot }
-    },
-    [isShotScriptNode, maxClipPreset, maxClipCustom, pacingPreset, pacingCustom],
-  )
+  // 把 preset/custom 草稿解析成结构化时长配置。
+  // 分镜节点永远返回合法值——非法输入（空 / 非正）回退默认，绝不放任 {maxClip} 占位槽裸奔泄漏给 LLM；
+  // 非分镜节点返回 null。
+  const resolveShotScriptConfig = useCallback((): ShotScriptConfig | null => {
+    if (!isShotScriptNode) return null
+    const parsed = maxClipPreset === 'custom' ? Number(maxClipCustom) : maxClipPreset
+    const maxClipSec = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_CLIP_SEC
+    return { maxClipSec }
+  }, [isShotScriptNode, maxClipPreset, maxClipCustom])
 
   const handleSaveDraft = useCallback(async () => {
     if (savingDraft) return
@@ -1752,7 +1737,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       flexWrap: 'wrap',
                     }}
                   >
-                    <span style={{ fontSize: 12, opacity: 0.7 }}>每镜时长</span>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>每镜最长</span>
                     <Select<number | 'custom'>
                       size="small"
                       style={{ width: 92 }}
@@ -1764,34 +1749,13 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       ]}
                     />
                     {maxClipPreset === 'custom' && (
-                      <Input
+                      <InputNumber
                         size="small"
-                        type="number"
-                        style={{ width: 78 }}
+                        min={1}
+                        style={{ width: 90 }}
                         addonAfter="秒"
-                        value={maxClipCustom}
-                        onChange={(e) => setMaxClipCustom(e.target.value)}
-                      />
-                    )}
-                    <span style={{ fontSize: 12, opacity: 0.7, marginLeft: 4 }}>平均镜时</span>
-                    <Select<number | 'custom'>
-                      size="small"
-                      style={{ width: 104 }}
-                      value={pacingPreset}
-                      onChange={(v) => setPacingPreset(v)}
-                      options={[
-                        ...SHOT_PACING_PRESETS.map((s) => ({ value: s, label: `${s} 秒/镜` })),
-                        { value: 'custom', label: '自定义' },
-                      ]}
-                    />
-                    {pacingPreset === 'custom' && (
-                      <Input
-                        size="small"
-                        type="number"
-                        style={{ width: 88 }}
-                        addonAfter="秒/镜"
-                        value={pacingCustom}
-                        onChange={(e) => setPacingCustom(e.target.value)}
+                        value={maxClipCustom.trim() === '' ? null : Number(maxClipCustom)}
+                        onChange={(v) => setMaxClipCustom(v == null ? '' : String(v))}
                       />
                     )}
                   </div>

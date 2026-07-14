@@ -584,7 +584,7 @@ export function CanvasInlineAiComposer({
       if (!preset) return
       setOperation(preset.defaultOperation)
       const presetPrompt = buildAgentPresetPrompt(role, { upstreamText: nodePromptContext })
-      // 分镜角色：把 {maxClip}/{pacing} 占位槽用默认值填好（内联编辑器不走结构化配置），
+      // 分镜角色：把 {maxClip} 占位槽用默认值填好（内联编辑器不走结构化配置），
       // 避免文本框里出现字面 {maxClip}。
       setPrompt(
         role === 'storyboard'

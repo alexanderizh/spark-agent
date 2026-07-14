@@ -9,6 +9,7 @@ import type {
   CanvasSnapshot,
   CanvasRightPanelTab,
   CreateCanvasTaskRequest,
+  ShotScriptConfig,
 } from './canvas.types'
 import type {
   CanvasMediaTaskInputFile,
@@ -755,7 +756,7 @@ export function useCanvasWorkspace(projectId: string) {
       taskPipelineRole?: CreateCanvasTaskRequest['taskPipelineRole']
       outputPipelineRole?: CreateCanvasTaskRequest['outputPipelineRole']
       outputTitle?: CreateCanvasTaskRequest['outputTitle']
-      shotScriptConfig?: { maxClipSec: number; pacingSecPerShot: number }
+      shotScriptConfig?: ShotScriptConfig
     }) => {
       const next = await canvasApi.createOperationNode({ projectId, ...input })
       setSnapshot(next)
