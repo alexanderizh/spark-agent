@@ -35,6 +35,7 @@
   "//deps-note": "dependencies 仅保留 main/preload 运行时真正 require 的包（已据 out/main bundle 权威核实）。所有纯渲染端依赖被 vite 打进 out/renderer，移到 devDependencies，使 electron-builder 仅收生产依赖闭包，避免渲染库及其传递依赖被重复打包。配合 pnpm nodeLinker:hoisted 平铺布局，electron-builder 才能完整收集生产闭包。",
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.66.1",
+    "@napi-rs/canvas": "1.0.0",
     "@openai/codex-sdk": "0.143.0",
     "@playwright/mcp": "^0.0.30",
     "@react-three/drei": "^10.7.7",
