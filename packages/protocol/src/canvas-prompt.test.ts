@@ -11,6 +11,18 @@ import type {
 import { CANVAS_PROMPT_VERSION } from './canvas-prompt.js'
 
 describe('canvas prompt protocol contract', () => {
+  it('allows custom relation text on parameter blocks', () => {
+    const block: CanvasPromptBlock = {
+      kind: 'parameter',
+      id: 'p1',
+      parameter: 'custom',
+      value: '站在主角左后方两米',
+      relation: '相对主角的空间站位',
+    }
+
+    expect(block.relation).toBe('相对主角的空间站位')
+  })
+
   it('uses the current versioned document contract', () => {
     expect(CANVAS_PROMPT_VERSION).toBe(2)
   })
