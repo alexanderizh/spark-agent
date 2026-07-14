@@ -7,7 +7,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
-import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
+import { Handle, NodeResizer, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react'
 import { Dropdown } from '@lobehub/ui'
 import { Progress } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
@@ -563,7 +563,14 @@ function buildDetailSheetNineGridPrompt(node: SparkCanvasNode): string {
     .join('\n')
 }
 
-export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps) {
+export const CanvasNode = memo(function CanvasNode({
+  id,
+  data,
+  selected,
+  width,
+  height,
+}: NodeProps) {
+  const updateNodeInternals = useUpdateNodeInternals()
   const {
     actions,
     canvasNode: node,
@@ -1154,6 +1161,25 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     inlinePanel != null
       ? (inlinePanelExtraHeight ?? lastInlinePanelHeightRef.current)
       : lastInlinePanelHeightRef.current
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      updateNodeInternals(id)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [
+    baseRenderedHeight,
+    height,
+    id,
+    inlinePanelDisplayHeight,
+    inlinePanelVisible,
+    resizeHovered,
+    renderedInlinePanel,
+    selected,
+    updateNodeInternals,
+    width,
+  ])
+
   const productionBadge =
     node.data.productionState && PRODUCTION_STATE_BADGE[node.data.productionState]
   const operationSummary = isOperationNode(node) ? operationRuntimeSummary(node) : null
@@ -1511,5 +1537,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
 
 function canvasNodePropsEqual(prev: NodeProps, next: NodeProps): boolean {
   if (prev.selected !== next.selected) return false
+  if ((prev.width ?? 0) !== (next.width ?? 0)) return false
+  if ((prev.height ?? 0) !== (next.height ?? 0)) return false
   return canvasFlowNodeDataEqual(prev.data as CanvasFlowNodeData, next.data as CanvasFlowNodeData)
 }

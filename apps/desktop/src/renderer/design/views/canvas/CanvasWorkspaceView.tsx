@@ -555,7 +555,8 @@ const CANVAS_SIDE_PANEL_MAX_WIDTH = 640
 const CANVAS_SIDE_PANEL_KEYBOARD_STEP = 24
 const CANVAS_AGENT_PANEL_WIDTH_KEY = 'spark-canvas:agent-panel-width'
 const CANVAS_AGENT_PANEL_OPEN_KEY = 'spark-canvas:agent-panel-open'
-const CANVAS_AGENT_PANEL_DEFAULT_WIDTH = 380
+const CANVAS_AGENT_PANEL_LEGACY_DEFAULT_WIDTH = 380
+const CANVAS_AGENT_PANEL_DEFAULT_WIDTH = 480
 const CANVAS_AGENT_PANEL_MIN_WIDTH = 300
 const CANVAS_AGENT_PANEL_MAX_WIDTH = 1200
 const CANVAS_AUTO_SAVE_DEBOUNCE_MS = 1200
@@ -592,7 +593,12 @@ function readAgentPanelWidth(): number {
   if (typeof window === 'undefined') return CANVAS_AGENT_PANEL_DEFAULT_WIDTH
   try {
     const parsed = Number(window.localStorage.getItem(CANVAS_AGENT_PANEL_WIDTH_KEY))
-    return Number.isFinite(parsed) ? clampAgentPanelWidth(parsed) : CANVAS_AGENT_PANEL_DEFAULT_WIDTH
+    if (!Number.isFinite(parsed)) return CANVAS_AGENT_PANEL_DEFAULT_WIDTH
+    // 把历史默认宽度平滑迁移到新的默认值；用户手动调过的宽度仍保持原样。
+    if (parsed === CANVAS_AGENT_PANEL_LEGACY_DEFAULT_WIDTH) {
+      return CANVAS_AGENT_PANEL_DEFAULT_WIDTH
+    }
+    return clampAgentPanelWidth(parsed)
   } catch {
     return CANVAS_AGENT_PANEL_DEFAULT_WIDTH
   }

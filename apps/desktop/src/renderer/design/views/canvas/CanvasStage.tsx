@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,6 +12,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
+import { createPortal } from 'react-dom'
 import {
   MiniMap,
   ReactFlow,
@@ -150,8 +152,151 @@ type PaneContextMenuState = {
   maxHeight: number
   openSubmenusLeft: boolean
   openSubmenusUp: boolean
+  anchorPoint: CanvasStagePoint
   flowPosition: CanvasStagePoint
   pendingConnection: PendingCanvasConnection | null
+}
+
+type CanvasPaneContextSubmenuProps = {
+  icon: ReactNode
+  label: string
+  openLeft: boolean
+  openUp: boolean
+  children: ReactNode
+}
+
+function CanvasPaneContextSubmenu({
+  icon,
+  label,
+  openLeft,
+  openUp,
+  children,
+}: CanvasPaneContextSubmenuProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const closeTimerRef = useRef<number | null>(null)
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<{
+    left: number
+    top: number
+    maxHeight: number
+  } | null>(null)
+
+  const cancelClose = useCallback(() => {
+    if (closeTimerRef.current == null) return
+    window.clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+  }, [])
+
+  const showPanel = useCallback(() => {
+    cancelClose()
+    setOpen(true)
+  }, [cancelClose])
+
+  const scheduleClose = useCallback(() => {
+    cancelClose()
+    closeTimerRef.current = window.setTimeout(() => {
+      setOpen(false)
+      setPosition(null)
+    }, 120)
+  }, [cancelClose])
+
+  useEffect(() => cancelClose, [cancelClose])
+
+  useLayoutEffect(() => {
+    if (!open) return undefined
+    const trigger = triggerRef.current
+    const panel = panelRef.current
+    const stage = trigger?.closest<HTMLElement>('.canvas-stage')
+    if (!trigger || !panel || !stage) return undefined
+
+    const updatePosition = () => {
+      const triggerRect = trigger.getBoundingClientRect()
+      const stageRect = stage.getBoundingClientRect()
+      const inset = 8
+      const maxHeight = Math.max(0, Math.min(440, stageRect.height - inset * 2))
+      const panelWidth = panel.offsetWidth
+      const panelHeight = Math.min(panel.scrollHeight, maxHeight)
+      const preferredLeft = openLeft ? triggerRect.left - panelWidth + 4 : triggerRect.right - 4
+      const preferredTop = openUp ? triggerRect.bottom - panelHeight : triggerRect.top
+      const left = Math.min(
+        Math.max(preferredLeft, stageRect.left + inset),
+        stageRect.right - panelWidth - inset,
+      )
+      const top = Math.min(
+        Math.max(preferredTop, stageRect.top + inset),
+        stageRect.bottom - panelHeight - inset,
+      )
+      setPosition((current) =>
+        current?.left === left && current.top === top && current.maxHeight === maxHeight
+          ? current
+          : { left, top, maxHeight },
+      )
+    }
+
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open, openLeft, openUp])
+
+  return (
+    <div
+      className="canvas-pane-context-submenu"
+      role="none"
+      onMouseEnter={showPanel}
+      onMouseLeave={scheduleClose}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        role="menuitem"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="canvas-pane-context-submenu-trigger"
+        onFocus={showPanel}
+        onBlur={(event) => {
+          const nextTarget = event.relatedTarget
+          if (nextTarget instanceof HTMLElement && panelRef.current?.contains(nextTarget)) return
+          scheduleClose()
+        }}
+      >
+        {icon}
+        <span>{label}</span>
+        <Icons.ChevronRight size={14} />
+      </button>
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            className="canvas-pane-context-submenu-panel"
+            role="menu"
+            style={{
+              left: position?.left ?? 0,
+              top: position?.top ?? 0,
+              maxHeight: position?.maxHeight,
+              visibility: position ? 'visible' : 'hidden',
+            }}
+            onMouseEnter={cancelClose}
+            onMouseLeave={scheduleClose}
+            onContextMenu={(event) => event.preventDefault()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onBlur={(event) => {
+              const nextTarget = event.relatedTarget
+              if (nextTarget instanceof HTMLElement && panelRef.current?.contains(nextTarget))
+                return
+              scheduleClose()
+            }}
+          >
+            {children}
+          </div>,
+          document.body,
+        )}
+    </div>
+  )
 }
 
 export type CanvasStageViewport = Viewport & {
@@ -689,6 +834,7 @@ function CanvasStageInner({
   const [dropActive, setDropActive] = useState(false)
   const dragDepthRef = useRef(0)
   const stageRef = useRef<HTMLDivElement>(null)
+  const paneContextMenuRef = useRef<HTMLDivElement>(null)
   const flowInstanceRef = useRef<ReactFlowInstance<Node<CanvasFlowNodeData>, Edge> | null>(null)
   const flowNodesRef = useRef(flowNodes)
   const latestViewportRef = useRef<Viewport>(boardViewport)
@@ -1132,6 +1278,7 @@ function CanvasStageInner({
         maxHeight: menuPosition.maxHeight,
         openSubmenusLeft: menuPosition.openSubmenusLeft,
         openSubmenusUp: menuPosition.openSubmenusUp,
+        anchorPoint: { x: rawLeft, y: rawTop },
         flowPosition: instance.screenToFlowPosition({
           x: point.clientX,
           y: point.clientY,
@@ -1142,6 +1289,54 @@ function CanvasStageInner({
     },
     [],
   )
+
+  useLayoutEffect(() => {
+    const menu = paneContextMenuRef.current
+    const stage = stageRef.current
+    const anchorPoint = paneContextMenu?.anchorPoint
+    if (!menu || !stage || !anchorPoint) return undefined
+
+    const updatePosition = () => {
+      const rect = stage.getBoundingClientRect()
+      const menuPosition = calculateCanvasContextMenuPosition({
+        point: anchorPoint,
+        container: { width: rect.width, height: rect.height },
+        menu: { width: menu.offsetWidth, height: menu.scrollHeight },
+        submenu: { width: 300 },
+      })
+      setPaneContextMenu((current) => {
+        if (!current) return current
+        if (
+          current.left === menuPosition.left &&
+          current.top === menuPosition.top &&
+          current.maxHeight === menuPosition.maxHeight &&
+          current.openSubmenusLeft === menuPosition.openSubmenusLeft &&
+          current.openSubmenusUp === menuPosition.openSubmenusUp
+        ) {
+          return current
+        }
+        return {
+          ...current,
+          left: menuPosition.left,
+          top: menuPosition.top,
+          maxHeight: menuPosition.maxHeight,
+          openSubmenusLeft: menuPosition.openSubmenusLeft,
+          openSubmenusUp: menuPosition.openSubmenusUp,
+        }
+      })
+    }
+
+    updatePosition()
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition)
+    resizeObserver?.observe(stage)
+    resizeObserver?.observe(menu)
+    window.addEventListener('resize', updatePosition)
+    return () => {
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [paneContextMenu?.anchorPoint])
 
   const handlePaneContextMenu = useCallback(
     (event: MouseEvent | ReactMouseEvent<Element, MouseEvent>) => {
@@ -1945,6 +2140,7 @@ function CanvasStageInner({
         )}
         {paneContextMenu && (
           <div
+            ref={paneContextMenuRef}
             className={`canvas-pane-context-menu${
               paneContextMenu.openSubmenusLeft ? ' canvas-pane-context-menu-submenus-left' : ''
             }${paneContextMenu.openSubmenusUp ? ' canvas-pane-context-menu-submenus-up' : ''}`}
@@ -2149,62 +2345,50 @@ function CanvasStageInner({
             <div className="canvas-pane-context-divider" />
             <div className="canvas-pane-context-section-title">任务节点</div>
             {onCreatePipelineAtPosition && (
-              <div className="canvas-pane-context-submenu" role="none">
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="canvas-pane-context-submenu-trigger"
-                >
-                  <Icons.Workflow size={14} />
-                  <span>剧本流水线</span>
-                  <Icons.ChevronRight size={14} />
-                </button>
-                <div className="canvas-pane-context-submenu-panel" role="menu">
-                  {CANVAS_PIPELINE_OPS.filter(
-                    (op) => op.appliesToText && (op.kind === 'text' || op.kind === 'extract'),
-                  ).map((op) => (
-                    <button
-                      key={op.id}
-                      type="button"
-                      role="menuitem"
-                      onClick={() => handleCreatePipelineFromPane(op.id)}
-                    >
-                      <Icons.Workflow size={14} />
-                      <span>{op.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <CanvasPaneContextSubmenu
+                icon={<Icons.Workflow size={14} />}
+                label="剧本流水线"
+                openLeft={paneContextMenu.openSubmenusLeft}
+                openUp={paneContextMenu.openSubmenusUp}
+              >
+                {CANVAS_PIPELINE_OPS.filter(
+                  (op) => op.appliesToText && (op.kind === 'text' || op.kind === 'extract'),
+                ).map((op) => (
+                  <button
+                    key={op.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleCreatePipelineFromPane(op.id)}
+                  >
+                    <Icons.Workflow size={14} />
+                    <span>{op.label}</span>
+                  </button>
+                ))}
+              </CanvasPaneContextSubmenu>
             )}
             {onCreateOperationAtPosition && (
-              <div className="canvas-pane-context-submenu" role="none">
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="canvas-pane-context-submenu-trigger"
-                >
-                  <Icons.Sparkles size={14} />
-                  <span>AI 操作</span>
-                  <Icons.ChevronRight size={14} />
-                </button>
-                <div className="canvas-pane-context-submenu-panel" role="menu">
-                  {CANVAS_CAPABILITIES.map((capability) => {
-                    const visual = getOperationVisual(capability.operation)
-                    return (
-                      <button
-                        key={capability.id}
-                        type="button"
-                        role="menuitem"
-                        className={`canvas-pane-context-op ${visual.colorClass}`}
-                        onClick={() => handleCreateOperationFromPane(capability.operation)}
-                      >
-                        <span className="canvas-pane-context-op-icon">{visual.icon}</span>
-                        <span>{capability.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
+              <CanvasPaneContextSubmenu
+                icon={<Icons.Sparkles size={14} />}
+                label="AI 操作"
+                openLeft={paneContextMenu.openSubmenusLeft}
+                openUp={paneContextMenu.openSubmenusUp}
+              >
+                {CANVAS_CAPABILITIES.map((capability) => {
+                  const visual = getOperationVisual(capability.operation)
+                  return (
+                    <button
+                      key={capability.id}
+                      type="button"
+                      role="menuitem"
+                      className={`canvas-pane-context-op ${visual.colorClass}`}
+                      onClick={() => handleCreateOperationFromPane(capability.operation)}
+                    >
+                      <span className="canvas-pane-context-op-icon">{visual.icon}</span>
+                      <span>{capability.label}</span>
+                    </button>
+                  )
+                })}
+              </CanvasPaneContextSubmenu>
             )}
             <div className="canvas-pane-context-divider" />
             <div className="canvas-pane-context-section-title">画布</div>

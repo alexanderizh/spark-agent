@@ -118,7 +118,22 @@ textarea::-moz-selection,
   scrollbar-color: auto !important;
 }
 
+.canvas-agent-modal .chat-panel-messages {
+  scrollbar-width: auto !important;
+  scrollbar-color: var(--border-strong) transparent !important;
+}
+
 .chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar {
+  display: block !important;
+  width: 10px !important;
+  height: 10px !important;
+  max-width: 10px !important;
+  max-height: 10px !important;
+  background: transparent !important;
+  -webkit-appearance: none !important;
+}
+
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar {
   display: block !important;
   width: 10px !important;
   height: 10px !important;
@@ -135,7 +150,24 @@ textarea::-moz-selection,
   background: transparent !important;
 }
 
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar-track,
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar-track-piece {
+  display: block !important;
+  width: 10px !important;
+  background: transparent !important;
+}
+
 .chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-thumb {
+  display: block !important;
+  min-height: 36px;
+  border: 2px solid transparent !important;
+  border-radius: 999px !important;
+  background: var(--border-strong) !important;
+  background-clip: content-box !important;
+  -webkit-appearance: none !important;
+}
+
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar-thumb {
   display: block !important;
   min-height: 36px;
   border: 2px solid transparent !important;
@@ -150,8 +182,20 @@ textarea::-moz-selection,
   background-clip: content-box !important;
 }
 
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint) !important;
+  background-clip: content-box !important;
+}
+
 .chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-button,
 .chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar-button,
+.canvas-agent-modal .chat-panel-messages::-webkit-scrollbar-corner {
   display: none !important;
   width: 0 !important;
   height: 0 !important;

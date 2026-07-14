@@ -81,6 +81,7 @@ import type {
 } from '@spark/protocol'
 import { buildCanvasRetryInputRoles, pickCanvasPromptTaskFields } from './canvasPromptTaskFields'
 import { buildTaskInputFiles } from './canvasTaskInputFiles'
+import { summarizeCanvasTaskInputFiles } from './canvasTaskInputDiagnostics'
 import { materializeCanvasTaskInputFiles } from './canvasWorkspaceTaskInput'
 import { buildCanvasVisiblePromptDocument } from './canvasPromptInitialization'
 import { reconcilePromptConnections } from './canvasPromptConnections'
@@ -4911,6 +4912,9 @@ export const canvasApi = {
       inputAssetIds: request.inputAssetIds ?? [],
       outputNodeIds: [],
       outputAssetIds: [],
+      ...(request.inputFiles?.length
+        ? { inputFileDiagnostics: summarizeCanvasTaskInputFiles(request.inputFiles) }
+        : {}),
       agentId: request.agentId ?? null,
       providerProfileId: request.providerProfileId ?? null,
       manifestId: request.manifestId ?? null,
@@ -5110,6 +5114,9 @@ export const canvasApi = {
       inputAssetIds: request.inputAssetIds ?? [],
       outputNodeIds: [],
       outputAssetIds: [],
+      ...(request.inputFiles?.length
+        ? { inputFileDiagnostics: summarizeCanvasTaskInputFiles(request.inputFiles) }
+        : {}),
       agentId: request.agentId ?? null,
       skillIds: request.skillIds ?? [],
       providerProfileId: request.providerProfileId ?? null,
