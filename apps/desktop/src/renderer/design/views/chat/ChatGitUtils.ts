@@ -115,6 +115,20 @@ export function splitGitFilePath(path: string): { dir: string; base: string } {
   return { dir: normalized.slice(0, idx + 1), base: normalized.slice(idx + 1) }
 }
 
+export function getGitReviewFileOpenPath(
+  workspaceRootPath: string | null | undefined,
+  filePath: string,
+): string {
+  if (!workspaceRootPath) return filePath
+  const separator =
+    workspaceRootPath.includes('\\') && !workspaceRootPath.includes('/') ? '\\' : '/'
+  return `${workspaceRootPath.replace(/[\\/]+$/, '')}${separator}${filePath.replace(/^[\\/]+/, '')}`
+}
+
+export function isGitReviewFileOpenable(change: WorkspaceGitFileChange): boolean {
+  return change.status !== 'D' && !change.status.endsWith('D')
+}
+
 export function getGitChangeStageLabel(change: WorkspaceGitFileChange): string {
   if (change.untracked) return '未跟踪'
   if (change.staged && change.unstaged) return '已暂存 + 工作区'

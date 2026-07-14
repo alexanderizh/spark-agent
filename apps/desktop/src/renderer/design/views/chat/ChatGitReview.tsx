@@ -2,6 +2,7 @@ import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } fr
 import type { WorkspaceGitFileChange, WorkspaceGitStatusResponse } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { getFileTypeBadge } from '../../components/FileDisplay'
+import { SessionFileOpenPicker } from '../../components/SessionFileOpenPicker'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { FileChipIcon } from './ChatFileIcon'
 import { clamp } from './ChatViewUtils'
@@ -15,8 +16,10 @@ import {
   buildGitReviewTree,
   formatGitStashDate,
   formatSignedNumber,
+  getGitReviewFileOpenPath,
   getGitChangeStageLabel,
   getGitTreeStageClass,
+  isGitReviewFileOpenable,
   matchesGitReviewStageFilter,
   parseGitDiffViewSegments,
   splitGitFilePath,
@@ -24,6 +27,7 @@ import {
   type GitReviewStageFilter,
   type GitReviewTreeNode,
 } from './ChatGitUtils'
+import './ChatGitReview.less'
 
 function GitFileTypeBadge({ path }: { path: string }) {
   const badge = getFileTypeBadge(path)
@@ -159,12 +163,14 @@ function GitReviewTreePanel({
   changes,
   status,
   selectedPath,
+  workspaceRootPath,
   onSelectPath,
   onRefresh,
 }: {
   changes: WorkspaceGitFileChange[]
   status: WorkspaceGitStatusResponse | null
   selectedPath: string | null
+  workspaceRootPath: string | null
   onSelectPath: (path: string) => void
   onRefresh: () => Promise<void>
 }) {
@@ -243,6 +249,7 @@ function GitReviewTreePanel({
             depth={0}
             expandedDirs={expandedDirs}
             selectedPath={selectedPath}
+            workspaceRootPath={workspaceRootPath}
             onToggleDir={toggleDir}
             onSelectPath={onSelectPath}
           />
@@ -281,6 +288,7 @@ function GitReviewTreeNodeRow({
   depth,
   expandedDirs,
   selectedPath,
+  workspaceRootPath,
   onToggleDir,
   onSelectPath,
 }: {
@@ -288,6 +296,7 @@ function GitReviewTreeNodeRow({
   depth: number
   expandedDirs: Record<string, boolean>
   selectedPath: string | null
+  workspaceRootPath: string | null
   onToggleDir: (path: string) => void
   onSelectPath: (path: string) => void
 }) {
@@ -296,24 +305,34 @@ function GitReviewTreeNodeRow({
   const depthStyle = { '--tree-indent': `${depth * 14}px` } as React.CSSProperties
 
   if (change != null) {
+    const selected = selectedPath === change.path
     return (
-      <button
-        type="button"
-        className={`git-review-tree-row file ${selectedPath === change.path ? 'selected' : ''}`}
-        style={depthStyle}
-        title={change.path}
-        onClick={() => onSelectPath(change.path)}
-      >
-        <span className="git-review-tree-file-icon">
-          <FileChipIcon path={change.path} size={14} />
-        </span>
-        <span className={`git-review-tree-stage-dot ${getGitTreeStageClass(change)}`} />
-        <span className="git-review-tree-name truncate">{node.name}</span>
-        <span className="git-review-tree-stats">
-          <span className="git-add">+{change.additions}</span>
-          <span className="git-del">-{change.deletions}</span>
-        </span>
-      </button>
+      <div className={`git-review-tree-row-wrap${selected ? ' selected' : ''}`}>
+        <button
+          type="button"
+          className={`git-review-tree-row file${selected ? ' selected' : ''}`}
+          style={depthStyle}
+          title={change.path}
+          onClick={() => onSelectPath(change.path)}
+        >
+          <span className="git-review-tree-file-icon">
+            <FileChipIcon path={change.path} size={14} />
+          </span>
+          <span className={`git-review-tree-stage-dot ${getGitTreeStageClass(change)}`} />
+          <span className="git-review-tree-name truncate">{node.name}</span>
+          <span className="git-review-tree-stats">
+            <span className="git-add">+{change.additions}</span>
+            <span className="git-del">-{change.deletions}</span>
+          </span>
+        </button>
+        {isGitReviewFileOpenable(change) && (
+          <SessionFileOpenPicker
+            filePath={getGitReviewFileOpenPath(workspaceRootPath, change.path)}
+            className="git-review-tree-file-open"
+            compact
+          />
+        )}
+      </div>
     )
   }
 
@@ -340,6 +359,7 @@ function GitReviewTreeNodeRow({
             depth={depth + 1}
             expandedDirs={expandedDirs}
             selectedPath={selectedPath}
+            workspaceRootPath={workspaceRootPath}
             onToggleDir={onToggleDir}
             onSelectPath={onSelectPath}
           />
@@ -350,6 +370,7 @@ function GitReviewTreeNodeRow({
 
 export function GitReviewPanel({
   workspaceId,
+  workspaceRootPath,
   status,
   width,
   onWidthChange,
@@ -357,6 +378,7 @@ export function GitReviewPanel({
   onClose,
 }: {
   workspaceId: string | null
+  workspaceRootPath: string | null
   status: WorkspaceGitStatusResponse | null
   width: number
   onWidthChange: (width: number) => void
@@ -545,26 +567,35 @@ export function GitReviewPanel({
                   className={`git-review-file-card${expanded ? ' is-expanded' : ''}`}
                   key={`${change.status}:${change.path}`}
                 >
-                  <button
-                    type="button"
-                    className="git-review-file-row"
-                    aria-expanded={expanded}
-                    onClick={() => toggleFile(change.path)}
-                  >
-                    <GitFileTypeBadge path={change.path} />
-                    <span className="git-review-file-path-wrap min-w-0" title={change.path}>
-                      {dir && <span className="git-review-file-dir truncate">{dir}</span>}
-                      <span className="git-review-file-name truncate">{base}</span>
-                    </span>
-                    <span className="git-review-file-stage">{getGitChangeStageLabel(change)}</span>
-                    <span className="git-review-file-stats">
-                      <span className="git-add">+{change.additions}</span>
-                      <span className="git-del">-{change.deletions}</span>
-                    </span>
-                    <span className={`git-review-file-chevron${expanded ? ' expanded' : ''}`}>
-                      <Icons.ChevronDown size={14} />
-                    </span>
-                  </button>
+                  <div className="git-review-file-row-wrap">
+                    <button
+                      type="button"
+                      className="git-review-file-row"
+                      aria-expanded={expanded}
+                      onClick={() => toggleFile(change.path)}
+                    >
+                      <GitFileTypeBadge path={change.path} />
+                      <span className="git-review-file-path-wrap min-w-0" title={change.path}>
+                        {dir && <span className="git-review-file-dir truncate">{dir}</span>}
+                        <span className="git-review-file-name truncate">{base}</span>
+                      </span>
+                      <span className="git-review-file-stage">{getGitChangeStageLabel(change)}</span>
+                      <span className="git-review-file-stats">
+                        <span className="git-add">+{change.additions}</span>
+                        <span className="git-del">-{change.deletions}</span>
+                      </span>
+                      <span className={`git-review-file-chevron${expanded ? ' expanded' : ''}`}>
+                        <Icons.ChevronDown size={14} />
+                      </span>
+                    </button>
+                    {isGitReviewFileOpenable(change) && (
+                      <SessionFileOpenPicker
+                        filePath={getGitReviewFileOpenPath(workspaceRootPath, change.path)}
+                        className="git-review-file-open"
+                        compact
+                      />
+                    )}
+                  </div>
                   {expanded && workspaceId != null && (
                     <GitReviewFileDiff
                       workspaceId={workspaceId}
@@ -597,6 +628,7 @@ export function GitReviewPanel({
                 changes={changes}
                 status={status}
                 selectedPath={expandedPath}
+                workspaceRootPath={workspaceRootPath}
                 onSelectPath={setExpandedPath}
                 onRefresh={onRefresh}
               />

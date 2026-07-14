@@ -2288,6 +2288,7 @@ export function ChatView({
           ) : activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
             <GitReviewPanel
               workspaceId={gitWorkspaceId}
+              workspaceRootPath={gitWorkspace?.rootPath ?? null}
               status={gitStatus}
               width={sideChatWidth}
               onWidthChange={setSideChatWidth}
