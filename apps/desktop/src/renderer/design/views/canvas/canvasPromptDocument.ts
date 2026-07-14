@@ -79,6 +79,18 @@ export function toCanvasPromptPlainText(document: CanvasPromptDocument): string 
     .join('')
 }
 
+export function toCanvasPromptLegacyText(document: CanvasPromptDocument): string {
+  return document.blocks
+    .map((block) => {
+      if (block.kind === 'text') return block.text
+      if (block.kind === 'reference') return `@[${block.label}](node:${block.sourceNodeId})`
+      if (block.kind === 'structured') return `@[${block.summary}](node:${block.sourceNodeId})`
+      const unit = block.unit ? ` ${block.unit}` : ''
+      return `${String(block.value)}${unit}`
+    })
+    .join('')
+}
+
 export function replacePromptBlock(
   document: CanvasPromptDocument,
   blockId: string,
