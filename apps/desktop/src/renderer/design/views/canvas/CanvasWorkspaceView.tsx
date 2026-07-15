@@ -551,23 +551,6 @@ function collectGroupDescendantNodes(nodes: CanvasNode[], groupId: string): Canv
   return descendants
 }
 
-function findGroupContainingNodes(nodes: CanvasNode[], nodeIds: string[]): CanvasNode | null {
-  const expectedIds = new Set(nodeIds)
-  if (expectedIds.size === 0) return null
-  const groups = nodes.filter((node) => node.type === 'group')
-  return (
-    groups.find((group) => {
-      const childIds = new Set(
-        nodes.filter((node) => node.parentNodeId === group.id).map((node) => node.id),
-      )
-      for (const nodeId of expectedIds) {
-        if (!childIds.has(nodeId)) return false
-      }
-      return true
-    }) ?? null
-  )
-}
-
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
@@ -1851,7 +1834,7 @@ export function CanvasWorkspaceView({
   const pendingImageConnectionRef = useRef<PendingCanvasConnection | null>(null)
   const pendingAssetConnectionRef = useRef<PendingCanvasConnection | null>(null)
   const pendingAssetPositionRef = useRef<CanvasPoint | null>(null)
-  const mergingGroupImageIdsRef = useRef(new Set<string>())
+  const compositingImageLockRef = useRef(new Set<string>())
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true)
   const [agentPanelWidth, setAgentPanelWidth] = useState(readAgentPanelWidth)
@@ -2824,26 +2807,33 @@ export function CanvasWorkspaceView({
     [patchNodes],
   )
 
-  const handleMergeGroupToImage = useCallback(
-    async (groupId: string, sourceSnapshot?: typeof snapshot) => {
-      if (mergingGroupImageIdsRef.current.has(groupId)) {
-        message.info('正在合成该组，请稍候')
-        return
-      }
+  // 把一组内容节点按其在画布上的当前位置截图合成成一张图，生成新的图片节点，
+  // 并从 sourceNodeIds 连线到新节点。组内「多图合并」与多选「合并为组合图」共用此逻辑：
+  // 前者 source = 组节点，后者 source = 被选中的内容节点（不再创建中间组节点）。
+  const compositeContentNodesToImage = useCallback(
+    async (params: {
+      contentNodes: CanvasNode[]
+      sourceNodeIds: string[]
+      title: string
+      placeX: number
+      placeY: number
+      lockKey: string
+      projectRootPath?: string
+      notInViewportMessage?: string
+    }) => {
+      const {
+        contentNodes,
+        sourceNodeIds,
+        title,
+        placeX,
+        placeY,
+        lockKey,
+        projectRootPath,
+        notInViewportMessage = '所选内容当前不在可截图区域内，请先移动视图后再合成',
+      } = params
 
-      const currentSnapshot = sourceSnapshot ?? snapshotRef.current ?? snapshot
-      const groupNode = currentSnapshot?.nodes.find(
-        (node) => node.id === groupId && node.type === 'group',
-      )
-      if (!currentSnapshot || !groupNode) return
-      const childNodes = collectGroupDescendantNodes(currentSnapshot.nodes, groupId)
-      if (childNodes.length === 0) {
-        message.warning('组内没有可合成的节点')
-        return
-      }
-      const contentNodes = childNodes.filter((node) => node.type !== 'group')
-      if (contentNodes.length === 0) {
-        message.warning('组内没有可合成的内容节点')
+      if (compositingImageLockRef.current.has(lockKey)) {
+        message.info('正在合成，请稍候')
         return
       }
 
@@ -2855,7 +2845,7 @@ export function CanvasWorkspaceView({
         .filter((element): element is HTMLElement => Boolean(element))
 
       if (!stageElement || contentElements.length === 0) {
-        message.error('无法定位组内内容区，请稍后重试')
+        message.error('无法定位内容区，请稍后重试')
         return
       }
 
@@ -2886,12 +2876,12 @@ export function CanvasWorkspaceView({
       )
 
       if (cropWidth <= 0 || cropHeight <= 0) {
-        message.error('组节点当前不在可截图区域内，请先移动视图后再合成')
+        message.error(notInViewportMessage)
         return
       }
 
-      mergingGroupImageIdsRef.current.add(groupId)
-      const closeLoading = message.loading('正在合成组内内容，请稍候…', 0)
+      compositingImageLockRef.current.add(lockKey)
+      const closeLoading = message.loading('正在合成内容，请稍候…', 0)
       await nextFrame()
 
       const hideElements = Array.from(
@@ -2945,52 +2935,84 @@ export function CanvasWorkspaceView({
         )
 
         const dataUrl = outputCanvas.toDataURL('image/png')
-        const file = dataUrlToFile(
-          dataUrl,
-          buildCanvasSnapshotFileName(groupNode.title ?? undefined),
-        )
+        const file = dataUrlToFile(dataUrl, buildCanvasSnapshotFileName(title))
         const savedImage = await window.spark.invoke('file:save-pasted-image', {
           dataUrl,
           mimeType: 'image/png',
           suggestedBaseName: file.name.replace(/\.[^.]+$/, ''),
           storageScope: 'canvas',
-          ...(currentSnapshot.project.rootPath
-            ? { projectRootPath: currentSnapshot.project.rootPath }
-            : {}),
+          ...(projectRootPath ? { projectRootPath } : {}),
         })
         const imageNode = await createImageNode({
           file,
           filePath: savedImage.filePath,
-          x: Math.round(groupNode.x + groupNode.width + 96),
-          y: Math.round(groupNode.y),
+          x: Math.round(placeX),
+          y: Math.round(placeY),
           ...fitImageNodeSize(outputCanvas.width, outputCanvas.height),
           imageWidth: outputCanvas.width,
           imageHeight: outputCanvas.height,
         })
         if (imageNode) {
-          await patchNodes([imageNode.id], { title: `${groupNode.title ?? '组'} 合成图` })
-          await connectNodes({ sourceNodeId: groupNode.id, targetNodeId: imageNode.id })
+          await patchNodes([imageNode.id], { title: `${title} 合成图` })
+          await Promise.all(
+            sourceNodeIds.map((sourceNodeId) =>
+              connectNodes({ sourceNodeId, targetNodeId: imageNode.id }),
+            ),
+          )
           setSelectedNodeIds([imageNode.id])
         }
         closeLoading()
-        message.success('已在组右侧生成内容合成图节点，并连接来源组')
+        message.success('已生成内容合成图节点，并连接来源节点')
       } catch (error) {
-        console.error('[canvas] merge group to image failed', error)
+        console.error('[canvas] composite content to image failed', error)
         closeLoading()
         message.error(
           error instanceof Error
             ? `合成图失败：${error.message}`
-            : '合成图失败，请检查组内图片是否可访问',
+            : '合成图失败，请检查内容图片是否可访问',
         )
       } finally {
         restoreColors?.()
         hideElements.forEach((element, index) => {
           element.style.visibility = previousVisibility[index] ?? ''
         })
-        mergingGroupImageIdsRef.current.delete(groupId)
+        compositingImageLockRef.current.delete(lockKey)
       }
     },
-    [connectNodes, createImageNode, patchNodes, snapshot],
+    [connectNodes, createImageNode, patchNodes],
+  )
+
+  const handleMergeGroupToImage = useCallback(
+    async (groupId: string, sourceSnapshot?: typeof snapshot) => {
+      const currentSnapshot = sourceSnapshot ?? snapshotRef.current ?? snapshot
+      const groupNode = currentSnapshot?.nodes.find(
+        (node) => node.id === groupId && node.type === 'group',
+      )
+      if (!currentSnapshot || !groupNode) return
+      const childNodes = collectGroupDescendantNodes(currentSnapshot.nodes, groupId)
+      if (childNodes.length === 0) {
+        message.warning('组内没有可合成的节点')
+        return
+      }
+      const contentNodes = childNodes.filter((node) => node.type !== 'group')
+      if (contentNodes.length === 0) {
+        message.warning('组内没有可合成的内容节点')
+        return
+      }
+      await compositeContentNodesToImage({
+        contentNodes,
+        sourceNodeIds: [groupNode.id],
+        title: groupNode.title ?? '组',
+        placeX: groupNode.x + groupNode.width + 96,
+        placeY: groupNode.y,
+        lockKey: groupId,
+        ...(currentSnapshot.project.rootPath
+          ? { projectRootPath: currentSnapshot.project.rootPath }
+          : {}),
+        notInViewportMessage: '组节点当前不在可截图区域内，请先移动视图后再合成',
+      })
+    },
+    [compositeContentNodesToImage, snapshot],
   )
 
   const handleCreateGroup = useCallback(() => {
@@ -3009,16 +3031,34 @@ export function CanvasWorkspaceView({
       return
     }
 
-    const nextSnapshot = await createGroupNode(summary.topLevelNodeIds)
-    const groupNode = findGroupContainingNodes(nextSnapshot.nodes, summary.topLevelNodeIds)
-    if (!groupNode) {
-      message.warning('已创建组，但未能定位新组节点，请选中组后再次合成')
+    // 直接后台合成选中内容节点为一张图，不再先创建中间组节点：
+    // 与「手动成组 → 多图合并」产物一致，但跳过组节点，按节点当前位置截图，
+    // 合成图放在选中内容整体的右侧，并从每个来源节点连线到合成图。
+    const contentNodes = selectedNodes.filter((node) =>
+      summary.topLevelNodeIds.includes(node.id),
+    )
+    if (contentNodes.length === 0) {
+      message.warning('未找到可合成的内容节点')
       return
     }
-    setSelectedNodeIds([groupNode.id])
-    await nextFrame()
-    await handleMergeGroupToImage(groupNode.id, nextSnapshot)
-  }, [createGroupNode, handleMergeGroupToImage, selectedNodes])
+    const placeX =
+      contentNodes.reduce((maxX, node) => Math.max(maxX, node.x + node.width), 0) + 96
+    const placeY = contentNodes.reduce(
+      (minY, node) => Math.min(minY, node.y),
+      Number.POSITIVE_INFINITY,
+    )
+    await compositeContentNodesToImage({
+      contentNodes,
+      sourceNodeIds: summary.topLevelNodeIds,
+      title: '组合图',
+      placeX,
+      placeY: Number.isFinite(placeY) ? placeY : 0,
+      lockKey: `selection:${[...summary.topLevelNodeIds].sort().join(',')}`,
+      ...(snapshot?.project.rootPath
+        ? { projectRootPath: snapshot.project.rootPath }
+        : {}),
+    })
+  }, [compositeContentNodesToImage, handleMergeGroupToImage, selectedNodes, snapshot])
 
   const handleAddSelectionToGroup = useCallback(
     (groupId?: string) => {
