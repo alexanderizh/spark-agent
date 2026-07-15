@@ -6,7 +6,7 @@ import type { WorkflowGraph } from '@spark/protocol'
  * 数据格式直接复用 WorkflowGraph（顶层 x/y、from/to、可选 condition），
  * 导入时由 graphToReactFlow 转成 React Flow 节点/边，再经 workflow:create 落库为 draft。
  *
- * 绑定类字段（agentId / skillIds / toolIds / mcpServerIds）在模板里一律留空——
+ * 绑定类字段（agentId / skillIds / toolIds）在模板里一律留空——
  * 这些 ID 是工作区相关的，写死会跨工作区失效。导入后由用户在检查器里补齐。
  *
  * 条件分支结构注意：分支节点必须有「互斥条件 + 各自独立终点」，不能合并回同一节点。
@@ -163,17 +163,16 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     },
   },
 
-  // 7. MCP 外部能力流 —— mcp 节点只挂所选服务（导入后绑定）
+  // 7. MCP 外部能力流 —— mcp 节点可直接使用应用中所有已启用服务
   {
     id: 'mcp-integration',
     name: 'MCP 外部能力流',
-    description: '通过所选 MCP 服务完成外部能力调用，再经复核产出交付物。',
+    description: '通过已启用的 MCP 服务完成外部能力调用，再经复核产出交付物。',
     tags: ['MCP', '外部'],
-    needsBinding: 'MCP 节点需绑定具体 MCP 服务',
     graph: {
       nodes: [
         { id: 'input-1', kind: 'input', title: '需求输入', x: 80, y: 160, config: { prompt: '解析目标与需要调用的外部能力。', outputKey: 'objective', retryCount: 1 } },
-        { id: 'mcp-1', kind: 'mcp', title: 'MCP 调用', x: 360, y: 160, config: { prompt: '使用所选 MCP 服务完成外部能力调用，记录响应。', outputKey: 'mcp_output' } },
+        { id: 'mcp-1', kind: 'mcp', title: 'MCP 调用', x: 360, y: 160, config: { prompt: '使用已启用的 MCP 服务完成外部能力调用，记录响应。', outputKey: 'mcp_output' } },
         { id: 'review-1', kind: 'review', title: '复核', x: 640, y: 160, config: { prompt: '复核 MCP 返回结果是否满足需求。', outputKey: 'review' } },
         { id: 'artifact-1', kind: 'artifact', title: '产物', x: 920, y: 160, config: { prompt: '整理最终交付物。', outputKey: 'deliverable' } },
       ],

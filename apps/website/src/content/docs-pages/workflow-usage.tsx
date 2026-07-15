@@ -90,7 +90,7 @@ const Body = () => (
     <pre>{`input → plan → skill(搜索) → mcp(网页/资料) → review → artifact`}</pre>
     <ul>
       <li><strong>skill</strong>：选择搜索或研究类 Skill，让 Agent 明确只做资料收集。</li>
-      <li><strong>mcp</strong>：只允许联网搜索、网页抓取或知识库 MCP。</li>
+      <li><strong>mcp</strong>：明确这一阶段要使用联网搜索、网页抓取或知识库 MCP；应用里已启用的 MCP 都会自动可用。</li>
       <li><strong>review</strong>：检查来源是否可靠、是否有互相矛盾的证据。</li>
       <li><strong>artifact</strong>：输出「结论 + 证据 + 风险 + 下一步」。</li>
     </ul>
@@ -108,11 +108,11 @@ const Body = () => (
     <h2 id="advanced-config">6. 专业配置：工具、模型、MCP 和恢复</h2>
     <p>右侧 Inspector 的配置项可以细调每个节点的能力边界：</p>
     <ul>
-      <li><strong>Agent</strong>：给 <code>agent</code> 节点绑定一个已有 Agent。它会继承该 Agent 的模型、权限、Skills、MCP 和 Prompt，也可被节点配置覆盖。</li>
+      <li><strong>Agent</strong>：给 <code>agent</code> 节点绑定一个已有 Agent。它会继承该 Agent 的模型、权限、Skills 和 Prompt，也可被节点配置覆盖；MCP 由应用统一启用。</li>
       <li><strong>Provider / Model</strong>：某个节点需要更强模型时单独覆盖，例如计划和复核用更强模型，执行用默认模型。</li>
       <li><strong>toolIds</strong>：用于限制内置工具。未配置代表不额外限制；一旦配置，就只允许你选择的工具，其余会被禁用。</li>
       <li><strong>skillIds</strong>：让某一步只加载指定 Skill，适合把团队经验固定到流程里。</li>
-      <li><strong>mcpServerIds</strong>：让某一步只连接指定 MCP，避免 Agent 看到过多外部工具。</li>
+      <li><strong>MCP</strong>：所有已启用 MCP 自动对每个 Agent 和工作流节点可用，无需逐 Agent 或逐节点绑定。旧数据中的 <code>mcpServerIds</code> 仅保留兼容，不再限制运行时工具。</li>
       <li><strong>retryCount</strong>：节点失败后的重试次数，适合网络检索、媒体生成这类偶发失败任务。</li>
       <li><strong>execution</strong>：设置为 <code>static</code> 时只做静态回显；默认或 <code>auto</code> 会走真实执行。</li>
       <li><strong>exportPath</strong>：在 <code>artifact</code> 节点配置工作区相对路径，把最终内容写成文件。</li>
@@ -146,7 +146,7 @@ const Body = () => (
       <li><strong>Agent 不能编辑文件</strong>：检查节点是不是只读节点；再检查 toolIds 是否漏选 Edit / MultiEdit / Write。</li>
       <li><strong>验证没有执行</strong>：确认使用 <code>verify</code> 节点，并在节点里填写了可在项目根目录运行的命令。</li>
       <li><strong>某个节点反复失败</strong>：查看运行快照中的 failedNode，先缩小该节点的 prompt、工具和输入。</li>
-      <li><strong>工具太多导致 Agent 乱选</strong>：给关键节点配置 toolIds / mcpServerIds，只暴露这一步需要的能力。</li>
+      <li><strong>工具太多导致 Agent 乱选</strong>：用 toolIds 收窄内置工具；不需要的 MCP 请在 MCP 管理页全局停用。</li>
       <li><strong>用户担心自动化越权</strong>：在高风险动作前加 approval，并把 Agent 权限模式设为需要审批。</li>
     </ul>
   </>
@@ -190,7 +190,7 @@ export const workflowUsage: DocsPageContent = {
     { key: '真实执行', value: 'Claude SDK 路径通过 workflow_run 执行，Codex 路径作为结构化计划' },
     { key: '可执行节点', value: 'agent / subagent / skill / tool / mcp / input / approval / verify / review / artifact' },
     { key: '只读节点', value: 'input / plan / review 默认禁用 Write / Edit / MultiEdit / NotebookEdit / Bash' },
-    { key: '能力限制', value: 'toolIds / skillIds / mcpServerIds；未配置 toolIds 表示不额外限制' },
+    { key: '能力限制', value: 'toolIds / skillIds 可按节点限制；所有已启用 MCP 自动可用' },
     { key: '运行记录', value: 'workflow_runs 快照记录完成节点、失败节点和恢复信息' },
   ],
   howTo: {
@@ -210,7 +210,7 @@ export const workflowUsage: DocsPageContent = {
   },
   aiSummary:
     'Spark Agent 工作流是可视化、可执行、可审计的任务编排。新版 Claude SDK 路径通过 workflow_run 真实执行节点，保存 workflow_runs 快照，支持失败节点记录与恢复；Codex 路径按结构化执行计划推进。' +
-    '非 IT 用户可按 input→plan→agent→verify→review→artifact 快速创建流程；专业用户可配置 agentId、provider/model、toolIds、skillIds、mcpServerIds、retryCount、execution、exportPath。' +
+    '非 IT 用户可按 input→plan→agent→verify→review→artifact 快速创建流程；专业用户可配置 agentId、provider/model、toolIds、skillIds、retryCount、execution、exportPath；所有已启用 MCP 自动对每个节点可用。' +
     '11 种节点包括 input、plan、agent、subagent、skill、tool、mcp、approval、verify、review、artifact。plan/input/review 默认只读，代码编辑应放在 agent/subagent/tool 节点。' +
     '常用模板包括程序编码开发、调研报告和发布前自检。',
   Body,

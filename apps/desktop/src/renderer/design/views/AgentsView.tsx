@@ -1148,7 +1148,6 @@ function AgentsTabContent({
                     providers={providers}
                     workflows={workflows}
                     skills={skills}
-                    mcpServers={mcpServers}
                     rules={rules}
                     selected={selectedIds.has(agent.id)}
                     selectionMode={selectionMode}
@@ -1500,23 +1499,26 @@ function AgentsTabContent({
 
           <ConfigSection
             title="MCP 服务"
-            count={countExistingRefs(draft.mcpServerIds, mcpServers)}
-            description="扩展 Agent 的外部能力"
-            footer={
-              <button type="button" className="agent-config-link">
-                <Icons.Wrench size={12} /> 配置 MCP
-              </button>
-            }
+            count={mcpServers.filter((server) => server.enabled).length}
+            description="所有已启用的 MCP 对该 Agent 自动可用，无需单独绑定"
           >
-            {mcpServers.length > 0 ? (
-              <PickList
-                items={mcpServers.map((s) => ({ id: s.id, label: s.name }))}
-                selected={draft.mcpServerIds}
-                onChange={(ids) => updateDraft('mcpServerIds', ids)}
-              />
-            ) : (
-              <div className="agent-config-empty">暂无可用 MCP 服务</div>
-            )}
+            {(() => {
+              const enabledServers = mcpServers.filter((server) => server.enabled)
+              return enabledServers.length > 0 ? (
+                <div className="skill-selected-preview">
+                  {enabledServers.slice(0, 6).map((server) => (
+                    <span key={server.id} className="skill-chip">
+                      {server.name}
+                    </span>
+                  ))}
+                  {enabledServers.length > 6 && (
+                    <span className="skill-chip more">+{enabledServers.length - 6}</span>
+                  )}
+                </div>
+              ) : (
+                <div className="agent-config-empty">暂无已启用的 MCP 服务</div>
+              )
+            })()}
           </ConfigSection>
 
           <ConfigSection
@@ -1750,7 +1752,6 @@ type AgentCardProps = {
   providers: ProviderProfile[]
   workflows: WorkflowItem[]
   skills: SkillItem[]
-  mcpServers: McpServerItem[]
   rules: RuleItem[]
   selected: boolean
   selectionMode: boolean
@@ -1772,7 +1773,6 @@ function AgentCard({
   providers,
   workflows,
   skills,
-  mcpServers,
   rules,
   selected,
   selectionMode,
@@ -1795,10 +1795,8 @@ function AgentCard({
     provider?.modelIds[0] ||
     (agent.agentAdapter === 'codex' ? 'Codex' : 'Claude')
   const skillCount = countExistingRefs(agent.skillIds, skills)
-  const mcpCount = countExistingRefs(agent.mcpServerIds, mcpServers)
   const ruleCount = countExistingRefs(agent.ruleIds, rules)
-  const hasMetaTags =
-    agent.isDefault || skillCount > 0 || mcpCount > 0 || workflow != null || ruleCount > 0
+  const hasMetaTags = agent.isDefault || skillCount > 0 || workflow != null || ruleCount > 0
 
   const menuItems = {
     items: [
@@ -1909,12 +1907,6 @@ function AgentCard({
                 <span className="agents-card-tag" title="Skills">
                   <Icons.Skills size={10} />
                   {skillCount} Skills
-                </span>
-              )}
-              {mcpCount > 0 && (
-                <span className="agents-card-tag" title="MCP">
-                  <Icons.MCP size={10} />
-                  {mcpCount} MCP
                 </span>
               )}
               {workflow && (

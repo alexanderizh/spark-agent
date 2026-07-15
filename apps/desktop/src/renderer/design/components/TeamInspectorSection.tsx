@@ -471,7 +471,7 @@ export function TeamInspectorSection({
                   </div>
                   <div className="team-roster-detail-row">
                     <span className="team-roster-detail-k">MCP</span>
-                    <span className="team-roster-detail-v">{agent.mcpCount ?? 0}</span>
+                    <span className="team-roster-detail-v">自动</span>
                   </div>
                 </div>
               )}

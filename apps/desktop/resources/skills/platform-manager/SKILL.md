@@ -107,7 +107,7 @@ Workflow 图支持的节点类型包括 `input`、`agent`、`subagent`、`tool`�
 
 - **agents_list** — 列出所有 Agent
 - **agents_get**（id）— 获取 Agent 完整配置（prompt / provider / model / skills / MCP / workflow / rules / hookConfig / metadata）
-- **agents_create**（name, description?, prompt?, agentAdapter?: 'claude-sdk'|'claude'|'codex', permissionMode?, reasoningEffort?: 'medium'|'high'|'xhigh'|'max', providerProfileId?, modelId?, skillIds?, mcpServerIds?, ruleIds?, workflowId?, hookConfig?, metadata?, isDefault?, enabled?, builtIn?）— 创建 Agent。**`workflowId`** 用于将 Agent 绑定到指定 Workflow，传 `null` 或省略则不绑定
+- **agents_create**（name, description?, prompt?, agentAdapter?: 'claude-sdk'|'claude'|'codex', permissionMode?, reasoningEffort?: 'medium'|'high'|'xhigh'|'max', providerProfileId?, modelId?, skillIds?, mcpServerIds?, ruleIds?, workflowId?, hookConfig?, metadata?, isDefault?, enabled?, builtIn?）— 创建 Agent。**`workflowId`** 用于将 Agent 绑定到指定 Workflow，传 `null` 或省略则不绑定。`mcpServerIds` 仅为旧版兼容字段，运行时忽略；所有已启用 MCP 自动可用
 - **agents_update**（id, 上述任意字段, builtIn?）— 更新 Agent 配置；设置 `builtIn=true` 可把 Agent 标记为内置
 - **agents_delete**（id）— 删除 Agent ⚠️ 破坏性操作（内置 Agent 不可删除）
 

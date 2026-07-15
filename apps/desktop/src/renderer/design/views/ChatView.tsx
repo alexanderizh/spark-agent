@@ -2550,6 +2550,11 @@ function ChatStream({
   workspaceIdRef.current = workspaceId
   // 切换/初始加载后需要把视图强制贴到底部（展示最新消息）；置位后由自动滚动 effect 处理。
   const scrollToBottomPendingRef = useRef(false)
+  // 发送成功后父级会先乐观地把 session 摘要设为 running；在 user_message 事件回流前，
+  // 这个 trigger 仍未被确认，不能让摘要状态单独驱动「执行任务中」占位。
+  const scrollToBottomTriggerRef = useRef(scrollToBottomTrigger ?? 0)
+  scrollToBottomTriggerRef.current = scrollToBottomTrigger ?? 0
+  const acknowledgedScrollToBottomTriggerRef = useRef(scrollToBottomTrigger ?? 0)
   // 初始贴底完成前，禁止「滚动到顶懒加载更早」触发——否则初次加载 scrollTop≈0 会立刻
   // 触发翻页 + 锚定，把视图一路拉到最早的消息（用户报告的「从最早开始 / 卡住」根因）。
   const initialScrollDoneRef = useRef(false)
@@ -2724,6 +2729,7 @@ function ChatStream({
         callbacks.onUsageDataChange(next)
       }
       if (event.type === 'user_message') {
+        acknowledgedScrollToBottomTriggerRef.current = scrollToBottomTriggerRef.current
         userScrolledRef.current = false
         setShowScrollToBottom(false)
         isStreamingRef.current = true
@@ -3262,8 +3268,15 @@ function ChatStream({
 
   // 是否有正在流式传输的消息
   const hasStreamingMsg = messages.some((m) => m.status === 'streaming')
+  const hasPendingUserMessage =
+    scrollToBottomTriggerRef.current !== acknowledgedScrollToBottomTriggerRef.current
   const showWaitingAgent =
-    (agentIsRunning || persistedSessionStatus === 'running') && !hasStreamingMsg
+    // `persistedSessionStatus` 在发送后会先被父组件乐观更新为 running，
+    // 但 user_message 事件可能还没回到这里；此时不能先渲染「执行任务中」占位。
+    // 用发送 trigger 与 user_message 的确认状态区分实时发送和切回运行中会话，
+    // 保留后者在首个 agent_status 尚未落库时的恢复能力。
+    (agentIsRunning || (persistedSessionStatus === 'running' && !hasPendingUserMessage)) &&
+    !hasStreamingMsg
 
   // 团队模式 @ 指定成员时，该 turn 由被 @ 的成员直接执行（见后端 mention 路由）。
   // 「等待中」占位用最近一条用户消息的 @ 指定成员，避免「先显示主持人、流式开始后又切回成员」的视差。
@@ -5643,11 +5656,11 @@ const UserMsg = React.memo(
         )}
         {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
         <div className="msg-user-line">
-          <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
-            <div className="msg-content">
-              <CollapsibleContent>{children}</CollapsibleContent>
+          <CollapsibleContent>
+            <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
+              <div className="msg-content">{children}</div>
             </div>
-          </div>
+          </CollapsibleContent>
         </div>
         {mentionAgentName != null && mentionAgentName.length > 0 && (
           <div className="msg-user-mention-hint">

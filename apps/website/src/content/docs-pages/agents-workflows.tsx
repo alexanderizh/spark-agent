@@ -4,7 +4,7 @@ const Body = () => (
   <>
     <p>
       Agent 是 Spark Agent 中「会用工具的 LLM 角色」。一个 Agent 由 <em>Provider / Model / Adapter /
-      Permission Mode / Reasoning Effort / Prompt / Skills / Rules / MCP / Hooks</em> 等组成，
+      Permission Mode / Reasoning Effort / Prompt / Skills / Rules / Hooks</em> 等组成，
       可以按项目复用，也可以按会话临时覆盖。
     </p>
 
@@ -20,7 +20,7 @@ const Body = () => (
       <li><strong>Agent Prompt</strong>：系统级 prompt（区别于会话 prompt）。</li>
       <li><strong>Rules</strong>：选中的项目级规则集。</li>
       <li><strong>Skills</strong>：可启用的技能（builtin / 用户安装）。</li>
-      <li><strong>MCP Allow-list</strong>：允许使用的 MCP 服务器。</li>
+      <li><strong>MCP</strong>：由应用统一启用，所有已启用服务器自动对该 Agent 可用。</li>
       <li><strong>Hooks</strong>：在权限请求、用户提问、会话结束、失败时的钩子覆盖。</li>
       <li><strong>Workflow</strong>：可选的工作流绑定（见下文）。</li>
     </ul>
@@ -41,14 +41,14 @@ const Body = () => (
       <li><strong>[Platform Tools]</strong>：注入 <code>spark_platform</code> MCP 的工具描述（管理员可见）。</li>
     </ol>
     <p>
-      Agent 级别选中的 Skill 会进入运行时「技能目录」，MCP Allow-list 会过滤实际传给 SDK 的服务器。
-      如果没有 MCP Allow-list，则所有「已启用」的 MCP 都可用。
+      Agent 级别选中的 Skill 会进入运行时「技能目录」；应用中所有「已启用」的 MCP 都会传给 SDK，
+      不需要再为 Agent 单独维护 Allow-list。
     </p>
 
     <h2 id="workflow-graphs">3. Workflow Graphs</h2>
     <p>
       Workflow 是节点（Nodes） + 边（Edges）的有向图，存为 <code>workflows.graph_json</code>。你可以把它当作
-      「给 Agent 看的流程图」：节点代表阶段，连线代表顺序，节点配置决定这一阶段使用哪个 Agent、模型、工具、Skill 或 MCP。
+      「给 Agent 看的流程图」：节点代表阶段，连线代表顺序，节点配置决定这一阶段使用哪个 Agent、模型、工具或 Skill；MCP 保持全局可用。
     </p>
     <pre>
 {`{
@@ -71,15 +71,15 @@ const Body = () => (
       <li><strong>subagent</strong>：创建临时子 Agent 处理局部任务。</li>
       <li><strong>skill</strong>：把某一步限制到指定 Skill 能力。</li>
       <li><strong>tool</strong>：把某一步限制到指定内置工具，如 Read / Edit / Bash。</li>
-      <li><strong>mcp</strong>：把某一步限制到指定 MCP 服务。</li>
+      <li><strong>mcp</strong>：明确某一步要调用外部能力；可使用应用中所有已启用 MCP。</li>
       <li><strong>approval</strong>：暂停等待用户确认。</li>
       <li><strong>verify</strong>：运行验证命令。</li>
       <li><strong>review</strong>：只读复核结果与风险。</li>
       <li><strong>artifact</strong>：整理最终交付物，可导出文件。</li>
     </ul>
     <p>
-      节点配置支持 Provider / Model 偏好、Agent ID、Skill ID、Rule ID、内置工具 ID、MCP ID、
-      重试次数、执行模式和导出路径。未配置 <code>toolIds</code> 表示不额外限制；一旦配置，
+      节点配置支持 Provider / Model 偏好、Agent ID、Skill ID、Rule ID、内置工具 ID、
+      重试次数、执行模式和导出路径。旧版 MCP ID 字段仅保留兼容，不再限制运行时能力。未配置 <code>toolIds</code> 表示不额外限制；一旦配置，
       运行时会把未选择工具放入禁用列表。
     </p>
     <p>
@@ -192,19 +192,19 @@ export const agentsWorkflows: DocsPageContent = {
   ],
   howTo: {
     name: '用 Spark Agent 创建并使用自定义 Agent',
-    description: '在「设置 → Agents」创建一个绑定特定模型、Skills、MCP 的 Agent',
+    description: '在「设置 → Agents」创建一个绑定特定模型和 Skills 的 Agent；已启用 MCP 自动可用',
     totalTime: 'PT5M',
     steps: [
       '打开「设置 → Agents」，点「新建 Agent」',
       '填入名称、描述、Agent Prompt',
       '选择默认 Provider / Model 与 Adapter',
-      '在 Skills / Rules / MCP 三个标签里勾选允许使用的资源',
+      '在 Skills / Rules 标签里选择允许使用的资源；MCP 由应用统一启用',
       '设置 Hooks（可选）与权限模式',
       '保存后在新会话的 Agent 选择器里即可使用',
     ],
   },
   aiSummary:
-    'Spark Agent 工作流核心机制：Agent Profile（Provider/Model/Adapter/Permission Mode/Prompt/Skills/Rules/MCP/Hooks/Workflow）、' +
+    'Spark Agent 工作流核心机制：Agent Profile（Provider/Model/Adapter/Permission Mode/Prompt/Skills/Rules/Hooks/Workflow）与全局已启用 MCP 自动挂载、' +
     '运行时注入顺序（[Runtime Rules] → [Workflow Execution Plan] → [Platform Tools]）、Workflow Graphs (nodes + edges, 11 种节点 input/plan/agent/subagent/skill/tool/mcp/approval/verify/review/artifact)、' +
     'Workflow 视图（卡片列表 + 图编辑器）、Hooks（permission-request/user-question/session-complete/failure）、' +
     'Platform 管理 MCP（mcp__spark_platform__*: skills/mcp_servers/providers/workflows/agents/teams/settings/sessions/board_tasks）、' +

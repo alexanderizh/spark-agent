@@ -216,6 +216,28 @@ describe('canvasOperationPresets', () => {
     })
   })
 
+  it('keeps scene extraction selections under its dedicated pipeline target', () => {
+    expect(
+      resolveCanvasPresetTarget({
+        operation: 'text_generate',
+        taskPipelineRole: 'scene',
+        workflow: 'extract_scene',
+      }),
+    ).toBe('screenplay.extract_scenes')
+
+    writeCanvasLastUsedPresetTarget('screenplay.extract_scenes', {
+      providerProfileId: 'provider:text',
+      modelId: 'gpt-5.1',
+      modelParams: { temperature: 0.4, maxTokens: 1200 },
+    })
+
+    expect(readCanvasResolvedPresetTarget('screenplay.extract_scenes')).toMatchObject({
+      providerProfileId: 'provider:text',
+      modelId: 'gpt-5.1',
+      modelParams: { temperature: 0.4, maxTokens: 1200 },
+    })
+  })
+
   it('clears last used when resetting via resetCanvasLastUsedPresetTarget', () => {
     writeCanvasPresetTarget('text_generate', {
       providerProfileId: 'provider:text',

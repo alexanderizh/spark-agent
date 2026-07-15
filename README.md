@@ -115,11 +115,11 @@ graph TB
 
 ### 团队 Agent（A2A）
 
-- Host Agent 通过 `spark_team` 调度多个成员 Agent，每个成员可独立配置模型、工具、Skills 与 MCP；
+- Host Agent 通过 `spark_team` 调度多个成员 Agent，每个成员可独立配置模型、工具与 Skills；应用中所有已启用 MCP 会自动对 Host 和 Member 可用；
 - 调度过程以群聊式 UI 呈现，可设成员级预算、超时与上下文上限；
 - **成员间可互发消息**（`agent_message`：广播 / 定向 `call` / 异步 `note`），由 `enablePeerMessaging` 开启；多轮讨论有显式轮次状态机（`team_round_advance` / `team_conclude`），共享讨论线程跨 turn 持续；
 - 支持 claude / codex 异构 adapter 混编（codex 成员经 HTTP 桥接获得等价工具面）；
-- 支持成员级 MCP 工具、嵌套调用（`allowNesting` + `maxDepth`，最大 3），单 turn dispatch 预算（10）、peer call 独立预算（20/turn）、讨论消息总量上限（40）、超时（默认 120s）与取消传播。
+- 支持全局已启用 MCP 工具、嵌套调用（`allowNesting` + `maxDepth`，最大 3），单 turn dispatch 预算（10）、peer call 独立预算（20/turn）、讨论消息总量上限（40）、超时（默认 120s）与取消传播。
 
 ### 双内核运行时与平台治理
 
@@ -145,7 +145,7 @@ graph TB
 - Claude SDK 路径通过 `workflow_run` 真实驱动可执行节点，不再只是把步骤写进提示词；Codex 路径会按结构化执行计划推进；
 - 支持 11 种节点：`input / plan / agent / subagent / skill / tool / mcp / approval / verify / review / artifact`；
 - `agent` / `subagent` 节点可派发专属 Agent；`input` / `approval` / `verify` 等节点由系统侧稳定执行；
-- `toolIds`、`skillIds`、`mcpServerIds` 可按节点收窄能力，`plan` / `input` / `review` 默认只读，真正编辑代码放在执行节点里；
+- `toolIds`、`skillIds` 可按节点收窄能力；MCP 按应用全局启用，自动对所有 Agent 和节点可用；`plan` / `input` / `review` 默认只读，真正编辑代码放在执行节点里；
 - `workflow_runs` 记录运行快照、已完成节点、失败节点和恢复信息，适合审计、复盘与中断后继续；
 - 常用模板：程序编码开发 `input → plan → approval → agent → verify → review → artifact`，调研报告 `input → plan → skill → mcp → review → artifact`，发布自检 `input → agent → verify → approval → review → artifact`；
 - 面向客户的完整配置教程见[工作流编排文档](https://spark.yiqibyte.com/docs/workflow-usage)。

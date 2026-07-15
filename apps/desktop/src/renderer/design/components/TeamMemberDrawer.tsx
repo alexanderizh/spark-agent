@@ -61,7 +61,7 @@ export function TeamMemberDrawer({ member, onClose, onEditAgent }: TeamMemberDra
           </div>
           <div className="team-member-drawer-row">
             <dt>MCP</dt>
-            <dd>{member.mcpCount}</dd>
+            <dd>全部已启用</dd>
           </div>
         </dl>
 

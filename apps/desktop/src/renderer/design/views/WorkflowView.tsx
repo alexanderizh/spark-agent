@@ -1568,11 +1568,12 @@ function WorkflowInspector(props: InspectorProps) {
           />
         </InspectorField>
         <InspectorField label="MCP">
-          <TagPicker
-            items={mcpServers.map((server) => ({ id: server.id, label: server.name }))}
-            selected={asStringArray(config.mcpServerIds)}
-            onChange={(mcpServerIds) => props.onPatchConfig({ mcpServerIds })}
-          />
+          <div className="wf-field-help">
+            所有已启用的 MCP 会自动挂载到该节点，无需逐节点绑定。
+            {mcpServers.some((server) => server.enabled)
+              ? ` 当前启用：${mcpServers.filter((server) => server.enabled).map((server) => server.name).join('、')}`
+              : ' 当前没有已启用的 MCP。'}
+          </div>
         </InspectorField>
         <InspectorField label="重试次数">
           <LobeInput

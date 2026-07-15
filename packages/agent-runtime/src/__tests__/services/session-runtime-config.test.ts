@@ -1362,7 +1362,7 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(mockState.sdkConfigs[0]?.applicationHookCallback).toBe(onHookTrigger)
   })
 
-  it('does not expose user-added app MCP servers until they are bound to the current agent', async () => {
+  it('exposes every enabled app MCP server without per-agent binding', async () => {
     mockState.mcpServers.push({
       id: 'mcp-search',
       scope: 'user',
@@ -1387,7 +1387,7 @@ describe('SessionService runtime provider/model resolution', () => {
       agentId: 'plain-agent',
       agentAdapter: 'claude-sdk',
       permissionMode: 'claude-plan',
-      title: 'Unbound MCP session',
+      title: 'Global MCP session',
     })
 
     await service.sendTurn({ sessionId, message: 'use my new MCP' })
@@ -1395,11 +1395,34 @@ describe('SessionService runtime provider/model resolution', () => {
     await vi.waitFor(() => {
       expect(mockState.sdkConfigs).toHaveLength(1)
     })
-    expect(mockState.sdkConfigs[0]?.mcpServers).not.toHaveProperty('local_search')
+    expect(mockState.sdkConfigs[0]?.mcpServers).toHaveProperty('local_search')
     const prompt = String(mockState.sdkConfigs[0]?.systemPrompt ?? '')
-    expect(prompt).toContain('The current Agent has no user-added app MCP servers available')
-    expect(prompt).toContain('local_search (enabled, user)')
-    expect(prompt).toContain('Agent Management > MCP')
+    expect(prompt).not.toContain('App MCP Availability')
+    expect(prompt).not.toContain('Agent Management > MCP')
+  })
+
+  it('does not expose disabled app MCP servers', async () => {
+    mockState.mcpServers.push({
+      id: 'mcp-disabled',
+      scope: 'user',
+      name: 'disabled_search',
+      config_json: JSON.stringify({ command: 'node', args: ['disabled-search.mjs'] }),
+      enabled: 0,
+      created_at: '2026-07-16T00:00:00.000Z',
+      updated_at: '2026-07-16T00:00:00.000Z',
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Disabled MCP session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'list available MCP tools' })
+
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+    expect(mockState.sdkConfigs[0]?.mcpServers).not.toHaveProperty('disabled_search')
   })
 
   it('uses the updated same-adapter provider and model on the next turn', async () => {
@@ -2005,6 +2028,15 @@ describe('SessionService runtime provider/model resolution', () => {
   })
 
   it('mounts the spark_team HTTP bridge for a codex host with team members (FR-0b)', async () => {
+    mockState.mcpServers.push({
+      id: 'mcp-codex-global',
+      scope: 'user',
+      name: 'global_search',
+      config_json: JSON.stringify({ command: 'node', args: ['global-search.mjs'] }),
+      enabled: 1,
+      created_at: '2026-07-16T00:00:00.000Z',
+      updated_at: '2026-07-16T00:00:00.000Z',
+    })
     seedProvider({
       id: 'codex-provider',
       provider_type: 'openai',
@@ -2068,6 +2100,7 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(teamServer?.type).toBe('http')
     expect(String(teamServer?.url)).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/)
     expect(String(teamServer?.headers?.Authorization)).toMatch(/^Bearer .+/)
+    expect(mockState.sdkConfigs[0]?.mcpServers).toHaveProperty('global_search')
   })
 
   it('exposes peer messaging + round controls, and dispatched members respect the resume-safety gate', async () => {
@@ -2169,6 +2202,15 @@ describe('SessionService runtime provider/model resolution', () => {
   })
 
   it('grants members agent_message (and only it) when peer messaging is on and nesting is off', async () => {
+    mockState.mcpServers.push({
+      id: 'mcp-member-global',
+      scope: 'user',
+      name: 'member_search',
+      config_json: JSON.stringify({ command: 'node', args: ['member-search.mjs'] }),
+      enabled: 1,
+      created_at: '2026-07-16T00:00:00.000Z',
+      updated_at: '2026-07-16T00:00:00.000Z',
+    })
     mockState.agents.set(
       'host-agent',
       makeAgent({
@@ -2232,6 +2274,7 @@ describe('SessionService runtime provider/model resolution', () => {
       expect(mockState.sdkConfigs).toHaveLength(2)
     })
     const memberConfig = mockState.sdkConfigs[1]
+    expect(memberConfig?.mcpServers).toHaveProperty('member_search')
     const memberPrompt = String(memberConfig?.systemPrompt ?? '')
     expect(memberPrompt).toContain('a MEMBER of Host')
     expect(memberPrompt).toContain('[Discussion So Far]')

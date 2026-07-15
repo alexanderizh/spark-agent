@@ -6,6 +6,11 @@
 
 ## [Unreleased] - Skill 商店开发中
 
+### 行为调整 — MCP 全局可用（2026-07-16）
+
+- **无需逐 Agent 绑定**：应用中所有已启用 MCP 默认挂载到单 Agent、团队 Host、团队 Member 和工作流节点；旧版 `mcpServerIds` 字段仅保留数据/API 兼容。
+- **界面与提示同步**：移除 Agent/工作流的 MCP 选择器和“请先绑定 MCP”运行时提示，统一展示全局启用状态；停用与 OAuth 授权校验仍然生效。
+
 ### 新功能 — 团队模式 A2A 深度协作升级（2026-07-04）
 
 - **codex 团队协作可用**：团队工具改为支持 codex 侧可见的桥接注入路径，codex Host / Member 可参与团队调度，不再被 in-process MCP server 卡死。
