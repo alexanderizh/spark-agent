@@ -3842,7 +3842,7 @@ export function ProviderEditPanel({
                       }}
                       placeholder={
                         form.modelType === 'image' ? '如 nano-banana、flux-pro、seedream-4.0…'
-                          : form.modelType === 'video' ? '如 veo2、kling-v2、hailuo-02…'
+                          : form.modelType === 'video' ? '如 sora-2、kling-v2-6、MiniMax-Hailuo-02…'
                             : '输入模型 ID 后按 Enter 添加'
                       }
                     />
