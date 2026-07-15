@@ -6461,8 +6461,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   height: min(900px, calc(100vh - 40px));
 }
 
-.canvas-node-floating-panel .canvas-operation-panel.is-inline,
-.canvas-node-floating-panel .canvas-bottom-floating-panel.is-inline {
+.canvas-node-floating-panel .canvas-operation-panel.is-inline:not(.is-fullscreen),
+.canvas-node-floating-panel .canvas-bottom-floating-panel.is-inline:not(.is-fullscreen) {
   position: relative;
   left: auto;
   bottom: auto;
@@ -7507,6 +7507,16 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 .canvas-shot-script-edit-panel .canvas-node-edit-bottom-body {
   padding: 10px 12px 12px;
+}
+
+// 分镜脚本编辑面板（内联、非全屏）：用受限高度而非 height:auto，打通高度链
+// 「bottom-editor(max-height 74vh) → floating-panel → 本面板 → body(flex:1,overflow) →
+//  table-wrap(overflow:auto)」。否则 height:auto 会让 body 的 flex:1 失去受限基准，
+// 内容增多后被外层 overflow:hidden 直接裁切（即"内容一多就炸"、无法滚动）。
+// 仅作用于分镜脚本面板、内联态、非全屏（全屏由专门规则处理），特异性 0,4,0 盖过上面的 0,3,0。
+.canvas-node-floating-panel .canvas-shot-script-edit-panel.is-inline:not(.is-fullscreen) {
+  height: 100%;
+  max-height: 100%;
 }
 
 .canvas-shot-script-editor {
