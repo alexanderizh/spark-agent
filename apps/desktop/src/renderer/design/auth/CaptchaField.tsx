@@ -61,7 +61,8 @@ export const CaptchaField = forwardRef<CaptchaFieldHandle, CaptchaFieldProps>(fu
     refreshingRef.current = true
     try {
       setLoading(true)
-      // 图片验证码单次有效；无论手动还是自动换图，都不能保留上一张图的答案。
+      // 只有用户手动换图或父表单确认图片验证码失效时才调用 refresh。
+      // 既然图片发生了变化，必须同时清空上一张图的答案。
       form.setFieldValue('captchaId', undefined)
       form.setFieldValue('captchaText', '')
       const res = await auth.fetchCaptcha(true)

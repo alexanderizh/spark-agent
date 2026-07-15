@@ -112,7 +112,6 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
         startCodeTimer(result.expire_in, requestedAt)
         form.setFields([{ name: 'emailCode', value: '', errors: [] }])
       }
-      void captchaRef.current?.refresh()
       toast.success(
         isStillCurrentTarget ? '验证码已发送到邮箱' : '验证码已发送到原邮箱，请重新获取',
       )
@@ -165,7 +164,6 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
         startCodeTimer(result.expire_in, requestedAt)
         form.setFields([{ name: 'smsCode', value: '', errors: [] }])
       }
-      void captchaRef.current?.refresh()
       toast.success(
         isStillCurrentTarget ? '短信验证码已发送' : '验证码已发送到原手机号，请重新获取',
       )
