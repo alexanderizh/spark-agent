@@ -10,6 +10,11 @@ import type {
   UserQuestionPrompt,
   WorkflowProgressNode,
 } from '@spark/protocol'
+import {
+  prepareTurnFileSummary,
+  type TurnFileChangeCollectionSource,
+  type TurnFileSummaryGeneratedGroup,
+} from './turn-file-summary'
 
 export interface UIMessage {
   id: string
@@ -44,6 +49,7 @@ export interface FileChangeSummary {
   changeType: 'create' | 'modify' | 'delete'
   adds: number
   dels: number
+  collectionSource?: TurnFileChangeCollectionSource
   /** 原始 unified diff，用于「重新应用」时正向 patch */
   diff?: string
 }
@@ -159,6 +165,8 @@ export type UIBlock =
       files: FileChangeSummary[]
       totalAdds: number
       totalDels: number
+      /** 被判定为构建/缓存/大批量生成的文件目录聚合。 */
+      generatedGroups?: TurnFileSummaryGeneratedGroup[]
       /** 该 turn 内最近一次 checkpoint，用于「撤销」 */
       latestCheckpointId: string | undefined
     }
@@ -676,9 +684,7 @@ export class MessageBuilder {
         const aggregationKey = agentErrorAggregationKey(event)
         const existing = this.findRuntimeIssueBlock(
           event.turnId,
-          (block) =>
-            block.kind === 'error' &&
-            agentErrorAggregationKey(block) === aggregationKey,
+          (block) => block.kind === 'error' && agentErrorAggregationKey(block) === aggregationKey,
         )
         const relatedSubagent =
           event.origin?.kind === 'subagent' ? this.findSubagentBlock(event.origin.toolCallId) : null
@@ -814,6 +820,9 @@ export class MessageBuilder {
           const existing = this.currentTurnFileChanges[existingIdx]!
           existing.adds += stats.adds
           existing.dels += stats.dels
+          if (event.collectionSource == null || event.collectionSource === 'agent') {
+            existing.collectionSource = 'agent'
+          }
           if (event.diff != null) existing.diff = event.diff
         } else {
           this.currentTurnFileChanges.push({
@@ -821,6 +830,7 @@ export class MessageBuilder {
             changeType: event.changeType as 'create' | 'modify' | 'delete',
             adds: stats.adds,
             dels: stats.dels,
+            collectionSource: event.collectionSource ?? 'agent',
             ...(event.diff != null ? { diff: event.diff } : {}),
           })
         }
@@ -867,6 +877,7 @@ export class MessageBuilder {
               changeType: 'modify',
               adds: 0,
               dels: 0,
+              collectionSource: 'checkpoint',
             })
           }
         }
@@ -969,7 +980,8 @@ export class MessageBuilder {
           existing.block.task = event.task
           existing.block.status = 'running'
           if (event.taskId != null) existing.block.taskId = event.taskId
-          if (!existing.message.eventIds.includes(event.id)) existing.message.eventIds.push(event.id)
+          if (!existing.message.eventIds.includes(event.id))
+            existing.message.eventIds.push(event.id)
         } else {
           const saMsg = this.getOrCreateAssistant(event.id, event.timestamp, {
             turnId: event.turnId,
@@ -1043,11 +1055,7 @@ export class MessageBuilder {
             const tokenCount =
               event.totalTokens ?? (event.inputTokens ?? 0) + (event.outputTokens ?? 0)
             block.status =
-              event.status === 'success'
-                ? 'done'
-                : event.status === 'stopped'
-                  ? 'stopped'
-                  : 'error'
+              event.status === 'success' ? 'done' : event.status === 'stopped' ? 'stopped' : 'error'
             block.tokens = tokenCount > 0 ? tokenCount.toLocaleString() : ''
             block.output = event.output
             block.progressSummary = event.resultSummary
@@ -1680,14 +1688,16 @@ export class MessageBuilder {
     if (this.turnSummaryEmitted || this.currentTurnFileChanges.length === 0) return
     this.turnSummaryEmitted = true
 
-    const totalAdds = this.currentTurnFileChanges.reduce((s, f) => s + f.adds, 0)
-    const totalDels = this.currentTurnFileChanges.reduce((s, f) => s + f.dels, 0)
+    const prepared = prepareTurnFileSummary(this.currentTurnFileChanges)
+    const totalAdds = prepared.files.reduce((s, f) => s + f.adds, 0)
+    const totalDels = prepared.files.reduce((s, f) => s + f.dels, 0)
 
     msg.blocks.push({
       kind: 'turn_file_summary',
-      files: [...this.currentTurnFileChanges],
+      files: [...prepared.files],
       totalAdds,
       totalDels,
+      ...(prepared.generatedGroups.length > 0 ? { generatedGroups: prepared.generatedGroups } : {}),
       latestCheckpointId: this.currentTurnCheckpointId,
     })
   }

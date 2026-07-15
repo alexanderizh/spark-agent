@@ -17,6 +17,7 @@ import {
 } from './components/FileDisplay'
 import { SessionFileOpenPicker } from './components/SessionFileOpenPicker'
 import { MarkdownText } from './views/ChatView'
+import type { TurnFileSummaryGeneratedGroup } from './services/turn-file-summary'
 
 const TURN_SUMMARY_VISIBLE_FILE_LIMIT = 10
 
@@ -332,8 +333,7 @@ export function Checkpoint({
   checkpointId: string
   onRestore?: () => void
 }) {
-  const displayId =
-    checkpointId.length > 10 ? checkpointId.slice(-8) : checkpointId
+  const displayId = checkpointId.length > 10 ? checkpointId.slice(-8) : checkpointId
   return (
     <div className="checkpoint">
       <span className="line" />
@@ -349,7 +349,11 @@ export function Checkpoint({
             onClick={onRestore}
             disabled={onRestore == null}
           >
-            <Icons.RotateCcw size={14} style={{fontSize: 14}} className="checkpoint-action-icon checkpoint-action-icon-restore" />
+            <Icons.RotateCcw
+              size={14}
+              style={{ fontSize: 14 }}
+              className="checkpoint-action-icon checkpoint-action-icon-restore"
+            />
           </button>
         </span>
       </span>
@@ -363,6 +367,7 @@ export interface FileChangeSummaryItem {
   changeType: 'create' | 'modify' | 'delete'
   adds: number
   dels: number
+  collectionSource?: 'agent' | 'checkpoint' | 'workspace_snapshot' | 'git_fallback'
 }
 
 export function getTurnSummaryFileType(filePath: string): FileTypeBadge {
@@ -373,6 +378,7 @@ export function TurnFileSummaryCard({
   files,
   totalAdds,
   totalDels,
+  generatedGroups = [],
   onUndo,
   onReapply,
   onFilePreview,
@@ -380,6 +386,7 @@ export function TurnFileSummaryCard({
   files: FileChangeSummaryItem[]
   totalAdds: number
   totalDels: number
+  generatedGroups?: TurnFileSummaryGeneratedGroup[]
   onUndo?: () => Promise<void> | void
   onReapply?: () => Promise<void> | void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
@@ -447,6 +454,16 @@ export function TurnFileSummaryCard({
         <span className="badge" style={{ fontSize: 10, marginLeft: 8 }}>
           {t('chat.summary.fileCount', { count: fileCount })}
         </span>
+        {generatedGroups.length > 0 && (
+          <span
+            className="badge turn-summary-generated-badge"
+            style={{ fontSize: 10, marginLeft: 6 }}
+          >
+            {t('chat.summary.generatedHidden', {
+              count: generatedGroups.reduce((sum, group) => sum + group.fileCount, 0),
+            })}
+          </span>
+        )}
         <span className="spacer" />
         {onUndo != null && undoState !== 'undone' && undoState !== 'reapplying' && (
           <button
@@ -520,6 +537,30 @@ export function TurnFileSummaryCard({
                   ? t('chat.summary.showLessFiles')
                   : t('chat.summary.showMoreFiles', { count: hiddenFileCount })}
               </button>
+            </div>
+          )}
+          {generatedGroups.length > 0 && (
+            <div className="turn-summary-generated-groups">
+              {generatedGroups.map((group) => (
+                <div
+                  className="turn-summary-generated-group"
+                  key={`${group.reason}:${group.directory}`}
+                >
+                  <span className="turn-summary-generated-icon">↳</span>
+                  <span className="turn-summary-generated-main">
+                    <code className="file-path" title={group.directory}>
+                      {group.directory}
+                    </code>
+                    <span className="turn-summary-generated-meta">
+                      {t('chat.summary.generatedGroup', { count: group.fileCount })}
+                    </span>
+                  </span>
+                  <span className="file-stats">
+                    <span className="add">+{group.additions}</span>
+                    <span className="del">−{group.deletions}</span>
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -670,11 +711,13 @@ export function SubagentCard({
   lastToolName?: string | undefined
   toolUses?: number | undefined
   durationMs?: number | undefined
-  transcript?: Array<{
-    kind: 'text' | 'thinking'
-    content: string
-    segmentId: string
-  }> | undefined
+  transcript?:
+    | Array<{
+        kind: 'text' | 'thinking'
+        content: string
+        segmentId: string
+      }>
+    | undefined
   onClick?: (() => void) | undefined
 }) {
   const { t } = useI18n()
@@ -690,7 +733,9 @@ export function SubagentCard({
   const taskPreview = taskText.length > 0 ? clipSubagentLabel(firstTaskLine(taskText), 86) : ''
   const progressText = progressSummary?.trim() ?? ''
   const activityText = [progressText, lastToolName]
-    .filter((item, index, items) => item != null && item.length > 0 && items.indexOf(item) === index)
+    .filter(
+      (item, index, items) => item != null && item.length > 0 && items.indexOf(item) === index,
+    )
     .join(' · ')
   const metaText = [activityText, roleText, taskPreview]
     .filter((item, index, items) => item.length > 0 && items.indexOf(item) === index)
@@ -702,7 +747,11 @@ export function SubagentCard({
   const transcriptEntries = transcript?.filter((entry) => entry.content.trim().length > 0) ?? []
   const hasTranscript = transcriptEntries.length > 0
   const isExpandable =
-    taskText.length > 0 || hasDisplayOutput || hasInternalOutput || progressText.length > 0 || hasTranscript
+    taskText.length > 0 ||
+    hasDisplayOutput ||
+    hasInternalOutput ||
+    progressText.length > 0 ||
+    hasTranscript
   const statusLabel =
     status === 'done'
       ? t('chat.subagent.done')
@@ -715,8 +764,12 @@ export function SubagentCard({
             : t('chat.subagent.running')
   const activityStats = [
     toolUses != null ? t('chat.subagent.toolUses', { count: toolUses }) : '',
-    durationMs != null ? t('chat.subagent.duration', { seconds: Math.max(1, Math.round(durationMs / 1000)) }) : '',
-  ].filter(Boolean).join(' · ')
+    durationMs != null
+      ? t('chat.subagent.duration', { seconds: Math.max(1, Math.round(durationMs / 1000)) })
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   const toggleExpanded = () => {
     if (isExpandable) {
@@ -790,7 +843,9 @@ export function SubagentCard({
             <section className="subagent-detail-section">
               <div className="subagent-detail-label">{t('chat.subagent.progressLabel')}</div>
               <div className="subagent-task-full">{progressText}</div>
-              {activityStats.length > 0 && <div className="subagent-status-note">{activityStats}</div>}
+              {activityStats.length > 0 && (
+                <div className="subagent-status-note">{activityStats}</div>
+              )}
             </section>
           )}
           {hasTranscript && (
