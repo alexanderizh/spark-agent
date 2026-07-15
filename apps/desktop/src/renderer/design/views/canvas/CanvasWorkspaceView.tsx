@@ -43,6 +43,7 @@ import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAsse
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel, buildOperationPanelSnapshotSignature } from './CanvasOperationPanel'
 import { shouldFocusCanvasInlinePanel } from './canvasInlinePanelFocus'
+import { runWithCanvasTaskViewport } from './canvasTaskViewportGuard'
 import { CanvasOperationWorkbench } from './CanvasOperationWorkbench'
 import {
   resolveCanvasOperationResourceNode,
@@ -1722,6 +1723,7 @@ export function CanvasWorkspaceView({
     switchBoard,
     setDefaultBoard,
     copyNodesToBoard,
+    refreshTaskSnapshot,
     // 资产
     insertAsset,
     refresh,
@@ -2427,7 +2429,7 @@ export function CanvasWorkspaceView({
   }, [])
 
   const restoreCanvasViewport = useCallback(
-    (viewport: CanvasStageViewport | null) => {
+    (viewport: Pick<CanvasStageViewport, 'x' | 'y' | 'zoom'> | null) => {
       if (!viewport) return
       pendingCanvasViewportRestoreRef.current = {
         x: viewport.x,
@@ -2465,8 +2467,14 @@ export function CanvasWorkspaceView({
 
   const persistCurrentCanvasViewport = useCallback(async () => {
     const currentSnapshot = snapshotRef.current
-    const viewport = canvasViewportRef.current
-    if (!currentSnapshot || !viewport) return null
+    if (!currentSnapshot) return null
+    const viewport = canvasViewportRef.current ?? {
+      x: currentSnapshot.board.viewport.x,
+      y: currentSnapshot.board.viewport.y,
+      zoom: currentSnapshot.board.viewport.zoom,
+      width: 0,
+      height: 0,
+    }
     await canvasApi.updateViewport(
       projectId,
       { x: viewport.x, y: viewport.y, zoom: viewport.zoom },
@@ -4767,6 +4775,8 @@ export function CanvasWorkspaceView({
   }) => {
     const snapshot = snapshotRef.current
     if (!snapshot) return
+    // Persist the live viewport before the task API refreshes the snapshot.
+    const viewportBeforeCreate = await persistCurrentCanvasViewport()
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
     const taskInputNodes =
       inputNodeIds !== undefined
@@ -4833,41 +4843,46 @@ export function CanvasWorkspaceView({
       },
     )
 
-    await createTask({
-      ...promptSubmission,
-      operation,
-      prompt: styledTask.prompt,
-      compiledUserText: styledTask.prompt,
-      ...(styledTask.negativePrompt ? { negativePrompt: styledTask.negativePrompt } : {}),
-      inputNodeIds: lineageInputNodeIds,
-      inputAssetIds: taskInputNodes
-        .map((node) => node.assetId)
-        .filter((id): id is string => Boolean(id)),
-      ...(inputFiles.length > 0 ? { inputFiles } : {}),
-      ...(providerProfileId != null ? { providerProfileId } : {}),
-      ...(manifestId != null ? { manifestId } : {}),
-      ...(modelId != null ? { modelId } : {}),
-      ...(Object.keys(styledTask.modelParams).length > 0
-        ? { modelParams: styledTask.modelParams }
-        : {}),
-      ...(agentId != null ? { agentId } : {}),
-      // skillIds 优先用调用方传入，没有就回退到 preset 默认，确保新建节点携带 skills。
-      ...(effectiveSkillIds.length > 0 ? { skillIds: effectiveSkillIds } : {}),
-      ...(taskTitle != null ? { taskTitle } : {}),
-      ...(outputTitle != null ? { outputTitle } : {}),
-      ...(taskPipelineRole != null ? { taskPipelineRole } : {}),
-      ...(outputPipelineRole != null ? { outputPipelineRole } : {}),
-      ...(droppedModelParams != null && droppedModelParams.length > 0
-        ? { droppedModelParams }
-        : {}),
-      ...(modelParamWarnings != null && modelParamWarnings.length > 0
-        ? { modelParamWarnings }
-        : {}),
-      outputPlacement: {
-        x: placement.x,
-        y: placement.y,
-      },
-    })
+    await runWithCanvasTaskViewport(
+      () => viewportBeforeCreate,
+      restoreCanvasViewport,
+      () =>
+        createTask({
+          ...promptSubmission,
+          operation,
+          prompt: styledTask.prompt,
+          compiledUserText: styledTask.prompt,
+          ...(styledTask.negativePrompt ? { negativePrompt: styledTask.negativePrompt } : {}),
+          inputNodeIds: lineageInputNodeIds,
+          inputAssetIds: taskInputNodes
+            .map((node) => node.assetId)
+            .filter((id): id is string => Boolean(id)),
+          ...(inputFiles.length > 0 ? { inputFiles } : {}),
+          ...(providerProfileId != null ? { providerProfileId } : {}),
+          ...(manifestId != null ? { manifestId } : {}),
+          ...(modelId != null ? { modelId } : {}),
+          ...(Object.keys(styledTask.modelParams).length > 0
+            ? { modelParams: styledTask.modelParams }
+            : {}),
+          ...(agentId != null ? { agentId } : {}),
+          // skillIds 优先用调用方传入，没有就回退到 preset 默认，确保新建节点携带 skills。
+          ...(effectiveSkillIds.length > 0 ? { skillIds: effectiveSkillIds } : {}),
+          ...(taskTitle != null ? { taskTitle } : {}),
+          ...(outputTitle != null ? { outputTitle } : {}),
+          ...(taskPipelineRole != null ? { taskPipelineRole } : {}),
+          ...(outputPipelineRole != null ? { outputPipelineRole } : {}),
+          ...(droppedModelParams != null && droppedModelParams.length > 0
+            ? { droppedModelParams }
+            : {}),
+          ...(modelParamWarnings != null && modelParamWarnings.length > 0
+            ? { modelParamWarnings }
+            : {}),
+          outputPlacement: {
+            x: placement.x,
+            y: placement.y,
+          },
+        }),
+    )
     writeCanvasLastUsedPresetTarget(presetTargetId, {
       ...(prompt.trim() ? { prompt } : {}),
       ...(negativePrompt != null ? { negativePrompt } : {}),
@@ -4933,7 +4948,7 @@ export function CanvasWorkspaceView({
       ...(request.systemPrompt ? { systemPrompt: request.systemPrompt } : {}),
       outputPlacement: { x: placement.x, y: placement.y },
     })
-    await refresh()
+    await refreshTaskSnapshot()
     restoreCanvasViewport(viewportBeforeRun)
 
     try {
@@ -4951,7 +4966,7 @@ export function CanvasWorkspaceView({
         ...(result.provider !== undefined ? { provider: result.provider } : {}),
         ...(result.modelId !== undefined ? { modelId: result.modelId } : {}),
       })
-      await refresh()
+      await refreshTaskSnapshot()
       restoreCanvasViewport(viewportBeforeRun)
       return result
     } catch (error) {
@@ -4962,7 +4977,7 @@ export function CanvasWorkspaceView({
         errorDetail: errorMessage,
         message: `失败：${errorMessage}`,
       })
-      await refresh()
+      await refreshTaskSnapshot()
       restoreCanvasViewport(viewportBeforeRun)
       throw error
     }

@@ -55,10 +55,88 @@ export function createHistoryEntry(snapshot: CanvasSnapshot): CanvasHistoryEntry
   return { snapshot: cloned, signature: boardHistorySignature(cloned) }
 }
 
-function mergeById<T extends { id: string }>(current: T[], next: T[]): T[] {
-  const ids = new Set(next.map((item) => item.id))
-  const missing = current.filter((item) => !ids.has(item.id))
-  return missing.length > 0 ? [...next, ...missing] : next
+type VersionedCanvasEntity = {
+  id: string
+  updatedAt?: string
+  createdAt?: string
+}
+
+function mergeTaskEntities<T extends VersionedCanvasEntity>(
+  current: T[],
+  next: T[],
+  preserveMissing = false,
+): T[] {
+  const currentById = new Map(current.map((item) => [item.id, item]))
+  const merged = next.map((item) => {
+    const previous = currentById.get(item.id)
+    if (!previous) return item
+    const previousVersion = previous.updatedAt ?? previous.createdAt
+    const nextVersion = item.updatedAt ?? item.createdAt
+    return previousVersion != null && previousVersion === nextVersion ? previous : item
+  })
+  if (preserveMissing) {
+    const nextIds = new Set(next.map((item) => item.id))
+    for (const item of current) {
+      if (!nextIds.has(item.id)) merged.push(item)
+    }
+  }
+  if (merged.length === current.length && merged.every((item, index) => item === current[index])) {
+    return current
+  }
+  return merged
+}
+
+/**
+ * Merge a task-related snapshot without replacing the active canvas board.
+ * Task APIs return full snapshots for IPC compatibility, but task status
+ * changes must not reset the user's viewport or recreate unrelated entities.
+ */
+export function mergeCanvasTaskSnapshot(
+  current: CanvasSnapshot | null,
+  next: CanvasSnapshot,
+): CanvasSnapshot {
+  return mergeCanvasSnapshot(current, next, true)
+}
+
+/** Merge a normal canvas mutation without replacing the active board viewport. */
+export function mergeCanvasMutationSnapshot(
+  current: CanvasSnapshot | null,
+  next: CanvasSnapshot,
+): CanvasSnapshot {
+  return mergeCanvasSnapshot(current, next, false)
+}
+
+function mergeCanvasSnapshot(
+  current: CanvasSnapshot | null,
+  next: CanvasSnapshot,
+  preserveMissingEntities: boolean,
+): CanvasSnapshot {
+  if (
+    !current ||
+    current.project.id !== next.project.id ||
+    current.board.id !== next.board.id ||
+    current.activeBoardId !== next.activeBoardId
+  ) {
+    return next
+  }
+
+  const boards =
+    current.boards && next.boards
+      ? mergeTaskEntities(current.boards, next.boards, preserveMissingEntities).map((board) =>
+          board.id === current.board.id ? { ...board, viewport: current.board.viewport } : board,
+        )
+      : (current.boards ?? next.boards)
+
+  return {
+    ...next,
+    board: current.board,
+    ...(boards ? { boards } : {}),
+    ...(current.activeBoardId ? { activeBoardId: current.activeBoardId } : {}),
+    nodes: mergeTaskEntities(current.nodes, next.nodes, preserveMissingEntities),
+    edges: mergeTaskEntities(current.edges, next.edges, preserveMissingEntities),
+    assets: mergeTaskEntities(current.assets, next.assets, preserveMissingEntities),
+    tasks: mergeTaskEntities(current.tasks, next.tasks, preserveMissingEntities),
+  }
 }
 
 export function mergeCanvasBackgroundTaskSnapshot(
@@ -66,13 +144,7 @@ export function mergeCanvasBackgroundTaskSnapshot(
   next: CanvasSnapshot,
 ): CanvasSnapshot {
   if (!current || current.project.id !== next.project.id) return next
-  return {
-    ...next,
-    nodes: mergeById(current.nodes, next.nodes),
-    edges: mergeById(current.edges, next.edges),
-    assets: mergeById(current.assets, next.assets),
-    tasks: mergeById(current.tasks, next.tasks),
-  }
+  return mergeCanvasTaskSnapshot(current, next)
 }
 
 export function useCanvasProjects() {
@@ -181,6 +253,23 @@ export function useCanvasWorkspace(projectId: string) {
     }
   }, [projectId])
 
+  const refreshTaskSnapshot = useCallback(async () => {
+    const next = await canvasApi.openSnapshot(projectId, activeBoardIdRef.current)
+    setSnapshot((current) => mergeCanvasTaskSnapshot(current, next))
+  }, [projectId])
+
+  const applyTaskSnapshot = useCallback(async (request: Promise<CanvasSnapshot>) => {
+    const next = await request
+    setSnapshot((current) => mergeCanvasTaskSnapshot(current, next))
+    return next
+  }, [])
+
+  const applyCanvasMutationSnapshot = useCallback(async (request: Promise<CanvasSnapshot>) => {
+    const next = await request
+    setSnapshot((current) => mergeCanvasMutationSnapshot(current, next))
+    return next
+  }, [])
+
   useEffect(() => {
     void refresh()
   }, [refresh])
@@ -238,17 +327,17 @@ export function useCanvasWorkspace(projectId: string) {
 
   const connectNodes = useCallback(
     async (input: { sourceNodeId: string; targetNodeId: string; type?: CanvasEdge['type'] }) => {
-      setSnapshot(await canvasApi.connectNodes(projectId, input))
+      await applyCanvasMutationSnapshot(canvasApi.connectNodes(projectId, input))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const deleteEdges = useCallback(
     async (edgeIds: string[]) => {
       if (edgeIds.length === 0) return
-      setSnapshot(await canvasApi.deleteEdges(projectId, edgeIds))
+      await applyCanvasMutationSnapshot(canvasApi.deleteEdges(projectId, edgeIds))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const createTextNode = useCallback(
@@ -266,10 +355,10 @@ export function useCanvasWorkspace(projectId: string) {
         boardId: current.board.id,
         ...input,
       })
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
       return node
     },
-    [projectId, snapshot],
+    [applyCanvasMutationSnapshot, projectId, snapshot],
   )
 
   /** 上传图片到项目资产库（不创建节点），返回新 assetId */
@@ -294,10 +383,10 @@ export function useCanvasWorkspace(projectId: string) {
         imageWidth: dimensions.width,
         imageHeight: dimensions.height,
       })
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
       return asset.id
     },
-    [projectId, snapshot],
+    [applyCanvasMutationSnapshot, projectId, snapshot],
   )
 
   const createImageNode = useCallback(
@@ -318,10 +407,10 @@ export function useCanvasWorkspace(projectId: string) {
         boardId: current.board.id,
         ...input,
       })
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
       return node
     },
-    [projectId, snapshot],
+    [applyCanvasMutationSnapshot, projectId, snapshot],
   )
 
   /** 创建视频/音频节点（拖入外部媒体文件时使用），与 createImageNode 对称。 */
@@ -347,83 +436,84 @@ export function useCanvasWorkspace(projectId: string) {
         boardId: current.board.id,
         ...input,
       })
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
       return node
     },
-    [projectId, snapshot],
+    [applyCanvasMutationSnapshot, projectId, snapshot],
   )
 
   const createGroupNode = useCallback(
     async (nodeIds: string[]) => {
       const nextSnapshot = await canvasApi.createGroupNode(projectId, nodeIds)
-      setSnapshot(nextSnapshot)
-      return nextSnapshot
+      return applyCanvasMutationSnapshot(Promise.resolve(nextSnapshot))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const dissolveGroupNode = useCallback(
     async (groupId: string) => {
-      setSnapshot(await canvasApi.dissolveGroupNode(projectId, groupId))
+      await applyCanvasMutationSnapshot(canvasApi.dissolveGroupNode(projectId, groupId))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const addNodesToGroup = useCallback(
     async (groupId: string, nodeIds: string[]) => {
-      setSnapshot(await canvasApi.addNodesToGroup(projectId, groupId, nodeIds))
+      await applyCanvasMutationSnapshot(canvasApi.addNodesToGroup(projectId, groupId, nodeIds))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const removeNodesFromGroup = useCallback(
     async (nodeIds: string[]) => {
-      setSnapshot(await canvasApi.removeNodesFromGroup(projectId, nodeIds))
+      await applyCanvasMutationSnapshot(canvasApi.removeNodesFromGroup(projectId, nodeIds))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const deleteNodes = useCallback(
     async (nodeIds: string[]) => {
       await canvasApi.deleteNodes(projectId, nodeIds)
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const duplicateNodes = useCallback(
     async (nodeIds: string[]) => {
-      setSnapshot(await canvasApi.duplicateNodes(projectId, nodeIds))
+      await applyCanvasMutationSnapshot(canvasApi.duplicateNodes(projectId, nodeIds))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const patchNodes = useCallback(
     async (nodeIds: string[], patch: Parameters<typeof canvasApi.patchNodes>[2]) => {
-      setSnapshot(await canvasApi.patchNodes(projectId, nodeIds, patch))
+      await applyCanvasMutationSnapshot(canvasApi.patchNodes(projectId, nodeIds, patch))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const updateNodeData = useCallback(
     async (nodeId: string, data: Parameters<typeof canvasApi.updateNodeData>[2]) => {
-      setSnapshot(await canvasApi.updateNodeData(projectId, nodeId, data))
+      await applyCanvasMutationSnapshot(canvasApi.updateNodeData(projectId, nodeId, data))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const updateManyNodeData = useCallback(
-    async (updates: Array<{ nodeId: string; data: Parameters<typeof canvasApi.updateNodeData>[2] }>) => {
-      setSnapshot(await canvasApi.updateManyNodeData(projectId, updates))
+    async (
+      updates: Array<{ nodeId: string; data: Parameters<typeof canvasApi.updateNodeData>[2] }>,
+    ) => {
+      await applyCanvasMutationSnapshot(canvasApi.updateManyNodeData(projectId, updates))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const updateProjectSettings = useCallback(
     async (settings: CanvasProjectSettings) => {
-      setSnapshot(await canvasApi.updateProjectSettings(projectId, settings))
+      await applyCanvasMutationSnapshot(canvasApi.updateProjectSettings(projectId, settings))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const createTask = useCallback(
@@ -436,23 +526,23 @@ export function useCanvasWorkspace(projectId: string) {
       if (!current) return
       // 多媒体 operation 走真实平台 adapter；文本 operation 走真实文本模型；其余记录为待接入执行器的任务。
       if (isMediaOperation(request.operation)) {
-        setSnapshot(await canvasApi.createMediaTask(projectId, request))
+        await applyTaskSnapshot(canvasApi.createMediaTask(projectId, request))
       } else if (isTextModelOperation(request.operation)) {
-        setSnapshot(await canvasApi.createTextTask(projectId, request))
+        await applyTaskSnapshot(canvasApi.createTextTask(projectId, request))
       } else {
-        setSnapshot(
-          await canvasApi.createTask(projectId, { ...request, boardId: current.board.id }),
+        await applyTaskSnapshot(
+          canvasApi.createTask(projectId, { ...request, boardId: current.board.id }),
         )
       }
     },
-    [projectId, snapshot],
+    [applyTaskSnapshot, projectId, snapshot],
   )
 
   const cancelTask = useCallback(
     async (taskId: string) => {
-      setSnapshot(await canvasApi.cancelTask(projectId, taskId))
+      await applyTaskSnapshot(canvasApi.cancelTask(projectId, taskId))
     },
-    [projectId],
+    [applyTaskSnapshot, projectId],
   )
 
   /**
@@ -464,10 +554,10 @@ export function useCanvasWorkspace(projectId: string) {
   const deleteTasks = useCallback(
     async (taskIds: string[]) => {
       if (taskIds.length === 0) return
-      canvasApi.deleteTasks(projectId, taskIds)
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await canvasApi.deleteTasks(projectId, taskIds)
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   /**
@@ -494,7 +584,7 @@ export function useCanvasWorkspace(projectId: string) {
         )
         for (const task of activeTasks) {
           try {
-            setSnapshot(await canvasApi.cancelTask(projectId, task.id))
+            await applyTaskSnapshot(canvasApi.cancelTask(projectId, task.id))
           } catch {
             // 单个任务取消失败不阻塞其余任务。
           }
@@ -506,39 +596,39 @@ export function useCanvasWorkspace(projectId: string) {
         .filter((task) => task.status === 'failed' || task.status === 'cancelled')
         .map((task) => task.id)
       if (endedTaskIds.length === 0) return
-      canvasApi.deleteTasks(projectId, endedTaskIds)
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await canvasApi.deleteTasks(projectId, endedTaskIds)
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
     },
-    [projectId, snapshot],
+    [applyCanvasMutationSnapshot, applyTaskSnapshot, projectId, snapshot],
   )
 
   // ─── 多 board 操作（文档 §7.1）──────────────────────────────────────────
   const createBoard = useCallback(
     async (input?: { name?: string; templateId?: string | null }) => {
-      setSnapshot(await canvasApi.createBoard(projectId, input))
+      await applyCanvasMutationSnapshot(canvasApi.createBoard(projectId, input))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const renameBoard = useCallback(
     async (boardId: string, name: string) => {
-      setSnapshot(await canvasApi.renameBoard(projectId, boardId, name))
+      await applyCanvasMutationSnapshot(canvasApi.renameBoard(projectId, boardId, name))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const deleteBoard = useCallback(
     async (boardId: string) => {
-      setSnapshot(await canvasApi.deleteBoard(projectId, boardId))
+      await applyCanvasMutationSnapshot(canvasApi.deleteBoard(projectId, boardId))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const duplicateBoard = useCallback(
     async (boardId: string, name?: string) => {
-      setSnapshot(await canvasApi.duplicateBoard(projectId, boardId, name))
+      await applyCanvasMutationSnapshot(canvasApi.duplicateBoard(projectId, boardId, name))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   /** 切换激活 board：保存当前 viewport 后切换（文档 §7.1 注意点） */
@@ -556,40 +646,42 @@ export function useCanvasWorkspace(projectId: string) {
 
   const reorderBoards = useCallback(
     async (orderedBoardIds: string[]) => {
-      setSnapshot(await canvasApi.reorderBoards(projectId, orderedBoardIds))
+      await applyCanvasMutationSnapshot(canvasApi.reorderBoards(projectId, orderedBoardIds))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const setBoardCover = useCallback(
     async (boardId: string, coverAssetId: string | null) => {
-      setSnapshot(await canvasApi.setBoardCover(projectId, boardId, coverAssetId))
+      await applyCanvasMutationSnapshot(canvasApi.setBoardCover(projectId, boardId, coverAssetId))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const setDefaultBoard = useCallback(
     async (boardId: string) => {
-      setSnapshot(await canvasApi.setDefaultBoard(projectId, boardId))
+      await applyCanvasMutationSnapshot(canvasApi.setDefaultBoard(projectId, boardId))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const copyNodesToBoard = useCallback(
     async (nodeIds: string[], targetBoardId: string) => {
-      setSnapshot(await canvasApi.copyNodesToBoard(projectId, nodeIds, targetBoardId))
+      await applyCanvasMutationSnapshot(
+        canvasApi.copyNodesToBoard(projectId, nodeIds, targetBoardId),
+      )
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   // ─── 资产 → board（文档 §7.2）───────────────────────────────────────────
   const insertAsset = useCallback(
     async (input: { assetId: string; boardId: string; x: number; y: number }) => {
       const node = await canvasApi.insertAssetToBoard({ projectId, ...input })
-      if (node) setSnapshot(await canvasApi.openSnapshot(projectId))
+      if (node) await applyTaskSnapshot(canvasApi.openSnapshot(projectId))
       return node
     },
-    [projectId],
+    [applyTaskSnapshot, projectId],
   )
 
   /** 应用模板：在指定 board 的指定位置生成节点组合（文档 §7.8） */
@@ -614,35 +706,35 @@ export function useCanvasWorkspace(projectId: string) {
         type?: 'used_as_input' | 'generated' | 'references'
       }>
     }) => {
-      setSnapshot(await canvasApi.applyTemplate({ projectId, ...input }))
+      await applyCanvasMutationSnapshot(canvasApi.applyTemplate({ projectId, ...input }))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   /** 局部更新项目扩展元数据（影视等行业模式，文档 §7.10） */
   const updateProjectMetadata = useCallback(
     async (patch: Record<string, unknown>) => {
-      setSnapshot(await canvasApi.updateProjectMetadata(projectId, patch))
+      await applyCanvasMutationSnapshot(canvasApi.updateProjectMetadata(projectId, patch))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   // ─── 影视公用资产（文档 §7.10）─────────────────────────────────────────
   const createFilmAsset = useCallback(
     async (input: import('./canvasFilmAssets').CreateFilmAssetInput) => {
       const asset = await canvasApi.createFilmAsset(projectId, input)
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
       return asset
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   /** 批量导入文稿（整篇 + 逐章）：单次事务，避免逐章重渲染卡死 */
   const importManuscript = useCallback(
     async (input: Parameters<typeof canvasApi.importManuscript>[1]) => {
-      setSnapshot(await canvasApi.importManuscript(projectId, input))
+      await applyCanvasMutationSnapshot(canvasApi.importManuscript(projectId, input))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   /** 删除整部文稿：级联删除全部章节，返回删除的章节数 */
@@ -652,24 +744,24 @@ export function useCanvasWorkspace(projectId: string) {
         projectId,
         manuscriptAssetId,
       )
-      setSnapshot(next)
+      await applyCanvasMutationSnapshot(Promise.resolve(next))
       return deletedChapters
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const updateFilmAsset = useCallback(
     async (assetId: string, patch: Parameters<typeof canvasApi.updateFilmAsset>[2]) => {
-      setSnapshot(await canvasApi.updateFilmAsset(projectId, assetId, patch))
+      await applyCanvasMutationSnapshot(canvasApi.updateFilmAsset(projectId, assetId, patch))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const deleteFilmAsset = useCallback(
     async (assetId: string) => {
-      setSnapshot(await canvasApi.deleteFilmAsset(projectId, assetId))
+      await applyCanvasMutationSnapshot(canvasApi.deleteFilmAsset(projectId, assetId))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   /** 查询资源被谁引用（分镜片段 + 画布节点） */
@@ -682,28 +774,28 @@ export function useCanvasWorkspace(projectId: string) {
   const createShotGroup = useCallback(
     async (input: { name: string; description?: string }) => {
       const result = await canvasApi.createShotGroup(projectId, input)
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
       const created = result.shotGroups[result.shotGroups.length - 1]
       if (!created) throw new Error('分镜分组创建失败')
       return created
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const updateShotGroup = useCallback(
     async (groupId: string, patch: { name?: string; description?: string }) => {
       await canvasApi.updateShotGroup(projectId, groupId, patch)
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const deleteShotGroup = useCallback(
     async (groupId: string) => {
       await canvasApi.deleteShotGroup(projectId, groupId)
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const createShotSegment = useCallback(
@@ -712,9 +804,9 @@ export function useCanvasWorkspace(projectId: string) {
       input: Partial<import('./canvasFilmAssets').ShotSegment> & { title: string },
     ) => {
       await canvasApi.createShotSegment(projectId, groupId, input)
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const updateShotSegment = useCallback(
@@ -724,17 +816,17 @@ export function useCanvasWorkspace(projectId: string) {
       patch: Partial<import('./canvasFilmAssets').ShotSegment>,
     ) => {
       await canvasApi.updateShotSegment(projectId, groupId, segmentId, patch)
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   const deleteShotSegment = useCallback(
     async (groupId: string, segmentId: string) => {
       await canvasApi.deleteShotSegment(projectId, groupId, segmentId)
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
     },
-    [projectId],
+    [applyCanvasMutationSnapshot, projectId],
   )
 
   // ─── 操作节点（文档：AI 操作按类型分拆）─────────────────────────────────
@@ -761,17 +853,16 @@ export function useCanvasWorkspace(projectId: string) {
       shotScriptConfig?: ShotScriptConfig
     }) => {
       const next = await canvasApi.createOperationNode({ projectId, ...input })
-      setSnapshot(next)
-      return next
+      return applyTaskSnapshot(Promise.resolve(next))
     },
-    [projectId],
+    [applyTaskSnapshot, projectId],
   )
 
   const retryOperationNode = useCallback(
     async (nodeId: string) => {
-      setSnapshot(await canvasApi.retryOperationNode(projectId, nodeId))
+      await applyTaskSnapshot(canvasApi.retryOperationNode(projectId, nodeId))
     },
-    [projectId],
+    [applyTaskSnapshot, projectId],
   )
   const runOperationNode = useCallback(
     async (
@@ -792,9 +883,9 @@ export function useCanvasWorkspace(projectId: string) {
         userPrompt?: string
       } & CanvasPromptTaskFields,
     ) => {
-      setSnapshot(await canvasApi.runOperationNode(projectId, nodeId, params))
+      await applyTaskSnapshot(canvasApi.runOperationNode(projectId, nodeId, params))
     },
-    [projectId],
+    [applyTaskSnapshot, projectId],
   )
 
   const undoCanvasChange = useCallback(async () => {
@@ -856,6 +947,7 @@ export function useCanvasWorkspace(projectId: string) {
     undoCanvasChange,
     redoCanvasChange,
     refresh,
+    refreshTaskSnapshot,
     updateNodes,
     connectNodes,
     deleteEdges,
