@@ -107,6 +107,11 @@ import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasSh
 import { splitStoryboardNode } from './canvasStoryboardNodeSplit'
 import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import {
+  planCanvasPipelineTaskPositions,
+  resolveCanvasPipelineAssetTargets,
+  type CanvasPipelineAssetTarget,
+} from './canvasPipelineActionBatch'
+import {
   CANVAS_PIPELINE_CREATE_OPERATIONS,
   canvasGeneralCreateOperations,
 } from './canvasNodeGenerationMenu'
@@ -3273,12 +3278,6 @@ export function CanvasWorkspaceView({
         createdNodeIds.push(created.id)
       }
 
-      // 多产物保持批次网格布局，并自动收进一个组；组是可操作的真实画布对象，
-      // 不是仅在任务节点预览里的视觉假象。
-      if (createdNodeIds.length > 1) {
-        await createGroupNode(createdNodeIds)
-      }
-
       if (plan.unsupportedOutputIds.length > 0) {
         message.warning(`${plan.unsupportedOutputIds.length} 个产物尚未关联资产，暂不能展开`)
       }
@@ -3297,7 +3296,7 @@ export function CanvasWorkspaceView({
         )
       }
     },
-    [connectNodes, createGroupNode, insertAsset, updateNodeData],
+    [connectNodes, insertAsset, updateNodeData],
   )
 
   const handleExpandOperationOutputScope = useCallback(
@@ -5376,7 +5375,10 @@ export function CanvasWorkspaceView({
     outputPipelineRole,
     outputTitle,
     shotScriptConfig,
+    position,
     openPanel = false,
+    selectCreated = true,
+    announce = true,
   }: {
     sourceNode: CanvasNode
     operation: CanvasOperationType
@@ -5388,12 +5390,15 @@ export function CanvasWorkspaceView({
     outputPipelineRole?: CanvasPipelineRole
     outputTitle?: string
     shotScriptConfig?: ShotScriptConfig
+    position?: CanvasPoint
     /** 从节点右键流水线创建时默认只选中新节点，避免面板被菜单收尾状态立即关闭。 */
     openPanel?: boolean
+    selectCreated?: boolean
+    announce?: boolean
   }) => {
     const snapshot = snapshotRef.current
     if (!snapshot) return
-    const placement = placeNodeRightOfNodes([sourceNode], { x: 360, y: 0 })
+    const placement = position ?? placeNodeRightOfNodes([sourceNode], { x: 360, y: 0 })
     const runtime = resolveRuntimeFromNode(sourceNode)
     const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
     const next = await createOperationNode({
@@ -5416,12 +5421,13 @@ export function CanvasWorkspaceView({
     if (created) {
       if (openPanel) {
         openOperationPanelForNode(created.id)
-        message.info('已创建操作节点，请确认配置后点击开始任务')
+        if (announce) message.info('已创建操作节点，请确认配置后点击开始任务')
       } else {
-        setSelectedNodeIds([created.id])
-        message.info('已创建并连接任务节点，双击或右键“编辑节点”可打开配置')
+        if (selectCreated) setSelectedNodeIds([created.id])
+        if (announce) message.info('已创建并连接任务节点，双击或右键“编辑节点”可打开配置')
       }
     }
+    return created
   }
 
   const handleNodePipelineAction = async (nodeId: string, actionId: string): Promise<void> => {
@@ -5477,12 +5483,41 @@ export function CanvasWorkspaceView({
       node.type === 'group'
         ? buildPipelineSourceText(actionInputNodes, snapshot.assets)
         : (asset?.contentText ?? node.data.text ?? '').trim()
-    const requireAsset = (): CanvasAsset | null => {
-      if (!asset) {
-        message.warning('该节点未关联资源，无法执行此操作')
-        return null
+    const requireAssetTargets = (label: string): CanvasPipelineAssetTarget[] => {
+      const targets = resolveCanvasPipelineAssetTargets({ sourceNode: node, actionId, snapshot })
+      if (targets.length === 0) {
+        message.warning(`该节点没有可用的${label}产物，无法执行此操作`)
       }
-      return asset
+      return targets
+    }
+    const createAssetTaskBatch = async (
+      targets: CanvasPipelineAssetTarget[],
+      create: (
+        target: CanvasPipelineAssetTarget,
+        position: CanvasPoint,
+      ) => Promise<CanvasNode | null | undefined>,
+    ) => {
+      const positions = planCanvasPipelineTaskPositions({
+        sourceNode: node,
+        count: targets.length,
+        existingNodes: snapshot.nodes,
+      })
+      const createdNodeIds: string[] = []
+      for (const [index, target] of targets.entries()) {
+        const position = positions[index]
+        if (!position) continue
+        const created = await create(target, position)
+        if (created) createdNodeIds.push(created.id)
+      }
+      if (createdNodeIds.length > 0) {
+        setSelectedNodeIds(createdNodeIds)
+        requestAnimationFrame(() => canvasViewportControlsRef.current?.focusNodes(createdNodeIds))
+        message.success(
+          createdNodeIds.length > 1
+            ? `已批量创建 ${createdNodeIds.length} 个后续任务节点`
+            : '已创建并连接任务节点，双击或右键“编辑节点”可打开配置',
+        )
+      }
     }
 
     switch (actionId) {
@@ -5505,26 +5540,33 @@ export function CanvasWorkspaceView({
         // 右键菜单入口：创建并选中操作节点，由用户双击或右键“编辑节点”打开配置
         // （不直接触发任务，与「生成分镜脚本 / 提取角色」等专用流水线行为保持一致）
         // 资产中心按钮入口仍走 handleGenerateCharacterSheets 直接发起任务。
-        const a = requireAsset()
-        if (!a) break
+        const targets = requireAssetTargets('角色')
+        if (targets.length === 0) break
         const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
-        await createConfiguredOperationNode({
-          sourceNode: node,
-          operation: 'text_to_image',
-          title: `生成角色身份板 · ${a.title ?? '角色'}`,
-          prompt: buildCharacterSheetPrompt({
-            aspect: 'turnaround',
-            character: assetToCharacterFields(a),
-            ...(styleBible ? { styleBible } : {}),
-            ...(typeof a.metadata?.prompt === 'string' ? { extraPrompt: a.metadata.prompt } : {}),
+        await createAssetTaskBatch(targets, ({ sourceNode, asset: targetAsset }, position) =>
+          createConfiguredOperationNode({
+            sourceNode,
+            position,
+            operation: 'text_to_image',
+            title: `生成角色身份板 · ${targetAsset.title ?? '角色'}`,
+            prompt: buildCharacterSheetPrompt({
+              aspect: 'turnaround',
+              character: assetToCharacterFields(targetAsset),
+              ...(styleBible ? { styleBible } : {}),
+              ...(typeof targetAsset.metadata?.prompt === 'string'
+                ? { extraPrompt: targetAsset.metadata.prompt }
+                : {}),
+            }),
+            // 角色身份板默认 16:9（综合卡横版构图），仅此面向默认
+            modelParams: { aspect_ratio: '16:9' },
+            nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
+            taskPipelineRole: 'design_card',
+            outputPipelineRole: 'design_card',
+            outputTitle: targetAsset.title ?? '角色',
+            selectCreated: false,
+            announce: false,
           }),
-          // 角色身份板默认 16:9（综合卡横版构图），仅此面向默认
-          modelParams: { aspect_ratio: '16:9' },
-          nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
-          taskPipelineRole: 'design_card',
-          outputPipelineRole: 'design_card',
-          outputTitle: a.title ?? '角色',
-        })
+        )
         break
       }
       case 'scene.scene_image':
@@ -5532,28 +5574,37 @@ export function CanvasWorkspaceView({
       case 'effect.effect_image': {
         // 右键菜单入口：创建并选中操作节点，由用户双击或右键“编辑节点”打开配置
         // 资产中心按钮入口仍走 handleGenerateAssetReference 直接发起任务。
-        const a = requireAsset()
-        if (!a) break
-        const kind = readAssetKind(a)
-        const title =
-          kind === 'scene'
-            ? '生成场景图'
-            : kind === 'prop'
-              ? '生成道具图'
-              : kind === 'effect'
-                ? '生成特效图'
-                : '生成设计图'
-        await createConfiguredOperationNode({
-          sourceNode: node,
-          operation: 'text_to_image',
-          title,
-          prompt: buildFilmAssetReferencePrompt(
-            a,
-            buildProductionBiblePrompt(snapshot.project.metadata),
-          ),
-          nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
-          taskPipelineRole: 'design_card',
-          outputPipelineRole: 'design_card',
+        const targets = requireAssetTargets(
+          actionId === 'scene.scene_image'
+            ? '场景'
+            : actionId === 'prop.prop_image'
+              ? '道具'
+              : '特效',
+        )
+        if (targets.length === 0) break
+        const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
+        await createAssetTaskBatch(targets, ({ sourceNode, asset: targetAsset }, position) => {
+          const kind = readAssetKind(targetAsset)
+          const title =
+            kind === 'scene'
+              ? '生成场景图'
+              : kind === 'prop'
+                ? '生成道具图'
+                : kind === 'effect'
+                  ? '生成特效图'
+                  : '生成设计图'
+          return createConfiguredOperationNode({
+            sourceNode,
+            position,
+            operation: 'text_to_image',
+            title,
+            prompt: buildFilmAssetReferencePrompt(targetAsset, styleBible),
+            nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
+            taskPipelineRole: 'design_card',
+            outputPipelineRole: 'design_card',
+            selectCreated: false,
+            announce: false,
+          })
         })
         break
       }
