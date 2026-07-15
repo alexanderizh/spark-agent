@@ -1,5 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
-import { runWithCanvasTaskViewport } from './canvasTaskViewportGuard'
+import { captureCanvasTaskViewport, runWithCanvasTaskViewport } from './canvasTaskViewportGuard'
+
+describe('captureCanvasTaskViewport', () => {
+  it('uses and freezes the live React Flow viewport instead of a stale cached viewport', () => {
+    const liveViewport = { x: -388, y: 146, zoom: 0.82 }
+    const setViewport = vi.fn()
+
+    const captured = captureCanvasTaskViewport(
+      { getViewport: () => liveViewport, setViewport },
+      { x: 120, y: 80, zoom: 1 },
+      { x: 0, y: 0, zoom: 1 },
+    )
+
+    expect(captured).toEqual(liveViewport)
+    expect(setViewport).toHaveBeenCalledWith(liveViewport, { duration: 0 })
+  })
+})
 
 describe('runWithCanvasTaskViewport', () => {
   it('restores the captured viewport after task creation', async () => {
