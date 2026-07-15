@@ -306,6 +306,46 @@ describe('ClaudeSDKExecutor', () => {
     expect(abortedIndex).toBeLessThan(cancelledIndex)
   })
 
+  it('force-closes the active SDK query when cancelled', async () => {
+    let releaseQuery: (() => void) | undefined
+    const released = new Promise<void>((resolve) => {
+      releaseQuery = resolve
+    })
+    const close = vi.fn()
+    const query = (async function* () {
+      await released
+      yield {
+        type: 'result',
+        subtype: 'success',
+        result: 'ignored',
+        usage: { input_tokens: 1, output_tokens: 1 },
+        total_cost_usd: 0,
+      }
+    })()
+    Object.assign(query, { close })
+    queryMock.mockReturnValue(query)
+    const executor = new ClaudeSDKExecutor()
+
+    const execution = executor.executeTurn('sess-1', 'turn-1', 'hello', baseConfig())
+    await vi.waitFor(() => expect(queryMock).toHaveBeenCalledOnce())
+    executor.cancel()
+    releaseQuery?.()
+    await execution
+
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('does not start a query when cancelled during SDK initialization', async () => {
+    queryMock.mockReturnValue(messages([]))
+    const executor = new ClaudeSDKExecutor()
+
+    const execution = executor.executeTurn('sess-1', 'turn-1', 'hello', baseConfig())
+    executor.cancel()
+    await execution
+
+    expect(queryMock).not.toHaveBeenCalled()
+  })
+
   it('finalizes streamed text before an SDK error result', async () => {
     queryMock.mockReturnValue(messages([
       {

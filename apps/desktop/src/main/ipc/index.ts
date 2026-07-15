@@ -23,6 +23,10 @@ import {
 import { PendingUserQuestionStore } from './user-question-store.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
+import {
+  isSessionServiceShutdownStarted,
+  registerSessionServiceForShutdown,
+} from '../session-service-shutdown.js'
 import { app, clipboard, dialog, shell, Notification, screen } from 'electron'
 import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
@@ -1870,6 +1874,9 @@ function toSDKApprovalScope(
 }
 
 function getSessionService(): SessionService {
+  if (isSessionServiceShutdownStarted()) {
+    throw new Error('Session service is shutting down')
+  }
   if (_sessionService == null) {
     const onEvent: SessionEventHandler = (event) => {
       pushStreamEvent('stream:session:agent-event', event)
@@ -1951,6 +1958,7 @@ function getSessionService(): SessionService {
       getMcpService(),
       getMcpOAuthService(),
     )
+    registerSessionServiceForShutdown(_sessionService)
     // 接入画布 Agent 桥：仅当 session 已 attach 到画布弹窗时返回 MCP server
     _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())
     _sessionService.setBrowserAutomationMcpProvider(browserAutomationMcpProvider)

@@ -215,6 +215,17 @@ describe('CodexCliExecutor', () => {
     expect(lastProfileConfig).toContain("web_search='disabled'")
   })
 
+  it('does not spawn Codex when cancelled during async preparation', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
+    const executor = new CodexCliExecutor()
+
+    const execution = executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+    executor.cancel()
+    await execution
+
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
   it('forces non-interactive Codex CLI execution for unattended automation turns', async () => {
     spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
 
