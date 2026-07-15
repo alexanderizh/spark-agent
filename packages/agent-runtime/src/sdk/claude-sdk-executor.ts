@@ -69,7 +69,7 @@ const log = createLogger('claude-sdk-executor')
 
 const SDK_HOST_TOOL_INSTRUCTIONS = [
   'SDK host tool rules:',
-  '- When using AskUserQuestion, prefer structured prompts. Use `type: "single_choice"` with 2-5 clear options for fast decisions, or `type: "text"` when the user must type a custom answer.',
+  '- When using AskUserQuestion, prefer structured prompts. Use `type: "single_choice"` with 2-4 clear options for fast decisions, or `type: "text"` when the user must type a custom answer.',
   '- For single-choice questions, include concise labels and descriptions. If canned options may not fit, set `allowOther: true` or mark an option with `allowsFreeText: true`.',
   '- AskUserQuestion option previews may be HTML fragments; keep them self-contained when included.',
   '- ExitPlanMode plans are rendered as Markdown for the user. Follow the plan-mode system message for where to write the plan (the CLI-designated plan file under `.claude/plans/`); you may also pass the plan text in the `plan` field and the host will use it as a fallback.',
