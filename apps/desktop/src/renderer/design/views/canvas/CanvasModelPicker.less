@@ -6,7 +6,7 @@
   border-color: color-mix(in srgb, var(--border) 80%, transparent);
   background: color-mix(in srgb, var(--canvas-field-bg) 88%, transparent);
 
-  > span:nth-last-child(2) {
+  .canvas-model-picker-trigger-label {
     min-width: 0;
     flex: 1;
     overflow: hidden;
@@ -17,8 +17,10 @@
 }
 
 .canvas-model-picker-trigger.is-compact {
+  // 与同行的其它参数按钮保持一致：不收缩、按内容宽度，避免被挤压到只剩图标。
+  flex: 0 0 auto;
   width: auto;
-  max-width: min(300px, 34vw);
+  max-width: min(280px, 50vw);
   height: 30px;
   padding-inline: 8px;
   border-color: color-mix(in srgb, var(--border-strong) 72%, transparent);
