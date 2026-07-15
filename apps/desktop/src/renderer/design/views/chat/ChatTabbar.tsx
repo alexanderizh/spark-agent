@@ -99,6 +99,16 @@ export function ChatTabbar({
   }
   const hostAgent = resolveAgentDisplay(agents, effectiveHostAgentId ?? teamConfig.hostAgentId)
   const memberCount = countExistingMembers(teamConfig.memberAgentIds, agents)
+  const hostConfiguredModel = hostAgent?.modelId?.trim() || ''
+  const inheritedSessionModel = session?.modelId?.trim() || ''
+  const hostModel = hostConfiguredModel || inheritedSessionModel || '会话默认'
+  const hostModelSource = hostConfiguredModel ? 'Agent 配置' : '沿用会话'
+  const hostAdapter =
+    hostAgent?.agentAdapter === 'codex'
+      ? 'Codex'
+      : hostAgent?.agentAdapter === 'claude'
+        ? 'Claude CLI'
+        : 'Claude SDK'
 
   return (
     <div
@@ -134,6 +144,8 @@ export function ChatTabbar({
                 <span>团队模式</span>
                 <span className="chat-team-status-divider" />
                 <span>Host：{hostAgent?.name ?? '平台管理'}</span>
+                <span>模型：{hostModel}（{hostModelSource}）</span>
+                <span>适配器：{hostAdapter}</span>
                 <span>成员 {memberCount}</span>
               </button>
             )}
@@ -245,5 +257,3 @@ export function ChatTabbar({
     </div>
   )
 }
-
-

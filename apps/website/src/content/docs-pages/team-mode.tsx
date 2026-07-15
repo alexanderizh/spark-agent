@@ -55,6 +55,10 @@ const Body = () => (
 
     <h2 id="dispatch">2. 分派机制</h2>
     <p>Host 调一次任务，团队模式会走这套流程：</p>
+    <p>
+      模型与适配器按「成员 Agent 配置优先、当前会话选择兜底」解析：Host/Member 自己配置了 Provider 或模型时使用自己的配置；未配置模型时沿用切换团队前会话中的模型，若该模型不属于所选 Provider，则回退到 Provider 默认模型。
+      顶部团队状态条和右侧成员详情会标出当前生效模型及其来源。
+    </p>
     <ol>
       <li>
         Spark 给 Host 这一轮注入进程内 MCP server <code>spark_team</code>，暴露唯一一个工具

@@ -2103,6 +2103,80 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(mockState.sdkConfigs[0]?.mcpServers).toHaveProperty('global_search')
   })
 
+  it('uses the team Host Agent model over the previous solo-session model', async () => {
+    seedProvider({
+      id: 'team-host-provider',
+      provider_type: 'anthropic',
+      name: 'Team Host Provider',
+      config_json: JSON.stringify({
+        defaultModel: 'team-host-default',
+        modelIds: ['team-host-model', 'team-host-default'],
+        apiEndpoint: 'https://api.example.test/team-host/anthropic',
+      }),
+      keystore_ref: 'key-team-host',
+      is_default: 0,
+    })
+    mockState.agents.set(
+      'team-host',
+      makeAgent({
+        id: 'team-host',
+        name: 'Team Host',
+        providerProfileId: 'team-host-provider',
+        modelId: 'team-host-model',
+      }),
+    )
+    mockState.agents.set(
+      'team-member',
+      makeAgent({
+        id: 'team-member',
+        name: 'Team Member',
+        providerProfileId: 'tencent-provider',
+      }),
+    )
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      agentId: 'team-host',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Team host model precedence',
+    })
+    const row = mockState.sessions.get(sessionId)
+    if (row == null) throw new Error('expected session row')
+    row.metadata_json = JSON.stringify({
+      team: { enabled: true, hostAgentId: 'team-host', memberAgentIds: ['team-member'] },
+    })
+
+    await service.sendTurn({ sessionId, message: 'use the host configuration' })
+
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+    expect(mockState.sdkConfigs[0]).toMatchObject({
+      model: 'team-host-model',
+      apiEndpoint: 'https://api.example.test/team-host/anthropic',
+    })
+    const teamServer = (
+      mockState.sdkConfigs[0]?.mcpServers as {
+        spark_team: {
+          instance: {
+            tools: Array<{
+              name: string
+              handler: (args: Record<string, unknown>) => Promise<unknown>
+            }>
+          }
+        }
+      }
+    ).spark_team
+    const dispatchTool = teamServer.instance.tools.find((tool) => tool.name === 'agent_dispatch')
+    if (dispatchTool == null) throw new Error('expected agent_dispatch tool')
+    await dispatchTool.handler({ targetAgentId: 'team-member', instruction: 'inherit the session model' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(2))
+    expect(mockState.sdkConfigs[1]).toMatchObject({
+      model: 'glm-5',
+      apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+    })
+  })
+
   it('exposes peer messaging + round controls, and dispatched members respect the resume-safety gate', async () => {
     mockState.agents.set(
       'host-agent',

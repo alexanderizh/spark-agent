@@ -58,6 +58,8 @@ import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
 import { CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { getOperationVisual } from './canvasOperationIcons'
 import { readCharacterSubviews } from './canvasCharacterLibrary'
+import { readAssetKind } from './canvasFilmAssets'
+import type { CanvasPipelineAssetKind } from './canvasPipelineOps'
 import {
   buildCanvasOperationRunViews,
   canvasOperationRunsFingerprint,
@@ -407,6 +409,7 @@ function toFlowNode(
   inlineExtension: CanvasNodeInlineExtension | null,
   assetSubviewCount = 0,
   operationRuns: CanvasOperationRunView[] = [],
+  assetKinds: CanvasPipelineAssetKind[] = [],
   isGeneratedOutput = false,
 ): Node<CanvasFlowNodeData> {
   const inlineToolbarHeight = inlineExtension?.toolbar ? INLINE_NODE_TOOLBAR_HEIGHT : 0
@@ -416,6 +419,7 @@ function toFlowNode(
   const data: CanvasFlowNodeData = {
     actions,
     canvasNode: node,
+    ...(assetKinds.length > 0 ? { assetKinds } : {}),
     ...(assetSubviewCount > 0 ? { assetSubviewCount } : {}),
     ...(operationRuns.length > 0
       ? {
@@ -796,6 +800,34 @@ function CanvasStageInner({
       ),
     [snapshot],
   )
+  const assetKindsByNodeId = useMemo(() => {
+    const assetById = new Map(snapshot.assets.map((asset) => [asset.id, asset] as const))
+    const result = new Map<string, CanvasPipelineAssetKind[]>()
+    const readPipelineKind = (assetId: string | undefined): CanvasPipelineAssetKind | undefined => {
+      const asset = assetId ? assetById.get(assetId) : undefined
+      const kind = asset ? readAssetKind(asset) : null
+      return kind === 'character' || kind === 'scene' || kind === 'prop' || kind === 'effect'
+        ? kind
+        : undefined
+    }
+
+    for (const node of snapshot.nodes) {
+      const kinds = new Set<CanvasPipelineAssetKind>()
+      const directKind = readPipelineKind(node.assetId ?? undefined)
+      if (directKind) kinds.add(directKind)
+      if (isOperationNode(node)) {
+        const latestRun = operationRunsByNodeId.get(node.id)?.find((run) => run.outputs.length > 0)
+        for (const output of latestRun?.outputs ?? []) {
+          const kind = readPipelineKind(
+            output.assetId ?? snapshotNodeById.get(output.nodeId ?? '')?.assetId ?? undefined,
+          )
+          if (kind) kinds.add(kind)
+        }
+      }
+      if (kinds.size > 0) result.set(node.id, [...kinds])
+    }
+    return result
+  }, [operationRunsByNodeId, snapshot.assets, snapshot.nodes, snapshotNodeById])
   const nodes = useMemo(
     () =>
       operationProjection.visibleNodes.map((node) =>
@@ -807,11 +839,13 @@ function CanvasStageInner({
           nodeInlineExtension?.nodeId === node.id ? nodeInlineExtension : null,
           node.assetId ? (assetSubviewCountById.get(node.assetId) ?? 0) : 0,
           operationRunsByNodeId.get(node.id) ?? [],
+          assetKindsByNodeId.get(node.id) ?? [],
           generatedOutputNodeIds.has(node.id),
         ),
       ),
     [
       assetSubviewCountById,
+      assetKindsByNodeId,
       generatedOutputNodeIds,
       lineageSummaries,
       nodeActions,

@@ -2264,7 +2264,6 @@ export interface AgentExportPayload {
     prompt: string
     skillIds: string[]
     disabledSkillIds: string[]
-    mcpServerIds: string[]
     ruleIds: string[]
     hookConfig: Record<string, unknown>
     workflowId: string | null

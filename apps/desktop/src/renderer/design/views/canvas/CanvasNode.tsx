@@ -28,6 +28,7 @@ import {
   pickCanvasNodeMinSize,
 } from './canvasNodeSize'
 import { getNodePipelineActions } from './canvasPipeline'
+import type { CanvasPipelineAssetKind } from './canvasPipelineOps'
 import {
   CANVAS_GENERAL_CREATE_OPERATION_GROUPS,
   CANVAS_PIPELINE_CREATE_OPERATIONS,
@@ -388,6 +389,8 @@ function OperationOutputDeck({
 
 export type CanvasFlowNodeData = {
   canvasNode: SparkCanvasNode
+  /** 节点自身或最近一次任务产物关联的影视资产类型，用于放宽同类型流水线入口。 */
+  assetKinds?: CanvasPipelineAssetKind[]
   assetSubviewCount?: number
   /** 当前操作节点的运行历史与各次产物，仅用于视图聚合。 */
   operationRuns?: CanvasOperationRunView[]
@@ -587,6 +590,7 @@ export const CanvasNode = memo(function CanvasNode({
     canvasNode: node,
     assetSubviewCount = 0,
     operationRuns = [],
+    assetKinds = [],
     isGeneratedOutput = false,
     baseRenderedHeight = node.height,
     cardChromeExtraHeight = 0,
@@ -651,7 +655,9 @@ export const CanvasNode = memo(function CanvasNode({
 
   const hasOperationOutput = !isTask || Boolean(operationOutputState.primaryOutput)
   const canCreateOperationFromNode = !isTask || hasOperationOutput
-  const pipelineActions = contentNode ? getNodePipelineActions(contentNode) : []
+  const pipelineActions = contentNode
+    ? getNodePipelineActions(contentNode, { assetKinds })
+    : []
   // 子类型切换（仅 image/text）：当前子类型 + 可选项，供右键菜单「切换类型」渲染。
   const subtypeSwitch = useMemo(() => {
     if (!isSubtypeSwitchable(node)) return null

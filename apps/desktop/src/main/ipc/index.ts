@@ -21,6 +21,7 @@ import {
   resolveCanvasTextTokenBudget,
 } from './canvasTextTaskDiagnostics.js'
 import { PendingUserQuestionStore } from './user-question-store.js'
+import { buildDetachedQuestionContinuationMessage } from './user-question-recovery.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
 import {
@@ -1800,6 +1801,14 @@ const pendingUserQuestions = new PendingUserQuestionStore({
       reason,
     })
   },
+  onDetachedAnswer: async (request, answers) => {
+    const message = buildDetachedQuestionContinuationMessage(request, answers)
+    log.warn('User answered after the SDK question stream detached; enqueueing recovery turn', {
+      sessionId: request.sessionId,
+      questionId: request.questionId,
+    })
+    await getSessionService().submitTurn({ sessionId: request.sessionId, message })
+  },
 })
 const remoteTurnTargets = new Map<string, { connectionId: string; externalId: string }>()
 
@@ -2047,7 +2056,7 @@ export function resolveUserQuestion(
   sessionId: string,
   questionId: string,
   answers: Record<string, unknown>,
-): boolean {
+): Promise<boolean> {
   return pendingUserQuestions.resolve(sessionId, questionId, answers)
 }
 
@@ -3018,7 +3027,7 @@ export function registerAllIpcHandlers(): void {
     log.info(
       `session:answer-question requested, sessionId=${req.sessionId} questionId=${req.questionId}`,
     )
-    if (!resolveUserQuestion(req.sessionId, req.questionId, req.answers)) {
+    if (!(await resolveUserQuestion(req.sessionId, req.questionId, req.answers))) {
       throw new SparkError('NOT_FOUND', '该提问已结束或不属于当前会话，请刷新后重试。')
     }
     return { ok: true }
@@ -5270,7 +5279,6 @@ export function registerAllIpcHandlers(): void {
           prompt: a.prompt,
           skillIds: a.skillIds,
           disabledSkillIds: a.disabledSkillIds,
-          mcpServerIds: a.mcpServerIds,
           ruleIds: a.ruleIds,
           hookConfig: a.hookConfig,
           workflowId: a.workflowId ?? null,

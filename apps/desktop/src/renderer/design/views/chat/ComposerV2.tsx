@@ -2585,15 +2585,22 @@ export function ComposerV2({
 
     const provider =
       providers.find((item) => item.id === agent.providerProfileId) ??
+      providers.find((item) => item.id === session?.providerProfileId) ??
       getPreferredProvider(
         providers,
         { ...readComposerPrefs(), agentId: agent.id },
         agent.agentAdapter,
       )
+    const configuredModel = agent.modelId?.trim() ?? ''
+    const previousSessionModel = session?.modelId?.trim() || draftModelId.trim()
+    const inheritedModel =
+      provider != null && previousSessionModel.length > 0 && providerSupportsModel(provider, previousSessionModel)
+        ? previousSessionModel
+        : ''
     const model =
       provider != null && isLocalCliProvider(provider)
         ? getProviderDefaultModel(provider)
-        : (agent.modelId ?? provider?.defaultModel ?? provider?.modelIds[0] ?? '')
+        : configuredModel || inheritedModel || provider?.defaultModel || provider?.modelIds[0] || ''
     if (provider != null) setSelectedProviderId(provider.id)
     setDraftModelId(model)
     writeComposerPrefs({

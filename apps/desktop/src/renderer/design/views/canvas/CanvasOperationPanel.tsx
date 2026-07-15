@@ -1043,36 +1043,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     [customParams, modelParamDraft, parameterFields, selectedCapability?.defaults],
   )
 
-  const persistLastUsedPreset = useCallback(() => {
-    if (!configurationTouchedRef.current) return
-    const runtimeDraft = buildRuntimeDraft()
-    const modelParams = buildCurrentModelParams()
-    writeCanvasLastUsedPresetTarget(presetTargetId, {
-      ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
-      ...(runtimeDraft.agentId ? { agentId: runtimeDraft.agentId } : {}),
-      ...(runtimeDraft.providerProfileId
-        ? { providerProfileId: runtimeDraft.providerProfileId }
-        : {}),
-      ...(runtimeDraft.manifestId ? { manifestId: runtimeDraft.manifestId } : {}),
-      ...(runtimeDraft.modelId ? { modelId: runtimeDraft.modelId } : {}),
-      ...(runtimeDraft.skillIds ? { skillIds: runtimeDraft.skillIds } : {}),
-      ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
-    })
-  }, [buildCurrentModelParams, buildRuntimeDraft, negativePrompt, presetTargetId])
-
-  const handleClose = useCallback(() => {
-    persistLastUsedPreset()
-    onClose()
-  }, [onClose, persistLastUsedPreset])
-
-  const persistOnUnmountRef = useRef(persistLastUsedPreset)
-  useEffect(() => {
-    persistOnUnmountRef.current = persistLastUsedPreset
-  }, [persistLastUsedPreset])
-  useEffect(() => {
-    return () => persistOnUnmountRef.current()
-  }, [])
-
   const handleTextAgentChange = useCallback(
     (agentId: string) => {
       const nextAgent = agents.find((agent) => agent.id === agentId)
@@ -1180,6 +1150,36 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       selectedTextProviderId,
     ],
   )
+
+  const persistLastUsedPreset = useCallback(() => {
+    if (!configurationTouchedRef.current) return
+    const runtimeDraft = buildRuntimeDraft()
+    const modelParams = buildCurrentModelParams()
+    writeCanvasLastUsedPresetTarget(presetTargetId, {
+      ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
+      ...(runtimeDraft.agentId ? { agentId: runtimeDraft.agentId } : {}),
+      ...(runtimeDraft.providerProfileId
+        ? { providerProfileId: runtimeDraft.providerProfileId }
+        : {}),
+      ...(runtimeDraft.manifestId ? { manifestId: runtimeDraft.manifestId } : {}),
+      ...(runtimeDraft.modelId ? { modelId: runtimeDraft.modelId } : {}),
+      ...(runtimeDraft.skillIds ? { skillIds: runtimeDraft.skillIds } : {}),
+      ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
+    })
+  }, [buildCurrentModelParams, buildRuntimeDraft, negativePrompt, presetTargetId])
+
+  const handleClose = useCallback(() => {
+    persistLastUsedPreset()
+    onClose()
+  }, [onClose, persistLastUsedPreset])
+
+  const persistOnUnmountRef = useRef(persistLastUsedPreset)
+  useEffect(() => {
+    persistOnUnmountRef.current = persistLastUsedPreset
+  }, [persistLastUsedPreset])
+  useEffect(() => {
+    return () => persistOnUnmountRef.current()
+  }, [])
 
   // 把 preset/custom 草稿解析成结构化时长配置。
   // 分镜节点永远返回合法值——非法输入（空 / 非正）回退默认，绝不放任 {maxClip} 占位槽裸奔泄漏给 LLM；

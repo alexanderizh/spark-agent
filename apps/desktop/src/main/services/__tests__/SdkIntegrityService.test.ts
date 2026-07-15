@@ -95,7 +95,7 @@ describe('SdkIntegrityService', () => {
     const codexSdk = result.sdks.find((sdk) => sdk.packageName === '@openai/codex-sdk')
 
     expect(codexSdk?.installed).toBe(true)
-    expect(codexSdk?.installedVersion).toBe('0.143.0')
+    expect(codexSdk?.installedVersion).toBe('0.144.5')
   })
 
   it('installs SDK packages into apps/desktop during development', async () => {
@@ -110,7 +110,9 @@ describe('SdkIntegrityService', () => {
     const result = await installSdk('@openai/codex-sdk')
 
     expect(result.success).toBe(true)
-    const spawnOptions = mocks.spawn.mock.calls[0]?.[2] as { cwd?: string; shell?: boolean } | undefined
+    const spawnOptions = mocks.spawn.mock.calls[0]?.[2] as
+      | { cwd?: string; shell?: boolean }
+      | undefined
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/^pnpm(\.cmd)?$/),
       ['add', '@openai/codex-sdk@latest'],
@@ -171,7 +173,7 @@ describe('SdkIntegrityService', () => {
       dependencies?: Record<string, string>
     }
 
-    expect(pkg.dependencies?.['@openai/codex-sdk']).toBe('0.143.0')
+    expect(pkg.dependencies?.['@openai/codex-sdk']).toBe('0.144.5')
   })
 
   it('unpacks Codex platform binaries from Electron asar archives', () => {

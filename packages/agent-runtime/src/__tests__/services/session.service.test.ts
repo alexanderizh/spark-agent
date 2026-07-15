@@ -18,6 +18,7 @@ import {
   shouldRunTurnPostProcessing,
 } from '../../services/session.service.js'
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
+import { SessionQuestionGate } from '../../services/session-question-gate.js'
 import { CodexCliExecutor, CodexSdkExecutor } from '../../sdk/index.js'
 
 function baseEvent(
@@ -48,10 +49,7 @@ describe('SessionService recovery helpers', () => {
     const onApprovalCancel = vi.fn()
     const platformStop = vi.fn(async () => undefined)
     const service = Object.create(SessionService.prototype) as {
-      activeExecutionPromises: Map<
-        typeof execution,
-        { sessionId: string; promise: Promise<void> }
-      >
+      activeExecutionPromises: Map<typeof execution, { sessionId: string; promise: Promise<void> }>
       activeLoops: Map<string, typeof execution>
       dispose: () => Promise<void>
       startingSessions: Set<string>
@@ -59,6 +57,7 @@ describe('SessionService recovery helpers', () => {
       onApprovalCancel: (sessionId: string) => void
       platformBridge: { stop: () => Promise<void> }
       pendingPlanApprovals: Set<string>
+      pendingUserQuestionGate: SessionQuestionGate
       pendingTurns: Map<string, unknown[]>
       teamDispatchService: { cancelAllAndWait: () => Promise<void> }
       teamMcpHandlesByTurn: Map<string, unknown>
@@ -72,6 +71,7 @@ describe('SessionService recovery helpers', () => {
     service.onApprovalCancel = onApprovalCancel
     service.platformBridge = { stop: platformStop }
     service.pendingPlanApprovals = new Set()
+    service.pendingUserQuestionGate = new SessionQuestionGate()
     service.pendingTurns = new Map()
     service.teamDispatchService = { cancelAllAndWait: vi.fn(() => teamDispatchDone) }
     service.teamMcpHandlesByTurn = new Map()
@@ -103,6 +103,7 @@ describe('SessionService recovery helpers', () => {
       activeLoops: Map<string, unknown>
       disposing: boolean
       pendingPlanApprovals: Set<string>
+      pendingUserQuestionGate: SessionQuestionGate
       pendingTurns: Map<string, unknown[]>
       startingSessions: Set<string>
       startNextQueuedTurn: (sessionId: string) => void
@@ -110,6 +111,32 @@ describe('SessionService recovery helpers', () => {
     service.activeLoops = new Map()
     service.disposing = true
     service.pendingPlanApprovals = new Set()
+    service.pendingUserQuestionGate = new SessionQuestionGate()
+    service.pendingTurns = new Map([['session-1', [queuedTurn]]])
+    service.startingSessions = new Set()
+
+    service.startNextQueuedTurn('session-1')
+
+    expect(service.pendingTurns.get('session-1')).toEqual([queuedTurn])
+  })
+
+  it('does not start queued work while a structured user question is pending', () => {
+    const queuedTurn = { turnId: 'turn-1' }
+    const gate = new SessionQuestionGate()
+    gate.enter('session-1')
+    const service = Object.create(SessionService.prototype) as {
+      activeLoops: Map<string, unknown>
+      disposing: boolean
+      pendingPlanApprovals: Set<string>
+      pendingUserQuestionGate: SessionQuestionGate
+      pendingTurns: Map<string, unknown[]>
+      startingSessions: Set<string>
+      startNextQueuedTurn: (sessionId: string) => void
+    }
+    service.activeLoops = new Map()
+    service.disposing = false
+    service.pendingPlanApprovals = new Set()
+    service.pendingUserQuestionGate = gate
     service.pendingTurns = new Map([['session-1', [queuedTurn]]])
     service.startingSessions = new Set()
 
