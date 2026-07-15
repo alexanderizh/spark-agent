@@ -1653,8 +1653,8 @@ export class SessionService {
     const enabledWorkflowWorkerIds = new Set(workflowMembers.map((member) => member.id))
     // Provider / model：mention 时优先用被 @ Agent 自己的配置，未配置则回退会话默认。
     const effectiveProviderProfileId = isMentionTurn
-      ? (agent.providerProfileId?.trim() || session.provider_profile_id)
-      : (runtimeAgent.providerProfileId?.trim() || session.provider_profile_id)
+      ? agent.providerProfileId?.trim() || session.provider_profile_id
+      : runtimeAgent.providerProfileId?.trim() || session.provider_profile_id
     if (effectiveProviderProfileId == null) {
       throw new Error(`Session ${sessionId} has no provider profile`)
     }
@@ -1685,8 +1685,8 @@ export class SessionService {
     const modelProfilesForRouting = new ModelProfileRepository(this.db).list()
     const providersForRouting = providerRowsForModelRouter(providerRepo.listAll())
     const requestedModel = isMentionTurn
-      ? (agent.modelId?.trim() || session.model_id)
-      : (runtimeAgent.modelId?.trim() || session.model_id)
+      ? agent.modelId?.trim() || session.model_id
+      : runtimeAgent.modelId?.trim() || session.model_id
     const loadProvider = (providerProfileId: string) => {
       const row = providerRepo.get(providerProfileId)
       if (row == null) {
@@ -1746,7 +1746,8 @@ export class SessionService {
       provider = loadProvider(effectiveRuntimeProviderProfileId)
       isLocalCli = isBuiltInLocalCliProvider(provider)
       config = JSON.parse(provider.config_json) as typeof config
-      const configuredAgentModel = (isMentionTurn ? agent.modelId : runtimeAgent.modelId)?.trim() ?? ''
+      const configuredAgentModel =
+        (isMentionTurn ? agent.modelId : runtimeAgent.modelId)?.trim() ?? ''
       const sessionModel = session.model_id?.trim() ?? ''
       const configuredModels = Array.isArray(config.modelIds)
         ? config.modelIds.filter((item): item is string => typeof item === 'string')
@@ -1758,7 +1759,7 @@ export class SessionService {
           : ''
       model = isLocalCli
         ? getLocalCliDefaultModel(provider)
-        : (configuredAgentModel || inheritedModel || config.defaultModel || config.model || '')
+        : configuredAgentModel || inheritedModel || config.defaultModel || config.model || ''
       if (model.length === 0) {
         throw new Error(`Provider ${provider.id} has no default model configured`)
       }
@@ -2252,7 +2253,9 @@ export class SessionService {
           }
           consoScopes.push({ scope: 'agent', scopeRef: runtimeAgent.id })
           // info 级让"整合 job 是否被触发"在默认日志级别下可观测（审查 HIGH#17）
-          log.info(`memory consolidation trigger fired for agent=${runtimeAgent.id} (fire-and-forget)`)
+          log.info(
+            `memory consolidation trigger fired for agent=${runtimeAgent.id} (fire-and-forget)`,
+          )
           void consolidationService.maybeConsolidate(consoScopes)
         } catch (err) {
           log.warn(
@@ -2621,9 +2624,7 @@ export class SessionService {
         enableCheckpoints: true,
         sdkSessionId,
         continueSession: canResumeSdkSession,
-        ...(this.onHookTrigger != null
-          ? { applicationHookCallback: this.onHookTrigger }
-          : {}),
+        ...(this.onHookTrigger != null ? { applicationHookCallback: this.onHookTrigger } : {}),
         ...(this.onApproval != null
           ? {
               approvalCallback: async (
@@ -3464,7 +3465,13 @@ export class SessionService {
                   this.emitAndPersist(
                     sessionId,
                     turnId,
-                    { ...makeBase(), type: 'file_change', changeType, path: abs },
+                    {
+                      ...makeBase(),
+                      type: 'file_change',
+                      changeType,
+                      path: abs,
+                      collectionSource: 'workspace_snapshot',
+                    },
                     eventRepo,
                   )
                 }
@@ -3665,6 +3672,7 @@ export class SessionService {
             type: 'file_change',
             changeType: change.changeType,
             path: change.path,
+            collectionSource: 'git_fallback',
           },
           eventRepo,
         )
@@ -5845,11 +5853,11 @@ export class SessionService {
       model = (
         isLocalCli
           ? getLocalCliDefaultModel(provider)
-          : (member.modelId?.trim() ||
-              inheritedModel ||
-              providerConfig.defaultModel ||
-              providerConfig.model ||
-              '')
+          : member.modelId?.trim() ||
+            inheritedModel ||
+            providerConfig.defaultModel ||
+            providerConfig.model ||
+            ''
       ).trim()
       if (!model) throw new Error('Member has no resolvable model')
     }
@@ -6034,9 +6042,7 @@ export class SessionService {
       enableCheckpoints: false,
       sdkSessionId: memberSdkSessionId,
       continueSession: canContinueDiscussionSession,
-      ...(this.onHookTrigger != null
-        ? { applicationHookCallback: this.onHookTrigger }
-        : {}),
+      ...(this.onHookTrigger != null ? { applicationHookCallback: this.onHookTrigger } : {}),
       ...(this.onApproval != null
         ? {
             approvalCallback: async (
@@ -6558,23 +6564,19 @@ export class SessionService {
       next.attachments,
       next.mentionAgentId,
     )
-      .catch(error => this.handleQueuedTurnStartFailure(sessionId, next, error))
+      .catch((error) => this.handleQueuedTurnStartFailure(sessionId, next, error))
       .finally(() => {
         this.startingSessions.delete(sessionId)
         if (!this.activeLoops.has(sessionId)) this.startNextQueuedTurn(sessionId)
       })
   }
 
-  private handleQueuedTurnStartFailure(
-    sessionId: string,
-    turn: PendingTurn,
-    error: unknown,
-  ): void {
+  private handleQueuedTurnStartFailure(sessionId: string, turn: PendingTurn, error: unknown): void {
     const eventRepo = new EventRepository(this.db)
     const sessionRepo = new SessionRepository(this.db)
     const existing = eventRepo.queryBySession({ sessionId, turnId: turn.turnId, limit: 200 }).events
-    const eventTypes = new Set(existing.map(item => item.event_type))
-    const hasTerminalStatus = existing.some(item => {
+    const eventTypes = new Set(existing.map((item) => item.event_type))
+    const hasTerminalStatus = existing.some((item) => {
       if (item.event_type !== 'agent_status') return false
       try {
         const status = (JSON.parse(item.event_json) as { status?: string }).status
@@ -6597,30 +6599,45 @@ export class SessionService {
       seq: 0,
     })
     if (!eventTypes.has('user_message')) {
-      this.emitAndPersist(sessionId, turn.turnId, {
-        ...base(),
-        type: 'user_message',
-        content: turn.message,
-        ...(turn.attachments ? { attachments: turn.attachments } : {}),
-      }, eventRepo)
+      this.emitAndPersist(
+        sessionId,
+        turn.turnId,
+        {
+          ...base(),
+          type: 'user_message',
+          content: turn.message,
+          ...(turn.attachments ? { attachments: turn.attachments } : {}),
+        },
+        eventRepo,
+      )
     }
     if (!eventTypes.has('agent_error')) {
-      this.emitAndPersist(sessionId, turn.turnId, {
-        ...base(),
-        type: 'agent_error',
-        code: isPlatformCredentialError ? 'PLATFORM_CREDENTIAL_UNAVAILABLE' : 'TURN_START_FAILED',
-        message,
-        retryable: true,
-      }, eventRepo)
+      this.emitAndPersist(
+        sessionId,
+        turn.turnId,
+        {
+          ...base(),
+          type: 'agent_error',
+          code: isPlatformCredentialError ? 'PLATFORM_CREDENTIAL_UNAVAILABLE' : 'TURN_START_FAILED',
+          message,
+          retryable: true,
+        },
+        eventRepo,
+      )
     }
-    this.emitAndPersist(sessionId, turn.turnId, {
-      ...base(),
-      type: 'agent_status',
-      status: 'error',
-      message: isPlatformCredentialError
-        ? '平台模型凭据暂不可用，请在账号中心选择“在本机继续”后重试'
-        : 'Queued turn failed to start',
-    }, eventRepo)
+    this.emitAndPersist(
+      sessionId,
+      turn.turnId,
+      {
+        ...base(),
+        type: 'agent_status',
+        status: 'error',
+        message: isPlatformCredentialError
+          ? '平台模型凭据暂不可用，请在账号中心选择“在本机继续”后重试'
+          : 'Queued turn failed to start',
+      },
+      eventRepo,
+    )
     sessionRepo.updateStatus(sessionId, 'error')
     new TurnRequestRepository(this.db).markFailed(turn.turnId, message)
     log.error('queued turn failed to start', { sessionId, turnId: turn.turnId, error: message })

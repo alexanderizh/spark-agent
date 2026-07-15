@@ -64,9 +64,7 @@ import {
 } from './chat/ChatDocumentOutput'
 import { MarkdownText } from './chat/ChatMarkdown'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
-import {
-  ModelSwitchNotice,
-} from './chat/ModelSwitchNotice'
+import { ModelSwitchNotice } from './chat/ModelSwitchNotice'
 import {
   readModelSwitchMarkers,
   saveModelSwitchMarker,
@@ -241,11 +239,7 @@ import {
   isClaudeAdapter,
   isProviderCompatibleWithAdapter,
 } from '../utils/provider-adapter'
-import {
-  getAgentAvatarConfig,
-  hasCustomAvatar,
-  resolveAvatarSrc,
-} from '../avatar'
+import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../avatar'
 import type {
   UIMessage,
   UIBlock,
@@ -4031,6 +4025,7 @@ function renderBlocks(
               files={block.files}
               totalAdds={block.totalAdds}
               totalDels={block.totalDels}
+              {...(block.generatedGroups != null ? { generatedGroups: block.generatedGroups } : {})}
               {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
               {...(canUndo
                 ? {

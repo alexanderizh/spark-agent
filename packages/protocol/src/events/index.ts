@@ -464,6 +464,8 @@ export interface FileChangeEvent extends BaseEvent {
   diff?: string
   /** 文件大小（bytes） */
   sizeBytes?: number
+  /** 变更来源；缺省表示 Agent 的直接编辑事件（兼容历史事件）。 */
+  collectionSource?: 'agent' | 'workspace_snapshot' | 'git_fallback'
   /** Team Mode：该文件变更来自某个被调度成员 Agent 时的归属信息 */
   teamMemberContext?: TeamMemberEventContext
 }
