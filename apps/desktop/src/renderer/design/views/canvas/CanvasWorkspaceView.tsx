@@ -4473,6 +4473,23 @@ export function CanvasWorkspaceView({
         height: input.sourceNode.height,
       })
 
+      // 把新切分节点接到来源节点的下游：删除 source→child，改为 newPrimary→child，
+      // 让切分产物插入到来源节点与其后续子节点之间（放在原节点后面、连线到后续子节点）。
+      const rewireDownstreamTo = async (newPrimaryId: string) => {
+        const sourceId = input.sourceNode.id
+        const downstreamEdges = snapshot.edges.filter(
+          (edge) => edge.sourceNodeId === sourceId && edge.targetNodeId !== newPrimaryId,
+        )
+        if (downstreamEdges.length === 0) return
+        const childIds = Array.from(new Set(downstreamEdges.map((edge) => edge.targetNodeId)))
+        await deleteEdges(downstreamEdges.map((edge) => edge.id))
+        await Promise.all(
+          childIds.map((childId) =>
+            connectNodes({ sourceNodeId: newPrimaryId, targetNodeId: childId }),
+          ),
+        )
+      }
+
       if (!shouldGroup) {
         const image = preparedImages[0]
         if (!image) return
@@ -4491,6 +4508,7 @@ export function CanvasWorkspaceView({
             title: image.title ?? `${input.sourceNode.title ?? '图片'} · 宫格切分`,
           })
           await connectNodes({ sourceNodeId: input.sourceNode.id, targetNodeId: imageNode.id })
+          await rewireDownstreamTo(imageNode.id)
           setSelectedNodeIds([imageNode.id])
         }
         setGridSplitImageNodeId(null)
@@ -4498,19 +4516,8 @@ export function CanvasWorkspaceView({
         return
       }
 
-      const gridMetrics = getImageGridMetrics(preparedImages)
-      const groupSize = {
-        width: Math.max(360, gridMetrics.width + GROUP_IMAGE_PADDING_X * 2),
-        height: Math.max(
-          220,
-          GROUP_IMAGE_HEADER_HEIGHT + gridMetrics.height + GROUP_IMAGE_PADDING_BOTTOM,
-        ),
-      }
-      const groupPosition = positionNodeInViewport(
-        canvasViewportRef.current,
-        groupSize,
-        preferredPosition,
-      )
+      // 放在来源节点右侧（与单张切分一致），而不是视口居中。
+      const groupPosition = preferredPosition
       const placedImages = layoutGroupedImages(preparedImages, groupPosition)
       const createdNodeIds: string[] = []
       const nodeTitleById = new Map<string, string>()
@@ -4559,6 +4566,7 @@ export function CanvasWorkspaceView({
             title: `${input.sourceNode.title ?? '图片'} · 宫格切分 ${input.rows}x${input.cols}`,
           })
           await connectNodes({ sourceNodeId: input.sourceNode.id, targetNodeId: groupNode.id })
+          await rewireDownstreamTo(groupNode.id)
           selection = [groupNode.id]
         } else {
           for (const nodeId of createdNodeIds) {
@@ -4573,7 +4581,7 @@ export function CanvasWorkspaceView({
       setGridSplitImageNodeId(null)
       message.success(`已生成 ${createdNodeIds.length} 张宫格切分图片`)
     },
-    [connectNodes, createGroupNode, createImageNode, patchNodes, snapshot],
+    [connectNodes, createGroupNode, createImageNode, deleteEdges, patchNodes, snapshot],
   )
 
   const handleUndoCanvasChange = useCallback(async () => {
