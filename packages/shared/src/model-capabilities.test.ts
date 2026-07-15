@@ -6,8 +6,6 @@ describe('ModelCapabilityRegistry', () => {
     expect(ModelCapabilityRegistry.getCapabilities('anthropic/claude-sonnet-4.5')?.contextWindow).toBe(200_000)
     expect(ModelCapabilityRegistry.getCapabilities('openai/gpt-5-codex')?.contextWindow).toBe(400_000)
     expect(ModelCapabilityRegistry.getCapabilities('google/gemini-2.5-pro-preview')?.contextWindow).toBe(1_048_576)
-    expect(ModelCapabilityRegistry.getCapabilities('deepseek-v4-flash')?.maxOutputTokens).toBe(384_000)
-    expect(ModelCapabilityRegistry.getCapabilities('glm-5.2')?.maxOutputTokens).toBe(131_072)
   })
 
   it('provides stable context window fallbacks for runtime and UI', () => {

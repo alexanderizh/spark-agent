@@ -1,42 +1,48 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildCanvasTextRawResponse,
+  CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
   resolveCanvasTextMaxTokens,
   resolveCanvasTextTokenBudget,
-  GENERAL_CONTEXT_DERIVED_MAX_TOKENS_CAP,
-  STORYBOARD_CONTEXT_DERIVED_MAX_TOKENS_CAP,
-  STORYBOARD_CONTEXT_DERIVED_MIN_MAX_TOKENS,
 } from './canvasTextTaskDiagnostics.js'
 
 describe('canvasTextTaskDiagnostics', () => {
-  it('uses model capability max output for known long-context storyboard models', () => {
+  it('uses the configured provider context window with a 15% reserve', () => {
     expect(
       resolveCanvasTextTokenBudget({
-        model: 'deepseek-v4-flash',
+        providerContextWindow: 1_000_000,
         taskPipelineRole: 'shot',
         prompt: '短场次剧本',
       }),
     ).toMatchObject({
-      maxTokens: 384_000,
-      source: 'model_capability',
-      modelContextWindow: 1_000_000,
-      modelMaxOutputTokens: 384_000,
+      maxTokens: 850_000,
+      source: 'context_window_derived',
+      providerContextWindow: 1_000_000,
+      contextWindow: 1_000_000,
+      contextReserveRatio: CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
     })
   })
 
-  it('derives a larger storyboard budget from provider context when model capability is unknown', () => {
+  it('uses the default 200K context when no provider override is set', () => {
     const budget = resolveCanvasTextTokenBudget({
-      providerSupportsMillionContext: true,
-      model: 'custom-storyboard-model',
-      taskPipelineRole: 'shot',
-      prompt: '长文本'.repeat(7_000),
+      prompt: '短文本',
     })
 
     expect(budget.source).toBe('context_window_derived')
-    expect(budget.maxTokens).toBe(STORYBOARD_CONTEXT_DERIVED_MAX_TOKENS_CAP)
+    expect(budget.contextWindow).toBe(200_000)
+    expect(budget.maxTokens).toBe(170_000)
   })
 
-  it('preserves explicit maxTokens overrides', () => {
+  it('supports a manually configured context window', () => {
+    expect(
+      resolveCanvasTextMaxTokens({
+        providerContextWindow: 256_000,
+        prompt: '普通文本',
+      }),
+    ).toBe(217_600)
+  })
+
+  it('preserves explicit maxTokens overrides within the derived budget', () => {
     expect(
       resolveCanvasTextMaxTokens({
         requestedMaxTokens: 2048,
@@ -46,37 +52,37 @@ describe('canvasTextTaskDiagnostics', () => {
     ).toBe(2048)
   })
 
-  it('does not force a default output budget for ordinary text tasks', () => {
+  it('clamps an explicit request to the context-derived budget', () => {
     expect(
       resolveCanvasTextMaxTokens({
-        taskPipelineRole: 'screenplay',
+        requestedMaxTokens: 200_000,
         prompt: '普通文本生成',
       }),
-    ).toBeUndefined()
+    ).toBe(170_000)
   })
 
-  it('raises ordinary text-task budgets when provider context is explicitly configured', () => {
+  it('also clamps provider output settings to the configured context window', () => {
     expect(
       resolveCanvasTextTokenBudget({
-        providerContextWindow: 1_000_000,
-        taskPipelineRole: 'screenplay',
+        providerContextWindow: 200_000,
+        providerMaxTokens: 128_000,
         prompt: '长文改写',
       }),
     ).toMatchObject({
-      source: 'context_window_derived',
-      maxTokens: GENERAL_CONTEXT_DERIVED_MAX_TOKENS_CAP,
-      providerContextWindow: 1_000_000,
+      source: 'provider_profile',
+      maxTokens: 128_000,
+      providerMaxTokens: 128_000,
+      contextWindow: 200_000,
     })
   })
 
-  it('still keeps a safe minimum derived budget for long prompts on storyboard tasks', () => {
+  it('reduces the output budget when the prompt consumes the context reserve', () => {
     expect(
       resolveCanvasTextTokenBudget({
         providerContextWindow: 20_000,
-        taskPipelineRole: 'shot',
-        prompt: '超长文本'.repeat(20_000),
+        prompt: '超长文本'.repeat(5_000),
       }).maxTokens,
-    ).toBe(STORYBOARD_CONTEXT_DERIVED_MIN_MAX_TOKENS)
+    ).toBe(4_000)
   })
 
   it('stores output diagnostics without duplicating system prompt or compiled prompt', () => {
@@ -92,8 +98,10 @@ describe('canvasTextTaskDiagnostics', () => {
       relationManifest: [],
       taskPipelineRole: 'shot',
       outputText: '{"shots":[{"index":1},{"index":2}',
-      effectiveMaxTokens: 384_000,
-      maxTokensSource: 'model_capability',
+      effectiveMaxTokens: 850_000,
+      maxTokensSource: 'context_window_derived',
+      contextWindow: 1_000_000,
+      contextReserveRatio: CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
       providerFinishReason: 'length',
       reasoningContentChars: 24_000,
     })
@@ -103,8 +111,10 @@ describe('canvasTextTaskDiagnostics', () => {
     expect(raw).toMatchObject({
       providerProfileId: 'provider-1',
       model: 'deepseek-v4-flash',
-      maxTokens: 384_000,
-      maxTokensSource: 'model_capability',
+      maxTokens: 850_000,
+      maxTokensSource: 'context_window_derived',
+      contextWindow: 1_000_000,
+      contextReserveRatio: CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
       providerFinishReason: 'length',
       reasoningContentChars: 24_000,
       truncation: {

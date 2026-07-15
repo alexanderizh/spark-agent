@@ -1,19 +1,10 @@
-import {
-  ModelCapabilityRegistry,
-} from '@spark/shared'
+import { resolveProviderContextWindow } from '@spark/shared'
 
-export const STORYBOARD_CONTEXT_DERIVED_MIN_MAX_TOKENS = 8_192
-export const STORYBOARD_CONTEXT_DERIVED_MAX_TOKENS_CAP = 65_536
-export const STORYBOARD_PROMPT_OVERHEAD_TOKENS = 2_048
-export const STORYBOARD_OUTPUT_RESERVE_TOKENS = 4_096
-export const GENERAL_CONTEXT_DERIVED_MIN_MAX_TOKENS = 8_192
-export const GENERAL_CONTEXT_DERIVED_MAX_TOKENS_CAP = 65_536
+/** 画布文本任务始终为输入、系统提示词和输出预留 15% 的上下文空间。 */
+export const CANVAS_TEXT_CONTEXT_RESERVE_RATIO = 0.15
+const CANVAS_TEXT_CONTEXT_BUDGET_RATIO = 1 - CANVAS_TEXT_CONTEXT_RESERVE_RATIO
 
-export type CanvasTextMaxTokensSource =
-  | 'request'
-  | 'provider_profile'
-  | 'model_capability'
-  | 'context_window_derived'
+export type CanvasTextMaxTokensSource = 'request' | 'provider_profile' | 'context_window_derived'
 
 export type CanvasTextTokenBudget = {
   maxTokens?: number
@@ -21,8 +12,8 @@ export type CanvasTextTokenBudget = {
   promptTokensEstimate?: number
   providerMaxTokens?: number
   providerContextWindow?: number
-  modelContextWindow?: number
-  modelMaxOutputTokens?: number
+  contextWindow?: number
+  contextReserveRatio?: number
 }
 
 type CanvasTextRawResponseInput = {
@@ -31,106 +22,75 @@ type CanvasTextRawResponseInput = {
   providerName: string
   model: string
   apiKind: 'chat' | 'responses'
-  agentId?: string | null
-  agentName?: string | null
-  skillIds?: string[]
-  relationManifest?: unknown
-  taskPipelineRole?: string | null
-  outputText?: string
-  statusCode?: number
-  errorBody?: string
-  effectiveMaxTokens?: number
-  maxTokensSource?: CanvasTextMaxTokensSource
-  promptTokensEstimate?: number
-  providerMaxTokens?: number
-  providerContextWindow?: number
-  modelContextWindow?: number
-  modelMaxOutputTokens?: number
-  providerFinishReason?: string
-  usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
-  reasoningContentChars?: number
+  agentId?: string | null | undefined
+  agentName?: string | null | undefined
+  skillIds?: string[] | undefined
+  relationManifest?: unknown | undefined
+  taskPipelineRole?: string | null | undefined
+  outputText?: string | undefined
+  statusCode?: number | undefined
+  errorBody?: string | undefined
+  effectiveMaxTokens?: number | undefined
+  maxTokensSource?: CanvasTextMaxTokensSource | undefined
+  promptTokensEstimate?: number | undefined
+  providerMaxTokens?: number | undefined
+  providerContextWindow?: number | undefined
+  contextWindow?: number | undefined
+  contextReserveRatio?: number | undefined
+  providerFinishReason?: string | undefined
+  usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined
+  reasoningContentChars?: number | undefined
 }
 
 export function resolveCanvasTextTokenBudget(input: {
-  requestedMaxTokens?: number
-  providerMaxTokens?: number
-  providerContextWindow?: number
-  providerSupportsMillionContext?: boolean
-  model?: string
-  taskPipelineRole?: string | null
+  requestedMaxTokens?: number | undefined
+  providerMaxTokens?: number | undefined
+  providerContextWindow?: number | undefined
+  providerSupportsMillionContext?: boolean | undefined
+  taskPipelineRole?: string | null | undefined
   prompt: string
 }): CanvasTextTokenBudget {
   const requested = sanitizePositiveInteger(input.requestedMaxTokens)
-  if (requested != null) return { maxTokens: requested, source: 'request' }
-
   const providerMaxTokens = sanitizePositiveInteger(input.providerMaxTokens)
-  const modelCapability =
-    typeof input.model === 'string' && input.model.trim().length > 0
-      ? ModelCapabilityRegistry.getCapabilities(input.model)
-      : undefined
-  const modelMaxOutputTokens = sanitizePositiveInteger(modelCapability?.maxOutputTokens)
-  const modelContextWindow = sanitizePositiveInteger(modelCapability?.contextWindow)
-  const providerContextWindow = sanitizePositiveInteger(
-    typeof input.providerContextWindow === 'number' && input.providerContextWindow > 0
-      ? input.providerContextWindow
-      : input.providerSupportsMillionContext === true
-        ? 1_000_000
-        : undefined,
+  const providerContextWindow = resolveProviderContextWindow(
+    input.providerSupportsMillionContext,
+    input.providerContextWindow,
   )
   const promptTokensEstimate = estimatePromptTokens(input.prompt)
 
-  if (providerMaxTokens != null) {
-    return {
-      maxTokens: modelMaxOutputTokens != null
-        ? Math.min(providerMaxTokens, modelMaxOutputTokens)
-        : providerMaxTokens,
-      source: 'provider_profile',
-      promptTokensEstimate,
-      providerMaxTokens,
-      providerContextWindow,
-      modelContextWindow,
-      modelMaxOutputTokens,
-    }
-  }
-
-  if (modelMaxOutputTokens != null) {
-    return {
-      maxTokens: modelMaxOutputTokens,
-      source: 'model_capability',
-      promptTokensEstimate,
-      providerContextWindow,
-      modelContextWindow,
-      modelMaxOutputTokens,
-    }
-  }
-
-  const effectiveContextWindow = Math.max(providerContextWindow ?? 0, modelContextWindow ?? 0)
-  if (effectiveContextWindow <= 0) return {}
-  const isStoryboardTask = input.taskPipelineRole === 'shot'
-
-  const availableOutputTokens = effectiveContextWindow
-    - promptTokensEstimate
-    - STORYBOARD_PROMPT_OVERHEAD_TOKENS
-    - STORYBOARD_OUTPUT_RESERVE_TOKENS
+  // contextWindow 是输入 + 输出的总窗口。输出预算最多使用 85%，
+  // 同时不能挤占当前 prompt 已经占用的空间。
+  const contextDerivedMaxTokens = Math.max(
+    1,
+    Math.min(
+      Math.floor(providerContextWindow * CANVAS_TEXT_CONTEXT_BUDGET_RATIO),
+      providerContextWindow - promptTokensEstimate,
+    ),
+  )
+  const limits = [contextDerivedMaxTokens, providerMaxTokens, requested].filter(
+    (value): value is number => value != null,
+  )
+  const source: CanvasTextMaxTokensSource =
+    requested != null
+      ? 'request'
+      : providerMaxTokens != null
+        ? 'provider_profile'
+        : 'context_window_derived'
 
   return {
-    maxTokens: clamp(
-      availableOutputTokens,
-      isStoryboardTask
-        ? STORYBOARD_CONTEXT_DERIVED_MIN_MAX_TOKENS
-        : GENERAL_CONTEXT_DERIVED_MIN_MAX_TOKENS,
-      isStoryboardTask
-        ? STORYBOARD_CONTEXT_DERIVED_MAX_TOKENS_CAP
-        : GENERAL_CONTEXT_DERIVED_MAX_TOKENS_CAP,
-    ),
-    source: 'context_window_derived',
+    maxTokens: Math.max(1, Math.min(...limits)),
+    source,
     promptTokensEstimate,
     providerContextWindow,
-    modelContextWindow,
+    contextWindow: providerContextWindow,
+    contextReserveRatio: CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
+    ...(providerMaxTokens != null ? { providerMaxTokens } : {}),
   }
 }
 
-export function resolveCanvasTextMaxTokens(input: Parameters<typeof resolveCanvasTextTokenBudget>[0]): number | undefined {
+export function resolveCanvasTextMaxTokens(
+  input: Parameters<typeof resolveCanvasTextTokenBudget>[0],
+): number | undefined {
   return resolveCanvasTextTokenBudget(input).maxTokens
 }
 
@@ -152,14 +112,26 @@ export function buildCanvasTextRawResponse(
     ...(input.outputText !== undefined ? { outputText: input.outputText } : {}),
     ...(input.effectiveMaxTokens !== undefined ? { maxTokens: input.effectiveMaxTokens } : {}),
     ...(input.maxTokensSource !== undefined ? { maxTokensSource: input.maxTokensSource } : {}),
-    ...(input.promptTokensEstimate !== undefined ? { promptTokensEstimate: input.promptTokensEstimate } : {}),
-    ...(input.providerMaxTokens !== undefined ? { providerMaxTokens: input.providerMaxTokens } : {}),
-    ...(input.providerContextWindow !== undefined ? { providerContextWindow: input.providerContextWindow } : {}),
-    ...(input.modelContextWindow !== undefined ? { modelContextWindow: input.modelContextWindow } : {}),
-    ...(input.modelMaxOutputTokens !== undefined ? { modelMaxOutputTokens: input.modelMaxOutputTokens } : {}),
-    ...(input.providerFinishReason !== undefined ? { providerFinishReason: input.providerFinishReason } : {}),
+    ...(input.promptTokensEstimate !== undefined
+      ? { promptTokensEstimate: input.promptTokensEstimate }
+      : {}),
+    ...(input.providerMaxTokens !== undefined
+      ? { providerMaxTokens: input.providerMaxTokens }
+      : {}),
+    ...(input.providerContextWindow !== undefined
+      ? { providerContextWindow: input.providerContextWindow }
+      : {}),
+    ...(input.contextWindow !== undefined ? { contextWindow: input.contextWindow } : {}),
+    ...(input.contextReserveRatio !== undefined
+      ? { contextReserveRatio: input.contextReserveRatio }
+      : {}),
+    ...(input.providerFinishReason !== undefined
+      ? { providerFinishReason: input.providerFinishReason }
+      : {}),
     ...(input.usage !== undefined ? { usage: input.usage } : {}),
-    ...(input.reasoningContentChars !== undefined ? { reasoningContentChars: input.reasoningContentChars } : {}),
+    ...(input.reasoningContentChars !== undefined
+      ? { reasoningContentChars: input.reasoningContentChars }
+      : {}),
   } satisfies Record<string, unknown>
   const truncation = detectCanvasTextTruncation(
     input.taskPipelineRole,
@@ -236,8 +208,4 @@ function estimatePromptTokens(text: string): number {
     tokens += 0.6
   }
   return Math.max(1, Math.ceil(tokens))
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, Math.floor(value)))
 }
