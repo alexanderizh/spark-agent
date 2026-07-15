@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Input, Popover, Spin } from 'antd'
-import { Button, Tooltip } from '@lobehub/ui'
+import { Input, Popover, Spin, Tooltip } from 'antd'
+import { Button } from '@lobehub/ui'
 import type { CanvasMediaModelSummary } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { ProviderLogo, getProviderIconForVendor } from '../../components/ProviderLogo'

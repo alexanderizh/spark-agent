@@ -17,7 +17,8 @@ vi.mock('@lobehub/ui', async () => {
       ...props
     }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode }) =>
       ReactActual.createElement('button', { type: 'button', onClick, ...props }, icon, children),
-    Tooltip: ({ children }: { children: React.ReactNode }) => children,
+    Tooltip: ({ children }: { children: React.ReactNode }) =>
+      ReactActual.createElement('span', { 'data-tooltip-source': 'lobe' }, children),
   }
 })
 
@@ -48,6 +49,8 @@ vi.mock('antd', async () => {
         open ? content : null,
       ),
     Spin: () => ReactActual.createElement('span', null, '加载中'),
+    Tooltip: ({ children }: { children: React.ReactNode }) =>
+      ReactActual.createElement('span', { 'data-tooltip-source': 'antd' }, children),
   }
 })
 
@@ -200,5 +203,12 @@ describe('CanvasModelPicker', () => {
     expect(emptyOption?.textContent).toContain('沿用平台默认')
     await act(async () => emptyOption?.click())
     expect(onChange).toHaveBeenCalledWith('')
+  })
+
+  it('uses the popover library tooltip to avoid React 19 cross-library ref update loops', async () => {
+    const container = await renderPicker({ models, value: '', onChange: vi.fn() })
+
+    expect(container.querySelector('[data-tooltip-source="antd"]')).not.toBeNull()
+    expect(container.querySelector('[data-tooltip-source="lobe"]')).toBeNull()
   })
 })
