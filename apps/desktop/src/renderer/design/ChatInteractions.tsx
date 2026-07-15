@@ -16,6 +16,7 @@ import {
   type PreviewFileType,
 } from './components/FileDisplay'
 import { SessionFileOpenPicker } from './components/SessionFileOpenPicker'
+import { FilePathContextMenu } from './components/FilePathContextMenu'
 import { MarkdownText } from './views/ChatView'
 import type { TurnFileSummaryGeneratedGroup } from './services/turn-file-summary'
 
@@ -394,6 +395,11 @@ export function TurnFileSummaryCard({
   const { t } = useI18n()
   const [expanded, setExpanded] = useState(true)
   const [showAllFiles, setShowAllFiles] = useState(false)
+  const [fileContextMenu, setFileContextMenu] = useState<{
+    x: number
+    y: number
+    filePath: string
+  } | null>(null)
   const [undoState, setUndoState] = useState<'idle' | 'undoing' | 'undone' | 'reapplying'>('idle')
   const { toast } = useToast()
   const fileCount = files.length
@@ -502,7 +508,15 @@ export function TurnFileSummaryCard({
               const canOpen = file.changeType !== 'delete'
               const fileType = getTurnSummaryFileType(file.path)
               return (
-                <div key={i} className="turn-summary-file-row">
+                <div
+                  key={i}
+                  className="turn-summary-file-row"
+                  onContextMenu={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setFileContextMenu({ x: event.clientX, y: event.clientY, filePath: file.path })
+                  }}
+                >
                   <span className={`file-type-badge type-${fileType.tone}`} title={fileType.label}>
                     <FileTypeIcon filePath={file.path} size={16} />
                   </span>
@@ -526,6 +540,14 @@ export function TurnFileSummaryCard({
               )
             })}
           </div>
+          {fileContextMenu != null && (
+            <FilePathContextMenu
+              filePath={fileContextMenu.filePath}
+              x={fileContextMenu.x}
+              y={fileContextMenu.y}
+              onClose={() => setFileContextMenu(null)}
+            />
+          )}
           {hasHiddenFiles && (
             <div className="turn-summary-more">
               <button

@@ -1,5 +1,6 @@
-import { useCallback, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import type { PreviewFileType } from '../../components/ClickableFilePath'
+import { FilePathContextMenu } from '../../components/FilePathContextMenu'
 import {
   FileTypeIcon,
   getFileTypeBadge,
@@ -105,6 +106,7 @@ export function DocumentOutputCard({
   const badge = getFileTypeBadge(normalizedPath)
   const { invoke: openFile } = useIpcInvoke('file:open')
   const { toast } = useToast()
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
 
   const handleOpen = useCallback(async () => {
     if (previewType != null && onFilePreview != null) {
@@ -120,33 +122,48 @@ export function DocumentOutputCard({
   }, [normalizedPath, onFilePreview, openFile, previewType, toast])
 
   return (
-    <button
-      type="button"
-      className={`document-output-card type-${badge.tone}`}
-      title={normalizedPath}
-      onClick={() => void handleOpen()}
-    >
-      <span className="document-output-card-preview" aria-hidden="true">
-        <FileTypeIcon filePath={normalizedPath} size={26} />
-        <span className="document-output-card-lines">
-          <span />
-          <span />
-          <span />
+    <>
+      <button
+        type="button"
+        className={`document-output-card type-${badge.tone}`}
+        title={normalizedPath}
+        onClick={() => void handleOpen()}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          setContextMenu({ x: event.clientX, y: event.clientY })
+        }}
+      >
+        <span className="document-output-card-preview" aria-hidden="true">
+          <FileTypeIcon filePath={normalizedPath} size={26} />
+          <span className="document-output-card-lines">
+            <span />
+            <span />
+            <span />
+          </span>
         </span>
-      </span>
-      <span className="document-output-card-main">
-        <span className="document-output-card-title">
-          {label || getFileNameFromReference(filePath)}
+        <span className="document-output-card-main">
+          <span className="document-output-card-title">
+            {label || getFileNameFromReference(filePath)}
+          </span>
+          <span className="document-output-card-meta">
+            <span className="document-output-card-type">{badge.label}</span>
+            <span className="document-output-card-path">{normalizedPath}</span>
+          </span>
         </span>
-        <span className="document-output-card-meta">
-          <span className="document-output-card-type">{badge.label}</span>
-          <span className="document-output-card-path">{normalizedPath}</span>
-        </span>
-      </span>
-      {/* <span className="document-output-card-action">
-        {previewType != null && onFilePreview != null ? '预览' : '打开'}
-      </span> */}
-    </button>
+        {/* <span className="document-output-card-action">
+          {previewType != null && onFilePreview != null ? '预览' : '打开'}
+        </span> */}
+      </button>
+      {contextMenu != null && (
+        <FilePathContextMenu
+          filePath={normalizedPath}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+    </>
   )
 }
 

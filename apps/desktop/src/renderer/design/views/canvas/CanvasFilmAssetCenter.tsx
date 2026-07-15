@@ -55,6 +55,7 @@ import { planShotsFromScene, totalPlannedDurationSec, type PlannedShot } from '.
 import { planSegmentSplit, resolveSegmentDuration, type ShotSplitPart } from './canvasShotSplit'
 import { parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
+import { resolveCanvasAssetFocusNodeIds } from './canvasAssetFocus'
 import {
   buildEdlMarkdown,
   buildTimeline,
@@ -101,6 +102,7 @@ const TAB_LABELS: Record<TabKind, string> = {
 
 /** 资产列表分批渲染步长：文稿/章节可达上千条，一次性挂载会卡顿并撑爆 DOM */
 const ASSET_PAGE_SIZE = 60
+
 
 const CHAPTER_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
   heading: '按章节标题',
@@ -169,6 +171,8 @@ export type FilmCenterHandlers = {
   hasPromptCanvasTarget?: () => boolean
   onApplyPromptEntryToCanvas?: (entry: CanvasPromptLibraryEntry) => Promise<boolean>
   onInsertAssetToCanvas: (assetId: string) => void
+  /** 定位资产对应的画布节点，并将其聚焦到画布中心 */
+  onLocateAsset?: (assetId: string) => void
   /** 查询资源被谁引用（分镜片段 + 画布节点） */
   getFilmAssetUsage?: (assetId: string) => {
     shotSegments: Array<{
@@ -615,6 +619,7 @@ function AssetListTab({
             const cover =
               refs.length > 0 ? snapshot.assets.find((a) => a.id === refs[0]?.assetId) : null
             const usage = usageMap.get(asset.id) ?? 0
+            const hasCanvasNode = resolveCanvasAssetFocusNodeIds(snapshot, asset.id).length > 0
             const tags = readTags(asset.metadata)
             return (
               <div key={asset.id} className="canvas-film-asset-card">
@@ -655,6 +660,18 @@ function AssetListTab({
                   )}
                 </div>
                 <div className="canvas-film-asset-card-actions">
+                  {handlers.onLocateAsset && (
+                    <Tooltip title={hasCanvasNode ? '定位' : '画布中暂无此资产节点'}>
+                      <Button
+                        size="middle"
+                        type="text"
+                        disabled={!hasCanvasNode}
+                        aria-label={`定位资产：${asset.title ?? '未命名'}`}
+                        icon={<Icons.Crosshair size={14} />}
+                        onClick={() => handlers.onLocateAsset?.(asset.id)}
+                      />
+                    </Tooltip>
+                  )}
                   {kind === 'script' && handlers.onBreakdownScriptAsset && (
                     <Tooltip title="拆解剧本">
                       <Button

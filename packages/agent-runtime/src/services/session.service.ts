@@ -280,6 +280,7 @@ type SessionRuntimePatch = {
   providerProfileId?: string
   modelId?: string | null
   agentId?: string
+  skillIds?: string[]
   agentAdapter?: AgentAdapterKind
   permissionMode?: SessionPermissionMode
   chatMode?: 'agent' | 'ask' | 'edit' | 'review'
@@ -303,6 +304,7 @@ type SendTurnParams = {
   providerProfileId?: string
   modelId?: string | null
   agentId?: string
+  skillIds?: string[]
   agentAdapter?: AgentAdapterKind
   permissionMode?: SessionPermissionMode
   chatMode?: 'agent' | 'ask' | 'edit' | 'review'
@@ -1651,10 +1653,17 @@ export class SessionService {
     const workflowMembers =
       workflowGraph != null ? this.resolveWorkflowMembers(workflowGraph, agent) : []
     const enabledWorkflowWorkerIds = new Set(workflowMembers.map((member) => member.id))
-    // Provider / model：mention 时优先用被 @ Agent 自己的配置，未配置则回退会话默认。
-    const effectiveProviderProfileId = isMentionTurn
-      ? agent.providerProfileId?.trim() || session.provider_profile_id
-      : runtimeAgent.providerProfileId?.trim() || session.provider_profile_id
+    // Provider / model：普通 turn 的显式 runtime patch 是用户刚刚做出的
+    // 选择，优先于当前 Agent 配置；mention 仍保持被 @ Agent 自身的路由语义。
+    // 这能避免画布已选择本地 Codex CLI，却被 Agent 旧的 BigModel/MiniMax 绑定重新覆盖。
+    const explicitProviderProfileId = isMentionTurn
+      ? undefined
+      : runtimePatch?.providerProfileId?.trim()
+    const effectiveProviderProfileId =
+      explicitProviderProfileId ||
+      (isMentionTurn
+        ? agent.providerProfileId?.trim() || session.provider_profile_id
+        : runtimeAgent.providerProfileId?.trim() || session.provider_profile_id)
     if (effectiveProviderProfileId == null) {
       throw new Error(`Session ${sessionId} has no provider profile`)
     }
@@ -1684,9 +1693,12 @@ export class SessionService {
     let effectiveRuntimeProviderProfileId = effectiveProviderProfileId
     const modelProfilesForRouting = new ModelProfileRepository(this.db).list()
     const providersForRouting = providerRowsForModelRouter(providerRepo.listAll())
-    const requestedModel = isMentionTurn
-      ? agent.modelId?.trim() || session.model_id
-      : runtimeAgent.modelId?.trim() || session.model_id
+    const explicitModelId = isMentionTurn ? undefined : runtimePatch?.modelId?.trim()
+    const requestedModel =
+      explicitModelId ||
+      (isMentionTurn
+        ? agent.modelId?.trim() || session.model_id
+        : runtimeAgent.modelId?.trim() || session.model_id)
     const loadProvider = (providerProfileId: string) => {
       const row = providerRepo.get(providerProfileId)
       if (row == null) {
@@ -1759,7 +1771,12 @@ export class SessionService {
           : ''
       model = isLocalCli
         ? getLocalCliDefaultModel(provider)
-        : configuredAgentModel || inheritedModel || config.defaultModel || config.model || ''
+        : explicitModelId ||
+          configuredAgentModel ||
+          inheritedModel ||
+          config.defaultModel ||
+          config.model ||
+          ''
       if (model.length === 0) {
         throw new Error(`Provider ${provider.id} has no default model configured`)
       }
@@ -1950,8 +1967,9 @@ export class SessionService {
       },
       explicitSkillPrompt,
       {
-        agentSkillIds: runtimeAgent.skillIds,
+        agentSkillIds: runtimePatch?.skillIds ?? runtimeAgent.skillIds,
         agentDisabledSkillIds: runtimeAgent.disabledSkillIds,
+        ...(runtimePatch?.skillIds !== undefined ? { replaceAgentSkills: true } : {}),
       },
     )
     const imageGenerationContext = await this.resolveImageGenerationContext(workspaceRootPath)
@@ -2699,6 +2717,7 @@ export class SessionService {
       apiKey,
       ...(automation.unattended ? { unattended: true } : {}),
       ...(isLocalCli ? { useLocalConfig: true } : {}),
+      ...(isLocalCli && agentAdapter === 'codex' ? { disableCodexNativeSkills: true } : {}),
       model,
       workspaceRootPath,
       permissionMode,
@@ -10084,6 +10103,7 @@ function getRuntimePatch(params: SessionRuntimePatch): SessionRuntimePatch | und
   if (params.providerProfileId !== undefined) patch.providerProfileId = params.providerProfileId
   if (params.modelId !== undefined) patch.modelId = params.modelId
   if (params.agentId !== undefined) patch.agentId = params.agentId
+  if (params.skillIds !== undefined) patch.skillIds = params.skillIds
   if (params.agentAdapter !== undefined) patch.agentAdapter = params.agentAdapter
   if (params.permissionMode !== undefined) patch.permissionMode = params.permissionMode
   if (params.chatMode !== undefined) patch.chatMode = params.chatMode

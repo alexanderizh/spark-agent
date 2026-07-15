@@ -280,6 +280,7 @@ describe('canvas operation inheritance', () => {
     const created = await canvasApi.createOperationNode({
       projectId: 'project-1', boardId: 'board-1', operation: 'text_generate',
       inputNodeIds: [], x: 100, y: 100,
+      providerProfileId: 'bigmodel-provider', modelId: 'MiniMax-M3',
     })
     const operationNode = created.nodes.find((node) => node.type === 'text_generate')
     if (!operationNode) throw new Error('Operation node was not created')
@@ -296,6 +297,8 @@ describe('canvas operation inheritance', () => {
       promptDocument: document,
       compiledUserText: '[剧本 ref-1: 场次剧本]\n雨夜车站',
       systemPrompt: '隐藏的角色提取规则',
+      providerProfileId: 'codex-cli-provider',
+      modelId: 'codex cli',
     })
     const reboundNode = started.snapshot.nodes.find((node) => node.id === operationNode.id)
     const reboundTask = started.snapshot.tasks.find((task) => task.id === started.taskId)
@@ -304,6 +307,8 @@ describe('canvas operation inheritance', () => {
     expect(reboundNode?.data.promptDocument).toEqual(document)
     expect(reboundNode?.data.systemPrompt).toBe('隐藏的角色提取规则')
     expect(reboundNode?.data.prompt).not.toContain('隐藏的角色提取规则')
+    expect(reboundNode?.data.providerProfileId).toBe('codex-cli-provider')
+    expect(reboundNode?.data.modelId).toBe('codex cli')
     expect(reboundTask?.prompt).toBe('[剧本 ref-1: 场次剧本]\n雨夜车站')
     expect(reboundTask?.promptDocument).toEqual(document)
     expect(reboundTask?.systemPrompt).toBe('隐藏的角色提取规则')

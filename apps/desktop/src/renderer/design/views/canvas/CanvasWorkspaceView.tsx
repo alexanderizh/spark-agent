@@ -39,7 +39,11 @@ import {
 import { classifyDroppedFile, layoutDroppedFiles, textFormatFromFileName } from './canvasFileDrop'
 import { extractDocumentText } from './canvasDocumentParse'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
-import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
+import {
+  CanvasFilmAssetCenter,
+  type FilmCenterHandlers,
+} from './CanvasFilmAssetCenter'
+import { resolveCanvasAssetFocusNodeIds } from './canvasAssetFocus'
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel, buildOperationPanelSnapshotSignature } from './CanvasOperationPanel'
 import { shouldFocusCanvasInlinePanel } from './canvasInlinePanelFocus'
@@ -6573,7 +6577,10 @@ export function CanvasWorkspaceView({
           }
           const entities = parseExtractedEntities(kind, response.text)
           if (entities.length === 0) {
-            throw new Error('未识别到实体，请检查文本内容或改用更规范的剧本')
+            const outputPreview = response.text.replace(/\s+/g, ' ').trim().slice(0, 500)
+            throw new Error(
+              `未识别到实体，请检查文本内容或输出格式${outputPreview ? `。模型输出摘要：${outputPreview}` : ''}`,
+            )
           }
           // 已存在同名（同 kind）资产去重
           const existingByName = new Map<string, CanvasAsset>()
@@ -7899,6 +7906,26 @@ export function CanvasWorkspaceView({
               hasPromptCanvasTarget: () => selectedNodes.length > 0,
               onApplyPromptEntryToCanvas: handleApplyPromptEntryBesideSelection,
               onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
+              onLocateAsset: (assetId) => {
+                const nodeId = resolveCanvasAssetFocusNodeIds(snapshot, assetId)[0]
+                if (!nodeId) {
+                  message.info('画布中暂无此资产节点')
+                  return
+                }
+
+                // 资产中心覆盖在画布上方，先关闭后再聚焦，确保用户能直接看到目标节点。
+                setFilmCenterOpen(false)
+                setSelectedNodeIds([nodeId])
+                window.requestAnimationFrame(() => {
+                  window.requestAnimationFrame(() => {
+                    const focused = canvasViewportControlsRef.current?.focusNodes([nodeId], {
+                      preferredWidth: 520,
+                      maxZoom: 1.08,
+                    })
+                    if (!focused) message.warning('未找到资产对应的画布节点')
+                  })
+                })
+              },
               createShotGroup,
               updateShotGroup,
               deleteShotGroup,

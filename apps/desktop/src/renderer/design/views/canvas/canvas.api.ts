@@ -4136,6 +4136,15 @@ export const canvasApi = {
     if (visibleUserPrompt != null) taskNodeData.prompt = visibleUserPrompt
     if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
     if (request.systemPrompt != null) taskNodeData.systemPrompt = request.systemPrompt
+    // A bound operation node is reusable. Keep its displayed/runtime configuration in
+    // lockstep with the new task instead of retaining the model from its previous run.
+    if (request.agentId != null) taskNodeData.agentId = request.agentId
+    if (request.providerProfileId != null)
+      taskNodeData.providerProfileId = request.providerProfileId
+    if (request.modelId != null) taskNodeData.modelId = request.modelId
+    if (request.reasoningEffort != null) taskNodeData.reasoningEffort = request.reasoningEffort
+    if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
+    if (request.modelParams != null) taskNodeData.modelParams = request.modelParams
 
     let taskNode: CanvasNode
     const bindNode = request.bindToNodeId
@@ -4269,6 +4278,9 @@ export const canvasApi = {
         status,
         progress,
         message: result.message ?? defaultMessage,
+        ...(task.agentId ? { agentId: task.agentId } : {}),
+        ...(task.providerProfileId ? { providerProfileId: task.providerProfileId } : {}),
+        ...(task.modelId ? { modelId: task.modelId } : {}),
       }
       taskNode.updatedAt = at
     }

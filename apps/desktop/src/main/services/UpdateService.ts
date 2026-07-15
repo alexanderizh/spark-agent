@@ -2,7 +2,7 @@
  * UpdateService — GitHub Release 资产更新服务
  *
  * 基于 GitHub Releases 直接实现跨平台更新：
- *   - 启动时自动检查最新 Release
+ *   - 启动时检查，并在运行期间低频轮询最新 Release
  *   - 按平台选择安装包（macOS: dmg，Windows: exe）
  *   - 后台下载安装包并同步进度
  *   - 下载完成后按平台启动安装流程
@@ -19,7 +19,7 @@ import { once } from 'node:events'
 import { createWriteStream, existsSync, readFileSync } from 'node:fs'
 import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { app } from 'electron'
+import { app, powerMonitor } from 'electron'
 import { createLogger } from '@spark/shared'
 import type {
   UpdateStatus,
@@ -31,7 +31,10 @@ import type {
 const log = createLogger('update-service')
 
 const STARTUP_CHECK_DELAY_MS = 5_000
-const FOCUS_RECHECK_THRESHOLD_MS = 2 * 60 * 60 * 1000
+const AUTO_CHECK_INTERVAL_MS = 30 * 60 * 1000
+const AUTO_CHECK_JITTER_MS = 5 * 60 * 1000
+const AUTO_CHECK_MAX_BACKOFF_MS = 2 * 60 * 60 * 1000
+const STALE_RECHECK_THRESHOLD_MS = AUTO_CHECK_INTERVAL_MS
 /** macOS：启动 dmg 后延迟退出，给安装镜像挂载/弹窗留时间 */
 const MAC_INSTALL_QUIT_DELAY_MS = 1_200
 const RELEASE_REQUEST_USER_AGENT = 'Spark-Agent-Updater'
@@ -434,10 +437,16 @@ function resolveReleaseAsset(
 }
 
 type StatusChangeHandler = (status: UpdateStatus) => void
+type UpdateCheckReason = 'manual' | 'startup' | 'interval' | 'focus' | 'resume'
+type AutomaticUpdateCheckReason = Exclude<UpdateCheckReason, 'manual'>
+type UpdateErrorMode = 'notify' | 'silent'
 
 export class UpdateService {
   private status: UpdateStatus
-  private startupCheckTimer: ReturnType<typeof setTimeout> | null = null
+  private autoCheckTimer: ReturnType<typeof setTimeout> | null = null
+  private nextAutoCheckAt: number | null = null
+  private automaticCheckInFlight: Promise<void> | null = null
+  private consecutiveAutoCheckFailures = 0
   private onStatusChange: StatusChangeHandler | null = null
   private onLastCheckedChange: ((iso: string) => void) | null = null
   private onUpdateAvailable: ((info: UpdateInfo, preferences: UpdatePreferences) => void) | null = null
@@ -459,13 +468,10 @@ export class UpdateService {
   private installLaunchInProgress = false
   private rateLimitedUntil: number | null = null
   private readonly onWindowFocus = () => {
-    if (!this.preferences.autoCheck) return
-    if (this.status.state === 'checking' || this.status.state === 'downloading') return
-    const lastCheckedAt = this.status.lastCheckedAt
-    if (lastCheckedAt == null) return
-    const elapsed = Date.now() - new Date(lastCheckedAt).getTime()
-    if (!Number.isFinite(elapsed) || elapsed < FOCUS_RECHECK_THRESHOLD_MS) return
-    void this.checkForUpdates('focus')
+    this.checkWhenStale('focus')
+  }
+  private readonly onResume = () => {
+    this.checkWhenStale('resume')
   }
   private readonly onWillQuit = () => {
     if (!this.preferences.autoInstall) return
@@ -516,6 +522,7 @@ export class UpdateService {
 
     app.on('browser-window-focus', this.onWindowFocus)
     app.on('will-quit', this.onWillQuit)
+    powerMonitor.on('resume', this.onResume)
 
     if (this.preferences.autoCheck) {
       this.startAutoCheck()
@@ -529,18 +536,21 @@ export class UpdateService {
       this.stopAutoCheck()
       return
     }
-    this.scheduleStartupCheck()
-    log.info('Auto-check scheduled for startup only')
+    this.consecutiveAutoCheckFailures = 0
+    this.scheduleAutomaticCheck(STARTUP_CHECK_DELAY_MS, 'startup')
+    log.info('Auto-check scheduled: startup + 30-minute interval with jitter')
   }
 
   stopAutoCheck(): void {
-    if (this.startupCheckTimer != null) {
-      clearTimeout(this.startupCheckTimer)
-      this.startupCheckTimer = null
+    if (this.autoCheckTimer != null) {
+      clearTimeout(this.autoCheckTimer)
+      this.autoCheckTimer = null
     }
+    this.nextAutoCheckAt = null
+    this.consecutiveAutoCheckFailures = 0
   }
 
-  async checkForUpdates(_reason: 'manual' | 'startup' | 'interval' | 'focus' = 'manual'): Promise<UpdateStatus> {
+  async checkForUpdates(reason: UpdateCheckReason = 'manual'): Promise<UpdateStatus> {
     if (this.status.state === 'checking' || this.status.state === 'downloading') {
       return this.status
     }
@@ -548,7 +558,7 @@ export class UpdateService {
     if (this.rateLimitedUntil != null && this.rateLimitedUntil > Date.now()) {
       const message = buildGitHubRateLimitMessage(this.rateLimitedUntil)
       this.updateStatus({ state: 'error', error: message, progress: null })
-      this.onUpdateError?.(message)
+      this.notifyCheckError(message, reason)
       return this.status
     }
 
@@ -619,20 +629,20 @@ export class UpdateService {
       })
       this.onUpdateAvailable?.(updateInfo, this.getPreferences())
       if (this.preferences.autoDownload) {
-        await this.downloadUpdate()
+        await this.downloadUpdate(reason === 'manual' ? 'notify' : 'silent')
       }
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : String(err)
       const message = normalizeUpdateErrorMessage(rawMessage)
       log.error(`Check for updates failed: ${message}`)
       this.updateStatus({ state: 'error', error: message, progress: null })
-      this.onUpdateError?.(message)
+      this.notifyCheckError(message, reason)
     }
 
     return this.status
   }
 
-  async downloadUpdate(): Promise<boolean> {
+  async downloadUpdate(errorMode: UpdateErrorMode = 'notify'): Promise<boolean> {
     if ((this.status.state !== 'available' && this.status.state !== 'downloaded') || this.releaseAsset == null || this.releaseInfo == null) {
       log.warn(`Cannot download: current state is ${this.status.state}`)
       return false
@@ -727,7 +737,11 @@ export class UpdateService {
         error: message,
         progress: null,
       })
-      this.onUpdateError?.(message)
+      if (errorMode === 'notify') {
+        this.onUpdateError?.(message)
+      } else {
+        log.warn(`Silent automatic update download failure: ${message}`)
+      }
       return false
     }
   }
@@ -805,15 +819,16 @@ export class UpdateService {
     this.preferences.channel = channel
     log.info(`Update channel set to: ${channel}`)
     if (this.preferences.autoCheck) {
-      this.scheduleStartupCheck(1_500)
+      this.scheduleAutomaticCheck(1_500, 'startup')
     }
   }
 
   destroy(): void {
+    this.initialized = false
     this.stopAutoCheck()
     app.removeListener('browser-window-focus', this.onWindowFocus)
     app.removeListener('will-quit', this.onWillQuit)
-    this.initialized = false
+    powerMonitor.removeListener('resume', this.onResume)
     log.info('UpdateService destroyed')
   }
 
@@ -825,15 +840,70 @@ export class UpdateService {
     this.onStatusChange?.(this.status)
   }
 
-  private scheduleStartupCheck(delayMs: number = STARTUP_CHECK_DELAY_MS): void {
-    if (!this.preferences.autoCheck) return
-    if (this.startupCheckTimer != null) {
-      clearTimeout(this.startupCheckTimer)
+  private scheduleAutomaticCheck(delayMs: number, reason: AutomaticUpdateCheckReason = 'interval'): void {
+    if (!this.initialized || !this.preferences.autoCheck) return
+    if (this.autoCheckTimer != null) {
+      clearTimeout(this.autoCheckTimer)
     }
-    this.startupCheckTimer = setTimeout(() => {
-      this.startupCheckTimer = null
-      void this.checkForUpdates('startup')
+    this.nextAutoCheckAt = Date.now() + delayMs
+    this.autoCheckTimer = setTimeout(() => {
+      this.autoCheckTimer = null
+      this.nextAutoCheckAt = null
+      this.triggerAutomaticCheck(reason)
     }, delayMs)
+  }
+
+  private triggerAutomaticCheck(reason: AutomaticUpdateCheckReason): void {
+    if (!this.initialized || !this.preferences.autoCheck || this.automaticCheckInFlight != null) return
+    if (this.autoCheckTimer != null) {
+      clearTimeout(this.autoCheckTimer)
+      this.autoCheckTimer = null
+    }
+    this.nextAutoCheckAt = null
+
+    const task = (async () => {
+      const status = await this.checkForUpdates(reason)
+      if (status.state === 'error') {
+        this.consecutiveAutoCheckFailures += 1
+      } else {
+        this.consecutiveAutoCheckFailures = 0
+      }
+      if (this.initialized && this.preferences.autoCheck) {
+        this.scheduleAutomaticCheck(this.getNextAutoCheckDelay())
+      }
+    })()
+    this.automaticCheckInFlight = task.finally(() => {
+      this.automaticCheckInFlight = null
+    })
+  }
+
+  private checkWhenStale(reason: 'focus' | 'resume'): void {
+    if (!this.initialized || !this.preferences.autoCheck) return
+    if (this.status.state === 'checking' || this.status.state === 'downloading') return
+    if (this.nextAutoCheckAt != null && Date.now() < this.nextAutoCheckAt) return
+    const lastCheckedAt = this.status.lastCheckedAt
+    if (lastCheckedAt != null) {
+      const elapsed = Date.now() - new Date(lastCheckedAt).getTime()
+      if (Number.isFinite(elapsed) && elapsed < STALE_RECHECK_THRESHOLD_MS) return
+    }
+    this.triggerAutomaticCheck(reason)
+  }
+
+  private getNextAutoCheckDelay(): number {
+    const backoffDelay = Math.min(
+      AUTO_CHECK_INTERVAL_MS * (2 ** this.consecutiveAutoCheckFailures),
+      AUTO_CHECK_MAX_BACKOFF_MS,
+    )
+    const jitter = Math.round((Math.random() * 2 - 1) * AUTO_CHECK_JITTER_MS)
+    return backoffDelay + jitter
+  }
+
+  private notifyCheckError(message: string, reason: UpdateCheckReason): void {
+    if (reason === 'manual') {
+      this.onUpdateError?.(message)
+      return
+    }
+    log.warn(`Silent automatic update check failure (${reason}): ${message}`)
   }
 
   private sanitizePreferences(preferences: UpdatePreferences): UpdatePreferences {

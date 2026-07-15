@@ -181,6 +181,39 @@ describe('canvasEntityExtract', () => {
       expect(rows[0]!.name).toBe('林岚')
       expect(rows[0]!.fields.marks).toBe('左脸旧疤')
     })
+
+    it('从 Codex 中间说明和多个 JSON 片段中选出真正的实体结果', () => {
+      const rows = parseExtractedCharacters(
+        [
+          '我先核对输出结构 {"status":"checking"}。',
+          '```json',
+          '{"kind":"character","entities":[{"name":"林岚","description":"清瘦青年","attributes":{"appearance":"清瘦"}}]}',
+          '```',
+        ].join('\n'),
+      )
+      expect(rows).toHaveLength(1)
+      expect(rows[0]!.name).toBe('林岚')
+      expect(rows[0]!.fields.appearance).toBe('清瘦')
+    })
+
+    it('兼容常见中文字段和 characters 包装键', () => {
+      const rows = parseExtractedCharacters(
+        JSON.stringify({
+          characters: [
+            {
+              名称: '陈默',
+              描述: '神秘访客',
+              提示词: 'mysterious visitor',
+              属性: { 外貌: '高大，戴墨镜' },
+            },
+          ],
+        }),
+      )
+      expect(rows).toHaveLength(1)
+      expect(rows[0]!.name).toBe('陈默')
+      expect(rows[0]!.fields.appearance).toBe('高大，戴墨镜')
+      expect(rows[0]!.prompt).toBe('mysterious visitor')
+    })
   })
 
   describe('parseExtractedScenes', () => {
