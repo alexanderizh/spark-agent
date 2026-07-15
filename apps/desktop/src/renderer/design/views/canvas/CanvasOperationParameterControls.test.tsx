@@ -127,4 +127,30 @@ describe('CanvasOperationParameterControls', () => {
     expect(container.querySelector('[aria-label="选择模型"]')).toBeNull()
     expect(container.querySelector('[data-parameter-name="aspect_ratio"]')).not.toBeNull()
   })
+
+  it('marks the aspect ratio popover for its multi-column layout', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    mounted.push({ root, container })
+
+    await act(async () => root.render(
+      <CanvasOperationParameterControls
+        variant="toolbar"
+        models={[]}
+        modelValue=""
+        fields={[{ name: 'aspect_ratio', title: '鐢诲箙', type: 'string', enumValues: ['1:1', '16:9'] }]}
+        values={{ aspect_ratio: '16:9' }}
+        onModelChange={vi.fn()}
+        onParameterChange={vi.fn()}
+      />,
+    ))
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('.canvas-operation-parameter-summary')!.click(),
+    )
+    expect(
+      container.querySelector('.canvas-operation-parameter-overlay.is-aspect-ratio'),
+    ).not.toBeNull()
+  })
 })

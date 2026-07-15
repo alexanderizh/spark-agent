@@ -115,6 +115,11 @@
 
 .canvas-operation-parameter-overlay .ant-popover-inner {
   width: min(520px, calc(100vw - 40px));
+  max-width: min(360px, calc(100vw - 40px));
+}
+
+.canvas-operation-parameter-overlay.is-aspect-ratio .ant-popover-inner {
+  width: min(320px, calc(100vw - 40px));
 }
 
 .canvas-operation-advanced-overlay .ant-popover-inner {
@@ -291,5 +296,19 @@
     .canvas-operation-composer-bottom:has(.canvas-operation-unified-controls)
     > .canvas-operation-composer-actions {
     align-self: flex-end;
+  }
+}
+
+@media (max-width: 380px) {
+  .canvas-operation-parameter-overlay.is-aspect-ratio .ant-popover-inner {
+    width: min(260px, calc(100vw - 28px));
+  }
+
+  .canvas-aspect-ratio-grid {
+    grid-template-columns: repeat(2, minmax(64px, 1fr));
+  }
+
+  .canvas-parameter-option-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
