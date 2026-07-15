@@ -215,11 +215,15 @@ function CanvasPromptAtomicDecorator({
     <span className="canvas-prompt-chip-icon">!</span>
   )
   const relation = block.kind === 'reference' ? block.relation : block.schema
-  const content = disconnected
-    ? '引用连接已断开，请重新绑定后再提交。'
-    : node
-      ? previewNodeContent(node, context.assetById)
-      : '引用节点已删除，请重新绑定后再提交。'
+  const media =
+    !disconnected && node ? renderCanvasPromptNodeHoverMedia(node, context.assetById) : null
+  const content = media
+    ? ''
+    : disconnected
+      ? '引用连接已断开，请重新绑定后再提交。'
+      : node
+        ? previewNodeContent(node, context.assetById)
+        : '引用节点已删除，请重新绑定后再提交。'
 
   return (
     <span
@@ -227,15 +231,7 @@ function CanvasPromptAtomicDecorator({
       contentEditable={false}
       data-prompt-block-id={block.id}
     >
-      <CanvasPromptHoverCard
-        title={label}
-        preview={thumbnail}
-        metadata={[
-          { label: '关系', value: relation },
-          { label: '来源', value: node?.title ?? block.sourceNodeId },
-        ]}
-        content={content}
-      >
+      <CanvasPromptHoverCard media={media} content={content}>
         <button
           type="button"
           className={`canvas-prompt-chip${invalid ? ' is-invalid' : ''}`}
@@ -294,6 +290,30 @@ export function renderCanvasPromptNodeThumbnail(
   return <Icons.File size={15} />
 }
 
+function renderCanvasPromptNodeHoverMedia(node: CanvasNode, assetById: Map<string, CanvasAsset>) {
+  const asset = node.assetId ? assetById.get(node.assetId) : undefined
+  const mediaType =
+    node.type === 'image' || asset?.type === 'image'
+      ? 'image'
+      : node.type === 'video' || asset?.type === 'video'
+        ? 'video'
+        : null
+  if (!mediaType) return null
+  const previewUrl =
+    mediaType === 'image'
+      ? (node.data.url ?? asset?.url ?? node.data.thumbnailUrl ?? asset?.thumbnailUrl)
+      : (node.data.thumbnailUrl ?? asset?.thumbnailUrl)
+  if (previewUrl) {
+    return <img src={previewUrl} alt={node.title ?? asset?.title ?? ''} loading="lazy" />
+  }
+  return (
+    <span className="canvas-prompt-hover-media-empty">
+      {mediaType === 'video' ? <Icons.Play size={24} /> : <Icons.Image size={24} />}
+      {mediaType === 'video' ? '暂无视频封面' : '图片不可预览'}
+    </span>
+  )
+}
+
 export function canvasPromptNodeTypeLabel(node: CanvasNode): string {
   if (node.data.pipelineRole === 'character') return '角色'
   if (node.data.pipelineRole === 'scene') return '场景'
@@ -335,11 +355,7 @@ function previewNodeContent(node: CanvasNode, assetById: Map<string, CanvasAsset
   const text = readCanvasTextInputContent(node, asset ? [asset] : [])
   if (text) return text
   if (typeof node.data.prompt === 'string' && node.data.prompt.trim()) return node.data.prompt.trim()
-  try {
-    return JSON.stringify(node.data, null, 2)
-  } catch {
-    return node.title ?? node.id
-  }
+  return '暂无可预览内容'
 }
 
 function cloneBlock<T extends CanvasPromptAtomicBlock>(block: T): T {

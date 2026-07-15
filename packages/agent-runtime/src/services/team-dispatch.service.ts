@@ -131,6 +131,8 @@ export class TeamDispatchService {
   private readonly executionQueueByTurn = new Map<string, Promise<unknown>>()
   /** dispatchId → AbortController（取消传播） */
   private readonly controllers = new Map<string, AbortController>()
+  private readonly activeRunPromises = new Set<Promise<unknown>>()
+  private shuttingDown = false
 
   constructor(
     private readonly dispatches: TeamDispatchRepository,
@@ -169,6 +171,8 @@ export class TeamDispatchService {
     }
 
     // ── 校验 ──────────────────────────────────────────────────────────────
+    if (this.shuttingDown) return fail('denied', 'Team dispatch service is shutting down.')
+
     const effectiveAllowedIds = ctx.allowedWorkerIds ?? new Set(ctx.teamConfig.memberAgentIds)
     if (member == null || !effectiveAllowedIds.has(task.memberAgentId)) {
       return fail(
@@ -427,7 +431,14 @@ export class TeamDispatchService {
         this.controllers.delete(dispatchId)
       }
     }
-    return options.parallel === true ? runMember() : this.enqueueTurnExecution(ctx.turnId, runMember)
+    const runPromise =
+      options.parallel === true ? runMember() : this.enqueueTurnExecution(ctx.turnId, runMember)
+    this.activeRunPromises.add(runPromise)
+    void runPromise.then(
+      () => this.activeRunPromises.delete(runPromise),
+      () => this.activeRunPromises.delete(runPromise),
+    )
+    return runPromise
   }
 
   /**
@@ -676,6 +687,13 @@ export class TeamDispatchService {
   cancelAll(): void {
     for (const controller of this.controllers.values()) controller.abort()
     this.controllers.clear()
+  }
+
+  async cancelAllAndWait(): Promise<void> {
+    this.shuttingDown = true
+    const activeRuns = [...this.activeRunPromises]
+    this.cancelAll()
+    await Promise.allSettled(activeRuns)
   }
 
   /** turn 结束后清理预算计数 */

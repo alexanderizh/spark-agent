@@ -31,7 +31,6 @@ import {
   buildCustomModelParams,
   buildModelParams,
   createCustomParamDraft,
-  mediaModelKey,
   mergeSchemaFields,
   modelSuggestedFields,
   normalizeModelParamsForSubmit,
@@ -44,6 +43,7 @@ import {
   type CustomParamDraft,
   type CustomParamType,
 } from './CanvasInlineAiComposer'
+import { mediaModelKey } from './canvasModelPickerModel'
 import {
   mergeSeededModelParamDraft,
   sameCustomParamDrafts,

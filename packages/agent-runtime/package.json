@@ -27,7 +27,7 @@
     "zod": "^3.23.0"
   },
   "optionalDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.204"
+    "@anthropic-ai/claude-agent-sdk": "0.3.210"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

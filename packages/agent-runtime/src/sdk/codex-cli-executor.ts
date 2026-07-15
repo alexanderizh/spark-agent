@@ -70,13 +70,17 @@ export class CodexCliExecutor {
     userMessage: string,
     config: SDKExecutorConfig,
   ): Promise<void> {
+    this.cancelled = false
     const tempDir = await mkdtemp(path.join(tmpdir(), 'spark-codex-'))
+    if (this.cancelled) {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => undefined)
+      return
+    }
     const outputFile = path.join(tempDir, 'last-message.txt')
     const prompt = buildCodexPrompt(buildCodexGoalPrompt(userMessage, config), config)
     let tempProfile: CodexTempProfile | null = null
     const streamTerminalizer = new StreamTerminalizer()
     this.streamTerminalizer = streamTerminalizer
-    this.cancelled = false
     const makeBase = (): EventBase => ({
       id: randomUUID(),
       sessionId,
@@ -116,6 +120,7 @@ export class CodexCliExecutor {
 
     try {
       tempProfile = await writeCodexTempProfile(config)
+      if (this.cancelled) return
       const args = buildCodexArgs(config, outputFile, tempProfile?.name)
       const result = await this.runCodex(args, prompt, makeBase, config.workspaceRootPath, config)
       if (result.exitCode !== 0) {

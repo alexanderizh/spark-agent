@@ -52,15 +52,50 @@ function imageNode(): CanvasNode {
   }
 }
 
+function videoNode(): CanvasNode {
+  return {
+    ...imageNode(),
+    id: 'clip',
+    type: 'video',
+    title: '参考视频',
+    assetId: 'asset-clip',
+    data: {
+      url: 'https://example.com/clip.mp4',
+      thumbnailUrl: 'https://example.com/clip-cover.png',
+    },
+  }
+}
+
+function textNode(): CanvasNode {
+  return {
+    ...imageNode(),
+    id: 'storyboard',
+    type: 'text',
+    title: '分镜表',
+    assetId: null,
+    data: { text: '| 镜号 | 画面 |\n| 01 | 女主回头 |' },
+  }
+}
+
 const asset: CanvasAsset = {
   id: 'asset-hero', projectId: 'p', userId: 1, type: 'image', source: 'upload', title: '小满',
   url: 'https://example.com/hero.png', thumbnailUrl: 'https://example.com/hero-thumb.png',
   metadata: {}, createdAt: '', updatedAt: '',
 }
 
+const videoAsset: CanvasAsset = {
+  ...asset,
+  id: 'asset-clip',
+  type: 'video',
+  title: '参考视频',
+  url: 'https://example.com/clip.mp4',
+  thumbnailUrl: 'https://example.com/clip-cover.png',
+}
+
 async function mountComposer(
   initialDocument: CanvasPromptDocument,
   nodes: CanvasNode[] = [imageNode()],
+  assets: CanvasAsset[] = [asset],
 ) {
   const container = window.document.createElement('div')
   window.document.body.appendChild(container)
@@ -76,7 +111,7 @@ async function mountComposer(
       <CanvasPromptComposer
         document={document}
         mentionNodes={nodes}
-        assets={[asset]}
+        assets={assets}
         placeholder="输入提示词"
         onChange={setDocument}
         onEditorReady={(nextEditor) => {
@@ -128,6 +163,80 @@ describe('CanvasPromptComposer', () => {
       mounted.container.querySelector<HTMLImageElement>('.canvas-prompt-chip-thumb img')?.src,
     ).toBe('https://example.com/hero-thumb.png')
     expect(mounted.container.textContent).toContain('小满')
+  })
+
+  it('renders the referenced image instead of its URL data in the hover card', async () => {
+    const referencedImage = imageNode()
+    referencedImage.data.url = 'safe-file://x/hero.png'
+    const mounted = await mountComposer(
+      {
+        version: 2,
+        blocks: [{ kind: 'reference', id: 'r1', source: 'manual', sourceNodeId: 'hero', relation: 'reference_image', label: '小满', order: 0 }],
+      },
+      [referencedImage],
+    )
+
+    const chip = mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-chip')
+    expect(chip).not.toBeNull()
+    await act(async () => {
+      chip?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+
+    expect(
+      window.document.querySelector<HTMLImageElement>('.canvas-prompt-hover-media img')?.src,
+    ).toBe('safe-file://x/hero.png')
+    expect(window.document.querySelector('.canvas-prompt-hover-scroll')).toBeNull()
+    expect(window.document.querySelector('.canvas-prompt-hover-head')).toBeNull()
+    expect(window.document.querySelector('.canvas-prompt-hover-meta')).toBeNull()
+  })
+
+  it('renders only the video cover in the hover card', async () => {
+    const mounted = await mountComposer(
+      {
+        version: 2,
+        blocks: [{ kind: 'reference', id: 'r1', source: 'manual', sourceNodeId: 'clip', relation: 'reference_video', label: '参考视频', order: 0 }],
+      },
+      [videoNode()],
+      [videoAsset],
+    )
+
+    const chip = mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-chip')
+    expect(chip).not.toBeNull()
+    await act(async () => {
+      chip?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+
+    expect(
+      window.document.querySelector<HTMLImageElement>('.canvas-prompt-hover-media img')?.src,
+    ).toBe('https://example.com/clip-cover.png')
+    expect(window.document.querySelector('.canvas-prompt-hover-head')).toBeNull()
+    expect(window.document.querySelector('.canvas-prompt-hover-meta')).toBeNull()
+  })
+
+  it('renders only text or table content in the hover card', async () => {
+    const mounted = await mountComposer(
+      {
+        version: 2,
+        blocks: [{ kind: 'reference', id: 'r1', source: 'manual', sourceNodeId: 'storyboard', relation: 'storyboard', label: '分镜表', order: 0 }],
+      },
+      [textNode()],
+      [],
+    )
+
+    const chip = mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-chip')
+    expect(chip).not.toBeNull()
+    await act(async () => {
+      chip?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+
+    expect(window.document.querySelector('.canvas-prompt-hover-scroll')?.textContent).toBe(
+      '| 镜号 | 画面 |\n| 01 | 女主回头 |',
+    )
+    expect(window.document.querySelector('.canvas-prompt-hover-head')).toBeNull()
+    expect(window.document.querySelector('.canvas-prompt-hover-meta')).toBeNull()
   })
 
   it('renders structured and invalid references as atomic states', async () => {

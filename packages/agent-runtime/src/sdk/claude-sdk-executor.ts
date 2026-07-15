@@ -292,6 +292,7 @@ export async function loadSdkMcpFactory(): Promise<{
 export class ClaudeSDKExecutor {
   private emitter = new AgentEventEmitter()
   private abortController: AbortController | null = null
+  private cancelRequested = false
 
   /**
    * Live permission mode — can be updated mid-turn via `setPermissionMode()`.
@@ -310,7 +311,15 @@ export class ClaudeSDKExecutor {
   }
 
   cancel(): void {
+    this.cancelRequested = true
     this.abortController?.abort()
+    try {
+      if (typeof this.activeQuery?.close === 'function') this.activeQuery.close()
+    } catch (error) {
+      log.warn('Failed to force-close Claude SDK query during cancellation', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   /**
@@ -460,12 +469,15 @@ export class ClaudeSDKExecutor {
     userMessage: string,
     config: SDKExecutorConfig,
   ): Promise<void> {
+    this.cancelRequested = false
+    const abortController = new AbortController()
+    this.abortController = abortController
     const sdk = await loadSDK()
+    if (this.cancelRequested || abortController.signal.aborted) return
     if (sdk == null) {
       throw new SDKNotAvailableError()
     }
 
-    this.abortController = new AbortController()
     this.livePermissionMode = config.permissionMode
     const ctx = { sessionId, turnId, toolNamesById: new Map<string, string>() }
     const streamTerminalizer = new StreamTerminalizer()
@@ -555,7 +567,7 @@ export class ClaudeSDKExecutor {
       })
       emitTerminalStatus('cancelled')
     }
-    this.abortController.signal.addEventListener('abort', onAbort, { once: true })
+    abortController.signal.addEventListener('abort', onAbort, { once: true })
 
     // Build SDK options
     const runtimeEnv = buildIsolatedRuntimeEnv(
@@ -606,7 +618,7 @@ export class ClaudeSDKExecutor {
       // Resolve sdkSessionId from config each iteration (resume recovery may update it)
       const sdkSessionId = config.sdkSessionId ?? sessionId
       const options: SDKQueryOptions = {
-        abortController: this.abortController,
+        abortController,
         model: effectiveModel,
         cwd: config.workspaceRootPath,
         ...(claudeCodeExecutable != null
@@ -817,7 +829,7 @@ export class ClaudeSDKExecutor {
         additionalDirectories: options.additionalDirectories ?? null,
       })
 
-      const interactivePrompt = createInteractivePromptStream(prompt, this.abortController.signal)
+      const interactivePrompt = createInteractivePromptStream(prompt, abortController.signal)
       try {
         const queryResult = sdk.query({ prompt: interactivePrompt.stream, options })
         let maxTurnsResult: SDKResultMessage | null = null
@@ -825,7 +837,7 @@ export class ClaudeSDKExecutor {
         this.activeQuery = queryResult
         try {
           for await (const message of queryResult) {
-            if (this.abortController.signal.aborted) break
+            if (abortController.signal.aborted) break
             if (message.type === 'result') interactivePrompt.close()
             if (message.type === 'system' && 'subtype' in message && message.subtype === 'init') {
               log.debug('Claude Code init message received', {
@@ -872,7 +884,7 @@ export class ClaudeSDKExecutor {
           if (this.activeQuery === queryResult) this.activeQuery = null
         }
 
-        if (this.abortController.signal.aborted) {
+        if (abortController.signal.aborted) {
           // Cancellation events already emitted by the abort signal listener.
           return
         }
@@ -914,7 +926,7 @@ export class ClaudeSDKExecutor {
         return
       } catch (err) {
         interactivePrompt.close()
-        if (this.abortController.signal.aborted) {
+        if (abortController.signal.aborted) {
           // Cancellation events already emitted by the abort signal listener.
           return
         }
