@@ -43,7 +43,7 @@ import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAsse
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel, buildOperationPanelSnapshotSignature } from './CanvasOperationPanel'
 import { shouldFocusCanvasInlinePanel } from './canvasInlinePanelFocus'
-import { runWithCanvasTaskViewport } from './canvasTaskViewportGuard'
+import { captureCanvasTaskViewport, runWithCanvasTaskViewport } from './canvasTaskViewportGuard'
 import { CanvasOperationWorkbench } from './CanvasOperationWorkbench'
 import {
   resolveCanvasOperationResourceNode,
@@ -2473,13 +2473,12 @@ export function CanvasWorkspaceView({
   const persistCurrentCanvasViewport = useCallback(async () => {
     const currentSnapshot = snapshotRef.current
     if (!currentSnapshot) return null
-    const viewport = canvasViewportRef.current ?? {
+    const controls = canvasViewportControlsRef.current
+    const viewport = captureCanvasTaskViewport(controls, canvasViewportRef.current, {
       x: currentSnapshot.board.viewport.x,
       y: currentSnapshot.board.viewport.y,
       zoom: currentSnapshot.board.viewport.zoom,
-      width: 0,
-      height: 0,
-    }
+    })
     await canvasApi.updateViewport(
       projectId,
       { x: viewport.x, y: viewport.y, zoom: viewport.zoom },
@@ -6993,6 +6992,7 @@ export function CanvasWorkspaceView({
       }
       return
     }
+    const viewportBeforeRetry = await persistCurrentCanvasViewport()
     const inputNodes = expandCanvasInputNodes(
       snapshot.nodes.filter((node) => task.inputNodeIds.includes(node.id)),
       snapshot.nodes,
@@ -7008,21 +7008,26 @@ export function CanvasWorkspaceView({
       x: 360,
       y: 260,
     })
-    await createTask({
-      operation: task.operation,
-      prompt: task.prompt ?? '',
-      inputNodeIds: task.inputNodeIds,
-      inputAssetIds: task.inputAssetIds,
-      ...(inputFiles.length > 0 ? { inputFiles } : {}),
-      ...(task.providerProfileId != null ? { providerProfileId: task.providerProfileId } : {}),
-      ...(task.manifestId != null ? { manifestId: task.manifestId } : {}),
-      ...(task.modelId != null ? { modelId: task.modelId } : {}),
-      modelParams: task.modelParams ?? {},
-      outputPlacement: {
-        x: placement.x,
-        y: placement.y,
-      },
-    })
+    await runWithCanvasTaskViewport(
+      () => viewportBeforeRetry,
+      restoreCanvasViewport,
+      () =>
+        createTask({
+          operation: task.operation,
+          prompt: task.prompt ?? '',
+          inputNodeIds: task.inputNodeIds,
+          inputAssetIds: task.inputAssetIds,
+          ...(inputFiles.length > 0 ? { inputFiles } : {}),
+          ...(task.providerProfileId != null ? { providerProfileId: task.providerProfileId } : {}),
+          ...(task.manifestId != null ? { manifestId: task.manifestId } : {}),
+          ...(task.modelId != null ? { modelId: task.modelId } : {}),
+          modelParams: task.modelParams ?? {},
+          outputPlacement: {
+            x: placement.x,
+            y: placement.y,
+          },
+        }),
+    )
   }
 
   const handleToggleLock = async () => {

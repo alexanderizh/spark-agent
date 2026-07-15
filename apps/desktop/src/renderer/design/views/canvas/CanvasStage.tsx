@@ -305,6 +305,7 @@ export type CanvasStageViewport = Viewport & {
 }
 
 export type CanvasStageViewportControls = {
+  getViewport: () => Viewport | null
   fitView: () => void
   zoomBy: (delta: number) => void
   panBy: (delta: { x: number; y: number }) => void
@@ -927,6 +928,13 @@ function CanvasStageInner({
       )
     }
     onViewportControlsChange({
+      getViewport: () => {
+        const instance = flowInstanceRef.current
+        if (!instance) return null
+        const viewport = instance.getViewport()
+        latestViewportRef.current = viewport
+        return viewport
+      },
       fitView: () => {
         void flowInstanceRef.current?.fitView({
           padding: 0.2,
