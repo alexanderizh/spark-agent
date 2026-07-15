@@ -95,8 +95,15 @@ import { buildStoryboardGridPrompt, buildStoryboardNodePrompt } from './canvasSt
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import { splitStoryboardNode } from './canvasStoryboardNodeSplit'
 import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
+import {
+  CANVAS_PIPELINE_CREATE_OPERATIONS,
+  canvasGeneralCreateOperations,
+} from './canvasNodeGenerationMenu'
 import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEntityExtract'
-import { DEFAULT_SHOT_SCRIPT_CONFIG, applyShotScriptConfigToPrompt } from './canvasAgentPromptPresets'
+import {
+  DEFAULT_SHOT_SCRIPT_CONFIG,
+  applyShotScriptConfigToPrompt,
+} from './canvasAgentPromptPresets'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import {
   characterSourceImageUrl,
@@ -4758,7 +4765,8 @@ export function CanvasWorkspaceView({
     })
     const inputFiles = promptSubmission.inputFiles ?? []
     const effectivePrompt =
-      promptSubmission.prompt || (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
+      promptSubmission.prompt ||
+      (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
     const mergedModelParams = mergeCanvasPresetTargetModelParams(presetTargetId, modelParams)
     const styleContext = buildCanvasStyleContext(snapshot, {
       ...(effectiveNegativePrompt ? { negativePrompt: effectiveNegativePrompt } : {}),
@@ -6959,7 +6967,8 @@ export function CanvasWorkspaceView({
                         })
                         .filter(Boolean)
                         .join('\n\n')
-                      const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
+                      const operation = (opNode.data.operation ??
+                        opNode.type) as CanvasOperationType
                       const promptDocument =
                         params.promptDocument ??
                         migrateLegacyPrompt({
@@ -7162,7 +7171,9 @@ export function CanvasWorkspaceView({
                       ...(params.manifestId ? { manifestId: params.manifestId } : {}),
                       ...(params.modelId ? { modelId: params.modelId } : {}),
                       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                      ...(params.shotScriptConfig ? { shotScriptConfig: params.shotScriptConfig } : {}),
+                      ...(params.shotScriptConfig
+                        ? { shotScriptConfig: params.shotScriptConfig }
+                        : {}),
                     }
                     if (params.prompt.trim()) {
                       nextNodeData.prompt = params.prompt
@@ -8095,20 +8106,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
         ]
       : []),
   ]
-  const genericAiOperations: Array<{ operation: CanvasOperationType; label: string }> = [
-    { operation: 'text_to_image', label: '文生图' },
-    { operation: 'image_edit', label: '图生图' },
-    { operation: 'image_compose', label: '多图合成' },
-    { operation: 'storyboard_grid', label: '故事板' },
-    { operation: 'panorama_360', label: '360 全景图' },
-    { operation: 'text_generate', label: '文本生成' },
-    { operation: 'text_rewrite', label: '文本改写' },
-    { operation: 'prompt_optimize', label: 'Prompt 优化' },
-    { operation: 'text_to_video', label: '文生视频' },
-    { operation: 'image_to_video', label: '图生视频' },
-    { operation: 'text_to_audio', label: '文生音频' },
-    { operation: 'audio_transcribe', label: '语音转写' },
-  ]
+  const genericAiOperations = canvasGeneralCreateOperations()
   const menuButton = (
     label: string,
     icon: React.ReactNode,
@@ -8142,7 +8140,9 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
       <div className="canvas-floating-menu-title">新建 AI 任务</div>
       {genericAiOperations.map((item) => (
         <div key={item.operation}>
-          {menuButton(item.label, undefined, () => onCreateOperationChild(item.operation))}
+          {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
+            onCreateOperationChild(item.operation),
+          )}
         </div>
       ))}
     </div>
@@ -8189,17 +8189,22 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           content={
             <div className="canvas-floating-menu">
               <div className="canvas-floating-menu-title">剧本流水线</div>
-              {pipelineActions.length > 0 ? (
+              {pipelineActions.length > 0 &&
                 pipelineActions.map((action) => (
                   <div key={action.id}>
                     {menuButton(action.label, resolveCanvasFloatingIcon(action.icon, 14), () =>
                       onPipelineAction(action.id),
                     )}
                   </div>
-                ))
-              ) : (
-                <div className="canvas-floating-menu-empty">当前节点暂无下一步动作</div>
-              )}
+                ))}
+              {pipelineActions.length > 0 && <div className="canvas-floating-menu-divider" />}
+              {CANVAS_PIPELINE_CREATE_OPERATIONS.map((item) => (
+                <div key={item.operation}>
+                  {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
+                    onCreateOperationChild(item.operation),
+                  )}
+                </div>
+              ))}
               <div className="canvas-floating-menu-divider" />
               {menuButton('确认采用', <Icons.Check size={14} />, () =>
                 onSetProductionState('confirmed'),
@@ -8643,7 +8648,8 @@ function CanvasNodeEditModal({
   const isTextLike = node?.type === 'text' || node?.type === 'prompt'
   const isShotScriptNode =
     node?.type === 'text' &&
-    isShotScriptText(node.data.text) && parseShotTable(node.data.text ?? '').length > 0
+    isShotScriptText(node.data.text) &&
+    parseShotTable(node.data.text ?? '').length > 0
 
   useEffect(() => {
     if (!node) return

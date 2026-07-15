@@ -5,7 +5,16 @@ import { Icons } from '../../Icons'
 import { operationLabel } from './canvas.api'
 import { isCanvasImageContentNode } from './canvas.capabilities'
 import { getNodePipelineActions } from './canvasPipeline'
-import type { CanvasNode, CanvasOperationType, CanvasProductionState, CanvasTask } from './canvas.types'
+import {
+  CANVAS_PIPELINE_CREATE_OPERATIONS,
+  canvasGeneralCreateOperations,
+} from './canvasNodeGenerationMenu'
+import type {
+  CanvasNode,
+  CanvasOperationType,
+  CanvasProductionState,
+  CanvasTask,
+} from './canvas.types'
 
 const FLOATING_IMAGE_STYLE_EXTRACTION_PROMPT =
   '请分析输入图片的视觉风格，并输出可复用的中文风格描述。重点包括：画面题材、艺术媒介、色彩倾向、光影氛围、构图镜头、材质细节、时代/类型气质，以及适合作为后续生成提示词的风格关键词。'
@@ -159,7 +168,10 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
           },
         ]
       : []),
-    ...((contentNode.type === 'image' || contentNode.type === 'text' || contentNode.type === 'prompt') && hasResource
+    ...((contentNode.type === 'image' ||
+      contentNode.type === 'text' ||
+      contentNode.type === 'prompt') &&
+    hasResource
       ? [
           {
             key: 'detail-sheet-nine-grid',
@@ -170,20 +182,7 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
         ]
       : []),
   ]
-  const genericAiOperations: Array<{ operation: CanvasOperationType; label: string }> = [
-    { operation: 'text_to_image', label: '文生图' },
-    { operation: 'image_edit', label: '图生图' },
-    { operation: 'image_compose', label: '多图合成' },
-    { operation: 'storyboard_grid', label: '故事板' },
-    { operation: 'panorama_360', label: '360 全景图' },
-    { operation: 'text_generate', label: '文本生成' },
-    { operation: 'text_rewrite', label: '文本改写' },
-    { operation: 'prompt_optimize', label: 'Prompt 优化' },
-    { operation: 'text_to_video', label: '文生视频' },
-    { operation: 'image_to_video', label: '图生视频' },
-    { operation: 'text_to_audio', label: '文生音频' },
-    { operation: 'audio_transcribe', label: '语音转写' },
-  ]
+  const genericAiOperations = canvasGeneralCreateOperations()
   const menuButton = (
     label: string,
     icon: React.ReactNode,
@@ -217,7 +216,9 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
       <div className="canvas-floating-menu-title">新建 AI 任务</div>
       {genericAiOperations.map((item) => (
         <div key={item.operation}>
-          {menuButton(item.label, undefined, () => onCreateOperationChild(item.operation))}
+          {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
+            onCreateOperationChild(item.operation),
+          )}
         </div>
       ))}
     </div>
@@ -264,17 +265,22 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
           content={
             <div className="canvas-floating-menu">
               <div className="canvas-floating-menu-title">剧本流水线</div>
-              {pipelineActions.length > 0 ? (
+              {pipelineActions.length > 0 &&
                 pipelineActions.map((action) => (
                   <div key={action.id}>
                     {menuButton(action.label, resolveCanvasFloatingIcon(action.icon, 14), () =>
                       onPipelineAction(action.id),
                     )}
                   </div>
-                ))
-              ) : (
-                <div className="canvas-floating-menu-empty">当前节点暂无下一步动作</div>
-              )}
+                ))}
+              {pipelineActions.length > 0 && <div className="canvas-floating-menu-divider" />}
+              {CANVAS_PIPELINE_CREATE_OPERATIONS.map((item) => (
+                <div key={item.operation}>
+                  {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
+                    onCreateOperationChild(item.operation),
+                  )}
+                </div>
+              ))}
               <div className="canvas-floating-menu-divider" />
               {menuButton('确认采用', <Icons.Check size={14} />, () =>
                 onSetProductionState('confirmed'),
@@ -330,9 +336,7 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
           <Button
             size="middle"
             type="text"
-            icon={
-              operationFullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />
-            }
+            icon={operationFullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
             onClick={() => onOperationFullscreenChange?.(!operationFullscreen)}
           >
             {operationFullscreen ? '退出全屏' : '全屏'}

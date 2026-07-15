@@ -7,7 +7,13 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
-import { Handle, NodeResizer, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react'
+import {
+  Handle,
+  NodeResizer,
+  Position,
+  useUpdateNodeInternals,
+  type NodeProps,
+} from '@xyflow/react'
 import { Dropdown } from '@lobehub/ui'
 import { Progress } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
@@ -22,6 +28,10 @@ import {
   pickCanvasNodeMinSize,
 } from './canvasNodeSize'
 import { getNodePipelineActions } from './canvasPipeline'
+import {
+  CANVAS_GENERAL_CREATE_OPERATION_GROUPS,
+  CANVAS_PIPELINE_CREATE_OPERATIONS,
+} from './canvasNodeGenerationMenu'
 import { buildCanvasOperationParamSummary } from './canvasOperationParamSummary'
 import {
   getNodeCurrentSubtype,
@@ -770,7 +780,7 @@ export const CanvasNode = memo(function CanvasNode({
               { type: 'divider' as const },
             ]
           : []),
-        ...(pipelineActions.length > 0
+        ...(pipelineActions.length > 0 || canCreateOperationFromNode
           ? [
               {
                 key: 'pipeline-actions',
@@ -779,15 +789,27 @@ export const CanvasNode = memo(function CanvasNode({
                     <Icons.Workflow size={14} /> 剧本流水线
                   </span>
                 ),
-                children: pipelineActions.map((action) => ({
-                  key: `pipeline-${action.id}`,
-                  label: (
-                    <span className="canvas-menu-item">
-                      {resolvePipelineIcon(action.icon)} {action.label}
-                    </span>
-                  ),
-                  onClick: () => actions.pipelineAction(node.id, action.id),
-                })),
+                children: [
+                  ...pipelineActions.map((action) => ({
+                    key: `pipeline-${action.id}`,
+                    label: (
+                      <span className="canvas-menu-item">
+                        {resolvePipelineIcon(action.icon)} {action.label}
+                      </span>
+                    ),
+                    onClick: () => actions.pipelineAction(node.id, action.id),
+                  })),
+                  ...(pipelineActions.length > 0 ? [{ type: 'divider' as const }] : []),
+                  ...CANVAS_PIPELINE_CREATE_OPERATIONS.map((item) => ({
+                    key: `pipeline-op-${item.operation}`,
+                    label: (
+                      <span className="canvas-menu-item">
+                        {resolvePipelineIcon(item.icon)} {item.label}
+                      </span>
+                    ),
+                    onClick: () => actions.createOperationChild(node.id, item.operation),
+                  })),
+                ],
               },
               { type: 'divider' as const },
             ]
@@ -885,68 +907,14 @@ export const CanvasNode = memo(function CanvasNode({
                 children: [
                   ...contextualAiActions,
                   ...(contextualAiActions.length > 0 ? [{ type: 'divider' as const }] : []),
-                  {
-                    key: 'op-text_to_image',
-                    label: '文生图',
-                    onClick: () => actions.createOperationChild(node.id, 'text_to_image'),
-                  },
-                  {
-                    key: 'op-image_edit',
-                    label: '图生图 / 编辑',
-                    onClick: () => actions.createOperationChild(node.id, 'image_edit'),
-                  },
-                  {
-                    key: 'op-image_compose',
-                    label: '多图合成',
-                    onClick: () => actions.createOperationChild(node.id, 'image_compose'),
-                  },
-                  {
-                    key: 'op-storyboard_grid',
-                    label: '故事板',
-                    onClick: () => actions.createOperationChild(node.id, 'storyboard_grid'),
-                  },
-                  {
-                    key: 'op-panorama_360',
-                    label: '360 全景图',
-                    onClick: () => actions.createOperationChild(node.id, 'panorama_360'),
-                  },
-                  { type: 'divider' as const },
-                  {
-                    key: 'op-text_generate',
-                    label: '文本生成',
-                    onClick: () => actions.createOperationChild(node.id, 'text_generate'),
-                  },
-                  {
-                    key: 'op-text_rewrite',
-                    label: '文本改写',
-                    onClick: () => actions.createOperationChild(node.id, 'text_rewrite'),
-                  },
-                  {
-                    key: 'op-prompt_optimize',
-                    label: 'Prompt 优化',
-                    onClick: () => actions.createOperationChild(node.id, 'prompt_optimize'),
-                  },
-                  { type: 'divider' as const },
-                  {
-                    key: 'op-text_to_video',
-                    label: '文生视频',
-                    onClick: () => actions.createOperationChild(node.id, 'text_to_video'),
-                  },
-                  {
-                    key: 'op-image_to_video',
-                    label: '图生视频',
-                    onClick: () => actions.createOperationChild(node.id, 'image_to_video'),
-                  },
-                  {
-                    key: 'op-text_to_audio',
-                    label: '文生音频',
-                    onClick: () => actions.createOperationChild(node.id, 'text_to_audio'),
-                  },
-                  {
-                    key: 'op-audio_transcribe',
-                    label: '语音转写',
-                    onClick: () => actions.createOperationChild(node.id, 'audio_transcribe'),
-                  },
+                  ...CANVAS_GENERAL_CREATE_OPERATION_GROUPS.flatMap((group, groupIndex) => [
+                    ...(groupIndex > 0 ? [{ type: 'divider' as const }] : []),
+                    ...group.items.map((item) => ({
+                      key: `op-${item.operation}`,
+                      label: item.label,
+                      onClick: () => actions.createOperationChild(node.id, item.operation),
+                    })),
+                  ]),
                 ],
               },
             ]
