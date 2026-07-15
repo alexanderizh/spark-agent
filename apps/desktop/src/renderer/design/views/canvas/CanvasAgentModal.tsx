@@ -1122,12 +1122,7 @@ export function CanvasAgentModal({
       )}
 
       <div className="canvas-bottom-floating-head canvas-agent-head-minimal">
-        <div className="canvas-agent-head-info">
-          <strong className="canvas-agent-title">
-            <Icons.Sparkles size={14} />
-            画布助手
-          </strong>
-        </div>
+        
         <div className="canvas-agent-head-composer">{headerSessionPicker}</div>
         <div className="canvas-agent-head-actions">
           <Tooltip title={fullscreen ? '恢复宽度' : '展开到半屏'}>
