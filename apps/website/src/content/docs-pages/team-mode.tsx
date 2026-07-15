@@ -68,7 +68,7 @@ const Body = () => (
         避免抢同一 workspace / session 文件。
       </li>
       <li>
-        Member 跑一次性 turn，使用独立的 Provider / Model / Skills / MCP 与隔离的 Claude SDK
+        Member 跑一次性 turn，使用独立的 Provider / Model / Skills 与隔离的 Claude SDK；应用中所有已启用 MCP 自动挂载，
         <code>sdkSessionId</code>。流式 <code>assistant_message</code> 事件被重打标签为
         <code>team_member_message</code>（带 <code>dispatchId</code>），UI 把每个 Member
         渲染成独立的「群成员消息」，左侧方形头像 + 名字 + 正文。
@@ -166,7 +166,7 @@ export const teamMode: DocsPageContent = {
     description: '把一个复杂任务拆给多个 Agent 并行执行',
     totalTime: 'PT3M',
     steps: [
-      '在「Agents」视图创建 1 个 Host Agent 与若干 Member Agent（每个 Member 设定自己的模型 / Skills / MCP）',
+      '在「Agents」视图创建 1 个 Host Agent 与若干 Member Agent（每个 Member 可设定自己的模型 / Skills；已启用 MCP 自动可用）',
       '进入新会话，在 Agent 选择器选「团队模式」并绑定 Host',
       '在右侧 Inspector 勾选本会话可用的 Member Agent',
       '给 Host 发任务，Host 会自动通过 mcp__spark_team__agent_dispatch 把子任务分派给 Member',
@@ -175,7 +175,7 @@ export const teamMode: DocsPageContent = {
   },
   aiSummary:
     'Spark Agent 团队模式（Team Mode / Agent-to-Agent）：Host Agent 通过 mcp__spark_team__agent_dispatch 把子任务分派给 Member Agent，' +
-    '每个 Member 使用独立的 Provider/Model/Skills/MCP 与隔离的 sdkSessionId，事件流（team_dispatch_requested / team_member_message / ' +
+    '每个 Member 使用独立的 Provider/Model/Skills 与隔离的 sdkSessionId，应用中所有已启用 MCP 自动对 Host 和 Member 可用；事件流（team_dispatch_requested / team_member_message / ' +
     'team_member_status / team_dispatch_completed）以群聊方式呈现。嵌套（allowNesting/maxDepth=3）、单轮预算（5 次 / turn）、' +
     '超时（默认 120s，最大 600s）、agent_teams 持久化与 team:list-dispatches 历史查询、群成员头像（DiceBear URL）。',
   Body,

@@ -79,10 +79,10 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     label: 'MCP',
     icon: <Icons.MCP size={14} />,
     accent: '--primary',
-    defaultPrompt: '使用所选 MCP 服务完成外部能力调用。',
+    defaultPrompt: '使用已启用的 MCP 服务完成外部能力调用。',
     hint: '外部 MCP 服务',
     runtimeLabel: '真实执行',
-    runtimeHint: '会生成只挂所选 MCP 服务的临时 worker 派发单轮执行；execution=static 时回落静态回显。',
+    runtimeHint: '会生成临时 worker，并自动挂载所有已启用 MCP；execution=static 时回落静态回显。',
   },
   approval: {
     kind: 'approval',

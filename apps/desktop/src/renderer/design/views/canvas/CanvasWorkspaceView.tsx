@@ -7218,6 +7218,26 @@ export function CanvasWorkspaceView({
                         ...(extractSystemPrompt ? { systemPrompt: extractSystemPrompt } : {}),
                         ...(params.inputTransport ? { inputTransport: params.inputTransport } : {}),
                       })
+                      // 抽取节点走独立的 workflow 分支，不会经过普通操作节点的
+                      // runOperationNode / createTask 链路；因此要在这里同步记录最近一次
+                      // 选择的运行时与模型参数，保证下一个角色/场景抽取节点能复用。
+                      const extractPresetTargetId = resolveCanvasPresetTarget({
+                        operation,
+                        taskPipelineRole: opNode.data.pipelineRole ?? null,
+                        outputPipelineRole: opNode.data.outputPipelineRole ?? null,
+                        workflow: params.modelParams?.workflow,
+                      })
+                      writeCanvasLastUsedPresetTarget(extractPresetTargetId, {
+                        ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                        ...(params.agentId ? { agentId: params.agentId } : {}),
+                        ...(params.providerProfileId
+                          ? { providerProfileId: params.providerProfileId }
+                          : {}),
+                        ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                        ...(params.modelId ? { modelId: params.modelId } : {}),
+                        ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                        ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                      })
                       closePanel()
                       void handleExtractEntities(
                         sourceNode,

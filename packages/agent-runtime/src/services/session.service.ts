@@ -99,7 +99,7 @@ import type {
   CommandListItem,
   CustomCommandConfig,
 } from '../core/index.js'
-import { MANAGED_MCP_SCOPE, McpService } from './mcp-server.service.js'
+import { McpService } from './mcp-server.service.js'
 import type { McpOAuthTokenProvider } from './mcp-server.service.js'
 import { resolveMcpConfig } from '../mcp/index.js'
 import type { McpChangeEvent } from './mcp-server.service.js'
@@ -260,7 +260,6 @@ interface FirstTurnTitleContext {
   userMessage: string
 }
 interface TryStartSDKTurnOptions {
-  allowedMcpServerIds?: Set<string>
   firstTurnTitleContext?: FirstTurnTitleContext
   /**
    * 团队模式 @ 路由：当前 turn 实际由该 Member 直接响应。
@@ -2258,12 +2257,6 @@ export class SessionService {
       )
     }
 
-    const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
-    const appMcpAvailabilityPrompt = buildAppMcpAvailabilityPrompt({
-      servers: this.mcpService.listServers(),
-      allowedServerIds: allowedMcpServerIds,
-    })
-
     const composedSystemPrompt = joinPromptSections(
       managedAgentPrompt,
       teamMemberContextPrompt,
@@ -2278,7 +2271,6 @@ export class SessionService {
         : undefined,
       automation.unattended ? UNATTENDED_AUTOMATION_SYSTEM_PROMPT : undefined,
       runtimeRulesPrompt,
-      appMcpAvailabilityPrompt,
       memoryBlock,
       // 记忆行为引导紧跟 memoryBlock：先让 agent 看到具体记忆摘要，再说明两套记忆的
       // 区别与"记住"路由规则。无条件注入（所有 adapter 都挂载了应用记忆工具）。
@@ -2638,7 +2630,6 @@ export class SessionService {
         ...(goalConfig != null ? { goal: goalConfig } : {}),
       }
       const turnOptions: TryStartSDKTurnOptions = {
-        ...(allowedMcpServerIds != null ? { allowedMcpServerIds } : {}),
         ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
         primaryWorkspaceId: primaryWorkspaceId ?? '',
         agentId: agent.id,
@@ -2728,7 +2719,6 @@ export class SessionService {
       sessionRepo,
       codexConfig,
       {
-        ...(allowedMcpServerIds != null ? { allowedMcpServerIds } : {}),
         ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
         primaryWorkspaceId: primaryWorkspaceId ?? '',
         agentId: agent.id,
@@ -2907,7 +2897,7 @@ export class SessionService {
     }
 
     // Build MCP server config from our McpService for the SDK
-    const mcpServers = await this.buildMcpServersForSDK(options.allowedMcpServerIds)
+    const mcpServers = await this.buildMcpServersForSDK()
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
@@ -3545,7 +3535,7 @@ export class SessionService {
       return
     }
 
-    const mcpServers = await this.buildMcpServersForSDK(options.allowedMcpServerIds)
+    const mcpServers = await this.buildMcpServersForSDK()
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
@@ -3929,15 +3919,12 @@ export class SessionService {
   /**
    * Build MCP server configs in the SDK's expected format from our McpService.
    */
-  private async buildMcpServersForSDK(
-    allowedServerIds?: Set<string>,
-  ): Promise<Record<string, SDKMcpServerConfig>> {
+  private async buildMcpServersForSDK(): Promise<Record<string, SDKMcpServerConfig>> {
     const result: Record<string, SDKMcpServerConfig> = {}
     const servers = this.mcpService.listServers()
 
     for (const server of servers) {
       if (!server.enabled) continue
-      if (allowedServerIds != null && !allowedServerIds.has(server.id)) continue
       try {
         const cfg = JSON.parse(server.configJson) as Record<string, unknown>
         // 归一化：兼容 `transport`/`type` 字段名，支持 http(Streamable HTTP)/sse/stdio。
@@ -5371,8 +5358,8 @@ export class SessionService {
                   // - input：LLM 把 prompt/objective/constraint/value 拆解为结构化 JSON；派发失败或
                   //   LLM 输出非法 JSON 时回落透传 getDefaultWorkflowAtomicContent 并追加提示。
                   // - skill/tool/mcp/plan/review/artifact：config.execution!=='static' 时经临时受限
-                  //   worker 真实派发单轮执行（skill 只挂 skillIds、tool 收窄 toolIds、mcp 只挂
-                  //   mcpServerIds、input/plan/review 只读工具集）；artifact 另外支持 exportPath 写盘。
+                  //   worker 真实派发单轮执行（skill 只挂 skillIds、tool 收窄 toolIds；MCP 使用
+                  //   全局已启用集合；input/plan/review 使用只读工具集）；artifact 另外支持 exportPath 写盘。
                   //   配 execution:'static' 或该 kind 不在真实执行集内时，回落静态回显。
                   switch (request.kind) {
                     case 'verify':
@@ -5912,8 +5899,8 @@ export class SessionService {
         )
       : crypto.randomUUID()
 
-    // Member 自身的 MCP 工具
-    const memberMcpServers = await this.buildMcpServersForSDK(getAllowedMcpServerIds(member, null))
+    // 所有已启用的应用 MCP 对团队成员默认可用，与 Host / 单 Agent 保持一致。
+    const memberMcpServers = await this.buildMcpServersForSDK()
     // 内置联网搜索对团队成员同样默认挂载
     const memberWebSearchServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
     if (memberWebSearchServer != null) memberMcpServers.spark_search = memberWebSearchServer
@@ -9334,9 +9321,6 @@ function buildWorkflowSystemPrompt(
       Array.isArray(config.ruleIds) && config.ruleIds.length > 0
         ? `rules=${config.ruleIds.join(', ')}`
         : '',
-      Array.isArray(config.mcpServerIds) && config.mcpServerIds.length > 0
-        ? `mcp=${config.mcpServerIds.join(', ')}`
-        : '',
       typeof config.retryCount === 'number' ? `retry=${config.retryCount}` : '',
     ].filter(Boolean)
     const prompt =
@@ -9354,7 +9338,7 @@ function buildWorkflowSystemPrompt(
       ? 'When workflow_run is available, call `mcp__spark_team__workflow_run` exactly once with the current user objective. The tool executes explicit agent nodes sequentially and carries outputKey state between nodes.'
       : workflowExecutionMode === 'codex_guided'
         ? 'This runtime does not expose `workflow_run`. Execute the active workflow phases yourself in topological order within this turn. Keep an internal checklist of active nodes, do not skip a node unless an incoming condition is false based on established state, and clearly report the blocking node if the workflow cannot be completed.'
-        : 'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, MCP server, or permission preference, treat it as the preferred configuration for that phase. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
+        : 'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, or permission preference, treat it as the preferred configuration for that phase. All enabled MCP servers remain globally available. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
     lines.join('\n'),
   ]
     .filter((line) => line.trim().length > 0)
@@ -9748,8 +9732,8 @@ export function shouldRunWorkflowAtomicNodeAsAgent(node: NormalizedWorkflowNode)
 /**
  * 为原子节点构造临时受限 worker：复用 createWorkflowSubagentMember 的 provider/model 继承逻辑，
  * 再按节点类型收窄能力面：
- * - skill：只挂节点所选 skillIds；tool：把 toolIds 交给 metadata（executeMemberTurn 换算 disallowedTools）；
- *   mcp：只挂所选 mcpServerIds。这些字段 createWorkflowSubagentMember 已从 config 读取，无需重复。
+ * - skill：只挂节点所选 skillIds；tool：把 toolIds 交给 metadata（executeMemberTurn 换算 disallowedTools）。
+ *   MCP 不再按 Agent 或节点收窄，所有已启用的应用 MCP 都由运行时统一挂载。
  * - input / plan / review：纯 LLM 任务（结构化解析 / 计划 / 复核），不需要外部写与执行类工具——
  *   额外用只读 toolIds 覆盖，禁掉 Write/Edit/Bash 等。
  */
@@ -9903,47 +9887,6 @@ function buildRuntimeRulesPrompt(rules: string[]): string | undefined {
   const unique = Array.from(new Set(rules.map((rule) => rule.trim()).filter(Boolean)))
   if (unique.length === 0) return undefined
   return ['[Runtime Rules]', ...unique.map((rule, index) => `${index + 1}. ${rule}`)].join('\n\n')
-}
-
-function getAllowedMcpServerIds(agent: AgentItem, workflow: WorkflowItem | null): Set<string> {
-  const ids = new Set(agent.mcpServerIds)
-  const graph = workflow != null ? normalizeWorkflowGraph(workflow.graph) : null
-  for (const node of graph?.nodes ?? []) {
-    const configured = node.config.mcpServerIds
-    if (!Array.isArray(configured)) continue
-    for (const id of configured) {
-      if (typeof id === 'string' && id.trim().length > 0) ids.add(id)
-    }
-  }
-  return ids
-}
-
-function buildAppMcpAvailabilityPrompt(input: {
-  servers: Array<{ id: string; name: string; scope: string; enabled: boolean }>
-  allowedServerIds: Set<string>
-}): string | undefined {
-  const appServers = input.servers.filter((server) => server.scope !== MANAGED_MCP_SCOPE)
-  if (appServers.length === 0) return undefined
-
-  const available = appServers.filter(
-    (server) => server.enabled && input.allowedServerIds.has(server.id),
-  )
-  if (available.length > 0) return undefined
-
-  const enabled = appServers.filter((server) => server.enabled)
-  const serverSummary = appServers
-    .map((server) => `${server.name} (${server.enabled ? 'enabled' : 'disabled'}, ${server.scope})`)
-    .join(', ')
-
-  return [
-    '## App MCP Availability',
-    'The current Agent has no user-added app MCP servers available in this turn.',
-    enabled.length > 0
-      ? `The app has configured MCP server(s): ${serverSummary}. None of the enabled servers are bound to this Agent or workflow node.`
-      : `The app has configured MCP server(s): ${serverSummary}, but none are enabled.`,
-    'If the user asks to use a newly added MCP, explain both checks clearly: the MCP may have been added to the app successfully, but it must also be enabled and assigned to the current Agent helper (Agent Management > MCP) or the active workflow node before you can call its tools.',
-    'Do not claim the MCP is broken only because no MCP tool is visible. State what you can observe from the current tool set and guide the user to bind the MCP to this Agent if needed.',
-  ].join('\n')
 }
 
 async function checkCommandAvailable(command: string, cwd: string | null): Promise<boolean> {

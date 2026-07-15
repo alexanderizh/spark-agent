@@ -23,6 +23,7 @@ import {
   mergeCanvasOperationPresetNegativePrompt,
   readCanvasResolvedPresetTarget,
   resolveCanvasPresetTarget,
+  writeCanvasLastUsedPresetTarget,
 } from './canvasOperationPresets'
 import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 import { buildReferenceImageInputRoles } from './canvasTaskInputFiles'
@@ -616,6 +617,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [maxClipCustom, setMaxClipCustom] = useState('')
   const modelParamDraftEditedRef = useRef(false)
   const customParamsEditedRef = useRef(false)
+  const configurationTouchedRef = useRef(false)
+  const markConfigurationTouched = useCallback(() => {
+    configurationTouchedRef.current = true
+  }, [])
   const promptCharCount = useMemo(
     () => toCanvasPromptPlainText(promptDocument).trim().length,
     [promptDocument],
@@ -650,6 +655,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     )
     setSelectedTextModelId(task?.modelId ?? node.data.modelId ?? operationPreset.modelId ?? '')
     setSelectedSkillIds(task?.skillIds ?? node.data.skillIds ?? operationPreset.skillIds)
+    configurationTouchedRef.current = false
     // 分镜时长配置草稿：从 node.data.shotScriptConfig 解析到 preset/custom（随节点切换重置）。
     // 兼容脏数据：持久化的 maxClipSec 非法（缺省 / 非有限 / ≤0）时回退默认值，避免回显 -1 这类异常。
     const rawMaxClip = node.data.shotScriptConfig?.maxClipSec
@@ -1037,10 +1043,41 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     [customParams, modelParamDraft, parameterFields, selectedCapability?.defaults],
   )
 
+  const persistLastUsedPreset = useCallback(() => {
+    if (!configurationTouchedRef.current) return
+    const runtimeDraft = buildRuntimeDraft()
+    const modelParams = buildCurrentModelParams()
+    writeCanvasLastUsedPresetTarget(presetTargetId, {
+      ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
+      ...(runtimeDraft.agentId ? { agentId: runtimeDraft.agentId } : {}),
+      ...(runtimeDraft.providerProfileId
+        ? { providerProfileId: runtimeDraft.providerProfileId }
+        : {}),
+      ...(runtimeDraft.manifestId ? { manifestId: runtimeDraft.manifestId } : {}),
+      ...(runtimeDraft.modelId ? { modelId: runtimeDraft.modelId } : {}),
+      ...(runtimeDraft.skillIds ? { skillIds: runtimeDraft.skillIds } : {}),
+      ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
+    })
+  }, [buildCurrentModelParams, buildRuntimeDraft, negativePrompt, presetTargetId])
+
+  const handleClose = useCallback(() => {
+    persistLastUsedPreset()
+    onClose()
+  }, [onClose, persistLastUsedPreset])
+
+  const persistOnUnmountRef = useRef(persistLastUsedPreset)
+  useEffect(() => {
+    persistOnUnmountRef.current = persistLastUsedPreset
+  }, [persistLastUsedPreset])
+  useEffect(() => {
+    return () => persistOnUnmountRef.current()
+  }, [])
+
   const handleTextAgentChange = useCallback(
     (agentId: string) => {
       const nextAgent = agents.find((agent) => agent.id === agentId)
       if (nextAgent == null) return
+      markConfigurationTouched()
       const nextProvider = pickDefaultTextProvider(
         textProviders,
         nextAgent.providerProfileId ?? selectedTextProvider?.id,
@@ -1049,33 +1086,71 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       setSelectedTextProviderId(nextProvider?.id ?? '')
       setSelectedTextModelId(pickDefaultTextModel(nextProvider, nextAgent.modelId))
     },
-    [agents, selectedTextProvider?.id, textProviders],
+    [agents, markConfigurationTouched, selectedTextProvider?.id, textProviders],
   )
 
-  const handleTextProviderModelChange = useCallback((providerId: string, modelId: string) => {
-    setSelectedTextProviderId(providerId)
-    setSelectedTextModelId(modelId)
-  }, [])
+  const handleTextProviderModelChange = useCallback(
+    (providerId: string, modelId: string) => {
+      markConfigurationTouched()
+      setSelectedTextProviderId(providerId)
+      setSelectedTextModelId(modelId)
+    },
+    [markConfigurationTouched],
+  )
 
-  const handleModelParamDraftChange = useCallback((fieldName: string, value: string) => {
-    modelParamDraftEditedRef.current = true
-    setModelParamDraft((prev) => updateModelParamDraftValue(prev, fieldName, value))
-  }, [])
+  const handleSelectedModelChange = useCallback(
+    (modelKey: string) => {
+      markConfigurationTouched()
+      setSelectedModelKey(modelKey)
+    },
+    [markConfigurationTouched],
+  )
 
-  const handleCustomParamPatch = useCallback((id: string, patch: Partial<CustomParamDraft>) => {
-    customParamsEditedRef.current = true
-    updateCustomParam(setCustomParams, id, patch)
-  }, [])
+  const handleSkillIdsChange = useCallback(
+    (skillIds: string[]) => {
+      markConfigurationTouched()
+      setSelectedSkillIds(skillIds)
+    },
+    [markConfigurationTouched],
+  )
+
+  const handleNegativePromptChange = useCallback(
+    (value: string) => {
+      markConfigurationTouched()
+      setNegativePrompt(value)
+    },
+    [markConfigurationTouched],
+  )
+
+  const handleModelParamDraftChange = useCallback(
+    (fieldName: string, value: string) => {
+      markConfigurationTouched()
+      modelParamDraftEditedRef.current = true
+      setModelParamDraft((prev) => updateModelParamDraftValue(prev, fieldName, value))
+    },
+    [markConfigurationTouched],
+  )
+
+  const handleCustomParamPatch = useCallback(
+    (id: string, patch: Partial<CustomParamDraft>) => {
+      markConfigurationTouched()
+      customParamsEditedRef.current = true
+      updateCustomParam(setCustomParams, id, patch)
+    },
+    [markConfigurationTouched],
+  )
 
   const handleAddCustomParam = useCallback(() => {
+    markConfigurationTouched()
     customParamsEditedRef.current = true
     setCustomParams((prev) => [...prev, createCustomParamDraft()])
-  }, [])
+  }, [markConfigurationTouched])
 
   const handleRemoveCustomParam = useCallback((id: string) => {
+    markConfigurationTouched()
     customParamsEditedRef.current = true
     setCustomParams((prev) => prev.filter((item) => item.id !== id))
-  }, [])
+  }, [markConfigurationTouched])
 
   const buildRuntimeDraft = useCallback(
     (): Pick<
@@ -1697,7 +1772,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             rows={3}
             value={negativePrompt}
             placeholder="不希望出现的内容..."
-            onChange={(event) => setNegativePrompt(event.target.value)}
+            onChange={(event) => handleNegativePromptChange(event.target.value)}
             disabled={running}
           />
         </div>
@@ -1959,7 +2034,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   content: renderMultiOptionList(
                     skills.map((skill) => ({ value: skill.id, label: skill.name })),
                     selectedSkillIds,
-                    setSelectedSkillIds,
+                    handleSkillIdsChange,
                     '清空 Skills',
                   ),
                 })}
@@ -1978,7 +2053,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       size="small"
                       style={{ width: 92 }}
                       value={maxClipPreset}
-                      onChange={(v) => setMaxClipPreset(v)}
+                      onChange={(v) => {
+                        markConfigurationTouched()
+                        setMaxClipPreset(v)
+                      }}
                       options={[
                         ...SHOT_MAX_CLIP_PRESETS.map((s) => ({ value: s, label: `${s} 秒` })),
                         { value: 'custom', label: '自定义' },
@@ -1991,7 +2069,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         style={{ width: 90 }}
                         addonAfter="秒"
                         value={maxClipCustom.trim() === '' ? null : Number(maxClipCustom)}
-                        onChange={(v) => setMaxClipCustom(v == null ? '' : String(v))}
+                        onChange={(v) => {
+                          markConfigurationTouched()
+                          setMaxClipCustom(v == null ? '' : String(v))
+                        }}
                       />
                     )}
                   </div>
@@ -2008,7 +2089,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 fields={parameterFields}
                 values={modelParamDraft}
                 advancedContent={advancedParameterContent}
-                onModelChange={setSelectedModelKey}
+                onModelChange={handleSelectedModelChange}
                 onParameterChange={handleModelParamDraftChange}
               />
             )}
@@ -2026,7 +2107,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       label: renderMediaOptionLabel(String(option.value), option.label),
                     })),
                     firstFrameNodeId,
-                    setFirstFrameNodeId,
+                    (value) => {
+                      markConfigurationTouched()
+                      setFirstFrameNodeId(value)
+                    },
                     '不指定首帧',
                   ),
                 })}
@@ -2046,7 +2130,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       label: renderMediaOptionLabel(String(option.value), option.label),
                     })),
                     lastFrameNodeId,
-                    setLastFrameNodeId,
+                    (value) => {
+                      markConfigurationTouched()
+                      setLastFrameNodeId(value)
+                    },
                     canUseLastFrame ? '不指定尾帧' : '仅 1 张图',
                   ),
                 })}
@@ -2066,7 +2153,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         label: renderMediaOptionLabel(String(option.value), option.label),
                       })),
                       referenceFrameNodeIds,
-                      setReferenceFrameNodeIds,
+                      (values) => {
+                        markConfigurationTouched()
+                        setReferenceFrameNodeIds(values)
+                      },
                       '清空参考图',
                     ),
                   })}
@@ -2165,7 +2255,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 onClick={() => setFullscreen((current) => !current)}
               />
             </Tooltip>
-            <Button size="middle" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
+            <Button size="middle" type="text" icon={<Icons.X size={15} />} onClick={handleClose} />
           </div>
         </div>
       )}
@@ -2357,7 +2447,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 maxTagCount="responsive"
                 options={skills.map((skill) => ({ value: skill.id, label: skill.name }))}
                 disabled={running || runtimeLoading || skills.length === 0}
-                onChange={(value) => setSelectedSkillIds(value.map(String))}
+                onChange={(value) => handleSkillIdsChange(value.map(String))}
               />
             </div>
             <div className="canvas-operation-panel-runtime-summary">
@@ -2391,7 +2481,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   </div>
                 </>
               }
-              onModelChange={setSelectedModelKey}
+              onModelChange={handleSelectedModelChange}
               onParameterChange={handleModelParamDraftChange}
             />
           </div>
@@ -2415,7 +2505,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         label: renderMediaOptionLabel(String(option.value), option.label),
                       })),
                       firstFrameNodeId,
-                      setFirstFrameNodeId,
+                      (value) => {
+                        markConfigurationTouched()
+                        setFirstFrameNodeId(value)
+                      },
                       '不指定首帧',
                     ),
                   })}
@@ -2437,7 +2530,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                         label: renderMediaOptionLabel(String(option.value), option.label),
                       })),
                       lastFrameNodeId,
-                      setLastFrameNodeId,
+                      (value) => {
+                        markConfigurationTouched()
+                        setLastFrameNodeId(value)
+                      },
                       canUseLastFrame ? '不指定尾帧' : '仅 1 张图',
                     ),
                   })}
@@ -2459,7 +2555,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                       label: renderMediaOptionLabel(String(option.value), option.label),
                     })),
                     referenceFrameNodeIds,
-                    setReferenceFrameNodeIds,
+                    (values) => {
+                      markConfigurationTouched()
+                      setReferenceFrameNodeIds(values)
+                    },
                     '清空参考图',
                   ),
                 })}
@@ -2617,7 +2716,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               type="text"
               aria-label="关闭配置"
               icon={<Icons.X size={14} />}
-              onClick={onClose}
+              onClick={handleClose}
             />
           </Tooltip>
         )}
