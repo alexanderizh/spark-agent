@@ -239,4 +239,44 @@ describe('canvasShotTableParse', () => {
     expect(rows[0]).toMatchObject({ index: 1, durationSec: 2, description: '开场空镜' })
     expect(rows[1]).toMatchObject({ index: 2, dialogue: '你好' })
   })
+
+  it('识别裸「场景」「画面」表头列（agent 常见简写）', () => {
+    const rows = parseShotTable(
+      [
+        '| 镜号 | 时长 | 景别 | 运镜 | 场景 | 画面 |',
+        '| --- | --- | --- | --- | --- | --- |',
+        '| 1 | 3 | 近景 | 推 | 窄巷尽头 | 少年握紧剑柄 |',
+      ].join('\n'),
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      shotSize: '近景',
+      movement: '推',
+      sceneLayout: '窄巷尽头',
+      description: '少年握紧剑柄',
+    })
+  })
+
+  it('识别 JSON 里「场景」「画面」中文键', () => {
+    const rows = parseShotTable(
+      JSON.stringify({
+        shots: [
+          {
+            index: 1,
+            时长: 3,
+            景别: '近景',
+            场景: '窄巷尽头',
+            画面: '少年握紧剑柄',
+          },
+        ],
+      }),
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      durationSec: 3,
+      shotSize: '近景',
+      sceneLayout: '窄巷尽头',
+      description: '少年握紧剑柄',
+    })
+  })
 })

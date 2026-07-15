@@ -3336,8 +3336,16 @@ export function CanvasWorkspaceView({
           y: item.y,
         })
         if (!created) continue
+        const isTextOutput = item.output.type === 'text' || item.output.type === 'prompt'
+        const outputText = item.output.text?.trim() ?? ''
         await updateNodeData(created.id, {
           origin: 'asset',
+          // 用产物自带的文本（分镜脚本等）覆盖资产派生文本，并标记为 markdown，
+          // 保证展开后的文本节点双击进入分镜脚本编辑器时能正确回显。
+          ...(outputText ? { text: outputText } : {}),
+          ...(isTextOutput
+            ? { format: (item.output.type === 'prompt' ? 'prompt' : 'markdown') as 'plain' | 'markdown' | 'prompt' }
+            : {}),
           ...(item.output.pipelineRole ? { pipelineRole: item.output.pipelineRole } : {}),
           ...(item.output.productionState ? { productionState: item.output.productionState } : {}),
           ...(item.output.panorama360 ? { panorama360: item.output.panorama360 } : {}),
