@@ -4,13 +4,14 @@
  * 画布舞台 `onDrop` 只做事件接入，真正的"这个文件应该变成什么节点"判定都在这里：
  *   - 图片 / 视频 / 音频 → 对应媒体节点
  *   - 文本类文件（txt/md/json/源码……）→ 读出文字后插入文本节点
- *   - 其余（pdf/docx/exe……）→ 不支持，由调用方跳过并提示
+ *   - 富文档（docx/xlsx/pptx/odt/rtf）→ 解析出文字后插入文本节点（canvasDocumentParse.ts）
+ *   - 其余（pdf/exe……）→ 不支持，由调用方跳过并提示
  *
  * 纯函数、无副作用、无 DOM 依赖，便于单测。
  */
 
 /** 拖入文件的分类结果，对应画布上的目标节点类型。 */
-export type DroppedFileKind = 'image' | 'video' | 'audio' | 'text' | 'unsupported'
+export type DroppedFileKind = 'image' | 'video' | 'audio' | 'text' | 'document' | 'unsupported'
 
 /** 文本节点的渲染格式（影响卡片内 markdown 渲染）。 */
 export type DroppedTextFormat = 'plain' | 'markdown'
@@ -32,6 +33,18 @@ const IMAGE_EXTENSIONS = new Set([
 ])
 
 const VIDEO_EXTENSIONS = new Set(['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv'])
+
+/** 需要解析才能取出文字的富文档（OOXML / 旧版二进制 Office 等）。
+ *  PDF 按需求暂不支持直接拖入解析，故不在其中。 */
+const DOCUMENT_EXTENSIONS = new Set([
+  'docx', // Word（OOXML）
+  'doc', // Word 97-2003（二进制，目前仅按 docx 路径尝试，失败则留档提示）
+  'xlsx', // Excel（OOXML）
+  'xls', // Excel 97-2003
+  'pptx', // PowerPoint（OOXML）
+  'odt', // OpenDocument 文本
+  'rtf', // 富文本
+])
 
 const AUDIO_EXTENSIONS = new Set([
   'mp3',
@@ -109,6 +122,7 @@ function kindByExtension(ext: string): DroppedFileKind {
   if (IMAGE_EXTENSIONS.has(ext)) return 'image'
   if (VIDEO_EXTENSIONS.has(ext)) return 'video'
   if (AUDIO_EXTENSIONS.has(ext)) return 'audio'
+  if (DOCUMENT_EXTENSIONS.has(ext)) return 'document'
   if (TEXT_EXTENSIONS.has(ext)) return 'text'
   return 'unsupported'
 }
@@ -121,6 +135,19 @@ function kindByMimeType(mimeType: string | undefined): DroppedFileKind | null {
   // text/* 一律按文本节点处理（html/css/源码读出来都是文本，放进文本节点最自然）。
   if (mimeType.startsWith('text/')) return 'text'
   if (mimeType === 'application/json' || mimeType === 'application/xml') return 'text'
+  // Office / 富文档（按扩展名兜底更准，这里只兜 MIME 命中的情况）
+  if (
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+    mimeType === 'application/msword' ||
+    mimeType === 'application/vnd.ms-excel' ||
+    mimeType === 'application/vnd.ms-powerpoint' ||
+    mimeType === 'application/vnd.oasis.opendocument.text' ||
+    mimeType === 'application/rtf'
+  ) {
+    return 'document'
+  }
   return null
 }
 

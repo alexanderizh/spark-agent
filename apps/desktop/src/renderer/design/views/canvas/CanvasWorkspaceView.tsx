@@ -28,6 +28,7 @@ import {
   readVideoDimensions,
 } from './canvas-safe-file'
 import { classifyDroppedFile, layoutDroppedFiles, textFormatFromFileName } from './canvasFileDrop'
+import { extractDocumentText } from './canvasDocumentParse'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
@@ -95,8 +96,15 @@ import { buildStoryboardGridPrompt, buildStoryboardNodePrompt } from './canvasSt
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import { splitStoryboardNode } from './canvasStoryboardNodeSplit'
 import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
+import {
+  CANVAS_PIPELINE_CREATE_OPERATIONS,
+  canvasGeneralCreateOperations,
+} from './canvasNodeGenerationMenu'
 import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEntityExtract'
-import { DEFAULT_SHOT_SCRIPT_CONFIG, applyShotScriptConfigToPrompt } from './canvasAgentPromptPresets'
+import {
+  DEFAULT_SHOT_SCRIPT_CONFIG,
+  applyShotScriptConfigToPrompt,
+} from './canvasAgentPromptPresets'
 import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import {
   characterSourceImageUrl,
@@ -555,9 +563,13 @@ const CANVAS_SIDE_PANEL_MAX_WIDTH = 640
 const CANVAS_SIDE_PANEL_KEYBOARD_STEP = 24
 const CANVAS_AGENT_PANEL_WIDTH_KEY = 'spark-canvas:agent-panel-width'
 const CANVAS_AGENT_PANEL_OPEN_KEY = 'spark-canvas:agent-panel-open'
-const CANVAS_AGENT_PANEL_LEGACY_DEFAULT_WIDTH = 380
-const CANVAS_AGENT_PANEL_DEFAULT_WIDTH = 480
-const CANVAS_AGENT_PANEL_MIN_WIDTH = 300
+// 旧实现会在 mount 时把"默认折叠 / 旧默认宽度"持久化进 localStorage，污染所有老用户的偏好，
+// 导致即便改了默认常量，老用户也始终拿到旧的窄值/折叠态。用版本标记做一次性迁移：
+// 迁移后老用户也回到新的默认（展开 + 更宽），用户后续显式折叠/调窄仍被保留。
+const CANVAS_AGENT_PANEL_OPEN_DEFAULT_VERSION_KEY = 'spark-canvas:agent-panel-open-default-v2'
+const CANVAS_AGENT_PANEL_WIDTH_MIGRATED_KEY = 'spark-canvas:agent-panel-width-migrated-v2'
+const CANVAS_AGENT_PANEL_DEFAULT_WIDTH = 560
+const CANVAS_AGENT_PANEL_MIN_WIDTH = 400
 const CANVAS_AGENT_PANEL_MAX_WIDTH = 1200
 const CANVAS_AUTO_SAVE_DEBOUNCE_MS = 1200
 const CANVAS_AUTO_SAVE_THROTTLE_MS = 30_000
@@ -594,9 +606,12 @@ function readAgentPanelWidth(): number {
   try {
     const parsed = Number(window.localStorage.getItem(CANVAS_AGENT_PANEL_WIDTH_KEY))
     if (!Number.isFinite(parsed)) return CANVAS_AGENT_PANEL_DEFAULT_WIDTH
-    // 把历史默认宽度平滑迁移到新的默认值；用户手动调过的宽度仍保持原样。
-    if (parsed === CANVAS_AGENT_PANEL_LEGACY_DEFAULT_WIDTH) {
-      return CANVAS_AGENT_PANEL_DEFAULT_WIDTH
+    // 一次性迁移：把低于新默认宽度的历史窄值（旧默认 380 / 旧最小 300 等）上迁到新默认，
+    // 解决"之前改了默认常量但老用户面板还是窄"——持久化的旧窄值会覆盖新默认。
+    // 用版本标记保证只迁一次：之后用户若手动调窄到 [MIN_WIDTH, DEFAULT) 区间，会被尊重保留。
+    if (window.localStorage.getItem(CANVAS_AGENT_PANEL_WIDTH_MIGRATED_KEY) !== '1') {
+      window.localStorage.setItem(CANVAS_AGENT_PANEL_WIDTH_MIGRATED_KEY, '1')
+      if (parsed < CANVAS_AGENT_PANEL_DEFAULT_WIDTH) return CANVAS_AGENT_PANEL_DEFAULT_WIDTH
     }
     return clampAgentPanelWidth(parsed)
   } catch {
@@ -605,11 +620,20 @@ function readAgentPanelWidth(): number {
 }
 
 function readAgentPanelOpen(): boolean {
-  if (typeof window === 'undefined') return false
+  if (typeof window === 'undefined') return true
   try {
-    return window.localStorage.getItem(CANVAS_AGENT_PANEL_OPEN_KEY) === '1'
+    // 一次性迁移：旧实现会在 mount 时把"默认折叠"写成 '0' 持久化，导致改默认值对老用户无效。
+    // 用版本标记识别"尚未迁移"的用户，清除被污染的旧 OPEN_KEY 后回退到默认展开。
+    if (window.localStorage.getItem(CANVAS_AGENT_PANEL_OPEN_DEFAULT_VERSION_KEY) !== '1') {
+      window.localStorage.removeItem(CANVAS_AGENT_PANEL_OPEN_KEY)
+      window.localStorage.setItem(CANVAS_AGENT_PANEL_OPEN_DEFAULT_VERSION_KEY, '1')
+      return true
+    }
+    const stored = window.localStorage.getItem(CANVAS_AGENT_PANEL_OPEN_KEY)
+    // 已迁移且无显式偏好（新用户）→ 默认展开；显式折叠过 → 保留其偏好
+    return stored === null ? true : stored === '1'
   } catch {
-    return false
+    return true
   }
 }
 
@@ -1811,6 +1835,7 @@ export function CanvasWorkspaceView({
   /** 用户显式「添加到 Agent 对话」的引用节点；与画布选区解耦，发送时以这里为准 */
   const [agentNodeRefs, setAgentNodeRefs] = useState<CanvasNode[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const uploadFilesInputRef = useRef<HTMLInputElement>(null)
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
   const activeToolRef = useRef<CanvasTool>('pan')
   const { registerNavGuard, requestConfirm, t, setTweak, setHasUnsavedChanges } = useApp()
@@ -2686,6 +2711,9 @@ export function CanvasWorkspaceView({
   /** 右键「添加到 Agent 对话」：把当前选中节点去重合并进引用列表，并自动展开 Agent 面板 */
   const handleAddSelectedToAgent = useCallback(() => {
     if (selectedNodes.length === 0) return
+    // 先关掉其他浮层但放过 agent（与 onOpenAgent 一致），避免菜单关闭流程里的
+    // closeCanvasFloatPanels() 把刚 setAgentOpen(true) 的面板又关回去。
+    closeCanvasFloatPanels('agent')
     setAgentNodeRefs((prev) => {
       const existing = new Set(prev.map((node) => node.id))
       const merged = [...prev]
@@ -2698,22 +2726,24 @@ export function CanvasWorkspaceView({
       return merged
     })
     setAgentOpen(true)
-  }, [selectedNodes])
+  }, [closeCanvasFloatPanels, selectedNodes])
 
   /** 单节点右键「添加到 Agent 对话」：把指定节点合并进引用列表并展开 Agent 面板。
    *  即使节点一时找不到（snapshot 尚未刷新），也保证面板展开，给用户即时反馈。 */
   const handleAddNodeToAgent = useCallback(
     (nodeId: string) => {
+      // 同上：先以 'agent' 例外关闭其他浮层，确保面板稳定展开。
+      closeCanvasFloatPanels('agent')
+      setAgentOpen(true)
       const node =
         snapshotNodeById.get(nodeId) ?? snapshotRef.current?.nodes.find((n) => n.id === nodeId)
-      setAgentOpen(true)
       if (!node) return
       setAgentNodeRefs((prev) => {
         if (prev.some((item) => item.id === nodeId)) return prev
         return [...prev, node]
       })
     },
-    [snapshotNodeById],
+    [closeCanvasFloatPanels, snapshotNodeById],
   )
 
   /** 宽屏切换：展开到屏幕一半宽度 / 恢复之前的宽度 */
@@ -4758,7 +4788,8 @@ export function CanvasWorkspaceView({
     })
     const inputFiles = promptSubmission.inputFiles ?? []
     const effectivePrompt =
-      promptSubmission.prompt || (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
+      promptSubmission.prompt ||
+      (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
     const mergedModelParams = mergeCanvasPresetTargetModelParams(presetTargetId, modelParams)
     const styleContext = buildCanvasStyleContext(snapshot, {
       ...(effectiveNegativePrompt ? { negativePrompt: effectiveNegativePrompt } : {}),
@@ -6031,12 +6062,14 @@ export function CanvasWorkspaceView({
 
       const images: File[] = []
       const texts: File[] = []
+      const documents: File[] = []
       const media: Array<{ file: File; kind: 'video' | 'audio' }> = []
       let unsupportedCount = 0
       for (const file of files) {
         const kind = classifyDroppedFile(file)
         if (kind === 'image') images.push(file)
         else if (kind === 'text') texts.push(file)
+        else if (kind === 'document') documents.push(file)
         else if (kind === 'video') media.push({ file, kind: 'video' })
         else if (kind === 'audio') media.push({ file, kind: 'audio' })
         else unsupportedCount += 1
@@ -6086,6 +6119,42 @@ export function CanvasWorkspaceView({
             )
             nextOrigin = nextOriginAfterBounds(
               boundsForPlacements(successfulTextPositions, TEXT_NODE_DEFAULT_SIZE),
+            )
+          }
+        }
+
+        // ── 富文档（docx/xlsx/pptx/odt/rtf）：解析出文字后建文本节点 ──────
+        //    解析依赖（mammoth/exceljs）懒加载、失败兜底为留档提示，详见 canvasDocumentParse.ts
+        if (documents.length > 0) {
+          const docPositions = layoutDroppedFiles(
+            documents.length,
+            nextOrigin,
+            TEXT_NODE_DEFAULT_SIZE,
+          )
+          const successfulDocIds = Array<string | null>(documents.length).fill(null)
+          await Promise.all(
+            documents.map(async (file, index) => {
+              const extracted = await extractDocumentText(file)
+              const node = await createTextNode({
+                text: extracted.text,
+                x: docPositions[index]!.x,
+                y: docPositions[index]!.y,
+                ...(extracted.format === 'markdown' ? { format: 'markdown' } : {}),
+              })
+              if (node) {
+                createdNodeIds.push(node.id)
+                successfulDocIds[index] = node.id
+              }
+            }),
+          )
+          const orderedDocIds = successfulDocIds.filter((id): id is string => Boolean(id))
+          if (orderedDocIds.length > 0) {
+            selectionNodeIds = [orderedDocIds[orderedDocIds.length - 1]!]
+            const successfulDocPositions = successfulDocIds.flatMap((id, index) =>
+              id ? [docPositions[index]!] : [],
+            )
+            nextOrigin = nextOriginAfterBounds(
+              boundsForPlacements(successfulDocPositions, TEXT_NODE_DEFAULT_SIZE),
             )
           }
         }
@@ -6168,6 +6237,26 @@ export function CanvasWorkspaceView({
       insertPreparedImages,
       prepareCanvasImageUpload,
     ],
+  )
+
+  /**
+   * 顶部工具栏「上传文件」按钮：弹原生多选文件选择器，选中后走与拖入相同的
+   * handleDropFiles 管线（图片 / 视频 / 音频 / 文本 / 代码 / CSV 等全部支持），
+   * 落点取当前视口中心附近。纯 renderer <input>，无需主进程 IPC。
+   */
+  const handleUploadFilesChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const selectedFiles = Array.from(event.target.files ?? [])
+      event.target.value = ''
+      if (selectedFiles.length === 0) return
+      const position = positionNodeInViewport(
+        canvasViewportRef.current,
+        TEXT_NODE_DEFAULT_SIZE,
+        { x: 260, y: 200 },
+      )
+      await handleDropFiles(position, selectedFiles)
+    },
+    [handleDropFiles],
   )
 
   /**
@@ -6959,7 +7048,8 @@ export function CanvasWorkspaceView({
                         })
                         .filter(Boolean)
                         .join('\n\n')
-                      const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
+                      const operation = (opNode.data.operation ??
+                        opNode.type) as CanvasOperationType
                       const promptDocument =
                         params.promptDocument ??
                         migrateLegacyPrompt({
@@ -7162,7 +7252,9 @@ export function CanvasWorkspaceView({
                       ...(params.manifestId ? { manifestId: params.manifestId } : {}),
                       ...(params.modelId ? { modelId: params.modelId } : {}),
                       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                      ...(params.shotScriptConfig ? { shotScriptConfig: params.shotScriptConfig } : {}),
+                      ...(params.shotScriptConfig
+                        ? { shotScriptConfig: params.shotScriptConfig }
+                        : {}),
                     }
                     if (params.prompt.trim()) {
                       nextNodeData.prompt = params.prompt
@@ -7263,6 +7355,7 @@ export function CanvasWorkspaceView({
           onSave={() => void doSave()}
           onAutoSaveChange={handleAutoSaveToggle}
           onExport={() => void handleExportProject()}
+          onUploadFiles={() => uploadFilesInputRef.current?.click()}
         />
       </header>
 
@@ -7911,6 +8004,15 @@ export function CanvasWorkspaceView({
         style={{ display: 'none' }}
         onChange={(event) => void handleFileChange(event)}
       />
+      <input
+        ref={uploadFilesInputRef}
+        type="file"
+        multiple
+        // accept 留宽：图片/视频/音频/文本/代码/CSV 等都放行；不支持的类型由
+        // classifyDroppedFile 判为 unsupported 并提示跳过，而不是在这里用 accept 硬挡。
+        style={{ display: 'none' }}
+        onChange={(event) => void handleUploadFilesChange(event)}
+      />
       {snapshot && (
         <SaveToLibraryDialog
           open={Boolean(saveToLibraryNode)}
@@ -8095,20 +8197,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
         ]
       : []),
   ]
-  const genericAiOperations: Array<{ operation: CanvasOperationType; label: string }> = [
-    { operation: 'text_to_image', label: '文生图' },
-    { operation: 'image_edit', label: '图生图' },
-    { operation: 'image_compose', label: '多图合成' },
-    { operation: 'storyboard_grid', label: '故事板' },
-    { operation: 'panorama_360', label: '360 全景图' },
-    { operation: 'text_generate', label: '文本生成' },
-    { operation: 'text_rewrite', label: '文本改写' },
-    { operation: 'prompt_optimize', label: 'Prompt 优化' },
-    { operation: 'text_to_video', label: '文生视频' },
-    { operation: 'image_to_video', label: '图生视频' },
-    { operation: 'text_to_audio', label: '文生音频' },
-    { operation: 'audio_transcribe', label: '语音转写' },
-  ]
+  const genericAiOperations = canvasGeneralCreateOperations()
   const menuButton = (
     label: string,
     icon: React.ReactNode,
@@ -8142,7 +8231,9 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
       <div className="canvas-floating-menu-title">新建 AI 任务</div>
       {genericAiOperations.map((item) => (
         <div key={item.operation}>
-          {menuButton(item.label, undefined, () => onCreateOperationChild(item.operation))}
+          {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
+            onCreateOperationChild(item.operation),
+          )}
         </div>
       ))}
     </div>
@@ -8189,17 +8280,22 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           content={
             <div className="canvas-floating-menu">
               <div className="canvas-floating-menu-title">剧本流水线</div>
-              {pipelineActions.length > 0 ? (
+              {pipelineActions.length > 0 &&
                 pipelineActions.map((action) => (
                   <div key={action.id}>
                     {menuButton(action.label, resolveCanvasFloatingIcon(action.icon, 14), () =>
                       onPipelineAction(action.id),
                     )}
                   </div>
-                ))
-              ) : (
-                <div className="canvas-floating-menu-empty">当前节点暂无下一步动作</div>
-              )}
+                ))}
+              {pipelineActions.length > 0 && <div className="canvas-floating-menu-divider" />}
+              {CANVAS_PIPELINE_CREATE_OPERATIONS.map((item) => (
+                <div key={item.operation}>
+                  {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
+                    onCreateOperationChild(item.operation),
+                  )}
+                </div>
+              ))}
               <div className="canvas-floating-menu-divider" />
               {menuButton('确认采用', <Icons.Check size={14} />, () =>
                 onSetProductionState('confirmed'),
@@ -8643,7 +8739,8 @@ function CanvasNodeEditModal({
   const isTextLike = node?.type === 'text' || node?.type === 'prompt'
   const isShotScriptNode =
     node?.type === 'text' &&
-    isShotScriptText(node.data.text) && parseShotTable(node.data.text ?? '').length > 0
+    isShotScriptText(node.data.text) &&
+    parseShotTable(node.data.text ?? '').length > 0
 
   useEffect(() => {
     if (!node) return

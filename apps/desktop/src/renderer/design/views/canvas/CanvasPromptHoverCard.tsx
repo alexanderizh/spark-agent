@@ -5,15 +5,11 @@ export const CANVAS_PROMPT_HOVER_MAX_HEIGHT = 280
 
 export function CanvasPromptHoverCard({
   children,
-  title,
-  preview,
-  metadata,
+  media,
   content,
 }: {
   children: ReactNode
-  title: string
-  preview?: ReactNode
-  metadata?: Array<{ label: string; value: string }>
+  media?: ReactNode
   content?: string
 }) {
   return (
@@ -23,19 +19,7 @@ export function CanvasPromptHoverCard({
       overlayClassName="canvas-prompt-hover-popover"
       content={
         <div className="canvas-prompt-hover-card">
-          <div className="canvas-prompt-hover-head">
-            {preview ? <div className="canvas-prompt-hover-preview">{preview}</div> : null}
-            <strong>{title}</strong>
-          </div>
-          {metadata && metadata.length > 0 ? (
-            <div className="canvas-prompt-hover-meta">
-              {metadata.map((item) => (
-                <span key={`${item.label}-${item.value}`}>
-                  {item.label}：{item.value}
-                </span>
-              ))}
-            </div>
-          ) : null}
+          {media ? <div className="canvas-prompt-hover-media">{media}</div> : null}
           {content ? <div className="canvas-prompt-hover-scroll">{content}</div> : null}
         </div>
       }

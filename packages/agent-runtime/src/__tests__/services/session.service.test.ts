@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
 import type { TeamA2ATask } from '@spark/protocol'
 import {
@@ -14,6 +14,7 @@ import {
   mapSessionAttachmentsToDispatch,
   isOpenAiOnlyCodexConsumer,
   resolveCodexMemberExecutionProfile,
+  SessionService,
   shouldRunTurnPostProcessing,
 } from '../../services/session.service.js'
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
@@ -34,6 +35,89 @@ function baseEvent(
 }
 
 describe('SessionService recovery helpers', () => {
+  it('cancels and waits for active executors before shutdown completes', async () => {
+    let finishExecution: (() => void) | undefined
+    const executionDone = new Promise<void>((resolve) => {
+      finishExecution = resolve
+    })
+    let finishTeamDispatch: (() => void) | undefined
+    const teamDispatchDone = new Promise<void>((resolve) => {
+      finishTeamDispatch = resolve
+    })
+    const execution = { cancel: vi.fn() }
+    const onApprovalCancel = vi.fn()
+    const platformStop = vi.fn(async () => undefined)
+    const service = Object.create(SessionService.prototype) as {
+      activeExecutionPromises: Map<
+        typeof execution,
+        { sessionId: string; promise: Promise<void> }
+      >
+      activeLoops: Map<string, typeof execution>
+      dispose: () => Promise<void>
+      startingSessions: Set<string>
+      disposing: boolean
+      onApprovalCancel: (sessionId: string) => void
+      platformBridge: { stop: () => Promise<void> }
+      pendingPlanApprovals: Set<string>
+      pendingTurns: Map<string, unknown[]>
+      teamDispatchService: { cancelAllAndWait: () => Promise<void> }
+      teamMcpHandlesByTurn: Map<string, unknown>
+    }
+    service.activeExecutionPromises = new Map([
+      [execution, { sessionId: 'session-1', promise: executionDone }],
+    ])
+    service.activeLoops = new Map([['session-1', execution]])
+    service.startingSessions = new Set()
+    service.disposing = false
+    service.onApprovalCancel = onApprovalCancel
+    service.platformBridge = { stop: platformStop }
+    service.pendingPlanApprovals = new Set()
+    service.pendingTurns = new Map()
+    service.teamDispatchService = { cancelAllAndWait: vi.fn(() => teamDispatchDone) }
+    service.teamMcpHandlesByTurn = new Map()
+
+    let disposed = false
+    const disposePromise = service.dispose().then(() => {
+      disposed = true
+    })
+    await Promise.resolve()
+
+    expect(execution.cancel).toHaveBeenCalledOnce()
+    expect(onApprovalCancel).toHaveBeenCalledWith('session-1')
+    expect(disposed).toBe(false)
+
+    finishExecution?.()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(disposed).toBe(false)
+    expect(platformStop).not.toHaveBeenCalled()
+
+    finishTeamDispatch?.()
+    await disposePromise
+
+    expect(platformStop).toHaveBeenCalledOnce()
+  })
+
+  it('does not start queued work after shutdown begins', () => {
+    const queuedTurn = { turnId: 'turn-1' }
+    const service = Object.create(SessionService.prototype) as {
+      activeLoops: Map<string, unknown>
+      disposing: boolean
+      pendingPlanApprovals: Set<string>
+      pendingTurns: Map<string, unknown[]>
+      startingSessions: Set<string>
+      startNextQueuedTurn: (sessionId: string) => void
+    }
+    service.activeLoops = new Map()
+    service.disposing = true
+    service.pendingPlanApprovals = new Set()
+    service.pendingTurns = new Map([['session-1', [queuedTurn]]])
+    service.startingSessions = new Set()
+
+    service.startNextQueuedTurn('session-1')
+
+    expect(service.pendingTurns.get('session-1')).toEqual([queuedTurn])
+  })
+
   it('routes bare Codex chat-compatible API configs through the Codex SDK executor', () => {
     expect(createCodexExecutorForConfig({ codexApiKind: 'chat' })).toBeInstanceOf(CodexSdkExecutor)
   })

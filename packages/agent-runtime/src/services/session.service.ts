@@ -72,6 +72,7 @@ import {
 } from '@spark/protocol'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
+import { runMemberExecutorIfActive } from './member-execution-lifecycle.js'
 import {
   getTeamMcpHttpBridge,
   type TeamMcpBridgeHandle,
@@ -502,6 +503,12 @@ export type BrowserAutomationMcpProvider = (
 
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>() // sessionId → active execution
+  private activeExecutionPromises = new Map<
+    ActiveExecution,
+    { sessionId: string; promise: Promise<void> }
+  >()
+  private disposing = false
+  private disposePromise: Promise<void> | null = null
   private pendingTurns = new Map<string, PendingTurn[]>()
   /** Guards the async preflight window before an executor is registered in activeLoops. */
   private readonly startingSessions = new Set<string>()
@@ -1493,6 +1500,7 @@ export class SessionService {
     durable: boolean,
     startAfter?: Promise<unknown>,
   ): Promise<{ turnId: string; started: boolean }> {
+    if (this.disposing) throw new Error('Session service is shutting down')
     const { sessionId, message, skillId, skillParams, mentionAgentId } = params
     const attachments = normalizeTurnAttachments(params.attachments)
     const runtimePatch = getRuntimePatch(params)
@@ -3350,9 +3358,21 @@ export class SessionService {
       await this.maybeCaptureCheckpoint(sessionId, turnId, workspaceRootPath, eventRepo, message)
     }
 
+    if (this.disposing || this.activeLoops.get(sessionId) !== executor) {
+      if (this.activeLoops.get(sessionId) === executor) {
+        this.activeLoops.delete(sessionId)
+        sessionRepo.updateStatus(sessionId, 'idle')
+        this.emitQueueChanged(sessionId)
+      }
+      this.teamDispatchService?.clearTurn(turnId)
+      this.closeTeamMcpHandlesForTurn(turnId)
+      return
+    }
+
     // Fire-and-forget
-    executor
-      .executeTurn(sessionId, turnId, message, sdkConfig)
+    const executionPromise = executor.executeTurn(sessionId, turnId, message, sdkConfig)
+    this.activeExecutionPromises.set(executor, { sessionId, promise: executionPromise })
+    executionPromise
       .then(async () => {
         if (!shouldRunTurnPostProcessing(pendingTerminalStatus?.status ?? null)) {
           const ownsSession = this.activeLoops.get(sessionId) === executor
@@ -3453,6 +3473,7 @@ export class SessionService {
         }
       })
       .finally(() => {
+        this.activeExecutionPromises.delete(executor)
         // 清理本 turn 的 dispatch 预算计数，避免长生命周期进程内存增长
         this.teamDispatchService?.clearTurn(turnId)
         // FR-0b：claude Host 本身不用桥接，但本 turn 内 dispatch 的 codex 成员
@@ -3715,8 +3736,20 @@ export class SessionService {
       )
     }
 
-    executor
-      .executeTurn(sessionId, turnId, message, cliConfig)
+    if (this.disposing || this.activeLoops.get(sessionId) !== executor) {
+      if (this.activeLoops.get(sessionId) === executor) {
+        this.activeLoops.delete(sessionId)
+        sessionRepo.updateStatus(sessionId, 'idle')
+        this.emitQueueChanged(sessionId)
+      }
+      this.teamDispatchService?.clearTurn(turnId)
+      this.closeTeamMcpHandlesForTurn(turnId)
+      return
+    }
+
+    const executionPromise = executor.executeTurn(sessionId, turnId, message, cliConfig)
+    this.activeExecutionPromises.set(executor, { sessionId, promise: executionPromise })
+    executionPromise
       .then(async () => {
         if (!shouldRunTurnPostProcessing(pendingTerminalStatus?.status ?? null)) {
           const ownsSession = this.activeLoops.get(sessionId) === executor
@@ -3763,6 +3796,7 @@ export class SessionService {
         }
       })
       .finally(() => {
+        this.activeExecutionPromises.delete(executor)
         this.teamDispatchService?.clearTurn(turnId)
         // FR-0b 修复（审查 B-1）：回收本 turn 创建的 codex HTTP 桥接 handle（Host 主循环路径）。
         this.closeTeamMcpHandlesForTurn(turnId)
@@ -5707,6 +5741,8 @@ export class SessionService {
       hostPermissionMode,
     } = args
 
+    if (signal.aborted || this.disposing) return { content: '', partial: true }
+
     // 团队模式下成员权限固定为自动放行策略（自动接受编辑、不向用户弹审批窗），避免多成员
     // 并发时审批窗互相打断。会话框的权限切换只对 host 生效。
     // FR-0a：成员按 member.agentAdapter 选择执行器——claude 成员走 ClaudeSDKExecutor +
@@ -6007,8 +6043,6 @@ export class SessionService {
     const executor = isCodexMember
       ? createCodexExecutorForConfig(sdkConfig)
       : new ClaudeSDKExecutor()
-    const onAbort = () => executor.cancel()
-    signal.addEventListener('abort', onAbort)
 
     // 按 segment 收集 member 多段正文（被工具调用分隔的每段文本）。
     // 给 Host 的最终 content 拼接所有段，避免最后一段 result 覆盖前面段。
@@ -6084,14 +6118,18 @@ export class SessionService {
     try {
       // 第二参数是 Spark 内部 turnId（仅用于 executor 内部日志/事件归属），不传给 SDK；
       // 用全新 UUID 避免与 Host 的 turnId 冲突（emit 时仍用 host turnId，见 makeBase）。
-      await executor.executeTurn(sessionId, crypto.randomUUID(), userMessage, sdkConfig)
+      const started = await runMemberExecutorIfActive({
+        signal,
+        isDisposing: () => this.disposing,
+        cancel: () => executor.cancel(),
+        execute: () => executor.executeTurn(sessionId, crypto.randomUUID(), userMessage, sdkConfig),
+      })
+      if (!started) aborted = true
     } catch (err) {
       // 被超时/取消（signal abort）打断：不抛错，回传已累积的部分产出（partial）。
       // 真实执行错误才向上抛出，交由 TeamDispatchService 标记 failed。
       if (!signal.aborted) throw err
       aborted = true
-    } finally {
-      signal.removeEventListener('abort', onAbort)
     }
 
     // 优先拼接各段正文；无分段（result-only / 纯 delta provider）时依次回落。
@@ -6284,12 +6322,49 @@ export class SessionService {
    * Call on application shutdown.
    */
   async dispose(): Promise<void> {
-    await this.platformBridge.stop()
-    // FR-0b 修复（审查 B-3）：进程退出时关停所有残留桥接会话 + HTTP server。
-    for (const turnId of this.teamMcpHandlesByTurn.keys()) {
-      this.closeTeamMcpHandlesForTurn(turnId)
-    }
-    await getTeamMcpHttpBridge().dispose()
+    if (this.disposePromise != null) return this.disposePromise
+    this.disposing = true
+    this.disposePromise = (async () => {
+      const trackedExecutions = [...this.activeExecutionPromises.entries()]
+      const executions = new Set<ActiveExecution>([
+        ...trackedExecutions.map(([execution]) => execution),
+        ...this.activeLoops.values(),
+      ])
+      const sessionIds = new Set([
+        ...trackedExecutions.map(([, tracked]) => tracked.sessionId),
+        ...this.activeLoops.keys(),
+      ])
+
+      for (const sessionId of sessionIds) this.onApprovalCancel?.(sessionId)
+      const teamDispatchShutdown = this.teamDispatchService?.cancelAllAndWait()
+      for (const execution of executions) execution.cancel()
+      this.activeLoops.clear()
+      this.startingSessions.clear()
+      this.pendingTurns.clear()
+      this.pendingPlanApprovals.clear()
+
+      const pending = [
+        ...trackedExecutions.map(([, tracked]) => tracked.promise),
+        ...(teamDispatchShutdown != null ? [teamDispatchShutdown] : []),
+      ]
+      if (pending.length > 0) {
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(resolve, 5_000)
+          void Promise.allSettled(pending).then(() => {
+            clearTimeout(timeout)
+            resolve()
+          })
+        })
+      }
+
+      await this.platformBridge.stop()
+      // FR-0b 修复（审查 B-3）：进程退出时关停所有残留桥接会话 + HTTP server。
+      for (const turnId of this.teamMcpHandlesByTurn.keys()) {
+        this.closeTeamMcpHandlesForTurn(turnId)
+      }
+      await getTeamMcpHttpBridge().dispose()
+    })()
+    return this.disposePromise
   }
 
   /** FR-0b 修复（审查 B-1）：关闭某 turn 期间创建的所有 codex HTTP 桥接 handle（防 leak）。 */
@@ -6400,6 +6475,7 @@ export class SessionService {
   }
 
   private startNextQueuedTurn(sessionId: string): void {
+    if (this.disposing) return
     // Plan 模式审批未完成前，队列暂停自动起跑：用户必须先批准/拒绝/切换权限模式，
     // 否则后续 turn 会跨越审批弹窗自行执行，破坏用户预期。
     if (this.pendingPlanApprovals.has(sessionId)) {
@@ -6550,6 +6626,7 @@ export class SessionService {
   }
 
   private async continueGoalOrQueue(sessionId: string): Promise<void> {
+    if (this.disposing) return
     const goal = new GoalRepository(this.db).getCurrent(sessionId)
     if (goal?.status === 'active') {
       await this.startGoalLoop(sessionId)

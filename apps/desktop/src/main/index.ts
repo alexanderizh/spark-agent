@@ -74,6 +74,12 @@ import {
   findPlatformModelRedeemCode,
   parsePlatformModelRedeemDeepLink,
 } from './services/PlatformModel/PlatformModelDeepLink.js'
+import {
+  createAppShutdownCoordinator,
+  registerEmergencySessionShutdown,
+  runShutdownCleanupSteps,
+} from './app-shutdown.js'
+import { disposeSessionServiceForShutdown } from './session-service-shutdown.js'
 
 const log = createLogger('main')
 let tray: Tray | null = null
@@ -83,6 +89,8 @@ const BROWSER_ZOOM_CHANGED_EVENT = 'spark:browser-zoom-changed'
 const UI_ZOOM_MIN = 80
 const UI_ZOOM_MAX = 150
 const UI_ZOOM_STEP = 5
+
+registerEmergencySessionShutdown(process, disposeSessionServiceForShutdown)
 
 // ─── Quit guard ──────────────────────────────────────────────────────────────
 // 无论从哪里发起退出（macOS Dock 右键"退出" / ⌘Q、托盘菜单"退出"、自动更新
@@ -622,18 +630,44 @@ async function initializeApp(): Promise<void> {
     log.info('Database initialized successfully')
 
     // 关闭数据库连接在应用退出时
-    app.on('before-quit', () => {
-      // 杀掉所有 node-pty 进程，避免应用退出后残留 shell 进程。
-      try {
-        getTerminalService().disposeAll()
-      } catch (err) {
-        log.warn(`Failed to dispose terminals on quit: ${String(err)}`)
-      }
-      getFileWatcherService().stopAll()
-      getUpdateService().destroy()
-      backgroundMaintenanceWorker.dispose()
-      closeDatabase()
-    })
+    app.on(
+      'before-quit',
+      createAppShutdownCoordinator({
+        app,
+        disposeSessionService: disposeSessionServiceForShutdown,
+        cleanup: () =>
+          runShutdownCleanupSteps(
+            [
+              {
+                name: 'terminals',
+                run: () => getTerminalService().disposeAll(),
+              },
+              {
+                name: 'file watchers',
+                run: () => getFileWatcherService().stopAll(),
+              },
+              {
+                name: 'update service',
+                run: () => getUpdateService().destroy(),
+              },
+              {
+                name: 'background maintenance worker',
+                run: () => backgroundMaintenanceWorker.dispose(),
+              },
+              {
+                name: 'database',
+                run: () => closeDatabase(),
+              },
+            ],
+            (stepName, err) => {
+              log.warn(`Failed to clean up ${stepName} on quit: ${String(err)}`)
+            },
+          ),
+        onError: (err) => {
+          log.warn(`Application shutdown cleanup failed: ${String(err)}`)
+        },
+      }),
+    )
   } catch (err) {
     log.error(`Database initialization failed: ${String(err)}`)
     // 数据库初始化失败不阻止应用启动，但大部分功能不可用
