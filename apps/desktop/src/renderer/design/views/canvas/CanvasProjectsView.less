@@ -114,6 +114,17 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
+.canvas-project-card:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 68%, transparent);
+  outline: 3px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  outline-offset: 2px;
+}
+
+.canvas-project-card.is-opening {
+  border-color: color-mix(in srgb, var(--primary) 48%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
 .canvas-project-card-pinned {
   border-color: color-mix(in srgb, var(--primary) 40%, transparent);
 }
