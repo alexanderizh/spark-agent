@@ -3,10 +3,7 @@ import { Input, Popover, Spin } from 'antd'
 import { Button, Tooltip } from '@lobehub/ui'
 import type { CanvasMediaModelSummary } from '@spark/protocol'
 import { Icons } from '../../Icons'
-import {
-  ProviderLogo,
-  getProviderIconForVendor,
-} from '../../components/ProviderLogo'
+import { ProviderLogo, getProviderIconForVendor } from '../../components/ProviderLogo'
 import {
   buildCanvasModelProviderGroups,
   filterCanvasModelProviderGroups,

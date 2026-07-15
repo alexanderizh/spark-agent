@@ -1,8 +1,5 @@
 import { AutoComplete, Input, Select, Switch } from 'antd'
-import {
-  aspectRatioShape,
-  type CanvasParameterPresentation,
-} from './canvasParameterPresentation'
+import { aspectRatioShape, type CanvasParameterPresentation } from './canvasParameterPresentation'
 import './CanvasParameterControl.less'
 
 export type CanvasParameterControlProps = {
@@ -17,11 +14,7 @@ function optionLabel(value: string, unit?: string): string {
   return `${value}${unit}`
 }
 
-function CompactOptions({
-  presentation,
-  value,
-  onChange,
-}: CanvasParameterControlProps) {
+function CompactOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
   const scrollable = presentation.field.enumValues.length > 6
   return (
     <div
@@ -45,11 +38,7 @@ function CompactOptions({
   )
 }
 
-function AspectRatioOptions({
-  presentation,
-  value,
-  onChange,
-}: CanvasParameterControlProps) {
+function AspectRatioOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
   return (
     <>
       <div className="canvas-aspect-ratio-grid" role="group" aria-label={presentation.label}>
@@ -81,7 +70,10 @@ function AspectRatioOptions({
         <AutoComplete
           className="canvas-parameter-custom-value"
           value={value || undefined}
-          options={presentation.field.enumValues.map((option) => ({ value: option, label: option }))}
+          options={presentation.field.enumValues.map((option) => ({
+            value: option,
+            label: option,
+          }))}
           placeholder={presentation.field.placeholder ?? '输入自定义比例或尺寸'}
           allowClear
           onChange={(next) => onChange(next == null ? '' : String(next))}
