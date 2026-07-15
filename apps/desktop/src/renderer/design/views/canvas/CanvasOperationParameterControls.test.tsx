@@ -33,6 +33,7 @@ vi.mock('antd', async () => {
         ReactActual.cloneElement(children as React.ReactElement<{ onClick?: () => void }>, { onClick: () => onOpenChange?.(!open) }),
         open ? content : null),
     Spin: () => ReactActual.createElement('span', null, '加载中'),
+    Tooltip: ({ children }: { children: React.ReactNode }) => children,
   }
 })
 
