@@ -45,6 +45,7 @@ import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasMediaInputHint } from './CanvasMediaInputHint'
 import { buildReferenceImageInputRoles } from './canvasTaskInputFiles'
 import { mediaModelKey } from './canvasModelPickerModel'
+import type { SchemaField } from './canvasParameterPresentation'
 import type {
   CanvasInputTransport,
   CanvasNode,
@@ -1340,15 +1341,7 @@ function renderFrameNodeOptionLabel(node: CanvasNode, label: string) {
   )
 }
 
-export type SchemaField = {
-  name: string
-  title: string
-  type: string
-  enumValues: string[]
-  allowCustom?: boolean
-  description?: string
-  placeholder?: string
-}
+export type { SchemaField } from './canvasParameterPresentation'
 
 export type CustomParamType = 'string' | 'number' | 'integer' | 'boolean' | 'json'
 
