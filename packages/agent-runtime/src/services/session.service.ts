@@ -108,6 +108,7 @@ import { getDebugLogServer } from './debug-log-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
+import { SessionQuestionGate } from './session-question-gate.js'
 import {
   executeWorkflowAgentPlan,
   getWorkflowNodesDeep,
@@ -530,6 +531,8 @@ export class SessionService {
   private userSkillsDir: string | null = null
   /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
   private pendingPlanApprovals = new Set<string>()
+  /** 结构化问答独立闸门：SDK 流提前结束时仍保持，直到用户回答或明确关闭。 */
+  private readonly pendingUserQuestionGate = new SessionQuestionGate()
   private readonly eventSequencer = new SessionEventSequencer()
   /**
    * 当前 turn 该会话实际生效的对话模型 — 含 @mention agent 切换。
@@ -1530,7 +1533,7 @@ export class SessionService {
       })
     }
     const currentGoal = new GoalRepository(this.db).getCurrent(sessionId)
-    if (currentGoal?.status === 'active') {
+    if (currentGoal?.status === 'active' || this.pendingUserQuestionGate.isBlocked(sessionId)) {
       this.enqueueTurn(sessionId, pendingTurn)
       return { turnId, started: false }
     }
@@ -1635,16 +1638,23 @@ export class SessionService {
     const agent = isMentionTurn
       ? this.resolveAgent(mentionAgentId)
       : this.resolveAgent(session.agent_id)
+    // 团队 Host 的实际配置优先于会话里上一次单 Agent 的运行时快照；没有配置的字段再回落到会话值。
+    const runtimeAgent =
+      !isMentionTurn && sessionTeamConfig?.enabled === true
+        ? (new AgentRepository(this.db).get(sessionTeamConfig.hostAgentId) ?? agent)
+        : agent
     const workflow =
-      agent.workflowId != null ? new WorkflowRepository(this.db).get(agent.workflowId) : null
+      runtimeAgent.workflowId != null
+        ? new WorkflowRepository(this.db).get(runtimeAgent.workflowId)
+        : null
     const workflowGraph = workflow != null ? normalizeWorkflowGraph(workflow.graph) : undefined
     const workflowMembers =
       workflowGraph != null ? this.resolveWorkflowMembers(workflowGraph, agent) : []
     const enabledWorkflowWorkerIds = new Set(workflowMembers.map((member) => member.id))
     // Provider / model：mention 时优先用被 @ Agent 自己的配置，未配置则回退会话默认。
     const effectiveProviderProfileId = isMentionTurn
-      ? (agent.providerProfileId ?? session.provider_profile_id)
-      : session.provider_profile_id
+      ? (agent.providerProfileId?.trim() || session.provider_profile_id)
+      : (runtimeAgent.providerProfileId?.trim() || session.provider_profile_id)
     if (effectiveProviderProfileId == null) {
       throw new Error(`Session ${sessionId} has no provider profile`)
     }
@@ -1674,7 +1684,9 @@ export class SessionService {
     let effectiveRuntimeProviderProfileId = effectiveProviderProfileId
     const modelProfilesForRouting = new ModelProfileRepository(this.db).list()
     const providersForRouting = providerRowsForModelRouter(providerRepo.listAll())
-    const requestedModel = (isMentionTurn ? agent.modelId : null) ?? session.model_id
+    const requestedModel = isMentionTurn
+      ? (agent.modelId?.trim() || session.model_id)
+      : (runtimeAgent.modelId?.trim() || session.model_id)
     const loadProvider = (providerProfileId: string) => {
       const row = providerRepo.get(providerProfileId)
       if (row == null) {
@@ -1734,9 +1746,19 @@ export class SessionService {
       provider = loadProvider(effectiveRuntimeProviderProfileId)
       isLocalCli = isBuiltInLocalCliProvider(provider)
       config = JSON.parse(provider.config_json) as typeof config
+      const configuredAgentModel = (isMentionTurn ? agent.modelId : runtimeAgent.modelId)?.trim() ?? ''
+      const sessionModel = session.model_id?.trim() ?? ''
+      const configuredModels = Array.isArray(config.modelIds)
+        ? config.modelIds.filter((item): item is string => typeof item === 'string')
+        : []
+      const inheritedModel =
+        sessionModel.length > 0 &&
+        (configuredModels.length === 0 || configuredModels.includes(sessionModel))
+          ? sessionModel
+          : ''
       model = isLocalCli
         ? getLocalCliDefaultModel(provider)
-        : (requestedModel ?? config.defaultModel ?? config.model ?? '')
+        : (configuredAgentModel || inheritedModel || config.defaultModel || config.model || '')
       if (model.length === 0) {
         throw new Error(`Provider ${provider.id} has no default model configured`)
       }
@@ -1756,7 +1778,11 @@ export class SessionService {
     this.activeChatModelBySession.set(sessionId, { providerId: provider.id, model })
 
     const agentAdapter = getAgentAdapterFromSession(
-      isMentionTurn ? (agent.agentAdapter ?? session.agent_adapter) : session.agent_adapter,
+      isMentionTurn
+        ? (agent.agentAdapter ?? session.agent_adapter)
+        : sessionTeamConfig?.enabled === true
+          ? runtimeAgent.agentAdapter
+          : session.agent_adapter,
       session.chat_mode,
       provider.provider_type,
     )
@@ -1919,12 +1945,12 @@ export class SessionService {
       {
         ...(primaryWorkspaceId != null ? { workspaceId: primaryWorkspaceId } : {}),
         sessionId,
-        agentId: agent.id,
+        agentId: runtimeAgent.id,
       },
       explicitSkillPrompt,
       {
-        agentSkillIds: agent.skillIds,
-        agentDisabledSkillIds: agent.disabledSkillIds,
+        agentSkillIds: runtimeAgent.skillIds,
+        agentDisabledSkillIds: runtimeAgent.disabledSkillIds,
       },
     )
     const imageGenerationContext = await this.resolveImageGenerationContext(workspaceRootPath)
@@ -1945,14 +1971,18 @@ export class SessionService {
       runtimeContext.skillConfig.effectiveSkillIds.includes('builtin:spark-web-tool')
     const workflowCanUseManagedExecutor =
       workflowGraph != null &&
-      hasWorkflowExecutableNodes(workflowGraph, enabledWorkflowWorkerIds, agent.id)
+      hasWorkflowExecutableNodes(workflowGraph, enabledWorkflowWorkerIds, runtimeAgent.id)
     const workflowExecutionMode =
       workflowGraph == null || !workflowCanUseManagedExecutor || isMentionTurn
         ? 'guided'
         : agentAdapter === 'claude-sdk' || agentAdapter === 'claude'
           ? 'workflow_run'
           : 'codex_guided'
-    const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow, workflowExecutionMode)
+    const managedAgentPrompt = buildManagedAgentSystemPrompt(
+      runtimeAgent,
+      workflow,
+      workflowExecutionMode,
+    )
 
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
     // Mention 路由：被 @ 的 Member 直接响应，不注入 spark_team（不允许它再 dispatch，符合"互调暂缓"原则）。
@@ -1963,7 +1993,7 @@ export class SessionService {
     let orchestrationModePrompt = ''
     if (!isMentionTurn) {
       const teamMembers = teamConfig?.enabled
-        ? this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
+        ? this.resolveTeamMembers(teamConfig.memberAgentIds, runtimeAgent.id)
         : []
       const hasDispatchableTeamMembers = teamMembers.length > 0
       let activeDiscussionId: string | undefined
@@ -1994,7 +2024,7 @@ export class SessionService {
             discussionRepo.createDiscussion({
               id: crypto.randomUUID(),
               sessionId,
-              hostAgentId: agent.id,
+              hostAgentId: runtimeAgent.id,
               topic: message.slice(0, 240).trim() || null,
               maxRounds:
                 teamConfig.maxDiscussionRounds ??
@@ -2013,7 +2043,7 @@ export class SessionService {
             ? teamConfig
             : {
                 enabled: true,
-                hostAgentId: agent.id,
+                hostAgentId: runtimeAgent.id,
                 memberAgentIds: [...enabledWorkflowWorkerIds],
                 maxDepth: 1,
                 allowNesting: false,
@@ -2022,7 +2052,7 @@ export class SessionService {
           (await this.createTeamMcpServer({
             sessionId,
             turnId,
-            hostAgent: agent,
+            hostAgent: runtimeAgent,
             members: dispatchMembers,
             teamConfig: dispatchTeamConfig,
             workspaceRootPath,
@@ -2068,8 +2098,8 @@ export class SessionService {
               seq: 0,
               active: true,
               source: hasDispatchableTeamMembers ? 'team' : 'workflow',
-              hostAgentId: agent.id,
-              hostAgentName: agent.name,
+              hostAgentId: runtimeAgent.id,
+              hostAgentName: runtimeAgent.name,
               memberCount: dispatchMembers.length,
             },
             eventRepo,
@@ -2220,9 +2250,9 @@ export class SessionService {
           if (primaryWorkspaceId != null && primaryWorkspaceId.length > 0) {
             consoScopes.push({ scope: 'project', scopeRef: primaryWorkspaceId })
           }
-          consoScopes.push({ scope: 'agent', scopeRef: agent.id })
+          consoScopes.push({ scope: 'agent', scopeRef: runtimeAgent.id })
           // info 级让"整合 job 是否被触发"在默认日志级别下可观测（审查 HIGH#17）
-          log.info(`memory consolidation trigger fired for agent=${agent.id} (fire-and-forget)`)
+          log.info(`memory consolidation trigger fired for agent=${runtimeAgent.id} (fire-and-forget)`)
           void consolidationService.maybeConsolidate(consoScopes)
         } catch (err) {
           log.warn(
@@ -2238,13 +2268,13 @@ export class SessionService {
       )
       // 种子查询：agent 身份 + workspace 名，驱动非 feedback 记忆的相关性检索
       const wsName = workspaceRootPath ? path.basename(workspaceRootPath) : ''
-      const seedQuery = [agent.name, agent.description, wsName]
+      const seedQuery = [runtimeAgent.name, runtimeAgent.description, wsName]
         .filter((s) => typeof s === 'string' && s.length > 0)
         .join(' ')
         .slice(0, 500)
       const memoryInjection = await memoryReader.loadForSession({
         workspaceId: primaryWorkspaceId ?? '',
-        agentId: agent.id,
+        agentId: runtimeAgent.id,
         ...(seedQuery.length > 0 ? { seedQuery } : {}),
       })
       memoryBlock = memoryInjection.block || undefined
@@ -2618,11 +2648,16 @@ export class SessionService {
                 questions: UserQuestionPrompt[],
                 context: SDKQuestionRequestContext,
               ) => {
+                const releaseQuestionGate = this.pendingUserQuestionGate.enter(sid)
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
                 try {
                   return await this.onQuestion!(sid, questions, context)
                 } finally {
+                  releaseQuestionGate()
                   this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
+                  if (!this.pendingUserQuestionGate.isBlocked(sid)) {
+                    setTimeout(() => this.startNextQueuedTurn(sid), 0)
+                  }
                 }
               },
             }
@@ -5798,10 +5833,23 @@ export class SessionService {
       provider = loadProvider(providerProfileId)
       isLocalCli = isBuiltInLocalCliProvider(provider)
       providerConfig = JSON.parse(provider.config_json) as typeof providerConfig
+      const sessionModel = session.model_id?.trim() ?? ''
+      const configuredModels = Array.isArray(providerConfig.modelIds)
+        ? providerConfig.modelIds.filter((item): item is string => typeof item === 'string')
+        : []
+      const inheritedModel =
+        sessionModel.length > 0 &&
+        (configuredModels.length === 0 || configuredModels.includes(sessionModel))
+          ? sessionModel
+          : ''
       model = (
         isLocalCli
           ? getLocalCliDefaultModel(provider)
-          : (member.modelId ?? providerConfig.defaultModel ?? providerConfig.model ?? '')
+          : (member.modelId?.trim() ||
+              inheritedModel ||
+              providerConfig.defaultModel ||
+              providerConfig.model ||
+              '')
       ).trim()
       if (!model) throw new Error('Member has no resolvable model')
     }
@@ -6013,11 +6061,16 @@ export class SessionService {
               questions: UserQuestionPrompt[],
               context: SDKQuestionRequestContext,
             ) => {
+              const releaseQuestionGate = this.pendingUserQuestionGate.enter(sid)
               this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
               try {
                 return await this.onQuestion!(sid, questions, context)
               } finally {
+                releaseQuestionGate()
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
+                if (!this.pendingUserQuestionGate.isBlocked(sid)) {
+                  setTimeout(() => this.startNextQueuedTurn(sid), 0)
+                }
               }
             },
           }
@@ -6329,6 +6382,7 @@ export class SessionService {
       this.startingSessions.clear()
       this.pendingTurns.clear()
       this.pendingPlanApprovals.clear()
+      this.pendingUserQuestionGate.clear()
 
       const pending = [
         ...trackedExecutions.map(([, tracked]) => tracked.promise),
@@ -6466,6 +6520,10 @@ export class SessionService {
     // Plan 模式审批未完成前，队列暂停自动起跑：用户必须先批准/拒绝/切换权限模式，
     // 否则后续 turn 会跨越审批弹窗自行执行，破坏用户预期。
     if (this.pendingPlanApprovals.has(sessionId)) {
+      this.emitQueueChanged(sessionId)
+      return
+    }
+    if (this.pendingUserQuestionGate.isBlocked(sessionId)) {
       this.emitQueueChanged(sessionId)
       return
     }

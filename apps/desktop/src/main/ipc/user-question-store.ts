@@ -6,13 +6,19 @@ type PendingQuestion = {
   request: UserQuestionRequest
   promise: Promise<Record<string, unknown>>
   resolve: (answers: Record<string, unknown>) => void
-  signal?: AbortSignal
-  onAbort?: () => void
+  detached: boolean
+  settling: boolean
+  signal?: AbortSignal | undefined
+  onAbort?: (() => void) | undefined
 }
 
 type PendingUserQuestionStoreOptions = {
   onRequest: (request: UserQuestionRequest) => void
   onClose: (request: UserQuestionRequest, reason: UserQuestionCloseReason) => void
+  onDetachedAnswer?: (
+    request: UserQuestionRequest,
+    answers: Record<string, unknown>,
+  ) => Promise<void>
 }
 
 function questionKey(sessionId: string, questionId: string): string {
@@ -33,6 +39,9 @@ export class PendingUserQuestionStore {
     const key = questionKey(params.sessionId, params.questionId)
     const existing = this.pending.get(key)
     if (existing != null) {
+      if (params.signal != null && params.signal !== existing.signal) {
+        this.attachSignal(existing, params.signal)
+      }
       this.options.onRequest(existing.request)
       return existing.promise
     }
@@ -51,19 +60,11 @@ export class PendingUserQuestionStore {
       request,
       promise,
       resolve: (answers) => resolvePromise?.(answers),
-      ...(params.signal != null ? { signal: params.signal } : {}),
+      detached: false,
+      settling: false,
     }
     this.pending.set(key, entry)
-    if (params.signal != null) {
-      entry.onAbort = () => {
-        this.finish(request.sessionId, request.questionId, { cancelled: true }, 'aborted')
-      }
-      if (params.signal.aborted) {
-        entry.onAbort()
-        return promise
-      }
-      params.signal.addEventListener('abort', entry.onAbort, { once: true })
-    }
+    if (params.signal != null) this.attachSignal(entry, params.signal)
     this.options.onRequest(request)
     return promise
   }
@@ -75,8 +76,28 @@ export class PendingUserQuestionStore {
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
 
-  resolve(sessionId: string, questionId: string, answers: Record<string, unknown>): boolean {
-    return this.finish(sessionId, questionId, answers, 'answered')
+  async resolve(
+    sessionId: string,
+    questionId: string,
+    answers: Record<string, unknown>,
+  ): Promise<boolean> {
+    const entry = this.pending.get(questionKey(sessionId, questionId))
+    if (entry == null || entry.settling) return false
+    entry.settling = true
+    try {
+      if (
+        entry.detached &&
+        answers.cancelled !== true &&
+        answers.declined !== true &&
+        this.options.onDetachedAnswer != null
+      ) {
+        await this.options.onDetachedAnswer(entry.request, answers)
+      }
+      return this.finish(sessionId, questionId, answers, 'answered')
+    } catch (error) {
+      entry.settling = false
+      throw error
+    }
   }
 
   cancelSession(sessionId: string): void {
@@ -84,6 +105,24 @@ export class PendingUserQuestionStore {
       if (entry.request.sessionId !== sessionId) continue
       this.finish(sessionId, entry.request.questionId, { cancelled: true }, 'cancelled')
     }
+  }
+
+  private attachSignal(entry: PendingQuestion, signal: AbortSignal): void {
+    if (entry.signal != null && entry.onAbort != null) {
+      entry.signal.removeEventListener('abort', entry.onAbort)
+    }
+    entry.signal = signal
+    entry.detached = false
+    entry.onAbort = () => {
+      // The SDK control channel is transport state, not user intent. Keep the
+      // question visible and pending; a later answer will be sent as a fresh turn.
+      entry.detached = true
+      signal.removeEventListener('abort', entry.onAbort!)
+      entry.signal = undefined
+      entry.onAbort = undefined
+    }
+    if (signal.aborted) entry.onAbort()
+    else signal.addEventListener('abort', entry.onAbort, { once: true })
   }
 
   private finish(

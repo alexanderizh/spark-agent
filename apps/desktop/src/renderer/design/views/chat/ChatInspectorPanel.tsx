@@ -814,6 +814,8 @@ export function ChatInspector({
         {teamConfig.enabled && (
           <TeamInspectorSection
             config={teamConfig}
+            fallbackProviderProfileId={session?.providerProfileId ?? null}
+            fallbackModelId={session?.modelId ?? null}
             agents={agents.map((a) => ({
               id: a.id,
               name: a.name,
@@ -821,6 +823,7 @@ export function ChatInspector({
               builtIn: a.builtIn,
               providerProfileId: a.providerProfileId ?? null,
               modelId: a.modelId ?? null,
+              agentAdapter: a.agentAdapter,
               skillCount: a.skillIds.length,
               mcpCount: a.mcpServerIds.length,
               metadata: a.metadata,

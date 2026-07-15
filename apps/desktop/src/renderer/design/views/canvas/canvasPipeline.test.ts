@@ -4,6 +4,7 @@ import {
   collectDownstream,
   confirmPatch,
   getPipelineActions,
+  getNodePipelineActions,
   humanEditPatch,
   isConfirmed,
   readManuscriptIndex,
@@ -48,6 +49,15 @@ describe('canvasPipeline', () => {
     it('无角色或未知角色返回空', () => {
       expect(getPipelineActions(undefined)).toEqual([])
       expect(getPipelineActions('style_bible')).toEqual([])
+    })
+
+    it('节点关联同类型资产时可放宽到对应出图任务', () => {
+      expect(
+        getNodePipelineActions(
+          { type: 'image' },
+          { assetKinds: ['scene'] },
+        ).map((action) => action.id),
+      ).toEqual(['scene.scene_image'])
     })
   })
 

@@ -34,6 +34,16 @@ export type CanvasPipelineOp = {
   extractKind?: ExtractEntityKind
 }
 
+/** 可直接从同类型影视资产卡片继续创建的图像任务类型。 */
+export type CanvasPipelineAssetKind = 'character' | 'scene' | 'prop' | 'effect'
+
+const ASSET_KIND_BY_ACTION: Partial<Record<string, CanvasPipelineAssetKind>> = {
+  'character.three_view': 'character',
+  'scene.scene_image': 'scene',
+  'prop.prop_image': 'prop',
+  'effect.effect_image': 'effect',
+}
+
 export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
   // 章节（也适用于任意文本节点：剧本/普通文本都可发起剧本化改写）
   {
@@ -168,19 +178,31 @@ export function getOpsForRole(role: CanvasPipelineRole | undefined): CanvasPipel
  * 某节点可执行的 op。
  * 文本/Prompt/组节点（chapter / screenplay / 普通文本 / 含文本的组）共享同一份「全量文本菜单」：
  * 合并「按角色匹配」与「appliesToText」两路，按 CANVAS_PIPELINE_OPS 原始顺序返回。
- * 这样章节、剧本、普通文本节点，以及包含文本的组节点，都能使用：转剧本 / 生成分镜脚本 / 提取角色 / 提取场景 / 生成分镜关键帧图。
+ * 这样章节、剧本、普通文本节点，以及包含文本的组节点，都能使用：转剧本 / 生成分镜脚本 / 提取角色 / 提取场景 / 生成分镜关键帧图；
+ * 关联影视资产的其他节点还可按资产类型获得对应的角色/场景/道具/特效出图入口。
  */
-export function getOpsForNode(node: {
-  type: CanvasNodeType
-  data?: { pipelineRole?: CanvasPipelineRole }
-}): CanvasPipelineOp[] {
+export function getOpsForNode(
+  node: {
+    type: CanvasNodeType
+    data?: { pipelineRole?: CanvasPipelineRole }
+  },
+  options: { assetKinds?: readonly CanvasPipelineAssetKind[] } = {},
+): CanvasPipelineOp[] {
   const role = node.data?.pipelineRole
   const isTextNode = node.type === 'text' || node.type === 'prompt' || node.type === 'group'
+  const assetKinds = options.assetKinds ?? []
+  const matchesAssetKind = (op: CanvasPipelineOp) => {
+    const assetKind = ASSET_KIND_BY_ACTION[op.id]
+    return assetKind != null && assetKinds.includes(assetKind)
+  }
   if (!isTextNode) {
-    return role ? getOpsForRole(role) : []
+    return CANVAS_PIPELINE_OPS.filter(
+      (op) => (role != null && op.appliesTo.includes(role)) || matchesAssetKind(op),
+    )
   }
   return CANVAS_PIPELINE_OPS.filter((op) => {
     if (role && op.appliesTo.includes(role)) return true
+    if (matchesAssetKind(op)) return true
     return Boolean(op.appliesToText)
   })
 }

@@ -145,7 +145,6 @@ type AgentDraft = {
   reasoningEffort: SessionReasoningEffort
   prompt: string
   skillIds: string[]
-  mcpServerIds: string[]
   ruleIds: string[]
   hookConfig: AgentHookConfig
   workflowId: string
@@ -178,7 +177,6 @@ const EMPTY_DRAFT: AgentDraft = {
     'builtin:platform-manager',
     'builtin:find-skills',
   ],
-  mcpServerIds: [],
   ruleIds: [],
   hookConfig: {
     enabled: false,
@@ -870,7 +868,6 @@ function AgentsTabContent({
           prompt: agent.prompt,
           skillIds: agent.skillIds,
           disabledSkillIds: agent.disabledSkillIds,
-          mcpServerIds: agent.mcpServerIds,
           ruleIds: agent.ruleIds,
           hookConfig: agent.hookConfig,
           workflowId: agent.workflowId,
@@ -2215,7 +2212,6 @@ function agentToDraft(agent: ManagedAgent): AgentDraft {
     reasoningEffort: normalizeReasoningEffort(agent.reasoningEffort),
     prompt: agent.prompt,
     skillIds: agent.skillIds,
-    mcpServerIds: agent.mcpServerIds,
     ruleIds: agent.ruleIds,
     hookConfig: normalizeAgentHookConfig(agent.hookConfig),
     workflowId: agent.workflowId ?? '',
@@ -2269,7 +2265,6 @@ function draftToPayload(draft: AgentDraft, provider?: ProviderProfile | null) {
     prompt: normalized.prompt,
     skillIds: normalized.skillIds,
     disabledSkillIds: [] as string[],
-    mcpServerIds: normalized.mcpServerIds,
     ruleIds: normalized.ruleIds,
     hookConfig: normalized.hookConfig,
     workflowId: normalized.workflowId || null,

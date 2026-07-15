@@ -75,6 +75,22 @@ describe('canvasPipelineOps', () => {
     it('无 role 的图片节点不给入口', () => {
       expect(getOpsForNode({ type: 'image' })).toEqual([])
     })
+    it('同类型资产卡片即使没有角色标记也能使用对应出图任务', () => {
+      expect(
+        getOpsForNode(
+          { type: 'image' },
+          { assetKinds: ['character', 'scene'] },
+        ).map((op) => op.id),
+      ).toEqual(['character.three_view', 'scene.scene_image'])
+    })
+    it('任务节点的同类型产物也能继续创建对应任务', () => {
+      expect(
+        getOpsForNode(
+          { type: 'text_generate', data: { pipelineRole: 'design_card' } },
+          { assetKinds: ['scene'] },
+        ).map((op) => op.id),
+      ).toEqual(['scene.scene_image'])
+    })
   })
 
   describe('buildOpPrompt', () => {

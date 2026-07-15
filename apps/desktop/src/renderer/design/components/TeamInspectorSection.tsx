@@ -29,6 +29,7 @@ export interface TeamInspectorAgent {
   /** 只读详情（点击成员行展开）：供应商/模型/技能数/MCP 数 */
   providerProfileId?: string | null
   modelId?: string | null
+  agentAdapter?: string | null
   skillCount?: number
   mcpCount?: number
   metadata?: Record<string, unknown> | undefined
@@ -38,6 +39,9 @@ export interface TeamInspectorSectionProps {
   config: TeamModeConfig
   /** 所有可选 Agent（含当前对话 Agent；本组件内部会单列） */
   agents: TeamInspectorAgent[]
+  /** Agent 未配置时，沿用当前单对话的运行时选择。 */
+  fallbackProviderProfileId?: string | null
+  fallbackModelId?: string | null
   runningAgentIds?: string[]
   onToggleMember: (agentId: string, enabled: boolean) => void
   onChangeConfig: (patch: Partial<TeamModeConfig>) => void
@@ -67,6 +71,8 @@ export function TeamInspectorSection({
   config,
   agents,
   runningAgentIds = [],
+  fallbackProviderProfileId,
+  fallbackModelId,
   onToggleMember,
   onChangeConfig,
 }: TeamInspectorSectionProps) {
@@ -459,11 +465,27 @@ export function TeamInspectorSection({
                 <div className="team-roster-detail">
                   <div className="team-roster-detail-row">
                     <span className="team-roster-detail-k">模型</span>
-                    <span className="team-roster-detail-v">{agent.modelId || '会话默认'}</span>
+                    <span className="team-roster-detail-v">
+                      {agent.modelId || fallbackModelId || '会话默认'}
+                      {!agent.modelId && fallbackModelId ? '（沿用会话）' : ''}
+                    </span>
                   </div>
                   <div className="team-roster-detail-row">
                     <span className="team-roster-detail-k">供应商</span>
-                    <span className="team-roster-detail-v">{agent.providerProfileId || '会话默认'}</span>
+                    <span className="team-roster-detail-v">
+                      {agent.providerProfileId || fallbackProviderProfileId || '会话默认'}
+                      {!agent.providerProfileId && fallbackProviderProfileId ? '（沿用会话）' : ''}
+                    </span>
+                  </div>
+                  <div className="team-roster-detail-row">
+                    <span className="team-roster-detail-k">适配器</span>
+                    <span className="team-roster-detail-v">
+                      {agent.agentAdapter === 'codex'
+                        ? 'Codex'
+                        : agent.agentAdapter === 'claude'
+                          ? 'Claude CLI'
+                          : 'Claude SDK'}
+                    </span>
                   </div>
                   <div className="team-roster-detail-row">
                     <span className="team-roster-detail-k">Skills</span>

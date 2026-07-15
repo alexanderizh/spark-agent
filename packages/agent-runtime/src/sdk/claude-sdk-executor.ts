@@ -28,7 +28,12 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { join, sep } from 'node:path'
-import type { AgentEvent, AgentStatusValue, UserQuestionOption, UserQuestionPrompt } from '@spark/protocol'
+import type {
+  AgentEvent,
+  AgentStatusValue,
+  UserQuestionOption,
+  UserQuestionPrompt,
+} from '@spark/protocol'
 import {
   createLogger,
   resolveModelContextWindow,
@@ -97,24 +102,34 @@ const ENV_BLOCKLIST_PREFIXES = ['ANTHROPIC_', 'CLAUDE_'] as const
 const DEFAULT_SDK_MAX_TURNS = 200
 const DEFAULT_MAX_TURN_EXTENSION_RETRIES = 6
 const DEFAULT_MAX_TURN_EXTENSION_CAP = 2000
+export const INTERACTIVE_PROMPT_CLOSE_GRACE_MS = 5_000
 const MAX_TURNS_ERROR_PATTERN = /reached\s+maximum\s+number\s+of\s+turns/i
 
 type InteractivePrompt = {
   stream: AsyncIterable<SDKUserMessage>
+  /** Force-close for explicit cancellation. */
   close: () => void
+  /** Ask the stream to close after late SDK control requests had a chance to arrive. */
+  requestClose: (graceMs?: number) => void
+  /** Keep the stream open until an in-flight host interaction settles. */
+  holdOpen: () => () => void
 }
 
 /**
  * The Agent SDK only supports host control requests (canUseTool, hooks,
  * setPermissionMode) while its input is in streaming mode. Keep the input
- * iterator open for the lifetime of the turn, then close it as soon as the
- * terminal result arrives.
+ * iterator open for the lifetime of the turn. Terminal results request a
+ * delayed close, while host-rendered questions hold the stream indefinitely
+ * until the user answers or explicitly closes them.
  */
 export function createInteractivePromptStream(
   prompt: string,
   signal?: AbortSignal,
 ): InteractivePrompt {
   let closed = false
+  let closeRequested = false
+  let holdCount = 0
+  let closeTimer: ReturnType<typeof setTimeout> | undefined
   let resolveClosed: (() => void) | undefined
   const closedPromise = new Promise<void>((resolve) => {
     resolveClosed = resolve
@@ -122,7 +137,35 @@ export function createInteractivePromptStream(
   const close = () => {
     if (closed) return
     closed = true
+    if (closeTimer != null) clearTimeout(closeTimer)
+    closeTimer = undefined
     resolveClosed?.()
+  }
+  const requestClose = (graceMs = INTERACTIVE_PROMPT_CLOSE_GRACE_MS) => {
+    if (closed) return
+    closeRequested = true
+    if (closeTimer != null) clearTimeout(closeTimer)
+    closeTimer = undefined
+    if (holdCount > 0) return
+    if (graceMs <= 0) {
+      close()
+      return
+    }
+    closeTimer = setTimeout(close, graceMs)
+    closeTimer.unref?.()
+  }
+  const holdOpen = () => {
+    if (closed) return () => undefined
+    holdCount += 1
+    if (closeTimer != null) clearTimeout(closeTimer)
+    closeTimer = undefined
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      holdCount = Math.max(0, holdCount - 1)
+      if (holdCount === 0 && closeRequested) close()
+    }
   }
   if (signal?.aborted === true) close()
   else signal?.addEventListener('abort', close, { once: true })
@@ -144,6 +187,8 @@ export function createInteractivePromptStream(
       },
     },
     close,
+    requestClose,
+    holdOpen,
   }
 }
 
@@ -187,7 +232,11 @@ function buildIsolatedRuntimeEnv(
   apiKey: string,
   model: string,
   apiEndpoint?: string,
-  tierModels?: { haiku?: string | undefined; sonnet?: string | undefined; opus?: string | undefined },
+  tierModels?: {
+    haiku?: string | undefined
+    sonnet?: string | undefined
+    opus?: string | undefined
+  },
   useLocalConfig?: boolean,
   customEnv?: Record<string, string>,
 ): Record<string, string> {
@@ -266,7 +315,11 @@ export interface SdkMcpToolResult {
  *  因此必须用 SDK 的 in-process server（区别于 spark_image 的 stdio 子进程）。
  *  SDK 不可用时返回 null。 */
 export async function loadSdkMcpFactory(): Promise<{
-  createSdkMcpServer: (opts: { name: string; version?: string; tools: unknown[] }) => SDKMcpServerConfig
+  createSdkMcpServer: (opts: {
+    name: string
+    version?: string
+    tools: unknown[]
+  }) => SDKMcpServerConfig
   tool: (
     name: string,
     description: string,
@@ -276,7 +329,11 @@ export async function loadSdkMcpFactory(): Promise<{
 } | null> {
   const sdk = (await loadSDK()) as
     | (SDKModule & {
-        createSdkMcpServer?: (opts: { name: string; version?: string; tools: unknown[] }) => SDKMcpServerConfig
+        createSdkMcpServer?: (opts: {
+          name: string
+          version?: string
+          tools: unknown[]
+        }) => SDKMcpServerConfig
         tool?: (
           name: string,
           description: string,
@@ -392,11 +449,7 @@ export class ClaudeSDKExecutor {
       // Minimal runtime env mirroring run(): just authentication + model, no
       // tier-model fan-out, MCP servers, system prompt or tools — we are not
       // running a turn, only resuming to issue the rewind control request.
-      const runtimeEnv = buildIsolatedRuntimeEnv(
-        params.apiKey,
-        params.model,
-        params.apiEndpoint,
-      )
+      const runtimeEnv = buildIsolatedRuntimeEnv(params.apiKey, params.model, params.apiEndpoint)
       const claudeCodeExecutable = resolveClaudeCodeExecutable()
       const options: SDKQueryOptions = {
         model: params.model,
@@ -481,7 +534,10 @@ export class ClaudeSDKExecutor {
     this.livePermissionMode = config.permissionMode
     const ctx = { sessionId, turnId, toolNamesById: new Map<string, string>() }
     const streamTerminalizer = new StreamTerminalizer()
-    const promptWithAttachments = buildPromptWithAttachments(buildSparkGoalPrompt(userMessage, config), config.attachments)
+    const promptWithAttachments = buildPromptWithAttachments(
+      buildSparkGoalPrompt(userMessage, config),
+      config.attachments,
+    )
     const makeBase = () => ({
       id: randomUUID(),
       sessionId,
@@ -587,7 +643,7 @@ export class ClaudeSDKExecutor {
     // 已在 runtimeEnv 里合并好。优先读 env，回落到 config.model。
     const effectiveModel =
       config.useLocalConfig === true
-        ? runtimeEnv.ANTHROPIC_MODEL ?? runtimeEnv.ANTHROPIC_DEFAULT_SONNET_MODEL ?? config.model
+        ? (runtimeEnv.ANTHROPIC_MODEL ?? runtimeEnv.ANTHROPIC_DEFAULT_SONNET_MODEL ?? config.model)
         : config.model
     const settings: SDKSettings = {
       model: effectiveModel,
@@ -617,6 +673,7 @@ export class ClaudeSDKExecutor {
     while (true) {
       // Resolve sdkSessionId from config each iteration (resume recovery may update it)
       const sdkSessionId = config.sdkSessionId ?? sessionId
+      let interactivePrompt: InteractivePrompt | undefined
       const options: SDKQueryOptions = {
         abortController,
         model: effectiveModel,
@@ -709,21 +766,30 @@ export class ClaudeSDKExecutor {
                     }
                     const questionCallback = config.questionCallback
                     if (questionCallback != null) {
-                      // Extract questions from input
-                      const questions = extractQuestionsFromInput(input)
-                      // Wait for user to answer questions
-                      const questionContext: SDKQuestionRequestContext = {
-                        questionId: callbackOptions.toolUseID,
-                        requestId: callbackOptions.requestId,
-                        signal: callbackOptions.signal,
+                      const releasePromptHold = interactivePrompt?.holdOpen() ?? (() => undefined)
+                      try {
+                        // Extract questions from input
+                        const questions = extractQuestionsFromInput(input)
+                        // Wait for user to answer questions
+                        const questionContext: SDKQuestionRequestContext = {
+                          questionId: callbackOptions.toolUseID,
+                          requestId: callbackOptions.requestId,
+                          signal: callbackOptions.signal,
+                        }
+                        const answers = await questionCallback(
+                          sessionId,
+                          questions,
+                          questionContext,
+                        )
+                        // Return SDK-compatible answers keyed by question text.
+                        return allowTool(
+                          buildAskUserQuestionInputWithAnswers(input, questions, answers),
+                          callbackOptions.toolUseID,
+                          'user_temporary',
+                        )
+                      } finally {
+                        releasePromptHold()
                       }
-                      const answers = await questionCallback(sessionId, questions, questionContext)
-                      // Return SDK-compatible answers keyed by question text.
-                      return allowTool(
-                        buildAskUserQuestionInputWithAnswers(input, questions, answers),
-                        callbackOptions.toolUseID,
-                        'user_temporary',
-                      )
                     }
                     // If no questionCallback, deny with helpful message
                     return denyTool(
@@ -829,16 +895,17 @@ export class ClaudeSDKExecutor {
         additionalDirectories: options.additionalDirectories ?? null,
       })
 
-      const interactivePrompt = createInteractivePromptStream(prompt, abortController.signal)
+      interactivePrompt = createInteractivePromptStream(prompt, abortController.signal)
+      const activeInteractivePrompt = interactivePrompt
       try {
-        const queryResult = sdk.query({ prompt: interactivePrompt.stream, options })
+        const queryResult = sdk.query({ prompt: activeInteractivePrompt.stream, options })
         let maxTurnsResult: SDKResultMessage | null = null
 
         this.activeQuery = queryResult
         try {
           for await (const message of queryResult) {
             if (abortController.signal.aborted) break
-            if (message.type === 'result') interactivePrompt.close()
+            if (message.type === 'result') activeInteractivePrompt.requestClose()
             if (message.type === 'system' && 'subtype' in message && message.subtype === 'init') {
               log.debug('Claude Code init message received', {
                 sparkSessionId: sessionId,
@@ -880,7 +947,7 @@ export class ClaudeSDKExecutor {
             }
           }
         } finally {
-          interactivePrompt.close()
+          activeInteractivePrompt.requestClose()
           if (this.activeQuery === queryResult) this.activeQuery = null
         }
 
@@ -925,7 +992,7 @@ export class ClaudeSDKExecutor {
         }
         return
       } catch (err) {
-        interactivePrompt.close()
+        activeInteractivePrompt.requestClose()
         if (abortController.signal.aborted) {
           // Cancellation events already emitted by the abort signal listener.
           return
@@ -1132,9 +1199,7 @@ function allowTool(
   return {
     behavior: 'allow',
     updatedInput: input,
-    ...(updatedPermissions != null && updatedPermissions.length > 0
-      ? { updatedPermissions }
-      : {}),
+    ...(updatedPermissions != null && updatedPermissions.length > 0 ? { updatedPermissions } : {}),
     ...(toolUseID != null ? { toolUseID } : {}),
     ...(decisionClassification != null ? { decisionClassification } : {}),
   }
@@ -1235,9 +1300,8 @@ function elicitationFields(
   for (const [key, rawSchema] of Object.entries(properties)) {
     if (typeof rawSchema !== 'object' || rawSchema == null || Array.isArray(rawSchema)) continue
     const schema = rawSchema as Record<string, unknown>
-    const title = typeof schema.title === 'string' && schema.title.trim().length > 0
-      ? schema.title
-      : key
+    const title =
+      typeof schema.title === 'string' && schema.title.trim().length > 0 ? schema.title : key
     const description = typeof schema.description === 'string' ? schema.description : ''
     const enumValues = Array.isArray(schema.enum) ? schema.enum : []
     const isArrayEnum =
@@ -1272,16 +1336,12 @@ function elicitationFields(
   return fields
 }
 
-function elicitationAnswerValue(
-  rawAnswer: unknown,
-  schema: Record<string, unknown>,
-): unknown {
+function elicitationAnswerValue(rawAnswer: unknown, schema: Record<string, unknown>): unknown {
   const answerRecord =
     typeof rawAnswer === 'object' && rawAnswer != null && !Array.isArray(rawAnswer)
       ? (rawAnswer as Record<string, unknown>)
       : null
-  const rawValue =
-    answerRecord?.value ?? answerRecord?.answer ?? answerRecord?.text ?? rawAnswer
+  const rawValue = answerRecord?.value ?? answerRecord?.answer ?? answerRecord?.text ?? rawAnswer
   if (rawValue == null || rawValue === '') return undefined
   if (schema.type === 'array') {
     if (Array.isArray(rawValue)) return rawValue
@@ -1328,10 +1388,7 @@ function denyTool(message: string, toolUseID: string | undefined): SDKPermission
 
 function isAlwaysAllowedControlTool(toolName: string): boolean {
   const normalized = toolName.replace(/-/g, '_').toLowerCase()
-  return (
-    normalized === 'enterplanmode' ||
-    normalized === 'enter_plan_mode'
-  )
+  return normalized === 'enterplanmode' || normalized === 'enter_plan_mode'
   // Note: ExitPlanMode is NOT here — it has plan-mode-specific handling
   // (deny in plan mode to wait for real user approval). See isExitPlanModeTool.
   // Note: AskUserQuestion is NOT always allowed - it needs user interaction
@@ -1411,7 +1468,9 @@ function normalizeAskUserQuestionAnswers(
     const rawAnswer = findRawQuestionAnswer(rawAnswers, question, index)
     const answerText = extractQuestionAnswerText(rawAnswer)
     const fallbackText =
-      answerPayload.cancelled === true || answerPayload.declined === true || isSkippedAnswer(rawAnswer)
+      answerPayload.cancelled === true ||
+      answerPayload.declined === true ||
+      isSkippedAnswer(rawAnswer)
         ? '用户拒绝回答'
         : ''
     answers[question.question] = answerText || fallbackText
@@ -1479,7 +1538,13 @@ function extractQuestionAnswerText(rawAnswer: unknown): string {
   if (typeof rawAnswer !== 'object' || rawAnswer == null) return ''
 
   const answer = rawAnswer as Record<string, unknown>
-  const candidates = [answer.answer, answer.text, answer.optionLabel, answer.optionValue, answer.value]
+  const candidates = [
+    answer.answer,
+    answer.text,
+    answer.optionLabel,
+    answer.optionValue,
+    answer.value,
+  ]
   for (const candidate of candidates) {
     if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate
   }
@@ -1492,9 +1557,7 @@ function isSkippedAnswer(rawAnswer: unknown): boolean {
   return answer.skipped === true || answer.declined === true
 }
 
-function normalizeQuestionOptions(
-  options: unknown,
-): UserQuestionOption[] {
+function normalizeQuestionOptions(options: unknown): UserQuestionOption[] {
   if (!Array.isArray(options)) return []
   return options
     .map((opt: unknown) => {
@@ -1518,14 +1581,14 @@ function normalizeQuestionOptions(
     .filter((opt): opt is NonNullable<typeof opt> => opt != null)
 }
 
-function normalizeQuestionPrompt(questionInput: Record<string, unknown>): UserQuestionPrompt | null {
+function normalizeQuestionPrompt(
+  questionInput: Record<string, unknown>,
+): UserQuestionPrompt | null {
   const question = typeof questionInput.question === 'string' ? questionInput.question : ''
   if (!question) return null
 
   const rawType = questionInput.type
-  const isMultiSelect =
-    questionInput.multiSelect === true ||
-    rawType === 'multi_choice'
+  const isMultiSelect = questionInput.multiSelect === true || rawType === 'multi_choice'
   const normalizedType =
     rawType === 'text' || rawType === 'single_choice' || rawType === 'multi_choice'
       ? rawType
@@ -1550,7 +1613,9 @@ function normalizeQuestionPrompt(questionInput: Record<string, unknown>): UserQu
     header: typeof questionInput.header === 'string' ? questionInput.header : '',
     type: finalType,
     ...(questionInput.required === false ? { required: false } : { required: true }),
-    ...(typeof questionInput.placeholder === 'string' ? { placeholder: questionInput.placeholder } : {}),
+    ...(typeof questionInput.placeholder === 'string'
+      ? { placeholder: questionInput.placeholder }
+      : {}),
     ...(questionInput.multiline === true ? { multiline: true } : {}),
     ...(questionInput.allowSkip === true ? { allowSkip: true } : {}),
     ...(questionInput.allowOther === true ? { allowOther: true } : {}),
@@ -1692,11 +1757,19 @@ export class SDKNotAvailableError extends Error {
   }
 }
 
-
 function buildSparkGoalPrompt(userMessage: string, config: SDKExecutorConfig): string {
   if (config.goal == null || config.goal.mode !== 'spark-loop') return userMessage
-  const criteria = config.goal.successCriteria?.length ? config.goal.successCriteria.map((item) => `- ${item}`).join('\n') : '- Infer verifiable success criteria from the objective.'
-  const progress = config.goal.progressLog?.slice(-8).map((entry) => `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`).join('\n') || '- No prior progress.'
+  const criteria = config.goal.successCriteria?.length
+    ? config.goal.successCriteria.map((item) => `- ${item}`).join('\n')
+    : '- Infer verifiable success criteria from the objective.'
+  const progress =
+    config.goal.progressLog
+      ?.slice(-8)
+      .map(
+        (entry) =>
+          `- #${entry.iteration} [${entry.phase}/${entry.status}] ${entry.summary}${entry.nextStep ? ` Next: ${entry.nextStep}` : ''}`,
+      )
+      .join('\n') || '- No prior progress.'
   return [
     'Spark Goal Loop Contract:',
     `Goal ID: ${config.goal.id}`,
