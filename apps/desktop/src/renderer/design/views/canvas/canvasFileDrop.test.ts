@@ -31,10 +31,35 @@ describe('classifyDroppedFile', () => {
     expect(classifyDroppedFile(makeFile('data', 'application/json'))).toBe('text')
   })
 
-  it('classifies binary docs as unsupported', () => {
+  it('classifies genuinely unsupported files as unsupported', () => {
+    // PDF 按需求暂不支持直接拖入解析；未知扩展名同样不支持。
     expect(classifyDroppedFile(makeFile('report.pdf', 'application/pdf'))).toBe('unsupported')
-    expect(classifyDroppedFile(makeFile('doc.docx'))).toBe('unsupported')
     expect(classifyDroppedFile(makeFile('unknown.xyz'))).toBe('unsupported')
+    expect(classifyDroppedFile(makeFile('setup.exe'))).toBe('unsupported')
+  })
+
+  it('classifies office / rich documents as document', () => {
+    // 扩展名兜底（Electron 拖入磁盘文件时 MIME 常为空）
+    expect(classifyDroppedFile(makeFile('report.docx'))).toBe('document')
+    expect(classifyDroppedFile(makeFile('sheet.xlsx'))).toBe('document')
+    expect(classifyDroppedFile(makeFile('deck.pptx'))).toBe('document')
+    expect(classifyDroppedFile(makeFile('old.doc'))).toBe('document')
+    expect(classifyDroppedFile(makeFile('legacy.xls'))).toBe('document')
+    expect(classifyDroppedFile(makeFile('note.odt'))).toBe('document')
+    expect(classifyDroppedFile(makeFile('rich.rtf'))).toBe('document')
+  })
+
+  it('classifies office documents by mime when present', () => {
+    expect(
+      classifyDroppedFile(
+        makeFile('report', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+      ),
+    ).toBe('document')
+    expect(
+      classifyDroppedFile(
+        makeFile('sheet', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+      ),
+    ).toBe('document')
   })
 })
 
