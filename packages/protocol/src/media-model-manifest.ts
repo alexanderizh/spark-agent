@@ -18,6 +18,7 @@ import {
   MediaModelParamPolicySchema,
 } from './media-model-contract.js'
 import { validateMediaModelManifestSemantics } from './media-model-manifest-validation.js'
+import { XAI_TTS_PARAM_SCHEMA, XAI_VIDEO_15_MANIFESTS } from './xai-media-model-manifests.js'
 
 export type MediaDomain = 'image' | 'audio' | 'video' | 'text' | 'document' | 'web' | 'slide' | 'sheet'
 
@@ -1105,14 +1106,20 @@ const videoSchema = {
 
 const xaiVideoSchema = {
   type: 'object',
-  additionalProperties: true,
+  additionalProperties: false,
   properties: {
     aspectRatio: { type: 'string', title: '比例', enum: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'] },
     durationSeconds: { type: 'integer', title: '时长', minimum: 1, maximum: 15, default: 8 },
-    resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '720p' },
+    resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' },
     user: { type: 'string', title: '用户标识' },
-    useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
-    useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
+  },
+}
+
+const xaiVideoReferenceSchema = {
+  ...xaiVideoSchema,
+  properties: {
+    ...xaiVideoSchema.properties,
+    durationSeconds: { type: 'integer', title: '时长', minimum: 1, maximum: 10, default: 8 },
   },
 }
 
@@ -1131,14 +1138,14 @@ const xaiVideoEditSchema = {
 
 /**
  * xAI 视频扩展参数。
- * 官方明确：扩展（/videos/extensions）duration 范围 [1, 15] 秒，默认 6 秒；
+ * 官方明确：扩展（/videos/extensions）duration 范围 [2, 10] 秒，默认 6 秒；
  * 从输入视频最后一帧续拍，不支持 aspect_ratio / resolution（继承输入视频）。
  */
 const xaiVideoExtendSchema = {
   type: 'object',
-  additionalProperties: true,
+  additionalProperties: false,
   properties: {
-    durationSeconds: { type: 'integer', title: '扩展时长', minimum: 1, maximum: 15, default: 6 },
+    durationSeconds: { type: 'integer', title: '扩展时长', minimum: 2, maximum: 10, default: 6 },
     user: { type: 'string', title: '用户标识' },
   },
 }
@@ -2307,7 +2314,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       {
         id: 'image.edit',
         label: '图生图 / 图片编辑',
-        input: { required: ['prompt', 'image'], maxImages: 10, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        input: { required: ['prompt', 'image'], maxImages: 3, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         paramSchema: xaiImageSchema,
         defaults: { n: 1, response_format: 'url' },
@@ -2350,9 +2357,9 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       {
         id: 'video.reference_to_video',
         label: '参考图生视频',
-        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 4, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 7, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: xaiVideoSchema,
+        paramSchema: xaiVideoReferenceSchema,
         defaults: { durationSeconds: 8, resolution: '720p' },
         aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
       },
@@ -2381,7 +2388,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt', 'video'] as MediaManifestInputKind[], acceptedMimeTypes: ['video/mp4'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         // 扩展端点由 XaiMediaAdapter.editVideo 处理（POST /videos/extensions，
-        // duration 范围 [1,15] 默认 6，从输入视频最后一帧续拍）。
+        // duration 范围 [2,10] 默认 6，从输入视频最后一帧续拍）。
         paramSchema: xaiVideoExtendSchema,
         defaults: { durationSeconds: 6 },
         aliases: { durationSeconds: 'duration' },
@@ -2403,6 +2410,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     docs: { sourceUrls: ['https://docs.x.ai/developers/model-capabilities/imagine'] },
     safety: { maxPromptLength: 8000, allowLocalFiles: true },
   },
+  ...XAI_VIDEO_15_MANIFESTS,
   {
     id: 'xai:grok-tts',
     providerKind: 'xai',
@@ -2415,19 +2423,27 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         label: '文生音频',
         input: { required: ['text'] },
         output: { types: ['audio'], mimeTypes: ['audio/mpeg', 'audio/wav'] },
-        paramSchema: audioSpeechSchema,
-        defaults: { format: 'mp3' },
+        paramSchema: XAI_TTS_PARAM_SCHEMA,
+        defaults: { voiceId: 'eve', language: 'auto', withTimestamps: false },
       },
     ],
     invocation: {
       mode: 'sync',
-      endpoint: '/audio/speech',
+      endpoint: '/tts',
       method: 'POST',
       contentType: 'json',
-      requestTemplate: { model: '{{modelId}}', input: '{{text}}' },
+      requestTemplate: {
+        text: '{{text}}',
+        voice_id: '{{voiceId}}',
+        language: '{{language}}',
+        output_format: '{{outputFormat}}',
+      },
       response: { kind: 'binary_response' },
     },
-    docs: { sourceUrls: ['https://docs.x.ai/developers/model-capabilities/audio/text-to-speech'] },
+    docs: {
+      sourceUrls: ['https://docs.x.ai/developers/model-capabilities/audio/text-to-speech'],
+      lastCheckedAt: '2026-07-16',
+    },
   },
   {
     id: 'bailian:wan2.7-image-pro',

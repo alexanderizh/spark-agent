@@ -119,6 +119,7 @@ export type CanvasPromptRelationManifestEntry = {
 }
 
 export type CanvasPromptCompiledInputFile = {
+  fileId?: string
   path?: string
   url?: string
   dataUrl?: string

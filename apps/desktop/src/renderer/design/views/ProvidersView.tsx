@@ -7,6 +7,7 @@ import {
 import { Badge, Switch } from 'antd'
 import { Icons } from '../Icons'
 import { ChipList } from '../components/ChipList'
+import { ProviderFilesPanel } from './provider/ProviderFilesPanel'
 import {
   ProviderLogo,
   PROVIDER_ICON_CATALOG,
@@ -3233,6 +3234,10 @@ export function ProviderEditPanel({
             closable
             onClose={() => setError('')}
           />
+        )}
+
+        {profileId && form.mediaProvider === 'xai' && (
+          <ProviderFilesPanel providerProfileId={profileId} />
         )}
 
         {/* ─── 服务商配置信息 ─── */}

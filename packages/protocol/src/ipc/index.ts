@@ -699,6 +699,39 @@ export interface ProviderGetApiKeyResponse {
   apiKey: string
 }
 
+export interface ProviderFileObject {
+  id: string
+  filename: string
+  bytes: number
+  createdAt: number
+  expiresAt?: number
+  purpose: string
+  object: 'file'
+}
+
+export interface ProviderFilesListRequest {
+  providerProfileId: string
+  paginationToken?: string
+  order?: 'asc' | 'desc'
+  sortBy?: 'created_at' | 'filename' | 'size'
+  limit?: number
+}
+
+export interface ProviderFilesListResponse {
+  files: ProviderFileObject[]
+  paginationToken?: string
+}
+
+export interface ProviderFilesDeleteRequest {
+  providerProfileId: string
+  fileId: string
+}
+
+export interface ProviderFilesDeleteResponse {
+  deleted: boolean
+  id: string
+}
+
 export interface ProviderCreateRequest {
   name: string
   provider: string
@@ -4717,6 +4750,7 @@ export interface CanvasMediaPruneModelParamsByInlineManifestResponse {
  * 把产物落盘到 `.spark-artifacts/media/<kind>`，返回 asset 元信息。
  */
 export interface CanvasMediaTaskInputFile {
+  fileId?: string
   path?: string
   url?: string
   dataUrl?: string
@@ -5158,6 +5192,8 @@ export interface IpcChannelMap {
   // Provider
   'provider:list': [ProviderListRequest, ProviderListResponse]
   'provider:get-api-key': [ProviderGetApiKeyRequest, ProviderGetApiKeyResponse]
+  'provider:files:list': [ProviderFilesListRequest, ProviderFilesListResponse]
+  'provider:files:delete': [ProviderFilesDeleteRequest, ProviderFilesDeleteResponse]
   'provider:create': [ProviderCreateRequest, ProviderCreateResponse]
   'provider:update': [ProviderUpdateRequest, ProviderUpdateResponse]
   'provider:delete': [ProviderDeleteRequest, ProviderDeleteResponse]

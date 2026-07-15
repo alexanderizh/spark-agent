@@ -28,6 +28,7 @@ import type {
   MediaProviderAdapter,
   MediaProviderContext,
 } from './media-adapter.types.js'
+import type { MediaUploader } from './media-uploader.js'
 import { ApimartMediaAdapter } from './adapters/apimart-media.adapter.js'
 import { AgnesMediaAdapter } from './adapters/agnes-media.adapter.js'
 import { VolcengineArkMediaAdapter } from './adapters/volcengine-ark-media.adapter.js'
@@ -71,6 +72,8 @@ export interface InvokeOptions {
   extraParams?: Record<string, unknown>
   /** 注入 fetch（测试用） */
   fetch?: typeof fetch
+  /** xAI Files 不可用时的公开文件上传回退，由桌面主进程按登录态注入。 */
+  fallbackUploader?: MediaUploader
 }
 
 export class MediaRouterService {
@@ -114,6 +117,33 @@ export class MediaRouterService {
     return candidates[0] ?? null
   }
 
+  resolveCapabilityForInput(
+    input: MediaGenerateInput,
+    options: Pick<InvokeOptions, 'providers' | 'providerProfileId' | 'modelId' | 'manifestId'>,
+  ): MediaCapabilityId | null {
+    if (
+      input.operation === 'text_to_video'
+      && (input.inputFiles ?? []).some((file) => file.type === 'image' && file.role === 'reference')
+    ) {
+      const selectedProviders = options.providerProfileId
+        ? options.providers.filter((provider) => provider.id === options.providerProfileId)
+        : options.providers
+      const supportsXaiReference = selectedProviders.some((provider) => {
+        if (effectiveProviderKind(provider) !== 'xai') return false
+        const manifests = provider.mediaModelManifests ?? []
+        const selectedManifest = options.manifestId
+          ? manifests.find((manifest) => manifest.id === options.manifestId)
+          : options.modelId
+            ? manifests.find((manifest) => manifest.modelId === options.modelId)
+            : manifests.find((manifest) => manifest.modelId === provider.defaultModel)
+        return selectedManifest?.capabilities.some((capability) => capability.id === 'video.reference_to_video')
+          ?? this.supports(provider, 'video.reference_to_video')
+      })
+      if (supportsXaiReference) return 'video.reference_to_video'
+    }
+    return this.resolveCapability(input.operation, options.providers)
+  }
+
   /** 检查某 provider profile 是否声明支持某 capability（且 adapter 也支持） */
   supports(profile: MediaProviderProfile, capability: MediaCapabilityId): boolean {
     const kind = effectiveProviderKind(profile)
@@ -143,7 +173,7 @@ export class MediaRouterService {
       throw new MediaProviderError('provider_not_configured', 'No media provider configured')
     }
     // 优先用显式传入的 capability，否则按 operation 推导
-    const capability = options.capability ?? input.capability ?? this.resolveCapability(input.operation, providers)
+    const capability = options.capability ?? input.capability ?? this.resolveCapabilityForInput(input, options)
     if (!capability) {
       throw new MediaProviderError('capability_not_supported', `No capability for operation ${input.operation}`)
     }
@@ -168,6 +198,15 @@ export class MediaRouterService {
     const manifestOptions: { manifestId?: string | null; modelId?: string | null } = {}
     if (options.manifestId !== undefined) manifestOptions.manifestId = options.manifestId
     if (options.modelId !== undefined) manifestOptions.modelId = options.modelId
+    const explicitModelManifest = options.modelId
+      ? chosen.mediaModelManifests?.find((manifest) => manifest.modelId === options.modelId)
+      : undefined
+    if (explicitModelManifest && !explicitModelManifest.capabilities.some((item) => item.id === capability)) {
+      throw new MediaProviderError(
+        'capability_not_supported',
+        `Model ${options.modelId} does not support capability ${capability}`,
+      )
+    }
     const manifestMatch = resolveManifestMatch(chosen, capability, manifestOptions)
     const effectiveModelId = options.modelId ?? manifestMatch?.manifest.modelId ?? chosen.defaultModel
     const kind = effectiveProviderKind(chosen)
@@ -190,6 +229,7 @@ export class MediaRouterService {
         mediaManifestCapability: manifestMatch.capability,
         ...(options.extraParams ? { extraParams: options.extraParams } : {}),
         fetch: capture.fetch,
+        ...(options.fallbackUploader ? { fallbackUploader: options.fallbackUploader } : {}),
       }
       try {
         const output = await this.templateAdapter.invoke(
@@ -222,6 +262,7 @@ export class MediaRouterService {
       ...(manifestMatch?.capability ? { mediaManifestCapability: manifestMatch.capability } : {}),
       ...(options.extraParams ? { extraParams: options.extraParams } : {}),
       fetch: capture.fetch,
+      ...(options.fallbackUploader ? { fallbackUploader: options.fallbackUploader } : {}),
     }
     try {
       const output = await adapter.invoke(

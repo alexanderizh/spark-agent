@@ -775,7 +775,7 @@ describe('MediaRouterService', () => {
             ? {
                 ok: true,
                 status: 200,
-                body: { status: 'completed', video_url: 'https://cdn/xai-video.mp4' },
+                body: { status: 'completed', video: { file_output: { file_id: 'file-video', public_url: 'https://cdn/xai-video.mp4' } } },
               }
             : { ok: true, status: 200, body: { status: 'processing' } },
       },
@@ -833,11 +833,12 @@ describe('MediaRouterService', () => {
       image: { url: `data:image/png;base64,${PNG_PIXEL}` },
       aspect_ratio: '9:16',
       duration: 8,
-      quality: 'hd',
       resolution: '720p',
-      seed: 42,
     })
     expect(captured.body.image_url).toBeUndefined()
+    expect(captured.body.quality).toBeUndefined()
+    expect(captured.body.seed).toBeUndefined()
+    expect(captured.body.storage_options).toEqual(expect.objectContaining({ public_url: true }))
     expect(output.provider).toBe('xai')
     expect(output.mode).toBe('async')
     expect(output.requestId).toBe('xai-video-1')
@@ -855,7 +856,7 @@ describe('MediaRouterService', () => {
         respond: () => ({
           ok: true,
           status: 200,
-          body: { status: 'done', video: { url: 'https://cdn/xai-edited.mp4', duration: 5 } },
+          body: { status: 'done', video: { url: 'https://temp/xai-edited.mp4', file_output: { file_id: 'file-edit', public_url: 'https://cdn/xai-edited.mp4' }, duration: 5 } },
         }),
       },
       {
@@ -929,9 +930,8 @@ describe('MediaRouterService', () => {
     expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
   })
 
-  it('xAI grok-imagine-video video_extend posts to /videos/extensions with clamped duration', async () => {
-    // 官方明确：视频扩展走 POST /videos/extensions，duration 范围 [1,15] 默认 6，
-    // 从输入视频最后一帧续拍。超出范围的 duration 应被 clamp。
+  it('xAI grok-imagine-video video_extend uses the documented default duration', async () => {
+    // 官方明确：视频扩展走 POST /videos/extensions，duration 范围 [2,10] 默认 6。
     const captured: { body: Record<string, unknown>; url: string } = { body: {}, url: '' }
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
     const fetchMock = makeFetch([
@@ -940,7 +940,7 @@ describe('MediaRouterService', () => {
         respond: () => ({
           ok: true,
           status: 200,
-          body: { status: 'done', video: { url: 'https://cdn/xai-extended.mp4', duration: 6 } },
+          body: { status: 'done', video: { file_output: { file_id: 'file-extend', public_url: 'https://cdn/xai-extended.mp4' }, duration: 10 } },
         }),
       },
       {
@@ -964,8 +964,6 @@ describe('MediaRouterService', () => {
         outputDir: tmpDir,
         prompt: 'continue the rocket launch upward',
         inputFiles: [{ type: 'video', role: 'input', url: 'https://cdn/source.mp4' }],
-        // duration=30 超出 [1,15]，应 clamp 到 15
-        modelParams: { durationSeconds: 30 },
       },
       {
         providers: [
@@ -996,7 +994,7 @@ describe('MediaRouterService', () => {
       model: 'grok-imagine-video',
       prompt: 'continue the rocket launch upward',
       video: { url: 'https://cdn/source.mp4' },
-      duration: 15,
+      duration: 6,
     })
     expect(output.provider).toBe('xai')
     expect(output.mode).toBe('async')
@@ -1123,7 +1121,7 @@ describe('MediaRouterService', () => {
     expect(xai.supports('video.extend')).toBe(true)
   })
 
-  it('xAI image.edit routes through /images/edits with image {url, type} (dataUrl)', async () => {
+  it('xAI image.edit routes through /images/edits with image {url} (dataUrl)', async () => {
     // 用 holder 对象承载抓取到的 body/url，避免 CFA 把 let 变量收窄成 never。
     const captured: { body: Record<string, unknown>; url: string } = { body: {}, url: '' }
     const fetchMock = makeFetch([
@@ -1159,11 +1157,10 @@ describe('MediaRouterService', () => {
       },
     )
     expect(output.provider).toBe('xai')
-    // xAI 编辑走 /images/edits，源图按 image（{url, type:"image_url"} 对象）传入。
+    // xAI 编辑走 /images/edits，REST 源图按 image（{url}）传入。
     expect(captured.url).toBe('/images/edits')
     expect(captured.body.image).toEqual({
       url: `data:image/png;base64,${PNG_PIXEL}`,
-      type: 'image_url',
     })
     expect(captured.body.images).toBeUndefined()
     expect(captured.body.image_url).toBeUndefined()
@@ -1206,8 +1203,8 @@ describe('MediaRouterService', () => {
       },
     )
     expect(captured.body.images).toEqual([
-      { url: 'https://cdn/a.png', type: 'image_url' },
-      { url: 'https://cdn/b.png', type: 'image_url' },
+      { url: 'https://cdn/a.png' },
+      { url: 'https://cdn/b.png' },
     ])
     expect(captured.body.image).toBeUndefined()
     expect(captured.body.image_url).toBeUndefined()
@@ -1329,7 +1326,7 @@ describe('MediaRouterService', () => {
     expect((captured.body.image as { url: string }).url).toBe('https://cdn/a.png')
     expect(captured.body.aspect_ratio).toBe('16:9')
     expect(captured.body.resolution).toBe('2k')
-    expect(captured.body.image_format).toBe('png')
+    expect(captured.body).not.toHaveProperty('image_format')
   })
 
   it('xAI image.edit maps canvas camelCase params to native xAI fields', async () => {
@@ -1373,7 +1370,7 @@ describe('MediaRouterService', () => {
     expect(captured.body.aspect_ratio).toBe('16:9')
     expect(captured.body).not.toHaveProperty('aspectRatio')
     expect(captured.body.response_format).toBe('b64_json')
-    expect(captured.body.image_format).toBe('png')
+    expect(captured.body).not.toHaveProperty('image_format')
   })
 
   it('xAI video polling treats expired as a failed terminal state', async () => {
@@ -1482,9 +1479,9 @@ describe('MediaRouterService', () => {
         fetch: fetchMock,
       },
     )
-    // 带参考图的 image.generate 委托给 editImage，走 /images/edits + image {url, type} 对象
+    // 带参考图的 image.generate 委托给 editImage，走 /images/edits + image {url} 对象
     expect(captured.url).toBe('/images/edits')
-    expect(captured.body.image).toEqual({ url: 'https://cdn/ref.png', type: 'image_url' })
+    expect(captured.body.image).toEqual({ url: 'https://cdn/ref.png' })
   })
 
   it('image.generate without input image stays a pure text-to-image call (no image field)', async () => {
