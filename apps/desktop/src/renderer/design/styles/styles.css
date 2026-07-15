@@ -480,7 +480,7 @@ html[data-backdrop-blur="1"] .floating-sidebar {
    Floating keeps its token-based translucent background; flat dark
    theme keeps the elevated panel token. */
 .sidebar-style-flat.theme-light .floating-sidebar {
-  background: rgb(245, 245, 245);
+  background: rgb(238, 238, 238);
 }
 html[data-backdrop-blur="1"] .sidebar-style-flat .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 84%, transparent);
