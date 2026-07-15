@@ -545,6 +545,7 @@ export function TurnFileSummaryCard({
                 <div
                   className="turn-summary-generated-group"
                   key={`${group.reason}:${group.directory}`}
+                  title={group.examples.join('\n')}
                 >
                   <span className="turn-summary-generated-icon">↳</span>
                   <span className="turn-summary-generated-main">

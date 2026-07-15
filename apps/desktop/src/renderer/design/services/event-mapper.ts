@@ -830,7 +830,7 @@ export class MessageBuilder {
             changeType: event.changeType as 'create' | 'modify' | 'delete',
             adds: stats.adds,
             dels: stats.dels,
-            collectionSource: event.collectionSource ?? 'agent',
+            ...(event.collectionSource != null ? { collectionSource: event.collectionSource } : {}),
             ...(event.diff != null ? { diff: event.diff } : {}),
           })
         }

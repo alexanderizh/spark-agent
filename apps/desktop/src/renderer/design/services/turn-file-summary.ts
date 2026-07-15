@@ -18,6 +18,7 @@ type TurnFileCandidate = {
   adds: number
   dels: number
   collectionSource?: TurnFileChangeCollectionSource
+  diff?: string
 }
 
 type PreparedTurnFileSummary<T extends TurnFileCandidate> = {
@@ -34,18 +35,27 @@ const LOW_CONFIDENCE_SOURCES = new Set<TurnFileChangeCollectionSource>([
 const GENERATED_DIRECTORY_NAMES = new Set([
   '.cache',
   '.gitnexus',
+  '.git',
   '.next',
   '.nuxt',
   '.parcel-cache',
+  '.playwright',
   '.spark-artifacts',
   '.spark-cache',
   '.turbo',
+  '.venv',
+  '.vite',
+  '__pycache__',
   'build',
+  'bin',
   'coverage',
   'dist',
+  'node_modules',
+  'obj',
   'out',
   'release',
   'target',
+  'vendor',
 ])
 
 const GENERATED_FILE_SUFFIXES = ['.map', '.pyc', '.tsbuildinfo']
@@ -111,7 +121,9 @@ export function prepareTurnFileSummary<T extends TurnFileCandidate>(
 
   for (const file of files) {
     const source = file.collectionSource ?? 'agent'
-    if (!LOW_CONFIDENCE_SOURCES.has(source)) {
+    const isLegacyGeneratedCandidate =
+      source === 'agent' && file.diff == null && file.adds === 0 && file.dels === 0
+    if (!LOW_CONFIDENCE_SOURCES.has(source) && !isLegacyGeneratedCandidate) {
       visible.push(file)
       continue
     }
