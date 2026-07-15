@@ -1,4 +1,13 @@
-import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  memo,
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Button, Empty, Segmented, Tag } from '@lobehub/ui'
 import { Drawer, Input, Modal, Popover, Select, Spin, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
@@ -1749,6 +1758,9 @@ export function CanvasWorkspaceView({
     undefined,
   )
   const [agentOpen, setAgentOpen] = useState(readAgentPanelOpen)
+  // 「新建空画布强制展开 Agent 面板」只判定一次：snapshot 首次加载完成且节点为空时强制展开。
+  // ref 守卫避免后续把节点删空时反复弹开；非空画布尊重用户上次的展开/折叠偏好（useState 已初始化）。
+  const forceExpandAgentOnEmptyCheckedRef = useRef(false)
   // 进入画布默认为平移模式：避免误触发框选/拖拽节点，更符合「先浏览」的直觉。
   const [activeTool, setActiveTool] = useState<CanvasTool>('pan')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
@@ -1895,6 +1907,15 @@ export function CanvasWorkspaceView({
       // Ignore storage failures.
     }
   }, [agentOpen])
+
+  // 进入「新建空画布」（首次加载即无节点）时强制展开 Agent 面板，方便用户立即开始对话；
+  // 已有内容的老画布尊重用户上次的展开/折叠偏好。useLayoutEffect 在浏览器绘制前定稿，避免一帧闪烁。
+  useLayoutEffect(() => {
+    if (forceExpandAgentOnEmptyCheckedRef.current) return
+    if (loading || !snapshot) return
+    forceExpandAgentOnEmptyCheckedRef.current = true
+    if (snapshot.nodes.length === 0) setAgentOpen(true)
+  }, [loading, snapshot])
 
   useEffect(
     () => () => {
