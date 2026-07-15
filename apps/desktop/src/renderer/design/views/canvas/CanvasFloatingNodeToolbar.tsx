@@ -19,6 +19,17 @@ import type {
 const FLOATING_IMAGE_STYLE_EXTRACTION_PROMPT =
   '请分析输入图片的视觉风格，并输出可复用的中文风格描述。重点包括：画面题材、艺术媒介、色彩倾向、光影氛围、构图镜头、材质细节、时代/类型气质，以及适合作为后续生成提示词的风格关键词。'
 
+function buildFloatingTextStyleExtractionPrompt(node: CanvasNode): string {
+  const source = (node.data.text ?? node.data.prompt ?? node.title ?? '').trim()
+  return [
+    '请阅读输入的剧本文本，提炼出这一章节可复用的镜头风格描述（中文）。',
+    '重点包括：整体影像气质、景别偏好、运镜方式、构图习惯、色调与光影氛围、画面材质与年代质感、节奏与剪辑风格，以及适合作为后续分镜 / 生成提示词的风格关键词。',
+    source ? `章节文本：\n${source}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
 function readCanvasNodeSourceText(node: CanvasNode): string {
   return (node.data.text ?? node.data.prompt ?? node.title ?? '').trim()
 }
@@ -146,11 +157,15 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
       prompt: buildFloatingDetailSheetNineGridPrompt(contentNode),
       modelParams: { aspect_ratio: '2:1' },
     })
-  const createStyleExtractionTask = () =>
-    onCreateOperationChild('text_generate', {
+  const createStyleExtractionTask = () => {
+    const isTextLike = contentNode.type === 'text' || contentNode.type === 'prompt'
+    return onCreateOperationChild('text_generate', {
       title: '风格提取',
-      prompt: FLOATING_IMAGE_STYLE_EXTRACTION_PROMPT,
+      prompt: isTextLike
+        ? buildFloatingTextStyleExtractionPrompt(contentNode)
+        : FLOATING_IMAGE_STYLE_EXTRACTION_PROMPT,
     })
+  }
   const contextualAiActions = [
     ...(isImage && hasResource
       ? [
@@ -167,7 +182,16 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
             onClick: createStyleExtractionTask,
           },
         ]
-      : []),
+      : (contentNode.type === 'text' || contentNode.type === 'prompt') && hasResource
+        ? [
+            {
+              key: 'extract-style',
+              label: '提取风格',
+              icon: <Icons.Sparkles size={14} />,
+              onClick: createStyleExtractionTask,
+            },
+          ]
+        : []),
     ...((contentNode.type === 'image' ||
       contentNode.type === 'text' ||
       contentNode.type === 'prompt') &&
