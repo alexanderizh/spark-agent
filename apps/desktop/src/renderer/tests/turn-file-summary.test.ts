@@ -32,6 +32,23 @@ describe('prepareTurnFileSummary', () => {
     ])
   })
 
+  it('also hides legacy zero-stat events from generated paths', () => {
+    const result = prepareTurnFileSummary([
+      {
+        path: '/workspace/.gitnexus/parse-cache/legacy.json',
+        changeType: 'modify' as const,
+        adds: 0,
+        dels: 0,
+      },
+    ])
+
+    expect(result.files).toHaveLength(0)
+    expect(result.generatedGroups[0]).toMatchObject({
+      directory: '/workspace/.gitnexus',
+      fileCount: 1,
+    })
+  })
+
   it('aggregates a large low-confidence batch outside known output directories', () => {
     const result = prepareTurnFileSummary(
       Array.from({ length: 20 }, (_, index) =>
