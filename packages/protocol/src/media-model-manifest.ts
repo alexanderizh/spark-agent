@@ -310,8 +310,8 @@ const apimartImageModelSchemas: Record<string, { schema: Record<string, unknown>
       type: 'object',
       additionalProperties: true,
       properties: {
-        size: { type: 'string', title: '画幅 / 尺寸', enum: ['1K', '2K', '4K', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'] },
-        resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K', '4K'] },
+        size: { type: 'string', title: '画幅 / 尺寸', enum: ['1K', '2K', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'] },
+        resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K'] },
         n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
         negative_prompt: { type: 'string', title: '负面提示词' },
         seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
@@ -368,7 +368,7 @@ const apimartImageModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16', '5:4', '4:5', '21:9', '1:4', '4:1', '1:8', '8:1'] },
         resolution: { type: 'string', title: '分辨率', enum: ['0.5K', '1K', '2K', '4K'], default: '1K' },
-        n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 1, default: 1 },
         google_search: { type: 'boolean', title: 'Google 搜索', default: false },
         google_image_search: { type: 'boolean', title: 'Google 图片搜索', default: false },
         official_fallback: { type: 'boolean', title: '官方兜底', default: false },
@@ -383,7 +383,7 @@ const apimartImageModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] },
         resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K', '4K'], default: '1K' },
-        n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 1, default: 1 },
         mask_url: { type: 'string', title: '遮罩 URL' },
         official_fallback: { type: 'boolean', title: '官方兜底', default: false },
       },
@@ -397,7 +397,7 @@ const apimartImageModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] },
         resolution: { type: 'string', title: '分辨率', enum: ['1K'], default: '1K' },
-        n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 1, default: 1 },
         mask_url: { type: 'string', title: '遮罩 URL' },
         official_fallback: { type: 'boolean', title: '官方兜底', default: false },
       },
@@ -410,7 +410,7 @@ const apimartImageModelSchemas: Record<string, { schema: Record<string, unknown>
       type: 'object',
       additionalProperties: true,
       properties: {
-        size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '16:9', '9:16', '21:9'], default: '1:1' },
+        size: { type: 'string', title: '画幅', enum: ['1:1', '2:3', '3:2'], default: '1:1' },
         n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
         quality: { type: 'string', title: '质量', enum: ['auto', 'low', 'medium', 'high'], default: 'auto' },
         background: { type: 'string', title: '背景', enum: ['auto', 'opaque', 'transparent'], default: 'auto' },
@@ -646,40 +646,41 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       type: 'object',
       additionalProperties: true,
       properties: {
-        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'] },
         durationSeconds: { type: 'integer', title: '时长', enum: [8], default: 8 },
         resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p', '4k'], default: '720p' },
         enable_gif: { type: 'boolean', title: '启用 GIF', default: false },
         official_fallback: { type: 'boolean', title: '官方兜底', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p', enable_gif: false, official_fallback: false },
+    defaults: { durationSeconds: 8, resolution: '720p', enable_gif: false, official_fallback: false },
   },
   'veo3.1-quality': {
     schema: {
       type: 'object',
       additionalProperties: true,
       properties: {
-        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'] },
         durationSeconds: { type: 'integer', title: '时长', enum: [8], default: 8 },
         resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p', '4k'], default: '720p' },
         enable_gif: { type: 'boolean', title: '启用 GIF', default: false },
         official_fallback: { type: 'boolean', title: '官方兜底', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p', enable_gif: false, official_fallback: false },
+    defaults: { durationSeconds: 8, resolution: '720p', enable_gif: false, official_fallback: false },
   },
   'veo3.1-lite': {
     schema: {
       type: 'object',
       additionalProperties: true,
       properties: {
-        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'] },
         durationSeconds: { type: 'integer', title: '时长', enum: [8], default: 8 },
         resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p', '4k'], default: '720p' },
+        enable_gif: { type: 'boolean', title: '启用 GIF', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
+    defaults: { durationSeconds: 8, resolution: '720p', enable_gif: false },
   },
   /* ─── MiniMax Hailuo 2.3 / Fast / Hailuo-02（APIMart 平台独立 slug）─── */
   'MiniMax-Hailuo-2.3': {
@@ -794,13 +795,13 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
         durationSeconds: { type: 'integer', title: '时长', enum: [5, 10, 15], default: 5 },
         resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p'], default: '720p' },
         seed: { type: 'integer', title: '随机种子' },
-        prompt_extend: { type: 'boolean', title: '提示词扩展', default: true },
-        audio: { type: 'boolean', title: '生成音频', default: false },
-        watermark: { type: 'boolean', title: '水印', default: false },
+        prompt_extend: { type: 'boolean', title: '提示词扩展' },
+        audio: { type: 'boolean', title: '生成音频' },
+        watermark: { type: 'boolean', title: '水印' },
         template: { type: 'string', title: '特效模板' },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', prompt_extend: true, watermark: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
   },
   'wan2.7': {
     schema: {
@@ -858,14 +859,13 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1'], default: '16:9' },
         durationSeconds: { type: 'integer', title: '时长', enum: [5, 10], default: 5 },
-        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p'], default: '720p' },
         mode: { type: 'string', title: '模式', enum: ['std', 'pro'], default: 'std' },
         negative_prompt: { type: 'string', title: '负面提示词' },
         audio: { type: 'boolean', title: '生成音频', default: false },
         watermark: { type: 'boolean', title: '水印', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', mode: 'std', audio: false, watermark: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, mode: 'std', audio: false, watermark: false },
   },
   'kling-v3': {
     schema: {
@@ -874,14 +874,13 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1'], default: '16:9' },
         durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 15, default: 5 },
-        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p', '4k'], default: '720p' },
         mode: { type: 'string', title: '模式', enum: ['std', 'pro', '4k'], default: 'std' },
         negative_prompt: { type: 'string', title: '负面提示词' },
         audio: { type: 'boolean', title: '生成音频', default: false },
         watermark: { type: 'boolean', title: '水印', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', mode: 'std', audio: false, watermark: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, mode: 'std', audio: false, watermark: false },
   },
   'kling-v3-omni': {
     schema: {
@@ -890,7 +889,6 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1'], default: '16:9' },
         durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 15, default: 5 },
-        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p', '4k'], default: '720p' },
         mode: { type: 'string', title: '模式', enum: ['std', 'pro', '4k'], default: 'std' },
         negative_prompt: { type: 'string', title: '负面提示词', maxLength: 2500 },
         audio: { type: 'boolean', title: '生成音频', default: false },
@@ -899,7 +897,7 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
         shot_type: { type: 'string', title: '镜头类型', enum: ['customize', 'intelligence'] },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', mode: 'std', audio: false, watermark: false, multi_shot: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, mode: 'std', audio: false, watermark: false, multi_shot: false },
   },
   'kling-3.0-turbo': {
     schema: {
@@ -921,12 +919,11 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1'], default: '16:9' },
         durationSeconds: { type: 'integer', title: '时长', enum: [5, 10], default: 5 },
-        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p'], default: '720p' },
         mode: { type: 'string', title: '模式', enum: ['std', 'pro'], default: 'std' },
         watermark: { type: 'boolean', title: '水印', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', mode: 'std', watermark: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, mode: 'std', watermark: false },
   },
   /* ─── Vidu Q3 全系（APIMart 平台独立 model id）─── */
   'viduq3-pro': {
@@ -934,28 +931,28 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       type: 'object',
       additionalProperties: true,
       properties: {
-        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '4:3', '3:4', '1:1'], default: '16:9' },
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '4:3', '3:4', '1:1'] },
         durationSeconds: { type: 'integer', title: '时长', minimum: 1, maximum: 16, default: 5 },
         resolution: { type: 'string', title: '分辨率', enum: ['540p', '720p', '1080p'], default: '720p' },
         audio: { type: 'boolean', title: '生成音频', default: true },
         seed: { type: 'integer', title: '随机种子' },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', audio: true },
+    defaults: { durationSeconds: 5, resolution: '720p', audio: true },
   },
   'viduq3-turbo': {
     schema: {
       type: 'object',
       additionalProperties: true,
       properties: {
-        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '4:3', '3:4', '1:1'], default: '16:9' },
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '4:3', '3:4', '1:1'] },
         durationSeconds: { type: 'integer', title: '时长', minimum: 1, maximum: 16, default: 5 },
         resolution: { type: 'string', title: '分辨率', enum: ['540p', '720p', '1080p'], default: '720p' },
         audio: { type: 'boolean', title: '生成音频', default: true },
         seed: { type: 'integer', title: '随机种子' },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', audio: true },
+    defaults: { durationSeconds: 5, resolution: '720p', audio: true },
   },
   'viduq3': {
     schema: {
@@ -1021,12 +1018,11 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       additionalProperties: true,
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
-        durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 10, default: 6 },
         resolution: { type: 'string', title: '分辨率', enum: ['720p'], default: '720p' },
         extend_from_task_id: { type: 'string', title: '续拍任务 ID' },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
+    defaults: { aspectRatio: '16:9', resolution: '720p' },
   },
   /* ─── Omni-Flash-Ext（APIMart 平台独立 model id）─── */
   'Omni-Flash-Ext': {
@@ -1074,6 +1070,23 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
     defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false },
   },
 }
+
+/** APIMart 视频模型中，画面比例字段在 provider 侧为 `size`（非默认 `aspect_ratio`）的 modelId 集合。
+ *  通过 aliases per-model 覆盖：UI 统一的 aspectRatio 在适配器层转成 provider 要的 `size`（其余仍转 `aspect_ratio`）。
+ *  依据各模型 APIMart 官方文档请求参数表。wan2.6 例外用 aspect_ratio，故不在集合内。 */
+const apimartVideoSizeFieldModels = new Set([
+  'happyhorse-1.0',
+  'happyhorse-1.1',
+  'pixverse-v6',
+  'grok-imagine-1.5-video-apimart',
+  'wan2.5-preview',
+  'wan2.7',
+  'wan2.7-r2v',
+  'wan2.7-videoedit',
+  'doubao-seedance-2.0',
+  'doubao-seedance-2-0-fast',
+  'doubao-seedance-2-0-mini',
+]);
 
 const videoSchema = {
   type: 'object',
@@ -1344,9 +1357,9 @@ const apimartSeedance2VideoSchema = {
   properties: {
     durationSeconds: { type: 'integer', title: '时长', minimum: 4, maximum: 15, default: 5 },
     aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'], default: '16:9' },
-    resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '480p' },
+    resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p', '4k'], default: '720p' },
     seed: { type: 'integer', title: '随机种子' },
-    generate_audio: { type: 'boolean', title: '生成音频', default: false },
+    generate_audio: { type: 'boolean', title: '生成音频', default: true },
     return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
     useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
     useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
@@ -2231,9 +2244,9 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           ? apimartSeedance2VideoSchema
           : (apimartVideoModelSchemas[entry.modelId]?.schema ?? videoSchema),
         defaults: entry.modelId === 'doubao-seedance-2.0'
-          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false }
+          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false }
           : (apimartVideoModelSchemas[entry.modelId]?.defaults ?? { aspectRatio: '16:9', durationSeconds: 5 }),
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+        aliases: { aspectRatio: apimartVideoSizeFieldModels.has(entry.modelId) ? 'size' : 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
       {
         id: 'video.image_to_video',
@@ -2244,9 +2257,9 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           ? apimartSeedance2VideoSchema
           : (apimartVideoModelSchemas[entry.modelId]?.schema ?? videoSchema),
         defaults: entry.modelId === 'doubao-seedance-2.0'
-          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false }
+          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false }
           : apimartVideoModelSchemas[entry.modelId]?.defaults,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+        aliases: { aspectRatio: apimartVideoSizeFieldModels.has(entry.modelId) ? 'size' : 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
       {
         id: 'video.edit',
@@ -2257,9 +2270,9 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           ? apimartSeedance2VideoSchema
           : (apimartVideoModelSchemas[entry.modelId]?.schema ?? videoSchema),
         defaults: entry.modelId === 'doubao-seedance-2.0'
-          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false }
+          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false }
           : apimartVideoModelSchemas[entry.modelId]?.defaults,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+        aliases: { aspectRatio: apimartVideoSizeFieldModels.has(entry.modelId) ? 'size' : 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
     ],
     invocation: {
