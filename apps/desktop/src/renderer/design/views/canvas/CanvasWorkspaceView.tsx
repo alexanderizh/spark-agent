@@ -6116,7 +6116,7 @@ export function CanvasWorkspaceView({
         }
 
         // ── 富文档（docx/xlsx/pptx/odt/rtf）：解析出文字后建文本节点 ──────
-        //    解析依赖（mammoth/xlsx）懒加载、失败兜底为留档提示，详见 canvasDocumentParse.ts
+        //    解析依赖（mammoth/exceljs）懒加载、失败兜底为留档提示，详见 canvasDocumentParse.ts
         if (documents.length > 0) {
           const docPositions = layoutDroppedFiles(
             documents.length,
