@@ -226,9 +226,15 @@ jobs:
         run: |
           # CI runner 内存受限，electron-vite/Rollup 打包大依赖（@lobehub、antd、
           # shiki、pdfjs、@xyflow 等）时默认 ~2GB 老生代堆会 OOM（exit 134）。
-          # 提高老生代堆上限到 4GB；该值在所有目标 runner（macOS 7GB / Windows 16GB）
-          # 上都安全，子进程（pnpm run build → electron-vite）会继承此环境变量。
-          export NODE_OPTIONS="--max-old-space-size=4096"
+          # 4GB 已不足以完成当前约 1.65 万模块的 renderer chunk 渲染。
+          # macOS runner（7GB）使用 5GB，Windows runner（16GB）使用 6GB；
+          # 子进程（pnpm run build → electron-vite）会继承此环境变量。
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export NODE_OPTIONS="--max-old-space-size=6144"
+          else
+            export NODE_OPTIONS="--max-old-space-size=5120"
+          fi
+          echo "[publish] NODE_OPTIONS=${NODE_OPTIONS}"
 
           # 非 Windows 任务清理 Windows 签名变量，避免污染 macOS 签名流程。
           if [ "$RUNNER_OS" != "Windows" ]; then
