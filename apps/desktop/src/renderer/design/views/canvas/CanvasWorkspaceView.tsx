@@ -555,23 +555,6 @@ function collectGroupDescendantNodes(nodes: CanvasNode[], groupId: string): Canv
   return descendants
 }
 
-function findGroupContainingNodes(nodes: CanvasNode[], nodeIds: string[]): CanvasNode | null {
-  const expectedIds = new Set(nodeIds)
-  if (expectedIds.size === 0) return null
-  const groups = nodes.filter((node) => node.type === 'group')
-  return (
-    groups.find((group) => {
-      const childIds = new Set(
-        nodes.filter((node) => node.parentNodeId === group.id).map((node) => node.id),
-      )
-      for (const nodeId of expectedIds) {
-        if (!childIds.has(nodeId)) return false
-      }
-      return true
-    }) ?? null
-  )
-}
-
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
@@ -1838,7 +1821,11 @@ export function CanvasWorkspaceView({
       node,
       sourceImageAsset,
       ownerAsset,
-      subviews: readCharacterSubviews(ownerAsset.metadata),
+      // 子视图按来源图片分区：只回显属于当前来源图片的子视图，避免同一角色资产的
+      // 多张产物图之间互相串框（第一个产物的框选出现在第二个产物上）。
+      subviews: readCharacterSubviews(ownerAsset.metadata).filter(
+        (item) => item.sourceAssetId === sourceImageAsset.id,
+      ),
     }
   }, [characterSubviewEditorNodeId, resolveCanvasResourceActionNode, snapshot])
   const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
@@ -1855,7 +1842,7 @@ export function CanvasWorkspaceView({
   const pendingImageConnectionRef = useRef<PendingCanvasConnection | null>(null)
   const pendingAssetConnectionRef = useRef<PendingCanvasConnection | null>(null)
   const pendingAssetPositionRef = useRef<CanvasPoint | null>(null)
-  const mergingGroupImageIdsRef = useRef(new Set<string>())
+  const compositingImageLockRef = useRef(new Set<string>())
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true)
   const [agentPanelWidth, setAgentPanelWidth] = useState(readAgentPanelWidth)
@@ -2828,26 +2815,33 @@ export function CanvasWorkspaceView({
     [patchNodes],
   )
 
-  const handleMergeGroupToImage = useCallback(
-    async (groupId: string, sourceSnapshot?: typeof snapshot) => {
-      if (mergingGroupImageIdsRef.current.has(groupId)) {
-        message.info('正在合成该组，请稍候')
-        return
-      }
+  // 把一组内容节点按其在画布上的当前位置截图合成成一张图，生成新的图片节点，
+  // 并从 sourceNodeIds 连线到新节点。组内「多图合并」与多选「合并为组合图」共用此逻辑：
+  // 前者 source = 组节点，后者 source = 被选中的内容节点（不再创建中间组节点）。
+  const compositeContentNodesToImage = useCallback(
+    async (params: {
+      contentNodes: CanvasNode[]
+      sourceNodeIds: string[]
+      title: string
+      placeX: number
+      placeY: number
+      lockKey: string
+      projectRootPath?: string
+      notInViewportMessage?: string
+    }) => {
+      const {
+        contentNodes,
+        sourceNodeIds,
+        title,
+        placeX,
+        placeY,
+        lockKey,
+        projectRootPath,
+        notInViewportMessage = '所选内容当前不在可截图区域内，请先移动视图后再合成',
+      } = params
 
-      const currentSnapshot = sourceSnapshot ?? snapshotRef.current ?? snapshot
-      const groupNode = currentSnapshot?.nodes.find(
-        (node) => node.id === groupId && node.type === 'group',
-      )
-      if (!currentSnapshot || !groupNode) return
-      const childNodes = collectGroupDescendantNodes(currentSnapshot.nodes, groupId)
-      if (childNodes.length === 0) {
-        message.warning('组内没有可合成的节点')
-        return
-      }
-      const contentNodes = childNodes.filter((node) => node.type !== 'group')
-      if (contentNodes.length === 0) {
-        message.warning('组内没有可合成的内容节点')
+      if (compositingImageLockRef.current.has(lockKey)) {
+        message.info('正在合成，请稍候')
         return
       }
 
@@ -2859,7 +2853,7 @@ export function CanvasWorkspaceView({
         .filter((element): element is HTMLElement => Boolean(element))
 
       if (!stageElement || contentElements.length === 0) {
-        message.error('无法定位组内内容区，请稍后重试')
+        message.error('无法定位内容区，请稍后重试')
         return
       }
 
@@ -2890,12 +2884,12 @@ export function CanvasWorkspaceView({
       )
 
       if (cropWidth <= 0 || cropHeight <= 0) {
-        message.error('组节点当前不在可截图区域内，请先移动视图后再合成')
+        message.error(notInViewportMessage)
         return
       }
 
-      mergingGroupImageIdsRef.current.add(groupId)
-      const closeLoading = message.loading('正在合成组内内容，请稍候…', 0)
+      compositingImageLockRef.current.add(lockKey)
+      const closeLoading = message.loading('正在合成内容，请稍候…', 0)
       await nextFrame()
 
       const hideElements = Array.from(
@@ -2949,52 +2943,84 @@ export function CanvasWorkspaceView({
         )
 
         const dataUrl = outputCanvas.toDataURL('image/png')
-        const file = dataUrlToFile(
-          dataUrl,
-          buildCanvasSnapshotFileName(groupNode.title ?? undefined),
-        )
+        const file = dataUrlToFile(dataUrl, buildCanvasSnapshotFileName(title))
         const savedImage = await window.spark.invoke('file:save-pasted-image', {
           dataUrl,
           mimeType: 'image/png',
           suggestedBaseName: file.name.replace(/\.[^.]+$/, ''),
           storageScope: 'canvas',
-          ...(currentSnapshot.project.rootPath
-            ? { projectRootPath: currentSnapshot.project.rootPath }
-            : {}),
+          ...(projectRootPath ? { projectRootPath } : {}),
         })
         const imageNode = await createImageNode({
           file,
           filePath: savedImage.filePath,
-          x: Math.round(groupNode.x + groupNode.width + 96),
-          y: Math.round(groupNode.y),
+          x: Math.round(placeX),
+          y: Math.round(placeY),
           ...fitImageNodeSize(outputCanvas.width, outputCanvas.height),
           imageWidth: outputCanvas.width,
           imageHeight: outputCanvas.height,
         })
         if (imageNode) {
-          await patchNodes([imageNode.id], { title: `${groupNode.title ?? '组'} 合成图` })
-          await connectNodes({ sourceNodeId: groupNode.id, targetNodeId: imageNode.id })
+          await patchNodes([imageNode.id], { title: `${title} 合成图` })
+          await Promise.all(
+            sourceNodeIds.map((sourceNodeId) =>
+              connectNodes({ sourceNodeId, targetNodeId: imageNode.id }),
+            ),
+          )
           setSelectedNodeIds([imageNode.id])
         }
         closeLoading()
-        message.success('已在组右侧生成内容合成图节点，并连接来源组')
+        message.success('已生成内容合成图节点，并连接来源节点')
       } catch (error) {
-        console.error('[canvas] merge group to image failed', error)
+        console.error('[canvas] composite content to image failed', error)
         closeLoading()
         message.error(
           error instanceof Error
             ? `合成图失败：${error.message}`
-            : '合成图失败，请检查组内图片是否可访问',
+            : '合成图失败，请检查内容图片是否可访问',
         )
       } finally {
         restoreColors?.()
         hideElements.forEach((element, index) => {
           element.style.visibility = previousVisibility[index] ?? ''
         })
-        mergingGroupImageIdsRef.current.delete(groupId)
+        compositingImageLockRef.current.delete(lockKey)
       }
     },
-    [connectNodes, createImageNode, patchNodes, snapshot],
+    [connectNodes, createImageNode, patchNodes],
+  )
+
+  const handleMergeGroupToImage = useCallback(
+    async (groupId: string, sourceSnapshot?: typeof snapshot) => {
+      const currentSnapshot = sourceSnapshot ?? snapshotRef.current ?? snapshot
+      const groupNode = currentSnapshot?.nodes.find(
+        (node) => node.id === groupId && node.type === 'group',
+      )
+      if (!currentSnapshot || !groupNode) return
+      const childNodes = collectGroupDescendantNodes(currentSnapshot.nodes, groupId)
+      if (childNodes.length === 0) {
+        message.warning('组内没有可合成的节点')
+        return
+      }
+      const contentNodes = childNodes.filter((node) => node.type !== 'group')
+      if (contentNodes.length === 0) {
+        message.warning('组内没有可合成的内容节点')
+        return
+      }
+      await compositeContentNodesToImage({
+        contentNodes,
+        sourceNodeIds: [groupNode.id],
+        title: groupNode.title ?? '组',
+        placeX: groupNode.x + groupNode.width + 96,
+        placeY: groupNode.y,
+        lockKey: groupId,
+        ...(currentSnapshot.project.rootPath
+          ? { projectRootPath: currentSnapshot.project.rootPath }
+          : {}),
+        notInViewportMessage: '组节点当前不在可截图区域内，请先移动视图后再合成',
+      })
+    },
+    [compositeContentNodesToImage, snapshot],
   )
 
   const handleCreateGroup = useCallback(() => {
@@ -3013,16 +3039,34 @@ export function CanvasWorkspaceView({
       return
     }
 
-    const nextSnapshot = await createGroupNode(summary.topLevelNodeIds)
-    const groupNode = findGroupContainingNodes(nextSnapshot.nodes, summary.topLevelNodeIds)
-    if (!groupNode) {
-      message.warning('已创建组，但未能定位新组节点，请选中组后再次合成')
+    // 直接后台合成选中内容节点为一张图，不再先创建中间组节点：
+    // 与「手动成组 → 多图合并」产物一致，但跳过组节点，按节点当前位置截图，
+    // 合成图放在选中内容整体的右侧，并从每个来源节点连线到合成图。
+    const contentNodes = selectedNodes.filter((node) =>
+      summary.topLevelNodeIds.includes(node.id),
+    )
+    if (contentNodes.length === 0) {
+      message.warning('未找到可合成的内容节点')
       return
     }
-    setSelectedNodeIds([groupNode.id])
-    await nextFrame()
-    await handleMergeGroupToImage(groupNode.id, nextSnapshot)
-  }, [createGroupNode, handleMergeGroupToImage, selectedNodes])
+    const placeX =
+      contentNodes.reduce((maxX, node) => Math.max(maxX, node.x + node.width), 0) + 96
+    const placeY = contentNodes.reduce(
+      (minY, node) => Math.min(minY, node.y),
+      Number.POSITIVE_INFINITY,
+    )
+    await compositeContentNodesToImage({
+      contentNodes,
+      sourceNodeIds: summary.topLevelNodeIds,
+      title: '组合图',
+      placeX,
+      placeY: Number.isFinite(placeY) ? placeY : 0,
+      lockKey: `selection:${[...summary.topLevelNodeIds].sort().join(',')}`,
+      ...(snapshot?.project.rootPath
+        ? { projectRootPath: snapshot.project.rootPath }
+        : {}),
+    })
+  }, [compositeContentNodesToImage, handleMergeGroupToImage, selectedNodes, snapshot])
 
   const handleAddSelectionToGroup = useCallback(
     (groupId?: string) => {
@@ -3296,8 +3340,16 @@ export function CanvasWorkspaceView({
           y: item.y,
         })
         if (!created) continue
+        const isTextOutput = item.output.type === 'text' || item.output.type === 'prompt'
+        const outputText = item.output.text?.trim() ?? ''
         await updateNodeData(created.id, {
           origin: 'asset',
+          // 用产物自带的文本（分镜脚本等）覆盖资产派生文本，并标记为 markdown，
+          // 保证展开后的文本节点双击进入分镜脚本编辑器时能正确回显。
+          ...(outputText ? { text: outputText } : {}),
+          ...(isTextOutput
+            ? { format: (item.output.type === 'prompt' ? 'prompt' : 'markdown') as 'plain' | 'markdown' | 'prompt' }
+            : {}),
           ...(item.output.pipelineRole ? { pipelineRole: item.output.pipelineRole } : {}),
           ...(item.output.productionState ? { productionState: item.output.productionState } : {}),
           ...(item.output.panorama360 ? { panorama360: item.output.panorama360 } : {}),
@@ -4433,6 +4485,23 @@ export function CanvasWorkspaceView({
         height: input.sourceNode.height,
       })
 
+      // 把新切分节点接到来源节点的下游：删除 source→child，改为 newPrimary→child，
+      // 让切分产物插入到来源节点与其后续子节点之间（放在原节点后面、连线到后续子节点）。
+      const rewireDownstreamTo = async (newPrimaryId: string) => {
+        const sourceId = input.sourceNode.id
+        const downstreamEdges = snapshot.edges.filter(
+          (edge) => edge.sourceNodeId === sourceId && edge.targetNodeId !== newPrimaryId,
+        )
+        if (downstreamEdges.length === 0) return
+        const childIds = Array.from(new Set(downstreamEdges.map((edge) => edge.targetNodeId)))
+        await deleteEdges(downstreamEdges.map((edge) => edge.id))
+        await Promise.all(
+          childIds.map((childId) =>
+            connectNodes({ sourceNodeId: newPrimaryId, targetNodeId: childId }),
+          ),
+        )
+      }
+
       if (!shouldGroup) {
         const image = preparedImages[0]
         if (!image) return
@@ -4451,6 +4520,7 @@ export function CanvasWorkspaceView({
             title: image.title ?? `${input.sourceNode.title ?? '图片'} · 宫格切分`,
           })
           await connectNodes({ sourceNodeId: input.sourceNode.id, targetNodeId: imageNode.id })
+          await rewireDownstreamTo(imageNode.id)
           setSelectedNodeIds([imageNode.id])
         }
         setGridSplitImageNodeId(null)
@@ -4458,19 +4528,8 @@ export function CanvasWorkspaceView({
         return
       }
 
-      const gridMetrics = getImageGridMetrics(preparedImages)
-      const groupSize = {
-        width: Math.max(360, gridMetrics.width + GROUP_IMAGE_PADDING_X * 2),
-        height: Math.max(
-          220,
-          GROUP_IMAGE_HEADER_HEIGHT + gridMetrics.height + GROUP_IMAGE_PADDING_BOTTOM,
-        ),
-      }
-      const groupPosition = positionNodeInViewport(
-        canvasViewportRef.current,
-        groupSize,
-        preferredPosition,
-      )
+      // 放在来源节点右侧（与单张切分一致），而不是视口居中。
+      const groupPosition = preferredPosition
       const placedImages = layoutGroupedImages(preparedImages, groupPosition)
       const createdNodeIds: string[] = []
       const nodeTitleById = new Map<string, string>()
@@ -4519,6 +4578,7 @@ export function CanvasWorkspaceView({
             title: `${input.sourceNode.title ?? '图片'} · 宫格切分 ${input.rows}x${input.cols}`,
           })
           await connectNodes({ sourceNodeId: input.sourceNode.id, targetNodeId: groupNode.id })
+          await rewireDownstreamTo(groupNode.id)
           selection = [groupNode.id]
         } else {
           for (const nodeId of createdNodeIds) {
@@ -4533,7 +4593,7 @@ export function CanvasWorkspaceView({
       setGridSplitImageNodeId(null)
       message.success(`已生成 ${createdNodeIds.length} 张宫格切分图片`)
     },
-    [connectNodes, createGroupNode, createImageNode, patchNodes, snapshot],
+    [connectNodes, createGroupNode, createImageNode, deleteEdges, patchNodes, snapshot],
   )
 
   const handleUndoCanvasChange = useCallback(async () => {
@@ -7801,7 +7861,17 @@ export function CanvasWorkspaceView({
             onSave={async (nextSubviews) => {
               const context = characterSubviewEditorContext
               if (!context) return
-              await updateFilmAsset(context.ownerAsset.id, { characterSubviews: nextSubviews })
+              // 子视图按来源图片分区存储在共享角色资产上：保存时只替换当前来源图片的
+              // 子视图，保留其它产物图片的子视图，避免互相覆盖。
+              const sourceAssetId = context.sourceImageAsset.id
+              const latestOwner = snapshot?.assets.find((item) => item.id === context.ownerAsset.id)
+              const preserved = readCharacterSubviews(
+                latestOwner?.metadata ?? context.ownerAsset.metadata,
+              ).filter((item) => item.sourceAssetId !== sourceAssetId)
+              const stamped = nextSubviews.map((item) => ({ ...item, sourceAssetId }))
+              await updateFilmAsset(context.ownerAsset.id, {
+                characterSubviews: [...preserved, ...stamped],
+              })
               message.success('子视图已更新')
             }}
             zIndex={1500}

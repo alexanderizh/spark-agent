@@ -530,6 +530,17 @@ const PIPELINE_ROLE_META: Partial<
 const IMAGE_STYLE_EXTRACTION_PROMPT =
   '请分析输入图片的视觉风格，并输出可复用的中文风格描述。重点包括：画面题材、艺术媒介、色彩倾向、光影氛围、构图镜头、材质细节、时代/类型气质，以及适合作为后续生成提示词的风格关键词。'
 
+function buildTextStyleExtractionPrompt(node: SparkCanvasNode): string {
+  const source = sourceNodeText(node)
+  return [
+    '请阅读输入的剧本文本，提炼出这一章节可复用的镜头风格描述（中文）。',
+    '重点包括：整体影像气质、景别偏好、运镜方式、构图习惯、色调与光影氛围、画面材质与年代质感、节奏与剪辑风格，以及适合作为后续分镜 / 生成提示词的风格关键词。',
+    source ? `章节文本：\n${source}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
 const INLINE_PANEL_TRANSITION_MS = 180
 
 const NODE_TYPE_META_LABEL: Partial<Record<SparkCanvasNode['type'] | 'prompt', string>> = {
@@ -668,6 +679,9 @@ export const CanvasNode = memo(function CanvasNode({
   }, [node])
   const isPanorama360 = Boolean(contentNode?.data.panorama360 ?? node.data.panorama360)
   const isImageContent = contentNode ? isCanvasImageContentNode(contentNode) : false
+  const isTextLikeContent = contentNode
+    ? contentNode.type === 'text' || contentNode.type === 'prompt'
+    : false
   const canExtractCharacterSubview = isImageContent && hasOperationOutput
   const latestOperationOutputCount =
     operationRuns.find((run) => run.outputs.length > 0)?.outputs.length ?? 0
@@ -686,11 +700,14 @@ export const CanvasNode = memo(function CanvasNode({
     return readRenderableShotScriptRows(node.data.text)
   }, [node.type, node.data.text])
   const renderShotTable = shotScriptRows.length > 0
-  const runImageStyleExtraction = () =>
-    actions.createOperationChild(node.id, 'text_generate', {
+  const runStyleExtraction = () => {
+    const target = contentNode ?? node
+    const isTextLike = target.type === 'text' || target.type === 'prompt'
+    return actions.createOperationChild(node.id, 'text_generate', {
       title: '风格提取',
-      prompt: IMAGE_STYLE_EXTRACTION_PROMPT,
+      prompt: isTextLike ? buildTextStyleExtractionPrompt(target) : IMAGE_STYLE_EXTRACTION_PROMPT,
     })
+  }
   const createImageOutpaintTask = () =>
     actions.createOperationChild(node.id, 'image_edit', {
       title: '图片扩图',
@@ -724,10 +741,22 @@ export const CanvasNode = memo(function CanvasNode({
                   <Icons.Sparkles size={14} /> 提取风格
                 </span>
               ),
-              onClick: runImageStyleExtraction,
+              onClick: runStyleExtraction,
             },
           ]
-        : []),
+        : isTextLikeContent
+          ? [
+              {
+                key: 'extract-style',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Sparkles size={14} /> 提取风格
+                  </span>
+                ),
+                onClick: runStyleExtraction,
+              },
+            ]
+          : []),
       ...(isImageContent ||
       Boolean(
         hasOperationOutput &&
@@ -753,7 +782,8 @@ export const CanvasNode = memo(function CanvasNode({
       createImageOutpaintTask,
       hasOperationOutput,
       isImageContent,
-      runImageStyleExtraction,
+      isTextLikeContent,
+      runStyleExtraction,
     ],
   )
   const menu = useMemo(

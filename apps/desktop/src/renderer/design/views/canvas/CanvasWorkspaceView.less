@@ -1911,23 +1911,14 @@
   -webkit-box-orient: vertical;
 }
 
-.canvas-node-context-menu {
+// 节点右键菜单（操作/图像/分镜/视频节点条目很多）必须能完整滚动到底部的「删除节点」。
+// 用双类选择器提升优先级，压过 antd v6 cssinjs 运行时注入的同优先级规则；同时把
+// 原先写死的 520px 上限改为视口高度，长菜单也能一屏显示更多、必要时内部滚动。
+.canvas-node-context-menu.ant-dropdown-menu,
+.ant-dropdown .canvas-node-context-menu.ant-dropdown-menu,
+.ant-dropdown-menu-submenu-popup .canvas-node-context-menu.ant-dropdown-menu {
   min-width: 142px;
-  max-height: min(520px, calc(100vh - 32px));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.canvas-node-context-menu .ant-dropdown-menu,
-.canvas-node-context-menu .ant-dropdown-menu-submenu-popup .ant-dropdown-menu {
-  max-height: min(520px, calc(100vh - 32px));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.ant-dropdown .canvas-node-context-menu,
-.ant-dropdown-menu-submenu-popup .canvas-node-context-menu {
-  max-height: min(520px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
