@@ -762,6 +762,17 @@ export const IpcSchemaRegistry = {
   'team:delete-def': TeamDeleteDefRequestSchema,
   'provider:create': ProviderCreateRequestSchema,
   'provider:get-api-key': ProviderGetApiKeyRequestSchema,
+  'provider:files:list': z.object({
+    providerProfileId: z.string().min(1).max(200),
+    paginationToken: z.string().min(1).max(2000).optional(),
+    order: z.enum(['asc', 'desc']).optional(),
+    sortBy: z.enum(['created_at', 'filename', 'size']).optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+  }),
+  'provider:files:delete': z.object({
+    providerProfileId: z.string().min(1).max(200),
+    fileId: z.string().min(1).max(500),
+  }),
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,
@@ -1094,6 +1105,7 @@ export const IpcSchemaRegistry = {
     inputFiles: z
       .array(
         z.object({
+          fileId: z.string().min(1).max(300).optional(),
           path: z.string().max(2000).optional(),
           url: z.string().max(4000).optional(),
           dataUrl: z.string().max(100_000_000).optional(),

@@ -26,6 +26,7 @@ import type {
   MediaRequestCall,
   ProviderMediaDefaults,
 } from '@spark/protocol'
+import type { MediaUploader } from './media-uploader.js'
 
 /** adapter 调用上下文：由 router 从 ProviderProfile + keystore 解析后注入 */
 export interface MediaProviderContext {
@@ -44,11 +45,14 @@ export interface MediaProviderContext {
   extraParams?: Record<string, unknown>
   /** 可注入的 fetch（测试用 mock）；缺省走全局 fetch */
   fetch?: typeof fetch
+  /** 桌面主进程可注入的 Spark 公开文件上传回退；agent-runtime 不反向依赖 desktop。 */
+  fallbackUploader?: MediaUploader
 }
 
 export type MediaArtifactType = 'image' | 'audio' | 'video' | 'text'
 
 export interface MediaInputFile {
+  fileId?: string
   path?: string
   url?: string
   dataUrl?: string
@@ -107,6 +111,7 @@ export type MediaErrorCode =
   | 'task_failed'
   | 'task_timeout'
   | 'artifact_download_failed'
+  | 'auth_required'
 
 export class MediaProviderError extends Error {
   readonly code: MediaErrorCode

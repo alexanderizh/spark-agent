@@ -1262,13 +1262,21 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'openai',
     apiEndpoint: 'https://api.x.ai/v1',
     defaultModel: 'grok-imagine-video',
-    modelIds: ['grok-imagine-video'],
+    modelIds: [
+      'grok-imagine-video-1.5',
+      'grok-imagine-video',
+      'grok-imagine-video-1.5-preview',
+      'grok-imagine-video-1.5-2026-05-30',
+    ],
     modelType: 'video',
     mediaProvider: 'xai',
     mediaApiType: 'async',
     mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.reference_to_video', 'video.edit', 'video.extend'],
     mediaModelRefs: [
+      { manifestId: 'xai:grok-imagine-video-1.5', modelId: 'grok-imagine-video-1.5', enabled: true },
       { manifestId: 'xai:grok-imagine-video', modelId: 'grok-imagine-video', enabled: true },
+      { manifestId: 'xai:grok-imagine-video-1.5-preview', modelId: 'grok-imagine-video-1.5-preview', enabled: true },
+      { manifestId: 'xai:grok-imagine-video-1.5-2026-05-30', modelId: 'grok-imagine-video-1.5-2026-05-30', enabled: true },
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },

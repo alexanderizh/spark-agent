@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -12,11 +12,13 @@ describe('spark_media MCP server', () => {
   let server: Server
   let baseUrl = ''
   let postedBody: Record<string, unknown> | null = null
+  let fileUploadCount = 0
   let child: ChildProcessWithoutNullStreams | null = null
 
   beforeEach(async () => {
     tmpDir = path.join(os.tmpdir(), `spark-media-mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
     mkdirSync(tmpDir, { recursive: true })
+    fileUploadCount = 0
     server = createServer((req, res) => {
       if (req.method === 'POST' && req.url === '/images') {
         const chunks: Buffer[] = []
@@ -28,9 +30,51 @@ describe('spark_media MCP server', () => {
         })
         return
       }
+      if (req.method === 'POST' && (req.url === '/videos/generations' || req.url === '/videos/extensions')) {
+        const chunks: Buffer[] = []
+        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+        req.on('end', () => {
+          postedBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ request_id: 'request-1' }))
+        })
+        return
+      }
+      if (req.method === 'POST' && req.url === '/files') {
+        fileUploadCount += 1
+        req.resume()
+        req.on('end', () => {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ id: 'file-input', filename: 'frame.png', bytes: 5, created_at: 1, object: 'file', purpose: 'user_data' }))
+        })
+        return
+      }
+      if (req.method === 'GET' && req.url === '/videos/request-1') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({
+          status: 'done',
+          video: { file_output: { file_id: 'file-video', public_url: `${baseUrl}/asset.mp4` } },
+        }))
+        return
+      }
+      if (req.method === 'POST' && req.url === '/tts') {
+        const chunks: Buffer[] = []
+        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+        req.on('end', () => {
+          postedBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+          res.writeHead(200, { 'content-type': 'audio/mpeg' })
+          res.end(Buffer.from('audio'))
+        })
+        return
+      }
       if (req.method === 'GET' && req.url === '/asset.png') {
         res.writeHead(200, { 'content-type': 'image/png' })
         res.end(Buffer.from(PNG_PIXEL, 'base64'))
+        return
+      }
+      if (req.method === 'GET' && req.url === '/asset.mp4') {
+        res.writeHead(200, { 'content-type': 'video/mp4' })
+        res.end(Buffer.from('video'))
         return
       }
       res.writeHead(404)
@@ -456,6 +500,7 @@ describe('spark_media MCP server', () => {
         SPARK_MEDIA_MODEL: 'image-model',
         SPARK_MEDIA_BASE_URL: baseUrl,
         SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify({ polling: { intervalMs: 1, timeoutMs: 3000 } }),
       },
     })
 
@@ -492,6 +537,108 @@ describe('spark_media MCP server', () => {
     expect(videoProps.mode!.enum).toBeUndefined()
     expect(videoProps.capability!.enum).toBeUndefined()
     expect(videoProps.resolution!.description).toContain('describe_model')
+  })
+
+  it('uses the same official xAI video and TTS contracts as the desktop adapter', async () => {
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'sk-test',
+        SPARK_MEDIA_PROVIDER: 'xai',
+        SPARK_MEDIA_MODEL: 'grok-imagine-video',
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify({
+          video: { durationSeconds: 8 },
+          polling: { intervalMs: 1, timeoutMs: 1000 },
+        }),
+      },
+    })
+
+    const references = Array.from({ length: 7 }, (_, index) => `${baseUrl}/reference-${index + 1}.png`)
+    const videoResponse = await callMcp(child, {
+      jsonrpc: '2.0', id: 7, method: 'tools/call', params: {
+        name: 'generate_video',
+        arguments: {
+          prompt: 'Use all references',
+          capability: 'video.reference_to_video',
+          referenceImages: references,
+          durationSeconds: 10,
+          aspectRatio: '16:9',
+          resolution: '720p',
+          seed: 42,
+          extraJson: { mode: 'reference-to-video', quality: 'hd' },
+          filename: 'skill-video.mp4',
+        },
+      },
+    })
+
+    expect(videoResponse.error).toBeUndefined()
+    expect(postedBody).toEqual({
+      model: 'grok-imagine-video',
+      prompt: 'Use all references',
+      reference_images: references.map((url) => ({ url })),
+      duration: 10,
+      aspect_ratio: '16:9',
+      resolution: '720p',
+      storage_options: { filename: 'skill-video.mp4', public_url: true },
+    })
+
+    const framePath = path.join(tmpDir, 'frame.png')
+    writeFileSync(framePath, Buffer.from('frame'))
+    const inputResponse = await callMcp(child, {
+      jsonrpc: '2.0', id: 9, method: 'tools/call', params: {
+        name: 'generate_video',
+        arguments: {
+          prompt: 'Animate local frame',
+          capability: 'video.image_to_video',
+          firstFrame: framePath,
+          filename: 'local-frame.mp4',
+        },
+      },
+    })
+    expect(inputResponse.error).toBeUndefined()
+    expect(fileUploadCount).toBe(1)
+    expect(postedBody).toMatchObject({ image: { file_id: 'file-input' } })
+
+    const extensionResponse = await callMcp(child, {
+      jsonrpc: '2.0', id: 11, method: 'tools/call', params: {
+        name: 'generate_video',
+        arguments: {
+          prompt: 'Continue the video',
+          capability: 'video.extend',
+          videoUrl: `${baseUrl}/asset.mp4`,
+          filename: 'extended.mp4',
+        },
+      },
+    })
+    expect(extensionResponse.error).toBeUndefined()
+    expect(postedBody).toMatchObject({
+      video: { url: `${baseUrl}/asset.mp4` },
+      duration: 6,
+    })
+
+    const audioResponse = await callMcp(child, {
+      jsonrpc: '2.0', id: 10, method: 'tools/call', params: {
+        name: 'generate_audio',
+        arguments: {
+          text: '你好',
+          voice: 'eve',
+          language: 'zh-CN',
+          format: 'mp3',
+          speed: 1.1,
+        },
+      },
+    })
+    expect(audioResponse.error).toBeUndefined()
+    expect(postedBody).toEqual({
+      text: '你好',
+      voice_id: 'eve',
+      language: 'zh-CN',
+      output_format: { codec: 'mp3' },
+      speed: 1.1,
+    })
   })
 })
 

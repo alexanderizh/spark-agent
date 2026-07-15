@@ -194,6 +194,8 @@ import { detectExternalTools, openProjectInTool } from '../services/ExternalTool
 import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.js'
 import { getTerminalService } from '../services/TerminalService.js'
 import { registerTerminalIpc } from './registerTerminalIpc.js'
+import { registerProviderFilesIpc } from './registerProviderFilesIpc.js'
+import { sparkMediaUploader } from '../services/media/SparkMediaUploader.js'
 import { registerPlatformModelIpc } from '../services/PlatformModel/registerPlatformModelIpc.js'
 import {
   getGitExecErrorMessage,
@@ -3415,6 +3417,7 @@ export function registerAllIpcHandlers(): void {
           ? {
               inputFiles: req.inputFiles.map((file) => ({
                 type: file.type,
+                ...(file.fileId != null ? { fileId: file.fileId } : {}),
                 ...(file.path != null ? { path: file.path } : {}),
                 ...(file.url != null ? { url: file.url } : {}),
                 ...(file.dataUrl != null ? { dataUrl: file.dataUrl } : {}),
@@ -3428,6 +3431,7 @@ export function registerAllIpcHandlers(): void {
       }
       const options = {
         providers,
+        fallbackUploader: sparkMediaUploader,
         ...(req.providerProfileId != null ? { providerProfileId: req.providerProfileId } : {}),
         ...(req.manifestId != null ? { manifestId: req.manifestId } : {}),
         ...(req.modelId != null ? { modelId: req.modelId } : {}),
@@ -7845,6 +7849,11 @@ export function registerAllIpcHandlers(): void {
 
   // ─── Built-in Terminal Panel (session-scoped PTY dock) ───────────────────────
   registerTerminalIpc()
+
+  registerProviderFilesIpc({
+    getProfile: async (id) => (await getProviderService().listProviders()).find((profile) => profile.id === id),
+    getApiKey: async (id) => getProviderService().getProviderApiKey(id),
+  })
 
   // ─── Provider 编辑辅助通道（如 reveal-key）注册入口 ─────────────────────
 

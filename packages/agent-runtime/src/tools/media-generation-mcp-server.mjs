@@ -112,6 +112,7 @@ const TOOLS = [
         prompt: { type: 'string', description: 'Edit instruction.' },
         imageUrls: { type: 'array', items: { type: 'string' } },
         imageFiles: { type: 'array', items: { type: 'string' }, description: 'Local file paths.' },
+        imageFileIds: { type: 'array', items: { type: 'string' }, description: 'xAI Files API file ids.' },
         model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
         mask: { type: 'string' },
         size: { type: 'string' },
@@ -136,6 +137,7 @@ const TOOLS = [
         text: { type: 'string', description: 'Text to synthesize.' },
         model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
         voice: { type: 'string', description: 'Voice id (provider-specific).' },
+        language: { type: 'string', description: 'BCP-47 language or auto (provider-specific).' },
         format: { type: 'string', description: 'mp3, wav, opus, aac, flac, pcm.' },
         output_format: { type: 'string', enum: ['url', 'hex'], description: 'Provider-specific output container, e.g. MiniMax url/hex.' },
         speed: { type: 'number' },
@@ -175,12 +177,14 @@ const TOOLS = [
           description: 'Optional reference image urls / data urls for image-to-video.',
         },
         firstFrame: { type: 'string', description: 'Optional first-frame image url / data url.' },
+        firstFrameFileId: { type: 'string', description: 'Optional xAI Files API id for the first frame.' },
         lastFrame: { type: 'string', description: 'Optional last-frame image url / data url.' },
         referenceImages: {
           type: 'array',
           items: { type: 'string' },
           description: 'Optional reference image urls / data urls for video edit.',
         },
+        referenceImageFileIds: { type: 'array', items: { type: 'string' }, description: 'xAI Files API ids for reference images.' },
         inputVideos: {
           type: 'array',
           items: { type: 'string' },
@@ -188,6 +192,7 @@ const TOOLS = [
         },
         videoUrl: { type: 'string', description: 'Optional remote input video url for video edit.' },
         videoFile: { type: 'string', description: 'Optional local input video file path for video edit.' },
+        videoFileId: { type: 'string', description: 'Optional xAI Files API id for video edit or extension.' },
         capability: { type: 'string', description: `Capability id such as video.generate, video.image_to_video, video.edit, or video.extend. ${DESCRIBE_MODEL_HINT}` },
         videoMode: { type: 'string', description: 'Loose routing hint: generate, image_to_video, reference_to_video, edit, or extend.' },
         aspectRatio: { type: 'string', description: `Provider-specific video aspect ratio. ${DESCRIBE_MODEL_HINT}` },
@@ -664,6 +669,15 @@ async function downloadMedia(config, url, kind, filename) {
   return file
 }
 
+async function writeBinaryAsset(config, buffer, kind, filename, extension) {
+  const dir = path.join(config.outputDir, kind === 'audio' ? 'audio' : 'videos')
+  await mkdir(dir, { recursive: true })
+  const parsed = path.parse(filename || `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`)
+  const file = path.join(dir, `${parsed.name}${parsed.ext || `.${extension}`}`)
+  await writeFile(file, buffer)
+  return file
+}
+
 async function writeTextAsset(config, text, filename) {
   const dir = path.join(config.outputDir, 'text')
   await mkdir(dir, { recursive: true })
@@ -1091,25 +1105,85 @@ function defaultMime(kind, args) {
 const RATIO_RE = /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/
 
 function xaiImageParams(args) {
-  const params = { ...(args.extraJson || {}) }
+  const source = { ...(args.extraJson || {}) }
+  const params = {}
   // xAI 不支持 size（HTTP 400: Argument not supported: size）。若调用方用 size 传了比例，
   // 归一化到 aspect_ratio；分辨率型 size 对 xAI 无意义，直接丢弃。绝不输出 size。
   const sizeLikeRatio = typeof args.size === 'string' && RATIO_RE.test(args.size.trim()) ? args.size.trim() : ''
-  if (sizeLikeRatio && params.aspect_ratio == null && args.aspectRatio == null) params.aspect_ratio = sizeLikeRatio
-  if (args.aspectRatio && params.aspect_ratio == null) params.aspect_ratio = args.aspectRatio
-  if (args.resolution && params.resolution == null) params.resolution = args.resolution
-  if (args.n != null && params.n == null) params.n = args.n
-  if (args.output_format && params.response_format == null && ['url', 'b64_json'].includes(String(args.output_format))) {
+  if (sizeLikeRatio && args.aspectRatio == null) params.aspect_ratio = sizeLikeRatio
+  if (args.aspectRatio || source.aspect_ratio) params.aspect_ratio = args.aspectRatio || source.aspect_ratio
+  if (args.resolution || source.resolution) params.resolution = args.resolution || source.resolution
+  if (args.n != null || source.n != null) params.n = args.n ?? source.n
+  if (args.output_format && ['url', 'b64_json'].includes(String(args.output_format))) {
     params.response_format = args.output_format
+  } else if (['url', 'b64_json'].includes(String(source.response_format))) {
+    params.response_format = source.response_format
   }
-  if (args.output_format && params.image_format == null && !['url', 'b64_json', 'base64'].includes(String(args.output_format))) {
-    params.image_format = args.output_format
-  }
-  if (args.negative_prompt && params.negative_prompt == null) params.negative_prompt = args.negative_prompt
-  if (args.seed != null && params.seed == null) params.seed = args.seed
-  // 兜底：即使经 extraJson 混入 size（如 { size: '1024x1024' }），也必须移除——xAI 不支持 size。
-  delete params.size
+  if (typeof source.user === 'string' && source.user) params.user = source.user
   return params
+}
+
+function xaiStorageOptions(args, extension) {
+  const configured = typeof args.filename === 'string' && args.filename.trim() ? args.filename.trim() : ''
+  return { filename: configured || `spark-${Date.now()}.${extension}`, public_url: true }
+}
+
+function xaiFileOutputStrings(value, key) {
+  const found = []
+  const visit = (node) => {
+    if (Array.isArray(node)) return node.forEach(visit)
+    if (!node || typeof node !== 'object') return
+    if (typeof node[key] === 'string' && node[key]) found.push(node[key])
+    if (node.file_output && typeof node.file_output === 'object' && typeof node.file_output[key] === 'string') {
+      found.push(node.file_output[key])
+    }
+    Object.values(node).forEach(visit)
+  }
+  visit(value)
+  return [...new Set(found)]
+}
+
+function xaiPublicUrls(value) {
+  return xaiFileOutputStrings(value, 'public_url').filter(isHttpUrl)
+}
+
+function xaiImageResults(value) {
+  const items = Array.isArray(value?.data) ? value.data : [value]
+  return items.flatMap((item) => {
+    const publicUrl = xaiPublicUrls(item)[0]
+    if (publicUrl) return [{ kind: 'url', value: publicUrl }]
+    const image = extractImages(item)[0]
+    return image ? [image] : []
+  })
+}
+
+async function xaiInputReference(config, value, kind, explicitFileId = '') {
+  if (explicitFileId) return { file_id: explicitFileId }
+  if (isHttpUrl(value)) return { url: value }
+  let buffer
+  let mimeType = kind === 'image' ? 'image/png' : 'video/mp4'
+  let filename = `spark-input-${Date.now()}.${kind === 'image' ? 'png' : 'mp4'}`
+  if (String(value || '').startsWith('data:')) {
+    mimeType = mimeFromDataUrl(value) || mimeType
+    buffer = Buffer.from(normalizeBase64(value), 'base64')
+  } else if (value) {
+    const { readFile } = await import('node:fs/promises')
+    buffer = await readFile(value)
+    filename = path.basename(value) || filename
+  }
+  if (!buffer) throw new Error(`xAI ${kind} input requires URL, file_id, data URL, or local file`)
+  try {
+    const form = new FormData()
+    form.append('file', new Blob([buffer], { type: mimeType }), filename)
+    const uploaded = await fetchJson(`${config.baseUrl}/files`, {
+      method: 'POST', headers: { authorization: `Bearer ${config.apiKey}` }, body: form,
+    }, 120_000)
+    if (!uploaded?.id) throw new Error('xAI Files response missing id')
+    return { file_id: uploaded.id }
+  } catch (error) {
+    if (kind === 'image') return { url: `data:${mimeType};base64,${buffer.toString('base64')}` }
+    throw new Error(`xAI Files upload failed; video input cannot fall back to base64: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 // ── tool handlers ──────────────────────────────────────────────────────────
@@ -1119,16 +1193,23 @@ async function handleGenerateImage(config, args) {
   const prompt = String(args.prompt || '').trim()
   if (!prompt) throw new Error('prompt is required')
   const manifestMatch = resolveManifestForTool(config, 'generate_image', args)
-  if (manifestMatch) return handleManifestTool(config, 'generate_image', args, manifestMatch)
+  if (manifestMatch && config.provider !== 'xai') return handleManifestTool(config, 'generate_image', args, manifestMatch)
+  if (config.provider === 'xai' && Array.isArray(args.inputImages) && args.inputImages.length > 0) {
+    return handleEditImage(config, { ...args, imageUrls: args.inputImages })
+  }
   if (!config.model) throw new Error('No media model configured')
-  const n = Math.max(1, Math.min(4, Number.parseInt(args.n || '1', 10) || 1))
+  const parsedN = Number.parseInt(args.n || '1', 10) || 1
+  const n = config.provider === 'xai' ? Math.max(1, parsedN) : Math.max(1, Math.min(4, parsedN))
   const body = {
     model: config.model,
     prompt,
     n,
     // xAI Images API 不支持 size（会 HTTP 400）。xAI 走 xaiImageParams，size 在其中
     // 归一化为 aspect_ratio（若为比例型）或丢弃；其它 provider 原样透传 size。
-    ...(config.provider === 'xai' ? xaiImageParams(args) : {
+    ...(config.provider === 'xai' ? {
+      ...xaiImageParams(args),
+      storage_options: xaiStorageOptions(args, 'png'),
+    } : {
       ...(args.size ? { size: args.size } : {}),
       ...(args.resolution ? { resolution: args.resolution } : {}),
       ...(args.aspectRatio ? { aspect_ratio: args.aspectRatio } : {}),
@@ -1137,7 +1218,7 @@ async function handleGenerateImage(config, args) {
   }
   const url = `${config.baseUrl}/images/generations`
   const data = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 60_000)
-  let images = extractImages(data)
+  let images = config.provider === 'xai' ? xaiImageResults(data) : extractImages(data)
   let mode = 'sync'
   if (images.length === 0 && (config.mode === 'async' || config.mode === 'auto')) {
     const taskId = extractTaskId(data)
@@ -1165,22 +1246,27 @@ async function handleEditImage(config, args) {
   if (manifestMatch && config.provider !== 'xai') return handleManifestTool(config, 'edit_image', args, manifestMatch)
   const imageUrls = Array.isArray(args.imageUrls) ? args.imageUrls : []
   const imageFiles = Array.isArray(args.imageFiles) ? args.imageFiles : []
+  const imageFileIds = Array.isArray(args.imageFileIds) ? args.imageFileIds : []
   const refs = [...imageUrls, ...imageFiles].filter((s) => typeof s === 'string' && s.length > 0)
   // xAI 图片编辑走 POST /images/edits（官方独立端点），源图按 image（单图：{url, type}）
   // 或 images（多图 ≤3：[{url, type}, ...]）传入。manifest 模板无法表达多端点 + 多图对象数组，
   // 故 xAI 走此 hardcode 分支优先于 manifest。见 https://docs.x.ai/developers/model-capabilities/images/editing。
   if (config.provider === 'xai') {
-    if (refs.length === 0) throw new Error('xAI image edit requires input image(s)')
-    const editRefs = refs.slice(0, 3)
-    const imageObjects = editRefs.map((ref) => ({ url: ref, type: 'image_url' }))
+    if (refs.length + imageFileIds.length === 0) throw new Error('xAI image edit requires input image(s)')
+    if (refs.length + imageFileIds.length > 3) throw new Error('xAI image edit supports at most 3 images')
+    const imageObjects = [
+      ...await Promise.all(refs.map((ref) => xaiInputReference(config, ref, 'image'))),
+      ...imageFileIds.map((fileId) => ({ file_id: fileId })),
+    ]
     const body = {
       model: config.model,
       prompt,
       ...(imageObjects.length === 1 ? { image: imageObjects[0] } : { images: imageObjects }),
       ...xaiImageParams(args),
+      storage_options: xaiStorageOptions(args, 'png'),
     }
     const data = await fetchJson(`${config.baseUrl}/images/edits`, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 120_000)
-    const images = extractImages(data)
+    const images = xaiImageResults(data)
     if (images.length === 0) throw new Error(`No images in xAI edit response: ${JSON.stringify(data).slice(0, 800)}`)
     const files = []
     for (let i = 0; i < images.length; i++) {
@@ -1215,6 +1301,21 @@ async function handleGenerateAudio(config, args) {
   const manifestMatch = resolveManifestForTool(config, 'generate_audio', args)
   if (manifestMatch) return handleManifestTool(config, 'generate_audio', args, manifestMatch)
   if (!config.model) throw new Error('No media model configured')
+  if (config.provider === 'xai') {
+    const codec = String(args.format || 'mp3')
+    const body = {
+      text,
+      voice_id: args.voice || 'eve',
+      language: args.language || 'auto',
+      output_format: { codec },
+      ...(args.speed != null ? { speed: args.speed } : {}),
+    }
+    const audio = await fetchJson(`${config.baseUrl}/tts`, {
+      method: 'POST', headers: authHeaders(config), body: JSON.stringify(body),
+    }, 60_000, true)
+    const file = await writeBinaryAsset(config, audio, 'audio', args.filename || '', codec)
+    return { success: true, provider: `${config.provider}/${config.model}`, mode: 'sync', files: [file] }
+  }
   const audioDefaults = config.mediaDefaults?.audio || {}
   const format = args.format || audioDefaults.format || 'mp3'
   const body = {
@@ -1285,44 +1386,65 @@ async function handleGenerateVideo(config, args) {
     const wantsExtend = args.capability === 'video.extend' || args.videoMode === 'extend' || args.extraJson?.mode === 'extend-video'
     const wantsEdit = args.capability === 'video.edit' || args.videoMode === 'edit' || args.extraJson?.mode === 'edit-video'
     const wantsReference = args.capability === 'video.reference_to_video' || args.videoMode === 'reference_to_video' || args.extraJson?.mode === 'reference-to-video'
+    const wantsImageToVideo = args.capability === 'video.image_to_video' || args.videoMode === 'image_to_video' || Boolean(firstFrame || args.firstFrameFileId)
+    const isVideo15 = String(config.model).startsWith('grok-imagine-video-1.5')
+    if (lastFrame) throw new Error('xAI video generation does not support a last frame')
+    if (isVideo15 && !wantsImageToVideo) throw new Error(`${config.model} only supports image-to-video`)
+    if (isVideo15 && wantsReference) throw new Error(`${config.model} does not support reference-to-video`)
+    const referenceFileIds = Array.isArray(args.referenceImageFileIds)
+      ? args.referenceImageFileIds.filter((item) => typeof item === 'string' && item)
+      : []
+    if (referenceImages.length + referenceFileIds.length > 7) throw new Error('xAI reference-to-video supports at most 7 images')
     let endpoint = '/videos/generations'
-    const body = { model: config.model, prompt, ...(args.extraJson || {}) }
-    delete body.mode
-    if (video) {
+    const body = { model: config.model, prompt }
+    const explicitVideoFileId = typeof args.videoFileId === 'string' ? args.videoFileId : ''
+    if (video || explicitVideoFileId) {
       endpoint = wantsExtend ? '/videos/extensions' : '/videos/edits'
-      body.video = { url: video }
+      body.video = await xaiInputReference(config, video, 'video', explicitVideoFileId)
       if (wantsExtend) {
-        const rawDuration = Number.parseInt(args.durationSeconds ?? videoDefaults.durationSeconds ?? '6', 10)
-        body.duration = Math.max(1, Math.min(15, Number.isFinite(rawDuration) ? rawDuration : 6))
+        const rawDuration = Number.parseInt(args.durationSeconds ?? '6', 10)
+        if (!Number.isFinite(rawDuration) || rawDuration < 2 || rawDuration > 10) {
+          throw new Error('xAI video extension duration must be between 2 and 10 seconds')
+        }
+        body.duration = rawDuration
       }
     } else {
       const firstImage = firstFrame || inputImages[0] || ''
-      if (wantsReference && referenceImages.length > 0) {
-        body.reference_images = referenceImages.slice(0, 4).map((url) => ({ url }))
+      if (wantsReference && referenceImages.length + referenceFileIds.length > 0) {
+        body.reference_images = [
+          ...await Promise.all(referenceImages.map((reference) => xaiInputReference(config, reference, 'image'))),
+          ...referenceFileIds.map((fileId) => ({ file_id: fileId })),
+        ]
       } else if (firstImage) {
-        body.image = { url: firstImage }
+        body.image = await xaiInputReference(config, firstImage, 'image', args.firstFrameFileId || '')
+      } else if (args.firstFrameFileId) {
+        body.image = { file_id: args.firstFrameFileId }
       } else if (referenceImages.length > 0) {
-        body.reference_images = referenceImages.slice(0, 4).map((url) => ({ url }))
+        body.reference_images = await Promise.all(referenceImages.map((reference) => xaiInputReference(config, reference, 'image')))
       }
       if (args.aspectRatio || videoDefaults.aspectRatio) body.aspect_ratio = args.aspectRatio || videoDefaults.aspectRatio
       if (args.durationSeconds || videoDefaults.durationSeconds) body.duration = args.durationSeconds || videoDefaults.durationSeconds
       if (args.resolution) body.resolution = args.resolution
-      if (args.seed != null) body.seed = args.seed
     }
-    if (wantsEdit && !video) throw new Error('xAI video edit requires videoUrl/videoFile/inputVideos')
-    if (wantsExtend && !video) throw new Error('xAI video extend requires videoUrl/videoFile/inputVideos')
+    body.storage_options = xaiStorageOptions(args, 'mp4')
+    if (wantsEdit && !video && !explicitVideoFileId) throw new Error('xAI video edit requires videoUrl/videoFile/videoFileId/inputVideos')
+    if (wantsExtend && !video && !explicitVideoFileId) throw new Error('xAI video extend requires videoUrl/videoFile/videoFileId/inputVideos')
     const data = await fetchJson(`${config.baseUrl}${endpoint}`, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 60_000)
-    let videoUrls = extractMediaUrls(data, { kind: 'video' })
+    let videoUrls = xaiPublicUrls(data)
     let requestId = null
     if (videoUrls.length === 0) {
       const taskId = extractTaskId(data)
       if (!taskId) throw new Error(`No video url or task id: ${JSON.stringify(data).slice(0, 800)}`)
       requestId = taskId
       const polled = await pollTask(config, `${config.baseUrl}/videos/${encodeURIComponent(taskId)}`, (d) => {
-        if (extractMediaUrls(d, { kind: 'video' }).length) return 'done'
+        if (xaiPublicUrls(d).length || xaiFileOutputStrings(d, 'public_url_error').length) return 'done'
         return FAILED_STATUSES.includes(extractStatus(d)) ? 'failed' : 'pending'
       })
-      videoUrls = extractMediaUrls(polled, { kind: 'video' })
+      videoUrls = xaiPublicUrls(polled)
+      if (videoUrls.length === 0) {
+        const publicUrlError = xaiFileOutputStrings(polled, 'public_url_error')[0]
+        throw new Error(`xAI video generated but official CDN persistence failed${publicUrlError ? `: ${publicUrlError}` : ''}`)
+      }
     }
     const files = []
     for (let i = 0; i < videoUrls.length; i++) {
@@ -1365,6 +1487,7 @@ async function handleGenerateVideo(config, args) {
 
 async function handle(request) {
   const id = request.id
+  let errorContext
   try {
     if (request.method === 'initialize') {
       result(id, {
@@ -1382,6 +1505,12 @@ async function handle(request) {
       const name = request.params?.name
       const args = request.params?.arguments || {}
       const config = configFromEnv()
+      errorContext = {
+        provider: config.provider,
+        model: config.model,
+        tool: name,
+        ...(typeof args.capability === 'string' ? { capability: args.capability } : {}),
+      }
       let data
       let task = null
       switch (name) {
@@ -1421,9 +1550,12 @@ async function handle(request) {
     if (id !== undefined) result(id, {})
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    const data = err && typeof err === 'object' && 'normalized' in err && err.normalized
-      ? { normalized: err.normalized }
-      : undefined
+    const data = {
+      ...(errorContext || {}),
+      ...(err && typeof err === 'object' && 'normalized' in err && err.normalized
+        ? { normalized: err.normalized }
+        : {}),
+    }
     error(id, -32000, message, data)
   }
 }

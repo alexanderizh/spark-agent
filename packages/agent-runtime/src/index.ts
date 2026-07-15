@@ -13,6 +13,9 @@ export {
   type GenerateCanvasTextResult,
 } from './services/canvas-text-generator.js'
 export { MediaRouterService } from './services/media/media-router.service.js'
+export { XAI_MAX_FILE_BYTES, XaiFilesClient } from './services/media/xai-files.client.js'
+export type { XaiFileObject, XaiFilesPage } from './services/media/xai-files.client.js'
+export type { MediaUploader, MediaUploadInput, MediaUploadResult } from './services/media/media-uploader.js'
 export { MediaModelCatalogService } from './services/media/media-model-catalog.service.js'
 export type {
   MediaModelCatalogItem,
