@@ -3,6 +3,7 @@ import {
   boardHistorySignature,
   createHistoryEntry,
   mergeCanvasBackgroundTaskSnapshot,
+  mergeCanvasMutationSnapshot,
   shouldRefreshCanvasProjectsForTaskStream,
 } from './canvas.store'
 import type { CanvasSnapshot } from './canvas.types'
@@ -230,7 +231,7 @@ describe('mergeCanvasBackgroundTaskSnapshot', () => {
     })
     const staleNext = makeSnapshot({
       nodes: makeSnapshot().nodes.map((node) =>
-        node.id === 'node-1' ? { ...node, x: 88 } : node,
+        node.id === 'node-1' ? { ...node, x: 88, updatedAt: '2026-06-01T00:02:00.000Z' } : node,
       ),
     })
 
@@ -241,6 +242,58 @@ describe('mergeCanvasBackgroundTaskSnapshot', () => {
     expect(merged.assets.some((asset) => asset.id === 'generated-asset')).toBe(true)
     expect(merged.tasks.some((task) => task.id === 'generated-task')).toBe(true)
     expect(merged.edges.some((edge) => edge.id === 'generated-edge')).toBe(true)
+  })
+
+  it('keeps the active board viewport and unchanged entity references', () => {
+    const current = makeSnapshot({
+      board: {
+        ...makeSnapshot().board,
+        viewport: { x: -420, y: 180, zoom: 0.72 },
+      },
+    })
+    const next = makeSnapshot({
+      board: { ...makeSnapshot().board, viewport: { x: 0, y: 0, zoom: 1 } },
+      tasks: current.tasks.map((task) => ({
+        ...task,
+        status: 'running' as const,
+        progress: 30,
+        updatedAt: '2026-06-01T00:02:00.000Z',
+      })),
+      nodes: current.nodes.map((node) =>
+        node.id === 'node-1'
+          ? {
+              ...node,
+              data: { ...node.data, status: 'running' as const },
+              updatedAt: '2026-06-01T00:02:00.000Z',
+            }
+          : { ...node },
+      ),
+    })
+
+    const merged = mergeCanvasBackgroundTaskSnapshot(current, next)
+
+    expect(merged.board.viewport).toEqual({ x: -420, y: 180, zoom: 0.72 })
+    expect(merged.nodes.find((node) => node.id === 'node-1')?.data.status).toBe('running')
+    expect(merged.nodes.find((node) => node.id === 'node-other-board')).toBe(current.nodes[1])
+  })
+
+  it('preserves the viewport while honoring structural deletions', () => {
+    const current = makeSnapshot({
+      board: {
+        ...makeSnapshot().board,
+        viewport: { x: -120, y: 64, zoom: 0.9 },
+      },
+    })
+    const next = makeSnapshot({
+      board: { ...makeSnapshot().board, viewport: { x: 0, y: 0, zoom: 1 } },
+      nodes: [makeSnapshot().nodes[0]!],
+    })
+
+    const merged = mergeCanvasMutationSnapshot(current, next)
+
+    expect(merged.board.viewport).toEqual({ x: -120, y: 64, zoom: 0.9 })
+    expect(merged.nodes).toHaveLength(1)
+    expect(merged.nodes[0]?.id).toBe('node-1')
   })
 })
 
