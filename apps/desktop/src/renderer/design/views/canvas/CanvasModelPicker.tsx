@@ -17,6 +17,9 @@ export type CanvasModelPickerProps = {
   value: string
   loading?: boolean
   disabled?: boolean
+  compact?: boolean
+  allowEmpty?: boolean
+  emptyLabel?: string
   onChange: (modelKey: string) => void
 }
 
@@ -30,6 +33,9 @@ export function CanvasModelPicker({
   value,
   loading = false,
   disabled = false,
+  compact = false,
+  allowEmpty = false,
+  emptyLabel = '沿用平台默认',
   onChange,
 }: CanvasModelPickerProps) {
   const [open, setOpen] = useState(false)
@@ -114,23 +120,25 @@ export function CanvasModelPicker({
           )}
         </div>
         <div className="canvas-model-picker-models" role="listbox" aria-label="模型列表">
-          <button
-            type="button"
-            className={`canvas-model-picker-model is-auto${value ? '' : ' is-selected'}`}
-            data-model-key="auto"
-            role="option"
-            aria-selected={!value}
-            onClick={() => chooseModel('')}
-          >
-            <span className="canvas-model-picker-auto-icon">
-              <Icons.Sparkles size={16} />
-            </span>
-            <span className="canvas-model-picker-model-copy">
-              <strong>自动路由</strong>
-              <small>根据任务能力选择已启用模型</small>
-            </span>
-            {!value && <Icons.Check size={15} />}
-          </button>
+          {allowEmpty && (
+            <button
+              type="button"
+              className={`canvas-model-picker-model is-auto${value ? '' : ' is-selected'}`}
+              data-model-key="empty"
+              role="option"
+              aria-selected={!value}
+              onClick={() => chooseModel('')}
+            >
+              <span className="canvas-model-picker-auto-icon">
+                <Icons.Sparkles size={16} />
+              </span>
+              <span className="canvas-model-picker-model-copy">
+                <strong>{emptyLabel}</strong>
+                <small>不固定模型，保留当前默认选择策略</small>
+              </span>
+              {!value && <Icons.Check size={15} />}
+            </button>
+          )}
           {loading ? (
             <div className="canvas-model-picker-loading">
               <Spin size="small" />
@@ -182,19 +190,29 @@ export function CanvasModelPicker({
 
   const triggerLabel = selectedModel
     ? `${selectedModel.providerName ?? selectedModel.providerKind} / ${selectedModel.displayName}`
-    : '自动路由'
+    : allowEmpty
+      ? emptyLabel
+      : '未选择模型'
 
   return (
-    <Tooltip title={selectedModel?.effectiveModelId ?? '由系统自动选择模型'}>
+    <Tooltip
+      title={
+        selectedModel?.effectiveModelId ??
+        (allowEmpty ? '不固定模型，沿用默认选择策略' : '请选择模型')
+      }
+    >
       <Popover
         content={content}
         open={open}
         placement="bottomLeft"
         trigger="click"
+        overlayClassName="canvas-model-picker-overlay"
+        autoAdjustOverflow
+        arrow={false}
         onOpenChange={handleOpenChange}
       >
         <Button
-          className="canvas-model-picker-trigger"
+          className={`canvas-model-picker-trigger${compact ? ' is-compact' : ''}`}
           aria-label="选择模型"
           disabled={disabled}
           icon={

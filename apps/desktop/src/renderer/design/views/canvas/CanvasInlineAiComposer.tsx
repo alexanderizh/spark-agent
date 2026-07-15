@@ -762,7 +762,7 @@ export function CanvasInlineAiComposer({
           {
             key: 'model',
             label: '模型',
-            value: selectedModel?.displayName ?? '自动路由',
+            value: selectedModel?.displayName ?? '未选择模型',
             icon: <Icons.Sparkles size={14} />,
             onClick: () => {
               const trigger =
@@ -860,7 +860,7 @@ export function CanvasInlineAiComposer({
                 ? '正在读取已启用模型...'
                 : supportedMediaModels.length > 0
                   ? `当前能力可用 ${supportedMediaModels.length} 个模型${selectedModel ? ` · ${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}` : ''}`
-                  : '当前能力暂无已启用模型，可继续使用自动路由或先到 Provider 绑定模型。'}
+                  : '当前能力暂无已启用模型，请先到 Provider 绑定。'}
             </div>
           </div>
         )}

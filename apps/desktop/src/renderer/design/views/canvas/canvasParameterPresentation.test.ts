@@ -59,12 +59,12 @@ describe('canvasParameterPresentation', () => {
     })
   })
 
-  it('recognizes ratio-like size fields without treating pixel sizes as ratios', () => {
+  it('recognizes ratio-like size fields including pixel canvas dimensions', () => {
     expect(presentField(field('size', ['1:1', '16:9']))).toMatchObject({
       control: 'aspect-ratio',
     })
     expect(presentField(field('size', ['1024x1024', '1536x1024']))).toMatchObject({
-      control: 'resolution',
+      control: 'aspect-ratio',
     })
   })
 
@@ -72,6 +72,7 @@ describe('canvasParameterPresentation', () => {
     expect(aspectRatioShape('16:9')).toEqual({ width: 32, height: 18 })
     expect(aspectRatioShape('9:16')).toEqual({ width: 18, height: 32 })
     expect(aspectRatioShape('adaptive')).toEqual({ width: 24, height: 18, adaptive: true })
+    expect(aspectRatioShape('1536x1024')).toEqual({ width: 32, height: 21 })
     expect(aspectRatioShape('not-a-ratio')).toEqual({ width: 24, height: 18 })
   })
 

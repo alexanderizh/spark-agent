@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AutoComplete, Input, InputNumber, Popover, Select, Tag, Tooltip, message } from 'antd'
+import { Input, InputNumber, Popover, Select, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import {
@@ -64,6 +64,7 @@ import {
   type SchemaField,
 } from './CanvasInlineAiComposer'
 import { mediaModelKey } from './canvasModelPickerModel'
+import { CanvasOperationParameterControls } from './CanvasOperationParameterControls'
 import {
   mergeSeededModelParamDraft,
   sameCustomParamDrafts,
@@ -745,14 +746,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       ),
     )
   }, [mediaCapabilityIds, mediaModels])
-  const modelOptions = useMemo(
-    () =>
-      supportedMediaModels.map((model) => ({
-        value: mediaModelKey(model),
-        label: `${model.providerName ?? model.providerKind} / ${model.displayName}`,
-      })),
-    [supportedMediaModels],
-  )
   const selectedModel = useMemo(
     () => supportedMediaModels.find((model) => mediaModelKey(model) === selectedModelKey),
     [selectedModelKey, supportedMediaModels],
@@ -922,7 +915,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     [operation, selectedCapability, selectedModel],
   )
   const parameterFields = useMemo(
-    () => allParameterFields.filter(isCommonOperationModelParam),
+    () => allParameterFields.filter((field) => !HIDDEN_MODEL_PARAM_NAMES.has(field.name)),
     [allParameterFields],
   )
 
@@ -1695,6 +1688,112 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     )
   }
 
+  const advancedParameterContent = (
+    <div className="canvas-operation-unified-advanced-extras">
+      {(operation.includes('image') || operation.includes('video')) && (
+        <div className="canvas-operation-unified-advanced-block">
+          <div className="canvas-operation-panel-section-label">反向提示词</div>
+          <Input.TextArea
+            rows={3}
+            value={negativePrompt}
+            placeholder="不希望出现的内容..."
+            onChange={(event) => setNegativePrompt(event.target.value)}
+            disabled={running}
+          />
+        </div>
+      )}
+      <div className="canvas-operation-unified-advanced-block">
+        <div className="canvas-operation-panel-section-title-row">
+          <div className="canvas-operation-panel-section-label">自定义参数</div>
+          <Button
+            size="small"
+            type="text"
+            icon={<Icons.Plus size={13} />}
+            disabled={running}
+            onClick={handleAddCustomParam}
+          >
+            添加
+          </Button>
+        </div>
+        {customParams.length === 0 ? (
+          <div className="canvas-operation-panel-hint">
+            可添加模型私有参数，例如 negative_prompt、camera_control 或 Provider 专属字段。
+          </div>
+        ) : (
+          <div className="canvas-operation-panel-custom-params">
+            {customParams.map((param) => (
+              <div key={param.id} className="canvas-operation-panel-custom-param">
+                <Input
+                  size="middle"
+                  value={param.name}
+                  placeholder="字段名"
+                  disabled={running}
+                  onChange={(event) =>
+                    handleCustomParamPatch(param.id, { name: event.target.value })
+                  }
+                />
+                <Select
+                  size="middle"
+                  value={param.type}
+                  disabled={running}
+                  options={[
+                    { value: 'string', label: '文本' },
+                    { value: 'number', label: '数字' },
+                    { value: 'integer', label: '整数' },
+                    { value: 'boolean', label: '布尔' },
+                    { value: 'json', label: 'JSON' },
+                  ]}
+                  onChange={(value) =>
+                    handleCustomParamPatch(param.id, {
+                      type: String(value) as CustomParamType,
+                    })
+                  }
+                />
+                {param.type === 'boolean' ? (
+                  <Select
+                    size="middle"
+                    allowClear
+                    value={param.value || undefined}
+                    placeholder="值"
+                    disabled={running}
+                    options={[
+                      { value: 'true', label: 'true' },
+                      { value: 'false', label: 'false' },
+                    ]}
+                    onChange={(value) =>
+                      handleCustomParamPatch(param.id, {
+                        value: value == null ? '' : String(value),
+                      })
+                    }
+                  />
+                ) : (
+                  <Input
+                    size="middle"
+                    value={param.value}
+                    placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
+                    type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
+                    disabled={running}
+                    onChange={(event) =>
+                      handleCustomParamPatch(param.id, { value: event.target.value })
+                    }
+                  />
+                )}
+                <Button
+                  size="middle"
+                  type="text"
+                  icon={<Icons.Trash size={13} />}
+                  aria-label="删除自定义参数"
+                  disabled={running}
+                  onClick={() => handleRemoveCustomParam(param.id)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
   if (placement === 'inline' && !fullscreen) {
     return (
       <div
@@ -1899,27 +1998,20 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 )}
               </>
             )}
-            {mediaCapabilityIds.length > 0 &&
-              renderTextClickSelector({
-                pickerId: 'media-model',
-                title: '选择模型',
-                label: '模型',
-                valueText: selectedModel
-                  ? `${selectedModel.providerName ?? selectedModel.providerKind} / ${selectedModel.displayName}`
-                  : modelsLoading
-                    ? '加载中'
-                    : '自动路由',
-                disabled: running,
-                content: renderSingleOptionList(
-                  modelOptions.map((option) => ({
-                    value: String(option.value),
-                    label: option.label,
-                  })),
-                  selectedModelKey,
-                  setSelectedModelKey,
-                  modelsLoading ? '加载模型...' : '自动路由',
-                ),
-              })}
+            {mediaCapabilityIds.length > 0 && (
+              <CanvasOperationParameterControls
+                variant="toolbar"
+                models={supportedMediaModels}
+                modelValue={selectedModelKey}
+                modelLoading={modelsLoading}
+                disabled={running}
+                fields={parameterFields}
+                values={modelParamDraft}
+                advancedContent={advancedParameterContent}
+                onModelChange={setSelectedModelKey}
+                onParameterChange={handleModelParamDraftChange}
+              />
+            )}
             {supportsVideoFrameRoles && (
               <>
                 {renderTextClickSelector({
@@ -1980,214 +2072,67 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   })}
               </>
             )}
-            {parameterFields.map((field) => (
-              <label key={field.name} className="canvas-operation-composer-param">
-                {field.enumValues.length > 0 ? (
-                  renderTextClickSelector({
-                    pickerId: `param:${field.name}`,
-                    title: field.title,
-                    label: (
-                      <Tooltip
-                        title={field.description || `当前模型支持：${field.enumValues.join('、')}`}
-                      >
-                        <span>{field.title}</span>
-                      </Tooltip>
-                    ),
-                    valueText: modelParamDraft[field.name] || '默认',
-                    disabled: running,
-                    content: renderSingleOptionList(
-                      buildOperationPanelEnumOptions(field, modelParamDraft[field.name]).map(
-                        (option) => ({
-                          value: option.value,
-                          label: option.unsupported ? (
-                            <Tooltip title="当前模型不支持">
-                              <span className="canvas-operation-param-option-unsupported">
-                                {option.label}
-                              </span>
-                            </Tooltip>
-                          ) : (
-                            option.label
-                          ),
-                          ...(option.disabled ? { disabled: true } : {}),
-                        }),
-                      ),
-                      modelParamDraft[field.name] || '',
-                      (value) => handleModelParamDraftChange(field.name, value),
-                      '默认',
-                    ),
-                  })
-                ) : field.type === 'boolean' ? (
-                  renderTextClickSelector({
-                    pickerId: `param:${field.name}`,
-                    title: field.title,
-                    label: field.title,
-                    valueText: modelParamDraft[field.name] || '默认',
-                    disabled: running,
-                    content: renderSingleOptionList(
-                      [
-                        { value: 'true', label: 'true' },
-                        { value: 'false', label: 'false' },
-                      ],
-                      modelParamDraft[field.name] || '',
-                      (value) => handleModelParamDraftChange(field.name, value),
-                      '默认',
-                    ),
-                  })
-                ) : (
-                  <>
-                    <span title={field.description}>{field.title}</span>
-                    <Input
-                      size="middle"
-                      type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
-                      placeholder={field.placeholder}
-                      value={modelParamDraft[field.name] ?? ''}
-                      disabled={running}
-                      onChange={(e) => handleModelParamDraftChange(field.name, e.target.value)}
-                    />
-                  </>
-                )}
-              </label>
-            ))}
-            {(operation.includes('image') || operation.includes('video')) &&
+            {mediaCapabilityIds.length === 0 &&
               renderTextClickSelector({
-                pickerId: 'negative-prompt',
-                title: '反向提示词',
-                label: '反向提示词',
-                valueText: negativePrompt.trim() ? '已填写' : '未填写',
+                pickerId: 'custom-params',
+                title: '自定义参数',
+                label: '自定义参数',
+                ...(customParams.length > 0 ? { valueText: `${customParams.length} 项` } : {}),
                 disabled: running,
-                popoverClassName: 'canvas-operation-composer-popover',
-                content: (
-                  <div className="canvas-operation-composer-popover">
-                    <Input.TextArea
-                      rows={5}
-                      value={negativePrompt}
-                      placeholder="不希望出现的内容..."
-                      onChange={(e) => setNegativePrompt(e.target.value)}
-                      disabled={running}
-                    />
-                  </div>
-                ),
+                popoverClassName: 'canvas-operation-composer-popover is-custom',
+                content: advancedParameterContent,
               })}
-            {renderTextClickSelector({
-              pickerId: 'custom-params',
-              title: '自定义参数',
-              label: '自定义参数',
-              ...(customParams.length > 0 ? { valueText: `${customParams.length} 项` } : {}),
-              disabled: running,
-              popoverClassName: 'canvas-operation-composer-popover is-custom',
-              content: (
-                <>
-                  <div className="canvas-operation-composer-popover-title">自定义参数</div>
-                  {customParams.map((param) => (
-                    <div key={param.id} className="canvas-operation-panel-custom-param">
-                      <Input
-                        size="middle"
-                        value={param.name}
-                        placeholder="字段名"
-                        disabled={running}
-                        onChange={(event) =>
-                          handleCustomParamPatch(param.id, { name: event.target.value })
-                        }
-                      />
-                      <Select
-                        size="middle"
-                        value={param.type}
-                        disabled={running}
-                        options={[
-                          { value: 'string', label: '文本' },
-                          { value: 'number', label: '数字' },
-                          { value: 'integer', label: '整数' },
-                          { value: 'boolean', label: '布尔' },
-                          { value: 'json', label: 'JSON' },
-                        ]}
-                        onChange={(value) =>
-                          handleCustomParamPatch(param.id, {
-                            type: String(value) as CustomParamType,
-                          })
-                        }
-                      />
-                      <Input
-                        size="middle"
-                        value={param.value}
-                        placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
-                        disabled={running}
-                        onChange={(event) =>
-                          handleCustomParamPatch(param.id, { value: event.target.value })
-                        }
-                      />
-                      <Button
-                        size="middle"
-                        type="text"
-                        icon={<Icons.Trash size={13} />}
-                        aria-label="删除自定义参数"
-                        disabled={running}
-                        onMouseDown={(event) => {
-                          event.preventDefault()
-                          handleRemoveCustomParam(param.id)
-                        }}
-                      />
-                    </div>
-                  ))}
-                  <Button
-                    size="middle"
-                    type="text"
-                    icon={<Icons.Plus size={13} />}
-                    disabled={running}
-                    onMouseDown={(event) => {
-                      event.preventDefault()
-                      handleAddCustomParam()
-                    }}
-                  >
-                    添加自定义参数
-                  </Button>
-                </>
-              ),
-            })}
           </div>
           <div className="canvas-operation-composer-actions">
-            <Button
-              size="middle"
-              icon={<Icons.RotateCcw size={13} />}
-              disabled={running || outputNodes.length === 0}
-              onClick={() => {
-                onRetry()
-                message.info('已发起重试，将在右侧生成新的产出节点')
-              }}
-            >
-              重试
-            </Button>
-            <Button
-              size="middle"
-              loading={savingDraft}
-              disabled={running || node.data.status === 'running'}
-              onClick={() => void handleSaveDraft()}
-            >
-              保存
-            </Button>
+            <Tooltip title="重试任务">
+              <Button
+                size="middle"
+                type="text"
+                aria-label="重试任务"
+                icon={<Icons.RotateCcw size={14} />}
+                disabled={running || outputNodes.length === 0}
+                onClick={() => {
+                  onRetry()
+                  message.info('已发起重试，将在右侧生成新的产出节点')
+                }}
+              />
+            </Tooltip>
+            <Tooltip title="保存配置">
+              <Button
+                size="middle"
+                type="text"
+                aria-label="保存配置"
+                icon={<Icons.Check size={14} />}
+                loading={savingDraft}
+                disabled={running || node.data.status === 'running'}
+                onClick={() => void handleSaveDraft()}
+              />
+            </Tooltip>
             {(running || submitting || node.data.status === 'running') &&
               task?.id &&
               onCancelTask && (
                 <Button
                   size="middle"
                   danger
+                  type="text"
+                  aria-label="取消任务"
                   icon={<Icons.XCircle size={13} />}
                   loading={cancelling}
                   onClick={() => void handleCancelTask()}
-                >
-                  取消任务
-                </Button>
+                />
               )}
-            <Button
-              size="middle"
-              type="primary"
-              className="canvas-operation-composer-submit"
-              icon={<Icons.Sparkles size={13} />}
-              loading={running || submitting || node.data.status === 'running'}
-              disabled={running || submitting || node.data.status === 'running'}
-              onClick={() => void handleRun()}
-            >
-              {node.data.status === 'running' ? '运行中' : submitting ? '提交中…' : '提交任务'}
-            </Button>
+            <Tooltip title={node.data.status === 'running' ? '运行中' : '提交任务'}>
+              <Button
+                size="middle"
+                type="primary"
+                className="canvas-operation-composer-submit"
+                aria-label="提交任务"
+                icon={<Icons.Send size={14} />}
+                loading={running || submitting || node.data.status === 'running'}
+                disabled={running || submitting || node.data.status === 'running'}
+                onClick={() => void handleRun()}
+              />
+            </Tooltip>
           </div>
         </div>
       </div>
@@ -2424,25 +2369,31 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
 
         {mediaCapabilityIds.length > 0 && (
           <div className="canvas-operation-panel-section canvas-operation-panel-section-model">
-            <div className="canvas-operation-panel-section-label">模型</div>
-            <Select
-              size="middle"
-              allowClear
-              loading={modelsLoading}
-              value={selectedModelKey || undefined}
-              placeholder={modelsLoading ? '加载模型目录...' : '自动路由'}
-              options={modelOptions}
-              onChange={(value) => setSelectedModelKey(value == null ? '' : String(value))}
+            <div className="canvas-operation-panel-section-label">模型与参数</div>
+            <CanvasOperationParameterControls
+              variant="panel"
+              models={supportedMediaModels}
+              modelValue={selectedModelKey}
+              modelLoading={modelsLoading}
               disabled={running}
+              fields={parameterFields}
+              values={modelParamDraft}
+              advancedContent={advancedParameterContent}
+              modelMeta={
+                <>
+                  {capabilityTag}
+                  <div className="canvas-operation-panel-hint">
+                    {modelsLoading
+                      ? '正在读取已启用模型...'
+                      : supportedMediaModels.length > 0
+                        ? `当前能力可用 ${supportedMediaModels.length} 个模型${selectedModel ? ` · ${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}` : ''}`
+                        : '当前能力暂无已启用模型，请先到 Provider 绑定。'}
+                  </div>
+                </>
+              }
+              onModelChange={setSelectedModelKey}
+              onParameterChange={handleModelParamDraftChange}
             />
-            {capabilityTag}
-            <div className="canvas-operation-panel-hint">
-              {modelsLoading
-                ? '正在读取已启用模型...'
-                : supportedMediaModels.length > 0
-                  ? `当前能力可用 ${supportedMediaModels.length} 个模型${selectedModel ? ` · ${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}` : ''}`
-                  : '当前能力暂无已启用模型，可继续使用自动路由或先到 Provider 绑定模型。'}
-            </div>
           </div>
         )}
 
@@ -2540,112 +2491,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           </div>
         </div>
 
-        {/* 负面提示词（仅图像/视频类） */}
-        {(operation.includes('image') || operation.includes('video')) && (
-          <div className="canvas-operation-panel-section canvas-operation-panel-section-negative">
-            <div className="canvas-operation-panel-section-label">负面提示词（可选）</div>
-            <Input.TextArea
-              rows={2}
-              value={negativePrompt}
-              placeholder="不希望出现的内容..."
-              onChange={(e) => setNegativePrompt(e.target.value)}
-              disabled={running}
-            />
-          </div>
-        )}
-
-        {/* 操作专属参数 */}
-        {parameterFields.length > 0 && (
-          <div className="canvas-operation-panel-section canvas-operation-panel-section-params">
-            <div className="canvas-operation-panel-section-label">模型参数</div>
-            <div className="canvas-operation-panel-params">
-              {parameterFields.map((field) => (
-                <label key={field.name} className="canvas-operation-panel-param">
-                  <span title={field.description}>{field.title}</span>
-                  {field.enumValues.length > 0 ? (
-                    field.allowCustom ? (
-                      <AutoComplete
-                        size="middle"
-                        allowClear
-                        value={modelParamDraft[field.name] || undefined}
-                        options={buildOperationPanelEnumOptions(
-                          field,
-                          modelParamDraft[field.name],
-                        ).map((option) => ({ value: option.value, label: option.label }))}
-                        filterOption={(input, option) =>
-                          String(option?.value ?? '')
-                            .toLowerCase()
-                            .includes(input.toLowerCase())
-                        }
-                        onChange={(value) =>
-                          handleModelParamDraftChange(
-                            field.name,
-                            value == null ? '' : String(value),
-                          )
-                        }
-                        disabled={running}
-                      />
-                    ) : (
-                      <Select
-                        size="middle"
-                        allowClear
-                        value={modelParamDraft[field.name] || undefined}
-                        options={buildOperationPanelEnumOptions(
-                          field,
-                          modelParamDraft[field.name],
-                        ).map((option) => ({
-                          value: option.value,
-                          label: option.unsupported ? (
-                            <Tooltip title="当前模型不支持">
-                              <span className="canvas-operation-param-option-unsupported">
-                                {option.label}
-                              </span>
-                            </Tooltip>
-                          ) : (
-                            option.label
-                          ),
-                          ...(option.disabled ? { disabled: true } : {}),
-                        }))}
-                        onChange={(value) =>
-                          handleModelParamDraftChange(
-                            field.name,
-                            value == null ? '' : String(value),
-                          )
-                        }
-                        disabled={running}
-                      />
-                    )
-                  ) : field.type === 'boolean' ? (
-                    <Select
-                      size="middle"
-                      allowClear
-                      value={modelParamDraft[field.name] || undefined}
-                      options={[
-                        { value: 'true', label: 'true' },
-                        { value: 'false', label: 'false' },
-                      ]}
-                      onChange={(value) =>
-                        handleModelParamDraftChange(field.name, value == null ? '' : String(value))
-                      }
-                      disabled={running}
-                    />
-                  ) : (
-                    <Input
-                      size="middle"
-                      type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
-                      placeholder={field.placeholder}
-                      value={modelParamDraft[field.name] ?? ''}
-                      onChange={(e) => handleModelParamDraftChange(field.name, e.target.value)}
-                      disabled={running}
-                    />
-                  )}
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="canvas-operation-panel-section canvas-operation-panel-section-custom">
+        {mediaCapabilityIds.length === 0 && (
+          <div className="canvas-operation-panel-section canvas-operation-panel-section-custom">
           <div className="canvas-operation-panel-section-title-row">
             <div className="canvas-operation-panel-section-label">自定义参数</div>
             <Button
@@ -2733,46 +2580,59 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               ))}
             </div>
           )}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="canvas-operation-panel-footer">
-        <Button
-          size="middle"
-          icon={<Icons.RotateCcw size={13} />}
-          disabled={running || outputNodes.length === 0}
-          onClick={() => {
-            onRetry()
-            message.info('已发起重试，将在右侧生成新的产出节点')
-          }}
-        >
-          重试
-        </Button>
+        <Tooltip title="重试任务">
+          <Button
+            size="middle"
+            type="text"
+            aria-label="重试任务"
+            icon={<Icons.RotateCcw size={14} />}
+            disabled={running || outputNodes.length === 0}
+            onClick={() => {
+              onRetry()
+              message.info('已发起重试，将在右侧生成新的产出节点')
+            }}
+          />
+        </Tooltip>
         <div className="canvas-operation-panel-footer-spacer" />
-        <Button
-          size="middle"
-          loading={savingDraft}
-          disabled={running || node.data.status === 'running'}
-          onClick={() => void handleSaveDraft()}
-        >
-          保存配置
-        </Button>
+        <Tooltip title="保存配置">
+          <Button
+            size="middle"
+            type="text"
+            aria-label="保存配置"
+            icon={<Icons.Check size={14} />}
+            loading={savingDraft}
+            disabled={running || node.data.status === 'running'}
+            onClick={() => void handleSaveDraft()}
+          />
+        </Tooltip>
         {placement !== 'inline' && (
-          <Button size="middle" onClick={onClose}>
-            取消
-          </Button>
+          <Tooltip title="关闭配置">
+            <Button
+              size="middle"
+              type="text"
+              aria-label="关闭配置"
+              icon={<Icons.X size={14} />}
+              onClick={onClose}
+            />
+          </Tooltip>
         )}
-        <Button
-          size="middle"
-          type="primary"
-          className="canvas-operation-composer-submit"
-          icon={<Icons.Sparkles size={13} />}
-          loading={running || submitting || node.data.status === 'running'}
-          disabled={running || submitting || node.data.status === 'running'}
-          onClick={() => void handleRun()}
-        >
-          {node.data.status === 'running' ? '运行中' : submitting ? '提交中…' : '提交任务'}
-        </Button>
+        <Tooltip title={node.data.status === 'running' ? '运行中' : '提交任务'}>
+          <Button
+            size="middle"
+            type="primary"
+            className="canvas-operation-composer-submit"
+            aria-label="提交任务"
+            icon={<Icons.Send size={14} />}
+            loading={running || submitting || node.data.status === 'running'}
+            disabled={running || submitting || node.data.status === 'running'}
+            onClick={() => void handleRun()}
+          />
+        </Tooltip>
       </div>
     </div>
   )

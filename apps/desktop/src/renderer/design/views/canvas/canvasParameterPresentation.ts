@@ -79,6 +79,7 @@ function isRatioValue(value: string): boolean {
   const trimmed = value.trim().toLowerCase()
   return (
     /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/.test(trimmed) ||
+    /^\d+(?:\.\d+)?[x×]\d+(?:\.\d+)?$/.test(trimmed) ||
     ['auto', 'adaptive', '智能比例', '自适应'].includes(trimmed)
   )
 }
@@ -162,7 +163,7 @@ export function aspectRatioShape(value: string): {
   if (['auto', 'adaptive', '智能比例', '自适应'].includes(normalized)) {
     return { width: 24, height: 18, adaptive: true }
   }
-  const match = normalized.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/)
+  const match = normalized.match(/^(\d+(?:\.\d+)?)(?::|x|×)(\d+(?:\.\d+)?)$/)
   if (!match) return { width: 24, height: 18 }
   const width = Number(match[1])
   const height = Number(match[2])

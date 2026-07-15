@@ -10,7 +10,7 @@
 
 本次改造覆盖：
 
-- `CanvasInlineAiComposer` 的模型选择、Schema 参数展示、常用/高级参数组织和底部操作栏。
+- `CanvasInlineAiComposer`、`CanvasOperationPanel` 与 `CanvasOperationPresetModal` 的模型选择、Schema 参数展示、常用/高级参数组织和底部操作栏；所有画布任务配置入口共享同一套展示组件。
 - 单节点右键菜单及相关节点快捷入口中的生成操作分组。
 - `CanvasProjectsView` 项目卡片的显式打开交互。
 - 与上述交互直接相关的样式、展示模型和自动化测试。
@@ -30,7 +30,7 @@
 
 模型选择器使用自定义双栏弹层：
 
-- 触发器展示当前 Provider 图标、模型名和必要的能力摘要；未选择时展示“自动路由”。
+- 触发器展示当前 Provider 图标、模型名和必要的能力摘要；任务面板未选择时明确提示“未选择模型”，允许不固定模型的预设入口提供“沿用平台默认”选项。
 - 左栏按 `providerProfileId` 分组，显示 Provider 名称、品牌图标和可用模型数量。
 - 右栏显示当前 Provider 下的模型，包含模型展示名、实际模型 ID、能力类型和选中状态。
 - 同名模型在不同 Provider 下保持独立选项，稳定值继续使用 `providerProfileId + manifestId + effectiveModelId`。
@@ -65,7 +65,7 @@
 
 ## 配置卡布局
 
-配置卡保留主提示词编辑区域，底部改为统一工具栏：
+配置卡保留主提示词编辑区域，底部改为统一工具栏；节点内联面板、展开面板与节点预设中心共享相同的模型/参数控件：
 
 - 左侧依次显示模型、比例、分辨率、数量或时长等摘要按钮。
 - 点击摘要按钮直接打开对应选择器，不要求用户进入完整高级面板。
@@ -73,7 +73,7 @@
 - 取消、关闭、提交和其他底部动作改为图标按钮，文字通过 Tooltip 和无障碍标签提供。
 - 高级设置默认折叠，展开状态写入独立的 renderer 本地偏好键并在会话间恢复。
 - 窄宽度下参数摘要允许水平滚动，右侧主操作保持可见；极窄宽度下再换为两行布局。
-- 全屏模式与浮动模式共享同一组件和交互，不复制实现。
+- 全屏模式、浮动模式与预设配置共享同一组件和交互，不复制模型/参数实现。
 
 ## 菜单整理
 
@@ -99,8 +99,11 @@
 ## 模块边界
 
 - `CanvasInlineAiComposer.tsx`：保留状态编排、草稿恢复、任务 payload 组装和提交。
+- `CanvasOperationPanel.tsx`：实际任务节点的内联/展开配置入口，复用统一模型与参数控件并保留原提交链路。
+- `CanvasOperationPresetModal.tsx`：应用级节点预设入口，复用统一模型与参数控件并保留原预设存储链路。
 - `canvasModelPickerModel.ts`：Provider 分组、搜索、稳定键和选中项解析的纯逻辑。
 - `CanvasModelPicker.tsx`：双栏模型选择 UI。
+- `CanvasOperationParameterControls.tsx`：工具栏与面板两种布局的统一模型/参数组合控件。
 - `canvasParameterPresentation.ts`：Schema 字段语义识别、常用/高级分类、比例图形信息和摘要生成。
 - `CanvasParameterControl.tsx`：按展示语义渲染具体参数控件。
 - `CanvasComposerToolbar.tsx`：底部摘要、折叠控制和图标动作。

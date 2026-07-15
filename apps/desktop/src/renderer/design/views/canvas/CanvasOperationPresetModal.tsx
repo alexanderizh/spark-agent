@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AutoComplete, Input, Modal, Select, Tag, message } from 'antd'
+import { Input, Modal, Select, Tag, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import {
   capabilityForOperation,
@@ -11,6 +11,8 @@ import {
 
 import { Icons } from '../../Icons'
 import { AgentPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
+import { CanvasModelPicker } from './CanvasModelPicker'
+import { CanvasOperationParameterControls } from './CanvasOperationParameterControls'
 import { canvasApi, operationLabel } from './canvas.api'
 import {
   CANVAS_PRESET_TARGETS,
@@ -198,14 +200,6 @@ export function CanvasOperationPresetModal({
       ),
     )
   }, [mediaCapabilityIds, mediaModels])
-  const modelOptions = useMemo(
-    () =>
-      supportedMediaModels.map((model) => ({
-        value: mediaModelKey(model),
-        label: `${model.providerName ?? model.providerKind} / ${model.displayName}`,
-      })),
-    [supportedMediaModels],
-  )
   const selectedModel = useMemo(
     () => supportedMediaModels.find((model) => mediaModelKey(model) === selectedModelKey) ?? null,
     [selectedModelKey, supportedMediaModels],
@@ -623,6 +617,118 @@ export function CanvasOperationPresetModal({
     }
   }, [activePresetOnly])
 
+  const advancedParameterContent = (
+    <div className="canvas-operation-unified-advanced-extras">
+      <label className="canvas-operation-preset-field canvas-operation-unified-advanced-block">
+        <span>预置反向提示词</span>
+        <Input.TextArea
+          value={negativePrompt}
+          rows={4}
+          placeholder="例如：不要水印、不要额外人物、不要低清晰度"
+          onChange={(event) => setNegativePrompt(event.target.value)}
+        />
+      </label>
+
+      <div className="canvas-operation-unified-advanced-block">
+        <div className="canvas-operation-preset-section-head canvas-operation-preset-custom-head">
+          <div>
+            <strong>自定义参数</strong>
+            <span>补充 Provider 私有字段</span>
+          </div>
+          <Button
+            size="middle"
+            type="text"
+            icon={<Icons.Plus size={13} />}
+            onClick={handleAddCustomParam}
+          >
+            添加
+          </Button>
+        </div>
+        {customParams.length === 0 ? (
+          <div className="canvas-operation-preset-hint">
+            可补充模型私有字段，例如 `seed`、`camera_control`、`reasoning_effort`。
+          </div>
+        ) : (
+          <div className="canvas-operation-preset-custom-list">
+            {customParams.map((param) => (
+              <div key={param.id} className="canvas-operation-preset-custom-item">
+                <Input
+                  size="middle"
+                  value={param.name}
+                  placeholder="字段名"
+                  onChange={(event) =>
+                    handleCustomParamPatch(param.id, { name: event.target.value })
+                  }
+                />
+                <Select
+                  size="middle"
+                  value={param.type}
+                  options={[
+                    { value: 'string', label: '文本' },
+                    { value: 'number', label: '数字' },
+                    { value: 'integer', label: '整数' },
+                    { value: 'boolean', label: '布尔' },
+                    { value: 'json', label: 'JSON' },
+                  ]}
+                  onChange={(value) =>
+                    handleCustomParamPatch(param.id, {
+                      type: String(value) as CustomParamType,
+                    })
+                  }
+                />
+                {param.type === 'boolean' ? (
+                  <Select
+                    size="middle"
+                    allowClear
+                    value={param.value || undefined}
+                    placeholder="值"
+                    options={[
+                      { value: 'true', label: 'true' },
+                      { value: 'false', label: 'false' },
+                    ]}
+                    onChange={(value) =>
+                      handleCustomParamPatch(param.id, {
+                        value: value == null ? '' : String(value),
+                      })
+                    }
+                  />
+                ) : (
+                  <Input
+                    size="middle"
+                    value={param.value}
+                    placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
+                    type={
+                      param.type === 'integer' || param.type === 'number' ? 'number' : 'text'
+                    }
+                    onChange={(event) =>
+                      handleCustomParamPatch(param.id, { value: event.target.value })
+                    }
+                  />
+                )}
+                <Button
+                  size="middle"
+                  type="text"
+                  icon={<Icons.Trash size={13} />}
+                  aria-label="删除自定义参数"
+                  onClick={() => handleRemoveCustomParam(param.id)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <label className="canvas-operation-preset-field canvas-operation-unified-advanced-block">
+        <span>当前默认参数预览</span>
+        <Input.TextArea
+          value={formatCanvasOperationPresetModelParams(buildCurrentModelParams())}
+          rows={6}
+          readOnly
+        />
+      </label>
+    </div>
+  )
+
   return (
     <Modal
       className="canvas-operation-preset-dialog"
@@ -730,19 +836,17 @@ export function CanvasOperationPresetModal({
                       }}
                     />
                   </div>
-                  <Select
-                    size="middle"
-                    allowClear
-                    className="canvas-operation-preset-runtime-bulk canvas-operation-preset-skill-select"
-                    loading={modelsLoading}
-                    value={bulkMediaModelKey || undefined}
-                    placeholder={modelsLoading ? '加载模型目录...' : '全部媒体节点默认模型'}
-                    options={mediaModels.map((model) => ({
-                      value: mediaModelKey(model),
-                      label: `${model.providerName ?? model.providerKind} / ${model.displayName}`,
-                    }))}
-                    onChange={(value) => setBulkMediaModelKey(value == null ? '' : String(value))}
-                  />
+                  <div className="canvas-operation-preset-runtime-bulk canvas-operation-preset-media-model">
+                    <span>全部媒体节点默认模型</span>
+                    <CanvasModelPicker
+                      models={mediaModels}
+                      value={bulkMediaModelKey}
+                      loading={modelsLoading}
+                      disabled={modelsLoading || mediaModels.length === 0}
+                      compact
+                      onChange={setBulkMediaModelKey}
+                    />
+                  </div>
                   <div className="canvas-operation-preset-runtime-actions">
                     <Button size="middle" type="primary" onClick={applyBulkDefaults}>
                       应用到全部节点
@@ -792,24 +896,7 @@ export function CanvasOperationPresetModal({
                       onChange={(value) => setSelectedSkillIds(value.map(String))}
                     />
                   </div>
-                ) : (
-                  <div className="canvas-operation-preset-model-block">
-                    <label className="canvas-operation-preset-field">
-                      <span>固定模型</span>
-                      <Select
-                        size="middle"
-                        allowClear
-                        loading={modelsLoading}
-                        value={selectedModelKey || undefined}
-                        placeholder={modelsLoading ? '加载模型目录...' : '选择默认模型'}
-                        options={modelOptions}
-                        onChange={(value) =>
-                          setSelectedModelKey(value == null ? '' : String(value))
-                        }
-                      />
-                    </label>
-                  </div>
-                )}
+                ) : null}
                 <div className="canvas-operation-preset-summary">
                   <Icons.Bot size={13} />
                   <span>{runtimeSummary}</span>
@@ -863,196 +950,40 @@ export function CanvasOperationPresetModal({
                     onChange={(event) => setPrompt(event.target.value)}
                   />
                 </label>
-                <label className="canvas-operation-preset-field">
-                  <span>预置反向提示词</span>
-                  <Input.TextArea
-                    value={negativePrompt}
-                    rows={4}
-                    placeholder="例如：不要水印、不要额外人物、不要低清晰度"
-                    onChange={(event) => setNegativePrompt(event.target.value)}
-                  />
-                </label>
               </section>
 
               <section className="canvas-operation-preset-section">
                 <div className="canvas-operation-preset-section-head">
-                  <strong>模型参数默认值</strong>
+                  <div>
+                    <strong>模型与生成参数</strong>
+                    <span>常用参数直接展示，低频参数与反向提示词统一折叠</span>
+                  </div>
                   <Tag color="purple" bordered>
-                    跟随模型参数表
+                    统一配置
                   </Tag>
                 </div>
-                {parameterFields.length > 0 ? (
-                  <div className="canvas-operation-preset-param-grid">
-                    {parameterFields.map((field) => (
-                      <label key={field.name} className="canvas-operation-preset-field">
-                        <span title={field.description}>{field.title}</span>
-                        {field.enumValues.length > 0 ? (
-                          field.allowCustom ? (
-                            <AutoComplete
-                              size="middle"
-                              allowClear
-                              value={modelParamDraft[field.name] || undefined}
-                              options={field.enumValues.map((value) => ({ value, label: value }))}
-                              filterOption={(input, option) =>
-                                String(option?.value ?? '')
-                                  .toLowerCase()
-                                  .includes(input.toLowerCase())
-                              }
-                              onChange={(value) =>
-                                handleModelParamDraftChange(
-                                  field.name,
-                                  value == null ? '' : String(value),
-                                )
-                              }
-                            />
-                          ) : (
-                            <Select
-                              size="middle"
-                              allowClear
-                              value={modelParamDraft[field.name] || undefined}
-                              options={field.enumValues.map((value) => ({ value, label: value }))}
-                              onChange={(value) =>
-                                handleModelParamDraftChange(
-                                  field.name,
-                                  value == null ? '' : String(value),
-                                )
-                              }
-                            />
-                          )
-                        ) : field.type === 'boolean' ? (
-                          <Select
-                            size="middle"
-                            allowClear
-                            value={modelParamDraft[field.name] || undefined}
-                            options={[
-                              { value: 'true', label: 'true' },
-                              { value: 'false', label: 'false' },
-                            ]}
-                            onChange={(value) =>
-                              handleModelParamDraftChange(
-                                field.name,
-                                value == null ? '' : String(value),
-                              )
-                            }
-                          />
-                        ) : (
-                          <Input
-                            size="middle"
-                            type={
-                              field.type === 'integer' || field.type === 'number'
-                                ? 'number'
-                                : 'text'
-                            }
-                            placeholder={field.placeholder}
-                            value={modelParamDraft[field.name] ?? ''}
-                            onChange={(event) =>
-                              handleModelParamDraftChange(field.name, event.target.value)
-                            }
-                          />
-                        )}
-                      </label>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="canvas-operation-preset-hint">
-                    当前模型没有可结构化展示的参数表，仍可在下方添加自定义参数。
-                  </div>
-                )}
-
-                <div className="canvas-operation-preset-section-head canvas-operation-preset-custom-head">
-                  <strong>自定义参数</strong>
-                  <Button
-                    size="middle"
-                    type="text"
-                    icon={<Icons.Plus size={13} />}
-                    onClick={handleAddCustomParam}
-                  >
-                    添加
-                  </Button>
-                </div>
-                {customParams.length === 0 ? (
-                  <div className="canvas-operation-preset-hint">
-                    可补充模型私有字段，例如 `seed`、`camera_control`、`reasoning_effort`。
-                  </div>
-                ) : (
-                  <div className="canvas-operation-preset-custom-list">
-                    {customParams.map((param) => (
-                      <div key={param.id} className="canvas-operation-preset-custom-item">
-                        <Input
-                          size="middle"
-                          value={param.name}
-                          placeholder="字段名"
-                          onChange={(event) =>
-                            handleCustomParamPatch(param.id, { name: event.target.value })
-                          }
-                        />
-                        <Select
-                          size="middle"
-                          value={param.type}
-                          options={[
-                            { value: 'string', label: '文本' },
-                            { value: 'number', label: '数字' },
-                            { value: 'integer', label: '整数' },
-                            { value: 'boolean', label: '布尔' },
-                            { value: 'json', label: 'JSON' },
-                          ]}
-                          onChange={(value) =>
-                            handleCustomParamPatch(param.id, {
-                              type: String(value) as CustomParamType,
-                            })
-                          }
-                        />
-                        {param.type === 'boolean' ? (
-                          <Select
-                            size="middle"
-                            allowClear
-                            value={param.value || undefined}
-                            placeholder="值"
-                            options={[
-                              { value: 'true', label: 'true' },
-                              { value: 'false', label: 'false' },
-                            ]}
-                            onChange={(value) =>
-                              handleCustomParamPatch(param.id, {
-                                value: value == null ? '' : String(value),
-                              })
-                            }
-                          />
-                        ) : (
-                          <Input
-                            size="middle"
-                            value={param.value}
-                            placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
-                            type={
-                              param.type === 'integer' || param.type === 'number'
-                                ? 'number'
-                                : 'text'
-                            }
-                            onChange={(event) =>
-                              handleCustomParamPatch(param.id, { value: event.target.value })
-                            }
-                          />
-                        )}
-                        <Button
-                          size="middle"
-                          type="text"
-                          icon={<Icons.Trash size={13} />}
-                          aria-label="删除自定义参数"
-                          onClick={() => handleRemoveCustomParam(param.id)}
-                        />
+                <CanvasOperationParameterControls
+                  variant="panel"
+                  models={supportedMediaModels}
+                  modelValue={selectedModelKey}
+                  modelLoading={modelsLoading}
+                  disabled={saving}
+                  showModelPicker={!isTextOperation}
+                  allowEmptyModel
+                  emptyModelLabel="沿用平台默认"
+                  fields={parameterFields}
+                  values={modelParamDraft}
+                  modelMeta={
+                    parameterFields.length === 0 ? (
+                      <div className="canvas-operation-preset-hint">
+                        当前模型没有可结构化展示的参数表，仍可在高级设置中添加自定义参数。
                       </div>
-                    ))}
-                  </div>
-                )}
-
-                <label className="canvas-operation-preset-field">
-                  <span>当前默认参数预览</span>
-                  <Input.TextArea
-                    value={formatCanvasOperationPresetModelParams(buildCurrentModelParams())}
-                    rows={6}
-                    readOnly
-                  />
-                </label>
+                    ) : null
+                  }
+                  advancedContent={advancedParameterContent}
+                  onModelChange={setSelectedModelKey}
+                  onParameterChange={handleModelParamDraftChange}
+                />
               </section>
             </div>
           </div>

@@ -107,6 +107,20 @@ vi.mock('./CanvasAgentModal', () => ({
     React.createElement('div', { className: 'provider-picker-stub' }, 'Provider'),
 }))
 
+vi.mock('./CanvasModelPicker', () => ({
+  CanvasModelPicker: () =>
+    React.createElement('div', { className: 'canvas-model-picker-stub' }, 'Media model picker'),
+}))
+
+vi.mock('./CanvasOperationParameterControls', () => ({
+  CanvasOperationParameterControls: () =>
+    React.createElement(
+      'div',
+      { className: 'canvas-operation-parameter-controls-stub' },
+      'Unified parameters',
+    ),
+}))
+
 vi.mock('./canvas.api', () => ({
   canvasApi: {
     listMediaModels: vi.fn().mockResolvedValue({ models: [] }),
@@ -163,5 +177,23 @@ describe('CanvasOperationPresetModal', () => {
       closeButton?.click()
     })
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the hierarchical model picker and unified parameter controls for media presets', async () => {
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<CanvasOperationPresetModal open onClose={vi.fn()} />)
+    })
+
+    const mediaTarget = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.canvas-operation-preset-sidebar-item'),
+    ).find((button) => button.textContent?.includes('text_to_image'))
+
+    expect(mediaTarget).not.toBeUndefined()
+    await act(async () => mediaTarget?.click())
+
+    expect(container.querySelector('.canvas-model-picker-stub')).not.toBeNull()
+    expect(container.querySelector('.canvas-operation-parameter-controls-stub')).not.toBeNull()
+    expect(container.querySelector('.canvas-operation-preset-param-grid')).toBeNull()
   })
 })
