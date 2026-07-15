@@ -1817,7 +1817,11 @@ export function CanvasWorkspaceView({
       node,
       sourceImageAsset,
       ownerAsset,
-      subviews: readCharacterSubviews(ownerAsset.metadata),
+      // 子视图按来源图片分区：只回显属于当前来源图片的子视图，避免同一角色资产的
+      // 多张产物图之间互相串框（第一个产物的框选出现在第二个产物上）。
+      subviews: readCharacterSubviews(ownerAsset.metadata).filter(
+        (item) => item.sourceAssetId === sourceImageAsset.id,
+      ),
     }
   }, [characterSubviewEditorNodeId, resolveCanvasResourceActionNode, snapshot])
   const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
@@ -7814,7 +7818,17 @@ export function CanvasWorkspaceView({
             onSave={async (nextSubviews) => {
               const context = characterSubviewEditorContext
               if (!context) return
-              await updateFilmAsset(context.ownerAsset.id, { characterSubviews: nextSubviews })
+              // 子视图按来源图片分区存储在共享角色资产上：保存时只替换当前来源图片的
+              // 子视图，保留其它产物图片的子视图，避免互相覆盖。
+              const sourceAssetId = context.sourceImageAsset.id
+              const latestOwner = snapshot?.assets.find((item) => item.id === context.ownerAsset.id)
+              const preserved = readCharacterSubviews(
+                latestOwner?.metadata ?? context.ownerAsset.metadata,
+              ).filter((item) => item.sourceAssetId !== sourceAssetId)
+              const stamped = nextSubviews.map((item) => ({ ...item, sourceAssetId }))
+              await updateFilmAsset(context.ownerAsset.id, {
+                characterSubviews: [...preserved, ...stamped],
+              })
               message.success('子视图已更新')
             }}
             zIndex={1500}
