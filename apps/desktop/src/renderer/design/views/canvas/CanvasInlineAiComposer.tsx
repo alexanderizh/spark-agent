@@ -44,6 +44,7 @@ import {
 import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasMediaInputHint } from './CanvasMediaInputHint'
 import { buildReferenceImageInputRoles } from './canvasTaskInputFiles'
+import { mediaModelKey } from './canvasModelPickerModel'
 import type {
   CanvasInputTransport,
   CanvasNode,
@@ -1190,10 +1191,6 @@ export function CanvasInlineAiComposer({
       </div>
     </section>
   )
-}
-
-export function mediaModelKey(model: CanvasMediaModelSummary): string {
-  return `${model.providerProfileId ?? 'catalog'}::${model.manifestId}::${model.effectiveModelId}`
 }
 
 function buildPromptContext(nodes: CanvasNode[]): string {
