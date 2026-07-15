@@ -29,7 +29,7 @@
 
 .canvas-aspect-ratio-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
+  grid-template-columns: repeat(3, minmax(64px, 1fr));
   gap: 6px;
 }
 
@@ -101,22 +101,20 @@
 
 .canvas-parameter-option-rail {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(54px, 1fr));
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
-.canvas-parameter-option-rail.is-scrollable {
-  display: flex;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-
 .canvas-parameter-option {
-  min-width: 54px;
+  min-width: 0;
   min-height: 34px;
   padding: 5px 9px;
+  overflow: hidden;
   font-size: 10px;
   font-weight: 700;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

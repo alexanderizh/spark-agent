@@ -91,6 +91,15 @@ describe('CanvasParameterControl', () => {
     expect(duration.container.textContent).toContain('8秒')
   })
 
+  it('wraps long option lists into a three-column grid', async () => {
+    const values = ['2K', '4K', '2048x2048', '2304x1728', '1728x2304', '2848x1600', '1600x2848']
+    const { container } = await renderControl(field('resolution', values), '4K')
+    const rail = container.querySelector('.canvas-parameter-option-rail')
+
+    expect(rail).not.toBeNull()
+    expect(rail?.querySelectorAll('[data-param-value]')).toHaveLength(values.length)
+  })
+
   it('emits string boolean values', async () => {
     const { container, onChange } = await renderControl(field('searchEnabled', [], 'boolean'), 'false')
     await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click())

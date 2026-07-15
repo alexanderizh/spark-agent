@@ -1,10 +1,11 @@
-import type { CanvasMediaModelSummary } from '@spark/protocol'
+import type { CanvasMediaModelSummary, ProviderIconConfig } from '@spark/protocol'
 
 export type CanvasModelProviderGroup = {
   key: string
   label: string
   providerKind: string
   providerProfileId?: string
+  providerIcon?: ProviderIconConfig
   models: CanvasMediaModelSummary[]
 }
 
@@ -32,6 +33,7 @@ export function buildCanvasModelProviderGroups(
       label: model.providerName?.trim() || model.providerKind,
       providerKind: model.providerKind,
       ...(model.providerProfileId ? { providerProfileId: model.providerProfileId } : {}),
+      ...(model.providerIcon ? { providerIcon: model.providerIcon } : {}),
       models: [model],
     })
   }

@@ -143,6 +143,7 @@ import type {
   HistoryImportSource,
   HistoryImportProgress,
   CanvasMediaModelSummary,
+  ProviderIconConfig,
   CanvasMediaTaskCreateResponse,
   CanvasTextTaskCreateResponse,
   BoardTask,
@@ -913,6 +914,7 @@ function toCanvasMediaModelSummary(
   options?: {
     providerProfileId?: string
     providerName?: string
+    providerIcon?: ProviderIconConfig
     effectiveModelId?: string
     defaults?: Record<string, unknown>
     enabled?: boolean
@@ -944,6 +946,7 @@ function toCanvasMediaModelSummary(
   if (options?.providerProfileId !== undefined)
     summary.providerProfileId = options.providerProfileId
   if (options?.providerName !== undefined) summary.providerName = options.providerName
+  if (options?.providerIcon !== undefined) summary.providerIcon = options.providerIcon
   if (options?.defaults !== undefined) summary.defaults = options.defaults
   return summary
 }
@@ -959,6 +962,7 @@ function profileMediaModelSummaries(
     const options: Parameters<typeof toCanvasMediaModelSummary>[1] = {
       providerProfileId: profile.id,
       providerName: profile.name,
+      ...(profile.providerIcon ? { providerIcon: profile.providerIcon } : {}),
       effectiveModelId: resolved.effectiveModelId,
       enabled: resolved.enabled,
     }

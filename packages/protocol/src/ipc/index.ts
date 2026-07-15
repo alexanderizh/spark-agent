@@ -4622,6 +4622,7 @@ export interface CanvasMediaModelSummary {
   manifestId: string
   providerProfileId?: string
   providerName?: string
+  providerIcon?: ProviderIconConfig
   providerKind: string
   modelId: string
   effectiveModelId: string

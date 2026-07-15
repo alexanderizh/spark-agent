@@ -89,7 +89,7 @@ export function CanvasOperationParameterControls({
               key={presentation.field.name}
               trigger="click"
               placement="bottomLeft"
-              overlayClassName="canvas-operation-parameter-overlay"
+              overlayClassName={`canvas-operation-parameter-overlay is-${presentation.control}`}
               arrow={false}
               autoAdjustOverflow
               open={activeParameter === presentation.field.name}

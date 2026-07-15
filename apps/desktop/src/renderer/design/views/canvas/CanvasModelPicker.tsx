@@ -101,7 +101,7 @@ export function CanvasModelPicker({
               >
                 <ProviderLogo
                   vendor={null}
-                  icon={getProviderIconForVendor(group.providerKind)}
+                  icon={group.providerIcon ?? getProviderIconForVendor(group.providerKind)}
                   size={24}
                   shape="rounded"
                   fallbackText={group.label.slice(0, 1).toUpperCase()}
@@ -162,9 +162,6 @@ export function CanvasModelPicker({
                   aria-selected={selected}
                   onClick={() => chooseModel(key)}
                 >
-                  <span className="canvas-model-picker-model-monogram">
-                    {model.displayName.slice(0, 2).toUpperCase()}
-                  </span>
                   <span className="canvas-model-picker-model-copy">
                     <strong>{model.displayName}</strong>
                     <small title={model.effectiveModelId}>{model.effectiveModelId}</small>
@@ -219,7 +216,9 @@ export function CanvasModelPicker({
             selectedModel ? (
               <ProviderLogo
                 vendor={null}
-                icon={getProviderIconForVendor(selectedModel.providerKind)}
+                icon={
+                  selectedModel.providerIcon ?? getProviderIconForVendor(selectedModel.providerKind)
+                }
                 size={20}
                 shape="rounded"
                 fallbackText={triggerLabel.slice(0, 1).toUpperCase()}

@@ -15,10 +15,9 @@ function optionLabel(value: string, unit?: string): string {
 }
 
 function CompactOptions({ presentation, value, onChange }: CanvasParameterControlProps) {
-  const scrollable = presentation.field.enumValues.length > 6
   return (
     <div
-      className={`canvas-parameter-option-rail${scrollable ? ' is-scrollable' : ''}`}
+      className="canvas-parameter-option-rail"
       role="group"
       aria-label={presentation.label}
     >

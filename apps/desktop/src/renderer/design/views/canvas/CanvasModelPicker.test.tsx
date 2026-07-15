@@ -55,7 +55,11 @@ vi.mock('antd', async () => {
 })
 
 vi.mock('../../components/ProviderLogo', () => ({
-  ProviderLogo: ({ title }: { title?: string }) => <span data-provider-logo>{title}</span>,
+  ProviderLogo: ({ title, icon }: { title?: string; icon?: { id?: string } }) => (
+    <span data-provider-logo data-provider-icon={icon?.id}>
+      {title}
+    </span>
+  ),
   getProviderIconForVendor: (id: string) => ({ id, style: 'avatar' }),
 }))
 
@@ -91,6 +95,7 @@ function model(input: Partial<CanvasMediaModelSummary>): CanvasMediaModelSummary
     enabled: true,
     ...(input.providerProfileId ? { providerProfileId: input.providerProfileId } : {}),
     ...(input.providerName ? { providerName: input.providerName } : {}),
+    ...(input.providerIcon ? { providerIcon: input.providerIcon } : {}),
   }
 }
 
@@ -203,6 +208,31 @@ describe('CanvasModelPicker', () => {
     expect(emptyOption?.textContent).toContain('沿用平台默认')
     await act(async () => emptyOption?.click())
     expect(onChange).toHaveBeenCalledWith('')
+  })
+
+  it('uses the configured provider icon and does not render a model icon placeholder', async () => {
+    const container = await renderPicker({
+      models: [
+        model({
+          providerProfileId: 'custom-provider',
+          providerName: 'Custom Provider',
+          providerIcon: { id: 'openai', style: 'mono' },
+        }),
+      ],
+      value: '',
+      onChange: vi.fn(),
+    })
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('.canvas-model-picker-trigger')!.click(),
+    )
+
+    expect(
+      container.querySelector(
+        '[data-provider-key="custom-provider"] [data-provider-icon="openai"]',
+      ),
+    ).not.toBeNull()
+    expect(container.querySelector('.canvas-model-picker-model-monogram')).toBeNull()
   })
 
   it('uses the popover library tooltip to avoid React 19 cross-library ref update loops', async () => {
