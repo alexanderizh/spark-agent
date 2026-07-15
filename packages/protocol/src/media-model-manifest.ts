@@ -310,8 +310,8 @@ const apimartImageModelSchemas: Record<string, { schema: Record<string, unknown>
       type: 'object',
       additionalProperties: true,
       properties: {
-        size: { type: 'string', title: '画幅 / 尺寸', enum: ['1K', '2K', '4K', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'] },
-        resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K', '4K'] },
+        size: { type: 'string', title: '画幅 / 尺寸', enum: ['1K', '2K', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'] },
+        resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K'] },
         n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
         negative_prompt: { type: 'string', title: '负面提示词' },
         seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
@@ -368,7 +368,7 @@ const apimartImageModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16', '5:4', '4:5', '21:9', '1:4', '4:1', '1:8', '8:1'] },
         resolution: { type: 'string', title: '分辨率', enum: ['0.5K', '1K', '2K', '4K'], default: '1K' },
-        n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 1, default: 1 },
         google_search: { type: 'boolean', title: 'Google 搜索', default: false },
         google_image_search: { type: 'boolean', title: 'Google 图片搜索', default: false },
         official_fallback: { type: 'boolean', title: '官方兜底', default: false },
@@ -383,7 +383,7 @@ const apimartImageModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] },
         resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K', '4K'], default: '1K' },
-        n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 1, default: 1 },
         mask_url: { type: 'string', title: '遮罩 URL' },
         official_fallback: { type: 'boolean', title: '官方兜底', default: false },
       },
@@ -397,14 +397,696 @@ const apimartImageModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] },
         resolution: { type: 'string', title: '分辨率', enum: ['1K'], default: '1K' },
-        n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 1, default: 1 },
         mask_url: { type: 'string', title: '遮罩 URL' },
         official_fallback: { type: 'boolean', title: '官方兜底', default: false },
       },
     },
     defaults: { resolution: '1K', n: 1, official_fallback: false },
   },
+  /* ─── GPT-Image-1 / GPT-Image-1.5（APIMart OpenAI 兼容聚合）：官方 model id `*-official` ─── */
+  'gpt-image-1-official': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['1:1', '2:3', '3:2'], default: '1:1' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+        quality: { type: 'string', title: '质量', enum: ['auto', 'low', 'medium', 'high'], default: 'auto' },
+        background: { type: 'string', title: '背景', enum: ['auto', 'opaque', 'transparent'], default: 'auto' },
+        moderation: { type: 'string', title: '审核', enum: ['auto', 'low'], default: 'auto' },
+        output_format: { type: 'string', title: '输出格式', enum: ['png', 'jpeg'], default: 'png' },
+        output_compression: { type: 'integer', title: '压缩率', minimum: 0, maximum: 100 },
+      },
+    },
+    defaults: { size: '1:1', n: 1, quality: 'auto', background: 'auto', moderation: 'auto', output_format: 'png' },
+  },
+  'gpt-image-1.5-official': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['1:1', '2:3', '3:2'], default: '1:1' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+        quality: { type: 'string', title: '质量', enum: ['auto', 'low', 'medium', 'high'], default: 'auto' },
+        background: { type: 'string', title: '背景', enum: ['auto', 'opaque', 'transparent'], default: 'auto' },
+        moderation: { type: 'string', title: '审核', enum: ['auto', 'low'], default: 'auto' },
+        output_format: { type: 'string', title: '输出格式', enum: ['png', 'jpeg'], default: 'png' },
+        output_compression: { type: 'integer', title: '压缩率', minimum: 0, maximum: 100 },
+      },
+    },
+    defaults: { size: '1:1', n: 1, quality: 'auto', background: 'auto', moderation: 'auto', output_format: 'png' },
+  },
+  /* ─── Seedream-4.0 / 4.5 / 5.0-Pro（APIMart 聚合，model id 与火山不同）─── */
+  'doubao-seedream-4-0': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9', '9:21'], default: '1:1' },
+        resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K', '4K'], default: '2K' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 15, default: 1 },
+        optimize_prompt_options: { type: 'string', title: '提示词优化', enum: ['standard', 'fast'], default: 'standard' },
+        sequential_image_generation: { type: 'string', title: '连续生成', enum: ['disabled', 'auto'], default: 'disabled' },
+        watermark: { type: 'boolean', title: '水印', default: false },
+      },
+    },
+    defaults: { size: '1:1', resolution: '2K', n: 1, optimize_prompt_options: 'standard', sequential_image_generation: 'disabled', watermark: false },
+  },
+  'doubao-seedream-4-5': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9', '9:21'], default: '1:1' },
+        resolution: { type: 'string', title: '分辨率', enum: ['2K', '4K'], default: '2K' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 15, default: 1 },
+        optimize_prompt_options: { type: 'string', title: '提示词优化', enum: ['standard', 'fast'], default: 'standard' },
+        sequential_image_generation: { type: 'string', title: '连续生成', enum: ['disabled', 'auto'], default: 'disabled' },
+        watermark: { type: 'boolean', title: '水印', default: false },
+      },
+    },
+    defaults: { size: '1:1', resolution: '2K', n: 1, optimize_prompt_options: 'standard', sequential_image_generation: 'disabled', watermark: false },
+  },
+  'doubao-seedream-5-0-pro': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9', 'auto'], default: '1:1' },
+        resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K'], default: '2K' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 1, default: 1 },
+        output_format: { type: 'string', title: '输出格式', enum: ['jpeg', 'png'], default: 'jpeg' },
+        watermark: { type: 'boolean', title: '水印', default: false },
+      },
+    },
+    defaults: { size: '1:1', resolution: '2K', n: 1, output_format: 'jpeg', watermark: false },
+  },
+  /* ─── Z-Image-Turbo（APIMart 自托管轻量模型）─── */
+  'z-image-turbo': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3'], default: '1:1' },
+        resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K'], default: '1K' },
+        prompt_extend: { type: 'boolean', title: '提示词扩展', default: false },
+      },
+    },
+    defaults: { size: '1:1', resolution: '1K', prompt_extend: false },
+  },
+  /* ─── Qwen Image 2.0 Pro（APIMart 平台增强文本渲染）─── */
+  'qwen-image-2.0-pro': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3'], default: '1:1' },
+        resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K'], default: '1K' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 6, default: 1 },
+        negative_prompt: { type: 'string', title: '负面提示词', maxLength: 500 },
+      },
+    },
+    defaults: { size: '1:1', resolution: '1K', n: 1 },
+  },
+  /* ─── Grok Imagine 1.5 图片（APIMart 平台转售 xAI 模型）─── */
+  'grok-imagine-1.5-apimart': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['1:1', '16:9', '9:16', '3:2', '2:3'], default: '1:1' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 10, default: 1 },
+      },
+    },
+    defaults: { size: '1:1', n: 1 },
+  },
+  /* ─── Nano Banana 官方版本别名（直接走 OpenAI 兼容模型 id）─── */
+  'gemini-2.5-flash-image-preview-official': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] },
+        resolution: { type: 'string', title: '分辨率', enum: ['1K'], default: '1K' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 1, default: 1 },
+        image_urls: { type: 'array', items: { type: 'string' }, title: '参考图 URL 列表', maxItems: 14 },
+      },
+    },
+    defaults: { resolution: '1K', n: 1 },
+  },
+  'gemini-3-pro-image-preview-official': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] },
+        resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K', '4K'], default: '1K' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 1, default: 1 },
+        image_urls: { type: 'array', items: { type: 'string' }, title: '参考图 URL 列表', maxItems: 14 },
+      },
+    },
+    defaults: { resolution: '1K', n: 1 },
+  },
+  'gemini-3.1-flash-image-preview-official': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16', '5:4', '4:5', '21:9', '1:4', '4:1', '1:8', '8:1'] },
+        resolution: { type: 'string', title: '分辨率', enum: ['0.5K', '1K', '2K', '4K'], default: '1K' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 1, default: 1 },
+        image_urls: { type: 'array', items: { type: 'string' }, title: '参考图 URL 列表', maxItems: 14 },
+      },
+    },
+    defaults: { resolution: '1K', n: 1 },
+  },
 }
+
+/**
+ * APIMart 视频模型参数 schema 映射。
+ *
+ * 与 apimartImageModelSchemas 同样按 model id 分键；adapter 走 OpenAiCompatibleMediaAdapter，
+ * 模型差异由 manifest 通过 paramSchema + aliases 显式声明，避免硬编码到 adapter。
+ * 大多数模型复用统一的 videoSchema（aspect_ratio / duration / seed / quality 等），
+ * 必要时（如 Kling Omni / SkyReels Omni）暴露特有字段。
+ */
+const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>; defaults: Record<string, unknown> }> = {
+  /* ─── Sora 2 / Sora 2 Pro（APIMart：aspect_ratio 仅 16:9/9:16；无 resolution；
+         sora-2 时长 10/15s，sora-2-pro 时长 15/25s；支持 watermark）─── */
+  'sora-2': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长（秒）', enum: [10, 15], default: 10 },
+        watermark: { type: 'boolean', title: '添加水印', default: false },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 10, watermark: false },
+  },
+  'sora-2-pro': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长（秒）', enum: [15, 25], default: 15 },
+        watermark: { type: 'boolean', title: '添加水印', default: false },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 15, watermark: false },
+  },
+  /* ─── Doubao Seedance 系列（APIMart 平台独立 model id，与火山方舟同名但走 apimart 路径）─── */
+  'doubao-seedance-1-5-pro': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 4, maximum: 12, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '720p' },
+        seed: { type: 'integer', title: '随机种子' },
+        audio: { type: 'boolean', title: '生成音频', default: true },
+        camerafixed: { type: 'boolean', title: '固定摄像头', default: false },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', audio: true, camerafixed: false },
+  },
+  'doubao-seedance-1-0-pro-fast': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 2, maximum: 12, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '1080p' },
+        seed: { type: 'integer', title: '随机种子' },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '1080p' },
+  },
+  'doubao-seedance-1-0-pro-quality': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 2, maximum: 12, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '1080p' },
+        seed: { type: 'integer', title: '随机种子' },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '1080p' },
+  },
+  /* ─── VEO 3.x 系列（APIMart 走 veo3.1-fast / -quality / -lite）─── */
+  'veo3.1-fast': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'] },
+        durationSeconds: { type: 'integer', title: '时长', enum: [8], default: 8 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p', '4k'], default: '720p' },
+        enable_gif: { type: 'boolean', title: '启用 GIF', default: false },
+        official_fallback: { type: 'boolean', title: '官方兜底', default: false },
+      },
+    },
+    defaults: { durationSeconds: 8, resolution: '720p', enable_gif: false, official_fallback: false },
+  },
+  'veo3.1-quality': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'] },
+        durationSeconds: { type: 'integer', title: '时长', enum: [8], default: 8 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p', '4k'], default: '720p' },
+        enable_gif: { type: 'boolean', title: '启用 GIF', default: false },
+        official_fallback: { type: 'boolean', title: '官方兜底', default: false },
+      },
+    },
+    defaults: { durationSeconds: 8, resolution: '720p', enable_gif: false, official_fallback: false },
+  },
+  'veo3.1-lite': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'] },
+        durationSeconds: { type: 'integer', title: '时长', enum: [8], default: 8 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p', '4k'], default: '720p' },
+        enable_gif: { type: 'boolean', title: '启用 GIF', default: false },
+      },
+    },
+    defaults: { durationSeconds: 8, resolution: '720p', enable_gif: false },
+  },
+  /* ─── MiniMax Hailuo 2.3 / Fast / Hailuo-02（APIMart 平台独立 slug）─── */
+  'MiniMax-Hailuo-2.3': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        durationSeconds: { type: 'integer', title: '时长', enum: [6, 10], default: 6 },
+        resolution: { type: 'string', title: '分辨率', enum: ['768p', '1080p'], default: '768p' },
+        prompt_optimizer: { type: 'boolean', title: '提示词优化', default: true },
+        fast_pretreatment: { type: 'boolean', title: '快速预处理', default: false },
+        watermark: { type: 'boolean', title: '水印', default: false },
+        useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
+      },
+    },
+    defaults: { durationSeconds: 6, resolution: '768p', prompt_optimizer: true, fast_pretreatment: false, watermark: false, useFirstFrame: true },
+  },
+  'MiniMax-Hailuo-02': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        durationSeconds: { type: 'integer', title: '时长', enum: [5, 10], default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['512p', '768p', '1080p'], default: '768p' },
+        prompt_optimizer: { type: 'boolean', title: '提示词优化', default: true },
+        fast_pretreatment: { type: 'boolean', title: '快速预处理', default: false },
+        watermark: { type: 'boolean', title: '水印', default: false },
+      },
+    },
+    defaults: { durationSeconds: 5, resolution: '768p', prompt_optimizer: true, fast_pretreatment: false, watermark: false },
+  },
+  /* ─── SkyReels V4 fast / std ─── */
+  'skyreels-v4-fast': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '4:3', '1:1', '9:16', '3:4'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 15, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '1080p' },
+        prompt_optimizer: { type: 'boolean', title: '提示词优化', default: true },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '1080p', prompt_optimizer: true },
+  },
+  'skyreels-v4-std': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '4:3', '1:1', '9:16', '3:4'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 15, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '1080p' },
+        prompt_optimizer: { type: 'boolean', title: '提示词优化', default: true },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '1080p', prompt_optimizer: true },
+  },
+  /* ─── HappyHorse 1.0 / 1.1（APIMart 统一入口，T2V/I2V/R2V 自适应）─── */
+  'happyhorse-1.0': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 15, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
+        watermark: { type: 'boolean', title: '水印', default: false },
+        seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
+        audio_setting: { type: 'string', title: '声音设置', enum: ['auto', 'origin'], default: 'auto' },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '1080P', watermark: false, audio_setting: 'auto' },
+  },
+  'happyhorse-1.1': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 15, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
+        watermark: { type: 'boolean', title: '水印', default: false },
+        seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '1080P', watermark: false },
+  },
+  /* ─── Wan 2.5/2.6/2.7 全系（APIMart 统一入口）─── */
+  'wan2.5-preview': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', enum: [5, 10], default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '720p' },
+        seed: { type: 'integer', title: '随机种子' },
+        prompt_extend: { type: 'boolean', title: '提示词扩展', default: true },
+        audio: { type: 'boolean', title: '生成音频', default: true },
+        watermark: { type: 'boolean', title: '水印', default: false },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', prompt_extend: true, audio: true, watermark: false },
+  },
+  'wan2.6': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', enum: [5, 10, 15], default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p'], default: '720p' },
+        seed: { type: 'integer', title: '随机种子' },
+        prompt_extend: { type: 'boolean', title: '提示词扩展' },
+        audio: { type: 'boolean', title: '生成音频' },
+        watermark: { type: 'boolean', title: '水印' },
+        template: { type: 'string', title: '特效模板' },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
+  },
+  'wan2.7': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 2, maximum: 15, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
+        prompt_extend: { type: 'boolean', title: '提示词扩展', default: true },
+        watermark: { type: 'boolean', title: '水印', default: false },
+        seed: { type: 'integer', title: '随机种子' },
+        negative_prompt: { type: 'string', title: '负面提示词', maxLength: 500 },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '1080P', prompt_extend: true, watermark: false },
+  },
+  'wan2.7-r2v': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 2, maximum: 15, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
+        prompt_extend: { type: 'boolean', title: '提示词扩展', default: true },
+        watermark: { type: 'boolean', title: '水印', default: false },
+        seed: { type: 'integer', title: '随机种子' },
+        negative_prompt: { type: 'string', title: '负面提示词', maxLength: 500 },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '1080P', prompt_extend: true, watermark: false },
+  },
+  'wan2.7-videoedit': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4'] },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 0, maximum: 10, default: 0 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720P', '1080P'], default: '1080P' },
+        prompt_extend: { type: 'boolean', title: '提示词扩展', default: true },
+        watermark: { type: 'boolean', title: '水印', default: false },
+        seed: { type: 'integer', title: '随机种子' },
+        audio_setting: { type: 'string', title: '声音设置', enum: ['auto', 'origin'], default: 'auto' },
+      },
+    },
+    defaults: { durationSeconds: 0, resolution: '1080P', prompt_extend: true, watermark: false, audio_setting: 'auto' },
+  },
+  /* ─── Kling 系列（APIMart 平台独立 model id）─── */
+  'kling-v2-6': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', enum: [5, 10], default: 5 },
+        mode: { type: 'string', title: '模式', enum: ['std', 'pro'], default: 'std' },
+        negative_prompt: { type: 'string', title: '负面提示词' },
+        audio: { type: 'boolean', title: '生成音频', default: false },
+        watermark: { type: 'boolean', title: '水印', default: false },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, mode: 'std', audio: false, watermark: false },
+  },
+  'kling-v3': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 15, default: 5 },
+        mode: { type: 'string', title: '模式', enum: ['std', 'pro', '4k'], default: 'std' },
+        negative_prompt: { type: 'string', title: '负面提示词' },
+        audio: { type: 'boolean', title: '生成音频', default: false },
+        watermark: { type: 'boolean', title: '水印', default: false },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, mode: 'std', audio: false, watermark: false },
+  },
+  'kling-v3-omni': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 15, default: 5 },
+        mode: { type: 'string', title: '模式', enum: ['std', 'pro', '4k'], default: 'std' },
+        negative_prompt: { type: 'string', title: '负面提示词', maxLength: 2500 },
+        audio: { type: 'boolean', title: '生成音频', default: false },
+        watermark: { type: 'boolean', title: '水印', default: false },
+        multi_shot: { type: 'boolean', title: '多镜头', default: false },
+        shot_type: { type: 'string', title: '镜头类型', enum: ['customize', 'intelligence'] },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, mode: 'std', audio: false, watermark: false, multi_shot: false },
+  },
+  'kling-3.0-turbo': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 15, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p'], default: '720p' },
+        watermark: { type: 'boolean', title: '水印', default: false },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', watermark: false },
+  },
+  'kling-video-o1': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', enum: [5, 10], default: 5 },
+        mode: { type: 'string', title: '模式', enum: ['std', 'pro'], default: 'std' },
+        watermark: { type: 'boolean', title: '水印', default: false },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, mode: 'std', watermark: false },
+  },
+  /* ─── Vidu Q3 全系（APIMart 平台独立 model id）─── */
+  'viduq3-pro': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '4:3', '3:4', '1:1'] },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 1, maximum: 16, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['540p', '720p', '1080p'], default: '720p' },
+        audio: { type: 'boolean', title: '生成音频', default: true },
+        seed: { type: 'integer', title: '随机种子' },
+      },
+    },
+    defaults: { durationSeconds: 5, resolution: '720p', audio: true },
+  },
+  'viduq3-turbo': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '4:3', '3:4', '1:1'] },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 1, maximum: 16, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['540p', '720p', '1080p'], default: '720p' },
+        audio: { type: 'boolean', title: '生成音频', default: true },
+        seed: { type: 'integer', title: '随机种子' },
+      },
+    },
+    defaults: { durationSeconds: 5, resolution: '720p', audio: true },
+  },
+  'viduq3': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '4:3', '3:4', '1:1'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 16, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['540p', '720p', '1080p'], default: '720p' },
+        seed: { type: 'integer', title: '随机种子' },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
+  },
+  'viduq3-mix': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '4:3', '3:4', '1:1'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 1, maximum: 16, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p'], default: '720p' },
+        seed: { type: 'integer', title: '随机种子' },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
+  },
+  /* ─── Grok Imagine 1.5 视频（APIMart 平台转售 xAI）─── */
+  'grok-imagine-1.5-video-apimart': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '3:2', '2:3'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 6, maximum: 30, default: 6 },
+        quality: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '480p' },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 6, quality: '480p' },
+  },
+  /* ─── Pixverse v6（APIMart 平台独立 model id）─── */
+  'pixverse-v6': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '4:3', '1:1', '3:4', '9:16', '2:3', '3:2', '21:9'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 1, maximum: 15, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['360p', '540p', '720p', '1080p'], default: '540p' },
+        seed: { type: 'integer', title: '随机种子' },
+        negative_prompt: { type: 'string', title: '负面提示词', maxLength: 2048 },
+        audio: { type: 'boolean', title: '生成音频', default: false },
+        watermark: { type: 'boolean', title: '水印', default: false },
+        motion_mode: { type: 'string', title: '运动模式', enum: ['normal'], default: 'normal' },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '540p', audio: false, watermark: false, motion_mode: 'normal' },
+  },
+  /* ─── Gemini Omni Flash Preview（APIMart 平台独立 model id）─── */
+  'gemini-omni-flash-preview': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
+        resolution: { type: 'string', title: '分辨率', enum: ['720p'], default: '720p' },
+        extend_from_task_id: { type: 'string', title: '续拍任务 ID' },
+      },
+    },
+    defaults: { aspectRatio: '16:9', resolution: '720p' },
+  },
+  /* ─── Omni-Flash-Ext（APIMart 平台独立 model id）─── */
+  'Omni-Flash-Ext': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', enum: [4, 6, 8, 10], default: 6 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1080p', '4k'], default: '720p' },
+        generation_type: { type: 'string', title: '生成类型', enum: ['frame', 'reference'] },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
+  },
+  /* ─── Doubao Seedance 2.0 Fast / Mini（APIMart 平台独立 model id，区别于火山方舟同名）─── */
+  'doubao-seedance-2-0-fast': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 4, maximum: 15, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' },
+        seed: { type: 'integer', title: '随机种子' },
+        generate_audio: { type: 'boolean', title: '生成音频', default: true },
+        return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false },
+  },
+  'doubao-seedance-2-0-mini': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'], default: '16:9' },
+        durationSeconds: { type: 'integer', title: '时长', minimum: 4, maximum: 15, default: 5 },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' },
+        seed: { type: 'integer', title: '随机种子' },
+        generate_audio: { type: 'boolean', title: '生成音频', default: true },
+        return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
+      },
+    },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false },
+  },
+}
+
+/** APIMart 视频模型中，画面比例字段在 provider 侧为 `size`（非默认 `aspect_ratio`）的 modelId 集合。
+ *  通过 aliases per-model 覆盖：UI 统一的 aspectRatio 在适配器层转成 provider 要的 `size`（其余仍转 `aspect_ratio`）。
+ *  依据各模型 APIMart 官方文档请求参数表。wan2.6 例外用 aspect_ratio，故不在集合内。 */
+const apimartVideoSizeFieldModels = new Set([
+  'happyhorse-1.0',
+  'happyhorse-1.1',
+  'pixverse-v6',
+  'grok-imagine-1.5-video-apimart',
+  'wan2.5-preview',
+  'wan2.7',
+  'wan2.7-r2v',
+  'wan2.7-videoedit',
+  'doubao-seedance-2.0',
+  'doubao-seedance-2-0-fast',
+  'doubao-seedance-2-0-mini',
+]);
 
 const videoSchema = {
   type: 'object',
@@ -675,9 +1357,9 @@ const apimartSeedance2VideoSchema = {
   properties: {
     durationSeconds: { type: 'integer', title: '时长', minimum: 4, maximum: 15, default: 5 },
     aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'], default: '16:9' },
-    resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '480p' },
+    resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p', '4k'], default: '720p' },
     seed: { type: 'integer', title: '随机种子' },
-    generate_audio: { type: 'boolean', title: '生成音频', default: false },
+    generate_audio: { type: 'boolean', title: '生成音频', default: true },
     return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
     useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
     useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
@@ -1459,6 +2141,17 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     { id: 'apimart:gemini-3-pro-image-preview', modelId: 'gemini-3-pro-image-preview', displayName: 'APIMart Gemini 3 Pro Image' },
     { id: 'apimart:gemini-2.5-flash-image-preview', modelId: 'gemini-2.5-flash-image-preview', displayName: 'APIMart Gemini 2.5 Flash Image (nano-banana)' },
     { id: 'apimart:imagen-4.0-apimart', modelId: 'imagen-4.0-apimart', displayName: 'APIMart Imagen 4.0' },
+    { id: 'apimart:gpt-image-1-official', modelId: 'gpt-image-1-official', displayName: 'APIMart GPT-Image-1' },
+    { id: 'apimart:gpt-image-1-5-official', modelId: 'gpt-image-1.5-official', displayName: 'APIMart GPT-Image-1.5' },
+    { id: 'apimart:doubao-seedream-4-0', modelId: 'doubao-seedream-4-0', displayName: 'APIMart Seedream 4.0' },
+    { id: 'apimart:doubao-seedream-4-5', modelId: 'doubao-seedream-4-5', displayName: 'APIMart Seedream 4.5' },
+    { id: 'apimart:doubao-seedream-5-0-pro', modelId: 'doubao-seedream-5-0-pro', displayName: 'APIMart Seedream 5.0 Pro' },
+    { id: 'apimart:z-image-turbo', modelId: 'z-image-turbo', displayName: 'APIMart Z-Image-Turbo' },
+    { id: 'apimart:qwen-image-2.0-pro', modelId: 'qwen-image-2.0-pro', displayName: 'APIMart Qwen Image 2.0 Pro' },
+    { id: 'apimart:grok-imagine-1.5-apimart', modelId: 'grok-imagine-1.5-apimart', displayName: 'APIMart Grok Imagine 1.5 Image' },
+    { id: 'apimart:gemini-2.5-flash-image-preview-official', modelId: 'gemini-2.5-flash-image-preview-official', displayName: 'APIMart Nano Banana (Official)' },
+    { id: 'apimart:gemini-3-pro-image-preview-official', modelId: 'gemini-3-pro-image-preview-official', displayName: 'APIMart Nano Banana Pro (Official)' },
+    { id: 'apimart:gemini-3.1-flash-image-preview-official', modelId: 'gemini-3.1-flash-image-preview-official', displayName: 'APIMart Nano Banana 2 (Official)' },
   ].map((entry) => ({
     id: entry.id,
     providerKind: 'apimart',
@@ -1499,11 +2192,40 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
   })),
   ...[
     { id: 'apimart:sora-2', modelId: 'sora-2', displayName: 'APIMart Sora 2' },
-    { id: 'apimart:veo2', modelId: 'veo2', displayName: 'APIMart VEO 2' },
-    { id: 'apimart:kling-v2', modelId: 'kling-v2-master', displayName: 'APIMart Kling V2' },
-    { id: 'apimart:seedance', modelId: 'seedance-1-0-pro-i2v', displayName: 'APIMart Seedance 1.0 Pro' },
     { id: 'apimart:doubao-seedance-2.0', modelId: 'doubao-seedance-2.0', displayName: 'APIMart Doubao Seedance 2.0' },
-    { id: 'apimart:hailuo-02', modelId: 'hailuo-02', displayName: 'APIMart Hailuo 02' },
+    { id: 'apimart:sora-2-pro', modelId: 'sora-2-pro', displayName: 'APIMart Sora 2 Pro' },
+    { id: 'apimart:veo3.1-fast', modelId: 'veo3.1-fast', displayName: 'APIMart VEO 3.1 Fast' },
+    { id: 'apimart:veo3.1-quality', modelId: 'veo3.1-quality', displayName: 'APIMart VEO 3.1 Quality' },
+    { id: 'apimart:veo3.1-lite', modelId: 'veo3.1-lite', displayName: 'APIMart VEO 3.1 Lite' },
+    { id: 'apimart:doubao-seedance-1-5-pro-apimart', modelId: 'doubao-seedance-1-5-pro', displayName: 'APIMart Seedance 1.5 Pro' },
+    { id: 'apimart:doubao-seedance-2-0-fast-apimart', modelId: 'doubao-seedance-2-0-fast', displayName: 'APIMart Seedance 2.0 Fast' },
+    { id: 'apimart:doubao-seedance-2-0-mini-apimart', modelId: 'doubao-seedance-2-0-mini', displayName: 'APIMart Seedance 2.0 Mini' },
+    { id: 'apimart:doubao-seedance-1-0-pro-fast', modelId: 'doubao-seedance-1-0-pro-fast', displayName: 'APIMart Seedance 1.0 Pro Fast' },
+    { id: 'apimart:doubao-seedance-1-0-pro-quality', modelId: 'doubao-seedance-1-0-pro-quality', displayName: 'APIMart Seedance 1.0 Pro Quality' },
+    { id: 'apimart:MiniMax-Hailuo-2.3-apimart', modelId: 'MiniMax-Hailuo-2.3', displayName: 'APIMart Hailuo 2.3' },
+    { id: 'apimart:MiniMax-Hailuo-02-apimart', modelId: 'MiniMax-Hailuo-02', displayName: 'APIMart Hailuo 02' },
+    { id: 'apimart:skyreels-v4-fast', modelId: 'skyreels-v4-fast', displayName: 'APIMart SkyReels V4 Fast' },
+    { id: 'apimart:skyreels-v4-std', modelId: 'skyreels-v4-std', displayName: 'APIMart SkyReels V4 Standard' },
+    { id: 'apimart:happyhorse-1.0', modelId: 'happyhorse-1.0', displayName: 'APIMart HappyHorse 1.0' },
+    { id: 'apimart:happyhorse-1.1', modelId: 'happyhorse-1.1', displayName: 'APIMart HappyHorse 1.1' },
+    { id: 'apimart:wan2.5-preview', modelId: 'wan2.5-preview', displayName: 'APIMart Wan 2.5 Preview' },
+    { id: 'apimart:wan2.6', modelId: 'wan2.6', displayName: 'APIMart Wan 2.6' },
+    { id: 'apimart:wan2.7', modelId: 'wan2.7', displayName: 'APIMart Wan 2.7' },
+    { id: 'apimart:wan2.7-r2v', modelId: 'wan2.7-r2v', displayName: 'APIMart Wan 2.7 R2V' },
+    { id: 'apimart:wan2.7-videoedit', modelId: 'wan2.7-videoedit', displayName: 'APIMart Wan 2.7 VideoEdit' },
+    { id: 'apimart:kling-v2-6', modelId: 'kling-v2-6', displayName: 'APIMart Kling v2.6' },
+    { id: 'apimart:kling-v3', modelId: 'kling-v3', displayName: 'APIMart Kling v3' },
+    { id: 'apimart:kling-v3-omni', modelId: 'kling-v3-omni', displayName: 'APIMart Kling v3 Omni' },
+    { id: 'apimart:kling-3.0-turbo', modelId: 'kling-3.0-turbo', displayName: 'APIMart Kling 3.0 Turbo' },
+    { id: 'apimart:kling-video-o1', modelId: 'kling-video-o1', displayName: 'APIMart Kling Video O1' },
+    { id: 'apimart:viduq3-pro', modelId: 'viduq3-pro', displayName: 'APIMart Vidu Q3 Pro' },
+    { id: 'apimart:viduq3-turbo', modelId: 'viduq3-turbo', displayName: 'APIMart Vidu Q3 Turbo' },
+    { id: 'apimart:viduq3', modelId: 'viduq3', displayName: 'APIMart Vidu Q3' },
+    { id: 'apimart:viduq3-mix', modelId: 'viduq3-mix', displayName: 'APIMart Vidu Q3 Mix' },
+    { id: 'apimart:grok-imagine-1.5-video-apimart', modelId: 'grok-imagine-1.5-video-apimart', displayName: 'APIMart Grok Imagine 1.5 Video' },
+    { id: 'apimart:pixverse-v6', modelId: 'pixverse-v6', displayName: 'APIMart Pixverse v6' },
+    { id: 'apimart:gemini-omni-flash-preview', modelId: 'gemini-omni-flash-preview', displayName: 'APIMart Gemini Omni Flash Preview' },
+    { id: 'apimart:Omni-Flash-Ext', modelId: 'Omni-Flash-Ext', displayName: 'APIMart Omni-Flash-Ext' },
   ].map((entry) => ({
     id: entry.id,
     providerKind: 'apimart',
@@ -1516,33 +2238,41 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         label: '文生视频',
         input: { required: ['prompt'] as MediaManifestInputKind[] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: entry.modelId === 'doubao-seedance-2.0' ? apimartSeedance2VideoSchema : videoSchema,
+        // Seedance 2.0（APIMart flavor）走专用 schema；其余新模型走 apimartVideoModelSchemas
+        // 按 modelId 取；老条目继续走通用 videoSchema。
+        paramSchema: entry.modelId === 'doubao-seedance-2.0'
+          ? apimartSeedance2VideoSchema
+          : (apimartVideoModelSchemas[entry.modelId]?.schema ?? videoSchema),
         defaults: entry.modelId === 'doubao-seedance-2.0'
-          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false }
-          : { aspectRatio: '16:9', durationSeconds: 5 },
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false }
+          : (apimartVideoModelSchemas[entry.modelId]?.defaults ?? { aspectRatio: '16:9', durationSeconds: 5 }),
+        aliases: { aspectRatio: apimartVideoSizeFieldModels.has(entry.modelId) ? 'size' : 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
       {
         id: 'video.image_to_video',
         label: '图生视频',
         input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: entry.modelId === 'doubao-seedance-2.0' ? apimartSeedance2VideoSchema : videoSchema,
+        paramSchema: entry.modelId === 'doubao-seedance-2.0'
+          ? apimartSeedance2VideoSchema
+          : (apimartVideoModelSchemas[entry.modelId]?.schema ?? videoSchema),
         defaults: entry.modelId === 'doubao-seedance-2.0'
-          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false }
-          : undefined,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false }
+          : apimartVideoModelSchemas[entry.modelId]?.defaults,
+        aliases: { aspectRatio: apimartVideoSizeFieldModels.has(entry.modelId) ? 'size' : 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
       {
         id: 'video.edit',
         label: '视频编辑',
         input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: entry.modelId === 'doubao-seedance-2.0' ? apimartSeedance2VideoSchema : videoSchema,
+        paramSchema: entry.modelId === 'doubao-seedance-2.0'
+          ? apimartSeedance2VideoSchema
+          : (apimartVideoModelSchemas[entry.modelId]?.schema ?? videoSchema),
         defaults: entry.modelId === 'doubao-seedance-2.0'
-          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false }
-          : undefined,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false }
+          : apimartVideoModelSchemas[entry.modelId]?.defaults,
+        aliases: { aspectRatio: apimartVideoSizeFieldModels.has(entry.modelId) ? 'size' : 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
     ],
     invocation: {
