@@ -128,6 +128,11 @@ export default defineConfig({
     },
   },
   renderer: {
+    // exceljs / mammoth 都是 CJS 包，在 renderer（浏览器上下文）动态 import 需预打包，
+    // 否则首次加载会因 CJS/ESM interop 报错。仅在画布拖入富文档时懒加载，不进初始 bundle。
+    optimizeDeps: {
+      include: ['exceljs', 'mammoth'],
+    },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer'),
