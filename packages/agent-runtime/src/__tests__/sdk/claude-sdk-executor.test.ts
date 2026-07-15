@@ -1682,6 +1682,8 @@ describe('ClaudeSDKExecutor', () => {
     })
     expect(JSON.stringify(options.systemPrompt)).toContain('AskUserQuestion')
     expect(JSON.stringify(options.systemPrompt)).toContain('options')
+    expect(JSON.stringify(options.systemPrompt)).toContain('2-4 clear options')
+    expect(JSON.stringify(options.systemPrompt)).not.toContain('2-5 clear options')
   })
 
   // ── Resume Recovery Tests ──────────────────────────────────────────────────

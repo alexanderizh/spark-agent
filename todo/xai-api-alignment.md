@@ -15,6 +15,8 @@
 5. **画布参考图视频节点已存在**：本期只负责把 xAI 模型接入既有画布节点和转换链路，不重复设计一个平行节点。
 6. **STT 只收集文档和差异，列 TODO**：本期不新增 xAI `audio.transcription` capability，不把 STT 半成品接入画布或 Skill。
 7. **retry/backoff、自定义 headers / `forwardUserIp` 本期不实现**：保留为后续 TODO。
+8. **xAI Files API 列表 + 删除管理 UI 本期要做**：扩展 P5 并新增 P9；放置位置已拍板 **D = ProvidersView Provider Drawer 内新增"文件管理"区块**（详见 P9）。
+9. **xAI Files UI 涉及的全部语义都遵循官方页面**：list 用 `GET /v1/files` 的 `data: FileObject[]` + `pagination_token`；delete 用 `DELETE /v1/files/{file_id}` 返回 `{deleted, id}`；FileObject 字段为 `id/filename/bytes/created_at/expires_at/object/purpose`。文件 size 客户端展示按官方 48 MiB 安全上限判断"已接近上限/已超限"，不再纠结 48/50 MB 文档冲突——该说法在 `managing-files` 页面已统一为 48 MB。
 
 ### 0.2 代码核对后必须纠正的事实
 
@@ -61,6 +63,7 @@
 | TTS | 对齐 `/v1/tts`，只发送官方 REST 字段；支持 raw bytes 与 timestamps 响应 |
 | xAI Files input | 上传图片/视频，生成 `file_id`，用于 image/video/reference_images |
 | xAI Files output | `storage_options.filename + public_url: true`，读取 `file_output.public_url/file_id` |
+| xAI Files 管理 UI | 桌面端侧面板/抽屉新增 list + delete 入口（详见 P9） |
 | Spark 文件回退 | 通过现有登录态上传桥接接入公共上传契约 |
 
 ### 1.3 明确不在本期
@@ -69,7 +72,7 @@
 - xAI Responses/Text API、Realtime Voice WSS；它们不是当前媒体 adapter 的图像/视频/同步 TTS 路径；
 - xAI STT REST/WSS 接入（只保留文档事实和 TODO）；
 - retry/backoff、`forwardUserIp`、自定义 headers；
-- xAI Files API 列表 + 删除管理 UI 的放置位置（详见 P9，待用户拍板：候选 ProvidersView Provider Drawer / SettingsView / 画布右侧 docked 侧面板 / 资产中心 Modal / 新建一级视图）；
+- xAI Files API 列表 + 删除管理 UI 的放置位置（详见 P9，已拍板 D = ProvidersView Provider Drawer 内新增"文件管理"区块）；
 - xAI 之外的渠道官方 CDN 适配。
 
 ## 2. 官方文档证据清单
@@ -390,6 +393,64 @@ interface MediaUploader {
    - 视频官方 CDN 持久化失败。
 5. 所有 xAI 特化逻辑由 `mediaProvider === 'xai'` / xAI manifest 守卫包住；其他 vendor 不进入这些分支。
 
+### P9：xAI Files API 列表 + 删除管理 UI
+
+**目标**：在桌面端某个侧面板/抽屉/列表视图中提供 xAI Files 的"列表 + 删除"管理能力，方便用户清理过期/无效文件、追踪上传结果，并作为后续（分块上传、生命周期清理）的前置 UI 脚手架。
+
+**范围**：
+
+| 项目 | 本期 |
+|---|---|
+| 列出文件 | ✅ `GET /v1/files`，按 `purpose/order/sort_by` 过滤，分页走 `pagination_token` |
+| 删除文件 | ✅ `DELETE /v1/files/{file_id}`，单删 + 多选批量删除 |
+| 文件详情 | ✅ filename / bytes / created_at / expires_at / purpose，悬浮卡或行展开 |
+| 上传 | ⛔ 不在本 UI 重做，已由 P5 `MediaUploader` 承担；上传仍走画布任务输入 / Skills |
+| 分块上传 / 续传 | ⛔ 列后续 TODO |
+| 生命周期 / TTL 自动清理 | ⛔ 列后续 TODO |
+| 其他 provider 的同类 UI | ⛔ 仅建立可复用 list 容器，契约由 `MediaUploader` 决定；本期只接 xAI |
+
+**位置（已拍板 D）**：
+
+经用户评审，xAI Files 管理 UI 放在 **ProvidersView Provider Drawer 内新增"文件管理"区块**（候选 D）。
+
+- 触发方式：在 ProvidersView 编辑 xAI Provider 时，Drawer 内新增一个 `pv_section` 区块，区块内放列表/过滤/删除/分页控件。
+- 范畴归属：xAI Files 严格按 `profileId`（即当前编辑的 Provider）作用域加载与操作；切换 Provider 编辑时重新加载该 Provider 名下的 Files。
+- 与现有 Provider Drawer 风格一致：复用 `pv_section` 堆叠分区骨架（参考 `ProvidersView.tsx:3238-3244`）；区块标题"xAI Files" + 右上角刷新/批量删除按钮。
+- 视觉规范：复用 `CanvasAssetManagerPanel` 的多选/虚拟化/Popconfirm 交互；`formatBytes` 借用 `SettingsView.tsx:5131`；过期时间展示借用 `PlatformModelAccountPanel.tsx:170`；空状态用 antd `<Empty>`（参考 `CanvasFilmAssetCenter.tsx:668-676`）。
+- 仅在编辑 xAI Provider 时显示该区块；其他 vendor Provider Drawer 不显示；其他 vendor 的 Files API（如未来 apimart/openai 提供同类）后续再扩展，本期不接入。
+- 用户决策原文："Files API 的列表、删除的管理 UI，就做在侧面板中找个地方放吧"（按 profileId 语义归属选择 D）。
+
+**约束（无论哪个位置都必须满足）**：
+
+1. 只读 xAI Files API，**不动其他 vendor**；其他 vendor 出现 Files API 时复用同一容器契约，但本期只接 xAI。
+2. UI 容器组件可复用：列表/网格切换、多选、虚拟滚动（参考 `CanvasAssetManagerPanel:4, 26, 656`）、`Popconfirm` 删除确认、`formatBytes`（参考 `SettingsView.tsx:5131`）、过期时间展示（参考 `PlatformModelAccountPanel.tsx:170`）。
+3. 必须有完整的 loading / empty / error / partial / unauthorized 状态：
+   - **unauthorized**：未配置 xAI API Key / Provider 缺失 → 显示"去配置"CTA，跳转 ProvidersView；
+   - **forbidden**：xAI API Key 无 Files 权限 → 提示检查 API Key 范围；
+   - **rate_limit**：列表/删除遇到 429 → 指数退避 + 顶部 toast；
+   - **network_error**：保留上次列表 + 提示重试，不清空列表；
+   - **partial**：单条删除失败时不影响其余。
+4. 默认过滤 `purpose=user_data` + `purpose=input`（按官方语义区分），但允许用户切换过滤；`purpose=assistants` 等其他 purpose 可不显示但要在过滤下拉中保留可见。
+5. 列表展示字段至少：`filename`、`bytes`（人类可读 KB/MB，含 48 MiB 安全上限高亮）、`created_at`（相对时间 + 悬停绝对时间）、`expires_at`（剩余时长徽章；已过期红、24h 内黄、>24h 灰）、`purpose`、`object`。
+6. 删除走两段式：第一次点击 → 行高亮 + "确认删除"按钮；二次点击 / Popconfirm OK → 调用 `DELETE /v1/files/{id}`；删除中行内 spinner；失败行回到原状态并红框。
+7. 批量选择：受 `CanvasAssetManagerPanel.MAX_SELECTION=30` 启发，本 UI 默认单批 ≤30；可调。
+8. 数据流（D 路径）：
+   - 主进程新增 IPC：`provider:files:list`、`provider:files:delete`（按 `profileId` 作用域，从 Drawer 当前编辑的 Provider 上下文读取）；
+   - renderer 封装：`apps/desktop/src/renderer/design/views/providers/providerFiles.api.ts`（独立文件，不混入 `canvas.api.ts`，因为 scope 是 Provider 而非画布）；
+   - Drawer 打开时初始化：根据当前 `profile.kind === 'xai'` 决定是否挂载 `XaiFilesPanel` 子组件；非 xAI 不挂载；
+   - agent-runtime 复用：xAI Files 客户端由 P5 阶段实现，本 P9 复用其 GET/DELETE（不再造并行客户端）；
+   - 调用：`window.spark.invoke('provider:files:list', { profileId, purpose, limit, order, sortBy, paginationToken })` 与 `window.spark.invoke('provider:files:delete', { profileId, fileId })`。
+9. 不在 renderer 直接持有 xAI API Key；所有请求经主进程 IPC，token 在主进程侧注入。
+10. 测试覆盖：
+    - 列表空 / 单条 / 多条 / 分页 / 排序；
+    - 单删成功 / 单删失败 / 批量删除混合结果；
+    - 过期 / 即将过期 / 永久 文件三种 UI 表现；
+    - 未配置 Provider → 引导跳转；
+    - 48 MiB 接近 / 超限标记；
+    - 401/403/429/500 错误态。
+
+**验收**：在拍板的位置出现新的"xAI Files"区/tab/list，可正常 list + delete 单/多文件，错误态完备，登录态/权限态清晰，与现有视觉规范一致；不影响其他 vendor 任何行为。
+
 ## 5. 实施顺序
 
 ### 阶段 A：协议与入口核对
@@ -415,6 +476,12 @@ interface MediaUploader {
 
 - P8：错误归一、warning、request_id、回退阶段展示。
 - 全量运行 xAI 聚焦测试；有并行改动时不擅自覆盖他人文件，只运行与本计划改动相关的只读验证。
+
+### 阶段 E：Files 管理 UI（P9）
+
+- P9：在 ProvidersView xAI Provider Drawer 内新增"xAI Files"区块，挂载 list + delete 控件；复用 P5 阶段的 xAI Files 客户端（GET/DELETE）与 401/403/429 错误归一，不重复造接口；
+- 阶段 E 仅在阶段 C 的 Files 客户端落地之后开始，避免 UI 调不通底层；
+- 阶段 E 不修改非 xAI Provider 的 Drawer、不修改 `CanvasFilmAssetCenter`、不修改 `CanvasAssetManagerPanel` 既有画布资产逻辑。
 
 ## 6. 测试与验收矩阵
 
@@ -442,7 +509,7 @@ interface MediaUploader {
 
 - xAI Files multipart `expires_after` 在 file 之前。
 - TTL 3600、2592000 边界通过，越界明确报错。
-- 48 MiB 安全上限行为稳定，错误注明官方 48/50 MB 文档冲突。
+- 48 MiB 安全上限行为稳定（与 `managing-files` 页面 48 MB 表述一致）。
 - xAI uploader 失败后小文件走 base64；超限/不适合 base64 时走 Spark uploader；未登录显示登录/注册引导。
 - 图片允许按约定回退；视频没有官方 CDN 时任务失败，不伪造成功。
 
@@ -453,6 +520,16 @@ interface MediaUploader {
 - 画布 xAI 1.5 只展示/允许 I2V；尾帧和参考视频给明确提示。
 - Skill/MCP 与画布生成同一类请求体，不出现一边支持 file_id、一边只支持 base64 的分叉。
 - 至少验证一次登录态缺失、xAI key 无效、参数不支持、R2V 超限、视频 CDN 持久化失败。
+
+### 6.5 Files 管理 UI（P9）
+
+- 拍板位置首次打开时显示空态 / 引导"去配置 xAI Provider"CTA（未配置时）。
+- 列表加载：空 / 单条 / 多条 / 分页（`pagination_token`）/ 三种排序（`created_at` desc/asc、`bytes` desc/asc、`expires_at` asc）。
+- 字段展示：filename、bytes（人类可读）、created_at（相对 + 绝对）、expires_at（剩余时长徽章：已过期红 / <24h 黄 / >24h 灰 / 永久绿）、purpose、object。
+- 单删成功 / 单删失败 / 多选批量删除（默认 ≤30）混合结果；行级 spinner + 失败红框。
+- 错误态：401 → 跳转 Provider 配置；403 → 提示检查 API Key 范围；429 → 指数退避；500 → 保留旧列表 + 重试 CTA。
+- 48 MiB 接近（≥40 MiB）/ 超限（>48 MiB）视觉高亮。
+- 不直接出现在画布项目资产中、不动其他 vendor UI；本 UI 只接 xAI。
 
 ## 7. 允许修改范围与隔离约束
 
@@ -469,6 +546,14 @@ interface MediaUploader {
 - `packages/agent-runtime/src/tools/media-generation-mcp-server.mjs`（只改 xAI native 分支）
 - 画布实际节点/编译文件（仅 P0 核实到的 xAI 接入点；不重做其他节点）
 - Spark 上传 bridge 的最小依赖注入文件（复用现有 AuthService/EduServerClient，不修改其他 vendor 上传逻辑）
+- **P9（已拍板 D）具体可修改文件**：
+  - `apps/desktop/src/renderer/design/views/providers/ProvidersView.tsx`：在 xAI Provider Drawer 内新增 `pv_section` 区块"xAI Files"；非 xAI Provider 不渲染该区块。
+  - `apps/desktop/src/main/ipc/provider-files.ts`（新建）：注册 `provider:files:list` / `provider:files:delete` IPC，参数 `profileId` 必填；调用 agent-runtime 的 xAI Files 客户端；处理 401/403/429/5xx 并返回结构化错误。
+  - `apps/desktop/src/main/ipc/index.ts`：注册 `registerProviderFilesIpc`（按现有 `register*Ipc` 风格）。
+  - `apps/desktop/src/renderer/design/views/providers/providerFiles.api.ts`（新建）：封装 `window.spark.invoke('provider:files:list' | 'provider:files:delete', ...)`；前端只持有类型，不直接持有 token。
+  - 复用 `CanvasAssetManagerPanel` 的多选/Popconfirm 交互、`SettingsView.tsx:5131 formatBytes`、`PlatformModelAccountPanel.tsx:170` 过期时间展示、`CanvasFilmAssetCenter.tsx:668-676` 空态样式；不修改这些原文件的行为，只按需抽出可复用辅助组件（必要时）。
+  - agent-runtime 侧：复用 P5 阶段的 xAI Files 客户端（multipart 上传 + GET/DELETE）；不新建并行 Files 客户端。
+  - **不修改**：`CanvasFilmAssetCenter.tsx` 任何影视资产 tab 与其数据流；其他 vendor Provider Drawer；`CanvasAssetManagerPanel.tsx` 既有画布资产逻辑（仅借用交互模式，不嵌入 xAI Files）。
 
 ### 7.2 禁止越界
 
@@ -483,9 +568,9 @@ interface MediaUploader {
 - xAI TTS/STT streaming WSS。
 - retry/backoff 和 provider-specific rate-limit 策略。
 - 自定义 headers / `forwardUserIp`。
-- Files API 列表、删除、分块上传、生命周期清理。
+- Files API 分块上传、生命周期 / TTL 自动清理、按 `purpose` 的批量管理操作。
 - 其他 vendor 的 `MediaUploader` 实现；本期只建立可切换契约并完成 xAI/Spark 所需实现。
-- 官方文档后续若统一 48/50 MB 限制、补充图片 n 上限或变更 TTS model 语义，重新刷新本计划和 manifest。
+- 官方文档后续若变更图片 n 上限、TTS model 语义、产物持久化策略或 R2V 限制，重新刷新本计划和 manifest。
 
 ## 9. 官方参考链接汇总
 
@@ -522,3 +607,5 @@ interface MediaUploader {
 7. 新增公共上传契约与现有 Spark `auth:upload-file` 登录态桥接，明确 xAI 输入回退和视频产物不允许降级 CDN 的差异。
 8. 将“画布 reference_to_video 已存在”作为用户确认事实执行，同时把当前代码未发现独立 operation 的冲突写入 P0，避免重复造节点或误接到 I2V。
 9. 将 STT、retry、headers 明确留在 TODO，不再把它们混进本期实施验收。
+10. **新增 P9（xAI Files API 列表 + 删除管理 UI）**：本期范围扩张项，明确基于官方 `GET /v1/files` + `DELETE /v1/files/{id}` 协议；放置位置已拍板 **D = ProvidersView xAI Provider Drawer 内新增"文件管理"区块**（按 profileId/API Key 归属最自然），具体文件清单见 7.1；同步移除旧计划中"Files 列表删除管理 UI 不在本期"的限制。
+11. **修正 Files 上限文档冲突表述**：`managing-files` 页面已统一为 48 MB，移除旧计划"48/50 MB 文档冲突"的兜底说法；客户端统一按 48 MiB 安全上限拦截。
