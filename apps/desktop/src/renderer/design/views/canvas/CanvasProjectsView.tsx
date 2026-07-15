@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Dropdown, Empty, Modal, Tag } from '@lobehub/ui'
+import { Button, Dropdown, Empty, Modal } from '@lobehub/ui'
 import { Modal as AntdModal, Spin, message } from 'antd'
 import { Icons } from '../../Icons'
 import {
@@ -16,6 +16,7 @@ import {
 } from './canvasProjectSort'
 import { useCanvasProjects } from './canvas.store'
 import { openCanvasProjectWindow } from './canvas-window-client'
+import { CanvasProjectCard } from './CanvasProjectCard'
 import './CanvasProjectsView.less'
 import './uiux-v4/projects.less'
 import './uiux-v4/modals.less'
@@ -388,108 +389,19 @@ export function CanvasProjectsView({
         ) : (
           <div className="canvas-projects-grid">
             {filteredProjects.map((project) => (
-              <article
+              <CanvasProjectCard
                 key={project.id}
-                className={`canvas-project-card${project.pinned ? ' canvas-project-card-pinned' : ''}`}
-                onClick={() => void handleOpenProject(project.id)}
-              >
-                <div className="canvas-project-cover">
-                  {project.coverUrl ? (
-                    <img
-                      className="canvas-project-cover-image"
-                      src={project.coverUrl}
-                      alt={project.title}
-                      draggable={false}
-                    />
-                  ) : (
-                    <>
-                      <div className="canvas-project-cover-grid" />
-                      <div className="canvas-project-cover-empty">
-                        <Icons.Canvas size={30} />
-                        <strong>暂无封面预览</strong>
-                        <span>进入项目开始创作</span>
-                      </div>
-                    </>
-                  )}
-                  {project.pinned && (
-                    <span className="canvas-project-pin-badge" title="已置顶">
-                      <Icons.Pin size={13} />
-                    </span>
-                  )}
-                </div>
-                <div className="canvas-project-card-body">
-                  <div className="canvas-project-card-top">
-                    <h3>{project.title}</h3>
-                    <Tag color={project.status === 'archived' ? 'default' : 'green'}>
-                      {project.status === 'archived' ? '已归档' : '进行中'}
-                    </Tag>
-                  </div>
-                  <p>{project.description || '暂无描述'}</p>
-                  <div className="canvas-project-card-meta">
-                    <span>{project.nodeCount} 节点</span>
-                    <span>{project.assetCount} 资产</span>
-                    <span>{project.taskCount} 任务</span>
-                  </div>
-                  <div className="canvas-project-card-foot">
-                    <span>更新 {new Date(project.updatedAt).toLocaleString()}</span>
-                    <div
-                      className="canvas-project-actions"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <Dropdown
-                        trigger={['click']}
-                        placement="bottom"
-                        menu={{
-                          items: [
-                            {
-                              key: 'pin',
-                              label: project.pinned ? '取消置顶' : '置顶',
-                              onClick: () => void handleTogglePin(project.id),
-                            },
-                            {
-                              key: 'rename',
-                              label: '基础信息',
-                              onClick: () => openEdit(project.id),
-                            },
-                            {
-                              key: 'open-folder',
-                              label: '打开文件夹',
-                              onClick: () => void handleOpenProjectFolder(project.id),
-                            },
-                            {
-                              key: 'export',
-                              label: '导出',
-                              onClick: () => void handleExportProject(project.id),
-                            },
-                            {
-                              key: 'archive',
-                              label: project.status === 'archived' ? '恢复' : '归档',
-                              onClick: () => void handleArchiveProject(project.id),
-                            },
-                            {
-                              key: 'delete',
-                              label: '删除',
-                              onClick: () => void handleDeleteProject(project.id),
-                            },
-                          ],
-                        }}
-                      >
-                        <Button
-                          size="middle"
-                          type="text"
-                          loading={
-                            exportingProjectId === project.id || togglingPinId === project.id
-                          }
-                          icon={<Icons.More size={13} />}
-                        />
-                      </Dropdown>
-                      <Button size="middle" type="text" icon={<Icons.ChevronRight size={13} />}>
-                        {openingProjectId === project.id ? '打开中' : '打开'}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </article>
+                project={project}
+                opening={openingProjectId === project.id}
+                busy={exportingProjectId === project.id || togglingPinId === project.id}
+                onOpen={(projectId) => void handleOpenProject(projectId)}
+                onTogglePin={(projectId) => void handleTogglePin(projectId)}
+                onEdit={openEdit}
+                onOpenFolder={(projectId) => void handleOpenProjectFolder(projectId)}
+                onExport={(projectId) => void handleExportProject(projectId)}
+                onArchive={(projectId) => void handleArchiveProject(projectId)}
+                onDelete={(projectId) => void handleDeleteProject(projectId)}
+              />
             ))}
           </div>
         )}
