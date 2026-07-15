@@ -55,21 +55,22 @@ const Body = () => (
 
     <h2 id="presets">4. 内置预设速查</h2>
     <pre>
-{`apimart-images           — APIMart 图片 (GPT Image 2)
-apimart-audio-whisper    — APIMart 语音转写 (Whisper)
-apimart-audio-tts        — APIMart 语音合成 (TTS)
-apimart-video-veo3       — APIMart 视频 (VEO 3, async)
-apimart-video-sora2      — APIMart 视频 (Sora 2, async)
-xai-imagine-image        — xAI Imagine 图片
-xai-imagine-video        — xAI Imagine 视频 (async, generate/i2v/edit/extend)
-xai-tts                  — xAI 语音合成
-bailian-images           — 阿里云百炼 图片
-bailian-video-happyhorse — 阿里云百炼 HappyHorse 视频
-bailian-video-wan-i2v    — 阿里云百炼 Wan 图生视频
-bailian-audio-tts        — 阿里云百炼 语音合成
-volcengine-seedance-video — 火山方舟 Seedance 视频 (async)
-kling-video              — Kling 可灵视频 (3.0 / 2.x, async)
-hailuo-video             — Hailuo 2.3 视频 (async)`}
+{`apimart-images             — APIMart 图片 (GPT Image 1/1.5/2 + 全部 Gemini Nano Banana + Seedream 系列 + Wan 2.7 + Imagen 4.0 + Qwen Image 2.0/Pro + Z-Image-Turbo + Grok Imagine 1.5)
+apimart-audio-whisper      — APIMart 语音转写 (Whisper)
+apimart-audio-tts          — APIMart 语音合成 (TTS)
+apimart-video-veo3         — APIMart 视频 VEO 3.x 系列 (veo3 / veo3.1-fast / veo3.1-quality / veo3.1-lite)
+apimart-video-sora2        — APIMart 视频 Sora 2 / Sora 2 Pro
+apimart-video-collection   — APIMart 视频合集（Kling 2.6/3.0/3.0 Turbo/v3 Omni/O1、Vidu Q3、Wan 2.5/2.6/2.7+R2V+VideoEdit、HappyHorse 1.0/1.1、SkyReels V4 fast/std、Pixverse v6、Gemini Omni Flash、Omni-Flash-Ext、MiniMax Hailuo 02/2.3、Grok Imagine 1.5 Video、Doubao Seedance 1.5/2.0 系列）
+xai-imagine-image          — xAI Imagine 图片
+xai-imagine-video          — xAI Imagine 视频 (async, generate/i2v/edit/extend)
+xai-tts                    — xAI 语音合成
+bailian-images             — 阿里云百炼 图片
+bailian-video-happyhorse   — 阿里云百炼 HappyHorse 视频
+bailian-video-wan-i2v      — 阿里云百炼 Wan 图生视频
+bailian-audio-tts          — 阿里云百炼 语音合成
+volcengine-seedance-video  — 火山方舟 Seedance 视频 (async)
+kling-video                — Kling 可灵视频 (3.0 / 2.x, async)
+hailuo-video               — Hailuo 2.3 视频 (async)`}
     </pre>
 
     <h2 id="param-coverage">5. 参数覆盖</h2>
@@ -86,7 +87,7 @@ hailuo-video             — Hailuo 2.3 视频 (async)`}
     </ul>
     <p>当前内置参数覆盖：</p>
     <ul>
-      <li><strong>APIMart</strong>：GPT Image 2 / Wan 2.7 Image / Qwen Image 2.0 / Seedream 5.0 Lite / Gemini image preview / Imagen 4.0 / Sora / Veo / Kling / Seedance / Hailuo 系列 — size、aspect、resolution、count、format、顺序生成、搜索开关、视频时长、分辨率、首末帧、音频标志。</li>
+      <li><strong>APIMart</strong>：GPT Image 1 / 1.5 / 2 / Wan 2.7 Image / Qwen Image 2.0 + Pro / Seedream 4.0 / 4.5 / 5.0 Lite / 5.0 Pro / Gemini Nano Banana 2/Pro/官方 / Imagen 4.0 / Z-Image-Turbo / Grok Imagine 1.5 Image / Sora 2 + Pro / Veo 3 + 3.1 fast/quality/lite / Kling v2.6 / v3 / v3 Omni / 3.0 Turbo / O1 / Vidu Q3 pro/turbo/mix/standard / Wan 2.5/2.6/2.7+R2V+VideoEdit / HappyHorse 1.0/1.1 / SkyReels V4 fast/std / Pixverse v6 / Gemini Omni Flash / Omni-Flash-Ext / MiniMax Hailuo 02/2.3 / Grok Imagine 1.5 Video / Doubao Seedance 1.5/2.0 系列 — size、aspect、resolution、count、format、顺序生成、搜索开关、视频时长、分辨率、首末帧、音频标志。</li>
       <li><strong>xAI</strong>：Grok Imagine Image Quality / Grok Imagine Video / Grok TTS — aspect、duration、resolution、first frame、format、voice、video edit / extend（duration 1-15s）。</li>
       <li><strong>阿里百炼</strong>：Wan 2.7 全系（Image Pro / T2V / I2V / R2V / VideoEdit）、HappyHorse 全系（1.0/1.1 T2V、1.1 I2V/R2V、1.0 Video Edit）、Qwen3 TTS Flash。</li>
       <li><strong>火山</strong>：Doubao Seedance 2.0 / 2.0 Fast。</li>
