@@ -1,0 +1,139 @@
+.canvas-parameter-control {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.canvas-parameter-control-head {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.canvas-parameter-control-head > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.canvas-parameter-control-head small {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-aspect-ratio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
+  gap: 6px;
+}
+
+.canvas-aspect-ratio-option,
+.canvas-parameter-option {
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: var(--r-md);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--canvas-field-bg) 88%, transparent);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.canvas-aspect-ratio-option {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  font-size: 10px;
+}
+
+.canvas-aspect-ratio-option:hover,
+.canvas-aspect-ratio-option:focus-visible,
+.canvas-parameter-option:hover,
+.canvas-parameter-option:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 64%, var(--border));
+  color: var(--text-strong);
+  outline: none;
+}
+
+.canvas-aspect-ratio-option.is-selected,
+.canvas-parameter-option.is-selected {
+  border-color: var(--primary);
+  color: var(--text-strong);
+  background: color-mix(in srgb, var(--primary) 13%, var(--canvas-field-bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 38%, transparent);
+}
+
+.canvas-aspect-ratio-frame-wrap {
+  width: 38px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.canvas-aspect-ratio-frame {
+  display: block;
+  max-width: 32px;
+  max-height: 32px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  opacity: 0.86;
+}
+
+.canvas-aspect-ratio-frame.is-adaptive {
+  border-style: dashed;
+}
+
+.canvas-parameter-custom-value {
+  margin-top: 2px;
+}
+
+.canvas-parameter-option-rail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(54px, 1fr));
+  gap: 6px;
+}
+
+.canvas-parameter-option-rail.is-scrollable {
+  display: flex;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.canvas-parameter-option {
+  min-width: 54px;
+  min-height: 34px;
+  padding: 5px 9px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.canvas-parameter-switch-row {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--canvas-field-bg) 88%, transparent);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.canvas-parameter-control.is-compact .canvas-parameter-control-head small {
+  display: none;
+}
