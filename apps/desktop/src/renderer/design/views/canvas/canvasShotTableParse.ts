@@ -105,7 +105,7 @@ const HEADER_MATCHERS: Array<{ key: ColumnKey; test: (h: string) => boolean }> =
   { key: 'shotSize', test: (h) => /景别|景\b|shot\s*size|scale/i.test(h) },
   { key: 'angle', test: (h) => /角度|机位|angle/i.test(h) },
   { key: 'movement', test: (h) => /运镜|镜头运动|运动|movement|camera\s*move/i.test(h) },
-  { key: 'sceneLayout', test: (h) => /场景布局|场景描述|空间|scene\s*layout|setting/i.test(h) },
+  { key: 'sceneLayout', test: (h) => /场景布局|场景描述|^场景$|空间|scene\s*layout|setting/i.test(h) },
   { key: 'blocking', test: (h) => /站位|调度|走位|场面调度|blocking/i.test(h) },
   { key: 'lighting', test: (h) => /光照|灯光|光影|lighting/i.test(h) },
   { key: 'cameraParams', test: (h) => /镜头参数|camera\s*params|lens\s*params/i.test(h) },
@@ -309,14 +309,20 @@ function mapShotItem(item: Record<string, unknown>, fallbackIndex: number): Pars
         ? Number.parseInt(stringField(item.index).match(/\d+/)![0]!, 10)
         : undefined
   const durationSec = numberField(item.durationSec ?? item.duration ?? item['时长'])
-  const description = stringField(item.description ?? item.action ?? item['画面/动作'])
+  const description = stringField(
+    item.description ?? item.action ?? item['画面/动作'] ?? item['画面'] ?? item['内容'] ?? item['描述'],
+  )
   const dialogue = stringField(item.dialogue ?? item['对白'])
   const narration = stringField(item.narration ?? item['旁白'])
   const shotSize = stringField(item.shotSize ?? item['景别'])
   const angle = stringField(item.angle ?? item['角度'])
   const movement = stringField(item.movement ?? item['运镜'])
   const sceneLayout = stringField(
-    item.sceneLayout ?? item.sceneDescription ?? item['场景布局'] ?? item['场景描述'],
+    item.sceneLayout ??
+      item.sceneDescription ??
+      item['场景布局'] ??
+      item['场景描述'] ??
+      item['场景'],
   )
   const blocking = stringField(
     item.blocking ?? item.staging ?? item['站位调度'] ?? item['场面调度'],

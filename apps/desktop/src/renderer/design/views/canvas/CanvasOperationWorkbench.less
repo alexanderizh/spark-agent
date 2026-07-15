@@ -363,10 +363,21 @@
   font-size: 13px;
 }
 
+// editing 包了一层，使内层面板不再是 content 的直接子项，content 那条
+// 「flex:1 + min-height:0 + max-height:100%」的高度链对它失效；原先这里又把面板
+// max-height 置为 none，导致内部 table-wrap 的 flex:1 + overflow:auto 没有受限基准，
+// 内容一多就被外层 overflow:hidden 裁切（任务节点编辑"无法滚动"）。
+// 这里给 editing 区一个受限高度并把内层面板同样钉成受限 flex 子项，打通滚动链。
 .canvas-operation-workbench-editing {
-  min-height: min(62vh, 620px);
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
 }
 
 .canvas-operation-workbench-editing > .canvas-bottom-floating-panel.is-inline {
-  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
 }

@@ -228,7 +228,7 @@ export function CanvasModelPicker({
             )
           }
         >
-          <span>{triggerLabel}</span>
+          <span className="canvas-model-picker-trigger-label">{triggerLabel}</span>
           {loading && <Spin size="small" />}
           <Icons.ChevronDown size={13} />
         </Button>
