@@ -266,6 +266,40 @@ function numberField(value: unknown): number | undefined {
   return undefined
 }
 
+/**
+ * 判断一行分镜是否有任何实质内容（mapShotItem 与 parseShotTable 共用同一判定）。
+ * 整行所有字段都空（如残留合计行 / 占位空行）才视为无内容。
+ * 不能只看 画面/对白/旁白/时长——很多分镜表的行只有 景别/运镜/镜头/场景 等列，
+ * 只看这 4 个字段会把合法行误判为空，导致编辑态表格显示为空。
+ */
+function hasShotRowContent(row: ParsedShotRow): boolean {
+  return (
+    !!row.description ||
+    !!row.dialogue ||
+    !!row.narration ||
+    row.durationSec !== undefined ||
+    !!row.shotSize ||
+    !!row.angle ||
+    !!row.movement ||
+    !!row.sceneLayout ||
+    !!row.blocking ||
+    !!row.lighting ||
+    !!row.cameraParams ||
+    !!row.focalLength ||
+    !!row.aperture ||
+    !!row.iso ||
+    !!row.colorTone ||
+    !!row.mood ||
+    !!row.performance ||
+    !!row.costume ||
+    !!row.groupName ||
+    !!row.sceneName ||
+    !!row.shotPrompt ||
+    !!row.negativePrompt ||
+    (row.characterNames?.length ?? 0) > 0
+  )
+}
+
 /** 把单个分镜项（shot / segment）对象映射为 ParsedShotRow。字段全部可选，便于容错。 */
 function mapShotItem(item: Record<string, unknown>, fallbackIndex: number): ParsedShotRow | null {
   const index =
@@ -312,11 +346,9 @@ function mapShotItem(item: Record<string, unknown>, fallbackIndex: number): Pars
     : stringField(rawCharacters)
       ? parseCharacterNames(stringField(rawCharacters))
       : []
-  // 整行无实质内容（画面/对白/旁白/时长都空）→ 视为无效，跳过
-  if (!description && !dialogue && !narration && durationSec === undefined) return null
-  return {
-    ...(index !== undefined ? { index } : {}),
+  const row: ParsedShotRow = {
     title: stringField(item.title) || `镜${index ?? fallbackIndex}`,
+    ...(index !== undefined ? { index } : {}),
     ...(durationSec !== undefined ? { durationSec } : {}),
     ...(shotSize ? { shotSize } : {}),
     ...(angle ? { angle } : {}),
@@ -341,6 +373,7 @@ function mapShotItem(item: Record<string, unknown>, fallbackIndex: number): Pars
     ...(shotPrompt ? { shotPrompt } : {}),
     ...(negativePrompt ? { negativePrompt } : {}),
   }
+  return hasShotRowContent(row) ? row : null
 }
 
 function parseJsonShotRows(text: string): ParsedShotRow[] {
@@ -474,18 +507,14 @@ export function parseShotTable(markdown: string): ParsedShotRow[] {
     const indexMatch = indexCell.match(/\d+/)
     const index = indexMatch ? Number.parseInt(indexMatch[0]!, 10) : undefined
 
-    // 整行无实质内容（画面/对白/时长都空）→ 跳过（如残留的合计行）
-    if (!description && !dialogue && !narration && durationSec === undefined) continue
-
     const shotPromptParts = [shotSize, angle, movement].filter(Boolean)
     const shotPrompt = shotCol || (shotPromptParts.length > 0 ? shotPromptParts.join('，') : '')
     const characterNames = charactersCell ? parseCharacterNames(charactersCell) : []
     const fallbackIndex = rows.length + 1
-    const title = `镜${index ?? fallbackIndex}`
 
-    rows.push({
+    const row: ParsedShotRow = {
+      title: `镜${index ?? fallbackIndex}`,
       ...(index !== undefined ? { index } : {}),
-      title,
       ...(durationSec !== undefined ? { durationSec } : {}),
       ...(shotSize ? { shotSize } : {}),
       ...(angle ? { angle } : {}),
@@ -509,7 +538,11 @@ export function parseShotTable(markdown: string): ParsedShotRow[] {
       ...(characterNames.length > 0 ? { characterNames } : {}),
       ...(shotPrompt ? { shotPrompt } : {}),
       ...(negativePrompt ? { negativePrompt } : {}),
-    })
+    }
+    // 整行无任何实质内容才跳过（如残留的合计行 / 占位空行）。判定逻辑与 mapShotItem 共用
+    // hasShotRowContent，避免两处字段增删不同步。
+    if (!hasShotRowContent(row)) continue
+    rows.push(row)
   }
   return rows
 }

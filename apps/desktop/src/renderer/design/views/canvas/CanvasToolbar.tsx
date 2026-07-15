@@ -19,6 +19,7 @@ export function CanvasToolbar({
   onSave,
   onAutoSaveChange,
   onExport,
+  onUploadFiles,
   selectedCount = 0,
   arranging = false,
   onArrange,
@@ -47,6 +48,7 @@ export function CanvasToolbar({
   onSave: () => void
   onAutoSaveChange: (enabled: boolean) => void
   onExport: () => void
+  onUploadFiles?: () => void
   arranging?: boolean
   onArrange: (options: {
     mode: CanvasAutoLayoutMode
@@ -97,6 +99,16 @@ export function CanvasToolbar({
         <Button size="middle" icon={<Icons.Download size={15} />} onClick={onExport}>
           导出
         </Button>
+        <Tooltip title="从本地选择文件（图片 / 视频 / 音频 / 文本 / 代码 / CSV 等）导入画布，可多选">
+          <Button
+            size="middle"
+            icon={<Icons.Upload size={15} />}
+            disabled={!onUploadFiles}
+            onClick={onUploadFiles}
+          >
+            上传文件
+          </Button>
+        </Tooltip>
         <Popover
           trigger="click"
           placement="bottomRight"
