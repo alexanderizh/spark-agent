@@ -10,7 +10,6 @@ import {
 import { Button, Checkbox as LobeCheckbox, Input, Tag, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { Select as LobeSelect } from '@lobehub/ui'
-import { AutoComplete } from 'antd'
 import {
   capabilityForOperation,
   capabilitySupportsFrameRoles,
@@ -45,7 +44,20 @@ import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasMediaInputHint } from './CanvasMediaInputHint'
 import { buildReferenceImageInputRoles } from './canvasTaskInputFiles'
 import { mediaModelKey } from './canvasModelPickerModel'
-import type { SchemaField } from './canvasParameterPresentation'
+import { CanvasModelPicker } from './CanvasModelPicker'
+import { CanvasParameterControl } from './CanvasParameterControl'
+import { CanvasComposerToolbar } from './CanvasComposerToolbar'
+import {
+  parameterSummaryValue,
+  partitionParameterFields,
+  type CanvasParameterControlKind,
+  type SchemaField,
+} from './canvasParameterPresentation'
+import {
+  readCanvasComposerAdvancedOpen,
+  writeCanvasComposerAdvancedOpen,
+} from './canvasComposerPreferences'
+import './CanvasInlineAiComposer.less'
 import type {
   CanvasInputTransport,
   CanvasNode,
@@ -108,6 +120,8 @@ export function CanvasInlineAiComposer({
   const [referenceFrameNodeIds, setReferenceFrameNodeIds] = useState<string[]>([])
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(readCanvasComposerAdvancedOpen)
   /**
    * 「创建任务」按钮防连击。
    * 用 ref 而非 state：onClick 是纯同步执行（onCreateTask 不返回 Promise），
@@ -242,7 +256,9 @@ export function CanvasInlineAiComposer({
     }
     const recommended = capabilities.find((capability) => capability.recommended)
     const nextOperation = recommended?.operation ?? operation
-    const nextPreset = readCanvasResolvedPresetTarget(resolveCanvasPresetTarget({ operation: nextOperation }))
+    const nextPreset = readCanvasResolvedPresetTarget(
+      resolveCanvasPresetTarget({ operation: nextOperation }),
+    )
     if (recommended) setOperation(recommended.operation)
     setPrompt(nodePromptContext)
     setNegativePrompt(mergeCanvasOperationPresetNegativePrompt('', nextPreset.negativePrompt))
@@ -267,14 +283,6 @@ export function CanvasInlineAiComposer({
       ),
     )
   }, [mediaCapabilityIds, mediaModels])
-  const modelOptions = useMemo(
-    () =>
-      supportedMediaModels.map((model) => ({
-        value: mediaModelKey(model),
-        label: `${model.providerName ?? model.providerKind} / ${model.displayName}`,
-      })),
-    [supportedMediaModels],
-  )
   const selectedModel = useMemo(
     () => supportedMediaModels.find((model) => mediaModelKey(model) === selectedModelKey),
     [selectedModelKey, supportedMediaModels],
@@ -301,7 +309,8 @@ export function CanvasInlineAiComposer({
   const selectedFrameCount =
     (firstFrameNodeId ? 1 : 0) + (lastFrameNodeId ? 1 : 0) + referenceFrameNodeIds.length
   const selectedCapabilityRolePolicy = useMemo(
-    () => (selectedCapability ? inferRolePolicy(selectedCapability) : EMPTY_MEDIA_INPUT_ROLE_POLICY),
+    () =>
+      selectedCapability ? inferRolePolicy(selectedCapability) : EMPTY_MEDIA_INPUT_ROLE_POLICY,
     [selectedCapability],
   )
   const frameImageOptions = useMemo(
@@ -348,6 +357,10 @@ export function CanvasInlineAiComposer({
         modelSuggestedFields(selectedModel),
       ),
     [operation, selectedCapability, selectedModel],
+  )
+  const parameterPartition = useMemo(
+    () => partitionParameterFields(parameterFields),
+    [parameterFields],
   )
 
   useEffect(() => {
@@ -429,15 +442,8 @@ export function CanvasInlineAiComposer({
           ? (preferredNodes[1]?.id ?? '')
           : '',
     )
-    setReferenceFrameNodeIds((prev) =>
-      prev.filter((id) => candidateIds.has(id)),
-    )
-  }, [
-    frameCandidateImageNodes,
-    selectedImageNodes,
-    supportsVideoFrameRoles,
-    videoFrameMaxImages,
-  ])
+    setReferenceFrameNodeIds((prev) => prev.filter((id) => candidateIds.has(id)))
+  }, [frameCandidateImageNodes, selectedImageNodes, supportsVideoFrameRoles, videoFrameMaxImages])
 
   // 防抖自动保存：弹窗打开期间，任意字段变化 → 400ms 后写入本节点集合的草稿。
   // 任务创建前持续缓存；关闭弹窗时立即 flush（见下一个 effect）。
@@ -605,6 +611,177 @@ export function CanvasInlineAiComposer({
     [agents, nodePromptContext, selectedAgentId],
   )
 
+  const handleAdvancedToggle = () => {
+    const next = !advancedOpen
+    setAdvancedOpen(next)
+    writeCanvasComposerAdvancedOpen(next)
+  }
+
+  const focusParameterControl = (fieldName: string) => {
+    const controls = panelRef.current?.querySelectorAll<HTMLElement>('[data-parameter-name]')
+    const target = controls
+      ? Array.from(controls).find((item) => item.dataset.parameterName === fieldName)
+      : undefined
+    target?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+    target
+      ?.querySelector<HTMLElement>('button, input, [role="switch"], .ant-select-selector')
+      ?.focus()
+  }
+
+  const handleSubmit = async () => {
+    // 防连点：ref 同步置位，拦住渲染未完成前的重复点击。
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      const rawModelParams = normalizeModelParamsForSubmit(
+        {
+          ...buildModelParams(parameterFields, modelParamDraft),
+          ...buildCustomModelParams(customParams),
+        },
+        selectedCapability?.defaults ?? {},
+        parameterFields,
+      )
+      // Contract V2 裁剪：按目标 manifest 在提交前过滤 unsupported/forbidden 字段，
+      // 避免 provider 400。manifest 缺省时 pruneModelParamsForCanvas 直接返回原值。
+      const pruned = await pruneModelParamsForCanvas({
+        operation,
+        ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
+        ...(selectedModel?.providerProfileId
+          ? { providerProfileId: selectedModel.providerProfileId }
+          : {}),
+        modelParams: rawModelParams,
+      })
+      const modelParams = pruned.modelParams
+      const effectivePrompt = mergeProjectPrompt(
+        prompt.trim() || fallbackPromptForOperation(operation),
+        includeProjectPrompt ? projectPrompt : '',
+      )
+      const effectiveNegativePrompt = mergeNegativePrompt(
+        negativePrompt,
+        includeNegativePrompt ? projectNegativePrompt : '',
+      )
+      const effectiveInputTransport =
+        inputTransport === 'auto'
+          ? selectedModel?.providerKind === 'xai'
+            ? 'base64'
+            : 'cloud_url'
+          : inputTransport
+      const videoFrameNodeIds = supportsVideoFrameRoles
+        ? normalizeVideoFrameNodeIds(firstFrameNodeId, lastFrameNodeId, referenceFrameNodeIds)
+        : []
+      const inputRoles = supportsVideoFrameRoles
+        ? buildVideoFrameInputRoles(
+            videoFrameNodeIds,
+            firstFrameNodeId,
+            lastFrameNodeId,
+            referenceFrameNodeIds,
+          )
+        : selectedCapabilityRolePolicy.imageRoles?.includes('reference_image')
+          ? buildReferenceImageInputRoles(selectedImageNodes.map((node) => node.id))
+          : undefined
+      const inputNodeIds = supportsVideoFrameRoles
+        ? buildTaskInputNodeIds(selectedNodes, videoFrameNodeIds)
+        : undefined
+      const payload: {
+        operation: CanvasOperationType
+        prompt: string
+        negativePrompt?: string
+        inputNodeIds?: string[]
+        providerProfileId?: string
+        manifestId?: string
+        modelId?: string
+        modelParams?: Record<string, unknown>
+        inputTransport?: CanvasInputTransport
+        inputRoles?: Record<string, CanvasTaskInputRoleSelection>
+        agentId?: string
+        droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string }>
+        modelParamWarnings?: Array<{ code: string; message: string }>
+      } = {
+        operation,
+        prompt: effectivePrompt,
+      }
+      if (isTextOperation && selectedAgentId) payload.agentId = selectedAgentId
+      if (effectiveNegativePrompt) payload.negativePrompt = effectiveNegativePrompt
+      if (selectedModel?.providerProfileId)
+        payload.providerProfileId = selectedModel.providerProfileId
+      if (selectedModel?.manifestId) payload.manifestId = selectedModel.manifestId
+      if (selectedModel?.effectiveModelId) payload.modelId = selectedModel.effectiveModelId
+      if (Object.keys(modelParams).length > 0) payload.modelParams = modelParams
+      if (needsImageInput) payload.inputTransport = effectiveInputTransport
+      if (inputNodeIds && inputNodeIds.length > 0) payload.inputNodeIds = inputNodeIds
+      if (inputRoles && Object.keys(inputRoles).length > 0) payload.inputRoles = inputRoles
+      if (pruned.droppedParams.length > 0) {
+        payload.droppedModelParams = pruned.droppedParams.map((d) => ({
+          name: d.name,
+          reason: d.reason,
+          ...(d.valuePreview != null ? { valuePreview: d.valuePreview } : {}),
+        }))
+      }
+      if (pruned.warnings.length > 0) {
+        payload.modelParamWarnings = pruned.warnings.map((w) => ({
+          code: w.code,
+          message: w.message,
+        }))
+      }
+      // 任务创建：保留跨节点模型偏好，清除本节点集合的草稿缓存
+      if (selectedModelKey) writeLastModelKey(operation, selectedModelKey)
+      writeCanvasLastUsedPresetTarget(resolveCanvasPresetTarget({ operation }), {
+        ...(prompt.trim() ? { prompt } : {}),
+        negativePrompt,
+        ...(selectedModel?.providerProfileId
+          ? { providerProfileId: selectedModel.providerProfileId }
+          : {}),
+        ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
+        ...(selectedModel?.effectiveModelId ? { modelId: selectedModel.effectiveModelId } : {}),
+        ...(selectedAgentId ? { agentId: selectedAgentId } : {}),
+        // 新节点没在 InlineAiComposer 里选 skills，但 preset 里可能已经预设了；
+        // 这里把 preset 默认值一起写进 lastUsed，避免后续新建节点拿不到 skill 覆盖。
+        ...(resolvedPresetSkillIds.length > 0 ? { skillIds: resolvedPresetSkillIds } : {}),
+        ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
+      })
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+      }
+      clearComposerDraft(nodeCacheKey)
+      // 阻止本次关窗 flush 把已清除的草稿写回
+      suppressFlushRef.current = true
+      onCreateTask(payload)
+      setPrompt('')
+      setNegativePrompt('')
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
+  }
+
+  const composerSummaries = [
+    ...(mediaCapabilityIds.length > 0
+      ? [
+          {
+            key: 'model',
+            label: '模型',
+            value: selectedModel?.displayName ?? '自动路由',
+            icon: <Icons.Sparkles size={14} />,
+            onClick: () => {
+              const trigger =
+                panelRef.current?.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')
+              trigger?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+              trigger?.click()
+            },
+          },
+        ]
+      : []),
+    ...parameterPartition.common.map((presentation) => ({
+      key: presentation.field.name,
+      label: presentation.label,
+      value: parameterSummaryValue(presentation, modelParamDraft[presentation.field.name] ?? ''),
+      icon: parameterSummaryIcon(presentation.control),
+      onClick: () => focusParameterControl(presentation.field.name),
+    })),
+  ]
+
   if (!open) return null
 
   return (
@@ -670,15 +847,13 @@ export function CanvasInlineAiComposer({
           </div>
         </div>
         {mediaCapabilityIds.length > 0 && (
-          <div className="canvas-form-row">
+          <div className="canvas-form-row canvas-composer-model-row">
             <label>模型</label>
-            <LobeSelect
-              value={selectedModelKey || undefined}
+            <CanvasModelPicker
+              models={supportedMediaModels}
+              value={selectedModelKey}
               loading={modelsLoading}
-              placeholder={modelsLoading ? '加载模型目录...' : '使用自动路由'}
-              onChange={(value) => setSelectedModelKey(String(value ?? ''))}
-              options={modelOptions}
-              allowClear
+              onChange={setSelectedModelKey}
             />
             <div className="canvas-model-hint">
               {modelsLoading
@@ -686,40 +861,6 @@ export function CanvasInlineAiComposer({
                 : supportedMediaModels.length > 0
                   ? `当前能力可用 ${supportedMediaModels.length} 个模型${selectedModel ? ` · ${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}` : ''}`
                   : '当前能力暂无已启用模型，可继续使用自动路由或先到 Provider 绑定模型。'}
-            </div>
-            {supportedMediaModels.length > 0 && (
-              <div className="canvas-model-chip-row">
-                {supportedMediaModels.slice(0, 4).map((model) => (
-                  <Tag
-                    key={mediaModelKey(model)}
-                    color={mediaModelKey(model) === selectedModelKey ? 'blue' : 'default'}
-                    bordered
-                  >
-                    {model.providerName ?? model.providerKind} / {model.displayName}
-                  </Tag>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        {needsImageInput && (
-          <div className="canvas-form-row">
-            <label>输入图片</label>
-            <LobeSelect
-              value={inputTransport}
-              onChange={(value) => setInputTransport((value ?? 'auto') as CanvasInputTransport)}
-              options={[
-                {
-                  value: 'auto',
-                  label:
-                    selectedModel?.providerKind === 'xai' ? '自动：Base64' : '自动：云端公网链接',
-                },
-                { value: 'cloud_url', label: '云端公网链接' },
-                { value: 'base64', label: 'Base64 直传' },
-              ]}
-            />
-            <div className="canvas-model-hint">
-              APIMart 等平台需要公网链接；xAI 在国内公网地址不可达时建议使用 Base64。
             </div>
           </div>
         )}
@@ -864,334 +1005,213 @@ export function CanvasInlineAiComposer({
             })
           }}
         />
-        <div className="canvas-form-row">
-          <label>项目提示词</label>
-          <div className="canvas-prompt-injection-list">
-            <LobeCheckbox
-              checked={includeProjectPrompt}
-              disabled={projectPrompt.length === 0}
-              onChange={setIncludeProjectPrompt}
-            >
-              注入项目统一提示词
-            </LobeCheckbox>
-            <LobeCheckbox
-              checked={includeNegativePrompt}
-              disabled={projectNegativePrompt.length === 0}
-              onChange={setIncludeNegativePrompt}
-            >
-              注入反向提示词
-            </LobeCheckbox>
-          </div>
-          <div className="canvas-model-hint">
-            {projectPrompt || projectNegativePrompt
-              ? '提交任务时按勾选状态附加项目级约束。'
-              : '可在右侧项目信息中配置项目级提示词。'}
-          </div>
-        </div>
-        {parameterFields.length > 0 && (
-          <div className="canvas-form-row">
-            <label>模型参数</label>
-            <div className="canvas-param-grid">
-              {parameterFields.map((field) => (
-                <div key={field.name} className="canvas-param-field">
-                  <span title={field.description}>{field.title}</span>
-                  {field.enumValues.length > 0 ? (
-                    field.allowCustom ? (
-                      <AutoComplete
-                        value={modelParamDraft[field.name] || undefined}
-                        options={field.enumValues.map((value) => ({ value, label: value }))}
-                        filterOption={(input, option) =>
-                          String(option?.value ?? '')
-                            .toLowerCase()
-                            .includes(input.toLowerCase())
-                        }
-                        allowClear
-                        onChange={(value) => {
-                          setModelParamDraft((prev) =>
-                            updateModelParamDraftValue(
-                              prev,
-                              field.name,
-                              value == null ? '' : String(value),
-                            ),
-                          )
-                        }}
-                      />
-                    ) : (
-                      <LobeSelect
-                        value={modelParamDraft[field.name] || undefined}
-                        allowClear
-                        onChange={(value) => {
-                          setModelParamDraft((prev) =>
-                            updateModelParamDraftValue(
-                              prev,
-                              field.name,
-                              value == null ? '' : String(value),
-                            ),
-                          )
-                        }}
-                        options={field.enumValues.map((value) => ({ value, label: value }))}
-                      />
+        {parameterPartition.common.length > 0 && (
+          <div className="canvas-form-row canvas-composer-common-parameters">
+            <label>常用参数</label>
+            <div className="canvas-composer-common-grid">
+              {parameterPartition.common.map((presentation) => (
+                <CanvasParameterControl
+                  key={presentation.field.name}
+                  presentation={presentation}
+                  value={modelParamDraft[presentation.field.name] ?? ''}
+                  onChange={(value) =>
+                    setModelParamDraft((prev) =>
+                      updateModelParamDraftValue(prev, presentation.field.name, value),
                     )
-                  ) : field.type === 'boolean' ? (
-                    <LobeSelect
-                      value={modelParamDraft[field.name] || undefined}
-                      allowClear
-                      onChange={(value) => {
-                        setModelParamDraft((prev) =>
-                          updateModelParamDraftValue(
-                            prev,
-                            field.name,
-                            value == null ? '' : String(value),
-                          ),
-                        )
-                      }}
-                      options={[
-                        { value: 'true', label: 'true' },
-                        { value: 'false', label: 'false' },
-                      ]}
-                    />
-                  ) : (
-                    <Input
-                      value={modelParamDraft[field.name] ?? ''}
-                      type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
-                      placeholder={field.placeholder}
-                      onChange={(e) => {
-                        setModelParamDraft((prev) =>
-                          updateModelParamDraftValue(prev, field.name, e.target.value),
-                        )
-                      }}
-                    />
-                  )}
-                </div>
+                  }
+                />
               ))}
             </div>
           </div>
         )}
-        <div className="canvas-form-row">
-          <div className="canvas-form-label-row">
-            <label>自定义参数</label>
-            <Button
-              size="middle"
-              icon={<Icons.Plus size={13} />}
-              onClick={() => setCustomParams((prev) => [...prev, createCustomParamDraft()])}
-            >
-              添加
-            </Button>
-          </div>
-          {customParams.length === 0 ? (
-            <div className="canvas-param-empty">
-              可添加模型私有参数，例如 google_search、seed、negative_prompt。
+        {advancedOpen && (
+          <div className="canvas-composer-advanced">
+            <div className="canvas-composer-advanced-title">
+              <Icons.Sliders size={14} />
+              <span>高级设置</span>
             </div>
-          ) : (
-            <div className="canvas-custom-param-list">
-              {customParams.map((param) => (
-                <div key={param.id} className="canvas-custom-param-row">
-                  <Input
-                    value={param.name}
-                    placeholder="字段名"
-                    onChange={(e) =>
-                      updateCustomParam(setCustomParams, param.id, { name: e.target.value })
-                    }
-                  />
-                  <LobeSelect
-                    value={param.type}
-                    options={[
-                      { value: 'string', label: '文本' },
-                      { value: 'number', label: '数字' },
-                      { value: 'integer', label: '整数' },
-                      { value: 'boolean', label: '布尔' },
-                      { value: 'json', label: 'JSON' },
-                    ]}
-                    onChange={(value) =>
-                      updateCustomParam(setCustomParams, param.id, {
-                        type: String(value) as CustomParamType,
-                      })
-                    }
-                  />
-                  {param.type === 'boolean' ? (
-                    <LobeSelect
-                      value={param.value || undefined}
-                      placeholder="值"
-                      allowClear
-                      options={[
-                        { value: 'true', label: 'true' },
-                        { value: 'false', label: 'false' },
-                      ]}
-                      onChange={(value) =>
-                        updateCustomParam(setCustomParams, param.id, {
-                          value: value == null ? '' : String(value),
-                        })
-                      }
-                    />
-                  ) : (
-                    <Input
-                      value={param.value}
-                      placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
-                      type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
-                      onChange={(e) =>
-                        updateCustomParam(setCustomParams, param.id, { value: e.target.value })
-                      }
-                    />
-                  )}
-                  <Button
-                    size="middle"
-                    type="text"
-                    icon={<Icons.Trash size={13} />}
-                    aria-label="删除自定义参数"
-                    onClick={() =>
-                      setCustomParams((prev) => prev.filter((item) => item.id !== param.id))
-                    }
-                  />
+            {needsImageInput && (
+              <div className="canvas-form-row">
+                <label>输入图片传输</label>
+                <LobeSelect
+                  value={inputTransport}
+                  onChange={(value) => setInputTransport((value ?? 'auto') as CanvasInputTransport)}
+                  options={[
+                    {
+                      value: 'auto',
+                      label:
+                        selectedModel?.providerKind === 'xai'
+                          ? '自动：Base64'
+                          : '自动：云端公网链接',
+                    },
+                    { value: 'cloud_url', label: '云端公网链接' },
+                    { value: 'base64', label: 'Base64 直传' },
+                  ]}
+                />
+                <div className="canvas-model-hint">
+                  APIMart 等平台需要公网链接；xAI 在国内公网地址不可达时建议使用 Base64。
                 </div>
-              ))}
+              </div>
+            )}
+            <div className="canvas-form-row">
+              <label>项目提示词</label>
+              <div className="canvas-prompt-injection-list">
+                <LobeCheckbox
+                  checked={includeProjectPrompt}
+                  disabled={projectPrompt.length === 0}
+                  onChange={setIncludeProjectPrompt}
+                >
+                  注入项目统一提示词
+                </LobeCheckbox>
+                <LobeCheckbox
+                  checked={includeNegativePrompt}
+                  disabled={projectNegativePrompt.length === 0}
+                  onChange={setIncludeNegativePrompt}
+                >
+                  注入反向提示词
+                </LobeCheckbox>
+              </div>
+              <div className="canvas-model-hint">
+                {projectPrompt || projectNegativePrompt
+                  ? '提交任务时按勾选状态附加项目级约束。'
+                  : '可在右侧项目信息中配置项目级提示词。'}
+              </div>
             </div>
-          )}
-        </div>
+            {parameterPartition.advanced.length > 0 && (
+              <div className="canvas-form-row">
+                <label>更多模型参数</label>
+                <div className="canvas-composer-advanced-grid">
+                  {parameterPartition.advanced.map((presentation) => (
+                    <CanvasParameterControl
+                      key={presentation.field.name}
+                      presentation={presentation}
+                      value={modelParamDraft[presentation.field.name] ?? ''}
+                      onChange={(value) =>
+                        setModelParamDraft((prev) =>
+                          updateModelParamDraftValue(prev, presentation.field.name, value),
+                        )
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="canvas-form-row">
+              <div className="canvas-form-label-row">
+                <label>自定义参数</label>
+                <Button
+                  size="middle"
+                  icon={<Icons.Plus size={13} />}
+                  onClick={() => setCustomParams((prev) => [...prev, createCustomParamDraft()])}
+                >
+                  添加
+                </Button>
+              </div>
+              {customParams.length === 0 ? (
+                <div className="canvas-param-empty">
+                  可添加模型私有参数，例如 google_search、seed、negative_prompt。
+                </div>
+              ) : (
+                <div className="canvas-custom-param-list">
+                  {customParams.map((param) => (
+                    <div key={param.id} className="canvas-custom-param-row">
+                      <Input
+                        value={param.name}
+                        placeholder="字段名"
+                        onChange={(event) =>
+                          updateCustomParam(setCustomParams, param.id, {
+                            name: event.target.value,
+                          })
+                        }
+                      />
+                      <LobeSelect
+                        value={param.type}
+                        options={[
+                          { value: 'string', label: '文本' },
+                          { value: 'number', label: '数字' },
+                          { value: 'integer', label: '整数' },
+                          { value: 'boolean', label: '布尔' },
+                          { value: 'json', label: 'JSON' },
+                        ]}
+                        onChange={(value) =>
+                          updateCustomParam(setCustomParams, param.id, {
+                            type: String(value) as CustomParamType,
+                          })
+                        }
+                      />
+                      {param.type === 'boolean' ? (
+                        <LobeSelect
+                          value={param.value || undefined}
+                          placeholder="值"
+                          allowClear
+                          options={[
+                            { value: 'true', label: 'true' },
+                            { value: 'false', label: 'false' },
+                          ]}
+                          onChange={(value) =>
+                            updateCustomParam(setCustomParams, param.id, {
+                              value: value == null ? '' : String(value),
+                            })
+                          }
+                        />
+                      ) : (
+                        <Input
+                          value={param.value}
+                          placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
+                          type={
+                            param.type === 'integer' || param.type === 'number' ? 'number' : 'text'
+                          }
+                          onChange={(event) =>
+                            updateCustomParam(setCustomParams, param.id, {
+                              value: event.target.value,
+                            })
+                          }
+                        />
+                      )}
+                      <Button
+                        size="middle"
+                        type="text"
+                        icon={<Icons.Trash size={13} />}
+                        aria-label="删除自定义参数"
+                        onClick={() =>
+                          setCustomParams((prev) => prev.filter((item) => item.id !== param.id))
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
-      <div className="canvas-inline-ai-footer">
-        <Button size="middle" onClick={onClose}>
-          取消
-        </Button>
-        <Button
-          size="middle"
-          type="primary"
-          icon={<Icons.Sparkles size={15} />}
-          disabled={!canSubmit}
-          onClick={async () => {
-            // 防连点：ref 同步置位，拦住渲染未完成前的重复点击。
-            if (submittingRef.current) return
-            submittingRef.current = true
-            try {
-              const rawModelParams = normalizeModelParamsForSubmit(
-                {
-                  ...buildModelParams(parameterFields, modelParamDraft),
-                  ...buildCustomModelParams(customParams),
-                },
-                selectedCapability?.defaults ?? {},
-                parameterFields,
-              )
-              // Contract V2 裁剪：按目标 manifest 在提交前过滤 unsupported/forbidden 字段，
-              // 避免 provider 400。manifest 缺省时 pruneModelParamsForCanvas 直接返回原值。
-              const pruned = await pruneModelParamsForCanvas({
-                operation,
-                ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
-                ...(selectedModel?.providerProfileId
-                  ? { providerProfileId: selectedModel.providerProfileId }
-                  : {}),
-                modelParams: rawModelParams,
-              })
-              const modelParams = pruned.modelParams
-              const effectivePrompt = mergeProjectPrompt(
-                prompt.trim() || fallbackPromptForOperation(operation),
-                includeProjectPrompt ? projectPrompt : '',
-              )
-              const effectiveNegativePrompt = mergeNegativePrompt(
-                negativePrompt,
-                includeNegativePrompt ? projectNegativePrompt : '',
-              )
-              const effectiveInputTransport =
-                inputTransport === 'auto'
-                  ? selectedModel?.providerKind === 'xai'
-                    ? 'base64'
-                    : 'cloud_url'
-                  : inputTransport
-              const videoFrameNodeIds = supportsVideoFrameRoles
-                ? normalizeVideoFrameNodeIds(
-                    firstFrameNodeId,
-                    lastFrameNodeId,
-                    referenceFrameNodeIds,
-                  )
-                : []
-              const inputRoles = supportsVideoFrameRoles
-                ? buildVideoFrameInputRoles(
-                    videoFrameNodeIds,
-                    firstFrameNodeId,
-                    lastFrameNodeId,
-                    referenceFrameNodeIds,
-                  )
-                : selectedCapabilityRolePolicy.imageRoles?.includes('reference_image')
-                  ? buildReferenceImageInputRoles(selectedImageNodes.map((node) => node.id))
-                  : undefined
-              const inputNodeIds = supportsVideoFrameRoles
-                ? buildTaskInputNodeIds(selectedNodes, videoFrameNodeIds)
-                : undefined
-              const payload: {
-                operation: CanvasOperationType
-                prompt: string
-                negativePrompt?: string
-                inputNodeIds?: string[]
-                providerProfileId?: string
-                manifestId?: string
-                modelId?: string
-                modelParams?: Record<string, unknown>
-                inputTransport?: CanvasInputTransport
-                inputRoles?: Record<string, CanvasTaskInputRoleSelection>
-                agentId?: string
-                droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string }>
-                modelParamWarnings?: Array<{ code: string; message: string }>
-              } = {
-                operation,
-                prompt: effectivePrompt,
-              }
-              if (isTextOperation && selectedAgentId) payload.agentId = selectedAgentId
-              if (effectiveNegativePrompt) payload.negativePrompt = effectiveNegativePrompt
-              if (selectedModel?.providerProfileId)
-                payload.providerProfileId = selectedModel.providerProfileId
-              if (selectedModel?.manifestId) payload.manifestId = selectedModel.manifestId
-              if (selectedModel?.effectiveModelId) payload.modelId = selectedModel.effectiveModelId
-              if (Object.keys(modelParams).length > 0) payload.modelParams = modelParams
-              if (needsImageInput) payload.inputTransport = effectiveInputTransport
-              if (inputNodeIds && inputNodeIds.length > 0) payload.inputNodeIds = inputNodeIds
-              if (inputRoles && Object.keys(inputRoles).length > 0) payload.inputRoles = inputRoles
-              if (pruned.droppedParams.length > 0) {
-                payload.droppedModelParams = pruned.droppedParams.map((d) => ({
-                  name: d.name,
-                  reason: d.reason,
-                  ...(d.valuePreview != null ? { valuePreview: d.valuePreview } : {}),
-                }))
-              }
-              if (pruned.warnings.length > 0) {
-                payload.modelParamWarnings = pruned.warnings.map((w) => ({
-                  code: w.code,
-                  message: w.message,
-                }))
-              }
-              // 任务创建：保留跨节点模型偏好，清除本节点集合的草稿缓存
-              if (selectedModelKey) writeLastModelKey(operation, selectedModelKey)
-              writeCanvasLastUsedPresetTarget(resolveCanvasPresetTarget({ operation }), {
-                ...(prompt.trim() ? { prompt } : {}),
-                negativePrompt,
-                ...(selectedModel?.providerProfileId
-                  ? { providerProfileId: selectedModel.providerProfileId }
-                  : {}),
-                ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
-                ...(selectedModel?.effectiveModelId ? { modelId: selectedModel.effectiveModelId } : {}),
-                ...(selectedAgentId ? { agentId: selectedAgentId } : {}),
-                // 新节点没在 InlineAiComposer 里选 skills，但 preset 里可能已经预设了；
-                // 这里把 preset 默认值一起写进 lastUsed，避免后续新建节点拿不到 skill 覆盖。
-                ...(resolvedPresetSkillIds.length > 0 ? { skillIds: resolvedPresetSkillIds } : {}),
-                ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
-              })
-              if (saveTimerRef.current) {
-                clearTimeout(saveTimerRef.current)
-                saveTimerRef.current = null
-              }
-              clearComposerDraft(nodeCacheKey)
-              // 阻止本次关窗 flush 把已清除的草稿写回
-              suppressFlushRef.current = true
-              onCreateTask(payload)
-              setPrompt('')
-              setNegativePrompt('')
-            } finally {
-              submittingRef.current = false
-            }
-          }}
-        >
-          创建任务
-        </Button>
-      </div>
+      <CanvasComposerToolbar
+        summaries={composerSummaries}
+        advancedAvailable
+        advancedOpen={advancedOpen}
+        canSubmit={canSubmit}
+        submitting={submitting}
+        onToggleAdvanced={handleAdvancedToggle}
+        onCancel={onClose}
+        onSubmit={() => void handleSubmit()}
+      />
     </section>
   )
+}
+
+function parameterSummaryIcon(control: CanvasParameterControlKind) {
+  switch (control) {
+    case 'aspect-ratio':
+      return <Icons.Image size={14} />
+    case 'resolution':
+      return <Icons.Maximize size={14} />
+    case 'count':
+      return <Icons.Layers size={14} />
+    case 'duration':
+      return <Icons.Clock size={14} />
+    default:
+      return <Icons.Settings size={14} />
+  }
 }
 
 function buildPromptContext(nodes: CanvasNode[]): string {
@@ -1437,10 +1457,7 @@ export function operationDefaultModelParams(
   return Object.fromEntries(
     Object.entries(
       readCanvasResolvedPresetTarget(resolveCanvasPresetTarget({ operation })).modelParams,
-    ).map(([name, value]) => [
-      name,
-      typeof value === 'string' ? value : String(value),
-    ]),
+    ).map(([name, value]) => [name, typeof value === 'string' ? value : String(value)]),
   )
 }
 

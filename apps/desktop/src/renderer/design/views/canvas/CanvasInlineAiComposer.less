@@ -1,0 +1,64 @@
+.canvas-composer-model-row {
+  padding: 7px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--canvas-field-bg) 74%, transparent);
+}
+
+.canvas-composer-common-parameters {
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--canvas-field-bg) 78%, transparent);
+}
+
+.canvas-composer-common-grid,
+.canvas-composer-advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.canvas-composer-common-grid > .canvas-parameter-control:has(.canvas-aspect-ratio-grid) {
+  grid-column: 1 / -1;
+}
+
+.canvas-composer-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
+  border-radius: var(--r-lg);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--primary) 5%, transparent), transparent 92px),
+    color-mix(in srgb, var(--canvas-field-bg) 90%, transparent);
+  animation: canvas-composer-advanced-enter 150ms ease-out;
+}
+
+.canvas-composer-advanced-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+@keyframes canvas-composer-advanced-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 620px) {
+  .canvas-composer-common-grid,
+  .canvas-composer-advanced-grid {
+    grid-template-columns: 1fr;
+  }
+}

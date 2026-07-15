@@ -5,13 +5,17 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CanvasMediaModelSummary } from '@spark/protocol'
 import { CanvasModelPicker } from './CanvasModelPicker'
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('@lobehub/ui', async () => {
   const ReactActual = await vi.importActual<typeof import('react')>('react')
   return {
-    Button: ({ children, icon, onClick, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode }) =>
+    Button: ({
+      children,
+      icon,
+      onClick,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode }) =>
       ReactActual.createElement('button', { type: 'button', onClick, ...props }, icon, children),
     Tooltip: ({ children }: { children: React.ReactNode }) => children,
   }
@@ -22,11 +26,23 @@ vi.mock('antd', async () => {
   return {
     Input: (props: React.InputHTMLAttributes<HTMLInputElement>) =>
       ReactActual.createElement('input', props),
-    Popover: ({ open, content, children, onOpenChange }: { open?: boolean; content?: React.ReactNode; children?: React.ReactElement; onOpenChange?: (open: boolean) => void }) =>
+    Popover: ({
+      open,
+      content,
+      children,
+      onOpenChange,
+    }: {
+      open?: boolean
+      content?: React.ReactNode
+      children?: React.ReactElement
+      onOpenChange?: (open: boolean) => void
+    }) =>
       ReactActual.createElement(
         'div',
         null,
-        ReactActual.cloneElement(children!, { onClick: () => onOpenChange?.(!open) }),
+        ReactActual.cloneElement(children as React.ReactElement<{ onClick?: () => void }>, {
+          onClick: () => onOpenChange?.(!open),
+        }),
         open ? content : null,
       ),
     Spin: () => ReactActual.createElement('span', null, '加载中'),
@@ -57,7 +73,15 @@ function model(input: Partial<CanvasMediaModelSummary>): CanvasMediaModelSummary
     displayName: input.displayName ?? 'Grok Imagine 1.0',
     domains: input.domains ?? ['image'],
     invocationMode: input.invocationMode ?? 'sync',
-    capabilities: input.capabilities ?? [{ id: 'image.generate', label: '文生图', input: ['text'], output: ['image'], paramSchema: {} }],
+    capabilities: input.capabilities ?? [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['text'] },
+        output: { types: ['image'] },
+        paramSchema: {},
+      },
+    ],
     sourceUrls: [],
     enabled: true,
     ...(input.providerProfileId ? { providerProfileId: input.providerProfileId } : {}),
@@ -77,7 +101,16 @@ async function renderPicker(props: React.ComponentProps<typeof CanvasModelPicker
 describe('CanvasModelPicker', () => {
   const models = [
     model({ providerProfileId: 'apimart-1', providerName: 'APIMart', providerKind: 'apimart' }),
-    model({ providerProfileId: 'apimart-1', providerName: 'APIMart', providerKind: 'apimart', manifestId: 'google:veo-3', modelId: 'veo-3', effectiveModelId: 'veo-3', displayName: 'VEO3', domains: ['video'] }),
+    model({
+      providerProfileId: 'apimart-1',
+      providerName: 'APIMart',
+      providerKind: 'apimart',
+      manifestId: 'google:veo-3',
+      modelId: 'veo-3',
+      effectiveModelId: 'veo-3',
+      displayName: 'VEO3',
+      domains: ['video'],
+    }),
     model({ providerProfileId: 'xai-1', providerName: 'xAI 官方', providerKind: 'xai' }),
   ]
 
@@ -96,7 +129,9 @@ describe('CanvasModelPicker', () => {
       setter?.call(input, 'veo')
       input.dispatchEvent(new InputEvent('input', { bubbles: true, data: 'veo' }))
     })
-    const option = container.querySelector<HTMLButtonElement>('[data-model-key="apimart-1::google:veo-3::veo-3"]')!
+    const option = container.querySelector<HTMLButtonElement>(
+      '[data-model-key="apimart-1::google:veo-3::veo-3"]',
+    )!
     expect(option).not.toBeNull()
     await act(async () => option.click())
     expect(onChange).toHaveBeenCalledWith('apimart-1::google:veo-3::veo-3')
@@ -104,20 +139,39 @@ describe('CanvasModelPicker', () => {
 
   it('supports automatic routing and closes on Escape', async () => {
     const onChange = vi.fn()
-    const container = await renderPicker({ models, value: 'xai-1::xai:grok-imagine-1::grok-imagine-1', onChange })
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!.click())
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-model-key="auto"]')!.click())
+    const container = await renderPicker({
+      models,
+      value: 'xai-1::xai:grok-imagine-1::grok-imagine-1',
+      onChange,
+    })
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!.click(),
+    )
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-model-key="auto"]')!.click(),
+    )
     expect(onChange).toHaveBeenCalledWith('')
 
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!.click())
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!.click(),
+    )
     const dialog = container.querySelector<HTMLElement>('.canvas-model-picker-popover')!
-    await act(async () => dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    await act(async () =>
+      dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    )
     expect(container.querySelector('.canvas-model-picker-popover')).toBeNull()
   })
 
   it('shows a loading state without losing automatic routing', async () => {
-    const container = await renderPicker({ models: [], value: '', loading: true, onChange: vi.fn() })
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!.click())
+    const container = await renderPicker({
+      models: [],
+      value: '',
+      loading: true,
+      onChange: vi.fn(),
+    })
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!.click(),
+    )
     expect(container.textContent).toContain('加载中')
     expect(container.querySelector('[data-model-key="auto"]')).not.toBeNull()
   })
