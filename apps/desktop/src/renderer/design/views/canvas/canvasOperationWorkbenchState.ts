@@ -23,6 +23,8 @@ export type CanvasOperationWorkbenchAction =
   | { type: 'toggle-editing' }
   | { type: 'toggle-selection-mode' }
   | { type: 'toggle-output-selection'; outputId: string }
+  | { type: 'set-output-selection'; outputIds: string[] }
+  | { type: 'finish-output-deletion' }
   | { type: 'set-busy'; busy: boolean }
 
 export function createCanvasOperationWorkbenchState(
@@ -49,7 +51,12 @@ export function reduceCanvasOperationWorkbenchState(
     case 'sync-primary':
       return {
         ...state,
-        tab: action.hasOutputs && state.tab === 'config' ? state.tab : action.hasOutputs ? 'output' : 'config',
+        tab:
+          action.hasOutputs && state.tab === 'config'
+            ? state.tab
+            : action.hasOutputs
+              ? 'output'
+              : 'config',
         runIndex: Math.max(0, action.runIndex),
         outputIndex: Math.max(0, action.outputIndex),
         editingOutput: false,
@@ -92,6 +99,16 @@ export function reduceCanvasOperationWorkbenchState(
         selectedOutputIds: state.selectedOutputIds.includes(action.outputId)
           ? state.selectedOutputIds.filter((id) => id !== action.outputId)
           : [...state.selectedOutputIds, action.outputId],
+      }
+    case 'set-output-selection':
+      if (!state.selectionMode) return state
+      return { ...state, selectedOutputIds: [...new Set(action.outputIds)] }
+    case 'finish-output-deletion':
+      return {
+        ...state,
+        selectionMode: false,
+        selectedOutputIds: [],
+        editingOutput: false,
       }
     case 'set-busy':
       return { ...state, busy: action.busy }

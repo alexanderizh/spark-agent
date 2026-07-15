@@ -27,7 +27,9 @@ describe('canvas operation workbench state', () => {
     })
     expect(ignored.selectedOutputIds).toEqual([])
 
-    const selecting = reduceCanvasOperationWorkbenchState(initial, { type: 'toggle-selection-mode' })
+    const selecting = reduceCanvasOperationWorkbenchState(initial, {
+      type: 'toggle-selection-mode',
+    })
     const selected = reduceCanvasOperationWorkbenchState(selecting, {
       type: 'toggle-output-selection',
       outputId: 'output-a',
@@ -50,6 +52,26 @@ describe('canvas operation workbench state', () => {
       editingOutput: false,
       selectionMode: false,
       selectedOutputIds: [],
+    })
+  })
+
+  it('supports selecting the whole active run and resets after deletion', () => {
+    const selecting = reduceCanvasOperationWorkbenchState(
+      createCanvasOperationWorkbenchState(true, 0, 0),
+      { type: 'toggle-selection-mode' },
+    )
+    const selected = reduceCanvasOperationWorkbenchState(selecting, {
+      type: 'set-output-selection',
+      outputIds: ['output-a', 'output-b', 'output-a'],
+    })
+    expect(selected.selectedOutputIds).toEqual(['output-a', 'output-b'])
+
+    expect(
+      reduceCanvasOperationWorkbenchState(selected, { type: 'finish-output-deletion' }),
+    ).toMatchObject({
+      selectionMode: false,
+      selectedOutputIds: [],
+      editingOutput: false,
     })
   })
 })

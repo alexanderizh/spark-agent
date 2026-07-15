@@ -51,6 +51,7 @@ import {
   selectCanvasOperationOutputs,
 } from './canvasOperationOutputModel'
 import { planCanvasOperationOutputMaterialization } from './canvasOperationOutputMaterialization'
+import { planCanvasOperationOutputDeletion } from './canvasOperationOutputDeletion'
 import { buildCanvasOperationRunViews, type CanvasOperationOutputView } from './canvasOperationRuns'
 import { CanvasOperationPresetModal } from './CanvasOperationPresetModal'
 import { CanvasPanoramaViewerModal } from './CanvasPanoramaViewerModal'
@@ -104,7 +105,10 @@ import {
 import { applyCanvasStyleToTask, buildCanvasStyleContext } from './canvasStyleContext'
 import { buildStoryboardGridPrompt, buildStoryboardNodePrompt } from './canvasStoryboardGrid'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
-import { splitStoryboardNode } from './canvasStoryboardNodeSplit'
+import {
+  resolveStoryboardSplitSourceNode,
+  splitStoryboardNode,
+} from './canvasStoryboardNodeSplit'
 import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import {
   planCanvasPipelineTaskPositions,
@@ -3232,6 +3236,37 @@ export function CanvasWorkspaceView({
     [updateNodeData],
   )
 
+  const handleDeleteOperationOutputs = useCallback(
+    async (operationNodeId: string, outputs: CanvasOperationOutputView[]) => {
+      const current = snapshotRef.current
+      if (!current || outputs.length === 0) return
+      const plan = planCanvasOperationOutputDeletion({
+        operationNodeId,
+        outputs,
+        edges: current.edges,
+      })
+      if (plan.nodeIds.length === 0) {
+        message.warning('所选产物没有可删除的画布节点')
+        return
+      }
+
+      await deleteEdges(plan.edgeIds)
+      await deleteNodes(plan.nodeIds)
+      if (plan.skippedOutputIds.length > 0) {
+        message.warning(
+          `已删除 ${plan.nodeIds.length} 个产物，另有 ${plan.skippedOutputIds.length} 个未关联画布节点，已跳过`,
+        )
+        return
+      }
+      message.success(
+        plan.nodeIds.length === 1
+          ? '已删除产物节点'
+          : `已删除 ${plan.nodeIds.length} 个产物节点`,
+      )
+    },
+    [deleteEdges, deleteNodes],
+  )
+
   const handleExpandOperationOutputs = useCallback(
     async (operationNodeId: string, outputs: CanvasOperationOutputView[]) => {
       const current = snapshotRef.current
@@ -3449,11 +3484,23 @@ export function CanvasWorkspaceView({
 
   const handleSplitStoryboard = useCallback(
     async (nodeId: string) => {
-      const source = snapshotRef.current?.nodes.find((item) => item.id === nodeId)
-      if (!source) return
+      const current = snapshotRef.current
+      const requestedNode = current?.nodes.find((item) => item.id === nodeId)
+      if (!current || !requestedNode) return
+      const primaryOutput = isOperationNode(requestedNode)
+        ? resolveCanvasOperationOutputState(
+            requestedNode,
+            buildCanvasOperationRunViews(requestedNode, current),
+          ).primaryOutput
+        : null
+      const source = resolveStoryboardSplitSourceNode(requestedNode, primaryOutput)
+      if (!source) {
+        message.warning('没有解析到可拆分的分镜')
+        return
+      }
       const created = await splitStoryboardNode({
         source,
-        allNodes: snapshotRef.current?.nodes ?? [],
+        allNodes: current.nodes,
         createTextNode,
         patchNodes,
         connectNodes,
@@ -7094,6 +7141,7 @@ export function CanvasWorkspaceView({
               onOpenAssetLibrary={() => setSidePanelTab('assets')}
               onSetPrimaryOutput={(output) => handleSetOperationPrimaryOutput(opNode.id, output)}
               onExpandOutputs={(outputs) => handleExpandOperationOutputs(opNode.id, outputs)}
+              onDeleteOutputs={(outputs) => handleDeleteOperationOutputs(opNode.id, outputs)}
               configPanel={
                 <CanvasOperationPanel
                   node={opNode}
