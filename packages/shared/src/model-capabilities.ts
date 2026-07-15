@@ -5,199 +5,199 @@ import type { ModelCapability } from '@spark/protocol'
 const CAPABILITIES: Record<string, ModelCapability> = {
   // ── Anthropic ──────────────────────────────────────────────────────────────
   'claude-opus-4-20250514': {
-    contextWindow: 200_000, maxOutputTokens: 32_000,
+    contextWindow: 200_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text', 'image'],
   },
   'claude-sonnet-4-20250514': {
-    contextWindow: 200_000, maxOutputTokens: 16_000,
+    contextWindow: 200_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text', 'image'],
   },
   'claude-sonnet-4-5-20250929': {
-    contextWindow: 200_000, maxOutputTokens: 16_000,
+    contextWindow: 200_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text', 'image'],
   },
   'claude-opus-4-1-20250805': {
-    contextWindow: 200_000, maxOutputTokens: 32_000,
+    contextWindow: 200_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text', 'image'],
   },
   'claude-3-5-sonnet-20241022': {
-    contextWindow: 200_000, maxOutputTokens: 8_192,
+    contextWindow: 200_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text', 'image'],
   },
   'claude-3-5-haiku-20241022': {
-    contextWindow: 200_000, maxOutputTokens: 8_192,
+    contextWindow: 200_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text', 'image'],
   },
   'claude-haiku-4-20250514': {
-    contextWindow: 200_000, maxOutputTokens: 8_192,
+    contextWindow: 200_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text', 'image'],
   },
 
   // ── OpenAI ─────────────────────────────────────────────────────────────────
   'gpt-4o': {
-    contextWindow: 128_000, maxOutputTokens: 16_384,
+    contextWindow: 128_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text', 'image'],
   },
   'gpt-4o-mini': {
-    contextWindow: 128_000, maxOutputTokens: 16_384,
+    contextWindow: 128_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text', 'image'],
   },
   'gpt-4-turbo': {
-    contextWindow: 128_000, maxOutputTokens: 4_096,
+    contextWindow: 128_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text', 'image'],
   },
   'o1': {
-    contextWindow: 200_000, maxOutputTokens: 100_000,
+    contextWindow: 200_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text', 'image'],
   },
   'o1-mini': {
-    contextWindow: 128_000, maxOutputTokens: 65_536,
+    contextWindow: 128_000,
     supportsVision: false, supportsToolUse: false, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
   'o3': {
-    contextWindow: 200_000, maxOutputTokens: 100_000,
+    contextWindow: 200_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text', 'image'],
   },
   'o3-mini': {
-    contextWindow: 200_000, maxOutputTokens: 65_536,
+    contextWindow: 200_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
   'gpt-5': {
-    contextWindow: 400_000, maxOutputTokens: 128_000,
+    contextWindow: 400_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text', 'image'],
   },
   'gpt-5-codex': {
-    contextWindow: 400_000, maxOutputTokens: 128_000,
+    contextWindow: 400_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text', 'image'],
   },
   'gpt-4.1': {
-    contextWindow: 400_000, maxOutputTokens: 32_768,
+    contextWindow: 400_000,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text', 'image'],
   },
 
   // ── DeepSeek ───────────────────────────────────────────────────────────────
   'deepseek-chat': {
-    contextWindow: 64_000, maxOutputTokens: 8_192,
+    contextWindow: 64_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text'],
   },
   'deepseek-v4-flash': {
-    contextWindow: 1_000_000, maxOutputTokens: 384_000,
+    contextWindow: 1_000_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
   'deepseek-v4-pro': {
-    contextWindow: 1_000_000, maxOutputTokens: 384_000,
+    contextWindow: 1_000_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
   'deepseek-reasoner': {
-    contextWindow: 64_000, maxOutputTokens: 8_000,
+    contextWindow: 64_000,
     supportsVision: false, supportsToolUse: false, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
 
   // ── Google Gemini ──────────────────────────────────────────────────────────
   'gemini-2.0-flash': {
-    contextWindow: 1_048_576, maxOutputTokens: 8_192,
+    contextWindow: 1_048_576,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text', 'image', 'audio', 'video'],
   },
   'gemini-2.5-pro': {
-    contextWindow: 1_048_576, maxOutputTokens: 65_536,
+    contextWindow: 1_048_576,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text', 'image', 'audio', 'video'],
   },
   'gemini-1.5-pro': {
-    contextWindow: 2_097_152, maxOutputTokens: 8_192,
+    contextWindow: 2_097_152,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text', 'image', 'audio', 'video'],
   },
 
   // ── 智谱 GLM ───────────────────────────────────────────────────────────────
   'glm-5.2': {
-    contextWindow: 1_000_000, maxOutputTokens: 131_072,
+    contextWindow: 1_000_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
   'glm-5.1': {
-    contextWindow: 200_000, maxOutputTokens: 131_072,
+    contextWindow: 200_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
   'glm-5': {
-    contextWindow: 200_000, maxOutputTokens: 131_072,
+    contextWindow: 200_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
   'glm-5-turbo': {
-    contextWindow: 200_000, maxOutputTokens: 131_072,
+    contextWindow: 200_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
   'glm-4.7': {
-    contextWindow: 200_000, maxOutputTokens: 131_072,
+    contextWindow: 200_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
   'glm-4.6': {
-    contextWindow: 200_000, maxOutputTokens: 131_072,
+    contextWindow: 200_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
   'glm-4.5': {
-    contextWindow: 128_000, maxOutputTokens: 98_304,
+    contextWindow: 128_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
   'glm-4': {
-    contextWindow: 128_000, maxOutputTokens: 4_096,
+    contextWindow: 128_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text'],
   },
   'glm-4v': {
-    contextWindow: 8_192, maxOutputTokens: 1_024,
+    contextWindow: 8_192,
     supportsVision: true, supportsToolUse: false, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text', 'image'],
   },
 
   // ── 通义千问 ───────────────────────────────────────────────────────────────
   'qwen-max': {
-    contextWindow: 32_768, maxOutputTokens: 8_192,
+    contextWindow: 32_768,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text'],
   },
   'qwen-plus': {
-    contextWindow: 131_072, maxOutputTokens: 8_192,
+    contextWindow: 131_072,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text'],
   },
   'qwen-vl-max': {
-    contextWindow: 32_768, maxOutputTokens: 2_000,
+    contextWindow: 32_768,
     supportsVision: true, supportsToolUse: false, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text', 'image'],
   },
 
   // ── Moonshot / Kimi ────────────────────────────────────────────────────────
   'moonshot-v1-128k': {
-    contextWindow: 128_000, maxOutputTokens: 4_096,
+    contextWindow: 128_000,
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
     supportedModalities: ['text'],
   },

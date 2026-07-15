@@ -74,7 +74,7 @@ export type Tweaks = {
 }
 
 export const DEFAULT_TWEAKS: Tweaks = {
-  theme: 'dark',
+  theme: 'system',
   primary: '#6366f1',
   density: 'regular',
   sidebar: 'collapsed',

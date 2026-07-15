@@ -3709,13 +3709,12 @@ export function registerAllIpcHandlers(): void {
         providerMaxTokens: chosen.profile.maxTokens,
         providerContextWindow: chosen.profile.contextWindow,
         providerSupportsMillionContext: chosen.profile.supportsMillionContext,
-        model,
         taskPipelineRole: req.taskPipelineRole,
         prompt: runtimeRequest.prompt,
       })
       const maxTokens = tokenBudget.maxTokens
       log.info(
-        `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} maxTokens=${maxTokens ?? '(provider-default)'} source=${tokenBudget.source ?? 'unset'} providerContext=${tokenBudget.providerContextWindow ?? '(n/a)'} modelContext=${tokenBudget.modelContextWindow ?? '(n/a)'} modelMaxOutput=${tokenBudget.modelMaxOutputTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate ?? '(n/a)'}`,
+        `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} maxTokens=${maxTokens ?? '(provider-default)'} source=${tokenBudget.source ?? 'unset'} contextWindow=${tokenBudget.contextWindow ?? '(n/a)'} reserve=${tokenBudget.contextReserveRatio ?? '(n/a)'} providerMax=${tokenBudget.providerMaxTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate ?? '(n/a)'}`,
       )
       const rawReasoningEffort =
         typeof req.reasoningEffort === 'string'
@@ -3770,8 +3769,8 @@ export function registerAllIpcHandlers(): void {
           promptTokensEstimate: tokenBudget.promptTokensEstimate,
           providerMaxTokens: tokenBudget.providerMaxTokens,
           providerContextWindow: tokenBudget.providerContextWindow,
-          modelContextWindow: tokenBudget.modelContextWindow,
-          modelMaxOutputTokens: tokenBudget.modelMaxOutputTokens,
+          contextWindow: tokenBudget.contextWindow,
+          contextReserveRatio: tokenBudget.contextReserveRatio,
           ...(err instanceof CanvasTextProviderError
             ? {
                 statusCode: err.statusCode,
@@ -3815,8 +3814,8 @@ export function registerAllIpcHandlers(): void {
           promptTokensEstimate: tokenBudget.promptTokensEstimate,
           providerMaxTokens: tokenBudget.providerMaxTokens,
           providerContextWindow: tokenBudget.providerContextWindow,
-          modelContextWindow: tokenBudget.modelContextWindow,
-          modelMaxOutputTokens: tokenBudget.modelMaxOutputTokens,
+          contextWindow: tokenBudget.contextWindow,
+          contextReserveRatio: tokenBudget.contextReserveRatio,
           providerFinishReason: result.finishReason,
           usage: result.usage,
           reasoningContentChars: result.reasoningContentChars,

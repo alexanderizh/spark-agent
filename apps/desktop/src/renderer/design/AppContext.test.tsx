@@ -30,6 +30,20 @@ describe('AppContext visual tweak persistence', () => {
 
   beforeEach(() => {
     localStorage.clear()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
     container = document.createElement('div')
     document.body.appendChild(container)
   })
@@ -44,7 +58,7 @@ describe('AppContext visual tweak persistence', () => {
     vi.unstubAllGlobals()
   })
 
-  it('uses the dark theme by default when no theme has been persisted', async () => {
+  it('follows the system theme by default when no theme has been persisted', async () => {
     function ThemeHarness() {
       const { t } = useApp()
       return <span data-testid="theme">{t.theme}</span>
@@ -56,8 +70,8 @@ describe('AppContext visual tweak persistence', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('dark')
-    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(container.querySelector('[data-testid="theme"]')?.textContent).toBe('system')
+    expect(document.documentElement.dataset.theme).toBe('light')
   })
 
   it('hydrates visual tweaks from persisted appearance settings', async () => {
