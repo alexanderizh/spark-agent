@@ -40,6 +40,7 @@ import {
 } from './canvasNodeSubtypeSwitch'
 import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
 import type { ParsedShotRow } from './canvasShotTableParse'
+import { resolveStoryboardSplitSourceNode } from './canvasStoryboardNodeSplit'
 import {
   CanvasOperationOutputList,
   CanvasOperationOutputPreview,
@@ -665,7 +666,11 @@ export const CanvasNode = memo(function CanvasNode({
   const latestOperationOutputCount =
     operationRuns.find((run) => run.outputs.length > 0)?.outputs.length ?? 0
   const canExpandOperationOutputs =
-    isTask && Boolean(actions.expandOperationOutputs) && latestOperationOutputCount > 1
+    isTask && Boolean(actions.expandOperationOutputs) && latestOperationOutputCount > 0
+  const storyboardSplitSource = useMemo(
+    () => resolveStoryboardSplitSourceNode(node, operationOutputState.primaryOutput),
+    [node, operationOutputState.primaryOutput],
+  )
   // 分镜脚本产物节点：把 agent 输出的 JSON / Markdown 分镜表渲染成传统分镜脚本表。
   // 不依赖 pipelineRole（分镜脚本文本产物节点故意不打 shot 角色，避免右键出现不适用的
   // 关键帧/视频操作），改为「文本节点 + 内容像分镜表 + 能解析出镜头」的内容判定，
@@ -882,7 +887,7 @@ export const CanvasNode = memo(function CanvasNode({
               },
             ]
           : []),
-        ...(renderShotTable && actions.splitStoryboard
+        ...(storyboardSplitSource && actions.splitStoryboard
           ? [
               {
                 key: 'split-storyboard-by-shot',
@@ -891,7 +896,7 @@ export const CanvasNode = memo(function CanvasNode({
                     <Icons.Scissors size={14} /> 按镜拆分
                   </span>
                 ),
-                onClick: () => actions.splitStoryboard?.(node.id),
+                onClick: () => actions.splitStoryboard?.(storyboardSplitSource.id),
               },
             ]
           : []),
@@ -1074,7 +1079,6 @@ export const CanvasNode = memo(function CanvasNode({
       isGroup,
       isGroupedChild,
       isPanorama360,
-      isTask,
       isVideoWorkbench,
       locked,
       canExtractCharacterSubview,
@@ -1085,9 +1089,8 @@ export const CanvasNode = memo(function CanvasNode({
       isImageContent,
       node.id,
       node.type,
-      operationOutputState.primaryOutput,
       pipelineActions,
-      renderShotTable,
+      storyboardSplitSource,
       subtypeSwitch,
     ],
   )

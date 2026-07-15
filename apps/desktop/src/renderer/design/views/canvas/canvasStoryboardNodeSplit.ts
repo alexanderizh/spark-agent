@@ -1,7 +1,33 @@
-import type { CanvasNode } from './canvas.types'
+import type { CanvasEdge, CanvasNode } from './canvas.types'
 import { fitTextNodeSize } from './canvas.api'
+import { isOperationNode } from './canvas.capabilities'
+import type { CanvasOperationOutputView } from './canvasOperationRuns'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import { formatStoryboardRowsAsMarkdown } from './canvasTextInputPresentation'
+
+export function resolveStoryboardSplitSourceNode(
+  node: CanvasNode,
+  primaryOutput?: CanvasOperationOutputView | null,
+): CanvasNode | null {
+  if (node.type === 'text' && isShotScriptText(node.data.text ?? '')) return node
+  if (
+    !isOperationNode(node) ||
+    primaryOutput?.type !== 'text' ||
+    !isShotScriptText(primaryOutput.text ?? '')
+  ) {
+    return null
+  }
+
+  return {
+    ...node,
+    type: 'text',
+    data: {
+      ...node.data,
+      text: primaryOutput.text ?? '',
+      format: 'markdown',
+    },
+  }
+}
 
 export function buildStoryboardShotNodeText(row: ParsedShotRow, index: number): string {
   const shotNumber = row.index ?? index + 1
@@ -76,7 +102,11 @@ export async function splitStoryboardNode(input: {
     format?: 'plain' | 'markdown'
   }) => Promise<CanvasNode | undefined>
   patchNodes: (nodeIds: string[], patch: { width?: number; height?: number }) => Promise<unknown>
-  connectNodes: (edge: { sourceNodeId: string; targetNodeId: string }) => Promise<unknown>
+  connectNodes: (edge: {
+    sourceNodeId: string
+    targetNodeId: string
+    type?: CanvasEdge['type']
+  }) => Promise<unknown>
 }): Promise<CanvasNode[]> {
   const drafts = buildStoryboardShotNodeDrafts(input.source, input.allNodes)
   const created: CanvasNode[] = []
@@ -89,7 +119,11 @@ export async function splitStoryboardNode(input: {
     })
     if (!node) continue
     await input.patchNodes([node.id], { width: draft.width, height: draft.height })
-    await input.connectNodes({ sourceNodeId: input.source.id, targetNodeId: node.id })
+    await input.connectNodes({
+      sourceNodeId: input.source.id,
+      targetNodeId: node.id,
+      type: 'references',
+    })
     created.push(node)
   }
   return created

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, type ReactNode } from 'react'
 import { Button, Tag, Tooltip } from '@lobehub/ui'
-import { Popover } from 'antd'
+import { Modal, Popover } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasNodeEditModal } from './CanvasNodeEditModal'
 import { CanvasOperationOutputPreview } from './CanvasOperationOutputPreview'
@@ -46,6 +46,7 @@ export function CanvasOperationWorkbench({
   onOpenAssetLibrary,
   onSetPrimaryOutput,
   onExpandOutputs,
+  onDeleteOutputs,
 }: {
   node: CanvasNode
   snapshot: CanvasSnapshot
@@ -60,6 +61,7 @@ export function CanvasOperationWorkbench({
   onOpenAssetLibrary?: (assetId: string) => void
   onSetPrimaryOutput?: (output: CanvasOperationOutputView) => Promise<void> | void
   onExpandOutputs?: (outputs: CanvasOperationOutputView[]) => Promise<void> | void
+  onDeleteOutputs?: (outputs: CanvasOperationOutputView[]) => Promise<void> | void
 }) {
   const runs = useMemo(() => buildCanvasOperationRunViews(node, snapshot), [node, snapshot])
   const outputState = useMemo(() => resolveCanvasOperationOutputState(node, runs), [node, runs])
@@ -96,6 +98,9 @@ export function CanvasOperationWorkbench({
     : null
   const activeTab: CanvasOperationWorkbenchTab = hasOutputs ? state.tab : 'config'
   const selectedOutputIdSet = new Set(state.selectedOutputIds)
+  const selectedOutputs = outputs.filter((output) => selectedOutputIdSet.has(output.id))
+  const allCurrentRunSelected =
+    outputs.length > 0 && outputs.every((output) => selectedOutputIdSet.has(output.id))
   const displayRunNumber = activeRun ? runs.length - effectiveRunIndex : 0
   const canDownload = Boolean(outputNode && (activeOutput?.type === 'image' || activeOutput?.type === 'video'))
   const canPreviewPanorama = Boolean(outputNode && activeOutput?.panorama360)
@@ -112,6 +117,29 @@ export function CanvasOperationWorkbench({
     } finally {
       dispatch({ type: 'set-busy', busy: false })
     }
+  }
+
+  const confirmOutputDeletion = (targetOutputs: CanvasOperationOutputView[]) => {
+    if (!onDeleteOutputs || targetOutputs.length === 0 || state.busy) return
+    Modal.confirm({
+      title:
+        targetOutputs.length === 1
+          ? '删除这个产物？'
+          : `删除选中的 ${targetOutputs.length} 个产物？`,
+      content: '产物将从当前任务中移除，对应画布节点和连线会同步清理；资源库中的资产仍会保留。',
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        dispatch({ type: 'set-busy', busy: true })
+        try {
+          await onDeleteOutputs(targetOutputs)
+          dispatch({ type: 'finish-output-deletion' })
+        } finally {
+          dispatch({ type: 'set-busy', busy: false })
+        }
+      },
+    })
   }
 
   const tabButton = (tab: CanvasOperationWorkbenchTab, label: string, icon: ReactNode, count?: number) => (
@@ -172,35 +200,48 @@ export function CanvasOperationWorkbench({
                 {state.selectionMode ? '退出多选' : '多选'}
               </Button>
             ) : null}
-            {onExpandOutputs ? (
+            {onExpandOutputs || (activeOutput && onDeleteOutputs) ? (
               <Popover
                 trigger="click"
                 placement="bottomRight"
                 content={
                   <div className="canvas-operation-expand-menu">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void runExpansion(
-                          activeRun
-                            ? selectCanvasOperationOutputs(runs, {
-                                scope: 'run',
-                                taskId: activeRun.taskId,
-                              })
-                            : [],
-                        )
-                      }
-                    >
-                      展开本次运行
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void runExpansion(selectCanvasOperationOutputs(runs, { scope: 'all' }))
-                      }
-                    >
-                      展开全部历史
-                    </button>
+                    {onExpandOutputs ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void runExpansion(
+                              activeRun
+                                ? selectCanvasOperationOutputs(runs, {
+                                    scope: 'run',
+                                    taskId: activeRun.taskId,
+                                  })
+                                : [],
+                            )
+                          }
+                        >
+                          展开本次运行
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void runExpansion(selectCanvasOperationOutputs(runs, { scope: 'all' }))
+                          }
+                        >
+                          展开全部历史
+                        </button>
+                      </>
+                    ) : null}
+                    {activeOutput && onDeleteOutputs ? (
+                      <button
+                        type="button"
+                        className="is-danger"
+                        onClick={() => confirmOutputDeletion([activeOutput])}
+                      >
+                        删除当前产物
+                      </button>
+                    ) : null}
                   </div>
                 }
               >
@@ -328,23 +369,49 @@ export function CanvasOperationWorkbench({
 
             {state.selectionMode ? (
               <div className="canvas-operation-selection-bar">
-                <span>已选择 {state.selectedOutputIds.length} 个产物</span>
-                <Button
-                  size="middle"
-                  type="primary"
-                  loading={state.busy}
-                  disabled={state.selectedOutputIds.length === 0}
-                  onClick={() =>
-                    void runExpansion(
-                      selectCanvasOperationOutputs(runs, {
-                        scope: 'selected',
-                        selectedOutputIds: state.selectedOutputIds,
-                      }),
-                    )
-                  }
-                >
-                  展开所选
-                </Button>
+                <div className="canvas-operation-selection-summary">
+                  <strong>已选择 {state.selectedOutputIds.length} 个</strong>
+                  <span>本次运行共 {outputs.length} 个产物</span>
+                </div>
+                <div className="canvas-operation-selection-actions">
+                  <Button
+                    size="middle"
+                    type="text"
+                    disabled={state.busy}
+                    onClick={() =>
+                      dispatch({
+                        type: 'set-output-selection',
+                        outputIds: allCurrentRunSelected ? [] : outputs.map((output) => output.id),
+                      })
+                    }
+                  >
+                    {allCurrentRunSelected ? '取消全选' : '全选本次'}
+                  </Button>
+                  {onExpandOutputs ? (
+                    <Button
+                      size="middle"
+                      type="default"
+                      loading={state.busy}
+                      disabled={selectedOutputs.length === 0}
+                      onClick={() => void runExpansion(selectedOutputs)}
+                    >
+                      展开所选
+                    </Button>
+                  ) : null}
+                  {onDeleteOutputs ? (
+                    <Button
+                      size="middle"
+                      type="text"
+                      danger
+                      icon={<Icons.Trash size={13} />}
+                      loading={state.busy}
+                      disabled={selectedOutputs.length === 0}
+                      onClick={() => confirmOutputDeletion(selectedOutputs)}
+                    >
+                      删除所选
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             ) : null}
 
