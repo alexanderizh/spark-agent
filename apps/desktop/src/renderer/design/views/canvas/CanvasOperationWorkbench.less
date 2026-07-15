@@ -78,7 +78,11 @@
 
 .canvas-operation-workbench-content > .canvas-operation-panel.is-inline,
 .canvas-operation-workbench-content > .canvas-bottom-floating-panel.is-inline {
-  max-height: none;
+  // 填满并受限于 workbench 内容区，让内部 flex 链生效：底部参数栏/按钮永远钉底可见，
+  // 提示词区有空间则撑大、空间不够则内部滚动，不再被 overflow:hidden 裁掉。
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
   border-radius: 0;
   box-shadow: none;
 }

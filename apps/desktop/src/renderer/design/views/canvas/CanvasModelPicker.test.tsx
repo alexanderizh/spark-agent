@@ -31,15 +31,17 @@ vi.mock('antd', async () => {
       content,
       children,
       onOpenChange,
+      overlayClassName,
     }: {
       open?: boolean
       content?: React.ReactNode
       children?: React.ReactElement
       onOpenChange?: (open: boolean) => void
+      overlayClassName?: string
     }) =>
       ReactActual.createElement(
         'div',
-        null,
+        { className: overlayClassName },
         ReactActual.cloneElement(children as React.ReactElement<{ onClick?: () => void }>, {
           onClick: () => onOpenChange?.(!open),
         }),
@@ -137,21 +139,13 @@ describe('CanvasModelPicker', () => {
     expect(onChange).toHaveBeenCalledWith('apimart-1::google:veo-3::veo-3')
   })
 
-  it('supports automatic routing and closes on Escape', async () => {
+  it('closes the picker on Escape', async () => {
     const onChange = vi.fn()
     const container = await renderPicker({
       models,
       value: 'xai-1::xai:grok-imagine-1::grok-imagine-1',
       onChange,
     })
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!.click(),
-    )
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[data-model-key="auto"]')!.click(),
-    )
-    expect(onChange).toHaveBeenCalledWith('')
-
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!.click(),
     )
@@ -162,7 +156,7 @@ describe('CanvasModelPicker', () => {
     expect(container.querySelector('.canvas-model-picker-popover')).toBeNull()
   })
 
-  it('shows a loading state without losing automatic routing', async () => {
+  it('shows a loading state without rendering the model list', async () => {
     const container = await renderPicker({
       models: [],
       value: '',
@@ -173,6 +167,38 @@ describe('CanvasModelPicker', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!.click(),
     )
     expect(container.textContent).toContain('加载中')
-    expect(container.querySelector('[data-model-key="auto"]')).not.toBeNull()
+    expect(container.querySelector('[data-model-key]')).toBeNull()
+  })
+
+  it('uses a compact trigger and a visually isolated overlay inside task toolbars', async () => {
+    const container = await renderPicker({
+      models,
+      value: '',
+      compact: true,
+      onChange: vi.fn(),
+    })
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!
+    expect(trigger.classList.contains('is-compact')).toBe(true)
+    await act(async () => trigger.click())
+    expect(container.querySelector('.canvas-model-picker-overlay')).not.toBeNull()
+  })
+
+  it('can clear an optional preset model without enabling auto routing in task panels', async () => {
+    const onChange = vi.fn()
+    const container = await renderPicker({
+      models,
+      value: 'xai-1::xai:grok-imagine-1::grok-imagine-1',
+      allowEmpty: true,
+      emptyLabel: '沿用平台默认',
+      onChange,
+    })
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="选择模型"]')!.click(),
+    )
+    const emptyOption = container.querySelector<HTMLButtonElement>('[data-model-key="empty"]')
+    expect(emptyOption?.textContent).toContain('沿用平台默认')
+    await act(async () => emptyOption?.click())
+    expect(onChange).toHaveBeenCalledWith('')
   })
 })

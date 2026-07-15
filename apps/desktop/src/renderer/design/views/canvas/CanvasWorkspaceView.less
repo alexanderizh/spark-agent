@@ -7051,16 +7051,27 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-node-floating-panel .canvas-operation-composer-main {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
   padding: 3px 12px 6px;
 }
 
+// 打通 flex 链：让提示词包裹层随 main 伸缩，提示词区才能撑大或内部滚动。
+.canvas-node-floating-panel .canvas-operation-composer-main > .canvas-operation-prompt-count-wrap {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .canvas-node-floating-panel .canvas-operation-composer-prompt {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  min-height: 240px !important;
-  max-height: 420px;
+  min-height: 120px;
+  max-height: none;
   resize: none;
   border-radius: 10px !important;
   font-size: 13px;

@@ -6,7 +6,7 @@
 
 **Goal:** 交付双栏 Provider/模型选择器、Schema 驱动的可视化参数控件、常用/高级参数布局、统一底部图标工具栏、整理后的剧本流水线菜单，并修复画布项目卡片打开按钮。
 
-**Architecture:** 保留 CanvasInlineAiComposer 的业务状态、草稿和提交链路，将模型分组、参数展示语义、具体控件、底部工具栏和菜单分类拆成独立模块。所有选择继续写回现有 selectedModelKey 与 modelParamDraft，因此任务 payload、参数裁剪和 Provider 调用语义不变。
+**Architecture:** 保留 CanvasInlineAiComposer、CanvasOperationPanel 与 CanvasOperationPresetModal 的业务状态、草稿和提交链路，将模型分组、参数展示语义、具体控件、底部工具栏和菜单分类拆成独立模块。所有选择继续写回现有 selectedModelKey 与 modelParamDraft，因此任务 payload、参数裁剪和 Provider 调用语义不变。
 
 **Tech Stack:** React 19、TypeScript、Vitest/jsdom、@lobehub/ui、antd、Less、Electron renderer IPC。
 
@@ -25,6 +25,9 @@
 - Create canvasComposerPreferences.ts and test: 高级设置展开偏好。
 - Create CanvasComposerToolbar.tsx and tests/styles: 底部摘要和图标操作组。
 - Modify CanvasInlineAiComposer.tsx and test: 接入新模块。
+- Create CanvasOperationParameterControls.tsx and tests/styles: 提供节点工具栏与面板两种统一模型/参数布局。
+- Modify CanvasOperationPanel.tsx and test: 覆盖实际任务节点的内联与展开配置入口，移除旧平铺模型列表。
+- Modify CanvasOperationPresetModal.tsx and test: 覆盖应用级节点预设入口，移除旧 Select/AutoComplete 参数网格。
 - Create canvasNodeGenerationMenu.ts and test: 统一生成操作目录。
 - Modify CanvasNode.tsx, CanvasFloatingNodeToolbar.tsx, CanvasWorkspaceView.tsx: 读取统一菜单目录。
 - Create CanvasProjectCard.tsx and test: 可测试的项目卡片。
