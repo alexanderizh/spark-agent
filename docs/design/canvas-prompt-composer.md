@@ -1,6 +1,20 @@
 # 无限画布 Prompt 参数编排器
 
-> 状态: 已落地 | 最后核对: 2026-07-15
+> 状态: 已落地 | 最后核对: 2026-07-16
+
+## 文本任务执行路径
+
+画布中的文本类操作节点（文本生成、改写、提示词优化、分镜文本等）按所选 Provider 选择执行通道：
+
+- 选择普通文本/多模态 Provider 时，继续使用 `canvas:task:generate-text` 的 HTTP API 路径。
+- 选择内置的本地 Claude CLI 或 Codex CLI Provider 时，主进程创建一次性会话并复用工作台 `SessionService`，分别进入 Claude SDK 或 Codex CLI/SDK 执行，再把最终 assistant 文本写回画布任务。
+- 本轮任务显式选择的 Provider/Model 优先于 Agent 历史绑定；复用操作节点时，卡片与任务同步写入新的运行时配置。
+- Codex CLI 报告“Skill descriptions were shortened...”时属于技能描述压缩警告，不应被当作任务失败；运行器会忽略该条警告并继续等待最终文本。
+- 画布本地会话只传递节点选中的 Skill ID，只在上下文中注入元数据目录；完整指令通过 `skills_load` 按需读取。Codex CLI 画布路径同时关闭宿主原生插件技能扫描，避免与 Spark 的渐进式披露重复。
+- 本地 Agent 返回值只在收到 `isFinal=true` 或 turn 终态后采用，不把 Codex 中间 `complete` 消息误当作最终结果。结构化实体解析会从混合文本、代码块及多个 JSON 片段中选择真正的实体对象。
+- 本地 CLI 当前只承载纯文本输入；包含图片输入的任务应选择支持多模态的 API Provider。
+
+这样模型选择器中的本地 CLI 选项与工作台对话的实际运行时保持一致，不再因本地 Provider 没有 API Key 而落入 HTTP Provider 的 `keystoreRef` 检查失败。
 
 ## 产品边界
 

@@ -478,6 +478,7 @@ async function writeCodexTempProfile(config: SDKExecutorConfig): Promise<CodexTe
 
 function buildCodexProfileConfigItems(config: SDKExecutorConfig): string[] {
   const items = [
+    ...(config.disableCodexNativeSkills === true ? ['features.plugins=false'] : []),
     ...(config.goal?.mode === 'codex-native' ? ['features.goals=true'] : []),
     ...buildCodexModelProviderConfigArgs(config),
     ...buildCodexMcpConfigArgs(config.mcpServers),
@@ -838,6 +839,10 @@ function extractCodexErrorText(obj: Record<string, unknown>): string {
 
 function normalizeCodexCliErrorText(value: string): string {
   return value.replace(/^\d{4}-\d{2}-\d{2}T\S+\s+ERROR\s+\S+:\s*/i, '').trim()
+}
+
+function isBenignCodexCliItemError(message: string): boolean {
+  return message.includes('Skill descriptions were shortened to fit the 2% skills context budget')
 }
 
 function findTextFromLine(line: string): string {
@@ -1261,6 +1266,12 @@ function dispatchCodexEvent(
 
   if (itemType === 'error') {
     const message = findText(record.message) ?? 'Codex CLI item failed'
+    if (isBenignCodexCliItemError(message)) {
+      // Codex has already degraded the descriptions and can still use every skill.
+      // Do not turn this informational warning into a terminal agent_error.
+      outcome.handled = true
+      return outcome
+    }
     emit({
       ...makeBase(),
       type: 'agent_error',

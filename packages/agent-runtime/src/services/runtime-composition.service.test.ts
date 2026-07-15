@@ -200,4 +200,25 @@ describe('RuntimeCompositionService', () => {
     expect(result.skillSystemPrompt).not.toContain('Review instructions')
     expect(result.skillSystemPrompt).not.toContain('Hidden instructions')
   })
+
+  it('allows an explicit empty skill selection without falling back to every enabled skill', () => {
+    const service = new RuntimeCompositionService(
+      makeSkillRepo([
+        skillRow({ id: 'skill:review', name: 'Review', enabled: 1 }),
+        skillRow({ id: 'skill:test', name: 'Test', enabled: 1 }),
+      ]),
+      makeSettingsRepo({
+        'runtime.skills:project:workspace-1': ['skill:test'],
+      }),
+    )
+
+    const result = service.composeRuntimeContext(
+      { agentId: 'platform-manager-agent', workspaceId: 'workspace-1' },
+      undefined,
+      { agentSkillIds: [], replaceAgentSkills: true },
+    )
+
+    expect(result.skillConfig.effectiveSkillIds).toEqual([])
+    expect(result.skillSystemPrompt).toBeUndefined()
+  })
 })

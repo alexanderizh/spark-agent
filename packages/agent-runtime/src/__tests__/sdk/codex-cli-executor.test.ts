@@ -291,6 +291,19 @@ describe('CodexCliExecutor', () => {
     expect(lastProfileConfig).toContain("web_search='cached'")
   })
 
+  it('disables native Codex plugin skill discovery when Spark owns progressive disclosure', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
+
+    await new CodexCliExecutor().executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({ disableCodexNativeSkills: true }),
+    )
+
+    expect(lastProfileConfig).toContain('features.plugins=false')
+  })
+
   it('maps CLI file, todo, item error, cache, and reasoning usage with SDK semantics', async () => {
     spawnMock.mockImplementation(
       (_command: string, args: string[]) =>
@@ -338,6 +351,26 @@ describe('CodexCliExecutor', () => {
         }),
       ]),
     )
+  })
+
+  it('does not fail a turn on the non-fatal skills context budget warning', async () => {
+    spawnMock.mockImplementation(
+      (_command: string, args: string[]) =>
+        new MockChildProcess(args, [
+          '{"type":"item.completed","item":{"type":"error","message":"Skill descriptions were shortened to fit the 2% skills context budget. Codex can still see every skill, but some descriptions are shorter."}}',
+          '{"type":"item.completed","item":{"type":"agent_message","text":"继续执行"}}',
+        ]),
+    )
+
+    const errors: AgentEvent[] = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'agent_error') errors.push(event)
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(errors).toHaveLength(0)
   })
 
   it('falls back to Windows Codex CLI shim candidates when the first command is missing', async () => {

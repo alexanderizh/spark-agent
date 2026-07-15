@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import type { AgentEvent } from '@spark/protocol'
 import {
   buildCanvasMediaProviderPrompt,
   buildCanvasRuntimeRequest,
   buildCanvasSystemPrompt,
+  resolveCanvasAgentTurnResult,
 } from './canvas-prompt-runtime'
 
 describe('canvas prompt runtime adapter', () => {
@@ -36,5 +38,44 @@ describe('canvas prompt runtime adapter', () => {
       buildCanvasMediaProviderPrompt({ systemPrompt: '能力约束', userPrompt: '用户要求' }),
     ).toBe('能力约束\n\n用户要求')
     expect(buildCanvasMediaProviderPrompt({ systemPrompt: '', userPrompt: '用户要求' })).toBe('用户要求')
+  })
+
+  it('waits for the authoritative final assistant message instead of returning an intermediate complete item', () => {
+    const base = {
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      timestamp: '2026-07-16T00:00:00.000Z',
+      seq: 1,
+    }
+    const intermediate = [
+      {
+        ...base,
+        id: 'message-1',
+        type: 'assistant_message',
+        mode: 'complete',
+        content: '我先分析剧本。',
+        isFinal: false,
+      },
+      { ...base, id: 'status-1', type: 'agent_status', status: 'working' },
+    ] as AgentEvent[]
+
+    expect(resolveCanvasAgentTurnResult(intermediate)).toEqual({ terminal: false })
+
+    const completed = [
+      ...intermediate,
+      {
+        ...base,
+        id: 'message-2',
+        type: 'assistant_message',
+        mode: 'complete',
+        content: '{"entities":[{"name":"林岚"}]}',
+        isFinal: true,
+      },
+      { ...base, id: 'status-2', type: 'agent_status', status: 'completed' },
+    ] as AgentEvent[]
+    expect(resolveCanvasAgentTurnResult(completed)).toEqual({
+      terminal: true,
+      text: '{"entities":[{"name":"林岚"}]}',
+    })
   })
 })

@@ -3216,6 +3216,57 @@ describe('SessionService runtime provider/model resolution', () => {
     })
   })
 
+  it('keeps an explicit local Codex turn above the selected agent legacy binding', async () => {
+    seedProvider({
+      id: 'local-codex-cli',
+      provider_type: 'openai',
+      name: 'Local Codex CLI',
+      config_json: JSON.stringify({
+        defaultModel: 'codex cli',
+        modelIds: ['codex cli'],
+      }),
+      keystore_ref: null,
+      is_default: 0,
+    })
+    mockState.agents.set(
+      'legacy-bound-agent',
+      makeAgent({
+        id: 'legacy-bound-agent',
+        name: 'Legacy Bound Agent',
+        providerProfileId: 'tencent-provider',
+        modelId: 'glm-5',
+      }),
+    )
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      agentId: 'legacy-bound-agent',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Explicit runtime provider wins',
+    })
+
+    await service.sendTurn({
+      sessionId,
+      message: 'run with the provider selected for this turn',
+      providerProfileId: 'local-codex-cli',
+      modelId: 'codex cli',
+      agentAdapter: 'codex',
+      permissionMode: 'codex-full-access',
+    })
+
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+    expect(mockState.sdkConfigs[0]).toMatchObject({
+      model: 'codex cli',
+      apiKey: '',
+      useLocalConfig: true,
+      disableCodexNativeSkills: true,
+    })
+    expect(mockState.sdkConfigs[0]).not.toHaveProperty('apiEndpoint')
+    expect(mockState.sdkConfigs[0]).not.toHaveProperty('codexCliProvider')
+  })
+
   it('rejectPlan clears the approval gate and persists a plan_rejected marker on the plan turn', async () => {
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({

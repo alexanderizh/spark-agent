@@ -15,6 +15,7 @@ import {
   buildCanvasMediaProviderPrompt,
   buildCanvasRuntimeRequest,
   buildCanvasSystemPrompt,
+  resolveCanvasAgentTurnResult,
 } from './canvas-prompt-runtime.js'
 import {
   buildCanvasTextRawResponse,
@@ -168,7 +169,12 @@ import type {
   SessionListResponse,
   SystemNotificationNavigateRequest,
 } from '@spark/protocol'
-import { MediaModelManifestSchema, isAutoRouterProvider } from '@spark/protocol'
+import {
+  MediaModelManifestSchema,
+  isAutoRouterProvider,
+  isBuiltInLocalCliProvider,
+  isLocalCodexCliProvider,
+} from '@spark/protocol'
 import { McpOAuthService } from '../services/mcp-oauth/McpOAuthService.js'
 import type {
   SessionEventHandler,
@@ -269,20 +275,34 @@ function resolveBrowserAutomationMcpServerPath(): string | null {
   const candidates = [
     path.resolve(here, 'tools/browser-automation-mcp-server.mjs'),
     path.resolve(here, '../tools/browser-automation-mcp-server.mjs'),
-    path.resolve(here, '../../../../packages/agent-runtime/src/tools/browser-automation-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/browser-automation-mcp-server.mjs'),
-    path.resolve(process.cwd(), '../packages/agent-runtime/src/tools/browser-automation-mcp-server.mjs'),
+    path.resolve(
+      here,
+      '../../../../packages/agent-runtime/src/tools/browser-automation-mcp-server.mjs',
+    ),
+    path.resolve(
+      process.cwd(),
+      'packages/agent-runtime/src/tools/browser-automation-mcp-server.mjs',
+    ),
+    path.resolve(
+      process.cwd(),
+      '../packages/agent-runtime/src/tools/browser-automation-mcp-server.mjs',
+    ),
     path.resolve(process.resourcesPath ?? '', 'tools/browser-automation-mcp-server.mjs'),
   ]
   return candidates.find((candidate) => existsSync(candidate)) ?? null
 }
 
-const browserAutomationMcpProvider: BrowserAutomationMcpProvider = async (sessionId, workspaceRootPath) => {
+const browserAutomationMcpProvider: BrowserAutomationMcpProvider = async (
+  sessionId,
+  workspaceRootPath,
+) => {
   const remoteConnection = getRemoteConnectionService()
     .list()
     .connections.find((connection) => connection.defaultSessionId === sessionId)
   if (remoteConnection != null && remoteConnection.capabilities.useInternalBrowser !== true) {
-    log.info(`spark_browser disabled for remote session=${sessionId} connection=${remoteConnection.id}`)
+    log.info(
+      `spark_browser disabled for remote session=${sessionId} connection=${remoteConnection.id}`,
+    )
     return null
   }
   const serverPath = resolveBrowserAutomationMcpServerPath()
@@ -308,7 +328,16 @@ const browserAutomationMcpProvider: BrowserAutomationMcpProvider = async (sessio
 
 let autoWindowWidthState: { baselineWidth: number; managedWidth: number } | null = null
 
-type ConfigChangedScope = 'provider' | 'model' | 'agent' | 'team' | 'skill' | 'mcp' | 'workflow' | 'rule' | 'prompt'
+type ConfigChangedScope =
+  | 'provider'
+  | 'model'
+  | 'agent'
+  | 'team'
+  | 'skill'
+  | 'mcp'
+  | 'workflow'
+  | 'rule'
+  | 'prompt'
 type ConfigChangedAction = 'create' | 'update' | 'delete' | 'import'
 
 function pushConfigChanged(
@@ -513,14 +542,10 @@ export function isInsideCanvasProjectsRoot(rootPath: string | null | undefined):
  * 否则拒绝删除。文件系统错误不抛出 —— DB 删除仍要继续，仅日志记录失败。
  * 返回是否实际移除了目录（不存在视为未移除）。
  */
-async function removeCanvasProjectDirectory(
-  rootPath: string | null | undefined,
-): Promise<boolean> {
+async function removeCanvasProjectDirectory(rootPath: string | null | undefined): Promise<boolean> {
   if (!isInsideCanvasProjectsRoot(rootPath)) {
     if (rootPath && rootPath.trim()) {
-      log.warn(
-        `canvas:project:delete refused to remove path outside projects root: ${rootPath}`,
-      )
+      log.warn(`canvas:project:delete refused to remove path outside projects root: ${rootPath}`)
     }
     return false
   }
@@ -1153,7 +1178,10 @@ function getBoardTaskAttachmentDir(taskId: string): string {
 }
 
 function isWithinBoardTaskAttachmentDir(taskId: string, targetPath: string): boolean {
-  return isWithinDirectory(path.resolve(targetPath), path.resolve(getBoardTaskAttachmentDir(taskId)))
+  return isWithinDirectory(
+    path.resolve(targetPath),
+    path.resolve(getBoardTaskAttachmentDir(taskId)),
+  )
 }
 
 function sanitizeBoardAttachmentBaseName(value: string | undefined, fallback: string): string {
@@ -1164,10 +1192,9 @@ async function persistBoardAttachment(
   taskId: string,
   attachment: BoardTaskAttachment,
 ): Promise<BoardTaskAttachment> {
-  const candidatePaths = [
-    attachment.path?.trim(),
-    attachment.previewPath?.trim(),
-  ].filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index)
+  const candidatePaths = [attachment.path?.trim(), attachment.previewPath?.trim()].filter(
+    (value, index, list): value is string => Boolean(value) && list.indexOf(value) === index,
+  )
 
   let sourcePath: string | null = null
   for (const candidatePath of candidatePaths) {
@@ -1304,26 +1331,43 @@ export function getMcpService(): McpService {
   return _mcpService
 }
 
-
 let _mcpOAuthService: McpOAuthService | null = null
 function getMcpOAuthService(): McpOAuthService {
   if (_mcpOAuthService == null) {
-    _mcpOAuthService = new McpOAuthService({ get: (id) => { const row = new McpServerRepository(getDatabase()).get(id); return row == null ? null : { id: row.id, configJson: row.config_json } } })
+    _mcpOAuthService = new McpOAuthService({
+      get: (id) => {
+        const row = new McpServerRepository(getDatabase()).get(id)
+        return row == null ? null : { id: row.id, configJson: row.config_json }
+      },
+    })
   }
   return _mcpOAuthService
 }
 
-
-function extractMcpOAuthStaticClient(configJson: string): { configJson: string; clientId?: string; clientSecret?: string; hasClientSecret: boolean } {
+function extractMcpOAuthStaticClient(configJson: string): {
+  configJson: string
+  clientId?: string
+  clientSecret?: string
+  hasClientSecret: boolean
+} {
   try {
     const config = JSON.parse(configJson) as Record<string, unknown>
-    const auth = config.auth != null && typeof config.auth === 'object' ? config.auth as Record<string, unknown> : null
+    const auth =
+      config.auth != null && typeof config.auth === 'object'
+        ? (config.auth as Record<string, unknown>)
+        : null
     if (auth?.type !== 'oauth2') return { configJson, hasClientSecret: false }
     const clientId = typeof auth.clientId === 'string' ? auth.clientId : undefined
     const clientSecret = typeof auth.clientSecret === 'string' ? auth.clientSecret : undefined
     if (clientSecret != null) delete auth.clientSecret
-    if (clientSecret != null || auth.hasClientSecret != null) auth.hasClientSecret = clientSecret != null && clientSecret.length > 0
-    return { configJson: JSON.stringify(config), ...(clientId != null ? { clientId } : {}), ...(clientSecret != null ? { clientSecret } : {}), hasClientSecret: clientSecret != null && clientSecret.length > 0 }
+    if (clientSecret != null || auth.hasClientSecret != null)
+      auth.hasClientSecret = clientSecret != null && clientSecret.length > 0
+    return {
+      configJson: JSON.stringify(config),
+      ...(clientId != null ? { clientId } : {}),
+      ...(clientSecret != null ? { clientSecret } : {}),
+      hasClientSecret: clientSecret != null && clientSecret.length > 0,
+    }
   } catch {
     return { configJson, hasClientSecret: false }
   }
@@ -2113,7 +2157,11 @@ async function triggerHook(
         const fallbackTitle = context?.title ?? getNodeDefaultTitle(node)
         const notificationTitle = getSessionNotificationTitle(sessionId, fallbackTitle)
         const notificationBody = context?.body ?? getNodeDefaultBody(node)
-        showSystemNotification(notificationTitle, notificationBody, { target: 'session', sessionId, reason: node })
+        showSystemNotification(notificationTitle, notificationBody, {
+          target: 'session',
+          sessionId,
+          reason: node,
+        })
         triggered = true
       } catch (err) {
         log.warn(`Failed to show notification: ${String(err)}`)
@@ -3013,7 +3061,10 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('session:set-checkpoint-config', async (req) => {
     const ok = getSessionService().setSessionCheckpointEnabled(req.sessionId, req.enabled)
-    return { ok, enabled: ok ? req.enabled : getSessionService().getSessionCheckpointEnabled(req.sessionId) }
+    return {
+      ok,
+      enabled: ok ? req.enabled : getSessionService().getSessionCheckpointEnabled(req.sessionId),
+    }
   })
 
   typedIpcHandle('session:delete-message', async (req) => {
@@ -3083,8 +3134,8 @@ export function registerAllIpcHandlers(): void {
     try {
       const result = await getProviderService().healthCheck(req.id)
       log.info(
-        `provider:health-check completed, id=${req.id}, healthy=${result.healthy}, `
-        + `latencyMs=${result.latencyMs ?? 'n/a'}`,
+        `provider:health-check completed, id=${req.id}, healthy=${result.healthy}, ` +
+          `latencyMs=${result.latencyMs ?? 'n/a'}`,
       )
       if (!result.healthy && result.errorMessage) {
         log.warn(`provider:health-check unhealthy, id=${req.id}, error="${result.errorMessage}"`)
@@ -3100,26 +3151,26 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('provider:test-connection', async (req) => {
     log.info(
-      `provider:test-connection requested, provider=${req.provider}, id=${req.id ?? '(draft)'}, `
-      + `model=${req.defaultModel}`,
+      `provider:test-connection requested, provider=${req.provider}, id=${req.id ?? '(draft)'}, ` +
+        `model=${req.defaultModel}`,
     )
     try {
       const result = await getProviderService().testConnection(req)
       log.info(
-        `provider:test-connection completed, provider=${req.provider}, id=${req.id ?? '(draft)'}, `
-        + `healthy=${result.healthy}, latencyMs=${result.latencyMs ?? 'n/a'}`,
+        `provider:test-connection completed, provider=${req.provider}, id=${req.id ?? '(draft)'}, ` +
+          `healthy=${result.healthy}, latencyMs=${result.latencyMs ?? 'n/a'}`,
       )
       if (!result.healthy && result.errorMessage) {
         log.warn(
-          `provider:test-connection unhealthy, provider=${req.provider}, `
-          + `id=${req.id ?? '(draft)'}, error="${result.errorMessage}"`,
+          `provider:test-connection unhealthy, provider=${req.provider}, ` +
+            `id=${req.id ?? '(draft)'}, error="${result.errorMessage}"`,
         )
       }
       return result
     } catch (err) {
       log.error(
-        `provider:test-connection failed, provider=${req.provider}, id=${req.id ?? '(draft)'}, `
-        + `error=${err instanceof Error ? err.message : String(err)}`,
+        `provider:test-connection failed, provider=${req.provider}, id=${req.id ?? '(draft)'}, ` +
+          `error=${err instanceof Error ? err.message : String(err)}`,
       )
       throw err
     }
@@ -3130,14 +3181,14 @@ export function registerAllIpcHandlers(): void {
     try {
       const models = await getProviderService().fetchModels(req)
       log.info(
-        `provider:fetch-models completed, provider=${req.provider}, id=${req.id ?? '(draft)'}, `
-        + `count=${models.length}`,
+        `provider:fetch-models completed, provider=${req.provider}, id=${req.id ?? '(draft)'}, ` +
+          `count=${models.length}`,
       )
       return { models }
     } catch (err) {
       log.error(
-        `provider:fetch-models failed, provider=${req.provider}, id=${req.id ?? '(draft)'}, `
-        + `error=${err instanceof Error ? err.message : String(err)}`,
+        `provider:fetch-models failed, provider=${req.provider}, id=${req.id ?? '(draft)'}, ` +
+          `error=${err instanceof Error ? err.message : String(err)}`,
       )
       throw err
     }
@@ -3224,8 +3275,11 @@ export function registerAllIpcHandlers(): void {
       const profile = profiles.find((item) => item.id === req.providerProfileId)
       if (profile) {
         // Provider 引用可能携带完整自定义 Manifest；统一解析可同时覆盖目录与旧合成兜底。
-        if (!manifest) manifest = resolveProfileMediaModels(profile, catalog, { enabledOnly: false })
-          .find((item) => item.manifest.id === req.manifestId)?.manifest ?? null
+        if (!manifest)
+          manifest =
+            resolveProfileMediaModels(profile, catalog, { enabledOnly: false }).find(
+              (item) => item.manifest.id === req.manifestId,
+            )?.manifest ?? null
         model =
           profileMediaModelSummaries(profile, catalog, { enabledOnly: false }).find(
             (item) => item.manifestId === req.manifestId,
@@ -3244,8 +3298,9 @@ export function registerAllIpcHandlers(): void {
       const profile = profiles.find((item) => item.id === req.providerProfileId)
       if (profile) {
         manifest =
-          resolveProfileMediaModels(profile, catalog, { enabledOnly: false })
-            .find((item) => item.manifest.id === req.manifestId)?.manifest ?? null
+          resolveProfileMediaModels(profile, catalog, { enabledOnly: false }).find(
+            (item) => item.manifest.id === req.manifestId,
+          )?.manifest ?? null
       }
     }
     if (!manifest) {
@@ -3432,6 +3487,123 @@ export function registerAllIpcHandlers(): void {
     log.info(
       `canvas:task:generate-text requested, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} agentId=${req.agentId ?? '(n/a)'} provider=${req.providerProfileId ?? '(auto)'} model=${req.modelId ?? '(auto)'} background=${req.waitForCompletion === false} images=${(req.inputFiles ?? []).filter((f) => f.type === 'image').length}`,
     )
+
+    /**
+     * 本地 CLI Provider 不经过 HTTP generateCanvasText：它们没有 API Key，
+     * 必须复用工作台的 SessionService，才能真正进入 Claude SDK / Codex CLI/SDK。
+     * 这里使用一次性 session 承载单个画布任务，取回最终 assistant_message 后清理，
+     * 因而不会把每个操作节点都长期堆积到会话侧栏。
+     */
+    const runWithLocalAgentRuntime = async (
+      profile: Awaited<ReturnType<ProviderService['listProviders']>>[number],
+      agent: { prompt?: string | null; providerProfileId?: string | null } | null,
+      runtimeRequest: ReturnType<typeof buildCanvasRuntimeRequest>,
+    ): Promise<CanvasTextTaskCreateResponse> => {
+      const adapter: SessionAgentAdapter = isLocalCodexCliProvider(profile) ? 'codex' : 'claude-sdk'
+      const permissionMode: SessionPermissionMode =
+        adapter === 'codex' ? 'codex-full-access' : 'claude-bypass'
+      const selectedSkillIds = Array.isArray(req.skillIds)
+        ? req.skillIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        : []
+      const responseFormat =
+        typeof req.modelParams?.responseFormat === 'string'
+          ? req.modelParams.responseFormat
+          : typeof req.modelParams?.response_format === 'string'
+            ? req.modelParams.response_format
+            : ''
+      const jsonConstraint =
+        responseFormat.toLowerCase() === 'json'
+          ? '\n\n输出格式硬约束：这是纯文本结构化转换，不要调用工具、不要读写文件；只返回合法 JSON，不要 Markdown，不要代码块，不要额外解释。'
+          : ''
+      const agentPrompt =
+        agent && typeof agent.prompt === 'string' && agent.prompt.trim().length > 0
+          ? agent.prompt.trim()
+          : '你是影视创作助手。严格遵循用户指令，直接输出结果，不要解释过程。'
+      const system = buildCanvasSystemPrompt({
+        capabilityPrompt: [runtimeRequest.system, jsonConstraint].filter(Boolean).join('\n\n'),
+        agentPrompt,
+        ...(req.negativePrompt ? { negativePrompt: req.negativePrompt } : {}),
+      })
+      const message = [system ? `[画布任务约束]\n${system}` : '', runtimeRequest.prompt]
+        .filter((part) => part.trim().length > 0)
+        .join('\n\n')
+      if (!message) throw new Error('画布文本任务提示词为空')
+
+      const model = profile.defaultModel
+      // 人设已经拼进本轮消息。当 Agent 仍绑定其他 Provider 时省略
+      // agentId，避免一次性画布会话携带与本轮显式 CLI 选择冲突的旧配置。
+      const sessionAgentId =
+        req.agentId && (agent?.providerProfileId == null || agent.providerProfileId === profile.id)
+          ? req.agentId
+          : undefined
+      let sessionId: string | undefined
+      try {
+        await ensureNoProjectDirectoryExists()
+        const noProjectWorkspaceId = getNoProjectWorkspaceId()
+        const created = await getSessionService().createSession({
+          title: `[画布文本] ${req.operation}`,
+          providerProfileId: profile.id,
+          ...(noProjectWorkspaceId ? { workspaceId: noProjectWorkspaceId } : {}),
+          ...(sessionAgentId ? { agentId: sessionAgentId } : {}),
+          modelId: model,
+          agentAdapter: adapter,
+          permissionMode,
+          chatMode: 'agent',
+        })
+        sessionId = created.sessionId
+        const turn = await getSessionService().sendTurn({
+          sessionId,
+          message,
+          providerProfileId: profile.id,
+          modelId: model,
+          skillIds: selectedSkillIds,
+          ...(sessionAgentId ? { agentId: sessionAgentId } : {}),
+          agentAdapter: adapter,
+          permissionMode,
+          ...(req.reasoningEffort ? { reasoningEffort: req.reasoningEffort } : {}),
+        })
+        // SessionService.sendTurn 只负责启动 executor，真正的 SDK/CLI 运行在后台
+        // promise 中；不能立刻读 history，否则 Codex 尚未写入 assistant_message。
+        // 轮询临时 session 的完整事件，直到本轮出现终态事件。
+        const deadline = Date.now() + 10 * 60_000
+        let finalText: string | undefined
+        while (Date.now() < deadline) {
+          const history = await getSessionService().getHistory({ sessionId, full: true })
+          const events = history.events.filter((event) => event.turnId === turn.turnId)
+          const result = resolveCanvasAgentTurnResult(events)
+          if (result.error) throw new Error(result.error)
+          if (result.text) finalText = result.text
+          if (result.terminal) break
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+        if (finalText == null) throw new Error('本地 Agent 未返回文本结果')
+        return {
+          status: 'succeeded',
+          providerProfileId: profile.id,
+          provider: profile.provider,
+          model,
+          text: finalText,
+          rawResponse: {
+            providerProfileId: profile.id,
+            provider: profile.provider,
+            providerName: profile.name,
+            model,
+            executionPath: 'session-runtime',
+            adapter,
+            agentId: req.agentId ?? null,
+            skillIds: selectedSkillIds,
+            relationManifest: runtimeRequest.relationManifest,
+          },
+        }
+      } finally {
+        if (sessionId != null) {
+          await getSessionService()
+            .deleteSession(sessionId)
+            .catch(() => undefined)
+        }
+      }
+    }
+
     const runTextGeneration = async (): Promise<CanvasTextTaskCreateResponse> => {
       const profiles = await getProviderService().listProviders()
       // 候选文本 provider：有密钥(keystoreRef + secret)，且非纯媒体(image/voice/video)
@@ -3448,6 +3620,31 @@ export function registerAllIpcHandlers(): void {
       const ordered = preferredProviderId
         ? profiles.filter((p) => p.id === preferredProviderId)
         : [...profiles].sort((a, b) => Number(b.isDefault) - Number(a.isDefault))
+      const runtimeRequest = buildCanvasRuntimeRequest(req)
+      const candidate = ordered.find((profile) => isTextProvider(profile))
+      if (candidate != null && isBuiltInLocalCliProvider(candidate)) {
+        if (runtimeRequest.images.length > 0) {
+          return fail(
+            'provider_not_configured',
+            '本地 CLI 暂不支持画布图片输入，请改用支持多模态的 API Provider',
+            {
+              providerProfileId: candidate.id,
+              provider: candidate.provider,
+              model: candidate.defaultModel,
+            },
+          )
+        }
+        try {
+          return await runWithLocalAgentRuntime(candidate, agent, runtimeRequest)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          return fail('text_generation_failed', message, {
+            providerProfileId: candidate.id,
+            provider: candidate.provider,
+            model: candidate.defaultModel,
+          })
+        }
+      }
       let chosen: { profile: (typeof profiles)[number]; apiKey: string } | null = null
       for (const profile of ordered) {
         if (preferredProviderId == null && !isTextProvider(profile)) continue
@@ -3493,7 +3690,6 @@ export function registerAllIpcHandlers(): void {
         responseFormat.toLowerCase() === 'json'
           ? '\n\n输出格式硬约束：只返回合法 JSON，不要 Markdown，不要代码块，不要额外解释。'
           : ''
-      const runtimeRequest = buildCanvasRuntimeRequest(req)
       const system = buildCanvasSystemPrompt({
         capabilityPrompt: [req.systemPrompt, jsonConstraint].filter(Boolean).join('\n\n'),
         agentPrompt: baseSystem,
@@ -3529,12 +3725,14 @@ export function registerAllIpcHandlers(): void {
             : typeof req.modelParams?.reasoning_effort === 'string'
               ? req.modelParams.reasoning_effort
               : undefined
-      const reasoningEffort = rawReasoningEffort != null && isProtocolReasoning(rawReasoningEffort)
-        ? rawReasoningEffort
-        : agent?.reasoningEffort != null && isProtocolReasoning(agent.reasoningEffort)
-          ? agent.reasoningEffort
-          : undefined
-      const disableThinking = req.taskPipelineRole === 'shot' || responseFormat.toLowerCase() === 'json'
+      const reasoningEffort =
+        rawReasoningEffort != null && isProtocolReasoning(rawReasoningEffort)
+          ? rawReasoningEffort
+          : agent?.reasoningEffort != null && isProtocolReasoning(agent.reasoningEffort)
+            ? agent.reasoningEffort
+            : undefined
+      const disableThinking =
+        req.taskPipelineRole === 'shot' || responseFormat.toLowerCase() === 'json'
       const apiKind = chosen.profile.codexApiKind === 'responses' ? 'responses' : 'chat'
       let result: Awaited<ReturnType<typeof generateCanvasText>>
       try {
@@ -5001,7 +5199,6 @@ export function registerAllIpcHandlers(): void {
     return { deleted }
   })
 
-
   // ─── MCP Handlers ───────────────────────────────────────────────────────────
 
   typedIpcHandle('mcp:list', async (req) => {
@@ -5067,7 +5264,9 @@ export function registerAllIpcHandlers(): void {
     try {
       await getMcpService().startServer(req.serverId)
     } catch (err) {
-      log.warn(`mcp:authorize completed but reconnect failed, serverId=${req.serverId}: ${err instanceof Error ? err.message : String(err)}`)
+      log.warn(
+        `mcp:authorize completed but reconnect failed, serverId=${req.serverId}: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
     pushConfigChanged('mcp', 'update', req.serverId)
     return { authorized: true }
@@ -5240,9 +5439,8 @@ export function registerAllIpcHandlers(): void {
       const teams = teamRepo.list({ includeDisabled: true })
       for (const team of teams) {
         const memberIndex = team.memberAgentIds.indexOf(req.id)
-        const nextMembers = memberIndex >= 0
-          ? team.memberAgentIds.filter((m) => m !== req.id)
-          : team.memberAgentIds
+        const nextMembers =
+          memberIndex >= 0 ? team.memberAgentIds.filter((m) => m !== req.id) : team.memberAgentIds
         const hostWasDeleted = team.hostAgentId === req.id
         const nextHost = hostWasDeleted ? (nextMembers[0] ?? '') : team.hostAgentId
         const membersChanged = memberIndex >= 0 && nextMembers.length !== team.memberAgentIds.length
@@ -5675,7 +5873,9 @@ export function registerAllIpcHandlers(): void {
       })
       // 安装完成后查回 postInstallHint
       const item = service.listInstallableCatalog().find((it) => it.slug === req.slug)
-      return item?.postInstallHint != null ? { skill, postInstallHint: item.postInstallHint } : { skill }
+      return item?.postInstallHint != null
+        ? { skill, postInstallHint: item.postInstallHint }
+        : { skill }
     } catch (err) {
       const existing = skillInstallStatusByKey.get(skillInstallStatusKey('catalog', req.slug))
       setSkillInstallStatus({
@@ -5936,7 +6136,14 @@ export function registerAllIpcHandlers(): void {
     const settingsRepo = new SettingsRepository(db)
     const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
     // manualWrite 走去重/配额/敏感词闸门（跳过置信度/演化）
-    const writer = new MemoryWriterService(repo, getMemoryStore(resolveWorkspaceRootPath(req.scope, req.scopeRef)), settingsGet, async () => '[]', null, entityRepo)
+    const writer = new MemoryWriterService(
+      repo,
+      getMemoryStore(resolveWorkspaceRootPath(req.scope, req.scopeRef)),
+      settingsGet,
+      async () => '[]',
+      null,
+      entityRepo,
+    )
     const row = await writer.manualWrite({
       scope: req.scope,
       type: req.type,
@@ -5950,7 +6157,9 @@ export function registerAllIpcHandlers(): void {
       try {
         entityRepo.upsertEntitiesForMemory(row.id, req.scope, req.scopeRef, req.entities)
       } catch (err) {
-        log.warn(`memory:create entity persist failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+        log.warn(
+          `memory:create entity persist failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        )
       }
     }
     return { entry: toMemoryDto(row) }
@@ -5960,33 +6169,32 @@ export function registerAllIpcHandlers(): void {
     log.info(`memory:update requested, id=${req.id}`)
     const repo = new MemoryRepository(getDatabase())
     const existing = repo.getById(req.id)
-    if (existing == null) throw new SparkError('NOT_FOUND', `记忆不存在：${req.id}（可能已被删除或归档）。`)
+    if (existing == null)
+      throw new SparkError('NOT_FOUND', `记忆不存在：${req.id}（可能已被删除或归档）。`)
     let bodyForUpdate: string | undefined
     if (req.body != null) {
       bodyForUpdate = req.body
       // 先写文件（事实来源），再更新 DB+FTS：writeFile 失败则整体中止（DB 维持旧状态，
       // 与 writer.updateEntry 契约一致——避免 DB 领先文件导致 recall 永久读不到正文）
-      await getMemoryStore(resolveWorkspaceRootPath(existing.scope, existing.scope_ref)).writeFile(
-        {
-          meta: {
-            id: existing.id,
-            scope: existing.scope,
-            scopeRef: existing.scope_ref,
-            type: req.type ?? existing.type,
-            name: existing.name,
-            description: req.description ?? existing.description,
-            confidence: existing.confidence,
-            createdAt: existing.created_at,
-            updatedAt: Date.now(),
-            hitCount: existing.hit_count,
-            lastHitAt: existing.last_hit_at,
-            sourceSessionId: existing.source_session_id,
-            links: [],
-            archived: existing.archived === 1,
-          },
-          body: req.body,
+      await getMemoryStore(resolveWorkspaceRootPath(existing.scope, existing.scope_ref)).writeFile({
+        meta: {
+          id: existing.id,
+          scope: existing.scope,
+          scopeRef: existing.scope_ref,
+          type: req.type ?? existing.type,
+          name: existing.name,
+          description: req.description ?? existing.description,
+          confidence: existing.confidence,
+          createdAt: existing.created_at,
+          updatedAt: Date.now(),
+          hitCount: existing.hit_count,
+          lastHitAt: existing.last_hit_at,
+          sourceSessionId: existing.source_session_id,
+          links: [],
+          archived: existing.archived === 1,
         },
-      )
+        body: req.body,
+      })
     }
     const updated = repo.update(
       req.id,
@@ -6955,7 +7163,11 @@ export function registerAllIpcHandlers(): void {
         const fallbackTitle = title ?? getNodeDefaultTitle(node)
         const notificationTitle = getSessionNotificationTitle(sessionId, fallbackTitle)
         const notificationBody = body ?? getNodeDefaultBody(node)
-        showSystemNotification(notificationTitle, notificationBody, { target: 'session', sessionId, reason: node })
+        showSystemNotification(notificationTitle, notificationBody, {
+          target: 'session',
+          sessionId,
+          reason: node,
+        })
         triggered = true
         log.debug(`Hook notification triggered for node=${node}`)
       } catch (err) {
@@ -7470,7 +7682,9 @@ export function registerAllIpcHandlers(): void {
     emitProgress(
       result.success ? 'done' : 'error',
       result.success ? 100 : null,
-      result.success ? `FFmpeg 安装成功 (版本 ${nextState.ffmpegVersion ?? '?'})` : result.message ?? '安装失败',
+      result.success
+        ? `FFmpeg 安装成功 (版本 ${nextState.ffmpegVersion ?? '?'})`
+        : (result.message ?? '安装失败'),
     )
     return result
   })
@@ -7498,15 +7712,18 @@ export function registerAllIpcHandlers(): void {
   })
 
   /** 通用视频处理 handler：按 operation 分派到 FfmpegRunner 方法 */
-  typedIpcHandle('video:process', async (req: VideoProcessRequest): Promise<VideoProcessResponse> => {
-    return handleVideoProcess(req, (progress) => {
-      pushStreamEvent('stream:video:process-progress', {
-        requestId: req.requestId,
-        percent: progress.percent,
-        stage: `frame=${progress.frame} fps=${progress.fps}`,
+  typedIpcHandle(
+    'video:process',
+    async (req: VideoProcessRequest): Promise<VideoProcessResponse> => {
+      return handleVideoProcess(req, (progress) => {
+        pushStreamEvent('stream:video:process-progress', {
+          requestId: req.requestId,
+          percent: progress.percent,
+          stage: `frame=${progress.frame} fps=${progress.fps}`,
+        })
       })
-    })
-  })
+    },
+  )
 
   /** 视频探测专用通道（只读，无进度） */
   typedIpcHandle('video:probe', async (req: VideoProcessRequest): Promise<VideoProcessResponse> => {

@@ -5713,7 +5713,7 @@ function UpdatesSection() {
       <div className="card">
         <SettingsRow
           title="自动检查更新"
-          desc="应用启动时自动检查；窗口重新聚焦且距离上次检查超过 2 小时会补查一次"
+          desc="启动时检查，运行期间约每 30 分钟静默检查；失败时自动退避，系统唤醒后会按需补查"
           right={
             <Switch
               size="middle"

@@ -387,23 +387,64 @@ export function buildEntityDescription(name: string, fields: Record<string, stri
   return parts.length > 0 ? `${name}（${parts.join('；')}）` : name
 }
 
-function tryParseJsonObject(text: string): unknown | null {
+function collectBalancedJsonCandidates(text: string): string[] {
+  const candidates: string[] = []
+  let start = -1
+  let stack: string[] = []
+  let inString = false
+  let escaped = false
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]!
+    if (start < 0) {
+      if (char === '{' || char === '[') {
+        start = index
+        stack = [char === '{' ? '}' : ']']
+      }
+      continue
+    }
+    if (inString) {
+      if (escaped) escaped = false
+      else if (char === '\\') escaped = true
+      else if (char === '"') inString = false
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    if (char === '{' || char === '[') {
+      stack.push(char === '{' ? '}' : ']')
+      continue
+    }
+    if (char !== stack.at(-1)) continue
+    stack.pop()
+    if (stack.length === 0) {
+      candidates.push(text.slice(start, index + 1))
+      start = -1
+    }
+  }
+  return candidates
+}
+
+function tryParseJsonValues(text: string): unknown[] {
   const trimmed = text.trim()
   const candidates = [trimmed]
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fenced?.[1]) candidates.push(fenced[1].trim())
-  const firstBrace = trimmed.indexOf('{')
-  const lastBrace = trimmed.lastIndexOf('}')
-  if (firstBrace >= 0 && lastBrace > firstBrace)
-    candidates.push(trimmed.slice(firstBrace, lastBrace + 1))
+  for (const match of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    if (match[1]) candidates.push(match[1].trim())
+  }
+  candidates.push(...collectBalancedJsonCandidates(trimmed))
+  const parsedValues: unknown[] = []
+  const seen = new Set<string>()
   for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate)) continue
+    seen.add(candidate)
     try {
-      return JSON.parse(candidate)
+      parsedValues.push(JSON.parse(candidate))
     } catch {
       // try next candidate
     }
   }
-  return null
+  return parsedValues
 }
 
 function stringField(value: unknown): string {
@@ -411,45 +452,61 @@ function stringField(value: unknown): string {
 }
 
 function parseJsonEntities(kind: ExtractEntityKind, text: string): ParsedEntity[] {
-  const parsed = tryParseJsonObject(text)
-  if (!parsed || typeof parsed !== 'object') return []
-  const root = parsed as Record<string, unknown>
-  const rawEntities = Array.isArray(parsed)
-    ? parsed
-    : Array.isArray(root.entities)
-      ? root.entities
-      : []
-  const result: ParsedEntity[] = []
-  const seen = new Set<string>()
-  for (const raw of rawEntities) {
-    if (!raw || typeof raw !== 'object') continue
-    const item = raw as Record<string, unknown>
-    const name = stringField(item.name)
-    if (!name) continue
-    const key = name.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-
-    const fields: Record<string, string> = {}
-    const attrs = item.attributes
-    if (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
-      for (const [rawKey, rawValue] of Object.entries(attrs as Record<string, unknown>)) {
-        const value = stringField(rawValue)
-        if (!value) continue
-        fields[normalizeFieldKey(kind, rawKey)] = value
-      }
-    }
-    const description = stringField(item.description) || buildEntityDescription(name, fields)
-    const prompt = stringField(item.prompt)
-    result.push({
-      name,
-      fields,
-      description,
-      ...(prompt ? { prompt } : {}),
-      raw: item,
-    })
+  const collectionKeys: Record<ExtractEntityKind, string[]> = {
+    character: ['entities', 'characters', '角色'],
+    scene: ['entities', 'scenes', '场景'],
+    prop: ['entities', 'props', '道具'],
+    effect: ['entities', 'effects', '特效'],
   }
-  return result
+  for (const parsed of tryParseJsonValues(text)) {
+    if (!parsed || typeof parsed !== 'object') continue
+    const root = parsed as Record<string, unknown>
+    const nestedData =
+      root.data && typeof root.data === 'object' && !Array.isArray(root.data)
+        ? (root.data as Record<string, unknown>)
+        : null
+    const rawEntities = Array.isArray(parsed)
+      ? parsed
+      : collectionKeys[kind]
+          .map((key) => root[key] ?? nestedData?.[key])
+          .find((value): value is unknown[] => Array.isArray(value)) ?? []
+    const result: ParsedEntity[] = []
+    const seen = new Set<string>()
+    for (const raw of rawEntities) {
+      if (!raw || typeof raw !== 'object') continue
+      const item = raw as Record<string, unknown>
+      const name =
+        stringField(item.name) || stringField(item.名称) || stringField(item.characterName)
+      if (!name) continue
+      const key = name.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+
+      const fields: Record<string, string> = {}
+      const attrs = item.attributes ?? item.属性 ?? item.fields
+      if (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
+        for (const [rawKey, rawValue] of Object.entries(attrs as Record<string, unknown>)) {
+          const value = stringField(rawValue)
+          if (!value) continue
+          fields[normalizeFieldKey(kind, rawKey)] = value
+        }
+      }
+      const description =
+        stringField(item.description) ||
+        stringField(item.描述) ||
+        buildEntityDescription(name, fields)
+      const prompt = stringField(item.prompt) || stringField(item.提示词)
+      result.push({
+        name,
+        fields,
+        description,
+        ...(prompt ? { prompt } : {}),
+        raw: item,
+      })
+    }
+    if (result.length > 0) return result
+  }
+  return []
 }
 
 /**

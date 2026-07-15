@@ -1,4 +1,5 @@
 import type {
+  AgentEvent,
   CanvasMediaTaskInputFile,
   CanvasPromptTaskFields,
 } from '@spark/protocol'
@@ -8,6 +9,66 @@ export type CanvasRuntimeRequest = {
   system: string
   images: Array<{ url?: string; dataUrl?: string; mimeType?: string }>
   relationManifest: CanvasPromptTaskFields['relationManifest']
+}
+
+export type CanvasAgentTurnPollResult = {
+  terminal: boolean
+  text?: string
+  error?: string
+}
+
+/**
+ * Select output for a background SessionService turn.
+ * Intermediate Codex messages can be mode=complete while the turn is still running;
+ * only isFinal is authoritative before a terminal status arrives.
+ */
+export function resolveCanvasAgentTurnResult(events: AgentEvent[]): CanvasAgentTurnPollResult {
+  const terminalError = events.find((event) => event.type === 'agent_error')
+  if (terminalError?.type === 'agent_error') {
+    return { terminal: true, error: terminalError.message }
+  }
+
+  const assistantMessages = events.filter(
+    (event): event is Extract<AgentEvent, { type: 'assistant_message' }> =>
+      event.type === 'assistant_message' &&
+      event.mode === 'complete' &&
+      event.content.trim().length > 0,
+  )
+  let finalMessage: Extract<AgentEvent, { type: 'assistant_message' }> | undefined
+  for (let index = assistantMessages.length - 1; index >= 0; index -= 1) {
+    const candidate = assistantMessages[index]
+    if (candidate?.isFinal === true) {
+      finalMessage = candidate
+      break
+    }
+  }
+  if (finalMessage != null) return { terminal: true, text: finalMessage.content }
+
+  let terminalStatus: Extract<AgentEvent, { type: 'agent_status' }> | undefined
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const candidate = events[index]
+    if (
+      candidate?.type === 'agent_status' &&
+      (candidate.status === 'completed' ||
+        candidate.status === 'cancelled' ||
+        candidate.status === 'error')
+    ) {
+      terminalStatus = candidate
+      break
+    }
+  }
+  if (terminalStatus == null) return { terminal: false }
+  if (terminalStatus.status !== 'completed') {
+    return {
+      terminal: true,
+      error: terminalStatus.message || `本地 Agent 状态：${terminalStatus.status}`,
+    }
+  }
+  const fallback = assistantMessages.at(-1)
+  return {
+    terminal: true,
+    ...(fallback != null ? { text: fallback.content } : {}),
+  }
 }
 
 export function buildCanvasSystemPrompt(input: {

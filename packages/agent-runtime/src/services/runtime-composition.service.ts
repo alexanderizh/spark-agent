@@ -13,6 +13,12 @@ export interface RuntimeScopeRefs {
 export interface RuntimeCompositionOverrides {
   agentSkillIds?: string[]
   agentDisabledSkillIds?: string[]
+  /**
+   * When true, agentSkillIds is an explicit allow-list, including an explicit
+   * empty list. This prevents legacy fallback-to-all from defeating progressive
+   * disclosure for one-off runtimes such as canvas tasks.
+   */
+  replaceAgentSkills?: boolean
 }
 
 export interface PromptLayerValue {
@@ -110,22 +116,26 @@ export class RuntimeCompositionService {
     const sessionDisabledSkillIds = refs.sessionId != null ? this.getDisabledSkillIds('session', refs.sessionId) : []
     const disabledIds = new Set([...agentDisabledSkillIds, ...projectDisabledSkillIds, ...sessionDisabledSkillIds])
 
-    // 内置技能（builtin:*）对所有 agent 默认可用，无需显式绑定：把已启用的内置 id
-    // 始终并入 base。仍会经下方 enabledIds/disabledIds 过滤，故用户显式禁用仍生效。
+    // 内置技能（builtin:*）对所有 agent 默认可用，无需显式绑定；
+    // 但一次性运行时若传入 replaceAgentSkills，则完全以显式 allow-list 为准。
     const builtinIds = Array.from(enabledIds).filter((id) => id.startsWith('builtin:'))
 
     // The agent's configured skills define the base set.
     // If the agent has no skillIds configured, fall back to all
     // system-enabled skills for backward compatibility. Project and session layers are
     // always additive on top. Built-in skills are always included on top.
-    const hasAgentSkillConfig = agentSkillIds.length > 0
+    const hasAgentSkillConfig =
+      overrides.replaceAgentSkills === true || agentSkillIds.length > 0
     const base = hasAgentSkillConfig
-      ? uniqueStrings([...builtinIds, ...agentSkillIds])
+      ? uniqueStrings([
+          ...(overrides.replaceAgentSkills === true ? [] : builtinIds),
+          ...agentSkillIds,
+        ])
       : Array.from(enabledIds)
     const ordered = uniqueStrings([
       ...base,
-      ...projectSkillIds,
-      ...sessionSkillIds,
+      ...(overrides.replaceAgentSkills === true ? [] : projectSkillIds),
+      ...(overrides.replaceAgentSkills === true ? [] : sessionSkillIds),
     ]).filter((id) => enabledIds.has(id) && !disabledIds.has(id))
 
     return {
