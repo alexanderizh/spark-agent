@@ -239,6 +239,7 @@ describe('authentication forms', () => {
     )
     act(() => send?.click())
     await flush()
+    expect(mocks.captchaRefresh).not.toHaveBeenCalled()
     act(() => setInput(inputByPlaceholder(container, '6 位邮箱验证码'), '123456'))
     await flush()
     expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(
@@ -271,6 +272,7 @@ describe('authentication forms', () => {
     )
     act(() => send?.click())
     await flush()
+    expect(mocks.captchaRefresh).not.toHaveBeenCalled()
     act(() => setInput(inputByPlaceholder(container, '邮箱验证码'), '123456'))
     await flush()
     const submit = container.querySelector<HTMLButtonElement>('button[type="submit"]')
@@ -286,7 +288,7 @@ describe('authentication forms', () => {
     })
   })
 
-  it('uses the login SMS contract for phone registration and submits after captcha refresh', async () => {
+  it('uses the login SMS contract for phone registration without refreshing a valid captcha', async () => {
     act(() => {
       root = createRoot(container)
       root.render(<RegisterForm />)
@@ -305,7 +307,7 @@ describe('authentication forms', () => {
       captchaId: 'captcha-id',
       captchaText: 'abcd',
     })
-    expect(mocks.captchaRefresh).toHaveBeenCalledOnce()
+    expect(mocks.captchaRefresh).not.toHaveBeenCalled()
 
     act(() => setInput(inputByPlaceholder(container, '6 位短信验证码'), '123456'))
     await flush()
@@ -339,6 +341,7 @@ describe('authentication forms', () => {
       captchaId: 'captcha-id',
       captchaText: 'abcd',
     })
+    expect(mocks.captchaRefresh).not.toHaveBeenCalled()
 
     act(() => setInput(inputByPlaceholder(container, '6 位短信验证码'), '654321'))
     await flush()
@@ -347,6 +350,49 @@ describe('authentication forms', () => {
     act(() => submit?.click())
     await flush()
     expect(mocks.loginBySms).toHaveBeenCalledWith({ phone: '13800138000', smsCode: '654321' })
+  })
+
+  it('keeps the captcha when sending a verification code fails for another reason', async () => {
+    mocks.sendCode.mockRejectedValue(new Error('邮件服务暂时不可用'))
+    act(() => {
+      root = createRoot(container)
+      root.render(<LoginForm />)
+    })
+    act(() =>
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === '验证码')
+        ?.click(),
+    )
+    act(() => setInput(inputByPlaceholder(container, '邮箱或手机号'), 'user@example.com'))
+    const send = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '发送',
+    )
+    act(() => send?.click())
+    await flush()
+
+    expect(mocks.captchaRefresh).not.toHaveBeenCalled()
+    expect(mocks.toast.error).toHaveBeenCalledWith('邮件服务暂时不可用')
+  })
+
+  it('refreshes the captcha only when the server rejects the captcha itself', async () => {
+    mocks.sendCode.mockRejectedValue(new Error('图片验证码错误'))
+    act(() => {
+      root = createRoot(container)
+      root.render(<LoginForm />)
+    })
+    act(() =>
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === '验证码')
+        ?.click(),
+    )
+    act(() => setInput(inputByPlaceholder(container, '邮箱或手机号'), 'user@example.com'))
+    const send = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '发送',
+    )
+    act(() => send?.click())
+    await flush()
+
+    expect(mocks.captchaRefresh).toHaveBeenCalledOnce()
   })
 
   it('invalidates a sent code when the account changes', async () => {
