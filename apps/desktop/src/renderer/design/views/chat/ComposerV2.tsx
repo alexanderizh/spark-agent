@@ -96,6 +96,7 @@ import {
 import type { UIMessage } from '../../services/event-mapper'
 import { formatTokenCount } from './ChatViewUtils'
 import { scrollTextareaCaretIntoView } from './composer-caret-scroll'
+import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 
 type ContextUsageState = {
   estimatedTokens: number
@@ -4781,28 +4782,18 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
     },
   ]
 
-const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> = [
-  {
-    value: 'codex-default',
-    label: '请求批准',
-    description: '编辑外部文件和使用互联网时始终询问',
-    icon: <Icons.Hand size={18} />,
-  },
-  {
-    value: 'codex-auto-review',
-    label: '替我批准',
-    description: '仅对检测到的风险操作请求批准',
-    icon: <Icons.Shield size={18} />,
-    tone: 'auto',
-  },
-  {
-    value: 'codex-full-access',
-    label: '完全访问',
-    description: '可不受限制地访问互联网和您电脑上的任何文件',
-    icon: <Icons.AlertTriangle size={18} />,
-    tone: 'danger',
-  },
-]
+const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> =
+  SHARED_CODEX_PERMISSION_MODE_OPTIONS.map((option) => ({
+    ...option,
+    icon:
+      option.value === 'codex-default' ? (
+        <Icons.Hand size={18} />
+      ) : option.value === 'codex-auto-review' ? (
+        <Icons.Shield size={18} />
+      ) : (
+        <Icons.AlertTriangle size={18} />
+      ),
+  }))
 
 function encodeToSafeFileUrl(absolutePath: string): string {
   const encoded = btoa(unescape(encodeURIComponent(absolutePath)))

@@ -1,9 +1,8 @@
 /**
  * Composer 下拉菜单的通用选项类型 + 权限模式选项。
  *
- * 与 ChatView.tsx 内部的私有定义保持一致（claude-ask / auto-edits / plan / auto / bypass；
- * codex-default / auto-review / full-access），抽出共享给画布 Agent 弹窗等嵌入式场景，
- * 避免重复维护。ChatView 暂未改用本文件（避免牵动主对话框回归），未来可统一。
+ * 统一维护 Claude/Codex 权限选项，供主对话框、设置和 Agent 配置等入口复用，
+ * 避免用户看到的权限语义与运行时映射漂移。
  */
 import type { SessionPermissionMode, SessionAgentAdapter } from '@spark/protocol'
 
@@ -38,25 +37,27 @@ export const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
 ]
 
 export const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
-  { value: 'codex-default', label: 'Default', description: '使用 Codex CLI 默认权限策略' },
+  {
+    value: 'codex-default',
+    label: '请求批准',
+    description: 'workspace-write；越界操作请求批准，SDK 无法承接时会拒绝',
+  },
   {
     value: 'codex-auto-review',
-    label: 'Auto review',
-    description: '允许自动读写，保留关键确认',
+    label: '替我批准',
+    description: 'workspace-write；越界操作交由 Codex 自动审查',
     tone: 'auto',
   },
   {
     value: 'codex-full-access',
-    label: 'Full access',
-    description: '危险：Codex CLI 完全访问',
+    label: '完全访问',
+    description: 'danger-full-access；允许修改 .git 和工作区外文件',
     tone: 'danger',
   },
 ]
 
 /** 按 adapter 返回可选的权限模式（codex 与 claude 系列互斥） */
-export function getPermissionModeOptions(
-  adapter: SessionAgentAdapter,
-): Array<ComposerMenuOption> {
+export function getPermissionModeOptions(adapter: SessionAgentAdapter): Array<ComposerMenuOption> {
   return adapter === 'codex' ? CODEX_PERMISSION_MODE_OPTIONS : CLAUDE_PERMISSION_MODE_OPTIONS
 }
 

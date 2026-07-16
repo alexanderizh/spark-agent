@@ -29,6 +29,7 @@ import {
   type AgentsTargetTab,
 } from '../teamNavigation'
 import { countExistingRefs, resolveExistingRefs } from './agent-config-counts'
+import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
 import { NO_PROJECT_WORKSPACE_NAME, useSessionSidebar } from '../SessionSidebarContext'
 import {
   getDefaultAgentModelForProvider,
@@ -2381,11 +2382,8 @@ const PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }>
   { value: 'claude-bypass', label: '完全访问' },
 ]
 
-const CODEX_PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }> = [
-  { value: 'codex-default', label: 'Codex 默认' },
-  { value: 'codex-auto-review', label: 'Codex 自动审查' },
-  { value: 'codex-full-access', label: 'Codex 完全访问' },
-]
+const CODEX_PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }> =
+  SHARED_CODEX_PERMISSION_MODE_OPTIONS.map(({ value, label }) => ({ value, label }))
 
 function getPermissionOptions(
   adapter: SessionAgentAdapter,
