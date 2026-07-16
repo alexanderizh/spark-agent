@@ -1169,6 +1169,10 @@ export class SessionService {
     }
 
     this.registerConfiguredCommands()
+    // A leading slash is also common in routes, file paths, and pasted text.
+    // Only consume the message when its first token resolves to a real command;
+    // otherwise let the normal Agent turn interpret the user's full text.
+    if (this.commandRegistry.get(parsed.name) == null) return { isCommand: false }
     const result = await this.commandRegistry.execute(parsed, ctx, deps)
     if (result.forwardToAgent) return { isCommand: false }
     return { isCommand: true, result }
@@ -1355,6 +1359,12 @@ export class SessionService {
     }
 
     this.registerConfiguredCommands()
+    // Preserve slash-prefixed routes/paths as ordinary user input when they do
+    // not match a registered command. The renderer will forward the original
+    // message unchanged, so the Agent can decide what the text represents.
+    if (this.commandRegistry.get(parsed.name) == null) {
+      return { isCommand: true, forwardToAgent: true }
+    }
     const result = await this.commandRegistry.execute(parsed, ctx, deps)
 
     if (result.forwardToAgent) return { isCommand: true, forwardToAgent: true }
@@ -6593,6 +6603,15 @@ export class SessionService {
   private handleQueuedTurnStartFailure(sessionId: string, turn: PendingTurn, error: unknown): void {
     const eventRepo = new EventRepository(this.db)
     const sessionRepo = new SessionRepository(this.db)
+    // startTurn 可能在 executor 注册为 active 后、真正 executeTurn 前的异步预处理阶段失败。
+    // 此时若只写错误事件，activeLoops 会一直让 renderer 认为会话仍在运行。
+    const activeLoop = this.activeLoops.get(sessionId)
+    if (activeLoop != null) {
+      activeLoop.cancel()
+      this.activeLoops.delete(sessionId)
+    }
+    this.teamDispatchService?.clearTurn(turn.turnId)
+    this.closeTeamMcpHandlesForTurn(turn.turnId)
     const existing = eventRepo.queryBySession({ sessionId, turnId: turn.turnId, limit: 200 }).events
     const eventTypes = new Set(existing.map((item) => item.event_type))
     const hasTerminalStatus = existing.some((item) => {
@@ -6604,7 +6623,6 @@ export class SessionService {
         return false
       }
     })
-    if (hasTerminalStatus) return
     const message = error instanceof Error ? error.message : String(error)
     const isPlatformCredentialError =
       message.includes('平台模型') ||
@@ -6644,19 +6662,21 @@ export class SessionService {
         eventRepo,
       )
     }
-    this.emitAndPersist(
-      sessionId,
-      turn.turnId,
-      {
-        ...base(),
-        type: 'agent_status',
-        status: 'error',
-        message: isPlatformCredentialError
-          ? '平台模型凭据暂不可用，请在账号中心选择“在本机继续”后重试'
-          : 'Queued turn failed to start',
-      },
-      eventRepo,
-    )
+    if (!hasTerminalStatus) {
+      this.emitAndPersist(
+        sessionId,
+        turn.turnId,
+        {
+          ...base(),
+          type: 'agent_status',
+          status: 'error',
+          message: isPlatformCredentialError
+            ? '平台模型凭据暂不可用，请在账号中心选择“在本机继续”后重试'
+            : 'Queued turn failed to start',
+        },
+        eventRepo,
+      )
+    }
     sessionRepo.updateStatus(sessionId, 'error')
     new TurnRequestRepository(this.db).markFailed(turn.turnId, message)
     log.error('queued turn failed to start', { sessionId, turnId: turn.turnId, error: message })
