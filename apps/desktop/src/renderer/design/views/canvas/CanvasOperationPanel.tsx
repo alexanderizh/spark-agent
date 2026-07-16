@@ -994,7 +994,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     }
     setModelParamDraft((prev) => {
       const candidate = modelParamDraftEditedRef.current
-        ? mergeSeededModelParamDraft(prev, next)
+        ? mergeSeededModelParamDraft(prev, next, parameterFields)
         : next
       if (sameModelParamDraft(prev, candidate)) {
         return prev

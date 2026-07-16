@@ -1,6 +1,6 @@
 # 画布模型切换参数兼容性实施计划
 
-> 状态: 实施中 | 最后核对: 2026-07-16
+> 状态: 已落地 | 最后核对: 2026-07-16
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -20,7 +20,7 @@
 - Modify: `apps/desktop/src/renderer/design/views/canvas/canvasModelParamDraftState.ts`
 - Modify: `apps/desktop/src/renderer/design/views/canvas/canvasParameterPresentation.ts`
 
-- [ ] **Step 1: 编写失败测试**
+- [x] **Step 1: 编写失败测试**
 
 创建纯函数测试，明确非法值回退、合法自定义尺寸保留、枚举值保留和缺少格式约束时保持宽松行为：
 
@@ -65,7 +65,7 @@ describe('model parameter compatibility', () => {
 })
 ```
 
-- [ ] **Step 2: 运行测试并确认失败**
+- [x] **Step 2: 运行测试并确认失败**
 
 Run:
 
@@ -75,7 +75,7 @@ pnpm --filter @spark/desktop test:unit -- src/renderer/design/views/canvas/canva
 
 Expected: FAIL，因为新兼容性函数和带字段约束的合并签名尚未实现。
 
-- [ ] **Step 3: 实现最小兼容性逻辑**
+- [x] **Step 3: 实现最小兼容性逻辑**
 
 给 `SchemaField` 增加可选的 `pattern?: string`，并在草稿状态模块实现：
 
@@ -119,7 +119,7 @@ export function mergeSeededModelParamDraft(
 }
 ```
 
-- [ ] **Step 4: 运行纯函数测试并确认通过**
+- [x] **Step 4: 运行纯函数测试并确认通过**
 
 Run:
 
@@ -136,7 +136,7 @@ Expected: PASS。
 - Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasInlineAiComposer.test.ts`
 - Modify: `apps/desktop/src/renderer/design/views/canvas/CanvasInlineAiComposer.tsx`
 
-- [ ] **Step 1: 编写失败测试**
+- [x] **Step 1: 编写失败测试**
 
 增加两个测试：schema 字段保留 `pattern`，历史节点中的非法 `size=2:1` 不覆盖默认值：
 
@@ -175,7 +175,7 @@ it('falls back to the model default when a persisted value is incompatible', () 
 })
 ```
 
-- [ ] **Step 2: 运行测试并确认失败**
+- [x] **Step 2: 运行测试并确认失败**
 
 Run:
 
@@ -185,7 +185,7 @@ pnpm --filter @spark/desktop test:unit -- src/renderer/design/views/canvas/Canva
 
 Expected: FAIL，当前 `schemaFields` 丢弃 `pattern`，初始值解析无条件接受历史值。
 
-- [ ] **Step 3: 实现 schema 提取和初始值校验**
+- [x] **Step 3: 实现 schema 提取和初始值校验**
 
 `schemaFields` 读取字符串类型的 `pattern`：
 
@@ -203,7 +203,7 @@ return {
 
 `resolveInitialModelParamDraftValue` 在接受 existing、preset 或 default 候选值前调用 `isModelParamDraftValueCompatible`；全景图映射逻辑保持原优先级，但不能返回新字段不接受的值。
 
-- [ ] **Step 4: 运行创建器测试并确认通过**
+- [x] **Step 4: 运行创建器测试并确认通过**
 
 Run:
 
@@ -222,7 +222,7 @@ Expected: PASS。
 - Modify: `packages/protocol/src/media-model-manifest.ts`
 - Modify: `packages/protocol/src/__tests__/schemas.test.ts`
 
-- [ ] **Step 1: 编写 Seedream schema 失败测试**
+- [x] **Step 1: 编写 Seedream schema 失败测试**
 
 在协议测试中断言 Seedream 4.0、4.5、5.0 和 5.0 lite 的 `size` 支持自定义值且声明 `宽x高` 格式：
 
@@ -240,7 +240,7 @@ for (const modelId of [
 }
 ```
 
-- [ ] **Step 2: 运行协议测试并确认失败**
+- [x] **Step 2: 运行协议测试并确认失败**
 
 Run:
 
@@ -250,7 +250,7 @@ pnpm --filter @spark/protocol test -- src/__tests__/schemas.test.ts
 
 Expected: FAIL，因为 Seedream 尺寸 schema 尚未声明 `pattern`。
 
-- [ ] **Step 3: 添加 manifest 格式约束并接入面板**
+- [x] **Step 3: 添加 manifest 格式约束并接入面板**
 
 为四个 Seedream `size` 字段增加：
 
@@ -264,7 +264,7 @@ pattern: '^\\d+\\s*[xX]\\s*\\d+$',
 mergeSeededModelParamDraft(prev, next, parameterFields)
 ```
 
-- [ ] **Step 4: 运行相关测试**
+- [x] **Step 4: 运行相关测试**
 
 Run:
 
@@ -282,7 +282,7 @@ Expected: PASS。
 - Modify: `docs/superpowers/specs/2026-07-16-canvas-model-param-compatibility.md`
 - Modify: `docs/superpowers/plans/2026-07-16-canvas-model-param-compatibility.md`
 
-- [ ] **Step 1: 运行类型检查**
+- [x] **Step 1: 运行类型检查**
 
 Run:
 
@@ -293,7 +293,7 @@ pnpm --filter @spark/desktop typecheck
 
 Expected: PASS。
 
-- [ ] **Step 2: 运行格式与变更范围检查**
+- [x] **Step 2: 运行格式与变更范围检查**
 
 Run:
 
@@ -305,7 +305,7 @@ git status --short
 
 Expected: 无空白错误，变更只包含参数兼容性、Seedream schema、相关测试和本任务文档。
 
-- [ ] **Step 3: 更新文档状态**
+- [x] **Step 3: 更新文档状态**
 
 把设计文档和实施计划的状态更新为：
 
@@ -313,7 +313,7 @@ Expected: 无空白错误，变更只包含参数兼容性、Seedream schema、�
 > 状态: 已落地 | 最后核对: 2026-07-16
 ```
 
-- [ ] **Step 4: 提交实现**
+- [x] **Step 4: 提交实现**
 
 ```powershell
 git add -- apps/desktop/src/renderer/design/views/canvas/canvasModelParamDraftState.ts apps/desktop/src/renderer/design/views/canvas/canvasModelParamDraftState.test.ts apps/desktop/src/renderer/design/views/canvas/canvasParameterPresentation.ts apps/desktop/src/renderer/design/views/canvas/CanvasInlineAiComposer.tsx apps/desktop/src/renderer/design/views/canvas/CanvasInlineAiComposer.test.ts apps/desktop/src/renderer/design/views/canvas/CanvasOperationPanel.tsx apps/desktop/src/renderer/design/views/canvas/CanvasOperationPresetModal.tsx packages/protocol/src/media-model-manifest.ts packages/protocol/src/__tests__/schemas.test.ts docs/superpowers/specs/2026-07-16-canvas-model-param-compatibility.md docs/superpowers/plans/2026-07-16-canvas-model-param-compatibility.md

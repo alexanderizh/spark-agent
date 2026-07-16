@@ -4,6 +4,7 @@ export type SchemaField = {
   type: string
   enumValues: string[]
   allowCustom?: boolean
+  pattern?: string
   description?: string
   placeholder?: string
 }
