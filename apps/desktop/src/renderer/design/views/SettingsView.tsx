@@ -31,6 +31,7 @@ import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import { FfmpegStatusCard } from './FfmpegStatusCard'
 import { clearOnboardingState } from './OnboardingView'
 import { canvasApi } from './canvas/canvas.api'
+import { CanvasBatchSubmitPreferenceSetting } from './canvas/CanvasBatchSubmitPreferenceSetting'
 import { resolveSupportedLanguage, SUPPORTED_LANGUAGES, useI18n } from '../i18n'
 import telegramLogo from '../../assets/remote-channels/telegram.svg'
 import feishuLogo from '../../assets/remote-channels/feishu.ico'
@@ -569,6 +570,7 @@ function GeneralSection() {
             </button>
           }
         />
+        <CanvasBatchSubmitPreferenceSetting />
       </div>
 
       <div className="form-grid">

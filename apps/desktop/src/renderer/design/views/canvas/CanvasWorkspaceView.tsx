@@ -46,6 +46,8 @@ import {
 import { resolveCanvasAssetFocusNodeIds } from './canvasAssetFocus'
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel, buildOperationPanelSnapshotSignature } from './CanvasOperationPanel'
+import { CanvasBatchTaskPanel } from './CanvasBatchTaskPanel'
+import { useCanvasBatchTasks } from './useCanvasBatchTasks'
 import { shouldFocusCanvasInlinePanel } from './canvasInlinePanelFocus'
 import { captureCanvasTaskViewport, runWithCanvasTaskViewport } from './canvasTaskViewportGuard'
 import { CanvasOperationWorkbench } from './CanvasOperationWorkbench'
@@ -1827,6 +1829,16 @@ export function CanvasWorkspaceView({
   const [directorStage3DNodeId, setDirectorStage3DNodeId] = useState<string | null>(null)
   const [videoWorkbenchNodeId, setVideoWorkbenchNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
+  const batchTasks = useCanvasBatchTasks({
+    getSnapshot: () => snapshot,
+    updateManyNodeData,
+    runOperationNode,
+    onSingleValidationError: (nodeId, error) => {
+      setActiveOperationPanelNodeId(nodeId)
+      setSelectedNodeIds([nodeId])
+      message.error(error instanceof Error ? error.message : '任务参数校验失败')
+    },
+  })
   const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportControlsRef = useRef<CanvasStageViewportControls | null>(null)
   const pendingCanvasViewportRestoreRef = useRef<Pick<
@@ -7723,6 +7735,15 @@ export function CanvasWorkspaceView({
             onBringSelectedNodesToFront={() => void handleBringToFront()}
             onAddNodesToAgent={handleAddSelectedToAgent}
             onAddNodeToAgent={handleAddNodeToAgent}
+            onRunOperationNode={(nodeId) => {
+              void batchTasks.controller.runSingle(nodeId).catch(() => undefined)
+            }}
+            onConfigureSelectedTasks={batchTasks.controller.openConfigure}
+            onSubmitSelectedTasks={(nodeIds) => {
+              void batchTasks.controller.openSubmit(nodeIds).catch((error) => {
+                message.error(error instanceof Error ? error.message : '批量提交失败')
+              })
+            }}
             onOpenAiComposer={handleOpenInlineAi}
             onEditNode={handleEditNode}
             onEditVideo={handleEditVideo}
@@ -7749,6 +7770,20 @@ export function CanvasWorkspaceView({
             onViewportChange={handleCanvasViewportChange}
             onViewportControlsChange={handleCanvasViewportControlsChange}
             onDeleteSelectedNodes={handleDeleteSelectedNodes}
+          />
+          <CanvasBatchTaskPanel
+            state={batchTasks.state}
+            onPatchGroup={batchTasks.controller.patchGroup}
+            onPatchNode={batchTasks.controller.patchNode}
+            onSaveDrafts={async () => {
+              await batchTasks.controller.saveDrafts()
+            }}
+            onSubmit={batchTasks.controller.submit}
+            onConfirmSubmit={batchTasks.controller.confirmSubmit}
+            onRetryFailed={batchTasks.controller.retryFailed}
+            onSkipNextConfirmationChange={batchTasks.controller.setSkipNextConfirmation}
+            onBackToConfigure={batchTasks.controller.backToConfigure}
+            onClose={batchTasks.controller.close}
           />
           {inlinePanelNode && floatingEditorPanel && (
             <div

@@ -427,6 +427,8 @@ export type CanvasFlowNodeData = {
     dissolveGroup: (groupId: string) => void
     /** 单节点右键：把该节点加入画布 Agent 对话引用列表 */
     addNodeToAgent?: (nodeId: string) => void
+    /** 单任务节点右键：使用已保存配置直接提交运行 */
+    runOperationNode?: (nodeId: string) => void
     openAiComposer: (nodeId: string) => void
     saveToLibrary: (nodeId: string) => void
     annotateImage?: (nodeId: string) => void
@@ -790,6 +792,21 @@ export const CanvasNode = memo(function CanvasNode({
     () => ({
       className: 'canvas-node-context-menu',
       items: [
+        ...(isTask && actions.runOperationNode
+          ? [
+              {
+                key: 'run-operation',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Play size={14} /> 提交运行
+                  </span>
+                ),
+                disabled: node.data.status === 'running',
+                onClick: () => actions.runOperationNode?.(node.id),
+              },
+              { type: 'divider' as const },
+            ]
+          : []),
         ...(isPanorama360
           ? [
               {
@@ -1123,7 +1140,9 @@ export const CanvasNode = memo(function CanvasNode({
       contentNode,
       hasOperationOutput,
       isImageContent,
+      isTask,
       node.id,
+      node.data.status,
       node.type,
       pipelineActions,
       storyboardSplitSource,
