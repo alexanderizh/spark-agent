@@ -14,6 +14,7 @@ import type {
 import type { AgentEvent } from '@spark/protocol'
 import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
+import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
 import { toCodexReasoningEffort } from './reasoning-effort.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
@@ -660,15 +661,14 @@ function resetCodexSdkRawTextSegment(state: StreamState): void {
 }
 
 function buildThreadOptions(config: SDKExecutorConfig): ThreadOptions {
+  const policy = resolveCodexPermissionPolicy(config.permissionMode, config.unattended === true)
   const options: ThreadOptions = {
     model: config.model,
     workingDirectory: config.workspaceRootPath,
     skipGitRepoCheck: true,
+    sandboxMode: policy.sandboxMode,
+    approvalPolicy: policy.approvalPolicy,
   }
-  const sandboxMode = mapSandboxMode(config.permissionMode)
-  if (sandboxMode != null) options.sandboxMode = sandboxMode
-  const approvalPolicy = mapApprovalPolicy(config.permissionMode, config.unattended === true)
-  if (approvalPolicy != null) options.approvalPolicy = approvalPolicy
   if (config.reasoningEffort != null) {
     const effort = toCodexReasoningEffort(config.reasoningEffort)
     if (effort != null) options.modelReasoningEffort = effort
@@ -684,9 +684,13 @@ function buildThreadOptions(config: SDKExecutorConfig): ThreadOptions {
 }
 
 function buildCodexConfig(config: SDKExecutorConfig): CodexConfigObject {
+  const policy = resolveCodexPermissionPolicy(config.permissionMode, config.unattended === true)
   return {
     model_reasoning_summary: 'concise',
     hide_agent_reasoning: false,
+    ...(policy.approvalsReviewer == null
+      ? {}
+      : { approvals_reviewer: policy.approvalsReviewer }),
     ...buildCodexModelProviderConfig(config),
     ...buildCodexMcpConfig(config.mcpServers),
   }
@@ -798,25 +802,6 @@ function codexBearerTokenEnvVar(rawName: string): string {
     .replace(/^_+|_+$/g, '')
     .toUpperCase()
   return `SPARK_MCP_${suffix.length > 0 ? suffix : 'SERVER'}_BEARER_TOKEN`
-}
-
-function mapSandboxMode(mode: SDKExecutorConfig['permissionMode']): ThreadOptions['sandboxMode'] {
-  return mode === 'codex-full-access' ? 'danger-full-access' : 'workspace-write'
-}
-
-function mapApprovalPolicy(
-  mode: SDKExecutorConfig['permissionMode'],
-  unattended: boolean,
-): ThreadOptions['approvalPolicy'] {
-  if (unattended) return 'never'
-  switch (mode) {
-    case 'codex-full-access':
-      return 'never'
-    case 'codex-auto-review':
-      return 'on-request'
-    default:
-      return 'on-request'
-  }
 }
 
 function buildCodexSdkPrompt(userMessage: string, config: SDKExecutorConfig): string {
