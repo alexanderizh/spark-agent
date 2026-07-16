@@ -22,6 +22,7 @@ import {
   $isLineBreakNode,
   $isRangeSelection,
   $isTextNode,
+  KEY_ESCAPE_COMMAND,
   type EditorState,
   type LexicalEditor,
   type LexicalNode,
@@ -36,15 +37,14 @@ import type {
 } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import type { CanvasAsset, CanvasNode } from './canvas.types'
-import { buildCanvasPromptMentionItems, filterCanvasPromptMentionItems } from './canvasPromptMentions'
+import { buildCanvasPromptMentionItems } from './canvasPromptMentions'
+import { CanvasPromptInsertMenu } from './CanvasPromptInsertMenu'
 import {
   $createCanvasPromptAtomicNode,
   $isCanvasPromptAtomicNode,
   CanvasPromptAtomicNode,
   CanvasPromptDecoratorProvider,
-  canvasPromptNodeTypeLabel,
   defaultCanvasPromptRelationForNode,
-  renderCanvasPromptNodeThumbnail,
   type CanvasPromptAtomicBlock,
 } from './CanvasPromptLexicalNode'
 
@@ -77,7 +77,10 @@ export function CanvasPromptComposer({
   const composerRef = useRef<HTMLDivElement | null>(null)
   const initialDocument = useRef(document)
   const initialDisabled = useRef(disabled)
-  const nodeById = useMemo(() => new Map(mentionNodes.map((node) => [node.id, node])), [mentionNodes])
+  const nodeById = useMemo(
+    () => new Map(mentionNodes.map((node) => [node.id, node])),
+    [mentionNodes],
+  )
   const assetById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets])
   const mentionItems = useMemo(() => buildCanvasPromptMentionItems(mentionNodes), [mentionNodes])
   const decoratorContext = useMemo(
@@ -100,22 +103,6 @@ export function CanvasPromptComposer({
     }),
     [],
   )
-
-  useEffect(() => {
-    if (!insertMenuOpen) return
-    const closeFromPointer = (event: globalThis.MouseEvent) => {
-      if (!composerRef.current?.contains(event.target as Node)) setInsertMenuOpen(false)
-    }
-    const closeFromKeyboard = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setInsertMenuOpen(false)
-    }
-    window.document.addEventListener('mousedown', closeFromPointer)
-    window.document.addEventListener('keydown', closeFromKeyboard)
-    return () => {
-      window.document.removeEventListener('mousedown', closeFromPointer)
-      window.document.removeEventListener('keydown', closeFromKeyboard)
-    }
-  }, [insertMenuOpen])
 
   return (
     <CanvasPromptDecoratorProvider value={decoratorContext}>
@@ -164,15 +151,11 @@ function CanvasPromptToolbar({
   onMentionSelect?: CanvasPromptComposerProps['onMentionSelect']
 }) {
   const [editor] = useLexicalComposerContext()
+  const [query, setQuery] = useState('')
+  const [triggerElement, setTriggerElement] = useState<HTMLButtonElement | null>(null)
 
   const insertParameter = (parameter: CanvasPromptParameterBlock['parameter']) => {
-    const block: CanvasPromptParameterBlock = {
-      kind: 'parameter',
-      id: nextPromptBlockId(`parameter-${parameter}`),
-      parameter,
-      value: '',
-      ...(parameter === 'duration' ? { unit: '秒' } : {}),
-    }
+    const block = createParameterBlock(parameter)
     insertAtomicBlock(editor, block, true)
     onOpenChange(false)
   }
@@ -187,77 +170,38 @@ function CanvasPromptToolbar({
   return (
     <div className="canvas-prompt-composer-toolbar">
       <button
+        ref={setTriggerElement}
         type="button"
         className="canvas-prompt-composer-add"
         aria-label="添加参数、角色或资源"
         disabled={disabled}
         onMouseDown={(event) => event.preventDefault()}
-        onClick={() => onOpenChange(!open)}
+        onClick={() => {
+          setQuery('')
+          onOpenChange(!open)
+        }}
       >
         <Icons.Plus size={16} />
       </button>
       <span>输入内容，或按 @ 引用节点、角色与资源</span>
-      {open ? (
-        <div className="canvas-prompt-parameter-menu">
-          <span className="canvas-prompt-menu-heading">快捷参数</span>
-          <InsertMenuButton
-            icon={<Icons.Clock size={15} />}
-            label="添加镜头时长"
-            onClick={() => insertParameter('duration')}
-          />
-          <InsertMenuButton
-            icon={<Icons.MessageSquare size={15} />}
-            label="添加台词"
-            onClick={() => insertParameter('dialogue')}
-          />
-          <InsertMenuButton
-            icon={<Icons.Crosshair size={15} />}
-            label="添加站位信息"
-            onClick={() => insertParameter('blocking')}
-          />
-          {mentionItems.length > 0 ? (
-            <>
-              <span className="canvas-prompt-menu-heading is-resources">节点与资源</span>
-              <div className="canvas-prompt-resource-list">
-                {mentionItems.map((item) => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => insertReference(item.node, item.label)}
-                  >
-                    <span className="canvas-prompt-menu-thumb">
-                      {renderCanvasPromptNodeThumbnail(item.node, assetById)}
-                    </span>
-                    <span className="canvas-prompt-menu-copy">
-                      <strong>{item.label}</strong>
-                      <small>{canvasPromptNodeTypeLabel(item.node)}</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : null}
-        </div>
-      ) : null}
+      {open && triggerElement
+        ? createPortal(
+            <CanvasPromptInsertMenu
+              items={mentionItems}
+              assetById={assetById}
+              query={query}
+              autoFocus
+              triggerElement={triggerElement}
+              fixedToTrigger
+              onQueryChange={setQuery}
+              onInsertParameter={insertParameter}
+              onInsertReference={(item) => insertReference(item.node, item.label)}
+              onRequestClose={() => onOpenChange(false)}
+            />,
+            document.body,
+          )
+        : null}
     </div>
-  )
-}
-
-function InsertMenuButton({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: React.ReactNode
-  label: string
-  onClick(): void
-}) {
-  return (
-    <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onClick}>
-      <span className="canvas-prompt-menu-icon">{icon}</span>
-      {label}
-    </button>
   )
 }
 
@@ -342,9 +286,9 @@ function CanvasPromptDocumentPlugin({
   const externalSignature = promptDocumentSignature(document)
 
   useEffect(() => {
-    const currentSignature = editor.getEditorState().read(() =>
-      promptDocumentSignature($readCanvasPromptDocument()),
-    )
+    const currentSignature = editor
+      .getEditorState()
+      .read(() => promptDocumentSignature($readCanvasPromptDocument()))
     if (currentSignature === externalSignature) return
     editor.update(() => $replaceCanvasPromptDocument(document), {
       tag: 'canvas-prompt-external-sync',
@@ -381,15 +325,9 @@ function CanvasPromptMentionPlugin({
   onMentionSelect?: CanvasPromptComposerProps['onMentionSelect']
 }) {
   const [editor] = useLexicalComposerContext()
-  const [query, setQuery] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   const trigger = useBasicTypeaheadTriggerMatch('@', { minLength: 0, maxLength: 80 })
-  const options = useMemo(
-    () =>
-      filterCanvasPromptMentionItems(items, query ?? '')
-        .slice(0, 10)
-        .map((item) => new CanvasPromptMentionOption(item)),
-    [items, query],
-  )
+  const options = useMemo(() => items.map((item) => new CanvasPromptMentionOption(item)), [items])
 
   const selectOption = useCallback(
     (
@@ -416,41 +354,88 @@ function CanvasPromptMentionPlugin({
 
   return (
     <LexicalTypeaheadMenuPlugin<CanvasPromptMentionOption>
-      onQueryChange={setQuery}
+      onQueryChange={(nextQuery) => {
+        if (nextQuery != null) setSearchQuery(nextQuery)
+      }}
       onSelectOption={selectOption}
       options={options}
       triggerFn={trigger}
       preselectFirstItem
-      menuRenderFn={(anchorElementRef, menuProps) =>
+      menuRenderFn={(anchorElementRef, menuProps, matchingString) =>
         anchorElementRef.current
           ? createPortal(
-              <div className="canvas-prompt-mention-menu" role="listbox">
-                {menuProps.options.map((option, index) => (
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={menuProps.selectedIndex === index}
-                    className={menuProps.selectedIndex === index ? 'is-selected' : ''}
-                    key={option.key}
-                    ref={(element) => option.setRefElement(element)}
-                    onMouseEnter={() => menuProps.setHighlightedIndex(index)}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => menuProps.selectOptionAndCleanUp(option)}
-                  >
-                    <span>{renderCanvasPromptNodeThumbnail(option.item.node, assetById)}</span>
-                    <span className="canvas-prompt-menu-copy">
-                      <strong>{option.item.label}</strong>
-                      <small>{canvasPromptNodeTypeLabel(option.item.node)}</small>
-                    </span>
-                  </button>
-                ))}
-              </div>,
+              <CanvasPromptInsertMenu
+                items={items}
+                assetById={assetById}
+                query={searchQuery}
+                autoFocus
+                triggerElement={anchorElementRef.current}
+                onQueryChange={setSearchQuery}
+                onInsertParameter={(parameter) => {
+                  insertParameterAtTypeahead(
+                    editor,
+                    createParameterBlock(parameter),
+                    matchingString,
+                  )
+                  closeLexicalTypeahead(editor)
+                }}
+                onInsertReference={(item) => {
+                  const option = menuProps.options.find(
+                    (candidate) => candidate.item.id === item.id,
+                  )
+                  if (option) menuProps.selectOptionAndCleanUp(option)
+                }}
+                onRequestClose={() => closeLexicalTypeahead(editor)}
+              />,
               anchorElementRef.current,
             )
           : null
       }
     />
   )
+}
+
+function createParameterBlock(
+  parameter: CanvasPromptParameterBlock['parameter'],
+): CanvasPromptParameterBlock {
+  return {
+    kind: 'parameter',
+    id: nextPromptBlockId(`parameter-${parameter}`),
+    parameter,
+    value: '',
+    ...(parameter === 'duration' ? { unit: '秒' } : {}),
+  }
+}
+
+function closeLexicalTypeahead(editor: LexicalEditor) {
+  editor.dispatchCommand(
+    KEY_ESCAPE_COMMAND,
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+  )
+}
+
+function insertParameterAtTypeahead(
+  editor: LexicalEditor,
+  block: CanvasPromptParameterBlock,
+  matchingString: string,
+) {
+  editor.update(() => {
+    const selection = $getSelection()
+    if (!$isRangeSelection(selection) || selection.anchor.type !== 'text') return
+    const textNode = selection.anchor.getNode()
+    if (!$isTextNode(textNode)) return
+    const endOffset = selection.anchor.offset
+    const replaceableLength = matchingString.length + 1
+    const startOffset = Math.max(0, endOffset - replaceableLength)
+    textNode.spliceText(startOffset, replaceableLength, '')
+    textNode.select(startOffset, startOffset)
+    const nextSelection = $getSelection()
+    if (!$isRangeSelection(nextSelection)) return
+    const node = $createCanvasPromptAtomicNode(block)
+    nextSelection.insertNodes([node])
+    node.selectNext()
+  })
+  focusInsertedBlock(editor, block.id, true)
 }
 
 function insertAtomicBlock(
@@ -472,12 +457,16 @@ function insertAtomicBlock(
     root.append(paragraph)
     node.selectNext()
   })
+  focusInsertedBlock(editor, block.id, focusParameterInput)
+}
+
+function focusInsertedBlock(editor: LexicalEditor, blockId: string, focusParameterInput: boolean) {
   window.requestAnimationFrame(() => {
     if (focusParameterInput) {
       const input = Array.from(
         editor.getRootElement()?.querySelectorAll<HTMLElement>('[data-prompt-block-id]') ?? [],
       )
-        .find((element) => element.dataset.promptBlockId === block.id)
+        .find((element) => element.dataset.promptBlockId === blockId)
         ?.querySelector<HTMLInputElement>('input')
       if (input) {
         input.focus()

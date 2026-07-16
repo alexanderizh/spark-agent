@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Input } from 'antd'
 
 export function CanvasOperationNodeSettings({
@@ -15,15 +15,17 @@ export function CanvasOperationNodeSettings({
   const [draft, setDraft] = useState(title ?? '')
   const [savedTitle, setSavedTitle] = useState(title)
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
 
   const commit = useCallback(async () => {
-    if (saving) return
+    if (savingRef.current) return
     const normalized = draft.trim() || null
     if (normalized === savedTitle) {
       setDraft(normalized ?? '')
       return
     }
+    savingRef.current = true
     setSaving(true)
     setError(null)
     try {
@@ -33,9 +35,10 @@ export function CanvasOperationNodeSettings({
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '保存节点名称失败')
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
-  }, [draft, onRename, savedTitle, saving])
+  }, [draft, onRename, savedTitle])
 
   return (
     <div className="canvas-operation-node-settings" aria-label="节点设置">

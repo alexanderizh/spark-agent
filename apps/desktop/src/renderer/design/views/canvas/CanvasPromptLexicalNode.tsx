@@ -67,7 +67,9 @@ export class CanvasPromptAtomicNode extends DecoratorNode<ReactNode> {
     return new CanvasPromptAtomicNode(cloneBlock(node.__block), node.__key)
   }
 
-  static override importJSON(serializedNode: SerializedCanvasPromptAtomicNode): CanvasPromptAtomicNode {
+  static override importJSON(
+    serializedNode: SerializedCanvasPromptAtomicNode,
+  ): CanvasPromptAtomicNode {
     return $createCanvasPromptAtomicNode(serializedNode.block)
   }
 
@@ -222,7 +224,7 @@ function CanvasPromptAtomicDecorator({
     : disconnected
       ? '引用连接已断开，请重新绑定后再提交。'
       : node
-        ? previewNodeContent(node, context.assetById)
+        ? previewCanvasPromptNodeContent(node, context.assetById)
         : '引用节点已删除，请重新绑定后再提交。'
 
   return (
@@ -290,7 +292,10 @@ export function renderCanvasPromptNodeThumbnail(
   return <Icons.File size={15} />
 }
 
-function renderCanvasPromptNodeHoverMedia(node: CanvasNode, assetById: Map<string, CanvasAsset>) {
+export function renderCanvasPromptNodeHoverMedia(
+  node: CanvasNode,
+  assetById: Map<string, CanvasAsset>,
+) {
   const asset = node.assetId ? assetById.get(node.assetId) : undefined
   const mediaType =
     node.type === 'image' || asset?.type === 'image'
@@ -350,11 +355,15 @@ function parameterIcon(parameter: CanvasPromptParameterBlock['parameter']) {
   return <Icons.Crosshair size={15} />
 }
 
-function previewNodeContent(node: CanvasNode, assetById: Map<string, CanvasAsset>): string {
+export function previewCanvasPromptNodeContent(
+  node: CanvasNode,
+  assetById: Map<string, CanvasAsset>,
+): string {
   const asset = node.assetId ? assetById.get(node.assetId) : undefined
   const text = readCanvasTextInputContent(node, asset ? [asset] : [])
   if (text) return text
-  if (typeof node.data.prompt === 'string' && node.data.prompt.trim()) return node.data.prompt.trim()
+  if (typeof node.data.prompt === 'string' && node.data.prompt.trim())
+    return node.data.prompt.trim()
   return '暂无可预览内容'
 }
 
