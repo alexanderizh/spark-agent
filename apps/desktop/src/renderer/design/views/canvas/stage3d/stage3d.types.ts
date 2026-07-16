@@ -1,5 +1,9 @@
 import type { CanvasNode } from '../canvas.types'
-import { DEFAULT_STAGE3D_ACTOR_MODEL_ID, getStage3DActorModel, normalizeStage3DActorModelId } from './actorModelRegistry'
+import {
+  DEFAULT_STAGE3D_ACTOR_MODEL_ID,
+  getStage3DActorModel,
+  normalizeStage3DActorModelId,
+} from './actorModelRegistry'
 
 /**
  * 真·3D 导演台数据模型（节点 data.stage3d，version 1）。
@@ -14,8 +18,10 @@ export type Stage3DBackdrop = {
   mode: Stage3DBackdropMode
   /** 背板平面贴图 URL（兼容旧 panorama 数据时也会原样保留） */
   imageUrl?: string | undefined
-  /** 背板绕 Y 轴旋转（弧度） */
+  /** 背景绕 Y 轴旋转（弧度） */
   rotationY?: number | undefined
+  /** panorama 模式的独立视野缩放：小于 1 拉远，大于 1 拉近 */
+  panoramaZoom?: number | undefined
   /** backdrop 模式下背板离原点的距离 */
   backdropDistance?: number | undefined
   /** 记录来源图片节点 id（便于回显选择器高亮） */
@@ -211,8 +217,22 @@ export const STAGE3D_ACTOR_COLORS = [
 ]
 
 export const STAGE3D_PRIMITIVE_COLOR = '#cbd5e1'
+export const STAGE3D_PANORAMA_ZOOM_MIN = 0.5
+export const STAGE3D_PANORAMA_ZOOM_MAX = 2
 export const STAGE3D_SCENE_SCALE_MIN = 0.5
 export const STAGE3D_SCENE_SCALE_MAX = 2
+
+export type Stage3DSceneControlField = 'panoramaZoom' | 'backdropDistance' | 'sceneScale' | 'fov'
+
+const COMMON_STAGE3D_SCENE_CONTROL_FIELDS = ['sceneScale', 'fov'] as const
+
+export function getStage3DSceneControlFields(
+  mode: Stage3DBackdropMode,
+): readonly Stage3DSceneControlField[] {
+  if (mode === 'panorama') return ['panoramaZoom', ...COMMON_STAGE3D_SCENE_CONTROL_FIELDS]
+  if (mode === 'backdrop') return ['backdropDistance', ...COMMON_STAGE3D_SCENE_CONTROL_FIELDS]
+  return COMMON_STAGE3D_SCENE_CONTROL_FIELDS
+}
 
 // ─────────────────────────── 工具 ───────────────────────────
 
@@ -259,7 +279,7 @@ export function defaultStage3DCamera(): Stage3DCamera {
 }
 
 export function defaultStage3DBackdrop(): Stage3DBackdrop {
-  return { mode: 'grid', rotationY: 0, backdropDistance: 8 }
+  return { mode: 'grid', rotationY: 0, panoramaZoom: 1, backdropDistance: 8 }
 }
 
 export function defaultStage3DLighting(): Stage3DLighting {
@@ -326,7 +346,11 @@ export function makeStage3DCrowdActors(
 }
 
 /** 从相机参数快照一个新镜头 */
-export function makeStage3DShot(camera: Stage3DCamera, index: number, patch?: Partial<Stage3DShot>): Stage3DShot {
+export function makeStage3DShot(
+  camera: Stage3DCamera,
+  index: number,
+  patch?: Partial<Stage3DShot>,
+): Stage3DShot {
   return {
     id: makeStage3DId('shot'),
     name: `镜头${index + 1}`,
@@ -378,7 +402,9 @@ function readLighting(raw: unknown): Stage3DLighting | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const l = raw as Record<string, unknown>
   return {
-    preset: (LIGHTING_PRESET_SET.has(String(l.preset)) ? l.preset : 'studio') as Stage3DLightingPreset,
+    preset: (LIGHTING_PRESET_SET.has(String(l.preset))
+      ? l.preset
+      : 'studio') as Stage3DLightingPreset,
     intensity: clamp(num(l.intensity, 1), 0.5, 2),
   }
 }
@@ -399,8 +425,12 @@ function readActor(raw: unknown, index: number): Stage3DActor | null {
   if (!raw || typeof raw !== 'object') return null
   const a = raw as Record<string, unknown>
   const id = typeof a.id === 'string' && a.id ? a.id : makeStage3DId('actor')
-  const bodyType = (BODY_TYPE_SET.has(String(a.bodyType)) ? a.bodyType : 'standard') as Stage3DBodyType
-  const modelId = normalizeStage3DActorModelId(typeof a.modelId === 'string' ? a.modelId : undefined)
+  const bodyType = (
+    BODY_TYPE_SET.has(String(a.bodyType)) ? a.bodyType : 'standard'
+  ) as Stage3DBodyType
+  const modelId = normalizeStage3DActorModelId(
+    typeof a.modelId === 'string' ? a.modelId : undefined,
+  )
   const model = getStage3DActorModel(modelId)
   const modelSource: Stage3DActorModelSource = model.source
   const rigType: Stage3DActorRigType = model.rigType
@@ -433,7 +463,13 @@ function readProp(raw: unknown, index: number): Stage3DProp | null {
   const kind: Stage3DPropKind =
     p.kind === 'glb' ? 'glb' : p.kind === 'local-model' ? 'local-model' : 'primitive'
   const assetId =
-    typeof p.assetId === 'string' && p.assetId ? p.assetId : kind === 'glb' ? 'unknown' : kind === 'local-model' ? 'local-model' : 'box'
+    typeof p.assetId === 'string' && p.assetId
+      ? p.assetId
+      : kind === 'glb'
+        ? 'unknown'
+        : kind === 'local-model'
+          ? 'local-model'
+          : 'box'
   const format =
     p.format === 'fbx' || p.format === 'obj' || p.format === 'glb' || p.format === 'gltf'
       ? p.format
@@ -474,13 +510,22 @@ export function readStage3DData(node: CanvasNode | null | undefined): Stage3DDat
       ? { imageUrl: rawBackdrop.imageUrl }
       : {}),
     rotationY: num(rawBackdrop.rotationY, 0),
+    panoramaZoom: clamp(
+      num(rawBackdrop.panoramaZoom, 1),
+      STAGE3D_PANORAMA_ZOOM_MIN,
+      STAGE3D_PANORAMA_ZOOM_MAX,
+    ),
     backdropDistance: clamp(num(rawBackdrop.backdropDistance, 8), 2, 40),
     ...(typeof rawBackdrop.sourceNodeId === 'string' && rawBackdrop.sourceNodeId
       ? { sourceNodeId: rawBackdrop.sourceNodeId }
       : {}),
   }
 
-  const sceneScale = clamp(num(data.sceneScale, 1), STAGE3D_SCENE_SCALE_MIN, STAGE3D_SCENE_SCALE_MAX)
+  const sceneScale = clamp(
+    num(data.sceneScale, 1),
+    STAGE3D_SCENE_SCALE_MIN,
+    STAGE3D_SCENE_SCALE_MAX,
+  )
 
   const rawCamera = (data.camera ?? {}) as Record<string, unknown>
   const camera: Stage3DCamera = {

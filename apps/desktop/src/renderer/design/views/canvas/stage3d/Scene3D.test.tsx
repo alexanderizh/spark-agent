@@ -4,6 +4,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import * as THREE from 'three'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { panoramaZoomToRayScale } from './panoramaProjection'
 import { createDefaultStage3DData, type Stage3DBackdropMode } from './stage3d.types'
 
 const r3fState = vi.hoisted(() => ({ current: null as unknown }))
@@ -92,7 +93,10 @@ describe('Scene3D backdrop rendering', () => {
       const text = String(message)
       if (
         text.includes('is unrecognized in this browser') ||
-        text.includes('is using incorrect casing')
+        text.includes('is using incorrect casing') ||
+        text.includes('React does not recognize') ||
+        text.includes('Unknown event handler property') ||
+        text.includes('Invalid value for prop')
       ) {
         return
       }
@@ -145,14 +149,20 @@ describe('Scene3D backdrop rendering', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    expect(container.querySelector('planegeometry')).toBeNull()
-    expect(scene.background).toBeInstanceOf(THREE.Texture)
-    expect((scene.background as THREE.Texture).mapping).toBe(THREE.EquirectangularReflectionMapping)
+    expect(container.querySelector('shadermaterial')).not.toBeNull()
+    expect(scene.background).toBeInstanceOf(THREE.Color)
   })
 
   it('keeps backdrop mode as a movable flat plane', () => {
     act(() => root.render(<Scene3D {...sceneProps('backdrop')} />))
 
     expect(container.querySelector('planegeometry')).not.toBeNull()
+  })
+
+  it('maps panorama zoom to inverse background ray scale', () => {
+    expect(panoramaZoomToRayScale(0.5)).toBe(2)
+    expect(panoramaZoomToRayScale(1)).toBe(1)
+    expect(panoramaZoomToRayScale(2)).toBe(0.5)
+    expect(panoramaZoomToRayScale(99)).toBe(0.5)
   })
 })
