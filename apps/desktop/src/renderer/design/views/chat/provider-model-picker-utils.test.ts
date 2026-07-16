@@ -3,6 +3,7 @@ import type { ProviderProfile } from '@spark/protocol'
 import {
   getProviderPickerLogoSize,
   prioritizeManagedProviderGroups,
+  resolveAvailableProviderModel,
   resolveManagedPlatformVendor,
 } from './provider-model-picker-utils'
 
@@ -59,5 +60,16 @@ describe('provider model picker utilities', () => {
   it('visually compensates the official PNG logo without enlarging other providers', () => {
     expect(getProviderPickerLogoSize(provider({ managed: true, managedType: 'newapi' }))).toBe(18)
     expect(getProviderPickerLogoSize(provider({ id: 'openai' }))).toBe(14)
+  })
+
+  it('drops a model cached from a provider that is no longer available', () => {
+    const thirdParty = provider({
+      id: 'third-party',
+      defaultModel: 'claude-sonnet',
+      modelIds: ['claude-sonnet'],
+    })
+
+    expect(resolveAvailableProviderModel('qwen3.6-plus', thirdParty)).toBe('')
+    expect(resolveAvailableProviderModel('claude-sonnet', thirdParty)).toBe('claude-sonnet')
   })
 })

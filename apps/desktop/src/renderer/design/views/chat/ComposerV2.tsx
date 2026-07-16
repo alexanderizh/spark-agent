@@ -68,6 +68,7 @@ import { ReasoningMaxParticles } from './ReasoningMaxParticles'
 import {
   getProviderPickerLogoSize,
   prioritizeManagedProviderGroups,
+  resolveAvailableProviderModel,
   resolveManagedPlatformVendor,
 } from './provider-model-picker-utils'
 import type {
@@ -94,6 +95,7 @@ import {
 } from '../../SessionSidebarContext'
 import type { UIMessage } from '../../services/event-mapper'
 import { formatTokenCount } from './ChatViewUtils'
+import { scrollTextareaCaretIntoView } from './composer-caret-scroll'
 
 type ContextUsageState = {
   estimatedTokens: number
@@ -916,11 +918,8 @@ export function ComposerV2({
     selectedProvider,
     selectedProvider?.modelIds[0],
   )
-  const sessionModelId =
-    normalizeModelForProvider(session?.modelId, selectedProvider) ||
-    (session?.modelId?.trim() ?? '')
-  const draftModelForProvider =
-    normalizeModelForProvider(draftModelId, selectedProvider) || draftModelId.trim()
+  const sessionModelId = resolveAvailableProviderModel(session?.modelId, selectedProvider)
+  const draftModelForProvider = resolveAvailableProviderModel(draftModelId, selectedProvider)
   const effectiveModelId =
     selectedProvider != null && isLocalCliProvider(selectedProvider)
       ? session != null
@@ -2168,6 +2167,16 @@ export function ComposerV2({
     [],
   )
 
+  // 高度调整完成后再校正滚动位置，确保换行后的新光标行立即可见。
+  useEffect(() => {
+    const el = textareaRef.current
+    if (el == null) return
+    const frame = requestAnimationFrame(() =>
+      scrollTextareaCaretIntoView(el, computeCaretViewportPosition),
+    )
+    return () => cancelAnimationFrame(frame)
+  }, [manualExpanded, value, computeCaretViewportPosition])
+
   const handleValueChange = useCallback(
     (next: string) => {
       setTextEditMenu(null)
@@ -2509,7 +2518,7 @@ export function ComposerV2({
         ? effectivePermissionMode
         : (getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask')
     const nextModel =
-      normalizeModelForProvider(modelId, provider) ||
+      resolveAvailableProviderModel(modelId, provider) ||
       getProviderDefaultModel(provider, provider.modelIds[0]) ||
       modelId
     const previousModel = effectiveModelId.trim()
@@ -5109,22 +5118,6 @@ function isControlApprovalRequest(request: PermissionApprovalRequest): boolean {
     normalized === 'enter_plan_mode' ||
     normalized === 'ask_user_question'
   )
-}
-
-function normalizeModelForProvider(
-  modelId: string | null | undefined,
-  provider: ProviderProfile | null | undefined,
-): string {
-  const model = modelId?.trim() ?? ''
-  if (isLocalCliProvider(provider)) return model || getProviderDefaultModel(provider)
-  if (!model || provider == null) return ''
-  const configuredModels = provider.modelIds.length
-    ? provider.modelIds
-    : provider.defaultModel
-      ? [provider.defaultModel]
-      : []
-  if (configuredModels.length === 0) return model
-  return configuredModels.includes(model) ? model : ''
 }
 
 function providerSupportsModel(
