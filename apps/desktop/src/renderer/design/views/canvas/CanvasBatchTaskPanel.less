@@ -1,12 +1,14 @@
 .canvas-batch-task-modal {
-  --batch-border: color-mix(in srgb, var(--color-border, #d7d3c9) 82%, transparent);
-  --batch-panel: color-mix(in srgb, var(--color-bg-container, #fff) 94%, #f1eee6);
-  --batch-muted: var(--color-text-secondary, #6f6b63);
-  --batch-accent: var(--color-primary, #2f6f4e);
+  --batch-border: var(--border-strong);
+  --batch-panel: var(--bg-sunken);
+  --batch-muted: var(--text-muted);
+  --batch-accent: var(--primary);
 
   .ant-modal-content {
     padding: 0;
     overflow: hidden;
+    color: var(--text);
+    background: var(--panel);
   }
 
   .ant-modal-header {
@@ -51,7 +53,7 @@
   }
 
   strong {
-    color: var(--color-text, #24231f);
+    color: var(--text);
     font-size: 14px;
   }
 }
@@ -99,7 +101,7 @@
   &:hover,
   &.is-active {
     border-color: var(--batch-border);
-    background: var(--color-bg-container, #fff);
+    background: var(--panel-elev);
   }
 
   &.is-active {
@@ -107,8 +109,8 @@
   }
 
   &.has-error {
-    color: var(--color-error, #b4422d);
-    background: color-mix(in srgb, var(--color-error, #b4422d) 8%, transparent);
+    color: var(--danger);
+    background: var(--danger-bg);
   }
 }
 
@@ -187,7 +189,7 @@
     cursor: pointer;
 
     &[aria-selected='true'] {
-      color: white;
+      color: var(--primary-fg, #fff);
       background: var(--batch-accent);
     }
   }
@@ -223,10 +225,10 @@
 .canvas-batch-task-issues {
   margin-top: 18px;
   padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--color-error, #b4422d) 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
   border-radius: 8px;
-  color: var(--color-error, #b4422d);
-  background: color-mix(in srgb, var(--color-error, #b4422d) 7%, transparent);
+  color: var(--danger);
+  background: var(--danger-bg);
 
   > div {
     display: flex;
@@ -244,7 +246,7 @@
   justify-content: space-between;
   padding: 12px 18px;
   border-top: 1px solid var(--batch-border);
-  background: var(--color-bg-container, #fff);
+  background: var(--panel);
 
   > span {
     color: var(--batch-muted);
@@ -274,12 +276,26 @@
     gap: 4px;
     padding: 13px;
     border-radius: 9px;
+    color: var(--text);
     background: var(--batch-panel);
+
+    small {
+      color: var(--batch-muted);
+    }
+
+    strong {
+      color: var(--text-strong);
+    }
   }
 
   .is-valid {
-    color: var(--batch-accent);
-    background: color-mix(in srgb, var(--batch-accent) 10%, transparent);
+    color: var(--success);
+    background: var(--success-bg);
+
+    small,
+    strong {
+      color: inherit;
+    }
   }
 }
 
@@ -317,9 +333,9 @@
 .canvas-batch-confirm-preference {
   margin-top: 16px;
   padding: 13px;
-  border: 1px solid color-mix(in srgb, #c9971a 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
   border-radius: 9px;
-  background: color-mix(in srgb, #c9971a 8%, transparent);
+  background: var(--warning-bg);
 
   p {
     margin: 5px 0 0 24px;
@@ -340,10 +356,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--batch-accent);
+  color: var(--success);
 
   span {
-    color: var(--color-error, #b4422d);
+    color: var(--danger);
   }
 }
 
@@ -352,7 +368,7 @@
   justify-content: space-between;
 
   &.has-error {
-    color: var(--color-error, #b4422d);
+    color: var(--danger);
   }
 }
 
