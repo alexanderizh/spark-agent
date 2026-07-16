@@ -316,6 +316,7 @@ describe('IPC schemas', () => {
     for (const m of [lite, five, fourFive, fourZero]) {
       const size = (m.capabilities[0]!.paramSchema.properties as Record<string, Record<string, unknown>>).size
       expect(size?.['x-allow-custom']).toBe(true)
+      expect(size?.pattern).toBe('^\\d+\\s*[xX]\\s*\\d+$')
     }
 
     // 默认值修正：watermark=true（文档默认）；5.0 lite outputFormat=jpeg
