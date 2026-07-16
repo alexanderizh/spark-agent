@@ -42,6 +42,7 @@ import wechatLogo from '../../assets/remote-channels/wechat.svg'
 // 仍能通过原路径 import。
 export { ProviderEditPanel } from './ProvidersView'
 import { MemoryPanel } from './MemoryPanel'
+import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
 import type {
   SessionAgentAdapter,
   SessionPermissionMode,
@@ -5810,21 +5811,13 @@ const CLAUDE_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
   },
 ]
 
-const CODEX_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
-  { value: 'codex-default', label: 'Default', desc: '使用 Codex 默认权限策略' },
-  {
-    value: 'codex-auto-review',
-    label: 'Auto review',
-    desc: 'Codex workspace-write 自动审查模式',
-    tone: 'auto',
-  },
-  {
-    value: 'codex-full-access',
-    label: 'Full access',
-    desc: '危险：跳过 Codex 审批与沙箱',
-    tone: 'danger',
-  },
-]
+const CODEX_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] =
+  SHARED_CODEX_PERMISSION_MODE_OPTIONS.map(({ value, label, description, tone }) => ({
+    value,
+    label,
+    desc: description,
+    ...(tone === 'auto' || tone === 'danger' ? { tone } : {}),
+  }))
 
 function getRuntimePermissionModeOptions(
   adapter: SessionAgentAdapter,
