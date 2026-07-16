@@ -5,6 +5,7 @@ import type {
   CanvasPromptTaskFields,
   SessionReasoningEffort,
 } from '@spark/protocol'
+import type { FilmReferenceKind } from './canvasFilmTypes'
 
 export type CanvasProjectStatus = 'active' | 'archived' | 'deleted'
 
@@ -242,6 +243,10 @@ export type CanvasNodeData = {
   outputPipelineRole?: CanvasPipelineRole
   /** 专用流水线任务节点上暂存的「产物节点标题」，供任务完成回写产物节点时读取 */
   outputTitle?: string
+  /** 生成产物应自动归档到的影视资产；用于角色板、场景图等回挂项目资产中心。 */
+  outputFilmAssetId?: string
+  /** 自动回挂项目资产中心时使用的参考图分类。 */
+  outputFilmReferenceKind?: FilmReferenceKind
   /** Contract V2 裁剪产物：被丢弃的字段及原因，供任务详情展示。 */
   droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
   /** Contract V2 裁剪产物：非阻断性提示（如 missing_param_policy、compat_passthrough）。 */

@@ -20,6 +20,7 @@ import {
   filmKindToAssetType,
   filmUid,
   migrateFilmAssetMetadata,
+  readAssetKind,
   readReferences,
   readTags,
   writeReferences,
@@ -5439,6 +5440,35 @@ export const canvasApi = {
       nodeData: CanvasNode['data']
       resultNodeSize: { width: number; height: number }
     }> = []
+    const explicitFilmOwner =
+      typeof taskNode.data.outputFilmAssetId === 'string'
+        ? db.assets.find(
+            (item) =>
+              item.id === taskNode.data.outputFilmAssetId &&
+              item.projectId === projectId &&
+              readAssetKind(item) !== null,
+          )
+        : undefined
+    const inferredFilmOwners =
+      taskNode.data.outputPipelineRole === 'design_card' || task.operation === 'panorama_360'
+        ? task.inputAssetIds
+            .map((assetId) => db.assets.find((item) => item.id === assetId))
+            .filter(
+              (item): item is CanvasAsset =>
+                item != null &&
+                item.projectId === projectId &&
+                (task.operation === 'panorama_360'
+                  ? readAssetKind(item) === 'scene'
+                  : ['character', 'scene', 'prop', 'effect'].includes(readAssetKind(item) ?? '')),
+            )
+        : []
+    const uniqueInferredFilmOwners = Array.from(
+      new Map(inferredFilmOwners.map((item) => [item.id, item])).values(),
+    )
+    const filmOwner =
+      explicitFilmOwner ??
+      (uniqueInferredFilmOwners.length === 1 ? uniqueInferredFilmOwners[0] : undefined)
+    const filmReferenceKind = taskNode.data.outputFilmReferenceKind ?? 'concept'
 
     for (const assetOut of response.assets) {
       const assetType = (assetOut.type || 'file') as CanvasAssetType
@@ -5509,6 +5539,13 @@ export const canvasApi = {
         ...(assetOut.durationMs != null ? { durationMs: assetOut.durationMs } : {}),
         metadata: {
           taskId,
+          ...(filmOwner ? { filmOwnerAssetId: filmOwner.id } : {}),
+          ...(!filmOwner && isPanorama360
+            ? {
+                kind: 'scene',
+                tags: ['360全景图'],
+              }
+            : {}),
           ...(isPanorama360
             ? { panorama360: { projection: 'equirectangular', sourceOperation: 'panorama_360' } }
             : {}),
@@ -5549,6 +5586,27 @@ export const canvasApi = {
         nodeData,
         resultNodeSize: fitMediaNodeSize(assetType, assetWidth, assetHeight),
       })
+    }
+
+    if (filmOwner) {
+      const currentReferences = readReferences(filmOwner.metadata)
+      const generatedReferences: FilmReference[] = preparedOutputs
+        .filter((output) => output.asset.type === 'image')
+        .map((output, index) => ({
+          id: filmUid('ref'),
+          kind: filmReferenceKind,
+          assetId: output.asset.id,
+          description: output.asset.title ?? task.title ?? '',
+          order: currentReferences.length + index,
+          ...(currentReferences.length === 0 && index === 0 ? { isPrimary: true } : {}),
+        }))
+      if (generatedReferences.length > 0) {
+        filmOwner.metadata = writeReferences(filmOwner.metadata, [
+          ...currentReferences,
+          ...generatedReferences,
+        ])
+        filmOwner.updatedAt = at
+      }
     }
 
     const outputPlacements = resolveCollisionFreeBatchPositions({
