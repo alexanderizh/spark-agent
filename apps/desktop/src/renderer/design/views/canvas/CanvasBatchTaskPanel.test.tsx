@@ -4,6 +4,8 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CanvasMediaModelSummary } from '@spark/protocol'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { createCanvasBatchTaskSession } from './canvasBatchTaskModel'
 import { CanvasBatchTaskPanel } from './CanvasBatchTaskPanel'
 import { canvasApi } from './canvas.api'
@@ -231,6 +233,22 @@ async function render(
 }
 
 describe('CanvasBatchTaskPanel', () => {
+  it('uses application theme tokens instead of light-only fallback colors', () => {
+    const batchTaskPanelStyles = readFileSync(
+      resolve(
+        process.cwd(),
+        'src/renderer/design/views/canvas/CanvasBatchTaskPanel.less',
+      ),
+      'utf8',
+    )
+    expect(batchTaskPanelStyles).toContain('--batch-panel: var(--bg-sunken)')
+    expect(batchTaskPanelStyles).toContain('--batch-muted: var(--text-muted)')
+    expect(batchTaskPanelStyles).toContain('background: var(--panel)')
+    expect(batchTaskPanelStyles).toContain('color: var(--success)')
+    expect(batchTaskPanelStyles).not.toContain('--color-bg-container')
+    expect(batchTaskPanelStyles).not.toContain('--color-text')
+  })
+
   it('focuses the first invalid node in configuration mode', async () => {
     const current = state('configure')
     current.issues = [
