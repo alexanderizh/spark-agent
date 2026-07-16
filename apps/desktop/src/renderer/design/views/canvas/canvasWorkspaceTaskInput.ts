@@ -163,7 +163,9 @@ export function resolveCanvasPipelineTextSource(
 ): { sourceNode: CanvasNode; sourceText: string } {
   const inputNodes = expandCanvasInputNodes([sourceNode], snapshot)
   const sourceText = buildPipelineSourceText(inputNodes, snapshot.assets)
-  if (inputNodes.length !== 1) return { sourceNode, sourceText }
+  if (!isOperationNode(sourceNode) || inputNodes.length !== 1) {
+    return { sourceNode, sourceText }
+  }
 
   const resolvedNode = inputNodes[0]
   if (!resolvedNode) return { sourceNode, sourceText }
