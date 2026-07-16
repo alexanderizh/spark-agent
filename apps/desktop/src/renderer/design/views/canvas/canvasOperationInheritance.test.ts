@@ -255,29 +255,67 @@ describe('canvas operation inheritance', () => {
 
   it('uses the same prompt-document initialization for right-click nodes and later connections', async () => {
     seedCanvasDb({
-      projects: [{
-        id: 'project-1', userId: 0, title: 'Project', status: 'active', nodeCount: 1,
-        assetCount: 0, taskCount: 0, createdAt: at, updatedAt: at,
-      }],
-      boards: [{
-        id: 'board-1', projectId: 'project-1', userId: 0, name: 'Board',
-        viewport: { x: 0, y: 0, zoom: 1 }, settings: {}, createdAt: at, updatedAt: at,
-      }],
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          nodeCount: 1,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
       assets: [],
-      nodes: [{
-        id: 'source-text', projectId: 'project-1', boardId: 'board-1', userId: 0,
-        type: 'text', title: '场次剧本', assetId: null, taskId: null, parentNodeId: null,
-        x: 0, y: 0, width: 320, height: 200, rotation: 0, zIndex: 1, locked: false,
-        hidden: false, data: { text: '雨夜里，小满走入车站。', pipelineRole: 'screenplay' },
-        createdAt: at, updatedAt: at,
-      }],
+      nodes: [
+        {
+          id: 'source-text',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text',
+          title: '场次剧本',
+          assetId: null,
+          taskId: null,
+          parentNodeId: null,
+          x: 0,
+          y: 0,
+          width: 320,
+          height: 200,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { text: '雨夜里，小满走入车站。', pipelineRole: 'screenplay' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
       edges: [],
       tasks: [],
     })
 
     const created = await canvasApi.createOperationNode({
-      projectId: 'project-1', boardId: 'board-1', operation: 'text_generate',
-      inputNodeIds: [], x: 400, y: 0,
+      projectId: 'project-1',
+      boardId: 'board-1',
+      operation: 'text_generate',
+      inputNodeIds: [],
+      x: 400,
+      y: 0,
     })
     const operationNode = created.nodes.find((node) => node.type === 'text_generate')
     if (!operationNode?.taskId) throw new Error('Operation node was not created')
@@ -286,13 +324,17 @@ describe('canvas operation inheritance', () => {
     expect(operationNode.data.systemPrompt).toBeTruthy()
 
     const connected = await canvasApi.connectNodes('project-1', {
-      sourceNodeId: 'source-text', targetNodeId: operationNode.id,
+      sourceNodeId: 'source-text',
+      targetNodeId: operationNode.id,
     })
     const connectedNode = connected.nodes.find((node) => node.id === operationNode.id)
     const connectedTask = connected.tasks.find((task) => task.id === operationNode.taskId)
     expect(connectedNode?.data.promptDocument?.blocks).toEqual([
       expect.objectContaining({
-        kind: 'reference', source: 'connection', sourceNodeId: 'source-text', relation: 'screenplay',
+        kind: 'reference',
+        source: 'connection',
+        sourceNodeId: 'source-text',
+        relation: 'screenplay',
       }),
       expect.objectContaining({ kind: 'text', text: '' }),
     ])
@@ -313,20 +355,45 @@ describe('canvas operation inheritance', () => {
 
   it('keeps workflow compiled text and hidden system instructions out of the rebound editor', async () => {
     seedCanvasDb({
-      projects: [{
-        id: 'project-1', userId: 0, title: 'Project', status: 'active', nodeCount: 0,
-        assetCount: 0, taskCount: 0, createdAt: at, updatedAt: at,
-      }],
-      boards: [{
-        id: 'board-1', projectId: 'project-1', userId: 0, name: 'Board',
-        viewport: { x: 0, y: 0, zoom: 1 }, settings: {}, createdAt: at, updatedAt: at,
-      }],
-      assets: [], nodes: [], edges: [], tasks: [],
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          nodeCount: 0,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [],
+      edges: [],
+      tasks: [],
     })
     const created = await canvasApi.createOperationNode({
-      projectId: 'project-1', boardId: 'board-1', operation: 'text_generate',
-      inputNodeIds: [], x: 100, y: 100,
-      providerProfileId: 'bigmodel-provider', modelId: 'MiniMax-M3',
+      projectId: 'project-1',
+      boardId: 'board-1',
+      operation: 'text_generate',
+      inputNodeIds: [],
+      x: 100,
+      y: 100,
+      providerProfileId: 'bigmodel-provider',
+      modelId: 'MiniMax-M3',
     })
     const operationNode = created.nodes.find((node) => node.type === 'text_generate')
     if (!operationNode) throw new Error('Operation node was not created')
@@ -336,7 +403,9 @@ describe('canvas operation inheritance', () => {
     }
 
     const started = await canvasApi.startWorkflowTask('project-1', {
-      boardId: 'board-1', operation: 'text_generate', title: '提取角色',
+      boardId: 'board-1',
+      operation: 'text_generate',
+      title: '提取角色',
       bindToNodeId: operationNode.id,
       prompt: '[剧本 ref-1: 场次剧本]\n雨夜车站',
       userPrompt: '只提取主要角色',
@@ -500,15 +569,13 @@ describe('canvas operation inheritance', () => {
     })
     Object.assign(window, {
       spark: {
-        invoke: vi
-          .fn()
-          .mockResolvedValue({
-            status: 'running',
-            providerProfileId: '',
-            provider: '',
-            model: '',
-            text: '',
-          }),
+        invoke: vi.fn().mockResolvedValue({
+          status: 'running',
+          providerProfileId: '',
+          provider: '',
+          model: '',
+          text: '',
+        }),
       },
     })
 
@@ -1068,6 +1135,94 @@ describe('canvas operation inheritance', () => {
     expect(operationNode?.data.modelId).toBe('gpt-5')
     expect(operationNode?.data.skillIds).toEqual(['skill:outline'])
     expect(operationNode?.data.modelParams).toEqual({ temperature: 0.3 })
+  })
+
+  it('uses the image-understanding task default for text nodes with image input', async () => {
+    window.localStorage.setItem(
+      'spark-canvas:task-defaults:v1',
+      JSON.stringify({
+        text: {
+          providerProfileId: 'provider:text',
+          modelId: 'gpt-text',
+          skillIds: [],
+        },
+        image_understanding: {
+          providerProfileId: 'provider:vision',
+          modelId: 'gpt-vision',
+          skillIds: ['skill:vision'],
+        },
+      }),
+    )
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          nodeCount: 1,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [
+        {
+          id: 'node-image',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'image',
+          title: 'Reference',
+          assetId: null,
+          taskId: null,
+          x: 20,
+          y: 20,
+          width: 240,
+          height: 180,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { url: 'safe-file://reference.png', mimeType: 'image/png' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [],
+    })
+
+    const snapshot = await canvasApi.createOperationNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      operation: 'text_generate',
+      inputNodeIds: ['node-image'],
+      x: 320,
+      y: 20,
+    })
+
+    const operationNode = snapshot.nodes.find((node) => node.type === 'text_generate')
+    const pendingTask = snapshot.tasks.find((task) => task.id === operationNode?.taskId)
+    expect(pendingTask).toMatchObject({
+      providerProfileId: 'provider:vision',
+      modelId: 'gpt-vision',
+      skillIds: ['skill:vision'],
+    })
   })
 
   it('keeps explicit node runtime overrides ahead of app-level presets', async () => {
