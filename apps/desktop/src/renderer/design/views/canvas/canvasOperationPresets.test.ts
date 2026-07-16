@@ -12,6 +12,7 @@ import {
   parseCanvasOperationPresetModelParams,
   readBuiltinCanvasOperationPreset,
   readCanvasLastUsedPresetTarget,
+  readCanvasInheritedPresetTarget,
   readCanvasOperationPreset,
   readCanvasOperationPresetPromptPrefix,
   readCanvasOperationPresetOverrides,
@@ -24,6 +25,7 @@ import {
   writeCanvasPresetTarget,
   writeCanvasOperationPreset,
 } from './canvasOperationPresets'
+import { writeCanvasTaskDefault } from './canvasTaskDefaults'
 
 describe('canvasOperationPresets', () => {
   beforeEach(() => {
@@ -213,6 +215,74 @@ describe('canvasOperationPresets', () => {
       modelId: 'gpt-5.1',
       skillIds: [],
       modelParams: { temperature: 0.2 },
+    })
+  })
+
+  it('merges task defaults beneath node overrides and last-used runtime values', () => {
+    writeCanvasTaskDefault('text', {
+      agentId: 'agent:global',
+      providerProfileId: 'provider:global',
+      modelId: 'gpt-global',
+      skillIds: ['skill:global'],
+    })
+    writeCanvasPresetTarget('text_generate', {
+      agentId: 'agent:node',
+      modelId: 'gpt-node',
+      skillIds: [],
+    })
+    writeCanvasLastUsedPresetTarget('text_generate', {
+      modelId: 'gpt-last-used',
+    })
+
+    expect(readCanvasResolvedPresetTarget('text_generate')).toMatchObject({
+      agentId: 'agent:node',
+      providerProfileId: 'provider:global',
+      modelId: 'gpt-last-used',
+      skillIds: [],
+    })
+  })
+
+  it('exposes the inherited task default without materializing a node override', () => {
+    writeCanvasTaskDefault('image_generation', {
+      providerProfileId: 'provider:global-image',
+      modelId: 'image-global',
+      skillIds: [],
+    })
+    writeCanvasPresetTarget('image_edit', {
+      providerProfileId: 'provider:node-image',
+      modelId: 'image-node',
+      skillIds: [],
+    })
+
+    expect(readCanvasInheritedPresetTarget('image_edit')).toMatchObject({
+      providerProfileId: 'provider:global-image',
+      modelId: 'image-global',
+    })
+    expect(readCanvasPresetTarget('image_edit')).toMatchObject({
+      providerProfileId: 'provider:node-image',
+      modelId: 'image-node',
+    })
+  })
+
+  it('uses the image-understanding default for text tasks with image input', () => {
+    writeCanvasTaskDefault('text', {
+      providerProfileId: 'provider:text',
+      modelId: 'gpt-text',
+      skillIds: [],
+    })
+    writeCanvasTaskDefault('image_understanding', {
+      providerProfileId: 'provider:vision',
+      modelId: 'gpt-vision',
+      skillIds: [],
+    })
+
+    expect(readCanvasResolvedPresetTarget('text_generate', { hasImageInput: true })).toMatchObject({
+      providerProfileId: 'provider:vision',
+      modelId: 'gpt-vision',
+    })
+    expect(readCanvasResolvedPresetTarget('text_generate')).toMatchObject({
+      providerProfileId: 'provider:text',
+      modelId: 'gpt-text',
     })
   })
 
