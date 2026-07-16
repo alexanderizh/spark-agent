@@ -18,6 +18,7 @@ import {
   normalizeModelParamsForSubmit,
   readModelParamDraftValue,
   resolveInitialModelParamDraftValue,
+  schemaFields,
   updateModelParamDraftValue,
   type SchemaField,
 } from './CanvasInlineAiComposer'
@@ -121,6 +122,42 @@ describe('CanvasInlineAiComposer node default model params', () => {
   it('reads aliased aspect ratio defaults across aspect_ratio and aspectRatio', () => {
     expect(readModelParamDraftValue({ aspect_ratio: '2:1' }, 'aspectRatio')).toBe('2:1')
     expect(readModelParamDraftValue({ aspectRatio: '2:1' }, 'aspect_ratio')).toBe('2:1')
+  })
+
+  it('preserves JSON Schema patterns for custom value validation', () => {
+    expect(
+      schemaFields({
+        properties: {
+          size: {
+            type: 'string',
+            enum: ['2K', '4K'],
+            'x-allow-custom': true,
+            pattern: '^\\d+x\\d+$',
+          },
+        },
+      })[0],
+    ).toMatchObject({
+      allowCustom: true,
+      pattern: '^\\d+x\\d+$',
+    })
+  })
+
+  it('falls back to the model default when a persisted value is incompatible', () => {
+    expect(
+      resolveInitialModelParamDraftValue({
+        operation: 'image_edit',
+        field: {
+          ...field('size'),
+          enumValues: ['2K', '4K'],
+          allowCustom: true,
+          pattern: '^\\d+x\\d+$',
+        },
+        fieldName: 'size',
+        presetParams: {},
+        existingParams: { size: '2:1' },
+        defaultParams: { size: '2K' },
+      }),
+    ).toBe('2K')
   })
 
   it('treats aliased aspect ratio params as covered by form fields', () => {

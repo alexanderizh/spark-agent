@@ -53,6 +53,7 @@ import {
   type CanvasParameterControlKind,
   type SchemaField,
 } from './canvasParameterPresentation'
+import { isModelParamDraftValueCompatible } from './canvasModelParamDraftState'
 import {
   readCanvasComposerAdvancedOpen,
   writeCanvasComposerAdvancedOpen,
@@ -379,15 +380,16 @@ export function CanvasInlineAiComposer({
       for (const field of parameterFields) {
         const cachedValue = readModelParamDraftValue(paramSource, field.name)
         next[field.name] =
-          cachedValue ??
-          resolveInitialModelParamDraftValue({
-            operation,
-            field,
-            fieldName: field.name,
-            presetParams: opDefaults,
-            existingParams: nodeDefaults,
-            defaultParams: mergedDefaults,
-          })
+          cachedValue && isModelParamDraftValueCompatible(field, cachedValue)
+            ? cachedValue
+            : resolveInitialModelParamDraftValue({
+                operation,
+                field,
+                fieldName: field.name,
+                presetParams: opDefaults,
+                existingParams: nodeDefaults,
+                defaultParams: mergedDefaults,
+              })
       }
       return next
     })
@@ -1434,12 +1436,14 @@ export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
       // manifest paramSchema 可标记 `x-allow-custom: true` 让前端用 AutoComplete 渲染
       //（既保留下拉推荐值，又允许用户在范围内输入自定义值，如 Seedream size）。
       const allowCustom = spec['x-allow-custom'] === true || spec.allowCustom === true
+      const pattern = typeof spec.pattern === 'string' ? spec.pattern : undefined
       return {
         name,
         title: typeof spec.title === 'string' ? spec.title : name,
         type,
         enumValues,
         ...(allowCustom ? { allowCustom: true } : {}),
+        ...(pattern ? { pattern } : {}),
         ...(typeof spec.description === 'string' ? { description: spec.description } : {}),
         ...(examples[0] ? { placeholder: examples[0] } : {}),
       }
@@ -1509,7 +1513,7 @@ export function resolveInitialModelParamDraftValue({
   defaultParams,
 }: {
   operation: CanvasOperationType
-  field: Pick<SchemaField, 'name' | 'enumValues'>
+  field: Pick<SchemaField, 'name' | 'enumValues' | 'allowCustom' | 'pattern'>
   fieldName: string
   presetParams: Record<string, unknown>
   existingParams: Record<string, unknown>
@@ -1517,25 +1521,35 @@ export function resolveInitialModelParamDraftValue({
 }): string {
   const panoramaFieldValue =
     operation === 'panorama_360' ? derivePanoramaFieldValue(field, presetParams) : undefined
+  const compatiblePanoramaFieldValue =
+    panoramaFieldValue && isModelParamDraftValueCompatible(field, panoramaFieldValue)
+      ? panoramaFieldValue
+      : undefined
+  const presetValue = readCompatibleModelParamDraftValue(presetParams, fieldName, field)
+  const existingValue = readCompatibleModelParamDraftValue(existingParams, fieldName, field)
+  const defaultValue = readCompatibleModelParamDraftValue(defaultParams, fieldName, field)
   if (
     operation === 'panorama_360' &&
     (fieldName === 'aspect_ratio' || fieldName === 'aspectRatio' || fieldName === 'size')
   ) {
     return (
-      panoramaFieldValue ??
-      readModelParamDraftValue(presetParams, fieldName) ??
-      readModelParamDraftValue(existingParams, fieldName) ??
-      readModelParamDraftValue(defaultParams, fieldName) ??
+      compatiblePanoramaFieldValue ??
+      presetValue ??
+      existingValue ??
+      defaultValue ??
       ''
     )
   }
-  return (
-    readModelParamDraftValue(existingParams, fieldName) ??
-    panoramaFieldValue ??
-    readModelParamDraftValue(presetParams, fieldName) ??
-    readModelParamDraftValue(defaultParams, fieldName) ??
-    ''
-  )
+  return existingValue ?? compatiblePanoramaFieldValue ?? presetValue ?? defaultValue ?? ''
+}
+
+function readCompatibleModelParamDraftValue(
+  params: Record<string, unknown>,
+  fieldName: string,
+  field: Pick<SchemaField, 'enumValues' | 'allowCustom' | 'pattern'>,
+): string | undefined {
+  const value = readModelParamDraftValue(params, fieldName)
+  return value && isModelParamDraftValueCompatible(field, value) ? value : undefined
 }
 
 export function isModelParamCoveredByFields(
