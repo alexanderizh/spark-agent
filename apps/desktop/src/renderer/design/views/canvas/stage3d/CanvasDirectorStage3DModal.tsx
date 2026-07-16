@@ -1051,22 +1051,6 @@ export function CanvasDirectorStage3DModal({
                       />
                     </label>
                   )}
-                  {draft.backdrop.mode === 'panorama' && (
-                    <label className="stage3d-field">
-                      <span>背景距离 {(draft.backdrop.backdropDistance ?? 8).toFixed(0)}</span>
-                      <Slider
-                        min={3}
-                        max={30}
-                        value={draft.backdrop.backdropDistance ?? 8}
-                        onChange={(v) =>
-                          setDraft((d) => ({
-                            ...d,
-                            backdrop: { ...d.backdrop, backdropDistance: v },
-                          }))
-                        }
-                      />
-                    </label>
-                  )}
                 </>
               )}
 
