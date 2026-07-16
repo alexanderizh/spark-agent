@@ -1,4 +1,6 @@
 import type { CanvasNode } from './canvas.types'
+import { summarizeBatchTaskSelection } from './canvasBatchTaskModel'
+import { isOperationNode } from './canvas.capabilities'
 
 export type CanvasContextMenuPositionInput = {
   point: { x: number; y: number }
@@ -27,6 +29,12 @@ export type CanvasSelectionContextSummary = {
   canDissolveGroup: boolean
   canMergeSelectionToImage: boolean
   mergeGroupId: string | null
+  canBatchConfigureTasks: boolean
+  canBatchSubmitTasks: boolean
+  batchTaskConfigureDisabledReason: string | null
+  batchTaskSubmitDisabledReason: string | null
+  batchTaskNodeIds: string[]
+  batchTaskOperationCount: number
 }
 
 export type CanvasSelectionContextMenuTarget = {
@@ -38,6 +46,26 @@ export type CanvasSelectionContextMenuTarget = {
 function clamp(value: number, min: number, max: number): number {
   if (max < min) return min
   return Math.min(Math.max(value, min), max)
+}
+
+export function getCanvasTaskSubmitActionState(
+  node: Pick<CanvasNode, 'type' | 'data'>,
+): { visible: boolean; disabled: boolean; reason: string | null } {
+  if (!isOperationNode(node)) {
+    return {
+      visible: false,
+      disabled: true,
+      reason: '所选节点不是任务节点',
+    }
+  }
+  if (node.data.status === 'running') {
+    return {
+      visible: true,
+      disabled: true,
+      reason: '任务正在运行',
+    }
+  }
+  return { visible: true, disabled: false, reason: null }
 }
 
 export function calculateCanvasContextMenuPosition({
@@ -64,8 +92,9 @@ export function calculateCanvasContextMenuPosition({
 }
 
 export function summarizeCanvasSelectionContext(
-  selectedNodes: Pick<CanvasNode, 'id' | 'type' | 'parentNodeId'>[],
+  selectedNodes: Pick<CanvasNode, 'id' | 'type' | 'parentNodeId' | 'data'>[],
 ): CanvasSelectionContextSummary {
+  const batchTasks = summarizeBatchTaskSelection(selectedNodes)
   const selectedGroupIds = selectedNodes.filter((node) => node.type === 'group').map((node) => node.id)
   const topLevelNodeIds = selectedNodes
     .filter((node) => node.type !== 'group' && !node.parentNodeId)
@@ -90,6 +119,12 @@ export function summarizeCanvasSelectionContext(
     canDissolveGroup,
     canMergeSelectionToImage: Boolean(mergeGroupId) || canCreateGroup,
     mergeGroupId,
+    canBatchConfigureTasks: batchTasks.canBatchConfigure,
+    canBatchSubmitTasks: batchTasks.canBatchSubmit,
+    batchTaskConfigureDisabledReason: batchTasks.configureReason,
+    batchTaskSubmitDisabledReason: batchTasks.submitReason,
+    batchTaskNodeIds: batchTasks.taskNodeIds,
+    batchTaskOperationCount: batchTasks.operationCount,
   }
 }
 

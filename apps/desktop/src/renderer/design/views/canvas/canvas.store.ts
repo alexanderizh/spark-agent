@@ -504,7 +504,7 @@ export function useCanvasWorkspace(projectId: string) {
     async (
       updates: Array<{ nodeId: string; data: Parameters<typeof canvasApi.updateNodeData>[2] }>,
     ) => {
-      await applyCanvasMutationSnapshot(canvasApi.updateManyNodeData(projectId, updates))
+      return applyCanvasMutationSnapshot(canvasApi.updateManyNodeData(projectId, updates))
     },
     [applyCanvasMutationSnapshot, projectId],
   )
