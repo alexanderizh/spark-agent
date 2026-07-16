@@ -79,6 +79,7 @@ describe('stage3d.types', () => {
     expect(data.version).toBe(1)
     expect(data.actors).toHaveLength(1)
     expect(data.backdrop.mode).toBe('grid')
+    expect(data.sceneScale).toBe(1)
     expect(data.camera.aspect).toBe('16:9')
     expect(data.activeId).toBe(data.actors[0]?.id)
   })
@@ -86,6 +87,7 @@ describe('stage3d.types', () => {
   it('序列化 → 反序列化 round-trip 保持一致（panorama 保持可读）', () => {
     const original: Stage3DData = {
       ...createDefaultStage3DData(),
+      sceneScale: 1.35,
       backdrop: { mode: 'backdrop', imageUrl: 'https://x/pano.jpg', rotationY: 1.2, backdropDistance: 10 },
       props: [makeGlbProp(GLB_ASSETS[0]!, 0), makePrimitiveProp('box', 1)],
       sceneBrief: '黄昏的咖啡馆',
@@ -96,6 +98,7 @@ describe('stage3d.types', () => {
     const restored = readStage3DData(fakeNode(legacySerialized))
     expect(restored.backdrop.mode).toBe('panorama')
     expect(restored.backdrop.imageUrl).toBe('https://x/pano.jpg')
+    expect(restored.sceneScale).toBe(1.35)
     expect(restored.actors.map((a) => a.id)).toEqual(original.actors.map((a) => a.id))
     expect(restored.props.map((p) => [p.id, p.kind, p.assetId])).toEqual(
       original.props.map((p) => [p.id, p.kind, p.assetId]),
@@ -108,6 +111,7 @@ describe('stage3d.types', () => {
     const data = readStage3DData(
       fakeNode({
         version: 1,
+        sceneScale: 99,
         backdrop: { mode: 'wormhole', backdropDistance: 999 },
         actors: [
           {
@@ -128,6 +132,7 @@ describe('stage3d.types', () => {
     )
     expect(data.backdrop.mode).toBe('grid')
     expect(data.backdrop.backdropDistance).toBe(40)
+    expect(data.sceneScale).toBe(2)
     expect(data.actors).toHaveLength(1)
     const actor = data.actors[0]!
     expect(actor.bodyType).toBe('standard')
@@ -621,6 +626,7 @@ describe('buildStage3DPrompt', () => {
     return {
       version: 1,
       backdrop: { mode: 'backdrop', imageUrl: 'https://x/p.jpg' },
+      sceneScale: 1.35,
       actors: [actor],
       props: [{ ...makeGlbProp(GLB_ASSETS[0]!, 0), name: '单人床1' }],
       camera: { position: [0, 3.2, 4.5], target: [0, 1, 0], fov: 40, aspect: '16:9' },
@@ -632,6 +638,7 @@ describe('buildStage3DPrompt', () => {
     const prompt = buildStage3DPrompt(sampleData())
     expect(prompt).toContain('场景：清晨的卧室')
     expect(prompt).toContain('远景背板')
+    expect(prompt).toContain('布景：整体布景缩放 1.35x')
     expect(prompt).toContain('林小满')
     expect(prompt).toContain('瘦高体型')
     expect(prompt).toContain('坐姿势')

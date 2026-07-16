@@ -20,6 +20,8 @@ import {
   STAGE3D_BODY_TYPES,
   STAGE3D_LIGHTING_LABEL,
   STAGE3D_LIGHTING_PRESETS,
+  STAGE3D_SCENE_SCALE_MAX,
+  STAGE3D_SCENE_SCALE_MIN,
   clamp,
   type Stage3DActor,
   type Stage3DActorModelId,
@@ -1049,10 +1051,45 @@ export function CanvasDirectorStage3DModal({
                       />
                     </label>
                   )}
+                  {draft.backdrop.mode === 'panorama' && (
+                    <label className="stage3d-field">
+                      <span>背景距离 {(draft.backdrop.backdropDistance ?? 8).toFixed(0)}</span>
+                      <Slider
+                        min={3}
+                        max={30}
+                        value={draft.backdrop.backdropDistance ?? 8}
+                        onChange={(v) =>
+                          setDraft((d) => ({
+                            ...d,
+                            backdrop: { ...d.backdrop, backdropDistance: v },
+                          }))
+                        }
+                      />
+                    </label>
+                  )}
                 </>
               )}
 
               <div className="stage3d-section-title">对象列表</div>
+              <div className="stage3d-section-title">布景比例</div>
+              <label className="stage3d-field">
+                <span>布景缩放 {(draft.sceneScale ?? 1).toFixed(2)}x</span>
+                <Slider
+                  min={STAGE3D_SCENE_SCALE_MIN}
+                  max={STAGE3D_SCENE_SCALE_MAX}
+                  step={0.05}
+                  value={draft.sceneScale ?? 1}
+                  onChange={(v) =>
+                    setDraft((d) => ({
+                      ...d,
+                      sceneScale: clamp(v, STAGE3D_SCENE_SCALE_MIN, STAGE3D_SCENE_SCALE_MAX),
+                    }))
+                  }
+                />
+              </label>
+              <div className="stage3d-tip">
+                只放大/缩小角色和道具的视觉存在感，不改背景图本身。全景图通常可试 1.2x - 1.6x。
+              </div>
               <div className="stage3d-object-list">
                 {!poseMode && (
                   <button
