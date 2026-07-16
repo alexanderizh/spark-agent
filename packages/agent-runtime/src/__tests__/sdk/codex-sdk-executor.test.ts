@@ -318,7 +318,7 @@ describe('CodexSdkExecutor', () => {
     ])
   })
 
-  it('maps auto-review permission mode to the supported interactive approval policy', async () => {
+  it('configures Codex auto review without widening the workspace sandbox', async () => {
     runStreamed.mockResolvedValue({ events: streamFrom([]) })
 
     const executor = new CodexSdkExecutor()
@@ -331,7 +331,31 @@ describe('CodexSdkExecutor', () => {
 
     expect(startThread).toHaveBeenCalledWith(
       expect.objectContaining({
+        sandboxMode: 'workspace-write',
         approvalPolicy: 'on-request',
+      }),
+    )
+    expect(codexCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ approvals_reviewer: 'auto_review' }),
+      }),
+    )
+  })
+
+  it('grants explicit full access for Git metadata writes', async () => {
+    runStreamed.mockResolvedValue({ events: streamFrom([]) })
+
+    await new CodexSdkExecutor().executeTurn(
+      'session-1',
+      'turn-1',
+      'hello',
+      makeConfig({ permissionMode: 'codex-full-access' }),
+    )
+
+    expect(startThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sandboxMode: 'danger-full-access',
+        approvalPolicy: 'never',
       }),
     )
   })
@@ -427,7 +451,7 @@ describe('CodexSdkExecutor', () => {
     expect(JSON.stringify(codexCtor.mock.calls[0]?.[0]?.config)).not.toContain('sk-third-party')
   })
 
-  it('uses a non-interactive approval policy for unattended automation turns', async () => {
+  it('keeps unattended auto-review inside workspace-write without disabling its reviewer', async () => {
     runStreamed.mockResolvedValue({ events: streamFrom([]) })
 
     const executor = new CodexSdkExecutor()
@@ -441,7 +465,12 @@ describe('CodexSdkExecutor', () => {
     expect(startThread).toHaveBeenCalledWith(
       expect.objectContaining({
         sandboxMode: 'workspace-write',
-        approvalPolicy: 'never',
+        approvalPolicy: 'on-request',
+      }),
+    )
+    expect(codexCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ approvals_reviewer: 'auto_review' }),
       }),
     )
   })
@@ -864,12 +893,20 @@ describe('CodexSdkExecutor', () => {
       'session-1',
       'turn-1',
       'continue',
-      makeConfig({ sdkSessionId: 'codex-thread-1', continueSession: true }),
+      makeConfig({
+        sdkSessionId: 'codex-thread-1',
+        continueSession: true,
+        permissionMode: 'codex-full-access',
+      }),
     )
 
     expect(resumeThread).toHaveBeenCalledWith(
       'codex-thread-1',
-      expect.objectContaining({ model: 'gpt-5-codex' }),
+      expect.objectContaining({
+        model: 'gpt-5-codex',
+        sandboxMode: 'danger-full-access',
+        approvalPolicy: 'never',
+      }),
     )
     expect(startThread).not.toHaveBeenCalled()
   })
