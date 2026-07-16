@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculateCanvasContextMenuPosition,
+  getCanvasTaskSubmitActionState,
   shouldOpenCanvasSelectionContextMenu,
   summarizeCanvasSelectionContext,
 } from './canvasContextMenuModel'
@@ -30,6 +31,27 @@ function node(input: Partial<CanvasNode> & Pick<CanvasNode, 'id' | 'type'>): Can
 }
 
 describe('canvasContextMenuModel', () => {
+  describe('getCanvasTaskSubmitActionState', () => {
+    it('enables saved operation nodes and disables running tasks', () => {
+      expect(
+        getCanvasTaskSubmitActionState(
+          node({ id: 'task', type: 'text_to_image', data: { status: 'pending' } }),
+        ),
+      ).toEqual({ visible: true, disabled: false, reason: null })
+      expect(
+        getCanvasTaskSubmitActionState(
+          node({ id: 'running', type: 'text_to_video', data: { status: 'running' } }),
+        ),
+      ).toEqual({ visible: true, disabled: true, reason: '任务正在运行' })
+    })
+
+    it('does not expose submit for content nodes', () => {
+      expect(
+        getCanvasTaskSubmitActionState(node({ id: 'note', type: 'text' })),
+      ).toEqual({ visible: false, disabled: true, reason: '所选节点不是任务节点' })
+    })
+  })
+
   describe('calculateCanvasContextMenuPosition', () => {
     it('keeps the primary menu inside the viewport when opened near the bottom edge', () => {
       const result = calculateCanvasContextMenuPosition({
@@ -70,6 +92,31 @@ describe('canvasContextMenuModel', () => {
   })
 
   describe('summarizeCanvasSelectionContext', () => {
+    it('enables task actions for mixed operation types', () => {
+      const result = summarizeCanvasSelectionContext([
+        node({ id: 'image-task', type: 'text_to_image' }),
+        node({ id: 'video-task', type: 'text_to_video' }),
+      ])
+
+      expect(result.canBatchConfigureTasks).toBe(true)
+      expect(result.canBatchSubmitTasks).toBe(true)
+      expect(result.batchTaskNodeIds).toEqual(['image-task', 'video-task'])
+      expect(result.batchTaskOperationCount).toBe(2)
+      expect(result.batchTaskDisabledReason).toBeNull()
+    })
+
+    it('disables task actions when operation and content nodes are mixed', () => {
+      const result = summarizeCanvasSelectionContext([
+        node({ id: 'image-task', type: 'text_to_image' }),
+        node({ id: 'note', type: 'text' }),
+      ])
+
+      expect(result.canBatchConfigureTasks).toBe(false)
+      expect(result.canBatchSubmitTasks).toBe(false)
+      expect(result.batchTaskNodeIds).toEqual(['image-task'])
+      expect(result.batchTaskDisabledReason).toBe('仅支持同时选择任务节点')
+    })
+
     it('enables group creation and merge-to-image for multiple top-level content nodes', () => {
       const result = summarizeCanvasSelectionContext([
         node({ id: 'image-1', type: 'image' }),

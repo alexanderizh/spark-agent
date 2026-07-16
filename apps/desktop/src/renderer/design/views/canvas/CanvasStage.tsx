@@ -572,6 +572,9 @@ function CanvasStageInner({
   onAddNodesToAgent,
   /** 单节点右键：把该节点加入画布 Agent 对话引用列表（节点富菜单入口） */
   onAddNodeToAgent,
+  onRunOperationNode,
+  onConfigureSelectedTasks,
+  onSubmitSelectedTasks,
   onOpenAiComposer,
   onEditNode,
   onSaveNodeToLibrary,
@@ -627,6 +630,12 @@ function CanvasStageInner({
   onAddNodesToAgent?: () => void
   /** 单节点右键 → 加入画布 Agent 对话（节点富菜单入口） */
   onAddNodeToAgent?: (nodeId: string) => void
+  /** 单节点右键 → 使用已保存配置提交任务 */
+  onRunOperationNode?: (nodeId: string) => void
+  /** 多选任务节点右键 → 打开批量配置面板 */
+  onConfigureSelectedTasks?: (nodeIds: string[]) => void
+  /** 多选任务节点右键 → 校验并批量提交 */
+  onSubmitSelectedTasks?: (nodeIds: string[]) => void
   onOpenAiComposer: (nodeId: string) => void
   onEditNode: (nodeId: string) => void
   onSaveNodeToLibrary: (nodeId: string) => void
@@ -701,6 +710,7 @@ function CanvasStageInner({
       removeNodeFromGroup: onRemoveNodeFromGroup,
       dissolveGroup: onDissolveGroup,
       ...(onAddNodeToAgent ? { addNodeToAgent: onAddNodeToAgent } : {}),
+      ...(onRunOperationNode ? { runOperationNode: onRunOperationNode } : {}),
       openAiComposer: onOpenAiComposer,
       editNode: onEditNode,
       saveToLibrary: onSaveNodeToLibrary,
@@ -737,6 +747,7 @@ function CanvasStageInner({
       onExpandOperationOutputs,
       onRemoveNodeFromGroup,
       onAddNodeToAgent,
+      onRunOperationNode,
       onCreateOperationChild,
       onPipelineAction,
       onSetProductionState,
@@ -2198,6 +2209,41 @@ function CanvasStageInner({
             {selectedNodeIds.length > 0 && (
               <>
                 <div className="canvas-pane-context-section-title">选中节点</div>
+                {(onConfigureSelectedTasks || onSubmitSelectedTasks) && (
+                  <>
+                    {onConfigureSelectedTasks && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={!selectedContext.canBatchConfigureTasks}
+                        title={selectedContext.batchTaskDisabledReason ?? undefined}
+                        onClick={() => {
+                          closePaneContextMenu()
+                          onConfigureSelectedTasks(selectedContext.batchTaskNodeIds)
+                        }}
+                      >
+                        <Icons.Sliders size={14} />
+                        <span>批量配置参数…</span>
+                      </button>
+                    )}
+                    {onSubmitSelectedTasks && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={!selectedContext.canBatchSubmitTasks}
+                        title={selectedContext.batchTaskDisabledReason ?? undefined}
+                        onClick={() => {
+                          closePaneContextMenu()
+                          onSubmitSelectedTasks(selectedContext.batchTaskNodeIds)
+                        }}
+                      >
+                        <Icons.Play size={14} />
+                        <span>批量提交运行</span>
+                      </button>
+                    )}
+                    <div className="canvas-pane-context-divider" />
+                  </>
+                )}
                 {onAddNodesToAgent && (
                   <button
                     type="button"
