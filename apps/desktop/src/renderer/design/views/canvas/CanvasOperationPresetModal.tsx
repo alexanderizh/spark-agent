@@ -122,9 +122,11 @@ export function CanvasOperationPresetModal({
   const [openRuntimeMenu, setOpenRuntimeMenu] = useState<RuntimePickerMenu>(null)
   const modelParamDraftEditedRef = useRef(false)
   const customParamsEditedRef = useRef(false)
-  const baselineDraftsSignatureRef = useRef('')
+  const [nodeFormTouched, setNodeFormTouched] = useState(false)
+  const [nodeRuntimeTouched, setNodeRuntimeTouched] = useState(false)
   const baselineDraftsRef = useRef<Record<string, CanvasOperationPreset>>({})
-  const baselineTaskDraftsSignatureRef = useRef('')
+  const [baselineDraftsSignature, setBaselineDraftsSignature] = useState('')
+  const [baselineTaskDraftsSignature, setBaselineTaskDraftsSignature] = useState('')
 
   const activeTarget = useMemo(
     () => getCanvasPresetTargetDefinition(activeTargetId),
@@ -132,18 +134,12 @@ export function CanvasOperationPresetModal({
   )
   const activeOperation = activeTarget?.operation ?? 'text_generate'
   const isTextOperation = useMemo(() => isTextModelOperation(activeOperation), [activeOperation])
-  const configuredPresetCount = useMemo(() => {
-    const nodeCount = Object.keys(readCanvasPresetTargetOverrides()).length
-    const taskCount = Object.keys(readCanvasTaskDefaults()).length
-    return nodeCount + taskCount
-  }, [open])
-  const nodeOverrideCount = useMemo(
-    () =>
-      countCanvasPresetOverrides(
-        CANVAS_PRESET_TARGETS.map((target) => target.id),
-        hasCanvasPresetTargetOverride,
-      ),
-    [open, drafts],
+  const configuredPresetCount =
+    Object.keys(readCanvasPresetTargetOverrides()).length +
+    Object.keys(readCanvasTaskDefaults()).length
+  const nodeOverrideCount = countCanvasPresetOverrides(
+    CANVAS_PRESET_TARGETS.map((target) => target.id),
+    hasCanvasPresetTargetOverride,
   )
   const targetGroups = useMemo(() => buildCanvasPresetTargetGroups(CANVAS_PRESET_TARGETS), [])
   const readonlyPromptPrefix = useMemo(
@@ -166,10 +162,10 @@ export function CanvasOperationPresetModal({
     ) as Record<string, CanvasOperationPreset>
     setDrafts(nextDrafts)
     baselineDraftsRef.current = nextDrafts
-    baselineDraftsSignatureRef.current = JSON.stringify(nextDrafts)
+    setBaselineDraftsSignature(JSON.stringify(nextDrafts))
     const nextTaskDrafts = readTaskDefaultDrafts()
     setTaskDrafts(nextTaskDrafts)
-    baselineTaskDraftsSignatureRef.current = JSON.stringify(nextTaskDrafts)
+    setBaselineTaskDraftsSignature(JSON.stringify(nextTaskDrafts))
     setViewMode('tasks')
     setActiveTargetId((current) =>
       CANVAS_PRESET_TARGETS.some((target) => target.id === current) ? current : INITIAL_TARGET,
@@ -292,6 +288,8 @@ export function CanvasOperationPresetModal({
   const loadDraftIntoForm = useCallback((draft: CanvasOperationPreset) => {
     modelParamDraftEditedRef.current = false
     customParamsEditedRef.current = false
+    setNodeFormTouched(false)
+    setNodeRuntimeTouched(false)
     setPrompt(draft.prompt)
     setNegativePrompt(draft.negativePrompt)
     setSelectedAgentId(draft.agentId ?? '')
@@ -431,28 +429,48 @@ export function CanvasOperationPresetModal({
 
   const buildCurrentDraft = useCallback((): CanvasOperationPreset => {
     const modelParams = buildCurrentModelParams()
+    const preservedRuntime = !nodeRuntimeTouched
+      ? {
+          ...(activeStoredPreset.agentId ? { agentId: activeStoredPreset.agentId } : {}),
+          ...(activeStoredPreset.providerProfileId
+            ? { providerProfileId: activeStoredPreset.providerProfileId }
+            : {}),
+          ...(activeStoredPreset.manifestId ? { manifestId: activeStoredPreset.manifestId } : {}),
+          ...(activeStoredPreset.modelId ? { modelId: activeStoredPreset.modelId } : {}),
+        }
+      : {}
     return {
       prompt,
       negativePrompt,
-      ...(isTextOperation && selectedAgentId ? { agentId: selectedAgentId } : {}),
-      ...(isTextOperation && selectedTextProviderId
+      ...preservedRuntime,
+      ...(nodeRuntimeTouched && isTextOperation && selectedAgentId
+        ? { agentId: selectedAgentId }
+        : {}),
+      ...(nodeRuntimeTouched && isTextOperation && selectedTextProviderId
         ? { providerProfileId: selectedTextProviderId }
-        : selectedModel?.providerProfileId
+        : nodeRuntimeTouched && selectedModel?.providerProfileId
           ? { providerProfileId: selectedModel.providerProfileId }
           : {}),
-      ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
-      ...(isTextOperation && selectedTextModelId
+      ...(nodeRuntimeTouched && selectedModel?.manifestId
+        ? { manifestId: selectedModel.manifestId }
+        : {}),
+      ...(nodeRuntimeTouched && isTextOperation && selectedTextModelId
         ? { modelId: selectedTextModelId }
-        : selectedModel?.effectiveModelId
+        : nodeRuntimeTouched && selectedModel?.effectiveModelId
           ? { modelId: selectedModel.effectiveModelId }
           : {}),
       ...(isTextOperation ? { skillIds: selectedSkillIds } : { skillIds: [] }),
       modelParams,
     }
   }, [
+    activeStoredPreset.agentId,
+    activeStoredPreset.manifestId,
+    activeStoredPreset.modelId,
+    activeStoredPreset.providerProfileId,
     buildCurrentModelParams,
     isTextOperation,
     negativePrompt,
+    nodeRuntimeTouched,
     prompt,
     selectedAgentId,
     selectedModel,
@@ -462,16 +480,18 @@ export function CanvasOperationPresetModal({
   ])
 
   const composeNextDrafts = useCallback(() => {
-    if (viewMode !== 'nodes') return drafts
+    if (viewMode !== 'nodes' || !nodeFormTouched) return drafts
     return {
       ...drafts,
       [activeTargetId]: buildCurrentDraft(),
     }
-  }, [activeTargetId, buildCurrentDraft, drafts, viewMode])
+  }, [activeTargetId, buildCurrentDraft, drafts, nodeFormTouched, viewMode])
 
   const handleTargetSwitch = useCallback(
     (targetId: CanvasPresetTargetId) => {
       setDrafts(composeNextDrafts())
+      setNodeFormTouched(false)
+      setNodeRuntimeTouched(false)
       setActiveTargetId(targetId)
     },
     [composeNextDrafts],
@@ -481,6 +501,8 @@ export function CanvasOperationPresetModal({
     (agentId: string) => {
       const nextAgent = agents.find((agent) => agent.id === agentId)
       if (!nextAgent) return
+      setNodeFormTouched(true)
+      setNodeRuntimeTouched(true)
       const nextProvider = pickDefaultTextProvider(
         textProviders,
         nextAgent.providerProfileId ?? selectedTextProvider?.id,
@@ -493,33 +515,39 @@ export function CanvasOperationPresetModal({
   )
 
   const handleTextProviderModelChange = useCallback((providerId: string, modelId: string) => {
+    setNodeFormTouched(true)
+    setNodeRuntimeTouched(true)
     setSelectedTextProviderId(providerId)
     setSelectedTextModelId(modelId)
   }, [])
 
   const handleModelParamDraftChange = useCallback((fieldName: string, value: string) => {
+    setNodeFormTouched(true)
     modelParamDraftEditedRef.current = true
     setModelParamDraft((prev) => updateModelParamDraftValue(prev, fieldName, value))
   }, [])
 
   const handleCustomParamPatch = useCallback((id: string, patch: Partial<CustomParamDraft>) => {
+    setNodeFormTouched(true)
     customParamsEditedRef.current = true
     updateCustomParam(setCustomParams, id, patch)
   }, [])
 
   const handleAddCustomParam = useCallback(() => {
+    setNodeFormTouched(true)
     customParamsEditedRef.current = true
     setCustomParams((prev) => [...prev, createCustomParamDraft()])
   }, [])
 
   const handleRemoveCustomParam = useCallback((id: string) => {
+    setNodeFormTouched(true)
     customParamsEditedRef.current = true
     setCustomParams((prev) => prev.filter((item) => item.id !== id))
   }, [])
 
   const isDirty =
-    JSON.stringify(composeNextDrafts()) !== baselineDraftsSignatureRef.current ||
-    JSON.stringify(taskDrafts) !== baselineTaskDraftsSignatureRef.current
+    JSON.stringify(composeNextDrafts()) !== baselineDraftsSignature ||
+    JSON.stringify(taskDrafts) !== baselineTaskDraftsSignature
   const requestClose = useCanvasUnsavedChangesGuard({
     dirty: isDirty,
     onClose,
@@ -556,8 +584,8 @@ export function CanvasOperationPresetModal({
         Object.keys(readCanvasTaskDefaults()).length
       onPresetCountChange?.(nextCount)
       baselineDraftsRef.current = nextDrafts
-      baselineDraftsSignatureRef.current = JSON.stringify(nextDrafts)
-      baselineTaskDraftsSignatureRef.current = JSON.stringify(taskDrafts)
+      setBaselineDraftsSignature(JSON.stringify(nextDrafts))
+      setBaselineTaskDraftsSignature(JSON.stringify(taskDrafts))
       message.success('画布默认设置已保存，新建任务会自动使用这套设置')
       onClose()
     } catch (error) {
@@ -588,7 +616,7 @@ export function CanvasOperationPresetModal({
       const nextDrafts = { ...composeNextDrafts(), [activeTargetId]: nextPreset }
       setDrafts(nextDrafts)
       baselineDraftsRef.current = nextDrafts
-      baselineDraftsSignatureRef.current = JSON.stringify(nextDrafts)
+      setBaselineDraftsSignature(JSON.stringify(nextDrafts))
       loadDraftIntoForm(nextPreset)
       const nextCount =
         Object.keys(readCanvasPresetTargetOverrides()).length +
@@ -686,7 +714,10 @@ export function CanvasOperationPresetModal({
           value={negativePrompt}
           rows={4}
           placeholder="例如：不要水印、不要额外人物、不要低清晰度"
-          onChange={(event) => setNegativePrompt(event.target.value)}
+          onChange={(event) => {
+            setNodeFormTouched(true)
+            setNegativePrompt(event.target.value)
+          }}
         />
       </label>
 
@@ -826,7 +857,11 @@ export function CanvasOperationPresetModal({
             className={viewMode === 'tasks' ? 'is-active' : ''}
             aria-current={viewMode === 'tasks' ? 'page' : undefined}
             onClick={() => {
-              if (viewMode === 'nodes') setDrafts(composeNextDrafts())
+              if (viewMode === 'nodes') {
+                setDrafts(composeNextDrafts())
+                setNodeFormTouched(false)
+                setNodeRuntimeTouched(false)
+              }
               setViewMode('tasks')
             }}
           >
@@ -935,7 +970,10 @@ export function CanvasOperationPresetModal({
                         maxTagCount="responsive"
                         options={skills.map((skill) => ({ value: skill.id, label: skill.name }))}
                         disabled={runtimeLoading || skills.length === 0}
-                        onChange={(value) => setSelectedSkillIds(value.map(String))}
+                        onChange={(value) => {
+                          setNodeFormTouched(true)
+                          setSelectedSkillIds(value.map(String))
+                        }}
                       />
                     </div>
                   ) : null}
@@ -989,7 +1027,10 @@ export function CanvasOperationPresetModal({
                           ? '例如：描述具体场景、主体、氛围和构图要求'
                           : '例如：统一镜头语言、品牌语气、结构要求'
                       }
-                      onChange={(event) => setPrompt(event.target.value)}
+                      onChange={(event) => {
+                        setNodeFormTouched(true)
+                        setPrompt(event.target.value)
+                      }}
                     />
                   </label>
                 </section>
@@ -1020,7 +1061,11 @@ export function CanvasOperationPresetModal({
                       ) : null
                     }
                     advancedContent={advancedParameterContent}
-                    onModelChange={setSelectedModelKey}
+                    onModelChange={(modelKey) => {
+                      setNodeFormTouched(true)
+                      setNodeRuntimeTouched(true)
+                      setSelectedModelKey(modelKey)
+                    }}
                     onParameterChange={handleModelParamDraftChange}
                   />
                 </section>

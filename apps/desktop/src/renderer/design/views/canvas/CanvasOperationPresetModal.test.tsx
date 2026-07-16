@@ -245,4 +245,87 @@ describe('CanvasOperationPresetModal', () => {
     ) as Record<string, unknown>
     expect(storedNodeOverrides).toEqual({})
   })
+
+  it('preserves unavailable saved runtime values when node overrides are viewed but not edited', async () => {
+    const storedOverride = {
+      prompt: '保留节点提示词',
+      agentId: 'agent:offline',
+      providerProfileId: 'provider:offline',
+      modelId: 'model:offline',
+      skillIds: ['skill:offline'],
+    }
+    window.localStorage.setItem(
+      'spark-canvas:operation-presets:v1',
+      JSON.stringify({ text_generate: storedOverride }),
+    )
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<CanvasOperationPresetModal open onClose={vi.fn()} />)
+    })
+
+    const overrideTab = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.includes('按节点覆盖'),
+    )
+    await act(async () => overrideTab?.click())
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '保存默认设置',
+    )
+    await act(async () => save?.click())
+
+    const storedNodeOverrides = JSON.parse(
+      window.localStorage.getItem('spark-canvas:operation-presets:v1') ?? '{}',
+    ) as Record<string, unknown>
+    expect(storedNodeOverrides.text_generate).toMatchObject(storedOverride)
+  })
+
+  it('preserves unavailable runtime values when only the node prompt is edited', async () => {
+    const storedOverride = {
+      prompt: '原节点提示词',
+      agentId: 'agent:offline',
+      providerProfileId: 'provider:offline',
+      modelId: 'model:offline',
+      skillIds: ['skill:offline'],
+    }
+    window.localStorage.setItem(
+      'spark-canvas:operation-presets:v1',
+      JSON.stringify({ text_generate: storedOverride }),
+    )
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<CanvasOperationPresetModal open onClose={vi.fn()} />)
+    })
+
+    const overrideTab = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.includes('按节点覆盖'),
+    )
+    await act(async () => overrideTab?.click())
+
+    const promptInput = Array.from(
+      container.querySelectorAll<HTMLTextAreaElement>('textarea'),
+    ).find((input) => input.value === storedOverride.prompt)
+    expect(promptInput).not.toBeUndefined()
+    await act(async () => {
+      if (!promptInput) return
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
+        promptInput,
+        '更新后的节点提示词',
+      )
+      promptInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '保存默认设置',
+    )
+    await act(async () => save?.click())
+
+    const storedNodeOverrides = JSON.parse(
+      window.localStorage.getItem('spark-canvas:operation-presets:v1') ?? '{}',
+    ) as Record<string, Record<string, unknown>>
+    expect(storedNodeOverrides.text_generate).toMatchObject({
+      ...storedOverride,
+      prompt: '更新后的节点提示词',
+    })
+  })
 })
