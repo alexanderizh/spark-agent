@@ -21,6 +21,11 @@ import {
   buildCanvasTextRawResponse,
   resolveCanvasTextTokenBudget,
 } from './canvasTextTaskDiagnostics.js'
+import {
+  buildCanvasTextOutputBudgetInstruction,
+  resolveCanvasTextExecutionAdapter,
+  resolveCanvasTextModel,
+} from './canvasTextTaskRuntime.js'
 import { PendingUserQuestionStore } from './user-question-store.js'
 import { buildDetachedQuestionContinuationMessage } from './user-question-recovery.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
@@ -108,7 +113,9 @@ import {
   MediaModelCatalogService,
   MediaTaskRuntimeService,
   CanvasTextProviderError,
+  CanvasTextTimeoutError,
   generateCanvasText,
+  resolveCanvasTextRequestTimeoutMs,
   resolveProfileMediaModels,
   MemoryStoreService,
   MemoryWriterService,
@@ -169,12 +176,7 @@ import type {
   SessionListResponse,
   SystemNotificationNavigateRequest,
 } from '@spark/protocol'
-import {
-  MediaModelManifestSchema,
-  isAutoRouterProvider,
-  isBuiltInLocalCliProvider,
-  isLocalCodexCliProvider,
-} from '@spark/protocol'
+import { MediaModelManifestSchema, isAutoRouterProvider } from '@spark/protocol'
 import { McpOAuthService } from '../services/mcp-oauth/McpOAuthService.js'
 import type {
   SessionEventHandler,
@@ -3493,17 +3495,23 @@ export function registerAllIpcHandlers(): void {
     )
 
     /**
-     * 本地 CLI Provider 不经过 HTTP generateCanvasText：它们没有 API Key，
-     * 必须复用工作台的 SessionService，才能真正进入 Claude SDK / Codex CLI/SDK。
-     * 这里使用一次性 session 承载单个画布任务，取回最终 assistant_message 后清理，
-     * 因而不会把每个操作节点都长期堆积到会话侧栏。
+     * 内置 CLI Provider，以及配置为 Codex adapter 的画布 Agent，统一复用 SessionService。
+     * 这样自定义 OpenAI-compatible Provider 也会进入 Codex SDK，而不是退化成一次性 HTTP completion。
+     * 临时 session 在取回最终 assistant_message 后立即清理，不会堆积到会话侧栏。
      */
-    const runWithLocalAgentRuntime = async (
+    const runWithCanvasAgentRuntime = async (
       profile: Awaited<ReturnType<ProviderService['listProviders']>>[number],
-      agent: { prompt?: string | null; providerProfileId?: string | null } | null,
+      agent: {
+        prompt?: string | null
+        providerProfileId?: string | null
+        reasoningEffort?: string | null
+      } | null,
       runtimeRequest: ReturnType<typeof buildCanvasRuntimeRequest>,
+      adapter: SessionAgentAdapter,
+      model: string,
+      tokenBudget: ReturnType<typeof resolveCanvasTextTokenBudget>,
+      requestTimeoutMs: number,
     ): Promise<CanvasTextTaskCreateResponse> => {
-      const adapter: SessionAgentAdapter = isLocalCodexCliProvider(profile) ? 'codex' : 'claude-sdk'
       const permissionMode: SessionPermissionMode =
         adapter === 'codex' ? 'codex-full-access' : 'claude-bypass'
       const selectedSkillIds = Array.isArray(req.skillIds)
@@ -3519,12 +3527,18 @@ export function registerAllIpcHandlers(): void {
         responseFormat.toLowerCase() === 'json'
           ? '\n\n输出格式硬约束：这是纯文本结构化转换，不要调用工具、不要读写文件；只返回合法 JSON，不要 Markdown，不要代码块，不要额外解释。'
           : ''
+      const outputBudgetInstruction = buildCanvasTextOutputBudgetInstruction(
+        req.taskPipelineRole,
+        tokenBudget.maxTokens,
+      )
       const agentPrompt =
         agent && typeof agent.prompt === 'string' && agent.prompt.trim().length > 0
           ? agent.prompt.trim()
           : '你是影视创作助手。严格遵循用户指令，直接输出结果，不要解释过程。'
       const system = buildCanvasSystemPrompt({
-        capabilityPrompt: [runtimeRequest.system, jsonConstraint].filter(Boolean).join('\n\n'),
+        capabilityPrompt: [runtimeRequest.system, jsonConstraint, outputBudgetInstruction]
+          .filter(Boolean)
+          .join('\n\n'),
         agentPrompt,
         ...(req.negativePrompt ? { negativePrompt: req.negativePrompt } : {}),
       })
@@ -3533,14 +3547,19 @@ export function registerAllIpcHandlers(): void {
         .join('\n\n')
       if (!message) throw new Error('画布文本任务提示词为空')
 
-      const model = profile.defaultModel
       // 人设已经拼进本轮消息。当 Agent 仍绑定其他 Provider 时省略
       // agentId，避免一次性画布会话携带与本轮显式 CLI 选择冲突的旧配置。
       const sessionAgentId =
         req.agentId && (agent?.providerProfileId == null || agent.providerProfileId === profile.id)
           ? req.agentId
           : undefined
+      const attachments = (req.inputFiles ?? []).flatMap((file) => {
+        if (file.type !== 'image') return []
+        const filePath = file.path?.trim() || decodeSafeFileUrl(file.url)
+        return filePath ? [{ type: 'image' as const, path: filePath }] : []
+      })
       let sessionId: string | undefined
+      let terminal = false
       try {
         await ensureNoProjectDirectoryExists()
         const noProjectWorkspaceId = getNoProjectWorkspaceId()
@@ -3564,22 +3583,29 @@ export function registerAllIpcHandlers(): void {
           ...(sessionAgentId ? { agentId: sessionAgentId } : {}),
           agentAdapter: adapter,
           permissionMode,
-          ...(req.reasoningEffort ? { reasoningEffort: req.reasoningEffort } : {}),
+          ...(req.reasoningEffort
+            ? { reasoningEffort: req.reasoningEffort }
+            : agent?.reasoningEffort != null && isProtocolReasoning(agent.reasoningEffort)
+              ? { reasoningEffort: agent.reasoningEffort }
+              : {}),
+          ...(attachments.length > 0 ? { attachments } : {}),
         })
         // SessionService.sendTurn 只负责启动 executor，真正的 SDK/CLI 运行在后台
         // promise 中；不能立刻读 history，否则 Codex 尚未写入 assistant_message。
         // 轮询临时 session 的完整事件，直到本轮出现终态事件。
-        const deadline = Date.now() + 10 * 60_000
+        const deadline = Date.now() + requestTimeoutMs
         let finalText: string | undefined
         while (Date.now() < deadline) {
           const history = await getSessionService().getHistory({ sessionId, full: true })
           const events = history.events.filter((event) => event.turnId === turn.turnId)
           const result = resolveCanvasAgentTurnResult(events)
+          if (result.terminal) terminal = true
           if (result.error) throw new Error(result.error)
           if (result.text) finalText = result.text
-          if (result.terminal) break
+          if (terminal) break
           await new Promise((resolve) => setTimeout(resolve, 100))
         }
+        if (!terminal) throw new CanvasTextTimeoutError(requestTimeoutMs)
         if (finalText == null) throw new Error('本地 Agent 未返回文本结果')
         return {
           status: 'succeeded',
@@ -3594,6 +3620,10 @@ export function registerAllIpcHandlers(): void {
             model,
             executionPath: 'session-runtime',
             adapter,
+            maxTokens: tokenBudget.maxTokens,
+            maxTokensSource: tokenBudget.source,
+            taskRoleMaxTokens: tokenBudget.taskRoleMaxTokens,
+            requestTimeoutMs,
             agentId: req.agentId ?? null,
             skillIds: selectedSkillIds,
             relationManifest: runtimeRequest.relationManifest,
@@ -3601,9 +3631,9 @@ export function registerAllIpcHandlers(): void {
         }
       } finally {
         if (sessionId != null) {
-          await getSessionService()
-            .deleteSession(sessionId)
-            .catch(() => undefined)
+          const sessionService = getSessionService()
+          if (!terminal) await sessionService.cancelTurn(sessionId).catch(() => undefined)
+          await sessionService.deleteSession(sessionId).catch(() => undefined)
         }
       }
     }
@@ -3626,27 +3656,61 @@ export function registerAllIpcHandlers(): void {
         : [...profiles].sort((a, b) => Number(b.isDefault) - Number(a.isDefault))
       const runtimeRequest = buildCanvasRuntimeRequest(req)
       const candidate = ordered.find((profile) => isTextProvider(profile))
-      if (candidate != null && isBuiltInLocalCliProvider(candidate)) {
-        if (runtimeRequest.images.length > 0) {
+      const requestedMaxTokens =
+        typeof req.modelParams?.maxTokens === 'number'
+          ? req.modelParams.maxTokens
+          : typeof req.modelParams?.max_tokens === 'number'
+            ? req.modelParams.max_tokens
+            : undefined
+      const requestTimeoutMs = resolveCanvasTextRequestTimeoutMs()
+      const executionAdapter =
+        candidate != null ? resolveCanvasTextExecutionAdapter(candidate, agent) : null
+      if (candidate != null && executionAdapter != null) {
+        const model = resolveCanvasTextModel(req.modelId, agent?.modelId, candidate.defaultModel)
+        const tokenBudget = resolveCanvasTextTokenBudget({
+          requestedMaxTokens,
+          providerMaxTokens: candidate.maxTokens,
+          providerContextWindow: candidate.contextWindow,
+          providerSupportsMillionContext: candidate.supportsMillionContext,
+          taskPipelineRole: req.taskPipelineRole,
+          prompt: runtimeRequest.prompt,
+        })
+        log.info(
+          `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} maxTokens=${tokenBudget.maxTokens ?? '(provider-default)'} source=${tokenBudget.source ?? 'unset'} contextWindow=${tokenBudget.contextWindow ?? '(n/a)'} reserve=${tokenBudget.contextReserveRatio ?? '(n/a)'} providerMax=${tokenBudget.providerMaxTokens ?? '(n/a)'} taskRoleMax=${tokenBudget.taskRoleMaxTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate ?? '(n/a)'} timeoutMs=${requestTimeoutMs} executionPath=session-runtime adapter=${executionAdapter}`,
+        )
+        try {
+          return await runWithCanvasAgentRuntime(
+            candidate,
+            agent,
+            runtimeRequest,
+            executionAdapter,
+            model,
+            tokenBudget,
+            requestTimeoutMs,
+          )
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
           return fail(
-            'provider_not_configured',
-            '本地 CLI 暂不支持画布图片输入，请改用支持多模态的 API Provider',
+            err instanceof CanvasTextTimeoutError ? err.code : 'text_generation_failed',
+            message,
             {
               providerProfileId: candidate.id,
               provider: candidate.provider,
-              model: candidate.defaultModel,
+              model,
+              rawResponse: {
+                providerProfileId: candidate.id,
+                provider: candidate.provider,
+                providerName: candidate.name,
+                model,
+                executionPath: 'session-runtime',
+                adapter: executionAdapter,
+                maxTokens: tokenBudget.maxTokens,
+                maxTokensSource: tokenBudget.source,
+                taskRoleMaxTokens: tokenBudget.taskRoleMaxTokens,
+                requestTimeoutMs,
+              },
             },
           )
-        }
-        try {
-          return await runWithLocalAgentRuntime(candidate, agent, runtimeRequest)
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err)
-          return fail('text_generation_failed', message, {
-            providerProfileId: candidate.id,
-            provider: candidate.provider,
-            model: candidate.defaultModel,
-          })
         }
       }
       let chosen: { profile: (typeof profiles)[number]; apiKey: string } | null = null
@@ -3669,10 +3733,7 @@ export function registerAllIpcHandlers(): void {
           '未找到可用的文本模型 Provider（需要已配置 API Key 的文本/通用模型）',
         )
       }
-      const model =
-        req.modelId?.trim() ||
-        (agent?.modelId && agent.modelId.trim().length > 0 ? agent.modelId.trim() : '') ||
-        chosen.profile.defaultModel
+      const model = resolveCanvasTextModel(req.modelId, agent?.modelId, chosen.profile.defaultModel)
       // system 提示词：选了专属 agent 用其人设，否则用通用影视创作助手；反向提示词作为硬约束追加。
       const baseSystem =
         agentPersona || '你是影视创作助手。严格遵循用户指令，直接输出结果，不要解释过程。'
@@ -3694,20 +3755,8 @@ export function registerAllIpcHandlers(): void {
         responseFormat.toLowerCase() === 'json'
           ? '\n\n输出格式硬约束：只返回合法 JSON，不要 Markdown，不要代码块，不要额外解释。'
           : ''
-      const system = buildCanvasSystemPrompt({
-        capabilityPrompt: [req.systemPrompt, jsonConstraint].filter(Boolean).join('\n\n'),
-        agentPrompt: baseSystem,
-        skillPrompts,
-        ...(req.negativePrompt ? { negativePrompt: req.negativePrompt } : {}),
-      })
       const temperature =
         typeof req.modelParams?.temperature === 'number' ? req.modelParams.temperature : undefined
-      const requestedMaxTokens =
-        typeof req.modelParams?.maxTokens === 'number'
-          ? req.modelParams.maxTokens
-          : typeof req.modelParams?.max_tokens === 'number'
-            ? req.modelParams.max_tokens
-            : undefined
       const tokenBudget = resolveCanvasTextTokenBudget({
         requestedMaxTokens,
         providerMaxTokens: chosen.profile.maxTokens,
@@ -3717,8 +3766,20 @@ export function registerAllIpcHandlers(): void {
         prompt: runtimeRequest.prompt,
       })
       const maxTokens = tokenBudget.maxTokens
+      const outputBudgetInstruction = buildCanvasTextOutputBudgetInstruction(
+        req.taskPipelineRole,
+        maxTokens,
+      )
+      const system = buildCanvasSystemPrompt({
+        capabilityPrompt: [req.systemPrompt, jsonConstraint, outputBudgetInstruction]
+          .filter(Boolean)
+          .join('\n\n'),
+        agentPrompt: baseSystem,
+        skillPrompts,
+        ...(req.negativePrompt ? { negativePrompt: req.negativePrompt } : {}),
+      })
       log.info(
-        `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} maxTokens=${maxTokens ?? '(provider-default)'} source=${tokenBudget.source ?? 'unset'} contextWindow=${tokenBudget.contextWindow ?? '(n/a)'} reserve=${tokenBudget.contextReserveRatio ?? '(n/a)'} providerMax=${tokenBudget.providerMaxTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate ?? '(n/a)'}`,
+        `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} maxTokens=${maxTokens ?? '(provider-default)'} source=${tokenBudget.source ?? 'unset'} contextWindow=${tokenBudget.contextWindow ?? '(n/a)'} reserve=${tokenBudget.contextReserveRatio ?? '(n/a)'} providerMax=${tokenBudget.providerMaxTokens ?? '(n/a)'} taskRoleMax=${tokenBudget.taskRoleMaxTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate ?? '(n/a)'} timeoutMs=${requestTimeoutMs} executionPath=http`,
       )
       const rawReasoningEffort =
         typeof req.reasoningEffort === 'string'
@@ -3753,10 +3814,14 @@ export function registerAllIpcHandlers(): void {
           ...(reasoningEffort != null ? { reasoningEffort } : {}),
           ...(disableThinking ? { disableThinking: true } : {}),
           ...(responseFormat.toLowerCase() === 'json' ? { responseFormat: 'json' as const } : {}),
+          timeoutMs: requestTimeoutMs,
         })
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
-        const requestCall = err instanceof CanvasTextProviderError ? err.requestCall : undefined
+        const requestCall =
+          err instanceof CanvasTextProviderError || err instanceof CanvasTextTimeoutError
+            ? err.requestCall
+            : undefined
         const rawResponse = buildCanvasTextRawResponse({
           providerProfileId: chosen.profile.id,
           provider: chosen.profile.provider,
@@ -3773,8 +3838,10 @@ export function registerAllIpcHandlers(): void {
           promptTokensEstimate: tokenBudget.promptTokensEstimate,
           providerMaxTokens: tokenBudget.providerMaxTokens,
           providerContextWindow: tokenBudget.providerContextWindow,
+          taskRoleMaxTokens: tokenBudget.taskRoleMaxTokens,
           contextWindow: tokenBudget.contextWindow,
           contextReserveRatio: tokenBudget.contextReserveRatio,
+          requestTimeoutMs,
           ...(err instanceof CanvasTextProviderError
             ? {
                 statusCode: err.statusCode,
@@ -3783,7 +3850,9 @@ export function registerAllIpcHandlers(): void {
             : {}),
         })
         return fail(
-          err instanceof CanvasTextProviderError ? err.code : 'text_generation_failed',
+          err instanceof CanvasTextProviderError || err instanceof CanvasTextTimeoutError
+            ? err.code
+            : 'text_generation_failed',
           message,
           {
             providerProfileId: chosen.profile.id,
@@ -3818,8 +3887,10 @@ export function registerAllIpcHandlers(): void {
           promptTokensEstimate: tokenBudget.promptTokensEstimate,
           providerMaxTokens: tokenBudget.providerMaxTokens,
           providerContextWindow: tokenBudget.providerContextWindow,
+          taskRoleMaxTokens: tokenBudget.taskRoleMaxTokens,
           contextWindow: tokenBudget.contextWindow,
           contextReserveRatio: tokenBudget.contextReserveRatio,
+          requestTimeoutMs,
           providerFinishReason: result.finishReason,
           usage: result.usage,
           reasoningContentChars: result.reasoningContentChars,
