@@ -75,6 +75,7 @@ export function isShotScriptText(text: string | null | undefined): boolean {
 /** 表头关键字 → 逻辑列名 */
 type ColumnKey =
   | 'index'
+  | 'title'
   | 'duration'
   | 'shotSize'
   | 'angle'
@@ -101,13 +102,14 @@ type ColumnKey =
 
 const HEADER_MATCHERS: Array<{ key: ColumnKey; test: (h: string) => boolean }> = [
   { key: 'index', test: (h) => /镜号|分镜号|序号|^#$|^no\.?$/i.test(h) },
+  { key: 'title', test: (h) => /^标题$|镜头标题|shot\s*title/i.test(h) },
   { key: 'duration', test: (h) => /时长|时间|秒|duration|time/i.test(h) },
   { key: 'shotSize', test: (h) => /景别|景\b|shot\s*size|scale/i.test(h) },
   { key: 'angle', test: (h) => /角度|机位|angle/i.test(h) },
   { key: 'movement', test: (h) => /运镜|镜头运动|运动|movement|camera\s*move/i.test(h) },
   { key: 'sceneLayout', test: (h) => /场景布局|场景描述|^场景$|空间|scene\s*layout|setting/i.test(h) },
   { key: 'blocking', test: (h) => /站位|调度|走位|场面调度|blocking/i.test(h) },
-  { key: 'lighting', test: (h) => /光照|灯光|光影|lighting/i.test(h) },
+  { key: 'lighting', test: (h) => /光照|布光|灯光|光影|lighting/i.test(h) },
   { key: 'cameraParams', test: (h) => /镜头参数|camera\s*params|lens\s*params/i.test(h) },
   { key: 'focalLength', test: (h) => /焦距|焦段|focal\s*length|^lens$/i.test(h) },
   { key: 'aperture', test: (h) => /光圈|景深|aperture|depth\s*of\s*field/i.test(h) },
@@ -131,7 +133,24 @@ function splitRow(line: string): string[] {
   let s = line.trim()
   if (s.startsWith('|')) s = s.slice(1)
   if (s.endsWith('|')) s = s.slice(0, -1)
-  return s.split('|').map((cell) => cell.trim())
+  const cells: string[] = []
+  let cell = ''
+  for (let index = 0; index < s.length; index += 1) {
+    const character = s.charAt(index)
+    if (character === '\\' && s[index + 1] === '|') {
+      cell += '|'
+      index += 1
+      continue
+    }
+    if (character === '|') {
+      cells.push(cell.trim())
+      cell = ''
+      continue
+    }
+    cell += character
+  }
+  cells.push(cell.trim())
+  return cells
 }
 
 /** 是否为分隔行（如 |---|:--:|） */
@@ -156,7 +175,7 @@ function parseCharacterNames(cell: string): string[] {
 }
 
 function cleanCell(cell: string | undefined): string {
-  const value = (cell ?? '').trim()
+  const value = (cell ?? '').trim().replace(/<br\s*\/?>/gi, '\n')
   return value === '—' || value === '-' ? '' : value
 }
 
@@ -510,6 +529,7 @@ export function parseShotTable(markdown: string): ParsedShotRow[] {
     const negativePrompt = at(cells, 'negativePrompt')
     const charactersCell = at(cells, 'characters')
     const indexCell = at(cells, 'index')
+    const title = at(cells, 'title')
     const indexMatch = indexCell.match(/\d+/)
     const index = indexMatch ? Number.parseInt(indexMatch[0]!, 10) : undefined
 
@@ -519,7 +539,7 @@ export function parseShotTable(markdown: string): ParsedShotRow[] {
     const fallbackIndex = rows.length + 1
 
     const row: ParsedShotRow = {
-      title: `镜${index ?? fallbackIndex}`,
+      title: title || `镜${index ?? fallbackIndex}`,
       ...(index !== undefined ? { index } : {}),
       ...(durationSec !== undefined ? { durationSec } : {}),
       ...(shotSize ? { shotSize } : {}),

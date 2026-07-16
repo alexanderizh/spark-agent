@@ -221,6 +221,19 @@ describe('canvasShotTableParse', () => {
     })
   })
 
+  it('兼容拆分节点历史使用的「布光」表头', () => {
+    const rows = parseShotTable(
+      `| 镜号 | 布光 | 画面/动作 |\n` +
+        `| --- | --- | --- |\n` +
+        `| 1 | 冷白屏幕光从正面照亮人物 | 人物盯着屏幕 |`,
+    )
+
+    expect(rows[0]).toMatchObject({
+      lighting: '冷白屏幕光从正面照亮人物',
+      description: '人物盯着屏幕',
+    })
+  })
+
   it('兼容 ```json 代码块包裹 + 平铺 segments[]', () => {
     const rows = parseShotTable(
       [
