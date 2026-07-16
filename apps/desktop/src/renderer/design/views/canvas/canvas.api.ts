@@ -4377,7 +4377,9 @@ export const canvasApi = {
       outputPipelineRole: input.outputPipelineRole ?? null,
       workflow: input.modelParams?.workflow,
     })
-    const operationPreset = readCanvasResolvedPresetTarget(presetTargetId)
+    const operationPreset = readCanvasResolvedPresetTarget(presetTargetId, {
+      hasImageInput: inputNodes.some((node) => node.type === 'image'),
+    })
     const systemPrompt = buildCanvasOperationSystemPrompt(
       input.operation,
       operationPreset.prompt,

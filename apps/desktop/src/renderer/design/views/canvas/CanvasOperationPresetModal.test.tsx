@@ -6,7 +6,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { CanvasOperationPresetModal } from './CanvasOperationPresetModal'
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('@lobehub/ui', async () => {
@@ -59,7 +58,8 @@ vi.mock('antd', async () => {
       : null
 
   const Input = Object.assign(
-    (props: React.InputHTMLAttributes<HTMLInputElement>) => ReactActual.createElement('input', props),
+    (props: React.InputHTMLAttributes<HTMLInputElement>) =>
+      ReactActual.createElement('input', props),
     {
       TextArea: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) =>
         ReactActual.createElement('textarea', props),
@@ -81,11 +81,15 @@ vi.mock('antd', async () => {
       'select',
       {
         className,
-        value: Array.isArray(value) ? value[0] ?? '' : (value ?? ''),
+        value: Array.isArray(value) ? (value[0] ?? '') : (value ?? ''),
         onChange: (event: React.ChangeEvent<HTMLSelectElement>) => onChange?.(event.target.value),
       },
       (options ?? []).map((option) =>
-        ReactActual.createElement('option', { key: option.value, value: option.value }, option.label),
+        ReactActual.createElement(
+          'option',
+          { key: option.value, value: option.value },
+          option.label,
+        ),
       ),
     )
 
@@ -133,6 +137,7 @@ describe('CanvasOperationPresetModal', () => {
   let root: Root | null = null
 
   beforeEach(() => {
+    window.localStorage.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
     const spark = {
@@ -157,7 +162,7 @@ describe('CanvasOperationPresetModal', () => {
     document.body.innerHTML = ''
   })
 
-  it('renders a dedicated scroll body, topbar close, and sticky footer actions', async () => {
+  it('renders task-first defaults with a clear title and sticky save action', async () => {
     const onClose = vi.fn()
 
     await act(async () => {
@@ -170,8 +175,15 @@ describe('CanvasOperationPresetModal', () => {
     expect(container.querySelector('.canvas-operation-preset-scroll')).not.toBeNull()
     expect(container.querySelector('.canvas-operation-preset-footer')).not.toBeNull()
     expect(container.querySelector('.canvas-operation-preset-footer button')).not.toBeNull()
+    expect(container.textContent).toContain('画布默认设置')
+    expect(container.textContent).toContain('文本处理')
+    expect(container.textContent).toContain('图片理解')
+    expect(container.textContent).toContain('图片生成')
+    expect(container.textContent).toContain('视频生成')
+    expect(container.querySelectorAll('.canvas-preset-task-card')).toHaveLength(4)
 
-    const closeButton = container.querySelector<HTMLButtonElement>('[aria-label="关闭预设中心"]')
+    const closeButton =
+      container.querySelector<HTMLButtonElement>('[aria-label="关闭画布默认设置"]')
     expect(closeButton).not.toBeNull()
     act(() => {
       closeButton?.click()
@@ -179,21 +191,141 @@ describe('CanvasOperationPresetModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('uses the hierarchical model picker and unified parameter controls for media presets', async () => {
+  it('keeps detailed model and parameter controls behind node overrides', async () => {
     await act(async () => {
       root = createRoot(container)
       root.render(<CanvasOperationPresetModal open onClose={vi.fn()} />)
     })
 
-    const mediaTarget = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('.canvas-operation-preset-sidebar-item'),
-    ).find((button) => button.textContent?.includes('text_to_image'))
+    const overrideTab = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.includes('按节点覆盖'),
+    )
+    expect(overrideTab).not.toBeUndefined()
+    await act(async () => overrideTab?.click())
 
+    const mediaTarget = container.querySelector<HTMLButtonElement>(
+      '[data-preset-target="text_to_image"]',
+    )
     expect(mediaTarget).not.toBeUndefined()
     await act(async () => mediaTarget?.click())
 
-    expect(container.querySelector('.canvas-model-picker-stub')).not.toBeNull()
     expect(container.querySelector('.canvas-operation-parameter-controls-stub')).not.toBeNull()
     expect(container.querySelector('.canvas-operation-preset-param-grid')).toBeNull()
+  })
+
+  it('does not turn inherited node values into overrides when a task default changes', async () => {
+    window.localStorage.setItem(
+      'spark-canvas:task-defaults:v1',
+      JSON.stringify({
+        text: {
+          agentId: 'agent:writer',
+          providerProfileId: 'provider:text',
+          modelId: 'gpt-5',
+          skillIds: [],
+        },
+      }),
+    )
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<CanvasOperationPresetModal open onClose={vi.fn()} />)
+    })
+
+    const directModel = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '直接用模型',
+    )
+    await act(async () => directModel?.click())
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '保存默认设置',
+    )
+    await act(async () => save?.click())
+
+    const storedNodeOverrides = JSON.parse(
+      window.localStorage.getItem('spark-canvas:operation-presets:v1') ?? '{}',
+    ) as Record<string, unknown>
+    expect(storedNodeOverrides).toEqual({})
+  })
+
+  it('preserves unavailable saved runtime values when node overrides are viewed but not edited', async () => {
+    const storedOverride = {
+      prompt: '保留节点提示词',
+      agentId: 'agent:offline',
+      providerProfileId: 'provider:offline',
+      modelId: 'model:offline',
+      skillIds: ['skill:offline'],
+    }
+    window.localStorage.setItem(
+      'spark-canvas:operation-presets:v1',
+      JSON.stringify({ text_generate: storedOverride }),
+    )
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<CanvasOperationPresetModal open onClose={vi.fn()} />)
+    })
+
+    const overrideTab = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.includes('按节点覆盖'),
+    )
+    await act(async () => overrideTab?.click())
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '保存默认设置',
+    )
+    await act(async () => save?.click())
+
+    const storedNodeOverrides = JSON.parse(
+      window.localStorage.getItem('spark-canvas:operation-presets:v1') ?? '{}',
+    ) as Record<string, unknown>
+    expect(storedNodeOverrides.text_generate).toMatchObject(storedOverride)
+  })
+
+  it('preserves unavailable runtime values when only the node prompt is edited', async () => {
+    const storedOverride = {
+      prompt: '原节点提示词',
+      agentId: 'agent:offline',
+      providerProfileId: 'provider:offline',
+      modelId: 'model:offline',
+      skillIds: ['skill:offline'],
+    }
+    window.localStorage.setItem(
+      'spark-canvas:operation-presets:v1',
+      JSON.stringify({ text_generate: storedOverride }),
+    )
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(<CanvasOperationPresetModal open onClose={vi.fn()} />)
+    })
+
+    const overrideTab = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.includes('按节点覆盖'),
+    )
+    await act(async () => overrideTab?.click())
+
+    const promptInput = Array.from(
+      container.querySelectorAll<HTMLTextAreaElement>('textarea'),
+    ).find((input) => input.value === storedOverride.prompt)
+    expect(promptInput).not.toBeUndefined()
+    await act(async () => {
+      if (!promptInput) return
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
+        promptInput,
+        '更新后的节点提示词',
+      )
+      promptInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '保存默认设置',
+    )
+    await act(async () => save?.click())
+
+    const storedNodeOverrides = JSON.parse(
+      window.localStorage.getItem('spark-canvas:operation-presets:v1') ?? '{}',
+    ) as Record<string, Record<string, unknown>>
+    expect(storedNodeOverrides.text_generate).toMatchObject({
+      ...storedOverride,
+      prompt: '更新后的节点提示词',
+    })
   })
 })

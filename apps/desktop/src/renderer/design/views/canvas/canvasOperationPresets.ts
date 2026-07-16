@@ -1,4 +1,9 @@
 import type { CanvasOperationType } from './canvas.types'
+import {
+  canvasTaskDefaultKindForOperation,
+  readCanvasTaskDefault,
+  type CanvasTaskDefaultContext,
+} from './canvasTaskDefaults'
 
 const STORAGE_KEY = 'spark-canvas:operation-presets:v1'
 const LAST_USED_STORAGE_KEY = 'spark-canvas:operation-last-used:v1'
@@ -402,12 +407,51 @@ export function readCanvasPresetTargetOverrides(): CanvasPresetStore {
   return readPresetStore()
 }
 
-export function readCanvasPresetTarget(targetId: CanvasPresetTargetId): CanvasOperationPreset {
+export type CanvasPresetResolutionContext = CanvasTaskDefaultContext
+
+export function readCanvasInheritedPresetTarget(
+  targetId: CanvasPresetTargetId,
+  context: CanvasPresetResolutionContext = {},
+): CanvasOperationPreset {
   const target = getCanvasPresetTargetDefinition(targetId)
   if (!target) {
-    return readCanvasOperationPreset(targetId as CanvasOperationType)
+    return readBuiltinCanvasOperationPreset(targetId as CanvasOperationType)
   }
-  const base = readCanvasOperationPreset(target.operation)
+  const builtin = readBuiltinCanvasOperationPreset(target.operation)
+  const operationOverrides =
+    target.id === target.operation ? {} : (readStore()[target.operation] ?? {})
+  const taskDefaultKind = canvasTaskDefaultKindForOperation(target.operation, context)
+  const taskDefault = taskDefaultKind ? readCanvasTaskDefault(taskDefaultKind) : { skillIds: [] }
+  return {
+    prompt: operationOverrides.prompt ?? builtin.prompt,
+    negativePrompt: operationOverrides.negativePrompt ?? builtin.negativePrompt,
+    ...((operationOverrides.providerProfileId ?? taskDefault.providerProfileId)
+      ? {
+          providerProfileId: operationOverrides.providerProfileId ?? taskDefault.providerProfileId,
+        }
+      : {}),
+    ...((operationOverrides.manifestId ?? taskDefault.manifestId)
+      ? { manifestId: operationOverrides.manifestId ?? taskDefault.manifestId }
+      : {}),
+    ...((operationOverrides.modelId ?? taskDefault.modelId)
+      ? { modelId: operationOverrides.modelId ?? taskDefault.modelId }
+      : {}),
+    ...((operationOverrides.agentId ?? taskDefault.agentId)
+      ? { agentId: operationOverrides.agentId ?? taskDefault.agentId }
+      : {}),
+    skillIds: [...(operationOverrides.skillIds ?? taskDefault.skillIds)],
+    modelParams: {
+      ...builtin.modelParams,
+      ...(operationOverrides.modelParams ?? {}),
+    },
+  }
+}
+
+export function readCanvasPresetTarget(
+  targetId: CanvasPresetTargetId,
+  context: CanvasPresetResolutionContext = {},
+): CanvasOperationPreset {
+  const base = readCanvasInheritedPresetTarget(targetId, context)
   const overrides = readPresetStore()[targetId] ?? {}
   return {
     prompt: overrides.prompt ?? base.prompt,
@@ -418,12 +462,8 @@ export function readCanvasPresetTarget(targetId: CanvasPresetTargetId): CanvasOp
     ...((overrides.manifestId ?? base.manifestId)
       ? { manifestId: overrides.manifestId ?? base.manifestId }
       : {}),
-    ...((overrides.modelId ?? base.modelId)
-      ? { modelId: overrides.modelId ?? base.modelId }
-      : {}),
-    ...((overrides.agentId ?? base.agentId)
-      ? { agentId: overrides.agentId ?? base.agentId }
-      : {}),
+    ...((overrides.modelId ?? base.modelId) ? { modelId: overrides.modelId ?? base.modelId } : {}),
+    ...((overrides.agentId ?? base.agentId) ? { agentId: overrides.agentId ?? base.agentId } : {}),
     skillIds: [...(overrides.skillIds ?? base.skillIds)],
     modelParams: {
       ...base.modelParams,
@@ -500,8 +540,11 @@ export function writeCanvasLastUsedPresetTarget(
   writeLastUsedStore(store)
 }
 
-export function readCanvasResolvedPresetTarget(targetId: CanvasPresetTargetId): CanvasOperationPreset {
-  const targetPreset = readCanvasPresetTarget(targetId)
+export function readCanvasResolvedPresetTarget(
+  targetId: CanvasPresetTargetId,
+  context: CanvasPresetResolutionContext = {},
+): CanvasOperationPreset {
+  const targetPreset = readCanvasPresetTarget(targetId, context)
   const lastUsed = readLastUsedStore()[targetId] ?? {}
   return {
     // 用户在任务面板中输入的内容不能反向覆盖功能节点的内置指令。
