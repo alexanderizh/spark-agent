@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 vi.mock('./canvas.api', () => ({
   canvasApi: {
+    listMediaModels: vi.fn(),
     pruneMediaModelParams: vi.fn(),
   },
 }))
@@ -59,6 +60,86 @@ describe('pruneModelParamsForCanvas', () => {
     expect(result.droppedParams[0]?.name).toBe('output_format')
   })
 
+  it('resolves an enabled model for final validation when manifestId is missing', async () => {
+    ;(canvasApi.listMediaModels as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      models: [
+        {
+          manifestId: 'xai:grok-imagine-video',
+          providerProfileId: 'profile-xai',
+          providerKind: 'xai',
+          modelId: 'grok-imagine-video',
+          effectiveModelId: 'grok-imagine-video',
+          displayName: 'Grok Imagine Video',
+          domains: ['video'],
+          invocationMode: 'async',
+          capabilities: [],
+          sourceUrls: [],
+          enabled: true,
+        },
+      ],
+    })
+    mockPruneResponse({ prunedModelParams: { duration: 8 } })
+
+    const result = await pruneModelParamsForCanvas({
+      operation: 'image_to_video',
+      prompt: 'animate',
+      validateSubmission: true,
+      modelParams: { durationSeconds: 8 },
+      inputFiles: [{ type: 'image', dataUrl: 'data:image/png;base64,AA==' }],
+    })
+
+    expect(canvasApi.listMediaModels).toHaveBeenCalledWith({
+      capability: 'video.image_to_video',
+      enabledOnly: true,
+    })
+    expect(canvasApi.pruneMediaModelParams).toHaveBeenCalledWith(
+      expect.objectContaining({
+        manifestId: 'xai:grok-imagine-video',
+        providerProfileId: 'profile-xai',
+        modelId: 'grok-imagine-video',
+        validateSubmission: true,
+      }),
+    )
+    expect(result.modelParams).toEqual({ duration: 8 })
+    expect(result).toMatchObject({
+      resolvedManifestId: 'xai:grok-imagine-video',
+      resolvedProviderProfileId: 'profile-xai',
+      resolvedModelId: 'grok-imagine-video',
+    })
+  })
+
+  it('does not fall back to a different model when an explicit model is unavailable', async () => {
+    ;(canvasApi.listMediaModels as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      models: [
+        {
+          manifestId: 'xai:grok-imagine-video',
+          providerProfileId: 'profile-xai',
+          providerKind: 'xai',
+          modelId: 'grok-imagine-video',
+          effectiveModelId: 'grok-imagine-video',
+          displayName: 'Grok Imagine Video',
+          domains: ['video'],
+          invocationMode: 'async',
+          capabilities: [],
+          sourceUrls: [],
+          enabled: true,
+        },
+      ],
+    })
+
+    const result = await pruneModelParamsForCanvas({
+      operation: 'image_to_video',
+      modelId: 'missing-video-model',
+      prompt: 'animate',
+      validateSubmission: true,
+      modelParams: {},
+      inputFiles: [{ type: 'image', dataUrl: 'data:image/png;base64,AA==' }],
+    })
+
+    expect(result.fallbackReason).toMatch(/missing-video-model/)
+    expect(canvasApi.pruneMediaModelParams).not.toHaveBeenCalled()
+  })
+
   it('passes through providerProfileId and inputFiles when provided', async () => {
     mockPruneResponse({ prunedModelParams: {} })
     await pruneModelParamsForCanvas({
@@ -66,16 +147,36 @@ describe('pruneModelParamsForCanvas', () => {
       manifestId: 'xai:grok-imagine-video',
       providerProfileId: 'profile-1',
       modelParams: { durationSeconds: 8 },
-      inputFiles: [{ type: 'image', role: 'first_frame' }],
+      inputFiles: [{ type: 'image', role: 'first_frame', fileId: 'file-1' }],
     })
     expect(canvasApi.pruneMediaModelParams).toHaveBeenCalledWith(
       expect.objectContaining({
         manifestId: 'xai:grok-imagine-video',
         providerProfileId: 'profile-1',
         capabilityId: 'video.image_to_video',
-        inputFiles: [{ type: 'image', role: 'first_frame' }],
+        inputFiles: [{ type: 'image', role: 'first_frame', fileId: 'file-1' }],
       }),
     )
+  })
+
+  it('sends only a short dataUrl summary to validation IPC', async () => {
+    mockPruneResponse({ prunedModelParams: {} })
+    const base64 = 'A'.repeat(10_000)
+
+    await pruneModelParamsForCanvas({
+      operation: 'image_to_video',
+      manifestId: 'xai:grok-imagine-video',
+      modelParams: {},
+      inputFiles: [
+        {
+          type: 'image',
+          dataUrl: `data:image/png;base64,${base64}`,
+        },
+      ],
+    })
+
+    const request = vi.mocked(canvasApi.pruneMediaModelParams).mock.calls[0]?.[0]
+    expect(request?.inputFiles?.[0]?.dataUrl).toBe(`data:image/png;base64,${'A'.repeat(32)}`)
   })
 
   it('propagates warnings and validationIssues from main process', async () => {

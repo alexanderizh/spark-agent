@@ -53,6 +53,10 @@ import {
   pickTextNodeSize,
 } from './canvasNodeSize'
 import { pruneModelParamsForCanvas } from './canvasMediaContract'
+import {
+  validateCanvasMediaTaskSubmission,
+  validateCanvasTextTaskSubmission,
+} from './canvasTaskSubmissionValidation'
 import { isShotScriptText } from './canvasShotTableParse'
 import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
 import { placeAutoNodeToRight } from './canvasAutoPlacement'
@@ -97,6 +101,7 @@ import {
 
 const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
+const CANVAS_TASK_VALIDATION_TOKEN = Symbol('canvas-task-validation')
 const PROVIDER_NOT_CONFIGURED_MESSAGE = '请先在『模型 / Agent 配置』中添加可用模型'
 
 const MANUSCRIPT_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
@@ -4645,23 +4650,6 @@ export const canvasApi = {
           inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id)),
       ),
     )
-    if (params.inputNodeIds) {
-      db.edges = db.edges.filter(
-        (edge) =>
-          !(
-            edge.projectId === projectId &&
-            edge.targetNodeId === nodeId &&
-            edge.type === 'used_as_input'
-          ),
-      )
-      const previousTask = node.taskId
-        ? db.tasks.find((item) => item.id === node.taskId && item.projectId === projectId)
-        : null
-      if (previousTask && previousTask.status === 'pending') {
-        db.tasks = db.tasks.filter((item) => item.id !== previousTask.id)
-      }
-      writeDb(db)
-    }
     // output 位置：节点右侧
     const oldOutputs = db.nodes.filter((n) =>
       db.edges.some(
@@ -4677,7 +4665,9 @@ export const canvasApi = {
           ?.reasoningEffort
       : undefined
     const reasoningEffort = params.reasoningEffort ?? existingReasoningEffort ?? undefined
-    const request = {
+    let request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
+      inputFiles?: CanvasMediaTaskInputFile[]
+    } = {
       operation: (node.data.operation ?? node.type) as CanvasOperationType,
       prompt: params.prompt,
       ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
@@ -4699,14 +4689,38 @@ export const canvasApi = {
       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
       ...pickCanvasPromptTaskFields(params),
     }
+    if (params.inputNodeIds) {
+      if (isTextModelOperation(request.operation)) {
+        request = validateCanvasTextTaskSubmission(request)
+      } else {
+        request = await validateCanvasMediaTaskSubmission(request)
+      }
+      db.edges = db.edges.filter(
+        (edge) =>
+          !(
+            edge.projectId === projectId &&
+            edge.targetNodeId === nodeId &&
+            edge.type === 'used_as_input'
+          ),
+      )
+      const previousTask = node.taskId
+        ? db.tasks.find((item) => item.id === node.taskId && item.projectId === projectId)
+        : null
+      if (previousTask && previousTask.status === 'pending') {
+        db.tasks = db.tasks.filter((item) => item.id !== previousTask.id)
+      }
+      writeDb(db)
+    }
     return isTextModelOperation(request.operation)
       ? this.createTextTask(projectId, request, {
           bindToNodeId: nodeId,
           ...(params.userPrompt !== undefined ? { userPrompt: params.userPrompt } : {}),
+          ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
         })
       : this.createMediaTask(projectId, request, {
           bindToNodeId: nodeId,
           ...(params.userPrompt !== undefined ? { userPrompt: params.userPrompt } : {}),
+          ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
         })
   },
   async cancelTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
@@ -4787,18 +4801,23 @@ export const canvasApi = {
    */
   async createMediaTask(
     projectId: string,
-    request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
+    requestInput: Omit<CreateCanvasTaskRequest, 'boardId'> & {
       inputFiles?: CanvasMediaTaskInputFile[]
     },
     options?: {
       bindToNodeId?: string
       userPrompt?: string
+      validationToken?: typeof CANVAS_TASK_VALIDATION_TOKEN
     },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
     const board = db.boards.find((item) => item.projectId === projectId)
     const project = db.projects.find((item) => item.id === projectId)
     if (!board || !project) throw new Error('Canvas board not found')
+    const request =
+      options?.validationToken === CANVAS_TASK_VALIDATION_TOKEN
+        ? requestInput
+        : await validateCanvasMediaTaskSubmission(requestInput)
     if (!project.rootPath) {
       project.rootPath = await ensureCanvasProjectDirectory({
         projectId,
@@ -5002,18 +5021,23 @@ export const canvasApi = {
    */
   async createTextTask(
     projectId: string,
-    request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
+    requestInput: Omit<CreateCanvasTaskRequest, 'boardId'> & {
       inputFiles?: CanvasMediaTaskInputFile[]
     },
     options?: {
       bindToNodeId?: string
       userPrompt?: string
+      validationToken?: typeof CANVAS_TASK_VALIDATION_TOKEN
     },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
     const board = db.boards.find((item) => item.projectId === projectId)
     const project = db.projects.find((item) => item.id === projectId)
     if (!board || !project) throw new Error('Canvas board not found')
+    const request =
+      options?.validationToken === CANVAS_TASK_VALIDATION_TOKEN
+        ? requestInput
+        : validateCanvasTextTaskSubmission(requestInput)
     const at = now()
     const taskId = uid('canvas_task')
     const taskNodeSize = pickOperationNodeInitialSize(

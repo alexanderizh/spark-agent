@@ -14,13 +14,59 @@ function seedCanvasDb(db: CanvasDb) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
 }
 
+function mockMediaInvoke(taskResponse: Record<string, unknown>) {
+  return vi.fn().mockImplementation((channel: string, request?: Record<string, unknown>) => {
+    if (channel === 'canvas:project:ensure-directory') {
+      return Promise.resolve({ rootPath: '/tmp/project-1' })
+    }
+    if (channel === 'canvas:media-models:list') {
+      const capability =
+        typeof request?.capability === 'string' ? request.capability : 'image.generate'
+      return Promise.resolve({
+        models: [
+          {
+            manifestId: 'custom:auto-media-model',
+            providerProfileId: 'provider-media',
+            providerKind: 'custom',
+            modelId: 'auto-media-model',
+            effectiveModelId: 'auto-media-model',
+            displayName: 'Auto Media Model',
+            domains: ['image', 'video', 'audio'],
+            invocationMode: 'sync',
+            capabilities: [
+              {
+                id: capability,
+                label: capability,
+                input: { required: [] },
+                output: { types: ['image'] },
+                paramSchema: { type: 'object', properties: {} },
+              },
+            ],
+            sourceUrls: [],
+            enabled: true,
+          },
+        ],
+      })
+    }
+    if (channel === 'canvas:media:prune-model-params') {
+      return Promise.resolve({
+        prunedModelParams: request?.modelParams ?? {},
+        droppedParams: [],
+        warnings: [],
+        validationIssues: [],
+      })
+    }
+    return Promise.resolve(taskResponse)
+  })
+}
+
 describe('canvas operation inheritance', () => {
   beforeEach(() => {
     window.localStorage.clear()
     vi.stubGlobal('window', window)
     Object.assign(window, {
       spark: {
-        invoke: vi.fn().mockResolvedValue({ rootPath: '/tmp/project-1' }),
+        invoke: mockMediaInvoke({ rootPath: '/tmp/project-1' }),
       },
     })
   })
@@ -353,7 +399,7 @@ describe('canvas operation inheritance', () => {
     }
     Object.assign(window, {
       spark: {
-        invoke: vi.fn().mockResolvedValue({ status: 'running', assets: [] }),
+        invoke: mockMediaInvoke({ status: 'running', assets: [] }),
       },
     })
     await canvasApi.createMediaTask('project-1', {
@@ -612,7 +658,7 @@ describe('canvas operation inheritance', () => {
       ],
     })
     Object.assign(window, {
-      spark: { invoke: vi.fn().mockResolvedValue({ status: 'running', assets: [] }) },
+      spark: { invoke: mockMediaInvoke({ status: 'running', assets: [] }) },
     })
 
     await canvasApi.retryOperationNode('project-1', 'node-op')
@@ -751,7 +797,7 @@ describe('canvas operation inheritance', () => {
   })
 
   it('includes connected text asset content when submitting media tasks', async () => {
-    const invoke = vi.fn().mockResolvedValue({
+    const invoke = mockMediaInvoke({
       providerProfileId: 'provider-1',
       provider: 'xai',
       model: 'grok-imagine-video',
@@ -1798,7 +1844,7 @@ describe('canvas operation inheritance', () => {
         },
       ],
     })
-    const invoke = vi.fn().mockResolvedValue({
+    const invoke = mockMediaInvoke({
       status: 'running',
       mode: 'async',
       runtimeTaskId: 'runtime-new-2',
@@ -1830,6 +1876,141 @@ describe('canvas operation inheritance', () => {
     expect(secondTask?.status).toBe('running')
     expect(secondTask?.prompt).toContain('雨夜街角，另一种构图')
     expect(secondTask?.prompt).toContain('画布节点内容')
+    expect(
+      invoke.mock.calls.filter(([channel]) => channel === 'canvas:media-models:list'),
+    ).toHaveLength(1)
+  })
+
+  it('does not mutate input edges or pending tasks when submission validation fails', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          settings: {},
+          nodeCount: 2,
+          assetCount: 0,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [
+        {
+          id: 'node-source',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text',
+          title: 'Source',
+          parentNodeId: null,
+          x: 0,
+          y: 0,
+          width: 240,
+          height: 180,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { text: 'source' },
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'node-op',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_to_image',
+          title: 'Generate',
+          taskId: 'task-pending',
+          parentNodeId: null,
+          x: 300,
+          y: 0,
+          width: 460,
+          height: 420,
+          rotation: 0,
+          zIndex: 2,
+          locked: false,
+          hidden: false,
+          data: { operation: 'text_to_image', status: 'pending' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-old',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          sourceNodeId: 'node-source',
+          targetNodeId: 'node-op',
+          type: 'used_as_input',
+          taskId: 'task-pending',
+          metadata: {},
+          createdAt: at,
+        },
+      ],
+      tasks: [
+        {
+          id: 'task-pending',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'pending',
+          progress: 0,
+          title: 'Generate',
+          prompt: 'old prompt',
+          inputNodeIds: ['node-source'],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+    Object.assign(window, {
+      spark: {
+        invoke: vi.fn().mockImplementation((channel: string) => {
+          if (channel === 'canvas:media-models:list') {
+            return Promise.resolve({ models: [] })
+          }
+          return Promise.resolve({})
+        }),
+      },
+    })
+
+    await expect(
+      canvasApi.runOperationNode('project-1', 'node-op', {
+        prompt: 'new prompt',
+        inputNodeIds: [],
+      }),
+    ).rejects.toThrow('未找到已启用')
+
+    const snapshot = await canvasApi.openSnapshot('project-1')
+    expect(snapshot.edges.map((edge) => edge.id)).toContain('edge-old')
+    expect(snapshot.tasks.map((task) => task.id)).toContain('task-pending')
+    expect(snapshot.nodes.find((node) => node.id === 'node-op')?.taskId).toBe('task-pending')
   })
 
   it('writes media task outputs through task edges when the node task id was overwritten', async () => {

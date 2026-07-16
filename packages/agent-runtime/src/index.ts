@@ -64,6 +64,15 @@ export {
   type CompilerInputFile,
 } from './services/media/media-request-compiler.js'
 export {
+  validateMediaRequest,
+  type ValidateMediaRequestInput,
+} from './services/media/media-request-validator.js'
+export type {
+  MediaRequestValidationResult,
+  MediaValidationContext,
+  MediaProviderValidator,
+} from './services/media/validators/media-validator.types.js'
+export {
   normalizeMediaError,
   type NormalizeMediaErrorInput,
   type NormalizedMediaError,

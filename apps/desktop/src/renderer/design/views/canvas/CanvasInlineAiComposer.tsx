@@ -8,6 +8,7 @@ import {
   type SetStateAction,
 } from 'react'
 import { Button, Checkbox as LobeCheckbox, Input, Tag, Tooltip } from '@lobehub/ui'
+import { message } from 'antd'
 import { Icons } from '../../Icons'
 import { Select as LobeSelect } from '@lobehub/ui'
 import {
@@ -32,6 +33,7 @@ import {
 } from './canvasAgentPromptPresets'
 import { canvasApi } from './canvas.api'
 import { pruneModelParamsForCanvas } from './canvasMediaContract'
+import { CanvasTaskValidationError } from './canvasTaskSubmissionValidation'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
 import {
   mergeCanvasOperationPresetNegativePrompt,
@@ -102,7 +104,7 @@ export function CanvasInlineAiComposer({
     droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
     /** Contract V2 裁剪产物：非阻断性提示（如 missing_param_policy、compat_passthrough）。 */
     modelParamWarnings?: Array<{ code: string; message: string }>
-  }) => void
+  }) => Promise<void>
 }) {
   const [operation, setOperation] = useState<CanvasOperationType>('text_to_image')
   const [prompt, setPrompt] = useState('')
@@ -740,6 +742,7 @@ export function CanvasInlineAiComposer({
         ...(resolvedPresetSkillIds.length > 0 ? { skillIds: resolvedPresetSkillIds } : {}),
         ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
       })
+      await onCreateTask(payload)
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
@@ -747,9 +750,17 @@ export function CanvasInlineAiComposer({
       clearComposerDraft(nodeCacheKey)
       // 阻止本次关窗 flush 把已清除的草稿写回
       suppressFlushRef.current = true
-      onCreateTask(payload)
       setPrompt('')
       setNegativePrompt('')
+    } catch (error) {
+      console.error('[CanvasInlineAiComposer] Failed to create task:', error)
+      if (error instanceof CanvasTaskValidationError) {
+        const paramName = validationParamName(error)
+        if (paramName) focusParameterControl(paramName)
+        message.error(error.message)
+      } else {
+        message.error(error instanceof Error ? error.message : '提交任务失败，请稍后重试')
+      }
     } finally {
       submittingRef.current = false
       setSubmitting(false)
@@ -1197,6 +1208,13 @@ export function CanvasInlineAiComposer({
       />
     </section>
   )
+}
+
+function validationParamName(error: CanvasTaskValidationError): string | undefined {
+  const path = error.issues[0]?.path ?? []
+  const modelParamsIndex = path.indexOf('modelParams')
+  const value = modelParamsIndex >= 0 ? path[modelParamsIndex + 1] : undefined
+  return typeof value === 'string' ? value : undefined
 }
 
 function parameterSummaryIcon(control: CanvasParameterControlKind) {

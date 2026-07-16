@@ -26,6 +26,7 @@ import {
   resolveCanvasTextExecutionAdapter,
   resolveCanvasTextModel,
 } from './canvasTextTaskRuntime.js'
+import { validateCanvasMediaTaskParams } from './canvasMediaTaskValidation.js'
 import { PendingUserQuestionStore } from './user-question-store.js'
 import { buildDetachedQuestionContinuationMessage } from './user-question-recovery.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
@@ -3326,10 +3327,13 @@ export function registerAllIpcHandlers(): void {
         fallbackReason: `capability ${req.capabilityId} 不存在于 manifest ${req.manifestId}`,
       }
     }
+    if (req.validateSubmission === true) {
+      return validateCanvasMediaTaskParams({ request: req, manifest, capability })
+    }
     const result = compileMediaRequest({
       manifest,
       capability,
-      modelId: manifest.modelId,
+      modelId: req.modelId ?? manifest.modelId,
       input: {
         ...(req.modelParams !== undefined ? { modelParams: req.modelParams } : {}),
         ...(req.inputFiles !== undefined ? { inputFiles: req.inputFiles } : {}),
