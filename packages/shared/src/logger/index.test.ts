@@ -60,6 +60,23 @@ describe('shared logger file logging', () => {
     expect(lines[0]).toContain('hello world')
   })
 
+  it('redacts secrets embedded in the primary log message', () => {
+    initFileLogger(dir)
+    const log = createLogger('security')
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    log.warn(
+      'request failed Authorization: Bearer abcdefghijklmnopqrstuvwxyz token=plain-secret sk-abcdefghijklmnopqrstuvwxyz',
+    )
+
+    const output = readLogTail(10).join('\n')
+    expect(output).toContain('Authorization: [redacted]')
+    expect(output).toContain('token=[redacted]')
+    expect(output).toContain('sk-[redacted]')
+    expect(output).not.toContain('abcdefghijklmnopqrstuvwxyz')
+    expect(output).not.toContain('plain-secret')
+  })
+
   it('respects log level: debug messages filtered when level is warn', () => {
     initFileLogger(dir)
     const log = createLogger('ns')
@@ -86,6 +103,22 @@ describe('shared logger file logging', () => {
 
     expect(readLogTail(100, ['error']).length).toBe(1)
     expect(readLogTail(100, ['error'])[0]).toContain('an error line')
+  })
+
+  it('readLogTail supports namespace prefix filter', () => {
+    initFileLogger(dir)
+    const canvasTaskLog = createLogger('canvas:task')
+    const canvasRuntimeLog = createLogger('canvas:media-task-runtime')
+    const unrelatedLog = createLogger('session')
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+
+    canvasTaskLog.info('event=submitted clientTaskId=canvas_task_1')
+    canvasRuntimeLog.info('media task started')
+    unrelatedLog.info('chat turn started')
+
+    const lines = readLogTail(100, undefined, { namespacePrefixes: ['canvas:'] })
+    expect(lines).toHaveLength(2)
+    expect(lines.every((line) => line.includes('[canvas:'))).toBe(true)
   })
 
   it('clearLogFile empties the current log file', () => {

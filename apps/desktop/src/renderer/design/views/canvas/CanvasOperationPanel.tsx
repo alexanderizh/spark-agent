@@ -158,7 +158,6 @@ export type OperationRunParams = {
 }
 
 export type OperationDraftParams = {
-  title: string | null
   message: string
   prompt: string
   promptDocument?: CanvasPromptDocument
@@ -435,7 +434,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     [controlledFullscreen, fullscreen, onFullscreenChange],
   )
   const canEditMediaInputs =
-    capability?.inputTypes.some((type) => type === 'image' || type === 'video') ?? false
+    capability?.inputTypes.some(
+      (type) => type === 'image' || type === 'video' || type === 'audio',
+    ) ?? false
 
   // 上游输入节点（used_as_input edge 的 source）
   const sourceInputNodes = useMemo(() => {
@@ -461,15 +462,22 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       snapshot.nodes
         .filter((item) => {
           if (item.hidden || item.id === node.id) return false
-          if (item.type !== 'image' && item.type !== 'video') return false
+          if (item.type !== 'image' && item.type !== 'video' && item.type !== 'audio') return false
           if (item.type === 'video' && !capability?.inputTypes.includes('video')) return false
           if (item.type === 'image' && !capability?.inputTypes.includes('image')) return false
+          if (item.type === 'audio' && !capability?.inputTypes.includes('audio')) return false
           return true
         })
         .sort((left, right) => left.x - right.x || left.y - right.y || left.zIndex - right.zIndex)
         .map((item, index) => ({
           value: item.id,
-          label: item.title ?? (item.type === 'video' ? `视频 ${index + 1}` : `图片 ${index + 1}`),
+          label:
+            item.title ??
+            (item.type === 'video'
+              ? `视频 ${index + 1}`
+              : item.type === 'audio'
+                ? `音频 ${index + 1}`
+                : `图片 ${index + 1}`),
           type: item.type,
         })),
     [capability, node.id, snapshot.nodes],
@@ -608,7 +616,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [submitting, setSubmitting] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
   const [cancelling, setCancelling] = useState(false)
-  const [titleDraft, setTitleDraft] = useState(node.title ?? '')
   const [messageDraft, setMessageDraft] = useState(node.data.message ?? '')
   const [showAllTextInputs, setShowAllTextInputs] = useState(false)
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false)
@@ -645,7 +652,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     setPrompt(initialPrompt)
     setPromptDocument(initialPromptDocument)
     setNegativePrompt(inheritedNegativePrompt)
-    setTitleDraft(node.title ?? '')
     setMessageDraft(node.data.message ?? '')
     setSelectedAgentId(task?.agentId ?? node.data.agentId ?? operationPreset.agentId ?? '')
     setSelectedTextProviderId(
@@ -1199,7 +1205,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       const runtimeDraft = buildRuntimeDraft()
       const shotConfig = resolveShotScriptConfig()
       await onSaveDraft({
-        title: titleDraft.trim().length > 0 ? titleDraft.trim() : null,
         message: messageDraft.trim(),
         prompt: prompt.trim(),
         promptDocument,
@@ -1229,7 +1234,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     hiddenFunctionalSystemPrompt,
     resolveShotScriptConfig,
     savingDraft,
-    titleDraft,
   ])
 
   const handleCancelTask = useCallback(async () => {
@@ -1249,19 +1253,22 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     if (
       !hasOperationPanelPromptContent(promptDocument) &&
       !capability?.inputTypes.includes('image') &&
-      !capability?.inputTypes.includes('video')
+      !capability?.inputTypes.includes('video') &&
+      !capability?.inputTypes.includes('audio')
     ) {
       message.warning('请输入提示词')
       return
     }
     if (
       canEditMediaInputs &&
-      capability?.inputTypes.some((type) => type === 'image' || type === 'video') &&
+      capability?.inputTypes.some(
+        (type) => type === 'image' || type === 'video' || type === 'audio',
+      ) &&
       !operationAcceptsTextInput(capability?.inputTypes) &&
       selectedInputNodeIds.length === 0 &&
       !hasExplicitFrameInput
     ) {
-      message.warning('请至少选择一个输入图片或视频节点')
+      message.warning('请至少选择一个输入图片、视频或音频节点')
       return
     }
     if (supportsVideoFrameRoles && !hasExplicitFrameInput) {
@@ -1402,7 +1409,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       .filter((item): item is CanvasNode => item != null)
       .filter((item) => !item.hidden && selectedInputIdSet.has(item.id))
   }, [selectedInputIdSet, snapshot.nodes])
-  const mediaInputs = inputNodes.filter((n) => n.type === 'image' || n.type === 'video')
+  const mediaInputs = inputNodes.filter(
+    (n) => n.type === 'image' || n.type === 'video' || n.type === 'audio',
+  )
   const referenceMediaInputs = useMemo(
     () =>
       supportsVideoFrameRoles
@@ -1465,6 +1474,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     const selectedSet = new Set(selectedInputNodeIds)
     return mediaInputs.filter((item) => item.type === 'image' && selectedSet.has(item.id)).length
   }, [mediaInputs, selectedFrameCount, selectedInputNodeIds, supportsVideoFrameRoles])
+  const selectedVideoCount = useMemo(
+    () => mediaInputs.filter((node) => node.type === 'video').length,
+    [mediaInputs],
+  )
+  const selectedAudioCount = useMemo(
+    () => mediaInputs.filter((node) => node.type === 'audio').length,
+    [mediaInputs],
+  )
   const showMediaInputHint =
     selectedCapability != null && (supportsImageRoles || canEditMediaInputs)
   // 当前命中的 capability 标识：让用户一眼看出当前节点命中 manifest 的哪个能力
@@ -1510,7 +1527,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       return {
         id: option.value,
         label: option.label,
-        type: option.type as 'image' | 'video',
+        type: option.type as 'image' | 'video' | 'audio',
         asset,
         previewUrl,
       }
@@ -1940,16 +1957,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             ) : null}
           </div>
           <div className="canvas-operation-composer-inputs">
-            <label className="canvas-operation-composer-mini-field">
-              <span>标题</span>
-              <Input
-                size="middle"
-                value={titleDraft}
-                placeholder={`${operationText}节点`}
-                onChange={(event) => setTitleDraft(event.target.value)}
-                disabled={running}
-              />
-            </label>
             <label className="canvas-operation-composer-mini-field is-message">
               <span>备注</span>
               <Input
@@ -1978,6 +1985,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 mode="composer"
                 maxImages={videoFrameMaxImages}
                 selectedImageCount={selectedImageCount}
+                maxVideos={selectedCapability?.input.maxVideos}
+                selectedVideoCount={selectedVideoCount}
+                maxAudios={selectedCapability?.input.maxAudios}
+                selectedAudioCount={selectedAudioCount}
                 rolePolicy={selectedCapabilityRolePolicy}
                 capabilityLabel={selectedCapability?.label}
                 capabilityId={selectedCapability?.id}
@@ -2267,18 +2278,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
 
       <div className="canvas-operation-panel-body">
         <div className="canvas-operation-panel-section canvas-operation-panel-section-node">
-          <div className="canvas-operation-panel-section-label">节点信息</div>
+          <div className="canvas-operation-panel-section-label">节点备注</div>
           <div className="canvas-operation-panel-detail-grid">
-            <label className="canvas-operation-panel-detail-field">
-              <span>标题</span>
-              <Input
-                size="middle"
-                value={titleDraft}
-                placeholder={`${operationText}节点`}
-                onChange={(event) => setTitleDraft(event.target.value)}
-                disabled={running}
-              />
-            </label>
             <label className="canvas-operation-panel-detail-field">
               <span>备注 / 展示文本</span>
               <Input
@@ -2318,6 +2319,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   mode="panel"
                   maxImages={videoFrameMaxImages}
                   selectedImageCount={selectedImageCount}
+                  maxVideos={selectedCapability?.input.maxVideos}
+                  selectedVideoCount={selectedVideoCount}
+                  maxAudios={selectedCapability?.input.maxAudios}
+                  selectedAudioCount={selectedAudioCount}
                   rolePolicy={selectedCapabilityRolePolicy}
                   capabilityLabel={selectedCapability?.label}
                   capabilityId={selectedCapability?.id}
@@ -2745,6 +2750,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
 function isSupportedMediaInputNode(node: CanvasNode, inputTypes: readonly string[]): boolean {
   if (node.type === 'image') return inputTypes.includes('image')
   if (node.type === 'video') return inputTypes.includes('video')
+  if (node.type === 'audio') return inputTypes.includes('audio')
   return false
 }
 

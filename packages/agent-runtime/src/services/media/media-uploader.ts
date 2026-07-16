@@ -4,6 +4,7 @@ export interface MediaUploadInput {
   buffer: Buffer
   filename: string
   mimeType?: string
+  targetProvider?: MediaProviderKind
   purpose?: string
   expiresAfter?: number
 }

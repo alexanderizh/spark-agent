@@ -4,7 +4,10 @@ import type {
   MediaModelCapabilityManifest,
   MediaModelManifest,
 } from '@spark/protocol'
-import { validateCanvasMediaTaskParams } from './canvasMediaTaskValidation.js'
+import {
+  mapCanvasMediaTaskInputFiles,
+  validateCanvasMediaTaskParams,
+} from './canvasMediaTaskValidation.js'
 
 const capability: MediaModelCapabilityManifest = {
   id: 'video.image_to_video',
@@ -39,6 +42,34 @@ const manifest: MediaModelManifest = {
 }
 
 describe('validateCanvasMediaTaskParams', () => {
+  it('preserves media role and metadata for runtime validation', () => {
+    expect(
+      mapCanvasMediaTaskInputFiles([
+        {
+          type: 'video',
+          role: 'reference',
+          url: 'https://example.com/reference.mp4',
+          mimeType: 'video/mp4',
+          sizeBytes: 1024,
+          width: 1920,
+          height: 1080,
+          durationMs: 5000,
+        },
+      ]),
+    ).toEqual([
+      {
+        type: 'video',
+        role: 'reference',
+        url: 'https://example.com/reference.mp4',
+        mimeType: 'video/mp4',
+        sizeBytes: 1024,
+        width: 1920,
+        height: 1080,
+        durationMs: 5000,
+      },
+    ])
+  })
+
   it('returns all blocking issues before task submission', () => {
     const request: CanvasMediaPruneModelParamsRequest = {
       manifestId: manifest.id,

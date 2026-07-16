@@ -10,8 +10,11 @@
  */
 
 import type { MediaErrorContract } from '@spark/protocol'
+import { createLogger } from '@spark/shared'
 import { MediaProviderError } from './media-adapter.types.js'
 import { normalizeMediaError } from './media-error-normalizer.js'
+
+const pollLog = createLogger('media:task-poll')
 
 // ─── 响应解析（re-export 自共享 .mjs 单一事实源） ─────────────────────────
 export {
@@ -57,13 +60,15 @@ export interface FetchJsonOptions {
 }
 
 /** JSON fetch + 统一错误码包装 */
-export async function fetchJson<T = unknown>(
-  url: string,
-  opts: FetchJsonOptions = {},
-): Promise<T> {
+export async function fetchJson<T = unknown>(url: string, opts: FetchJsonOptions = {}): Promise<T> {
   const fetchImpl = opts.fetchImpl ?? fetch
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 30_000)
+  const timeoutMs = opts.timeoutMs ?? 30_000
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
   try {
     const init: RequestInit = { method: opts.method ?? 'GET', signal: controller.signal }
     if (opts.headers !== undefined) init.headers = opts.headers
@@ -91,13 +96,27 @@ export async function fetchJson<T = unknown>(
     return body as T
   } catch (err) {
     if (err instanceof MediaProviderError) throw err
-    throw new MediaProviderError('provider_http_error', err instanceof Error ? err.message : String(err))
+    if (timedOut || (controller.signal.aborted && isAbortError(err))) {
+      throw new MediaProviderError(
+        'provider_http_error',
+        `${opts.method ?? 'GET'} ${sanitizeRequestUrl(url)} timed out after ${timeoutMs}ms`,
+      )
+    }
+    throw new MediaProviderError(
+      'provider_http_error',
+      err instanceof Error ? err.message : String(err),
+    )
   } finally {
     clearTimeout(timer)
   }
 }
 
-function buildError(status: number, rawText: string, body: unknown, opts: FetchJsonOptions): MediaProviderError {
+function buildError(
+  status: number,
+  rawText: string,
+  body: unknown,
+  opts: FetchJsonOptions,
+): MediaProviderError {
   // 优先用 provider 专属提取器解析错误消息文本；未命中则退回默认兜底。
   const extracted = opts.errorExtractor?.(status, body, rawText)
   const message = extracted ?? `HTTP ${status}: ${String(rawText).slice(0, 800)}`
@@ -123,11 +142,27 @@ export interface PollOptions {
   errorExtractor?: ErrorExtractor | undefined
   /** 与 fetchJson 同语义；轮询中遇到的 4xx/5xx 也会按 contract 归一 */
   errorContract?: MediaErrorContract | undefined
+  /** 安全的结构化上下文，例如 provider/capability/requestId；不得包含密钥或签名 URL。 */
+  logContext?: string | undefined
+  /** 返回不含密钥和 URL 的响应摘要，供逐次轮询诊断。 */
+  describeResponse?: ((data: unknown) => unknown) | undefined
 }
 
 /** 轮询直到 inspect 返回 done/failed 或超时 */
-export async function pollTask(url: string, headers: Record<string, string>, opts: PollOptions): Promise<unknown> {
+export async function pollTask(
+  url: string,
+  headers: Record<string, string>,
+  opts: PollOptions,
+): Promise<unknown> {
+  const startedAt = Date.now()
   const deadline = Date.now() + opts.timeoutMs
+  const safeUrl = sanitizePollingUrl(url)
+  const logContext = opts.logContext ? ` ${opts.logContext}` : ''
+  let attempts = 0
+  let lastResponseSummary = ''
+  pollLog.info(
+    `event=started url=${safeUrl} intervalMs=${opts.intervalMs} timeoutMs=${opts.timeoutMs}${logContext}`,
+  )
   // 允许调用方传小间隔（测试场景）；生产环境由 mediaDefaults.polling.intervalMs 控制（默认 5s）
   let interval = Math.max(1, opts.intervalMs)
   const fetchOpts: FetchJsonOptions = { headers, timeoutMs: 30_000 }
@@ -135,15 +170,70 @@ export async function pollTask(url: string, headers: Record<string, string>, opt
   if (opts.errorExtractor !== undefined) fetchOpts.errorExtractor = opts.errorExtractor
   if (opts.errorContract !== undefined) fetchOpts.errorContract = opts.errorContract
   while (Date.now() < deadline) {
-    const data = await fetchJson(url, fetchOpts)
-    const state = opts.inspect(data)
-    if (state === 'done') return data
-    if (state === 'failed') {
-      throw new MediaProviderError('task_failed', `Task failed: ${JSON.stringify(data).slice(0, 800)}`)
+    attempts += 1
+    let data: unknown
+    try {
+      data = await fetchJson(url, fetchOpts)
+    } catch (error) {
+      pollLog.warn(
+        `event=request-failed url=${safeUrl} attempts=${attempts} elapsedMs=${Date.now() - startedAt} message=${JSON.stringify(error instanceof Error ? error.message : String(error))}`,
+      )
+      throw error
     }
+    const state = opts.inspect(data)
+    const responseSummary = describePollResponse(opts, data)
+    lastResponseSummary = responseSummary
+    if (state === 'done') {
+      pollLog.info(
+        `event=finished state=done attempts=${attempts} elapsedMs=${Date.now() - startedAt} url=${safeUrl}${logContext}${responseSummary}`,
+      )
+      return data
+    }
+    if (state === 'failed') {
+      pollLog.warn(
+        `event=finished state=failed attempts=${attempts} elapsedMs=${Date.now() - startedAt} url=${safeUrl}${logContext}${responseSummary}`,
+      )
+      throw new MediaProviderError(
+        'task_failed',
+        `Task failed: ${JSON.stringify(data).slice(0, 800)}`,
+      )
+    }
+    pollLog.debug(
+      `event=pending attempts=${attempts} elapsedMs=${Date.now() - startedAt} nextIntervalMs=${interval} url=${safeUrl}${logContext}${responseSummary}`,
+    )
     await new Promise((resolve) => setTimeout(resolve, interval))
     // 简单退避，上限 15s，避免长时间任务的高频轮询
     interval = Math.min(Math.max(interval * 1.3, interval), 15_000)
   }
+  pollLog.warn(
+    `event=finished state=timeout attempts=${attempts} elapsedMs=${Date.now() - startedAt} url=${safeUrl}${logContext}${lastResponseSummary}`,
+  )
   throw new MediaProviderError('task_timeout', `Task timed out after ${opts.timeoutMs}ms`)
+}
+
+function sanitizePollingUrl(url: string): string {
+  return sanitizeRequestUrl(url)
+}
+
+function sanitizeRequestUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return `${parsed.origin}${parsed.pathname}`
+  } catch {
+    return url.split(/[?#]/, 1)[0] ?? '(invalid-url)'
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
+function describePollResponse(opts: PollOptions, data: unknown): string {
+  if (!opts.describeResponse) return ''
+  try {
+    const summary = JSON.stringify(opts.describeResponse(data))
+    return summary ? ` response=${summary.slice(0, 800)}` : ''
+  } catch {
+    return ' response="[summary-failed]"'
+  }
 }

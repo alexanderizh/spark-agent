@@ -2,11 +2,28 @@ import {
   isMediaCapabilityId,
   isMediaProviderKind,
   type CanvasMediaPruneModelParamsRequest,
+  type CanvasMediaTaskInputFile,
   type CanvasOperationType,
   type MediaModelCapabilityManifest,
   type MediaModelManifest,
 } from '@spark/protocol'
 import { validateMediaRequest } from '@spark/agent-runtime'
+
+export function mapCanvasMediaTaskInputFiles(inputFiles: CanvasMediaTaskInputFile[]) {
+  return inputFiles.map((file) => ({
+    type: file.type,
+    ...(file.role != null ? { role: file.role } : {}),
+    ...(file.fileId != null ? { fileId: file.fileId } : {}),
+    ...(file.path != null ? { path: file.path } : {}),
+    ...(file.url != null ? { url: file.url } : {}),
+    ...(file.dataUrl != null ? { dataUrl: file.dataUrl } : {}),
+    ...(file.mimeType != null ? { mimeType: file.mimeType } : {}),
+    ...(file.sizeBytes != null ? { sizeBytes: file.sizeBytes } : {}),
+    ...(file.width != null ? { width: file.width } : {}),
+    ...(file.height != null ? { height: file.height } : {}),
+    ...(file.durationMs != null ? { durationMs: file.durationMs } : {}),
+  }))
+}
 
 export function validateCanvasMediaTaskParams(input: {
   request: CanvasMediaPruneModelParamsRequest
@@ -31,15 +48,7 @@ export function validateCanvasMediaTaskParams(input: {
       ...(request.prompt != null ? { prompt: request.prompt } : {}),
       ...(request.inputFiles != null
         ? {
-            inputFiles: request.inputFiles.map((file) => ({
-              type: file.type,
-              ...(file.role != null ? { role: file.role } : {}),
-              ...(file.fileId != null ? { fileId: file.fileId } : {}),
-              ...(file.path != null ? { path: file.path } : {}),
-              ...(file.url != null ? { url: file.url } : {}),
-              ...(file.dataUrl != null ? { dataUrl: file.dataUrl } : {}),
-              ...(file.mimeType != null ? { mimeType: file.mimeType } : {}),
-            })),
+            inputFiles: mapCanvasMediaTaskInputFiles(request.inputFiles),
           }
         : {}),
       modelParams: request.modelParams,

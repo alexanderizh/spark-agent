@@ -1,6 +1,9 @@
 import { MediaProviderError } from './media-adapter.types.js'
+import { createLogger } from '@spark/shared'
 
 export const XAI_MAX_FILE_BYTES = 48 * 1024 * 1024
+const XAI_FILES_REQUEST_TIMEOUT_MS = 30_000
+const log = createLogger('media:xai-files')
 
 export interface XaiFileObject {
   id: string
@@ -23,6 +26,7 @@ export class XaiFilesClient {
       apiKey: string
       apiEndpoint: string
       fetch?: typeof fetch
+      timeoutMs?: number
     },
   ) {}
 
@@ -71,30 +75,60 @@ export class XaiFilesClient {
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await (this.options.fetch ?? fetch)(
-      `${this.options.apiEndpoint.replace(/\/+$/, '')}${path}`,
-      {
-        ...init,
-        headers: { authorization: `Bearer ${this.options.apiKey}`, ...(init.headers ?? {}) },
-      },
-    )
-    const text = await response.text()
-    if (!response.ok) {
-      throw new MediaProviderError(
-        'provider_http_error',
-        `xAI Files HTTP ${response.status}: ${text.slice(0, 800)}`,
-        response.status,
-      )
-    }
-    if (!text) return null as T
+    const method = init.method ?? 'GET'
+    const safePath = path.split('?', 1)[0] ?? path
+    const timeoutMs = this.options.timeoutMs ?? XAI_FILES_REQUEST_TIMEOUT_MS
+    const controller = new AbortController()
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, timeoutMs)
+    const startedAt = Date.now()
+    log.debug(`event=request-started method=${method} path=${safePath} timeoutMs=${timeoutMs}`)
     try {
-      return JSON.parse(text) as T
-    } catch {
-      throw new MediaProviderError(
-        'provider_http_error',
-        `xAI Files returned invalid JSON: ${text.slice(0, 800)}`,
-        response.status,
+      const response = await (this.options.fetch ?? fetch)(
+        `${this.options.apiEndpoint.replace(/\/+$/, '')}${path}`,
+        {
+          ...init,
+          signal: controller.signal,
+          headers: { authorization: `Bearer ${this.options.apiKey}`, ...(init.headers ?? {}) },
+        },
       )
+      const text = await response.text()
+      log.debug(
+        `event=request-finished method=${method} path=${safePath} status=${response.status} elapsedMs=${Date.now() - startedAt}`,
+      )
+      if (!response.ok) {
+        throw new MediaProviderError(
+          'provider_http_error',
+          `xAI Files HTTP ${response.status}: ${text.slice(0, 800)}`,
+          response.status,
+        )
+      }
+      if (!text) return null as T
+      try {
+        return JSON.parse(text) as T
+      } catch {
+        throw new MediaProviderError(
+          'provider_http_error',
+          `xAI Files returned invalid JSON: ${text.slice(0, 800)}`,
+          response.status,
+        )
+      }
+    } catch (error) {
+      if (timedOut) {
+        log.warn(
+          `event=request-timeout method=${method} path=${safePath} elapsedMs=${Date.now() - startedAt}`,
+        )
+        throw new MediaProviderError(
+          'provider_http_error',
+          `xAI Files ${method} ${safePath} timed out after ${timeoutMs}ms`,
+        )
+      }
+      throw error
+    } finally {
+      clearTimeout(timer)
     }
   }
 }

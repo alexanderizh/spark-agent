@@ -68,7 +68,8 @@ export function computeMediaInputRoleMap(
   if (supportsFrameRoles) {
     for (const node of mediaInputs) {
       if (node.type !== 'image') {
-        map.set(node.id, videoRole ? { role: videoRole, usageStatus: 'used' } : { usageStatus: 'used' })
+        const role = node.type === 'audio' ? audioRole : videoRole
+        map.set(node.id, role ? { role, usageStatus: 'used' } : { usageStatus: 'used' })
         continue
       }
       if (node.id === firstFrameNodeId) {

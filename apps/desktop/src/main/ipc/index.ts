@@ -26,7 +26,16 @@ import {
   resolveCanvasTextExecutionAdapter,
   resolveCanvasTextModel,
 } from './canvasTextTaskRuntime.js'
-import { validateCanvasMediaTaskParams } from './canvasMediaTaskValidation.js'
+import {
+  mapCanvasMediaTaskInputFiles,
+  validateCanvasMediaTaskParams,
+} from './canvasMediaTaskValidation.js'
+import {
+  CANVAS_TASK_LOG_NAMESPACE_PREFIXES,
+  canvasTaskLogger,
+  createCanvasTaskLifecycleLog,
+} from './canvas-task-lifecycle-log.js'
+import { resolveTelemetryLogLevel } from './telemetry-settings.js'
 import { PendingUserQuestionStore } from './user-question-store.js'
 import { buildDetachedQuestionContinuationMessage } from './user-question-recovery.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
@@ -2189,11 +2198,7 @@ function readAgentHookConfig(sessionId: string): HookConfigInternal {
 }
 
 function applyTelemetrySettings(value: unknown): void {
-  if (value == null || typeof value !== 'object' || Array.isArray(value)) return
-  const logLevel = (value as { logLevel?: unknown }).logLevel
-  if (logLevel === 'debug' || logLevel === 'info' || logLevel === 'warn' || logLevel === 'error') {
-    setLogLevel(logLevel)
-  }
+  setLogLevel(resolveTelemetryLogLevel(value))
 }
 
 function getStartupSettings(): { supported: boolean; openAtLogin: boolean; openAsHidden: boolean } {
@@ -3389,24 +3394,34 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('canvas:task:create-media', async (req) => {
-    const taskRuntime = getMediaTaskRuntimeService()
-    const resolvedProviders = await resolveCanvasMediaProviders()
-    const providers = req.modelId
-      ? resolvedProviders.map((provider) => {
-          const shouldOverride =
-            req.providerProfileId != null
-              ? provider.id === req.providerProfileId
-              : provider.modelIds?.includes(req.modelId ?? '') === true
-          return shouldOverride ? { ...provider, defaultModel: req.modelId as string } : provider
-        })
-      : resolvedProviders
-    const outputDir =
-      req.outputDir && req.outputDir.trim().length > 0 ? req.outputDir : getDefaultCanvasMediaDir()
-    log.info(
-      `canvas:task:create-media requested, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} op=${req.operation} provider=${req.providerProfileId ?? '(auto)'} model=${req.modelId ?? '(auto)'} background=${req.waitForCompletion === false} inputFiles=${req.inputFiles?.length ?? 0}`,
-    )
+    const taskLog = createCanvasTaskLifecycleLog({
+      kind: 'media',
+      projectId: req.projectId,
+      clientTaskId: req.clientTaskId,
+      operation: req.operation,
+      providerProfileId: req.providerProfileId,
+      modelId: req.modelId,
+      background: req.waitForCompletion === false,
+      inputCount: req.inputFiles?.length ?? 0,
+    })
+    taskLog.started()
     // capability 由 router 按 operation 推导（input.capability 留空）
     try {
+      const taskRuntime = getMediaTaskRuntimeService()
+      const resolvedProviders = await resolveCanvasMediaProviders()
+      const providers = req.modelId
+        ? resolvedProviders.map((provider) => {
+            const shouldOverride =
+              req.providerProfileId != null
+                ? provider.id === req.providerProfileId
+                : provider.modelIds?.includes(req.modelId ?? '') === true
+            return shouldOverride ? { ...provider, defaultModel: req.modelId as string } : provider
+          })
+        : resolvedProviders
+      const outputDir =
+        req.outputDir && req.outputDir.trim().length > 0
+          ? req.outputDir
+          : getDefaultCanvasMediaDir()
       const runtimeRequest = buildCanvasRuntimeRequest(req)
       const input = {
         operation: req.operation,
@@ -3421,15 +3436,18 @@ export function registerAllIpcHandlers(): void {
         ...(req.negativePrompt != null ? { negativePrompt: req.negativePrompt } : {}),
         ...(req.inputFiles != null
           ? {
-              inputFiles: req.inputFiles.map((file) => ({
-                type: file.type,
-                ...(file.fileId != null ? { fileId: file.fileId } : {}),
-                ...(file.path != null ? { path: file.path } : {}),
-                ...(file.url != null ? { url: file.url } : {}),
-                ...(file.dataUrl != null ? { dataUrl: file.dataUrl } : {}),
-                ...(file.mimeType != null ? { mimeType: file.mimeType } : {}),
-                ...(file.role != null ? { role: file.role } : {}),
-              })),
+              inputFiles: mapCanvasMediaTaskInputFiles(req.inputFiles).map((file) => {
+                const safeFilePath = decodeSafeFileUrl(file.url)
+                const localPath = file.path?.trim() || safeFilePath
+                if (!localPath) return file
+                if (!isSafeFilePathAllowed(localPath)) {
+                  throw new Error('画布媒体输入文件不在允许读取的项目或应用目录内')
+                }
+                if (!safeFilePath) return { ...file, path: localPath }
+                const mapped = { ...file, path: localPath }
+                delete mapped.url
+                return mapped
+              }),
             }
           : {}),
         ...(req.modelParams != null ? { modelParams: req.modelParams } : {}),
@@ -3446,6 +3464,15 @@ export function registerAllIpcHandlers(): void {
         const task = taskRuntime.submitBackground(input, options, (record) => {
           if (record.status === 'running') return
           void canvasResponseFromMediaTaskRecord(record).then((response) => {
+            taskLog.settled({
+              status: record.status,
+              runtimeTaskId: record.id,
+              providerRequestId: record.requestId,
+              provider: record.providerKind,
+              model: record.modelId,
+              assetCount: record.assets.length,
+              error: response.error,
+            })
             pushStreamEvent('stream:canvas:media-task', {
               ...(req.projectId !== undefined ? { projectId: req.projectId } : {}),
               ...(req.clientTaskId !== undefined ? { clientTaskId: req.clientTaskId } : {}),
@@ -3458,14 +3485,20 @@ export function registerAllIpcHandlers(): void {
         return canvasResponseFromMediaTaskRecord(task)
       }
       const task = await taskRuntime.submit(input, options)
-      log.info(
-        `canvas:task:create-media finished (sync), runtimeTaskId=${task.id} status=${task.status} assets=${task.assets.length}`,
-      )
+      taskLog.settled({
+        status: task.status,
+        runtimeTaskId: task.id,
+        providerRequestId: task.requestId,
+        provider: task.providerKind,
+        model: task.modelId,
+        assetCount: task.assets.length,
+        error: task.error,
+      })
       return canvasResponseFromMediaTaskRecord(task)
     } catch (err) {
       const code = (err as MediaProviderError)?.code ?? 'provider_http_error'
       const message = err instanceof Error ? err.message : String(err)
-      log.warn(`canvas:task:create-media failed: ${code} ${message}`)
+      taskLog.failed({ code, message })
       const response: CanvasMediaTaskCreateResponse = {
         status: 'failed',
         providerProfileId: '',
@@ -3480,6 +3513,17 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('canvas:task:generate-text', async (req) => {
+    const taskLog = createCanvasTaskLifecycleLog({
+      kind: 'text',
+      projectId: req.projectId,
+      clientTaskId: req.clientTaskId,
+      operation: req.operation,
+      providerProfileId: req.providerProfileId,
+      modelId: req.modelId,
+      background: req.waitForCompletion === false,
+      inputCount: req.inputFiles?.length ?? 0,
+    })
+    taskLog.started()
     const fail = (
       code: string,
       message: string,
@@ -3494,9 +3538,6 @@ export function registerAllIpcHandlers(): void {
       ...(extra.requestCall !== undefined ? { requestCall: extra.requestCall } : {}),
       error: { code, message },
     })
-    log.info(
-      `canvas:task:generate-text requested, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} agentId=${req.agentId ?? '(n/a)'} provider=${req.providerProfileId ?? '(auto)'} model=${req.modelId ?? '(auto)'} background=${req.waitForCompletion === false} images=${(req.inputFiles ?? []).filter((f) => f.type === 'image').length}`,
-    )
 
     /**
      * 内置 CLI Provider，以及配置为 Codex adapter 的画布 Agent，统一复用 SessionService。
@@ -3679,7 +3720,7 @@ export function registerAllIpcHandlers(): void {
           taskPipelineRole: req.taskPipelineRole,
           prompt: runtimeRequest.prompt,
         })
-        log.info(
+        canvasTaskLogger.info(
           `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} maxTokens=${tokenBudget.maxTokens ?? '(provider-default)'} source=${tokenBudget.source ?? 'unset'} contextWindow=${tokenBudget.contextWindow ?? '(n/a)'} reserve=${tokenBudget.contextReserveRatio ?? '(n/a)'} providerMax=${tokenBudget.providerMaxTokens ?? '(n/a)'} taskRoleMax=${tokenBudget.taskRoleMaxTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate ?? '(n/a)'} timeoutMs=${requestTimeoutMs} executionPath=session-runtime adapter=${executionAdapter}`,
         )
         try {
@@ -3782,7 +3823,7 @@ export function registerAllIpcHandlers(): void {
         skillPrompts,
         ...(req.negativePrompt ? { negativePrompt: req.negativePrompt } : {}),
       })
-      log.info(
+      canvasTaskLogger.info(
         `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} maxTokens=${maxTokens ?? '(provider-default)'} source=${tokenBudget.source ?? 'unset'} contextWindow=${tokenBudget.contextWindow ?? '(n/a)'} reserve=${tokenBudget.contextReserveRatio ?? '(n/a)'} providerMax=${tokenBudget.providerMaxTokens ?? '(n/a)'} taskRoleMax=${tokenBudget.taskRoleMaxTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate ?? '(n/a)'} timeoutMs=${requestTimeoutMs} executionPath=http`,
       )
       const rawReasoningEffort =
@@ -3905,13 +3946,16 @@ export function registerAllIpcHandlers(): void {
       void runTextGeneration()
         .catch((err) => {
           const message = err instanceof Error ? err.message : String(err)
-          log.warn(`canvas:task:generate-text failed (background path): ${message}`)
           return fail('text_generation_failed', message)
         })
         .then((response) => {
-          log.info(
-            `canvas:task:generate-text finished (background), status=${response.status} chars=${response.text.length}`,
-          )
+          taskLog.settled({
+            status: response.status,
+            provider: response.provider,
+            model: response.model,
+            outputChars: response.text.length,
+            error: response.error,
+          })
           pushStreamEvent('stream:canvas:text-task', {
             ...(req.projectId !== undefined ? { projectId: req.projectId } : {}),
             ...(req.clientTaskId !== undefined ? { clientTaskId: req.clientTaskId } : {}),
@@ -3929,22 +3973,28 @@ export function registerAllIpcHandlers(): void {
     }
     try {
       const response = await runTextGeneration()
-      log.info(
-        `canvas:task:generate-text finished (sync), status=${response.status} provider=${response.provider} model=${response.model} chars=${response.text.length}`,
-      )
+      taskLog.settled({
+        status: response.status,
+        provider: response.provider,
+        model: response.model,
+        outputChars: response.text.length,
+        error: response.error,
+      })
       return response
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      log.warn(`canvas:task:generate-text failed (sync path): ${message}`)
+      taskLog.failed({ code: 'text_generation_failed', message })
       return fail('text_generation_failed', message)
     }
   })
 
   typedIpcHandle('canvas:task:cancel-media', async (req) => {
-    log.info(`canvas:task:cancel-media requested, runtimeTaskId=${req.runtimeTaskId}`)
+    canvasTaskLogger.info(`event=cancel-requested runtimeTaskId=${req.runtimeTaskId}`)
     const record = getMediaTaskRuntimeService().cancel(req.runtimeTaskId)
     if (!record) {
-      log.warn(`canvas:task:cancel-media: task not found, runtimeTaskId=${req.runtimeTaskId}`)
+      canvasTaskLogger.warn(
+        `event=cancel-failed runtimeTaskId=${req.runtimeTaskId} code=task_not_found`,
+      )
       return {
         runtimeTaskId: req.runtimeTaskId,
         cancelled: false,
@@ -3955,8 +4005,8 @@ export function registerAllIpcHandlers(): void {
         },
       }
     }
-    log.info(
-      `canvas:task:cancel-media resolved, runtimeTaskId=${record.id} status=${record.status} cancelled=${record.status === 'cancelled'}`,
+    canvasTaskLogger.info(
+      `event=cancel-finished runtimeTaskId=${record.id} status=${record.status} cancelled=${record.status === 'cancelled'}`,
     )
     return {
       runtimeTaskId: record.id,
@@ -6406,7 +6456,13 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('log:read', async (req) => {
     const maxLines = req.maxLines ?? 500
     const levels = req.levels
-    const lines = readLogTail(maxLines, levels)
+    const lines = readLogTail(
+      maxLines,
+      levels,
+      req.scope === 'canvas'
+        ? { namespacePrefixes: [...CANVAS_TASK_LOG_NAMESPACE_PREFIXES] }
+        : undefined,
+    )
     const info = getLogInfo()
     return {
       lines,
@@ -7926,7 +7982,8 @@ export function registerAllIpcHandlers(): void {
   registerTerminalIpc()
 
   registerProviderFilesIpc({
-    getProfile: async (id) => (await getProviderService().listProviders()).find((profile) => profile.id === id),
+    getProfile: async (id) =>
+      (await getProviderService().listProviders()).find((profile) => profile.id === id),
     getApiKey: async (id) => getProviderService().getProviderApiKey(id),
   })
 

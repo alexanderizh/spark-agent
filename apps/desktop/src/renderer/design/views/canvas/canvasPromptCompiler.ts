@@ -10,7 +10,10 @@ import type {
   CanvasPromptCompiledInputFile,
 } from '@spark/protocol'
 import type { CanvasAsset, CanvasNode, CanvasOperationType } from './canvas.types'
-import { presentCanvasTextForModel, readCanvasTextInputContent } from './canvasTextInputPresentation'
+import {
+  presentCanvasTextForModel,
+  readCanvasTextInputContent,
+} from './canvasTextInputPresentation'
 
 export class CanvasPromptCompileError extends Error {
   readonly code = 'canvas_prompt_compile_failed'
@@ -93,7 +96,10 @@ function compileBlock(input: {
   }
 
   if (block.kind === 'reference' && block.disconnected) {
-    throw new CanvasPromptCompileError(block.id, `引用“${block.label}”已断开连接，请重新绑定后再提交`)
+    throw new CanvasPromptCompileError(
+      block.id,
+      `引用“${block.label}”已断开连接，请重新绑定后再提交`,
+    )
   }
 
   const node = input.nodeById.get(block.sourceNodeId)
@@ -201,11 +207,19 @@ function buildInputFile(
   const type: CanvasPromptCompiledInputFile['type'] =
     node.type === 'image' || node.type === 'video' || node.type === 'audio' ? node.type : 'file'
   const mimeType = node.data.mimeType ?? asset?.mimeType ?? undefined
+  const width = asset?.width ?? undefined
+  const height = asset?.height ?? undefined
+  const durationMs = asset?.durationMs ?? undefined
+  const sizeBytes = asset?.sizeBytes ?? undefined
   return {
     type,
     ...(role ? { role } : {}),
     ...(url.startsWith('data:') ? { dataUrl: url } : { url }),
     ...(mimeType ? { mimeType } : {}),
+    ...(sizeBytes != null ? { sizeBytes } : {}),
+    ...(width != null ? { width } : {}),
+    ...(height != null ? { height } : {}),
+    ...(durationMs != null ? { durationMs } : {}),
   }
 }
 
@@ -217,7 +231,14 @@ function readNodeContent(node: CanvasNode, asset?: CanvasAsset): string {
 }
 
 function isMediaNode(node: CanvasNode, asset?: CanvasAsset): boolean {
-  return node.type === 'image' || node.type === 'video' || node.type === 'audio' || asset?.type === 'image' || asset?.type === 'video' || asset?.type === 'audio'
+  return (
+    node.type === 'image' ||
+    node.type === 'video' ||
+    node.type === 'audio' ||
+    asset?.type === 'image' ||
+    asset?.type === 'video' ||
+    asset?.type === 'audio'
+  )
 }
 
 function inputKindForNode(

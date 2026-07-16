@@ -16,7 +16,9 @@ import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
-import { CanvasPromptLibraryPanel, type CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
+import type { CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
+import { CanvasFilmPromptLibraryTab } from './CanvasFilmPromptLibraryTab'
+import { CanvasProviderFilesTab } from './CanvasProviderFilesTab'
 import {
   FILM_ASSET_KIND_LABELS,
   FILM_ASSET_KIND_ORDER,
@@ -73,7 +75,7 @@ import {
  * 数据复用 CanvasAsset + metadata.kind，不新建表。
  */
 
-export type TabKind = FilmAssetKind | 'shots'
+export type TabKind = FilmAssetKind | 'shots' | 'files'
 
 const TAB_ORDER: TabKind[] = [
   // 文稿与章节合并为「文稿」一个 tab：文稿列表 → 章节列表 → 章节正文 下钻
@@ -85,6 +87,7 @@ const TAB_ORDER: TabKind[] = [
   'effect',
   'shots',
   'prompt_library',
+  'files',
 ]
 
 const TAB_LABELS: Record<TabKind, string> = {
@@ -98,6 +101,7 @@ const TAB_LABELS: Record<TabKind, string> = {
   shot_group: '分镜',
   shots: '分镜分组',
   prompt_library: '提示词库',
+  files: 'Files',
 }
 
 /** 资产列表分批渲染步长：文稿/章节可达上千条，一次性挂载会卡顿并撑爆 DOM */
@@ -245,7 +249,7 @@ export function CanvasFilmAssetCenter({
         <div className="canvas-bottom-floating-head">
           <div>
             <FilmCenterHeaderTitle />
-            <span>剧本、角色、场景、道具、分镜和提示词库</span>
+            <span>文稿、影视资产、分镜、提示词和渠道 Files</span>
           </div>
           <Button
             size="middle"
@@ -272,7 +276,9 @@ export function CanvasFilmAssetCenter({
             {activeTab === 'shots' ? (
               <ShotGroupTab snapshot={snapshot} handlers={handlers} />
             ) : activeTab === 'prompt_library' ? (
-              <PromptLibraryTab snapshot={snapshot} handlers={handlers} />
+              <CanvasFilmPromptLibraryTab snapshot={snapshot} handlers={handlers} />
+            ) : activeTab === 'files' ? (
+              <CanvasProviderFilesTab />
             ) : activeTab === 'manuscript' ? (
               <ManuscriptTab snapshot={snapshot} handlers={handlers} />
             ) : (
@@ -297,52 +303,6 @@ function FilmCenterHeaderTitle() {
       <Icons.Layers size={16} />
       项目资产中心
     </span>
-  )
-}
-
-function PromptLibraryTab({
-  snapshot,
-  handlers,
-}: {
-  snapshot: CanvasSnapshot
-  handlers: FilmCenterHandlers
-}) {
-  const handleApply = async (entry: CanvasPromptLibraryEntry) => {
-    if (handlers.onApplyPromptEntryToCanvas) {
-      const applied = await handlers.onApplyPromptEntryToCanvas(entry)
-      if (applied) return
-    }
-
-    if (entry.source === 'project' && entry.assetId) {
-      handlers.onInsertAssetToCanvas(entry.assetId)
-      message.success('已插入提示词到画布')
-      return
-    }
-    await handlers.createFilmAsset({
-      kind: 'prompt_library',
-      name: entry.label,
-      text: entry.text,
-      prompt: entry.text,
-      tags: [entry.group, ...(entry.tags ?? [])],
-    })
-    message.success(`已加入项目提示词库：${entry.label}`)
-  }
-
-  return (
-    <CanvasPromptLibraryPanel
-      assets={snapshot.assets}
-      className="canvas-film-prompt-library"
-      title="提示词库"
-      subtitle="项目提示词 + 内置电影镜头/风格/表演词"
-      onApply={handleApply}
-      getApplyLabel={(entry) =>
-        handlers.hasPromptCanvasTarget?.()
-          ? '应用到画布'
-          : entry.source === 'project'
-            ? '插入画布'
-            : '加入项目库'
-      }
-    />
   )
 }
 

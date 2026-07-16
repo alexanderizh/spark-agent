@@ -24,6 +24,7 @@ import type {
   MediaNormalizedErrorCode,
   MediaProviderKind,
   MediaRequestCall,
+  MediaInputMetadata,
   ProviderMediaDefaults,
 } from '@spark/protocol'
 import type { MediaUploader } from './media-uploader.js'
@@ -51,7 +52,7 @@ export interface MediaProviderContext {
 
 export type MediaArtifactType = 'image' | 'audio' | 'video' | 'text'
 
-export interface MediaInputFile {
+export interface MediaInputFile extends MediaInputMetadata {
   fileId?: string
   path?: string
   url?: string
@@ -149,8 +150,5 @@ export type { MediaErrorContract }
 export interface MediaProviderAdapter {
   readonly id: MediaProviderKind
   supports(capability: MediaCapabilityId): boolean
-  invoke(
-    input: MediaGenerateInput,
-    context: MediaProviderContext,
-  ): Promise<MediaGenerateOutput>
+  invoke(input: MediaGenerateInput, context: MediaProviderContext): Promise<MediaGenerateOutput>
 }

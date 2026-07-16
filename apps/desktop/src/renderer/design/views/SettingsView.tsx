@@ -42,6 +42,7 @@ import wechatLogo from '../../assets/remote-channels/wechat.svg'
 // 仍能通过原路径 import。
 export { ProviderEditPanel } from './ProvidersView'
 import { MemoryPanel } from './MemoryPanel'
+import { SettingsLogViewer } from './SettingsLogViewer'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
 import type {
   SessionAgentAdapter,
@@ -75,7 +76,6 @@ type WorkflowTemplate = {
   nodes: number
   updatedAt: string
 }
-
 const SANDBOX_LEVEL_KEY = 'spark-sandbox-level'
 const AUDIT_ENABLED_KEY = 'spark-audit-enabled'
 // 工作流模板暂未实现，保留常量定义以便后续启用
@@ -4122,89 +4122,6 @@ function PermRule({
 /* ───────── TELEMETRY ───────── */
 function TelemetrySection() {
   const [s, set] = usePersistedSettings(SETTINGS_TELEMETRY_KEY, DEFAULT_TELEMETRY)
-  const { toast } = useToast()
-
-  // ── 日志查看器状态 ──
-  const [lines, setLines] = useState<string[]>([])
-  const [filePath, setFilePath] = useState<string | null>(null)
-  const [sizeBytes, setSizeBytes] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [levelFilter, setLevelFilter] = useState<'all' | 'debug' | 'info' | 'warn' | 'error'>('all')
-  const [keyword, setKeyword] = useState('')
-
-  const loadLogs = useCallback(async () => {
-    setLoading(true)
-    try {
-      const levels = levelFilter === 'all' ? undefined : [levelFilter]
-      const res = await window.spark.invoke('log:read', {
-        maxLines: 500,
-        ...(levels !== undefined ? { levels } : {}),
-      })
-      setLines(res.lines)
-      setFilePath(res.filePath)
-      setSizeBytes(res.sizeBytes)
-    } catch (err) {
-      toast.error(`读取日志失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setLoading(false)
-    }
-  }, [levelFilter, toast])
-
-  // 进入 section 时拉一次；级别筛选变化时重新拉取
-  useEffect(() => {
-    void loadLogs()
-  }, [loadLogs])
-
-  const handleClear = useCallback(async () => {
-    try {
-      await window.spark.invoke('log:clear', {})
-      toast.success('日志已清空')
-      void loadLogs()
-    } catch (err) {
-      toast.error(`清空日志失败：${err instanceof Error ? err.message : String(err)}`)
-    }
-  }, [loadLogs, toast])
-
-  const handleReveal = useCallback(async () => {
-    try {
-      await window.spark.invoke('log:reveal', {})
-    } catch {
-      /* ignore */
-    }
-  }, [])
-
-  const handleExport = useCallback(async () => {
-    try {
-      const res = await window.spark.invoke('dialog:save-file', {
-        title: '导出日志',
-        defaultPath: 'spark-agent.log',
-        filters: [{ name: '日志文件', extensions: ['log', 'txt'] }],
-      })
-      if (res?.filePath) {
-        // 用现成的 file:write-text 写入当前查看器中的（已筛选）内容
-        await window.spark.invoke('file:write-text', {
-          path: res.filePath,
-          content: lines.join('\n'),
-        })
-        toast.success(`已导出到：${res.filePath}`)
-      }
-    } catch (err) {
-      toast.error(`导出失败：${err instanceof Error ? err.message : String(err)}`)
-    }
-  }, [lines, toast])
-
-  // 客户端二次过滤：在 IPC 返回行的基础上再按关键词过滤
-  const filteredLines = useMemo(() => {
-    const kw = keyword.trim().toLowerCase()
-    if (!kw) return lines
-    return lines.filter((l) => l.toLowerCase().includes(kw))
-  }, [lines, keyword])
-
-  const fmtSize = (n: number) => {
-    if (n < 1024) return `${n} B`
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-    return `${(n / (1024 * 1024)).toFixed(2)} MB`
-  }
 
   return (
     <div className="settings-section">
@@ -4228,71 +4145,9 @@ function TelemetrySection() {
         />
       </div>
 
-      {/* ── 日志查看器 ── */}
-      <div className="subsec-h">日志查看器</div>
-
-      <div className="log-viewer-toolbar">
-        <Select
-          value={levelFilter}
-          onChange={(v) => setLevelFilter(v as typeof levelFilter)}
-          options={[
-            { label: '全部级别', value: 'all' },
-            { label: 'debug', value: 'debug' },
-            { label: 'info', value: 'info' },
-            { label: 'warn', value: 'warn' },
-            { label: 'error', value: 'error' },
-          ]}
-        />
-        <Input
-          placeholder="关键词过滤…"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          allowClear
-          style={{ width: 220 }}
-        />
-        <Button onClick={() => void loadLogs()} loading={loading}>
-          刷新
-        </Button>
-        <div className="log-viewer-spacer" />
-        <Button onClick={() => void handleExport()}>导出</Button>
-        <Button onClick={() => void handleReveal()}>在文件夹中显示</Button>
-        <Button onClick={() => void handleClear()} danger>
-          清空
-        </Button>
-      </div>
-
-      <div className="log-viewer-meta">
-        {filePath != null ? (
-          <>
-            <span className="log-viewer-path" title={filePath ?? undefined}>
-              {filePath}
-            </span>
-            <span className="log-viewer-size">{fmtSize(sizeBytes)}</span>
-          </>
-        ) : (
-          <span className="log-viewer-empty">日志文件尚未初始化（应用刚启动时可能暂未落盘）。</span>
-        )}
-      </div>
-
-      <div className="log-viewer">
-        {filteredLines.length === 0 ? (
-          <div className="log-viewer-empty">
-            {loading ? '加载中…' : '暂无日志记录。触发一些操作后点击「刷新」。'}
-          </div>
-        ) : (
-          filteredLines.map((line, i) => <div key={i} className={`log-line log-${logLineLevel(line)}`}>{line}</div>)
-        )}
-      </div>
+      <SettingsLogViewer />
     </div>
   )
-}
-
-/** 从一行日志 `[ts] [LEVEL] [ns] ...` 中提取级别，用于着色。 */
-function logLineLevel(line: string): 'debug' | 'info' | 'warn' | 'error' | 'default' {
-  const m = line.match(/\]\s*\[(DEBUG|INFO|WARN|ERROR)\]\s*\[/)
-  const lvl = m?.[1]?.toLowerCase()
-  if (!lvl) return 'default'
-  return lvl === 'warn' ? 'warn' : (lvl as 'debug' | 'info' | 'error')
 }
 
 /* ───────── USAGE ───────── */

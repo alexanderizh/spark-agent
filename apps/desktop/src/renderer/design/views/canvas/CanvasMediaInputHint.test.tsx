@@ -19,7 +19,7 @@ describe('CanvasMediaInputHint', () => {
     expect(hint).toContain('当前模型声明支持 2 张图片')
     expect(hint).toContain('第一张作为首帧、第二张作为尾帧')
     expect(hint).toContain('已选 4 张')
-    expect(hint).toContain('超出 2 张仍会尝试传递')
+    expect(hint).toContain('图片超出 2 张，提交校验会阻止任务')
     expect(hint).toContain('建议显式选择')
   })
 
@@ -31,13 +31,20 @@ describe('CanvasMediaInputHint', () => {
       rolePolicy: {
         imageRoles: ['reference_image'],
         videoRoles: ['reference_video'],
+        audioRoles: ['reference_audio'],
         defaultRoleAssignment: 'all_reference',
       },
+      maxVideos: 3,
+      selectedVideoCount: 2,
+      maxAudios: 3,
+      selectedAudioCount: 1,
     })
 
     expect(hint).toContain('当前模型声明支持 9 张图片')
     expect(hint).toContain('未手动指定时，已选图片均作为参考图')
     expect(hint).toContain('已选 3 张')
+    expect(hint).toContain('参考视频 2/3 段')
+    expect(hint).toContain('参考音频 1/3 段')
     expect(hint).not.toContain('首帧')
   })
 

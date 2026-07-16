@@ -1,0 +1,138 @@
+.canvas-provider-files {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+  padding: 18px 20px 24px;
+}
+
+.canvas-provider-files-channel-tabs,
+.canvas-provider-files-toolbar,
+.canvas-provider-files-actions,
+.canvas-provider-files-meta,
+.canvas-provider-files-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.canvas-provider-files-channel-tab {
+  padding: 7px 12px;
+  border: 1px solid var(--divider);
+  border-radius: var(--r-md);
+  background: var(--canvas-film-card);
+  color: var(--text-muted);
+  cursor: pointer;
+
+  &.active {
+    border-color: color-mix(in srgb, var(--primary) 42%, var(--divider));
+    background: var(--primary-soft);
+    color: var(--primary);
+  }
+}
+
+.canvas-provider-files-toolbar {
+  justify-content: space-between;
+  padding: 12px;
+  border: 1px solid var(--divider);
+  border-radius: var(--r-lg);
+  background: var(--canvas-film-card);
+}
+
+.canvas-provider-files-toolbar-main {
+  display: flex;
+  min-width: min(100%, 520px);
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.canvas-provider-files-list {
+  display: grid;
+  gap: 9px;
+}
+
+.canvas-provider-file-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--divider);
+  border-radius: var(--r-lg);
+  background: var(--canvas-film-card);
+}
+
+.canvas-provider-file-row.is-failed {
+  border-color: color-mix(in srgb, var(--danger) 46%, var(--divider));
+}
+
+.canvas-provider-file-name,
+.canvas-provider-file-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-provider-file-name {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.canvas-provider-file-id,
+.canvas-provider-files-note,
+.canvas-provider-file-error {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-provider-file-error {
+  margin-top: 5px;
+  color: var(--danger);
+  white-space: pre-wrap;
+}
+
+.canvas-provider-files-pagination {
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.canvas-provider-files-upload-form {
+  display: grid;
+  gap: 12px;
+}
+
+.canvas-provider-files-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.canvas-provider-files-field {
+  display: grid;
+  gap: 5px;
+}
+
+.canvas-provider-files-field > span:first-child {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 860px) {
+  .canvas-provider-files-upload-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .canvas-provider-file-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .canvas-provider-files-actions {
+    grid-column: 2;
+  }
+}

@@ -328,9 +328,10 @@ Agent 工具不直接读写这些元数据，但应：
 
 **首尾帧图生视频**
 
-1. 对某个 `shot` 找首帧/尾帧图片节点，顺序作为 `inputNodeIds`。
-2. 建 `image_to_video` 操作节点，`outputPipelineRole: "clip"`。
-3. Prompt 包含镜头运动、主体动作、时长、转场约束；没有关键帧时才退化为 `text_to_video`。
+1. 先用 `canvas_list_media_models` / `canvas_get_operation_config` 确认目标模型 `rolePolicy`；画布角色是供应商无关语义，不能把某个 provider 的字段硬编码进节点。
+2. 对某个 `shot` 找首帧/尾帧图片节点，顺序作为 `inputNodeIds`；模型不支持尾帧时只能保留首帧，不能抱着“平台会忽略”的侥幸提交。
+3. 建 `image_to_video` 操作节点，`outputPipelineRole: "clip"`。若使用参考图/参考视频/参考音频，必须按模型声明的角色、数量、格式和时长限制选择素材，并避免与首帧/首尾帧互斥模式混用。
+4. Prompt 包含镜头运动、主体动作、时长、转场约束；没有关键帧时才退化为 `text_to_video`。
 
 **360 全景图**
 

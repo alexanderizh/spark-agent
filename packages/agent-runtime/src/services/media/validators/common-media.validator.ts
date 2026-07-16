@@ -48,6 +48,28 @@ export function validateCommonMediaRequest(context: MediaValidationContext): Med
       )
     }
 
+    const videos = inputFilesOfKind(context, 'video')
+    if (capability.input.maxVideos != null && videos.length > capability.input.maxVideos) {
+      issues.push(
+        validationIssue(
+          'out_of_range',
+          `模型 ${context.modelId} 最多支持 ${capability.input.maxVideos} 段视频，当前选择了 ${videos.length} 段`,
+          ['inputFiles'],
+        ),
+      )
+    }
+
+    const audios = inputFilesOfKind(context, 'audio')
+    if (capability.input.maxAudios != null && audios.length > capability.input.maxAudios) {
+      issues.push(
+        validationIssue(
+          'out_of_range',
+          `模型 ${context.modelId} 最多支持 ${capability.input.maxAudios} 段音频，当前选择了 ${audios.length} 段`,
+          ['inputFiles'],
+        ),
+      )
+    }
+
     const acceptedMimeTypes = capability.input.acceptedMimeTypes ?? []
     if (acceptedMimeTypes.length > 0) {
       for (const [index, file] of files.entries()) {

@@ -215,7 +215,7 @@ describe('XaiMediaAdapter official contract', () => {
     })
   })
 
-  it('requires an xAI public CDN URL for completed videos', async () => {
+  it('uses the official temporary video URL when public CDN persistence fails', async () => {
     const fetchImpl = (async (input: string | URL | Request) => {
       const url = String(input)
       if (url.endsWith('/videos/generations')) return new Response(JSON.stringify({ request_id: 'request-1' }))
@@ -228,15 +228,50 @@ describe('XaiMediaAdapter official contract', () => {
           },
         }))
       }
+      if (url === 'https://temporary.x.ai/video.mp4') return new Response(VIDEO_BYTES)
       return new Response('', { status: 404 })
     }) as typeof fetch
 
-    await expect(
-      adapter.invoke(
-        { operation: 'text_to_video', capability: 'video.generate', outputDir, prompt: 'A test video' },
-        context(fetchImpl),
-      ),
-    ).rejects.toThrow('官方 CDN 持久化失败')
+    const result = await adapter.invoke(
+      { operation: 'text_to_video', capability: 'video.generate', outputDir, prompt: 'A test video' },
+      context(fetchImpl),
+    )
+
+    expect(result.assets).toHaveLength(1)
+    expect(result.assets[0]?.type).toBe('video')
+  })
+
+  it('resolves only the first-frame image for image-to-video', async () => {
+    const firstPath = path.join(outputDir, 'first.png')
+    const unusedPath = path.join(outputDir, 'unused.png')
+    writeFileSync(firstPath, Buffer.from('first-image'))
+    writeFileSync(unusedPath, Buffer.from('unused-image'))
+    const capture: { body?: Record<string, unknown>; uploadCount: number } = { uploadCount: 0 }
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith('/files')) {
+        capture.uploadCount += 1
+        return new Response(JSON.stringify({
+          id: `file-${capture.uploadCount}`, filename: 'frame.png', bytes: 11,
+          created_at: 1, object: 'file', purpose: 'user_data',
+        }))
+      }
+      return videoFetch(capture)(input, init)
+    }) as typeof fetch
+
+    await adapter.invoke(
+      {
+        operation: 'image_to_video', capability: 'video.image_to_video', outputDir,
+        prompt: 'Animate only the first frame',
+        inputFiles: [
+          { type: 'image', role: 'first_frame', path: firstPath, mimeType: 'image/png' },
+          { type: 'image', role: 'reference', path: unusedPath, mimeType: 'image/png' },
+        ],
+      },
+      context(fetchImpl),
+    )
+
+    expect(capture.uploadCount).toBe(1)
+    expect(capture.body?.image).toEqual({ file_id: 'file-1' })
   })
 
   it('enforces Grok Imagine Video 1.5 image-to-video only', async () => {

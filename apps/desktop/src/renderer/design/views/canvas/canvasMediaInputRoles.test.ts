@@ -3,6 +3,7 @@ import { computeMediaInputRoleMap } from './canvasMediaInputRoles'
 
 const image = (id: string) => ({ id, type: 'image' })
 const video = (id: string) => ({ id, type: 'video' })
+const audio = (id: string) => ({ id, type: 'audio' })
 
 describe('computeMediaInputRoleMap', () => {
   it('纯参考图路径：文生视频多模态参考 maxImages=9，5 张图全选 → 全 reference_image/used', () => {
@@ -146,6 +147,27 @@ describe('computeMediaInputRoleMap', () => {
     })
     expect(map.get('v1')).toEqual({ role: 'reference_video', usageStatus: 'used' })
     expect(map.get('img1')).toEqual({ role: 'reference_image', usageStatus: 'used' })
+  })
+
+  it('video.generate 多模态：参考音频标 reference_audio role', () => {
+    const map = computeMediaInputRoleMap({
+      mediaInputs: [audio('a1'), image('img1')],
+      selectedInputNodeIds: ['a1', 'img1'],
+      supportsFrameRoles: false,
+      supportsImageRoles: true,
+      policy: {
+        imageRoles: ['reference_image'],
+        videoRoles: ['reference_video'],
+        audioRoles: ['reference_audio'],
+        defaultRoleAssignment: 'all_reference',
+      },
+      maxImages: 9,
+      firstFrameNodeId: '',
+      lastFrameNodeId: '',
+      referenceFrameNodeIds: [],
+      explicitFrameNodeIds: [],
+    })
+    expect(map.get('a1')).toEqual({ role: 'reference_audio', usageStatus: 'used' })
   })
 
   it('无图片角色 capability（如 audio.generate）：所有输入标 used 无 role', () => {

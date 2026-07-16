@@ -1,3 +1,5 @@
+import type { MediaInputMetadata } from './media-config.js'
+
 /** Current cross-process canvas prompt document version. */
 export const CANVAS_PROMPT_VERSION = 2 as const
 
@@ -118,7 +120,7 @@ export type CanvasPromptRelationManifestEntry = {
   contentHash?: string
 }
 
-export type CanvasPromptCompiledInputFile = {
+export type CanvasPromptCompiledInputFile = MediaInputMetadata & {
   fileId?: string
   path?: string
   url?: string

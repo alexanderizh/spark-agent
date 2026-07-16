@@ -5,7 +5,100 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-const PNG_PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+const PNG_PIXEL =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+
+function volcVideoManifest() {
+  const rolePolicy = {
+    imageRoles: ['first_frame', 'last_frame', 'reference_image'],
+    videoRoles: ['reference_video'],
+    audioRoles: ['reference_audio'],
+    defaultRoleAssignment: 'first_then_last_then_reference',
+  }
+  const referenceRolePolicy = {
+    imageRoles: ['reference_image'],
+    videoRoles: ['reference_video'],
+    audioRoles: ['reference_audio'],
+    defaultRoleAssignment: 'all_reference',
+  }
+  return {
+    id: 'volcengine:doubao-seedance-2-0-260128',
+    providerKind: 'volcengine-ark',
+    modelId: 'doubao-seedance-2-0-260128',
+    displayName: 'Seedance 2.0',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.image_to_video',
+        label: '首帧/首尾帧/多模态参考',
+        input: { required: ['image'], maxImages: 9, maxVideos: 3, maxAudios: 3 },
+        rolePolicy,
+        output: { types: ['video'], mimeTypes: ['video/mp4'] },
+        paramSchema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            aspectRatio: { type: 'string', enum: ['智能比例', '16:9'] },
+            durationSeconds: { type: 'integer', minimum: -1, maximum: 15 },
+            searchEnabled: { type: 'boolean' },
+          },
+        },
+        aliases: {
+          aspectRatio: 'ratio',
+          durationSeconds: 'duration',
+          searchEnabled: 'enable_search',
+        },
+        paramPolicy: { strict: true, passthrough: { enabled: false } },
+      },
+      {
+        id: 'video.reference_to_video',
+        label: '多模态参考生视频',
+        input: { required: [], maxImages: 9, maxVideos: 3, maxAudios: 3 },
+        rolePolicy: referenceRolePolicy,
+        output: { types: ['video'], mimeTypes: ['video/mp4'] },
+        paramSchema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            aspectRatio: { type: 'string', enum: ['智能比例', '16:9'] },
+            durationSeconds: { type: 'integer', minimum: -1, maximum: 15 },
+            searchEnabled: { type: 'boolean' },
+          },
+        },
+        aliases: {
+          aspectRatio: 'ratio',
+          durationSeconds: 'duration',
+          searchEnabled: 'enable_search',
+        },
+        paramPolicy: { strict: true, passthrough: { enabled: false } },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/contents/generations/tasks',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', content: '{{content}}' },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['id'],
+        statusEndpoint: '/contents/generations/tasks/{{taskId}}',
+        resultPaths: ['content.video_url'],
+      },
+      polling: {
+        intervalMs: 1,
+        timeoutMs: 3000,
+        statusMap: {
+          queued: 'queued',
+          running: 'running',
+          succeeded: 'succeeded',
+          failed: 'failed',
+        },
+      },
+    },
+    docs: { sourceUrls: [] },
+  }
+}
 
 describe('spark_media MCP server', () => {
   let tmpDir: string
@@ -13,12 +106,17 @@ describe('spark_media MCP server', () => {
   let baseUrl = ''
   let postedBody: Record<string, unknown> | null = null
   let fileUploadCount = 0
+  let fileUploadBody = ''
   let child: ChildProcessWithoutNullStreams | null = null
 
   beforeEach(async () => {
-    tmpDir = path.join(os.tmpdir(), `spark-media-mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    tmpDir = path.join(
+      os.tmpdir(),
+      `spark-media-mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    )
     mkdirSync(tmpDir, { recursive: true })
     fileUploadCount = 0
+    fileUploadBody = ''
     server = createServer((req, res) => {
       if (req.method === 'POST' && req.url === '/images') {
         const chunks: Buffer[] = []
@@ -30,7 +128,10 @@ describe('spark_media MCP server', () => {
         })
         return
       }
-      if (req.method === 'POST' && (req.url === '/videos/generations' || req.url === '/videos/extensions')) {
+      if (
+        req.method === 'POST' &&
+        (req.url === '/videos/generations' || req.url === '/videos/extensions')
+      ) {
         const chunks: Buffer[] = []
         req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
         req.on('end', () => {
@@ -40,21 +141,79 @@ describe('spark_media MCP server', () => {
         })
         return
       }
+      if (req.method === 'POST' && req.url === '/contents/generations/tasks') {
+        const chunks: Buffer[] = []
+        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+        req.on('end', () => {
+          postedBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ id: 'volc-task' }))
+        })
+        return
+      }
       if (req.method === 'POST' && req.url === '/files') {
         fileUploadCount += 1
-        req.resume()
+        const chunks: Buffer[] = []
+        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
         req.on('end', () => {
+          fileUploadBody = Buffer.concat(chunks).toString('utf8')
           res.writeHead(200, { 'content-type': 'application/json' })
-          res.end(JSON.stringify({ id: 'file-input', filename: 'frame.png', bytes: 5, created_at: 1, object: 'file', purpose: 'user_data' }))
+          res.end(
+            JSON.stringify({
+              id: 'file-input',
+              filename: 'frame.png',
+              bytes: 5,
+              created_at: 1,
+              object: 'file',
+              purpose: 'user_data',
+            }),
+          )
         })
         return
       }
       if (req.method === 'GET' && req.url === '/videos/request-1') {
         res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({
-          status: 'done',
-          video: { file_output: { file_id: 'file-video', public_url: `${baseUrl}/asset.mp4` } },
-        }))
+        res.end(
+          JSON.stringify({
+            status: 'done',
+            video: { file_output: { file_id: 'file-video', public_url: `${baseUrl}/asset.mp4` } },
+          }),
+        )
+        return
+      }
+      if (req.method === 'GET' && req.url === '/contents/generations/tasks/volc-task') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({ status: 'succeeded', content: { video_url: `${baseUrl}/asset.mp4` } }),
+        )
+        return
+      }
+      if (req.method === 'GET' && req.url === '/files/file-input') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            id: 'file-input',
+            object: 'file',
+            status: 'active',
+            purpose: 'user_data',
+          }),
+        )
+        return
+      }
+      if (req.method === 'GET' && req.url?.startsWith('/files?')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            object: 'list',
+            data: [{ id: 'file-input', status: 'active' }],
+            has_more: false,
+          }),
+        )
+        return
+      }
+      if (req.method === 'DELETE' && req.url === '/files/file-input') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ id: 'file-input', object: 'file', deleted: true }))
         return
       }
       if (req.method === 'POST' && req.url === '/tts') {
@@ -326,7 +485,8 @@ describe('spark_media MCP server', () => {
     expect(droppedNames).toContain('watermark')
     expect(droppedNames).toContain('unknown_field')
     // forbidden 命中应额外报一条 validationIssues，方便 agent 区分"未声明"与"显式禁止"。
-    const issueCodes = structured.validationIssues?.map((issue: { code: string }) => issue.code) ?? []
+    const issueCodes =
+      structured.validationIssues?.map((issue: { code: string }) => issue.code) ?? []
     expect(issueCodes).toContain('forbidden_param')
   })
 
@@ -490,6 +650,144 @@ describe('spark_media MCP server', () => {
     })
   })
 
+  it('uses explicit rolePolicy and sends Volcengine Seedance nested multimodal content', async () => {
+    const manifest = volcVideoManifest()
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'ark-test',
+        SPARK_MEDIA_PROVIDER: 'volcengine-ark',
+        SPARK_MEDIA_MODEL: manifest.modelId,
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify({ polling: { intervalMs: 1, timeoutMs: 3000 } }),
+        SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify([manifest]),
+      },
+    })
+
+    const described = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 50,
+      method: 'tools/call',
+      params: { name: 'describe_model', arguments: { model: manifest.id } },
+    })
+    const referenceCapability = described.result.structuredContent.model.capabilities.find(
+      (capability: { id: string }) => capability.id === 'video.reference_to_video',
+    )
+    expect(referenceCapability.input).toMatchObject({ maxImages: 9, maxVideos: 3, maxAudios: 3 })
+    expect(referenceCapability.rolePolicy).toEqual({
+      imageRoles: ['reference_image'],
+      videoRoles: ['reference_video'],
+      audioRoles: ['reference_audio'],
+      defaultRoleAssignment: 'all_reference',
+    })
+
+    const generated = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 51,
+      method: 'tools/call',
+      params: {
+        name: 'generate_video',
+        arguments: {
+          model: manifest.id,
+          capability: 'video.reference_to_video',
+          prompt: '保持角色、动作和环境声音一致',
+          referenceImages: ['https://cdn/ref.png'],
+          referenceVideos: ['https://cdn/ref.mp4'],
+          referenceAudios: ['https://cdn/ref.mp3'],
+          aspectRatio: '智能比例',
+          durationSeconds: -1,
+        },
+      },
+    })
+
+    expect(generated.error).toBeUndefined()
+    expect(postedBody).toMatchObject({
+      model: manifest.modelId,
+      ratio: 'adaptive',
+      duration: -1,
+    })
+    expect(postedBody?.content).toEqual([
+      { type: 'text', text: '保持角色、动作和环境声音一致' },
+      { type: 'image_url', image_url: { url: 'https://cdn/ref.png' }, role: 'reference_image' },
+      { type: 'video_url', video_url: { url: 'https://cdn/ref.mp4' }, role: 'reference_video' },
+      { type: 'audio_url', audio_url: { url: 'https://cdn/ref.mp3' }, role: 'reference_audio' },
+    ])
+    expect(generated.result.structuredContent.files[0]).toMatch(/\.mp4$/)
+  })
+
+  it('manages Volcengine Files upload/get/list/delete lifecycle', async () => {
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'ark-test',
+        SPARK_MEDIA_PROVIDER: 'volcengine-ark',
+        SPARK_MEDIA_MODEL: 'doubao-seed-1-8',
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+      },
+    })
+
+    const uploaded = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 60,
+      method: 'tools/call',
+      params: {
+        name: 'upload_file',
+        arguments: {
+          url: 'tos://source/input.mp4',
+          tos: { bucket: 'target-bucket', prefix: 'arkfiles/' },
+          waitUntilActive: true,
+          preprocessVideo: { fps: 0.3, max_video_tokens: 81920 },
+        },
+      },
+    })
+    expect(uploaded.error).toBeUndefined()
+    expect(uploaded.result.structuredContent.file).toMatchObject({
+      id: 'file-input',
+      status: 'active',
+    })
+    expect(fileUploadBody).toContain('name="purpose"')
+    expect(fileUploadBody).toContain('user_data')
+    expect(fileUploadBody).toContain('name="tos[bucket]"')
+    expect(fileUploadBody).toContain('target-bucket')
+    expect(fileUploadBody).toContain('name="tos[prefix]"')
+    expect(fileUploadBody).toContain('arkfiles/')
+    expect(fileUploadBody).toContain('name="preprocess_configs[video][fps]"')
+    expect(fileUploadBody).toContain('0.3')
+    expect(fileUploadBody).toContain('name="preprocess_configs[video][max_video_tokens]"')
+    expect(fileUploadBody).toContain('81920')
+
+    const got = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 61,
+      method: 'tools/call',
+      params: { name: 'get_file', arguments: { fileId: 'file-input' } },
+    })
+    expect(got.result.structuredContent.file.status).toBe('active')
+
+    const listed = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 62,
+      method: 'tools/call',
+      params: { name: 'list_files', arguments: { limit: 20, order: 'desc' } },
+    })
+    expect(listed.result.structuredContent.data).toEqual([{ id: 'file-input', status: 'active' }])
+
+    const deleted = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 63,
+      method: 'tools/call',
+      params: { name: 'delete_file', arguments: { fileId: 'file-input' } },
+    })
+    expect(deleted.result.structuredContent.deleted).toMatchObject({
+      id: 'file-input',
+      deleted: true,
+    })
+  })
+
   it('lists media generation tools with loose model-parameter schemas that point agents to describe_model', async () => {
     child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
       cwd: path.resolve('..', 'agent-runtime'),
@@ -518,8 +816,10 @@ describe('spark_media MCP server', () => {
     }>
     const image = tools.find((tool) => tool.name === 'generate_image')
     const video = tools.find((tool) => tool.name === 'generate_video')
+    const uploadFile = tools.find((tool) => tool.name === 'upload_file')
     expect(image).toBeDefined()
     expect(video).toBeDefined()
+    expect(uploadFile).toBeDefined()
     const imageProps = image!.inputSchema.properties
     const videoProps = video!.inputSchema.properties
     expect(imageProps.resolution).toBeDefined()
@@ -529,6 +829,8 @@ describe('spark_media MCP server', () => {
     expect(videoProps.aspectRatio).toBeDefined()
     expect(videoProps.mode).toBeDefined()
     expect(videoProps.capability).toBeDefined()
+    expect(videoProps.referenceVideos).toBeDefined()
+    expect(videoProps.referenceAudios).toBeDefined()
     expect(imageProps.resolution!.enum).toBeUndefined()
     expect(imageProps.aspectRatio!.enum).toBeUndefined()
     expect(imageProps.output_format!.enum).toBeUndefined()
@@ -556,9 +858,15 @@ describe('spark_media MCP server', () => {
       },
     })
 
-    const references = Array.from({ length: 7 }, (_, index) => `${baseUrl}/reference-${index + 1}.png`)
+    const references = Array.from(
+      { length: 7 },
+      (_, index) => `${baseUrl}/reference-${index + 1}.png`,
+    )
     const videoResponse = await callMcp(child, {
-      jsonrpc: '2.0', id: 7, method: 'tools/call', params: {
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'tools/call',
+      params: {
         name: 'generate_video',
         arguments: {
           prompt: 'Use all references',
@@ -588,7 +896,10 @@ describe('spark_media MCP server', () => {
     const framePath = path.join(tmpDir, 'frame.png')
     writeFileSync(framePath, Buffer.from('frame'))
     const inputResponse = await callMcp(child, {
-      jsonrpc: '2.0', id: 9, method: 'tools/call', params: {
+      jsonrpc: '2.0',
+      id: 9,
+      method: 'tools/call',
+      params: {
         name: 'generate_video',
         arguments: {
           prompt: 'Animate local frame',
@@ -603,7 +914,10 @@ describe('spark_media MCP server', () => {
     expect(postedBody).toMatchObject({ image: { file_id: 'file-input' } })
 
     const extensionResponse = await callMcp(child, {
-      jsonrpc: '2.0', id: 11, method: 'tools/call', params: {
+      jsonrpc: '2.0',
+      id: 11,
+      method: 'tools/call',
+      params: {
         name: 'generate_video',
         arguments: {
           prompt: 'Continue the video',
@@ -620,7 +934,10 @@ describe('spark_media MCP server', () => {
     })
 
     const audioResponse = await callMcp(child, {
-      jsonrpc: '2.0', id: 10, method: 'tools/call', params: {
+      jsonrpc: '2.0',
+      id: 10,
+      method: 'tools/call',
+      params: {
         name: 'generate_audio',
         arguments: {
           text: '你好',
@@ -642,7 +959,10 @@ describe('spark_media MCP server', () => {
   })
 })
 
-function callMcp(child: ChildProcessWithoutNullStreams, request: Record<string, unknown>): Promise<any> {
+function callMcp(
+  child: ChildProcessWithoutNullStreams,
+  request: Record<string, unknown>,
+): Promise<any> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('MCP call timed out')), 5_000)
     let buffer = ''

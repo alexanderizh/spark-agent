@@ -5,7 +5,7 @@ import { getAuthService } from '../Auth/AuthService.js'
 
 export class SparkMediaUploader implements MediaUploader {
   canHandle(provider: MediaProviderKind): boolean {
-    return provider === 'xai'
+    return provider === 'xai' || provider === 'volcengine-ark'
   }
 
   async upload(input: MediaUploadInput): Promise<MediaUploadResult> {
@@ -18,7 +18,11 @@ export class SparkMediaUploader implements MediaUploader {
       fileName: input.filename,
       ...(input.mimeType ? { mimeType: input.mimeType } : {}),
     })
-    return { provider: 'xai', publicUrl: uploaded.aiUrl, url: uploaded.aiUrl }
+    return {
+      provider: input.targetProvider ?? 'xai',
+      publicUrl: uploaded.aiUrl,
+      url: uploaded.aiUrl,
+    }
   }
 }
 

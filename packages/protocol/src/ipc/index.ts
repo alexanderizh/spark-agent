@@ -25,6 +25,7 @@ import type {
   MediaCapabilityId,
   CanvasOperationType,
   MediaRequestCall,
+  MediaInputMetadata,
 } from '../media-config.js'
 import type { MediaModelManifest, ProviderMediaModelRef } from '../media-model-manifest.js'
 import type {
@@ -57,6 +58,7 @@ import type {
   ConnectorCapabilityKind,
   GitHubConnectorConnection,
 } from '../connectors.js'
+import type { ProviderFilesIpcChannelMap } from '../provider-files.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -624,7 +626,9 @@ export interface PlatformModelSubscription {
   nextResetTime?: number
 }
 
-export interface PlatformModelRedeemRequest { code: string }
+export interface PlatformModelRedeemRequest {
+  code: string
+}
 export interface PlatformModelRedeemResponse {
   benefitType: 'quota' | 'subscription'
   quotaAdded?: number
@@ -697,39 +701,6 @@ export interface ProviderGetApiKeyRequest {
 
 export interface ProviderGetApiKeyResponse {
   apiKey: string
-}
-
-export interface ProviderFileObject {
-  id: string
-  filename: string
-  bytes: number
-  createdAt: number
-  expiresAt?: number
-  purpose: string
-  object: 'file'
-}
-
-export interface ProviderFilesListRequest {
-  providerProfileId: string
-  paginationToken?: string
-  order?: 'asc' | 'desc'
-  sortBy?: 'created_at' | 'filename' | 'size'
-  limit?: number
-}
-
-export interface ProviderFilesListResponse {
-  files: ProviderFileObject[]
-  paginationToken?: string
-}
-
-export interface ProviderFilesDeleteRequest {
-  providerProfileId: string
-  fileId: string
-}
-
-export interface ProviderFilesDeleteResponse {
-  deleted: boolean
-  id: string
 }
 
 export interface ProviderCreateRequest {
@@ -2842,6 +2813,8 @@ export interface LogReadRequest {
   maxLines?: number
   /** 仅返回这些级别的行；为空/缺省表示不过滤。 */
   levels?: LogLevel[]
+  /** 日志范围；canvas 会聚合画布生命周期、媒体 adapter 与轮询诊断。 */
+  scope?: 'all' | 'canvas'
 }
 
 export interface LogReadResponse {
@@ -4752,7 +4725,7 @@ export interface CanvasMediaPruneModelParamsByInlineManifestResponse {
  * 主进程解析可用 provider + API key（不外泄），调用 MediaRouterService，
  * 把产物落盘到 `.spark-artifacts/media/<kind>`，返回 asset 元信息。
  */
-export interface CanvasMediaTaskInputFile {
+export interface CanvasMediaTaskInputFile extends MediaInputMetadata {
   fileId?: string
   path?: string
   url?: string
@@ -5153,7 +5126,7 @@ export interface CanvasProjectCleanupOrphansResponse {
  * const res = await invoke('session:create', { providerProfileId: '...' })
  * //    ^-- 类型自动推断为 SessionCreateResponse
  */
-export interface IpcChannelMap {
+export interface IpcChannelMap extends ProviderFilesIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]
@@ -5195,8 +5168,6 @@ export interface IpcChannelMap {
   // Provider
   'provider:list': [ProviderListRequest, ProviderListResponse]
   'provider:get-api-key': [ProviderGetApiKeyRequest, ProviderGetApiKeyResponse]
-  'provider:files:list': [ProviderFilesListRequest, ProviderFilesListResponse]
-  'provider:files:delete': [ProviderFilesDeleteRequest, ProviderFilesDeleteResponse]
   'provider:create': [ProviderCreateRequest, ProviderCreateResponse]
   'provider:update': [ProviderUpdateRequest, ProviderUpdateResponse]
   'provider:delete': [ProviderDeleteRequest, ProviderDeleteResponse]
@@ -5543,10 +5514,7 @@ export interface IpcChannelMap {
     CanvasAssetCopyToProjectResponse,
   ]
   'canvas:asset:download': [CanvasAssetDownloadRequest, CanvasAssetDownloadResponse]
-  'canvas:asset:download-batch': [
-    CanvasAssetDownloadBatchRequest,
-    CanvasAssetDownloadBatchResponse,
-  ]
+  'canvas:asset:download-batch': [CanvasAssetDownloadBatchRequest, CanvasAssetDownloadBatchResponse]
   'canvas:project:export-package': [
     CanvasProjectExportPackageRequest,
     CanvasProjectExportPackageResponse,
