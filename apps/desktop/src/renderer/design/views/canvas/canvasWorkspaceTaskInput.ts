@@ -153,6 +153,27 @@ export function buildPipelineSourceText(nodes: CanvasNode[], assets: CanvasAsset
     .join('\n\n')
 }
 
+/**
+ * 流水线菜单展示能力时会把操作节点视为其主产物；执行动作时也必须解析到同一份文本。
+ * 有持久化产物节点时让下游直接连接产物，否则保留操作节点作为可展开的血缘入口。
+ */
+export function resolveCanvasPipelineTextSource(
+  sourceNode: CanvasNode,
+  snapshot: CanvasSnapshot,
+): { sourceNode: CanvasNode; sourceText: string } {
+  const inputNodes = expandCanvasInputNodes([sourceNode], snapshot)
+  const sourceText = buildPipelineSourceText(inputNodes, snapshot.assets)
+  if (inputNodes.length !== 1) return { sourceNode, sourceText }
+
+  const resolvedNode = inputNodes[0]
+  if (!resolvedNode) return { sourceNode, sourceText }
+  const persistedNode = snapshot.nodes.find((node) => node.id === resolvedNode.id)
+  return {
+    sourceNode: persistedNode ?? sourceNode,
+    sourceText,
+  }
+}
+
 export function expandCanvasInputNodes(
   selectedNodes: CanvasNode[],
   snapshot: CanvasSnapshot,

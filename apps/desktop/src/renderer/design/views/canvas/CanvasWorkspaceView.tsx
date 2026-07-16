@@ -90,6 +90,7 @@ import {
   type ShotGroup,
   type ShotSegment,
 } from './canvasFilmAssets'
+import type { FilmReferenceKind } from './canvasFilmTypes'
 import {
   buildCharacterSheetPrompt,
   getCharacterSheetTemplate,
@@ -109,6 +110,7 @@ import {
 import { applyCanvasStyleToTask, buildCanvasStyleContext } from './canvasStyleContext'
 import { buildStoryboardGridPrompt, buildStoryboardNodePrompt } from './canvasStoryboardGrid'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import { resolveCanvasPipelineTextSource } from './canvasWorkspaceTaskInput'
 import {
   formatStoryboardCameraParamsForEditor,
   formatStoryboardRowsAsMarkdown,
@@ -1061,18 +1063,6 @@ function hydrateTextInputNodes(nodes: CanvasNode[], assets: CanvasAsset[]): Canv
     if (!text || text === node.data.text) return node
     return { ...node, data: { ...node.data, text } }
   })
-}
-
-function buildPipelineSourceText(nodes: CanvasNode[], assets: CanvasAsset[]): string {
-  const byAssetId = new Map(assets.map((asset) => [asset.id, asset]))
-  return nodes
-    .filter((node) => node.type === 'text' || node.type === 'prompt')
-    .map((node) => {
-      const assetText = node.assetId ? byAssetId.get(node.assetId)?.contentText : undefined
-      return (assetText ?? node.data.text ?? '').trim()
-    })
-    .filter((text): text is string => Boolean(text))
-    .join('\n\n')
 }
 
 function placeNodeRightOfNodes(
@@ -5113,6 +5103,8 @@ export function CanvasWorkspaceView({
     taskPipelineRole?: CanvasPipelineRole
     outputPipelineRole?: CanvasPipelineRole
     outputTitle?: string
+    outputFilmAssetId?: string
+    outputFilmReferenceKind?: FilmReferenceKind
     /** 预绑定的上游节点（仅创建时记录；用户可在面板里改） */
     inputNodeIds?: string[]
     /** 自定义节点尺寸，用于 viewport 居中计算 */
@@ -5145,6 +5137,14 @@ export function CanvasWorkspaceView({
       existingNodeIds,
     )
     if (created) {
+      if (params.outputFilmAssetId) {
+        await updateNodeData(created.id, {
+          outputFilmAssetId: params.outputFilmAssetId,
+          ...(params.outputFilmReferenceKind
+            ? { outputFilmReferenceKind: params.outputFilmReferenceKind }
+            : {}),
+        })
+      }
       if (params.openPanel !== false) {
         openOperationPanelForNode(created.id)
         message.info(`已创建「${params.title}」任务节点，请确认配置后开始`)
@@ -5489,6 +5489,8 @@ export function CanvasWorkspaceView({
     taskPipelineRole,
     outputPipelineRole,
     outputTitle,
+    outputFilmAssetId,
+    outputFilmReferenceKind,
     shotScriptConfig,
     position,
     openPanel = false,
@@ -5504,6 +5506,8 @@ export function CanvasWorkspaceView({
     taskPipelineRole?: CanvasPipelineRole
     outputPipelineRole?: CanvasPipelineRole
     outputTitle?: string
+    outputFilmAssetId?: string
+    outputFilmReferenceKind?: FilmReferenceKind
     shotScriptConfig?: ShotScriptConfig
     position?: CanvasPoint
     /** 从节点右键流水线创建时默认只选中新节点，避免面板被菜单收尾状态立即关闭。 */
@@ -5534,6 +5538,12 @@ export function CanvasWorkspaceView({
     })
     const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
     if (created) {
+      if (outputFilmAssetId) {
+        await updateNodeData(created.id, {
+          outputFilmAssetId,
+          ...(outputFilmReferenceKind ? { outputFilmReferenceKind } : {}),
+        })
+      }
       if (openPanel) {
         openOperationPanelForNode(created.id)
         if (announce) message.info('已创建操作节点，请确认配置后点击开始任务')
@@ -5550,18 +5560,20 @@ export function CanvasWorkspaceView({
     if (!snapshot) return
     const node = snapshot.nodes.find((item) => item.id === nodeId)
     if (!node) return
+    const pipelineTextSource = resolveCanvasPipelineTextSource(node, snapshot)
     // 分镜 / 关键帧节点：从 shotRef 解析分镜后执行（§S6/§S7 节点化）
     if (
       actionId === 'shot.to_keyframes' ||
       actionId === 'shot.to_video' ||
       actionId === 'keyframe.to_video'
     ) {
-      if (actionId === 'shot.to_keyframes' && node.type === 'text') {
-        const sourceText = (node.data.text ?? '').trim()
+      const shotSourceNode = pipelineTextSource.sourceNode
+      if (actionId === 'shot.to_keyframes' && shotSourceNode.type === 'text') {
+        const sourceText = pipelineTextSource.sourceText
         const parsedRows = sourceText ? parseShotTable(sourceText) : []
         if (isShotScriptText(sourceText) && parsedRows.length >= 2) {
           await createConfiguredOperationNode({
-            sourceNode: node,
+            sourceNode: shotSourceNode,
             operation: 'storyboard_grid',
             title: '生成分镜关键帧图',
             prompt:
@@ -5573,7 +5585,7 @@ export function CanvasWorkspaceView({
           return
         }
       }
-      const resolved = resolveShotFromNode(node)
+      const resolved = resolveShotFromNode(shotSourceNode) ?? resolveShotFromNode(node)
       if (!resolved) {
         message.warning(
           actionId === 'shot.to_video'
@@ -5589,15 +5601,7 @@ export function CanvasWorkspaceView({
       }
       return
     }
-    const actionInputNodes = expandCanvasInputNodes([node], snapshot.nodes)
-    const asset = node.assetId
-      ? snapshot.assets.find((item) => item.id === node.assetId)
-      : undefined
-    // 文本来源：优先关联资产正文，回退节点自身文本（让章→剧本改写产出的纯文本节点右键即可用）
-    const sourceText =
-      node.type === 'group'
-        ? buildPipelineSourceText(actionInputNodes, snapshot.assets)
-        : (asset?.contentText ?? node.data.text ?? '').trim()
+    const { sourceNode: textSourceNode, sourceText } = pipelineTextSource
     const requireAssetTargets = (label: string): CanvasPipelineAssetTarget[] => {
       const targets = resolveCanvasPipelineAssetTargets({ sourceNode: node, actionId, snapshot })
       if (targets.length === 0) {
@@ -5637,19 +5641,19 @@ export function CanvasWorkspaceView({
 
     switch (actionId) {
       case 'chapter.to_screenplay':
-        await handlePrepareChapterToScreenplayOperation(node, sourceText)
+        await handlePrepareChapterToScreenplayOperation(textSourceNode, sourceText)
         break
       case 'screenplay.to_shot_script':
-        await handleGenerateShotScript(node, sourceText)
+        await handleGenerateShotScript(textSourceNode, sourceText)
         break
       case 'screenplay.extract_characters':
-        await handlePrepareExtractEntitiesOperation(node, sourceText, 'character')
+        await handlePrepareExtractEntitiesOperation(textSourceNode, sourceText, 'character')
         break
       case 'screenplay.extract_scenes':
-        await handlePrepareExtractEntitiesOperation(node, sourceText, 'scene')
+        await handlePrepareExtractEntitiesOperation(textSourceNode, sourceText, 'scene')
         break
       case 'screenplay.storyboard_grid':
-        handleStoryboardGridFromNode(node)
+        handleStoryboardGridFromNode(textSourceNode)
         break
       case 'character.three_view': {
         // 右键菜单入口：创建并选中操作节点，由用户双击或右键“编辑节点”打开配置
@@ -5678,6 +5682,8 @@ export function CanvasWorkspaceView({
             taskPipelineRole: 'design_card',
             outputPipelineRole: 'design_card',
             outputTitle: targetAsset.title ?? '角色',
+            outputFilmAssetId: targetAsset.id,
+            outputFilmReferenceKind: 'concept',
             selectCreated: false,
             announce: false,
           }),
@@ -5717,6 +5723,8 @@ export function CanvasWorkspaceView({
             nodeMessage: '确认 Prompt、Agent 与模型后点击开始任务',
             taskPipelineRole: 'design_card',
             outputPipelineRole: 'design_card',
+            outputFilmAssetId: targetAsset.id,
+            outputFilmReferenceKind: 'concept',
             selectCreated: false,
             announce: false,
           })
@@ -6794,6 +6802,8 @@ export function CanvasWorkspaceView({
       ...(sourceNodeId ? { inputNodeIds: [sourceNodeId] } : {}),
       taskPipelineRole: 'design_card',
       outputPipelineRole: 'design_card',
+      outputFilmAssetId: asset.id,
+      outputFilmReferenceKind: 'concept',
     })
   }
 
@@ -6821,7 +6831,9 @@ export function CanvasWorkspaceView({
       })
       const sheetTitle =
         aspect === 'turnaround' ? `生成角色身份板 · ${asset.title ?? '角色'}` : '生成角色图'
-      const needsBase = getCharacterSheetTemplate(aspect)?.needsBaseImage ?? false
+      const sheetTemplate = getCharacterSheetTemplate(aspect)
+      const needsBase = sheetTemplate?.needsBaseImage ?? false
+      const referenceKind = sheetTemplate?.referenceKind ?? 'other'
       // 角色身份板默认 16:9（综合卡横版构图）；其余面向维持现状不强制比例
       const sheetModelParams = aspect === 'turnaround' ? { aspect_ratio: '16:9' } : undefined
       // 不直接发起任务：为每一面在画布上创建一个独立的生成任务节点，用户统一在面板里确认
@@ -6835,6 +6847,8 @@ export function CanvasWorkspaceView({
           ...(sheetModelParams ? { modelParams: sheetModelParams } : {}),
           taskPipelineRole: 'design_card',
           outputPipelineRole: 'design_card',
+          outputFilmAssetId: asset.id,
+          outputFilmReferenceKind: referenceKind,
           ...(aspect === 'turnaround' ? { outputTitle: asset.title ?? '角色' } : {}),
         })
       } else {
@@ -6846,6 +6860,8 @@ export function CanvasWorkspaceView({
           ...(sheetModelParams ? { modelParams: sheetModelParams } : {}),
           taskPipelineRole: 'design_card',
           outputPipelineRole: 'design_card',
+          outputFilmAssetId: asset.id,
+          outputFilmReferenceKind: referenceKind,
           ...(aspect === 'turnaround' ? { outputTitle: asset.title ?? '角色' } : {}),
         })
       }

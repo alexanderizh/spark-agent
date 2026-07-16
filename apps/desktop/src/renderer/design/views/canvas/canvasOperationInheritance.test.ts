@@ -2292,5 +2292,243 @@ describe('canvas operation inheritance', () => {
     expect(asset?.title).toBe('林岚')
     expect(outputNode?.title).toBe('林岚')
     expect(outputNode?.data.pipelineRole).toBe('design_card')
+    expect(asset?.metadata.kind).toBeUndefined()
+  })
+
+  it('attaches generated design-card images to their owning film asset', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 1,
+          assetCount: 1,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [
+        {
+          id: 'character-asset',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'prompt',
+          source: 'manual',
+          title: 'Lin Lan',
+          metadata: { kind: 'character', references: [], tags: [] },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-task',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_to_image',
+          title: 'Character sheet',
+          taskId: 'task-running',
+          parentNodeId: null,
+          x: 10,
+          y: 20,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: {
+            operation: 'text_to_image',
+            status: 'running',
+            progress: 35,
+            outputPipelineRole: 'design_card',
+            outputFilmAssetId: 'character-asset',
+            outputFilmReferenceKind: 'expression',
+          },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [
+        {
+          id: 'task-running',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'running',
+          progress: 35,
+          title: 'Character sheet',
+          prompt: 'character sheet',
+          negativePrompt: null,
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          requestId: 'runtime-1',
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+
+    const snapshot = await canvasApi.applyMediaTaskResult('project-1', 'task-running', {
+      status: 'succeeded',
+      mode: 'async',
+      runtimeTaskId: 'runtime-1',
+      requestId: 'runtime-1',
+      providerProfileId: 'provider-1',
+      provider: 'test',
+      model: 'image-model',
+      assets: [
+        {
+          type: 'image',
+          filePath: '/tmp/expression.png',
+          mimeType: 'image/png',
+          width: 1280,
+          height: 720,
+        },
+      ],
+    })
+
+    const generated = snapshot.assets.find((item) => item.metadata.taskId === 'task-running')
+    const owner = snapshot.assets.find((item) => item.id === 'character-asset')
+    expect(generated?.metadata.filmOwnerAssetId).toBe('character-asset')
+    expect(generated?.metadata.kind).toBeUndefined()
+    expect(owner?.metadata.references).toEqual([
+      expect.objectContaining({
+        kind: 'expression',
+        assetId: generated?.id,
+        isPrimary: true,
+      }),
+    ])
+  })
+
+  it('archives an unowned panorama as a scene asset', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 1,
+          assetCount: 0,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [
+        {
+          id: 'node-task',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'panorama_360',
+          title: 'Panorama',
+          taskId: 'task-running',
+          parentNodeId: null,
+          x: 10,
+          y: 20,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: {
+            operation: 'panorama_360',
+            status: 'running',
+            progress: 35,
+          },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [
+        {
+          id: 'task-running',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'panorama_360',
+          status: 'running',
+          progress: 35,
+          title: 'Panorama',
+          prompt: 'panorama',
+          negativePrompt: null,
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          requestId: 'runtime-1',
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+
+    const snapshot = await canvasApi.applyMediaTaskResult('project-1', 'task-running', {
+      status: 'succeeded',
+      mode: 'async',
+      runtimeTaskId: 'runtime-1',
+      requestId: 'runtime-1',
+      providerProfileId: 'provider-1',
+      provider: 'test',
+      model: 'image-model',
+      assets: [
+        {
+          type: 'image',
+          filePath: '/tmp/panorama.png',
+          mimeType: 'image/png',
+          width: 2048,
+          height: 1024,
+        },
+      ],
+    })
+
+    const panorama = snapshot.assets.find((item) => item.metadata.taskId === 'task-running')
+    expect(panorama?.metadata.kind).toBe('scene')
+    expect(panorama?.metadata.tags).toEqual(['360全景图'])
+    expect(panorama?.metadata.panorama360).toEqual({
+      projection: 'equirectangular',
+      sourceOperation: 'panorama_360',
+    })
   })
 })
