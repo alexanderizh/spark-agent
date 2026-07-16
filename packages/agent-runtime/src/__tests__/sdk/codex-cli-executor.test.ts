@@ -226,21 +226,42 @@ describe('CodexCliExecutor', () => {
     expect(spawnMock).not.toHaveBeenCalled()
   })
 
-  it('forces non-interactive Codex CLI execution for unattended automation turns', async () => {
-    spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
+  it.each([
+    ['codex-default', true, 'workspace-write', "approval_policy='never'", null],
+    [
+      'codex-auto-review',
+      true,
+      'workspace-write',
+      "approval_policy='on-request'",
+      "approvals_reviewer='auto_review'",
+    ],
+    ['codex-full-access', false, 'danger-full-access', "approval_policy='never'", null],
+  ] as const)(
+    'maps %s unattended=%s without implicit privilege escalation',
+    async (permissionMode, unattended, sandboxMode, approvalConfig, reviewerConfig) => {
+      spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))
 
-    const executor = new CodexCliExecutor()
-    await executor.executeTurn(
-      'session-1',
-      'turn-1',
-      'hello',
-      makeConfig({ permissionMode: 'codex-auto-review', unattended: true }),
-    )
+      await new CodexCliExecutor().executeTurn(
+        'session-1',
+        'turn-1',
+        'hello',
+        makeConfig({ permissionMode, unattended }),
+      )
 
-    const args = spawnMock.mock.calls[0]?.[1] as string[]
-    expect(args).toContain('--dangerously-bypass-approvals-and-sandbox')
-    expect(args).not.toContain('--sandbox')
-  })
+      const args = spawnMock.mock.calls[0]?.[1] as string[]
+      expect(args.slice(args.indexOf('--sandbox'), args.indexOf('--sandbox') + 2)).toEqual([
+        '--sandbox',
+        sandboxMode,
+      ])
+      expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+      expect(lastProfileConfig).toContain(approvalConfig)
+      if (reviewerConfig == null) {
+        expect(lastProfileConfig).not.toContain('approvals_reviewer=')
+      } else {
+        expect(lastProfileConfig).toContain(reviewerConfig)
+      }
+    },
+  )
 
   it('maps Spark max reasoning to Codex CLI xhigh effort', async () => {
     spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args))

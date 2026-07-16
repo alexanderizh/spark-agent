@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@spark/protocol'
 import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
+import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
 import { toCodexReasoningEffort, type CodexReasoningEffort } from './reasoning-effort.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
@@ -455,7 +456,7 @@ function buildCodexArgs(
   if (!config.useLocalConfig && config.model.trim().length > 0) {
     args.push('--model', config.model)
   }
-  args.push(...mapCodexPermissionArgs(config.permissionMode, config.unattended))
+  args.push(...buildCodexPermissionArgs(config))
   for (const dir of config.additionalDirectories ?? []) {
     args.push('--add-dir', dir)
   }
@@ -477,6 +478,7 @@ async function writeCodexTempProfile(config: SDKExecutorConfig): Promise<CodexTe
 }
 
 function buildCodexProfileConfigItems(config: SDKExecutorConfig): string[] {
+  const policy = resolveCodexPermissionPolicy(config.permissionMode, config.unattended === true)
   const items = [
     ...(config.disableCodexNativeSkills === true ? ['features.plugins=false'] : []),
     ...(config.goal?.mode === 'codex-native' ? ['features.goals=true'] : []),
@@ -490,6 +492,10 @@ function buildCodexProfileConfigItems(config: SDKExecutorConfig): string[] {
   items.push(`model_reasoning_summary='concise'`)
   items.push('show_raw_agent_reasoning=true')
   items.push('hide_agent_reasoning=false')
+  items.push(`approval_policy=${tomlString(policy.approvalPolicy)}`)
+  if (policy.approvalsReviewer != null) {
+    items.push(`approvals_reviewer=${tomlString(policy.approvalsReviewer)}`)
+  }
   items.push(`sandbox_workspace_write.network_access=${config.networkAccessEnabled ?? false}`)
   const webSearchMode =
     config.webSearchMode ?? (config.webSearchEnabled === true ? 'live' : 'disabled')
@@ -551,24 +557,9 @@ function createCodexCliNotFoundError(candidates: string[]): Error {
   return err
 }
 
-function mapCodexPermissionArgs(
-  mode: SDKExecutorConfig['permissionMode'],
-  unattended: boolean | undefined,
-): string[] {
-  // Codex CLI currently exposes only the all-or-nothing bypass flag for
-  // suppressing approvals. Scheduled unattended runs must never block waiting
-  // for input, so force the non-interactive path when automation requests it.
-  if (unattended === true) {
-    return ['--dangerously-bypass-approvals-and-sandbox']
-  }
-  switch (mode) {
-    case 'codex-full-access':
-      return ['--dangerously-bypass-approvals-and-sandbox']
-    case 'codex-auto-review':
-      return ['--sandbox', 'workspace-write']
-    default:
-      return ['--sandbox', 'workspace-write']
-  }
+function buildCodexPermissionArgs(config: SDKExecutorConfig): string[] {
+  const policy = resolveCodexPermissionPolicy(config.permissionMode, config.unattended === true)
+  return ['--sandbox', policy.sandboxMode]
 }
 
 function buildCodexPrompt(userMessage: string, config: SDKExecutorConfig): string {
