@@ -91,4 +91,25 @@ describe('CanvasOperationNodeSettings', () => {
     expect(mounted.input.value).toBe('重试名称')
     expect(mounted.container.textContent).toContain('保存失败')
   })
+
+  it('deduplicates Enter and blur while the same save is in flight', async () => {
+    let resolveSave: (() => void) | undefined
+    const onRename = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve
+        }),
+    )
+    const mounted = await mountSettings('旧名称', onRename)
+    await changeValue(mounted.input, '新名称')
+
+    await act(async () => {
+      mounted.input.focus()
+      mounted.input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      mounted.input.blur()
+    })
+    expect(onRename).toHaveBeenCalledTimes(1)
+
+    await act(async () => resolveSave?.())
+  })
 })

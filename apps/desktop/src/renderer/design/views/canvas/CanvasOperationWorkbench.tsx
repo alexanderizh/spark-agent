@@ -316,7 +316,7 @@ export function CanvasOperationWorkbench({
       <div className="canvas-operation-workbench-content">
         {activeTab === 'settings' ? (
           <CanvasOperationNodeSettings
-            key={`${node.id}:${node.updatedAt}`}
+            key={`${node.id}:${node.title ?? ''}`}
             nodeId={node.id}
             title={node.title ?? null}
             disabled={state.busy}

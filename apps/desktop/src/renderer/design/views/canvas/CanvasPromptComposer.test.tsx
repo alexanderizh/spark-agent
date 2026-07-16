@@ -18,7 +18,6 @@ import type { CanvasAsset, CanvasNode } from './canvas.types'
 import { CanvasPromptComposer } from './CanvasPromptComposer'
 import { CANVAS_PROMPT_HOVER_MAX_HEIGHT } from './CanvasPromptHoverCard'
 import './canvasPromptComposer.less'
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 if (!Range.prototype.getBoundingClientRect) {
@@ -44,11 +43,29 @@ afterEach(async () => {
 
 function imageNode(): CanvasNode {
   return {
-    id: 'hero', projectId: 'p', boardId: 'b', userId: 1, type: 'image', title: '小满',
-    assetId: 'asset-hero', taskId: null, parentNodeId: null, x: 0, y: 0, width: 100, height: 100,
-    rotation: 0, zIndex: 0, locked: false, hidden: false,
-    data: { url: 'https://example.com/hero.png', thumbnailUrl: 'https://example.com/hero-thumb.png' },
-    createdAt: '', updatedAt: '',
+    id: 'hero',
+    projectId: 'p',
+    boardId: 'b',
+    userId: 1,
+    type: 'image',
+    title: '小满',
+    assetId: 'asset-hero',
+    taskId: null,
+    parentNodeId: null,
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    rotation: 0,
+    zIndex: 0,
+    locked: false,
+    hidden: false,
+    data: {
+      url: 'https://example.com/hero.png',
+      thumbnailUrl: 'https://example.com/hero-thumb.png',
+    },
+    createdAt: '',
+    updatedAt: '',
   }
 }
 
@@ -78,9 +95,17 @@ function textNode(): CanvasNode {
 }
 
 const asset: CanvasAsset = {
-  id: 'asset-hero', projectId: 'p', userId: 1, type: 'image', source: 'upload', title: '小满',
-  url: 'https://example.com/hero.png', thumbnailUrl: 'https://example.com/hero-thumb.png',
-  metadata: {}, createdAt: '', updatedAt: '',
+  id: 'asset-hero',
+  projectId: 'p',
+  userId: 1,
+  type: 'image',
+  source: 'upload',
+  title: '小满',
+  url: 'https://example.com/hero.png',
+  thumbnailUrl: 'https://example.com/hero-thumb.png',
+  metadata: {},
+  createdAt: '',
+  updatedAt: '',
 }
 
 const videoAsset: CanvasAsset = {
@@ -157,7 +182,17 @@ describe('CanvasPromptComposer', () => {
   it('renders image references as thumbnail chips', async () => {
     const mounted = await mountComposer({
       version: 2,
-      blocks: [{ kind: 'reference', id: 'r1', source: 'manual', sourceNodeId: 'hero', relation: 'character', label: '小满', order: 0 }],
+      blocks: [
+        {
+          kind: 'reference',
+          id: 'r1',
+          source: 'manual',
+          sourceNodeId: 'hero',
+          relation: 'character',
+          label: '小满',
+          order: 0,
+        },
+      ],
     })
     expect(
       mounted.container.querySelector<HTMLImageElement>('.canvas-prompt-chip-thumb img')?.src,
@@ -171,7 +206,17 @@ describe('CanvasPromptComposer', () => {
     const mounted = await mountComposer(
       {
         version: 2,
-        blocks: [{ kind: 'reference', id: 'r1', source: 'manual', sourceNodeId: 'hero', relation: 'reference_image', label: '小满', order: 0 }],
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'r1',
+            source: 'manual',
+            sourceNodeId: 'hero',
+            relation: 'reference_image',
+            label: '小满',
+            order: 0,
+          },
+        ],
       },
       [referencedImage],
     )
@@ -195,7 +240,17 @@ describe('CanvasPromptComposer', () => {
     const mounted = await mountComposer(
       {
         version: 2,
-        blocks: [{ kind: 'reference', id: 'r1', source: 'manual', sourceNodeId: 'clip', relation: 'reference_video', label: '参考视频', order: 0 }],
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'r1',
+            source: 'manual',
+            sourceNodeId: 'clip',
+            relation: 'reference_video',
+            label: '参考视频',
+            order: 0,
+          },
+        ],
       },
       [videoNode()],
       [videoAsset],
@@ -219,7 +274,17 @@ describe('CanvasPromptComposer', () => {
     const mounted = await mountComposer(
       {
         version: 2,
-        blocks: [{ kind: 'reference', id: 'r1', source: 'manual', sourceNodeId: 'storyboard', relation: 'storyboard', label: '分镜表', order: 0 }],
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'r1',
+            source: 'manual',
+            sourceNodeId: 'storyboard',
+            relation: 'storyboard',
+            label: '分镜表',
+            order: 0,
+          },
+        ],
       },
       [textNode()],
       [],
@@ -241,7 +306,18 @@ describe('CanvasPromptComposer', () => {
 
   it('renders structured and invalid references as atomic states', async () => {
     const mounted = await mountComposer(
-      { version: 2, blocks: [{ kind: 'structured', id: 's1', sourceNodeId: 'missing', schema: 'storyboard', summary: '镜头 03–06' }] },
+      {
+        version: 2,
+        blocks: [
+          {
+            kind: 'structured',
+            id: 's1',
+            sourceNodeId: 'missing',
+            schema: 'storyboard',
+            summary: '镜头 03–06',
+          },
+        ],
+      },
       [],
     )
     expect(mounted.container.textContent).toContain('镜头 03–06')
@@ -265,7 +341,15 @@ describe('CanvasPromptComposer', () => {
       version: 2,
       blocks: [
         { kind: 'text', id: 'text-before-resource', text: '镜头中间文字' },
-        { kind: 'reference', id: 'reference-hero', source: 'manual', sourceNodeId: 'hero', relation: 'reference_image', label: '小满', order: 0 },
+        {
+          kind: 'reference',
+          id: 'reference-hero',
+          source: 'manual',
+          sourceNodeId: 'hero',
+          relation: 'reference_image',
+          label: '小满',
+          order: 0,
+        },
       ],
     })
     await act(async () => {
@@ -287,9 +371,11 @@ describe('CanvasPromptComposer', () => {
 
   it('creates an editable parameter and focuses its value', async () => {
     const mounted = await mountComposer({ version: 2, blocks: [] })
-    await act(async () => mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click())
+    await act(async () =>
+      mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click(),
+    )
     const durationButton = Array.from(
-      mounted.container.querySelectorAll<HTMLButtonElement>('.canvas-prompt-parameter-menu > button'),
+      document.querySelectorAll<HTMLButtonElement>('.canvas-prompt-insert-shortcuts button'),
     ).find((button) => button.textContent?.includes('镜头时长'))!
     await act(async () => durationButton.click())
     await flushEditor()
@@ -308,24 +394,95 @@ describe('CanvasPromptComposer', () => {
   })
 
   it('adds character and image resources from the insert menu', async () => {
-    const characterNode = { ...imageNode(), data: { ...imageNode().data, pipelineRole: 'character' as const } }
+    const characterNode = {
+      ...imageNode(),
+      data: { ...imageNode().data, pipelineRole: 'character' as const },
+    }
     const mounted = await mountComposer({ version: 2, blocks: [] }, [characterNode])
-    await act(async () => mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click())
+    await act(async () =>
+      mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click(),
+    )
     const resourceButton = Array.from(
-      mounted.container.querySelectorAll<HTMLButtonElement>('.canvas-prompt-resource-list button'),
+      document.querySelectorAll<HTMLButtonElement>('.canvas-prompt-insert-result'),
     ).find((button) => button.textContent?.includes('小满'))!
     await act(async () => resourceButton.click())
     await flushEditor()
     expect(mounted.getDocument().blocks).toContainEqual(
-      expect.objectContaining({ kind: 'reference', sourceNodeId: 'hero', relation: 'character', label: '小满' }),
+      expect.objectContaining({
+        kind: 'reference',
+        sourceNodeId: 'hero',
+        relation: 'character',
+        label: '小满',
+      }),
     )
+  })
+
+  it('uses the shared searchable menu for the toolbar and @ trigger', async () => {
+    const mounted = await mountComposer(
+      { version: 2, blocks: [] },
+      [textNode(), imageNode()],
+      [asset],
+    )
+
+    await act(async () => {
+      mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click()
+    })
+    const toolbarMenu = document.querySelector<HTMLElement>('.canvas-prompt-insert-menu')
+    expect(toolbarMenu).not.toBeNull()
+    expect(toolbarMenu?.parentElement).toBe(document.body)
+    expect(toolbarMenu?.style.position).toBe('fixed')
+    expect(document.querySelector<HTMLInputElement>('[aria-label="搜索节点与资源"]')).not.toBeNull()
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(document.querySelector('.canvas-prompt-insert-menu')).toBeNull()
+
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('@分镜')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+    const mentionSearch = document.querySelector<HTMLInputElement>(
+      '.canvas-prompt-insert-menu [aria-label="搜索节点与资源"]',
+    )
+    expect(mentionSearch?.value).toBe('分镜')
+  })
+
+  it('closes the toolbar insert menu after an outside pointer down', async () => {
+    const mounted = await mountComposer({ version: 2, blocks: [] })
+    await act(async () => {
+      mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click()
+    })
+    expect(document.querySelector('.canvas-prompt-insert-menu')).not.toBeNull()
+
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+    expect(document.querySelector('.canvas-prompt-insert-menu')).toBeNull()
   })
 
   it('keeps a resource tag and following text in one Lexical paragraph', async () => {
     const mounted = await mountComposer({
       version: 2,
       blocks: [
-        { kind: 'reference', id: 'reference-hero', source: 'manual', sourceNodeId: 'hero', relation: 'reference_image', label: '小满', order: 0 },
+        {
+          kind: 'reference',
+          id: 'reference-hero',
+          source: 'manual',
+          sourceNodeId: 'hero',
+          relation: 'reference_image',
+          label: '小满',
+          order: 0,
+        },
         { kind: 'text', id: 'text-after-resource', text: '继续输入镜头描述' },
       ],
     })
@@ -333,16 +490,30 @@ describe('CanvasPromptComposer', () => {
     expect(paragraph.querySelector('.canvas-prompt-lexical-atomic')).not.toBeNull()
     expect(paragraph.textContent).toContain('继续输入镜头描述')
     expect(
-      window.getComputedStyle(paragraph.querySelector<HTMLElement>('.canvas-prompt-lexical-atomic')!).display,
+      window.getComputedStyle(
+        paragraph.querySelector<HTMLElement>('.canvas-prompt-lexical-atomic')!,
+      ).display,
     ).toBe('inline')
   })
 
   it('deletes a manually inserted tag as one atomic unit', async () => {
     const mounted = await mountComposer({
       version: 2,
-      blocks: [{ kind: 'reference', id: 'manual-hero', source: 'manual', sourceNodeId: 'hero', relation: 'character', label: '小满', order: 0 }],
+      blocks: [
+        {
+          kind: 'reference',
+          id: 'manual-hero',
+          source: 'manual',
+          sourceNodeId: 'hero',
+          relation: 'character',
+          label: '小满',
+          order: 0,
+        },
+      ],
     })
-    await act(async () => mounted.container.querySelector<HTMLButtonElement>('[aria-label="删除小满"]')!.click())
+    await act(async () =>
+      mounted.container.querySelector<HTMLButtonElement>('[aria-label="删除小满"]')!.click(),
+    )
     await flushEditor()
     expect(mounted.getDocument().blocks).toEqual([])
   })
@@ -350,9 +521,22 @@ describe('CanvasPromptComposer', () => {
   it('persists deletion of an automatic connection tag as a suppressed input', async () => {
     const mounted = await mountComposer({
       version: 2,
-      blocks: [{ kind: 'reference', id: 'connection-hero', source: 'connection', sourceNodeId: 'hero', relation: 'character', connectionRelation: 'character', label: '小满', order: 0 }],
+      blocks: [
+        {
+          kind: 'reference',
+          id: 'connection-hero',
+          source: 'connection',
+          sourceNodeId: 'hero',
+          relation: 'character',
+          connectionRelation: 'character',
+          label: '小满',
+          order: 0,
+        },
+      ],
     })
-    await act(async () => mounted.container.querySelector<HTMLButtonElement>('[aria-label="删除小满"]')!.click())
+    await act(async () =>
+      mounted.container.querySelector<HTMLButtonElement>('[aria-label="删除小满"]')!.click(),
+    )
     await flushEditor()
     expect(mounted.getDocument().blocks).toContainEqual(
       expect.objectContaining({ id: 'connection-hero', suppressed: true }),
@@ -375,12 +559,43 @@ describe('CanvasPromptComposer', () => {
       mounted.getEditor().focus()
     })
     await flushEditor()
-    const option = window.document.querySelector<HTMLButtonElement>('.canvas-prompt-mention-menu button')
+    const option = window.document.querySelector<HTMLButtonElement>('.canvas-prompt-insert-result')
     expect(option?.textContent).toContain('小满')
     await act(async () => option!.click())
     await flushEditor()
     expect(mounted.getDocument().blocks).toContainEqual(
       expect.objectContaining({ kind: 'reference', sourceNodeId: 'hero', label: '小满' }),
+    )
+  })
+
+  it('replaces an @ query when inserting a shortcut parameter from the shared menu', async () => {
+    const mounted = await mountComposer({ version: 2, blocks: [] })
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('@')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+
+    const shortcut = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.canvas-prompt-insert-shortcuts button'),
+    ).find((button) => button.textContent?.includes('镜头时长'))
+    expect(shortcut).toBeDefined()
+    await act(async () => shortcut?.click())
+    await flushEditor()
+
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ kind: 'parameter', parameter: 'duration' }),
+    )
+    expect(mounted.getDocument().blocks).not.toContainEqual(
+      expect.objectContaining({ kind: 'text', text: '@' }),
     )
   })
 })
