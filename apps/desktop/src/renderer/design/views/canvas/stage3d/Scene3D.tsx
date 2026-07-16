@@ -35,6 +35,7 @@ import { MixamoActorRig } from './MixamoActorRig'
 import { UE4ActorRig } from './UE4ActorRig'
 import { getStage3DActorModel } from './actorModelRegistry'
 import { PoseGizmo } from './PoseGizmo'
+import { PanoramaBackground } from './PanoramaBackground'
 import { BODY_METRICS, poseGroundOffset, type JointId, type Vec3 } from './mannequin'
 
 /**
@@ -304,41 +305,6 @@ function useStageTexture(url: string | undefined, equirect: boolean): THREE.Text
   return texture
 }
 
-function PanoramaSceneBackground({
-  texture,
-  rotationY,
-}: {
-  texture: THREE.Texture | null
-  rotationY: number
-}) {
-  const { gl, scene } = useThree()
-
-  useEffect(() => {
-    if (!texture) {
-      // R3F owns this scene object; background synchronization is intentionally imperative.
-      // eslint-disable-next-line react-hooks/immutability
-      scene.background = new THREE.Color('#0b1220')
-      scene.backgroundRotation.set(0, 0, 0)
-      gl.setClearColor('#0b1220', 1)
-      return
-    }
-
-    scene.background = texture
-    scene.backgroundBlurriness = 0
-    scene.backgroundIntensity = 1
-    scene.backgroundRotation.set(0, rotationY, 0)
-    gl.setClearColor('#0b1220', 1)
-
-    return () => {
-      scene.background = new THREE.Color('#0b1220')
-      scene.backgroundRotation.set(0, 0, 0)
-      gl.setClearColor('#0b1220', 1)
-    }
-  }, [gl, rotationY, scene, texture])
-
-  return null
-}
-
 function Backdrop({ data }: { data: Stage3DData }) {
   const { backdrop } = data
   const backdropTexture = useStageTexture(
@@ -349,7 +315,13 @@ function Backdrop({ data }: { data: Stage3DData }) {
   if (backdrop.mode === 'panorama') {
     return (
       <group>
-        <PanoramaSceneBackground texture={backdropTexture} rotationY={backdrop.rotationY ?? 0} />
+        {backdropTexture && (
+          <PanoramaBackground
+            texture={backdropTexture}
+            rotationY={backdrop.rotationY ?? 0}
+            zoom={backdrop.panoramaZoom ?? 1}
+          />
+        )}
         <Grid
           args={[40, 40]}
           cellSize={0.5}

@@ -4,6 +4,7 @@ import type { CanvasNode } from '../canvas.types'
 import {
   createDefaultStage3DData,
   defaultStage3DLighting,
+  getStage3DSceneControlFields,
   makeStage3DCrowdActors,
   makeStage3DActor,
   makeStage3DShot,
@@ -35,11 +36,11 @@ import {
 } from './mannequin'
 import { getMixamoRootTransform } from './MixamoActorRig'
 import { buildStage3DPrompt } from './prompt'
+import { createStage3DLocalModelRuntimeUrl, inferStage3DLocalModelFormat } from './localModelImport'
 import {
-  createStage3DLocalModelRuntimeUrl,
-  inferStage3DLocalModelFormat,
-} from './localModelImport'
-import { poseEditorOverrideFromFinalEuler, poseEditorOverridesFromFinalPose } from './poseEditorMath'
+  poseEditorOverrideFromFinalEuler,
+  poseEditorOverridesFromFinalPose,
+} from './poseEditorMath'
 import {
   getUE4Stage3DBodyScale,
   getUE4Stage3DBoneScales,
@@ -74,11 +75,20 @@ function fakeNode(stage3d: unknown): CanvasNode {
 // ─────────────────────────── stage3d.types 序列化 / 宽容解析 ───────────────────────────
 
 describe('stage3d.types', () => {
+  it.each([
+    ['panorama', ['panoramaZoom', 'sceneScale', 'fov']],
+    ['backdrop', ['backdropDistance', 'sceneScale', 'fov']],
+    ['grid', ['sceneScale', 'fov']],
+  ] as const)('%s 模式返回对应的场景控制字段', (mode, expectedFields) => {
+    expect(getStage3DSceneControlFields(mode)).toEqual(expectedFields)
+  })
+
   it('空节点给出默认场景：1 个角色、grid 背景、16:9 相机', () => {
     const data = readStage3DData(undefined)
     expect(data.version).toBe(1)
     expect(data.actors).toHaveLength(1)
     expect(data.backdrop.mode).toBe('grid')
+    expect(data.backdrop.panoramaZoom).toBe(1)
     expect(data.sceneScale).toBe(1)
     expect(data.camera.aspect).toBe('16:9')
     expect(data.activeId).toBe(data.actors[0]?.id)
@@ -88,16 +98,23 @@ describe('stage3d.types', () => {
     const original: Stage3DData = {
       ...createDefaultStage3DData(),
       sceneScale: 1.35,
-      backdrop: { mode: 'backdrop', imageUrl: 'https://x/pano.jpg', rotationY: 1.2, backdropDistance: 10 },
+      backdrop: {
+        mode: 'backdrop',
+        imageUrl: 'https://x/pano.jpg',
+        rotationY: 1.2,
+        backdropDistance: 10,
+      },
       props: [makeGlbProp(GLB_ASSETS[0]!, 0), makePrimitiveProp('box', 1)],
       sceneBrief: '黄昏的咖啡馆',
       prompt: '旧提示词',
     }
     const legacySerialized = serializeStage3DData(original)
     ;(legacySerialized.backdrop as Record<string, unknown>).mode = 'panorama'
+    ;(legacySerialized.backdrop as Record<string, unknown>).panoramaZoom = 1.35
     const restored = readStage3DData(fakeNode(legacySerialized))
     expect(restored.backdrop.mode).toBe('panorama')
     expect(restored.backdrop.imageUrl).toBe('https://x/pano.jpg')
+    expect(restored.backdrop.panoramaZoom).toBe(1.35)
     expect(restored.sceneScale).toBe(1.35)
     expect(restored.actors.map((a) => a.id)).toEqual(original.actors.map((a) => a.id))
     expect(restored.props.map((p) => [p.id, p.kind, p.assetId])).toEqual(
@@ -112,7 +129,7 @@ describe('stage3d.types', () => {
       fakeNode({
         version: 1,
         sceneScale: 99,
-        backdrop: { mode: 'wormhole', backdropDistance: 999 },
+        backdrop: { mode: 'wormhole', backdropDistance: 999, panoramaZoom: 99 },
         actors: [
           {
             id: 'a1',
@@ -132,6 +149,7 @@ describe('stage3d.types', () => {
     )
     expect(data.backdrop.mode).toBe('grid')
     expect(data.backdrop.backdropDistance).toBe(40)
+    expect(data.backdrop.panoramaZoom).toBe(2)
     expect(data.sceneScale).toBe(2)
     expect(data.actors).toHaveLength(1)
     const actor = data.actors[0]!
@@ -234,7 +252,15 @@ describe('stage3d.types', () => {
       fakeNode({
         version: 1,
         shots: [
-          { id: 's1', name: '开场', shotNumber: '3A', position: [1, 2, 3], target: [0, 1, 0], fov: 40, aspect: '9:16' },
+          {
+            id: 's1',
+            name: '开场',
+            shotNumber: '3A',
+            position: [1, 2, 3],
+            target: [0, 1, 0],
+            fov: 40,
+            aspect: '9:16',
+          },
           { fov: 999, aspect: '21:9', shotNumber: 12 },
           null,
           'junk',
@@ -251,26 +277,38 @@ describe('stage3d.types', () => {
   })
 
   it('lighting 宽容解析：非法预设回退 studio、强度钳制 0.5-2', () => {
-    expect(readStage3DData(fakeNode({ version: 1, lighting: { preset: 'x', intensity: 99 } })).lighting).toEqual({
+    expect(
+      readStage3DData(fakeNode({ version: 1, lighting: { preset: 'x', intensity: 99 } })).lighting,
+    ).toEqual({
       preset: 'studio',
       intensity: 2,
     })
-    expect(readStage3DData(fakeNode({ version: 1, lighting: { preset: 'rim', intensity: 0.1 } })).lighting).toEqual({
+    expect(
+      readStage3DData(fakeNode({ version: 1, lighting: { preset: 'rim', intensity: 0.1 } }))
+        .lighting,
+    ).toEqual({
       preset: 'rim',
       intensity: 0.5,
     })
   })
 
   it('slate 全空视作未设置；有值时保留', () => {
-    expect(readStage3DData(fakeNode({ version: 1, slate: { scene: '', shotNumber: '', take: '' } })).slate).toBeUndefined()
-    const withSlate = readStage3DData(fakeNode({ version: 1, slate: { scene: '3', shotNumber: '3A', take: '2', note: 'ok' } }))
+    expect(
+      readStage3DData(fakeNode({ version: 1, slate: { scene: '', shotNumber: '', take: '' } }))
+        .slate,
+    ).toBeUndefined()
+    const withSlate = readStage3DData(
+      fakeNode({ version: 1, slate: { scene: '3', shotNumber: '3A', take: '2', note: 'ok' } }),
+    )
     expect(withSlate.slate).toEqual({ scene: '3', shotNumber: '3A', take: '2', note: 'ok' })
   })
 
   it('shots/lighting/slate round-trip 一致', () => {
     const original: Stage3DData = {
       ...createDefaultStage3DData(),
-      shots: [makeStage3DShot(createDefaultStage3DData().camera, 0, { name: '主镜', shotNumber: '1A' })],
+      shots: [
+        makeStage3DShot(createDefaultStage3DData().camera, 0, { name: '主镜', shotNumber: '1A' }),
+      ],
       lighting: { preset: 'side', intensity: 1.3 },
       slate: { scene: '5', shotNumber: '5C', take: '3' },
     }
@@ -339,7 +377,16 @@ describe('mannequin', () => {
   it('姿势预设 id 唯一，且覆盖设计文档要求的基础姿势', () => {
     const ids = POSE_PRESETS.map((p) => p.id)
     expect(new Set(ids).size).toBe(ids.length)
-    for (const required of ['stand', 'walk', 'run', 'sit', 'point', 'arms-crossed', 'lying', 'kneel']) {
+    for (const required of [
+      'stand',
+      'walk',
+      'run',
+      'sit',
+      'point',
+      'arms-crossed',
+      'lying',
+      'kneel',
+    ]) {
       expect(ids).toContain(required)
     }
   })
@@ -413,7 +460,11 @@ describe('clampJointEuler', () => {
 
   it('锁定轴恒归 0（含 clamp=false）', () => {
     // lowerLegL 的 Y/Z 为 null
-    expect(clampJointEuler('lowerLegL', [1, 5, 9])).toEqual([clampJointEuler('lowerLegL', [1, 5, 9])[0], 0, 0])
+    expect(clampJointEuler('lowerLegL', [1, 5, 9])).toEqual([
+      clampJointEuler('lowerLegL', [1, 5, 9])[0],
+      0,
+      0,
+    ])
     // Alt 突破仍归零锁定轴
     const alt = clampJointEuler('lowerLegL', [999, 5, 9], { clamp: false })
     expect(alt[0]).toBe(999)
@@ -476,7 +527,11 @@ describe('composePose', () => {
     // stand 预设：upperArmL=[0,0,d(-12)], upperArmR=[0,0,d(12)]（∓12° 外展，见 mannequin.ts）
     const base = getPose('stand')
     const composed = composePose('stand', { upperArmL: [0.1, 0, 0], head: [0.2, 0, 0] })
-    expect(composed.upperArmL).toEqual([0.1 + base.upperArmL![0], base.upperArmL![1], base.upperArmL![2]])
+    expect(composed.upperArmL).toEqual([
+      0.1 + base.upperArmL![0],
+      base.upperArmL![1],
+      base.upperArmL![2],
+    ])
     // 预设未含的关节直接取覆盖值
     expect(composed.head).toEqual([0.2, 0, 0])
     // 无覆盖时等于预设本身
@@ -493,11 +548,7 @@ describe('poseEditorMath', () => {
   it('全屏姿势编辑从 mannequin stand 预设反推覆盖量，避免重复常量漂移', () => {
     const base = getPose('stand').upperArmL!
     expect(poseEditorOverrideFromFinalEuler('upperArmL', base)).toEqual([0, 0, 0])
-    expect(poseEditorOverrideFromFinalEuler('head', [0.2, 0.1, -0.1])).toEqual([
-      0.2,
-      0.1,
-      -0.1,
-    ])
+    expect(poseEditorOverrideFromFinalEuler('head', [0.2, 0.1, -0.1])).toEqual([0.2, 0.1, -0.1])
   })
 
   it('把最终姿势快照转换为 stand 覆盖，渲染后不重复叠加站姿基准', () => {
@@ -587,7 +638,10 @@ describe('solveTwoBoneIK', () => {
     // 伸直：末端长度 ≈ 上段+下段
     expect(end.length()).toBeCloseTo(armChain.upperLen + armChain.lowerLen, 4)
     // 方向对准目标
-    const dot = end.clone().normalize().dot(new THREE.Vector3(0, -1, 0))
+    const dot = end
+      .clone()
+      .normalize()
+      .dot(new THREE.Vector3(0, -1, 0))
     expect(dot).toBeGreaterThan(0.999)
   })
 
@@ -698,7 +752,12 @@ describe('buildStage3DPrompt', () => {
   it('cameraOverride 覆盖机位：仰视 vs 默认俯视', () => {
     const data = sampleData() // 默认相机高 3.2 > 目标 1 → 俯视
     expect(buildStage3DPrompt(data)).toContain('俯视')
-    const lowCam: Stage3DCamera = { position: [0, 0.3, 4.5], target: [0, 1.5, 0], fov: 40, aspect: '16:9' }
+    const lowCam: Stage3DCamera = {
+      position: [0, 0.3, 4.5],
+      target: [0, 1.5, 0],
+      fov: 40,
+      aspect: '16:9',
+    }
     expect(buildStage3DPrompt(data, lowCam)).toContain('仰视')
   })
 
@@ -716,18 +775,19 @@ describe('buildStage3DPrompt', () => {
   it('多角色时追加相对第一个角色的方位关系', () => {
     const data = sampleData()
     const first = data.actors[0]!
-    data.actors = [
-      first,
-      { ...makeStage3DActor(1), name: '角色B', position: [4, 0, -2] },
-    ]
+    data.actors = [first, { ...makeStage3DActor(1), name: '角色B', position: [4, 0, -2] }]
     const prompt = buildStage3DPrompt(data)
-    expect(prompt).toMatch(/角色B位于林小满(正前方|右前方|右侧|右后方|正后方|左后方|左侧|左前方)约 \d+\.\d 米/)
+    expect(prompt).toMatch(
+      /角色B位于林小满(正前方|右前方|右侧|右后方|正后方|左后方|左侧|左前方)约 \d+\.\d 米/,
+    )
   })
 
   it('道具定位：相对最近角色的方位 + 距离', () => {
     const data = sampleData() // 角色在 [2,0,0]，道具用默认 makeGlbProp 位置
     const prompt = buildStage3DPrompt(data)
-    expect(prompt).toMatch(/单人床1：位于林小满(正前方|右前方|右侧|右后方|正后方|左后方|左侧|左前方)约 \d+\.\d 米/)
+    expect(prompt).toMatch(
+      /单人床1：位于林小满(正前方|右前方|右侧|右后方|正后方|左后方|左侧|左前方)约 \d+\.\d 米/,
+    )
   })
 
   it('道具超过 6 个时按锚点归纳分组，避免逐条列举', () => {
@@ -750,7 +810,9 @@ describe('buildStage3DPrompt', () => {
     const data = sampleData()
     data.actors = []
     const prompt = buildStage3DPrompt(data)
-    expect(prompt).toMatch(/单人床1：位于场景原点(正前方|右前方|右侧|右后方|正后方|左后方|左侧|左前方)约 \d+\.\d 米/)
+    expect(prompt).toMatch(
+      /单人床1：位于场景原点(正前方|右前方|右侧|右后方|正后方|左后方|左侧|左前方)约 \d+\.\d 米/,
+    )
   })
 })
 
@@ -781,7 +843,9 @@ describe('MixamoActorRig', () => {
 
 describe('rotationYFromQuaternion', () => {
   it('跨过 90° 时仍返回真实 yaw，而不是欧拉角重排后的 45°', () => {
-    const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, (3 * Math.PI) / 4, 0, 'XYZ'))
+    const quaternion = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(0, (3 * Math.PI) / 4, 0, 'XYZ'),
+    )
     const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ')
     expect(euler.y).toBeCloseTo(Math.PI / 4, 6)
     expect(rotationYFromQuaternion(quaternion)).toBeCloseTo((3 * Math.PI) / 4, 6)
@@ -866,7 +930,9 @@ describe('localModelImport', () => {
     }) as typeof fetch
 
     try {
-      const runtime = await createStage3DLocalModelRuntimeUrl('data:model/gltf-binary;base64,AAECAw==')
+      const runtime = await createStage3DLocalModelRuntimeUrl(
+        'data:model/gltf-binary;base64,AAECAw==',
+      )
       expect(runtime.url).toBe('blob:stage3d-1')
       expect(created[0]?.size).toBe(4)
       runtime.revoke?.()
@@ -1082,7 +1148,9 @@ function redoLike(
 describe('姿势编辑 undo/redo 栈契约（等价复刻验证）', () => {
   it('pushPoseUndo：新动作入 undo 栈并清空 redo 栈', () => {
     const undo: PoseUndoEntryLite[] = []
-    const redo: PoseUndoEntryLite[] = [/* 模拟之前 undo 过 */]
+    const redo: PoseUndoEntryLite[] = [
+      /* 模拟之前 undo 过 */
+    ]
     const entry: PoseUndoEntryLite = {
       actorId: 'a1',
       before: { pose: 'stand', joints: undefined },
@@ -1135,8 +1203,16 @@ describe('姿势编辑 undo/redo 栈契约（等价复刻验证）', () => {
   })
 
   it('多次 undo 全程可还原：栈清空后 undo 不抛', () => {
-    const e1: PoseUndoEntryLite = { actorId: 'a1', before: { pose: 'stand', joints: undefined }, after: { pose: 'walk', joints: undefined } }
-    const e2: PoseUndoEntryLite = { actorId: 'a1', before: { pose: 'walk', joints: undefined }, after: { pose: 'run', joints: undefined } }
+    const e1: PoseUndoEntryLite = {
+      actorId: 'a1',
+      before: { pose: 'stand', joints: undefined },
+      after: { pose: 'walk', joints: undefined },
+    }
+    const e2: PoseUndoEntryLite = {
+      actorId: 'a1',
+      before: { pose: 'walk', joints: undefined },
+      after: { pose: 'run', joints: undefined },
+    }
     let undo: PoseUndoEntryLite[] = [e1, e2]
     let redo: PoseUndoEntryLite[] = []
     const u1 = undoLike(undo, redo)
@@ -1154,7 +1230,11 @@ describe('姿势编辑 undo/redo 栈契约（等价复刻验证）', () => {
   })
 
   it('新动作截断 redo 分支：undo 后再编辑，原 redo 不再可达', () => {
-    const e1: PoseUndoEntryLite = { actorId: 'a1', before: { pose: 'stand', joints: undefined }, after: { pose: 'walk', joints: undefined } }
+    const e1: PoseUndoEntryLite = {
+      actorId: 'a1',
+      before: { pose: 'stand', joints: undefined },
+      after: { pose: 'walk', joints: undefined },
+    }
     let undo: PoseUndoEntryLite[] = [e1]
     let redo: PoseUndoEntryLite[] = []
     // undo 一次：redo 入栈一条
@@ -1163,7 +1243,11 @@ describe('姿势编辑 undo/redo 栈契约（等价复刻验证）', () => {
     redo = u.redo
     expect(redo).toHaveLength(1)
     // 编辑新动作：redo 必须被清空
-    const e2: PoseUndoEntryLite = { actorId: 'a1', before: { pose: 'walk', joints: undefined }, after: { pose: 'run', joints: undefined } }
+    const e2: PoseUndoEntryLite = {
+      actorId: 'a1',
+      before: { pose: 'walk', joints: undefined },
+      after: { pose: 'run', joints: undefined },
+    }
     const next = pushUndoLike(undo, redo, e2)
     expect(next.redo).toHaveLength(0)
     expect(next.undo).toHaveLength(1)
@@ -1239,14 +1323,22 @@ describe('stand 姿势下手与大腿不相交（全体型 FK 粗算）', () => 
     const upperArm = mk([0, 0, 0], rot(`upperArm${side}`))
     const lowerArm = mk([0, -m.upperArmLen, 0], rot(`lowerArm${side}`))
     const hand = mk([0, -m.lowerArmLen, 0], rot(`hand${side}`))
-    hips.add(spine); spine.add(chest); chest.add(shoulder)
-    shoulder.add(upperArm); upperArm.add(lowerArm); lowerArm.add(hand)
+    hips.add(spine)
+    spine.add(chest)
+    chest.add(shoulder)
+    shoulder.add(upperArm)
+    upperArm.add(lowerArm)
+    lowerArm.add(hand)
     hips.updateMatrixWorld(true)
     return hand.localToWorld(localInHand.clone())
   }
 
   /** 点到竖直大腿轴线段（髋关节→膝）的最短距离。 */
-  function distToThighAxis(p: THREE.Vector3, m: (typeof BODY_METRICS)['standard'], side: 'L' | 'R'): number {
+  function distToThighAxis(
+    p: THREE.Vector3,
+    m: (typeof BODY_METRICS)['standard'],
+    side: 'L' | 'R',
+  ): number {
     const sgn = side === 'L' ? -1 : 1
     const top = new THREE.Vector3(sgn * m.hipWidth, m.hipHeight - 0.02, 0)
     const bottom = top.clone().setY(top.y - m.upperLegLen) // stand 无腿部旋转，大腿竖直向下
