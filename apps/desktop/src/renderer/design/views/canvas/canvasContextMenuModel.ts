@@ -31,7 +31,8 @@ export type CanvasSelectionContextSummary = {
   mergeGroupId: string | null
   canBatchConfigureTasks: boolean
   canBatchSubmitTasks: boolean
-  batchTaskDisabledReason: string | null
+  batchTaskConfigureDisabledReason: string | null
+  batchTaskSubmitDisabledReason: string | null
   batchTaskNodeIds: string[]
   batchTaskOperationCount: number
 }
@@ -91,7 +92,7 @@ export function calculateCanvasContextMenuPosition({
 }
 
 export function summarizeCanvasSelectionContext(
-  selectedNodes: Pick<CanvasNode, 'id' | 'type' | 'parentNodeId'>[],
+  selectedNodes: Pick<CanvasNode, 'id' | 'type' | 'parentNodeId' | 'data'>[],
 ): CanvasSelectionContextSummary {
   const batchTasks = summarizeBatchTaskSelection(selectedNodes)
   const selectedGroupIds = selectedNodes.filter((node) => node.type === 'group').map((node) => node.id)
@@ -120,7 +121,8 @@ export function summarizeCanvasSelectionContext(
     mergeGroupId,
     canBatchConfigureTasks: batchTasks.canBatchConfigure,
     canBatchSubmitTasks: batchTasks.canBatchSubmit,
-    batchTaskDisabledReason: batchTasks.reason,
+    batchTaskConfigureDisabledReason: batchTasks.configureReason,
+    batchTaskSubmitDisabledReason: batchTasks.submitReason,
     batchTaskNodeIds: batchTasks.taskNodeIds,
     batchTaskOperationCount: batchTasks.operationCount,
   }

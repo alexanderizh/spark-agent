@@ -3,8 +3,10 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { CanvasMediaModelSummary } from '@spark/protocol'
 import { createCanvasBatchTaskSession } from './canvasBatchTaskModel'
 import { CanvasBatchTaskPanel } from './CanvasBatchTaskPanel'
+import { canvasApi } from './canvas.api'
 import type { CanvasBatchTaskState } from './useCanvasBatchTasks'
 import type { CanvasNode } from './canvas.types'
 
@@ -94,7 +96,11 @@ vi.mock('antd', async () => {
 })
 
 vi.mock('./CanvasModelPicker', () => ({
-  CanvasModelPicker: () => <div>模型选择器</div>,
+  CanvasModelPicker: ({ value }: { value?: string }) => (
+    <div data-testid="model-picker" data-value={value}>
+      模型选择器
+    </div>
+  ),
 }))
 
 vi.mock('./CanvasOperationParameterControls', () => ({
@@ -150,6 +156,32 @@ function operationNode(id: string, type: 'text_to_image' | 'text_to_video'): Can
     data: { modelId: `${id}-model`, modelParams: {} },
     createdAt: '2026-07-16T00:00:00.000Z',
     updatedAt: '2026-07-16T00:00:00.000Z',
+  }
+}
+
+function mediaModel(
+  input: Partial<CanvasMediaModelSummary>,
+): CanvasMediaModelSummary {
+  return {
+    manifestId: input.manifestId ?? 'vendor:image-model',
+    providerKind: input.providerKind ?? 'vendor',
+    modelId: input.modelId ?? 'image-model',
+    effectiveModelId: input.effectiveModelId ?? 'image-model',
+    displayName: input.displayName ?? 'Image Model',
+    domains: input.domains ?? ['image'],
+    invocationMode: input.invocationMode ?? 'sync',
+    capabilities: input.capabilities ?? [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['text'] },
+        output: { types: ['image'] },
+        paramSchema: {},
+      },
+    ],
+    sourceUrls: [],
+    enabled: true,
+    ...(input.providerProfileId ? { providerProfileId: input.providerProfileId } : {}),
   }
 }
 
@@ -240,6 +272,41 @@ describe('CanvasBatchTaskPanel', () => {
     expect(container.querySelector('.canvas-batch-task-editor h3')?.textContent).toBe('短视频')
   })
 
+  it('keeps invalid nodes visible when they do not match the active search', async () => {
+    const current = state('configure')
+    const { container, rerender } = await render(current)
+    const search = container.querySelector<HTMLInputElement>(
+      'input[placeholder="搜索任务节点"]',
+    )!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        search,
+        '封面',
+      )
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(
+      Array.from(container.querySelectorAll('button')).some((button) =>
+        button.textContent?.includes('短视频'),
+      ),
+    ).toBe(false)
+
+    await rerender({
+      ...current,
+      issues: [{ nodeId: 'node-2', fieldPath: ['modelId'], message: '缺少模型' }],
+      session: {
+        ...current.session!,
+        activeOperation: 'text_to_video',
+        activeNodeId: 'node-2',
+      },
+    })
+
+    const invalidRow = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('短视频'),
+    )
+    expect(invalidRow?.getAttribute('aria-current')).toBe('true')
+  })
+
   it('keeps save draft separate from submit', async () => {
     const onSaveDrafts = vi.fn(async () => undefined)
     const onSubmit = vi.fn(async () => undefined)
@@ -292,5 +359,68 @@ describe('CanvasBatchTaskPanel', () => {
       touched: ['modelParams.n'],
       values: { modelParams: { n: 3 } },
     })
+  })
+
+  it('does not display the first available model as selected for mixed model values', async () => {
+    vi.mocked(canvasApi.listMediaModels).mockResolvedValueOnce({
+      models: [
+        mediaModel({
+          providerProfileId: 'provider-a',
+          manifestId: 'vendor:model-a',
+          modelId: 'model-a',
+          effectiveModelId: 'model-a',
+        }),
+        mediaModel({
+          providerProfileId: 'provider-b',
+          manifestId: 'vendor:model-b',
+          modelId: 'model-b',
+          effectiveModelId: 'model-b',
+        }),
+      ],
+    })
+    const first = operationNode('node-1', 'text_to_image')
+    first.data = {
+      ...first.data,
+      providerProfileId: 'provider-a',
+      manifestId: 'vendor:model-a',
+      modelId: 'model-a',
+    }
+    const second = operationNode('node-2', 'text_to_image')
+    second.data = {
+      ...second.data,
+      providerProfileId: 'provider-b',
+      manifestId: 'vendor:model-b',
+      modelId: 'model-b',
+    }
+    const current = state('configure')
+    current.session = createCanvasBatchTaskSession([first, second])
+
+    const { container } = await render(current)
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="model-picker"]')).not.toBeNull(),
+    )
+
+    expect(
+      container.querySelector('[data-testid="model-picker"]')?.getAttribute('data-value'),
+    ).toBe('')
+  })
+
+  it('shows task titles instead of internal node ids in submission results', async () => {
+    const current = state('result')
+    current.results = [
+      { nodeId: 'node-1', batchId: 'batch-1', status: 'succeeded' },
+      {
+        nodeId: 'node-2',
+        batchId: 'batch-1',
+        status: 'failed',
+        error: 'network error',
+      },
+    ]
+
+    const { container } = await render(current)
+
+    expect(container.textContent).toContain('封面主图')
+    expect(container.textContent).toContain('短视频')
+    expect(container.textContent).not.toContain('node-1')
   })
 })

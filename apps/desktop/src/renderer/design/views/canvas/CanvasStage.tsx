@@ -2216,7 +2216,7 @@ function CanvasStageInner({
                         type="button"
                         role="menuitem"
                         disabled={!selectedContext.canBatchConfigureTasks}
-                        title={selectedContext.batchTaskDisabledReason ?? undefined}
+                        title={selectedContext.batchTaskConfigureDisabledReason ?? undefined}
                         onClick={() => {
                           closePaneContextMenu()
                           onConfigureSelectedTasks(selectedContext.batchTaskNodeIds)
@@ -2231,7 +2231,7 @@ function CanvasStageInner({
                         type="button"
                         role="menuitem"
                         disabled={!selectedContext.canBatchSubmitTasks}
-                        title={selectedContext.batchTaskDisabledReason ?? undefined}
+                        title={selectedContext.batchTaskSubmitDisabledReason ?? undefined}
                         onClick={() => {
                           closePaneContextMenu()
                           onSubmitSelectedTasks(selectedContext.batchTaskNodeIds)

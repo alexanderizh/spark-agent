@@ -40,13 +40,14 @@ export type CanvasBatchTaskSession = {
 export type CanvasBatchTaskSelectionSummary = {
   canBatchConfigure: boolean
   canBatchSubmit: boolean
-  reason: string | null
+  configureReason: string | null
+  submitReason: string | null
   taskNodeIds: string[]
   operationCount: number
 }
 
 type CanvasBatchSelectionNode = Pick<CanvasNode, 'id' | 'type'> & {
-  data?: Pick<CanvasNodeData, 'operation'>
+  data?: Pick<CanvasNodeData, 'operation' | 'status'>
 }
 
 const EDITABLE_FIELDS: Array<keyof CanvasBatchEditableData> = [
@@ -67,15 +68,20 @@ export function summarizeBatchTaskSelection(
   const operationCount = new Set(taskNodes.map(nodeOperation)).size
   const enoughNodes = nodes.length >= 2
   const allTasks = enoughNodes && taskNodes.length === nodes.length
+  const selectionReason = allTasks
+    ? null
+    : !enoughNodes
+      ? '请至少选择两个任务节点'
+      : '仅支持同时选择任务节点'
+  const hasRunningTask = taskNodes.some((node) => node.data?.status === 'running')
 
   return {
     canBatchConfigure: allTasks,
-    canBatchSubmit: allTasks,
-    reason: allTasks
-      ? null
-      : !enoughNodes
-        ? '请至少选择两个任务节点'
-        : '仅支持同时选择任务节点',
+    canBatchSubmit: allTasks && !hasRunningTask,
+    configureReason: selectionReason,
+    submitReason:
+      selectionReason ??
+      (hasRunningTask ? '选中任务包含正在运行的节点' : null),
     taskNodeIds,
     operationCount,
   }
@@ -182,6 +188,32 @@ export function rebaseCanvasBatchTaskSession(
         touchedFields: new Set<string>(),
       },
     ]
+  })
+  return { ...session, entries }
+}
+
+export function refreshCanvasBatchTaskSession(
+  session: CanvasBatchTaskSession,
+  currentNodes: CanvasNode[],
+): CanvasBatchTaskSession {
+  const currentById = new Map(currentNodes.map((node) => [node.id, node]))
+  const entries = session.entries.map((entry) => {
+    const node = currentById.get(entry.nodeId)
+    if (!node || !isOperationNode(node)) return entry
+    const editable = readEditableData(node.data)
+    const refreshed: CanvasBatchTaskEntry = {
+      ...entry,
+      title: node.title?.trim() || node.id,
+      operation: nodeOperation(node),
+      baseUpdatedAt: node.updatedAt,
+      base: cloneEditableData(editable),
+      draft: cloneEditableData(editable),
+      touchedFields: new Set<string>(),
+    }
+    return patchEntry(refreshed, {
+      touched: [...entry.touchedFields],
+      values: entry.draft,
+    })
   })
   return { ...session, entries }
 }
