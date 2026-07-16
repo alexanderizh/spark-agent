@@ -1064,6 +1064,7 @@ async function canvasResponseFromMediaTaskRecord(
     mode: record.mode ?? 'sync',
     assets,
     ...(record.requestId != null ? { requestId: record.requestId } : {}),
+    ...(record.submitResponse != null ? { submitResponse: record.submitResponse } : {}),
     ...(record.rawResponse != null ? { rawResponse: record.rawResponse } : {}),
     ...(record.requestCall != null ? { requestCall: record.requestCall } : {}),
     ...(record.error != null ? { error: record.error } : {}),
@@ -3462,17 +3463,25 @@ export function registerAllIpcHandlers(): void {
       }
       if (req.waitForCompletion === false) {
         const task = taskRuntime.submitBackground(input, options, (record) => {
-          if (record.status === 'running') return
+          if (record.status === 'running' && record.submitResponse == null) return
           void canvasResponseFromMediaTaskRecord(record).then((response) => {
-            taskLog.settled({
-              status: record.status,
-              runtimeTaskId: record.id,
-              providerRequestId: record.requestId,
-              provider: record.providerKind,
-              model: record.modelId,
-              assetCount: record.assets.length,
-              error: response.error,
-            })
+            if (record.status === 'running' && record.requestId) {
+              taskLog.submitted({
+                runtimeTaskId: record.id,
+                providerRequestId: record.requestId,
+                response: record.submitResponse,
+              })
+            } else {
+              taskLog.settled({
+                status: record.status,
+                runtimeTaskId: record.id,
+                providerRequestId: record.requestId,
+                provider: record.providerKind,
+                model: record.modelId,
+                assetCount: record.assets.length,
+                error: response.error,
+              })
+            }
             pushStreamEvent('stream:canvas:media-task', {
               ...(req.projectId !== undefined ? { projectId: req.projectId } : {}),
               ...(req.clientTaskId !== undefined ? { clientTaskId: req.clientTaskId } : {}),

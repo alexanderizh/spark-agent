@@ -27,6 +27,7 @@ import type {
   MediaGenerateOutput,
   MediaProviderAdapter,
   MediaProviderContext,
+  MediaTaskSubmission,
 } from './media-adapter.types.js'
 import type { MediaUploader } from './media-uploader.js'
 import { ApimartMediaAdapter } from './adapters/apimart-media.adapter.js'
@@ -75,6 +76,8 @@ export interface InvokeOptions {
   fetch?: typeof fetch
   /** xAI Files 不可用时的公开文件上传回退，由桌面主进程按登录态注入。 */
   fallbackUploader?: MediaUploader
+  /** 异步 provider 返回渠道任务 ID 后立即通知调用方。 */
+  onTaskSubmitted?: (submission: MediaTaskSubmission) => void
 }
 
 export class MediaRouterService {
@@ -233,6 +236,20 @@ export class MediaRouterService {
     // 只取最后一个带 body 的 POST：adapter 内部对单次能力调用只发一个主请求；
     // APIMart 编辑会先 POST /uploads/images 再 POST /images/generations，取后者即主请求。
     const capture = createRequestCapture(options.fetch)
+    const onTaskSubmitted = options.onTaskSubmitted
+      ? (submission: MediaTaskSubmission): void => {
+          try {
+            const requestCall = capture.getCaptured()
+            options.onTaskSubmitted?.({
+              requestId: submission.requestId,
+              response: compactForLog(submission.response),
+              ...(requestCall ? { requestCall } : {}),
+            })
+          } catch {
+            // 诊断回调失败不能中断已经成功提交的 provider 任务及后续轮询。
+          }
+        }
+      : undefined
     if (manifestMatch && shouldUseManifestAdapter) {
       const ctx: MediaProviderContext = {
         apiKey: chosen.apiKey,
@@ -247,6 +264,7 @@ export class MediaRouterService {
         ...(options.extraParams ? { extraParams: options.extraParams } : {}),
         fetch: capture.fetch,
         ...(options.fallbackUploader ? { fallbackUploader: options.fallbackUploader } : {}),
+        ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
       }
       try {
         const output = await this.templateAdapter.invoke(
@@ -280,6 +298,7 @@ export class MediaRouterService {
       ...(options.extraParams ? { extraParams: options.extraParams } : {}),
       fetch: capture.fetch,
       ...(options.fallbackUploader ? { fallbackUploader: options.fallbackUploader } : {}),
+      ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
     }
     try {
       const output = await adapter.invoke(

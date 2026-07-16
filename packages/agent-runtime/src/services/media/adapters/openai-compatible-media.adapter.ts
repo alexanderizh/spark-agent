@@ -175,6 +175,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       if (taskId && (this.genericTaskPath || this.videoTaskPath)) {
         requestId = taskId
         mode = 'async'
+        ctx.onTaskSubmitted?.({ requestId: taskId, response: data })
         const pollUrl = `${baseEndpoint(ctx)}${(this.genericTaskPath ?? this.videoTaskPath)!(taskId)}`
         const polled = await pollTask(pollUrl, authHeaders(ctx), {
           fetchImpl: ctx.fetch,
@@ -515,6 +516,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       }
       requestId = taskId
       mode = 'async'
+      ctx.onTaskSubmitted?.({ requestId: taskId, response: data })
       const pollUrl = `${baseEndpoint(ctx)}${this.videoTaskPath(taskId)}`
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,

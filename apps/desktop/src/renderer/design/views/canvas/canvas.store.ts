@@ -282,9 +282,10 @@ export function useCanvasWorkspace(projectId: string) {
         if (!active) return
         if (payload.projectId && payload.projectId !== projectId) return
         if (!payload.clientTaskId) return
-        if (payload.status === 'running') return
-        void canvasApi
-          .applyMediaTaskResult(projectId, payload.clientTaskId, payload.response)
+        const update = payload.status === 'running'
+          ? canvasApi.markMediaTaskSubmitted(projectId, payload.clientTaskId, payload.response)
+          : canvasApi.applyMediaTaskResult(projectId, payload.clientTaskId, payload.response)
+        void update
           .then((next) => {
             if (active) setSnapshot((current) => mergeCanvasBackgroundTaskSnapshot(current, next))
           })

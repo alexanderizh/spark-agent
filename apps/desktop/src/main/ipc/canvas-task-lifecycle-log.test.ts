@@ -20,6 +20,11 @@ describe('createCanvasTaskLifecycleLog', () => {
     )
 
     taskLog.started()
+    taskLog.submitted({
+      runtimeTaskId: 'runtime-1',
+      providerRequestId: 'task_01ABC',
+      response: { task_id: 'task_01ABC', status: 'queued' },
+    })
     taskLog.settled({
       status: 'succeeded',
       runtimeTaskId: 'runtime-1',
@@ -33,7 +38,11 @@ describe('createCanvasTaskLifecycleLog', () => {
         'event=started kind=media projectId=project-1 clientTaskId=canvas_task_1 operation=text_to_video',
       ),
     )
-    const finished = String(info.mock.calls[1]?.[0])
+    const submitted = String(info.mock.calls[1]?.[0])
+    expect(submitted).toContain('event=provider-submitted')
+    expect(submitted).toContain('providerRequestId=task_01ABC')
+    expect(submitted).toContain('response={"task_id":"task_01ABC","status":"queued"}')
+    const finished = String(info.mock.calls[2]?.[0])
     expect(finished).toContain(
       'event=finished kind=media projectId=project-1 clientTaskId=canvas_task_1 operation=text_to_video',
     )

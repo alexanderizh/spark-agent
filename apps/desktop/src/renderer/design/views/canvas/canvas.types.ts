@@ -358,6 +358,8 @@ export type CanvasTask = {
   requestId?: string | null
   /** provider 原始响应摘要（不含敏感信息） */
   rawResponse?: unknown
+  /** 轮询任务提交接口响应摘要，拿到渠道任务 ID 后立即写入。 */
+  submitResponse?: unknown
   /** 提交时输入文件的诊断摘要，便于任务详情排查 url/base64/path 等传参方式。 */
   inputFileDiagnostics?: CanvasTaskInputDiagnostic[]
   /** 实际发给 provider 的 HTTP 调用摘要（请求 + 响应），用于任务详情展示。 */

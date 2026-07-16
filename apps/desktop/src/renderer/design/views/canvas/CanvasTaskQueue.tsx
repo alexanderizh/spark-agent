@@ -457,6 +457,7 @@ function TaskDetailModal({
   const displayPrompt = task.compiledUserText || task.prompt || ''
   const detailParams = buildCanvasTaskDetailParams(task)
   const httpResponse = task.requestCall?.response
+  const submitResponse = task.submitResponse ?? httpResponse?.body
   const providerResponseText = task.rawResponse != null ? formatJson(task.rawResponse) : ''
   const httpResponseBodyText = httpResponse?.body != null ? formatJson(httpResponse.body) : ''
   const shouldShowProviderResponse =
@@ -571,17 +572,19 @@ function TaskDetailModal({
           </DetailBlock>
         )}
 
-        {httpResponse && (
-          <DetailBlock title="实际 HTTP 响应">
+        {(httpResponse || task.submitResponse != null) && (
+          <DetailBlock title={task.submitResponse != null ? '任务提交响应' : '实际 HTTP 响应'}>
             <div className="canvas-task-request-call">
-              <div className="canvas-task-request-line">
-                <Tag size="middle" color={httpResponse.status >= 400 ? 'red' : 'green'}>
-                  {httpResponse.status}
-                </Tag>
-                <code>{httpResponse.statusText || 'response'}</code>
-              </div>
-              {httpResponse.headers != null && <pre>{formatJson(httpResponse.headers)}</pre>}
-              {httpResponse.body != null && <pre>{formatJson(httpResponse.body)}</pre>}
+              {httpResponse && (
+                <div className="canvas-task-request-line">
+                  <Tag size="middle" color={httpResponse.status >= 400 ? 'red' : 'green'}>
+                    {httpResponse.status}
+                  </Tag>
+                  <code>{httpResponse.statusText || 'response'}</code>
+                </div>
+              )}
+              {httpResponse?.headers != null && <pre>{formatJson(httpResponse.headers)}</pre>}
+              {submitResponse != null && <pre>{formatJson(submitResponse)}</pre>}
             </div>
           </DetailBlock>
         )}

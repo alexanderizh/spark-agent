@@ -1657,6 +1657,58 @@ describe('canvas operation inheritance', () => {
     )
   })
 
+  it('stores the provider task id and submit response while a polling task is running', async () => {
+    seedCanvasDb({
+      projects: [{
+        id: 'project-1', userId: 0, title: 'Project', status: 'active', rootPath: '/tmp/project-1',
+        nodeCount: 1, assetCount: 0, taskCount: 1, createdAt: at, updatedAt: at,
+      }],
+      boards: [{
+        id: 'board-1', projectId: 'project-1', userId: 0, name: 'Board',
+        viewport: { x: 0, y: 0, zoom: 1 }, settings: {}, createdAt: at, updatedAt: at,
+      }],
+      assets: [],
+      nodes: [{
+        id: 'node-task', projectId: 'project-1', boardId: 'board-1', userId: 0,
+        type: 'text_to_video', title: '生成视频', taskId: 'task-running', parentNodeId: null,
+        x: 10, y: 20, width: 260, height: 160, rotation: 0, zIndex: 1,
+        locked: false, hidden: false,
+        data: { operation: 'text_to_video', status: 'running', progress: 24 },
+        createdAt: at, updatedAt: at,
+      }],
+      edges: [],
+      tasks: [{
+        id: 'task-running', projectId: 'project-1', boardId: 'board-1', userId: 0,
+        operation: 'text_to_video', status: 'running', progress: 24, prompt: '生成视频',
+        negativePrompt: null, inputNodeIds: [], inputAssetIds: [], outputNodeIds: [], outputAssetIds: [],
+        requestId: 'runtime-1', modelParams: {}, createdAt: at, updatedAt: at,
+      }],
+    })
+
+    const submitResponse = { task_id: 'provider-task-1', status: 'queued' }
+    const snapshot = await canvasApi.markMediaTaskSubmitted('project-1', 'task-running', {
+      status: 'running', mode: 'async', runtimeTaskId: 'runtime-1', requestId: 'provider-task-1',
+      providerProfileId: 'provider-1', provider: 'xai', model: 'grok-imagine-video', assets: [],
+      submitResponse,
+      requestCall: {
+        method: 'POST', url: 'https://api.x.ai/v1/videos/generations',
+        response: { status: 200, body: submitResponse },
+      },
+    })
+
+    const task = snapshot.tasks.find((item) => item.id === 'task-running')
+    expect(task?.requestId).toBe('provider-task-1')
+    expect(task?.submitResponse).toEqual(submitResponse)
+    expect(task?.requestCall?.response?.body).toEqual(submitResponse)
+    expect(task?.progress).toBe(35)
+
+    const afterInitialAck = await canvasApi.markMediaTaskSubmitted('project-1', 'task-running', {
+      status: 'running', mode: 'async', runtimeTaskId: 'runtime-1',
+      providerProfileId: 'provider-1', provider: '', model: '', assets: [],
+    })
+    expect(afterInitialAck.tasks.find((item) => item.id === 'task-running')?.requestId).toBe('provider-task-1')
+  })
+
   it('does not downgrade a completed media task when a late running acknowledgement arrives', async () => {
     seedCanvasDb({
       projects: [

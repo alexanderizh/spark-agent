@@ -3033,6 +3033,7 @@ describe('VolcengineArkMediaAdapter', () => {
 
   it('Google Veo adapter polls operation and downloads generated video', async () => {
     let downloadHeader = ''
+    const submissions: Array<{ requestId: string; response: unknown; requestCall?: unknown }> = []
     const fetchMock = makeFetch([
       {
         match: '/models/veo-3.1-generate-preview:predictLongRunning',
@@ -3088,11 +3089,26 @@ describe('VolcengineArkMediaAdapter', () => {
           }),
         ],
         fetch: fetchMock,
+        onTaskSubmitted: (submission) => {
+          submissions.push(submission)
+          throw new Error('diagnostic callback unavailable')
+        },
       },
     )
 
     expect(output.mode).toBe('async')
     expect(output.requestId).toBe('operations/op-1')
+    expect(submissions).toHaveLength(1)
+    expect(submissions[0]).toMatchObject({
+      requestId: 'operations/op-1',
+      response: { name: 'operations/op-1' },
+      requestCall: {
+        method: 'POST',
+        response: { status: 200 },
+      },
+    })
+    expect(String((submissions[0]?.requestCall as { response?: { body?: unknown } })?.response?.body))
+      .toContain('operations/op-1')
     expect(downloadHeader).toBe('sk-test')
     expect(output.assets[0]?.type).toBe('video')
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)

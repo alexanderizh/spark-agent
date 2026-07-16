@@ -201,6 +201,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     if (!taskId) {
       throw new MediaProviderError('provider_http_error', `No xAI video request_id: ${JSON.stringify(data).slice(0, 800)}`)
     }
+    ctx.onTaskSubmitted?.({ requestId: taskId, response: data })
     log.info(
       `event=task-created capability=${capability} model=${model} requestId=${taskId} elapsedMs=${Date.now() - createStartedAt}`,
     )
@@ -439,6 +440,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       }
       requestId = taskId
       mode = 'async'
+      ctx.onTaskSubmitted?.({ requestId: taskId, response: data })
       const pollUrl = `${baseEndpoint(ctx)}/videos/${encodeURIComponent(taskId)}`
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,

@@ -91,6 +91,7 @@ export class MidjourneyMediaAdapter implements MediaProviderAdapter {
       }
       requestId = taskId
       mode = 'async'
+      ctx.onTaskSubmitted?.({ requestId: taskId, response: data })
       raw = await pollTask(statusEndpointFor(ctx, taskId), authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,

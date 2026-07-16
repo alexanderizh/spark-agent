@@ -58,6 +58,9 @@ describe('XaiMediaAdapter official contract', () => {
 
   it('sends only documented video generation fields and enables public URL storage', async () => {
     const capture: { body?: Record<string, unknown> } = {}
+    const submissions: Array<{ requestId: string; response: unknown }> = []
+    const ctx = context(videoFetch(capture))
+    ctx.onTaskSubmitted = (submission) => submissions.push(submission)
     await adapter.invoke(
       {
         operation: 'image_to_video',
@@ -78,7 +81,7 @@ describe('XaiMediaAdapter official contract', () => {
           filename: 'result.mp4',
         },
       },
-      context(videoFetch(capture)),
+      ctx,
     )
 
     expect(capture.body).toEqual({
@@ -91,6 +94,9 @@ describe('XaiMediaAdapter official contract', () => {
       storage_options: { filename: 'result.mp4', public_url: true },
       user: 'user-1',
     })
+    expect(submissions).toEqual([
+      { requestId: 'request-1', response: { request_id: 'request-1' } },
+    ])
   })
 
   it('maps up to seven reference images and rejects a last frame', async () => {

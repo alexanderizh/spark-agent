@@ -60,26 +60,37 @@ describe('MediaTaskRuntimeService', () => {
 
   it('returns immediately for background submit and emits completion updates', async () => {
     const service = new MediaTaskRuntimeService(createRepo(), {
-      async invoke() {
+      async invoke(_input, options) {
+        options.onTaskSubmitted?.({
+          requestId: 'provider-task-bg',
+          response: { task_id: 'provider-task-bg', status: 'queued' },
+          requestCall: {
+            method: 'POST',
+            url: 'https://provider.example/tasks',
+            response: { status: 200, body: { task_id: 'provider-task-bg' } },
+          },
+        })
         return {
           providerProfileId: 'provider-1',
           output: {
             provider: 'apimart',
             model: 'gpt-image-2',
-            mode: 'sync',
-            requestId: 'req-bg',
+            mode: 'async',
+            requestId: 'provider-task-bg',
             assets: [{ type: 'image', filePath: '/tmp/bg.png', mimeType: 'image/png' }],
           },
         }
       },
     })
     const statuses: string[] = []
+    const submittedResponses: unknown[] = []
     const completed = new Promise<void>((resolve) => {
       service.submitBackground(
         { operation: 'text_to_image', prompt: 'hello', outputDir: '/tmp/media' },
         { providers: [], providerProfileId: 'provider-1' },
         (record) => {
           statuses.push(record.status)
+          if (record.submitResponse != null) submittedResponses.push(record.submitResponse)
           if (record.status === 'succeeded') resolve()
         },
       )
@@ -90,8 +101,12 @@ describe('MediaTaskRuntimeService', () => {
 
     await completed
 
-    expect(statuses).toEqual(['running', 'succeeded'])
-    expect(service.inquire('media-task-1')?.requestId).toBe('req-bg')
+    expect(statuses).toEqual(['running', 'running', 'succeeded'])
+    expect(submittedResponses).toEqual([
+      { task_id: 'provider-task-bg', status: 'queued' },
+      { task_id: 'provider-task-bg', status: 'queued' },
+    ])
+    expect(service.inquire('media-task-1')?.requestId).toBe('provider-task-bg')
   })
 
   it('cancels pending or running tasks', () => {

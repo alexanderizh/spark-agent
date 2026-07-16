@@ -43,6 +43,8 @@ export interface MediaTaskRecord {
   outputDir: string
   requestId: string | null
   assets: MediaGeneratedAsset[]
+  /** 轮询任务提交接口的响应摘要（包含渠道任务 ID）。 */
+  submitResponse: unknown
   rawResponse: unknown
   /** 实际发给 provider 的请求摘要（method + url + 已截断 body），来自 router 的 fetch 捕获。 */
   requestCall: MediaRequestCall | null
@@ -100,7 +102,7 @@ export class MediaTaskRuntimeService {
     )
     void Promise.resolve(onUpdate?.(started)).catch(() => {})
     queueMicrotask(() => {
-      void this.execute(row, input, options)
+      void this.execute(row, input, options, onUpdate)
         .then((record) => {
           log.info(
             `media task finished (background): id=${record.id} op=${record.operation} status=${record.status}`,
@@ -137,7 +139,9 @@ export class MediaTaskRuntimeService {
     row: MediaGenerationTaskRow,
     input: MediaGenerateInput,
     options: MediaTaskSubmitOptions,
+    onUpdate?: MediaTaskUpdateHandler,
   ): Promise<MediaTaskRecord> {
+    let submitResponse: unknown = null
     try {
       const invokeOptions: InvokeOptions = {
         providers: options.providers,
@@ -147,6 +151,20 @@ export class MediaTaskRuntimeService {
         ...(options.capability !== undefined ? { capability: options.capability } : {}),
         ...(options.extraParams !== undefined ? { extraParams: options.extraParams } : {}),
         ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+        onTaskSubmitted: (nextSubmission) => {
+          submitResponse = nextSubmission.response
+          const submitted = this.repo.update(row.id, {
+            mode: 'async',
+            requestId: nextSubmission.requestId,
+          })
+          const record = rowToRecord(submitted ?? this.repo.getById(row.id) ?? row)
+          record.submitResponse = nextSubmission.response
+          record.requestCall = nextSubmission.requestCall ?? null
+          log.info(
+            `media task provider submitted: id=${row.id} providerRequestId=${nextSubmission.requestId} response=${JSON.stringify(nextSubmission.response).slice(0, 2000)}`,
+          )
+          void Promise.resolve(onUpdate?.(record)).catch(() => {})
+        },
       }
       const { output, providerProfileId } = await this.router.invoke(input, invokeOptions)
       const latest = this.repo.getById(row.id)
@@ -169,6 +187,7 @@ export class MediaTaskRuntimeService {
       // requestCall 仅存在于内存的 router output 中（不落 media_generation_tasks 表），
       // 在此处挂到 record 上，经 IPC 传给画布任务，由画布快照负责持久化。
       record.requestCall = output.requestCall ?? null
+      record.submitResponse = submitResponse
       log.info(
         `media task succeeded: id=${record.id} op=${record.operation} provider=${providerProfileId} model=${output.model} assets=${output.assets.length}`,
       )
@@ -190,6 +209,7 @@ export class MediaTaskRuntimeService {
       const record = rowToRecord(failed ?? this.repo.getById(row.id) ?? row)
       // 失败任务也带上请求摘要（router 已挂到 error 上），方便在详情里排查 422/参数错误。
       record.requestCall = err instanceof MediaProviderError ? err.requestCall ?? null : null
+      record.submitResponse = submitResponse
       log.warn(
         `media task failed: id=${record.id} op=${record.operation} code=${code} msg=${message}`,
       )
@@ -253,6 +273,7 @@ function rowToRecord(row: MediaGenerationTaskRow): MediaTaskRecord {
     outputDir: row.output_dir,
     requestId: row.request_id,
     assets: parseJson(row.assets_json, []),
+    submitResponse: null,
     rawResponse: parseJson(row.raw_response_json, null),
     // requestCall 不落 DB，仅由 execute() 从内存 output 挂载；rowToRecord 给 null 兜底。
     requestCall: null,

@@ -48,6 +48,15 @@ export interface MediaProviderContext {
   fetch?: typeof fetch
   /** 桌面主进程可注入的 Spark 公开文件上传回退；agent-runtime 不反向依赖 desktop。 */
   fallbackUploader?: MediaUploader
+  /** 轮询任务拿到渠道任务 ID 后立即上报提交响应，不必等待最终产物。 */
+  onTaskSubmitted?: (submission: MediaTaskSubmission) => void
+}
+
+export interface MediaTaskSubmission {
+  requestId: string
+  response: unknown
+  /** Router 捕获的提交 HTTP 请求/响应摘要。 */
+  requestCall?: MediaRequestCall
 }
 
 export type MediaArtifactType = 'image' | 'audio' | 'video' | 'text'

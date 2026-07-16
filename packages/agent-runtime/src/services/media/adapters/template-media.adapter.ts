@@ -116,6 +116,7 @@ export class TemplateMediaAdapter {
         }
         requestId = taskId
         mode = 'async'
+        ctx.onTaskSubmitted?.({ requestId: taskId, response: raw })
         raw = await this.pollManifestTask(manifest, taskId, ctx, headers)
       }
     }
