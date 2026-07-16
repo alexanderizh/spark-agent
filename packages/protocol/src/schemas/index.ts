@@ -17,7 +17,11 @@ import {
 } from '../media-config.js'
 import { ProviderMediaModelRefSchema, MediaModelManifestSchema } from '../media-model-manifest.js'
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '../local-cli-provider.js'
-import { CLAUDE_AUTO_ROUTER_PROVIDER_ID, CODEX_AUTO_ROUTER_PROVIDER_ID } from '../auto-router-provider.js'
+import {
+  CLAUDE_AUTO_ROUTER_PROVIDER_ID,
+  CODEX_AUTO_ROUTER_PROVIDER_ID,
+} from '../auto-router-provider.js'
+import { ProviderFilesIpcSchemaRegistry } from '../provider-files.js'
 
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
@@ -707,22 +711,34 @@ const CanvasPromptDocumentSchema = z.object({
 })
 const CanvasPromptTaskFieldsSchema = {
   promptDocument: CanvasPromptDocumentSchema.optional(),
-  promptSnapshot: CanvasPromptDocumentSchema.extend({ capturedAt: z.string().max(80).optional() }).optional(),
+  promptSnapshot: CanvasPromptDocumentSchema.extend({
+    capturedAt: z.string().max(80).optional(),
+  }).optional(),
   compiledUserText: z.string().max(100_000).optional(),
   inputSnapshots: z.array(z.record(z.unknown())).max(64).optional(),
-  relationManifest: z.array(z.object({
-    blockId: z.string().max(200),
-    sourceNodeId: z.string().max(200),
-    relation: CanvasPromptRelationSchema,
-    order: z.number().int().min(0),
-    label: z.string().max(500).optional(),
-    contentHash: z.string().max(200).optional(),
-  })).max(64).optional(),
-  promptWarnings: z.array(z.object({
-    code: z.string().max(200),
-    message: z.string().max(10_000),
-    blockId: z.string().max(200).optional(),
-  })).max(64).optional(),
+  relationManifest: z
+    .array(
+      z.object({
+        blockId: z.string().max(200),
+        sourceNodeId: z.string().max(200),
+        relation: CanvasPromptRelationSchema,
+        order: z.number().int().min(0),
+        label: z.string().max(500).optional(),
+        contentHash: z.string().max(200).optional(),
+      }),
+    )
+    .max(64)
+    .optional(),
+  promptWarnings: z
+    .array(
+      z.object({
+        code: z.string().max(200),
+        message: z.string().max(10_000),
+        blockId: z.string().max(200).optional(),
+      }),
+    )
+    .max(64)
+    .optional(),
   systemPrompt: z.string().max(100_000).optional(),
 }
 
@@ -762,17 +778,7 @@ export const IpcSchemaRegistry = {
   'team:delete-def': TeamDeleteDefRequestSchema,
   'provider:create': ProviderCreateRequestSchema,
   'provider:get-api-key': ProviderGetApiKeyRequestSchema,
-  'provider:files:list': z.object({
-    providerProfileId: z.string().min(1).max(200),
-    paginationToken: z.string().min(1).max(2000).optional(),
-    order: z.enum(['asc', 'desc']).optional(),
-    sortBy: z.enum(['created_at', 'filename', 'size']).optional(),
-    limit: z.number().int().min(1).max(100).optional(),
-  }),
-  'provider:files:delete': z.object({
-    providerProfileId: z.string().min(1).max(200),
-    fileId: z.string().min(1).max(500),
-  }),
+  ...ProviderFilesIpcSchemaRegistry,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'provider:test-connection': ProviderConnectionTestRequestSchema,
@@ -1036,6 +1042,7 @@ export const IpcSchemaRegistry = {
   'log:read': z.object({
     maxLines: z.number().int().min(1).max(5000).optional(),
     levels: z.array(z.enum(['debug', 'info', 'warn', 'error'])).optional(),
+    scope: z.enum(['all', 'canvas']).optional(),
   }),
   'log:clear': z.object({}),
   'log:reveal': z.object({}),
@@ -1069,6 +1076,10 @@ export const IpcSchemaRegistry = {
           url: z.string().max(4000).optional(),
           dataUrl: z.string().max(2000).optional(),
           mimeType: z.string().max(160).optional(),
+          sizeBytes: z.number().int().nonnegative().optional(),
+          width: z.number().int().positive().optional(),
+          height: z.number().int().positive().optional(),
+          durationMs: z.number().int().nonnegative().optional(),
         }),
       )
       .max(64)
@@ -1118,6 +1129,10 @@ export const IpcSchemaRegistry = {
           url: z.string().max(4000).optional(),
           dataUrl: z.string().max(100_000_000).optional(),
           mimeType: z.string().max(160).optional(),
+          sizeBytes: z.number().int().nonnegative().optional(),
+          width: z.number().int().positive().optional(),
+          height: z.number().int().positive().optional(),
+          durationMs: z.number().int().nonnegative().optional(),
           type: z.enum(['image', 'audio', 'video', 'file']),
           role: z.enum(['input', 'first_frame', 'last_frame', 'reference', 'mask']).optional(),
         }),
@@ -1374,9 +1389,19 @@ export const IpcSchemaRegistry = {
   }),
   'video:process': z.object({
     operation: z.enum([
-      'probe', 'extractKeyframes', 'extractFramesAtTimes', 'generateThumbnail',
-      'trim', 'concat', 'segment', 'transcode',
-      'adjustSpeed', 'reverse', 'crop', 'watermark', 'burnSubtitle',
+      'probe',
+      'extractKeyframes',
+      'extractFramesAtTimes',
+      'generateThumbnail',
+      'trim',
+      'concat',
+      'segment',
+      'transcode',
+      'adjustSpeed',
+      'reverse',
+      'crop',
+      'watermark',
+      'burnSubtitle',
     ]),
     input: z.string().min(1).max(4096),
     params: z.record(z.unknown()),

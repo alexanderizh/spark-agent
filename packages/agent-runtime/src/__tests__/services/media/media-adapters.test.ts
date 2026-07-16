@@ -638,7 +638,7 @@ describe('MediaRouterService', () => {
     expect(output.assets[0]?.contentText).toBe('transcribed words')
   })
 
-  it('APIMart video.generate (async): polls then downloads video url', async () => {
+  it('APIMart video.generate (async): polls the unified task endpoint and downloads the video', async () => {
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70]) // ftyp box
     const fetchMock = makeFetch([
       {
@@ -649,15 +649,22 @@ describe('MediaRouterService', () => {
             : { ok: true, status: 200, body: { id: 'vid-1' } },
       },
       {
-        match: '/videos/generations/vid-1',
+        match: '/tasks/vid-1',
         respond: (_init, count) =>
           count >= 2
             ? {
                 ok: true,
                 status: 200,
-                body: { status: 'completed', video: { url: 'https://cdn/v.mp4' } },
+                body: {
+                  code: 200,
+                  data: {
+                    id: 'vid-1',
+                    status: 'completed',
+                    result: { videos: [{ url: 'https://cdn/v.mp4' }] },
+                  },
+                },
               }
-            : { ok: true, status: 200, body: { status: 'generating' } },
+            : { ok: true, status: 200, body: { code: 200, data: { status: 'processing' } } },
       },
       {
         match: 'https://cdn/v.mp4',
@@ -685,6 +692,7 @@ describe('MediaRouterService', () => {
     expect(output.requestId).toBe('vid-1')
     expect(output.assets[0]?.type).toBe('video')
     expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
+    expect(fetchMock.calls.some((call) => call.url.endsWith('/tasks/vid-1'))).toBe(true)
   })
 
   it('task failure raises task_failed error', async () => {
@@ -694,8 +702,12 @@ describe('MediaRouterService', () => {
         respond: () => ({ ok: true, status: 200, body: { id: 'vid-fail' } }),
       },
       {
-        match: '/videos/generations/vid-fail',
-        respond: () => ({ ok: true, status: 200, body: { status: 'failed' } }),
+        match: '/tasks/vid-fail',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { code: 200, data: { id: 'vid-fail', status: 'failed' } },
+        }),
       },
     ])
     await expect(
@@ -775,7 +787,12 @@ describe('MediaRouterService', () => {
             ? {
                 ok: true,
                 status: 200,
-                body: { status: 'completed', video: { file_output: { file_id: 'file-video', public_url: 'https://cdn/xai-video.mp4' } } },
+                body: {
+                  status: 'completed',
+                  video: {
+                    file_output: { file_id: 'file-video', public_url: 'https://cdn/xai-video.mp4' },
+                  },
+                },
               }
             : { ok: true, status: 200, body: { status: 'processing' } },
       },
@@ -856,7 +873,14 @@ describe('MediaRouterService', () => {
         respond: () => ({
           ok: true,
           status: 200,
-          body: { status: 'done', video: { url: 'https://temp/xai-edited.mp4', file_output: { file_id: 'file-edit', public_url: 'https://cdn/xai-edited.mp4' }, duration: 5 } },
+          body: {
+            status: 'done',
+            video: {
+              url: 'https://temp/xai-edited.mp4',
+              file_output: { file_id: 'file-edit', public_url: 'https://cdn/xai-edited.mp4' },
+              duration: 5,
+            },
+          },
         }),
       },
       {
@@ -940,7 +964,13 @@ describe('MediaRouterService', () => {
         respond: () => ({
           ok: true,
           status: 200,
-          body: { status: 'done', video: { file_output: { file_id: 'file-extend', public_url: 'https://cdn/xai-extended.mp4' }, duration: 10 } },
+          body: {
+            status: 'done',
+            video: {
+              file_output: { file_id: 'file-extend', public_url: 'https://cdn/xai-extended.mp4' },
+              duration: 10,
+            },
+          },
         }),
       },
       {
@@ -1095,7 +1125,9 @@ describe('MediaRouterService', () => {
           const body = JSON.parse(String(init?.body ?? '{}')) as { image_urls?: string[] }
           expect(body.image_urls).toHaveLength(1)
           expect(body.image_urls?.[0]).toMatch(/^data:image\/webp;base64,/)
-          expect(Buffer.byteLength(body.image_urls?.[0] ?? '', 'utf8')).toBeLessThanOrEqual(3 * 1024 * 1024)
+          expect(Buffer.byteLength(body.image_urls?.[0] ?? '', 'utf8')).toBeLessThanOrEqual(
+            3 * 1024 * 1024,
+          )
           return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
         },
       },
@@ -2242,7 +2274,7 @@ describe('VolcengineArkMediaAdapter', () => {
     expect((firstFrame!.image_url as { url: string }).url).toBe('https://cdn/first.png')
   })
 
-  it('Seedance image_to_video with role-less images infers first_frame + last_frame + references', async () => {
+  it('Seedance image_to_video with two role-less images infers first_frame + last_frame', async () => {
     const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
     const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
       (entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128',
@@ -2283,11 +2315,10 @@ describe('VolcengineArkMediaAdapter', () => {
         capability: 'video.image_to_video',
         outputDir: tmpDir,
         prompt: '首尾帧过渡',
-        // 无 role 图：i2v 兜底应分别作 first_frame / last_frame，其余作为 reference_image。
+        // 无 role 图：i2v 兜底应分别作 first_frame / last_frame。
         inputFiles: [
           { type: 'image', url: 'https://cdn/start.png' },
           { type: 'image', url: 'https://cdn/end.png' },
-          { type: 'image', url: 'https://cdn/ref.png' },
         ],
       },
       {
@@ -2314,8 +2345,43 @@ describe('VolcengineArkMediaAdapter', () => {
     expect((firstFrame!.image_url as { url: string }).url).toBe('https://cdn/start.png')
     expect((lastFrame!.image_url as { url: string }).url).toBe('https://cdn/end.png')
     const refs = content.filter((item) => item.role === 'reference_image')
-    expect(refs).toHaveLength(1)
-    expect((refs[0]!.image_url as { url: string }).url).toBe('https://cdn/ref.png')
+    expect(refs).toHaveLength(0)
+  })
+
+  it('Seedance rejects mixing implicit first-and-last frames with a third reference image', async () => {
+    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128',
+    )!
+
+    await expect(
+      router.invoke(
+        {
+          operation: 'image_to_video',
+          capability: 'video.image_to_video',
+          outputDir: tmpDir,
+          prompt: '首尾帧过渡',
+          inputFiles: [
+            { type: 'image', url: 'https://cdn/start.png' },
+            { type: 'image', url: 'https://cdn/end.png' },
+            { type: 'image', url: 'https://cdn/ref.png' },
+          ],
+        },
+        {
+          providers: [
+            makeProvider({
+              id: 'volc-prov',
+              name: '火山 Seedance',
+              defaultModel: 'doubao-seedance-2-0-260128',
+              apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+              mediaProvider: 'volcengine-ark',
+              mediaCapabilities: ['video.image_to_video'],
+              mediaModelManifests: [seedanceManifest],
+            }),
+          ],
+          fetch: makeFetch([]),
+        },
+      ),
+    ).rejects.toThrow('首帧/首尾帧模式与多模态参考模式互斥，不能混用')
   })
 
   it('Seedream image.edit (multi-image fusion): passes image[] array and honors searchEnabled alias', async () => {
@@ -2380,10 +2446,9 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(postedBody.tools).toEqual([{ type: 'web_search' }])
   })
 
-  it('Seedream 4.5: 不发 output_format / response_format（这俩是 5.0 新增字段，4.5 传了平台报 400）', async () => {
+  it('Seedream 4.5: 不发 output_format，但支持通用 response_format', async () => {
     // 回归测试：用户报告 4.5 生图报 "output_format is not supported by the current model"。
-    // 4.5 的 manifest schema 已移除 outputFormat/responseFormat 字段，adapter 的 schema 网关
-    // 也会拦截——即使 modelParams 显式传或 preset mediaDefaults 兜底，都不应透传给平台。
+    // 4.5 的 manifest schema 已移除 outputFormat，但 response_format 是通用响应参数。
     const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
       (entry) => entry.id === 'volcengine:doubao-seedream-4-5-251128',
     )!
@@ -2437,9 +2502,9 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(postedBody.prompt).toBe('一只赛博朋克风格的猫')
     expect(postedBody.size).toBe('4K')
     expect(postedBody.watermark).toBe(false)
-    // 关键断言：4.5 不支持 output_format / response_format，必须 undefined
+    // 关键断言：4.5 不支持 output_format；response_format=url 可正常使用。
     expect(postedBody.output_format).toBeUndefined()
-    expect(postedBody.response_format).toBeUndefined()
+    expect(postedBody.response_format).toBe('url')
     expect(output.mode).toBe('sync')
     expect(output.assets[0]?.type).toBe('image')
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
@@ -2558,11 +2623,11 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(postedBody.tools).toEqual([{ type: 'web_search' }])
   })
 
-  it('Seedream 5.0 (主模型): 不暴露 searchEnabled，即使传入也不发 tools', async () => {
-    // 主模型 5.0 不支持联网搜索；schema 已移除 searchEnabled，但 adapter 仍可能收到
+  it('Seedream 5.0 Pro: 不暴露 searchEnabled，即使传入也不发 tools', async () => {
+    // Pro 不支持联网搜索；schema 已移除 searchEnabled，但 adapter 仍可能收到
     // 透传的 modelParams。验证：tools 字段绝不能出现，避免平台报错。
     const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
-      (entry) => entry.id === 'volcengine:doubao-seedream-5-0-260128',
+      (entry) => entry.id === 'volcengine:doubao-seedream-5-0-pro-260628',
     )!
     let postedBody: Record<string, unknown> = {}
     const fetchMock = makeFetch([
@@ -2598,7 +2663,7 @@ describe('VolcengineArkMediaAdapter', () => {
           makeProvider({
             id: 'volc-main',
             name: '火山 Seedream',
-            defaultModel: 'doubao-seedream-5-0-260128',
+            defaultModel: 'doubao-seedream-5-0-pro-260628',
             apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
             mediaProvider: 'volcengine-ark',
             mediaApiType: 'sync',
@@ -2610,7 +2675,7 @@ describe('VolcengineArkMediaAdapter', () => {
       },
     )
 
-    expect(postedBody.model).toBe('doubao-seedream-5-0-260128')
+    expect(postedBody.model).toBe('doubao-seedream-5-0-pro-260628')
     expect(postedBody.tools).toBeUndefined()
   })
 
@@ -2806,11 +2871,10 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(postedBody.output_format).toBeUndefined()
   })
 
-  it('Seedream 5.0 主模型: forwards guidance_scale, drops searchEnabled via forbidden_by_contract', async () => {
-    // 文档 1541523：5.0 主模型独有 guidance_scale [1,10]；不支持联网搜索（searchEnabled
-    // 由 seedream5ParamPolicy.forbidden 拦截，产 forbidden_by_contract dropped）。
+  it('Seedream 5.0 Pro: rejects undocumented guidance_scale before provider request', async () => {
+    // 官方当前参数表不包含 guidance_scale，调用层必须在发请求前阻止。
     const seedream5Manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
-      (entry) => entry.id === 'volcengine:doubao-seedream-5-0-260128',
+      (entry) => entry.id === 'volcengine:doubao-seedream-5-0-pro-260628',
     )!
     let postedBody: Record<string, unknown> = {}
     const fetchMock = makeFetch([
@@ -2832,36 +2896,33 @@ describe('VolcengineArkMediaAdapter', () => {
       },
     ])
 
-    const { output } = await router.invoke(
-      {
-        operation: 'text_to_image',
-        capability: 'image.generate',
-        outputDir: tmpDir,
-        prompt: '一只赛博朋克龙',
-        modelParams: { guidanceScale: 7.5, searchEnabled: true },
-      },
-      {
-        providers: [
-          makeProvider({
-            id: 'volc-seed5',
-            name: '火山 Seedream 5.0',
-            defaultModel: 'doubao-seedream-5-0-260128',
-            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
-            mediaProvider: 'volcengine-ark',
-            mediaApiType: 'sync',
-            mediaCapabilities: ['image.generate'],
-            mediaModelManifests: [seedream5Manifest],
-          }),
-        ],
-        fetch: fetchMock,
-      },
-    )
-
-    // guidance_scale 在 [1,10] 范围内透传
-    expect(postedBody.guidance_scale).toBe(7.5)
-    // searchEnabled 被 paramPolicy.forbidden 裁掉，不进入 tools
-    expect(postedBody.tools).toBeUndefined()
-    expect(output.mode).toBe('sync')
+    await expect(
+      router.invoke(
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          outputDir: tmpDir,
+          prompt: '一只赛博朋克龙',
+          modelParams: { guidanceScale: 7.5, searchEnabled: true },
+        },
+        {
+          providers: [
+            makeProvider({
+              id: 'volc-seed5',
+              name: '火山 Seedream 5.0',
+              defaultModel: 'doubao-seedream-5-0-pro-260628',
+              apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+              mediaProvider: 'volcengine-ark',
+              mediaApiType: 'sync',
+              mediaCapabilities: ['image.generate'],
+              mediaModelManifests: [seedream5Manifest],
+            }),
+          ],
+          fetch: fetchMock,
+        },
+      ),
+    ).rejects.toThrow('官方参数不包含 guidanceScale')
+    expect(postedBody).toEqual({})
   })
 
   it('Seedream 5.0 lite: forwards 自定义 size 像素值（方式2，x-allow-custom）', async () => {
@@ -3131,7 +3192,7 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(legacy).toBeUndefined()
   })
 
-  it('Seedance 1.x manifests are registered with duration [2,12]', () => {
+  it('Seedance 1.x manifests expose their documented duration ranges', () => {
     const ids = [
       'volcengine:doubao-seedance-1-5-pro-251215',
       'volcengine:doubao-seedance-1-0-pro-250528',
@@ -3141,10 +3202,15 @@ describe('VolcengineArkMediaAdapter', () => {
       const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find((entry) => entry.id === id)
       expect(manifest, `${id} missing`).toBeDefined()
       const schema = manifest!.capabilities[0]?.paramSchema as {
-        properties?: Record<string, { minimum?: number; maximum?: number }>
+        properties?: Record<string, { minimum?: number; maximum?: number; enum?: number[] }>
       }
-      expect(schema.properties?.durationSeconds?.minimum).toBe(2)
-      expect(schema.properties?.durationSeconds?.maximum).toBe(12)
+      const duration = schema.properties?.durationSeconds
+      if (id.includes('1-5')) {
+        expect(duration?.enum).toEqual([-1, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+      } else {
+        expect(duration?.minimum).toBe(2)
+        expect(duration?.maximum).toBe(12)
+      }
     }
   })
 })
@@ -3282,7 +3348,7 @@ describe('media adapters reject unknown params under Contract V2', () => {
     expect(postedBody!).not.toHaveProperty('seed')
   })
 
-  it('Volcengine Ark Seedream 5.0 (main) drops searchEnabled (forbidden by contract)', async () => {
+  it('Volcengine Ark Seedream 5.0 Pro drops unsupported searchEnabled', async () => {
     let postedBody: Record<string, unknown> | null = null
     const fetchMock = makeFetch([
       {
@@ -3307,12 +3373,12 @@ describe('media adapters reject unknown params under Contract V2', () => {
       },
     ])
     const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
-      (m) => m.id === 'volcengine:doubao-seedream-5-0-260128',
+      (m) => m.id === 'volcengine:doubao-seedream-5-0-pro-260628',
     )!
     expect(seedreamManifest).toBeDefined()
-    // sanity: M5-c 保证主模型 forbidden searchEnabled
+    // Pro 使用 strict policy，schema 未声明的联网搜索会被裁掉。
     const policy = seedreamManifest.capabilities[0]?.paramPolicy
-    expect(policy?.forbidden?.find((f) => f.name === 'searchEnabled')).toBeDefined()
+    expect(policy?.strict).toBe(true)
 
     const router = new MediaRouterService()
     await router.invoke(
@@ -3332,12 +3398,12 @@ describe('media adapters reject unknown params under Contract V2', () => {
             name: 'Volcengine Ark',
             apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
             mediaProvider: 'volcengine-ark',
-            defaultModel: 'doubao-seedream-5-0-260128',
+            defaultModel: 'doubao-seedream-5-0-pro-260628',
             mediaCapabilities: ['image.generate'],
             mediaModelManifests: [seedreamManifest],
           }),
         ],
-        modelId: 'doubao-seedream-5-0-260128',
+        modelId: 'doubao-seedream-5-0-pro-260628',
         fetch: fetchMock,
       },
     )

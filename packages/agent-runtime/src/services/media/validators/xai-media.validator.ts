@@ -8,6 +8,7 @@ import {
   validationIssue,
   type MediaValidationContext,
 } from './media-validator.types.js'
+import { XAI_MAX_VIDEO_PROMPT_CHARS } from '../xai-media.constants.js'
 
 export function validateXaiMediaRequest(context: MediaValidationContext): MediaContractIssue[] {
   const issues: MediaContractIssue[] = []
@@ -47,6 +48,14 @@ export function validateXaiMediaRequest(context: MediaValidationContext): MediaC
   if (capability.startsWith('video.')) {
     if (prompt.length === 0) {
       issues.push(validationIssue('missing_required', 'xAI 视频任务需要提示词', ['prompt']))
+    } else if (prompt.length > XAI_MAX_VIDEO_PROMPT_CHARS) {
+      issues.push(
+        validationIssue(
+          'out_of_range',
+          `xAI 视频提示词不能超过 ${XAI_MAX_VIDEO_PROMPT_CHARS} 个字符，当前为 ${prompt.length} 个字符`,
+          ['prompt'],
+        ),
+      )
     }
     if (modelId.startsWith('grok-imagine-video-1.5') && capability !== 'video.image_to_video') {
       issues.push(

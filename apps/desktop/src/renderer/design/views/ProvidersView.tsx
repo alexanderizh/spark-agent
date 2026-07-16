@@ -8,6 +8,7 @@ import { Badge, Switch } from 'antd'
 import { Icons } from '../Icons'
 import { ChipList } from '../components/ChipList'
 import { ProviderFilesPanel } from './provider/ProviderFilesPanel'
+import { ProviderConversationProtocolFields } from './provider/ProviderConversationProtocolFields'
 import {
   ProviderLogo,
   PROVIDER_ICON_CATALOG,
@@ -3403,20 +3404,11 @@ export function ProviderEditPanel({
               </div>
 
               {form.provider === 'openai' && isChatModel && (
-                <>
-                  <label className="pv_form_label">
-                    Codex API 类型
-                  </label>
-                  <Select
-                    value={form.codexApiKind}
-                    onChange={(v) => set('codexApiKind', v as 'chat' | 'responses' | 'embedding')}
-                    options={[
-                      { label: 'Responses API（推荐）', value: 'responses' },
-                      { label: 'Chat Completions（兼容旧/第三方）', value: 'chat' },
-                      { label: 'Embeddings（向量模型）', value: 'embedding' },
-                    ]}
-                  />
-                </>
+                <ProviderConversationProtocolFields
+                  value={form.codexApiKind}
+                  apiEndpoint={form.endpoint}
+                  onChange={(value) => set('codexApiKind', value)}
+                />
               )}
 
               <label className="pv_form_label">

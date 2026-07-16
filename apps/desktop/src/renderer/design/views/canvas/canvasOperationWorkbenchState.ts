@@ -1,4 +1,4 @@
-export type CanvasOperationWorkbenchTab = 'output' | 'history' | 'config'
+export type CanvasOperationWorkbenchTab = 'output' | 'history' | 'config' | 'settings'
 
 export type CanvasOperationWorkbenchState = {
   tab: CanvasOperationWorkbenchTab
@@ -52,7 +52,7 @@ export function reduceCanvasOperationWorkbenchState(
       return {
         ...state,
         tab:
-          action.hasOutputs && state.tab === 'config'
+          state.tab === 'config' || state.tab === 'settings'
             ? state.tab
             : action.hasOutputs
               ? 'output'

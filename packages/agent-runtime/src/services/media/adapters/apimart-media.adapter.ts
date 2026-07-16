@@ -54,10 +54,8 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
         'video.image_to_video',
         'video.edit',
       ],
-      // APIMart 视频任务通常用 /videos/generations/{id} 查询，部分模型走 /tasks/{id}。
-      // extractMediaUrls/extractStatus 对两种返回都兼容，这里给一条兜底 path，
-      // 服务端若无该 path 会返回 404，由调用方报错。
-      videoTaskPath: (taskId) => `/videos/generations/${encodeURIComponent(taskId)}`,
+      // APIMart 所有异步图片/视频任务都通过统一任务端点查询。
+      videoTaskPath: (taskId) => `/tasks/${encodeURIComponent(taskId)}`,
       genericTaskPath: (taskId) => `/tasks/${encodeURIComponent(taskId)}`,
     })
   }

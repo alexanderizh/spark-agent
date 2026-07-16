@@ -74,4 +74,20 @@ describe('canvas operation workbench state', () => {
       editingOutput: false,
     })
   })
+
+  it('keeps node settings available when the workbench has no outputs', () => {
+    const settings = reduceCanvasOperationWorkbenchState(
+      createCanvasOperationWorkbenchState(false, 0, 0),
+      { type: 'select-tab', tab: 'settings' },
+    )
+
+    expect(
+      reduceCanvasOperationWorkbenchState(settings, {
+        type: 'sync-primary',
+        hasOutputs: false,
+        runIndex: 0,
+        outputIndex: 0,
+      }),
+    ).toMatchObject({ tab: 'settings' })
+  })
 })

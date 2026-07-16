@@ -26,4 +26,11 @@ describe('compactForLog', () => {
     expect(result.apiKey).toBe('[REDACTED]')
     expect((result.nested as Record<string, unknown>).access_token).toBe('[REDACTED]')
   })
+
+  it('truncates long prompt text while retaining its character count', () => {
+    const result = compactForLog({ prompt: '场'.repeat(5_000) }) as Record<string, string>
+
+    expect(result.prompt).toContain('[truncated chars=5000]')
+    expect(result.prompt?.length).toBeLessThan(1_000)
+  })
 })

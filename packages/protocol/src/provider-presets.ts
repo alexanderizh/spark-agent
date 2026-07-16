@@ -644,11 +644,13 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: '火山方舟 Seed 2.1',
     provider: 'openai',
     apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+    codexApiKind: 'chat',
     defaultModel: 'doubao-seed-2-1-pro',
     modelIds: ['doubao-seed-2-1-pro', 'doubao-seed-2-1-turbo', 'doubao-seed-evolving'],
     modelType: 'multimodal',
     sourceUrls: [
       'https://www.volcengine.com/docs/82379/1399009',
+      'https://console.volcengine.com/ark/region:cn-beijing/docs/82379/1569618?lang=zh',
       'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seed-2-1-pro',
       'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seed-2-1-turbo',
     ],
@@ -1112,7 +1114,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, quality: 'hd' },
-      polling: { intervalMs: 6000, timeoutMs: 600_000 },
+      polling: { intervalMs: 6000, timeoutMs: 1_800_000 },
     },
     sourceUrls: [
       'https://docs.apimart.ai/cn/api-reference/videos/veo3/generation',
@@ -1138,7 +1140,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, quality: 'hd' },
-      polling: { intervalMs: 6000, timeoutMs: 600_000 },
+      polling: { intervalMs: 6000, timeoutMs: 1_800_000 },
     },
     sourceUrls: [
       'https://docs.apimart.ai/cn/api-reference/videos/sora-2/generation',
@@ -1223,7 +1225,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
-      polling: { intervalMs: 6000, timeoutMs: 600_000 },
+      polling: { intervalMs: 6000, timeoutMs: 1_800_000 },
     },
     sourceUrls: [
       'https://docs.apimart.ai/cn/api-reference/videos',
@@ -1421,7 +1423,13 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelType: 'video',
     mediaProvider: 'volcengine-ark',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit', 'video.extend'],
+    mediaCapabilities: [
+      'video.generate',
+      'video.image_to_video',
+      'video.reference_to_video',
+      'video.edit',
+      'video.extend',
+    ],
     mediaModelRefs: [
       { manifestId: 'volcengine:doubao-seedance-2-0-260128', modelId: 'doubao-seedance-2-0-260128', enabled: true },
       { manifestId: 'volcengine:doubao-seedance-2-0-fast-260128', modelId: 'doubao-seedance-2-0-fast-260128', enabled: true },
@@ -1441,18 +1449,17 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
   },
 
-  /* ─── 火山方舟图片（Seedream 4.0 / 4.5 / 5.0 / 5.0 lite）─── */
+  /* ─── 火山方舟图片（Seedream 4.0 / 4.5 / 5.0 Lite / 5.0 Pro）─── */
   {
     id: 'volcengine-seedream-image',
     vendorId: 'volcengine',
     name: '火山方舟 Seedream 图片',
     provider: 'openai',
     apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
-    // 默认 5.0：最新主模型，支持 png 输出 + 组图，最省心。
-    // 5.0 lite（doubao-seedream-5-0-lite-260128）是更便宜、更快的版本，
-    // 额外支持联网搜索 + 深度推理；需要这些能力时切到 lite。
-    defaultModel: 'doubao-seedream-5-0-260128',
+    // 默认最新的 5.0 Pro；需要组图、流式或联网搜索时切到 5.0 Lite。
+    defaultModel: 'doubao-seedream-5-0-pro-260628',
     modelIds: [
+      'doubao-seedream-5-0-pro-260628',
       'doubao-seedream-5-0-260128',
       'doubao-seedream-5-0-lite-260128',
       'doubao-seedream-4-5-251128',
@@ -1465,19 +1472,19 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaApiType: 'sync',
     mediaCapabilities: ['image.generate', 'image.edit'],
     mediaModelRefs: [
+      { manifestId: 'volcengine:doubao-seedream-5-0-pro-260628', modelId: 'doubao-seedream-5-0-pro-260628', enabled: true },
       { manifestId: 'volcengine:doubao-seedream-5-0-260128', modelId: 'doubao-seedream-5-0-260128', enabled: true },
       { manifestId: 'volcengine:doubao-seedream-5-0-lite-260128', modelId: 'doubao-seedream-5-0-lite-260128', enabled: true },
       { manifestId: 'volcengine:doubao-seedream-4-5-251128', modelId: 'doubao-seedream-4-5-251128', enabled: true },
       { manifestId: 'volcengine:doubao-seedream-4-0-250828', modelId: 'doubao-seedream-4-0-250828', enabled: true },
     ],
     mediaDefaults: {
-      // output_format / response_format 仅 5.0 系列支持；adapter 已按 manifest schema
-      // 网关过滤，4.0/4.5 即使收到该默认值也不会透传给平台（避免 HTTP 400）。
-      // 这里给 5.0 系列兜底 jpeg（默认值，最稳）。
+      // output_format 仅 5.0 Pro/Lite 支持；adapter 按 manifest schema 过滤。
       image: { resolution: '2K', outputFormat: 'jpeg', responseFormat: 'url' },
     },
     sourceUrls: [
       'https://www.volcengine.com/docs/82379/1541523',
+      'https://console.volcengine.com/ark/region:cn-beijing/docs/82379/2582774?lang=zh',
       'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-5-0',
       'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-5-0-lite',
       'https://console.volcengine.com/ark/region:ark+cn-beijing/model/detail?Id=doubao-seedream-4-5',

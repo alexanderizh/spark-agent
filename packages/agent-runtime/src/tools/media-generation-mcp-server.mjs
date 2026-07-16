@@ -10,10 +10,11 @@
  *   generate_audio     — 语音合成（text → audio）
  *   transcribe_audio   — 语音转写（audioFile/audioUrl → text）
  *   generate_video     — 文生视频 / 图生视频 / 视频编辑（prompt + 可选 inputImages/inputVideos）
+ *   upload/get/list/delete_file — Provider 文件平台生命周期（当前支持火山方舟）
  *
  * 配置全部来自环境变量（API key 仅在本子进程内存内，不外泄）：
  *   SPARK_MEDIA_API_KEY       API key（必填）
- *   SPARK_MEDIA_PROVIDER      apimart | xai | openai-compatible | custom（默认 openai-compatible）
+ *   SPARK_MEDIA_PROVIDER      apimart | xai | volcengine-ark | openai-compatible | custom（默认 openai-compatible）
  *   SPARK_MEDIA_MODEL         默认模型 id
  *   SPARK_MEDIA_API_TYPE      sync | async | auto（默认 auto）
  *   SPARK_MEDIA_BASE_URL      API base url
@@ -21,7 +22,7 @@
  *   SPARK_MEDIA_DEFAULTS_JSON 可选；mediaDefaults 的 JSON 字符串
  *   SPARK_MEDIA_MANIFESTS_JSON 可选；已启用 MediaModelManifest[]，用于 list/describe
  */
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import readline from 'node:readline'
 // 响应解析逻辑复用 TS adapter 的单一事实源（media-extract.mjs），避免分叉
@@ -167,7 +168,6 @@ const TOOLS = [
     description: 'Generate or edit a video from a prompt, first/last frames, reference images, or an input video.',
     inputSchema: {
       type: 'object',
-      required: ['prompt'],
       properties: {
         prompt: { type: 'string' },
         model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
@@ -190,13 +190,23 @@ const TOOLS = [
           items: { type: 'string' },
           description: 'Optional input video urls / file paths for video edit.',
         },
+        referenceVideos: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional reference video URLs. Provider/model limits come from describe_model.',
+        },
+        referenceAudios: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional reference audio URLs / data URLs. Provider/model limits come from describe_model.',
+        },
         videoUrl: { type: 'string', description: 'Optional remote input video url for video edit.' },
         videoFile: { type: 'string', description: 'Optional local input video file path for video edit.' },
         videoFileId: { type: 'string', description: 'Optional xAI Files API id for video edit or extension.' },
         capability: { type: 'string', description: `Capability id such as video.generate, video.image_to_video, video.edit, or video.extend. ${DESCRIBE_MODEL_HINT}` },
         videoMode: { type: 'string', description: 'Loose routing hint: generate, image_to_video, reference_to_video, edit, or extend.' },
         aspectRatio: { type: 'string', description: `Provider-specific video aspect ratio. ${DESCRIBE_MODEL_HINT}` },
-        durationSeconds: { type: 'integer', minimum: 1, maximum: 120 },
+        durationSeconds: { type: 'integer', minimum: -1, maximum: 120, description: `Duration in seconds; some models use -1 for automatic duration. ${DESCRIBE_MODEL_HINT}` },
         resolution: { type: 'string', description: `Provider-specific video resolution. ${DESCRIBE_MODEL_HINT}` },
         mode: { type: 'string', description: `Provider-specific generation mode. ${DESCRIBE_MODEL_HINT}` },
         editStrength: { type: 'number', minimum: 0, maximum: 1 },
@@ -210,6 +220,78 @@ const TOOLS = [
         filename: { type: 'string' },
         extraJson: { type: 'object', additionalProperties: true },
       },
+    },
+  },
+  {
+    name: 'upload_file',
+    description:
+      'Upload/import a file to the configured provider file platform. Volcengine Ark supports local binary files or URL/TOS imports and can wait until status=active.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string', description: 'Local file path. Mutually exclusive with url.' },
+        url: {
+          type: 'string',
+          description: 'HTTP/HTTPS or tos:// URL. Mutually exclusive with filePath.',
+        },
+        purpose: { type: 'string', enum: ['user_data'], default: 'user_data' },
+        expireAt: {
+          type: 'integer',
+          description: 'UTC Unix seconds; Volcengine allows now+1 day through now+30 days.',
+        },
+        tos: {
+          type: 'object',
+          required: ['bucket', 'prefix'],
+          properties: {
+            bucket: { type: 'string' },
+            prefix: { type: 'string', description: 'Relative TOS object prefix.' },
+          },
+        },
+        preprocessVideo: {
+          type: 'object',
+          properties: {
+            fps: { type: 'number', minimum: 0.2, maximum: 5 },
+            model: { type: 'string' },
+            max_video_tokens: { type: 'integer', minimum: 10240, maximum: 204800 },
+            min_frame_tokens: { type: 'integer', minimum: 16, maximum: 128 },
+            max_frame_tokens: { type: 'integer', minimum: 128, maximum: 640 },
+            min_frames: { type: 'integer', minimum: 5, maximum: 16 },
+          },
+        },
+        waitUntilActive: { type: 'boolean', default: true },
+      },
+    },
+  },
+  {
+    name: 'get_file',
+    description: 'Retrieve one file object from the configured provider file platform.',
+    inputSchema: {
+      type: 'object',
+      required: ['fileId'],
+      properties: { fileId: { type: 'string' } },
+    },
+  },
+  {
+    name: 'list_files',
+    description: 'List files from the configured provider file platform.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        after: { type: 'string' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, default: 100 },
+        purpose: { type: 'string', enum: ['user_data'] },
+        order: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+        scopeId: { type: 'string', description: 'Managed Agents Session ID when applicable.' },
+      },
+    },
+  },
+  {
+    name: 'delete_file',
+    description: 'Delete one file from the configured provider file platform.',
+    inputSchema: {
+      type: 'object',
+      required: ['fileId'],
+      properties: { fileId: { type: 'string' } },
     },
   },
   {
@@ -308,6 +390,307 @@ function handleCancelTask(args) {
   TASKS.set(taskId, cancelled)
   return { success: true, cancelled: true, task: cancelled }
 }
+
+function assertVolcengineFilesConfig(config) {
+  if (config.provider !== 'volcengine-ark') {
+    throw new Error(
+      `Provider file management is not implemented for ${config.provider}; select a Volcengine Ark provider`,
+    )
+  }
+  if (!config.apiKey) throw new Error('No media API key configured')
+}
+
+async function handleUploadFile(config, args) {
+  assertVolcengineFilesConfig(config)
+  const filePath = typeof args.filePath === 'string' ? args.filePath.trim() : ''
+  const urlValue = typeof args.url === 'string' ? args.url.trim() : ''
+  if (Boolean(filePath) === Boolean(urlValue)) {
+    throw new Error('Exactly one of filePath or url is required')
+  }
+  if (urlValue && !/^(?:https?:\/\/|tos:\/\/)/i.test(urlValue)) {
+    throw new Error('Volcengine Files url must use http://, https://, or tos://')
+  }
+  const tos = normalizeVolcengineTos(args.tos)
+  if (urlValue.toLowerCase().startsWith('tos://') && !tos) {
+    throw new Error('Volcengine tos:// imports require tos.bucket and tos.prefix')
+  }
+  const purpose = String(args.purpose || 'user_data')
+  if (purpose !== 'user_data') {
+    throw new Error('Volcengine Files purpose must be user_data')
+  }
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const expireAt = args.expireAt == null ? undefined : Number(args.expireAt)
+  if (
+    expireAt != null &&
+    (!Number.isInteger(expireAt) ||
+      expireAt < nowSeconds + 86400 ||
+      expireAt > nowSeconds + 2592000)
+  ) {
+    throw new Error(
+      'Volcengine expireAt must be a UTC Unix timestamp between now+1 day and now+30 days',
+    )
+  }
+
+  const form = new globalThis.FormData()
+  form.append('purpose', purpose)
+  if (filePath) {
+    const info = await stat(filePath)
+    if (!info.isFile()) throw new Error(`Volcengine Files path is not a file: ${filePath}`)
+    const extension = path.extname(filePath).toLowerCase()
+    assertVolcengineFileExtension(extension)
+    if (args.preprocessVideo && !VOLCENGINE_VIDEO_EXTENSIONS.has(extension)) {
+      throw new Error('Volcengine video preprocessing only supports MP4, AVI, or MOV files')
+    }
+    const maxBytes =
+      tos && VOLCENGINE_VIDEO_EXTENSIONS.has(extension)
+        ? 2 * 1024 * 1024 * 1024
+        : 512 * 1024 * 1024
+    if (info.size > maxBytes) {
+      throw new Error(
+        `Volcengine Files local file exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`,
+      )
+    }
+    const buffer = await readFile(filePath)
+    form.append(
+      'file',
+      new globalThis.Blob([buffer], { type: mimeFromFilename(filePath) }),
+      path.basename(filePath),
+    )
+  } else {
+    const extension = remoteFileExtension(urlValue)
+    if (extension) assertVolcengineFileExtension(extension)
+    if (args.preprocessVideo && extension && !VOLCENGINE_VIDEO_EXTENSIONS.has(extension)) {
+      throw new Error('Volcengine video preprocessing only supports MP4, AVI, or MOV files')
+    }
+    form.append('url', urlValue)
+  }
+  if (expireAt != null) form.append('expire_at', String(expireAt))
+  if (tos) {
+    form.append('tos[bucket]', tos.bucket)
+    form.append('tos[prefix]', tos.prefix)
+  }
+  if (args.preprocessVideo && typeof args.preprocessVideo === 'object') {
+    appendVolcengineVideoPreprocess(form, args.preprocessVideo)
+  }
+  const uploaded = await fetchJson(
+    `${volcengineFilesBaseUrl(config.baseUrl)}/files`,
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${config.apiKey}` },
+      body: form,
+    },
+    300_000,
+  )
+  if (!uploaded?.id) throw new Error('Volcengine Files response missing id')
+  const file =
+    args.waitUntilActive === false ? uploaded : await waitForVolcengineFile(config, uploaded.id)
+  return { success: true, provider: config.provider, file }
+}
+
+async function handleGetFile(config, args) {
+  assertVolcengineFilesConfig(config)
+  const fileId = String(args.fileId || '').trim()
+  if (!fileId) throw new Error('fileId is required')
+  const file = await fetchJson(
+    `${volcengineFilesBaseUrl(config.baseUrl)}/files/${encodeURIComponent(fileId)}`,
+    { headers: authHeaders(config) },
+    30_000,
+  )
+  return { success: true, provider: config.provider, file }
+}
+
+async function handleListFiles(config, args) {
+  assertVolcengineFilesConfig(config)
+  const query = new URLSearchParams()
+  if (args.after) query.set('after', String(args.after))
+  query.set('limit', String(Math.max(1, Math.min(100, Number(args.limit) || 100))))
+  if (args.purpose && args.purpose !== 'user_data') {
+    throw new Error('Volcengine Files purpose must be user_data')
+  }
+  if (args.purpose) query.set('purpose', 'user_data')
+  query.set('order', args.order === 'asc' ? 'asc' : 'desc')
+  if (args.scopeId) query.set('scope_id', String(args.scopeId))
+  const files = await fetchJson(
+    `${volcengineFilesBaseUrl(config.baseUrl)}/files?${query.toString()}`,
+    { headers: authHeaders(config) },
+    30_000,
+  )
+  return { success: true, provider: config.provider, ...files }
+}
+
+async function handleDeleteFile(config, args) {
+  assertVolcengineFilesConfig(config)
+  const fileId = String(args.fileId || '').trim()
+  if (!fileId) throw new Error('fileId is required')
+  const deleted = await fetchJson(
+    `${volcengineFilesBaseUrl(config.baseUrl)}/files/${encodeURIComponent(fileId)}`,
+    { method: 'DELETE', headers: authHeaders(config) },
+    30_000,
+  )
+  return { success: true, provider: config.provider, deleted }
+}
+
+function appendVolcengineVideoPreprocess(form, raw) {
+  const allowedFields = new Set([
+    'fps',
+    'model',
+    'max_video_tokens',
+    'min_frame_tokens',
+    'max_frame_tokens',
+    'min_frames',
+  ])
+  const unsupportedField = Object.keys(raw).find((name) => !allowedFields.has(name))
+  if (unsupportedField) {
+    throw new Error(`Unsupported Volcengine preprocessVideo field: ${unsupportedField}`)
+  }
+  const fields = [
+    ['fps', 0.2, 5, false],
+    ['max_video_tokens', 10240, 204800, true],
+    ['min_frame_tokens', 16, 128, true],
+    ['max_frame_tokens', 128, 640, true],
+    ['min_frames', 5, 16, true],
+  ]
+  for (const [name, minimum, maximum, integer] of fields) {
+    if (raw[name] == null) continue
+    const value = Number(raw[name])
+    if (
+      !Number.isFinite(value) ||
+      (integer && !Number.isInteger(value)) ||
+      value < minimum ||
+      value > maximum
+    ) {
+      throw new Error(
+        `Volcengine preprocessVideo.${name} must be ${integer ? 'an integer ' : ''}between ${minimum} and ${maximum}`,
+      )
+    }
+    form.append(`preprocess_configs[video][${name}]`, String(value))
+  }
+  if (raw.model != null) {
+    const model = String(raw.model).trim()
+    if (!model) throw new Error('Volcengine preprocessVideo.model cannot be empty')
+    form.append('preprocess_configs[video][model]', model)
+  }
+  if (
+    raw.min_frame_tokens != null &&
+    raw.max_frame_tokens != null &&
+    Number(raw.min_frame_tokens) > Number(raw.max_frame_tokens)
+  ) {
+    throw new Error('Volcengine preprocessVideo.min_frame_tokens cannot exceed max_frame_tokens')
+  }
+}
+
+async function waitForVolcengineFile(config, fileId) {
+  const deadline = Date.now() + 300_000
+  let interval = 1000
+  while (Date.now() < deadline) {
+    const file = await fetchJson(
+      `${volcengineFilesBaseUrl(config.baseUrl)}/files/${encodeURIComponent(fileId)}`,
+      { headers: authHeaders(config) },
+      30_000,
+    )
+    if (file?.status === 'active') return file
+    if (file?.status === 'failed') {
+      throw new Error(
+        `Volcengine file preprocessing failed: ${file?.error?.code || ''} ${file?.error?.message || ''}`.trim(),
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, interval))
+    interval = Math.min(Math.ceil(interval * 1.5), 5000)
+  }
+  throw new Error(`Volcengine file ${fileId} did not become active within 5 minutes`)
+}
+
+function mimeFromFilename(filename) {
+  const extension = path.extname(filename).toLowerCase()
+  const map = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.bmp': 'image/bmp',
+    '.tiff': 'image/tiff',
+    '.heic': 'image/heic',
+    '.heif': 'image/heif',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.avi': 'video/x-msvideo',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.aac': 'audio/aac',
+    '.m4a': 'audio/mp4',
+    '.pdf': 'application/pdf',
+  }
+  return map[extension] || 'application/octet-stream'
+}
+
+const VOLCENGINE_FILE_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.tiff',
+  '.ico',
+  '.icns',
+  '.sgi',
+  '.jp2',
+  '.heic',
+  '.heif',
+  '.mp4',
+  '.avi',
+  '.mov',
+  '.pdf',
+  '.mp3',
+  '.wav',
+  '.aac',
+  '.m4a',
+])
+const VOLCENGINE_VIDEO_EXTENSIONS = new Set(['.mp4', '.avi', '.mov'])
+
+function assertVolcengineFileExtension(extension) {
+  if (!VOLCENGINE_FILE_EXTENSIONS.has(extension)) {
+    throw new Error(`Volcengine Files does not support ${extension || 'extensionless'} files`)
+  }
+}
+
+function normalizeVolcengineTos(raw) {
+  if (raw == null) return null
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Volcengine tos must be an object with bucket and prefix')
+  }
+  const bucket = String(raw.bucket || '').trim()
+  const prefix = String(raw.prefix || '').trim()
+  if (!bucket || !prefix) throw new Error('Volcengine tos.bucket and tos.prefix are required')
+  if (prefix.startsWith('/')) throw new Error('Volcengine tos.prefix must be a relative path')
+  return { bucket, prefix }
+}
+
+function remoteFileExtension(value) {
+  try {
+    if (value.toLowerCase().startsWith('tos://')) {
+      return path.extname(value.slice('tos://'.length).split(/[?#]/, 1)[0] || '').toLowerCase()
+    }
+    return path.extname(new globalThis.URL(value).pathname).toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+function volcengineFilesBaseUrl(value) {
+  const baseUrl = String(value || '').replace(/\/+$/, '')
+  try {
+    const parsed = new globalThis.URL(baseUrl)
+    if (parsed.hostname.toLowerCase() === 'ark.cn-beijing.volces.com') {
+      return `${parsed.origin}/api/v3`
+    }
+  } catch {
+    // fetchJson will surface the invalid URL through its normal provider error path.
+  }
+  return baseUrl
+}
+
 
 function configFromEnv() {
   let mediaDefaults
@@ -455,9 +838,11 @@ function collectInputFileKinds(args) {
   if (hasImageInput) files.push({ type: 'image' })
   if (args.firstFrame) files.push({ type: 'image', role: 'first_frame' })
   if (args.lastFrame) files.push({ type: 'image', role: 'last_frame' })
-  const hasVideoInput = args.videoUrl || args.videoFile || (Array.isArray(args.inputVideos) && args.inputVideos.length > 0)
+  const hasVideoInput = args.videoUrl || args.videoFile ||
+    (Array.isArray(args.inputVideos) && args.inputVideos.length > 0) ||
+    (Array.isArray(args.referenceVideos) && args.referenceVideos.length > 0)
   if (hasVideoInput) files.push({ type: 'video' })
-  if (args.audioUrl || args.audioFile) files.push({ type: 'audio' })
+  if (args.audioUrl || args.audioFile || (Array.isArray(args.referenceAudios) && args.referenceAudios.length > 0)) files.push({ type: 'audio' })
   if (args.mask) files.push({ type: 'mask' })
   if (typeof args.text === 'string' && args.text.trim()) files.push({ type: 'text' })
   return files
@@ -575,6 +960,9 @@ function summarizeParamPolicy(capability) {
  * 当前 capability 接受哪些角色、未指定 role 时的默认分配。
  */
 function inferRolePolicyMjs(capability) {
+  if (capability?.rolePolicy && typeof capability.rolePolicy === 'object') {
+    return capability.rolePolicy
+  }
   const req = Array.isArray(capability?.input?.required) ? capability.input.required : []
   const hasImage = req.includes('image') || req.includes('images')
   const maxImages = typeof capability?.input?.maxImages === 'number' ? capability.input.maxImages : 0
@@ -1173,8 +1561,8 @@ async function xaiInputReference(config, value, kind, explicitFileId = '') {
   }
   if (!buffer) throw new Error(`xAI ${kind} input requires URL, file_id, data URL, or local file`)
   try {
-    const form = new FormData()
-    form.append('file', new Blob([buffer], { type: mimeType }), filename)
+    const form = new globalThis.FormData()
+    form.append('file', new globalThis.Blob([buffer], { type: mimeType }), filename)
     const uploaded = await fetchJson(`${config.baseUrl}/files`, {
       method: 'POST', headers: { authorization: `Bearer ${config.apiKey}` }, body: form,
     }, 120_000)
@@ -1182,7 +1570,10 @@ async function xaiInputReference(config, value, kind, explicitFileId = '') {
     return { file_id: uploaded.id }
   } catch (error) {
     if (kind === 'image') return { url: `data:${mimeType};base64,${buffer.toString('base64')}` }
-    throw new Error(`xAI Files upload failed; video input cannot fall back to base64: ${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(
+      `xAI Files upload failed; video input cannot fall back to base64: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    )
   }
 }
 
@@ -1361,11 +1752,234 @@ async function handleTranscribeAudio(config, args) {
   return { success: true, provider: `${config.provider}/${config.model}`, mode: 'sync', files: [file], text }
 }
 
+async function handleVolcengineVideoManifestTool(config, args, match) {
+  const { manifest, capability } = match
+  const modelId =
+    typeof args.model === 'string' && args.model !== manifest.id
+      ? args.model
+      : manifest.modelId || config.model
+  const prompt = String(args.prompt || '').trim()
+  const inputImages = stringArray(args.inputImages)
+  const referenceImages = stringArray(args.referenceImages)
+  const inputVideos = stringArray(args.inputVideos)
+  const referenceVideos = stringArray(args.referenceVideos)
+  const referenceAudios = stringArray(args.referenceAudios)
+  const firstFrame =
+    typeof args.firstFrame === 'string' && args.firstFrame
+      ? args.firstFrame
+      : capability.id === 'video.image_to_video'
+        ? inputImages[0] || ''
+        : ''
+  const lastFrame =
+    typeof args.lastFrame === 'string' && args.lastFrame
+      ? args.lastFrame
+      : capability.id === 'video.image_to_video'
+        ? inputImages[1] || ''
+        : ''
+  const extraFrameImages =
+    capability.id === 'video.image_to_video' ? inputImages.slice(2) : inputImages
+  const videoUrl = typeof args.videoUrl === 'string' ? args.videoUrl : ''
+  const videoFile = typeof args.videoFile === 'string' ? args.videoFile : ''
+  const referenceModeImages = [...extraFrameImages, ...referenceImages]
+  const referenceModeVideos = [...inputVideos, ...referenceVideos, videoUrl, videoFile].filter(
+    Boolean,
+  )
+  const hasFrameMode = Boolean(firstFrame || lastFrame)
+  const hasReferenceMode =
+    referenceModeImages.length > 0 ||
+    referenceModeVideos.length > 0 ||
+    referenceAudios.length > 0 ||
+    ['video.reference_to_video', 'video.edit', 'video.extend'].includes(capability.id)
+
+  if (lastFrame && !firstFrame) throw new Error('Volcengine Seedance lastFrame requires firstFrame')
+  if (hasFrameMode && hasReferenceMode) {
+    throw new Error(
+      'Volcengine Seedance first/last-frame mode cannot be mixed with multimodal references',
+    )
+  }
+  if (hasReferenceMode && referenceModeImages.length === 0 && referenceModeVideos.length === 0) {
+    throw new Error(
+      'Volcengine Seedance multimodal reference mode requires at least one image or video; audio-only is unsupported',
+    )
+  }
+  const maxImages = capability.input?.maxImages ?? 0
+  const maxVideos = capability.input?.maxVideos ?? 0
+  const maxAudios = capability.input?.maxAudios ?? 0
+  const totalImages = hasFrameMode
+    ? Number(Boolean(firstFrame)) + Number(Boolean(lastFrame))
+    : referenceModeImages.length
+  if (maxImages > 0 && totalImages > maxImages)
+    throw new Error(`Volcengine Seedance accepts at most ${maxImages} images for this capability`)
+  if (maxVideos > 0 && referenceModeVideos.length > maxVideos)
+    throw new Error(`Volcengine Seedance accepts at most ${maxVideos} reference videos`)
+  if (maxAudios > 0 && referenceAudios.length > maxAudios)
+    throw new Error(`Volcengine Seedance accepts at most ${maxAudios} reference audios`)
+
+  const prune = pruneModelParamsByManifest({
+    manifest,
+    capability,
+    modelId,
+    params: argsToModelParams('generate_video', args),
+    inputFiles: collectInputFileKinds(args),
+    providerDefaults: config.mediaDefaults?.providerParams,
+    mode: 'mcp',
+  })
+  const variables = buildManifestVariables(
+    'generate_video',
+    args,
+    manifest,
+    capability,
+    modelId,
+    prune.prunedParams,
+  )
+  const providerParams = { ...variables.providerParams }
+  const searchEnabled =
+    providerParams.enable_search === true || providerParams.searchEnabled === true
+  delete providerParams.enable_search
+  delete providerParams.searchEnabled
+  if (searchEnabled && (hasFrameMode || hasReferenceMode)) {
+    throw new Error(
+      'Volcengine Seedance web search is only available for text-only video generation',
+    )
+  }
+  if (providerParams.ratio === '智能比例') providerParams.ratio = 'adaptive'
+
+  const content = []
+  if (prompt) content.push({ type: 'text', text: prompt })
+  if (hasFrameMode) {
+    if (firstFrame) {
+      content.push({
+        type: 'image_url',
+        image_url: { url: await volcengineInputReference(firstFrame, 'image') },
+        role: 'first_frame',
+      })
+    }
+    if (lastFrame) {
+      content.push({
+        type: 'image_url',
+        image_url: { url: await volcengineInputReference(lastFrame, 'image') },
+        role: 'last_frame',
+      })
+    }
+  } else {
+    for (const value of referenceModeImages) {
+      content.push({
+        type: 'image_url',
+        image_url: { url: await volcengineInputReference(value, 'image') },
+        role: 'reference_image',
+      })
+    }
+    for (const value of referenceModeVideos) {
+      content.push({
+        type: 'video_url',
+        video_url: { url: await volcengineInputReference(value, 'video') },
+        role: 'reference_video',
+      })
+    }
+    for (const value of referenceAudios) {
+      content.push({
+        type: 'audio_url',
+        audio_url: { url: await volcengineInputReference(value, 'audio') },
+        role: 'reference_audio',
+      })
+    }
+  }
+  if (content.length === 0)
+    throw new Error('Volcengine Seedance requires a prompt or supported media input')
+
+  const requestBody = {
+    model: modelId,
+    content,
+    ...providerParams,
+    ...(searchEnabled ? { tools: [{ type: 'web_search' }] } : {}),
+  }
+  const url = resolveManifestUrl(config.baseUrl, manifest.invocation.endpoint)
+  const responseSpec = manifest.invocation.response
+  let raw
+  try {
+    raw = await fetchJson(
+      url,
+      {
+        method: manifest.invocation.method || 'POST',
+        headers: authHeaders(config),
+        body: JSON.stringify(requestBody),
+      },
+      60_000,
+    )
+    const taskId = firstStringAtPaths(raw, responseSpec.taskIdPaths || [])
+    if (!taskId) throw new Error(`No task id in response: ${JSON.stringify(raw).slice(0, 800)}`)
+    raw = await pollManifestTask(config, manifest, responseSpec, taskId)
+    const materialized = await materializeManifestResult(
+      config,
+      responseSpec,
+      raw,
+      capability,
+      args,
+    )
+    return {
+      success: true,
+      provider: `${manifest.providerKind}/${modelId}`,
+      manifestId: manifest.id,
+      model: modelId,
+      mode: 'async',
+      requestId: taskId,
+      ...materialized,
+      ...(prune.droppedParams.length > 0 ? { droppedParams: prune.droppedParams } : {}),
+      ...(prune.warnings.length > 0 ? { paramWarnings: prune.warnings } : {}),
+      ...(prune.validationIssues.length > 0 ? { validationIssues: prune.validationIssues } : {}),
+    }
+  } catch (err) {
+    const normalized = normalizeMcpMediaError(manifest, err)
+    const wrapped = new Error(normalized.message)
+    wrapped.normalized = normalized
+    throw wrapped
+  }
+}
+
+function stringArray(value) {
+  return Array.isArray(value)
+    ? value.filter((item) => typeof item === 'string' && item.trim().length > 0)
+    : []
+}
+
+async function volcengineInputReference(value, kind) {
+  const source = String(value || '').trim()
+  if (!source) throw new Error(`Volcengine ${kind} input is empty`)
+  if (isHttpUrl(source) || source.startsWith('asset://') || source.startsWith('data:')) {
+    if (kind === 'video' && source.startsWith('data:')) {
+      throw new Error('Volcengine Seedance reference videos do not support base64 data URLs')
+    }
+    return source
+  }
+  if (kind === 'video') {
+    throw new Error(
+      'Volcengine Seedance local video references must be uploaded to a public URL or asset:// ID first',
+    )
+  }
+  const buffer = await readFile(source)
+  const extension = path.extname(source).toLowerCase()
+  const mime =
+    kind === 'audio'
+      ? extension === '.wav'
+        ? 'audio/wav'
+        : 'audio/mpeg'
+      : extension === '.jpg' || extension === '.jpeg'
+        ? 'image/jpeg'
+        : extension === '.webp'
+          ? 'image/webp'
+          : 'image/png'
+  return `data:${mime};base64,${buffer.toString('base64')}`
+}
+
+
 async function handleGenerateVideo(config, args) {
   if (!config.apiKey) throw new Error('No media API key configured')
   const prompt = String(args.prompt || '').trim()
-  if (!prompt) throw new Error('prompt is required')
   const manifestMatch = resolveManifestForTool(config, 'generate_video', args)
+  if (manifestMatch && config.provider === 'volcengine-ark') {
+    return handleVolcengineVideoManifestTool(config, args, manifestMatch)
+  }
+  if (!prompt) throw new Error('prompt is required')
   const videoDefaults = config.mediaDefaults?.video || {}
   const inputImages = Array.isArray(args.inputImages) ? args.inputImages : []
   const firstFrame = typeof args.firstFrame === 'string' && args.firstFrame
@@ -1516,6 +2130,10 @@ async function handle(request) {
       switch (name) {
         case 'list_models': data = handleListModels(config, args); break
         case 'describe_model': data = handleDescribeModel(config, args); break
+        case 'upload_file': data = await handleUploadFile(config, args); break
+        case 'get_file': data = await handleGetFile(config, args); break
+        case 'list_files': data = await handleListFiles(config, args); break
+        case 'delete_file': data = await handleDeleteFile(config, args); break
         case 'get_task': data = handleGetTask(args); break
         case 'cancel_task': data = handleCancelTask(args); break
         case 'generate_image':

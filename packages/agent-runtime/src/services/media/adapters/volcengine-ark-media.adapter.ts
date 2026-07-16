@@ -34,6 +34,7 @@
  */
 
 import type { MediaCapabilityId, MediaProviderKind } from '@spark/protocol'
+import { createLogger } from '@spark/shared'
 import { MediaProviderError } from '../media-adapter.types.js'
 import type {
   MediaGenerateInput,
@@ -53,15 +54,15 @@ import {
   type ErrorExtractor,
 } from '../media-http.util.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
-import {
-  clampInt,
-  filenameHelper,
-  mediaInputRef,
-} from './openai-compatible-media.adapter.js'
+import { resolveVolcengineMediaReference } from '../volcengine-ark-media-input.js'
+import { clampInt, filenameHelper } from './openai-compatible-media.adapter.js'
+
+const log = createLogger('media:volcengine-ark')
 
 const VIDEO_CAPABILITIES: readonly MediaCapabilityId[] = [
   'video.generate',
   'video.image_to_video',
+  'video.reference_to_video',
   'video.edit',
   'video.extend',
 ]
@@ -93,10 +94,16 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
     if (!ctx.apiKey) throw new MediaProviderError('api_key_missing', 'Missing Volcengine API key')
     const capability = input.capability
     if (!capability) {
-      throw new MediaProviderError('capability_not_supported', 'No capability resolved for volcengine-ark invoke')
+      throw new MediaProviderError(
+        'capability_not_supported',
+        'No capability resolved for volcengine-ark invoke',
+      )
     }
     if (!this.supports(capability)) {
-      throw new MediaProviderError('capability_not_supported', `volcengine-ark does not support ${capability}`)
+      throw new MediaProviderError(
+        'capability_not_supported',
+        `volcengine-ark does not support ${capability}`,
+      )
     }
     if (VIDEO_CAPABILITIES.includes(capability)) {
       return this.generateVideo(input, ctx)
@@ -115,9 +122,13 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
     const model = ctx.defaultModel
     const base = baseEndpoint(ctx)
 
-    const content = buildSeedanceContent(input, ctx, capability, prompt)
+    assertSeedanceInputMode(input, ctx, capability)
+    const content = await buildSeedanceContent(input, ctx, capability, prompt)
     if (content.length === 0) {
-      throw new MediaProviderError('invalid_input', `Volcengine ${capability} requires a prompt or input media`)
+      throw new MediaProviderError(
+        'invalid_input',
+        `Volcengine ${capability} requires a prompt or input media`,
+      )
     }
     const params = buildSeedanceParams(input, ctx)
     const body: Record<string, unknown> = {
@@ -141,15 +152,24 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
       },
     })
 
-    const createResp = await fetchJson(url, {
-      method: 'POST',
-      headers: authHeaders(ctx),
-      body: JSON.stringify(body),
-      fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
-      errorExtractor: volcengineErrorExtractor,
-      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
-    })
+    const createStartedAt = Date.now()
+    let createResp: unknown
+    try {
+      createResp = await fetchJson(url, {
+        method: 'POST',
+        headers: authHeaders(ctx),
+        body: JSON.stringify(body),
+        fetchImpl: ctx.fetch,
+        timeoutMs: 60_000,
+        errorExtractor: volcengineErrorExtractor,
+        ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
+      })
+    } catch (error) {
+      log.warn(
+        `event=create-failed capability=${capability} model=${model} elapsedMs=${Date.now() - createStartedAt} message=${JSON.stringify(error instanceof Error ? error.message : String(error))}`,
+      )
+      throw error
+    }
 
     // 少数情况会同步直出视频；否则取任务 id 轮询。
     let videoUrls = extractMediaUrls(createResp, { kind: 'video' })
@@ -160,11 +180,22 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
     if (videoUrls.length === 0) {
       const taskId = extractTaskId(createResp)
       if (!taskId) {
-        logMediaResult({ provider: this.id, capability, ok: false, error: 'No task id in create response' })
-        throw new MediaProviderError('provider_http_error', `No task id in Volcengine response: ${JSON.stringify(createResp).slice(0, 800)}`)
+        logMediaResult({
+          provider: this.id,
+          capability,
+          ok: false,
+          error: 'No task id in create response',
+        })
+        throw new MediaProviderError(
+          'provider_http_error',
+          `No task id in Volcengine response: ${JSON.stringify(createResp).slice(0, 800)}`,
+        )
       }
       requestId = taskId
       mode = 'async'
+      log.info(
+        `event=task-created capability=${capability} model=${model} requestId=${taskId} elapsedMs=${Date.now() - createStartedAt}`,
+      )
       const pollUrl = `${base}/contents/generations/tasks/${encodeURIComponent(taskId)}`
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
@@ -178,6 +209,8 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
           if (status === SUCCEEDED_STATUS) return 'done'
           return FAILED_STATUSES.includes(status) ? 'failed' : 'pending'
         },
+        logContext: `provider=volcengine-ark capability=${capability} requestId=${taskId}`,
+        describeResponse: describeVolcenginePollResponse,
         ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       })
       videoUrls = extractMediaUrls(raw, { kind: 'video' })
@@ -185,14 +218,36 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
 
     if (videoUrls.length === 0) {
       logMediaResult({ provider: this.id, capability, ok: false, error: 'No video produced' })
-      throw new MediaProviderError('provider_http_error', `No video produced: ${JSON.stringify(raw).slice(0, 800)}`)
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No video produced: ${JSON.stringify(raw).slice(0, 800)}`,
+      )
     }
-    logMediaResult({ provider: this.id, capability, ok: true, assetCount: videoUrls.length, requestId })
+    const downloadStartedAt = Date.now()
+    log.info(
+      `event=download-started capability=${capability} requestId=${requestId ?? 'inline'} assetCount=${videoUrls.length}`,
+    )
     const assets = await Promise.all(
       videoUrls.map((u, i) =>
-        this.artifact.downloadMediaAsset('video', u, input.outputDir, filenameHelper(input, videoPrefix(capability), i, videoUrls.length), ctx.fetch),
+        this.artifact.downloadMediaAsset(
+          'video',
+          u,
+          input.outputDir,
+          filenameHelper(input, videoPrefix(capability), i, videoUrls.length),
+          ctx.fetch,
+        ),
       ),
     )
+    log.info(
+      `event=download-finished capability=${capability} requestId=${requestId ?? 'inline'} assetCount=${assets.length} elapsedMs=${Date.now() - downloadStartedAt}`,
+    )
+    logMediaResult({
+      provider: this.id,
+      capability,
+      ok: true,
+      assetCount: assets.length,
+      requestId,
+    })
     return {
       provider: this.id,
       model,
@@ -217,7 +272,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
     const model = ctx.defaultModel
     const base = baseEndpoint(ctx)
 
-    const params = buildSeedreamParams(input, ctx)
+    const params = await buildSeedreamParams(input, ctx)
     const body: Record<string, unknown> = {
       model,
       prompt,
@@ -232,7 +287,10 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
       method: 'POST',
       url,
       body,
-      extra: { prompt: prompt.slice(0, 120), imageCount: params.image ? (Array.isArray(params.image) ? params.image.length : 1) : 0 },
+      extra: {
+        prompt: prompt.slice(0, 120),
+        imageCount: params.image ? (Array.isArray(params.image) ? params.image.length : 1) : 0,
+      },
     })
 
     const data = await fetchJson(url, {
@@ -247,12 +305,20 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
     const images = extractImages(data)
     if (images.length === 0) {
       logMediaResult({ provider: this.id, capability, ok: false, error: 'No images in response' })
-      throw new MediaProviderError('provider_http_error', `No images in Volcengine Seedream response: ${JSON.stringify(data).slice(0, 800)}`)
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No images in Volcengine Seedream response: ${JSON.stringify(data).slice(0, 800)}`,
+      )
     }
     logMediaResult({ provider: this.id, capability, ok: true, assetCount: images.length })
     const assets = await Promise.all(
       images.map((image, index) =>
-        this.artifact.writeImage(image, input.outputDir, filenameHelper(input, 'seedream', index, images.length), ctx.fetch),
+        this.artifact.writeImage(
+          image,
+          input.outputDir,
+          filenameHelper(input, 'seedream', index, images.length),
+          ctx.fetch,
+        ),
       ),
     )
     return { provider: this.id, model, mode: 'sync', assets, rawResponse: data }
@@ -260,6 +326,107 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
 }
 
 // ─── Seedance content[] 构造 ──────────────────────────────────────────────────
+
+function assertSeedanceInputMode(
+  input: MediaGenerateInput,
+  ctx: MediaProviderContext,
+  capability: MediaCapabilityId,
+): void {
+  const files = input.inputFiles ?? []
+  const images = files.filter(isImageInput)
+  const videos = files.filter(isVideoInput)
+  const audios = files.filter(isAudioInput)
+  const firstFrames = images.filter((file) => file.role === 'first_frame')
+  const lastFrames = images.filter((file) => file.role === 'last_frame')
+  const explicitReferences = images.filter((file) => file.role === 'reference')
+  const isSeedance2 = ctx.defaultModel.startsWith('doubao-seedance-2-0-')
+
+  if (firstFrames.length > 1 || lastFrames.length > 1) {
+    throw new MediaProviderError('invalid_input', 'Seedance 首帧和尾帧都最多只能选择 1 张')
+  }
+  if (lastFrames.length > 0 && firstFrames.length === 0) {
+    throw new MediaProviderError('invalid_input', 'Seedance 尾帧不能脱离首帧单独提交')
+  }
+  if (
+    ctx.defaultModel.includes('seedance-1-0-pro-fast') &&
+    (lastFrames.length > 0 || images.length > 1)
+  ) {
+    throw new MediaProviderError(
+      'invalid_input',
+      'Seedance 1.0 Pro Fast 只支持单张首帧，不支持首尾帧',
+    )
+  }
+  if (!isSeedance2 && (videos.length > 0 || audios.length > 0 || explicitReferences.length > 0)) {
+    throw new MediaProviderError(
+      'invalid_input',
+      `${ctx.defaultModel} 不支持多模态参考图、参考视频或参考音频`,
+    )
+  }
+
+  const hasExplicitFrameMode = firstFrames.length > 0 || lastFrames.length > 0
+  const usesImplicitFrameMode =
+    capability === 'video.image_to_video' &&
+    !hasExplicitFrameMode &&
+    explicitReferences.length === 0 &&
+    images.length > 0
+  const implicitReferenceImages = usesImplicitFrameMode
+    ? images.slice(2)
+    : images.filter((file) => file.role !== 'first_frame' && file.role !== 'last_frame')
+  const hasFrameMode = hasExplicitFrameMode || usesImplicitFrameMode
+  const hasReferenceMode =
+    implicitReferenceImages.length > 0 ||
+    videos.length > 0 ||
+    audios.length > 0 ||
+    capability === 'video.reference_to_video' ||
+    capability === 'video.edit' ||
+    capability === 'video.extend'
+  if (hasFrameMode && hasReferenceMode) {
+    throw new MediaProviderError(
+      'invalid_input',
+      'Seedance 首帧/首尾帧模式不能与多模态参考模式混用',
+    )
+  }
+  if (isSeedance2 && hasReferenceMode && images.length === 0 && videos.length === 0) {
+    throw new MediaProviderError(
+      'invalid_input',
+      'Seedance 多模态参考不能只传音频，至少需要 1 张图片或 1 段视频',
+    )
+  }
+  if (images.length > 9 || videos.length > 3 || audios.length > 3) {
+    throw new MediaProviderError(
+      'invalid_input',
+      'Seedance 2.0 最多支持 9 张参考图、3 段参考视频和 3 段参考音频',
+    )
+  }
+
+  const searchEnabled =
+    boolVal(input.modelParams?.searchEnabled) ?? boolVal(input.modelParams?.enable_search)
+  if (searchEnabled && files.length > 0) {
+    throw new MediaProviderError(
+      'invalid_input',
+      'Seedance 联网搜索仅支持纯文本输入，不能与图片、视频或音频同时使用',
+    )
+  }
+}
+
+function isImageInput(file: MediaInputFile): boolean {
+  if (file.type === 'image') return true
+  if (file.type !== 'file') return false
+  if (file.mimeType?.startsWith('video/') || file.mimeType?.startsWith('audio/')) return false
+  return true
+}
+
+function isVideoInput(file: MediaInputFile): boolean {
+  return (
+    file.type === 'video' || (file.type === 'file' && file.mimeType?.startsWith('video/') === true)
+  )
+}
+
+function isAudioInput(file: MediaInputFile): boolean {
+  return (
+    file.type === 'audio' || (file.type === 'file' && file.mimeType?.startsWith('audio/') === true)
+  )
+}
 
 /**
  * 按 inputFiles 的 role 聚合成 Seedance content[] 数组。
@@ -271,16 +438,16 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
  *   - video.edit / video.extend：输入视频为 reference_video
  *   - 其它：无显式 role 的图作 reference_image
  */
-function buildSeedanceContent(
+async function buildSeedanceContent(
   input: MediaGenerateInput,
   ctx: MediaProviderContext,
   capability: MediaCapabilityId,
   prompt: string,
-): SeedanceContentItem[] {
+): Promise<SeedanceContentItem[]> {
   const files = input.inputFiles ?? []
-  const imageFiles = files.filter((file) => file.type === 'image' || file.type === 'file')
-  const videoFiles = files.filter((file) => file.type === 'video' || (file.type === 'file' && file.role === 'input'))
-  const audioFiles = files.filter((file) => file.type === 'audio')
+  const imageFiles = files.filter(isImageInput)
+  const videoFiles = files.filter(isVideoInput)
+  const audioFiles = files.filter(isAudioInput)
 
   const content: SeedanceContentItem[] = []
   if (prompt) content.push({ type: 'text', text: prompt })
@@ -298,33 +465,39 @@ function buildSeedanceContent(
   //   - 第 2 张无 role 图 → last_frame（首尾帧是 Seedance 核心能力，需成对识别）
   //   - 其余 → reference_image
   // 有显式 role（first_frame/last_frame/reference）时尊重标注，不走兜底。
-  const i2vImplicit = capability === 'video.image_to_video' && !firstFrameFile && !lastFrameFile && !hasExplicitRef
+  const i2vImplicit =
+    capability === 'video.image_to_video' && !firstFrameFile && !lastFrameFile && !hasExplicitRef
   if (i2vImplicit && referenceImageFiles[0]) {
-    const ref = resolveRef(referenceImageFiles[0], ctx.mediaProvider)
-    if (ref) content.push({ type: 'image_url', image_url: { url: ref }, role: 'first_frame' })
+    const ref = await resolveVolcengineMediaReference(referenceImageFiles[0], 'image', ctx)
+    content.push({ type: 'image_url', image_url: { url: ref }, role: 'first_frame' })
     if (referenceImageFiles[1]) {
-      const ref2 = resolveRef(referenceImageFiles[1], ctx.mediaProvider)
-      if (ref2) content.push({ type: 'image_url', image_url: { url: ref2 }, role: 'last_frame' })
+      const ref2 = await resolveVolcengineMediaReference(referenceImageFiles[1], 'image', ctx)
+      content.push({ type: 'image_url', image_url: { url: ref2 }, role: 'last_frame' })
     }
   } else {
-    const ref = resolveRef(firstFrameFile, ctx.mediaProvider)
-    if (ref) content.push({ type: 'image_url', image_url: { url: ref }, role: 'first_frame' })
-    const lref = resolveRef(lastFrameFile, ctx.mediaProvider)
-    if (lref) content.push({ type: 'image_url', image_url: { url: lref }, role: 'last_frame' })
+    if (firstFrameFile) {
+      const ref = await resolveVolcengineMediaReference(firstFrameFile, 'image', ctx)
+      content.push({ type: 'image_url', image_url: { url: ref }, role: 'first_frame' })
+    }
+    if (lastFrameFile) {
+      const ref = await resolveVolcengineMediaReference(lastFrameFile, 'image', ctx)
+      content.push({ type: 'image_url', image_url: { url: ref }, role: 'last_frame' })
+    }
   }
   // 参考图：i2v 兜底模式下跳过已被首/尾帧占用的前两张。
   for (const file of referenceImageFiles) {
-    if (i2vImplicit && (file === referenceImageFiles[0] || file === referenceImageFiles[1])) continue
-    const ref = resolveRef(file, ctx.mediaProvider)
-    if (ref) content.push({ type: 'image_url', image_url: { url: ref }, role: 'reference_image' })
+    if (i2vImplicit && (file === referenceImageFiles[0] || file === referenceImageFiles[1]))
+      continue
+    const ref = await resolveVolcengineMediaReference(file, 'image', ctx)
+    content.push({ type: 'image_url', image_url: { url: ref }, role: 'reference_image' })
   }
   for (const file of videoFiles) {
-    const ref = resolveRef(file, ctx.mediaProvider)
-    if (ref) content.push({ type: 'video_url', video_url: { url: ref }, role: 'reference_video' })
+    const ref = await resolveVolcengineMediaReference(file, 'video', ctx)
+    content.push({ type: 'video_url', video_url: { url: ref }, role: 'reference_video' })
   }
   for (const file of audioFiles) {
-    const ref = resolveRef(file, ctx.mediaProvider)
-    if (ref) content.push({ type: 'audio_url', audio_url: { url: ref }, role: 'reference_audio' })
+    const ref = await resolveVolcengineMediaReference(file, 'audio', ctx)
+    content.push({ type: 'audio_url', audio_url: { url: ref }, role: 'reference_audio' })
   }
   return content
 }
@@ -350,7 +523,10 @@ function buildSeedanceParams(
 
   // ratio：schema 用中文 label "智能比例" 提升用户可读性，发送给平台时翻译为
   // 文档要求的 "adaptive"。其它选项原样透传（16:9 / 9:16 等已是平台值）。
-  const ratioRaw = stringVal(normalized.ratio) ?? stringVal(normalized.aspect_ratio) ?? stringVal(normalized.aspectRatio)
+  const ratioRaw =
+    stringVal(normalized.ratio) ??
+    stringVal(normalized.aspect_ratio) ??
+    stringVal(normalized.aspectRatio)
   const ratio = normalizeSeedanceRatio(ratioRaw)
   if (ratio) params.ratio = ratio
 
@@ -358,46 +534,84 @@ function buildSeedanceParams(
   // manifest 已通过 schema enum/minimum 在 UI 层把 1.x 限到 [2,12]，adapter 层
   // 这里取并集 [2,15] 兜底，避免误把合法的 1.x 短时长（如 3s）钳到 4s。
   const duration = numberVal(normalized.duration) ?? numberVal(normalized.durationSeconds)
-  if (duration != null) params.duration = clampInt(duration, undefined, 5, 2, 15)
+  if (duration != null)
+    params.duration = duration === -1 ? -1 : clampInt(duration, undefined, 5, 2, 15)
 
   const resolution = stringVal(normalized.resolution) ?? videoDefaults?.resolution
   if (resolution) params.resolution = resolution
 
   const seed = numberVal(normalized.seed)
-  if (seed != null) params.seed = seed
+  if (seed != null && manifestSupportsParam(ctx, 'seed')) params.seed = seed
 
   const generateAudio = boolVal(normalized.generate_audio) ?? boolVal(normalized.generateAudio)
-  if (generateAudio != null) params.generate_audio = generateAudio
+  if (generateAudio != null && manifestSupportsParam(ctx, 'generateAudio'))
+    params.generate_audio = generateAudio
 
   const watermark = boolVal(normalized.watermark)
   if (watermark != null) params.watermark = watermark
 
-  const returnLastFrame = boolVal(normalized.return_last_frame) ?? boolVal(normalized.returnLastFrame)
+  const returnLastFrame =
+    boolVal(normalized.return_last_frame) ?? boolVal(normalized.returnLastFrame)
   if (returnLastFrame != null) params.return_last_frame = returnLastFrame
 
   // 离线推理（service_tier=flex）：仅当显式开启时透传。
   const serviceTier = stringVal(normalized.service_tier) ?? stringVal(normalized.serviceTier)
-  if (serviceTier) params.service_tier = serviceTier
+  if (serviceTier && manifestSupportsParam(ctx, 'serviceTier')) params.service_tier = serviceTier
 
   // 固定摄像头（Seedance 1.x，参考图场景不支持；2.x 不支持此参数）。
   const cameraFixed = boolVal(normalized.camera_fixed) ?? boolVal(normalized.cameraFixed)
-  if (cameraFixed != null) params.camera_fixed = cameraFixed
+  if (cameraFixed != null && manifestSupportsParam(ctx, 'cameraFixed'))
+    params.camera_fixed = cameraFixed
 
   // 样片模式（Seedance 1.5 pro 支持 draft）。
   const draft = boolVal(normalized.draft)
-  if (draft != null) params.draft = draft
+  if (draft != null && manifestSupportsParam(ctx, 'draft')) params.draft = draft
 
   // 帧数（Seedance 1.0 系列支持 frames，1.5/2.x 不支持；仅显式给出时透传）。
   const frames = numberVal(normalized.frames)
-  if (frames != null) params.frames = frames
+  if (frames != null && manifestSupportsParam(ctx, 'frames')) params.frames = frames
+
+  const executionExpiresAfter =
+    numberVal(normalized.execution_expires_after) ?? numberVal(normalized.executionExpiresAfter)
+  if (executionExpiresAfter != null && manifestSupportsParam(ctx, 'executionExpiresAfter')) {
+    params.execution_expires_after = clampInt(
+      executionExpiresAfter,
+      undefined,
+      172800,
+      3600,
+      259200,
+    )
+  }
+
+  const priority = numberVal(normalized.priority)
+  if (priority != null && manifestSupportsParam(ctx, 'priority')) {
+    params.priority = clampInt(priority, undefined, 0, 0, 9)
+  }
+
+  const safetyIdentifier =
+    stringVal(normalized.safety_identifier) ?? stringVal(normalized.safetyIdentifier)
+  if (safetyIdentifier && manifestSupportsParam(ctx, 'safetyIdentifier')) {
+    params.safety_identifier = safetyIdentifier.slice(0, 64)
+  }
+
+  const callbackUrl = stringVal(normalized.callback_url) ?? stringVal(normalized.callbackUrl)
+  if (callbackUrl && manifestSupportsParam(ctx, 'callbackUrl')) params.callback_url = callbackUrl
 
   // 联网搜索：tools:[{type:'web_search'}]。
   // Seedance 2.0 新增能力，仅适用于纯文本输入；adapter 层不再二次校验
   // （图/视频文件存在与否的判断已由 UI 层 capability/输入面板限制），开启时透传即可。
   // 与 Seedream 一致：仅当 manifest paramSchema 声明 searchEnabled 时透传，
   // 防止未支持的模型被平台拒绝（custom 模型 schema 缺失时按 manifestSupportsParam 兜底放行）。
-  const searchEnabled = boolVal(normalized.searchEnabled) ?? boolVal(normalized.search_enabled) ?? boolVal(normalized.enable_search)
-  if (searchEnabled && manifestSupportsParam(ctx, 'searchEnabled')) params.tools = [{ type: 'web_search' }]
+  const searchEnabled =
+    boolVal(normalized.searchEnabled) ??
+    boolVal(normalized.search_enabled) ??
+    boolVal(normalized.enable_search)
+  if (
+    searchEnabled &&
+    manifestSupportsParam(ctx, 'searchEnabled') &&
+    (input.inputFiles?.length ?? 0) === 0
+  )
+    params.tools = [{ type: 'web_search' }]
 
   return params
 }
@@ -415,10 +629,10 @@ function normalizeSeedanceRatio(value: string | undefined): string | undefined {
 
 // ─── Seedream 图片参数 ────────────────────────────────────────────────────────
 
-function buildSeedreamParams(
+async function buildSeedreamParams(
   input: MediaGenerateInput,
   ctx: MediaProviderContext,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   const raw = removeBlankParams(input.modelParams)
   const imageDefaults = ctx.mediaDefaults?.image
   const params: Record<string, unknown> = {}
@@ -430,37 +644,42 @@ function buildSeedreamParams(
   // 传了平台会 400。schema 已按版本裁剪，adapter 在此按 schema 网关过滤：
   // manifest paramSchema 未声明该字段的模型绝不透传，防止 preset/旧配置的兜底默认值污染。
   if (manifestSupportsParam(ctx, 'outputFormat')) {
-    const outputFormat = stringVal(raw.output_format) ?? stringVal(raw.outputFormat) ?? imageDefaults?.outputFormat
+    const outputFormat =
+      stringVal(raw.output_format) ?? stringVal(raw.outputFormat) ?? imageDefaults?.outputFormat
     if (outputFormat) params.output_format = outputFormat
   }
   if (manifestSupportsParam(ctx, 'responseFormat')) {
-    const responseFormat = stringVal(raw.response_format) ?? stringVal(raw.responseFormat) ?? imageDefaults?.responseFormat
+    const responseFormat =
+      stringVal(raw.response_format) ??
+      stringVal(raw.responseFormat) ??
+      imageDefaults?.responseFormat
     if (responseFormat) params.response_format = responseFormat
   }
 
   const watermark = boolVal(raw.watermark)
   if (watermark != null) params.watermark = watermark
 
-  const seed = numberVal(raw.seed)
-  if (seed != null) params.seed = seed
-
   // 联网搜索：tools:[{type:'web_search'}]。
   // 兼容 schema 字段名 searchEnabled、manifest alias enable_search、以及 snake_case 三种写法。
   // 重要：联网搜索是 Seedream 5.0 lite 首创能力，主模型 5.0 / 4.x 不支持。
   // 通过 manifest paramSchema 是否声明 searchEnabled 来判断当前模型是否支持，
   // 未声明时丢弃该参数——避免主模型被平台拒绝（防止 UI 不显示但调用方/MCP 仍透传）。
-  const searchEnabled = boolVal(raw.searchEnabled) ?? boolVal(raw.search_enabled) ?? boolVal(raw.enable_search)
+  const searchEnabled =
+    boolVal(raw.searchEnabled) ?? boolVal(raw.search_enabled) ?? boolVal(raw.enable_search)
   if (searchEnabled && manifestSupportsParam(ctx, 'searchEnabled')) {
     params.tools = [{ type: 'web_search' }]
   }
 
   // 组图生成：sequential_image_generation=auto + max_images
-  const sequential = stringVal(raw.sequential_image_generation) ?? stringVal(raw.sequentialImageGeneration)
-  if (sequential) {
+  const sequential =
+    stringVal(raw.sequential_image_generation) ?? stringVal(raw.sequentialImageGeneration)
+  if (sequential && manifestSupportsParam(ctx, 'sequentialImageGeneration')) {
     params.sequential_image_generation = sequential
     const maxImages = numberVal(raw.max_images) ?? numberVal(raw.maxImages)
     if (maxImages != null) {
-      params.sequential_image_generation_options = { max_images: clampInt(maxImages, undefined, 4, 1, 15) }
+      params.sequential_image_generation_options = {
+        max_images: clampInt(maxImages, undefined, 15, 1, 15),
+      }
     }
   }
 
@@ -474,14 +693,6 @@ function buildSeedreamParams(
     }
   }
 
-  // guidance_scale：仅 Seedream 5.0 主模型支持（文本权重 [1,10]，值越大与 prompt 相关性越强）。
-  if (manifestSupportsParam(ctx, 'guidanceScale')) {
-    const guidance = numberVal(raw.guidanceScale) ?? numberVal(raw.guidance_scale)
-    if (guidance != null) {
-      params.guidance_scale = Math.min(10, Math.max(1, guidance))
-    }
-  }
-
   // stream：平台支持流式输出，但当前 adapter 按 sync url 解析响应。
   // 内置 manifest 暂不声明该字段；未来 SSE 解析落地后再由 schema 显式开放。
   if (manifestSupportsParam(ctx, 'stream')) {
@@ -491,10 +702,10 @@ function buildSeedreamParams(
 
   // 参考图：image 字段单图为 string、多图为 string[]（与官方示例一致）。
   // safe-file:// 本地协议第三方 API 无法访问，必须过滤；优先 base64 dataUrl。
-  const imageFiles = (input.inputFiles ?? []).filter((file) => file.type === 'image' || file.type === 'file')
-  const imageRefs = imageFiles
-    .map((file) => mediaInputRef(file, ctx.mediaProvider))
-    .filter((ref): ref is string => typeof ref === 'string' && ref.length > 0)
+  const imageFiles = (input.inputFiles ?? []).filter(isImageInput)
+  const imageRefs = await Promise.all(
+    imageFiles.map((file) => resolveVolcengineMediaReference(file, 'image', ctx)),
+  )
   if (imageRefs.length === 1) {
     params.image = imageRefs[0]
   } else if (imageRefs.length > 1) {
@@ -529,7 +740,7 @@ function authHeaders(ctx: MediaProviderContext): Record<string, string> {
  * RequestId 是火山客服排障必问字段，提取出来拼到错误消息里，方便用户反馈。
  * 未命中结构时返回 undefined，由 fetchJson 退回默认兜底。
  */
-export const volcengineErrorExtractor: ErrorExtractor = (status, body, rawText) => {
+export const volcengineErrorExtractor: ErrorExtractor = (status, body, _rawText) => {
   // body 可能是字符串（非 JSON 响应）或对象
   let errObj: unknown = undefined
   if (body && typeof body === 'object') {
@@ -556,14 +767,23 @@ export const volcengineErrorExtractor: ErrorExtractor = (status, body, rawText) 
 function appendRequestId(body: unknown): string {
   if (!body || typeof body !== 'object') return ''
   const root = body as Record<string, unknown>
-  const requestId = stringVal(root.RequestId) ?? stringVal(root.requestId) ?? stringVal(root.request_id)
+  const requestId =
+    stringVal(root.RequestId) ?? stringVal(root.requestId) ?? stringVal(root.request_id)
   return requestId ? ` (RequestId: ${requestId})` : ''
 }
 
-/** 解析输入文件为可发送给平台的引用（过滤 safe-file://，优先 http/base64） */
-function resolveRef(file: MediaInputFile | undefined, provider: MediaProviderKind): string | undefined {
-  if (!file) return undefined
-  return mediaInputRef(file, provider)
+function describeVolcenginePollResponse(value: unknown): Record<string, unknown> {
+  const root = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const error = root.error && typeof root.error === 'object'
+    ? root.error as Record<string, unknown>
+    : {}
+  return {
+    status: extractStatus(value) || 'unknown',
+    videoUrls: extractMediaUrls(value, { kind: 'video' }).length,
+    errorCode: stringVal(error.code) ?? stringVal(error.Code),
+    requestId:
+      stringVal(root.RequestId) ?? stringVal(root.requestId) ?? stringVal(root.request_id),
+  }
 }
 
 /**
@@ -583,7 +803,11 @@ function manifestSupportsParam(ctx: MediaProviderContext, paramName: string): bo
   return paramName in properties
 }
 
-function manifestAllowsStringParamValue(ctx: MediaProviderContext, paramName: string, value: string): boolean {
+function manifestAllowsStringParamValue(
+  ctx: MediaProviderContext,
+  paramName: string,
+  value: string,
+): boolean {
   const schema = ctx.mediaManifestCapability?.paramSchema
   if (!schema || typeof schema !== 'object') return true
   const properties = (schema as { properties?: Record<string, unknown> }).properties

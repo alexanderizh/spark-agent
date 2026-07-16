@@ -519,7 +519,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 600_000,
+        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
         inspect: (d) => {
           const urls = extractMediaUrls(d, { kind: 'video' })
           if (urls.length > 0) return 'done'

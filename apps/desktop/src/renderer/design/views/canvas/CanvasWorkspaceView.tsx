@@ -7237,6 +7237,9 @@ export function CanvasWorkspaceView({
               node={opNode}
               snapshot={snapshot}
               onSaveOutput={handleSaveNodeEdit}
+              onRenameNode={async (title) => {
+                await patchNodes([opNode.id], { title })
+              }}
               onDownloadOutput={(nodeId) => void handleDownloadMediaNode(nodeId)}
               onPreviewPanoramaOutput={handlePreviewPanorama}
               onOpenAssetLibrary={() => setSidePanelTab('assets')}
@@ -7498,7 +7501,6 @@ export function CanvasWorkspaceView({
                       outputPipelineRole: opNode.data.outputPipelineRole ?? null,
                       workflow: params.modelParams?.workflow ?? opNode.data.modelParams?.workflow,
                     })
-                    await patchNodes([opNode.id], { title: params.title })
                     const nextNodeData = {
                       ...opNode.data,
                       ...(params.promptDocument ? { promptDocument: params.promptDocument } : {}),

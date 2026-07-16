@@ -3,6 +3,7 @@ import { Button, Tag, Tooltip } from '@lobehub/ui'
 import { Modal, Popover } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasNodeEditModal } from './CanvasNodeEditModal'
+import { CanvasOperationNodeSettings } from './CanvasOperationNodeSettings'
 import { CanvasOperationOutputPreview } from './CanvasOperationOutputPreview'
 import {
   resolveCanvasOperationOutputState,
@@ -40,6 +41,7 @@ export function CanvasOperationWorkbench({
   node,
   snapshot,
   configPanel,
+  onRenameNode,
   onSaveOutput,
   onDownloadOutput,
   onPreviewPanoramaOutput,
@@ -51,6 +53,7 @@ export function CanvasOperationWorkbench({
   node: CanvasNode
   snapshot: CanvasSnapshot
   configPanel: ReactNode
+  onRenameNode: (title: string | null) => Promise<void> | void
   onSaveOutput: (
     node: CanvasNode,
     patch: Partial<CanvasNode>,
@@ -67,15 +70,12 @@ export function CanvasOperationWorkbench({
   const outputState = useMemo(() => resolveCanvasOperationOutputState(node, runs), [node, runs])
   const outputCount = runs.reduce((total, run) => total + run.outputs.length, 0)
   const hasOutputs = outputCount > 0
-  const [state, dispatch] = useReducer(
-    reduceCanvasOperationWorkbenchState,
-    undefined,
-    () =>
-      createCanvasOperationWorkbenchState(
-        hasOutputs,
-        outputState.primaryRunIndex,
-        outputState.primaryOutputIndex,
-      ),
+  const [state, dispatch] = useReducer(reduceCanvasOperationWorkbenchState, undefined, () =>
+    createCanvasOperationWorkbenchState(
+      hasOutputs,
+      outputState.primaryRunIndex,
+      outputState.primaryOutputIndex,
+    ),
   )
   const runsFingerprint = canvasOperationRunsFingerprint(runs)
 
@@ -86,7 +86,13 @@ export function CanvasOperationWorkbench({
       runIndex: outputState.primaryRunIndex,
       outputIndex: outputState.primaryOutputIndex,
     })
-  }, [hasOutputs, node.data.primaryOutputId, outputState.primaryOutputIndex, outputState.primaryRunIndex, runsFingerprint])
+  }, [
+    hasOutputs,
+    node.data.primaryOutputId,
+    outputState.primaryOutputIndex,
+    outputState.primaryRunIndex,
+    runsFingerprint,
+  ])
 
   const effectiveRunIndex = Math.min(state.runIndex, Math.max(0, runs.length - 1))
   const activeRun = runs[effectiveRunIndex]
@@ -96,13 +102,16 @@ export function CanvasOperationWorkbench({
   const outputNode = activeOutput?.nodeId
     ? (snapshot.nodes.find((item) => item.id === activeOutput.nodeId) ?? null)
     : null
-  const activeTab: CanvasOperationWorkbenchTab = hasOutputs ? state.tab : 'config'
+  const activeTab: CanvasOperationWorkbenchTab =
+    !hasOutputs && (state.tab === 'output' || state.tab === 'history') ? 'config' : state.tab
   const selectedOutputIdSet = new Set(state.selectedOutputIds)
   const selectedOutputs = outputs.filter((output) => selectedOutputIdSet.has(output.id))
   const allCurrentRunSelected =
     outputs.length > 0 && outputs.every((output) => selectedOutputIdSet.has(output.id))
   const displayRunNumber = activeRun ? runs.length - effectiveRunIndex : 0
-  const canDownload = Boolean(outputNode && (activeOutput?.type === 'image' || activeOutput?.type === 'video'))
+  const canDownload = Boolean(
+    outputNode && (activeOutput?.type === 'image' || activeOutput?.type === 'video'),
+  )
   const canPreviewPanorama = Boolean(outputNode && activeOutput?.panorama360)
   const isPrimaryOutput = Boolean(
     activeOutput && outputState.primaryOutput && activeOutput.id === outputState.primaryOutput.id,
@@ -142,11 +151,16 @@ export function CanvasOperationWorkbench({
     })
   }
 
-  const tabButton = (tab: CanvasOperationWorkbenchTab, label: string, icon: ReactNode, count?: number) => (
+  const tabButton = (
+    tab: CanvasOperationWorkbenchTab,
+    label: string,
+    icon: ReactNode,
+    count?: number,
+  ) => (
     <button
       type="button"
       className={`canvas-operation-workbench-tab${activeTab === tab ? ' is-active' : ''}`}
-      disabled={tab !== 'config' && !hasOutputs}
+      disabled={(tab === 'output' || tab === 'history') && !hasOutputs}
       onClick={() => dispatch({ type: 'select-tab', tab })}
     >
       {icon}
@@ -162,6 +176,7 @@ export function CanvasOperationWorkbench({
           {tabButton('output', '产物', <Icons.File size={13} />, outputCount)}
           {tabButton('history', '运行历史', <Icons.RotateCcw size={13} />, runs.length)}
           {tabButton('config', '任务配置', <Icons.Settings size={13} />)}
+          {tabButton('settings', '节点设置', <Icons.Edit size={13} />)}
         </div>
         {activeTab === 'output' && activeRun ? (
           <div className="canvas-operation-workbench-actions">
@@ -245,7 +260,12 @@ export function CanvasOperationWorkbench({
                   </div>
                 }
               >
-                <Button size="middle" type="text" icon={<Icons.More size={14} />} aria-label="更多产物操作" />
+                <Button
+                  size="middle"
+                  type="text"
+                  icon={<Icons.More size={14} />}
+                  aria-label="更多产物操作"
+                />
               </Popover>
             ) : null}
             {canPreviewPanorama && outputNode && onPreviewPanoramaOutput ? (
@@ -294,7 +314,15 @@ export function CanvasOperationWorkbench({
       </div>
 
       <div className="canvas-operation-workbench-content">
-        {activeTab === 'config' ? (
+        {activeTab === 'settings' ? (
+          <CanvasOperationNodeSettings
+            key={`${node.id}:${node.updatedAt}`}
+            nodeId={node.id}
+            title={node.title ?? null}
+            disabled={state.busy}
+            onRename={onRenameNode}
+          />
+        ) : activeTab === 'config' ? (
           configPanel
         ) : activeTab === 'history' ? (
           <div className="canvas-operation-history" aria-label="运行历史">
@@ -331,7 +359,9 @@ export function CanvasOperationWorkbench({
                 >
                   <Icons.ChevronLeft size={14} />
                 </button>
-                <span>第 {displayRunNumber} 次运行{runs.length > 1 ? ` / 共 ${runs.length} 次` : ''}</span>
+                <span>
+                  第 {displayRunNumber} 次运行{runs.length > 1 ? ` / 共 ${runs.length} 次` : ''}
+                </span>
                 <button
                   type="button"
                   aria-label="查看更早的一次运行"
@@ -358,9 +388,13 @@ export function CanvasOperationWorkbench({
                         }
                       }}
                     >
-                      {state.selectionMode ? <span className="canvas-operation-output-check">{selected ? '✓' : ''}</span> : null}
+                      {state.selectionMode ? (
+                        <span className="canvas-operation-output-check">{selected ? '✓' : ''}</span>
+                      ) : null}
                       <span>{output.title}</span>
-                      {primary ? <small>{outputState.mode === 'collection' ? '默认' : '主'}</small> : null}
+                      {primary ? (
+                        <small>{outputState.mode === 'collection' ? '默认' : '主'}</small>
+                      ) : null}
                     </button>
                   )
                 })}

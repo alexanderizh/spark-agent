@@ -35,7 +35,11 @@ function findCapability(manifest: MediaModelManifest, id: string): MediaModelCap
   return c
 }
 
-function compileFromManifest(manifestId: string, capabilityId: string, modelParams: Record<string, unknown>) {
+function compileFromManifest(
+  manifestId: string,
+  capabilityId: string,
+  modelParams: Record<string, unknown>,
+) {
   const manifest = findManifest(manifestId)
   const capability = findCapability(manifest, capabilityId)
   return compileMediaRequest({
@@ -56,7 +60,9 @@ describe('M5 builtin manifest contract — xAI image', () => {
     expect(cap.paramPolicy).toBeDefined()
     expect(cap.paramPolicy?.strict).toBe(true)
     expect(cap.paramPolicy?.passthrough?.enabled).toBe(false)
-    expect(cap.paramPolicy?.transforms).toEqual([{ kind: 'ratio_size_to_aspect', from: 'size', to: 'aspectRatio' }])
+    expect(cap.paramPolicy?.transforms).toEqual([
+      { kind: 'ratio_size_to_aspect', from: 'size', to: 'aspectRatio' },
+    ])
     expect(cap.paramPolicy?.forbidden?.map((f) => f.name)).toContain('size')
   })
 
@@ -83,11 +89,16 @@ describe('M5 builtin manifest contract — xAI image', () => {
     const result = compileFromManifest(manifestId, 'image.generate', { size: '1024x1024' })
     expect(result.providerParams).not.toHaveProperty('size')
     expect(result.providerParams).not.toHaveProperty('aspect_ratio')
-    expect(result.droppedParams.some((d) => d.name === 'size' && d.reason === 'forbidden_by_contract')).toBe(true)
+    expect(
+      result.droppedParams.some((d) => d.name === 'size' && d.reason === 'forbidden_by_contract'),
+    ).toBe(true)
   })
 
   it('drops unknown params (filename / debug) under strict policy', () => {
-    const result = compileFromManifest(manifestId, 'image.generate', { filename: 'out.png', debug: 1 })
+    const result = compileFromManifest(manifestId, 'image.generate', {
+      filename: 'out.png',
+      debug: 1,
+    })
     expect(result.providerParams).not.toHaveProperty('filename')
     expect(result.providerParams).not.toHaveProperty('debug')
   })
@@ -142,7 +153,7 @@ describe('M5 builtin manifest contract — Seedream 5 lite', () => {
       body: {
         error: {
           code: 'InvalidParameter',
-          message: "The parameter `output_format` specified in the request is not valid.",
+          message: 'The parameter `output_format` specified in the request is not valid.',
         },
         request_id: '0217832-test',
       },
@@ -156,23 +167,28 @@ describe('M5 builtin manifest contract — Seedream 5 lite', () => {
   })
 })
 
-describe('M5 builtin manifest contract — Seedream 5 主模型', () => {
-  const manifestId = 'volcengine:doubao-seedream-5-0-260128'
+describe('M5 builtin manifest contract — Seedream 5 Pro', () => {
+  const manifestId = 'volcengine:doubao-seedream-5-0-pro-260628'
 
-  it('forbids searchEnabled (主模型不支持联网搜索)', () => {
+  it('uses strict policy and does not expose searchEnabled', () => {
     const manifest = findManifest(manifestId)
     const cap = findCapability(manifest, 'image.generate')
-    expect(cap.paramPolicy?.forbidden?.some((f) => f.name === 'searchEnabled')).toBe(true)
+    expect(cap.paramPolicy?.strict).toBe(true)
+    expect((cap.paramSchema.properties as Record<string, unknown>).searchEnabled).toBeUndefined()
   })
 
-  it('drops searchEnabled with forbidden_by_contract reason', () => {
+  it('drops searchEnabled as unsupported by model', () => {
     const result = compileFromManifest(manifestId, 'image.generate', {
       outputFormat: 'png',
       searchEnabled: true,
     })
     expect(result.providerParams).not.toHaveProperty('enable_search')
     expect(result.providerParams).not.toHaveProperty('searchEnabled')
-    expect(result.droppedParams.some((d) => d.name === 'searchEnabled' && d.reason === 'forbidden_by_contract')).toBe(true)
+    expect(
+      result.droppedParams.some(
+        (d) => d.name === 'searchEnabled' && d.reason === 'unsupported_by_model',
+      ),
+    ).toBe(true)
   })
 })
 
@@ -198,7 +214,10 @@ describe('M5 builtin manifest contract — Google Gemini image', () => {
   })
 
   it('drops unknown params (e.g. style, debug) under strict policy', () => {
-    const result = compileFromManifest(manifestId, 'image.generate', { style: 'cinematic', debug: 1 })
+    const result = compileFromManifest(manifestId, 'image.generate', {
+      style: 'cinematic',
+      debug: 1,
+    })
     expect(result.providerParams).not.toHaveProperty('style')
     expect(result.providerParams).not.toHaveProperty('debug')
     expect(result.droppedParams.some((d) => d.name === 'style')).toBe(true)
@@ -251,13 +270,22 @@ describe('M5 builtin manifest contract — APIMart GPT-Image 2', () => {
   })
 
   it('drops unknown params not in passthrough allow (e.g. debug)', () => {
-    const result = compileFromManifest(manifestId, 'image.generate', { debug: 1, style: 'cinematic' })
+    const result = compileFromManifest(manifestId, 'image.generate', {
+      debug: 1,
+      style: 'cinematic',
+    })
     expect(result.providerParams).not.toHaveProperty('debug')
     expect(result.providerParams).not.toHaveProperty('style')
   })
 
   it('rejects non-scalar passthrough even if whitelisted (allowScalarsOnly=true default)', () => {
-    const result = compileFromManifest(manifestId, 'image.generate', { aspectRatio: { width: 1024 } })
-    expect(result.droppedParams.some((d) => d.name === 'aspectRatio' && d.reason === 'unsafe_passthrough')).toBe(true)
+    const result = compileFromManifest(manifestId, 'image.generate', {
+      aspectRatio: { width: 1024 },
+    })
+    expect(
+      result.droppedParams.some(
+        (d) => d.name === 'aspectRatio' && d.reason === 'unsafe_passthrough',
+      ),
+    ).toBe(true)
   })
 })

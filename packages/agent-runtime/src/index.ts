@@ -17,6 +17,13 @@ export {
 export { MediaRouterService } from './services/media/media-router.service.js'
 export { XAI_MAX_FILE_BYTES, XaiFilesClient } from './services/media/xai-files.client.js'
 export type { XaiFileObject, XaiFilesPage } from './services/media/xai-files.client.js'
+export {
+  VOLCENGINE_ARK_FILES_DEFAULT_BASE_URL,
+  VOLCENGINE_ARK_PLATFORM_FILE_MAX_BYTES,
+  VOLCENGINE_ARK_TOS_VIDEO_MAX_BYTES,
+  VolcengineArkFilesClient,
+  resolveVolcengineArkFilesBaseUrl,
+} from './services/media/volcengine-ark-files.client.js'
 export type { MediaUploader, MediaUploadInput, MediaUploadResult } from './services/media/media-uploader.js'
 export { MediaModelCatalogService } from './services/media/media-model-catalog.service.js'
 export type {

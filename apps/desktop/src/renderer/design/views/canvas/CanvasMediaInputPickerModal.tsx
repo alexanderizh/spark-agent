@@ -9,7 +9,7 @@ import type { CanvasAsset } from './canvas.types'
 export type MediaInputPickerItem = {
   id: string
   label: string
-  type: 'image' | 'video'
+  type: 'image' | 'video' | 'audio'
   asset: CanvasAsset | null
   previewUrl?: string | null
 }
@@ -18,6 +18,7 @@ function MediaInputPickerThumb({ item }: { item: MediaInputPickerItem }) {
   if (item.asset) {
     return <AssetThumbnail asset={item.asset} />
   }
+  if (item.type === 'audio') return <Icons.AudioLines size={24} />
   const previewUrl = item.previewUrl?.trim()
   if (previewUrl) {
     return (

@@ -48,6 +48,7 @@ const CAPABILITY_COLOR = {
 const SECRET_KEY_PATTERN = /^(authorization|api[-_]?key|.*[-_]?token)$/i
 const BASE64_KEY_PATTERN = /(base64|b64(?:_json)?|dataurl)$/i
 const DATA_URL_PATTERN = /^data:([^;,]+)?;base64,(.*)$/is
+const MAX_LOG_STRING_CHARS = 800
 
 function base64Summary(value: string, mimeType?: string): string {
   const normalized = value.replace(/\s+/g, '')
@@ -77,7 +78,10 @@ export function compactForLog(value: unknown, seen: WeakSet<object> = new WeakSe
   if (value == null) return value
   if (typeof value === 'string') {
     const dataUrl = DATA_URL_PATTERN.exec(value)
-    return dataUrl ? base64Summary(dataUrl[2] ?? '', dataUrl[1]) : value
+    if (dataUrl) return base64Summary(dataUrl[2] ?? '', dataUrl[1])
+    return value.length > MAX_LOG_STRING_CHARS
+      ? `${value.slice(0, MAX_LOG_STRING_CHARS)}…[truncated chars=${value.length}]`
+      : value
   }
   if (typeof value !== 'object') return value
   if (seen.has(value as object)) return '[Circular]'

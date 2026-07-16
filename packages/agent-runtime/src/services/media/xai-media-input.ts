@@ -1,18 +1,26 @@
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
+import { createLogger } from '@spark/shared'
 import type { MediaInputFile, MediaProviderContext } from './media-adapter.types.js'
 import { MediaProviderError } from './media-adapter.types.js'
 import { XaiFilesClient } from './xai-files.client.js'
 
 export type XaiMediaReference = { url: string } | { file_id: string }
+const log = createLogger('media:xai-input')
 
 export async function resolveXaiMediaReference(
   file: MediaInputFile,
   kind: 'image' | 'video',
   ctx: MediaProviderContext,
 ): Promise<XaiMediaReference> {
-  if (file.fileId?.trim()) return { file_id: file.fileId.trim() }
-  if (file.url && /^https?:\/\//i.test(file.url)) return { url: file.url }
+  if (file.fileId?.trim()) {
+    log.debug(`event=resolved kind=${kind} transport=file_id source=existing`)
+    return { file_id: file.fileId.trim() }
+  }
+  if (file.url && /^https?:\/\//i.test(file.url)) {
+    log.debug(`event=resolved kind=${kind} transport=url source=public`)
+    return { url: file.url }
+  }
 
   const materialized = await materializeInput(file)
   if (!materialized) {
@@ -20,6 +28,10 @@ export async function resolveXaiMediaReference(
   }
 
   try {
+    const startedAt = Date.now()
+    log.info(
+      `event=upload-started kind=${kind} bytes=${materialized.buffer.byteLength} mime=${materialized.mimeType ?? 'unknown'}`,
+    )
     const uploaded = await new XaiFilesClient({
       apiKey: ctx.apiKey,
       apiEndpoint: ctx.apiEndpoint,
@@ -29,9 +41,15 @@ export async function resolveXaiMediaReference(
       filename: materialized.filename,
       ...(materialized.mimeType ? { mimeType: materialized.mimeType } : {}),
     })
+    log.info(
+      `event=upload-finished kind=${kind} transport=file_id elapsedMs=${Date.now() - startedAt}`,
+    )
     return { file_id: uploaded.id }
   } catch (providerUploadError) {
     if (kind === 'image') {
+      log.warn(
+        `event=upload-fallback kind=image transport=data_url reason=${JSON.stringify(errorMessage(providerUploadError))}`,
+      )
       if (file.dataUrl) return { url: file.dataUrl }
       const mimeType = materialized.mimeType ?? 'image/png'
       return { url: `data:${mimeType};base64,${materialized.buffer.toString('base64')}` }

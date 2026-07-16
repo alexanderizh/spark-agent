@@ -82,4 +82,20 @@ describe('XaiFilesClient', () => {
       statusCode: 502,
     })
   })
+
+  it('times out stalled file requests with a phase-specific error', async () => {
+    const client = new XaiFilesClient({
+      apiKey: 'test-key',
+      apiEndpoint: 'https://api.x.ai/v1',
+      timeoutMs: 5,
+      fetch: ((_: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'))
+          })
+        })) as typeof fetch,
+    })
+
+    await expect(client.list()).rejects.toThrow('xAI Files GET /files timed out after 5ms')
+  })
 })

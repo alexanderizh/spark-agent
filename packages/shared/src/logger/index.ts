@@ -26,7 +26,9 @@ type ProcessLike = {
   env?: Record<string, string | undefined>
 }
 
-const nodeEnv = (globalThis as typeof globalThis & { process?: ProcessLike }).process?.env?.['NODE_ENV']
+const nodeEnv = (globalThis as typeof globalThis & { process?: ProcessLike }).process?.env?.[
+  'NODE_ENV'
+]
 
 let currentLevel: LogLevel = nodeEnv === 'production' ? 'warn' : 'debug'
 
@@ -40,13 +42,23 @@ function shouldLog(level: LogLevel): boolean {
 
 function formatMessage(level: LogLevel, namespace: string, message: string): string {
   const ts = new Date().toISOString()
-  return `[${ts}] [${level.toUpperCase()}] [${namespace}] ${message}`
+  return `[${ts}] [${level.toUpperCase()}] [${namespace}] ${sanitizeLogText(message)}`
 }
 
 // ─── 敏感字段脱敏 ──────────────────────────────────────────────────────────────
 // 对 console/文件写入前的 args 做轻量脱敏：识别常见敏感键名，掩盖其字符串值。
 // 仅覆盖最常见场景，不做递归深扫——保持轻量，与"轻量日志器"定位一致。
 const SENSITIVE_KEY = /^(authorization|api[_-]?key|secret|token|password|pwd|bearer)$/i
+
+function sanitizeLogText(value: string): string {
+  return value
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]{8,}/gi, 'Bearer [redacted]')
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}/gi, 'sk-[redacted]')
+    .replace(
+      /\b(authorization|api[_-]?key|secret|token|password|pwd)(\s*[:=]\s*)(?:Bearer\s+)?([^\s,;"'}]+)/gi,
+      '$1$2[redacted]',
+    )
+}
 
 function maskValue(value: unknown): unknown {
   if (typeof value === 'string') {
@@ -290,7 +302,16 @@ export function getLogFilePath(): string | null {
  * levelFilter 不为空时，只返回包含指定级别的行。
  * 未初始化文件 logger 时返回空数组。
  */
-export function readLogTail(maxLines = 500, levelFilter?: LogLevel[]): string[] {
+export interface ReadLogTailOptions {
+  /** 仅返回 namespace 以任一前缀开头的日志。 */
+  namespacePrefixes?: string[]
+}
+
+export function readLogTail(
+  maxLines = 500,
+  levelFilter?: LogLevel[],
+  options: ReadLogTailOptions = {},
+): string[] {
   const fs = getFs()
   if (!fs || !fileState) return []
   let content: string
@@ -300,7 +321,11 @@ export function readLogTail(maxLines = 500, levelFilter?: LogLevel[]): string[] 
     return []
   }
   const lines = content.split(/\r?\n/).filter((l) => l.length > 0)
-  const filtered = levelFilter && levelFilter.length > 0 ? filterByLevel(lines, levelFilter) : lines
+  const levelFiltered =
+    levelFilter && levelFilter.length > 0 ? filterByLevel(lines, levelFilter) : lines
+  const filtered = options.namespacePrefixes?.length
+    ? filterByNamespacePrefix(levelFiltered, options.namespacePrefixes)
+    : levelFiltered
   return filtered.slice(-maxLines)
 }
 
@@ -310,6 +335,13 @@ function filterByLevel(lines: string[], levels: LogLevel[]): string[] {
     const match = line.match(/\]\s*\[(DEBUG|INFO|WARN|ERROR)\]\s*\[/)
     const lvl = match?.[1]
     return lvl != null && levelSet.has(lvl)
+  })
+}
+
+function filterByNamespacePrefix(lines: string[], prefixes: string[]): string[] {
+  return lines.filter((line) => {
+    const namespace = line.match(/\]\s*\[(?:DEBUG|INFO|WARN|ERROR)\]\s*\[([^\]]+)\]/)?.[1]
+    return namespace != null && prefixes.some((prefix) => namespace.startsWith(prefix))
   })
 }
 

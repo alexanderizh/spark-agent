@@ -167,6 +167,31 @@ describe('validateMediaRequest', () => {
     ).toBe(true)
   })
 
+  it('rejects xAI video prompts longer than the provider limit before submission', () => {
+    const cap = capability()
+    const mediaManifest = manifest('xai', 'grok-imagine-video', cap)
+    const result = validateMediaRequest({
+      input: {
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        prompt: 'x'.repeat(4_097),
+        inputFiles: [{ type: 'image', url: 'https://example.com/frame.png' }],
+        outputDir: '',
+      },
+      providerKind: 'xai',
+      modelId: 'grok-imagine-video',
+      capability: 'video.image_to_video',
+      manifest: mediaManifest,
+      manifestCapability: cap,
+    })
+
+    expect(
+      result.blockingIssues.some(
+        (issue) => issue.code === 'out_of_range' && issue.message.includes('4096'),
+      ),
+    ).toBe(true)
+  })
+
   it('validates Google image transport before adapter execution', () => {
     const cap = capability({
       id: 'image.edit',
