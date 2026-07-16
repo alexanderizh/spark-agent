@@ -5,11 +5,12 @@ import { Icons } from '../../Icons'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasPromptLibraryPanel } from './CanvasPromptLibraryPanel'
 import { readAssetKind } from './canvasFilmAssets'
-import { parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import type { ParsedShotRow } from './canvasShotTableParse'
 import { isRenderableShotScriptText } from './canvasShotScriptPresentation'
 import {
   formatStoryboardCameraParamsForEditor,
   formatStoryboardRowsAsMarkdown,
+  resolveStoryboardRowsForEditing,
   updateStoryboardCameraParams,
 } from './canvasTextInputPresentation'
 import { appendPromptFragment, buildPromptOptimizationInstruction } from './canvasPromptEditing'
@@ -298,6 +299,7 @@ export function CanvasNodeEditModal({
   open,
   assets,
   tasks,
+  nodes,
   placement = 'floating',
   onClose,
   onSave,
@@ -306,6 +308,7 @@ export function CanvasNodeEditModal({
   open: boolean
   assets: CanvasAsset[]
   tasks: CanvasTask[]
+  nodes: CanvasNode[]
   placement?: 'floating' | 'inline'
   onClose: () => void
   onSave: (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => Promise<void>
@@ -336,10 +339,10 @@ export function CanvasNodeEditModal({
     setNegativePrompt('')
     setMessageText(node.data.message ?? '')
     setUrl(node.data.url ?? '')
-    setShotRows(parseShotTable(node.data.text ?? ''))
+    setShotRows(resolveStoryboardRowsForEditing(node.data.text ?? '', nodes))
     setOptimizeModalOpen(false)
     setOptimizeRequirement('')
-  }, [node])
+  }, [node, nodes])
 
   const insertPromptText = (fragment: string) => {
     setText((current) => appendPromptFragment(current, fragment))

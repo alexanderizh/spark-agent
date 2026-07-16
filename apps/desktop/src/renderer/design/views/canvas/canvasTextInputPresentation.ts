@@ -79,6 +79,117 @@ export function updateStoryboardCameraParams(
   })
 }
 
+function isLegacySplitStoryboardText(text: string): boolean {
+  const header = text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .find((line) => line.trim().startsWith('|'))
+  if (!header) return false
+  return (
+    /布光/.test(header) &&
+    /站位\s*\/\s*调度/.test(header) &&
+    !/场景描述|焦距|微表情|生成提示词|反向提示词/.test(header)
+  )
+}
+
+function sameText(left: string | undefined, right: string | undefined): boolean {
+  const normalizedLeft = left?.trim()
+  return Boolean(normalizedLeft) && normalizedLeft === right?.trim()
+}
+
+function legacyStoryboardMatchScore(current: ParsedShotRow, candidate: ParsedShotRow): number {
+  if (
+    current.index !== undefined &&
+    candidate.index !== undefined &&
+    current.index !== candidate.index
+  ) {
+    return -1
+  }
+
+  const descriptionMatches = sameText(current.description, candidate.description)
+  const titleMatches = sameText(current.title, candidate.title)
+  const supportingMatches = [
+    sameText(current.dialogue, candidate.dialogue),
+    sameText(current.lighting, candidate.lighting),
+    sameText(current.blocking, candidate.blocking),
+  ].filter(Boolean).length
+  if (!descriptionMatches && !(titleMatches && supportingMatches > 0)) return -1
+
+  const recoverableDetails = [
+    candidate.sceneLayout,
+    candidate.focalLength,
+    candidate.aperture,
+    candidate.iso,
+    candidate.colorTone,
+    candidate.mood,
+    candidate.performance,
+    candidate.costume,
+    candidate.shotPrompt,
+    candidate.negativePrompt,
+  ].filter((value) => value?.trim()).length
+  if (recoverableDetails === 0) return -1
+
+  return (descriptionMatches ? 100 : 0) + (titleMatches ? 30 : 0) + supportingMatches * 10
+}
+
+function mergeLegacyStoryboardRow(
+  current: ParsedShotRow,
+  candidate: ParsedShotRow,
+): ParsedShotRow {
+  return {
+    ...candidate,
+    title: current.title || candidate.title,
+    ...(current.index !== undefined ? { index: current.index } : {}),
+    ...(current.durationSec !== undefined ? { durationSec: current.durationSec } : {}),
+    ...(current.shotSize ? { shotSize: current.shotSize } : {}),
+    ...(current.angle ? { angle: current.angle } : {}),
+    ...(current.movement ? { movement: current.movement } : {}),
+    ...(current.description ? { description: current.description } : {}),
+    ...(current.dialogue ? { dialogue: current.dialogue } : {}),
+    ...(current.characterNames?.length ? { characterNames: current.characterNames } : {}),
+    ...(current.lighting ? { lighting: current.lighting } : {}),
+    ...(current.blocking ? { blocking: current.blocking } : {}),
+    ...(current.cameraParams ? { cameraParams: current.cameraParams } : {}),
+  }
+}
+
+export function resolveStoryboardRowsForEditing(
+  text: string,
+  candidateNodes: CanvasNode[] = [],
+): ParsedShotRow[] {
+  const currentRows = parseShotTable(text)
+  if (currentRows.length !== 1 || !isLegacySplitStoryboardText(text)) return currentRows
+
+  const current = currentRows[0]
+  if (!current) return currentRows
+  const anchors = [current.description, current.title]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+  let bestMatch: ParsedShotRow | undefined
+  let bestScore = -1
+
+  for (const node of candidateNodes) {
+    const candidateText = node.data.text?.trim()
+    if (
+      !candidateText ||
+      candidateText === text.trim() ||
+      !isShotScriptText(candidateText) ||
+      (anchors.length > 0 && !anchors.some((anchor) => candidateText.includes(anchor)))
+    ) {
+      continue
+    }
+    for (const candidate of parseShotTable(candidateText)) {
+      const score = legacyStoryboardMatchScore(current, candidate)
+      if (score > bestScore) {
+        bestMatch = candidate
+        bestScore = score
+      }
+    }
+  }
+
+  return bestMatch ? [mergeLegacyStoryboardRow(current, bestMatch)] : currentRows
+}
+
 /**
  * 分镜节点可能保存为 JSON；模型侧只需要可读语义，不应承担解析画布内部结构的职责。
  * 普通文本和无法可靠解析的内容保持原样，避免误改用户输入。

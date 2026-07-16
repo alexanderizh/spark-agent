@@ -422,6 +422,7 @@ export function CanvasOperationWorkbench({
                   open
                   assets={snapshot.assets}
                   tasks={snapshot.tasks}
+                  nodes={snapshot.nodes}
                   placement="inline"
                   onClose={() => dispatch({ type: 'toggle-editing' })}
                   onSave={async (targetNode, patch, data) => {

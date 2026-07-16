@@ -3,6 +3,7 @@ import {
   formatCanvasTextInputContext,
   formatStoryboardCameraParamsForEditor,
   presentCanvasTextForModel,
+  resolveStoryboardRowsForEditing,
   updateStoryboardCameraParams,
 } from './canvasTextInputPresentation'
 import type { CanvasNode } from './canvas.types'
@@ -74,5 +75,59 @@ describe('canvasTextInputPresentation', () => {
         '手持摄影，浅景深',
       ),
     ).toEqual([{ title: '镜1', cameraParams: '手持摄影，浅景深' }])
+  })
+
+  it('restores fields missing from a legacy split node using its full storyboard source', () => {
+    const legacyText = [
+      '# 镜 16 · 报警与脑内警告',
+      '',
+      '| 镜号 | 标题 | 时长(秒) | 景别 | 角度 | 运镜 | 画面/动作 | 对白 | 角色 | 布光 | 站位/调度 |',
+      '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+      '| 16 | 报警与脑内警告 | 10 | 近景 | 平视 | 固定 | 恶作剧的想法让苏烬背心发凉。 | 苏烬：喂！ | 苏烬 | 屋内灯光昏暗。 | 苏烬拿起手机报警。 |',
+    ].join('\n')
+    const sourceNode = {
+      id: 'full-storyboard',
+      type: 'text',
+      data: {
+        text: JSON.stringify({
+          shots: [
+            {
+              index: 16,
+              title: '报警与脑内警告',
+              durationSec: 10,
+              shotSize: '近景',
+              angle: '平视',
+              movement: '固定',
+              focalLength: '35mm',
+              aperture: 'f/2.0',
+              iso: 'ISO 800',
+              lighting: '屋内灯光昏暗。',
+              colorTone: '冷白与暗部混合',
+              mood: '困惑、恐慌',
+              sceneLayout: '电脑桌前，屏幕显示查无此公司。',
+              blocking: '苏烬拿起手机报警。',
+              characters: ['苏烬'],
+              microExpression: '瞳孔涣散，眼神焦急。',
+              costume: '灰色旧卫衣',
+              description: '恶作剧的想法让苏烬背心发凉。',
+              dialogue: '苏烬：喂！',
+              shotPrompt: '近景镜头，35mm，冷白屏幕光。',
+              negativePrompt: '其他人物，过曝，水印。',
+            },
+          ],
+        }),
+      },
+    } as CanvasNode
+
+    expect(resolveStoryboardRowsForEditing(legacyText, [sourceNode])[0]).toMatchObject({
+      index: 16,
+      sceneLayout: '电脑桌前，屏幕显示查无此公司。',
+      focalLength: '35mm',
+      aperture: 'f/2.0',
+      iso: 'ISO 800',
+      performance: '瞳孔涣散，眼神焦急。',
+      shotPrompt: '近景镜头，35mm，冷白屏幕光。',
+      negativePrompt: '其他人物，过曝，水印。',
+    })
   })
 })
