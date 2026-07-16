@@ -423,9 +423,12 @@ export class InternalBrowserService {
 
   private installNetworkHooks(state: WindowState): void {
     const filter = { urls: ['*://*/*', 'file://*/*', 'data:*'] }
-    const ses = state.win.webContents.session
+    const webContents = state.win.webContents
+    const webContentsId = webContents.id
+    const ses = webContents.session
+    const isActive = (): boolean => this.windows.get(state.windowId) === state
     ses.webRequest.onBeforeRequest(filter, (details, callback) => {
-      if (details.webContentsId !== state.win.webContents.id) return callback({})
+      if (!isActive() || details.webContentsId !== webContentsId) return callback({})
       const rule = [...state.networkRules.values()].find((candidate) => matchesRule(candidate, details.url))
       pushBounded(state.networkEvents, {
         seq: ++state.networkSeq,
@@ -440,7 +443,9 @@ export class InternalBrowserService {
       callback({})
     })
     ses.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
-      if (details.webContentsId !== state.win.webContents.id) return callback({ requestHeaders: details.requestHeaders })
+      if (!isActive() || details.webContentsId !== webContentsId) {
+        return callback({ requestHeaders: details.requestHeaders })
+      }
       const headerRules = [...state.networkRules.values()]
         .filter((rule) => rule.action === 'set_headers' && matchesRule(rule, details.url) && rule.headers != null)
       if (headerRules.length === 0) return callback({ requestHeaders: details.requestHeaders })
@@ -449,7 +454,7 @@ export class InternalBrowserService {
       callback({ requestHeaders })
     })
     ses.webRequest.onCompleted(filter, (details) => {
-      if (details.webContentsId !== state.win.webContents.id) return
+      if (!isActive() || details.webContentsId !== webContentsId) return
       pushBounded(state.networkEvents, {
         seq: ++state.networkSeq,
         kind: 'completed',
@@ -460,7 +465,7 @@ export class InternalBrowserService {
       })
     })
     ses.webRequest.onErrorOccurred(filter, (details) => {
-      if (details.webContentsId !== state.win.webContents.id) return
+      if (!isActive() || details.webContentsId !== webContentsId) return
       pushBounded(state.networkEvents, {
         seq: ++state.networkSeq,
         kind: 'error',
