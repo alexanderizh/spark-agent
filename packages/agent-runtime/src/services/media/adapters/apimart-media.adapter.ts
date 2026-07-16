@@ -119,6 +119,7 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
       if (taskId) {
         requestId = taskId
         mode = 'async'
+        ctx.onTaskSubmitted?.({ requestId: taskId, response: data })
         raw = await pollTask(`${baseEndpoint(ctx)}/tasks/${encodeURIComponent(taskId)}`, authHeaders(ctx), {
           fetchImpl: ctx.fetch,
           intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 4_000,

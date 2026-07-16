@@ -150,6 +150,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
     if (!operationName) {
       throw new MediaProviderError('provider_http_error', `No operation name in response: ${JSON.stringify(initial).slice(0, 800)}`)
     }
+    ctx.onTaskSubmitted?.({ requestId: operationName, response: initial })
     const pollUrl = `${baseEndpoint(ctx)}/${operationName.replace(/^\/+/, '')}`
     const raw = await pollTask(pollUrl, googleHeaders(ctx), {
       fetchImpl: ctx.fetch,

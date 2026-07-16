@@ -24,6 +24,12 @@ type CanvasTaskTerminalFields = {
   error?: { code: string; message: string } | null | undefined
 }
 
+type CanvasTaskSubmittedFields = {
+  runtimeTaskId?: string | null | undefined
+  providerRequestId: string
+  response?: unknown
+}
+
 type CanvasTaskFailureFields = {
   code: string
   message: string
@@ -41,6 +47,7 @@ type CanvasTaskLifecycleDependencies = {
 
 export const canvasTaskLogger = createLogger('canvas:task')
 const MAX_ERROR_MESSAGE_CHARS = 500
+const MAX_RESPONSE_CHARS = 2_000
 
 export const CANVAS_TASK_LOG_NAMESPACE_PREFIXES = [
   'canvas:',
@@ -102,6 +109,19 @@ export function createCanvasTaskLifecycleLog(
     started(): void {
       logger.info(`event=started ${base}`)
     },
+    submitted(fields: CanvasTaskSubmittedFields): void {
+      const response = safeResponse(fields.response)
+      logger.info(
+        [
+          'event=provider-submitted',
+          base,
+          `runtimeTaskId=${field(fields.runtimeTaskId)}`,
+          `providerRequestId=${field(fields.providerRequestId)}`,
+          ...(response ? [`response=${response}`] : []),
+          `elapsedMs=${Math.max(0, now() - startedAt)}`,
+        ].join(' '),
+      )
+    },
     finished,
     failed,
     settled(fields: CanvasTaskTerminalFields): void {
@@ -117,6 +137,15 @@ export function createCanvasTaskLifecycleLog(
       }
       finished(fields)
     },
+  }
+}
+
+function safeResponse(value: unknown): string {
+  if (value == null) return ''
+  try {
+    return JSON.stringify(value).slice(0, MAX_RESPONSE_CHARS)
+  } catch {
+    return '"[unserializable]"'
   }
 }
 

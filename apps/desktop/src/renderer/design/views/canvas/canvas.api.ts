@@ -5378,11 +5378,12 @@ export const canvasApi = {
     if (task.status === 'completed' || task.status === 'failed') return this.openSnapshot(projectId)
     task.status = 'running'
     task.progress = Math.max(task.progress, 35)
-    task.requestId = response.runtimeTaskId ?? response.requestId ?? null
+    task.requestId = response.requestId ?? task.requestId ?? response.runtimeTaskId ?? null
     task.providerProfileId = response.providerProfileId || task.providerProfileId || null
     task.provider = response.provider || task.provider || null
     task.modelId = response.model || task.modelId || null
     task.requestCall = response.requestCall ?? task.requestCall ?? null
+    if (response.submitResponse !== undefined) task.submitResponse = response.submitResponse
     task.updatedAt = now()
     if (patchTaskNode) {
       taskNode.data = {
@@ -5433,6 +5434,9 @@ export const canvasApi = {
         response.error?.message ?? (isCancelled ? '任务已取消' : 'Provider task failed'),
       )
       task.requestId = responseRequestId
+      task.requestCall = response.requestCall ?? task.requestCall ?? null
+      if (response.submitResponse !== undefined) task.submitResponse = response.submitResponse
+      if (response.rawResponse !== undefined) task.rawResponse = response.rawResponse
       task.updatedAt = now()
       if (patchTaskNode) {
         taskNode.data = {
@@ -5457,7 +5461,8 @@ export const canvasApi = {
     task.provider = response.provider || null
     task.requestId = responseRequestId
     task.rawResponse = response.rawResponse
-    task.requestCall = response.requestCall ?? null
+    if (response.submitResponse !== undefined) task.submitResponse = response.submitResponse
+    task.requestCall = response.requestCall ?? task.requestCall ?? null
 
     const at = now()
     const preparedOutputs: Array<{

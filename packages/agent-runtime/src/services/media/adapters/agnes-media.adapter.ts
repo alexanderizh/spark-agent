@@ -220,6 +220,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
       }
       requestId = taskId || videoId
       mode = 'async'
+      if (requestId) ctx.onTaskSubmitted?.({ requestId, response: data })
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,

@@ -4779,6 +4779,8 @@ export interface CanvasMediaTaskCreateResponse {
   mode: 'sync' | 'async'
   requestId?: string
   assets: CanvasMediaTaskAsset[]
+  /** 轮询任务提交接口的响应摘要；在 provider 返回任务 ID 后立即回写。 */
+  submitResponse?: unknown
   rawResponse?: unknown
   /** 实际发给 provider 的请求摘要（method + url + 已截断 body），用于任务详情展示。 */
   requestCall?: MediaRequestCall

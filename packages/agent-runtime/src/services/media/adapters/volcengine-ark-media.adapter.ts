@@ -193,6 +193,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
       }
       requestId = taskId
       mode = 'async'
+      ctx.onTaskSubmitted?.({ requestId: taskId, response: createResp })
       log.info(
         `event=task-created capability=${capability} model=${model} requestId=${taskId} elapsedMs=${Date.now() - createStartedAt}`,
       )
