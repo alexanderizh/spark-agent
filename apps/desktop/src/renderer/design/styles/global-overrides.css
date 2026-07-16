@@ -111,9 +111,10 @@ textarea::-moz-selection,
   line-height: calc(var(--form-control-h) - 2px);
 }
 
-/* Chat content is the only native scrollbar exception. This file loads last,
-   so it can safely override the global scrollbar hiding rules in styles.css. */
-.chat-main-active > .chat-stream-viewport > .chat-stream {
+/* Legacy/native chat streams may opt back into the native scrollbar. The main
+   conversation stream uses overlay-scrollbar-enabled and therefore keeps the
+   global native-scrollbar hiding rules so its custom thumb consumes no layout width. */
+.chat-main-active > .chat-stream-viewport > .chat-stream:not(.overlay-scrollbar-enabled) {
   scrollbar-width: auto !important;
   scrollbar-color: auto !important;
 }
@@ -123,7 +124,9 @@ textarea::-moz-selection,
   scrollbar-color: var(--border-strong) transparent !important;
 }
 
-.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar {
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar {
   display: block !important;
   width: 10px !important;
   height: 10px !important;
@@ -143,8 +146,12 @@ textarea::-moz-selection,
   -webkit-appearance: none !important;
 }
 
-.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-track,
-.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-track-piece {
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar-track,
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar-track-piece {
   display: block !important;
   width: 10px !important;
   background: transparent !important;
@@ -157,7 +164,9 @@ textarea::-moz-selection,
   background: transparent !important;
 }
 
-.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-thumb {
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar-thumb {
   display: block !important;
   min-height: 36px;
   border: 2px solid transparent !important;
@@ -177,7 +186,9 @@ textarea::-moz-selection,
   -webkit-appearance: none !important;
 }
 
-.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-thumb:hover {
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar-thumb:hover {
   background: var(--text-faint) !important;
   background-clip: content-box !important;
 }
@@ -187,8 +198,12 @@ textarea::-moz-selection,
   background-clip: content-box !important;
 }
 
-.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-button,
-.chat-main-active > .chat-stream-viewport > .chat-stream::-webkit-scrollbar-corner {
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar-button,
+.chat-main-active
+  > .chat-stream-viewport
+  > .chat-stream:not(.overlay-scrollbar-enabled)::-webkit-scrollbar-corner {
   display: none !important;
   width: 0 !important;
   height: 0 !important;

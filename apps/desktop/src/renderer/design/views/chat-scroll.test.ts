@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { shouldShowScrollToBottom } from './chat-scroll'
+import { calculateOverlayScrollbarMetrics } from './chat/chat-overlay-scrollbar-metrics'
 
 describe('chat scroll controls', () => {
   it('shows the scroll-to-bottom button once the chat is more than 50px from bottom', () => {
@@ -9,7 +10,32 @@ describe('chat scroll controls', () => {
     expect(shouldShowScrollToBottom(51)).toBe(true)
   })
 
-  it('keeps the outer stream as the only scroll container', () => {
+  it('maps the native scroll position onto the overlay thumb', () => {
+    const metrics = calculateOverlayScrollbarMetrics({
+      viewportHeight: 500,
+      contentHeight: 2_000,
+      scrollTop: 750,
+      trackHeight: 400,
+    })
+
+    expect(metrics.visible).toBe(true)
+    expect(metrics.thumbHeight).toBe(100)
+    expect(metrics.thumbTop).toBe(150)
+    expect(metrics.maxScrollTop).toBe(1_500)
+  })
+
+  it('hides the overlay thumb when the conversation does not overflow', () => {
+    const metrics = calculateOverlayScrollbarMetrics({
+      viewportHeight: 500,
+      contentHeight: 500,
+      scrollTop: 0,
+      trackHeight: 400,
+    })
+
+    expect(metrics.visible).toBe(false)
+  })
+
+  it('keeps the outer stream as the only scroll container without reserving a gutter', () => {
     const stylesheet = readFileSync(
       fileURLToPath(new URL('./ChatView.less', import.meta.url)),
       'utf8',
@@ -18,11 +44,11 @@ describe('chat scroll controls', () => {
     const innerBlock = stylesheet.match(/\.chat-stream-inner\s*\{[^}]*\}/)?.[0] ?? ''
 
     expect(streamBlock).toContain('overflow-y: auto')
-    expect(streamBlock).toContain('scrollbar-gutter: stable both-edges')
+    expect(streamBlock).toContain('scrollbar-gutter: auto')
     expect(innerBlock).not.toContain('overflow-y: auto')
   })
 
-  it('restores the native scrollbar only for the main chat content stream', () => {
+  it('keeps the native scrollbar hidden when the main chat uses the overlay thumb', () => {
     const baseStyles = readFileSync(
       fileURLToPath(new URL('../styles/styles.css', import.meta.url)),
       'utf8',
@@ -34,12 +60,28 @@ describe('chat scroll controls', () => {
 
     expect(baseStyles).toContain('*::-webkit-scrollbar')
     expect(baseStyles).toContain('scrollbar-width: none !important')
-    expect(overrideStyles).toContain(
-      '.chat-main-active > .chat-stream-viewport > .chat-stream',
-    )
+    expect(overrideStyles).toContain('.chat-stream:not(.overlay-scrollbar-enabled)')
     expect(overrideStyles).toContain('scrollbar-width: auto !important')
     expect(overrideStyles).toContain('::-webkit-scrollbar-thumb')
     expect(overrideStyles).not.toContain('.sidebar')
+  })
+
+  it('renders the overlay scrollbar next to the width-neutral stream', () => {
+    const component = readFileSync(
+      fileURLToPath(new URL('./ChatView.tsx', import.meta.url)),
+      'utf8',
+    )
+    const overlayComponent = readFileSync(
+      fileURLToPath(new URL('./chat/ChatOverlayScrollbar.tsx', import.meta.url)),
+      'utf8',
+    )
+
+    expect(component).toContain('chat-stream overlay-scrollbar-enabled')
+    expect(component).toContain(
+      '<ChatOverlayScrollbar scrollRef={streamRef} controlsId={streamId} />',
+    )
+    expect(overlayComponent).toContain('role="scrollbar"')
+    expect(overlayComponent).toContain('ResizeObserver')
   })
 
   it('keeps the active chat stream and composer containers width-aligned', () => {

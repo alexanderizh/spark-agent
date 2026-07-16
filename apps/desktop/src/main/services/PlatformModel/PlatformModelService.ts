@@ -6,6 +6,7 @@ import type {
   PlatformModelSubscription,
 } from '@spark/protocol'
 import { ProviderService, setManagedCredentialRecoveryHandler } from '@spark/agent-runtime'
+import { createLogger } from '@spark/shared'
 import { ProviderProfileRepository } from '@spark/storage'
 import { Notification, shell } from 'electron'
 import { getDatabase } from '../../db.js'
@@ -27,6 +28,8 @@ type BootstrapCredentials = {
   baseUrl: string
 }
 
+const log = createLogger('platform-model:service')
+
 export class PlatformModelService {
   private status: PlatformModelStatus = emptyStatus()
   private readonly bootstrapInflight = new Map<string, Promise<PlatformModelStatus>>()
@@ -35,9 +38,20 @@ export class PlatformModelService {
   private lastConflictNotificationAt = 0
 
   constructor() {
-    getAuthService().addLogoutHook(async (userId) => this.logout(userId))
-    getAuthService().addLoginHook(async () => { await this.bootstrap(false) })
+    const auth = getAuthService()
+    auth.addLogoutHook(async (userId) => this.logout(userId))
+    auth.addLoginHook(async () => { await this.bootstrap(false) })
     setManagedCredentialRecoveryHandler(request => this.recoverManagedCredential(request))
+    // AuthService.start() 已在创建本服务前加载本地登录态。若此时没有用户，说明上次
+    // 进程可能在正常 logout hook 运行前退出；立即隐藏遗留的官方 Provider，避免未登录
+    // 的 renderer 在首次 provider:list 时短暂读到上一账号的平台模型。
+    if (auth.getCurrentUserId() == null) {
+      void Promise.resolve(this.providerService().disableManagedNewApiProvider())
+        .then(() => this.emitProviderChanged('update'))
+        .catch((error) => {
+          log.warn(`startup managed provider cleanup failed: ${(error as Error).message}`)
+        })
+    }
   }
 
   getStatus(): PlatformModelStatus {

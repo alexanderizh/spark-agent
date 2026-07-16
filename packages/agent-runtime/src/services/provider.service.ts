@@ -1136,13 +1136,15 @@ export class ProviderService {
     if (!row || !isManagedProviderRow(row)) return
     const config = JSON.parse(row.config_json) as ProviderConfig
     if (ownerUserId && config.managedOwnerUserId !== ownerUserId) return
-    if (row.keystore_ref) {
-      await keystore.deleteSecret(row.keystore_ref as keystore.KeystoreRef)
-    }
+    // 先同步落库隐藏 Provider，再异步清理 Keychain。这样冷启动未登录时即使
+    // Keychain 较慢，首次 provider:list 也不会暴露上一账号的平台模型。
     this.repo.update(PLATFORM_NEWAPI_PROVIDER_ID, {
       enabled: false,
       config: { ...config, credentialState: 'unavailable' },
     })
+    if (row.keystore_ref) {
+      await keystore.deleteSecret(row.keystore_ref as keystore.KeystoreRef)
+    }
   }
 
   setManagedNewApiCredentialState(
