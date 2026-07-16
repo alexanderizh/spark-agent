@@ -12,6 +12,7 @@ import React, {
   useState,
   useCallback,
   useMemo,
+  useId,
   Fragment,
 } from 'react'
 import './ChatView.less'
@@ -85,6 +86,7 @@ import {
 } from './chat/ChatActivitySegments'
 import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
 import { EmptySessionModeLauncher } from './chat/EmptySessionModeLauncher'
+import { ChatOverlayScrollbar } from './chat/ChatOverlayScrollbar'
 import {
   persistThenSyncTeamSelection,
   preserveExplicitEmptySessionTeamConfig,
@@ -2512,6 +2514,7 @@ function ChatStream({
   modelSwitchMarkers?: ModelSwitchMarker[]
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
+  const streamId = useId()
   const virtualMessageListRef = useRef<VirtualMessageListHandle | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
   const messagesRef = useRef<UIMessage[]>([])
@@ -3473,7 +3476,7 @@ function ChatStream({
 
   return (
     <div className="chat-stream-viewport">
-      <div className="chat-stream" ref={streamRef}>
+      <div id={streamId} className="chat-stream overlay-scrollbar-enabled" ref={streamRef}>
         <div className={`chat-stream-inner${multiSelectMode ? ' has-multiselect' : ''}`}>
           {multiSelectMode && (
             <div className="chat-message-selectbar">
@@ -3686,6 +3689,7 @@ function ChatStream({
           <Icons.ArrowDown size={16} />
         </button>
       )}
+      <ChatOverlayScrollbar scrollRef={streamRef} controlsId={streamId} />
     </div>
   )
 }

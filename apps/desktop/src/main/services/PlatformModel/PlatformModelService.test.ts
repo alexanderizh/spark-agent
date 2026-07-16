@@ -167,6 +167,14 @@ describe('PlatformModelService delivery boundaries', () => {
     expect(service.getStatus().models).toEqual(['MiniMax-M3', 'deepseek-v4'])
   })
 
+  it('hides a stale managed provider immediately when the app starts logged out', async () => {
+    mocks.currentUserId = null
+
+    new PlatformModelService()
+
+    expect(mocks.disableManagedProvider).toHaveBeenCalledWith()
+  })
+
   it('loads enabled purchase channels and only opens a server-provided safe URL', async () => {
     mocks.platformGet.mockResolvedValue([
       { id: '2', name: '渠道 B', url: 'https://shop.example/b', sortOrder: '20' },

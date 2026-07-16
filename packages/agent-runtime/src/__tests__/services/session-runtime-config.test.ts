@@ -1165,6 +1165,34 @@ describe('SessionService runtime provider/model resolution', () => {
     await vi.waitFor(() => {
       expect(mockState.turnRequests.get(result.turnId)?.status).toBe('failed')
     })
+    expect(service.getQueueState({ sessionId }).running).toBe(false)
+    expect(mockState.sessions.get(sessionId)?.status).toBe('error')
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'agent_status',
+      turnId: result.turnId,
+      status: 'error',
+    }))
+  })
+
+  it('releases the active loop when turn startup fails after executor registration', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    vi.spyOn(service as never, 'maybeCaptureCheckpoint' as never).mockRejectedValueOnce(
+      new Error('checkpoint startup failed') as never,
+    )
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      agentAdapter: 'claude-sdk',
+      title: 'Post-registration startup failure',
+    })
+
+    const result = await service.submitTurn({ sessionId, message: 'hello' })
+
+    await vi.waitFor(() => {
+      expect(mockState.turnRequests.get(result.turnId)?.status).toBe('failed')
+    })
+    expect(service.getQueueState({ sessionId }).running).toBe(false)
+    expect(mockState.sessions.get(sessionId)?.status).toBe('error')
   })
 
   it('serializes background preflight for rapid interactive submissions in one session', async () => {
@@ -1720,6 +1748,32 @@ describe('SessionService runtime provider/model resolution', () => {
         message: '/rename completed',
       }),
     )
+  })
+
+  it('forwards an unregistered slash-prefixed route to the Agent as ordinary text', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Slash route session',
+    })
+
+    const result = await service.executeCommandAsEvents({
+      sessionId,
+      message:
+        '/#/grid/workflow_backlog/budget_wfl_detail/2077664245723344898/YSDJ002/20776643296716308491 这个页面是不是在你项目中',
+    })
+
+    expect(result).toEqual({ isCommand: true, forwardToAgent: true })
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        type: 'assistant_message',
+        provider: 'spark',
+        content: expect.stringContaining('未知命令'),
+      }),
+    )
+    expect(mockState.sdkTurns).toHaveLength(0)
   })
 
   it('does not inject command completed before /validate --repair follow-up Agent turn', async () => {

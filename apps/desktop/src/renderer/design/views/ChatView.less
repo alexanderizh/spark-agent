@@ -1967,9 +1967,59 @@ body.git-review-tree-resizing {
   height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
-  /* 原生滚动条会占用右侧布局宽度；两侧预留等宽 gutter，避免消息内容相对
-     不带滚动条的 composer 左移半个滚动条宽度。 */
-  scrollbar-gutter: stable both-edges;
+  /* 原生滚动条由 overlay-scrollbar-enabled 隐藏，自定义滚动条绝对定位在
+     chat-stream-viewport 上方，因此这里不再预留 gutter，不会挤压消息宽度。 */
+  scrollbar-gutter: auto;
+}
+
+.chat-overlay-scrollbar {
+  position: absolute;
+  top: 8px;
+  right: 4px;
+  bottom: 8px;
+  z-index: 10;
+  width: 10px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.chat-overlay-scrollbar.is-visible {
+  opacity: 0.62;
+  pointer-events: auto;
+}
+
+.chat-stream-viewport:hover .chat-overlay-scrollbar.is-visible,
+.chat-overlay-scrollbar.is-visible:focus-within {
+  opacity: 1;
+}
+
+.chat-overlay-scrollbar-thumb {
+  width: 6px;
+  min-height: 28px;
+  margin-left: 2px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  cursor: grab;
+  touch-action: none;
+  will-change: transform;
+}
+
+.chat-overlay-scrollbar-thumb:active {
+  cursor: grabbing;
+  background: var(--text-faint);
+}
+
+.chat-overlay-scrollbar-thumb:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 58%, transparent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-overlay-scrollbar {
+    transition: none;
+  }
 }
 
 /* 会话流内空态 / 加载态容器：flex:1 撑满聊天区高度，使内容垂直 + 水平居中
