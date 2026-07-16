@@ -121,6 +121,8 @@ export type Stage3DSlate = {
 export type Stage3DData = {
   version: 1
   backdrop: Stage3DBackdrop
+  /** 布景倍率：仅放大/缩小角色和道具的视觉存在感，不改背景图本身 */
+  sceneScale?: number | undefined
   actors: Stage3DActor[]
   props: Stage3DProp[]
   camera: Stage3DCamera
@@ -209,6 +211,8 @@ export const STAGE3D_ACTOR_COLORS = [
 ]
 
 export const STAGE3D_PRIMITIVE_COLOR = '#cbd5e1'
+export const STAGE3D_SCENE_SCALE_MIN = 0.5
+export const STAGE3D_SCENE_SCALE_MAX = 2
 
 // ─────────────────────────── 工具 ───────────────────────────
 
@@ -340,6 +344,7 @@ export function createDefaultStage3DData(): Stage3DData {
   return {
     version: 1,
     backdrop: defaultStage3DBackdrop(),
+    sceneScale: 1,
     actors: [actor],
     props: [],
     camera: defaultStage3DCamera(),
@@ -475,6 +480,8 @@ export function readStage3DData(node: CanvasNode | null | undefined): Stage3DDat
       : {}),
   }
 
+  const sceneScale = clamp(num(data.sceneScale, 1), STAGE3D_SCENE_SCALE_MIN, STAGE3D_SCENE_SCALE_MAX)
+
   const rawCamera = (data.camera ?? {}) as Record<string, unknown>
   const camera: Stage3DCamera = {
     position: vec3(rawCamera.position, [0, 1.6, 4.5]),
@@ -500,6 +507,7 @@ export function readStage3DData(node: CanvasNode | null | undefined): Stage3DDat
   return {
     version: 1,
     backdrop,
+    sceneScale,
     actors: safeActors,
     props,
     camera,
