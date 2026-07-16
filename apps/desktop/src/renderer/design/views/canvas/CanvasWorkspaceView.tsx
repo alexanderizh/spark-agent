@@ -110,6 +110,11 @@ import { applyCanvasStyleToTask, buildCanvasStyleContext } from './canvasStyleCo
 import { buildStoryboardGridPrompt, buildStoryboardNodePrompt } from './canvasStoryboardGrid'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import {
+  formatStoryboardCameraParamsForEditor,
+  formatStoryboardRowsAsMarkdown,
+  updateStoryboardCameraParams,
+} from './canvasTextInputPresentation'
+import {
   resolveStoryboardSplitSourceNode,
   splitStoryboardNode,
 } from './canvasStoryboardNodeSplit'
@@ -8670,31 +8675,7 @@ const EMPTY_SHOT_ROW: ParsedShotRow = {
 }
 
 function serializeShotRowsToMarkdown(rows: ParsedShotRow[]): string {
-  const body = rows.map((row, index) =>
-    [
-      row.index ?? index + 1,
-      row.durationSec ?? '',
-      row.shotSize ?? '',
-      row.movement ?? '',
-      row.sceneLayout ?? '',
-      row.blocking ?? '',
-      row.lighting ?? '',
-      row.cameraParams ?? '',
-      row.performance ?? '',
-      row.description ?? row.title ?? '',
-      row.dialogue ?? '',
-      row.characterNames?.join('、') ?? '',
-      row.shotPrompt ?? '',
-      row.negativePrompt ?? '',
-    ]
-      .map((cell) => String(cell).replace(/\|/g, '｜').replace(/\n/g, ' '))
-      .join(' | '),
-  )
-  return [
-    '| 镜号 | 时长(秒) | 景别 | 运镜 | 场景描述 | 站位调度 | 光照 | 镜头参数 | 微表情动作 | 画面/动作 | 对白 | 角色 | 生成提示词 | 反向提示词 |',
-    '|---|---:|---|---|---|---|---|---|---|---|---|---|---|---|',
-    ...body.map((line) => `| ${line} |`),
-  ].join('\n')
+  return formatStoryboardRowsAsMarkdown(rows)
 }
 
 function updateShotRowField(
@@ -8865,8 +8846,10 @@ function CanvasShotScriptEditPanel({
                 <td className="canvas-shot-script-editor-cell is-multiline">
                   <Input.TextArea
                     className="canvas-shot-script-editor-textarea"
-                    value={row.cameraParams ?? ''}
-                    onChange={(event) => updateRow(index, { cameraParams: event.target.value })}
+                    value={formatStoryboardCameraParamsForEditor(row)}
+                    onChange={(event) =>
+                      onRowsChange(updateStoryboardCameraParams(rows, index, event.target.value))
+                    }
                   />
                 </td>
                 <td className="canvas-shot-script-editor-cell is-multiline">

@@ -11,12 +11,25 @@ const STORYBOARD_COLUMNS: Array<{
   { label: '景别', read: (row) => row.shotSize ?? '' },
   { label: '角度', read: (row) => row.angle ?? '' },
   { label: '运镜', read: (row) => row.movement ?? '' },
-  { label: '画面/动作', read: (row) => row.description ?? row.shotPrompt ?? '' },
-  { label: '对白', read: (row) => row.dialogue ?? '' },
-  { label: '角色', read: (row) => row.characterNames?.join('、') ?? '' },
+  { label: '场次', read: (row) => row.groupName ?? '' },
+  { label: '场景名', read: (row) => row.sceneName ?? '' },
+  { label: '场景描述', read: (row) => row.sceneLayout ?? '' },
+  { label: '站位调度', read: (row) => row.blocking ?? '' },
+  { label: '光照', read: (row) => row.lighting ?? '' },
   { label: '镜头参数', read: (row) => row.cameraParams ?? '' },
-  { label: '布光', read: (row) => row.lighting ?? '' },
-  { label: '站位/调度', read: (row) => row.blocking ?? '' },
+  { label: '焦距', read: (row) => row.focalLength ?? '' },
+  { label: '光圈', read: (row) => row.aperture ?? '' },
+  { label: 'ISO', read: (row) => row.iso ?? '' },
+  { label: '色调', read: (row) => row.colorTone ?? '' },
+  { label: '氛围', read: (row) => row.mood ?? '' },
+  { label: '微表情动作', read: (row) => row.performance ?? '' },
+  { label: '服装', read: (row) => row.costume ?? '' },
+  { label: '画面/动作', read: (row) => row.description ?? '' },
+  { label: '对白', read: (row) => row.dialogue ?? '' },
+  { label: '旁白', read: (row) => row.narration ?? '' },
+  { label: '角色', read: (row) => row.characterNames?.join('、') ?? '' },
+  { label: '生成提示词', read: (row) => row.shotPrompt ?? '' },
+  { label: '反向提示词', read: (row) => row.negativePrompt ?? '' },
 ]
 
 function escapeMarkdownCell(value: string): string {
@@ -35,6 +48,35 @@ export function formatStoryboardRowsAsMarkdown(rows: ParsedShotRow[]): string {
       `| ${columns.map((column) => escapeMarkdownCell(column.read(row, index))).join(' | ')} |`,
   )
   return [header, divider, ...body].join('\n')
+}
+
+export function formatStoryboardCameraParamsForEditor(row: ParsedShotRow): string {
+  if (row.cameraParams !== undefined) return row.cameraParams
+  const iso = row.iso?.trim()
+  return [
+    row.focalLength ? `焦距 ${row.focalLength}` : '',
+    row.aperture ? `光圈 ${row.aperture}` : '',
+    iso ? (/^iso\b/i.test(iso) ? iso : `ISO ${iso}`) : '',
+  ]
+    .filter(Boolean)
+    .join('；')
+}
+
+export function updateStoryboardCameraParams(
+  rows: ParsedShotRow[],
+  index: number,
+  cameraParams: string,
+): ParsedShotRow[] {
+  return rows.map((row, rowIndex) => {
+    if (rowIndex !== index) return row
+    const {
+      focalLength: _focalLength,
+      aperture: _aperture,
+      iso: _iso,
+      ...rest
+    } = row
+    return { ...rest, cameraParams }
+  })
 }
 
 /**

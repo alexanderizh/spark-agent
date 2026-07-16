@@ -7,6 +7,7 @@ import {
 } from './canvasStoryboardNodeSplit'
 import type { CanvasOperationOutputView } from './canvasOperationRuns'
 import type { CanvasNode } from './canvas.types'
+import { parseShotTable } from './canvasShotTableParse'
 
 const storyboardText =
   '| 镜号 | 景别 | 画面 |\n| --- | --- | --- |\n| 1 | 远景 | 城市夜景 |\n| 2 | 特写 | 手握门把 |'
@@ -35,6 +36,54 @@ describe('canvasStoryboardNodeSplit', () => {
     const text = buildStoryboardShotNodeText({ title: '开场', description: '门打开' }, 0)
     expect(text).toContain('# 镜 01')
     expect(text).toContain('门打开')
+  })
+
+  it('preserves detailed production fields when a split shot is parsed for editing', () => {
+    const text = buildStoryboardShotNodeText(
+      {
+        index: 1,
+        title: '电脑前的停顿',
+        durationSec: 8,
+        shotSize: '特写',
+        angle: '平视',
+        movement: '固定',
+        sceneLayout: '狭窄出租屋内，桌面凌乱，电脑屏幕占据画面中心',
+        blocking: '苏焕位于画面中央偏右，头部前倾',
+        lighting: '电脑屏幕冷白光照亮面部，背景保持低照度',
+        focalLength: '50mm',
+        aperture: 'f/2.8',
+        iso: 'ISO 800',
+        colorTone: '低饱和冷色调',
+        mood: '焦躁、压抑',
+        performance: '眼神焦灼，眉头紧锁，右手夹着香烟',
+        costume: '深色旧卫衣',
+        description: '一口浓烟从画面右侧呼出，打在电脑屏幕上',
+        dialogue: '苏焕：别再转圈了。\n画外音：钟表继续走动。',
+        narration: '凌晨两点。',
+        characterNames: ['苏焕'],
+        shotPrompt: '电影感特写，50mm，冷白屏幕光，浅景深',
+        negativePrompt: '文字|水印，过曝，错误手指',
+      },
+      0,
+    )
+
+    expect(parseShotTable(text)[0]).toMatchObject({
+      title: '电脑前的停顿',
+      sceneLayout: '狭窄出租屋内，桌面凌乱，电脑屏幕占据画面中心',
+      blocking: '苏焕位于画面中央偏右，头部前倾',
+      lighting: '电脑屏幕冷白光照亮面部，背景保持低照度',
+      focalLength: '50mm',
+      aperture: 'f/2.8',
+      iso: 'ISO 800',
+      colorTone: '低饱和冷色调',
+      mood: '焦躁、压抑',
+      performance: '眼神焦灼，眉头紧锁，右手夹着香烟',
+      costume: '深色旧卫衣',
+      dialogue: '苏焕：别再转圈了。\n画外音：钟表继续走动。',
+      narration: '凌晨两点。',
+      shotPrompt: '电影感特写，50mm，冷白屏幕光，浅景深',
+      negativePrompt: '文字|水印，过曝，错误手指',
+    })
   })
 
   it('uses a storyboard task primary text output as the split source', () => {
