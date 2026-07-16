@@ -104,13 +104,14 @@ describe('SparkDatabase', () => {
     expect(tableNames).toContain('media_generation_tasks')
 
     const canvasAssistant = db.raw
-      .prepare('SELECT name, built_in, enabled, skill_ids_json FROM agents WHERE id = ?')
+      .prepare('SELECT name, built_in, enabled, skill_ids_json, prompt FROM agents WHERE id = ?')
       .get('canvas-assistant-agent') as
       | {
           name: string
           built_in: number
           enabled: number
           skill_ids_json: string
+          prompt: string
         }
       | undefined
     expect(canvasAssistant?.name).toBe('画布助手')
@@ -121,6 +122,9 @@ describe('SparkDatabase', () => {
       'builtin:canvas-studio',
       'builtin:multimedia-use',
     ])
+    expect(canvasAssistant?.prompt).toContain('canvas_get_available_actions')
+    expect(canvasAssistant?.prompt).toContain('canvas_get_production_plan')
+    expect(canvasAssistant?.prompt).toContain('默认只创建并配置操作节点')
   })
 
   it('should not re-apply already applied migrations', () => {

@@ -32,4 +32,13 @@ describe('canvas agent tool schemas', () => {
     expect(schemas.canvas_update_operation_config).toBeDefined()
     expect(schemas.canvas_run_operation?.inputSchema).toHaveProperty('required', ['nodeId'])
   })
+
+  it('exposes dynamic node actions and recommended production planning tools', () => {
+    const schemas = Object.fromEntries(getCanvasToolSchemas().map((tool) => [tool.name, tool]))
+
+    expect(schemas.canvas_get_available_actions).toBeDefined()
+    expect(schemas.canvas_get_available_actions?.inputSchema).toHaveProperty('required', ['nodeId'])
+    expect(schemas.canvas_get_production_plan).toBeDefined()
+    expect(schemas.canvas_get_production_plan?.inputSchema).not.toHaveProperty('required')
+  })
 })

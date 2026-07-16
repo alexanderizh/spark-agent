@@ -15,6 +15,8 @@ export function buildSelectedNodesContext(nodes: CanvasNode[]): string {
     const subtype = getNodeCurrentSubtype(node)
     const parts = [`- 节点 ${node.id} | 类型 ${node.type} | 子类型 ${subtype}`]
     if (node.title) parts.push(`标题「${node.title}」`)
+    if (node.data.pipelineRole) parts.push(`流水线角色 ${node.data.pipelineRole}`)
+    if (node.data.productionState) parts.push(`生产状态 ${node.data.productionState}`)
     if (node.type === 'text' || node.type === 'prompt') {
       const text = node.data.text ?? ''
       const preview =
@@ -32,5 +34,8 @@ export function buildSelectedNodesContext(nodes: CanvasNode[]): string {
     nodes.length > MAX_CONTEXT_NODES
       ? `\n(还有 ${nodes.length - MAX_CONTEXT_NODES} 个选中节点未列出)`
       : ''
-  return `[当前选中节点]\n${lines.join('\n')}${truncated}`
+  return [
+    `[当前选中节点]\n${lines.join('\n')}${truncated}`,
+    '[节点能力使用要求] 针对以上节点行动前，先调用 canvas_get_available_actions；优先使用返回的 pipeline / recommended_flow 动作，不要绕过节点能力自行臆测下一步。',
+  ].join('\n\n')
 }

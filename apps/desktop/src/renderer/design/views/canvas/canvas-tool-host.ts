@@ -28,6 +28,8 @@ import type { CanvasSnapshot } from './canvas.types'
  */
 const READONLY_TOOL_NAMES = new Set<string>([
   'canvas_get_project_summary',
+  'canvas_get_available_actions',
+  'canvas_get_production_plan',
   'canvas_get_node',
   'canvas_get_operation_config',
   'canvas_get_asset',
