@@ -8,11 +8,16 @@
 
 import { createLogger } from '@spark/shared'
 import type { MediaRequestCall } from '@spark/protocol'
-import { toOpenAIResponsesReasoningEffort, type SparkReasoningEffort } from '../sdk/reasoning-effort.js'
+import {
+  toOpenAIResponsesReasoningEffort,
+  type SparkReasoningEffort,
+} from '../sdk/reasoning-effort.js'
 
 const log = createLogger('canvas-text-generator')
 
-const REQUEST_TIMEOUT_MS = 120_000
+const DEFAULT_REQUEST_TIMEOUT_MS = 10 * 60_000
+const MIN_CONFIGURED_REQUEST_TIMEOUT_MS = 10_000
+const MAX_CONFIGURED_REQUEST_TIMEOUT_MS = 30 * 60_000
 const DEFAULT_MAX_TOKENS = 4096
 const ERROR_DETAIL_MAX_LENGTH = 2_000
 const REQUEST_TEXT_MAX_LENGTH = 4_000
@@ -32,6 +37,22 @@ export class CanvasTextProviderError extends Error {
     this.name = 'CanvasTextProviderError'
     this.statusCode = statusCode
     this.responseBody = responseBody
+    this.requestCall = requestCall
+  }
+}
+
+export class CanvasTextTimeoutError extends Error {
+  readonly code = 'request_timeout'
+  readonly timeoutMs: number
+  readonly requestCall?: MediaRequestCall | undefined
+
+  constructor(timeoutMs: number, requestCall?: MediaRequestCall) {
+    const timeoutSeconds = Math.ceil(timeoutMs / 1000)
+    super(
+      `画布文本请求超时（超过 ${timeoutSeconds} 秒）。模型或代理未在时限内完成响应，请降低最大输出长度、减少输入内容，或检查代理性能后重试。`,
+    )
+    this.name = 'CanvasTextTimeoutError'
+    this.timeoutMs = timeoutMs
     this.requestCall = requestCall
   }
 }
@@ -67,6 +88,8 @@ export interface GenerateCanvasTextParams {
   reasoningEffort?: SparkReasoningEffort
   disableThinking?: boolean
   responseFormat?: 'json' | 'text'
+  /** 单次 HTTP 请求超时；缺省读取 SPARK_CANVAS_TEXT_TIMEOUT_MS，默认 10 分钟。 */
+  timeoutMs?: number
 }
 
 export interface CanvasTextTokenUsage {
@@ -102,6 +125,15 @@ export async function generateCanvasText(
       ? { reasoningContentChars: result.reasoningContentChars }
       : {}),
   }
+}
+
+export function resolveCanvasTextRequestTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const configured = Number.parseInt(env.SPARK_CANVAS_TEXT_TIMEOUT_MS ?? '', 10)
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_REQUEST_TIMEOUT_MS
+  return Math.min(
+    MAX_CONFIGURED_REQUEST_TIMEOUT_MS,
+    Math.max(MIN_CONFIGURED_REQUEST_TIMEOUT_MS, configured),
+  )
 }
 
 function isAnthropic(providerType: string): boolean {
@@ -166,15 +198,20 @@ async function callAnthropic(
     ...(params.temperature != null ? { temperature: params.temperature } : {}),
   }
   const requestCall = buildRequestCall('POST', url, body)
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': params.apiKey,
-      'anthropic-version': '2023-06-01',
+  const res = await fetchWithTimeout(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': params.apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  })
+    params.timeoutMs,
+    requestCall,
+  )
   if (!res.ok) {
     const detail = await safeText(res)
     log.warn(`Anthropic text request failed: HTTP ${res.status} ${detail}`)
@@ -230,14 +267,19 @@ async function callOpenAIChatCompletions(
       : {}),
   }
   const requestCall = buildRequestCall('POST', url, body)
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${params.apiKey}`,
+  const res = await fetchWithTimeout(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${params.apiKey}`,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  })
+    params.timeoutMs,
+    requestCall,
+  )
   if (!res.ok) {
     const detail = await safeText(res)
     log.warn(`OpenAI-compatible text request failed: HTTP ${res.status} ${detail}`)
@@ -286,14 +328,19 @@ async function callOpenAIResponses(
     ...(reasoningEffort != null ? { reasoning: { effort: reasoningEffort } } : {}),
   }
   const requestCall = buildRequestCall('POST', url, body)
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${params.apiKey}`,
+  const res = await fetchWithTimeout(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${params.apiKey}`,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  })
+    params.timeoutMs,
+    requestCall,
+  )
   if (!res.ok) {
     const detail = await safeText(res)
     log.warn(`OpenAI Responses text request failed: HTTP ${res.status} ${detail}`)
@@ -413,11 +460,29 @@ function sanitizeRequestBody(value: unknown): unknown {
   return value
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  requestedTimeoutMs: number | undefined,
+  requestCall: MediaRequestCall,
+): Promise<Response> {
+  const timeoutMs =
+    typeof requestedTimeoutMs === 'number' &&
+    Number.isFinite(requestedTimeoutMs) &&
+    requestedTimeoutMs > 0
+      ? Math.floor(requestedTimeoutMs)
+      : resolveCanvasTextRequestTimeoutMs()
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
   try {
     return await fetch(url, { ...init, signal: controller.signal })
+  } catch (err) {
+    if (timedOut) throw new CanvasTextTimeoutError(timeoutMs, requestCall)
+    throw err
   } finally {
     clearTimeout(timer)
   }
@@ -438,7 +503,9 @@ function normalizeTokenUsage(usage: {
 }): CanvasTextTokenUsage {
   return {
     ...(typeof usage.prompt_tokens === 'number' ? { promptTokens: usage.prompt_tokens } : {}),
-    ...(typeof usage.completion_tokens === 'number' ? { completionTokens: usage.completion_tokens } : {}),
+    ...(typeof usage.completion_tokens === 'number'
+      ? { completionTokens: usage.completion_tokens }
+      : {}),
     ...(typeof usage.total_tokens === 'number' ? { totalTokens: usage.total_tokens } : {}),
   }
 }

@@ -1,5 +1,8 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { generateCanvasText } from '../../services/canvas-text-generator.js'
+import {
+  generateCanvasText,
+  resolveCanvasTextRequestTimeoutMs,
+} from '../../services/canvas-text-generator.js'
 
 const PNG_DATA_URL =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
@@ -25,10 +28,57 @@ function stubFetch(
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
 describe('generateCanvasText multimodal', () => {
+  it('uses a 10 minute default timeout and supports a bounded environment override', () => {
+    expect(resolveCanvasTextRequestTimeoutMs({})).toBe(600_000)
+    expect(resolveCanvasTextRequestTimeoutMs({ SPARK_CANVAS_TEXT_TIMEOUT_MS: '900000' })).toBe(
+      900_000,
+    )
+    expect(resolveCanvasTextRequestTimeoutMs({ SPARK_CANVAS_TEXT_TIMEOUT_MS: '1000' })).toBe(10_000)
+    expect(resolveCanvasTextRequestTimeoutMs({ SPARK_CANVAS_TEXT_TIMEOUT_MS: '99999999' })).toBe(
+      1_800_000,
+    )
+  })
+
+  it('converts an internal abort into an explicit canvas timeout error', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, requestInit?: RequestInit) => {
+        return new Promise<Response>((_resolve, reject) => {
+          requestInit?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('This operation was aborted', 'AbortError'))
+          })
+        })
+      }),
+    )
+
+    const pending = generateCanvasText({
+      providerType: 'openai',
+      apiKey: 'sk-x',
+      apiEndpoint: 'https://api.example.com/v1',
+      model: 'gpt-5.4',
+      prompt: '生成剧本',
+      timeoutMs: 25,
+    })
+    const assertion = expect(pending).rejects.toMatchObject({
+      name: 'CanvasTextTimeoutError',
+      code: 'request_timeout',
+      timeoutMs: 25,
+      message: expect.stringContaining('画布文本请求超时'),
+      requestCall: {
+        method: 'POST',
+        url: 'https://api.example.com/v1/chat/completions',
+      },
+    })
+    await vi.advanceTimersByTimeAsync(25)
+    await assertion
+  })
+
   it('OpenAI-compatible: 纯文本时 user content 仍是字符串', async () => {
     const captured = stubFetch({
       choices: [{ message: { content: '一段风格描述' }, finish_reason: 'stop' }],

@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   buildCanvasTextRawResponse,
   CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
+  CANVAS_TEXT_ROLE_MAX_TOKENS,
   resolveCanvasTextMaxTokens,
   resolveCanvasTextTokenBudget,
 } from './canvasTextTaskDiagnostics.js'
 
 describe('canvasTextTaskDiagnostics', () => {
-  it('uses the configured provider context window with a 15% reserve', () => {
+  it('caps storyboard output independently from a very large provider context window', () => {
     expect(
       resolveCanvasTextTokenBudget({
         providerContextWindow: 1_000_000,
@@ -15,11 +16,25 @@ describe('canvasTextTaskDiagnostics', () => {
         prompt: '短场次剧本',
       }),
     ).toMatchObject({
-      maxTokens: 850_000,
-      source: 'context_window_derived',
+      maxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.shot,
+      source: 'task_role_cap',
       providerContextWindow: 1_000_000,
+      taskRoleMaxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.shot,
       contextWindow: 1_000_000,
       contextReserveRatio: CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
+    })
+  })
+
+  it('uses a smaller dedicated cap for screenplay rewriting', () => {
+    expect(
+      resolveCanvasTextTokenBudget({
+        taskPipelineRole: 'screenplay',
+        prompt: '把章节改写成剧本',
+      }),
+    ).toMatchObject({
+      maxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.screenplay,
+      source: 'task_role_cap',
+      taskRoleMaxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.screenplay,
     })
   })
 
@@ -98,10 +113,12 @@ describe('canvasTextTaskDiagnostics', () => {
       relationManifest: [],
       taskPipelineRole: 'shot',
       outputText: '{"shots":[{"index":1},{"index":2}',
-      effectiveMaxTokens: 850_000,
-      maxTokensSource: 'context_window_derived',
+      effectiveMaxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.shot,
+      maxTokensSource: 'task_role_cap',
+      taskRoleMaxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.shot,
       contextWindow: 1_000_000,
       contextReserveRatio: CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
+      requestTimeoutMs: 600_000,
       providerFinishReason: 'length',
       reasoningContentChars: 24_000,
     })
@@ -111,10 +128,12 @@ describe('canvasTextTaskDiagnostics', () => {
     expect(raw).toMatchObject({
       providerProfileId: 'provider-1',
       model: 'deepseek-v4-flash',
-      maxTokens: 850_000,
-      maxTokensSource: 'context_window_derived',
+      maxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.shot,
+      maxTokensSource: 'task_role_cap',
+      taskRoleMaxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.shot,
       contextWindow: 1_000_000,
       contextReserveRatio: CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
+      requestTimeoutMs: 600_000,
       providerFinishReason: 'length',
       reasoningContentChars: 24_000,
       truncation: {

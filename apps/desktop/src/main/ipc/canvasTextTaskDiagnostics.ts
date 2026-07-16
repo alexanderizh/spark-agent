@@ -4,7 +4,16 @@ import { resolveProviderContextWindow } from '@spark/shared'
 export const CANVAS_TEXT_CONTEXT_RESERVE_RATIO = 0.15
 const CANVAS_TEXT_CONTEXT_BUDGET_RATIO = 1 - CANVAS_TEXT_CONTEXT_RESERVE_RATIO
 
-export type CanvasTextMaxTokensSource = 'request' | 'provider_profile' | 'context_window_derived'
+export type CanvasTextMaxTokensSource =
+  | 'request'
+  | 'provider_profile'
+  | 'task_role_cap'
+  | 'context_window_derived'
+
+export const CANVAS_TEXT_ROLE_MAX_TOKENS = {
+  screenplay: 24_576,
+  shot: 32_768,
+} as const
 
 export type CanvasTextTokenBudget = {
   maxTokens?: number
@@ -12,6 +21,7 @@ export type CanvasTextTokenBudget = {
   promptTokensEstimate?: number
   providerMaxTokens?: number
   providerContextWindow?: number
+  taskRoleMaxTokens?: number
   contextWindow?: number
   contextReserveRatio?: number
 }
@@ -35,8 +45,10 @@ type CanvasTextRawResponseInput = {
   promptTokensEstimate?: number | undefined
   providerMaxTokens?: number | undefined
   providerContextWindow?: number | undefined
+  taskRoleMaxTokens?: number | undefined
   contextWindow?: number | undefined
   contextReserveRatio?: number | undefined
+  requestTimeoutMs?: number | undefined
   providerFinishReason?: string | undefined
   usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined
   reasoningContentChars?: number | undefined
@@ -57,6 +69,7 @@ export function resolveCanvasTextTokenBudget(input: {
     input.providerContextWindow,
   )
   const promptTokensEstimate = estimatePromptTokens(input.prompt)
+  const taskRoleMaxTokens = resolveTaskRoleMaxTokens(input.taskPipelineRole)
 
   // contextWindow 是输入 + 输出的总窗口。输出预算最多使用 85%，
   // 同时不能挤占当前 prompt 已经占用的空间。
@@ -67,24 +80,29 @@ export function resolveCanvasTextTokenBudget(input: {
       providerContextWindow - promptTokensEstimate,
     ),
   )
-  const limits = [contextDerivedMaxTokens, providerMaxTokens, requested].filter(
-    (value): value is number => value != null,
+  const constraints: Array<{ value: number; source: CanvasTextMaxTokensSource }> = [
+    { value: contextDerivedMaxTokens, source: 'context_window_derived' },
+    ...(taskRoleMaxTokens != null
+      ? [{ value: taskRoleMaxTokens, source: 'task_role_cap' as const }]
+      : []),
+    ...(providerMaxTokens != null
+      ? [{ value: providerMaxTokens, source: 'provider_profile' as const }]
+      : []),
+    ...(requested != null ? [{ value: requested, source: 'request' as const }] : []),
+  ]
+  const effective = constraints.reduce((smallest, item) =>
+    item.value < smallest.value ? item : smallest,
   )
-  const source: CanvasTextMaxTokensSource =
-    requested != null
-      ? 'request'
-      : providerMaxTokens != null
-        ? 'provider_profile'
-        : 'context_window_derived'
 
   return {
-    maxTokens: Math.max(1, Math.min(...limits)),
-    source,
+    maxTokens: Math.max(1, effective.value),
+    source: effective.source,
     promptTokensEstimate,
     providerContextWindow,
     contextWindow: providerContextWindow,
     contextReserveRatio: CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
     ...(providerMaxTokens != null ? { providerMaxTokens } : {}),
+    ...(taskRoleMaxTokens != null ? { taskRoleMaxTokens } : {}),
   }
 }
 
@@ -121,10 +139,14 @@ export function buildCanvasTextRawResponse(
     ...(input.providerContextWindow !== undefined
       ? { providerContextWindow: input.providerContextWindow }
       : {}),
+    ...(input.taskRoleMaxTokens !== undefined
+      ? { taskRoleMaxTokens: input.taskRoleMaxTokens }
+      : {}),
     ...(input.contextWindow !== undefined ? { contextWindow: input.contextWindow } : {}),
     ...(input.contextReserveRatio !== undefined
       ? { contextReserveRatio: input.contextReserveRatio }
       : {}),
+    ...(input.requestTimeoutMs !== undefined ? { requestTimeoutMs: input.requestTimeoutMs } : {}),
     ...(input.providerFinishReason !== undefined
       ? { providerFinishReason: input.providerFinishReason }
       : {}),
@@ -144,6 +166,12 @@ export function buildCanvasTextRawResponse(
 function sanitizePositiveInteger(value: number | undefined): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
   return Math.max(1, Math.floor(value))
+}
+
+function resolveTaskRoleMaxTokens(taskPipelineRole: string | null | undefined): number | undefined {
+  if (taskPipelineRole === 'screenplay') return CANVAS_TEXT_ROLE_MAX_TOKENS.screenplay
+  if (taskPipelineRole === 'shot') return CANVAS_TEXT_ROLE_MAX_TOKENS.shot
+  return undefined
 }
 
 function detectCanvasTextTruncation(
@@ -201,7 +229,7 @@ function estimatePromptTokens(text: string): number {
       tokens += 0.8
       continue
     }
-    if (/[\x00-\x7f]/.test(char)) {
+    if ((char.codePointAt(0) ?? 0) <= 0x7f) {
       tokens += 0.35
       continue
     }

@@ -8,7 +8,9 @@ export {
 } from './services/provider-credential-resolver.js'
 export {
   CanvasTextProviderError,
+  CanvasTextTimeoutError,
   generateCanvasText,
+  resolveCanvasTextRequestTimeoutMs,
   type GenerateCanvasTextParams,
   type GenerateCanvasTextResult,
 } from './services/canvas-text-generator.js'
