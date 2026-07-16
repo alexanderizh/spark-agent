@@ -23,6 +23,11 @@ import type {
 import type { CreateFilmAssetInput, ShotGroup, ShotSegment } from './canvasFilmAssets'
 import type { SessionReasoningEffort } from '@spark/protocol'
 import { getCanvasCapability, isOperationNode, nodeOperation } from './canvas.capabilities'
+import {
+  getCanvasAgentAvailableActions,
+  resolveNodeAssetKinds,
+} from './canvasAgentCapabilities'
+import { buildCanvasAgentProductionPlan } from './canvasAgentProductionPlan'
 
 type JSONSchema = Record<string, unknown>
 
@@ -426,6 +431,47 @@ const tools: CanvasToolDescriptor[] = [
     handler: async (ctx, input: { prompt?: string; negativePrompt?: string }) => {
       await ctx.workspace.updateProjectSettings(input)
       return { ok: true }
+    },
+  },
+
+  {
+    name: 'canvas_get_available_actions',
+    description:
+      '获取指定节点当前可用的完整能力目录：剧本流水线、推荐影视流程、通用生成、编辑整理和 UI 专属右键功能。针对节点操作前优先调用。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeId'],
+      properties: { nodeId: string('节点 id') },
+    },
+    handler: async (ctx, input: { nodeId: string }) => {
+      const snap = requireSnapshot(ctx)
+      const node = findNode(snap, input.nodeId)
+      const assetKinds = resolveNodeAssetKinds(node, snap.assets)
+      return {
+        node: summarizeNodeLite(node),
+        actions: getCanvasAgentAvailableActions(node, { assetKinds }),
+        usage: {
+          preferredOrder: [
+            '先选择 pipeline 或 recommended_flow 动作',
+            '再使用 create_operation_node 创建可检查的操作节点',
+            '只有用户明确要求立即执行时才运行媒体任务',
+          ],
+        },
+      }
+    },
+  },
+  {
+    name: 'canvas_get_production_plan',
+    description:
+      '根据当前画布实时状态生成影视/短剧推荐制作计划、阻塞项和下一步。收到“制作短剧/继续制作/下一步”等宽泛请求时，在创建节点前调用。',
+    paramsSchema: { type: 'object', properties: {} },
+    handler: async (ctx) => {
+      const snap = requireSnapshot(ctx)
+      return buildCanvasAgentProductionPlan({
+        assets: snap.assets,
+        nodes: snap.nodes,
+        metadata: snap.project.metadata,
+      })
     },
   },
 

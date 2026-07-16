@@ -1,7 +1,7 @@
 ---
 name: 画布工作室
 description: '用 mcp__spark_canvas__* 工具操作 SparkWork 的无限画布。凡是用户提到画布、节点、素材、影视资产、文稿拆章、剧本拆解、角色/场景/道具/特效设定、分镜、关键帧、首尾帧视频、360 全景图、导演台构图、宫格切分、图片标注、成片清单或把 Agent 产物放回画布，都应优先加载本技能并使用 spark_canvas 工具，而不是只用普通对话描述。'
-version: 1.3.1
+version: 1.4.0
 author: Spark AI
 category: utility
 tags:
@@ -83,6 +83,14 @@ CanvasProject
 
 ## 黄金规则
 
+### 能力发现与推荐流程（强制）
+
+- 用户提出“制作短剧 / 做视频 / 继续制作 / 下一步做什么”等宽泛目标时，在创建节点前先调用 `canvas_get_project_summary` 和 `canvas_get_production_plan`，按返回的阶段、阻塞项和 `nextActions` 推进。
+- 用户针对某个节点说“处理这个 / 用这个继续 / 这个能做什么”时，先调用 `canvas_get_available_actions({nodeId})`。优先使用 `source=pipeline` 或 `source=recommended_flow` 的动作，再考虑通用生成操作。
+- `execution=create_operation_node` 表示应创建并连接一个可检查的操作节点；默认不要立即运行。只有用户明确说“直接生成 / 立即执行 / 帮我跑完”时才调用 `canvas_run_operation`。
+- `execution=requires_user_interaction` 表示当前能力依赖图片标注、宫格切分、全景预览、视频工作台或 3D 导演台等交互式 UI；应准确告诉用户右键入口，不要伪造工具调用或假装已完成。
+- 影视生产顺序遵循制作计划：文稿/剧本 → 角色与场景 → 身份板/场景图 → 重点场景全景 → 分集 → 按集分镜 → 镜头资产齐套 → 关键帧 → 视频节点 → EDL。不得因为用户只说“制作短剧”就跳过上游直接创建视频。
+
 1. **先查后改**：任何编辑前先调用 `canvas_get_project_summary`，需要细节再 `canvas_list_nodes`、`canvas_get_node`、`canvas_list_assets` 或 `canvas_list_shot_groups`。
 2. **只操作当前画布**：节点/任务默认作用于当前打开的画布。不要尝试创建、删除、复制、重命名或切换画板；如果用户提出多画板需求，说明当前 UI 暂未开放，建议先在当前画布用分组、区域和命名整理。
 3. **不要凭空重复建资产**：影视资产先 `canvas_search_assets` 或 `canvas_list_assets({kind})` 去重；同名同 kind 资产优先复用。
@@ -96,12 +104,14 @@ CanvasProject
 ### 项目 / 当前画布
 
 - `canvas_get_project_summary`：项目概览。编辑前先用。
+- `canvas_get_production_plan`：根据实时资产、节点和分镜状态返回当前制作阶段、阻塞项与推荐下一步。宽泛影视任务创建节点前先用。
 - `canvas_update_project_settings(prompt?, negativePrompt?)`：项目级默认提示词/反向提示词。
 - 多画板管理工具当前不对 Agent 开放；不要调用或假设存在 `canvas_create_board`、`canvas_switch_board` 等画板工具。
 
 ### 节点 / 连线 / 分组
 
 - `canvas_list_nodes(type?, includeHidden?)`、`canvas_get_node(nodeId)`、`canvas_find_nodes(query)`、`canvas_list_group_members(groupId)`。
+- `canvas_get_available_actions(nodeId)`：读取该节点当前可用的流水线动作、推荐流程、通用生成和 UI 右键能力。针对节点行动前先用。
 - `canvas_get_operation_config(nodeId)`：读取 AI 操作节点的当前配置、关联任务、连线输入和能力约束。
 - `canvas_create_text_node(text, x?, y?)`、`canvas_create_prompt_node(prompt, title?, x?, y?)`。
 - `canvas_update_node_data(nodeId, data)`：可写 `text/prompt/negativePrompt/modelParams/agentId/providerProfileId/manifestId/modelId/reasoningEffort/skillIds/pipelineRole/outputPipelineRole/productionState/shotGroupId/shotSegmentId` 等字段。
