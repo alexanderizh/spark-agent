@@ -1366,6 +1366,43 @@ describe('SessionService runtime provider/model resolution', () => {
     )
   })
 
+  it('broadcasts the locally derived title for a new session first turn', async () => {
+    seedProvider({
+      id: 'local-codex-cli',
+      provider_type: 'openai',
+      name: 'Local Codex CLI',
+      config_json: JSON.stringify({
+        defaultModel: 'codex cli',
+        modelIds: ['codex cli'],
+      }),
+      keystore_ref: null,
+      is_default: 0,
+    })
+    const onSessionRenamed = vi.fn()
+    const service = new SessionService(
+      {} as never,
+      (event) => events.push(event),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      onSessionRenamed,
+    )
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'local-codex-cli',
+      modelId: 'codex cli',
+      agentAdapter: 'codex',
+      permissionMode: 'codex-default',
+      title: '新会话',
+    })
+
+    await service.sendTurn({ sessionId, message: '修复 Codex CLI 重复输出问题' })
+
+    expect(mockState.sessions.get(sessionId)?.title).toBe('修复 Codex CLI 重复输出问题')
+    expect(onSessionRenamed).toHaveBeenCalledWith(sessionId, '修复 Codex CLI 重复输出问题')
+  })
+
   it('passes the application hook bridge into Claude SDK turns', async () => {
     const onHookTrigger = vi.fn()
     const service = new SessionService(

@@ -870,6 +870,68 @@ describe('CodexCliExecutor', () => {
     ])
   })
 
+  it('keeps consecutive completed agent-message items in separate segments', async () => {
+    spawnMock.mockImplementation(
+      (_command: string, args: string[]) =>
+        new MockChildProcess(args, [
+          '{"type":"item.completed","item":{"id":"msg-1","type":"agent_message","text":"检查结果：工作区干净。"}}',
+          '{"type":"item.completed","item":{"id":"msg-2","type":"agent_message","text":"执行被环境权限拦截。"}}',
+        ]),
+    )
+
+    const events: Array<{
+      mode: string
+      content: string
+      isFinal: boolean
+      segmentId?: string
+    }> = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (event.type !== 'assistant_message') return
+      events.push({
+        mode: event.mode,
+        content: event.content,
+        isFinal: event.isFinal,
+        ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+      })
+    })
+
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      {
+        mode: 'delta',
+        content: '检查结果：工作区干净。',
+        isFinal: false,
+        segmentId: 'codex-turn-1-text-1',
+      },
+      {
+        mode: 'complete',
+        content: '检查结果：工作区干净。',
+        isFinal: false,
+        segmentId: 'codex-turn-1-text-1',
+      },
+      {
+        mode: 'delta',
+        content: '执行被环境权限拦截。',
+        isFinal: false,
+        segmentId: 'codex-turn-1-text-2',
+      },
+      {
+        mode: 'complete',
+        content: '执行被环境权限拦截。',
+        isFinal: false,
+        segmentId: 'codex-turn-1-text-2',
+      },
+      {
+        mode: 'complete',
+        content: '检查结果：工作区干净。\n\n执行被环境权限拦截。',
+        isFinal: true,
+        segmentId: 'codex-turn-1',
+      },
+    ])
+  })
+
   it('does not surface structured Codex JSONL as terminal output', async () => {
     spawnMock.mockImplementation(
       (_command: string, args: string[]) =>

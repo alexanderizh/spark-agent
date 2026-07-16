@@ -35,6 +35,7 @@ type CodexTempProfile = {
 type CodexStreamState = {
   content: string
   thinking: string
+  currentTextItemId: string | null
   currentTextSegmentId: string | null
   textSegmentCounter: number
   completedTextBySegmentId: Map<string, string>
@@ -255,6 +256,7 @@ export class CodexCliExecutor {
       const streamState: CodexStreamState = {
         content: '',
         thinking: '',
+        currentTextItemId: null,
         currentTextSegmentId: null,
         textSegmentCounter: 0,
         completedTextBySegmentId: new Map(),
@@ -997,8 +999,28 @@ function dispatchCodexEvent(
       resetCurrentTextSegment(state)
       state.toolCalledSinceContent = false
     }
-    const segmentId = currentTextSegmentId(state, makeBase().turnId)
     const text = (findText(record.text) ?? findText(record.content) ?? '').replace(/\r?\n$/, '')
+    const itemId = typeof record.id === 'string' && record.id.length > 0 ? record.id : null
+    // CLI 可连续发出多个 agent_message item，中间不一定有可识别的工具事件。
+    // 若继续复用同一 segment，前端会把两条正文拼成一块，而最终汇总又缺少前一条，
+    // 导致 reconcileFinalText 无法去重并追加一份近似全文。
+    const currentSegmentCompleted =
+      state.currentTextSegmentId != null &&
+      state.completedTextBySegmentId.has(state.currentTextSegmentId)
+    const itemChanged =
+      itemId != null && state.currentTextItemId != null && itemId !== state.currentTextItemId
+    const unidentifiedCompletedItemChanged =
+      itemId == null &&
+      currentSegmentCompleted &&
+      text.length > 0 &&
+      !text.startsWith(state.content) &&
+      !state.content.startsWith(text)
+    if (itemChanged || unidentifiedCompletedItemChanged) {
+      completeCurrentTextSegment(state)
+      resetCurrentTextSegment(state)
+    }
+    if (itemId != null) state.currentTextItemId = itemId
+    const segmentId = currentTextSegmentId(state, makeBase().turnId)
     const delta = computeDelta(text, state.content)
     if (delta.length > 0) {
       emit({
@@ -1305,6 +1327,7 @@ function completeCurrentTextSegment(state: CodexStreamState): void {
 
 function resetCurrentTextSegment(state: CodexStreamState): void {
   state.content = ''
+  state.currentTextItemId = null
   state.currentTextSegmentId = null
 }
 

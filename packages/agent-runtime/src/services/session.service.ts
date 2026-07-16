@@ -1704,7 +1704,9 @@ export class SessionService {
       })
     const isFirstTurn = existingEventCount === 0 && shouldDeriveSessionTitle(session.title)
     if (isFirstTurn) {
-      sessionRepo.updateTitle(sessionId, deriveSessionTitle(message))
+      const derivedTitle = deriveSessionTitle(message)
+      sessionRepo.updateTitle(sessionId, derivedTitle)
+      this.onSessionRenamed?.(sessionId, derivedTitle)
     }
     let effectiveRuntimeProviderProfileId = effectiveProviderProfileId
     const modelProfilesForRouting = new ModelProfileRepository(this.db).list()
