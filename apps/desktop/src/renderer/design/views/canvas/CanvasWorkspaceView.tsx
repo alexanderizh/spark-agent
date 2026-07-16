@@ -116,6 +116,7 @@ import { resolveCanvasPipelineTextSource } from './canvasWorkspaceTaskInput'
 import {
   formatStoryboardCameraParamsForEditor,
   formatStoryboardRowsAsMarkdown,
+  resolveStoryboardRowsForEditing,
   updateStoryboardCameraParams,
 } from './canvasTextInputPresentation'
 import {
@@ -7545,6 +7546,7 @@ export function CanvasWorkspaceView({
           open={Boolean(editingNodeId)}
           assets={snapshot.assets}
           tasks={snapshot.tasks}
+          nodes={snapshot.nodes}
           placement="inline"
           onClose={() => {
             setEditingNodeId(null)
@@ -9003,6 +9005,7 @@ function CanvasNodeEditModal({
   open,
   assets,
   tasks,
+  nodes,
   placement = 'floating',
   onClose,
   onSave,
@@ -9011,6 +9014,7 @@ function CanvasNodeEditModal({
   open: boolean
   assets: CanvasAsset[]
   tasks: CanvasTask[]
+  nodes: CanvasNode[]
   placement?: 'floating' | 'inline'
   onClose: () => void
   onSave: (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => Promise<void>
@@ -9042,10 +9046,10 @@ function CanvasNodeEditModal({
     setNegativePrompt('')
     setMessageText(node.data.message ?? '')
     setUrl(node.data.url ?? '')
-    setShotRows(parseShotTable(node.data.text ?? ''))
+    setShotRows(resolveStoryboardRowsForEditing(node.data.text ?? '', nodes))
     setOptimizeModalOpen(false)
     setOptimizeRequirement('')
-  }, [node])
+  }, [node, nodes])
 
   const insertPromptText = (fragment: string) => {
     setText((current) => appendPromptFragment(current, fragment))
