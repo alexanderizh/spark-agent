@@ -7846,8 +7846,8 @@ export function CanvasWorkspaceView({
             {...(snapshot.project.settings ? { projectSettings: snapshot.project.settings } : {})}
             onUploadImage={() => uploadFirstImage()}
             onClose={() => setInlineAiOpen(false)}
-            onCreateTask={(input) => {
-              void handleCreateTask(input)
+            onCreateTask={async (input) => {
+              await handleCreateTask(input)
               setInlineAiOpen(false)
             }}
           />

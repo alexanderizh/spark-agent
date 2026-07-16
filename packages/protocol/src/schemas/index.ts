@@ -1055,12 +1055,20 @@ export const IpcSchemaRegistry = {
     manifestId: z.string().min(1).max(160),
     providerProfileId: z.string().min(1).max(200).optional(),
     capabilityId: z.string().min(1).max(120),
+    modelId: z.string().min(1).max(200).optional(),
+    prompt: z.string().max(100_000).optional(),
+    validateSubmission: z.boolean().optional(),
     modelParams: z.record(z.unknown()),
     inputFiles: z
       .array(
         z.object({
-          type: z.string().min(1).max(40),
-          role: z.string().min(1).max(40).optional(),
+          type: z.enum(['image', 'audio', 'video', 'file']),
+          role: z.enum(['input', 'first_frame', 'last_frame', 'reference', 'mask']).optional(),
+          fileId: z.string().min(1).max(300).optional(),
+          path: z.string().max(2000).optional(),
+          url: z.string().max(4000).optional(),
+          dataUrl: z.string().max(2000).optional(),
+          mimeType: z.string().max(160).optional(),
         }),
       )
       .max(64)

@@ -1,0 +1,107 @@
+import type { MediaContractIssue, MediaManifestInputKind } from '@spark/protocol'
+import {
+  imageInputFiles,
+  inputFilesOfKind,
+  promptText,
+  validationIssue,
+  type MediaValidationContext,
+} from './media-validator.types.js'
+
+export function validateCommonMediaRequest(context: MediaValidationContext): MediaContractIssue[] {
+  const issues: MediaContractIssue[] = []
+  const capability = context.manifestCapability
+  const files = context.input.inputFiles ?? []
+
+  for (const [index, file] of files.entries()) {
+    if (file.dataUrl && !/^data:[^;,]+;base64,.+$/is.test(file.dataUrl)) {
+      issues.push(
+        validationIssue('invalid_type', `第 ${index + 1} 个输入文件的 dataUrl 格式无效`, [
+          'inputFiles',
+          index,
+          'dataUrl',
+        ]),
+      )
+    }
+  }
+
+  if (capability) {
+    for (const required of capability.input.required) {
+      if (!hasRequiredInput(context, required)) {
+        issues.push(
+          validationIssue(
+            'missing_required',
+            `模型 ${context.modelId} 的 ${capability.label} 缺少必需输入：${required}`,
+            required === 'prompt' || required === 'text' ? ['prompt'] : ['inputFiles', required],
+          ),
+        )
+      }
+    }
+
+    const images = imageInputFiles(context)
+    if (capability.input.maxImages != null && images.length > capability.input.maxImages) {
+      issues.push(
+        validationIssue(
+          'out_of_range',
+          `模型 ${context.modelId} 最多支持 ${capability.input.maxImages} 张图片，当前选择了 ${images.length} 张`,
+          ['inputFiles'],
+        ),
+      )
+    }
+
+    const acceptedMimeTypes = capability.input.acceptedMimeTypes ?? []
+    if (acceptedMimeTypes.length > 0) {
+      for (const [index, file] of files.entries()) {
+        if (!file.mimeType || acceptedMimeTypes.includes(file.mimeType)) continue
+        issues.push(
+          validationIssue(
+            'invalid_enum',
+            `模型 ${context.modelId} 不支持输入格式 ${file.mimeType}`,
+            ['inputFiles', index, 'mimeType'],
+          ),
+        )
+      }
+    }
+  }
+
+  const maxPromptLength = context.manifest?.safety?.maxPromptLength
+  const prompt = context.input.prompt ?? ''
+  if (maxPromptLength != null && prompt.length > maxPromptLength) {
+    issues.push(
+      validationIssue(
+        'out_of_range',
+        `提示词长度不能超过 ${maxPromptLength} 个字符，当前为 ${prompt.length} 个字符`,
+        ['prompt'],
+      ),
+    )
+  }
+
+  if (context.manifest?.safety?.allowLocalFiles === false) {
+    for (const [index, file] of files.entries()) {
+      if (!file.path) continue
+      issues.push(
+        validationIssue('forbidden_param', `模型 ${context.modelId} 不允许直接使用本地文件路径`, [
+          'inputFiles',
+          index,
+          'path',
+        ]),
+      )
+    }
+  }
+
+  return issues
+}
+
+function hasRequiredInput(
+  context: MediaValidationContext,
+  required: MediaManifestInputKind,
+): boolean {
+  if (required === 'prompt' || required === 'text') return promptText(context).length > 0
+  if (required === 'image' || required === 'images') return imageInputFiles(context).length > 0
+  if (required === 'video') return inputFilesOfKind(context, 'video').length > 0
+  if (required === 'audio') return inputFilesOfKind(context, 'audio').length > 0
+  if (required === 'file') return (context.input.inputFiles ?? []).length > 0
+  if (required === 'mask') {
+    return (context.input.inputFiles ?? []).some((file) => file.role === 'mask')
+  }
+  return true
+}

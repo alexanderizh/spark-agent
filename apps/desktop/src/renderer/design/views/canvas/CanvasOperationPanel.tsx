@@ -47,6 +47,7 @@ import { canvasApi } from './canvas.api'
 import { expandCanvasInputNodes } from './canvasWorkspaceTaskInput'
 import { readCanvasTextInputContent } from './canvasTextInputPresentation'
 import { confirmVideoSubmission, isVideoSubmissionOperation } from './canvasVideoSubmissionGate'
+import { CanvasTaskValidationError } from './canvasTaskSubmissionValidation'
 import {
   buildCustomModelParams,
   buildModelParams,
@@ -1349,7 +1350,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       })
     } catch (error) {
       console.error('[CanvasOperationPanel] Failed to run operation node:', error)
-      message.error('提交任务失败，请调整参数后重试')
+      if (error instanceof CanvasTaskValidationError) {
+        message.error(error.message)
+      } else {
+        message.error(error instanceof Error ? error.message : '提交任务失败，请调整参数后重试')
+      }
     } finally {
       setRunning(false)
       setSubmitting(false)

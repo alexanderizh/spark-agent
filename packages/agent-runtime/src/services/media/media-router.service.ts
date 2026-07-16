@@ -37,6 +37,7 @@ import { TemplateMediaAdapter } from './adapters/template-media.adapter.js'
 import { GoogleGenerativeAiMediaAdapter } from './adapters/google-generative-ai-media.adapter.js'
 import { MidjourneyMediaAdapter } from './adapters/midjourney-media.adapter.js'
 import { compactForLog } from './media-debug-log.js'
+import { validateMediaRequest } from './media-request-validator.js'
 
 /**
  * 最小化 provider profile 视图：router 只关心调用所需的字段，
@@ -210,6 +211,22 @@ export class MediaRouterService {
     const manifestMatch = resolveManifestMatch(chosen, capability, manifestOptions)
     const effectiveModelId = options.modelId ?? manifestMatch?.manifest.modelId ?? chosen.defaultModel
     const kind = effectiveProviderKind(chosen)
+    const validation = validateMediaRequest({
+      input: { ...input, capability },
+      providerKind: kind ?? 'custom',
+      modelId: effectiveModelId,
+      capability,
+      ...(manifestMatch?.manifest ? { manifest: manifestMatch.manifest } : {}),
+      ...(manifestMatch?.capability
+        ? { manifestCapability: manifestMatch.capability }
+        : {}),
+      ...(chosen.mediaDefaults ? { providerDefaults: chosen.mediaDefaults } : {}),
+      mode: 'adapter',
+    })
+    const blockingIssue = validation.blockingIssues[0]
+    if (blockingIssue) {
+      throw new MediaProviderError('invalid_input', blockingIssue.message)
+    }
     const adapter = kind ? this.adapters.get(kind) : undefined
     const shouldUseManifestAdapter = Boolean(manifestMatch && (!adapter || !adapter.supports(capability) || kind === 'custom'))
     // 包装 fetch，捕获发给 provider 的请求（method + url + body），用于任务详情展示。

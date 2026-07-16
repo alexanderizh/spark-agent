@@ -4700,12 +4700,15 @@ export interface CanvasMediaPruneModelParamsRequest {
   manifestId: string
   providerProfileId?: string | undefined
   capabilityId: string
+  modelId?: string | undefined
+  prompt?: string | undefined
+  validateSubmission?: boolean | undefined
   modelParams: Record<string, unknown>
   /**
-   * 输入文件类型摘要，供 conditionals.drop_when_input_kind 判定（如 image_to_video
-   * 场景下禁止 maxImages 等）。仅传 type/role 字符串数组，避免传整个文件 buffer。
+   * 最终提交预校验会携带输入文件的传输描述，供供应商校验 URL、dataUrl 摘要、本地
+   * 路径及 conditionals.drop_when_input_kind；不传原始 Buffer 或完整 base64。
    */
-  inputFiles?: Array<{ type: string; role?: string | undefined }> | undefined
+  inputFiles?: CanvasMediaTaskInputFile[] | undefined
 }
 
 export interface CanvasMediaPruneModelParamsResponse {
