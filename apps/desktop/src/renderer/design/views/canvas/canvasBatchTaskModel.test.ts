@@ -47,7 +47,8 @@ describe('canvasBatchTaskModel', () => {
     ).toEqual({
       canBatchConfigure: true,
       canBatchSubmit: true,
-      reason: null,
+      configureReason: null,
+      submitReason: null,
       taskNodeIds: ['image-task', 'video-task'],
       operationCount: 2,
     })
@@ -60,7 +61,8 @@ describe('canvasBatchTaskModel', () => {
     ).toMatchObject({
       canBatchConfigure: false,
       canBatchSubmit: false,
-      reason: '仅支持同时选择任务节点',
+      configureReason: '仅支持同时选择任务节点',
+      submitReason: '仅支持同时选择任务节点',
       taskNodeIds: ['image-task'],
     })
   })
@@ -137,4 +139,5 @@ describe('canvasBatchTaskModel', () => {
       ]),
     ).toEqual(['a', 'b'])
   })
+
 })

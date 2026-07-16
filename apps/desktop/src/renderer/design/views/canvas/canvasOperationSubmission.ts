@@ -65,6 +65,7 @@ export async function prepareSavedCanvasOperationSubmission(
 ): Promise<PreparedCanvasOperationSubmission> {
   const { node, snapshot } = input
   if (!isOperationNode(node)) throw new Error('所选节点不是任务节点')
+  if (node.data.status === 'running') throw new Error('任务正在运行')
   const operation = nodeOperation(node)
   if (!operation) throw new Error('任务节点缺少操作类型')
   const workflow = node.data.modelParams?.workflow

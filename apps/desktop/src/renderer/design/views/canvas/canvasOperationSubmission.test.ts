@@ -269,4 +269,24 @@ describe('canvasOperationSubmission', () => {
       ),
     ).rejects.toThrow('该流水线任务需单独运行')
   })
+
+  it('blocks a running node before compiling submission inputs', async () => {
+    const current = snapshot(
+      operationNode({
+        data: {
+          prompt: '让画面动起来',
+          status: 'running',
+        },
+      }),
+    )
+    const deps = dependencies()
+
+    await expect(
+      prepareSavedCanvasOperationSubmission(
+        { snapshot: current, node: current.nodes[1]! },
+        deps,
+      ),
+    ).rejects.toThrow('任务正在运行')
+    expect(deps.compile).not.toHaveBeenCalled()
+  })
 })

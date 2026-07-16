@@ -124,6 +124,7 @@ export function CanvasBatchTaskPanel({
     operation,
     entries: sortEntriesByIssues(
       groupEntries.filter((entry) =>
+        issueCountByNodeId.has(entry.nodeId) ||
         entry.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
       ),
       issueCountByNodeId,
@@ -170,6 +171,7 @@ export function CanvasBatchTaskPanel({
         />
       ) : state.mode === 'result' ? (
         <ResultView
+          entries={entries}
           results={state.results}
           onRetryFailed={onRetryFailed}
           onClose={closePanel}
@@ -379,13 +381,14 @@ function BatchConfigurationEditor({
   )
   const modelIdentity = commonRuntimeIdentity(entries)
   const selectedModel =
-    supportedModels.find(
-      (model) =>
-        (!modelIdentity.providerProfileId ||
-          model.providerProfileId === modelIdentity.providerProfileId) &&
-        (!modelIdentity.manifestId || model.manifestId === modelIdentity.manifestId) &&
-        (!modelIdentity.modelId || model.effectiveModelId === modelIdentity.modelId),
-    ) ?? null
+    modelIdentity.manifestId && modelIdentity.modelId
+      ? supportedModels.find(
+          (model) =>
+            model.providerProfileId === modelIdentity.providerProfileId &&
+            model.manifestId === modelIdentity.manifestId &&
+            model.effectiveModelId === modelIdentity.modelId,
+        ) ?? null
+      : null
   const selectedCapability =
     selectedModel?.capabilities.find((capability) =>
       (capabilityIds as readonly string[]).includes(capability.id),
@@ -590,16 +593,19 @@ function ConfirmView({
 }
 
 function ResultView({
+  entries,
   results,
   onRetryFailed,
   onClose,
 }: {
+  entries: CanvasBatchTaskEntry[]
   results: CanvasBatchSubmitResult[]
   onRetryFailed: () => Promise<void>
   onClose: () => void
 }) {
   const succeeded = results.filter((result) => result.status === 'succeeded').length
   const failed = results.length - succeeded
+  const titleByNodeId = new Map(entries.map((entry) => [entry.nodeId, entry.title]))
   return (
     <div className="canvas-batch-result">
       <div className="canvas-batch-result-summary" aria-live="polite">
@@ -610,7 +616,7 @@ function ResultView({
       <div className="canvas-batch-result-list">
         {results.map((result) => (
           <div key={result.nodeId} className={result.status === 'failed' ? 'has-error' : ''}>
-            <span>{result.nodeId}</span>
+            <span>{titleByNodeId.get(result.nodeId) ?? result.nodeId}</span>
             <strong>{result.status === 'succeeded' ? '已提交' : result.error}</strong>
           </div>
         ))}
@@ -688,12 +694,23 @@ function commonValue(
 }
 
 function commonRuntimeIdentity(entries: CanvasBatchTaskEntry[]): CanvasBatchEditableData {
+  const first = entries[0]?.draft
+  if (
+    !first ||
+    !entries.every(
+      (entry) =>
+        entry.draft.providerProfileId === first.providerProfileId &&
+        entry.draft.manifestId === first.manifestId &&
+        entry.draft.modelId === first.modelId,
+    )
+  ) {
+    return {}
+  }
   return {
-    providerProfileId: commonValue(
-      entries,
-      (entry) => entry.draft.providerProfileId,
-    ),
-    manifestId: commonValue(entries, (entry) => entry.draft.manifestId),
-    modelId: commonValue(entries, (entry) => entry.draft.modelId),
+    ...(first.providerProfileId !== undefined
+      ? { providerProfileId: first.providerProfileId }
+      : {}),
+    ...(first.manifestId !== undefined ? { manifestId: first.manifestId } : {}),
+    ...(first.modelId !== undefined ? { modelId: first.modelId } : {}),
   }
 }

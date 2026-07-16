@@ -102,7 +102,8 @@ describe('canvasContextMenuModel', () => {
       expect(result.canBatchSubmitTasks).toBe(true)
       expect(result.batchTaskNodeIds).toEqual(['image-task', 'video-task'])
       expect(result.batchTaskOperationCount).toBe(2)
-      expect(result.batchTaskDisabledReason).toBeNull()
+      expect(result.batchTaskConfigureDisabledReason).toBeNull()
+      expect(result.batchTaskSubmitDisabledReason).toBeNull()
     })
 
     it('disables task actions when operation and content nodes are mixed', () => {
@@ -114,7 +115,28 @@ describe('canvasContextMenuModel', () => {
       expect(result.canBatchConfigureTasks).toBe(false)
       expect(result.canBatchSubmitTasks).toBe(false)
       expect(result.batchTaskNodeIds).toEqual(['image-task'])
-      expect(result.batchTaskDisabledReason).toBe('仅支持同时选择任务节点')
+      expect(result.batchTaskConfigureDisabledReason).toBe('仅支持同时选择任务节点')
+      expect(result.batchTaskSubmitDisabledReason).toBe('仅支持同时选择任务节点')
+    })
+
+    it('allows configuring but not submitting when a selected task is running', () => {
+      const result = summarizeCanvasSelectionContext([
+        node({
+          id: 'running-task',
+          type: 'text_to_image',
+          data: { status: 'running' },
+        }),
+        node({
+          id: 'pending-task',
+          type: 'text_to_video',
+          data: { status: 'pending' },
+        }),
+      ])
+
+      expect(result.canBatchConfigureTasks).toBe(true)
+      expect(result.canBatchSubmitTasks).toBe(false)
+      expect(result.batchTaskConfigureDisabledReason).toBeNull()
+      expect(result.batchTaskSubmitDisabledReason).toBe('选中任务包含正在运行的节点')
     })
 
     it('enables group creation and merge-to-image for multiple top-level content nodes', () => {

@@ -75,10 +75,12 @@ function prepared(nodeId: string): PreparedCanvasOperationSubmission {
 
 function setup(input?: {
   skipConfirmation?: boolean
+  nodes?: CanvasNode[]
   prepare?: (nodeId: string) => Promise<PreparedCanvasOperationSubmission>
   run?: (nodeId: string) => Promise<void>
+  onSingleValidationError?: (nodeId: string, error: unknown) => void
 }) {
-  let current = snapshot()
+  let current = snapshot(input?.nodes)
   const updateManyNodeData = vi.fn(
     async (updates: Array<{ nodeId: string; data: Partial<CanvasNodeData> }>) => {
     current = {
@@ -112,6 +114,9 @@ function setup(input?: {
     readSkipConfirmation: () => input?.skipConfirmation ?? false,
     writeSkipConfirmation,
     createBatchId: () => 'batch-1',
+    ...(input?.onSingleValidationError
+      ? { onSingleValidationError: input.onSingleValidationError }
+      : {}),
   })
   return {
     controller,
@@ -119,6 +124,12 @@ function setup(input?: {
     runOperationNode,
     prepareSubmission,
     writeSkipConfirmation,
+    replaceNode: (nodeId: string, replace: (node: CanvasNode) => CanvasNode) => {
+      current = {
+        ...current,
+        nodes: current.nodes.map((node) => (node.id === nodeId ? replace(node) : node)),
+      }
+    },
   }
 }
 
@@ -264,5 +275,110 @@ describe('useCanvasBatchTasks controller', () => {
     await submitting
 
     expect(controller.getState().mode).toBe('closed')
+  })
+
+  it('blocks stale draft writes and refreshes untouched values from the latest node', async () => {
+    const { controller, replaceNode, updateManyNodeData } = setup()
+    controller.openConfigure(['node-1', 'node-2'])
+    controller.patchGroup('text_to_image', {
+      touched: ['modelParams.size'],
+      values: { modelParams: { size: '4K' } },
+    })
+    replaceNode('node-1', (node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        modelId: 'external-model',
+        modelParams: { size: '2K', seed: 9 },
+      },
+      updatedAt: '2026-07-16T00:00:30.000Z',
+    }))
+
+    await expect(controller.saveDrafts()).rejects.toThrow(
+      '节点配置已变化，已合并最新值，请检查后重试',
+    )
+
+    expect(updateManyNodeData).not.toHaveBeenCalled()
+    expect(controller.getState().issues).toEqual([
+      {
+        nodeId: 'node-1',
+        fieldPath: [],
+        message: '节点配置已变化，已合并最新值，请检查后重试',
+      },
+    ])
+    expect(controller.getState().session?.entries[0]?.draft).toMatchObject({
+      modelId: 'external-model',
+      modelParams: { size: '4K', seed: 9 },
+    })
+
+    await controller.saveDrafts()
+
+    expect(updateManyNodeData).toHaveBeenCalledWith([
+      {
+        nodeId: 'node-1',
+        data: { modelParams: { size: '4K', seed: 9 } },
+      },
+    ])
+    expect(controller.getState().issues).toEqual([])
+  })
+
+  it('does not classify operation execution failures as validation failures', async () => {
+    const onSingleValidationError = vi.fn()
+    const { controller } = setup({
+      run: async () => {
+        throw new Error('network error')
+      },
+      onSingleValidationError,
+    })
+
+    await expect(controller.runSingle('node-1')).rejects.toThrow('network error')
+
+    expect(onSingleValidationError).not.toHaveBeenCalled()
+  })
+
+  it('opens the node editor when single-run preparation fails', async () => {
+    const validationError = new CanvasTaskValidationError([
+      {
+        severity: 'error',
+        code: 'missing_required',
+        message: '请选择模型',
+        path: ['modelId'],
+      },
+    ])
+    const onSingleValidationError = vi.fn()
+    const { controller, runOperationNode } = setup({
+      prepare: async () => {
+        throw validationError
+      },
+      onSingleValidationError,
+    })
+
+    await expect(controller.runSingle('node-1')).rejects.toThrow('请选择模型')
+
+    expect(onSingleValidationError).toHaveBeenCalledWith('node-1', validationError)
+    expect(runOperationNode).not.toHaveBeenCalled()
+  })
+
+  it('bounds preflight preparation concurrency', async () => {
+    const nodes = Array.from({ length: 8 }, (_, index) =>
+      operationNode(`node-${index + 1}`, 'text_to_image'),
+    )
+    let active = 0
+    let maxActive = 0
+    const { controller } = setup({
+      nodes,
+      prepare: async (nodeId) => {
+        active += 1
+        maxActive = Math.max(maxActive, active)
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        active -= 1
+        return prepared(nodeId)
+      },
+    })
+
+    await controller.openSubmit(nodes.map((node) => node.id))
+
+    expect(maxActive).toBeLessThanOrEqual(3)
+    expect(controller.getState().mode).toBe('confirm')
   })
 })
