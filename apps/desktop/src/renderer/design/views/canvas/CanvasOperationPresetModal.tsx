@@ -389,7 +389,7 @@ export function CanvasOperationPresetModal({
     }
     setModelParamDraft((prev) => {
       const candidate = modelParamDraftEditedRef.current
-        ? mergeSeededModelParamDraft(prev, next)
+        ? mergeSeededModelParamDraft(prev, next, parameterFields)
         : next
       return sameModelParamDraft(prev, candidate) ? prev : candidate
     })
