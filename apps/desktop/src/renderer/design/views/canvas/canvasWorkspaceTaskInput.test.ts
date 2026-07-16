@@ -130,4 +130,29 @@ describe('resolveCanvasPipelineTextSource', () => {
       sourceText: '场 1：雨夜车站\n林岚走入候车厅。',
     })
   })
+
+  it('keeps a single-child group as the downstream lineage source', () => {
+    const group: CanvasNode = {
+      ...operationNode(),
+      id: 'group-screenplay',
+      type: 'group',
+      taskId: null,
+      title: '剧本分组',
+      data: {},
+    }
+    const child: CanvasNode = {
+      ...group,
+      id: 'node-screenplay-child',
+      type: 'text',
+      parentNodeId: group.id,
+      title: '第一场',
+      data: { text: '场 1：雨夜车站' },
+    }
+    const snapshot = snapshotWith([group, child], screenplayTask([]))
+
+    expect(resolveCanvasPipelineTextSource(group, snapshot)).toEqual({
+      sourceNode: group,
+      sourceText: '场 1：雨夜车站',
+    })
+  })
 })
