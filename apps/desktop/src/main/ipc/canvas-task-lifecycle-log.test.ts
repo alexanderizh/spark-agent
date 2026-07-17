@@ -5,6 +5,7 @@ describe('createCanvasTaskLifecycleLog', () => {
   it('keeps the same canvas task correlation fields from start to completion', () => {
     const info = vi.fn()
     const warn = vi.fn()
+    const error = vi.fn()
     const taskLog = createCanvasTaskLifecycleLog(
       {
         kind: 'media',
@@ -16,7 +17,7 @@ describe('createCanvasTaskLifecycleLog', () => {
         background: true,
         inputCount: 1,
       },
-      { logger: { info, warn }, now: () => 1_000 },
+      { logger: { info, warn, error }, now: () => 1_000 },
     )
 
     taskLog.started()
@@ -55,6 +56,7 @@ describe('createCanvasTaskLifecycleLog', () => {
   it('logs terminal failures at warn level with a bounded single-line message', () => {
     const info = vi.fn()
     const warn = vi.fn()
+    const error = vi.fn()
     const taskLog = createCanvasTaskLifecycleLog(
       {
         kind: 'text',
@@ -63,7 +65,7 @@ describe('createCanvasTaskLifecycleLog', () => {
         operation: 'text_generate',
         background: false,
       },
-      { logger: { info, warn }, now: () => 2_000 },
+      { logger: { info, warn, error }, now: () => 2_000 },
     )
 
     taskLog.settled({
