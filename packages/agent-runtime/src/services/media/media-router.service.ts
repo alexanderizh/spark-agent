@@ -20,7 +20,12 @@ import type {
   MediaModelCapabilityManifest,
   MediaRequestCall,
 } from '@spark/protocol'
-import { capabilityForOperation, isMediaCapabilityId, isMediaProviderKind, mediaManifestCapabilities } from '@spark/protocol'
+import {
+  capabilityForOperation,
+  isMediaCapabilityId,
+  isMediaProviderKind,
+  mediaManifestCapabilities,
+} from '@spark/protocol'
 import { MediaProviderError } from './media-adapter.types.js'
 import type {
   MediaGenerateInput,
@@ -33,6 +38,7 @@ import type { MediaUploader } from './media-uploader.js'
 import { ApimartMediaAdapter } from './adapters/apimart-media.adapter.js'
 import { AgnesMediaAdapter } from './adapters/agnes-media.adapter.js'
 import { VolcengineArkMediaAdapter } from './adapters/volcengine-ark-media.adapter.js'
+import { BailianMediaAdapter } from './adapters/bailian-media.adapter.js'
 import { XaiMediaAdapter } from './adapters/xai-media.adapter.js'
 import { TemplateMediaAdapter } from './adapters/template-media.adapter.js'
 import { GoogleGenerativeAiMediaAdapter } from './adapters/google-generative-ai-media.adapter.js'
@@ -93,6 +99,7 @@ export class MediaRouterService {
     // 火山方舟（Seedance 视频 / Seedream 图片）：真实 API 需嵌套 content[] 数组，
     // 模板适配器无法表达，故用专用 adapter；supports(capability) 时优先于模板适配器。
     this.register(new VolcengineArkMediaAdapter())
+    this.register(new BailianMediaAdapter())
     this.register(new GoogleGenerativeAiMediaAdapter('google-generative-ai'))
     this.register(new GoogleGenerativeAiMediaAdapter('omni'))
     this.register(new MidjourneyMediaAdapter())
@@ -115,7 +122,10 @@ export class MediaRouterService {
    * 解析 operation → 所需 capability（取首个候选 provider 支持的）。
    * 用于 canvas runtime 在不显式指定 capability 时推导。
    */
-  resolveCapability(operation: CanvasOperationType, providers: MediaProviderProfile[]): MediaCapabilityId | null {
+  resolveCapability(
+    operation: CanvasOperationType,
+    providers: MediaProviderProfile[],
+  ): MediaCapabilityId | null {
     const candidates = capabilityForOperation(operation)
     for (const cap of candidates) {
       if (providers.some((provider) => this.supports(provider, cap))) return cap
@@ -185,7 +195,10 @@ export class MediaRouterService {
     const declared = mediaCapabilitiesForProfile(profile)
     // 声明了能力列表就以列表为准；未声明则信任 adapter
     if (declared.length > 0) {
-      return declared.includes(capability) && (Boolean(adapter?.supports(capability)) || hasManifestCapability(profile, capability))
+      return (
+        declared.includes(capability) &&
+        (Boolean(adapter?.supports(capability)) || hasManifestCapability(profile, capability))
+      )
     }
     return Boolean(adapter?.supports(capability))
   }
@@ -198,7 +211,10 @@ export class MediaRouterService {
    *   2. providers 列表中首个支持 capability 的（按传入顺序，调用方可排好优先级）
    *   3. capability registry 中第一个 enabled provider 兜底
    */
-  async invoke(input: MediaGenerateInput, options: InvokeOptions): Promise<{
+  async invoke(
+    input: MediaGenerateInput,
+    options: InvokeOptions,
+  ): Promise<{
     output: MediaGenerateOutput
     providerProfileId: string
   }> {
@@ -207,9 +223,13 @@ export class MediaRouterService {
       throw new MediaProviderError('provider_not_configured', 'No media provider configured')
     }
     // 优先用显式传入的 capability，否则按 operation 推导
-    const capability = options.capability ?? input.capability ?? this.resolveCapabilityForInput(input, options)
+    const capability =
+      options.capability ?? input.capability ?? this.resolveCapabilityForInput(input, options)
     if (!capability) {
-      throw new MediaProviderError('capability_not_supported', `No capability for operation ${input.operation}`)
+      throw new MediaProviderError(
+        'capability_not_supported',
+        `No capability for operation ${input.operation}`,
+      )
     }
 
     let chosen: MediaProviderProfile | undefined
@@ -235,14 +255,18 @@ export class MediaRouterService {
     const explicitModelManifest = options.modelId
       ? chosen.mediaModelManifests?.find((manifest) => manifest.modelId === options.modelId)
       : undefined
-    if (explicitModelManifest && !explicitModelManifest.capabilities.some((item) => item.id === capability)) {
+    if (
+      explicitModelManifest &&
+      !explicitModelManifest.capabilities.some((item) => item.id === capability)
+    ) {
       throw new MediaProviderError(
         'capability_not_supported',
         `Model ${options.modelId} does not support capability ${capability}`,
       )
     }
     const manifestMatch = resolveManifestMatch(chosen, capability, manifestOptions)
-    const effectiveModelId = options.modelId ?? manifestMatch?.manifest.modelId ?? chosen.defaultModel
+    const effectiveModelId =
+      options.modelId ?? manifestMatch?.manifest.modelId ?? chosen.defaultModel
     const kind = effectiveProviderKind(chosen)
     if (!options.skipValidation) {
       const validation = validateMediaRequest({
@@ -263,7 +287,9 @@ export class MediaRouterService {
       }
     }
     const adapter = kind ? this.adapters.get(kind) : undefined
-    const shouldUseManifestAdapter = Boolean(manifestMatch && (!adapter || !adapter.supports(capability) || kind === 'custom'))
+    const shouldUseManifestAdapter = Boolean(
+      manifestMatch && (!adapter || !adapter.supports(capability) || kind === 'custom'),
+    )
     // 包装 fetch，捕获发给 provider 的请求（method + url + body），用于任务详情展示。
     // 只取最后一个带 body 的 POST：adapter 内部对单次能力调用只发一个主请求；
     // APIMart 编辑会先 POST /uploads/images 再 POST /images/generations，取后者即主请求。
@@ -300,11 +326,11 @@ export class MediaRouterService {
         ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
       }
       try {
-        const output = await this.templateAdapter.invoke(
-          { ...input, capability },
-          ctx,
-        )
-        return { output: { ...output, requestCall: output.requestCall ?? capture.getCaptured() }, providerProfileId: chosen.id }
+        const output = await this.templateAdapter.invoke({ ...input, capability }, ctx)
+        return {
+          output: { ...output, requestCall: output.requestCall ?? capture.getCaptured() },
+          providerProfileId: chosen.id,
+        }
       } catch (err) {
         attachCapturedRequest(err, capture)
         throw err
@@ -335,11 +361,11 @@ export class MediaRouterService {
       ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
     }
     try {
-      const output = await adapter.invoke(
-        { ...input, capability },
-        ctx,
-      )
-      return { output: { ...output, requestCall: output.requestCall ?? capture.getCaptured() }, providerProfileId: chosen.id }
+      const output = await adapter.invoke({ ...input, capability }, ctx)
+      return {
+        output: { ...output, requestCall: output.requestCall ?? capture.getCaptured() },
+        providerProfileId: chosen.id,
+      }
     } catch (err) {
       attachCapturedRequest(err, capture)
       throw err
@@ -381,10 +407,7 @@ function createRequestCapture(fetchImpl?: typeof fetch): {
 }
 
 /** 把请求体归一为可展示形式：JSON 解析后截断 base64；非 JSON 字符串整体截断；二进制给字节占位。 */
-function summarizeRequestBody(
-  body: unknown,
-  headers?: Record<string, string>,
-): unknown {
+function summarizeRequestBody(body: unknown, headers?: Record<string, string>): unknown {
   const contentType = headers?.['content-type']?.toLowerCase() ?? ''
   if (typeof body === 'string') {
     const trimmed = body.trimStart()
@@ -410,7 +433,9 @@ function truncateLongString(value: string): string {
   return value.length <= 200 ? value : `${value.slice(0, 120)}…<truncated, len=${value.length}>`
 }
 
-async function summarizeResponse(response: Response): Promise<NonNullable<MediaRequestCall['response']>> {
+async function summarizeResponse(
+  response: Response,
+): Promise<NonNullable<MediaRequestCall['response']>> {
   const headers = summarizeHeaders(response.headers)
   const contentType = headers?.['content-type']?.toLowerCase() ?? ''
   const summary: NonNullable<MediaRequestCall['response']> = {
@@ -421,7 +446,10 @@ async function summarizeResponse(response: Response): Promise<NonNullable<MediaR
   try {
     const text = await response.clone().text()
     if (isTextualContentType(contentType) || looksLikeTextPayload(text)) {
-      return { ...summary, ...(text.length > 0 ? { body: summarizeTextPayload(text, contentType) } : {}) }
+      return {
+        ...summary,
+        ...(text.length > 0 ? { body: summarizeTextPayload(text, contentType) } : {}),
+      }
     }
     const buffer = Buffer.from(await response.clone().arrayBuffer())
     return {
@@ -477,14 +505,15 @@ function looksLikeTextPayload(text: string): boolean {
   return readable / sample.length > 0.85
 }
 
-function summarizeHeaders(
-  headers: unknown,
-): Record<string, string> | undefined {
+function summarizeHeaders(headers: unknown): Record<string, string> | undefined {
   if (!headers) return undefined
   const entries = normalizeHeaders(headers)
   if (entries.length === 0) return undefined
   const summarized = Object.fromEntries(
-    entries.map(([key, value]) => [key, SECRET_HEADER_PATTERN.test(key) ? '[REDACTED]' : truncateHeaderValue(value)]),
+    entries.map(([key, value]) => [
+      key,
+      SECRET_HEADER_PATTERN.test(key) ? '[REDACTED]' : truncateHeaderValue(value),
+    ]),
   )
   return Object.keys(summarized).length > 0 ? summarized : undefined
 }
@@ -511,13 +540,18 @@ function truncateHeaderValue(value: string): string {
 const SECRET_HEADER_PATTERN = /^(authorization|x-api-key|api-key)$/i
 
 /** 失败的 provider 调用：把 fetch 捕获到的请求摘要挂到 MediaProviderError 上，便于任务详情排查。 */
-function attachCapturedRequest(err: unknown, capture: { getCaptured: () => MediaRequestCall | undefined }): void {
+function attachCapturedRequest(
+  err: unknown,
+  capture: { getCaptured: () => MediaRequestCall | undefined },
+): void {
   if (!(err instanceof MediaProviderError)) return
   const captured = capture.getCaptured()
   if (captured && !err.requestCall) err.requestCall = captured
 }
 
-function mediaCapabilitiesForProfile(profile: Pick<MediaProviderProfile, 'mediaCapabilities' | 'mediaModelManifests'>): MediaCapabilityId[] {
+function mediaCapabilitiesForProfile(
+  profile: Pick<MediaProviderProfile, 'mediaCapabilities' | 'mediaModelManifests'>,
+): MediaCapabilityId[] {
   const declared = profile.mediaCapabilities ?? []
   const fromManifests = (profile.mediaModelManifests ?? [])
     .flatMap((manifest) => mediaManifestCapabilities(manifest))
@@ -525,7 +559,10 @@ function mediaCapabilitiesForProfile(profile: Pick<MediaProviderProfile, 'mediaC
   return Array.from(new Set([...declared, ...fromManifests]))
 }
 
-function hasManifestCapability(profile: Pick<MediaProviderProfile, 'mediaModelManifests'>, capability: MediaCapabilityId): boolean {
+function hasManifestCapability(
+  profile: Pick<MediaProviderProfile, 'mediaModelManifests'>,
+  capability: MediaCapabilityId,
+): boolean {
   return (profile.mediaModelManifests ?? []).some((manifest) =>
     manifest.capabilities.some((item) => item.id === capability),
   )
@@ -542,7 +579,10 @@ function resolveManifestMatch(
       manifest,
       capability: manifest.capabilities.find((item) => item.id === capability),
     }))
-    .filter((item): item is { manifest: MediaModelManifest; capability: MediaModelCapabilityManifest } => item.capability != null)
+    .filter(
+      (item): item is { manifest: MediaModelManifest; capability: MediaModelCapabilityManifest } =>
+        item.capability != null,
+    )
   if (candidates.length === 0) return null
   if (options.manifestId) {
     const exact = candidates.find((item) => item.manifest.id === options.manifestId)
@@ -556,7 +596,9 @@ function resolveManifestMatch(
 }
 
 /** 解析 provider profile 的有效 mediaProvider：优先显式字段，其次由 imageProvider 推断 */
-export function effectiveProviderKind(profile: Pick<MediaProviderProfile, 'mediaProvider'>): MediaProviderKind | null {
+export function effectiveProviderKind(
+  profile: Pick<MediaProviderProfile, 'mediaProvider'>,
+): MediaProviderKind | null {
   if (profile.mediaProvider && isMediaProviderKind(profile.mediaProvider)) {
     return profile.mediaProvider
   }

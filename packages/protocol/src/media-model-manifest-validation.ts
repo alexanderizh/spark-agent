@@ -44,6 +44,7 @@ const STANDARD_TEMPLATE_VARIABLES = new Set([
   'audio',
   'audioUrl',
   'media',
+  'content',
   'params',
   'providerParams',
 ])
@@ -135,7 +136,7 @@ function validateCapabilityParamPolicy(
   // 此处只校验 paramPolicy 内部一致性，aliases 与 schema 的对齐在 compiler 中处理。
 
   for (const entry of policy.forbidden ?? []) {
-    if (!knownFields.has(entry.name) && !(policy.aliases?.[entry.name])) {
+    if (!knownFields.has(entry.name) && !policy.aliases?.[entry.name]) {
       issues.push({
         path: [...basePath, 'forbidden'],
         code: 'invalid_param_policy',

@@ -18,6 +18,11 @@ export { MediaRouterService } from './services/media/media-router.service.js'
 export { XAI_MAX_FILE_BYTES, XaiFilesClient } from './services/media/xai-files.client.js'
 export type { XaiFileObject, XaiFilesPage } from './services/media/xai-files.client.js'
 export {
+  BAILIAN_FILES_DEFAULT_BASE_URL,
+  BailianFilesClient,
+  resolveBailianFilesBaseUrl,
+} from './services/media/bailian-files.client.js'
+export {
   VOLCENGINE_ARK_FILES_DEFAULT_BASE_URL,
   VOLCENGINE_ARK_PLATFORM_FILE_MAX_BYTES,
   VOLCENGINE_ARK_TOS_VIDEO_MAX_BYTES,

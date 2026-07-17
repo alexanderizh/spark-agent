@@ -10,11 +10,11 @@
  *   generate_audio     — 语音合成（text → audio）
  *   transcribe_audio   — 语音转写（audioFile/audioUrl → text）
  *   generate_video     — 文生视频 / 图生视频 / 视频编辑（prompt + 可选 inputImages/inputVideos）
- *   upload/get/list/delete_file — Provider 文件平台生命周期（当前支持火山方舟）
+ *   upload/get/list/delete_file、list/get/cancel_task — Provider 文件与异步任务生命周期
  *
  * 配置全部来自环境变量（API key 仅在本子进程内存内，不外泄）：
  *   SPARK_MEDIA_API_KEY       API key（必填）
- *   SPARK_MEDIA_PROVIDER      apimart | xai | volcengine-ark | openai-compatible | custom（默认 openai-compatible）
+ *   SPARK_MEDIA_PROVIDER      apimart | xai | bailian | volcengine-ark | openai-compatible | custom（默认 openai-compatible）
  *   SPARK_MEDIA_MODEL         默认模型 id
  *   SPARK_MEDIA_API_TYPE      sync | async | auto（默认 auto）
  *   SPARK_MEDIA_BASE_URL      API base url
@@ -225,7 +225,7 @@ const TOOLS = [
   {
     name: 'upload_file',
     description:
-      'Upload/import a file to the configured provider file platform. Volcengine Ark supports local binary files or URL/TOS imports and can wait until status=active.',
+      'Upload/import a file to the configured provider file platform. Volcengine Ark supports local binary or URL/TOS imports; Bailian supports local DashScope multipart uploads for file-extract, batch, and fine-tune only.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -234,7 +234,8 @@ const TOOLS = [
           type: 'string',
           description: 'HTTP/HTTPS or tos:// URL. Mutually exclusive with filePath.',
         },
-        purpose: { type: 'string', enum: ['user_data'], default: 'user_data' },
+        purpose: { type: 'string', enum: ['user_data', 'file-extract', 'batch', 'fine-tune'] },
+        description: { type: 'string', description: 'Optional Bailian file description.' },
         expireAt: {
           type: 'integer',
           description: 'UTC Unix seconds; Volcengine allows now+1 day through now+30 days.',
@@ -278,8 +279,9 @@ const TOOLS = [
       type: 'object',
       properties: {
         after: { type: 'string' },
+        pageNo: { type: 'integer', minimum: 1, description: 'Bailian Files page number; defaults to 1.' },
         limit: { type: 'integer', minimum: 1, maximum: 100, default: 100 },
-        purpose: { type: 'string', enum: ['user_data'] },
+        purpose: { type: 'string', enum: ['user_data', 'file-extract', 'batch', 'fine-tune'] },
         order: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
         scopeId: { type: 'string', description: 'Managed Agents Session ID when applicable.' },
       },
@@ -295,8 +297,23 @@ const TOOLS = [
     },
   },
   {
+    name: 'list_tasks',
+    description: 'List provider asynchronous tasks. Bailian supports the documented 24-hour task query window.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        startTime: { type: 'string', description: 'Bailian task start time as YYYYMMDDhhmmss.' },
+        endTime: { type: 'string', description: 'Bailian task end time as YYYYMMDDhhmmss.' },
+        modelName: { type: 'string' },
+        status: { type: 'string', enum: ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELED', 'UNKNOWN'] },
+        pageNo: { type: 'integer', minimum: 1 },
+        limit: { type: 'integer', minimum: 1, maximum: 100 },
+      },
+    },
+  },
+  {
     name: 'get_task',
-    description: 'Inspect a media task created by this Spark media MCP process.',
+    description: 'Inspect a media task created by this Spark media MCP process, or a Bailian provider task by task id.',
     inputSchema: {
       type: 'object',
       required: ['taskId'],
@@ -307,7 +324,7 @@ const TOOLS = [
   },
   {
     name: 'cancel_task',
-    description: 'Cancel a pending/running media task when supported by this Spark media MCP process.',
+    description: 'Cancel a pending/running media task. Bailian permits remote cancellation only while the task is PENDING.',
     inputSchema: {
       type: 'object',
       required: ['taskId'],
@@ -369,18 +386,32 @@ function failTaskRecord(task, err) {
   return record
 }
 
-function handleGetTask(args) {
+async function handleListTasks(config, args) {
+  if (config.provider === 'bailian') return handleBailianListTasks(config, args)
+  const limit = Math.max(1, Math.min(100, Math.floor(Number(args.limit) || 20)))
+  return {
+    success: true,
+    tasks: [...TASKS.values()]
+      .filter((task) => task.provider === config.provider)
+      .slice(-limit)
+      .reverse(),
+  }
+}
+
+async function handleGetTask(config, args) {
   const taskId = String(args.taskId || '').trim()
   if (!taskId) throw new Error('taskId is required')
   const task = TASKS.get(taskId)
+  if (!task && config.provider === 'bailian') return handleBailianGetTask(config, taskId)
   if (!task) throw new Error(`Unknown media task: ${taskId}`)
   return { success: true, task }
 }
 
-function handleCancelTask(args) {
+async function handleCancelTask(config, args) {
   const taskId = String(args.taskId || '').trim()
   if (!taskId) throw new Error('taskId is required')
   const task = TASKS.get(taskId)
+  if (!task && config.provider === 'bailian') return handleBailianCancelTask(config, taskId)
   if (!task) throw new Error(`Unknown media task: ${taskId}`)
   if (task.status !== 'pending' && task.status !== 'running') {
     return { success: true, cancelled: false, task, message: `Task is already ${task.status}` }
@@ -401,6 +432,7 @@ function assertVolcengineFilesConfig(config) {
 }
 
 async function handleUploadFile(config, args) {
+  if (config.provider === 'bailian') return handleBailianUploadFile(config, args)
   assertVolcengineFilesConfig(config)
   const filePath = typeof args.filePath === 'string' ? args.filePath.trim() : ''
   const urlValue = typeof args.url === 'string' ? args.url.trim() : ''
@@ -488,6 +520,7 @@ async function handleUploadFile(config, args) {
 }
 
 async function handleGetFile(config, args) {
+  if (config.provider === 'bailian') return handleBailianGetFile(config, args)
   assertVolcengineFilesConfig(config)
   const fileId = String(args.fileId || '').trim()
   if (!fileId) throw new Error('fileId is required')
@@ -500,6 +533,7 @@ async function handleGetFile(config, args) {
 }
 
 async function handleListFiles(config, args) {
+  if (config.provider === 'bailian') return handleBailianListFiles(config, args)
   assertVolcengineFilesConfig(config)
   const query = new URLSearchParams()
   if (args.after) query.set('after', String(args.after))
@@ -519,6 +553,7 @@ async function handleListFiles(config, args) {
 }
 
 async function handleDeleteFile(config, args) {
+  if (config.provider === 'bailian') return handleBailianDeleteFile(config, args)
   assertVolcengineFilesConfig(config)
   const fileId = String(args.fileId || '').trim()
   if (!fileId) throw new Error('fileId is required')
@@ -528,6 +563,143 @@ async function handleDeleteFile(config, args) {
     30_000,
   )
   return { success: true, provider: config.provider, deleted }
+}
+
+function assertBailianFilesConfig(config) {
+  if (config.provider !== 'bailian') throw new Error('Bailian Files requires a Bailian provider')
+  if (!config.apiKey) throw new Error('No media API key configured')
+  return bailianFilesBaseUrl(config.baseUrl)
+}
+
+async function handleBailianUploadFile(config, args) {
+  const baseUrl = assertBailianFilesConfig(config)
+  const filePath = typeof args.filePath === 'string' ? args.filePath.trim() : ''
+  if (!filePath || args.url) throw new Error('Bailian Files requires filePath and does not support URL/TOS imports')
+  const purpose = String(args.purpose || '').trim()
+  if (!['file-extract', 'batch', 'fine-tune'].includes(purpose)) {
+    throw new Error('Bailian Files purpose must be file-extract, batch, or fine-tune')
+  }
+  const info = await stat(filePath)
+  if (!info.isFile()) throw new Error(`Bailian Files path is not a file: ${filePath}`)
+  const maxBytes = purpose === 'file-extract'
+    ? 150 * 1024 * 1024
+    : purpose === 'batch'
+      ? 500 * 1024 * 1024
+      : 1024 * 1024 * 1024
+  if (info.size > maxBytes) {
+    throw new Error(`Bailian Files ${purpose} local file exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`)
+  }
+  const form = new globalThis.FormData()
+  const buffer = await readFile(filePath)
+  form.append('files', new globalThis.Blob([buffer], { type: mimeFromFilename(filePath) }), path.basename(filePath))
+  form.append('purpose', purpose)
+  if (typeof args.description === 'string' && args.description.trim()) {
+    form.append('descriptions', args.description.trim())
+  }
+  const response = await fetchJson(
+    `${baseUrl}/files`,
+    { method: 'POST', headers: { authorization: `Bearer ${config.apiKey}` }, body: form },
+    300_000,
+  )
+  const failed = response?.data?.failed_uploads?.[0]
+  const file = response?.data?.uploaded_files?.[0]
+  if (!file?.file_id) {
+    const detail = [failed?.code, failed?.message].filter(Boolean).join(': ')
+    throw new Error(`Bailian Files upload did not return an uploaded file${detail ? `: ${detail}` : ''}${requestIdSuffix(response)}`)
+  }
+  return { success: true, provider: config.provider, file, requestId: response?.request_id || null }
+}
+
+async function handleBailianGetFile(config, args) {
+  const baseUrl = assertBailianFilesConfig(config)
+  const fileId = String(args.fileId || '').trim()
+  if (!fileId) throw new Error('fileId is required')
+  const response = await fetchJson(
+    `${baseUrl}/files/${encodeURIComponent(fileId)}`,
+    { headers: { authorization: `Bearer ${config.apiKey}` } },
+    30_000,
+  )
+  if (!response?.data?.file_id) throw new Error(`Bailian Files response missing file_id${requestIdSuffix(response)}`)
+  return { success: true, provider: config.provider, file: response.data, requestId: response.request_id || null }
+}
+
+async function handleBailianListFiles(config, args) {
+  const baseUrl = assertBailianFilesConfig(config)
+  if (args.after || args.scopeId || args.purpose || args.order) {
+    throw new Error('Bailian Files list supports only pageNo and limit; purpose/order/after/scopeId are not documented for this API')
+  }
+  const pageNo = Math.max(1, Math.floor(Number(args.pageNo) || 1))
+  const pageSize = Math.max(1, Math.min(100, Math.floor(Number(args.limit) || 20)))
+  const response = await fetchJson(
+    `${baseUrl}/files?page_no=${pageNo}&page_size=${pageSize}`,
+    { headers: { authorization: `Bearer ${config.apiKey}` } },
+    30_000,
+  )
+  return { success: true, provider: config.provider, ...(response?.data || {}), requestId: response?.request_id || null }
+}
+
+async function handleBailianDeleteFile(config, args) {
+  const baseUrl = assertBailianFilesConfig(config)
+  const fileId = String(args.fileId || '').trim()
+  if (!fileId) throw new Error('fileId is required')
+  const response = await fetchJson(
+    `${baseUrl}/files/${encodeURIComponent(fileId)}`,
+    { method: 'DELETE', headers: { authorization: `Bearer ${config.apiKey}` } },
+    30_000,
+  )
+  return { success: true, provider: config.provider, deleted: true, id: fileId, requestId: response?.request_id || null }
+}
+
+async function handleBailianGetTask(config, taskId) {
+  const baseUrl = assertBailianFilesConfig(config)
+  const response = await fetchJson(
+    `${baseUrl}/tasks/${encodeURIComponent(taskId)}`,
+    { headers: { authorization: `Bearer ${config.apiKey}` } },
+    30_000,
+  )
+  return { success: true, provider: config.provider, task: response?.output || response, requestId: response?.request_id || null }
+}
+
+async function handleBailianListTasks(config, args) {
+  const baseUrl = assertBailianFilesConfig(config)
+  const query = new URLSearchParams()
+  const taskId = typeof args.taskId === 'string' ? args.taskId.trim() : ''
+  if (taskId) query.set('task_id', taskId)
+  for (const [argName, queryName] of [
+    ['startTime', 'start_time'],
+    ['endTime', 'end_time'],
+    ['modelName', 'model_name'],
+    ['status', 'status'],
+  ]) {
+    if (args[argName] == null || args[argName] === '') continue
+    const value = String(args[argName]).trim()
+    if ((argName === 'startTime' || argName === 'endTime') && !/^\d{14}$/.test(value)) {
+      throw new Error(`Bailian ${argName} must use YYYYMMDDhhmmss`)
+    }
+    query.set(queryName, value)
+  }
+  const pageNo = args.pageNo == null ? undefined : Number(args.pageNo)
+  const pageSize = args.limit == null ? undefined : Number(args.limit)
+  if (pageNo != null && (!Number.isInteger(pageNo) || pageNo < 1)) throw new Error('Bailian pageNo must be a positive integer')
+  if (pageSize != null && (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100)) throw new Error('Bailian limit must be an integer between 1 and 100')
+  if (pageNo != null) query.set('page_no', String(pageNo))
+  if (pageSize != null) query.set('page_size', String(pageSize))
+  const response = await fetchJson(
+    `${baseUrl}/tasks/?${query.toString()}`,
+    { headers: { authorization: `Bearer ${config.apiKey}` } },
+    30_000,
+  )
+  return { success: true, provider: config.provider, ...(response || {}) }
+}
+
+async function handleBailianCancelTask(config, taskId) {
+  const baseUrl = assertBailianFilesConfig(config)
+  const response = await fetchJson(
+    `${baseUrl}/tasks/${encodeURIComponent(taskId)}/cancel`,
+    { method: 'POST', headers: { authorization: `Bearer ${config.apiKey}` } },
+    30_000,
+  )
+  return { success: true, provider: config.provider, cancelled: true, taskId, requestId: response?.request_id || null }
 }
 
 function appendVolcengineVideoPreprocess(form, raw) {
@@ -691,6 +863,25 @@ function volcengineFilesBaseUrl(value) {
   return baseUrl
 }
 
+function bailianFilesBaseUrl(value) {
+  const configured = String(value || 'https://dashscope.aliyuncs.com/api/v1').replace(/\/+$/, '')
+  try {
+    const parsed = new globalThis.URL(configured)
+    if (parsed.hostname.toLowerCase() === 'dashscope.aliyuncs.com') {
+      return `${parsed.origin}/api/v1`
+    }
+  } catch {
+    // Report the same clear configuration guidance below.
+  }
+  throw new Error(
+    'Bailian Files supports only the Beijing public DashScope Base URL: https://dashscope.aliyuncs.com/api/v1',
+  )
+}
+
+function requestIdSuffix(body) {
+  return body?.request_id ? ` (RequestId: ${body.request_id})` : ''
+}
+
 
 function configFromEnv() {
   let mediaDefaults
@@ -706,15 +897,32 @@ function configFromEnv() {
   } catch {
     manifests = []
   }
+  const provider = (env.SPARK_MEDIA_PROVIDER || 'openai-compatible').trim().toLowerCase()
+  const configuredBaseUrl = (env.SPARK_MEDIA_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')
   return {
     apiKey: env.SPARK_MEDIA_API_KEY || '',
-    provider: (env.SPARK_MEDIA_PROVIDER || 'openai-compatible').trim().toLowerCase(),
+    provider,
     model: env.SPARK_MEDIA_MODEL || '',
     mode: env.SPARK_MEDIA_API_TYPE || 'auto',
-    baseUrl: (env.SPARK_MEDIA_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, ''),
+    baseUrl: provider === 'bailian' ? bailianMediaBaseUrl(configuredBaseUrl) : configuredBaseUrl,
     outputDir: env.SPARK_MEDIA_OUTPUT_DIR || path.join(process.cwd(), '.spark-artifacts', 'media'),
     mediaDefaults,
     manifests,
+  }
+}
+
+function bailianMediaBaseUrl(value) {
+  const configured = String(value || 'https://dashscope.aliyuncs.com/api/v1').replace(/\/+$/, '')
+  try {
+    const parsed = new globalThis.URL(configured)
+    const pathName = parsed.pathname.replace(/\/+$/, '')
+    if (pathName.endsWith('/api/v1/services/aigc') || pathName.endsWith('/services/aigc')) {
+      return `${parsed.origin}${pathName}`
+    }
+    if (pathName.endsWith('/api/v1')) return `${parsed.origin}${pathName}/services/aigc`
+    return `${parsed.origin}/api/v1/services/aigc`
+  } catch {
+    throw new Error('Bailian media Base URL is invalid; expected an HTTP(S) API endpoint')
   }
 }
 
@@ -802,7 +1010,14 @@ async function fetchJson(url, init, timeoutMs, binary = false) {
     const text = await res.text()
     let body = null
     try { body = text ? JSON.parse(text) : null } catch { body = text }
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${String(text).slice(0, 800)}`)
+    if (!res.ok) {
+      const providerDetail = body && typeof body === 'object'
+        ? [body.code, body.message, body.request_id ? `RequestId: ${body.request_id}` : '']
+          .filter(Boolean)
+          .join(': ')
+        : ''
+      throw new Error(`HTTP ${res.status}: ${providerDetail || String(text).slice(0, 800)}`)
+    }
     return body
   } finally {
     clearTimeout(timer)
@@ -826,6 +1041,13 @@ async function pollTask(config, url, inspect) {
 
 function authHeaders(config) {
   return { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` }
+}
+
+function stringHeaders(value) {
+  if (!isPlainRecord(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value).filter(([, headerValue]) => typeof headerValue === 'string' && headerValue.length > 0),
+  )
 }
 
 // 收集 args 中的输入文件类型，用于 paramPolicy.transforms.drop_when_input_kind
@@ -1157,6 +1379,108 @@ function argsToModelParams(toolName, args) {
   return params
 }
 
+async function normalizeBailianMcpInputs(args, capabilityId) {
+  const next = { ...args }
+  for (const key of ['inputImages', 'referenceImages', 'imageUrls', 'imageFiles']) {
+    if (!Array.isArray(args[key])) continue
+    next[key] = await Promise.all(
+      args[key]
+        .filter((value) => typeof value === 'string' && value.trim())
+        .map((value) => bailianMcpImageReference(value)),
+    )
+  }
+  if (typeof args.firstFrame === 'string' && args.firstFrame.trim()) {
+    next.firstFrame = await bailianMcpImageReference(args.firstFrame)
+  }
+  if (typeof args.lastFrame === 'string' && args.lastFrame.trim()) {
+    next.lastFrame = await bailianMcpImageReference(args.lastFrame)
+  }
+  for (const key of ['videoUrl', 'videoFile', 'inputVideos', 'referenceVideos', 'referenceAudios']) {
+    const values = Array.isArray(args[key]) ? args[key] : [args[key]]
+    const present = values.filter((value) => typeof value === 'string' && value.trim())
+    for (const value of present) {
+      if (!/^(?:https?:|oss:)/i.test(value)) {
+        throw new Error(
+          `Bailian ${capabilityId} video/audio inputs must use HTTP(S) or OSS temporary URLs; local files are supported from Canvas after public upload, but not from the isolated spark_media process.`,
+        )
+      }
+    }
+  }
+  return next
+}
+
+async function bailianMcpImageReference(value) {
+  const reference = String(value || '').trim()
+  if (/^(?:https?:|oss:|data:image\/)/i.test(reference)) return reference
+  const buffer = await readFile(reference)
+  const mimeType = mimeFromFilename(reference)
+  if (!mimeType.startsWith('image/')) throw new Error(`Bailian image input is not a supported image: ${reference}`)
+  return `data:${mimeType};base64,${buffer.toString('base64')}`
+}
+
+function buildBailianMcpMedia(args, capabilityId) {
+  const inputImages = Array.isArray(args.inputImages) ? args.inputImages.filter(Boolean) : []
+  const referenceImages = Array.isArray(args.referenceImages) ? args.referenceImages.filter(Boolean) : []
+  const inputVideos = Array.isArray(args.inputVideos) ? args.inputVideos.filter(Boolean) : []
+  const referenceVideos = Array.isArray(args.referenceVideos) ? args.referenceVideos.filter(Boolean) : []
+  const referenceAudios = Array.isArray(args.referenceAudios) ? args.referenceAudios.filter(Boolean) : []
+  const hasExplicitFirstFrame = Boolean(args.firstFrame)
+  const firstFrame = args.firstFrame || inputImages[0] || ''
+  const lastFrame = args.lastFrame || ''
+
+  if (capabilityId === 'video.generate') return []
+  if (capabilityId === 'video.image_to_video') {
+    if (inputVideos.length > 1 || referenceAudios.length > 1) {
+      throw new Error('Bailian image-to-video accepts at most one first clip and one driving audio')
+    }
+    if (inputVideos.length > 0) {
+      if (firstFrame || referenceAudios.length > 0) {
+        throw new Error('Bailian video extension accepts only first_clip, optionally followed by last_frame')
+      }
+      return [
+        { type: 'first_clip', url: inputVideos[0] },
+        ...(lastFrame ? [{ type: 'last_frame', url: lastFrame }] : []),
+      ]
+    }
+    if (!firstFrame) throw new Error('Bailian image-to-video requires a first frame or first clip')
+    return [
+      { type: 'first_frame', url: firstFrame },
+      ...(lastFrame ? [{ type: 'last_frame', url: lastFrame }] : []),
+      ...(referenceAudios[0] ? [{ type: 'driving_audio', url: referenceAudios[0] }] : []),
+    ]
+  }
+  if (capabilityId === 'video.reference_to_video') {
+    const references = [
+      ...(hasExplicitFirstFrame ? inputImages : inputImages.slice(firstFrame ? 1 : 0)),
+      ...referenceImages,
+    ]
+    if ((firstFrame ? 1 : 0) + references.length + referenceVideos.length > 5) {
+      throw new Error('Bailian reference-to-video accepts at most five image/video references')
+    }
+    if (!firstFrame && references.length + referenceVideos.length === 0) {
+      throw new Error('Bailian reference-to-video requires at least one image or video reference')
+    }
+    if (referenceAudios.length > 1) throw new Error('Bailian reference-to-video accepts at most one reference voice')
+    return [
+      ...(firstFrame ? [{ type: 'first_frame', url: firstFrame }] : []),
+      ...references.map((url) => ({ type: 'reference_image', url })),
+      ...referenceVideos.map((url) => ({ type: 'reference_video', url })),
+      ...(referenceAudios[0] ? [{ type: 'reference_voice', url: referenceAudios[0] }] : []),
+    ]
+  }
+  if (capabilityId === 'video.edit') {
+    const video = args.videoUrl || inputVideos[0] || ''
+    const images = [...inputImages, ...referenceImages]
+    if (!video || inputVideos.length > 1) throw new Error('Bailian video edit requires exactly one input video')
+    if (images.length > 4) throw new Error('Bailian video edit accepts at most four reference images')
+    return [
+      { type: 'video', url: video },
+      ...images.map((url) => ({ type: 'reference_image', url })),
+    ]
+  }
+  return []
+}
+
 function buildManifestVariables(toolName, args, manifest, capability, modelId, prePrunedParams) {
   // prePrunedParams：当调用方（handleManifestTool）已通过 Contract V2 prune 后，
   // 直接使用裁剪后的 canonical 参数；否则回退到原 argsToModelParams 收集行为。
@@ -1196,10 +1520,22 @@ function buildManifestVariables(toolName, args, manifest, capability, modelId, p
       : inputVideos[0] || ''
   const audio = typeof args.audioUrl === 'string' && args.audioUrl ? args.audioUrl : typeof args.audioFile === 'string' ? args.audioFile : ''
   const prompt = typeof args.prompt === 'string' ? args.prompt : ''
+  const negativePrompt = typeof args.negative_prompt === 'string' ? args.negative_prompt : ''
   const text = typeof args.text === 'string' ? args.text : prompt
+  const media = manifest.providerKind === 'bailian'
+    ? buildBailianMcpMedia(args, capability.id)
+    : undefined
+  const content = manifest.providerKind === 'bailian' && capability.id.startsWith('image.')
+    ? [...images.map((imageUrl) => ({ image: imageUrl })), { text: prompt }]
+    : undefined
+  if (manifest.providerKind === 'bailian') {
+    delete providerParams.negativePrompt
+    delete providerParams.negative_prompt
+  }
   return {
     modelId,
     prompt,
+    negativePrompt,
     text,
     audio,
     audioUrl: args.audioUrl || '',
@@ -1210,6 +1546,8 @@ function buildManifestVariables(toolName, args, manifest, capability, modelId, p
     lastFrame,
     referenceImages,
     video,
+    media,
+    content,
     params,
     providerParams,
     ...params,
@@ -1230,21 +1568,32 @@ async function handleManifestTool(config, toolName, args, match) {
   // Contract V2 preflight：在 canonical 空间裁剪，确保 prune.prunedParams 与
   // capability.paramSchema（canonical 命名）对齐；buildManifestVariables 再通过
   // capability.aliases 把 canonical → provider-native 字段。
-  const collectedParams = argsToModelParams(toolName, args)
+  const resolvedArgs = manifest.providerKind === 'bailian'
+    ? await normalizeBailianMcpInputs(args, capability.id)
+    : args
+  const collectedParams = argsToModelParams(toolName, resolvedArgs)
   const prune = pruneModelParamsByManifest({
     manifest,
     capability,
     modelId,
     params: collectedParams,
-    inputFiles: collectInputFileKinds(args),
+    inputFiles: collectInputFileKinds(resolvedArgs),
     providerDefaults: config.mediaDefaults?.providerParams,
     mode: 'mcp',
   })
 
-  const variables = buildManifestVariables(toolName, args, manifest, capability, modelId, prune.prunedParams)
+  const variables = buildManifestVariables(
+    toolName,
+    resolvedArgs,
+    manifest,
+    capability,
+    modelId,
+    prune.prunedParams,
+  )
 
   const endpoint = renderTemplateString(manifest.invocation.endpoint || '', variables)
   const url = resolveManifestUrl(config.baseUrl, endpoint)
+  const invocationHeaders = renderTemplate(manifest.invocation.headers || {}, variables)
   const requestBody = mergeProviderParams(
     renderTemplate(manifest.invocation.requestTemplate || {}, variables),
     variables.providerParams,
@@ -1256,7 +1605,10 @@ async function handleManifestTool(config, toolName, args, match) {
       url,
       {
         method: manifest.invocation.method || 'POST',
-        headers: authHeaders(config),
+        headers: {
+          ...authHeaders(config),
+          ...stringHeaders(invocationHeaders),
+        },
         body: JSON.stringify(requestBody),
       },
       60_000,
@@ -1307,8 +1659,11 @@ async function handleManifestTool(config, toolName, args, match) {
 
 async function pollManifestTask(config, manifest, responseSpec, taskId) {
   const polling = manifest.invocation?.polling || {}
+  const pollingBaseUrl = manifest.providerKind === 'bailian'
+    ? config.baseUrl.replace(/\/services\/aigc$/, '')
+    : config.baseUrl
   const pollUrl = resolveManifestUrl(
-    config.baseUrl,
+    pollingBaseUrl,
     renderTemplateString(responseSpec.statusEndpoint || '', { taskId }),
   )
   const deadline = Date.now() + (config.mediaDefaults?.polling?.timeoutMs || polling.timeoutMs || 600_000)
@@ -1398,6 +1753,10 @@ function renderTemplateString(template, variables) {
 function mergeProviderParams(body, providerParams) {
   if (!isPlainRecord(body) || !isPlainRecord(providerParams)) return body
   const next = { ...body }
+  if (isPlainRecord(next.parameters)) {
+    next.parameters = { ...next.parameters, ...providerParams }
+    return next
+  }
   for (const [key, value] of Object.entries(providerParams)) {
     if (value !== undefined && value !== null && value !== '') next[key] = value
   }
@@ -1979,7 +2338,9 @@ async function handleGenerateVideo(config, args) {
   if (manifestMatch && config.provider === 'volcengine-ark') {
     return handleVolcengineVideoManifestTool(config, args, manifestMatch)
   }
-  if (!prompt) throw new Error('prompt is required')
+  if (!prompt && !(config.provider === 'bailian' && manifestMatch?.capability.id === 'video.edit')) {
+    throw new Error('prompt is required')
+  }
   const videoDefaults = config.mediaDefaults?.video || {}
   const inputImages = Array.isArray(args.inputImages) ? args.inputImages : []
   const firstFrame = typeof args.firstFrame === 'string' && args.firstFrame
@@ -2134,8 +2495,9 @@ async function handle(request) {
         case 'get_file': data = await handleGetFile(config, args); break
         case 'list_files': data = await handleListFiles(config, args); break
         case 'delete_file': data = await handleDeleteFile(config, args); break
-        case 'get_task': data = handleGetTask(args); break
-        case 'cancel_task': data = handleCancelTask(args); break
+        case 'list_tasks': data = await handleListTasks(config, args); break
+        case 'get_task': data = await handleGetTask(config, args); break
+        case 'cancel_task': data = await handleCancelTask(config, args); break
         case 'generate_image':
           task = createTaskRecord(name, args, config)
           try { data = await handleGenerateImage(config, args); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }

@@ -4,6 +4,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { BUILTIN_MEDIA_MODEL_MANIFESTS } from '@spark/protocol'
 
 const PNG_PIXEL =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
@@ -105,6 +106,7 @@ describe('spark_media MCP server', () => {
   let server: Server
   let baseUrl = ''
   let postedBody: Record<string, unknown> | null = null
+  let postedHeaders: Record<string, string | string[] | undefined> = {}
   let fileUploadCount = 0
   let fileUploadBody = ''
   let child: ChildProcessWithoutNullStreams | null = null
@@ -117,6 +119,7 @@ describe('spark_media MCP server', () => {
     mkdirSync(tmpDir, { recursive: true })
     fileUploadCount = 0
     fileUploadBody = ''
+    postedHeaders = {}
     server = createServer((req, res) => {
       if (req.method === 'POST' && req.url === '/images') {
         const chunks: Buffer[] = []
@@ -148,6 +151,22 @@ describe('spark_media MCP server', () => {
           postedBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
           res.writeHead(200, { 'content-type': 'application/json' })
           res.end(JSON.stringify({ id: 'volc-task' }))
+        })
+        return
+      }
+      if (
+        req.method === 'POST' &&
+        req.url === '/api/v1/services/aigc/video-generation/video-synthesis'
+      ) {
+        const chunks: Buffer[] = []
+        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+        req.on('end', () => {
+          postedHeaders = req.headers
+          postedBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(
+            JSON.stringify({ request_id: 'submit-request', output: { task_id: 'bailian-task' } }),
+          )
         })
         return
       }
@@ -185,6 +204,20 @@ describe('spark_media MCP server', () => {
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(
           JSON.stringify({ status: 'succeeded', content: { video_url: `${baseUrl}/asset.mp4` } }),
+        )
+        return
+      }
+      if (req.method === 'GET' && req.url === '/api/v1/tasks/bailian-task') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            request_id: 'poll-request',
+            output: {
+              task_id: 'bailian-task',
+              task_status: 'SUCCEEDED',
+              video_url: `${baseUrl}/asset.mp4`,
+            },
+          }),
         )
         return
       }
@@ -714,6 +747,62 @@ describe('spark_media MCP server', () => {
       { type: 'video_url', video_url: { url: 'https://cdn/ref.mp4' }, role: 'reference_video' },
       { type: 'audio_url', audio_url: { url: 'https://cdn/ref.mp3' }, role: 'reference_audio' },
     ])
+    expect(generated.result.structuredContent.files[0]).toMatch(/\.mp4$/)
+  })
+
+  it('submits Bailian manifest video with async header, media roles, native params, and API-v1 polling', async () => {
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:wan2.7-i2v-2026-04-25',
+    )!
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'bailian-test',
+        SPARK_MEDIA_PROVIDER: 'bailian',
+        SPARK_MEDIA_MODEL: manifest.modelId,
+        SPARK_MEDIA_BASE_URL: `${baseUrl}/api/v1`,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify({ polling: { intervalMs: 1, timeoutMs: 3000 } }),
+        SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify([manifest]),
+      },
+    })
+
+    const generated = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 52,
+      method: 'tools/call',
+      params: {
+        name: 'generate_video',
+        arguments: {
+          model: manifest.id,
+          capability: 'video.image_to_video',
+          prompt: '从首帧平滑过渡到尾帧',
+          firstFrame: 'https://cdn/first.png',
+          lastFrame: 'https://cdn/last.png',
+          referenceAudios: ['https://cdn/drive.mp3'],
+          resolution: '720P',
+          durationSeconds: 8,
+        },
+      },
+    })
+
+    expect(generated.error).toBeUndefined()
+    expect(postedHeaders['x-dashscope-async']).toBe('enable')
+    expect(postedBody).toMatchObject({
+      model: manifest.modelId,
+      input: {
+        prompt: '从首帧平滑过渡到尾帧',
+        media: [
+          { type: 'first_frame', url: 'https://cdn/first.png' },
+          { type: 'last_frame', url: 'https://cdn/last.png' },
+          { type: 'driving_audio', url: 'https://cdn/drive.mp3' },
+        ],
+      },
+      parameters: { resolution: '720P', duration: 8 },
+    })
+    expect(postedBody).not.toHaveProperty('durationSeconds')
+    expect(generated.result.structuredContent.requestId).toBe('bailian-task')
     expect(generated.result.structuredContent.files[0]).toMatch(/\.mp4$/)
   })
 

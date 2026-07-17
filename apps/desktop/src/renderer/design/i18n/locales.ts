@@ -233,7 +233,7 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'app.user.loggedInCloud': '已登录 · Cloud',
     'app.user.loggedOutLogin': '点击登录',
     'app.user.website': '官网',
-    'app.user.aboutSpark': '关于 SparkWork',
+    'app.user.aboutSpark': '关于',
     'app.user.version': '当前版本',
     'app.user.contactUs': '联系我们',
     'app.user.contactQQ': 'QQ 讨论组',

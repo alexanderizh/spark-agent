@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { rmSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
+import { rmSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { createCanvas } from '@napi-rs/canvas'
@@ -3540,8 +3540,9 @@ describe('VolcengineArkMediaAdapter', () => {
         response: { status: 200 },
       },
     })
-    expect(String((submissions[0]?.requestCall as { response?: { body?: unknown } })?.response?.body))
-      .toContain('operations/op-1')
+    expect(
+      String((submissions[0]?.requestCall as { response?: { body?: unknown } })?.response?.body),
+    ).toContain('operations/op-1')
     expect(downloadHeader).toBe('sk-test')
     expect(output.assets[0]?.type).toBe('video')
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
@@ -3860,5 +3861,245 @@ describe('media adapters reject unknown params under Contract V2', () => {
     expect(postedBody).not.toBeNull()
     // 联网搜索是 tools:[{type:'web_search'}]，searchEnabled true 但 forbidden 时绝不发出
     expect(postedBody!).not.toHaveProperty('tools')
+  })
+})
+
+describe('BailianMediaAdapter', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = path.join(
+      os.tmpdir(),
+      `spark-bailian-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    )
+    mkdirSync(tmpDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('uses Wan 2.7 synchronous image request format and persists the result', async () => {
+    let submitted: Record<string, unknown> | undefined
+    const fetchMock = makeFetch([
+      {
+        match: '/multimodal-generation/generation',
+        respond: (init) => {
+          submitted = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return {
+            ok: true,
+            status: 200,
+            body: {
+              request_id: 'image-request',
+              output: {
+                choices: [
+                  {
+                    message: {
+                      content: [{ type: 'image', image: `data:image/png;base64,${PNG_PIXEL}` }],
+                    },
+                  },
+                ],
+              },
+            },
+          }
+        },
+      },
+    ])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:wan2.7-image-pro',
+    )!
+    const router = new MediaRouterService()
+
+    const result = await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        prompt: 'a flower shop',
+        outputDir: tmpDir,
+        modelParams: { size: '2K', n: 1, thinking_mode: true },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'bailian-image',
+            name: 'Bailian',
+            defaultModel: manifest.modelId,
+            apiEndpoint: 'https://workspace.cn-beijing.maas.aliyuncs.com',
+            mediaProvider: 'bailian',
+            mediaCapabilities: ['image.generate', 'image.edit'],
+            mediaModelManifests: [manifest],
+          }),
+        ],
+        modelId: manifest.modelId,
+        fetch: fetchMock,
+      },
+    )
+
+    expect(result.output.requestId).toBe('image-request')
+    expect(result.output.assets).toHaveLength(1)
+    expect(submitted).toMatchObject({
+      model: 'wan2.7-image-pro',
+      parameters: { size: '2K', n: 1, thinking_mode: true },
+    })
+    expect(fetchMock.calls[0]?.url).toBe(
+      'https://workspace.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
+    )
+  })
+
+  it('rejects an invalid Wan 2.7 image-to-video media combination before submitting', async () => {
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:wan2.7-i2v-2026-04-25',
+    )!
+    const router = new MediaRouterService()
+
+    await expect(
+      router.invoke(
+        {
+          operation: 'image_to_video',
+          capability: 'video.image_to_video',
+          prompt: 'animate it',
+          outputDir: tmpDir,
+          inputFiles: [
+            { type: 'video', url: 'https://example.test/clip.mp4', mimeType: 'video/mp4' },
+            { type: 'audio', url: 'https://example.test/voice.mp3', mimeType: 'audio/mpeg' },
+          ],
+        },
+        {
+          providers: [
+            makeProvider({
+              id: 'bailian-video',
+              name: 'Bailian',
+              defaultModel: manifest.modelId,
+              apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
+              mediaProvider: 'bailian',
+              mediaCapabilities: ['video.image_to_video'],
+              mediaModelManifests: [manifest],
+            }),
+          ],
+          modelId: manifest.modelId,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+  })
+
+  it('routes a configured Wan reference model to its distinct capability', () => {
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:wan2.7-r2v',
+    )!
+    const router = new MediaRouterService()
+    const capability = router.resolveCapabilityForInput(
+      {
+        operation: 'text_to_video',
+        outputDir: tmpDir,
+        inputFiles: [
+          {
+            type: 'image',
+            role: 'reference',
+            url: 'https://example.test/character.png',
+            mimeType: 'image/png',
+          },
+        ],
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'bailian-r2v',
+            name: 'Bailian',
+            defaultModel: manifest.modelId,
+            mediaProvider: 'bailian',
+            mediaCapabilities: ['video.reference_to_video'],
+            mediaModelManifests: [manifest],
+          }),
+        ],
+        modelId: manifest.modelId,
+      },
+    )
+
+    expect(capability).toBe('video.reference_to_video')
+  })
+
+  it('submits prompt-optional video edit with aliased params, public local input, and channel task id', async () => {
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:wan2.7-videoedit',
+    )!
+    const inputPath = path.join(tmpDir, 'source.mp4')
+    writeFileSync(inputPath, Buffer.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]))
+    let submitted: Record<string, unknown> | undefined
+    const videoBuffer = Buffer.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70])
+    const fetchMock = makeFetch([
+      {
+        match: '/video-generation/video-synthesis',
+        respond: (init) => {
+          submitted = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          expect(new Headers(init?.headers).get('x-dashscope-async')).toBe('enable')
+          return {
+            ok: true,
+            status: 200,
+            body: { request_id: 'submit-request', output: { task_id: 'bailian-task-1' } },
+          }
+        },
+      },
+      {
+        match: '/tasks/bailian-task-1',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: {
+            request_id: 'poll-request',
+            output: { task_id: 'bailian-task-1', task_status: 'SUCCEEDED', video_url: 'https://cdn/edit.mp4' },
+          },
+        }),
+      },
+      {
+        match: 'https://cdn/edit.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuffer }),
+      },
+    ])
+    const taskSubmissions: string[] = []
+    const router = new MediaRouterService()
+
+    const { output } = await router.invoke(
+      {
+        operation: 'video_edit',
+        capability: 'video.edit',
+        outputDir: tmpDir,
+        inputFiles: [{ type: 'video', path: inputPath, mimeType: 'video/mp4' }],
+        modelParams: { aspectRatio: '9:16', durationSeconds: 4, audioSetting: 'origin' },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'bailian-video-edit',
+            name: 'Bailian',
+            defaultModel: manifest.modelId,
+            apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1',
+            mediaProvider: 'bailian',
+            mediaCapabilities: ['video.edit'],
+            mediaModelManifests: [manifest],
+            mediaDefaults: { polling: { intervalMs: 1, timeoutMs: 1000 } },
+          }),
+        ],
+        modelId: manifest.modelId,
+        fetch: fetchMock,
+        fallbackUploader: {
+          canHandle: (provider) => provider === 'bailian',
+          upload: async () => ({ provider: 'bailian', publicUrl: 'https://cdn/source.mp4' }),
+        },
+        onTaskSubmitted: (submission) => taskSubmissions.push(submission.requestId),
+      },
+    )
+
+    expect(fetchMock.calls[0]?.url).toBe(
+      'https://dashscope.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis',
+    )
+    expect(submitted).toMatchObject({
+      model: 'wan2.7-videoedit',
+      input: { media: [{ type: 'video', url: 'https://cdn/source.mp4' }] },
+      parameters: { ratio: '9:16', duration: 4, audio_setting: 'origin' },
+    })
+    expect((submitted?.input as Record<string, unknown>).prompt).toBeUndefined()
+    expect(taskSubmissions).toEqual(['bailian-task-1'])
+    expect(output.requestId).toBe('bailian-task-1')
+    expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuffer)
   })
 })

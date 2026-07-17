@@ -13,14 +13,16 @@ import {
   message,
 } from 'antd'
 import type {
+  BailianFilePurpose,
   IpcRequest,
   ProviderFileObject,
+  ProviderFilesApiKind,
   ProviderProfile,
   VolcengineVideoPreprocessInput,
 } from '@spark/protocol'
 import { useIpcInvoke } from '../../hooks/useIpc'
 import { Icons } from '../../Icons'
-import { isVolcengineArkFilesProfile } from './canvasProviderFiles'
+import { providerFilesApiKindForProfile } from './canvasProviderFiles'
 import './CanvasProviderFilesTab.less'
 
 const MAX_BATCH_DELETE = 20
@@ -49,6 +51,14 @@ export function CanvasProviderFilesTab() {
   const pollingRef = useRef(false)
   const loadSequenceRef = useRef(0)
   const providerProfileIdRef = useRef(providerProfileId)
+  const providerKind = useMemo<Extract<ProviderFilesApiKind, 'bailian' | 'volcengine-ark'> | null>(
+    () =>
+      providerFilesApiKindForProfile(
+        providers.find((profile) => profile.id === providerProfileId) ?? {},
+      ),
+    [providerProfileId, providers],
+  )
+  const providerLabel = providerKind === 'bailian' ? '阿里云百炼' : '火山方舟'
 
   useEffect(() => {
     providerProfileIdRef.current = providerProfileId
@@ -57,7 +67,9 @@ export function CanvasProviderFilesTab() {
   useEffect(() => {
     void listProviders({})
       .then((result) => {
-        const next = result.profiles.filter(isVolcengineArkFilesProfile)
+        const next = result.profiles.filter(
+          (profile) => providerFilesApiKindForProfile(profile) !== null,
+        )
         const currentProviderProfileId = providerProfileIdRef.current
         const nextProviderProfileId = next.some(
           (profile) => profile.id === currentProviderProfileId,
@@ -78,10 +90,12 @@ export function CanvasProviderFilesTab() {
       try {
         const result = await listFiles({
           providerProfileId,
-          purpose: 'user_data',
           order,
           limit: 100,
-          ...(after ? { after } : {}),
+          ...(providerKind === 'volcengine-ark'
+            ? { purpose: 'user_data' as const, ...(after ? { after } : {}) }
+            : {}),
+          ...(providerKind === 'bailian' && after ? { paginationToken: after } : {}),
         })
         if (sequence !== loadSequenceRef.current) return
         setFiles((current) => (after ? mergeFiles(current, result.files) : result.files))
@@ -93,7 +107,7 @@ export function CanvasProviderFilesTab() {
         setErrorMessage(filesErrorMessage(error))
       }
     },
-    [listFiles, order, providerProfileId],
+    [listFiles, order, providerKind, providerProfileId],
   )
 
   useEffect(() => {
@@ -117,9 +131,7 @@ export function CanvasProviderFilesTab() {
         const results = await Promise.allSettled(
           processingIds
             .slice(0, 20)
-            .map((fileId) =>
-              getFile({ providerProfileId: pollingProviderProfileId, fileId }),
-            ),
+            .map((fileId) => getFile({ providerProfileId: pollingProviderProfileId, fileId })),
         )
         if (providerProfileIdRef.current !== pollingProviderProfileId) return
         const updates = results.flatMap((result) =>
@@ -187,11 +199,14 @@ export function CanvasProviderFilesTab() {
 
   const confirmDelete = (targets: ProviderFileObject[]) => {
     Modal.confirm({
-      title: targets.length > 1 ? `删除 ${targets.length} 个火山方舟文件？` : '删除火山方舟文件？',
+      title:
+        targets.length > 1
+          ? `删除 ${targets.length} 个${providerLabel}文件？`
+          : `删除${providerLabel}文件？`,
       content:
         targets.length > 1
-          ? `单次最多删除 ${MAX_BATCH_DELETE} 个；远端文件可能仍被其他对话引用，删除后无法恢复。`
-          : `${targets[0]?.filename ?? ''}（${targets[0]?.id ?? ''}）可能仍被其他对话引用，删除后无法恢复。`,
+          ? `单次最多删除 ${MAX_BATCH_DELETE} 个；远端文件可能仍被其他任务引用，删除后无法恢复。`
+          : `${targets[0]?.filename ?? ''}（${targets[0]?.id ?? ''}）可能仍被其他任务引用，删除后无法恢复。`,
       okText: '确认删除',
       cancelText: '取消',
       okButtonProps: { danger: true },
@@ -210,16 +225,20 @@ export function CanvasProviderFilesTab() {
           aria-selected
           className="canvas-provider-files-channel-tab active"
         >
-          火山方舟
+          {providerLabel}
         </button>
         <span className="canvas-provider-files-note">
-          渠道能力独立适配；后续可在此并列接入 xAI Files
+          已支持火山方舟与百炼 DashScope 原生 Files；文件 ID 不会跨渠道或自动注入多媒体素材。
         </span>
       </div>
 
       <Alert
         type="info"
-        message="Files API 用于 Chat / Responses 的图片、视频、音频和 PDF 输入；文件必须为 active 才能引用。远端文件属于所选 Provider 项目，不随当前画布复制或导出；Seedance 视频生成不使用 file_id。"
+        message={
+          providerKind === 'bailian'
+            ? '百炼 DashScope Files 仅用于文件解析、Batch 和模型微调；官方未声明 file_id 可直接传给万相图片或视频生成，因此画布不会自动引用它。该 API 仅在北京 Region 开放。'
+            : 'Files API 用于 Chat / Responses 的图片、视频、音频和 PDF 输入；文件必须为 active 才能引用。远端文件属于所选 Provider 项目，不随当前画布复制或导出；Seedance 视频生成不使用 file_id。'
+        }
       />
       {errorMessage && (
         <Alert type="error" message={errorMessage} closable onClose={() => setErrorMessage('')} />
@@ -229,7 +248,7 @@ export function CanvasProviderFilesTab() {
         <div className="canvas-provider-files-toolbar-main">
           <Select
             value={providerProfileId || null}
-            placeholder="选择已配置的火山方舟 Provider"
+            placeholder="选择已配置的 Files Provider"
             options={providers.map((profile) => ({
               value: profile.id,
               label: `${profile.name} · ${profile.defaultModel}`,
@@ -300,7 +319,7 @@ export function CanvasProviderFilesTab() {
       </div>
 
       {!providersLoading && providers.length === 0 ? (
-        <Empty description="暂无可用的火山方舟 Provider，请先在模型管理中配置 API Key 与官方 BaseURL" />
+        <Empty description="暂无可用的 Files Provider，请先在模型管理中配置 API Key 与官方 Base URL" />
       ) : visibleFiles.length === 0 && !filesLoading ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -381,36 +400,180 @@ export function CanvasProviderFilesTab() {
         </div>
       )}
 
-      <VolcengineFileUploadModal
-        open={uploadOpen}
-        providerProfileId={providerProfileId}
-        uploading={uploadLoading}
-        onClose={() => setUploadOpen(false)}
-        onUpload={async (requests) => {
-          const requestedProviderProfileId = requests[0]?.providerProfileId ?? ''
-          let succeeded = 0
-          const failures: string[] = []
-          for (const request of requests) {
-            try {
-              const result = await uploadFile(request)
-              if (providerProfileIdRef.current === requestedProviderProfileId) {
-                setFiles((current) => mergeFiles([result.file], current))
+      {providerKind === 'bailian' ? (
+        <BailianFileUploadModal
+          open={uploadOpen}
+          providerProfileId={providerProfileId}
+          uploading={uploadLoading}
+          onClose={() => setUploadOpen(false)}
+          onUpload={async (requests) => {
+            const requestedProviderProfileId = requests[0]?.providerProfileId ?? ''
+            let succeeded = 0
+            const failures: string[] = []
+            for (const request of requests) {
+              try {
+                const result = await uploadFile(request)
+                if (providerProfileIdRef.current === requestedProviderProfileId) {
+                  setFiles((current) => mergeFiles([result.file], current))
+                }
+                succeeded += 1
+              } catch (error) {
+                failures.push(filesErrorMessage(error, '百炼'))
               }
-              succeeded += 1
-            } catch (error) {
-              failures.push(filesErrorMessage(error))
             }
-          }
-          if (providerProfileIdRef.current !== requestedProviderProfileId) return
-          if (failures.length > 0) {
-            setErrorMessage(`${succeeded} 个文件已提交，${failures.length} 个失败：${failures[0]}`)
-          } else {
-            message.success(`已提交 ${succeeded} 个文件，处理中项目会自动刷新`)
-            setUploadOpen(false)
-          }
-        }}
-      />
+            if (providerProfileIdRef.current !== requestedProviderProfileId) return
+            if (failures.length > 0) {
+              setErrorMessage(
+                `${succeeded} 个文件已上传，${failures.length} 个失败：${failures[0]}`,
+              )
+            } else {
+              message.success(`已上传 ${succeeded} 个百炼文件`)
+              setUploadOpen(false)
+            }
+          }}
+        />
+      ) : (
+        <VolcengineFileUploadModal
+          open={uploadOpen}
+          providerProfileId={providerProfileId}
+          uploading={uploadLoading}
+          onClose={() => setUploadOpen(false)}
+          onUpload={async (requests) => {
+            const requestedProviderProfileId = requests[0]?.providerProfileId ?? ''
+            let succeeded = 0
+            const failures: string[] = []
+            for (const request of requests) {
+              try {
+                const result = await uploadFile(request)
+                if (providerProfileIdRef.current === requestedProviderProfileId) {
+                  setFiles((current) => mergeFiles([result.file], current))
+                }
+                succeeded += 1
+              } catch (error) {
+                failures.push(filesErrorMessage(error))
+              }
+            }
+            if (providerProfileIdRef.current !== requestedProviderProfileId) return
+            if (failures.length > 0) {
+              setErrorMessage(
+                `${succeeded} 个文件已提交，${failures.length} 个失败：${failures[0]}`,
+              )
+            } else {
+              message.success(`已提交 ${succeeded} 个文件，处理中项目会自动刷新`)
+              setUploadOpen(false)
+            }
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+function BailianFileUploadModal({
+  open,
+  providerProfileId,
+  uploading,
+  onClose,
+  onUpload,
+}: {
+  open: boolean
+  providerProfileId: string
+  uploading: boolean
+  onClose: () => void
+  onUpload: (requests: Array<IpcRequest<'provider:files:upload'>>) => Promise<void>
+}) {
+  const [filePaths, setFilePaths] = useState<string[]>([])
+  const [purpose, setPurpose] = useState<BailianFilePurpose>('file-extract')
+  const [description, setDescription] = useState('')
+
+  const pickFiles = async () => {
+    const picked = await window.spark.invoke('dialog:open-file', {
+      title: '选择上传到阿里云百炼 Files 的文件',
+      multiple: true,
+    })
+    if (picked.canceled) return
+    const paths = (picked.filePaths ?? (picked.filePath ? [picked.filePath] : [])).slice(
+      0,
+      MAX_LOCAL_UPLOADS,
+    )
+    setFilePaths(paths)
+    if ((picked.filePaths?.length ?? 0) > MAX_LOCAL_UPLOADS) {
+      message.warning(`单次最多选择 ${MAX_LOCAL_UPLOADS} 个文件`)
+    }
+  }
+
+  const submit = async () => {
+    if (!providerProfileId) return
+    if (filePaths.length === 0) {
+      message.warning('请先选择本地文件')
+      return
+    }
+    await onUpload(
+      filePaths.map((filePath) => ({
+        providerProfileId,
+        filePath,
+        purpose,
+        ...(description.trim() ? { description: description.trim() } : {}),
+      })),
+    )
+  }
+
+  return (
+    <Modal
+      open={open}
+      title="上传到阿里云百炼 Files"
+      width={620}
+      okText="开始上传"
+      cancelText="取消"
+      confirmLoading={uploading}
+      onCancel={onClose}
+      onOk={() => void submit()}
+      destroyOnClose={false}
+      zIndex={1500}
+    >
+      <div className="canvas-provider-files-upload-form">
+        <Alert
+          type="info"
+          message="仅支持本地 multipart 上传。该文件平台用于文件解析、Batch 和模型微调；不会作为万相图像/视频生成的素材引用。"
+        />
+        <div className="canvas-provider-files-upload-row">
+          <Button icon={<Icons.FolderOpen size={13} />} onClick={() => void pickFiles()}>
+            选择文件
+          </Button>
+          <span className="canvas-provider-files-note">
+            {filePaths.length > 0
+              ? `已选择 ${filePaths.length} 个：${filePaths.map(fileNameFromPath).join('、')}`
+              : '可多选，单次最多 20 个'}
+          </span>
+        </div>
+        <div className="canvas-provider-files-upload-grid">
+          <label className="canvas-provider-files-field">
+            <span>用途（purpose）</span>
+            <Select
+              value={purpose}
+              onChange={setPurpose}
+              options={[
+                { value: 'file-extract', label: 'file-extract · 文件解析（150 MB）' },
+                { value: 'batch', label: 'batch · 批量任务（500 MB）' },
+                {
+                  value: 'fine-tune',
+                  label: 'fine-tune · 模型微调（300 MB；视频/图像 ZIP 特例 1 GiB）',
+                },
+              ]}
+            />
+          </label>
+          <label className="canvas-provider-files-field">
+            <span>文件描述（可选）</span>
+            <Input
+              value={description}
+              maxLength={2000}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="将随 descriptions 字段上传"
+            />
+          </label>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -743,14 +906,14 @@ function expireAtFromDays(days: number): number {
   return now + Math.floor(days) * 86_400
 }
 
-function filesErrorMessage(error: unknown): string {
+function filesErrorMessage(error: unknown, providerName = '火山方舟'): string {
   const detail = error instanceof Error ? error.message : String(error)
   if (/401|api key|auth/i.test(detail))
-    return '火山方舟 API Key 无效或未配置，请检查当前 Provider 凭据。'
+    return `${providerName} API Key 无效或未配置，请检查当前 Provider 凭据。`
   if (/403|forbidden|permission/i.test(detail))
-    return '当前 API Key 没有 Files 权限，或文件与 Provider 不属于同一项目。'
-  if (/429|rate.?limit/i.test(detail)) return '火山方舟 Files 请求过于频繁，请稍后重试。'
-  return `火山方舟 Files 请求失败：${detail}`
+    return `当前 API Key 没有 ${providerName} Files 权限，或文件与 Provider 不属于同一项目。`
+  if (/429|rate.?limit/i.test(detail)) return `${providerName} Files 请求过于频繁，请稍后重试。`
+  return `${providerName} Files 请求失败：${detail}`
 }
 
 function formatBytes(bytes: number): string {

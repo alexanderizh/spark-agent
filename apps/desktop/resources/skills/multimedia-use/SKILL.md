@@ -117,6 +117,29 @@ tags:
 - Responses API：https://console.volcengine.com/ark/region:cn-beijing/docs/82379/1569618?lang=zh
 - Files API：https://console.volcengine.com/ark/region:cn-beijing/docs/82379/1870405?lang=zh
 
+## 阿里云百炼专项规则
+
+以下规则仅适用于 `providerKind=bailian` 的已启用 Wan 2.7 Manifest；其他百炼模型必须先通过 `describe_model` 确认 schema 后再调用：
+
+- `wan2.7-image-pro` / `wan2.7-image` 使用 DashScope 原生同步图像接口。`size` 只接受 `1K`、`2K`、`4K`；4K 仅限 `wan2.7-image-pro` 的非组图纯文生图。不要传宽高比形式的 `size` 或另造 `resolution` 字段。
+- 图片编辑最多 9 张输入图；支持 HTTP/HTTPS、百炼临时 `oss://` URL 或图片 Base64。`thinking_mode` 仅在无图、非组图时有效；组图用 `enable_sequential=true` 且 `n=1..12`，其他图像请求 `n=1..4`。
+- `wan2.7-i2v-2026-04-25` 只接受五种素材组合：首帧；首帧+驱动音频；首帧+尾帧；首帧+尾帧+驱动音频；首视频片段（可加尾帧）。首帧、尾帧、驱动音频、首视频片段每种最多一个；不能把视频续写和驱动音频/首帧混在一次请求中。
+- `wan2.7-r2v-2026-06-12` 是独立的 `video.reference_to_video` 能力。最多 5 个图像/视频参考和 1 个参考音色；提示词须用“图1/视频1”等顺序明确指代素材。首帧与参考素材的组合、音色绑定以 `describe_model` 返回的 rolePolicy 为准。
+- `wan2.7-videoedit` 必须传入且仅传入 1 段待编辑视频，最多加 4 张参考图；`duration=0` 表示保持原视频时长，只有需要截断时才传 2–10 秒；`audio_setting` 仅为 `auto` 或 `origin`。
+- 百炼视频提交必须使用 DashScope 异步语义：`X-DashScope-Async: enable`，随后查询 `/api/v1/tasks/{task_id}`。需要排查历史任务时，可用 `list_tasks` 按 24 小时窗口、模型和状态查询；仅 `PENDING` 的远端任务可取消。任务和结果 URL 仅保留 24 小时；成功后应立即落盘，不能把临时 URL 当作永久资产。
+- 视频/音频素材需要该模型 API 明确允许的 HTTP/HTTPS URL；图像还可以用 API 允许的 Base64。Managed Agents、DashScope 原生与 OpenAI 兼容 Files API 的 `file_id` 不可直接传给多媒体生成接口。DashScope Files 返回的下载 URL 也不能因为存在就推断为万相素材 URL。
+- 百炼 DashScope 原生 Files 已可在「无限画布 → 项目资产中心 → Files」中管理：仅北京 Region 公共 `https://dashscope.aliyuncs.com/api/v1/files`，上传必须使用本地 `files` multipart 字段和 `purpose`=`file-extract` / `batch` / `fine-tune`。它只用于文件解析、Batch 与模型微调；不作为万相图片/视频素材。上传响应可能部分成功，必须逐项显示失败的 `code`、`message`、`request_id`。删除远端文件前仍需用户明确确认。
+- 当错误含 `request_id`、`code` 或字段名时，要保留它们并指出可修复的输入字段；不要将百炼的错误结构按 OpenAI 或火山方舟格式臆测解析。
+
+官方依据：
+
+- Wan 2.7 图像：https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference
+- Wan 2.7 图生视频：https://help.aliyun.com/zh/model-studio/image-to-video-general-api-reference
+- Wan 2.7 参考生视频：https://help.aliyun.com/zh/model-studio/wan-video-to-video-api-reference
+- Wan 2.7 视频编辑：https://help.aliyun.com/zh/model-studio/wan-video-editing-api-reference
+- 上传与管理文件：https://help.aliyun.com/zh/model-studio/upload-file-api 、https://help.aliyun.com/zh/model-studio/get-file-api
+- 异步任务管理：https://help.aliyun.com/zh/model-studio/manage-asynchronous-tasks
+
 ### 配音 / 转写
 
 1. 配音先确认语言、声线、语速、情绪、用途。

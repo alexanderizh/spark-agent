@@ -18,6 +18,12 @@ describe('resolveProviderFilesApiKind', () => {
 
   it('preserves xAI routing and rejects unrelated providers', () => {
     expect(resolveProviderFilesApiKind({ mediaProvider: 'xai' })).toBe('xai')
+    expect(resolveProviderFilesApiKind({ mediaProvider: 'bailian' })).toBe('bailian')
+    expect(
+      resolveProviderFilesApiKind({
+        apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
+      }),
+    ).toBe('bailian')
     expect(resolveProviderFilesApiKind({ apiEndpoint: 'https://api.example.com/v1' })).toBeNull()
     expect(
       resolveProviderFilesApiKind({
