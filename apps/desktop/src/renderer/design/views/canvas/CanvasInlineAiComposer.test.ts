@@ -124,6 +124,13 @@ describe('CanvasInlineAiComposer node default model params', () => {
     expect(readModelParamDraftValue({ aspectRatio: '2:1' }, 'aspect_ratio')).toBe('2:1')
   })
 
+  it('reads and covers persisted duration aliases as the same form field', () => {
+    expect(readModelParamDraftValue({ duration: 3 }, 'durationSeconds')).toBe('3')
+    expect(readModelParamDraftValue({ durationSeconds: 3 }, 'duration')).toBe('3')
+    expect(isModelParamCoveredByFields('duration', [field('durationSeconds')])).toBe(true)
+    expect(isModelParamCoveredByFields('durationSeconds', [field('duration')])).toBe(true)
+  })
+
   it('preserves JSON Schema patterns for custom value validation', () => {
     expect(
       schemaFields({

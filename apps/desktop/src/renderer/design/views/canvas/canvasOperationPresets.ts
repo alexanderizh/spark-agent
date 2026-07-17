@@ -600,21 +600,42 @@ export function mergeCanvasOperationPresetModelParams(
   operation: CanvasOperationType,
   modelParams?: Record<string, unknown>,
 ): Record<string, unknown> {
-  return {
-    ...(BUILTIN_MODEL_PARAMS[operation] ?? {}),
-    ...readCanvasOperationPreset(operation).modelParams,
-    ...(modelParams ?? {}),
-  }
+  return mergeModelParamAliases(
+    {
+      ...(BUILTIN_MODEL_PARAMS[operation] ?? {}),
+      ...readCanvasOperationPreset(operation).modelParams,
+    },
+    modelParams,
+  )
 }
 
 export function mergeCanvasPresetTargetModelParams(
   targetId: CanvasPresetTargetId,
   modelParams?: Record<string, unknown>,
 ): Record<string, unknown> {
-  return {
-    ...readCanvasPresetTarget(targetId).modelParams,
-    ...(modelParams ?? {}),
+  return mergeModelParamAliases(readCanvasPresetTarget(targetId).modelParams, modelParams)
+}
+
+function mergeModelParamAliases(
+  base: Record<string, unknown>,
+  overrides: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const nextBase = { ...base }
+  const nextOverrides = { ...(overrides ?? {}) }
+  let selectedDuration: { name: 'duration' | 'durationSeconds'; value: unknown } | undefined
+  for (const [name, value] of Object.entries(nextOverrides)) {
+    if (name === 'duration' || name === 'durationSeconds') {
+      selectedDuration = { name, value }
+    }
   }
+  if (selectedDuration) {
+    delete nextBase.duration
+    delete nextBase.durationSeconds
+    delete nextOverrides.duration
+    delete nextOverrides.durationSeconds
+    nextOverrides[selectedDuration.name] = selectedDuration.value
+  }
+  return { ...nextBase, ...nextOverrides }
 }
 
 export function formatCanvasOperationPresetModelParams(
