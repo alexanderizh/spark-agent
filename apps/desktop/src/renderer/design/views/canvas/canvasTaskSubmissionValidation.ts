@@ -119,9 +119,9 @@ function validateBasicMediaSubmission(request: CanvasTaskSubmissionRequest): Med
   const issues: MediaContractIssue[] = []
   const prompt = (request.prompt ?? '').trim()
   const files = request.inputFiles ?? []
-  const imageCount = files.filter((file) => file.type === 'image' || file.type === 'file').length
-  const videoCount = files.filter((file) => file.type === 'video').length
-  const audioCount = files.filter((file) => file.type === 'audio').length
+  const imageCount = files.filter((file) => matchesMediaKind(file, 'image')).length
+  const videoCount = files.filter((file) => matchesMediaKind(file, 'video')).length
+  const audioCount = files.filter((file) => matchesMediaKind(file, 'audio')).length
 
   if (operationRequiresPrompt(request.operation) && !prompt) {
     issues.push(issue('missing_required', '请输入提示词', ['prompt']))
@@ -139,6 +139,16 @@ function validateBasicMediaSubmission(request: CanvasTaskSubmissionRequest): Med
     issues.push(issue('missing_required', '请选择输入音频', ['inputFiles']))
   }
   return issues
+}
+
+function matchesMediaKind(
+  file: CanvasMediaTaskInputFile,
+  kind: 'image' | 'video' | 'audio',
+): boolean {
+  if (file.type === kind) return true
+  if (file.type !== 'file') return false
+  if (file.mimeType) return file.mimeType.toLowerCase().startsWith(`${kind}/`)
+  return kind === 'image'
 }
 
 function operationRequiresPrompt(operation: CanvasOperationType): boolean {

@@ -49,7 +49,7 @@ export const XAI_VIDEO_15_MANIFESTS: readonly MediaModelManifest[] = XAI_VIDEO_1
         id: 'video.image_to_video',
         label: '图生视频',
         input: {
-          required: ['prompt', 'image'],
+          required: ['image'],
           maxImages: 1,
           acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },

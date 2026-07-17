@@ -99,7 +99,7 @@ describe('XaiMediaAdapter official contract', () => {
     ])
   })
 
-  it('maps up to seven reference images and rejects a last frame', async () => {
+  it('maps all reference images without an undocumented local cap and rejects a last frame', async () => {
     const capture: { body?: Record<string, unknown> } = {}
     const references = Array.from({ length: 7 }, (_, index) => ({
       type: 'image' as const,

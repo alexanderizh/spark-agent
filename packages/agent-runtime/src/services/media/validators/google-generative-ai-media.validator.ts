@@ -20,7 +20,7 @@ export function validateGoogleGenerativeAiMediaRequest(
   }
 
   const referenceImages = imageInputFiles(context).filter((file) => file.role === 'reference')
-  if (referenceImages.length > 3) {
+  if (context.capability.startsWith('video.') && referenceImages.length > 3) {
     issues.push(validationIssue('out_of_range', 'Google 视频参考图最多支持 3 张', ['inputFiles']))
   }
 

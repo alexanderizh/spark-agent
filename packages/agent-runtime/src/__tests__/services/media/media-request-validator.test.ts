@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import type { MediaModelCapabilityManifest, MediaModelManifest } from '@spark/protocol'
+import {
+  BUILTIN_MEDIA_MODEL_MANIFESTS,
+  type MediaModelCapabilityManifest,
+  type MediaModelManifest,
+} from '@spark/protocol'
 import { validateMediaRequest } from '../../../services/media/media-request-validator.js'
 
 function capability(
@@ -84,6 +88,96 @@ describe('validateMediaRequest', () => {
     )
   })
 
+  it('classifies generic file inputs by MIME type before enforcing media counts', () => {
+    const cap = capability({
+      id: 'video.reference_to_video',
+      input: {
+        required: ['prompt', 'video'],
+        maxImages: 1,
+        maxVideos: 1,
+        maxAudios: 1,
+        acceptedMimeTypes: ['image/png', 'video/mp4', 'audio/mpeg'],
+      },
+    })
+    const mediaManifest = manifest('custom', 'multimodal-video-model', cap)
+    const result = validateMediaRequest({
+      input: {
+        operation: 'image_to_video',
+        capability: 'video.reference_to_video',
+        prompt: 'follow the references',
+        inputFiles: [
+          {
+            type: 'file',
+            role: 'reference',
+            mimeType: 'image/png',
+            url: 'https://example.com/reference.png',
+          },
+          {
+            type: 'file',
+            role: 'reference',
+            mimeType: 'video/mp4',
+            url: 'https://example.com/reference-1.mp4',
+          },
+          {
+            type: 'file',
+            role: 'reference',
+            mimeType: 'video/mp4',
+            url: 'https://example.com/reference-2.mp4',
+          },
+          {
+            type: 'file',
+            role: 'reference',
+            mimeType: 'audio/mpeg',
+            url: 'https://example.com/reference.mp3',
+          },
+        ],
+        outputDir: '',
+      },
+      providerKind: 'custom',
+      modelId: 'multimodal-video-model',
+      capability: 'video.reference_to_video',
+      manifest: mediaManifest,
+      manifestCapability: cap,
+      mode: 'canvas',
+    })
+
+    expect(result.blockingIssues).toHaveLength(1)
+    expect(result.blockingIssues[0]?.message).toContain('最多支持 1 段视频')
+  })
+
+  it('normalizes equivalent MIME spellings before enforcing accepted formats', () => {
+    const cap = capability({
+      input: {
+        required: ['image'],
+        maxImages: 1,
+        acceptedMimeTypes: ['image/jpeg'],
+      },
+    })
+    const mediaManifest = manifest('custom', 'jpeg-model', cap)
+    const result = validateMediaRequest({
+      input: {
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        inputFiles: [
+          {
+            type: 'image',
+            mimeType: 'IMAGE/JPG; charset=binary',
+            url: 'https://example.com/frame.jpg',
+          },
+        ],
+        outputDir: '',
+      },
+      providerKind: 'custom',
+      modelId: 'jpeg-model',
+      capability: 'video.image_to_video',
+      manifest: mediaManifest,
+      manifestCapability: cap,
+      mode: 'canvas',
+    })
+
+    expect(result.blockingIssues).toEqual([])
+  })
+
   it('keeps xAI model-specific rules isolated in the xAI validator', () => {
     const cap = capability({
       id: 'video.generate',
@@ -114,7 +208,7 @@ describe('validateMediaRequest', () => {
     expect(result.blockingIssues.some((issue) => issue.message.includes('不支持尾帧'))).toBe(true)
   })
 
-  it('enforces xAI reference image and extension duration limits', () => {
+  it('enforces the documented xAI reference-image limit and still validates extension duration', () => {
     const referenceCapability = capability({
       id: 'video.reference_to_video',
       input: { required: ['prompt', 'images'], maxImages: 9 },
@@ -125,7 +219,7 @@ describe('validateMediaRequest', () => {
         operation: 'text_to_video',
         capability: 'video.reference_to_video',
         prompt: 'animate',
-        inputFiles: Array.from({ length: 8 }, (_, index) => ({
+        inputFiles: Array.from({ length: 7 }, (_, index) => ({
           type: 'image' as const,
           role: 'reference' as const,
           url: `https://example.com/${index}.png`,
@@ -138,9 +232,7 @@ describe('validateMediaRequest', () => {
       manifest: referenceManifest,
       manifestCapability: referenceCapability,
     })
-    expect(
-      referenceResult.blockingIssues.some((issue) => issue.message.includes('最多支持 7 张')),
-    ).toBe(true)
+    expect(referenceResult.blockingIssues).toEqual([])
 
     const extensionCapability = capability({
       id: 'video.extend',
@@ -167,7 +259,68 @@ describe('validateMediaRequest', () => {
     ).toBe(true)
   })
 
-  it('rejects xAI video prompts longer than the provider limit before submission', () => {
+  it('rejects an eighth xAI reference image before adapter execution', () => {
+    const mediaManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'xai:grok-imagine-video',
+    )!
+    const capability = mediaManifest.capabilities.find(
+      (entry) => entry.id === 'video.reference_to_video',
+    )!
+    const result = validateMediaRequest({
+      input: {
+        operation: 'text_to_video',
+        capability: 'video.reference_to_video',
+        prompt: 'use these references',
+        inputFiles: Array.from({ length: 8 }, (_, index) => ({
+          type: 'image' as const,
+          role: 'reference' as const,
+          url: `https://example.com/reference-${index}.png`,
+        })),
+        outputDir: '',
+      },
+      providerKind: 'xai',
+      modelId: mediaManifest.modelId,
+      capability: 'video.reference_to_video',
+      manifest: mediaManifest,
+      manifestCapability: capability,
+    })
+
+    expect(result.blockingIssues.some((issue) => issue.code === 'out_of_range')).toBe(true)
+  })
+
+  it('accepts Seedance 1.5 Pro first and last frame input', () => {
+    const mediaManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'apimart:doubao-seedance-1-5-pro-apimart',
+    )
+    const mediaCapability = mediaManifest?.capabilities.find(
+      (entry) => entry.id === 'video.image_to_video',
+    )
+    expect(mediaManifest).toBeDefined()
+    expect(mediaCapability).toBeDefined()
+
+    const result = validateMediaRequest({
+      input: {
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        prompt: 'animate from first frame to last frame',
+        inputFiles: [
+          { type: 'image', role: 'first_frame', url: 'https://example.com/first.png' },
+          { type: 'image', role: 'last_frame', url: 'https://example.com/last.png' },
+        ],
+        outputDir: '',
+      },
+      providerKind: 'apimart',
+      modelId: 'doubao-seedance-1-5-pro',
+      capability: 'video.image_to_video',
+      manifest: mediaManifest,
+      manifestCapability: mediaCapability,
+      mode: 'canvas',
+    })
+
+    expect(result.blockingIssues).toEqual([])
+  })
+
+  it('does not reject xAI video prompts using an undocumented local character limit', () => {
     const cap = capability()
     const mediaManifest = manifest('xai', 'grok-imagine-video', cap)
     const result = validateMediaRequest({
@@ -185,11 +338,62 @@ describe('validateMediaRequest', () => {
       manifestCapability: cap,
     })
 
-    expect(
-      result.blockingIssues.some(
-        (issue) => issue.code === 'out_of_range' && issue.message.includes('4096'),
-      ),
-    ).toBe(true)
+    expect(result.blockingIssues).toEqual([])
+  })
+
+  it('accepts promptless xAI image-to-video and 10-second reference requests', () => {
+    const mediaManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'xai:grok-imagine-video',
+    )
+    const imageToVideo = mediaManifest?.capabilities.find(
+      (entry) => entry.id === 'video.image_to_video',
+    )
+    const referenceToVideo = mediaManifest?.capabilities.find(
+      (entry) => entry.id === 'video.reference_to_video',
+    )
+    expect(mediaManifest).toBeDefined()
+    expect(imageToVideo).toBeDefined()
+    expect(referenceToVideo).toBeDefined()
+
+    const imageResult = validateMediaRequest({
+      input: {
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        inputFiles: [
+          { type: 'image', role: 'first_frame', url: 'https://example.com/frame.png' },
+        ],
+        outputDir: '',
+      },
+      providerKind: 'xai',
+      modelId: mediaManifest!.modelId,
+      capability: 'video.image_to_video',
+      manifest: mediaManifest,
+      manifestCapability: imageToVideo,
+      mode: 'canvas',
+    })
+    const referenceResult = validateMediaRequest({
+      input: {
+        operation: 'text_to_video',
+        capability: 'video.reference_to_video',
+        prompt: 'use these references',
+        inputFiles: Array.from({ length: 7 }, (_, index) => ({
+          type: 'image' as const,
+          role: 'reference' as const,
+          url: `https://example.com/reference-${index}.png`,
+        })),
+        modelParams: { durationSeconds: 10 },
+        outputDir: '',
+      },
+      providerKind: 'xai',
+      modelId: mediaManifest!.modelId,
+      capability: 'video.reference_to_video',
+      manifest: mediaManifest,
+      manifestCapability: referenceToVideo,
+      mode: 'canvas',
+    })
+
+    expect(imageResult.blockingIssues).toEqual([])
+    expect(referenceResult.blockingIssues).toEqual([])
   })
 
   it('validates Google image transport before adapter execution', () => {
@@ -219,6 +423,40 @@ describe('validateMediaRequest', () => {
     expect(
       result.blockingIssues.some((issue) => issue.message.includes('dataUrl 或本地文件路径')),
     ).toBe(true)
+  })
+
+  it('does not apply the Veo three-reference limit to Google image editing', () => {
+    const mediaManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'google:gemini-3.1-flash-image',
+    )
+    const mediaCapability = mediaManifest?.capabilities.find(
+      (entry) => entry.id === 'image.edit',
+    )
+    expect(mediaManifest).toBeDefined()
+    expect(mediaCapability?.input.maxImages).toBe(8)
+
+    const result = validateMediaRequest({
+      input: {
+        operation: 'image_edit',
+        capability: 'image.edit',
+        prompt: 'combine the references',
+        inputFiles: Array.from({ length: 4 }, (_, index) => ({
+          type: 'image' as const,
+          role: 'reference' as const,
+          dataUrl: `data:image/png;base64,AAAA${index}`,
+          mimeType: 'image/png',
+        })),
+        outputDir: '',
+      },
+      providerKind: 'google-generative-ai',
+      modelId: mediaManifest!.modelId,
+      capability: 'image.edit',
+      manifest: mediaManifest,
+      manifestCapability: mediaCapability,
+      mode: 'canvas',
+    })
+
+    expect(result.blockingIssues).toEqual([])
   })
 
   it('rejects malformed media data URLs', () => {

@@ -42,7 +42,7 @@ describe('pruneModelParamsForCanvas', () => {
 
   it('invokes pruneMediaModelParams with derived capability from operation', async () => {
     mockPruneResponse({
-      prunedModelParams: { aspect_ratio: '16:9' },
+      prunedModelParams: { aspectRatio: '16:9' },
       droppedParams: [{ name: 'output_format', reason: 'unsupported_by_model' }],
     })
     const result = await pruneModelParamsForCanvas({
@@ -55,7 +55,7 @@ describe('pruneModelParamsForCanvas', () => {
       capabilityId: 'image.generate',
       modelParams: { aspectRatio: '16:9', output_format: 'png' },
     })
-    expect(result.modelParams).toEqual({ aspect_ratio: '16:9' })
+    expect(result.modelParams).toEqual({ aspectRatio: '16:9' })
     expect(result.droppedParams).toHaveLength(1)
     expect(result.droppedParams[0]?.name).toBe('output_format')
   })
@@ -78,7 +78,7 @@ describe('pruneModelParamsForCanvas', () => {
         },
       ],
     })
-    mockPruneResponse({ prunedModelParams: { duration: 8 } })
+    mockPruneResponse({ prunedModelParams: { durationSeconds: 8 } })
 
     const result = await pruneModelParamsForCanvas({
       operation: 'image_to_video',
@@ -100,12 +100,145 @@ describe('pruneModelParamsForCanvas', () => {
         validateSubmission: true,
       }),
     )
-    expect(result.modelParams).toEqual({ duration: 8 })
+    expect(result.modelParams).toEqual({ durationSeconds: 8 })
     expect(result).toMatchObject({
       resolvedManifestId: 'xai:grok-imagine-video',
       resolvedProviderProfileId: 'profile-xai',
       resolvedModelId: 'grok-imagine-video',
     })
+  })
+
+  it('validates Grok multi-reference input with reference-to-video capability', async () => {
+    ;(canvasApi.listMediaModels as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      models: [
+        {
+          manifestId: 'xai:grok-imagine-video',
+          providerProfileId: 'profile-xai',
+          providerKind: 'xai',
+          modelId: 'grok-imagine-video',
+          effectiveModelId: 'grok-imagine-video',
+          displayName: 'Grok Imagine Video',
+          domains: ['video'],
+          invocationMode: 'async',
+          capabilities: [
+            { id: 'video.image_to_video', label: '图生视频', input: { required: ['image'], maxImages: 1 }, output: { types: ['video'] }, paramSchema: {} },
+            { id: 'video.reference_to_video', label: '多参考图生视频', input: { required: ['image'], maxImages: 7 }, output: { types: ['video'] }, paramSchema: {} },
+          ],
+          sourceUrls: [],
+          enabled: true,
+        },
+      ],
+    })
+    mockPruneResponse({ prunedModelParams: {} })
+
+    await pruneModelParamsForCanvas({
+      operation: 'image_to_video',
+      manifestId: 'xai:grok-imagine-video',
+      providerProfileId: 'profile-xai',
+      modelId: 'grok-imagine-video',
+      prompt: 'animate both references',
+      validateSubmission: true,
+      modelParams: {},
+      inputFiles: [
+        { type: 'image', role: 'reference', url: 'https://example.com/ref-1.png' },
+        { type: 'image', role: 'reference', url: 'https://example.com/ref-2.png' },
+      ],
+    })
+
+    expect(canvasApi.pruneMediaModelParams).toHaveBeenCalledWith(
+      expect.objectContaining({ capabilityId: 'video.reference_to_video' }),
+    )
+  })
+
+  it('falls back to image-to-video discovery when no reference capability is available', async () => {
+    ;(canvasApi.listMediaModels as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ models: [] })
+      .mockResolvedValueOnce({
+        models: [
+          {
+            manifestId: 'xai:grok-imagine-video-1.5',
+            providerProfileId: 'profile-xai',
+            providerKind: 'xai',
+            modelId: 'grok-imagine-video-1.5',
+            effectiveModelId: 'grok-imagine-video-1.5',
+            displayName: 'Grok Imagine Video 1.5',
+            domains: ['video'],
+            invocationMode: 'async',
+            capabilities: [
+              { id: 'video.image_to_video', label: '图生视频', input: { required: ['image'], maxImages: 1 }, output: { types: ['video'] }, paramSchema: {} },
+            ],
+            sourceUrls: [],
+            enabled: true,
+          },
+        ],
+      })
+    mockPruneResponse({ prunedModelParams: {} })
+
+    const result = await pruneModelParamsForCanvas({
+      operation: 'image_to_video',
+      prompt: 'animate this image',
+      validateSubmission: true,
+      modelParams: {},
+      inputFiles: [
+        { type: 'image', role: 'reference', url: 'https://example.com/ref.png' },
+      ],
+    })
+
+    expect(canvasApi.listMediaModels).toHaveBeenNthCalledWith(1, {
+      capability: 'video.reference_to_video',
+      enabledOnly: true,
+    })
+    expect(canvasApi.listMediaModels).toHaveBeenNthCalledWith(2, {
+      capability: 'video.image_to_video',
+      enabledOnly: true,
+    })
+    expect(canvasApi.pruneMediaModelParams).toHaveBeenCalledWith(
+      expect.objectContaining({ capabilityId: 'video.image_to_video' }),
+    )
+    expect(result.fallbackReason).toBeUndefined()
+  })
+
+  it('discovers reference-to-video for multiple role-less images from legacy canvas data', async () => {
+    ;(canvasApi.listMediaModels as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      models: [
+        {
+          manifestId: 'xai:grok-imagine-video',
+          providerProfileId: 'profile-xai',
+          providerKind: 'xai',
+          modelId: 'grok-imagine-video',
+          effectiveModelId: 'grok-imagine-video',
+          displayName: 'Grok Imagine Video',
+          domains: ['video'],
+          invocationMode: 'async',
+          capabilities: [
+            { id: 'video.image_to_video', label: '图生视频', input: { required: ['image'], maxImages: 1 }, output: { types: ['video'] }, paramSchema: {} },
+            { id: 'video.reference_to_video', label: '参考图生视频', input: { required: ['prompt', 'image'], maxImages: 7 }, output: { types: ['video'] }, paramSchema: {} },
+          ],
+          sourceUrls: [],
+          enabled: true,
+        },
+      ],
+    })
+    mockPruneResponse({ prunedModelParams: {} })
+
+    await pruneModelParamsForCanvas({
+      operation: 'image_to_video',
+      prompt: 'use both images',
+      validateSubmission: true,
+      modelParams: {},
+      inputFiles: [
+        { type: 'image', url: 'https://example.com/one.png' },
+        { type: 'image', url: 'https://example.com/two.png' },
+      ],
+    })
+
+    expect(canvasApi.listMediaModels).toHaveBeenCalledWith({
+      capability: 'video.reference_to_video',
+      enabledOnly: true,
+    })
+    expect(canvasApi.pruneMediaModelParams).toHaveBeenCalledWith(
+      expect.objectContaining({ capabilityId: 'video.reference_to_video' }),
+    )
   })
 
   it('does not fall back to a different model when an explicit model is unavailable', async () => {

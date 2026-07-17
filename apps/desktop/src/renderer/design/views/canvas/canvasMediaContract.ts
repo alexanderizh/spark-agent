@@ -71,7 +71,7 @@ export async function pruneModelParamsForCanvas(
     inputFiles,
     operation,
   } = input
-  const capability = capabilityId ?? deriveCapabilityId(operation)
+  let capability = capabilityId ?? deriveCapabilityId(operation)
   if (!capability) {
     return {
       modelParams,
@@ -85,11 +85,28 @@ export async function pruneModelParamsForCanvas(
   let effectiveProviderProfileId = providerProfileId
   let effectiveModelId = modelId
   if (validateSubmission === true) {
-    const response = await canvasApi.listMediaModels({
+    const referenceCapability = prefersReferenceVideoCapability(operation, inputFiles)
+      ? 'video.reference_to_video'
+      : undefined
+    const discoveryCapability = capabilityId ?? referenceCapability ?? capability
+    const hasExplicitModelTarget = Boolean(manifestId || modelId)
+    let response = await canvasApi.listMediaModels({
       ...(providerProfileId ? { providerProfileId } : {}),
-      capability,
+      ...(!hasExplicitModelTarget ? { capability: discoveryCapability } : {}),
       enabledOnly: true,
     })
+    if (
+      response.models.length === 0 &&
+      !hasExplicitModelTarget &&
+      referenceCapability &&
+      discoveryCapability !== capability
+    ) {
+      response = await canvasApi.listMediaModels({
+        ...(providerProfileId ? { providerProfileId } : {}),
+        capability,
+        enabledOnly: true,
+      })
+    }
     const selected = response.models.find((model) => {
       if (manifestId && model.manifestId !== manifestId) return false
       if (modelId && model.effectiveModelId !== modelId && model.modelId !== modelId) {
@@ -101,6 +118,13 @@ export async function pruneModelParamsForCanvas(
       effectiveManifestId = selected.manifestId
       effectiveProviderProfileId = providerProfileId ?? selected.providerProfileId
       effectiveModelId = modelId ?? selected.effectiveModelId
+      if (
+        !capabilityId &&
+        referenceCapability &&
+        selected.capabilities.some((item) => item.id === referenceCapability)
+      ) {
+        capability = referenceCapability
+      }
     } else {
       const target = [manifestId, modelId].filter(Boolean).join(' / ') || capability
       return {
@@ -163,6 +187,33 @@ function summarizeValidationInputFile(file: CanvasMediaTaskInputFile): CanvasMed
 function deriveCapabilityId(operation: CanvasOperationType): string | undefined {
   const capabilities = capabilityForOperation(operation)
   return capabilities[0] ?? undefined
+}
+
+function prefersReferenceVideoCapability(
+  operation: CanvasOperationType,
+  inputFiles: CanvasMediaTaskInputFile[] | undefined,
+): boolean {
+  if (operation !== 'text_to_video' && operation !== 'image_to_video') return false
+  if (operation === 'text_to_video') {
+    return (inputFiles ?? []).some((file) => isMediaFile(file))
+  }
+  const images = (inputFiles ?? []).filter((file) => file.type === 'image')
+  if ((inputFiles ?? []).some((file) => file.type === 'video' || file.type === 'audio')) {
+    return true
+  }
+  if (images.some((file) => file.role === 'reference')) return true
+  // Older canvas payloads did not persist roles. With multiple unassigned
+  // images the only unambiguous safe mode is reference-to-video; otherwise a
+  // provider's one-image first-frame limit can reject a valid request.
+  return (
+    images.length > 1 &&
+    !images.some((file) => file.role === 'first_frame' || file.role === 'last_frame')
+  )
+}
+
+function isMediaFile(file: CanvasMediaTaskInputFile): boolean {
+  if (file.type === 'image' || file.type === 'video' || file.type === 'audio') return true
+  return file.type === 'file' && /^((image|video|audio)\/)/i.test(file.mimeType ?? '')
 }
 
 /**

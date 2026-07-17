@@ -19,6 +19,10 @@ import {
 } from './media-model-contract.js'
 import { validateMediaModelManifestSemantics } from './media-model-manifest-validation.js'
 import {
+  apimartVideoCapabilityDefaults,
+  apimartVideoInputContracts,
+} from './apimart-video-input-contracts.js'
+import {
   MediaInputRolePolicySchema,
   type MediaInputRolePolicy,
 } from './media-config.js'
@@ -611,11 +615,11 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       additionalProperties: true,
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
-        durationSeconds: { type: 'integer', title: '时长（秒）', enum: [10, 15], default: 10 },
-        watermark: { type: 'boolean', title: '添加水印', default: false },
+        durationSeconds: { type: 'integer', title: '时长（秒）', enum: [4, 8, 12, 16, 20], default: 4 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720p'], default: '720p' },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 10, watermark: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 4, resolution: '720p' },
   },
   'sora-2-pro': {
     schema: {
@@ -623,11 +627,11 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       additionalProperties: true,
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
-        durationSeconds: { type: 'integer', title: '时长（秒）', enum: [15, 25], default: 15 },
-        watermark: { type: 'boolean', title: '添加水印', default: false },
+        durationSeconds: { type: 'integer', title: '时长（秒）', enum: [4, 8, 12, 16, 20], default: 4 },
+        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1024p', '1080p'], default: '720p' },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 15, watermark: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 4, resolution: '720p' },
   },
   /* ─── Doubao Seedance 系列（APIMart 平台独立 model id，与火山方舟同名但走 apimart 路径）─── */
   'doubao-seedance-1-5-pro': {
@@ -639,11 +643,11 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
         durationSeconds: { type: 'integer', title: '时长', minimum: 4, maximum: 12, default: 5 },
         resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '720p' },
         seed: { type: 'integer', title: '随机种子' },
-        audio: { type: 'boolean', title: '生成音频', default: true },
+        audio: { type: 'boolean', title: '生成音频', default: false },
         camerafixed: { type: 'boolean', title: '固定摄像头', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', audio: true, camerafixed: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', audio: false, camerafixed: false },
   },
   'doubao-seedance-1-0-pro-fast': {
     schema: {
@@ -811,7 +815,7 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
         resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '720p' },
         seed: { type: 'integer', title: '随机种子' },
         prompt_extend: { type: 'boolean', title: '提示词扩展', default: true },
-        audio: { type: 'boolean', title: '生成音频', default: true },
+        audio: { type: 'boolean', title: '生成音频', enum: [true], default: true },
         watermark: { type: 'boolean', title: '水印', default: false },
       },
     },
@@ -1077,13 +1081,13 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'], default: '16:9' },
         durationSeconds: { type: 'integer', title: '时长', minimum: 4, maximum: 15, default: 5 },
-        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '480p' },
         seed: { type: 'integer', title: '随机种子' },
-        generate_audio: { type: 'boolean', title: '生成音频', default: true },
+        generate_audio: { type: 'boolean', title: '生成音频', default: false },
         return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false },
   },
   'doubao-seedance-2-0-mini': {
     schema: {
@@ -1092,13 +1096,13 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'], default: '16:9' },
         durationSeconds: { type: 'integer', title: '时长', minimum: 4, maximum: 15, default: 5 },
-        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '480p' },
         seed: { type: 'integer', title: '随机种子' },
-        generate_audio: { type: 'boolean', title: '生成音频', default: true },
+        generate_audio: { type: 'boolean', title: '生成音频', default: false },
         return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false },
   },
 }
 
@@ -1555,44 +1559,37 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     modelId: 'veo3',
     displayName: 'APIMart VEO 3',
     domains: ['video'],
-    capabilities: [
-      {
-        id: 'video.generate',
-        label: '文生视频',
-        input: { required: ['prompt'] as MediaManifestInputKind[] },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: videoSchema,
-        defaults: { aspectRatio: '16:9', durationSeconds: 8 },
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+    capabilities: apimartVideoInputContracts('veo3').map((contract) => ({
+      ...contract,
+      output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+      paramSchema: videoSchema,
+      defaults: { aspectRatio: '16:9', durationSeconds: 8 },
+      aliases: {
+        aspectRatio: 'aspect_ratio',
+        durationSeconds: 'duration',
+        editStrength: 'edit_strength',
       },
-      {
-        id: 'video.image_to_video',
-        label: '图生视频',
-        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: videoSchema,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
-      },
-      {
-        id: 'video.edit',
-        label: '视频编辑',
-        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: videoSchema,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
-      },
-    ],
+    })),
     invocation: {
       mode: 'async_polling',
       endpoint: '/videos/generations',
       method: 'POST',
       contentType: 'json',
-      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', first_frame_image: '{{firstFrame}}', last_frame_image: '{{lastFrame}}', video: '{{video}}' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        prompt: '{{prompt}}',
+        first_frame_image: '{{firstFrame}}',
+        last_frame_image: '{{lastFrame}}',
+        image_urls: '{{referenceImageUrls}}',
+        video_url: '{{videoUrl}}',
+        video_urls: '{{inputVideoUrls}}',
+        audio_urls: '{{inputAudioUrls}}',
+      },
       response: { kind: 'task_poll', taskIdPaths: ['task_id', 'request_id', 'id'], statusEndpoint: '/videos/generations/{{taskId}}', resultPaths: ['video_url', 'data[].url', 'output.url'] },
       polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
     },
     docs: { sourceUrls: ['https://docs.apimart.ai/cn'] },
-    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+    safety: { allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
   },
   ...[
     { id: 'apimart:wan2.7-image', modelId: 'wan2.7-image', displayName: 'APIMart Wan 2.7 Image' },
@@ -1693,60 +1690,56 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     modelId: entry.modelId,
     displayName: entry.displayName,
     domains: ['video'] as MediaDomain[],
-    capabilities: [
-      {
-        id: 'video.generate',
-        label: '文生视频',
-        input: { required: ['prompt'] as MediaManifestInputKind[] },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        // Seedance 2.0（APIMart flavor）走专用 schema；其余新模型走 apimartVideoModelSchemas
-        // 按 modelId 取；老条目继续走通用 videoSchema。
-        paramSchema: entry.modelId === 'doubao-seedance-2.0'
+    capabilities: apimartVideoInputContracts(entry.modelId).map((contract) => ({
+      ...contract,
+      output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+      // Seedance 2.0（APIMart flavor）走专用 schema；其余模型按 modelId 取独立 schema。
+      paramSchema:
+        entry.modelId === 'doubao-seedance-2.0'
           ? apimartSeedance2VideoSchema
           : (apimartVideoModelSchemas[entry.modelId]?.schema ?? videoSchema),
-        defaults: entry.modelId === 'doubao-seedance-2.0'
-          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false }
-          : (apimartVideoModelSchemas[entry.modelId]?.defaults ?? { aspectRatio: '16:9', durationSeconds: 5 }),
-        aliases: { aspectRatio: apimartVideoSizeFieldModels.has(entry.modelId) ? 'size' : 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+      defaults: apimartVideoCapabilityDefaults(
+        entry.modelId,
+        contract.id,
+        entry.modelId === 'doubao-seedance-2.0'
+          ? {
+              aspectRatio: '16:9',
+              durationSeconds: 5,
+              resolution: '480p',
+              generate_audio: false,
+              return_last_frame: false,
+            }
+          : (apimartVideoModelSchemas[entry.modelId]?.defaults ?? {
+              aspectRatio: '16:9',
+              durationSeconds: 5,
+            }),
+      ),
+      aliases: {
+        aspectRatio: apimartVideoSizeFieldModels.has(entry.modelId) ? 'size' : 'aspect_ratio',
+        durationSeconds: 'duration',
+        editStrength: 'edit_strength',
       },
-      {
-        id: 'video.image_to_video',
-        label: '图生视频',
-        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: entry.modelId === 'doubao-seedance-2.0'
-          ? apimartSeedance2VideoSchema
-          : (apimartVideoModelSchemas[entry.modelId]?.schema ?? videoSchema),
-        defaults: entry.modelId === 'doubao-seedance-2.0'
-          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false }
-          : apimartVideoModelSchemas[entry.modelId]?.defaults,
-        aliases: { aspectRatio: apimartVideoSizeFieldModels.has(entry.modelId) ? 'size' : 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
-      },
-      {
-        id: 'video.edit',
-        label: '视频编辑',
-        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: entry.modelId === 'doubao-seedance-2.0'
-          ? apimartSeedance2VideoSchema
-          : (apimartVideoModelSchemas[entry.modelId]?.schema ?? videoSchema),
-        defaults: entry.modelId === 'doubao-seedance-2.0'
-          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false }
-          : apimartVideoModelSchemas[entry.modelId]?.defaults,
-        aliases: { aspectRatio: apimartVideoSizeFieldModels.has(entry.modelId) ? 'size' : 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
-      },
-    ],
+    })),
     invocation: {
       mode: 'async_polling' as MediaInvocationMode,
       endpoint: '/videos/generations',
       method: 'POST' as const,
       contentType: 'json' as const,
-      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', first_frame_image: '{{firstFrame}}', last_frame_image: '{{lastFrame}}', video: '{{video}}' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        prompt: '{{prompt}}',
+        first_frame_image: '{{firstFrame}}',
+        last_frame_image: '{{lastFrame}}',
+        image_urls: '{{referenceImageUrls}}',
+        video_url: '{{videoUrl}}',
+        video_urls: '{{inputVideoUrls}}',
+        audio_urls: '{{inputAudioUrls}}',
+      },
       response: { kind: 'task_poll' as const, taskIdPaths: ['task_id', 'request_id', 'id'], statusEndpoint: '/videos/generations/{{taskId}}', resultPaths: ['video_url', 'data[].url', 'output.url'] },
       polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
     },
     docs: { sourceUrls: ['https://docs.apimart.ai/cn'] },
-    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+    safety: { allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
   })),
   {
     id: 'xai:grok-imagine-image',
@@ -1820,7 +1813,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       {
         id: 'video.image_to_video',
         label: '图生视频',
-        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        input: { required: ['image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: xaiVideoSchema,
         defaults: { durationSeconds: 8, resolution: '720p' },

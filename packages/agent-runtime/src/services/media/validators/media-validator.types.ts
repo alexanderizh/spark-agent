@@ -42,12 +42,19 @@ export function inputFilesOfKind(
   context: MediaValidationContext,
   kind: 'image' | 'audio' | 'video' | 'file',
 ) {
-  return (context.input.inputFiles ?? []).filter((file) => file.type === kind)
+  return (context.input.inputFiles ?? []).filter((file) => {
+    if (file.type === kind) return true
+    if (file.type !== 'file' || kind === 'file') return false
+    return file.mimeType?.toLowerCase().startsWith(`${kind}/`) === true
+  })
 }
 
 export function imageInputFiles(context: MediaValidationContext) {
   return (context.input.inputFiles ?? []).filter(
-    (file) => file.type === 'image' || file.type === 'file',
+    (file) =>
+      file.type === 'image' ||
+      (file.type === 'file' &&
+        (!file.mimeType || file.mimeType.toLowerCase().startsWith('image/'))),
   )
 }
 

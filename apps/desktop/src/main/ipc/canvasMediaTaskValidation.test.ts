@@ -97,4 +97,26 @@ describe('validateCanvasMediaTaskParams', () => {
       result.validationIssues.some((issue) => issue.message.includes('最多支持 1 张图片')),
     ).toBe(true)
   })
+
+  it('keeps canonical parameter names after validation for native adapters', () => {
+    const aliasedCapability: MediaModelCapabilityManifest = {
+      ...capability,
+      aliases: { durationSeconds: 'duration' },
+    }
+    const result = validateCanvasMediaTaskParams({
+      request: {
+        manifestId: manifest.id,
+        capabilityId: aliasedCapability.id,
+        modelId: manifest.modelId,
+        prompt: 'animate',
+        modelParams: { durationSeconds: 8 },
+        inputFiles: [{ type: 'image', url: 'https://example.com/frame.png' }],
+        validateSubmission: true,
+      },
+      manifest: { ...manifest, capabilities: [aliasedCapability] },
+      capability: aliasedCapability,
+    })
+
+    expect(result.prunedModelParams).toEqual({ durationSeconds: 8 })
+  })
 })
