@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CanvasPromptParameterBlock } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import type { CanvasAsset } from './canvas.types'
@@ -44,7 +44,11 @@ export function CanvasPromptInsertMenu({
   const [filter, setFilter] = useState<CanvasPromptInsertFilter>('all')
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [previewSide, setPreviewSide] = useState<'left' | 'right'>('right')
-  const [fixedPosition, setFixedPosition] = useState({ top: 0, left: 0 })
+  const [fixedPosition, setFixedPosition] = useState({
+    top: 0,
+    left: 0,
+    maxHeight: undefined as number | undefined,
+  })
   const filteredItems = useMemo(
     () => filterCanvasPromptInsertItems(items, query, filter, assetById),
     [assetById, filter, items, query],
@@ -55,13 +59,34 @@ export function CanvasPromptInsertMenu({
     if (autoFocus) searchRef.current?.focus()
   }, [autoFocus])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!fixedToTrigger || !triggerElement) return
     const updatePosition = () => {
-      const rect = triggerElement.getBoundingClientRect()
-      setFixedPosition({
-        top: rect.bottom + 6,
-        left: Math.max(12, Math.min(rect.left, window.innerWidth - 352)),
+      const triggerRect = triggerElement.getBoundingClientRect()
+      const menuRect = rootRef.current?.getBoundingClientRect()
+      const viewportMargin = 12
+      const triggerGap = 6
+      const menuWidth = menuRect?.width || 340
+      const menuHeight = menuRect?.height || 0
+      const spaceBelow = Math.max(
+        0,
+        window.innerHeight - triggerRect.bottom - triggerGap - viewportMargin,
+      )
+      const spaceAbove = Math.max(0, triggerRect.top - triggerGap - viewportMargin)
+      const placeBelow = menuHeight <= spaceBelow || spaceBelow >= spaceAbove
+      const maxHeight = placeBelow ? spaceBelow : spaceAbove
+      const top = placeBelow
+        ? triggerRect.bottom + triggerGap
+        : Math.max(viewportMargin, triggerRect.top - triggerGap - Math.min(menuHeight, maxHeight))
+      const left = Math.max(
+        viewportMargin,
+        Math.min(triggerRect.left, window.innerWidth - menuWidth - viewportMargin),
+      )
+      setFixedPosition((current) => {
+        if (current.top === top && current.left === left && current.maxHeight === maxHeight) {
+          return current
+        }
+        return { top, left, maxHeight }
       })
     }
     updatePosition()
@@ -71,7 +96,7 @@ export function CanvasPromptInsertMenu({
       window.removeEventListener('resize', updatePosition)
       document.removeEventListener('scroll', updatePosition, true)
     }
-  }, [fixedToTrigger, triggerElement])
+  }, [filteredItems.length, fixedToTrigger, triggerElement])
 
   useEffect(() => {
     const closeFromPointer = (event: PointerEvent) => {

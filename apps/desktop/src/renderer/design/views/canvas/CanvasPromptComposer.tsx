@@ -370,6 +370,7 @@ function CanvasPromptMentionPlugin({
                 query={searchQuery}
                 autoFocus
                 triggerElement={anchorElementRef.current}
+                fixedToTrigger
                 onQueryChange={setSearchQuery}
                 onInsertParameter={(parameter) => {
                   insertParameterAtTypeahead(
