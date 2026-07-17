@@ -95,6 +95,28 @@ describe('canvasTextTaskDiagnostics', () => {
     })
   })
 
+  it('applies learned and low provider caps below the normal 16K floor', () => {
+    expect(resolveCanvasTextTokenBudget({
+      operation: 'text_generate',
+      taskPipelineRole: 'screenplay',
+      learnedMaxTokens: 8_192,
+      providerMaxTokens: 128_000,
+      prompt: '剧本',
+    })).toMatchObject({
+      maxTokens: 8_192,
+      source: 'learned_model_cap',
+    })
+
+    expect(resolveCanvasTextTokenBudget({
+      operation: 'text_generate',
+      providerMaxTokens: 4_096,
+      prompt: '旧模型',
+    })).toMatchObject({
+      maxTokens: 4_096,
+      source: 'provider_profile',
+    })
+  })
+
   it('keeps a model-specific 1M context while applying the provider output cap', () => {
     expect(
       resolveCanvasTextTokenBudget({
