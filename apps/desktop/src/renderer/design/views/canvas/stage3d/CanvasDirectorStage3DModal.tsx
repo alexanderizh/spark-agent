@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Tag } from '@lobehub/ui'
-import { Dropdown, Input, Popover, Segmented, Select, Slider, message } from 'antd'
+import {
+  ConfigProvider,
+  Dropdown,
+  Input,
+  Popover,
+  Segmented,
+  Select,
+  Slider,
+  message,
+  theme as antdTheme,
+} from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../../Icons'
 import type { CanvasNode } from '../canvas.types'
@@ -74,6 +84,23 @@ import { useCanvasUnsavedChangesGuard } from '../useCanvasUnsavedChangesGuard'
 import './stage3d.less'
 
 const RAD = Math.PI / 180
+
+/**
+ * 导演台固定使用深色工作区，但应用主题可能是浅色。给所有 Ant Design 表单一个独立主题，
+ * 同时覆盖 portal 中的下拉选项，避免深色自定义面板上出现深色文字或不可读的选中值。
+ */
+const STAGE3D_FORM_THEME = {
+  algorithm: antdTheme.darkAlgorithm,
+  token: {
+    colorPrimary: '#3b82f6',
+    colorBgContainer: '#252525',
+    colorBgElevated: '#303030',
+    colorBorder: '#454545',
+    colorText: '#e4e4e7',
+    colorTextPlaceholder: '#8b8b94',
+    controlItemBgActive: '#1d4ed8',
+  },
+}
 
 /** macOS 无边框窗口红绿灯安全区（顶栏左侧留白，避免标题被交通灯压住） */
 const isPlatformDarwin = typeof window !== 'undefined' && window.spark?.platform === 'darwin'
@@ -773,8 +800,9 @@ export function CanvasDirectorStage3DModal({
   }))
 
   return (
-    <div className="stage3d-modal-overlay" onKeyDown={handleKeyDown} tabIndex={-1}>
-      <div className="stage3d-shell">
+    <ConfigProvider theme={STAGE3D_FORM_THEME}>
+      <div className="stage3d-modal-overlay" onKeyDown={handleKeyDown} tabIndex={-1}>
+        <div className="stage3d-shell">
         {/* 顶栏 */}
         <div className={`stage3d-topbar${isPlatformDarwin ? ' platform-darwin-safe-area' : ''}`}>
           <div className="stage3d-titlebox">
@@ -1315,19 +1343,20 @@ export function CanvasDirectorStage3DModal({
             </aside>
           )}
         </div>
+        </div>
+        {poseEditorOpen && activeActor && (
+          <PoseEditorModal
+            actor={activeActor}
+            onChange={(joints) => {
+              // 把全屏页编辑结果写回当前 actor 的 joints + 同步 pose=stand（与 poseLibrary 套用语义一致）
+              updateActor(activeActor.id, { joints, pose: 'stand' })
+              setPoseEditorOpen(false)
+            }}
+            onClose={() => setPoseEditorOpen(false)}
+          />
+        )}
       </div>
-      {poseEditorOpen && activeActor && (
-        <PoseEditorModal
-          actor={activeActor}
-          onChange={(joints) => {
-            // 把全屏页编辑结果写回当前 actor 的 joints + 同步 pose=stand（与 poseLibrary 套用语义一致）
-            updateActor(activeActor.id, { joints, pose: 'stand' })
-            setPoseEditorOpen(false)
-          }}
-          onClose={() => setPoseEditorOpen(false)}
-        />
-      )}
-    </div>
+    </ConfigProvider>
   )
 }
 

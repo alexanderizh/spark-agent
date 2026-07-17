@@ -592,7 +592,6 @@ function CanvasStageInner({
   onAddImageAtPosition,
   onDropFiles,
   onAddPromptAtPosition,
-  onAddDirectorStageAtPosition,
   onAddDirectorStage3DAtPosition,
   onInsertAssetFromPane,
   onDeleteSelectedNodes,
@@ -665,8 +664,6 @@ function CanvasStageInner({
   onDropFiles?: (position: CanvasStagePoint, files: File[]) => void
   /** 空白右键：新建 Prompt 节点 */
   onAddPromptAtPosition?: CanvasStageCreateAction
-  /** 空白右键：新建画面编排导演台节点（2D 俯视版） */
-  onAddDirectorStageAtPosition?: CanvasStageCreateAction
   /** 空白右键：新建真·3D 导演台节点 */
   onAddDirectorStage3DAtPosition?: CanvasStageCreateAction
   /** 空白右键：从资产插入（打开资产面板） */
@@ -1606,11 +1603,6 @@ function CanvasStageInner({
     void runPaneCreateAction(onAddPromptAtPosition)
   }, [onAddPromptAtPosition, runPaneCreateAction])
 
-  const handleAddDirectorStageFromPane = useCallback(() => {
-    if (!onAddDirectorStageAtPosition) return
-    void runPaneCreateAction(onAddDirectorStageAtPosition)
-  }, [onAddDirectorStageAtPosition, runPaneCreateAction])
-
   const handleAddDirectorStage3DFromPane = useCallback(() => {
     if (!onAddDirectorStage3DAtPosition) return
     void runPaneCreateAction(onAddDirectorStage3DAtPosition)
@@ -2410,12 +2402,6 @@ function CanvasStageInner({
               <button type="button" role="menuitem" onClick={handleAddPromptFromPane}>
                 <Icons.Edit size={14} />
                 <span>新建 Prompt</span>
-              </button>
-            )}
-            {onAddDirectorStageAtPosition && (
-              <button type="button" role="menuitem" onClick={handleAddDirectorStageFromPane}>
-                <Icons.Play size={14} />
-                <span>新建 2D 导演台</span>
               </button>
             )}
             {onAddDirectorStage3DAtPosition && (

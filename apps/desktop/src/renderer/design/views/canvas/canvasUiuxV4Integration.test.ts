@@ -71,4 +71,26 @@ describe('canvas UI/UX V4 integration', () => {
     expect(assetManager).toContain('<audio src={source} controls')
     expect(assetManager).toContain("event.key !== 'Escape'")
   })
+
+  it('keeps only the 3D director stage and gives its forms an isolated dark theme', () => {
+    const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
+    const stage = readCanvasSource('./CanvasStage.tsx')
+    const node = readCanvasSource('./CanvasNode.tsx')
+    const stage3dModal = readCanvasSource('./stage3d/CanvasDirectorStage3DModal.tsx')
+
+    expect(workspace).not.toContain('CanvasDirectorStageModal')
+    expect(workspace).not.toContain("subtype: 'director_stage'")
+    expect(stage).not.toContain('onAddDirectorStageAtPosition')
+    expect(node).not.toContain('DirectorStageMini')
+    expect(stage3dModal).toContain('<ConfigProvider theme={STAGE3D_FORM_THEME}>')
+    expect(stage3dModal).toContain('algorithm: antdTheme.darkAlgorithm')
+    expect(stage3dModal).toContain("colorText: '#e4e4e7'")
+  })
+
+  it('keeps selected values readable in the 3D director stage side forms', () => {
+    const workbenchStyles = readCanvasSource('./uiux-v4/workbenches.less')
+
+    expect(workbenchStyles).toContain('input:not(.ant-select-input)')
+    expect(workbenchStyles).not.toMatch(/\.stage3d-field\s*\{[\s\S]*?\n\s+input,/)
+  })
 })

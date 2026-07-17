@@ -1,0 +1,37 @@
+.canvas-inline-node-title-trigger {
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 4px;
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  line-height: 22px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: text;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.canvas-inline-node-title-trigger:hover,
+.canvas-inline-node-title-trigger:focus-visible {
+  background: color-mix(in srgb, var(--panel) 58%, transparent);
+  border-color: color-mix(in srgb, var(--border-strong) 72%, transparent);
+  outline: none;
+}
+
+.canvas-inline-node-title-input.ant-input {
+  width: clamp(120px, 22vw, 260px);
+  height: 28px;
+  padding-block: 2px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--border));
+}

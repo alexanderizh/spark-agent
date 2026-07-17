@@ -123,11 +123,11 @@ export function stage3DBodyTypeToUE4BodyType(bodyType: Stage3DBodyType): UE4Stag
 export function getUE4Stage3DBodyScale(bodyType: Stage3DBodyType): Vec3 {
   switch (stage3DBodyTypeToUE4BodyType(bodyType)) {
     case 'child':
-      return [0.72, 0.72, 0.72]
+      return [0.01152, 0.01152, 0.01152]
     case 'tall':
-      return [0.9, 1.14, 0.9]
+      return [0.0144, 0.01824, 0.0144]
     default:
-      return [1, 1, 1]
+      return [0.016, 0.016, 0.016]
   }
 }
 
@@ -291,12 +291,22 @@ function applyRotationOffset(bone: THREE.Bone, rotation: Vec3): void {
   bone.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation)))
 }
 
-function alignToGround(scene: THREE.Object3D): void {
+export function alignUE4RigToLocalGround(scene: THREE.Object3D): void {
   scene.position.y = 0
   scene.updateMatrixWorld(true)
   const bounds = new THREE.Box3().setFromObject(scene)
   if (bounds.isEmpty() || !Number.isFinite(bounds.min.y)) return
-  scene.position.y += -bounds.min.y
+
+  if (!scene.parent) {
+    scene.position.y = -bounds.min.y
+    return
+  }
+
+  const parentOrigin = scene.parent.getWorldPosition(new THREE.Vector3())
+  const localGround = scene.parent.worldToLocal(
+    new THREE.Vector3(parentOrigin.x, bounds.min.y, parentOrigin.z),
+  )
+  scene.position.y = -localGround.y
 }
 
 function applyRig(instance: RigInstance, actor: Stage3DActor): void {
@@ -324,7 +334,7 @@ function applyRig(instance: RigInstance, actor: Stage3DActor): void {
     if (poseRotation) applyRotationOffset(bone, poseRotation)
   }
 
-  alignToGround(instance.scene)
+  alignUE4RigToLocalGround(instance.scene)
   instance.scene.updateMatrixWorld(true)
 }
 

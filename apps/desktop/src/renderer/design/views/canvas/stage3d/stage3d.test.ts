@@ -42,6 +42,7 @@ import {
   poseEditorOverridesFromFinalPose,
 } from './poseEditorMath'
 import {
+  alignUE4RigToLocalGround,
   getUE4Stage3DBodyScale,
   getUE4Stage3DBoneScales,
   stage3DBodyTypeToUE4BodyType,
@@ -357,6 +358,26 @@ describe('actorModelRegistry', () => {
 })
 
 describe('UE4ActorRig body scaling', () => {
+  it('在父级角色上下移动后仍按模型局部坐标落地，不抵消父级 Y 位移', () => {
+    const parent = new THREE.Group()
+    parent.position.y = 3
+    const rig = new THREE.Group()
+    rig.add(new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1)))
+    parent.add(rig)
+    parent.updateMatrixWorld(true)
+
+    alignUE4RigToLocalGround(rig)
+    parent.updateMatrixWorld(true)
+
+    const worldBounds = new THREE.Box3().setFromObject(rig)
+    expect(worldBounds.min.y).toBeCloseTo(parent.position.y)
+  })
+
+  it('把原始厘米制 UE4 模型换算为画布米制尺寸', () => {
+    expect(getUE4Stage3DBodyScale('standard')).toEqual([0.016, 0.016, 0.016])
+    expect(getUE4Stage3DBodyScale('tall')).toEqual([0.0144, 0.01824, 0.0144])
+  })
+
   it('把现有体型映射到参考项目 UE4 局部骨骼体型，而不是只缩放根节点', () => {
     expect(stage3DBodyTypeToUE4BodyType('standard')).toBe('mannequin')
     expect(stage3DBodyTypeToUE4BodyType('heavy')).toBe('broad')
@@ -369,6 +390,7 @@ describe('UE4ActorRig body scaling', () => {
     expect(heavy.Bip001_Spine1_05![1]).toBeGreaterThan(standard.Bip001_Spine1_05![1])
     expect(child.Bip001_Head_055![0]).toBeGreaterThan(standard.Bip001_Head_055![0])
   })
+
 })
 
 // ─────────────────────────── mannequin 姿势与体型表完整性 ───────────────────────────

@@ -60,116 +60,7 @@ function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.Reac
   return <IconFn size={size} />
 }
 
-/** 从节点数据里解析导演台站位（兼容 v2 items / 旧版 objects），用于卡片迷你俯视图。 */
-function readDirectorStageMini(data: SparkCanvasNode['data']): {
-  items: Array<{ x: number; z: number; color: string }>
-  camera: { x: number; z: number; facing: number; fov: number }
-} | null {
-  const raw = data.directorStage as Record<string, unknown> | undefined
-  if (!raw || typeof raw !== 'object') return null
-  const clamp = (v: number) => Math.min(1, Math.max(-1, v))
-  const fovFromFocal = (focal: number) =>
-    (2 * Math.atan(36 / (2 * Math.min(300, Math.max(8, focal || 35)))) * 180) / Math.PI
-
-  if (Array.isArray(raw.items) && raw.camera && typeof raw.camera === 'object') {
-    const cam = raw.camera as Record<string, unknown>
-    const items = (raw.items as Array<Record<string, unknown>>)
-      .filter((it) => typeof it.x === 'number')
-      .map((it) => ({
-        x: clamp(Number(it.x) || 0),
-        z: clamp(Number(it.z) || 0),
-        color: typeof it.color === 'string' ? it.color : '#60a5fa',
-      }))
-    return {
-      items,
-      camera: {
-        x: clamp(Number(cam.x) || 0),
-        z: clamp(Number.isFinite(Number(cam.z)) ? Number(cam.z) : 0.9),
-        facing: Number(cam.facing) || 0,
-        fov: fovFromFocal(Number(cam.focalLength) || 35),
-      },
-    }
-  }
-
-  if (Array.isArray(raw.objects)) {
-    const objs = raw.objects as Array<Record<string, unknown>>
-    const camObj = objs.find((o) => o.kind === 'camera')
-    const items = objs
-      .filter((o) => o.kind !== 'camera')
-      .map((o) => {
-        const pos = (o.position as { x?: number; z?: number } | undefined) ?? {}
-        return {
-          x: clamp((Number(pos.x) || 0) / 5),
-          z: clamp((Number(pos.z) || 0) / 5),
-          color: o.kind === 'prop' ? '#e2e8f0' : '#60a5fa',
-        }
-      })
-    const camPos = (camObj?.position as { x?: number; z?: number } | undefined) ?? {}
-    return {
-      items,
-      camera: {
-        x: clamp((Number(camPos.x) || 0) / 5),
-        z: clamp((Number(camPos.z) || 4) / 5),
-        facing: 0,
-        fov: 50,
-      },
-    }
-  }
-  return null
-}
-
-/** 导演台节点卡片：迷你俯视图（网格 + 站位点 + 相机 FOV 扇形）。 */
-function DirectorStageMini({ data, nodeId }: { data: SparkCanvasNode['data']; nodeId: string }) {
-  const stage = readDirectorStageMini(data)
-  const clipId = `mini-stage-clip-${nodeId}`
-  const toPlan = (x: number, z: number) => ({ px: 50 + x * 40, py: 50 + z * 40 })
-  const cam = stage ? toPlan(stage.camera.x, stage.camera.z) : { px: 50, py: 90 }
-  const head = (deg: number) => ({
-    hx: Math.sin((deg * Math.PI) / 180),
-    hy: -Math.cos((deg * Math.PI) / 180),
-  })
-  const fov = stage?.camera.fov ?? 50
-  const facing = stage?.camera.facing ?? 0
-  const left = head(facing - fov / 2)
-  const right = head(facing + fov / 2)
-  const L = 120
-  return (
-    <svg
-      className="canvas-node-director-mini"
-      viewBox="0 0 100 100"
-      preserveAspectRatio="xMidYMid slice"
-    >
-      <defs>
-        <clipPath id={clipId}>
-          <rect x="8" y="8" width="84" height="84" rx="4" />
-        </clipPath>
-      </defs>
-      <rect x="8" y="8" width="84" height="84" rx="4" className="mini-floor" />
-      <g clipPath={`url(#${clipId})`} className="mini-grid">
-        {[26, 44, 62, 80].map((v) => (
-          <line key={`mx-${v}`} x1={v} y1="8" x2={v} y2="92" />
-        ))}
-        {[26, 44, 62, 80].map((v) => (
-          <line key={`my-${v}`} x1="8" y1={v} x2="92" y2={v} />
-        ))}
-      </g>
-      <polygon
-        clipPath={`url(#${clipId})`}
-        className="mini-cone"
-        points={`${cam.px},${cam.py} ${cam.px + left.hx * L},${cam.py + left.hy * L} ${cam.px + right.hx * L},${cam.py + right.hy * L}`}
-      />
-      {stage?.items.map((item, index) => {
-        const p = toPlan(item.x, item.z)
-        return (
-          <circle key={index} cx={p.px} cy={p.py} r={3.4} fill={item.color} className="mini-dot" />
-        )
-      })}
-      <rect x={cam.px - 3} y={cam.py - 3} width={6} height={6} rx={1.4} className="mini-cam" />
-    </svg>
-  )
-}
-
-/** 真·3D 导演台节点卡片：角色/道具计数 + 最近一次截图缩略图（若有）。 */
+/** 3D 导演台节点卡片：角色/道具计数 + 最近一次截图缩略图（若有）。 */
 function Stage3DMini({ data }: { data: SparkCanvasNode['data'] }) {
   const raw = data.stage3d as Record<string, unknown> | undefined
   const actors = Array.isArray(raw?.actors) ? (raw!.actors as unknown[]).length : 0
@@ -635,7 +526,6 @@ export const CanvasNode = memo(function CanvasNode({
     node.type === 'prompt' && (!node.title || node.title === 'Prompt')
       ? 'Text note'
       : (node.title ?? metaTypeLabel)
-  const isDirectorStage = node.data.subtype === 'director_stage'
   const isDirectorStage3D = node.data.subtype === 'director_stage_3d'
   const isVideoWorkbench = node.data.subtype === 'video_workbench'
   const isResourceOutput = !isTask && (isGeneratedOutput || node.data.origin === 'task_output')
@@ -668,9 +558,7 @@ export const CanvasNode = memo(function CanvasNode({
 
   const hasOperationOutput = !isTask || Boolean(operationOutputState.primaryOutput)
   const canCreateOperationFromNode = !isTask || hasOperationOutput
-  const pipelineActions = contentNode
-    ? getNodePipelineActions(contentNode, { assetKinds })
-    : []
+  const pipelineActions = contentNode ? getNodePipelineActions(contentNode, { assetKinds }) : []
   // 子类型切换（仅 image/text）：当前子类型 + 可选项，供右键菜单「切换类型」渲染。
   const subtypeSwitch = useMemo(() => {
     if (!isSubtypeSwitchable(node)) return null
@@ -1245,17 +1133,15 @@ export const CanvasNode = memo(function CanvasNode({
     ? '产物'
     : productionBadge?.label
       ? productionBadge.label
-      : isDirectorStage
-        ? '草稿'
-        : node.type === 'group'
-          ? '节点组'
-          : isMediaContentNode
-            ? node.data.url
-              ? '已生成'
-              : '待添加'
-            : isTextContentNode
-              ? '可编辑'
-              : '已就绪'
+      : node.type === 'group'
+        ? '节点组'
+        : isMediaContentNode
+          ? node.data.url
+            ? '已生成'
+            : '待添加'
+          : isTextContentNode
+            ? '可编辑'
+            : '已就绪'
   const nodeFooterLabel = operationSummary
     ? operationSummary
     : isOperationNode(node)
@@ -1293,7 +1179,7 @@ export const CanvasNode = memo(function CanvasNode({
             (node.data.panorama360 ? <Icons.Globe size={14} /> : <Icons.Image size={14} />)}
           {node.type === 'audio' && <Icons.Play size={14} />}
           {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={14} />}
-          {isDirectorStage ? (
+          {isDirectorStage3D ? (
             <Icons.Box size={14} />
           ) : isOperationNode(node) ? (
             operationNodeIcon(nodeOperation(node), operationWorkflow)
@@ -1451,13 +1337,6 @@ export const CanvasNode = memo(function CanvasNode({
                 <Stage3DMini data={node.data} />
               ) : isVideoWorkbench ? (
                 <VideoWorkbenchMini data={node.data} />
-              ) : isDirectorStage ? (
-                <div className="canvas-node-director-stage">
-                  <DirectorStageMini data={node.data} nodeId={node.id} />
-                  <div className="canvas-node-director-stage-hint">
-                    双击编排画面 · 站位 / 取景 / 提示词
-                  </div>
-                </div>
               ) : isOperationNode(node) ? (
                 <div className="canvas-node-task canvas-node-operation">
                   <OperationOutputDeck

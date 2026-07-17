@@ -254,9 +254,7 @@ export type CanvasNodeData = {
   droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
   /** Contract V2 裁剪产物：非阻断性提示（如 missing_param_policy、compat_passthrough）。 */
   modelParamWarnings?: Array<{ code: string; message: string }>
-  /** 3D 导演台节点数据：三维对象、摄像机、网格与导出提示词。 */
-  directorStage?: Record<string, unknown>
-  /** 真·3D 导演台节点数据（subtype 'director_stage_3d'）：人偶/道具/背景/取景相机。 */
+  /** 3D 导演台节点数据（subtype 'director_stage_3d'）：人偶/道具/背景/取景相机。 */
   stage3d?: Record<string, unknown>
   /** 视频工作台节点数据（subtype 'video_workbench'）：关键帧/剪辑/转码配置与产物。 */
   videoWorkbench?: Record<string, unknown>

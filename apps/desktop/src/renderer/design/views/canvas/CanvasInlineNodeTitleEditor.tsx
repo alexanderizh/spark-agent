@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Input, message, type InputRef } from 'antd'
+import './CanvasInlineNodeTitleEditor.less'
 
-function normalizeNodeTitle(title: string | null): string | null {
+function normalizeNodeTitle(title: string | null | undefined): string | null {
   return title?.trim() || null
 }
 
@@ -12,7 +13,7 @@ export function CanvasInlineNodeTitleEditor({
   onRename,
 }: {
   nodeId: string
-  title: string | null
+  title: string | null | undefined
   fallbackTitle: string
   onRename(title: string | null): Promise<void> | void
 }) {
