@@ -356,10 +356,9 @@ const apimartGptImage2Schema = {
 /**
  * APIMart GPT Image 2 Contract V2 参数策略。
  *
- * APIMart 是聚合平台，不同上游模型对参数支持差异较大（OpenAI gpt-image-1 / Google
- * imagen / 各类第三方模型）。M5 在此显式声明有限 passthrough 白名单（aspect_ratio /
- * resolution / output_format），其余未知字段一律丢弃；这与 OpenAI gpt-image-1 直连
- * 路径行为一致，避免 APIMart 把上游 400 透传给用户。
+ * APIMart 是聚合平台，不同上游模型对参数支持差异较大。GPT Image 2 的原生画幅字段
+ * 是 `size`（值为 2:1 / 16:9 等比例），不是像素尺寸，也不是 `aspect_ratio`。内部遗留的
+ * aspectRatio / aspect_ratio 通过 capability alias 统一映射到 provider 的 `size`。
  *
  * 关键设计：`strict: true` + `passthrough.enabled: true` 的组合。strict=true 让未声明
  * 字段在编译期就被裁掉；passthrough.enabled=true + allow 列表给聚合平台留出**显式**
@@ -372,7 +371,7 @@ const apimartGptImage2ParamPolicy: MediaModelParamPolicy = {
   strict: true,
   passthrough: {
     enabled: true,
-    allow: ['aspect_ratio', 'resolution', 'output_format', 'outputFormat', 'aspectRatio'],
+    allow: ['aspectRatio', 'outputFormat'],
     allowScalarsOnly: true,
     deny: ['filename', 'image', 'images', 'prompt', 'mask', 'tools'],
   },
@@ -1791,7 +1790,7 @@ const xaiImageSchema = {
     },
     resolution: { type: 'string', title: '分辨率', enum: ['1k', '2k'] },
     n: { type: 'integer', title: '数量', minimum: 1, default: 1 },
-    response_format: {
+    responseFormat: {
       type: 'string',
       title: '响应格式',
       enum: ['url', 'b64_json'],
@@ -1811,7 +1810,7 @@ const xaiImageSchema = {
  *   - 比例形式的 size（如 "16:9"）先转成 aspectRatio，再走 capability.alias 映射到
  *     provider 原生字段 `aspect_ratio`。非比例形式（如 "1024x1024"）会被 forbidden
  *     丢弃，并产 `forbidden_by_contract` dropped 记录，便于任务详情提示。
- *   - n / response_format 等仍由 schema + defaults 处理；filename 由编译器内建 local_only
+ *   - n / responseFormat 等仍由 schema + defaults 处理；filename 由编译器内建 local_only
  *     拦截，不在 contract 中重复声明。
  *   - strict + passthrough.enabled=false：让未知字段在编译期就被裁掉，避免
  *     "provider 400 后才发现" 的高成本反馈。
@@ -2043,7 +2042,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         paramSchema: apimartGptImage2Schema,
         defaults: { n: 1, size: '1:1', resolution: '1k', official_fallback: false },
-        aliases: { aspectRatio: 'aspect_ratio', outputFormat: 'output_format' },
+        aliases: { aspectRatio: 'size', outputFormat: 'output_format' },
         paramPolicy: apimartGptImage2ParamPolicy,
       },
       {
@@ -2060,7 +2059,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         },
         paramSchema: apimartGptImage2Schema,
         defaults: { n: 1, size: '1:1', resolution: '1k', official_fallback: false },
-        aliases: { aspectRatio: 'aspect_ratio', outputFormat: 'output_format' },
+        aliases: { aspectRatio: 'size', outputFormat: 'output_format' },
         paramPolicy: apimartGptImage2ParamPolicy,
       },
     ],
@@ -2445,8 +2444,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },
         paramSchema: xaiImageSchema,
-        defaults: { n: 1, response_format: 'url' },
-        aliases: { aspectRatio: 'aspect_ratio' },
+        defaults: { n: 1, responseFormat: 'url' },
+        aliases: { aspectRatio: 'aspect_ratio', responseFormat: 'response_format' },
         paramPolicy: xaiImageParamPolicy,
       },
       {
@@ -2462,8 +2461,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
         },
         paramSchema: xaiImageSchema,
-        defaults: { n: 1, response_format: 'url' },
-        aliases: { aspectRatio: 'aspect_ratio' },
+        defaults: { n: 1, responseFormat: 'url' },
+        aliases: { aspectRatio: 'aspect_ratio', responseFormat: 'response_format' },
         paramPolicy: xaiImageParamPolicy,
       },
     ],
@@ -2597,7 +2596,21 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['text'] },
         output: { types: ['audio'], mimeTypes: ['audio/mpeg', 'audio/wav'] },
         paramSchema: XAI_TTS_PARAM_SCHEMA,
-        defaults: { voiceId: 'eve', language: 'auto', withTimestamps: false },
+        defaults: {
+          voiceId: 'eve',
+          language: 'auto',
+          outputFormat: 'mp3',
+          withTimestamps: false,
+        },
+        aliases: {
+          voiceId: 'voice_id',
+          outputFormat: 'output_format',
+          sampleRate: 'sample_rate',
+          bitRate: 'bit_rate',
+          optimizeStreamingLatency: 'optimize_streaming_latency',
+          textNormalization: 'text_normalization',
+          withTimestamps: 'with_timestamps',
+        },
       },
     ],
     invocation: {

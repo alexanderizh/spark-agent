@@ -1512,16 +1512,13 @@ export function nodeDefaultModelParams(
   nodes: readonly Pick<CanvasNode, 'data'>[],
   fields: readonly SchemaField[],
 ): Record<string, string> {
-  const fieldNames = new Set(fields.map((field) => field.name))
   const result: Record<string, string> = {}
   for (const node of nodes) {
     const params = node.data?.modelParams
     if (!params || typeof params !== 'object') continue
-    for (const [name, value] of Object.entries(params)) {
-      if (!fieldNames.has(name)) continue
-      if (value == null) continue
-      const str = typeof value === 'string' ? value : String(value)
-      if (str && result[name] === undefined) result[name] = str
+    for (const field of fields) {
+      const value = readModelParamDraftValue(params, field.name)
+      if (value && result[field.name] === undefined) result[field.name] = value
     }
     if (Object.keys(result).length > 0) break
   }
@@ -1568,7 +1565,7 @@ export function resolveInitialModelParamDraftValue({
   const defaultValue = readCompatibleModelParamDraftValue(defaultParams, fieldName, field)
   if (
     operation === 'panorama_360' &&
-    (fieldName === 'aspect_ratio' || fieldName === 'aspectRatio' || fieldName === 'size')
+    (isAspectRatioParam(fieldName) || fieldName === 'size')
   ) {
     return (
       compatiblePanoramaFieldValue ??
@@ -1596,7 +1593,7 @@ export function isModelParamCoveredByFields(
 ): boolean {
   const aliases = new Set(modelParamAliasCandidates(key))
   if (
-    (key === 'aspect_ratio' || key === 'aspectRatio') &&
+    isAspectRatioParam(key) &&
     fields.some((field) => field.name === 'size' && fieldCanRepresentPanoramaAspectRatio(field))
   ) {
     return true
@@ -1605,11 +1602,32 @@ export function isModelParamCoveredByFields(
 }
 
 function modelParamAliasCandidates(fieldName: string): string[] {
-  if (fieldName === 'aspect_ratio') return ['aspect_ratio', 'aspectRatio']
-  if (fieldName === 'aspectRatio') return ['aspectRatio', 'aspect_ratio']
-  if (fieldName === 'duration') return ['duration', 'durationSeconds']
-  if (fieldName === 'durationSeconds') return ['durationSeconds', 'duration']
+  const groups = [
+    ['ratio', 'aspectRatio', 'aspect_ratio'],
+    ['durationSeconds', 'duration'],
+    ['generateAudio', 'generate_audio'],
+    ['returnLastFrame', 'return_last_frame'],
+    ['promptExtend', 'prompt_extend'],
+    ['audioSetting', 'audio_setting'],
+    ['serviceTier', 'service_tier'],
+    ['cameraFixed', 'camera_fixed'],
+    ['searchEnabled', 'search_enabled', 'enable_search'],
+    ['responseFormat', 'response_format'],
+    ['outputFormat', 'output_format', 'image_format'],
+    ['sampleRate', 'sample_rate'],
+    ['bitRate', 'bit_rate'],
+    ['voiceId', 'voice_id'],
+    ['withTimestamps', 'with_timestamps'],
+    ['optimizeStreamingLatency', 'optimize_streaming_latency'],
+    ['textNormalization', 'text_normalization'],
+  ]
+  const group = groups.find((candidates) => candidates.includes(fieldName))
+  if (group) return [fieldName, ...group.filter((candidate) => candidate !== fieldName)]
   return [fieldName]
+}
+
+function isAspectRatioParam(name: string): boolean {
+  return name === 'ratio' || name === 'aspectRatio' || name === 'aspect_ratio'
 }
 
 function derivePanoramaFieldValue(
@@ -1617,10 +1635,9 @@ function derivePanoramaFieldValue(
   presetParams: Record<string, unknown>,
 ): string | undefined {
   const presetAspect =
-    readModelParamDraftValue(presetParams, 'aspect_ratio') ??
     readModelParamDraftValue(presetParams, 'aspectRatio')
   if (!presetAspect) return undefined
-  if (field.name === 'aspect_ratio' || field.name === 'aspectRatio') return presetAspect
+  if (isAspectRatioParam(field.name)) return presetAspect
   if (field.name !== 'size') return undefined
   if (field.enumValues.includes(presetAspect)) return presetAspect
   const dimensionCandidate = field.enumValues.find((value) =>
@@ -1905,6 +1922,7 @@ export function mergeSchemaFields(
   baseFields: SchemaField[],
   ...suggestedFieldGroups: SchemaField[][]
 ): SchemaField[] {
+  const hasModelSchema = baseFields.length > 0
   const dimensionFieldPolicy = imageDimensionFieldPolicy(baseFields)
   const seen = new Set<string>()
   const result: SchemaField[] = []
@@ -1926,6 +1944,9 @@ export function mergeSchemaFields(
       }
       continue
     }
+    // 模型 schema 是参数能力的唯一事实源。通用/模型建议只负责补充同名字段的展示
+    // 元数据；只有旧模型完全没有 schema 时，才允许建议字段作为兼容兜底出现。
+    if (hasModelSchema) continue
     seen.add(field.name)
     result.push(field)
   }
@@ -1939,13 +1960,13 @@ function imageDimensionFieldPolicy(fields: SchemaField[]): {
   const accepted = new Set(
     fields
       .map((field) => field.name)
-      .filter((name) => name === 'size' || name === 'aspect_ratio' || name === 'aspectRatio'),
+      .filter((name) => name === 'size' || isAspectRatioParam(name)),
   )
   return {
     accepted,
     allows: (name) =>
       accepted.size === 0 ||
-      (name !== 'size' && name !== 'aspect_ratio' && name !== 'aspectRatio') ||
+      (name !== 'size' && !isAspectRatioParam(name)) ||
       accepted.has(name),
   }
 }
@@ -2089,9 +2110,10 @@ export function updateModelParamDraftValue(
   const next = { ...draft, [fieldName]: value }
   if (value.trim().length === 0) return next
   if (fieldName === 'size') {
+    next.ratio = ''
     next.aspect_ratio = ''
     next.aspectRatio = ''
-  } else if (fieldName === 'aspect_ratio' || fieldName === 'aspectRatio') {
+  } else if (isAspectRatioParam(fieldName)) {
     next.size = ''
   }
   return next
@@ -2133,20 +2155,25 @@ export function normalizeModelParamsForSubmit(
   if (fields) {
     const policy = imageDimensionFieldPolicy(fields)
     if (policy.accepted.size > 0) {
-      for (const name of ['size', 'aspect_ratio', 'aspectRatio']) {
+      for (const name of ['size', 'ratio', 'aspect_ratio', 'aspectRatio']) {
         if (!policy.accepted.has(name)) delete next[name]
       }
     }
   }
-  const aspect = stringParam(next.aspectRatio) ?? stringParam(next.aspect_ratio)
+  const aspect =
+    stringParam(next.aspectRatio) ?? stringParam(next.aspect_ratio) ?? stringParam(next.ratio)
   const size = stringParam(next.size)
   const defaultSize = stringParam(defaults.size)
-  const defaultAspect = stringParam(defaults.aspectRatio) ?? stringParam(defaults.aspect_ratio)
+  const defaultAspect =
+    stringParam(defaults.aspectRatio) ??
+    stringParam(defaults.aspect_ratio) ??
+    stringParam(defaults.ratio)
   if (aspect && size && defaultSize && size === defaultSize) {
     delete next.size
   } else if (aspect && size && defaultAspect && aspect === defaultAspect) {
     delete next.aspectRatio
     delete next.aspect_ratio
+    delete next.ratio
   }
   return next
 }

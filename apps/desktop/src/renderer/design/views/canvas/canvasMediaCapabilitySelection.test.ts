@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { CanvasMediaModelSummary } from '@spark/protocol'
+import type { CanvasMediaModelSummary, CanvasOperationType } from '@spark/protocol'
 import { selectCanvasMediaCapability } from './canvasMediaCapabilitySelection'
 
 const model = {
@@ -35,7 +35,72 @@ const images = [
   { value: 'image-2', type: 'image' },
 ]
 
+const multiDomainModel = {
+  ...model,
+  manifestId: 'test:all-media-capabilities',
+  providerKind: 'custom',
+  modelId: 'all-media-capabilities',
+  effectiveModelId: 'all-media-capabilities',
+  displayName: 'All media capabilities',
+  domains: ['image', 'audio', 'video'],
+  capabilities: [
+    capability('image.generate'),
+    capability('image.edit'),
+    capability('audio.speech'),
+    capability('audio.transcription'),
+    capability('video.generate'),
+    capability('video.image_to_video'),
+    capability('video.edit'),
+    capability('video.extend'),
+  ],
+} satisfies CanvasMediaModelSummary
+
+function capability(id: string): CanvasMediaModelSummary['capabilities'][number] {
+  return {
+    id,
+    label: id,
+    input: { required: ['prompt'] },
+    output: { types: [id.startsWith('audio.') ? 'audio' : id.startsWith('video.') ? 'video' : 'image'] },
+    paramSchema: { type: 'object', properties: { marker: { type: 'string', title: id } } },
+  }
+}
+
 describe('selectCanvasMediaCapability', () => {
+  it.each<[CanvasOperationType, string]>([
+    ['text_to_image', 'image.generate'],
+    ['image_to_image', 'image.edit'],
+    ['image_edit', 'image.edit'],
+    ['image_compose', 'image.edit'],
+    ['storyboard_grid', 'image.generate'],
+    ['panorama_360', 'image.generate'],
+    ['text_to_audio', 'audio.speech'],
+    ['audio_transcribe', 'audio.transcription'],
+    ['text_to_video', 'video.generate'],
+    ['image_to_video', 'video.image_to_video'],
+    ['video_edit', 'video.edit'],
+    ['video_extend', 'video.extend'],
+  ])('selects %s from the shared operation contract', (operation, expectedCapability) => {
+    expect(
+      selectCanvasMediaCapability({
+        operation,
+        model: multiDomainModel,
+        selectedInputNodeIds: [],
+        mediaInputOptions: [],
+      })?.id,
+    ).toBe(expectedCapability)
+  })
+
+  it('uses the first capability candidate actually exposed by the model', () => {
+    expect(
+      selectCanvasMediaCapability({
+        operation: 'storyboard_grid',
+        model: { ...multiDomainModel, capabilities: [capability('image.edit')] },
+        selectedInputNodeIds: [],
+        mediaInputOptions: [],
+      })?.id,
+    ).toBe('image.edit')
+  })
+
   it('uses reference-to-video for multiple unassigned images', () => {
     expect(
       selectCanvasMediaCapability({

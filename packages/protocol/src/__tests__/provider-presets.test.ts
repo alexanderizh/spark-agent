@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { BUILTIN_MEDIA_MODEL_MANIFESTS } from '../media-model-manifest.js'
 import { getProviderPresetById } from '../provider-presets.js'
 
 describe('provider presets', () => {
@@ -47,6 +48,39 @@ describe('provider presets', () => {
         expect.objectContaining({ manifestId: 'agnes:agnes-image-2.0-flash' }),
         expect.objectContaining({ manifestId: 'agnes:agnes-video-v2.0' }),
       ]),
+    })
+  })
+
+  it('keeps image provider defaults aligned with each default model schema', () => {
+    expect(getProviderPresetById('bailian-images')?.mediaDefaults?.image).toEqual({
+      size: '2K',
+      n: 1,
+    })
+    expect(getProviderPresetById('volcengine-seedream-image')?.mediaDefaults?.image).toMatchObject({
+      size: '2K',
+    })
+    expect(getProviderPresetById('volcengine-seedream-image')?.mediaDefaults?.image).not.toHaveProperty(
+      'resolution',
+    )
+
+    const xaiPreset = getProviderPresetById('xai-imagine-image')
+    if (!xaiPreset) throw new Error('xai image preset not found')
+    const xaiManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (manifest) => manifest.id === xaiPreset.mediaModelRefs?.[0]?.manifestId,
+    )
+    if (!xaiManifest) throw new Error('xai image manifest not found')
+    const schemaProperties = xaiManifest.capabilities[0]?.paramSchema.properties ?? {}
+    for (const defaultName of Object.keys(xaiPreset.mediaDefaults?.image ?? {})) {
+      expect(schemaProperties).toHaveProperty(defaultName)
+    }
+  })
+
+  it('wires xAI TTS to its manifest with provider-compatible defaults', () => {
+    expect(getProviderPresetById('xai-tts')).toMatchObject({
+      mediaModelRefs: [
+        { manifestId: 'xai:grok-tts', modelId: 'grok-tts', enabled: true },
+      ],
+      mediaDefaults: { audio: { voice: 'eve', format: 'mp3', speed: 1 } },
     })
   })
 })

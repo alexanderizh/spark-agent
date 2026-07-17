@@ -128,7 +128,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     if (!prompt) throw new MediaProviderError('invalid_input', 'prompt is required')
     const model = ctx.defaultModel
     const defaults = ctx.mediaDefaults?.image
-    const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider)
+    const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider, model)
     const body: Record<string, unknown> = {
       model,
       prompt,
@@ -216,7 +216,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     }
     const model = ctx.defaultModel
     const defaults = ctx.mediaDefaults?.image
-    const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider)
+    const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider, model)
     const imageRefs = inputs
       .filter((file) => file.type === 'image' || file.type === 'file')
       .map((file) => mediaInputRef(file, ctx.mediaProvider) ?? '')
@@ -684,6 +684,7 @@ function buildImageRequestParams(
   modelParams: Record<string, unknown> | undefined,
   defaults: ProviderMediaDefaults['image'] | undefined,
   provider: MediaProviderKind,
+  modelId?: string,
 ): { n: number; size?: string; aspect_ratio?: string; quality?: unknown; resolution?: string; response_format?: string; output_format?: string } {
   const params = normalizeImageAliasParams(modelParams)
   const aspectRatio = stringParam(params.aspect_ratio)
@@ -707,6 +708,27 @@ function buildImageRequestParams(
       ...(resolution ? { resolution } : {}),
       ...(xaiAspect ? { aspect_ratio: xaiAspect } : {}),
       ...(responseFormat ? { response_format: responseFormat } : {}),
+      ...(outputFormat ? { output_format: outputFormat } : {}),
+    }
+  }
+  // APIMart GPT Image 2 文档中的 size 本身就是画幅比例，而 resolution 才是清晰度档位。
+  // 兼容历史画布节点的 aspect_ratio，但绝不能再转成 OpenAI 风格像素尺寸。
+  if (provider === 'apimart' && modelId === 'gpt-image-2') {
+    const documentedSize =
+      explicitSize && (explicitSize === 'auto' || RATIO_PATTERN.test(explicitSize))
+        ? explicitSize
+        : undefined
+    const legacyAspect =
+      aspectRatio && RATIO_PATTERN.test(aspectRatio) ? aspectRatio : undefined
+    const documentedDefault =
+      defaultSize && (defaultSize === 'auto' || RATIO_PATTERN.test(defaultSize))
+        ? defaultSize
+        : undefined
+    const size = documentedSize ?? legacyAspect ?? documentedDefault
+    return {
+      n: clampInt(params.n, defaults?.n, 1, 1, 1),
+      ...(size ? { size } : {}),
+      ...(resolution ? { resolution } : {}),
       ...(outputFormat ? { output_format: outputFormat } : {}),
     }
   }

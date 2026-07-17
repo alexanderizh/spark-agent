@@ -638,7 +638,11 @@ async function buildSeedreamParams(
   const imageDefaults = ctx.mediaDefaults?.image
   const params: Record<string, unknown> = {}
 
-  const size = stringVal(raw.size) ?? imageDefaults?.resolution ?? stringVal(raw.resolution)
+  const size =
+    stringVal(raw.size) ??
+    stringVal(raw.resolution) ??
+    imageDefaults?.size ??
+    imageDefaults?.resolution
   if (size) params.size = size
 
   // output_format / response_format 是 Seedream 5.0 新增字段，4.0/4.5 都不支持，

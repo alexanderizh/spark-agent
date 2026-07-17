@@ -1588,7 +1588,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       },
     ],
     mediaDefaults: {
-      image: { aspectRatio: '1:1', n: 1, outputFormat: 'png', responseFormat: 'url' },
+      image: { aspectRatio: '1:1', n: 1, responseFormat: 'url' },
     },
     sourceUrls: ['https://docs.x.ai/developers/model-capabilities/imagine'],
   },
@@ -1664,7 +1664,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       { manifestId: 'bailian:wan2.7-image', modelId: 'wan2.7-image', enabled: true },
     ],
     mediaDefaults: {
-      image: { size: '1:1', resolution: '2K', n: 1, outputFormat: 'png' },
+      image: { size: '2K', n: 1 },
       polling: { intervalMs: 5000, timeoutMs: 600_000 },
     },
     sourceUrls: ['https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market'],
@@ -1896,7 +1896,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       // output_format 仅 5.0 Pro/Lite 支持；adapter 按 manifest schema 过滤。
-      image: { resolution: '2K', outputFormat: 'jpeg', responseFormat: 'url' },
+      image: { size: '2K', outputFormat: 'jpeg', responseFormat: 'url' },
     },
     sourceUrls: [
       'https://www.volcengine.com/docs/82379/1541523',
@@ -1921,7 +1921,10 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaProvider: 'xai',
     mediaApiType: 'sync',
     mediaCapabilities: ['audio.speech'],
-    mediaDefaults: { audio: { voice: 'alloy', format: 'mp3', speed: 1 } },
+    mediaModelRefs: [
+      { manifestId: 'xai:grok-tts', modelId: 'grok-tts', enabled: true },
+    ],
+    mediaDefaults: { audio: { voice: 'eve', format: 'mp3', speed: 1 } },
     sourceUrls: ['https://docs.x.ai/developers/model-capabilities/audio/text-to-speech'],
   },
 

@@ -431,6 +431,56 @@ describe('XaiMediaAdapter official contract', () => {
     })
   })
 
+  it('assembles flat canvas TTS fields into the official output_format object', async () => {
+    let body: Record<string, unknown> = {}
+    const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return new Response(Buffer.from('audio'))
+    }) as typeof fetch
+
+    await adapter.invoke(
+      {
+        operation: 'text_to_audio',
+        capability: 'audio.speech',
+        outputDir,
+        prompt: 'flat fields',
+        modelParams: { outputFormat: 'wav', sampleRate: 24_000, bitRate: 128_000 },
+      },
+      context(fetchImpl, 'grok-tts'),
+    )
+
+    expect(body.output_format).toEqual({ codec: 'wav', sample_rate: 24_000, bit_rate: 128_000 })
+  })
+
+  it('uses xAI TTS provider defaults when the task has no explicit overrides', async () => {
+    let body: Record<string, unknown> = {}
+    const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return new Response(Buffer.from('audio'))
+    }) as typeof fetch
+    const ctx = context(fetchImpl, 'grok-tts')
+    ctx.mediaDefaults = {
+      audio: { voice: 'Ara', format: 'wav', speed: 1.1 },
+      polling: { intervalMs: 1, timeoutMs: 100 },
+    }
+
+    await adapter.invoke(
+      {
+        operation: 'text_to_audio',
+        capability: 'audio.speech',
+        outputDir,
+        prompt: 'provider defaults',
+      },
+      ctx,
+    )
+
+    expect(body).toMatchObject({
+      voice_id: 'Ara',
+      output_format: { codec: 'wav' },
+      speed: 1.1,
+    })
+  })
+
   it('uses storage_options and preserves each image public URL', async () => {
     let body: Record<string, unknown> | undefined
     const fetchImpl = (async (request: string | URL | Request, init?: RequestInit) => {

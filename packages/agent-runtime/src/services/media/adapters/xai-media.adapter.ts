@@ -274,14 +274,20 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     }
 
     const params = input.modelParams ?? {}
-    const outputFormat = normalizeTtsOutputFormat(params.outputFormat ?? params.output_format)
+    const audioDefaults = ctx.mediaDefaults?.audio
+    const outputFormat = normalizeTtsOutputFormat(
+      params.outputFormat ?? params.output_format ?? audioDefaults?.format,
+      params.sampleRate ?? params.sample_rate,
+      params.bitRate ?? params.bit_rate,
+    )
+    const speed = numericParam(params.speed) ?? audioDefaults?.speed
     const withTimestamps = params.withTimestamps === true || params.with_timestamps === true
     const body: Record<string, unknown> = {
       text,
-      voice_id: stringParam(params.voiceId ?? params.voice_id) ?? 'eve',
+      voice_id: stringParam(params.voiceId ?? params.voice_id) ?? audioDefaults?.voice ?? 'eve',
       language: stringParam(params.language) ?? 'auto',
       output_format: outputFormat,
-      ...(numericParam(params.speed) !== undefined ? { speed: numericParam(params.speed) } : {}),
+      ...(speed !== undefined ? { speed } : {}),
       ...(typeof params.optimizeStreamingLatency === 'boolean'
         ? { optimize_streaming_latency: params.optimizeStreamingLatency }
         : typeof params.optimize_streaming_latency === 'boolean'
@@ -734,7 +740,11 @@ function extractXaiImages(value: unknown): Array<{
   return results
 }
 
-function normalizeTtsOutputFormat(value: unknown): Record<string, unknown> {
+function normalizeTtsOutputFormat(
+  value: unknown,
+  sampleRate?: unknown,
+  bitRate?: unknown,
+): Record<string, unknown> {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     const source = value as Record<string, unknown>
     return {
@@ -743,7 +753,11 @@ function normalizeTtsOutputFormat(value: unknown): Record<string, unknown> {
       ...(numericParam(source.bit_rate) !== undefined ? { bit_rate: numericParam(source.bit_rate) } : {}),
     }
   }
-  return { codec: stringParam(value) ?? 'mp3' }
+  return {
+    codec: stringParam(value) ?? 'mp3',
+    ...(numericParam(sampleRate) !== undefined ? { sample_rate: numericParam(sampleRate) } : {}),
+    ...(numericParam(bitRate) !== undefined ? { bit_rate: numericParam(bitRate) } : {}),
+  }
 }
 
 function positiveInteger(value: unknown): number | undefined {

@@ -73,7 +73,7 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
     }
     const model = ctx.defaultModel
     const defaults = ctx.mediaDefaults?.image
-    const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider)
+    const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider, model)
     const imageUrls = await Promise.all(imageFiles.map((file) => resolveApimartImageUrl(file)))
     const body: Record<string, unknown> = {
       model,
