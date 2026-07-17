@@ -123,11 +123,11 @@ export function stage3DBodyTypeToUE4BodyType(bodyType: Stage3DBodyType): UE4Stag
 export function getUE4Stage3DBodyScale(bodyType: Stage3DBodyType): Vec3 {
   switch (stage3DBodyTypeToUE4BodyType(bodyType)) {
     case 'child':
-      return [0.01152, 0.01152, 0.01152]
+      return [0.018288, 0.018288, 0.018288]
     case 'tall':
-      return [0.0144, 0.01824, 0.0144]
+      return [0.02286, 0.028956, 0.02286]
     default:
-      return [0.016, 0.016, 0.016]
+      return [0.0254, 0.0254, 0.0254]
   }
 }
 
