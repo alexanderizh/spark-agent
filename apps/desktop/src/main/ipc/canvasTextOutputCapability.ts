@@ -146,7 +146,13 @@ function collectErrorText(value: unknown, depth = 0): string[] {
   }
   if (Array.isArray(value)) return value.flatMap((item) => collectErrorText(item, depth + 1))
   if (!isRecord(value)) return []
-  return Object.values(value).flatMap((item) => collectErrorText(item, depth + 1))
+  const structuredSummary = ['param', 'code', 'type', 'message']
+    .flatMap((key) => (typeof value[key] === 'string' ? [value[key]] : []))
+    .join(' ')
+  return [
+    ...(structuredSummary ? [structuredSummary] : []),
+    ...Object.values(value).flatMap((item) => collectErrorText(item, depth + 1)),
+  ]
 }
 
 function toErrorRecord(error: Error): Record<string, unknown> {
