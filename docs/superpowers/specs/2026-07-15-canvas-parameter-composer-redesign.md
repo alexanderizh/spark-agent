@@ -1,6 +1,6 @@
 # 画布参数配置与菜单体验重设计
 
-> 状态: 已落地 | 最后核对: 2026-07-15
+> 状态: 已落地 | 最后核对: 2026-07-18
 
 ## 目标
 
@@ -25,6 +25,25 @@
 4. 已识别参数使用专用控件，未知参数可靠降级为通用输入控件。
 5. 所有图标按钮具备 Tooltip、`aria-label`、键盘焦点和明确的禁用状态。
 6. 不重复定义菜单分类，右键菜单和相关快捷入口共享同一展示模型。
+
+## 模型契约一致性规则
+
+2026-07-18 的 APIMart GPT Image 2 回归暴露出一类“契约漂移”问题：操作面板在本地重复维护了不完整的 operation → capability 映射，图片与音频操作因此没有命中模型 schema；参数层随后启用通用兜底，同时展示 `size` 与 `aspect_ratio`。适配器又按 OpenAI 图片习惯把比例转换成像素尺寸，最终造成 UI、manifest 和 provider 请求三套语义不一致。
+
+统一采用以下规则：
+
+1. `capabilityForOperation` 是 operation → capability 的唯一事实源。Renderer、runtime 和校验层不得再维护局部 switch 映射；多候选 operation 按协议顺序选择模型实际暴露的第一个 capability。
+2. 选中模型且 schema 非空时，schema 是可编辑参数的唯一事实源。通用建议和模型建议只能补充同名字段的标题、选项或展示说明，不能新增 schema 未声明的字段；只有旧模型完全没有 schema 时才启用建议字段兜底。
+3. Provider 原生字段语义以对应模型文档为准，不能按相似 API 猜测。APIMart `gpt-image-2` 的 `size` 是 `2:1`、`16:9` 等画幅比例，`resolution` 才是 `1k/2k/4k` 清晰度档位；请求不得再发送 `aspect_ratio` 或把比例转换成 `2048x1024` 一类像素尺寸。
+4. 历史节点的别名兼容在 contract/adapter 边界完成，不重新暴露为第二个 UI 控件。画幅统一识别 `ratio` / `aspectRatio` / `aspect_ratio`；音频、视频和搜索等参数同理兼容 camelCase、snake_case 与已知 provider 别名，新任务只保存模型 schema 的规范字段。APIMart 的旧画幅别名最终归一到 `size`。
+5. 每次新增或调整媒体模型至少验证三层：operation 能选中正确 capability、参数面板只出现 schema 字段、最终 provider 请求体符合模型文档。回归测试必须覆盖冲突历史值，防止默认值或通用兜底覆盖用户选择。
+
+### 跨渠道核对结论
+
+- xAI 图片只展示 `aspectRatio`、`resolution` 等 manifest 字段，`responseFormat` 作为 canonical 字段编译为 provider 的 `response_format`；移除未在模型 schema 中声明的图片格式默认值。xAI TTS 将嵌套 `output_format` 拆成画布可编辑的 `outputFormat`、`sampleRate`、`bitRate`，由 adapter 组装官方对象。
+- APIMart Seedance 与火山 Seedance 的画幅仍以各模型 schema 为准；历史 `ratio` / `aspect_ratio` 可回显到当前字段，`generate_audio`、`return_last_frame`、搜索开关等 snake_case 参数不会生成重复控件。
+- 百炼 Wan 图片的 `size` 表示图像规格，默认值改为 `2K`，不再把 `1:1` 比例或不存在的 `resolution` / `outputFormat` 默认值注入请求；百炼视频的 `ratio` 与通用画幅别名统一处理。
+- 火山 Seedream 的请求尺寸字段是 `size`，Provider 默认值改为 `size: 2K`；adapter 仍兼容已保存配置中的旧 `resolution` 默认值，并保证显式任务参数优先于 Provider 默认值。
 
 ## 模型选择器
 
@@ -114,7 +133,7 @@
 
 1. Composer 根据 operation 筛选媒体模型。
 2. 模型展示模型按 Provider 分组，选择结果仍回写现有 `selectedModelKey`。
-3. 现有 capability、默认值和模型建议字段生成 `SchemaField[]`。
+3. 现有 capability schema 生成 `SchemaField[]`；模型建议只补充同名展示元数据，无 schema 时才作为兼容兜底。
 4. 参数展示语义层把字段划分为常用与高级，并为每个字段选择控件类型。
 5. 所有控件继续写入现有 `modelParamDraft`，不引入第二份参数状态。
 6. 提交时继续调用现有 `buildModelParams`、`normalizeModelParamsForSubmit` 和 `pruneModelParamsForCanvas`。
@@ -139,6 +158,6 @@
 
 ## 影响与风险
 
-GitNexus MCP 当前未暴露，无法执行专属 impact/detect_changes。实施时按仓库降级规则，在每个生产符号修改前使用直接调用点检索确认影响范围，并在完成后使用相关测试和 `git diff` 核对变更范围。
+GitNexus MCP 当前未暴露；本次通过项目本地 GitNexus CLI 刷新索引并完成 impact / detect-changes，CLI 不可用时继续按仓库降级规则使用直接调用点检索、相关测试与 `git diff` 核对范围。
 
 高风险点主要是 Composer 草稿与提交链路。通过保持 `modelParamDraft`、模型稳定键和提交函数不变，将风险限制在展示层；菜单重构通过纯展示模型测试防止操作类型映射错误。

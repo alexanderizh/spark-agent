@@ -79,6 +79,14 @@ describe('M5 builtin manifest contract — xAI image', () => {
     expect(result.providerParams).not.toHaveProperty('aspectRatio')
   })
 
+  it('responseFormat canonical -> provider response_format alias', () => {
+    const result = compileFromManifest(manifestId, 'image.generate', {
+      responseFormat: 'b64_json',
+    })
+    expect(result.providerParams.response_format).toBe('b64_json')
+    expect(result.providerParams).not.toHaveProperty('responseFormat')
+  })
+
   it('size "16:9" is transformed into aspectRatio -> aspect_ratio (no provider 400)', () => {
     const result = compileFromManifest(manifestId, 'image.generate', { size: '16:9' })
     expect(result.providerParams.aspect_ratio).toBe('16:9')
@@ -121,6 +129,21 @@ describe('M5 builtin manifest contract — xAI image', () => {
     expect(result.providerCode).toBe('invalid_request_error')
     expect(result.paramName).toBe('size')
     expect(result.retryable).toBe(false)
+  })
+})
+
+describe('M5 builtin manifest contract — xAI TTS', () => {
+  it('uses flat UI fields and compiles them to provider output format fields', () => {
+    const result = compileFromManifest('xai:grok-tts', 'audio.speech', {
+      outputFormat: 'wav',
+      sampleRate: 24_000,
+      bitRate: 128_000,
+    })
+    expect(result.providerParams).toMatchObject({
+      output_format: 'wav',
+      sample_rate: 24_000,
+      bit_rate: 128_000,
+    })
   })
 })
 
@@ -260,12 +283,13 @@ describe('M5 builtin manifest contract — APIMart GPT-Image 2', () => {
     expect(manifest.error?.codePaths).toContain('error.code')
   })
 
-  it('allows whitelisted canonical params (aspectRatio, outputFormat)', () => {
+  it('maps the legacy canonical aspectRatio to APIMart native size', () => {
     const result = compileFromManifest(manifestId, 'image.generate', {
       aspectRatio: '1:1',
       outputFormat: 'png',
     })
-    expect(result.providerParams.aspect_ratio).toBe('1:1')
+    expect(result.providerParams.size).toBe('1:1')
+    expect(result.providerParams).not.toHaveProperty('aspect_ratio')
     expect(result.providerParams.output_format).toBe('png')
   })
 

@@ -492,7 +492,7 @@ describe('MediaRouterService', () => {
     expect(fetchMock.calls.some((call) => call.url.includes('/tasks/task-123'))).toBe(true)
   })
 
-  it('APIMart image.generate maps aspect_ratio to vertical size instead of default square size', async () => {
+  it('APIMart GPT Image 2 maps legacy aspect_ratio to the documented size ratio', async () => {
     const captured: { body: Record<string, unknown> } = { body: {} }
     const fetchMock = makeFetch([
       {
@@ -518,7 +518,7 @@ describe('MediaRouterService', () => {
       },
     )
 
-    expect(captured.body.size).toBe('1024x1536')
+    expect(captured.body.size).toBe('9:16')
     expect(captured.body.aspect_ratio).toBeUndefined()
   })
 
@@ -2884,7 +2884,8 @@ describe('VolcengineArkMediaAdapter', () => {
     // 4.5 的 manifest schema 已移除 outputFormat，但 response_format 是通用响应参数。
     const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
       (entry) => entry.id === 'volcengine:doubao-seedream-4-5-251128',
-    )!
+    )
+    if (!seedreamManifest) throw new Error('Seedream 4.5 manifest not found')
     let postedBody: Record<string, unknown> = {}
     const fetchMock = makeFetch([
       {
@@ -2941,6 +2942,61 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(output.mode).toBe('sync')
     expect(output.assets[0]?.type).toBe('image')
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
+  it('Seedream uses canonical provider size defaults and still accepts legacy resolution defaults', async () => {
+    const seedreamManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedream-4-5-251128',
+    )
+    if (!seedreamManifest) throw new Error('Seedream 4.5 manifest not found')
+
+    const invokeWithDefaults = async (imageDefaults: { size?: string; resolution?: string }) => {
+      let postedBody: Record<string, unknown> = {}
+      const fetchMock = makeFetch([
+        {
+          match: '/images/generations',
+          respond: (init) => {
+            postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+            return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/default.png' }] } }
+          },
+        },
+        {
+          match: 'https://cdn/default.png',
+          respond: () => ({
+            ok: true,
+            status: 200,
+            body: null,
+            binary: Buffer.from(PNG_PIXEL, 'base64'),
+          }),
+        },
+      ])
+      await router.invoke(
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          outputDir: tmpDir,
+          prompt: 'default size',
+        },
+        {
+          providers: [
+            makeProvider({
+              id: `volc-${imageDefaults.size ?? imageDefaults.resolution}`,
+              defaultModel: 'doubao-seedream-4-5-251128',
+              apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+              mediaProvider: 'volcengine-ark',
+              mediaCapabilities: ['image.generate'],
+              mediaDefaults: { image: imageDefaults },
+              mediaModelManifests: [seedreamManifest],
+            }),
+          ],
+          fetch: fetchMock,
+        },
+      )
+      return postedBody
+    }
+
+    expect((await invokeWithDefaults({ size: '2K' })).size).toBe('2K')
+    expect((await invokeWithDefaults({ resolution: '4K' })).size).toBe('4K')
   })
 
   it('Seedream 4.5: drops unsupported fast prompt mode and stream before provider request', async () => {
@@ -3736,7 +3792,7 @@ describe('media adapters reject unknown params under Contract V2', () => {
     expect(postedBody!).not.toHaveProperty('size')
   })
 
-  it('APIMart gpt-image-2 only passes whitelisted params (aspect_ratio/output_format/resolution)', async () => {
+  it('APIMart gpt-image-2 resolves conflicting canvas dimensions to documented size ratio', async () => {
     let postedBody: Record<string, unknown> | null = null
     const fetchMock = makeFetch([
       {
@@ -3760,8 +3816,9 @@ describe('media adapters reject unknown params under Contract V2', () => {
         outputDir: tmpDir,
         prompt: 'apimart whitelist',
         modelParams: {
-          aspectRatio: '16:9',
-          resolution: '2K',
+          size: '2048x1024',
+          aspect_ratio: '2:1',
+          resolution: '2k',
           output_format: 'png',
           // 未在 passthrough.allow 中：必须被丢弃，避免 GPT-Image-2 平台 400
           seed: 42,
@@ -3786,14 +3843,13 @@ describe('media adapters reject unknown params under Contract V2', () => {
     )
 
     expect(postedBody).not.toBeNull()
-    // gpt-image-2 schema 的 size 字段已支持比例型 enum；adapter 层 buildImageRequestParams
-    // 会把 aspectRatio '16:9' 进一步转成像素值 '1536x1024'。resolution/output_format 透传。
     expect(postedBody).toMatchObject({
       prompt: 'apimart whitelist',
-      size: '1536x1024',
-      resolution: '2K',
+      size: '2:1',
+      resolution: '2k',
       output_format: 'png',
     })
+    expect(postedBody!).not.toHaveProperty('aspect_ratio')
     expect(postedBody!).not.toHaveProperty('style_preset')
     expect(postedBody!).not.toHaveProperty('seed')
   })

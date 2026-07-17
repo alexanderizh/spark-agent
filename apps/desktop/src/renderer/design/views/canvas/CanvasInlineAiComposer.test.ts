@@ -34,7 +34,7 @@ describe('CanvasInlineAiComposer image dimension params', () => {
   it('shows and submits only size when the model schema accepts size', () => {
     const fields = mergeSchemaFields([field('size')], [field('aspect_ratio'), field('quality')])
 
-    expect(fields.map((item) => item.name)).toEqual(['size', 'quality'])
+    expect(fields.map((item) => item.name)).toEqual(['size'])
     expect(
       normalizeModelParamsForSubmit(
         { size: '1024x1024', aspect_ratio: '1:1', quality: 'high' },
@@ -47,7 +47,7 @@ describe('CanvasInlineAiComposer image dimension params', () => {
   it('shows and submits only aspect_ratio when the model schema accepts aspect_ratio', () => {
     const fields = mergeSchemaFields([field('aspect_ratio')], [field('size'), field('quality')])
 
-    expect(fields.map((item) => item.name)).toEqual(['aspect_ratio', 'quality'])
+    expect(fields.map((item) => item.name)).toEqual(['aspect_ratio'])
     expect(
       normalizeModelParamsForSubmit(
         { size: '1024x1024', aspect_ratio: '16:9', quality: 'standard' },
@@ -57,18 +57,29 @@ describe('CanvasInlineAiComposer image dimension params', () => {
     ).toEqual({ aspect_ratio: '16:9', quality: 'standard' })
   })
 
+  it('uses operation suggestions only when the selected model has no parameter schema', () => {
+    const fields = mergeSchemaFields([], [field('size'), field('aspect_ratio'), field('quality')])
+
+    expect(fields.map((item) => item.name)).toEqual(['size', 'aspect_ratio', 'quality'])
+  })
+
   it('clears the alternate image dimension draft when selecting size or aspect ratio', () => {
     expect(
       updateModelParamDraftValue(
-        { size: '', aspect_ratio: '1:1', aspectRatio: '1:1' },
+        { size: '', ratio: '1:1', aspect_ratio: '1:1', aspectRatio: '1:1' },
         'size',
         '1536x1024',
       ),
-    ).toEqual({ size: '1536x1024', aspect_ratio: '', aspectRatio: '' })
+    ).toEqual({ size: '1536x1024', ratio: '', aspect_ratio: '', aspectRatio: '' })
 
     expect(
       updateModelParamDraftValue({ size: '1024x1024', aspect_ratio: '' }, 'aspect_ratio', '16:9'),
     ).toEqual({ size: '', aspect_ratio: '16:9' })
+
+    expect(updateModelParamDraftValue({ size: '2K', ratio: '' }, 'ratio', '9:16')).toEqual({
+      size: '',
+      ratio: '9:16',
+    })
   })
 
   it('cleans submitted defaults when both size and aspect_ratio are present', () => {
@@ -89,6 +100,14 @@ describe('CanvasInlineAiComposer image dimension params', () => {
         fields,
       ),
     ).toEqual({ size: '1536x1024' })
+
+    expect(
+      normalizeModelParamsForSubmit(
+        { size: '2K', ratio: '9:16', aspectRatio: '1:1' },
+        { size: '2K' },
+        [field('ratio')],
+      ),
+    ).toEqual({ ratio: '9:16' })
   })
 })
 
@@ -122,6 +141,11 @@ describe('CanvasInlineAiComposer node default model params', () => {
   it('reads aliased aspect ratio defaults across aspect_ratio and aspectRatio', () => {
     expect(readModelParamDraftValue({ aspect_ratio: '2:1' }, 'aspectRatio')).toBe('2:1')
     expect(readModelParamDraftValue({ aspectRatio: '2:1' }, 'aspect_ratio')).toBe('2:1')
+    expect(readModelParamDraftValue({ ratio: '16:9' }, 'aspectRatio')).toBe('16:9')
+    expect(readModelParamDraftValue({ aspect_ratio: '9:16' }, 'ratio')).toBe('9:16')
+    expect(nodeDefaultModelParams([node({ ratio: '4:3' })], [field('aspectRatio')])).toEqual({
+      aspectRatio: '4:3',
+    })
   })
 
   it('reads and covers persisted duration aliases as the same form field', () => {
@@ -129,6 +153,14 @@ describe('CanvasInlineAiComposer node default model params', () => {
     expect(readModelParamDraftValue({ durationSeconds: 3 }, 'duration')).toBe('3')
     expect(isModelParamCoveredByFields('duration', [field('durationSeconds')])).toBe(true)
     expect(isModelParamCoveredByFields('durationSeconds', [field('duration')])).toBe(true)
+  })
+
+  it('reads common provider snake_case fields through canonical canvas names', () => {
+    expect(readModelParamDraftValue({ generate_audio: true }, 'generateAudio')).toBe('true')
+    expect(readModelParamDraftValue({ prompt_extend: false }, 'promptExtend')).toBe('false')
+    expect(readModelParamDraftValue({ enable_search: true }, 'searchEnabled')).toBe('true')
+    expect(readModelParamDraftValue({ response_format: 'url' }, 'responseFormat')).toBe('url')
+    expect(readModelParamDraftValue({ sample_rate: 24_000 }, 'sampleRate')).toBe('24000')
   })
 
   it('preserves JSON Schema patterns for custom value validation', () => {
@@ -170,6 +202,8 @@ describe('CanvasInlineAiComposer node default model params', () => {
   it('treats aliased aspect ratio params as covered by form fields', () => {
     expect(isModelParamCoveredByFields('aspect_ratio', [field('aspectRatio')])).toBe(true)
     expect(isModelParamCoveredByFields('aspectRatio', [field('aspect_ratio')])).toBe(true)
+    expect(isModelParamCoveredByFields('ratio', [field('aspectRatio')])).toBe(true)
+    expect(isModelParamCoveredByFields('aspect_ratio', [field('ratio')])).toBe(true)
   })
 
   it('treats panorama aspect ratio params as covered when the schema exposes size', () => {

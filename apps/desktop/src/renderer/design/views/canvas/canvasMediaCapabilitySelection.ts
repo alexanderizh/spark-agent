@@ -3,6 +3,7 @@ import type {
   CanvasMediaModelSummary,
   CanvasOperationType,
 } from '@spark/protocol'
+import { capabilityForOperation } from '@spark/protocol'
 
 export interface CanvasMediaCapabilitySelectionInput {
   operation: CanvasOperationType
@@ -26,8 +27,11 @@ export function selectCanvasMediaCapability(
   input: CanvasMediaCapabilitySelectionInput,
 ): CanvasMediaModelCapabilitySummary | null {
   const capabilities = input.model?.capabilities ?? []
-  const primaryId = primaryCapabilityId(input.operation)
-  const primary = capabilities.find((item) => item.id === primaryId) ?? null
+  const primaryIds = capabilityForOperation(input.operation)
+  const primary =
+    primaryIds
+      .map((id) => capabilities.find((item) => item.id === id))
+      .find((item): item is CanvasMediaModelCapabilitySummary => item != null) ?? null
   const reference = capabilities.find((item) => item.id === 'video.reference_to_video') ?? null
 
   if (!reference || !shouldUseReferenceCapability(input)) return primary
@@ -50,15 +54,4 @@ function shouldUseReferenceCapability(input: CanvasMediaCapabilitySelectionInput
   if (input.operation === 'text_to_video') return selectedMediaCount > 0
   if (selectedMediaCount > selectedImages.length) return true
   return selectedImages.length > 1
-}
-
-function primaryCapabilityId(operation: CanvasOperationType): string | undefined {
-  switch (operation) {
-    case 'image_to_video':
-      return 'video.image_to_video'
-    case 'text_to_video':
-      return 'video.generate'
-    default:
-      return undefined
-  }
 }
