@@ -1249,7 +1249,6 @@ export const CanvasNode = memo(function CanvasNode({
             {shouldShowContentTitle && isTextContentNode ? (
               <div className="canvas-node-content-title canvas-node-content-title-text">
                 <strong title={title}>{title}</strong>
-                <span>{contentTitleMeta}</span>
               </div>
             ) : null}
             {/* nowheel：阻止画布 d3-zoom 抢走滚轮做缩放。
@@ -1408,7 +1407,6 @@ export const CanvasNode = memo(function CanvasNode({
             {shouldShowContentTitle && isMediaContentNode ? (
               <div className="canvas-node-content-title canvas-node-content-title-media">
                 <strong title={title}>{title}</strong>
-                <span>{contentTitleMeta}</span>
               </div>
             ) : null}
             <div className="canvas-node-quick-footer nodrag nopan">

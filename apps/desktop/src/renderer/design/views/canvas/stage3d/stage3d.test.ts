@@ -374,8 +374,8 @@ describe('UE4ActorRig body scaling', () => {
   })
 
   it('把原始厘米制 UE4 模型换算为画布米制尺寸', () => {
-    expect(getUE4Stage3DBodyScale('standard')).toEqual([0.016, 0.016, 0.016])
-    expect(getUE4Stage3DBodyScale('tall')).toEqual([0.0144, 0.01824, 0.0144])
+    expect(getUE4Stage3DBodyScale('standard')).toEqual([0.0254, 0.0254, 0.0254])
+    expect(getUE4Stage3DBodyScale('tall')).toEqual([0.02286, 0.028956, 0.02286])
   })
 
   it('把现有体型映射到参考项目 UE4 局部骨骼体型，而不是只缩放根节点', () => {

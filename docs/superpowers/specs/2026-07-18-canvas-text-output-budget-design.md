@@ -1,6 +1,6 @@
 # 画布文本输出预算与模型能力自适应设计
 
-> 状态: 实施中 | 最后核对: 2026-07-18
+> 状态: 已落地 | 最后核对: 2026-07-18
 
 ## 背景
 
@@ -184,4 +184,3 @@ type LearnedOutputCapability = {
 - 保留现有 `modelParams.maxTokens` / `modelParams.max_tokens` 输入兼容。
 - 旧 Provider 不需要补写 `maxTokens`；首次遇到上限错误时自动学习。
 - 平台官方 Provider 现有 128K 上限作为已知能力继续生效，但不再与 1M 上下文窗口混为同一概念。
-

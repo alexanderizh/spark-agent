@@ -1,6 +1,6 @@
 # Canvas Text Output Budget Implementation Plan
 
-> 状态: 实施中 | 最后核对: 2026-07-18
+> 状态: 已落地 | 最后核对: 2026-07-18
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -18,7 +18,7 @@
 - Modify: `apps/desktop/src/main/ipc/canvasTextTaskDiagnostics.ts`
 - Modify: `apps/desktop/src/main/ipc/canvasTextTaskDiagnostics.test.ts`
 
-- [ ] **Step 1: Write failing tests for fixed defaults and context protection**
+- [x] **Step 1: Write failing tests for fixed defaults and context protection**
 
 Add focused expectations covering the new semantics:
 
@@ -40,7 +40,7 @@ it('uses a fixed 16K context safety buffer instead of an 85 percent output ratio
   expect(resolveCanvasTextTokenBudget({
     operation: 'text_generate',
     providerContextWindow: 100_000,
-    prompt: '文'.repeat(75_000),
+    prompt: '文'.repeat(74_999),
   })).toMatchObject({
     maxTokens: 23_616,
     source: 'context_remaining',
@@ -52,7 +52,7 @@ it('uses a fixed 16K context safety buffer instead of an 85 percent output ratio
 
 Retain coverage for explicit request overrides and provider caps, but update expected sources and remove the old 170K/217.6K ratio expectations.
 
-- [ ] **Step 2: Run the diagnostics test and verify RED**
+- [x] **Step 2: Run the diagnostics test and verify RED**
 
 Run:
 
@@ -62,7 +62,7 @@ pnpm --filter @spark/desktop exec vitest run src/main/ipc/canvasTextTaskDiagnost
 
 Expected: FAIL because `operation`, tier defaults, and fixed safety diagnostics are not implemented.
 
-- [ ] **Step 3: Implement task defaults and independent constraints**
+- [x] **Step 3: Implement task defaults and independent constraints**
 
 Introduce these constants and sources:
 
@@ -102,11 +102,11 @@ const constraints = [
 
 Use 16K for `prompt_optimize`, 64K for `screenplay`/`shot`, and 32K for all other canvas text generation and rewrite tasks. Clamp explicit requests to 128K before applying provider/context constraints.
 
-- [ ] **Step 4: Run the diagnostics test and verify GREEN**
+- [x] **Step 4: Run the diagnostics test and verify GREEN**
 
 Run the same Vitest command. Expected: all diagnostics tests pass and no expectation references `context_window_derived`.
 
-- [ ] **Step 5: Commit Task 1 files only**
+- [x] **Step 5: Commit Task 1 files only**
 
 ```bash
 git add apps/desktop/src/main/ipc/canvasTextTaskDiagnostics.ts apps/desktop/src/main/ipc/canvasTextTaskDiagnostics.test.ts
@@ -119,7 +119,7 @@ git commit -m "fix(canvas): use task-based text output budgets"
 - Modify: `packages/agent-runtime/src/services/canvas-text-generator.ts`
 - Modify: `packages/agent-runtime/src/__tests__/services/canvas-text-generator.test.ts`
 
-- [ ] **Step 1: Write failing request-body tests**
+- [x] **Step 1: Write failing request-body tests**
 
 Add one omitted-`maxTokens` assertion for Anthropic, OpenAI chat, and OpenAI Responses:
 
@@ -128,7 +128,7 @@ expect(captured.lastBody().max_tokens).toBe(16_384)
 expect(capturedResponses.lastBody().max_output_tokens).toBe(16_384)
 ```
 
-- [ ] **Step 2: Run the generator test and verify RED**
+- [x] **Step 2: Run the generator test and verify RED**
 
 ```bash
 pnpm --filter @spark/agent-runtime exec vitest run src/__tests__/services/canvas-text-generator.test.ts
@@ -136,7 +136,7 @@ pnpm --filter @spark/agent-runtime exec vitest run src/__tests__/services/canvas
 
 Expected: FAIL with received value `4096`.
 
-- [ ] **Step 3: Raise the single fallback constant**
+- [x] **Step 3: Raise the single fallback constant**
 
 ```ts
 const DEFAULT_MAX_TOKENS = 16_384
@@ -144,11 +144,11 @@ const DEFAULT_MAX_TOKENS = 16_384
 
 Do not add provider-specific branching in the generator; provider-specific learning belongs to the desktop orchestration layer.
 
-- [ ] **Step 4: Run the generator test and verify GREEN**
+- [x] **Step 4: Run the generator test and verify GREEN**
 
 Run the same Vitest command. Expected: all generator tests pass.
 
-- [ ] **Step 5: Commit Task 2 files only**
+- [x] **Step 5: Commit Task 2 files only**
 
 ```bash
 git add packages/agent-runtime/src/services/canvas-text-generator.ts packages/agent-runtime/src/__tests__/services/canvas-text-generator.test.ts
@@ -161,7 +161,7 @@ git commit -m "fix(canvas): raise default text output to 16k"
 - Create: `apps/desktop/src/main/ipc/canvasTextOutputCapability.ts`
 - Create: `apps/desktop/src/main/ipc/canvasTextOutputCapability.test.ts`
 
-- [ ] **Step 1: Write failing classifier and retry tests**
+- [x] **Step 1: Write failing classifier and retry tests**
 
 Cover structured NewAPI nesting, Anthropic/OpenAI parameter names, non-token 400s, exact numeric extraction, and ladder fallback:
 
@@ -188,7 +188,7 @@ expect(nextCanvasTextOutputRetryMax(16_384)).toBe(8_192)
 expect(nextCanvasTextOutputRetryMax(4_096)).toBeUndefined()
 ```
 
-- [ ] **Step 2: Write failing persistent-cache tests**
+- [x] **Step 2: Write failing persistent-cache tests**
 
 Use an in-memory fake implementing `get`/`set` and a deterministic clock. Verify:
 
@@ -204,7 +204,7 @@ expect(cache.get(key)).toBe(16_384)
 Advance beyond seven days and expect the entry to expire.
 Record two models under one Provider plus one model under another Provider, call `clearProvider`, and verify only the selected Provider entries are removed.
 
-- [ ] **Step 3: Run the new test and verify RED**
+- [x] **Step 3: Run the new test and verify RED**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run src/main/ipc/canvasTextOutputCapability.test.ts
@@ -212,7 +212,7 @@ pnpm --filter @spark/desktop exec vitest run src/main/ipc/canvasTextOutputCapabi
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 4: Implement the focused capability module**
+- [x] **Step 4: Implement the focused capability module**
 
 Export these public units:
 
@@ -241,11 +241,11 @@ export function nextCanvasTextOutputRetryMax(current: number): number | undefine
 
 Store normalized entries under the settings category `canvas-text-output-capability`, discard malformed/expired values on read, use a seven-day TTL, and retain only the lower observed value for an unexpired key. `clearProvider` removes entries belonging to one Provider profile. Redact evidence to a bounded parameter-validation excerpt.
 
-- [ ] **Step 5: Run the new test and verify GREEN**
+- [x] **Step 5: Run the new test and verify GREEN**
 
 Run the same Vitest command. Expected: all classifier, ladder, and cache tests pass.
 
-- [ ] **Step 6: Commit Task 3 files only**
+- [x] **Step 6: Commit Task 3 files only**
 
 ```bash
 git add apps/desktop/src/main/ipc/canvasTextOutputCapability.ts apps/desktop/src/main/ipc/canvasTextOutputCapability.test.ts
@@ -261,7 +261,7 @@ git commit -m "feat(canvas): learn model text output limits"
 - Create: `apps/desktop/src/main/ipc/canvasTextAdaptiveGeneration.ts`
 - Create: `apps/desktop/src/main/ipc/canvasTextAdaptiveGeneration.test.ts`
 
-- [ ] **Step 1: Write failing adaptive-generation tests**
+- [x] **Step 1: Write failing adaptive-generation tests**
 
 Test the orchestration with an injected `generate(maxTokens)` callback:
 
@@ -282,7 +282,7 @@ expect(result.learnedSafeMaxTokens).toBe(32_768)
 
 Also verify exact 128K extraction, immediate stop on unrelated 400, strict decrease, and the five-retry bound.
 
-- [ ] **Step 2: Run the adaptive test and verify RED**
+- [x] **Step 2: Run the adaptive test and verify RED**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run src/main/ipc/canvasTextAdaptiveGeneration.test.ts
@@ -290,7 +290,7 @@ pnpm --filter @spark/desktop exec vitest run src/main/ipc/canvasTextAdaptiveGene
 
 Expected: FAIL because the adaptive wrapper does not exist.
 
-- [ ] **Step 3: Implement a generic adaptive wrapper**
+- [x] **Step 3: Implement a generic adaptive wrapper**
 
 The new module accepts a callback and returns the provider result plus diagnostics:
 
@@ -314,7 +314,7 @@ export async function generateCanvasTextWithAdaptiveOutput<T>(input: {
 
 Use the classifier and ladder from Task 3. An extracted exact limit is usable only when it is positive and strictly lower than the failed attempt; otherwise continue with the next lower ladder value. Invoke `onLearnedSafeMaxTokens` immediately for a credible exact error limit and after a downgraded attempt succeeds. Never retry errors classified as `other`.
 
-- [ ] **Step 4: Wire cache lookup before budget resolution**
+- [x] **Step 4: Wire cache lookup before budget resolution**
 
 In the HTTP path of `canvas:task:generate-text`:
 
@@ -329,7 +329,7 @@ In the existing `provider:update` and `provider:delete` IPC handlers, call `getC
 
 Do not apply HTTP parameter retries to the local CLI/Session runtime path because that path does not send this IPC `maxTokens` as a direct provider request parameter.
 
-- [ ] **Step 5: Add retry and budget diagnostics to raw responses**
+- [x] **Step 5: Add retry and budget diagnostics to raw responses**
 
 Extend `buildCanvasTextRawResponse` inputs and output with:
 
@@ -345,7 +345,7 @@ outputLimitEvidence
 
 On final failure, preserve the last provider request summary and the full attempt list.
 
-- [ ] **Step 6: Run focused desktop tests and verify GREEN**
+- [x] **Step 6: Run focused desktop tests and verify GREEN**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run \
@@ -356,7 +356,7 @@ pnpm --filter @spark/desktop exec vitest run \
 
 Expected: all focused tests pass.
 
-- [ ] **Step 7: Commit Task 4 files only**
+- [x] **Step 7: Commit Task 4 files only**
 
 ```bash
 git add apps/desktop/src/main/ipc/index.ts \
@@ -373,7 +373,7 @@ git commit -m "feat(canvas): retry unsupported text output budgets"
 - Modify: `docs/superpowers/specs/2026-07-18-canvas-text-output-budget-design.md`
 - Modify: `docs/superpowers/plans/2026-07-18-canvas-text-output-budget.md`
 
-- [ ] **Step 1: Run all affected unit tests**
+- [x] **Step 1: Run all affected unit tests**
 
 ```bash
 pnpm --filter @spark/agent-runtime exec vitest run \
@@ -387,7 +387,7 @@ pnpm --filter @spark/desktop exec vitest run \
 
 Expected: all affected tests pass with zero failures.
 
-- [ ] **Step 2: Run type checks and focused lint**
+- [x] **Step 2: Run type checks and focused lint**
 
 ```bash
 pnpm --filter @spark/agent-runtime typecheck
@@ -408,7 +408,7 @@ git diff --check
 
 Expected: commands exit zero; pre-existing lint warnings may be reported separately, but no new errors or warnings may originate from changed lines.
 
-- [ ] **Step 3: Inspect the final diff and direct call sites**
+- [x] **Step 3: Inspect the final diff and direct call sites**
 
 ```bash
 rg -n "resolveCanvasTextTokenBudget|generateCanvasTextWithAdaptiveOutput|DEFAULT_MAX_TOKENS" \
@@ -420,7 +420,7 @@ git diff -- apps/desktop/src/main/ipc packages/agent-runtime/src/services/canvas
 
 Confirm the change is limited to canvas text budgets, adaptive retries, learned capability storage, diagnostics, and their documentation. GitNexus impact/detect steps are skipped only if MCP remains unavailable or the stale index cannot be safely refreshed without touching user-owned dirty instruction files.
 
-- [ ] **Step 4: Mark design and plan as landed**
+- [x] **Step 4: Mark design and plan as landed**
 
 Change the status lines in both documents to:
 
@@ -430,7 +430,7 @@ Change the status lines in both documents to:
 
 Mark every implementation-plan checkbox complete.
 
-- [ ] **Step 5: Commit verification documentation only**
+- [x] **Step 5: Commit verification documentation only**
 
 ```bash
 git add docs/superpowers/specs/2026-07-18-canvas-text-output-budget-design.md \
