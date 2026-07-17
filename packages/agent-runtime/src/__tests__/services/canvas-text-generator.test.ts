@@ -93,6 +93,7 @@ describe('generateCanvasText multimodal', () => {
     expect(result.text).toBe('一段风格描述')
     expect(result.finishReason).toBe('stop')
     expect(result.usage).toEqual({ promptTokens: 12, completionTokens: 8, totalTokens: 20 })
+    expect(captured.lastBody().max_tokens).toBe(16_384)
     const messages = captured.lastBody().messages as Array<{ role: string; content: unknown }>
     const user = messages.find((m) => m.role === 'user')!
     expect(user.content).toBe('分析风格')
@@ -107,6 +108,7 @@ describe('generateCanvasText multimodal', () => {
       prompt: '请分析输入图片的视觉风格',
       images: [{ url: 'https://cdn/ref.png' }],
     })
+    expect(captured.lastBody().max_tokens).toBe(16_384)
     const messages = captured.lastBody().messages as Array<{ role: string; content: unknown }>
     const user = messages.find((m) => m.role === 'user')!
     const parts = user.content as Array<Record<string, unknown>>
@@ -124,6 +126,7 @@ describe('generateCanvasText multimodal', () => {
       prompt: '分析风格',
       images: [{ url: 'https://cdn/ref.png' }],
     })
+    expect(captured.lastBody().max_tokens).toBe(16_384)
     const messages = captured.lastBody().messages as Array<{ role: string; content: unknown }>
     const blocks = messages[0]!.content as Array<Record<string, unknown>>
     expect(blocks[0]).toEqual({
@@ -258,6 +261,7 @@ describe('generateCanvasText multimodal', () => {
 
     expect(captured.lastBody()).toMatchObject({
       reasoning: { effort: 'xhigh' },
+      max_output_tokens: 16_384,
     })
   })
 
