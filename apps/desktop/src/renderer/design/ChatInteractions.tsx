@@ -375,11 +375,23 @@ export function getTurnSummaryFileType(filePath: string): FileTypeBadge {
   return getFileTypeBadge(filePath)
 }
 
+function getTurnSummaryDisplayPath(filePath: string, workspaceRootPath?: string | null): string {
+  if (workspaceRootPath == null || workspaceRootPath.length === 0) return filePath
+  const normalizedPath = filePath.replace(/\\/g, '/')
+  const normalizedRoot = workspaceRootPath.replace(/\\/g, '/').replace(/\/+$/, '')
+  if (normalizedPath === normalizedRoot) return '.'
+  if (normalizedPath.startsWith(`${normalizedRoot}/`)) {
+    return normalizedPath.slice(normalizedRoot.length + 1)
+  }
+  return filePath
+}
+
 export function TurnFileSummaryCard({
   files,
   totalAdds,
   totalDels,
   generatedGroups = [],
+  workspaceRootPath,
   onUndo,
   onReapply,
   onFilePreview,
@@ -388,6 +400,7 @@ export function TurnFileSummaryCard({
   totalAdds: number
   totalDels: number
   generatedGroups?: TurnFileSummaryGeneratedGroup[]
+  workspaceRootPath?: string | null
   onUndo?: () => Promise<void> | void
   onReapply?: () => Promise<void> | void
   onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
@@ -510,6 +523,7 @@ export function TurnFileSummaryCard({
             {visibleFiles.map((file, i) => {
               const canOpen = file.changeType !== 'delete'
               const fileType = getTurnSummaryFileType(file.path)
+              const displayPath = getTurnSummaryDisplayPath(file.path, workspaceRootPath)
               return (
                 <div
                   key={i}
@@ -524,7 +538,7 @@ export function TurnFileSummaryCard({
                     <FileTypeIcon filePath={file.path} size={16} />
                   </span>
                   <code className="file-path" title={file.path}>
-                    {file.path}
+                    {displayPath}
                   </code>
                   {hasSummaryStats && (
                     <span className="file-stats">
@@ -577,7 +591,7 @@ export function TurnFileSummaryCard({
                   <span className="turn-summary-generated-icon">↳</span>
                   <span className="turn-summary-generated-main">
                     <code className="file-path" title={group.directory}>
-                      {group.directory}
+                      {getTurnSummaryDisplayPath(group.directory, workspaceRootPath)}
                     </code>
                     <span className="turn-summary-generated-meta">
                       {t('chat.summary.generatedGroup', { count: group.fileCount })}

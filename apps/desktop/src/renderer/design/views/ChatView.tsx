@@ -2129,6 +2129,7 @@ export function ChatView({
               key="chat-stream"
               sessionId={active}
               workspaceId={activeSessionWorkspaceId}
+              workspaceRootPath={activeSessionWorkspace?.rootPath ?? null}
               onStatusChange={setAgentStatus}
               onUsageChange={setContextInputTokens}
               onUsageDataChange={setSessionUsageData}
@@ -2338,6 +2339,7 @@ export function ChatView({
                     key={`side-chat-stream-${sideChatSessionId}`}
                     sessionId={sideChatSessionId}
                     workspaceId={sideChatWorkspace?.id ?? null}
+                    workspaceRootPath={sideChatWorkspace?.rootPath ?? null}
                     onStatusChange={setSideChatAgentStatus}
                     onUsageChange={setSideChatContextInputTokens}
                     onUsageDataChange={() => {}}
@@ -2441,6 +2443,7 @@ export function ChatView({
 function ChatStream({
   sessionId,
   workspaceId,
+  workspaceRootPath,
   onStatusChange,
   onUsageChange,
   onUsageDataChange,
@@ -2468,6 +2471,8 @@ function ChatStream({
   sessionId: SessionId
   /** 当前会话工作区 ID。非 null 时用于过滤 turn_file_summary 中被 .gitignore 忽略的路径 */
   workspaceId: string | null
+  /** 当前会话工作区根目录，仅用于把汇总卡中的绝对路径显示为项目内相对路径。 */
+  workspaceRootPath: string | null
   onStatusChange: (s: string) => void
   onUsageChange: (tokens: number) => void
   onUsageDataChange: (data: SessionUsageData) => void
@@ -3582,6 +3587,7 @@ function ChatStream({
                     <AssistantMessageRows
                       key={msg.id}
                       sessionId={sessionId}
+                      workspaceRootPath={workspaceRootPath}
                       messageId={msg.id}
                       blocks={msg.blocks}
                       messageStatus={msg.status}
@@ -3631,6 +3637,7 @@ function ChatStream({
             <AgentMsg
               key="agent-running-placeholder"
               sessionId={sessionId}
+              workspaceRootPath={workspaceRootPath}
               status="running"
               blocks={[]}
               messageStatus="streaming"
@@ -3849,6 +3856,7 @@ function renderBlocks(
   options: {
     surface?: 'main' | 'inspector'
     sessionId?: SessionId
+    workspaceRootPath?: string | null
     autoCollapseTools?: boolean
     onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   } = {},
@@ -4029,6 +4037,9 @@ function renderBlocks(
               files={block.files}
               totalAdds={block.totalAdds}
               totalDels={block.totalDels}
+              {...(options.workspaceRootPath != null
+                ? { workspaceRootPath: options.workspaceRootPath }
+                : {})}
               {...(block.generatedGroups != null ? { generatedGroups: block.generatedGroups } : {})}
               {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
               {...(canUndo
@@ -4139,6 +4150,7 @@ function renderBlocksGrouped(
   options: {
     surface?: 'main' | 'inspector'
     sessionId?: SessionId
+    workspaceRootPath?: string | null
     autoCollapseTools?: boolean
     onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   } = {},
@@ -4168,6 +4180,7 @@ function renderActivityBlocks(
   options: {
     surface?: 'main' | 'inspector'
     sessionId?: SessionId
+    workspaceRootPath?: string | null
     autoCollapseTools?: boolean
     onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
   },
@@ -5884,6 +5897,7 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
  */
 type AssistantRowCompareProps = {
   sessionId: SessionId
+  workspaceRootPath: string | null
   status?: 'running'
   blocks: UIBlock[]
   messageStatus?: UIMessage['status']
@@ -5910,6 +5924,7 @@ function assistantRowsPropsAreEqual(
     prev.blocks === next.blocks &&
     prev.messageStatus === next.messageStatus &&
     prev.sessionId === next.sessionId &&
+    prev.workspaceRootPath === next.workspaceRootPath &&
     prev.assistantId === next.assistantId &&
     prev.assistantName === next.assistantName &&
     prev.assistantAvatarSrc === next.assistantAvatarSrc &&
@@ -5923,6 +5938,7 @@ function assistantRowsPropsAreEqual(
 
 const AssistantMessageRows = React.memo(function AssistantMessageRows({
   sessionId,
+  workspaceRootPath,
   status,
   blocks,
   messageStatus,
@@ -5945,6 +5961,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
   onRetry,
 }: {
   sessionId: SessionId
+  workspaceRootPath: string | null
   status?: 'running'
   blocks: UIBlock[]
   messageStatus?: UIMessage['status']
@@ -5984,7 +6001,9 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             <div key={`team-${index}`} className="team-timeline-segment">
               {renderBlocks(
                 segment.blocks,
-                onFilePreview != null ? { sessionId, onFilePreview } : { sessionId },
+                onFilePreview != null
+                  ? { sessionId, workspaceRootPath, onFilePreview }
+                  : { sessionId, workspaceRootPath },
               )}
             </div>
           )
@@ -6044,6 +6063,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
           <AgentMsg
             key={`agent-${index}`}
             sessionId={sessionId}
+            workspaceRootPath={workspaceRootPath}
             blocks={segment.blocks}
             isLatest={segmentIsLatest}
             assistantId={assistantId}
@@ -6195,6 +6215,7 @@ function isHostActivityRunning(blocks: UIBlock[]): boolean {
 
 const AgentMsg = React.memo(function AgentMsg({
   sessionId,
+  workspaceRootPath,
   status,
   blocks,
   messageStatus,
@@ -6215,6 +6236,7 @@ const AgentMsg = React.memo(function AgentMsg({
   onRetry,
 }: {
   sessionId: SessionId
+  workspaceRootPath: string | null
   status?: 'running'
   blocks: UIBlock[]
   messageStatus?: UIMessage['status']
@@ -6402,8 +6424,13 @@ const AgentMsg = React.memo(function AgentMsg({
           {renderBlocksGrouped(
             group.blocks,
             onFilePreview != null
-              ? { sessionId, onFilePreview, autoCollapseTools: !isStreaming }
-              : { sessionId, autoCollapseTools: !isStreaming },
+              ? {
+                  sessionId,
+                  workspaceRootPath,
+                  onFilePreview,
+                  autoCollapseTools: !isStreaming,
+                }
+              : { sessionId, workspaceRootPath, autoCollapseTools: !isStreaming },
           )}
         </div>
       )

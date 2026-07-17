@@ -99,4 +99,22 @@ describe('TurnFileSummaryCard', () => {
     expect(container.querySelector('.diff-stats')).toBeNull()
     expect(container.querySelector('.file-stats')).toBeNull()
   })
+
+  it('shortens absolute paths for display while retaining the full path as the title', () => {
+    const fullPath = '/Users/test/project/packages/app/src/index.ts'
+    act(() => {
+      root.render(
+        <TurnFileSummaryCard
+          files={[{ path: fullPath, changeType: 'modify', adds: 1, dels: 0 }]}
+          totalAdds={1}
+          totalDels={0}
+          workspaceRootPath="/Users/test/project"
+        />,
+      )
+    })
+
+    const path = container.querySelector('.file-path')
+    expect(path?.textContent).toBe('packages/app/src/index.ts')
+    expect(path?.getAttribute('title')).toBe(fullPath)
+  })
 })
