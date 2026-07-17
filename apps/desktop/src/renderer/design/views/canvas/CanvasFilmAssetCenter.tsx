@@ -198,7 +198,7 @@ export type FilmCenterHandlers = {
   createShotSegment: (
     groupId: string,
     input: Partial<ShotSegment> & { title: string },
-  ) => Promise<void>
+  ) => Promise<ShotSegment>
   updateShotSegment: (
     groupId: string,
     segmentId: string,

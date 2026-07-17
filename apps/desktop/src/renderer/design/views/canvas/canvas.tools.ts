@@ -17,6 +17,7 @@ import type {
   CanvasNodeData,
   CanvasNodeType,
   CanvasOperationType,
+  ShotScriptConfig,
   CanvasSnapshot,
   CanvasTask,
 } from './canvas.types'
@@ -28,6 +29,7 @@ import {
   resolveNodeAssetKinds,
 } from './canvasAgentCapabilities'
 import { buildCanvasAgentProductionPlan } from './canvasAgentProductionPlan'
+import { SPECIALIZED_CANVAS_NODE_TOOLS } from './canvasSpecializedNodeTools'
 
 type JSONSchema = Record<string, unknown>
 
@@ -87,7 +89,7 @@ export type CanvasWorkspaceActions = {
   createShotSegment: (
     groupId: string,
     input: Partial<ShotSegment> & { title: string },
-  ) => Promise<void>
+  ) => Promise<ShotSegment>
   updateShotSegment: (
     groupId: string,
     segmentId: string,
@@ -113,6 +115,7 @@ export type CanvasWorkspaceActions = {
     reasoningEffort?: SessionReasoningEffort
     taskPipelineRole?: CanvasNodeData['pipelineRole']
     outputPipelineRole?: CanvasNodeData['outputPipelineRole']
+    shotScriptConfig?: ShotScriptConfig
   }) => Promise<CanvasSnapshot | void>
   retryOperationNode: (nodeId: string) => Promise<void>
   runOperationNode: (
@@ -447,13 +450,29 @@ const tools: CanvasToolDescriptor[] = [
       const snap = requireSnapshot(ctx)
       const node = findNode(snap, input.nodeId)
       const assetKinds = resolveNodeAssetKinds(node, snap.assets)
+      const actions = getCanvasAgentAvailableActions(node, { assetKinds }).map((action) => {
+        if (
+          action.execution !== 'create_operation_node' ||
+          (action.source !== 'pipeline' && action.source !== 'recommended_flow')
+        ) {
+          return action
+        }
+        return {
+          ...action,
+          toolName: 'canvas_create_pipeline_operation_node',
+          toolRecipe: {
+            toolName: 'canvas_create_pipeline_operation_node',
+            arguments: { actionId: action.id, sourceNodeId: node.id },
+          },
+        }
+      })
       return {
         node: summarizeNodeLite(node),
-        actions: getCanvasAgentAvailableActions(node, { assetKinds }),
+        actions,
         usage: {
           preferredOrder: [
             '先选择 pipeline 或 recommended_flow 动作',
-            '再使用 create_operation_node 创建可检查的操作节点',
+            '再按 toolRecipe 使用专用流水线工具创建可检查的操作节点',
             '只有用户明确要求立即执行时才运行媒体任务',
           ],
         },
@@ -583,7 +602,8 @@ const tools: CanvasToolDescriptor[] = [
   // ───────── 节点编辑 ─────────
   {
     name: 'canvas_create_text_node',
-    description: '创建纯文本节点（同时生成同步的文本 asset）。坐标省略时自动放在画布空白处。',
+    description:
+      '创建普通纯文本笔记节点（同时生成同步的文本 asset）。不得用于剧本、分镜或影视资产；这些内容必须使用对应专用工具。坐标省略时自动放在画布空白处。',
     paramsSchema: {
       type: 'object',
       required: ['text'],
@@ -1453,7 +1473,8 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_insert_generated_text',
-    description: 'Agent 生成了一段文本后，作为文本节点插入画布。',
+    description:
+      '把 Agent 生成的普通说明或笔记插入文本节点。不得用于剧本、分镜或影视资产；这些内容必须使用对应专用工具。',
     paramsSchema: {
       type: 'object',
       required: ['text'],
@@ -1490,6 +1511,8 @@ const tools: CanvasToolDescriptor[] = [
       return { nodeId: node?.id ?? null }
     },
   },
+
+  ...SPECIALIZED_CANVAS_NODE_TOOLS,
 
   // ───────── 批量 / 高级操作（C3 增强）─────────
   {

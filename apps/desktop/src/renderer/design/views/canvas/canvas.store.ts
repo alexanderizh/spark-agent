@@ -804,8 +804,13 @@ export function useCanvasWorkspace(projectId: string) {
       groupId: string,
       input: Partial<import('./canvasFilmAssets').ShotSegment> & { title: string },
     ) => {
-      await canvasApi.createShotSegment(projectId, groupId, input)
+      const result = await canvasApi.createShotSegment(projectId, groupId, input)
       await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
+      const created = result.shotGroups
+        .find((group) => group.id === groupId)
+        ?.segments.at(-1)
+      if (!created) throw new Error('分镜片段创建失败')
+      return created
     },
     [applyCanvasMutationSnapshot, projectId],
   )

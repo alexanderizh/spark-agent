@@ -59,6 +59,8 @@ import {
 } from './canvasTaskSubmissionValidation'
 import { isShotScriptText } from './canvasShotTableParse'
 import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
+import { materializeStoryboardRows } from './canvasStoryboardMaterialization'
+import { validateCanvasSemanticTextOutput } from './canvasTextOutputValidation'
 import { placeAutoNodeToRight } from './canvasAutoPlacement'
 import { planGroupLayout } from './canvasGroupLayout'
 import {
@@ -3116,17 +3118,12 @@ export const canvasApi = {
     const groups = this.readShotGroups(db, projectId)
     const group = groups.find((item) => item.id === groupId)
     if (!group) return { shotGroups: groups }
+    const { id: _id, index: _index, ...fields } = input as Partial<ShotSegment>
     const segment: ShotSegment = {
+      ...fields,
       id: filmUid('shot_seg'),
       index: group.segments.length + 1,
       title: input.title,
-      ...(input.description ? { description: input.description } : {}),
-      ...(input.dialogue ? { dialogue: input.dialogue } : {}),
-      ...(input.narration ? { narration: input.narration } : {}),
-      ...(input.characterAssetIds ? { characterAssetIds: input.characterAssetIds } : {}),
-      ...(input.sceneAssetId ? { sceneAssetId: input.sceneAssetId } : {}),
-      ...(input.propAssetIds ? { propAssetIds: input.propAssetIds } : {}),
-      ...(input.shotPrompt ? { shotPrompt: input.shotPrompt } : {}),
     }
     group.segments.push(segment)
     this.writeShotGroups(db, projectId, groups)
@@ -5250,6 +5247,9 @@ export const canvasApi = {
     const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
     if (!task || !taskNode) return this.openSnapshot(projectId)
     if (task.status === 'cancelled') return this.openSnapshot(projectId)
+    if (task.status === 'completed' || task.status === 'failed') {
+      return this.openSnapshot(projectId)
+    }
 
     if (response.status === 'failed' || response.error || !response.text) {
       task.status = 'failed'
@@ -5279,6 +5279,48 @@ export const canvasApi = {
       return this.openSnapshot(projectId)
     }
 
+    const outputRole = taskNode.data.outputPipelineRole
+    const semanticValidation = validateCanvasSemanticTextOutput(outputRole, response.text)
+    if (!semanticValidation.ok) {
+      task.status = 'failed'
+      task.progress = 100
+      task.errorMsg = semanticValidation.code
+      task.errorDetail = semanticValidation.message
+      task.providerProfileId = response.providerProfileId || task.providerProfileId || null
+      task.provider = response.provider || task.provider || null
+      task.modelId = response.model || task.modelId || null
+      task.requestCall = response.requestCall ?? task.requestCall ?? null
+      task.rawResponse = response.rawResponse ?? { text: response.text }
+      task.updatedAt = now()
+      if (patchTaskNode) {
+        taskNode.data = {
+          ...taskNode.data,
+          status: 'failed',
+          progress: 100,
+          message: `失败：${semanticValidation.message}`,
+        }
+        taskNode.updatedAt = now()
+      }
+      updateProjectCounts(db, projectId)
+      writeDb(db)
+      return this.openSnapshot(projectId)
+    }
+
+    const outputText = semanticValidation.text
+    if (outputRole === 'shot' && semanticValidation.storyboardRows?.length) {
+      const project = db.projects.find((item) => item.id === projectId)
+      if (project) {
+        const materialized = materializeStoryboardRows({
+          metadata: project.metadata,
+          defaultGroupName: taskNode.data.outputTitle ?? task.title ?? '分镜脚本',
+          assets: db.assets,
+          rows: semanticValidation.storyboardRows,
+        })
+        project.metadata = materialized.metadata
+        project.updatedAt = now()
+      }
+    }
+
     const at = now()
     const asset: CanvasAsset = {
       id: uid('canvas_asset'),
@@ -5287,7 +5329,7 @@ export const canvasApi = {
       type: 'text',
       source: 'ai_generated',
       title: defaultCanvasNodeTitle('text', nextCanvasNodeSequence(db, projectId, 'text')),
-      contentText: response.text,
+      contentText: outputText,
       metadata: {
         taskId,
         providerProfileId: response.providerProfileId,
@@ -5297,8 +5339,7 @@ export const canvasApi = {
       createdAt: at,
       updatedAt: at,
     }
-    const outputRole = taskNode.data.outputPipelineRole
-    const storyboardRows = readRenderableShotScriptRows(response.text)
+    const storyboardRows = readRenderableShotScriptRows(outputText)
     if (patchTaskNode && storyboardRows.length > 0) {
       const completedSize = fitShotScriptOperationNodeSize(storyboardRows.length)
       taskNode.width = Math.max(taskNode.width, completedSize.width)
@@ -5311,7 +5352,7 @@ export const canvasApi = {
       width: taskNode.width,
       height: taskNode.height,
     })
-    const resultNodeSize = pickTextNodeSize(response.text)
+    const resultNodeSize = pickTextNodeSize(outputText)
     const resultNodePlacement = resolveCollisionFreeNodePosition({
       preferred: preferredResultNodePlacement,
       size: resultNodeSize,
@@ -5329,7 +5370,7 @@ export const canvasApi = {
       width: resultNodeSize.width,
       height: resultNodeSize.height,
       data: {
-        text: response.text,
+        text: outputText,
         format: 'markdown',
         origin: 'task_output',
         ...(outputRole ? { pipelineRole: outputRole } : {}),
