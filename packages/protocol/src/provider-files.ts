@@ -1,7 +1,10 @@
 import { z } from 'zod'
 
-export const ProviderFilesApiKindSchema = z.enum(['xai', 'volcengine-ark'])
+export const ProviderFilesApiKindSchema = z.enum(['xai', 'volcengine-ark', 'bailian'])
 export type ProviderFilesApiKind = z.infer<typeof ProviderFilesApiKindSchema>
+
+export const BailianFilePurposeSchema = z.enum(['fine-tune', 'file-extract', 'batch'])
+export type BailianFilePurpose = z.infer<typeof BailianFilePurposeSchema>
 
 export const VolcengineFileStatusSchema = z.enum(['processing', 'active', 'failed'])
 export type VolcengineFileStatus = z.infer<typeof VolcengineFileStatusSchema>
@@ -27,7 +30,7 @@ export interface ProviderFilesListRequest {
   providerProfileId: string
   paginationToken?: string
   after?: string
-  purpose?: 'user_data'
+  purpose?: 'user_data' | BailianFilePurpose
   scopeId?: string
   order?: 'asc' | 'desc'
   sortBy?: 'created_at' | 'filename' | 'size'
@@ -66,7 +69,8 @@ export interface ProviderFilesUploadRequest {
   providerProfileId: string
   filePath?: string
   url?: string
-  purpose?: 'user_data'
+  purpose?: 'user_data' | BailianFilePurpose
+  description?: string
   expireAt?: number
   tos?: { bucket: string; prefix: string }
   preprocessVideo?: VolcengineVideoPreprocessInput
@@ -119,7 +123,7 @@ export const ProviderFilesIpcSchemaRegistry = {
     providerProfileId: ProviderProfileIdSchema,
     paginationToken: z.string().min(1).max(2_000).optional(),
     after: ProviderFileIdSchema.optional(),
-    purpose: z.literal('user_data').optional(),
+    purpose: z.union([z.literal('user_data'), BailianFilePurposeSchema]).optional(),
     scopeId: z.string().min(1).max(500).optional(),
     order: z.enum(['asc', 'desc']).optional(),
     sortBy: z.enum(['created_at', 'filename', 'size']).optional(),
@@ -140,7 +144,8 @@ export const ProviderFilesIpcSchemaRegistry = {
         .max(10_000)
         .regex(/^(?:https?:\/\/|tos:\/\/)/i, 'url must use http://, https://, or tos://')
         .optional(),
-      purpose: z.literal('user_data').optional(),
+      purpose: z.union([z.literal('user_data'), BailianFilePurposeSchema]).optional(),
+      description: z.string().trim().max(2_000).optional(),
       expireAt: z.number().int().positive().optional(),
       tos: z
         .object({

@@ -94,7 +94,13 @@ export function confirmVideoSubmission(input: {
       width: 560,
       icon: null,
       okText: '确认并提交',
+      okButtonProps: {
+        type: 'link'
+      },
       cancelText: '返回完善',
+      cancelButtonProps:{
+        type: 'text'
+      },
       content: (
         <div className="canvas-video-submit-gate">
           <p>这不是强制门禁。视频生成成本较高，花十秒确认素材和镜头信息能减少无效生成。</p>

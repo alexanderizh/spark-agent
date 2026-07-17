@@ -10,6 +10,7 @@ export const SPARK_MEDIA_TOOL_NAMES = [
   'mcp__spark_media__get_file',
   'mcp__spark_media__list_files',
   'mcp__spark_media__delete_file',
+  'mcp__spark_media__list_tasks',
   'mcp__spark_media__get_task',
   'mcp__spark_media__cancel_task',
 ] as const
@@ -55,7 +56,8 @@ export function buildMediaGenerationSystemPrompt(input: {
     '- `mcp__spark_media__upload_file` — upload/import a file to the configured provider file platform.',
     '- `mcp__spark_media__get_file` / `list_files` — retrieve provider file metadata.',
     '- `mcp__spark_media__delete_file` — delete a provider file after explicit user confirmation.',
-    '- `mcp__spark_media__get_task` — inspect a media task returned by generation tools.',
+    '- `mcp__spark_media__list_tasks` — list asynchronous tasks; Bailian supports the official 24-hour query window.',
+    '- `mcp__spark_media__get_task` — inspect a media task returned by generation tools or a Bailian task ID.',
     '- `mcp__spark_media__cancel_task` — cancel a pending/running media task when supported.',
     '',
     'Before calling `generate_video`, `generate_image`, or `edit_image`, you must call `mcp__spark_media__describe_model` for the selected model/capability unless you already inspected it in this turn.',
