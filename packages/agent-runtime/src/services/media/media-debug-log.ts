@@ -1,20 +1,20 @@
 /**
  * @module media-debug-log
  *
- * 多媒体 adapter 调用前的彩色参数日志（主进程 / Node 运行时）。
+ * 多媒体 adapter 调用日志（主进程 / Node 运行时）。
  *
  * 目的：画布里文生图 / 图生图 / 图片编辑 / TTS / 转写 / 视频等 AI 调用，
- * 在真正发 HTTP 给三方平台之前，把「组装好的请求参数」按能力分色打印成一块，
- * 方便排查「参数没拼对 / model 选错 / inputFiles 没带上」这类问题。
+ * 在真正发 HTTP 给三方平台之前，把「组装好的请求参数 / 响应 / 报错」按能力落成
+ * 单行结构化日志，方便「设置 → 遥测与日志」页面的日志查看器按前缀过滤和检索。
  *
- * 颜色按产物类型区分，控制台里一眼能分清是图片/语音/视频/文本调用：
- *   image  → 品红
- *   audio  → 青色
- *   video  → 黄色
- *   text   → 绿色
- *   其它   → 灰色
+ * 历史说明：早期版本用 ANSI 多行盒式框打印到控制台，但盒式框会让
+ * logger 写到 main.log 后「第二行起」丢失 `[LEVEL] [namespace]` 前缀，
+ * 导致 `media:`/`canvas:` 命名空间过滤丢掉 body/response/error 内容。
+ * 本版本改为 file-friendly 单行输出，控制台也直接走单行（仍可按 capability 上色）。
  *
- * 所有 base64 / data: 内容会被截断到 50 字符，不会刷屏。
+ * 颜色按产物类型区分：image→品红，audio→青，video→黄，text→绿，其它灰。
+ *
+ * 所有 base64 / data: 内容会被截断（复用 compactForLog），不会刷屏。
  */
 
 import { createLogger } from '@spark/shared'
@@ -115,46 +115,36 @@ export interface MediaCallLogInput {
 }
 
 /**
- * 打印一块彩色「媒体调用」日志。请在 adapter 调用 fetchJson 之前调用。
+ * 单行打印一次「媒体调用」参数日志（请在 adapter 调用 fetchJson 之前调用）。
  *
- * 输出形如：
- *   ╭─ media:adapter · image.generate · apimart ───────────────
- *   │ POST https://api.apimart.ai/v1/images/generations
- *   │ model: gpt-image-2
- *   │ body: { model: 'gpt-image-2', prompt: '一只猫', n: 1, size: '1024x1024' }
- *   ╰──────────────────────────────────────────────────────────
+ * 输出形如（main.log 实际内容，无 ANSI）：
+ *   [...INFO...] [media:adapter] event=adapter-request provider=xai capability=video.generate model=grok-imagine-video method=POST url="..." body={"..."} extras=...
+ *
+ * 控制台会再额外走一个带颜色的摘要行（不影响文件输出）。
  */
 export function logMediaCall(input: MediaCallLogInput): void {
-  const color = colorForCapability(input.capability)
-  const cap = input.capability ?? 'unknown'
-  const header = `${COLORS.bold}media:adapter${COLORS.reset} · ${color}${cap}${COLORS.reset} · ${COLORS.dim}${input.provider}${COLORS.reset}`
-  const visibleHeader = Object.values(COLORS).reduce(
-    (text, ansi) => text.split(ansi).join(''),
-    header,
-  )
-  const rule = `${COLORS.dim}─${COLORS.reset}`.repeat(Math.max(8, 56 - visibleHeader.length))
-
-  const lines: string[] = []
-  lines.push(`${COLORS.dim}╭─${COLORS.reset}${header} ${COLORS.dim}${rule}${COLORS.reset}`)
-  lines.push(
-    `${COLORS.dim}│${COLORS.reset} ${COLORS.bold}${input.method}${COLORS.reset} ${input.url}`,
-  )
-  if (input.model)
-    lines.push(`${COLORS.dim}│${COLORS.reset} model: ${color}${input.model}${COLORS.reset}`)
+  const parts: string[] = ['event=adapter-request']
+  parts.push(`provider=${JSON.stringify(input.provider)}`)
+  parts.push(`capability=${JSON.stringify(input.capability ?? 'unknown')}`)
+  if (input.model) parts.push(`model=${JSON.stringify(input.model)}`)
+  parts.push(`method=${JSON.stringify(input.method)}`)
+  parts.push(`url=${JSON.stringify(input.url)}`)
+  if (input.body !== undefined) {
+    const bodyStr = stringifyBody(input.body)
+    parts.push(`body=${bodyStr}`)
+  }
   if (input.extra) {
     for (const [key, value] of Object.entries(input.extra)) {
-      const display = typeof value === 'string' ? value : JSON.stringify(value)
-      lines.push(`${COLORS.dim}│${COLORS.reset} ${key}: ${display}`)
+      parts.push(`${key}=${formatExtraValue(value)}`)
     }
   }
-  if (input.body !== undefined) {
-    const bodyStr =
-      typeof input.body === 'string' ? input.body : JSON.stringify(compactForLog(input.body))
-    lines.push(`${COLORS.dim}│${COLORS.reset} body: ${bodyStr}`)
+  try {
+    log.info(parts.join(' '))
+  } catch {
+    /* 日志失败不影响业务路径 */
   }
-  lines.push(`${COLORS.dim}╰${COLORS.reset}${COLORS.dim}${'─'.repeat(60)}${COLORS.reset}`)
-
-  log.info(`\n${lines.join('\n')}`)
+  // 控制台彩色摘要：仅 dev 期肉眼定位能力类型。
+  writeConsoleSummary(input)
 }
 
 export interface MediaCallResultInput {
@@ -165,23 +155,82 @@ export interface MediaCallResultInput {
   assetCount?: number | undefined
   requestId?: string | undefined
   error?: string | undefined
+  /** 失败时的额外上下文：HTTP 状态码或上游响应摘要（仅在 ok=false 时有意义） */
+  details?: string | undefined
 }
 
 /**
- * 打印媒体调用的结果摘要（成功/失败、产物数量、requestId）。
+ * 单行打印媒体调用结果摘要（成功/失败、产物数量、requestId、错误）。
  * 与 logMediaCall 成对使用，框住一次三方调用。
  */
 export function logMediaResult(input: MediaCallResultInput): void {
+  const parts: string[] = [`event=adapter-${input.ok ? 'response' : 'failed'}`]
+  parts.push(`provider=${JSON.stringify(input.provider)}`)
+  parts.push(`capability=${JSON.stringify(input.capability ?? 'unknown')}`)
+  if (input.durationMs != null) parts.push(`durationMs=${input.durationMs}`)
+  if (input.assetCount != null) parts.push(`assets=${input.assetCount}`)
+  if (input.requestId) parts.push(`requestId=${JSON.stringify(input.requestId)}`)
+  if (input.error) parts.push(`error=${JSON.stringify(truncate(input.error, 1000))}`)
+  if (input.details) parts.push(`details=${JSON.stringify(truncate(input.details, 800))}`)
+  try {
+    if (input.ok) {
+      log.info(parts.join(' '))
+    } else {
+      log.warn(parts.join(' '))
+    }
+  } catch {
+    /* 日志失败不影响业务路径 */
+  }
+  // 控制台彩色摘要：仅 dev 期肉眼定位。
+  writeConsoleResultSummary(input)
+}
+
+function stringifyBody(body: unknown): string {
+  try {
+    return JSON.stringify(compactForLog(body))
+  } catch {
+    return '"[unserializable body]"'
+  }
+}
+
+function formatExtraValue(value: unknown): string {
+  if (value === undefined) return '"(n/a)"'
+  if (typeof value === 'string') return JSON.stringify(truncate(value, 400))
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  try {
+    return JSON.stringify(compactForLog(value))
+  } catch {
+    return '"[unserializable value]"'
+  }
+}
+
+function truncate(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max)}…[truncated chars=${value.length}]`
+}
+
+function writeConsoleSummary(input: MediaCallLogInput): void {
+  if (typeof console === 'undefined') return
+  const color = colorForCapability(input.capability)
+  const cap = input.capability ?? 'unknown'
+  // 控制台用单行着色摘要（避免 ANSI 多行盒式框）
+  // eslint-disable-next-line no-console
+  console.log(
+    `${COLORS.bold}media:adapter${COLORS.reset} · ${color}${cap}${COLORS.reset} · ${COLORS.dim}${input.provider}${COLORS.reset} ${input.method} ${input.url}`,
+  )
+}
+
+function writeConsoleResultSummary(input: MediaCallResultInput): void {
+  if (typeof console === 'undefined') return
   const color = colorForCapability(input.capability)
   const status = input.ok
     ? `${COLORS.green}ok${COLORS.reset}`
     : `${COLORS.bold}${COLORS.red}failed${COLORS.reset}`
-  const parts = [
-    `${COLORS.bold}media:result${COLORS.reset} · ${color}${input.capability ?? 'unknown'}${COLORS.reset} · ${status}`,
-  ]
-  if (input.durationMs != null) parts.push(`${input.durationMs}ms`)
-  if (input.assetCount != null) parts.push(`${input.assetCount} asset(s)`)
-  if (input.requestId) parts.push(`requestId=${input.requestId}`)
-  if (input.error) parts.push(`${COLORS.bold}${COLORS.red}${input.error}${COLORS.reset}`)
-  log.info(parts.join(' · '))
+  const summary = `${COLORS.bold}media:result${COLORS.reset} · ${color}${input.capability ?? 'unknown'}${COLORS.reset} · ${status}`
+  const tail: string[] = []
+  if (input.durationMs != null) tail.push(`${input.durationMs}ms`)
+  if (input.assetCount != null) tail.push(`${input.assetCount} asset(s)`)
+  if (input.requestId) tail.push(`requestId=${input.requestId}`)
+  if (input.error) tail.push(`${COLORS.bold}${COLORS.red}${input.error}${COLORS.reset}`)
+  // eslint-disable-next-line no-console
+  console.log(tail.length > 0 ? `${summary} · ${tail.join(' · ')}` : summary)
 }

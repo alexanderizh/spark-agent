@@ -44,6 +44,13 @@ import { TemplateMediaAdapter } from './adapters/template-media.adapter.js'
 import { GoogleGenerativeAiMediaAdapter } from './adapters/google-generative-ai-media.adapter.js'
 import { MidjourneyMediaAdapter } from './adapters/midjourney-media.adapter.js'
 import { compactForLog } from './media-debug-log.js'
+import {
+  logCanvasBlockEnd,
+  logCanvasBlockStart,
+  logCanvasModelFailure,
+  logCanvasModelRequest,
+  logCanvasModelResponse,
+} from './canvas-model-logger.js'
 import { validateMediaRequest } from './media-request-validator.js'
 
 /**
@@ -325,13 +332,57 @@ export class MediaRouterService {
         ...(options.fallbackUploader ? { fallbackUploader: options.fallbackUploader } : {}),
         ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
       }
+      const providerKind = effectiveProviderKind(chosen) ?? 'custom'
+      logCanvasBlockStart({ label: `${effectiveModelId ?? '(model)'} · ${capability}`, kind: 'media' })
+      logCanvasModelRequest({
+        provider: providerKind,
+        capability,
+        model: effectiveModelId,
+        method: 'POST',
+        url: chosen.apiEndpoint ?? '',
+        extra: { manifestId: manifestMatch.manifest.id },
+      })
+      const startedAt = Date.now()
       try {
         const output = await this.templateAdapter.invoke({ ...input, capability }, ctx)
+        const captured = output.requestCall ?? capture.getCaptured()
+        if (captured) {
+          logCanvasModelResponse({
+            provider: providerKind,
+            capability,
+            model: effectiveModelId,
+            status: captured.response?.status,
+            body: captured.response?.body ?? captured.body,
+            durationMs: Date.now() - startedAt,
+            ...(output.assets?.length != null ? { assetCount: output.assets.length } : {}),
+          })
+        }
+        logCanvasBlockEnd({ label: `${effectiveModelId ?? '(model)'} · ${capability}`, kind: 'media' })
         return {
           output: { ...output, requestCall: output.requestCall ?? capture.getCaptured() },
           providerProfileId: chosen.id,
         }
       } catch (err) {
+        const captured = capture.getCaptured()
+        logCanvasModelFailure({
+          provider: providerKind,
+          capability,
+          model: effectiveModelId,
+          code: (err as { code?: string })?.code,
+          message: err instanceof Error ? err.message : String(err),
+          durationMs: Date.now() - startedAt,
+        })
+        if (captured?.body !== undefined) {
+          logCanvasModelRequest({
+            provider: providerKind,
+            capability,
+            model: effectiveModelId,
+            method: captured.method,
+            url: captured.url,
+            body: captured.body,
+          })
+        }
+        logCanvasBlockEnd({ label: `${effectiveModelId ?? '(model)'} · ${capability}`, kind: 'media' })
         attachCapturedRequest(err, capture)
         throw err
       }
@@ -361,12 +412,53 @@ export class MediaRouterService {
       ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
     }
     try {
+      logCanvasBlockStart({ label: `${effectiveModelId ?? '(model)'} · ${capability}`, kind: 'media' })
+      logCanvasModelRequest({
+        provider: kind ?? 'custom',
+        capability,
+        model: effectiveModelId,
+        method: 'POST',
+        url: chosen.apiEndpoint ?? '',
+      })
+      const startedAt = Date.now()
       const output = await adapter.invoke({ ...input, capability }, ctx)
+      const captured = output.requestCall ?? capture.getCaptured()
+      if (captured) {
+        logCanvasModelResponse({
+          provider: kind ?? 'custom',
+          capability,
+          model: effectiveModelId,
+          status: captured.response?.status,
+          body: captured.response?.body ?? captured.body,
+          durationMs: Date.now() - startedAt,
+          ...(output.assets?.length != null ? { assetCount: output.assets.length } : {}),
+        })
+      }
+      logCanvasBlockEnd({ label: `${effectiveModelId ?? '(model)'} · ${capability}`, kind: 'media' })
       return {
         output: { ...output, requestCall: output.requestCall ?? capture.getCaptured() },
         providerProfileId: chosen.id,
       }
     } catch (err) {
+      const captured = capture.getCaptured()
+      logCanvasModelFailure({
+        provider: kind ?? 'custom',
+        capability,
+        model: effectiveModelId,
+        code: (err as { code?: string })?.code,
+        message: err instanceof Error ? err.message : String(err),
+      })
+      if (captured?.body !== undefined) {
+        logCanvasModelRequest({
+          provider: kind ?? 'custom',
+          capability,
+          model: effectiveModelId,
+          method: captured.method,
+          url: captured.url,
+          body: captured.body,
+        })
+      }
+      logCanvasBlockEnd({ label: `${effectiveModelId ?? '(model)'} · ${capability}`, kind: 'media' })
       attachCapturedRequest(err, capture)
       throw err
     }

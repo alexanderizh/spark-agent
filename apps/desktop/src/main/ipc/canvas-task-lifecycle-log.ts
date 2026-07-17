@@ -38,7 +38,30 @@ type CanvasTaskFailureFields = {
   model?: string | null | undefined
 }
 
-type LifecycleLogger = Pick<ReturnType<typeof createLogger>, 'info' | 'warn'>
+type CanvasTaskTextRequestFields = {
+  model: string
+  apiKind: 'chat' | 'responses' | string
+  executionPath: string
+  adapter?: string | null | undefined
+  systemPromptChars: number
+  userPromptChars: number
+  maxTokens?: number | undefined
+  maxTokensSource?: string | undefined
+  temperature?: number | undefined
+  reasoningEffort?: string | undefined
+  responseFormat?: string | undefined
+  attachmentCount?: number | undefined
+}
+
+type CanvasTaskTextResponseFields = {
+  textChars: number
+  finishReason?: string | undefined
+  usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined
+  reasoningContentChars?: number | undefined
+  durationMs?: number | undefined
+}
+
+type LifecycleLogger = Pick<ReturnType<typeof createLogger>, 'info' | 'warn' | 'error'>
 
 type CanvasTaskLifecycleDependencies = {
   logger?: LifecycleLogger
@@ -105,6 +128,64 @@ export function createCanvasTaskLifecycleLog(
     )
   }
 
+  const textCallRequest = (fields: CanvasTaskTextRequestFields): number => {
+    const requestStartedAt = now()
+    try {
+      logger.info(
+        [
+          'event=text-request',
+          base,
+          `model=${field(fields.model)}`,
+          `apiKind=${field(fields.apiKind)}`,
+          `executionPath=${field(fields.executionPath)}`,
+          `adapter=${field(fields.adapter)}`,
+          `systemChars=${fields.systemPromptChars}`,
+          `userChars=${fields.userPromptChars}`,
+          fields.attachmentCount != null ? `attachments=${fields.attachmentCount}` : null,
+          `maxTokens=${fields.maxTokens ?? '(provider-default)'}`,
+          `maxTokensSource=${field(fields.maxTokensSource)}`,
+          fields.temperature != null ? `temperature=${fields.temperature}` : null,
+          fields.reasoningEffort ? `reasoningEffort=${JSON.stringify(fields.reasoningEffort)}` : null,
+          fields.responseFormat ? `responseFormat=${JSON.stringify(fields.responseFormat)}` : null,
+        ]
+          .filter((part): part is string => part != null)
+          .join(' '),
+      )
+    } catch {
+      /* 日志失败不影响业务 */
+    }
+    return requestStartedAt
+  }
+
+  const textCallResponse = (
+    fields: CanvasTaskTextResponseFields,
+    requestStartedAt: number,
+  ): void => {
+    try {
+      logger.info(
+        [
+          'event=text-response',
+          base,
+          `textChars=${fields.textChars}`,
+          fields.reasoningContentChars != null
+            ? `reasoningChars=${fields.reasoningContentChars}`
+            : null,
+          fields.finishReason ? `finishReason=${JSON.stringify(fields.finishReason)}` : null,
+          fields.usage?.promptTokens != null ? `promptTokens=${fields.usage.promptTokens}` : null,
+          fields.usage?.completionTokens != null
+            ? `completionTokens=${fields.usage.completionTokens}`
+            : null,
+          fields.usage?.totalTokens != null ? `totalTokens=${fields.usage.totalTokens}` : null,
+          `durationMs=${Math.max(0, now() - requestStartedAt)}`,
+        ]
+          .filter((part): part is string => part != null)
+          .join(' '),
+      )
+    } catch {
+      /* 日志失败不影响业务 */
+    }
+  }
+
   return {
     started(): void {
       logger.info(`event=started ${base}`)
@@ -122,6 +203,8 @@ export function createCanvasTaskLifecycleLog(
         ].join(' '),
       )
     },
+    textCallRequest,
+    textCallResponse,
     finished,
     failed,
     settled(fields: CanvasTaskTerminalFields): void {
