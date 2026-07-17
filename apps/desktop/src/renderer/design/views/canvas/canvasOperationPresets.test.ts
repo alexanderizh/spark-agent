@@ -354,6 +354,17 @@ describe('canvasOperationPresets', () => {
     })
   })
 
+  it('lets an explicit duration alias replace a stale preset alias', () => {
+    writeCanvasPresetTarget('image_to_video', {
+      modelParams: { durationSeconds: 8, resolution: '720p' },
+    })
+
+    expect(mergeCanvasPresetTargetModelParams('image_to_video', { duration: 3 })).toEqual({
+      duration: 3,
+      resolution: '720p',
+    })
+  })
+
   it('resolves pipeline preset target by operation, role, and workflow', () => {
     expect(
       resolveCanvasPresetTarget({

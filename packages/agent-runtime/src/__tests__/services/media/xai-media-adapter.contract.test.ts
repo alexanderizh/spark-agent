@@ -99,6 +99,54 @@ describe('XaiMediaAdapter official contract', () => {
     ])
   })
 
+  it('uses the later duration alias when a stale default and the user selection coexist', async () => {
+    const capture: { body?: Record<string, unknown> } = {}
+    const ctx = context(videoFetch(capture))
+    ctx.skipParameterValidation = true
+
+    await adapter.invoke(
+      {
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        outputDir,
+        prompt: 'Animate this frame for three seconds',
+        inputFiles: [{ type: 'image', role: 'first_frame', url: 'https://input/frame.png' }],
+        modelParams: { durationSeconds: 8, duration: 3 },
+      },
+      ctx,
+    )
+
+    expect(capture.body?.duration).toBe(3)
+  })
+
+  it('forwards the provider duration alias when extending a video without validation', async () => {
+    const capture: { body?: Record<string, unknown> } = {}
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/videos/extensions')) {
+        capture.body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        return new Response(JSON.stringify({ request_id: 'request-1' }))
+      }
+      return videoFetch(capture)(input, init)
+    }) as typeof fetch
+    const ctx = context(fetchImpl)
+    ctx.skipParameterValidation = true
+
+    await adapter.invoke(
+      {
+        operation: 'video_extend',
+        capability: 'video.extend',
+        outputDir,
+        prompt: 'Continue this video',
+        inputFiles: [{ type: 'video', role: 'input', url: 'https://input/video.mp4' }],
+        modelParams: { duration: 3 },
+      },
+      ctx,
+    )
+
+    expect(capture.body?.duration).toBe(3)
+  })
+
   it('maps all reference images without an undocumented local cap and rejects a last frame', async () => {
     const capture: { body?: Record<string, unknown> } = {}
     const references = Array.from({ length: 7 }, (_, index) => ({

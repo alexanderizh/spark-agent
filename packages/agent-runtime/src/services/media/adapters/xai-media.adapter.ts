@@ -138,7 +138,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     }
 
     const params = input.modelParams ?? {}
-    const duration = numericParam(params.durationSeconds ?? params.duration)
+    const duration = lastNumericParam(params, 'durationSeconds', 'duration')
     const maxDuration = capability === 'video.reference_to_video' ? 10 : 15
     if (
       duration !== undefined &&
@@ -401,7 +401,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       storage_options: buildStorageOptions(input, 'mp4'),
     }
     if (isExtend) {
-      const duration = numericParam(input.modelParams?.durationSeconds) ?? 6
+      const duration = lastNumericParam(input.modelParams ?? {}, 'durationSeconds', 'duration') ?? 6
       if (
         (!Number.isInteger(duration) || duration < 2 || duration > 10) &&
         !ctx.skipParameterValidation
@@ -602,6 +602,17 @@ function numericParam(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return parsed
   }
   return undefined
+}
+
+function lastNumericParam(params: Record<string, unknown>, ...names: string[]): number | undefined {
+  const accepted = new Set(names)
+  let resolved: number | undefined
+  for (const [name, value] of Object.entries(params)) {
+    if (!accepted.has(name)) continue
+    const numeric = numericParam(value)
+    if (numeric !== undefined) resolved = numeric
+  }
+  return resolved
 }
 
 function buildStorageOptions(input: MediaGenerateInput, extension: string): Record<string, unknown> {

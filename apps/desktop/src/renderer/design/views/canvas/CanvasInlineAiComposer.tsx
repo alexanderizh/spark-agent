@@ -1607,6 +1607,8 @@ export function isModelParamCoveredByFields(
 function modelParamAliasCandidates(fieldName: string): string[] {
   if (fieldName === 'aspect_ratio') return ['aspect_ratio', 'aspectRatio']
   if (fieldName === 'aspectRatio') return ['aspectRatio', 'aspect_ratio']
+  if (fieldName === 'duration') return ['duration', 'durationSeconds']
+  if (fieldName === 'durationSeconds') return ['durationSeconds', 'duration']
   return [fieldName]
 }
 
