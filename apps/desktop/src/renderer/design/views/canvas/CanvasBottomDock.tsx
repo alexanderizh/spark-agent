@@ -44,9 +44,9 @@ export function CanvasBottomDock({
   onOpenAddMenu: () => void
   onOpenFilmCenter: () => void
   onOpenCharacterLibrary: () => void
-  /** 分镜导演台面板入口（保留 API 以兼容其他调用方；底部工具栏已改为 3D 导演台入口） */
+  /** 分镜导演台面板入口（保留 API 以兼容其他调用方） */
   onOpenShotDirector?: () => void
-  /** 底部工具栏「3D 导演台」入口：新建 3D 导演台节点并打开（2D 版走空白右键菜单） */
+  /** 底部工具栏「3D 导演台」入口：新建 3D 导演台节点并打开 */
   onAddDirectorStage3D: () => void
   /** 底部工具栏「视频工作台」入口：新建视频工作台节点并打开 */
   onAddVideoWorkbench: () => void

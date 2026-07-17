@@ -38,7 +38,7 @@ function poseDescription(actor: Stage3DActor): string {
  * 角色姿势 / 站位 / 朝向 / 相对关系、道具（相对最近角色的方位+距离）、背景、
  * 相机机位 / 焦段 / 画幅 / 到主体距离。
  * 全部用"固定基准（镜头 or 场景原点）+ 相对位置"描述，单位统一米、保留一位小数，
- * 便于视频生成模型理解空间关系。风格参考 2D 版 buildDirectorPrompt。
+ * 便于视频生成模型理解空间关系。
  */
 
 function sub(a: number, b: number): number {

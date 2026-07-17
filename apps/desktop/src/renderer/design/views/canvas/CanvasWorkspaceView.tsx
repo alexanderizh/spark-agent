@@ -25,6 +25,7 @@ import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { downloadAsset, downloadCanvasResource } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
+import { CanvasInlineNodeTitleEditor } from './CanvasInlineNodeTitleEditor'
 import { CanvasCharacterLibraryPanel } from './CanvasCharacterLibraryPanel'
 import { CanvasCharacterSubviewEditor } from './CanvasCharacterSubviewEditor'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
@@ -39,10 +40,7 @@ import {
 import { classifyDroppedFile, layoutDroppedFiles, textFormatFromFileName } from './canvasFileDrop'
 import { extractDocumentText } from './canvasDocumentParse'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
-import {
-  CanvasFilmAssetCenter,
-  type FilmCenterHandlers,
-} from './CanvasFilmAssetCenter'
+import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { resolveCanvasAssetFocusNodeIds } from './canvasAssetFocus'
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel, buildOperationPanelSnapshotSignature } from './CanvasOperationPanel'
@@ -71,11 +69,6 @@ import {
   type CanvasShotDirectorDraft,
   type CanvasShotDirectorScreenshotInput,
 } from './CanvasShotDirectorPanel'
-import {
-  CanvasDirectorStageModal,
-  createDefaultDirectorStageData,
-  type DirectorStageData,
-} from './CanvasDirectorStageModal'
 import { CanvasDirectorStage3DModal } from './stage3d/CanvasDirectorStage3DModal'
 import { createDefaultStage3DData, type Stage3DData } from './stage3d/stage3d.types'
 import { CanvasVideoWorkbenchModal } from './videoWorkbench/CanvasVideoWorkbenchModal'
@@ -119,10 +112,7 @@ import {
   resolveStoryboardRowsForEditing,
   updateStoryboardCameraParams,
 } from './canvasTextInputPresentation'
-import {
-  resolveStoryboardSplitSourceNode,
-  splitStoryboardNode,
-} from './canvasStoryboardNodeSplit'
+import { resolveStoryboardSplitSourceNode, splitStoryboardNode } from './canvasStoryboardNodeSplit'
 import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import {
   planCanvasPipelineTaskPositions,
@@ -1826,7 +1816,6 @@ export function CanvasWorkspaceView({
       ),
     }
   }, [characterSubviewEditorNodeId, resolveCanvasResourceActionNode, snapshot])
-  const [directorStageNodeId, setDirectorStageNodeId] = useState<string | null>(null)
   const [directorStage3DNodeId, setDirectorStage3DNodeId] = useState<string | null>(null)
   const [videoWorkbenchNodeId, setVideoWorkbenchNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
@@ -3050,15 +3039,12 @@ export function CanvasWorkspaceView({
     // 直接后台合成选中内容节点为一张图，不再先创建中间组节点：
     // 与「手动成组 → 多图合并」产物一致，但跳过组节点，按节点当前位置截图，
     // 合成图放在选中内容整体的右侧，并从每个来源节点连线到合成图。
-    const contentNodes = selectedNodes.filter((node) =>
-      summary.topLevelNodeIds.includes(node.id),
-    )
+    const contentNodes = selectedNodes.filter((node) => summary.topLevelNodeIds.includes(node.id))
     if (contentNodes.length === 0) {
       message.warning('未找到可合成的内容节点')
       return
     }
-    const placeX =
-      contentNodes.reduce((maxX, node) => Math.max(maxX, node.x + node.width), 0) + 96
+    const placeX = contentNodes.reduce((maxX, node) => Math.max(maxX, node.x + node.width), 0) + 96
     const placeY = contentNodes.reduce(
       (minY, node) => Math.min(minY, node.y),
       Number.POSITIVE_INFINITY,
@@ -3070,9 +3056,7 @@ export function CanvasWorkspaceView({
       placeX,
       placeY: Number.isFinite(placeY) ? placeY : 0,
       lockKey: `selection:${[...summary.topLevelNodeIds].sort().join(',')}`,
-      ...(snapshot?.project.rootPath
-        ? { projectRootPath: snapshot.project.rootPath }
-        : {}),
+      ...(snapshot?.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
     })
   }, [compositeContentNodesToImage, handleMergeGroupToImage, selectedNodes, snapshot])
 
@@ -3126,12 +3110,6 @@ export function CanvasWorkspaceView({
         setInlinePanelFocusRequest({ nodeId, nonce: Date.now() })
         setSelectedNodeIds([nodeId])
         setActiveOperationPanelNodeId(nodeId)
-        return
-      }
-      if (node?.data.subtype === 'director_stage') {
-        closeCanvasFloatPanels('node-edit')
-        setSelectedNodeIds([nodeId])
-        setDirectorStageNodeId(nodeId)
         return
       }
       if (node?.data.subtype === 'director_stage_3d') {
@@ -3315,9 +3293,7 @@ export function CanvasWorkspaceView({
         return
       }
       message.success(
-        plan.nodeIds.length === 1
-          ? '已删除产物节点'
-          : `已删除 ${plan.nodeIds.length} 个产物节点`,
+        plan.nodeIds.length === 1 ? '已删除产物节点' : `已删除 ${plan.nodeIds.length} 个产物节点`,
       )
     },
     [deleteEdges, deleteNodes],
@@ -3356,7 +3332,12 @@ export function CanvasWorkspaceView({
           // 保证展开后的文本节点双击进入分镜脚本编辑器时能正确回显。
           ...(outputText ? { text: outputText } : {}),
           ...(isTextOutput
-            ? { format: (item.output.type === 'prompt' ? 'prompt' : 'markdown') as 'plain' | 'markdown' | 'prompt' }
+            ? {
+                format: (item.output.type === 'prompt' ? 'prompt' : 'markdown') as
+                  | 'plain'
+                  | 'markdown'
+                  | 'prompt',
+              }
             : {}),
           ...(item.output.pipelineRole ? { pipelineRole: item.output.pipelineRole } : {}),
           ...(item.output.productionState ? { productionState: item.output.productionState } : {}),
@@ -3577,39 +3558,6 @@ export function CanvasWorkspaceView({
       message.success(`已拆分为 ${created.length} 个分镜节点`)
     },
     [connectNodes, createTextNode, patchNodes],
-  )
-
-  const addDirectorStage = useCallback(
-    async (preferredPosition?: CanvasPoint) => {
-      const position = preferredPosition
-        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
-        : positionNodeInViewport(canvasViewportRef.current, VIDEO_NODE_DEFAULT_SIZE, {
-            x: 160,
-            y: 140,
-          })
-      const node = await createTextNode({
-        text: '2D 导演台：双击打开画面编排空间。',
-        x: position.x,
-        y: position.y,
-      })
-      if (!node) return
-      await patchNodes([node.id], {
-        title: '2D 导演台',
-        width: VIDEO_NODE_DEFAULT_SIZE.width,
-        height: VIDEO_NODE_DEFAULT_SIZE.height,
-      })
-      await updateNodeData(node.id, {
-        ...node.data,
-        subtype: 'director_stage',
-        displayCategory: 'content',
-        directorStage: createDefaultDirectorStageData() as unknown as Record<string, unknown>,
-        text: '2D 导演台：双击打开画面编排空间。',
-      })
-      setSelectedNodeIds([node.id])
-      setDirectorStageNodeId(node.id)
-      return node
-    },
-    [createTextNode, patchNodes, updateNodeData],
   )
 
   const addDirectorStage3D = useCallback(
@@ -4034,86 +3982,7 @@ export function CanvasWorkspaceView({
     ],
   )
 
-  const directorStageNode = useMemo(
-    () => snapshot?.nodes.find((item) => item.id === directorStageNodeId) ?? null,
-    [directorStageNodeId, snapshot?.nodes],
-  )
-
-  const handleSaveDirectorStage = useCallback(
-    async (data: DirectorStageData, prompt: string) => {
-      if (!directorStageNode) return
-      await updateNodeData(directorStageNode.id, {
-        ...directorStageNode.data,
-        subtype: 'director_stage',
-        directorStage: data as unknown as Record<string, unknown>,
-        text: prompt,
-      })
-    },
-    [directorStageNode, updateNodeData],
-  )
-
-  const handleInsertDirectorStagePrompt = useCallback(
-    async (promptText: string) => {
-      if (!snapshot) return
-      const position = positionNodeInViewport(canvasViewportRef.current, VIDEO_NODE_DEFAULT_SIZE, {
-        x: 260,
-        y: 200,
-      })
-      const createdNode = await createTextNode({
-        text: promptText,
-        x: position.x,
-        y: position.y,
-      })
-      if (!createdNode) return
-      await patchNodes([createdNode.id], {
-        title: '画面提示词',
-        width: VIDEO_NODE_DEFAULT_SIZE.width,
-        height: VIDEO_NODE_DEFAULT_SIZE.height,
-      })
-      setSelectedNodeIds([createdNode.id])
-      message.success('已插入画面提示词节点')
-    },
-    [createTextNode, patchNodes, snapshot],
-  )
-
-  const handleInsertDirectorStageScreenshot = useCallback(
-    async (input: { dataUrl: string; prompt: string }) => {
-      if (!snapshot) return
-      const fileName = `director-framing-${Date.now()}.png`
-      const file = dataUrlToFile(input.dataUrl, fileName)
-      const dimensions = await readImageDimensions(input.dataUrl)
-      const savedImage = await window.spark.invoke('file:save-pasted-image', {
-        dataUrl: input.dataUrl,
-        mimeType: file.type,
-        suggestedBaseName: fileName.replace(/\.[^.]+$/, ''),
-        storageScope: 'canvas',
-        ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
-      })
-      const nodeSize = fitImageNodeSize(dimensions.width || 1280, dimensions.height || 720)
-      const position = positionNodeInViewport(canvasViewportRef.current, nodeSize, {
-        x: 260,
-        y: 200,
-      })
-      const imageNode = await createImageNode({
-        file,
-        filePath: savedImage.filePath,
-        x: position.x,
-        y: position.y,
-        width: nodeSize.width,
-        height: nodeSize.height,
-        imageWidth: dimensions.width,
-        imageHeight: dimensions.height,
-      })
-      if (imageNode) {
-        await patchNodes([imageNode.id], { title: '画面取景预览' })
-        setSelectedNodeIds([imageNode.id])
-      }
-      message.success('已导出取景预览图到画布')
-    },
-    [createImageNode, patchNodes, snapshot],
-  )
-
-  // ─── 真·3D 导演台（subtype director_stage_3d）───
+  // ─── 3D 导演台（subtype director_stage_3d）───
   const directorStage3DNode = useMemo(
     () => snapshot?.nodes.find((item) => item.id === directorStage3DNodeId) ?? null,
     [directorStage3DNodeId, snapshot?.nodes],
@@ -5827,6 +5696,14 @@ export function CanvasWorkspaceView({
   const inlinePanelResourceNodeRef = useRef(inlinePanelResourceNode)
   inlinePanelResourceNodeRef.current = inlinePanelResourceNode
 
+  const renameInlinePanelNodeStable = useCallback(
+    async (title: string | null) => {
+      const nodeId = inlinePanelNodeRef.current?.id
+      if (!nodeId) return
+      await patchNodes([nodeId], { title })
+    },
+    [patchNodes],
+  )
   const closeFloatingEditorStable = useCallback(() => {
     setActiveOperationPanelNodeId(null)
     setEditingNodeId(null)
@@ -6472,11 +6349,10 @@ export function CanvasWorkspaceView({
       const selectedFiles = Array.from(event.target.files ?? [])
       event.target.value = ''
       if (selectedFiles.length === 0) return
-      const position = positionNodeInViewport(
-        canvasViewportRef.current,
-        TEXT_NODE_DEFAULT_SIZE,
-        { x: 260, y: 200 },
-      )
+      const position = positionNodeInViewport(canvasViewportRef.current, TEXT_NODE_DEFAULT_SIZE, {
+        x: 260,
+        y: 200,
+      })
       await handleDropFiles(position, selectedFiles)
     },
     [handleDropFiles],
@@ -7771,7 +7647,6 @@ export function CanvasWorkspaceView({
             onAddImageAtPosition={uploadFirstImage}
             onDropFiles={handleDropFiles}
             onAddPromptAtPosition={addPrompt}
-            onAddDirectorStageAtPosition={addDirectorStage}
             onAddDirectorStage3DAtPosition={addDirectorStage3D}
             onInsertAssetFromPane={onInsertAssetFromPaneStable}
             onCreateOperationAtPosition={handleCreateOperationAtPosition}
@@ -7807,6 +7682,7 @@ export function CanvasWorkspaceView({
                   node={inlinePanelNode}
                   resourceNode={inlinePanelResourceNode ?? undefined}
                   isOperation={Boolean(activeOperationNode)}
+                  onRenameNode={renameInlinePanelNodeStable}
                   operationFullscreen={inlineOperationFullscreen}
                   onOperationFullscreenChange={setInlineOperationFullscreen}
                   onClose={closeFloatingEditorStable}
@@ -7958,15 +7834,6 @@ export function CanvasWorkspaceView({
             onClose={() => setPanoramaPreviewNodeId(null)}
             onScreenshot={handlePanoramaScreenshot}
             onCrop={handlePanoramaCrop}
-          />
-          <CanvasDirectorStageModal
-            key={directorStageNode?.id}
-            node={directorStageNode}
-            open={Boolean(directorStageNode)}
-            onClose={() => setDirectorStageNodeId(null)}
-            onSave={handleSaveDirectorStage}
-            onInsertPrompt={handleInsertDirectorStagePrompt}
-            onExportFraming={handleInsertDirectorStageScreenshot}
           />
           <CanvasDirectorStage3DModal
             key={directorStage3DNode?.id}
@@ -8397,6 +8264,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   node,
   resourceNode,
   isOperation,
+  onRenameNode,
   onClose,
   onFocus,
   onDuplicate,
@@ -8423,6 +8291,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   /** 操作节点当前主产物；资源动作作用于它，节点管理仍作用于稳定步骤节点。 */
   resourceNode?: CanvasNode | undefined
   isOperation: boolean
+  onRenameNode: (title: string | null) => Promise<void> | void
   onClose: () => void
   onFocus: () => void
   onDuplicate: () => void
@@ -8567,7 +8436,16 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
     <div className="canvas-floating-toolbar-shell" role="toolbar" aria-label={`${title} 编辑工具`}>
       <div className="canvas-floating-toolbar-title">
         {isOperation ? <Icons.Sparkles size={14} /> : <Icons.Edit size={14} />}
-        <span>{isOperation ? operationTitle : title}</span>
+        {isOperation ? (
+          <span>{operationTitle}</span>
+        ) : (
+          <CanvasInlineNodeTitleEditor
+            nodeId={node.id}
+            title={node.title}
+            fallbackTitle={title}
+            onRename={onRenameNode}
+          />
+        )}
         {isOperation && (
           <Tag color={operationStatusColor} bordered>
             {floatingOperationStatusLabel(operationStatus)}

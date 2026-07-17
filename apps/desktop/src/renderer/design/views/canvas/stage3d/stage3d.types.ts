@@ -6,10 +6,9 @@ import {
 } from './actorModelRegistry'
 
 /**
- * 真·3D 导演台数据模型（节点 data.stage3d，version 1）。
+ * 3D 导演台数据模型（节点 data.stage3d，version 1）。
  *
- * 与 2D 版（data.directorStage）并列、互不影响。所有解析都尽量宽容：
- * 旧/脏数据缺字段时用默认值补齐，坐标/角度做范围钳制。
+ * 所有解析都尽量宽容：旧/脏数据缺字段时用默认值补齐，坐标/角度做范围钳制。
  */
 
 export type Stage3DBackdropMode = 'grid' | 'panorama' | 'backdrop'
@@ -91,7 +90,7 @@ export type Stage3DCamera = {
   aspect: Stage3DAspect
 }
 
-/** 三点布光预设，与 2D 版 LIGHTING_LABEL（顺光/侧光/逆光/顶光/轮廓光）语义对齐 */
+/** 三点布光预设 */
 export type Stage3DLightingPreset = 'studio' | 'front' | 'side' | 'back' | 'rim' | 'top' | 'none'
 
 export type Stage3DLighting = {
@@ -175,7 +174,7 @@ export const STAGE3D_LIGHTING_PRESETS: Stage3DLightingPreset[] = [
   'none',
 ]
 
-/** 与 2D 版 LIGHTING_LABEL 措辞对齐，另加影视语义「三点/无」 */
+/** 布光预设的界面文案 */
 export const STAGE3D_LIGHTING_LABEL: Record<Stage3DLightingPreset, string> = {
   studio: '三点布光',
   front: '顺光',
