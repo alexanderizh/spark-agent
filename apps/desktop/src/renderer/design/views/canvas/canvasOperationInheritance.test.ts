@@ -2067,6 +2067,7 @@ describe('canvas operation inheritance', () => {
       prompt: '雨夜街角，另一种构图',
       inputNodeIds: ['node-source'],
       userPrompt: '另一种构图',
+      skipParameterValidation: true,
     })
 
     const firstNode = snapshot.nodes.find((item) => item.id === 'node-op-1')
@@ -2085,7 +2086,11 @@ describe('canvas operation inheritance', () => {
     expect(secondTask?.prompt).toContain('画布节点内容')
     expect(
       invoke.mock.calls.filter(([channel]) => channel === 'canvas:media-models:list'),
-    ).toHaveLength(1)
+    ).toHaveLength(0)
+    expect(invoke).toHaveBeenCalledWith(
+      'canvas:task:create-media',
+      expect.objectContaining({ skipParameterValidation: true }),
+    )
   })
 
   it('does not mutate input edges or pending tasks when submission validation fails', async () => {

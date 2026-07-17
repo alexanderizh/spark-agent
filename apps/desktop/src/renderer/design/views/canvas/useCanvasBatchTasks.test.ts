@@ -75,10 +75,18 @@ function prepared(nodeId: string): PreparedCanvasOperationSubmission {
 
 function setup(input?: {
   skipConfirmation?: boolean
+  skipParameterValidation?: boolean
   nodes?: CanvasNode[]
-  prepare?: (nodeId: string) => Promise<PreparedCanvasOperationSubmission>
+  prepare?: (
+    nodeId: string,
+    options?: { skipParameterValidation?: boolean },
+  ) => Promise<PreparedCanvasOperationSubmission>
   run?: (nodeId: string) => Promise<void>
   onSingleValidationError?: (nodeId: string, error: unknown) => void
+  confirmParameterValidation?: () => Promise<{
+    confirmed: boolean
+    skipFutureValidation: boolean
+  }>
 }) {
   let current = snapshot(input?.nodes)
   const updateManyNodeData = vi.fn(
@@ -102,10 +110,12 @@ function setup(input?: {
   const runOperationNode = vi.fn(async (nodeId: string) => {
     await input?.run?.(nodeId)
   })
-  const prepareSubmission = vi.fn(async ({ node }: { node: CanvasNode }) =>
-    input?.prepare ? input.prepare(node.id) : prepared(node.id),
+  const prepareSubmission = vi.fn(
+    async ({ node }: { node: CanvasNode }, options?: { skipParameterValidation?: boolean }) =>
+      input?.prepare ? input.prepare(node.id, options) : prepared(node.id),
   )
   const writeSkipConfirmation = vi.fn()
+  const writeSkipParameterValidation = vi.fn()
   const controller = createCanvasBatchTaskController({
     getSnapshot: () => current,
     updateManyNodeData,
@@ -113,6 +123,11 @@ function setup(input?: {
     prepareSubmission,
     readSkipConfirmation: () => input?.skipConfirmation ?? false,
     writeSkipConfirmation,
+    readSkipParameterValidation: () => input?.skipParameterValidation ?? false,
+    writeSkipParameterValidation,
+    ...(input?.confirmParameterValidation
+      ? { confirmParameterValidation: input.confirmParameterValidation }
+      : {}),
     createBatchId: () => 'batch-1',
     ...(input?.onSingleValidationError
       ? { onSingleValidationError: input.onSingleValidationError }
@@ -124,6 +139,7 @@ function setup(input?: {
     runOperationNode,
     prepareSubmission,
     writeSkipConfirmation,
+    writeSkipParameterValidation,
     replaceNode: (nodeId: string, replace: (node: CanvasNode) => CanvasNode) => {
       current = {
         ...current,
@@ -152,7 +168,7 @@ describe('useCanvasBatchTasks controller', () => {
     expect(controller.getState().mode).toBe('configure')
   })
 
-  it('forces configuration when any preflight fails even if confirmation is skipped', async () => {
+  it('shows validation issues as warnings and submits after confirmation', async () => {
     const validationError = new CanvasTaskValidationError([
       {
         severity: 'error',
@@ -161,10 +177,10 @@ describe('useCanvasBatchTasks controller', () => {
         path: ['modelId'],
       },
     ])
-    const { controller, runOperationNode } = setup({
+    const { controller, runOperationNode, writeSkipParameterValidation, prepareSubmission } = setup({
       skipConfirmation: true,
-      prepare: async (nodeId) => {
-        if (nodeId === 'node-2') throw validationError
+      prepare: async (nodeId, options) => {
+        if (nodeId === 'node-2' && !options?.skipParameterValidation) throw validationError
         return prepared(nodeId)
       },
     })
@@ -172,9 +188,13 @@ describe('useCanvasBatchTasks controller', () => {
     await controller.openSubmit(['node-1', 'node-2'])
 
     expect(runOperationNode).not.toHaveBeenCalled()
+    expect(prepareSubmission).toHaveBeenCalledWith(
+      expect.objectContaining({ node: expect.objectContaining({ id: 'node-2' }) }),
+      { skipParameterValidation: true },
+    )
     expect(controller.getState()).toMatchObject({
-      mode: 'configure',
-      issues: [
+      mode: 'confirm',
+      validationWarnings: [
         {
           nodeId: 'node-2',
           fieldPath: ['modelId'],
@@ -182,6 +202,12 @@ describe('useCanvasBatchTasks controller', () => {
         },
       ],
     })
+
+    controller.setSkipParameterValidation(true)
+    await controller.confirmSubmit()
+
+    expect(writeSkipParameterValidation).toHaveBeenCalledWith(true)
+    expect(runOperationNode).toHaveBeenCalledTimes(2)
   })
 
   it('opens confirmation and persists skip only after explicit confirmation', async () => {
@@ -336,7 +362,7 @@ describe('useCanvasBatchTasks controller', () => {
     expect(onSingleValidationError).not.toHaveBeenCalled()
   })
 
-  it('opens the node editor when single-run preparation fails', async () => {
+  it('warns and continues a single run after explicit confirmation', async () => {
     const validationError = new CanvasTaskValidationError([
       {
         severity: 'error',
@@ -346,17 +372,28 @@ describe('useCanvasBatchTasks controller', () => {
       },
     ])
     const onSingleValidationError = vi.fn()
-    const { controller, runOperationNode } = setup({
-      prepare: async () => {
-        throw validationError
+    const confirmParameterValidation = vi.fn(async () => ({
+      confirmed: true,
+      skipFutureValidation: false,
+    }))
+    const { controller, runOperationNode, prepareSubmission } = setup({
+      prepare: async (nodeId, options) => {
+        if (!options?.skipParameterValidation) throw validationError
+        return prepared(nodeId)
       },
       onSingleValidationError,
+      confirmParameterValidation,
     })
 
-    await expect(controller.runSingle('node-1')).rejects.toThrow('请选择模型')
+    await controller.runSingle('node-1')
 
-    expect(onSingleValidationError).toHaveBeenCalledWith('node-1', validationError)
-    expect(runOperationNode).not.toHaveBeenCalled()
+    expect(confirmParameterValidation).toHaveBeenCalledWith(validationError.issues)
+    expect(onSingleValidationError).not.toHaveBeenCalled()
+    expect(prepareSubmission).toHaveBeenLastCalledWith(
+      expect.objectContaining({ node: expect.objectContaining({ id: 'node-1' }) }),
+      { skipParameterValidation: true },
+    )
+    expect(runOperationNode).toHaveBeenCalledTimes(1)
   })
 
   it('bounds preflight preparation concurrency', async () => {

@@ -432,6 +432,8 @@ export type CreateCanvasTaskRequest = {
     strategy?: 'near_selection' | 'viewport_center' | 'right_of_selection'
   }
   modelParams?: Record<string, unknown>
+  /** User-confirmed opt-out from renderer-side parameter preflight. */
+  skipParameterValidation?: boolean
   agentId?: string
   providerProfileId?: string
   manifestId?: string

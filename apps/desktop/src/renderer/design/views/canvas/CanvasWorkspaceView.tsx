@@ -7470,6 +7470,9 @@ export function CanvasWorkspaceView({
                         ...(Object.keys(styledTask.modelParams).length > 0
                           ? { modelParams: styledTask.modelParams }
                           : {}),
+                        ...(params.skipParameterValidation
+                          ? { skipParameterValidation: true }
+                          : {}),
                         userPrompt: params.prompt,
                       })
                     } finally {
@@ -7789,6 +7792,7 @@ export function CanvasWorkspaceView({
             onConfirmSubmit={batchTasks.controller.confirmSubmit}
             onRetryFailed={batchTasks.controller.retryFailed}
             onSkipNextConfirmationChange={batchTasks.controller.setSkipNextConfirmation}
+            onSkipParameterValidationChange={batchTasks.controller.setSkipParameterValidation}
             onBackToConfigure={batchTasks.controller.backToConfigure}
             onClose={batchTasks.controller.close}
           />

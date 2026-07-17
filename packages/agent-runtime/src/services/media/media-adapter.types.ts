@@ -44,6 +44,8 @@ export interface MediaProviderContext {
   mediaManifestCapability?: MediaModelCapabilityManifest
   /** 透传的 provider-level extra params（来自 modelParams 的非标量字段） */
   extraParams?: Record<string, unknown>
+  /** 用户已确认画布参数预校验提醒；适配器不得重复阻断同一类参数问题。 */
+  skipParameterValidation?: boolean
   /** 可注入的 fetch（测试用 mock）；缺省走全局 fetch */
   fetch?: typeof fetch
   /** 桌面主进程可注入的 Spark 公开文件上传回退；agent-runtime 不反向依赖 desktop。 */

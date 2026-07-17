@@ -22,7 +22,7 @@ describe('APIMart video manifests', () => {
       'doubao-seedance-2.0',
       'doubao-seedance-2-0-fast',
       'doubao-seedance-2-0-mini',
-      ]) {
+    ]) {
       expectInput(modelId, 'video.reference_to_video', {
         maxImages: 9,
         maxVideos: 3,
@@ -159,22 +159,35 @@ describe('APIMart video manifests', () => {
   it('uses the current Seedance 2.0 duration, resolution, and audio defaults', () => {
     const standard = findCapability('doubao-seedance-2.0', 'video.generate')
     const fast = findCapability('doubao-seedance-2-0-fast', 'video.generate')
-    const standardProperties = standard?.paramSchema.properties as Record<string, { minimum?: number; enum?: unknown[] }>
-    const fastProperties = fast?.paramSchema.properties as Record<string, { minimum?: number; enum?: unknown[] }>
+    const mini = findCapability('doubao-seedance-2-0-mini', 'video.generate')
+    const standardProperties = standard?.paramSchema.properties as Record<
+      string,
+      { minimum?: number; enum?: unknown[] }
+    >
+    const fastProperties = fast?.paramSchema.properties as Record<
+      string,
+      { minimum?: number; enum?: unknown[] }
+    >
+    const miniProperties = mini?.paramSchema.properties as Record<
+      string,
+      { minimum?: number; enum?: unknown[] }
+    >
 
     expect(standardProperties.durationSeconds).toMatchObject({ minimum: 4 })
-    expect(standardProperties.resolution?.enum).toEqual(['480p', '720p', '1080p'])
-    expect(standard?.defaults).toMatchObject({ resolution: '480p', generate_audio: false })
+    expect(standardProperties.resolution?.enum).toEqual(['480p', '720p', '1080p', '4k'])
+    expect(standard?.defaults).toMatchObject({ resolution: '720p', generate_audio: true })
     expect(fastProperties.durationSeconds).toMatchObject({ minimum: 4 })
-    expect(fast?.defaults).toMatchObject({ resolution: '480p', generate_audio: false })
+    expect(fast?.defaults).toMatchObject({ resolution: '720p', generate_audio: true })
+    expect(miniProperties.durationSeconds).toMatchObject({ minimum: 4 })
+    expect(mini?.defaults).toMatchObject({ resolution: '720p', generate_audio: true })
   })
 
-  it('keeps Seedance 1.5 audio disabled by default while allowing explicit audio=true', () => {
+  it('uses the documented Seedance 1.5 audio default while allowing explicit audio=false', () => {
     const capability = findCapability('doubao-seedance-1-5-pro', 'video.generate')
     const properties = capability?.paramSchema.properties as Record<string, { default?: unknown; enum?: unknown[] }>
 
-    expect(properties.audio?.default).toBe(false)
-    expect(capability?.defaults?.audio).toBe(false)
+    expect(properties.audio?.default).toBe(true)
+    expect(capability?.defaults?.audio).toBe(true)
     expect(properties.audio?.enum).toBeUndefined()
   })
 

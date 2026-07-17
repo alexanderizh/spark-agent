@@ -63,6 +63,7 @@ export interface MediaTaskSubmitOptions {
   capability?: MediaCapabilityId
   extraParams?: Record<string, unknown>
   fetch?: typeof fetch
+  skipValidation?: boolean
 }
 
 export interface MediaTaskRouterLike {
@@ -151,6 +152,7 @@ export class MediaTaskRuntimeService {
         ...(options.capability !== undefined ? { capability: options.capability } : {}),
         ...(options.extraParams !== undefined ? { extraParams: options.extraParams } : {}),
         ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+        ...(options.skipValidation === true ? { skipValidation: true } : {}),
         onTaskSubmitted: (nextSubmission) => {
           submitResponse = nextSubmission.response
           const submitted = this.repo.update(row.id, {

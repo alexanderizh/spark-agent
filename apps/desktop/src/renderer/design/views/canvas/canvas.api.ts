@@ -4629,6 +4629,7 @@ export const canvasApi = {
       modelId?: string
       reasoningEffort?: SessionReasoningEffort
       modelParams?: Record<string, unknown>
+      skipParameterValidation?: boolean
       skillIds?: string[]
       userPrompt?: string
     } & CanvasPromptTaskFields,
@@ -4688,11 +4689,17 @@ export const canvasApi = {
       ...(params.modelId ? { modelId: params.modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+      ...(params.skipParameterValidation === true
+        ? { skipParameterValidation: true }
+        : {}),
       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
       ...pickCanvasPromptTaskFields(params),
     }
     if (params.inputNodeIds) {
-      if (isTextModelOperation(request.operation)) {
+      const skipParameterValidation = params.skipParameterValidation === true
+      if (skipParameterValidation) {
+        // The user explicitly accepted the warning or disabled future renderer preflight.
+      } else if (isTextModelOperation(request.operation)) {
         request = validateCanvasTextTaskSubmission(request)
       } else {
         request = await validateCanvasMediaTaskSubmission(request)
@@ -4817,6 +4824,7 @@ export const canvasApi = {
     const project = db.projects.find((item) => item.id === projectId)
     if (!board || !project) throw new Error('Canvas board not found')
     const request =
+      requestInput.skipParameterValidation === true ||
       options?.validationToken === CANVAS_TASK_VALIDATION_TOKEN
         ? requestInput
         : await validateCanvasMediaTaskSubmission(requestInput)
@@ -4992,6 +5000,9 @@ export const canvasApi = {
       ...(request.manifestId != null ? { manifestId: request.manifestId } : {}),
       ...(request.modelId != null ? { modelId: request.modelId } : {}),
       ...(request.modelParams != null ? { modelParams: request.modelParams } : {}),
+      ...(request.skipParameterValidation === true
+        ? { skipParameterValidation: true }
+        : {}),
       ...pickCanvasPromptTaskFields(request),
       outputDir: `${project.rootPath}/assets`,
       waitForCompletion: false,
@@ -5037,6 +5048,7 @@ export const canvasApi = {
     const project = db.projects.find((item) => item.id === projectId)
     if (!board || !project) throw new Error('Canvas board not found')
     const request =
+      requestInput.skipParameterValidation === true ||
       options?.validationToken === CANVAS_TASK_VALIDATION_TOKEN
         ? requestInput
         : validateCanvasTextTaskSubmission(requestInput)

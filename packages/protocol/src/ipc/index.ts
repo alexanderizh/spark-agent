@@ -4751,6 +4751,8 @@ export interface CanvasMediaTaskCreateRequest {
   /** 指定 provider 内实际调用的模型；缺省使用 Provider defaultModel / manifest 默认模型 */
   modelId?: string | null
   modelParams?: Record<string, unknown>
+  /** User confirmed preflight warnings and asked the runtime to continue. */
+  skipParameterValidation?: boolean
   /** false means return immediately and push completion through stream:canvas:media-task. */
   waitForCompletion?: boolean
   /** 产物落盘根目录；缺省使用 userData/.spark-artifacts/media */

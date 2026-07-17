@@ -880,6 +880,7 @@ export function useCanvasWorkspace(projectId: string) {
         modelId?: string
         reasoningEffort?: SessionReasoningEffort
         modelParams?: Record<string, unknown>
+        skipParameterValidation?: boolean
         skillIds?: string[]
         userPrompt?: string
       } & CanvasPromptTaskFields,

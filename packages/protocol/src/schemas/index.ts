@@ -1172,6 +1172,7 @@ export const IpcSchemaRegistry = {
     manifestId: z.string().min(1).max(160).nullable().optional(),
     modelId: z.string().min(1).max(200).nullable().optional(),
     modelParams: z.record(z.unknown()).optional(),
+    skipParameterValidation: z.boolean().optional(),
     waitForCompletion: z.boolean().optional(),
     outputDir: z.string().max(2000).optional(),
     ...CanvasPromptTaskFieldsSchema,

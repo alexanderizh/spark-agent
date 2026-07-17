@@ -34,6 +34,11 @@ import {
 import { canvasApi } from './canvas.api'
 import { pruneModelParamsForCanvas } from './canvasMediaContract'
 import { CanvasTaskValidationError } from './canvasTaskSubmissionValidation'
+import {
+  readSkipCanvasParameterValidation,
+  writeSkipCanvasParameterValidation,
+} from './canvasParameterValidationPreferences'
+import { confirmCanvasTaskValidation } from './canvasTaskValidationWarning'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
 import {
   mergeCanvasOperationPresetNegativePrompt,
@@ -97,6 +102,7 @@ export function CanvasInlineAiComposer({
     manifestId?: string
     modelId?: string
     modelParams?: Record<string, unknown>
+    skipParameterValidation?: boolean
     inputTransport?: CanvasInputTransport
     inputRoles?: Record<string, CanvasTaskInputRoleSelection>
     /** 文本类操作可指定专属 agent（应用内 agent 管理配置的 ManagedAgent） */
@@ -696,6 +702,7 @@ export function CanvasInlineAiComposer({
         manifestId?: string
         modelId?: string
         modelParams?: Record<string, unknown>
+        skipParameterValidation?: boolean
         inputTransport?: CanvasInputTransport
         inputRoles?: Record<string, CanvasTaskInputRoleSelection>
         agentId?: string
@@ -704,6 +711,7 @@ export function CanvasInlineAiComposer({
       } = {
         operation,
         prompt: effectivePrompt,
+        ...(readSkipCanvasParameterValidation() ? { skipParameterValidation: true } : {}),
       }
       if (isTextOperation && selectedAgentId) payload.agentId = selectedAgentId
       if (effectiveNegativePrompt) payload.negativePrompt = effectiveNegativePrompt
@@ -744,7 +752,19 @@ export function CanvasInlineAiComposer({
         ...(resolvedPresetSkillIds.length > 0 ? { skillIds: resolvedPresetSkillIds } : {}),
         ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
       })
-      await onCreateTask(payload)
+      try {
+        await onCreateTask(payload)
+      } catch (error) {
+        if (!(error instanceof CanvasTaskValidationError)) throw error
+        const decision = await confirmCanvasTaskValidation(error.issues)
+        if (!decision.confirmed) {
+          const paramName = validationParamName(error)
+          if (paramName) focusParameterControl(paramName)
+          return
+        }
+        if (decision.skipFutureValidation) writeSkipCanvasParameterValidation(true)
+        await onCreateTask({ ...payload, skipParameterValidation: true })
+      }
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
@@ -759,7 +779,7 @@ export function CanvasInlineAiComposer({
       if (error instanceof CanvasTaskValidationError) {
         const paramName = validationParamName(error)
         if (paramName) focusParameterControl(paramName)
-        message.error(error.message)
+        message.warning(error.message)
       } else {
         message.error(error instanceof Error ? error.message : '提交任务失败，请稍后重试')
       }

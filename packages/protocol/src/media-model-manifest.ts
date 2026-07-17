@@ -643,11 +643,11 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
         durationSeconds: { type: 'integer', title: '时长', minimum: 4, maximum: 12, default: 5 },
         resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '720p' },
         seed: { type: 'integer', title: '随机种子' },
-        audio: { type: 'boolean', title: '生成音频', default: false },
+        audio: { type: 'boolean', title: '生成音频', default: true },
         camerafixed: { type: 'boolean', title: '固定摄像头', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', audio: false, camerafixed: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', audio: true, camerafixed: false },
   },
   'doubao-seedance-1-0-pro-fast': {
     schema: {
@@ -1081,13 +1081,13 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'], default: '16:9' },
         durationSeconds: { type: 'integer', title: '时长', minimum: 4, maximum: 15, default: 5 },
-        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '480p' },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' },
         seed: { type: 'integer', title: '随机种子' },
-        generate_audio: { type: 'boolean', title: '生成音频', default: false },
+        generate_audio: { type: 'boolean', title: '生成音频', default: true },
         return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false },
   },
   'doubao-seedance-2-0-mini': {
     schema: {
@@ -1096,13 +1096,13 @@ const apimartVideoModelSchemas: Record<string, { schema: Record<string, unknown>
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'], default: '16:9' },
         durationSeconds: { type: 'integer', title: '时长', minimum: 4, maximum: 15, default: 5 },
-        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '480p' },
+        resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p'], default: '720p' },
         seed: { type: 'integer', title: '随机种子' },
-        generate_audio: { type: 'boolean', title: '生成音频', default: false },
+        generate_audio: { type: 'boolean', title: '生成音频', default: true },
         return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false },
+    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false },
   },
 }
 
@@ -1705,8 +1705,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           ? {
               aspectRatio: '16:9',
               durationSeconds: 5,
-              resolution: '480p',
-              generate_audio: false,
+              resolution: '720p',
+              generate_audio: true,
               return_last_frame: false,
             }
           : (apimartVideoModelSchemas[entry.modelId]?.defaults ?? {

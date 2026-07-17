@@ -48,6 +48,8 @@ export interface CompileMediaRequestInput {
   }
   /** Provider-level 默认值（来自 ProviderMediaDefaults），优先级低于 capability.defaults。 */
   providerDefaults?: Record<string, unknown> | undefined
+  /** 用户已确认参数提醒时保留原参数，让供应商最终决定是否接受。 */
+  skipParameterValidation?: boolean | undefined
   /**
    * 调用场景：
    *   - 'canvas'：MCP/skill 不在场的画布裁剪（不出 provider 错误，只产警告）。
@@ -103,6 +105,7 @@ export function compileMediaRequest(input: CompileMediaRequestInput): CompileMed
     merged,
     schema,
     input.capability.id,
+    input.skipParameterValidation === true,
   )
   dropped.push(...schemaDropped)
   issues.push(...schemaIssues)
@@ -123,22 +126,23 @@ export function compileMediaRequest(input: CompileMediaRequestInput): CompileMed
   )
   dropped.push(...transformDropped)
 
-  const { params: conflictResolved, dropped: conflictDropped, issues: conflictIssues } = resolveConflicts(
-    transformed,
-    policy.conflicts,
-    input.capability.id,
-  )
+  const { params: conflictResolved, dropped: conflictDropped, issues: conflictIssues } =
+    input.skipParameterValidation
+      ? { params: transformed, dropped: [], issues: [] }
+      : resolveConflicts(transformed, policy.conflicts, input.capability.id)
   dropped.push(...conflictDropped)
   issues.push(...conflictIssues)
 
   // 关键顺序：filter 在 canonical 空间做，避免 provider 字段反查；最后再做 aliases 映射。
-  const filtered = filterCanonicalParams(
-    conflictResolved,
-    policy,
-    schema,
-    mode,
-    input.capability.id,
-  )
+  const filtered = input.skipParameterValidation
+    ? { params: conflictResolved, dropped: [], issues: [], warnings: [] }
+    : filterCanonicalParams(
+        conflictResolved,
+        policy,
+        schema,
+        mode,
+        input.capability.id,
+      )
   dropped.push(...filtered.dropped)
   issues.push(...filtered.issues)
   for (const w of filtered.warnings) warnings.push(w)
@@ -185,6 +189,7 @@ function validateAgainstParamSchema(
   params: Record<string, unknown>,
   schema: Record<string, unknown>,
   capabilityId: string,
+  keepInvalid = false,
 ): {
   validated: Record<string, unknown>
   dropped: MediaDroppedParam[]
@@ -208,6 +213,7 @@ function validateAgainstParamSchema(
     const issue = validateParamValue(result.value, propSchema, key, capabilityId)
     if (issue) {
       issues.push(issue)
+      if (keepInvalid) validated[key] = result.value
       continue
     }
     validated[key] = result.value
