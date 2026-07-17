@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { prepareTurnFileSummary } from '../design/services/turn-file-summary'
+import { hydrateTurnFileStats, prepareTurnFileSummary } from '../design/services/turn-file-summary'
 
 function file(
   path: string,
@@ -9,6 +9,23 @@ function file(
 }
 
 describe('prepareTurnFileSummary', () => {
+  it('hydrates zero-stat events from the workspace Git status', () => {
+    const files = [
+      { path: '/workspace/src/index.ts', changeType: 'modify' as const, adds: 0, dels: 0 },
+      { path: '/workspace/README.md', changeType: 'modify' as const, adds: 2, dels: 1 },
+    ]
+
+    expect(
+      hydrateTurnFileStats(files, [
+        { path: 'src/index.ts', additions: 7, deletions: 3 },
+        { path: 'README.md', additions: 99, deletions: 99 },
+      ]),
+    ).toEqual([
+      { path: '/workspace/src/index.ts', changeType: 'modify', adds: 7, dels: 3 },
+      { path: '/workspace/README.md', changeType: 'modify', adds: 2, dels: 1 },
+    ])
+  })
+
   it('keeps direct edits visible even when they are under a generated directory', () => {
     const result = prepareTurnFileSummary([file('dist/index.html')])
 
