@@ -65,6 +65,7 @@ const PROVIDER_HTTP_TIMEOUT_MS = 8_000
 const PROVIDER_CONNECTION_TIMEOUT_MS = 15_000
 const MODELS_ERROR_BODY_MAX_CHARS = 512
 export const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
+const PLATFORM_NEWAPI_MAX_TOKENS = 128_000
 
 /**
  * Windows 下 npm 全局包生成的可执行 shim 实际是 `claude.cmd` / `claude.ps1`，
@@ -301,6 +302,11 @@ function rowToProfile(row: {
     : row.id === LOCAL_CLI_PROVIDER_ID
       ? LOCAL_CLI_PROVIDER_NAME
       : row.name
+  const maxTokens = typeof config.maxTokens === 'number' && config.maxTokens > 0
+    ? config.maxTokens
+    : config.managed === true && config.managedType === 'newapi'
+      ? PLATFORM_NEWAPI_MAX_TOKENS
+      : undefined
   return {
     id: row.id,
     name,
@@ -313,7 +319,7 @@ function rowToProfile(row: {
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
     supportsMillionContext: config.supportsMillionContext === true,
     ...(typeof config.contextWindow === 'number' && config.contextWindow > 0 && { contextWindow: config.contextWindow }),
-    ...(typeof config.maxTokens === 'number' && config.maxTokens > 0 && { maxTokens: config.maxTokens }),
+    ...(maxTokens !== undefined && { maxTokens }),
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
     ...(config.opusModel !== undefined && { opusModel: config.opusModel }),
@@ -1081,6 +1087,7 @@ export class ProviderService {
       // Claude/Anthropic SDK appends /v1/messages itself. Keeping the OpenAI-style
       // /v1 suffix here would send managed models to /v1/v1/messages.
       apiEndpoint: params.baseUrl.replace(/\/+$/, ''),
+      maxTokens: PLATFORM_NEWAPI_MAX_TOKENS,
       modelType: 'text',
       managed: true,
       managedType: 'newapi',

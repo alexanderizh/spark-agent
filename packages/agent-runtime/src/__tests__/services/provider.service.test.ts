@@ -1284,6 +1284,7 @@ describe('ProviderService', () => {
       managed: true,
       managedType: 'newapi',
       managedOwnerUserId: '42',
+      maxTokens: 128_000,
       isDefault: false,
     })
     expect(keystore.setSecret).toHaveBeenCalledWith(
@@ -1341,11 +1342,41 @@ describe('ProviderService', () => {
     expect(profile.provider).toBe('anthropic')
     expect(profile.name).toBe('Spark 平台模型')
     expect(profile.apiEndpoint).toBe('https://newapi.example')
+    expect(profile.maxTokens).toBe(128_000)
     expect(profile).not.toHaveProperty('codexApiKind')
     expect(repo.update).toHaveBeenCalledWith('spark-platform-newapi', expect.objectContaining({
       providerType: 'anthropic',
       config: expect.objectContaining({ apiEndpoint: 'https://newapi.example' }),
     }))
+  })
+
+  it('applies the platform output cap before an existing managed provider is refreshed', async () => {
+    repo.rows.set('spark-platform-newapi', {
+      id: 'spark-platform-newapi',
+      provider_type: 'anthropic',
+      name: 'Spark 平台模型',
+      config_json: JSON.stringify({
+        defaultModel: 'glm-5',
+        modelIds: ['glm-5'],
+        apiEndpoint: 'https://newapi.example',
+        modelType: 'text',
+        managed: true,
+        managedType: 'newapi',
+        managedOwnerUserId: '42',
+        credentialState: 'ready',
+      }),
+      enabled: 1,
+      keystore_ref: 'newapi-spark-user-42-api-key',
+      is_default: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+
+    const profile = (await service.listProviders()).find(
+      candidate => candidate.id === 'spark-platform-newapi',
+    )
+
+    expect(profile?.maxTokens).toBe(128_000)
   })
 
   it('preserves local managed model preferences when the platform model list refreshes', async () => {
