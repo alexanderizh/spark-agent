@@ -405,6 +405,7 @@ export function TurnFileSummaryCard({
   const fileCount = files.length
   const hiddenFileCount = Math.max(0, fileCount - TURN_SUMMARY_VISIBLE_FILE_LIMIT)
   const hasHiddenFiles = hiddenFileCount > 0
+  const hasSummaryStats = totalAdds !== 0 || totalDels !== 0
   const visibleFiles =
     hasHiddenFiles && !showAllFiles ? files.slice(0, TURN_SUMMARY_VISIBLE_FILE_LIMIT) : files
 
@@ -453,10 +454,12 @@ export function TurnFileSummaryCard({
           <Icons.CheckCircle />
         </span>
         <span>{t('chat.summary.done')}</span>
-        <span className="diff-stats">
-          <span className="add">+{totalAdds}</span>
-          <span className="del">−{totalDels}</span>
-        </span>
+        {hasSummaryStats && (
+          <span className="diff-stats">
+            <span className="add">+{totalAdds}</span>
+            <span className="del">−{totalDels}</span>
+          </span>
+        )}
         <span className="badge" style={{ fontSize: 10, marginLeft: 8 }}>
           {t('chat.summary.fileCount', { count: fileCount })}
         </span>
@@ -523,10 +526,12 @@ export function TurnFileSummaryCard({
                   <code className="file-path" title={file.path}>
                     {file.path}
                   </code>
-                  <span className="file-stats">
-                    <span className="add">+{file.adds}</span>
-                    <span className="del">−{file.dels}</span>
-                  </span>
+                  {hasSummaryStats && (
+                    <span className="file-stats">
+                      <span className="add">+{file.adds}</span>
+                      <span className="del">−{file.dels}</span>
+                    </span>
+                  )}
                   <span className="file-actions">
                     {canOpen && (
                       <SessionFileOpenPicker
@@ -578,10 +583,12 @@ export function TurnFileSummaryCard({
                       {t('chat.summary.generatedGroup', { count: group.fileCount })}
                     </span>
                   </span>
-                  <span className="file-stats">
-                    <span className="add">+{group.additions}</span>
-                    <span className="del">−{group.deletions}</span>
-                  </span>
+                  {hasSummaryStats && (
+                    <span className="file-stats">
+                      <span className="add">+{group.additions}</span>
+                      <span className="del">−{group.deletions}</span>
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

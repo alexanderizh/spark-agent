@@ -28,7 +28,6 @@ vi.mock('./components/FileDisplay', () => ({
 
 const { TurnFileSummaryCard } = await import('./ChatInteractions')
 type FileChangeSummaryItem = import('./ChatInteractions').FileChangeSummaryItem
-
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 function buildFiles(count: number): FileChangeSummaryItem[] {
@@ -84,5 +83,20 @@ describe('TurnFileSummaryCard', () => {
     expect(container.textContent).toContain('/tmp/file-11.ts')
     expect(container.textContent).toContain('/tmp/file-12.ts')
     expect(container.textContent).toContain('收起剩余文件')
+  })
+
+  it('hides line statistics when the whole summary has no line changes', () => {
+    act(() => {
+      root.render(
+        <TurnFileSummaryCard
+          files={[{ path: '/tmp/generated.bin', changeType: 'modify', adds: 0, dels: 0 }]}
+          totalAdds={0}
+          totalDels={0}
+        />,
+      )
+    })
+
+    expect(container.querySelector('.diff-stats')).toBeNull()
+    expect(container.querySelector('.file-stats')).toBeNull()
   })
 })
