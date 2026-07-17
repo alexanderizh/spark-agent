@@ -22,6 +22,15 @@ import {
   resolveCanvasTextTokenBudget,
 } from './canvasTextTaskDiagnostics.js'
 import {
+  CanvasTextAdaptiveGenerationError,
+  generateCanvasTextWithAdaptiveOutput,
+  type CanvasTextOutputLimitRetryDiagnostics,
+} from './canvasTextAdaptiveGeneration.js'
+import {
+  CanvasTextOutputCapabilityCache,
+  type CanvasTextOutputCapabilityKey,
+} from './canvasTextOutputCapability.js'
+import {
   buildCanvasTextOutputBudgetInstruction,
   resolveCanvasTextExecutionAdapter,
   resolveCanvasTextModel,
@@ -1475,6 +1484,16 @@ function getSettingsService(): SettingsService {
     _settingsService = new SettingsService(new SettingsRepository(getDatabase()))
   }
   return _settingsService
+}
+
+let _canvasTextOutputCapabilityCache: CanvasTextOutputCapabilityCache | null = null
+function getCanvasTextOutputCapabilityCache(): CanvasTextOutputCapabilityCache {
+  if (_canvasTextOutputCapabilityCache == null) {
+    _canvasTextOutputCapabilityCache = new CanvasTextOutputCapabilityCache(
+      new SettingsRepository(getDatabase()),
+    )
+  }
+  return _canvasTextOutputCapabilityCache
 }
 
 let _remoteConnectionService: RemoteConnectionService | null = null
@@ -3129,6 +3148,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('provider:update', async (req) => {
     log.info(`provider:update requested, id=${req.id}`)
     const profile = await getProviderService().updateProvider(req)
+    getCanvasTextOutputCapabilityCache().clearProvider(req.id)
     pushConfigChanged('provider', 'update', profile.id)
     return { profile }
   })
@@ -3136,6 +3156,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('provider:delete', async (req) => {
     log.info(`provider:delete requested, id=${req.id}`)
     await getProviderService().deleteProvider(req.id)
+    getCanvasTextOutputCapabilityCache().clearProvider(req.id)
     pushConfigChanged('provider', 'delete', req.id)
     return { deleted: true }
   })
@@ -3675,9 +3696,11 @@ export function registerAllIpcHandlers(): void {
             model,
             executionPath: 'session-runtime',
             adapter,
+            desiredMaxTokens: tokenBudget.desiredMaxTokens,
             maxTokens: tokenBudget.maxTokens,
             maxTokensSource: tokenBudget.source,
-            taskRoleMaxTokens: tokenBudget.taskRoleMaxTokens,
+            remainingContextTokens: tokenBudget.remainingContextTokens,
+            contextSafetyTokens: tokenBudget.contextSafetyTokens,
             requestTimeoutMs,
             agentId: req.agentId ?? null,
             skillIds: selectedSkillIds,
@@ -3723,6 +3746,8 @@ export function registerAllIpcHandlers(): void {
       if (candidate != null && executionAdapter != null) {
         const model = resolveCanvasTextModel(req.modelId, agent?.modelId, candidate.defaultModel)
         const tokenBudget = resolveCanvasTextTokenBudget({
+          operation: req.operation,
+          modelId: model,
           requestedMaxTokens,
           providerMaxTokens: candidate.maxTokens,
           providerContextWindow: candidate.contextWindow,
@@ -3731,10 +3756,21 @@ export function registerAllIpcHandlers(): void {
           prompt: runtimeRequest.prompt,
         })
         canvasTaskLogger.info(
-          `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} maxTokens=${tokenBudget.maxTokens ?? '(provider-default)'} source=${tokenBudget.source ?? 'unset'} contextWindow=${tokenBudget.contextWindow ?? '(n/a)'} reserve=${tokenBudget.contextReserveRatio ?? '(n/a)'} providerMax=${tokenBudget.providerMaxTokens ?? '(n/a)'} taskRoleMax=${tokenBudget.taskRoleMaxTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate ?? '(n/a)'} timeoutMs=${requestTimeoutMs} executionPath=session-runtime adapter=${executionAdapter}`,
+          `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} desired=${tokenBudget.desiredMaxTokens ?? '(n/a)'} maxTokens=${tokenBudget.maxTokens ?? '(provider-default)'} source=${tokenBudget.source ?? 'unset'} contextWindow=${tokenBudget.contextWindow ?? '(n/a)'} contextRemaining=${tokenBudget.remainingContextTokens ?? '(n/a)'} safety=${tokenBudget.contextSafetyTokens ?? '(n/a)'} providerMax=${tokenBudget.providerMaxTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate ?? '(n/a)'} timeoutMs=${requestTimeoutMs} executionPath=session-runtime adapter=${executionAdapter}`,
         )
+        const sessionTextStartedAt = taskLog.textCallRequest({
+          model,
+          apiKind: executionAdapter,
+          executionPath: 'session-runtime',
+          adapter: executionAdapter,
+          systemPromptChars: 0,
+          userPromptChars: runtimeRequest.prompt.length,
+          ...(tokenBudget.maxTokens != null ? { maxTokens: tokenBudget.maxTokens } : {}),
+          ...(tokenBudget.source != null ? { maxTokensSource: tokenBudget.source } : {}),
+          attachmentCount: runtimeRequest.images.length,
+        })
         try {
-          return await runWithCanvasAgentRuntime(
+          const response = await runWithCanvasAgentRuntime(
             candidate,
             agent,
             runtimeRequest,
@@ -3743,6 +3779,13 @@ export function registerAllIpcHandlers(): void {
             tokenBudget,
             requestTimeoutMs,
           )
+          taskLog.textCallResponse(
+            {
+              textChars: response.text.length,
+            },
+            sessionTextStartedAt,
+          )
+          return response
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
           return fail(
@@ -3759,9 +3802,11 @@ export function registerAllIpcHandlers(): void {
                 model,
                 executionPath: 'session-runtime',
                 adapter: executionAdapter,
+                desiredMaxTokens: tokenBudget.desiredMaxTokens,
                 maxTokens: tokenBudget.maxTokens,
                 maxTokensSource: tokenBudget.source,
-                taskRoleMaxTokens: tokenBudget.taskRoleMaxTokens,
+                remainingContextTokens: tokenBudget.remainingContextTokens,
+                contextSafetyTokens: tokenBudget.contextSafetyTokens,
                 requestTimeoutMs,
               },
             },
@@ -3812,9 +3857,21 @@ export function registerAllIpcHandlers(): void {
           : ''
       const temperature =
         typeof req.modelParams?.temperature === 'number' ? req.modelParams.temperature : undefined
+      const apiKind = chosen.profile.codexApiKind === 'responses' ? 'responses' : 'chat'
+      const capabilityKey: CanvasTextOutputCapabilityKey = {
+        providerProfileId: chosen.profile.id,
+        ...(chosen.profile.apiEndpoint ? { endpoint: chosen.profile.apiEndpoint } : {}),
+        model,
+        apiKind,
+      }
+      const outputCapabilityCache = getCanvasTextOutputCapabilityCache()
+      const learnedMaxTokens = outputCapabilityCache.get(capabilityKey)
       const tokenBudget = resolveCanvasTextTokenBudget({
+        operation: req.operation,
+        modelId: model,
         requestedMaxTokens,
         providerMaxTokens: chosen.profile.maxTokens,
+        learnedMaxTokens,
         providerContextWindow: chosen.profile.contextWindow,
         providerSupportsMillionContext: chosen.profile.supportsMillionContext,
         taskPipelineRole: req.taskPipelineRole,
@@ -3834,7 +3891,7 @@ export function registerAllIpcHandlers(): void {
         ...(req.negativePrompt ? { negativePrompt: req.negativePrompt } : {}),
       })
       canvasTaskLogger.info(
-        `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} maxTokens=${maxTokens ?? '(provider-default)'} source=${tokenBudget.source ?? 'unset'} contextWindow=${tokenBudget.contextWindow ?? '(n/a)'} reserve=${tokenBudget.contextReserveRatio ?? '(n/a)'} providerMax=${tokenBudget.providerMaxTokens ?? '(n/a)'} taskRoleMax=${tokenBudget.taskRoleMaxTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate ?? '(n/a)'} timeoutMs=${requestTimeoutMs} executionPath=http`,
+        `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} desired=${tokenBudget.desiredMaxTokens} maxTokens=${maxTokens} source=${tokenBudget.source} contextWindow=${tokenBudget.contextWindow} contextRemaining=${tokenBudget.remainingContextTokens} safety=${tokenBudget.contextSafetyTokens} learnedMax=${learnedMaxTokens ?? '(n/a)'} providerMax=${tokenBudget.providerMaxTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate} timeoutMs=${requestTimeoutMs} executionPath=http`,
       )
       const rawReasoningEffort =
         typeof req.reasoningEffort === 'string'
@@ -3852,30 +3909,73 @@ export function registerAllIpcHandlers(): void {
             : undefined
       const disableThinking =
         req.taskPipelineRole === 'shot' || responseFormat.toLowerCase() === 'json'
-      const apiKind = chosen.profile.codexApiKind === 'responses' ? 'responses' : 'chat'
       let result: Awaited<ReturnType<typeof generateCanvasText>>
+      let learnedOutputCap = learnedMaxTokens
+      let retryDiagnostics: CanvasTextOutputLimitRetryDiagnostics = {
+        retryCount: 0,
+        attempts: [maxTokens],
+      }
+      const textRequestStartedAt = taskLog.textCallRequest({
+        model,
+        apiKind,
+        executionPath: 'http',
+        systemPromptChars: system.length,
+        userPromptChars: runtimeRequest.prompt.length,
+        ...(tokenBudget.maxTokens != null ? { maxTokens: tokenBudget.maxTokens } : {}),
+        ...(tokenBudget.source != null ? { maxTokensSource: tokenBudget.source } : {}),
+        ...(temperature != null ? { temperature } : {}),
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+        ...(responseFormat ? { responseFormat } : {}),
+        attachmentCount: runtimeRequest.images.length,
+      })
       try {
-        result = await generateCanvasText({
-          providerType: chosen.profile.provider,
-          apiKind,
-          apiKey: chosen.apiKey,
-          ...(chosen.profile.apiEndpoint ? { apiEndpoint: chosen.profile.apiEndpoint } : {}),
-          model,
-          system,
-          prompt: runtimeRequest.prompt,
-          ...(runtimeRequest.images.length > 0 ? { images: runtimeRequest.images } : {}),
-          ...(temperature != null ? { temperature } : {}),
-          ...(maxTokens != null ? { maxTokens } : {}),
-          ...(reasoningEffort != null ? { reasoningEffort } : {}),
-          ...(disableThinking ? { disableThinking: true } : {}),
-          ...(responseFormat.toLowerCase() === 'json' ? { responseFormat: 'json' as const } : {}),
-          timeoutMs: requestTimeoutMs,
+        const adaptiveResult = await generateCanvasTextWithAdaptiveOutput({
+          initialMaxTokens: maxTokens,
+          generate: (attemptMaxTokens) => generateCanvasText({
+            providerType: chosen.profile.provider,
+            apiKind,
+            apiKey: chosen.apiKey,
+            ...(chosen.profile.apiEndpoint ? { apiEndpoint: chosen.profile.apiEndpoint } : {}),
+            model,
+            system,
+            prompt: runtimeRequest.prompt,
+            ...(runtimeRequest.images.length > 0 ? { images: runtimeRequest.images } : {}),
+            ...(temperature != null ? { temperature } : {}),
+            maxTokens: attemptMaxTokens,
+            ...(reasoningEffort != null ? { reasoningEffort } : {}),
+            ...(disableThinking ? { disableThinking: true } : {}),
+            ...(responseFormat.toLowerCase() === 'json'
+              ? { responseFormat: 'json' as const }
+              : {}),
+            timeoutMs: requestTimeoutMs,
+          }),
+          onLearnedSafeMaxTokens: (value, source) => {
+            outputCapabilityCache.record(capabilityKey, value, source)
+            learnedOutputCap = learnedOutputCap == null ? value : Math.min(learnedOutputCap, value)
+          },
         })
+        result = adaptiveResult.value
+        retryDiagnostics = adaptiveResult.retryDiagnostics
+        taskLog.textCallResponse(
+          {
+            textChars: result.text.length,
+            ...(result.finishReason ? { finishReason: result.finishReason } : {}),
+            ...(result.usage ? { usage: result.usage } : {}),
+            ...(result.reasoningContentChars != null
+              ? { reasoningContentChars: result.reasoningContentChars }
+              : {}),
+          },
+          textRequestStartedAt,
+        )
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
+        const adaptiveError = err instanceof CanvasTextAdaptiveGenerationError ? err : null
+        const providerError = adaptiveError?.cause ?? err
+        if (adaptiveError != null) retryDiagnostics = adaptiveError.retryDiagnostics
+        const message = providerError instanceof Error ? providerError.message : String(providerError)
         const requestCall =
-          err instanceof CanvasTextProviderError || err instanceof CanvasTextTimeoutError
-            ? err.requestCall
+          providerError instanceof CanvasTextProviderError
+          || providerError instanceof CanvasTextTimeoutError
+            ? providerError.requestCall
             : undefined
         const rawResponse = buildCanvasTextRawResponse({
           providerProfileId: chosen.profile.id,
@@ -3888,25 +3988,34 @@ export function registerAllIpcHandlers(): void {
           skillIds: selectedSkillIds,
           relationManifest: runtimeRequest.relationManifest,
           taskPipelineRole: req.taskPipelineRole,
-          effectiveMaxTokens: tokenBudget.maxTokens,
+          desiredMaxTokens: tokenBudget.desiredMaxTokens,
+          effectiveMaxTokens:
+            retryDiagnostics.attempts[retryDiagnostics.attempts.length - 1]
+            ?? tokenBudget.maxTokens,
           maxTokensSource: tokenBudget.source,
           promptTokensEstimate: tokenBudget.promptTokensEstimate,
           providerMaxTokens: tokenBudget.providerMaxTokens,
+          learnedMaxTokens: tokenBudget.learnedMaxTokens,
           providerContextWindow: tokenBudget.providerContextWindow,
-          taskRoleMaxTokens: tokenBudget.taskRoleMaxTokens,
           contextWindow: tokenBudget.contextWindow,
-          contextReserveRatio: tokenBudget.contextReserveRatio,
+          remainingContextTokens: tokenBudget.remainingContextTokens,
+          contextSafetyTokens: tokenBudget.contextSafetyTokens,
+          learnedOutputCap,
+          outputLimitRetryCount: retryDiagnostics.retryCount,
+          outputLimitAttempts: retryDiagnostics.attempts,
+          outputLimitEvidence: retryDiagnostics.evidence,
           requestTimeoutMs,
-          ...(err instanceof CanvasTextProviderError
+          ...(providerError instanceof CanvasTextProviderError
             ? {
-                statusCode: err.statusCode,
-                errorBody: err.responseBody,
+                statusCode: providerError.statusCode,
+                errorBody: providerError.responseBody,
               }
             : {}),
         })
         return fail(
-          err instanceof CanvasTextProviderError || err instanceof CanvasTextTimeoutError
-            ? err.code
+          providerError instanceof CanvasTextProviderError
+          || providerError instanceof CanvasTextTimeoutError
+            ? providerError.code
             : 'text_generation_failed',
           message,
           {
@@ -3937,14 +4046,22 @@ export function registerAllIpcHandlers(): void {
           relationManifest: runtimeRequest.relationManifest,
           taskPipelineRole: req.taskPipelineRole,
           outputText: result.text,
-          effectiveMaxTokens: tokenBudget.maxTokens,
+          desiredMaxTokens: tokenBudget.desiredMaxTokens,
+          effectiveMaxTokens:
+            retryDiagnostics.attempts[retryDiagnostics.attempts.length - 1]
+            ?? tokenBudget.maxTokens,
           maxTokensSource: tokenBudget.source,
           promptTokensEstimate: tokenBudget.promptTokensEstimate,
           providerMaxTokens: tokenBudget.providerMaxTokens,
+          learnedMaxTokens: tokenBudget.learnedMaxTokens,
           providerContextWindow: tokenBudget.providerContextWindow,
-          taskRoleMaxTokens: tokenBudget.taskRoleMaxTokens,
           contextWindow: tokenBudget.contextWindow,
-          contextReserveRatio: tokenBudget.contextReserveRatio,
+          remainingContextTokens: tokenBudget.remainingContextTokens,
+          contextSafetyTokens: tokenBudget.contextSafetyTokens,
+          learnedOutputCap,
+          outputLimitRetryCount: retryDiagnostics.retryCount,
+          outputLimitAttempts: retryDiagnostics.attempts,
+          outputLimitEvidence: retryDiagnostics.evidence,
           requestTimeoutMs,
           providerFinishReason: result.finishReason,
           usage: result.usage,

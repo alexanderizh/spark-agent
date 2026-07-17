@@ -33,18 +33,16 @@ export class CanvasTextContextBudgetError extends Error {
 }
 
 export type CanvasTextTokenBudget = {
-  maxTokens?: number
-  source?: CanvasTextMaxTokensSource
-  desiredMaxTokens?: number
-  promptTokensEstimate?: number
+  maxTokens: number
+  source: CanvasTextMaxTokensSource
+  desiredMaxTokens: number
+  promptTokensEstimate: number
   providerMaxTokens?: number
   learnedMaxTokens?: number
-  providerContextWindow?: number
-  taskRoleMaxTokens?: number
-  contextWindow?: number
-  contextReserveRatio?: number
-  remainingContextTokens?: number
-  contextSafetyTokens?: number
+  providerContextWindow: number
+  contextWindow: number
+  remainingContextTokens: number
+  contextSafetyTokens: number
 }
 
 type CanvasTextRawResponseInput = {
@@ -68,11 +66,13 @@ type CanvasTextRawResponseInput = {
   providerMaxTokens?: number | undefined
   learnedMaxTokens?: number | undefined
   providerContextWindow?: number | undefined
-  taskRoleMaxTokens?: number | undefined
   contextWindow?: number | undefined
-  contextReserveRatio?: number | undefined
   remainingContextTokens?: number | undefined
   contextSafetyTokens?: number | undefined
+  learnedOutputCap?: number | undefined
+  outputLimitRetryCount?: number | undefined
+  outputLimitAttempts?: number[] | undefined
+  outputLimitEvidence?: string | undefined
   requestTimeoutMs?: number | undefined
   providerFinishReason?: string | undefined
   usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined
@@ -179,18 +179,24 @@ export function buildCanvasTextRawResponse(
     ...(input.providerContextWindow !== undefined
       ? { providerContextWindow: input.providerContextWindow }
       : {}),
-    ...(input.taskRoleMaxTokens !== undefined
-      ? { taskRoleMaxTokens: input.taskRoleMaxTokens }
-      : {}),
     ...(input.contextWindow !== undefined ? { contextWindow: input.contextWindow } : {}),
-    ...(input.contextReserveRatio !== undefined
-      ? { contextReserveRatio: input.contextReserveRatio }
-      : {}),
     ...(input.remainingContextTokens !== undefined
       ? { remainingContextTokens: input.remainingContextTokens }
       : {}),
     ...(input.contextSafetyTokens !== undefined
       ? { contextSafetyTokens: input.contextSafetyTokens }
+      : {}),
+    ...(input.learnedOutputCap !== undefined
+      ? { learnedOutputCap: input.learnedOutputCap }
+      : {}),
+    ...(input.outputLimitRetryCount !== undefined
+      ? { outputLimitRetryCount: input.outputLimitRetryCount }
+      : {}),
+    ...(input.outputLimitAttempts !== undefined
+      ? { outputLimitAttempts: input.outputLimitAttempts }
+      : {}),
+    ...(input.outputLimitEvidence !== undefined
+      ? { outputLimitEvidence: input.outputLimitEvidence }
       : {}),
     ...(input.requestTimeoutMs !== undefined ? { requestTimeoutMs: input.requestTimeoutMs } : {}),
     ...(input.providerFinishReason !== undefined
