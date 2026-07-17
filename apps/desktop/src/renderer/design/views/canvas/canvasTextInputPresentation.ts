@@ -1,4 +1,5 @@
 import type { CanvasAsset, CanvasNode } from './canvas.types'
+import { renderCanvasTextForModel } from './canvasModelInputPresentation'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 
 const STORYBOARD_COLUMNS: Array<{
@@ -195,11 +196,7 @@ export function resolveStoryboardRowsForEditing(
  * 普通文本和无法可靠解析的内容保持原样，避免误改用户输入。
  */
 export function presentCanvasTextForModel(content: string): string {
-  const trimmed = content.trim()
-  if (!trimmed || !isShotScriptText(trimmed)) return trimmed
-  const rows = parseShotTable(trimmed)
-  if (rows.length === 0) return trimmed
-  return formatStoryboardRowsAsMarkdown(rows)
+  return renderCanvasTextForModel(content.trim())
 }
 
 export function readCanvasTextInputContent(node: CanvasNode, assets: CanvasAsset[]): string {

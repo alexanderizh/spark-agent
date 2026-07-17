@@ -226,6 +226,40 @@ describe('canvasOperationSubmission', () => {
     })
   })
 
+  it('passes saved input bindings back into compilation when rerunning a node', async () => {
+    const deps = dependencies()
+    const current = snapshot(
+      operationNode({
+        data: {
+          prompt: '节点提示词',
+          inputBindings: [
+            {
+              id: 'connection:input-1:first_frame',
+              sourceNodeId: 'input-1',
+              origin: 'connection',
+              kind: 'image',
+              relation: 'first_frame',
+              role: 'first_frame',
+              enabled: true,
+              order: 0,
+            },
+          ],
+        },
+      }),
+    )
+
+    await prepareSavedCanvasOperationSubmission(
+      { snapshot: current, node: current.nodes[1]! },
+      deps,
+    )
+
+    expect(deps.compile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputBindings: [expect.objectContaining({ sourceNodeId: 'input-1', role: 'first_frame' })],
+      }),
+    )
+  })
+
   it('preserves structured validation issues', async () => {
     const validationError = new CanvasTaskValidationError([
       {

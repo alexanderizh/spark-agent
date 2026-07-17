@@ -9,15 +9,17 @@ import {
 import type { CanvasNode } from './canvas.types'
 
 describe('canvasTextInputPresentation', () => {
-  it('converts storyboard JSON to readable markdown before sending it to a model', () => {
+  it('converts storyboard JSON to field-value text before sending it to a model', () => {
     const source = JSON.stringify({
       shots: [
         { index: 1, title: '走廊', durationSec: 3, shotSize: '中景', description: '人物向前走' },
       ],
     })
     const result = presentCanvasTextForModel(source)
-    expect(result).toContain('| 镜号 |')
+    expect(result).toContain('名称：走廊')
+    expect(result).toContain('景别：中景')
     expect(result).toContain('人物向前走')
+    expect(result).not.toContain('| 镜号 |')
     expect(result).not.toContain('"shots"')
   })
 

@@ -138,6 +138,37 @@ describe('XaiMediaAdapter official contract', () => {
     ).rejects.toMatchObject({ code: 'invalid_input' })
   })
 
+  it('preserves the prompt reference numbering and reference_images order', async () => {
+    const capture: { body?: Record<string, unknown> } = {}
+    const prompt = [
+      '[图片引用]',
+      '参考图 #1：苏烬（角色）',
+      '参考图 #2：出租屋（场景）',
+      '[/图片引用]',
+    ].join('\n')
+    const references = [
+      { type: 'image' as const, role: 'reference' as const, url: 'https://input/su-jin.png' },
+      { type: 'image' as const, role: 'reference' as const, url: 'https://input/apartment.png' },
+    ]
+
+    await adapter.invoke(
+      {
+        operation: 'text_to_video',
+        capability: 'video.reference_to_video',
+        outputDir,
+        prompt,
+        inputFiles: references,
+      },
+      context(videoFetch(capture)),
+    )
+
+    expect(capture.body?.prompt).toBe(prompt)
+    expect(capture.body?.reference_images).toEqual([
+      { url: 'https://input/su-jin.png' },
+      { url: 'https://input/apartment.png' },
+    ])
+  })
+
   it('uploads local inputs to xAI Files and sends REST file_id objects', async () => {
     const inputPath = path.join(outputDir, 'frame.png')
     writeFileSync(inputPath, Buffer.from('image-bytes'))

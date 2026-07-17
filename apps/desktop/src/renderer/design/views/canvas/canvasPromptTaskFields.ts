@@ -4,6 +4,9 @@ import type { CanvasTaskInputRole, CanvasTaskInputRoleSelection } from './canvas
 export function pickCanvasPromptTaskFields(input: CanvasPromptTaskFields): CanvasPromptTaskFields {
   return {
     ...(input.promptDocument ? { promptDocument: input.promptDocument } : {}),
+    ...(input.inputBindings
+      ? { inputBindings: input.inputBindings.map((binding) => ({ ...binding })) }
+      : {}),
     ...(input.promptSnapshot ? { promptSnapshot: input.promptSnapshot } : {}),
     ...(input.compiledUserText != null ? { compiledUserText: input.compiledUserText } : {}),
     ...(input.inputSnapshots ? { inputSnapshots: input.inputSnapshots } : {}),

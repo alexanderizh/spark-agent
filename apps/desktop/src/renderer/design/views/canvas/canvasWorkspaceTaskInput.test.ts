@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { resolveCanvasPipelineTextSource } from './canvasWorkspaceTaskInput'
+import {
+  buildPipelineSourceText,
+  resolveCanvasPipelineTextSource,
+} from './canvasWorkspaceTaskInput'
 import type { CanvasAsset, CanvasNode, CanvasSnapshot, CanvasTask } from './canvas.types'
 
 const at = '2026-07-16T00:00:00.000Z'
@@ -154,5 +157,37 @@ describe('resolveCanvasPipelineTextSource', () => {
       sourceNode: group,
       sourceText: '场 1：雨夜车站',
     })
+  })
+
+  it('serializes storyboard pipeline input as field-value text instead of a Markdown table', () => {
+    const storyboard: CanvasNode = {
+      ...operationNode(),
+      id: 'storyboard-1',
+      type: 'text',
+      taskId: null,
+      title: '分镜脚本',
+      data: {
+        pipelineRole: 'shot',
+        text: JSON.stringify({
+          shots: [
+            {
+              index: 1,
+              title: '烟雾与拒绝',
+              sceneName: '狭窄出租房',
+              characters: ['苏烬'],
+              description: '苏烬面对电脑屏幕缓慢吐出烟雾',
+            },
+          ],
+        }),
+      },
+    }
+
+    const result = buildPipelineSourceText([storyboard], [])
+
+    expect(result).toContain('名称：烟雾与拒绝')
+    expect(result).toContain('角色：苏烬')
+    expect(result).toContain('场景：狭窄出租房')
+    expect(result).not.toContain('| 镜号 |')
+    expect(result).not.toContain('"shots"')
   })
 })

@@ -56,7 +56,7 @@ describe('canvasPromptSubmission', () => {
     })
 
     expect(result.promptDocument).toEqual(document)
-    expect(result.prompt).toContain('[参考图 ref-1: 小满]')
+    expect(result.prompt).toContain('参考图 #1：小满（参考图）')
     expect(result.inputFiles).toEqual([
       { type: 'image', role: 'reference', dataUrl: 'data:image/png;base64,AA==', mimeType: 'image/png' },
     ])
@@ -82,7 +82,10 @@ describe('canvasPromptSubmission', () => {
       expect.objectContaining({ kind: 'reference', sourceNodeId: 'script', relation: 'screenplay' }),
       expect.objectContaining({ kind: 'text', text: '' }),
     ])
-    expect(result.prompt).toContain('[剧本 ref-1: 场次剧本]')
+    expect(result.prompt).toContain('[文本引用 T1 开始]')
+    expect(result.prompt).toContain('类型：剧本')
+    expect(result.prompt).toContain('名称：场次剧本')
+    expect(result.prompt).toContain('[/文本引用 T1 结束]')
     expect(result.prompt).toContain('雨夜里，小满走进车站。')
     expect(result.relationManifest).toEqual([
       expect.objectContaining({ sourceNodeId: 'script', relation: 'screenplay' }),
@@ -99,12 +102,46 @@ describe('canvasPromptSubmission', () => {
     }
     const result = await buildCanvasPromptSubmission({ document, snapshot: snapshot(), operation: 'text_to_image', inputTransport: 'base64', systemPrompt: 'hidden' })
 
-    expect(result.prompt).toContain('[角色 ref-1: 小满]')
+    expect(result.prompt).toContain('参考图 #1：小满（角色）')
     expect(result.compiledUserText).toBe(result.prompt)
     expect(result.promptDocument).toEqual(document)
     expect(result.promptSnapshot?.capturedAt).toEqual(expect.any(String))
     expect(result.systemPrompt).toBe('hidden')
     expect(result.inputFiles).toEqual([{ type: 'image', role: 'reference', dataUrl: 'data:image/png;base64,AA==', mimeType: 'image/png' }])
     expect(result.relationManifest?.[0]).toMatchObject({ relation: 'character', sourceNodeId: 'hero' })
+  })
+
+  it('uses active input bindings as the canonical executable input set', async () => {
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [
+        { kind: 'text', id: 'text', text: '保持主体一致' },
+        { kind: 'reference', id: 'image', source: 'manual', sourceNodeId: 'hero', relation: 'reference_image', label: '小满', order: 0 },
+      ],
+    }
+    const result = await buildCanvasPromptSubmission({
+      document,
+      snapshot: snapshot(),
+      operation: 'text_to_image',
+      inputNodeIds: ['hero'],
+      inputBindings: [
+        {
+          id: 'manual:hero:reference',
+          sourceNodeId: 'hero',
+          origin: 'manual',
+          kind: 'image',
+          relation: 'reference_image',
+          role: 'reference',
+          enabled: false,
+          order: 0,
+          promptBlockId: 'image',
+        },
+      ],
+    })
+
+    expect(result.inputBindings).toEqual([expect.objectContaining({ enabled: false })])
+    expect(result.inputFiles).toBeUndefined()
+    expect(result.compiledUserText).toBe('保持主体一致')
+    expect(result.relationManifest).toEqual([])
   })
 })

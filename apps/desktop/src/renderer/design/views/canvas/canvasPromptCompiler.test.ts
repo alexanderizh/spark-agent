@@ -71,7 +71,7 @@ describe('canvasPromptCompiler', () => {
       systemPrompt: 'hidden capability',
     })
 
-    expect(result.compiledUserText).toContain('[角色 ref-1: 小满]')
+    expect(result.compiledUserText).toContain('参考图 #1：小满（角色）')
     expect(result.compiledUserText).not.toContain('hidden capability')
     expect(result.inputFiles?.map((file) => file.role)).toEqual(['reference', 'first_frame', 'last_frame'])
     expect(result.relationManifest.map((item) => item.relation)).toEqual(['character', 'first_frame', 'last_frame'])
@@ -86,7 +86,10 @@ describe('canvasPromptCompiler', () => {
     }
     const result = compileCanvasPromptDocument({ document, nodes: [shots], assets: [], operation: 'text_generate' })
 
-    expect(result.compiledUserText).toContain('[分镜表 ref-1: 镜头 1]')
+    expect(result.compiledUserText).toContain('[文本引用 T1 开始]')
+    expect(result.compiledUserText).toContain('类型：分镜脚本')
+    expect(result.compiledUserText).toContain('名称：镜头 1')
+    expect(result.compiledUserText).toContain('[/文本引用 T1 结束]')
     expect(result.inputSnapshots[0]?.structuredData).toEqual({ shots: [{ index: 1, title: '车站', description: '小满走入雨幕' }] })
     expect(result.relationManifest[0]).toMatchObject({ relation: 'storyboard', sourceNodeId: 'shots' })
   })
@@ -159,6 +162,93 @@ describe('canvasPromptCompiler', () => {
     }
     const result = compileCanvasPromptDocument({ document, nodes: [hero], assets: [asset], operation: 'text_to_image' })
     expect(result.inputSnapshots[0]?.previewUrl).toBe('safe-file://hero.png')
+  })
+
+  it('numbers text and reference images independently in final provider order', () => {
+    const first = imageNode('first', 'safe-file://first.png', '角色板')
+    const second = imageNode('second', 'safe-file://second.png', '场景板')
+    const note = node('note', 'text', 'Text note', { text: '保持雨夜氛围' })
+    const direction = node('direction', 'text', '补充说明', { text: '镜头运动保持克制' })
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [
+        { kind: 'reference', id: 'text-1', source: 'manual', sourceNodeId: 'note', relation: 'generic', label: 'Text note', order: 0 },
+        { kind: 'reference', id: 'image-1', source: 'manual', sourceNodeId: 'first', relation: 'character', label: '角色板', order: 1 },
+        { kind: 'structured', id: 'text-2', sourceNodeId: 'direction', schema: 'table', summary: '补充说明' },
+        { kind: 'reference', id: 'image-2', source: 'manual', sourceNodeId: 'second', relation: 'scene', label: '场景板', order: 2 },
+      ],
+    }
+
+    const result = compileCanvasPromptDocument({
+      document,
+      nodes: [note, direction, first, second],
+      assets: [],
+      operation: 'text_to_video',
+    })
+
+    expect(result.compiledUserText).toContain('参考图 #1：角色板（角色）')
+    expect(result.compiledUserText).toContain('参考图 #2：场景板（场景）')
+    expect(result.compiledUserText).toContain('[文本引用 T1 开始]')
+    expect(result.compiledUserText).toContain('[文本引用 T2 开始]')
+    expect(result.compiledUserText).not.toContain('ref-')
+    expect(result.inputFiles?.map((file) => file.url)).toEqual([
+      'safe-file://first.png',
+      'safe-file://second.png',
+    ])
+    expect(result.relationManifest.find((item) => item.blockId === 'image-1')?.modelReference)
+      .toEqual({ channel: 'reference_images', ordinal: 1, label: '参考图 #1' })
+    expect(result.relationManifest.find((item) => item.blockId === 'text-1')?.modelReference)
+      .toEqual({ channel: 'text', ordinal: 1, label: '文本引用 T1' })
+  })
+
+  it('reuses one provider image slot for duplicate mentions of the same source and role', () => {
+    const hero = imageNode('hero', 'safe-file://hero.png', '苏烬')
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [
+        { kind: 'reference', id: 'image-a', source: 'manual', sourceNodeId: 'hero', relation: 'character', label: '苏烬', order: 0 },
+        { kind: 'reference', id: 'image-b', source: 'manual', sourceNodeId: 'hero', relation: 'character', label: '苏烬近景', order: 1 },
+      ],
+    }
+
+    const result = compileCanvasPromptDocument({
+      document,
+      nodes: [hero],
+      assets: [],
+      operation: 'text_to_video',
+    })
+
+    expect(result.inputFiles).toHaveLength(1)
+    expect(result.compiledUserText.match(/参考图 #1/g)).toHaveLength(1)
+    expect(result.relationManifest.map((item) => item.modelReference?.ordinal)).toEqual([1, 1])
+  })
+
+  it('renders one bounded text body and reuses its T reference for duplicate mentions', () => {
+    const note = node('note', 'text', 'Text note', { text: '保持雨夜氛围' })
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [
+        { kind: 'reference', id: 'text-a', source: 'manual', sourceNodeId: 'note', relation: 'generic', label: '氛围说明', order: 0 },
+        { kind: 'text', id: 'instruction', text: '下一段继续沿用以上资料' },
+        { kind: 'reference', id: 'text-b', source: 'manual', sourceNodeId: 'note', relation: 'generic', label: '氛围说明（再次引用）', order: 1 },
+      ],
+    }
+
+    const result = compileCanvasPromptDocument({
+      document,
+      nodes: [note],
+      assets: [],
+      operation: 'text_generate',
+    })
+
+    expect(result.compiledUserText.match(/\[文本引用 T1 开始\]/g)).toHaveLength(1)
+    expect(result.compiledUserText.match(/保持雨夜氛围/g)).toHaveLength(1)
+    expect(result.compiledUserText).toContain('[引用文本 T1：氛围说明（再次引用）]')
+    expect(result.compiledUserText).not.toContain('文本引用 T2')
+    expect(result.relationManifest.map((item) => item.modelReference)).toEqual([
+      { channel: 'text', ordinal: 1, label: '文本引用 T1' },
+      { channel: 'text', ordinal: 1, label: '文本引用 T1' },
+    ])
   })
 
   it('is deterministic for identical input and warns for empty documents', () => {

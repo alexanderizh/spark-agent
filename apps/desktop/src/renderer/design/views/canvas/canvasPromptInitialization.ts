@@ -67,8 +67,17 @@ export function buildCanvasSubmissionPromptDocument(input: {
   document: CanvasPromptDocument
   inputNodes: CanvasNode[]
 }): CanvasPromptDocument {
+  const referencedNodeIds = new Set(
+    input.document.blocks.flatMap((block) => {
+      if (block.kind === 'structured') return [block.sourceNodeId]
+      if (block.kind === 'reference' && !block.suppressed && !block.disconnected) {
+        return [block.sourceNodeId]
+      }
+      return []
+    }),
+  )
   return ensureConnectionReferences(
     { version: 2, blocks: input.document.blocks.map((block) => ({ ...block })) },
-    input.inputNodes,
+    input.inputNodes.filter((node) => !referencedNodeIds.has(node.id)),
   )
 }
