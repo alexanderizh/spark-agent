@@ -1,6 +1,6 @@
 # 画布 Agent 专用节点工具轻量兼容设计
 
-> 状态: 待开发 | 最后核对: 2026-07-18
+> 状态: 已落地 | 最后核对: 2026-07-18
 
 ## 背景
 
@@ -132,6 +132,8 @@ UI 右键入口和 Agent 专用操作工具都调用同一个执行函数，不�
 - `shot.to_keyframes`
 - `shot.to_video`
 - `keyframe.to_video`
+- `screenplay.split_episodes`
+- `scene.panorama_360`
 
 `canvas_get_available_actions` 返回专用工具名或 `canvas_create_pipeline_operation_node` 的完整 `actionId` 配方，不再为影视动作推荐裸 `canvas_create_operation_node`。
 
@@ -240,14 +242,22 @@ UI 右键入口和 Agent 专用操作工具都调用同一个执行函数，不�
 - `canvasPipelineActionContracts.ts`：可执行流水线动作契约与完整操作节点配置。
 - `canvasSpecializedNodeSchemas.ts`：专用工具 JSON Schema 和格式示例。
 - `canvasSpecializedNodeTools.ts`：专用工具描述符与薄 handler。
-- `canvasSpecializedNodeMaterializer.ts`：影视资产、节点、分镜和血缘的组合创建。
+- `canvasStoryboardMaterialization.ts`：分镜行、影视资产引用与 ShotGroup/ShotSegment 的组合物化。
 - `canvasTextOutputValidation.ts`：剧本、分镜和实体结果校验与归一化。
 
 现有大文件只做薄接线：
 
 - `canvas.tools.ts` 聚合并导出新增工具描述符。
 - `canvas.api.ts` 在文本任务完成时调用结果校验/物化 helper，并修正分镜字段持久化。
-- `CanvasWorkspaceView.tsx` 的右键入口调用共享流水线契约，不再自行构造专用参数。
+- 现有 UI 手动入口保持不变；Agent 动作发现层把影视动作转换为共享 actionId 契约，契约复用现有 Prompt 构建器和 pipeline 定义。
+
+## 实际落地说明
+
+- 已注册 13 个专用 Agent 工具，全部复用现有 `CanvasNode.type`、`pipelineRole`、影视资产 kind 和分镜 metadata，没有新增节点类型或持久化版本字段。
+- `canvas_get_available_actions` 只在 Agent 工具返回层把 `pipeline/recommended_flow` 配方改写为 `canvas_create_pipeline_operation_node`；UI 使用的原始能力目录和手动节点入口不变。
+- 剧本和分镜文本任务在创建语义产物前校验；无效结果保留原始响应并标记任务失败。分镜通过后由程序生成 Markdown 并写入 ShotGroup/ShotSegment。
+- 文本任务终态回调具备幂等保护，避免重复事件重复追加分镜；媒体语义工具会在写入前校验媒体类型和分镜回链。
+- 通用文本与通用操作工具仍然保留，但 Agent 指引明确禁止用它们伪装剧本、分镜或影视资产。
 
 ## 错误处理
 

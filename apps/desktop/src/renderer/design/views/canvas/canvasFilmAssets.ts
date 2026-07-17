@@ -122,6 +122,34 @@ export type ShotSegment = {
   propAssetIds?: string[]
   /** 镜头提示词 */
   shotPrompt?: string
+  /** 景别（远景/全景/中景/近景/特写等） */
+  shotSize?: string
+  /** 拍摄角度（平视/俯拍/仰拍/过肩/主观等） */
+  angle?: string
+  /** 运镜方式与起止变化 */
+  movement?: string
+  /** 场景空间布局与前中后景关系 */
+  sceneLayout?: string
+  /** 人物站位、朝向和走位 */
+  blocking?: string
+  /** 光源、方向、色温和明暗关系 */
+  lighting?: string
+  /** 镜头焦距/焦段 */
+  focalLength?: string
+  /** 光圈与景深说明 */
+  aperture?: string
+  /** 感光度与颗粒说明 */
+  iso?: string
+  /** 色调与色彩方案 */
+  colorTone?: string
+  /** 镜头氛围与情绪 */
+  mood?: string
+  /** 微表情与表演细节 */
+  microExpression?: string
+  /** 服装与造型连续性 */
+  costume?: string
+  /** 该镜专属反向提示词 */
+  negativePrompt?: string
   /** 关联的画布节点 id（生成的 task/image 节点） */
   nodeIds?: string[]
   // ── 按秒分镜 + 关键帧（设计 §S6/§S7）─────────────────────────────
