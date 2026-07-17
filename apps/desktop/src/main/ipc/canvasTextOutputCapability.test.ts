@@ -61,6 +61,16 @@ describe('canvasTextOutputCapability', () => {
     ).toMatchObject({ kind: 'output_limit' })
   })
 
+  it('combines structured param and message fields during classification', () => {
+    expect(
+      classifyCanvasTextOutputLimitError({
+        param: 'max_tokens',
+        code: 'invalid_parameter',
+        message: 'expected a value <= 8192',
+      }),
+    ).toMatchObject({ kind: 'output_limit', exactLimit: 8_192 })
+  })
+
   it('does not retry unrelated HTTP 400 responses', () => {
     expect(
       classifyCanvasTextOutputLimitError({
