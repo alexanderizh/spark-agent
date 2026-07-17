@@ -46,7 +46,7 @@ import {
   type CanvasAutoLayoutSpacing,
 } from './canvasAutoLayout'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
-import { CANVAS_CAPABILITIES, isOperationNode } from './canvas.capabilities'
+import { isOperationNode } from './canvas.capabilities'
 import { canvasNodeChromeExtraHeight } from './canvasNodeChrome'
 import {
   CANVAS_NODE_META_BAR_HEIGHT,
@@ -56,6 +56,12 @@ import {
 } from './canvasNodeSize'
 import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
 import { CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
+import {
+  CANVAS_BASE_TASK_MENU_LABEL,
+  CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
+  CANVAS_FUNCTIONAL_MENU_LABEL,
+  canvasBaseCreateOperations,
+} from './canvasNodeGenerationMenu'
 import { getOperationVisual } from './canvasOperationIcons'
 import { readCharacterSubviews } from './canvasCharacterLibrary'
 import { readAssetKind } from './canvasFilmAssets'
@@ -2421,7 +2427,7 @@ function CanvasStageInner({
             {onCreatePipelineAtPosition && (
               <CanvasPaneContextSubmenu
                 icon={<Icons.Workflow size={14} />}
-                label="剧本流水线"
+                label={CANVAS_FUNCTIONAL_MENU_LABEL}
                 openLeft={paneContextMenu.openSubmenusLeft}
                 openUp={paneContextMenu.openSubmenusUp}
               >
@@ -2438,27 +2444,42 @@ function CanvasStageInner({
                     <span>{op.label}</span>
                   </button>
                 ))}
+                {CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => {
+                  const visual = getOperationVisual(item.operation)
+                  return (
+                    <button
+                      key={item.operation}
+                      type="button"
+                      role="menuitem"
+                      className={`canvas-pane-context-op ${visual.colorClass}`}
+                      onClick={() => handleCreateOperationFromPane(item.operation)}
+                    >
+                      <span className="canvas-pane-context-op-icon">{visual.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  )
+                })}
               </CanvasPaneContextSubmenu>
             )}
             {onCreateOperationAtPosition && (
               <CanvasPaneContextSubmenu
                 icon={<Icons.Sparkles size={14} />}
-                label="AI 操作"
+                label={CANVAS_BASE_TASK_MENU_LABEL}
                 openLeft={paneContextMenu.openSubmenusLeft}
                 openUp={paneContextMenu.openSubmenusUp}
               >
-                {CANVAS_CAPABILITIES.map((capability) => {
-                  const visual = getOperationVisual(capability.operation)
+                {canvasBaseCreateOperations().map((item) => {
+                  const visual = getOperationVisual(item.operation)
                   return (
                     <button
-                      key={capability.id}
+                      key={item.operation}
                       type="button"
                       role="menuitem"
                       className={`canvas-pane-context-op ${visual.colorClass}`}
-                      onClick={() => handleCreateOperationFromPane(capability.operation)}
+                      onClick={() => handleCreateOperationFromPane(item.operation)}
                     >
                       <span className="canvas-pane-context-op-icon">{visual.icon}</span>
-                      <span>{capability.label}</span>
+                      <span>{item.label}</span>
                     </button>
                   )
                 })}

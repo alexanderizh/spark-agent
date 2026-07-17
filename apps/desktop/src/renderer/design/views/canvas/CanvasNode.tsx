@@ -30,8 +30,10 @@ import {
 import { getNodePipelineActions } from './canvasPipeline'
 import type { CanvasPipelineAssetKind } from './canvasPipelineOps'
 import {
-  CANVAS_GENERAL_CREATE_OPERATION_GROUPS,
-  CANVAS_PIPELINE_CREATE_OPERATIONS,
+  CANVAS_BASE_CREATE_OPERATION_GROUPS,
+  CANVAS_BASE_TASK_MENU_LABEL,
+  CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
+  CANVAS_FUNCTIONAL_MENU_LABEL,
 } from './canvasNodeGenerationMenu'
 import { buildCanvasOperationParamSummary } from './canvasOperationParamSummary'
 import {
@@ -732,7 +734,7 @@ export const CanvasNode = memo(function CanvasNode({
                 key: 'pipeline-actions',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.Workflow size={14} /> 剧本流水线
+                    <Icons.Workflow size={14} /> {CANVAS_FUNCTIONAL_MENU_LABEL}
                   </span>
                 ),
                 children: [
@@ -746,7 +748,9 @@ export const CanvasNode = memo(function CanvasNode({
                     onClick: () => actions.pipelineAction(node.id, action.id),
                   })),
                   ...(pipelineActions.length > 0 ? [{ type: 'divider' as const }] : []),
-                  ...CANVAS_PIPELINE_CREATE_OPERATIONS.map((item) => ({
+                  ...contextualAiActions,
+                  ...(contextualAiActions.length > 0 ? [{ type: 'divider' as const }] : []),
+                  ...CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => ({
                     key: `pipeline-op-${item.operation}`,
                     label: (
                       <span className="canvas-menu-item">
@@ -847,13 +851,11 @@ export const CanvasNode = memo(function CanvasNode({
                 key: 'add-operation',
                 label: (
                   <span className="canvas-menu-item">
-                    <Icons.Sparkles size={14} /> 生成任务
+                    <Icons.Sparkles size={14} /> {CANVAS_BASE_TASK_MENU_LABEL}
                   </span>
                 ),
                 children: [
-                  ...contextualAiActions,
-                  ...(contextualAiActions.length > 0 ? [{ type: 'divider' as const }] : []),
-                  ...CANVAS_GENERAL_CREATE_OPERATION_GROUPS.flatMap((group, groupIndex) => [
+                  ...CANVAS_BASE_CREATE_OPERATION_GROUPS.flatMap((group, groupIndex) => [
                     ...(groupIndex > 0 ? [{ type: 'divider' as const }] : []),
                     ...group.items.map((item) => ({
                       key: `op-${item.operation}`,
