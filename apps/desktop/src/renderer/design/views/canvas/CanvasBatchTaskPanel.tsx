@@ -41,6 +41,7 @@ export type CanvasBatchTaskPanelProps = {
   onConfirmSubmit: () => Promise<void>
   onRetryFailed: () => Promise<void>
   onSkipNextConfirmationChange: (skip: boolean) => void
+  onSkipParameterValidationChange: (skip: boolean) => void
   onBackToConfigure: () => void
   onClose: () => void
 }
@@ -54,6 +55,7 @@ export function CanvasBatchTaskPanel({
   onConfirmSubmit,
   onRetryFailed,
   onSkipNextConfirmationChange,
+  onSkipParameterValidationChange,
   onBackToConfigure,
   onClose,
 }: CanvasBatchTaskPanelProps) {
@@ -165,7 +167,10 @@ export function CanvasBatchTaskPanel({
         <ConfirmView
           entries={entries}
           skip={state.skipNextConfirmation}
+          skipParameterValidation={state.skipParameterValidation}
+          validationWarnings={state.validationWarnings}
           onSkipChange={onSkipNextConfirmationChange}
+          onSkipParameterValidationChange={onSkipParameterValidationChange}
           onBack={onBackToConfigure}
           onConfirm={onConfirmSubmit}
         />
@@ -544,13 +549,19 @@ function BatchConfigurationEditor({
 function ConfirmView({
   entries,
   skip,
+  skipParameterValidation,
+  validationWarnings,
   onSkipChange,
+  onSkipParameterValidationChange,
   onBack,
   onConfirm,
 }: {
   entries: CanvasBatchTaskEntry[]
   skip: boolean
+  skipParameterValidation: boolean
+  validationWarnings: CanvasBatchTaskState['validationWarnings']
   onSkipChange: (skip: boolean) => void
+  onSkipParameterValidationChange: (skip: boolean) => void
   onBack: () => void
   onConfirm: () => Promise<void>
 }) {
@@ -560,7 +571,10 @@ function ConfirmView({
       <div className="canvas-batch-confirm-stats">
         <div><small>任务</small><strong>{entries.length} 个</strong></div>
         <div><small>类型</small><strong>{groups.size} 种</strong></div>
-        <div className="is-valid"><small>校验</small><strong>全部通过</strong></div>
+        <div className={validationWarnings.length > 0 ? 'has-warning' : 'is-valid'}>
+          <small>校验</small>
+          <strong>{validationWarnings.length > 0 ? `${validationWarnings.length} 个提醒` : '全部通过'}</strong>
+        </div>
       </div>
       <div className="canvas-batch-confirm-list">
         {[...groups.entries()].map(([operation, operationEntries]) => (
@@ -573,6 +587,17 @@ function ConfirmView({
           </div>
         ))}
       </div>
+      {validationWarnings.length > 0 && (
+        <div className="canvas-batch-confirm-warnings" role="alert">
+          <strong>以下参数问题不会阻止提交，但可能导致供应商拒绝任务：</strong>
+          {validationWarnings.map((warning, index) => (
+            <div key={`${warning.nodeId}-${warning.fieldPath.join('.')}-${index}`}>
+              <span>{warning.nodeId}</span>
+              <p>{warning.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="canvas-batch-confirm-preference">
         <Checkbox
           checked={skip}
@@ -582,6 +607,16 @@ function ConfirmView({
         </Checkbox>
         <p>该偏好对当前用户的所有项目生效，可在设置中恢复。</p>
       </div>
+      {validationWarnings.length > 0 && (
+        <div className="canvas-batch-confirm-parameter-preference">
+          <Checkbox
+            checked={skipParameterValidation}
+            onChange={(event) => onSkipParameterValidationChange(event.target.checked)}
+          >
+            下次不再提醒参数校验问题
+          </Checkbox>
+        </div>
+      )}
       <footer>
         <Button type="text" onClick={onBack}>返回修改</Button>
         <Button type="primary" onClick={() => void onConfirm()}>

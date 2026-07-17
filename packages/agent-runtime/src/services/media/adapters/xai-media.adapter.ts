@@ -89,7 +89,11 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
 
     const model = ctx.defaultModel
     const isVideo15 = model.startsWith('grok-imagine-video-1.5')
-    if (isVideo15 && capability !== 'video.image_to_video') {
+    if (
+      isVideo15 &&
+      capability !== 'video.image_to_video' &&
+      !ctx.skipParameterValidation
+    ) {
       throw new MediaProviderError('invalid_input', `${model} 仅支持图生视频`)
     }
     if ((input.inputFiles ?? []).some((file) => file.type === 'video')) {
@@ -136,7 +140,11 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     const params = input.modelParams ?? {}
     const duration = numericParam(params.durationSeconds ?? params.duration)
     const maxDuration = capability === 'video.reference_to_video' ? 10 : 15
-    if (duration !== undefined && (duration < 1 || duration > maxDuration)) {
+    if (
+      duration !== undefined &&
+      (duration < 1 || duration > maxDuration) &&
+      !ctx.skipParameterValidation
+    ) {
       throw new MediaProviderError(
         'invalid_input',
         `xAI ${capability} duration must be between 1 and ${maxDuration} seconds`,
@@ -145,7 +153,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     const aspectRatio = stringParam(params.aspectRatio ?? params.aspect_ratio)
       ?? ctx.mediaDefaults?.video?.aspectRatio
     const resolution = stringParam(params.resolution) ?? ctx.mediaDefaults?.video?.resolution
-    if (resolution === '1080p' && !isVideo15) {
+    if (resolution === '1080p' && !isVideo15 && !ctx.skipParameterValidation) {
       throw new MediaProviderError('invalid_input', 'xAI 1080p video is only supported by Grok Imagine Video 1.5 I2V')
     }
 
@@ -261,7 +269,9 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
   ): Promise<MediaGenerateOutput> {
     const text = (input.prompt ?? '').trim()
     if (!text) throw new MediaProviderError('invalid_input', 'xAI TTS requires text')
-    if (text.length > 15_000) throw new MediaProviderError('invalid_input', 'xAI TTS text exceeds 15,000 characters')
+    if (text.length > 15_000 && !ctx.skipParameterValidation) {
+      throw new MediaProviderError('invalid_input', 'xAI TTS text exceeds 15,000 characters')
+    }
 
     const params = input.modelParams ?? {}
     const outputFormat = normalizeTtsOutputFormat(params.outputFormat ?? params.output_format)
@@ -330,7 +340,9 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     if (imageFiles.length === 0) {
       throw new MediaProviderError('invalid_input', 'xAI image edit requires input image(s)')
     }
-    if (imageFiles.length > 3) throw new MediaProviderError('invalid_input', 'xAI image edit supports at most 3 images')
+    if (imageFiles.length > 3 && !ctx.skipParameterValidation) {
+      throw new MediaProviderError('invalid_input', 'xAI image edit supports at most 3 images')
+    }
     const imageRefs = await Promise.all(imageFiles.map((file) => resolveXaiMediaReference(file, 'image', ctx)))
     const model = ctx.defaultModel
     const params = normalizeXaiImageParams(input.modelParams)
@@ -390,7 +402,10 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     }
     if (isExtend) {
       const duration = numericParam(input.modelParams?.durationSeconds) ?? 6
-      if (!Number.isInteger(duration) || duration < 2 || duration > 10) {
+      if (
+        (!Number.isInteger(duration) || duration < 2 || duration > 10) &&
+        !ctx.skipParameterValidation
+      ) {
         throw new MediaProviderError('invalid_input', 'xAI video extension duration must be between 2 and 10 seconds')
       }
       body.duration = duration

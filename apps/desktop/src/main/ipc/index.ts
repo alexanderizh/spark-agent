@@ -3460,6 +3460,7 @@ export function registerAllIpcHandlers(): void {
         ...(req.providerProfileId != null ? { providerProfileId: req.providerProfileId } : {}),
         ...(req.manifestId != null ? { manifestId: req.manifestId } : {}),
         ...(req.modelId != null ? { modelId: req.modelId } : {}),
+        ...(req.skipParameterValidation === true ? { skipValidation: true } : {}),
       }
       if (req.waitForCompletion === false) {
         const task = taskRuntime.submitBackground(input, options, (record) => {

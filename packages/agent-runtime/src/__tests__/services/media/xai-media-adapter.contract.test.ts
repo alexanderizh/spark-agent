@@ -138,6 +138,28 @@ describe('XaiMediaAdapter official contract', () => {
     ).rejects.toMatchObject({ code: 'invalid_input' })
   })
 
+  it('forwards user-confirmed xAI parameter warnings to the provider', async () => {
+    const capture: { body?: Record<string, unknown> } = {}
+    const ctx = context(videoFetch(capture))
+    ctx.skipParameterValidation = true
+
+    await adapter.invoke(
+      {
+        operation: 'text_to_video',
+        capability: 'video.reference_to_video',
+        outputDir,
+        prompt: 'Let the provider decide',
+        inputFiles: [
+          { type: 'image', role: 'reference', url: 'https://input/reference.png' },
+        ],
+        modelParams: { durationSeconds: 11, resolution: '1080p' },
+      },
+      ctx,
+    )
+
+    expect(capture.body).toMatchObject({ duration: 11, resolution: '1080p' })
+  })
+
   it('preserves the prompt reference numbering and reference_images order', async () => {
     const capture: { body?: Record<string, unknown> } = {}
     const prompt = [

@@ -195,8 +195,10 @@ function state(mode: CanvasBatchTaskState['mode']): CanvasBatchTaskState {
       operationNode('node-2', 'text_to_video'),
     ]),
     issues: [],
+    validationWarnings: [],
     results: [],
     skipNextConfirmation: false,
+    skipParameterValidation: false,
     saving: false,
   }
 }
@@ -218,6 +220,7 @@ async function render(
     onConfirmSubmit: vi.fn(async () => undefined),
     onRetryFailed: vi.fn(async () => undefined),
     onSkipNextConfirmationChange: vi.fn(),
+    onSkipParameterValidationChange: vi.fn(),
     onBackToConfigure: vi.fn(),
     onClose: vi.fn(),
     ...handlers,

@@ -31,6 +31,8 @@ export type SavedCanvasOperationRunParams = {
   modelParams?: Record<string, unknown>
   skillIds?: string[]
   userPrompt?: string
+  /** Skip the renderer-side provider parameter preflight after the user opted out. */
+  skipParameterValidation?: boolean
 } & CanvasPromptTaskFields
 
 type SubmissionValidationRequest = SavedCanvasOperationRunParams & {
@@ -62,6 +64,7 @@ export async function prepareSavedCanvasOperationSubmission(
     node: CanvasNode
   },
   dependencies: CanvasOperationSubmissionDependencies = DEFAULT_DEPENDENCIES,
+  options?: { skipParameterValidation?: boolean },
 ): Promise<PreparedCanvasOperationSubmission> {
   const { node, snapshot } = input
   if (!isOperationNode(node)) throw new Error('所选节点不是任务节点')
@@ -146,14 +149,17 @@ export async function prepareSavedCanvasOperationSubmission(
     ...(Object.keys(modelParams).length > 0 ? { modelParams: { ...modelParams } } : {}),
     userPrompt,
   }
-  const validated = isTextOperation(operation)
-    ? dependencies.validateText(request)
-    : await dependencies.validateMedia(request)
+  const validated = options?.skipParameterValidation
+    ? request
+    : isTextOperation(operation)
+      ? dependencies.validateText(request)
+      : await dependencies.validateMedia(request)
   const params = omitOperation({
     ...request,
     ...validated,
     prompt: validated.prompt ?? request.prompt,
   })
+  if (options?.skipParameterValidation) params.skipParameterValidation = true
 
   return {
     nodeId: node.id,

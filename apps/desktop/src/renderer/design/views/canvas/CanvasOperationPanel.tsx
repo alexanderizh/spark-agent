@@ -52,6 +52,11 @@ import { confirmVideoSubmission, isVideoSubmissionOperation } from './canvasVide
 import { useCanvasInputBindings } from './useCanvasInputBindings'
 import { CanvasTaskValidationError } from './canvasTaskSubmissionValidation'
 import {
+  readSkipCanvasParameterValidation,
+  writeSkipCanvasParameterValidation,
+} from './canvasParameterValidationPreferences'
+import { confirmCanvasTaskValidation } from './canvasTaskValidationWarning'
+import {
   buildCustomModelParams,
   buildModelParams,
   createCustomParamDraft,
@@ -157,6 +162,8 @@ export type OperationRunParams = {
   reasoningEffort?: SessionReasoningEffort
   skillIds?: string[]
   modelParams?: Record<string, unknown>
+  /** User-confirmed opt-out from renderer-side parameter preflight. */
+  skipParameterValidation?: boolean
   /** 分镜任务的时长配置（每镜最长时间），运行时替换 prompt 占位槽 {maxClip} */
   shotScriptConfig?: ShotScriptConfig
 }
@@ -1285,31 +1292,6 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     // 防重复提交：本地 running/submitting flag + 节点状态（含已完成节点重提场景）。
     // 旧实现仅拦 running，已完成(completed)节点重提会穿透 → 产生重复任务。
     if (running || submitting || node.data.status === 'running') return
-    if (
-      !hasOperationPanelPromptContent(promptDocument) &&
-      !capability?.inputTypes.includes('image') &&
-      !capability?.inputTypes.includes('video') &&
-      !capability?.inputTypes.includes('audio')
-    ) {
-      message.warning('请输入提示词')
-      return
-    }
-    if (
-      canEditMediaInputs &&
-      capability?.inputTypes.some(
-        (type) => type === 'image' || type === 'video' || type === 'audio',
-      ) &&
-      !operationAcceptsTextInput(capability?.inputTypes) &&
-      selectedInputNodeIds.length === 0 &&
-      !hasExplicitFrameInput
-    ) {
-      message.warning('请至少选择一个输入图片、视频或音频节点')
-      return
-    }
-    if (supportsVideoFrameRoles && !hasExplicitFrameInput) {
-      message.warning('请在底部参数栏选择首帧或尾帧图片')
-      return
-    }
     const inputRoles = supportsVideoFrameRoles
       ? buildVideoFrameInputRoles(
           explicitFrameNodeIds,
@@ -1359,10 +1341,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       if (!proceed) return
     }
     const resolvedShotScriptConfig = resolveShotScriptConfig()
+    const skipParameterValidation = readSkipCanvasParameterValidation()
     setSubmitting(true)
     setRunning(true)
     try {
-      await onRun({
+      const runParams: OperationRunParams = {
         prompt: prompt.trim(),
         promptDocument,
         inputBindings,
@@ -1390,11 +1373,21 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         ...(Object.keys(nextModelParams).length > 0 ? { modelParams: nextModelParams } : {}),
         ...(inputRoles && Object.keys(inputRoles).length > 0 ? { inputRoles } : {}),
         ...(resolvedShotScriptConfig ? { shotScriptConfig: resolvedShotScriptConfig } : {}),
-      })
+        ...(skipParameterValidation ? { skipParameterValidation: true } : {}),
+      }
+      try {
+        await onRun(runParams)
+      } catch (error) {
+        if (!(error instanceof CanvasTaskValidationError)) throw error
+        const decision = await confirmCanvasTaskValidation(error.issues)
+        if (!decision.confirmed) return
+        if (decision.skipFutureValidation) writeSkipCanvasParameterValidation(true)
+        await onRun({ ...runParams, skipParameterValidation: true })
+      }
     } catch (error) {
       console.error('[CanvasOperationPanel] Failed to run operation node:', error)
       if (error instanceof CanvasTaskValidationError) {
-        message.error(error.message)
+        message.warning(error.message)
       } else {
         message.error(error instanceof Error ? error.message : '提交任务失败，请调整参数后重试')
       }

@@ -74,6 +74,8 @@ export interface InvokeOptions {
   extraParams?: Record<string, unknown>
   /** 注入 fetch（测试用） */
   fetch?: typeof fetch
+  /** User explicitly accepted renderer preflight warnings and chose to continue. */
+  skipValidation?: boolean
   /** xAI Files 不可用时的公开文件上传回退，由桌面主进程按登录态注入。 */
   fallbackUploader?: MediaUploader
   /** 异步 provider 返回渠道任务 ID 后立即通知调用方。 */
@@ -242,21 +244,23 @@ export class MediaRouterService {
     const manifestMatch = resolveManifestMatch(chosen, capability, manifestOptions)
     const effectiveModelId = options.modelId ?? manifestMatch?.manifest.modelId ?? chosen.defaultModel
     const kind = effectiveProviderKind(chosen)
-    const validation = validateMediaRequest({
-      input: { ...input, capability },
-      providerKind: kind ?? 'custom',
-      modelId: effectiveModelId,
-      capability,
-      ...(manifestMatch?.manifest ? { manifest: manifestMatch.manifest } : {}),
-      ...(manifestMatch?.capability
-        ? { manifestCapability: manifestMatch.capability }
-        : {}),
-      ...(chosen.mediaDefaults ? { providerDefaults: chosen.mediaDefaults } : {}),
-      mode: 'adapter',
-    })
-    const blockingIssue = validation.blockingIssues[0]
-    if (blockingIssue) {
-      throw new MediaProviderError('invalid_input', blockingIssue.message)
+    if (!options.skipValidation) {
+      const validation = validateMediaRequest({
+        input: { ...input, capability },
+        providerKind: kind ?? 'custom',
+        modelId: effectiveModelId,
+        capability,
+        ...(manifestMatch?.manifest ? { manifest: manifestMatch.manifest } : {}),
+        ...(manifestMatch?.capability
+          ? { manifestCapability: manifestMatch.capability }
+          : {}),
+        ...(chosen.mediaDefaults ? { providerDefaults: chosen.mediaDefaults } : {}),
+        mode: 'adapter',
+      })
+      const blockingIssue = validation.blockingIssues[0]
+      if (blockingIssue) {
+        throw new MediaProviderError('invalid_input', blockingIssue.message)
+      }
     }
     const adapter = kind ? this.adapters.get(kind) : undefined
     const shouldUseManifestAdapter = Boolean(manifestMatch && (!adapter || !adapter.supports(capability) || kind === 'custom'))
@@ -290,6 +294,7 @@ export class MediaRouterService {
         mediaManifest: manifestMatch.manifest,
         mediaManifestCapability: manifestMatch.capability,
         ...(options.extraParams ? { extraParams: options.extraParams } : {}),
+        ...(options.skipValidation === true ? { skipParameterValidation: true } : {}),
         fetch: capture.fetch,
         ...(options.fallbackUploader ? { fallbackUploader: options.fallbackUploader } : {}),
         ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
@@ -324,6 +329,7 @@ export class MediaRouterService {
       ...(manifestMatch?.manifest ? { mediaManifest: manifestMatch.manifest } : {}),
       ...(manifestMatch?.capability ? { mediaManifestCapability: manifestMatch.capability } : {}),
       ...(options.extraParams ? { extraParams: options.extraParams } : {}),
+      ...(options.skipValidation === true ? { skipParameterValidation: true } : {}),
       fetch: capture.fetch,
       ...(options.fallbackUploader ? { fallbackUploader: options.fallbackUploader } : {}),
       ...(onTaskSubmitted ? { onTaskSubmitted } : {}),

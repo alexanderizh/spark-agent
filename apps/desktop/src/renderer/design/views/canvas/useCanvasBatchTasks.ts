@@ -15,11 +15,16 @@ import {
   writeSkipCanvasBatchSubmitConfirmation,
 } from './canvasBatchSubmitPreferences'
 import {
+  readSkipCanvasParameterValidation,
+  writeSkipCanvasParameterValidation,
+} from './canvasParameterValidationPreferences'
+import {
   prepareSavedCanvasOperationSubmission,
   type PreparedCanvasOperationSubmission,
   type SavedCanvasOperationRunParams,
 } from './canvasOperationSubmission'
 import { CanvasTaskValidationError } from './canvasTaskSubmissionValidation'
+import { confirmCanvasTaskValidation } from './canvasTaskValidationWarning'
 import type {
   CanvasNode,
   CanvasNodeData,
@@ -51,8 +56,10 @@ export type CanvasBatchTaskState = {
   mode: CanvasBatchPanelMode
   session: CanvasBatchTaskSession | null
   issues: CanvasBatchValidationIssue[]
+  validationWarnings: CanvasBatchValidationIssue[]
   results: CanvasBatchSubmitResult[]
   skipNextConfirmation: boolean
+  skipParameterValidation: boolean
   saving: boolean
 }
 
@@ -62,9 +69,15 @@ export type CanvasBatchTaskControllerDependencies = {
     updates: Array<{ nodeId: string; data: Partial<CanvasNodeData> }>,
   ) => Promise<CanvasSnapshot | void>
   runOperationNode: (nodeId: string, params: SavedCanvasOperationRunParams) => Promise<void>
-  prepareSubmission?: typeof prepareSavedCanvasOperationSubmission
+  prepareSubmission?: (
+    input: Parameters<typeof prepareSavedCanvasOperationSubmission>[0],
+    options?: { skipParameterValidation?: boolean },
+  ) => Promise<PreparedCanvasOperationSubmission>
   readSkipConfirmation?: () => boolean
   writeSkipConfirmation?: (skip: boolean) => void
+  readSkipParameterValidation?: () => boolean
+  writeSkipParameterValidation?: (skip: boolean) => void
+  confirmParameterValidation?: typeof confirmCanvasTaskValidation
   createBatchId?: () => string
   onSingleValidationError?: (nodeId: string, error: unknown) => void
 }
@@ -75,8 +88,10 @@ const INITIAL_STATE: CanvasBatchTaskState = {
   mode: 'closed',
   session: null,
   issues: [],
+  validationWarnings: [],
   results: [],
   skipNextConfirmation: false,
+  skipParameterValidation: false,
   saving: false,
 }
 
@@ -201,26 +216,54 @@ export function createCanvasBatchTaskController(
         const node = nodeById.get(entry.nodeId)
         if (!node) {
           return {
-            issues: [
+            blockingIssues: [
               {
                 nodeId: entry.nodeId,
                 fieldPath: [],
                 message: '任务节点已被删除',
               },
             ],
+            validationWarnings: [],
           }
         }
         try {
+          const skipParameterValidation = dependencies.readSkipParameterValidation()
           return {
-            prepared: await dependencies.prepareSubmission({ snapshot, node }),
+            prepared: await dependencies.prepareSubmission(
+              { snapshot, node },
+              skipParameterValidation ? { skipParameterValidation: true } : undefined,
+            ),
+            validationWarnings: [],
+            blockingIssues: [],
           }
         } catch (error) {
-          return { issues: issuesFromError(entry.nodeId, error) }
+          if (error instanceof CanvasTaskValidationError) {
+            try {
+              return {
+                prepared: await dependencies.prepareSubmission(
+                  { snapshot, node },
+                  { skipParameterValidation: true },
+                ),
+                validationWarnings: issuesFromError(entry.nodeId, error),
+                blockingIssues: [],
+              }
+            } catch (retryError) {
+              return {
+                validationWarnings: [],
+                blockingIssues: issuesFromError(entry.nodeId, retryError),
+              }
+            }
+          }
+          return {
+            validationWarnings: [],
+            blockingIssues: issuesFromError(entry.nodeId, error),
+          }
         }
       },
     )
     if (generation !== sessionGeneration) return
-    const issues = results.flatMap((result) => result.issues ?? [])
+    const issues = results.flatMap((result) => result.blockingIssues ?? [])
+    const validationWarnings = results.flatMap((result) => result.validationWarnings ?? [])
     if (issues.length > 0) {
       preparedSubmissions = []
       const firstIssueEntry = session.entries.find(
@@ -230,6 +273,7 @@ export function createCanvasBatchTaskController(
         ...state,
         mode: 'configure',
         issues,
+        validationWarnings: [],
         session: firstIssueEntry
           ? {
               ...session,
@@ -244,6 +288,17 @@ export function createCanvasBatchTaskController(
       result.prepared ? [result.prepared] : [],
     )
     if (dependencies.readSkipConfirmation()) {
+      if (validationWarnings.length > 0) {
+        setState({
+          ...state,
+          mode: 'confirm',
+          issues: [],
+          validationWarnings,
+          skipNextConfirmation: false,
+          skipParameterValidation: false,
+        })
+        return
+      }
       await executePrepared(
         preparedSubmissions,
         dependencies.createBatchId(),
@@ -255,7 +310,9 @@ export function createCanvasBatchTaskController(
       ...state,
       mode: 'confirm',
       issues: [],
+      validationWarnings,
       skipNextConfirmation: false,
+      skipParameterValidation: false,
     })
   }
 
@@ -305,7 +362,7 @@ export function createCanvasBatchTaskController(
     generation = sessionGeneration,
   ) => {
     if (generation !== sessionGeneration) return
-    setState({ ...state, mode: 'submitting', issues: [] })
+    setState({ ...state, mode: 'submitting', issues: [], validationWarnings: [] })
     const nextResults = await runPreparedSubmissions(submissions, batchId)
     if (generation !== sessionGeneration) return
     setState({ ...state, mode: 'result', results: nextResults })
@@ -320,6 +377,7 @@ export function createCanvasBatchTaskController(
       setState({
         ...state,
         mode: 'configure',
+        validationWarnings: [],
         issues: staleNodeIds.map((nodeId) => ({
           nodeId,
           fieldPath: [],
@@ -329,6 +387,7 @@ export function createCanvasBatchTaskController(
       return
     }
     if (state.skipNextConfirmation) dependencies.writeSkipConfirmation(true)
+    if (state.skipParameterValidation) dependencies.writeSkipParameterValidation(true)
     await executePrepared(
       preparedSubmissions,
       dependencies.createBatchId(),
@@ -369,12 +428,35 @@ export function createCanvasBatchTaskController(
     if (!node) throw new Error('任务节点不存在')
     let prepared: PreparedCanvasOperationSubmission
     try {
-      prepared = await dependencies.prepareSubmission({ snapshot, node })
+      const skipParameterValidation = dependencies.readSkipParameterValidation()
+      prepared = await dependencies.prepareSubmission(
+        { snapshot, node },
+        skipParameterValidation ? { skipParameterValidation: true } : undefined,
+      )
     } catch (error) {
+      if (error instanceof CanvasTaskValidationError) {
+        const decision = await dependencies.confirmParameterValidation(error.issues)
+        if (!decision.confirmed) return
+        if (decision.skipFutureValidation) dependencies.writeSkipParameterValidation(true)
+        prepared = await dependencies.prepareSubmission(
+          { snapshot, node },
+          { skipParameterValidation: true },
+        )
+        await dependencies.runOperationNode(nodeId, {
+          ...prepared.params,
+          skipParameterValidation: true,
+        })
+        return
+      }
       dependencies.onSingleValidationError?.(nodeId, error)
       throw error
     }
-    await dependencies.runOperationNode(nodeId, prepared.params)
+    await dependencies.runOperationNode(nodeId, {
+      ...prepared.params,
+      ...(dependencies.readSkipParameterValidation()
+        ? { skipParameterValidation: true }
+        : {}),
+    })
   }
 
   return {
@@ -397,6 +479,8 @@ export function createCanvasBatchTaskController(
     runSingle,
     setSkipNextConfirmation: (skip: boolean) =>
       setState({ ...state, skipNextConfirmation: skip }),
+    setSkipParameterValidation: (skip: boolean) =>
+      setState({ ...state, skipParameterValidation: skip }),
     backToConfigure: () => setState({ ...state, mode: 'configure' }),
     close: () => {
       sessionGeneration += 1
@@ -450,13 +534,24 @@ function withDefaults(
   return {
     ...dependencies,
     prepareSubmission:
-      dependencies.prepareSubmission ?? prepareSavedCanvasOperationSubmission,
+      dependencies.prepareSubmission ??
+      ((input, options) =>
+        prepareSavedCanvasOperationSubmission(input, undefined, options)),
     readSkipConfirmation:
       dependencies.readSkipConfirmation ??
       readSkipCanvasBatchSubmitConfirmation,
     writeSkipConfirmation:
       dependencies.writeSkipConfirmation ??
       writeSkipCanvasBatchSubmitConfirmation,
+    readSkipParameterValidation:
+      dependencies.readSkipParameterValidation ??
+      readSkipCanvasParameterValidation,
+    writeSkipParameterValidation:
+      dependencies.writeSkipParameterValidation ??
+      writeSkipCanvasParameterValidation,
+    confirmParameterValidation:
+      dependencies.confirmParameterValidation ??
+      confirmCanvasTaskValidation,
     createBatchId:
       dependencies.createBatchId ??
       (() => globalThis.crypto?.randomUUID?.() ?? `batch-${Date.now()}`),

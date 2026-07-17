@@ -65,9 +65,10 @@ export class TemplateMediaAdapter {
         })),
       },
       mode: 'adapter',
+      ...(ctx.skipParameterValidation ? { skipParameterValidation: true } : {}),
     })
     const blockingIssue = compiled.validationIssues.find((issue) => issue.severity === 'error')
-    if (blockingIssue) {
+    if (blockingIssue && !ctx.skipParameterValidation) {
       throw new MediaProviderError('invalid_input', blockingIssue.message)
     }
 
