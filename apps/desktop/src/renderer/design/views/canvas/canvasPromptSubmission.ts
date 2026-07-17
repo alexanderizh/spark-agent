@@ -10,6 +10,7 @@ import {
   buildCanvasSubmissionPromptDocument,
   buildCanvasVisiblePromptDocument,
 } from './canvasPromptInitialization'
+import { activeCanvasInputNodeIds } from './canvasInputBindings'
 import {
   expandCanvasInputNodes,
   materializeCanvasTaskInputFiles,
@@ -42,11 +43,17 @@ export async function buildCanvasPromptSubmission(input: {
   inputTransport?: CanvasInputTransport
   inputRoles?: Record<string, CanvasTaskInputRoleSelection>
   inputNodeIds?: string[]
+  inputBindings?: CanvasPromptTaskFields['inputBindings']
 }): Promise<CanvasPromptSubmission> {
-  const inputNodeIds = new Set(input.inputNodeIds ?? [])
+  const inputNodeIds = new Set(
+    input.inputBindings
+      ? activeCanvasInputNodeIds(input.inputBindings)
+      : (input.inputNodeIds ?? []),
+  )
   const selectedSourceNodes = input.snapshot.nodes.filter((node) => inputNodeIds.has(node.id))
   const inputNodes = expandCanvasInputNodes(selectedSourceNodes, input.snapshot)
-  const resolved = resolveExecutableReferences(input.document, input.snapshot)
+  const executableSourceDocument = applyInputBindings(input.document, input.inputBindings)
+  const resolved = resolveExecutableReferences(executableSourceDocument, input.snapshot)
   const visibleDocument = applyInputRoles(input.document, input.inputRoles)
   const document = applyInputRoles(
     buildCanvasSubmissionPromptDocument({ document: resolved.document, inputNodes }),
@@ -75,9 +82,32 @@ export async function buildCanvasPromptSubmission(input: {
     compiledUserText: compiled.compiledUserText,
     inputSnapshots: compiled.inputSnapshots,
     relationManifest: compiled.relationManifest,
+    ...(input.inputBindings
+      ? { inputBindings: input.inputBindings.map((binding) => ({ ...binding })) }
+      : {}),
     ...(compiled.promptWarnings ? { promptWarnings: compiled.promptWarnings } : {}),
     ...(compiled.systemPrompt ? { systemPrompt: compiled.systemPrompt } : {}),
     ...(inputFiles.length > 0 ? { inputFiles } : {}),
+  }
+}
+
+function applyInputBindings(
+  document: NonNullable<CanvasPromptTaskFields['promptDocument']>,
+  bindings: CanvasPromptTaskFields['inputBindings'],
+): NonNullable<CanvasPromptTaskFields['promptDocument']> {
+  if (!bindings) return document
+  const activeNodeIds = new Set(
+    bindings.filter((binding) => binding.enabled).map((binding) => binding.sourceNodeId),
+  )
+  return {
+    version: 2,
+    blocks: document.blocks
+      .filter(
+        (block) =>
+          (block.kind !== 'reference' && block.kind !== 'structured') ||
+          activeNodeIds.has(block.sourceNodeId),
+      )
+      .map((block) => ({ ...block })),
   }
 }
 

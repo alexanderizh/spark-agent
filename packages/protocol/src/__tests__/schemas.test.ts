@@ -530,7 +530,26 @@ describe('IPC schemas', () => {
       },
       systemPrompt: 'hidden capability',
       relationManifest: [
-        { blockId: 'ref-1', sourceNodeId: 'node-1', relation: 'character', order: 0 },
+        {
+          blockId: 'ref-1',
+          sourceNodeId: 'node-1',
+          relation: 'character',
+          order: 0,
+          modelReference: { channel: 'reference_images', ordinal: 1, label: '参考图 #1' },
+        },
+      ],
+      inputBindings: [
+        {
+          id: 'manual:node-1:reference',
+          sourceNodeId: 'node-1',
+          origin: 'manual',
+          kind: 'image',
+          relation: 'character',
+          role: 'reference',
+          enabled: true,
+          order: 0,
+          promptBlockId: 'ref-1',
+        },
       ],
       providerProfileId: 'provider-media-1',
       modelId: 'gpt-image-2',
@@ -541,6 +560,7 @@ describe('IPC schemas', () => {
     expect(taskRequest.promptDocument?.version).toBe(2)
     expect(taskRequest.systemPrompt).toBe('hidden capability')
     expect(taskRequest.relationManifest?.[0]?.relation).toBe('character')
+    expect(taskRequest.inputBindings?.[0]?.sourceNodeId).toBe('node-1')
 
     const deleteRequest = IpcSchemaRegistry['canvas:project:delete'].parse({
       projectId: 'canvas_project_1',

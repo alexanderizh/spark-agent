@@ -100,11 +100,13 @@ export async function prepareSavedCanvasOperationSubmission(
     })
   const negativePrompt = (node.data.negativePrompt ?? task?.negativePrompt ?? '').trim()
   const systemPrompt = (node.data.systemPrompt ?? task?.systemPrompt ?? '').trim()
+  const inputBindings = node.data.inputBindings ?? task?.inputBindings
   const compiled = await dependencies.compile({
     document: promptDocument,
     snapshot,
     operation,
     inputNodeIds,
+    ...(inputBindings ? { inputBindings } : {}),
     ...(systemPrompt ? { systemPrompt } : {}),
     ...(negativePrompt ? { negativePrompt } : {}),
   })

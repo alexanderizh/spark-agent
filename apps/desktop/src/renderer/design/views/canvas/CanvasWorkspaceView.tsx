@@ -7319,6 +7319,7 @@ export function CanvasWorkspaceView({
                         snapshot,
                         operation,
                         ...(params.inputNodeIds ? { inputNodeIds: params.inputNodeIds } : {}),
+                        ...(params.inputBindings ? { inputBindings: params.inputBindings } : {}),
                         ...(extractSystemPrompt ? { systemPrompt: extractSystemPrompt } : {}),
                         ...(params.inputTransport ? { inputTransport: params.inputTransport } : {}),
                       })
@@ -7403,6 +7404,7 @@ export function CanvasWorkspaceView({
                       snapshot,
                       operation,
                       ...(params.inputNodeIds ? { inputNodeIds: params.inputNodeIds } : {}),
+                      ...(params.inputBindings ? { inputBindings: params.inputBindings } : {}),
                       ...(systemPrompt ? { systemPrompt } : {}),
                       ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
                       ...(params.inputTransport ? { inputTransport: params.inputTransport } : {}),
@@ -7504,6 +7506,7 @@ export function CanvasWorkspaceView({
                     const nextNodeData = {
                       ...opNode.data,
                       ...(params.promptDocument ? { promptDocument: params.promptDocument } : {}),
+                      ...(params.inputBindings ? { inputBindings: params.inputBindings } : {}),
                       ...(params.systemPrompt ? { systemPrompt: params.systemPrompt } : {}),
                       negativePrompt: params.negativePrompt,
                       message: params.message,

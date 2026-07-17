@@ -709,8 +709,20 @@ const CanvasPromptDocumentSchema = z.object({
   version: z.literal(2),
   blocks: z.array(CanvasPromptBlockSchema).max(2_000),
 })
+const CanvasInputBindingSchema = z.object({
+  id: z.string().min(1).max(300),
+  sourceNodeId: z.string().min(1).max(200),
+  origin: z.enum(['connection', 'manual', 'picker']),
+  kind: z.enum(['image', 'video', 'audio', 'text', 'structured', 'file']),
+  relation: CanvasPromptRelationSchema,
+  role: z.enum(['input', 'first_frame', 'last_frame', 'reference', 'mask']).optional(),
+  enabled: z.boolean(),
+  order: z.number().int().min(0),
+  promptBlockId: z.string().max(200).optional(),
+})
 const CanvasPromptTaskFieldsSchema = {
   promptDocument: CanvasPromptDocumentSchema.optional(),
+  inputBindings: z.array(CanvasInputBindingSchema).max(128).optional(),
   promptSnapshot: CanvasPromptDocumentSchema.extend({
     capturedAt: z.string().max(80).optional(),
   }).optional(),
@@ -725,6 +737,23 @@ const CanvasPromptTaskFieldsSchema = {
         order: z.number().int().min(0),
         label: z.string().max(500).optional(),
         contentHash: z.string().max(200).optional(),
+        modelReference: z
+          .object({
+            channel: z.enum([
+              'reference_images',
+              'input_images',
+              'reference_videos',
+              'input_videos',
+              'reference_audios',
+              'input_audios',
+              'first_frame',
+              'last_frame',
+              'text',
+            ]),
+            ordinal: z.number().int().positive().optional(),
+            label: z.string().max(500),
+          })
+          .optional(),
       }),
     )
     .max(64)

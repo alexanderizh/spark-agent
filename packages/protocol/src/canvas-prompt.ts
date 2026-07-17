@@ -84,6 +84,43 @@ export type CanvasPromptSnapshot = CanvasPromptDocument & {
 
 export type CanvasPromptInputKind = 'image' | 'video' | 'audio' | 'text' | 'structured' | 'file'
 
+export type CanvasInputBindingOrigin = 'connection' | 'manual' | 'picker'
+
+export type CanvasInputBindingRole =
+  | 'input'
+  | 'first_frame'
+  | 'last_frame'
+  | 'reference'
+  | 'mask'
+
+/** Canonical task-level binding shared by every canvas input entry point. */
+export type CanvasInputBinding = {
+  id: string
+  sourceNodeId: string
+  origin: CanvasInputBindingOrigin
+  kind: CanvasPromptInputKind
+  relation: CanvasPromptRelation
+  role?: CanvasInputBindingRole
+  enabled: boolean
+  order: number
+  promptBlockId?: string
+}
+
+export type CanvasPromptModelReference = {
+  channel:
+    | 'reference_images'
+    | 'input_images'
+    | 'reference_videos'
+    | 'input_videos'
+    | 'reference_audios'
+    | 'input_audios'
+    | 'first_frame'
+    | 'last_frame'
+    | 'text'
+  ordinal?: number
+  label: string
+}
+
 /** Stable, non-secret representation of one resolved prompt input. */
 export type CanvasPromptInputSnapshot = {
   blockId: string
@@ -118,6 +155,7 @@ export type CanvasPromptRelationManifestEntry = {
   order: number
   label?: string
   contentHash?: string
+  modelReference?: CanvasPromptModelReference
 }
 
 export type CanvasPromptCompiledInputFile = MediaInputMetadata & {
@@ -144,6 +182,7 @@ export type CanvasPromptCompilation = {
 /** Optional task/request fields; legacy string-only requests remain valid. */
 export interface CanvasPromptTaskFields {
   promptDocument?: CanvasPromptDocument
+  inputBindings?: CanvasInputBinding[]
   promptSnapshot?: CanvasPromptSnapshot
   compiledUserText?: string
   inputSnapshots?: CanvasPromptInputSnapshot[]
