@@ -274,7 +274,9 @@
   top: calc(100% + 6px);
   left: 8px;
   display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   width: min(340px, calc(100vw - 48px));
+  box-sizing: border-box;
   padding: 8px;
   border: 1px solid var(--border-strong);
   border-radius: 12px;
@@ -344,6 +346,7 @@
 
 .canvas-prompt-insert-results {
   display: grid;
+  min-height: 0;
   max-height: 260px;
   overflow-y: auto;
   overscroll-behavior: contain;

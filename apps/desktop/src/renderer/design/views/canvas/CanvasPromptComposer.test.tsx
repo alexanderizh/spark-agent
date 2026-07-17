@@ -455,6 +455,9 @@ describe('CanvasPromptComposer', () => {
       '.canvas-prompt-insert-menu [aria-label="搜索节点与资源"]',
     )
     expect(mentionSearch?.value).toBe('分镜')
+    const mentionMenu = document.querySelector<HTMLElement>('.canvas-prompt-insert-menu')
+    expect(mentionMenu?.parentElement?.id).toBe('typeahead-menu')
+    expect(mentionMenu?.style.position).toBe('fixed')
   })
 
   it('closes the toolbar insert menu after an outside pointer down', async () => {

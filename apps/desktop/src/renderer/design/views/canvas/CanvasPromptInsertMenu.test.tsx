@@ -79,6 +79,8 @@ const characterAsset: CanvasAsset = {
 async function mountMenu(
   overrides: {
     query?: string
+    triggerElement?: HTMLElement | null
+    fixedToTrigger?: boolean
     onQueryChange?: (query: string) => void
     onInsertParameter?: ReturnType<typeof vi.fn>
     onInsertReference?: ReturnType<typeof vi.fn>
@@ -101,6 +103,12 @@ async function mountMenu(
         items={buildCanvasPromptMentionItems([characterNode, sceneNode, textNode])}
         assetById={new Map([[characterAsset.id, characterAsset]])}
         query={overrides.query ?? ''}
+        {...(overrides.triggerElement !== undefined
+          ? { triggerElement: overrides.triggerElement }
+          : {})}
+        {...(overrides.fixedToTrigger !== undefined
+          ? { fixedToTrigger: overrides.fixedToTrigger }
+          : {})}
         {...callbacks}
       />,
     )
@@ -119,6 +127,72 @@ function buttonByText(container: HTMLElement, text: string): HTMLButtonElement {
 }
 
 describe('CanvasPromptInsertMenu', () => {
+  it('keeps a trigger-anchored menu inside the viewport and scrolls its results', async () => {
+    const trigger = document.createElement('button')
+    document.body.appendChild(trigger)
+    const originalInnerWidth = window.innerWidth
+    const originalInnerHeight = window.innerHeight
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 })
+    let triggerTop = 100
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this === trigger) {
+          return {
+            top: triggerTop,
+            right: 140,
+            bottom: triggerTop + 30,
+            left: 100,
+            width: 40,
+            height: 30,
+            x: 100,
+            y: triggerTop,
+            toJSON: () => ({}),
+          }
+        }
+        if (this.classList.contains('canvas-prompt-insert-menu')) {
+          return {
+            top: 0,
+            right: 440,
+            bottom: 390,
+            left: 100,
+            width: 340,
+            height: 390,
+            x: 100,
+            y: 0,
+            toJSON: () => ({}),
+          }
+        }
+        return new DOMRect()
+      })
+
+    try {
+      const mounted = await mountMenu({ triggerElement: trigger, fixedToTrigger: true })
+      const menu = mounted.container.querySelector<HTMLElement>('.canvas-prompt-insert-menu')!
+      expect(menu.style.position).toBe('fixed')
+      expect(menu.style.top).toBe('136px')
+      expect(menu.style.left).toBe('100px')
+      expect(menu.style.maxHeight).toBe('252px')
+
+      triggerTop = 350
+      await act(async () => window.dispatchEvent(new Event('resize')))
+      expect(menu.style.top).toBe('12px')
+      expect(menu.style.maxHeight).toBe('332px')
+    } finally {
+      rectSpy.mockRestore()
+      trigger.remove()
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        value: originalInnerWidth,
+      })
+      Object.defineProperty(window, 'innerHeight', {
+        configurable: true,
+        value: originalInnerHeight,
+      })
+    }
+  })
+
   it('shows five compact shortcuts and uses character/scene shortcuts as filters', async () => {
     const mounted = await mountMenu()
     expect(
