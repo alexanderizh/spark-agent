@@ -1,84 +1,88 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildCanvasTextRawResponse,
-  CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
-  CANVAS_TEXT_ROLE_MAX_TOKENS,
+  CANVAS_TEXT_CONTEXT_SAFETY_TOKENS,
+  CANVAS_TEXT_OUTPUT_TIERS,
+  CanvasTextContextBudgetError,
   resolveCanvasTextMaxTokens,
   resolveCanvasTextTokenBudget,
 } from './canvasTextTaskDiagnostics.js'
 
 describe('canvasTextTaskDiagnostics', () => {
-  it('caps storyboard output independently from a very large provider context window', () => {
+  it('uses the long-output tier for storyboard generation', () => {
     expect(
       resolveCanvasTextTokenBudget({
+        operation: 'text_generate',
         providerContextWindow: 1_000_000,
         taskPipelineRole: 'shot',
         prompt: '短场次剧本',
       }),
     ).toMatchObject({
-      maxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.shot,
-      source: 'task_role_cap',
+      maxTokens: CANVAS_TEXT_OUTPUT_TIERS.long,
+      desiredMaxTokens: CANVAS_TEXT_OUTPUT_TIERS.long,
+      source: 'task_default',
       providerContextWindow: 1_000_000,
-      taskRoleMaxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.shot,
       contextWindow: 1_000_000,
-      contextReserveRatio: CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
+      contextSafetyTokens: CANVAS_TEXT_CONTEXT_SAFETY_TOKENS,
     })
   })
 
-  it('uses a smaller dedicated cap for screenplay rewriting', () => {
+  it('uses the long-output tier for screenplay rewriting', () => {
     expect(
       resolveCanvasTextTokenBudget({
+        operation: 'text_rewrite',
         taskPipelineRole: 'screenplay',
         prompt: '把章节改写成剧本',
       }),
     ).toMatchObject({
-      maxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.screenplay,
-      source: 'task_role_cap',
-      taskRoleMaxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.screenplay,
+      maxTokens: CANVAS_TEXT_OUTPUT_TIERS.long,
+      source: 'task_default',
     })
   })
 
-  it('uses the default 200K context when no provider override is set', () => {
+  it('uses 32K for ordinary canvas text generation', () => {
     const budget = resolveCanvasTextTokenBudget({
+      operation: 'text_generate',
       prompt: '短文本',
     })
 
-    expect(budget.source).toBe('context_window_derived')
+    expect(budget.source).toBe('task_default')
     expect(budget.contextWindow).toBe(200_000)
-    expect(budget.maxTokens).toBe(170_000)
+    expect(budget.maxTokens).toBe(CANVAS_TEXT_OUTPUT_TIERS.standard)
   })
 
-  it('supports a manually configured context window', () => {
+  it('uses 16K for prompt optimization', () => {
     expect(
       resolveCanvasTextMaxTokens({
-        providerContextWindow: 256_000,
-        prompt: '普通文本',
+        operation: 'prompt_optimize',
+        prompt: '优化这段提示词',
       }),
-    ).toBe(217_600)
+    ).toBe(CANVAS_TEXT_OUTPUT_TIERS.minimum)
   })
 
-  it('preserves explicit maxTokens overrides within the derived budget', () => {
+  it('raises explicit maxTokens overrides below the 16K minimum tier', () => {
     expect(
       resolveCanvasTextMaxTokens({
         requestedMaxTokens: 2048,
         taskPipelineRole: 'shot',
         prompt: '任意',
       }),
-    ).toBe(2048)
+    ).toBe(CANVAS_TEXT_OUTPUT_TIERS.minimum)
   })
 
-  it('clamps an explicit request to the context-derived budget', () => {
+  it('clamps an explicit request to the 128K explicit maximum', () => {
     expect(
       resolveCanvasTextMaxTokens({
         requestedMaxTokens: 200_000,
         prompt: '普通文本生成',
       }),
-    ).toBe(170_000)
+    ).toBe(CANVAS_TEXT_OUTPUT_TIERS.explicitMaximum)
   })
 
-  it('also clamps provider output settings to the configured context window', () => {
+  it('clamps an explicit request to the provider output cap', () => {
     expect(
       resolveCanvasTextTokenBudget({
+        requestedMaxTokens: 131_072,
         providerContextWindow: 200_000,
         providerMaxTokens: 128_000,
         prompt: '长文改写',
@@ -91,13 +95,43 @@ describe('canvasTextTaskDiagnostics', () => {
     })
   })
 
-  it('reduces the output budget when the prompt consumes the context reserve', () => {
+  it('keeps a model-specific 1M context while applying the provider output cap', () => {
     expect(
       resolveCanvasTextTokenBudget({
-        providerContextWindow: 20_000,
-        prompt: '超长文本'.repeat(5_000),
-      }).maxTokens,
-    ).toBe(4_000)
+        modelId: 'deepseek-v4-pro',
+        requestedMaxTokens: 131_072,
+        providerMaxTokens: 128_000,
+        prompt: '长篇剧本',
+      }),
+    ).toMatchObject({
+      source: 'provider_profile',
+      maxTokens: 128_000,
+      providerMaxTokens: 128_000,
+      providerContextWindow: 1_000_000,
+      contextWindow: 1_000_000,
+    })
+  })
+
+  it('uses a fixed 16K safety buffer when the prompt consumes most of the context', () => {
+    expect(resolveCanvasTextTokenBudget({
+      operation: 'text_generate',
+      providerContextWindow: 100_000,
+      prompt: '文'.repeat(74_999),
+    })).toMatchObject({
+      maxTokens: 23_616,
+      source: 'context_remaining',
+      promptTokensEstimate: 60_000,
+      remainingContextTokens: 23_616,
+      contextSafetyTokens: CANVAS_TEXT_CONTEXT_SAFETY_TOKENS,
+    })
+  })
+
+  it('fails locally when the prompt leaves no safe output context', () => {
+    expect(() => resolveCanvasTextTokenBudget({
+      operation: 'text_generate',
+      providerContextWindow: 20_000,
+      prompt: '超长文本'.repeat(5_000),
+    })).toThrow(CanvasTextContextBudgetError)
   })
 
   it('stores output diagnostics without duplicating system prompt or compiled prompt', () => {
@@ -113,11 +147,12 @@ describe('canvasTextTaskDiagnostics', () => {
       relationManifest: [],
       taskPipelineRole: 'shot',
       outputText: '{"shots":[{"index":1},{"index":2}',
-      effectiveMaxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.shot,
-      maxTokensSource: 'task_role_cap',
-      taskRoleMaxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.shot,
+      desiredMaxTokens: CANVAS_TEXT_OUTPUT_TIERS.long,
+      effectiveMaxTokens: CANVAS_TEXT_OUTPUT_TIERS.long,
+      maxTokensSource: 'task_default',
       contextWindow: 1_000_000,
-      contextReserveRatio: CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
+      remainingContextTokens: 983_000,
+      contextSafetyTokens: CANVAS_TEXT_CONTEXT_SAFETY_TOKENS,
       requestTimeoutMs: 600_000,
       providerFinishReason: 'length',
       reasoningContentChars: 24_000,
@@ -128,11 +163,12 @@ describe('canvasTextTaskDiagnostics', () => {
     expect(raw).toMatchObject({
       providerProfileId: 'provider-1',
       model: 'deepseek-v4-flash',
-      maxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.shot,
-      maxTokensSource: 'task_role_cap',
-      taskRoleMaxTokens: CANVAS_TEXT_ROLE_MAX_TOKENS.shot,
+      desiredMaxTokens: CANVAS_TEXT_OUTPUT_TIERS.long,
+      maxTokens: CANVAS_TEXT_OUTPUT_TIERS.long,
+      maxTokensSource: 'task_default',
       contextWindow: 1_000_000,
-      contextReserveRatio: CANVAS_TEXT_CONTEXT_RESERVE_RATIO,
+      remainingContextTokens: 983_000,
+      contextSafetyTokens: CANVAS_TEXT_CONTEXT_SAFETY_TOKENS,
       requestTimeoutMs: 600_000,
       providerFinishReason: 'length',
       reasoningContentChars: 24_000,
