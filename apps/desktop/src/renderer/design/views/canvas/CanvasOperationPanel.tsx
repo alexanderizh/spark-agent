@@ -40,6 +40,7 @@ import {
   stripCanvasFunctionalPromptInput,
 } from './canvasPromptInitialization'
 import { computeMediaInputRoleMap } from './canvasMediaInputRoles'
+import { selectCanvasMediaCapability } from './canvasMediaCapabilitySelection'
 import {
   CanvasMediaInputPickerModal,
   type MediaInputPickerItem,
@@ -907,12 +908,27 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   ])
   const selectedCapability = useMemo(() => {
     if (!selectedModel) return null
-    return (
-      selectedModel.capabilities.find((item) =>
-        (mediaCapabilityIds as readonly string[]).includes(item.id),
-      ) ?? null
-    )
-  }, [mediaCapabilityIds, selectedModel])
+    return selectCanvasMediaCapability({
+      operation,
+      model: selectedModel,
+      selectedInputNodeIds,
+      mediaInputOptions: mediaInputOptions.map((item) => ({
+        value: String(item.value),
+        type: item.type,
+      })),
+      firstFrameNodeId,
+      lastFrameNodeId,
+      referenceFrameNodeIds,
+    })
+  }, [
+    firstFrameNodeId,
+    lastFrameNodeId,
+    mediaInputOptions,
+    operation,
+    referenceFrameNodeIds,
+    selectedInputNodeIds,
+    selectedModel,
+  ])
   const supportsVideoFrameRoles = useMemo(
     () =>
       (selectedCapability ? capabilitySupportsFrameRoles(selectedCapability) : false) &&

@@ -126,29 +126,57 @@ export class MediaRouterService {
     options: Pick<InvokeOptions, 'providers' | 'providerProfileId' | 'modelId' | 'manifestId'>,
   ): MediaCapabilityId | null {
     if (
-      input.operation === 'text_to_video'
-      && (input.inputFiles ?? []).some((file) => file.type === 'image' && file.role === 'reference')
+      (input.operation === 'text_to_video' || input.operation === 'image_to_video')
+      && this.prefersReferenceCapability(input)
     ) {
       const selectedProviders = options.providerProfileId
         ? options.providers.filter((provider) => provider.id === options.providerProfileId)
-        : options.providers
-      const supportsXaiReference = selectedProviders.some((provider) => {
-        if (effectiveProviderKind(provider) !== 'xai') return false
+        : options.manifestId
+          ? options.providers.filter((provider) =>
+              provider.mediaModelManifests?.some((manifest) => manifest.id === options.manifestId),
+            )
+          : options.modelId
+            ? options.providers.filter(
+                (provider) =>
+                  provider.defaultModel === options.modelId ||
+                  provider.modelIds?.includes(options.modelId ?? '') === true ||
+                  provider.mediaModelManifests?.some(
+                    (manifest) => manifest.modelId === options.modelId,
+                  ),
+              )
+            : options.providers
+      const supportsReferenceInput = selectedProviders.some((provider) => {
         const manifests = provider.mediaModelManifests ?? []
         const selectedManifest = options.manifestId
           ? manifests.find((manifest) => manifest.id === options.manifestId)
           : options.modelId
             ? manifests.find((manifest) => manifest.modelId === options.modelId)
             : manifests.find((manifest) => manifest.modelId === provider.defaultModel)
-        return selectedManifest?.capabilities.some((capability) => capability.id === 'video.reference_to_video')
-          ?? this.supports(provider, 'video.reference_to_video')
+        if (selectedManifest) {
+          return selectedManifest.capabilities.some(
+            (capability) => capability.id === 'video.reference_to_video',
+          )
+        }
+        if (options.manifestId || options.modelId) return false
+        return this.supports(provider, 'video.reference_to_video')
       })
-      if (supportsXaiReference) return 'video.reference_to_video'
+      if (supportsReferenceInput) return 'video.reference_to_video'
     }
     return this.resolveCapability(input.operation, options.providers)
   }
 
   /** 检查某 provider profile 是否声明支持某 capability（且 adapter 也支持） */
+  private prefersReferenceCapability(input: MediaGenerateInput): boolean {
+    const files = input.inputFiles ?? []
+    if (input.operation === 'text_to_video') {
+      return files.some((file) => file.type === 'image' || file.type === 'video' || file.type === 'audio')
+    }
+    if (files.some((file) => file.type === 'video' || file.type === 'audio')) return true
+    const images = files.filter((file) => file.type === 'image')
+    if (images.some((file) => file.role === 'reference')) return true
+    return images.length > 1 && !images.some((file) => file.role === 'first_frame' || file.role === 'last_frame')
+  }
+
   supports(profile: MediaProviderProfile, capability: MediaCapabilityId): boolean {
     const kind = effectiveProviderKind(profile)
     const adapter = kind ? this.adapters.get(kind) : undefined

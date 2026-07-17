@@ -21,6 +21,7 @@ describe('xAI media manifests', () => {
         | Record<string, { enum?: unknown[] }>
         | undefined
       expect(schema?.resolution?.enum).toEqual(['480p', '720p', '1080p'])
+      expect(manifest?.capabilities[0]?.input.required).toEqual(['image'])
     }
 
     const preset = PROVIDER_PRESETS.find((entry) => entry.id === 'xai-imagine-video')
@@ -47,6 +48,9 @@ describe('xAI media manifests', () => {
       (reference?.paramSchema.properties as Record<string, { maximum?: number }>).durationSeconds
         ?.maximum,
     ).toBe(10)
+    expect(
+      manifest?.capabilities.find((entry) => entry.id === 'video.image_to_video')?.input.required,
+    ).toEqual(['image'])
     const extension = manifest?.capabilities.find((entry) => entry.id === 'video.extend')
     const extensionDuration = (extension?.paramSchema.properties as Record<string, { minimum?: number; maximum?: number }>).durationSeconds
     expect(extensionDuration).toMatchObject({ minimum: 2, maximum: 10 })

@@ -52,7 +52,9 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
         'audio.transcription',
         'video.generate',
         'video.image_to_video',
+        'video.reference_to_video',
         'video.edit',
+        'video.extend',
       ],
       // APIMart 所有异步图片/视频任务都通过统一任务端点查询。
       videoTaskPath: (taskId) => `/tasks/${encodeURIComponent(taskId)}`,

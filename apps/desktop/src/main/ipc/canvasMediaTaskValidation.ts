@@ -63,7 +63,7 @@ export function validateCanvasMediaTaskParams(input: {
   })
 
   return {
-    prunedModelParams: result.providerParams,
+    prunedModelParams: result.canonicalParams,
     droppedParams: result.droppedParams,
     warnings: result.warnings,
     validationIssues: result.validationIssues,

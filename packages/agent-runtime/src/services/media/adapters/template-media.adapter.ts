@@ -265,8 +265,6 @@ export function buildVariables(
   const referenceFiles = imageFiles.some((file) => file.role === 'reference')
     ? imageFiles.filter((file) => file.role === 'reference')
     : imageFiles.filter((file) => file !== (firstFrame ?? imageFiles[0]) && file !== lastFrame)
-  void capability
-
   // 百炼视频系列（HappyHorse 全系列 + Wan 2.7 全系列）共用 input.media: [{type, url}]
   // 数组结构。元素 type 覆盖：video / first_frame / last_frame / reference_image /
   // driving_audio（Wan i2v/t2v 驱动音频）。
@@ -301,8 +299,12 @@ export function buildVariables(
     inputImages: imageRefs,
     inputImageUrls: imageRefs,
     imageUrls: imageRefs,
-    firstFrame: resolveRef(firstFrame) || imageRefs[0] || '',
-    firstFrameImage: resolveRef(firstFrame) || imageRefs[0] || '',
+    firstFrame:
+      resolveRef(firstFrame) ||
+      (capability.id === 'video.image_to_video' ? (imageRefs[0] ?? '') : ''),
+    firstFrameImage:
+      resolveRef(firstFrame) ||
+      (capability.id === 'video.image_to_video' ? (imageRefs[0] ?? '') : ''),
     lastFrame: resolveRef(lastFrame) || '',
     lastFrameImage: resolveRef(lastFrame) || '',
     referenceImages: referenceFiles.map(resolveRef).filter(Boolean),
@@ -315,6 +317,12 @@ export function buildVariables(
     firstClip: videoRefs[0] || '',
     audio: audioRefs[0] || '',
     audioUrl: audioRefs[0] || '',
+    audios: audioRefs,
+    audioUrls: audioRefs,
+    inputAudios: audioRefs,
+    inputAudioUrls: audioRefs,
+    referenceAudios: audioRefs,
+    referenceAudioUrls: audioRefs,
     media: bailianMedia,
     params: canonicalParams,
     providerParams,
@@ -343,14 +351,19 @@ function mergeProviderParams(body: unknown, providerParams: unknown): unknown {
 
 function renderTemplate(value: unknown, variables: Record<string, unknown>): unknown {
   if (typeof value === 'string') return renderTemplateStringOrValue(value, variables)
-  if (Array.isArray(value)) return value.map((item) => renderTemplate(item, variables)).filter((item) => item !== undefined)
+  if (Array.isArray(value)) {
+    const rendered = value
+      .map((item) => renderTemplate(item, variables))
+      .filter((item) => item !== undefined)
+    return rendered.length > 0 ? rendered : undefined
+  }
   if (isPlainRecord(value)) {
     const rendered: Record<string, unknown> = {}
     for (const [key, child] of Object.entries(value)) {
       const next = renderTemplate(child, variables)
       if (next !== undefined && next !== '') rendered[key] = next
     }
-    return rendered
+    return Object.keys(rendered).length > 0 ? rendered : undefined
   }
   return value
 }

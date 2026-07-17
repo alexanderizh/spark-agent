@@ -32,7 +32,6 @@ import { FAILED_STATUSES } from './openai-compatible-media.adapter.js'
 import { filenameHelper } from './openai-compatible-media.adapter.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
 import { resolveXaiMediaReference, type XaiMediaReference } from '../xai-media-input.js'
-import { XAI_MAX_VIDEO_PROMPT_CHARS } from '../xai-media.constants.js'
 
 const log = createLogger('media:xai')
 
@@ -84,12 +83,8 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
   ): Promise<MediaGenerateOutput> {
     const capability = input.capability ?? 'video.generate'
     const prompt = (input.prompt ?? '').trim()
-    if (!prompt) throw new MediaProviderError('invalid_input', `xAI ${capability} requires a prompt`)
-    if (prompt.length > XAI_MAX_VIDEO_PROMPT_CHARS) {
-      throw new MediaProviderError(
-        'invalid_input',
-        `xAI 视频提示词不能超过 ${XAI_MAX_VIDEO_PROMPT_CHARS} 个字符，当前为 ${prompt.length} 个字符`,
-      )
+    if (!prompt && capability !== 'video.image_to_video') {
+      throw new MediaProviderError('invalid_input', `xAI ${capability} requires a prompt`)
     }
 
     const model = ctx.defaultModel
@@ -136,9 +131,6 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       if (referenceRefs.length === 0) {
         throw new MediaProviderError('invalid_input', 'xAI reference-to-video requires reference images')
       }
-      if (referenceRefs.length > 7) {
-        throw new MediaProviderError('invalid_input', 'xAI reference-to-video supports at most 7 images')
-      }
     }
 
     const params = input.modelParams ?? {}
@@ -159,7 +151,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
 
     const body: Record<string, unknown> = {
       model,
-      prompt,
+      ...(prompt ? { prompt } : {}),
       ...(capability === 'video.image_to_video' && firstFrame ? { image: firstFrame } : {}),
       ...(capability === 'video.reference_to_video'
         ? { reference_images: referenceRefs }
@@ -377,12 +369,6 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     const prompt = (input.prompt ?? '').trim()
     if (!prompt) {
       throw new MediaProviderError('invalid_input', `xAI ${capability} requires a prompt`)
-    }
-    if (prompt.length > XAI_MAX_VIDEO_PROMPT_CHARS) {
-      throw new MediaProviderError(
-        'invalid_input',
-        `xAI 视频提示词不能超过 ${XAI_MAX_VIDEO_PROMPT_CHARS} 个字符，当前为 ${prompt.length} 个字符`,
-      )
     }
     const inputVideoFile = (input.inputFiles ?? []).find(
       (file) => file.type === 'video' || (file.type === 'file' && file.role === 'input'),

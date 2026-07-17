@@ -8,7 +8,6 @@ import {
   validationIssue,
   type MediaValidationContext,
 } from './media-validator.types.js'
-import { XAI_MAX_VIDEO_PROMPT_CHARS } from '../xai-media.constants.js'
 
 export function validateXaiMediaRequest(context: MediaValidationContext): MediaContractIssue[] {
   const issues: MediaContractIssue[] = []
@@ -46,16 +45,8 @@ export function validateXaiMediaRequest(context: MediaValidationContext): MediaC
   }
 
   if (capability.startsWith('video.')) {
-    if (prompt.length === 0) {
+    if (capability !== 'video.image_to_video' && prompt.length === 0) {
       issues.push(validationIssue('missing_required', 'xAI 视频任务需要提示词', ['prompt']))
-    } else if (prompt.length > XAI_MAX_VIDEO_PROMPT_CHARS) {
-      issues.push(
-        validationIssue(
-          'out_of_range',
-          `xAI 视频提示词不能超过 ${XAI_MAX_VIDEO_PROMPT_CHARS} 个字符，当前为 ${prompt.length} 个字符`,
-          ['prompt'],
-        ),
-      )
     }
     if (modelId.startsWith('grok-imagine-video-1.5') && capability !== 'video.image_to_video') {
       issues.push(
@@ -91,12 +82,11 @@ export function validateXaiMediaRequest(context: MediaValidationContext): MediaC
   if (capability === 'video.reference_to_video') {
     const explicitReferences = images.filter((file) => file.role === 'reference')
     const references = explicitReferences.length > 0 ? explicitReferences : images
+    if (references.length > 7) {
+      issues.push(validationIssue('out_of_range', 'xAI reference-to-video supports at most 7 reference images', ['inputFiles']))
+    }
     if (references.length === 0) {
       issues.push(validationIssue('missing_required', 'xAI 参考生视频需要参考图片', ['inputFiles']))
-    } else if (references.length > 7) {
-      issues.push(
-        validationIssue('out_of_range', 'xAI 参考生视频最多支持 7 张图片', ['inputFiles']),
-      )
     }
   }
 
@@ -113,7 +103,8 @@ export function validateXaiMediaRequest(context: MediaValidationContext): MediaC
   const duration = numericParam(input.modelParams, 'durationSeconds', 'duration')
   if (duration != null) {
     const min = capability === 'video.extend' ? 2 : 1
-    const max = capability === 'video.extend' || capability === 'video.reference_to_video' ? 10 : 15
+    const max =
+      capability === 'video.extend' || capability === 'video.reference_to_video' ? 10 : 15
     if (
       duration < min ||
       duration > max ||

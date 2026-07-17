@@ -39,9 +39,41 @@ describe('canvasTaskSubmissionValidation', () => {
     expect(mockedPrune).not.toHaveBeenCalled()
   })
 
+  it('classifies generic file inputs by MIME type during basic validation', async () => {
+    await expect(
+      validateCanvasMediaTaskSubmission({
+        operation: 'video_edit',
+        prompt: 'restyle',
+        inputFiles: [
+          {
+            type: 'file',
+            role: 'input',
+            mimeType: 'video/mp4',
+            url: 'https://example.com/input.mp4',
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ operation: 'video_edit' })
+
+    await expect(
+      validateCanvasMediaTaskSubmission({
+        operation: 'image_to_video',
+        prompt: 'animate',
+        inputFiles: [
+          {
+            type: 'file',
+            role: 'reference',
+            mimeType: 'video/mp4',
+            url: 'https://example.com/reference.mp4',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ message: '请至少选择一张输入图片' })
+  })
+
   it('passes the final prompt, model and materialized inputs to provider validation', async () => {
     mockedPrune.mockResolvedValue({
-      modelParams: { duration: 8 },
+      modelParams: { durationSeconds: 8 },
       droppedParams: [],
       warnings: [],
       validationIssues: [],
@@ -74,7 +106,7 @@ describe('canvasTaskSubmissionValidation', () => {
         validateSubmission: true,
       }),
     )
-    expect(result.modelParams).toEqual({ duration: 8 })
+    expect(result.modelParams).toEqual({ durationSeconds: 8 })
     expect(result).toMatchObject({
       manifestId: 'xai:grok-imagine-video',
       providerProfileId: 'provider-1',

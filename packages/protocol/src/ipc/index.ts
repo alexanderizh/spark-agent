@@ -4685,7 +4685,7 @@ export interface CanvasMediaPruneModelParamsRequest {
 }
 
 export interface CanvasMediaPruneModelParamsResponse {
-  /** 裁剪后的 modelParams（已应用 aliases 映射、过滤 forbidden/local/unknown）。 */
+  /** 裁剪后的 canonical modelParams（已过滤 forbidden/local/unknown；aliases 由执行 adapter 映射）。 */
   prunedModelParams: Record<string, unknown>
   /** 被丢弃的字段及原因，用于任务详情展示和 agent 自我纠正。 */
   droppedParams: MediaDroppedParam[]

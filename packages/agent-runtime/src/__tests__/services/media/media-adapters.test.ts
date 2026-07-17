@@ -695,6 +695,439 @@ describe('MediaRouterService', () => {
     expect(fetchMock.calls.some((call) => call.url.endsWith('/tasks/vid-1'))).toBe(true)
   })
 
+  it('APIMart video requests apply model-specific aspect-ratio aliases at the adapter boundary', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'apimart:grok-imagine-1.5-video-apimart',
+    )
+    expect(manifest).toBeDefined()
+    const fetchMock = makeFetch([
+      {
+        match: '/videos/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { video_url: 'https://cdn/aliased.mp4' } }
+        },
+      },
+      {
+        match: 'https://cdn/aliased.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        outputDir: tmpDir,
+        prompt: 'a cinematic camera move',
+        modelParams: { aspectRatio: '16:9', durationSeconds: 8 },
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'grok-imagine-1.5-video-apimart',
+            mediaCapabilities: ['video.generate'],
+            mediaModelManifests: manifest ? [manifest] : [],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(captured.body).toMatchObject({ size: '16:9', duration: 8 })
+    expect(captured.body.aspect_ratio).toBeUndefined()
+  })
+
+  it('APIMart reference-to-video sends every role-tagged media input in provider arrays', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'apimart:doubao-seedance-2.0',
+    )
+    expect(manifest).toBeDefined()
+    const fetchMock = makeFetch([
+      {
+        match: '/videos/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { video_url: 'https://cdn/reference.mp4' } }
+        },
+      },
+      {
+        match: 'https://cdn/reference.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'image_to_video',
+        capability: 'video.reference_to_video',
+        outputDir: tmpDir,
+        prompt: '',
+        inputFiles: [
+          { type: 'image', role: 'reference', url: 'https://cdn/a.png' },
+          { type: 'image', role: 'reference', url: 'https://cdn/b.png' },
+          {
+            type: 'file',
+            role: 'reference',
+            mimeType: 'video/mp4',
+            url: 'https://cdn/motion.mp4',
+          },
+          {
+            type: 'file',
+            role: 'reference',
+            mimeType: 'audio/mpeg',
+            url: 'https://cdn/voice.mp3',
+          },
+        ],
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'doubao-seedance-2.0',
+            mediaCapabilities: ['video.reference_to_video'],
+            mediaModelManifests: manifest ? [manifest] : [],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(captured.body.image_urls).toEqual(['https://cdn/a.png', 'https://cdn/b.png'])
+    expect(captured.body.video_urls).toEqual(['https://cdn/motion.mp4'])
+    expect(captured.body.audio_urls).toEqual(['https://cdn/voice.mp3'])
+    expect(captured.body.prompt).toBeUndefined()
+    expect(captured.body.first_frame_image).toBeUndefined()
+    expect(captured.body.reference_images).toBeUndefined()
+  })
+
+  it('APIMart Seedance 1.5 sends first and last frames with documented roles', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'apimart:doubao-seedance-1-5-pro-apimart',
+    )
+    expect(manifest).toBeDefined()
+    const fetchMock = makeFetch([
+      {
+        match: '/videos/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { video_url: 'https://cdn/seedance.mp4' } }
+        },
+      },
+      {
+        match: 'https://cdn/seedance.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        outputDir: tmpDir,
+        prompt: 'transition between the supplied frames',
+        inputFiles: [
+          { type: 'image', role: 'first_frame', url: 'https://cdn/first.png' },
+          { type: 'image', role: 'last_frame', url: 'https://cdn/last.png' },
+        ],
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'doubao-seedance-1-5-pro',
+            mediaCapabilities: ['video.image_to_video'],
+            mediaModelManifests: manifest ? [manifest] : [],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(captured.body.image_with_roles).toEqual([
+      { url: 'https://cdn/first.png', role: 'first_frame' },
+      { url: 'https://cdn/last.png', role: 'last_frame' },
+    ])
+    expect(captured.body.first_frame_image).toBeUndefined()
+    expect(captured.body.last_frame_image).toBeUndefined()
+  })
+
+  it('APIMart Seedance 1.5 infers first and last roles for two unassigned images', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'apimart:doubao-seedance-1-5-pro-apimart',
+    )
+    expect(manifest).toBeDefined()
+    const fetchMock = makeFetch([
+      {
+        match: '/videos/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { video_url: 'https://cdn/seedance-inferred.mp4' } }
+        },
+      },
+      {
+        match: 'https://cdn/seedance-inferred.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        outputDir: tmpDir,
+        prompt: 'animate the supplied images',
+        inputFiles: [
+          { type: 'image', url: 'https://cdn/first.png' },
+          { type: 'image', url: 'https://cdn/last.png' },
+        ],
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'doubao-seedance-1-5-pro',
+            mediaCapabilities: ['video.image_to_video'],
+            mediaModelManifests: manifest ? [manifest] : [],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(captured.body.image_with_roles).toEqual([
+      { url: 'https://cdn/first.png', role: 'first_frame' },
+      { url: 'https://cdn/last.png', role: 'last_frame' },
+    ])
+  })
+
+  it('APIMart omits ignored aspect-ratio fields for image and edit inputs', async () => {
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const captured: Record<string, Record<string, unknown>> = {}
+    const manifests = new Map(
+      ['wan2.6', 'happyhorse-1.0'].map((modelId) => [
+        modelId,
+        BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+          (entry) => entry.providerKind === 'apimart' && entry.modelId === modelId,
+        ),
+      ]),
+    )
+    const fetchMock = makeFetch([
+      {
+        match: '/videos/generations',
+        respond: (init) => {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          captured[String(body.model)] = body
+          return {
+            ok: true,
+            status: 200,
+            body: { video_url: `https://cdn/${String(body.model)}.mp4` },
+          }
+        },
+      },
+      {
+        match: 'https://cdn/',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        outputDir: tmpDir,
+        prompt: 'animate the source image',
+        inputFiles: [{ type: 'image', role: 'first_frame', url: 'https://cdn/frame.png' }],
+        modelParams: { aspectRatio: '9:16' },
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'wan2.6',
+            mediaCapabilities: ['video.image_to_video'],
+            mediaModelManifests: [manifests.get('wan2.6')!],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    await router.invoke(
+      {
+        operation: 'video_edit',
+        capability: 'video.edit',
+        outputDir: tmpDir,
+        prompt: 'restyle the source video',
+        inputFiles: [{ type: 'video', role: 'input', url: 'https://cdn/source.mp4' }],
+        modelParams: { aspectRatio: '9:16' },
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'happyhorse-1.0',
+            mediaCapabilities: ['video.edit'],
+            mediaModelManifests: [manifests.get('happyhorse-1.0')!],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(captured['wan2.6']?.aspect_ratio).toBeUndefined()
+    expect(captured['happyhorse-1.0']?.size).toBeUndefined()
+  })
+
+  it('APIMart sends the native dotted Seedance 2.0 model id', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'apimart:doubao-seedance-2-0-fast-apimart',
+    )
+    expect(manifest).toBeDefined()
+    const fetchMock = makeFetch([
+      {
+        match: '/videos/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { video_url: 'https://cdn/seedance-dotted.mp4' } }
+        },
+      },
+      {
+        match: 'https://cdn/seedance-dotted.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        outputDir: tmpDir,
+        prompt: 'a cinematic scene',
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'doubao-seedance-2-0-fast',
+            mediaCapabilities: ['video.generate'],
+            mediaModelManifests: manifest ? [manifest] : [],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(captured.body.model).toBe('doubao-seedance-2.0-fast')
+  })
+
+  it('APIMart adapter uses the PixVerse model-specific reference field', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'apimart:pixverse-v6',
+    )
+    expect(manifest).toBeDefined()
+    const fetchMock = makeFetch([
+      {
+        match: '/videos/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { video_url: 'https://cdn/pixverse.mp4' } }
+        },
+      },
+      {
+        match: 'https://cdn/pixverse.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'image_to_video',
+        capability: 'video.reference_to_video',
+        outputDir: tmpDir,
+        prompt: 'preserve the supplied subjects',
+        inputFiles: [
+          { type: 'image', role: 'reference', url: 'https://cdn/reference-1.png' },
+          { type: 'image', role: 'reference', url: 'https://cdn/reference-2.png' },
+        ],
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'pixverse-v6',
+            mediaCapabilities: ['video.reference_to_video'],
+            mediaModelManifests: manifest ? [manifest] : [],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(captured.body.img_references).toEqual([
+      'https://cdn/reference-1.png',
+      'https://cdn/reference-2.png',
+    ])
+    expect(captured.body.image_urls).toBeUndefined()
+  })
+
+  it('APIMart video editing sends the source video and all reference images', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'apimart:happyhorse-1.0',
+    )
+    expect(manifest).toBeDefined()
+    const fetchMock = makeFetch([
+      {
+        match: '/videos/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { video_url: 'https://cdn/edited.mp4' } }
+        },
+      },
+      {
+        match: 'https://cdn/edited.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'video_edit',
+        capability: 'video.edit',
+        outputDir: tmpDir,
+        prompt: 'restyle the video',
+        inputFiles: [
+          { type: 'video', role: 'input', url: 'https://cdn/source.mp4' },
+          { type: 'image', role: 'reference', url: 'https://cdn/style-a.png' },
+          { type: 'image', role: 'reference', url: 'https://cdn/style-b.png' },
+        ],
+      },
+      {
+        providers: [
+          makeProvider({
+            defaultModel: 'happyhorse-1.0',
+            mediaCapabilities: ['video.edit'],
+            mediaModelManifests: manifest ? [manifest] : [],
+          }),
+        ],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(captured.body.video_url).toBe('https://cdn/source.mp4')
+    expect(captured.body.image_urls).toEqual([
+      'https://cdn/style-a.png',
+      'https://cdn/style-b.png',
+    ])
+  })
+
   it('task failure raises task_failed error', async () => {
     const fetchMock = makeFetch([
       {

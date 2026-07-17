@@ -72,8 +72,9 @@ export function validateCommonMediaRequest(context: MediaValidationContext): Med
 
     const acceptedMimeTypes = capability.input.acceptedMimeTypes ?? []
     if (acceptedMimeTypes.length > 0) {
+      const accepted = new Set(acceptedMimeTypes.map(normalizeMimeType))
       for (const [index, file] of files.entries()) {
-        if (!file.mimeType || acceptedMimeTypes.includes(file.mimeType)) continue
+        if (!file.mimeType || accepted.has(normalizeMimeType(file.mimeType))) continue
         issues.push(
           validationIssue(
             'invalid_enum',
@@ -111,6 +112,11 @@ export function validateCommonMediaRequest(context: MediaValidationContext): Med
   }
 
   return issues
+}
+
+function normalizeMimeType(value: string): string {
+  const normalized = value.split(';', 1)[0]?.trim().toLowerCase() ?? ''
+  return normalized === 'image/jpg' ? 'image/jpeg' : normalized
 }
 
 function hasRequiredInput(

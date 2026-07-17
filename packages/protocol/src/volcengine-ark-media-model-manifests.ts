@@ -125,15 +125,23 @@ const seedance2BaseProperties = {
   priority: { type: 'integer', title: '队列优先级', minimum: 0, maximum: 9, default: 0 },
   safetyIdentifier: { type: 'string', title: '安全标识', maxLength: 64 },
   callbackUrl: { type: 'string', title: '回调地址', format: 'uri' },
-  searchEnabled: { type: 'boolean', title: '联网搜索（仅纯文本）', default: false },
 }
 
-function seedance2Schema(resolutions: readonly string[]) {
+function seedance2Schema(resolutions: readonly string[], includeSearch: boolean) {
   return {
     type: 'object',
     additionalProperties: false,
     properties: {
       ...seedance2BaseProperties,
+      ...(includeSearch
+        ? {
+            searchEnabled: {
+              type: 'boolean',
+              title: '联网搜索（仅纯文本）',
+              default: false,
+            },
+          }
+        : {}),
       resolution: {
         type: 'string',
         title: '分辨率',
@@ -152,7 +160,6 @@ const seedance2Aliases = {
   executionExpiresAfter: 'execution_expires_after',
   safetyIdentifier: 'safety_identifier',
   callbackUrl: 'callback_url',
-  searchEnabled: 'enable_search',
 }
 
 function seedance2Capability(input: {
@@ -162,6 +169,10 @@ function seedance2Capability(input: {
   schema: Record<string, unknown>
   rolePolicy: MediaInputRolePolicy
 }): MediaModelCapabilityManifest {
+  const aliases = {
+    ...seedance2Aliases,
+    ...(input.id === 'video.generate' ? { searchEnabled: 'enable_search' } : {}),
+  }
   return {
     id: input.id,
     label: input.label,
@@ -184,9 +195,9 @@ function seedance2Capability(input: {
       returnLastFrame: false,
       executionExpiresAfter: 172800,
       priority: 0,
-      searchEnabled: false,
+      ...(input.id === 'video.generate' ? { searchEnabled: false } : {}),
     },
-    aliases: seedance2Aliases,
+    aliases,
     paramPolicy: strictParamPolicy,
   }
 }
@@ -196,7 +207,8 @@ function seedance2Manifest(input: {
   displayName: string
   resolutions: readonly string[]
 }): MediaModelManifest {
-  const schema = seedance2Schema(input.resolutions)
+  const textSchema = seedance2Schema(input.resolutions, true)
+  const mediaSchema = seedance2Schema(input.resolutions, false)
   return {
     id: `volcengine:${input.modelId}`,
     providerKind: 'volcengine-ark',
@@ -208,35 +220,35 @@ function seedance2Manifest(input: {
         id: 'video.generate',
         label: '文生视频 / 多模态参考',
         required: [],
-        schema,
+        schema: textSchema,
         rolePolicy: seedanceReferenceRolePolicy,
       }),
       seedance2Capability({
         id: 'video.image_to_video',
         label: '首帧 / 首尾帧 / 多模态参考生视频',
         required: ['image'],
-        schema,
+        schema: mediaSchema,
         rolePolicy: seedanceFrameAndReferenceRolePolicy,
       }),
       seedance2Capability({
         id: 'video.reference_to_video',
         label: '多模态参考生视频',
         required: [],
-        schema,
+        schema: mediaSchema,
         rolePolicy: seedanceReferenceRolePolicy,
       }),
       seedance2Capability({
         id: 'video.edit',
         label: '参考视频编辑',
         required: ['video'],
-        schema,
+        schema: mediaSchema,
         rolePolicy: seedanceReferenceRolePolicy,
       }),
       seedance2Capability({
         id: 'video.extend',
         label: '参考视频延长',
         required: ['video'],
-        schema,
+        schema: mediaSchema,
         rolePolicy: seedanceReferenceRolePolicy,
       }),
     ],
@@ -339,6 +351,30 @@ const seedance10Schema = {
   },
 }
 
+const seedance15ImageToVideoSchema = {
+  ...seedance15Schema,
+  properties: {
+    ...seedance15Schema.properties,
+    resolution: {
+      ...seedance15Schema.properties.resolution,
+      enum: ['480p', '720p'],
+      default: '720p',
+    },
+  },
+}
+
+const seedance10ImageToVideoSchema = {
+  ...seedance10Schema,
+  properties: {
+    ...omitRecordKeys(seedance10Schema.properties, ['cameraFixed']),
+    resolution: {
+      ...seedance10Schema.properties.resolution,
+      enum: ['480p', '720p'],
+      default: '720p',
+    },
+  },
+}
+
 const seedanceLegacyAliases = {
   aspectRatio: 'ratio',
   durationSeconds: 'duration',
@@ -351,6 +387,23 @@ const seedanceLegacyAliases = {
   callbackUrl: 'callback_url',
 }
 
+function omitRecordKeys(
+  values: Record<string, unknown>,
+  omittedKeys: readonly string[],
+): Record<string, unknown> {
+  const omitted = new Set(omittedKeys)
+  return Object.fromEntries(Object.entries(values).filter(([key]) => !omitted.has(key)))
+}
+
+function valuesDeclaredBySchema<T>(
+  schema: Record<string, unknown>,
+  values: Record<string, T>,
+): Record<string, T> {
+  const properties = schema.properties
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return {}
+  return Object.fromEntries(Object.entries(values).filter(([key]) => key in properties))
+}
+
 function seedanceLegacyManifest(input: {
   modelId: string
   displayName: string
@@ -358,37 +411,49 @@ function seedanceLegacyManifest(input: {
   maxImages: 1 | 2
   acceptedMimeTypes: string[]
   defaults: Record<string, unknown>
+  imageToVideoSchema?: Record<string, unknown>
+  imageToVideoResolution?: string
 }): MediaModelManifest {
   const capability = (
     id: 'video.generate' | 'video.image_to_video',
-  ): MediaModelCapabilityManifest => ({
-    id,
-    label:
-      id === 'video.generate'
-        ? '文生视频'
-        : input.maxImages === 2
-          ? '首帧 / 首尾帧生视频'
-          : '首帧生视频',
-    input:
-      id === 'video.generate'
-        ? { required: ['prompt'] }
-        : {
-            required: ['image'],
-            maxImages: input.maxImages,
-            acceptedMimeTypes: input.acceptedMimeTypes,
-          },
-    ...(id === 'video.image_to_video'
-      ? {
-          rolePolicy:
-            input.maxImages === 2 ? seedanceFirstLastFrameRolePolicy : seedanceFirstFrameRolePolicy,
-        }
-      : {}),
-    output: { types: ['video'], mimeTypes: ['video/mp4'] },
-    paramSchema: input.schema,
-    defaults: input.defaults,
-    aliases: seedanceLegacyAliases,
-    paramPolicy: strictParamPolicy,
-  })
+  ): MediaModelCapabilityManifest => {
+    const schema =
+      id === 'video.image_to_video' ? (input.imageToVideoSchema ?? input.schema) : input.schema
+    const defaults =
+      id === 'video.image_to_video' && input.imageToVideoResolution
+        ? { ...input.defaults, resolution: input.imageToVideoResolution }
+        : input.defaults
+    return {
+      id,
+      label:
+        id === 'video.generate'
+          ? '文生视频'
+          : input.maxImages === 2
+            ? '首帧 / 首尾帧生视频'
+            : '首帧生视频',
+      input:
+        id === 'video.generate'
+          ? { required: ['prompt'] }
+          : {
+              required: ['image'],
+              maxImages: input.maxImages,
+              acceptedMimeTypes: input.acceptedMimeTypes,
+            },
+      ...(id === 'video.image_to_video'
+        ? {
+            rolePolicy:
+              input.maxImages === 2
+                ? seedanceFirstLastFrameRolePolicy
+                : seedanceFirstFrameRolePolicy,
+          }
+        : {}),
+      output: { types: ['video'], mimeTypes: ['video/mp4'] },
+      paramSchema: schema,
+      defaults: valuesDeclaredBySchema(schema, defaults),
+      aliases: valuesDeclaredBySchema(schema, seedanceLegacyAliases),
+      paramPolicy: strictParamPolicy,
+    }
+  }
   return {
     id: `volcengine:${input.modelId}`,
     providerKind: 'volcengine-ark',
@@ -603,8 +668,20 @@ function seedreamManifest(input: {
         }
       : {}),
     output: { types: ['image'], mimeTypes: ['image/png', 'image/jpeg'] },
-    paramSchema: schema,
-    defaults,
+    paramSchema:
+      id === 'image.edit' && !pro
+        ? {
+            ...schema,
+            properties: {
+              ...(schema.properties as Record<string, unknown>),
+              maxImages: {
+                ...((schema.properties as Record<string, Record<string, unknown>>).maxImages ?? {}),
+                default: 14,
+              },
+            },
+          }
+        : schema,
+    defaults: id === 'image.edit' && !pro ? { ...defaults, maxImages: 14 } : defaults,
     aliases: seedreamAliases,
     paramPolicy: strictParamPolicy,
   })
@@ -658,6 +735,7 @@ export const VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[]
     schema: seedance15Schema,
     maxImages: 2,
     acceptedMimeTypes: SEEDANCE_IMAGE_MIME,
+    imageToVideoSchema: seedance15ImageToVideoSchema,
     defaults: {
       aspectRatio: '智能比例',
       durationSeconds: 5,
@@ -677,6 +755,8 @@ export const VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[]
     schema: seedance10Schema,
     maxImages: 2,
     acceptedMimeTypes: SEEDANCE_10_IMAGE_MIME,
+    imageToVideoSchema: seedance10ImageToVideoSchema,
+    imageToVideoResolution: '720p',
     defaults: {
       aspectRatio: '智能比例',
       durationSeconds: 5,
@@ -695,6 +775,8 @@ export const VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[]
     schema: seedance10Schema,
     maxImages: 1,
     acceptedMimeTypes: SEEDANCE_10_IMAGE_MIME,
+    imageToVideoSchema: seedance10ImageToVideoSchema,
+    imageToVideoResolution: '720p',
     defaults: {
       aspectRatio: '智能比例',
       durationSeconds: 5,
