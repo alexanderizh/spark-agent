@@ -21,12 +21,15 @@ export type CanvasNodeGenerationMenuGroup = {
   items: CanvasNodeGenerationMenuItem[]
 }
 
-export const CANVAS_PIPELINE_CREATE_OPERATIONS: CanvasNodeGenerationMenuItem[] = [
+export const CANVAS_FUNCTIONAL_MENU_LABEL = '影视创作'
+export const CANVAS_BASE_TASK_MENU_LABEL = '基础任务'
+
+export const CANVAS_FUNCTIONAL_CREATE_OPERATIONS: CanvasNodeGenerationMenuItem[] = [
   { operation: 'storyboard_grid', label: '故事板', icon: 'Grid' },
   { operation: 'panorama_360', label: '360 全景图', icon: 'Globe' },
 ]
 
-export const CANVAS_GENERAL_CREATE_OPERATION_GROUPS: CanvasNodeGenerationMenuGroup[] = [
+export const CANVAS_BASE_CREATE_OPERATION_GROUPS: CanvasNodeGenerationMenuGroup[] = [
   {
     id: 'image',
     label: '图像',
@@ -51,6 +54,8 @@ export const CANVAS_GENERAL_CREATE_OPERATION_GROUPS: CanvasNodeGenerationMenuGro
     items: [
       { operation: 'text_to_video', label: '文生视频', icon: 'Video' },
       { operation: 'image_to_video', label: '图生视频', icon: 'Video' },
+      { operation: 'video_edit', label: '视频编辑', icon: 'Video' },
+      { operation: 'video_extend', label: '视频扩展', icon: 'Video' },
     ],
   },
   {
@@ -63,6 +68,6 @@ export const CANVAS_GENERAL_CREATE_OPERATION_GROUPS: CanvasNodeGenerationMenuGro
   },
 ]
 
-export function canvasGeneralCreateOperations(): CanvasNodeGenerationMenuItem[] {
-  return CANVAS_GENERAL_CREATE_OPERATION_GROUPS.flatMap((group) => group.items)
+export function canvasBaseCreateOperations(): CanvasNodeGenerationMenuItem[] {
+  return CANVAS_BASE_CREATE_OPERATION_GROUPS.flatMap((group) => group.items)
 }

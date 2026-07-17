@@ -120,8 +120,10 @@ import {
   type CanvasPipelineAssetTarget,
 } from './canvasPipelineActionBatch'
 import {
-  CANVAS_PIPELINE_CREATE_OPERATIONS,
-  canvasGeneralCreateOperations,
+  CANVAS_BASE_TASK_MENU_LABEL,
+  CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
+  CANVAS_FUNCTIONAL_MENU_LABEL,
+  canvasBaseCreateOperations,
 } from './canvasNodeGenerationMenu'
 import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEntityExtract'
 import {
@@ -2625,7 +2627,9 @@ export function CanvasWorkspaceView({
       if (!node) return
 
       if (activeOperationPanelNodeId === nodeId || editingNodeId === nodeId) return
-      closeCanvasFloatPanels()
+      // 节点右键菜单项点击完成后，React Flow 仍可能补发一次节点选择意图。
+      // 保留 Agent 面板，避免“添加到 Agent 对话”刚展开又被这次收尾点击关闭。
+      closeCanvasFloatPanels('agent')
     },
     [activeOperationPanelNodeId, closeCanvasFloatPanels, editingNodeId],
   )
@@ -8390,7 +8394,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
         ]
       : []),
   ]
-  const genericAiOperations = canvasGeneralCreateOperations()
+  const baseTaskOperations = canvasBaseCreateOperations()
   const menuButton = (
     label: string,
     icon: React.ReactNode,
@@ -8411,18 +8415,10 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   )
   const aiOperationMenu = (
     <div className="canvas-floating-menu">
-      <div className="canvas-floating-menu-title">AI 工具</div>
+      <div className="canvas-floating-menu-title">{CANVAS_BASE_TASK_MENU_LABEL}</div>
       {menuButton('打开 AI 面板', <Icons.Sparkles size={14} />, onOpenInlineAi)}
-      {(contextualAiActions.length > 0 || genericAiOperations.length > 0) && (
-        <div className="canvas-floating-menu-divider" />
-      )}
-      {contextualAiActions.length > 0 && <div className="canvas-floating-menu-title">快捷操作</div>}
-      {contextualAiActions.map((action) => (
-        <div key={action.key}>{menuButton(action.label, action.icon, action.onClick)}</div>
-      ))}
-      {genericAiOperations.length > 0 && <div className="canvas-floating-menu-divider" />}
-      <div className="canvas-floating-menu-title">新建 AI 任务</div>
-      {genericAiOperations.map((item) => (
+      {baseTaskOperations.length > 0 && <div className="canvas-floating-menu-divider" />}
+      {baseTaskOperations.map((item) => (
         <div key={item.operation}>
           {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
             onCreateOperationChild(item.operation),
@@ -8469,7 +8465,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           content={aiOperationMenu}
         >
           <Button size="middle" type="text" icon={<Icons.Sparkles size={14} />}>
-            AI 操作
+            {CANVAS_BASE_TASK_MENU_LABEL}
           </Button>
         </Popover>
       )}
@@ -8481,7 +8477,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           placement="bottom"
           content={
             <div className="canvas-floating-menu">
-              <div className="canvas-floating-menu-title">剧本流水线</div>
+              <div className="canvas-floating-menu-title">{CANVAS_FUNCTIONAL_MENU_LABEL}</div>
               {pipelineActions.length > 0 &&
                 pipelineActions.map((action) => (
                   <div key={action.id}>
@@ -8491,7 +8487,11 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
                   </div>
                 ))}
               {pipelineActions.length > 0 && <div className="canvas-floating-menu-divider" />}
-              {CANVAS_PIPELINE_CREATE_OPERATIONS.map((item) => (
+              {contextualAiActions.map((action) => (
+                <div key={action.key}>{menuButton(action.label, action.icon, action.onClick)}</div>
+              ))}
+              {contextualAiActions.length > 0 && <div className="canvas-floating-menu-divider" />}
+              {CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => (
                 <div key={item.operation}>
                   {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
                     onCreateOperationChild(item.operation),
@@ -8509,7 +8509,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           }
         >
           <Button size="middle" type="text" icon={<Icons.Workflow size={14} />}>
-            剧本流水线
+            {CANVAS_FUNCTIONAL_MENU_LABEL}
           </Button>
         </Popover>
       )}

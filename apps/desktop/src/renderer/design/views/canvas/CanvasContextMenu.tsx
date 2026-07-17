@@ -1,6 +1,7 @@
 import { Icons } from '../../Icons'
 import type { CanvasNode } from './canvas.types'
 import { getNodePipelineActions } from './canvasPipeline'
+import { CANVAS_FUNCTIONAL_MENU_LABEL } from './canvasNodeGenerationMenu'
 
 /** 把 op 的图标 key 映射为 Icons 组件（找不到回退 Workflow） */
 function resolvePipelineIcon(iconKey: string | undefined): React.ReactNode {
@@ -138,7 +139,7 @@ export function buildContextMenuItems(
             {
               type: 'submenu',
               key: 'pipeline_actions',
-              label: '剧本流水线',
+              label: CANVAS_FUNCTIONAL_MENU_LABEL,
               icon: <Icons.Workflow size={14} />,
               children: pipelineActions.map((action) => ({
                 key: `pipeline:${action.id}`,
@@ -168,7 +169,7 @@ export function buildContextMenuItems(
           {
             type: 'submenu',
             key: 'pipeline_actions',
-            label: '剧本流水线',
+            label: CANVAS_FUNCTIONAL_MENU_LABEL,
             icon: <Icons.Workflow size={14} />,
             children: pipelineActions.map((action) => ({
               key: `pipeline:${action.id}`,

@@ -1,7 +1,7 @@
 import { readAssetKind, type FilmAssetKind } from './canvasFilmAssets'
 import {
-  CANVAS_GENERAL_CREATE_OPERATION_GROUPS,
-  CANVAS_PIPELINE_CREATE_OPERATIONS,
+  CANVAS_BASE_CREATE_OPERATION_GROUPS,
+  CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
 } from './canvasNodeGenerationMenu'
 import { getNodePipelineActions } from './canvasPipeline'
 import { getOp } from './canvasPipelineOps'
@@ -74,7 +74,7 @@ function pipelineActions(
       category: 'pipeline' as const,
       source: 'pipeline' as const,
       execution: 'create_operation_node' as const,
-      description: `沿用节点“剧本流水线”能力，产出 ${action.produces} 节点。`,
+      description: `沿用节点“影视创作”能力，产出 ${action.produces} 节点。`,
       ...(operation ? { operation } : {}),
       outputPipelineRole: action.produces,
       guidance: '默认只创建待确认操作节点；用户明确要求立即生成时再运行。',
@@ -143,8 +143,8 @@ function generationActions(node: CanvasNode): CanvasAgentAvailableAction[] {
   const supportsGeneration = ['text', 'prompt', 'image', 'audio', 'video', 'group'].includes(node.type)
   if (!supportsGeneration) return []
   const items = [
-    ...CANVAS_PIPELINE_CREATE_OPERATIONS,
-    ...CANVAS_GENERAL_CREATE_OPERATION_GROUPS.flatMap((group) => group.items),
+    ...CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
+    ...CANVAS_BASE_CREATE_OPERATION_GROUPS.flatMap((group) => group.items),
   ]
   return items.map((item) => ({
     id: `operation.${item.operation}`,
