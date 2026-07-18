@@ -31,6 +31,8 @@ vi.mock('./canvas.capabilities', () => ({
 vi.mock('./canvasOperationPresets', () => ({
   mergeCanvasOperationPresetNegativePrompt: (base: string, preset: string) =>
     [base, preset].filter(Boolean).join('\n'),
+  mergeCanvasPresetTargetModelParams: (_targetId: string, params: Record<string, unknown>) =>
+    params,
   readCanvasOperationPreset: () => ({
     prompt: '',
     negativePrompt: '',
@@ -83,6 +85,16 @@ describe('CanvasOperationPanel negative prompt inheritance', () => {
         operationPresetNegativePrompt: '不要字幕',
       }),
     ).toBe('不要人物\n不要字幕')
+  })
+
+  it('prefers the editable node snapshot over its immutable historical task', () => {
+    expect(
+      resolveCanvasOperationPanelNegativePrompt({
+        nodeNegativePrompt: '当前节点配置',
+        taskNegativePrompt: '历史任务配置',
+        operationPresetNegativePrompt: '预设约束',
+      }),
+    ).toBe('当前节点配置\n预设约束')
   })
 
   it('preserves user-selected param values when async defaults arrive later', () => {

@@ -18,7 +18,9 @@ export function stripCanvasFunctionalPromptInput(prompt: string, presetTargetId:
       : presetTargetId === 'chapter.to_screenplay'
         ? '章节原文：'
         : presetTargetId === 'screenplay.extract_characters' ||
-            presetTargetId === 'screenplay.extract_scenes'
+            presetTargetId === 'screenplay.extract_scenes' ||
+            presetTargetId === 'screenplay.extract_props' ||
+            presetTargetId === 'screenplay.extract_effects'
           ? '【剧本】'
           : ''
   if (!marker) return prompt.trim()
