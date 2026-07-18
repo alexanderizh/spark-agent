@@ -112,6 +112,46 @@ const GenericProviderIcon = GenericProviderIconBase as LobeIcon
 GenericProviderIcon.title = '通用模型'
 GenericProviderIcon.Avatar = ({ size }) => <GenericProviderIconBase size={size} />
 
+// @lobehub/icons-static-svg 1.94.0 已提供 AgnesAI，但当前 React 包 5.10.x 尚未导出。
+// 这里复用 Lobe 官方 agnesai.svg 的矢量路径，并保持与 Lobe Avatar 一致的组件接口。
+const AgnesAIIconBase: IconComponent = ({ size = 24, color = 'currentColor' }) => (
+  <svg
+    fill={color}
+    fillRule="evenodd"
+    height={size}
+    role="img"
+    viewBox="0 0 24 24"
+    width={size}
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <title>Agnes AI</title>
+    <path d="M12 0c6.627 0 12 5.373 12 12s-5.373 12-12 12S0 18.627 0 12 5.373 0 12 0zm5.013 8.817c-.2-.003-.4.026-.59.084-.51.153-.991.405-1.256.906-1.248 2.369-7.222 9.47-9.446 4.707H5.72c-.007.021-1.176 3.606.999 3.968 2.182.362 5.8-.672 9.798-8.227-.007.03-.496 2.381-.762 3.731a.885.885 0 01-.308.513.906.906 0 01-.567.204h-.533a.157.157 0 00-.088.287c.506.345 1.154 1.094 1.258 2.68a.487.487 0 00.239.388.503.503 0 00.459.029.824.824 0 00.38-.353c.085-.154.132-.325.136-.5l-.073-.66a.77.77 0 01.507-.79c.474-.17 1.114-.525 1.427-1.252a.11.11 0 00.009-.046.11.11 0 00-.013-.045.108.108 0 00-.03-.036.113.113 0 00-.104-.017c-.317.113-.918.299-1.443.296a.261.261 0 01-.244-.185.254.254 0 01-.007-.108l.728-5.013a.484.484 0 00-.475-.56zm-.406-3.169a1.204 1.204 0 10-.384 2.378 1.204 1.204 0 00.384-2.378z" />
+  </svg>
+)
+
+const AgnesAI = AgnesAIIconBase as LobeIcon
+AgnesAI.title = 'Agnes AI'
+AgnesAI.Avatar = ({ size, shape = 'square' }) => (
+  <span
+    aria-label="Agnes AI"
+    style={{
+      alignItems: 'center',
+      background: '#000',
+      borderRadius: shape === 'circle' ? '50%' : Math.floor(size * 0.1),
+      color: '#fff',
+      display: 'inline-flex',
+      height: size,
+      justifyContent: 'center',
+      overflow: 'hidden',
+      width: size,
+    }}
+  >
+    <span style={{ display: 'inline-flex', transform: 'scale(0.75)' }}>
+      <AgnesAIIconBase color="#fff" size={size} />
+    </span>
+  </span>
+)
+
 const VENDOR_AVATAR_MAP: Record<string, AvatarComponent> = {
   openai: OpenAI.Avatar as AvatarComponent,
   anthropic: Anthropic.Avatar as AvatarComponent,
@@ -143,6 +183,10 @@ const VENDOR_AVATAR_MAP: Record<string, AvatarComponent> = {
   'qwen-tongyi': Alibaba.Avatar as AvatarComponent,
   // 新增（2026-06）
   'xiaomi-mimo': XiaomiMiMo.Avatar as AvatarComponent,
+  'agnes-ai': AgnesAI.Avatar as AvatarComponent,
+  xai: XAI.Avatar as AvatarComponent,
+  bailian: Bailian.Avatar as AvatarComponent,
+  midjourney: Midjourney.Avatar as AvatarComponent,
   github: Github.Avatar as AvatarComponent,
   'new-api': NewAPI.Avatar as AvatarComponent,
 }
@@ -180,6 +224,7 @@ const ICON_KEYWORDS_BY_ID: Record<string, string[]> = {
   qwen: ['tongyi', '通义千问', 'aliyun'],
   alibaba: ['aliyun', '百炼', 'tongyi'],
   bailian: ['aliyun', '百炼'],
+  agnesai: ['agnes', 'agnes-ai'],
   kimi: ['moonshot', '月之暗面'],
   moonshot: ['kimi'],
   minimax: ['hailuo'],
@@ -248,6 +293,7 @@ const ICON_PRIORITY = [
 ]
 
 const SUPPLEMENTAL_ICON_EXPORTS: Record<string, LobeIcon> = {
+  AgnesAI,
   Alibaba: Alibaba as LobeIcon,
   Anthropic: Anthropic as LobeIcon,
   Bailian: Bailian as LobeIcon,
@@ -255,11 +301,13 @@ const SUPPLEMENTAL_ICON_EXPORTS: Record<string, LobeIcon> = {
   ClaudeCode: ClaudeCode as LobeIcon,
   Codex: Codex as LobeIcon,
   Github: Github as LobeIcon,
+  Midjourney: Midjourney as LobeIcon,
   NewAPI: NewAPI as LobeIcon,
   OpenRouter: OpenRouter as LobeIcon,
   Tencent: Tencent as LobeIcon,
   TencentCloud: TencentCloud as LobeIcon,
   Trae: Trae as LobeIcon,
+  XAI: XAI as LobeIcon,
 }
 
 function normalizeIconExportId(exportName: string): string {
@@ -350,6 +398,9 @@ const VENDOR_ICON_MAP: Record<string, string> = {
   'tencent-coding-plan': 'tencent',
   'aliyun-bailian-coding-plan': 'bailian',
   bailian: 'bailian',
+  'agnes-ai': 'agnesai',
+  xai: 'xai',
+  midjourney: 'midjourney',
   'zhipu-glm-coding-plan': 'zhipu',
   'qwen-standard': 'qwen',
   'deepseek-api': 'deepseek',
