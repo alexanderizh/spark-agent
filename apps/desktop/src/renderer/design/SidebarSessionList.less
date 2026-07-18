@@ -323,6 +323,12 @@
   height: var(--sidebar-project-toolbar-icon-size);
 }
 
+// ListFilter 的有效图形高度较窄，略微放大以与两侧操作图标保持相同视觉重量。
+.sidebar-project-toolbar .sidebar-filter-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* ─── Context-menu open state (right-click on a session) ─── */
 // .chat-item-compact.is-context-open {
 //   background: color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 14%, transparent);
