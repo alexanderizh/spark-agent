@@ -53,9 +53,9 @@ import { getUpdateService } from './services/UpdateService.js'
 import { checkSdkIntegrity } from './services/SdkIntegrityService.js'
 import { initializeShellEnvironment, getShellEnvironmentStatus } from './services/ShellEnvironmentService.js'
 import { ensureRegistered as ensurePlaywrightRegistered, readRegistration as readPlaywrightRegistration } from './services/PlaywrightMcpRegistration.js'
-import { detectIntegrity as detectPlaywrightIntegrity, installBrowser as autoInstallBrowser, invalidateCache as invalidatePlaywrightCache } from './services/PlaywrightIntegrityService.js'
+import { detectIntegrity as detectPlaywrightIntegrity } from './services/PlaywrightIntegrityService.js'
 import { getInternalBrowserService } from './services/InternalBrowserService.js'
-import { ensureBundledBrowserEnv, resetBundledBrowsersPathCache } from './services/PlaywrightEnvironment.js'
+import { ensureBundledBrowserEnv } from './services/PlaywrightEnvironment.js'
 import { detectFfmpegIntegrity } from './services/FfmpegIntegrityService.js'
 import {
   registerSafeFileProtocol,
@@ -813,35 +813,9 @@ async function initializeApp(): Promise<void> {
   }, 3_000)
 
   // 7. 检测 Playwright 完整性并推送状态（延迟 6 秒，与 SDK 自检错开）
+  // 启动阶段只检测，不隐式下载 Chromium；下载由 Agent 按需恢复或用户在完整性页手动触发。
   setTimeout(() => {
     pushPlaywrightStatus()
-
-    // 7.5 如果浏览器未就绪，自动在后台下载到内置目录
-    // 仅在 dev 模式下自动下载（打包模式下浏览器应已内置）
-    if (is.dev) {
-      const integrity = detectPlaywrightIntegrity()
-      if (integrity.browserSource !== 'bundled' && integrity.playwrightInstalled) {
-        log.info('Bundled chromium not ready — auto-downloading chromium to bundled directory...')
-        autoInstallBrowser((line) => {
-          log.info(`[auto-download] ${line.trim()}`)
-        }).then((result) => {
-          if (result.success) {
-            log.info('Auto-download completed successfully')
-            // Reset caches and update env
-            resetBundledBrowsersPathCache()
-            invalidatePlaywrightCache()
-            ensureBundledBrowserEnv()
-            pushPlaywrightStatus()
-          } else {
-            log.warn(`Auto-download failed: ${result.message}`)
-            pushPlaywrightStatus()
-          }
-        }).catch((err) => {
-          log.warn(`Auto-download error: ${String(err)}`)
-          pushPlaywrightStatus()
-        })
-      }
-    }
   }, 6_000)
 
   // 8. 检测 FFmpeg 完整性并推送状态（延迟 8 秒，排在 Playwright 之后）
