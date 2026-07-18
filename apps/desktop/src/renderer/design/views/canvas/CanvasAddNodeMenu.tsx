@@ -9,7 +9,7 @@ import type { CanvasNodeData, CanvasOperationType } from './canvas.types'
  * 画布节点创建约定（文档 §7.7）：
  *
  * 节点在交互层归并为两类：
- * - 资源内容节点：文本 / Prompt / 媒体 / 组，以及从资产、历史、模板导入
+ * - 资源内容节点：文本 / 媒体 / 组，以及从资产、历史、模板导入
  * - 任务节点：所有 AI 操作（底层仍为 task + operation）
  *
  * 资源入口动作（上传、从资产选择等）通过 action 触发，不新增底层 node type。
@@ -66,15 +66,6 @@ export function useAddNodeMenuItems(): AddNodeMenuItem[] {
         colorClass: 'canvas-op-color-text',
         nodeType: 'text',
         data: { text: '', format: 'plain', origin: 'manual' },
-      },
-      {
-        id: 'resource:prompt',
-        label: 'Prompt',
-        category: 'resource',
-        icon: <Icons.Wand size={15} />,
-        colorClass: 'canvas-op-color-text',
-        nodeType: 'prompt',
-        data: { text: '', format: 'prompt', origin: 'manual' },
       },
       {
         id: 'resource:image',

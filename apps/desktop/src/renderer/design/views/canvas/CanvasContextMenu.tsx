@@ -98,7 +98,6 @@ export function buildContextMenuItems(
         children: [
           { key: 'add_text', label: '添加文本', icon: <Icons.File size={14} /> },
           { key: 'add_image', label: '上传图片', icon: <Icons.Image size={14} /> },
-          { key: 'add_prompt', label: '新建 Prompt', icon: <Icons.Edit size={14} /> },
           { key: 'insert_asset', label: '从资产选择', icon: <Icons.Folder size={14} /> },
         ],
       },
