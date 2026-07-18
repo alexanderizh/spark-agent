@@ -112,6 +112,7 @@ export function buildCanvasPipelineOperationDraft(
         message: '确认分集 Prompt、Agent 与模型后点击开始任务',
         taskPipelineRole: 'screenplay',
         outputPipelineRole: 'screenplay',
+        modelParams: { workflow: 'split_episodes' },
       }
     case 'shot.to_keyframes':
     case 'screenplay.storyboard_grid':

@@ -51,6 +51,24 @@ export const CANVAS_PIPELINE_PRESET_TARGETS = [
     label: '提取场景',
     description: '从剧本中提取场景信息',
   },
+  {
+    id: 'screenplay.extract_props',
+    operation: 'text_generate',
+    label: '提取道具',
+    description: '从剧本中提取道具信息',
+  },
+  {
+    id: 'screenplay.extract_effects',
+    operation: 'text_generate',
+    label: '提取特效',
+    description: '从剧本中提取特效信息',
+  },
+  {
+    id: 'screenplay.split_episodes',
+    operation: 'text_generate',
+    label: '按剧情分集',
+    description: '把长剧本拆分为结构化分集剧本',
+  },
 ] as const satisfies readonly {
   id: string
   operation: CanvasOperationType
@@ -318,6 +336,27 @@ export function resolveCanvasPresetTarget(input: {
   ) {
     return 'screenplay.extract_scenes'
   }
+  if (
+    input.operation === 'text_generate' &&
+    input.taskPipelineRole === 'prop' &&
+    workflow === 'extract_prop'
+  ) {
+    return 'screenplay.extract_props'
+  }
+  if (
+    input.operation === 'text_generate' &&
+    input.taskPipelineRole === 'effect' &&
+    workflow === 'extract_effect'
+  ) {
+    return 'screenplay.extract_effects'
+  }
+  if (
+    input.operation === 'text_generate' &&
+    input.taskPipelineRole === 'screenplay' &&
+    workflow === 'split_episodes'
+  ) {
+    return 'screenplay.split_episodes'
+  }
   return input.operation
 }
 
@@ -423,7 +462,11 @@ export function readCanvasInheritedPresetTarget(
   const taskDefaultKind = canvasTaskDefaultKindForOperation(target.operation, context)
   const taskDefault = taskDefaultKind ? readCanvasTaskDefault(taskDefaultKind) : { skillIds: [] }
   return {
-    prompt: operationOverrides.prompt ?? builtin.prompt,
+    // A dedicated pipeline contract owns its task identity and output schema.
+    // Reuse runtime/model defaults from the generic operation, but never inherit
+    // its authored prompt (for example a character extractor into a shot task).
+    prompt:
+      target.id === target.operation ? (operationOverrides.prompt ?? builtin.prompt) : '',
     negativePrompt: operationOverrides.negativePrompt ?? builtin.negativePrompt,
     ...((operationOverrides.providerProfileId ?? taskDefault.providerProfileId)
       ? {

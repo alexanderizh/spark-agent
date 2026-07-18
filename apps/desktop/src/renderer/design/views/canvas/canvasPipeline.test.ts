@@ -24,11 +24,13 @@ describe('canvasPipeline', () => {
       expect(actions[0]!.produces).toBe('screenplay')
     })
 
-    it('剧本可生成分镜脚本 / 提取角色 / 提取场景 / 分镜关键帧图', () => {
+    it('剧本可生成分镜脚本 / 提取完整实体 / 分镜关键帧图', () => {
       expect(getPipelineActions('screenplay').map((a) => a.id)).toEqual([
         'screenplay.to_shot_script',
         'screenplay.extract_characters',
         'screenplay.extract_scenes',
+        'screenplay.extract_props',
+        'screenplay.extract_effects',
         'screenplay.storyboard_grid',
       ])
     })

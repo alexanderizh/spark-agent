@@ -326,3 +326,16 @@ git commit -m "feat(canvas): add specialized agent node tools"
 - `pnpm --filter @spark/desktop typecheck`、`pnpm --filter @spark/desktop lint` 和桌面生产构建通过。
 - 五轴审查补充了文本任务终态幂等、媒体类型/分镜回链前置校验和空语义名称校验。
 - GitNexus MCP 未暴露，按项目降级规则使用 `rg` 调用点、全量画布测试、类型检查、构建和 `git diff` 完成影响核对。
+
+### 2026-07-18 运行时与诊断维护补充
+
+- [x] Anthropic-compatible Provider 不再因 Agent adapter 为 Codex 而被错误路由到 Responses WebSocket；本地 Codex/Claude CLI 路由保持不变。
+- [x] 专用功能 Prompt 与通用操作 Prompt 隔离，空白画布入口补齐 task/output role 与 workflow。
+- [x] 历史污染的分镜、剧本和实体抽取 Prompt 在运行/重试时按专用契约标记修复。
+- [x] 结构解析失败独立保留模型原文，写入失败终态时间并输出 schema 诊断。
+- [x] 任务详情展示最终 System/User Prompt、完整运行配置、真实生命周期事件与独立运行时诊断。
+- [x] 节点卡片同步最新 Agent/Provider/Model；重试区分当前节点模型与原任务模型。
+- [x] 终态任务配置冻结，节点草稿不再覆盖原任务模型；分镜时长配置按任务快照保存。
+- [x] 角色、场景、道具、特效统一进入实体解析与资产物化路径，解析前先保存完整模型原文。
+- [x] 旧 OpenAI Chat Profile 缺少 wire protocol 时回退直连，不再默认探测 Responses。
+- [x] 旧任务按边语义恢复操作节点，生成边使用 source、输入边使用 target。

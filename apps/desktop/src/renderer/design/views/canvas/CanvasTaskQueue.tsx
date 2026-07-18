@@ -9,6 +9,7 @@ import { CanvasTaskInputSnapshotList } from './CanvasTaskInputSnapshotList'
 
 type TaskFilter = 'all' | 'active' | 'failed' | 'completed'
 type ClearTaskScope = 'active' | 'failed'
+export type CanvasTaskRetryRuntimeSource = 'current-node' | 'original-task'
 
 export function CanvasTaskQueue({
   tasks,
@@ -26,7 +27,7 @@ export function CanvasTaskQueue({
   onCancelTask: (taskId: string) => void
   onClearTasks: (scope: ClearTaskScope) => void | Promise<void>
   onDeleteTasks: (taskIds: string[]) => void | Promise<void>
-  onRetryTask: (task: CanvasTask) => void
+  onRetryTask: (task: CanvasTask, runtimeSource: CanvasTaskRetryRuntimeSource) => void
   onSelectNode: (nodeId: string) => void
 }) {
   const [filter, setFilter] = useState<TaskFilter>('all')
@@ -428,34 +429,33 @@ function TaskDetailModal({
   assets: CanvasAsset[]
   onClose: () => void
   onCancelTask: (taskId: string) => void
-  onRetryTask: (task: CanvasTask) => void
+  onRetryTask: (task: CanvasTask, runtimeSource: CanvasTaskRetryRuntimeSource) => void
   onSelectNode: (nodeId: string) => void
 }) {
   if (!task) return null
 
   const inputNodes = nodes.filter((node) => task.inputNodeIds.includes(node.id))
   const outputNodes = nodes.filter((node) => task.outputNodeIds.includes(node.id))
-  // 节点已代表其背后资产（节点带 assetId）时，资产版块就是冗余展示，
-  // 节点版块既能定位跳转又带原标题。仅显示那些没被任何对应节点代表的纯资产引用。
-  const inputNodeAssetIds = new Set(
-    inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id))
-  )
-  const outputNodeAssetIds = new Set(
-    outputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id))
-  )
-  const inputAssets = assets.filter(
-    (asset) => task.inputAssetIds.includes(asset.id) && !inputNodeAssetIds.has(asset.id)
-  )
-  const outputAssets = assets.filter(
-    (asset) => task.outputAssetIds.includes(asset.id) && !outputNodeAssetIds.has(asset.id)
-  )
-  const taskNode = nodes.find((node) => node.taskId === task.id)
+  // Keep assets visible even when a node also represents them. Diagnostic views favor
+  // complete lineage over UI deduplication.
+  const inputAssets = assets.filter((asset) => task.inputAssetIds.includes(asset.id))
+  const outputAssets = assets.filter((asset) => task.outputAssetIds.includes(asset.id))
+  const taskNode =
+    (task.operationNodeId
+      ? nodes.find((node) => node.id === task.operationNodeId)
+      : undefined) ?? nodes.find((node) => node.taskId === task.id)
   const canCancel = isTaskActive(task)
   const raw = isRecord(task.rawResponse) ? task.rawResponse : null
-  const outputText = stringField(raw?.outputText) || stringField(raw?.text)
+  const outputText =
+    task.modelOutputText || stringField(raw?.outputText) || stringField(raw?.text)
   const parsedEntities = raw?.parsedEntities
   const displayPrompt = task.compiledUserText || task.prompt || ''
-  const detailParams = buildCanvasTaskDetailParams(task)
+  const detailParams = {
+    ...buildCanvasTaskDetailParams(task),
+    ...(task.shotScriptConfig == null && taskNode?.data.shotScriptConfig
+      ? { shotScriptConfig: taskNode.data.shotScriptConfig }
+      : {}),
+  }
   const httpResponse = task.requestCall?.response
   const submitResponse = task.submitResponse ?? httpResponse?.body
   const providerResponseText = task.rawResponse != null ? formatJson(task.rawResponse) : ''
@@ -503,8 +503,13 @@ function TaskDetailModal({
           <Button size="middle" disabled={!canCancel} onClick={() => onCancelTask(task.id)}>
             中断取消
           </Button>
-          <Button size="middle" onClick={() => onRetryTask(task)}>
-            {task.status === 'failed' || task.status === 'cancelled' ? '重试' : '再次运行'}
+          {taskNode && (
+            <Button size="middle" onClick={() => onRetryTask(task, 'current-node')}>
+              使用当前节点模型重试
+            </Button>
+          )}
+          <Button size="middle" type="text" onClick={() => onRetryTask(task, 'original-task')}>
+            按原任务模型重试
           </Button>
         </Space>
 
@@ -526,9 +531,19 @@ function TaskDetailModal({
           ]}
         />
 
-        {outputText && (
-          <DetailBlock title="模型输出">
-            <pre>{outputText}</pre>
+        <DetailBlock title="模型原始输出（解析失败也保留）">
+          <pre>{outputText || '（Provider/Agent 未返回任何文本）'}</pre>
+        </DetailBlock>
+
+        {task.systemPrompt && (
+          <DetailBlock title="最终 System Prompt">
+            <pre>{task.systemPrompt}</pre>
+          </DetailBlock>
+        )}
+
+        {displayPrompt && (
+          <DetailBlock title="最终 User Prompt">
+            <pre>{displayPrompt}</pre>
           </DetailBlock>
         )}
 
@@ -600,36 +615,26 @@ function TaskDetailModal({
 
         <DetailBlock title="运行日志">
           <div className="canvas-task-log-list">
-            <TaskLogItem time={task.createdAt} label="任务创建" />
-            {(task.agentId || task.providerProfileId || task.modelId) && (
-              <TaskLogItem
-                time={task.updatedAt}
-                label={`运行配置：${[
-                  task.agentId ? `Agent ${task.agentId}` : '',
-                  task.providerProfileId ? `Profile ${task.providerProfileId}` : '',
-                  task.provider ? `Provider ${task.provider}` : '',
-                  task.modelId ? `Model ${task.modelId}` : '',
-                ]
-                  .filter(Boolean)
-                  .join(' / ')}`}
-              />
+            {task.runtimeEvents && task.runtimeEvents.length > 0 ? (
+              task.runtimeEvents.map((event, index) => (
+                <TaskLogItem
+                  key={`${event.at}-${event.kind}-${index}`}
+                  time={event.at}
+                  label={event.detail ? `${event.label}：${event.detail}` : event.label}
+                />
+              ))
+            ) : (
+              <>
+                <TaskLogItem time={task.createdAt} label="任务创建（旧任务无详细事件）" />
+                <TaskLogItem time={task.updatedAt} label={`最后状态：${task.status}`} />
+                {task.completedAt && <TaskLogItem time={task.completedAt} label="任务结束" />}
+              </>
             )}
-            {displayPrompt && (
-              <TaskLogItem time={task.updatedAt} label={`Prompt ${displayPrompt.length} 字符`} />
-            )}
-            {outputText && (
-              <TaskLogItem time={task.updatedAt} label={`模型输出 ${outputText.length} 字符`} />
-            )}
-            {task.requestId && (
-              <TaskLogItem time={task.updatedAt} label={`Provider request: ${task.requestId}`} />
-            )}
-            <TaskLogItem time={task.updatedAt} label={`状态更新为 ${task.status}`} />
-            {task.completedAt && <TaskLogItem time={task.completedAt} label="任务结束" />}
           </div>
         </DetailBlock>
 
         {shouldShowProviderResponse && (
-          <DetailBlock title="最终 Provider 响应">
+          <DetailBlock title="运行时 / Provider 诊断数据">
             <pre>{formatJson(task.rawResponse)}</pre>
           </DetailBlock>
         )}

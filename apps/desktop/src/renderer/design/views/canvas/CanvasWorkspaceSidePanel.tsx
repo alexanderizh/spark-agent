@@ -5,7 +5,10 @@ import { downloadAsset } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasInspector } from './CanvasInspector'
 import { CanvasProjectInfoPanel } from './CanvasProjectInfoPanel'
-import { CanvasTaskQueue } from './CanvasTaskQueue'
+import {
+  CanvasTaskQueue,
+  type CanvasTaskRetryRuntimeSource,
+} from './CanvasTaskQueue'
 import type { CanvasNode, CanvasProjectSettings } from './canvas.types'
 
 export type CanvasSidePanelTab = 'details' | 'tasks' | 'assets' | 'project'
@@ -45,7 +48,7 @@ type CanvasWorkspaceSidePanelProps = {
   onCancelTask: (taskId: string) => void
   onClearTasks: (scope: any) => void
   onDeleteTasks: (taskIds: string[]) => void
-  onRetryTask: (task: any) => void
+  onRetryTask: (task: any, runtimeSource: CanvasTaskRetryRuntimeSource) => void
   onSelectNode: (nodeId: string) => void
   onInsertAsset: (assetId: string) => void
   onInsertSubview: (ownerAsset: any, sourceImageAsset: any, subview: any) => void

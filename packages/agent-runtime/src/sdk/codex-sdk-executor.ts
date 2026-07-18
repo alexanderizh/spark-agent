@@ -916,10 +916,13 @@ function computeDelta(next: string, prev: string): string {
 }
 
 function isBenignCodexSdkError(message: string): boolean {
+  const normalizedMessage = message.toLowerCase()
   const isUnsupportedResponsesWebSocket =
-    message.includes('unexpected status 404 Not Found: endpoint not supported') &&
-    message.includes('/v1/responses') &&
-    (message.includes('ws://') || message.includes('WebSockets') || message.includes('WebSocket'))
+    normalizedMessage.includes('unexpected status 404') &&
+    /wss?:\/\/\S+\/(?:v1\/)?responses\b/i.test(message) &&
+    (normalizedMessage.includes('reconnecting') ||
+      normalizedMessage.includes('falling back') ||
+      normalizedMessage.includes('websocket'))
   const isUnsupportedServiceTierWarning =
     message.includes('Configured service tier `') &&
     message.includes('` is not advertised as supported for model `') &&
