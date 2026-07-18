@@ -3,6 +3,7 @@ import { Button, Tag, Tooltip } from '@lobehub/ui'
 import { Input, message } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasPresetHubEntry } from './CanvasPresetHubEntry'
+import { CanvasAcceptanceProjectSummary } from './acceptance/CanvasAcceptanceProjectSummary'
 import { readStyleBible } from './canvasPipeline'
 import type { CanvasProject, CanvasProjectSettings } from './canvas.types'
 
@@ -58,6 +59,7 @@ export function CanvasProjectInfoPanel({
         onOpen={onOpenPresetCenter}
         variant="panel"
       />
+      <CanvasAcceptanceProjectSummary project={project} />
       <section className="canvas-panel-section">
         <div className="canvas-panel-title-row">
           <h3>项目基础信息</h3>

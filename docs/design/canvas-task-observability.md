@@ -1,6 +1,6 @@
 # 画布节点任务可观测性与异步视频修复
 
-> 状态: 已落地 | 最后核对: 2026-07-18
+> 状态: 已落地 | 最后核对: 2026-07-19
 
 ## 背景
 
@@ -96,6 +96,26 @@ xAI 另有一处终态解析错误：官方成功契约是 `status=done` 且产�
 - `全部日志`：维持原始主进程日志视图。
 
 画布范围是默认值，可继续按级别以及任务 ID、项目、模型等关键词过滤和导出。新安装在没有遥测配置时使用 `info` 日志级别，确保 started/finished 生命周期日志会实际落盘。
+
+### Dev 无限画布验收实验室
+
+Dev 模式的项目页提供「验收实验室」入口。它使用当前已配置的 Provider Profile、模型和 Manifest 生成专属验收项目与真实小说生产工作流；生成画布只冻结计划，不会自动调用模型。用户在项目侧栏确认后，Runner 才通过现有 `runOperationNode`/`retryOperationNode` 真实提交任务。
+
+验收证据按 `runId → caseId → attemptId → taskId` 关联。每次重跑都创建新 Task 和新 Attempt，旧任务、旧产物和首次失败证据保持不变。证据包含 preflight、实际请求/响应、运行时事件、模型原文、错误详情、产物节点/资产/边和断言；缺少实际调用、生命周期或失败依据时单独标记 `observabilityGap`，不与业务失败混为一谈。
+
+项目 metadata 保留最近 50 个 Run 的 Board/Plan/Case 节点映射，因此创建新 Run 后，在旧 Run Board 上发生的 stream 回写仍会进入原 Run 证据。Runner 提交前会比较冻结 Plan 与节点当前 Provider/Model/Manifest；发生漂移时在 preflight 阻断，避免意外调用错误渠道。等待任务超时会先请求取消真实任务，再保存 timeout 终态。
+
+媒体完成后会核对资产类型、MIME、项目内路径或 URL、扩展名、图片尺寸、音视频时长和文件大小。缺少可选元数据记为 warning，类型矛盾、MIME 矛盾、零值或无产物记为 failed；当前阶段尚未执行 ffprobe 解码和 codec/container 验证。
+
+每次 stream 回写及 Runner 终态都会更新脱敏证据，并自动镜像到项目目录：
+
+```text
+<projectRoot>/tasks/<runId>.canvas-acceptance.json
+```
+
+浏览器 localStorage 作为即时查询缓存；配额不足时内存仍保留本次 Run，并继续写项目文件镜像。侧栏可查看 Case 汇总、模型矩阵、Attempt 历史、证据缺口，手动导出 JSON，或仅重跑当前失败项。
+
+脱敏覆盖结构化 secret key、Authorization/Cookie、长 base64、签名 URL 的 query/fragment，以及异常文本里的 Bearer token；证据采集失败不得打断生产 task stream 回写。
 
 ## 排查顺序
 
