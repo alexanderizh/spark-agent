@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
 
 const iconMocks = vi.hoisted(() => {
   const icon = (title: string) => {
     const Icon = () => null
-    Icon.Avatar = () => null
+    Icon.Avatar = () => `avatar:${title}`
     Icon.Combine = () => null
     Icon.title = title
     return Icon
@@ -68,7 +69,10 @@ const iconMocks = vi.hoisted(() => {
     'XiaomiMiMo',
     'Zhipu',
   ]
-  const entries: Array<[string, unknown]> = required.map((name) => [name, icon(name)])
+  const entries: Array<[string, unknown]> = required.map((name) => [
+    name,
+    icon(name === 'XAI' ? 'Grok' : name),
+  ])
   entries.push(['WrappedDefault', { default: icon('Wrapped Default') }])
   for (let i = 0; i < 220; i += 1) entries.push([`MockModel${i}`, icon(`Mock Model ${i}`)])
   return {
@@ -80,7 +84,7 @@ const iconMocks = vi.hoisted(() => {
 vi.mock('@lobehub/icons/es/icons', () => iconMocks.icons)
 
 vi.mock('@lobehub/icons/es/features/modelConfig', () => {
-  const entries = Object.entries(iconMocks.icons)
+  const entries = Object.entries(iconMocks.icons).filter(([name]) => name !== 'Midjourney')
   return {
     modelMappings: entries.map(([name, value]) => ({
       Icon: typeof value === 'object' && value != null && 'default' in value
@@ -92,7 +96,7 @@ vi.mock('@lobehub/icons/es/features/modelConfig', () => {
 })
 
 vi.mock('@lobehub/icons/es/features/providerConfig', () => {
-  const entries = Object.entries(iconMocks.icons)
+  const entries = Object.entries(iconMocks.icons).filter(([name]) => name !== 'Midjourney')
   return {
     providerMappings: entries.map(([name, value]) => ({
       Icon: typeof value === 'object' && value != null && 'default' in value
@@ -145,5 +149,32 @@ describe('ProviderLogo icon catalog', () => {
 
     expect(getProviderIconForVendor('claude-auto-router')).toEqual({ id: 'claude', style: 'avatar' })
     expect(getProviderIconForVendor('codex-auto-router')).toEqual({ id: 'codex', style: 'avatar' })
+  })
+
+  it('uses Lobe avatars for multimedia template vendors', async () => {
+    const { getProviderIconForVendor, ProviderLogo } = await import('./ProviderLogo')
+    const vendor = (id: string, name: string) => ({
+      id,
+      name,
+      emoji: name.slice(0, 2),
+      color: '#000000',
+      desc: '',
+      logoPath: `providers/${id}.svg`,
+    })
+
+    const agnes = renderToStaticMarkup(<ProviderLogo vendor={vendor('agnes-ai', 'Agnes AI')} />)
+    const xai = renderToStaticMarkup(<ProviderLogo vendor={vendor('xai', 'xAI')} />)
+    const bailian = renderToStaticMarkup(<ProviderLogo vendor={vendor('bailian', '阿里云百炼')} />)
+    const midjourney = renderToStaticMarkup(<ProviderLogo vendor={vendor('midjourney', 'Midjourney')} />)
+
+    expect(agnes).toContain('<svg')
+    expect(agnes).toContain('<title>Agnes AI</title>')
+    expect(xai).toContain('avatar:Grok')
+    expect(bailian).toContain('avatar:Bailian')
+    expect(midjourney).toContain('avatar:Midjourney')
+    expect(getProviderIconForVendor('agnes-ai')).toEqual({ id: 'agnesai', style: 'avatar' })
+    expect(getProviderIconForVendor('xai')).toEqual({ id: 'xai', style: 'avatar' })
+    expect(getProviderIconForVendor('bailian')).toEqual({ id: 'bailian', style: 'avatar' })
+    expect(getProviderIconForVendor('midjourney')).toEqual({ id: 'midjourney', style: 'avatar' })
   })
 })
