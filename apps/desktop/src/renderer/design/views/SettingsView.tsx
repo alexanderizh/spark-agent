@@ -51,6 +51,7 @@ import wechatLogo from '../../assets/remote-channels/wechat.svg'
 export { ProviderEditPanel } from './ProvidersView'
 import { MemoryPanel } from './MemoryPanel'
 import { SettingsLogViewer } from './SettingsLogViewer'
+import { needsSdkInstallAction } from './sdkIntegrityPresentation'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
 import type {
   SessionAgentAdapter,
@@ -5637,10 +5638,7 @@ function IntegritySection() {
               </div>
               <div className="integrity-sdk-right">
                 {getStatusBadge(sdk)}
-                {(!sdk.installed ||
-                  sdk.updateAvailable ||
-                  sdk.runtime?.installed !== true ||
-                  sdk.runtime?.updateAvailable === true) && (
+                {needsSdkInstallAction(sdk) && (
                   <Button
                     size="middle"
                     type="primary"

@@ -287,7 +287,7 @@ export async function checkSdkIntegrity(
       item.installedVersion = version
 
       // 2. 如果请求了最新版检测
-      if (checkLatest && def.runtime !== 'codex') {
+      if (checkLatest && def.runtime !== 'codex' && !app.isPackaged) {
         const latest = await getLatestVersion(def.packageName)
         item.latestVersion = latest
         item.latestChecked = true
@@ -295,10 +295,10 @@ export async function checkSdkIntegrity(
         if (latest != null && item.installedVersion != null) {
           item.updateAvailable = isVersionNewer(latest, item.installedVersion)
         }
-      } else if (checkLatest && def.runtime === 'codex') {
-        // Codex JS SDK belongs to the signed desktop application and is upgraded
-        // with the app. The actionable cloud update in this page is the native
-        // runtime below, so do not advertise an npm version that cannot be hot-swapped.
+      } else if (checkLatest) {
+        // SDK packages in a signed desktop application are upgraded with the app.
+        // Do not advertise an npm update that the packaged build cannot install.
+        // Codex's separately managed native runtime is checked below.
         item.latestVersion = item.installedVersion
         item.latestChecked = true
       }
