@@ -140,6 +140,7 @@ import {
 import type {
   SDKApprovalResult,
   SDKExecutorConfig,
+  SDKInvocationSnapshot,
   SDKMcpServerConfig,
   SDKPermissionRequestContext,
   SDKQuestionRequestContext,
@@ -328,6 +329,8 @@ type SendTurnParams = {
   teamConfig?: TeamModeConfig
   mentionAgentId?: string
   interruptActive?: boolean
+  /** 仅供同进程诊断调用；不会进入持久化 turn 队列。 */
+  invocationObserver?: (snapshot: SDKInvocationSnapshot) => void
 }
 
 const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
@@ -1528,7 +1531,7 @@ export class SessionService {
     startAfter?: Promise<unknown>,
   ): Promise<{ turnId: string; started: boolean }> {
     if (this.disposing) throw new Error('Session service is shutting down')
-    const { sessionId, message, skillId, skillParams, mentionAgentId } = params
+    const { sessionId, message, skillId, skillParams, mentionAgentId, invocationObserver } = params
     const attachments = normalizeTurnAttachments(params.attachments)
     const runtimePatch = getRuntimePatch(params)
     const turnId = crypto.randomUUID()
@@ -1608,6 +1611,7 @@ export class SessionService {
         skillParams,
         attachments,
         mentionAgentId,
+        invocationObserver,
       )
     } catch (error) {
       this.handleQueuedTurnStartFailure(sessionId, pendingTurn, error)
@@ -1625,6 +1629,7 @@ export class SessionService {
     skillParams?: Record<string, unknown>,
     attachments?: SessionAttachment[],
     mentionAgentId?: string,
+    invocationObserver?: (snapshot: SDKInvocationSnapshot) => void,
   ): Promise<void> {
     if (this.activeLoops.has(sessionId)) {
       this.enqueueTurn(
@@ -2708,6 +2713,7 @@ export class SessionService {
             }
           : {}),
         ...(goalConfig != null ? { goal: goalConfig } : {}),
+        ...(invocationObserver != null ? { invocationObserver } : {}),
       }
       const turnOptions: TryStartSDKTurnOptions = {
         ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
@@ -2791,6 +2797,7 @@ export class SessionService {
       sdkSessionId,
       continueSession: canResumeSdkSession,
       ...(goalConfig != null ? { goal: goalConfig } : {}),
+      ...(invocationObserver != null ? { invocationObserver } : {}),
     }
     await this.tryStartCodexCliTurn(
       sessionId,

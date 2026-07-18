@@ -241,10 +241,12 @@ describe('generateCanvasText multimodal', () => {
       temperature: 0.3,
       stream: false,
     })
-    expect(result.requestCall).toEqual({
+    expect(result.requestCall).toMatchObject({
       method: 'POST',
       url: 'https://api.openai.com/v1/responses',
+      headers: { authorization: '[redacted]', 'content-type': 'application/json' },
       body: captured.lastBody(),
+      response: { status: 200 },
     })
   })
 
@@ -286,6 +288,10 @@ describe('generateCanvasText multimodal', () => {
         method: 'POST',
         url: 'https://api.example.com/v1/chat/completions',
         body: captured.lastBody(),
+        response: {
+          status: 400,
+          body: { error: { message: 'Unsupported parameter: max_tokens' } },
+        },
       },
     })
   })

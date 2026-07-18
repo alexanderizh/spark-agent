@@ -36,6 +36,10 @@ import {
   resolveCanvasTextModel,
 } from './canvasTextTaskRuntime.js'
 import {
+  buildCanvasSessionRuntimeRequestCall,
+  CanvasSessionRuntimeInvocationError,
+} from './canvasTextTaskRequestCall.js'
+import {
   mapCanvasMediaTaskInputFiles,
   validateCanvasMediaTaskParams,
 } from './canvasMediaTaskValidation.js'
@@ -144,6 +148,7 @@ import type {
   MediaProviderProfile as MediaProviderProfileRuntime,
   MediaTaskRecord,
   MediaProviderError,
+  SDKInvocationSnapshot,
 } from '@spark/agent-runtime'
 import * as keystore from '@spark/shared/keystore'
 import { ScheduledTaskService } from '@spark/agent-runtime'
@@ -3636,38 +3641,80 @@ export function registerAllIpcHandlers(): void {
         const filePath = file.path?.trim() || decodeSafeFileUrl(file.url)
         return filePath ? [{ type: 'image' as const, path: filePath }] : []
       })
+      const effectiveReasoningEffort = req.reasoningEffort
+        ? req.reasoningEffort
+        : agent?.reasoningEffort != null && isProtocolReasoning(agent.reasoningEffort)
+          ? agent.reasoningEffort
+          : undefined
+      const createSessionInvocation = {
+        title: `[画布文本] ${req.operation}`,
+        providerProfileId: profile.id,
+        ...(sessionAgentId ? { agentId: sessionAgentId } : {}),
+        modelId: model,
+        agentAdapter: adapter,
+        permissionMode,
+        chatMode: 'agent' as const,
+      }
+      const sendTurnInvocation = {
+        message,
+        providerProfileId: profile.id,
+        modelId: model,
+        skillIds: selectedSkillIds,
+        ...(sessionAgentId ? { agentId: sessionAgentId } : {}),
+        agentAdapter: adapter,
+        permissionMode,
+        ...(effectiveReasoningEffort ? { reasoningEffort: effectiveReasoningEffort } : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
+      }
+      let requestCall = buildCanvasSessionRuntimeRequestCall({
+        profile,
+        adapter,
+        model,
+        invocation: {
+          captureStatus: 'session-dispatch',
+          createSession: createSessionInvocation,
+          sendTurn: sendTurnInvocation,
+        },
+      })
       let sessionId: string | undefined
       let terminal = false
       try {
         await ensureNoProjectDirectoryExists()
         const noProjectWorkspaceId = getNoProjectWorkspaceId()
-        const created = await getSessionService().createSession({
-          title: `[画布文本] ${req.operation}`,
-          providerProfileId: profile.id,
+        const createSessionRequest = {
+          ...createSessionInvocation,
           ...(noProjectWorkspaceId ? { workspaceId: noProjectWorkspaceId } : {}),
-          ...(sessionAgentId ? { agentId: sessionAgentId } : {}),
-          modelId: model,
-          agentAdapter: adapter,
-          permissionMode,
-          chatMode: 'agent',
-        })
+        }
+        const created = await getSessionService().createSession(createSessionRequest)
         sessionId = created.sessionId
-        const turn = await getSessionService().sendTurn({
+        const sendTurnRequest = {
           sessionId,
-          message,
-          providerProfileId: profile.id,
-          modelId: model,
-          skillIds: selectedSkillIds,
-          ...(sessionAgentId ? { agentId: sessionAgentId } : {}),
-          agentAdapter: adapter,
-          permissionMode,
-          ...(req.reasoningEffort
-            ? { reasoningEffort: req.reasoningEffort }
-            : agent?.reasoningEffort != null && isProtocolReasoning(agent.reasoningEffort)
-              ? { reasoningEffort: agent.reasoningEffort }
-              : {}),
-          ...(attachments.length > 0 ? { attachments } : {}),
+          ...sendTurnInvocation,
+          invocationObserver: (snapshot: SDKInvocationSnapshot) => {
+            requestCall = buildCanvasSessionRuntimeRequestCall({
+              profile,
+              adapter,
+              model,
+              invocation: {
+                captureStatus: 'executor-final',
+                transport: snapshot.transport,
+                sdkOrCliRequest: snapshot.request,
+              },
+            })
+          },
+        }
+        requestCall = buildCanvasSessionRuntimeRequestCall({
+          profile,
+          adapter,
+          model,
+          invocation: {
+            captureStatus: 'session-dispatch',
+            createSession: createSessionRequest,
+            sendTurn: { sessionId, ...sendTurnInvocation },
+            timeoutMs: requestTimeoutMs,
+          },
         })
+        const turn = await getSessionService().sendTurn(sendTurnRequest)
         // SessionService.sendTurn 只负责启动 executor，真正的 SDK/CLI 运行在后台
         // promise 中；不能立刻读 history，否则 Codex 尚未写入 assistant_message。
         // 轮询临时 session 的完整事件，直到本轮出现终态事件。
@@ -3691,6 +3738,7 @@ export function registerAllIpcHandlers(): void {
           provider: profile.provider,
           model,
           text: finalText,
+          requestCall,
           rawResponse: {
             providerProfileId: profile.id,
             provider: profile.provider,
@@ -3707,8 +3755,11 @@ export function registerAllIpcHandlers(): void {
             agentId: req.agentId ?? null,
             skillIds: selectedSkillIds,
             relationManifest: runtimeRequest.relationManifest,
+            modelCallUrl: requestCall.url,
           },
         }
+      } catch (error) {
+        throw new CanvasSessionRuntimeInvocationError(error, requestCall)
       } finally {
         if (sessionId != null) {
           const sessionService = getSessionService()
@@ -3789,14 +3840,21 @@ export function registerAllIpcHandlers(): void {
           )
           return response
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err)
+          const runtimeError = err instanceof CanvasSessionRuntimeInvocationError ? err.cause : err
+          const message =
+            runtimeError instanceof Error ? runtimeError.message : String(runtimeError)
           return fail(
-            err instanceof CanvasTextTimeoutError ? err.code : 'text_generation_failed',
+            runtimeError instanceof CanvasTextTimeoutError
+              ? runtimeError.code
+              : 'text_generation_failed',
             message,
             {
               providerProfileId: candidate.id,
               provider: candidate.provider,
               model,
+              ...(err instanceof CanvasSessionRuntimeInvocationError
+                ? { requestCall: err.requestCall }
+                : {}),
               rawResponse: {
                 providerProfileId: candidate.id,
                 provider: candidate.provider,
@@ -3810,6 +3868,9 @@ export function registerAllIpcHandlers(): void {
                 remainingContextTokens: tokenBudget.remainingContextTokens,
                 contextSafetyTokens: tokenBudget.contextSafetyTokens,
                 requestTimeoutMs,
+                ...(err instanceof CanvasSessionRuntimeInvocationError
+                  ? { modelCallUrl: err.requestCall.url }
+                  : {}),
               },
             },
           )

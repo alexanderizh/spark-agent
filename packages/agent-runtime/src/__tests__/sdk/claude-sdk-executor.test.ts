@@ -271,6 +271,44 @@ describe('ClaudeSDKExecutor', () => {
     expect(secondOptions.skills).toBeUndefined()
   })
 
+  it('reports the final sanitized SDK query parameters to diagnostics', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          total_cost_usd: 0,
+        },
+      ]),
+    )
+    const invocationObserver = vi.fn()
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      apiEndpoint: 'https://api.example.com',
+      invocationObserver,
+    })
+
+    expect(invocationObserver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'claude-sdk',
+        request: expect.objectContaining({
+          prompt: expect.stringContaining('hello'),
+          options: expect.objectContaining({
+            model: 'claude-sonnet-4-5',
+            environment: expect.objectContaining({
+              ANTHROPIC_BASE_URL: 'https://api.example.com',
+              credentials: '[redacted]',
+            }),
+          }),
+        }),
+      }),
+    )
+    expect(JSON.stringify(invocationObserver.mock.calls)).not.toContain('sk-test')
+  })
+
   it('uses the configured SDK session id for fresh and resumed turns', async () => {
     queryMock.mockReturnValue(
       messages([
