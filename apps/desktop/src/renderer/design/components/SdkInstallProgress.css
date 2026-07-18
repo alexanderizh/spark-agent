@@ -1,0 +1,81 @@
+.sdk-install-progress {
+  width: 100%;
+  margin-top: 10px;
+  color: var(--text-muted, #747b86);
+}
+
+.sdk-install-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.sdk-install-progress-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sdk-install-progress-head strong {
+  flex: 0 0 auto;
+  color: var(--text, #20242a);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sdk-install-progress-track {
+  position: relative;
+  height: 6px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text, #20242a) 9%, transparent);
+}
+
+.sdk-install-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary, #5876d8);
+  transition: width 0.2s ease;
+}
+
+.sdk-install-progress.is-done .sdk-install-progress-fill {
+  background: var(--success, #2f9d68);
+}
+
+.sdk-install-progress.is-error .sdk-install-progress-fill {
+  background: var(--danger, #df5965);
+}
+
+.sdk-install-progress-track.is-indeterminate .sdk-install-progress-fill {
+  width: 34% !important;
+  animation: sdk-install-progress-slide 1.1s ease-in-out infinite;
+}
+
+.sdk-install-progress.is-compact {
+  margin-top: 7px;
+}
+
+.integrity-sdk-progress-wrap {
+  padding: 0 18px 14px;
+}
+
+@keyframes sdk-install-progress-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(310%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sdk-install-progress-track.is-indeterminate .sdk-install-progress-fill {
+    animation: none;
+  }
+}

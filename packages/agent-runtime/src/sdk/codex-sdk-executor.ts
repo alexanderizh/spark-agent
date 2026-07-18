@@ -18,6 +18,7 @@ import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
 import { toCodexReasoningEffort } from './reasoning-effort.js'
 import { StreamTerminalizer } from './stream-terminalizer.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from './types.js'
+import { codexTargetTriple, resolveManagedCodexCli } from './codex-runtime.js'
 
 type Listener = (event: AgentEvent) => void
 type EventBase = { id: string; sessionId: string; turnId: string; timestamp: string; seq: number }
@@ -48,6 +49,19 @@ export class CodexSDKNotAvailableError extends Error {
     this.name = 'CodexSDKNotAvailableError'
     if (cause != null) this.cause = cause
   }
+}
+
+export class CodexRuntimeNotInstalledError extends Error {
+  constructor() {
+    super('Codex native runtime 未安装。请打开“设置 → 完整性”下载 Codex 运行时，然后重试。')
+    this.name = 'CodexRuntimeNotInstalledError'
+  }
+}
+
+export function codexSdkExecutionErrorCode(error: unknown, aborted: boolean): string {
+  if (aborted) return 'CODEX_SDK_CANCELLED'
+  if (error instanceof CodexRuntimeNotInstalledError) return 'CODEX_RUNTIME_NOT_INSTALLED'
+  return 'CODEX_SDK_ERROR'
 }
 
 let codexSdkLoadPromise: Promise<CodexSdkModule> | null = null
@@ -188,7 +202,7 @@ export class CodexSdkExecutor {
       this.emit({
         ...makeBase(),
         type: 'agent_error',
-        code: aborted ? 'CODEX_SDK_CANCELLED' : 'CODEX_SDK_ERROR',
+        code: codexSdkExecutionErrorCode(err, aborted),
         message: aborted
           ? 'Codex SDK run was cancelled'
           : err instanceof Error
@@ -581,6 +595,9 @@ export class CodexSdkExecutor {
 
 function buildCodexOptions(config: SDKExecutorConfig): CodexOptions {
   const bundledCodex = resolveBundledCodexCli()
+  if (bundledCodex == null && process.env.SPARK_CODEX_REQUIRE_RUNTIME === '1') {
+    throw new CodexRuntimeNotInstalledError()
+  }
   const env = stringifyEnv({
     ...process.env,
     ...(config.codexCliProvider?.env ?? {}),
@@ -688,9 +705,7 @@ function buildCodexConfig(config: SDKExecutorConfig): CodexConfigObject {
   return {
     model_reasoning_summary: 'concise',
     hide_agent_reasoning: false,
-    ...(policy.approvalsReviewer == null
-      ? {}
-      : { approvals_reviewer: policy.approvalsReviewer }),
+    ...(policy.approvalsReviewer == null ? {} : { approvals_reviewer: policy.approvalsReviewer }),
     ...buildCodexModelProviderConfig(config),
     ...buildCodexMcpConfig(config.mcpServers),
   }
@@ -944,6 +959,14 @@ function sanitizeConfigKey(value: string): string {
 }
 
 export function resolveBundledCodexCli(): BundledCodexCli | null {
+  const managedCodex = resolveManagedCodexCli()
+  if (managedCodex != null) {
+    return {
+      executablePath: managedCodex.executablePath,
+      pathDirs: managedCodex.pathDirs,
+    }
+  }
+
   const targetTriple = codexTargetTriple()
   if (targetTriple == null) return null
   const platformPackage = codexPlatformPackage(targetTriple)
@@ -970,26 +993,6 @@ export function resolveBundledCodexCli(): BundledCodexCli | null {
     }
   } catch {
     return null
-  }
-}
-
-function codexTargetTriple(): string | null {
-  switch (process.platform) {
-    case 'linux':
-    case 'android':
-      if (process.arch === 'x64') return 'x86_64-unknown-linux-musl'
-      if (process.arch === 'arm64') return 'aarch64-unknown-linux-musl'
-      return null
-    case 'darwin':
-      if (process.arch === 'x64') return 'x86_64-apple-darwin'
-      if (process.arch === 'arm64') return 'aarch64-apple-darwin'
-      return null
-    case 'win32':
-      if (process.arch === 'x64') return 'x86_64-pc-windows-msvc'
-      if (process.arch === 'arm64') return 'aarch64-pc-windows-msvc'
-      return null
-    default:
-      return null
   }
 }
 

@@ -10,6 +10,8 @@
  * shot spec 或 prompt metadata，方便追踪来源。
  */
 
+import { canvasPromptExampleUrl } from '../../assets/remoteAssetUrls'
+
 export type CameraPromptCategory =
   | 'shot_size' // 景别
   | 'angle' // 角度
@@ -44,24 +46,19 @@ export type CinematicStyleExampleId =
   | 'sci_fi'
   | 'vintage_drama'
 
-const styleExampleModules = import.meta.glob('../../../assets/canvas-prompt-examples/*.png', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>
+const styleExample = (fileName: string): string => canvasPromptExampleUrl(fileName)
 
 const STYLE_EXAMPLE_IMAGE_SRC: Record<CinematicStyleExampleId, string> = {
-  noir: styleExampleModules['../../../assets/canvas-prompt-examples/style-noir.png'] ?? '',
-  neo_noir: styleExampleModules['../../../assets/canvas-prompt-examples/style-neo-noir.png'] ?? '',
-  cyberpunk: styleExampleModules['../../../assets/canvas-prompt-examples/style-cyberpunk.png'] ?? '',
-  horror: styleExampleModules['../../../assets/canvas-prompt-examples/style-horror.png'] ?? '',
-  romance: styleExampleModules['../../../assets/canvas-prompt-examples/style-romance.png'] ?? '',
-  epic: styleExampleModules['../../../assets/canvas-prompt-examples/style-epic.png'] ?? '',
-  documentary: styleExampleModules['../../../assets/canvas-prompt-examples/style-documentary.png'] ?? '',
-  psychological_thriller:
-    styleExampleModules['../../../assets/canvas-prompt-examples/style-psychological-thriller.png'] ?? '',
-  sci_fi: styleExampleModules['../../../assets/canvas-prompt-examples/style-sci-fi.png'] ?? '',
-  vintage_drama: styleExampleModules['../../../assets/canvas-prompt-examples/style-vintage-drama.png'] ?? '',
+  noir: styleExample('style-noir.png'),
+  neo_noir: styleExample('style-neo-noir.png'),
+  cyberpunk: styleExample('style-cyberpunk.png'),
+  horror: styleExample('style-horror.png'),
+  romance: styleExample('style-romance.png'),
+  epic: styleExample('style-epic.png'),
+  documentary: styleExample('style-documentary.png'),
+  psychological_thriller: styleExample('style-psychological-thriller.png'),
+  sci_fi: styleExample('style-sci-fi.png'),
+  vintage_drama: styleExample('style-vintage-drama.png'),
 }
 
 export type CameraPromptItem = {

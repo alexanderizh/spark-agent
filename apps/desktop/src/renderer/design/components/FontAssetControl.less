@@ -1,0 +1,29 @@
+.font-asset-control {
+  width: min(460px, 100%);
+  margin-top: 10px;
+}
+
+.font-asset-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.font-asset-control .ant-progress {
+  max-width: 320px;
+  margin-top: 6px;
+}
+
+.font-asset-hint,
+.font-asset-error {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+}
+
+.font-asset-error {
+  color: var(--danger);
+  word-break: break-word;
+}

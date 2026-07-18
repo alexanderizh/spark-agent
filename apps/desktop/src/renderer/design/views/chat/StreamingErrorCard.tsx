@@ -8,7 +8,10 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import type { RuntimeEventOrigin } from '@spark/protocol'
+import { CodexRuntimeRecovery } from './CodexRuntimeRecovery'
 import './StreamingErrorCard.css'
+
+const CODEX_RUNTIME_NOT_INSTALLED = 'CODEX_RUNTIME_NOT_INSTALLED'
 
 export interface StreamingErrorCardProps {
   code?: string
@@ -38,6 +41,8 @@ export function StreamingErrorCard({
   const [expanded, setExpanded] = useState(false)
   const StatusIcon = level === 'error' ? AlertCircle : level === 'warning' ? TriangleAlert : Info
   const sourceLabel = origin?.kind === 'subagent' ? `协作 Agent · ${origin.name}` : origin?.name
+  const needsCodexRuntime = code === CODEX_RUNTIME_NOT_INSTALLED
+  const displayTitle = needsCodexRuntime ? 'Codex 运行时未安装' : title
   const retryProgress = details.find((detail) => detail.label === '重试进度')?.value
   const httpStatus = details.find((detail) => detail.label === 'HTTP 状态')?.value
   const compactMeta = [
@@ -51,7 +56,7 @@ export function StreamingErrorCard({
     <section
       className={`runtime-diagnostic-card is-${level}${expanded ? ' is-expanded' : ''}`}
       role="group"
-      aria-label={`${title}${code != null ? ` (${code})` : ''}`}
+      aria-label={`${displayTitle}${code != null ? ` (${code})` : ''}`}
     >
       <div className="runtime-diagnostic-summary">
         <span className="runtime-diagnostic-icon-shell" aria-hidden="true">
@@ -59,7 +64,7 @@ export function StreamingErrorCard({
         </span>
         <span className="runtime-diagnostic-heading">
           <span className="runtime-diagnostic-title-row">
-            <strong>{title}</strong>
+            <strong>{displayTitle}</strong>
             {compactMeta.map((item) => (
               <span className="runtime-diagnostic-meta" key={item}>
                 {item}
@@ -69,7 +74,7 @@ export function StreamingErrorCard({
           {!expanded && <span className="runtime-diagnostic-preview">{message}</span>}
         </span>
         <span className="runtime-diagnostic-header-actions">
-          {retryable && onRetry != null && (
+          {retryable && !needsCodexRuntime && onRetry != null && (
             <button type="button" className="runtime-diagnostic-retry" onClick={onRetry}>
               <RefreshCw size={13} aria-hidden="true" />
               重新尝试
@@ -90,6 +95,7 @@ export function StreamingErrorCard({
           </button>
         </span>
       </div>
+      {needsCodexRuntime && <CodexRuntimeRecovery {...(onRetry != null ? { onRetry } : {})} />}
       {expanded && (
         <div className="runtime-diagnostic-body">
           <p>{message}</p>

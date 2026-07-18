@@ -4,7 +4,7 @@
  * APIMart 是 OpenAI 兼容聚合平台（design doc §6.1）：
  *   - 图片：/images/generations（可能返回直接产物或异步 task id）
  *   - GPT Image 2 图生图/图片编辑：/images/generations + image_urls
- *     支持公网 URL 与压缩后的 base64 data URI。
+ *     支持公网 URL 与小体积 base64 data URI；大图由宿主上传后改传公网 URL。
  *   - 语音合成：/audio/speech（OpenAI TTS 风格，二进制返回）
  *   - 语音转写：/audio/transcriptions（Whisper 风格）
  *   - 视频：/videos/generations 创建任务 → 轮询 /videos/generations/{id} 或 /tasks/{id}
@@ -37,8 +37,6 @@ import {
 
 const FAILED_STATUSES = ['failed', 'error', 'cancelled', 'canceled']
 const APIMART_IMAGE_DATA_URL_MAX_BYTES = 3 * 1024 * 1024
-const APIMART_IMAGE_MAX_EDGES = [2048, 1600, 1280, 1024, 768, 512, 384, 256] as const
-const APIMART_IMAGE_WEBP_QUALITIES = [82, 70, 58, 46, 36] as const
 
 export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
   constructor() {
@@ -74,7 +72,7 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
     const model = ctx.defaultModel
     const defaults = ctx.mediaDefaults?.image
     const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider, model)
-    const imageUrls = await Promise.all(imageFiles.map((file) => resolveApimartImageUrl(file)))
+    const imageUrls = await Promise.all(imageFiles.map((file) => resolveApimartImageUrl(file, ctx)))
     const body: Record<string, unknown> = {
       model,
       prompt,
@@ -148,93 +146,74 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
   }
 }
 
-async function resolveApimartImageUrl(file: MediaInputFile): Promise<string> {
+async function resolveApimartImageUrl(file: MediaInputFile, ctx: MediaProviderContext): Promise<string> {
   if (file.url && /^https?:\/\//i.test(file.url)) return file.url
-  if (file.dataUrl) return compressApimartImageDataUrl(file.dataUrl)
+  if (file.dataUrl) {
+    const parsed = parseImageDataUrl(file.dataUrl)
+    if (parsed.buffer.byteLength <= APIMART_IMAGE_DATA_URL_MAX_BYTES) return file.dataUrl
+    return uploadApimartImage(parsed.buffer, parsed.mimeType, ctx)
+  }
   if (file.path) {
     const artifact = new MediaArtifactService()
     const buffer = await artifact.readLocalFile(file.path)
     const mimeType = file.mimeType ?? 'image/png'
-    return compressApimartImageDataUrl(`data:${mimeType};base64,${buffer.toString('base64')}`)
-  }
-  throw new MediaProviderError('invalid_input', 'APIMart image edit requires public image URL or dataUrl input')
-}
-
-/**
- * APIMart generation 接口支持在 image_urls 中直接传 base64 data URI，但大 PNG
- * 会使 JSON 请求体过大并触发网关 413。仅对超过安全阈值的输入副本做 WebP 压缩，
- * 原图与小图保持不变。
- */
-async function compressApimartImageDataUrl(dataUrl: string): Promise<string> {
-  if (Buffer.byteLength(dataUrl, 'utf8') <= APIMART_IMAGE_DATA_URL_MAX_BYTES) return dataUrl
-
-  const match = /^data:image\/(?:png|jpe?g|webp);base64,([a-z0-9+/=\s]+)$/i.exec(dataUrl)
-  if (!match?.[1]) {
-    throw new MediaProviderError(
-      'invalid_input',
-      'APIMart oversized image input must be a base64 PNG, JPEG, or WebP data URL',
-    )
-  }
-
-  let canvasModule: typeof import('@napi-rs/canvas')
-  try {
-    canvasModule = await import('@napi-rs/canvas')
-  } catch (error) {
-    throw new MediaProviderError(
-      'provider_not_configured',
-      `APIMart image compression is unavailable: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  }
-
-  let source: Awaited<ReturnType<typeof canvasModule.loadImage>>
-  try {
-    source = await canvasModule.loadImage(Buffer.from(match[1].replace(/\s/g, ''), 'base64'))
-  } catch (error) {
-    throw new MediaProviderError(
-      'invalid_input',
-      `APIMart failed to decode oversized image input: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  }
-
-  const sourceWidth = source.width
-  const sourceHeight = source.height
-  const sourceMaxEdge = Math.max(sourceWidth, sourceHeight)
-  if (!Number.isFinite(sourceMaxEdge) || sourceMaxEdge <= 0) {
-    throw new MediaProviderError('invalid_input', 'APIMart oversized image input has invalid dimensions')
-  }
-
-  let smallestDataUrl = dataUrl
-  const maxEdges = Array.from(
-    new Set([Math.min(sourceMaxEdge, APIMART_IMAGE_MAX_EDGES[0]), ...APIMART_IMAGE_MAX_EDGES]),
-  ).filter((edge) => edge <= sourceMaxEdge)
-
-  for (const maxEdge of maxEdges) {
-    const scale = Math.min(1, maxEdge / sourceMaxEdge)
-    const width = Math.max(1, Math.round(sourceWidth * scale))
-    const height = Math.max(1, Math.round(sourceHeight * scale))
-    const canvas = canvasModule.createCanvas(width, height)
-    const context = canvas.getContext('2d')
-    context.imageSmoothingEnabled = true
-    context.imageSmoothingQuality = 'high'
-    context.drawImage(source, 0, 0, width, height)
-
-    for (const quality of APIMART_IMAGE_WEBP_QUALITIES) {
-      const encoded = await canvas.encode('webp', quality)
-      const compressed = `data:image/webp;base64,${encoded.toString('base64')}`
-      if (compressed.length < smallestDataUrl.length) smallestDataUrl = compressed
-      if (Buffer.byteLength(compressed, 'utf8') <= APIMART_IMAGE_DATA_URL_MAX_BYTES) {
-        return compressed
-      }
-    }
-  }
-
-  if (Buffer.byteLength(smallestDataUrl, 'utf8') <= APIMART_IMAGE_DATA_URL_MAX_BYTES) {
-    return smallestDataUrl
+    return uploadApimartImage(buffer, mimeType, ctx)
   }
   throw new MediaProviderError(
     'invalid_input',
-    `APIMart image remains too large after compression (${Buffer.byteLength(smallestDataUrl, 'utf8')} bytes)`,
+    'APIMart image edit requires a public image URL, dataUrl, or readable local file',
   )
+}
+
+function parseImageDataUrl(dataUrl: string): { buffer: Buffer; mimeType: string } {
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)$/i.exec(dataUrl)
+  if (!match?.[1] || match[2] == null) {
+    throw new MediaProviderError(
+      'invalid_input',
+      'APIMart image input must be a base64 image data URL or a public HTTP(S) URL',
+    )
+  }
+  return {
+    mimeType: match[1].toLowerCase(),
+    buffer: Buffer.from(match[2].replace(/\s/g, ''), 'base64'),
+  }
+}
+
+async function uploadApimartImage(
+  buffer: Buffer,
+  mimeType: string,
+  ctx: MediaProviderContext,
+): Promise<string> {
+  if (!ctx.fallbackUploader?.canHandle('apimart')) {
+    throw new MediaProviderError(
+      'provider_not_configured',
+      'APIMart 图片超过 3 MiB 或来自本地文件，需要先登录 Spark 以获取公开图片 URL',
+    )
+  }
+  try {
+    const uploaded = await ctx.fallbackUploader.upload({
+      buffer,
+      filename: `apimart-reference-${Date.now()}.${extensionForMime(mimeType)}`,
+      mimeType,
+      targetProvider: 'apimart',
+    })
+    const publicUrl = uploaded.publicUrl ?? uploaded.url
+    if (publicUrl && /^https?:\/\//i.test(publicUrl)) return publicUrl
+    throw new Error('上传结果缺少公开 HTTP(S) URL')
+  } catch (error) {
+    throw new MediaProviderError(
+      'auth_required',
+      `APIMart 图片上传失败，请登录 Spark 后重试：${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+function extensionForMime(mimeType: string): string {
+  const normalized = mimeType.toLowerCase()
+  if (normalized === 'image/jpeg') return 'jpg'
+  if (normalized === 'image/webp') return 'webp'
+  if (normalized === 'image/gif') return 'gif'
+  return 'png'
 }
 
 function baseEndpoint(ctx: MediaProviderContext): string {

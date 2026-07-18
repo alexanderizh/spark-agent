@@ -19,10 +19,17 @@ buildDependenciesFromSource: false
 directories:
   buildResources: resources
   output: dist
+afterPack: scripts/after-pack.js
 afterSign: scripts/notarize.js
 mac:
   icon: resources/icon.icns
   category: public.app-category.developer-tools
+  # Electron/Chromium 自带约 50 组 locale。产品界面目前只支持中英文，
+  # macOS 资源目录使用 underscore 命名（zh_CN.lproj / zh_TW.lproj）。
+  electronLanguages:
+    - en
+    - zh_CN
+    - zh_TW
   extendInfo:
     CFBundleDisplayName: SparkWork
   target:
@@ -41,6 +48,11 @@ mac:
   identity: 'Developer ID Application'
 win:
   icon: resources/icon.ico
+  # Windows/Linux Electron locale 文件使用 BCP-47 风格的连字符命名。
+  electronLanguages:
+    - en-US
+    - zh-CN
+    - zh-TW
   # Windows 10+ / Electron 31 仅使用 SHA-256。RFC 3161 时间戳让已签名版本在
   # 自签名证书到期后仍可验证其签名时点；时间戳服务本身不改变证书信任级别。
   publisherName: Spark Foundation
@@ -53,6 +65,10 @@ nsis:
   uninstallDisplayName: SparkWork ${version}
 linux:
   icon: resources/icon.png
+  electronLanguages:
+    - en-US
+    - zh-CN
+    - zh-TW
   desktop:
     Name: SparkWork
 asar: true
@@ -64,9 +80,6 @@ asarUnpack:
   - '**/node_modules/sqlite-vec*/**'
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude'
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude.exe'
-  - '**/node_modules/@openai/codex-*/vendor/**/bin/codex'
-  - '**/node_modules/@openai/codex-*/vendor/**/bin/codex.exe'
-  - '**/node_modules/@openai/codex-*/vendor/**/codex-path/**'
 files:
   # 不显式列 node_modules —— electron-builder 自动只收 package.json 的「生产依赖」闭包。
   # 纯渲染端依赖已移至 devDependencies（被 vite 打进 out/renderer），故不会被收集；
@@ -85,6 +98,8 @@ files:
   - '!**/*.md'
   - '!**/*.ts'
   - '!**/{LICENSE,license,LICENSE.txt,*.LICENSE.txt,CHANGELOG.md}'
+  # Codex JS SDK 保留，但 native vendor runtime 改由完整性页按平台按需下载。
+  - '!**/node_modules/@openai/codex-*/vendor/**'
 extraResources:
   - from: out/main/migrations
     to: migrations

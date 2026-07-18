@@ -8,7 +8,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { Button, Input, InputNumber, Modal, Segmented, Select, Tag, TextArea } from '@lobehub/ui'
 // TODO(lobe-migration): @lobehub/ui 没有 Switch 命名导出;从 antd 引用,与项目其他 view 保持一致
-import { Space, Switch } from 'antd'
+import { Modal as AntdModal, Space, Switch } from 'antd'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
@@ -29,6 +29,8 @@ import { useToast } from '../components/Toast'
 import { ModelCapabilityRegistry } from '@spark/shared'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import { FfmpegStatusCard } from './FfmpegStatusCard'
+import { FontAssetControl } from '../components/FontAssetControl'
+import { SdkInstallProgressView } from '../components/SdkInstallProgress'
 import { clearOnboardingState } from './OnboardingView'
 import { canvasApi } from './canvas/canvas.api'
 import { CanvasBatchSubmitPreferenceSetting } from './canvas/CanvasBatchSubmitPreferenceSetting'
@@ -58,6 +60,7 @@ import type {
   McpServerItem,
   UpdateStatus,
   SdkIntegrityItem,
+  SdkIntegrityInstallProgress,
   RuntimeToolStatus,
   SessionListResponse,
   RemoteChannelType,
@@ -1700,6 +1703,7 @@ function AppearanceSection() {
               width: 200
             }}
           />
+          <FontAssetControl />
         </div>
 
         <label>
@@ -3777,6 +3781,36 @@ export function PermissionsSection() {
   const handleRuntimeAdapterChange = (adapter: SessionAgentAdapter) => {
     const permissionMode = getValidRuntimePermissionMode(runtimePermissionMode, adapter)
     updateRuntimePrefs({ adapter, permissionMode })
+    if (adapter !== 'codex') return
+
+    void window.spark
+      .invoke('sdk:integrity-check', { checkLatest: false })
+      .then((result) => {
+        const codex = result.sdks.find((sdk) => sdk.packageName === '@openai/codex-sdk')
+        if (codex?.runtime?.installed !== false) return
+        AntdModal.confirm({
+          title: '需要下载 Codex 运行时',
+          content:
+            'Codex JS SDK 已随应用安装，但当前平台的 native runtime 尚未下载。现在下载后即可使用；稍后也可以在“设置 → 完整性”中安装或升级。',
+          okText: '下载运行时',
+          cancelText: '稍后处理',
+          onOk: async () => {
+            const installed = await window.spark.invoke('sdk:integrity-install', {
+              packageName: '@openai/codex-sdk',
+            })
+            if (!installed.success) {
+              toast.error(installed.message)
+              throw new Error(installed.message)
+            }
+            toast.success(installed.message)
+          },
+        })
+      })
+      .catch((error: unknown) => {
+        toast.error(
+          `Codex 运行时检测失败：${error instanceof Error ? error.message : String(error)}`,
+        )
+      })
   }
 
   const RULE_META: Array<{
@@ -5032,6 +5066,7 @@ function IntegritySection() {
     success: boolean
     message: string
   } | null>(null)
+  const [installProgress, setInstallProgress] = useState<SdkIntegrityInstallProgress | null>(null)
   const { toast } = useToast()
 
   // Load cached result from startup auto-check
@@ -5062,7 +5097,15 @@ function IntegritySection() {
       setCheckedAt(payload.checkedAt)
       window.localStorage.setItem('spark-sdk-integrity', JSON.stringify(payload))
     })
-    return unsub ?? (() => {})
+    const unsubProgress = window.spark?.on('stream:sdk:install-progress', (payload) => {
+      setInstallProgress(payload)
+      const active = payload.state !== 'done' && payload.state !== 'error'
+      setInstallingPkg(active ? payload.packageName : null)
+    })
+    return () => {
+      unsub?.()
+      unsubProgress?.()
+    }
   }, [])
 
   const handleCheck = async (checkLatest = false) => {
@@ -5089,6 +5132,14 @@ function IntegritySection() {
     if (installingPkg != null) return
     setInstallingPkg(packageName)
     setInstallResult(null)
+    setInstallProgress({
+      packageName,
+      state: 'preparing',
+      downloaded: 0,
+      total: 0,
+      percent: 0,
+      message: '正在准备下载',
+    })
     try {
       const result = await window.spark.invoke('sdk:integrity-install', { packageName })
       setInstallResult({ pkg: packageName, success: result.success, message: result.message })
@@ -5098,15 +5149,38 @@ function IntegritySection() {
         await handleCheck(true)
       } else {
         toast.error(result.message)
+        setInstallProgress((current) => ({
+          packageName,
+          state: 'error',
+          downloaded: current?.packageName === packageName ? current.downloaded : 0,
+          total: current?.packageName === packageName ? current.total : 0,
+          percent: current?.packageName === packageName ? current.percent : null,
+          message: result.message,
+        }))
       }
     } catch (err) {
-      toast.error(`安装失败: ${err instanceof Error ? err.message : String(err)}`)
+      const message = `安装失败: ${err instanceof Error ? err.message : String(err)}`
+      toast.error(message)
+      setInstallProgress((current) => ({
+        packageName,
+        state: 'error',
+        downloaded: current?.packageName === packageName ? current.downloaded : 0,
+        total: current?.packageName === packageName ? current.total : 0,
+        percent: current?.packageName === packageName ? current.percent : null,
+        message,
+      }))
     } finally {
       setInstallingPkg(null)
     }
   }
 
   const getStatusBadge = (sdk: SdkIntegrityItem) => {
+    if (sdk.runtime && !sdk.runtime.installed) {
+      return <span className="badge error dot">运行时未安装</span>
+    }
+    if (sdk.runtime?.updateAvailable) {
+      return <span className="badge warning dot">运行时有新版 {sdk.runtime.latestVersion}</span>
+    }
     if (!sdk.installed) {
       return <span className="badge error dot">未安装</span>
     }
@@ -5153,9 +5227,17 @@ function IntegritySection() {
 
   // Count installed / total for summary (SDKs + tools combined)
   const sdkInstalled = sdks.filter((s) => s.installed).length
+  const sdkRuntimeReady = sdks.filter((s) => s.runtime == null || s.runtime.installed).length
+  const sdkHealthy = sdks.filter(
+    (s) => s.installed && (s.runtime == null || s.runtime.installed),
+  ).length
   const toolAvailable = tools.filter((t) => t.available).length
   const totalItems = sdks.length + tools.length
-  const allOk = totalItems > 0 && sdkInstalled === sdks.length && toolAvailable === tools.length
+  const allOk =
+    totalItems > 0 &&
+    sdkInstalled === sdks.length &&
+    sdkRuntimeReady === sdks.length &&
+    toolAvailable === tools.length
   const isInstallingSdk = installingPkg != null
 
   return (
@@ -5169,9 +5251,7 @@ function IntegritySection() {
           {totalItems > 0 ? (
             <div className={`integrity-status-badge ${allOk ? 'ok' : 'warn'}`}>
               {allOk ? <Icons.CheckCircle size={14} /> : <Icons.AlertTriangle size={14} />}
-              <span>
-                {allOk ? '环境完整' : `${sdkInstalled + toolAvailable}/${totalItems} 正常`}
-              </span>
+              <span>{allOk ? '环境完整' : `${sdkHealthy + toolAvailable}/${totalItems} 正常`}</span>
             </div>
           ) : (
             <div className="integrity-status-badge unknown">
@@ -5281,7 +5361,7 @@ function IntegritySection() {
                 <div className="integrity-sdk-name">{sdk.displayName}</div>
                 <div className="integrity-sdk-version">
                   {sdk.installedVersion
-                    ? `v${sdk.installedVersion}`
+                    ? `v${sdk.installedVersion}${sdk.runtime?.installedVersion ? ` · native v${sdk.runtime.installedVersion}` : sdk.runtime ? ' · native 未安装' : ''}`
                     : sdk.installed
                       ? '已安装'
                       : '未安装'}
@@ -5289,25 +5369,41 @@ function IntegritySection() {
               </div>
               <div className="integrity-sdk-right">
                 {getStatusBadge(sdk)}
-                {(!sdk.installed || sdk.updateAvailable) && (
+                {(!sdk.installed ||
+                  sdk.updateAvailable ||
+                  sdk.runtime?.installed !== true ||
+                  sdk.runtime?.updateAvailable === true) && (
                   <Button
                     size="middle"
                     type="primary"
                     loading={installingPkg === sdk.packageName}
                     disabled={isInstallingSdk}
-                    icon={<Icons.Download  size={13} />}
+                    icon={<Icons.Download size={13} />}
                     onClick={() => void handleInstall(sdk.packageName)}
                   >
-                    {installingPkg != null && installingPkg !== sdk.packageName
-                      ? '请稍候'
-                      : sdk.installed
-                        ? '更新'
-                        : '安装'}
+                    {installingPkg === sdk.packageName
+                      ? installProgress?.percent != null
+                        ? `${Math.round(installProgress.percent)}%`
+                        : '下载中'
+                      : installingPkg != null
+                        ? '请稍候'
+                        : sdk.runtime && !sdk.runtime.installed
+                          ? '下载运行时'
+                          : sdk.installed
+                            ? '更新'
+                            : '安装'}
                   </Button>
                 )}
               </div>
             </div>
-            {sdk.error && <div className="integrity-sdk-error">{sdk.error}</div>}
+            {installProgress?.packageName === sdk.packageName && (
+              <div className="integrity-sdk-progress-wrap">
+                <SdkInstallProgressView progress={installProgress} />
+              </div>
+            )}
+            {(sdk.error || sdk.runtime?.error) && (
+              <div className="integrity-sdk-error">{sdk.error || sdk.runtime?.error}</div>
+            )}
           </div>
         ))}
         {sdks.length === 0 && !isChecking && (
@@ -5361,7 +5457,8 @@ function IntegritySection() {
           <div className="integrity-ref-left">
             <div className="integrity-ref-name">OpenAI Codex SDK</div>
             <div className="integrity-ref-desc">
-              提供 Codex SDK 流式事件、工具调用、MCP 和代码执行适配。
+              JS SDK 随应用提供；native runtime 按需从 Spark
+              云端下载，完整性页面负责校验、安装和升级。
             </div>
           </div>
           <span className="badge dot">必需</span>

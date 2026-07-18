@@ -81,7 +81,7 @@ describe('SdkIntegrityService', () => {
     mocks.app.isPackaged = true
     const { installSdk } = await import('../SdkIntegrityService.js')
 
-    const result = await installSdk('@openai/codex-sdk')
+    const result = await installSdk('@anthropic-ai/claude-agent-sdk')
 
     expect(result.success).toBe(false)
     expect(result.message).toContain('生产安装包不能热安装核心 SDK')
@@ -96,6 +96,7 @@ describe('SdkIntegrityService', () => {
 
     expect(codexSdk?.installed).toBe(true)
     expect(codexSdk?.installedVersion).toBe('0.144.5')
+    expect(codexSdk?.runtime).toMatchObject({ installed: true, installedVersion: 'bundled', targetTriple: expect.any(String) })
   })
 
   it('installs SDK packages into apps/desktop during development', async () => {
@@ -107,7 +108,7 @@ describe('SdkIntegrityService', () => {
     mocks.spawn.mockReturnValue(makeSpawnResult(0))
     const { installSdk } = await import('../SdkIntegrityService.js')
 
-    const result = await installSdk('@openai/codex-sdk')
+    const result = await installSdk('@anthropic-ai/claude-agent-sdk')
 
     expect(result.success).toBe(true)
     const spawnOptions = mocks.spawn.mock.calls[0]?.[2] as
@@ -115,7 +116,7 @@ describe('SdkIntegrityService', () => {
       | undefined
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.stringMatching(/^pnpm(\.cmd)?$/),
-      ['add', '@openai/codex-sdk@latest'],
+      ['add', '--save-optional', '@anthropic-ai/claude-agent-sdk@latest'],
       expect.objectContaining({ shell: true }),
     )
     expect(spawnOptions?.cwd).toMatch(/apps[/\\]desktop$/)
@@ -132,11 +133,11 @@ describe('SdkIntegrityService', () => {
     mocks.spawn.mockReturnValue(pending)
     const { installSdk } = await import('../SdkIntegrityService.js')
 
-    const first = installSdk('@openai/codex-sdk')
-    const second = await installSdk('@anthropic-ai/claude-agent-sdk')
+    const first = installSdk('@anthropic-ai/claude-agent-sdk')
+    const second = await installSdk('@openai/codex-sdk')
 
     expect(second.success).toBe(false)
-    expect(second.message).toContain('@openai/codex-sdk 正在安装')
+    expect(second.message).toContain('@anthropic-ai/claude-agent-sdk 正在安装')
     expect(mocks.spawn).toHaveBeenCalledTimes(1)
 
     pending.emit('close', 0)
@@ -176,11 +177,10 @@ describe('SdkIntegrityService', () => {
     expect(pkg.dependencies?.['@openai/codex-sdk']).toBe('0.144.5')
   })
 
-  it('unpacks Codex platform binaries from Electron asar archives', () => {
+  it('excludes Codex native vendor binaries from Electron asar archives', () => {
     const builderConfig = readFileSync(join(process.cwd(), 'electron-builder.yml'), 'utf-8')
 
-    expect(builderConfig).toContain('**/node_modules/@openai/codex-*/vendor/**/bin/codex')
-    expect(builderConfig).toContain('**/node_modules/@openai/codex-*/vendor/**/bin/codex.exe')
-    expect(builderConfig).toContain('**/node_modules/@openai/codex-*/vendor/**/codex-path/**')
+    expect(builderConfig).toContain("'!**/node_modules/@openai/codex-*/vendor/**'")
+    expect(builderConfig).not.toContain("'**/node_modules/@openai/codex-*/vendor/**/bin/codex'")
   })
 })

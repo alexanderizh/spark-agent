@@ -38,6 +38,11 @@ export interface SparkInstallArtifact {
     contentRoot?: string
   }
   dependencies?: string[]
+  /** 可选的应用托管 runtime 元数据；当前用于 Codex native runtime。 */
+  runtime?: 'codex' | 'claude'
+  targetTriple?: string
+  sdkPackage?: string
+  executablePath?: string
   fallbackUrls?: string[]
   notes?: string
 }

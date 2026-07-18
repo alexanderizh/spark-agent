@@ -1,6 +1,11 @@
 import { delimiter, sep } from 'node:path'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { CodexSdkExecutor, resolveBundledCodexCli } from '../../sdk/codex-sdk-executor.js'
+import {
+  CodexRuntimeNotInstalledError,
+  CodexSdkExecutor,
+  codexSdkExecutionErrorCode,
+  resolveBundledCodexCli,
+} from '../../sdk/codex-sdk-executor.js'
 import type { SDKExecutorConfig } from '../../sdk/types.js'
 
 const codexCtor = vi.hoisted(() => vi.fn())
@@ -45,6 +50,16 @@ describe('CodexSdkExecutor', () => {
     resumeThread.mockReset()
     runStreamed.mockReset()
     startThread.mockReturnValue({ runStreamed })
+  })
+
+  it('uses an actionable error code when the managed Codex runtime is missing', () => {
+    expect(codexSdkExecutionErrorCode(new CodexRuntimeNotInstalledError(), false)).toBe(
+      'CODEX_RUNTIME_NOT_INSTALLED',
+    )
+    expect(codexSdkExecutionErrorCode(new Error('other failure'), false)).toBe('CODEX_SDK_ERROR')
+    expect(codexSdkExecutionErrorCode(new CodexRuntimeNotInstalledError(), true)).toBe(
+      'CODEX_SDK_CANCELLED',
+    )
   })
 
   it('streams Codex SDK reasoning, command, MCP, file, usage, and final text events', async () => {

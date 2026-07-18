@@ -180,6 +180,21 @@ export type {
   CommandListItem,
 } from './core/index.js'
 export { SkillRegistryService } from './services/skill-registry/index.js'
+export {
+  fetchSparkInstallManifest,
+  findSparkInstallArtifact,
+  resolveArtifactUrl,
+  resolveArtifactUrlString,
+} from './services/skill-registry/artifact-manifest.js'
+export type {
+  SparkInstallArtifact,
+  SparkInstallManifest,
+} from './services/skill-registry/artifact-manifest.js'
+export { installBinaryArchive } from './services/skill-registry/tarball-installer.js'
+export type {
+  BinaryArchiveInstallParams,
+  BinaryArchiveInstallResult,
+} from './services/skill-registry/tarball-installer.js'
 export { SettingsService } from './services/settings.service.js'
 export { UsageLedgerService } from './services/usage-ledger.service.js'
 export type {
@@ -230,7 +245,17 @@ export type {
 } from './mcp/index.js'
 
 // Claude Agent SDK integration
-export { ClaudeSDKExecutor, isSDKAvailable, SDKNotAvailableError } from './sdk/index.js'
+export {
+  ClaudeSDKExecutor,
+  isSDKAvailable,
+  SDKNotAvailableError,
+  CodexRuntimeNotInstalledError,
+  resolveBundledCodexCli,
+  getCodexRuntimeRoot,
+  resolveManagedCodexCli,
+  readManagedCodexRuntimeState,
+  codexTargetTriple,
+} from './sdk/index.js'
 export { mapPermissionMode, mergeToolPermissions } from './sdk/index.js'
 export type {
   SDKExecutorConfig,
