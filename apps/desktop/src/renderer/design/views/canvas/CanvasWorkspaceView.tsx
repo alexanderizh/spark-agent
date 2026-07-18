@@ -20,7 +20,10 @@ import {
   type CanvasStageViewportControls,
 } from './CanvasStage'
 import type { PendingCanvasConnection } from './canvasPendingConnection'
-import { CanvasTaskQueue } from './CanvasTaskQueue'
+import {
+  CanvasTaskQueue,
+  type CanvasTaskRetryRuntimeSource,
+} from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { downloadAsset, downloadCanvasResource } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
@@ -125,7 +128,18 @@ import {
   CANVAS_FUNCTIONAL_MENU_LABEL,
   canvasBaseCreateOperations,
 } from './canvasNodeGenerationMenu'
-import { buildEntityExtractionPrompt, parseExtractedEntities } from './canvasEntityExtract'
+import {
+  buildEntityExtractionPrompt,
+  extractEntityKindLabel,
+  parseExtractedEntities,
+  resolveExtractEntityKindFromWorkflow,
+  type ExtractEntityKind,
+} from './canvasEntityExtract'
+import {
+  mergeCanvasTrackedWorkflowDiagnostics,
+  type CanvasTrackedWorkflowDiagnostics,
+  type CaptureCanvasTrackedWorkflowDiagnostics,
+} from './canvasTrackedWorkflowDiagnostics'
 import {
   DEFAULT_SHOT_SCRIPT_CONFIG,
   applyShotScriptConfigToPrompt,
@@ -175,7 +189,10 @@ import {
   type CanvasPromptSubmission,
 } from './canvasPromptSubmission'
 import { migrateLegacyPrompt } from './canvasPromptDocument'
-import { stripCanvasFunctionalPromptInput } from './canvasPromptInitialization'
+import {
+  normalizeCanvasFunctionalSystemPrompt,
+  stripCanvasFunctionalPromptInput,
+} from './canvasPromptInitialization'
 import { summarizeCanvasSelectionContext } from './canvasContextMenuModel'
 import {
   buildCanvasOperationSystemPrompt,
@@ -218,16 +235,11 @@ import './CanvasWorkspaceView.less'
 import './uiux-v4/index.less'
 
 type CanvasPoint = { x: number; y: number }
-type TrackedCanvasWorkflowResult = {
+type TrackedCanvasWorkflowResult = CanvasTrackedWorkflowDiagnostics & {
   count?: number
   outputNodeIds?: string[]
   outputAssetIds?: string[]
   message?: string
-  rawResponse?: unknown
-  agentId?: string | null
-  providerProfileId?: string | null
-  provider?: string | null
-  modelId?: string | null
 }
 type PreparedImageUpload = {
   file: File
@@ -4882,8 +4894,13 @@ export function CanvasWorkspaceView({
       modelId?: string
       skillIds?: string[]
       modelParams?: Record<string, unknown>
+      taskPipelineRole?: CanvasPipelineRole
+      outputPipelineRole?: CanvasPipelineRole
+      shotScriptConfig?: ShotScriptConfig
     } & CanvasPromptTaskFields,
-    run: () => Promise<TrackedCanvasWorkflowResult>,
+    run: (
+      captureDiagnostics: CaptureCanvasTrackedWorkflowDiagnostics,
+    ) => Promise<TrackedCanvasWorkflowResult>,
   ): Promise<TrackedCanvasWorkflowResult> => {
     const snapshot = snapshotRef.current
     if (!snapshot) throw new Error('画布尚未加载')
@@ -4909,6 +4926,9 @@ export function CanvasWorkspaceView({
       ...(request.modelId ? { modelId: request.modelId } : {}),
       ...(request.skillIds ? { skillIds: request.skillIds } : {}),
       ...(request.modelParams ? { modelParams: request.modelParams } : {}),
+      ...(request.taskPipelineRole ? { taskPipelineRole: request.taskPipelineRole } : {}),
+      ...(request.outputPipelineRole ? { outputPipelineRole: request.outputPipelineRole } : {}),
+      ...(request.shotScriptConfig ? { shotScriptConfig: request.shotScriptConfig } : {}),
       ...(request.promptDocument ? { promptDocument: request.promptDocument } : {}),
       ...(request.promptSnapshot ? { promptSnapshot: request.promptSnapshot } : {}),
       ...(request.compiledUserText !== undefined
@@ -4923,20 +4943,36 @@ export function CanvasWorkspaceView({
     await refreshTaskSnapshot()
     restoreCanvasViewport(viewportBeforeRun)
 
+    let diagnostics: CanvasTrackedWorkflowDiagnostics = {}
+    const captureDiagnostics: CaptureCanvasTrackedWorkflowDiagnostics = (next) => {
+      diagnostics = mergeCanvasTrackedWorkflowDiagnostics(diagnostics, next)
+    }
     try {
-      const result = await run()
+      const result = await run(captureDiagnostics)
+      const effectiveDiagnostics = mergeCanvasTrackedWorkflowDiagnostics(diagnostics, result)
       await canvasApi.finishWorkflowTask(projectId, taskId, {
         status: 'completed',
         ...(result.outputNodeIds ? { outputNodeIds: result.outputNodeIds } : {}),
         ...(result.outputAssetIds ? { outputAssetIds: result.outputAssetIds } : {}),
         ...(result.message ? { message: result.message } : {}),
-        ...(result.rawResponse !== undefined ? { rawResponse: result.rawResponse } : {}),
-        ...(result.agentId !== undefined ? { agentId: result.agentId } : {}),
-        ...(result.providerProfileId !== undefined
-          ? { providerProfileId: result.providerProfileId }
+        ...(effectiveDiagnostics.rawResponse !== undefined
+          ? { rawResponse: effectiveDiagnostics.rawResponse }
           : {}),
-        ...(result.provider !== undefined ? { provider: result.provider } : {}),
-        ...(result.modelId !== undefined ? { modelId: result.modelId } : {}),
+        ...(effectiveDiagnostics.modelOutputText !== undefined
+          ? { modelOutputText: effectiveDiagnostics.modelOutputText }
+          : {}),
+        ...(effectiveDiagnostics.agentId !== undefined
+          ? { agentId: effectiveDiagnostics.agentId }
+          : {}),
+        ...(effectiveDiagnostics.providerProfileId !== undefined
+          ? { providerProfileId: effectiveDiagnostics.providerProfileId }
+          : {}),
+        ...(effectiveDiagnostics.provider !== undefined
+          ? { provider: effectiveDiagnostics.provider }
+          : {}),
+        ...(effectiveDiagnostics.modelId !== undefined
+          ? { modelId: effectiveDiagnostics.modelId }
+          : {}),
       })
       await refreshTaskSnapshot()
       restoreCanvasViewport(viewportBeforeRun)
@@ -4948,6 +4984,16 @@ export function CanvasWorkspaceView({
         errorMsg: 'workflow_failed',
         errorDetail: errorMessage,
         message: `失败：${errorMessage}`,
+        ...(diagnostics.rawResponse !== undefined ? { rawResponse: diagnostics.rawResponse } : {}),
+        ...(diagnostics.modelOutputText !== undefined
+          ? { modelOutputText: diagnostics.modelOutputText }
+          : {}),
+        ...(diagnostics.agentId !== undefined ? { agentId: diagnostics.agentId } : {}),
+        ...(diagnostics.providerProfileId !== undefined
+          ? { providerProfileId: diagnostics.providerProfileId }
+          : {}),
+        ...(diagnostics.provider !== undefined ? { provider: diagnostics.provider } : {}),
+        ...(diagnostics.modelId !== undefined ? { modelId: diagnostics.modelId } : {}),
       })
       await refreshTaskSnapshot()
       restoreCanvasViewport(viewportBeforeRun)
@@ -5520,6 +5566,12 @@ export function CanvasWorkspaceView({
       case 'screenplay.extract_scenes':
         await handlePrepareExtractEntitiesOperation(textSourceNode, sourceText, 'scene')
         break
+      case 'screenplay.extract_props':
+        await handlePrepareExtractEntitiesOperation(textSourceNode, sourceText, 'prop')
+        break
+      case 'screenplay.extract_effects':
+        await handlePrepareExtractEntitiesOperation(textSourceNode, sourceText, 'effect')
+        break
       case 'screenplay.storyboard_grid':
         handleStoryboardGridFromNode(textSourceNode)
         break
@@ -5821,6 +5873,7 @@ export function CanvasWorkspaceView({
       nodeMessage: '确认分镜脚本 Prompt、Agent 与模型后点击开始任务',
       taskPipelineRole: 'shot',
       outputPipelineRole: 'shot',
+      modelParams: { workflow: 'shot_script', responseFormat: 'json' },
       shotScriptConfig: DEFAULT_SHOT_SCRIPT_CONFIG,
     })
   }
@@ -5848,7 +5901,7 @@ export function CanvasWorkspaceView({
   const handlePrepareExtractEntitiesOperation = async (
     node: CanvasNode,
     sourceText: string,
-    kind: 'character' | 'scene',
+    kind: ExtractEntityKind,
   ) => {
     if (!sourceText) {
       message.warning('该节点没有可用文本，无法抽取')
@@ -5856,7 +5909,7 @@ export function CanvasWorkspaceView({
     }
     const snapshot = snapshotRef.current
     if (!snapshot) return
-    const label = kind === 'character' ? '提取角色' : '提取场景'
+    const label = `提取${extractEntityKindLabel(kind)}`
     const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
     await createConfiguredOperationNode({
       sourceNode: node,
@@ -5866,6 +5919,7 @@ export function CanvasWorkspaceView({
       nodeMessage: `确认${label} Prompt、Agent 与模型后点击开始任务`,
       modelParams: { workflow: `extract_${kind}`, responseFormat: 'json' },
       taskPipelineRole: kind,
+      outputPipelineRole: kind,
     })
   }
 
@@ -6422,13 +6476,16 @@ export function CanvasWorkspaceView({
         ? { systemPrompt: stripCanvasFunctionalPromptInput(promptPlaceholder, op.id) }
         : {}),
       message: '请连接上游文本节点并确认 Prompt 后开始任务',
+      ...(op.produces ? { taskPipelineRole: op.produces } : {}),
       ...(op.produces ? { outputPipelineRole: op.produces } : {}),
       ...(op.id === 'screenplay.to_shot_script'
         ? { shotScriptConfig: DEFAULT_SHOT_SCRIPT_CONFIG }
         : {}),
       ...(op.kind === 'extract'
         ? { modelParams: { workflow: `extract_${op.extractKind}`, responseFormat: 'json' } }
-        : {}),
+        : op.id === 'screenplay.to_shot_script'
+          ? { modelParams: { workflow: 'shot_script', responseFormat: 'json' } }
+          : {}),
     })
     const created = findLatestCreatedOperationNode(next?.nodes ?? [], operation, existingNodeIds)
     if (created) {
@@ -6450,7 +6507,7 @@ export function CanvasWorkspaceView({
   const handleExtractEntities = async (
     node: CanvasNode,
     sourceText: string,
-    kind: 'character' | 'scene',
+    kind: ExtractEntityKind,
     options: {
       prompt?: string
       userPrompt?: string
@@ -6472,7 +6529,7 @@ export function CanvasWorkspaceView({
     }
     const snapshot = snapshotRef.current
     if (!snapshot) return
-    const label = kind === 'character' ? '提取角色' : '提取场景'
+    const label = `提取${extractEntityKindLabel(kind)}`
     const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
     const extractionPrompt =
       options.promptSubmission?.prompt.trim() ||
@@ -6506,9 +6563,11 @@ export function CanvasWorkspaceView({
           message: `正在${label}...`,
           ...runtime,
           modelParams: extractionModelParams,
+          taskPipelineRole: kind,
+          outputPipelineRole: kind,
           ...promptTaskFields,
         },
-        async () => {
+        async (captureDiagnostics) => {
           const response = await window.spark.invoke('canvas:task:generate-text', {
             ...(options.promptSubmission ?? {}),
             operation: 'text_generate',
@@ -6519,6 +6578,18 @@ export function CanvasWorkspaceView({
             ...(runtime.reasoningEffort ? { reasoningEffort: runtime.reasoningEffort } : {}),
             ...(runtime.skillIds ? { skillIds: runtime.skillIds } : {}),
             modelParams: extractionModelParams,
+          })
+          captureDiagnostics({
+            modelOutputText: response.text,
+            rawResponse:
+              response.rawResponse ?? {
+                status: response.status,
+                error: response.error ?? null,
+              },
+            agentId: runtime.agentId ?? null,
+            providerProfileId: (response.providerProfileId || runtime.providerProfileId) ?? null,
+            provider: response.provider || null,
+            modelId: (response.model || runtime.modelId) ?? null,
           })
           if (response.status !== 'succeeded' || !response.text) {
             throw new Error(response.error?.message ?? '抽取失败')
@@ -6987,16 +7058,70 @@ export function CanvasWorkspaceView({
     })
   }
 
-  const handleRetryTask = async (task: CanvasTask) => {
+  const handleRetryTask = async (
+    task: CanvasTask,
+    runtimeSource: CanvasTaskRetryRuntimeSource,
+  ) => {
     const snapshot = snapshotRef.current
     if (!snapshot) return
-    const taskNode = snapshot.nodes.find((node) => node.taskId === task.id)
+    const taskNode =
+      (task.operationNodeId
+        ? snapshot.nodes.find((node) => node.id === task.operationNodeId)
+        : undefined) ?? snapshot.nodes.find((node) => node.taskId === task.id)
+    const retryModelParams =
+      runtimeSource === 'current-node'
+        ? { ...task.modelParams, ...(taskNode?.data.modelParams ?? {}) }
+        : task.modelParams
+    const retryExtractKind = resolveExtractEntityKindFromWorkflow(retryModelParams.workflow)
+    if (taskNode && isOperationNode(taskNode) && retryExtractKind) {
+      const retryInputNodes = task.inputNodeIds
+        .map((nodeId) => snapshot.nodes.find((node) => node.id === nodeId && !node.hidden))
+        .filter((node): node is CanvasNode => node != null)
+      const sourceNode = retryInputNodes[0]
+      const sourceText = retryInputNodes
+        .map((node) => resolveCanvasPipelineTextSource(node, snapshot).sourceText.trim())
+        .filter(Boolean)
+        .join('\n\n')
+      if (!sourceNode || !sourceText) {
+        message.warning('该抽取任务的原始输入已不存在，无法重试')
+        return
+      }
+      const runtime = runtimeSource === 'current-node' ? taskNode.data : task
+      const promptSubmission: CanvasPromptSubmission = {
+        prompt: task.compiledUserText ?? task.prompt ?? sourceText,
+        ...pickCanvasPromptTaskFields(task),
+      }
+      const viewportBeforeRetry = await persistCurrentCanvasViewport()
+      try {
+        await handleExtractEntities(sourceNode, sourceText, retryExtractKind, {
+          promptSubmission,
+          ...(task.prompt != null ? { userPrompt: task.prompt } : {}),
+          ...(runtime.agentId ? { agentId: runtime.agentId } : {}),
+          ...(runtime.providerProfileId
+            ? { providerProfileId: runtime.providerProfileId }
+            : {}),
+          ...(runtime.modelId ? { modelId: runtime.modelId } : {}),
+          ...(runtime.reasoningEffort ? { reasoningEffort: runtime.reasoningEffort } : {}),
+          ...(runtime.skillIds ? { skillIds: runtime.skillIds } : {}),
+          modelParams: retryModelParams,
+          bindToNodeId: taskNode.id,
+          inputNodeIds: task.inputNodeIds,
+          inputAssetIds: task.inputAssetIds,
+        })
+      } finally {
+        restoreCanvasViewport(viewportBeforeRetry)
+      }
+      return
+    }
     // 失败/取消的任务如果存在关联的操作节点，则绑定到原节点重试，
     // 这样原节点的状态会立即刷新为「运行中」，而不是留下一个显示「失败」的旧节点。
     if (taskNode && isOperationNode(taskNode)) {
       const viewportBeforeRetry = await persistCurrentCanvasViewport()
       try {
-        await retryOperationNode(taskNode.id)
+        await retryOperationNode(taskNode.id, {
+          sourceTaskId: task.id,
+          runtimeSource,
+        })
       } finally {
         restoreCanvasViewport(viewportBeforeRetry)
       }
@@ -7134,12 +7259,13 @@ export function CanvasWorkspaceView({
                       opTask && typeof opTask.modelParams?.workflow === 'string'
                         ? opTask.modelParams.workflow
                         : ''
+                    const extractKind = resolveExtractEntityKindFromWorkflow(workflow)
                     // 统一行为：先收起弹窗，再继续执行任务，避免提交后弹窗长时间不关。
                     const closePanel = () => {
                       setActiveOperationPanelNodeId(null)
                       setSelectedNodeIds([])
                     }
-                    if (workflow === 'extract_character' || workflow === 'extract_scene') {
+                    if (extractKind) {
                       const sourceNode = hydratedTaskInputNodes[0]
                       if (!sourceNode) {
                         message.warning('该抽取节点缺少原始输入，无法重新执行')
@@ -7209,7 +7335,7 @@ export function CanvasWorkspaceView({
                       void handleExtractEntities(
                         sourceNode,
                         sourceText,
-                        workflow === 'extract_character' ? 'character' : 'scene',
+                        extractKind,
                         {
                           prompt: promptSubmission.prompt,
                           userPrompt: params.prompt,
@@ -7259,7 +7385,10 @@ export function CanvasWorkspaceView({
                       })
                     const resolvedPreset = readCanvasResolvedPresetTarget(presetTargetId)
                     const systemPrompt =
-                      params.systemPrompt?.trim() ||
+                      normalizeCanvasFunctionalSystemPrompt(
+                        params.systemPrompt,
+                        presetTargetId,
+                      ) ||
                       buildCanvasOperationSystemPrompt(operation, resolvedPreset.prompt)
                     const promptSubmission = await buildCanvasPromptSubmission({
                       document: promptDocument,
@@ -7332,6 +7461,9 @@ export function CanvasWorkspaceView({
                         ...(Object.keys(styledTask.modelParams).length > 0
                           ? { modelParams: styledTask.modelParams }
                           : {}),
+                        ...(params.shotScriptConfig
+                          ? { shotScriptConfig: params.shotScriptConfig }
+                          : {}),
                         ...(params.skipParameterValidation
                           ? { skipParameterValidation: true }
                           : {}),
@@ -7350,6 +7482,10 @@ export function CanvasWorkspaceView({
                     }
                   }}
                   onRetry={async () => {
+                    if (opTask) {
+                      await handleRetryTask(opTask, 'current-node')
+                      return
+                    }
                     const viewportBeforeRetry = await persistCurrentCanvasViewport()
                     try {
                       await retryOperationNode(opNode.id)
@@ -7372,7 +7508,14 @@ export function CanvasWorkspaceView({
                       ...opNode.data,
                       ...(params.promptDocument ? { promptDocument: params.promptDocument } : {}),
                       ...(params.inputBindings ? { inputBindings: params.inputBindings } : {}),
-                      ...(params.systemPrompt ? { systemPrompt: params.systemPrompt } : {}),
+                      ...(params.systemPrompt
+                        ? {
+                            systemPrompt: normalizeCanvasFunctionalSystemPrompt(
+                              params.systemPrompt,
+                              presetTargetId,
+                            ),
+                          }
+                        : {}),
                       negativePrompt: params.negativePrompt,
                       message: params.message,
                       modelParams: params.modelParams,
@@ -8041,7 +8184,9 @@ export function CanvasWorkspaceView({
                   onCancelTask={(taskId) => void cancelTask(taskId)}
                   onClearTasks={(scope) => void clearTasks(scope)}
                   onDeleteTasks={(taskIds) => void deleteTasks(taskIds)}
-                  onRetryTask={(task) => void handleRetryTask(task)}
+                  onRetryTask={(task, runtimeSource) =>
+                    void handleRetryTask(task, runtimeSource)
+                  }
                   onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
                 />
               </div>
@@ -8106,7 +8251,11 @@ export function CanvasWorkspaceView({
           tasks={snapshot.tasks}
           onInsertAsset={(assetId) => void handleInsertAsset(assetId)}
           onLocateTaskNode={(taskId) => {
-            const node = snapshot.nodes.find((n) => n.taskId === taskId)
+            const task = snapshot.tasks.find((candidate) => candidate.id === taskId)
+            const node =
+              (task?.operationNodeId
+                ? snapshot.nodes.find((candidate) => candidate.id === task.operationNodeId)
+                : undefined) ?? snapshot.nodes.find((candidate) => candidate.taskId === taskId)
             if (node) {
               setSelectedNodeIds([node.id])
               message.info(`已定位到任务节点：${node.title ?? node.type}`)
@@ -8114,7 +8263,7 @@ export function CanvasWorkspaceView({
           }}
           onRetryTask={(taskId) => {
             const task = snapshot.tasks.find((t) => t.id === taskId)
-            if (task) void handleRetryTask(task)
+            if (task) void handleRetryTask(task, 'original-task')
           }}
         />
       </Drawer>

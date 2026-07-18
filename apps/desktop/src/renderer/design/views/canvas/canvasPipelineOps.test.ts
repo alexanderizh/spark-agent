@@ -13,11 +13,13 @@ describe('canvasPipelineOps', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('剧本角色有四个专用 op', () => {
+  it('剧本角色有完整的专用 op', () => {
     expect(getOpsForRole('screenplay').map((op) => op.id)).toEqual([
       'screenplay.to_shot_script',
       'screenplay.extract_characters',
       'screenplay.extract_scenes',
+      'screenplay.extract_props',
+      'screenplay.extract_effects',
       'screenplay.storyboard_grid',
     ])
   })
@@ -35,6 +37,8 @@ describe('canvasPipelineOps', () => {
         'screenplay.to_shot_script',
         'screenplay.extract_characters',
         'screenplay.extract_scenes',
+        'screenplay.extract_props',
+        'screenplay.extract_effects',
         'screenplay.storyboard_grid',
       ])
     })
@@ -45,6 +49,8 @@ describe('canvasPipelineOps', () => {
         'screenplay.to_shot_script',
         'screenplay.extract_characters',
         'screenplay.extract_scenes',
+        'screenplay.extract_props',
+        'screenplay.extract_effects',
         'screenplay.storyboard_grid',
       ])
     })
@@ -55,6 +61,8 @@ describe('canvasPipelineOps', () => {
         'screenplay.to_shot_script',
         'screenplay.extract_characters',
         'screenplay.extract_scenes',
+        'screenplay.extract_props',
+        'screenplay.extract_effects',
         'screenplay.storyboard_grid',
       ])
     })
@@ -65,6 +73,8 @@ describe('canvasPipelineOps', () => {
         'screenplay.to_shot_script',
         'screenplay.extract_characters',
         'screenplay.extract_scenes',
+        'screenplay.extract_props',
+        'screenplay.extract_effects',
         'screenplay.storyboard_grid',
       ])
     })
@@ -119,6 +129,14 @@ describe('canvasPipelineOps', () => {
     it('提取场景委托抽取提示词', () => {
       const prompt = buildOpPrompt('screenplay.extract_scenes', { upstreamText: '车站' })
       expect(prompt).toContain('抽取其中出现的全部场景')
+    })
+    it('提取道具和特效委托各自的抽取提示词', () => {
+      expect(buildOpPrompt('screenplay.extract_props', { upstreamText: '银色手枪' })).toContain(
+        '抽取其中出现的全部道具',
+      )
+      expect(buildOpPrompt('screenplay.extract_effects', { upstreamText: '空间裂缝' })).toContain(
+        '抽取其中出现的全部特效',
+      )
     })
     it('图像类 op 返回空（由 workspace 用资产构建）', () => {
       expect(buildOpPrompt('character.three_view', {})).toBe('')

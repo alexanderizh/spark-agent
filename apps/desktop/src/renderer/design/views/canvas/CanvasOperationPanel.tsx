@@ -714,7 +714,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     setMaxClipCustom(SHOT_MAX_CLIP_PRESETS.includes(safeMaxClip) ? '' : String(safeMaxClip))
     // 只在切换节点时重载草稿，避免保存后的 snapshot 刷新把用户刚输入的配置重置掉。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.id])
+  }, [node.id, task?.id])
 
   useEffect(() => {
     let cancelled = false

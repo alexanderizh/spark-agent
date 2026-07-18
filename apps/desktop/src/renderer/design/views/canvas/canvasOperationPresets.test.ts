@@ -190,6 +190,20 @@ describe('canvasOperationPresets', () => {
     })
   })
 
+  it('does not inherit a generic authored prompt into a dedicated pipeline contract', () => {
+    writeCanvasOperationPreset('text_generate', {
+      prompt: '你是角色分析师，只输出 characters JSON',
+      providerProfileId: 'provider:text',
+      modelId: 'gpt-5',
+    })
+
+    expect(readCanvasInheritedPresetTarget('screenplay.to_shot_script')).toMatchObject({
+      prompt: '',
+      providerProfileId: 'provider:text',
+      modelId: 'gpt-5',
+    })
+  })
+
   it('keeps the configured system prompt while reusing runtime selections', () => {
     writeCanvasPresetTarget('chapter.to_screenplay', {
       prompt: '预设版转剧本',
@@ -379,5 +393,12 @@ describe('canvasOperationPresets', () => {
         workflow: 'extract_character',
       }),
     ).toBe('screenplay.extract_characters')
+    expect(
+      resolveCanvasPresetTarget({
+        operation: 'text_generate',
+        taskPipelineRole: 'prop',
+        workflow: 'extract_prop',
+      }),
+    ).toBe('screenplay.extract_props')
   })
 })

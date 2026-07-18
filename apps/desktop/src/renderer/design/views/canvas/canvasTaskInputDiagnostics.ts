@@ -11,13 +11,35 @@ export function summarizeCanvasTaskInputFiles(
 }
 
 export function buildCanvasTaskDetailParams(
-  task: Pick<CanvasTask, 'modelParams' | 'inputFileDiagnostics'>,
+  task: Pick<
+    CanvasTask,
+    | 'operation'
+    | 'agentId'
+    | 'skillIds'
+    | 'providerProfileId'
+    | 'manifestId'
+    | 'modelId'
+    | 'reasoningEffort'
+    | 'modelParams'
+    | 'inputFileDiagnostics'
+    | 'taskPipelineRole'
+    | 'outputPipelineRole'
+    | 'shotScriptConfig'
+  >,
 ): Record<string, unknown> {
-  const modelParams = task.modelParams ?? {}
-  if (!task.inputFileDiagnostics || task.inputFileDiagnostics.length === 0) return modelParams
   return {
-    ...modelParams,
-    _requestInputFiles: task.inputFileDiagnostics,
+    operation: task.operation,
+    agentId: task.agentId ?? null,
+    skillIds: task.skillIds ?? [],
+    providerProfileId: task.providerProfileId ?? null,
+    manifestId: task.manifestId ?? null,
+    modelId: task.modelId ?? null,
+    reasoningEffort: task.reasoningEffort ?? null,
+    taskPipelineRole: task.taskPipelineRole ?? null,
+    outputPipelineRole: task.outputPipelineRole ?? null,
+    shotScriptConfig: task.shotScriptConfig ?? null,
+    modelParams: task.modelParams ?? {},
+    requestInputFiles: task.inputFileDiagnostics ?? [],
   }
 }
 

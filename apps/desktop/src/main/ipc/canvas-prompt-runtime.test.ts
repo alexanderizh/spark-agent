@@ -27,6 +27,9 @@ describe('canvas prompt runtime adapter', () => {
     expect(request.prompt).toBe('[角色 ref-1: 小满]\n雨夜')
     expect(request.prompt).not.toContain('只输出可执行分镜')
     expect(request.system).toContain('你是导演')
+    expect(request.system.indexOf('你是导演')).toBeLessThan(
+      request.system.indexOf('只输出可执行分镜'),
+    )
     expect(request.images).toEqual([{ url: 'https://cdn/ref.png' }])
     expect(request.relationManifest).toEqual([
       { blockId: 'r1', sourceNodeId: 'n1', relation: 'character', order: 0 },

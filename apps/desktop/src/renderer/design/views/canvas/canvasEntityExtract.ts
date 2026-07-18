@@ -1,5 +1,5 @@
 /**
- * 实体抽取（剧本 → 角色 / 场景，一对多）。
+ * 实体抽取（剧本 → 角色 / 场景 / 道具 / 特效，一对多）。
  *
  * 用于画布「文本节点右键 → 提取角色 / 提取场景」：让文本模型按**固定可解析格式**
  * 输出实体清单，再用这里的解析器还原为结构化实体，逐个落库 + 在画布生成专用节点。
@@ -7,6 +7,33 @@
  */
 
 export type ExtractEntityKind = 'character' | 'scene' | 'prop' | 'effect'
+
+export function extractEntityKindLabel(kind: ExtractEntityKind): string {
+  return kind === 'character'
+    ? '角色'
+    : kind === 'scene'
+      ? '场景'
+      : kind === 'prop'
+        ? '道具'
+        : '特效'
+}
+
+export function resolveExtractEntityKindFromWorkflow(
+  workflow: unknown,
+): ExtractEntityKind | null {
+  switch (workflow) {
+    case 'extract_character':
+      return 'character'
+    case 'extract_scene':
+      return 'scene'
+    case 'extract_prop':
+      return 'prop'
+    case 'extract_effect':
+      return 'effect'
+    default:
+      return null
+  }
+}
 
 /** 解析出的单个实体（字段已归一化为中文标准 key） */
 export type ParsedEntity = {
