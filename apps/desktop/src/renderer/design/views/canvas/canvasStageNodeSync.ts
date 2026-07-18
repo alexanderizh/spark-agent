@@ -65,6 +65,14 @@ export function mergeFlowNodes(
     }
     if (flowNodeContentEqual(prev, next)) return prev
     changed = true
+    const sameRenderedSize = prev.width === next.width && prev.height === next.height
+    if (next.measured == null && prev.measured != null && sameRenderedSize) {
+      // React Flow derives handleBounds from the measured user node. Dropping
+      // this field during a content-only snapshot refresh resets handleBounds;
+      // its marquee algorithm then treats the node as an initial render and
+      // includes it without checking whether it intersects the selection box.
+      return { ...next, measured: prev.measured }
+    }
     return next
   })
   return changed ? merged : prevNodes
