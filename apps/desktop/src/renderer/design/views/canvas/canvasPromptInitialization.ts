@@ -26,6 +26,46 @@ export function stripCanvasFunctionalPromptInput(prompt: string, presetTargetId:
   return markerIndex >= 0 ? prompt.slice(0, markerIndex).trim() : prompt.trim()
 }
 
+const FUNCTIONAL_PROMPT_START_MARKERS: Record<string, readonly string[]> = {
+  'screenplay.to_shot_script': ['【任务】把下面的场次剧本拆成'],
+  'chapter.to_screenplay': [
+    '请把下面的小说/长文稿章节改写为影视剧本',
+    '【任务】把下面的原文改写为规范的影视场次剧本',
+  ],
+  'screenplay.extract_characters': [
+    '【任务】你是资深影视美术/设定师。通读下面的剧本，抽取其中出现的全部角色',
+  ],
+  'screenplay.extract_scenes': [
+    '【任务】你是资深影视美术/设定师。通读下面的剧本，抽取其中出现的全部场景',
+  ],
+  'screenplay.extract_props': [
+    '【任务】你是资深影视美术/设定师。通读下面的剧本，抽取其中出现的全部道具',
+  ],
+  'screenplay.extract_effects': [
+    '【任务】你是资深影视美术/设定师。通读下面的剧本，抽取其中出现的全部特效',
+  ],
+  'screenplay.split_episodes': ['请把下面的长剧本按剧情冲突、悬念节奏和合理时长完成分集'],
+}
+
+/**
+ * Repair legacy functional nodes whose dedicated contract was prefixed by an unrelated
+ * generic operation preset. The target-specific marker is deliberately conservative:
+ * if it cannot be found, preserve the authored prompt unchanged.
+ */
+export function normalizeCanvasFunctionalSystemPrompt(
+  prompt: string | null | undefined,
+  presetTargetId: string,
+): string {
+  const value = prompt?.trim() ?? ''
+  if (!value) return ''
+  const markers = FUNCTIONAL_PROMPT_START_MARKERS[presetTargetId] ?? []
+  const markerIndexes = markers
+    .map((marker) => value.indexOf(marker))
+    .filter((index) => index >= 0)
+  if (markerIndexes.length === 0) return value
+  return value.slice(Math.min(...markerIndexes)).trim()
+}
+
 /**
  * Canonical editor initialization. Media inputs intentionally stay out of the
  * visible document: the media selector represents them, and the submission

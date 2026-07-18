@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { canvasApi, __resetCanvasHotCache } from './canvas.api'
 import type { CanvasDb } from './canvas.api'
+import { writeCanvasOperationPreset } from './canvasOperationPresets'
 
 const STORAGE_KEY = 'spark-canvas:v1'
 
@@ -71,6 +72,181 @@ describe('canvas operation inheritance', () => {
     })
   })
 
+  it('backfills diagnostics for legacy failed tasks without changing their status', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          nodeCount: 2,
+          assetCount: 0,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [
+        {
+          id: 'node-operation',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_generate',
+          title: 'Storyboard',
+          x: 0,
+          y: 0,
+          width: 640,
+          height: 420,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          taskId: 'task-newer',
+          data: {
+            pipelineRole: 'shot',
+            outputPipelineRole: 'shot',
+          },
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'node-output',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text',
+          title: 'Legacy output',
+          x: 700,
+          y: 0,
+          width: 420,
+          height: 300,
+          rotation: 0,
+          zIndex: 2,
+          locked: false,
+          hidden: false,
+          data: { text: 'unparsed legacy model output', origin: 'task_output' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-generated',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          sourceNodeId: 'node-operation',
+          targetNodeId: 'node-output',
+          type: 'generated',
+          taskId: 'task-legacy',
+          metadata: {},
+          createdAt: at,
+        },
+      ],
+      tasks: [
+        {
+          id: 'task-legacy',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_generate',
+          status: 'failed',
+          progress: 100,
+          title: 'Legacy failed task',
+          prompt: 'Generate storyboard',
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: ['node-output'],
+          outputAssetIds: [],
+          modelParams: {},
+          rawResponse: { text: 'unparsed legacy model output' },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+
+    const snapshot = await canvasApi.openSnapshot('project-1')
+    expect(snapshot.tasks[0]).toMatchObject({
+      id: 'task-legacy',
+      status: 'failed',
+      operationNodeId: 'node-operation',
+      taskPipelineRole: 'shot',
+      outputPipelineRole: 'shot',
+      completedAt: at,
+      modelOutputText: 'unparsed legacy model output',
+    })
+  })
+
+  it('does not prepend a generic text prompt to an explicit storyboard contract', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          nodeCount: 0,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [],
+      edges: [],
+      tasks: [],
+    })
+    writeCanvasOperationPreset('text_generate', {
+      prompt: '你是角色分析师，只输出 characters JSON。',
+    })
+
+    const snapshot = await canvasApi.createOperationNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      operation: 'text_generate',
+      inputNodeIds: [],
+      x: 0,
+      y: 0,
+      taskPipelineRole: 'shot',
+      outputPipelineRole: 'shot',
+      modelParams: { workflow: 'shot_script', responseFormat: 'json' },
+      systemPrompt: '【任务】把下面的场次剧本拆成分镜。\nJSON 顶层结构必须为：{"shots":[]}',
+    })
+
+    const node = snapshot.nodes.find((candidate) => candidate.type === 'text_generate')
+    expect(node?.data.systemPrompt).toContain('"shots"')
+    expect(node?.data.systemPrompt).not.toContain('characters')
+  })
+
   it('creates storyboard tasks large and grows them to the completed shot table size', async () => {
     seedCanvasDb({
       projects: [
@@ -119,6 +295,9 @@ describe('canvas operation inheritance', () => {
     const taskNode = created.nodes.find((node) => node.type === 'text_generate')
     expect(taskNode).toMatchObject({ width: 960, height: 560 })
     if (!taskNode?.taskId) throw new Error('Storyboard task node was not created')
+    expect(created.tasks.find((task) => task.id === taskNode.taskId)?.shotScriptConfig).toEqual({
+      maxClipSec: 5,
+    })
 
     const shots = Array.from({ length: 5 }, (_, index) => ({
       index: index + 1,
@@ -414,6 +593,8 @@ describe('canvas operation inheritance', () => {
       systemPrompt: '隐藏的角色提取规则',
       providerProfileId: 'codex-cli-provider',
       modelId: 'codex cli',
+      taskPipelineRole: 'character',
+      outputPipelineRole: 'character',
     })
     const reboundNode = started.snapshot.nodes.find((node) => node.id === operationNode.id)
     const reboundTask = started.snapshot.tasks.find((task) => task.id === started.taskId)
@@ -427,6 +608,8 @@ describe('canvas operation inheritance', () => {
     expect(reboundTask?.prompt).toBe('[剧本 ref-1: 场次剧本]\n雨夜车站')
     expect(reboundTask?.promptDocument).toEqual(document)
     expect(reboundTask?.systemPrompt).toBe('隐藏的角色提取规则')
+    expect(reboundTask?.taskPipelineRole).toBe('character')
+    expect(reboundTask?.outputPipelineRole).toBe('character')
   })
 
   it('keeps compiled prompt documents out of the legacy operation prefix', async () => {
@@ -588,6 +771,154 @@ describe('canvas operation inheritance', () => {
         promptDocument: document,
         compiledUserText: '冻结文本',
         systemPrompt: '隐藏能力',
+      }),
+    )
+  })
+
+  it('distinguishes current-node runtime retries from original-task retries', async () => {
+    const seedRetryTask = () =>
+      seedCanvasDb({
+        projects: [
+          {
+            id: 'project-1',
+            userId: 0,
+            title: 'Project',
+            status: 'active',
+            nodeCount: 1,
+            assetCount: 0,
+            taskCount: 1,
+            createdAt: at,
+            updatedAt: at,
+          },
+        ],
+        boards: [
+          {
+            id: 'board-1',
+            projectId: 'project-1',
+            userId: 0,
+            name: 'Board',
+            viewport: { x: 0, y: 0, zoom: 1 },
+            settings: {},
+            createdAt: at,
+            updatedAt: at,
+          },
+        ],
+        assets: [],
+        nodes: [
+          {
+            id: 'node-op',
+            projectId: 'project-1',
+            boardId: 'board-1',
+            userId: 0,
+            type: 'text_generate',
+            title: '生成分镜脚本',
+            assetId: null,
+            taskId: 'task-old',
+            parentNodeId: null,
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 160,
+            rotation: 0,
+            zIndex: 1,
+            locked: false,
+            hidden: false,
+            data: {
+              operation: 'text_generate',
+              modelId: 'new-model',
+              providerProfileId: 'new-provider',
+              agentId: 'new-agent',
+              pipelineRole: 'shot',
+              outputPipelineRole: 'shot',
+              modelParams: { workflow: 'shot_script', temperature: 0.2 },
+            },
+            createdAt: at,
+            updatedAt: at,
+          },
+        ],
+        edges: [],
+        tasks: [
+          {
+            id: 'task-old',
+            projectId: 'project-1',
+            boardId: 'board-1',
+            userId: 0,
+            operation: 'text_generate',
+            status: 'failed',
+            progress: 100,
+            title: '生成分镜脚本',
+            prompt: '冻结输入',
+            inputNodeIds: [],
+            inputAssetIds: [],
+            outputNodeIds: [],
+            outputAssetIds: [],
+            providerProfileId: 'old-provider',
+            modelId: 'old-model',
+            agentId: 'old-agent',
+            modelParams: { workflow: 'shot_script', temperature: 0.8 },
+            taskPipelineRole: 'shot',
+            outputPipelineRole: 'shot',
+            createdAt: at,
+            updatedAt: at,
+          },
+        ],
+      })
+
+    seedRetryTask()
+    const edited = await canvasApi.updateNodeData('project-1', 'node-op', {
+      modelId: 'edited-model',
+      providerProfileId: 'edited-provider',
+    })
+    expect(edited.nodes.find((node) => node.id === 'node-op')?.data).toMatchObject({
+      modelId: 'edited-model',
+      providerProfileId: 'edited-provider',
+    })
+    expect(edited.tasks.find((task) => task.id === 'task-old')).toMatchObject({
+      modelId: 'old-model',
+      providerProfileId: 'old-provider',
+    })
+    const currentInvoke = vi.fn().mockResolvedValue({
+      status: 'running',
+      providerProfileId: '',
+      provider: '',
+      model: '',
+      text: '',
+    })
+    Object.assign(window, { spark: { invoke: currentInvoke } })
+    await canvasApi.retryOperationNode('project-1', 'node-op', {
+      sourceTaskId: 'task-old',
+      runtimeSource: 'current-node',
+    })
+    expect(currentInvoke).toHaveBeenCalledWith(
+      'canvas:task:generate-text',
+      expect.objectContaining({
+        providerProfileId: 'edited-provider',
+        modelId: 'edited-model',
+        agentId: 'new-agent',
+        modelParams: { workflow: 'shot_script', temperature: 0.2 },
+      }),
+    )
+
+    seedRetryTask()
+    const originalInvoke = vi.fn().mockResolvedValue({
+      status: 'running',
+      providerProfileId: '',
+      provider: '',
+      model: '',
+      text: '',
+    })
+    Object.assign(window, { spark: { invoke: originalInvoke } })
+    await canvasApi.retryOperationNode('project-1', 'node-op', {
+      sourceTaskId: 'task-old',
+      runtimeSource: 'original-task',
+    })
+    expect(originalInvoke).toHaveBeenCalledWith(
+      'canvas:task:generate-text',
+      expect.objectContaining({
+        providerProfileId: 'old-provider',
+        modelId: 'old-model',
+        agentId: 'old-agent',
+        modelParams: { workflow: 'shot_script', temperature: 0.8 },
       }),
     )
   })
@@ -1364,6 +1695,7 @@ describe('canvas operation inheritance', () => {
       status: 'completed',
       outputNodeIds: [outputNode.id],
       message: '已展开 1 个分镜节点到画布',
+      modelOutputText: '{"shots":[{"index":1}]}',
       rawResponse: { workflow: 'script_breakdown', shotSegmentCount: 1 },
     })
 
@@ -1374,6 +1706,12 @@ describe('canvas operation inheritance', () => {
       workflow: 'script_breakdown',
       shotSegmentCount: 1,
     })
+    expect(completedTask?.modelOutputText).toBe('{"shots":[{"index":1}]}')
+    expect(completedTask?.runtimeEvents?.map((event) => event.kind)).toEqual([
+      'created',
+      'provider_response',
+      'completed',
+    ])
     expect(
       finished.edges.some(
         (edge) =>
@@ -1383,6 +1721,28 @@ describe('canvas operation inheritance', () => {
           edge.type === 'generated',
       ),
     ).toBe(true)
+
+    const failedRun = await canvasApi.startWorkflowTask('project-1', {
+      boardId: 'board-1',
+      title: '提取道具',
+      modelParams: { workflow: 'extract_prop', responseFormat: 'json' },
+      taskPipelineRole: 'prop',
+      outputPipelineRole: 'prop',
+    })
+    const failed = await canvasApi.finishWorkflowTask('project-1', failedRun.taskId, {
+      status: 'failed',
+      errorMsg: 'workflow_failed',
+      errorDetail: '无法解析道具实体',
+      modelOutputText: '{"episode":1,"characters":[]}',
+      rawResponse: { requestId: 'req-failed' },
+    })
+    expect(failed.tasks.find((task) => task.id === failedRun.taskId)).toMatchObject({
+      status: 'failed',
+      modelOutputText: '{"episode":1,"characters":[]}',
+      rawResponse: { requestId: 'req-failed' },
+      taskPipelineRole: 'prop',
+      outputPipelineRole: 'prop',
+    })
   })
 
   it('returns a running snapshot before slow text IPC completes', async () => {

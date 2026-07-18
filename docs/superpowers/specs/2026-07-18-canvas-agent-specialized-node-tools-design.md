@@ -87,7 +87,13 @@ UI 右键入口和 Agent 专用操作工具都调用同一个执行函数，不�
 - 实体抽取：使用现有实体解析器；没有合法实体时不创建影视资产。
 - 校验通过后，由代码生成现有 Markdown 展示文本，并一次性补齐节点角色、影视资产、生产状态和来源边。
 
-原始模型响应仍保存在任务诊断字段中，便于排查 Provider 截断、无效 JSON 或字段缺失。
+模型原始文本保存在独立的 `modelOutputText` 诊断字段中；Provider/Session runtime 摘要保存在 `rawResponse`。即使结构校验失败，二者也不能互相覆盖，便于排查 Provider 截断、无效 JSON、错误 schema 或字段缺失。
+
+该约束同时适用于普通文本任务和 renderer 侧跟踪的实体工作流。角色、场景、道具、特效在解析之前先记录完整模型输出；解析失败时沿失败终态写回，不得只保存错误摘要。四类实体 workflow 共用同一个类型解析入口和物化路径。
+
+任务记录是执行时快照：运行后不再随操作节点草稿变化。原任务重试读取任务快照，当前节点重试读取节点配置；分镜时长配置也必须写入任务。历史 `operationNodeId` 按 `used_as_input.target` 或 `generated.source` 恢复，不能关联到产物节点。
+
+专用功能 system prompt 是输出 schema 的唯一契约。通用 `text_generate`/`text_rewrite` 操作预设只能提供通用节点的默认 Prompt，不得拼接进分镜、剧本、分集或实体抽取契约；Agent 人设、Skill 和项目风格只能补充能力与风格，不能改变专用任务类型和输出 schema。历史节点若已经出现通用 Prompt 前缀污染，提交或重试时按专用契约标记剥离该前缀。
 
 ## 专用工具范围
 
@@ -255,7 +261,7 @@ UI 右键入口和 Agent 专用操作工具都调用同一个执行函数，不�
 
 - 已注册 13 个专用 Agent 工具，全部复用现有 `CanvasNode.type`、`pipelineRole`、影视资产 kind 和分镜 metadata，没有新增节点类型或持久化版本字段。
 - `canvas_get_available_actions` 只在 Agent 工具返回层把 `pipeline/recommended_flow` 配方改写为 `canvas_create_pipeline_operation_node`；UI 使用的原始能力目录和手动节点入口不变。
-- 剧本和分镜文本任务在创建语义产物前校验；无效结果保留原始响应并标记任务失败。分镜通过后由程序生成 Markdown 并写入 ShotGroup/ShotSegment。
+- 剧本和分镜文本任务在创建语义产物前校验；无效结果分别保留模型原文与运行时诊断并标记任务失败。分镜通过后由程序生成 Markdown 并写入 ShotGroup/ShotSegment。
 - 文本任务终态回调具备幂等保护，避免重复事件重复追加分镜；媒体语义工具会在写入前校验媒体类型和分镜回链。
 - 通用文本与通用操作工具仍然保留，但 Agent 指引明确禁止用它们伪装剧本、分镜或影视资产。
 

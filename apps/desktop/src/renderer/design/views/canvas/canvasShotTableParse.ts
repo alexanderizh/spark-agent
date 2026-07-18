@@ -195,7 +195,17 @@ function tryParseJsonObject(text: string): unknown | null {
     candidates.push(trimmed.slice(firstBrace, lastBrace + 1))
   for (const candidate of candidates) {
     try {
-      return JSON.parse(candidate)
+      const parsed = JSON.parse(candidate) as unknown
+      // Some adapters serialize the model's JSON one extra time. Accept that shape
+      // without making the task detail depend on provider-specific escaping.
+      if (typeof parsed === 'string') {
+        try {
+          return JSON.parse(parsed)
+        } catch {
+          return parsed
+        }
+      }
+      return parsed
     } catch {
       // try next candidate
     }

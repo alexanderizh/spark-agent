@@ -48,6 +48,16 @@ describe('canvasTaskInputDiagnostics', () => {
   it('merges input diagnostics into task detail params', () => {
     expect(
       buildCanvasTaskDetailParams({
+        operation: 'text_to_image',
+        agentId: null,
+        skillIds: [],
+        providerProfileId: 'provider-1',
+        manifestId: 'manifest-1',
+        modelId: 'image-1',
+        reasoningEffort: null,
+        taskPipelineRole: 'design_card',
+        outputPipelineRole: 'design_card',
+        shotScriptConfig: { maxClipSec: 6 },
         modelParams: { size: '2:1', resolution: '2k' },
         inputFileDiagnostics: [
           {
@@ -61,9 +71,18 @@ describe('canvasTaskInputDiagnostics', () => {
         ],
       }),
     ).toEqual({
-      size: '2:1',
-      resolution: '2k',
-      _requestInputFiles: [
+      operation: 'text_to_image',
+      agentId: null,
+      skillIds: [],
+      providerProfileId: 'provider-1',
+      manifestId: 'manifest-1',
+      modelId: 'image-1',
+      reasoningEffort: null,
+      taskPipelineRole: 'design_card',
+      outputPipelineRole: 'design_card',
+      shotScriptConfig: { maxClipSec: 6 },
+      modelParams: { size: '2:1', resolution: '2k' },
+      requestInputFiles: [
         {
           type: 'image',
           payloadField: 'dataUrl',

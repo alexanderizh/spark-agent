@@ -112,6 +112,21 @@ export type CanvasPipelineRole =
 export type CanvasProductionState = 'empty' | 'drafting' | 'draft' | 'confirmed' | 'stale'
 
 export type CanvasTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export type CanvasTaskRuntimeEvent = {
+  at: string
+  kind:
+    | 'created'
+    | 'dispatched'
+    | 'submitted'
+    | 'provider_response'
+    | 'validation'
+    | 'completed'
+    | 'failed'
+    | 'cancelled'
+  label: string
+  detail?: string
+}
 export type CanvasEdgeType =
   | 'derived_from'
   | 'used_as_input'
@@ -344,6 +359,8 @@ export type CanvasTask = {
   status: CanvasTaskStatus
   progress: number
   title?: string | null
+  /** Stable owner operation node. Unlike node.taskId, this survives later retries. */
+  operationNodeId?: string | null
   prompt?: string | null
   negativePrompt?: string | null
   inputNodeIds: string[]
@@ -359,6 +376,8 @@ export type CanvasTask = {
   requestId?: string | null
   /** provider 原始响应摘要（不含敏感信息） */
   rawResponse?: unknown
+  /** Agent/model 原始文本；即使业务解析失败也必须保留。 */
+  modelOutputText?: string | null
   /** 轮询任务提交接口响应摘要，拿到渠道任务 ID 后立即写入。 */
   submitResponse?: unknown
   /** 提交时输入文件的诊断摘要，便于任务详情排查 url/base64/path 等传参方式。 */
@@ -372,6 +391,12 @@ export type CanvasTask = {
   /** Spark 统一推理强度；主进程会按目标 adapter 映射为 provider 合法枚举。 */
   reasoningEffort?: SessionReasoningEffort | null
   modelParams: Record<string, unknown>
+  taskPipelineRole?: CanvasPipelineRole | null
+  outputPipelineRole?: CanvasPipelineRole | null
+  /** Storyboard timing configuration captured when this task was submitted. */
+  shotScriptConfig?: ShotScriptConfig | null
+  /** Persisted lifecycle events with their actual write timestamps. */
+  runtimeEvents?: CanvasTaskRuntimeEvent[]
   errorMsg?: string | null
   errorDetail?: string | null
   createdAt: string
@@ -447,6 +472,8 @@ export type CreateCanvasTaskRequest = {
   taskPipelineRole?: CanvasPipelineRole
   /** 专用流水线节点：产物节点的流水线角色（如分镜脚本产物 = shot） */
   outputPipelineRole?: CanvasPipelineRole
+  /** 分镜任务提交时的时长配置快照。 */
+  shotScriptConfig?: ShotScriptConfig
   /** Contract V2 裁剪产物：被丢弃的字段及原因，供任务详情展示。 */
   droppedModelParams?: Array<{ name: string; reason: string; valuePreview?: string | undefined }>
   /** Contract V2 裁剪产物：非阻断性提示（如 missing_param_policy、compat_passthrough）。 */

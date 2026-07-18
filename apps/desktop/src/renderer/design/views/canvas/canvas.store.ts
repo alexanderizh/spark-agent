@@ -865,8 +865,14 @@ export function useCanvasWorkspace(projectId: string) {
   )
 
   const retryOperationNode = useCallback(
-    async (nodeId: string) => {
-      await applyTaskSnapshot(canvasApi.retryOperationNode(projectId, nodeId))
+    async (
+      nodeId: string,
+      options?: {
+        sourceTaskId?: string
+        runtimeSource?: 'current-node' | 'original-task'
+      },
+    ) => {
+      await applyTaskSnapshot(canvasApi.retryOperationNode(projectId, nodeId, options))
     },
     [applyTaskSnapshot, projectId],
   )
@@ -888,6 +894,7 @@ export function useCanvasWorkspace(projectId: string) {
         skipParameterValidation?: boolean
         skillIds?: string[]
         userPrompt?: string
+        shotScriptConfig?: ShotScriptConfig
       } & CanvasPromptTaskFields,
     ) => {
       await applyTaskSnapshot(canvasApi.runOperationNode(projectId, nodeId, params))

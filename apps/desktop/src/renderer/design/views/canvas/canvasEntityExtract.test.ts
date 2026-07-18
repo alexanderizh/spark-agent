@@ -4,9 +4,18 @@ import {
   buildEntityExtractionPrompt,
   parseExtractedCharacters,
   parseExtractedScenes,
+  resolveExtractEntityKindFromWorkflow,
 } from './canvasEntityExtract'
 
 describe('canvasEntityExtract', () => {
+  it('maps every structured extraction workflow to its entity kind', () => {
+    expect(resolveExtractEntityKindFromWorkflow('extract_character')).toBe('character')
+    expect(resolveExtractEntityKindFromWorkflow('extract_scene')).toBe('scene')
+    expect(resolveExtractEntityKindFromWorkflow('extract_prop')).toBe('prop')
+    expect(resolveExtractEntityKindFromWorkflow('extract_effect')).toBe('effect')
+    expect(resolveExtractEntityKindFromWorkflow('shot_script')).toBeNull()
+  })
+
   describe('buildEntityExtractionPrompt', () => {
     it('角色抽取提示词含格式要求与剧本', () => {
       const prompt = buildEntityExtractionPrompt('character', '林岚推门进入。', '水墨写意')

@@ -1,6 +1,6 @@
 # 画布节点任务可观测性与异步视频修复
 
-> 状态: 已落地 | 最后核对: 2026-07-17
+> 状态: 已落地 | 最后核对: 2026-07-18
 
 ## 背景
 
@@ -45,6 +45,30 @@ xAI 另有一处终态解析错误：官方成功契约是 `status=done` 且产�
 - `event=cancel-*`：媒体任务取消请求与结果。
 
 `projectId + clientTaskId` 是画布侧的主关联键；媒体任务还可以继续用 `runtimeTaskId + providerRequestId` 串联 `[canvas:media-task-runtime]`、`[media:adapter]` 和 `[media:task-poll]`。
+
+### 节点任务详情诊断
+
+任务记录同时保存 `operationNodeId` 与真实生命周期事件。操作节点后续重试并切换到新 task 时，历史任务仍可定位到原节点；任务详情不再使用同一个 `updatedAt` 伪造多条运行日志。
+
+文本任务把以下信息分开保存和展示：
+
+- `modelOutputText`：模型/Agent 原始文本，结构解析失败时也必须保留；
+- `rawResponse`：Session runtime 或 Provider 的非敏感诊断摘要，不再冒充模型正文；
+- `systemPrompt` 与 `compiledUserText`：最终提交的 System/User Prompt；
+- 完整运行配置：Agent、Provider Profile、Manifest、Model、推理强度、Skill、pipeline role、模型参数和输入文件传输摘要；
+- `completedAt`：成功、失败与取消三种终态都必须写入。
+
+结构化输出校验失败时，详情仍显示模型原文，并尽量报告实际收到的 JSON 顶层字段。例如分镜任务收到 `episode/characters` 时，应明确指出期望 `shots`，而不是只显示“无法解析”。
+
+重试提供两种明确语义：“使用当前节点模型重试”复用冻结的任务输入但采用节点当前 Agent/Provider/Model/参数；“按原任务模型重试”完整复用原运行时配置。
+
+任务一旦进入 `running` 或终态即成为不可变执行快照。后续在操作节点中切换模型、Provider、Agent、Skill 或参数，只修改节点的下一次运行配置，不得回写历史任务；分镜的 `shotScriptConfig` 也按任务独立保存，详情不能用节点当前值冒充历史值。
+
+角色、场景、道具和特效抽取共用完整实体解析链路。模型返回后先写入独立诊断快照，再开始解析和资产物化；即使解析器抛错，任务详情仍保存完整 `modelOutputText`、Provider 摘要和实际模型信息，而不是只保留截断的异常预览。
+
+文本执行路径按 Provider 的真实 wire protocol 选择：Anthropic-compatible 走 Messages；明确声明 `chat`/`responses` 的 OpenAI-compatible Profile 才可进入对应 Codex Session Runtime；缺少 `codexApiKind` 的旧 OpenAI-compatible Profile 保守回退直连 Chat Completions，避免被默认探测 `/responses`。
+
+旧任务迁移按边类型恢复操作节点：`used_as_input` 使用 target，`generated` 使用 source。迁移结果按实际数据库对象缓存，项目重载或回滚得到的新快照仍会执行兼容迁移。
 
 ### 异步轮询诊断
 

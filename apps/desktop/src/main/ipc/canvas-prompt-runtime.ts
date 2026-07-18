@@ -79,12 +79,14 @@ export function buildCanvasSystemPrompt(input: {
   negativePrompt?: string
 }): string {
   const sections = [
-    input.capabilityPrompt,
-    input.presetPrompt,
     input.agentPrompt,
     ...(input.skillPrompts && input.skillPrompts.length > 0
       ? [`[Selected Skills]\n${input.skillPrompts.filter((item) => item.trim()).join('\n\n')}`]
       : []),
+    input.presetPrompt,
+    // Functional capability contracts come last so an agent persona or selected
+    // skill cannot silently replace a required output schema.
+    input.capabilityPrompt,
     input.negativePrompt?.trim() ? `约束（不可违反）：${input.negativePrompt.trim()}` : undefined,
   ]
   return sections
