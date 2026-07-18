@@ -17,6 +17,7 @@ import {
 import { useCanvasProjects } from './canvas.store'
 import { openCanvasProjectWindow } from './canvas-window-client'
 import { CanvasProjectCard } from './CanvasProjectCard'
+import { CanvasAcceptanceLauncher } from './acceptance/CanvasAcceptanceLauncher'
 import './CanvasProjectsView.less'
 import './uiux-v4/projects.less'
 import './uiux-v4/modals.less'
@@ -304,6 +305,14 @@ export function CanvasProjectsView({
           <p>以项目为入口管理无限画布、素材、任务和生成血缘。</p>
         </div>
         <div className="canvas-projects-header-actions">
+          {import.meta.env.DEV && (
+            <CanvasAcceptanceLauncher
+              onReady={async (projectId) => {
+                await refresh()
+                await handleOpenProject(projectId)
+              }}
+            />
+          )}
           <Button
             size="medium"
             type="text"
