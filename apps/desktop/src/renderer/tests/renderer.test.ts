@@ -3651,7 +3651,7 @@ describe('Renderer Smoke Tests', () => {
     )
   })
 
-  it('does not auto-collapse the latest assistant message body', async () => {
+  it('does not auto-collapse the latest two assistant message bodies', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
@@ -3804,10 +3804,11 @@ describe('Renderer Smoke Tests', () => {
       })
 
       await vi.waitFor(() => {
-        expect(container.querySelectorAll('.collapse-overlay .collapse-toggle').length).toBe(1)
+        expect(container.querySelectorAll('.collapse-overlay .collapse-toggle').length).toBe(0)
       })
-      const latestMessage = container.querySelectorAll('.msg-agent')[1]
-      expect(latestMessage?.querySelector('.collapse-overlay .collapse-toggle')).toBeNull()
+      const assistantMessages = container.querySelectorAll('.msg-agent')
+      expect(assistantMessages[0]?.querySelector('.collapse-overlay .collapse-toggle')).toBeNull()
+      expect(assistantMessages[1]?.querySelector('.collapse-overlay .collapse-toggle')).toBeNull()
     } finally {
       scrollHeightSpy.mockRestore()
     }
