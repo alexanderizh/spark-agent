@@ -2,11 +2,9 @@ import React from 'react'
 import { ThemeProvider } from '@lobehub/ui'
 import { App as AntdApp, ConfigProvider as AntdConfigProvider } from 'antd'
 import type { ThemeAppearance } from 'antd-style'
-import '@lobehub/webfont-geist/css/index.css'
-import '@lobehub/webfont-geist-mono/css/index.css'
-import '@lobehub/webfont-harmony-sans-sc/css/index.css'
 import 'katex/dist/katex.min.css'
 import type { ResolvedTheme, ThemeMode } from '../AppContext'
+import { useManagedFontAssets } from '../hooks/useManagedFontAssets'
 
 type LobeThemeProviderProps = {
   themeMode: ThemeMode
@@ -79,6 +77,7 @@ export function LobeThemeProvider({
   primary,
   children,
 }: LobeThemeProviderProps) {
+  useManagedFontAssets()
   const appearance: ThemeAppearance = resolvedTheme === 'dark' ? 'dark' : 'light'
   const p = PALETTE[resolvedTheme]
 

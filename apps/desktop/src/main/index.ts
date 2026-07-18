@@ -51,12 +51,14 @@ import { getFileWatcherService } from './services/FileWatcherService.js'
 import { getTerminalService } from './services/TerminalService.js'
 import { getUpdateService } from './services/UpdateService.js'
 import { checkSdkIntegrity } from './services/SdkIntegrityService.js'
+import { configureCodexRuntimeEnvironment } from './services/CodexRuntimeIntegrityService.js'
 import { initializeShellEnvironment, getShellEnvironmentStatus } from './services/ShellEnvironmentService.js'
 import { ensureRegistered as ensurePlaywrightRegistered, readRegistration as readPlaywrightRegistration } from './services/PlaywrightMcpRegistration.js'
 import { detectIntegrity as detectPlaywrightIntegrity } from './services/PlaywrightIntegrityService.js'
 import { getInternalBrowserService } from './services/InternalBrowserService.js'
 import { ensureBundledBrowserEnv } from './services/PlaywrightEnvironment.js'
 import { detectFfmpegIntegrity } from './services/FfmpegIntegrityService.js'
+import { updateManagedFontAssetsInBackground } from './services/FontAssetService.js'
 import {
   registerSafeFileProtocol,
   registerSafeFileSchemes,
@@ -602,6 +604,10 @@ function pushPlaywrightStatus(): void {
 async function initializeApp(): Promise<void> {
   log.info('Initializing Spark Agent...')
 
+  // Codex native runtime is managed outside the application bundle. Set the path
+  // before IPC/session services are initialized so the first Codex turn can use it.
+  configureCodexRuntimeEnvironment()
+
   // 0a. Configure bundled chromium env (must be BEFORE any playwright MCP subprocess starts)
   try {
     ensureBundledBrowserEnv()
@@ -811,6 +817,14 @@ async function initializeApp(): Promise<void> {
       log.warn(`Failed to push shell environment status: ${String(err)}`)
     })
   }, 3_000)
+
+  // 6.5 字体不再打进安装包：启动后后台检查并下载/升级。
+  // 下载失败只回退系统字体，设置 → 外观中可手动重试。
+  setTimeout(() => {
+    void updateManagedFontAssetsInBackground().then((result) => {
+      if (!result.success) log.warn(`Managed font update skipped: ${result.message}`)
+    })
+  }, 2_000)
 
   // 7. 检测 Playwright 完整性并推送状态（延迟 6 秒，与 SDK 自检错开）
   // 启动阶段只检测，不隐式下载 Chromium；下载由 Agent 按需恢复或用户在完整性页手动触发。

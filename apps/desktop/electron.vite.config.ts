@@ -53,7 +53,7 @@ function copyRuntimeToolsPlugin() {
 /**
  * dropWoffPlugin — 从 renderer 产物中剔除 .woff（保留 .woff2）。
  * Electron(Chromium) 完整支持 woff2，woff 仅为古旧浏览器回退，纯冗余。
- * HarmonyOS Sans SC 的 woff 约 32MB。
+ * UI 字体已改为云端托管；这里继续保护第三方样式未来不要重新引入 woff 回退。
  */
 function dropWoffPlugin() {
   return {

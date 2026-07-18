@@ -5,44 +5,38 @@ import { CAMERA_PROMPT_LIBRARY, getCameraPromptExampleImage } from './canvasFilm
 import { PERFORMANCE_PROMPT_LIBRARY } from './canvasFilmPerformancePrompts'
 import { readAssetKind } from './canvasFilmAssets'
 import type { CanvasAsset } from './canvas.types'
+import {
+  canvasGeneratedPromptExampleUrl,
+  canvasPromptExampleUrl,
+} from '../../assets/remoteAssetUrls'
+import { RemoteAssetImage } from '../../components/RemoteAssetImage'
 
-const promptExampleModules = import.meta.glob('../../../assets/canvas-prompt-examples/*.png', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>
-
-const generatedPromptExampleModules = import.meta.glob('../../../assets/canvas-prompt-examples/generated/*.png', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>
+const promptExample = (fileName: string): string => canvasPromptExampleUrl(fileName)
 
 const GROUP_EXAMPLE_IMAGE_SRC: Record<string, string> = {
-  景别: promptExampleModules['../../../assets/canvas-prompt-examples/group-shot-size.png'] ?? '',
-  角度: promptExampleModules['../../../assets/canvas-prompt-examples/group-angle.png'] ?? '',
-  运镜: promptExampleModules['../../../assets/canvas-prompt-examples/group-movement.png'] ?? '',
-  构图: promptExampleModules['../../../assets/canvas-prompt-examples/group-composition.png'] ?? '',
-  镜头焦距: promptExampleModules['../../../assets/canvas-prompt-examples/group-lens.png'] ?? '',
-  光圈: promptExampleModules['../../../assets/canvas-prompt-examples/group-focus.png'] ?? '',
-  快门: promptExampleModules['../../../assets/canvas-prompt-examples/group-exposure.png'] ?? '',
-  ISO: promptExampleModules['../../../assets/canvas-prompt-examples/group-exposure.png'] ?? '',
-  白平衡: promptExampleModules['../../../assets/canvas-prompt-examples/group-color.png'] ?? '',
-  焦点: promptExampleModules['../../../assets/canvas-prompt-examples/group-focus.png'] ?? '',
-  剪辑节奏: promptExampleModules['../../../assets/canvas-prompt-examples/group-pacing.png'] ?? '',
-  光影: promptExampleModules['../../../assets/canvas-prompt-examples/group-lighting.png'] ?? '',
-  色彩: promptExampleModules['../../../assets/canvas-prompt-examples/group-color.png'] ?? '',
-  镜头质感: promptExampleModules['../../../assets/canvas-prompt-examples/group-texture.png'] ?? '',
-  曝光与纹理: promptExampleModules['../../../assets/canvas-prompt-examples/group-exposure.png'] ?? '',
-  美术与环境:
-    promptExampleModules['../../../assets/canvas-prompt-examples/group-production-design.png'] ?? '',
-  情绪氛围: promptExampleModules['../../../assets/canvas-prompt-examples/group-atmosphere.png'] ?? '',
-  表情: promptExampleModules['../../../assets/canvas-prompt-examples/group-expression.png'] ?? '',
-  动作: promptExampleModules['../../../assets/canvas-prompt-examples/group-action.png'] ?? '',
-  情绪: promptExampleModules['../../../assets/canvas-prompt-examples/group-emotion.png'] ?? '',
-  对白状态: promptExampleModules['../../../assets/canvas-prompt-examples/group-dialogue.png'] ?? '',
-  反向词: promptExampleModules['../../../assets/canvas-prompt-examples/group-negative.png'] ?? '',
-  连贯性: promptExampleModules['../../../assets/canvas-prompt-examples/group-continuity.png'] ?? '',
+  景别: promptExample('group-shot-size.png'),
+  角度: promptExample('group-angle.png'),
+  运镜: promptExample('group-movement.png'),
+  构图: promptExample('group-composition.png'),
+  镜头焦距: promptExample('group-lens.png'),
+  光圈: promptExample('group-focus.png'),
+  快门: promptExample('group-exposure.png'),
+  ISO: promptExample('group-exposure.png'),
+  白平衡: promptExample('group-color.png'),
+  焦点: promptExample('group-focus.png'),
+  剪辑节奏: promptExample('group-pacing.png'),
+  光影: promptExample('group-lighting.png'),
+  色彩: promptExample('group-color.png'),
+  镜头质感: promptExample('group-texture.png'),
+  曝光与纹理: promptExample('group-exposure.png'),
+  美术与环境: promptExample('group-production-design.png'),
+  情绪氛围: promptExample('group-atmosphere.png'),
+  表情: promptExample('group-expression.png'),
+  动作: promptExample('group-action.png'),
+  情绪: promptExample('group-emotion.png'),
+  对白状态: promptExample('group-dialogue.png'),
+  反向词: promptExample('group-negative.png'),
+  连贯性: promptExample('group-continuity.png'),
 }
 
 export type CanvasPromptLibraryEntry = {
@@ -104,7 +98,7 @@ function getPromptEntryExampleImage(entry: CanvasPromptLibraryEntry): string | u
 
 function getGeneratedPromptExampleImage(itemId: string): string | undefined {
   const slug = itemId.replace(/[._]/g, '-')
-  return generatedPromptExampleModules[`../../../assets/canvas-prompt-examples/generated/prompt-${slug}.png`] || undefined
+  return canvasGeneratedPromptExampleUrl(`prompt-${slug}.png`)
 }
 
 export function buildCanvasPromptLibraryEntries(assets: CanvasAsset[]): CanvasPromptLibraryEntry[] {
@@ -286,11 +280,10 @@ export function CanvasPromptLibraryPanel({
                 >
                   <div className="canvas-prompt-library-entry-media">
                     {exampleImageSrc ? (
-                      <img
+                      <RemoteAssetImage
                         className="canvas-prompt-library-entry-preview"
                         src={exampleImageSrc}
                         alt=""
-                        loading="lazy"
                       />
                     ) : (
                       <div className="canvas-prompt-library-entry-fallback">

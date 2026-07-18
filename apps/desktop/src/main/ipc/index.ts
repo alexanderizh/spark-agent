@@ -216,6 +216,7 @@ import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.j
 import { getTerminalService } from '../services/TerminalService.js'
 import { registerTerminalIpc } from './registerTerminalIpc.js'
 import { registerProviderFilesIpc } from './registerProviderFilesIpc.js'
+import { registerFontAssetIpc } from './registerFontAssetIpc.js'
 import { sparkMediaUploader } from '../services/media/SparkMediaUploader.js'
 import { registerPlatformModelIpc } from '../services/PlatformModel/registerPlatformModelIpc.js'
 import {
@@ -2846,6 +2847,7 @@ async function handleRemoteInboundMessage(
 
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
+  registerFontAssetIpc()
   // 初始化文件日志：app.getPath('logs') 在 app.whenReady() 后才可用，
   // 而 registerAllIpcHandlers 恰在 ready 后被调用（见 main/index.ts），故此处安全。
   // 此后所有 createLogger 产出的日志会同时落盘到 <logs>/main.log，设置页可查看。
@@ -7365,7 +7367,9 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('sdk:integrity-install', async (req) => {
     log.info(`sdk:integrity-install requested, packageName=${req.packageName}`)
-    const result = await installSdk(req.packageName)
+    const result = await installSdk(req.packageName, (progress) => {
+      pushStreamEvent('stream:sdk:install-progress', progress)
+    })
     return result
   })
 

@@ -39,6 +39,7 @@ export const SAFE_FILE_SCHEME = 'safe-file'
 const MIME_BY_EXT: Record<string, string> = {
   '.aac': 'audio/aac',
   '.flac': 'audio/flac',
+  '.otf': 'font/otf',
   '.gif': 'image/gif',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -54,6 +55,8 @@ const MIME_BY_EXT: Record<string, string> = {
   '.wav': 'audio/wav',
   '.webm': 'video/webm',
   '.webp': 'image/webp',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
 }
 
 /**

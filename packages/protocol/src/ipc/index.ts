@@ -59,6 +59,12 @@ import type {
   GitHubConnectorConnection,
 } from '../connectors.js'
 import type { ProviderFilesIpcChannelMap } from '../provider-files.js'
+import type {
+  FontAssetsInstallRequest,
+  FontAssetsInstallResponse,
+  FontAssetsStatusRequest,
+  FontAssetsStatusResponse,
+} from '../font-assets.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -3558,6 +3564,17 @@ export interface SdkIntegrityItem {
   latestChecked: boolean
   /** Error message if detection failed */
   error?: string
+  /** Managed native runtime status, currently populated for Codex. */
+  runtime?: {
+    installed: boolean
+    installedVersion: string | null
+    latestVersion: string | null
+    updateAvailable: boolean
+    latestChecked: boolean
+    targetTriple: string | null
+    artifactId: string | null
+    error?: string
+  }
 }
 
 export interface SdkIntegrityCheckRequest {
@@ -3582,6 +3599,17 @@ export interface SdkIntegrityInstallResponse {
   success: boolean
   message: string
   newVersion?: string
+}
+
+export interface SdkIntegrityInstallProgress {
+  packageName: string
+  state: 'preparing' | 'downloading' | 'verifying' | 'activating' | 'done' | 'error'
+  downloaded: number
+  total: number
+  percent: number | null
+  message: string
+  artifactId?: string
+  version?: string
 }
 
 // ─── Shell Environment Channels ───────────────────────────────────────────────
@@ -5554,6 +5582,8 @@ export interface IpcChannelMap extends ProviderFilesIpcChannelMap {
   // FFmpeg Integrity & Video Processing
   'ffmpeg:status': [FfmpegStatusRequest, FfmpegStatusResponse]
   'ffmpeg:install': [FfmpegInstallRequest, FfmpegInstallResponse]
+  'font-assets:status': [FontAssetsStatusRequest, FontAssetsStatusResponse]
+  'font-assets:install': [FontAssetsInstallRequest, FontAssetsInstallResponse]
   'video:probe': [VideoProcessRequest, VideoProcessResponse]
   'video:process': [VideoProcessRequest, VideoProcessResponse]
   'binary:install': [BinaryInstallRequest, BinaryInstallResponse]
@@ -5800,6 +5830,8 @@ export interface IpcStreamChannelMap {
   }
   /** SDK 完整性自检结果（启动时自动推送）*/
   'stream:sdk:integrity': SdkIntegrityCheckResponse
+  /** SDK / managed runtime 安装进度 */
+  'stream:sdk:install-progress': SdkIntegrityInstallProgress
   /** Shell 环境状态（PATH 修复 + 运行时工具检测结果）*/
   'stream:env:status': ShellEnvironmentStatus
   /** Playwright 安装/状态变化推送（Settings UI 监听）*/
@@ -5808,6 +5840,7 @@ export interface IpcStreamChannelMap {
   'stream:playwright:install-progress': PlaywrightInstallProgress
   /** FFmpeg 状态变化推送（启动自检 + 安装后刷新）*/
   'stream:ffmpeg:status': FfmpegStatusResponse
+  'stream:font-assets:status': FontAssetsStatusResponse
   /** FFmpeg 下载安装进度推送 */
   'stream:ffmpeg:install-progress': FfmpegInstallProgress
   /** 视频处理进度推送（按 requestId 关联请求）*/

@@ -17,7 +17,6 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@napi-rs/canvas": "1.0.0",
     "@openai/codex-sdk": "0.144.5",
     "@spark/protocol": "workspace:*",
     "@spark/shared": "workspace:*",

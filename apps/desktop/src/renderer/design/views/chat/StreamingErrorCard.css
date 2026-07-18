@@ -224,6 +224,101 @@
   font-size: 12px;
 }
 
+.codex-runtime-recovery {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 16px 14px 28px;
+  padding: 11px 12px 11px 50px;
+  border-top: 1px solid color-mix(in srgb, var(--text, #20242a) 8%, transparent);
+}
+
+.codex-runtime-recovery-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted, #747b86);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.codex-runtime-recovery-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.codex-runtime-recovery-status svg {
+  flex: 0 0 auto;
+}
+
+.codex-runtime-recovery.is-installing .codex-runtime-recovery-status svg,
+.codex-runtime-recovery.is-installing .codex-runtime-install-button svg {
+  animation: codex-runtime-spin 0.9s linear infinite;
+}
+
+.codex-runtime-recovery.is-success .codex-runtime-recovery-status {
+  color: var(--success, #2f9d68);
+}
+
+.codex-runtime-recovery.is-error .codex-runtime-recovery-status {
+  color: var(--danger, #df5965);
+}
+
+.codex-runtime-recovery-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.codex-runtime-recovery-actions button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.codex-runtime-install-button {
+  background: var(--primary, #5876d8);
+  color: #fff;
+}
+
+.codex-runtime-install-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary, #5876d8) 88%, #000);
+}
+
+.codex-runtime-install-button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.codex-runtime-settings-button {
+  border-color: color-mix(in srgb, var(--text, #20242a) 12%, transparent) !important;
+  background: transparent;
+  color: var(--text-muted, #747b86);
+}
+
+.codex-runtime-settings-button:hover {
+  background: color-mix(in srgb, var(--text, #20242a) 6%, transparent);
+  color: var(--text, #20242a);
+}
+
+@keyframes codex-runtime-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 720px) {
   .runtime-diagnostic-summary {
     grid-template-columns: auto minmax(0, 1fr);
@@ -240,5 +335,15 @@
 
   .runtime-diagnostic-body {
     padding-left: 0;
+  }
+
+  .codex-runtime-recovery {
+    align-items: stretch;
+    flex-direction: column;
+    padding-left: 0;
+  }
+
+  .codex-runtime-recovery-actions {
+    flex-wrap: wrap;
   }
 }

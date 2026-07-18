@@ -48,10 +48,9 @@ type AppearanceFontMeta = {
 /**
  * Font stack map for the appearance selector.
  *
- * Note: `@lobehub/webfont-geist/css/index.css` registers the family as
- * `Geist` (NOT `Geist Sans`), so the first entry in the `geist.sans` stack
- * must match that exact name. Using `"Geist Sans"` would always fall back
- * to the next family and silently break the "Geist (recommended)" option.
+ * The managed font loader registers the family as `Geist` (not `Geist Sans`),
+ * so the first entry in the stack must keep that exact name. Before the cloud
+ * font archive is available Chromium transparently uses the system fallback.
  */
 const FONT_MAP: Record<string, AppearanceFontMeta> = {
   geist: {

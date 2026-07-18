@@ -17,6 +17,7 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useToast } from '../components/Toast'
 import { ProviderLogo } from '../components/ProviderLogo'
+import { RemoteAssetImage } from '../components/RemoteAssetImage'
 import { Icons } from '../Icons'
 import { OnboardingPlatformFunding } from './platform-model/OnboardingPlatformFunding'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
@@ -1775,7 +1776,7 @@ function OnboardingVisual({ step }: { step: OnboardingStep }) {
               exit={{ opacity: 0, scale: 0.97 }}
               transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
             >
-              <img className="visual-poster" src={poster} alt="" draggable={false} />
+              <RemoteAssetImage className="visual-poster" src={poster} alt="" />
             </motion.div>
           </AnimatePresence>
         </div>

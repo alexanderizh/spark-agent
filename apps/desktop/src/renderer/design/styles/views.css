@@ -1490,6 +1490,9 @@ body.sidebar-resizing {
 .msg-agent-main .md-surface{
   margin-top: 10px;
 }
+.msg-agent-main .md-surface:first-child{
+  margin-top: 0px;
+}
 .md-surface {
   min-width: 0;
   font-weight: 500;
@@ -16588,4 +16591,13 @@ body.inspector-resizing {
   background: var(--bg-sunken);
   border-radius: 0 0 var(--r-md) var(--r-md);
   padding: 10px 16px;
+}
+@keyframes spark-remote-asset-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
 }

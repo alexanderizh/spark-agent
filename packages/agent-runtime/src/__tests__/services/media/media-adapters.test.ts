@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { rmSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { createCanvas } from '@napi-rs/canvas'
 import { MediaRouterService } from '../../../services/media/media-router.service.js'
 import type { MediaProviderProfile } from '../../../services/media/media-router.service.js'
 import { AgnesMediaAdapter } from '../../../services/media/adapters/agnes-media.adapter.js'
@@ -1534,33 +1533,20 @@ describe('MediaRouterService', () => {
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
   })
 
-  it('APIMart image.edit compresses oversized dataUrl in image_urls', async () => {
-    const dimension = 1280
-    const canvas = createCanvas(dimension, dimension)
-    const context = canvas.getContext('2d')
-    const imageData = context.createImageData(dimension, dimension)
-    let seed = 42
-    for (let index = 0; index < imageData.data.length; index += 4) {
-      seed = (seed * 1664525 + 1013904223) >>> 0
-      imageData.data[index] = seed & 0xff
-      imageData.data[index + 1] = (seed >>> 8) & 0xff
-      imageData.data[index + 2] = (seed >>> 16) & 0xff
-      imageData.data[index + 3] = 0xff
-    }
-    context.putImageData(imageData, 0, 0)
-    const oversizedDataUrl = canvas.toDataURL('image/png')
-    expect(oversizedDataUrl.length).toBeGreaterThan(3 * 1024 * 1024)
-
+  it('APIMart image.edit uploads oversized dataUrl and sends the public URL', async () => {
+    const oversizedDataUrl = `data:image/png;base64,${Buffer.alloc(3 * 1024 * 1024 + 1, 7).toString('base64')}`
+    const uploads: Array<{
+      targetProvider?: string | undefined
+      size: number
+      mimeType?: string | undefined
+    }> = []
     const fetchMock = makeFetch([
       {
         match: '/images/generations',
         respond: (init) => {
           const body = JSON.parse(String(init?.body ?? '{}')) as { image_urls?: string[] }
           expect(body.image_urls).toHaveLength(1)
-          expect(body.image_urls?.[0]).toMatch(/^data:image\/webp;base64,/)
-          expect(Buffer.byteLength(body.image_urls?.[0] ?? '', 'utf8')).toBeLessThanOrEqual(
-            3 * 1024 * 1024,
-          )
+          expect(body.image_urls?.[0]).toBe('https://minio.yiqibyte.com/spark-desktop/apimart/reference.png')
           return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
         },
       },
@@ -1574,8 +1560,26 @@ describe('MediaRouterService', () => {
         prompt: 'compress this reference image',
         inputFiles: [{ type: 'image', dataUrl: oversizedDataUrl }],
       },
-      { providers: [makeProvider()], fetch: fetchMock },
+      {
+        providers: [makeProvider()],
+        fetch: fetchMock,
+        fallbackUploader: {
+          canHandle: (provider) => provider === 'apimart',
+          upload: async (input) => {
+            uploads.push({
+              targetProvider: input.targetProvider,
+              size: input.buffer.byteLength,
+              mimeType: input.mimeType,
+            })
+            return {
+              provider: 'apimart',
+              publicUrl: 'https://minio.yiqibyte.com/spark-desktop/apimart/reference.png',
+            }
+          },
+        },
+      },
     )
+    expect(uploads).toEqual([{ targetProvider: 'apimart', size: 3 * 1024 * 1024 + 1, mimeType: 'image/png' }])
   })
 
   it('xAI does not support audio.transcription', () => {

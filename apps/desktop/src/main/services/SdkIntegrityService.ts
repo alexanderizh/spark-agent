@@ -5,7 +5,8 @@
  *   1. 检测 Claude Agent SDK 和 OpenAI Codex SDK 是否安装
  *   2. 获取已安装版本号
  *   3. 从 npm registry 检查最新版本（HTTP API，不依赖 npm CLI）
- *   4. 提供安装/更新能力（spawn + shell: true 兼容 Windows）
+ *   4. Claude 在开发态保留 pnpm 安装/更新；Codex native runtime 在开发/生产态
+ *      统一从 Spark MinIO manifest 下载、校验和激活
  *
  * 使用场景：
  *   - 应用启动时自动自检
@@ -19,15 +20,31 @@ import * as https from 'node:https'
 import { createRequire } from 'node:module'
 import { app } from 'electron'
 import { createLogger } from '@spark/shared'
-import type { SdkIntegrityItem, SdkIntegrityCheckRequest, SdkIntegrityCheckResponse, SdkIntegrityInstallResponse, RuntimeToolStatus } from '@spark/protocol'
+import type {
+  SdkIntegrityItem,
+  SdkIntegrityCheckRequest,
+  SdkIntegrityCheckResponse,
+  SdkIntegrityInstallProgress,
+  SdkIntegrityInstallResponse,
+  RuntimeToolStatus,
+} from '@spark/protocol'
 import { recheckRuntimeTools } from './ShellEnvironmentService.js'
+import { checkCodexRuntimeIntegrity, installCodexRuntime } from './CodexRuntimeIntegrityService.js'
 
 const log = createLogger('sdk-integrity')
 
 /** SDK 定义列表 */
-const SDK_DEFINITIONS: Array<{ packageName: string; displayName: string }> = [
-  { packageName: '@anthropic-ai/claude-agent-sdk', displayName: 'Claude Agent SDK' },
-  { packageName: '@openai/codex-sdk', displayName: 'OpenAI Codex SDK' },
+const SDK_DEFINITIONS: Array<{
+  packageName: string
+  displayName: string
+  runtime?: 'codex' | 'claude'
+}> = [
+  {
+    packageName: '@anthropic-ai/claude-agent-sdk',
+    displayName: 'Claude Agent SDK',
+    runtime: 'claude',
+  },
+  { packageName: '@openai/codex-sdk', displayName: 'OpenAI Codex SDK', runtime: 'codex' },
 ]
 
 const DESKTOP_PACKAGE_NAME = '@spark/desktop'
@@ -182,7 +199,7 @@ async function getLatestVersion(packageName: string): Promise<string | null> {
       method: 'GET',
       timeout: 15_000,
       headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         'User-Agent': 'spark-agent-sdk-check/1.0',
       },
     }
@@ -246,7 +263,9 @@ function isVersionNewer(v1: string, v2: string): boolean {
 /**
  * 执行 SDK 完整性检测
  */
-export async function checkSdkIntegrity(request: SdkIntegrityCheckRequest): Promise<SdkIntegrityCheckResponse> {
+export async function checkSdkIntegrity(
+  request: SdkIntegrityCheckRequest,
+): Promise<SdkIntegrityCheckResponse> {
   const { checkLatest = false } = request
   const sdks: SdkIntegrityItem[] = []
 
@@ -268,7 +287,7 @@ export async function checkSdkIntegrity(request: SdkIntegrityCheckRequest): Prom
       item.installedVersion = version
 
       // 2. 如果请求了最新版检测
-      if (checkLatest) {
+      if (checkLatest && def.runtime !== 'codex') {
         const latest = await getLatestVersion(def.packageName)
         item.latestVersion = latest
         item.latestChecked = true
@@ -276,6 +295,15 @@ export async function checkSdkIntegrity(request: SdkIntegrityCheckRequest): Prom
         if (latest != null && item.installedVersion != null) {
           item.updateAvailable = isVersionNewer(latest, item.installedVersion)
         }
+      } else if (checkLatest && def.runtime === 'codex') {
+        // Codex JS SDK belongs to the signed desktop application and is upgraded
+        // with the app. The actionable cloud update in this page is the native
+        // runtime below, so do not advertise an npm version that cannot be hot-swapped.
+        item.latestVersion = item.installedVersion
+        item.latestChecked = true
+      }
+      if (def.runtime === 'codex') {
+        item.runtime = await checkCodexRuntimeIntegrity(checkLatest, version)
       }
     } catch (err) {
       item.error = err instanceof Error ? err.message : String(err)
@@ -376,7 +404,10 @@ function getInstallArgs(targetDir: string, packageName: string): string[] {
  *
  * 使用 spawn + shell: true 确保 Windows 上 .cmd 文件可执行。
  */
-export async function installSdk(packageName: string): Promise<SdkIntegrityInstallResponse> {
+export async function installSdk(
+  packageName: string,
+  onProgress?: (progress: SdkIntegrityInstallProgress) => void,
+): Promise<SdkIntegrityInstallResponse> {
   if (!SDK_DEFINITIONS.some((def) => def.packageName === packageName)) {
     return {
       success: false,
@@ -388,6 +419,19 @@ export async function installSdk(packageName: string): Promise<SdkIntegrityInsta
     return {
       success: false,
       message: `${installingSdkPackage} 正在安装，请等待完成后再更新其他 SDK`,
+    }
+  }
+
+  if (packageName === '@openai/codex-sdk') {
+    installingSdkPackage = packageName
+    try {
+      const result = await installCodexRuntime(getInstalledVersion(packageName), (progress) => {
+        onProgress?.({ packageName, ...progress })
+      })
+      cachedResult = null
+      return result
+    } finally {
+      installingSdkPackage = null
     }
   }
 
