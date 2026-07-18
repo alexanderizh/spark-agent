@@ -4702,6 +4702,25 @@ body.side-chat-resizing {
   display: none;
 }
 
+/* 团队模式会给 .msg-content 添加气泡背景；当其中只有已折叠的活动日志时，
+   连同内容容器一起隐藏，避免留下没有正文的空气泡。节点仍保持挂载以保留展开状态。 */
+.msg-bubble-agent.tool-logs-hidden .msg-content.is-tool-logs-only {
+  display: none;
+}
+
+/* 团队会话只展示成员正文，隐藏 Agent 的内部思考与工具活动；选择器必须限定在
+   team-mode-active 下，确保单 Agent 会话继续保留原有的日志总开关与展开能力。 */
+.team-mode-active .msg-bubble-agent .thinking-section,
+.team-mode-active .msg-bubble-agent .chat-activity-segment,
+.team-mode-active .msg-bubble-agent .tool-log-group,
+.team-mode-active .msg-bubble-agent .tool-call,
+.team-mode-active .msg-bubble-agent .tool-logs-collapsible,
+.team-mode-active .msg-bubble-agent .diff.hunk-mode,
+.team-mode-active .msg-bubble-agent .parallel-tools-indicator,
+.team-mode-active .msg-bubble-agent .msg-content.is-tool-logs-only {
+  display: none;
+}
+
 /* 会话活动日志：内容区字号与日志标题保持一致，只比正文小一号。 */
 .thinking-content,
 .thinking-content.md-surface p,

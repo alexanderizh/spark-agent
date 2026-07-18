@@ -23,4 +23,35 @@ describe('groupChatMessageTimeline', () => {
     expect(groups[0]).toMatchObject({ blocks: [expect.objectContaining({ content: 'before' })] })
     expect(groups[2]).toMatchObject({ blocks: [expect.objectContaining({ content: 'after' })] })
   })
+
+  it('marks timeline content that disappears with the tool-log master toggle', () => {
+    const toolOnlyGroups = groupChatMessageTimeline([
+      {
+        kind: 'tool_call',
+        toolCallId: 'tool-1',
+        toolName: 'web_search',
+        toolInput: {},
+        status: 'success',
+        output: 'done',
+        error: undefined,
+        durationMs: 10,
+      },
+    ])
+    const mixedGroups = groupChatMessageTimeline([
+      {
+        kind: 'tool_call',
+        toolCallId: 'tool-1',
+        toolName: 'web_search',
+        toolInput: {},
+        status: 'success',
+        output: 'done',
+        error: undefined,
+        durationMs: 10,
+      },
+      { kind: 'text', content: '最终回答', isStreaming: false },
+    ])
+
+    expect(toolOnlyGroups[0]).toMatchObject({ kind: 'content', collapsibleOnly: true })
+    expect(mixedGroups[0]).toMatchObject({ kind: 'content', collapsibleOnly: false })
+  })
 })
