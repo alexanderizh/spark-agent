@@ -3513,24 +3513,6 @@ export function CanvasWorkspaceView({
     [createTextNode],
   )
 
-  const addPrompt = useCallback(
-    async (preferredPosition?: CanvasPoint) => {
-      const position = preferredPosition
-        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
-        : positionNodeInViewport(canvasViewportRef.current, TEXT_NODE_DEFAULT_SIZE, {
-            x: 140,
-            y: 120,
-          })
-      return createTextNode({
-        kind: 'prompt',
-        text: '',
-        x: position.x,
-        y: position.y,
-      })
-    },
-    [createTextNode],
-  )
-
   const handleSplitStoryboard = useCallback(
     async (nodeId: string) => {
       const current = snapshotRef.current
@@ -7650,7 +7632,6 @@ export function CanvasWorkspaceView({
             onAddTextAtPosition={addText}
             onAddImageAtPosition={uploadFirstImage}
             onDropFiles={handleDropFiles}
-            onAddPromptAtPosition={addPrompt}
             onAddDirectorStage3DAtPosition={addDirectorStage3D}
             onInsertAssetFromPane={onInsertAssetFromPaneStable}
             onCreateOperationAtPosition={handleCreateOperationAtPosition}

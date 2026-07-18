@@ -313,6 +313,47 @@ function CanvasPaneContextSubmenu({
   )
 }
 
+function CanvasPaneResourceNodeActions({
+  onAddText,
+  onAddImage,
+  onAddDirectorStage3D,
+  onInsertAsset,
+}: {
+  onAddText?: (() => void) | undefined
+  onAddImage?: (() => void) | undefined
+  onAddDirectorStage3D?: (() => void) | undefined
+  onInsertAsset?: (() => void) | undefined
+}) {
+  return (
+    <>
+      {onAddText && (
+        <button type="button" role="menuitem" onClick={onAddText}>
+          <Icons.File size={14} />
+          <span>添加文本</span>
+        </button>
+      )}
+      {onAddImage && (
+        <button type="button" role="menuitem" onClick={onAddImage}>
+          <Icons.Image size={14} />
+          <span>上传图片</span>
+        </button>
+      )}
+      {onAddDirectorStage3D && (
+        <button type="button" role="menuitem" onClick={onAddDirectorStage3D}>
+          <Icons.Box size={14} />
+          <span>新建 3D 导演台</span>
+        </button>
+      )}
+      {onInsertAsset && (
+        <button type="button" role="menuitem" onClick={onInsertAsset}>
+          <Icons.Folder size={14} />
+          <span>从资产选择</span>
+        </button>
+      )}
+    </>
+  )
+}
+
 export type CanvasStageViewport = Viewport & {
   width: number
   height: number
@@ -607,7 +648,6 @@ function CanvasStageInner({
   onAddTextAtPosition,
   onAddImageAtPosition,
   onDropFiles,
-  onAddPromptAtPosition,
   onAddDirectorStage3DAtPosition,
   onInsertAssetFromPane,
   onDeleteSelectedNodes,
@@ -678,8 +718,6 @@ function CanvasStageInner({
   onAddImageAtPosition: CanvasStageCreateAction
   /** 拖入外部文件落到画布上（图片/视频/音频/文本），位置已转为 flow 坐标 */
   onDropFiles?: (position: CanvasStagePoint, files: File[]) => void
-  /** 空白右键：新建 Prompt 节点 */
-  onAddPromptAtPosition?: CanvasStageCreateAction
   /** 空白右键：新建真·3D 导演台节点 */
   onAddDirectorStage3DAtPosition?: CanvasStageCreateAction
   /** 空白右键：从资产插入（打开资产面板） */
@@ -1639,11 +1677,6 @@ function CanvasStageInner({
     void runPaneCreateAction(onAddImageAtPosition)
   }, [onAddImageAtPosition, runPaneCreateAction])
 
-  const handleAddPromptFromPane = useCallback(() => {
-    if (!onAddPromptAtPosition) return
-    void runPaneCreateAction(onAddPromptAtPosition)
-  }, [onAddPromptAtPosition, runPaneCreateAction])
-
   const handleAddDirectorStage3DFromPane = useCallback(() => {
     if (!onAddDirectorStage3DAtPosition) return
     void runPaneCreateAction(onAddDirectorStage3DAtPosition)
@@ -2380,15 +2413,12 @@ function CanvasStageInner({
                     <span>解散组</span>
                   </button>
                 )}
-                {(selectedContext.canCreateGroup ||
-                  selectedContext.canMergeSelectionToImage ||
-                  selectedContext.canAddToGroup ||
-                  selectedContext.canRemoveFromGroup ||
-                  selectedContext.canDissolveGroup) &&
-                  (onToggleLockSelectedNodes || onBringSelectedNodesToFront) && (
-                    <div className="canvas-pane-context-divider" />
-                  )}
-                {onToggleLockSelectedNodes && (
+                {(onDeleteSelectedNodes ||
+                  (selectedNodeIds.length === 1 &&
+                    (onToggleLockSelectedNodes || onBringSelectedNodesToFront))) && (
+                  <div className="canvas-pane-context-divider" />
+                )}
+                {selectedNodeIds.length === 1 && onToggleLockSelectedNodes && (
                   <button
                     type="button"
                     role="menuitem"
@@ -2401,7 +2431,7 @@ function CanvasStageInner({
                     <span>锁定 / 解锁</span>
                   </button>
                 )}
-                {onBringSelectedNodesToFront && (
+                {selectedNodeIds.length === 1 && onBringSelectedNodesToFront && (
                   <button
                     type="button"
                     role="menuitem"
@@ -2418,6 +2448,7 @@ function CanvasStageInner({
                   <button
                     type="button"
                     role="menuitem"
+                    className="canvas-menu-item-danger"
                     onClick={() => {
                       closePaneContextMenu()
                       onDeleteSelectedNodes()
@@ -2432,34 +2463,6 @@ function CanvasStageInner({
                 )}
               </>
             )}
-            <div className="canvas-pane-context-section-title">资源内容节点</div>
-            <button type="button" role="menuitem" onClick={handleAddTextFromPane}>
-              <Icons.File size={14} />
-              <span>添加文本</span>
-            </button>
-            <button type="button" role="menuitem" onClick={handleAddImageFromPane}>
-              <Icons.Image size={14} />
-              <span>上传图片</span>
-            </button>
-            {onAddPromptAtPosition && (
-              <button type="button" role="menuitem" onClick={handleAddPromptFromPane}>
-                <Icons.Edit size={14} />
-                <span>新建 Prompt</span>
-              </button>
-            )}
-            {onAddDirectorStage3DAtPosition && (
-              <button type="button" role="menuitem" onClick={handleAddDirectorStage3DFromPane}>
-                <Icons.Box size={14} />
-                <span>新建 3D 导演台</span>
-              </button>
-            )}
-            {onInsertAssetFromPane && (
-              <button type="button" role="menuitem" onClick={handleInsertAssetFromPane}>
-                <Icons.Folder size={14} />
-                <span>从资产选择</span>
-              </button>
-            )}
-            <div className="canvas-pane-context-divider" />
             <div className="canvas-pane-context-section-title">任务节点</div>
             {onCreatePipelineAtPosition && (
               <CanvasPaneContextSubmenu
@@ -2468,6 +2471,16 @@ function CanvasStageInner({
                 openLeft={paneContextMenu.openSubmenusLeft}
                 openUp={paneContextMenu.openSubmenusUp}
               >
+                <CanvasPaneResourceNodeActions
+                  onAddImage={handleAddImageFromPane}
+                  onAddDirectorStage3D={
+                    onAddDirectorStage3DAtPosition
+                      ? handleAddDirectorStage3DFromPane
+                      : undefined
+                  }
+                  onInsertAsset={onInsertAssetFromPane ? handleInsertAssetFromPane : undefined}
+                />
+                <div className="canvas-pane-context-divider" />
                 {CANVAS_PIPELINE_OPS.filter(
                   (op) => op.appliesToText && (op.kind === 'text' || op.kind === 'extract'),
                 ).map((op) => (
@@ -2505,6 +2518,10 @@ function CanvasStageInner({
                 openLeft={paneContextMenu.openSubmenusLeft}
                 openUp={paneContextMenu.openSubmenusUp}
               >
+                <CanvasPaneResourceNodeActions
+                  onAddText={handleAddTextFromPane}
+                />
+                <div className="canvas-pane-context-divider" />
                 {canvasBaseCreateOperations().map((item) => {
                   const visual = getOperationVisual(item.operation)
                   return (
