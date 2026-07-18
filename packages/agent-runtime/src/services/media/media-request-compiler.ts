@@ -26,6 +26,7 @@ import type {
   MediaParamConflictRule,
   MediaParamTransformRule,
 } from '@spark/protocol'
+import { isMediaProviderKind } from '@spark/protocol'
 
 /** 入参中"输入文件"的最小形态；conditionals.drop_when_input_kind 需要读 type。 */
 export interface CompilerInputFile {
@@ -70,6 +71,21 @@ export interface CompileMediaRequestResult {
   validationIssues: MediaContractIssue[]
 }
 
+/**
+ * A `custom:*` ref without an inline manifest is synthesized from a built-in
+ * provider manifest for canvas presentation only. Its cloned schema must not
+ * validate or prune the custom model's provider parameters.
+ */
+export function isSynthesizedCustomManifest(
+  manifest: Pick<MediaModelManifest, 'id' | 'providerKind'>,
+): boolean {
+  return (
+    manifest.id.startsWith('custom:') &&
+    manifest.providerKind !== 'custom' &&
+    isMediaProviderKind(manifest.providerKind)
+  )
+}
+
 // 仅在本地产物命名使用、永远不应进入 provider 请求的字段。
 const LOCAL_ONLY_FIELDS = new Set(['filename'])
 
@@ -91,11 +107,31 @@ const CANONICAL_ALIASES_FALLBACK: Record<string, string> = {
 
 export function compileMediaRequest(input: CompileMediaRequestInput): CompileMediaRequestResult {
   const mode = input.mode ?? 'adapter'
+  const rawParams = removeBlankParams(input.input.modelParams ?? {})
+  if (isSynthesizedCustomManifest(input.manifest)) {
+    const providerParams = { ...rawParams }
+    const droppedParams: MediaDroppedParam[] = []
+    if (Object.prototype.hasOwnProperty.call(providerParams, 'filename')) {
+      droppedParams.push({
+        name: 'filename',
+        providerName: 'filename',
+        valuePreview: String(providerParams.filename).slice(0, 80),
+        reason: 'local_only',
+      })
+      delete providerParams.filename
+    }
+    return {
+      canonicalParams: { ...rawParams },
+      providerParams,
+      droppedParams,
+      warnings: [],
+      validationIssues: [],
+    }
+  }
   const issues: MediaContractIssue[] = []
   const warnings: MediaContractWarning[] = []
   const dropped: MediaDroppedParam[] = []
 
-  const rawParams = removeBlankParams(input.input.modelParams ?? {})
   const canonicalFromRaw = normalizeCanonicalParams(rawParams)
   const defaults = mergeDefaults(input.providerDefaults, input.capability.defaults)
   const merged = { ...defaults, ...canonicalFromRaw }

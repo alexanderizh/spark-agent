@@ -102,6 +102,18 @@ describe('media HTTP util extractors', () => {
     expect(images.some((image) => image.kind === 'base64')).toBe(true)
   })
 
+  it('extractImages treats DashScope Wan image fields as signed URLs', () => {
+    const signedUrl =
+      'https://dashscope-7c2c.oss-accelerate.aliyuncs.com/result.png?Expires=1784470372&Signature=abc'
+    const images = extractImages({
+      output: {
+        choices: [{ message: { content: [{ type: 'image', image: signedUrl }] } }],
+      },
+    })
+
+    expect(images).toEqual([{ kind: 'url', value: signedUrl }])
+  })
+
   it('extractMediaUrls dedupes video urls', () => {
     const urls = extractMediaUrls(
       { video_url: 'https://cdn/v.mp4', result: { url: 'https://cdn/v.mp4' } },
@@ -2189,6 +2201,179 @@ describe('MediaRouterService', () => {
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
   })
 
+  it('uses a custom manifest on a Bailian profile instead of the native Wan adapter', async () => {
+    let postedBody: Record<string, unknown> | null = null
+    const manifest: MediaModelManifest = {
+      id: 'custom:qwen-image-2.0-pro-2026-04-22',
+      providerKind: 'custom',
+      modelId: 'qwen-image-2.0-pro-2026-04-22',
+      displayName: 'Qwen Image custom contract',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'], mimeTypes: ['image/png'] },
+          paramSchema: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {
+              size: { type: 'string' },
+              resolution: { type: 'string' },
+              n: { type: 'integer', minimum: 1, maximum: 4 },
+            },
+          },
+          defaults: { n: 1 },
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/custom/images/generations',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'inline_base64', jsonPaths: ['data[].b64_json'] },
+      },
+      docs: { sourceUrls: [] },
+    }
+    const fetchMock = makeFetch([
+      {
+        match: '/custom/images/generations',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'a character sheet',
+        modelParams: {
+          size: '2048*1024',
+          resolution: '1k',
+          n: 1,
+          thinking_mode: true,
+        },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'bailian-custom-qwen',
+            name: 'Bailian custom image',
+            defaultModel: manifest.modelId,
+            apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1',
+            mediaProvider: 'bailian',
+            mediaCapabilities: ['image.generate'],
+            mediaModelManifests: [manifest],
+          }),
+        ],
+        providerProfileId: 'bailian-custom-qwen',
+        manifestId: manifest.id,
+        modelId: manifest.modelId,
+        fetch: fetchMock,
+      },
+    )
+
+    expect(output.provider).toBe('custom')
+    expect(output.model).toBe(manifest.modelId)
+    expect(postedBody).toMatchObject({
+      model: manifest.modelId,
+      prompt: 'a character sheet',
+      size: '2048*1024',
+      resolution: '1k',
+      n: 1,
+      thinking_mode: true,
+    })
+    expect(output.assets).toHaveLength(1)
+  })
+
+  it('allows custom size on a synthesized Bailian model while preserving the selected model', async () => {
+    let postedBody: Record<string, unknown> | null = null
+    const baseManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:wan2.7-image',
+    )!
+    const manifest: MediaModelManifest = {
+      ...baseManifest,
+      id: 'custom:qwen-image-2.0-pro-2026-04-22',
+      modelId: 'qwen-image-2.0-pro-2026-04-22',
+      displayName: 'Qwen Image synthesized contract',
+    }
+    const fetchMock = makeFetch([
+      {
+        match: '/multimodal-generation/generation',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return {
+            ok: true,
+            status: 200,
+            body: {
+              request_id: 'qwen-image-request',
+              output: {
+                choices: [
+                  {
+                    message: {
+                      content: [{ type: 'image', image: `data:image/png;base64,${PNG_PIXEL}` }],
+                    },
+                  },
+                ],
+              },
+            },
+          }
+        },
+      },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'a character sheet',
+        modelParams: {
+          size: '2048*1024',
+          n: 1,
+          thinking_mode: true,
+          watermark: false,
+        },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'bailian-synthesized-qwen',
+            name: 'Bailian synthesized image',
+            defaultModel: manifest.modelId,
+            apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1',
+            mediaProvider: 'bailian',
+            mediaCapabilities: ['image.generate'],
+            mediaModelManifests: [manifest],
+          }),
+        ],
+        providerProfileId: 'bailian-synthesized-qwen',
+        manifestId: manifest.id,
+        modelId: manifest.modelId,
+        fetch: fetchMock,
+      },
+    )
+
+    expect(output.provider).toBe('bailian')
+    expect(output.model).toBe(manifest.modelId)
+    expect(postedBody).toMatchObject({
+      model: manifest.modelId,
+      parameters: {
+        size: '2048*1024',
+        n: 1,
+        thinking_mode: true,
+        watermark: false,
+      },
+    })
+    expect(output.assets).toHaveLength(1)
+  })
+
   it('rejects manifest parameters outside the declared schema before provider calls', async () => {
     const manifest: MediaModelManifest = {
       id: 'custom:image-template',
@@ -4001,6 +4186,121 @@ describe('BailianMediaAdapter', () => {
       model: 'wan2.7-image-pro',
       parameters: { size: '2K', n: 1, thinking_mode: true },
     })
+    expect(fetchMock.calls[0]?.url).toBe(
+      'https://workspace.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
+    )
+  })
+
+  it('downloads Wan 2.7 signed image URLs instead of decoding them as base64', async () => {
+    const signedUrl =
+      'https://dashscope-7c2c.oss-accelerate.aliyuncs.com/result.png?Expires=1784470372&Signature=abc'
+    const fetchMock = makeFetch([
+      {
+        match: '/multimodal-generation/generation',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: {
+            request_id: 'signed-image-request',
+            output: {
+              choices: [
+                { message: { content: [{ type: 'image', image: signedUrl }] } },
+              ],
+            },
+          },
+        }),
+      },
+      {
+        match: '/result.png',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: null,
+          binary: Buffer.from(PNG_PIXEL, 'base64'),
+        }),
+      },
+    ])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:wan2.7-image',
+    )!
+    const router = new MediaRouterService()
+
+    const result = await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        prompt: 'a flower shop',
+        outputDir: tmpDir,
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'bailian-signed-image',
+            name: 'Bailian',
+            defaultModel: manifest.modelId,
+            apiEndpoint: 'https://workspace.cn-beijing.maas.aliyuncs.com',
+            mediaProvider: 'bailian',
+            mediaCapabilities: ['image.generate'],
+            mediaModelManifests: [manifest],
+          }),
+        ],
+        modelId: manifest.modelId,
+        fetch: fetchMock,
+      },
+    )
+
+    expect(result.output.assets).toHaveLength(1)
+    expect(readFileSync(result.output.assets[0]!.filePath!)).toEqual(
+      Buffer.from(PNG_PIXEL, 'base64'),
+    )
+    expect(fetchMock.calls.map((call) => call.url)).toContain(signedUrl)
+  })
+
+  it('converts a Bailian OpenAI-compatible workspace endpoint to native AIGC URL', async () => {
+    const fetchMock = makeFetch([
+      {
+        match: '/multimodal-generation/generation',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: {
+            request_id: 'compatible-workspace-image-request',
+            output: {
+              choices: [{ message: { content: [{ type: 'image', image: `data:image/png;base64,${PNG_PIXEL}` }] } }],
+            },
+          },
+        }),
+      },
+    ])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:wan2.7-image-pro',
+    )!
+    const router = new MediaRouterService()
+
+    await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        prompt: 'a flower shop',
+        outputDir: tmpDir,
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'bailian-compatible-workspace',
+            name: 'Bailian',
+            defaultModel: manifest.modelId,
+            apiEndpoint: 'https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+            mediaProvider: 'bailian',
+            mediaCapabilities: ['image.generate'],
+            mediaModelManifests: [manifest],
+          }),
+        ],
+        modelId: manifest.modelId,
+        fetch: fetchMock,
+      },
+    )
+
     expect(fetchMock.calls[0]?.url).toBe(
       'https://workspace.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
     )

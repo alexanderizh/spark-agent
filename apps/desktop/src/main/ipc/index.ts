@@ -3438,11 +3438,37 @@ export function registerAllIpcHandlers(): void {
     try {
       const taskRuntime = getMediaTaskRuntimeService()
       const resolvedProviders = await resolveCanvasMediaProviders()
+      const requestedMediaModelId = req.modelId?.trim() || null
+      const requestedMediaProvider = req.providerProfileId
+        ? resolvedProviders.find((provider) => provider.id === req.providerProfileId)
+        : null
+      const mediaModelOwner = requestedMediaModelId
+        ? resolvedProviders.find(
+            (provider) =>
+              provider.modelIds?.includes(requestedMediaModelId) === true ||
+              provider.mediaModelManifests?.some(
+                (manifest) => manifest.modelId === requestedMediaModelId,
+              ) === true,
+          )
+        : null
+      const requestedMediaProviderSupportsModel =
+        requestedMediaModelId == null ||
+        (req.providerProfileId == null
+          ? true
+          : requestedMediaProvider != null &&
+            (requestedMediaProvider.modelIds?.includes(requestedMediaModelId) === true ||
+              requestedMediaProvider.mediaModelManifests?.some(
+                (manifest) => manifest.modelId === requestedMediaModelId,
+              ) === true))
+      const effectiveMediaProviderId =
+        mediaModelOwner != null && !requestedMediaProviderSupportsModel
+          ? mediaModelOwner.id
+          : req.providerProfileId ?? mediaModelOwner?.id ?? null
       const providers = req.modelId
         ? resolvedProviders.map((provider) => {
             const shouldOverride =
-              req.providerProfileId != null
-                ? provider.id === req.providerProfileId
+              effectiveMediaProviderId != null
+                ? provider.id === effectiveMediaProviderId
                 : provider.modelIds?.includes(req.modelId ?? '') === true
             return shouldOverride ? { ...provider, defaultModel: req.modelId as string } : provider
           })
@@ -3485,7 +3511,7 @@ export function registerAllIpcHandlers(): void {
       const options = {
         providers,
         fallbackUploader: sparkMediaUploader,
-        ...(req.providerProfileId != null ? { providerProfileId: req.providerProfileId } : {}),
+        ...(effectiveMediaProviderId != null ? { providerProfileId: effectiveMediaProviderId } : {}),
         ...(req.manifestId != null ? { manifestId: req.manifestId } : {}),
         ...(req.modelId != null ? { modelId: req.modelId } : {}),
         ...(req.skipParameterValidation === true ? { skipValidation: true } : {}),
@@ -3780,8 +3806,31 @@ export function registerAllIpcHandlers(): void {
         agent && typeof agent.prompt === 'string' && agent.prompt.trim().length > 0
           ? agent.prompt.trim()
           : ''
+      const requestedModelId = req.modelId?.trim() || null
+      const modelOwner = requestedModelId
+        ? profiles.find(
+            (profile) =>
+              isTextProvider(profile) &&
+              (profile.defaultModel === requestedModelId || profile.modelIds.includes(requestedModelId)),
+          )
+        : null
+      const requestedProvider = req.providerProfileId
+        ? profiles.find((profile) => profile.id === req.providerProfileId)
+        : null
+      const requestedProviderSupportsModel =
+        requestedModelId == null ||
+        (req.providerProfileId == null
+          ? true
+          : requestedProvider != null &&
+            (requestedProvider.defaultModel === requestedModelId ||
+              requestedProvider.modelIds.includes(requestedModelId)))
+      // 模型选择是画布提交时的最终意图。旧节点可能残留了另一个 Provider ID；
+      // 当显式 modelId 与该 Provider 不匹配时，改用真正拥有该模型的 Provider，
+      // 防止运行阶段把 Qwen 等模型回退成 Provider 的 defaultModel（如 glm-5.2）。
       const preferredProviderId =
-        req.providerProfileId ?? (agent?.providerProfileId ? agent.providerProfileId : null)
+        modelOwner != null && !requestedProviderSupportsModel
+          ? modelOwner.id
+          : req.providerProfileId ?? (modelOwner?.id ?? (agent?.providerProfileId ? agent.providerProfileId : null))
       const ordered = preferredProviderId
         ? profiles.filter((p) => p.id === preferredProviderId)
         : [...profiles].sort((a, b) => Number(b.isDefault) - Number(a.isDefault))

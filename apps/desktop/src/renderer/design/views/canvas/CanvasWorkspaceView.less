@@ -6500,7 +6500,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   display: flex;
   flex-direction: column;
   border: 0;
-  border-radius: 14px;
+  // 内联面板位于浮层/编辑器内部，外层容器统一负责圆角。
+  border-radius: 0;
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 3%, transparent), transparent 120px),
     var(--canvas-edit-bg);
@@ -6511,7 +6512,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 .canvas-node-floating-panel .canvas-operation-panel.is-composer:not(.is-fullscreen) {
   max-height: min(70vh, 720px);
-  border-radius: 14px;
+  border-radius: 0;
 }
 
 .canvas-node-floating-panel .canvas-operation-composer-top {

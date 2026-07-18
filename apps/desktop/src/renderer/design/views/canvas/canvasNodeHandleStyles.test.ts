@@ -37,14 +37,20 @@ describe('canvas node handle styles', () => {
     expect(v4NodeStyles).toMatch(/\.canvas-node\s*\{[\s\S]*?overflow:\s*visible\s*;/)
     expect(v4NodeStyles).toMatch(/\.canvas-node-handle\s*\{[\s\S]*?width:\s*28px\s*;/)
     expect(v4NodeStyles).toMatch(/&::after\s*\{[\s\S]*?width:\s*10px\s*;/)
+    expect(v4NodeStyles).toMatch(/\.canvas-node-handle\s*\{[\s\S]*?opacity:\s*0\s*;/)
+    expect(v4NodeStyles).toContain('.canvas-node-connection-follow')
     expect(nodeSource).toContain(
       'const showResizer = !locked && (selected || resizeHovered || resizing)',
     )
     expect(nodeSource).toContain('onPointerEnter={() => setResizeHovered(true)}')
     expect(nodeSource).toContain('onResizeStart={() => setResizing(true)}')
     expect(stageSource).toContain('interactionWidth: 36')
+    expect(stageSource).toContain('connectionRadius={32}')
     expect(v4StageStyles).toMatch(
       /\.react-flow__edge-interaction\s*\{[\s\S]*?stroke-width:\s*36px\s*;/,
+    )
+    expect(v4StageStyles).toMatch(
+      /\.react-flow__connection-path\s*\{[\s\S]*?stroke-width:\s*3px\s*;/,
     )
   })
 })

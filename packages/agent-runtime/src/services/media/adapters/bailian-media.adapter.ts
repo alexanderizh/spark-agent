@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { MediaCapabilityId, MediaProviderKind } from '@spark/protocol'
+import { isMediaProviderKind, type MediaCapabilityId, type MediaProviderKind } from '@spark/protocol'
 import { MediaArtifactService } from '../media-artifact.service.js'
 import { MediaProviderError } from '../media-adapter.types.js'
 import type {
@@ -82,7 +82,9 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
     if (images.length > 9)
       throw new MediaProviderError('invalid_input', '万相 2.7 图像生成最多支持 9 张输入图片')
 
-    const params = imageParameters(input.modelParams, ctx.defaultModel, images.length)
+    const params = isSynthesizedCustomImageManifest(ctx)
+      ? customImageParameters(input.modelParams)
+      : imageParameters(input.modelParams, ctx.defaultModel, images.length)
     const body = {
       model: ctx.defaultModel,
       input: {
@@ -548,6 +550,33 @@ function normalizeBailianImageParams(
   return normalized
 }
 
+/**
+ * A custom model ref may be displayed with a cloned Wan manifest so the
+ * canvas can render its parameter controls. That clone must not impose Wan's
+ * `1K/2K/4K` enum (custom Bailian models commonly expect `2048*1024`). Keep
+ * the user's non-empty custom parameters and let the selected model validate
+ * its own native parameter contract.
+ */
+function customImageParameters(
+  params: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const normalized = normalizeBailianImageParams(params)
+  return Object.fromEntries(
+    Object.entries(normalized).filter(
+      ([key, value]) => key !== 'filename' && value !== undefined && value !== null && value !== '',
+    ),
+  )
+}
+
+function isSynthesizedCustomImageManifest(ctx: MediaProviderContext): boolean {
+  const manifest = ctx.mediaManifest
+  return (
+    manifest?.id.startsWith('custom:') === true &&
+    manifest.providerKind !== 'custom' &&
+    isMediaProviderKind(manifest.providerKind)
+  )
+}
+
 function normalizeBailianVideoParams(
   params: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
@@ -579,6 +608,15 @@ function aigcBaseUrl(ctx: MediaProviderContext): string {
   const endpoint = (
     ctx.apiEndpoint || 'https://dashscope.aliyuncs.com/api/v1/services/aigc'
   ).replace(/\/+$/, '')
+  // A provider profile may reuse Bailian's OpenAI-compatible endpoint
+  // (`/compatible-mode/v1`) for chat and media. Media generation, however,
+  // is exposed by the native DashScope API. Convert the workspace endpoint
+  // before appending the native AIGC routes; otherwise requests become
+  // `/compatible-mode/v1/api/v1/services/aigc/...` and return 404.
+  const compatibleModeSuffix = '/compatible-mode/v1'
+  if (endpoint.endsWith(compatibleModeSuffix)) {
+    return `${endpoint.slice(0, -compatibleModeSuffix.length)}/api/v1/services/aigc`
+  }
   if (endpoint.endsWith('/services/aigc')) return endpoint
   if (endpoint.endsWith('/api/v1')) return `${endpoint}/services/aigc`
   return `${endpoint}/api/v1/services/aigc`

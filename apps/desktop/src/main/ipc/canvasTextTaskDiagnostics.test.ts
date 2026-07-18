@@ -208,4 +208,26 @@ describe('canvasTextTaskDiagnostics', () => {
       },
     })
   })
+
+  it('marks Anthropic max_tokens responses as suspected storyboard truncation', () => {
+    const raw = buildCanvasTextRawResponse({
+      providerProfileId: 'provider-1',
+      provider: 'anthropic',
+      providerName: '火山方舟 Coding Plan',
+      model: 'glm-5.2',
+      apiKind: 'chat',
+      relationManifest: [],
+      taskPipelineRole: 'shot',
+      outputText: '{"shots":[{"index":11}',
+      providerFinishReason: 'max_tokens',
+    })
+
+    expect(raw).toMatchObject({
+      providerFinishReason: 'max_tokens',
+      truncation: {
+        suspected: true,
+        reason: 'provider_finish_reason_max_tokens',
+      },
+    })
+  })
 })

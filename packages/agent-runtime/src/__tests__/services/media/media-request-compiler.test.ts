@@ -221,6 +221,28 @@ describe('compileMediaRequest — Documented Scenarios', () => {
     expect(result.providerParams.size).toBe('3750x1250')
     expect(result.validationIssues.some((issue) => issue.code === 'invalid_enum')).toBe(false)
   })
+
+  it('passes custom parameters through a synthesized provider manifest', () => {
+    const capability = imageCapability({
+      paramSchema: {
+        type: 'object',
+        properties: { size: { type: 'string', enum: ['1K', '2K'] } },
+      },
+    })
+    const result = compile({
+      manifest: buildManifest({
+        id: 'custom:qwen-image',
+        providerKind: 'bailian',
+        capabilities: [capability],
+      }),
+      capability,
+      modelParams: { size: '2048*1024', n: 1, filename: 'qwen.png' },
+    })
+
+    expect(result.providerParams).toMatchObject({ size: '2048*1024', n: 1 })
+    expect(result.providerParams).not.toHaveProperty('filename')
+    expect(result.validationIssues).toEqual([])
+  })
 })
 
 describe('compileMediaRequest — Backward compatibility', () => {

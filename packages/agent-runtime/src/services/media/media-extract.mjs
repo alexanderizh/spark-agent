@@ -34,14 +34,23 @@ export function extractImages(value) {
       }
       return
     }
-    if ((key === 'url' || key === 'image_url' || key === 'imageUrl') && /^https?:\/\//i.test(node)) {
+    // Wan 2.7 Image (DashScope native) returns the generated image URL in
+    // `message.content[].image`, unlike OpenAI-compatible responses which use
+    // `url`/`image_url`. Check URL-shaped values before the raw-base64 fallback;
+    // otherwise a long signed URL is persisted as if it were base64 and the
+    // canvas receives a corrupt image file.
+    if ((key === 'url' || key === 'image_url' || key === 'imageUrl' || key === 'image') && /^https?:\/\//i.test(node)) {
       images.push({ kind: 'url', value: node })
     }
     if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(node)) {
       const match = /^data:(image\/[a-z0-9.+-]+);base64,(.*)$/i.exec(node)
       images.push({ kind: 'base64', value: match?.[2] ?? '', mimeType: match?.[1] ?? 'image/png' })
     }
-    if ((key === 'b64_json' || key === 'base64' || key === 'image') && node.length > 64) {
+    if (
+      (key === 'b64_json' || key === 'base64' || key === 'image') &&
+      node.length > 64 &&
+      !/^https?:\/\//i.test(node)
+    ) {
       images.push({ kind: 'base64', value: node, mimeType: 'image/png' })
     }
   })
