@@ -1,4 +1,5 @@
 import { isOperationNode } from './canvas.capabilities'
+import { isFullBleedCanvasImageNode } from './canvasImageNodePresentation'
 import { isRenderableShotScriptText } from './canvasShotScriptPresentation'
 import type { CanvasNode } from './canvas.types'
 
@@ -19,6 +20,7 @@ export function canvasNodeHasContentTitle(node: CanvasNode): boolean {
  * React Flow 需要把它们计入视图高度；保存尺寸时再由布局层扣回。
  */
 export function canvasNodeChromeExtraHeight(node: CanvasNode): number {
+  if (isFullBleedCanvasImageNode(node)) return 0
   return (
     CANVAS_NODE_QUICK_FOOTER_HEIGHT +
     (canvasNodeHasContentTitle(node) ? CANVAS_NODE_CONTENT_TITLE_HEIGHT : 0)

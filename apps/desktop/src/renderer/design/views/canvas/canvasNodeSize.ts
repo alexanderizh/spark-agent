@@ -71,7 +71,7 @@ export const CANVAS_NODE_MIN_SIZE = {
   group: { width: 400, height: 320 },
 } as const
 
-/** 图片节点按素材比例拟合尺寸；返回值是节点总高度，正文区域按素材比例保留。 */
+/** 图片节点按素材比例拟合尺寸；已知素材尺寸时，节点外框即图片正文尺寸。 */
 export function fitCanvasImageNodeSize(
   width?: number | null,
   height?: number | null,
@@ -86,13 +86,13 @@ export function fitCanvasImageNodeSize(
   }
   return {
     width: Math.round(nodeWidth),
-    height: Math.max(CANVAS_NODE_MIN_SIZE.image.height, bodyHeight + CANVAS_NODE_META_BAR_HEIGHT),
+    height: bodyHeight,
   }
 }
 
 /**
- * 多图导入时使用的紧凑图片节点尺寸。返回的 height 是节点总高度；若只返回
- * 图片正文高度，meta 头部会把图片挤出卡片底部。
+ * 多图导入时使用的紧凑图片节点尺寸。已知素材尺寸时保持图片比例；竖图超过
+ * 紧凑高度上限时同步收窄宽度，避免独立裁剪高度破坏比例。
  */
 export function fitCanvasGroupedImageNodeSize(
   width?: number | null,
@@ -101,8 +101,9 @@ export function fitCanvasGroupedImageNodeSize(
   const nodeWidth = 220
   if (!width || !height) return { width: nodeWidth, height: 196 + CANVAS_NODE_META_BAR_HEIGHT }
   const aspect = height / width
-  const bodyHeight = Math.min(Math.max(Math.round(nodeWidth * aspect), 120), 260)
-  return { width: nodeWidth, height: bodyHeight + CANVAS_NODE_META_BAR_HEIGHT }
+  const bodyHeight = Math.round(nodeWidth * aspect)
+  if (bodyHeight <= 260) return { width: nodeWidth, height: bodyHeight }
+  return { width: Math.max(1, Math.round(260 / aspect)), height: 260 }
 }
 
 /** 图片和视频节点缩放时保持整体卡片比例，避免媒体区域被任意拉伸。 */

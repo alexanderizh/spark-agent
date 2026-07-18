@@ -42,6 +42,14 @@ describe('canvasNodeChromeExtraHeight', () => {
     expect(canvasNodeChromeExtraHeight(createNode({ type: 'text' }))).toBe(expected)
   })
 
+  it('does not add layout chrome to an image node with loaded content', () => {
+    expect(
+      canvasNodeChromeExtraHeight(
+        createNode({ type: 'image', data: { url: 'safe-file://character.png' } }),
+      ),
+    ).toBe(0)
+  })
+
   it('only includes the footer for operation, group, and shot script nodes', () => {
     expect(canvasNodeChromeExtraHeight(createNode({ type: 'text_to_image' }))).toBe(
       CANVAS_NODE_QUICK_FOOTER_HEIGHT,

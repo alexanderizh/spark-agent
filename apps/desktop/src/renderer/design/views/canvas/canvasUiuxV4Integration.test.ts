@@ -55,6 +55,18 @@ describe('canvas UI/UX V4 integration', () => {
     expect(dock).toContain('shortLabel="任务"')
   })
 
+  it('uses full-bleed overlays only for image nodes with loaded content', () => {
+    const node = readCanvasSource('./CanvasNode.tsx')
+    const nodeStyles = readCanvasSource('./uiux-v4/nodes.less')
+
+    expect(node).toContain('isFullBleedCanvasImageNode(node)')
+    expect(node).toContain('canvas-node-image-full-bleed')
+    expect(node).toContain('canvas-node-image-overlay-footer')
+    expect(nodeStyles).toContain('.canvas-node-image-full-bleed')
+    expect(nodeStyles).toContain('.canvas-node-image-overlay-footer')
+    expect(nodeStyles).toContain('backdrop-filter: blur(10px)')
+  })
+
   it('keeps portal modal styling isolated to canvas business classes', () => {
     const modals = readCanvasSource('./uiux-v4/modals.less')
 

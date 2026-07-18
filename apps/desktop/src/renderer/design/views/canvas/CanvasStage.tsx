@@ -49,6 +49,11 @@ import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import { isOperationNode } from './canvas.capabilities'
 import { canvasNodeChromeExtraHeight } from './canvasNodeChrome'
 import {
+  isFullBleedCanvasImageNode,
+  resolveCanvasImageNodePresentationSize,
+  type CanvasImageSourceDimensions,
+} from './canvasImageNodePresentation'
+import {
   CANVAS_NODE_META_BAR_HEIGHT,
   OPERATION_NODE_DEFAULT_SIZE,
   fitCollectionOperationNodeSize,
@@ -397,13 +402,14 @@ function flowNodeToAutoLayoutNode(node: Node<CanvasFlowNodeData>): CanvasAutoLay
         ? node.height
         : node.data.canvasNode.height
   const hasInlineExtension = Boolean(node.data.inlineToolbar || node.data.inlinePanel)
+  const hasOverlayChrome = isFullBleedCanvasImageNode(node.data.canvasNode)
   return {
     id: node.id,
     x: node.position.x,
     y: node.position.y,
     width,
     height,
-    headerHeight: hasInlineExtension ? 0 : CANVAS_NODE_META_BAR_HEIGHT,
+    headerHeight: hasInlineExtension || hasOverlayChrome ? 0 : CANVAS_NODE_META_BAR_HEIGHT,
   }
 }
 
@@ -417,10 +423,13 @@ function toFlowNode(
   operationRuns: CanvasOperationRunView[] = [],
   assetKinds: CanvasPipelineAssetKind[] = [],
   isGeneratedOutput = false,
+  imageSourceDimensions?: CanvasImageSourceDimensions,
 ): Node<CanvasFlowNodeData> {
   const inlineToolbarHeight = inlineExtension?.toolbar ? INLINE_NODE_TOOLBAR_HEIGHT : 0
   const cardChromeExtraHeight = canvasNodeChromeExtraHeight(node)
-  const presentationSize = operationNodePresentationSize(node, operationRuns)
+  const presentationSize =
+    resolveCanvasImageNodePresentationSize(node, imageSourceDimensions) ??
+    operationNodePresentationSize(node, operationRuns)
   const baseRenderedHeight = presentationSize.height + cardChromeExtraHeight
   const data: CanvasFlowNodeData = {
     actions,
@@ -789,6 +798,10 @@ function CanvasStageInner({
     () => buildLineageSummaries(operationProjection.visibleEdges),
     [operationProjection.visibleEdges],
   )
+  const assetById = useMemo(
+    () => new Map(snapshot.assets.map((asset) => [asset.id, asset] as const)),
+    [snapshot.assets],
+  )
   const assetSubviewCountById = useMemo(
     () =>
       new Map(
@@ -815,7 +828,6 @@ function CanvasStageInner({
     [snapshot],
   )
   const assetKindsByNodeId = useMemo(() => {
-    const assetById = new Map(snapshot.assets.map((asset) => [asset.id, asset] as const))
     const result = new Map<string, CanvasPipelineAssetKind[]>()
     const readPipelineKind = (assetId: string | undefined): CanvasPipelineAssetKind | undefined => {
       const asset = assetId ? assetById.get(assetId) : undefined
@@ -841,7 +853,7 @@ function CanvasStageInner({
       if (kinds.size > 0) result.set(node.id, [...kinds])
     }
     return result
-  }, [operationRunsByNodeId, snapshot.assets, snapshot.nodes, snapshotNodeById])
+  }, [assetById, operationRunsByNodeId, snapshot.nodes, snapshotNodeById])
   const nodes = useMemo(
     () =>
       operationProjection.visibleNodes.map((node) =>
@@ -855,10 +867,12 @@ function CanvasStageInner({
           operationRunsByNodeId.get(node.id) ?? [],
           assetKindsByNodeId.get(node.id) ?? [],
           generatedOutputNodeIds.has(node.id),
+          node.assetId ? assetById.get(node.assetId) : undefined,
         ),
       ),
     [
       assetSubviewCountById,
+      assetById,
       assetKindsByNodeId,
       generatedOutputNodeIds,
       lineageSummaries,

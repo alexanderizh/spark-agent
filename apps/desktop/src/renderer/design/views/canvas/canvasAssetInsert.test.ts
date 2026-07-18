@@ -186,7 +186,7 @@ describe('canvas asset insertion', () => {
     expect(node?.data.text).toBe(prompt)
   })
 
-  it('fits portrait image assets with enough height for the embedded node header', async () => {
+  it('fits portrait image assets to the full-bleed image ratio', async () => {
     const asset = await canvasApi.createImageAsset({
       projectId: 'project-1',
       file: new File([new Uint8Array([1, 2, 3])], 'portrait.png', { type: 'image/png' }),
@@ -205,7 +205,7 @@ describe('canvas asset insertion', () => {
 
     expect(node?.type).toBe('image')
     expect(node?.width).toBe(480)
-    expect(node?.height).toBe(758)
+    expect(node?.height).toBe(720)
   })
 
   it('fits landscape image assets to their visible content height', async () => {
@@ -227,7 +227,7 @@ describe('canvas asset insertion', () => {
 
     expect(node?.type).toBe('image')
     expect(node?.width).toBe(540)
-    expect(node?.height).toBe(342)
+    expect(node?.height).toBe(304)
   })
 
   // 居中落点依赖 resolveAssetInsertSize 算出的尺寸与 insertAssetToBoard 最终节点

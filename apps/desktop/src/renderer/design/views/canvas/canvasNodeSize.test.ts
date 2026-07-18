@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CANVAS_NODE_MIN_SIZE,
   LONG_TEXT_MIN_CHARS,
   SHOT_SCRIPT_NODE_MIN_SIZE,
   SHOT_SCRIPT_NODE_SIZE,
@@ -150,28 +149,25 @@ describe('canvasNodeSize', () => {
   })
 
   describe('fitCanvasImageNodeSize', () => {
-    it('横图按真实纵横比收紧高度，并把内嵌头部计入节点总高度', () => {
-      expect(fitCanvasImageNodeSize(1920, 1080)).toEqual({ width: 540, height: 342 })
+    it('横图节点尺寸严格等于图片正文比例', () => {
+      expect(fitCanvasImageNodeSize(1920, 1080)).toEqual({ width: 540, height: 304 })
     })
 
-    it('超宽图片仍保留当前图片节点最小可用高度', () => {
-      expect(fitCanvasImageNodeSize(2400, 800)).toEqual({
-        width: 540,
-        height: CANVAS_NODE_MIN_SIZE.image.height,
-      })
+    it('超宽图片不再用独立最小高度破坏图片比例', () => {
+      expect(fitCanvasImageNodeSize(2400, 800)).toEqual({ width: 540, height: 180 })
     })
 
-    it('竖图仍保持原有正文缩放上限逻辑，并把内嵌头部计入节点总高度', () => {
-      expect(fitCanvasImageNodeSize(800, 1200)).toEqual({ width: 480, height: 758 })
+    it('竖图保持正文缩放上限且不加入卡片栏位高度', () => {
+      expect(fitCanvasImageNodeSize(800, 1200)).toEqual({ width: 480, height: 720 })
     })
   })
 
   describe('fitCanvasGroupedImageNodeSize', () => {
-    it('把图片正文和 meta 头部都计入多选导入的节点高度', () => {
-      expect(fitCanvasGroupedImageNodeSize(440, 220)).toEqual({ width: 220, height: 158 })
+    it('已知尺寸的多选导入节点严格等于图片比例', () => {
+      expect(fitCanvasGroupedImageNodeSize(440, 220)).toEqual({ width: 220, height: 110 })
     })
 
-    it('对未知尺寸也保留 meta 头部空间', () => {
+    it('未知尺寸继续使用原有安全回退尺寸', () => {
       expect(fitCanvasGroupedImageNodeSize()).toEqual({ width: 220, height: 234 })
     })
   })
