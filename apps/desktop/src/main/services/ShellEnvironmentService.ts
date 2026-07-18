@@ -17,7 +17,7 @@
  */
 
 import { execFile } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -253,22 +253,36 @@ async function fixUnixPath(originalPath: string): Promise<{
 }> {
   try {
     const shell = process.env.SHELL ?? '/bin/bash'
-    // Run an interactive login shell to get the full user PATH
+    // Use a marker because login shell startup scripts may print extra text.
+    const pathMarker = '__SPARK_SHELL_PATH__'
     const { stdout } = await execFileAsync(
       '/usr/bin/env',
-      ['-i', `HOME=${homedir()}`, `SHELL=${shell}`, shell, '-l', '-c', 'printf "%s" "$PATH"'],
+      [
+        '-i',
+        `HOME=${homedir()}`,
+        `SHELL=${shell}`,
+        shell,
+        '-l',
+        '-c',
+        `printf "\\n${pathMarker}%s\\n" "$PATH"`,
+      ],
       { timeout: 5000 },
     )
 
-    const shellPath = stdout.trim()
+    const markedPath = stdout
+      .split(/\r?\n/)
+      .reverse()
+      .find((line) => line.startsWith(pathMarker))
+    const shellPath = markedPath?.slice(pathMarker.length).trim() ?? ''
     if (!shellPath) {
       return { originalPath, fixedPath: originalPath, changed: false }
     }
 
-    // Merge shell PATH with existing process.env.PATH
+    // The user's shell PATH must win over the minimal/stale PATH inherited by a
+    // desktop-launched Electron process.
     const allPaths = [
-      ...splitPathEntries(originalPath),
       ...splitPathEntries(shellPath),
+      ...splitPathEntries(originalPath),
       ...getCommonUnixPaths(),
     ]
 
@@ -298,6 +312,7 @@ async function fixUnixPath(originalPath: string): Promise<{
 
 function getCommonUnixPaths(): string[] {
   const paths = [
+    ...getNvmNodePaths(),
     '/opt/homebrew/bin',
     '/opt/homebrew/sbin',
     '/usr/local/bin',
@@ -308,16 +323,42 @@ function getCommonUnixPaths(): string[] {
     '/sbin',
   ]
 
-  const nvmVersionsDir = join(homedir(), '.nvm', 'versions', 'node')
-  try {
-    for (const version of readdirSync(nvmVersionsDir)) {
-      paths.push(join(nvmVersionsDir, version, 'bin'))
-    }
-  } catch {
-    // nvm is optional.
-  }
-
   return paths.filter((path) => existsSync(path))
+}
+
+function getNvmNodePaths(): string[] {
+  const nvmDir = join(homedir(), '.nvm')
+  const nvmVersionsDir = join(nvmDir, 'versions', 'node')
+  try {
+    const versions = readdirSync(nvmVersionsDir).sort((a, b) =>
+      b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }),
+    )
+
+    // Finder-launched apps cannot inherit a terminal's `nvm current` state. The
+    // stable equivalent is nvm's default alias; fall back to the newest version.
+    let defaultAlias = ''
+    try {
+      defaultAlias = readFileSync(join(nvmDir, 'alias', 'default'), 'utf-8')
+        .trim()
+        .replace(/^v/, '')
+    } catch {
+      // The default alias is optional.
+    }
+
+    const defaultVersion = versions.find((version) => {
+      const normalizedVersion = version.replace(/^v/, '')
+      return (
+        normalizedVersion === defaultAlias || normalizedVersion.startsWith(`${defaultAlias}.`)
+      )
+    })
+    const orderedVersions = defaultVersion
+      ? [defaultVersion, ...versions.filter((version) => version !== defaultVersion)]
+      : versions
+
+    return orderedVersions.map((version) => join(nvmVersionsDir, version, 'bin'))
+  } catch {
+    return []
+  }
 }
 
 // ─── Runtime Detection ────────────────────────────────────────────────────────

@@ -88,6 +88,20 @@ describe('SdkIntegrityService', () => {
     expect(mocks.spawn).not.toHaveBeenCalled()
   })
 
+  it('does not advertise packaged Claude SDK npm updates that cannot be installed', async () => {
+    mocks.app.isPackaged = true
+    const { checkSdkIntegrity } = await import('../SdkIntegrityService.js')
+
+    const result = await checkSdkIntegrity({ checkLatest: true })
+    const claudeSdk = result.sdks.find(
+      (sdk) => sdk.packageName === '@anthropic-ai/claude-agent-sdk',
+    )
+
+    expect(claudeSdk?.latestChecked).toBe(true)
+    expect(claudeSdk?.latestVersion).toBe(claudeSdk?.installedVersion)
+    expect(claudeSdk?.updateAvailable).toBe(false)
+  })
+
   it('detects installed Codex SDK packages that do not export package.json', async () => {
     const { checkSdkIntegrity } = await import('../SdkIntegrityService.js')
 
