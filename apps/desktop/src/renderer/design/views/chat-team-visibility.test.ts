@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import type { UIBlock } from '../services/event-mapper'
 import { hasVisibleTeamMemberActivityBlocks } from './chat-team-visibility'
 
@@ -47,5 +49,27 @@ describe('hasVisibleTeamMemberActivityBlocks', () => {
     ]
 
     expect(hasVisibleTeamMemberActivityBlocks(blocks)).toBe(true)
+  })
+
+  it('hides assistant thinking and tool logs only while team mode is active', () => {
+    const stylesheet = readFileSync(
+      fileURLToPath(new URL('./ChatView.less', import.meta.url)),
+      'utf8',
+    )
+    const teamLogRule =
+      stylesheet.match(
+        /\.team-mode-active \.msg-bubble-agent \.thinking-section,[\s\S]*?\{\s*display:\s*none;\s*\}/,
+      )?.[0] ?? ''
+
+    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .thinking-section')
+    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .chat-activity-segment')
+    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .tool-log-group')
+    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .tool-call')
+    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .tool-logs-collapsible')
+    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .diff.hunk-mode')
+    expect(teamLogRule).toContain('.team-mode-active .msg-bubble-agent .parallel-tools-indicator')
+    expect(teamLogRule).toContain(
+      '.team-mode-active .msg-bubble-agent .msg-content.is-tool-logs-only',
+    )
   })
 })

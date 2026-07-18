@@ -1,13 +1,23 @@
 import type { UIBlock } from '../../services/event-mapper'
+import { isChatActivityBlock } from './ChatActivitySegments'
 
 export type ChatMessageTimelineGroup =
-  | { kind: 'content'; key: string; blocks: UIBlock[] }
+  | { kind: 'content'; key: string; blocks: UIBlock[]; collapsibleOnly: boolean }
   | { kind: 'error'; key: string; block: Extract<UIBlock, { kind: 'error' }> }
   | {
       kind: 'runtime_signal'
       key: string
       block: Extract<UIBlock, { kind: 'runtime_signal' }>
     }
+
+function isControlledByToolLogToggle(block: UIBlock): boolean {
+  if (isChatActivityBlock(block)) return true
+  return (
+    block.kind === 'plan_proposed' ||
+    block.kind === 'team_dispatch' ||
+    block.kind === 'team_discussion_status'
+  )
+}
 
 /**
  * Preserve the event order while keeping adjacent regular blocks grouped for
@@ -20,7 +30,12 @@ export function groupChatMessageTimeline(blocks: UIBlock[]): ChatMessageTimeline
 
   const flushContent = () => {
     if (content.length === 0) return
-    groups.push({ kind: 'content', key: `content-${contentStart}`, blocks: content })
+    groups.push({
+      kind: 'content',
+      key: `content-${contentStart}`,
+      blocks: content,
+      collapsibleOnly: content.every(isControlledByToolLogToggle),
+    })
     content = []
   }
 

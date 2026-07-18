@@ -6282,6 +6282,9 @@ const AgentMsg = React.memo(function AgentMsg({
     ),
   )
   const timelineGroups = groupChatMessageTimeline(timelineBlocks)
+  const timelineContentCollapsibleOnly =
+    timelineGroups.length > 0 &&
+    timelineGroups.every((group) => group.kind === 'content' && group.collapsibleOnly)
   const contentBlocks = timelineBlocks.filter(
     (block) => block.kind !== 'error' && block.kind !== 'runtime_signal',
   )
@@ -6515,11 +6518,19 @@ const AgentMsg = React.memo(function AgentMsg({
             </div>
           )}
           {timelineGroups.length > 0 && (isLatest || contentBlocks.length === 0) && (
-            <div className="msg-content">{timelineContent}</div>
+            <div
+              className={`msg-content${timelineContentCollapsibleOnly ? ' is-tool-logs-only' : ''}`}
+            >
+              {timelineContent}
+            </div>
           )}
           {timelineGroups.length > 0 && !isLatest && contentBlocks.length > 0 && (
             <CollapsibleContent maxHeight={500} streaming={isStreaming}>
-              <div className="msg-content">{timelineContent}</div>
+              <div
+                className={`msg-content${timelineContentCollapsibleOnly ? ' is-tool-logs-only' : ''}`}
+              >
+                {timelineContent}
+              </div>
             </CollapsibleContent>
           )}
           {isCancelled && <StoppedMarker />}
