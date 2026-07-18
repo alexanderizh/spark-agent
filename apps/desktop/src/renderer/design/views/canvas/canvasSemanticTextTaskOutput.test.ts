@@ -118,7 +118,26 @@ describe('semantic canvas text task output', () => {
       errorMsg: 'invalid_screenplay_output',
     })
     expect(snapshot.tasks[0]?.outputNodeIds).toEqual([])
+    expect(snapshot.tasks[0]?.modelOutputText).toBe('这是一个自由格式故事梗概。')
+    expect(snapshot.tasks[0]?.completedAt).toBeTruthy()
     expect(snapshot.nodes.some((node) => node.data.pipelineRole === 'screenplay')).toBe(false)
+  })
+
+  it('keeps model output separate when runtime diagnostics already exist', async () => {
+    seedSemanticTask('shot')
+    const modelText = JSON.stringify({ episode: 1, characters: [{ name: '苏烬' }] })
+
+    const snapshot = await canvasApi.applyTextTaskResult('project-1', 'task-1', {
+      ...responseBase,
+      text: modelText,
+      rawResponse: { executionPath: 'session-runtime', adapter: 'codex' },
+    })
+
+    expect(snapshot.tasks[0]).toMatchObject({
+      status: 'failed',
+      modelOutputText: modelText,
+      rawResponse: { executionPath: 'session-runtime', adapter: 'codex' },
+    })
   })
 
   it('normalizes valid storyboard JSON and writes shot groups before creating the result node', async () => {

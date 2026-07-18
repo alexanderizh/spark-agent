@@ -88,6 +88,26 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     extractKind: 'scene',
   },
   {
+    id: 'screenplay.extract_props',
+    label: '提取道具',
+    icon: 'Box',
+    kind: 'extract',
+    produces: 'prop',
+    appliesTo: ['screenplay'],
+    appliesToText: true,
+    extractKind: 'prop',
+  },
+  {
+    id: 'screenplay.extract_effects',
+    label: '提取特效',
+    icon: 'Sparkles',
+    kind: 'extract',
+    produces: 'effect',
+    appliesTo: ['screenplay'],
+    appliesToText: true,
+    extractKind: 'effect',
+  },
+  {
     id: 'screenplay.storyboard_grid',
     label: '生成分镜关键帧图',
     icon: 'Image',
@@ -231,6 +251,10 @@ export function buildOpPrompt(
       return buildEntityExtractionPrompt('character', ctx.upstreamText ?? '', ctx.styleBible)
     case 'screenplay.extract_scenes':
       return buildEntityExtractionPrompt('scene', ctx.upstreamText ?? '', ctx.styleBible)
+    case 'screenplay.extract_props':
+      return buildEntityExtractionPrompt('prop', ctx.upstreamText ?? '', ctx.styleBible)
+    case 'screenplay.extract_effects':
+      return buildEntityExtractionPrompt('effect', ctx.upstreamText ?? '', ctx.styleBible)
     default:
       return ''
   }

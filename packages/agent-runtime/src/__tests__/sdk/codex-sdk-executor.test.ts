@@ -508,6 +508,11 @@ describe('CodexSdkExecutor', () => {
             'Reconnecting... 2/5 (unexpected status 404 Not Found: endpoint not supported, url: ws://localhost:59538/v1/responses)',
         },
         {
+          type: 'error',
+          message:
+            'Reconnecting... 2/5 (unexpected status 404 Not Found: 404 page not found, url: wss://api.minimaxi.com/anthropic/responses)',
+        },
+        {
           type: 'item.completed',
           item: {
             id: 'transport-fallback-1',
