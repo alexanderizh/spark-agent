@@ -239,10 +239,10 @@ function detectCanvasTextTruncation(
   if (taskPipelineRole !== 'shot' || typeof outputText !== 'string') return undefined
   const trimmed = outputText.trim()
   if (trimmed.length === 0 || !/"shots"\s*:/.test(trimmed)) return undefined
-  if (providerFinishReason === 'length') {
+  if (providerFinishReason === 'length' || providerFinishReason === 'max_tokens') {
     return {
       suspected: true,
-      reason: 'provider_finish_reason_length',
+      reason: `provider_finish_reason_${providerFinishReason}`,
       tailPreview: trimmed.slice(-240),
     }
   }

@@ -434,7 +434,7 @@ describe('ProviderEditPanel progressive configuration', () => {
     }))
   })
 
-  it('creates an editable manifest when a custom image model is added', async () => {
+  it('hides custom model input until the media flow is supported', async () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
@@ -450,82 +450,8 @@ describe('ProviderEditPanel progressive configuration', () => {
     )
     act(() => advancedToggle?.click())
 
-    const adapterSelect = Array.from(container.querySelectorAll('select')).find((select) =>
-      select.querySelector('option[value="volcengine-ark"]'),
-    )
-    expect(adapterSelect).toBeDefined()
-    act(() => {
-      if (!adapterSelect) return
-      adapterSelect.value = 'custom'
-      adapterSelect.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    const modelInput = container.querySelector(
-      'input[placeholder*="nano-banana"]',
-    ) as HTMLInputElement | null
-    expect(modelInput).not.toBeNull()
-    act(() => {
-      if (!modelInput) return
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        modelInput,
-        'studio-image-v1',
-      )
-      modelInput.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    const addButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === '添加',
-    )
-    act(() => addButton?.click())
-
-    expect(container.textContent).toContain('协议已配置')
-    const editButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('编辑协议'),
-    )
-    act(() => editButton?.click())
-
-    const editor = container.querySelector(
-      'textarea[aria-label="自定义模型 Manifest JSON"]',
-    ) as HTMLTextAreaElement | null
-    expect(editor?.value).toContain('"endpoint": "/images/generations"')
-    expect(editor?.value).toContain('"image.generate"')
-
-    const saveManifestButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('检查并保存'),
-    )
-    act(() => saveManifestButton?.click())
-
-    const apiKeyInput = container.querySelector(
-      'input[placeholder="媒体平台 API Key"]',
-    ) as HTMLInputElement | null
-    expect(apiKeyInput).not.toBeNull()
-    act(() => {
-      if (!apiKeyInput) return
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-        apiKeyInput,
-        'sk-studio',
-      )
-      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-
-    const saveButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === '保存',
-    )
-    await act(async () => {
-      saveButton?.click()
-      await new Promise((resolve) => window.setTimeout(resolve, 10))
-    })
-
-    const createProvider = mocks.invokers.get('provider:create')
-    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
-      mediaModelRefs: expect.arrayContaining([
-        expect.objectContaining({
-          manifest: expect.objectContaining({
-            id: 'custom:studio-image-v1',
-            invocation: expect.objectContaining({ endpoint: '/images/generations' }),
-          }),
-        }),
-      ]),
-    }))
+    expect(container.textContent).not.toContain('添加自定义模型')
+    expect(container.querySelector('input[placeholder*="nano-banana"]')).toBeNull()
   })
 
   it('preserves Agnes media refs when saving a multimodal preset', async () => {

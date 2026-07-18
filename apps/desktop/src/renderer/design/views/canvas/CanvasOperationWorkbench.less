@@ -6,7 +6,8 @@
   flex: 1 1 auto;
   flex-direction: column;
   overflow: hidden;
-  border-radius: 14px;
+  // 工作台作为外层面板的内容区，不再重复绘制一层圆角；圆角由外层面板统一负责。
+  border-radius: 0;
   background: var(--canvas-edit-bg);
 }
 
@@ -102,7 +103,8 @@
   gap: 10px;
   padding: 20px;
   border: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
-  border-radius: 12px;
+  // 节点设置卡片是面板内部的结构容器，保持直角以避免圆角嵌套。
+  border-radius: 0;
   background: color-mix(in srgb, var(--panel) 94%, transparent);
 }
 

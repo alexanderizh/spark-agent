@@ -294,8 +294,14 @@ export class MediaRouterService {
       }
     }
     const adapter = kind ? this.adapters.get(kind) : undefined
+    // An inline custom manifest is an explicit per-model protocol override. A
+    // synthesized `custom:*` manifest keeps the native provider kind and is
+    // intentionally handled by that provider's adapter (it is only a UI
+    // compatibility contract, not a complete wire protocol).
+    const isCustomManifest = manifestMatch?.manifest.providerKind === 'custom'
     const shouldUseManifestAdapter = Boolean(
-      manifestMatch && (!adapter || !adapter.supports(capability) || kind === 'custom'),
+      manifestMatch &&
+        (isCustomManifest || !adapter || !adapter.supports(capability) || kind === 'custom'),
     )
     // 包装 fetch，捕获发给 provider 的请求（method + url + body），用于任务详情展示。
     // 只取最后一个带 body 的 POST：adapter 内部对单次能力调用只发一个主请求；

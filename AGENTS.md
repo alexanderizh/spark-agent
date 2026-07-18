@@ -77,3 +77,8 @@ This project is indexed by GitNexus as **spark-agent** (39163 symbols, 68679 rel
 
 
 写代码时控制好单文件的大小长度，如果一个代码文件超过了3000行，就不要在单文件上直接加东西了，能拆分为独立组件、工具、枚举数据等文件的都拆分出去使用模块导入，避免单文件过大；
+
+# 项目本地记忆
+
+- 多媒体模型渠道的配置、扩展和参数校验经验，见 `.agents/memory/multimedia-model-channel-configuration.md`。
+- 后续涉及多媒体 Provider、MediaModelManifest、模型参数枚举或自定义渠道时，先阅读该记忆文档，再按其中的分层流程定位改动范围。

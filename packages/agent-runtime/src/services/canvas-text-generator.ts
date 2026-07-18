@@ -221,12 +221,42 @@ async function callAnthropic(
     log.warn(`Anthropic text request failed: HTTP ${res.status} ${detail}`)
     throw new CanvasTextProviderError(res.status, detail, requestCall)
   }
-  const data = (await res.json()) as { content?: Array<{ type?: string; text?: string }> }
+  const data = (await res.json()) as {
+    content?: Array<{ type?: string; text?: string }>
+    stop_reason?: string | null
+    usage?: {
+      input_tokens?: number
+      output_tokens?: number
+      total_tokens?: number
+    }
+  }
   const text = data.content
     ?.filter((item) => item.type === 'text')
     .map((item) => item.text ?? '')
     .join('')
-  return { text: typeof text === 'string' ? text : null, requestCall }
+  const normalizedText = typeof text === 'string' ? text : null
+  const usage = data.usage ? normalizeAnthropicUsage(data.usage) : undefined
+  log.info(
+    [
+      'event=response',
+      'provider=anthropic',
+      `model=${JSON.stringify(params.model)}`,
+      `maxTokens=${params.maxTokens ?? '(provider-default)'}`,
+      `textChars=${normalizedText?.length ?? 0}`,
+      `stopReason=${JSON.stringify(data.stop_reason ?? '(n/a)')}`,
+      usage?.promptTokens != null ? `promptTokens=${usage.promptTokens}` : null,
+      usage?.completionTokens != null ? `completionTokens=${usage.completionTokens}` : null,
+      usage?.totalTokens != null ? `totalTokens=${usage.totalTokens}` : null,
+    ]
+      .filter((part): part is string => part != null)
+      .join(' '),
+  )
+  return {
+    text: normalizedText,
+    requestCall,
+    ...(typeof data.stop_reason === 'string' ? { finishReason: data.stop_reason } : {}),
+    ...(usage ? { usage } : {}),
+  }
 }
 
 async function callOpenAICompatible(
@@ -546,6 +576,18 @@ function normalizeTokenUsage(usage: {
     ...(typeof usage.completion_tokens === 'number'
       ? { completionTokens: usage.completion_tokens }
       : {}),
+    ...(typeof usage.total_tokens === 'number' ? { totalTokens: usage.total_tokens } : {}),
+  }
+}
+
+function normalizeAnthropicUsage(usage: {
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+}): CanvasTextTokenUsage {
+  return {
+    ...(typeof usage.input_tokens === 'number' ? { promptTokens: usage.input_tokens } : {}),
+    ...(typeof usage.output_tokens === 'number' ? { completionTokens: usage.output_tokens } : {}),
     ...(typeof usage.total_tokens === 'number' ? { totalTokens: usage.total_tokens } : {}),
   }
 }

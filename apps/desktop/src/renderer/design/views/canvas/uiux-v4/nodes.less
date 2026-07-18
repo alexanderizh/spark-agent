@@ -457,7 +457,9 @@
     border: 0;
     background: transparent;
     box-shadow: none;
-    opacity: 1;
+    // 保留 28px 的不可见命中区；只有节点/锚点悬浮或进入连接吸附态时才显形。
+    opacity: 0;
+    transition: opacity var(--canvas-v4-motion-fast) ease-out;
 
     &::after {
       width: 10px;
@@ -487,17 +489,62 @@
   }
 
   .canvas-node-selected .canvas-node-handle,
-  .canvas-node-handle:hover {
+  .canvas-node-handle:hover,
+  .canvas-node-connection-target .canvas-node-handle.connectingto,
+  .canvas-node:hover .canvas-node-handle {
     --canvas-node-handle-scale: 1;
     background: transparent;
     box-shadow: none;
+    opacity: 1;
   }
 
   .canvas-node-selected .canvas-node-handle::after,
-  .canvas-node-handle:hover::after {
+  .canvas-node-handle:hover::after,
+  .canvas-node-connection-target .canvas-node-handle.connectingto::after,
+  .canvas-node:hover .canvas-node-handle::after {
     width: 12px;
     height: 12px;
     background: var(--primary);
+  }
+
+  // 命中吸附区时，锚点跟随指针显示；真实 Handle 仍保持在节点边缘，
+  // 因此 React Flow 的连线几何和落点不会因视觉反馈而抖动。
+  .canvas-node-connection-follow {
+    position: absolute;
+    z-index: 10;
+    width: 16px;
+    height: 16px;
+    border: 3px solid var(--panel);
+    border-radius: 50%;
+    background: var(--primary);
+    box-shadow:
+      0 0 0 5px color-mix(in srgb, var(--primary) 18%, transparent),
+      0 0 18px color-mix(in srgb, var(--primary) 42%, transparent);
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    animation: canvas-node-connection-pulse 1.15s ease-in-out infinite;
+  }
+
+  .canvas-node-connection-target .canvas-node-handle.connectingto.valid::after,
+  .canvas-node-connection-valid .canvas-node-handle.connectingto::after {
+    background: var(--primary);
+    box-shadow:
+      0 0 0 8px color-mix(in srgb, var(--primary) 22%, transparent),
+      var(--shadow-sm);
+  }
+
+  @keyframes canvas-node-connection-pulse {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 4px color-mix(in srgb, var(--primary) 14%, transparent),
+        0 0 14px color-mix(in srgb, var(--primary) 32%, transparent);
+    }
+    50% {
+      box-shadow:
+        0 0 0 8px color-mix(in srgb, var(--primary) 24%, transparent),
+        0 0 22px color-mix(in srgb, var(--primary) 50%, transparent);
+    }
   }
 
   .canvas-node-task-running {

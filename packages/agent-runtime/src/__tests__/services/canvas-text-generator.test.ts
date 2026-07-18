@@ -136,6 +136,30 @@ describe('generateCanvasText multimodal', () => {
     expect(blocks[1]).toEqual({ type: 'text', text: '分析风格' })
   })
 
+  it('Anthropic: 记录 stop_reason 和 token usage，便于识别输出截断', async () => {
+    const captured = stubFetch({
+      content: [{ type: 'text', text: '{"shots":[' }],
+      stop_reason: 'max_tokens',
+      usage: { input_tokens: 4461, output_tokens: 16384, total_tokens: 20845 },
+    })
+    const result = await generateCanvasText({
+      providerType: 'anthropic',
+      apiKey: 'sk-ant',
+      apiEndpoint: 'https://ark.example.com/api/coding',
+      model: 'glm-5.2',
+      prompt: '输出分镜 JSON',
+      maxTokens: 65_536,
+    })
+
+    expect(captured.lastBody().max_tokens).toBe(65_536)
+    expect(result.finishReason).toBe('max_tokens')
+    expect(result.usage).toEqual({
+      promptTokens: 4461,
+      completionTokens: 16384,
+      totalTokens: 20845,
+    })
+  })
+
   it('Anthropic: base64 dataUrl 图片转成 base64 source', async () => {
     const captured = stubFetch({ content: [{ type: 'text', text: 'ok' }] })
     await generateCanvasText({

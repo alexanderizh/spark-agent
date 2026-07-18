@@ -62,6 +62,7 @@ import {
 } from './canvasNodeSize'
 import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
 import { CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
+import { getNodePipelineActions } from './canvasPipeline'
 import {
   CANVAS_BASE_TASK_MENU_LABEL,
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
@@ -77,7 +78,10 @@ import {
   canvasOperationRunsFingerprint,
   type CanvasOperationRunView,
 } from './canvasOperationRuns'
-import { resolveCanvasOperationOutputState } from './canvasOperationOutputModel'
+import {
+  resolveCanvasOperationOutputState,
+  resolveCanvasOperationResourceNode,
+} from './canvasOperationOutputModel'
 import { buildCanvasOperationProjection } from './canvasOperationProjection'
 import {
   calculateCanvasContextMenuPosition,
@@ -738,7 +742,7 @@ function CanvasStageInner({
   onCreatePipelineAtPosition?: (
     actionId: string,
     position: CanvasStagePoint,
-    options?: { openPanel?: boolean },
+    options?: { openPanel?: boolean; sourceNodeId?: string },
   ) => MaybePromise<CanvasStageCreateResult>
   /** 用户明确点击某个节点，用于恢复被手动关闭的节点面板 */
   onNodeSelectIntent?: (nodeId: string) => void
@@ -976,6 +980,26 @@ function CanvasStageInner({
     left: number
     top: number
   } | null>(null)
+  /**
+   * 牵线到空白处时，菜单应以连线起点节点为上下文展示后续流水线操作。
+   * 没有牵线上下文时保留空白画布原有的通用文本/抽取操作。
+   */
+  const panePipelineOperations = useMemo(() => {
+    const sourceNode = paneContextMenu?.pendingConnection
+      ? snapshotNodeById.get(paneContextMenu.pendingConnection.sourceNodeId)
+      : undefined
+    if (!sourceNode) {
+      return CANVAS_PIPELINE_OPS.filter(
+        (op) => op.appliesToText && (op.kind === 'text' || op.kind === 'extract'),
+      )
+    }
+    const contentNode = isOperationNode(sourceNode)
+      ? resolveCanvasOperationResourceNode(sourceNode, snapshot) ?? sourceNode
+      : sourceNode
+    return getNodePipelineActions(contentNode, {
+      assetKinds: assetKindsByNodeId.get(sourceNode.id) ?? [],
+    })
+  }, [assetKindsByNodeId, paneContextMenu, snapshot, snapshotNodeById])
   const edges = useMemo(
     () =>
       operationProjection.visibleEdges
@@ -1733,6 +1757,7 @@ function CanvasStageInner({
       closePaneContextMenu()
       const created = await onCreatePipelineAtPosition?.(actionId, position, {
         openPanel: pendingConnection == null,
+        ...(pendingConnection ? { sourceNodeId: pendingConnection.sourceNodeId } : {}),
       })
       await connectPendingConnectionToNode(created, pendingConnection)
     },
@@ -2166,6 +2191,8 @@ function CanvasStageInner({
           maxZoom={CANVAS_MAX_ZOOM}
           nodeOrigin={defaultNodeOrigin}
           onlyRenderVisibleElements
+          // 连接热区略大于可见锚点，方便从节点边缘开始牵线并降低误操作。
+          connectionRadius={32}
           nodesDraggable={activeTool === 'select' && nodesInitialized}
           nodesConnectable
           elementsSelectable
@@ -2181,6 +2208,7 @@ function CanvasStageInner({
           onConnect={handleConnect}
           onConnectStart={handleConnectStart}
           onConnectEnd={handleConnectEnd}
+          connectionLineStyle={{ strokeWidth: 3 }}
           onNodeDragStart={handleNodeDragStart}
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
@@ -2497,9 +2525,7 @@ function CanvasStageInner({
                   onInsertAsset={onInsertAssetFromPane ? handleInsertAssetFromPane : undefined}
                 />
                 <div className="canvas-pane-context-divider" />
-                {CANVAS_PIPELINE_OPS.filter(
-                  (op) => op.appliesToText && (op.kind === 'text' || op.kind === 'extract'),
-                ).map((op) => (
+                {panePipelineOperations.map((op) => (
                   <button
                     key={op.id}
                     type="button"

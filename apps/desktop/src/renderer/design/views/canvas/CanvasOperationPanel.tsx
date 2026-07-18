@@ -836,11 +836,28 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       (task?.agentId ? agents.find((agent) => agent.id === task.agentId) : null) ??
       presetAgent ??
       pickDefaultTextAgent(agents)
+    // 旧节点可能只持久化了 modelId，没有 providerProfileId。此时不能直接
+    // 回落到 Agent 默认 Provider，否则模型会被判定为“不属于当前 Provider”并
+    // 替换成该 Provider 的 defaultModel（例如 Qwen3.6-3 → glm-5.2）。
+    const persistedModelId =
+      node.data.modelId ?? task?.modelId ?? operationPreset.modelId ?? defaultAgent?.modelId
+    const modelOwner = persistedModelId
+      ? textProviders.find((provider) => getProviderTextModels(provider).includes(persistedModelId))
+      : null
+    const explicitProviderId =
+      node.data.providerProfileId ?? task?.providerProfileId ?? operationPreset.providerProfileId
+    const explicitProvider = explicitProviderId
+      ? textProviders.find((provider) => provider.id === explicitProviderId)
+      : null
+    const explicitProviderSupportsModel =
+      persistedModelId == null ||
+      (explicitProvider == null
+        ? explicitProviderId == null
+        : getProviderTextModels(explicitProvider).includes(persistedModelId))
     const preferredProviderId =
-      node.data.providerProfileId ??
-      task?.providerProfileId ??
-      operationPreset.providerProfileId ??
-      defaultAgent?.providerProfileId
+      modelOwner != null && !explicitProviderSupportsModel
+        ? modelOwner.id
+        : explicitProviderId ?? modelOwner?.id ?? defaultAgent?.providerProfileId
     const defaultProvider = pickDefaultTextProvider(textProviders, preferredProviderId)
 
     setSelectedAgentId((current) =>
@@ -856,11 +873,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     isTextOperation,
     node.id,
     node.data.agentId,
+    node.data.modelId,
     node.data.providerProfileId,
     operationPreset.agentId,
+    operationPreset.modelId,
     operationPreset.providerProfileId,
     runtimeLoading,
     task?.agentId,
+    task?.modelId,
     task?.providerProfileId,
     textProviders,
   ])

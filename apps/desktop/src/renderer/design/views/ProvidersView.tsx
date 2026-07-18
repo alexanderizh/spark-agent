@@ -361,7 +361,7 @@ const MEDIA_PROVIDER_LABELS: Record<MediaProviderKind, string> = {
   'openai-compatible': 'OpenAI Compatible',
   'openai-images': 'OpenAI Images',
   'google-generative-ai': 'Google Gemini / Veo',
-  'volcengine-ark': 'Volcengine Ark / Seedance',
+  'volcengine-ark': '火山方舟 / Seedance',
   kling: 'Kling',
   pixverse: 'PixVerse',
   'minimax-hailuo': 'MiniMax Hailuo',
@@ -398,6 +398,28 @@ const USABLE_MEDIA_PROVIDER_KINDS: readonly MediaProviderKind[] = [
   'kling',
   'minimax-hailuo',
   'custom',
+]
+
+/**
+ * 当前阶段只在生图 / 视频配置中展示已验证可用的平台。
+ *
+ * 其他平台的 manifest 和 adapter 仍保留在协议层，避免影响已有配置与运行时兼容；
+ * 这里只收窄配置 UI，待后续逐个平台验证通过后再加入白名单。
+ */
+const SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS: readonly MediaProviderKind[] = [
+  'apimart',
+  'xai',
+  'volcengine-ark',
+  'bailian',
+  // 自定义不是第三方平台，保留用于用户手动填写已验证的兼容接口。
+  'custom',
+]
+
+const SUPPORTED_IMAGE_PROVIDERS: readonly ImageProviderKind[] = [
+  'apimart',
+  'xai',
+  'seeddance',
+  'bailian',
 ]
 
 const MEDIA_CAPABILITY_LABELS: Record<MediaCapabilityId, string> = {
@@ -652,6 +674,18 @@ function mediaModelMatchesProvider(model: CanvasMediaModelSummary, form: Provide
   return candidates.has(model.providerKind)
 }
 
+function mediaProviderOptionsForModelType(modelType: ProviderModelType): readonly MediaProviderKind[] {
+  return modelType === 'image' || modelType === 'video'
+    ? SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS
+    : USABLE_MEDIA_PROVIDER_KINDS
+}
+
+function imageProviderOptionsForModelType(modelType: ProviderModelType): typeof IMAGE_PROVIDER_OPTIONS {
+  return modelType === 'image'
+    ? IMAGE_PROVIDER_OPTIONS.filter((option) => SUPPORTED_IMAGE_PROVIDERS.includes(option.value))
+    : IMAGE_PROVIDER_OPTIONS
+}
+
 /** 自定义模型 manifestId 前缀：不匹配内置目录，不会在 mediaCatalogForForm 中出现，单独渲染。 */
 const CUSTOM_MODEL_REF_PREFIX = 'custom:'
 
@@ -800,7 +834,7 @@ const IMAGE_PROVIDER_OPTIONS: Array<{ value: ImageProviderKind; label: string; e
   { value: 'apimart', label: 'APIMart', endpoint: 'https://api.apimart.ai/v1', mode: 'async' },
   { value: 'openrouter', label: 'OpenRouter', endpoint: 'https://openrouter.ai/api/v1', mode: 'sync' },
   { value: 'gemini', label: 'Gemini / Imagen', endpoint: 'https://generativelanguage.googleapis.com/v1beta', mode: 'sync' },
-  { value: 'seeddance', label: 'Seedream / Seedance', endpoint: 'https://ark.cn-beijing.volces.com/api/v3', mode: 'sync' },
+  { value: 'seeddance', label: '火山方舟 Seedream / Seedance', endpoint: 'https://ark.cn-beijing.volces.com/api/v3', mode: 'sync' },
   { value: 'bailian', label: '阿里百炼', endpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc', mode: 'async' },
   { value: 'zhipu', label: '智谱 GLM Image', endpoint: 'https://open.bigmodel.cn/api/paas/v4', mode: 'sync' },
   { value: 'xai', label: 'xAI Imagine', endpoint: 'https://api.x.ai/v1', mode: 'sync' },
@@ -2643,7 +2677,11 @@ export function ProviderEditPanel({
         // 生图/语音/视频只展示同类型多媒体预设；对话模型（含通用 LLM 与显式声明
         // multimodal 附加生成能力的模板，如 Agnes）展示同协议下的非专职媒体预设。
         if (isMediaProviderModelType(form.modelType)) {
-          return preset.modelType === form.modelType
+          if (preset.modelType !== form.modelType) return false
+          if (form.modelType === 'image' || form.modelType === 'video') {
+            return SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS.includes(preset.mediaProvider as MediaProviderKind)
+          }
+          return true
         }
         if (preset.provider !== form.provider) return false
         return preset.modelType !== 'image' && preset.modelType !== 'voice' && preset.modelType !== 'video'
@@ -2653,6 +2691,7 @@ export function ProviderEditPanel({
   const mediaCatalogForForm = useMemo(() => {
     const byType = mediaCatalog.filter((model) => mediaModelMatchesType(model, form.modelType))
     const providerFiltered = byType.filter((model) => mediaModelMatchesProvider(model, form))
+    if (form.modelType === 'image' || form.modelType === 'video') return providerFiltered
     // 对话模型：只展示同厂商生图/视频模型，不兜底展示跨厂商全量目录，
     // 避免「附加生成能力」面板里出现和当前服务商无关的生图/视频模型。
     if (form.modelType === 'multimodal') return providerFiltered
@@ -3202,6 +3241,9 @@ export function ProviderEditPanel({
   const isDedicatedMediaType = isMediaProviderModelType(form.modelType)
   const isChatModel = form.modelType === 'multimodal'
   const mediaPanelVisible = isDedicatedMediaType || (isChatModel && form.mediaGenerationEnabled)
+  // 自定义模型协议尚未完成验证，暂时不在任何多媒体配置中开放输入入口；
+  // 已保存的自定义引用仍继续展示，避免编辑旧配置时丢失信息。
+  const showCustomMediaModelInput = false
 
   return (
     <Drawer
@@ -3262,6 +3304,22 @@ export function ProviderEditPanel({
                     setFetchedModels([])
                     setForm((prev) => {
                       const supportsMediaConfig = isDedicatedMedia || (modelType === 'multimodal' && prev.mediaGenerationEnabled)
+                      const imageProvider = modelType === 'image' && !SUPPORTED_IMAGE_PROVIDERS.includes(prev.imageProvider)
+                        ? 'apimart'
+                        : modelType === 'image'
+                          ? prev.imageProvider
+                          : 'openai'
+                      const mediaProvider = isDedicatedMedia
+                        ? (() => {
+                            const candidate = prev.mediaProvider || mediaProviderFromImageKind(imageProvider)
+                            return (modelType === 'image' || modelType === 'video') &&
+                              !SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS.includes(candidate)
+                              ? modelType === 'image' ? mediaProviderFromImageKind(imageProvider) : 'apimart'
+                              : candidate
+                          })()
+                        : supportsMediaConfig
+                          ? prev.mediaProvider
+                          : ''
                       return {
                         ...prev,
                         modelType,
@@ -3272,13 +3330,9 @@ export function ProviderEditPanel({
                           : prev.provider === 'openai'
                             ? 'responses'
                             : prev.codexApiKind,
-                        imageProvider: modelType === 'image' ? prev.imageProvider : 'openai',
+                        imageProvider,
                         imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
-                        mediaProvider: isDedicatedMedia
-                          ? (prev.mediaProvider || mediaProviderFromImageKind(prev.imageProvider))
-                          : supportsMediaConfig
-                            ? prev.mediaProvider
-                            : '',
+                        mediaProvider,
                         mediaApiType: supportsMediaConfig ? prev.mediaApiType : 'auto',
                       }
                     })
@@ -3645,7 +3699,7 @@ export function ProviderEditPanel({
                         codexApiKind: 'chat',
                       }))
                     }}
-                    options={IMAGE_PROVIDER_OPTIONS.map((option) => ({
+                    options={imageProviderOptionsForModelType(form.modelType).map((option) => ({
                       label: option.label,
                       value: option.value,
                     }))}
@@ -3664,7 +3718,7 @@ export function ProviderEditPanel({
                   <Select
                     value={form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)}
                     onChange={(v) => set('mediaProvider', v as MediaProviderKind)}
-                    options={USABLE_MEDIA_PROVIDER_KINDS.map((kind) => ({
+                    options={mediaProviderOptionsForModelType(form.modelType).map((kind) => ({
                       label: MEDIA_PROVIDER_LABELS[kind],
                       value: kind,
                     }))}
@@ -3820,43 +3874,43 @@ export function ProviderEditPanel({
                     )}
                   </div>
 
-                  <label className="pv_form_label">
-                    添加自定义模型
-                    <span className="pv_form_sub">直接输入模型 ID 添加</span>
-                  </label>
-                  <div className="pv_custom_model_add">
-                    <Input
-                      value={customModelInput}
-                      onChange={(e) => setCustomModelInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          if (customModelInput.trim()) {
-                            addCustomMediaModel(customModelInput)
-                            setCustomModelInput('')
-                          }
-                        }
-                      }}
-                      placeholder={
-                        form.modelType === 'image' ? '如 nano-banana、flux-pro、seedream-4.0…'
-                          : form.modelType === 'video' ? '如 sora-2、kling-v2-6、MiniMax-Hailuo-02…'
-                            : '输入模型 ID 后按 Enter 添加'
-                      }
-                    />
-                    <Button
-                      type="primary"
-                      icon={<Icons.Plus />}
-                      disabled={!customModelInput.trim()}
-                      onClick={() => {
-                        if (customModelInput.trim()) {
-                          addCustomMediaModel(customModelInput)
-                          setCustomModelInput('')
-                        }
-                      }}
-                    >
-                      添加
-                    </Button>
-                  </div>
+                  {showCustomMediaModelInput && (
+                    <>
+                      <label className="pv_form_label">
+                        添加自定义模型
+                        <span className="pv_form_sub">直接输入模型 ID 添加</span>
+                      </label>
+                      <div className="pv_custom_model_add">
+                        <Input
+                          value={customModelInput}
+                          onChange={(e) => setCustomModelInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              if (customModelInput.trim()) {
+                                addCustomMediaModel(customModelInput)
+                                setCustomModelInput('')
+                              }
+                            }
+                          }}
+                          placeholder="输入模型 ID 后按 Enter 添加"
+                        />
+                        <Button
+                          type="primary"
+                          icon={<Icons.Plus />}
+                          disabled={!customModelInput.trim()}
+                          onClick={() => {
+                            if (customModelInput.trim()) {
+                              addCustomMediaModel(customModelInput)
+                              setCustomModelInput('')
+                            }
+                          }}
+                        >
+                          添加
+                        </Button>
+                      </div>
+                    </>
+                  )}
 
                   {mediaCapabilityOptions.length > 0 && (
                     <>

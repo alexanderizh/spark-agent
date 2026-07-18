@@ -82,6 +82,10 @@ describe('canvasPipelineOps', () => {
       const ops = getOpsForNode({ type: 'image', data: { pipelineRole: 'character' } })
       expect(ops.map((op) => op.id)).toEqual(['character.three_view'])
     })
+    it('角色描述文本节点同时保留文本操作与角色身份板入口', () => {
+      const ops = getOpsForNode({ type: 'text', data: { pipelineRole: 'character' } })
+      expect(ops.map((op) => op.id)).toContain('character.three_view')
+    })
     it('无 role 的图片节点不给入口', () => {
       expect(getOpsForNode({ type: 'image' })).toEqual([])
     })

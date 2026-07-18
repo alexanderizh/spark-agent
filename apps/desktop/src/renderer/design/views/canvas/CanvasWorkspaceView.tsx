@@ -6440,11 +6440,17 @@ export function CanvasWorkspaceView({
   const handleCreatePipelineAtPosition = async (
     actionId: string,
     position: CanvasPoint,
-    options?: { openPanel?: boolean },
+    options?: { openPanel?: boolean; sourceNodeId?: string },
   ) => {
     const snapshot = snapshotRef.current
     if (!snapshot) return
     closeCanvasFloatPanels()
+    // 牵线菜单已经明确提供了上游节点，复用节点右键的完整编排处理器，
+    // 不再走“空白处创建流水线”分支（后者只支持文本/抽取且不依赖选中态）。
+    if (options?.sourceNodeId) {
+      await handleNodePipelineAction(options.sourceNodeId, actionId)
+      return
+    }
     const op = CANVAS_PIPELINE_OPS.find((item) => item.id === actionId)
     if (!op) return
     if (op.kind !== 'text' && op.kind !== 'extract') {

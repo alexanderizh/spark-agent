@@ -11,6 +11,8 @@ import {
   Handle,
   NodeResizer,
   Position,
+  useConnection,
+  useStore,
   useUpdateNodeInternals,
   type NodeProps,
 } from '@xyflow/react'
@@ -490,8 +492,25 @@ export const CanvasNode = memo(function CanvasNode({
   selected,
   width,
   height,
+  positionAbsoluteX,
+  positionAbsoluteY,
 }: NodeProps) {
   const updateNodeInternals = useUpdateNodeInternals()
+  const connection = useConnection((current) =>
+    current.inProgress && current.toNode?.id === id
+      ? { isValid: current.isValid, pointer: current.pointer }
+      : null,
+  )
+  const viewportTransform = useStore(
+    (state) => (state.connection.inProgress ? state.transform : null),
+    (previous, next) =>
+      previous === next ||
+      (previous != null &&
+        next != null &&
+        previous[0] === next[0] &&
+        previous[1] === next[1] &&
+        previous[2] === next[2]),
+  )
   const {
     actions,
     canvasNode: node,
@@ -506,6 +525,23 @@ export const CanvasNode = memo(function CanvasNode({
     inlineToolbar,
   } = data as CanvasFlowNodeData
   const locked = Boolean(node.locked)
+  const connectionTargetsNode = connection != null
+  const connectionTargetIsValid = connection?.isValid === true
+  const connectionPointer = connection?.pointer
+  const connectionPointerPosition =
+    connectionTargetIsValid && connectionPointer && viewportTransform
+      ? {
+          // React Flow exposes the pointer in renderer coordinates while custom node
+          // content is laid out in flow coordinates. Convert it back so the marker
+          // can travel through the invisible snap zone without moving the real handle.
+          left:
+            (connectionPointer.x - viewportTransform[0]) / viewportTransform[2] -
+            positionAbsoluteX,
+          top:
+            (connectionPointer.y - viewportTransform[1]) / viewportTransform[2] -
+            positionAbsoluteY,
+        }
+      : null
   const isGroup = node.type === 'group'
   const isTask = isOperationNode(node)
   const operationOutputState = useMemo(
@@ -1208,7 +1244,7 @@ export const CanvasNode = memo(function CanvasNode({
       <div className="canvas-node-shell">
         <div
           data-canvas-node-id={node.id}
-          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && node.data.status === 'running' ? ' canvas-node-task-running' : ''}${isTask && node.data.status === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}${isFullBleedImageNode ? ' canvas-node-image-full-bleed' : ''}`}
+          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && node.data.status === 'running' ? ' canvas-node-task-running' : ''}${isTask && node.data.status === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}${isFullBleedImageNode ? ' canvas-node-image-full-bleed' : ''}${connectionTargetsNode ? ' canvas-node-connection-target' : ''}${connectionTargetIsValid ? ' canvas-node-connection-valid' : ''}`}
           style={nodeStyle}
           onPointerEnter={() => setResizeHovered(true)}
           onPointerLeave={() => setResizeHovered(false)}
@@ -1217,6 +1253,13 @@ export const CanvasNode = memo(function CanvasNode({
             actions.editNode(node.id)
           }}
         >
+          {connectionPointerPosition ? (
+            <span
+              className="canvas-node-connection-follow"
+              aria-hidden="true"
+              style={{ left: connectionPointerPosition.left, top: connectionPointerPosition.top }}
+            />
+          ) : null}
           {nodeMetaBar}
           {/* 悬浮、选中或正在拉伸时显示缩放控件。 */}
           <NodeResizer
