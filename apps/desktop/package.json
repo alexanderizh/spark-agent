@@ -9,7 +9,7 @@
     "dev": "pnpm run prepare:file-viewer-assets && electron-vite dev",
     "dev:rebuild": "pnpm run rebuild:native",
     "verify:migrations": "node ../../packages/storage/scripts/verify-migrations.mjs",
-    "build": "pnpm run verify:migrations && pnpm run prepare:file-viewer-assets && electron-vite build",
+    "build": "pnpm run verify:migrations && pnpm run prepare:file-viewer-assets && node scripts/run-electron-vite-build.js",
     "build:unpack": "pnpm run build && pnpm run rebuild:native && electron-builder --dir",
     "build:prod": "pnpm run build && pnpm run rebuild:native && electron-builder",
     "build:win": "bash scripts/build-win-release.sh x64 --publish never",
