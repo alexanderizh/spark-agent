@@ -22,6 +22,7 @@ import { MarkdownText } from '../chat/ChatMarkdown'
 import { canvasFlowNodeDataEqual } from './canvasStageNodeSync'
 import { operationLabel } from './canvas.api'
 import { isCanvasImageContentNode, isOperationNode, nodeOperation } from './canvas.capabilities'
+import { isFullBleedCanvasImageNode } from './canvasImageNodePresentation'
 import {
   isLongText,
   keepsCanvasMediaNodeAspectRatio,
@@ -549,6 +550,7 @@ export const CanvasNode = memo(function CanvasNode({
   // 未锁定节点在选中或悬浮时挂载缩放控件，无需先点击，同时避免所有节点常驻控件。
   const showResizer = !locked && (selected || resizeHovered || resizing)
   const imageSrc = node.data.thumbnailUrl ?? node.data.url
+  const isFullBleedImageNode = isFullBleedCanvasImageNode(node)
   const normalizedImageSrc = imageSrc ? normalizeEduAssetUrl(imageSrc) : ''
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
   const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
@@ -1118,19 +1120,6 @@ export const CanvasNode = memo(function CanvasNode({
     (node.type === 'image' || node.type === 'audio' || node.type === 'video') &&
     !isOperationNode(node)
   const shouldShowContentTitle = isTextContentNode || isMediaContentNode
-  const contentTitleMeta = isResourceOutput
-    ? '画布产物'
-    : roleMeta?.label
-      ? `${roleMeta.label}资产`
-      : node.type === 'image'
-        ? node.data.panorama360
-          ? '360° 全景资产'
-          : '图片资产'
-        : node.type === 'video'
-          ? '视频资产'
-          : node.type === 'audio'
-            ? '音频资产'
-            : '双击打开编辑器'
   const passiveStatusLabel = isResourceOutput
     ? '产物'
     : productionBadge?.label
@@ -1219,7 +1208,7 @@ export const CanvasNode = memo(function CanvasNode({
       <div className="canvas-node-shell">
         <div
           data-canvas-node-id={node.id}
-          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && node.data.status === 'running' ? ' canvas-node-task-running' : ''}${isTask && node.data.status === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}`}
+          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && node.data.status === 'running' ? ' canvas-node-task-running' : ''}${isTask && node.data.status === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}${isFullBleedImageNode ? ' canvas-node-image-full-bleed' : ''}`}
           style={nodeStyle}
           onPointerEnter={() => setResizeHovered(true)}
           onPointerLeave={() => setResizeHovered(false)}
@@ -1404,24 +1393,43 @@ export const CanvasNode = memo(function CanvasNode({
                 </div>
               )}
             </div>
-            {shouldShowContentTitle && isMediaContentNode ? (
+            {shouldShowContentTitle && isMediaContentNode && !isFullBleedImageNode ? (
               <div className="canvas-node-content-title canvas-node-content-title-media">
                 <strong title={title}>{title}</strong>
               </div>
             ) : null}
-            <div className="canvas-node-quick-footer nodrag nopan">
-              <span title={nodeFooterLabel}>{nodeFooterLabel}</span>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  actions.editNode(node.id)
-                }}
-              >
-                {nodeActionLabel}
-              </button>
-            </div>
+            {isFullBleedImageNode ? (
+              <div className="canvas-node-image-overlay-footer nodrag nopan">
+                <span className="canvas-node-image-overlay-copy">
+                  <strong title={title}>{title}</strong>
+                  <small title={nodeFooterLabel}>{nodeFooterLabel}</small>
+                </span>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    actions.editNode(node.id)
+                  }}
+                >
+                  {nodeActionLabel}
+                </button>
+              </div>
+            ) : (
+              <div className="canvas-node-quick-footer nodrag nopan">
+                <span title={nodeFooterLabel}>{nodeFooterLabel}</span>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    actions.editNode(node.id)
+                  }}
+                >
+                  {nodeActionLabel}
+                </button>
+              </div>
+            )}
           </div>
           {renderedInlinePanel ? (
             <div
