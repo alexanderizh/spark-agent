@@ -85,6 +85,7 @@ import {
   type ToolLogGroupKind,
 } from './chat/ChatActivitySegments'
 import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
+import { getRecentAssistantMessageIds } from './chat/recent-assistant-messages'
 import { EmptySessionModeLauncher } from './chat/EmptySessionModeLauncher'
 import { ChatOverlayScrollbar } from './chat/ChatOverlayScrollbar'
 import {
@@ -3299,6 +3300,10 @@ function ChatStream({
     () => messages.filter((msg) => selectedMessageIds.has(msg.id)),
     [messages, selectedMessageIds],
   )
+  const expandedAssistantMessageIds = useMemo(
+    () => getRecentAssistantMessageIds(messages, 2),
+    [messages],
+  )
 
   const toggleMessageSelected = useCallback((messageId: string) => {
     setSelectedMessageIds((prev) => {
@@ -3591,7 +3596,7 @@ function ChatStream({
                       messageId={msg.id}
                       blocks={msg.blocks}
                       messageStatus={msg.status}
-                      isLatest={index === messages.length - 1}
+                      isLatest={expandedAssistantMessageIds.has(msg.id)}
                       assistantId={identity.id}
                       assistantName={identity.name}
                       assistantAvatarSrc={identity.avatarSrc}
