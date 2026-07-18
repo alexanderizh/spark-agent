@@ -673,6 +673,8 @@ export class ClaudeSDKExecutor {
     while (true) {
       // Resolve sdkSessionId from config each iteration (resume recovery may update it)
       const sdkSessionId = config.sdkSessionId ?? sessionId
+      // Declared before SDK options because canUseTool closes over the prompt hold API.
+      // eslint-disable-next-line prefer-const
       let interactivePrompt: InteractivePrompt | undefined
       const options: SDKQueryOptions = {
         abortController,
@@ -893,6 +895,14 @@ export class ClaudeSDKExecutor {
         maxTurnExtensionAttempt: extensionAttempts,
         attachmentCount: config.attachments?.length ?? 0,
         additionalDirectories: options.additionalDirectories ?? null,
+      })
+
+      config.invocationObserver?.({
+        transport: 'claude-sdk',
+        request: {
+          prompt,
+          options: sanitizeClaudeQueryOptions(options, runtimeEnv),
+        },
       })
 
       interactivePrompt = createInteractivePromptStream(prompt, abortController.signal)
@@ -1141,6 +1151,81 @@ function buildMaxTurnLimitMessage(maxTurns: number, extensionAttempts: number): 
   }
   const noun = extensionAttempts === 1 ? 'extension' : 'extensions'
   return `Reached maximum number of turns (${maxTurns}) after ${extensionAttempts} automatic ${noun}. Review progress and choose whether to continue.`
+}
+
+function sanitizeClaudeQueryOptions(
+  options: SDKQueryOptions,
+  runtimeEnv: Record<string, string | undefined>,
+): Record<string, unknown> {
+  const settings =
+    typeof options.settings === 'string'
+      ? options.settings
+      : options.settings != null
+        ? {
+            model: options.settings.model,
+            permissions: options.settings.permissions,
+            environment: {
+              ANTHROPIC_BASE_URL: options.settings.env?.ANTHROPIC_BASE_URL,
+              ANTHROPIC_MODEL: options.settings.env?.ANTHROPIC_MODEL,
+              credentials: '[redacted]',
+            },
+          }
+        : undefined
+  const mcpServers = Object.fromEntries(
+    Object.entries(options.mcpServers ?? {}).map(([name, server]) => [
+      name,
+      {
+        type: server.type,
+        command: server.command,
+        args: server.args,
+        cwd: server.cwd,
+        url: server.url,
+        name: server.name,
+        ...(server.headers != null ? { headers: '[redacted]' } : {}),
+        ...(server.env != null ? { environment: '[redacted]' } : {}),
+        ...(server.instance != null ? { instance: '[in-process SDK server]' } : {}),
+      },
+    ]),
+  )
+  return {
+    model: options.model,
+    cwd: options.cwd,
+    pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable,
+    environment: {
+      ANTHROPIC_BASE_URL: runtimeEnv.ANTHROPIC_BASE_URL,
+      ANTHROPIC_MODEL: runtimeEnv.ANTHROPIC_MODEL,
+      credentials: '[redacted]',
+    },
+    settings,
+    settingSources: options.settingSources,
+    systemPrompt: options.systemPrompt,
+    permissionMode: options.permissionMode,
+    allowedTools: options.allowedTools,
+    disallowedTools: options.disallowedTools,
+    mcpServers,
+    strictMcpConfig: options.strictMcpConfig,
+    forwardSubagentText: options.forwardSubagentText,
+    agentProgressSummaries: options.agentProgressSummaries,
+    disableWorkflows: options.disableWorkflows,
+    workflowKeywordTriggerEnabled: options.workflowKeywordTriggerEnabled,
+    skills: options.skills,
+    toolConfig: options.toolConfig,
+    maxTurns: options.maxTurns,
+    maxBudgetUsd: options.maxBudgetUsd,
+    effort: options.effort,
+    sessionId: options.sessionId,
+    resume: options.resume,
+    persistSession: options.persistSession,
+    additionalDirectories: options.additionalDirectories,
+    includePartialMessages: options.includePartialMessages,
+    enableFileCheckpointing: options.enableFileCheckpointing,
+    callbacks: {
+      stderr: options.stderr != null,
+      canUseTool: options.canUseTool != null,
+      hooks: options.hooks != null,
+      onElicitation: options.onElicitation != null,
+    },
+  }
 }
 
 function buildCompositeSystemPrompt(config: SDKExecutorConfig): string | undefined {

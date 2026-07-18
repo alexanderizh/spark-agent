@@ -20,7 +20,9 @@ const MIN_CONFIGURED_REQUEST_TIMEOUT_MS = 10_000
 const MAX_CONFIGURED_REQUEST_TIMEOUT_MS = 30 * 60_000
 const DEFAULT_MAX_TOKENS = 16_384
 const ERROR_DETAIL_MAX_LENGTH = 2_000
-const REQUEST_TEXT_MAX_LENGTH = 4_000
+// Keep normal long-form screenplay/storyboard requests intact in diagnostics. Only
+// pathological payloads are bounded; base64/data URLs are still summarized separately.
+const REQUEST_TEXT_MAX_LENGTH = 100_000
 
 const ANTHROPIC_DEFAULT_ENDPOINT = 'https://api.anthropic.com'
 const OPENAI_DEFAULT_ENDPOINT = 'https://api.openai.com/v1'
@@ -212,8 +214,10 @@ async function callAnthropic(
     params.timeoutMs,
     requestCall,
   )
+  attachResponseMetadata(requestCall, res)
   if (!res.ok) {
     const detail = await safeText(res)
+    attachErrorResponseBody(requestCall, detail)
     log.warn(`Anthropic text request failed: HTTP ${res.status} ${detail}`)
     throw new CanvasTextProviderError(res.status, detail, requestCall)
   }
@@ -280,8 +284,10 @@ async function callOpenAIChatCompletions(
     params.timeoutMs,
     requestCall,
   )
+  attachResponseMetadata(requestCall, res)
   if (!res.ok) {
     const detail = await safeText(res)
+    attachErrorResponseBody(requestCall, detail)
     log.warn(`OpenAI-compatible text request failed: HTTP ${res.status} ${detail}`)
     throw new CanvasTextProviderError(res.status, detail, requestCall)
   }
@@ -341,8 +347,10 @@ async function callOpenAIResponses(
     params.timeoutMs,
     requestCall,
   )
+  attachResponseMetadata(requestCall, res)
   if (!res.ok) {
     const detail = await safeText(res)
+    attachErrorResponseBody(requestCall, detail)
     log.warn(`OpenAI Responses text request failed: HTTP ${res.status} ${detail}`)
     throw new CanvasTextProviderError(res.status, detail, requestCall)
   }
@@ -435,7 +443,39 @@ function shouldSendThinkingToggle(params: GenerateCanvasTextParams): boolean {
 }
 
 function buildRequestCall(method: string, url: string, body: unknown): MediaRequestCall {
-  return { method, url, body: sanitizeRequestBody(body) }
+  return {
+    method,
+    url,
+    headers: {
+      'content-type': 'application/json',
+      authorization: '[redacted]',
+    },
+    body: sanitizeRequestBody(body),
+  }
+}
+
+function attachResponseMetadata(requestCall: MediaRequestCall, response: Response): void {
+  const headers: Record<string, string> = {}
+  for (const name of ['content-type', 'request-id', 'x-request-id']) {
+    const value = response.headers.get(name)
+    if (value) headers[name] = value
+  }
+  requestCall.response = {
+    status: response.status,
+    ...(response.statusText ? { statusText: response.statusText } : {}),
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
+  }
+}
+
+function attachErrorResponseBody(requestCall: MediaRequestCall, detail: string): void {
+  if (!requestCall.response || !detail) return
+  let body: unknown = detail
+  try {
+    body = JSON.parse(detail)
+  } catch {
+    // Keep the bounded text returned by safeText.
+  }
+  requestCall.response.body = sanitizeRequestBody(body)
 }
 
 function sanitizeRequestBody(value: unknown): unknown {

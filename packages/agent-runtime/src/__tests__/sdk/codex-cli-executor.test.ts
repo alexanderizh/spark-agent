@@ -194,7 +194,13 @@ describe('CodexCliExecutor', () => {
     })
 
     const executor = new CodexCliExecutor()
-    await executor.executeTurn('session-1', 'turn-1', '只回复 OK', makeConfig())
+    const invocationObserver = vi.fn()
+    await executor.executeTurn(
+      'session-1',
+      'turn-1',
+      '只回复 OK',
+      makeConfig({ invocationObserver }),
+    )
 
     expect(spawnMock).toHaveBeenCalledWith(
       process.platform === 'win32' ? 'codex.exe' : 'codex',
@@ -208,6 +214,17 @@ describe('CodexCliExecutor', () => {
     expect(args).not.toContain('--model')
     expect(args).not.toContain('codex cli')
     expect(child?.prompt).toContain('# Spark Skills')
+    expect(invocationObserver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transport: 'codex-cli',
+        request: expect.objectContaining({
+          command: 'codex',
+          args: expect.arrayContaining(['exec', '--json']),
+          stdin: expect.stringContaining('只回复 OK'),
+          credentials: '[local-cli configuration]',
+        }),
+      }),
+    )
     expect(child?.prompt).toContain('Skill catalog')
     expect(child?.prompt).toContain('# Spark Runtime Context')
     expect(child?.prompt).toContain('System context')
@@ -356,7 +373,11 @@ describe('CodexCliExecutor', () => {
       expect.arrayContaining([
         expect.objectContaining({ type: 'file_change', path: 'src/new.ts', changeType: 'create' }),
         expect.objectContaining({ type: 'file_change', path: 'src/old.ts', changeType: 'delete' }),
-        expect.objectContaining({ type: 'tool_call', toolCallId: 'todo-1', toolName: 'todo_write' }),
+        expect.objectContaining({
+          type: 'tool_call',
+          toolCallId: 'todo-1',
+          toolName: 'todo_write',
+        }),
         expect.objectContaining({ type: 'tool_result', toolCallId: 'todo-1', status: 'success' }),
         expect.objectContaining({
           type: 'agent_error',

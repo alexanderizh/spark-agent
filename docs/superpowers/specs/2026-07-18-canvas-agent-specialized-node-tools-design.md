@@ -97,6 +97,8 @@ UI 右键入口和 Agent 专用操作工具都调用同一个执行函数，不�
 
 专用节点还必须持有不可被模型 Contract 裁剪掉的功能身份。`workflow`/`responseFormat` 等画布控制参数与 Provider wire 参数分层处理；专用 preset 在创建、编辑、当前节点重试和 API 提交边界都重新锁定自己的 workflow。兼容旧数据时，`taskPipelineRole`、`outputPipelineRole` 和 workflow 任一可靠信号均可恢复专用 target，其中 `shot` 角色优先于残留的实体抽取 workflow，防止分镜节点再次进入角色抽取分支。
 
+诊断展示也必须区分“画布提交配置”和“实际模型调用”。最终调用快照记录直连 HTTP 的 URL/body/响应元数据，或 Session Runtime 的 SDK/CLI 地址与最终调用参数；只有该快照可以标记为最终请求。画布 System/User Prompt 合并为调用前快照并默认折叠，冻结输入、血缘、画布参数和去除重复输出后的 runtime 数据同样按需展开。
+
 ## 专用工具范围
 
 ### 内容与影视资产工具

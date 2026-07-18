@@ -46,7 +46,8 @@ export interface MediaInputMetadata {
 }
 
 /**
- * 一次 provider HTTP 调用的摘要，用于在任务详情里展示「真实请求 + HTTP 响应」。
+ * 一次实际模型调用的摘要。HTTP 路径记录真实请求与响应元数据；SDK/CLI 路径记录
+ * 解析后的模型地址和最终 SDK 调用参数，method 会明确标注 SDK/CLI 而不伪装成 HTTP。
  *
  * body 已经过脱敏/摘要处理（base64 / data: URI 压缩成 MIME、大小估算、
  * sha256 和短 preview），既避免一张图刷屏，也避免把大体积 base64 落进画布快照。
