@@ -124,6 +124,16 @@ export class CodexCliExecutor {
       tempProfile = await writeCodexTempProfile(config)
       if (this.cancelled) return
       const args = buildCodexArgs(config, outputFile, tempProfile?.name)
+      config.invocationObserver?.({
+        transport: 'codex-cli',
+        request: {
+          command: 'codex',
+          args,
+          cwd: config.workspaceRootPath,
+          stdin: prompt,
+          credentials: '[local-cli configuration]',
+        },
+      })
       const result = await this.runCodex(args, prompt, makeBase, config.workspaceRootPath, config)
       if (result.exitCode !== 0) {
         for (const event of streamTerminalizer.finalize(makeBase)) this.emit(event)

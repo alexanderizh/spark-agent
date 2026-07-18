@@ -22,6 +22,7 @@ import { operationLabel } from './canvas.api'
 import { getCanvasCapability, nodeOperation } from './canvas.capabilities'
 import {
   mergeCanvasOperationPresetNegativePrompt,
+  mergeCanvasPresetTargetModelParams,
   readCanvasResolvedPresetTarget,
   resolveCanvasPresetTarget,
   writeCanvasLastUsedPresetTarget,
@@ -224,8 +225,8 @@ export function resolveCanvasOperationPanelNegativePrompt(params: {
   operationPresetNegativePrompt?: string | null | undefined
 }): string {
   const baseNegativePrompt =
-    params.taskNegativePrompt?.trim() ||
     params.nodeNegativePrompt?.trim() ||
+    params.taskNegativePrompt?.trim() ||
     params.sourceNegativePrompts
       ?.map((value) => value?.trim() || '')
       .find((value) => value.length > 0) ||
@@ -281,7 +282,12 @@ export function isGeneratedCanvasFunctionalPrompt(
   if (presetTargetId === 'chapter.to_screenplay') {
     return value.includes('请把下面的小说/长文稿章节改写为影视剧本') && value.includes('章节原文：')
   }
-  if (presetTargetId === 'screenplay.extract_characters' || presetTargetId === 'screenplay.extract_scenes') {
+  if (
+    presetTargetId === 'screenplay.extract_characters' ||
+    presetTargetId === 'screenplay.extract_scenes' ||
+    presetTargetId === 'screenplay.extract_props' ||
+    presetTargetId === 'screenplay.extract_effects'
+  ) {
     return value.includes('【任务】你是资深影视美术/设定师') && value.includes('【剧本】')
   }
   return false
@@ -437,15 +443,17 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     () =>
       resolveCanvasPresetTarget({
         operation,
-        taskPipelineRole: node.data.pipelineRole ?? null,
-        outputPipelineRole: node.data.outputPipelineRole ?? null,
-        workflow: task?.modelParams?.workflow ?? node.data.modelParams?.workflow,
+        taskPipelineRole: node.data.pipelineRole ?? task?.taskPipelineRole ?? null,
+        outputPipelineRole: node.data.outputPipelineRole ?? task?.outputPipelineRole ?? null,
+        workflow: node.data.modelParams?.workflow ?? task?.modelParams?.workflow,
       }),
     [
       node.data.modelParams?.workflow,
       node.data.outputPipelineRole,
       node.data.pipelineRole,
       operation,
+      task?.outputPipelineRole,
+      task?.taskPipelineRole,
       task?.modelParams?.workflow,
     ],
   )
@@ -533,8 +541,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   )
   const hiddenFunctionalSystemPrompt = useMemo(
     () =>
-      task?.systemPrompt?.trim() ||
       node.data.systemPrompt?.trim() ||
+      task?.systemPrompt?.trim() ||
       (hideFunctionalPrompt
         ? stripGeneratedCanvasFunctionalPromptInput(functionalPromptSource, presetTargetId)
         : ''),
@@ -556,10 +564,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const initialPromptDocument = useMemo(
     () =>
       buildOperationPanelEditablePromptDocument({
-        ...(task?.promptDocument
-          ? { document: task.promptDocument }
-          : node.data.promptDocument
-            ? { document: node.data.promptDocument }
+        ...(node.data.promptDocument
+          ? { document: node.data.promptDocument }
+          : task?.promptDocument
+            ? { document: task.promptDocument }
             : {}),
         editablePrompt: initialPrompt,
         hideFunctionalPrompt,
@@ -628,10 +636,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   } = useCanvasInputBindings({
     resetKey: node.id,
     initialDocument: initialPromptDocument,
-    ...(task?.inputBindings
-      ? { initialBindings: task.inputBindings }
-      : node.data.inputBindings
-        ? { initialBindings: node.data.inputBindings }
+    ...(node.data.inputBindings
+      ? { initialBindings: node.data.inputBindings }
+      : task?.inputBindings
+        ? { initialBindings: task.inputBindings }
         : {}),
     nodes: snapshot.nodes,
     connectionNodeIds: bindingConnectionNodeIds,
@@ -645,19 +653,19 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [runtimeLoading, setRuntimeLoading] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState(
-    task?.agentId ?? node.data.agentId ?? operationPreset.agentId ?? '',
+    node.data.agentId ?? task?.agentId ?? operationPreset.agentId ?? '',
   )
   const [selectedTextProviderId, setSelectedTextProviderId] = useState(
-    task?.providerProfileId ??
-      node.data.providerProfileId ??
+    node.data.providerProfileId ??
+      task?.providerProfileId ??
       operationPreset.providerProfileId ??
       '',
   )
   const [selectedTextModelId, setSelectedTextModelId] = useState(
-    task?.modelId ?? node.data.modelId ?? operationPreset.modelId ?? '',
+    node.data.modelId ?? task?.modelId ?? operationPreset.modelId ?? '',
   )
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>(
-    task?.skillIds ?? node.data.skillIds ?? operationPreset.skillIds,
+    node.data.skillIds ?? task?.skillIds ?? operationPreset.skillIds,
   )
   const [openRuntimeMenu, setOpenRuntimeMenu] = useState<RuntimePickerMenu>(null)
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
@@ -693,15 +701,15 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     setPromptDocument(initialPromptDocument)
     setNegativePrompt(inheritedNegativePrompt)
     setMessageDraft(node.data.message ?? '')
-    setSelectedAgentId(task?.agentId ?? node.data.agentId ?? operationPreset.agentId ?? '')
+    setSelectedAgentId(node.data.agentId ?? task?.agentId ?? operationPreset.agentId ?? '')
     setSelectedTextProviderId(
-      task?.providerProfileId ??
-        node.data.providerProfileId ??
+      node.data.providerProfileId ??
+        task?.providerProfileId ??
         operationPreset.providerProfileId ??
         '',
     )
-    setSelectedTextModelId(task?.modelId ?? node.data.modelId ?? operationPreset.modelId ?? '')
-    setSelectedSkillIds(task?.skillIds ?? node.data.skillIds ?? operationPreset.skillIds)
+    setSelectedTextModelId(node.data.modelId ?? task?.modelId ?? operationPreset.modelId ?? '')
+    setSelectedSkillIds(node.data.skillIds ?? task?.skillIds ?? operationPreset.skillIds)
     configurationTouchedRef.current = false
     // 分镜时长配置草稿：从 node.data.shotScriptConfig 解析到 preset/custom（随节点切换重置）。
     // 兼容脏数据：持久化的 maxClipSec 非法（缺省 / 非有限 / ≤0）时回退默认值，避免回显 -1 这类异常。
@@ -824,13 +832,13 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         ? (agents.find((agent) => agent.id === operationPreset.agentId) ?? null)
         : null
     const defaultAgent =
-      (task?.agentId ? agents.find((agent) => agent.id === task.agentId) : null) ??
       (node.data.agentId ? agents.find((agent) => agent.id === node.data.agentId) : null) ??
+      (task?.agentId ? agents.find((agent) => agent.id === task.agentId) : null) ??
       presetAgent ??
       pickDefaultTextAgent(agents)
     const preferredProviderId =
-      task?.providerProfileId ??
       node.data.providerProfileId ??
+      task?.providerProfileId ??
       operationPreset.providerProfileId ??
       defaultAgent?.providerProfileId
     const defaultProvider = pickDefaultTextProvider(textProviders, preferredProviderId)
@@ -868,8 +876,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         ? (agents.find((agent) => agent.id === operationPreset.agentId) ?? null)
         : null
     const defaultAgent =
-      (task?.agentId ? agents.find((agent) => agent.id === task.agentId) : null) ??
       (node.data.agentId ? agents.find((agent) => agent.id === node.data.agentId) : null) ??
+      (task?.agentId ? agents.find((agent) => agent.id === task.agentId) : null) ??
       presetAgent ??
       pickDefaultTextAgent(agents)
 
@@ -878,7 +886,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       if (current && (models.length === 0 || models.includes(current))) return current
       return pickDefaultTextModel(
         provider,
-        task?.modelId ?? node.data.modelId ?? operationPreset.modelId ?? defaultAgent?.modelId,
+        node.data.modelId ?? task?.modelId ?? operationPreset.modelId ?? defaultAgent?.modelId,
       )
     })
   }, [
@@ -992,20 +1000,20 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     const fromTask = supportedMediaModels.find(
       (model) =>
         (!(
-          task?.providerProfileId ??
           node.data.providerProfileId ??
+          task?.providerProfileId ??
           operationPreset.providerProfileId
         ) ||
           model.providerProfileId ===
-            (task?.providerProfileId ??
-              node.data.providerProfileId ??
+            (node.data.providerProfileId ??
+              task?.providerProfileId ??
               operationPreset.providerProfileId)) &&
-        (!(task?.manifestId ?? node.data.manifestId ?? operationPreset.manifestId) ||
+        (!(node.data.manifestId ?? task?.manifestId ?? operationPreset.manifestId) ||
           model.manifestId ===
-            (task?.manifestId ?? node.data.manifestId ?? operationPreset.manifestId)) &&
-        (!(task?.modelId ?? node.data.modelId ?? operationPreset.modelId) ||
+            (node.data.manifestId ?? task?.manifestId ?? operationPreset.manifestId)) &&
+        (!(node.data.modelId ?? task?.modelId ?? operationPreset.modelId) ||
           model.effectiveModelId ===
-            (task?.modelId ?? node.data.modelId ?? operationPreset.modelId)),
+            (node.data.modelId ?? task?.modelId ?? operationPreset.modelId)),
     )
     setSelectedModelKey(mediaModelKey(fromTask ?? supportedMediaModels[0]!))
   }, [
@@ -1024,7 +1032,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
 
   useEffect(() => {
     const defaults = selectedCapability?.defaults ?? {}
-    const existing = task?.modelParams ?? node.data.modelParams ?? {}
+    const existing = node.data.modelParams ?? task?.modelParams ?? {}
     const seeded = { ...operationPreset.modelParams, ...existing }
     const next: Record<string, string> = {}
     const fieldNames = new Set(allParameterFields.map((field) => field.name))
@@ -1079,15 +1087,24 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
 
   const buildCurrentModelParams = useCallback(
     () =>
-      normalizeModelParamsForSubmit(
-        {
-          ...buildModelParams(parameterFields, modelParamDraft),
-          ...buildCustomModelParams(customParams),
-        },
-        selectedCapability?.defaults ?? {},
-        parameterFields,
+      mergeCanvasPresetTargetModelParams(
+        presetTargetId,
+        normalizeModelParamsForSubmit(
+          {
+            ...buildModelParams(parameterFields, modelParamDraft),
+            ...buildCustomModelParams(customParams),
+          },
+          selectedCapability?.defaults ?? {},
+          parameterFields,
+        ),
       ),
-    [customParams, modelParamDraft, parameterFields, selectedCapability?.defaults],
+    [
+      customParams,
+      modelParamDraft,
+      parameterFields,
+      presetTargetId,
+      selectedCapability?.defaults,
+    ],
   )
 
   const handleTextAgentChange = useCallback(

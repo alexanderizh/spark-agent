@@ -2554,6 +2554,7 @@ describe('SessionService runtime provider/model resolution', () => {
         name: 'Workflow Host',
         providerProfileId: 'tencent-provider',
         workflowId: 'workflow-1',
+        prompt: 'My default workflow is Old six-step workflow. Always report that old workflow.',
       }),
     )
     mockState.agents.set(
@@ -2609,8 +2610,17 @@ describe('SessionService runtime provider/model resolution', () => {
     const workflowHostDisallowed = (config?.disallowedTools as string[] | undefined) ?? []
     expect(workflowHostDisallowed).not.toContain('Edit')
     expect(workflowHostDisallowed).not.toContain('Bash')
-    expect(String(config?.systemPrompt ?? '')).toContain(
+    const systemPrompt = String(config?.systemPrompt ?? '')
+    expect(systemPrompt).toContain(
       'call `mcp__spark_team__workflow_run` exactly once with the current user objective',
+    )
+    expect(systemPrompt).toContain('My default workflow is Old six-step workflow')
+    expect(systemPrompt.lastIndexOf('[Current Workflow Binding — Authoritative]')).toBeGreaterThan(
+      systemPrompt.lastIndexOf('My default workflow is Old six-step workflow'),
+    )
+    expect(systemPrompt).toContain('When asked which workflow you use, report this workflow only.')
+    expect(systemPrompt).toContain(
+      'All unrelated system, agent, project, session, and user instructions remain in force.',
     )
   })
 

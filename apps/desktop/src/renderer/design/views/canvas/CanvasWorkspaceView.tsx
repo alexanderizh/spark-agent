@@ -7068,10 +7068,28 @@ export function CanvasWorkspaceView({
       (task.operationNodeId
         ? snapshot.nodes.find((node) => node.id === task.operationNodeId)
         : undefined) ?? snapshot.nodes.find((node) => node.taskId === task.id)
-    const retryModelParams =
+    const requestedRetryModelParams =
       runtimeSource === 'current-node'
         ? { ...task.modelParams, ...(taskNode?.data.modelParams ?? {}) }
         : task.modelParams
+    const retryPresetTargetId = resolveCanvasPresetTarget({
+      operation: task.operation,
+      taskPipelineRole:
+        (runtimeSource === 'current-node' ? taskNode?.data.pipelineRole : task.taskPipelineRole) ??
+        task.taskPipelineRole ??
+        null,
+      outputPipelineRole:
+        (runtimeSource === 'current-node'
+          ? taskNode?.data.outputPipelineRole
+          : task.outputPipelineRole) ??
+        task.outputPipelineRole ??
+        null,
+      workflow: requestedRetryModelParams.workflow,
+    })
+    const retryModelParams = mergeCanvasPresetTargetModelParams(
+      retryPresetTargetId,
+      requestedRetryModelParams,
+    )
     const retryExtractKind = resolveExtractEntityKindFromWorkflow(retryModelParams.workflow)
     if (taskNode && isOperationNode(taskNode) && retryExtractKind) {
       const retryInputNodes = task.inputNodeIds
@@ -7255,11 +7273,26 @@ export function CanvasWorkspaceView({
                       taskInputNodes,
                       snapshot.assets,
                     )
-                    const workflow =
-                      opTask && typeof opTask.modelParams?.workflow === 'string'
-                        ? opTask.modelParams.workflow
-                        : ''
-                    const extractKind = resolveExtractEntityKindFromWorkflow(workflow)
+                    const operation = (opNode.data.operation ??
+                      opNode.type) as CanvasOperationType
+                    const currentPresetTargetId = resolveCanvasPresetTarget({
+                      operation,
+                      taskPipelineRole:
+                        opNode.data.pipelineRole ?? opTask?.taskPipelineRole ?? null,
+                      outputPipelineRole:
+                        opNode.data.outputPipelineRole ?? opTask?.outputPipelineRole ?? null,
+                      workflow:
+                        params.modelParams?.workflow ??
+                        opNode.data.modelParams?.workflow ??
+                        opTask?.modelParams?.workflow,
+                    })
+                    const currentModelParams = mergeCanvasPresetTargetModelParams(
+                      currentPresetTargetId,
+                      params.modelParams,
+                    )
+                    const extractKind = resolveExtractEntityKindFromWorkflow(
+                      currentModelParams.workflow,
+                    )
                     // 统一行为：先收起弹窗，再继续执行任务，避免提交后弹窗长时间不关。
                     const closePanel = () => {
                       setActiveOperationPanelNodeId(null)
@@ -7280,8 +7313,6 @@ export function CanvasWorkspaceView({
                         })
                         .filter(Boolean)
                         .join('\n\n')
-                      const operation = (opNode.data.operation ??
-                        opNode.type) as CanvasOperationType
                       const promptDocument =
                         params.promptDocument ??
                         migrateLegacyPrompt({
@@ -7290,7 +7321,10 @@ export function CanvasWorkspaceView({
                           assets: snapshot.assets,
                         })
                       const extractSystemPrompt =
-                        params.systemPrompt?.trim() ||
+                        normalizeCanvasFunctionalSystemPrompt(
+                          params.systemPrompt,
+                          currentPresetTargetId,
+                        ) ||
                         buildCanvasOperationSystemPrompt(
                           operation,
                           readCanvasResolvedPresetTarget(
@@ -7298,7 +7332,7 @@ export function CanvasWorkspaceView({
                               operation,
                               taskPipelineRole: opNode.data.pipelineRole ?? null,
                               outputPipelineRole: opNode.data.outputPipelineRole ?? null,
-                              workflow: params.modelParams?.workflow,
+                              workflow: currentModelParams.workflow,
                             }),
                           ).prompt,
                         )
@@ -7318,7 +7352,7 @@ export function CanvasWorkspaceView({
                         operation,
                         taskPipelineRole: opNode.data.pipelineRole ?? null,
                         outputPipelineRole: opNode.data.outputPipelineRole ?? null,
-                        workflow: params.modelParams?.workflow,
+                        workflow: currentModelParams.workflow,
                       })
                       writeCanvasLastUsedPresetTarget(extractPresetTargetId, {
                         ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
@@ -7329,7 +7363,7 @@ export function CanvasWorkspaceView({
                         ...(params.manifestId ? { manifestId: params.manifestId } : {}),
                         ...(params.modelId ? { modelId: params.modelId } : {}),
                         ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                        ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                        modelParams: currentModelParams,
                       })
                       closePanel()
                       void handleExtractEntities(
@@ -7349,7 +7383,7 @@ export function CanvasWorkspaceView({
                             ? { reasoningEffort: params.reasoningEffort }
                             : {}),
                           ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                          ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                          modelParams: currentModelParams,
                           bindToNodeId: opNode.id,
                           ...(params.inputNodeIds ? { inputNodeIds: params.inputNodeIds } : {}),
                           inputAssetIds: taskInputNodes
@@ -7362,13 +7396,7 @@ export function CanvasWorkspaceView({
                     }
                     // 普通操作（文本/图片/视频生成等）：先收起弹窗，再异步提交任务。
                     closePanel()
-                    const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
-                    const presetTargetId = resolveCanvasPresetTarget({
-                      operation,
-                      taskPipelineRole: opNode.data.pipelineRole ?? null,
-                      outputPipelineRole: opNode.data.outputPipelineRole ?? null,
-                      workflow: params.modelParams?.workflow ?? opNode.data.modelParams?.workflow,
-                    })
+                    const presetTargetId = currentPresetTargetId
                     const effectiveInputRoles =
                       operation === 'storyboard_grid'
                         ? buildStoryboardReferenceInputRoles(
@@ -7411,8 +7439,8 @@ export function CanvasWorkspaceView({
                       : effectivePrompt
                     const styleContext = buildCanvasStyleContext(snapshot, {
                       ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
-                      ...(params.modelParams && Object.keys(params.modelParams).length > 0
-                        ? { modelParams: params.modelParams }
+                      ...(Object.keys(currentModelParams).length > 0
+                        ? { modelParams: currentModelParams }
                         : {}),
                     })
                     const styledTask = applyCanvasStyleToTask(
@@ -7420,7 +7448,7 @@ export function CanvasWorkspaceView({
                       {
                         prompt: finalPrompt,
                         ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
-                        ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                        modelParams: currentModelParams,
                       },
                       styleContext,
                     )
@@ -7436,7 +7464,7 @@ export function CanvasWorkspaceView({
                         ? { reasoningEffort: params.reasoningEffort }
                         : {}),
                       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                      ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                      modelParams: currentModelParams,
                     })
                     try {
                       await runOperationNode(opNode.id, {
@@ -7500,10 +7528,16 @@ export function CanvasWorkspaceView({
                     const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
                     const presetTargetId = resolveCanvasPresetTarget({
                       operation,
-                      taskPipelineRole: opNode.data.pipelineRole ?? null,
-                      outputPipelineRole: opNode.data.outputPipelineRole ?? null,
+                      taskPipelineRole:
+                        opNode.data.pipelineRole ?? opTask?.taskPipelineRole ?? null,
+                      outputPipelineRole:
+                        opNode.data.outputPipelineRole ?? opTask?.outputPipelineRole ?? null,
                       workflow: params.modelParams?.workflow ?? opNode.data.modelParams?.workflow,
                     })
+                    const modelParams = mergeCanvasPresetTargetModelParams(
+                      presetTargetId,
+                      params.modelParams,
+                    )
                     const nextNodeData = {
                       ...opNode.data,
                       ...(params.promptDocument ? { promptDocument: params.promptDocument } : {}),
@@ -7518,7 +7552,7 @@ export function CanvasWorkspaceView({
                         : {}),
                       negativePrompt: params.negativePrompt,
                       message: params.message,
-                      modelParams: params.modelParams,
+                      modelParams,
                       ...(params.agentId ? { agentId: params.agentId } : {}),
                       ...(params.providerProfileId
                         ? { providerProfileId: params.providerProfileId }
@@ -7545,7 +7579,7 @@ export function CanvasWorkspaceView({
                       ...(params.manifestId ? { manifestId: params.manifestId } : {}),
                       ...(params.modelId ? { modelId: params.modelId } : {}),
                       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                      ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                      modelParams,
                     })
                   }}
                 />

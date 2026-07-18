@@ -78,6 +78,23 @@ export const CANVAS_PIPELINE_PRESET_TARGETS = [
 
 export type CanvasPipelinePresetTargetId = (typeof CANVAS_PIPELINE_PRESET_TARGETS)[number]['id']
 export type CanvasPresetTargetId = CanvasOperationType | CanvasPipelinePresetTargetId
+
+const CANVAS_PIPELINE_MODEL_PARAM_DEFAULTS: Partial<
+  Record<CanvasPipelinePresetTargetId, Record<string, unknown>>
+> = {
+  'screenplay.to_shot_script': { workflow: 'shot_script', responseFormat: 'json' },
+  'screenplay.extract_characters': { workflow: 'extract_character', responseFormat: 'json' },
+  'screenplay.extract_scenes': { workflow: 'extract_scene', responseFormat: 'json' },
+  'screenplay.extract_props': { workflow: 'extract_prop', responseFormat: 'json' },
+  'screenplay.extract_effects': { workflow: 'extract_effect', responseFormat: 'json' },
+  'screenplay.split_episodes': { workflow: 'split_episodes' },
+}
+
+const CANVAS_PIPELINE_CONTROL_PARAM_NAMES = new Set([
+  'workflow',
+  'responseFormat',
+  'response_format',
+])
 export type CanvasPresetTargetDefinition = {
   id: CanvasPresetTargetId
   operation: CanvasOperationType
@@ -319,40 +336,45 @@ export function resolveCanvasPresetTarget(input: {
   if (input.operation === 'text_rewrite' && input.outputPipelineRole === 'screenplay') {
     return 'chapter.to_screenplay'
   }
-  if (input.operation === 'text_generate' && input.taskPipelineRole === 'shot') {
+  if (
+    input.operation === 'text_generate' &&
+    (input.taskPipelineRole === 'shot' ||
+      input.outputPipelineRole === 'shot' ||
+      workflow === 'shot_script')
+  ) {
     return 'screenplay.to_shot_script'
   }
   if (
     input.operation === 'text_generate' &&
-    input.taskPipelineRole === 'character' &&
+    (input.taskPipelineRole === 'character' || input.outputPipelineRole === 'character') &&
     workflow === 'extract_character'
   ) {
     return 'screenplay.extract_characters'
   }
   if (
     input.operation === 'text_generate' &&
-    input.taskPipelineRole === 'scene' &&
+    (input.taskPipelineRole === 'scene' || input.outputPipelineRole === 'scene') &&
     workflow === 'extract_scene'
   ) {
     return 'screenplay.extract_scenes'
   }
   if (
     input.operation === 'text_generate' &&
-    input.taskPipelineRole === 'prop' &&
+    (input.taskPipelineRole === 'prop' || input.outputPipelineRole === 'prop') &&
     workflow === 'extract_prop'
   ) {
     return 'screenplay.extract_props'
   }
   if (
     input.operation === 'text_generate' &&
-    input.taskPipelineRole === 'effect' &&
+    (input.taskPipelineRole === 'effect' || input.outputPipelineRole === 'effect') &&
     workflow === 'extract_effect'
   ) {
     return 'screenplay.extract_effects'
   }
   if (
     input.operation === 'text_generate' &&
-    input.taskPipelineRole === 'screenplay' &&
+    (input.taskPipelineRole === 'screenplay' || input.outputPipelineRole === 'screenplay') &&
     workflow === 'split_episodes'
   ) {
     return 'screenplay.split_episodes'
@@ -459,6 +481,13 @@ export function readCanvasInheritedPresetTarget(
   const builtin = readBuiltinCanvasOperationPreset(target.operation)
   const operationOverrides =
     target.id === target.operation ? {} : (readStore()[target.operation] ?? {})
+  const inheritedModelParams = {
+    ...builtin.modelParams,
+    ...(operationOverrides.modelParams ?? {}),
+  }
+  if (target.id !== target.operation) {
+    for (const name of CANVAS_PIPELINE_CONTROL_PARAM_NAMES) delete inheritedModelParams[name]
+  }
   const taskDefaultKind = canvasTaskDefaultKindForOperation(target.operation, context)
   const taskDefault = taskDefaultKind ? readCanvasTaskDefault(taskDefaultKind) : { skillIds: [] }
   return {
@@ -484,8 +513,8 @@ export function readCanvasInheritedPresetTarget(
       : {}),
     skillIds: [...(operationOverrides.skillIds ?? taskDefault.skillIds)],
     modelParams: {
-      ...builtin.modelParams,
-      ...(operationOverrides.modelParams ?? {}),
+      ...inheritedModelParams,
+      ...(CANVAS_PIPELINE_MODEL_PARAM_DEFAULTS[target.id as CanvasPipelinePresetTargetId] ?? {}),
     },
   }
 }
@@ -496,7 +525,7 @@ export function readCanvasPresetTarget(
 ): CanvasOperationPreset {
   const base = readCanvasInheritedPresetTarget(targetId, context)
   const overrides = readPresetStore()[targetId] ?? {}
-  return {
+  const resolved = {
     prompt: overrides.prompt ?? base.prompt,
     negativePrompt: overrides.negativePrompt ?? base.negativePrompt,
     ...((overrides.providerProfileId ?? base.providerProfileId)
@@ -513,6 +542,8 @@ export function readCanvasPresetTarget(
       ...(overrides.modelParams ?? {}),
     },
   }
+  resolved.modelParams = enforceCanvasPresetTargetModelParams(targetId, resolved.modelParams)
+  return resolved
 }
 
 export function writeCanvasOperationPreset(
@@ -589,7 +620,7 @@ export function readCanvasResolvedPresetTarget(
 ): CanvasOperationPreset {
   const targetPreset = readCanvasPresetTarget(targetId, context)
   const lastUsed = readLastUsedStore()[targetId] ?? {}
-  return {
+  const resolved = {
     // 用户在任务面板中输入的内容不能反向覆盖功能节点的内置指令。
     // 历史版本曾把 prompt 写进 last-used，这里固定以显式 preset 为准，
     // 同时继续沿用上次选择的模型、Agent 与参数。
@@ -613,6 +644,8 @@ export function readCanvasResolvedPresetTarget(
       ...(lastUsed.modelParams ?? {}),
     },
   }
+  resolved.modelParams = enforceCanvasPresetTargetModelParams(targetId, resolved.modelParams)
+  return resolved
 }
 
 export function hasCanvasPresetTargetOverride(targetId: CanvasPresetTargetId): boolean {
@@ -656,7 +689,21 @@ export function mergeCanvasPresetTargetModelParams(
   targetId: CanvasPresetTargetId,
   modelParams?: Record<string, unknown>,
 ): Record<string, unknown> {
-  return mergeModelParamAliases(readCanvasPresetTarget(targetId).modelParams, modelParams)
+  return enforceCanvasPresetTargetModelParams(
+    targetId,
+    mergeModelParamAliases(readCanvasPresetTarget(targetId).modelParams, modelParams),
+  )
+}
+
+/** Keep a functional node's routing identity separate from provider parameter inheritance. */
+export function enforceCanvasPresetTargetModelParams(
+  targetId: CanvasPresetTargetId,
+  modelParams: Record<string, unknown>,
+): Record<string, unknown> {
+  const workflow = CANVAS_PIPELINE_MODEL_PARAM_DEFAULTS[
+    targetId as CanvasPipelinePresetTargetId
+  ]?.workflow
+  return typeof workflow === 'string' ? { ...modelParams, workflow } : { ...modelParams }
 }
 
 function mergeModelParamAliases(

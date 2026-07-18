@@ -617,6 +617,15 @@ export interface CodexCliModelProviderConfig {
   env?: Record<string, string | undefined> | undefined
 }
 
+/**
+ * 脱敏后的最终 SDK/CLI 调用快照。记录 executor 真正提交给 SDK/CLI 的参数，
+ * 但不包含 apiKey、Authorization 或完整环境变量。
+ */
+export interface SDKInvocationSnapshot {
+  transport: 'claude-sdk' | 'codex-sdk' | 'codex-cli'
+  request: Record<string, unknown>
+}
+
 export interface SDKExecutorConfig {
   apiKey: string
   /** True when the turn is running as unattended automation and must never wait on user input. */
@@ -697,6 +706,7 @@ export interface SDKExecutorConfig {
   enableCheckpoints?: boolean | undefined
   sdkSessionId?: string | undefined
   continueSession?: boolean | undefined
+  invocationObserver?: ((snapshot: SDKInvocationSnapshot) => void) | undefined
   approvalCallback?: ((
     sessionId: string,
     toolName: string,

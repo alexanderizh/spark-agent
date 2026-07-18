@@ -152,11 +152,21 @@ export class CodexSdkExecutor {
 
     try {
       const sdk = await loadCodexSdk()
-      const codex = new sdk.Codex(buildCodexOptions(config)) as CodexClient
+      const codexOptions = buildCodexOptions(config)
+      const threadOptions = buildThreadOptions(config)
+      config.invocationObserver?.({
+        transport: 'codex-sdk',
+        request: {
+          input,
+          clientOptions: sanitizeCodexClientOptions(codexOptions),
+          threadOptions,
+        },
+      })
+      const codex = new sdk.Codex(codexOptions) as CodexClient
       const thread =
         config.sdkSessionId != null && config.continueSession === true
-          ? codex.resumeThread(config.sdkSessionId, buildThreadOptions(config))
-          : codex.startThread(buildThreadOptions(config))
+          ? codex.resumeThread(config.sdkSessionId, threadOptions)
+          : codex.startThread(threadOptions)
       this.thread = thread
 
       const state: StreamState = {
@@ -614,6 +624,31 @@ function buildCodexOptions(config: SDKExecutorConfig): CodexOptions {
     config: buildCodexConfig(config),
     env,
   }
+}
+
+function sanitizeCodexClientOptions(options: CodexOptions): Record<string, unknown> {
+  return {
+    ...(options.baseUrl != null ? { baseUrl: options.baseUrl } : {}),
+    ...(options.codexPathOverride != null ? { codexPathOverride: options.codexPathOverride } : {}),
+    config: sanitizeCodexConfigForDiagnostics(options.config),
+    credentials: '[redacted]',
+  }
+}
+
+function sanitizeCodexConfigForDiagnostics(value: unknown, key = ''): unknown {
+  if (key === 'env' || key === 'http_headers' || key === 'headers') return '[redacted]'
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeCodexConfigForDiagnostics(item))
+  }
+  if (value != null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([childKey, childValue]) => [
+        childKey,
+        sanitizeCodexConfigForDiagnostics(childValue, childKey.toLowerCase()),
+      ]),
+    )
+  }
+  return value
 }
 
 function getCompletedAssistantText(state: StreamState): string {

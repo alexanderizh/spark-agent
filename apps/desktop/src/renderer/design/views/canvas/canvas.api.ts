@@ -488,6 +488,30 @@ export function isTextModelOperation(operation: CanvasOperationType): boolean {
   return TEXT_MODEL_OPERATIONS.has(operation)
 }
 
+const CANVAS_TEXT_CONTROL_MODEL_PARAM_NAMES = new Set([
+  'workflow',
+  'sourceAssetId',
+  'responseFormat',
+  'response_format',
+])
+
+/**
+ * Provider contracts only understand wire parameters. Canvas workflow identity and
+ * response-shape hints are renderer control metadata and must survive that pruning.
+ */
+function restoreCanvasTextControlModelParams(
+  operation: CanvasOperationType,
+  original: Record<string, unknown>,
+  pruned: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!isTextModelOperation(operation)) return pruned
+  const restored = { ...pruned }
+  for (const name of CANVAS_TEXT_CONTROL_MODEL_PARAM_NAMES) {
+    if (Object.prototype.hasOwnProperty.call(original, name)) restored[name] = original[name]
+  }
+  return restored
+}
+
 export type CanvasDb = {
   projects: CanvasProject[]
   boards: CanvasBoard[]
@@ -4499,6 +4523,9 @@ export const canvasApi = {
       outputPipelineRole: input.outputPipelineRole ?? null,
       workflow: input.modelParams?.workflow,
     })
+    const taskPipelineRole =
+      input.taskPipelineRole ??
+      (presetTargetId !== input.operation ? input.outputPipelineRole : undefined)
     const operationPreset = readCanvasResolvedPresetTarget(presetTargetId, {
       hasImageInput: inputNodes.some((node) => node.type === 'image'),
     })
@@ -4538,10 +4565,10 @@ export const canvasApi = {
     for (const task of inputTasks) mergeInheritedModelParams(inheritedModelParams, task.modelParams)
     for (const node of inputNodes)
       mergeInheritedModelParams(inheritedModelParams, node.data.modelParams)
-    const mergedModelParams = {
-      ...mergeCanvasPresetTargetModelParams(presetTargetId, inheritedModelParams),
+    const mergedModelParams = mergeCanvasPresetTargetModelParams(presetTargetId, {
+      ...inheritedModelParams,
       ...(input.modelParams ?? {}),
-    }
+    })
     // Contract V2 二次裁剪：preset/继承/input 合并后按目标 manifest 再次过滤，
     // 防止上游节点的旧模型字段（如 searchEnabled / output_format）污染新模型请求。
     // manifest 缺省时直接退回原值，不阻塞创建。
@@ -4556,7 +4583,14 @@ export const canvasApi = {
     // 参数裁剪可能走异步 IPC；创建前重新读取最新快照，避免菜单/Agent 同时添加操作节点时
     // 后写入者覆盖前一个节点，也确保统一碰撞检测包含刚落下的节点。
     db = readDb()
-    const modelParams = pruned.modelParams
+    const modelParams = restoreCanvasTextControlModelParams(
+      input.operation,
+      mergedModelParams,
+      pruned.modelParams,
+    )
+    const droppedParams = pruned.droppedParams.filter(
+      (item) => !CANVAS_TEXT_CONTROL_MODEL_PARAM_NAMES.has(item.name),
+    )
     const modelId = input.modelId ?? operationPreset.modelId ?? null
     const agentId = input.agentId ?? operationPreset.agentId ?? null
     const skillIds = input.skillIds ?? operationPreset.skillIds
@@ -4572,7 +4606,7 @@ export const canvasApi = {
     )
     const operationNodeSize = pickOperationNodeInitialSize(
       Boolean(input.shotScriptConfig) ||
-        (input.operation === 'text_generate' && input.taskPipelineRole === 'shot'),
+        (input.operation === 'text_generate' && taskPipelineRole === 'shot'),
     )
     const position = resolveCollisionFreeNodePosition({
       preferred: { x: input.x, y: input.y },
@@ -4610,13 +4644,13 @@ export const canvasApi = {
         ...(modelId ? { modelId } : {}),
         ...(agentId ? { agentId } : {}),
         ...(skillIds.length > 0 ? { skillIds } : {}),
-        ...(input.taskPipelineRole != null ? { pipelineRole: input.taskPipelineRole } : {}),
+        ...(taskPipelineRole != null ? { pipelineRole: taskPipelineRole } : {}),
         ...(input.outputPipelineRole != null
           ? { outputPipelineRole: input.outputPipelineRole }
           : {}),
         ...(input.outputTitle != null ? { outputTitle: input.outputTitle } : {}),
         ...(input.shotScriptConfig ? { shotScriptConfig: input.shotScriptConfig } : {}),
-        ...(pruned.droppedParams.length > 0 ? { droppedModelParams: pruned.droppedParams } : {}),
+        ...(droppedParams.length > 0 ? { droppedModelParams: droppedParams } : {}),
         ...(pruned.warnings.length > 0 ? { modelParamWarnings: pruned.warnings } : {}),
         origin: 'manual',
       },
@@ -4652,7 +4686,7 @@ export const canvasApi = {
       modelId,
       reasoningEffort,
       modelParams,
-      taskPipelineRole: input.taskPipelineRole ?? null,
+      taskPipelineRole: taskPipelineRole ?? null,
       outputPipelineRole: input.outputPipelineRole ?? null,
       shotScriptConfig: input.shotScriptConfig ?? null,
       runtimeEvents: initialCanvasTaskRuntimeEvents(at, '操作节点草稿创建'),
@@ -4728,7 +4762,7 @@ export const canvasApi = {
       buildTaskInputFiles(retryInputNodes, buildCanvasRetryInputRoles(oldTask.relationManifest)),
       oldTask.provider === 'xai' ? 'base64' : undefined,
     )
-    const retryModelParams = useCurrentRuntime
+    const requestedRetryModelParams = useCurrentRuntime
       ? { ...oldTask.modelParams, ...(node.data.modelParams ?? {}) }
       : oldTask.modelParams
     const retryProviderProfileId =
@@ -4740,15 +4774,28 @@ export const canvasApi = {
     const retryReasoningEffort =
       (useCurrentRuntime ? node.data.reasoningEffort : oldTask.reasoningEffort) ?? undefined
     const retrySkillIds = (useCurrentRuntime ? node.data.skillIds : oldTask.skillIds) ?? []
-    const retryTaskPipelineRole = oldTask.taskPipelineRole ?? node.data.pipelineRole
-    const retryOutputPipelineRole = oldTask.outputPipelineRole ?? node.data.outputPipelineRole
-    const retryShotScriptConfig = oldTask.shotScriptConfig ?? node.data.shotScriptConfig
+    const retryTaskPipelineRole = useCurrentRuntime
+      ? (node.data.pipelineRole ?? oldTask.taskPipelineRole)
+      : (oldTask.taskPipelineRole ?? node.data.pipelineRole)
+    const retryOutputPipelineRole = useCurrentRuntime
+      ? (node.data.outputPipelineRole ?? oldTask.outputPipelineRole)
+      : (oldTask.outputPipelineRole ?? node.data.outputPipelineRole)
+    const retryShotScriptConfig = useCurrentRuntime
+      ? (node.data.shotScriptConfig ?? oldTask.shotScriptConfig)
+      : (oldTask.shotScriptConfig ?? node.data.shotScriptConfig)
     const retryPresetTargetId = resolveCanvasPresetTarget({
       operation: oldTask.operation,
       taskPipelineRole: retryTaskPipelineRole ?? null,
       outputPipelineRole: retryOutputPipelineRole ?? null,
-      workflow: retryModelParams.workflow,
+      workflow: requestedRetryModelParams.workflow,
     })
+    const retryModelParams = mergeCanvasPresetTargetModelParams(
+      retryPresetTargetId,
+      requestedRetryModelParams,
+    )
+    const resolvedRetryTaskPipelineRole =
+      retryTaskPipelineRole ??
+      (retryPresetTargetId !== oldTask.operation ? retryOutputPipelineRole : undefined)
     const retrySystemPrompt = normalizeCanvasFunctionalSystemPrompt(
       oldTask.systemPrompt,
       retryPresetTargetId,
@@ -4769,7 +4816,9 @@ export const canvasApi = {
       ...(retryAgentId ? { agentId: retryAgentId } : {}),
       ...(retryReasoningEffort ? { reasoningEffort: retryReasoningEffort } : {}),
       ...(retrySkillIds.length > 0 ? { skillIds: retrySkillIds } : {}),
-      ...(retryTaskPipelineRole ? { taskPipelineRole: retryTaskPipelineRole } : {}),
+      ...(resolvedRetryTaskPipelineRole
+        ? { taskPipelineRole: resolvedRetryTaskPipelineRole }
+        : {}),
       ...(retryOutputPipelineRole ? { outputPipelineRole: retryOutputPipelineRole } : {}),
       ...(retryShotScriptConfig ? { shotScriptConfig: retryShotScriptConfig } : {}),
       ...(oldTask.title ? { taskTitle: oldTask.title } : {}),
@@ -4841,10 +4890,25 @@ export const canvasApi = {
           ?.reasoningEffort
       : undefined
     const reasoningEffort = params.reasoningEffort ?? existingReasoningEffort ?? undefined
+    const operation = (node.data.operation ?? node.type) as CanvasOperationType
+    const presetTargetId = resolveCanvasPresetTarget({
+      operation,
+      taskPipelineRole: node.data.pipelineRole ?? null,
+      outputPipelineRole: node.data.outputPipelineRole ?? null,
+      workflow: params.modelParams?.workflow ?? node.data.modelParams?.workflow,
+    })
+    const taskPipelineRole =
+      node.data.pipelineRole ??
+      (presetTargetId !== operation ? node.data.outputPipelineRole : undefined)
+    const modelParams = mergeCanvasPresetTargetModelParams(presetTargetId, params.modelParams)
+    const normalizedSystemPrompt = normalizeCanvasFunctionalSystemPrompt(
+      params.systemPrompt ?? node.data.systemPrompt,
+      presetTargetId,
+    )
     let request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
       inputFiles?: CanvasMediaTaskInputFile[]
     } = {
-      operation: (node.data.operation ?? node.type) as CanvasOperationType,
+      operation,
       prompt: params.prompt,
       ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
       inputNodeIds,
@@ -4852,8 +4916,8 @@ export const canvasApi = {
       ...(params.inputFiles ? { inputFiles: params.inputFiles } : {}),
       outputPlacement: { x: baseX, y: node.y },
       taskTitle:
-        node.title ?? operationLabel((node.data.operation ?? node.type) as CanvasOperationType),
-      ...(node.data.pipelineRole ? { taskPipelineRole: node.data.pipelineRole } : {}),
+        node.title ?? operationLabel(operation),
+      ...(taskPipelineRole ? { taskPipelineRole } : {}),
       ...(node.data.outputPipelineRole ? { outputPipelineRole: node.data.outputPipelineRole } : {}),
       ...(node.data.outputTitle ? { outputTitle: node.data.outputTitle } : {}),
       ...(params.agentId ? { agentId: params.agentId } : {}),
@@ -4861,13 +4925,14 @@ export const canvasApi = {
       ...(params.manifestId ? { manifestId: params.manifestId } : {}),
       ...(params.modelId ? { modelId: params.modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
-      ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+      ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
       ...(params.skipParameterValidation === true
         ? { skipParameterValidation: true }
         : {}),
       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
       ...(params.shotScriptConfig ? { shotScriptConfig: params.shotScriptConfig } : {}),
       ...pickCanvasPromptTaskFields(params),
+      ...(normalizedSystemPrompt ? { systemPrompt: normalizedSystemPrompt } : {}),
     }
     if (params.inputNodeIds) {
       const skipParameterValidation = params.skipParameterValidation === true

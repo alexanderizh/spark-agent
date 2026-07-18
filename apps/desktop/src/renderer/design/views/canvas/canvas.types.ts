@@ -382,7 +382,7 @@ export type CanvasTask = {
   submitResponse?: unknown
   /** 提交时输入文件的诊断摘要，便于任务详情排查 url/base64/path 等传参方式。 */
   inputFileDiagnostics?: CanvasTaskInputDiagnostic[]
-  /** 实际发给 provider 的 HTTP 调用摘要（请求 + 响应），用于任务详情展示。 */
+  /** 实际模型调用摘要：HTTP 请求，或 SDK/CLI 的最终地址与调用参数。 */
   requestCall?: MediaRequestCall | null
   agentId?: string | null
   skillIds?: string[]
