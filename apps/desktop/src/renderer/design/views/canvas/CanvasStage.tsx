@@ -30,6 +30,7 @@ import {
   type NodeOrigin,
   type ReactFlowInstance,
   type Viewport,
+  type XYPosition,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Icons } from '../../Icons'
@@ -1339,6 +1340,20 @@ function CanvasStageInner({
     [notifyViewportChange],
   )
 
+  const handleMinimapClick = useCallback(
+    (_event: ReactMouseEvent, position: XYPosition) => {
+      const instance = flowInstanceRef.current
+      if (!instance) return
+      setPaneContextMenu(null)
+      setEdgeContextMenu(null)
+      void instance.setCenter(position.x, position.y, {
+        zoom: latestViewportRef.current.zoom,
+        duration: 160,
+      })
+    },
+    [],
+  )
+
   const handleInit = useCallback(
     (instance: ReactFlowInstance<Node<CanvasFlowNodeData>, Edge>) => {
       flowInstanceRef.current = instance
@@ -2211,7 +2226,8 @@ function CanvasStageInner({
               className="canvas-minimap"
               style={{ width: CANVAS_MINIMAP_WIDTH, height: CANVAS_MINIMAP_HEIGHT }}
               pannable
-              ariaLabel="小地图：拖动可视区域以移动画布"
+              onClick={handleMinimapClick}
+              ariaLabel="小地图：点击或拖动可视区域以移动画布"
               nodeColor={minimapNodeColor}
               nodeBorderRadius={8}
               nodeStrokeWidth={0}
