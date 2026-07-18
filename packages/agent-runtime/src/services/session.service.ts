@@ -80,6 +80,11 @@ import {
 } from './team-mcp-http-bridge.js'
 import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-continuity.js'
 import {
+  buildWorkflowBindingAuthorityPrompt,
+  buildWorkflowSystemPrompt,
+  type WorkflowExecutionMode,
+} from './workflow-system-prompt.js'
+import {
   AGENT_MESSAGE_DELIVERY_MODES,
   qualifyTeamToolName,
   SPARK_TEAM_MCP_SERVER_NAME,
@@ -119,8 +124,6 @@ import {
   getWorkflowNodeEffectiveWorkerId,
   getWorkflowNodeWorkerId,
   normalizeWorkflowGraph,
-  orderWorkflowNodes,
-  type NormalizedWorkflowEdge,
   type NormalizedWorkflowGraph,
   type NormalizedWorkflowNode,
   type WorkflowDispatchAttachment,
@@ -2352,6 +2355,7 @@ export class SessionService {
       runtimeContext.envSystemPrompt,
       projectContext.systemPrompt,
       conversationHistoryPrompt,
+      workflow != null ? buildWorkflowBindingAuthorityPrompt(workflow) : undefined,
     )
     const composedSkillSystemPrompt = joinPromptSections(
       runtimeContext.skillSystemPrompt,
@@ -8862,7 +8866,7 @@ export function formatReplyForHost(reply: import('@spark/protocol').TeamA2AReply
 function buildManagedAgentSystemPrompt(
   agent: AgentItem,
   workflow: WorkflowItem | null,
-  workflowExecutionMode: 'guided' | 'workflow_run' | 'codex_guided' = 'guided',
+  workflowExecutionMode: WorkflowExecutionMode = 'guided',
 ): string {
   const sections: string[] = [
     '[Managed Agent]',
@@ -9321,56 +9325,6 @@ const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   'For destructive operations (delete, uninstall), always confirm with the user first.',
   'Never reveal or ask for full API keys — only show whether a key is configured.',
 ].join('\n')
-
-function buildWorkflowSystemPrompt(
-  workflow: WorkflowItem,
-  workflowExecutionMode: 'guided' | 'workflow_run' | 'codex_guided' = 'guided',
-): string {
-  const graph = normalizeWorkflowGraph(workflow.graph)
-  if (graph.nodes.length === 0) return ''
-  const nodes: NormalizedWorkflowNode[] = graph.nodes
-  const edges: NormalizedWorkflowEdge[] = graph.edges
-  const ordered = orderWorkflowNodes(nodes, edges)
-  const lines = ordered.map((node, index) => {
-    const config = node.config
-    const detail = [
-      `kind=${node.kind}`,
-      config.role != null ? `role=${String(config.role)}` : '',
-      config.modelId != null && String(config.modelId).trim()
-        ? `model=${String(config.modelId)}`
-        : '',
-      Array.isArray(config.skillIds) && config.skillIds.length > 0
-        ? `skills=${config.skillIds.join(', ')}`
-        : '',
-      Array.isArray(config.toolIds) && config.toolIds.length > 0
-        ? `tools=${config.toolIds.join(', ')}`
-        : '',
-      Array.isArray(config.ruleIds) && config.ruleIds.length > 0
-        ? `rules=${config.ruleIds.join(', ')}`
-        : '',
-      typeof config.retryCount === 'number' ? `retry=${config.retryCount}` : '',
-    ].filter(Boolean)
-    const prompt =
-      typeof config.prompt === 'string' && config.prompt.trim()
-        ? `\n   prompt: ${config.prompt.trim()}`
-        : ''
-    return `${index + 1}. ${node.title} [${detail.join('; ')}]${prompt}`
-  })
-
-  return [
-    '[Workflow Execution Plan]',
-    `Workflow: ${workflow.name} (${workflow.id})`,
-    workflow.description.trim() ? `Description: ${workflow.description.trim()}` : '',
-    workflowExecutionMode === 'workflow_run'
-      ? 'When workflow_run is available, call `mcp__spark_team__workflow_run` exactly once with the current user objective. The tool executes explicit agent nodes sequentially and carries outputKey state between nodes.'
-      : workflowExecutionMode === 'codex_guided'
-        ? 'This runtime does not expose `workflow_run`. Execute the active workflow phases yourself in topological order within this turn. Keep an internal checklist of active nodes, do not skip a node unless an incoming condition is false based on established state, and clearly report the blocking node if the workflow cannot be completed.'
-        : 'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, or permission preference, treat it as the preferred configuration for that phase. All enabled MCP servers remain globally available. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
-    lines.join('\n'),
-  ]
-    .filter((line) => line.trim().length > 0)
-    .join('\n\n')
-}
 
 function createWorkflowSubagentMember(
   node: NormalizedWorkflowNode,
