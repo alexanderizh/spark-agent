@@ -195,12 +195,26 @@ describe('canvasOperationPresets', () => {
       prompt: '你是角色分析师，只输出 characters JSON',
       providerProfileId: 'provider:text',
       modelId: 'gpt-5',
+      modelParams: { workflow: 'extract_character', responseFormat: 'json' },
     })
 
     expect(readCanvasInheritedPresetTarget('screenplay.to_shot_script')).toMatchObject({
       prompt: '',
       providerProfileId: 'provider:text',
       modelId: 'gpt-5',
+      modelParams: { workflow: 'shot_script', responseFormat: 'json' },
+    })
+  })
+
+  it('repairs contaminated last-used workflow metadata for a dedicated pipeline target', () => {
+    writeCanvasLastUsedPresetTarget('screenplay.to_shot_script', {
+      modelParams: { workflow: 'extract_character', temperature: 0.3 },
+    })
+
+    expect(readCanvasResolvedPresetTarget('screenplay.to_shot_script').modelParams).toEqual({
+      workflow: 'shot_script',
+      responseFormat: 'json',
+      temperature: 0.3,
     })
   })
 
@@ -400,5 +414,18 @@ describe('canvasOperationPresets', () => {
         workflow: 'extract_prop',
       }),
     ).toBe('screenplay.extract_props')
+    expect(
+      resolveCanvasPresetTarget({
+        operation: 'text_generate',
+        outputPipelineRole: 'shot',
+        workflow: 'extract_character',
+      }),
+    ).toBe('screenplay.to_shot_script')
+    expect(
+      resolveCanvasPresetTarget({
+        operation: 'text_generate',
+        workflow: 'shot_script',
+      }),
+    ).toBe('screenplay.to_shot_script')
   })
 })

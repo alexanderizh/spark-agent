@@ -70,6 +70,8 @@ xAI 另有一处终态解析错误：官方成功契约是 `status=done` 且产�
 
 旧任务迁移按边类型恢复操作节点：`used_as_input` 使用 target，`generated` 使用 source。迁移结果按实际数据库对象缓存，项目重载或回滚得到的新快照仍会执行兼容迁移。
 
+功能身份不能依赖 Provider 参数裁剪后的 `modelParams` 单点判断。`workflow`、`responseFormat` 和来源资产 id 属于画布控制元数据，文本模型 Contract 裁剪后必须恢复；分镜旧节点只要输入角色或输出角色为 `shot`，即使 `taskPipelineRole`/`workflow` 缺失或残留 `extract_character`，也必须解析为 `screenplay.to_shot_script`。当前节点运行和编辑优先读取节点草稿，历史 task 只作为缺省回退；API 提交边界再次强制功能 workflow 并规范化 system prompt，避免不可变历史快照反向污染下一次运行。
+
 ### 异步轮询诊断
 
 共享轮询器会记录：

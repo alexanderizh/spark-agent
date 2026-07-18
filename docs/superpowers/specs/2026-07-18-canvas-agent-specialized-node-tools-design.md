@@ -95,6 +95,8 @@ UI 右键入口和 Agent 专用操作工具都调用同一个执行函数，不�
 
 专用功能 system prompt 是输出 schema 的唯一契约。通用 `text_generate`/`text_rewrite` 操作预设只能提供通用节点的默认 Prompt，不得拼接进分镜、剧本、分集或实体抽取契约；Agent 人设、Skill 和项目风格只能补充能力与风格，不能改变专用任务类型和输出 schema。历史节点若已经出现通用 Prompt 前缀污染，提交或重试时按专用契约标记剥离该前缀。
 
+专用节点还必须持有不可被模型 Contract 裁剪掉的功能身份。`workflow`/`responseFormat` 等画布控制参数与 Provider wire 参数分层处理；专用 preset 在创建、编辑、当前节点重试和 API 提交边界都重新锁定自己的 workflow。兼容旧数据时，`taskPipelineRole`、`outputPipelineRole` 和 workflow 任一可靠信号均可恢复专用 target，其中 `shot` 角色优先于残留的实体抽取 workflow，防止分镜节点再次进入角色抽取分支。
+
 ## 专用工具范围
 
 ### 内容与影视资产工具
