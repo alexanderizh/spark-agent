@@ -323,6 +323,12 @@
   height: var(--sidebar-project-toolbar-icon-size);
 }
 
+// Maximize2 / Minimize2 线条外扩更明显，单独收一号，避免比筛选和新建按钮显得更重。
+.sidebar-project-toolbar-actions > .sidebar-project-toolbar-btn:first-child svg {
+  width: 14px;
+  height: 14px;
+}
+
 // ListFilter 的有效图形高度较窄，略微放大以与两侧操作图标保持相同视觉重量。
 .sidebar-project-toolbar .sidebar-filter-btn svg {
   width: 16px;
