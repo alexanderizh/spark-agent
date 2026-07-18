@@ -6,6 +6,7 @@
  */
 import { useMemo, useState } from 'react'
 import { Dropdown } from '@lobehub/ui'
+import { ListFilter } from 'lucide-react'
 import './SidebarFilterMenu.less'
 import { Icons } from './Icons'
 import { useI18n } from './i18n'
@@ -285,7 +286,7 @@ export function SidebarFilterMenu({
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        <Icons.ListFilter size={15} />
+        <ListFilter size={16} />
         {active && <span className="sidebar-filter-btn-dot" />}
       </button>
     </Dropdown>

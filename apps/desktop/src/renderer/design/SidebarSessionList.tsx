@@ -6,6 +6,7 @@ import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffe
 import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
 import { ActionIcon, Button, Dropdown, Input, Modal } from '@lobehub/ui'
+import { Maximize2, Minimize2 } from 'lucide-react'
 import { Icons } from './Icons'
 import {
   useSessionSidebar,
@@ -1049,7 +1050,7 @@ function SidebarProjectToolbar({
       <div className="sidebar-project-toolbar-actions">
         <ActionIcon
           className="sidebar-project-toolbar-btn"
-          icon={allCollapsed ? Icons.ComposerExpand : Icons.ComposerCollapse}
+          icon={allCollapsed ? Maximize2 : Minimize2}
           size="small"
           variant="borderless"
           title={toggleTitle}
