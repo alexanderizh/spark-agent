@@ -87,6 +87,7 @@ import {
   buildPendingConnectionInput,
   type PendingCanvasConnection,
 } from './canvasPendingConnection'
+import { shouldClearCanvasSelectionOnEscape } from './canvasSelectionKeyboard'
 import type {
   CanvasEdge,
   CanvasNode as SparkCanvasNode,
@@ -1562,20 +1563,40 @@ function CanvasStageInner({
   }, [handleStageWheel])
 
   useEffect(() => {
-    if (!paneContextMenu && !edgeContextMenu) return undefined
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key !== 'Escape') return
+      const hasOpenContextMenu = Boolean(paneContextMenu || edgeContextMenu)
+      if (hasOpenContextMenu) {
         closePaneContextMenu()
         setEdgeContextMenu(null)
+        return
       }
+      if (
+        !shouldClearCanvasSelectionOnEscape({
+          key: event.key,
+          selectedNodeCount: selectedNodeIds.length,
+          hasOpenContextMenu,
+          editableTarget: isEditableEventTarget(event.target),
+        })
+      )
+        return
+      event.preventDefault()
+      onSelectionChange([])
+      setSelectedEdgeIds((previous) => (previous.length === 0 ? previous : []))
     }
     window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('blur', closePaneContextMenu)
+    if (paneContextMenu) window.addEventListener('blur', closePaneContextMenu)
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('blur', closePaneContextMenu)
+      if (paneContextMenu) window.removeEventListener('blur', closePaneContextMenu)
     }
-  }, [closePaneContextMenu, edgeContextMenu, paneContextMenu])
+  }, [
+    closePaneContextMenu,
+    edgeContextMenu,
+    onSelectionChange,
+    paneContextMenu,
+    selectedNodeIds.length,
+  ])
 
   const handleResetZoom = useCallback(() => {
     const instance = flowInstanceRef.current
