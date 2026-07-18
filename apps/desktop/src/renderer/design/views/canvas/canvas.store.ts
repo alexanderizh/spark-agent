@@ -18,6 +18,7 @@ import type {
   CanvasPromptTaskFields,
   SessionReasoningEffort,
 } from '@spark/protocol'
+import { captureCanvasAcceptanceTaskEvidence } from './acceptance/canvasAcceptanceEvidence'
 
 export type CanvasViewMode = { mode: 'projects' } | { mode: 'workspace'; projectId: string }
 
@@ -281,12 +282,18 @@ export function useCanvasWorkspace(projectId: string) {
       (payload: CanvasMediaTaskStreamPayload) => {
         if (!active) return
         if (payload.projectId && payload.projectId !== projectId) return
-        if (!payload.clientTaskId) return
+        const clientTaskId = payload.clientTaskId
+        if (!clientTaskId) return
         const update = payload.status === 'running'
-          ? canvasApi.markMediaTaskSubmitted(projectId, payload.clientTaskId, payload.response)
-          : canvasApi.applyMediaTaskResult(projectId, payload.clientTaskId, payload.response)
+          ? canvasApi.markMediaTaskSubmitted(projectId, clientTaskId, payload.response)
+          : canvasApi.applyMediaTaskResult(projectId, clientTaskId, payload.response)
         void update
           .then((next) => {
+            captureCanvasAcceptanceTaskEvidence({
+              snapshot: next,
+              taskId: clientTaskId,
+              source: 'media-stream',
+            })
             if (active) setSnapshot((current) => mergeCanvasBackgroundTaskSnapshot(current, next))
           })
           .catch(() => {
@@ -300,10 +307,16 @@ export function useCanvasWorkspace(projectId: string) {
       (payload: CanvasTextTaskStreamPayload) => {
         if (!active) return
         if (payload.projectId && payload.projectId !== projectId) return
-        if (!payload.clientTaskId) return
+        const clientTaskId = payload.clientTaskId
+        if (!clientTaskId) return
         void canvasApi
-          .applyTextTaskResult(projectId, payload.clientTaskId, payload.response)
+          .applyTextTaskResult(projectId, clientTaskId, payload.response)
           .then((next) => {
+            captureCanvasAcceptanceTaskEvidence({
+              snapshot: next,
+              taskId: clientTaskId,
+              source: 'text-stream',
+            })
             if (active) setSnapshot((current) => mergeCanvasBackgroundTaskSnapshot(current, next))
           })
           .catch(() => {
