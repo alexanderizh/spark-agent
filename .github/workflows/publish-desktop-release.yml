@@ -224,16 +224,10 @@ jobs:
           PUBLISH_FLAG: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_release == 'true') || github.event_name == 'push' }}
         shell: bash
         run: |
-          # CI runner 内存受限，electron-vite/Rollup 打包大依赖（@lobehub、antd、
-          # shiki、pdfjs、@xyflow 等）时默认 ~2GB 老生代堆会 OOM（exit 134）。
-          # 4GB 已不足以完成当前约 1.65 万模块的 renderer chunk 渲染。
-          # macOS runner（7GB）使用 5GB，Windows runner（16GB）使用 6GB；
-          # 子进程（pnpm run build → electron-vite）会继承此环境变量。
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            export NODE_OPTIONS="--max-old-space-size=6144"
-          else
-            export NODE_OPTIONS="--max-old-space-size=5120"
-          fi
+          # 4GB 默认堆已不足以完成当前约 1.65 万模块的 renderer chunk 渲染。
+          # package build wrapper 会保证至少 8GB；CI 这里显式声明，便于日志和排障。
+          # max-old-space-size 是上限而非预分配，不会在启动时直接占用 8GB。
+          export NODE_OPTIONS="--max-old-space-size=8192"
           echo "[publish] NODE_OPTIONS=${NODE_OPTIONS}"
 
           # 非 Windows 任务清理 Windows 签名变量，避免污染 macOS 签名流程。
