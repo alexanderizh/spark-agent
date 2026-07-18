@@ -14,6 +14,7 @@ import type { PlaywrightInstallProgress, PlaywrightStatusResponse } from '@spark
 import { Button } from '@lobehub/ui'
 import { Icons } from '../Icons'
 import { useToast } from '../components/Toast'
+import { getBrowserDescription } from './playwrightStatusCopy'
 
 type Status = PlaywrightStatusResponse
 type InstallProgress = PlaywrightInstallProgress
@@ -237,13 +238,7 @@ export function PlaywrightStatusCard(): ReactElement {
             <div className="playwright-row-icon"><Icons.Globe size={18} /></div>
             <div>
               <div className="settings-card-title">Chromium 浏览器</div>
-              <div className="settings-card-desc">
-                {status.browserSource === 'bundled'
-                  ? '浏览器已内置，会随安装包一起分发'
-                  : status.browserSource === 'system'
-                    ? '未检测到内置 Chromium，当前会回退到系统 Chrome/Edge'
-                    : 'Playwright 使用的内置浏览器引擎，约 150MB'}
-              </div>
+              <div className="settings-card-desc">{getBrowserDescription(status.browserSource)}</div>
             </div>
           </div>
           <div className="playwright-row-actions">

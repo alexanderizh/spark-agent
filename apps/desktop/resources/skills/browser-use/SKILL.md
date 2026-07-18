@@ -72,6 +72,15 @@ tags: [browser, automation, playwright, web, scraping, 浏览器, 自动化]
    镜像只覆盖当前 shell / 当前会话的环境变量，**不要写到用户全局 ~/.npmrc**，避免影响其他项目。
 4. **仍失败**：放弃自动恢复，向用户报告：缺失的依赖、尝试过的镜像、最后一行错误日志，请用户确认网络环境或手动安装。
 
+### 浏览器启动失败时按需恢复
+
+如果 Playwright MCP 工具已经存在，但调用时提示浏览器可执行文件缺失、Chromium 未安装或版本不匹配：
+
+1. 先复用已有的系统 Chrome/Edge、Playwright 缓存或内置 Chromium；只要其中一个可以正常启动，就不要额外下载。
+2. 确认没有可用浏览器后，先告诉用户接下来会按需下载约 150MB 的 Chromium，再在 Playwright 所在项目执行 `npx playwright install chromium`（pnpm 项目可用 `pnpm exec playwright install chromium`）。应用或会话仅仅启动时不得触发下载。
+3. 下载成功后重试原始操作一次，不要要求用户重复描述任务。
+4. 下载或重试仍失败时，报告最后的关键错误，并引导用户前往“设置 → 完整性 → 浏览器自动化”手动下载或修复 Chromium。
+
 ## 安全与边界
 
 - **不要**访问银行、支付、含个人敏感信息的页面，除非用户明确要求

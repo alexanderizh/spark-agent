@@ -105,6 +105,10 @@ import { resolveMcpConfig } from '../mcp/index.js'
 import type { McpChangeEvent } from './mcp-server.service.js'
 import { PlatformBridgeService } from './platform-bridge.service.js'
 import { getDebugLogServer } from './debug-log-server.service.js'
+import {
+  BROWSER_AUTOMATION_SYSTEM_PROMPT,
+  BROWSER_TOOL_NAMES,
+} from './browser-automation-prompt.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
@@ -9267,45 +9271,6 @@ const DEBUG_TOOL_NAMES: string[] = [
   'mcp__spark_debug__status',
   'mcp__spark_debug__finish',
 ]
-
-/** SDK-namespaced tool names exposed by the spark_browser MCP server. */
-const BROWSER_TOOL_NAMES: string[] = [
-  'mcp__spark_browser__open',
-  'mcp__spark_browser__navigate',
-  'mcp__spark_browser__eval',
-  'mcp__spark_browser__inject_script',
-  'mcp__spark_browser__remove_script',
-  'mcp__spark_browser__screenshot',
-  'mcp__spark_browser__get_url',
-  'mcp__spark_browser__get_title',
-  'mcp__spark_browser__list_windows',
-  'mcp__spark_browser__close',
-  'mcp__spark_browser__console_start',
-  'mcp__spark_browser__console_events',
-  'mcp__spark_browser__console_clear',
-  'mcp__spark_browser__network_set_rules',
-  'mcp__spark_browser__network_events',
-  'mcp__spark_browser__network_clear',
-  'mcp__spark_browser__clear_profile',
-]
-
-const BROWSER_AUTOMATION_SYSTEM_PROMPT = [
-  '## Visible In-App Browser Capability (spark_browser)',
-  'You can use the `mcp__spark_browser__*` tools to control a visible Electron BrowserWindow inside the Spark app.',
-  'Use spark_browser when the task benefits from a browser window the user can see and share, local `file://` HTML debugging, persistent injected scripts, reusable login/cache profiles, console capture, or network observation/interception.',
-  'Use Playwright MCP when you need mature selector-based clicking/typing, robust web automation, crawling, or E2E-style validation. The two browser toolsets are complementary; if one is blocked, switch to the other and briefly explain why.',
-  '',
-  'Core spark_browser workflow:',
-  '1. `open` with a URL and optional `profileId` to create/reuse a visible window. Same profileId preserves cookies, localStorage, IndexedDB, and cache across turns.',
-  '2. `eval` for one-off JavaScript. Return only JSON-serializable values; stringify DOM nodes or complex objects inside the code.',
-  '3. `inject_script` for persistent hooks that re-run after navigation; later call `remove_script` or `close` to clean up.',
-  '4. `console_start` + `console_events` to read page logs/errors/warnings.',
-  '5. `network_set_rules` + `network_events` to record, block, redirect, or add request headers. Response-body mock_response is not available unless the tool explicitly says it is supported.',
-  '6. Use `screenshot`, `get_url`, `get_title`, and `list_windows` to observe current state, including manual user navigation.',
-  '7. When finished, call `network_clear`, `console_clear`, `remove_script`, and/or `close`. Use `clear_profile` only when you intentionally want to sign pages out or reset browser state.',
-  '',
-  'Security model: pages stay sandboxed with no Node/Electron APIs. Your power comes from main-process controlled eval, webRequest, screenshot, console, and profile tools.',
-].join('\n')
 
 /**
  * System prompt section injected only when the session has debug mode enabled.
