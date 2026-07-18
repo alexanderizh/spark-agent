@@ -3933,24 +3933,25 @@ export function registerAllIpcHandlers(): void {
       try {
         const adaptiveResult = await generateCanvasTextWithAdaptiveOutput({
           initialMaxTokens: maxTokens,
-          generate: (attemptMaxTokens) => generateCanvasText({
-            providerType: chosen.profile.provider,
-            apiKind,
-            apiKey: chosen.apiKey,
-            ...(chosen.profile.apiEndpoint ? { apiEndpoint: chosen.profile.apiEndpoint } : {}),
-            model,
-            system,
-            prompt: runtimeRequest.prompt,
-            ...(runtimeRequest.images.length > 0 ? { images: runtimeRequest.images } : {}),
-            ...(temperature != null ? { temperature } : {}),
-            maxTokens: attemptMaxTokens,
-            ...(reasoningEffort != null ? { reasoningEffort } : {}),
-            ...(disableThinking ? { disableThinking: true } : {}),
-            ...(responseFormat.toLowerCase() === 'json'
-              ? { responseFormat: 'json' as const }
-              : {}),
-            timeoutMs: requestTimeoutMs,
-          }),
+          generate: (attemptMaxTokens) =>
+            generateCanvasText({
+              providerType: chosen.profile.provider,
+              apiKind,
+              apiKey: chosen.apiKey,
+              ...(chosen.profile.apiEndpoint ? { apiEndpoint: chosen.profile.apiEndpoint } : {}),
+              model,
+              system,
+              prompt: runtimeRequest.prompt,
+              ...(runtimeRequest.images.length > 0 ? { images: runtimeRequest.images } : {}),
+              ...(temperature != null ? { temperature } : {}),
+              maxTokens: attemptMaxTokens,
+              ...(reasoningEffort != null ? { reasoningEffort } : {}),
+              ...(disableThinking ? { disableThinking: true } : {}),
+              ...(responseFormat.toLowerCase() === 'json'
+                ? { responseFormat: 'json' as const }
+                : {}),
+              timeoutMs: requestTimeoutMs,
+            }),
           onLearnedSafeMaxTokens: (value, source) => {
             outputCapabilityCache.record(capabilityKey, value, source)
             learnedOutputCap = learnedOutputCap == null ? value : Math.min(learnedOutputCap, value)
@@ -3973,10 +3974,11 @@ export function registerAllIpcHandlers(): void {
         const adaptiveError = err instanceof CanvasTextAdaptiveGenerationError ? err : null
         const providerError = adaptiveError?.cause ?? err
         if (adaptiveError != null) retryDiagnostics = adaptiveError.retryDiagnostics
-        const message = providerError instanceof Error ? providerError.message : String(providerError)
+        const message =
+          providerError instanceof Error ? providerError.message : String(providerError)
         const requestCall =
-          providerError instanceof CanvasTextProviderError
-          || providerError instanceof CanvasTextTimeoutError
+          providerError instanceof CanvasTextProviderError ||
+          providerError instanceof CanvasTextTimeoutError
             ? providerError.requestCall
             : undefined
         const rawResponse = buildCanvasTextRawResponse({
@@ -3992,8 +3994,8 @@ export function registerAllIpcHandlers(): void {
           taskPipelineRole: req.taskPipelineRole,
           desiredMaxTokens: tokenBudget.desiredMaxTokens,
           effectiveMaxTokens:
-            retryDiagnostics.attempts[retryDiagnostics.attempts.length - 1]
-            ?? tokenBudget.maxTokens,
+            retryDiagnostics.attempts[retryDiagnostics.attempts.length - 1] ??
+            tokenBudget.maxTokens,
           maxTokensSource: tokenBudget.source,
           promptTokensEstimate: tokenBudget.promptTokensEstimate,
           providerMaxTokens: tokenBudget.providerMaxTokens,
@@ -4015,8 +4017,8 @@ export function registerAllIpcHandlers(): void {
             : {}),
         })
         return fail(
-          providerError instanceof CanvasTextProviderError
-          || providerError instanceof CanvasTextTimeoutError
+          providerError instanceof CanvasTextProviderError ||
+            providerError instanceof CanvasTextTimeoutError
             ? providerError.code
             : 'text_generation_failed',
           message,
@@ -4050,8 +4052,8 @@ export function registerAllIpcHandlers(): void {
           outputText: result.text,
           desiredMaxTokens: tokenBudget.desiredMaxTokens,
           effectiveMaxTokens:
-            retryDiagnostics.attempts[retryDiagnostics.attempts.length - 1]
-            ?? tokenBudget.maxTokens,
+            retryDiagnostics.attempts[retryDiagnostics.attempts.length - 1] ??
+            tokenBudget.maxTokens,
           maxTokensSource: tokenBudget.source,
           promptTokensEstimate: tokenBudget.promptTokensEstimate,
           providerMaxTokens: tokenBudget.providerMaxTokens,

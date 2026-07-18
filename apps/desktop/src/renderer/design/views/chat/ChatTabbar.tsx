@@ -144,9 +144,6 @@ export function ChatTabbar({
                 <span>团队模式</span>
                 <span className="chat-team-status-divider" />
                 <span>Host：{hostAgent?.name ?? '平台管理'}</span>
-                <span>模型：{hostModel}（{hostModelSource}）</span>
-                <span>适配器：{hostAdapter}</span>
-                <span>成员 {memberCount}</span>
               </button>
             )}
             {!teamConfig.enabled && orchestration != null && (

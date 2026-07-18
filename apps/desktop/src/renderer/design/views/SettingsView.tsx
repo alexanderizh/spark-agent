@@ -12,7 +12,13 @@ import { Modal as AntdModal, Space, Switch } from 'antd'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
-import { DEFAULT_SHORTCUTS, formatShortcut, loadShortcuts, modSymbol, saveShortcuts } from '../hooks/useKeyboard'
+import {
+  DEFAULT_SHORTCUTS,
+  formatShortcut,
+  loadShortcuts,
+  modSymbol,
+  saveShortcuts,
+} from '../hooks/useKeyboard'
 import {
   UI_ZOOM_MAX,
   UI_ZOOM_MIN,
@@ -110,7 +116,9 @@ const isPlatformDarwin = sparkPlatform === 'darwin'
 const isPlatformWin32 = sparkPlatform === 'win32'
 const RELEASES_URL = 'https://github.com/alexanderizh/spark-agent/releases'
 
-function getUpdateSourceLabel(source?: UpdateStatus['updateSource'] | UpdateStatus['downloadSource']): string {
+function getUpdateSourceLabel(
+  source?: UpdateStatus['updateSource'] | UpdateStatus['downloadSource'],
+): string {
   if (source === 'version-center') return '官网版本中心'
   if (source === 'github') return 'GitHub Releases'
   return '尚未确定'
@@ -377,18 +385,18 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     {
       group: '通用',
       items: [
-        { id: 'general', icon: <Icons.Settings  size={13} />, label: '通用' },
-        { id: 'appearance', icon: <Icons.Sparkles  size={13} />, label: '外观' },
-        { id: 'shortcuts', icon: <Icons.Command  size={13} />, label: '快捷键' },
+        { id: 'general', icon: <Icons.Settings size={13} />, label: '通用' },
+        { id: 'appearance', icon: <Icons.Sparkles size={13} />, label: '外观' },
+        { id: 'shortcuts', icon: <Icons.Command size={13} />, label: '快捷键' },
       ],
     },
     {
       group: 'Agent',
       items: [
-        { id: 'rules', icon: <Icons.Beaker  size={13} />, label: '规则' },
-        { id: 'custom-commands', icon: <Icons.Command  size={13} />, label: '自定义命令' },
-        { id: 'permissions', icon: <Icons.Shield  size={13} />, label: '权限策略' },
-        { id: 'memory', icon: <Icons.Brain  size={13} />, label: '记忆' },
+        { id: 'rules', icon: <Icons.Beaker size={13} />, label: '规则' },
+        { id: 'custom-commands', icon: <Icons.Command size={13} />, label: '自定义命令' },
+        { id: 'permissions', icon: <Icons.Shield size={13} />, label: '权限策略' },
+        { id: 'memory', icon: <Icons.Brain size={13} />, label: '记忆' },
       ],
     },
     {
@@ -396,8 +404,8 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
       items: [
         // MCP 设置暂未完全实现，隐藏导航项
         // { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
-        { id: 'remote-connections', icon: <Icons.Globe  size={13} />, label: '远程连接' },
-        { id: 'system-prompt', icon: <Icons.Chat  size={13} />, label: '系统提示词' },
+        { id: 'remote-connections', icon: <Icons.Globe size={13} />, label: '远程连接' },
+        { id: 'system-prompt', icon: <Icons.Chat size={13} />, label: '系统提示词' },
         // 工作流模板暂未实现，隐藏导航项
         // { id: 'workflows', icon: <Icons.Workflow />, label: '工作流模板' },
       ],
@@ -405,15 +413,15 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     {
       group: '系统',
       items: [
-        { id: 'integrity', icon: <Icons.Shield  size={13} />, label: '完整性' },
-        { id: 'playwright', icon: <Icons.Globe  size={13} />, label: '浏览器自动化' },
-        { id: 'usage', icon: <Icons.Activity  size={13} />, label: '用量统计' },
-        { id: 'telemetry', icon: <Icons.Activity  size={13} />, label: '遥测与日志' },
-        { id: 'hooks', icon: <Icons.Bell  size={13} />, label: 'Hooks' },
-        { id: 'storage', icon: <Icons.Database  size={13} />, label: '存储与备份' },
-        { id: 'archived', icon: <Icons.Archive  size={13} />, label: '已归档' },
-        { id: 'updates', icon: <Icons.Refresh  size={13} />, label: '更新' },
-        { id: 'about', icon: <Icons.Sparkles  size={13} />, label: '关于' },
+        { id: 'integrity', icon: <Icons.Shield size={13} />, label: '完整性' },
+        { id: 'playwright', icon: <Icons.Globe size={13} />, label: '浏览器自动化' },
+        { id: 'usage', icon: <Icons.Activity size={13} />, label: '用量统计' },
+        { id: 'telemetry', icon: <Icons.Activity size={13} />, label: '遥测与日志' },
+        { id: 'hooks', icon: <Icons.Bell size={13} />, label: 'Hooks' },
+        { id: 'storage', icon: <Icons.Database size={13} />, label: '存储与备份' },
+        { id: 'archived', icon: <Icons.Archive size={13} />, label: '已归档' },
+        { id: 'updates', icon: <Icons.Refresh size={13} />, label: '更新' },
+        { id: 'about', icon: <Icons.Sparkles size={13} />, label: '关于' },
       ],
     },
   ]
@@ -554,7 +562,7 @@ function GeneralSection() {
       <h2>通用</h2>
       <div className="lede">应用启动、语言、默认行为。</div>
 
-      <div className="settings-card" style={{marginBottom: 10}}>
+      <div className="settings-card" style={{ marginBottom: 10 }}>
         <SettingsRow
           title="新手引导"
           desc="重新打开安装后的图文引导，配置模型、助手并发起第一次会话。"
@@ -585,7 +593,11 @@ function GeneralSection() {
           value={resolveSupportedLanguage(s.language)}
           onChange={(v) => set({ language: resolveSupportedLanguage(v) })}
           options={SUPPORTED_LANGUAGES.map((language) => ({
-            label: tr(language === 'zh-CN' ? 'settings.general.language.zh' : 'settings.general.language.en'),
+            label: tr(
+              language === 'zh-CN'
+                ? 'settings.general.language.zh'
+                : 'settings.general.language.en',
+            ),
             value: language,
           }))}
         />
@@ -615,7 +627,12 @@ function GeneralSection() {
             onChange={(e) => set({ defaultWorkspace: e.target.value })}
             placeholder="点击浏览选择…"
           />
-          <Button size="middle" type="text" icon={<Icons.Folder  size={13} />} onClick={() => void handleBrowseWorkspace()}>
+          <Button
+            size="middle"
+            type="text"
+            icon={<Icons.Folder size={13} />}
+            onClick={() => void handleBrowseWorkspace()}
+          >
             浏览…
           </Button>
         </div>
@@ -623,11 +640,7 @@ function GeneralSection() {
         <label>
           系统托盘<span className="sub">关闭主窗口后保留后台运行</span>
         </label>
-        <Switch
-          size="middle"
-          checked={s.systemTray}
-          onChange={(v) => set({ systemTray: v })}
-        />
+        <Switch size="middle" checked={s.systemTray} onChange={(v) => set({ systemTray: v })} />
 
         <label>
           开机自启动
@@ -1074,15 +1087,15 @@ function RemoteConnectionsSection() {
       <div className="remote-settings-hero">
         <div>
           <h2>远程连接</h2>
-          <div className="lede">
-            通过 Telegram、飞书从远程桌面或移动端与 SparkWork 通信。
-          </div>
+          <div className="lede">通过 Telegram、飞书从远程桌面或移动端与 SparkWork 通信。</div>
         </div>
         <div className="remote-runtime-summary">
           <span className={runtimeStatus.running ? 'live' : ''}>
             {runtimeStatus.running ? '运行中' : '未运行'}
           </span>
-          <strong>{connectedCount}/{connections.length}</strong>
+          <strong>
+            {connectedCount}/{connections.length}
+          </strong>
           <em>已连接</em>
         </div>
       </div>
@@ -1096,7 +1109,11 @@ function RemoteConnectionsSection() {
               : '启用任一渠道后，远程消息才会被接收'}
           </span>
         </div>
-        <Button size="middle" icon={<Icons.Refresh size={13} />} onClick={() => void refreshRuntime()}>
+        <Button
+          size="middle"
+          icon={<Icons.Refresh size={13} />}
+          onClick={() => void refreshRuntime()}
+        >
           刷新
         </Button>
       </div>
@@ -1138,7 +1155,9 @@ function RemoteConnectionsSection() {
           </span>
           <span className="remote-card-main">
             <span className="remote-card-title">新建连接</span>
-            <span className="remote-card-desc">默认平台：{REMOTE_CHANNEL_META[lastChannel].label}</span>
+            <span className="remote-card-desc">
+              默认平台：{REMOTE_CHANNEL_META[lastChannel].label}
+            </span>
           </span>
         </button>
         {loading && <div className="remote-muted-box">加载中...</div>}
@@ -1208,12 +1227,14 @@ function RemoteConnectionsSection() {
               删除
             </Button>
             <span className="remote-actions-spacer" />
-            <Button size="middle" onClick={() => setEditorOpen(false)}>取消</Button>
+            <Button size="middle" onClick={() => setEditorOpen(false)}>
+              取消
+            </Button>
             <Button
               size="middle"
               loading={busy === 'test'}
               disabled={!draft.id}
-              icon={<Icons.Refresh  size={13} />}
+              icon={<Icons.Refresh size={13} />}
               onClick={() => void testConnection()}
             >
               测试配置
@@ -1239,263 +1260,261 @@ function RemoteConnectionsSection() {
       >
         <div className="remote-editor-body">
           <aside className="remote-editor-nav">
-              {[
-                ['基础', '连接名称 / 平台 / 默认会话'],
-                ['凭证', draftChannelMeta.short + ' 机器人凭证'],
-                ['授权', '允许名单 / 能力开关'],
-                ['配对', '配对码 / webhook / 已绑定设备'],
-                ['命令', '内置命令目录'],
-              ].map(([title, desc]) => (
-                <span key={title}>
-                  <strong>{title}</strong>
-                  <em>{desc}</em>
-                </span>
-              ))}
+            {[
+              ['基础', '连接名称 / 平台 / 默认会话'],
+              ['凭证', draftChannelMeta.short + ' 机器人凭证'],
+              ['授权', '允许名单 / 能力开关'],
+              ['配对', '配对码 / webhook / 已绑定设备'],
+              ['命令', '内置命令目录'],
+            ].map(([title, desc]) => (
+              <span key={title}>
+                <strong>{title}</strong>
+                <em>{desc}</em>
+              </span>
+            ))}
           </aside>
 
           <div className="remote-editor-scroll">
-              <section className="remote-editor-section">
-                <div className="subsec-h">基础</div>
-                <div className="remote-channel-picker">
-                  {AVAILABLE_REMOTE_CHANNELS.map((channel) => {
-                    const meta = REMOTE_CHANNEL_META[channel]
-                    return (
-                      <button
-                        key={channel}
-                        className={draft.channel === channel ? 'active' : ''}
-                        onClick={() => {
-                          updateDraft({ channel, name: draft.name || meta.label })
-                          rememberChannel(channel)
-                        }}
-                      >
-                        <img src={meta.icon} alt="" />
-                        <span>{meta.short}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-                <div className="form-grid remote-form-grid">
-                  <label>连接名称</label>
-                  <Input value={draft.name} onChange={(e) => updateDraft({ name: e.target.value })} />
+            <section className="remote-editor-section">
+              <div className="subsec-h">基础</div>
+              <div className="remote-channel-picker">
+                {AVAILABLE_REMOTE_CHANNELS.map((channel) => {
+                  const meta = REMOTE_CHANNEL_META[channel]
+                  return (
+                    <button
+                      key={channel}
+                      className={draft.channel === channel ? 'active' : ''}
+                      onClick={() => {
+                        updateDraft({ channel, name: draft.name || meta.label })
+                        rememberChannel(channel)
+                      }}
+                    >
+                      <img src={meta.icon} alt="" />
+                      <span>{meta.short}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="form-grid remote-form-grid">
+                <label>连接名称</label>
+                <Input value={draft.name} onChange={(e) => updateDraft({ name: e.target.value })} />
 
-                  <label>
-                    启用连接<span className="sub">停用后不会接收远程消息</span>
-                  </label>
-                  <Switch
+                <label>
+                  启用连接<span className="sub">停用后不会接收远程消息</span>
+                </label>
+                <Switch
+                  size="middle"
+                  checked={draft.enabled}
+                  onChange={(v) => updateDraft({ enabled: v })}
+                />
+
+                <label>
+                  命令前缀<span className="sub">Telegram 可同步为 bot command</span>
+                </label>
+                <Input
+                  value={draft.commandPrefix}
+                  onChange={(e) => updateDraft({ commandPrefix: e.target.value || '/' })}
+                />
+
+                <label>
+                  默认会话<span className="sub">普通远程消息会投递到这里</span>
+                </label>
+                <Select
+                  value={draft.defaultSessionId ?? ''}
+                  onChange={(v) => {
+                    const value = v
+                    setDraft((prev) => {
+                      const next = { ...prev }
+                      if (value) next.defaultSessionId = value
+                      else delete next.defaultSessionId
+                      return next
+                    })
+                  }}
+                  options={[
+                    { label: '未选择', value: '' },
+                    ...sessions.map((session) => ({
+                      label: `${session.title || '新会话'} · ${session.id}`,
+                      value: session.id,
+                    })),
+                  ]}
+                />
+              </div>
+              {selectedSession == null && draft.defaultSessionId != null && (
+                <div className="remote-muted-box">
+                  当前默认会话未在最近会话列表中找到：{draft.defaultSessionId}
+                </div>
+              )}
+            </section>
+
+            <section className="remote-editor-section">
+              <div className="subsec-h">凭证</div>
+              <div className="form-grid remote-form-grid">
+                <RemoteCredentialFields draft={draft} updateCredential={updateCredential} />
+              </div>
+              {draft.channel === 'telegram' && (
+                <div className="remote-muted-box">
+                  {polling?.running
+                    ? 'Telegram polling 已启动，无需公网 webhook；发送 /bind 配对码 后即可使用。'
+                    : polling?.lastError != null
+                      ? `Telegram polling 未启动：${polling.lastError}`
+                      : '保存并启用 Telegram Bot Token 后会自动启动 polling。'}
+                </div>
+              )}
+              {draft.channel === 'feishu' && (
+                <div className="remote-muted-box">
+                  {longConnection?.running
+                    ? '飞书 WebSocket 长连接已启动，无需公网 webhook；在飞书里发送 /bind 配对码 后即可使用。'
+                    : longConnection?.lastError != null
+                      ? `飞书长连接未启动：${longConnection.lastError}`
+                      : '保存并启用 App ID / App Secret 后会自动启动飞书长连接。'}
+                </div>
+              )}
+            </section>
+            <section className="remote-editor-section">
+              <div className="subsec-h">配对</div>
+              <div className="remote-pairing-panel">
+                {webhookUrl && draft.channel !== 'telegram' && draft.channel !== 'feishu' && (
+                  <div className="remote-webhook-box">
+                    <span>{webhookUrl}</span>
+                    <Button
+                      size="middle"
+                      icon={<Icons.Copy size={13} />}
+                      onClick={() => void navigator.clipboard?.writeText(webhookUrl)}
+                    >
+                      复制
+                    </Button>
+                  </div>
+                )}
+                <div className="remote-pairing-actions">
+                  <Button
                     size="middle"
-                    checked={draft.enabled}
-                    onChange={(v) => updateDraft({ enabled: v })}
-                  />
-
-                  <label>
-                    命令前缀<span className="sub">Telegram 可同步为 bot command</span>
-                  </label>
-                  <Input
-                    value={draft.commandPrefix}
-                    onChange={(e) => updateDraft({ commandPrefix: e.target.value || '/' })}
-                  />
-
-                  <label>
-                    默认会话<span className="sub">普通远程消息会投递到这里</span>
-                  </label>
-                  <Select
-                    value={draft.defaultSessionId ?? ''}
-                    onChange={(v) => {
-                      const value = v
-                      setDraft((prev) => {
-                        const next = { ...prev }
-                        if (value) next.defaultSessionId = value
-                        else delete next.defaultSessionId
-                        return next
-                      })
-                    }}
-                    options={[
-                      { label: '未选择', value: '' },
-                      ...sessions.map((session) => ({
-                        label: `${session.title || '新会话'} · ${session.id}`,
-                        value: session.id,
-                      })),
-                    ]}
-                  />
+                    disabled={!draft.id}
+                    loading={busy === 'pair:code'}
+                    onClick={() => void generatePairing('code')}
+                  >
+                    生成配对码
+                  </Button>
+                  <Button
+                    size="middle"
+                    disabled={!draft.id}
+                    loading={busy === 'pair:qr'}
+                    onClick={() => void generatePairing('qr')}
+                  >
+                    生成二维码配对
+                  </Button>
                 </div>
-                {selectedSession == null && draft.defaultSessionId != null && (
-                  <div className="remote-muted-box">
-                    当前默认会话未在最近会话列表中找到：{draft.defaultSessionId}
-                  </div>
-                )}
-              </section>
-
-              <section className="remote-editor-section">
-                <div className="subsec-h">凭证</div>
-                <div className="form-grid remote-form-grid">
-                  <RemoteCredentialFields draft={draft} updateCredential={updateCredential} />
-                </div>
-                {draft.channel === 'telegram' && (
-                  <div className="remote-muted-box">
-                    {polling?.running
-                      ? 'Telegram polling 已启动，无需公网 webhook；发送 /bind 配对码 后即可使用。'
-                      : polling?.lastError != null
-                        ? `Telegram polling 未启动：${polling.lastError}`
-                        : '保存并启用 Telegram Bot Token 后会自动启动 polling。'}
-                  </div>
-                )}
-                {draft.channel === 'feishu' && (
-                  <div className="remote-muted-box">
-                    {longConnection?.running
-                      ? '飞书 WebSocket 长连接已启动，无需公网 webhook；在飞书里发送 /bind 配对码 后即可使用。'
-                      : longConnection?.lastError != null
-                        ? `飞书长连接未启动：${longConnection.lastError}`
-                        : '保存并启用 App ID / App Secret 后会自动启动飞书长连接。'}
-                  </div>
-                )}
-              </section>
-              <section className="remote-editor-section">
-                <div className="subsec-h">配对</div>
-                <div className="remote-pairing-panel">
-                  {webhookUrl && draft.channel !== 'telegram' && draft.channel !== 'feishu' && (
-                    <div className="remote-webhook-box">
-                      <span>{webhookUrl}</span>
-                      <Button
-                        size="middle"
-                        icon={<Icons.Copy size={13} />}
-                        onClick={() => void navigator.clipboard?.writeText(webhookUrl)}
-                      >
-                        复制
-                      </Button>
-                    </div>
-                  )}
-                  <div className="remote-pairing-actions">
-                    <Button
-                      size="middle"
-                      disabled={!draft.id}
-                      loading={busy === 'pair:code'}
-                      onClick={() => void generatePairing('code')}
-                    >
-                      生成配对码
-                    </Button>
-                    <Button
-                      size="middle"
-                      disabled={!draft.id}
-                      loading={busy === 'pair:qr'}
-                      onClick={() => void generatePairing('qr')}
-                    >
-                      生成二维码配对
-                    </Button>
-                  </div>
-                  {draft.pairing != null ? (
-                    <div className="remote-pairing-body">
-                      <div>
-                        <div className="remote-pair-code">{draft.pairing.code}</div>
-                        <div className="remote-pair-tip">
-                          在 {REMOTE_CHANNEL_META[draft.channel].label} 中发送{' '}
-                          <code>/bind {draft.pairing.code}</code> 完成配对。
-                        </div>
-                        <div className="muted text-xs-12">
-                          过期时间：{new Date(draft.pairing.expiresAt).toLocaleString()}
-                        </div>
-                        <div className="remote-manual-pair">
-                          <Input
-                            value={manualPairUser}
-                            onChange={(e) => setManualPairUser(e.target.value)}
-                            placeholder="远程用户 ID"
-                          />
-                          <Input
-                            value={manualPairName}
-                            onChange={(e) => setManualPairName(e.target.value)}
-                            placeholder="显示名称（可选）"
-                          />
-                          <Button
-                            size="middle"
-                            loading={busy === 'confirm-pair'}
-                            onClick={() => void confirmPairing()}
-                          >
-                            手动确认
-                          </Button>
-                        </div>
+                {draft.pairing != null ? (
+                  <div className="remote-pairing-body">
+                    <div>
+                      <div className="remote-pair-code">{draft.pairing.code}</div>
+                      <div className="remote-pair-tip">
+                        在 {REMOTE_CHANNEL_META[draft.channel].label} 中发送{' '}
+                        <code>/bind {draft.pairing.code}</code> 完成配对。
                       </div>
-                      <QrPayloadPreview payload={draft.pairing.qrPayload} />
-                    </div>
-                  ) : (
-                    <div className="remote-muted-box">
-                      连接保存后生成一次性配对码，然后在远程聊天里发送 /bind 配对码 完成绑定。
-                    </div>
-                  )}
-                  {draft.pairedDevices.length > 0 && (
-                    <div className="remote-paired-list">
-                      {draft.pairedDevices.map((device) => (
-                        <Tag key={device.id} size="middle" color="green">
-                          {device.displayName || device.remoteUserId}
-                        </Tag>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              <section className="remote-editor-section">
-                <div className="subsec-h">授权</div>
-                <div className="form-grid remote-form-grid">
-                  <label>
-                    允许用户 ID<span className="sub">英文逗号或换行分隔，留空表示配对后允许</span>
-                  </label>
-                  <TextArea
-                    value={joinCsv(draft.allowedUserIds)}
-                    onChange={(e) => updateDraft({ allowedUserIds: splitCsv(e.target.value) })}
-                    rows={2}
-                  />
-
-                  <label>
-                    允许会话/群 ID<span className="sub">用于群聊、频道或飞书群限制</span>
-                  </label>
-                  <TextArea
-                    value={joinCsv(draft.allowedChatIds)}
-                    onChange={(e) => updateDraft({ allowedChatIds: splitCsv(e.target.value) })}
-                    rows={2}
-                  />
-                </div>
-                <div className="remote-cap-grid">
-                  {(
-                    Object.entries(draft.capabilities) as Array<
-                      [keyof RemoteConnectionCapabilities, boolean]
-                    >
-                  ).map(([key, value]) => (
-                    <SettingsRow
-                      key={key}
-                      title={REMOTE_CAPABILITY_LABELS[key]}
-                      desc={REMOTE_CAPABILITY_DESCS[key]}
-                      right={
-                        <Switch
-                          size="middle"
-                          checked={value}
-                          onChange={(v) => updateCapability(key, v)}
+                      <div className="muted text-xs-12">
+                        过期时间：{new Date(draft.pairing.expiresAt).toLocaleString()}
+                      </div>
+                      <div className="remote-manual-pair">
+                        <Input
+                          value={manualPairUser}
+                          onChange={(e) => setManualPairUser(e.target.value)}
+                          placeholder="远程用户 ID"
                         />
-                      }
-                    />
-                  ))}
-                </div>
-              </section>
-
-
-
-              <section className="remote-editor-section">
-                <div className="subsec-h">命令</div>
-                {draft.channel === 'telegram' && (
-                  <TextArea
-                    value={draft.telegramCommands.join('\n')}
-                    onChange={(e) => updateDraft({ telegramCommands: splitCsv(e.target.value) })}
-                    rows={5}
-                    placeholder="help&#10;sessions&#10;models&#10;agents"
-                  />
-                )}
-                <div className="remote-command-list">
-                  {commands.map((cmd) => (
-                    <div key={cmd.name} className="remote-command-row">
-                      <code>{cmd.usage}</code>
-                      <span>{cmd.description}</span>
+                        <Input
+                          value={manualPairName}
+                          onChange={(e) => setManualPairName(e.target.value)}
+                          placeholder="显示名称（可选）"
+                        />
+                        <Button
+                          size="middle"
+                          loading={busy === 'confirm-pair'}
+                          onClick={() => void confirmPairing()}
+                        >
+                          手动确认
+                        </Button>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </section>
+                    <QrPayloadPreview payload={draft.pairing.qrPayload} />
+                  </div>
+                ) : (
+                  <div className="remote-muted-box">
+                    连接保存后生成一次性配对码，然后在远程聊天里发送 /bind 配对码 完成绑定。
+                  </div>
+                )}
+                {draft.pairedDevices.length > 0 && (
+                  <div className="remote-paired-list">
+                    {draft.pairedDevices.map((device) => (
+                      <Tag key={device.id} size="middle" color="green">
+                        {device.displayName || device.remoteUserId}
+                      </Tag>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="remote-editor-section">
+              <div className="subsec-h">授权</div>
+              <div className="form-grid remote-form-grid">
+                <label>
+                  允许用户 ID<span className="sub">英文逗号或换行分隔，留空表示配对后允许</span>
+                </label>
+                <TextArea
+                  value={joinCsv(draft.allowedUserIds)}
+                  onChange={(e) => updateDraft({ allowedUserIds: splitCsv(e.target.value) })}
+                  rows={2}
+                />
+
+                <label>
+                  允许会话/群 ID<span className="sub">用于群聊、频道或飞书群限制</span>
+                </label>
+                <TextArea
+                  value={joinCsv(draft.allowedChatIds)}
+                  onChange={(e) => updateDraft({ allowedChatIds: splitCsv(e.target.value) })}
+                  rows={2}
+                />
+              </div>
+              <div className="remote-cap-grid">
+                {(
+                  Object.entries(draft.capabilities) as Array<
+                    [keyof RemoteConnectionCapabilities, boolean]
+                  >
+                ).map(([key, value]) => (
+                  <SettingsRow
+                    key={key}
+                    title={REMOTE_CAPABILITY_LABELS[key]}
+                    desc={REMOTE_CAPABILITY_DESCS[key]}
+                    right={
+                      <Switch
+                        size="middle"
+                        checked={value}
+                        onChange={(v) => updateCapability(key, v)}
+                      />
+                    }
+                  />
+                ))}
+              </div>
+            </section>
+
+            <section className="remote-editor-section">
+              <div className="subsec-h">命令</div>
+              {draft.channel === 'telegram' && (
+                <TextArea
+                  value={draft.telegramCommands.join('\n')}
+                  onChange={(e) => updateDraft({ telegramCommands: splitCsv(e.target.value) })}
+                  rows={5}
+                  placeholder="help&#10;sessions&#10;models&#10;agents"
+                />
+              )}
+              <div className="remote-command-list">
+                {commands.map((cmd) => (
+                  <div key={cmd.name} className="remote-command-row">
+                    <code>{cmd.usage}</code>
+                    <span>{cmd.description}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
         </div>
       </Modal>
@@ -1529,7 +1548,8 @@ const REMOTE_CAPABILITY_DESCS: Record<keyof RemoteConnectionCapabilities, string
   approvePermissions: '预留给远程 allow/deny 审批，默认关闭',
   observeDesktop: '允许 /screen、/windows 查看桌面与窗口概览',
   controlDesktop: '允许 /focus、/click、/type、/hotkey 等桌面控制命令，默认关闭',
-  useInternalBrowser: '允许远程会话打开本机可见的 spark_browser 窗口，并读取控制台 / 网络元信息，默认关闭',
+  useInternalBrowser:
+    '允许远程会话打开本机可见的 spark_browser 窗口，并读取控制台 / 网络元信息，默认关闭',
   transferFiles: '预留给远程文件上传、下载与摘要读取，默认关闭',
   manageRuntime: '允许 /progress、/queue、/history、/cancel 管理远程任务',
   dangerousActions: '允许 /confirm 确认高危动作，仍需二次确认',
@@ -1700,7 +1720,7 @@ function AppearanceSection() {
             onChange={(v) => setA({ font: v })}
             options={fontOptions}
             style={{
-              width: 200
+              width: 200,
             }}
           />
           <FontAssetControl />
@@ -1924,7 +1944,9 @@ function ShortcutsSection() {
       if (!value) return
       updateShortcuts(
         shortcuts.map((shortcut) =>
-          shortcut.id === id ? { ...shortcut, key: value === 'Esc' ? 'Escape' : value.toLowerCase() } : shortcut,
+          shortcut.id === id
+            ? { ...shortcut, key: value === 'Esc' ? 'Escape' : value.toLowerCase() }
+            : shortcut,
         ),
       )
     },
@@ -1956,7 +1978,9 @@ function ShortcutsSection() {
   return (
     <div className="settings-section section-wider">
       <h2>快捷键</h2>
-      <div className="lede">下方仅展示已接入全局快捷键处理器的动作；可搜索、修改主按键或一键恢复默认。</div>
+      <div className="lede">
+        下方仅展示已接入全局快捷键处理器的动作；可搜索、修改主按键或一键恢复默认。
+      </div>
 
       <div className="row row-mb-sm">
         <Input
@@ -1968,7 +1992,12 @@ function ShortcutsSection() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索动作或按键..."
         />
-        <Button size="middle" type="text" icon={<Icons.Refresh  size={13} />} onClick={resetShortcuts}>
+        <Button
+          size="middle"
+          type="text"
+          icon={<Icons.Refresh size={13} />}
+          onClick={resetShortcuts}
+        >
           重置全部
         </Button>
       </div>
@@ -2109,7 +2138,12 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
                   <Icons.X size={11} />
                 </button>
               </div>
-              <Button className="add-fallback-btn" size="middle" type="text" icon={<Icons.Plus size={11} />}>
+              <Button
+                className="add-fallback-btn"
+                size="middle"
+                type="text"
+                icon={<Icons.Plus size={11} />}
+              >
                 添加 fallback
               </Button>
             </div>
@@ -2119,12 +2153,14 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <div className="modal-foot">
-          <Button size="middle" type="text" danger>删除 Profile</Button>
+          <Button size="middle" type="text" danger>
+            删除 Profile
+          </Button>
           <div className="flex1" />
           <Button size="middle" type="text" onClick={onClose}>
             取消
           </Button>
-          <Button size="middle" type="primary" icon={<Icons.Check  size={13} />} onClick={onClose}>
+          <Button size="middle" type="primary" icon={<Icons.Check size={13} />} onClick={onClose}>
             保存
           </Button>
         </div>
@@ -2279,13 +2315,9 @@ function ModelsSection() {
                       </span>
                     </div>
                   )}
-                  <Switch
-                    size="middle"
-                    checked={m.enabled}
-                    onChange={() => void handleToggle(m)}
-                  />
+                  <Switch size="middle" checked={m.enabled} onChange={() => void handleToggle(m)} />
                   <button className="icon-btn" title="删除" onClick={() => void handleDelete(m.id)}>
-                    <Icons.X  size={13} />
+                    <Icons.X size={13} />
                   </button>
                 </div>
               )
@@ -2521,18 +2553,14 @@ function RuleLayer({
             <span className="txt">{rule.content}</span>
             <span className="marker win">P{rule.priority}</span>
             {!rule.enabled && <span className="marker lose">禁用</span>}
-            <Switch
-              size="middle"
-              checked={rule.enabled}
-              onChange={(v) => onToggle(rule.id, v)}
-            />
+            <Switch size="middle" checked={rule.enabled} onChange={(v) => onToggle(rule.id, v)} />
             {!readOnly && (
               <>
                 <button className="icon-btn" title="编辑" onClick={() => onEdit(rule)}>
-                  <Icons.Edit  size={13} />
+                  <Icons.Edit size={13} />
                 </button>
                 <button className="icon-btn" title="删除" onClick={() => onDelete(rule.id)}>
-                  <Icons.X  size={13} />
+                  <Icons.X size={13} />
                 </button>
               </>
             )}
@@ -2639,7 +2667,14 @@ function RuleEditPanel({
           <Button size="middle" type="text" onClick={onClose}>
             取消
           </Button>
-          <Button size="middle" type="primary" loading={saving} icon={<Icons.Check  size={13} />} onClick={handleSave} disabled={saving}>
+          <Button
+            size="middle"
+            type="primary"
+            loading={saving}
+            icon={<Icons.Check size={13} />}
+            onClick={handleSave}
+            disabled={saving}
+          >
             保存
           </Button>
         </div>
@@ -2659,7 +2694,10 @@ function CustomCommandsSection() {
   const loadCommands = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await window.spark.invoke('settings:get', { category: CUSTOM_COMMANDS_CATEGORY, key: CUSTOM_COMMANDS_KEY })
+      const res = await window.spark.invoke('settings:get', {
+        category: CUSTOM_COMMANDS_CATEGORY,
+        key: CUSTOM_COMMANDS_KEY,
+      })
       setCommands(parseCustomCommandItems(typeof res.value === 'string' ? res.value : null))
     } finally {
       setLoading(false)
@@ -2670,13 +2708,20 @@ function CustomCommandsSection() {
 
   const persistCommands = useCallback(async (next: CustomCommandItem[]) => {
     setCommands(next)
-    await window.spark.invoke('settings:set', { category: CUSTOM_COMMANDS_CATEGORY, key: CUSTOM_COMMANDS_KEY, value: JSON.stringify(next) })
+    await window.spark.invoke('settings:set', {
+      category: CUSTOM_COMMANDS_CATEGORY,
+      key: CUSTOM_COMMANDS_KEY,
+      value: JSON.stringify(next),
+    })
   }, [])
 
   const normalizedQuery = query.trim().toLowerCase()
   const visibleCommands = commands.filter((command) => {
     if (!normalizedQuery) return true
-    return [command.name, command.description, command.prompt, command.script].join(' ').toLowerCase().includes(normalizedQuery)
+    return [command.name, command.description, command.prompt, command.script]
+      .join(' ')
+      .toLowerCase()
+      .includes(normalizedQuery)
   })
   const enabledCount = commands.filter((command) => command.enabled).length
 
@@ -2690,7 +2735,12 @@ function CustomCommandsSection() {
       toast.error('请至少填写提示词或脚本。')
       return
     }
-    if (commands.some((command) => command.id !== draft.id && normalizeCustomCommandInput(command.name) === normalizedName)) {
+    if (
+      commands.some(
+        (command) =>
+          command.id !== draft.id && normalizeCustomCommandInput(command.name) === normalizedName,
+      )
+    ) {
       toast.error(`命令 ${normalizedName} 已存在。`)
       return
     }
@@ -2711,11 +2761,20 @@ function CustomCommandsSection() {
   }
 
   const handleToggle = async (id: string, enabled: boolean) => {
-    await persistCommands(commands.map((command) => command.id === id ? { ...command, enabled, updatedAt: new Date().toISOString() } : command))
+    await persistCommands(
+      commands.map((command) =>
+        command.id === id ? { ...command, enabled, updatedAt: new Date().toISOString() } : command,
+      ),
+    )
   }
 
   const handleDelete = async (id: string) => {
-    const confirmed = await requestConfirm({ title: '删除自定义命令？', description: '删除后会立即从会话斜杠命令列表中移除。', confirmText: '删除', danger: true })
+    const confirmed = await requestConfirm({
+      title: '删除自定义命令？',
+      description: '删除后会立即从会话斜杠命令列表中移除。',
+      confirmText: '删除',
+      danger: true,
+    })
     if (!confirmed) return
     await persistCommands(commands.filter((command) => command.id !== id))
   }
@@ -2724,11 +2783,24 @@ function CustomCommandsSection() {
     <>
       <div className="settings-section section-wider">
         <h2>自定义命令</h2>
-        <div className="lede">将常用流程沉淀为 / 命令。可先运行 JavaScript / Python 脚本，再把配置好的提示词交给 Agent 继续处理。</div>
+        <div className="lede">
+          将常用流程沉淀为 / 命令。可先运行 JavaScript / Python 脚本，再把配置好的提示词交给 Agent
+          继续处理。
+        </div>
         <div className="row info-banner">
           <Icons.Command size={14} className="color-primary flex-shrink-0" />
-          <div className="flex1 info-banner-text"><strong>{enabledCount} 个启用</strong> · {commands.length} 个自定义命令 · 会显示在会话输入框的「工具」分组。</div>
-          <Button size="middle" type="primary" icon={<Icons.Plus  size={13} />} onClick={() => setEditing(createCustomCommandDraft())}>新增命令</Button>
+          <div className="flex1 info-banner-text">
+            <strong>{enabledCount} 个启用</strong> · {commands.length} 个自定义命令 ·
+            会显示在会话输入框的「工具」分组。
+          </div>
+          <Button
+            size="middle"
+            type="primary"
+            icon={<Icons.Plus size={13} />}
+            onClick={() => setEditing(createCustomCommandDraft())}
+          >
+            新增命令
+          </Button>
         </div>
         <div className="custom-command-toolbar">
           <Input
@@ -2739,61 +2811,180 @@ function CustomCommandsSection() {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索命令名、描述、提示词或脚本…"
           />
-          <Button size="middle" onClick={() => void loadCommands()}>刷新</Button>
+          <Button size="middle" onClick={() => void loadCommands()}>
+            刷新
+          </Button>
         </div>
         {loading ? (
           <div className="card loading-card">正在加载自定义命令...</div>
         ) : visibleCommands.length === 0 ? (
-          <div className="placeholder-section"><Icons.Command size={28} /><h3>{commands.length === 0 ? '还没有自定义命令' : '没有匹配的命令'}</h3><p>建议从 /custom-plan 开始，把固定计划、审查或总结流程变成一键入口。</p></div>
+          <div className="placeholder-section">
+            <Icons.Command size={28} />
+            <h3>{commands.length === 0 ? '还没有自定义命令' : '没有匹配的命令'}</h3>
+            <p>建议从 /custom-plan 开始，把固定计划、审查或总结流程变成一键入口。</p>
+          </div>
         ) : (
           <div className="custom-command-grid">
             {visibleCommands.map((command) => (
-              <div key={command.id} className={`custom-command-card ${command.enabled ? '' : 'disabled'}`}>
+              <div
+                key={command.id}
+                className={`custom-command-card ${command.enabled ? '' : 'disabled'}`}
+              >
                 <div className="custom-command-card-h">
-                  <div><div className="custom-command-name">{command.name}</div><div className="custom-command-desc">{command.description || '未填写描述'}</div></div>
-                  <Switch size="middle" checked={command.enabled} onChange={(enabled) => void handleToggle(command.id, enabled)} />
+                  <div>
+                    <div className="custom-command-name">{command.name}</div>
+                    <div className="custom-command-desc">{command.description || '未填写描述'}</div>
+                  </div>
+                  <Switch
+                    size="middle"
+                    checked={command.enabled}
+                    onChange={(enabled) => void handleToggle(command.id, enabled)}
+                  />
                 </div>
-                <div className="custom-command-meta"><span>{command.prompt.trim() ? '提示词' : '无提示词'}</span><span>{command.script.trim() ? (command.scriptLanguage === 'python' ? 'Python' : 'JavaScript') : '无脚本'}</span><span>{formatCustomCommandDate(command.updatedAt)}</span></div>
-                <div className="custom-command-preview">{command.prompt || command.script || '未配置内容'}</div>
-                <div className="row gap-8"><Button size="middle" onClick={() => setEditing(command)}>编辑</Button><Button size="middle" danger onClick={() => void handleDelete(command.id)}>删除</Button></div>
+                <div className="custom-command-meta">
+                  <span>{command.prompt.trim() ? '提示词' : '无提示词'}</span>
+                  <span>
+                    {command.script.trim()
+                      ? command.scriptLanguage === 'python'
+                        ? 'Python'
+                        : 'JavaScript'
+                      : '无脚本'}
+                  </span>
+                  <span>{formatCustomCommandDate(command.updatedAt)}</span>
+                </div>
+                <div className="custom-command-preview">
+                  {command.prompt || command.script || '未配置内容'}
+                </div>
+                <div className="row gap-8">
+                  <Button size="middle" onClick={() => setEditing(command)}>
+                    编辑
+                  </Button>
+                  <Button size="middle" danger onClick={() => void handleDelete(command.id)}>
+                    删除
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
-      {editing != null && <CustomCommandEditPanel command={editing} onClose={() => setEditing(null)} onSave={(draft) => void handleSave(draft)} />}
+      {editing != null && (
+        <CustomCommandEditPanel
+          command={editing}
+          onClose={() => setEditing(null)}
+          onSave={(draft) => void handleSave(draft)}
+        />
+      )}
     </>
   )
 }
 
-function CustomCommandEditPanel({ command, onClose, onSave }: { command: CustomCommandItem; onClose: () => void; onSave: (draft: CustomCommandItem) => void }) {
+function CustomCommandEditPanel({
+  command,
+  onClose,
+  onSave,
+}: {
+  command: CustomCommandItem
+  onClose: () => void
+  onSave: (draft: CustomCommandItem) => void
+}) {
   const [draft, setDraft] = useState(command)
-  const patch = (next: Partial<CustomCommandItem>) => setDraft((current) => ({ ...current, ...next }))
+  const patch = (next: Partial<CustomCommandItem>) =>
+    setDraft((current) => ({ ...current, ...next }))
   const normalizedName = normalizeCustomCommandInput(draft.name)
   const canSave = normalizedName != null && (!!draft.prompt.trim() || !!draft.script.trim())
 
   return (
     <div className="slide-panel-backdrop" onClick={onClose}>
-      <div className="slide-panel custom-command-panel" onClick={(event) => event.stopPropagation()}>
-        <div className="slide-panel-h"><div className="h-icon">/</div><div className="flex1"><div className="h-title">编辑自定义命令</div><div className="h-sub">保存后可在会话输入框输入 / 搜索触发</div></div><button className="icon-btn" onClick={onClose}><Icons.X /></button></div>
+      <div
+        className="slide-panel custom-command-panel"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="slide-panel-h">
+          <div className="h-icon">/</div>
+          <div className="flex1">
+            <div className="h-title">编辑自定义命令</div>
+            <div className="h-sub">保存后可在会话输入框输入 / 搜索触发</div>
+          </div>
+          <button className="icon-btn" onClick={onClose}>
+            <Icons.X />
+          </button>
+        </div>
         <div className="slide-panel-body">
-          <div className="custom-command-preview-strip"><span>预览</span><code>{normalizedName ?? '/custom-plan'} 用户输入的参数</code></div>
+          <div className="custom-command-preview-strip">
+            <span>预览</span>
+            <code>{normalizedName ?? '/custom-plan'} 用户输入的参数</code>
+          </div>
           <div className="form-grid">
-            <label>命令名<span className="sub">例如 /custom-plan</span></label>
-            <Input value={draft.name} onChange={(event) => patch({ name: event.target.value })} placeholder="/custom-plan" />
-            <label>描述<span className="sub">显示在斜杠命令列表</span></label>
-            <Input value={draft.description} onChange={(event) => patch({ description: event.target.value })} placeholder="生成一份可执行计划" />
+            <label>
+              命令名<span className="sub">例如 /custom-plan</span>
+            </label>
+            <Input
+              value={draft.name}
+              onChange={(event) => patch({ name: event.target.value })}
+              placeholder="/custom-plan"
+            />
+            <label>
+              描述<span className="sub">显示在斜杠命令列表</span>
+            </label>
+            <Input
+              value={draft.description}
+              onChange={(event) => patch({ description: event.target.value })}
+              placeholder="生成一份可执行计划"
+            />
             <label>启用</label>
-            <Switch size="middle" checked={draft.enabled} onChange={(enabled) => patch({ enabled })} />
+            <Switch
+              size="middle"
+              checked={draft.enabled}
+              onChange={(enabled) => patch({ enabled })}
+            />
             <label>脚本语言</label>
-            <Segmented value={draft.scriptLanguage} onChange={(value) => patch({ scriptLanguage: value as CustomCommandScriptLanguage })} options={[{ label: 'JavaScript', value: 'javascript' }, { label: 'Python', value: 'python' }]} />
-            <label>提示词<span className="sub">脚本成功后继续交给 Agent</span></label>
-            <TextArea value={draft.prompt} onChange={(event) => patch({ prompt: event.target.value })} placeholder="请基于用户输入输出分阶段计划，并列出风险和验证步骤。" className="rule-textarea custom-command-textarea" />
-            <label>脚本<span className="sub">命令后的文本会作为第一个参数传入</span></label>
-            <TextArea value={draft.script} onChange={(event) => patch({ script: event.target.value })} placeholder={draft.scriptLanguage === 'python' ? 'import sys\nprint(sys.argv[1] if len(sys.argv) > 1 else "")' : 'const arg = process.argv[2] || ""\\nconsole.log(arg)'} className="rule-textarea custom-command-textarea" />
+            <Segmented
+              value={draft.scriptLanguage}
+              onChange={(value) => patch({ scriptLanguage: value as CustomCommandScriptLanguage })}
+              options={[
+                { label: 'JavaScript', value: 'javascript' },
+                { label: 'Python', value: 'python' },
+              ]}
+            />
+            <label>
+              提示词<span className="sub">脚本成功后继续交给 Agent</span>
+            </label>
+            <TextArea
+              value={draft.prompt}
+              onChange={(event) => patch({ prompt: event.target.value })}
+              placeholder="请基于用户输入输出分阶段计划，并列出风险和验证步骤。"
+              className="rule-textarea custom-command-textarea"
+            />
+            <label>
+              脚本<span className="sub">命令后的文本会作为第一个参数传入</span>
+            </label>
+            <TextArea
+              value={draft.script}
+              onChange={(event) => patch({ script: event.target.value })}
+              placeholder={
+                draft.scriptLanguage === 'python'
+                  ? 'import sys\nprint(sys.argv[1] if len(sys.argv) > 1 else "")'
+                  : 'const arg = process.argv[2] || ""\\nconsole.log(arg)'
+              }
+              className="rule-textarea custom-command-textarea"
+            />
           </div>
         </div>
-        <div className="slide-panel-foot"><span className="muted text-xs-12">{!canSave ? '需要有效命令名，并至少填写提示词或脚本。' : '脚本失败时不会继续执行提示词。'}</span><span className="flex1" /><Button size="middle" type="text" onClick={onClose}>取消</Button><Button size="middle" type="primary" disabled={!canSave} onClick={() => onSave(draft)}>保存</Button></div>
+        <div className="slide-panel-foot">
+          <span className="muted text-xs-12">
+            {!canSave
+              ? '需要有效命令名，并至少填写提示词或脚本。'
+              : '脚本失败时不会继续执行提示词。'}
+          </span>
+          <span className="flex1" />
+          <Button size="middle" type="text" onClick={onClose}>
+            取消
+          </Button>
+          <Button size="middle" type="primary" disabled={!canSave} onClick={() => onSave(draft)}>
+            保存
+          </Button>
+        </div>
       </div>
     </div>
   )
@@ -2801,7 +2992,16 @@ function CustomCommandEditPanel({ command, onClose, onSave }: { command: CustomC
 
 function createCustomCommandDraft(): CustomCommandItem {
   const now = new Date().toISOString()
-  return { id: `custom-${Date.now()}`, name: '/custom-plan', description: '生成一份可执行计划', prompt: '请基于用户输入生成一份简洁、可执行、包含验证步骤的计划。', script: '', scriptLanguage: 'javascript', enabled: true, updatedAt: now }
+  return {
+    id: `custom-${Date.now()}`,
+    name: '/custom-plan',
+    description: '生成一份可执行计划',
+    prompt: '请基于用户输入生成一份简洁、可执行、包含验证步骤的计划。',
+    script: '',
+    scriptLanguage: 'javascript',
+    enabled: true,
+    updatedAt: now,
+  }
 }
 
 function parseCustomCommandItems(raw: string | null): CustomCommandItem[] {
@@ -2809,16 +3009,18 @@ function parseCustomCommandItems(raw: string | null): CustomCommandItem[] {
   try {
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed)) return []
-    return parsed.filter((item): item is Record<string, unknown> => item != null && typeof item === 'object').map((item) => ({
-      id: typeof item.id === 'string' ? item.id : `custom-${Date.now()}`,
-      name: typeof item.name === 'string' ? item.name : '/custom-command',
-      description: typeof item.description === 'string' ? item.description : '',
-      prompt: typeof item.prompt === 'string' ? item.prompt : '',
-      script: typeof item.script === 'string' ? item.script : '',
-      scriptLanguage: item.scriptLanguage === 'python' ? 'python' : 'javascript',
-      enabled: item.enabled !== false,
-      updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString(),
-    }))
+    return parsed
+      .filter((item): item is Record<string, unknown> => item != null && typeof item === 'object')
+      .map((item) => ({
+        id: typeof item.id === 'string' ? item.id : `custom-${Date.now()}`,
+        name: typeof item.name === 'string' ? item.name : '/custom-command',
+        description: typeof item.description === 'string' ? item.description : '',
+        prompt: typeof item.prompt === 'string' ? item.prompt : '',
+        script: typeof item.script === 'string' ? item.script : '',
+        scriptLanguage: item.scriptLanguage === 'python' ? 'python' : 'javascript',
+        enabled: item.enabled !== false,
+        updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString(),
+      }))
   } catch {
     return []
   }
@@ -3148,7 +3350,7 @@ function McpSection() {
         </span>
         <Button
           type="primary"
-          icon={<Icons.Plus  size={13} />}
+          icon={<Icons.Plus size={13} />}
           onClick={openAddForm}
           style={{ marginLeft: 10 }} /* dynamic */
         >
@@ -3228,7 +3430,7 @@ function McpSection() {
                       </Button>
                     )}
                     <button className="icon-btn" title="编辑" onClick={() => openEditForm(server)}>
-                      <Icons.Edit  size={13} />
+                      <Icons.Edit size={13} />
                     </button>
                     <button
                       className="icon-btn"
@@ -3431,7 +3633,13 @@ function McpSection() {
 
               <div className="subsec-h mt-lg">
                 环境变量
-                <Button className="mcp-env-add-btn" size="middle" type="text" icon={<Icons.Plus size={11} />} onClick={addEnvPair}>
+                <Button
+                  className="mcp-env-add-btn"
+                  size="middle"
+                  type="text"
+                  icon={<Icons.Plus size={11} />}
+                  onClick={addEnvPair}
+                >
                   添加
                 </Button>
               </div>
@@ -3459,7 +3667,7 @@ function McpSection() {
                         onClick={() => removeEnvPair(idx)}
                         title="删除"
                       >
-                        <Icons.X  size={13} />
+                        <Icons.X size={13} />
                       </button>
                     </div>
                   ))}
@@ -3476,7 +3684,7 @@ function McpSection() {
                 size="middle"
                 type="primary"
                 loading={formSaving}
-                icon={<Icons.Check  size={13} />}
+                icon={<Icons.Check size={13} />}
                 onClick={() => void handleFormSave()}
                 disabled={formSaving}
               >
@@ -3624,7 +3832,7 @@ function SystemPromptSection() {
             size="middle"
             type="primary"
             loading={savingPrompt}
-            icon={<Icons.Check  size={13} />}
+            icon={<Icons.Check size={13} />}
             onClick={() => void saveSystemPrompt()}
             disabled={savingPrompt || !isDirty}
           >
@@ -3658,7 +3866,12 @@ function WorkflowTemplatesSection() {
             管理共享 DAG 模板与版本。模板会作为 Workflow 页创建新流程时的起点。
           </div>
         </div>
-        <Button size="middle" type="text" icon={<Icons.Refresh size={11} />} onClick={restoreDefaults}>
+        <Button
+          size="middle"
+          type="text"
+          icon={<Icons.Refresh size={11} />}
+          onClick={restoreDefaults}
+        >
           恢复内置
         </Button>
       </div>
@@ -3689,6 +3902,7 @@ export function PermissionsSection() {
   const [runtimePrefs, setRuntimePrefs] = useState<RuntimePermissionPrefs>(() =>
     readRuntimePermissionPrefs(),
   )
+  const { toast } = useToast()
 
   const { invoke: listProfiles } = useIpcInvoke('permission:list-profiles')
   const { invoke: updateSandbox } = useIpcInvoke('permission:update-sandbox')
@@ -4043,13 +4257,7 @@ export function PermissionsSection() {
         <SettingsRow
           title="记录所有权限决策"
           desc="写入 SQLite · 不可篡改"
-          right={
-            <Switch
-              size="middle"
-              checked={auditEnabled}
-              onChange={toggleAudit}
-            />
-          }
+          right={<Switch size="middle" checked={auditEnabled} onChange={toggleAudit} />}
         />
         <SettingsRow
           title="导出团队审计报告"
@@ -4161,7 +4369,8 @@ function TelemetrySection() {
     <div className="settings-section">
       <h2>遥测与日志</h2>
       <div className="lede">
-        运行时日志会写入本地文件，可在此查看最近内容。OpenTelemetry、trace 查看和诊断包导出仍在待开发阶段。
+        运行时日志会写入本地文件，可在此查看最近内容。OpenTelemetry、trace
+        查看和诊断包导出仍在待开发阶段。
       </div>
 
       {/* ── 本地日志级别 ── */}
@@ -4315,35 +4524,43 @@ function UsageSection() {
       <div className="subsec-h">累计统计</div>
       <div className="usage-alltime-grid">
         <div className="usage-stat-card with-icon">
-          <div className="usage-stat-icon"><Icons.Hash size={14} /></div>
-          <div className="usage-stat-label">总请求数</div>
-          <div className="usage-stat-value">
-            {loading ? '—' : String(total?.recordCount ?? 0)}
+          <div className="usage-stat-icon">
+            <Icons.Hash size={14} />
           </div>
+          <div className="usage-stat-label">总请求数</div>
+          <div className="usage-stat-value">{loading ? '—' : String(total?.recordCount ?? 0)}</div>
         </div>
         <div className="usage-stat-card with-icon">
-          <div className="usage-stat-icon"><Icons.ArrowUp size={14} /></div>
+          <div className="usage-stat-icon">
+            <Icons.ArrowUp size={14} />
+          </div>
           <div className="usage-stat-label">总输入 Token</div>
           <div className="usage-stat-value">
             {loading ? '—' : fmt(total?.totalInputTokens ?? 0)}
           </div>
         </div>
         <div className="usage-stat-card with-icon">
-          <div className="usage-stat-icon"><Icons.ArrowDown size={14} /></div>
+          <div className="usage-stat-icon">
+            <Icons.ArrowDown size={14} />
+          </div>
           <div className="usage-stat-label">总输出 Token</div>
           <div className="usage-stat-value">
             {loading ? '—' : fmt(total?.totalOutputTokens ?? 0)}
           </div>
         </div>
         <div className="usage-stat-card with-icon">
-          <div className="usage-stat-icon"><Icons.Database size={14} /></div>
+          <div className="usage-stat-icon">
+            <Icons.Database size={14} />
+          </div>
           <div className="usage-stat-label">总缓存命中</div>
           <div className="usage-stat-value">
             {loading ? '—' : fmt(total?.totalCacheReadTokens ?? 0)}
           </div>
         </div>
         <div className="usage-stat-card with-icon">
-          <div className="usage-stat-icon"><Icons.Zap size={14} /></div>
+          <div className="usage-stat-icon">
+            <Icons.Zap size={14} />
+          </div>
           <div className="usage-stat-label">总缓存写入</div>
           <div className="usage-stat-value">
             {loading ? '—' : fmt(total?.totalCacheWriteTokens ?? 0)}
@@ -4360,32 +4577,21 @@ function UsageSection() {
         {(() => {
           const sorted = [...models].sort(
             (a, b) =>
-              b.totalInputTokens +
-              b.totalOutputTokens -
-              (a.totalInputTokens + a.totalOutputTokens),
+              b.totalInputTokens + b.totalOutputTokens - (a.totalInputTokens + a.totalOutputTokens),
           )
-          const grand = sorted.reduce(
-            (s, m) => s + m.totalInputTokens + m.totalOutputTokens,
-            0,
-          )
+          const grand = sorted.reduce((s, m) => s + m.totalInputTokens + m.totalOutputTokens, 0)
           return sorted.map((m) => {
             const mTotal = m.totalInputTokens + m.totalOutputTokens
             const pct = grand > 0 ? (mTotal / grand) * 100 : 0
             return (
-              <div
-                key={`${m.providerId}-${m.modelId}`}
-                className="usage-rank-item"
-              >
+              <div key={`${m.providerId}-${m.modelId}`} className="usage-rank-item">
                 <div className="usage-rank-name">
                   <div className="row-title">{m.modelId}</div>
                   <div className="row-desc">{m.providerId}</div>
                 </div>
                 <div className="usage-rank-bar">
                   <div className="usage-rank-track">
-                    <div
-                      className="usage-rank-fill"
-                      style={{ width: `${pct}%` }}
-                    />
+                    <div className="usage-rank-fill" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
                 <div className="usage-rank-stats">
@@ -4428,7 +4634,14 @@ function UsageSection() {
           title="刷新数据"
           desc="重新从数据库加载用量统计"
           right={
-            <Button size="middle" type="text" loading={loading} icon={<Icons.Refresh size={11} />} onClick={loadDashboard} disabled={loading}>
+            <Button
+              size="middle"
+              type="text"
+              loading={loading}
+              icon={<Icons.Refresh size={11} />}
+              onClick={loadDashboard}
+              disabled={loading}
+            >
               刷新
             </Button>
           }
@@ -4437,7 +4650,14 @@ function UsageSection() {
           title="清理旧记录"
           desc="删除 90 天以前的本地用量明细，保留近期统计"
           right={
-            <Button size="middle" type="text" danger loading={purging} onClick={purgeOldRecords} disabled={loading || purging}>
+            <Button
+              size="middle"
+              type="text"
+              danger
+              loading={purging}
+              onClick={purgeOldRecords}
+              disabled={loading || purging}
+            >
               清理
             </Button>
           }
@@ -4650,7 +4870,12 @@ function StorageSection() {
             value={stats?.userDataPath ?? '加载中...'}
             readOnly
           />
-          <Button size="middle" type="text" icon={<Icons.Folder  size={13} />} onClick={handleOpenDataDir}>
+          <Button
+            size="middle"
+            type="text"
+            icon={<Icons.Folder size={13} />}
+            onClick={handleOpenDataDir}
+          >
             打开
           </Button>
         </div>
@@ -4659,8 +4884,18 @@ function StorageSection() {
           当前工作区<span className="sub">Agent 文件工具的根目录</span>
         </label>
         <div className="control">
-          <Input className="flex1" size="middle" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
-          <Button size="middle" type="text" icon={<Icons.Folder  size={13} />} onClick={handleOpenWorkspace}>
+          <Input
+            className="flex1"
+            size="middle"
+            value={workspace?.rootPath ?? '未打开工作区'}
+            readOnly
+          />
+          <Button
+            size="middle"
+            type="text"
+            icon={<Icons.Folder size={13} />}
+            onClick={handleOpenWorkspace}
+          >
             选择
           </Button>
           <Button
@@ -4677,8 +4912,18 @@ function StorageSection() {
           Canvas 项目根目录<span className="sub">新建画布项目默认保存位置</span>
         </label>
         <div className="control">
-          <Input className="flex1" size="middle" value={canvasProjectsRoot || stats?.canvasProjectsRoot || '加载中...'} readOnly />
-          <Button size="middle" type="text" icon={<Icons.Folder  size={13} />} onClick={() => void handleChooseCanvasRoot()}>
+          <Input
+            className="flex1"
+            size="middle"
+            value={canvasProjectsRoot || stats?.canvasProjectsRoot || '加载中...'}
+            readOnly
+          />
+          <Button
+            size="middle"
+            type="text"
+            icon={<Icons.Folder size={13} />}
+            onClick={() => void handleChooseCanvasRoot()}
+          >
             选择
           </Button>
         </div>
@@ -4686,7 +4931,10 @@ function StorageSection() {
 
       {error !== null && <div className="card storage-card">{error}</div>}
 
-      <div className="subsec-h" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'end'}}>
+      <div
+        className="subsec-h"
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end' }}
+      >
         存储用量
         <Button
           size="small"
@@ -4752,7 +5000,11 @@ function StorageSection() {
         <SettingsRow
           title="最近一次备份"
           desc="今天 03:00 · 成功 · 41 MB"
-          right={<Button size="middle" type="text">查看历史</Button>}
+          right={
+            <Button size="middle" type="text">
+              查看历史
+            </Button>
+          }
         />
         <SettingsRow
           title="导出全部数据"
@@ -4970,7 +5222,12 @@ function ArchivedSection() {
                 <div className="row-desc">归档于 {formatDate(w.archivedAt)}</div>
               </div>
               <div className="archived-item-actions">
-                <Button size="middle" type="text" icon={<Icons.Refresh size={11} />} onClick={() => handleRestoreWorkspace(w)}>
+                <Button
+                  size="middle"
+                  type="text"
+                  icon={<Icons.Refresh size={11} />}
+                  onClick={() => handleRestoreWorkspace(w)}
+                >
                   恢复
                 </Button>
                 <Button
@@ -5006,10 +5263,21 @@ function ArchivedSection() {
                 </div>
               </div>
               <div className="archived-item-actions">
-                <Button size="middle" type="text" icon={<Icons.Refresh size={11} />} onClick={() => handleRestoreSession(s)}>
+                <Button
+                  size="middle"
+                  type="text"
+                  icon={<Icons.Refresh size={11} />}
+                  onClick={() => handleRestoreSession(s)}
+                >
                   恢复
                 </Button>
-                <Button size="middle" type="text" danger icon={<Icons.Trash size={11} />} onClick={() => handleDeleteSession(s)}>
+                <Button
+                  size="middle"
+                  type="text"
+                  danger
+                  icon={<Icons.Trash size={11} />}
+                  onClick={() => handleDeleteSession(s)}
+                >
                   删除
                 </Button>
               </div>
@@ -5271,7 +5539,7 @@ function IntegritySection() {
             type="text"
             loading={isChecking}
             disabled={isChecking || isCheckingLatest}
-            icon={<Icons.Refresh  size={13} className={isChecking ? 'spin' : ''} />}
+            icon={<Icons.Refresh size={13} className={isChecking ? 'spin' : ''} />}
             onClick={() => void handleCheck(false)}
           >
             立即检测
@@ -5281,7 +5549,7 @@ function IntegritySection() {
             type="text"
             loading={isCheckingLatest}
             disabled={isChecking || isCheckingLatest}
-            icon={<Icons.Globe  size={13} className={isCheckingLatest ? 'spin' : ''} />}
+            icon={<Icons.Globe size={13} className={isCheckingLatest ? 'spin' : ''} />}
             onClick={() => void handleCheck(true)}
           >
             检查最新版本
@@ -5301,7 +5569,7 @@ function IntegritySection() {
           <Button
             size="middle"
             type="text"
-            icon={<Icons.X  size={13} />}
+            icon={<Icons.X size={13} />}
             onClick={() => setInstallResult(null)}
             style={{ marginLeft: 'auto', padding: '0 4px', height: 20 }}
           />
@@ -5332,7 +5600,7 @@ function IntegritySection() {
                 <Button
                   size="middle"
                   type="text"
-                  icon={<Icons.ExternalLink  size={13} />}
+                  icon={<Icons.ExternalLink size={13} />}
                   href={tool.downloadUrl}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -5722,7 +5990,15 @@ function UpdatesSection() {
         <SettingsRow
           title="更新来源"
           desc={`检查顺序：官网版本中心 → GitHub Releases；当前检查来源：${updateSourceLabel}`}
-          right={<span className="badge">{status?.updateSource === 'github' ? 'GitHub' : status?.updateSource === 'version-center' ? '官网' : '待检查'}</span>}
+          right={
+            <span className="badge">
+              {status?.updateSource === 'github'
+                ? 'GitHub'
+                : status?.updateSource === 'version-center'
+                  ? '官网'
+                  : '待检查'}
+            </span>
+          }
         />
       </div>
 
