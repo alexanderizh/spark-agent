@@ -2142,6 +2142,8 @@ function CanvasStageInner({
             <MiniMap
               className="canvas-minimap"
               style={{ width: CANVAS_MINIMAP_WIDTH, height: CANVAS_MINIMAP_HEIGHT }}
+              pannable
+              ariaLabel="小地图：拖动可视区域以移动画布"
               nodeColor={minimapNodeColor}
               nodeBorderRadius={8}
               nodeStrokeWidth={0}
