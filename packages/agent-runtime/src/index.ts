@@ -259,6 +259,7 @@ export {
 export { mapPermissionMode, mergeToolPermissions } from './sdk/index.js'
 export type {
   SDKExecutorConfig,
+  SDKInvocationSnapshot,
   SDKMcpServerConfig,
   SDKPermissionConfig,
   SparkPermissionMode,

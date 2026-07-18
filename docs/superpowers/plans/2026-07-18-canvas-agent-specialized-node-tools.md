@@ -339,3 +339,5 @@ git commit -m "feat(canvas): add specialized agent node tools"
 - [x] 角色、场景、道具、特效统一进入实体解析与资产物化路径，解析前先保存完整模型原文。
 - [x] 旧 OpenAI Chat Profile 缺少 wire protocol 时回退直连，不再默认探测 Responses。
 - [x] 旧任务按边语义恢复操作节点，生成边使用 source、输入边使用 target。
+- [x] 专用 workflow 与 Provider 参数裁剪分层；旧分镜节点可由输出 `shot` 角色恢复身份，并在提交边界清除残留角色抽取 Prompt。
+- [x] 任务详情按实际模型调用去重：HTTP/SDK/CLI 地址与最终参数优先展开，画布 Prompt、输入快照和非最终配置折叠展示。

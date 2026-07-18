@@ -54,7 +54,7 @@ xAI 另有一处终态解析错误：官方成功契约是 `status=done` 且产�
 
 - `modelOutputText`：模型/Agent 原始文本，结构解析失败时也必须保留；
 - `rawResponse`：Session runtime 或 Provider 的非敏感诊断摘要，不再冒充模型正文；
-- `systemPrompt` 与 `compiledUserText`：最终提交的 System/User Prompt；
+- `systemPrompt` 与 `compiledUserText`：画布编译后、进入 Session Runtime 前的 System/User Prompt；
 - 完整运行配置：Agent、Provider Profile、Manifest、Model、推理强度、Skill、pipeline role、模型参数和输入文件传输摘要；
 - `completedAt`：成功、失败与取消三种终态都必须写入。
 
@@ -68,7 +68,11 @@ xAI 另有一处终态解析错误：官方成功契约是 `status=done` 且产�
 
 文本执行路径按 Provider 的真实 wire protocol 选择：Anthropic-compatible 走 Messages；明确声明 `chat`/`responses` 的 OpenAI-compatible Profile 才可进入对应 Codex Session Runtime；缺少 `codexApiKind` 的旧 OpenAI-compatible Profile 保守回退直连 Chat Completions，避免被默认探测 `/responses`。
 
+任务详情以“实际模型调用”为最终事实源。直连 HTTP 保存最终 URL、方法、脱敏请求头、模型实际请求体以及响应状态/请求 ID；Session Runtime 在 executor 提交边界保存明确标注的 Codex SDK、Claude SDK 或本地 CLI 地址，并分别记录真实 `sdk.query` Prompt/options、Codex client/thread/input 或 CLI command/args/stdin。API Key、Authorization、MCP header/env 和完整运行环境只显示脱敏占位，不再把画布侧 `modelParams` 或上层 `createSession`/`sendTurn` 冒充最终模型参数。画布提交 Prompt、冻结输入、节点血缘、画布配置和运行时诊断默认折叠；模型原始输出、实际模型调用和错误默认展开。System/User Prompt 合并为一个“调用前快照”，最终组合后的 Prompt 以实际 HTTP body 或 executor 调用快照为准。运行时诊断展示时移除已经单独展示的 `outputText`、`text` 和 `parsedEntities`，避免重复刷屏。
+
 旧任务迁移按边类型恢复操作节点：`used_as_input` 使用 target，`generated` 使用 source。迁移结果按实际数据库对象缓存，项目重载或回滚得到的新快照仍会执行兼容迁移。
+
+功能身份不能依赖 Provider 参数裁剪后的 `modelParams` 单点判断。`workflow`、`responseFormat` 和来源资产 id 属于画布控制元数据，文本模型 Contract 裁剪后必须恢复；分镜旧节点只要输入角色或输出角色为 `shot`，即使 `taskPipelineRole`/`workflow` 缺失或残留 `extract_character`，也必须解析为 `screenplay.to_shot_script`。当前节点运行和编辑优先读取节点草稿，历史 task 只作为缺省回退；API 提交边界再次强制功能 workflow 并规范化 system prompt，避免不可变历史快照反向污染下一次运行。
 
 ### 异步轮询诊断
 

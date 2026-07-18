@@ -5344,15 +5344,40 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-task-detail-block {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
+  display: block;
 }
 
 .canvas-task-detail-block-title {
+  cursor: pointer;
   color: var(--text-strong);
   font-size: 12px;
   font-weight: 700;
+  user-select: none;
+}
+
+.canvas-task-detail-block-content {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 7px;
+}
+
+.canvas-task-detail-subtitle {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.canvas-task-detail-note,
+.canvas-task-detail-empty-call {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .canvas-task-detail-block pre,

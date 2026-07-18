@@ -227,6 +227,25 @@ describe('canvas operation inheritance', () => {
     })
     writeCanvasOperationPreset('text_generate', {
       prompt: '你是角色分析师，只输出 characters JSON。',
+      modelParams: { workflow: 'extract_character', responseFormat: 'json' },
+    })
+    Object.assign(window, {
+      spark: {
+        invoke: vi.fn().mockImplementation((channel: string) => {
+          if (channel === 'canvas:media:prune-model-params') {
+            return Promise.resolve({
+              prunedModelParams: {},
+              droppedParams: [
+                { name: 'workflow', reason: 'unsupported_by_model' },
+                { name: 'responseFormat', reason: 'unsupported_by_model' },
+              ],
+              warnings: [],
+              validationIssues: [],
+            })
+          }
+          return Promise.resolve({ rootPath: '/tmp/project-1' })
+        }),
+      },
     })
 
     const snapshot = await canvasApi.createOperationNode({
@@ -236,15 +255,23 @@ describe('canvas operation inheritance', () => {
       inputNodeIds: [],
       x: 0,
       y: 0,
-      taskPipelineRole: 'shot',
       outputPipelineRole: 'shot',
-      modelParams: { workflow: 'shot_script', responseFormat: 'json' },
-      systemPrompt: '【任务】把下面的场次剧本拆成分镜。\nJSON 顶层结构必须为：{"shots":[]}',
+      modelParams: { workflow: 'extract_character', responseFormat: 'json' },
+      manifestId: 'custom:text-model',
+      systemPrompt:
+        '你是专业的影视角色分析师。只输出 characters JSON。\n\n' +
+        '【任务】把下面的场次剧本拆成分镜。\nJSON 顶层结构必须为：{"shots":[]}',
     })
 
     const node = snapshot.nodes.find((candidate) => candidate.type === 'text_generate')
+    const task = snapshot.tasks.find((candidate) => candidate.id === node?.taskId)
     expect(node?.data.systemPrompt).toContain('"shots"')
     expect(node?.data.systemPrompt).not.toContain('characters')
+    expect(node?.data.pipelineRole).toBe('shot')
+    expect(node?.data.modelParams).toEqual({ workflow: 'shot_script', responseFormat: 'json' })
+    expect(node?.data.droppedModelParams).toBeUndefined()
+    expect(task?.taskPipelineRole).toBe('shot')
+    expect(task?.modelParams).toEqual({ workflow: 'shot_script', responseFormat: 'json' })
   })
 
   it('creates storyboard tasks large and grows them to the completed shot table size', async () => {
@@ -828,9 +855,8 @@ describe('canvas operation inheritance', () => {
               modelId: 'new-model',
               providerProfileId: 'new-provider',
               agentId: 'new-agent',
-              pipelineRole: 'shot',
               outputPipelineRole: 'shot',
-              modelParams: { workflow: 'shot_script', temperature: 0.2 },
+              modelParams: { temperature: 0.2 },
             },
             createdAt: at,
             updatedAt: at,
@@ -855,9 +881,11 @@ describe('canvas operation inheritance', () => {
             providerProfileId: 'old-provider',
             modelId: 'old-model',
             agentId: 'old-agent',
-            modelParams: { workflow: 'shot_script', temperature: 0.8 },
-            taskPipelineRole: 'shot',
+            modelParams: { workflow: 'extract_character', temperature: 0.8 },
             outputPipelineRole: 'shot',
+            systemPrompt:
+              '你是专业的影视角色分析师。只输出 characters JSON。\n\n' +
+              '【任务】把下面的场次剧本拆成分镜。\nJSON 顶层结构必须为：{"shots":[]}',
             createdAt: at,
             updatedAt: at,
           },
@@ -895,9 +923,15 @@ describe('canvas operation inheritance', () => {
         providerProfileId: 'edited-provider',
         modelId: 'edited-model',
         agentId: 'new-agent',
-        modelParams: { workflow: 'shot_script', temperature: 0.2 },
+        modelParams: {
+          workflow: 'shot_script',
+          responseFormat: 'json',
+          temperature: 0.2,
+        },
+        systemPrompt: expect.stringContaining('"shots"'),
       }),
     )
+    expect(currentInvoke.mock.calls[0]?.[1]?.systemPrompt).not.toContain('characters')
 
     seedRetryTask()
     const originalInvoke = vi.fn().mockResolvedValue({
@@ -918,9 +952,15 @@ describe('canvas operation inheritance', () => {
         providerProfileId: 'old-provider',
         modelId: 'old-model',
         agentId: 'old-agent',
-        modelParams: { workflow: 'shot_script', temperature: 0.8 },
+        modelParams: {
+          workflow: 'shot_script',
+          responseFormat: 'json',
+          temperature: 0.8,
+        },
+        systemPrompt: expect.stringContaining('"shots"'),
       }),
     )
+    expect(originalInvoke.mock.calls[0]?.[1]?.systemPrompt).not.toContain('characters')
   })
 
   it('retries media tasks with their relation-derived input roles', async () => {
