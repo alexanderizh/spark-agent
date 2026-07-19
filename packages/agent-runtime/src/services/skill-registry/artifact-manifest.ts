@@ -14,6 +14,7 @@ export type SparkInstallArtifactType =
   | 'npm-store'
   | 'archive'
   | 'binary'
+  | 'voice'
 
 export interface SparkInstallArtifact {
   id: string
