@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ProviderEditPanel,
+  getMediaRequestPreviewUrl,
   resolveCodexApiKind,
   resolveProviderCardKind,
   sortProviderProfilesForCards,
@@ -1027,5 +1028,46 @@ describe('sortProviderProfilesForCards', () => {
       localCli,
       custom,
     ])
+  })
+})
+
+describe('getMediaRequestPreviewUrl', () => {
+  // 百炼 baseUrl 形如 https://dashscope.aliyuncs.com/api/v1/services/aigc；
+  // 适配器（bailian-media.adapter.ts）在此 base 上拼接能力后缀。
+  const BASE = 'https://dashscope.aliyuncs.com/api/v1/services/aigc'
+  type MediaProvider = Parameters<typeof getMediaRequestPreviewUrl>[2]
+  const preview = (modelType: 'image' | 'video', mediaProvider: MediaProvider) =>
+    getMediaRequestPreviewUrl(BASE, { modelType, defaultModel: '', mediaCapabilities: [] }, mediaProvider)
+
+  it('百炼图片预览走 DashScope 原生 multimodal-generation/generation（qwen / wan 共用）', () => {
+    expect(preview('image', 'bailian')).toBe(`${BASE}/multimodal-generation/generation`)
+  })
+
+  it('百炼视频预览走 video-generation/video-synthesis', () => {
+    expect(preview('video', 'bailian')).toBe(`${BASE}/video-generation/video-synthesis`)
+  })
+
+  it('回归：apimart 图片仍走 OpenAI 兼容 /images/generations', () => {
+    expect(preview('image', 'apimart')).toBe(`${BASE}/images/generations`)
+  })
+
+  it('回归：xai 视频仍走 /videos/generations', () => {
+    expect(preview('video', 'xai')).toBe(`${BASE}/videos/generations`)
+  })
+
+  it('回归：google 图片仍走 /interactions', () => {
+    expect(preview('image', 'google-generative-ai')).toBe(`${BASE}/interactions`)
+  })
+
+  it('回归：volcengine-ark 视频仍走 /contents/generations/tasks', () => {
+    expect(preview('video', 'volcengine-ark')).toBe(`${BASE}/contents/generations/tasks`)
+  })
+
+  it('回归：agnes 视频仍走 /videos', () => {
+    expect(preview('video', 'agnes')).toBe(`${BASE}/videos`)
+  })
+
+  it('回归：midjourney 图片仍走 /imagine', () => {
+    expect(preview('image', 'midjourney')).toBe(`${BASE}/imagine`)
   })
 })
