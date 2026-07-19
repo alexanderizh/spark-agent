@@ -162,10 +162,21 @@ export interface ZipInstallParams {
   skillRoot?: string
   /** 进度回调（已下载字节数 / 总字节数，总字节数未知时为 0） */
   onProgress?: (downloaded: number, total: number) => void
+  /** 单个下载源的超时时间；大体积归档可按需覆盖，缺省 2 分钟 */
+  downloadTimeoutMs?: number
 }
 
 export async function installFromZip(params: ZipInstallParams): Promise<TarballInstallResult> {
-  const { url, fallbackUrls, sha256, destDirName, userSkillsDir, skillRoot, onProgress } = params
+  const {
+    url,
+    fallbackUrls,
+    sha256,
+    destDirName,
+    userSkillsDir,
+    skillRoot,
+    onProgress,
+    downloadTimeoutMs,
+  } = params
   const workId = randomUUID()
   const tmpDir = join(tmpdir(), `spark-skill-zip-${workId}`)
   mkdirSync(tmpDir, { recursive: true })
@@ -173,7 +184,13 @@ export async function installFromZip(params: ZipInstallParams): Promise<TarballI
   const extractDir = join(tmpDir, 'extracted')
 
   try {
-    await downloadFromZipCandidates([url, ...(fallbackUrls ?? [])], zipPath, sha256, onProgress)
+    await downloadFromZipCandidates(
+      [url, ...(fallbackUrls ?? [])],
+      zipPath,
+      sha256,
+      onProgress,
+      downloadTimeoutMs,
+    )
 
     mkdirSync(extractDir, { recursive: true })
     let extracted = false
@@ -241,6 +258,8 @@ export interface BinaryArchiveInstallParams {
   destDir: string
   /** 进度回调（已下载字节数 / 总字节数，总字节数未知时为 0） */
   onProgress?: (downloaded: number, total: number) => void
+  /** 单个下载源的超时时间；大体积归档可按需覆盖，缺省 2 分钟 */
+  downloadTimeoutMs?: number
 }
 
 export interface BinaryArchiveInstallResult {
@@ -265,7 +284,7 @@ export interface BinaryArchiveInstallResult {
 export async function installBinaryArchive(
   params: BinaryArchiveInstallParams,
 ): Promise<BinaryArchiveInstallResult> {
-  const { url, fallbackUrls, sha256, destDir, onProgress } = params
+  const { url, fallbackUrls, sha256, destDir, onProgress, downloadTimeoutMs } = params
   const format =
     params.format ?? (url.toLowerCase().endsWith('.tar.gz') ? 'tar.gz' : 'zip')
 
@@ -276,7 +295,13 @@ export async function installBinaryArchive(
   const extractDir = join(tmpDir, 'extracted')
 
   try {
-    await downloadFromZipCandidates([url, ...(fallbackUrls ?? [])], archivePath, sha256, onProgress)
+    await downloadFromZipCandidates(
+      [url, ...(fallbackUrls ?? [])],
+      archivePath,
+      sha256,
+      onProgress,
+      downloadTimeoutMs,
+    )
 
     mkdirSync(extractDir, { recursive: true })
     let extracted = false
@@ -437,14 +462,16 @@ async function downloadFile(
   dest: string,
   token: string | undefined,
   onProgress?: (downloaded: number, total: number) => void,
+  timeoutMs?: number,
 ): Promise<void> {
+  const fetchTimeoutMs = timeoutMs ?? 120000
   const headers: Record<string, string> = { 'User-Agent': 'Spark-Agent' }
   if (token) headers.Authorization = `Bearer ${token}`
   let res: Response
   try {
-    res = await fetch(url, { headers, signal: AbortSignal.timeout(120000) })
+    res = await fetch(url, { headers, signal: AbortSignal.timeout(fetchTimeoutMs) })
   } catch (err) {
-    if (await downloadFileWithNativeTool(url, dest, onProgress)) return
+    if (await downloadFileWithNativeTool(url, dest, onProgress, timeoutMs)) return
     throw err
   }
   if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`)
@@ -491,7 +518,9 @@ async function downloadFileWithNativeTool(
   url: string,
   dest: string,
   onProgress?: (downloaded: number, total: number) => void,
+  timeoutMs?: number,
 ): Promise<boolean> {
+  const nativeTimeoutMs = timeoutMs ?? 180000
   try {
     onProgress?.(0, 0)
   } catch {
@@ -499,7 +528,7 @@ async function downloadFileWithNativeTool(
   }
 
   const curlOk = await runCommand('curl', ['-L', '-f', '-A', 'Spark-Agent', '-o', dest, url], {
-    timeoutMs: 180000,
+    timeoutMs: nativeTimeoutMs,
   })
   if (curlOk && existsSync(dest)) {
     await reportNativeDownloadDone(dest, onProgress)
@@ -515,7 +544,7 @@ async function downloadFileWithNativeTool(
     const powershellOk = await runCommand(
       'powershell.exe',
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script, url, dest],
-      { timeoutMs: 180000 },
+      { timeoutMs: nativeTimeoutMs },
     )
     if (powershellOk && existsSync(dest)) {
       await reportNativeDownloadDone(dest, onProgress)
@@ -568,11 +597,12 @@ async function downloadFromZipCandidates(
   dest: string,
   sha256?: string,
   onProgress?: (downloaded: number, total: number) => void,
+  timeoutMs?: number,
 ): Promise<void> {
   let lastErr: unknown
   for (const url of urls) {
     try {
-      await downloadFile(url, dest, undefined, onProgress)
+      await downloadFile(url, dest, undefined, onProgress, timeoutMs)
       if (sha256) await verifyFileSha256(dest, sha256)
       return
     } catch (err) {

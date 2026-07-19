@@ -4,6 +4,8 @@ import { useVoiceIntegrity } from '../../voice/useVoiceIntegrity'
 import { useVoiceInput } from '../../voice/useVoiceInput'
 import { VoiceMicButton } from '../../voice/VoiceMicButton'
 import { VoiceInstallToast } from '../../voice/VoiceInstallToast'
+import { useVoiceDownloadConfirmation } from '../../voice/useVoiceDownloadConfirmation'
+import { useVoiceInputShortcut } from '../../voice/useVoiceInputShortcut'
 import type { ReactNode, RefObject } from 'react'
 import { Button, Dropdown, Popover, Tag as LobeTag, Tooltip } from '@lobehub/ui'
 import { ImagePreviewModal } from '../../components/ImagePreviewModal'
@@ -859,6 +861,7 @@ export function ComposerV2({
   const [fileDropActive, setFileDropActive] = useState(false)
   // ── Escape double-press interrupt ──
   const escapeTimestampRef = useRef(0)
+  const voiceInputActiveRef = useRef(false)
   const [escapeConfirm, setEscapeConfirm] = useState(false)
   const { invoke: sendTurn } = useIpcInvoke('session:submit-turn')
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
@@ -1771,7 +1774,7 @@ export function ComposerV2({
   )
 
   const handleSend = async () => {
-    if (!canSubmit) return
+    if (!canSubmit || voiceInputActiveRef.current) return
     setTextEditMenu(null)
     const rawText = value.trim() || '请查看附件。'
     const turnAttachments = attachments
@@ -2244,6 +2247,7 @@ export function ComposerV2({
 
   // ── 语音输入（离线 ASR：sherpa-onnx + Paraformer 流式）──
   const voiceIntegrity = useVoiceIntegrity()
+  const requestVoicePackInstall = useVoiceDownloadConfirmation(voiceIntegrity.install)
   const voice = useVoiceInput({
     onFinal: (text) => {
       setValue((prev) => {
@@ -2252,25 +2256,40 @@ export function ComposerV2({
         return prev + (needSpace ? ' ' : '') + text
       })
     },
+    onError: (message) => toast.error(message),
   })
   const handleVoiceToggle = useCallback(async () => {
     if (voice.status === 'recording' || voice.status === 'starting') {
       await voice.stop()
       return
     }
+    if (voice.status === 'stopping') return
     const st = voiceIntegrity.status
     if (!st.supported) {
       toast.warning(st.unsupportedReason ?? '当前平台不支持语音输入')
       return
     }
     if (!st.ready) {
-      // 触发按需下载：进度由 VoiceInstallToast 展示，不阻塞用户其他操作
-      void voiceIntegrity.install()
-      toast.info('正在后台下载语音包，完成后即可使用语音输入')
+      await requestVoicePackInstall()
       return
     }
     await voice.start()
-  }, [voice, voiceIntegrity, toast])
+  }, [voice, voiceIntegrity, requestVoicePackInstall, toast])
+
+  const voiceInputActive =
+    voice.status === 'starting' || voice.status === 'recording' || voice.status === 'stopping'
+  useLayoutEffect(() => {
+    voiceInputActiveRef.current = voiceInputActive
+  }, [voiceInputActive])
+  useVoiceInputShortcut({
+    disabled:
+      sending ||
+      voice.status === 'stopping' ||
+      voiceIntegrity.checking ||
+      voiceIntegrity.status.downloading ||
+      !voiceIntegrity.status.supported,
+    onToggle: () => void handleVoiceToggle(),
+  })
 
   // 录音时把实时 partial 叠加到输入框末尾（整体替换式展示）；停止后回落到正式草稿值
   const voiceDisplayValue =
@@ -3116,7 +3135,7 @@ export function ComposerV2({
               placeholder={composerPlaceholder}
               value={voiceDisplayValue}
               onChange={(event) => handleValueChange(event.target.value)}
-              readOnly={voice.status === 'recording'}
+              readOnly={voiceInputActive}
               onScroll={(event) => {
                 const layer = event.currentTarget.previousElementSibling as HTMLDivElement | null
                 if (layer == null) return
@@ -3196,7 +3215,9 @@ export function ComposerV2({
             </div>
             <VoiceMicButton
               status={voice.status}
+              audioLevelStore={voice.audioLevelStore}
               ready={voiceIntegrity.status.ready}
+              checking={voiceIntegrity.checking}
               downloading={voiceIntegrity.status.downloading}
               unsupported={!voiceIntegrity.status.supported}
               disabled={sending}
@@ -3204,9 +3225,17 @@ export function ComposerV2({
             />
             <button
               className={`composer-send-round ${sending ? 'is-sending' : ''} ${isWorking ? 'is-stopping' : ''}`}
-              title={isWorking ? '停止会话' : needsTeamSelection ? '请先创建并选择团队' : '发送'}
+              title={
+                isWorking
+                  ? '停止会话'
+                  : voiceInputActive
+                    ? '请先结束语音输入'
+                    : needsTeamSelection
+                      ? '请先创建并选择团队'
+                      : '发送'
+              }
               onClick={() => void handlePrimaryAction()}
-              disabled={isWorking ? session?.id == null : !canSubmit}
+              disabled={isWorking ? session?.id == null : voiceInputActive || !canSubmit}
             >
               {sending ? (
                 <Icons.Spinner size={14} />
@@ -3393,7 +3422,7 @@ export function ComposerV2({
             <button
               className="btn primary sm composer-send-btn"
               onClick={() => void handleSend()}
-              disabled={!canSubmit}
+              disabled={voiceInputActive || !canSubmit}
             >
               {sending ? (
                 <Icons.Spinner size={12} />

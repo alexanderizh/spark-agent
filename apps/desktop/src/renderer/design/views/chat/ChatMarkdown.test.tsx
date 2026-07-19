@@ -11,6 +11,10 @@ const markdownMocks = vi.hoisted(() => ({
 
 vi.mock('./ChatMarkdownUtils', () => ({
   parseMarkdown: markdownMocks.parseMarkdown,
+  findStableMarkdownPrefixEnd: (content: string) => {
+    const boundary = content.lastIndexOf('\n\n')
+    return boundary < 0 ? 0 : boundary + 2
+  },
 }))
 
 vi.mock('../../hooks/useAppearance', () => ({
@@ -42,6 +46,7 @@ vi.mock('../../components/FileDisplay', () => ({
 }))
 
 vi.mock('./ChatDocumentOutput', () => ({
+  collectDocumentOutputKeys: () => [],
   renderDocumentOutputParagraph: () => null,
 }))
 
@@ -85,5 +90,18 @@ describe('MarkdownText', () => {
     expect(markdownMocks.parseMarkdown).toHaveBeenCalledTimes(2)
     expect(markdownMocks.parseMarkdown).toHaveBeenLastCalledWith('partial response')
     expect(container.textContent).toBe('partial response')
+  })
+
+  it('keeps completed streaming paragraphs parsed while only reparsing the live tail', () => {
+    act(() => root.render(<MarkdownText content={'stable paragraph\n\npartial'} isStreaming />))
+    act(() => root.render(<MarkdownText content={'stable paragraph\n\npartial response'} isStreaming />))
+
+    expect(markdownMocks.parseMarkdown).toHaveBeenCalledTimes(3)
+    expect(markdownMocks.parseMarkdown.mock.calls.map(([content]) => content)).toEqual([
+      'stable paragraph\n\n',
+      'partial',
+      'partial response',
+    ])
+    expect(container.textContent).toBe('stable paragraphpartial response')
   })
 })

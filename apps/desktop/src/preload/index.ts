@@ -20,9 +20,11 @@ import type {
   IpcResponse,
   IpcStreamChannel,
   IpcStreamPayload,
-  VoiceAudioChunkPayload,
 } from '@spark/protocol'
-import { VOICE_AUDIO_CHUNK_CHANNEL } from '@spark/protocol'
+import {
+  VOICE_AUDIO_CHUNK_CHANNEL,
+  type VoiceAudioChunkPayload,
+} from '@spark/protocol/voice'
 
 /**
  * IPC 调用结果格式（与主进程 typed-ipc.ts 中的 IpcResult 匹配）

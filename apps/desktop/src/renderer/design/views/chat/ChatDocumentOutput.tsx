@@ -74,6 +74,17 @@ export function getDocumentOutputKey(filePath: string): string {
   return normalizeFileReference(filePath).replace(/\\/g, '/').toLowerCase()
 }
 
+export function collectDocumentOutputKeys(text: string): string[] {
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (lines.length === 0) return []
+  const refs = lines.map(parseDocumentOutputLine)
+  if (refs.some((item) => item == null)) return []
+  return refs.flatMap((item) => (item == null ? [] : [getDocumentOutputKey(item.filePath)]))
+}
+
 function parseDocumentOutputLine(line: string): { filePath: string; label?: string } | null {
   const trimmed = line.trim()
   if (!trimmed) return null

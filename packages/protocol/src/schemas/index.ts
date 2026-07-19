@@ -1409,6 +1409,23 @@ export const IpcSchemaRegistry = {
   'binary:install': z.object({
     artifactId: z.string().min(1).max(200),
   }),
+  // Voice Input (ASR)
+  'voice:check-integrity': z.object({
+    checkLatest: z.boolean().optional(),
+  }),
+  'voice:install': z.object({
+    force: z.boolean().optional(),
+  }),
+  'voice:request-microphone-permission': z.object({}).strict(),
+  'voice:start': z.object({
+    sampleRate: z.literal(16000).optional(),
+    language: z.enum(['auto', 'zh', 'en', 'yue']).optional(),
+    enableVad: z.boolean().optional(),
+    vadSilenceMs: z.number().int().min(100).max(5000).optional(),
+  }),
+  'voice:stop': z.object({
+    sessionId: z.string().regex(/^voice-\d+-\d+$/).max(120).optional(),
+  }),
   // video:probe 与 video:process 共享 VideoProcessRequest 结构。
   // params 是宽松的 Record（具体校验在主进程 videoProcessHandler 做路径白名单 + 数值范围）。
   'video:probe': z.object({

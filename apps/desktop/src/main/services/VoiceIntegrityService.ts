@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import {
   fetchSparkInstallManifest,
   resolveArtifactUrl,
@@ -23,6 +23,8 @@ const log = createLogger('voice-integrity')
 /** manifest 中语音包 artifact id 前缀约定 */
 const VOICE_NATIVE_ID_PREFIX = 'voice.native.'
 const VOICE_MODEL_ID_PREFIX = 'voice.model.'
+/** 识别模型约 219MB，弱网下不能沿用通用归档的 2 分钟超时。 */
+const VOICE_ARCHIVE_DOWNLOAD_TIMEOUT_MS = 30 * 60 * 1000
 
 /** sherpa-onnx-node 提供 prebuilt 的平台组合 */
 export type VoicePlatformKey = 'darwin-arm64' | 'darwin-x64' | 'win32-x64' | 'linux-x64'
@@ -101,40 +103,70 @@ export interface VoiceModelPaths {
   nativeMain: string
 }
 
+function resolveContainedPath(root: string, relativePath: string): string | null {
+  if (!relativePath || relativePath.includes('\0')) return null
+  const resolvedRoot = resolve(root)
+  const candidate = resolve(resolvedRoot, relativePath)
+  if (candidate === resolvedRoot || !candidate.startsWith(`${resolvedRoot}${sep}`)) return null
+  return candidate
+}
+
+function resolveInstalledNative(
+  state: VoiceState,
+  platformKey: VoicePlatformKey | null,
+): { nativeDir: string; nativeMain: string } | null {
+  if (!state.native || !platformKey || state.native.platformKey !== platformKey) return null
+  if (typeof state.native.version !== 'string' || !isSafeVersion(state.native.version)) return null
+  const nativeDir = join(getVoiceNativeDir(), `${state.native.version}-${platformKey}`)
+  if (!existsSync(nativeDir)) return null
+  try {
+    const pkg = JSON.parse(readFileSync(join(nativeDir, 'package.json'), 'utf8')) as {
+      main?: unknown
+    }
+    if (typeof pkg.main !== 'string') return null
+    const nativeMain = resolveContainedPath(nativeDir, pkg.main)
+    if (!nativeMain || !existsSync(nativeMain)) return null
+    return { nativeDir, nativeMain }
+  } catch {
+    return null
+  }
+}
+
 export function resolveVoiceModelPaths(): VoiceModelPaths | null {
   const platformKey = voicePlatformKey()
   const state = readVoiceState()
-  if (!platformKey || !state.native || !state.model) return null
-  if (state.native.platformKey !== platformKey) return null
-  const nativeDir = join(getVoiceNativeDir(), `${state.native.version}-${platformKey}`)
+  const native = resolveInstalledNative(state, platformKey)
+  if (!native || !state.model || !isModelInstalled(state)) return null
   const modelDir = join(getVoiceModelDir(), state.model.version)
-  if (!existsSync(nativeDir) || !existsSync(modelDir)) return null
-  let nativeMain = ''
-  try {
-    const pkg = JSON.parse(readFileSync(join(nativeDir, 'package.json'), 'utf8')) as {
-      main?: string
-    }
-    if (pkg.main && existsSync(join(nativeDir, pkg.main))) {
-      nativeMain = join(nativeDir, pkg.main)
-    }
-  } catch {
-    // package.json 缺失或损坏，交给检测流程报告 missing。
-  }
-  if (!nativeMain) return null
-  return { nativeDir, modelDir, nativeMain }
+  return { nativeDir: native.nativeDir, modelDir, nativeMain: native.nativeMain }
 }
 
 function isNativeInstalled(state: VoiceState, platformKey: VoicePlatformKey | null): boolean {
-  if (!state.native || !platformKey) return false
-  if (state.native.platformKey !== platformKey) return false
-  return resolveVoiceModelPaths() != null
+  return resolveInstalledNative(state, platformKey) != null
 }
 
 function isModelInstalled(state: VoiceState): boolean {
   if (!state.model) return false
+  if (typeof state.model.version !== 'string' || !isSafeVersion(state.model.version)) return false
   const dir = join(getVoiceModelDir(), state.model.version)
   if (!existsSync(dir)) return false
   return existsSync(join(dir, 'model-package.json'))
+}
+
+function isVoiceModelVersionInstalled(version: string): boolean {
+  if (!isSafeVersion(version)) return false
+  return existsSync(join(getVoiceModelDir(), version, 'model-package.json'))
+}
+
+function isVoiceNativeVersionInstalled(
+  version: string,
+  platformKey: VoicePlatformKey,
+): boolean {
+  if (!isSafeVersion(version)) return false
+  const syntheticState: VoiceState = {
+    native: { version, platformKey, artifactId: 'recovered-from-disk' },
+  }
+  return resolveInstalledNative(syntheticState, platformKey) != null
 }
 
 export function selectVoiceNativeArtifact(
@@ -284,6 +316,7 @@ async function installComponent(params: InstallComponentParams): Promise<void> {
     ...(artifact.archive?.format ? { format: artifact.archive.format } : {}),
     ...(artifact.archive?.contentRoot ? { contentRoot: artifact.archive.contentRoot } : {}),
     destDir: stagingDir,
+    downloadTimeoutMs: VOICE_ARCHIVE_DOWNLOAD_TIMEOUT_MS,
     onProgress: (downloaded, responseTotal) => {
       const total = responseTotal > 0 ? responseTotal : manifestTotal
       const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : null
@@ -328,7 +361,8 @@ export async function installVoicePack(
 
   if (installInFlight) {
     const message = '语音包正在安装中，请稍候'
-    return { success: false, message, status: await checkVoiceIntegrity(false) }
+    const status = await checkVoiceIntegrity(false)
+    return { success: false, message, status: { ...status, downloading: true } }
   }
 
   const platformKey = voicePlatformKey()
@@ -351,8 +385,17 @@ export async function installVoicePack(
   const stagingRoot = join(root, `.staging-${process.pid}-${Date.now()}`)
   let modelArtifact: SparkInstallArtifact | undefined
   let nativeArtifact: SparkInstallArtifact | undefined
+  let activeComponent: VoicePackComponent = 'model'
 
   try {
+    report({
+      component: 'model',
+      state: 'preparing',
+      downloaded: 0,
+      total: 0,
+      percent: null,
+      message: '正在获取语音包下载信息',
+    })
     const manifest = await fetchSparkInstallManifest()
     nativeArtifact = selectVoiceNativeArtifact(manifest.artifacts)
     modelArtifact = selectVoiceModelArtifact(manifest.artifacts)
@@ -376,38 +419,50 @@ export async function installVoicePack(
       return { success: false, message, status: await checkVoiceIntegrity(false) }
     }
 
-    // 1. 先装模型（跨平台、相对小）
-    await installComponent({
-      component: 'model',
-      artifact: modelArtifact,
-      destFinal: join(getVoiceModelDir(), modelArtifact.version),
-      stagingRoot,
-      manifest,
-      report,
-    })
+    const installedState = readVoiceState()
+    const modelIsCurrent = isVoiceModelVersionInstalled(modelArtifact.version)
+    const nativeIsCurrent = isVoiceNativeVersionInstalled(nativeArtifact.version, platformKey)
+    const installModel = force || !modelIsCurrent
+    const installNative = force || !nativeIsCurrent
+    const nextState: VoiceState = { ...installedState }
 
-    // 2. 再装 native 运行时（按平台）
-    await installComponent({
-      component: 'native',
-      artifact: nativeArtifact,
-      destFinal: join(getVoiceNativeDir(), `${nativeArtifact.version}-${platformKey}`),
-      stagingRoot,
-      manifest,
-      report,
-    })
+    // 模型体积最大，先完成并原子激活；已安装同版本时不重复下载。
+    if (installModel) {
+      activeComponent = 'model'
+      await installComponent({
+        component: 'model',
+        artifact: modelArtifact,
+        destFinal: join(getVoiceModelDir(), modelArtifact.version),
+        stagingRoot,
+        manifest,
+        report,
+      })
+    }
+    nextState.model = { version: modelArtifact.version, artifactId: modelArtifact.id }
+    // 每完成一个组件就持久化，后续组件失败时重试不会重复下载大模型。
+    await writeVoiceState(nextState)
 
-    await writeVoiceState({
-      native: {
-        version: nativeArtifact.version,
-        platformKey,
-        artifactId: nativeArtifact.id,
-      },
-      model: { version: modelArtifact.version, artifactId: modelArtifact.id },
-    })
+    if (installNative) {
+      activeComponent = 'native'
+      await installComponent({
+        component: 'native',
+        artifact: nativeArtifact,
+        destFinal: join(getVoiceNativeDir(), `${nativeArtifact.version}-${platformKey}`),
+        stagingRoot,
+        manifest,
+        report,
+      })
+    }
+    nextState.native = {
+      version: nativeArtifact.version,
+      platformKey,
+      artifactId: nativeArtifact.id,
+    }
+    await writeVoiceState(nextState)
 
     const message = '语音包安装成功'
     report({
-      component: 'native',
+      component: activeComponent,
       state: 'done',
       downloaded: 0,
       total: 0,
@@ -419,15 +474,19 @@ export async function installVoicePack(
     )
     return { success: true, message, status: await checkVoiceIntegrity(false) }
   } catch (err) {
-    const message = `语音包安装失败：${err instanceof Error ? err.message : String(err)}`
+    const rawError = err instanceof Error ? err.message : String(err)
+    const detail = /(?:timeout|timed out|aborted)/i.test(rawError)
+      ? '下载超时，请检查网络或代理后重试'
+      : rawError
+    const message = `语音包安装失败：${detail}`
     log.error(message)
     report({
-      component: nativeArtifact ? 'native' : 'model',
+      component: activeComponent,
       state: 'error',
       downloaded: 0,
       total: 0,
       percent: null,
-      message,
+      message: detail,
     })
     return { success: false, message, status: await checkVoiceIntegrity(false) }
   } finally {

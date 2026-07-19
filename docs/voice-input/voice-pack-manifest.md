@@ -1,6 +1,6 @@
-> 状态: 实施中(语音资源已发布到 MinIO,2026-07-19)| 最后核对: 2026-07-19
-
 # 语音包 MinIO 仓库接入规格
+
+> 状态: 已落地 | 最后核对: 2026-07-19
 
 本文档说明如何把语音输入（离线 ASR：sherpa-onnx + Paraformer-streaming）所需的 native 运行时与模型文件接入 Spark 自建安装源（MinIO `artifact-repository/v1/index.json`）。
 
@@ -201,3 +201,10 @@ paraformer-streaming-trilingual-1.0.0.tar.gz
 - **native 实际结构（已修正）**：每个 native tarball 解压后根目录含 `sherpa-onnx-node` 主包的全部 JS wrapper（`sherpa-onnx.js`/`addon.js`/`streaming-asr.js`/`types.js` 等，`package.json.main = sherpa-onnx.js`）+ 对应平台的 `sherpa-onnx.node` + onnxruntime 动态库，三者同目录。`addon.js` 的 `possible_paths` 末项 `./sherpa-onnx.node` 命中加载，无需改代码、无需 `DYLD_LIBRARY_PATH`。require 后得到 `OnlineRecognizer` 类式 API（`new OnlineRecognizer(config)`/`createStream()`/`acceptWaveform()`），已实测通过。
 - native 来源：`npm pack sherpa-onnx-node@1.13.4`（JS wrapper）+ `npm pack sherpa-onnx-{darwin-arm64,darwin-x64,win-x64,linux-x64}@1.13.4`（N-API 二进制）合并。N-API ABI 稳定，Electron 可直接加载，无需 electron-rebuild。
 - 模型来源：HuggingFace `csukuangfj/sherpa-onnx-streaming-paraformer-trilingual-zh-cantonese-en` int8 量化版，补 `model-package.json` 后重新打包。
+
+## 8. 客户端安装与安全约束
+
+- 聊天输入区首次点击麦克风时先弹出确认框，明确告知需一次性下载约 230 MB；用户确认后才开始后台下载。
+- 语音归档单源下载超时为 30 分钟；每个组件安装后立即持久化状态，并能恢复“文件已落盘但状态缺失”的中断现场，只下载缺失组件，避免重复拉取 219 MB 模型。
+- `voice:start`、`voice:stop` 等 invoke 请求通过 Zod 做运行时校验；音频 chunk 每帧最多 3200 samples。
+- 识别会话绑定发起它的 WebContents；音频输入、停止操作和识别文本事件均限制在所属 renderer，避免跨窗口干扰或泄露。

@@ -125,6 +125,32 @@ export function parseMarkdown(content: string): MarkdownBlock[] {
   return blocks
 }
 
+/**
+ * 返回流式 Markdown 中可视为稳定前缀的结束位置。
+ * 只在 fenced code 之外的空行处分段，避免每个 token 都重解析已经完成的段落，
+ * 同时确保代码块中的空行不会被错误切开。
+ */
+export function findStableMarkdownPrefixEnd(content: string): number {
+  let inFence = false
+  let stableEnd = 0
+  const linePattern = /[^\n]*(?:\n|$)/g
+  let match: RegExpExecArray | null
+
+  while ((match = linePattern.exec(content)) != null) {
+    const rawLine = match[0]
+    if (rawLine.length === 0) break
+    const line = rawLine.endsWith('\n') ? rawLine.slice(0, -1) : rawLine
+    const normalizedLine = line.endsWith('\r') ? line.slice(0, -1) : line
+    if (/^```(?:[A-Za-z0-9_-]*)\s*$/.test(normalizedLine)) {
+      inFence = !inFence
+    } else if (!inFence && normalizedLine.trim().length === 0 && rawLine.endsWith('\n')) {
+      stableEnd = match.index + rawLine.length
+    }
+  }
+
+  return stableEnd
+}
+
 function splitTableRow(line: string): string[] {
   return line
     .trim()
@@ -133,4 +159,3 @@ function splitTableRow(line: string): string[] {
     .split('|')
     .map((cell) => cell.trim())
 }
-

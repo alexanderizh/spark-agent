@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { createLogger } from '@spark/shared'
 import type { VoiceRecognitionEvent, VoiceStartRequest } from '@spark/protocol'
 import { resolveVoiceModelPaths } from './VoiceIntegrityService.js'
@@ -62,6 +62,7 @@ interface VoiceModelDescriptor {
 
 interface VoiceSession {
   sessionId: string
+  ownerId: number
   recognizer: SherpaOnlineRecognizer
   stream: SherpaOnlineStream
   sampleRate: number
@@ -69,7 +70,7 @@ interface VoiceSession {
   lastPartial: string
 }
 
-type VoiceEventEmitter = (event: VoiceRecognitionEvent) => void
+type VoiceEventEmitter = (event: VoiceRecognitionEvent, ownerId: number) => void
 
 let cachedModule: SherpaModule | null = null
 let cachedRecognizer: { recognizer: SherpaOnlineRecognizer; configKey: string } | null = null
@@ -102,19 +103,31 @@ function readModelDescriptor(modelDir: string): VoiceModelDescriptor {
     throw new Error(`模型描述文件缺失: ${pkgPath}`)
   }
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
-    version?: string
-    encoder?: string
-    decoder?: string
-    tokens?: string
+    version?: unknown
+    encoder?: unknown
+    decoder?: unknown
+    tokens?: unknown
   }
-  if (!pkg.encoder || !pkg.decoder || !pkg.tokens) {
+  if (
+    typeof pkg.encoder !== 'string' ||
+    typeof pkg.decoder !== 'string' ||
+    typeof pkg.tokens !== 'string'
+  ) {
     throw new Error('model-package.json 缺少 encoder/decoder/tokens 字段')
   }
+  const resolveModelFile = (relativePath: string, label: string): string => {
+    const root = resolve(modelDir)
+    const candidate = resolve(root, relativePath)
+    if (candidate === root || !candidate.startsWith(`${root}${sep}`) || !existsSync(candidate)) {
+      throw new Error(`model-package.json 中的 ${label} 路径无效`)
+    }
+    return candidate
+  }
   return {
-    version: pkg.version ?? '0.0.0',
-    encoder: join(modelDir, pkg.encoder),
-    decoder: join(modelDir, pkg.decoder),
-    tokens: join(modelDir, pkg.tokens),
+    version: typeof pkg.version === 'string' ? pkg.version : '0.0.0',
+    encoder: resolveModelFile(pkg.encoder, 'encoder'),
+    decoder: resolveModelFile(pkg.decoder, 'decoder'),
+    tokens: resolveModelFile(pkg.tokens, 'tokens'),
   }
 }
 
@@ -173,9 +186,13 @@ function int16ToFloat32(samples: Int16Array): Float32Array {
 export interface VoiceSessionHandle {
   success: boolean
   sessionId: string | null
+  error: string | null
 }
 
-export function startVoiceSession(params: VoiceStartRequest): VoiceSessionHandle {
+export function startVoiceSession(params: VoiceStartRequest, ownerId: number): VoiceSessionHandle {
+  for (const [id, session] of sessions) {
+    if (session.ownerId === ownerId) stopVoiceSession(id, ownerId)
+  }
   const sessionId = `voice-${process.pid}-${++sessionCounter}`
   try {
     const mod = loadSherpaModule()
@@ -183,26 +200,27 @@ export function startVoiceSession(params: VoiceStartRequest): VoiceSessionHandle
     const stream = recognizer.createStream()
     const session: VoiceSession = {
       sessionId,
+      ownerId,
       recognizer,
       stream,
       sampleRate: params.sampleRate ?? 16000,
       lastPartial: '',
     }
     sessions.set(sessionId, session)
-    emitPending(sessionId, { type: 'session-started', sessionId, text: '' })
+    emitPending({ type: 'session-started', sessionId, text: '' }, ownerId)
     log.info(`Voice session started: ${sessionId}`)
-    return { success: true, sessionId }
+    return { success: true, sessionId, error: null }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     log.error(`Failed to start voice session: ${message}`)
-    emitPending(sessionId, { type: 'error', sessionId, message })
-    return { success: false, sessionId: null }
+    emitPending({ type: 'error', sessionId, message }, ownerId)
+    return { success: false, sessionId: null, error: message }
   }
 }
 
-export function feedVoiceAudio(sessionId: string, samples: Int16Array): void {
+export function feedVoiceAudio(sessionId: string, samples: Int16Array, ownerId: number): void {
   const session = sessions.get(sessionId)
-  if (!session) return
+  if (!session || session.ownerId !== ownerId) return
   try {
     const float32 = int16ToFloat32(samples)
     session.stream.acceptWaveform({ samples: float32, sampleRate: session.sampleRate })
@@ -214,12 +232,12 @@ export function feedVoiceAudio(sessionId: string, samples: Int16Array): void {
     // partial: 文本变化时推送（UI 整体替换当前句）
     if (text && text !== session.lastPartial) {
       session.lastPartial = text
-      emitPending(sessionId, { type: 'partial', sessionId, text })
+      emitPending({ type: 'partial', sessionId, text }, session.ownerId)
     }
     // 句尾：endpoint 触发，锁定 final 并 reset stream
     if (session.recognizer.isEndpoint(session.stream)) {
       if (text) {
-        emitPending(sessionId, { type: 'final', sessionId, text })
+        emitPending({ type: 'final', sessionId, text }, session.ownerId)
       }
       session.recognizer.reset(session.stream)
       session.lastPartial = ''
@@ -227,7 +245,7 @@ export function feedVoiceAudio(sessionId: string, samples: Int16Array): void {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     log.error(`Voice feed error (${sessionId}): ${message}`)
-    emitPending(sessionId, { type: 'error', sessionId, message })
+    emitPending({ type: 'error', sessionId, message }, session.ownerId)
   }
 }
 
@@ -238,22 +256,25 @@ export function setVoiceEventEmitter(emit: VoiceEventEmitter | null): void {
   activeEmitter = emit
 }
 
-function emitPending(sessionId: string, event: VoiceRecognitionEvent): void {
+function emitPending(event: VoiceRecognitionEvent, ownerId: number): void {
   try {
-    activeEmitter?.(event)
+    activeEmitter?.(event, ownerId)
   } catch {
     // 事件推送失败不得影响识别主流程
   }
 }
 
-export function stopVoiceSession(sessionId?: string): void {
+export function stopVoiceSession(sessionId?: string, ownerId?: number): void {
   if (!sessionId) {
-    // 停止全部
-    for (const id of sessions.keys()) stopVoiceSession(id)
+    // ownerId 存在时只停止该 renderer 的会话；内部维护调用可省略 ownerId 停止全部。
+    for (const [id, session] of sessions) {
+      if (ownerId == null || session.ownerId === ownerId) stopVoiceSession(id, ownerId)
+    }
     return
   }
   const session = sessions.get(sessionId)
   if (!session) return
+  if (ownerId != null && session.ownerId !== ownerId) return
   try {
     // 尾部 padding + 最终解码，争取最后一段 partial 落地为 final
     const tail = new Float32Array(Math.floor(session.sampleRate * 0.4))
@@ -261,17 +282,18 @@ export function stopVoiceSession(sessionId?: string): void {
     while (session.recognizer.isReady(session.stream)) {
       session.recognizer.decode(session.stream)
     }
+    session.stream.inputFinished()
+    while (session.recognizer.isReady(session.stream)) {
+      session.recognizer.decode(session.stream)
+    }
     const result = session.recognizer.getResult(session.stream)
     const text = (result.text ?? '').trim()
-    if (text) {
-      emitPending(sessionId, { type: 'final', sessionId, text })
-    }
-    session.stream.inputFinished()
+    if (text) emitPending({ type: 'final', sessionId, text }, session.ownerId)
   } catch (err) {
     log.warn(`Voice stop cleanup error (${sessionId}): ${err instanceof Error ? err.message : String(err)}`)
   }
   sessions.delete(sessionId)
-  emitPending(sessionId, { type: 'session-stopped', sessionId, text: '' })
+  emitPending({ type: 'session-stopped', sessionId, text: '' }, session.ownerId)
   log.info(`Voice session stopped: ${sessionId}`)
 }
 
@@ -282,7 +304,7 @@ export function getActiveVoiceSessionCount(): number {
 
 /** 卸载 native 模块缓存（设置变更/卸载语音包后调用） */
 export function resetVoiceEngineCache(): void {
-  sessions.clear()
+  stopVoiceSession()
   cachedRecognizer = null
   cachedModule = null
 }

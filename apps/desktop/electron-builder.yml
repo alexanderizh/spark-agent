@@ -32,6 +32,7 @@ mac:
     - zh_TW
   extendInfo:
     CFBundleDisplayName: SparkWork
+    NSMicrophoneUsageDescription: SparkWork 需要访问麦克风，用于在本地将您的语音转换为文字。
   target:
     - dmg
   # 公证的前置条件：开启 hardened runtime

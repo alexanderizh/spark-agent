@@ -72,6 +72,8 @@ import type {
   VoiceIntegrityCheckRequest,
   VoiceIntegrityCheckResponse,
   VoiceIntegrityStatus,
+  VoiceMicrophonePermissionRequest,
+  VoiceMicrophonePermissionResponse,
   VoiceRecognitionEvent,
   VoiceStartRequest,
   VoiceStartResponse,
@@ -5615,6 +5617,10 @@ export interface IpcChannelMap extends ProviderFilesIpcChannelMap {
   // Voice Input (ASR) - sherpa-onnx 离线流式语音识别
   'voice:check-integrity': [VoiceIntegrityCheckRequest, VoiceIntegrityCheckResponse]
   'voice:install': [VoiceInstallRequest, VoiceInstallResponse]
+  'voice:request-microphone-permission': [
+    VoiceMicrophonePermissionRequest,
+    VoiceMicrophonePermissionResponse,
+  ]
   'voice:start': [VoiceStartRequest, VoiceStartResponse]
   'voice:stop': [VoiceStopRequest, VoiceStopResponse]
   'video:probe': [VideoProcessRequest, VideoProcessResponse]
