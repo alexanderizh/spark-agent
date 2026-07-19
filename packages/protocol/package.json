@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./ipc": "./src/ipc/index.ts",
     "./events": "./src/events/index.ts",
-    "./schemas": "./src/schemas/index.ts"
+    "./schemas": "./src/schemas/index.ts",
+    "./voice": "./src/voice.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseMarkdown } from './ChatMarkdownUtils'
+import { findStableMarkdownPrefixEnd, parseMarkdown } from './ChatMarkdownUtils'
 
 describe('parseMarkdown', () => {
   it('preserves headings, task lists, tables and fenced code blocks', () => {
@@ -26,5 +26,15 @@ describe('parseMarkdown', () => {
     expect(parseMarkdown('```tsx\nconst pending = true')).toEqual([
       { kind: 'incomplete_code', lang: 'tsx', code: 'const pending = true' },
     ])
+  })
+
+  it('finds stable paragraph boundaries without splitting fenced code', () => {
+    const content = '第一段\n\n```ts\nconst a = 1\n\nconst b = 2\n```\n\n正在生成'
+    const stableEnd = findStableMarkdownPrefixEnd(content)
+
+    expect(content.slice(0, stableEnd)).toBe(
+      '第一段\n\n```ts\nconst a = 1\n\nconst b = 2\n```\n\n',
+    )
+    expect(content.slice(stableEnd)).toBe('正在生成')
   })
 })

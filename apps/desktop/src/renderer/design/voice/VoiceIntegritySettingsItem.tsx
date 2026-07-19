@@ -32,7 +32,7 @@ const COMPONENT_LABEL: Record<VoicePackComponent, string> = {
 
 const COMPONENT_DESC: Record<VoicePackComponent, string> = {
   native: 'sherpa-onnx native 模块，提供 OnnxRecognizer 流式推理调用。',
-  model: 'Paraformer 流式中文 ASR 模型 + silero VAD，约 80-200MB。',
+  model: 'Paraformer 流式中文 ASR 模型 + silero VAD，约 219 MB。',
 }
 
 const PROGRESS_STATE_LABEL: Record<VoiceInstallProgress['state'], string> = {
@@ -175,8 +175,8 @@ export function VoiceIntegritySettingsItem(): ReactElement {
         <div className="voice-integrity-heading">
           <h2>语音输入 (ASR)</h2>
           <div className="lede">
-            离线语音输入依赖跨平台 native 推理引擎与中文识别模型,首次使用时按需下载
-            (约 80-200MB,视平台而定),不打进安装包。
+            离线语音输入依赖跨平台 native 推理引擎与中文识别模型，首次使用时按需下载
+            （约 230 MB，视平台而定），不打进安装包。
           </div>
         </div>
         <div className="voice-integrity-header-actions">

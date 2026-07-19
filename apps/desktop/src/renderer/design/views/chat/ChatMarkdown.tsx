@@ -15,29 +15,115 @@ import {
   isPreviewableFileReference,
   normalizeFileReference,
 } from '../../components/FileDisplay'
-import { renderDocumentOutputParagraph } from './ChatDocumentOutput'
-import { parseMarkdown } from './ChatMarkdownUtils'
+import {
+  collectDocumentOutputKeys,
+  renderDocumentOutputParagraph,
+} from './ChatDocumentOutput'
+import {
+  findStableMarkdownPrefixEnd,
+  parseMarkdown,
+  type MarkdownBlock,
+} from './ChatMarkdownUtils'
+
+const EMPTY_MARKDOWN_BLOCKS: MarkdownBlock[] = []
+const STREAMING_STABLE_BLOCK_CACHE_LIMIT = 64
+const streamingStableBlockCache = new Map<string, MarkdownBlock[]>()
 
 export const MarkdownText = React.memo(function MarkdownText({
   content,
-  isStreaming: _isStreaming = false,
+  isStreaming = false,
   agents,
   onMentionClick,
   onFilePreview,
 }: {
   content: string
   isStreaming?: boolean
-  agents?: { id: string; name: string }[]
-  onMentionClick?: (agentId: string) => void
-  onFilePreview?: (filePath: string, fileType: PreviewFileType) => void
+  agents?: { id: string; name: string }[] | undefined
+  onMentionClick?: ((agentId: string) => void) | undefined
+  onFilePreview?: ((filePath: string, fileType: PreviewFileType) => void) | undefined
 }) {
-  const blocks = useMemo(() => parseMarkdown(content), [content])
+  const { stableBlocks, tailBlocks } = useMemo(() => {
+    if (!isStreaming) {
+      return { stableBlocks: EMPTY_MARKDOWN_BLOCKS, tailBlocks: parseMarkdown(content) }
+    }
+
+    const stableEnd = findStableMarkdownPrefixEnd(content)
+    const stablePrefix = content.slice(0, stableEnd)
+    const nextStableBlocks = getCachedStableMarkdownBlocks(stablePrefix)
+    return {
+      stableBlocks: nextStableBlocks,
+      tailBlocks: content.length === stableEnd
+        ? EMPTY_MARKDOWN_BLOCKS
+        : parseMarkdown(content.slice(stableEnd)),
+    }
+  }, [content, isStreaming])
   const { syntaxHighlight } = useAppearanceSettings()
-  const seenDocumentKeys = new Set<string>()
+  const stableDocumentKeys = useMemo(
+    () => stableBlocks.flatMap((block) => block.kind === 'paragraph'
+      ? collectDocumentOutputKeys(block.text)
+      : []),
+    [stableBlocks],
+  )
 
   return (
     <>
-      {blocks.map((block, index) => {
+      <MarkdownBlocks
+        blocks={stableBlocks}
+        startIndex={0}
+        syntaxHighlight={syntaxHighlight}
+        agents={agents}
+        onMentionClick={onMentionClick}
+        onFilePreview={onFilePreview}
+      />
+      <MarkdownBlocks
+        blocks={tailBlocks}
+        startIndex={stableBlocks.length}
+        syntaxHighlight={syntaxHighlight}
+        agents={agents}
+        onMentionClick={onMentionClick}
+        onFilePreview={onFilePreview}
+        initialDocumentKeys={stableDocumentKeys}
+      />
+    </>
+  )
+})
+
+function getCachedStableMarkdownBlocks(prefix: string): MarkdownBlock[] {
+  if (prefix.length === 0) return EMPTY_MARKDOWN_BLOCKS
+  const cached = streamingStableBlockCache.get(prefix)
+  if (cached != null) return cached
+  const blocks = parseMarkdown(prefix)
+  streamingStableBlockCache.set(prefix, blocks)
+  if (streamingStableBlockCache.size > STREAMING_STABLE_BLOCK_CACHE_LIMIT) {
+    const oldestKey = streamingStableBlockCache.keys().next().value
+    if (oldestKey != null) streamingStableBlockCache.delete(oldestKey)
+  }
+  return blocks
+}
+
+const MarkdownBlocks = React.memo(function MarkdownBlocks({
+  blocks,
+  startIndex,
+  syntaxHighlight,
+  agents,
+  onMentionClick,
+  onFilePreview,
+  initialDocumentKeys = [],
+}: {
+  blocks: MarkdownBlock[]
+  startIndex: number
+  syntaxHighlight: boolean
+  agents?: { id: string; name: string }[] | undefined
+  onMentionClick?: ((agentId: string) => void) | undefined
+  onFilePreview?: ((filePath: string, fileType: PreviewFileType) => void) | undefined
+  initialDocumentKeys?: string[]
+}) {
+  const seenDocumentKeys = new Set(initialDocumentKeys)
+
+  return (
+    <>
+      {blocks.map((block, localIndex) => {
+        const index = startIndex + localIndex
         switch (block.kind) {
           case 'heading': {
             const tagName = `h${Math.min(block.level, 6)}` as keyof JSX.IntrinsicElements

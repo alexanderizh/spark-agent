@@ -64,6 +64,25 @@ export interface VoiceInstallResponse {
   status: VoiceIntegrityStatus
 }
 
+// ─── 麦克风权限 ─────────────────────────────────────────────────────────────
+
+export type VoiceMicrophonePermissionStatus =
+  | 'not-determined'
+  | 'granted'
+  | 'denied'
+  | 'restricted'
+  | 'unknown'
+
+export type VoiceMicrophonePermissionRequest = Record<string, never>
+
+export interface VoiceMicrophonePermissionResponse {
+  /** 是否可以继续调用 getUserMedia；unknown 在 Linux 等平台上交由 Chromium 判断。 */
+  granted: boolean
+  status: VoiceMicrophonePermissionStatus
+  /** denied/restricted 时面向用户的处理建议。 */
+  message: string | null
+}
+
 /** 单个组件的安装进度（与 SdkIntegrityInstallProgress 同构，额外标注 component） */
 export interface VoiceInstallProgress {
   /** 当前正在安装的组件 */
@@ -135,9 +154,24 @@ export interface VoiceRecognitionEvent {
  * 该通道为 fire-and-forget，不进入 IpcChannelMap（非 invoke 语义）。
  */
 export const VOICE_AUDIO_CHUNK_CHANNEL = 'voice:feed-audio'
+/** Worklet 正常每帧 1600 samples；保留一倍余量并拒绝异常超大 IPC payload。 */
+export const VOICE_AUDIO_CHUNK_MAX_SAMPLES = 3200
 
 export interface VoiceAudioChunkPayload {
   sessionId: string
   /** 16kHz 单声道 16-bit PCM，little-endian */
   samples: Int16Array
+}
+
+export function isVoiceAudioChunkPayload(payload: unknown): payload is VoiceAudioChunkPayload {
+  if (!payload || typeof payload !== 'object') return false
+  const candidate = payload as Partial<VoiceAudioChunkPayload>
+  return (
+    typeof candidate.sessionId === 'string' &&
+    /^voice-\d+-\d+$/.test(candidate.sessionId) &&
+    candidate.sessionId.length <= 120 &&
+    candidate.samples instanceof Int16Array &&
+    candidate.samples.length > 0 &&
+    candidate.samples.length <= VOICE_AUDIO_CHUNK_MAX_SAMPLES
+  )
 }

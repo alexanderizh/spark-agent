@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { filterDocumentOutputFiles, isDocumentOutputReference } from './ChatDocumentOutput'
+import {
+  collectDocumentOutputKeys,
+  filterDocumentOutputFiles,
+  isDocumentOutputReference,
+} from './ChatDocumentOutput'
 
 describe('ChatDocumentOutput', () => {
   it('only treats document-like file references as document outputs', () => {
@@ -30,5 +34,13 @@ describe('ChatDocumentOutput', () => {
       { path: '/tmp/report.pdf', title: 'Report' },
       { path: '/tmp/index.html', title: 'Preview page' },
     ])
+  })
+
+  it('collects only paragraphs made entirely from document references', () => {
+    expect(collectDocumentOutputKeys('[报告](/tmp/report.pdf)\n`/tmp/slides.pptx`')).toEqual([
+      '/tmp/report.pdf',
+      '/tmp/slides.pptx',
+    ])
+    expect(collectDocumentOutputKeys('生成结果：\n/tmp/report.pdf')).toEqual([])
   })
 })

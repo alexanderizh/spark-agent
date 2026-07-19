@@ -97,6 +97,37 @@ describe('installFromZip — Spark artifact zip installer', () => {
     expect(progressEvents.at(-1)).toEqual({ downloaded: zipBuffer.length, total: zipBuffer.length })
   })
 
+  it('uses a caller-provided timeout for large archive downloads', async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'spark-zip-installer-timeout-'))
+    const userSkillsDir = join(tempRoot, 'skills')
+    mkdirSync(userSkillsDir, { recursive: true })
+    const zipBuffer = readFileSync(FIXTURE_ZIP)
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout')
+    process.env.SPARK_SKILL_INSTALL_DISABLE_SYSTEM_TAR = '1'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(zipBuffer, {
+          status: 200,
+          headers: { 'content-length': String(zipBuffer.length) },
+        }),
+      ),
+    )
+
+    try {
+      await installFromZip({
+        url: 'https://artifact.example.test/large-skill.zip',
+        destDirName: 'large-artifact-skill',
+        userSkillsDir,
+        downloadTimeoutMs: 30 * 60 * 1000,
+      })
+
+      expect(timeoutSpy).toHaveBeenCalledWith(30 * 60 * 1000)
+    } finally {
+      timeoutSpy.mockRestore()
+    }
+  })
+
   it('falls back to native downloader when Node fetch fails', async () => {
     if (spawnSync('curl', ['--version'], { stdio: 'ignore' }).status !== 0) return
 
