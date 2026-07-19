@@ -1,0 +1,333 @@
+// 语音输入相关样式：麦克风按钮 + 下载进度卡片
+
+// ── 麦克风按钮（挂在 composer-submit-row，紧邻发送按钮）──────────────────────
+.composer-voice-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: var(--bg-sunken, rgba(255, 255, 255, 0.04));
+  color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+    color: var(--text-primary, #fff);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &.is-recording {
+    background: rgba(232, 76, 84, 0.16);
+    border-color: rgba(232, 76, 84, 0.6);
+    color: #ff6b72;
+  }
+
+  &.is-pending:not(.is-downloading):not(:disabled) {
+    color: var(--text-tertiary, rgba(255, 255, 255, 0.5));
+  }
+}
+
+.composer-voice-pulse {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid rgba(232, 76, 84, 0.55);
+  animation: voice-pulse 1.2s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes voice-pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+
+.composer-voice-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent, #4f8cff);
+  color: #fff;
+  border: 2px solid var(--bg-panel, #1a1a1a);
+}
+
+.composer-voice-spinner {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  background: var(--bg-panel, #1a1a1a);
+  border-radius: 50%;
+  padding: 1px;
+}
+
+// ── 下载进度卡片（右上角，portal 到 body）──────────────────────────────────
+.voice-install-toast {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+  width: 300px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bg-panel, #1f1f24);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  color: var(--text-primary, #fff);
+  animation: voice-toast-in 0.18s ease-out;
+
+  &.is-done {
+    border-color: rgba(76, 175, 120, 0.5);
+  }
+
+  &.is-error {
+    border-color: rgba(232, 76, 84, 0.55);
+  }
+}
+
+@keyframes voice-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.voice-install-toast-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.voice-install-toast-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.voice-install-toast-spinner {
+  color: var(--accent, #4f8cff);
+  flex-shrink: 0;
+}
+
+.voice-install-toast-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary, rgba(255, 255, 255, 0.5));
+  cursor: pointer;
+  border-radius: 4px;
+
+  &:hover {
+    background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+    color: var(--text-primary, #fff);
+  }
+}
+
+.voice-install-toast-bar {
+  margin-top: 10px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-sunken, rgba(255, 255, 255, 0.08));
+  overflow: hidden;
+}
+
+.voice-install-toast-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent, #4f8cff), var(--accent-soft, #7aa8ff));
+  transition: width 0.2s ease;
+}
+
+.voice-install-toast-meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+}
+
+.voice-install-toast-error {
+  color: #ff8a8e;
+}
+
+.voice-install-toast-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+
+  button {
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.16));
+    background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+    color: var(--text-primary, #fff);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--bg-hover-strong, rgba(255, 255, 255, 0.12));
+    }
+  }
+}
+
+// ── 设置 → 完整性 面板中的「语音包」卡片 ─────────────────────────────────
+.voice-integrity-settings {
+  max-width: 980px;
+}
+
+.voice-integrity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  margin-top: 16px;
+}
+
+.voice-integrity-heading {
+  min-width: 0;
+  flex: 1;
+}
+
+.voice-integrity-heading h2 {
+  margin-bottom: 8px;
+}
+
+.voice-integrity-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+// 让两个组件行多一行描述,层级清晰
+.voice-integrity-card .integrity-sdk-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.voice-integrity-desc {
+  font-size: 11px;
+  color: var(--text-muted, rgba(255, 255, 255, 0.5));
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+.voice-integrity-progress-wrap {
+  padding: 0 var(--pad-lg, 18px) 14px;
+}
+
+.voice-integrity-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+// ── 安装进度条(与 sdk-install-progress 同构,仅换前缀) ──────────────────
+.voice-progress {
+  width: 100%;
+  margin-top: 10px;
+  color: var(--text-muted, rgba(255, 255, 255, 0.55));
+}
+
+.voice-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  line-height: 18px;
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong {
+    flex: 0 0 auto;
+    color: var(--text-primary, #fff);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 11px;
+    font-weight: 600;
+  }
+}
+
+.voice-progress-track {
+  position: relative;
+  height: 6px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary, #fff) 9%, transparent);
+}
+
+.voice-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #4f8cff);
+  transition: width 0.2s ease;
+}
+
+.voice-progress.is-done .voice-progress-fill {
+  background: var(--success, #4caf78);
+}
+
+.voice-progress.is-error .voice-progress-fill {
+  background: var(--danger, #e84c54);
+}
+
+.voice-progress-track.indeterminate .voice-progress-fill {
+  width: 34% !important;
+  animation: voice-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes voice-progress-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(310%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-progress-track.indeterminate .voice-progress-fill {
+    animation: none;
+  }
+}

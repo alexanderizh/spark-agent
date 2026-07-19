@@ -20,7 +20,9 @@ import type {
   IpcResponse,
   IpcStreamChannel,
   IpcStreamPayload,
+  VoiceAudioChunkPayload,
 } from '@spark/protocol'
+import { VOICE_AUDIO_CHUNK_CHANNEL } from '@spark/protocol'
 
 /**
  * IPC 调用结果格式（与主进程 typed-ipc.ts 中的 IpcResult 匹配）
@@ -82,6 +84,14 @@ export interface SparkApi {
    * 当前运行平台（同步常量，渲染进程不需要 IPC 即可读取）
    */
   platform: SparkPlatform
+
+  /**
+   * 推送语音音频 chunk（高频流式，fire-and-forget，不走 invoke/response）
+   *
+   * 渲染进程 AudioWorklet 采集 16kHz/16bit PCM 后通过此通道推给主进程
+   * OnlineRecognizer 做增量解码。
+   */
+  sendVoiceAudioChunk: (payload: VoiceAudioChunkPayload) => void
 }
 
 /**
@@ -137,6 +147,11 @@ contextBridge.exposeInMainWorld('spark', {
 
   // 同步暴露平台标识，用于渲染进程在首次渲染时决定 UI（无需 IPC 等待）
   platform: process.platform,
+
+  // 语音音频 chunk 流：fire-and-forget，主进程 ipcMain.on 接收
+  sendVoiceAudioChunk: (payload: VoiceAudioChunkPayload): void => {
+    ipcRenderer.send(VOICE_AUDIO_CHUNK_CHANNEL, payload)
+  },
 } satisfies SparkApi)
 
 // 为渲染进程提供 TypeScript 类型支持，通过 declare global 扩展 Window 接口
