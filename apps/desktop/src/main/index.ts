@@ -46,7 +46,13 @@ import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
 import { startBackgroundMaintenanceWorker } from './services/background-maintenance-worker.js'
 import { registerAllIpcHandlers, ensureNoProjectDirectoryExists } from './ipc/index.js'
-import { setMainWindow, sendToMainWindow } from './windows/index.js'
+import {
+  getMainWindow,
+  getPreferredAppWindow,
+  revealAppWindow,
+  setMainWindow,
+  sendToMainWindow,
+} from './windows/index.js'
 import { getFileWatcherService } from './services/FileWatcherService.js'
 import { getTerminalService } from './services/TerminalService.js'
 import { getUpdateService } from './services/UpdateService.js'
@@ -56,6 +62,7 @@ import { initializeShellEnvironment, getShellEnvironmentStatus } from './service
 import { ensureRegistered as ensurePlaywrightRegistered, readRegistration as readPlaywrightRegistration } from './services/PlaywrightMcpRegistration.js'
 import { detectIntegrity as detectPlaywrightIntegrity } from './services/PlaywrightIntegrityService.js'
 import { getInternalBrowserService } from './services/InternalBrowserService.js'
+import { getCanvasWindowService } from './services/CanvasWindowService.js'
 import { ensureBundledBrowserEnv } from './services/PlaywrightEnvironment.js'
 import { detectFfmpegIntegrity } from './services/FfmpegIntegrityService.js'
 import { updateManagedFontAssetsInBackground } from './services/FontAssetService.js'
@@ -120,14 +127,13 @@ function getResourcePath(fileName: string): string {
 }
 
 function showMainWindow(): void {
-  const existing = BrowserWindow.getAllWindows()[0]
-  if (existing != null) {
-    if (existing.isMinimized()) existing.restore()
-    existing.show()
-    existing.focus()
-    return
-  }
+  if (revealAppWindow(getMainWindow())) return
   createWindow()
+}
+
+function showPreferredAppWindow(): void {
+  if (revealAppWindow(getPreferredAppWindow())) return
+  showMainWindow()
 }
 
 const pendingRedeemCodes = new Set<string>()
@@ -301,7 +307,7 @@ async function promptForDownloadedUpdate(info: UpdateInfo, autoInstall: boolean)
         : `SparkWork v${info.version} 安装包已下载完成`,
   )
 
-  const mainWindow = BrowserWindow.getAllWindows()[0] ?? null
+  const mainWindow = getMainWindow()
   if (mainWindow == null || mainWindow.isDestroyed()) return
 
   const installButtonLabel =
@@ -384,8 +390,16 @@ async function refreshTrayMenu(): Promise<void> {
         },
       }))
 
+  const canvasWindowAvailable = getCanvasWindowService().getWindow() != null
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: '打开 SparkWork', click: showMainWindow },
+    { label: '打开主窗口', click: showMainWindow },
+    {
+      label: '打开画布',
+      visible: canvasWindowAvailable,
+      click: () => {
+        getCanvasWindowService().focus()
+      },
+    },
     { type: 'separator' },
     {
       label: '新建会话',
@@ -402,13 +416,12 @@ async function refreshTrayMenu(): Promise<void> {
     {
       label: '打开内部控制台',
       click: () => {
-        const win = BrowserWindow.getAllWindows()[0]
+        const win = getPreferredAppWindow()
         if (win == null) {
           showMainWindow()
           return
         }
-        win.show()
-        win.focus()
+        revealAppWindow(win)
         win.webContents.openDevTools({ mode: 'detach' })
       },
     },
@@ -865,7 +878,7 @@ function setupApplicationMenu(): void {
   if (process.platform === 'darwin') return
 
   const zoomFocusedWindow = (action: 'in' | 'out' | 'reset') => {
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const win = BrowserWindow.getFocusedWindow() ?? getPreferredAppWindow()
     if (win != null) setBrowserZoom(win, action)
   }
 
@@ -902,13 +915,11 @@ if (ownsSingleInstanceLock) {
       app.quit()
     })
 
-    // macOS：dock 图标被点击时恢复/显示主窗口。
-    // 注意：close 处理器对窗口做了 hide()（而非 destroy），所以即便窗口已被关闭/最小化，
-    // getAllWindows().length 仍为 1，旧实现只判断「无窗口才新建」会漏掉「窗口已隐藏/最小化」
-    // 的情况，导致点击 Dock 图标无任何反应。这里统一走 showMainWindow()：存在则 restore+show+focus，
-    // 不存在则新建，与托盘点击行为保持一致。
-    app.on('activate', () => {
-      showMainWindow()
+    // macOS：已有可见窗口时交给系统保持最近使用窗口；仅所有窗口都不可见时，
+    // 恢复应用内最后聚焦的窗口，并在没有可用窗口时回退到主窗口。
+    app.on('activate', (_event, hasVisibleWindows) => {
+      if (hasVisibleWindows) return
+      showPreferredAppWindow()
     })
   })
 
