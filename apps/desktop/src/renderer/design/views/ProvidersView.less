@@ -449,6 +449,30 @@
   text-overflow: ellipsis;
 }
 
+.pv_vendor_purchase {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: var(--r-sm, 6px);
+  color: var(--text-muted);
+  text-decoration: none;
+  background: transparent;
+  transition: color 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    color: var(--text-strong, var(--text));
+    background: var(--bg-soft, rgba(255, 255, 255, 0.06));
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary, #5b8cff);
+    outline-offset: 1px;
+  }
+}
+
 /* ─── Provider card (configured entry) ──────────────────────────────────── */
 
 .pv_card {

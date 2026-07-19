@@ -81,7 +81,7 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
     }
     const qwenModel = isQwenImageModel(ctx.defaultModel)
     const maxInputImages = qwenModel ? 3 : 9
-    if (images.length > maxInputImages) {
+    if (images.length > maxInputImages && !ctx.skipParameterValidation) {
       throw new MediaProviderError(
         'invalid_input',
         qwenModel
@@ -94,8 +94,13 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
     const params = isSynthesizedCustomImageManifest(ctx)
       ? customImageParameters(modelParams)
       : qwenModel
-        ? qwenImageParameters(modelParams)
-        : imageParameters(modelParams, ctx.defaultModel, images.length)
+        ? qwenImageParameters(modelParams, ctx.skipParameterValidation)
+        : imageParameters(
+            modelParams,
+            ctx.defaultModel,
+            images.length,
+            ctx.skipParameterValidation,
+          )
     const body = {
       model: ctx.defaultModel,
       input: {
@@ -505,10 +510,15 @@ function isQwenImageModel(model: string | undefined): boolean {
  */
 function qwenImageParameters(
   params: Record<string, unknown> | undefined,
+  skipParameterValidation = false,
 ): Record<string, unknown> {
   const normalized = normalizeBailianImageParams(params)
   const size = normalized.size
-  if (size !== undefined && (typeof size !== 'string' || !/^\d+\*\d+$/.test(size))) {
+  if (
+    !skipParameterValidation &&
+    size !== undefined &&
+    (typeof size !== 'string' || !/^\d+\*\d+$/.test(size))
+  ) {
     throw new MediaProviderError(
       'invalid_input',
       'Qwen-Image 2.0 size 必须为像素星号格式（如 2048*2048）',
@@ -516,6 +526,7 @@ function qwenImageParameters(
   }
   const n = normalized.n
   if (
+    !skipParameterValidation &&
     n !== undefined &&
     (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 6)
   ) {
@@ -547,21 +558,35 @@ function imageParameters(
   params: Record<string, unknown> | undefined,
   model: string,
   imageCount: number,
+  skipParameterValidation = false,
 ): Record<string, unknown> {
   const normalized = normalizeBailianImageParams(params)
   const size = normalized.size
-  if (size !== undefined && (typeof size !== 'string' || !['1K', '2K', '4K'].includes(size))) {
+  if (
+    !skipParameterValidation &&
+    size !== undefined &&
+    (typeof size !== 'string' || !['1K', '2K', '4K'].includes(size))
+  ) {
     throw new MediaProviderError('invalid_input', '万相 2.7 图像 size 仅支持 1K、2K、4K')
   }
   const enableSequential = normalized.enable_sequential === true
-  if (size === '4K' && (model !== 'wan2.7-image-pro' || imageCount > 0 || enableSequential)) {
+  if (
+    !skipParameterValidation &&
+    size === '4K' &&
+    (model !== 'wan2.7-image-pro' || imageCount > 0 || enableSequential)
+  ) {
     throw new MediaProviderError('invalid_input', '4K 仅支持 wan2.7-image-pro 的非组图纯文生图场景')
   }
-  if (model !== 'wan2.7-image-pro' && normalized.color_palette !== undefined) {
+  if (
+    !skipParameterValidation &&
+    model !== 'wan2.7-image-pro' &&
+    normalized.color_palette !== undefined
+  ) {
     throw new MediaProviderError('invalid_input', 'color_palette 仅支持 wan2.7-image-pro')
   }
   const n = normalized.n
   if (
+    !skipParameterValidation &&
     n !== undefined &&
     (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > (enableSequential ? 12 : 4))
   ) {

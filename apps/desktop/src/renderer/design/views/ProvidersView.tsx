@@ -1687,6 +1687,20 @@ function VendorPresetCard({
         </div>
         <div className="pv_vendor_desc">{vendor.desc}</div>
       </div>
+      {vendor.purchaseUrl ? (
+        <a
+          className="pv_vendor_purchase"
+          href={vendor.purchaseUrl}
+          target="_blank"
+          rel="noreferrer"
+          title={`访问 ${vendor.name} 购买 / 充值`}
+          aria-label={`访问 ${vendor.name} 购买 / 充值`}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <Icons.ExternalLink size={14} />
+        </a>
+      ) : null}
     </div>
   )
 }

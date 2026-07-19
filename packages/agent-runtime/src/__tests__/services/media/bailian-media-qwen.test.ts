@@ -190,6 +190,40 @@ describe('BailianMediaAdapter — Qwen-Image 2.0', () => {
     })
   })
 
+  it('does not reject a 2746-character prompt using the documented 1300-token reference', async () => {
+    let submitted: Record<string, unknown> | undefined
+    const fetchMock = makeFetch([
+      {
+        match: '/multimodal-generation/generation',
+        respond: (init) => {
+          submitted = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: qwenResponse(`data:image/png;base64,${PNG_PIXEL}`) }
+        },
+      },
+    ])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:qwen-image-2.0',
+    )!
+    const prompt = '角色设定'.repeat(686) + '结尾'
+
+    await new MediaRouterService().invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        prompt,
+        outputDir: tmpDir,
+      },
+      {
+        providers: [makeProvider({ defaultModel: manifest.modelId, mediaModelManifests: [manifest] })],
+        modelId: manifest.modelId,
+        fetch: fetchMock,
+      },
+    )
+
+    expect(prompt).toHaveLength(2746)
+    expect(submitted).toMatchObject({ input: { messages: [{ content: [{ text: prompt }] }] } })
+  })
+
   it('image.edit: routes as binary-capable edit and limits to 3 input images', async () => {
     let submitted: Record<string, unknown> | undefined
     const fetchMock = makeFetch([
@@ -316,6 +350,41 @@ describe('BailianMediaAdapter — Qwen-Image 2.0', () => {
         },
       ),
     ).rejects.toThrow(/1-6/)
+  })
+
+  it('forwards user-confirmed qwen parameter warnings to the provider', async () => {
+    let submitted: Record<string, unknown> | undefined
+    const fetchMock = makeFetch([
+      {
+        match: '/multimodal-generation/generation',
+        respond: (init) => {
+          submitted = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: qwenResponse(`data:image/png;base64,${PNG_PIXEL}`) }
+        },
+      },
+    ])
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'bailian:qwen-image-2.0-pro',
+    )!
+    const router = new MediaRouterService()
+
+    await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        prompt: 'x',
+        outputDir: tmpDir,
+        modelParams: { n: 7 },
+      },
+      {
+        providers: [makeProvider({ defaultModel: manifest.modelId, mediaModelManifests: [manifest] })],
+        modelId: manifest.modelId,
+        fetch: fetchMock,
+        skipValidation: true,
+      },
+    )
+
+    expect(submitted).toMatchObject({ parameters: { n: 7 } })
   })
 
   it('rejects ratio-style size (1:1) — only pixel asterisk allowed', async () => {

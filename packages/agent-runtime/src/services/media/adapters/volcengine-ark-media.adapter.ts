@@ -122,7 +122,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
     const model = ctx.defaultModel
     const base = baseEndpoint(ctx)
 
-    assertSeedanceInputMode(input, ctx, capability)
+    if (!ctx.skipParameterValidation) assertSeedanceInputMode(input, ctx, capability)
     const content = await buildSeedanceContent(input, ctx, capability, prompt)
     if (content.length === 0) {
       throw new MediaProviderError(

@@ -172,3 +172,11 @@ paramPolicy: {
 - 异步任务无法完成：检查 `invocation.response.kind === 'task_poll'`、task id 路径、statusEndpoint、statusMap 和 polling。
 - 新模型配置了 manifest 但仍走旧逻辑：检查专用 adapter 是否按 modelId 写了分支，以及 router 是否优先使用专用 adapter。
 - 自定义模型没有精确参数能力：resolver 在缺少 manifest 时可能用同 provider 的代表性内置 manifest 合成；要获得准确参数 schema，应配置 inline manifest。
+
+## 七、提示词长度校验原则
+
+- `safety.maxPromptLength` 只表示 Provider 文档参考阈值，不得在本地作为硬阻断依据。
+- 同时记录 `promptLengthUnit`（字符、Token 或 Provider 特有口径）和 `promptOverflowBehavior`（截断、拒绝或未知）。没有 tokenizer 时不能把 Token 阈值按 JavaScript 字符数精确校验。
+- Provider 文档未明确给出阈值时不要猜测；历史兼容值即使暂时保留，也只能产生 advisory warning。
+- 专用 validator/adapter 不要重复实现长度硬限制。确定性的缺参、输入格式和文件访问安全问题可以继续阻断。
+- 画布媒体 prompt 使用 protocol 的共享拼接器，预检与执行必须保持同一拼接口径，并去除 System/User 中已逐字包含的文本引用正文。

@@ -9,6 +9,21 @@ import type { MediaGenerateInput } from '../../../services/media/media-adapter.t
 import { validateMediaRequest } from '../../../services/media/media-request-validator.js'
 
 describe('APIMart media request validation', () => {
+  it('keeps the Seedance prompt threshold advisory', () => {
+    const result = validate({
+      modelId: 'doubao-seedance-2.0',
+      capability: 'video.generate',
+      prompt: 'a'.repeat(4001),
+    })
+
+    expect(result.blockingIssues).toEqual([])
+    expect(result.validationIssues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ severity: 'warning', code: 'out_of_range' }),
+      ]),
+    )
+  })
+
   it('accepts documented Seedance 2.0 multi-reference inputs', () => {
     const result = validate({
       modelId: 'doubao-seedance-2.0',

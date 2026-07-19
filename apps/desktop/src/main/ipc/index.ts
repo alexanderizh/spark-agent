@@ -3516,7 +3516,10 @@ export function registerAllIpcHandlers(): void {
           : {}),
         ...(req.manifestId != null ? { manifestId: req.manifestId } : {}),
         ...(req.modelId != null ? { modelId: req.modelId } : {}),
-        ...(req.skipParameterValidation === true ? { skipValidation: true } : {}),
+        // Canvas performs structural checks and advisory manifest validation in
+        // the renderer. Do not run a second, stricter manifest pass after the
+        // final prompt has been expanded with system/context text.
+        skipValidation: true,
       }
       if (req.waitForCompletion === false) {
         const task = taskRuntime.submitBackground(input, options, (record) => {

@@ -53,8 +53,9 @@ function validateApimartVideoRequest(context: MediaValidationContext): MediaCont
     issues.push(
       validationIssue(
         'out_of_range',
-        'APIMart Seedance 2.0 prompt 最多支持 4000 个字符',
+        'APIMart Seedance 2.0 prompt 可能超过 4000 个字符；本地不会阻断请求',
         ['prompt'],
+        'warning',
       ),
     )
   }

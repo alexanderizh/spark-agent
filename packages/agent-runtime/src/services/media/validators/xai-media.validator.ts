@@ -39,7 +39,12 @@ export function validateXaiMediaRequest(context: MediaValidationContext): MediaC
       issues.push(validationIssue('missing_required', 'xAI 语音合成需要文本', ['prompt']))
     } else if (prompt.length > 15_000) {
       issues.push(
-        validationIssue('out_of_range', 'xAI 语音合成文本不能超过 15000 个字符', ['prompt']),
+        validationIssue(
+          'out_of_range',
+          'xAI 语音合成文本可能超过 15000 个字符；本地不会阻断请求',
+          ['prompt'],
+          'warning',
+        ),
       )
     }
   }

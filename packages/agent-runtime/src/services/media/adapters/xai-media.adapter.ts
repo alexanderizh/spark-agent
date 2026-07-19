@@ -269,10 +269,6 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
   ): Promise<MediaGenerateOutput> {
     const text = (input.prompt ?? '').trim()
     if (!text) throw new MediaProviderError('invalid_input', 'xAI TTS requires text')
-    if (text.length > 15_000 && !ctx.skipParameterValidation) {
-      throw new MediaProviderError('invalid_input', 'xAI TTS text exceeds 15,000 characters')
-    }
-
     const params = input.modelParams ?? {}
     const audioDefaults = ctx.mediaDefaults?.audio
     const outputFormat = normalizeTtsOutputFormat(

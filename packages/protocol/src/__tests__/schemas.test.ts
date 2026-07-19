@@ -240,6 +240,26 @@ describe('IPC schemas', () => {
     }
   })
 
+  it('records documented prompt units and overflow behavior for Bailian image models', () => {
+    const qwen = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (manifest) => manifest.id === 'bailian:qwen-image-2.0',
+    )
+    const wan = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (manifest) => manifest.id === 'bailian:wan2.7-image',
+    )
+
+    expect(qwen?.safety).toMatchObject({
+      maxPromptLength: 1300,
+      promptLengthUnit: 'tokens',
+      promptOverflowBehavior: 'truncate',
+    })
+    expect(wan?.safety).toMatchObject({
+      maxPromptLength: 5000,
+      promptLengthUnit: 'characters',
+      promptOverflowBehavior: 'truncate',
+    })
+  })
+
   it('Seedance 2.0 image_to_video exposes reference-image input roles', () => {
     const seedance2Ids = [
       'volcengine:doubao-seedance-2-0-260128',

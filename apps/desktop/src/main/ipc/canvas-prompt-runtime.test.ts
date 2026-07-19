@@ -43,6 +43,17 @@ describe('canvas prompt runtime adapter', () => {
     expect(buildCanvasMediaProviderPrompt({ systemPrompt: '', userPrompt: '用户要求' })).toBe('用户要求')
   })
 
+  it('removes a connected text reference when its substantive body is already in system text', () => {
+    const character =
+      '二十出头的年轻女性，身高约160cm，体态娇小。肤色偏白，留着齐肩的黑色直发。'
+    expect(
+      buildCanvasMediaProviderPrompt({
+        systemPrompt: `生成专业角色身份板。角色设定：${character}`,
+        userPrompt: `[文本引用 T1 开始]\n类型：角色资料\n名称：小静\n\n${character}\n[/文本引用 T1 结束]`,
+      }),
+    ).toBe(`生成专业角色身份板。角色设定：${character}`)
+  })
+
   it('waits for the authoritative final assistant message instead of returning an intermediate complete item', () => {
     const base = {
       sessionId: 'session-1',
