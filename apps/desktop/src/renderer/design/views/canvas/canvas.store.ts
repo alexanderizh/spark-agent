@@ -206,6 +206,7 @@ export function useCanvasWorkspace(projectId: string) {
   const undoStackRef = useRef<CanvasHistoryEntry[]>([])
   const redoStackRef = useRef<CanvasHistoryEntry[]>([])
   const lastRecordedSnapshotRef = useRef<CanvasHistoryEntry | null>(null)
+  const agentTurnCheckpointsRef = useRef<Map<string, CanvasHistoryEntry>>(new Map())
   const restoringHistoryRef = useRef(false)
   const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingHistorySnapshotRef = useRef<CanvasSnapshot | null>(null)
@@ -284,9 +285,10 @@ export function useCanvasWorkspace(projectId: string) {
         if (payload.projectId && payload.projectId !== projectId) return
         const clientTaskId = payload.clientTaskId
         if (!clientTaskId) return
-        const update = payload.status === 'running'
-          ? canvasApi.markMediaTaskSubmitted(projectId, clientTaskId, payload.response)
-          : canvasApi.applyMediaTaskResult(projectId, clientTaskId, payload.response)
+        const update =
+          payload.status === 'running'
+            ? canvasApi.markMediaTaskSubmitted(projectId, clientTaskId, payload.response)
+            : canvasApi.applyMediaTaskResult(projectId, clientTaskId, payload.response)
         void update
           .then((next) => {
             captureCanvasAcceptanceTaskEvidence({
@@ -819,9 +821,7 @@ export function useCanvasWorkspace(projectId: string) {
     ) => {
       const result = await canvasApi.createShotSegment(projectId, groupId, input)
       await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
-      const created = result.shotGroups
-        .find((group) => group.id === groupId)
-        ?.segments.at(-1)
+      const created = result.shotGroups.find((group) => group.id === groupId)?.segments.at(-1)
       if (!created) throw new Error('分镜片段创建失败')
       return created
     },
@@ -957,6 +957,51 @@ export function useCanvasWorkspace(projectId: string) {
     }
   }, [historyBusy, projectId])
 
+  const createCanvasHistoryCheckpoint = useCallback((): string | null => {
+    if (!snapshot) return null
+    const checkpointId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `canvas-checkpoint-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    agentTurnCheckpointsRef.current.set(checkpointId, createHistoryEntry(snapshot))
+    while (agentTurnCheckpointsRef.current.size > 20) {
+      const oldest = agentTurnCheckpointsRef.current.keys().next().value
+      if (oldest == null) break
+      agentTurnCheckpointsRef.current.delete(oldest)
+    }
+    return checkpointId
+  }, [snapshot])
+
+  const restoreCanvasHistoryCheckpoint = useCallback(
+    async (checkpointId: string) => {
+      if (historyBusy) throw new Error('画布历史正在更新，请稍后重试')
+      const checkpoint = agentTurnCheckpointsRef.current.get(checkpointId)
+      if (!checkpoint) throw new Error('本轮画布快照已过期，无法撤销')
+      const current = lastRecordedSnapshotRef.current
+      setHistoryBusy(true)
+      try {
+        if (current) redoStackRef.current.push(current)
+        restoringHistoryRef.current = true
+        setSnapshot(await canvasApi.restoreBoardSnapshot(projectId, checkpoint.snapshot))
+        agentTurnCheckpointsRef.current.delete(checkpointId)
+        setHistoryVersion((version) => version + 1)
+      } catch (error) {
+        if (current)
+          redoStackRef.current = redoStackRef.current.filter((entry) => entry !== current)
+        restoringHistoryRef.current = false
+        throw error
+      } finally {
+        setHistoryBusy(false)
+      }
+    },
+    [historyBusy, projectId],
+  )
+
+  const hasCanvasHistoryCheckpoint = useCallback(
+    (checkpointId: string) => agentTurnCheckpointsRef.current.has(checkpointId),
+    [],
+  )
+
   const canUndo = useMemo(
     () => !historyBusy && undoStackRef.current.length > 0,
     [historyBusy, historyVersion],
@@ -973,6 +1018,9 @@ export function useCanvasWorkspace(projectId: string) {
     canRedo,
     undoCanvasChange,
     redoCanvasChange,
+    createCanvasHistoryCheckpoint,
+    restoreCanvasHistoryCheckpoint,
+    hasCanvasHistoryCheckpoint,
     refresh,
     refreshTaskSnapshot,
     updateNodes,

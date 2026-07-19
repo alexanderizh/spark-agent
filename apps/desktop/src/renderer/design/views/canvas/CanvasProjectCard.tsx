@@ -1,4 +1,5 @@
 import { Button, Dropdown, Tag, Tooltip } from '@lobehub/ui'
+import { Pin, PinOff } from 'lucide-react'
 import { Icons } from '../../Icons'
 import type { CanvasProject } from './canvas.types'
 
@@ -64,15 +65,23 @@ export function CanvasProjectCard({
             </div>
           </>
         )}
-        {project.pinned && (
-          <span className="canvas-project-pin-badge" title="已置顶">
-            <Icons.Pin size={13} />
-          </span>
-        )}
       </div>
       <div className="canvas-project-card-body">
         <div className="canvas-project-card-top">
           <h3>{project.title}</h3>
+          <Tooltip title={project.pinned ? '取消置顶' : '置顶'}>
+            <button
+              type="button"
+              className={`canvas-project-pin-btn${project.pinned ? ' is-pinned' : ''}`}
+              aria-label={project.pinned ? '取消置顶' : '置顶'}
+              onClick={(event) => {
+                event.stopPropagation()
+                onTogglePin(project.id)
+              }}
+            >
+              {project.pinned ? <Pin size={13} fill="currentColor" /> : <PinOff size={13} />}
+            </button>
+          </Tooltip>
           <Tag color={project.status === 'archived' ? 'default' : 'green'}>
             {project.status === 'archived' ? '已归档' : '进行中'}
           </Tag>
@@ -93,6 +102,7 @@ export function CanvasProjectCard({
                 items: [
                   {
                     key: 'pin',
+                    icon: project.pinned ? <PinOff size={14} /> : <Pin size={14} />,
                     label: project.pinned ? '取消置顶' : '置顶',
                     onClick: () => onTogglePin(project.id),
                   },

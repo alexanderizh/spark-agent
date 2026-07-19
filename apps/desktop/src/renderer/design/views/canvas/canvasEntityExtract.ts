@@ -6,6 +6,8 @@
  * 纯逻辑、无 DOM/IPC，便于单测。
  */
 
+import { SCENE_NO_PEOPLE_PROMPT } from './canvasScenePrompt'
+
 export type ExtractEntityKind = 'character' | 'scene' | 'prop' | 'effect'
 
 export function extractEntityKindLabel(kind: ExtractEntityKind): string {
@@ -169,8 +171,7 @@ const ENTITY_LABEL: Record<ExtractEntityKind, string> = {
 const DETAIL_GUIDE_BY_KIND: Record<ExtractEntityKind, string> = {
   character:
     '- 角色须覆盖：性别、年龄、身高与体型、肤色、脸型与五官特色（眉/眼/鼻/唇）、眼睛颜色与神态、发型发色、身份职业、服饰（款式/颜色/材质/新旧）、配饰、标志道具、标志特征（疤痕/纹身/胎记等辨识点）、气质神态、性格、声线。\n- prompt 必须产出"专业角色定妆设计图（character model sheet / turnaround reference）"：纯白底、干净排版；顶部第一行写角色名；顶部区域放面部特征拆解特写（眼/鼻/唇/佩戴饰物的耳部）与头部三视图（正/侧/背）；中部区域放全身三视图（正/侧/背）；底部或侧边放服装细节图与鞋的细节图；高清、柔和摄影棚光效、无影棚角色定妆照质感，统一光照与色彩锚点确保多视图一致性。',
-  scene:
-    '- 场景须覆盖：内外景、地点、年代、时间与天气、光源与光影、色调、美术风格与质感、空间层次（前景/中景/背景及纵深）、视角与景别建议、体量尺度、关键陈设与标志物、主要材质、氛围情绪。\n- prompt 必须产出"专业场景设计参考图（scene model sheet / environment turnaround）"：纯白底或中性背景、干净排版；顶部第一行写场景名；主画面至少包含 4 个视角的子图，按场景类型从以下视图中选取必要组合——整体建立镜头（wide establishing shot）、俯瞰图（top-down / overhead）、正面平视（eye-level front）、侧面侧拍（side angle）、远景（long shot）、近景/中景（medium / close-up）、关键陈设或标志物特写（detail insert）、窗内看向窗外（interior-to-exterior view）、窗外看向窗内（exterior-to-interior view）、360° 环视或前-后-左-右四向展开（360 turnaround / four-side views）；各子图间用统一的光源方向、色温、色调与材质锚点，确保场景在镜头切换、机位变化、角色出入画等不同使用处保持视觉一致；附 1-2 张关键道具/材质放大细节。高清、电影级美术指导质感，单点透视与空气透视正确，景别之间比例与纵深连贯。',
+  scene: `- 场景须覆盖：内外景、地点、年代、时间与天气、光源与光影、色调、美术风格与质感、空间层次（前景/中景/背景及纵深）、视角与景别建议、体量尺度、关键陈设与标志物、主要材质、氛围情绪。\n- ${SCENE_NO_PEOPLE_PROMPT} 场景实体的 description、prompt、attributes 均只描述环境本身，不记录人物活动、站位、动作或人物特征；每个场景的 prompt 都必须原样包含“【不要存在人物】”。\n- prompt 必须产出"专业场景设计参考图（scene model sheet / environment turnaround）"：纯白底或中性背景、干净排版；顶部第一行写场景名；主画面至少包含 4 个视角的子图，按场景类型从以下视图中选取必要组合——整体建立镜头（wide establishing shot）、俯瞰图（top-down / overhead）、正面平视（eye-level front）、侧面侧拍（side angle）、远景（long shot）、近景/中景（medium / close-up）、关键陈设或标志物特写（detail insert）、窗内看向窗外（interior-to-exterior view）、窗外看向窗内（exterior-to-interior view）、360° 环视或前-后-左-右四向展开（360 turnaround / four-side views）；各子图间用统一的光源方向、色温、色调与材质锚点，确保场景在镜头切换、机位变化及后续使用中保持视觉一致；附 1-2 张关键道具/材质放大细节。高清、电影级美术指导质感，单点透视与空气透视正确，景别之间比例与纵深连贯。`,
   prop:
     '- 道具须覆盖：类别、归属者、功能用途、材质、造型轮廓、颜色、细节（纹理/磨损/机关/编号）、工艺风格与年代感、尺寸比例。',
   effect:
@@ -284,7 +285,7 @@ export function buildEntityExtractionPrompt(
                 description:
                   '上世纪八十年代废弃火车站的内景，夜戏。空间纵深清晰：前景是翻倒的木质长椅与散落报纸，中景是斑驳剥落的水磨石立柱与售票窗口，背景是高大拱形窗透入的冷蓝月光与生锈的站台指示牌。层高约六米，空间空旷而压抑。主光来自忽明忽暗的吊顶白炽灯，辅以窗外冷色漏光，地面有积水反射形成明暗交错。材质上墙面起皮、铁件锈蚀、地砖油腻发暗。整体暖黄人工光与冷蓝自然光对冲，色调低饱和偏青绿，氛围压抑、悬疑，带颗粒胶片质感。',
                 prompt:
-                  'professional scene design model sheet, environment turnaround reference, neutral white background, clean studio layout, scene name "旧车站候车室" printed at the top, multi-view panel with at least four views: wide establishing shot of the abandoned 1980s railway station waiting room interior at night, overhead top-down floor plan view, eye-level front perspective and side angle perspective showing six-meter ceiling height and deep spatial depth, plus a 360 turnaround row showing front back left and right sides, an interior-to-exterior view through the tall arched window toward the cold moonlit platform and an exterior-to-interior view through the ticket window, close-up detail inserts of peeling terrazzo columns rusted platform signs and wet reflective floor tiles, consistent key light from flickering incandescent ceiling lamps with cold blue window spill, unified desaturated teal palette warm-cold contrast, film grain, oppressive suspenseful mood, cinematic production design, single-point and atmospheric perspective correct, consistent lighting color and material anchors across all views to keep the location visually identical across shots and camera moves',
+                  '【不要存在人物】pure environment only, no people, characters, crowds, silhouettes, body parts or human reflections, professional scene design model sheet, environment turnaround reference, neutral white background, clean studio layout, scene name "旧车站候车室" printed at the top, multi-view panel with at least four views: wide establishing shot of the abandoned 1980s railway station waiting room interior at night, overhead top-down floor plan view, eye-level front perspective and side angle perspective showing six-meter ceiling height and deep spatial depth, plus a 360 turnaround row showing front back left and right sides, an interior-to-exterior view through the tall arched window toward the cold moonlit platform and an exterior-to-interior view through the ticket window, close-up detail inserts of peeling terrazzo columns rusted platform signs and wet reflective floor tiles, consistent key light from flickering incandescent ceiling lamps with cold blue window spill, unified desaturated teal palette warm-cold contrast, film grain, oppressive suspenseful mood, cinematic production design, single-point and atmospheric perspective correct, consistent lighting color and material anchors across all views to keep the location visually identical across shots and camera moves',
                 attributes: {
                   settingType: '内景',
                   location: '废弃火车站候车室',

@@ -62,4 +62,11 @@ describe('CanvasShotScriptTable', () => {
       expect(html).toContain(value)
     }
   })
+
+  it('未选中节点可以关闭滚轮隔离，把滚轮交还画布', () => {
+    const html = renderToStaticMarkup(<CanvasShotScriptTable rows={[]} isolateWheel={false} />)
+
+    expect(html).toContain('class="canvas-node-shot-table-wrap"')
+    expect(html).not.toContain('nowheel')
+  })
 })

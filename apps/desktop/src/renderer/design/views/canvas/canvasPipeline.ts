@@ -27,8 +27,8 @@ import {
   getOpsForNode,
   type CanvasPipelineAssetKind,
   type CanvasPipelineOp,
+  type PipelineOpKind,
 } from './canvasPipelineOps'
-import { isShotScriptText, parseShotTable } from './canvasShotTableParse'
 
 // ─── 编排动作（右键「下一步」菜单数据源，设计 §7）────────────────────────────
 
@@ -38,6 +38,8 @@ export type PipelineAction = {
   id: string
   /** 中文菜单标签 */
   label: string
+  /** 统一菜单分类；不同节点和入口按此分组，不再各自猜测 */
+  kind: PipelineOpKind
   /** 产出节点的流水线角色 */
   produces: CanvasPipelineRole
   /** 若直接落为媒体任务，对应的 operation（agent 文本动作则为空） */
@@ -50,6 +52,7 @@ function toAction(op: CanvasPipelineOp): PipelineAction {
   return {
     id: op.id,
     label: op.label,
+    kind: op.kind,
     produces: op.produces,
     icon: op.icon,
     ...(op.baseOperation ? { operation: op.baseOperation } : {}),
@@ -69,16 +72,6 @@ export function getNodePipelineActions(
   },
   options: { assetKinds?: readonly CanvasPipelineAssetKind[] } = {},
 ): PipelineAction[] {
-  const sourceText = typeof node.data?.text === 'string' ? node.data.text : ''
-  if (
-    node.type === 'text' &&
-    isShotScriptText(sourceText) &&
-    parseShotTable(sourceText).length >= 2
-  ) {
-    return getOpsForRole('shot')
-      .filter((op) => op.id === 'shot.to_keyframes')
-      .map(toAction)
-  }
   return getOpsForNode(node, options).map(toAction)
 }
 

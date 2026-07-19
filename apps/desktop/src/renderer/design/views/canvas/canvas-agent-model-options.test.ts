@@ -35,6 +35,30 @@ describe('canvas agent model options', () => {
     defaultModel: 'gpt-5',
     modelIds: ['gpt-5', 'gpt-5-mini'],
   })
+  const imageProvider = profile({
+    id: 'image-provider',
+    provider: 'openai-compatible',
+    name: 'Image Provider',
+    defaultModel: 'image-1',
+    modelIds: ['image-1'],
+    modelType: 'image',
+  })
+  const voiceProvider = profile({
+    id: 'voice-provider',
+    provider: 'openai-compatible',
+    name: 'Voice Provider',
+    defaultModel: 'voice-1',
+    modelIds: ['voice-1'],
+    modelType: 'voice',
+  })
+  const videoProvider = profile({
+    id: 'video-provider',
+    provider: 'openai-compatible',
+    name: 'Video Provider',
+    defaultModel: 'video-1',
+    modelIds: ['video-1'],
+    modelType: 'video',
+  })
 
   it('builds one provider/model list that carries the hidden adapter per option', () => {
     const groups = buildCanvasAgentModelOptions([claudeProvider, codexProvider])
@@ -53,6 +77,21 @@ describe('canvas agent model options', () => {
           { modelId: 'gpt-5-mini', label: 'gpt-5-mini' },
         ],
       },
+    ])
+  })
+
+  it('only exposes conversation providers in the canvas agent model selector', () => {
+    const groups = buildCanvasAgentModelOptions([
+      claudeProvider,
+      imageProvider,
+      voiceProvider,
+      videoProvider,
+      codexProvider,
+    ])
+
+    expect(groups.map((group) => group.provider.id)).toEqual([
+      'anthropic-provider',
+      'openai-provider',
     ])
   })
 

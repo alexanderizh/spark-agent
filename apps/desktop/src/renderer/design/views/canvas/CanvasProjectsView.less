@@ -133,20 +133,37 @@
   background: color-mix(in srgb, var(--primary) 6%, var(--bg-sunken));
 }
 
-.canvas-project-pin-badge {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+.canvas-project-pin-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 999px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: var(--r-sm, 4px);
+  color: var(--text-faint);
+  opacity: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.canvas-project-card:hover .canvas-project-pin-btn,
+.canvas-project-pin-btn:focus-visible,
+.canvas-project-pin-btn.is-pinned {
+  opacity: 1;
+}
+.canvas-project-pin-btn.is-pinned {
   color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 18%, white);
-  backdrop-filter: blur(2px);
-  box-shadow: var(--shadow-sm);
+}
+.canvas-project-pin-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.canvas-project-pin-btn.is-pinned:hover {
+  background: var(--primary-soft);
+  color: var(--primary-hover, var(--primary));
 }
 
 .canvas-project-cover {

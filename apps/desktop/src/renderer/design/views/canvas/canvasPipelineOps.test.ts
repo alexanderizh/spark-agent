@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CANVAS_PIPELINE_MENU_GROUPS,
   CANVAS_PIPELINE_OPS,
   buildOpPrompt,
   getOp,
@@ -11,6 +12,17 @@ describe('canvasPipelineOps', () => {
   it('op id 全局唯一', () => {
     const ids = CANVAS_PIPELINE_OPS.map((op) => op.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('all pipeline actions share the same four menu categories', () => {
+    expect(CANVAS_PIPELINE_MENU_GROUPS).toEqual([
+      { id: 'text', label: '文本编排' },
+      { id: 'extract', label: '资产提取' },
+      { id: 'image', label: '视觉生成' },
+      { id: 'video', label: '视频生成' },
+    ])
+    const groupIds = new Set(CANVAS_PIPELINE_MENU_GROUPS.map((group) => group.id))
+    expect(CANVAS_PIPELINE_OPS.every((op) => groupIds.has(op.kind))).toBe(true)
   })
 
   it('剧本角色有完整的专用 op', () => {
@@ -40,6 +52,7 @@ describe('canvasPipelineOps', () => {
         'screenplay.extract_props',
         'screenplay.extract_effects',
         'screenplay.storyboard_grid',
+        'character.three_view',
       ])
     })
     it('章节节点（pipelineRole=chapter）与普通文本节点菜单一致', () => {
@@ -52,6 +65,7 @@ describe('canvasPipelineOps', () => {
         'screenplay.extract_props',
         'screenplay.extract_effects',
         'screenplay.storyboard_grid',
+        'character.three_view',
       ])
     })
     it('剧本节点（pipelineRole=screenplay）与普通文本节点菜单一致', () => {
@@ -64,6 +78,7 @@ describe('canvasPipelineOps', () => {
         'screenplay.extract_props',
         'screenplay.extract_effects',
         'screenplay.storyboard_grid',
+        'character.three_view',
       ])
     })
     it('组节点也给文本流水线入口，由运行时展开组内文本', () => {
@@ -76,6 +91,7 @@ describe('canvasPipelineOps', () => {
         'screenplay.extract_props',
         'screenplay.extract_effects',
         'screenplay.storyboard_grid',
+        'character.three_view',
       ])
     })
     it('非文本节点（image）有 role 时按角色匹配', () => {
@@ -86,15 +102,15 @@ describe('canvasPipelineOps', () => {
       const ops = getOpsForNode({ type: 'text', data: { pipelineRole: 'character' } })
       expect(ops.map((op) => op.id)).toContain('character.three_view')
     })
+    it('普通文本节点也提供角色身份板生图入口', () => {
+      expect(getOpsForNode({ type: 'text' }).map((op) => op.id)).toContain('character.three_view')
+    })
     it('无 role 的图片节点不给入口', () => {
       expect(getOpsForNode({ type: 'image' })).toEqual([])
     })
     it('同类型资产卡片即使没有角色标记也能使用对应出图任务', () => {
       expect(
-        getOpsForNode(
-          { type: 'image' },
-          { assetKinds: ['character', 'scene'] },
-        ).map((op) => op.id),
+        getOpsForNode({ type: 'image' }, { assetKinds: ['character', 'scene'] }).map((op) => op.id),
       ).toEqual(['character.three_view', 'scene.scene_image'])
     })
     it('任务节点的同类型产物也能继续创建对应任务', () => {

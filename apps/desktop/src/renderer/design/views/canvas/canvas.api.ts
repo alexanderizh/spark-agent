@@ -111,21 +111,17 @@ import {
   readCanvasResolvedPresetTarget,
   resolveCanvasPresetTarget,
 } from './canvasOperationPresets'
+import { canvasTaskErrorMessage } from './canvasTaskErrorMessage'
 
 const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
 const CANVAS_TASK_VALIDATION_TOKEN = Symbol('canvas-task-validation')
-const PROVIDER_NOT_CONFIGURED_MESSAGE = '请先在『模型 / Agent 配置』中添加可用模型'
 
 const MANUSCRIPT_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
   heading: '按标题',
   length: '按长度分片',
   single: '不分章',
   'multi-file': '多文件（一文件一章）',
-}
-
-function canvasTaskErrorMessage(code: string | undefined, fallback: string): string {
-  return code === 'provider_not_configured' ? PROVIDER_NOT_CONFIGURED_MESSAGE : fallback
 }
 
 function readCanvasTextNodeContent(node: CanvasNode, assets: CanvasAsset[]): string {

@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback, useMemo, useRef, useState } from 'react'
+import { Pin, PinOff } from 'lucide-react'
 import {
   AppProvider,
   AppDialogHost,
@@ -297,7 +298,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
           title={isPinned ? tr('app.nav.unpin') : tr('app.nav.pinTop')}
           aria-label={isPinned ? tr('app.nav.unpin') : tr('app.nav.pinTop')}
         >
-          <Icons.Pin size={12} />
+          {isPinned ? <Pin size={12} fill="currentColor" /> : <PinOff size={12} />}
         </span>
       </button>
     )

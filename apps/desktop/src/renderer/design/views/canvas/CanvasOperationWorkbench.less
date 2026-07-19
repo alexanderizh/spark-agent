@@ -32,15 +32,27 @@
   gap: 6px;
 }
 
+.canvas-operation-workbench-tabs {
+  // Tab 是头部的稳定导航区，不参与右侧产物操作增多时的宽度压缩。
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .canvas-operation-workbench-actions {
+  flex: 1 1 0;
   min-width: 0;
   justify-content: flex-end;
   overflow-x: auto;
 }
 
+.canvas-operation-workbench-actions > * {
+  flex: 0 0 auto;
+}
+
 .canvas-operation-workbench-tab {
   display: inline-flex;
   height: 30px;
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
   padding: 0 11px;
@@ -51,6 +63,12 @@
   cursor: pointer;
   font-size: 12px;
   font-weight: 650;
+  white-space: nowrap;
+}
+
+.canvas-operation-workbench-tab > svg,
+.canvas-operation-workbench-count {
+  flex: 0 0 auto;
 }
 
 .canvas-operation-workbench-tab:hover:not(:disabled),

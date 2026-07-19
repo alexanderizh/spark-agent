@@ -58,6 +58,39 @@ describe('MediaTaskRuntimeService', () => {
     expect(service.materialize(record.id)).toBeNull()
   })
 
+  it('forwards the fallback uploader to the media router', async () => {
+    const fallbackUploader = {
+      canHandle: () => true,
+      upload: async () => ({
+        provider: 'apimart' as const,
+        publicUrl: 'https://example.com/ref.png',
+      }),
+    }
+    let receivedUploader: unknown
+    const service = new MediaTaskRuntimeService(createRepo(), {
+      async invoke(_input, options) {
+        receivedUploader = options.fallbackUploader
+        return {
+          providerProfileId: 'provider-1',
+          output: {
+            provider: 'apimart',
+            model: 'gpt-image-2',
+            mode: 'sync',
+            assets: [],
+          },
+        }
+      },
+    })
+
+    const record = await service.submit(
+      { operation: 'image_edit', prompt: 'hello', outputDir: '/tmp/media' },
+      { providers: [], fallbackUploader },
+    )
+
+    expect(record.status).toBe('succeeded')
+    expect(receivedUploader).toBe(fallbackUploader)
+  })
+
   it('returns immediately for background submit and emits completion updates', async () => {
     const service = new MediaTaskRuntimeService(createRepo(), {
       async invoke(_input, options) {

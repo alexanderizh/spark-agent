@@ -29,6 +29,9 @@ describe('canvasEntityExtract', () => {
       const prompt = buildEntityExtractionPrompt('scene', '车站候车室')
       expect(prompt).toContain('抽取其中出现的全部场景')
       expect(prompt).toContain('location')
+      expect(prompt).toContain('【不要存在人物】')
+      expect(prompt).toContain('只呈现纯粹的场景')
+      expect(prompt).toContain('description、prompt、attributes 均只描述环境本身')
     })
     it('角色抽取提示词含加厚后的精细字段', () => {
       const prompt = buildEntityExtractionPrompt('character', '林岚')
