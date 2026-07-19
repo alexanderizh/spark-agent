@@ -44,11 +44,11 @@ export function CanvasPromptInsertMenu({
   const [filter, setFilter] = useState<CanvasPromptInsertFilter>('all')
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [previewSide, setPreviewSide] = useState<'left' | 'right'>('right')
-  const [fixedPosition, setFixedPosition] = useState({
-    top: 0,
-    left: 0,
-    maxHeight: undefined as number | undefined,
-  })
+  const [fixedPosition, setFixedPosition] = useState<{
+    top: number
+    left: number
+    maxHeight: number | undefined
+  } | null>(null)
   const filteredItems = useMemo(
     () => filterCanvasPromptInsertItems(items, query, filter, assetById),
     [assetById, filter, items, query],
@@ -62,6 +62,10 @@ export function CanvasPromptInsertMenu({
   useLayoutEffect(() => {
     if (!fixedToTrigger || !triggerElement) return
     const updatePosition = () => {
+      if (!triggerElement.isConnected) {
+        setFixedPosition(null)
+        return
+      }
       const triggerRect = triggerElement.getBoundingClientRect()
       const menuRect = rootRef.current?.getBoundingClientRect()
       const viewportMargin = 12
@@ -83,16 +87,22 @@ export function CanvasPromptInsertMenu({
         Math.min(triggerRect.left, window.innerWidth - menuWidth - viewportMargin),
       )
       setFixedPosition((current) => {
-        if (current.top === top && current.left === left && current.maxHeight === maxHeight) {
+        if (current?.top === top && current.left === left && current.maxHeight === maxHeight) {
           return current
         }
         return { top, left, maxHeight }
       })
     }
     updatePosition()
+    const triggerPositionObserver = new MutationObserver(updatePosition)
+    triggerPositionObserver.observe(triggerElement, {
+      attributes: true,
+      attributeFilter: ['style'],
+    })
     window.addEventListener('resize', updatePosition)
     document.addEventListener('scroll', updatePosition, true)
     return () => {
+      triggerPositionObserver.disconnect()
       window.removeEventListener('resize', updatePosition)
       document.removeEventListener('scroll', updatePosition, true)
     }
@@ -144,7 +154,14 @@ export function CanvasPromptInsertMenu({
     <div
       ref={rootRef}
       className="canvas-prompt-insert-menu"
-      style={fixedToTrigger ? { position: 'fixed', ...fixedPosition } : undefined}
+      style={
+        fixedToTrigger
+          ? {
+              position: 'fixed',
+              ...(fixedPosition ?? { visibility: 'hidden' }),
+            }
+          : undefined
+      }
     >
       <input
         ref={searchRef}

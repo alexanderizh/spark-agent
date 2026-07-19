@@ -193,6 +193,32 @@ describe('CanvasPromptInsertMenu', () => {
     }
   })
 
+  it('repositions after a detached typeahead anchor is attached and positioned', async () => {
+    const trigger = document.createElement('div')
+    const rectSpy = vi
+      .spyOn(trigger, 'getBoundingClientRect')
+      .mockImplementation(() =>
+        trigger.isConnected ? new DOMRect(240, 180, 2, 18) : new DOMRect(0, 0, 0, 0),
+      )
+
+    const mounted = await mountMenu({ triggerElement: trigger, fixedToTrigger: true })
+    const menu = mounted.container.querySelector<HTMLElement>('.canvas-prompt-insert-menu')
+    if (!menu) throw new Error('Expected the insert menu to render')
+    expect(menu.style.visibility).toBe('hidden')
+
+    await act(async () => {
+      document.body.appendChild(trigger)
+      trigger.style.left = '240px'
+      await Promise.resolve()
+    })
+
+    expect(menu.style.left).toBe('240px')
+    expect(menu.style.top).toBe('204px')
+    expect(menu.style.visibility).toBe('')
+    rectSpy.mockRestore()
+    trigger.remove()
+  })
+
   it('shows five compact shortcuts and uses character/scene shortcuts as filters', async () => {
     const mounted = await mountMenu()
     expect(
