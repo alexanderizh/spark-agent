@@ -51,8 +51,9 @@ describe('canvas UI/UX V4 integration', () => {
     expect(panelStyles).toContain('.canvas-agent-side-panel-collapse-toggle.is-collapsed')
     expect(panelStyles).toContain('display: none')
     expect(addMenu).toContain('canvas-dock-labeled-action')
-    expect(dock).toContain('shortLabel="资源"')
-    expect(dock).toContain('shortLabel="任务"')
+    expect(dock).toContain('aria-label="全部节点类型"')
+    expect(dock).not.toContain('shortLabel="资源"')
+    expect(dock).not.toContain('shortLabel="任务"')
   })
 
   it('uses full-bleed overlays only for image nodes with loaded content', () => {

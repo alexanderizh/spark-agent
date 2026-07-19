@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  calculateCanvasContextMenuAnchorSpace,
   calculateCanvasContextMenuPosition,
+  CANVAS_CONTEXT_MENU_STAGE_INSETS,
   getCanvasTaskSubmitActionState,
   shouldOpenCanvasSelectionContextMenu,
   summarizeCanvasSelectionContext,
@@ -88,6 +90,34 @@ describe('canvasContextMenuModel', () => {
       expect(result.top).toBe(8)
       expect(result.maxHeight).toBe(584)
       expect(result.top + result.maxHeight).toBe(592)
+    })
+
+    it('reserves the bottom dock safe area for canvas and connection menus', () => {
+      const result = calculateCanvasContextMenuPosition({
+        point: { x: 360, y: 590 },
+        container: { width: 800, height: 600 },
+        menu: { width: 280, height: 900 },
+        inset: CANVAS_CONTEXT_MENU_STAGE_INSETS,
+      })
+
+      expect(result.top).toBe(8)
+      expect(result.maxHeight).toBe(520)
+      expect(result.top + result.maxHeight).toBe(528)
+      expect(result.openSubmenusUp).toBe(true)
+    })
+
+    it('chooses the roomier side and constrains a node dropdown to that space', () => {
+      expect(
+        calculateCanvasContextMenuAnchorSpace({
+          point: { x: 760, y: 500 },
+          container: { width: 800, height: 600 },
+          inset: CANVAS_CONTEXT_MENU_STAGE_INSETS,
+        }),
+      ).toEqual({
+        maxHeight: 492,
+        maxWidth: 752,
+        placement: 'topRight',
+      })
     })
   })
 

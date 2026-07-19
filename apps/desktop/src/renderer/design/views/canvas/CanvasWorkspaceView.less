@@ -6415,6 +6415,18 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   font-weight: 650;
 }
 
+.canvas-floating-menu-section + .canvas-floating-menu-section {
+  margin-top: 4px;
+}
+
+.canvas-floating-menu-section-title {
+  padding: 4px 8px 2px;
+  color: var(--text-faint, var(--text-muted));
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
 .canvas-floating-menu-empty {
   padding: 7px 8px;
   color: var(--text-muted);
@@ -10632,6 +10644,78 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 .canvas-agent-panel.is-fullscreen .canvas-agent-modal {
   height: 100%;
+}
+
+.canvas-agent-context-copy {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-agent-connection {
+  display: inline-flex;
+  min-width: max-content;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+
+.canvas-agent-connection-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.canvas-agent-connection.is-attached {
+  color: var(--success, #4d9f74);
+
+  .canvas-agent-connection-dot {
+    background: currentColor;
+  }
+}
+
+.canvas-agent-connection.is-attaching .canvas-agent-connection-dot {
+  background: var(--primary);
+  animation: canvas-agent-connection-pulse 1.2s ease-in-out infinite;
+}
+
+.canvas-agent-connection.is-error {
+  color: var(--danger);
+
+  .canvas-agent-connection-dot {
+    background: currentColor;
+  }
+}
+
+.canvas-agent-connection-retry {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@keyframes canvas-agent-connection-pulse {
+  0%,
+  100% {
+    opacity: 0.38;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-agent-connection.is-attaching .canvas-agent-connection-dot {
+    animation: none;
+  }
 }
 
 .canvas-agent-resize-handle {

@@ -10,6 +10,7 @@ import type {
   ShotScriptConfig,
 } from './canvas.types'
 import { buildChapterToScreenplayInstruction } from './canvasWorkspaceFilm'
+import { SCENE_NO_PEOPLE_PROMPT } from './canvasScenePrompt'
 
 export type CanvasPipelineOperationDraft = {
   operation: CanvasOperationType
@@ -129,7 +130,13 @@ export function buildCanvasPipelineOperationDraft(
       return {
         operation: 'text_to_image',
         title: '生成角色身份板',
-        systemPrompt: `请根据以下角色设定生成专业角色身份板，包含头部和全身多视角，保持身份、服装和五官一致。\n\n${input.sourceText}`,
+        systemPrompt: [
+          '请根据以下角色设定生成专业角色身份板，包含头部和全身多视角，保持身份、服装和五官一致。',
+          input.sourceText,
+          input.styleBible ? `视觉总设定：\n${input.styleBible}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
         message: '确认 Prompt、Agent 与模型后点击开始任务',
         taskPipelineRole: 'design_card',
         outputPipelineRole: 'design_card',
@@ -146,7 +153,10 @@ export function buildCanvasPipelineOperationDraft(
             : input.actionId === 'prop.prop_image'
               ? '生成道具图'
               : '生成特效图',
-        systemPrompt: input.sourceText,
+        systemPrompt:
+          input.actionId === 'scene.scene_image'
+            ? `${SCENE_NO_PEOPLE_PROMPT}\n\n${input.sourceText}`
+            : input.sourceText,
         message: '确认 Prompt、Agent 与模型后点击开始任务',
         taskPipelineRole: 'design_card',
         outputPipelineRole: 'design_card',

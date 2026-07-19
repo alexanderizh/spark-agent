@@ -61,13 +61,13 @@ import {
   fitShotScriptOperationNodeSize,
 } from './canvasNodeSize'
 import { readRenderableShotScriptRows } from './canvasShotScriptPresentation'
-import { CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
+import { CANVAS_PIPELINE_MENU_GROUPS, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import { getNodePipelineActions } from './canvasPipeline'
 import {
+  CANVAS_BASE_CREATE_OPERATION_GROUPS,
   CANVAS_BASE_TASK_MENU_LABEL,
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
   CANVAS_FUNCTIONAL_MENU_LABEL,
-  canvasBaseCreateOperations,
 } from './canvasNodeGenerationMenu'
 import { getOperationVisual } from './canvasOperationIcons'
 import { readCharacterSubviews } from './canvasCharacterLibrary'
@@ -85,6 +85,7 @@ import {
 import { buildCanvasOperationProjection } from './canvasOperationProjection'
 import {
   calculateCanvasContextMenuPosition,
+  CANVAS_CONTEXT_MENU_STAGE_INSETS,
   shouldOpenCanvasSelectionContextMenu,
   summarizeCanvasSelectionContext,
 } from './canvasContextMenuModel'
@@ -93,6 +94,7 @@ import {
   type PendingCanvasConnection,
 } from './canvasPendingConnection'
 import { shouldClearCanvasSelectionOnEscape } from './canvasSelectionKeyboard'
+import { findSelectedCanvasNodeScrollRegion } from './canvasWheelInteraction'
 import type {
   CanvasEdge,
   CanvasNode as SparkCanvasNode,
@@ -199,6 +201,7 @@ function CanvasPaneContextSubmenu({
     left: number
     top: number
     maxHeight: number
+    maxWidth: number
   } | null>(null)
 
   const cancelClose = useCallback(() => {
@@ -232,31 +235,37 @@ function CanvasPaneContextSubmenu({
     const updatePosition = () => {
       const triggerRect = trigger.getBoundingClientRect()
       const stageRect = stage.getBoundingClientRect()
-      const inset = 8
-      const maxHeight = Math.max(0, Math.min(440, stageRect.height - inset * 2))
-      const panelWidth = panel.offsetWidth
+      const safeTop = stageRect.top + CANVAS_CONTEXT_MENU_STAGE_INSETS.top
+      const safeRight = stageRect.right - CANVAS_CONTEXT_MENU_STAGE_INSETS.right
+      const safeBottom = stageRect.bottom - CANVAS_CONTEXT_MENU_STAGE_INSETS.bottom
+      const safeLeft = stageRect.left + CANVAS_CONTEXT_MENU_STAGE_INSETS.left
+      const maxHeight = Math.max(0, Math.min(440, safeBottom - safeTop))
+      const maxWidth = Math.max(0, safeRight - safeLeft)
+      const panelWidth = Math.min(panel.offsetWidth, maxWidth)
       const panelHeight = Math.min(panel.scrollHeight, maxHeight)
       const preferredLeft = openLeft ? triggerRect.left - panelWidth + 4 : triggerRect.right - 4
       const preferredTop = openUp ? triggerRect.bottom - panelHeight : triggerRect.top
-      const left = Math.min(
-        Math.max(preferredLeft, stageRect.left + inset),
-        stageRect.right - panelWidth - inset,
-      )
-      const top = Math.min(
-        Math.max(preferredTop, stageRect.top + inset),
-        stageRect.bottom - panelHeight - inset,
-      )
+      const left = Math.min(Math.max(preferredLeft, safeLeft), safeRight - panelWidth)
+      const top = Math.min(Math.max(preferredTop, safeTop), safeBottom - panelHeight)
       setPosition((current) =>
-        current?.left === left && current.top === top && current.maxHeight === maxHeight
+        current?.left === left &&
+        current.top === top &&
+        current.maxHeight === maxHeight &&
+        current.maxWidth === maxWidth
           ? current
-          : { left, top, maxHeight },
+          : { left, top, maxHeight, maxWidth },
       )
     }
 
     updatePosition()
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition)
+    resizeObserver?.observe(stage)
+    resizeObserver?.observe(panel)
     window.addEventListener('resize', updatePosition)
     window.addEventListener('scroll', updatePosition, true)
     return () => {
+      resizeObserver?.disconnect()
       window.removeEventListener('resize', updatePosition)
       window.removeEventListener('scroll', updatePosition, true)
     }
@@ -297,6 +306,7 @@ function CanvasPaneContextSubmenu({
               left: position?.left ?? 0,
               top: position?.top ?? 0,
               maxHeight: position?.maxHeight,
+              maxWidth: position?.maxWidth,
               visibility: position ? 'visible' : 'hidden',
             }}
             onMouseEnter={cancelClose}
@@ -596,16 +606,7 @@ function isCanvasZoomWheelEvent(event: WheelEvent): boolean {
 
 function canvasNodeWheelBoundary(event: WheelEvent): HTMLElement | null {
   if (isCanvasZoomWheelEvent(event)) return null
-  const target = event.target
-  if (!(target instanceof Element)) return null
-  const element = target.closest<HTMLElement>(
-    '.canvas-node-text, .canvas-node-task-msg, .canvas-node-shot-table-wrap, .canvas-node-inline-panel',
-  )
-  if (!element) return null
-
-  const canScrollY = element.scrollHeight - element.clientHeight > 1
-  const canScrollX = element.scrollWidth - element.clientWidth > 1
-  return canScrollY || canScrollX ? element : null
+  return findSelectedCanvasNodeScrollRegion(event.target)
 }
 
 function CanvasStageInner({
@@ -942,6 +943,7 @@ function CanvasStageInner({
   const dragDepthRef = useRef(0)
   const stageRef = useRef<HTMLDivElement>(null)
   const paneContextMenuRef = useRef<HTMLDivElement>(null)
+  const edgeContextMenuRef = useRef<HTMLDivElement>(null)
   const flowInstanceRef = useRef<ReactFlowInstance<Node<CanvasFlowNodeData>, Edge> | null>(null)
   const flowNodesRef = useRef(flowNodes)
   const latestViewportRef = useRef<Viewport>(boardViewport)
@@ -979,6 +981,8 @@ function CanvasStageInner({
     edgeId: string
     left: number
     top: number
+    maxHeight: number
+    anchorPoint: CanvasStagePoint
   } | null>(null)
   /**
    * 牵线到空白处时，菜单应以连线起点节点为上下文展示后续流水线操作。
@@ -1000,6 +1004,14 @@ function CanvasStageInner({
       assetKinds: assetKindsByNodeId.get(sourceNode.id) ?? [],
     })
   }, [assetKindsByNodeId, paneContextMenu, snapshot, snapshotNodeById])
+  const panePipelineOperationGroups = useMemo(
+    () =>
+      CANVAS_PIPELINE_MENU_GROUPS.map((group) => ({
+        ...group,
+        actions: panePipelineOperations.filter((action) => action.kind === group.id),
+      })).filter((group) => group.actions.length > 0),
+    [panePipelineOperations],
+  )
   const edges = useMemo(
     () =>
       operationProjection.visibleEdges
@@ -1416,6 +1428,7 @@ function CanvasStageInner({
         container: { width: rect.width, height: rect.height },
         menu: { width: 280, height: 520 },
         submenu: { width: 300 },
+        inset: CANVAS_CONTEXT_MENU_STAGE_INSETS,
       })
 
       // 画布菜单与连线菜单共享同一交互层，任何时刻只保留一个右键菜单。
@@ -1451,6 +1464,7 @@ function CanvasStageInner({
         container: { width: rect.width, height: rect.height },
         menu: { width: menu.offsetWidth, height: menu.scrollHeight },
         submenu: { width: 300 },
+        inset: CANVAS_CONTEXT_MENU_STAGE_INSETS,
       })
       setPaneContextMenu((current) => {
         if (!current) return current
@@ -1985,14 +1999,70 @@ function CanvasStageInner({
     if (!rect) return
     event.preventDefault()
     event.stopPropagation()
+    const anchorPoint = {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    }
+    const menuPosition = calculateCanvasContextMenuPosition({
+      point: anchorPoint,
+      container: { width: rect.width, height: rect.height },
+      menu: { width: 160, height: 56 },
+      inset: CANVAS_CONTEXT_MENU_STAGE_INSETS,
+    })
     setPaneContextMenu(null)
     setSelectedEdgeIds([edge.id])
     setEdgeContextMenu({
       edgeId: edge.id,
-      left: event.clientX - rect.left,
-      top: event.clientY - rect.top,
+      left: menuPosition.left,
+      top: menuPosition.top,
+      maxHeight: menuPosition.maxHeight,
+      anchorPoint,
     })
   }, [])
+
+  useLayoutEffect(() => {
+    const menu = edgeContextMenuRef.current
+    const stage = stageRef.current
+    const anchorPoint = edgeContextMenu?.anchorPoint
+    if (!menu || !stage || !anchorPoint) return undefined
+
+    const updatePosition = () => {
+      const rect = stage.getBoundingClientRect()
+      const menuPosition = calculateCanvasContextMenuPosition({
+        point: anchorPoint,
+        container: { width: rect.width, height: rect.height },
+        menu: { width: menu.offsetWidth, height: menu.scrollHeight },
+        inset: CANVAS_CONTEXT_MENU_STAGE_INSETS,
+      })
+      setEdgeContextMenu((current) => {
+        if (!current) return current
+        if (
+          current.left === menuPosition.left &&
+          current.top === menuPosition.top &&
+          current.maxHeight === menuPosition.maxHeight
+        ) {
+          return current
+        }
+        return {
+          ...current,
+          left: menuPosition.left,
+          top: menuPosition.top,
+          maxHeight: menuPosition.maxHeight,
+        }
+      })
+    }
+
+    updatePosition()
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition)
+    resizeObserver?.observe(stage)
+    resizeObserver?.observe(menu)
+    window.addEventListener('resize', updatePosition)
+    return () => {
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [edgeContextMenu?.anchorPoint])
 
   const handleNodeClick = useCallback(
     (event: ReactMouseEvent, node: Node<CanvasFlowNodeData>) => {
@@ -2283,8 +2353,13 @@ function CanvasStageInner({
         )}
         {edgeContextMenu && (
           <div
+            ref={edgeContextMenuRef}
             className="canvas-edge-context-menu"
-            style={{ left: edgeContextMenu.left, top: edgeContextMenu.top }}
+            style={{
+              left: edgeContextMenu.left,
+              top: edgeContextMenu.top,
+              maxHeight: edgeContextMenu.maxHeight,
+            }}
             role="menu"
             onMouseDown={(event) => event.stopPropagation()}
             onContextMenu={(event) => event.preventDefault()}
@@ -2525,17 +2600,23 @@ function CanvasStageInner({
                   onInsertAsset={onInsertAssetFromPane ? handleInsertAssetFromPane : undefined}
                 />
                 <div className="canvas-pane-context-divider" />
-                {panePipelineOperations.map((op) => (
-                  <button
-                    key={op.id}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => handleCreatePipelineFromPane(op.id)}
-                  >
-                    <Icons.Workflow size={14} />
-                    <span>{op.label}</span>
-                  </button>
+                {panePipelineOperationGroups.map((group) => (
+                  <div key={group.id} className="canvas-pane-context-group">
+                    <div className="canvas-pane-context-section-title">{group.label}</div>
+                    {group.actions.map((op) => (
+                      <button
+                        key={op.id}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleCreatePipelineFromPane(op.id)}
+                      >
+                        <Icons.Workflow size={14} />
+                        <span>{op.label}</span>
+                      </button>
+                    ))}
+                  </div>
                 ))}
+                <div className="canvas-pane-context-section-title">通用视觉工具</div>
                 {CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => {
                   const visual = getOperationVisual(item.operation)
                   return (
@@ -2564,21 +2645,26 @@ function CanvasStageInner({
                   onAddText={handleAddTextFromPane}
                 />
                 <div className="canvas-pane-context-divider" />
-                {canvasBaseCreateOperations().map((item) => {
-                  const visual = getOperationVisual(item.operation)
-                  return (
-                    <button
-                      key={item.operation}
-                      type="button"
-                      role="menuitem"
-                      className={`canvas-pane-context-op ${visual.colorClass}`}
-                      onClick={() => handleCreateOperationFromPane(item.operation)}
-                    >
-                      <span className="canvas-pane-context-op-icon">{visual.icon}</span>
-                      <span>{item.label}</span>
-                    </button>
-                  )
-                })}
+                {CANVAS_BASE_CREATE_OPERATION_GROUPS.map((group) => (
+                  <div key={group.id} className="canvas-pane-context-group">
+                    <div className="canvas-pane-context-section-title">{group.label}</div>
+                    {group.items.map((item) => {
+                      const visual = getOperationVisual(item.operation)
+                      return (
+                        <button
+                          key={item.operation}
+                          type="button"
+                          role="menuitem"
+                          className={`canvas-pane-context-op ${visual.colorClass}`}
+                          onClick={() => handleCreateOperationFromPane(item.operation)}
+                        >
+                          <span className="canvas-pane-context-op-icon">{visual.icon}</span>
+                          <span>{item.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ))}
               </CanvasPaneContextSubmenu>
             )}
             <div className="canvas-pane-context-divider" />

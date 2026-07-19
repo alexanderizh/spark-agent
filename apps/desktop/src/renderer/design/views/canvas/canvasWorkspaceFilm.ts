@@ -2,6 +2,7 @@ import { readAssetKind, readReferences, type ShotGroup, type ShotSegment } from 
 import { readStylePresets } from './canvasPipeline'
 import type { CharacterPromptFields } from './canvasCharacterSheetPrompts'
 import type { CanvasAsset } from './canvas.types'
+import { SCENE_NO_PEOPLE_PROMPT } from './canvasScenePrompt'
 
 export type ScriptBreakdownDraft = {
   characters: Array<{ name: string; description: string }>
@@ -283,7 +284,7 @@ export function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: s
   // 只喂结构化视觉要点 + 截断后的设定摘要，避免把整章/整段原文丢给模型
   const detailDirective =
     kind === 'scene'
-      ? '输出一张大画幅「场景概念设计板」：以低机位广角建立镜头呈现完整空间，明确前景/中景/背景的纵深层次与遮挡关系；标注主光源位置、光影走向、整体色调与色温；体现关键陈设、标志物与材质质感（墙面/地面/家具的材料及新旧磨损）；再补充 2-3 个细节插图（入口出口、标志物特写、材质特写）并配简短文字标签；保证空间布局可被后续镜头复用的一致性。'
+      ? `${SCENE_NO_PEOPLE_PROMPT} 输出一张大画幅「场景概念设计板」：以低机位广角建立镜头呈现完整空间，明确前景/中景/背景的纵深层次与遮挡关系；标注主光源位置、光影走向、整体色调与色温；体现关键陈设、标志物与材质质感（墙面/地面/家具的材料及新旧磨损）；再补充 2-3 个细节插图（入口出口、标志物特写、材质特写）并配简短文字标签；保证空间布局可被后续镜头复用的一致性。`
       : kind === 'prop'
         ? '输出一张「道具设定板」：正面/侧面/背面与 3/4 视角并列，附手持或参照物比例；材质、工艺与磨损特写；功能结构拆解与可动部件；颜色、纹理、编号或机关等细节标注；附 1-2 个使用场景小图；强调可被后续分镜复用的一致性锚点。'
         : kind === 'effect'

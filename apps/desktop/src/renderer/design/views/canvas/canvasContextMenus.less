@@ -1,0 +1,66 @@
+// 无限画布浮层统一遵守可视区边界：主菜单按右键锚点动态计算可用高度，子菜单再用
+// 视口上限兜底。菜单项过多时只滚动菜单本身，不穿过底部 dock，也不带动画布。
+.canvas-node-context-menu.ant-dropdown-menu,
+.ant-dropdown .canvas-node-context-menu.ant-dropdown-menu,
+.ant-dropdown-menu-submenu-popup .canvas-node-context-menu.ant-dropdown-menu,
+.canvas-node-context-submenu-popup .ant-dropdown-menu {
+  min-width: min(142px, calc(100dvw - 16px));
+  max-width: calc(100dvw - 16px);
+  max-height: min(520px, calc(100dvh - 96px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.canvas-node-context-submenu-popup .ant-dropdown-menu {
+  max-height: min(440px, calc(100dvh - 96px));
+}
+
+.canvas-pane-context-menu,
+.canvas-pane-context-submenu-panel,
+.canvas-context-submenu-panel,
+.canvas-edge-context-menu {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.canvas-pane-context-menu {
+  min-width: min(220px, calc(100dvw - 16px));
+  max-width: min(280px, calc(100% - 16px));
+}
+
+.canvas-pane-context-menu button.canvas-menu-item-danger {
+  color: var(--danger);
+}
+
+.canvas-pane-context-menu button.canvas-menu-item-danger:hover,
+.canvas-pane-context-menu button.canvas-menu-item-danger:focus-visible {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.canvas-pane-context-submenu-panel {
+  min-width: min(220px, calc(100dvw - 16px));
+  max-width: min(300px, calc(100dvw - 16px));
+  max-height: min(440px, calc(100dvh - 96px));
+}
+
+.canvas-context-menu {
+  min-width: min(180px, calc(100dvw - 24px));
+  max-width: calc(100dvw - 24px);
+  max-height: calc(100dvh - 96px);
+}
+
+.canvas-context-submenu-panel {
+  min-width: min(180px, calc(100dvw - 16px));
+  max-width: min(280px, calc(100dvw - 16px));
+  max-height: min(440px, calc(100dvh - 96px));
+}
+
+.canvas-edge-context-menu {
+  min-width: min(128px, calc(100% - 16px));
+  max-width: calc(100% - 16px);
+  overflow-x: hidden;
+}

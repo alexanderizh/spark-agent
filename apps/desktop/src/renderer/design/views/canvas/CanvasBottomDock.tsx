@@ -220,6 +220,7 @@ export function CanvasBottomDock({
               size="middle"
               type={gridVisible ? 'primary' : 'text'}
               icon={<Icons.Grid size={15} />}
+              aria-label={gridVisible ? '隐藏网格' : '显示网格'}
               onClick={onToggleGrid}
             />
           </Tooltip>

@@ -35,6 +35,12 @@ type JSONSchema = Record<string, unknown>
 
 /** 画布工作区 actions 的形状（与 useCanvasWorkspace 返回值匹配） */
 export type CanvasWorkspaceActions = {
+  /** 为 Agent 轮次记录可恢复的完整画布快照。 */
+  createCanvasHistoryCheckpoint: () => string | null
+  /** 还原到指定 Agent 轮次开始前的画布快照。 */
+  restoreCanvasHistoryCheckpoint: (checkpointId: string) => Promise<void>
+  /** 检查快照是否仍在内存保留窗口中。 */
+  hasCanvasHistoryCheckpoint: (checkpointId: string) => boolean
   createTextNode: (input: { text: string; x: number; y: number }) => Promise<CanvasNode | undefined>
   createImageNode: (input: {
     file: File

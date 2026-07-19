@@ -1594,6 +1594,26 @@ describe('MediaRouterService', () => {
     expect(uploads).toEqual([{ targetProvider: 'apimart', size: 3 * 1024 * 1024 + 1, mimeType: 'image/png' }])
   })
 
+  it('APIMart image.edit reports auth_required when an oversized image cannot be uploaded', async () => {
+    const oversizedDataUrl = `data:image/png;base64,${Buffer.alloc(3 * 1024 * 1024 + 1, 7).toString('base64')}`
+
+    await expect(
+      router.invoke(
+        {
+          operation: 'image_edit',
+          capability: 'image.edit',
+          outputDir: tmpDir,
+          prompt: 'use this reference image',
+          inputFiles: [{ type: 'image', dataUrl: oversizedDataUrl }],
+        },
+        { providers: [makeProvider()] },
+      ),
+    ).rejects.toMatchObject({
+      code: 'auth_required',
+      message: expect.stringContaining('需要先登录 Spark'),
+    })
+  })
+
   it('xAI does not support audio.transcription', () => {
     const xai = new XaiMediaAdapter()
     expect(xai.supports('audio.transcription')).toBe(false)

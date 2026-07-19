@@ -13,9 +13,12 @@ import './CanvasOperationOutputPreview.less'
 export function CanvasOperationOutputPreview({
   output,
   variant = 'card',
+  isolateWheel = true,
 }: {
   output: CanvasOperationOutputView
   variant?: 'card' | 'detail'
+  /** 位于未选中的画布节点中时关闭，让滚轮继续交给画布。 */
+  isolateWheel?: boolean
 }) {
   const normalizedUrl = output.url ? normalizeEduAssetUrl(output.url) : ''
   const normalizedThumbnail = output.thumbnailUrl
@@ -61,20 +64,24 @@ export function CanvasOperationOutputPreview({
   if (textPresentation?.kind === 'storyboard') {
     return (
       <div className={`canvas-operation-output-storyboard is-${variant}`}>
-        <CanvasShotScriptTable rows={textPresentation.rows} />
+        <CanvasShotScriptTable rows={textPresentation.rows} isolateWheel={isolateWheel} />
       </div>
     )
   }
   if (textPresentation?.kind === 'json') {
     return (
-      <pre className={`canvas-operation-output-json is-${variant} nowheel`}>
+      <pre
+        className={`canvas-operation-output-json is-${variant}${isolateWheel ? ' nowheel' : ''}`}
+      >
         {textPresentation.text}
       </pre>
     )
   }
   if (textPresentation?.kind === 'text') {
     return (
-      <div className={`canvas-operation-output-text is-${variant} nowheel`}>
+      <div
+        className={`canvas-operation-output-text is-${variant}${isolateWheel ? ' nowheel' : ''}`}
+      >
         {output.pipelineRole === 'character' ? (
           <Icons.User size={variant === 'detail' ? 26 : 20} />
         ) : output.pipelineRole === 'scene' ? (
@@ -133,12 +140,19 @@ function CollectionOutputIcon({ output }: { output: CanvasOperationOutputView })
 }
 
 /** 集合型任务的节点内列表投影；只消费现有 outputs，不改变持久化数据格式。 */
-export function CanvasOperationOutputList({ outputs }: { outputs: CanvasOperationOutputView[] }) {
+export function CanvasOperationOutputList({
+  outputs,
+  isolateWheel = true,
+}: {
+  outputs: CanvasOperationOutputView[]
+  /** 位于未选中的画布节点中时关闭，让滚轮继续交给画布。 */
+  isolateWheel?: boolean
+}) {
   const commonRole = outputs[0] ? outputRoleLabel(outputs[0]) : '产物'
   const sameRole = outputs.every((output) => outputRoleLabel(output) === commonRole)
 
   return (
-    <div className="canvas-operation-output-list nowheel">
+    <div className={`canvas-operation-output-list${isolateWheel ? ' nowheel' : ''}`}>
       <div className="canvas-operation-output-list-heading">
         <span>提取结果</span>
         <strong>{sameRole ? `${outputs.length} 个${commonRole}` : `${outputs.length} 项`}</strong>

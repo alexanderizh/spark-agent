@@ -14,6 +14,20 @@ export interface CanvasAgentModelSelection {
   adapter: SessionAgentAdapter
 }
 
+export function isCanvasAgentConversationProvider(provider: ProviderProfile): boolean {
+  return (
+    provider.modelType !== 'image' &&
+    provider.modelType !== 'voice' &&
+    provider.modelType !== 'video'
+  )
+}
+
+export function filterCanvasAgentConversationProviders(
+  providers: ProviderProfile[],
+): ProviderProfile[] {
+  return providers.filter(isCanvasAgentConversationProvider)
+}
+
 export function getCanvasAgentProviderModels(provider: ProviderProfile | undefined): string[] {
   if (provider == null) return []
   return Array.from(
@@ -34,7 +48,7 @@ export function getCanvasAgentProviderModels(provider: ProviderProfile | undefin
 export function buildCanvasAgentModelOptions(
   providers: ProviderProfile[],
 ): CanvasAgentModelGroup[] {
-  return providers
+  return filterCanvasAgentConversationProviders(providers)
     .map((provider) => ({
       provider,
       adapter: getProviderAdapterKind(provider),

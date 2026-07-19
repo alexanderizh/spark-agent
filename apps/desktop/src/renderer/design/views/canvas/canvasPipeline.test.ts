@@ -55,11 +55,23 @@ describe('canvasPipeline', () => {
 
     it('节点关联同类型资产时可放宽到对应出图任务', () => {
       expect(
-        getNodePipelineActions(
-          { type: 'image' },
-          { assetKinds: ['scene'] },
-        ).map((action) => action.id),
+        getNodePipelineActions({ type: 'image' }, { assetKinds: ['scene'] }).map(
+          (action) => action.id,
+        ),
       ).toEqual(['scene.scene_image'])
+    })
+
+    it('分镜脚本等功能文本节点仍保留完整标准文本能力', () => {
+      const actions = getNodePipelineActions({
+        type: 'text',
+        data: {
+          text: ['| 镜号 | 画面 |', '| --- | --- |', '| 1 | 夜景 |', '| 2 | 近景 |'].join('\n'),
+        },
+      })
+
+      expect(actions.map((action) => action.id)).toContain('screenplay.extract_characters')
+      expect(actions.map((action) => action.id)).toContain('character.three_view')
+      expect(actions.every((action) => Boolean(action.kind))).toBe(true)
     })
   })
 

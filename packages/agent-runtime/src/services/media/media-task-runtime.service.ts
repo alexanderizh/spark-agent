@@ -21,6 +21,7 @@ import type {
   MediaGenerateInput,
   MediaGenerateOutput,
 } from './media-adapter.types.js'
+import type { MediaUploader } from './media-uploader.js'
 import { MediaRouterService } from './media-router.service.js'
 import type { InvokeOptions, MediaProviderProfile } from './media-router.service.js'
 
@@ -64,6 +65,7 @@ export interface MediaTaskSubmitOptions {
   extraParams?: Record<string, unknown>
   fetch?: typeof fetch
   skipValidation?: boolean
+  fallbackUploader?: MediaUploader
 }
 
 export interface MediaTaskRouterLike {
@@ -153,6 +155,9 @@ export class MediaTaskRuntimeService {
         ...(options.extraParams !== undefined ? { extraParams: options.extraParams } : {}),
         ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
         ...(options.skipValidation === true ? { skipValidation: true } : {}),
+        ...(options.fallbackUploader !== undefined
+          ? { fallbackUploader: options.fallbackUploader }
+          : {}),
         onTaskSubmitted: (nextSubmission) => {
           submitResponse = nextSubmission.response
           const submitted = this.repo.update(row.id, {

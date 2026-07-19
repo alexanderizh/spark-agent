@@ -186,7 +186,7 @@ async function uploadApimartImage(
 ): Promise<string> {
   if (!ctx.fallbackUploader?.canHandle('apimart')) {
     throw new MediaProviderError(
-      'provider_not_configured',
+      'auth_required',
       'APIMart 图片超过 3 MiB 或来自本地文件，需要先登录 Spark 以获取公开图片 URL',
     )
   }

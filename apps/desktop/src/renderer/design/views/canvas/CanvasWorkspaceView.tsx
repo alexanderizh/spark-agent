@@ -83,6 +83,7 @@ import {
   type WorkbenchKeyframe,
 } from './videoWorkbench/videoWorkbench.types'
 import { isCanvasImageContentNode, isOperationNode } from './canvas.capabilities'
+import { SCENE_NO_PEOPLE_PROMPT } from './canvasScenePrompt'
 import {
   readAssetKind,
   readFilmData,
@@ -118,17 +119,22 @@ import {
   updateStoryboardCameraParams,
 } from './canvasTextInputPresentation'
 import { resolveStoryboardSplitSourceNode, splitStoryboardNode } from './canvasStoryboardNodeSplit'
-import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
+import {
+  buildOpPrompt,
+  CANVAS_PIPELINE_MENU_GROUPS,
+  CANVAS_PIPELINE_OPS,
+} from './canvasPipelineOps'
 import {
   planCanvasPipelineTaskPositions,
   resolveCanvasPipelineAssetTargets,
   type CanvasPipelineAssetTarget,
 } from './canvasPipelineActionBatch'
+import { buildCanvasPipelineOperationDraft } from './canvasPipelineActionContracts'
 import {
+  CANVAS_BASE_CREATE_OPERATION_GROUPS,
   CANVAS_BASE_TASK_MENU_LABEL,
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
   CANVAS_FUNCTIONAL_MENU_LABEL,
-  canvasBaseCreateOperations,
 } from './canvasNodeGenerationMenu'
 import {
   buildEntityExtractionPrompt,
@@ -1422,7 +1428,7 @@ function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string):
   // 只喂结构化视觉要点 + 截断后的设定摘要，避免把整章/整段原文丢给模型
   const detailDirective =
     kind === 'scene'
-      ? '输出一张大画幅「场景概念设计板」：以低机位广角建立镜头呈现完整空间，明确前景/中景/背景的纵深层次与遮挡关系；标注主光源位置、光影走向、整体色调与色温；体现关键陈设、标志物与材质质感（墙面/地面/家具的材料及新旧磨损）；再补充 2-3 个细节插图（入口出口、标志物特写、材质特写）并配简短文字标签；保证空间布局可被后续镜头复用的一致性。'
+      ? `${SCENE_NO_PEOPLE_PROMPT} 输出一张大画幅「场景概念设计板」：以低机位广角建立镜头呈现完整空间，明确前景/中景/背景的纵深层次与遮挡关系；标注主光源位置、光影走向、整体色调与色温；体现关键陈设、标志物与材质质感（墙面/地面/家具的材料及新旧磨损）；再补充 2-3 个细节插图（入口出口、标志物特写、材质特写）并配简短文字标签；保证空间布局可被后续镜头复用的一致性。`
       : kind === 'prop'
         ? '输出一张「道具设定板」：正面/侧面/背面与 3/4 视角并列，附手持或参照物比例；材质、工艺与磨损特写；功能结构拆解与可动部件；颜色、纹理、编号或机关等细节标注；附 1-2 个使用场景小图；强调可被后续分镜复用的一致性锚点。'
         : kind === 'effect'
@@ -1691,6 +1697,9 @@ export function CanvasWorkspaceView({
     snapshot,
     loading,
     canUndo,
+    createCanvasHistoryCheckpoint,
+    restoreCanvasHistoryCheckpoint,
+    hasCanvasHistoryCheckpoint,
     canRedo,
     undoCanvasChange,
     redoCanvasChange,
@@ -5623,9 +5632,43 @@ export function CanvasWorkspaceView({
         // 右键菜单入口：创建并选中操作节点，由用户双击或右键“编辑节点”打开配置
         // （不直接触发任务，与「生成分镜脚本 / 提取角色」等专用流水线行为保持一致）
         // 资产中心按钮入口仍走 handleGenerateCharacterSheets 直接发起任务。
-        const targets = requireAssetTargets('角色')
-        if (targets.length === 0) break
         const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
+        const targets = resolveCanvasPipelineAssetTargets({ sourceNode: node, actionId, snapshot })
+        if (targets.length === 0) {
+          // 普通文本/功能文本没有角色资产时，仍可直接把当前文本作为角色设定创建身份板任务。
+          // 后续若先执行“提取角色”，同一入口会自动切换为按角色资产批量创建。
+          const [position] = planCanvasPipelineTaskPositions({
+            sourceNode: textSourceNode,
+            count: 1,
+            existingNodes: snapshot.nodes,
+          })
+          if (!position) break
+          const draft = buildCanvasPipelineOperationDraft({
+            actionId,
+            sourceText,
+            ...(styleBible ? { styleBible } : {}),
+          })
+          const created = await createConfiguredOperationNode({
+            sourceNode: textSourceNode,
+            position,
+            operation: draft.operation,
+            title: draft.title,
+            prompt: draft.systemPrompt,
+            nodeMessage: draft.message,
+            ...(draft.modelParams ? { modelParams: draft.modelParams } : {}),
+            ...(draft.taskPipelineRole ? { taskPipelineRole: draft.taskPipelineRole } : {}),
+            ...(draft.outputPipelineRole ? { outputPipelineRole: draft.outputPipelineRole } : {}),
+            outputTitle: textSourceNode.title?.trim() || '角色身份板',
+            selectCreated: false,
+            announce: false,
+          })
+          if (created) {
+            setSelectedNodeIds([created.id])
+            requestAnimationFrame(() => canvasViewportControlsRef.current?.focusNodes([created.id]))
+            message.success('已创建并连接角色身份板生图节点')
+          }
+          break
+        }
         await createAssetTaskBatch(targets, ({ sourceNode, asset: targetAsset }, position) =>
           createConfiguredOperationNode({
             sourceNode,
@@ -7730,8 +7773,27 @@ export function CanvasWorkspaceView({
               setAgentNodeRefs((prev) => prev.filter((node) => node.id !== nodeId))
             }
             onClearNodeRefs={() => setAgentNodeRefs([])}
+            onFocusNode={(nodeId) => {
+              const node = snapshot.nodes.find((item) => item.id === nodeId)
+              if (!node) {
+                message.warning('未找到对应的画布节点')
+                return
+              }
+              setSelectedNodeIds([nodeId])
+              window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(() => {
+                  canvasViewportControlsRef.current?.focusNodes([nodeId], {
+                    preferredWidth: 520,
+                    maxZoom: 1.08,
+                  })
+                })
+              })
+            }}
             onWideModeChange={handleAgentWideMode}
             workspace={{
+              createCanvasHistoryCheckpoint,
+              restoreCanvasHistoryCheckpoint,
+              hasCanvasHistoryCheckpoint,
               createTextNode,
               createImageNode,
               uploadImageAsset,
@@ -8593,7 +8655,10 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
         ]
       : []),
   ]
-  const baseTaskOperations = canvasBaseCreateOperations()
+  const pipelineActionGroups = CANVAS_PIPELINE_MENU_GROUPS.map((group) => ({
+    ...group,
+    actions: pipelineActions.filter((action) => action.kind === group.id),
+  })).filter((group) => group.actions.length > 0)
   const menuButton = (
     label: string,
     icon: React.ReactNode,
@@ -8616,12 +8681,17 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
     <div className="canvas-floating-menu">
       <div className="canvas-floating-menu-title">{CANVAS_BASE_TASK_MENU_LABEL}</div>
       {menuButton('打开 AI 面板', <Icons.Sparkles size={14} />, onOpenInlineAi)}
-      {baseTaskOperations.length > 0 && <div className="canvas-floating-menu-divider" />}
-      {baseTaskOperations.map((item) => (
-        <div key={item.operation}>
-          {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
-            onCreateOperationChild(item.operation),
-          )}
+      <div className="canvas-floating-menu-divider" />
+      {CANVAS_BASE_CREATE_OPERATION_GROUPS.map((group) => (
+        <div key={group.id} className="canvas-floating-menu-section">
+          <div className="canvas-floating-menu-section-title">{group.label}</div>
+          {group.items.map((item) => (
+            <div key={item.operation}>
+              {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
+                onCreateOperationChild(item.operation),
+              )}
+            </div>
+          ))}
         </div>
       ))}
     </div>
@@ -8653,7 +8723,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           聚焦
         </Button>
       </Tooltip>
-      {!isGroup && !isOperation && (
+      {!isGroup && hasResource && (
         <Popover
           trigger="hover"
           mouseEnterDelay={0.08}
@@ -8668,7 +8738,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           </Button>
         </Popover>
       )}
-      {!isGroup && !isOperation && (
+      {!isGroup && hasResource && (
         <Popover
           trigger="hover"
           mouseEnterDelay={0.08}
@@ -8677,15 +8747,19 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           content={
             <div className="canvas-floating-menu">
               <div className="canvas-floating-menu-title">{CANVAS_FUNCTIONAL_MENU_LABEL}</div>
-              {pipelineActions.length > 0 &&
-                pipelineActions.map((action) => (
-                  <div key={action.id}>
-                    {menuButton(action.label, resolveCanvasFloatingIcon(action.icon, 14), () =>
-                      onPipelineAction(action.id),
-                    )}
-                  </div>
-                ))}
-              {pipelineActions.length > 0 && <div className="canvas-floating-menu-divider" />}
+              {pipelineActionGroups.map((group) => (
+                <div key={group.id} className="canvas-floating-menu-section">
+                  <div className="canvas-floating-menu-section-title">{group.label}</div>
+                  {group.actions.map((action) => (
+                    <div key={action.id}>
+                      {menuButton(action.label, resolveCanvasFloatingIcon(action.icon, 14), () =>
+                        onPipelineAction(action.id),
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {pipelineActionGroups.length > 0 && <div className="canvas-floating-menu-divider" />}
               {contextualAiActions.map((action) => (
                 <div key={action.key}>{menuButton(action.label, action.icon, action.onClick)}</div>
               ))}
@@ -8712,7 +8786,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
           </Button>
         </Popover>
       )}
-      {!isOperation && (
+      {hasResource && (
         <Popover
           trigger="hover"
           mouseEnterDelay={0.08}

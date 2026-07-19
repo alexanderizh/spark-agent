@@ -22,12 +22,19 @@ function ShotDetailStack({ items }: { items: ShotDetail[] }) {
 }
 
 /** 分镜脚本产物的只读全字段表格，可复用于普通产物节点和操作节点内嵌产物。 */
-export function CanvasShotScriptTable({ rows }: { rows: ParsedShotRow[] }) {
+export function CanvasShotScriptTable({
+  rows,
+  isolateWheel = true,
+}: {
+  rows: ParsedShotRow[]
+  /** 位于未选中的画布节点中时关闭，让滚轮继续交给画布。 */
+  isolateWheel?: boolean
+}) {
   const totalSec = rows.reduce((sum, row) => sum + (row.durationSec ?? 0), 0)
   const hasDuration = rows.some((row) => row.durationSec != null)
 
   return (
-    <div className="canvas-node-shot-table-wrap nowheel">
+    <div className={`canvas-node-shot-table-wrap${isolateWheel ? ' nowheel' : ''}`}>
       <table className="canvas-node-shot-table">
         <colgroup>
           <col className="canvas-node-shot-col-idx" />

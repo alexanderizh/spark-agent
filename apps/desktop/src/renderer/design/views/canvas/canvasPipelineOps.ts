@@ -14,6 +14,16 @@ import { buildEntityExtractionPrompt, type ExtractEntityKind } from './canvasEnt
 /** op 类别：文本生成 / 实体抽取(一对多) / 图像生成 / 视频生成 */
 export type PipelineOpKind = 'text' | 'extract' | 'image' | 'video'
 
+export const CANVAS_PIPELINE_MENU_GROUPS: ReadonlyArray<{
+  id: PipelineOpKind
+  label: string
+}> = [
+  { id: 'text', label: '文本编排' },
+  { id: 'extract', label: '资产提取' },
+  { id: 'image', label: '视觉生成' },
+  { id: 'video', label: '视频生成' },
+]
+
 export type CanvasPipelineOp = {
   /** 稳定 id（UI 绑定 + dispatch + 测试） */
   id: string
@@ -125,6 +135,7 @@ export const CANVAS_PIPELINE_OPS: CanvasPipelineOp[] = [
     kind: 'image',
     produces: 'design_card',
     appliesTo: ['character'],
+    appliesToText: true,
     baseOperation: 'text_to_image',
   },
   {
@@ -198,7 +209,7 @@ export function getOpsForRole(role: CanvasPipelineRole | undefined): CanvasPipel
  * 某节点可执行的 op。
  * 文本/Prompt/组节点（chapter / screenplay / 普通文本 / 含文本的组）共享同一份「全量文本菜单」：
  * 合并「按角色匹配」与「appliesToText」两路，按 CANVAS_PIPELINE_OPS 原始顺序返回。
- * 这样章节、剧本、普通文本节点，以及包含文本的组节点，都能使用：转剧本 / 生成分镜脚本 / 提取角色 / 提取场景 / 生成分镜关键帧图；
+ * 这样章节、剧本、普通文本节点，以及包含文本的组节点，都能使用：转剧本 / 生成分镜脚本 / 提取角色 / 提取场景 / 生成分镜关键帧图 / 生成角色身份板；
  * 关联影视资产的其他节点还可按资产类型获得对应的角色/场景/道具/特效出图入口。
  */
 export function getOpsForNode(

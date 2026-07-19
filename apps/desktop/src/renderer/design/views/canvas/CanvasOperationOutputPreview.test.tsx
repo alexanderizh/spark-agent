@@ -46,4 +46,16 @@ describe('CanvasOperationOutputList', () => {
 
     expect(html).toContain('data-output-role="character"')
   })
+
+  it('未选中节点的产物列表不隔离滚轮', () => {
+    const html = renderToStaticMarkup(
+      <CanvasOperationOutputList
+        outputs={[characterOutput('character-1', '苏烬')]}
+        isolateWheel={false}
+      />,
+    )
+
+    expect(html).toContain('class="canvas-operation-output-list"')
+    expect(html).not.toContain('nowheel')
+  })
 })

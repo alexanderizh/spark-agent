@@ -24,6 +24,15 @@ import { RuntimeSignalCard } from '../views/chat/RuntimeSignalCard'
 import { CancellationNotice } from '../views/chat/CancellationNotice'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
+import { ChatPanelThinkingGroup } from './ChatPanelThinkingGroup'
+import { getChatPanelThinkingBlocks } from './chat-panel-thinking'
+import { ChatPanelToolActivity } from './ChatPanelToolActivity'
+import { getChatPanelToolBlocks, isCanvasMutationTool } from './chat-panel-tool-activity'
+import {
+  getChatPanelUserText,
+  groupChatPanelMessagesByTurn,
+  sanitizeCanvasUserMessage,
+} from './chat-panel-turns'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { MarkdownText } from '../views/ChatView'
@@ -55,6 +64,8 @@ export interface ChatPanelProps {
   hideToolCalls?: boolean
   /** 可选：隐藏工具调用中的参数/结果块，仅保留标题与错误信息 */
   hideToolInputOutput?: boolean
+  /** 工具调用展示方式；summary 用于画布侧栏的紧凑执行记录。 */
+  toolCallDisplay?: 'hidden' | 'summary' | 'full'
   /**
    * 可选：接管发送逻辑。传入后 ChatPanel 不再自行调 session:submit-turn，
    * 而是把待发送文本交给父组件（父组件负责建会/发消息）；发送失败请抛异常，
@@ -75,6 +86,12 @@ export interface ChatPanelProps {
   onRemoveNodeReference?: (id: string) => void
   /** 可选：清空全部引用节点 */
   onClearNodeReferences?: () => void
+  /** 点击引用节点或工具执行结果时，在宿主画布中定位。 */
+  onFocusNodeReference?: (id: string) => void
+  /** 指定 turn 是否存在可恢复的画布快照。 */
+  canUndoTurn?: (turnId: string) => boolean
+  /** 恢复到指定 turn 开始前。 */
+  onUndoTurn?: (turnId: string) => Promise<void>
   /** 可选：当前可用 agent 列表，用于解析 assistant 头像 */
   agents?: ManagedAgent[]
   /** 可选：assistant 回退身份（用于首条 loading / 无 agent snapshot 的气泡） */
@@ -115,6 +132,7 @@ export function ChatPanel({
   toolNamePrefixFilter,
   hideToolCalls,
   hideToolInputOutput,
+  toolCallDisplay,
   onSend,
   initialInput,
   onDraftChange,
@@ -123,10 +141,15 @@ export function ChatPanel({
   nodeReferences,
   onRemoveNodeReference,
   onClearNodeReferences,
+  onFocusNodeReference,
+  canUndoTurn,
+  onUndoTurn,
   agents = [],
   fallbackAssistant,
   persistedSessionStatus,
 }: ChatPanelProps): React.ReactElement {
+  const resolvedToolCallDisplay =
+    toolCallDisplay ?? (hideToolCalls ? 'hidden' : hideToolInputOutput ? 'summary' : 'full')
   const [messages, setMessages] = useState<UIMessage[]>([])
   const [input, setInput] = useState(initialInput ?? '')
   const applyInput = useCallback(
@@ -150,6 +173,12 @@ export function ChatPanel({
     ChatPanelDisplayAttachment[]
   >([])
   const [showAssistantPending, setShowAssistantPending] = useState(false)
+  const [hasMoreHistory, setHasMoreHistory] = useState(false)
+  const [loadingOlderHistory, setLoadingOlderHistory] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const [historyReloadKey, setHistoryReloadKey] = useState(0)
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const [unseenMessageCount, setUnseenMessageCount] = useState(0)
 
   const builderRef = useRef<MessageBuilder>(new MessageBuilder())
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -172,6 +201,8 @@ export function ChatPanel({
   const preservePendingOnSessionBindRef = useRef(false)
   const preservePendingHistoryLoadRef = useRef(false)
   const liveEventsRef = useRef<AgentEvent[]>([])
+  const loadedEventsRef = useRef<AgentEvent[]>([])
+  const unseenActivityKeysRef = useRef<Set<string>>(new Set())
   const historyLoadedRef = useRef(false)
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
@@ -187,7 +218,15 @@ export function ChatPanel({
     setMessages([])
     setAttachments([])
     liveEventsRef.current = []
+    loadedEventsRef.current = []
+    unseenActivityKeysRef.current.clear()
     historyLoadedRef.current = false
+    setHasMoreHistory(false)
+    setLoadingOlderHistory(false)
+    setHistoryError(null)
+    setShowScrollToBottom(false)
+    setUnseenMessageCount(0)
+    isAtBottomRef.current = true
     setCancelling(false)
     if (!preservePendingOnSessionBindRef.current) {
       setStatus('idle')
@@ -214,11 +253,14 @@ export function ChatPanel({
         if (cancelled) return
         const builder = new MessageBuilder()
         const mergedEvents = mergeAgentEvents(historyRes.events, liveEventsRef.current)
+        loadedEventsRef.current = mergedEvents
         for (const event of mergedEvents) {
           builder.processEvent(event)
         }
         builderRef.current = builder
         historyLoadedRef.current = true
+        setHasMoreHistory(historyRes.hasMore)
+        setHistoryError(null)
         setMessages(builder.getAllMessages())
         const latestStatus = getLatestAgentStatus(mergedEvents, persistedSessionStatus ?? undefined)
         if (isRunningAgentStatus(latestStatus)) {
@@ -238,11 +280,19 @@ export function ChatPanel({
       .catch((err) => {
         if (cancelled) return
         console.error('加载会话历史失败', err)
+        const fallbackEvents = mergeAgentEvents([], liveEventsRef.current)
+        loadedEventsRef.current = fallbackEvents
+        const builder = new MessageBuilder()
+        for (const event of fallbackEvents) builder.processEvent(event)
+        builderRef.current = builder
+        historyLoadedRef.current = true
+        setMessages(builder.getAllMessages())
+        setHistoryError(err instanceof Error ? err.message : '加载会话历史失败')
       })
     return () => {
       cancelled = true
     }
-  }, [getHistory, persistedSessionStatus, sessionId])
+  }, [getHistory, historyReloadKey, persistedSessionStatus, sessionId])
 
   // 订阅 agent 事件流
   useEffect(() => {
@@ -253,7 +303,21 @@ export function ChatPanel({
       liveEventsRef.current = mergeAgentEvents(liveEventsRef.current, [event])
       builderRef.current.processEvent(event)
       if (historyLoadedRef.current) {
+        loadedEventsRef.current = mergeAgentEvents(loadedEventsRef.current, [event])
         setMessages([...builderRef.current.getAllMessages()])
+        if (
+          !isAtBottomRef.current &&
+          (event.type === 'assistant_message' ||
+            event.type === 'agent_thinking' ||
+            event.type === 'tool_call' ||
+            event.type === 'tool_result')
+        ) {
+          const activityKey = getAgentEventActivityKey(event)
+          if (!unseenActivityKeysRef.current.has(activityKey)) {
+            unseenActivityKeysRef.current.add(activityKey)
+            setUnseenMessageCount(Math.min(99, unseenActivityKeysRef.current.size))
+          }
+        }
       }
       if (evt.type === 'user_message') {
         setPendingUserText(null)
@@ -269,14 +333,14 @@ export function ChatPanel({
       ) {
         setShowAssistantPending(false)
       }
-      if (evt.type === 'agent_status') {
-        const s = (event as { status?: string }).status
+      if (event.type === 'agent_status') {
+        const s = event.status
         if (s === 'completed' || s === 'cancelled' || s === 'error') {
           setStatus('idle')
           setCancelling(false)
           setShowAssistantPending(false)
           preservePendingHistoryLoadRef.current = false
-        } else if (s === 'running') {
+        } else if (isRunningAgentStatus(s)) {
           setStatus('streaming')
           setShowAssistantPending(false)
           preservePendingHistoryLoadRef.current = false
@@ -289,14 +353,76 @@ export function ChatPanel({
   // 智能滚动：仅在用户已处于底部附近时自动跟随，上滑查看历史时不强制拉回
   useEffect(() => {
     if (isAtBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      const frame = window.requestAnimationFrame(() => {
+        const el = messagesContainerRef.current
+        if (el != null) el.scrollTop = el.scrollHeight
+      })
+      return () => window.cancelAnimationFrame(frame)
     }
   }, [messages, pendingUserAttachments, pendingUserText, showAssistantPending])
+
+  const loadOlderHistory = useCallback(async () => {
+    if (
+      sessionId == null ||
+      loadingOlderHistory ||
+      !hasMoreHistory ||
+      loadedEventsRef.current.length === 0
+    ) {
+      return
+    }
+    const beforeSeq = loadedEventsRef.current[0]?.seq
+    if (beforeSeq == null) return
+    const el = messagesContainerRef.current
+    const previousHeight = el?.scrollHeight ?? 0
+    const previousTop = el?.scrollTop ?? 0
+    setLoadingOlderHistory(true)
+    setHistoryError(null)
+    try {
+      const historyRes = await getHistory({
+        sessionId: sessionId as never,
+        turnLimit: CHAT_PANEL_HISTORY_TURN_PAGE,
+        eventLimit: CHAT_PANEL_HISTORY_EVENT_PAGE,
+        beforeSeq,
+      })
+      const mergedEvents = mergeAgentEvents(historyRes.events, loadedEventsRef.current)
+      loadedEventsRef.current = mergedEvents
+      const builder = new MessageBuilder()
+      for (const event of mergedEvents) builder.processEvent(event)
+      builderRef.current = builder
+      setMessages(builder.getAllMessages())
+      setHasMoreHistory(historyRes.hasMore)
+      window.requestAnimationFrame(() => {
+        const next = messagesContainerRef.current
+        if (next != null) next.scrollTop = previousTop + (next.scrollHeight - previousHeight)
+      })
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : '加载更早消息失败')
+    } finally {
+      setLoadingOlderHistory(false)
+    }
+  }, [getHistory, hasMoreHistory, loadingOlderHistory, sessionId])
 
   const handleMessagesScroll = useCallback(() => {
     const el = messagesContainerRef.current
     if (!el) return
-    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    isAtBottomRef.current = atBottom
+    setShowScrollToBottom(!atBottom)
+    if (atBottom) {
+      unseenActivityKeysRef.current.clear()
+      setUnseenMessageCount(0)
+    }
+    if (el.scrollTop < 48 && hasMoreHistory && !loadingOlderHistory) {
+      void loadOlderHistory()
+    }
+  }, [hasMoreHistory, loadOlderHistory, loadingOlderHistory])
+
+  const handleScrollToBottom = useCallback(() => {
+    isAtBottomRef.current = true
+    unseenActivityKeysRef.current.clear()
+    setShowScrollToBottom(false)
+    setUnseenMessageCount(0)
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [])
 
   const appendAttachments = useCallback(
@@ -377,53 +503,96 @@ export function ChatPanel({
     setAttachments((current) => current.filter((attachment) => attachment.id !== id))
   }, [])
 
+  const submitTurn = useCallback(
+    async (
+      rawText: string,
+      turnAttachments: ChatPanelDisplayAttachment[],
+      restoreText: string,
+      preserveComposer = false,
+    ) => {
+      if ((rawText.length === 0 && turnAttachments.length === 0) || status !== 'idle') return
+      if (onSend == null && sessionId == null) return
+      if (!preserveComposer) {
+        applyInput('')
+        setAttachments([])
+      }
+      setStatus('sending')
+      setSendError(null)
+      setPendingUserText(rawText)
+      setPendingUserAttachments(turnAttachments)
+      setShowAssistantPending(true)
+      preservePendingOnSessionBindRef.current = onSend != null && sessionId == null
+      try {
+        if (onSend != null) {
+          // 父组件接管发送（如画布弹窗需要先建会、注入上下文等）
+          await onSend(rawText, turnAttachments)
+        } else {
+          await window.spark.invoke('session:submit-turn', {
+            sessionId: sessionId as never,
+            message: rawText,
+            ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
+          })
+        }
+        onAfterSend?.(rawText)
+      } catch (err) {
+        if (!preserveComposer) {
+          applyInput(restoreText)
+          setAttachments(
+            pendingAttachmentsToComposer(turnAttachments).concat(
+              attachments.filter(
+                (attachment) =>
+                  !turnAttachments.some(
+                    (pendingAttachment) => pendingAttachment.path === attachment.path,
+                  ),
+              ),
+            ),
+          )
+        }
+        setStatus('idle')
+        setCancelling(false)
+        setSendError(err instanceof Error ? err.message : '发送失败')
+        setPendingUserText(null)
+        setPendingUserAttachments([])
+        setShowAssistantPending(false)
+      }
+    },
+    [applyInput, attachments, onAfterSend, onSend, sessionId, status],
+  )
+
   const handleSend = useCallback(async () => {
     const text = input.trim()
     const turnAttachments = toSessionAttachments(attachments)
-    // onSend 模式下允许 sessionId 为空（父组件负责建会）；默认模式必须有 sessionId
-    if ((text.length === 0 && turnAttachments.length === 0) || status !== 'idle') return
-    if (onSend == null && sessionId == null) return
     const rawText = text || '请查看附件。'
-    applyInput('')
-    setAttachments([])
-    setStatus('sending')
-    setSendError(null)
-    setPendingUserText(rawText)
-    setPendingUserAttachments(turnAttachments)
-    setShowAssistantPending(true)
-    preservePendingOnSessionBindRef.current = onSend != null && sessionId == null
-    try {
-      if (onSend != null) {
-        // 父组件接管发送（如画布弹窗需要先建会、注入上下文等）
-        await onSend(rawText, turnAttachments)
-      } else {
-        await window.spark.invoke('session:submit-turn', {
-          sessionId: sessionId as never,
-          message: rawText,
-          ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
-        })
+    await submitTurn(rawText, turnAttachments, text)
+  }, [attachments, input, submitTurn])
+
+  const handleRetryTurn = useCallback(
+    async (userMessage: UIMessage) => {
+      const text = getChatPanelUserText(userMessage).trim()
+      const turnAttachments = userMessage.attachments ?? []
+      if (text.length === 0 && turnAttachments.length === 0) return
+      await submitTurn(text || '请查看附件。', turnAttachments, text, true)
+    },
+    [submitTurn],
+  )
+
+  const handleCopyAssistant = useCallback(
+    async (assistantMessage: UIMessage) => {
+      const text = assistantMessage.blocks
+        .filter((block): block is Extract<UIBlock, { kind: 'text' }> => block.kind === 'text')
+        .map((block) => block.content)
+        .join('\n\n')
+        .trim()
+      if (!text) return
+      try {
+        await navigator.clipboard.writeText(text)
+        toast.success('回复已复制')
+      } catch {
+        toast.error('复制失败')
       }
-      onAfterSend?.(rawText)
-    } catch (err) {
-      applyInput(rawText === '请查看附件。' && text.length === 0 ? '' : rawText)
-      setAttachments(
-        pendingAttachmentsToComposer(turnAttachments).concat(
-          attachments.filter(
-            (attachment) =>
-              !turnAttachments.some(
-                (pendingAttachment) => pendingAttachment.path === attachment.path,
-              ),
-          ),
-        ),
-      )
-      setStatus('idle')
-      setCancelling(false)
-      setSendError(err instanceof Error ? err.message : '发送失败')
-      setPendingUserText(null)
-      setPendingUserAttachments([])
-      setShowAssistantPending(false)
-    }
-  }, [applyInput, attachments, input, onAfterSend, onSend, sessionId, status])
+    },
+    [toast],
+  )
 
   const handleCancel = useCallback(async () => {
     if (sessionId == null || status === 'idle' || cancelling) return
@@ -461,6 +630,7 @@ export function ChatPanel({
     if (status === 'streaming') return 'agent 正在回复...'
     return placeholder ?? '输入消息（Enter 发送，Shift+Enter 换行）'
   }, [cancelling, error, loading, status, placeholder])
+  const turns = useMemo(() => groupChatPanelMessagesByTurn(messages), [messages])
 
   return (
     <div className="chat-panel">
@@ -478,24 +648,118 @@ export function ChatPanel({
       )}
 
       {!loading && contextBadge && <div className="chat-panel-context">{contextBadge}</div>}
-      <div className="chat-panel-messages" ref={messagesContainerRef} onScroll={handleMessagesScroll}>
+      <div
+        className="chat-panel-messages"
+        ref={messagesContainerRef}
+        onScroll={handleMessagesScroll}
+      >
+        {(hasMoreHistory || loadingOlderHistory) && (
+          <button
+            type="button"
+            className="chat-panel-load-older"
+            disabled={loadingOlderHistory}
+            onClick={() => void loadOlderHistory()}
+          >
+            {loadingOlderHistory ? <Spin size="small" /> : <Icons.ChevronUp size={12} />}
+            {loadingOlderHistory ? '正在加载更早消息' : '加载更早消息'}
+          </button>
+        )}
+        {historyError && (
+          <div className="chat-panel-history-error" role="alert">
+            <Icons.X size={12} />
+            <span title={historyError}>会话记录加载失败</span>
+            <button
+              type="button"
+              onClick={() => {
+                if (hasMoreHistory) void loadOlderHistory()
+                else setHistoryReloadKey((key) => key + 1)
+              }}
+            >
+              重试
+            </button>
+          </div>
+        )}
         {messages.length === 0 &&
           pendingUserText == null &&
           !showAssistantPending &&
           emptyState && <div className="chat-panel-empty">{emptyState}</div>}
-        {messages.map((msg) => (
-          <MessageView
-            key={msg.id}
-            message={msg}
-            sessionId={sessionId}
-            agents={agents}
-            onQuestionAnswered={handleQuestionAnswered}
-            {...(fallbackAssistant != null ? { fallbackAssistant } : {})}
-            {...(toolNamePrefixFilter !== undefined ? { toolNamePrefixFilter } : {})}
-            {...(hideToolCalls ? { hideToolCalls } : {})}
-            {...(hideToolInputOutput ? { hideToolInputOutput } : {})}
-          />
-        ))}
+        {turns.map((turn) => {
+          const userMessage = turn.messages.find((message) => message.role === 'user')
+          const assistantMessage = turn.messages.find((message) => message.role === 'assistant')
+          const turnStatus =
+            assistantMessage?.status ?? (status === 'idle' ? 'completed' : 'streaming')
+          const canRetry =
+            userMessage != null &&
+            assistantMessage != null &&
+            (assistantMessage.status === 'error' || assistantMessage.status === 'cancelled')
+          return (
+            <section
+              key={turn.key}
+              className={`chat-panel-turn is-${turnStatus}`}
+              data-turn-id={turn.turnId}
+            >
+              <div className="chat-panel-turn-head">
+                <span>
+                  {formatChatPanelTurnTime(userMessage?.timestamp ?? assistantMessage?.timestamp)}
+                </span>
+                <span className="chat-panel-turn-status">
+                  {chatPanelTurnStatusLabel(turnStatus)}
+                </span>
+              </div>
+              {turn.messages.map((msg) => (
+                <MessageView
+                  key={msg.id}
+                  message={msg}
+                  sessionId={sessionId}
+                  agents={agents}
+                  onQuestionAnswered={handleQuestionAnswered}
+                  {...(fallbackAssistant != null ? { fallbackAssistant } : {})}
+                  {...(toolNamePrefixFilter !== undefined ? { toolNamePrefixFilter } : {})}
+                  toolCallDisplay={resolvedToolCallDisplay}
+                  {...(hideToolInputOutput ? { hideToolInputOutput } : {})}
+                  {...(onFocusNodeReference ? { onFocusNode: onFocusNodeReference } : {})}
+                />
+              ))}
+              {assistantMessage != null && assistantMessage.status !== 'streaming' && (
+                <div className="chat-panel-turn-actions">
+                  {assistantMessage.blocks.some((block) => block.kind === 'text') && (
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyAssistant(assistantMessage)}
+                    >
+                      <Icons.Copy size={11} />
+                      复制
+                    </button>
+                  )}
+                  {canRetry && userMessage != null && (
+                    <button
+                      type="button"
+                      disabled={status !== 'idle'}
+                      onClick={() => void handleRetryTurn(userMessage)}
+                    >
+                      <Icons.Refresh size={11} />
+                      重试本轮
+                    </button>
+                  )}
+                  {turn.turnId != null &&
+                    assistantMessage.blocks.some(
+                      (block) =>
+                        block.kind === 'tool_call' &&
+                        block.status === 'success' &&
+                        isCanvasMutationTool(block.toolName),
+                    ) &&
+                    canUndoTurn?.(turn.turnId) &&
+                    onUndoTurn != null && (
+                      <button type="button" onClick={() => void onUndoTurn(turn.turnId as string)}>
+                        <Icons.Undo2 size={11} />
+                        撤销本轮画布修改
+                      </button>
+                    )}
+                </div>
+              )}
+            </section>
+          )
+        })}
         {pendingUserText != null && (
           <PendingUserMessageView text={pendingUserText} attachments={pendingUserAttachments} />
         )}
@@ -504,6 +768,17 @@ export function ChatPanel({
             agents={agents}
             {...(fallbackAssistant != null ? { fallbackAssistant } : {})}
           />
+        )}
+        {showScrollToBottom && (
+          <button
+            type="button"
+            className="chat-panel-scroll-to-bottom"
+            onClick={handleScrollToBottom}
+            aria-label="滚动到最新消息"
+          >
+            <Icons.ArrowDown size={13} />
+            {unseenMessageCount > 0 ? `${unseenMessageCount} 条新动态` : '回到最新'}
+          </button>
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -523,6 +798,7 @@ export function ChatPanel({
               refs={nodeReferences}
               {...(onRemoveNodeReference ? { onRemove: onRemoveNodeReference } : {})}
               {...(onClearNodeReferences ? { onClear: onClearNodeReferences } : {})}
+              {...(onFocusNodeReference ? { onFocus: onFocusNodeReference } : {})}
             />
           )}
           {attachments.length > 0 && (
@@ -561,7 +837,13 @@ export function ChatPanel({
               }}
             >
               {isWorking ? (
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
                   <rect x="6" y="6" width="12" height="12" rx="2" />
                 </svg>
               ) : (
@@ -603,8 +885,9 @@ function MessageView({
   agents,
   fallbackAssistant,
   toolNamePrefixFilter,
-  hideToolCalls,
+  toolCallDisplay,
   hideToolInputOutput,
+  onFocusNode,
   onQuestionAnswered,
 }: {
   message: UIMessage
@@ -612,8 +895,9 @@ function MessageView({
   agents: ManagedAgent[]
   fallbackAssistant?: { agentId: string; agentName: string }
   toolNamePrefixFilter?: string
-  hideToolCalls?: boolean
+  toolCallDisplay: 'hidden' | 'summary' | 'full'
   hideToolInputOutput?: boolean
+  onFocusNode?: (nodeId: string) => void
   onQuestionAnswered: (
     questions: UserQuestionPrompt[],
     summaries: UserQuestionAnswerSummary[],
@@ -621,6 +905,14 @@ function MessageView({
 }): React.ReactElement {
   const assistantIdentity = resolveAssistantIdentity(message, agents, fallbackAssistant)
   const attachments = message.role === 'user' ? (message.attachments ?? []) : []
+  const thinkingBlocks = getChatPanelThinkingBlocks(message.blocks)
+  const firstThinkingIndex = message.blocks.findIndex((block) => block.kind === 'thinking')
+  const compactToolBlocks = getChatPanelToolBlocks(message.blocks, toolNamePrefixFilter)
+  const firstCompactToolIndex = message.blocks.findIndex(
+    (block) =>
+      block.kind === 'tool_call' &&
+      (toolNamePrefixFilter == null || block.toolName.startsWith(toolNamePrefixFilter)),
+  )
   return (
     <div className={`chat-panel-message chat-panel-message-${message.role}`}>
       <div className="chat-panel-message-avatar">
@@ -636,18 +928,33 @@ function MessageView({
       </div>
       <div className="chat-panel-message-body">
         {attachments.length > 0 && <MessageAttachmentsView attachments={attachments} />}
-        {message.blocks.map((block, idx) => (
-          <BlockView
-            key={idx}
-            block={block}
-            role={message.role}
-            sessionId={sessionId}
-            onQuestionAnswered={onQuestionAnswered}
-            {...(toolNamePrefixFilter !== undefined ? { toolNamePrefixFilter } : {})}
-            {...(hideToolCalls ? { hideToolCalls } : {})}
-            {...(hideToolInputOutput ? { hideToolInputOutput } : {})}
-          />
-        ))}
+        {message.blocks.map((block, idx) => {
+          if (block.kind === 'thinking') {
+            if (idx !== firstThinkingIndex) return null
+            return <ChatPanelThinkingGroup key="thinking-group" blocks={thinkingBlocks} />
+          }
+          if (block.kind === 'tool_call' && toolCallDisplay !== 'full') {
+            if (toolCallDisplay === 'hidden' || idx !== firstCompactToolIndex) return null
+            return (
+              <ChatPanelToolActivity
+                key="tool-activity"
+                blocks={compactToolBlocks}
+                {...(onFocusNode ? { onFocusNode } : {})}
+              />
+            )
+          }
+          return (
+            <BlockView
+              key={idx}
+              block={block}
+              role={message.role}
+              sessionId={sessionId}
+              onQuestionAnswered={onQuestionAnswered}
+              {...(toolNamePrefixFilter !== undefined ? { toolNamePrefixFilter } : {})}
+              {...(hideToolInputOutput ? { hideToolInputOutput } : {})}
+            />
+          )
+        })}
       </div>
     </div>
   )
@@ -658,7 +965,6 @@ function BlockView({
   role,
   sessionId,
   toolNamePrefixFilter,
-  hideToolCalls,
   hideToolInputOutput,
   onQuestionAnswered,
 }: {
@@ -666,7 +972,6 @@ function BlockView({
   role: 'user' | 'assistant'
   sessionId: string | null
   toolNamePrefixFilter?: string
-  hideToolCalls?: boolean
   hideToolInputOutput?: boolean
   onQuestionAnswered: (
     questions: UserQuestionPrompt[],
@@ -684,14 +989,8 @@ function BlockView({
         </div>
       )
     case 'thinking':
-      return (
-        <details className="chat-panel-thinking">
-          <summary>思考中…</summary>
-          <pre>{block.content}</pre>
-        </details>
-      )
+      return null
     case 'tool_call': {
-      if (hideToolCalls) return null
       const displayName = block.toolName.replace(/^mcp__[^_]+__/, '')
       const isCanvas = block.toolName.startsWith('mcp__spark_canvas__')
       // 设了前缀过滤时，匹配的工具(画布操作)优先展示；
@@ -1223,11 +1522,21 @@ function resolveAssistantIdentity(
 }
 
 function sanitizeUserDisplayText(content: string): string {
-  if (!content.startsWith('[画布绑定]\n')) return content
-  const marker = '\n\n---\n\n'
-  const index = content.indexOf(marker)
-  if (index < 0) return content
-  return content.slice(index + marker.length).trim()
+  return sanitizeCanvasUserMessage(content)
+}
+
+function chatPanelTurnStatusLabel(status: UIMessage['status']): string {
+  if (status === 'streaming') return '进行中'
+  if (status === 'error') return '失败'
+  if (status === 'cancelled') return '已取消'
+  return '已完成'
+}
+
+function formatChatPanelTurnTime(timestamp: string | undefined): string {
+  if (!timestamp) return '当前轮次'
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return '当前轮次'
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
 function ComposerAttachmentsStrip({
@@ -1327,21 +1636,37 @@ function ComposerNodeRefsStrip({
   refs,
   onRemove,
   onClear,
+  onFocus,
 }: {
   refs: ChatPanelNodeReference[]
   onRemove?: (id: string) => void
   onClear?: () => void
+  onFocus?: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const hiddenCount = Math.max(0, refs.length - CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
-  const visibleRefs = expanded || hiddenCount === 0 ? refs : refs.slice(0, CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
+  const visibleRefs =
+    expanded || hiddenCount === 0 ? refs : refs.slice(0, CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
   return (
     <div className="chat-panel-node-refs">
       <div className="chat-panel-node-refs-chips">
         {visibleRefs.map((ref) => (
           <div key={ref.id} className="chat-panel-node-ref-chip" title={nodeRefLabel(ref)}>
-            {nodeRefIcon(ref.type)}
-            <span>{nodeRefLabel(ref)}</span>
+            {onFocus ? (
+              <button
+                type="button"
+                className="chat-panel-node-ref-focus"
+                onClick={() => onFocus(ref.id)}
+              >
+                {nodeRefIcon(ref.type)}
+                <span>{nodeRefLabel(ref)}</span>
+              </button>
+            ) : (
+              <>
+                {nodeRefIcon(ref.type)}
+                <span>{nodeRefLabel(ref)}</span>
+              </>
+            )}
             {onRemove && (
               <button
                 type="button"
@@ -1616,4 +1941,14 @@ function compareAgentEvents(a: AgentEvent, b: AgentEvent): number {
   const timeDiff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   if (timeDiff !== 0) return timeDiff
   return a.id.localeCompare(b.id)
+}
+
+function getAgentEventActivityKey(event: AgentEvent): string {
+  if (event.type === 'assistant_message' || event.type === 'agent_thinking') {
+    return `${event.turnId}:${event.type}:${event.segmentId ?? 'default'}`
+  }
+  if (event.type === 'tool_call' || event.type === 'tool_result') {
+    return `${event.turnId}:tool:${event.toolCallId}`
+  }
+  return event.id
 }

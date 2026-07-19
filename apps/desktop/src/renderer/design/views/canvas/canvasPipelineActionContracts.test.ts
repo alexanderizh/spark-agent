@@ -74,6 +74,35 @@ describe('canvas pipeline action contracts', () => {
     expect(draft.systemPrompt).toContain('分镜关键帧宫格图')
   })
 
+  it('builds a character identity-board image task directly from ordinary text', () => {
+    const draft = buildCanvasPipelineOperationDraft({
+      actionId: 'character.three_view',
+      sourceText: '王鱼：黑发青年，灰色长风衣，左眼下方有一道短疤。',
+      styleBible: '低饱和电影质感，冷暖对比光。',
+    })
+
+    expect(draft).toMatchObject({
+      operation: 'text_to_image',
+      title: '生成角色身份板',
+      taskPipelineRole: 'design_card',
+      outputPipelineRole: 'design_card',
+      modelParams: { aspect_ratio: '16:9' },
+    })
+    expect(draft.systemPrompt).toContain('王鱼')
+    expect(draft.systemPrompt).toContain('低饱和电影质感')
+  })
+
+  it('keeps generated scene images free of people', () => {
+    const draft = buildCanvasPipelineOperationDraft({
+      actionId: 'scene.scene_image',
+      sourceText: '雨夜茶馆，木质柜台与暖色吊灯。',
+    })
+
+    expect(draft.systemPrompt).toContain('【不要存在人物】')
+    expect(draft.systemPrompt).toContain('只呈现纯粹的场景')
+    expect(draft.systemPrompt).toContain('雨夜茶馆，木质柜台与暖色吊灯。')
+  })
+
   it('builds the recommended screenplay split operation from its action id', () => {
     const draft = buildCanvasPipelineOperationDraft({
       actionId: 'screenplay.split_episodes',

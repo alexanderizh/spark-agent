@@ -937,6 +937,42 @@ body.sidebar-resizing {
   flex-shrink: 0;
 }
 
+/* Project group pin button — sits after the project name.
+   Hidden by default, revealed on row hover; pinned projects keep it visible. */
+.proj-pin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: var(--r-sm, 4px);
+  color: var(--text-faint);
+  opacity: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.proj-head:hover .proj-pin-btn,
+.proj-pin-btn:focus-visible {
+  opacity: 1;
+}
+.proj-pin-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.proj-pin-btn.is-pinned {
+  color: var(--primary);
+  opacity: 1;
+}
+.proj-pin-btn.is-pinned:hover {
+  background: var(--primary-soft);
+  color: var(--primary-hover, var(--primary));
+}
+
 /* ---------- TOOL DROPDOWN moved to views/ToolDropdown.less ---------- */
 
 .chat-main {

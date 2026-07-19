@@ -6,7 +6,7 @@ import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffe
 import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
 import { ActionIcon, Button, Dropdown, Input, Modal } from '@lobehub/ui'
-import { Maximize2, Minimize2 } from 'lucide-react'
+import { Maximize2, Minimize2, Pin, PinOff } from 'lucide-react'
 import { Icons } from './Icons'
 import {
   useSessionSidebar,
@@ -516,7 +516,7 @@ function ChatListItem({
               </span>
             ) : null
           })()}
-          {s.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
+          {s.pinnedAt != null && <Pin size={11} fill="currentColor" className="pinned-icon" />}
           {worktreeBranch != null && (
             <span
               className="worktree-branch-icon"
@@ -567,7 +567,7 @@ function ChatListItem({
                 onAction={() => setMenuOpen(false)}
                 items={[
                   {
-                    icon: <Icons.Pin size={14} />,
+                    icon: s.pinnedAt == null ? <Pin size={14} /> : <PinOff size={14} />,
                     label:
                       s.pinnedAt == null ? t('sidebar.session.pin') : t('sidebar.session.unpin'),
                     onClick: () => onTogglePinned?.(s),
@@ -686,8 +686,26 @@ function ProjectSessionGroup({
             <Icons.FolderClosed className="chev" size={15} />
           )}
         </span>
-        {group.workspace.pinnedAt != null && <Icons.Pin size={15} className="pinned-icon" />}
         <span className="proj-name">{group.workspace.name}</span>
+        <button
+          className={`proj-pin-btn${group.workspace.pinnedAt != null ? ' is-pinned' : ''}`}
+          title={
+            group.workspace.pinnedAt != null ? t('sidebar.project.unpin') : t('sidebar.project.pin')
+          }
+          aria-label={
+            group.workspace.pinnedAt != null ? t('sidebar.project.unpin') : t('sidebar.project.pin')
+          }
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleProjectPinned(group.workspace)
+          }}
+        >
+          {group.workspace.pinnedAt != null ? (
+            <Pin size={13} fill="currentColor" />
+          ) : (
+            <PinOff size={13} />
+          )}
+        </button>
         <span className="proj-count">{group.sessions.length}</span>
         <button
           className="icon-btn proj-add-session-btn"
@@ -712,7 +730,8 @@ function ProjectSessionGroup({
                 onAction={() => setMenuOpen(false)}
                 items={[
                   {
-                    icon: <Icons.Pin size={14} />,
+                    icon:
+                      group.workspace.pinnedAt == null ? <Pin size={14} /> : <PinOff size={14} />,
                     label:
                       group.workspace.pinnedAt == null
                         ? t('sidebar.project.pin')
