@@ -49,6 +49,12 @@ export interface VendorMeta {
    * 缺省或加载失败时，UI 应回退到 emoji + color 组合。
    */
   logoPath: string
+  /**
+   * 对应平台的购买 / 注册 / 充值入口。
+   * 模板卡片右上角会渲染一个外链小按钮，点击后由 Electron main 进程
+   * 调起系统默认浏览器。无 URL（如本地 / 自建网关）则不渲染按钮。
+   */
+  purchaseUrl?: string
 }
 
 export const VENDOR_CATALOG: VendorMeta[] = [
@@ -60,6 +66,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#10a37f',
     desc: 'GPT-5.5 / GPT-5.4 / GPT-Image',
     logoPath: 'providers/openai.svg',
+    purchaseUrl: 'https://platform.openai.com/settings/organization/billing',
   },
   {
     id: 'anthropic',
@@ -68,6 +75,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#d4a574',
     desc: 'Claude Sonnet 4 / Opus 4 / Haiku',
     logoPath: 'providers/anthropic.svg',
+    purchaseUrl: 'https://console.anthropic.com/settings/billing',
   },
   {
     id: 'google-gemini',
@@ -76,6 +84,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#4285f4',
     desc: 'Gemini 2.5 Pro / Flash',
     logoPath: 'providers/google-gemini.svg',
+    purchaseUrl: 'https://aistudio.google.com/apikey',
   },
   {
     id: 'tencent-coding-plan',
@@ -84,6 +93,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#006eff',
     desc: '混元 / MiniMax / Kimi / GLM 聚合',
     logoPath: 'providers/tencent-coding-plan.png',
+    purchaseUrl: 'https://buy.cloud.tencent.com/lkeap',
   },
   {
     id: 'aliyun-bailian-coding-plan',
@@ -92,6 +102,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#ff6a00',
     desc: 'Qwen3 / GLM / Kimi / MiniMax 聚合',
     logoPath: 'providers/aliyun-bailian-coding-plan.svg',
+    purchaseUrl: 'https://bailian.console.aliyun.com/',
   },
   {
     id: 'bailian',
@@ -100,6 +111,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#ff6a00',
     desc: 'Wan / HappyHorse / Qwen3 TTS / 多媒体聚合',
     logoPath: 'providers/aliyun-bailian-coding-plan.svg',
+    purchaseUrl: 'https://bailian.console.aliyun.com/',
   },
   {
     id: 'zhipu-glm-coding-plan',
@@ -108,6 +120,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#3b5cff',
     desc: 'GLM-5 / GLM-4.7 / GLM-4.5-air',
     logoPath: 'providers/zhipu-glm-coding-plan.png',
+    purchaseUrl: 'https://bigmodel.cn/claude-code',
   },
   {
     id: 'qwen-standard',
@@ -116,6 +129,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#6f42c1',
     desc: 'Qwen3 / Qwen3-Coder 系列模型',
     logoPath: 'providers/qwen-standard.png',
+    purchaseUrl: 'https://bailian.console.aliyun.com/',
   },
   {
     id: 'deepseek-api',
@@ -124,6 +138,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#4d6bfe',
     desc: 'DeepSeek-V4 Flash / Pro',
     logoPath: 'providers/deepseek-api.svg',
+    purchaseUrl: 'https://platform.deepseek.com/topup',
   },
   {
     id: 'minimax',
@@ -132,6 +147,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#6c5ce7',
     desc: 'MiniMax-M2.7 / M2.5 系列',
     logoPath: 'providers/minimax.png',
+    purchaseUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
   },
   {
     id: 'kimi',
@@ -140,6 +156,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#1a1a2e',
     desc: 'Kimi-K2.6 / K2.5 / K2-Thinking',
     logoPath: 'providers/kimi.png',
+    purchaseUrl: 'https://platform.moonshot.cn/console/account',
   },
   {
     id: 'siliconflow',
@@ -148,6 +165,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#7c3aed',
     desc: 'DeepSeek / Qwen / Kimi 聚合',
     logoPath: 'providers/siliconflow.svg',
+    purchaseUrl: 'https://cloud.siliconflow.cn/',
   },
   {
     id: 'openrouter',
@@ -156,6 +174,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#6d28d9',
     desc: 'GPT-4.1 / Claude / Gemini 聚合',
     logoPath: 'providers/openrouter.svg',
+    purchaseUrl: 'https://openrouter.ai/keys',
   },
   {
     id: 'ollama',
@@ -174,6 +193,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#ff6900',
     desc: 'MiMo-V2-Pro / V2-Omni / V2-TTS',
     logoPath: 'providers/xiaomi-mimo.png',
+    purchaseUrl: 'https://platform.xiaomimimo.com/',
   },
   {
     id: 'xfyun',
@@ -182,6 +202,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#1e88e5',
     desc: 'Spark X2 / X1.5 / Ultra / Pro',
     logoPath: 'providers/xfyun.png',
+    purchaseUrl: 'https://xinghuo.xfyun.cn/sparkapi',
   },
   {
     id: 'jdcloud',
@@ -190,6 +211,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#e1251b',
     desc: 'JoyAI-LLM / JoyAI-M3 / Coding Plan',
     logoPath: 'providers/jdcloud.png',
+    purchaseUrl: 'https://www.jdcloud.com/cn/products/jdcloud-joybuilder',
   },
   {
     id: 'ctyun',
@@ -198,6 +220,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#cf0a2c',
     desc: '息壤 Tokens · DeepSeek / Qwen / GLM 聚合',
     logoPath: 'providers/ctyun.svg',
+    purchaseUrl: 'https://www.ctyun.cn/h5/huiju/',
   },
   {
     id: 'baidu',
@@ -206,6 +229,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#2932e1',
     desc: 'ERNIE-4.5 / Qianfan-VL / 文心系列',
     logoPath: 'providers/baidu.png',
+    purchaseUrl: 'https://console.bce.baidu.com/qianfan/',
   },
   {
     id: 'volcengine',
@@ -214,6 +238,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#1a73e8',
     desc: 'Doubao-pro / Doubao-Seed / Seedance',
     logoPath: 'providers/volcengine.png',
+    purchaseUrl: 'https://www.volcengine.com/product/ark',
   },
   {
     id: 'huaweicloud',
@@ -222,14 +247,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#c7000b',
     desc: 'Pangu-NLP-N4 718B / Pangu Pro MoE',
     logoPath: 'providers/huaweicloud.png',
-  },
-  {
-    id: 'unicom',
-    name: '联通云',
-    emoji: 'UC',
-    color: '#003c8f',
-    desc: '元景 32B / 编码助手 AISP',
-    logoPath: 'providers/unicom.png',
+    purchaseUrl: 'https://console.huaweicloud.com/modelarts/',
   },
   {
     id: 'ucloud',
@@ -238,6 +256,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#0052d9',
     desc: 'DeepSeek / Qwen / 文心 / 阶跃 聚合',
     logoPath: 'providers/ucloud.png',
+    purchaseUrl: 'https://console.ucloud.cn/modelverse',
   },
   {
     id: 'infini-ai',
@@ -246,6 +265,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#0d47a1',
     desc: 'DeepSeek / Qwen / 20+ 模型 · 多芯异构',
     logoPath: 'providers/infini-ai.png',
+    purchaseUrl: 'https://cloud.infini-ai.com/genstudio',
   },
   {
     id: 'alaya',
@@ -254,6 +274,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#ff5722',
     desc: 'Kimi / Qwen3.5 / GLM-5 / MiniMax 聚合',
     logoPath: 'providers/alaya.svg',
+    purchaseUrl: 'https://www.alayacode.com/',
   },
   {
     id: 'mthreads',
@@ -262,6 +283,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#00a86b',
     desc: '夸娥 GPU · Qwen / DeepSeek / MiniMax',
     logoPath: 'providers/mthreads.png',
+    purchaseUrl: 'https://www.mthreads.com/',
   },
   {
     id: 'kuaishou',
@@ -270,6 +292,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#ff6633',
     desc: '可灵 Kling V1.6 / 视频生成',
     logoPath: 'providers/kuaishou.png',
+    purchaseUrl: 'https://klingai.kuaishou.com/',
   },
   {
     id: 'trae',
@@ -278,6 +301,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#5b21b6',
     desc: 'Trae IDE · Doubao-1.5 / DeepSeek',
     logoPath: 'providers/trae.svg',
+    purchaseUrl: 'https://www.trae.cn/',
   },
   {
     id: 'qwen-tongyi',
@@ -286,6 +310,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#ff6a00',
     desc: 'Qwen3.5 / Qwen3-Max / Qwen-Coder',
     logoPath: 'providers/qwen-tongyi.png',
+    purchaseUrl: 'https://bailian.console.aliyun.com/',
   },
 
   /* ─── 新增（2026-06）：海外 / 自建网关 ─── */
@@ -296,6 +321,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#24292f',
     desc: 'GitHub Models · GPT-4o / o3 / Llama / Phi',
     logoPath: 'providers/github.svg',
+    purchaseUrl: 'https://github.com/marketplace/models',
   },
   {
     id: 'new-api',
@@ -314,6 +340,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#22c55e',
     desc: '图片 / 语音 / 视频聚合（GPT Image / Whisper / VEO / Sora）',
     logoPath: 'providers/apimart.svg',
+    purchaseUrl: 'https://apimart.ai/',
   },
   {
     id: 'agnes-ai',
@@ -322,6 +349,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#2563eb',
     desc: 'Agnes 文本 / 图片 / 视频统一接入',
     logoPath: 'providers/openai.svg',
+    purchaseUrl: 'https://agnes-ai.com/',
   },
   {
     id: 'xai',
@@ -330,6 +358,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#0f172a',
     desc: 'Grok Imagine 图片 / 视频 / 语音合成',
     logoPath: 'providers/xai.svg',
+    purchaseUrl: 'https://console.x.ai/',
   },
   {
     id: 'midjourney',
@@ -338,6 +367,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     color: '#111827',
     desc: 'Midjourney 外部网关（非官方 HTTP API）',
     logoPath: 'providers/midjourney.svg',
+    purchaseUrl: 'https://www.midjourney.com/',
   },
 ]
 

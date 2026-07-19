@@ -1,4 +1,4 @@
-import type { MediaContractIssue } from '@spark/protocol'
+import { composeCanvasMediaProviderPrompt, type MediaContractIssue } from '@spark/protocol'
 import type { CanvasMediaTaskInputFile } from '@spark/protocol'
 import type { CanvasOperationType, CreateCanvasTaskRequest } from './canvas.types'
 import { pruneModelParamsForCanvas } from './canvasMediaContract'
@@ -20,7 +20,11 @@ export class CanvasTaskValidationError extends Error {
 export async function validateCanvasMediaTaskSubmission(
   request: CanvasTaskSubmissionRequest,
 ): Promise<CanvasTaskSubmissionRequest> {
-  const basicIssues = validateBasicMediaSubmission(request)
+  const providerPrompt = composeCanvasMediaProviderPrompt({
+    userPrompt: request.compiledUserText ?? request.prompt ?? '',
+    ...(request.systemPrompt ? { systemPrompt: request.systemPrompt } : {}),
+  })
+  const basicIssues = validateBasicMediaSubmission(request, providerPrompt)
   if (basicIssues.length > 0) throw new CanvasTaskValidationError(basicIssues)
 
   const pruned = await pruneModelParamsForCanvas({
@@ -28,7 +32,7 @@ export async function validateCanvasMediaTaskSubmission(
     ...(request.manifestId ? { manifestId: request.manifestId } : {}),
     ...(request.providerProfileId ? { providerProfileId: request.providerProfileId } : {}),
     ...(request.modelId ? { modelId: request.modelId } : {}),
-    ...(request.prompt != null ? { prompt: request.prompt } : {}),
+    ...(providerPrompt ? { prompt: providerPrompt } : {}),
     validateSubmission: true,
     modelParams: request.modelParams ?? {},
     ...(request.inputFiles ? { inputFiles: request.inputFiles } : {}),
@@ -38,8 +42,14 @@ export async function validateCanvasMediaTaskSubmission(
       issue('missing_required', `无法完成任务预校验：${pruned.fallbackReason}`, ['manifestId']),
     ])
   }
-  const blockingIssues = pruned.validationIssues.filter((issue) => issue.severity === 'error')
-  if (blockingIssues.length > 0) throw new CanvasTaskValidationError(blockingIssues)
+  const advisoryIssues = pruned.validationIssues.map((validationIssue) => ({
+    code: validationIssue.code,
+    message: validationIssue.message,
+  }))
+  const modelParamWarnings = [
+    ...pruned.warnings.map((warning) => ({ code: warning.code, message: warning.message })),
+    ...advisoryIssues,
+  ]
 
   return {
     ...request,
@@ -58,12 +68,9 @@ export async function validateCanvasMediaTaskSubmission(
           })),
         }
       : {}),
-    ...(pruned.warnings.length > 0
+    ...(modelParamWarnings.length > 0
       ? {
-          modelParamWarnings: pruned.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
+          modelParamWarnings,
         }
       : {}),
   }
@@ -115,15 +122,29 @@ function validateOptionalEnum(
   }
 }
 
-function validateBasicMediaSubmission(request: CanvasTaskSubmissionRequest): MediaContractIssue[] {
+function validateBasicMediaSubmission(
+  request: CanvasTaskSubmissionRequest,
+  providerPrompt: string,
+): MediaContractIssue[] {
   const issues: MediaContractIssue[] = []
-  const prompt = (request.prompt ?? '').trim()
   const files = request.inputFiles ?? []
   const imageCount = files.filter((file) => matchesMediaKind(file, 'image')).length
   const videoCount = files.filter((file) => matchesMediaKind(file, 'video')).length
   const audioCount = files.filter((file) => matchesMediaKind(file, 'audio')).length
 
-  if (operationRequiresPrompt(request.operation) && !prompt) {
+  for (const [index, file] of files.entries()) {
+    if (file.dataUrl && !/^data:[^;,]+;base64,.+$/is.test(file.dataUrl)) {
+      issues.push(
+        issue('invalid_type', `第 ${index + 1} 个输入文件的 dataUrl 格式无效`, [
+          'inputFiles',
+          index,
+          'dataUrl',
+        ]),
+      )
+    }
+  }
+
+  if (operationRequiresPrompt(request.operation) && !providerPrompt) {
     issues.push(issue('missing_required', '请输入提示词', ['prompt']))
   }
   if (operationRequiresImage(request.operation) && imageCount === 0) {

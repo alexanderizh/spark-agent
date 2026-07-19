@@ -150,7 +150,11 @@ export interface MediaModelManifest {
   }
   safety?:
     | {
+        /** Provider-documented reference threshold; never a local hard limit. */
         maxPromptLength?: number | undefined
+        promptLengthUnit?: 'characters' | 'tokens' | 'provider_specific' | undefined
+        /** What the provider documents doing after the reference threshold. */
+        promptOverflowBehavior?: 'truncate' | 'reject' | 'unknown' | undefined
         allowLocalFiles?: boolean | undefined
         maxInputBytes?: number | undefined
       }
@@ -273,6 +277,8 @@ export const MediaModelManifestSchema: z.ZodType<MediaModelManifest> = z.object(
   safety: z
     .object({
       maxPromptLength: z.number().int().min(1).max(1_000_000).optional(),
+      promptLengthUnit: z.enum(['characters', 'tokens', 'provider_specific']).optional(),
+      promptOverflowBehavior: z.enum(['truncate', 'reject', 'unknown']).optional(),
       allowLocalFiles: z.boolean().optional(),
       maxInputBytes: z.number().int().min(1).optional(),
     })

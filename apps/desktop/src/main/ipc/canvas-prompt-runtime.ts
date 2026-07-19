@@ -3,6 +3,7 @@ import type {
   CanvasMediaTaskInputFile,
   CanvasPromptTaskFields,
 } from '@spark/protocol'
+import { composeCanvasMediaProviderPrompt } from '@spark/protocol'
 
 export type CanvasRuntimeRequest = {
   prompt: string
@@ -119,9 +120,5 @@ export function buildCanvasMediaProviderPrompt(input: {
   systemPrompt?: string
   userPrompt: string
 }): string {
-  const system = input.systemPrompt?.trim()
-  const user = input.userPrompt.trim()
-  if (!system) return user
-  if (!user) return system
-  return `${system}\n\n${user}`
+  return composeCanvasMediaProviderPrompt(input)
 }

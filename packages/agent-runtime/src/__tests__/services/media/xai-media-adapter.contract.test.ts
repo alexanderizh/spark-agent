@@ -431,6 +431,28 @@ describe('XaiMediaAdapter official contract', () => {
     })
   })
 
+  it('lets the provider decide how to handle TTS text above the local reference threshold', async () => {
+    let body: Record<string, unknown> = {}
+    const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return new Response(Buffer.from('audio'))
+    }) as typeof fetch
+    const text = '长'.repeat(15_001)
+
+    await expect(
+      adapter.invoke(
+        {
+          operation: 'text_to_audio',
+          capability: 'audio.speech',
+          outputDir,
+          prompt: text,
+        },
+        context(fetchImpl, 'grok-tts'),
+      ),
+    ).resolves.toBeDefined()
+    expect(body.text).toBe(text)
+  })
+
   it('assembles flat canvas TTS fields into the official output_format object', async () => {
     let body: Record<string, unknown> = {}
     const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {

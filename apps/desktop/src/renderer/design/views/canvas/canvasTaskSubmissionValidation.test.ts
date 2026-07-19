@@ -114,7 +114,39 @@ describe('canvasTaskSubmissionValidation', () => {
     })
   })
 
-  it('throws structured provider validation issues', async () => {
+  it('preflights the composed provider prompt without overwriting the authored user prompt', async () => {
+    const result = await validateCanvasMediaTaskSubmission({
+      operation: 'text_to_image',
+      prompt: '用户画面要求',
+      systemPrompt: '内置构图约束',
+    })
+
+    expect(mockedPrune).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: '内置构图约束\n\n用户画面要求' }),
+    )
+    expect(result.prompt).toBe('用户画面要求')
+    expect(result.systemPrompt).toBe('内置构图约束')
+  })
+
+  it('accepts a media task when the effective prompt comes from system or compiled text', async () => {
+    await expect(
+      validateCanvasMediaTaskSubmission({
+        operation: 'text_to_image',
+        prompt: '',
+        systemPrompt: '完整的内置出图指令',
+      }),
+    ).resolves.toMatchObject({ systemPrompt: '完整的内置出图指令' })
+
+    await expect(
+      validateCanvasMediaTaskSubmission({
+        operation: 'text_to_image',
+        prompt: '',
+        compiledUserText: '来自引用节点的已编译文本',
+      }),
+    ).resolves.toMatchObject({ compiledUserText: '来自引用节点的已编译文本' })
+  })
+
+  it('keeps provider validation issues advisory instead of blocking submission', async () => {
     mockedPrune.mockResolvedValue({
       modelParams: {},
       droppedParams: [],
@@ -129,13 +161,28 @@ describe('canvasTaskSubmissionValidation', () => {
       ],
     })
 
-    const promise = validateCanvasMediaTaskSubmission({
+    const result = await validateCanvasMediaTaskSubmission({
       operation: 'text_to_video',
       prompt: 'animate',
       manifestId: 'xai:grok-imagine-video',
     })
-    await expect(promise).rejects.toBeInstanceOf(CanvasTaskValidationError)
-    await expect(promise).rejects.toMatchObject({ message: 'duration is invalid' })
+    expect(result.modelParamWarnings).toEqual([
+      { code: 'out_of_range', message: 'duration is invalid' },
+    ])
+  })
+
+  it('still blocks malformed local input payloads before model validation', async () => {
+    await expect(
+      validateCanvasMediaTaskSubmission({
+        operation: 'image_to_image',
+        prompt: 'restyle',
+        inputFiles: [{ type: 'image', dataUrl: 'invalid' }],
+      }),
+    ).rejects.toMatchObject({
+      name: 'CanvasTaskValidationError',
+      message: expect.stringContaining('dataUrl 格式无效'),
+    })
+    expect(mockedPrune).not.toHaveBeenCalled()
   })
 
   it('blocks submission when no enabled model can be validated', async () => {

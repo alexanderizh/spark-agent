@@ -483,6 +483,48 @@ describe('validateMediaRequest', () => {
     ).toBe(true)
   })
 
+  it('reports prompt reference thresholds as warnings and never as blocking issues', () => {
+    const cap = capability({
+      id: 'image.generate',
+      label: '文生图',
+      input: { required: ['prompt'] },
+      output: { types: ['image'] },
+    })
+    const mediaManifest: MediaModelManifest = {
+      ...manifest('custom', 'token-limited-image', cap),
+      safety: {
+        maxPromptLength: 4,
+        promptLengthUnit: 'tokens',
+        promptOverflowBehavior: 'truncate',
+      },
+    }
+    const result = validateMediaRequest({
+      input: {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        prompt: '一段明显超过参考阈值的提示词',
+        outputDir: '',
+      },
+      providerKind: 'custom',
+      modelId: mediaManifest.modelId,
+      capability: 'image.generate',
+      manifest: mediaManifest,
+      manifestCapability: cap,
+      mode: 'adapter',
+    })
+
+    expect(result.blockingIssues).toEqual([])
+    expect(result.validationIssues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'warning',
+          code: 'out_of_range',
+          message: expect.stringContaining('本地不会阻断请求'),
+        }),
+      ]),
+    )
+  })
+
   it('keeps APIMart image transport rules in its provider validator', () => {
     const cap = capability({
       id: 'image.edit',

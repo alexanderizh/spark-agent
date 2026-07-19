@@ -235,7 +235,13 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       ],
       lastCheckedAt: '2026-07-17',
     },
-    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+    safety: {
+      maxPromptLength: 5000,
+      promptLengthUnit: 'characters',
+      promptOverflowBehavior: 'truncate',
+      allowLocalFiles: true,
+      maxInputBytes: 50 * 1024 * 1024,
+    },
   },
   {
     id: 'bailian:wan2.7-image',
@@ -322,7 +328,13 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       ],
       lastCheckedAt: '2026-07-17',
     },
-    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+    safety: {
+      maxPromptLength: 5000,
+      promptLengthUnit: 'characters',
+      promptOverflowBehavior: 'truncate',
+      allowLocalFiles: true,
+      maxInputBytes: 50 * 1024 * 1024,
+    },
   },
   {
     id: 'bailian:qwen-image-2.0-pro',
@@ -395,7 +407,13 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       ],
       lastCheckedAt: '2026-07-19',
     },
-    safety: { maxPromptLength: 1300, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+    safety: {
+      maxPromptLength: 1300,
+      promptLengthUnit: 'tokens',
+      promptOverflowBehavior: 'truncate',
+      allowLocalFiles: true,
+      maxInputBytes: 50 * 1024 * 1024,
+    },
   },
   {
     id: 'bailian:qwen-image-2.0',
@@ -468,7 +486,13 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       ],
       lastCheckedAt: '2026-07-19',
     },
-    safety: { maxPromptLength: 1300, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+    safety: {
+      maxPromptLength: 1300,
+      promptLengthUnit: 'tokens',
+      promptOverflowBehavior: 'truncate',
+      allowLocalFiles: true,
+      maxInputBytes: 50 * 1024 * 1024,
+    },
   },
   {
     id: 'bailian:wan2.7-i2v-2026-04-25',
@@ -554,7 +578,13 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       sourceUrls: ['https://help.aliyun.com/zh/model-studio/image-to-video-general-api-reference'],
       lastCheckedAt: '2026-07-17',
     },
-    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+    safety: {
+      maxPromptLength: 5000,
+      promptLengthUnit: 'characters',
+      promptOverflowBehavior: 'truncate',
+      allowLocalFiles: true,
+      maxInputBytes: 100 * 1024 * 1024,
+    },
   },
   {
     id: 'bailian:wan2.7-t2v',
@@ -622,7 +652,13 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       polling: { intervalMs: 15000, timeoutMs: 600000, statusMap: bailianVideoStatusMap },
     },
     docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/text-to-video-guide'] },
-    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+    safety: {
+      maxPromptLength: 5000,
+      promptLengthUnit: 'characters',
+      promptOverflowBehavior: 'truncate',
+      allowLocalFiles: true,
+      maxInputBytes: 100 * 1024 * 1024,
+    },
   },
   {
     id: 'bailian:wan2.7-r2v',
@@ -715,7 +751,13 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       sourceUrls: ['https://help.aliyun.com/zh/model-studio/wan-reference-to-video-api-reference'],
       lastCheckedAt: '2026-07-17',
     },
-    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+    safety: {
+      maxPromptLength: 5000,
+      promptLengthUnit: 'characters',
+      promptOverflowBehavior: 'truncate',
+      allowLocalFiles: true,
+      maxInputBytes: 100 * 1024 * 1024,
+    },
   },
   {
     id: 'bailian:wan2.7-videoedit',
@@ -806,7 +848,13 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       sourceUrls: ['https://help.aliyun.com/zh/model-studio/wan-video-editing-api-reference'],
       lastCheckedAt: '2026-07-17',
     },
-    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+    safety: {
+      maxPromptLength: 5000,
+      promptLengthUnit: 'characters',
+      promptOverflowBehavior: 'truncate',
+      allowLocalFiles: true,
+      maxInputBytes: 100 * 1024 * 1024,
+    },
   },
   {
     id: 'bailian:happyhorse-1.0-t2v',

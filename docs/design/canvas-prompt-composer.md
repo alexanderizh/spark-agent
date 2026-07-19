@@ -1,6 +1,6 @@
 # 无限画布 Prompt 参数编排器
 
-> 状态: 已落地 | 最后核对: 2026-07-17
+> 状态: 已落地 | 最后核对: 2026-07-19
 
 ## 文本任务执行路径
 
@@ -58,6 +58,14 @@
 - 引用操作节点或分组时，提交阶段会解析为其当前主产物/集合产物并冻结 `inputSnapshots`，而编辑器仍保留原始上游节点卡片，避免提交后卡片被产物正文替换。
 - 任务运行或特殊工作流回绑节点时，`task.prompt` 只保存编译后的执行快照，`node.data.promptDocument` 仍保存用户可见文档，`node.data.systemPrompt` 保存隐藏指令；三者不得互相反向初始化。
 - 旧节点中混合保存的功能提示词与上游正文会在面板初始化时迁移：功能指令转入隐藏层，上游文本转成连接 Tag，自动媒体 Tag 转移到媒体输入区。
+
+## 媒体 Prompt 拼接与校验
+
+- 媒体 Provider 只接受单一 prompt 时，由 protocol 共享拼接器统一合并 `systemPrompt` 与 `compiledUserText`，renderer 预检和 main 执行不得各自实现一套拼接规则。
+- 若 System Prompt 已逐字包含 User Prompt，或已包含 `[文本引用 Tn]` 中的实质正文，最终请求只保留一次；编辑器和任务详情仍分别保存原始 system/user 字段。
+- 模型清单的 `safety.maxPromptLength` 是 Provider 文档参考阈值，不是本地可信硬上限。必须同时记录已知的 `promptLengthUnit` 和 `promptOverflowBehavior`；单位不明时不得按字符数伪装成精确限制。
+- 提示词长度、模型参数范围和 Provider 兼容性问题在画布中作为 advisory warning 保存，不阻断请求。缺少任务必需输入、畸形 data URL 和主进程文件路径越权仍是硬错误。
+- renderer 对拼接后的 Provider prompt 做一次预检；main 不再在补齐系统提示词和节点上下文后重复执行更严格的 manifest 校验，避免同一请求前后判定不一致。
 
 ## 设计参考
 

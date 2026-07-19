@@ -86,14 +86,34 @@ export function validateCommonMediaRequest(context: MediaValidationContext): Med
     }
   }
 
-  const maxPromptLength = context.manifest?.safety?.maxPromptLength
+  const promptSafety = context.manifest?.safety
+  const maxPromptLength = promptSafety?.maxPromptLength
   const prompt = context.input.prompt ?? ''
-  if (maxPromptLength != null && prompt.length > maxPromptLength) {
+  const promptLengthUnit = promptSafety?.promptLengthUnit ?? 'provider_specific'
+  const observedLength = Array.from(prompt).length
+  if (maxPromptLength != null && observedLength > maxPromptLength) {
+    const thresholdLabel =
+      promptLengthUnit === 'tokens'
+        ? `${maxPromptLength} Token`
+        : promptLengthUnit === 'characters'
+          ? `${maxPromptLength} 个字符`
+          : `清单中的参考值 ${maxPromptLength}`
+    const observedLabel =
+      promptLengthUnit === 'characters'
+        ? `当前为 ${observedLength} 个字符`
+        : `当前可观测字符长度为 ${observedLength}`
+    const providerBehavior =
+      promptSafety?.promptOverflowBehavior === 'truncate'
+        ? '；Provider 文档说明超出部分会自动截断'
+        : promptSafety?.promptOverflowBehavior === 'reject'
+          ? '；Provider 可能拒绝该请求'
+          : '；是否接受由 Provider 最终判定'
     issues.push(
       validationIssue(
         'out_of_range',
-        `提示词长度不能超过 ${maxPromptLength} 个字符，当前为 ${prompt.length} 个字符`,
+        `提示词可能超过模型的${thresholdLabel}，${observedLabel}${providerBehavior}。本地不会阻断请求`,
         ['prompt'],
+        'warning',
       ),
     )
   }

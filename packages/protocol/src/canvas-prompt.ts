@@ -198,3 +198,56 @@ export interface CanvasPromptResponseFields {
   promptWarnings?: CanvasPromptWarning[]
   systemPrompt?: string
 }
+
+/**
+ * Compose the single prompt accepted by image/video providers.
+ *
+ * Canvas keeps system and user text separate for editing and diagnostics, while
+ * most media APIs only accept one text field. Connected text nodes can already
+ * be expanded into a functional system prompt, so blindly concatenating both
+ * copies wastes provider context and can cross model limits.
+ */
+export function composeCanvasMediaProviderPrompt(input: {
+  systemPrompt?: string
+  userPrompt: string
+}): string {
+  const system = input.systemPrompt?.trim() ?? ''
+  const user = input.userPrompt.trim()
+  if (!system) return user
+  if (!user) return system
+
+  const normalizedSystem = normalizePromptForContainment(system)
+  const normalizedUser = normalizePromptForContainment(user)
+  if (normalizedSystem.includes(normalizedUser)) return system
+  if (normalizedUser.includes(normalizedSystem)) return user
+
+  const dedupedUser = user
+    .replace(
+      /\[文本引用[^\]\r\n]*开始\]([\s\S]*?)\[\/文本引用[^\]\r\n]*结束\]/g,
+      (block, body: string) =>
+        referenceBodyAlreadyIncluded(normalizedSystem, body) ? '' : block,
+    )
+    .trim()
+
+  if (!dedupedUser) return system
+  const normalizedDedupedUser = normalizePromptForContainment(dedupedUser)
+  if (normalizedSystem.includes(normalizedDedupedUser)) return system
+  return `${system}\n\n${dedupedUser}`
+}
+
+function referenceBodyAlreadyIncluded(normalizedSystem: string, body: string): boolean {
+  const paragraphs = body
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+  return paragraphs.some((paragraph) => {
+    const normalized = normalizePromptForContainment(paragraph)
+    // Short labels such as names are not distinctive enough to remove a whole
+    // reference block. A substantive paragraph must already exist verbatim.
+    return normalized.length >= 24 && normalizedSystem.includes(normalized)
+  })
+}
+
+function normalizePromptForContainment(value: string): string {
+  return value.toLocaleLowerCase().replace(/\s+/g, '')
+}
