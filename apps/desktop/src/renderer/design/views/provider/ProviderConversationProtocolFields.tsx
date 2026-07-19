@@ -1,7 +1,6 @@
 import { Select } from '@lobehub/ui'
 import {
   isVolcengineArkConversationEndpoint,
-  resolveProviderProtocolEndpoint,
   type ProviderApiKind,
 } from './providerConversationProtocol'
 
@@ -17,7 +16,6 @@ export function ProviderConversationProtocolFields({
   onChange: (value: ProviderApiKind) => void
 }) {
   const isVolcengineArk = isVolcengineArkConversationEndpoint(apiEndpoint)
-  const resolvedEndpoint = resolveProviderProtocolEndpoint(apiEndpoint, value)
   return (
     <>
       <label className="pv_form_label">
@@ -37,11 +35,6 @@ export function ProviderConversationProtocolFields({
           { label: 'Embeddings API（向量模型）', value: 'embedding' },
         ]}
       />
-      {resolvedEndpoint && (
-        <span className="pv_form_sub" title={resolvedEndpoint}>
-          请求端点：{resolvedEndpoint}
-        </span>
-      )}
     </>
   )
 }
