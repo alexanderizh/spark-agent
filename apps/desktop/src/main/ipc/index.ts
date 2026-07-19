@@ -4983,14 +4983,53 @@ export function registerAllIpcHandlers(): void {
     )
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
     try {
-      await execFileAsync('git', ['switch', req.branch], { cwd: workspace.root_path })
+      const refs = await getWorkspaceBranches(workspace.root_path)
+      const localBranch = refs.branchDetails.find(
+        (item) => item.kind === 'local' && item.name === req.branch,
+      )
+      const remoteBranch = refs.branchDetails.find(
+        (item) => item.kind === 'remote' && item.name === req.branch,
+      )
+      if (localBranch != null || remoteBranch == null) {
+        await execFileAsync('git', ['switch', req.branch], { cwd: workspace.root_path })
+      } else {
+        const localName = remoteBranch.name.slice(remoteBranch.name.indexOf('/') + 1)
+        const matchingLocal = refs.branchDetails.some(
+          (item) => item.kind === 'local' && item.name === localName,
+        )
+        await execFileAsync(
+          'git',
+          matchingLocal ? ['switch', localName] : ['switch', '--track', remoteBranch.name],
+          { cwd: workspace.root_path },
+        )
+      }
       const result = await getWorkspaceBranches(workspace.root_path)
       if (result.currentBranch == null) {
         throw new Error('Unable to determine current git branch after switch')
       }
-      return { currentBranch: result.currentBranch, branches: result.branches }
+      return {
+        currentBranch: result.currentBranch,
+        branches: result.branches,
+        branchDetails: result.branchDetails,
+      }
     } catch (err) {
       throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, '切换分支失败'), {
+        cause: err,
+      })
+    }
+  })
+
+  typedIpcHandle('workspace:fetch-branches', async (req) => {
+    log.info(`workspace:fetch-branches requested, workspaceId=${req.workspaceId}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    try {
+      const remotes = await execFileAsync('git', ['remote'], { cwd: workspace.root_path })
+      if (remotes.stdout.trim().length > 0) {
+        await execFileAsync('git', ['fetch', '--prune'], { cwd: workspace.root_path })
+      }
+      return { ...(await getWorkspaceBranches(workspace.root_path)), fetched: true as const }
+    } catch (err) {
+      throw new SparkError('GIT_OPERATION_FAILED', getGitExecErrorMessage(err, 'Fetch 失败'), {
         cause: err,
       })
     }
@@ -5089,6 +5128,7 @@ export function registerAllIpcHandlers(): void {
       return {
         currentBranch: branches.currentBranch,
         branches: branches.branches,
+        branchDetails: branches.branchDetails,
         status: await getWorkspaceGitStatus(workspace.root_path),
       }
     } catch (err) {

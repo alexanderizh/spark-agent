@@ -5,6 +5,7 @@ import { Icons } from '../../Icons'
 import { resolveDisplayedGitBranch } from '../chat-session-routing'
 import type { BranchState } from './ChatComposerTypes'
 import { formatSignedNumber } from './ChatGitUtils'
+import { GitBranchRows } from './BranchPicker'
 
 function GitDialogShell({
   children,
@@ -182,28 +183,33 @@ export function GitBranchDialog({
   onClose,
   onSwitchBranch,
   onOpenCreateBranch,
+  onFetch,
 }: {
   status: WorkspaceGitStatusResponse | null
   branchState: BranchState
   onClose: () => void
   onSwitchBranch: (branch: string) => Promise<boolean>
   onOpenCreateBranch: () => void
+  onFetch: () => Promise<void>
 }) {
   const [branchSearch, setBranchSearch] = useState('')
   const [busy, setBusy] = useState(false)
+  const [fetching, setFetching] = useState(false)
   const currentBranch = resolveDisplayedGitBranch({
     branchStateCurrentBranch: branchState.currentBranch,
     statusCurrentBranch: status?.currentBranch,
   })
-  const branchSource =
-    branchState.branches.length > 0 ? branchState.branches : (status?.branches ?? [])
-  const branches = Array.from(
-    new Set(branchSource.filter((branch): branch is string => branch.length > 0)),
-  )
-  const filteredBranches = branches.filter((branch) =>
-    branch.toLowerCase().includes(branchSearch.trim().toLowerCase()),
-  )
   const changedFiles = status?.changedFiles ?? 0
+
+  const runFetch = async () => {
+    if (fetching) return
+    setFetching(true)
+    try {
+      await onFetch()
+    } finally {
+      setFetching(false)
+    }
+  }
 
   return (
     <GitDialogShell className="git-dialog-card-branch" onClose={onClose}>
@@ -221,38 +227,40 @@ export function GitBranchDialog({
           placeholder="搜索分支"
           autoFocus
         />
+        <button
+          type="button"
+          className="git-fetch-branches-btn"
+          disabled={fetching}
+          onClick={() => void runFetch()}
+        >
+          <Icons.Refresh size={12} className={fetching ? 'is-spinning' : ''} />
+          Fetch
+        </button>
       </div>
       <div className="git-branch-list">
-        {filteredBranches.map((branch) => (
-          <button
-            type="button"
-            key={branch}
-            className={`git-branch-row ${branch === currentBranch ? 'active' : ''}`}
-            disabled={busy}
-            onClick={() => {
-              if (branch === currentBranch) {
-                onClose()
-                return
-              }
-              setBusy(true)
-              void onSwitchBranch(branch)
-                .then((switched) => {
-                  if (switched) onClose()
-                })
-                .finally(() => setBusy(false))
-            }}
-          >
-            <Icons.GitBranch size={14} />
-            <span className="git-branch-copy">
-              <span className="git-branch-name truncate">{branch}</span>
-              {branch === currentBranch && changedFiles > 0 && (
-                <span className="git-branch-desc">未提交：{changedFiles} 个文件</span>
-              )}
-            </span>
-            {branch === currentBranch && <Icons.Check size={14} />}
-          </button>
-        ))}
-        {filteredBranches.length === 0 && <div className="git-popover-muted">没有匹配分支</div>}
+        <GitBranchRows
+          branchState={
+            branchState.branchDetails != null
+              ? branchState
+              : { ...branchState, branchDetails: status?.branchDetails }
+          }
+          search={branchSearch}
+          currentBranch={currentBranch ?? ''}
+          disabled={busy}
+          currentDescription={changedFiles > 0 ? `未提交：${changedFiles} 个文件` : null}
+          onSelect={(branch) => {
+            if (branch === currentBranch) {
+              onClose()
+              return
+            }
+            setBusy(true)
+            void onSwitchBranch(branch)
+              .then((switched) => {
+                if (switched) onClose()
+              })
+              .finally(() => setBusy(false))
+          }}
+        />
       </div>
       <button type="button" className="git-create-branch-btn" onClick={onOpenCreateBranch}>
         <Icons.Plus size={14} />

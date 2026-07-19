@@ -3,6 +3,7 @@ import { promisify } from 'node:util'
 import type {
   WorkspaceGitFileChange,
   WorkspaceGitFileDiffResponse,
+  WorkspaceGitBranch,
   WorkspaceGitStashEntry,
   WorkspaceGitStatusResponse,
 } from '@spark/protocol'
@@ -21,22 +22,57 @@ type GitComparison = {
   remoteUrl: string | null
 }
 
-export async function getWorkspaceBranches(
-  rootPath: string,
-): Promise<{ currentBranch: string | null; branches: string[] }> {
+export async function getWorkspaceBranches(rootPath: string): Promise<{
+  currentBranch: string | null
+  branches: string[]
+  branchDetails: WorkspaceGitBranch[]
+}> {
   try {
-    const [current, branches] = await Promise.all([
+    const [current, refs] = await Promise.all([
       execFileAsync('git', ['branch', '--show-current'], { cwd: rootPath }),
-      execFileAsync('git', ['branch', '--format=%(refname:short)'], { cwd: rootPath }),
+      execFileAsync(
+        'git',
+        [
+          'for-each-ref',
+          '--format=%(refname)%09%(committerdate:unix)',
+          'refs/heads',
+          'refs/remotes',
+        ],
+        { cwd: rootPath },
+      ),
     ])
-    const branchList = branches.stdout
+    const branchDetails = refs.stdout
       .split(/\r?\n/)
-      .map((item) => item.trim())
-      .filter(Boolean)
+      .flatMap((line): WorkspaceGitBranch[] => {
+        const [refName, timestamp = '0'] = line.split('\t')
+        if (refName?.startsWith('refs/heads/')) {
+          return [
+            {
+              name: refName.slice('refs/heads/'.length),
+              kind: 'local',
+              updatedAt: Number(timestamp) * 1000 || 0,
+            },
+          ]
+        }
+        if (refName?.startsWith('refs/remotes/') && !refName.endsWith('/HEAD')) {
+          return [
+            {
+              name: refName.slice('refs/remotes/'.length),
+              kind: 'remote',
+              updatedAt: Number(timestamp) * 1000 || 0,
+            },
+          ]
+        }
+        return []
+      })
+      .sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name))
+    const branchList = branchDetails
+      .filter((branch) => branch.kind === 'local')
+      .map((branch) => branch.name)
     const currentBranch = current.stdout.trim() || branchList[0] || null
-    return { currentBranch, branches: branchList }
+    return { currentBranch, branches: branchList, branchDetails }
   } catch {
-    return { currentBranch: null, branches: [] }
+    return { currentBranch: null, branches: [], branchDetails: [] }
   }
 }
 
@@ -45,6 +81,7 @@ function emptyGitStatus(): WorkspaceGitStatusResponse {
     isGitRepo: false,
     currentBranch: null,
     branches: [],
+    branchDetails: [],
     ahead: 0,
     behind: 0,
     additions: 0,
@@ -365,6 +402,7 @@ export async function getWorkspaceGitStatus(rootPath: string): Promise<Workspace
     isGitRepo: true,
     currentBranch: branches.currentBranch,
     branches: branches.branches,
+    branchDetails: branches.branchDetails,
     ahead: comparison.ahead,
     behind: comparison.behind,
     additions: files.reduce((sum, item) => sum + item.additions, 0),

@@ -4,7 +4,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
-import { getWorkspaceGitFileDiff, getWorkspaceGitStatus } from './workspace-git-status.js'
+import {
+  getWorkspaceBranches,
+  getWorkspaceGitFileDiff,
+  getWorkspaceGitStatus,
+} from './workspace-git-status.js'
 
 const execFileAsync = promisify(execFile)
 const tempDirs: string[] = []
@@ -45,6 +49,23 @@ afterEach(async () => {
 })
 
 describe('workspace Git status for an unpushed local branch', () => {
+  it('lists local and remote branches with activity metadata', async () => {
+    const workspacePath = await createUnpushedFeatureRepository()
+
+    const result = await getWorkspaceBranches(workspacePath)
+
+    expect(result.currentBranch).toBe('feature/local-review')
+    expect(result.branches).toEqual(expect.arrayContaining(['feature/local-review', 'master']))
+    expect(result.branchDetails).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'feature/local-review', kind: 'local' }),
+        expect.objectContaining({ name: 'origin/master', kind: 'remote' }),
+      ]),
+    )
+    expect(result.branchDetails.every((branch) => Number.isFinite(branch.updatedAt))).toBe(true)
+    expect(result.branchDetails.some((branch) => branch.name === 'origin/HEAD')).toBe(false)
+  })
+
   it('compares committed changes against the remote default branch', async () => {
     const workspacePath = await createUnpushedFeatureRepository()
 

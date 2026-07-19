@@ -938,6 +938,7 @@ export function ChatView({
   const { invoke: cancelSessionTurn } = useIpcInvoke('session:cancel')
   const { invoke: listBranches } = useIpcInvoke('workspace:list-branches')
   const { invoke: switchBranch } = useIpcInvoke('workspace:switch-branch')
+  const { invoke: fetchBranches } = useIpcInvoke('workspace:fetch-branches')
   const { invoke: commitGitChanges } = useIpcInvoke('workspace:git-commit')
   const { invoke: pushGitChanges } = useIpcInvoke('workspace:git-push')
   // 留空提交信息时，把提交请求作为消息发给当前会话的 agent，由 agent 分析 diff 并提交。
@@ -1488,7 +1489,11 @@ export function ChatView({
     if (gitWorkspace == null) return
     try {
       const res = await createBranch({ workspaceId: gitWorkspace.id, branch })
-      setBranchState({ currentBranch: res.currentBranch, branches: res.branches })
+      setBranchState({
+        currentBranch: res.currentBranch,
+        branches: res.branches,
+        branchDetails: res.branchDetails,
+      })
       applyGitStatus(res.status)
       toast.success(`已创建并切换到 ${res.currentBranch}`)
     } catch (err) {
@@ -1506,6 +1511,17 @@ export function ChatView({
       setBranchState(res)
     } catch {
       // 静默失败，保留上一次已知分支列表
+    }
+  }
+
+  const handleFetchBranches = async () => {
+    if (gitWorkspaceId == null) return
+    try {
+      const res = await fetchBranches({ workspaceId: gitWorkspaceId })
+      setBranchState(res)
+      toast.success('Fetch 完成')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Fetch 失败')
     }
   }
 
@@ -1856,6 +1872,7 @@ export function ChatView({
         }}
         onSwitchBranch={handleComposerSwitchBranch}
         onRefreshBranches={refreshBranches}
+        onFetchBranches={handleFetchBranches}
         onCreateBranch={handleCreateBranch}
         onCancelSession={handleCancelSession}
         onSent={handleUserSent}
@@ -1909,6 +1926,7 @@ export function ChatView({
         }}
         onSwitchBranch={handleComposerSwitchBranch}
         onRefreshBranches={refreshBranches}
+        onFetchBranches={handleFetchBranches}
         onCreateBranch={handleCreateBranch}
         onCancelSession={handleCancelSession}
         onSent={handleUserSent}
@@ -2239,6 +2257,7 @@ export function ChatView({
           branchState={branchState}
           onClose={() => setGitBranchModalOpen(false)}
           onSwitchBranch={handleSwitchBranch}
+          onFetch={handleFetchBranches}
           onOpenCreateBranch={() => {
             setGitBranchModalOpen(false)
             setGitCreateBranchOpen(true)
@@ -2385,6 +2404,7 @@ export function ChatView({
                     }}
                     onSwitchBranch={handleComposerSwitchBranch}
                     onRefreshBranches={refreshBranches}
+                    onFetchBranches={handleFetchBranches}
                     onCreateBranch={handleCreateBranch}
                     onCancelSession={handleCancelSession}
                     onSent={handleSideChatSent}

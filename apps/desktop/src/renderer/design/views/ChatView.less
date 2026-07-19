@@ -685,6 +685,8 @@
 }
 
 .git-branch-search input {
+  min-width: 0;
+  flex: 1;
   width: 100%;
   border: 0;
   background: transparent;
@@ -694,11 +696,67 @@
   outline: none;
 }
 
+.git-fetch-branches-btn {
+  display: inline-flex;
+  min-height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.git-fetch-branches-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.git-fetch-branches-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.git-fetch-branches-btn .is-spinning {
+  animation: git-fetch-spin 0.8s linear infinite;
+}
+
+@keyframes git-fetch-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .git-branch-list {
   display: grid;
   gap: 1px;
   max-height: 240px;
   overflow: auto;
+}
+
+.git-branch-section {
+  display: grid;
+  gap: 1px;
+}
+
+.git-branch-section + .git-branch-section {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+}
+
+.git-branch-section-title {
+  padding: 3px 8px 2px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .git-branch-row {
@@ -719,6 +777,7 @@
 
 .git-branch-copy {
   display: grid;
+  flex: 1;
   min-width: 0;
   gap: 1px;
 }
