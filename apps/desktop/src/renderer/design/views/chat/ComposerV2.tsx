@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './ComposerInlineMenus.less'
+import { useVoiceIntegrity } from '../../voice/useVoiceIntegrity'
+import { useVoiceInput } from '../../voice/useVoiceInput'
+import { VoiceMicButton } from '../../voice/VoiceMicButton'
+import { VoiceInstallToast } from '../../voice/VoiceInstallToast'
 import type { ReactNode, RefObject } from 'react'
 import { Button, Dropdown, Popover, Tag as LobeTag, Tooltip } from '@lobehub/ui'
 import { ImagePreviewModal } from '../../components/ImagePreviewModal'
@@ -2238,6 +2242,40 @@ export function ComposerV2({
     ],
   )
 
+  // ── 语音输入（离线 ASR：sherpa-onnx + Paraformer 流式）──
+  const voiceIntegrity = useVoiceIntegrity()
+  const voice = useVoiceInput({
+    onFinal: (text) => {
+      setValue((prev) => {
+        if (!text) return prev
+        const needSpace = prev.length > 0 && !/\s$/.test(prev)
+        return prev + (needSpace ? ' ' : '') + text
+      })
+    },
+  })
+  const handleVoiceToggle = useCallback(async () => {
+    if (voice.status === 'recording' || voice.status === 'starting') {
+      await voice.stop()
+      return
+    }
+    const st = voiceIntegrity.status
+    if (!st.supported) {
+      toast.warning(st.unsupportedReason ?? '当前平台不支持语音输入')
+      return
+    }
+    if (!st.ready) {
+      // 触发按需下载：进度由 VoiceInstallToast 展示，不阻塞用户其他操作
+      void voiceIntegrity.install()
+      toast.info('正在后台下载语音包，完成后即可使用语音输入')
+      return
+    }
+    await voice.start()
+  }, [voice, voiceIntegrity, toast])
+
+  // 录音时把实时 partial 叠加到输入框末尾（整体替换式展示）；停止后回落到正式草稿值
+  const voiceDisplayValue =
+    voice.status === 'recording' ? value + voice.partialText : value
+
   /** 用户选中候选 Agent：用 `@<name> ` 替换 `@<query>` 段，并记录 pendingMention */
   const handleMentionSelect = useCallback(
     (candidate: MentionCandidate) => {
@@ -2760,6 +2798,11 @@ export function ComposerV2({
 
   return (
     <div className="composer-wrap">
+      <VoiceInstallToast
+        progress={voiceIntegrity.progress}
+        status={voiceIntegrity.status}
+        onRetry={() => void voiceIntegrity.install()}
+      />
       <div className="composer-inner">
         {visibleApprovalRequest && (
           <InlineApprovalRequest
@@ -3071,8 +3114,9 @@ export function ComposerV2({
               ref={textareaRef}
               rows={1}
               placeholder={composerPlaceholder}
-              value={value}
+              value={voiceDisplayValue}
               onChange={(event) => handleValueChange(event.target.value)}
+              readOnly={voice.status === 'recording'}
               onScroll={(event) => {
                 const layer = event.currentTarget.previousElementSibling as HTMLDivElement | null
                 if (layer == null) return
@@ -3150,6 +3194,14 @@ export function ComposerV2({
                 />
               )}
             </div>
+            <VoiceMicButton
+              status={voice.status}
+              ready={voiceIntegrity.status.ready}
+              downloading={voiceIntegrity.status.downloading}
+              unsupported={!voiceIntegrity.status.supported}
+              disabled={sending}
+              onClick={() => void handleVoiceToggle()}
+            />
             <button
               className={`composer-send-round ${sending ? 'is-sending' : ''} ${isWorking ? 'is-stopping' : ''}`}
               title={isWorking ? '停止会话' : needsTeamSelection ? '请先创建并选择团队' : '发送'}

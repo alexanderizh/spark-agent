@@ -35,6 +35,7 @@ import { useToast } from '../components/Toast'
 import { ModelCapabilityRegistry } from '@spark/shared'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import { FfmpegStatusCard } from './FfmpegStatusCard'
+import { VoiceIntegritySettingsItem } from '../voice/VoiceIntegritySettingsItem'
 import { FontAssetControl } from '../components/FontAssetControl'
 import { SdkInstallProgressView } from '../components/SdkInstallProgress'
 import { clearOnboardingState } from './OnboardingView'
@@ -5733,6 +5734,9 @@ function IntegritySection() {
 
       {/* ── FFmpeg (视频处理工作台依赖) ── */}
       <FfmpegStatusCard />
+
+      {/* ── 语音输入 (ASR) 语音包完整性 ── */}
+      <VoiceIntegritySettingsItem />
     </div>
   )
 }

@@ -65,6 +65,19 @@ import type {
   FontAssetsStatusRequest,
   FontAssetsStatusResponse,
 } from '../font-assets.js'
+import type {
+  VoiceInstallProgress,
+  VoiceInstallRequest,
+  VoiceInstallResponse,
+  VoiceIntegrityCheckRequest,
+  VoiceIntegrityCheckResponse,
+  VoiceIntegrityStatus,
+  VoiceRecognitionEvent,
+  VoiceStartRequest,
+  VoiceStartResponse,
+  VoiceStopRequest,
+  VoiceStopResponse,
+} from '../voice.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -5599,6 +5612,11 @@ export interface IpcChannelMap extends ProviderFilesIpcChannelMap {
   'ffmpeg:install': [FfmpegInstallRequest, FfmpegInstallResponse]
   'font-assets:status': [FontAssetsStatusRequest, FontAssetsStatusResponse]
   'font-assets:install': [FontAssetsInstallRequest, FontAssetsInstallResponse]
+  // Voice Input (ASR) - sherpa-onnx 离线流式语音识别
+  'voice:check-integrity': [VoiceIntegrityCheckRequest, VoiceIntegrityCheckResponse]
+  'voice:install': [VoiceInstallRequest, VoiceInstallResponse]
+  'voice:start': [VoiceStartRequest, VoiceStartResponse]
+  'voice:stop': [VoiceStopRequest, VoiceStopResponse]
   'video:probe': [VideoProcessRequest, VideoProcessResponse]
   'video:process': [VideoProcessRequest, VideoProcessResponse]
   'binary:install': [BinaryInstallRequest, BinaryInstallResponse]
@@ -5856,6 +5874,12 @@ export interface IpcStreamChannelMap {
   /** FFmpeg 状态变化推送（启动自检 + 安装后刷新）*/
   'stream:ffmpeg:status': FfmpegStatusResponse
   'stream:font-assets:status': FontAssetsStatusResponse
+  /** Voice 语音包完整性状态变化推送（设置页 / 首次使用弹窗监听） */
+  'stream:voice:status': VoiceIntegrityStatus
+  /** Voice 语音包下载安装进度推送 */
+  'stream:voice:install-progress': VoiceInstallProgress
+  /** Voice 流式识别事件推送（partial / final / error） */
+  'stream:voice:recognition': VoiceRecognitionEvent
   /** FFmpeg 下载安装进度推送 */
   'stream:ffmpeg:install-progress': FfmpegInstallProgress
   /** 视频处理进度推送（按 requestId 关联请求）*/
