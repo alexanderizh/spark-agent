@@ -10,7 +10,15 @@ interface BuilderConfig {
   productName?: string
   artifactName?: string
   protocols?: Array<{ name?: string; schemes?: string[] }>
-  mac?: { extendInfo?: { CFBundleDisplayName?: string } }
+  mac?: {
+    hardenedRuntime?: boolean
+    entitlements?: string
+    entitlementsInherit?: string
+    extendInfo?: {
+      CFBundleDisplayName?: string
+      NSMicrophoneUsageDescription?: string
+    }
+  }
   nsis?: { shortcutName?: string; uninstallDisplayName?: string }
   linux?: { desktop?: { Name?: string } }
 }
@@ -26,9 +34,22 @@ describe('desktop branding boundaries', () => {
 
     expect(config.protocols?.[0]?.name).toBe('SparkWork redemption')
     expect(config.mac?.extendInfo?.CFBundleDisplayName).toBe('SparkWork')
+    expect(config.mac?.extendInfo?.NSMicrophoneUsageDescription).toContain('麦克风')
     expect(config.nsis?.shortcutName).toBe('SparkWork')
     expect(config.nsis?.uninstallDisplayName).toBe('SparkWork ${version}')
     expect(config.linux?.desktop?.Name).toBe('SparkWork')
+  })
+
+  it('keeps the macOS microphone declarations required by Hardened Runtime', () => {
+    const config = load(readFileSync(join(ROOT, 'electron-builder.yml'), 'utf8')) as BuilderConfig
+    const entitlements = readFileSync(join(ROOT, 'resources/entitlements.mac.plist'), 'utf8')
+
+    expect(config.mac?.hardenedRuntime).toBe(true)
+    expect(config.mac?.entitlements).toBe('resources/entitlements.mac.plist')
+    expect(config.mac?.entitlementsInherit).toBe('resources/entitlements.mac.plist')
+    expect(entitlements).toMatch(
+      /<key>com\.apple\.security\.device\.audio-input<\/key>\s*<true\/>/,
+    )
   })
 
   it('uses SparkWork as the renderer window title', () => {
