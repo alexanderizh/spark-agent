@@ -119,10 +119,17 @@ tags:
 
 ## 阿里云百炼专项规则
 
-以下规则仅适用于 `providerKind=bailian` 的已启用 Wan 2.7 Manifest；其他百炼模型必须先通过 `describe_model` 确认 schema 后再调用：
+以下规则适用于 `providerKind=bailian` 的已启用百炼 Manifest（Wan 2.7 与 Qwen-Image 2.0 系列）；其他百炼模型必须先通过 `describe_model` 确认 schema 后再调用：
 
 - `wan2.7-image-pro` / `wan2.7-image` 使用 DashScope 原生同步图像接口。`size` 只接受 `1K`、`2K`、`4K`；4K 仅限 `wan2.7-image-pro` 的非组图纯文生图。不要传宽高比形式的 `size` 或另造 `resolution` 字段。
 - 图片编辑最多 9 张输入图；支持 HTTP/HTTPS、百炼临时 `oss://` URL 或图片 Base64。`thinking_mode` 仅在无图、非组图时有效；组图用 `enable_sequential=true` 且 `n=1..12`，其他图像请求 `n=1..4`。
+- `qwen-image-2.0-pro` / `qwen-image-2.0` 与 wan2.7 走**同一** DashScope 原生同步图像接口（`multimodal-generation/generation`），但属**独立模型族，参数规则不同，不可混用**：
+  - prompt 放在 `input.messages[0].content[].text`（**不是** wan 的 `input.prompt`）；`parameters` 是与 `input` 平级的顶层字段。
+  - `size` 只接受**像素星号**格式（`2048*2048`、`2688*1536`、`1536*2688`、`2368*1728`、`1728*2368`，默认 `2048*2048`）。**不要**传 wan 的 `1K/2K/4K`、不要传宽高比 `1:1`、不要另造 `resolution` 字段。
+  - `n` 在 2.0 系列为 1–6；可选 `negative_prompt`（≤500 字符）、`prompt_extend`（默认 true）、`watermark`（默认 false）、`seed`。**不要**传 wan 的 `thinking_mode` / `enable_sequential` / `bbox_list` / `color_palette`，qwen 不支持这些字段。
+  - 图像编辑（`image.edit`）最多 **3 张**输入图（wan 是 9 张），用自然语言指令驱动，不用 mask/bbox；多图时输出比例以最后一张输入图为准。
+  - 文生图与图像编辑共用同一 modelId（二合一）：按**是否有输入图**区分 capability，不是按 modelId。
+  - 与 apimart 渠道的 qwen（`providerKind=apimart`，比例 enum + `resolution`）是完全独立的模型族，参数 schema 不同，**不能混用**。
 - `wan2.7-i2v-2026-04-25` 只接受五种素材组合：首帧；首帧+驱动音频；首帧+尾帧；首帧+尾帧+驱动音频；首视频片段（可加尾帧）。首帧、尾帧、驱动音频、首视频片段每种最多一个；不能把视频续写和驱动音频/首帧混在一次请求中。
 - `wan2.7-r2v-2026-06-12` 是独立的 `video.reference_to_video` 能力。最多 5 个图像/视频参考和 1 个参考音色；提示词须用“图1/视频1”等顺序明确指代素材。首帧与参考素材的组合、音色绑定以 `describe_model` 返回的 rolePolicy 为准。
 - `wan2.7-videoedit` 必须传入且仅传入 1 段待编辑视频，最多加 4 张参考图；`duration=0` 表示保持原视频时长，只有需要截断时才传 2–10 秒；`audio_setting` 仅为 `auto` 或 `origin`。
@@ -134,6 +141,8 @@ tags:
 官方依据：
 
 - Wan 2.7 图像：https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference
+- Qwen-Image 文生图：https://help.aliyun.com/zh/model-studio/qwen-image-api
+- Qwen-Image 图像编辑：https://help.aliyun.com/zh/model-studio/qwen-image-edit-api
 - Wan 2.7 图生视频：https://help.aliyun.com/zh/model-studio/image-to-video-general-api-reference
 - Wan 2.7 参考生视频：https://help.aliyun.com/zh/model-studio/wan-video-to-video-api-reference
 - Wan 2.7 视频编辑：https://help.aliyun.com/zh/model-studio/wan-video-editing-api-reference

@@ -5,7 +5,11 @@ import type {
   MediaManifestOutputKind,
   MediaModelManifest,
 } from './media-model-manifest.js'
-import { audioSpeechSchema, bailianImageSchema } from './media-model-shared-manifest-parts.js'
+import {
+  audioSpeechSchema,
+  bailianImageSchema,
+  bailianQwenImageSchema,
+} from './media-model-shared-manifest-parts.js'
 
 const bailianCommonStatusMap = {
   queued: 'queued',
@@ -319,6 +323,152 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       lastCheckedAt: '2026-07-17',
     },
     safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:qwen-image-2.0-pro',
+    providerKind: 'bailian',
+    modelId: 'qwen-image-2.0-pro',
+    displayName: 'Qwen Image 2.0 Pro',
+    domains: ['image'],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: {
+          types: ['image'] as MediaManifestOutputKind[],
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
+        paramSchema: bailianQwenImageSchema,
+        defaults: { size: '2048*2048', n: 1, prompt_extend: true, watermark: false },
+      },
+      {
+        id: 'image.edit',
+        label: '图生图 / 图片编辑',
+        input: {
+          required: ['prompt', 'image'] as MediaManifestInputKind[],
+          maxImages: 3,
+          acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
+        output: {
+          types: ['image'] as MediaManifestOutputKind[],
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
+        paramSchema: bailianQwenImageSchema,
+        defaults: { size: '2048*2048', n: 1, prompt_extend: true, watermark: false },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/multimodal-generation/generation',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: {
+          messages: [
+            {
+              role: 'user',
+              content: '{{content}}',
+            },
+          ],
+        },
+        parameters: {
+          size: '{{size}}',
+          n: '{{n}}',
+          negative_prompt: '{{negative_prompt}}',
+          prompt_extend: '{{prompt_extend}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'url',
+        jsonPaths: ['output.choices[].message.content[].image'],
+        download: true,
+      },
+    },
+    docs: {
+      sourceUrls: [
+        'https://help.aliyun.com/zh/model-studio/qwen-image-api',
+        'https://help.aliyun.com/zh/model-studio/qwen-image-edit-api',
+      ],
+      lastCheckedAt: '2026-07-19',
+    },
+    safety: { maxPromptLength: 1300, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:qwen-image-2.0',
+    providerKind: 'bailian',
+    modelId: 'qwen-image-2.0',
+    displayName: 'Qwen Image 2.0',
+    domains: ['image'],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: {
+          types: ['image'] as MediaManifestOutputKind[],
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
+        paramSchema: bailianQwenImageSchema,
+        defaults: { size: '2048*2048', n: 1, prompt_extend: true, watermark: false },
+      },
+      {
+        id: 'image.edit',
+        label: '图生图 / 图片编辑',
+        input: {
+          required: ['prompt', 'image'] as MediaManifestInputKind[],
+          maxImages: 3,
+          acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
+        output: {
+          types: ['image'] as MediaManifestOutputKind[],
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
+        paramSchema: bailianQwenImageSchema,
+        defaults: { size: '2048*2048', n: 1, prompt_extend: true, watermark: false },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/multimodal-generation/generation',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: {
+          messages: [
+            {
+              role: 'user',
+              content: '{{content}}',
+            },
+          ],
+        },
+        parameters: {
+          size: '{{size}}',
+          n: '{{n}}',
+          negative_prompt: '{{negative_prompt}}',
+          prompt_extend: '{{prompt_extend}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'url',
+        jsonPaths: ['output.choices[].message.content[].image'],
+        download: true,
+      },
+    },
+    docs: {
+      sourceUrls: [
+        'https://help.aliyun.com/zh/model-studio/qwen-image-api',
+        'https://help.aliyun.com/zh/model-studio/qwen-image-edit-api',
+      ],
+      lastCheckedAt: '2026-07-19',
+    },
+    safety: { maxPromptLength: 1300, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
   },
   {
     id: 'bailian:wan2.7-i2v-2026-04-25',

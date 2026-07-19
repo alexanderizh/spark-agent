@@ -77,14 +77,25 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
         .map((file) => resolveImageReference(file)),
     )
     if (capability === 'image.edit' && images.length === 0) {
-      throw new MediaProviderError('invalid_input', '万相图像编辑至少需要一张参考图')
+      throw new MediaProviderError('invalid_input', '图像编辑至少需要一张参考图')
     }
-    if (images.length > 9)
-      throw new MediaProviderError('invalid_input', '万相 2.7 图像生成最多支持 9 张输入图片')
+    const qwenModel = isQwenImageModel(ctx.defaultModel)
+    const maxInputImages = qwenModel ? 3 : 9
+    if (images.length > maxInputImages) {
+      throw new MediaProviderError(
+        'invalid_input',
+        qwenModel
+          ? 'Qwen-Image 2.0 图像编辑最多支持 3 张输入图片'
+          : '万相 2.7 图像生成最多支持 9 张输入图片',
+      )
+    }
 
+    const modelParams = mergeNegativePrompt(input.modelParams, input.negativePrompt)
     const params = isSynthesizedCustomImageManifest(ctx)
-      ? customImageParameters(input.modelParams)
-      : imageParameters(input.modelParams, ctx.defaultModel, images.length)
+      ? customImageParameters(modelParams)
+      : qwenModel
+        ? qwenImageParameters(modelParams)
+        : imageParameters(modelParams, ctx.defaultModel, images.length)
     const body = {
       model: ctx.defaultModel,
       input: {
@@ -133,7 +144,13 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
           input.outputDir,
           filenameHelper(
             input,
-            capability === 'image.edit' ? 'wan-edit' : 'wan-image',
+            qwenModel
+              ? capability === 'image.edit'
+                ? 'qwen-edit'
+                : 'qwen-image'
+              : capability === 'image.edit'
+                ? 'wan-edit'
+                : 'wan-image',
             index,
             imagesOut.length,
           ),
@@ -474,6 +491,58 @@ async function readLocalFile(filePath: string, label: string): Promise<Buffer> {
   }
 }
 
+function isQwenImageModel(model: string | undefined): boolean {
+  return typeof model === 'string' && model.startsWith('qwen-image')
+}
+
+/**
+ * Qwen-Image 2.0 系列参数构造（DashScope 原生，与 apimart 的 qwen 完全独立）。
+ * 与 wan 的 imageParameters 关键差异：
+ * - size 为像素星号（2048*2048），不校验 1K/2K/4K；
+ * - n 上限 6（2.0 系列）；
+ * - 不透传 wan 专属的 thinking_mode / enable_sequential / bbox_list / color_palette。
+ * negative_prompt 由 generateImage 从 input.negativePrompt 合并进 params，此处直接 pick。
+ */
+function qwenImageParameters(
+  params: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const normalized = normalizeBailianImageParams(params)
+  const size = normalized.size
+  if (size !== undefined && (typeof size !== 'string' || !/^\d+\*\d+$/.test(size))) {
+    throw new MediaProviderError(
+      'invalid_input',
+      'Qwen-Image 2.0 size 必须为像素星号格式（如 2048*2048）',
+    )
+  }
+  const n = normalized.n
+  if (
+    n !== undefined &&
+    (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 6)
+  ) {
+    throw new MediaProviderError('invalid_input', 'Qwen-Image 2.0 n 必须是 1-6 的整数')
+  }
+  // 显式补全官方默认（size/n/prompt_extend/watermark），使请求体稳定可控；
+  // negative_prompt / seed 仅在调用方传入时透传。
+  const result: Record<string, unknown> = {
+    size: size ?? '2048*2048',
+    n: typeof n === 'number' ? n : 1,
+    prompt_extend: normalized.prompt_extend ?? true,
+    watermark: normalized.watermark ?? false,
+  }
+  if (normalized.negative_prompt !== undefined) result.negative_prompt = normalized.negative_prompt
+  if (normalized.seed !== undefined) result.seed = normalized.seed
+  return result
+}
+
+function mergeNegativePrompt(
+  params: Record<string, unknown> | undefined,
+  negativePrompt: string | undefined,
+): Record<string, unknown> | undefined {
+  const trimmed = negativePrompt?.trim()
+  if (!trimmed) return params
+  return { ...(params ?? {}), negative_prompt: trimmed }
+}
+
 function imageParameters(
   params: Record<string, unknown> | undefined,
   model: string,
@@ -542,6 +611,8 @@ function normalizeBailianImageParams(
     ['enableSequential', 'enable_sequential'],
     ['bboxList', 'bbox_list'],
     ['colorPalette', 'color_palette'],
+    ['negativePrompt', 'negative_prompt'],
+    ['promptExtend', 'prompt_extend'],
   ]
   for (const [from, to] of aliases) {
     if (normalized[to] === undefined && normalized[from] !== undefined)

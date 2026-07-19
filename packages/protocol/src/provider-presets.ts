@@ -1654,7 +1654,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'openai',
     apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
     defaultModel: 'wan2.7-image-pro',
-    modelIds: ['wan2.7-image-pro', 'wan2.7-image'],
+    modelIds: ['wan2.7-image-pro', 'wan2.7-image', 'qwen-image-2.0-pro', 'qwen-image-2.0'],
     modelType: 'image',
     mediaProvider: 'bailian',
     mediaApiType: 'async',
@@ -1662,6 +1662,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaModelRefs: [
       { manifestId: 'bailian:wan2.7-image-pro', modelId: 'wan2.7-image-pro', enabled: true },
       { manifestId: 'bailian:wan2.7-image', modelId: 'wan2.7-image', enabled: true },
+      { manifestId: 'bailian:qwen-image-2.0-pro', modelId: 'qwen-image-2.0-pro', enabled: true },
+      { manifestId: 'bailian:qwen-image-2.0', modelId: 'qwen-image-2.0', enabled: true },
     ],
     mediaDefaults: {
       image: { size: '2K', n: 1 },

@@ -365,7 +365,7 @@ describe('ProviderEditPanel progressive configuration', () => {
     expect(container.textContent).toContain('deepseek:avatar')
   })
 
-  it('keeps template-derived media controls collapsed until requested', async () => {
+  it('keeps template-derived media routing read-only until converted to custom configuration', async () => {
     await act(async () => {
       root = createRoot(container)
       root.render(
@@ -388,8 +388,22 @@ describe('ProviderEditPanel progressive configuration', () => {
 
     act(() => toggle?.click())
 
+    expect(container.textContent).toContain('媒体调用配置')
+    expect(container.textContent).toContain('APIMart · auto 自动兼容')
+    expect(container.textContent).toContain('转为自定义配置')
+    expect(container.textContent).not.toContain('平台适配器')
+    expect(container.textContent).not.toContain('生图接口来源')
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('转为自定义配置'),
+    )
+    expect(convertButton).toBeDefined()
+
+    act(() => convertButton?.click())
+
     expect(container.textContent).toContain('平台适配器')
-    expect(container.textContent).toContain('生图接口来源')
+    expect(container.textContent).toContain('调用方式')
+    expect(container.textContent).not.toContain('生图接口来源')
   })
 
   it('maps Volcengine Seedream template to Seedream image source before advanced settings are opened', async () => {
