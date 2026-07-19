@@ -63,6 +63,11 @@ import { buildCanvasOperationRunViews, type CanvasOperationOutputView } from './
 import { CanvasOperationPresetModal } from './CanvasOperationPresetModal'
 import { CanvasPanoramaViewerModal } from './CanvasPanoramaViewerModal'
 import { CanvasImageAnnotationModal } from './CanvasImageAnnotationModal'
+import {
+  annotationBaseName,
+  createCanvasImageAnnotationRef,
+  saveCanvasImageAnnotationDocument,
+} from './image-annotation/annotationPersistence'
 import { CanvasGridSplitModal, type CanvasGridSplitTile } from './CanvasGridSplitModal'
 import { useFloatingViewportGeometry } from './useFloatingViewportGeometry'
 import { CanvasPresetHubEntry } from './CanvasPresetHubEntry'
@@ -210,6 +215,7 @@ import { SidebarExpandButton } from '../../SidebarExpandButton'
 import type {
   CanvasInputTransport,
   CanvasAsset,
+  CanvasImageAnnotationDocument,
   CanvasNode,
   CanvasOperationType,
   CanvasPipelineRole,
@@ -4269,14 +4275,23 @@ export function CanvasWorkspaceView({
   )
 
   const handleAnnotateImageComplete = useCallback(
-    async (input: { dataUrl: string; width: number; height: number; sourceNode: CanvasNode }) => {
+    async (input: {
+      dataUrl: string
+      width: number
+      height: number
+      sourceNode: CanvasNode
+      document: CanvasImageAnnotationDocument
+      documentPath?: string
+    }) => {
       if (!snapshot) return
-      const fileName = `${
-        (input.sourceNode.title || 'image')
-          .replace(/[^\p{L}\p{N}_-]+/gu, '-')
-          .replace(/^-+|-+$/g, '')
-          .slice(0, 40) || 'image'
-      }-annotated-${Date.now()}.png`
+      const baseName = annotationBaseName(input.sourceNode)
+      const fileName = `${baseName}-annotated-${Date.now()}.png`
+      const documentPath = await saveCanvasImageAnnotationDocument({
+        document: input.document,
+        sourceNode: input.sourceNode,
+        ...(input.documentPath ? { existingFilePath: input.documentPath } : {}),
+        ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+      })
       const file = await dataUrlToFile(input.dataUrl, fileName)
       const savedImage = await window.spark.invoke('file:save-pasted-image', {
         dataUrl: input.dataUrl,
@@ -4304,14 +4319,47 @@ export function CanvasWorkspaceView({
         imageHeight: input.height,
       })
       if (imageNode) {
-        await patchNodes([imageNode.id], { title: `${source.title ?? '图片'} · 标注` })
+        await patchNodes([imageNode.id], {
+          title: `${source.title ?? '图片'} · 标注`,
+          data: {
+            ...imageNode.data,
+            imageAnnotation: createCanvasImageAnnotationRef({
+              documentPath,
+              document: input.document,
+              sourceNode: source,
+            }),
+          },
+        })
         await connectNodes({ sourceNodeId: source.id, targetNodeId: imageNode.id })
+        // “完成”代表这一轮草稿已经结算到新图片节点。新节点保留侧车文档用于追溯，
+        // 原图则清除自动草稿引用；两者下一次都从各自当前图片开启一轮新的标注。
+        await updateNodeData(source.id, {
+          // updateNodeData 在运行时会删除值为 undefined 的字段；这里用显式断言表达“删除”。
+          imageAnnotation: undefined,
+        } as unknown as Partial<CanvasNode['data']>)
         setSelectedNodeIds([imageNode.id])
       }
       setAnnotatingImageNodeId(null)
       message.success('已生成标注图片节点')
     },
-    [connectNodes, createImageNode, patchNodes, snapshot],
+    [connectNodes, createImageNode, patchNodes, snapshot, updateNodeData],
+  )
+
+  const handleAnnotateImageDraftSaved = useCallback(
+    async (input: {
+      documentPath: string
+      document: CanvasImageAnnotationDocument
+      sourceNode: CanvasNode
+    }) => {
+      const source = input.sourceNode
+      await patchNodes([source.id], {
+        data: {
+          ...source.data,
+          imageAnnotation: createCanvasImageAnnotationRef(input),
+        },
+      })
+    },
+    [patchNodes],
   )
 
   const handleGridSplitComplete = useCallback(
@@ -7944,8 +7992,10 @@ export function CanvasWorkspaceView({
           <CanvasImageAnnotationModal
             open={Boolean(annotatingImageNode)}
             node={annotatingImageNode}
+            {...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {})}
             onCancel={() => setAnnotatingImageNodeId(null)}
-            onComplete={(input) => void handleAnnotateImageComplete(input)}
+            onDraftSaved={handleAnnotateImageDraftSaved}
+            onComplete={handleAnnotateImageComplete}
           />
           <CanvasGridSplitModal
             open={Boolean(gridSplitImageNode)}

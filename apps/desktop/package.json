@@ -88,6 +88,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "exceljs": "^4.4.0",
+    "fabric": "^7.4.0",
     "html2canvas": "^1.4.1",
     "katex": "^0.17.0",
     "less": "^4.6.4",

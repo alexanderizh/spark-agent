@@ -189,11 +189,61 @@ export type CanvasBoard = {
   updatedAt: string
 }
 
+export type CanvasImageAnnotationPadding = {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+/** 图片标注的可编辑侧车文档。Fabric 场景被封装在自有版本协议内，避免成为公共存储协议。 */
+export type CanvasImageAnnotationDocument = {
+  schemaVersion: 1
+  source: {
+    nodeId: string
+    assetId?: string
+    url: string
+    width: number
+    height: number
+  }
+  artboard: {
+    width: number
+    height: number
+    contentWidth: number
+    contentHeight: number
+    background: '#ffffff' | null
+    padding: CanvasImageAnnotationPadding
+  }
+  scene: {
+    engine: 'fabric'
+    engineVersion: string
+    json: unknown
+  }
+  createdAt: string
+  updatedAt: string
+}
+
+export type CanvasImageAnnotationRef = {
+  schemaVersion: 1
+  documentPath: string
+  sourceNodeId: string
+  sourceAssetId?: string
+  artboard: {
+    width: number
+    height: number
+    background: '#ffffff' | null
+    padding: CanvasImageAnnotationPadding
+  }
+  updatedAt: string
+}
+
 export type CanvasNodeData = {
   text?: string
   format?: 'plain' | 'markdown' | 'prompt'
   url?: string
   thumbnailUrl?: string
+  /** 可继续编辑的图片标注侧车文档；实际场景不直接写入项目节点快照。 */
+  imageAnnotation?: CanvasImageAnnotationRef
   mimeType?: string
   operation?: CanvasOperationType
   /** 单产物 / 候选 / 集合 / 角色包；缺省时由工作流和最近一次运行自动推断。 */

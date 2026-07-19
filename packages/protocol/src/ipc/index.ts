@@ -4013,6 +4013,20 @@ export interface FileSavePastedImageResponse {
   fileName: string
 }
 
+/** 把可编辑图片标注文档写入画布项目的 assets/annotations 目录。 */
+export interface FileSaveCanvasAnnotationRequest {
+  documentJson: string
+  suggestedBaseName?: string
+  projectRootPath?: string
+  /** 自动草稿与完成保存复用同一侧车文件；仅允许覆盖 annotations 目录内文件。 */
+  existingFilePath?: string
+}
+
+export interface FileSaveCanvasAnnotationResponse {
+  filePath: string
+  fileName: string
+}
+
 export interface FilePrepareImagePreviewRequest {
   sourcePath: string
 }
@@ -5499,6 +5513,7 @@ export interface IpcChannelMap extends ProviderFilesIpcChannelMap {
   // File Save Image — show save dialog and copy a local image to the user's chosen path
   'file:save-image': [FileSaveImageRequest, FileSaveImageResponse]
   'file:save-pasted-image': [FileSavePastedImageRequest, FileSavePastedImageResponse]
+  'file:save-canvas-annotation': [FileSaveCanvasAnnotationRequest, FileSaveCanvasAnnotationResponse]
   'file:prepare-image-preview': [FilePrepareImagePreviewRequest, FilePrepareImagePreviewResponse]
   'file:stat-kind': [FileStatKindRequest, FileStatKindResponse]
 

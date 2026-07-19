@@ -7816,6 +7816,42 @@ export function registerAllIpcHandlers(): void {
     return { filePath, fileName }
   })
 
+  typedIpcHandle('file:save-canvas-annotation', async (req) => {
+    const documentJson = req.documentJson?.trim()
+    if (!documentJson) throw new Error('documentJson is required')
+    if (Buffer.byteLength(documentJson, 'utf8') > 20 * 1024 * 1024) {
+      throw new Error('图片标注文档超过 20MB，无法保存')
+    }
+    JSON.parse(documentJson)
+
+    const rootDir = req.projectRootPath?.trim()
+      ? path.join(path.resolve(req.projectRootPath), 'assets', 'annotations')
+      : path.join(getDefaultCanvasMediaDir(), 'annotations')
+    await fs.mkdir(rootDir, { recursive: true })
+    const baseName = (req.suggestedBaseName?.trim() || 'image-annotation').replace(
+      /[^a-zA-Z0-9._-]+/g,
+      '-',
+    )
+    const requestedPath = req.existingFilePath?.trim()
+    const fileName = requestedPath
+      ? path.basename(requestedPath)
+      : `${baseName}-${crypto.randomUUID()}.spark-annotation.json`
+    const filePath = requestedPath ? path.resolve(requestedPath) : path.join(rootDir, fileName)
+    const relativePath = path.relative(path.resolve(rootDir), filePath)
+    if (
+      !relativePath ||
+      relativePath.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativePath) ||
+      !fileName.endsWith('.spark-annotation.json')
+    ) {
+      throw new Error('标注文件不在当前项目的 annotations 目录内')
+    }
+    const tempPath = `${filePath}.${crypto.randomUUID()}.tmp`
+    await fs.writeFile(tempPath, documentJson, 'utf8')
+    await fs.rename(tempPath, filePath)
+    return { filePath, fileName }
+  })
+
   typedIpcHandle('file:prepare-image-preview', async (req) => {
     const sourcePath = req.sourcePath?.trim()
     if (!sourcePath) {
