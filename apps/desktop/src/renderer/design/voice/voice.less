@@ -48,7 +48,7 @@
   }
 
   &.is-recording {
-    width: 132px;
+    width: 116px;
     height: 32px;
     padding: 0;
     gap: 7px;
@@ -94,7 +94,9 @@
   align-items: center;
   justify-content: flex-start;
   gap: 1px;
-  width: 70px;
+  // 18 根 2px 音柱 + 17 个 1px 间隔 = 53px。宽度与实际轨道对齐，
+  // 避免容器尾部空白叠加到计时器前，看起来像异常大间距。
+  width: 53px;
   height: 20px;
   flex: 0 0 auto;
   overflow: hidden;
