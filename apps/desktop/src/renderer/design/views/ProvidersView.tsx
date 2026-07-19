@@ -235,7 +235,7 @@ function buildRequestEndpointPreview(form: Pick<ProviderForm,
   }
 }
 
-function getMediaRequestPreviewUrl(
+export function getMediaRequestPreviewUrl(
   baseUrl: string,
   form: Pick<ProviderForm, 'modelType' | 'defaultModel' | 'mediaCapabilities'>,
   mediaProvider: MediaProviderKind,
@@ -243,6 +243,9 @@ function getMediaRequestPreviewUrl(
   if (form.modelType === 'image') {
     if (mediaProvider === 'google-generative-ai' || mediaProvider === 'omni') return `${baseUrl}/interactions`
     if (mediaProvider === 'midjourney') return `${baseUrl}/imagine`
+    // 百炼（DashScope 原生）：qwen-image / wan 图片统一走 multimodal-generation/generation，
+    // 与 OpenAI 兼容的 /images/generations 不同；适配器 bailian-media.adapter.ts 同源。
+    if (mediaProvider === 'bailian') return `${baseUrl}/multimodal-generation/generation`
     return `${baseUrl}/images/generations`
   }
 
@@ -261,6 +264,8 @@ function getMediaRequestPreviewUrl(
       return `${baseUrl}/models/${model}:predictLongRunning`
     }
     if (mediaProvider === 'volcengine-ark') return `${baseUrl}/contents/generations/tasks`
+    // 百炼（DashScope 原生）：wan 视频 / qwen 视频统一走 video-generation/video-synthesis。
+    if (mediaProvider === 'bailian') return `${baseUrl}/video-generation/video-synthesis`
     return `${baseUrl}/videos/generations`
   }
 
