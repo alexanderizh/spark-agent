@@ -19,7 +19,7 @@ import {
 } from '../../services/session.service.js'
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
 import { SessionQuestionGate } from '../../services/session-question-gate.js'
-import { CodexCliExecutor, CodexSdkExecutor } from '../../sdk/index.js'
+import { CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor } from '../../sdk/index.js'
 
 function baseEvent(
   sessionId: string,
@@ -145,11 +145,13 @@ describe('SessionService recovery helpers', () => {
     expect(service.pendingTurns.get('session-1')).toEqual([queuedTurn])
   })
 
-  it('routes bare Codex chat-compatible API configs through the Codex SDK executor', () => {
-    expect(createCodexExecutorForConfig({ codexApiKind: 'chat' })).toBeInstanceOf(CodexSdkExecutor)
+  it('routes remote Chat Completions configs through the direct OpenAI executor', () => {
+    expect(createCodexExecutorForConfig({ codexApiKind: 'chat' })).toBeInstanceOf(
+      CodexOpenAIExecutor,
+    )
   })
 
-  it('routes OpenAI-compatible Codex provider configs through the Codex SDK executor for tool access', () => {
+  it('keeps Chat Completions off the Codex SDK even when a CLI provider config exists', () => {
     expect(
       createCodexExecutorForConfig({
         codexApiKind: 'chat',
@@ -160,7 +162,7 @@ describe('SessionService recovery helpers', () => {
           env: { SPARK_CODEX_API_KEY_TEST: 'sk-test' },
         },
       }),
-    ).toBeInstanceOf(CodexSdkExecutor)
+    ).toBeInstanceOf(CodexOpenAIExecutor)
   })
 
   it('keeps Codex Responses providers on the Codex SDK executor', () => {
@@ -168,6 +170,19 @@ describe('SessionService recovery helpers', () => {
       CodexSdkExecutor,
     )
     expect(createCodexExecutorForConfig({})).toBeInstanceOf(CodexSdkExecutor)
+  })
+
+  it('gives an explicit Responses selection precedence over stale Chat provider metadata', () => {
+    expect(
+      createCodexExecutorForConfig({
+        codexApiKind: 'responses',
+        codexCliProvider: {
+          id: 'spark-provider',
+          wireApi: 'chat',
+          envKey: 'SPARK_CODEX_API_KEY_TEST',
+        },
+      }),
+    ).toBeInstanceOf(CodexSdkExecutor)
   })
 
   it('keeps local Codex CLI providers on the CLI executor', () => {
@@ -710,8 +725,8 @@ describe('resolveCodexMemberExecutionProfile (FR-0a codex member executor routin
   })
 })
 
-describe('isOpenAiOnlyCodexConsumer legacy compatibility hook', () => {
-  it('does not mark Codex SDK chat-wire providers as OpenAI-only', () => {
+describe('isOpenAiOnlyCodexConsumer direct Chat routing', () => {
+  it('marks remote anthropic-profile Chat consumers as direct OpenAI-only', () => {
     expect(
       isOpenAiOnlyCodexConsumer({
         isCodex: true,
@@ -719,7 +734,7 @@ describe('isOpenAiOnlyCodexConsumer legacy compatibility hook', () => {
         providerType: 'anthropic',
         codexApiKind: 'chat',
       }),
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it('does not mark Codex SDK responses providers as OpenAI-only', () => {
@@ -733,7 +748,7 @@ describe('isOpenAiOnlyCodexConsumer legacy compatibility hook', () => {
     ).toBe(false)
   })
 
-  it('does not mark non-anthropic Codex SDK providers as OpenAI-only', () => {
+  it('marks remote OpenAI-compatible Chat consumers as direct OpenAI-only', () => {
     expect(
       isOpenAiOnlyCodexConsumer({
         isCodex: true,
@@ -741,7 +756,7 @@ describe('isOpenAiOnlyCodexConsumer legacy compatibility hook', () => {
         providerType: 'openai',
         codexApiKind: 'chat',
       }),
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it('does not mark local CLI codex as OpenAI-only', () => {

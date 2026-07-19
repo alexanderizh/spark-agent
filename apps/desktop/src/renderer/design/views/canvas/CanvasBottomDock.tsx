@@ -3,8 +3,6 @@ import { Button, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import {
   CanvasAddNodeMenu,
-  CanvasDockAddDropdown,
-  groupAddNodeItems,
   useAddNodeMenuItems,
   type AddNodeMenuItem,
 } from './CanvasAddNodeMenu'
@@ -13,7 +11,7 @@ import type { CanvasTool } from './CanvasToolbar'
 /**
  * 底部悬浮工具栏（文档 §7.5）。
  *
- * 节点创建约定：资源内容节点 / 任务节点 两类，悬停展开全部子类型。
+ * 节点通过「全部节点类型」入口统一创建。
  * 选择/平移、编辑、视图控制与其余工作台入口保持分组排列。
  */
 export function CanvasBottomDock({
@@ -64,7 +62,6 @@ export function CanvasBottomDock({
   canRedo: boolean
 }) {
   const items = useAddNodeMenuItems()
-  const grouped = groupAddNodeItems(items)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const deleteTooltip = selectedCount > 0 ? `删除选中节点（${selectedCount}）` : '选择节点后可删除'
   const openAddMenu = () => {
@@ -116,20 +113,6 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-divider" />
 
         <div className="canvas-bottom-dock-group">
-          <CanvasDockAddDropdown
-            label="添加资源内容节点"
-            shortLabel="资源"
-            icon={<Icons.FileText size={15} />}
-            items={grouped.resource}
-            onSelect={(item) => closeAddMenuAndRun(() => handleAddNodeItem(item))}
-          />
-          <CanvasDockAddDropdown
-            label="添加任务节点"
-            shortLabel="任务"
-            icon={<Icons.Sparkles size={15} />}
-            items={grouped.task}
-            onSelect={(item) => closeAddMenuAndRun(() => handleAddNodeItem(item))}
-          />
           <Tooltip title="全部节点类型" placement="top">
             <Button
               size="middle"

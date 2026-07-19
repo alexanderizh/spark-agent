@@ -134,6 +134,7 @@ import { SkillLoader } from '../skills/skill-loader.js'
 import {
   ClaudeSDKExecutor,
   CodexCliExecutor,
+  CodexOpenAIExecutor,
   CodexSdkExecutor,
   isSDKAvailable,
 } from '../sdk/index.js'
@@ -241,22 +242,25 @@ type ActiveExecution = {
 
 export function createCodexExecutorForConfig(
   config: Pick<SDKExecutorConfig, 'useLocalConfig' | 'codexApiKind' | 'codexCliProvider'>,
-): CodexCliExecutor | CodexSdkExecutor {
+): CodexCliExecutor | CodexOpenAIExecutor | CodexSdkExecutor {
   if (config.useLocalConfig === true) return new CodexCliExecutor()
-  void config.codexApiKind
-  void config.codexCliProvider
+  if (config.codexApiKind === 'chat') {
+    return new CodexOpenAIExecutor()
+  }
+  if (config.codexApiKind == null && config.codexCliProvider?.wireApi === 'chat') {
+    return new CodexOpenAIExecutor()
+  }
   return new CodexSdkExecutor()
 }
 
-/** Legacy compatibility hook: Codex API providers now run through CodexSdkExecutor. */
+/** Chat-only Codex consumers use direct HTTP and cannot consume local MCP bridges. */
 export function isOpenAiOnlyCodexConsumer(args: {
   isCodex: boolean
   isLocalCli: boolean
   providerType: string
   codexApiKind?: 'chat' | 'responses' | undefined
 }): boolean {
-  void args
-  return false
+  return args.isCodex && !args.isLocalCli && args.codexApiKind === 'chat'
 }
 
 type ImageGenerationRuntimeContext = {
@@ -10151,7 +10155,7 @@ function buildCodexCliModelProviderConfig(params: {
  * - claude 成员 → permissionMode 'claude-auto'、无 codex 扩展（走 ClaudeSDKExecutor）
  * - codex 成员 → permissionMode 'codex-auto-review'（→ acceptEdits / workspace-write），并按
  *   isLocalCli/providerType/codexApiKind 构造 useLocalConfig/codexApiKind/codexCliProvider，
- *   供 createCodexExecutorForConfig 选 CodexCli/CodexSdk 执行器。
+ *   供 createCodexExecutorForConfig 选 CodexCli/CodexOpenAI/CodexSdk 执行器。
  *
  * 注：原方案 6.8 节写的 'codex-auto' 不在 SparkPermissionMode 联合类型内（非法字面量），
  * 故取语义最近的 codex-auto-review。

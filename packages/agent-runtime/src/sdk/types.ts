@@ -622,7 +622,7 @@ export interface CodexCliModelProviderConfig {
  * 但不包含 apiKey、Authorization 或完整环境变量。
  */
 export interface SDKInvocationSnapshot {
-  transport: 'claude-sdk' | 'codex-sdk' | 'codex-cli'
+  transport: 'claude-sdk' | 'codex-sdk' | 'codex-cli' | 'openai-chat'
   request: Record<string, unknown>
 }
 

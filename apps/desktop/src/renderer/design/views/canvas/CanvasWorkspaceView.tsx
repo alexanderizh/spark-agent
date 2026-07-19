@@ -20,10 +20,7 @@ import {
   type CanvasStageViewportControls,
 } from './CanvasStage'
 import type { PendingCanvasConnection } from './canvasPendingConnection'
-import {
-  CanvasTaskQueue,
-  type CanvasTaskRetryRuntimeSource,
-} from './CanvasTaskQueue'
+import { CanvasTaskQueue, type CanvasTaskRetryRuntimeSource } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { downloadAsset, downloadCanvasResource } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
@@ -1675,8 +1672,7 @@ const CANVAS_SHORTCUT_HELP_GROUPS: Array<{
       { keys: ['Ctrl / Cmd', '\\'], desc: '展开 / 折叠右侧面板' },
       { keys: ['Ctrl / Cmd', 'R'], desc: '刷新当前画布数据' },
       { keys: ['Ctrl / Cmd', 'Shift', 'S'], desc: '开启 / 关闭自动保存' },
-      { keys: ['底部工具栏', '任务节点'], desc: '打开任务节点类型列表' },
-      { keys: ['底部工具栏', '资源节点'], desc: '打开资源内容节点列表' },
+      { keys: ['底部工具栏', '全部节点'], desc: '打开全部节点类型列表' },
       { keys: ['底部工具栏', '资产中心'], desc: '打开项目资产中心' },
     ],
   },
@@ -6635,11 +6631,10 @@ export function CanvasWorkspaceView({
           })
           captureDiagnostics({
             modelOutputText: response.text,
-            rawResponse:
-              response.rawResponse ?? {
-                status: response.status,
-                error: response.error ?? null,
-              },
+            rawResponse: response.rawResponse ?? {
+              status: response.status,
+              error: response.error ?? null,
+            },
             agentId: runtime.agentId ?? null,
             providerProfileId: (response.providerProfileId || runtime.providerProfileId) ?? null,
             provider: response.provider || null,
@@ -7112,10 +7107,7 @@ export function CanvasWorkspaceView({
     })
   }
 
-  const handleRetryTask = async (
-    task: CanvasTask,
-    runtimeSource: CanvasTaskRetryRuntimeSource,
-  ) => {
+  const handleRetryTask = async (task: CanvasTask, runtimeSource: CanvasTaskRetryRuntimeSource) => {
     const snapshot = snapshotRef.current
     if (!snapshot) return
     const taskNode =
@@ -7169,9 +7161,7 @@ export function CanvasWorkspaceView({
           promptSubmission,
           ...(task.prompt != null ? { userPrompt: task.prompt } : {}),
           ...(runtime.agentId ? { agentId: runtime.agentId } : {}),
-          ...(runtime.providerProfileId
-            ? { providerProfileId: runtime.providerProfileId }
-            : {}),
+          ...(runtime.providerProfileId ? { providerProfileId: runtime.providerProfileId } : {}),
           ...(runtime.modelId ? { modelId: runtime.modelId } : {}),
           ...(runtime.reasoningEffort ? { reasoningEffort: runtime.reasoningEffort } : {}),
           ...(runtime.skillIds ? { skillIds: runtime.skillIds } : {}),
@@ -7327,8 +7317,7 @@ export function CanvasWorkspaceView({
                       taskInputNodes,
                       snapshot.assets,
                     )
-                    const operation = (opNode.data.operation ??
-                      opNode.type) as CanvasOperationType
+                    const operation = (opNode.data.operation ?? opNode.type) as CanvasOperationType
                     const currentPresetTargetId = resolveCanvasPresetTarget({
                       operation,
                       taskPipelineRole:
@@ -7420,31 +7409,26 @@ export function CanvasWorkspaceView({
                         modelParams: currentModelParams,
                       })
                       closePanel()
-                      void handleExtractEntities(
-                        sourceNode,
-                        sourceText,
-                        extractKind,
-                        {
-                          prompt: promptSubmission.prompt,
-                          userPrompt: params.prompt,
-                          promptSubmission,
-                          ...(params.agentId ? { agentId: params.agentId } : {}),
-                          ...(params.providerProfileId
-                            ? { providerProfileId: params.providerProfileId }
-                            : {}),
-                          ...(params.modelId ? { modelId: params.modelId } : {}),
-                          ...(params.reasoningEffort
-                            ? { reasoningEffort: params.reasoningEffort }
-                            : {}),
-                          ...(params.skillIds ? { skillIds: params.skillIds } : {}),
-                          modelParams: currentModelParams,
-                          bindToNodeId: opNode.id,
-                          ...(params.inputNodeIds ? { inputNodeIds: params.inputNodeIds } : {}),
-                          inputAssetIds: taskInputNodes
-                            .map((item) => item.assetId)
-                            .filter((id): id is string => Boolean(id)),
-                        },
-                      )
+                      void handleExtractEntities(sourceNode, sourceText, extractKind, {
+                        prompt: promptSubmission.prompt,
+                        userPrompt: params.prompt,
+                        promptSubmission,
+                        ...(params.agentId ? { agentId: params.agentId } : {}),
+                        ...(params.providerProfileId
+                          ? { providerProfileId: params.providerProfileId }
+                          : {}),
+                        ...(params.modelId ? { modelId: params.modelId } : {}),
+                        ...(params.reasoningEffort
+                          ? { reasoningEffort: params.reasoningEffort }
+                          : {}),
+                        ...(params.skillIds ? { skillIds: params.skillIds } : {}),
+                        modelParams: currentModelParams,
+                        bindToNodeId: opNode.id,
+                        ...(params.inputNodeIds ? { inputNodeIds: params.inputNodeIds } : {}),
+                        inputAssetIds: taskInputNodes
+                          .map((item) => item.assetId)
+                          .filter((id): id is string => Boolean(id)),
+                      })
                       restoreCanvasViewport(viewportBeforeRun)
                       return
                     }
@@ -7467,10 +7451,7 @@ export function CanvasWorkspaceView({
                       })
                     const resolvedPreset = readCanvasResolvedPresetTarget(presetTargetId)
                     const systemPrompt =
-                      normalizeCanvasFunctionalSystemPrompt(
-                        params.systemPrompt,
-                        presetTargetId,
-                      ) ||
+                      normalizeCanvasFunctionalSystemPrompt(params.systemPrompt, presetTargetId) ||
                       buildCanvasOperationSystemPrompt(operation, resolvedPreset.prompt)
                     const promptSubmission = await buildCanvasPromptSubmission({
                       document: promptDocument,
@@ -8274,9 +8255,7 @@ export function CanvasWorkspaceView({
                   onCancelTask={(taskId) => void cancelTask(taskId)}
                   onClearTasks={(scope) => void clearTasks(scope)}
                   onDeleteTasks={(taskIds) => void deleteTasks(taskIds)}
-                  onRetryTask={(task, runtimeSource) =>
-                    void handleRetryTask(task, runtimeSource)
-                  }
+                  onRetryTask={(task, runtimeSource) => void handleRetryTask(task, runtimeSource)}
                   onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
                 />
               </div>

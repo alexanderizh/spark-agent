@@ -168,7 +168,8 @@ function contextualUiActions(node: CanvasNode): CanvasAgentAvailableAction[] {
         category: 'edit',
         source: 'node_menu',
         execution: 'requires_user_interaction',
-        description: '打开矢量标注编辑器，支持形状、箭头、画笔、文字、马赛克和裁剪。',
+        description:
+          '打开可继续编辑的图片标注工作台，支持形状、箭头、画笔、文字、编号、马赛克、裁剪和四边白色留白。',
         guidance: '引导用户右键图片节点选择“图片标注”。',
       },
       {

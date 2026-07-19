@@ -523,6 +523,22 @@ describe('ProviderEditPanel progressive configuration', () => {
     expect(apiKindSelect?.value).toBe('responses')
   })
 
+  it('shows the actual request address only once for OpenAI protocol settings', async () => {
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ProviderEditPanel visible initialPresetId="volcengine-ark-openai" onClose={() => undefined} />,
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10))
+    })
+
+    expect(container.textContent).not.toContain('请求端点：')
+    expect(container.querySelectorAll('.pv_endpoint_inline_hint')).toHaveLength(1)
+    expect(container.querySelector('.pv_endpoint_inline_hint')?.textContent).toContain('实际请求地址：')
+  })
+
   it('keeps unknown OpenAI-compatible endpoints on Chat Completions by default', () => {
     expect(resolveCodexApiKind('openai', 'https://api.compat.example/v1')).toBe('chat')
     expect(resolveCodexApiKind('openai', 'https://open.bigmodel.cn/api/coding/paas/v4')).toBe('responses')

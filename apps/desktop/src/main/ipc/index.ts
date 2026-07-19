@@ -3463,7 +3463,7 @@ export function registerAllIpcHandlers(): void {
       const effectiveMediaProviderId =
         mediaModelOwner != null && !requestedMediaProviderSupportsModel
           ? mediaModelOwner.id
-          : req.providerProfileId ?? mediaModelOwner?.id ?? null
+          : (req.providerProfileId ?? mediaModelOwner?.id ?? null)
       const providers = req.modelId
         ? resolvedProviders.map((provider) => {
             const shouldOverride =
@@ -3511,7 +3511,9 @@ export function registerAllIpcHandlers(): void {
       const options = {
         providers,
         fallbackUploader: sparkMediaUploader,
-        ...(effectiveMediaProviderId != null ? { providerProfileId: effectiveMediaProviderId } : {}),
+        ...(effectiveMediaProviderId != null
+          ? { providerProfileId: effectiveMediaProviderId }
+          : {}),
         ...(req.manifestId != null ? { manifestId: req.manifestId } : {}),
         ...(req.modelId != null ? { modelId: req.modelId } : {}),
         ...(req.skipParameterValidation === true ? { skipValidation: true } : {}),
@@ -3811,7 +3813,8 @@ export function registerAllIpcHandlers(): void {
         ? profiles.find(
             (profile) =>
               isTextProvider(profile) &&
-              (profile.defaultModel === requestedModelId || profile.modelIds.includes(requestedModelId)),
+              (profile.defaultModel === requestedModelId ||
+                profile.modelIds.includes(requestedModelId)),
           )
         : null
       const requestedProvider = req.providerProfileId
@@ -3830,7 +3833,9 @@ export function registerAllIpcHandlers(): void {
       const preferredProviderId =
         modelOwner != null && !requestedProviderSupportsModel
           ? modelOwner.id
-          : req.providerProfileId ?? (modelOwner?.id ?? (agent?.providerProfileId ? agent.providerProfileId : null))
+          : (req.providerProfileId ??
+            modelOwner?.id ??
+            (agent?.providerProfileId ? agent.providerProfileId : null))
       const ordered = preferredProviderId
         ? profiles.filter((p) => p.id === preferredProviderId)
         : [...profiles].sort((a, b) => Number(b.isDefault) - Number(a.isDefault))
