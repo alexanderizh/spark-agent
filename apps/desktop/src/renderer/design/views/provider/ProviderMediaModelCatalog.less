@@ -1,0 +1,27 @@
+.pv_media_catalog {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pv_media_catalog_search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+
+  & > :first-child {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.pv_media_catalog_count {
+  flex-shrink: 0;
+  min-width: 48px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

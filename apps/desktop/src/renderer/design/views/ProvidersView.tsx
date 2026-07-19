@@ -10,6 +10,7 @@ import { ChipList } from '../components/ChipList'
 import { ProviderFilesPanel } from './provider/ProviderFilesPanel'
 import { ProviderConversationProtocolFields } from './provider/ProviderConversationProtocolFields'
 import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingFields'
+import { ProviderMediaModelCatalog } from './provider/ProviderMediaModelCatalog'
 import {
   ProviderLogo,
   PROVIDER_ICON_CATALOG,
@@ -3736,70 +3737,15 @@ export function ProviderEditPanel({
                     模型清单
                   </label>
                   <div className="pv_media_model_refs">
-                    <div className="pv_media_manifest_list">
-                      {mediaCatalogLoading ? (
-                        <div className="pv_media_manifest_empty">正在加载模型清单…</div>
-                      ) : mediaCatalogForForm.length === 0 ? (
-                        <div className="pv_media_manifest_empty">
-                          {isChatModel ? '该服务商暂未收录内置生图/视频模型，可在下方手动添加自定义模型 ID' : '暂无匹配的内置模型清单'}
-                        </div>
-                      ) : (
-                        mediaCatalogForForm.map((model) => (
-                          <label
-                            key={model.manifestId}
-                            className={[
-                              'pv_media_manifest_item',
-                              selectedManifestIds.has(model.manifestId) ? 'pv_media_manifest_item_selected' : '',
-                            ].filter(Boolean).join(' ')}
-                          >
-                            <Checkbox
-                              checked={selectedManifestIds.has(model.manifestId)}
-                              onChange={(checked: boolean) => toggleMediaModelRef(model, checked)}
-                            />
-                            <div className="pv_media_manifest_main">
-                              <div className="pv_media_manifest_title">
-                                <span>{model.displayName}</span>
-                                <Tag size="middle" color="gray">{model.providerKind}</Tag>
-                                <Tag size="middle" color="blue">{model.invocationMode}</Tag>
-                              </div>
-                              <div className="pv_media_manifest_meta">
-                                {model.effectiveModelId}
-                              </div>
-                              <div className="pv_media_manifest_caps">
-                                {model.capabilities.slice(0, 4).map((capability) => (
-                                  <Tag key={capability.id} size="middle" color="gray">
-                                    {capability.label}
-                                  </Tag>
-                                ))}
-                              </div>
-                            </div>
-                            {/* 已勾选的模型才可设为默认；按钮需阻止冒泡，避免误触 checkbox */}
-                            {selectedManifestIds.has(model.manifestId) && (
-                              <div className="pv_media_manifest_actions">
-                                {form.defaultModel.trim() === model.effectiveModelId.trim() ? (
-                                  <Tag size="middle" color="green">默认</Tag>
-                                ) : (
-                                  <Button
-                                    size="middle"
-                                    type="text"
-                                    icon={<Icons.Star size={12} />}
-                                    onClick={(e) => {
-                                      e.preventDefault()
-                                      e.stopPropagation()
-                                      setMediaDefaultModel(model.effectiveModelId)
-                                    }}
-                                    title="设为默认调用模型"
-                                    aria-label={`将 ${model.effectiveModelId} 设为默认`}
-                                  >
-                                    设为默认
-                                  </Button>
-                                )}
-                              </div>
-                            )}
-                          </label>
-                        ))
-                      )}
-                    </div>
+                    <ProviderMediaModelCatalog
+                      models={mediaCatalogForForm}
+                      loading={mediaCatalogLoading}
+                      isChatModel={isChatModel}
+                      selectedManifestIds={selectedManifestIds}
+                      defaultModel={form.defaultModel}
+                      onToggleModel={toggleMediaModelRef}
+                      onSetDefaultModel={setMediaDefaultModel}
+                    />
 
                     {/* ─── 自定义模型引用（不在内置目录里，可手动增删） ─── */}
                     {customModelRefs.length > 0 && (
