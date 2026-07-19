@@ -285,7 +285,10 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
         setStatus('idle')
       } else {
         setError(message)
-        setStatus('error')
+        // 权限拒绝已由主进程拉起系统设置；此时没有录音会话，按钮应立即退出红色录入态。
+        setStatus(
+          err instanceof VoiceCaptureError && err.code === 'permission-denied' ? 'idle' : 'error',
+        )
         onErrorRef.current?.(message)
       }
     } finally {

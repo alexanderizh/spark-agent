@@ -1,11 +1,11 @@
 # 语音采集启动与错误处理
 
-> 状态: 已落地 | 最后核对: 2026-07-19
+> 状态: 已落地 | 最后核对: 2026-07-20
 
 语音包就绪后，渲染进程必须按以下顺序启动采集，避免在麦克风不可用时提前创建 native 识别会话：
 
 1. 使用 `enumerateDevices()` 检查是否存在 `audioinput`。
-2. 调用 `voice:request-microphone-permission` 检查操作系统权限；macOS 首次使用由主进程通过 `systemPreferences.askForMediaAccess('microphone')` 请求授权。
+2. 调用 `voice:request-microphone-permission` 检查操作系统权限；macOS 首次使用由主进程通过 `systemPreferences.askForMediaAccess('microphone')` 请求授权。若 macOS 或 Windows 已拒绝权限，主进程直接拉起系统麦克风权限设置页，渲染进程显示操作提示并立即将语音按钮复位为 idle，不保留红色录入态。
 3. 授权后重新枚举设备并调用 `getUserMedia()`。系统默认输入设备出现 `AbortError`、`NotReadableError` 等硬件错误时，依次尝试其他音频输入设备。
 4. 确认音频流至少包含一条未结束的 audio track，随后创建 `AudioContext` 与 AudioWorklet。Worklet 脚本从 renderer 的同源 public 资源加载，不能使用 `blob:`：当前 CSP 为 `script-src 'self'`，Chromium 会将被 CSP 拦截的 blob Worklet 误报为 `AbortError: The user aborted a request.`。
 5. 最后调用 `voice:start` 创建 sherpa-onnx 识别会话并连接采集图。
@@ -14,7 +14,7 @@
 
 用户手动停止时先关闭本地采集，再调用 `voice:stop`，但必须等主进程完成尾部解码并推送最后一个 `final` 后才能取消识别事件订阅，否则最后一段文本会丢失。
 
-macOS 打包产物必须在 `Info.plist` 包含 `NSMicrophoneUsageDescription`。开发模式的系统权限项可能显示为 Electron，正式安装包显示为 SparkWork；用户在系统设置中修改已拒绝的权限后需要重启应用。
+macOS 打包产物必须在 `Info.plist` 包含 `NSMicrophoneUsageDescription`，并在 Hardened Runtime 签名 entitlement 中包含 `com.apple.security.device.audio-input=true`；缺少后者时 TCC 会直接拒绝请求，既不弹授权框，也不会在麦克风权限列表中展示应用。开发模式的系统权限项可能显示为 Electron，正式安装包显示为 SparkWork；用户在系统设置中修改已拒绝的权限后需要重启应用。
 
 ## 录音态反馈
 

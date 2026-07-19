@@ -215,7 +215,7 @@ describe('useVoiceInput', () => {
 
     await act(async () => voice().start())
 
-    expect(voice().status).toBe('error')
+    expect(voice().status).toBe('idle')
     expect(voice().error).toBe('请在系统设置中允许麦克风访问。')
     expect(getUserMedia).not.toHaveBeenCalled()
     expect(invoke).not.toHaveBeenCalledWith('voice:start', expect.anything())
