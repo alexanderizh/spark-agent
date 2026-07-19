@@ -10,7 +10,8 @@ import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin'
 import {
   LexicalTypeaheadMenuPlugin,
   MenuOption,
-  useBasicTypeaheadTriggerMatch,
+  PUNCTUATION,
+  type TriggerFn,
 } from '@lexical/react/LexicalTypeaheadMenuPlugin'
 import {
   $createLineBreakNode,
@@ -315,6 +316,18 @@ class CanvasPromptMentionOption extends MenuOption {
   }
 }
 
+const CANVAS_PROMPT_MENTION_TRIGGER = new RegExp(`@((?:[^@${PUNCTUATION}\\s]){0,80})$`)
+
+const matchCanvasPromptMentionTrigger: TriggerFn = (text) => {
+  const match = CANVAS_PROMPT_MENTION_TRIGGER.exec(text)
+  if (!match) return null
+  return {
+    leadOffset: match.index,
+    matchingString: match[1] ?? '',
+    replaceableString: match[0],
+  }
+}
+
 function CanvasPromptMentionPlugin({
   items,
   assetById,
@@ -326,7 +339,6 @@ function CanvasPromptMentionPlugin({
 }) {
   const [editor] = useLexicalComposerContext()
   const [searchQuery, setSearchQuery] = useState('')
-  const trigger = useBasicTypeaheadTriggerMatch('@', { minLength: 0, maxLength: 80 })
   const options = useMemo(() => items.map((item) => new CanvasPromptMentionOption(item)), [items])
 
   const selectOption = useCallback(
@@ -359,7 +371,7 @@ function CanvasPromptMentionPlugin({
       }}
       onSelectOption={selectOption}
       options={options}
-      triggerFn={trigger}
+      triggerFn={matchCanvasPromptMentionTrigger}
       preselectFirstItem
       menuRenderFn={(anchorElementRef, menuProps, matchingString) =>
         anchorElementRef.current
@@ -388,7 +400,7 @@ function CanvasPromptMentionPlugin({
                 }}
                 onRequestClose={() => closeLexicalTypeahead(editor)}
               />,
-              anchorElementRef.current,
+              document.body,
             )
           : null
       }

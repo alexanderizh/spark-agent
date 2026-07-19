@@ -456,8 +456,37 @@ describe('CanvasPromptComposer', () => {
     )
     expect(mentionSearch?.value).toBe('分镜')
     const mentionMenu = document.querySelector<HTMLElement>('.canvas-prompt-insert-menu')
-    expect(mentionMenu?.parentElement?.id).toBe('typeahead-menu')
+    expect(mentionMenu?.parentElement).toBe(document.body)
     expect(mentionMenu?.style.position).toBe('fixed')
+  })
+
+  it('opens @ suggestions without requiring whitespace before the trigger', async () => {
+    const mounted = await mountComposer({ version: 2, blocks: [] })
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('镜头中@小')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+
+    const option = document.querySelector<HTMLButtonElement>('.canvas-prompt-insert-result')
+    expect(option?.textContent).toContain('小满')
+    if (!option) throw new Error('Expected the @ mention menu to contain an option')
+    await act(async () => option.click())
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'text', text: '镜头中' }),
+        expect.objectContaining({ kind: 'reference', sourceNodeId: 'hero', label: '小满' }),
+      ]),
+    )
   })
 
   it('closes the toolbar insert menu after an outside pointer down', async () => {
