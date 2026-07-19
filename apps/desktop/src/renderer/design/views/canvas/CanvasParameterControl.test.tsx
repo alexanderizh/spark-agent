@@ -100,6 +100,24 @@ describe('CanvasParameterControl', () => {
     expect(rail?.querySelectorAll('[data-param-value]')).toHaveLength(values.length)
   })
 
+  it('renders pixel-asterisk size (bailian qwen-image) as compact options, not aspect thumbnails', async () => {
+    // 百炼 Qwen-Image 2.0 的 size 用像素星号（2048*2048），与 wan 的 1K/2K/4K、
+    // 与 agnes 的 1024x1024 都不同。isRatioValue 正则只匹配 ':' 或 'x'/'×'，
+    // 不匹配 '*'，因此星号格式必须落到 resolution（CompactOptions 按钮横排），
+    // 不能被误判为 aspect-ratio 缩略图，否则画布会渲染出错误的比例预览。
+    const values = ['2048*2048', '2688*1536', '1536*2688', '2368*1728', '1728*2368']
+    const { container } = await renderControl(field('size', values), '2048*2048')
+    const rail = container.querySelector('.canvas-parameter-option-rail')
+
+    expect(rail).not.toBeNull()
+    expect(rail?.querySelectorAll('[data-param-value]')).toHaveLength(values.length)
+    // 星号格式不得渲染为比例缩略图（aspect-ratio 控件才有 data-aspect-width）
+    expect(rail?.querySelector('[data-aspect-width]')).toBeNull()
+    expect(
+      rail?.querySelector('[data-param-value="2048*2048"]')?.getAttribute('aria-pressed'),
+    ).toBe('true')
+  })
+
   it('emits string boolean values', async () => {
     const { container, onChange } = await renderControl(field('searchEnabled', [], 'boolean'), 'false')
     await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click())

@@ -9,6 +9,7 @@ import { Icons } from '../Icons'
 import { ChipList } from '../components/ChipList'
 import { ProviderFilesPanel } from './provider/ProviderFilesPanel'
 import { ProviderConversationProtocolFields } from './provider/ProviderConversationProtocolFields'
+import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingFields'
 import {
   ProviderLogo,
   PROVIDER_ICON_CATALOG,
@@ -36,7 +37,6 @@ import {
   CODEX_AUTO_ROUTER_PROVIDER_ID,
   CODEX_AUTO_ROUTER_PROVIDER_NAME,
   isLocalCodexCliProvider,
-  MEDIA_API_TYPES,
   MEDIA_CAPABILITY_IDS,
   isMediaProviderKind,
   createBasicCustomMediaManifest,
@@ -678,12 +678,6 @@ function mediaProviderOptionsForModelType(modelType: ProviderModelType): readonl
   return modelType === 'image' || modelType === 'video'
     ? SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS
     : USABLE_MEDIA_PROVIDER_KINDS
-}
-
-function imageProviderOptionsForModelType(modelType: ProviderModelType): typeof IMAGE_PROVIDER_OPTIONS {
-  return modelType === 'image'
-    ? IMAGE_PROVIDER_OPTIONS.filter((option) => SUPPORTED_IMAGE_PROVIDERS.includes(option.value))
-    : IMAGE_PROVIDER_OPTIONS
 }
 
 /** 自定义模型 manifestId 前缀：不匹配内置目录，不会在 mediaCatalogForForm 中出现，单独渲染。 */
@@ -2717,6 +2711,10 @@ export function ProviderEditPanel({
     () => MEDIA_CAPABILITY_IDS.filter((capability) => capabilitiesForModelType(form.modelType).includes(capability)),
     [form.modelType],
   )
+  const templateConfigured = form.presetId !== 'custom'
+  const effectiveMediaProvider = (
+    form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)
+  ) as MediaProviderKind
   const showMediaDefaults = useMemo(() => {
     if (form.modelType === 'image') return true
     if (form.modelType === 'voice') return true
@@ -2732,7 +2730,6 @@ export function ProviderEditPanel({
     [form.mediaModelRefs],
   )
   const advancedSummary = useMemo(() => {
-    const templateConfigured = form.presetId !== 'custom'
     if (hasConfiguredMediaStack(form.modelType, form.mediaProvider, form.mediaCapabilities, form.mediaModelRefs)) {
       const adapter = MEDIA_PROVIDER_LABELS[
         (form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)) as MediaProviderKind
@@ -2745,7 +2742,7 @@ export function ProviderEditPanel({
     return templateConfigured
       ? '模板已自动配置 · 可按需调整模型与上下文'
       : `可选：协议、${routingLabel}`
-  }, [form])
+  }, [form, templateConfigured])
   const requestEndpointPreview = useMemo(
     () => buildRequestEndpointPreview(form),
     [form],
@@ -3206,6 +3203,23 @@ export function ProviderEditPanel({
 
   const set = <K extends keyof ProviderForm>(k: K, v: ProviderForm[K]) =>
     setForm((prev) => ({ ...prev, [k]: v }))
+  const changeMediaProvider = (mediaProvider: MediaProviderKind) => {
+    setForm((prev) => {
+      if (prev.modelType !== 'image') return { ...prev, mediaProvider }
+      const imageProvider = imageProviderFromMediaProvider(mediaProvider) ?? prev.imageProvider
+      const defaults = imageProviderDefaults(imageProvider)
+      return {
+        ...prev,
+        provider: 'openai',
+        imageProvider,
+        imageApiType: defaults.mode,
+        mediaProvider,
+        mediaApiType: defaults.mode,
+        endpoint: defaults.endpoint || prev.endpoint,
+        codexApiKind: 'chat',
+      }
+    })
+  }
   const selectProviderIcon = (iconId: string) => {
     const next = normalizeProviderIconConfig({ id: iconId, style: iconPickerStyle })
     if (!next) return
@@ -3677,72 +3691,25 @@ export function ProviderEditPanel({
                 </>
               )}
 
-              {form.modelType === 'image' && (
-                <>
-                  <label className="pv_form_label">
-                    生图接口来源
-                    <span className="pv_form_sub">决定图片请求 body、路径、尺寸参数和轮询策略</span>
-                  </label>
-                  <Select
-                    value={form.imageProvider}
-                    onChange={(v) => {
-                      const imageProvider = normalizeImageProvider(v)
-                      const defaults = imageProviderDefaults(imageProvider)
-                      setForm((prev) => ({
-                        ...prev,
-                        provider: 'openai',
-                        imageProvider,
-                        imageApiType: defaults.mode,
-                        mediaProvider: mediaProviderFromImageKind(imageProvider),
-                        mediaApiType: defaults.mode,
-                        endpoint: defaults.endpoint || prev.endpoint,
-                        codexApiKind: 'chat',
-                      }))
-                    }}
-                    options={imageProviderOptionsForModelType(form.modelType).map((option) => ({
-                      label: option.label,
-                      value: option.value,
-                    }))}
-                  />
-
-                </>
-              )}
-
               {/* ─── 多媒体能力（图片 / 语音 / 视频）─── */}
               {mediaPanelVisible && (
                 <>
-                  <label className="pv_form_label">
-                    平台适配器
-                    <span className="pv_form_sub">决定默认的请求端点与异步轮询策略</span>
-                  </label>
-                  <Select
-                    value={form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)}
-                    onChange={(v) => set('mediaProvider', v as MediaProviderKind)}
-                    options={mediaProviderOptionsForModelType(form.modelType).map((kind) => ({
+                  <ProviderMediaRoutingFields
+                    templateConfigured={templateConfigured}
+                    mediaProvider={effectiveMediaProvider}
+                    mediaApiType={form.mediaApiType}
+                    providerOptions={mediaProviderOptionsForModelType(form.modelType).map((kind) => ({
                       label: MEDIA_PROVIDER_LABELS[kind],
                       value: kind,
                     }))}
-                  />
-
-                  <label className="pv_form_label">
-                    调用方式
-                    <span className="pv_form_sub">手动配置：sync 同步 / async 任务轮询 / auto 自动兼容</span>
-                  </label>
-                  <Select
-                    value={form.mediaApiType}
-                    onChange={(v) => {
-                      const mediaApiType = v as MediaApiType
-                      setForm((prev) => ({
-                        ...prev,
-                        mediaApiType,
-                        imageApiType: prev.modelType === 'image'
-                          ? normalizeImageApiType(mediaApiType)
-                          : prev.imageApiType,
-                      }))
-                    }}
-                    options={MEDIA_API_TYPES.map((mode) => ({
-                      label: mode === 'sync' ? 'sync · 同步返回' : mode === 'async' ? 'async · 任务轮询' : 'auto · 自动兼容',
-                      value: mode,
+                    onConvertToCustom={() => set('presetId', 'custom')}
+                    onMediaProviderChange={changeMediaProvider}
+                    onMediaApiTypeChange={(mediaApiType) => setForm((prev) => ({
+                      ...prev,
+                      mediaApiType,
+                      imageApiType: prev.modelType === 'image'
+                        ? normalizeImageApiType(mediaApiType)
+                        : prev.imageApiType,
                     }))}
                   />
 

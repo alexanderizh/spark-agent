@@ -125,6 +125,33 @@ export const bailianImageSchema = {
   },
 }
 
+/**
+ * 百炼 Qwen-Image 2.0 系列图像参数（DashScope 原生协议）。
+ * 与 wan 的 bailianImageSchema 关键差异：
+ * - size 为像素星号格式（宽*高，如 2048*2048），不是 1K/2K/4K；
+ * - 无 resolution / thinking_mode / enable_sequential / bbox_list / color_palette；
+ * - n 上限 6（2.0 系列）。
+ * 这是百炼渠道的独立 schema，与 apimart 的 qwen（比例 enum）完全不同，不可混用。
+ * 官方来源：help.aliyun.com/zh/model-studio/qwen-image-api (nodeId 2975126)。
+ */
+export const bailianQwenImageSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    size: {
+      type: 'string',
+      title: '画幅',
+      enum: ['2048*2048', '2688*1536', '1536*2688', '2368*1728', '1728*2368'],
+      default: '2048*2048',
+    },
+    n: { type: 'integer', title: '数量', minimum: 1, maximum: 6, default: 1 },
+    negative_prompt: { type: 'string', title: '负面提示词', maxLength: 500 },
+    prompt_extend: { type: 'boolean', title: '提示词智能改写', default: true },
+    watermark: { type: 'boolean', title: '水印', default: false },
+    seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
+  },
+}
+
 export const apimartSeedance2VideoSchema = {
   type: 'object',
   additionalProperties: true,
