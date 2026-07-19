@@ -1,0 +1,26 @@
+.canvas-panorama-shell:fullscreen,
+.canvas-panorama-modal-fullscreen .canvas-panorama-shell {
+  .canvas-panorama-topbar {
+    padding-right: 116px;
+  }
+
+  .canvas-panorama-fullscreen-button {
+    position: absolute;
+    z-index: 6;
+    top: 8px;
+    right: 8px;
+    border-color: rgba(255, 255, 255, 0.22);
+    background: rgba(16, 18, 24, 0.58);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.24);
+    color: #fff;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+
+    &:hover,
+    &:focus-visible {
+      border-color: rgba(255, 255, 255, 0.36) !important;
+      background: rgba(16, 18, 24, 0.82) !important;
+      color: #fff !important;
+    }
+  }
+}

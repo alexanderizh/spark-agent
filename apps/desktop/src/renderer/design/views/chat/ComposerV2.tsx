@@ -70,6 +70,7 @@ import {
   type VendorMeta,
 } from '@spark/protocol'
 import { EMPTY_COMPOSER_DRAFT } from './ChatComposerTypes'
+import { ComposerBranchSelect } from './BranchPicker'
 import { ReasoningMaxParticles } from './ReasoningMaxParticles'
 import {
   getProviderPickerLogoSize,
@@ -667,6 +668,7 @@ export function ComposerV2({
   onCommandComplete,
   onSwitchBranch,
   onRefreshBranches,
+  onFetchBranches,
   onCreateBranch,
   onCancelSession,
   onSent,
@@ -748,6 +750,7 @@ export function ComposerV2({
   onSwitchBranch: (branch: string) => Promise<void>
   // 分支选择器每次展开时调用，触发一次分支列表刷新（避免终端手动切分支后界面不同步）
   onRefreshBranches?: () => void
+  onFetchBranches?: () => Promise<void>
   onCreateBranch?: (branch: string) => Promise<void>
   onCancelSession: (sessionId: SessionId) => void | Promise<void>
   onSent: (sessionId: SessionId) => void
@@ -3210,6 +3213,7 @@ export function ComposerV2({
                   onChange={onSwitchBranch}
                   {...(onCreateBranch !== undefined ? { onCreateBranch } : {})}
                   {...(onRefreshBranches !== undefined ? { onOpen: onRefreshBranches } : {})}
+                  {...(onFetchBranches !== undefined ? { onFetch: onFetchBranches } : {})}
                 />
               )}
             </div>
@@ -3747,173 +3751,6 @@ function ComposerReasoningSlider({
               style={{ '--reasoning-step-left': activePosition } as React.CSSProperties}
             />
           </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * ComposerBranchSelect — 分支选择器（输入框右下角）
- * 展开时：
- *   - 调用 onOpen（若提供）刷新一次最新分支列表，避免用户在终端手动切分支后界面不同步
- *   - 顶部搜索框可按名称过滤分支
- *   - 底部「创建并检出新分支...」点击后原地变为无边框输入框 + 取消/确定图标按钮
- */
-function ComposerBranchSelect({
-  branchState,
-  onChange,
-  onCreateBranch,
-  onOpen,
-}: {
-  branchState: BranchState
-  onChange: (branch: string) => void | Promise<void>
-  onCreateBranch?: (branch: string) => Promise<void>
-  onOpen?: () => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [draft, setDraft] = useState('')
-  const [busy, setBusy] = useState(false)
-  const rootRef = useRef<HTMLDivElement | null>(null)
-  useCloseOnOutside(rootRef, () => setOpen(false), open)
-
-  const currentBranch = branchState.currentBranch ?? ''
-  const branches = Array.from(
-    new Set(branchState.branches.filter((branch): branch is string => branch.length > 0)),
-  )
-  const filteredBranches = branches.filter((branch) =>
-    branch.toLowerCase().includes(search.trim().toLowerCase()),
-  )
-
-  const resetPanel = () => {
-    setSearch('')
-    setCreating(false)
-    setDraft('')
-  }
-
-  const handleToggle = () => {
-    setOpen((prev) => {
-      const next = !prev
-      if (next) {
-        resetPanel()
-        onOpen?.()
-      }
-      return next
-    })
-  }
-
-  const runCreateBranch = async () => {
-    const next = draft.trim()
-    if (!next || busy || onCreateBranch == null) return
-    setBusy(true)
-    try {
-      await onCreateBranch(next)
-      setOpen(false)
-      resetPanel()
-    } catch {
-      // 失败已由上层 toast 提示，保留输入框内容供用户重试
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div
-      ref={rootRef}
-      className={`composer-select composer-branch-select${open ? ' is-open' : ''}`}
-      title="分支"
-    >
-      <span className="composer-select-icon">
-        <Icons.GitBranch size={13} />
-      </span>
-      <button type="button" className="composer-select-trigger" onClick={handleToggle}>
-        <span>{currentBranch || '未配置'}</span>
-        <Icons.ChevronDown size={12} />
-      </button>
-      {open && (
-        <div className="composer-menu branch-menu right">
-          <div className="git-branch-search">
-            <Icons.Search size={14} />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索分支"
-              autoFocus
-            />
-          </div>
-          <div className="git-branch-list">
-            {filteredBranches.map((branch) => (
-              <button
-                type="button"
-                key={branch}
-                className={`git-branch-row ${branch === currentBranch ? 'active' : ''}`}
-                disabled={busy}
-                onClick={() => {
-                  setOpen(false)
-                  if (branch !== currentBranch) void onChange(branch)
-                }}
-              >
-                <Icons.GitBranch size={14} />
-                <span className="git-branch-copy">
-                  <span className="git-branch-name truncate">{branch}</span>
-                </span>
-                {branch === currentBranch && <Icons.Check size={14} />}
-              </button>
-            ))}
-            {filteredBranches.length === 0 && <div className="git-popover-muted">没有匹配分支</div>}
-          </div>
-          {onCreateBranch != null &&
-            (creating ? (
-              <div className="git-create-branch-inline">
-                <input
-                  className="git-create-branch-inline-input"
-                  value={draft}
-                  autoFocus
-                  placeholder="新分支名称"
-                  disabled={busy}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') void runCreateBranch()
-                    if (event.key === 'Escape') {
-                      setCreating(false)
-                      setDraft('')
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  className="git-create-branch-inline-btn"
-                  title="取消"
-                  disabled={busy}
-                  onClick={() => {
-                    setCreating(false)
-                    setDraft('')
-                  }}
-                >
-                  <Icons.X size={13} />
-                </button>
-                <button
-                  type="button"
-                  className="git-create-branch-inline-btn confirm"
-                  title="创建并检出"
-                  disabled={busy || !draft.trim()}
-                  onClick={() => void runCreateBranch()}
-                >
-                  <Icons.Check size={13} />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="git-create-branch-btn"
-                onClick={() => setCreating(true)}
-              >
-                <Icons.Plus size={14} />
-                <span>创建并检出新分支...</span>
-              </button>
-            ))}
         </div>
       )}
     </div>

@@ -5,9 +5,14 @@ import type {
   SessionChatMode,
   SessionPermissionMode,
   SessionReasoningEffort,
+  WorkspaceGitBranch,
 } from '@spark/protocol'
 
-export type BranchState = { currentBranch: string | null; branches: string[] }
+export type BranchState = {
+  currentBranch: string | null
+  branches: string[]
+  branchDetails?: WorkspaceGitBranch[] | undefined
+}
 export type AgentAdapter = SessionAgentAdapter
 export type PermissionModeChoice = SessionPermissionMode
 export type ComposerOptionTone = 'default' | 'auto' | 'danger'

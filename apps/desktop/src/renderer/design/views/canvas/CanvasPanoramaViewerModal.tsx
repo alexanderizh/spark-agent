@@ -3,6 +3,7 @@ import { Button, Modal, Slider, Switch, message } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import type { CanvasNode } from './canvas.types'
+import './CanvasPanoramaViewerModal.less'
 
 type PanoramaViewerHandle = {
   screenshot: () => string | null
@@ -783,6 +784,7 @@ export function CanvasPanoramaViewerModal({
           <div className="canvas-panorama-topbar-actions">
             <span className="canvas-panorama-meta">{aspectLabel}</span>
             <Button
+              className="canvas-panorama-fullscreen-button"
               icon={fullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
               onClick={toggleFullscreen}
             >

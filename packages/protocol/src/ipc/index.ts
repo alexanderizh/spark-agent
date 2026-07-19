@@ -1029,9 +1029,16 @@ export interface WorkspaceListBranchesRequest {
   workspaceId: string
 }
 
+export interface WorkspaceGitBranch {
+  name: string
+  kind: 'local' | 'remote'
+  updatedAt: number
+}
+
 export interface WorkspaceListBranchesResponse {
   currentBranch: string | null
   branches: string[]
+  branchDetails?: WorkspaceGitBranch[]
 }
 
 export interface WorkspaceSwitchBranchRequest {
@@ -1042,6 +1049,15 @@ export interface WorkspaceSwitchBranchRequest {
 export interface WorkspaceSwitchBranchResponse {
   currentBranch: string
   branches: string[]
+  branchDetails?: WorkspaceGitBranch[]
+}
+
+export interface WorkspaceFetchBranchesRequest {
+  workspaceId: string
+}
+
+export interface WorkspaceFetchBranchesResponse extends WorkspaceListBranchesResponse {
+  fetched: true
 }
 
 export interface WorkspaceGitFileChange {
@@ -1070,6 +1086,7 @@ export interface WorkspaceGitStatusResponse {
   isGitRepo: boolean
   currentBranch: string | null
   branches: string[]
+  branchDetails?: WorkspaceGitBranch[]
   ahead: number
   behind: number
   additions: number
@@ -1137,6 +1154,7 @@ export interface WorkspaceCreateBranchRequest {
 export interface WorkspaceCreateBranchResponse {
   currentBranch: string
   branches: string[]
+  branchDetails?: WorkspaceGitBranch[]
   status: WorkspaceGitStatusResponse
 }
 
@@ -5273,6 +5291,7 @@ export interface IpcChannelMap extends ProviderFilesIpcChannelMap {
   'workspace:list-directory': [WorkspaceListDirectoryRequest, WorkspaceListDirectoryResponse]
   'workspace:list-branches': [WorkspaceListBranchesRequest, WorkspaceListBranchesResponse]
   'workspace:switch-branch': [WorkspaceSwitchBranchRequest, WorkspaceSwitchBranchResponse]
+  'workspace:fetch-branches': [WorkspaceFetchBranchesRequest, WorkspaceFetchBranchesResponse]
   'workspace:git-status': [WorkspaceGitStatusRequest, WorkspaceGitStatusResponse]
   'workspace:git-file-diff': [WorkspaceGitFileDiffRequest, WorkspaceGitFileDiffResponse]
   'workspace:git-check-ignore': [WorkspaceGitCheckIgnoreRequest, WorkspaceGitCheckIgnoreResponse]

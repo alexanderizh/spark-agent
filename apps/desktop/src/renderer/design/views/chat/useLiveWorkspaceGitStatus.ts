@@ -60,7 +60,11 @@ export function useLiveWorkspaceGitStatus({
         setGitStatus(status)
       }
       if (status?.isGitRepo === true) {
-        onBranchStateChange({ currentBranch: status.currentBranch, branches: status.branches })
+        onBranchStateChange({
+          currentBranch: status.currentBranch,
+          branches: status.branches,
+          branchDetails: status.branchDetails,
+        })
       }
     },
     [onBranchStateChange],

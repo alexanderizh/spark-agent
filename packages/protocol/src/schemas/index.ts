@@ -569,6 +569,10 @@ export const WorkspaceSwitchBranchRequestSchema = z.object({
   branch: z.string().min(1).max(200),
 })
 
+export const WorkspaceFetchBranchesRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+})
+
 export const WorkspaceGitStatusRequestSchema = z.object({
   workspaceId: z.string().uuid(),
 })
@@ -839,6 +843,7 @@ export const IpcSchemaRegistry = {
   'workspace:list-directory': WorkspaceListDirectoryRequestSchema,
   'workspace:list-branches': WorkspaceListBranchesRequestSchema,
   'workspace:switch-branch': WorkspaceSwitchBranchRequestSchema,
+  'workspace:fetch-branches': WorkspaceFetchBranchesRequestSchema,
   'workspace:git-status': WorkspaceGitStatusRequestSchema,
   'workspace:git-file-diff': WorkspaceGitFileDiffRequestSchema,
   'workspace:git-commit': WorkspaceGitCommitRequestSchema,
