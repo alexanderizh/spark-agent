@@ -90,6 +90,7 @@
 .canvas-prompt-chip-shell {
   display: inline-flex;
   align-items: center;
+  max-width: min(100%, 240px);
   margin: 0 2px;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -122,6 +123,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
   min-height: 28px;
   margin: 0 2px;
   padding: 2px 7px 2px 3px;
@@ -218,7 +220,17 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  min-width: 0;
+  overflow: hidden;
   line-height: 1.2;
+}
+
+.canvas-prompt-chip-copy strong,
+.canvas-prompt-chip-copy small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .canvas-prompt-chip-copy small {
@@ -472,6 +484,14 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 28px;
   align-items: center;
+  border-radius: 8px;
+
+  // 整行作为单一视觉块：鼠标悬停或键盘高亮主卡片时，背景铺满整行（含置顶按钮列），
+  // 避免主卡片与置顶按钮各自带圆角背景形成“分块”。
+  &:hover,
+  &:has(.canvas-prompt-insert-result.is-highlighted) {
+    background: var(--hover);
+  }
 }
 
 .canvas-prompt-insert-result {
@@ -481,7 +501,7 @@
   gap: 8px;
   padding: 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   background: transparent;
   color: var(--text);
   cursor: pointer;
@@ -509,15 +529,11 @@
   opacity: 1;
 }
 
+// 置顶态与悬停态不再用独立色块（会与行背景分成两块），
+// 只把图标变成主题色作为区分；行级统一背景由上面的 row 规则提供。
 .canvas-prompt-insert-pin:hover,
 .canvas-prompt-insert-pin.is-pinned {
-  background: var(--primary-soft);
   color: var(--primary);
-}
-
-.canvas-prompt-insert-result:hover,
-.canvas-prompt-insert-result.is-highlighted {
-  background: var(--hover);
 }
 
 .canvas-prompt-insert-empty {
