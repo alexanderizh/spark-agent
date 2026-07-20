@@ -62,6 +62,7 @@ import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 import type { CanvasOperationOutputMode, CanvasOperationType } from './canvas.types'
 import type { CanvasNodeData } from './canvas.types'
 import type { CanvasOperationRunView } from './canvasOperationRuns'
+import { effectiveCanvasOperationStatus } from './canvasTaskOutputIntegrity'
 
 /** 把 op 的图标 key 映射为 Icons 组件（找不到回退 Workflow） */
 function resolvePipelineIcon(iconKey: string | undefined, size = 14): React.ReactNode {
@@ -1169,7 +1170,9 @@ export const CanvasNode = memo(function CanvasNode({
   const productionBadge =
     node.data.productionState && PRODUCTION_STATE_BADGE[node.data.productionState]
   const operationSummary = isOperationNode(node) ? canvasOperationRuntimeSummary(node) : null
-  const operationStatus = isOperationNode(node) ? (node.data.status ?? 'pending') : null
+  const operationStatus = isOperationNode(node)
+    ? effectiveCanvasOperationStatus(node.data.status, Boolean(operationOutputState.primaryOutput))
+    : null
   const operationParamSummary = isOperationNode(node)
     ? buildCanvasOperationParamSummary(node.data.modelParams, 4)
     : []
@@ -1281,7 +1284,7 @@ export const CanvasNode = memo(function CanvasNode({
       >
         <div
           data-canvas-node-id={node.id}
-          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && node.data.status === 'running' ? ' canvas-node-task-running' : ''}${isTask && node.data.status === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}${isFullBleedImageNode ? ' canvas-node-image-full-bleed' : ''}${connectionTargetsNode ? ' canvas-node-connection-target' : ''}${connectionTargetIsValid ? ' canvas-node-connection-valid' : ''}`}
+          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && operationStatus === 'running' ? ' canvas-node-task-running' : ''}${isTask && operationStatus === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}${isFullBleedImageNode ? ' canvas-node-image-full-bleed' : ''}${connectionTargetsNode ? ' canvas-node-connection-target' : ''}${connectionTargetIsValid ? ' canvas-node-connection-valid' : ''}`}
           style={nodeStyle}
           onPointerEnter={() => setResizeHovered(true)}
           onPointerLeave={() => setResizeHovered(false)}
@@ -1416,14 +1419,14 @@ export const CanvasNode = memo(function CanvasNode({
                         <div className="canvas-operation-empty-icon">
                           {operationNodeIcon(nodeOperation(node), operationWorkflow)}
                         </div>
-                        {(node.data.status ?? 'pending') !== 'pending' ? (
+                        {(operationStatus ?? 'pending') !== 'pending' ? (
                           <Progress
                             percent={node.data.progress ?? 0}
                             size="middle"
                             status={
-                              node.data.status === 'failed'
+                              operationStatus === 'failed'
                                 ? 'exception'
-                                : node.data.status === 'completed'
+                                : operationStatus === 'completed'
                                   ? 'success'
                                   : 'active'
                             }

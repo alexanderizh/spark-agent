@@ -113,6 +113,11 @@ import {
   resolveCanvasPresetTarget,
 } from './canvasOperationPresets'
 import { canvasTaskErrorMessage } from './canvasTaskErrorMessage'
+import {
+  canvasTaskIdsSafeToDelete,
+  isCompletedCanvasTaskWithOutputs,
+  recoverCanvasTaskFromMaterializedOutputs,
+} from './canvasTaskOutputIntegrity'
 
 const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
@@ -3873,10 +3878,13 @@ export const canvasApi = {
     }
     if (edgeType === 'used_as_input') syncOperationPromptDocumentFromConnections(db, target)
     if (task && edgeType === 'generated') {
-      if (!task.outputNodeIds.includes(target.id)) task.outputNodeIds.push(target.id)
-      if (target.assetId && !task.outputAssetIds.includes(target.assetId))
-        task.outputAssetIds.push(target.assetId)
-      task.updatedAt = at
+      recoverCanvasTaskFromMaterializedOutputs({
+        task,
+        operationNode: source,
+        outputNodeIds: [target.id],
+        outputAssetIds: target.assetId ? [target.assetId] : [],
+        at,
+      })
     }
 
     updateProjectCounts(db, projectId)
@@ -5046,9 +5054,9 @@ export const canvasApi = {
   /**
    * 删除任务记录（不经过取消流程）。
    *
-   * 用于「清空失败/已取消任务」等清理场景：这些任务已经结束，没有运行态需要中断，
-   * 直接从 db.tasks 移除记录即可。参考 deleteNodes 删除节点时连带移除任务的先例
-   * （见本对象内 `db.tasks = db.tasks.filter(...)` 写法）。
+   * 用于「清空失败/已取消任务」等清理场景。无产物记录可直接删除；仍有关联
+   * 产物节点/资产的记录会先恢复为 completed 并保留，避免删除唯一运行索引后
+   * 操作节点预览退回空状态。
    *
    * 不返回任何值——调用方在循环删除结束后统一 openSnapshot 刷新视图，避免每删一条
    * 就重写一次库。
@@ -5056,7 +5064,15 @@ export const canvasApi = {
   deleteTasks(projectId: string, taskIds: string[]): void {
     if (taskIds.length === 0) return
     const db = readDb()
-    const idSet = new Set(taskIds)
+    const idSet = canvasTaskIdsSafeToDelete({
+      projectId,
+      taskIds,
+      tasks: db.tasks,
+      nodes: db.nodes,
+      assets: db.assets,
+      edges: db.edges,
+      at: now(),
+    })
     db.tasks = db.tasks.filter((task) => !(task.projectId === projectId && idSet.has(task.id)))
     updateProjectCounts(db, projectId)
     writeDb(db)
@@ -5788,6 +5804,10 @@ export const canvasApi = {
     const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
     if (!task || !taskNode) return this.openSnapshot(projectId)
     if (task.status === 'cancelled') return this.openSnapshot(projectId)
+
+    // Terminal state is monotonic once outputs are materialized. A duplicated or
+    // delayed failure/cancel event must not hide an already playable artifact.
+    if (isCompletedCanvasTaskWithOutputs(task)) return this.openSnapshot(projectId)
 
     const responseRequestId = response.requestId ?? response.runtimeTaskId ?? null
     if (

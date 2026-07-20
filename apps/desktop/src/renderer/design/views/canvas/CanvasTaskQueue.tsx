@@ -99,7 +99,7 @@ export function CanvasTaskQueue({
       title: isClearActive ? `取消全部 ${count} 个运行中任务？` : `清空全部 ${count} 个失败任务？`,
       content: isClearActive
         ? '将中断这些正在运行的任务，已生成的部分结果不会保留。'
-        : '将从队列中删除这些已结束的任务记录，操作不可撤销。',
+        : '无产物的失败记录将从队列删除；仍有关联产物的记录会恢复为完成并保留。删除操作不可撤销。',
       okText: isClearActive ? '全部取消' : '清空',
       okButtonProps: { danger: true },
       cancelText: '再想想',
