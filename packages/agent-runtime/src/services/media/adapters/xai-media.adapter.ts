@@ -208,7 +208,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     const raw = await pollTask(`${baseEndpoint(ctx)}/videos/${encodeURIComponent(taskId)}`, authHeaders(ctx), {
       fetchImpl: ctx.fetch,
       intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-      timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 600_000,
+      timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
       inspect: (response) => {
         const status = extractStatus(response)
         if (extractXaiVideoUrls(response).length > 0 || status === 'done') return 'done'
@@ -448,7 +448,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 600_000,
+        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
         inspect: (d) => {
           const urls = extractXaiVideoUrls(d)
           const s = extractStatus(d)

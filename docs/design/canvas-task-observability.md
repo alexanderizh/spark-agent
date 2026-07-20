@@ -1,12 +1,12 @@
 # 画布节点任务可观测性与异步视频修复
 
-> 状态: 已落地 | 最后核对: 2026-07-19
+> 状态: 已落地 | 最后核对: 2026-07-20
 
 ## 背景
 
 画布的媒体节点和文本节点都由主进程后台执行。此前日志分散在 IPC、媒体运行时和 provider adapter 多个 namespace 中，同一任务缺少稳定的关联字段；设置页只能查看全部日志，难以单独排查画布任务。
 
-APIMart 视频任务还存在一处状态查询契约错误：提交使用 `POST /v1/videos/generations`，但旧 adapter 随后查询 `GET /v1/videos/generations/{task_id}`。APIMart 当前统一要求通过 `GET /v1/tasks/{task_id}` 获取图片和视频异步任务状态，因此渠道已经完成后，客户端仍会持续轮询错误端点并最终报 `Task timed out after 600000ms`。
+APIMart 视频任务先后暴露出两处状态查询契约问题：旧 adapter 曾错误查询 `GET /v1/videos/generations/{task_id}`，修复为官方统一的 `GET /v1/tasks/{task_id}` 后，2026-07-20 的真实任务 `task_01KXYNJJ1RND3XQA7AC3EP3SMS` 仍在渠道完成后持续轮询。根因是官方成功响应使用 `data.result.videos[].url: string[]`，而公共媒体 URL 提取器和旧测试只覆盖了 `url: string`，因此完成响应的视频 URL 数量始终被解析为 0，最终触发历史 Provider 配置中的 10 分钟超时。
 
 xAI 另有一处终态解析错误：官方成功契约是 `status=done` 且产物位于 `video.url`；`file_output.public_url` 只是启用 Files 持久化后的可选地址。旧 adapter 只接受 `public_url`，因此渠道已完成但 CDN 持久化未完成或失败时仍会持续轮询。实际日志还暴露出本地图片上传缺少超时、图生视频会上传未使用图片、4096 字符限制未前置等提交阶段问题。
 
@@ -17,9 +17,9 @@ xAI 另有一处终态解析错误：官方成功契约是 `status=done` 且产�
 ### APIMart 视频任务
 
 - APIMart 的图片和视频异步任务统一轮询 `/v1/tasks/{task_id}`。
-- 成功响应从 `data.result.videos[].url` 提取视频地址，下载到画布项目资产目录后再把任务置为成功。
-- VEO、Sora 和视频合集预设的轮询超时统一为 30 分钟；未显式配置超时的 OpenAI-compatible 视频任务也使用 30 分钟兜底。
-- adapter 回归测试使用 APIMart 官方统一任务响应结构，防止轮询路径回退。
+- 成功响应从 `data.result.videos[].url[]` 提取视频地址；公共媒体 URL 提取器同时兼容字符串和字符串数组，下载到画布项目资产目录后再把任务置为成功。
+- 视频任务的 Provider 表单、内置预设、manifest、adapter 和 MCP 兜底统一至少为 30 分钟。数据库 migration 055 会把历史视频 Provider/manifest 中缺失或小于 30 分钟的超时抬到 30 分钟，同时保留火山方舟等已有更长超时。
+- adapter 回归测试使用 APIMart 官方统一任务响应结构和真实的 `url: string[]` 形状，防止轮询路径或数组解析回退。
 
 ### xAI 视频任务
 
@@ -81,7 +81,7 @@ xAI 另有一处终态解析错误：官方成功契约是 `status=done` 且产�
 - 脱敏后的状态查询 URL（移除 query 和 fragment）；
 - 初始轮询间隔和超时；
 - pending 尝试次数（debug）；
-- 每次响应的 provider、capability、渠道任务 ID、状态、进度或产物数量摘要；
+- 每次响应的 provider、capability、渠道任务 ID、状态、进度或产物数量摘要；OpenAI-compatible 视频轮询至少记录 `status` 和 `videoUrls` 数量，不记录实际签名 URL；
 - done、failed、request-failed、timeout 终态及累计耗时；
 - xAI 的输入解析、Files 上传、任务创建和产物下载分段耗时；
 - 火山的任务创建、轮询和产物下载分段耗时。

@@ -48,6 +48,7 @@ export interface OpenAiCompatibleAdapterOptions {
 
 /** 终态状态集合（异步轮询判定失败用），子类（如 xAI editVideo）复用。 */
 export const FAILED_STATUSES = ['failed', 'error', 'expired', 'cancelled', 'canceled']
+const SUCCEEDED_STATUSES = ['completed', 'succeeded', 'success', 'done']
 
 function baseEndpoint(ctx: MediaProviderContext): string {
   return (ctx.apiEndpoint ?? '').replace(/\/+$/, '')
@@ -617,12 +618,18 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
         timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
+        logContext: `provider=${this.id} capability=${capability} requestId=${taskId}`,
         inspect: (d) => {
           const urls = extractMediaUrls(d, { kind: 'video' })
           if (urls.length > 0) return 'done'
           const s = extractStatus(d)
+          if (SUCCEEDED_STATUSES.includes(s)) return 'done'
           return FAILED_STATUSES.includes(s) ? 'failed' : 'pending'
         },
+        describeResponse: (d) => ({
+          status: extractStatus(d) || undefined,
+          videoUrls: extractMediaUrls(d, { kind: 'video' }).length,
+        }),
         ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       })
       videoUrls = extractMediaUrls(raw, { kind: 'video' })

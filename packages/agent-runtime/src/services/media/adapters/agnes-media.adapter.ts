@@ -224,7 +224,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 900_000,
+        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
         inspect: (payload) => {
           const urls = extractAgnesVideoUrls(payload)
           if (urls.length > 0) return 'done'

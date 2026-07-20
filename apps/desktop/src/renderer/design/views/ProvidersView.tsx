@@ -39,6 +39,7 @@ import {
   CODEX_AUTO_ROUTER_PROVIDER_NAME,
   isLocalCodexCliProvider,
   MEDIA_CAPABILITY_IDS,
+  DEFAULT_VIDEO_POLL_TIMEOUT_MS,
   isMediaProviderKind,
   createBasicCustomMediaManifest,
   ProviderMediaModelRefSchema,
@@ -484,6 +485,15 @@ function hasAnyMediaFields(
     || (Array.isArray(mediaModelRefs) && mediaModelRefs.length > 0)
 }
 
+function hasVideoTaskConfig(
+  modelType: string | null | undefined,
+  mediaCapabilities: readonly unknown[] | undefined,
+): boolean {
+  return modelType === 'video' || (mediaCapabilities ?? []).some(
+    (capability) => typeof capability === 'string' && capability.startsWith('video.'),
+  )
+}
+
 /** 把 preset 的 mediaProvider/mediaApiType/mediaCapabilities/mediaDefaults 投影成 ProviderForm 媒体字段 */
 function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
   | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaModelRefs' | 'mediaGenerationEnabled'
@@ -507,7 +517,10 @@ function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
     mediaVideoDuration: d?.video?.durationSeconds != null ? String(d.video.durationSeconds) : '',
     mediaVideoQuality: d?.video?.resolution ?? d?.video?.quality ?? '',
     mediaPollInterval: d?.polling?.intervalMs != null ? String(d.polling.intervalMs) : '',
-    mediaPollTimeout: d?.polling?.timeoutMs != null ? String(d.polling.timeoutMs) : '',
+    mediaPollTimeout: String(
+      d?.polling?.timeoutMs ??
+      (hasVideoTaskConfig(preset.modelType, preset.mediaCapabilities) ? DEFAULT_VIDEO_POLL_TIMEOUT_MS : ''),
+    ),
   }
 }
 
@@ -534,7 +547,10 @@ function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
     mediaVideoDuration: d?.video?.durationSeconds != null ? String(d.video.durationSeconds) : '',
     mediaVideoQuality: d?.video?.resolution ?? d?.video?.quality ?? '',
     mediaPollInterval: d?.polling?.intervalMs != null ? String(d.polling.intervalMs) : '',
-    mediaPollTimeout: d?.polling?.timeoutMs != null ? String(d.polling.timeoutMs) : '',
+    mediaPollTimeout: String(
+      d?.polling?.timeoutMs ??
+      (hasVideoTaskConfig(p.modelType, p.mediaCapabilities) ? DEFAULT_VIDEO_POLL_TIMEOUT_MS : ''),
+    ),
   }
 }
 
@@ -612,7 +628,11 @@ function buildMediaDefaults(form: ProviderForm): ProviderMediaDefaults | undefin
   }
   const polling = {
     ...(form.mediaPollInterval.trim() ? { intervalMs: Number(form.mediaPollInterval) } : {}),
-    ...(form.mediaPollTimeout.trim() ? { timeoutMs: Number(form.mediaPollTimeout) } : {}),
+    ...(form.mediaPollTimeout.trim()
+      ? { timeoutMs: Number(form.mediaPollTimeout) }
+      : hasVideoTaskConfig(form.modelType, form.mediaCapabilities)
+        ? { timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS }
+        : {}),
   }
   const result: ProviderMediaDefaults = {}
   if (Object.keys(image).length > 0) result.image = image
@@ -3368,6 +3388,10 @@ export function ProviderEditPanel({
                         imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
                         mediaProvider,
                         mediaApiType: supportsMediaConfig ? prev.mediaApiType : 'auto',
+                        mediaPollTimeout:
+                          hasVideoTaskConfig(modelType, prev.mediaCapabilities) && !prev.mediaPollTimeout.trim()
+                            ? String(DEFAULT_VIDEO_POLL_TIMEOUT_MS)
+                            : prev.mediaPollTimeout,
                       }
                     })
                   }}

@@ -70,6 +70,12 @@ export function extractMediaUrls(value, opts = { kind: 'video' }) {
     : ['url', 'video_url', 'videoUrl', 'file_url', 'fileUrl', 'download_url', 'link', 'result']
   const found = []
   walkJson(value, (node, key) => {
+    if (Array.isArray(node) && keys.includes(key)) {
+      for (const item of node) {
+        if (typeof item === 'string' && /^https?:\/\//i.test(item)) found.push(item)
+      }
+      return
+    }
     if (typeof node === 'string' && keys.includes(key) && /^https?:\/\//i.test(node)) {
       found.push(node)
     }

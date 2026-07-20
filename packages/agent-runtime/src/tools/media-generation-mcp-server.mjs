@@ -1024,9 +1024,9 @@ async function fetchJson(url, init, timeoutMs, binary = false) {
   }
 }
 
-async function pollTask(config, url, inspect) {
+async function pollTask(config, url, inspect, fallbackTimeoutMs = 600_000) {
   const defaults = config.mediaDefaults?.polling || {}
-  const deadline = Date.now() + (defaults.timeoutMs || 600_000)
+  const deadline = Date.now() + (defaults.timeoutMs || fallbackTimeoutMs)
   let interval = Math.max(1000, defaults.intervalMs || 5000)
   while (Date.now() < deadline) {
     const data = await fetchJson(url, { headers: authHeaders(config) }, 30_000)
@@ -1666,7 +1666,10 @@ async function pollManifestTask(config, manifest, responseSpec, taskId) {
     pollingBaseUrl,
     renderTemplateString(responseSpec.statusEndpoint || '', { taskId }),
   )
-  const deadline = Date.now() + (config.mediaDefaults?.polling?.timeoutMs || polling.timeoutMs || 600_000)
+  const defaultTimeoutMs = Array.isArray(manifest.domains) && manifest.domains.includes('video')
+    ? 1_800_000
+    : 600_000
+  const deadline = Date.now() + (config.mediaDefaults?.polling?.timeoutMs || polling.timeoutMs || defaultTimeoutMs)
   let interval = Math.max(1, config.mediaDefaults?.polling?.intervalMs || polling.intervalMs || 5000)
   while (Date.now() < deadline) {
     const data = await fetchJson(pollUrl, { headers: authHeaders(config) }, 30_000)
@@ -2414,7 +2417,7 @@ async function handleGenerateVideo(config, args) {
       const polled = await pollTask(config, `${config.baseUrl}/videos/${encodeURIComponent(taskId)}`, (d) => {
         if (xaiPublicUrls(d).length || xaiFileOutputStrings(d, 'public_url_error').length) return 'done'
         return FAILED_STATUSES.includes(extractStatus(d)) ? 'failed' : 'pending'
-      })
+      }, 1_800_000)
       videoUrls = xaiPublicUrls(polled)
       if (videoUrls.length === 0) {
         const publicUrlError = xaiFileOutputStrings(polled, 'public_url_error')[0]
@@ -2450,7 +2453,7 @@ async function handleGenerateVideo(config, args) {
     const polled = await pollTask(config, `${config.baseUrl}${videoTaskPath(config, taskId)}`, (d) => {
       if (extractMediaUrls(d, { kind: 'video' }).length) return 'done'
       return FAILED_STATUSES.includes(extractStatus(d)) ? 'failed' : 'pending'
-    })
+    }, 1_800_000)
     videoUrls = extractMediaUrls(polled)
   }
   const files = []

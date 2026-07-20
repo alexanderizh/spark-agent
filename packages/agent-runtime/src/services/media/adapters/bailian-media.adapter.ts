@@ -224,7 +224,7 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
       {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 15_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 600_000,
+        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
         errorExtractor: bailianError,
         ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
         inspect: (value) => {
