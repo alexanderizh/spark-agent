@@ -1922,7 +1922,26 @@ export const canvasApi = {
     })
     if (result.canceled || !result.filePath) return null
     const { content } = await window.spark.invoke('file:read-text', { path: result.filePath })
+
+    // 跨设备导入：从 payload 顶层提取源电脑导出包根（writeCanvasProjectPackageFiles 写入）。
+    // 导出包内 url 编码的是源电脑绝对路径，需让 main 端把它翻译到本机导入包根，否则 fs.stat 必失败。
+    let exportedPackageRoot: string | null = null
+    try {
+      const rawPayload = JSON.parse(content) as { kind?: string; projectRootPath?: unknown }
+      if (
+        rawPayload.kind === 'spark.canvas.project' &&
+        typeof rawPayload.projectRootPath === 'string' &&
+        rawPayload.projectRootPath.trim()
+      ) {
+        exportedPackageRoot = rawPayload.projectRootPath.trim()
+      }
+    } catch {
+      // 非 payload 包裹的纯 snapshot：无源包根，走原迁移逻辑。
+    }
     const parsedSnapshot = parseCanvasProjectExport(content)
+    if (!exportedPackageRoot && typeof parsedSnapshot.project.rootPath === 'string') {
+      exportedPackageRoot = parsedSnapshot.project.rootPath.trim() || null
+    }
     const clonedSnapshot = cloneImportedSnapshot(parsedSnapshot)
     clonedSnapshot.project.rootPath = await ensureCanvasProjectDirectory({
       projectId: clonedSnapshot.project.id,
@@ -1934,11 +1953,14 @@ export const canvasApi = {
         projectId: clonedSnapshot.project.id,
         projectRootPath: clonedSnapshot.project.rootPath,
         snapshotJson: JSON.stringify(clonedSnapshot),
+        sourceFilePath: result.filePath,
+        ...(exportedPackageRoot ? { exportedPackageRoot } : {}),
       })
       clonedSnapshot.project = (JSON.parse(migrated.snapshotJson) as CanvasSnapshot).project
       Object.assign(clonedSnapshot, JSON.parse(migrated.snapshotJson) as CanvasSnapshot)
-    } catch {
-      // Import remains compatible with pure JSON projects even if local asset copy is unavailable.
+    } catch (err) {
+      // 资产迁移非阻断：即使失败也保留纯 JSON 项目可用性。记录日志便于排查跨设备导入问题。
+      console.warn('[canvas] migrate-assets failed during import', err)
     }
     const normalized = await normalizeSnapshotForHotStorage(clonedSnapshot)
     const db = readDb()

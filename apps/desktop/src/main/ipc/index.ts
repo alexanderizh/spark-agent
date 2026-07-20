@@ -4595,7 +4595,26 @@ export function registerAllIpcHandlers(): void {
       req.projectId,
       req.projectRootPath ?? null,
     )
-    const snapshot = JSON.parse(req.snapshotJson)
+    let snapshot = JSON.parse(req.snapshotJson)
+
+    // 跨设备导入修复：导出包内 url 编码的是源电脑绝对路径（payload 顶层 projectRootPath）。
+    // 若调用方同时提供源电脑包根与本机导入包 project.json 路径，先把 url 从源电脑包根翻译到
+    // 本机包根，使后续 fs.stat 能命中本机真实文件，正常拷贝并重写为项目目录路径。
+    const exportedPackageRoot = req.exportedPackageRoot?.trim() || null
+    const sourceFilePath = req.sourceFilePath?.trim() || null
+    if (exportedPackageRoot && sourceFilePath) {
+      try {
+        const fromRoot = path.resolve(exportedPackageRoot)
+        const toRoot = path.dirname(path.resolve(sourceFilePath))
+        if (fromRoot !== toRoot) {
+          snapshot = rewriteCanvasSnapshotRootPaths(snapshot, fromRoot, toRoot)
+        }
+      } catch (err) {
+        // 路径重写失败时降级到原行为（不阻断导入，最多部分资产 skipped）。
+        log.warn('[canvas] cross-device asset root rewrite failed', err)
+      }
+    }
+
     const urlMap = new Map<string, string>()
     let movedAssets = 0
     let skippedAssets = 0
