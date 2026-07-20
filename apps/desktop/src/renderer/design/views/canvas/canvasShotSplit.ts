@@ -10,7 +10,10 @@ import type { ShotSegment } from './canvasFilmAssets'
 import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 
 /** 拆分产物：可直接喂给 createShotSegment 的字段子集（不含 id / index，由调用方分配） */
-export type ShotSplitPart = {
+export type ShotSplitPart = Omit<
+  Partial<ShotSegment>,
+  'id' | 'index' | 'title' | 'durationSec' | 'inSec' | 'outSec' | 'nodeIds' | 'keyframeNodeIds'
+> & {
   title: string
   description?: string
   dialogue?: string
@@ -18,17 +21,12 @@ export type ShotSplitPart = {
   durationSec: number
   inSec: number
   outSec: number
-  characterAssetIds?: string[]
-  sceneAssetId?: string
-  propAssetIds?: string[]
-  shotPrompt?: string
-  cameraDesignId?: string
-  actionDesignId?: string
-  frameDesignId?: string
 }
 
 /** 取片段时长：优先 durationSec，其次 out-in，最后兜底 0 */
-export function resolveSegmentDuration(segment: Pick<ShotSegment, 'durationSec' | 'inSec' | 'outSec'>): number {
+export function resolveSegmentDuration(
+  segment: Pick<ShotSegment, 'durationSec' | 'inSec' | 'outSec'>,
+): number {
   if (typeof segment.durationSec === 'number' && segment.durationSec > 0) return segment.durationSec
   if (
     typeof segment.inSec === 'number' &&
@@ -60,7 +58,8 @@ export function planSegmentSplit(
   options: { maxClipSec?: number; parts?: number } = {},
 ): ShotSplitPart[] {
   const duration = resolveSegmentDuration(segment)
-  const maxClip = options.maxClipSec && options.maxClipSec > 0 ? options.maxClipSec : DEFAULT_MAX_CLIP_SEC
+  const maxClip =
+    options.maxClipSec && options.maxClipSec > 0 ? options.maxClipSec : DEFAULT_MAX_CLIP_SEC
 
   let parts: number
   if (options.parts && options.parts > 0) {
@@ -97,6 +96,9 @@ export function planSegmentSplit(
       durationSec: segDuration > 0 ? segDuration : chunk,
       inSec: roundHalf(cursor),
       outSec: segOut,
+      ...(i === 0 && segment.firstFrame ? { firstFrame: segment.firstFrame } : {}),
+      ...(isLast && segment.lastFrame ? { lastFrame: segment.lastFrame } : {}),
+      // 时码依赖字段不直接复制，避免将父镜时间轴错用到子段。
       ...inheritRefs(segment),
     })
     cursor = segOut
@@ -126,6 +128,7 @@ export function splitSegmentAt(segment: ShotSegment, atSec: number): ShotSplitPa
       durationSec: roundHalf(midOut - baseIn),
       inSec: roundHalf(baseIn),
       outSec: midOut,
+      ...(segment.firstFrame ? { firstFrame: segment.firstFrame } : {}),
       ...inheritRefs(segment),
     },
     {
@@ -134,6 +137,7 @@ export function splitSegmentAt(segment: ShotSegment, atSec: number): ShotSplitPa
       durationSec: roundHalf(endOut - midOut),
       inSec: midOut,
       outSec: endOut,
+      ...(segment.lastFrame ? { lastFrame: segment.lastFrame } : {}),
       ...inheritRefs(segment),
     },
   ]
@@ -150,6 +154,11 @@ function toSinglePart(segment: ShotSegment, duration: number): ShotSplitPart {
     durationSec: roundHalf(effectiveDuration),
     inSec: roundHalf(baseIn),
     outSec: roundHalf(baseIn + effectiveDuration),
+    ...(segment.actionBeats ? { actionBeats: segment.actionBeats } : {}),
+    ...(segment.soundEffects ? { soundEffects: segment.soundEffects } : {}),
+    ...(segment.transition ? { transition: segment.transition } : {}),
+    ...(segment.firstFrame ? { firstFrame: segment.firstFrame } : {}),
+    ...(segment.lastFrame ? { lastFrame: segment.lastFrame } : {}),
     ...inheritRefs(segment),
   }
 }
@@ -163,6 +172,23 @@ function inheritRefs(
   | 'sceneAssetId'
   | 'propAssetIds'
   | 'shotPrompt'
+  | 'shotSize'
+  | 'angle'
+  | 'movement'
+  | 'sceneLayout'
+  | 'composition'
+  | 'blocking'
+  | 'lighting'
+  | 'focalLength'
+  | 'aperture'
+  | 'iso'
+  | 'colorTone'
+  | 'mood'
+  | 'microExpression'
+  | 'costume'
+  | 'characterReferences'
+  | 'continuity'
+  | 'negativePrompt'
   | 'cameraDesignId'
   | 'actionDesignId'
   | 'frameDesignId'
@@ -176,6 +202,23 @@ function inheritRefs(
       ? { propAssetIds: [...segment.propAssetIds] }
       : {}),
     ...(segment.shotPrompt ? { shotPrompt: segment.shotPrompt } : {}),
+    ...(segment.shotSize ? { shotSize: segment.shotSize } : {}),
+    ...(segment.angle ? { angle: segment.angle } : {}),
+    ...(segment.movement ? { movement: segment.movement } : {}),
+    ...(segment.sceneLayout ? { sceneLayout: segment.sceneLayout } : {}),
+    ...(segment.composition ? { composition: segment.composition } : {}),
+    ...(segment.blocking ? { blocking: segment.blocking } : {}),
+    ...(segment.lighting ? { lighting: segment.lighting } : {}),
+    ...(segment.focalLength ? { focalLength: segment.focalLength } : {}),
+    ...(segment.aperture ? { aperture: segment.aperture } : {}),
+    ...(segment.iso ? { iso: segment.iso } : {}),
+    ...(segment.colorTone ? { colorTone: segment.colorTone } : {}),
+    ...(segment.mood ? { mood: segment.mood } : {}),
+    ...(segment.microExpression ? { microExpression: segment.microExpression } : {}),
+    ...(segment.costume ? { costume: segment.costume } : {}),
+    ...(segment.characterReferences ? { characterReferences: segment.characterReferences } : {}),
+    ...(segment.continuity ? { continuity: segment.continuity } : {}),
+    ...(segment.negativePrompt ? { negativePrompt: segment.negativePrompt } : {}),
     ...(segment.cameraDesignId ? { cameraDesignId: segment.cameraDesignId } : {}),
     ...(segment.actionDesignId ? { actionDesignId: segment.actionDesignId } : {}),
     ...(segment.frameDesignId ? { frameDesignId: segment.frameDesignId } : {}),

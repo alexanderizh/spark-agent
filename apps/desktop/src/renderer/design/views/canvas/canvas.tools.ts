@@ -24,10 +24,7 @@ import type {
 import type { CreateFilmAssetInput, ShotGroup, ShotSegment } from './canvasFilmAssets'
 import type { SessionReasoningEffort } from '@spark/protocol'
 import { getCanvasCapability, isOperationNode, nodeOperation } from './canvas.capabilities'
-import {
-  getCanvasAgentAvailableActions,
-  resolveNodeAssetKinds,
-} from './canvasAgentCapabilities'
+import { getCanvasAgentAvailableActions, resolveNodeAssetKinds } from './canvasAgentCapabilities'
 import { buildCanvasAgentProductionPlan } from './canvasAgentProductionPlan'
 import { SPECIALIZED_CANVAS_NODE_TOOLS } from './canvasSpecializedNodeTools'
 
@@ -274,7 +271,7 @@ const summarizeTask = (t: CanvasTask) => ({
 
 const summarizeOperationConfig = (snap: CanvasSnapshot, node: CanvasNode) => {
   const operation = nodeOperation(node)
-  const task = node.taskId ? snap.tasks.find((item) => item.id === node.taskId) ?? null : null
+  const task = node.taskId ? (snap.tasks.find((item) => item.id === node.taskId) ?? null) : null
   const inputNodeIds = snap.edges
     .filter((edge) => edge.targetNodeId === node.id && edge.type === 'used_as_input')
     .map((edge) => edge.sourceNodeId)
@@ -396,6 +393,45 @@ const PIPELINE_ROLES = [
   'clip',
 ] as const
 const PRODUCTION_STATES = ['empty', 'drafting', 'draft', 'confirmed', 'stale'] as const
+
+const SHOT_SEGMENT_TOOL_FIELDS = {
+  description: string('镜头画面与动作描述', false),
+  dialogue: string('带说话人的对白', false),
+  narration: string('旁白 / OS / 字幕', false),
+  characterAssetIds: array(string('角色资产 id'), '出场角色'),
+  sceneAssetId: string('场景资产 id', false),
+  propAssetIds: array(string('道具资产 id'), '道具'),
+  shotPrompt: string('自包含的 AI 视频镜头提示词', false),
+  shotSize: string('景别', false),
+  angle: string('机位高度、拍摄角度与视角', false),
+  movement: string('镜头类型、轨迹、方向、速度与稳定性', false),
+  sceneLayout: string('前中后景、道具和空间布局', false),
+  composition: string('九宫格落点、视觉中心与画面分割', false),
+  blocking: string('人物站位、入画范围、走位与 cm 级距离', false),
+  lighting: string('主光/辅光/轮廓光、光比和色温', false),
+  focalLength: string('镜头焦距/焦段', false),
+  aperture: string('光圈、景深与焦平面', false),
+  iso: string('感光度与颗粒', false),
+  colorTone: string('主色、强调色、冷暖与饱和度', false),
+  mood: string('氛围与情绪基调', false),
+  microExpression: string('微表情与表演动作', false),
+  costume: string('服装与造型连续性', false),
+  characterReferences: string('角色图/资产参考与本镜造型', false),
+  actionBeats: string('0.5s 精度的完整动作节拍', false),
+  soundEffects: string('环境声、拟音、音乐与时码', false),
+  transition: string('入镜/出镜的硬切或其他剪辑标识', false),
+  firstFrame: string('0.0s 首帧精确描述', false),
+  lastFrame: string('镜头末尾帧精确描述', false),
+  continuity: string('轴线、视线、道具、造型、光向与动作接点', false),
+  negativePrompt: string('该镜专属反向提示词', false),
+  inSec: number('镜头入点（秒）'),
+  outSec: number('镜头出点（秒）'),
+  durationSec: number('镜头时长（秒）'),
+  keyframeNodeIds: array(string('关键帧节点 id'), '关联关键帧节点'),
+  cameraDesignId: string('运镜风格预设 id', false),
+  actionDesignId: string('动作风格预设 id', false),
+  frameDesignId: string('画面风格预设 id', false),
+}
 
 // ─── 工具定义 ──────────────────────────────────────────────────────────────
 
@@ -778,7 +814,8 @@ const tools: CanvasToolDescriptor[] = [
       const node = findNode(snap, input.nodeId)
       if (!isOperationNode(node)) throw new Error(`节点 ${input.nodeId} 不是 AI 操作节点`)
       await ctx.workspace.updateNodeData(input.nodeId, input.config)
-      if (input.title != null) await ctx.workspace.patchNodes([input.nodeId], { title: input.title })
+      if (input.title != null)
+        await ctx.workspace.patchNodes([input.nodeId], { title: input.title })
       return { ok: true, nodeId: input.nodeId, taskId: node.taskId ?? null }
     },
   },
@@ -1174,9 +1211,12 @@ const tools: CanvasToolDescriptor[] = [
       const snap = requireSnapshot(ctx)
       const node = findNode(snap, input.nodeId)
       if (!isOperationNode(node)) throw new Error(`节点 ${input.nodeId} 不是 AI 操作节点`)
-      const savedPrompt = node.data.prompt ?? (node.taskId ? snap.tasks.find((t) => t.id === node.taskId)?.prompt : null)
+      const savedPrompt =
+        node.data.prompt ??
+        (node.taskId ? snap.tasks.find((t) => t.id === node.taskId)?.prompt : null)
       const prompt = input.prompt ?? savedPrompt
-      if (!prompt?.trim()) throw new Error('操作节点没有可运行的 prompt，请先更新配置或传入 prompt。')
+      if (!prompt?.trim())
+        throw new Error('操作节点没有可运行的 prompt，请先更新配置或传入 prompt。')
       const { nodeId, ...params } = input
       await ctx.workspace.runOperationNode(nodeId, { ...params, prompt })
       return { ok: true, nodeId }
@@ -1317,20 +1357,7 @@ const tools: CanvasToolDescriptor[] = [
       properties: {
         groupId: string('分组 id'),
         title: string('镜头标题（如「开场—远景」）'),
-        description: string('镜头描述', false),
-        dialogue: string('台词', false),
-        narration: string('旁白', false),
-        characterAssetIds: array(string('角色资产 id'), '出场角色'),
-        sceneAssetId: string('场景资产 id', false),
-        propAssetIds: array(string('道具资产 id'), '道具'),
-        shotPrompt: string('镜头提示词', false),
-        inSec: number('镜头入点（秒）'),
-        outSec: number('镜头出点（秒）'),
-        durationSec: number('镜头时长（秒）'),
-        keyframeNodeIds: array(string('关键帧节点 id'), '关联关键帧节点'),
-        cameraDesignId: string('运镜风格预设 id', false),
-        actionDesignId: string('动作风格预设 id', false),
-        frameDesignId: string('画面风格预设 id', false),
+        ...SHOT_SEGMENT_TOOL_FIELDS,
       },
     },
     handler: async (ctx, input: { groupId: string; title: string } & Partial<ShotSegment>) => {
@@ -1349,20 +1376,7 @@ const tools: CanvasToolDescriptor[] = [
         groupId: string('分组 id'),
         segmentId: string('片段 id'),
         title: string('标题', false),
-        description: string('描述', false),
-        dialogue: string('台词', false),
-        narration: string('旁白', false),
-        characterAssetIds: array(string('角色资产 id'), '出场角色'),
-        sceneAssetId: string('场景资产 id', false),
-        propAssetIds: array(string('道具资产 id'), '道具'),
-        shotPrompt: string('镜头提示词', false),
-        inSec: number('镜头入点（秒）'),
-        outSec: number('镜头出点（秒）'),
-        durationSec: number('镜头时长（秒）'),
-        keyframeNodeIds: array(string('关键帧节点 id'), '关联关键帧节点'),
-        cameraDesignId: string('运镜风格预设 id', false),
-        actionDesignId: string('动作风格预设 id', false),
-        frameDesignId: string('画面风格预设 id', false),
+        ...SHOT_SEGMENT_TOOL_FIELDS,
       },
     },
     handler: async (ctx, input: { groupId: string; segmentId: string } & Partial<ShotSegment>) => {
@@ -1563,7 +1577,14 @@ const tools: CanvasToolDescriptor[] = [
     handler: async (
       ctx,
       input: {
-        nodes: Array<{ text?: string; prompt?: string; type?: 'text' | 'prompt'; title?: string; x?: number; y?: number }>
+        nodes: Array<{
+          text?: string
+          prompt?: string
+          type?: 'text' | 'prompt'
+          title?: string
+          x?: number
+          y?: number
+        }>
         connections?: Array<{ fromIndex: number; toIndex: number }>
         startX?: number
         startY?: number
@@ -1593,7 +1614,10 @@ const tools: CanvasToolDescriptor[] = [
         if (node) {
           createdIds.push(node.id)
           if (isPrompt) {
-            await ctx.workspace.updateNodeData(node.id, { prompt: spec.prompt ?? content, format: 'prompt' })
+            await ctx.workspace.updateNodeData(node.id, {
+              prompt: spec.prompt ?? content,
+              format: 'prompt',
+            })
           }
           if (spec.title) await ctx.workspace.patchNodes([node.id], { title: spec.title })
         }
@@ -1630,7 +1654,10 @@ const tools: CanvasToolDescriptor[] = [
     },
     handler: async (
       ctx,
-      input: { nodeIds: string[]; direction: 'left' | 'right' | 'top' | 'bottom' | 'center-h' | 'center-v' },
+      input: {
+        nodeIds: string[]
+        direction: 'left' | 'right' | 'top' | 'bottom' | 'center-h' | 'center-v'
+      },
     ) => {
       const snap = requireSnapshot(ctx)
       const targets = input.nodeIds
@@ -1648,12 +1675,24 @@ const tools: CanvasToolDescriptor[] = [
       for (const n of targets) {
         let patch: { x?: number; y?: number } = {}
         switch (input.direction) {
-          case 'left': patch = { x: left }; break
-          case 'right': patch = { x: right - n.width }; break
-          case 'top': patch = { y: top }; break
-          case 'bottom': patch = { y: bottom - n.height }; break
-          case 'center-h': patch = { x: centerX - n.width / 2 }; break
-          case 'center-v': patch = { y: centerY - n.height / 2 }; break
+          case 'left':
+            patch = { x: left }
+            break
+          case 'right':
+            patch = { x: right - n.width }
+            break
+          case 'top':
+            patch = { y: top }
+            break
+          case 'bottom':
+            patch = { y: bottom - n.height }
+            break
+          case 'center-h':
+            patch = { x: centerX - n.width / 2 }
+            break
+          case 'center-v':
+            patch = { y: centerY - n.height / 2 }
+            break
         }
         await ctx.workspace.patchNodes([n.id], patch)
       }
@@ -1851,7 +1890,9 @@ const tools: CanvasToolDescriptor[] = [
       }
       if (input.hasOutputs != null) {
         const nodesWithOutputs = new Set(
-          snap.edges.filter((e) => e.type === 'generated' || e.type === 'derived_from').map((e) => e.sourceNodeId),
+          snap.edges
+            .filter((e) => e.type === 'generated' || e.type === 'derived_from')
+            .map((e) => e.sourceNodeId),
         )
         result = result.filter((n) => nodesWithOutputs.has(n.id) === input.hasOutputs)
       }

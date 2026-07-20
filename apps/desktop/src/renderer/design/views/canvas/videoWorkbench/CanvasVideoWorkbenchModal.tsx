@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { Button, Dropdown, Segmented, message } from 'antd'
+import type { MenuProps } from 'antd'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { encodeToSafeFileUrl } from '../canvas-safe-file'
 import type { FfmpegInstallProgress, VideoProcessRequest } from '@spark/protocol'
@@ -31,6 +32,11 @@ import {
 import { VideoWorkbenchFramePanel } from './VideoWorkbenchFramePanel'
 import { VideoWorkbenchEditPanel } from './VideoWorkbenchEditPanel'
 import { VideoTimeline } from './VideoTimeline'
+import { VideoWorkbenchResourcePanel } from './VideoWorkbenchResourcePanel'
+import { VideoWorkbenchTrackTimeline } from './VideoWorkbenchTrackTimeline'
+import { VideoWorkbenchOutputPanel } from './VideoWorkbenchOutputPanel'
+import { insertResourceIntoTrack, mergeResources, removeTrackClip } from './resourcePanelUtils'
+import type { TrackClip, WorkbenchResource } from './videoWorkbench.types'
 import {
   normalizeTimelineRange,
   splitTimelineRange,
@@ -75,6 +81,32 @@ interface CanvasVideoOption {
   thumbnailUrl?: string
 }
 
+/** 父级支持的"从画布选择资源"输入（含图片 + 视频） */
+export interface CanvasResourceOption {
+  id: string
+  title: string
+  url: string
+  kind: 'video' | 'image'
+  thumbnailUrl?: string
+  durationSec?: number
+  width?: number
+  height?: number
+  fileSize?: number
+}
+
+/** 资源面板可接收的本地文件（父级在文件选择器回调中解析后传入） */
+export interface LocalResourceFile {
+  path: string
+  name: string
+  kind: 'video' | 'image'
+  url: string
+  thumbnailUrl?: string
+  durationSec?: number
+  width?: number
+  height?: number
+  fileSize?: number
+}
+
 interface Props {
   node: CanvasNode | null
   open: boolean
@@ -88,7 +120,59 @@ interface Props {
   onSelectVideo?: (url: string) => Promise<void>
   /** 画布上可用的视频节点列表（从画布选择用） */
   videoNodes?: CanvasVideoOption[]
+  /** 资源面板：从本机添加（父级弹出文件选择器，把解析后的资源列表传回） */
+  onAddLocalResources?: () => Promise<LocalResourceFile[]>
+  /** 资源面板：从画布选择资源（父级弹出画布选择 UI，把选中资源传回） */
+  onPickCanvasResources?: () => Promise<CanvasResourceOption[]>
+  /** 资源面板：按上级连线自动收集上游节点首选产物（父级实现，传入一个已收集好的资源列表） */
+  onCollectUpstream?: () => Promise<CanvasResourceOption[]>
 }
+
+function canvasResourceOptionToWorkbenchResource(
+  r: CanvasResourceOption,
+  source: 'upstream' | 'canvas',
+): WorkbenchResource {
+  const base: WorkbenchResource = {
+    id: `${source}:${r.id}`,
+    source,
+    kind: r.kind,
+    title: r.title,
+    url: r.url,
+    originPath: resolveDiskPath(r.url),
+    importedAt: Date.now(),
+  }
+  return {
+    ...base,
+    ...(r.thumbnailUrl !== undefined ? { thumbnailUrl: r.thumbnailUrl } : {}),
+    ...(r.durationSec !== undefined ? { durationSec: r.durationSec } : {}),
+    ...(r.width !== undefined ? { width: r.width } : {}),
+    ...(r.height !== undefined ? { height: r.height } : {}),
+    ...(r.fileSize !== undefined ? { fileSize: r.fileSize } : {}),
+  }
+}
+
+function localResourceFileToWorkbenchResource(f: LocalResourceFile): WorkbenchResource {
+  const base: WorkbenchResource = {
+    id: `local:${f.path}`,
+    source: 'local',
+    kind: f.kind,
+    title: f.name,
+    url: f.url,
+    originPath: f.path,
+    importedAt: Date.now(),
+  }
+  return {
+    ...base,
+    ...(f.thumbnailUrl !== undefined ? { thumbnailUrl: f.thumbnailUrl } : {}),
+    ...(f.durationSec !== undefined ? { durationSec: f.durationSec } : {}),
+    ...(f.width !== undefined ? { width: f.width } : {}),
+    ...(f.height !== undefined ? { height: f.height } : {}),
+    ...(f.fileSize !== undefined ? { fileSize: f.fileSize } : {}),
+  }
+}
+
+/** 持久化防抖窗口（毫秒）。拖拽重排 / 加 mark 这类高频操作会被合并为一次 onSave。 */
+const PERSIST_DEBOUNCE_MS = 300
 
 export function CanvasVideoWorkbenchModal({
   node,
@@ -99,12 +183,25 @@ export function CanvasVideoWorkbenchModal({
   onAddVideo,
   onSelectVideo,
   videoNodes,
+  onAddLocalResources,
+  onPickCanvasResources,
+  onCollectUpstream,
 }: Props): ReactElement | null {
-  const initial = node?.data?.videoWorkbench
-    ? readVideoWorkbenchData(node.data.videoWorkbench as Record<string, unknown>)
-    : createDefaultVideoWorkbenchData()
-  const [draft, setDraft] = useState<VideoWorkbenchData>(initial)
-  const [activeTab, setActiveTab] = useState<'frames' | 'edit' | 'output'>(initial.activeTab)
+  // 惰性初始化：只在 mount 时跑一次 readVideoWorkbenchData，避免每次 re-render 都重跑校验。
+  // Modal 在父级用 key={node.id} 绑定节点，切换节点会完整 remount，所以这里不需要额外重置 draft。
+  const [draft, setDraft] = useState<VideoWorkbenchData>(() =>
+    node?.data?.videoWorkbench
+      ? readVideoWorkbenchData(node.data.videoWorkbench as Record<string, unknown>)
+      : createDefaultVideoWorkbenchData(),
+  )
+  const [activeTab, setActiveTab] = useState<'resources' | 'frames' | 'edit' | 'output'>(
+    draft.activeTab === 'frames' ||
+      draft.activeTab === 'edit' ||
+      draft.activeTab === 'output' ||
+      draft.activeTab === 'resources'
+      ? draft.activeTab
+      : 'resources',
+  )
   const [ffmpegReady, setFfmpegReady] = useState<boolean | null>(null)
   const [ffmpegInstalling, setFfmpegInstalling] = useState(false)
   const [ffmpegInstallProgress, setFfmpegInstallProgress] = useState<FfmpegInstallProgress | null>(
@@ -132,11 +229,37 @@ export function CanvasVideoWorkbenchModal({
   }>({ sourceUrl: '', range: { startSec: 0, endSec: 0 } })
   /** true=关键帧无损快切，false=重新编码精确切 */
   const [trimCopy, setTrimCopy] = useState(true)
+  /** 资源面板当前选中的资源 id（用于在主预览区单独预览） */
+  const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null)
+  const autoCollectTriggeredRef = useRef(false)
 
   const sourceVideoUrl = useMemo(() => {
     const raw = node?.data?.url as string | undefined
     return raw ? normalizeEduAssetUrl(raw) : ''
   }, [node?.data?.url])
+
+  /**
+   * 主预览区当前展示：先看资源面板选中项，没有则退回源视频。
+   * 三值（selectedResource / previewUrl / previewKind）从同一次 find 派生，避免重复扫数组。
+   */
+  const preview = useMemo(() => {
+    if (selectedResourceId) {
+      const r = draft.resourcePanel.find((x) => x.id === selectedResourceId)
+      if (r) {
+        return {
+          selectedResource: r,
+          previewUrl: r.url,
+          previewKind: r.kind,
+        }
+      }
+    }
+    return {
+      selectedResource: null as WorkbenchResource | null,
+      previewUrl: sourceVideoUrl,
+      previewKind: sourceVideoUrl ? ('video' as const) : null,
+    }
+  }, [draft.resourcePanel, selectedResourceId, sourceVideoUrl])
+  const { selectedResource, previewUrl, previewKind } = preview
 
   const probe = draft.probeInfo
   const duration = probe?.durationSec ?? videoMetaDuration ?? 0
@@ -163,6 +286,53 @@ export function CanvasVideoWorkbenchModal({
       .then((s: { ffmpegReady: boolean }) => setFfmpegReady(s.ffmpegReady))
       .catch(() => setFfmpegReady(false))
   }, [open])
+
+  // ── 防抖持久化：draft 变化时合并为一次 onSave ──────────────────────
+  // 关键点：
+  //  - setDraft 的 updater 必须是纯函数，不能塞 IPC 副作用
+  //  - unmount / open 关闭时强制 flush 一次，避免最后一次改动丢失
+  //  - 跳过首次 mount（draft 与已持久化数据一致，不重复写）
+  const isFirstRenderRef = useRef(true)
+  const pendingDraftRef = useRef<VideoWorkbenchData | null>(null)
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const onSaveRef = useRef(onSave)
+  useEffect(() => {
+    onSaveRef.current = onSave
+  }, [onSave])
+  const flushSave = useCallback(() => {
+    if (flushTimerRef.current != null) {
+      clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = null
+    }
+    if (pendingDraftRef.current) {
+      const next = pendingDraftRef.current
+      pendingDraftRef.current = null
+      void onSaveRef.current(next)
+    }
+  }, [])
+  useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false
+      return
+    }
+    pendingDraftRef.current = draft
+    if (flushTimerRef.current != null) clearTimeout(flushTimerRef.current)
+    flushTimerRef.current = setTimeout(flushSave, PERSIST_DEBOUNCE_MS)
+    return () => {
+      if (flushTimerRef.current != null) {
+        clearTimeout(flushTimerRef.current)
+        flushTimerRef.current = null
+      }
+    }
+  }, [draft, flushSave])
+  // open 转 false（父级把 videoWorkbenchNode 设回 null → key 变化导致 unmount）时 flush 兜底
+  useEffect(() => {
+    if (open) return
+    flushSave()
+    return flushSave
+  }, [open, flushSave])
+  // 组件卸载（key 变化时也会触发）再 flush 一次，最后一道防线
+  useEffect(() => flushSave, [flushSave])
 
   useEffect(() => {
     if (!open) return
@@ -213,45 +383,38 @@ export function CanvasVideoWorkbenchModal({
     }
   }, [open])
 
-  const probeAndUpdate = useCallback(
-    async (n: CanvasNode) => {
-      if (probingRef.current) return
-      const sourcePath = resolveDiskPath((n.data as { url?: string }).url ?? '')
-      if (!sourcePath) return // 未关联视频文件，跳过探测（预览区已展示"未关联视频"）
-      probingRef.current = true
-      setBusy(true)
-      setProgress(null)
-      setProbeFailed(false)
-      try {
-        const reqId = shortId()
-        const res = await window.spark.invoke('video:probe', {
-          operation: 'probe',
-          input: sourcePath,
-          params: {},
-          requestId: reqId,
-        })
-        if (res.success && res.result) {
-          const probeInfo = res.result as VideoProbeInfo
-          setDraft((d) => {
-            const next = { ...d, probeInfo }
-            void onSave(next)
-            return next
-          })
-        } else {
-          // probe 返回失败（路径校验/ffmpeg 执行错误）—— 不阻塞，用 video 元素信息降级
-          console.warn('[video-workbench] probe failed:', res.error)
-          setProbeFailed(true)
-        }
-      } catch (err) {
-        console.warn('[video-workbench] probe error:', err)
+  const probeAndUpdate = useCallback(async (n: CanvasNode) => {
+    if (probingRef.current) return
+    const sourcePath = resolveDiskPath((n.data as { url?: string }).url ?? '')
+    if (!sourcePath) return // 未关联视频文件，跳过探测（预览区已展示"未关联视频"）
+    probingRef.current = true
+    setBusy(true)
+    setProgress(null)
+    setProbeFailed(false)
+    try {
+      const reqId = shortId()
+      const res = await window.spark.invoke('video:probe', {
+        operation: 'probe',
+        input: sourcePath,
+        params: {},
+        requestId: reqId,
+      })
+      if (res.success && res.result) {
+        const probeInfo = res.result as VideoProbeInfo
+        setDraft((d) => ({ ...d, probeInfo }))
+      } else {
+        // probe 返回失败（路径校验/ffmpeg 执行错误）—— 不阻塞，用 video 元素信息降级
+        console.warn('[video-workbench] probe failed:', res.error)
         setProbeFailed(true)
-      } finally {
-        setBusy(false)
-        probingRef.current = false
       }
-    },
-    [onSave],
-  )
+    } catch (err) {
+      console.warn('[video-workbench] probe error:', err)
+      setProbeFailed(true)
+    } finally {
+      setBusy(false)
+      probingRef.current = false
+    }
+  }, [])
 
   // ── 首次打开自动 probe（若 probeInfo 缺失且 ffmpeg 可用）─────────
   useEffect(() => {
@@ -268,6 +431,8 @@ export function CanvasVideoWorkbenchModal({
     void probeAndUpdate(node)
   }, [draft.probeInfo, ffmpegReady, node, open, probeAndUpdate])
 
+  // 收窄依赖：只关心 extractConfig 三个参数，不让整个 draft 把回调拖着重算
+  const extractConfig = draft.extractConfig
   // ── 自动提取关键帧（首次打开 + keyframes 为空）──────────────────
   const extractKeyframes = useCallback(
     async (strategy: KeyframeStrategy) => {
@@ -282,9 +447,9 @@ export function CanvasVideoWorkbenchModal({
           input: resolveDiskPath((node.data as { url?: string }).url ?? ''),
           params: {
             strategy,
-            threshold: draft.extractConfig.threshold,
-            intervalSec: draft.extractConfig.intervalSec,
-            maxFrames: draft.extractConfig.maxFrames,
+            threshold: extractConfig.threshold,
+            intervalSec: extractConfig.intervalSec,
+            maxFrames: extractConfig.maxFrames,
           },
           requestId: reqId,
         })
@@ -298,11 +463,7 @@ export function CanvasVideoWorkbenchModal({
             timestampSec: f.timestampSec,
             index: f.index,
           }))
-          setDraft((d) => {
-            const next = { ...d, keyframes: frames }
-            void onSave(next)
-            return next
-          })
+          setDraft((d) => ({ ...d, keyframes: frames }))
           message.success(`提取了 ${frames.length} 个关键帧`)
         } else {
           console.error('[video-workbench] extractKeyframes failed:', res.error)
@@ -315,7 +476,7 @@ export function CanvasVideoWorkbenchModal({
         setProgress(null)
       }
     },
-    [node, probe, draft, onSave],
+    [node, probe, extractConfig],
   )
 
   // 手动标记时间点
@@ -324,26 +485,18 @@ export function CanvasVideoWorkbenchModal({
     setDraft((d) => {
       if (d.manualMarks.includes(t)) return d
       const marks = [...d.manualMarks, t].sort((a, b) => a - b)
-      const next = { ...d, manualMarks: marks }
-      void onSave(next)
-      return next
+      return { ...d, manualMarks: marks }
     })
-  }, [currentTime, onSave])
+  }, [currentTime])
 
-  const removeManualMark = useCallback(
-    (t: number) => {
-      setDraft((d) => {
-        const next = { ...d, manualMarks: d.manualMarks.filter((x) => x !== t) }
-        void onSave(next)
-        return next
-      })
-    },
-    [onSave],
-  )
+  const removeManualMark = useCallback((t: number) => {
+    setDraft((d) => ({ ...d, manualMarks: d.manualMarks.filter((x) => x !== t) }))
+  }, [])
 
-  // 批量提取手动标记点
+  // 收窄依赖：manualMarks 单独读，避免整 draft 变化时整个回调重建
+  const manualMarks = draft.manualMarks
   const extractManualMarks = useCallback(async () => {
-    if (!node || draft.manualMarks.length === 0) return
+    if (!node || manualMarks.length === 0) return
     setBusy(true)
     setProgress(0)
     try {
@@ -351,7 +504,7 @@ export function CanvasVideoWorkbenchModal({
       const res = await window.spark.invoke('video:process', {
         operation: 'extractFramesAtTimes',
         input: resolveDiskPath((node.data as { url?: string }).url ?? ''),
-        params: { timesSec: draft.manualMarks },
+        params: { timesSec: manualMarks },
         requestId: reqId,
       })
       if (res.success && res.result) {
@@ -365,9 +518,7 @@ export function CanvasVideoWorkbenchModal({
             timestampSec: f.timestampSec,
             index: baseIdx + i,
           }))
-          const next = { ...d, keyframes: [...d.keyframes, ...frames] }
-          void onSave(next)
-          return next
+          return { ...d, keyframes: [...d.keyframes, ...frames] }
         })
         message.success(`提取了 ${frames.length} 个标记帧`)
       }
@@ -377,7 +528,7 @@ export function CanvasVideoWorkbenchModal({
       setBusy(false)
       setProgress(null)
     }
-  }, [node, draft, onSave])
+  }, [node, manualMarks])
 
   // 跳转到指定时间点
   const seekTo = useCallback((sec: number) => {
@@ -444,12 +595,10 @@ export function CanvasVideoWorkbenchModal({
           })),
           ...d.outputs,
         ].slice(0, 20) // 保留最近 20 条
-        const next = { ...d, outputs, activeTab: 'output' as const }
-        void onSave(next)
-        return next
+        return { ...d, outputs, activeTab: 'output' as const }
       })
     },
-    [onSave],
+    [],
   )
 
   const recordOutput = useCallback(
@@ -532,7 +681,211 @@ export function CanvasVideoWorkbenchModal({
     message.success(`已在 ${formatTimestamp(currentTime)} 分割并导出 2 个片段`)
   }, [currentTime, duration, handleProcess, recordOutputs, timelineRange, trimCopy])
 
-  // ── Esc 关闭（全局监听，不依赖 overlay 获得焦点）──
+  // ── 资源面板 / 多段轨道 handlers ───────────────────────────────
+  // updater 必须是纯函数（无 IPC 副作用）；持久化由 useEffect 防抖接管
+  const updateDraft = useCallback((updater: (d: VideoWorkbenchData) => VideoWorkbenchData) => {
+    setDraft((d) => updater(d))
+  }, [])
+
+  const handleAddResourceToTrack = useCallback(
+    (resource: WorkbenchResource, insertAfterClipId?: string | null) => {
+      updateDraft((d) => ({
+        ...d,
+        track: insertResourceIntoTrack(d.track, resource, insertAfterClipId),
+      }))
+    },
+    [updateDraft],
+  )
+
+  const handleReorderTrack = useCallback(
+    (nextTrack: TrackClip[]) => {
+      updateDraft((d) => ({ ...d, track: nextTrack }))
+    },
+    [updateDraft],
+  )
+
+  const handleRemoveClip = useCallback(
+    (clipId: string) => {
+      updateDraft((d) => ({ ...d, track: removeTrackClip(d.track, clipId) }))
+    },
+    [updateDraft],
+  )
+
+  const handleClearTrack = useCallback(() => {
+    updateDraft((d) => ({ ...d, track: [] }))
+  }, [updateDraft])
+
+  const handleExportWhole = useCallback(() => {
+    if (draft.track.length === 0) {
+      message.warning('请先把资源加入轨道再导出整条')
+      return
+    }
+    // P1：UI 入口已就位；真实 ffmpeg concat 流程由父级 / IPC 在后续 P2 接入
+    message.info('导出整条需要 ffmpeg concat 流程（P2 任务），当前为占位')
+  }, [draft.track.length])
+
+  const handlePreviewResource = useCallback((resource: WorkbenchResource) => {
+    setSelectedResourceId(resource.id)
+  }, [])
+
+  const handleRemoveResource = useCallback(
+    (resourceId: string) => {
+      updateDraft((d) => ({
+        ...d,
+        resourcePanel: d.resourcePanel.filter((r) => r.id !== resourceId),
+        // 同时从轨道中清理引用了该资源的 clip
+        track: d.track.filter((c) => c.resourceId !== resourceId),
+      }))
+    },
+    [updateDraft],
+  )
+
+  const handleAutoCollectToggle = useCallback(
+    (next: boolean) => {
+      updateDraft((d) => ({ ...d, autoCollectUpstream: next }))
+    },
+    [updateDraft],
+  )
+
+  const handleCollectUpstream = useCallback(async () => {
+    if (!onCollectUpstream) {
+      message.info('当前画布上下文未提供「按上级连线收集」能力，仅支持手动添加资源')
+      return
+    }
+    setBusy(true)
+    try {
+      const collected = await onCollectUpstream()
+      if (!Array.isArray(collected) || collected.length === 0) {
+        message.info('未找到上级连线节点或没有可收集的产物')
+        return
+      }
+      const incoming: WorkbenchResource[] = collected.map((r) =>
+        canvasResourceOptionToWorkbenchResource(r, 'upstream'),
+      )
+      updateDraft((d) => ({ ...d, resourcePanel: mergeResources(d.resourcePanel, incoming) }))
+      message.success(`已收集 ${incoming.length} 个上游产物`)
+    } catch (err) {
+      message.error(`自动收集上游失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }, [onCollectUpstream, updateDraft])
+
+  useEffect(() => {
+    if (!open || !draft.autoCollectUpstream) {
+      autoCollectTriggeredRef.current = false
+      return
+    }
+    if (!onCollectUpstream || autoCollectTriggeredRef.current) return
+    autoCollectTriggeredRef.current = true
+    void handleCollectUpstream()
+  }, [draft.autoCollectUpstream, handleCollectUpstream, onCollectUpstream, open])
+
+  const handleAddResourcesFromProps = useCallback(
+    (resources: CanvasResourceOption[] | undefined) => {
+      if (!resources || resources.length === 0) return
+      const incoming: WorkbenchResource[] = resources.map((r) =>
+        canvasResourceOptionToWorkbenchResource(r, 'canvas'),
+      )
+      updateDraft((d) => ({ ...d, resourcePanel: mergeResources(d.resourcePanel, incoming) }))
+    },
+    [updateDraft],
+  )
+
+  const handleAddLocalResourcesFromProps = useCallback(
+    (files: LocalResourceFile[] | undefined) => {
+      if (!files || files.length === 0) return
+      const incoming: WorkbenchResource[] = files.map((f) =>
+        localResourceFileToWorkbenchResource(f),
+      )
+      updateDraft((d) => ({ ...d, resourcePanel: mergeResources(d.resourcePanel, incoming) }))
+    },
+    [updateDraft],
+  )
+
+  const handlePickLocal = useCallback(async () => {
+    if (!onAddLocalResources) return
+    try {
+      handleAddLocalResourcesFromProps(await onAddLocalResources())
+    } catch (err) {
+      message.error(`打开本机资源失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [handleAddLocalResourcesFromProps, onAddLocalResources])
+
+  const handlePickCanvas = useCallback(async () => {
+    if (!onPickCanvasResources) return
+    try {
+      handleAddResourcesFromProps(await onPickCanvasResources())
+    } catch (err) {
+      message.error(`打开画布选择失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [handleAddResourcesFromProps, onPickCanvasResources])
+
+  // 「添加资源」Dropdown 的菜单项：依赖稳定时一次性计算，避免每次 render 重建数组对象
+  const addResourceMenuItems = useMemo<NonNullable<MenuProps['items']>>(() => {
+    const items: NonNullable<MenuProps['items']> = []
+    if (onAddLocalResources) {
+      items.push({
+        key: 'resource-from-file',
+        label: '📁 从本机添加资源',
+        onClick: () => {
+          setActiveTab('resources')
+          void handlePickLocal()
+        },
+      })
+    }
+    if (onPickCanvasResources) {
+      items.push({
+        key: 'resource-from-canvas',
+        label: '🖼️ 从画布选择资源',
+        onClick: () => {
+          setActiveTab('resources')
+          void handlePickCanvas()
+        },
+      })
+    }
+    if (onCollectUpstream) {
+      items.push({ type: 'divider' })
+      items.push({
+        key: 'resource-collect-upstream',
+        label: '🔗 按上级连线自动收集',
+        onClick: () => {
+          setActiveTab('resources')
+          void handleCollectUpstream()
+        },
+      })
+    }
+    if (onAddVideo || (onSelectVideo && videoNodes && videoNodes.length > 0)) {
+      items.push({ type: 'divider' })
+      if (onAddVideo) {
+        items.push({
+          key: 'video-from-file',
+          label: '🎬 从文件添加视频（设置源）',
+          onClick: () => void onAddVideo(),
+        })
+      }
+      if (onSelectVideo && videoNodes && videoNodes.length > 0) {
+        for (const v of videoNodes) {
+          items.push({
+            key: `pick-video-${v.id}`,
+            label: `🎬 设为源：${v.title}`,
+            onClick: () => void onSelectVideo(v.url),
+          })
+        }
+      }
+    }
+    return items
+  }, [
+    onAddLocalResources,
+    onPickCanvasResources,
+    onCollectUpstream,
+    onAddVideo,
+    onSelectVideo,
+    videoNodes,
+    handlePickLocal,
+    handlePickCanvas,
+    handleCollectUpstream,
+  ])
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -570,40 +923,22 @@ export function CanvasVideoWorkbenchModal({
             )}
           </div>
           <div className="vwb-topbar-actions">
-            {(onAddVideo || (onSelectVideo && videoNodes && videoNodes.length > 0)) && (
+            {(onAddVideo ||
+              (onSelectVideo && videoNodes && videoNodes.length > 0) ||
+              onAddLocalResources ||
+              onPickCanvasResources ||
+              onCollectUpstream) && (
               <Dropdown
                 trigger={['click']}
                 placement="bottomRight"
-                menu={{
-                  items: [
-                    ...(onAddVideo
-                      ? [
-                          {
-                            key: 'from-file',
-                            label: '从文件添加…',
-                            onClick: () => void onAddVideo(),
-                          },
-                        ]
-                      : []),
-                    ...(onSelectVideo && videoNodes && videoNodes.length > 0
-                      ? [
-                          { type: 'divider' as const },
-                          ...videoNodes.map((v) => ({
-                            key: `pick-${v.id}`,
-                            label: v.title,
-                            onClick: () => void onSelectVideo(v.url),
-                          })),
-                        ]
-                      : []),
-                  ],
-                }}
+                menu={{ items: addResourceMenuItems }}
               >
                 <Button
                   size="small"
-                  type={sourceVideoUrl ? 'default' : 'primary'}
+                  type={draft.resourcePanel.length === 0 ? 'primary' : 'default'}
                   icon={<Icons.Video size={14} />}
                 >
-                  {sourceVideoUrl ? '更换视频' : '添加视频'}
+                  添加资源
                 </Button>
               </Dropdown>
             )}
@@ -640,10 +975,19 @@ export function CanvasVideoWorkbenchModal({
           {/* 左侧：视频预览 + 时间线 */}
           <div className="vwb-preview-pane">
             <div className="vwb-video-stage">
-              {sourceVideoUrl ? (
+              {selectedResource && (
+                <div className="vwb-preview-meta">
+                  <Icons.Eye size={12} />
+                  <span>预览资源：{selectedResource.title}</span>
+                  <Button size="small" type="text" onClick={() => setSelectedResourceId(null)}>
+                    返回主源
+                  </Button>
+                </div>
+              )}
+              {previewUrl && previewKind === 'video' ? (
                 <video
                   ref={videoRef}
-                  src={sourceVideoUrl}
+                  src={previewUrl}
                   preload="metadata"
                   onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                   onLoadedMetadata={(e) => {
@@ -654,6 +998,13 @@ export function CanvasVideoWorkbenchModal({
                   onPause={() => setIsPlaying(false)}
                   className="vwb-video"
                 />
+              ) : previewUrl && previewKind === 'image' ? (
+                <img
+                  src={previewUrl}
+                  alt={selectedResource?.title ?? ''}
+                  className="vwb-video"
+                  style={{ objectFit: 'contain' }}
+                />
               ) : (
                 <div className="vwb-video-empty">
                   <Icons.Film size={48} />
@@ -663,7 +1014,7 @@ export function CanvasVideoWorkbenchModal({
             </div>
 
             {/* 自定义播放控制条 */}
-            {sourceVideoUrl && (
+            {previewUrl && previewKind === 'video' && (
               <div className="vwb-player-controls">
                 <button
                   className="vwb-player-btn"
@@ -722,30 +1073,47 @@ export function CanvasVideoWorkbenchModal({
               </div>
             )}
 
-            {/* 专业视频轨道 */}
-            <VideoTimeline
-              duration={duration}
-              currentTime={currentTime}
-              keyframes={draft.keyframes}
-              manualMarks={draft.manualMarks}
-              range={timelineRange}
-              trimCopy={trimCopy}
-              processingReady={ffmpegReady === true}
-              onSeek={seekTo}
-              onRangeChange={handleTimelineRangeChange}
-              onTrimCopyChange={setTrimCopy}
-              onApplyTrim={() => void handleApplyTimelineTrim()}
-              onSplit={() => void handleSplitTimeline()}
-              onMark={addManualMark}
-              onRemoveMark={removeManualMark}
-              onExtractMarks={extractManualMarks}
+            {/* 多段拼接轨道（设计稿：主时间线 V1） */}
+            <VideoWorkbenchTrackTimeline
+              track={draft.track}
+              resources={draft.resourcePanel}
               busy={busy}
+              onReorder={handleReorderTrack}
+              onRemoveClip={handleRemoveClip}
+              onPreviewResource={handlePreviewResource}
+              onAddResourceToTrack={handleAddResourceToTrack}
+              onExportWhole={handleExportWhole}
+              onClearTrack={handleClearTrack}
             />
+
+            {/* 单视频源编辑轨道（已有关联源视频且尚未开始多段拼接时展示，作为补充工具） */}
+            {sourceVideoUrl && draft.track.length === 0 && (
+              <VideoTimeline
+                duration={duration}
+                currentTime={currentTime}
+                keyframes={draft.keyframes}
+                manualMarks={draft.manualMarks}
+                range={timelineRange}
+                trimCopy={trimCopy}
+                processingReady={ffmpegReady === true}
+                onSeek={seekTo}
+                onRangeChange={handleTimelineRangeChange}
+                onTrimCopyChange={setTrimCopy}
+                onApplyTrim={() => void handleApplyTimelineTrim()}
+                onSplit={() => void handleSplitTimeline()}
+                onMark={addManualMark}
+                onRemoveMark={removeManualMark}
+                onExtractMarks={extractManualMarks}
+                busy={busy}
+              />
+            )}
           </div>
 
           {/* 右侧：Tab 面板 */}
           <div className="vwb-side-pane">
             <div className="vwb-workflow-strip" aria-label="视频工作流">
+              <span className={activeTab === 'resources' ? 'is-active' : ''}>00 资源</span>
+              <Icons.ChevronRight size={13} />
               <span className={activeTab === 'frames' ? 'is-active' : ''}>01 素材分析</span>
               <Icons.ChevronRight size={13} />
               <span className={activeTab === 'edit' ? 'is-active' : ''}>02 剪辑处理</span>
@@ -754,8 +1122,9 @@ export function CanvasVideoWorkbenchModal({
             </div>
             <Segmented
               value={activeTab}
-              onChange={(v) => setActiveTab(v as 'frames' | 'edit' | 'output')}
+              onChange={(v) => setActiveTab(v as 'resources' | 'frames' | 'edit' | 'output')}
               options={[
+                { label: '资源', value: 'resources' },
                 { label: '关键帧', value: 'frames' },
                 { label: '剪辑', value: 'edit' },
                 { label: '产物', value: 'output' },
@@ -763,6 +1132,22 @@ export function CanvasVideoWorkbenchModal({
               block
               size="small"
             />
+
+            {activeTab === 'resources' && (
+              <VideoWorkbenchResourcePanel
+                resources={draft.resourcePanel}
+                track={draft.track}
+                autoCollectUpstream={draft.autoCollectUpstream}
+                busy={busy}
+                onAddToTrack={handleAddResourceToTrack}
+                onPreview={handlePreviewResource}
+                onRemoveResource={handleRemoveResource}
+                onAutoCollectToggle={handleAutoCollectToggle}
+                onCollectUpstream={() => void handleCollectUpstream()}
+                onPickLocal={onAddLocalResources ? () => void handlePickLocal() : undefined}
+                onPickCanvas={onPickCanvasResources ? () => void handlePickCanvas() : undefined}
+              />
+            )}
 
             {activeTab === 'frames' && (
               <VideoWorkbenchFramePanel
@@ -773,20 +1158,12 @@ export function CanvasVideoWorkbenchModal({
                 ffmpegReady={ffmpegReady}
                 onExtract={extractKeyframes}
                 onConfigChange={(cfg) => {
-                  setDraft((d) => {
-                    const next = { ...d, extractConfig: cfg }
-                    void onSave(next)
-                    return next
-                  })
+                  setDraft((d) => ({ ...d, extractConfig: cfg }))
                 }}
                 onSeek={seekTo}
                 onExport={handleExportKeyframes}
                 onRemoveKeyframe={(idx) => {
-                  setDraft((d) => {
-                    const next = { ...d, keyframes: d.keyframes.filter((k) => k.index !== idx) }
-                    void onSave(next)
-                    return next
-                  })
+                  setDraft((d) => ({ ...d, keyframes: d.keyframes.filter((k) => k.index !== idx) }))
                 }}
               />
             )}
@@ -804,43 +1181,7 @@ export function CanvasVideoWorkbenchModal({
               />
             )}
 
-            {activeTab === 'output' && (
-              <div className="vwb-output-panel">
-                {draft.outputs.length === 0 ? (
-                  <div className="vwb-placeholder">
-                    <Icons.Package size={28} />
-                    <span>暂无产物</span>
-                    <span className="muted">剪辑/转码/分割的产物会在这里展示</span>
-                  </div>
-                ) : (
-                  <div className="vwb-output-list">
-                    {draft.outputs.map((out) => (
-                      <div key={out.id} className="vwb-output-item">
-                        <div className="vwb-output-icon">
-                          <Icons.Video size={16} />
-                        </div>
-                        <div className="vwb-output-info">
-                          <div className="vwb-output-summary">{out.summary}</div>
-                          <div className="vwb-output-time">
-                            {new Date(out.createdAt).toLocaleTimeString()}
-                          </div>
-                        </div>
-                        {out.outputUrl && (
-                          <a
-                            className="vwb-output-play"
-                            href={out.outputUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            <Icons.Play size={14} />
-                          </a>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {activeTab === 'output' && <VideoWorkbenchOutputPanel outputs={draft.outputs} />}
           </div>
         </div>
       </div>

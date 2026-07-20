@@ -15,6 +15,7 @@ import type {
   CanvasMediaTaskInputFile,
   CanvasMediaTaskStreamPayload,
   CanvasTextTaskStreamPayload,
+  CanvasInputBinding,
   CanvasPromptTaskFields,
   SessionReasoningEffort,
 } from '@spark/protocol'
@@ -866,6 +867,7 @@ export function useCanvasWorkspace(projectId: string) {
       providerProfileId?: string
       manifestId?: string
       modelId?: string
+      inputBindings?: CanvasInputBinding[]
       taskPipelineRole?: CreateCanvasTaskRequest['taskPipelineRole']
       outputPipelineRole?: CreateCanvasTaskRequest['outputPipelineRole']
       outputTitle?: CreateCanvasTaskRequest['outputTitle']

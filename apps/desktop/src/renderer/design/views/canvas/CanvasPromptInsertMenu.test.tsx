@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildCanvasPromptMentionItems } from './canvasPromptMentions'
 import { CanvasPromptInsertMenu } from './CanvasPromptInsertMenu'
+import { filterCanvasPromptInsertItems } from './canvasPromptInsertMenuModel'
 import type { CanvasAsset, CanvasNode } from './canvas.types'
 import './canvasPromptComposer.less'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -17,6 +18,7 @@ afterEach(async () => {
     await act(async () => mounted.root.unmount())
     mounted.container.remove()
   }
+  window.localStorage.clear()
 })
 
 function node(
@@ -48,20 +50,40 @@ function node(
   }
 }
 
-const characterNode = node(
-  'character-xiaoman',
-  '小满',
-  'image',
-  { pipelineRole: 'character', url: 'https://example.com/xiaoman.png' },
-  'asset-character',
-)
-const sceneNode = node('scene-alley', '雨夜巷口', 'image', {
-  pipelineRole: 'scene',
-  url: 'https://example.com/alley.png',
-})
-const textNode = node('text-briefcase', 'A04｜门口公文包', 'text', {
-  text: '镜头从门口推进，公文包半掩在阴影中。',
-})
+const characterNode = {
+  ...node(
+    'character-xiaoman',
+    '小满',
+    'image',
+    { pipelineRole: 'character', url: 'https://example.com/xiaoman.png' },
+    'asset-character',
+  ),
+  createdAt: '2026-07-01T00:00:00.000Z',
+  updatedAt: '2026-07-04T12:00:00.000Z',
+}
+const sceneNode = {
+  ...node('scene-alley', '雨夜巷口', 'image', {
+    pipelineRole: 'scene',
+    url: 'https://example.com/alley.png',
+  }),
+  createdAt: '2026-07-03T00:00:00.000Z',
+  updatedAt: '2026-07-03T00:00:00.000Z',
+}
+const videoNode = {
+  ...node('video-rain', '雨夜片段', 'video', {
+    url: 'https://example.com/rain.mp4',
+    thumbnailUrl: 'https://example.com/rain-cover.png',
+  }),
+  createdAt: '2026-07-02T00:00:00.000Z',
+  updatedAt: '2026-07-05T00:00:00.000Z',
+}
+const textNode = {
+  ...node('text-briefcase', 'A04｜门口公文包', 'text', {
+    text: '镜头从门口推进，公文包半掩在阴影中。',
+  }),
+  createdAt: '2026-07-04T00:00:00.000Z',
+  updatedAt: '2026-07-04T00:00:00.000Z',
+}
 
 const characterAsset: CanvasAsset = {
   id: 'asset-character',
@@ -100,7 +122,7 @@ async function mountMenu(
   await act(async () => {
     root.render(
       <CanvasPromptInsertMenu
-        items={buildCanvasPromptMentionItems([characterNode, sceneNode, textNode])}
+        items={buildCanvasPromptMentionItems([characterNode, sceneNode, videoNode, textNode])}
         assetById={new Map([[characterAsset.id, characterAsset]])}
         query={overrides.query ?? ''}
         {...(overrides.triggerElement !== undefined
@@ -219,7 +241,7 @@ describe('CanvasPromptInsertMenu', () => {
     trigger.remove()
   })
 
-  it('shows five compact shortcuts and uses character/scene shortcuts as filters', async () => {
+  it('shows five compact shortcuts and filters all canvas image/video nodes by type', async () => {
     const mounted = await mountMenu()
     expect(
       Array.from(
@@ -227,14 +249,21 @@ describe('CanvasPromptInsertMenu', () => {
           '.canvas-prompt-insert-shortcuts button',
         ),
       ).map((button) => button.textContent?.trim()),
-    ).toEqual(['镜头时长', '台词', '站位', '角色', '场景'])
+    ).toEqual(['镜头时长', '台词', '站位', '图片', '视频'])
 
-    await act(async () => buttonByText(mounted.container, '角色').click())
+    await act(async () => buttonByText(mounted.container, '图片').click())
     expect(
       Array.from(
         mounted.container.querySelectorAll<HTMLElement>('.canvas-prompt-insert-result strong'),
       ).map((element) => element.textContent),
-    ).toEqual(['小满'])
+    ).toEqual(['小满', '雨夜巷口'])
+
+    await act(async () => buttonByText(mounted.container, '视频').click())
+    expect(
+      Array.from(
+        mounted.container.querySelectorAll<HTMLElement>('.canvas-prompt-insert-result strong'),
+      ).map((element) => element.textContent),
+    ).toEqual(['雨夜片段'])
   })
 
   it('matches text content from the search field', async () => {
@@ -244,6 +273,71 @@ describe('CanvasPromptInsertMenu', () => {
     expect(mounted.search.value).toBe('公文包')
     expect(mounted.container.textContent).toContain('A04｜门口公文包')
     expect(mounted.container.textContent).not.toContain('雨夜巷口')
+  })
+
+  it('searches resource file names from URLs', async () => {
+    const mounted = await mountMenu({ query: 'xiaoman.png' })
+
+    expect(mounted.container.textContent).toContain('小满')
+    expect(mounted.container.textContent).not.toContain('雨夜巷口')
+  })
+
+  it('does not index embedded media payloads as file names', () => {
+    const embeddedNode = {
+      ...sceneNode,
+      id: 'embedded-image',
+      title: '内嵌图片',
+      assetId: null,
+      data: { url: 'data:image/png;base64,SECRET_PAYLOAD_FOR_SEARCH' },
+    }
+    const items = buildCanvasPromptMentionItems([embeddedNode])
+
+    expect(
+      filterCanvasPromptInsertItems(items, 'SECRET_PAYLOAD_FOR_SEARCH', 'all', new Map()),
+    ).toEqual([])
+  })
+
+  it('sorts by latest modification or latest addition', async () => {
+    const mounted = await mountMenu()
+    const resultLabels = () =>
+      Array.from(
+        mounted.container.querySelectorAll<HTMLElement>('.canvas-prompt-insert-result strong'),
+      ).map((element) => element.textContent)
+
+    expect(resultLabels()).toEqual(['雨夜片段', '小满', 'A04｜门口公文包', '雨夜巷口'])
+
+    const sortSelect =
+      mounted.container.querySelector<HTMLSelectElement>('[aria-label="列表排序"]')!
+    await act(async () => {
+      sortSelect.value = 'created'
+      sortSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(resultLabels()).toEqual(['A04｜门口公文包', '雨夜巷口', '雨夜片段', '小满'])
+  })
+
+  it('pins and unpins an item above the current time sort and persists it per project', async () => {
+    const mounted = await mountMenu()
+    const pinButton =
+      mounted.container.querySelector<HTMLButtonElement>('[aria-label="置顶雨夜巷口"]')!
+
+    expect(
+      mounted.container.querySelector('.canvas-prompt-insert-results')?.getAttribute('role'),
+    ).toBe('list')
+    expect(mounted.container.querySelectorAll('[role="listitem"]')).toHaveLength(4)
+    expect(mounted.container.querySelector('[role="option"]')).toBeNull()
+
+    await act(async () => pinButton.click())
+    expect(
+      mounted.container.querySelector<HTMLElement>('.canvas-prompt-insert-result strong')
+        ?.textContent,
+    ).toBe('雨夜巷口')
+    expect(pinButton.getAttribute('aria-pressed')).toBe('true')
+    expect(window.localStorage.getItem('spark-canvas:prompt-insert-pinned:v1:project-1')).toContain(
+      'scene-alley',
+    )
+
+    await act(async () => pinButton.click())
+    expect(pinButton.getAttribute('aria-pressed')).toBe('false')
   })
 
   it('shows an external text or image preview for the hovered result', async () => {
@@ -278,5 +372,35 @@ describe('CanvasPromptInsertMenu', () => {
       document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
     })
     expect(onRequestClose).toHaveBeenCalledOnce()
+  })
+
+  it('shows a jump-to-bottom button when results overflow and scrolls on click', async () => {
+    const mounted = await mountMenu()
+    const results = mounted.container.querySelector<HTMLElement>('.canvas-prompt-insert-results')!
+    // 初始内容未溢出（jsdom 默认 scrollHeight/clientHeight 均为 0）→ 不显示按钮
+    expect(mounted.container.querySelector('[aria-label="跳到底部"]')).toBeNull()
+
+    // 模拟列表溢出：scrollHeight 远大于 clientHeight
+    Object.defineProperty(results, 'scrollHeight', { configurable: true, value: 600 })
+    Object.defineProperty(results, 'clientHeight', { configurable: true, value: 200 })
+    await act(async () => {
+      results.dispatchEvent(new Event('scroll'))
+    })
+    const jump = mounted.container.querySelector<HTMLButtonElement>('[aria-label="跳到底部"]')!
+    expect(jump).toBeTruthy()
+
+    // jsdom 未实现 Element.prototype.scrollTo，手动注入 mock 以断言点击行为
+    const scrollToCalls: Array<{ top: number; behavior: string }> = []
+    ;(
+      results as unknown as {
+        scrollTo: (args: { top: number; behavior: string }) => void
+      }
+    ).scrollTo = (args) => {
+      scrollToCalls.push(args)
+    }
+    await act(async () => {
+      jump.click()
+    })
+    expect(scrollToCalls[0]).toEqual(expect.objectContaining({ top: 600 }))
   })
 })

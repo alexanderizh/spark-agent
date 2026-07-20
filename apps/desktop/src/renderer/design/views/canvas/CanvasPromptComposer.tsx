@@ -18,6 +18,7 @@ import {
   $createParagraphNode,
   $createTextNode,
   $getRoot,
+  $getNodeByKey,
   $getSelection,
   $isElementNode,
   $isLineBreakNode,
@@ -27,6 +28,7 @@ import {
   type EditorState,
   type LexicalEditor,
   type LexicalNode,
+  type NodeKey,
   type TextNode,
 } from 'lexical'
 import type {
@@ -49,6 +51,8 @@ import {
   type CanvasPromptAtomicBlock,
 } from './CanvasPromptLexicalNode'
 
+export type CanvasPromptCanvasNodePickHandler = (onPick: (node: CanvasNode) => void) => void
+
 export type CanvasPromptComposerProps = {
   document: CanvasPromptDocument
   mentionNodes: CanvasNode[]
@@ -58,6 +62,7 @@ export type CanvasPromptComposerProps = {
   className?: string
   onChange(document: CanvasPromptDocument): void
   onMentionSelect?(node: CanvasNode, relation: CanvasPromptRelation): boolean | void
+  onRequestCanvasNodePick?: CanvasPromptCanvasNodePickHandler
   onBlockEdit?(blockId: string): void
   onEditorReady?(editor: LexicalEditor): void
 }
@@ -71,6 +76,7 @@ export function CanvasPromptComposer({
   className,
   onChange,
   onMentionSelect,
+  onRequestCanvasNodePick,
   onBlockEdit,
   onEditorReady,
 }: CanvasPromptComposerProps) {
@@ -119,6 +125,7 @@ export function CanvasPromptComposer({
             assetById={assetById}
             onOpenChange={setInsertMenuOpen}
             onMentionSelect={onMentionSelect}
+            {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
           />
           <CanvasPromptEditorSurface
             document={document}
@@ -128,6 +135,7 @@ export function CanvasPromptComposer({
             assetById={assetById}
             onChange={onChange}
             onMentionSelect={onMentionSelect}
+            {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
             onEditorReady={onEditorReady}
           />
         </div>
@@ -143,6 +151,7 @@ function CanvasPromptToolbar({
   assetById,
   onOpenChange,
   onMentionSelect,
+  onRequestCanvasNodePick,
 }: {
   open: boolean
   disabled: boolean
@@ -150,6 +159,7 @@ function CanvasPromptToolbar({
   assetById: Map<string, CanvasAsset>
   onOpenChange(open: boolean): void
   onMentionSelect?: CanvasPromptComposerProps['onMentionSelect']
+  onRequestCanvasNodePick?: CanvasPromptCanvasNodePickHandler
 }) {
   const [editor] = useLexicalComposerContext()
   const [query, setQuery] = useState('')
@@ -168,13 +178,21 @@ function CanvasPromptToolbar({
     onOpenChange(false)
   }
 
+  const pickReferenceFromCanvas = () => {
+    onOpenChange(false)
+    onRequestCanvasNodePick?.((node) => {
+      const item = mentionItems.find((candidate) => candidate.node.id === node.id)
+      if (item) insertReference(node, item.label)
+    })
+  }
+
   return (
     <div className="canvas-prompt-composer-toolbar">
       <button
         ref={setTriggerElement}
         type="button"
         className="canvas-prompt-composer-add"
-        aria-label="添加参数、角色或资源"
+        aria-label="添加参数、图片、视频或资源"
         disabled={disabled}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
@@ -184,7 +202,7 @@ function CanvasPromptToolbar({
       >
         <Icons.Plus size={16} />
       </button>
-      <span>输入内容，或按 @ 引用节点、角色与资源</span>
+      <span>输入内容，或按 @ 引用节点、图片与视频资源</span>
       {open && triggerElement
         ? createPortal(
             <CanvasPromptInsertMenu
@@ -197,6 +215,7 @@ function CanvasPromptToolbar({
               onQueryChange={setQuery}
               onInsertParameter={insertParameter}
               onInsertReference={(item) => insertReference(item.node, item.label)}
+              {...(onRequestCanvasNodePick ? { onPickFromCanvas: pickReferenceFromCanvas } : {})}
               onRequestClose={() => onOpenChange(false)}
             />,
             document.body,
@@ -214,6 +233,7 @@ function CanvasPromptEditorSurface({
   assetById,
   onChange,
   onMentionSelect,
+  onRequestCanvasNodePick,
   onEditorReady,
 }: {
   document: CanvasPromptDocument
@@ -223,6 +243,7 @@ function CanvasPromptEditorSurface({
   assetById: Map<string, CanvasAsset>
   onChange(document: CanvasPromptDocument): void
   onMentionSelect?: CanvasPromptComposerProps['onMentionSelect']
+  onRequestCanvasNodePick?: CanvasPromptCanvasNodePickHandler
   onEditorReady?: CanvasPromptComposerProps['onEditorReady']
 }) {
   const [editor] = useLexicalComposerContext()
@@ -255,6 +276,7 @@ function CanvasPromptEditorSurface({
         items={mentionItems}
         assetById={assetById}
         onMentionSelect={onMentionSelect}
+        {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
       />
     </div>
   )
@@ -332,10 +354,12 @@ function CanvasPromptMentionPlugin({
   items,
   assetById,
   onMentionSelect,
+  onRequestCanvasNodePick,
 }: {
   items: ReturnType<typeof buildCanvasPromptMentionItems>
   assetById: Map<string, CanvasAsset>
   onMentionSelect?: CanvasPromptComposerProps['onMentionSelect']
+  onRequestCanvasNodePick?: CanvasPromptCanvasNodePickHandler
 }) {
   const [editor] = useLexicalComposerContext()
   const [searchQuery, setSearchQuery] = useState('')
@@ -398,6 +422,25 @@ function CanvasPromptMentionPlugin({
                   )
                   if (option) menuProps.selectOptionAndCleanUp(option)
                 }}
+                {...(onRequestCanvasNodePick
+                  ? {
+                      onPickFromCanvas: () => {
+                        const bookmark = captureTypeaheadCanvasNodePick(editor, matchingString)
+                        closeLexicalTypeahead(editor)
+                        onRequestCanvasNodePick((node) => {
+                          const item = items.find((candidate) => candidate.node.id === node.id)
+                          if (!item) return
+                          const relation = defaultCanvasPromptRelationForNode(node)
+                          if (onMentionSelect?.(node, relation) === false) return
+                          insertAtomicBlockAtTypeaheadBookmark(
+                            editor,
+                            createReferenceBlock(node, item.label, relation),
+                            bookmark,
+                          )
+                        })
+                      },
+                    }
+                  : {})}
                 onRequestClose={() => closeLexicalTypeahead(editor)}
               />,
               document.body,
@@ -449,6 +492,66 @@ function insertParameterAtTypeahead(
     node.selectNext()
   })
   focusInsertedBlock(editor, block.id, true)
+}
+
+type CanvasPromptTypeaheadBookmark = {
+  textNodeKey: NodeKey
+  startOffset: number
+  endOffset: number
+  replaceableText: string
+}
+
+function captureTypeaheadCanvasNodePick(
+  editor: LexicalEditor,
+  matchingString: string,
+): CanvasPromptTypeaheadBookmark | null {
+  let bookmark: CanvasPromptTypeaheadBookmark | null = null
+  editor.getEditorState().read(() => {
+    const selection = $getSelection()
+    if (!$isRangeSelection(selection) || selection.anchor.type !== 'text') return
+    const textNode = selection.anchor.getNode()
+    if (!$isTextNode(textNode)) return
+    const endOffset = selection.anchor.offset
+    const startOffset = Math.max(0, endOffset - matchingString.length - 1)
+    bookmark = {
+      textNodeKey: textNode.getKey(),
+      startOffset,
+      endOffset,
+      replaceableText: textNode.getTextContent().slice(startOffset, endOffset),
+    }
+  })
+  return bookmark
+}
+
+function insertAtomicBlockAtTypeaheadBookmark(
+  editor: LexicalEditor,
+  block: CanvasPromptAtomicBlock,
+  bookmark: CanvasPromptTypeaheadBookmark | null,
+) {
+  editor.update(() => {
+    if (bookmark) {
+      const textNode = $getNodeByKey<TextNode>(bookmark.textNodeKey)
+      const replaceableText = textNode
+        ?.getTextContent()
+        .slice(bookmark.startOffset, bookmark.endOffset)
+      if ($isTextNode(textNode) && replaceableText === bookmark.replaceableText) {
+        textNode.spliceText(bookmark.startOffset, bookmark.endOffset - bookmark.startOffset, '')
+        textNode.select(bookmark.startOffset, bookmark.startOffset)
+      }
+    }
+    const node = $createCanvasPromptAtomicNode(block)
+    const selection = $getSelection()
+    if ($isRangeSelection(selection)) {
+      selection.insertNodes([node])
+      node.selectNext()
+      return
+    }
+    const paragraph = $createParagraphNode()
+    paragraph.append(node)
+    $getRoot().append(paragraph)
+    node.selectNext()
+  })
+  focusInsertedBlock(editor, block.id, false)
 }
 
 function insertAtomicBlock(

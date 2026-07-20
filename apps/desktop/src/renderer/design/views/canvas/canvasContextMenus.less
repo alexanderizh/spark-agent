@@ -64,3 +64,43 @@
   max-width: calc(100% - 16px);
   overflow-x: hidden;
 }
+
+// 画布右键菜单细圆头滚动条：上面已为这些容器预留 scrollbar-gutter:stable，但全局
+// *::-webkit-scrollbar{width:0!important} 把滚动条隐藏了，这里局部覆盖回来。手法同 chat-stream
+// （global-overrides.css）：8mm 轨道 + 2mm transparent border + background-clip:content-box，
+// thumb 视觉约 4mm、两头圆。节点右键菜单 .canvas-node-context-menu.ant-dropdown-menu 的滚动条在
+// CanvasWorkspaceView.less 里与 antd 双类选择器同处定义以保优先级，这里覆盖其余右键/子菜单容器。
+.canvas-pane-context-menu,
+.canvas-pane-context-submenu-panel,
+.canvas-context-submenu-panel,
+.canvas-edge-context-menu,
+.canvas-node-context-submenu-popup .ant-dropdown-menu {
+  scrollbar-width: auto !important;
+  scrollbar-color: var(--border-strong) transparent !important;
+
+  &::-webkit-scrollbar {
+    width: 8px !important;
+    height: 8px !important;
+  }
+  &::-webkit-scrollbar-track,
+  &::-webkit-scrollbar-track-piece {
+    background: transparent !important;
+  }
+  &::-webkit-scrollbar-thumb {
+    min-height: 28px;
+    border: 2px solid transparent !important;
+    border-radius: 999px !important;
+    background: var(--border-strong) !important;
+    background-clip: content-box !important;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--text-faint) !important;
+    background-clip: content-box !important;
+  }
+  &::-webkit-scrollbar-button,
+  &::-webkit-scrollbar-corner {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+}

@@ -43,6 +43,7 @@ import {
   CANVAS_FUNCTIONAL_MENU_LABEL,
 } from './canvasNodeGenerationMenu'
 import { buildCanvasOperationParamSummary } from './canvasOperationParamSummary'
+import { canvasNodeSecondaryLabel, canvasOperationRuntimeSummary } from './canvasNodeSecondaryLabel'
 import {
   getNodeCurrentSubtype,
   getNodeSubtypeOptions,
@@ -174,16 +175,6 @@ function operationStatusLabel(status: SparkCanvasNode['data']['status']): string
   if (status === 'cancelled') return '已取消'
   if (status === 'running') return '运行中'
   return '待提交'
-}
-
-function operationRuntimeSummary(node: SparkCanvasNode): string | null {
-  const model = typeof node.data.modelId === 'string' ? node.data.modelId.trim() : ''
-  if (model) return `模型 ${model}`
-  const manifest = typeof node.data.manifestId === 'string' ? node.data.manifestId.trim() : ''
-  if (manifest) return `工作流 ${manifest}`
-  const provider =
-    typeof node.data.providerProfileId === 'string' ? node.data.providerProfileId.trim() : ''
-  return provider ? `Provider ${provider}` : null
 }
 
 function OperationOutputDeck({
@@ -545,11 +536,9 @@ export const CanvasNode = memo(function CanvasNode({
           // content is laid out in flow coordinates. Convert it back so the marker
           // can travel through the invisible snap zone without moving the real handle.
           left:
-            (connectionPointer.x - viewportTransform[0]) / viewportTransform[2] -
-            positionAbsoluteX,
+            (connectionPointer.x - viewportTransform[0]) / viewportTransform[2] - positionAbsoluteX,
           top:
-            (connectionPointer.y - viewportTransform[1]) / viewportTransform[2] -
-            positionAbsoluteY,
+            (connectionPointer.y - viewportTransform[1]) / viewportTransform[2] - positionAbsoluteY,
         }
       : null
   const isGroup = node.type === 'group'
@@ -1179,7 +1168,7 @@ export const CanvasNode = memo(function CanvasNode({
 
   const productionBadge =
     node.data.productionState && PRODUCTION_STATE_BADGE[node.data.productionState]
-  const operationSummary = isOperationNode(node) ? operationRuntimeSummary(node) : null
+  const operationSummary = isOperationNode(node) ? canvasOperationRuntimeSummary(node) : null
   const operationStatus = isOperationNode(node) ? (node.data.status ?? 'pending') : null
   const operationParamSummary = isOperationNode(node)
     ? buildCanvasOperationParamSummary(node.data.modelParams, 4)
@@ -1212,29 +1201,10 @@ export const CanvasNode = memo(function CanvasNode({
           : isTextContentNode
             ? '可编辑'
             : '已就绪'
-  const nodeFooterLabel = operationSummary
-    ? operationSummary
-    : isOperationNode(node)
-      ? '运行记录'
-      : isResourceOutput
-        ? '画布产物'
-        : node.type === 'group'
-          ? '成组排列'
-          : isDirectorStage3D
-            ? '导演场景'
-            : isVideoWorkbench
-              ? '视频工程'
-              : node.type === 'image'
-                ? node.data.panorama360
-                  ? '360° 全景'
-                  : '图片资产'
-                : node.type === 'video'
-                  ? '视频资产'
-                  : node.type === 'audio'
-                    ? '音频资产'
-                    : isTextContentNode
-                      ? `${(node.data.text ?? node.data.message ?? '').length} 字`
-                      : '可编辑'
+  const nodeFooterLabel = canvasNodeSecondaryLabel(node, undefined, {
+    isResourceOutput,
+    isTextContentNode,
+  })
   const nodeStyle = {
     ...(roleMeta ? { ['--role-color' as string]: roleMeta.color } : {}),
     ...(hasInlineExtension

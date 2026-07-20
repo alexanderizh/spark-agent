@@ -5,6 +5,7 @@ import {
   activeCanvasInputNodeIds,
   addCanvasInputBinding,
   createCanvasInputBinding,
+  materializeCanvasInputBindingReferences,
   removeCanvasInputBinding,
   replaceCanvasInputBindingRoles,
   reconcileCanvasInputBindings,
@@ -162,6 +163,25 @@ describe('canvasInputBindings', () => {
     ])
   })
 
+  it('does not layer a generic reference over an explicit connected frame role', () => {
+    const image = canvasNode('image-1', 'image')
+    const firstFrame = binding({
+      id: 'connection:image-1:first_frame',
+      origin: 'connection',
+      relation: 'first_frame',
+      role: 'first_frame',
+    })
+
+    const result = reconcileCanvasInputBindings({
+      bindings: [firstFrame],
+      nodes: [image],
+      connectionNodeIds: ['image-1'],
+      document: { version: 2, blocks: [] },
+    })
+
+    expect(result).toEqual([firstFrame])
+  })
+
   it('removes a deleted manual tag binding and disables a suppressed connection binding', () => {
     const image = canvasNode('image-1', 'image')
     const manual = binding({ id: 'manual-tag', promptBlockId: 'manual-tag' })
@@ -200,6 +220,83 @@ describe('canvasInputBindings', () => {
       },
     })
     expect(suppressed).toEqual([expect.objectContaining({ id: 'connection-tag', enabled: false })])
+  })
+
+  it('materializes a legacy picker binding as a visible removable tag', () => {
+    const image = canvasNode('image-1', 'image')
+    const document = materializeCanvasInputBindingReferences({
+      document: { version: 2, blocks: [] },
+      bindings: [
+        binding({
+          id: 'legacy-first-frame',
+          origin: 'picker',
+          role: 'first_frame',
+          relation: 'first_frame',
+        }),
+      ],
+      nodes: [image],
+    })
+
+    expect(document.blocks).toContainEqual(
+      expect.objectContaining({
+        kind: 'reference',
+        source: 'manual',
+        sourceNodeId: 'image-1',
+        relation: 'reference_image',
+      }),
+    )
+  })
+
+  it('links expanded child bindings to their visible group owner tag', () => {
+    const image = canvasNode('image-1', 'image')
+    const owners = new Map<string, readonly string[]>([['image-1', ['group-1']]])
+    const groupBlock = {
+      kind: 'reference' as const,
+      id: 'connection-group',
+      source: 'connection' as const,
+      sourceNodeId: 'group-1',
+      relation: 'generic' as const,
+      label: '图片组',
+      order: 0,
+    }
+    const activeDocument = {
+      version: 2 as const,
+      blocks: [groupBlock],
+    }
+    const linked = reconcileCanvasInputBindings({
+      bindings: [
+        binding({
+          id: 'child-first-frame',
+          origin: 'picker',
+          role: 'first_frame',
+          relation: 'first_frame',
+        }),
+      ],
+      nodes: [image],
+      connectionNodeIds: [],
+      document: activeDocument,
+      promptOwnerNodeIdsBySourceNodeId: owners,
+    })
+    expect(linked).toEqual([
+      expect.objectContaining({
+        id: 'child-first-frame',
+        promptBlockId: 'connection-group',
+        enabled: true,
+      }),
+    ])
+
+    expect(
+      reconcileCanvasInputBindings({
+        bindings: linked,
+        nodes: [image],
+        connectionNodeIds: [],
+        document: {
+          ...activeDocument,
+          blocks: [{ ...groupBlock, suppressed: true }],
+        },
+        promptOwnerNodeIdsBySourceNodeId: owners,
+      }),
+    ).toEqual([])
   })
 
   it('removes every provider role for a tile and cleans linked prompt blocks', () => {

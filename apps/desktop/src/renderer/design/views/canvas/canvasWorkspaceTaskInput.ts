@@ -1,5 +1,11 @@
-import type { CanvasMediaTaskInputFile } from '@spark/protocol'
-import { buildTaskInputFiles, type CanvasTaskInputRoleSelection } from './canvasTaskInputFiles'
+import type { CanvasInputBinding, CanvasMediaTaskInputFile } from '@spark/protocol'
+import {
+  buildTaskInputFiles,
+  normalizeCanvasTaskInputRoleSelection,
+  type CanvasTaskInputRole,
+  type CanvasTaskInputRoleSelection,
+} from './canvasTaskInputFiles'
+import { createCanvasInputBinding } from './canvasInputBindings'
 import type {
   CanvasAsset,
   CanvasInputTransport,
@@ -24,6 +30,45 @@ export function buildStoryboardReferenceInputRoles(
     if (node.type === 'image' && node.data.url) roles[node.id] = 'reference'
   }
   return roles
+}
+
+/** Persist explicit media roles on a newly created operation node. */
+export function buildCanvasInputBindingsForRoles(
+  nodes: readonly CanvasNode[],
+  inputRoles: Record<string, CanvasTaskInputRoleSelection>,
+): CanvasInputBinding[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]))
+  const bindings: CanvasInputBinding[] = []
+  for (const [nodeId, selection] of Object.entries(inputRoles)) {
+    const node = nodeById.get(nodeId)
+    if (!node) continue
+    for (const role of normalizeCanvasTaskInputRoleSelection(selection)) {
+      bindings.push(
+        createCanvasInputBinding({
+          sourceNodeId: nodeId,
+          origin: 'connection',
+          kind: canvasInputKind(node),
+          relation: canvasRelationForInputRole(role),
+          role,
+          order: bindings.length,
+        }),
+      )
+    }
+  }
+  return bindings
+}
+
+function canvasInputKind(node: CanvasNode): CanvasInputBinding['kind'] {
+  if (node.type === 'image' || node.type === 'video' || node.type === 'audio') return node.type
+  if (node.type === 'text' || node.type === 'prompt') return 'text'
+  return 'file'
+}
+
+function canvasRelationForInputRole(role: CanvasTaskInputRole): CanvasInputBinding['relation'] {
+  if (role === 'first_frame') return 'first_frame'
+  if (role === 'last_frame') return 'last_frame'
+  if (role === 'reference') return 'reference_image'
+  return 'generic'
 }
 
 export async function buildCloudTaskInputFiles(

@@ -187,8 +187,64 @@ describe('useCanvasInputBindings', () => {
     expect(mounted.current().firstFrameNodeId).toBe('image-1')
     expect(mounted.current().referenceFrameNodeIds).toEqual([])
     expect(mounted.current().document.blocks).toEqual([
-      expect.objectContaining({ id: 'connection-image', suppressed: true }),
+      expect.not.objectContaining({ suppressed: true }),
     ])
+    expect(mounted.current().bindings).toContainEqual(
+      expect.objectContaining({ sourceNodeId: 'image-1', role: 'input', enabled: true }),
+    )
+  })
+
+  it('removes linked frame roles when the visible source tag is deleted', async () => {
+    const image = canvasNode('image-1', 'image')
+    const mounted = await mountHook({
+      initialDocument: {
+        version: 2,
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'connection-image',
+            source: 'connection',
+            sourceNodeId: image.id,
+            relation: 'reference_image',
+            label: '上游图',
+            order: 0,
+          },
+        ],
+      },
+      nodes: [image],
+      connectionNodeIds: ['image-1'],
+    })
+
+    await act(async () => mounted.current().setFirstFrameNodeId('image-1'))
+    expect(mounted.current().bindings).toContainEqual(
+      expect.objectContaining({
+        sourceNodeId: 'image-1',
+        role: 'first_frame',
+        promptBlockId: 'connection-image',
+      }),
+    )
+
+    await act(async () =>
+      mounted.current().setDocument({
+        version: 2,
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'connection-image',
+            source: 'connection',
+            sourceNodeId: image.id,
+            relation: 'reference_image',
+            label: '上游图',
+            order: 0,
+            suppressed: true,
+          },
+        ],
+      }),
+    )
+
+    expect(mounted.current().firstFrameNodeId).toBe('')
+    expect(mounted.current().referenceFrameNodeIds).toEqual([])
+    expect(mounted.current().bindings.filter((binding) => binding.enabled)).toEqual([])
   })
 
   it('re-enables a suppressed connected reference when it is selected again', async () => {

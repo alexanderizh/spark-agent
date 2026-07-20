@@ -1,6 +1,6 @@
 # 画布 Agent 专用节点工具轻量兼容设计
 
-> 状态: 已落地 | 最后核对: 2026-07-18
+> 状态: 已落地 | 最后核对: 2026-07-20
 
 ## 背景
 
@@ -28,19 +28,19 @@
 
 专用工具只负责按现有组合正确创建数据，不改变底层存储模型。
 
-| 语义节点 | 现有底层节点 | 现有语义字段或关联 |
-| --- | --- | --- |
-| 普通文本 | `type: "text"` | `data.format: "plain" | "markdown"` |
-| Prompt | `type: "prompt"` | `data.format: "prompt"` |
-| 章节 | `type: "text"` | `data.pipelineRole: "chapter"`，可关联 `asset.metadata.kind: "chapter"` |
-| 剧本 | `type: "text"` | `data.pipelineRole: "screenplay"`，关联 `asset.metadata.kind: "script"` |
-| 角色/场景/道具/特效 | `type: "text" | "image"` | 对应 `pipelineRole`，关联同 kind 影视资产 |
-| 分镜脚本 | `type: "text"` | `data.pipelineRole: "shot"`，正文可由 `parseShotTable()` 解析 |
-| 单镜节点 | `type: "text"` | `pipelineRole: "shot"`、`shotGroupId`、`shotSegmentId` |
-| 设定图卡 | `type: "image"` | `data.pipelineRole: "design_card"` |
-| 关键帧 | `type: "image"` | `data.pipelineRole: "keyframe"`，可带分镜回链 |
-| 视频片段 | `type: "video"` | `data.pipelineRole: "clip"`，可带分镜回链 |
-| 360 全景图 | `type: "image"` | `data.panorama360.projection: "equirectangular"` |
+| 语义节点            | 现有底层节点              | 现有语义字段或关联                                                      |
+| ------------------- | ------------------------- | ----------------------------------------------------------------------- |
+| 普通文本            | `type: "text"`            | `data.format: "plain" \| "markdown"`                                    |
+| Prompt              | `type: "prompt"`          | `data.format: "prompt"`                                                 |
+| 章节                | `type: "text"`            | `data.pipelineRole: "chapter"`，可关联 `asset.metadata.kind: "chapter"` |
+| 剧本                | `type: "text"`            | `data.pipelineRole: "screenplay"`，关联 `asset.metadata.kind: "script"` |
+| 角色/场景/道具/特效 | `type: "text" \| "image"` | 对应 `pipelineRole`，关联同 kind 影视资产                               |
+| 分镜脚本            | `type: "text"`            | `data.pipelineRole: "shot"`，正文可由 `parseShotTable()` 解析           |
+| 单镜节点            | `type: "text"`            | `pipelineRole: "shot"`、`shotGroupId`、`shotSegmentId`                  |
+| 设定图卡            | `type: "image"`           | `data.pipelineRole: "design_card"`                                      |
+| 关键帧              | `type: "image"`           | `data.pipelineRole: "keyframe"`，可带分镜回链                           |
+| 视频片段            | `type: "video"`           | `data.pipelineRole: "clip"`，可带分镜回链                               |
+| 360 全景图          | `type: "image"`           | `data.panorama360.projection: "equirectangular"`                        |
 
 ## 总体设计
 
@@ -103,25 +103,25 @@ UI 右键入口和 Agent 专用操作工具都调用同一个执行函数，不�
 
 ### 内容与影视资产工具
 
-| 工具 | 输入重点 | 物化结果 |
-| --- | --- | --- |
-| `canvas_create_chapter_node` | 标题、正文、来源节点 | chapter 资产与 `pipelineRole: "chapter"` 文本节点 |
-| `canvas_create_screenplay_node` | 标题、场次剧本文本、来源节点 | script 资产与 `pipelineRole: "screenplay"` 文本节点 |
-| `canvas_create_character_node` | 名称、描述、角色 attributes、Prompt、引用图 | character 资产与角色节点 |
-| `canvas_create_scene_node` | 名称、描述、场景 attributes、Prompt、引用图 | scene 资产与场景节点 |
-| `canvas_create_prop_node` | 名称、描述、道具 attributes、Prompt、引用图 | prop 资产与道具节点 |
-| `canvas_create_effect_node` | 名称、描述、特效 attributes、Prompt、引用图 | effect 资产与特效节点 |
-| `canvas_create_storyboard_node` | 标题、分组和镜头数组、来源节点 | 分镜文本节点、`ShotGroup[]`、`ShotSegment[]` 和血缘 |
-| `canvas_create_shot_node` | group id、单镜字段、来源节点 | ShotSegment 与带回链的单镜文本节点 |
+| 工具                            | 输入重点                                    | 物化结果                                            |
+| ------------------------------- | ------------------------------------------- | --------------------------------------------------- |
+| `canvas_create_chapter_node`    | 标题、正文、来源节点                        | chapter 资产与 `pipelineRole: "chapter"` 文本节点   |
+| `canvas_create_screenplay_node` | 标题、场次剧本文本、来源节点                | script 资产与 `pipelineRole: "screenplay"` 文本节点 |
+| `canvas_create_character_node`  | 名称、描述、角色 attributes、Prompt、引用图 | character 资产与角色节点                            |
+| `canvas_create_scene_node`      | 名称、描述、场景 attributes、Prompt、引用图 | scene 资产与场景节点                                |
+| `canvas_create_prop_node`       | 名称、描述、道具 attributes、Prompt、引用图 | prop 资产与道具节点                                 |
+| `canvas_create_effect_node`     | 名称、描述、特效 attributes、Prompt、引用图 | effect 资产与特效节点                               |
+| `canvas_create_storyboard_node` | 标题、分组和镜头数组、来源节点              | 分镜文本节点、`ShotGroup[]`、`ShotSegment[]` 和血缘 |
+| `canvas_create_shot_node`       | group id、单镜字段、来源节点                | ShotSegment 与带回链的单镜文本节点                  |
 
 ### 媒体语义工具
 
-| 工具 | 输入重点 | 物化结果 |
-| --- | --- | --- |
-| `canvas_insert_design_card_node` | 图片来源、影视资产 id、标题 | `pipelineRole: "design_card"` 图片节点和资产引用 |
-| `canvas_insert_keyframe_node` | 图片来源、group/segment id、帧位 | `pipelineRole: "keyframe"` 图片节点和分镜回链 |
-| `canvas_insert_clip_node` | 视频来源、group/segment id、时长 | `pipelineRole: "clip"` 视频节点和分镜回链 |
-| `canvas_insert_panorama_node` | 2:1 图片来源、场景资产 id | 带 `panorama360` 标记的图片节点 |
+| 工具                             | 输入重点                         | 物化结果                                         |
+| -------------------------------- | -------------------------------- | ------------------------------------------------ |
+| `canvas_insert_design_card_node` | 图片来源、影视资产 id、标题      | `pipelineRole: "design_card"` 图片节点和资产引用 |
+| `canvas_insert_keyframe_node`    | 图片来源、group/segment id、帧位 | `pipelineRole: "keyframe"` 图片节点和分镜回链    |
+| `canvas_insert_clip_node`        | 视频来源、group/segment id、时长 | `pipelineRole: "clip"` 视频节点和分镜回链        |
+| `canvas_insert_panorama_node`    | 2:1 图片来源、场景资产 id        | 带 `panorama360` 标记的图片节点                  |
 
 ### 专用操作节点工具
 
@@ -195,9 +195,18 @@ UI 右键入口和 Agent 专用操作工具都调用同一个执行函数，不�
       "shotSize": "全景",
       "angle": "平视",
       "movement": "缓慢推进",
+      "composition": "林岚落在右上交点，前景雨帘占 20%",
+      "blocking": "林岚距镜头 220cm，右手距门把 8cm",
       "description": "林岚推门进入茶馆，雨水从外套滴落",
+      "actionBeats": "0.0–0.5s：右手接近门把；0.5–1.0s：压下门把；1.0–4.0s：推门进入",
       "dialogue": "林岚：还有空房吗？",
-      "characters": ["林岚", "老板"],
+      "characterNames": ["林岚", "老板"],
+      "characterReferences": "林岚=雨夜造型图；老板=茶馆工作造型图",
+      "soundEffects": "0.5s：门铃轻响；1.0s：木门摩擦声",
+      "transition": "入：硬切；出：动作匹配硬切",
+      "firstFrame": "茶馆门关闭，林岚右手悬停在门把前 8cm",
+      "lastFrame": "门开 45°，林岚右脚落在门内",
+      "continuity": "右手保持握门把，运动方向从左至右",
       "shotPrompt": "雨夜茶馆内景，全景，镜头缓慢推进",
       "negativePrompt": "多余人物、错误服装、文字水印"
     }
@@ -210,6 +219,8 @@ UI 右键入口和 Agent 专用操作工具都调用同一个执行函数，不�
 ```
 
 程序使用 `parseShotTable()` 归一化，然后：
+
+`shots[]` 维持扁平可选字段，不引入嵌套摄影/声音对象。内置分镜模型契约只输出一份 JSON；Markdown 展示文本由程序根据结构化结果生成。`composition/characterReferences/actionBeats/soundEffects/transition/firstFrame/lastFrame/continuity` 用于电影级视频控制，旧 JSON 和旧 Markdown 表格继续容错读取。
 
 1. 按 `groupName` 或调用参数创建/复用 `ShotGroup`。
 2. 把每行写成 `ShotSegment`。

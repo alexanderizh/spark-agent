@@ -120,6 +120,21 @@ describe('canvasShotTableParse', () => {
     })
   })
 
+  it('精简表中的动作节拍和时间轴不会误识别为动作描述或时长', () => {
+    for (const header of ['动作节拍', '时间轴']) {
+      const rows = parseShotTable(`| 镜号 | ${header} |\n| - | - |\n| 1 | 0.0–0.5s：抬手 |`)
+      expect(rows[0]?.actionBeats).toBe('0.0–0.5s：抬手')
+      expect(rows[0]?.description).toBeUndefined()
+      expect(rows[0]?.durationSec).toBeUndefined()
+    }
+  })
+
+  it('严格模式不抢救被截断的 JSON 前缀', () => {
+    const truncated = '{"shots":[{"index":1,"durationSec":1},{"index":2,"durationSec":1},{"index":3'
+    expect(parseShotTable(truncated)).toHaveLength(2)
+    expect(parseShotTable(truncated, { allowPartialJsonRecovery: false })).toEqual([])
+  })
+
   it('导演 agent 增强表（多出角度/镜头列）也能解析', () => {
     const rows = parseShotTable(
       `| 镜号 | 时长(秒) | 景别 | 角度 | 运镜 | 画面 | 对白 | 角色 |\n` +
@@ -219,6 +234,40 @@ describe('canvasShotTableParse', () => {
       shotPrompt: '电影感广角镜头',
       negativePrompt: '文字、水印',
     })
+  })
+
+  it('解析电影级视频控制字段', () => {
+    const rows = parseShotTable(
+      JSON.stringify({
+        shots: [
+          {
+            index: 1,
+            title: '推门入画',
+            durationSec: 2,
+            composition: '主体落在右上交点，前景 20% 雨帘',
+            blocking: '林岚距镜头 220cm，右手距门把 8cm',
+            characterReferences: '林岚=角色图「雨夜造型」',
+            actionBeats: '0.0–0.5s：手伸向门把；0.5–1.0s：压下门把；1.0–1.5s：门开；1.5–2.0s：踏入',
+            soundEffects: '0.5s：金属门把轻响；1.0s：木门摩擦声',
+            transition: '入：硬切；出：动作匹配硬切',
+            firstFrame: '门关闭，林岚右手悬停在门把前 8cm',
+            lastFrame: '门开 45°，林岚右脚落地',
+            continuity: '右手持门把，保持画面运动方向左至右',
+          },
+        ],
+      }),
+    )
+
+    expect(rows[0]).toMatchObject({
+      composition: '主体落在右上交点，前景 20% 雨帘',
+      characterReferences: '林岚=角色图「雨夜造型」',
+      soundEffects: '0.5s：金属门把轻响；1.0s：木门摩擦声',
+      transition: '入：硬切；出：动作匹配硬切',
+      firstFrame: '门关闭，林岚右手悬停在门把前 8cm',
+      lastFrame: '门开 45°，林岚右脚落地',
+      continuity: '右手持门把，保持画面运动方向左至右',
+    })
+    expect(rows[0]?.actionBeats).toContain('1.5–2.0s')
   })
 
   it('兼容拆分节点历史使用的「布光」表头', () => {

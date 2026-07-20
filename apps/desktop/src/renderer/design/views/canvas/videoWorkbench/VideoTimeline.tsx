@@ -102,14 +102,24 @@ export function VideoTimeline({
   useEffect(() => {
     const el = trackRef.current
     if (!el || duration <= 0) return
+    let frame = 0
     const update = () => {
+      // 滚动期间 setViewRange 频率 ≈ 1/frame,避免每像素都触发整个轨道 + keyframes/marks 全量 re-render
+      frame = 0
       const startT = (el.scrollLeft / trackWidth) * duration
       const endT = ((el.scrollLeft + el.clientWidth) / trackWidth) * duration
       setViewRange({ start: startT, end: endT })
     }
+    const onScroll = () => {
+      if (frame) return
+      frame = requestAnimationFrame(update)
+    }
     update()
-    el.addEventListener('scroll', update, { passive: true })
-    return () => el.removeEventListener('scroll', update)
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      if (frame) cancelAnimationFrame(frame)
+    }
   }, [trackWidth, duration])
 
   const ticks = useMemo(() => {
@@ -121,6 +131,22 @@ export function VideoTimeline({
     for (let t = firstTick; t <= end; t += tickInterval) result.push(t)
     return result
   }, [duration, tickInterval, viewRange.start, viewRange.end])
+
+  // 视口过滤：只在当前可见范围 ± 少量边距内渲染 keyframes/marks，
+  // 避免关键帧几百个时全量挂载 <img> + Tooltip 导致卡顿
+  const VISIBLE_PADDING_SEC = 5
+  const visibleKeyframes = useMemo(() => {
+    if (duration <= 0) return keyframes
+    const lo = Math.max(0, viewRange.start - VISIBLE_PADDING_SEC)
+    const hi = Math.min(duration, viewRange.end + VISIBLE_PADDING_SEC)
+    return keyframes.filter((k) => k.timestampSec >= lo && k.timestampSec <= hi)
+  }, [duration, keyframes, viewRange.end, viewRange.start])
+  const visibleManualMarks = useMemo(() => {
+    if (duration <= 0) return manualMarks
+    const lo = Math.max(0, viewRange.start - VISIBLE_PADDING_SEC)
+    const hi = Math.min(duration, viewRange.end + VISIBLE_PADDING_SEC)
+    return manualMarks.filter((t) => t >= lo && t <= hi)
+  }, [duration, manualMarks, viewRange.end, viewRange.start])
 
   const xToTime = useCallback(
     (clientX: number): number => {
@@ -476,7 +502,7 @@ export function VideoTimeline({
 
             <div className="vwb-timeline-played" style={{ width: `${playheadX}px` }} />
 
-            {keyframes.map((keyframe) => (
+            {visibleKeyframes.map((keyframe) => (
               <Tooltip
                 key={keyframe.index}
                 title={`${formatTimestamp(keyframe.timestampSec)} · 关键帧 ${keyframe.index + 1}`}
@@ -494,7 +520,7 @@ export function VideoTimeline({
               </Tooltip>
             ))}
 
-            {manualMarks.map((time) => (
+            {visibleManualMarks.map((time) => (
               <Tooltip key={time} title={formatTimestamp(time)}>
                 <div
                   className="vwb-timeline-mark"

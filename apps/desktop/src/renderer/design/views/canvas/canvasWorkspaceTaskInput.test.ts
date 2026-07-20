@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildCanvasInputBindingsForRoles,
   buildPipelineSourceText,
   resolveCanvasPipelineTextSource,
 } from './canvasWorkspaceTaskInput'
@@ -99,6 +100,34 @@ function snapshotWith(nodes: CanvasNode[], task: CanvasTask): CanvasSnapshot {
 }
 
 describe('resolveCanvasPipelineTextSource', () => {
+  it('persists true keyframes as endpoints and design images as references', () => {
+    const first = {
+      ...operationNode(),
+      id: 'first',
+      type: 'image' as const,
+      data: { url: '1.png' },
+    }
+    const last = { ...operationNode(), id: 'last', type: 'image' as const, data: { url: '2.png' } }
+    const design = {
+      ...operationNode(),
+      id: 'design',
+      type: 'image' as const,
+      data: { url: 'design.png' },
+    }
+
+    expect(
+      buildCanvasInputBindingsForRoles([first, last, design], {
+        first: 'first_frame',
+        last: 'last_frame',
+        design: 'reference',
+      }),
+    ).toEqual([
+      expect.objectContaining({ sourceNodeId: 'first', role: 'first_frame' }),
+      expect.objectContaining({ sourceNodeId: 'last', role: 'last_frame' }),
+      expect.objectContaining({ sourceNodeId: 'design', role: 'reference' }),
+    ])
+  })
+
   it('reads screenplay text from the completed 转剧本 operation primary output node', () => {
     const operation = operationNode()
     const output: CanvasNode = {

@@ -24,10 +24,7 @@ describe('storyboard materialization', () => {
     const result = materializeStoryboardRows({
       metadata: {},
       defaultGroupName: '第一集',
-      assets: [
-        filmAsset('char-1', 'character', '林岚'),
-        filmAsset('scene-1', 'scene', '旧茶馆'),
-      ],
+      assets: [filmAsset('char-1', 'character', '林岚'), filmAsset('scene-1', 'scene', '旧茶馆')],
       rows: [
         {
           index: 1,
@@ -39,6 +36,7 @@ describe('storyboard materialization', () => {
           angle: '平视',
           movement: '缓慢推进',
           sceneLayout: '前景雨帘，中景林岚，背景茶馆柜台',
+          composition: '林岚落在右上交点',
           blocking: '林岚从画面左侧进入',
           lighting: '左侧暖光',
           focalLength: '35mm',
@@ -51,6 +49,13 @@ describe('storyboard materialization', () => {
           description: '林岚推门进入。',
           dialogue: '林岚：还有空房吗？',
           characterNames: ['林岚', '未入库角色'],
+          characterReferences: '林岚=雨夜造型图',
+          actionBeats: '0.0–0.5s：握住门把',
+          soundEffects: '0.5s：门铃声',
+          transition: '入：硬切；出：动作匹配硬切',
+          firstFrame: '门关闭',
+          lastFrame: '门开 45°',
+          continuity: '右手保持握门把',
           shotPrompt: '雨夜茶馆全景',
           negativePrompt: '文字水印',
         },
@@ -65,6 +70,7 @@ describe('storyboard materialization', () => {
       angle: '平视',
       movement: '缓慢推进',
       sceneLayout: '前景雨帘，中景林岚，背景茶馆柜台',
+      composition: '林岚落在右上交点',
       blocking: '林岚从画面左侧进入',
       lighting: '左侧暖光',
       focalLength: '35mm',
@@ -74,6 +80,13 @@ describe('storyboard materialization', () => {
       mood: '紧张',
       microExpression: '眼神快速扫视',
       costume: '深色外套',
+      characterReferences: '林岚=雨夜造型图',
+      actionBeats: '0.0–0.5s：握住门把',
+      soundEffects: '0.5s：门铃声',
+      transition: '入：硬切；出：动作匹配硬切',
+      firstFrame: '门关闭',
+      lastFrame: '门开 45°',
+      continuity: '右手保持握门把',
       characterAssetIds: ['char-1'],
       sceneAssetId: 'scene-1',
       negativePrompt: '文字水印',
@@ -84,9 +97,7 @@ describe('storyboard materialization', () => {
   it('appends to existing shot groups without mutating the input metadata', () => {
     const existing = {
       film: {
-        shotGroups: [
-          { id: 'existing', name: '已有分组', sortOrder: 0, segments: [] },
-        ],
+        shotGroups: [{ id: 'existing', name: '已有分组', sortOrder: 0, segments: [] }],
       },
     }
 
@@ -97,7 +108,7 @@ describe('storyboard materialization', () => {
       rows: [{ title: '镜1', description: '建立镜头' }],
     })
 
-    expect((existing.film.shotGroups as unknown[])).toHaveLength(1)
+    expect(existing.film.shotGroups as unknown[]).toHaveLength(1)
     expect((result.metadata.film as { shotGroups: unknown[] }).shotGroups).toHaveLength(2)
     expect(result.createdGroups[0]?.sortOrder).toBe(1)
   })

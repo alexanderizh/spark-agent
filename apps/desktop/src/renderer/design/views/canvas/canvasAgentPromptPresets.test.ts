@@ -5,7 +5,6 @@ import {
   DEFAULT_SHOT_SCRIPT_CONFIG,
   applyShotScriptConfigToPrompt,
   buildAgentPresetPrompt,
-  getAgentPreset,
 } from './canvasAgentPromptPresets'
 
 describe('canvasAgentPromptPresets', () => {
@@ -60,7 +59,20 @@ describe('canvasAgentPromptPresets', () => {
       // 节奏基线（约 N 秒/镜）已移除，不应再出现
       expect(prompt).not.toContain('秒/镜')
       expect(prompt).toContain('"shots"')
-      expect(prompt).toContain('Markdown 表格')
+      expect(prompt).toContain('只输出一个完整 JSON 对象')
+      expect(prompt).not.toContain('再输出 Markdown 表格')
+      expect(prompt).toContain('actionBeats')
+      expect(prompt).toContain('0.5s')
+      expect(prompt).toContain('characterReferences')
+      expect(prompt).toContain('groupName')
+      expect(prompt).toContain('sceneName')
+      expect(prompt).toContain('composition')
+      expect(prompt).toContain('soundEffects')
+      expect(prompt).toContain('transition')
+      expect(prompt).toContain('firstFrame')
+      expect(prompt).toContain('lastFrame')
+      expect(prompt).toContain('continuity')
+      expect(prompt).toContain('精确到 cm')
     })
 
     it('分镜预设时长上限缺省用 DEFAULT_MAX_CLIP_SEC', () => {

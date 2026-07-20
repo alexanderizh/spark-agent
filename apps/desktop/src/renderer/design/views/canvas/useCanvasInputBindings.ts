@@ -36,6 +36,7 @@ export function useCanvasInputBindings(input: {
   initialBindings?: readonly CanvasInputBinding[]
   nodes: readonly CanvasNode[]
   connectionNodeIds: readonly string[]
+  promptOwnerNodeIdsBySourceNodeId?: ReadonlyMap<string, readonly string[]> | undefined
 }) {
   const [state, setState] = useState<CanvasInputBindingState>(() => ({
     document: input.initialDocument,
@@ -44,6 +45,7 @@ export function useCanvasInputBindings(input: {
       document: input.initialDocument,
       nodes: input.nodes,
       connectionNodeIds: input.connectionNodeIds,
+      promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
     }),
   }))
   const resetKeyRef = useRef(input.resetKey)
@@ -58,6 +60,7 @@ export function useCanvasInputBindings(input: {
           document: input.initialDocument,
           nodes: input.nodes,
           connectionNodeIds: input.connectionNodeIds,
+          promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
         }),
       })
       return
@@ -69,6 +72,7 @@ export function useCanvasInputBindings(input: {
         document: current.document,
         nodes: input.nodes,
         connectionNodeIds: input.connectionNodeIds,
+        promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
       }),
     }))
   }, [
@@ -76,6 +80,7 @@ export function useCanvasInputBindings(input: {
     input.initialBindings,
     input.initialDocument,
     input.nodes,
+    input.promptOwnerNodeIdsBySourceNodeId,
     input.resetKey,
   ])
 
@@ -114,17 +119,19 @@ export function useCanvasInputBindings(input: {
             document,
             nodes: input.nodes,
             connectionNodeIds: input.connectionNodeIds,
+            promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
           }),
         }
       })
     },
-    [input.connectionNodeIds, input.nodes],
+    [input.connectionNodeIds, input.nodes, input.promptOwnerNodeIdsBySourceNodeId],
   )
 
   const setSelectedInputNodeIds = useRoleSelectionSetter({
     setState,
     nodes: input.nodes,
     connectionNodeIds: input.connectionNodeIds,
+    promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
     currentValues: selectedInputNodeIds,
     accepts: (binding) => isMediaBinding(binding) && isDefaultMediaRole(binding.role),
     roleForNode: (node) => (node.type === 'image' ? 'reference' : 'input'),
@@ -133,14 +140,17 @@ export function useCanvasInputBindings(input: {
     setState,
     nodes: input.nodes,
     connectionNodeIds: input.connectionNodeIds,
+    promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
     currentValues: referenceFrameNodeIds,
     accepts: (binding) => binding.kind === 'image' && binding.role === 'reference',
     roleForNode: () => 'reference',
+    preservePromptMembershipOnRemove: true,
   })
   const setFirstFrameNodeId = useSingleRoleSelectionSetter({
     setState,
     nodes: input.nodes,
     connectionNodeIds: input.connectionNodeIds,
+    promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
     currentValue: firstFrameNodeId,
     role: 'first_frame',
   })
@@ -148,6 +158,7 @@ export function useCanvasInputBindings(input: {
     setState,
     nodes: input.nodes,
     connectionNodeIds: input.connectionNodeIds,
+    promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
     currentValue: lastFrameNodeId,
     role: 'last_frame',
   })
@@ -163,11 +174,12 @@ export function useCanvasInputBindings(input: {
             document,
             nodes: input.nodes,
             connectionNodeIds: input.connectionNodeIds,
+            promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
           }),
         }
       })
     },
-    [input.connectionNodeIds, input.nodes],
+    [input.connectionNodeIds, input.nodes, input.promptOwnerNodeIdsBySourceNodeId],
   )
 
   return {
@@ -190,6 +202,7 @@ function useSingleRoleSelectionSetter(input: {
   setState: Dispatch<SetStateAction<CanvasInputBindingState>>
   nodes: readonly CanvasNode[]
   connectionNodeIds: readonly string[]
+  promptOwnerNodeIdsBySourceNodeId?: ReadonlyMap<string, readonly string[]> | undefined
   currentValue: string
   role: CanvasInputBindingRole
 }): Dispatch<SetStateAction<string>> {
@@ -199,6 +212,7 @@ function useSingleRoleSelectionSetter(input: {
       updateRoleSelection(input.setState, {
         nodes: input.nodes,
         connectionNodeIds: input.connectionNodeIds,
+        promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
         desiredNodeIds: values ? [values] : [],
         accepts: (binding) => binding.role === input.role,
         roleForNode: () => input.role,
@@ -212,9 +226,11 @@ function useRoleSelectionSetter(input: {
   setState: Dispatch<SetStateAction<CanvasInputBindingState>>
   nodes: readonly CanvasNode[]
   connectionNodeIds: readonly string[]
+  promptOwnerNodeIdsBySourceNodeId?: ReadonlyMap<string, readonly string[]> | undefined
   currentValues: string[]
   accepts: (binding: CanvasInputBinding) => boolean
   roleForNode: (node: CanvasNode) => CanvasInputBindingRole
+  preservePromptMembershipOnRemove?: boolean | undefined
 }): Dispatch<SetStateAction<string[]>> {
   return useCallback(
     (action) => {
@@ -222,9 +238,11 @@ function useRoleSelectionSetter(input: {
       updateRoleSelection(input.setState, {
         nodes: input.nodes,
         connectionNodeIds: input.connectionNodeIds,
+        promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
         desiredNodeIds: values,
         accepts: input.accepts,
         roleForNode: input.roleForNode,
+        preservePromptMembershipOnRemove: input.preservePromptMembershipOnRemove,
       })
     },
     [input],
@@ -236,9 +254,11 @@ function updateRoleSelection(
   input: {
     nodes: readonly CanvasNode[]
     connectionNodeIds: readonly string[]
+    promptOwnerNodeIdsBySourceNodeId?: ReadonlyMap<string, readonly string[]> | undefined
     desiredNodeIds: readonly string[]
     accepts: (binding: CanvasInputBinding) => boolean
     roleForNode: (node: CanvasNode) => CanvasInputBindingRole
+    preservePromptMembershipOnRemove?: boolean | undefined
   },
 ) {
   setState((current) => {
@@ -247,6 +267,22 @@ function updateRoleSelection(
     let bindings = current.bindings
     for (const binding of current.bindings) {
       if (!input.accepts(binding) || desiredIds.has(binding.sourceNodeId)) continue
+      if (input.preservePromptMembershipOnRemove && binding.promptBlockId) {
+        bindings = bindings.filter((candidate) => candidate.id !== binding.id)
+        bindings = addCanvasInputBinding(
+          bindings,
+          createCanvasInputBinding({
+            sourceNodeId: binding.sourceNodeId,
+            origin: 'picker',
+            kind: binding.kind,
+            relation: binding.relation,
+            role: 'input',
+            order: binding.order,
+            promptBlockId: binding.promptBlockId,
+          }),
+        )
+        continue
+      }
       bindings = removeCanvasInputBinding(bindings, binding.id)
       removedBindings.push(binding)
     }
@@ -256,6 +292,11 @@ function updateRoleSelection(
       const node = nodeById.get(nodeId)
       if (!node) continue
       const role = input.roleForNode(node)
+      if (input.preservePromptMembershipOnRemove) {
+        bindings = bindings.filter(
+          (binding) => !(binding.sourceNodeId === node.id && binding.role === 'input'),
+        )
+      }
       const existing = bindings.find(
         (binding) => binding.sourceNodeId === node.id && (binding.role ?? 'input') === role,
       )
@@ -298,6 +339,7 @@ function updateRoleSelection(
         document,
         nodes: input.nodes,
         connectionNodeIds: input.connectionNodeIds,
+        promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
       }),
     }
   })

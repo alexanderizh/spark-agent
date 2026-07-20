@@ -37,6 +37,7 @@ describe('canvas pipeline action contracts', () => {
     expect(draft.systemPrompt).toContain('单镜时长不得超过 6 秒')
     expect(draft.systemPrompt).toContain('只输出一个完整 JSON 对象')
     expect(draft.systemPrompt).not.toContain('再输出 Markdown 表格')
+    expect(draft.systemPrompt).not.toContain('场1 内景 茶馆 日')
   })
 
   it.each([

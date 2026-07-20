@@ -44,6 +44,41 @@ function cloneExistingGroups(metadata: Record<string, unknown> | undefined): Sho
   }))
 }
 
+export function storyboardRowToSegmentDraft(
+  row: ParsedShotRow,
+): Partial<ShotSegment> & { title: string } {
+  return {
+    title: row.title?.trim() || `镜${row.index ?? 1}`,
+    ...(row.description ? { description: row.description } : {}),
+    ...(row.dialogue ? { dialogue: row.dialogue } : {}),
+    ...(row.narration ? { narration: row.narration } : {}),
+    ...(row.shotPrompt ? { shotPrompt: row.shotPrompt } : {}),
+    ...(row.durationSec != null ? { durationSec: row.durationSec } : {}),
+    ...(row.shotSize ? { shotSize: row.shotSize } : {}),
+    ...(row.angle ? { angle: row.angle } : {}),
+    ...(row.movement ? { movement: row.movement } : {}),
+    ...(row.sceneLayout ? { sceneLayout: row.sceneLayout } : {}),
+    ...(row.composition ? { composition: row.composition } : {}),
+    ...(row.blocking ? { blocking: row.blocking } : {}),
+    ...(row.lighting ? { lighting: row.lighting } : {}),
+    ...(row.focalLength ? { focalLength: row.focalLength } : {}),
+    ...(row.aperture ? { aperture: row.aperture } : {}),
+    ...(row.iso ? { iso: row.iso } : {}),
+    ...(row.colorTone ? { colorTone: row.colorTone } : {}),
+    ...(row.mood ? { mood: row.mood } : {}),
+    ...(row.performance ? { microExpression: row.performance } : {}),
+    ...(row.costume ? { costume: row.costume } : {}),
+    ...(row.characterReferences ? { characterReferences: row.characterReferences } : {}),
+    ...(row.actionBeats ? { actionBeats: row.actionBeats } : {}),
+    ...(row.soundEffects ? { soundEffects: row.soundEffects } : {}),
+    ...(row.transition ? { transition: row.transition } : {}),
+    ...(row.firstFrame ? { firstFrame: row.firstFrame } : {}),
+    ...(row.lastFrame ? { lastFrame: row.lastFrame } : {}),
+    ...(row.continuity ? { continuity: row.continuity } : {}),
+    ...(row.negativePrompt ? { negativePrompt: row.negativePrompt } : {}),
+  }
+}
+
 function rowToSegment(
   row: ParsedShotRow,
   index: number,
@@ -56,28 +91,9 @@ function rowToSegment(
   return {
     id: filmUid('shot_seg'),
     index: row.index ?? index + 1,
-    title: row.title?.trim() || `镜${row.index ?? index + 1}`,
-    ...(row.description ? { description: row.description } : {}),
-    ...(row.dialogue ? { dialogue: row.dialogue } : {}),
-    ...(row.narration ? { narration: row.narration } : {}),
+    ...storyboardRowToSegmentDraft(row),
     ...(characterAssetIds.length > 0 ? { characterAssetIds } : {}),
     ...(sceneAssetId ? { sceneAssetId } : {}),
-    ...(row.shotPrompt ? { shotPrompt: row.shotPrompt } : {}),
-    ...(row.durationSec != null ? { durationSec: row.durationSec } : {}),
-    ...(row.shotSize ? { shotSize: row.shotSize } : {}),
-    ...(row.angle ? { angle: row.angle } : {}),
-    ...(row.movement ? { movement: row.movement } : {}),
-    ...(row.sceneLayout ? { sceneLayout: row.sceneLayout } : {}),
-    ...(row.blocking ? { blocking: row.blocking } : {}),
-    ...(row.lighting ? { lighting: row.lighting } : {}),
-    ...(row.focalLength ? { focalLength: row.focalLength } : {}),
-    ...(row.aperture ? { aperture: row.aperture } : {}),
-    ...(row.iso ? { iso: row.iso } : {}),
-    ...(row.colorTone ? { colorTone: row.colorTone } : {}),
-    ...(row.mood ? { mood: row.mood } : {}),
-    ...(row.performance ? { microExpression: row.performance } : {}),
-    ...(row.costume ? { costume: row.costume } : {}),
-    ...(row.negativePrompt ? { negativePrompt: row.negativePrompt } : {}),
   }
 }
 

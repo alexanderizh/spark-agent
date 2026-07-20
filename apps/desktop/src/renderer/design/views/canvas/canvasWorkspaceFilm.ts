@@ -4,6 +4,27 @@ import type { CharacterPromptFields } from './canvasCharacterSheetPrompts'
 import type { CanvasAsset } from './canvas.types'
 import { SCENE_NO_PEOPLE_PROMPT } from './canvasScenePrompt'
 
+export type ShotSegmentContext = {
+  group: ShotGroup
+  segment: ShotSegment
+  characters: CanvasAsset[]
+  scene?: CanvasAsset
+}
+
+export function resolveShotSegmentContext(
+  group: ShotGroup,
+  segment: ShotSegment,
+  assets: readonly CanvasAsset[],
+): ShotSegmentContext {
+  const characters = (segment.characterAssetIds ?? [])
+    .map((id) => assets.find((asset) => asset.id === id))
+    .filter((asset): asset is CanvasAsset => Boolean(asset))
+  const scene = segment.sceneAssetId
+    ? assets.find((asset) => asset.id === segment.sceneAssetId)
+    : undefined
+  return { group, segment, characters, ...(scene ? { scene } : {}) }
+}
+
 export type ScriptBreakdownDraft = {
   characters: Array<{ name: string; description: string }>
   scenes: Array<{ name: string; description: string }>
@@ -307,10 +328,17 @@ export function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: s
 export function buildShotNodeText(group: ShotGroup, segment: ShotSegment): string {
   return [
     `【${group.name}】镜${segment.index}`,
-    segment.description ? segment.description : '',
-    segment.dialogue ? `对白：${segment.dialogue}` : '',
-    segment.shotPrompt ? `镜头：${segment.shotPrompt}` : '',
     segment.durationSec != null ? `时长：${segment.durationSec}s` : '',
+    segment.description ? `画面/动作：${segment.description}` : '',
+    segment.actionBeats ? `动作节拍：${segment.actionBeats}` : '',
+    segment.dialogue ? `对白：${segment.dialogue}` : '',
+    segment.narration ? `旁白/OS：${segment.narration}` : '',
+    segment.soundEffects ? `音效：${segment.soundEffects}` : '',
+    segment.firstFrame ? `首帧：${segment.firstFrame}` : '',
+    segment.lastFrame ? `尾帧：${segment.lastFrame}` : '',
+    segment.transition ? `转场：${segment.transition}` : '',
+    segment.continuity ? `连续性：${segment.continuity}` : '',
+    segment.shotPrompt ? `镜头：${segment.shotPrompt}` : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -359,17 +387,51 @@ export function buildShotSegmentVideoPrompt(
     `请生成一段影视分镜视频。`,
     `分组：${group.name}`,
     `镜号：#${segment.index} ${segment.title}`,
+    segment.durationSec != null ? `时长：${segment.durationSec} 秒` : '',
     segment.description ? `画面/动作：${segment.description}` : '',
+    [
+      segment.shotSize,
+      segment.angle,
+      segment.movement,
+      segment.focalLength,
+      segment.aperture,
+    ].filter(Boolean).length > 0
+      ? `镜头语言：${[
+          segment.shotSize,
+          segment.angle,
+          segment.movement,
+          segment.focalLength,
+          segment.aperture,
+        ]
+          .filter(Boolean)
+          .join('；')}`
+      : '',
+    segment.sceneLayout ? `场景布局：${segment.sceneLayout}` : '',
+    segment.composition ? `构图：${segment.composition}` : '',
+    segment.blocking ? `人物占位与距离：${segment.blocking}` : '',
+    segment.characterReferences ? `角色参考：${segment.characterReferences}` : '',
+    segment.microExpression ? `表演：${segment.microExpression}` : '',
+    segment.costume ? `造型：${segment.costume}` : '',
+    segment.lighting ? `灯光：${segment.lighting}` : '',
+    segment.colorTone ? `色调：${segment.colorTone}` : '',
+    segment.iso ? `感光度/颗粒：${segment.iso}` : '',
+    segment.actionBeats ? `动作节拍：${segment.actionBeats}` : '',
     segment.dialogue ? `对白：${segment.dialogue}` : '',
-    segment.narration ? `旁白：${segment.narration}` : '',
+    segment.narration ? `旁白/OS：${segment.narration}` : '',
+    segment.soundEffects ? `音效：${segment.soundEffects}` : '',
+    segment.transition ? `入/出转场：${segment.transition}` : '',
+    segment.firstFrame ? `首帧：${segment.firstFrame}` : '',
+    segment.lastFrame ? `尾帧：${segment.lastFrame}` : '',
+    segment.continuity ? `连续性锁定：${segment.continuity}` : '',
     scene
       ? `场景：${scene.title ?? ''} ${scene.contentText ?? ''}${sceneRefs ? `；参考：${sceneRefs}` : ''}`
       : '',
     characterText ? `角色设定：\n${characterText}` : '',
-    segment.shotPrompt ? `镜头语言：${segment.shotPrompt}` : '',
+    segment.shotPrompt ? `完整视频 Prompt：${segment.shotPrompt}` : '',
+    segment.negativePrompt ? `该镜反向约束：${segment.negativePrompt}` : '',
     styleFragments.length > 0 ? `片段风格预设：${styleFragments.join('；')}` : '',
     styleBible && styleBible.trim() ? `视觉总设定：${styleBible.trim()}` : '',
-    '生成要求：动作自然，角色一致，场景连贯，电影感光影，避免字幕、水印和畸变。',
+    '生成要求：严格按 0.5s 节拍执行，保持角色身份、肢体结构、场景几何、道具手位和光影稳定；运动符合重力与惯性，无闪烁、跳变、漂移、字幕或水印。',
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -418,14 +480,23 @@ export function buildShotSegmentKeyframePrompt(
     `镜号：#${segment.index} ${segment.title}`,
     segment.durationSec != null ? `镜头时长：${segment.durationSec} 秒` : '',
     segment.description ? `画面/动作：${segment.description}` : '',
+    frame === 'first' && segment.firstFrame ? `首帧精确描述：${segment.firstFrame}` : '',
+    frame === 'last' && segment.lastFrame ? `尾帧精确描述：${segment.lastFrame}` : '',
     frame === 'first'
-      ? '取镜头开始瞬间的画面。'
-      : '取镜头结束瞬间的画面，需与首帧保持同一场景与角色一致。',
+      ? '取镜头 0.0s 的确定画面，不要提前执行后续动作。'
+      : '取镜头结束瞬间的确定画面，保留下一镜所需的动作与视线接点。',
+    segment.composition ? `构图：${segment.composition}` : '',
+    segment.blocking ? `人物占位与距离：${segment.blocking}` : '',
+    segment.characterReferences ? `角色参考：${segment.characterReferences}` : '',
+    segment.lighting ? `灯光：${segment.lighting}` : '',
+    segment.colorTone ? `色调：${segment.colorTone}` : '',
+    segment.continuity ? `连续性锁定：${segment.continuity}` : '',
     scene
       ? `场景：${scene.title ?? ''} ${scene.contentText ?? ''}${sceneRefs ? `；参考：${sceneRefs}` : ''}`
       : '',
     characterText ? `角色设定：\n${characterText}` : '',
     segment.shotPrompt ? `镜头语言：${segment.shotPrompt}` : '',
+    segment.negativePrompt ? `反向约束：${segment.negativePrompt}` : '',
     styleFragments.length > 0 ? `片段风格预设：${styleFragments.join('；')}` : '',
     styleBible ? `视觉总设定：${styleBible}` : '',
     '生成要求：电影级光影，角色与场景一致，单帧静态画面，避免字幕、水印和畸变。',

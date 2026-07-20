@@ -18,7 +18,7 @@ describe('canvas UI/UX V4 integration', () => {
     ]
 
     expect(workspace).toContain("import './uiux-v4/index.less'")
-    expect(workspace).toContain('className="canvas-workspace canvas-uiux-v4"')
+    expect(workspace).toContain('canvas-workspace canvas-uiux-v4')
     for (const moduleName of scopedModules) {
       expect(stylesheetEntry).toContain(`@import './${moduleName}';`)
       expect(readCanvasSource(`./uiux-v4/${moduleName}`)).toContain(

@@ -26,6 +26,7 @@ vi.mock('./canvas.api', () => ({
 }))
 vi.mock('./canvas.capabilities', () => ({
   getCanvasCapability: () => ({ inputTypes: [] }),
+  isOperationNode: () => false,
   nodeOperation: () => 'text_to_image',
 }))
 vi.mock('./canvasOperationPresets', () => ({
@@ -51,6 +52,8 @@ vi.mock('./canvasOperationPresets', () => ({
 import {
   buildOperationPanelEnumOptions,
   buildOperationPanelEditablePromptDocument,
+  buildOperationPanelPromptOwnerNodeIds,
+  expandOperationPanelPromptNodeIds,
   isCommonOperationModelParam,
   isGeneratedCanvasFunctionalPrompt,
   buildOperationPanelRunInputNodeIds,
@@ -65,7 +68,7 @@ import {
   stripGeneratedCanvasFunctionalPromptInput,
 } from './CanvasOperationPanel'
 import { mergeSeededModelParamDraft } from './canvasModelParamDraftState'
-import type { CanvasNode } from './canvas.types'
+import type { CanvasNode, CanvasSnapshot } from './canvas.types'
 
 describe('CanvasOperationPanel negative prompt inheritance', () => {
   it('merges project-level and operation preset negative prompts', () => {
@@ -270,7 +273,7 @@ describe('CanvasOperationPanel negative prompt inheritance', () => {
       document.blocks.some(
         (block) => block.kind === 'reference' && block.sourceNodeId === 'image-1',
       ),
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it('excludes suppressed tags from active task inputs', () => {
@@ -473,6 +476,53 @@ describe('CanvasOperationPanel negative prompt inheritance', () => {
         ],
       }),
     ).toEqual(['img-a', 'img-b'])
+  })
+
+  it('expands a visible group tag into child image options and binding ownership', () => {
+    const baseNode: Omit<CanvasNode, 'id' | 'type' | 'title' | 'parentNodeId' | 'data'> = {
+      projectId: 'project-1',
+      boardId: 'board-1',
+      userId: 1,
+      assetId: null,
+      taskId: null,
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      rotation: 0,
+      zIndex: 0,
+      locked: false,
+      hidden: false,
+      createdAt: '',
+      updatedAt: '',
+    }
+    const group: CanvasNode = {
+      ...baseNode,
+      id: 'group-1',
+      type: 'group',
+      title: '图片组',
+      parentNodeId: null,
+      data: {},
+    }
+    const image: CanvasNode = {
+      ...baseNode,
+      id: 'image-1',
+      type: 'image',
+      title: '首帧候选',
+      parentNodeId: group.id,
+      data: { url: 'https://example.com/image-1.png' },
+    }
+    const snapshot: CanvasSnapshot = {
+      project: {} as CanvasSnapshot['project'],
+      board: {} as CanvasSnapshot['board'],
+      nodes: [group, image],
+      edges: [],
+      assets: [],
+      tasks: [],
+    }
+
+    expect(expandOperationPanelPromptNodeIds([group.id], snapshot)).toEqual(['group-1', 'image-1'])
+    expect(buildOperationPanelPromptOwnerNodeIds(snapshot).get(image.id)).toEqual([group.id])
   })
 
   it('keeps unsupported enum draft values visible as disabled options after model switch', () => {

@@ -92,6 +92,40 @@
   padding: 7px;
 }
 
+// 画布弹层细圆头滚动条：局部覆盖全局 *::-webkit-scrollbar{width:0!important} 隐藏规则。
+// 手法同 chat-stream（global-overrides.css），8mm 轨道 + content-box 让 thumb 视觉约 4mm、两头圆。
+.canvas-model-picker-providers,
+.canvas-model-picker-models {
+  scrollbar-width: auto !important;
+  scrollbar-color: var(--border-strong) transparent !important;
+
+  &::-webkit-scrollbar {
+    width: 8px !important;
+    height: 8px !important;
+  }
+  &::-webkit-scrollbar-track,
+  &::-webkit-scrollbar-track-piece {
+    background: transparent !important;
+  }
+  &::-webkit-scrollbar-thumb {
+    min-height: 24px;
+    border: 2px solid transparent !important;
+    border-radius: 999px !important;
+    background: var(--border-strong) !important;
+    background-clip: content-box !important;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--text-faint) !important;
+    background-clip: content-box !important;
+  }
+  &::-webkit-scrollbar-button,
+  &::-webkit-scrollbar-corner {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+}
+
 .canvas-model-picker-providers {
   border-right: 1px solid var(--divider);
   background: color-mix(in srgb, var(--bg-sunken) 72%, transparent);

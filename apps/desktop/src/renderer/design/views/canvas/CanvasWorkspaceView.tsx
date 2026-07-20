@@ -44,6 +44,8 @@ import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAsse
 import { resolveCanvasAssetFocusNodeIds } from './canvasAssetFocus'
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel, buildOperationPanelSnapshotSignature } from './CanvasOperationPanel'
+import { CanvasPromptNodePickerBanner } from './CanvasPromptNodePickerBanner'
+import { useCanvasPromptNodePicker } from './useCanvasPromptNodePicker'
 import { CanvasBatchTaskPanel } from './CanvasBatchTaskPanel'
 import { useCanvasBatchTasks } from './useCanvasBatchTasks'
 import { shouldFocusCanvasInlinePanel } from './canvasInlinePanelFocus'
@@ -77,6 +79,7 @@ import {
 import { CanvasDirectorStage3DModal } from './stage3d/CanvasDirectorStage3DModal'
 import { createDefaultStage3DData, type Stage3DData } from './stage3d/stage3d.types'
 import { CanvasVideoWorkbenchModal } from './videoWorkbench/CanvasVideoWorkbenchModal'
+import { useCanvasVideoWorkbenchResources } from './videoWorkbench/useCanvasVideoWorkbenchResources'
 import {
   createDefaultVideoWorkbenchData,
   type VideoWorkbenchData,
@@ -111,7 +114,16 @@ import {
 import { applyCanvasStyleToTask, buildCanvasStyleContext } from './canvasStyleContext'
 import { buildStoryboardGridPrompt, buildStoryboardNodePrompt } from './canvasStoryboardGrid'
 import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
-import { resolveCanvasPipelineTextSource } from './canvasWorkspaceTaskInput'
+import {
+  buildCanvasInputBindingsForRoles,
+  resolveCanvasPipelineTextSource,
+} from './canvasWorkspaceTaskInput'
+import {
+  buildShotNodeText,
+  buildShotSegmentKeyframePrompt,
+  buildShotSegmentVideoPrompt,
+  resolveShotSegmentContext,
+} from './canvasWorkspaceFilm'
 import {
   formatStoryboardCameraParamsForEditor,
   formatStoryboardRowsAsMarkdown,
@@ -1447,19 +1459,6 @@ function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string):
   return base.join('\n')
 }
 
-/** 分镜节点展示文本（§S6 节点化） */
-function buildShotNodeText(group: ShotGroup, segment: ShotSegment): string {
-  return [
-    `【${group.name}】镜${segment.index}`,
-    segment.description ? segment.description : '',
-    segment.dialogue ? `对白：${segment.dialogue}` : '',
-    segment.shotPrompt ? `镜头：${segment.shotPrompt}` : '',
-    segment.durationSec != null ? `时长：${segment.durationSec}s` : '',
-  ]
-    .filter(Boolean)
-    .join('\n')
-}
-
 function findSegmentStyleFragments(
   segment: ShotSegment,
   presets: ReturnType<typeof readStylePresets>,
@@ -1472,53 +1471,6 @@ function findSegmentStyleFragments(
     .filter((fragment): fragment is string => Boolean(fragment))
 }
 
-function buildShotSegmentVideoPrompt(
-  input: {
-    group: ShotGroup
-    segment: ShotSegment
-    characters: CanvasAsset[]
-    scene?: CanvasAsset
-  },
-  styleBible?: string,
-  styleFragments: string[] = [],
-): string {
-  const { group, segment, characters, scene } = input
-  const characterText = characters
-    .map((asset) => {
-      const refs = readReferences(asset.metadata)
-      const refText = refs
-        .map((ref) => ref.description)
-        .filter(Boolean)
-        .join('；')
-      return `${asset.title ?? '角色'}：${asset.contentText ?? ''}${refText ? `；参考：${refText}` : ''}`
-    })
-    .join('\n')
-  const sceneRefs = scene
-    ? readReferences(scene.metadata)
-        .map((ref) => ref.description)
-        .filter(Boolean)
-        .join('；')
-    : ''
-  return [
-    `请生成一段影视分镜视频。`,
-    `分组：${group.name}`,
-    `镜号：#${segment.index} ${segment.title}`,
-    segment.description ? `画面/动作：${segment.description}` : '',
-    segment.dialogue ? `对白：${segment.dialogue}` : '',
-    segment.narration ? `旁白：${segment.narration}` : '',
-    scene
-      ? `场景：${scene.title ?? ''} ${scene.contentText ?? ''}${sceneRefs ? `；参考：${sceneRefs}` : ''}`
-      : '',
-    characterText ? `角色设定：\n${characterText}` : '',
-    segment.shotPrompt ? `镜头语言：${segment.shotPrompt}` : '',
-    styleFragments.length > 0 ? `片段风格预设：${styleFragments.join('；')}` : '',
-    styleBible && styleBible.trim() ? `视觉总设定：${styleBible.trim()}` : '',
-    '生成要求：动作自然，角色一致，场景连贯，电影感光影，避免字幕、水印和畸变。',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
-}
-
 function buildChapterToScreenplayInstruction(chapterText: string): string {
   return [
     '请把下面的小说/长文稿章节改写为影视剧本（场次剧本）。',
@@ -1526,56 +1478,6 @@ function buildChapterToScreenplayInstruction(chapterText: string): string {
     '保留关键情节与人物关系；对白口语化、可表演；输出可直接用于后续角色/场景/分镜拆解，不要解释过程。',
     `章节原文：\n${chapterText.slice(0, 8000)}`,
   ].join('\n\n')
-}
-
-function buildShotSegmentKeyframePrompt(
-  input: {
-    group: ShotGroup
-    segment: ShotSegment
-    characters: CanvasAsset[]
-    scene?: CanvasAsset
-  },
-  frame: 'first' | 'last',
-  styleBible: string,
-  styleFragments: string[] = [],
-): string {
-  const { group, segment, characters, scene } = input
-  const characterText = characters
-    .map((asset) => {
-      const refs = readReferences(asset.metadata)
-      const refText = refs
-        .map((ref) => ref.description)
-        .filter(Boolean)
-        .join('；')
-      return `${asset.title ?? '角色'}：${asset.contentText ?? ''}${refText ? `；参考：${refText}` : ''}`
-    })
-    .join('\n')
-  const sceneRefs = scene
-    ? readReferences(scene.metadata)
-        .map((ref) => ref.description)
-        .filter(Boolean)
-        .join('；')
-    : ''
-  return [
-    `请生成一张影视分镜${frame === 'first' ? '首帧' : '尾帧'}关键帧图。`,
-    `分组：${group.name}`,
-    `镜号：#${segment.index} ${segment.title}`,
-    segment.durationSec != null ? `镜头时长：${segment.durationSec} 秒` : '',
-    segment.description ? `画面/动作：${segment.description}` : '',
-    frame === 'first'
-      ? '取镜头开始瞬间的画面。'
-      : '取镜头结束瞬间的画面，需与首帧保持同一场景与角色一致。',
-    scene
-      ? `场景：${scene.title ?? ''} ${scene.contentText ?? ''}${sceneRefs ? `；参考：${sceneRefs}` : ''}`
-      : '',
-    characterText ? `角色设定：\n${characterText}` : '',
-    segment.shotPrompt ? `镜头语言：${segment.shotPrompt}` : '',
-    styleFragments.length > 0 ? `片段风格预设：${styleFragments.join('；')}` : '',
-    styleBible ? `视觉总设定：${styleBible}` : '',
-    '生成要求：电影级光影，角色与场景一致，单帧静态画面，避免字幕、水印和畸变。',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
 }
 
 function buildPromptOptimizationInstruction(
@@ -1620,7 +1522,7 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
     target.isContentEditable ||
     Boolean(
       target.closest(
-        '[contenteditable="true"], .canvas-inline-ai-composer, .ant-modal, .ant-drawer',
+        '[contenteditable="true"], .canvas-inline-ai-composer, .ant-modal, .ant-drawer, .canvas-operation-panel',
       ),
     )
   )
@@ -1844,6 +1746,17 @@ export function CanvasWorkspaceView({
   const [directorStage3DNodeId, setDirectorStage3DNodeId] = useState<string | null>(null)
   const [videoWorkbenchNodeId, setVideoWorkbenchNodeId] = useState<string | null>(null)
   const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
+  const {
+    ownerNodeId: promptNodePickerOwnerId,
+    start: startPromptNodePicker,
+    cancel: cancelPromptNodePicker,
+    interceptSelectionChange: interceptPromptNodePickerSelection,
+    interceptNodeSelect: interceptPromptNodeSelect,
+  } = useCanvasPromptNodePicker({
+    nodes: snapshot?.nodes ?? [],
+    activeOperationNodeId: activeOperationPanelNodeId,
+    setSelectedNodeIds,
+  })
   const batchTasks = useCanvasBatchTasks({
     getSnapshot: () => snapshot,
     updateManyNodeData,
@@ -2616,6 +2529,7 @@ export function CanvasWorkspaceView({
 
   const handleSelectionChange = useCallback(
     (nodeIds: string[]) => {
+      if (interceptPromptNodePickerSelection()) return
       const lockedInlinePanelNodeId = activeOperationPanelNodeId ?? editingNodeId
       if (nodeIds.length === 0 && lockedInlinePanelNodeId) {
         setSelectedNodeIds((previousIds) =>
@@ -2639,11 +2553,12 @@ export function CanvasWorkspaceView({
         )
       })
     },
-    [activeOperationPanelNodeId, editingNodeId],
+    [activeOperationPanelNodeId, editingNodeId, interceptPromptNodePickerSelection],
   )
 
   const handleNodeSelectIntent = useCallback(
     (nodeId: string) => {
+      if (interceptPromptNodeSelect(nodeId)) return
       // 从 ref 读取最新节点，避免把 snapshot?.nodes 放进依赖导致引用抖动
       // （否则每次 snapshot 变更都会让 nodeActions memo 失效，连带所有可见节点重渲染）
       const node = snapshotRef.current?.nodes.find((item) => item.id === nodeId)
@@ -2654,7 +2569,7 @@ export function CanvasWorkspaceView({
       // 保留 Agent 面板，避免“添加到 Agent 对话”刚展开又被这次收尾点击关闭。
       closeCanvasFloatPanels('agent')
     },
-    [activeOperationPanelNodeId, closeCanvasFloatPanels, editingNodeId],
+    [activeOperationPanelNodeId, closeCanvasFloatPanels, editingNodeId, interceptPromptNodeSelect],
   )
 
   const handleCanvasViewportControlsChange = useCallback(
@@ -4169,6 +4084,17 @@ export function CanvasWorkspaceView({
     [snapshot?.nodes, videoWorkbenchNodeId],
   )
 
+  const {
+    addLocalResources: handleAddLocalWorkbenchResources,
+    pickCanvasResources: handlePickCanvasWorkbenchResources,
+    collectUpstreamResources: handleCollectUpstreamWorkbenchResources,
+  } = useCanvasVideoWorkbenchResources({
+    snapshot,
+    projectId,
+    workbenchNodeId: videoWorkbenchNodeId,
+    selectedNodes,
+  })
+
   const handleSaveVideoWorkbench = useCallback(
     async (data: VideoWorkbenchData) => {
       if (!videoWorkbenchNode) return
@@ -5074,6 +5000,8 @@ export function CanvasWorkspaceView({
     outputFilmReferenceKind?: FilmReferenceKind
     /** 预绑定的上游节点（仅创建时记录；用户可在面板里改） */
     inputNodeIds?: string[]
+    /** 首帧/尾帧/参考图的明确语义，必须随操作节点持久化。 */
+    inputRoles?: Record<string, CanvasTaskInputRoleSelection>
     /** 自定义节点尺寸，用于 viewport 居中计算 */
     size?: { width: number; height: number }
     /** 创建后是否自动打开操作面板，默认 true */
@@ -5084,6 +5012,9 @@ export function CanvasWorkspaceView({
     const size = params.size ?? OPERATION_NODE_DEFAULT_SIZE
     const placement = positionNodeInViewport(canvasViewportRef.current, size, { x: 260, y: 200 })
     const existingNodeIds = new Set(snapshot.nodes.map((item) => item.id))
+    const inputBindings = params.inputRoles
+      ? buildCanvasInputBindingsForRoles(snapshot.nodes, params.inputRoles)
+      : []
     const next = await createOperationNode({
       boardId: snapshot.board.id,
       operation: params.operation,
@@ -5093,6 +5024,7 @@ export function CanvasWorkspaceView({
       title: params.title,
       systemPrompt: params.prompt,
       message: params.message ?? '请在操作面板确认 Prompt / Agent / 模型后点击开始任务',
+      ...(inputBindings.length > 0 ? { inputBindings } : {}),
       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
       ...(params.taskPipelineRole ? { taskPipelineRole: params.taskPipelineRole } : {}),
       ...(params.outputPipelineRole ? { outputPipelineRole: params.outputPipelineRole } : {}),
@@ -5406,13 +5338,7 @@ export function CanvasWorkspaceView({
     const group = film?.shotGroups?.find((item) => item.id === groupId)
     const segment = group?.segments.find((item) => item.id === segmentId)
     if (!group || !segment) return null
-    const characters = (segment.characterAssetIds ?? [])
-      .map((id) => snapshot.assets.find((a) => a.id === id))
-      .filter((a): a is CanvasAsset => Boolean(a))
-    const scene = segment.sceneAssetId
-      ? snapshot.assets.find((a) => a.id === segment.sceneAssetId)
-      : undefined
-    return { group, segment, characters, ...(scene ? { scene } : {}) }
+    return resolveShotSegmentContext(group, segment, snapshot.assets)
   }
 
   const resolveRuntimeFromNode = (
@@ -5552,6 +5478,25 @@ export function CanvasWorkspaceView({
           return
         }
       }
+      if (actionId === 'shot.to_video') {
+        const groupId = shotSourceNode.data.shotGroupId ?? node.data.shotGroupId
+        const segmentId = shotSourceNode.data.shotSegmentId ?? node.data.shotSegmentId
+        if (groupId && !segmentId) {
+          const group = readFilmData(snapshot.project.metadata)?.shotGroups?.find(
+            (item) => item.id === groupId,
+          )
+          if (group && group.segments.length > 0) {
+            for (const segment of group.segments) {
+              await handleGenerateSegmentVideo(
+                resolveShotSegmentContext(group, segment, snapshot.assets),
+                { openPanel: false },
+              )
+            }
+            message.success(`已按 ${group.segments.length} 个分镜创建视频任务节点`)
+            return
+          }
+        }
+      }
       const resolved = resolveShotFromNode(shotSourceNode) ?? resolveShotFromNode(node)
       if (!resolved) {
         message.warning(
@@ -5564,7 +5509,7 @@ export function CanvasWorkspaceView({
       if (actionId === 'shot.to_keyframes') {
         handleGenerateSegmentKeyframes(resolved, { openPanel: false })
       } else {
-        handleGenerateSegmentVideo(resolved, { openPanel: false })
+        await handleGenerateSegmentVideo(resolved, { openPanel: false })
       }
       return
     }
@@ -5948,14 +5893,17 @@ export function CanvasWorkspaceView({
     const snapshot = snapshotRef.current
     if (!snapshot) return
     const styleBible = buildProductionBiblePrompt(snapshot.project.metadata)
+    const storyboardSystemPrompt = buildOpPrompt('screenplay.to_shot_script', {
+      upstreamText: sourceText,
+      ...(styleBible ? { styleBible } : {}),
+      keepShotScriptPlaceholders: true,
+    })
     await createConfiguredOperationNode({
       sourceNode: node,
       operation: 'text_generate',
-      prompt: buildOpPrompt('screenplay.to_shot_script', {
-        upstreamText: sourceText,
-        ...(styleBible ? { styleBible } : {}),
-        keepShotScriptPlaceholders: true,
-      }),
+      // 原剧本由 used_as_input 连接编译进 user prompt；system prompt 只保留契约，
+      // 避免长剧本在 system/user 两侧各出现一次而挤占上下文。
+      prompt: stripCanvasFunctionalPromptInput(storyboardSystemPrompt, 'screenplay.to_shot_script'),
       title: '生成分镜脚本',
       nodeMessage: '确认分镜脚本 Prompt、Agent 与模型后点击开始任务',
       taskPipelineRole: 'shot',
@@ -6979,7 +6927,7 @@ export function CanvasWorkspaceView({
     return anchors
   }
 
-  const handleGenerateSegmentVideo = (
+  const handleGenerateSegmentVideo = async (
     input: Parameters<NonNullable<FilmCenterHandlers['onGenerateSegmentVideo']>>[0],
     options?: { openPanel?: boolean },
   ) => {
@@ -6990,26 +6938,42 @@ export function CanvasWorkspaceView({
       input.segment,
       readStylePresets(snapshot.project.metadata),
     )
-    // 优先用关键帧 / 引用设定图作为首尾帧走图生视频（§S8 连贯性）；无锚点图则退化文生视频
+    // 优先使用真实关键帧；角色/场景设定图只能作为 reference，不能冒充时间端点。
     const anchorNodes = resolveSegmentAnchorImageNodes(input.segment, input.characters, input.scene)
     if (anchorNodes.length > 0) {
-      void addFilmAssetTaskNode({
+      const keyframeIds = new Set(input.segment.keyframeNodeIds ?? [])
+      const usesKeyframes = anchorNodes.some((node) => keyframeIds.has(node.id))
+      const inputRoles: Record<string, CanvasTaskInputRoleSelection> = {}
+      for (const [index, node] of anchorNodes.slice(0, 2).entries()) {
+        inputRoles[node.id] = usesKeyframes
+          ? index === 0
+            ? 'first_frame'
+            : 'last_frame'
+          : 'reference'
+      }
+      await addFilmAssetTaskNode({
         operation: 'image_to_video',
         title: `生成视频 · 分镜 #${input.segment.index}`,
         prompt: buildShotSegmentVideoPrompt(input, styleBible, styleFragments),
-        // 取前两张：第一张→首帧，第二张→尾帧（buildTaskInputFiles 自动按序分配 role）
         inputNodeIds: anchorNodes.slice(0, 2).map((node) => node.id),
+        inputRoles,
+        ...(input.segment.durationSec != null && input.segment.durationSec > 0
+          ? { modelParams: { durationSeconds: input.segment.durationSec } }
+          : {}),
         ...(options?.openPanel !== undefined ? { openPanel: options.openPanel } : {}),
       })
       return
     }
-    void addFilmAssetTaskNode({
+    await addFilmAssetTaskNode({
       operation: 'text_to_video',
       title: `生成视频 · 分镜 #${input.segment.index}`,
       prompt: buildShotSegmentVideoPrompt(input, styleBible, styleFragments),
+      ...(input.segment.durationSec != null && input.segment.durationSec > 0
+        ? { modelParams: { durationSeconds: input.segment.durationSec } }
+        : {}),
       ...(options?.openPanel !== undefined ? { openPanel: options.openPanel } : {}),
     })
-    message.info('未找到关键帧/设定图，请先在画布上配置基准图')
+    message.info('未找到关键帧/设定图，已创建文生视频节点；补充基准图可进一步提升一致性')
   }
 
   const handleSetSegmentKeyframesFromSelection: NonNullable<
@@ -7345,6 +7309,7 @@ export function CanvasWorkspaceView({
                   placement="inline"
                   fullscreen={inlineOperationFullscreen}
                   onFullscreenChange={setInlineOperationFullscreen}
+                  onRequestCanvasNodePick={(onPick) => startPromptNodePicker(opNode.id, onPick)}
                   {...(opTask ? { task: opTask } : {})}
                   onClose={() => {
                     setActiveOperationPanelNodeId(null)
@@ -7493,9 +7458,12 @@ export function CanvasWorkspaceView({
                         assets: snapshot.assets,
                       })
                     const resolvedPreset = readCanvasResolvedPresetTarget(presetTargetId)
-                    const systemPrompt =
+                    const baseSystemPrompt =
                       normalizeCanvasFunctionalSystemPrompt(params.systemPrompt, presetTargetId) ||
                       buildCanvasOperationSystemPrompt(operation, resolvedPreset.prompt)
+                    const systemPrompt = params.shotScriptConfig
+                      ? applyShotScriptConfigToPrompt(baseSystemPrompt, params.shotScriptConfig)
+                      : baseSystemPrompt
                     const promptSubmission = await buildCanvasPromptSubmission({
                       document: promptDocument,
                       snapshot,
@@ -7699,7 +7667,9 @@ export function CanvasWorkspaceView({
   }
 
   return (
-    <div className="canvas-workspace canvas-uiux-v4">
+    <div
+      className={`canvas-workspace canvas-uiux-v4${promptNodePickerOwnerId ? ' is-picking-prompt-node' : ''}`}
+    >
       <header
         className="canvas-workspace-header"
         onDoubleClick={() => {
@@ -7856,6 +7826,10 @@ export function CanvasWorkspaceView({
               <span>已切换为 {toolLabel(toolSwitchHint.tool)}</span>
             </div>
           )}
+          <CanvasPromptNodePickerBanner
+            visible={Boolean(promptNodePickerOwnerId)}
+            onCancel={() => cancelPromptNodePicker()}
+          />
           <CanvasStage
             snapshot={snapshot}
             activeTool={activeTool === 'pan' ? 'pan' : 'select'}
@@ -8118,6 +8092,9 @@ export function CanvasWorkspaceView({
             onAddVideo={handleAddVideoToWorkbench}
             onSelectVideo={handleSelectVideoFromCanvas}
             videoNodes={videoNodesForWorkbench}
+            onAddLocalResources={handleAddLocalWorkbenchResources}
+            onPickCanvasResources={handlePickCanvasWorkbenchResources}
+            onCollectUpstream={handleCollectUpstreamWorkbenchResources}
           />
           <CanvasFilmAssetCenter
             open={filmCenterOpen}

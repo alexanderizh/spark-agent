@@ -8250,6 +8250,42 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
+// 画布弹层细圆头滚动条：局部覆盖全局 *::-webkit-scrollbar{width:0!important} 隐藏规则。
+// 手法同 chat-stream（global-overrides.css），8mm 轨道 + content-box 让 thumb 视觉约 4mm、两头圆。
+// 覆盖节点工厂菜单、dock 添加下拉、节点右键菜单（antd Dropdown，配合上面的双类选择器优先级）。
+.canvas-add-node-menu,
+.canvas-dock-add-dropdown-panel,
+.canvas-node-context-menu.ant-dropdown-menu {
+  scrollbar-width: auto !important;
+  scrollbar-color: var(--border-strong) transparent !important;
+
+  &::-webkit-scrollbar {
+    width: 8px !important;
+    height: 8px !important;
+  }
+  &::-webkit-scrollbar-track,
+  &::-webkit-scrollbar-track-piece {
+    background: transparent !important;
+  }
+  &::-webkit-scrollbar-thumb {
+    min-height: 28px;
+    border: 2px solid transparent !important;
+    border-radius: 999px !important;
+    background: var(--border-strong) !important;
+    background-clip: content-box !important;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--text-faint) !important;
+    background-clip: content-box !important;
+  }
+  &::-webkit-scrollbar-button,
+  &::-webkit-scrollbar-corner {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+}
+
 .canvas-add-node-section {
   margin-bottom: 10px;
 }
