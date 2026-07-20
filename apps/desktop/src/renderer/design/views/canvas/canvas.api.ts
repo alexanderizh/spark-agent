@@ -73,6 +73,7 @@ import type {
   CanvasMediaTaskCreateResponse,
   CanvasTextTaskCreateResponse,
   CanvasMediaTaskInputFile,
+  CanvasInputBinding,
   CanvasMediaCapabilitiesListResponse,
   CanvasMediaModelDescribeRequest,
   CanvasMediaModelDescribeResponse,
@@ -4254,7 +4255,8 @@ export const canvasApi = {
       message: messageText,
     }
     const requestPrompt = request.compiledUserText ?? request.prompt
-    const visibleUserPrompt = request.userPrompt ?? (request.promptDocument ? undefined : request.prompt)
+    const visibleUserPrompt =
+      request.userPrompt ?? (request.promptDocument ? undefined : request.prompt)
     if (visibleUserPrompt != null) taskNodeData.prompt = visibleUserPrompt
     if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
     if (request.systemPrompt != null) taskNodeData.systemPrompt = request.systemPrompt
@@ -4270,8 +4272,7 @@ export const canvasApi = {
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)
       taskNodeData.outputPipelineRole = request.outputPipelineRole
-    if (request.shotScriptConfig != null)
-      taskNodeData.shotScriptConfig = request.shotScriptConfig
+    if (request.shotScriptConfig != null) taskNodeData.shotScriptConfig = request.shotScriptConfig
 
     let taskNode: CanvasNode
     const bindNode = request.bindToNodeId
@@ -4403,8 +4404,7 @@ export const canvasApi = {
     }
     appendCanvasTaskRuntimeEvent(task, {
       at,
-      kind:
-        status === 'completed' ? 'completed' : status === 'cancelled' ? 'cancelled' : 'failed',
+      kind: status === 'completed' ? 'completed' : status === 'cancelled' ? 'cancelled' : 'failed',
       label:
         status === 'completed'
           ? '本地工作流完成'
@@ -4488,6 +4488,7 @@ export const canvasApi = {
     modelId?: string
     reasoningEffort?: SessionReasoningEffort
     skillIds?: string[]
+    inputBindings?: CanvasInputBinding[]
     taskPipelineRole?: CreateCanvasTaskRequest['taskPipelineRole']
     outputPipelineRole?: CreateCanvasTaskRequest['outputPipelineRole']
     outputTitle?: CreateCanvasTaskRequest['outputTitle']
@@ -4545,6 +4546,9 @@ export const canvasApi = {
       connections: inputNodes,
       assets: db.assets,
     })
+    const inputBindings = (input.inputBindings ?? [])
+      .filter((binding) => input.inputNodeIds.includes(binding.sourceNodeId))
+      .map((binding) => ({ ...binding }))
     const inheritedNegativePrompt =
       inputTasks
         .map((task) => nonEmptyString(task.negativePrompt))
@@ -4632,6 +4636,7 @@ export const canvasApi = {
         message: input.message ?? '点击下方编辑面板调整参数后运行',
         ...(explicitPrompt ? { prompt: explicitPrompt } : {}),
         promptDocument,
+        ...(inputBindings.length > 0 ? { inputBindings } : {}),
         ...(systemPrompt ? { systemPrompt } : {}),
         ...(negativePrompt ? { negativePrompt } : {}),
         ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
@@ -4687,6 +4692,7 @@ export const canvasApi = {
       shotScriptConfig: input.shotScriptConfig ?? null,
       runtimeEvents: initialCanvasTaskRuntimeEvents(at, '操作节点草稿创建'),
       promptDocument,
+      ...(inputBindings.length > 0 ? { inputBindings } : {}),
       ...(systemPrompt ? { systemPrompt } : {}),
       createdAt: at,
       updatedAt: at,
@@ -4812,9 +4818,7 @@ export const canvasApi = {
       ...(retryAgentId ? { agentId: retryAgentId } : {}),
       ...(retryReasoningEffort ? { reasoningEffort: retryReasoningEffort } : {}),
       ...(retrySkillIds.length > 0 ? { skillIds: retrySkillIds } : {}),
-      ...(resolvedRetryTaskPipelineRole
-        ? { taskPipelineRole: resolvedRetryTaskPipelineRole }
-        : {}),
+      ...(resolvedRetryTaskPipelineRole ? { taskPipelineRole: resolvedRetryTaskPipelineRole } : {}),
       ...(retryOutputPipelineRole ? { outputPipelineRole: retryOutputPipelineRole } : {}),
       ...(retryShotScriptConfig ? { shotScriptConfig: retryShotScriptConfig } : {}),
       ...(oldTask.title ? { taskTitle: oldTask.title } : {}),
@@ -4911,8 +4915,7 @@ export const canvasApi = {
       ...(inputAssetIds.length > 0 ? { inputAssetIds } : {}),
       ...(params.inputFiles ? { inputFiles: params.inputFiles } : {}),
       outputPlacement: { x: baseX, y: node.y },
-      taskTitle:
-        node.title ?? operationLabel(operation),
+      taskTitle: node.title ?? operationLabel(operation),
       ...(taskPipelineRole ? { taskPipelineRole } : {}),
       ...(node.data.outputPipelineRole ? { outputPipelineRole: node.data.outputPipelineRole } : {}),
       ...(node.data.outputTitle ? { outputTitle: node.data.outputTitle } : {}),
@@ -4922,9 +4925,7 @@ export const canvasApi = {
       ...(params.modelId ? { modelId: params.modelId } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(Object.keys(modelParams).length > 0 ? { modelParams } : {}),
-      ...(params.skipParameterValidation === true
-        ? { skipParameterValidation: true }
-        : {}),
+      ...(params.skipParameterValidation === true ? { skipParameterValidation: true } : {}),
       ...(params.skillIds ? { skillIds: params.skillIds } : {}),
       ...(params.shotScriptConfig ? { shotScriptConfig: params.shotScriptConfig } : {}),
       ...pickCanvasPromptTaskFields(params),
@@ -5104,11 +5105,7 @@ export const canvasApi = {
     const requestPrompt = request.promptDocument
       ? request.prompt
       : buildCanvasOperationPrompt(request.operation, requestPromptWithContext)
-    if (
-      requestPrompt != null &&
-      request.promptDocument == null &&
-      options?.bindToNodeId == null
-    ) {
+    if (requestPrompt != null && request.promptDocument == null && options?.bindToNodeId == null) {
       taskNodeData.prompt = requestPrompt
     }
     if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
@@ -5126,8 +5123,7 @@ export const canvasApi = {
     if (request.outputPipelineRole != null)
       taskNodeData.outputPipelineRole = request.outputPipelineRole
     if (request.outputTitle != null) taskNodeData.outputTitle = request.outputTitle
-    if (request.shotScriptConfig != null)
-      taskNodeData.shotScriptConfig = request.shotScriptConfig
+    if (request.shotScriptConfig != null) taskNodeData.shotScriptConfig = request.shotScriptConfig
     const defaultTaskTitle =
       request.taskTitle ??
       defaultCanvasNodeTitle(
@@ -5250,9 +5246,7 @@ export const canvasApi = {
       ...(request.manifestId != null ? { manifestId: request.manifestId } : {}),
       ...(request.modelId != null ? { modelId: request.modelId } : {}),
       ...(request.modelParams != null ? { modelParams: request.modelParams } : {}),
-      ...(request.skipParameterValidation === true
-        ? { skipParameterValidation: true }
-        : {}),
+      ...(request.skipParameterValidation === true ? { skipParameterValidation: true } : {}),
       ...pickCanvasPromptTaskFields(request),
       outputDir: `${project.rootPath}/assets`,
       waitForCompletion: false,
@@ -5327,11 +5321,7 @@ export const canvasApi = {
     const requestPrompt = request.promptDocument
       ? request.prompt
       : buildCanvasOperationPrompt(request.operation, request.prompt)
-    if (
-      requestPrompt != null &&
-      request.promptDocument == null &&
-      options?.bindToNodeId == null
-    ) {
+    if (requestPrompt != null && request.promptDocument == null && options?.bindToNodeId == null) {
       taskNodeData.prompt = requestPrompt
     }
     if (request.promptDocument != null) taskNodeData.promptDocument = request.promptDocument
@@ -5341,8 +5331,7 @@ export const canvasApi = {
     if (request.outputPipelineRole != null)
       taskNodeData.outputPipelineRole = request.outputPipelineRole
     if (request.outputTitle != null) taskNodeData.outputTitle = request.outputTitle
-    if (request.shotScriptConfig != null)
-      taskNodeData.shotScriptConfig = request.shotScriptConfig
+    if (request.shotScriptConfig != null) taskNodeData.shotScriptConfig = request.shotScriptConfig
     if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
     const defaultTaskTitle =
       request.taskTitle ??
@@ -5555,7 +5544,9 @@ export const canvasApi = {
     }
 
     const outputRole = task.outputPipelineRole ?? taskNode.data.outputPipelineRole
-    const semanticValidation = validateCanvasSemanticTextOutput(outputRole, response.text)
+    const semanticValidation = validateCanvasSemanticTextOutput(outputRole, response.text, {
+      shotScriptConfig: task.shotScriptConfig ?? taskNode.data.shotScriptConfig ?? null,
+    })
     if (!semanticValidation.ok) {
       const at = now()
       task.status = 'failed'
@@ -5593,6 +5584,7 @@ export const canvasApi = {
     }
 
     const outputText = semanticValidation.text
+    let materializedShotGroups: ShotGroup[] = []
     if (outputRole === 'shot' && semanticValidation.storyboardRows?.length) {
       const project = db.projects.find((item) => item.id === projectId)
       if (project) {
@@ -5604,6 +5596,7 @@ export const canvasApi = {
         })
         project.metadata = materialized.metadata
         project.updatedAt = now()
+        materializedShotGroups = materialized.createdGroups
       }
     }
 
@@ -5639,6 +5632,10 @@ export const canvasApi = {
       height: taskNode.height,
     })
     const resultNodeSize = pickTextNodeSize(outputText)
+    const materializedShotGroup =
+      materializedShotGroups.length === 1 ? materializedShotGroups[0] : undefined
+    const materializedShotSegment =
+      materializedShotGroup?.segments.length === 1 ? materializedShotGroup.segments[0] : undefined
     const resultNodePlacement = resolveCollisionFreeNodePosition({
       preferred: preferredResultNodePlacement,
       size: resultNodeSize,
@@ -5660,6 +5657,8 @@ export const canvasApi = {
         format: 'markdown',
         origin: 'task_output',
         ...(outputRole ? { pipelineRole: outputRole } : {}),
+        ...(materializedShotGroup ? { shotGroupId: materializedShotGroup.id } : {}),
+        ...(materializedShotSegment ? { shotSegmentId: materializedShotSegment.id } : {}),
       },
       at,
     })

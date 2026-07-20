@@ -15,6 +15,7 @@ const STORYBOARD_COLUMNS: Array<{
   { label: '场次', read: (row) => row.groupName ?? '' },
   { label: '场景名', read: (row) => row.sceneName ?? '' },
   { label: '场景描述', read: (row) => row.sceneLayout ?? '' },
+  { label: '构图', read: (row) => row.composition ?? '' },
   { label: '站位调度', read: (row) => row.blocking ?? '' },
   { label: '光照', read: (row) => row.lighting ?? '' },
   { label: '镜头参数', read: (row) => row.cameraParams ?? '' },
@@ -29,6 +30,13 @@ const STORYBOARD_COLUMNS: Array<{
   { label: '对白', read: (row) => row.dialogue ?? '' },
   { label: '旁白', read: (row) => row.narration ?? '' },
   { label: '角色', read: (row) => row.characterNames?.join('、') ?? '' },
+  { label: '角色参考', read: (row) => row.characterReferences ?? '' },
+  { label: '动作节拍', read: (row) => row.actionBeats ?? '' },
+  { label: '音效', read: (row) => row.soundEffects ?? '' },
+  { label: '转场', read: (row) => row.transition ?? '' },
+  { label: '首帧', read: (row) => row.firstFrame ?? '' },
+  { label: '尾帧', read: (row) => row.lastFrame ?? '' },
+  { label: '连续性', read: (row) => row.continuity ?? '' },
   { label: '生成提示词', read: (row) => row.shotPrompt ?? '' },
   { label: '反向提示词', read: (row) => row.negativePrompt ?? '' },
 ]
@@ -70,12 +78,7 @@ export function updateStoryboardCameraParams(
 ): ParsedShotRow[] {
   return rows.map((row, rowIndex) => {
     if (rowIndex !== index) return row
-    const {
-      focalLength: _focalLength,
-      aperture: _aperture,
-      iso: _iso,
-      ...rest
-    } = row
+    const { focalLength: _focalLength, aperture: _aperture, iso: _iso, ...rest } = row
     return { ...rest, cameraParams }
   })
 }
@@ -118,6 +121,7 @@ function legacyStoryboardMatchScore(current: ParsedShotRow, candidate: ParsedSho
 
   const recoverableDetails = [
     candidate.sceneLayout,
+    candidate.composition,
     candidate.focalLength,
     candidate.aperture,
     candidate.iso,
@@ -125,6 +129,13 @@ function legacyStoryboardMatchScore(current: ParsedShotRow, candidate: ParsedSho
     candidate.mood,
     candidate.performance,
     candidate.costume,
+    candidate.characterReferences,
+    candidate.actionBeats,
+    candidate.soundEffects,
+    candidate.transition,
+    candidate.firstFrame,
+    candidate.lastFrame,
+    candidate.continuity,
     candidate.shotPrompt,
     candidate.negativePrompt,
   ].filter((value) => value?.trim()).length
@@ -133,10 +144,7 @@ function legacyStoryboardMatchScore(current: ParsedShotRow, candidate: ParsedSho
   return (descriptionMatches ? 100 : 0) + (titleMatches ? 30 : 0) + supportingMatches * 10
 }
 
-function mergeLegacyStoryboardRow(
-  current: ParsedShotRow,
-  candidate: ParsedShotRow,
-): ParsedShotRow {
+function mergeLegacyStoryboardRow(current: ParsedShotRow, candidate: ParsedShotRow): ParsedShotRow {
   return {
     ...candidate,
     title: current.title || candidate.title,

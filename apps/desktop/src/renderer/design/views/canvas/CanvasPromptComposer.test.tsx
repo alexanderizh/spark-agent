@@ -121,6 +121,7 @@ async function mountComposer(
   initialDocument: CanvasPromptDocument,
   nodes: CanvasNode[] = [imageNode()],
   assets: CanvasAsset[] = [asset],
+  onRequestCanvasNodePick?: (onPick: (node: CanvasNode) => void) => void,
 ) {
   const container = window.document.createElement('div')
   window.document.body.appendChild(container)
@@ -139,6 +140,7 @@ async function mountComposer(
         assets={assets}
         placeholder="输入提示词"
         onChange={setDocument}
+        {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
         onEditorReady={(nextEditor) => {
           editor = nextEditor
         }}
@@ -460,6 +462,55 @@ describe('CanvasPromptComposer', () => {
     expect(mentionMenu?.style.position).toBe('fixed')
   })
 
+  it('keeps the @ query when canvas picking is cancelled and replaces it after a pick', async () => {
+    let completePick: ((node: CanvasNode) => void) | null = null
+    const mounted = await mountComposer(
+      { version: 2, blocks: [] },
+      [imageNode()],
+      [asset],
+      (onPick) => {
+        completePick = onPick
+      },
+    )
+
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('@小满')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+
+    const pickButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.includes('从画布点选节点'),
+    )
+    expect(pickButton).toBeDefined()
+    await act(async () => pickButton?.click())
+    await flushEditor()
+
+    expect(completePick).not.toBeNull()
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ kind: 'text', text: '@小满' }),
+    )
+
+    await act(async () => completePick?.(imageNode()))
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({ kind: 'reference', sourceNodeId: 'hero', label: '小满' }),
+    )
+    expect(
+      mounted
+        .getDocument()
+        .blocks.some((block) => block.kind === 'text' && block.text.includes('@小满')),
+    ).toBe(false)
+  })
+
   it('opens @ suggestions without requiring whitespace before the trigger', async () => {
     const mounted = await mountComposer({ version: 2, blocks: [] })
     await act(async () => {
@@ -597,6 +648,48 @@ describe('CanvasPromptComposer', () => {
     await flushEditor()
     expect(mounted.getDocument().blocks).toContainEqual(
       expect.objectContaining({ kind: 'reference', sourceNodeId: 'hero', label: '小满' }),
+    )
+  })
+
+  it('starts canvas pick mode from @ and inserts the clicked node at the query position', async () => {
+    let pickFromCanvas: ((node: CanvasNode) => void) | null = null
+    const source = textNode()
+    const mounted = await mountComposer({ version: 2, blocks: [] }, [source], [], (onPick) => {
+      pickFromCanvas = onPick
+    })
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('引用：@分镜')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+
+    const canvasPickButton = document.querySelector<HTMLButtonElement>(
+      '.canvas-prompt-insert-canvas-pick',
+    )
+    expect(canvasPickButton).not.toBeNull()
+    await act(async () => canvasPickButton?.click())
+    await flushEditor()
+    expect(document.querySelector('.canvas-prompt-insert-menu')).toBeNull()
+    expect(pickFromCanvas).not.toBeNull()
+
+    await act(async () => pickFromCanvas?.(source))
+    await flushEditor()
+    expect(mounted.getDocument().blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'text', text: '引用：' }),
+        expect.objectContaining({ kind: 'reference', sourceNodeId: 'storyboard', label: '分镜表' }),
+      ]),
+    )
+    expect(mounted.getDocument().blocks).not.toContainEqual(
+      expect.objectContaining({ kind: 'text', text: expect.stringContaining('@分镜') }),
     )
   })
 

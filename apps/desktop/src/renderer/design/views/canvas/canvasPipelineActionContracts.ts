@@ -4,13 +4,10 @@ import {
   DEFAULT_MAX_CLIP_SEC,
   type AgentPresetContext,
 } from './canvasAgentPromptPresets'
-import type {
-  CanvasOperationType,
-  CanvasPipelineRole,
-  ShotScriptConfig,
-} from './canvas.types'
+import type { CanvasOperationType, CanvasPipelineRole, ShotScriptConfig } from './canvas.types'
 import { buildChapterToScreenplayInstruction } from './canvasWorkspaceFilm'
 import { SCENE_NO_PEOPLE_PROMPT } from './canvasScenePrompt'
+import { stripCanvasFunctionalPromptInput } from './canvasPromptInitialization'
 
 export type CanvasPipelineOperationDraft = {
   operation: CanvasOperationType
@@ -52,7 +49,8 @@ function buildJsonOnlyStoryboardPrompt(context: AgentPresetContext): string {
   )
   const tableStart = withoutTableInstruction.indexOf('随后输出兼容导入器的 Markdown 表格')
   const qualityStart = withoutTableInstruction.indexOf('【质量要求（务必遵守）】')
-  if (tableStart < 0 || qualityStart < 0 || qualityStart <= tableStart) return withoutTableInstruction
+  if (tableStart < 0 || qualityStart < 0 || qualityStart <= tableStart)
+    return withoutTableInstruction
   return `${withoutTableInstruction.slice(0, tableStart)}${withoutTableInstruction.slice(qualityStart)}`
 }
 
@@ -93,11 +91,14 @@ export function buildCanvasPipelineOperationDraft(
       return {
         operation: 'text_generate',
         title: '生成分镜脚本',
-        systemPrompt: buildJsonOnlyStoryboardPrompt({
-          upstreamText: input.sourceText,
-          maxClipSec,
-          ...(input.styleBible ? { styleBible: input.styleBible } : {}),
-        }),
+        systemPrompt: stripCanvasFunctionalPromptInput(
+          buildJsonOnlyStoryboardPrompt({
+            upstreamText: input.sourceText,
+            maxClipSec,
+            ...(input.styleBible ? { styleBible: input.styleBible } : {}),
+          }),
+          'screenplay.to_shot_script',
+        ),
         message: '确认分镜脚本 Prompt、Agent 与模型后点击开始任务',
         taskPipelineRole: 'shot',
         outputPipelineRole: 'shot',

@@ -72,10 +72,55 @@ describe('canvasShotSplit', () => {
       }
     })
 
+    it('继承静态分镜控制，但不复制已失效的父镜时间轴', () => {
+      const parts = planSegmentSplit(
+        makeSegment({
+          composition: '主体落在右上交点',
+          blocking: '人物距镜头 220cm',
+          lighting: '主辅光比 4:1',
+          characterReferences: '林岚=雨夜造型图',
+          continuity: '保持右手持剑',
+          negativePrompt: '手指畸形',
+          actionBeats: '0.0–0.5s：拔剑',
+          soundEffects: '0.5s：剑鸣',
+          transition: '入：硬切；出：硬切',
+          firstFrame: '剑未出鞘',
+          lastFrame: '剑尖向前',
+        }),
+        { maxClipSec: 5 },
+      )
+
+      for (const part of parts) {
+        expect(part.composition).toBe('主体落在右上交点')
+        expect(part.blocking).toBe('人物距镜头 220cm')
+        expect(part.lighting).toBe('主辅光比 4:1')
+        expect(part.continuity).toBe('保持右手持剑')
+        expect(part.actionBeats).toBeUndefined()
+        expect(part.soundEffects).toBeUndefined()
+        expect(part.transition).toBeUndefined()
+      }
+      expect(parts[0]?.firstFrame).toBe('剑未出鞘')
+      expect(parts[0]?.lastFrame).toBeUndefined()
+      expect(parts.at(-1)?.firstFrame).toBeUndefined()
+      expect(parts.at(-1)?.lastFrame).toBe('剑尖向前')
+    })
+
     it('短于上限不拆，返回单段', () => {
-      const parts = planSegmentSplit(makeSegment({ durationSec: 4, outSec: 4 }), { maxClipSec: 5 })
+      const parts = planSegmentSplit(
+        makeSegment({
+          durationSec: 4,
+          outSec: 4,
+          actionBeats: '0.0–4.0s：完整动作',
+          firstFrame: '起始帧',
+          lastFrame: '结束帧',
+        }),
+        { maxClipSec: 5 },
+      )
       expect(parts).toHaveLength(1)
       expect(parts[0]!.title).toBe('镜1')
+      expect(parts[0]!.actionBeats).toBe('0.0–4.0s：完整动作')
+      expect(parts[0]!.firstFrame).toBe('起始帧')
+      expect(parts[0]!.lastFrame).toBe('结束帧')
     })
 
     it('未知时长用上限兜底每段时长', () => {

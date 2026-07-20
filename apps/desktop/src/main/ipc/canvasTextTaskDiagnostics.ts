@@ -89,26 +89,32 @@ export function resolveCanvasTextTokenBudget(input: {
   providerSupportsMillionContext?: boolean | undefined
   taskPipelineRole?: string | null | undefined
   prompt: string
+  /** Hidden capability/agent instructions also consume the provider context window. */
+  systemPrompt?: string | undefined
 }): CanvasTextTokenBudget {
   const requestedValue = sanitizePositiveInteger(input.requestedMaxTokens)
-  const requested = requestedValue == null
-    ? undefined
-    : Math.min(
-        CANVAS_TEXT_OUTPUT_TIERS.explicitMaximum,
-        Math.max(CANVAS_TEXT_OUTPUT_TIERS.minimum, requestedValue),
-      )
+  const requested =
+    requestedValue == null
+      ? undefined
+      : Math.min(
+          CANVAS_TEXT_OUTPUT_TIERS.explicitMaximum,
+          Math.max(CANVAS_TEXT_OUTPUT_TIERS.minimum, requestedValue),
+        )
   const providerMaxTokens = sanitizePositiveInteger(input.providerMaxTokens)
   const learnedMaxTokens = sanitizePositiveInteger(input.learnedMaxTokens)
   const configuredContextWindow = sanitizePositiveInteger(input.providerContextWindow)
-  const providerContextWindow = configuredContextWindow
-    ?? (input.providerSupportsMillionContext === true
+  const providerContextWindow =
+    configuredContextWindow ??
+    (input.providerSupportsMillionContext === true
       ? resolveProviderContextWindow(true)
       : input.modelId?.trim()
         ? resolveModelContextWindow(input.modelId)
         : resolveProviderContextWindow())
-  const promptTokensEstimate = estimatePromptTokens(input.prompt)
-  const desiredMaxTokens = requested
-    ?? resolveTaskDefaultMaxTokens(input.operation, input.taskPipelineRole)
+  const promptTokensEstimate = estimatePromptTokens(
+    [input.systemPrompt?.trim(), input.prompt.trim()].filter(Boolean).join('\n\n'),
+  )
+  const desiredMaxTokens =
+    requested ?? resolveTaskDefaultMaxTokens(input.operation, input.taskPipelineRole)
   const remainingContextTokens =
     providerContextWindow - promptTokensEstimate - CANVAS_TEXT_CONTEXT_SAFETY_TOKENS
   if (remainingContextTokens <= 0) {
@@ -165,9 +171,7 @@ export function buildCanvasTextRawResponse(
     ...(input.errorBody !== undefined ? { errorBody: input.errorBody } : {}),
     ...(input.outputText !== undefined ? { outputText: input.outputText } : {}),
     ...(input.effectiveMaxTokens !== undefined ? { maxTokens: input.effectiveMaxTokens } : {}),
-    ...(input.desiredMaxTokens !== undefined
-      ? { desiredMaxTokens: input.desiredMaxTokens }
-      : {}),
+    ...(input.desiredMaxTokens !== undefined ? { desiredMaxTokens: input.desiredMaxTokens } : {}),
     ...(input.maxTokensSource !== undefined ? { maxTokensSource: input.maxTokensSource } : {}),
     ...(input.promptTokensEstimate !== undefined
       ? { promptTokensEstimate: input.promptTokensEstimate }
@@ -186,9 +190,7 @@ export function buildCanvasTextRawResponse(
     ...(input.contextSafetyTokens !== undefined
       ? { contextSafetyTokens: input.contextSafetyTokens }
       : {}),
-    ...(input.learnedOutputCap !== undefined
-      ? { learnedOutputCap: input.learnedOutputCap }
-      : {}),
+    ...(input.learnedOutputCap !== undefined ? { learnedOutputCap: input.learnedOutputCap } : {}),
     ...(input.outputLimitRetryCount !== undefined
       ? { outputLimitRetryCount: input.outputLimitRetryCount }
       : {}),

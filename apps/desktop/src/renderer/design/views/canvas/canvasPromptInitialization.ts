@@ -3,14 +3,6 @@ import type { CanvasAsset, CanvasNode } from './canvas.types'
 import { ensureConnectionReferences } from './canvasPromptConnections'
 import { migrateLegacyPrompt } from './canvasPromptDocument'
 
-export function isCanvasPromptMediaNode(node: CanvasNode): boolean {
-  return node.type === 'image' || node.type === 'video' || node.type === 'audio'
-}
-
-export function isCanvasPromptInlineNode(node: CanvasNode): boolean {
-  return !isCanvasPromptMediaNode(node)
-}
-
 export function stripCanvasFunctionalPromptInput(prompt: string, presetTargetId: string): string {
   const marker =
     presetTargetId === 'screenplay.to_shot_script'
@@ -61,18 +53,12 @@ export function normalizeCanvasFunctionalSystemPrompt(
   const value = prompt?.trim() ?? ''
   if (!value) return ''
   const markers = FUNCTIONAL_PROMPT_START_MARKERS[presetTargetId] ?? []
-  const markerIndexes = markers
-    .map((marker) => value.indexOf(marker))
-    .filter((index) => index >= 0)
+  const markerIndexes = markers.map((marker) => value.indexOf(marker)).filter((index) => index >= 0)
   if (markerIndexes.length === 0) return value
   return value.slice(Math.min(...markerIndexes)).trim()
 }
 
-/**
- * Canonical editor initialization. Media inputs intentionally stay out of the
- * visible document: the media selector represents them, and the submission
- * compiler adds them back to the executable document.
- */
+/** Canonical editor initialization for text and media connection tags. */
 export function buildCanvasVisiblePromptDocument(input: {
   document?: CanvasPromptDocument
   prompt: string
@@ -84,24 +70,16 @@ export function buildCanvasVisiblePromptDocument(input: {
   const source =
     input.document ??
     migrateLegacyPrompt({ prompt: input.prompt, nodes: input.nodes, assets: input.assets })
-  const inlineConnections = input.connections.filter(isCanvasPromptInlineNode)
-  const mediaConnectionIds = new Set(
-    input.connections.filter(isCanvasPromptMediaNode).map((node) => node.id),
-  )
   const visible: CanvasPromptDocument = {
     version: 2,
     blocks: source.blocks
       .filter((block) => {
         if (input.hideText && block.kind === 'text') return false
-        return !(
-          block.kind === 'reference' &&
-          block.source === 'connection' &&
-          mediaConnectionIds.has(block.sourceNodeId)
-        )
+        return true
       })
       .map((block) => ({ ...block })),
   }
-  return ensureConnectionReferences(visible, inlineConnections)
+  return ensureConnectionReferences(visible, input.connections)
 }
 
 /** Add selected inputs to the executable document without exposing them in the editor. */

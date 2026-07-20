@@ -30,7 +30,7 @@ const snapshot = (): CanvasSnapshot => ({
 })
 
 describe('canvasPromptSubmission', () => {
-  it('keeps media inputs out of the visible editor document', () => {
+  it('keeps media inputs visible as tags in the editor document', () => {
     const document = buildCanvasPromptDocumentForInputs({
       prompt: '保持人物一致',
       nodes: [imageNode()],
@@ -38,10 +38,17 @@ describe('canvasPromptSubmission', () => {
     })
     expect(document.blocks).toEqual([
       { kind: 'text', id: expect.any(String), text: '保持人物一致' },
+      expect.objectContaining({
+        kind: 'reference',
+        source: 'connection',
+        sourceNodeId: 'hero',
+        relation: 'reference_image',
+      }),
+      { kind: 'text', id: expect.any(String), text: '' },
     ])
   })
 
-  it('injects a media-selector input into the executable request without exposing its tag', async () => {
+  it('compiles a visible media tag into the executable request', async () => {
     const document = buildCanvasPromptDocumentForInputs({
       prompt: '保持人物一致',
       nodes: [imageNode()],

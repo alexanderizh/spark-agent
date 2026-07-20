@@ -3866,6 +3866,16 @@ export function registerAllIpcHandlers(): void {
           providerSupportsMillionContext: candidate.supportsMillionContext,
           taskPipelineRole: req.taskPipelineRole,
           prompt: runtimeRequest.prompt,
+          systemPrompt: [
+            agent?.prompt,
+            runtimeRequest.system,
+            ...(req.skillIds ?? []).map((skillId) =>
+              getSkillService().buildSkillSystemPrompt(skillId),
+            ),
+            req.negativePrompt,
+          ]
+            .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+            .join('\n\n'),
         })
         canvasTaskLogger.info(
           `canvas:task:generate-text budget, projectId=${req.projectId ?? '(n/a)'} clientTaskId=${req.clientTaskId ?? '(n/a)'} model=${model} desired=${tokenBudget.desiredMaxTokens ?? '(n/a)'} maxTokens=${tokenBudget.maxTokens ?? '(provider-default)'} source=${tokenBudget.source ?? 'unset'} contextWindow=${tokenBudget.contextWindow ?? '(n/a)'} contextRemaining=${tokenBudget.remainingContextTokens ?? '(n/a)'} safety=${tokenBudget.contextSafetyTokens ?? '(n/a)'} providerMax=${tokenBudget.providerMaxTokens ?? '(n/a)'} promptEstimate=${tokenBudget.promptTokensEstimate ?? '(n/a)'} timeoutMs=${requestTimeoutMs} executionPath=session-runtime adapter=${executionAdapter}`,
@@ -3875,7 +3885,7 @@ export function registerAllIpcHandlers(): void {
           apiKind: executionAdapter,
           executionPath: 'session-runtime',
           adapter: executionAdapter,
-          systemPromptChars: 0,
+          systemPromptChars: runtimeRequest.system.length,
           userPromptChars: runtimeRequest.prompt.length,
           ...(tokenBudget.maxTokens != null ? { maxTokens: tokenBudget.maxTokens } : {}),
           ...(tokenBudget.source != null ? { maxTokensSource: tokenBudget.source } : {}),
@@ -3998,6 +4008,9 @@ export function registerAllIpcHandlers(): void {
         providerSupportsMillionContext: chosen.profile.supportsMillionContext,
         taskPipelineRole: req.taskPipelineRole,
         prompt: runtimeRequest.prompt,
+        systemPrompt: [baseSystem, runtimeRequest.system, ...skillPrompts]
+          .filter(Boolean)
+          .join('\n\n'),
       })
       const maxTokens = tokenBudget.maxTokens
       const outputBudgetInstruction = buildCanvasTextOutputBudgetInstruction(

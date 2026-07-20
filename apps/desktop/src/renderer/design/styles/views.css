@@ -2626,6 +2626,7 @@ body.sidebar-resizing {
 }
 .diff-line.add {
   background: var(--diff-add-bg);
+  box-shadow: inset 3px 0 0 0 var(--diff-add-bar);
 }
 .diff-line.add .code {
   color: var(--diff-add-fg);
@@ -2634,10 +2635,13 @@ body.sidebar-resizing {
   content: '+';
   color: var(--diff-add-fg);
   margin-right: 8px;
-  opacity: 0.7;
+  display: inline-block;
+  width: 12px;
+  font-weight: 600;
 }
 .diff-line.del {
   background: var(--diff-del-bg);
+  box-shadow: inset 3px 0 0 0 var(--diff-del-bar);
 }
 .diff-line.del .code {
   color: var(--diff-del-fg);
@@ -2646,7 +2650,9 @@ body.sidebar-resizing {
   content: '−';
   color: var(--diff-del-fg);
   margin-right: 8px;
-  opacity: 0.7;
+  display: inline-block;
+  width: 12px;
+  font-weight: 600;
 }
 .diff-line.ctx .code::before {
   content: ' ';

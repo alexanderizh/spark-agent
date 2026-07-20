@@ -130,6 +130,8 @@ export type ShotSegment = {
   movement?: string
   /** 场景空间布局与前中后景关系 */
   sceneLayout?: string
+  /** 九宫格、视觉中心与画面分割 */
+  composition?: string
   /** 人物站位、朝向和走位 */
   blocking?: string
   /** 光源、方向、色温和明暗关系 */
@@ -148,6 +150,20 @@ export type ShotSegment = {
   microExpression?: string
   /** 服装与造型连续性 */
   costume?: string
+  /** 角色图 / 角色资产参考与本镜造型状态 */
+  characterReferences?: string
+  /** 0.5s 精度的动作节拍 */
+  actionBeats?: string
+  /** 环境声、拟音、音乐等声音设计 */
+  soundEffects?: string
+  /** 入镜 / 出镜剪辑与转场标识 */
+  transition?: string
+  /** 镜头 0.0s 首帧描述 */
+  firstFrame?: string
+  /** 镜头末尾帧描述 */
+  lastFrame?: string
+  /** 轴线、道具、光向等镜间连续性约束 */
+  continuity?: string
   /** 该镜专属反向提示词 */
   negativePrompt?: string
   /** 关联的画布节点 id（生成的 task/image 节点） */

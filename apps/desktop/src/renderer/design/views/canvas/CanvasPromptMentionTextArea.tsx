@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CanvasPromptDocument } from '@spark/protocol'
 import { CanvasPromptComposer } from './CanvasPromptComposer'
+import type { CanvasPromptCanvasNodePickHandler } from './CanvasPromptComposer'
 import type { CanvasAsset, CanvasNode } from './canvas.types'
 import { migrateLegacyPrompt, toCanvasPromptLegacyText } from './canvasPromptDocument'
 import { ensureConnectionReferences, reconcilePromptConnections } from './canvasPromptConnections'
@@ -17,6 +18,7 @@ export function CanvasPromptMentionTextArea({
   assets,
   onChange,
   onMentionSelect,
+  onRequestCanvasNodePick,
   onDocumentChange,
 }: {
   value: string
@@ -30,14 +32,16 @@ export function CanvasPromptMentionTextArea({
   assets?: CanvasAsset[]
   onChange: (value: string) => void
   onMentionSelect?: (node: CanvasNode, marker: string) => boolean | void
+  onRequestCanvasNodePick?: CanvasPromptCanvasNodePickHandler
   onDocumentChange?: (document: CanvasPromptDocument) => void
 }) {
   const nodes = useMemo(() => mentionNodes ?? [], [mentionNodes])
   const connections = useMemo(() => connectionNodes ?? [], [connectionNodes])
   const promptAssets = useMemo(() => assets ?? [], [assets])
   const emittedValueRef = useRef(value)
-  const [document, setDocument] = useState<CanvasPromptDocument>(() =>
-    controlledDocument ??
+  const [document, setDocument] = useState<CanvasPromptDocument>(
+    () =>
+      controlledDocument ??
       ensureConnectionReferences(
         migrateLegacyPrompt({ prompt: value, nodes, assets: promptAssets }),
         connections,
@@ -119,6 +123,7 @@ export function CanvasPromptMentionTextArea({
       {...(className != null ? { className } : {})}
       onChange={handleChange}
       onMentionSelect={(node, relation) => onMentionSelect?.(node, relation)}
+      {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
     />
   )
 }

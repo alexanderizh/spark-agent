@@ -1,6 +1,51 @@
 import { describe, expect, it } from 'vitest'
 import { validateCanvasSemanticTextOutput } from './canvasTextOutputValidation'
 
+function actionBeats(durationSec: number): string {
+  return Array.from({ length: durationSec * 2 }, (_, index) => {
+    const start = index / 2
+    const end = start + 0.5
+    return `${start.toFixed(1)}–${end.toFixed(1)}s：主体动作与镜头变化`
+  }).join('；')
+}
+
+function cinematicShot(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const durationSec = typeof overrides.durationSec === 'number' ? overrides.durationSec : 1
+  return {
+    index: 1,
+    title: '雨夜进入茶馆',
+    durationSec,
+    shotSize: '全景',
+    angle: '机位高 150cm，平视客观视角',
+    movement: '固定机位，稳定拍摄',
+    description: '林岚推门进入茶馆。',
+    lighting: '主光 4300K，辅光 3200K，光比 4:1',
+    composition: '九宫格右侧落点，前中后景比例 2:5:3',
+    blocking: '林岚距镜头 300cm，距门 20cm',
+    actionBeats: actionBeats(durationSec),
+    transition: '入：硬切；出：动作匹配硬切',
+    firstFrame: '0.0s，林岚位于门外，右手贴近门把手。',
+    lastFrame: '镜末，林岚站在门内，视线朝画左。',
+    continuity: '保持人物身份、光向、视线和门把手手位。',
+    shotPrompt: '雨夜茶馆全景，林岚稳定入画，真实物理运动。',
+    negativePrompt: '错误角色、畸形手指、文字水印、画面闪烁。',
+    ...overrides,
+  }
+}
+
+function storyboard(shots: Record<string, unknown>[]): string {
+  return JSON.stringify({
+    shots,
+    summary: {
+      shotCount: shots.length,
+      totalDurationSec: shots.reduce(
+        (total, shot) => total + (typeof shot.durationSec === 'number' ? shot.durationSec : 0),
+        0,
+      ),
+    },
+  })
+}
+
 describe('canvas semantic text output validation', () => {
   it('rejects arbitrary prose as a screenplay result', () => {
     expect(validateCanvasSemanticTextOutput('screenplay', '这是一个故事梗概。')).toMatchObject({
@@ -22,23 +67,11 @@ describe('canvas semantic text output validation', () => {
   it('normalizes valid storyboard JSON to the existing markdown presentation', () => {
     const result = validateCanvasSemanticTextOutput(
       'shot',
-      JSON.stringify({
-        shots: [
-          {
-            index: 1,
-            title: '雨夜进入茶馆',
-            durationSec: 4,
-            shotSize: '全景',
-            angle: '平视',
-            movement: '缓慢推进',
-            description: '林岚推门进入茶馆。',
-            characters: ['林岚'],
-            shotPrompt: '雨夜茶馆全景',
-            negativePrompt: '文字水印',
-          },
-        ],
-        summary: { shotCount: 1, totalDurationSec: 4 },
-      }),
+      storyboard([
+        cinematicShot({
+          characters: ['林岚'],
+        }),
+      ]),
     )
 
     expect(result).toMatchObject({ ok: true })
@@ -76,12 +109,43 @@ describe('canvas semantic text output validation', () => {
   })
 
   it('accepts storyboard JSON serialized one extra time by an adapter', () => {
-    const serialized = JSON.stringify(
-      JSON.stringify({
-        shots: [{ index: 1, durationSec: 3, description: '苏烬抬头。' }],
-      }),
-    )
+    const serialized = JSON.stringify(storyboard([cinematicShot()]))
     expect(validateCanvasSemanticTextOutput('shot', serialized)).toMatchObject({ ok: true })
+  })
+
+  it('rejects truncated JSON even when complete shot prefixes can be recovered', () => {
+    const first = JSON.stringify(cinematicShot({ index: 1 }))
+    const second = JSON.stringify(cinematicShot({ index: 2 }))
+    const truncated = `{"shots":[${first},${second},{"index":3,"title":"未完成"`
+
+    expect(validateCanvasSemanticTextOutput('shot', truncated)).toMatchObject({
+      ok: false,
+      code: 'invalid_storyboard_output',
+      message: expect.stringContaining('截断'),
+    })
+  })
+
+  it('enforces max clip, 0.5s beats and summary consistency', () => {
+    expect(
+      validateCanvasSemanticTextOutput('shot', storyboard([cinematicShot({ durationSec: 4.5 })]), {
+        shotScriptConfig: { maxClipSec: 4 },
+      }),
+    ).toMatchObject({ ok: false, message: expect.stringContaining('超过') })
+
+    const invalidBeats = cinematicShot({ actionBeats: '0.0–0.5s：动作；1.0–1.5s：跳段' })
+    expect(validateCanvasSemanticTextOutput('shot', storyboard([invalidBeats]))).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('空洞'),
+    })
+
+    const mismatchedSummary = JSON.stringify({
+      shots: [cinematicShot()],
+      summary: { shotCount: 2, totalDurationSec: 1 },
+    })
+    expect(validateCanvasSemanticTextOutput('shot', mismatchedSummary)).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('疑似输出截断'),
+    })
   })
 
   it('validates every structured entity output role', () => {

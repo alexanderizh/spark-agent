@@ -102,6 +102,14 @@ describe('canvas agent tool schemas', () => {
 
     expect(schemas.canvas_create_screenplay_node).toBeDefined()
     expect(schemas.canvas_create_storyboard_node).toBeDefined()
+    expect(schemas.canvas_create_storyboard_node?.inputSchema).toHaveProperty(
+      'properties.shots.items.properties.actionBeats',
+    )
+    expect(schemas.canvas_create_storyboard_node?.inputSchema).toHaveProperty(
+      'properties.shots.items.properties.firstFrame',
+    )
+    expect(schemas.canvas_create_shot_segment?.inputSchema).toHaveProperty('properties.composition')
+    expect(schemas.canvas_create_shot_segment?.inputSchema).toHaveProperty('properties.continuity')
     expect(schemas.canvas_create_pipeline_operation_node).toBeDefined()
     expect(schemas.canvas_insert_keyframe_node).toBeDefined()
     expect(schemas.canvas_insert_clip_node).toBeDefined()
@@ -122,17 +130,21 @@ describe('canvas agent tool schemas', () => {
       { nodeId: 'screenplay-1' },
     )) as { actions: Array<{ id: string; toolRecipe?: unknown }> }
 
-    expect(result.actions.find((action) => action.id === 'screenplay.to_shot_script')).toMatchObject({
+    expect(
+      result.actions.find((action) => action.id === 'screenplay.to_shot_script'),
+    ).toMatchObject({
       toolRecipe: {
         toolName: 'canvas_create_pipeline_operation_node',
         arguments: { actionId: 'screenplay.to_shot_script', sourceNodeId: 'screenplay-1' },
       },
     })
-    expect(result.actions.find((action) => action.id === 'screenplay.extract_props')).toMatchObject({
-      toolRecipe: {
-        toolName: 'canvas_create_pipeline_operation_node',
-        arguments: { actionId: 'screenplay.extract_props', sourceNodeId: 'screenplay-1' },
+    expect(result.actions.find((action) => action.id === 'screenplay.extract_props')).toMatchObject(
+      {
+        toolRecipe: {
+          toolName: 'canvas_create_pipeline_operation_node',
+          arguments: { actionId: 'screenplay.extract_props', sourceNodeId: 'screenplay-1' },
+        },
       },
-    })
+    )
   })
 })

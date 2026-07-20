@@ -19,6 +19,7 @@ import type {
 import { Icons } from '../../Icons'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import { CanvasPromptHoverCard } from './CanvasPromptHoverCard'
+import { canvasNodeSecondaryLabel } from './canvasNodeSecondaryLabel'
 import { readCanvasTextInputContent } from './canvasTextInputPresentation'
 import type { CanvasAsset, CanvasNode } from './canvas.types'
 
@@ -208,6 +209,7 @@ function CanvasPromptAtomicDecorator({
   }
 
   const node = context.nodeById.get(block.sourceNodeId)
+  const asset = node?.assetId ? context.assetById.get(node.assetId) : undefined
   const label = block.kind === 'reference' ? block.label : block.summary
   const disconnected = block.kind === 'reference' && block.disconnected === true
   const invalid = !node || disconnected
@@ -217,6 +219,7 @@ function CanvasPromptAtomicDecorator({
     <span className="canvas-prompt-chip-icon">!</span>
   )
   const relation = block.kind === 'reference' ? block.relation : block.schema
+  const secondaryLabel = node ? canvasNodeSecondaryLabel(node, asset) : relation
   const media =
     !disconnected && node ? renderCanvasPromptNodeHoverMedia(node, context.assetById) : null
   const content = media
@@ -244,7 +247,7 @@ function CanvasPromptAtomicDecorator({
           <span className="canvas-prompt-chip-thumb">{thumbnail}</span>
           <span className="canvas-prompt-chip-copy">
             <strong>{label}</strong>
-            <small>{relation}</small>
+            <small title={secondaryLabel}>{secondaryLabel}</small>
           </span>
         </button>
       </CanvasPromptHoverCard>

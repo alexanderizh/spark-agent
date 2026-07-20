@@ -96,22 +96,26 @@ describe('canvasTextTaskDiagnostics', () => {
   })
 
   it('applies learned and low provider caps below the normal 16K floor', () => {
-    expect(resolveCanvasTextTokenBudget({
-      operation: 'text_generate',
-      taskPipelineRole: 'screenplay',
-      learnedMaxTokens: 8_192,
-      providerMaxTokens: 128_000,
-      prompt: '剧本',
-    })).toMatchObject({
+    expect(
+      resolveCanvasTextTokenBudget({
+        operation: 'text_generate',
+        taskPipelineRole: 'screenplay',
+        learnedMaxTokens: 8_192,
+        providerMaxTokens: 128_000,
+        prompt: '剧本',
+      }),
+    ).toMatchObject({
       maxTokens: 8_192,
       source: 'learned_model_cap',
     })
 
-    expect(resolveCanvasTextTokenBudget({
-      operation: 'text_generate',
-      providerMaxTokens: 4_096,
-      prompt: '旧模型',
-    })).toMatchObject({
+    expect(
+      resolveCanvasTextTokenBudget({
+        operation: 'text_generate',
+        providerMaxTokens: 4_096,
+        prompt: '旧模型',
+      }),
+    ).toMatchObject({
       maxTokens: 4_096,
       source: 'provider_profile',
     })
@@ -135,11 +139,13 @@ describe('canvasTextTaskDiagnostics', () => {
   })
 
   it('uses a fixed 16K safety buffer when the prompt consumes most of the context', () => {
-    expect(resolveCanvasTextTokenBudget({
-      operation: 'text_generate',
-      providerContextWindow: 100_000,
-      prompt: '文'.repeat(74_999),
-    })).toMatchObject({
+    expect(
+      resolveCanvasTextTokenBudget({
+        operation: 'text_generate',
+        providerContextWindow: 100_000,
+        prompt: '文'.repeat(74_999),
+      }),
+    ).toMatchObject({
       maxTokens: 23_616,
       source: 'context_remaining',
       promptTokensEstimate: 60_000,
@@ -148,12 +154,35 @@ describe('canvasTextTaskDiagnostics', () => {
     })
   })
 
-  it('fails locally when the prompt leaves no safe output context', () => {
-    expect(() => resolveCanvasTextTokenBudget({
+  it('counts hidden system instructions in the context budget', () => {
+    const withoutSystem = resolveCanvasTextTokenBudget({
       operation: 'text_generate',
-      providerContextWindow: 20_000,
-      prompt: '超长文本'.repeat(5_000),
-    })).toThrow(CanvasTextContextBudgetError)
+      providerContextWindow: 100_000,
+      prompt: '短剧本',
+    })
+    const withSystem = resolveCanvasTextTokenBudget({
+      operation: 'text_generate',
+      providerContextWindow: 100_000,
+      prompt: '短剧本',
+      systemPrompt: '电影级分镜约束'.repeat(5_000),
+    })
+
+    expect(withSystem.promptTokensEstimate ?? 0).toBeGreaterThan(
+      withoutSystem.promptTokensEstimate ?? 0,
+    )
+    expect(withSystem.remainingContextTokens ?? 0).toBeLessThan(
+      withoutSystem.remainingContextTokens ?? 0,
+    )
+  })
+
+  it('fails locally when the prompt leaves no safe output context', () => {
+    expect(() =>
+      resolveCanvasTextTokenBudget({
+        operation: 'text_generate',
+        providerContextWindow: 20_000,
+        prompt: '超长文本'.repeat(5_000),
+      }),
+    ).toThrow(CanvasTextContextBudgetError)
   })
 
   it('stores output diagnostics without duplicating system prompt or compiled prompt', () => {

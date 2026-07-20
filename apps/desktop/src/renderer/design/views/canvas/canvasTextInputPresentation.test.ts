@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatCanvasTextInputContext,
   formatStoryboardCameraParamsForEditor,
+  formatStoryboardRowsAsMarkdown,
   presentCanvasTextForModel,
   resolveStoryboardRowsForEditing,
   updateStoryboardCameraParams,
@@ -21,6 +22,31 @@ describe('canvasTextInputPresentation', () => {
     expect(result).toContain('人物向前走')
     expect(result).not.toContain('| 镜号 |')
     expect(result).not.toContain('"shots"')
+  })
+
+  it('完整保留电影级控制字段到 Markdown 展示文本', () => {
+    const markdown = formatStoryboardRowsAsMarkdown([
+      {
+        title: '推门',
+        composition: '主体落在右上交点',
+        characterReferences: '林岚=雨夜造型图',
+        actionBeats: '0.0–0.5s：手接近门把',
+        soundEffects: '0.5s：金属轻响',
+        transition: '入：硬切',
+        firstFrame: '门关闭',
+        lastFrame: '门开 45°',
+        continuity: '右手保持握门把',
+      },
+    ])
+
+    expect(markdown).toContain('| 构图 |')
+    expect(markdown).toContain('| 角色参考 |')
+    expect(markdown).toContain('| 动作节拍 |')
+    expect(markdown).toContain('| 音效 |')
+    expect(markdown).toContain('| 转场 |')
+    expect(markdown).toContain('| 首帧 |')
+    expect(markdown).toContain('| 尾帧 |')
+    expect(markdown).toContain('| 连续性 |')
   })
 
   it('keeps ordinary text unchanged', () => {

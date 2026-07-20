@@ -87,7 +87,10 @@ export function CanvasShotScriptTable({
                     { label: '场次', value: row.groupName },
                     { label: '场景', value: row.sceneName },
                     { label: '布局', value: row.sceneLayout },
+                    { label: '构图', value: row.composition },
                     { label: '画面', value: row.description },
+                    { label: '首帧', value: row.firstFrame },
+                    { label: '尾帧', value: row.lastFrame },
                   ]}
                 />
               </td>
@@ -96,6 +99,8 @@ export function CanvasShotScriptTable({
                   items={[
                     { label: '调度', value: row.blocking },
                     { label: '表演', value: row.performance },
+                    { label: '节拍', value: row.actionBeats },
+                    { label: '连续', value: row.continuity },
                   ]}
                 />
               </td>
@@ -117,6 +122,8 @@ export function CanvasShotScriptTable({
                   items={[
                     { label: '对白', value: row.dialogue },
                     { label: '旁白', value: row.narration },
+                    { label: '音效', value: row.soundEffects },
+                    { label: '转场', value: row.transition },
                   ]}
                 />
               </td>
@@ -130,6 +137,7 @@ export function CanvasShotScriptTable({
                           ? row.characterNames.join('、')
                           : undefined,
                     },
+                    { label: '参考', value: row.characterReferences },
                     { label: '造型', value: row.costume },
                   ]}
                 />

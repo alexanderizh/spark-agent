@@ -56,6 +56,7 @@ import {
 import { planShotsFromScene, totalPlannedDurationSec, type PlannedShot } from './canvasShotPlanner'
 import { planSegmentSplit, resolveSegmentDuration, type ShotSplitPart } from './canvasShotSplit'
 import { parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import { storyboardRowToSegmentDraft } from './canvasStoryboardMaterialization'
 import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 import { resolveCanvasAssetFocusNodeIds } from './canvasAssetFocus'
 import {
@@ -106,7 +107,6 @@ const TAB_LABELS: Record<TabKind, string> = {
 
 /** 资产列表分批渲染步长：文稿/章节可达上千条，一次性挂载会卡顿并撑爆 DOM */
 const ASSET_PAGE_SIZE = 60
-
 
 const CHAPTER_SPLIT_MODE_LABELS: Record<ChapterSplitMode, string> = {
   heading: '按章节标题',
@@ -2533,20 +2533,7 @@ function ShotSegmentEditor({
     try {
       for (const part of splitPreview) {
         await handlers.createShotSegment(group.id, {
-          title: part.title,
-          ...(part.description ? { description: part.description } : {}),
-          ...(part.dialogue ? { dialogue: part.dialogue } : {}),
-          ...(part.narration ? { narration: part.narration } : {}),
-          durationSec: part.durationSec,
-          ...(part.inSec != null ? { inSec: part.inSec } : {}),
-          ...(part.outSec != null ? { outSec: part.outSec } : {}),
-          ...(part.characterAssetIds ? { characterAssetIds: part.characterAssetIds } : {}),
-          ...(part.sceneAssetId ? { sceneAssetId: part.sceneAssetId } : {}),
-          ...(part.propAssetIds ? { propAssetIds: part.propAssetIds } : {}),
-          ...(part.shotPrompt ? { shotPrompt: part.shotPrompt } : {}),
-          ...(part.cameraDesignId ? { cameraDesignId: part.cameraDesignId } : {}),
-          ...(part.actionDesignId ? { actionDesignId: part.actionDesignId } : {}),
-          ...(part.frameDesignId ? { frameDesignId: part.frameDesignId } : {}),
+          ...part,
         })
       }
       await handlers.deleteShotSegment(group.id, splitTarget.id)
@@ -2583,12 +2570,7 @@ function ShotSegmentEditor({
       for (const row of parsedRows) {
         const characterIds = matchCharacterIds(row.characterNames)
         await handlers.createShotSegment(group.id, {
-          title: row.title,
-          ...(row.description ? { description: row.description } : {}),
-          ...(row.dialogue ? { dialogue: row.dialogue } : {}),
-          ...(row.narration ? { narration: row.narration } : {}),
-          ...(row.durationSec != null ? { durationSec: row.durationSec } : {}),
-          ...(row.shotPrompt ? { shotPrompt: row.shotPrompt } : {}),
+          ...storyboardRowToSegmentDraft(row),
           ...(characterIds.length > 0 ? { characterAssetIds: characterIds } : {}),
         })
       }

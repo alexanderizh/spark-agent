@@ -97,6 +97,42 @@ const responseBase = {
   model: 'model-1',
 }
 
+function validStoryboardShot(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    index: 1,
+    title: '推门进入',
+    durationSec: 1,
+    shotSize: '全景',
+    angle: '机位高 150cm，平视',
+    movement: '固定镜头',
+    description: '林岚推门进入。',
+    lighting: '主光 4300K，辅光 3200K，光比 4:1',
+    composition: '九宫格右侧落点，前中后景 2:5:3',
+    blocking: '林岚距镜头 300cm，距门 20cm',
+    actionBeats: '0.0–0.5s：抬手；0.5–1.0s：推门',
+    transition: '入：硬切；出：动作匹配硬切',
+    firstFrame: '林岚在门外，手靠近门把手。',
+    lastFrame: '林岚站在门内，视线朝画左。',
+    continuity: '保持人物、光向、视线和道具手位。',
+    shotPrompt: '雨夜茶馆全景，身份稳定，真实物理运动。',
+    negativePrompt: '错误角色、畸形手指、文字水印、闪烁。',
+    ...overrides,
+  }
+}
+
+function validStoryboardOutput(shots: Record<string, unknown>[]): string {
+  return JSON.stringify({
+    shots,
+    summary: {
+      shotCount: shots.length,
+      totalDurationSec: shots.reduce(
+        (total, shot) => total + (typeof shot.durationSec === 'number' ? shot.durationSec : 0),
+        0,
+      ),
+    },
+  })
+}
+
 describe('semantic canvas text task output', () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -145,40 +181,32 @@ describe('semantic canvas text task output', () => {
 
     const snapshot = await canvasApi.applyTextTaskResult('project-1', 'task-1', {
       ...responseBase,
-      text: JSON.stringify({
-        shots: [
-          {
-            index: 1,
-            title: '推门进入',
-            groupName: '第一场',
-            durationSec: 4,
-            shotSize: '全景',
-            description: '林岚推门进入。',
-            shotPrompt: '雨夜茶馆全景',
-          },
-        ],
-      }),
+      text: validStoryboardOutput([validStoryboardShot({ groupName: '第一场' })]),
     })
 
     const resultNode = snapshot.nodes.find((node) => node.data.pipelineRole === 'shot')
     expect(snapshot.tasks[0]?.status).toBe('completed')
     expect(resultNode?.data.text).toContain('| 镜号 |')
     const film = snapshot.project.metadata?.film as {
-      shotGroups?: Array<{ name: string; segments: Array<{ durationSec?: number }> }>
+      shotGroups?: Array<{
+        id: string
+        name: string
+        segments: Array<{ id: string; durationSec?: number }>
+      }>
     }
     expect(film.shotGroups?.[0]).toMatchObject({
       name: '第一场',
-      segments: [{ durationSec: 4 }],
+      segments: [{ durationSec: 1 }],
     })
+    expect(resultNode?.data.shotGroupId).toBe(film.shotGroups?.[0]?.id)
+    expect(resultNode?.data.shotSegmentId).toBe(film.shotGroups?.[0]?.segments[0]?.id)
   })
 
   it('materializes a completed storyboard task only once when completion is delivered twice', async () => {
     seedSemanticTask('shot')
     const response = {
       ...responseBase,
-      text: JSON.stringify({
-        shots: [{ index: 1, title: '推门进入', groupName: '第一场', durationSec: 4 }],
-      }),
+      text: validStoryboardOutput([validStoryboardShot({ groupName: '第一场' })]),
     }
 
     await canvasApi.applyTextTaskResult('project-1', 'task-1', response)
@@ -188,5 +216,24 @@ describe('semantic canvas text task output', () => {
     expect(film.shotGroups).toHaveLength(1)
     expect(snapshot.nodes.filter((node) => node.data.pipelineRole === 'shot')).toHaveLength(1)
     expect(snapshot.tasks[0]?.outputNodeIds).toHaveLength(1)
+  })
+
+  it('links a multi-shot result to its group without pretending it is one segment', async () => {
+    seedSemanticTask('shot')
+    const snapshot = await canvasApi.applyTextTaskResult('project-1', 'task-1', {
+      ...responseBase,
+      text: validStoryboardOutput([
+        validStoryboardShot({ index: 1, groupName: '第一场' }),
+        validStoryboardShot({ index: 2, title: '落座', groupName: '第一场' }),
+      ]),
+    })
+
+    const resultNode = snapshot.nodes.find((node) => node.data.pipelineRole === 'shot')
+    const film = snapshot.project.metadata?.film as {
+      shotGroups?: Array<{ id: string; segments: unknown[] }>
+    }
+    expect(film.shotGroups?.[0]?.segments).toHaveLength(2)
+    expect(resultNode?.data.shotGroupId).toBe(film.shotGroups?.[0]?.id)
+    expect(resultNode?.data.shotSegmentId).toBeUndefined()
   })
 })

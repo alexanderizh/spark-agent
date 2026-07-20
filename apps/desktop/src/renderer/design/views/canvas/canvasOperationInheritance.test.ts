@@ -9,6 +9,28 @@ const STORAGE_KEY = 'spark-canvas:v1'
 
 const at = '2026-06-18T00:00:00.000Z'
 
+function validCinematicShot(index: number): Record<string, unknown> {
+  return {
+    index,
+    title: `第 ${index} 镜`,
+    durationSec: 1,
+    shotSize: '中景',
+    angle: '机位高 150cm，平视',
+    movement: '固定镜头',
+    description: `第 ${index} 镜画面`,
+    lighting: '主光 4300K，辅光 3200K，光比 4:1',
+    composition: '九宫格主体落点，前中后景 2:5:3',
+    blocking: '主体距镜头 300cm，距道具 20cm',
+    actionBeats: '0.0–0.5s：动作起势；0.5–1.0s：动作完成',
+    transition: '入：硬切；出：动作匹配硬切',
+    firstFrame: '主体位于画面中央，动作尚未开始。',
+    lastFrame: '主体完成动作，保持视线方向。',
+    continuity: '保持身份、轴线、光向和道具手位。',
+    shotPrompt: `第 ${index} 镜生成提示词，稳定且符合真实物理。`,
+    negativePrompt: '错误角色、畸形肢体、文字水印、画面闪烁。',
+  }
+}
+
 function seedCanvasDb(db: CanvasDb) {
   // 清除内存缓存，确保 readDb 读到刚写入 localStorage 的最新数据
   __resetCanvasHotCache()
@@ -326,18 +348,16 @@ describe('canvas operation inheritance', () => {
       maxClipSec: 5,
     })
 
-    const shots = Array.from({ length: 5 }, (_, index) => ({
-      index: index + 1,
-      durationSec: 4,
-      description: `第 ${index + 1} 镜画面`,
-      shotPrompt: `第 ${index + 1} 镜生成提示词`,
-    }))
+    const shots = Array.from({ length: 5 }, (_, index) => validCinematicShot(index + 1))
     const completed = await canvasApi.applyTextTaskResult('project-1', taskNode.taskId, {
       status: 'succeeded',
       providerProfileId: 'provider-1',
       provider: 'openai',
       model: 'gpt-5',
-      text: JSON.stringify({ shots }),
+      text: JSON.stringify({
+        shots,
+        summary: { shotCount: shots.length, totalDurationSec: shots.length },
+      }),
     })
     const completedTaskNode = completed.nodes.find((node) => node.id === taskNode?.id)
     const outputNode = completed.nodes.find(
@@ -443,6 +463,18 @@ describe('canvas operation inheritance', () => {
       boardId: 'board-1',
       operation: 'image_to_image',
       inputNodeIds: ['node-source'],
+      inputBindings: [
+        {
+          id: 'connection:node-source:first_frame',
+          sourceNodeId: 'node-source',
+          origin: 'connection',
+          kind: 'image',
+          relation: 'first_frame',
+          role: 'first_frame',
+          enabled: true,
+          order: 0,
+        },
+      ],
       x: 310,
       y: 20,
     })
@@ -452,11 +484,25 @@ describe('canvas operation inheritance', () => {
     const pendingTask = snapshot.tasks.find((task) => task.id === operationNode?.taskId)
     expect(pendingTask?.prompt).toBeNull()
     expect(pendingTask?.systemPrompt).not.toContain('cinematic portrait')
-    expect(pendingTask?.promptDocument?.blocks).toEqual([])
+    expect(pendingTask?.promptDocument?.blocks).toEqual([
+      expect.objectContaining({
+        kind: 'reference',
+        source: 'connection',
+        sourceNodeId: 'node-source',
+        relation: 'reference_image',
+      }),
+      expect.objectContaining({ kind: 'text', text: '' }),
+    ])
     expect(pendingTask?.negativePrompt).toBe('blurry, low quality')
     expect(pendingTask?.modelParams).toEqual({ aspectRatio: '16:9', seed: 1234 })
+    expect(pendingTask?.inputBindings).toEqual([
+      expect.objectContaining({ sourceNodeId: 'node-source', role: 'first_frame' }),
+    ])
     expect(operationNode?.data.negativePrompt).toBe('blurry, low quality')
     expect(operationNode?.data.modelParams).toEqual({ aspectRatio: '16:9', seed: 1234 })
+    expect(operationNode?.data.inputBindings).toEqual([
+      expect.objectContaining({ sourceNodeId: 'node-source', role: 'first_frame' }),
+    ])
   })
 
   it('uses the same prompt-document initialization for right-click nodes and later connections', async () => {
@@ -2059,39 +2105,94 @@ describe('canvas operation inheritance', () => {
 
   it('stores the provider task id and submit response while a polling task is running', async () => {
     seedCanvasDb({
-      projects: [{
-        id: 'project-1', userId: 0, title: 'Project', status: 'active', rootPath: '/tmp/project-1',
-        nodeCount: 1, assetCount: 0, taskCount: 1, createdAt: at, updatedAt: at,
-      }],
-      boards: [{
-        id: 'board-1', projectId: 'project-1', userId: 0, name: 'Board',
-        viewport: { x: 0, y: 0, zoom: 1 }, settings: {}, createdAt: at, updatedAt: at,
-      }],
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 1,
+          assetCount: 0,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
       assets: [],
-      nodes: [{
-        id: 'node-task', projectId: 'project-1', boardId: 'board-1', userId: 0,
-        type: 'text_to_video', title: '生成视频', taskId: 'task-running', parentNodeId: null,
-        x: 10, y: 20, width: 260, height: 160, rotation: 0, zIndex: 1,
-        locked: false, hidden: false,
-        data: { operation: 'text_to_video', status: 'running', progress: 24 },
-        createdAt: at, updatedAt: at,
-      }],
+      nodes: [
+        {
+          id: 'node-task',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_to_video',
+          title: '生成视频',
+          taskId: 'task-running',
+          parentNodeId: null,
+          x: 10,
+          y: 20,
+          width: 260,
+          height: 160,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: { operation: 'text_to_video', status: 'running', progress: 24 },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
       edges: [],
-      tasks: [{
-        id: 'task-running', projectId: 'project-1', boardId: 'board-1', userId: 0,
-        operation: 'text_to_video', status: 'running', progress: 24, prompt: '生成视频',
-        negativePrompt: null, inputNodeIds: [], inputAssetIds: [], outputNodeIds: [], outputAssetIds: [],
-        requestId: 'runtime-1', modelParams: {}, createdAt: at, updatedAt: at,
-      }],
+      tasks: [
+        {
+          id: 'task-running',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_video',
+          status: 'running',
+          progress: 24,
+          prompt: '生成视频',
+          negativePrompt: null,
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          requestId: 'runtime-1',
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
     })
 
     const submitResponse = { task_id: 'provider-task-1', status: 'queued' }
     const snapshot = await canvasApi.markMediaTaskSubmitted('project-1', 'task-running', {
-      status: 'running', mode: 'async', runtimeTaskId: 'runtime-1', requestId: 'provider-task-1',
-      providerProfileId: 'provider-1', provider: 'xai', model: 'grok-imagine-video', assets: [],
+      status: 'running',
+      mode: 'async',
+      runtimeTaskId: 'runtime-1',
+      requestId: 'provider-task-1',
+      providerProfileId: 'provider-1',
+      provider: 'xai',
+      model: 'grok-imagine-video',
+      assets: [],
       submitResponse,
       requestCall: {
-        method: 'POST', url: 'https://api.x.ai/v1/videos/generations',
+        method: 'POST',
+        url: 'https://api.x.ai/v1/videos/generations',
         response: { status: 200, body: submitResponse },
       },
     })
@@ -2103,10 +2204,17 @@ describe('canvas operation inheritance', () => {
     expect(task?.progress).toBe(35)
 
     const afterInitialAck = await canvasApi.markMediaTaskSubmitted('project-1', 'task-running', {
-      status: 'running', mode: 'async', runtimeTaskId: 'runtime-1',
-      providerProfileId: 'provider-1', provider: '', model: '', assets: [],
+      status: 'running',
+      mode: 'async',
+      runtimeTaskId: 'runtime-1',
+      providerProfileId: 'provider-1',
+      provider: '',
+      model: '',
+      assets: [],
     })
-    expect(afterInitialAck.tasks.find((item) => item.id === 'task-running')?.requestId).toBe('provider-task-1')
+    expect(afterInitialAck.tasks.find((item) => item.id === 'task-running')?.requestId).toBe(
+      'provider-task-1',
+    )
   })
 
   it('does not downgrade a completed media task when a late running acknowledgement arrives', async () => {
