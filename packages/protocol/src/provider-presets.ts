@@ -1376,7 +1376,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       image: { size: '1:1', n: 1, resolution: '1k', outputFormat: 'png' },
-      polling: { intervalMs: 4000, timeoutMs: 240_000 },
+      polling: { intervalMs: 4000, timeoutMs: 600_000 },
     },
     sourceUrls: [
       'https://docs.apimart.ai/cn/api-reference/images/gpt-image-2/official',
@@ -1953,9 +1953,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaProvider: 'xai',
     mediaApiType: 'sync',
     mediaCapabilities: ['audio.speech'],
-    mediaModelRefs: [
-      { manifestId: 'xai:grok-tts', modelId: 'grok-tts', enabled: true },
-    ],
+    mediaModelRefs: [{ manifestId: 'xai:grok-tts', modelId: 'grok-tts', enabled: true }],
     mediaDefaults: { audio: { voice: 'eve', format: 'mp3', speed: 1 } },
     sourceUrls: ['https://docs.x.ai/developers/model-capabilities/audio/text-to-speech'],
   },
