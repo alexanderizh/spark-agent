@@ -6,15 +6,17 @@ import { getProviderPresetById, PROVIDER_PRESETS } from '../provider-presets.js'
 describe('provider presets', () => {
   it('gives every video-capable preset and manifest at least the 30 minute default timeout', () => {
     for (const preset of PROVIDER_PRESETS) {
-      const supportsVideo = preset.modelType === 'video'
-        || preset.mediaCapabilities?.some((capability) => capability.startsWith('video.')) === true
+      const supportsVideo =
+        preset.modelType === 'video' ||
+        preset.mediaCapabilities?.some((capability) => capability.startsWith('video.')) === true
       if (!supportsVideo) continue
       expect(preset.mediaDefaults?.polling?.timeoutMs, preset.id).toBeGreaterThanOrEqual(
         DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       )
     }
     for (const manifest of BUILTIN_MEDIA_MODEL_MANIFESTS) {
-      if (!manifest.domains.includes('video') || manifest.invocation.mode !== 'async_polling') continue
+      if (!manifest.domains.includes('video') || manifest.invocation.mode !== 'async_polling')
+        continue
       expect(manifest.invocation.polling?.timeoutMs, manifest.id).toBeGreaterThanOrEqual(
         DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       )
@@ -47,11 +49,7 @@ describe('provider presets', () => {
       defaultModel: 'agnes-2.0-flash',
       modelType: 'multimodal',
       mediaProvider: 'agnes',
-      mediaCapabilities: expect.arrayContaining([
-        'image.generate',
-        'image.edit',
-        'video.generate',
-      ]),
+      mediaCapabilities: expect.arrayContaining(['image.generate', 'image.edit', 'video.generate']),
       mediaModelRefs: expect.arrayContaining([
         expect.objectContaining({ manifestId: 'agnes:agnes-image-2.0-flash' }),
         expect.objectContaining({ manifestId: 'agnes:agnes-video-v2.0' }),
@@ -60,6 +58,7 @@ describe('provider presets', () => {
   })
 
   it('keeps image provider defaults aligned with each default model schema', () => {
+    expect(getProviderPresetById('apimart-images')?.mediaDefaults?.polling?.timeoutMs).toBe(600_000)
     expect(getProviderPresetById('bailian-images')?.mediaDefaults?.image).toEqual({
       size: '2K',
       n: 1,
@@ -67,9 +66,9 @@ describe('provider presets', () => {
     expect(getProviderPresetById('volcengine-seedream-image')?.mediaDefaults?.image).toMatchObject({
       size: '2K',
     })
-    expect(getProviderPresetById('volcengine-seedream-image')?.mediaDefaults?.image).not.toHaveProperty(
-      'resolution',
-    )
+    expect(
+      getProviderPresetById('volcengine-seedream-image')?.mediaDefaults?.image,
+    ).not.toHaveProperty('resolution')
 
     const xaiPreset = getProviderPresetById('xai-imagine-image')
     if (!xaiPreset) throw new Error('xai image preset not found')
@@ -85,9 +84,7 @@ describe('provider presets', () => {
 
   it('wires xAI TTS to its manifest with provider-compatible defaults', () => {
     expect(getProviderPresetById('xai-tts')).toMatchObject({
-      mediaModelRefs: [
-        { manifestId: 'xai:grok-tts', modelId: 'grok-tts', enabled: true },
-      ],
+      mediaModelRefs: [{ manifestId: 'xai:grok-tts', modelId: 'grok-tts', enabled: true }],
       mediaDefaults: { audio: { voice: 'eve', format: 'mp3', speed: 1 } },
     })
   })

@@ -255,7 +255,7 @@ describe('SparkDatabase', () => {
     expect(row.enable_peer_messaging).toBe(0)
   })
 
-  it('should raise historical video polling timeouts to 30 minutes without shortening longer values', () => {
+  it('should upgrade historical media polling defaults without overwriting explicit values', () => {
     const dbPath = join(testDir, 'test.db')
     const migrationsDir = join(process.cwd(), 'migrations')
 
@@ -265,44 +265,109 @@ describe('SparkDatabase', () => {
       INSERT INTO provider_profiles (id, provider_type, name, config_json)
       VALUES (?, 'openai', ?, ?)
     `)
-    insertProvider.run('video-short', 'Video short', JSON.stringify({
-      modelType: 'video',
-      mediaDefaults: { polling: { intervalMs: 5000, timeoutMs: 600000 } },
-    }))
-    insertProvider.run('video-long', 'Video long', JSON.stringify({
-      mediaCapabilities: ['video.generate'],
-      mediaDefaults: { polling: { timeoutMs: 172800000 } },
-    }))
-    insertProvider.run('image-short', 'Image short', JSON.stringify({
-      modelType: 'image',
-      mediaDefaults: { polling: { timeoutMs: 240000 } },
-    }))
-    db.raw.prepare(`
+    insertProvider.run(
+      'video-short',
+      'Video short',
+      JSON.stringify({
+        modelType: 'video',
+        mediaDefaults: { polling: { intervalMs: 5000, timeoutMs: 600000 } },
+      }),
+    )
+    insertProvider.run(
+      'video-long',
+      'Video long',
+      JSON.stringify({
+        mediaCapabilities: ['video.generate'],
+        mediaDefaults: { polling: { timeoutMs: 172800000 } },
+      }),
+    )
+    insertProvider.run(
+      'image-short',
+      'Image short',
+      JSON.stringify({
+        modelType: 'image',
+        mediaDefaults: { polling: { timeoutMs: 240000 } },
+      }),
+    )
+    insertProvider.run(
+      'image-explicit',
+      'Image explicit',
+      JSON.stringify({
+        modelType: 'image',
+        mediaDefaults: { polling: { timeoutMs: 300000 } },
+      }),
+    )
+    db.raw
+      .prepare(
+        `
       INSERT INTO media_model_manifests (
         id, provider_kind, model_id, display_name, manifest_json
       ) VALUES (?, 'custom', ?, ?, ?)
-    `).run('custom:video', 'video', 'Video', JSON.stringify({
-      domains: ['video'],
-      invocation: { mode: 'async_polling', polling: { timeoutMs: 600000 } },
-    }))
+    `,
+      )
+      .run(
+        'custom:video',
+        'video',
+        'Video',
+        JSON.stringify({
+          domains: ['video'],
+          invocation: { mode: 'async_polling', polling: { timeoutMs: 600000 } },
+        }),
+      )
+    db.raw
+      .prepare(
+        `
+      INSERT INTO media_model_manifests (
+        id, provider_kind, model_id, display_name, manifest_json
+      ) VALUES (?, 'custom', ?, ?, ?)
+    `,
+      )
+      .run(
+        'custom:image',
+        'image',
+        'Image',
+        JSON.stringify({
+          domains: ['image'],
+          invocation: { mode: 'async_polling', polling: { timeoutMs: 240000 } },
+        }),
+      )
 
     db.runMigrations(migrationsDir)
 
-    const providerTimeout = (id: string): number => (
-      db.raw.prepare(`
+    const providerTimeout = (id: string): number =>
+      (
+        db.raw
+          .prepare(
+            `
         SELECT json_extract(config_json, '$.mediaDefaults.polling.timeoutMs') AS timeout
         FROM provider_profiles WHERE id = ?
-      `).get(id) as { timeout: number }
-    ).timeout
+      `,
+          )
+          .get(id) as { timeout: number }
+      ).timeout
     expect(providerTimeout('video-short')).toBe(1_800_000)
     expect(providerTimeout('video-long')).toBe(172_800_000)
-    expect(providerTimeout('image-short')).toBe(240_000)
+    expect(providerTimeout('image-short')).toBe(600_000)
+    expect(providerTimeout('image-explicit')).toBe(300_000)
 
-    const manifest = db.raw.prepare(`
+    const manifest = db.raw
+      .prepare(
+        `
       SELECT json_extract(manifest_json, '$.invocation.polling.timeoutMs') AS timeout
       FROM media_model_manifests WHERE id = 'custom:video'
-    `).get() as { timeout: number }
+    `,
+      )
+      .get() as { timeout: number }
     expect(manifest.timeout).toBe(1_800_000)
+    const imageManifest = db.raw
+      .prepare(
+        `
+      SELECT json_extract(manifest_json, '$.invocation.polling.timeoutMs') AS timeout
+      FROM media_model_manifests WHERE id = 'custom:image'
+    `,
+      )
+      .get() as { timeout: number }
+    expect(imageManifest.timeout).toBe(600_000)
   })
 
   it('should throw error for invalid migration filename', () => {

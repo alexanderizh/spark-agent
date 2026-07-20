@@ -4,7 +4,7 @@ import path from 'node:path'
 import readline from 'node:readline'
 
 const DEFAULT_SIZE = '1024x1024'
-const DEFAULT_TIMEOUT_MS = 240_000
+const DEFAULT_TIMEOUT_MS = 600_000
 const DEFAULT_POLL_INTERVAL_MS = 5_000
 
 const env = process.env

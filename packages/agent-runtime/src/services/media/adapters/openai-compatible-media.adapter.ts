@@ -87,10 +87,16 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     if (!ctx.apiKey) throw new MediaProviderError('api_key_missing', 'Missing API key')
     const capability = input.capability
     if (!capability) {
-      throw new MediaProviderError('capability_not_supported', 'No capability resolved for media invoke')
+      throw new MediaProviderError(
+        'capability_not_supported',
+        'No capability resolved for media invoke',
+      )
     }
     if (!this.supports(capability)) {
-      throw new MediaProviderError('capability_not_supported', `${this.id} does not support ${capability}`)
+      throw new MediaProviderError(
+        'capability_not_supported',
+        `${this.id} does not support ${capability}`,
+      )
     }
     switch (capability) {
       case 'image.generate':
@@ -110,12 +116,18 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       case 'video.extend':
         return this.editVideo(input, ctx)
       default:
-        throw new MediaProviderError('capability_not_supported', `Unsupported capability: ${capability}`)
+        throw new MediaProviderError(
+          'capability_not_supported',
+          `Unsupported capability: ${capability}`,
+        )
     }
   }
 
   // ── image.generate ──────────────────────────────────────────────────────
-  protected async generateImage(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
+  protected async generateImage(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
     // 「文生图」类操作（panorama_360 / text_to_image）经 capabilityForOperation 映射到
     // image.generate，但生成端点本身只发 prompt。若节点接了上游参考图（画布连线），
     // 必须把图带给模型，否则参考图被静默丢弃、产物与参考图无关。
@@ -129,7 +141,12 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     if (!prompt) throw new MediaProviderError('invalid_input', 'prompt is required')
     const model = ctx.defaultModel
     const defaults = ctx.mediaDefaults?.image
-    const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider, model)
+    const imageParams = buildImageRequestParams(
+      input.modelParams,
+      defaults,
+      ctx.mediaProvider,
+      model,
+    )
     const body: Record<string, unknown> = {
       model,
       prompt,
@@ -141,16 +158,21 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ...(imageParams.response_format ? { response_format: imageParams.response_format } : {}),
       ...(imageParams.output_format ? { output_format: imageParams.output_format } : {}),
       ...(input.negativePrompt ? { negative_prompt: input.negativePrompt } : {}),
-      ...extraAllowed(ctx.extraParams, normalizeImageAliasParams(input.modelParams), [
-        'size',
-        'n',
-        'quality',
-        'resolution',
-        'output_format',
-        'response_format',
-        'aspect_ratio',
-        ...(ctx.mediaProvider === 'xai' ? ['aspectRatio'] : ['aspectRatio', 'aspect_ratio']),
-      ], ctx.mediaManifestCapability),
+      ...extraAllowed(
+        ctx.extraParams,
+        normalizeImageAliasParams(input.modelParams),
+        [
+          'size',
+          'n',
+          'quality',
+          'resolution',
+          'output_format',
+          'response_format',
+          'aspect_ratio',
+          ...(ctx.mediaProvider === 'xai' ? ['aspectRatio'] : ['aspectRatio', 'aspect_ratio']),
+        ],
+        ctx.mediaManifestCapability,
+      ),
     }
     const url = `${baseEndpoint(ctx)}/images/generations`
     logMediaCall({
@@ -183,7 +205,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         const polled = await pollTask(pollUrl, authHeaders(ctx), {
           fetchImpl: ctx.fetch,
           intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 4_000,
-          timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 240_000,
+          timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 600_000,
           inspect: (d) => {
             const imgs = extractImages(d)
             if (imgs.length > 0) return 'done'
@@ -196,20 +218,49 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       }
     }
     if (images.length === 0) {
-      logMediaResult({ provider: this.id, capability: 'image.generate', ok: false, error: 'No images in response' })
-      throw new MediaProviderError('provider_http_error', `No images in response: ${JSON.stringify(data).slice(0, 800)}`)
+      logMediaResult({
+        provider: this.id,
+        capability: 'image.generate',
+        ok: false,
+        error: 'No images in response',
+      })
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No images in response: ${JSON.stringify(data).slice(0, 800)}`,
+      )
     }
-    logMediaResult({ provider: this.id, capability: 'image.generate', ok: true, assetCount: images.length, requestId })
+    logMediaResult({
+      provider: this.id,
+      capability: 'image.generate',
+      ok: true,
+      assetCount: images.length,
+      requestId,
+    })
     const assets = await Promise.all(
       images.map((image, i) =>
-        this.artifact.writeImage(image, input.outputDir, filename(input, 'img', i, images.length), ctx.fetch),
+        this.artifact.writeImage(
+          image,
+          input.outputDir,
+          filename(input, 'img', i, images.length),
+          ctx.fetch,
+        ),
       ),
     )
-    return { provider: this.id, model, mode, ...(requestId ? { requestId } : {}), assets, rawResponse: data }
+    return {
+      provider: this.id,
+      model,
+      mode,
+      ...(requestId ? { requestId } : {}),
+      assets,
+      rawResponse: data,
+    }
   }
 
   // ── image.edit / image.variations ───────────────────────────────────────
-  protected async editImage(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
+  protected async editImage(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
     const prompt = (input.prompt ?? '').trim()
     const inputs = input.inputFiles ?? []
     if (inputs.length === 0 && !prompt) {
@@ -217,7 +268,12 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     }
     const model = ctx.defaultModel
     const defaults = ctx.mediaDefaults?.image
-    const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider, model)
+    const imageParams = buildImageRequestParams(
+      input.modelParams,
+      defaults,
+      ctx.mediaProvider,
+      model,
+    )
     const imageRefs = inputs
       .filter((file) => file.type === 'image' || file.type === 'file')
       .map((file) => mediaInputRef(file, ctx.mediaProvider) ?? '')
@@ -234,17 +290,22 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ...(imageParams.resolution ? { resolution: imageParams.resolution } : {}),
       ...(imageParams.response_format ? { response_format: imageParams.response_format } : {}),
       ...(imageParams.output_format ? { output_format: imageParams.output_format } : {}),
-      ...extraAllowed(ctx.extraParams, normalizeImageAliasParams(input.modelParams), [
-        'size',
-        'n',
-        'quality',
-        'resolution',
-        'output_format',
-        'response_format',
-        'aspect_ratio',
-        'mask',
-        ...(ctx.mediaProvider === 'xai' ? ['aspectRatio'] : ['aspectRatio', 'aspect_ratio']),
-      ], ctx.mediaManifestCapability),
+      ...extraAllowed(
+        ctx.extraParams,
+        normalizeImageAliasParams(input.modelParams),
+        [
+          'size',
+          'n',
+          'quality',
+          'resolution',
+          'output_format',
+          'response_format',
+          'aspect_ratio',
+          'mask',
+          ...(ctx.mediaProvider === 'xai' ? ['aspectRatio'] : ['aspectRatio', 'aspect_ratio']),
+        ],
+        ctx.mediaManifestCapability,
+      ),
     }
     const url = `${baseEndpoint(ctx)}/images/edits`
     logMediaCall({
@@ -269,20 +330,41 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     })
     const images = extractImages(data)
     if (images.length === 0) {
-      logMediaResult({ provider: this.id, capability: 'image.edit', ok: false, error: 'No images in edit response' })
-      throw new MediaProviderError('provider_http_error', `No images in edit response: ${JSON.stringify(data).slice(0, 800)}`)
+      logMediaResult({
+        provider: this.id,
+        capability: 'image.edit',
+        ok: false,
+        error: 'No images in edit response',
+      })
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No images in edit response: ${JSON.stringify(data).slice(0, 800)}`,
+      )
     }
-    logMediaResult({ provider: this.id, capability: 'image.edit', ok: true, assetCount: images.length })
+    logMediaResult({
+      provider: this.id,
+      capability: 'image.edit',
+      ok: true,
+      assetCount: images.length,
+    })
     const assets = await Promise.all(
       images.map((image, i) =>
-        this.artifact.writeImage(image, input.outputDir, filename(input, 'edit', i, images.length), ctx.fetch),
+        this.artifact.writeImage(
+          image,
+          input.outputDir,
+          filename(input, 'edit', i, images.length),
+          ctx.fetch,
+        ),
       ),
     )
     return { provider: this.id, model, mode: 'sync', assets, rawResponse: data }
   }
 
   // ── audio.speech (TTS) ──────────────────────────────────────────────────
-  protected async generateSpeech(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
+  protected async generateSpeech(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
     const text = (input.prompt ?? '').trim()
     if (!text) throw new MediaProviderError('invalid_input', 'text/prompt is required for speech')
     const model = ctx.defaultModel
@@ -297,7 +379,12 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ...(audioDefaults?.speed != null || input.modelParams?.speed != null
         ? { speed: input.modelParams?.speed ?? audioDefaults?.speed }
         : {}),
-      ...extraAllowed(ctx.extraParams, input.modelParams, ['voice', 'response_format', 'speed', 'input'], ctx.mediaManifestCapability),
+      ...extraAllowed(
+        ctx.extraParams,
+        input.modelParams,
+        ['voice', 'response_format', 'speed', 'input'],
+        ctx.mediaManifestCapability,
+      ),
     }
     const url = `${baseEndpoint(ctx)}/audio/speech`
     logMediaCall({
@@ -327,13 +414,23 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       filename(input, 'audio', 0, 1),
       mimeType,
     )
-    return { provider: this.id, model, mode: 'sync', assets: [asset], rawResponse: { bytes: buffer.length } }
+    return {
+      provider: this.id,
+      model,
+      mode: 'sync',
+      assets: [asset],
+      rawResponse: { bytes: buffer.length },
+    }
   }
 
   // ── audio.transcription ─────────────────────────────────────────────────
-  protected async transcribe(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
+  protected async transcribe(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
     const file = (input.inputFiles ?? []).find((f) => f.type === 'audio' || f.type === 'file')
-    if (!file) throw new MediaProviderError('invalid_input', 'transcription requires an audio input file')
+    if (!file)
+      throw new MediaProviderError('invalid_input', 'transcription requires an audio input file')
     const model = ctx.defaultModel
     const url = `${baseEndpoint(ctx)}/audio/transcriptions`
     // 先支持 url / dataUrl 模式（OpenAI compatible 部分聚合平台支持 JSON body 传 url）
@@ -341,8 +438,15 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       const body: Record<string, unknown> = {
         model,
         url: file.url,
-        ...(ctx.mediaDefaults?.audio?.language ? { language: ctx.mediaDefaults.audio.language } : {}),
-        ...extraAllowed(ctx.extraParams, input.modelParams, ['language', 'response_format', 'prompt', 'url'], ctx.mediaManifestCapability),
+        ...(ctx.mediaDefaults?.audio?.language
+          ? { language: ctx.mediaDefaults.audio.language }
+          : {}),
+        ...extraAllowed(
+          ctx.extraParams,
+          input.modelParams,
+          ['language', 'response_format', 'prompt', 'url'],
+          ctx.mediaManifestCapability,
+        ),
       }
       logMediaCall({
         provider: this.id,
@@ -369,11 +473,14 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       : file.path
         ? await this.artifact.readLocalFile(file.path)
         : null
-    if (!buffer) throw new MediaProviderError('invalid_input', 'transcription input must be url/dataUrl/path')
+    if (!buffer)
+      throw new MediaProviderError('invalid_input', 'transcription input must be url/dataUrl/path')
     const form = await buildMultipart(
       {
         model,
-        ...(ctx.mediaDefaults?.audio?.language ? { language: ctx.mediaDefaults.audio.language } : {}),
+        ...(ctx.mediaDefaults?.audio?.language
+          ? { language: ctx.mediaDefaults.audio.language }
+          : {}),
       },
       [{ field: 'file', filename: 'audio.dat', content: buffer }],
     )
@@ -383,7 +490,11 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       model,
       method: 'POST',
       url,
-      body: { model, language: ctx.mediaDefaults?.audio?.language, file: `[multipart ${buffer.length} bytes]` },
+      body: {
+        model,
+        language: ctx.mediaDefaults?.audio?.language,
+        file: `[multipart ${buffer.length} bytes]`,
+      },
       extra: { source: file.dataUrl ? 'dataUrl' : 'path', bytes: buffer.length },
     })
     const data = await fetchJson(url, {
@@ -403,7 +514,11 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     model: string,
   ): Promise<MediaGenerateOutput> {
     const text = extractText(data) ?? ''
-    const asset = await this.artifact.writeTextAsset(text, input.outputDir, filename(input, 'transcript', 0, 1))
+    const asset = await this.artifact.writeTextAsset(
+      text,
+      input.outputDir,
+      filename(input, 'transcript', 0, 1),
+    )
     return { provider: this.id, model, mode: 'sync', assets: [asset], rawResponse: data }
   }
 
@@ -414,13 +529,20 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
    * 需要独立编辑/扩展端点的 provider（如 xAI 走 /videos/edits、/videos/extensions）
    * 在子类重写此方法。
    */
-  protected async editVideo(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
+  protected async editVideo(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
     return this.generateVideo(input, ctx)
   }
 
   // ── video.generate / video.image_to_video ───────────────────────────────
-  protected async generateVideo(input: MediaGenerateInput, ctx: MediaProviderContext): Promise<MediaGenerateOutput> {
-    const capability = input.capability ?? capabilityForOperation(input.operation)[0] ?? 'video.generate'
+  protected async generateVideo(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
+    const capability =
+      input.capability ?? capabilityForOperation(input.operation)[0] ?? 'video.generate'
     const prompt = (input.prompt ?? '').trim()
     if (!prompt && capability === 'video.generate') {
       throw new MediaProviderError('invalid_input', 'prompt is required for video generation')
@@ -431,8 +553,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     const imageFiles = inputFiles.filter(
       (f) =>
         f.type === 'image' ||
-        (f.type === 'file' &&
-          (!f.mimeType || f.mimeType.toLowerCase().startsWith('image/'))),
+        (f.type === 'file' && (!f.mimeType || f.mimeType.toLowerCase().startsWith('image/'))),
     )
     const firstImage =
       imageFiles.find((f) => f.role === 'first_frame') ??
@@ -448,8 +569,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     const unassignedFrameReferences =
       capability === 'video.image_to_video'
         ? imageFiles.filter(
-            (file) =>
-              file.role == null && file !== firstImage && file !== lastImage,
+            (file) => file.role == null && file !== firstImage && file !== lastImage,
           )
         : []
     const referenceImages =
@@ -458,14 +578,11 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         : [...explicitReferenceImages, ...unassignedFrameReferences]
     const videoFiles = inputFiles.filter(
       (f) =>
-        f.type === 'video' ||
-        (f.type === 'file' && f.mimeType?.toLowerCase().startsWith('video/')),
+        f.type === 'video' || (f.type === 'file' && f.mimeType?.toLowerCase().startsWith('video/')),
     )
     const inputVideo =
       videoFiles.find((f) => f.role === 'input') ??
-      (capability === 'video.edit' || capability === 'video.extend'
-        ? videoFiles[0]
-        : undefined)
+      (capability === 'video.edit' || capability === 'video.extend' ? videoFiles[0] : undefined)
     const explicitReferenceVideos = videoFiles.filter((f) => f.role === 'reference')
     const referenceVideos =
       capability === 'video.reference_to_video' && explicitReferenceVideos.length === 0
@@ -487,7 +604,9 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         : explicitReferenceAudios
     const firstImageRef = firstImage ? mediaInputRef(firstImage, ctx.mediaProvider) : undefined
     const lastImageRef = lastImage ? mediaInputRef(lastImage, ctx.mediaProvider) : undefined
-    const referenceImageRefs = referenceImages.map((file) => mediaInputRef(file, ctx.mediaProvider)).filter((ref): ref is string => Boolean(ref))
+    const referenceImageRefs = referenceImages
+      .map((file) => mediaInputRef(file, ctx.mediaProvider))
+      .filter((ref): ref is string => Boolean(ref))
     const inputVideoRef = inputVideo ? mediaInputRef(inputVideo, ctx.mediaProvider) : undefined
     const referenceVideoRefs = referenceVideos
       .map((file) => mediaInputRef(file, ctx.mediaProvider))
@@ -537,28 +656,38 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       (!isApimart || shouldSendApimartAspectRatio(model, capability, hasImageInput, hasVideoInput))
     const sendDuration =
       duration != null &&
-      (!isApimart || !(model === 'Omni-Flash-Ext' && capability === 'video.reference_to_video' && referenceVideoRefs.length > 0))
-    const passthroughParams = extraAllowed(ctx.extraParams, input.modelParams, [
-      'aspectRatio',
-      'aspect_ratio',
-      'duration',
-      'durationSeconds',
-      'editStrength',
-      'edit_strength',
-      'fps',
-      'image',
-      'image_url',
-      'image_urls',
-      'first_frame_image',
-      'last_frame_image',
-      'quality',
-      'reference_images',
-      'resolution',
-      'seed',
-      'video',
-      'video_url',
-      'prompt',
-    ], ctx.mediaManifestCapability)
+      (!isApimart ||
+        !(
+          model === 'Omni-Flash-Ext' &&
+          capability === 'video.reference_to_video' &&
+          referenceVideoRefs.length > 0
+        ))
+    const passthroughParams = extraAllowed(
+      ctx.extraParams,
+      input.modelParams,
+      [
+        'aspectRatio',
+        'aspect_ratio',
+        'duration',
+        'durationSeconds',
+        'editStrength',
+        'edit_strength',
+        'fps',
+        'image',
+        'image_url',
+        'image_urls',
+        'first_frame_image',
+        'last_frame_image',
+        'quality',
+        'reference_images',
+        'resolution',
+        'seed',
+        'video',
+        'video_url',
+        'prompt',
+      ],
+      ctx.mediaManifestCapability,
+    )
     const body: Record<string, unknown> = {
       model: nativeModel,
       ...(prompt ? { prompt } : {}),
@@ -574,7 +703,9 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         ? { resolution: input.modelParams?.resolution ?? videoDefaults?.resolution }
         : {}),
       ...(input.modelParams?.seed != null ? { seed: input.modelParams.seed } : {}),
-      ...(input.modelParams?.editStrength != null ? { edit_strength: input.modelParams.editStrength } : {}),
+      ...(input.modelParams?.editStrength != null
+        ? { edit_strength: input.modelParams.editStrength }
+        : {}),
       ...passthroughParams,
       ...providerVideoInputFields,
     }
@@ -607,8 +738,16 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     if (videoUrls.length === 0) {
       const taskId = extractTaskId(data)
       if (!taskId || !this.videoTaskPath) {
-        logMediaResult({ provider: this.id, capability, ok: false, error: 'No video url or task id' })
-        throw new MediaProviderError('provider_http_error', `No video url or task id: ${JSON.stringify(data).slice(0, 800)}`)
+        logMediaResult({
+          provider: this.id,
+          capability,
+          ok: false,
+          error: 'No video url or task id',
+        })
+        throw new MediaProviderError(
+          'provider_http_error',
+          `No video url or task id: ${JSON.stringify(data).slice(0, 800)}`,
+        )
       }
       requestId = taskId
       mode = 'async'
@@ -636,12 +775,27 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     }
     if (videoUrls.length === 0) {
       logMediaResult({ provider: this.id, capability, ok: false, error: 'No video produced' })
-      throw new MediaProviderError('provider_http_error', `No video produced: ${JSON.stringify(raw).slice(0, 800)}`)
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No video produced: ${JSON.stringify(raw).slice(0, 800)}`,
+      )
     }
-    logMediaResult({ provider: this.id, capability, ok: true, assetCount: videoUrls.length, requestId })
+    logMediaResult({
+      provider: this.id,
+      capability,
+      ok: true,
+      assetCount: videoUrls.length,
+      requestId,
+    })
     const assets = await Promise.all(
       videoUrls.map((u, i) =>
-        this.artifact.downloadMediaAsset('video', u, input.outputDir, filename(input, 'video', i, videoUrls.length), ctx.fetch),
+        this.artifact.downloadMediaAsset(
+          'video',
+          u,
+          input.outputDir,
+          filename(input, 'video', i, videoUrls.length),
+          ctx.fetch,
+        ),
       ),
     )
     return {
@@ -680,8 +834,15 @@ function mediaInputRef(
   return file.path
 }
 
-function clampInt(value: unknown, fallback: number | undefined, def: number, min: number, max: number): number {
-  const raw = typeof value === 'number' ? value : typeof value === 'string' ? Number.parseInt(value, 10) : NaN
+function clampInt(
+  value: unknown,
+  fallback: number | undefined,
+  def: number,
+  min: number,
+  max: number,
+): number {
+  const raw =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number.parseInt(value, 10) : NaN
   if (Number.isFinite(raw)) return Math.max(min, Math.min(max, raw))
   if (fallback != null) return Math.max(min, Math.min(max, fallback))
   return def
@@ -692,7 +853,15 @@ function buildImageRequestParams(
   defaults: ProviderMediaDefaults['image'] | undefined,
   provider: MediaProviderKind,
   modelId?: string,
-): { n: number; size?: string; aspect_ratio?: string; quality?: unknown; resolution?: string; response_format?: string; output_format?: string } {
+): {
+  n: number
+  size?: string
+  aspect_ratio?: string
+  quality?: unknown
+  resolution?: string
+  response_format?: string
+  output_format?: string
+} {
   const params = normalizeImageAliasParams(modelParams)
   const aspectRatio = stringParam(params.aspect_ratio)
   const explicitSize = stringParam(params.size)
@@ -707,7 +876,8 @@ function buildImageRequestParams(
   //   - 分辨率型 size（如 1024x1024）→ 对 xAI 无意义，丢弃
   // 故 xAI 永不发 size；aspect_ratio 取「显式 aspect_ratio 优先，否则比例型 size 回填」。
   if (provider === 'xai') {
-    const sizeLikeRatio = explicitSize && RATIO_PATTERN.test(explicitSize) ? explicitSize : undefined
+    const sizeLikeRatio =
+      explicitSize && RATIO_PATTERN.test(explicitSize) ? explicitSize : undefined
     const xaiAspect = aspectRatio ?? sizeLikeRatio
     return {
       n: clampInt(params.n, defaults?.n, 1, 1, 4),
@@ -725,8 +895,7 @@ function buildImageRequestParams(
       explicitSize && (explicitSize === 'auto' || RATIO_PATTERN.test(explicitSize))
         ? explicitSize
         : undefined
-    const legacyAspect =
-      aspectRatio && RATIO_PATTERN.test(aspectRatio) ? aspectRatio : undefined
+    const legacyAspect = aspectRatio && RATIO_PATTERN.test(aspectRatio) ? aspectRatio : undefined
     const documentedDefault =
       defaultSize && (defaultSize === 'auto' || RATIO_PATTERN.test(defaultSize))
         ? defaultSize
@@ -759,7 +928,8 @@ function normalizeImageAliasParams(
     if (next.outputFormat != null) next.output_format = next.outputFormat
     if (next.image_format != null) next.output_format = next.image_format
   }
-  if (next.image_format == null && next.output_format != null) next.image_format = next.output_format
+  if (next.image_format == null && next.output_format != null)
+    next.image_format = next.output_format
   return next
 }
 
@@ -795,7 +965,10 @@ function shouldSendApimartAspectRatio(
   }
   if (
     capability === 'video.image_to_video' &&
-    (model === 'wan2.5-preview' || model === 'wan2.6' || model === 'wan2.7' || model === 'pixverse-v6')
+    (model === 'wan2.5-preview' ||
+      model === 'wan2.6' ||
+      model === 'wan2.7' ||
+      model === 'pixverse-v6')
   ) {
     return false
   }
@@ -816,7 +989,8 @@ function sizeForAspectRatio(aspectRatio: string | undefined): string | undefined
 }
 
 function filename(input: MediaGenerateInput, prefix: string, index: number, total: number): string {
-  const fromParams = typeof input.modelParams?.filename === 'string' ? (input.modelParams.filename as string) : ''
+  const fromParams =
+    typeof input.modelParams?.filename === 'string' ? (input.modelParams.filename as string) : ''
   const suffix = total > 1 ? `_${String(index + 1).padStart(3, '0')}` : ''
   return `${fromParams || `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`}${suffix}`
 }
@@ -843,7 +1017,11 @@ function extraAllowed(
 ): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...(extraParams ?? {}) }
   for (const [key, value] of Object.entries(modelParams ?? {})) {
-    if (!blacklist.includes(key) && !['filename', 'n', 'size'].includes(key) && typeof value !== 'object') {
+    if (
+      !blacklist.includes(key) &&
+      !['filename', 'n', 'size'].includes(key) &&
+      typeof value !== 'object'
+    ) {
       merged[key] = value
     }
   }
@@ -857,7 +1035,10 @@ function extraAllowed(
   const forbidden = new Set((policy?.forbidden ?? []).map((entry) => entry.name))
   const strict = policy?.strict === true
   const passthroughEnabled = !strict || (policy?.passthrough?.enabled ?? false)
-  const aliases: Record<string, string> = { ...(capability.aliases ?? {}), ...(policy?.aliases ?? {}) }
+  const aliases: Record<string, string> = {
+    ...(capability.aliases ?? {}),
+    ...(policy?.aliases ?? {}),
+  }
   // 反向 alias：provider-native 名 → canonical 名集合
   const providerToCanonical: Record<string, string[]> = {}
   for (const [canonical, provider] of Object.entries(aliases)) {
