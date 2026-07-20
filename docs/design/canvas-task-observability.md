@@ -46,6 +46,14 @@ xAI 另有一处终态解析错误：官方成功契约是 `status=done` 且产�
 
 `projectId + clientTaskId` 是画布侧的主关联键；媒体任务还可以继续用 `runtimeTaskId + providerRequestId` 串联 `[canvas:media-task-runtime]`、`[media:adapter]` 和 `[media:task-poll]`。
 
+### 超时后产物恢复与引用完整性
+
+Provider 可能在本地轮询超时后才完成生成。用户从 Provider 文件中心或项目目录把晚到产物重新挂回原操作节点时，画布必须把对应失败/取消任务恢复为 `completed`，补齐 `outputNodeIds` / `outputAssetIds`，清除超时错误，并写入恢复完成事件。任务队列执行「清空失败」时，有仍可访问产物的任务不得删除；仅无有效产物的失败记录可以清理。
+
+旧版本可能已经只删除 `CanvasTask`，却保留操作节点的 `taskId`、`generated` 连线、产物节点和资产。操作节点产物投影因此增加图关系降级：任务记录缺失时，按 `generated.taskId` 从目标节点及其资产合成只读完成运行。只要产物关系仍在，图片、视频、音频和文本预览都不能因任务队列清理或后续画布重渲染而消失；存在可播放产物时，节点展示状态按完成处理，不再显示失败空壳。
+
+媒体终态遵循单调性：任务已经 `completed` 且拥有物化产物后，晚到或重复的 `failed` / `cancelled` 回写不得覆盖成功状态或隐藏产物。真正无产物的超时任务仍维持失败语义。
+
 ### 节点任务详情诊断
 
 任务记录同时保存 `operationNodeId` 与真实生命周期事件。操作节点后续重试并切换到新 task 时，历史任务仍可定位到原节点；任务详情不再使用同一个 `updatedAt` 伪造多条运行日志。

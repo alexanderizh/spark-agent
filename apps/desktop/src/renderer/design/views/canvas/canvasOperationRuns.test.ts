@@ -164,6 +164,29 @@ describe('canvas operation run views', () => {
     })
   })
 
+  it('recovers generated outputs when failed-task cleanup removed the task row', () => {
+    const snapshot = snapshotFixture()
+    const operationNode = operationFixtureNode(snapshot)
+    operationNode.data.status = 'failed'
+    operationNode.data.message = '失败：Task timed out after 600000ms'
+    snapshot.tasks = snapshot.tasks.filter((task) => task.id !== 'task-2')
+
+    const runs = buildCanvasOperationRunViews(operationNode, snapshot)
+
+    expect(runs[0]).toMatchObject({
+      taskId: 'task-2',
+      status: 'completed',
+      progress: 100,
+      outputs: [
+        expect.objectContaining({
+          nodeId: 'output-two',
+          assetId: 'asset-two',
+          url: 'https://example.com/two.png',
+        }),
+      ],
+    })
+  })
+
   it('changes the fingerprint when an output is updated', () => {
     const snapshot = snapshotFixture()
     const before = canvasOperationRunsFingerprint(

@@ -584,13 +584,13 @@ export function useCanvasWorkspace(projectId: string) {
    *   必须逐个走 cancelTask（通知平台 adapter 中断 media 请求 + 标记 cancelled），
    *   记录保留在队列里作为历史，不删除。串行执行避免并发写库竞态，
    *   单个失败不阻塞其余任务。
-   * - scope='failed'：直接删除所有已结束（failed/cancelled）任务记录。
-   *   这些任务已无运行态，无需 cancel，用 deleteTasks 一次性清掉。
+   * - scope='failed'：清理已结束（failed/cancelled）任务记录。无产物记录直接删除；
+   *   仍有关联产物的记录由 deleteTasks 恢复为 completed 并保留。
    *
    * 注意：孤儿任务（运行中但承载节点已删）不在本方法处理——它们 cancelTask 无法终止，
    * 改由 deleteTasks(taskIds) 单独删除，UI 通过 onDeleteTasks 触发。
    *
-   * scope 互斥：active 只取消不删记录，failed 只删记录不取消。
+   * scope 互斥：active 只取消不删记录，failed 不取消运行时。
    */
   const clearTasks = useCallback(
     async (scope: 'active' | 'failed') => {

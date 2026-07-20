@@ -129,31 +129,54 @@ export function buildCanvasOperationRunViews(
 
   const nodesById = new Map(snapshot.nodes.map((node) => [node.id, node]))
   const assetsById = new Map(snapshot.assets.map((asset) => [asset.id, asset]))
+  const generatedEdgesByTaskId = new Map<string, typeof generatedEdges>()
+  for (const edge of generatedEdges) {
+    if (!edge.taskId) continue
+    const taskEdges = generatedEdgesByTaskId.get(edge.taskId) ?? []
+    taskEdges.push(edge)
+    generatedEdgesByTaskId.set(edge.taskId, taskEdges)
+  }
 
-  return snapshot.tasks
+  const collectOutputs = (
+    taskId: string,
+    outputNodeIds: string[],
+    outputAssetIds: string[],
+  ): CanvasOperationOutputView[] => {
+    const outputs: CanvasOperationOutputView[] = []
+    const seen = new Set<string>()
+    const nodeIds = new Set([
+      ...outputNodeIds,
+      ...(generatedEdgesByTaskId.get(taskId) ?? []).map((edge) => edge.targetNodeId),
+    ])
+
+    for (const nodeId of nodeIds) {
+      const node = nodesById.get(nodeId)
+      const asset = node?.assetId ? assetsById.get(node.assetId) : undefined
+      if (!node && !asset) continue
+      const view = operationOutputView(node, asset, nodeId)
+      if (seen.has(view.id)) continue
+      seen.add(view.id)
+      outputs.push(view)
+    }
+
+    for (const assetId of outputAssetIds) {
+      const asset = assetsById.get(assetId)
+      if (!asset || seen.has(asset.id)) continue
+      const node = snapshot.nodes.find((item) => item.assetId === assetId)
+      const view = operationOutputView(node, asset, assetId)
+      if (seen.has(view.id)) continue
+      seen.add(view.id)
+      outputs.push(view)
+    }
+    return outputs
+  }
+
+  const persistedTaskIds = new Set<string>()
+  const persistedRuns = snapshot.tasks
     .filter((task) => taskIds.has(task.id))
     .map((task): CanvasOperationRunView => {
-      const outputs: CanvasOperationOutputView[] = []
-      const seen = new Set<string>()
-
-      for (const nodeId of task.outputNodeIds) {
-        const node = nodesById.get(nodeId)
-        const asset = node?.assetId ? assetsById.get(node.assetId) : undefined
-        const view = operationOutputView(node, asset, nodeId)
-        if (seen.has(view.id)) continue
-        seen.add(view.id)
-        outputs.push(view)
-      }
-
-      for (const assetId of task.outputAssetIds) {
-        const asset = assetsById.get(assetId)
-        if (!asset || seen.has(asset.id)) continue
-        const node = snapshot.nodes.find((item) => item.assetId === assetId)
-        const view = operationOutputView(node, asset, assetId)
-        if (seen.has(view.id)) continue
-        seen.add(view.id)
-        outputs.push(view)
-      }
+      persistedTaskIds.add(task.id)
+      const outputs = collectOutputs(task.id, task.outputNodeIds, task.outputAssetIds)
 
       return {
         taskId: task.id,
@@ -169,6 +192,34 @@ export function buildCanvasOperationRunViews(
         outputs,
       }
     })
+
+  // Historical cleanup versions deleted failed CanvasTask rows without removing
+  // their generated edges/assets. Synthesize a compact completed run from the
+  // surviving graph so existing projects keep their playable artifacts.
+  const recoveredRuns = Array.from(taskIds).flatMap((taskId): CanvasOperationRunView[] => {
+    if (persistedTaskIds.has(taskId)) return []
+    const outputs = collectOutputs(taskId, [], [])
+    if (outputs.length === 0) return []
+    const createdAt =
+      (generatedEdgesByTaskId.get(taskId) ?? []).map((edge) => edge.createdAt).sort().at(-1) ??
+      outputs.map((output) => output.createdAt).sort().at(-1) ??
+      operationNode.updatedAt
+    const completedAt =
+      outputs.map((output) => output.updatedAt).sort().at(-1) ?? operationNode.updatedAt
+    return [
+      {
+        taskId,
+        status: 'completed',
+        progress: 100,
+        createdAt,
+        completedAt,
+        ...(operationNode.data.modelId ? { modelId: operationNode.data.modelId } : {}),
+        outputs,
+      },
+    ]
+  })
+
+  return [...persistedRuns, ...recoveredRuns]
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 }
 
