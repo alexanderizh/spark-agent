@@ -152,7 +152,10 @@ export class TemplateMediaAdapter {
     return pollTask(pollUrl, headers, {
       fetchImpl: ctx.fetch,
       intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? polling?.intervalMs ?? 5_000,
-      timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? polling?.timeoutMs ?? 600_000,
+      timeoutMs:
+        ctx.mediaDefaults?.polling?.timeoutMs ??
+        polling?.timeoutMs ??
+        (manifest.domains.includes('video') ? 1_800_000 : 600_000),
       inspect: (data) => {
         if (firstStringAtPaths(data, response.resultPaths)) return 'done'
         const rawStatus = extractStatus(data).toLowerCase()

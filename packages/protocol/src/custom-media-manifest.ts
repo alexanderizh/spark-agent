@@ -34,11 +34,13 @@ export function createBasicCustomMediaManifest(
           kind: 'task_poll',
           taskIdPaths: ['task_id', 'id'],
           statusEndpoint: '/tasks/{{taskId}}',
-          resultPaths: ['data[].url', 'output.url', 'url'],
+          resultPaths: input.modelType === 'video'
+            ? ['data.result.videos[].url[]', 'data[].url', 'output.url', 'url']
+            : ['data[].url', 'output.url', 'url'],
         },
         polling: {
           intervalMs: 5_000,
-          timeoutMs: 600_000,
+          timeoutMs: input.modelType === 'video' ? 1_800_000 : 600_000,
           statusMap: {
             queued: 'queued',
             pending: 'queued',

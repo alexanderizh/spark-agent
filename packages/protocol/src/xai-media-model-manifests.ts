@@ -77,7 +77,7 @@ export const XAI_VIDEO_15_MANIFESTS: readonly MediaModelManifest[] = XAI_VIDEO_1
       },
       polling: {
         intervalMs: 5000,
-        timeoutMs: 1200000,
+        timeoutMs: 1800000,
         statusMap: xaiVideoStatusMap,
       },
     },

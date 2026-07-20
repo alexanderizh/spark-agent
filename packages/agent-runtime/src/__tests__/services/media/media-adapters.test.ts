@@ -116,10 +116,13 @@ describe('media HTTP util extractors', () => {
 
   it('extractMediaUrls dedupes video urls', () => {
     const urls = extractMediaUrls(
-      { video_url: 'https://cdn/v.mp4', result: { url: 'https://cdn/v.mp4' } },
+      {
+        video_url: 'https://cdn/v.mp4',
+        result: { videos: [{ url: ['https://cdn/v.mp4', 'https://cdn/v2.mp4'] }] },
+      },
       { kind: 'video' },
     )
-    expect(urls).toEqual(['https://cdn/v.mp4'])
+    expect(urls).toEqual(['https://cdn/v.mp4', 'https://cdn/v2.mp4'])
   })
 
   it('extractTaskId prefers task_id then request_id then id', () => {
@@ -656,7 +659,11 @@ describe('MediaRouterService', () => {
         match: '/videos/generations',
         respond: (init) =>
           init?.method === 'POST'
-            ? { ok: true, status: 200, body: { id: 'vid-1', status: 'pending' } }
+            ? {
+                ok: true,
+                status: 200,
+                body: { code: 200, data: [{ status: 'submitted', task_id: 'vid-1' }] },
+              }
             : { ok: true, status: 200, body: { id: 'vid-1' } },
       },
       {
@@ -671,7 +678,7 @@ describe('MediaRouterService', () => {
                   data: {
                     id: 'vid-1',
                     status: 'completed',
-                    result: { videos: [{ url: 'https://cdn/v.mp4' }] },
+                    result: { videos: [{ url: ['https://cdn/v.mp4'] }] },
                   },
                 },
               }

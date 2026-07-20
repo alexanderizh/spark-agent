@@ -1269,7 +1269,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaDefaults: {
       image: { size: '1024x1024', responseFormat: 'url' },
       video: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
-      polling: { intervalMs: 5000, timeoutMs: 900_000 },
+      polling: { intervalMs: 5000, timeoutMs: 1_800_000 },
     },
     sourceUrls: ['https://agnes-ai.com/zh-Hans/docs/overview'],
   },
@@ -1667,7 +1667,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
-      polling: { intervalMs: 5000, timeoutMs: 600_000 },
+      polling: { intervalMs: 5000, timeoutMs: 1_800_000 },
     },
     sourceUrls: [
       'https://docs.x.ai/developers/model-capabilities/video/generation',
@@ -1734,7 +1734,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { resolution: '1080P', durationSeconds: 5 },
-      polling: { intervalMs: 15000, timeoutMs: 600_000 },
+      polling: { intervalMs: 15000, timeoutMs: 1_800_000 },
     },
     sourceUrls: [
       'https://help.aliyun.com/zh/model-studio/happyhorse-text-to-video-api-reference',
@@ -1777,7 +1777,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { resolution: '1080P', durationSeconds: 5, watermark: false },
-      polling: { intervalMs: 15000, timeoutMs: 600_000 },
+      polling: { intervalMs: 15000, timeoutMs: 1_800_000 },
     },
     sourceUrls: [
       'https://help.aliyun.com/zh/model-studio/text-to-video-api-reference',
@@ -2099,7 +2099,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 5 },
-      polling: { intervalMs: 5000, timeoutMs: 1_200_000 },
+      polling: { intervalMs: 5000, timeoutMs: 1_800_000 },
     },
     sourceUrls: ['https://klingapi.com/zh/docs/text-to-video'],
   },
@@ -2163,7 +2163,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { durationSeconds: 6, resolution: '768P' },
-      polling: { intervalMs: 5000, timeoutMs: 1_200_000 },
+      polling: { intervalMs: 5000, timeoutMs: 1_800_000 },
     },
     sourceUrls: ['https://platform.minimaxi.com/document/video_generation'],
   },

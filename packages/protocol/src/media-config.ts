@@ -100,6 +100,9 @@ export const MEDIA_PROVIDER_KINDS = [
 
 export const MEDIA_API_TYPES = ['sync', 'async', 'auto'] as const satisfies readonly MediaApiType[]
 
+/** 视频异步任务的统一默认轮询超时：30 分钟。Provider 可显式配置更长时间。 */
+export const DEFAULT_VIDEO_POLL_TIMEOUT_MS = 30 * 60 * 1_000
+
 export const MEDIA_CAPABILITY_IDS = [
   'image.generate',
   'image.edit',

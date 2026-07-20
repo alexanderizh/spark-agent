@@ -1,15 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { BUILTIN_MEDIA_MODEL_MANIFESTS } from '../media-model-manifest.js'
-import { getProviderPresetById } from '../provider-presets.js'
+import { DEFAULT_VIDEO_POLL_TIMEOUT_MS } from '../media-config.js'
+import { getProviderPresetById, PROVIDER_PRESETS } from '../provider-presets.js'
 
 describe('provider presets', () => {
-  it('allows APIMart video tasks to run for up to 30 minutes', () => {
-    for (const id of [
-      'apimart-video-veo3',
-      'apimart-video-sora2',
-      'apimart-video-collection',
-    ]) {
-      expect(getProviderPresetById(id)?.mediaDefaults?.polling?.timeoutMs).toBe(1_800_000)
+  it('gives every video-capable preset and manifest at least the 30 minute default timeout', () => {
+    for (const preset of PROVIDER_PRESETS) {
+      const supportsVideo = preset.modelType === 'video'
+        || preset.mediaCapabilities?.some((capability) => capability.startsWith('video.')) === true
+      if (!supportsVideo) continue
+      expect(preset.mediaDefaults?.polling?.timeoutMs, preset.id).toBeGreaterThanOrEqual(
+        DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+      )
+    }
+    for (const manifest of BUILTIN_MEDIA_MODEL_MANIFESTS) {
+      if (!manifest.domains.includes('video') || manifest.invocation.mode !== 'async_polling') continue
+      expect(manifest.invocation.polling?.timeoutMs, manifest.id).toBeGreaterThanOrEqual(
+        DEFAULT_VIDEO_POLL_TIMEOUT_MS,
+      )
     }
   })
 
