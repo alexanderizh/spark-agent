@@ -5171,6 +5171,16 @@ export interface CanvasProjectMigrateAssetsRequest {
   projectId: string
   projectRootPath?: string | null
   snapshotJson: string
+  /**
+   * 跨设备导入：导入包在本机的 project.json 绝对路径。
+   * main 进程用 path.dirname 推导本机包根，配合 exportedPackageRoot 把 url 从源电脑路径翻译到本机。
+   */
+  sourceFilePath?: string
+  /**
+   * 跨设备导入：导出包顶层 projectRootPath（源电脑包根）。
+   * 跨设备后 url 仍编码源电脑绝对路径，需先翻译到本机包根才能 fs.stat 命中真实文件。
+   */
+  exportedPackageRoot?: string | null
 }
 export interface CanvasProjectMigrateAssetsResponse {
   migrated: boolean

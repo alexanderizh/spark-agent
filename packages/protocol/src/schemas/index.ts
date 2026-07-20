@@ -1274,6 +1274,8 @@ export const IpcSchemaRegistry = {
     projectId: z.string().min(1).max(200),
     projectRootPath: z.string().max(2000).nullable().optional(),
     snapshotJson: z.string().min(1),
+    sourceFilePath: z.string().max(2000).optional(),
+    exportedPackageRoot: z.string().max(2000).nullable().optional(),
   }),
   'canvas:project:cleanup-orphans': z.object({
     dryRun: z.boolean().optional(),
