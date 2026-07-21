@@ -18,6 +18,7 @@ import { Button, Switch, Tooltip } from 'antd'
 import { Icons } from '../../../Icons'
 import { formatTimestamp, type TrackClip, type WorkbenchResource } from './videoWorkbench.types'
 import { isResourceUsedInTrack } from './resourcePanelUtils'
+import { ResourceThumb, type ThumbnailMeta } from './VideoWorkbenchResourceThumb'
 
 type Filter = 'all' | 'video' | 'image'
 
@@ -40,6 +41,8 @@ interface Props {
   onPickLocal?: (() => void) | undefined
   /** 「从画布选择」按钮回调（由父级 Modal 弹出画布节点选择器） */
   onPickCanvas?: (() => void) | undefined
+  /** 视频缩略图 onLoadedMetadata 回填（durationSec / 宽高），仅在缺失字段时触发 */
+  onResourceMeta?: ((resourceId: string, meta: ThumbnailMeta) => void) | undefined
 }
 
 const FILTER_LABELS: Record<Filter, string> = {
@@ -60,6 +63,7 @@ export function VideoWorkbenchResourcePanel({
   onCollectUpstream,
   onPickLocal,
   onPickCanvas,
+  onResourceMeta,
 }: Props): ReactElement {
   const [filter, setFilter] = useState<Filter>('all')
   const [query, setQuery] = useState('')
@@ -180,6 +184,9 @@ export function VideoWorkbenchResourcePanel({
                 onAdd={() => onAddToTrack(r)}
                 onPreview={() => onPreview(r)}
                 onRemove={() => onRemoveResource(r.id)}
+                onMeta={
+                  onResourceMeta ? (meta) => onResourceMeta(r.id, meta) : undefined
+                }
               />
             )
           })}
@@ -195,6 +202,7 @@ interface ResourceCardProps {
   onAdd: () => void
   onPreview: () => void
   onRemove: () => void
+  onMeta?: ((meta: ThumbnailMeta) => void) | undefined
 }
 
 function ResourceCard({
@@ -203,10 +211,10 @@ function ResourceCard({
   onAdd,
   onPreview,
   onRemove,
+  onMeta,
 }: ResourceCardProps): ReactElement {
-  const { kind, title, url, thumbnailUrl, source, durationSec, width, height, fileSize } = resource
+  const { kind, title, source, durationSec, width, height, fileSize } = resource
   const isVideo = kind === 'video'
-  const previewUrl = thumbnailUrl || url
   const sourceLabel = source === 'upstream' ? '↑ 上游' : source === 'canvas' ? '🎨 画布' : '本地'
   const sourceClass =
     source === 'upstream' ? 'from-up' : source === 'canvas' ? 'from-canvas' : 'from-local'
@@ -227,10 +235,8 @@ function ResourceCard({
       }}
       title={title}
     >
-      <div
-        className="vwb-resource-thumb"
-        style={previewUrl ? { backgroundImage: `url(${previewUrl})` } : undefined}
-      >
+      <div className="vwb-resource-thumb">
+        <ResourceThumb resource={resource} className="vwb-resource-thumb-media" onMeta={onMeta} />
         <span className={`vwb-resource-type vwb-resource-type-${kind}`}>
           {isVideo ? '视频' : '图片'}
         </span>
@@ -244,7 +250,6 @@ function ResourceCard({
         ) : fileSize ? (
           <span className="vwb-resource-duration">{formatFileSize(fileSize)}</span>
         ) : null}
-        {!previewUrl && <Icons.Film size={20} />}
       </div>
       <div className="vwb-resource-info">
         <div className="vwb-resource-name">{title}</div>

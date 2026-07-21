@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react'
-import { Modal, Select, message } from 'antd'
+import { message } from 'antd'
 import { encodeToSafeFileUrl } from '../canvas-safe-file'
 import type { CanvasNode, CanvasSnapshot } from '../canvas.types'
 import type { CanvasResourceOption, LocalResourceFile } from './CanvasVideoWorkbenchModal'
@@ -39,19 +39,6 @@ export function useCanvasVideoWorkbenchResources({
         ]
       }),
     [snapshot?.nodes, workbenchNodeId],
-  )
-  const taskOutputNodeIds = useMemo(
-    () =>
-      new Set(
-        (snapshot?.nodes ?? [])
-          .filter((node) => node.data.origin === 'task_output')
-          .map((node) => node.id),
-      ),
-    [snapshot?.nodes],
-  )
-  const selectableCanvasResources = useMemo(
-    () => allCanvasResources.filter((resource) => !taskOutputNodeIds.has(resource.id)),
-    [allCanvasResources, taskOutputNodeIds],
   )
 
   const addLocalResources = useCallback(async (): Promise<LocalResourceFile[]> => {
@@ -108,42 +95,21 @@ export function useCanvasVideoWorkbenchResources({
   }, [projectId, snapshot?.project.rootPath])
 
   const pickCanvasResources = useCallback(async (): Promise<CanvasResourceOption[]> => {
-    if (selectableCanvasResources.length === 0) {
+    // 语义：返回"当前画布上可选的资源候选"，由工作台 Modal 内的 VideoWorkbenchResourcePicker
+    // 提供缩略图多选 + 类型过滤 + 搜索 UI（旧的 Modal.confirm + 纯文字 Select 已废弃）。
+    // 候选基于 allCanvasResources：同时包含用户手建节点与任务产物(task_output)节点——
+    // 后者 url 经 materialize 已固化为持久 safe-file 路径，可安全纳入。
+    if (allCanvasResources.length === 0) {
       message.info('当前画布没有可加入工作台的图片或视频节点')
-      return []
     }
-    return new Promise<CanvasResourceOption[]>((resolve) => {
-      let selectedIds = selectableCanvasResources
-        .filter((resource) => selectedNodes.some((node) => node.id === resource.id))
-        .map((resource) => resource.id)
-      Modal.confirm({
-        title: '从画布选择资源',
-        content: (
-          <Select
-            mode="multiple"
-            allowClear
-            style={{ width: '100%', marginTop: 12 }}
-            placeholder="选择图片或视频节点"
-            defaultValue={selectedIds}
-            options={selectableCanvasResources.map((resource) => ({
-              value: resource.id,
-              label: `${resource.kind === 'video' ? '视频' : '图片'} · ${resource.title}`,
-            }))}
-            onChange={(values) => {
-              selectedIds = values.map(String)
-            }}
-          />
-        ),
-        okText: '加入资源面板',
-        cancelText: '取消',
-        onOk: () => {
-          const selected = new Set(selectedIds)
-          resolve(selectableCanvasResources.filter((resource) => selected.has(resource.id)))
-        },
-        onCancel: () => resolve([]),
-      })
-    })
-  }, [selectableCanvasResources, selectedNodes])
+    // 用户当前在画布上选中的节点排前面，方便快速定位
+    if (selectedNodes.length === 0) return allCanvasResources
+    const selectedIds = new Set(selectedNodes.map((n) => n.id))
+    return [
+      ...allCanvasResources.filter((r) => selectedIds.has(r.id)),
+      ...allCanvasResources.filter((r) => !selectedIds.has(r.id)),
+    ]
+  }, [allCanvasResources, selectedNodes])
 
   const collectUpstreamResources = useCallback(async (): Promise<CanvasResourceOption[]> => {
     if (!snapshot || !workbenchNodeId) return []

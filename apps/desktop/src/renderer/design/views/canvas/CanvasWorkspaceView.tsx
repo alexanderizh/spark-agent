@@ -4063,8 +4063,8 @@ export function CanvasWorkspaceView({
     [videoWorkbenchNodeId, snapshot?.nodes],
   )
 
-  /** 画布上所有可用作工作台源的视频节点（供工作台「从画布选择」）。
-   *  排除当前工作台节点自身和易失效的操作产物(task_output)。 */
+  /** 画布上所有可用作工作台源的视频节点（供工作台「从画布选择」旧「设为源」入口）。
+   *  排除当前工作台节点自身；任务产物(task_output)的 url 已固化为持久路径，可纳入。 */
   const videoNodesForWorkbench = useMemo(
     () =>
       (snapshot?.nodes ?? [])
@@ -4072,8 +4072,7 @@ export function CanvasWorkspaceView({
           (n) =>
             n.type === 'video' &&
             typeof n.data.url === 'string' &&
-            n.id !== videoWorkbenchNodeId &&
-            n.data.origin !== 'task_output',
+            n.id !== videoWorkbenchNodeId,
         )
         .map((n) => ({
           id: n.id,
