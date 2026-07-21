@@ -8,6 +8,7 @@ type PendingQuestion = {
   resolve: (answers: Record<string, unknown>) => void
   detached: boolean
   settling: boolean
+  sourceTurnId?: string | undefined
   signal?: AbortSignal | undefined
   onAbort?: (() => void) | undefined
 }
@@ -18,6 +19,7 @@ type PendingUserQuestionStoreOptions = {
   onDetachedAnswer?: (
     request: UserQuestionRequest,
     answers: Record<string, unknown>,
+    context: { sourceTurnId?: string | undefined },
   ) => Promise<void>
 }
 
@@ -34,6 +36,7 @@ export class PendingUserQuestionStore {
     questionId: string
     sessionId: string
     questions: UserQuestionPrompt[]
+    sourceTurnId?: string | undefined
     signal?: AbortSignal
   }): Promise<Record<string, unknown>> {
     const key = questionKey(params.sessionId, params.questionId)
@@ -62,6 +65,7 @@ export class PendingUserQuestionStore {
       resolve: (answers) => resolvePromise?.(answers),
       detached: false,
       settling: false,
+      sourceTurnId: params.sourceTurnId,
     }
     this.pending.set(key, entry)
     if (params.signal != null) this.attachSignal(entry, params.signal)
@@ -91,7 +95,9 @@ export class PendingUserQuestionStore {
         answers.declined !== true &&
         this.options.onDetachedAnswer != null
       ) {
-        await this.options.onDetachedAnswer(entry.request, answers)
+        await this.options.onDetachedAnswer(entry.request, answers, {
+          sourceTurnId: entry.sourceTurnId,
+        })
       }
       return this.finish(sessionId, questionId, answers, 'answered')
     } catch (error) {

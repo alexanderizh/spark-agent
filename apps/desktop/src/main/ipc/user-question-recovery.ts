@@ -1,4 +1,4 @@
-import type { UserQuestionRequest } from '@spark/protocol'
+import type { AgentEvent, SessionAttachment, UserQuestionRequest } from '@spark/protocol'
 
 function printableAnswer(value: unknown): string {
   if (typeof value === 'string') return value
@@ -39,4 +39,65 @@ export function buildDetachedQuestionContinuationMessage(
     '',
     ...pairs,
   ].join('\n')
+}
+
+export function recoverDetachedQuestionAttachments(
+  events: AgentEvent[],
+  sourceTurnId?: string,
+): SessionAttachment[] | undefined {
+  const byNewest = [...events].sort((a, b) => b.seq - a.seq)
+  const sourceEvents =
+    sourceTurnId != null ? byNewest.filter((event) => event.turnId === sourceTurnId) : []
+  const exact = recoverAttachmentsFromEvents(sourceEvents)
+  if (exact != null) return exact
+  return recoverAttachmentsFromEvents(byNewest)
+}
+
+function recoverAttachmentsFromEvents(events: AgentEvent[]): SessionAttachment[] | undefined {
+  for (const event of events) {
+    if (event.type === 'user_message') {
+      const attachments = normalizeAttachments(event.attachments)
+      if (attachments != null) return attachments
+    }
+    if (event.type === 'turn_prompt_snapshot') {
+      const attachments = parseAttachmentLedger(event.userMessage)
+      if (attachments != null) return attachments
+    }
+  }
+  return undefined
+}
+
+function normalizeAttachments(
+  attachments:
+    | Array<{
+        type: 'image' | 'file' | 'directory'
+        path: string
+      }>
+    | undefined,
+): SessionAttachment[] | undefined {
+  if (attachments == null || attachments.length === 0) return undefined
+  const seen = new Set<string>()
+  const normalized: SessionAttachment[] = []
+  for (const attachment of attachments) {
+    const path = attachment.path.trim()
+    if (path.length === 0 || seen.has(path)) continue
+    seen.add(path)
+    normalized.push({ type: attachment.type, path })
+  }
+  return normalized.length > 0 ? normalized : undefined
+}
+
+function parseAttachmentLedger(userMessage: string): SessionAttachment[] | undefined {
+  const attachments: SessionAttachment[] = []
+  const seen = new Set<string>()
+  for (const line of userMessage.split(/\r?\n/)) {
+    const match = line.match(/^\d+\.\s+(image|file|directory):\s+.+\s+\((.+)\)$/)
+    if (match == null) continue
+    const type = match[1] as SessionAttachment['type']
+    const path = match[2]?.trim() ?? ''
+    if (path.length === 0 || seen.has(path)) continue
+    seen.add(path)
+    attachments.push({ type, path })
+  }
+  return attachments.length > 0 ? attachments : undefined
 }

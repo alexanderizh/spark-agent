@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildDetachedQuestionContinuationMessage } from './user-question-recovery.js'
+import type { AgentEvent } from '@spark/protocol'
+import {
+  buildDetachedQuestionContinuationMessage,
+  recoverDetachedQuestionAttachments,
+} from './user-question-recovery.js'
 
 describe('buildDetachedQuestionContinuationMessage', () => {
   it('assembles the original questions and submitted answers into a continuation turn', () => {
@@ -26,5 +30,94 @@ describe('buildDetachedQuestionContinuationMessage', () => {
     expect(message).toContain('问题：怎么安排？')
     expect(message).toContain('用户回答：先修复问答，再升级 SDK')
     expect(message).toContain('不要重复提问')
+  })
+
+  it('recovers attachments from the source turn before falling back to newer turns', () => {
+    const events: AgentEvent[] = [
+      {
+        id: 'event-1',
+        type: 'user_message',
+        sessionId: 'session-1',
+        turnId: 'turn-source',
+        timestamp: '2026-07-16T00:00:00.000Z',
+        seq: 1,
+        content: '看这张图',
+        attachments: [
+          { type: 'image', path: '/tmp/source.png', name: 'source.png' },
+          { type: 'image', path: '/tmp/source.png', name: 'source.png' },
+        ],
+      },
+      {
+        id: 'event-2',
+        type: 'user_message',
+        sessionId: 'session-1',
+        turnId: 'turn-newer',
+        timestamp: '2026-07-16T00:01:00.000Z',
+        seq: 2,
+        content: '后来一轮',
+        attachments: [{ type: 'file', path: '/tmp/newer.txt', name: 'newer.txt' }],
+      },
+    ]
+
+    expect(recoverDetachedQuestionAttachments(events, 'turn-source')).toEqual([
+      { type: 'image', path: '/tmp/source.png' },
+    ])
+  })
+
+  it('falls back to the newest recoverable attachments when source turn metadata is absent', () => {
+    const events: AgentEvent[] = [
+      {
+        id: 'event-1',
+        type: 'user_message',
+        sessionId: 'session-1',
+        turnId: 'turn-old',
+        timestamp: '2026-07-16T00:00:00.000Z',
+        seq: 1,
+        content: '旧附件',
+        attachments: [{ type: 'file', path: '/tmp/old.txt', name: 'old.txt' }],
+      },
+      {
+        id: 'event-2',
+        type: 'user_message',
+        sessionId: 'session-1',
+        turnId: 'turn-new',
+        timestamp: '2026-07-16T00:01:00.000Z',
+        seq: 2,
+        content: '新附件',
+        attachments: [{ type: 'image', path: '/tmp/new.png', name: 'new.png' }],
+      },
+    ]
+
+    expect(recoverDetachedQuestionAttachments(events)).toEqual([
+      { type: 'image', path: '/tmp/new.png' },
+    ])
+  })
+
+  it('recovers attachment paths from a turn prompt snapshot ledger', () => {
+    const events: AgentEvent[] = [
+      {
+        id: 'event-1',
+        type: 'turn_prompt_snapshot',
+        sessionId: 'session-1',
+        turnId: 'turn-source',
+        timestamp: '2026-07-16T00:00:00.000Z',
+        seq: 1,
+        userMessage: [
+          '看图修界面',
+          '',
+          'Attachments:',
+          '1. image: screenshot.png (/tmp/screenshot.png)',
+        ].join('\n'),
+        systemPromptSections: [],
+        model: 'claude-sonnet',
+        adapterKind: 'claude-sdk',
+        permissionMode: 'claude-ask',
+        toolCount: 0,
+      },
+    ]
+
+    expect(recoverDetachedQuestionAttachments(events, 'turn-source')).toEqual([
+      { type: 'image', path: '/tmp/screenshot.png' },
+    ])
   })
 })
