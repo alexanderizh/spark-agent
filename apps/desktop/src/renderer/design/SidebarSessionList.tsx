@@ -285,6 +285,37 @@ function formatRelativeTime(value: string): string {
   return `time.weeks:${Math.floor(diffMs / week)}`
 }
 
+function getSessionLocalDateKey(value: string): string | null {
+  const date = new Date(value)
+  const time = date.getTime()
+  if (!Number.isFinite(time)) return null
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+function formatSessionDateMarker(value: string): string | null {
+  const date = new Date(value)
+  const time = date.getTime()
+  if (!Number.isFinite(time)) return null
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${month}.${day}`
+}
+
+function shouldShowSessionDateMarker(
+  session: SessionSummary,
+  previousSession: SessionSummary | undefined,
+): boolean {
+  if (previousSession == null) return false
+  if (session.pinnedAt != null || previousSession.pinnedAt != null) return false
+  const currentKey = getSessionLocalDateKey(session.updatedAt)
+  const previousKey = getSessionLocalDateKey(previousSession.updatedAt)
+  return currentKey != null && previousKey != null && currentKey !== previousKey
+}
+
 function getSessionDisplayStatus(
   sessionStatus: string,
   agentStatus?: AgentStatusValue,
@@ -783,21 +814,35 @@ function ProjectSessionGroup({
             </button>
           ) : (
             <>
-              {visibleSessions.map((session) => (
-                <ChatListItem
-                  key={session.id}
-                  session={session}
-                  active={activeSessionId}
-                  agentStatus={sessionAgentStatuses[session.id]}
-                  terminalActivity={sessionTerminalActivity[session.id]}
-                  unreviewed={unreviewedCompletedSessions.has(session.id)}
-                  onClick={() => onSelectSession(session)}
-                  onRename={onRenameSession}
-                  onTogglePinned={onToggleSessionPinned}
-                  onArchive={onArchiveSession}
-                  onDelete={onDeleteSession}
-                />
-              ))}
+              {visibleSessions.map((session, index) => {
+                const dateMarker = shouldShowSessionDateMarker(
+                  session,
+                  visibleSessions[index - 1],
+                )
+                  ? formatSessionDateMarker(session.updatedAt)
+                  : null
+                return (
+                  <React.Fragment key={session.id}>
+                    {dateMarker != null && (
+                      <div className="session-date-marker" aria-label={`会话日期 ${dateMarker}`}>
+                        {dateMarker}
+                      </div>
+                    )}
+                    <ChatListItem
+                      session={session}
+                      active={activeSessionId}
+                      agentStatus={sessionAgentStatuses[session.id]}
+                      terminalActivity={sessionTerminalActivity[session.id]}
+                      unreviewed={unreviewedCompletedSessions.has(session.id)}
+                      onClick={() => onSelectSession(session)}
+                      onRename={onRenameSession}
+                      onTogglePinned={onToggleSessionPinned}
+                      onArchive={onArchiveSession}
+                      onDelete={onDeleteSession}
+                    />
+                  </React.Fragment>
+                )
+              })}
               {hasMore && (
                 <button
                   className="proj-show-more-btn"
