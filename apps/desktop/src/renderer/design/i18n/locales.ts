@@ -190,12 +190,14 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'chat.subagent.duration': '{{seconds}} 秒',
     'chat.subagent.expandHint': '查看任务说明',
     'chat.subagent.taskLabel': '任务说明',
+    'chat.subagent.resultSummaryLabel': '结果摘要',
     'chat.subagent.resultLabel': '执行结果',
     'chat.subagent.progressLabel': '当前进度',
     'chat.subagent.transcriptLabel': '执行记录',
     'chat.subagent.thinkingLabel': '思考',
     'chat.subagent.messageLabel': '消息',
     'chat.subagent.waitingForResult': '协作Agent 正在处理，完成后这里会显示结果。',
+    'chat.subagent.noAdditionalResult': '任务已结束，Provider 未提供额外的可读结果。',
     'chat.subagent.internalOutputHidden': '内部启动信息已隐藏；协作Agent 完成后会显示可读结果。',
     'chat.toolChooser.agentChoice': 'Agent 选择:',
     'chat.toolChooser.cancel': '取消',
@@ -479,6 +481,7 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'chat.subagent.duration': '{{seconds}}s',
     'chat.subagent.expandHint': 'View task details',
     'chat.subagent.taskLabel': 'Task',
+    'chat.subagent.resultSummaryLabel': 'Result summary',
     'chat.subagent.resultLabel': 'Result',
     'chat.subagent.progressLabel': 'Progress',
     'chat.subagent.transcriptLabel': 'Activity',
@@ -486,6 +489,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'chat.subagent.messageLabel': 'Message',
     'chat.subagent.waitingForResult':
       'The collaborative agent is working. Results will appear here when ready.',
+    'chat.subagent.noAdditionalResult':
+      'The task ended without an additional readable result from the provider.',
     'chat.subagent.internalOutputHidden':
       'Internal launch metadata is hidden. A readable result will appear when the collaborative agent finishes.',
     'chat.toolChooser.agentChoice': 'Agent choice:',

@@ -751,7 +751,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   gap: 4px;
   width: 100%;
 }
-.sidebar-bottom-user .sidebar-user { flex: 1; min-width: 0; }
+.sidebar-bottom-user .sidebar-user { flex: 1; min-width: 0; padding-right: 10px; }
 .sidebar-user-settings {
   flex-shrink: 0;
   display: flex;

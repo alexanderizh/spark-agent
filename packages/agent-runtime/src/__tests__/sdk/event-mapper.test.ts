@@ -67,13 +67,140 @@ describe('Claude SDK event mapper', () => {
     expect(completed).toContainEqual(expect.objectContaining({
       type: 'subagent_completed',
       toolCallId: 'tool-1',
+      taskId: 'task-1',
       status: 'success',
-      output: 'No permission regressions found',
+      resultSummary: 'No permission regressions found',
+      output: '',
       totalTokens: 456,
       toolUses: 6,
       durationMs: 2_500,
     }))
     expect(completed[0]).not.toHaveProperty('outputFile')
+  })
+
+  it('uses the structured Agent tool result as the full subagent output', () => {
+    const context = {
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      toolNamesById: new Map<string, string>(),
+    }
+    mapSDKMessageToEvents({
+      type: 'assistant',
+      uuid: 'spawn-structured-agent',
+      session_id: 'session-1',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'tool-structured-agent',
+          name: 'Agent',
+          input: {
+            agent: 'researcher',
+            description: 'Inspect authentication',
+            prompt: 'Trace authentication callbacks and report concrete findings.',
+          },
+        }],
+      },
+    } as SDKMessage, context)
+
+    const events = mapSDKMessageToEvents({
+      type: 'user',
+      uuid: 'structured-agent-result',
+      session_id: 'session-1',
+      parent_tool_use_id: null,
+      tool_use_result: {
+        status: 'completed',
+        agentId: 'agent-structured-1',
+        agentType: 'researcher',
+        prompt: 'Trace authentication callbacks and report concrete findings.',
+        content: [
+          { type: 'text', text: 'Found two callbacks.\n\nBoth preserve the permission scope.' },
+        ],
+        totalToolUseCount: 7,
+        totalDurationMs: 2_750,
+        totalTokens: 640,
+        usage: {
+          input_tokens: 500,
+          output_tokens: 140,
+          cache_creation_input_tokens: null,
+          cache_read_input_tokens: null,
+          server_tool_use: null,
+          service_tier: null,
+          cache_creation: null,
+        },
+      },
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'tool-structured-agent',
+          content: 'Inspect authentication',
+        }],
+      },
+    } as SDKMessage, context)
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'subagent_completed',
+      toolCallId: 'tool-structured-agent',
+      name: 'researcher',
+      status: 'success',
+      resultSummary: 'Found two callbacks.\n\nBoth preserve the permission scope.',
+      output: 'Found two callbacks.\n\nBoth preserve the permission scope.',
+      inputTokens: 500,
+      outputTokens: 140,
+      totalTokens: 640,
+      toolUses: 7,
+      durationMs: 2_750,
+    }))
+  })
+
+  it('correlates a structured result after a system task lifecycle without a tool name cache', () => {
+    const context = { sessionId: 'session-1', turnId: 'turn-1' }
+    mapSDKMessageToEvents({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: 'task-system-only',
+      tool_use_id: 'tool-system-only',
+      description: 'Inspect system-only lifecycle',
+      subagent_type: 'researcher',
+      prompt: 'Return the complete system-only report.',
+      uuid: 'task-system-only-started',
+      session_id: 'session-1',
+    } as SDKMessage, context)
+
+    const events = mapSDKMessageToEvents({
+      type: 'user',
+      uuid: 'task-system-only-result',
+      session_id: 'session-1',
+      parent_tool_use_id: null,
+      tool_use_result: {
+        status: 'completed',
+        agentId: 'agent-system-only',
+        content: [{ type: 'text', text: 'Complete system-only report.' }],
+        totalToolUseCount: 2,
+        totalDurationMs: 900,
+        totalTokens: 220,
+        usage: { input_tokens: 180, output_tokens: 40 },
+      },
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'tool-system-only',
+          content: 'Inspect system-only lifecycle',
+        }],
+      },
+    } as SDKMessage, context)
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'subagent_completed',
+      toolCallId: 'tool-system-only',
+      taskId: 'task-system-only',
+      name: 'researcher',
+      output: 'Complete system-only report.',
+    }))
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'tool_result' }))
   })
 
   it('maps background task replacement state without correlating unrelated task edges', () => {

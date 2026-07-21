@@ -342,6 +342,8 @@ export interface SDKUserMessage {
   uuid?: string
   session_id?: string
   parent_tool_use_id: string | null
+  /** SDK 工具的结构化完整输出；Agent 工具应优先从这里读取最终报告。 */
+  tool_use_result?: unknown
   message: {
     role: 'user'
     content: string | SDKContentBlock[]
