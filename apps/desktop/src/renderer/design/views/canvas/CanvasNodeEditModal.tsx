@@ -54,11 +54,15 @@ function CanvasShotScriptEditPanel({
     })
   }
   const handleTableWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-    if (!event.shiftKey) return
     const tableWrap = tableWrapRef.current
     if (!tableWrap) return
     const maxScrollLeft = tableWrap.scrollWidth - tableWrap.clientWidth
     if (maxScrollLeft <= 0) return
+    // 触控板横向滑动（deltaX 非零）或 shift+滚轮 → 横向滚动；纯垂直滚轮保留默认纵向滚动，
+    // 避免把 deltaY 强转横向导致行数多时看不到底部。横向溢出已通过收窄列宽大幅压缩。
+    const hasHorizontalIntent =
+      event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)
+    if (!hasHorizontalIntent) return
     const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
     if (delta === 0) return
     event.preventDefault()

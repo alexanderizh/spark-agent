@@ -6475,10 +6475,6 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   max-width: calc(100% - 32px);
 }
 
-.canvas-node-floating-panel:has(.canvas-shot-script-edit-panel) {
-  width: min(1180px, calc(100vw - 56px)) !important;
-}
-
 .canvas-node-floating-panel:not(.canvas-node-bottom-editor-panel):has(.is-fullscreen) {
   position: fixed;
   inset: auto;
@@ -7570,6 +7566,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 .canvas-shot-script-editor {
   display: flex;
+  min-width: 0;
   min-height: 0;
   height: 100%;
   flex-direction: column;
@@ -7586,6 +7583,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-shot-script-editor-table-wrap {
+  min-width: 0;
   min-height: 0;
   flex: 1;
   overflow: auto;
@@ -7597,10 +7595,10 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 .canvas-shot-script-editor-table {
   width: 100%;
-  min-width: 2380px;
   border-collapse: collapse;
   table-layout: fixed;
   font-size: 12px;
+  background: var(--panel-elev);
 
   th,
   td {
@@ -7613,74 +7611,100 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     position: sticky;
     top: 0;
     z-index: 1;
-    background: color-mix(in srgb, var(--canvas-float-bg) 96%, #050505);
+    background: color-mix(in srgb, var(--panel-elev) 96%, #050505);
     color: var(--text-muted);
     font-weight: 650;
     text-align: left;
   }
 
-  th:nth-child(1),
+  // 首列（镜号）sticky left，横滚时常驻便于定位行。背景必须不透明以遮挡滑入的单元格；
+  // th 兼作左上角（top+left）z-index 最高，td 用主体色避免与表头色差断层。
+  th:nth-child(1) {
+    width: 56px;
+    position: sticky;
+    top: 0;
+    left: 0;
+    z-index: 3;
+    background: color-mix(in srgb, var(--panel-elev) 96%, #050505);
+  }
+
   td:nth-child(1) {
-    width: 58px;
+    width: 56px;
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--panel-elev);
   }
 
   th:nth-child(2),
   td:nth-child(2) {
-    width: 68px;
+    width: 64px;
   }
 
   th:nth-child(3),
   td:nth-child(3),
   th:nth-child(4),
   td:nth-child(4) {
-    width: 90px;
+    width: 84px;
   }
 
   th:nth-child(5),
-  td:nth-child(5),
+  td:nth-child(5) {
+    width: 140px;
+  }
+
   th:nth-child(6),
   td:nth-child(6),
-  th:nth-child(7),
-  td:nth-child(7),
   th:nth-child(9),
   td:nth-child(9) {
-    width: 220px;
+    width: 130px;
+  }
+
+  th:nth-child(7),
+  td:nth-child(7),
+  th:nth-child(12),
+  td:nth-child(12) {
+    width: 120px;
   }
 
   th:nth-child(8),
   td:nth-child(8) {
-    width: 180px;
+    width: 110px;
   }
 
   th:nth-child(10),
-  td:nth-child(10),
-  th:nth-child(13),
-  td:nth-child(13) {
-    width: 320px;
+  td:nth-child(10) {
+    width: 170px;
   }
 
   th:nth-child(11),
-  td:nth-child(11) {
-    width: 240px;
+  td:nth-child(11),
+  th:nth-child(14),
+  td:nth-child(14) {
+    width: 150px;
   }
 
-  th:nth-child(12),
-  td:nth-child(12) {
+  th:nth-child(13),
+  td:nth-child(13) {
     width: 180px;
   }
 
-  th:nth-child(14),
-  td:nth-child(14) {
-    width: 260px;
-  }
-
-  th:last-child,
+  // 末列（删除按钮）sticky right，横滚时常驻。td 主体色、th 表头色（兼右上角，与左上角 z-index 齐平）。
   td:last-child {
     position: sticky;
     right: 0;
     z-index: 2;
-    width: 46px;
-    background: color-mix(in srgb, var(--canvas-float-bg) 96%, #050505);
+    width: 44px;
+    background: var(--panel-elev);
+  }
+
+  th:last-child {
+    position: sticky;
+    top: 0;
+    right: 0;
+    z-index: 3;
+    width: 44px;
+    background: color-mix(in srgb, var(--panel-elev) 96%, #050505);
   }
 
   td :where(.ant-input, .ant-input-affix-wrapper, textarea.ant-input) {
@@ -7691,7 +7715,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     height: 1px;
     .canvas-shot-script-editor-textarea {
       height: 100%;
-      min-height: 120px;
+      min-height: 84px;
     }
   }
 
@@ -7712,11 +7736,14 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     align-items: stretch;
   }
 
+  // height:100%!important 用于覆盖 antd TextArea autoSize 注入的 inline height，让 textarea 填满
+  // td（td height:1px + 行高由 textarea 撑开，同行等高）；其余属性去掉 !important 用普通规则即可生效，
+  // 避免 !important 堆积掩盖问题、影响边框/圆角/聚焦态对齐项目其他输入框。
   td.canvas-shot-script-editor-cell.is-multiline .ant-input-textarea textarea.ant-input {
     height: 100% !important;
-    min-height: 74px !important;
-    max-height: none !important;
-    overflow-y: hidden !important;
+    min-height: 84px;
+    max-height: none;
+    overflow-y: hidden;
     resize: none;
   }
 }
