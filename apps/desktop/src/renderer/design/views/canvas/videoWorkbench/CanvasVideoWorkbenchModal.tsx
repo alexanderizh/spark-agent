@@ -35,6 +35,9 @@ import { VideoTimeline } from './VideoTimeline'
 import { VideoWorkbenchResourcePanel } from './VideoWorkbenchResourcePanel'
 import { VideoWorkbenchTrackTimeline } from './VideoWorkbenchTrackTimeline'
 import { VideoWorkbenchOutputPanel } from './VideoWorkbenchOutputPanel'
+import type { ThumbnailMeta } from './VideoWorkbenchResourceThumb'
+import { VideoWorkbenchResourcePicker } from './VideoWorkbenchResourcePicker'
+import { useVideoWorkbenchPlayback } from './useVideoWorkbenchPlayback'
 import { insertResourceIntoTrack, mergeResources, removeTrackClip } from './resourcePanelUtils'
 import type { TrackClip, WorkbenchResource } from './videoWorkbench.types'
 import {
@@ -216,8 +219,6 @@ export function CanvasVideoWorkbenchModal({
   const probingRef = useRef(false)
   /** probe 失败标记（无 ffmpeg / 路径问题），用于区分「探测中」和「探测失败」 */
   const [probeFailed, setProbeFailed] = useState(false)
-  /** 是否正在播放 */
-  const [isPlaying, setIsPlaying] = useState(false)
   /** video 元素的 duration（probe 失败时兜底用） */
   const [videoMetaDuration, setVideoMetaDuration] = useState(0)
   /** 当前播放位置（秒），用于手动标记 */
@@ -231,6 +232,15 @@ export function CanvasVideoWorkbenchModal({
   const [trimCopy, setTrimCopy] = useState(true)
   /** 资源面板当前选中的资源 id（用于在主预览区单独预览） */
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null)
+  /** 多段轨道连播状态机（active 时主预览区按 clip 顺序连播，详见 useVideoWorkbenchPlayback） */
+  const playback = useVideoWorkbenchPlayback({
+    track: draft.track,
+    resources: draft.resourcePanel,
+    videoRef,
+  })
+  /** 「从画布选择资源」Picker 的打开状态与候选列表（UI 在 Modal 内部，避免改动父级） */
+  const [canvasPickerOpen, setCanvasPickerOpen] = useState(false)
+  const [canvasPickerCandidates, setCanvasPickerCandidates] = useState<CanvasResourceOption[]>([])
   const autoCollectTriggeredRef = useRef(false)
 
   const sourceVideoUrl = useMemo(() => {
@@ -239,27 +249,51 @@ export function CanvasVideoWorkbenchModal({
   }, [node?.data?.url])
 
   /**
-   * 主预览区当前展示：先看资源面板选中项，没有则退回源视频。
-   * 三值（selectedResource / previewUrl / previewKind）从同一次 find 派生，避免重复扫数组。
+   * 主预览区当前展示，优先级：单独预览（点资源 Eye）> 连播（playback.active）> 源视频。
+   * isPlayback 标志用于决定 <video> 事件是否转发给连播状态机。
    */
   const preview = useMemo(() => {
     if (selectedResourceId) {
       const r = draft.resourcePanel.find((x) => x.id === selectedResourceId)
       if (r) {
         return {
-          selectedResource: r,
+          selectedResource: r as WorkbenchResource | null,
           previewUrl: r.url,
           previewKind: r.kind,
+          isPlayback: false as const,
         }
+      }
+    }
+    if (playback.active && playback.currentResource) {
+      return {
+        selectedResource: null as WorkbenchResource | null,
+        previewUrl: playback.currentResource.url,
+        previewKind: playback.currentResource.kind,
+        isPlayback: true as const,
       }
     }
     return {
       selectedResource: null as WorkbenchResource | null,
       previewUrl: sourceVideoUrl,
       previewKind: sourceVideoUrl ? ('video' as const) : null,
+      isPlayback: false as const,
     }
-  }, [draft.resourcePanel, selectedResourceId, sourceVideoUrl])
-  const { selectedResource, previewUrl, previewKind } = preview
+  }, [draft.resourcePanel, selectedResourceId, sourceVideoUrl, playback.active, playback.currentResource])
+  const { selectedResource, previewUrl, previewKind, isPlayback } = preview
+  // 解构 playback 的稳定函数与状态，避免依赖整个对象导致下游 useCallback 频繁重建
+  const {
+    toggle: playbackToggle,
+    seekToGlobal: playbackSeek,
+    handleVideoEnded: playbackOnEnded,
+    handleVideoTimeUpdate: playbackOnTimeUpdate,
+    handleVideoPlay: playbackOnPlay,
+    handleVideoPause: playbackOnPause,
+    playing: playbackPlaying,
+    active: playbackActive,
+    globalTimeSec: playbackGlobalTime,
+    totalDurationSec: playbackTotal,
+    currentClipId: playbackCurrentClipId,
+  } = playback
 
   const probe = draft.probeInfo
   const duration = probe?.durationSec ?? videoMetaDuration ?? 0
@@ -520,7 +554,9 @@ export function CanvasVideoWorkbenchModal({
           }))
           return { ...d, keyframes: [...d.keyframes, ...frames] }
         })
-        message.success(`提取了 ${frames.length} 个标记帧`)
+        // result.length === frames.length（frames 定义在 setDraft updater 内部，
+        // 外部访问会 ReferenceError，用 result.length 计数）
+        message.success(`提取了 ${result.length} 个标记帧`)
       }
     } catch (err) {
       message.error(`提取失败: ${err instanceof Error ? err.message : String(err)}`)
@@ -538,6 +574,74 @@ export function CanvasVideoWorkbenchModal({
       setCurrentTime(sec)
     }
   }, [])
+
+  /**
+   * 播放/暂停：
+   *  - 已在连播 → 状态机 toggle
+   *  - 有轨道且未单独预览 → 进入连播（用户编排了轨道，点播放=看整条）
+   *  - 其余（无轨道 / 单独预览资源 / 源视频）→ 直接控制主预览 video 元素
+   */
+  const handlePlayToggle = useCallback(() => {
+    if (isPlayback || (draft.track.length > 0 && !selectedResourceId)) {
+      playbackToggle()
+      return
+    }
+    const v = videoRef.current
+    if (!v) return
+    if (v.paused) void v.play().catch(() => {})
+    else v.pause()
+  }, [isPlayback, draft.track.length, selectedResourceId, playbackToggle])
+
+  /** 逐帧（仅视频；连播 / 单独预览 / 源视频都基于同一个 video 元素） */
+  const stepFrame = useCallback(
+    (dir: 1 | -1) => {
+      const v = videoRef.current
+      if (!v) return
+      const fps = probe?.fps ?? 30
+      v.pause()
+      v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + dir / fps))
+    },
+    [probe?.fps],
+  )
+
+  /** 回到开头：连播模式 seek 到全局 0；其余 video.currentTime = 0 */
+  const handleToStart = useCallback(() => {
+    if (isPlayback) {
+      playbackSeek(0)
+      return
+    }
+    const v = videoRef.current
+    if (v) v.currentTime = 0
+  }, [isPlayback, playbackSeek])
+
+  /** 相对 seek：连播用全局时间，其余直接改 video.currentTime（供 Shift+←/→ 5s 跳转） */
+  const seekRelative = useCallback(
+    (deltaSec: number) => {
+      if (isPlayback) {
+        playbackSeek(Math.max(0, playbackGlobalTime + deltaSec))
+        return
+      }
+      const v = videoRef.current
+      if (!v) return
+      v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + deltaSec))
+    },
+    [isPlayback, playbackGlobalTime, playbackSeek],
+  )
+
+  /** 播放条 seek：若正在单独预览某资源，自动切回连播模式（点播放控件 = 想看整条） */
+  const handlePlaybackSeek = useCallback(
+    (sec: number) => {
+      if (selectedResourceId) setSelectedResourceId(null)
+      playbackSeek(sec)
+    },
+    [selectedResourceId, playbackSeek],
+  )
+
+  /** 播放条播放按钮：同上，自动退出单独预览 */
+  const handlePlaybackToggle = useCallback(() => {
+    if (selectedResourceId) setSelectedResourceId(null)
+    playbackToggle()
+  }, [selectedResourceId, playbackToggle])
 
   const handleExportKeyframes = useCallback(async () => {
     if (!node || !onExportKeyframes || draft.keyframes.length === 0) return
@@ -740,6 +844,57 @@ export function CanvasVideoWorkbenchModal({
     [updateDraft],
   )
 
+  // 视频缩略图 <video> onLoadedMetadata 回填：本机导入 / 上游收集的资源常缺 durationSec / 宽高，
+  // 缩略图加载时由浏览器拿到的 metadata 批量补齐。每个卡片都可能触发，用 buffer + 短延迟合并，
+  // 避免高频 setDraft；已有字段的资源原样返回，不触发 re-render。
+  const metaBufferRef = useRef<Map<string, ThumbnailMeta>>(new Map())
+  const metaFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const flushResourceMeta = useCallback(() => {
+    metaFlushTimerRef.current = null
+    const buffer = metaBufferRef.current
+    if (buffer.size === 0) return
+    const entries = Array.from(buffer.entries())
+    buffer.clear()
+    updateDraft((d) => {
+      let changed = false
+      const resourcePanel = d.resourcePanel.map((r) => {
+        const entry = entries.find(([id]) => id === r.id)
+        if (!entry) return r
+        const meta = entry[1]
+        const durationSec = r.durationSec ?? meta.durationSec
+        const width = r.width ?? meta.width
+        const height = r.height ?? meta.height
+        if (durationSec === r.durationSec && width === r.width && height === r.height) return r
+        changed = true
+        return {
+          ...r,
+          ...(durationSec !== undefined ? { durationSec } : {}),
+          ...(width !== undefined ? { width } : {}),
+          ...(height !== undefined ? { height } : {}),
+        }
+      })
+      return changed ? { ...d, resourcePanel } : d
+    })
+  }, [updateDraft])
+  const handleResourceMeta = useCallback(
+    (resourceId: string, meta: ThumbnailMeta) => {
+      const prev = metaBufferRef.current.get(resourceId) ?? {}
+      metaBufferRef.current.set(resourceId, { ...prev, ...meta })
+      if (metaFlushTimerRef.current == null) {
+        metaFlushTimerRef.current = setTimeout(flushResourceMeta, 200)
+      }
+    },
+    [flushResourceMeta],
+  )
+  // 卸载时清 timer，避免泄漏（buffer 随组件销毁，无需手动 clear）
+  useEffect(() => {
+    return () => {
+      if (metaFlushTimerRef.current != null) {
+        clearTimeout(metaFlushTimerRef.current)
+      }
+    }
+  }, [])
+
   const handleAutoCollectToggle = useCallback(
     (next: boolean) => {
       updateDraft((d) => ({ ...d, autoCollectUpstream: next }))
@@ -815,11 +970,28 @@ export function CanvasVideoWorkbenchModal({
   const handlePickCanvas = useCallback(async () => {
     if (!onPickCanvasResources) return
     try {
-      handleAddResourcesFromProps(await onPickCanvasResources())
+      const candidates = await onPickCanvasResources()
+      if (candidates.length === 0) return // hook 内部已 message 提示
+      setCanvasPickerCandidates(candidates)
+      setCanvasPickerOpen(true)
     } catch (err) {
       message.error(`打开画布选择失败：${err instanceof Error ? err.message : String(err)}`)
     }
-  }, [handleAddResourcesFromProps, onPickCanvasResources])
+  }, [onPickCanvasResources])
+
+  const handlePickerConfirm = useCallback(
+    (selected: CanvasResourceOption[]) => {
+      setCanvasPickerOpen(false)
+      setCanvasPickerCandidates([])
+      handleAddResourcesFromProps(selected)
+    },
+    [handleAddResourcesFromProps],
+  )
+
+  const handlePickerCancel = useCallback(() => {
+    setCanvasPickerOpen(false)
+    setCanvasPickerCandidates([])
+  }, [])
 
   // 「添加资源」Dropdown 的菜单项：依赖稳定时一次性计算，避免每次 render 重建数组对象
   const addResourceMenuItems = useMemo<NonNullable<MenuProps['items']>>(() => {
@@ -886,6 +1058,8 @@ export function CanvasVideoWorkbenchModal({
     handlePickCanvas,
     handleCollectUpstream,
   ])
+  // 播放器快捷键：Space 播放/暂停、←/→ 逐帧、Shift+←/→ 5s 跳转、Home 回到开头、Esc 关闭。
+  // 守卫：输入框 / 下拉菜单聚焦时不拦截；VideoTimeline（单视频剪辑轨道）聚焦时把箭头键交给它。
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -893,11 +1067,41 @@ export function CanvasVideoWorkbenchModal({
         e.preventDefault()
         e.stopPropagation()
         onClose()
+        return
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const target = e.target as HTMLElement | null
+      const inEditable =
+        !!target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.closest(
+            '.ant-select, .ant-dropdown-menu, [role="combobox"], [contenteditable="true"]',
+          ) != null)
+      if (inEditable) return
+      const inSingleTimeline = !!target?.closest('.vwb-timeline')
+      if (inSingleTimeline) return
+
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault()
+        handlePlayToggle()
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        if (e.shiftKey) seekRelative(-5)
+        else stepFrame(-1)
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        if (e.shiftKey) seekRelative(5)
+        else stepFrame(1)
+      } else if (e.key === 'Home') {
+        e.preventDefault()
+        handleToStart()
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [open, onClose])
+  }, [open, onClose, handlePlayToggle, stepFrame, handleToStart, seekRelative])
 
   if (!open) return null
 
@@ -989,13 +1193,21 @@ export function CanvasVideoWorkbenchModal({
                   ref={videoRef}
                   src={previewUrl}
                   preload="metadata"
-                  onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                  onTimeUpdate={(e) => {
+                    const t = e.currentTarget.currentTime
+                    // 连播模式下 currentTime 无人消费（控件显示 playbackGlobalTime、
+                    // VideoTimeline 已隐藏），跳过 setCurrentTime 避免一次全量 re-render；
+                    // 只把时间转发给连播状态机驱动播放头。
+                    if (isPlayback) playbackOnTimeUpdate(t)
+                    else setCurrentTime(t)
+                  }}
                   onLoadedMetadata={(e) => {
                     const d = e.currentTarget.duration
                     if (Number.isFinite(d) && d > 0) setVideoMetaDuration(d)
                   }}
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
+                  onPlay={playbackOnPlay}
+                  onPause={playbackOnPause}
+                  onEnded={isPlayback ? playbackOnEnded : undefined}
                   className="vwb-video"
                 />
               ) : previewUrl && previewKind === 'image' ? (
@@ -1013,60 +1225,45 @@ export function CanvasVideoWorkbenchModal({
               )}
             </div>
 
-            {/* 自定义播放控制条 */}
-            {previewUrl && previewKind === 'video' && (
+            {/* 自定义播放控制条（连播 / 单独预览 / 源视频共用） */}
+            {previewUrl && (
               <div className="vwb-player-controls">
                 <button
                   className="vwb-player-btn"
-                  onClick={() => {
-                    const v = videoRef.current
-                    if (!v) return
-                    // 逐帧后退（1/fps，默认 1/30）
-                    const fps = probe?.fps ?? 30
-                    v.pause()
-                    v.currentTime = Math.max(0, v.currentTime - 1 / fps)
-                  }}
-                  title="上一帧"
+                  onClick={() => stepFrame(-1)}
+                  disabled={previewKind !== 'video'}
+                  title="上一帧（←）"
                 >
                   <Icons.ChevronLeft size={16} />
                 </button>
                 <button
                   className="vwb-player-btn vwb-player-play"
-                  onClick={() => {
-                    const v = videoRef.current
-                    if (!v) return
-                    if (v.paused) void v.play()
-                    else v.pause()
-                  }}
-                  title={isPlaying ? '暂停' : '播放'}
+                  onClick={handlePlayToggle}
+                  disabled={!isPlayback && previewKind !== 'video'}
+                  title={playbackPlaying ? '暂停（空格）' : '播放（空格）'}
                 >
-                  {isPlaying ? <Icons.Pause size={18} /> : <Icons.Play size={18} />}
+                  {playbackPlaying ? <Icons.Pause size={18} /> : <Icons.Play size={18} />}
                 </button>
                 <button
                   className="vwb-player-btn"
-                  onClick={() => {
-                    const v = videoRef.current
-                    if (!v) return
-                    const fps = probe?.fps ?? 30
-                    v.pause()
-                    v.currentTime = Math.min(v.duration || 0, v.currentTime + 1 / fps)
-                  }}
-                  title="下一帧"
+                  onClick={() => stepFrame(1)}
+                  disabled={previewKind !== 'video'}
+                  title="下一帧（→）"
                 >
                   <Icons.ChevronRight size={16} />
                 </button>
-                <span className="vwb-player-time">{formatTimestamp(currentTime)}</span>
+                <span className="vwb-player-time">
+                  {formatTimestamp(isPlayback ? playbackGlobalTime : currentTime)}
+                </span>
                 <span className="vwb-player-divider">/</span>
-                <span className="vwb-player-duration">{formatTimestamp(duration)}</span>
+                <span className="vwb-player-duration">
+                  {formatTimestamp(isPlayback ? playbackTotal : duration)}
+                </span>
                 <div className="vwb-player-spacer" />
                 <button
                   className="vwb-player-btn"
-                  onClick={() => {
-                    const v = videoRef.current
-                    if (!v) return
-                    v.currentTime = 0
-                  }}
-                  title="回到开头"
+                  onClick={handleToStart}
+                  title="回到开头（Home）"
                 >
                   <Icons.RotateCcw size={14} />
                 </button>
@@ -1084,6 +1281,15 @@ export function CanvasVideoWorkbenchModal({
               onAddResourceToTrack={handleAddResourceToTrack}
               onExportWhole={handleExportWhole}
               onClearTrack={handleClearTrack}
+              playback={{
+                active: playbackActive,
+                playing: playbackPlaying,
+                currentClipId: playbackCurrentClipId,
+                globalTimeSec: playbackGlobalTime,
+                totalDurationSec: playbackTotal,
+              }}
+              onPlaybackSeek={handlePlaybackSeek}
+              onPlaybackToggle={handlePlaybackToggle}
             />
 
             {/* 单视频源编辑轨道（已有关联源视频且尚未开始多段拼接时展示，作为补充工具） */}
@@ -1146,6 +1352,7 @@ export function CanvasVideoWorkbenchModal({
                 onCollectUpstream={() => void handleCollectUpstream()}
                 onPickLocal={onAddLocalResources ? () => void handlePickLocal() : undefined}
                 onPickCanvas={onPickCanvasResources ? () => void handlePickCanvas() : undefined}
+                onResourceMeta={handleResourceMeta}
               />
             )}
 
@@ -1185,6 +1392,12 @@ export function CanvasVideoWorkbenchModal({
           </div>
         </div>
       </div>
+      <VideoWorkbenchResourcePicker
+        open={canvasPickerOpen}
+        candidates={canvasPickerCandidates}
+        onConfirm={handlePickerConfirm}
+        onCancel={handlePickerCancel}
+      />
     </div>
   )
 }

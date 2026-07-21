@@ -1472,12 +1472,29 @@
   position: relative;
   aspect-ratio: 16 / 10;
   background-color: #0f0f12;
-  background-size: cover;
-  background-position: center;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #3f3f46;
+  overflow: hidden;
+}
+
+// 视频首帧（<video>）/ 图片（<img>）填充缩略图容器，三处复用。
+.vwb-resource-thumb-media,
+.vwb-track-clip-thumb-media,
+.vwb-picker-card-media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+
+  &.no-preview {
+    position: static;
+    width: auto;
+    height: auto;
+  }
 }
 
 .vwb-resource-type {
@@ -1681,6 +1698,137 @@
   gap: 4px;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// 播放进度条（连播预览 · VideoWorkbenchPlaybackBar）
+// ═══════════════════════════════════════════════════════════════
+
+.vwb-playback-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 2px 0;
+}
+
+.vwb-playback-play {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: #3d8eff;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s;
+
+  &:hover:not(:disabled) {
+    background: #5a9eff;
+  }
+
+  &.is-playing {
+    background: #6a5cff;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.vwb-playback-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  color: #d4d4d8;
+  display: flex;
+  gap: 4px;
+
+  .vwb-playback-time-total {
+    color: #71717a;
+  }
+}
+
+.vwb-playback-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 120px;
+  height: 34px;
+  display: flex;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+}
+
+.vwb-playback-seg {
+  position: relative;
+  min-width: 0;
+  background: linear-gradient(180deg, #3d8eff 0%, #2f6fbf 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 6px;
+  overflow: hidden;
+  transition: filter 0.12s;
+
+  &.is-image {
+    background: linear-gradient(180deg, #22c55e 0%, #15803d 100%);
+  }
+
+  &.is-current {
+    filter: brightness(1.18);
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55);
+  }
+
+  &:hover {
+    filter: brightness(1.08);
+  }
+}
+
+.vwb-playback-seg-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.vwb-playback-seg-dur {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+}
+
+.vwb-playback-head {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: #ef4444;
+  transform: translateX(-1px);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.vwb-playback-head-handle {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
 .vwb-track-strip {
   display: flex;
   align-items: stretch;
@@ -1765,19 +1913,15 @@
 }
 
 .vwb-track-clip-thumb {
+  position: relative;
   flex: 1;
   min-height: 44px;
   background-color: rgba(0, 0, 0, 0.4);
-  background-size: cover;
-  background-position: center;
   display: flex;
   align-items: center;
   justify-content: center;
   color: rgba(255, 255, 255, 0.4);
-
-  &.no-preview {
-    background: rgba(0, 0, 0, 0.4);
-  }
+  overflow: hidden;
 }
 
 .vwb-track-clip-info {
@@ -1853,6 +1997,214 @@
   font-size: 10px;
   color: #52525b;
   text-align: center;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 资源选择器（从画布选择 · VideoWorkbenchResourcePicker）
+// ═══════════════════════════════════════════════════════════════
+
+// Picker 用 antd Modal（默认白底），但内部元素（卡片名、空状态、搜索框）都是
+// 按主工作台的深色主题设计的。这里把 antd Modal 的容器/标题/footer/关闭按钮
+// 全部刷成深色工作台风格，让浅灰文字（#d4d4d8 等）在深底上可读，与主面板统一。
+.vwb-picker-modal {
+  .ant-modal-content {
+    background: #1a1a1e;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  }
+
+  .ant-modal-header {
+    background: transparent;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 0;
+    padding: 16px 20px;
+  }
+
+  .ant-modal-title {
+    color: #f4f4f5;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .ant-modal-body {
+    color: #e4e4e7;
+    padding: 16px 20px;
+  }
+
+  .ant-modal-footer {
+    background: transparent;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    margin-top: 0;
+    padding: 12px 20px 16px;
+  }
+
+  .ant-modal-close {
+    color: #71717a;
+
+    &:hover,
+    &:focus {
+      color: #f4f4f5;
+      background: rgba(255, 255, 255, 0.08);
+    }
+  }
+}
+
+.vwb-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vwb-picker-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.vwb-picker-search {
+  flex: 1 1 200px;
+  min-width: 160px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: #e4e4e7;
+  font-size: 12px;
+  outline: none;
+
+  &:focus {
+    border-color: #3d8eff;
+  }
+}
+
+.vwb-picker-chip {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: transparent;
+  color: #a1a1aa;
+  font-size: 11px;
+  cursor: pointer;
+
+  &.is-active {
+    background: rgba(61, 142, 255, 0.15);
+    border-color: #3d8eff;
+    color: #93c5fd;
+  }
+}
+
+.vwb-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 2px;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+}
+
+.vwb-picker-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+
+  &.is-selected {
+    border-color: #3d8eff;
+  }
+}
+
+.vwb-picker-card-thumb {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #0f0f12;
+}
+
+.vwb-picker-card-type {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.92);
+
+  &.type-video {
+    background: rgba(61, 142, 255, 0.85);
+  }
+  &.type-image {
+    background: rgba(34, 197, 94, 0.85);
+  }
+}
+
+.vwb-picker-card-dur {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.vwb-picker-card-check {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #3d8eff;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vwb-picker-card-name {
+  font-size: 11px;
+  color: #d4d4d8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vwb-picker-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 32px;
+  color: #71717a;
+  font-size: 12px;
+
+  .muted {
+    font-size: 11px;
+    color: #52525b;
+    text-align: center;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -292,3 +292,52 @@ export function mergeResources(
   }
   return Array.from(map.values())
 }
+
+// ─── 连播（playlist-style playback）位置换算 ──────────────────────────
+// 这些纯函数把"整条轨道的全局时间"与"(clip, clip 内偏移)"互相换算，
+// 供 useVideoWorkbenchPlayback hook 和播放进度条共用，便于单测。
+
+/** 把整条轨道的全局时间换算为 (clip, clip 内偏移)。超出末尾落在最后一个 clip。 */
+export function resolveClipAtGlobalTime(
+  track: TrackClip[],
+  resourcesById: Map<string, WorkbenchResource>,
+  globalSec: number,
+): { clip: TrackClip; offsetSec: number } | null {
+  if (!Array.isArray(track) || track.length === 0) return null
+  const sorted = track.slice().sort((a, b) => a.order - b.order)
+  let acc = 0
+  for (let i = 0; i < sorted.length; i++) {
+    const clip = sorted[i]
+    if (!clip) continue
+    const dur = clipDurationSec(clip, resourcesById.get(clip.resourceId))
+    if (globalSec <= acc + dur || i === sorted.length - 1) {
+      return { clip, offsetSec: Math.max(0, globalSec - acc) }
+    }
+    acc += dur
+  }
+  // 兜底（理论不可达：循环最后一轮必 return）
+  const last = sorted[sorted.length - 1]
+  return last ? { clip: last, offsetSec: 0 } : null
+}
+
+/** 给定 clipId，返回它在整条轨道里的起始全局时间（秒）。找不到返回 0。 */
+export function clipStartSecInTrack(
+  track: TrackClip[],
+  resourcesById: Map<string, WorkbenchResource>,
+  clipId: string | null | undefined,
+): number {
+  if (!clipId || !Array.isArray(track)) return 0
+  const sorted = track.slice().sort((a, b) => a.order - b.order)
+  let acc = 0
+  for (const clip of sorted) {
+    if (clip.id === clipId) return acc
+    acc += clipDurationSec(clip, resourcesById.get(clip.resourceId))
+  }
+  return 0
+}
+
+/** clip 内偏移 → video 元素应该 seek 到的时间（含 range 裁剪起点）。 */
+export function clipSeekTimeSec(clip: TrackClip, offsetSec: number): number {
+  const start = clip.range?.startSec ?? 0
+  return Math.max(0, start + Math.max(0, offsetSec))
+}

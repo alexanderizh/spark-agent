@@ -3,6 +3,8 @@ import {
   appendResourceToTrack,
   calculateTrackDuration,
   clipDurationSec,
+  clipSeekTimeSec,
+  clipStartSecInTrack,
   collectUpstreamResources,
   DEFAULT_IMAGE_STATIC_DURATION_SEC,
   indexResourcesById,
@@ -13,6 +15,7 @@ import {
   pickPrimaryArtifact,
   removeTrackClip,
   reorderTrack,
+  resolveClipAtGlobalTime,
   upstreamNodeToResource,
   type UpstreamNodeRef,
 } from './resourcePanelUtils'
@@ -335,6 +338,69 @@ describe('resourcePanelUtils', () => {
 
     it('returns 0 for an empty track', () => {
       expect(calculateTrackDuration([], new Map())).toBe(0)
+    })
+  })
+
+  describe('resolveClipAtGlobalTime / clipStartSecInTrack', () => {
+    const resources = [
+      makeResource({ id: 'r1', kind: 'video', durationSec: 10 }),
+      makeResource({ id: 'r2', kind: 'image' }),
+      makeResource({ id: 'r3', kind: 'video', durationSec: 7 }),
+    ]
+    const track = [
+      makeClip({ id: 'c1', resourceId: 'r1', order: 0 }),
+      makeClip({ id: 'c2', resourceId: 'r2', order: 1 }),
+      makeClip({ id: 'c3', resourceId: 'r3', order: 2 }),
+    ]
+    const map = indexResourcesById(resources)
+    // c1: 0..10, c2: 10..18 (8s image), c3: 18..25
+
+    it('returns null for an empty track', () => {
+      expect(resolveClipAtGlobalTime([], map, 5)).toBeNull()
+    })
+
+    it('lands on the first clip when global time is in its range', () => {
+      const hit = resolveClipAtGlobalTime(track, map, 4)
+      expect(hit?.clip.id).toBe('c1')
+      expect(hit?.offsetSec).toBe(4)
+    })
+
+    it('crosses into the second clip accounting for clip 1 duration', () => {
+      const hit = resolveClipAtGlobalTime(track, map, 14)
+      expect(hit?.clip.id).toBe('c2')
+      expect(hit?.offsetSec).toBe(4)
+    })
+
+    it('clamps overflow into the last clip', () => {
+      const hit = resolveClipAtGlobalTime(track, map, 999)
+      expect(hit?.clip.id).toBe('c3')
+    })
+
+    it('clipStartSecInTrack reports the start offset of each clip', () => {
+      expect(clipStartSecInTrack(track, map, 'c1')).toBe(0)
+      expect(clipStartSecInTrack(track, map, 'c2')).toBe(10)
+      expect(clipStartSecInTrack(track, map, 'c3')).toBe(18)
+    })
+
+    it('clipStartSecInTrack returns 0 for unknown clipId', () => {
+      expect(clipStartSecInTrack(track, map, 'nope')).toBe(0)
+    })
+  })
+
+  describe('clipSeekTimeSec', () => {
+    it('offsets by range.startSec when clip has a range', () => {
+      const clip = makeClip({ id: 'c1', resourceId: 'r1', range: { startSec: 5, endSec: 15 } })
+      expect(clipSeekTimeSec(clip, 3)).toBe(8)
+    })
+
+    it('returns offset directly when clip has no range', () => {
+      const clip = makeClip({ id: 'c1', resourceId: 'r1' })
+      expect(clipSeekTimeSec(clip, 6)).toBe(6)
+    })
+
+    it('clamps negative offsets to 0', () => {
+      const clip = makeClip({ id: 'c1', resourceId: 'r1' })
+      expect(clipSeekTimeSec(clip, -2)).toBe(0)
     })
   })
 

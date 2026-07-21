@@ -11,7 +11,7 @@
  *  - clip 上的"+"预览、"×"删除 handle
  *  - 顶部 head 显示总时长 + 导出整条 + 清空
  */
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent, ReactElement } from 'react'
 import { Button, Tooltip } from 'antd'
 import { Icons } from '../../../Icons'
@@ -24,9 +24,20 @@ import {
   reorderTrack,
 } from './resourcePanelUtils'
 import type { ResourceDragPayload } from './VideoWorkbenchResourcePanel'
+import { ResourceThumb } from './VideoWorkbenchResourceThumb'
+import { VideoWorkbenchPlaybackBar } from './VideoWorkbenchPlaybackBar'
 
 const DRAG_MIME = 'application/x-vwb-resource'
 const DRAG_CLIP_MIME = 'application/x-vwb-track-clip'
+
+/** 播放状态（由 useVideoWorkbenchPlayback 提供，透传给播放进度条） */
+export interface TrackPlaybackState {
+  active: boolean
+  playing: boolean
+  currentClipId: string | null
+  globalTimeSec: number
+  totalDurationSec: number
+}
 
 interface Props {
   track: TrackClip[]
@@ -44,6 +55,10 @@ interface Props {
   onAddResourceToTrack: (resource: WorkbenchResource, insertAfterClipId?: string | null) => void
   onExportWhole: () => void
   onClearTrack: () => void
+  /** 连播状态（播放进度条用） */
+  playback: TrackPlaybackState
+  onPlaybackSeek: (sec: number) => void
+  onPlaybackToggle: () => void
 }
 
 /**
@@ -67,6 +82,9 @@ export function VideoWorkbenchTrackTimeline({
   onAddResourceToTrack,
   onExportWhole,
   onClearTrack,
+  playback,
+  onPlaybackSeek,
+  onPlaybackToggle,
 }: Props): ReactElement {
   const resourcesById = useMemo(() => indexResourcesById(resources), [resources])
   const totalDuration = useMemo(
@@ -81,21 +99,28 @@ export function VideoWorkbenchTrackTimeline({
   )
   const [stripHover, setStripHover] = useState(false)
 
-  // 单一 dispatch handler：所有 clip 共享同一函数引用，clipId 从 dataset 读
-  const onClipDragStart = (e: ReactDragEvent<HTMLDivElement>) => {
+  // 最新状态 ref：让拖拽 handler 引用稳定（useCallback 空依赖），又能读到最新的
+  // sortedTrack/resourcesById/dropTarget。在 render 阶段同步 ref 是社区常用模式
+  //（等价于 useEvent 提议），handler 在事件回调里执行时 render 已完成，读到的是最新值。
+  const stateRef = useRef({ sortedTrack, resourcesById, dropTarget })
+  stateRef.current = { sortedTrack, resourcesById, dropTarget }
+
+  // 所有 clip 共享同一函数引用（useCallback），clipId 从 dataset 读；
+  // 配合 ClipCard 的 memo，拖拽时只有 dragging/dropClass 变化的 clip 重渲染。
+  const onClipDragStart = useCallback((e: ReactDragEvent<HTMLDivElement>) => {
     const clipId = e.currentTarget.dataset.clipId
     if (!clipId) return
     e.dataTransfer.setData(DRAG_CLIP_MIME, clipId)
     e.dataTransfer.effectAllowed = 'move'
     setDraggingClipId(clipId)
-  }
+  }, [])
 
-  const onClipDragEnd = () => {
+  const onClipDragEnd = useCallback(() => {
     setDraggingClipId(null)
     setDropTarget(null)
-  }
+  }, [])
 
-  const onClipDragOver = (e: ReactDragEvent<HTMLDivElement>) => {
+  const onClipDragOver = useCallback((e: ReactDragEvent<HTMLDivElement>) => {
     const clipId = e.currentTarget.dataset.clipId
     if (!clipId) return
     // 只有 clip 重排或资源拖入两种情况才接受
@@ -106,63 +131,61 @@ export function VideoWorkbenchTrackTimeline({
     e.dataTransfer.dropEffect = hasClip ? 'move' : 'copy'
     const rect = e.currentTarget.getBoundingClientRect()
     const side: 'before' | 'after' = e.clientX - rect.left < rect.width / 2 ? 'before' : 'after'
-    if (!dropTarget || dropTarget.clipId !== clipId || dropTarget.side !== side) {
+    const prev = stateRef.current.dropTarget
+    if (!prev || prev.clipId !== clipId || prev.side !== side) {
       setDropTarget({ clipId, side })
     }
-  }
+  }, [])
 
-  const onClipDrop = (e: ReactDragEvent<HTMLDivElement>) => {
-    const targetClipId = e.currentTarget.dataset.clipId
-    if (!targetClipId) return
-    e.preventDefault()
-    e.stopPropagation()
-    const rect = e.currentTarget.getBoundingClientRect()
-    const side: 'before' | 'after' = e.clientX - rect.left < rect.width / 2 ? 'before' : 'after'
-    const clipPayload = e.dataTransfer.getData(DRAG_CLIP_MIME)
-    const resourcePayload = e.dataTransfer.getData(DRAG_MIME)
-    if (clipPayload) {
-      // 移动到目标 clip 的 before/after 位置
-      const fromId = clipPayload
-      if (fromId === targetClipId) {
-        setDropTarget(null)
-        return
-      }
-      onReorder(moveClipRelativeTo(sortedTrack, fromId, targetClipId, side))
-    } else if (resourcePayload) {
-      const payload = safeParse<ResourceDragPayload>(resourcePayload)
-      if (payload) {
-        const resource = resourcesById.get(payload.resourceId)
-        if (resource) {
-          // 资源拖入：side=after → 插到 target 之后；side=before → 插到 target 之前
-          // 实现：after 时把 insertAfterClipId 设为 target；before 时设为 target 的前一个 clip，
-          // 没有前一个就传 null（追加到开头）。父级 handler 负责 reorder 收尾。
-          if (side === 'after') {
-            onAddResourceToTrack(resource, targetClipId)
-          } else {
-            const targetIndex = sortedTrack.findIndex((c) => c.id === targetClipId)
-            const beforeClip = targetIndex > 0 ? sortedTrack[targetIndex - 1] : undefined
-            onAddResourceToTrack(resource, beforeClip ? beforeClip.id : null)
+  const onClipDrop = useCallback(
+    (e: ReactDragEvent<HTMLDivElement>) => {
+      const targetClipId = e.currentTarget.dataset.clipId
+      if (!targetClipId) return
+      e.preventDefault()
+      e.stopPropagation()
+      const { sortedTrack: st, resourcesById: rb } = stateRef.current
+      const rect = e.currentTarget.getBoundingClientRect()
+      const side: 'before' | 'after' = e.clientX - rect.left < rect.width / 2 ? 'before' : 'after'
+      const clipPayload = e.dataTransfer.getData(DRAG_CLIP_MIME)
+      const resourcePayload = e.dataTransfer.getData(DRAG_MIME)
+      if (clipPayload) {
+        // 移动到目标 clip 的 before/after 位置
+        if (clipPayload === targetClipId) {
+          setDropTarget(null)
+          return
+        }
+        onReorder(moveClipRelativeTo(st, clipPayload, targetClipId, side))
+      } else if (resourcePayload) {
+        const payload = safeParse<ResourceDragPayload>(resourcePayload)
+        if (payload) {
+          const resource = rb.get(payload.resourceId)
+          if (resource) {
+            // side=after → 插到 target 之后；side=before → 插到 target 之前。
+            // before 时取 target 的前一个 clip；没有前一个就传 null（插到开头）。
+            if (side === 'after') {
+              onAddResourceToTrack(resource, targetClipId)
+            } else {
+              const targetIndex = st.findIndex((c) => c.id === targetClipId)
+              const beforeClip = targetIndex > 0 ? st[targetIndex - 1] : undefined
+              onAddResourceToTrack(resource, beforeClip ? beforeClip.id : null)
+            }
           }
         }
       }
-    }
-    setDropTarget(null)
-  }
+      setDropTarget(null)
+    },
+    [onReorder, onAddResourceToTrack],
+  )
 
   const previewResource = useCallback(
     (resource: WorkbenchResource) => onPreviewResource(resource),
     [onPreviewResource],
   )
   const removeClip = useCallback((id: string) => onRemoveClip(id), [onRemoveClip])
-  // These handlers intentionally follow the current render. onClipDrop reads
-  // the latest track/resources; freezing the object would retain the empty
-  // first-render closure and make later drag/drop operations no-op.
-  const clipCardHandlers: ClipCardHandlers = {
-    onClipDragStart,
-    onClipDragEnd,
-    onClipDragOver,
-    onClipDrop,
-  }
+  const clipCardHandlers = useMemo<ClipCardHandlers>(
+    () => ({ onClipDragStart, onClipDragEnd, onClipDragOver, onClipDrop }),
+    [onClipDragStart, onClipDragEnd, onClipDragOver, onClipDrop],
+  )
 
   const onStripDragOver = (e: ReactDragEvent<HTMLDivElement>) => {
     const hasResource = e.dataTransfer.types.includes(DRAG_MIME)
@@ -227,6 +250,18 @@ export function VideoWorkbenchTrackTimeline({
         </div>
       </div>
 
+      <VideoWorkbenchPlaybackBar
+        track={track}
+        resources={resources}
+        globalTimeSec={playback.globalTimeSec}
+        totalDurationSec={playback.totalDurationSec}
+        active={playback.active}
+        playing={playback.playing}
+        currentClipId={playback.currentClipId}
+        onSeek={onPlaybackSeek}
+        onTogglePlay={onPlaybackToggle}
+      />
+
       <div
         className={`vwb-track-strip${stripHover ? ' is-drop' : ''}`}
         onDragOver={onStripDragOver}
@@ -257,8 +292,8 @@ export function VideoWorkbenchTrackTimeline({
                 dragging={isDragging}
                 dropClass={dropClass}
                 handlers={clipCardHandlers}
-                onPreview={() => resource && previewResource(resource)}
-                onRemove={() => removeClip(clip.id)}
+                onPreviewResource={previewResource}
+                onRemoveClip={removeClip}
               />
             )
           })
@@ -278,8 +313,8 @@ interface ClipCardProps {
   dragging: boolean
   dropClass: string
   handlers: ClipCardHandlers
-  onPreview: () => void
-  onRemove: () => void
+  onPreviewResource: (resource: WorkbenchResource) => void
+  onRemoveClip: (clipId: string) => void
 }
 
 const ClipCard = memo(function ClipCard({
@@ -288,12 +323,11 @@ const ClipCard = memo(function ClipCard({
   dragging,
   dropClass,
   handlers,
-  onPreview,
-  onRemove,
+  onPreviewResource,
+  onRemoveClip,
 }: ClipCardProps): ReactElement {
   const duration = clipDurationSec(clip, resource)
   const isImage = resource?.kind === 'image'
-  const previewUrl = resource?.thumbnailUrl || resource?.url
 
   return (
     <div
@@ -304,14 +338,17 @@ const ClipCard = memo(function ClipCard({
       onDragEnd={handlers.onClipDragEnd}
       onDragOver={handlers.onClipDragOver}
       onDrop={handlers.onClipDrop}
-      onDoubleClick={onPreview}
+      onDoubleClick={() => {
+        if (resource) onPreviewResource(resource)
+      }}
       title={resource?.title ?? '资源已丢失'}
     >
-      <div
-        className={`vwb-track-clip-thumb${previewUrl ? '' : ' no-preview'}`}
-        style={previewUrl ? { backgroundImage: `url(${previewUrl})` } : undefined}
-      >
-        {!previewUrl && <Icons.Film size={16} />}
+      <div className="vwb-track-clip-thumb">
+        <ResourceThumb
+          resource={resource}
+          className="vwb-track-clip-thumb-media"
+          fallbackSize={16}
+        />
       </div>
       <div className="vwb-track-clip-info">
         <div className="vwb-track-clip-name">
@@ -338,7 +375,7 @@ const ClipCard = memo(function ClipCard({
             aria-label="预览片段"
             onClick={(e) => {
               e.stopPropagation()
-              onPreview()
+              if (resource) onPreviewResource(resource)
             }}
           >
             <Icons.Eye size={12} />
@@ -350,7 +387,7 @@ const ClipCard = memo(function ClipCard({
             aria-label="移除片段"
             onClick={(e) => {
               e.stopPropagation()
-              onRemove()
+              onRemoveClip(clip.id)
             }}
           >
             <Icons.X size={12} />
