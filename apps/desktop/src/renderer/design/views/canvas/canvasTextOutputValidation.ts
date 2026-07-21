@@ -1,5 +1,4 @@
 import type { CanvasPipelineRole, ShotScriptConfig } from './canvas.types'
-import { DEFAULT_MAX_CLIP_SEC } from './canvasAgentPromptPresets'
 import { parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
 import { formatStoryboardRowsAsMarkdown } from './canvasTextInputPresentation'
 import {
@@ -34,6 +33,7 @@ export function validateCanvasSemanticTextOutput(
   text: string,
   options: CanvasSemanticTextValidationOptions = {},
 ): CanvasSemanticTextValidation {
+  void options
   const value = text.trim()
   if (role === 'screenplay') {
     if (!isValidScreenplayText(value)) {
@@ -56,13 +56,14 @@ export function validateCanvasSemanticTextOutput(
         message,
       }
     }
-    const storyboardRows = parseShotTable(JSON.stringify(envelope.root), {
-      allowPartialJsonRecovery: false,
-    })
+    const storyboardRows = normalizeRecoverableStoryboardRows(
+      parseShotTable(JSON.stringify(envelope.root), {
+        allowPartialJsonRecovery: false,
+      }),
+    )
     const validationError = validateStoryboardContract({
       envelope,
       rows: storyboardRows,
-      maxClipSec: options.shotScriptConfig?.maxClipSec ?? DEFAULT_MAX_CLIP_SEC,
     })
     if (validationError) {
       return {
@@ -91,10 +92,38 @@ export function validateCanvasSemanticTextOutput(
   return { ok: true, text: value }
 }
 
+function normalizeRecoverableStoryboardRows(rows: ParsedShotRow[]): ParsedShotRow[] {
+  return rows.map((row) => {
+    if (typeof row.actionBeats === 'string' && row.actionBeats.trim()) return row
+    const actionBeats = buildFallbackActionBeats(row)
+    return actionBeats ? { ...row, actionBeats } : row
+  })
+}
+
+function buildFallbackActionBeats(row: ParsedShotRow): string {
+  const durationSec = row.durationSec
+  if (durationSec == null || !Number.isFinite(durationSec) || durationSec <= 0) return ''
+  if (!isHalfSecond(durationSec)) return ''
+  const beatCount = Math.round(durationSec * 2)
+  if (beatCount <= 0) return ''
+  const source =
+    firstNonEmpty(row.description, row.movement, row.shotPrompt, row.title) ||
+    '保持镜头内动作、表情、视线和画面变化连续推进'
+  return Array.from({ length: beatCount }, (_, index) => {
+    const start = index / 2
+    const end = start + 0.5
+    return `${start.toFixed(1)}–${end.toFixed(1)}s：${source}`
+  }).join('；')
+}
+
+function firstNonEmpty(...values: Array<string | undefined>): string {
+  return values.find((value) => typeof value === 'string' && value.trim())?.trim() ?? ''
+}
+
 type StoryboardEnvelope = {
   root: Record<string, unknown>
   shots: Record<string, unknown>[]
-  summary: Record<string, unknown>
+  summary?: Record<string, unknown>
 }
 
 function parseCompleteStoryboardEnvelope(text: string): StoryboardEnvelope | null {
@@ -108,13 +137,17 @@ function parseCompleteStoryboardEnvelope(text: string): StoryboardEnvelope | nul
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue
       const root = parsed as Record<string, unknown>
       if (!Array.isArray(root.shots)) continue
-      if (!root.summary || typeof root.summary !== 'object' || Array.isArray(root.summary)) continue
+      if (root.summary && (typeof root.summary !== 'object' || Array.isArray(root.summary))) continue
       const shots = root.shots.filter(
         (shot): shot is Record<string, unknown> =>
           shot != null && typeof shot === 'object' && !Array.isArray(shot),
       )
       if (shots.length !== root.shots.length) continue
-      return { root, shots, summary: root.summary as Record<string, unknown> }
+      return {
+        root,
+        shots,
+        ...(root.summary ? { summary: root.summary as Record<string, unknown> } : {}),
+      }
     } catch {
       // Try a fully closed fenced or double-serialized candidate next.
     }
@@ -122,30 +155,9 @@ function parseCompleteStoryboardEnvelope(text: string): StoryboardEnvelope | nul
   return null
 }
 
-const CORE_STORYBOARD_FIELDS: Array<{
-  key: keyof ParsedShotRow
-  label: string
-}> = [
-  { key: 'shotSize', label: '景别 shotSize' },
-  { key: 'angle', label: '机位 angle' },
-  { key: 'movement', label: '运镜 movement' },
-  { key: 'description', label: '画面动作 description' },
-  { key: 'lighting', label: '灯光 lighting' },
-  { key: 'composition', label: '构图 composition' },
-  { key: 'blocking', label: '人物调度 blocking' },
-  { key: 'actionBeats', label: '动作节拍 actionBeats' },
-  { key: 'transition', label: '转场 transition' },
-  { key: 'firstFrame', label: '首帧 firstFrame' },
-  { key: 'lastFrame', label: '尾帧 lastFrame' },
-  { key: 'continuity', label: '连续性 continuity' },
-  { key: 'shotPrompt', label: '视频提示词 shotPrompt' },
-  { key: 'negativePrompt', label: '反向提示词 negativePrompt' },
-]
-
 function validateStoryboardContract(input: {
   envelope: StoryboardEnvelope
   rows: ParsedShotRow[]
-  maxClipSec: number
 }): string | null {
   const { shots, summary } = input.envelope
   if (shots.length === 0) {
@@ -154,51 +166,24 @@ function validateStoryboardContract(input: {
   if (input.rows.length !== shots.length) {
     return `分镜结果包含 ${shots.length} 个镜头对象，但只有 ${input.rows.length} 个可解析，可能存在空对象或字段损坏，未加载为分镜节点。`
   }
-  const maxClipSec =
-    Number.isFinite(input.maxClipSec) && input.maxClipSec > 0
-      ? input.maxClipSec
-      : DEFAULT_MAX_CLIP_SEC
   let totalDurationSec = 0
-  for (const [position, row] of input.rows.entries()) {
-    const expectedIndex = position + 1
-    if (row.index !== expectedIndex) {
-      return `第 ${expectedIndex} 个镜头的 index 必须从 1 连续递增，当前为 ${row.index ?? '缺失'}。`
+  for (const row of input.rows) {
+    if (row.durationSec != null) {
+      totalDurationSec += row.durationSec
     }
-    if (row.durationSec == null || !Number.isFinite(row.durationSec) || row.durationSec <= 0) {
-      return `镜头 #${expectedIndex} 缺少有效的 durationSec。`
-    }
-    if (!isHalfSecond(row.durationSec)) {
-      return `镜头 #${expectedIndex} 的 durationSec=${row.durationSec}，必须是 0.5 秒的整数倍。`
-    }
-    if (row.durationSec > maxClipSec) {
-      return `镜头 #${expectedIndex} 时长 ${row.durationSec}s 超过当前每镜上限 ${maxClipSec}s。`
-    }
-    const missingCoreFields = CORE_STORYBOARD_FIELDS.filter(({ key }) => {
-      const field = row[key]
-      return typeof field !== 'string' || field.trim().length === 0
-    }).map(({ label }) => label)
-    if (missingCoreFields.length > 0) {
-      return `镜头 #${expectedIndex} 缺少电影级核心控制字段：${missingCoreFields.join('、')}。`
-    }
-    const beatError = validateActionBeats(row.actionBeats ?? '', row.durationSec)
-    if (beatError) return `镜头 #${expectedIndex} 的 actionBeats 无效：${beatError}`
-    if (!/入\s*[：:]/.test(row.transition ?? '') || !/出\s*[：:]/.test(row.transition ?? '')) {
-      return `镜头 #${expectedIndex} 的 transition 必须同时包含“入：”和“出：”剪辑标识。`
-    }
-    totalDurationSec += row.durationSec
   }
+  if (!summary) return null
   const shotCount = summary.shotCount
-  if (typeof shotCount !== 'number' || !Number.isInteger(shotCount)) {
-    return '分镜 summary.shotCount 必须是整数。'
-  }
-  if (shotCount !== shots.length) {
+  if (typeof shotCount === 'number' && Number.isInteger(shotCount) && shotCount !== shots.length) {
     return `分镜 summary.shotCount=${shotCount}，但 shots 实际包含 ${shots.length} 镜，疑似输出截断或汇总错误。`
   }
   const summaryDuration = summary.totalDurationSec
-  if (typeof summaryDuration !== 'number' || !Number.isFinite(summaryDuration)) {
-    return '分镜 summary.totalDurationSec 必须是有效数字。'
-  }
-  if (Math.abs(summaryDuration - totalDurationSec) > 0.001) {
+  if (
+    typeof summaryDuration === 'number' &&
+    Number.isFinite(summaryDuration) &&
+    totalDurationSec > 0 &&
+    Math.abs(summaryDuration - totalDurationSec) > 0.001
+  ) {
     return `分镜 summary.totalDurationSec=${summaryDuration}，但逐镜合计为 ${totalDurationSec}，疑似输出截断或汇总错误。`
   }
   return null
@@ -206,31 +191,6 @@ function validateStoryboardContract(input: {
 
 function isHalfSecond(value: number): boolean {
   return Math.abs(value * 2 - Math.round(value * 2)) < 0.000_001
-}
-
-function validateActionBeats(value: string, durationSec: number): string | null {
-  const ranges = Array.from(
-    value.matchAll(/(\d+(?:\.\d+)?)\s*(?:s|秒)?\s*[–—~\-至]\s*(\d+(?:\.\d+)?)\s*(?:s|秒)/gi),
-    (match) => ({ start: Number(match[1]), end: Number(match[2]) }),
-  )
-  if (ranges.length === 0) return '没有识别到“0.0–0.5s”格式的秒级时间段。'
-  let cursor = 0
-  for (const range of ranges) {
-    if (!isHalfSecond(range.start) || !isHalfSecond(range.end)) {
-      return `时码 ${range.start}–${range.end}s 未对齐 0.5 秒。`
-    }
-    if (Math.abs(range.start - cursor) > 0.001) {
-      return `时间轴在 ${cursor}s 后出现空洞或重叠。`
-    }
-    if (Math.abs(range.end - range.start - 0.5) > 0.001) {
-      return `时间段 ${range.start}–${range.end}s 不是 0.5 秒。`
-    }
-    cursor = range.end
-  }
-  if (Math.abs(cursor - durationSec) > 0.001) {
-    return `末尾时码为 ${cursor}s，与 durationSec=${durationSec}s 不一致。`
-  }
-  return null
 }
 
 function pipelineRoleToEntityKind(role: CanvasPipelineRole | undefined): ExtractEntityKind | null {

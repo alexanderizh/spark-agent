@@ -83,6 +83,55 @@ describe('canvas semantic text output validation', () => {
     }
   })
 
+  it('repairs missing actionBeats from duration and shot description', () => {
+    const shot = cinematicShot({
+      durationSec: 1.5,
+      description: '林岚抬手推门，镜头缓慢跟入。',
+    })
+    delete shot.actionBeats
+    const result = validateCanvasSemanticTextOutput('shot', storyboard([shot]))
+
+    expect(result).toMatchObject({ ok: true })
+    if (result.ok) {
+      expect(result.storyboardRows?.[0]?.actionBeats).toContain('0.0–0.5s')
+      expect(result.storyboardRows?.[0]?.actionBeats).toContain('1.0–1.5s')
+      expect(result.storyboardRows?.[0]?.actionBeats).toContain('林岚抬手推门')
+    }
+  })
+
+  it('accepts advisory storyboard rows with missing optional production fields', () => {
+    const shot = {
+      index: 1,
+      title: '雨夜进入茶馆',
+      durationSec: 1,
+      description: '林岚推门进入茶馆。',
+    }
+    const result = validateCanvasSemanticTextOutput('shot', storyboard([shot]))
+
+    expect(result).toMatchObject({ ok: true })
+    if (result.ok) {
+      expect(result.storyboardRows?.[0]).toMatchObject({
+        title: '雨夜进入茶馆',
+        durationSec: 1,
+      })
+    }
+  })
+
+  it('rejects storyboard rows that cannot be parsed into editable shots', () => {
+    const result = validateCanvasSemanticTextOutput(
+      'shot',
+      JSON.stringify({
+        shots: [cinematicShot(), {}],
+        summary: { shotCount: 2, totalDurationSec: 1 },
+      }),
+    )
+
+    expect(result).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('只有 1 个可解析'),
+    })
+  })
+
   it('rejects empty or unparseable storyboard results', () => {
     expect(validateCanvasSemanticTextOutput('shot', '{"shots":[]}')).toMatchObject({
       ok: false,
@@ -125,19 +174,20 @@ describe('canvas semantic text output validation', () => {
     })
   })
 
-  it('enforces max clip, 0.5s beats and summary consistency', () => {
+  it('does not reject editable storyboard rows for quality-only issues', () => {
     expect(
       validateCanvasSemanticTextOutput('shot', storyboard([cinematicShot({ durationSec: 4.5 })]), {
         shotScriptConfig: { maxClipSec: 4 },
       }),
-    ).toMatchObject({ ok: false, message: expect.stringContaining('超过') })
+    ).toMatchObject({ ok: true })
 
     const invalidBeats = cinematicShot({ actionBeats: '0.0–0.5s：动作；1.0–1.5s：跳段' })
     expect(validateCanvasSemanticTextOutput('shot', storyboard([invalidBeats]))).toMatchObject({
-      ok: false,
-      message: expect.stringContaining('空洞'),
+      ok: true,
     })
+  })
 
+  it('rejects storyboard results with inconsistent summary counts', () => {
     const mismatchedSummary = JSON.stringify({
       shots: [cinematicShot()],
       summary: { shotCount: 2, totalDurationSec: 1 },
