@@ -1596,6 +1596,206 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(mediaServer.env.SPARK_MEDIA_MANIFESTS_JSON).toContain('agnes:agnes-video-v2.0')
   })
 
+  it('injects all enabled image providers into one routable spark_media server', async () => {
+    const imageManifest = (id: string, providerKind: string, modelId: string) => ({
+      id,
+      providerKind,
+      modelId,
+      displayName: modelId,
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'] },
+          paramSchema: {},
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images/generations',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    })
+    seedProvider({
+      id: 'xai-image-provider',
+      provider_type: 'openai',
+      name: 'xAI 图片',
+      config_json: JSON.stringify({
+        defaultModel: 'grok-imagine-image',
+        modelIds: ['grok-imagine-image'],
+        apiEndpoint: 'https://api.x.ai/v1',
+        modelType: 'image',
+        imageProvider: 'xai',
+        imageApiType: 'sync',
+        mediaProvider: 'xai',
+        mediaApiType: 'sync',
+        mediaCapabilities: ['image.generate'],
+        mediaModelRefs: [
+          {
+            manifestId: 'xai:grok-imagine-image',
+            modelId: 'grok-imagine-image',
+            enabled: true,
+            manifest: imageManifest('xai:grok-imagine-image', 'xai', 'grok-imagine-image'),
+          },
+        ],
+      }),
+      keystore_ref: 'key-xai-image',
+      is_default: 0,
+    })
+    seedProvider({
+      id: 'bailian-image-provider',
+      provider_type: 'openai',
+      name: '百炼图片',
+      config_json: JSON.stringify({
+        defaultModel: 'qwen-image-2.0-pro-2026-04-22',
+        modelIds: ['qwen-image-2.0-pro-2026-04-22'],
+        apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1',
+        modelType: 'image',
+        imageProvider: 'bailian',
+        imageApiType: 'async',
+        mediaProvider: 'bailian',
+        mediaApiType: 'async',
+        mediaCapabilities: ['image.generate'],
+        mediaModelRefs: [
+          {
+            manifestId: 'bailian:qwen-image-2.0-pro',
+            modelId: 'qwen-image-2.0-pro-2026-04-22',
+            enabled: true,
+            manifest: imageManifest(
+              'bailian:qwen-image-2.0-pro',
+              'bailian',
+              'qwen-image-2.0-pro-2026-04-22',
+            ),
+          },
+        ],
+      }),
+      keystore_ref: 'key-bailian-image',
+      is_default: 0,
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Multi-provider image session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'use qwen image model' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    const config = mockState.sdkConfigs[0]
+    expect(config?.mcpServers).toHaveProperty('spark_media')
+    expect(config?.mcpServers).not.toHaveProperty('spark_image')
+    const mediaServer = (config?.mcpServers as { spark_media: { env: Record<string, string> } })
+      .spark_media
+    const providers = JSON.parse(mediaServer.env.SPARK_MEDIA_PROVIDERS_JSON ?? '[]') as Array<{
+      id: string
+      model: string
+      provider: string
+    }>
+    expect(providers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'xai-image-provider', model: 'grok-imagine-image' }),
+        expect.objectContaining({
+          id: 'bailian-image-provider',
+          model: 'qwen-image-2.0-pro-2026-04-22',
+          provider: 'bailian',
+        }),
+      ]),
+    )
+    expect(String(config?.skillSystemPrompt ?? '')).toContain('百炼图片')
+    expect(String(config?.skillSystemPrompt ?? '')).toContain('qwen-image-2.0-pro-2026-04-22')
+  })
+
+  it('skips a media provider whose credential lookup fails and keeps other routes available', async () => {
+    const manifest = {
+      id: 'custom:working-image',
+      providerKind: 'custom',
+      modelId: 'working-image',
+      displayName: 'Working Image',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'] },
+          paramSchema: {},
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images/generations',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    }
+    seedProvider({
+      id: 'broken-image-provider',
+      provider_type: 'openai',
+      name: 'Broken Image',
+      config_json: JSON.stringify({
+        defaultModel: 'broken-image',
+        modelType: 'image',
+        mediaProvider: 'custom',
+        mediaCapabilities: ['image.generate'],
+        mediaModelRefs: [
+          { manifestId: 'custom:broken-image', modelId: 'broken-image', manifest },
+        ],
+      }),
+      keystore_ref: 'key-broken-image',
+      is_default: 0,
+    })
+    seedProvider({
+      id: 'working-image-provider',
+      provider_type: 'openai',
+      name: 'Working Image',
+      config_json: JSON.stringify({
+        defaultModel: 'working-image',
+        modelType: 'image',
+        mediaProvider: 'custom',
+        mediaCapabilities: ['image.generate'],
+        mediaModelRefs: [
+          { manifestId: manifest.id, modelId: manifest.modelId, manifest },
+        ],
+      }),
+      keystore_ref: 'key-working-image',
+      is_default: 0,
+    })
+    vi.mocked(keystore.getSecret).mockImplementation(async (ref) => {
+      if (String(ref) === 'key-broken-image') throw new Error('keychain unavailable')
+      return 'test-api-key'
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Credential isolation session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'draw with the working provider' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    const mediaServer = (
+      mockState.sdkConfigs[0]?.mcpServers as { spark_media: { env: Record<string, string> } }
+    ).spark_media
+    const providers = JSON.parse(mediaServer.env.SPARK_MEDIA_PROVIDERS_JSON ?? '[]') as Array<{
+      id: string
+    }>
+    expect(providers.map((provider) => provider.id)).toContain('working-image-provider')
+    expect(providers.map((provider) => provider.id)).not.toContain('broken-image-provider')
+  })
+
   it('injects spark_media into Codex adapter turns when media capabilities are configured', async () => {
     seedProvider({
       id: 'agnes-codex-provider',

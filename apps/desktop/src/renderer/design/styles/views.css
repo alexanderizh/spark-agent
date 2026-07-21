@@ -8720,13 +8720,19 @@ body.inspector-resizing {
 }
 
 /* ─── User Question Dock — Bottom Sheet ─── */
-.user-question-dock {
+.user-question-dock-frame {
   position: absolute;
   bottom: 0;
-  left: clamp(8px, 2.4vw, var(--pad-xl));
-  right: clamp(8px, 2.4vw, var(--pad-xl));
-  width: auto;
+  left: 0;
+  right: 0;
   z-index: 60;
+  padding-bottom: 0;
+  pointer-events: none;
+}
+
+.user-question-dock {
+  position: relative;
+  width: 100%;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-bottom: 0;
   border-radius: var(--r-lg) var(--r-lg) 0 0;
@@ -8739,6 +8745,7 @@ body.inspector-resizing {
   max-height: min(58vh, 480px);
   display: flex;
   flex-direction: column;
+  pointer-events: auto;
 }
 
 @keyframes user-question-slide-up {
@@ -16457,6 +16464,17 @@ body.inspector-resizing {
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-all;
+}
+/* 铺满剩余高度：本地日志页让日志内容区填满可视区 */
+.settings-section--fill {
+  height: calc(100% - var(--pad-xl));
+  display: flex;
+  flex-direction: column;
+}
+.settings-section--fill .log-viewer {
+  flex: 1 1 auto;
+  min-height: 360px;
+  max-height: none;
 }
 .log-viewer .log-line {
   padding: 1px 0;

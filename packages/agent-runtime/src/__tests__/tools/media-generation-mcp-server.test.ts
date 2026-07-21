@@ -107,6 +107,7 @@ describe('spark_media MCP server', () => {
   let baseUrl = ''
   let postedBody: Record<string, unknown> | null = null
   let postedHeaders: Record<string, string | string[] | undefined> = {}
+  let postedPath = ''
   let fileUploadCount = 0
   let fileUploadBody = ''
   let child: ChildProcessWithoutNullStreams | null = null
@@ -120,11 +121,19 @@ describe('spark_media MCP server', () => {
     fileUploadCount = 0
     fileUploadBody = ''
     postedHeaders = {}
+    postedPath = ''
     server = createServer((req, res) => {
-      if (req.method === 'POST' && req.url === '/images') {
+      if (
+        req.method === 'POST' &&
+        (req.url === '/images' ||
+          req.url === '/provider-a/images' ||
+          req.url === '/provider-b/images')
+      ) {
         const chunks: Buffer[] = []
         req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
         req.on('end', () => {
+          postedPath = req.url ?? ''
+          postedHeaders = req.headers
           postedBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
           res.writeHead(200, { 'content-type': 'application/json' })
           res.end(JSON.stringify({ data: [{ url: `${baseUrl}/asset.png` }] }))
@@ -350,6 +359,129 @@ describe('spark_media MCP server', () => {
     const file = response.result.structuredContent.files[0] as string
     expect(file).toContain('mcp-image')
     expect(existsSync(file)).toBe(true)
+  })
+
+  it('routes an explicitly selected model through its owning provider endpoint and credential', async () => {
+    const buildManifest = (id: string, modelId: string) => ({
+      id,
+      providerKind: 'custom',
+      modelId,
+      displayName: 'Shared Image Model',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'], mimeTypes: ['image/png'] },
+          paramSchema: {},
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    })
+    const providerA = buildManifest('custom:model-a', 'model-a')
+    const providerB = buildManifest('custom:model-b', 'model-b')
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_PROVIDERS_JSON: JSON.stringify([
+          {
+            id: 'provider-a',
+            name: 'Provider A',
+            apiKey: 'key-a',
+            provider: 'custom',
+            model: 'model-a',
+            mode: 'sync',
+            baseUrl: `${baseUrl}/provider-a`,
+            manifests: [providerA],
+          },
+          {
+            id: 'provider-b',
+            name: 'Provider B',
+            apiKey: 'key-b',
+            provider: 'custom',
+            model: 'model-b',
+            mode: 'sync',
+            baseUrl: `${baseUrl}/provider-b`,
+            manifests: [providerB],
+          },
+        ]),
+      },
+    })
+
+    const listed = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'list_models', arguments: { capability: 'image.generate' } },
+    })
+    expect(listed.error).toBeUndefined()
+    expect(listed.result.structuredContent.models).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          modelId: 'model-a',
+          providerProfileId: 'provider-a',
+          selectionKey: 'provider-a/custom:model-a',
+        }),
+        expect.objectContaining({
+          modelId: 'model-b',
+          providerProfileId: 'provider-b',
+          selectionKey: 'provider-b/custom:model-b',
+        }),
+      ]),
+    )
+
+    const generated = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'generate_image',
+        arguments: {
+          model: 'provider-b/custom:model-b',
+          prompt: 'route me to provider b',
+        },
+      },
+    })
+
+    expect(generated.error).toBeUndefined()
+    expect(postedPath).toBe('/provider-b/images')
+    expect(postedHeaders.authorization).toBe('Bearer key-b')
+    expect(postedBody).toMatchObject({ model: 'model-b', prompt: 'route me to provider b' })
+
+    const ambiguous = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'generate_image',
+        arguments: { model: 'Shared Image Model', prompt: 'do not guess the provider' },
+      },
+    })
+    expect(ambiguous.error?.message).toContain('Ambiguous media model')
+    expect(ambiguous.error?.message).toContain('provider-a/custom:model-a')
+    expect(ambiguous.error?.message).toContain('provider-b/custom:model-b')
+
+    const unsupported = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: {
+        name: 'generate_video',
+        arguments: { model: 'provider-b/custom:model-b', prompt: 'do not change models' },
+      },
+    })
+    expect(unsupported.error?.message).toContain('does not support video.generate')
   })
 
   it('drops unsupported output_format for strict models before reaching provider', async () => {

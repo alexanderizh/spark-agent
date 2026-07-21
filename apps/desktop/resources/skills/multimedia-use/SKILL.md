@@ -48,6 +48,7 @@ tags:
 2. 在普通 Agent 会话中，如果运行时注入了 `mcp__spark_media__*`：
    - 先 `mcp__spark_media__list_models` 找候选。
    - 调用生成前，先 `mcp__spark_media__describe_model` 查看参数 schema。
+   - 用户明确指定模型时，把 `list_models` 返回的 `selectionKey`（优先）或唯一 `modelId` 原样传给生成工具的 `model` 参数；不得静默改用默认模型。
    - 再调用 `generate_image` / `edit_image` / `generate_video` / `generate_audio` / `transcribe_audio`。
    - Provider 文件平台使用 `upload_file` / `get_file` / `list_files`；删除前先取得用户明确确认，再调用 `delete_file`。
    - 异步任务用 `get_task` 查询，必要时 `cancel_task`。

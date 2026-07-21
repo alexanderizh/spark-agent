@@ -21,6 +21,7 @@
  *   SPARK_MEDIA_OUTPUT_DIR    产物落盘根目录
  *   SPARK_MEDIA_DEFAULTS_JSON 可选；mediaDefaults 的 JSON 字符串
  *   SPARK_MEDIA_MANIFESTS_JSON 可选；已启用 MediaModelManifest[]，用于 list/describe
+ *   SPARK_MEDIA_PROVIDERS_JSON 可选；可路由 Provider 配置数组，优先于上方单 Provider 变量
  */
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -53,6 +54,8 @@ function error(id, code, message, data) {
 
 const DESCRIBE_MODEL_HINT =
   'Provider/model-specific field. Call describe_model first for the selected model/capability to inspect supported values; unsupported values are pruned at runtime by the manifest contract.'
+const MODEL_SELECTOR_DESCRIPTION =
+  'Model selectionKey (preferred), manifest id, or unique provider model id returned by list_models.'
 
 const TOOLS = [
   {
@@ -72,7 +75,7 @@ const TOOLS = [
       type: 'object',
       required: ['model'],
       properties: {
-        model: { type: 'string', description: 'Manifest id or provider model id.' },
+        model: { type: 'string', description: MODEL_SELECTOR_DESCRIPTION },
       },
     },
   },
@@ -85,7 +88,7 @@ const TOOLS = [
       required: ['prompt'],
       properties: {
         prompt: { type: 'string', description: 'Detailed image prompt.' },
-        model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
+        model: { type: 'string', description: MODEL_SELECTOR_DESCRIPTION },
         size: { type: 'string', description: `Size, pixel dimensions, or aspect ratio (e.g. 1024x1024, 16:9, portrait). ${DESCRIBE_MODEL_HINT}` },
         resolution: { type: 'string', description: `Provider-specific image resolution. ${DESCRIBE_MODEL_HINT}` },
         aspectRatio: { type: 'string', description: `Provider-specific image aspect ratio. ${DESCRIBE_MODEL_HINT}` },
@@ -114,7 +117,7 @@ const TOOLS = [
         imageUrls: { type: 'array', items: { type: 'string' } },
         imageFiles: { type: 'array', items: { type: 'string' }, description: 'Local file paths.' },
         imageFileIds: { type: 'array', items: { type: 'string' }, description: 'xAI Files API file ids.' },
-        model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
+        model: { type: 'string', description: MODEL_SELECTOR_DESCRIPTION },
         mask: { type: 'string' },
         size: { type: 'string' },
         resolution: { type: 'string' },
@@ -136,7 +139,7 @@ const TOOLS = [
       required: ['text'],
       properties: {
         text: { type: 'string', description: 'Text to synthesize.' },
-        model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
+        model: { type: 'string', description: MODEL_SELECTOR_DESCRIPTION },
         voice: { type: 'string', description: 'Voice id (provider-specific).' },
         language: { type: 'string', description: 'BCP-47 language or auto (provider-specific).' },
         format: { type: 'string', description: 'mp3, wav, opus, aac, flac, pcm.' },
@@ -156,7 +159,7 @@ const TOOLS = [
       properties: {
         audioFile: { type: 'string', description: 'Local audio file path.' },
         audioUrl: { type: 'string', description: 'Remote audio url.' },
-        model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
+        model: { type: 'string', description: MODEL_SELECTOR_DESCRIPTION },
         language: { type: 'string' },
         responseFormat: { type: 'string' },
         extraJson: { type: 'object', additionalProperties: true },
@@ -170,7 +173,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         prompt: { type: 'string' },
-        model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
+        model: { type: 'string', description: MODEL_SELECTOR_DESCRIPTION },
         inputImages: {
           type: 'array',
           items: { type: 'string' },
@@ -899,15 +902,46 @@ function configFromEnv() {
   }
   const provider = (env.SPARK_MEDIA_PROVIDER || 'openai-compatible').trim().toLowerCase()
   const configuredBaseUrl = (env.SPARK_MEDIA_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')
-  return {
+  const outputDir = env.SPARK_MEDIA_OUTPUT_DIR || path.join(process.cwd(), '.spark-artifacts', 'media')
+  const legacy = normalizeProviderConfig({
     apiKey: env.SPARK_MEDIA_API_KEY || '',
     provider,
     model: env.SPARK_MEDIA_MODEL || '',
     mode: env.SPARK_MEDIA_API_TYPE || 'auto',
-    baseUrl: provider === 'bailian' ? bailianMediaBaseUrl(configuredBaseUrl) : configuredBaseUrl,
-    outputDir: env.SPARK_MEDIA_OUTPUT_DIR || path.join(process.cwd(), '.spark-artifacts', 'media'),
+    baseUrl: configuredBaseUrl,
+    outputDir,
     mediaDefaults,
     manifests,
+  }, outputDir)
+  const providers = parseProviderConfigs(env.SPARK_MEDIA_PROVIDERS_JSON, outputDir)
+  return { ...(providers[0] || legacy), providers: providers.length > 0 ? providers : [legacy] }
+}
+
+function parseProviderConfigs(raw, outputDir) {
+  try {
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => item && typeof item === 'object').map((item) => normalizeProviderConfig(item, outputDir))
+      : []
+  } catch {
+    return []
+  }
+}
+
+function normalizeProviderConfig(value, outputDir) {
+  const provider = String(value.provider || 'openai-compatible').trim().toLowerCase()
+  const configuredBaseUrl = String(value.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')
+  return {
+    id: String(value.id || '').trim(),
+    name: String(value.name || '').trim(),
+    apiKey: String(value.apiKey || ''),
+    provider,
+    model: String(value.model || ''),
+    mode: String(value.mode || 'auto'),
+    baseUrl: provider === 'bailian' ? bailianMediaBaseUrl(configuredBaseUrl) : configuredBaseUrl,
+    outputDir,
+    mediaDefaults: value.mediaDefaults && typeof value.mediaDefaults === 'object' ? value.mediaDefaults : {},
+    manifests: Array.isArray(value.manifests) ? value.manifests.filter(isManifestLike) : [],
   }
 }
 
@@ -956,28 +990,34 @@ function manifestCapabilities(manifest) {
 }
 
 function handleListModels(config, args) {
-  const manifests = config.manifests.length > 0 ? config.manifests : [fallbackManifest(config)].filter(Boolean)
   const capability = typeof args.capability === 'string' ? args.capability : ''
-  const models = manifests
-    .filter((manifest) => !capability || manifestCapabilities(manifest).includes(capability))
-    .map((manifest) => ({
-      id: manifest.id,
-      providerKind: manifest.providerKind,
-      modelId: manifest.modelId,
-      displayName: manifest.displayName,
-      domains: manifest.domains || [],
-      capabilities: manifestCapabilities(manifest),
-      docs: manifest.docs || { sourceUrls: [] },
-    }))
+  const models = config.providers.flatMap((providerConfig) => {
+    const manifests = providerConfig.manifests.length > 0
+      ? providerConfig.manifests
+      : [fallbackManifest(providerConfig)].filter(Boolean)
+    return manifests
+      .filter((manifest) => !capability || manifestCapabilities(manifest).includes(capability))
+      .map((manifest) => ({
+        id: manifest.id,
+        selectionKey: providerConfig.id ? `${providerConfig.id}/${manifest.id}` : manifest.id,
+        providerProfileId: providerConfig.id || undefined,
+        providerName: providerConfig.name || undefined,
+        providerKind: manifest.providerKind,
+        modelId: manifest.modelId,
+        displayName: manifest.displayName,
+        domains: manifest.domains || [],
+        capabilities: manifestCapabilities(manifest),
+        docs: manifest.docs || { sourceUrls: [] },
+      }))
+  })
   return { success: true, models }
 }
 
 function handleDescribeModel(config, args) {
   const key = String(args.model || '').trim()
   if (!key) throw new Error('model is required')
-  const manifests = config.manifests.length > 0 ? config.manifests : [fallbackManifest(config)].filter(Boolean)
-  const manifest = manifests.find((item) => item.id === key || item.modelId === key)
-  if (!manifest) throw new Error(`Unknown media model: ${key}`)
+  const match = resolveConfiguredModel(config, key)
+  const manifest = match.manifest
   const capabilities = (manifest.capabilities || []).map((cap) => {
     const summary = summarizeParamPolicy(cap)
     return {
@@ -990,9 +1030,66 @@ function handleDescribeModel(config, args) {
   })
   return {
     success: true,
-    model: { ...manifest, capabilities },
+    model: {
+      ...manifest,
+      capabilities,
+      providerProfileId: match.config.id || undefined,
+      providerName: match.config.name || undefined,
+      selectionKey: match.config.id ? `${match.config.id}/${manifest.id}` : manifest.id,
+    },
     errorContract: summarizeErrorContract(manifest),
   }
+}
+
+function configuredModelMatches(config, key) {
+  const manifests = config.manifests.length > 0
+    ? config.manifests
+    : [fallbackManifest(config)].filter(Boolean)
+  return manifests
+    .filter((manifest) =>
+      manifest.id === key ||
+      manifest.modelId === key ||
+      manifest.displayName === key ||
+      (config.id && (`${config.id}/${manifest.id}` === key || `${config.id}/${manifest.modelId}` === key)))
+    .map((manifest) => ({ config, manifest }))
+}
+
+function resolveConfiguredModel(config, key) {
+  const matches = config.providers.flatMap((providerConfig) => configuredModelMatches(providerConfig, key))
+  if (matches.length === 0) throw new Error(`Unknown media model: ${key}`)
+  if (matches.length > 1) {
+    const choices = matches.map((match) => `${match.config.id}/${match.manifest.id}`).join(', ')
+    throw new Error(`Ambiguous media model ${key}; use one of: ${choices}`)
+  }
+  return matches[0]
+}
+
+function configForTool(config, toolName, args) {
+  const requestedModel = typeof args.model === 'string' ? args.model.trim() : ''
+  if (requestedModel) {
+    const match = resolveConfiguredModel(config, requestedModel)
+    const candidates = TOOL_CAPABILITY_CANDIDATES[toolName]?.(args) || []
+    const supported = manifestCapabilities(match.manifest)
+    if (!candidates.some((capabilityId) => supported.includes(capabilityId))) {
+      throw new Error(
+        `Media model ${requestedModel} does not support ${candidates.join(' or ') || toolName}`,
+      )
+    }
+    return { ...match.config, model: match.manifest.modelId, manifests: [match.manifest] }
+  }
+  const candidates = TOOL_CAPABILITY_CANDIDATES[toolName]?.(args) || []
+  for (const capabilityId of candidates) {
+    for (const providerConfig of config.providers) {
+      const manifests = providerConfig.manifests.length > 0
+        ? providerConfig.manifests
+        : [fallbackManifest(providerConfig)].filter(Boolean)
+      const defaultManifest = manifests.find((manifest) =>
+        (manifest.modelId === providerConfig.model || manifest.id === providerConfig.model) &&
+        manifestCapabilities(manifest).includes(capabilityId))
+      if (defaultManifest) return { ...providerConfig, model: defaultManifest.modelId }
+    }
+  }
+  return config.providers[0] || config
 }
 
 const FAILED_STATUSES = ['failed', 'error', 'expired', 'cancelled', 'canceled']
@@ -2483,9 +2580,13 @@ async function handle(request) {
       const name = request.params?.name
       const args = request.params?.arguments || {}
       const config = configFromEnv()
+      const toolConfig = TOOL_CAPABILITY_CANDIDATES[name] ? configForTool(config, name, args) : config
+      const toolArgs = TOOL_CAPABILITY_CANDIDATES[name]
+        ? { ...args, model: toolConfig.model }
+        : args
       errorContext = {
-        provider: config.provider,
-        model: config.model,
+        provider: toolConfig.provider,
+        model: toolConfig.model,
         tool: name,
         ...(typeof args.capability === 'string' ? { capability: args.capability } : {}),
       }
@@ -2502,24 +2603,24 @@ async function handle(request) {
         case 'get_task': data = await handleGetTask(config, args); break
         case 'cancel_task': data = await handleCancelTask(config, args); break
         case 'generate_image':
-          task = createTaskRecord(name, args, config)
-          try { data = await handleGenerateImage(config, args); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          task = createTaskRecord(name, toolArgs, toolConfig)
+          try { data = await handleGenerateImage(toolConfig, toolArgs); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
           break
         case 'edit_image':
-          task = createTaskRecord(name, args, config)
-          try { data = await handleEditImage(config, args); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          task = createTaskRecord(name, toolArgs, toolConfig)
+          try { data = await handleEditImage(toolConfig, toolArgs); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
           break
         case 'generate_audio':
-          task = createTaskRecord(name, args, config)
-          try { data = await handleGenerateAudio(config, args); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          task = createTaskRecord(name, toolArgs, toolConfig)
+          try { data = await handleGenerateAudio(toolConfig, toolArgs); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
           break
         case 'transcribe_audio':
-          task = createTaskRecord(name, args, config)
-          try { data = await handleTranscribeAudio(config, args); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          task = createTaskRecord(name, toolArgs, toolConfig)
+          try { data = await handleTranscribeAudio(toolConfig, toolArgs); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
           break
         case 'generate_video':
-          task = createTaskRecord(name, args, config)
-          try { data = await handleGenerateVideo(config, args); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          task = createTaskRecord(name, toolArgs, toolConfig)
+          try { data = await handleGenerateVideo(toolConfig, toolArgs); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
           break
         default: throw new Error(`Unknown tool: ${name}`)
       }
