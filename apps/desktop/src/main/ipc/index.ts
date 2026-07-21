@@ -1892,12 +1892,9 @@ const pendingUserQuestions = new PendingUserQuestionStore({
   },
   onDetachedAnswer: async (request, answers, context) => {
     const message = buildDetachedQuestionContinuationMessage(request, answers)
-    const history = await getSessionService().getHistory({
-      sessionId: request.sessionId,
-      limit: 200,
-    })
-    const attachments = await filterExistingSessionAttachments(
-      recoverDetachedQuestionAttachments(history.events, context.sourceTurnId),
+    const attachments = await recoverExistingDetachedQuestionAttachments(
+      request.sessionId,
+      context.sourceTurnId,
     )
     log.warn('User answered after the SDK question stream detached; enqueueing recovery turn', {
       sessionId: request.sessionId,
@@ -1913,6 +1910,28 @@ const pendingUserQuestions = new PendingUserQuestionStore({
   },
 })
 const remoteTurnTargets = new Map<string, { connectionId: string; externalId: string }>()
+
+async function recoverExistingDetachedQuestionAttachments(
+  sessionId: string,
+  sourceTurnId: string | undefined,
+): Promise<SessionAttachment[] | undefined> {
+  try {
+    const history = await getSessionService().getHistory({
+      sessionId,
+      limit: 200,
+    })
+    return await filterExistingSessionAttachments(
+      recoverDetachedQuestionAttachments(history.events, sourceTurnId),
+    )
+  } catch (error) {
+    log.warn('Failed to recover attachments for detached question answer; continuing without them', {
+      sessionId,
+      sourceTurnId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return undefined
+  }
+}
 
 async function filterExistingSessionAttachments(
   attachments: SessionAttachment[] | undefined,

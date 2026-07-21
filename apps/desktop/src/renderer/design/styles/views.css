@@ -8723,12 +8723,9 @@ body.inspector-resizing {
 .user-question-dock {
   position: absolute;
   bottom: 0;
-  left: 50%;
-  right: auto;
-  /* 与 .composer-inner（max-width: 900px; padding: 0 var(--pad-xl)）保持一致——
-     视觉上与输入框同宽，左右对齐。 */
-  width: min(calc(900px - 2 * var(--pad-xl)), calc(100% - 2 * var(--pad-xl)));
-  transform: translateX(-50%);
+  left: clamp(8px, 2.4vw, var(--pad-xl));
+  right: clamp(8px, 2.4vw, var(--pad-xl));
+  width: auto;
   z-index: 60;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-bottom: 0;
@@ -8746,13 +8743,17 @@ body.inspector-resizing {
 
 @keyframes user-question-slide-up {
   from {
-    transform: translateX(-50%) translateY(100%);
+    transform: translateY(100%);
     opacity: 0;
   }
   to {
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
     opacity: 1;
   }
+}
+
+.user-question-dock.is-collapsed {
+  max-height: 54px;
 }
 
 .user-question-dock-head {
@@ -8765,6 +8766,10 @@ body.inspector-resizing {
   flex-shrink: 0;
 }
 
+.user-question-dock-heading {
+  min-width: 0;
+}
+
 .user-question-dock-icon {
   width: 24px;
   height: 24px;
@@ -8775,6 +8780,30 @@ body.inspector-resizing {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.user-question-dock-toggle {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--bg-soft) 70%, transparent);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.user-question-dock-toggle:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 10%, var(--panel));
+  transform: translateY(-1px);
 }
 
 .user-question-dock-title {

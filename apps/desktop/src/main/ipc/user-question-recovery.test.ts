@@ -32,6 +32,22 @@ describe('buildDetachedQuestionContinuationMessage', () => {
     expect(message).toContain('不要重复提问')
   })
 
+  it('prints skipped answers explicitly in detached continuation turns', () => {
+    const message = buildDetachedQuestionContinuationMessage(
+      {
+        sessionId: 'session-1',
+        questionId: 'question-1',
+        createdAt: '2026-07-16T00:00:00.000Z',
+        questions: [{ header: '审批', question: '继续吗？', options: [{ label: '继续' }] }],
+      },
+      {
+        answers: [{ skipped: true, answer: '' }],
+      },
+    )
+
+    expect(message).toContain('用户回答：用户选择跳过')
+  })
+
   it('recovers attachments from the source turn before falling back to newer turns', () => {
     const events: AgentEvent[] = [
       {

@@ -15,6 +15,7 @@ function printableAnswer(value: unknown): string {
     const answer = printableAnswer(item[key])
     if (answer.length > 0) return answer
   }
+  if (item.skipped === true) return '用户选择跳过'
   return ''
 }
 

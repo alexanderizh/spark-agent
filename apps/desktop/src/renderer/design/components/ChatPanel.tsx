@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Spin } from 'antd'
-import type { AgentEvent, ManagedAgent, SessionAttachment } from '@spark/protocol'
+import type { AgentEvent, ManagedAgent, SessionAttachment, SessionId } from '@spark/protocol'
 import type { UserQuestionOption, UserQuestionPrompt } from '@spark/protocol'
 import { Icons } from '../Icons'
 import {
@@ -1101,6 +1101,7 @@ function InlineUserQuestionCard({
   onAnswered: (questions: UserQuestionPrompt[], summaries: UserQuestionAnswerSummary[]) => void
 }): React.ReactElement | null {
   const { invoke: answerQuestion } = useIpcInvoke('session:answer-question')
+  const { invoke: cancelTurn } = useIpcInvoke('session:cancel')
   const [drafts, setDrafts] = useState<Record<number, UserQuestionDraft>>({})
   const [currentIndex, setCurrentIndex] = useState(0)
   const [submitting, setSubmitting] = useState(false)
@@ -1214,7 +1215,40 @@ function InlineUserQuestionCard({
   }
 
   const handleCancel = () => {
-    void submitAnswers(buildQuestionCancelAnswer(block.questions))
+    if (sessionId == null || submitting || block.answered || block.error != null) return
+    setSubmitting(true)
+    setError(null)
+    cancelTurn({ sessionId: sessionId as SessionId }).catch((err) => {
+      setError(err instanceof Error ? err.message : '终止失败')
+      setSubmitting(false)
+    })
+  }
+
+  const handleSkip = () => {
+    if (currentQuestion == null || submitting || currentQuestion.allowSkip === false) return
+    const answerList = block.questions.map((question, index) => {
+      const draft = drafts[index]
+      const submissionDraft =
+        index < currentIndex && isQuestionAnswered(question, draft)
+          ? draft
+          : {
+              skipped: true,
+              selectedLabel: '',
+              selectedValue: '',
+              selectedLabels: [],
+              selectedValues: [],
+              otherText: '',
+              text: '',
+            }
+      return buildQuestionAnswer(question, submissionDraft, index)
+    })
+    void submitAnswers({
+      skipped: true,
+      reason: '用户选择跳过这些问题。',
+      answers: answerList,
+      questionCount: total,
+      answeredCount: answerList.filter((answer) => answer.skipped !== true).length,
+    })
   }
 
   return (
@@ -1372,18 +1406,7 @@ function InlineUserQuestionCard({
                 type="button"
                 className="chat-panel-question-btn"
                 disabled={submitting || currentQuestion.allowSkip === false}
-                onClick={() => {
-                  updateDraft({
-                    skipped: true,
-                    selectedLabel: '',
-                    selectedValue: '',
-                    selectedLabels: [],
-                    selectedValues: [],
-                    otherText: '',
-                    text: '',
-                  })
-                  if (canGoNext) setCurrentIndex((prev) => Math.min(prev + 1, total - 1))
-                }}
+                onClick={handleSkip}
               >
                 跳过
               </button>
@@ -1852,7 +1875,7 @@ function buildQuestionAnswer(
     question: question.question,
     type: resolvedType,
     skipped: isSkipped,
-    answer: isSkipped ? '' : answerValue,
+    answer: isSkipped ? '用户选择跳过' : answerValue,
     ...(isMultiChoiceQuestion(question)
       ? {
           ...(draft?.selectedLabels && draft.selectedLabels.length > 0
@@ -1890,26 +1913,6 @@ function buildQuestionAnswerSummaries(
       }
     })
     .filter((item): item is UserQuestionAnswerSummary => item != null)
-}
-
-function buildQuestionCancelAnswer(questions: UserQuestionPrompt[]): Record<string, unknown> {
-  return {
-    cancelled: true,
-    declined: true,
-    reason: '用户取消了问答弹窗，拒绝回答这些问题。',
-    questionCount: questions.length,
-    answeredCount: 0,
-    answers: questions.map((question, index) => ({
-      index,
-      id: question.id ?? `question-${index + 1}`,
-      header: question.header,
-      question: question.question,
-      type: question.type ?? (isChoiceQuestion(question) ? 'single_choice' : 'text'),
-      skipped: true,
-      declined: true,
-      answer: '用户拒绝回答',
-    })),
-  }
 }
 
 const IMAGE_ATTACHMENT_EXTENSIONS = new Set([

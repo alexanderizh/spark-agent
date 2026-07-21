@@ -43,7 +43,7 @@ import {
 } from './chat/ChatToolbar'
 import { ChatTitlebarEnd, ChatTitlebarStart } from './chat/ChatTitlebar'
 import { UserQuestionDock } from './chat/UserQuestionDock'
-import { buildQuestionCancelAnswer, type UserQuestionData } from './chat/UserQuestionUtils'
+import type { UserQuestionData } from './chat/UserQuestionUtils'
 import {
   buildQuestionAnswerSummaries,
   getQuestionAnswerCacheKey,
@@ -974,21 +974,9 @@ export function ChatView({
 
   const handleCancelQuestion = useCallback(() => {
     if (userQuestion == null) return
-    const answers = buildQuestionCancelAnswer(userQuestion.questions)
-    const summaries = buildQuestionAnswerSummaries(userQuestion.questions, answers)
-    if (summaries.length > 0) {
-      persistQuestionAnswerSummaries(
-        getQuestionAnswerCacheKey(userQuestion.questions, userQuestion.sessionId),
-        summaries,
-      )
-    }
-    answerQuestion({
-      sessionId: userQuestion.sessionId,
-      questionId: userQuestion.questionId,
-      answers,
-    }).catch(console.error)
     onUserQuestionClose?.(userQuestion.sessionId, userQuestion.questionId)
-  }, [answerQuestion, onUserQuestionClose, userQuestion])
+    cancelSessionTurn({ sessionId: userQuestion.sessionId as SessionId }).catch(console.error)
+  }, [cancelSessionTurn, onUserQuestionClose, userQuestion])
 
   // ── Session status updates via context ──
   const setSessionStatus = useCallback(
