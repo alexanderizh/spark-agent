@@ -8,7 +8,7 @@ import type {
   CanvasPromptResponseFields,
   CanvasPromptTaskFields,
 } from './index.js'
-import { CANVAS_PROMPT_VERSION } from './canvas-prompt.js'
+import { CANVAS_PROMPT_VERSION, composeCanvasMediaProviderPrompt } from './canvas-prompt.js'
 
 describe('canvas prompt protocol contract', () => {
   it('allows custom relation text on parameter blocks', () => {
@@ -120,5 +120,27 @@ describe('canvas prompt protocol contract', () => {
 
     expect(JSON.parse(JSON.stringify(response))).toMatchObject(responseFields)
     expect(JSON.parse(JSON.stringify(compilation))).toEqual(compilation)
+  })
+
+  it('keeps bounded text resources when authored input explicitly maps to their ids', () => {
+    const style = '写实都市 / 末日硬核 / 微胶片颗粒'
+    const systemPrompt = `生成电影画面。全局风格要求：${style}`
+    const userPrompt = [
+      '[用户输入与引用关系]',
+      '风格：文本引用 T1',
+      '[/用户输入与引用关系]',
+      '',
+      '[引用资源]',
+      '[文本引用 T1 开始]',
+      '类型：文本',
+      '名称：全局风格指引',
+      '',
+      style,
+      '[/文本引用 T1 结束]',
+      '[/引用资源]',
+    ].join('\n')
+
+    expect(composeCanvasMediaProviderPrompt({ systemPrompt, userPrompt }))
+      .toBe(`${systemPrompt}\n\n${userPrompt}`)
   })
 })

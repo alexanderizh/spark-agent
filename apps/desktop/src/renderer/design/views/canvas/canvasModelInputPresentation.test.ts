@@ -1,10 +1,46 @@
 import { describe, expect, it } from 'vitest'
 import {
+  renderCanvasPromptWithReferences,
   renderCanvasReferenceImageList,
   renderCanvasTextReference,
 } from './canvasModelInputPresentation'
 
 describe('canvasModelInputPresentation', () => {
+  it('puts authored input and reference mappings before bounded resource bodies', () => {
+    expect(
+      renderCanvasPromptWithReferences({
+        userInput: '角色苏烬：参考图 #1\n风格：文本引用 T1',
+        resources: [
+          '[图片引用]\n参考图 #1：苏烬（角色）\n[/图片引用]',
+          '[文本引用 T1 开始]\n类型：文本\n名称：风格\n[/文本引用 T1 结束]',
+        ],
+      }),
+    ).toBe(
+      [
+        '[用户输入与引用关系]',
+        '角色苏烬：参考图 #1',
+        '风格：文本引用 T1',
+        '[/用户输入与引用关系]',
+        '',
+        '[引用资源]',
+        '[图片引用]',
+        '参考图 #1：苏烬（角色）',
+        '[/图片引用]',
+        '',
+        '[文本引用 T1 开始]',
+        '类型：文本',
+        '名称：风格',
+        '[/文本引用 T1 结束]',
+        '[/引用资源]',
+      ].join('\n'),
+    )
+  })
+
+  it('leaves prompts without references unchanged', () => {
+    expect(renderCanvasPromptWithReferences({ userInput: '保持主体一致', resources: [] }))
+      .toBe('保持主体一致')
+  })
+
   it('renders storyboard JSON as bounded field-value records instead of a table', () => {
     const rendered = renderCanvasTextReference({
       ordinal: 1,
