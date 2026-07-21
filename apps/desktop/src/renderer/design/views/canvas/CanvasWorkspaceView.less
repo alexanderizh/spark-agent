@@ -6248,18 +6248,18 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   animation: canvas-node-bottom-editor-in 0.18s ease-out;
 }
 
+.canvas-node-bottom-editor.is-fullscreen,
 .canvas-node-bottom-editor:has(.is-fullscreen) {
   position: fixed;
-  inset: 24px;
-  left: 24px;
-  bottom: 24px;
-  z-index: 1300;
+  inset: 0;
+  z-index: 1500;
   width: auto;
-  max-height: none;
   height: auto;
+  max-height: none;
+  border-radius: 0;
   transform: none;
   animation: none;
-  top: 60px;
+  box-shadow: none;
 }
 
 @keyframes canvas-node-bottom-editor-in {
@@ -6312,6 +6312,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   transform: none;
 }
 
+.canvas-node-bottom-editor.is-fullscreen
+  .canvas-node-bottom-editor-panel.canvas-node-floating-panel,
 .canvas-node-bottom-editor:has(.is-fullscreen)
   .canvas-node-bottom-editor-panel.canvas-node-floating-panel {
   position: relative;
@@ -6323,6 +6325,30 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   max-width: none;
   flex: 1 1 auto;
   transform: none;
+}
+
+:is(.canvas-node-bottom-editor.is-fullscreen, .canvas-node-bottom-editor:has(.is-fullscreen))
+  .canvas-operation-workbench {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+}
+
+:is(.canvas-node-bottom-editor.is-fullscreen, .canvas-node-bottom-editor:has(.is-fullscreen))
+  :is(
+    .canvas-operation-workbench-content,
+    .canvas-operation-result-panel,
+    .canvas-operation-workbench-preview,
+    .canvas-operation-workbench-editing
+  ) {
+  min-height: 0;
+  max-height: none;
+}
+
+:is(.canvas-node-bottom-editor.is-fullscreen, .canvas-node-bottom-editor:has(.is-fullscreen))
+  .canvas-operation-workbench-preview {
+  height: 100%;
 }
 
 .canvas-floating-toolbar-shell {
@@ -7542,7 +7568,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-shot-script-edit-panel {
-  min-height: min(62vh, 620px);
+  min-height: min(78vh, 820px);
 }
 
 .canvas-shot-script-edit-panel.is-fullscreen {
@@ -7551,238 +7577,38 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-shot-script-edit-panel .canvas-node-edit-bottom-body {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
   padding: 10px 12px 12px;
 }
 
+.canvas-shot-script-edit-panel
+  .canvas-node-edit-bottom-body:has(.canvas-storyboard-editor) {
+  overflow: hidden;
+}
+
+.canvas-node-bottom-editor:has(.canvas-shot-script-edit-panel) {
+  width: min(1480px, calc(100% - 32px));
+  max-height: min(88vh, 920px);
+}
+
+.canvas-node-bottom-editor.is-fullscreen:has(.canvas-shot-script-edit-panel),
+.canvas-node-bottom-editor:has(.canvas-shot-script-edit-panel.is-fullscreen) {
+  inset: 0;
+  width: auto;
+  height: auto;
+  max-height: none;
+}
+
 // 分镜脚本编辑面板（内联、非全屏）：用受限高度而非 height:auto，打通高度链
-// 「bottom-editor(max-height 74vh) → floating-panel → 本面板 → body(flex:1,overflow) →
-//  table-wrap(overflow:auto)」。否则 height:auto 会让 body 的 flex:1 失去受限基准，
+// 「bottom-editor(max-height 88vh) → floating-panel → 本面板 → body(flex:1,overflow) →
+//  独立分镜编辑器」。否则 height:auto 会让 body 的 flex:1 失去受限基准，
 // 内容增多后被外层 overflow:hidden 直接裁切（即"内容一多就炸"、无法滚动）。
 // 仅作用于分镜脚本面板、内联态、非全屏（全屏由专门规则处理），特异性 0,4,0 盖过上面的 0,3,0。
 .canvas-node-floating-panel .canvas-shot-script-edit-panel.is-inline:not(.is-fullscreen) {
   height: 100%;
   max-height: 100%;
-}
-
-.canvas-shot-script-editor {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.canvas-shot-script-editor-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.canvas-shot-script-editor-table-wrap {
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  overscroll-behavior-x: contain;
-  overscroll-behavior-y: auto;
-  border-radius: 10px;
-  background: color-mix(in srgb, #ffffff 3%, transparent);
-}
-
-.canvas-shot-script-editor-table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-  font-size: 12px;
-  background: var(--panel-elev);
-
-  th,
-  td {
-    padding: 6px;
-    border-bottom: 1px solid color-mix(in srgb, var(--divider) 62%, transparent);
-    vertical-align: top;
-  }
-
-  th {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    background: color-mix(in srgb, var(--panel-elev) 96%, #050505);
-    color: var(--text-muted);
-    font-weight: 650;
-    text-align: left;
-  }
-
-  // 首列（镜号）sticky left，横滚时常驻便于定位行。背景必须不透明以遮挡滑入的单元格；
-  // th 兼作左上角（top+left）z-index 最高，td 用主体色避免与表头色差断层。
-  th:nth-child(1) {
-    width: 56px;
-    position: sticky;
-    top: 0;
-    left: 0;
-    z-index: 3;
-    background: color-mix(in srgb, var(--panel-elev) 96%, #050505);
-  }
-
-  td:nth-child(1) {
-    width: 56px;
-    position: sticky;
-    left: 0;
-    z-index: 2;
-    background: var(--panel-elev);
-  }
-
-  th:nth-child(2),
-  td:nth-child(2) {
-    width: 64px;
-  }
-
-  th:nth-child(3),
-  td:nth-child(3),
-  th:nth-child(4),
-  td:nth-child(4) {
-    width: 84px;
-  }
-
-  th:nth-child(5),
-  td:nth-child(5) {
-    width: 140px;
-  }
-
-  th:nth-child(6),
-  td:nth-child(6),
-  th:nth-child(9),
-  td:nth-child(9) {
-    width: 130px;
-  }
-
-  th:nth-child(7),
-  td:nth-child(7),
-  th:nth-child(12),
-  td:nth-child(12) {
-    width: 120px;
-  }
-
-  th:nth-child(8),
-  td:nth-child(8) {
-    width: 110px;
-  }
-
-  th:nth-child(10),
-  td:nth-child(10) {
-    width: 170px;
-  }
-
-  th:nth-child(11),
-  td:nth-child(11),
-  th:nth-child(14),
-  td:nth-child(14) {
-    width: 150px;
-  }
-
-  th:nth-child(13),
-  td:nth-child(13) {
-    width: 180px;
-  }
-
-  // 末列（删除按钮）sticky right，横滚时常驻。td 主体色、th 表头色（兼右上角，与左上角 z-index 齐平）。
-  td:last-child {
-    position: sticky;
-    right: 0;
-    z-index: 2;
-    width: 44px;
-    background: var(--panel-elev);
-  }
-
-  th:last-child {
-    position: sticky;
-    top: 0;
-    right: 0;
-    z-index: 3;
-    width: 44px;
-    background: color-mix(in srgb, var(--panel-elev) 96%, #050505);
-  }
-
-  td :where(.ant-input, .ant-input-affix-wrapper, textarea.ant-input) {
-    width: 100%;
-  }
-
-  td.canvas-shot-script-editor-cell {
-    height: 1px;
-    .canvas-shot-script-editor-textarea {
-      height: 100%;
-      min-height: 84px;
-    }
-  }
-
-  td.canvas-shot-script-editor-cell.is-multiline,
-  td.canvas-shot-script-editor-cell.is-character {
-    padding-top: 4px;
-    padding-bottom: 4px;
-  }
-
-  td.canvas-shot-script-editor-cell.is-multiline .ant-input-textarea,
-  td.canvas-shot-script-editor-cell.is-character .canvas-shot-script-character-cell {
-    display: flex;
-    min-height: 100%;
-    height: 100%;
-  }
-
-  td.canvas-shot-script-editor-cell.is-multiline .ant-input-textarea {
-    align-items: stretch;
-  }
-
-  // height:100%!important 用于覆盖 antd TextArea autoSize 注入的 inline height，让 textarea 填满
-  // td（td height:1px + 行高由 textarea 撑开，同行等高）；其余属性去掉 !important 用普通规则即可生效，
-  // 避免 !important 堆积掩盖问题、影响边框/圆角/聚焦态对齐项目其他输入框。
-  td.canvas-shot-script-editor-cell.is-multiline .ant-input-textarea textarea.ant-input {
-    height: 100% !important;
-    min-height: 84px;
-    max-height: none;
-    overflow-y: hidden;
-    resize: none;
-  }
-}
-
-.canvas-shot-script-character-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  justify-content: stretch;
-
-  .ant-input-affix-wrapper,
-  .ant-input {
-    margin-top: auto;
-  }
-}
-
-.canvas-shot-script-character-chip {
-  display: inline-flex;
-  width: 100%;
-  min-height: 26px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 8px;
-  background: color-mix(in srgb, #ffffff 5%, transparent);
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.canvas-shot-script-character-chip:hover,
-.canvas-shot-script-character-chip.is-active {
-  background: color-mix(in srgb, var(--primary) 18%, transparent);
-  color: var(--text-strong);
-}
-
-.canvas-shot-script-empty {
-  color: var(--text-muted);
-  font-size: 12px;
 }
 
 .canvas-node-floating-panel
@@ -10370,10 +10196,34 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   width: 100%;
   min-height: 0;
   flex: 1;
-  overflow: auto;
+  overflow-x: scroll;
+  overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 4px 12px 12px;
   cursor: grab;
+}
+
+.canvas-node-shot-table-wrap:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: -2px;
+}
+
+.canvas-node-shot-table-wrap::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.canvas-node-shot-table-wrap::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 46%, transparent);
+  background-clip: padding-box;
+}
+
+.canvas-node-shot-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-muted) 70%, transparent);
+  background-clip: padding-box;
 }
 
 .canvas-node-shot-table {

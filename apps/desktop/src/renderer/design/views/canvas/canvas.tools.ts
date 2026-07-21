@@ -65,6 +65,10 @@ export type CanvasWorkspaceActions = {
       >
     >,
   ) => Promise<void>
+  updateNode: (
+    nodeId: string,
+    patch: { title?: string; data?: Partial<CanvasNodeData> },
+  ) => Promise<void>
   updateNodeData: (nodeId: string, data: Partial<CanvasNodeData>) => Promise<void>
   connectNodes: (input: { sourceNodeId: string; targetNodeId: string }) => Promise<void>
   deleteEdges: (edgeIds: string[]) => Promise<void>
@@ -140,7 +144,6 @@ export type CanvasWorkspaceActions = {
   ) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   updateProjectSettings: (settings: { prompt?: string; negativePrompt?: string }) => Promise<void>
-  refresh: () => Promise<void>
 }
 
 /** 工具执行上下文 */
@@ -188,6 +191,57 @@ const findNode = (snap: CanvasSnapshot, nodeId: string): CanvasNode => {
   const n = snap.nodes.find((x) => x.id === nodeId)
   if (!n) throw new Error(`未找到节点 ${nodeId}`)
   return n
+}
+
+async function updateCanvasNode(
+  ctx: CanvasToolContext,
+  input: {
+    nodeId: string
+    title?: string
+    content?: string
+    data?: Partial<CanvasNodeData>
+  },
+): Promise<CanvasNode> {
+  const node = findNode(requireSnapshot(ctx), input.nodeId)
+  const hasTitle = input.title !== undefined
+  const hasContent = input.content !== undefined
+  const hasData = input.data != null && Object.keys(input.data).length > 0
+  if (!hasTitle && !hasContent && !hasData) {
+    throw new Error('至少提供 title、content 或 data 中的一项')
+  }
+
+  const dataPatch: Partial<CanvasNodeData> = { ...(input.data ?? {}) }
+  const content = input.content
+  if (content !== undefined) {
+    if (node.type === 'text') {
+      dataPatch.text = content
+    } else if (node.type === 'prompt') {
+      // Prompt cards render data.text, while some Agent/pipeline paths read
+      // data.prompt. Keep the two representations in sync.
+      dataPatch.text = content
+      dataPatch.prompt = content
+    } else if (isOperationNode(node)) {
+      dataPatch.prompt = content
+    } else {
+      throw new Error(`节点 ${input.nodeId} 不支持 content，请通过 data 修改具体字段`)
+    }
+  } else if (node.type === 'prompt') {
+    const hasPrompt = Object.prototype.hasOwnProperty.call(dataPatch, 'prompt')
+    const hasText = Object.prototype.hasOwnProperty.call(dataPatch, 'text')
+    const prompt = dataPatch.prompt
+    const text = dataPatch.text
+    if (hasPrompt && hasText && prompt !== text) {
+      throw new Error('Prompt 节点的 data.text 与 data.prompt 必须一致，请改用 content')
+    }
+    if (hasPrompt && !hasText && typeof prompt === 'string') dataPatch.text = prompt
+    if (hasText && !hasPrompt && typeof text === 'string') dataPatch.prompt = text
+  }
+
+  await ctx.workspace.updateNode(input.nodeId, {
+    ...(input.title !== undefined ? { title: input.title } : {}),
+    ...(Object.keys(dataPatch).length > 0 ? { data: dataPatch } : {}),
+  })
+  return node
 }
 
 const summarizeNode = (n: CanvasNode) => ({
@@ -643,6 +697,42 @@ const tools: CanvasToolDescriptor[] = [
 
   // ───────── 节点编辑 ─────────
   {
+    name: 'canvas_update_node',
+    description:
+      '通用节点更新工具。可同时修改节点标题、可见正文和任意 data 字段，并在写入后强制刷新画布内存快照。text/prompt 节点的 content 会更新卡片正文，AI 操作节点的 content 会更新提示词。优先使用本工具，避免只改存储数据但 UI 仍显示旧值。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeId'],
+      properties: {
+        nodeId: string('节点 id'),
+        title: string('节点标题（可选）', false),
+        content: string('节点可见正文或 AI 操作提示词（可选）', false),
+        data: {
+          type: 'object',
+          description: '需要合并写入的其他 node.data 字段（可选）',
+          additionalProperties: true,
+        },
+      },
+    },
+    handler: async (
+      ctx,
+      input: {
+        nodeId: string
+        title?: string
+        content?: string
+        data?: Partial<CanvasNodeData>
+      },
+    ) => {
+      const node = await updateCanvasNode(ctx, input)
+      return {
+        ok: true,
+        nodeId: input.nodeId,
+        nodeType: node.type,
+        refreshed: true,
+      }
+    },
+  },
+  {
     name: 'canvas_create_text_node',
     description:
       '创建普通纯文本笔记节点（同时生成同步的文本 asset）。不得用于剧本、分镜或影视资产；这些内容必须使用对应专用工具。坐标省略时自动放在画布空白处。',
@@ -694,7 +784,7 @@ const tools: CanvasToolDescriptor[] = [
   {
     name: 'canvas_update_node_data',
     description:
-      '编辑节点 data 字段（如修改 text/prompt/title/format/message 等）。注意：要改 prompt 节点的提示词，直接传 prompt 字段即可。',
+      '兼容工具：编辑节点 data 字段并刷新画布。普通节点更新优先使用 canvas_update_node；修改 prompt 卡片的 prompt 字段时会自动同步其可见 text。',
     paramsSchema: {
       type: 'object',
       required: ['nodeId', 'data'],
@@ -745,8 +835,8 @@ const tools: CanvasToolDescriptor[] = [
       },
     },
     handler: async (ctx, input: { nodeId: string; data: Partial<CanvasNodeData> }) => {
-      await ctx.workspace.updateNodeData(input.nodeId, input.data)
-      return { ok: true }
+      await updateCanvasNode(ctx, input)
+      return { ok: true, refreshed: true }
     },
   },
   {
@@ -813,10 +903,17 @@ const tools: CanvasToolDescriptor[] = [
       const snap = requireSnapshot(ctx)
       const node = findNode(snap, input.nodeId)
       if (!isOperationNode(node)) throw new Error(`节点 ${input.nodeId} 不是 AI 操作节点`)
-      await ctx.workspace.updateNodeData(input.nodeId, input.config)
-      if (input.title != null)
-        await ctx.workspace.patchNodes([input.nodeId], { title: input.title })
-      return { ok: true, nodeId: input.nodeId, taskId: node.taskId ?? null }
+      await updateCanvasNode(ctx, {
+        nodeId: input.nodeId,
+        ...(input.title != null ? { title: input.title } : {}),
+        data: input.config,
+      })
+      return {
+        ok: true,
+        nodeId: input.nodeId,
+        taskId: node.taskId ?? null,
+        refreshed: true,
+      }
     },
   },
   {

@@ -1041,6 +1041,7 @@ export function CanvasAgentModal({
             firstTurnSent: true,
           })
         }
+        onClearNodeRefs?.()
       } catch (sendError) {
         setRunning(false)
         throw sendError
@@ -1058,6 +1059,7 @@ export function CanvasAgentModal({
       refreshProjectSessions,
       selectedProvider,
       nodeRefs,
+      onClearNodeRefs,
       sessionId,
       snapshot,
       syncSessionSkills,

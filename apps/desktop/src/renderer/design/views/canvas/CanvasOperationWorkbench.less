@@ -11,13 +11,18 @@
   background: var(--canvas-edit-bg);
 }
 
+.canvas-operation-workbench:has(.canvas-storyboard-editor) {
+  min-height: min(82vh, 860px);
+  max-height: min(88vh, 920px);
+}
+
 .canvas-operation-workbench-head {
   display: flex;
   min-height: 44px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   padding: 7px 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
   background: color-mix(in srgb, var(--panel) 92%, transparent);
@@ -25,6 +30,7 @@
 
 .canvas-operation-workbench-tabs,
 .canvas-operation-workbench-actions,
+.canvas-operation-workbench-context,
 .canvas-operation-workbench-nav,
 .canvas-operation-workbench-run-nav {
   display: flex;
@@ -39,10 +45,19 @@
 }
 
 .canvas-operation-workbench-actions {
-  flex: 1 1 0;
+  max-width: 44%;
+  flex: 0 1 auto;
   min-width: 0;
   justify-content: flex-end;
   overflow-x: auto;
+}
+
+.canvas-operation-workbench-context {
+  min-width: 160px;
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding-left: 4px;
+  border-left: 1px solid color-mix(in srgb, var(--divider) 70%, transparent);
 }
 
 .canvas-operation-workbench-actions > * {
@@ -150,12 +165,7 @@
   overflow: hidden;
 }
 
-.canvas-operation-workbench-nav {
-  min-height: 42px;
-  flex: 0 0 auto;
-  justify-content: space-between;
-  padding: 6px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--divider) 62%, transparent);
+.canvas-operation-workbench-context {
   color: var(--text-muted);
   font-size: 12px;
 }
@@ -209,6 +219,10 @@
   align-items: center;
   gap: 3px;
   overflow-x: auto;
+}
+
+.canvas-operation-workbench-context .canvas-operation-workbench-output-list {
+  flex: 1 1 auto;
 }
 
 .canvas-operation-workbench-output-list button {
@@ -435,4 +449,19 @@
   flex: 1 1 auto;
   min-height: 0;
   max-height: 100%;
+}
+
+@media (max-width: 1180px) {
+  .canvas-operation-workbench-head {
+    flex-wrap: wrap;
+  }
+
+  .canvas-operation-workbench-context {
+    order: 3;
+    width: 100%;
+    min-height: 34px;
+    border-left: 0;
+    border-top: 1px solid color-mix(in srgb, var(--divider) 62%, transparent);
+    padding-top: 4px;
+  }
 }

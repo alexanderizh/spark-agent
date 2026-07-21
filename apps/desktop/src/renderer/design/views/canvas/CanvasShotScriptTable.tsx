@@ -1,3 +1,4 @@
+import { useRef, type WheelEvent as ReactWheelEvent } from 'react'
 import type { ParsedShotRow } from './canvasShotTableParse'
 
 type ShotDetail = {
@@ -30,11 +31,29 @@ export function CanvasShotScriptTable({
   /** 位于未选中的画布节点中时关闭，让滚轮继续交给画布。 */
   isolateWheel?: boolean
 }) {
+  const tableWrapRef = useRef<HTMLDivElement | null>(null)
   const totalSec = rows.reduce((sum, row) => sum + (row.durationSec ?? 0), 0)
   const hasDuration = rows.some((row) => row.durationSec != null)
+  const handleTableWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!isolateWheel) return
+    const tableWrap = tableWrapRef.current
+    if (!tableWrap || tableWrap.scrollWidth <= tableWrap.clientWidth) return
+    const hasHorizontalIntent = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)
+    if (!hasHorizontalIntent) return
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+    if (delta === 0) return
+    event.preventDefault()
+    tableWrap.scrollLeft += delta
+  }
 
   return (
-    <div className={`canvas-node-shot-table-wrap${isolateWheel ? ' nowheel' : ''}`}>
+    <div
+      ref={tableWrapRef}
+      className={`canvas-node-shot-table-wrap${isolateWheel ? ' nowheel' : ''}`}
+      aria-label="分镜脚本表格，可横向滚动查看更多字段"
+      tabIndex={isolateWheel ? 0 : undefined}
+      onWheel={handleTableWheel}
+    >
       <table className="canvas-node-shot-table">
         <colgroup>
           <col className="canvas-node-shot-col-idx" />
