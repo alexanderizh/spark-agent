@@ -221,13 +221,17 @@ export function composeCanvasMediaProviderPrompt(input: {
   if (normalizedSystem.includes(normalizedUser)) return system
   if (normalizedUser.includes(normalizedSystem)) return user
 
-  const dedupedUser = user
-    .replace(
-      /\[文本引用[^\]\r\n]*开始\]([\s\S]*?)\[\/文本引用[^\]\r\n]*结束\]/g,
-      (block, body: string) =>
-        referenceBodyAlreadyIncluded(normalizedSystem, body) ? '' : block,
-    )
-    .trim()
+  const hasExplicitReferenceMappings =
+    user.includes('[用户输入与引用关系]') && user.includes('[/用户输入与引用关系]')
+  const dedupedUser = (
+    hasExplicitReferenceMappings
+      ? user
+      : user.replace(
+          /\[文本引用[^\]\r\n]*开始\]([\s\S]*?)\[\/文本引用[^\]\r\n]*结束\]/g,
+          (block, body: string) =>
+            referenceBodyAlreadyIncluded(normalizedSystem, body) ? '' : block,
+        )
+  ).trim()
 
   if (!dedupedUser) return system
   const normalizedDedupedUser = normalizePromptForContainment(dedupedUser)

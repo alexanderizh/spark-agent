@@ -72,6 +72,8 @@ describe('canvasPromptCompiler', () => {
     })
 
     expect(result.compiledUserText).toContain('参考图 #1：小满（角色）')
+    expect(result.compiledUserText).toContain('[首帧图：首帧（首帧）]')
+    expect(result.compiledUserText).toContain('[尾帧图：尾帧（尾帧）]')
     expect(result.compiledUserText).not.toContain('hidden capability')
     expect(result.inputFiles?.map((file) => file.role)).toEqual(['reference', 'first_frame', 'last_frame'])
     expect(result.relationManifest.map((item) => item.relation)).toEqual(['character', 'first_frame', 'last_frame'])
@@ -201,6 +203,54 @@ describe('canvasPromptCompiler', () => {
       .toEqual({ channel: 'text', ordinal: 1, label: '文本引用 T1' })
   })
 
+  it('keeps field-to-resource mappings inline and moves full resources below user input', () => {
+    const storyboard = node('storyboard', 'text', '生成分镜脚本', { text: '分镜 1\n场景：出租屋' })
+    const hero = imageNode('hero', 'safe-file://hero.png', '5555')
+    const scene = imageNode('scene', 'safe-file://scene.png', '12_出租屋360场景板.png')
+    const style = node('style', 'text', '全局风格指引', { text: '写实都市 / 末日硬核' })
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [
+        { kind: 'text', id: 'label-storyboard', text: '片段详情设计：' },
+        { kind: 'reference', id: 'storyboard-ref', source: 'manual', sourceNodeId: 'storyboard', relation: 'storyboard', label: '生成分镜脚本', order: 0 },
+        { kind: 'text', id: 'label-character', text: '\n\n角色苏烬：' },
+        { kind: 'reference', id: 'hero-ref', source: 'manual', sourceNodeId: 'hero', relation: 'character', label: '5555', order: 1 },
+        { kind: 'text', id: 'label-scene', text: '\n\n场景：' },
+        { kind: 'reference', id: 'scene-ref', source: 'manual', sourceNodeId: 'scene', relation: 'scene', label: '12_出租屋360场景板.png', order: 2 },
+        { kind: 'text', id: 'label-style', text: '\n\n风格：' },
+        { kind: 'reference', id: 'style-ref', source: 'manual', sourceNodeId: 'style', relation: 'generic', label: '全局风格指引', order: 3 },
+      ],
+    }
+
+    const result = compileCanvasPromptDocument({
+      document,
+      nodes: [storyboard, hero, scene, style],
+      assets: [],
+      operation: 'text_to_video',
+    })
+
+    expect(result.compiledUserText).toContain(
+      [
+        '[用户输入与引用关系]',
+        '片段详情设计：文本引用 T1',
+        '',
+        '角色苏烬：参考图 #1',
+        '',
+        '场景：参考图 #2',
+        '',
+        '风格：文本引用 T2',
+        '[/用户输入与引用关系]',
+      ].join('\n'),
+    )
+    expect(result.compiledUserText).toContain(
+      '[引用资源]\n[图片引用]\n参考图 #1：5555（角色）\n参考图 #2：12_出租屋360场景板.png（场景）\n[/图片引用]',
+    )
+    expect(result.compiledUserText.indexOf('[引用资源]'))
+      .toBeGreaterThan(result.compiledUserText.indexOf('[/用户输入与引用关系]'))
+    expect(result.compiledUserText.match(/\[文本引用 T1 开始\]/g)).toHaveLength(1)
+    expect(result.compiledUserText.match(/\[文本引用 T2 开始\]/g)).toHaveLength(1)
+  })
+
   it('reuses one provider image slot for duplicate mentions of the same source and role', () => {
     const hero = imageNode('hero', 'safe-file://hero.png', '苏烬')
     const document: CanvasPromptDocument = {
@@ -219,7 +269,7 @@ describe('canvasPromptCompiler', () => {
     })
 
     expect(result.inputFiles).toHaveLength(1)
-    expect(result.compiledUserText.match(/参考图 #1/g)).toHaveLength(1)
+    expect(result.compiledUserText.match(/参考图 #1/g)).toHaveLength(3)
     expect(result.relationManifest.map((item) => item.modelReference?.ordinal)).toEqual([1, 1])
   })
 
@@ -243,7 +293,9 @@ describe('canvasPromptCompiler', () => {
 
     expect(result.compiledUserText.match(/\[文本引用 T1 开始\]/g)).toHaveLength(1)
     expect(result.compiledUserText.match(/保持雨夜氛围/g)).toHaveLength(1)
-    expect(result.compiledUserText).toContain('[引用文本 T1：氛围说明（再次引用）]')
+    expect(result.compiledUserText).toContain(
+      '[用户输入与引用关系]\n文本引用 T1下一段继续沿用以上资料文本引用 T1\n[/用户输入与引用关系]',
+    )
     expect(result.compiledUserText).not.toContain('文本引用 T2')
     expect(result.relationManifest.map((item) => item.modelReference)).toEqual([
       { channel: 'text', ordinal: 1, label: '文本引用 T1' },

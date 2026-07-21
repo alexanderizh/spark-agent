@@ -63,6 +63,9 @@ describe('canvasPromptSubmission', () => {
     })
 
     expect(result.promptDocument).toEqual(document)
+    expect(result.prompt).toContain(
+      '[用户输入与引用关系]\n保持人物一致参考图 #1\n[/用户输入与引用关系]',
+    )
     expect(result.prompt).toContain('参考图 #1：小满（参考图）')
     expect(result.inputFiles).toEqual([
       { type: 'image', role: 'reference', dataUrl: 'data:image/png;base64,AA==', mimeType: 'image/png' },
@@ -89,6 +92,9 @@ describe('canvasPromptSubmission', () => {
       expect.objectContaining({ kind: 'reference', sourceNodeId: 'script', relation: 'screenplay' }),
       expect.objectContaining({ kind: 'text', text: '' }),
     ])
+    expect(result.prompt).toContain(
+      '[用户输入与引用关系]\n提取主要场景：文本引用 T1\n[/用户输入与引用关系]',
+    )
     expect(result.prompt).toContain('[文本引用 T1 开始]')
     expect(result.prompt).toContain('类型：剧本')
     expect(result.prompt).toContain('名称：场次剧本')

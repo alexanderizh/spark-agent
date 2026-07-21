@@ -7,6 +7,24 @@ export type CanvasModelReferenceImage = {
   relation: CanvasPromptRelation
 }
 
+export function renderCanvasPromptWithReferences(input: {
+  userInput: string
+  resources: readonly string[]
+}): string {
+  const userInput = input.userInput.trim()
+  const resources = input.resources.map((resource) => resource.trim()).filter(Boolean)
+  if (resources.length === 0) return userInput
+  return [
+    '[用户输入与引用关系]',
+    userInput,
+    '[/用户输入与引用关系]',
+    '',
+    '[引用资源]',
+    resources.join('\n\n'),
+    '[/引用资源]',
+  ].join('\n')
+}
+
 export function renderCanvasReferenceImageList(
   images: readonly CanvasModelReferenceImage[],
 ): string {

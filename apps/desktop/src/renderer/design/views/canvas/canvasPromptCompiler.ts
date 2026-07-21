@@ -13,6 +13,7 @@ import type {
 import type { CanvasAsset, CanvasNode, CanvasOperationType } from './canvas.types'
 import { readCanvasTextInputContent } from './canvasTextInputPresentation'
 import {
+  renderCanvasPromptWithReferences,
   renderCanvasReferenceImageList,
   renderCanvasTextReference,
   type CanvasModelReferenceImage,
@@ -26,6 +27,7 @@ type CanvasPromptReferenceState = {
   referenceAudioOrdinal: number
   inputAudioOrdinal: number
   referenceImages: CanvasModelReferenceImage[]
+  textResources: string[]
   mediaReferences: Map<string, CanvasPromptModelReference>
   textReferences: Map<
     string,
@@ -68,6 +70,7 @@ export function compileCanvasPromptDocument(input: {
     referenceAudioOrdinal: 0,
     inputAudioOrdinal: 0,
     referenceImages: [],
+    textResources: [],
     mediaReferences: new Map(),
     textReferences: new Map(),
   }
@@ -87,8 +90,14 @@ export function compileCanvasPromptDocument(input: {
     if (compiled) textParts.push(compiled)
   }
 
-  const referenceImageList = renderCanvasReferenceImageList(referenceState.referenceImages)
-  const compiledUserText = [referenceImageList, ...textParts].filter(Boolean).join('\n\n').trim()
+  const referenceResources = [
+    renderCanvasReferenceImageList(referenceState.referenceImages),
+    ...referenceState.textResources,
+  ]
+  const compiledUserText = renderCanvasPromptWithReferences({
+    userInput: textParts.join(''),
+    resources: referenceResources,
+  })
   if (!compiledUserText && inputFiles.length === 0) {
     warnings.push({ code: 'empty_prompt', message: '提示词和媒体输入均为空' })
   }
@@ -116,7 +125,7 @@ function compileBlock(input: {
   warnings: NonNullable<CanvasPromptCompilation['promptWarnings']>
 }): string {
   const { block } = input
-  if (block.kind === 'text') return block.text.trim()
+  if (block.kind === 'text') return block.text
   if (block.kind === 'reference' && block.suppressed) return ''
   if (block.kind === 'parameter') {
     const unit = block.unit ? ` ${block.unit}` : ''
@@ -201,8 +210,12 @@ function compileBlock(input: {
       blockId: block.id,
     })
   }
-  if (!isFirstMention) return `[引用文本 T${modelReference.ordinal}：${label}]`
-  return renderCanvasTextReference({ ordinal: modelReference.ordinal, label, relation, content })
+  if (isFirstMention) {
+    input.referenceState.textResources.push(
+      renderCanvasTextReference({ ordinal: modelReference.ordinal, label, relation, content }),
+    )
+  }
+  return modelReference.label
 }
 
 function buildRelationManifestEntry(input: {
@@ -282,7 +295,7 @@ function renderInlineMediaReference(
   label: string,
   relation: CanvasPromptRelation,
 ): string {
-  if (reference.channel === 'reference_images') return ''
+  if (reference.channel === 'reference_images') return reference.label
   return `[${reference.label}：${label}（${relationLabel(relation)}）]`
 }
 
