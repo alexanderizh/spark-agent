@@ -34,6 +34,16 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     runtimeLabel: '只读派发',
     runtimeHint: '会用只读工具集（禁写/执行）派发单轮 LLM 产出计划文本；execution=static 时回落静态回显。',
   },
+  route: {
+    kind: 'route',
+    label: '路由判断',
+    icon: <Icons.Branch size={14} />,
+    accent: '--warning',
+    defaultPrompt: '根据目标和上游输入选择一个后续路由，只输出分支值。',
+    hint: '条件路由：输出分支值',
+    runtimeLabel: '条件路由',
+    runtimeHint: '会用只读 LLM 临时 worker 选择 routeOptions 中的一个 value，并写入 outputKey 供条件边分流。',
+  },
   agent: {
     kind: 'agent',
     label: '执行节点',
@@ -139,6 +149,7 @@ export const NODE_KIND_META: Record<WorkflowNodeKind, NodeKindMeta> = {
 export const NODE_KIND_ORDER: WorkflowNodeKind[] = [
   'input',
   'plan',
+  'route',
   'agent',
   'subagent',
   'skill',

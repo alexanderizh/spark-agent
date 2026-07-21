@@ -313,9 +313,9 @@ describe('executeWorkflowAgentPlan', () => {
       nodes: [
         {
           id: 'route',
-          kind: 'agent',
+          kind: 'route',
           title: 'Route',
-          config: { agentId: 'router', outputKey: 'route' },
+          config: { outputKey: 'route', routeOptions: [{ value: 'review' }, { value: 'skip' }] },
         },
         {
           id: 'review',
@@ -339,14 +339,19 @@ describe('executeWorkflowAgentPlan', () => {
     const result = await executeWorkflowAgentPlan({
       graph,
       objective: 'Choose a branch',
-      dispatch: async (request) => ({
+      executeAtomicNode: async (request) => ({
         content: request.nodeId === 'route' ? 'skip' : `unexpected ${request.nodeId}`,
+      }),
+      dispatch: async (request) => ({
+        content: `unexpected ${request.nodeId}`,
       }),
     })
 
     expect(result.status).toBe('completed')
-    expect(result.executions.map((item) => item.nodeId)).toEqual(['route'])
+    expect(result.atomicExecutions.map((item) => item.nodeId)).toEqual(['route'])
+    expect(result.executions.map((item) => item.nodeId)).toEqual([])
     expect(result.state).toEqual({ route: 'skip' })
+    expect(result.skippedNodeIds).toEqual(['review', 'publish'])
   })
 
   it('executes agent nodes behind active conditional edges and passes active upstream inputs', async () => {
@@ -354,9 +359,9 @@ describe('executeWorkflowAgentPlan', () => {
       nodes: [
         {
           id: 'route',
-          kind: 'agent',
+          kind: 'route',
           title: 'Route',
-          config: { agentId: 'router', outputKey: 'route' },
+          config: { outputKey: 'route', routeOptions: [{ value: 'review' }, { value: 'skip' }] },
         },
         {
           id: 'review',
@@ -373,17 +378,82 @@ describe('executeWorkflowAgentPlan', () => {
     const result = await executeWorkflowAgentPlan({
       graph,
       objective: 'Choose a branch',
+      executeAtomicNode: async (request) => ({
+        content: request.nodeId === 'route' ? 'review' : `unexpected ${request.nodeId}`,
+      }),
       dispatch: async (request) => ({
-        content: request.nodeId === 'route' ? 'review' : `notes for ${String(request.inputs.route)}`,
+        content: `notes for ${String(request.inputs.route)}`,
       }),
     })
 
     expect(result.status).toBe('completed')
+    expect(result.atomicExecutions.map((item) => item.nodeId)).toEqual(['route'])
     expect(result.executions.map((item) => ({ nodeId: item.nodeId, inputs: item.inputs }))).toEqual([
-      { nodeId: 'route', inputs: {} },
       { nodeId: 'review', inputs: { route: 'review' } },
     ])
     expect(result.state).toEqual({ route: 'review', reviewNotes: 'notes for review' })
+    expect(result.skippedNodeIds).toEqual([])
+  })
+
+  it('joins conditional branches when one branch is skipped and another branch completes', async () => {
+    const graph = normalizeWorkflowGraph({
+      nodes: [
+        {
+          id: 'route',
+          kind: 'route',
+          title: 'Route',
+          config: { outputKey: 'route', routeOptions: [{ value: 'deep' }, { value: 'quick' }] },
+        },
+        {
+          id: 'deep',
+          kind: 'agent',
+          title: 'Deep',
+          config: { agentId: 'deep-worker', outputKey: 'deepResult' },
+        },
+        {
+          id: 'quick',
+          kind: 'agent',
+          title: 'Quick',
+          config: { agentId: 'quick-worker', outputKey: 'quickResult' },
+        },
+        {
+          id: 'merge',
+          kind: 'agent',
+          title: 'Merge',
+          config: { agentId: 'publisher', outputKey: 'deliverable' },
+        },
+      ],
+      edges: [
+        { id: 'route-deep', from: 'route', to: 'deep', condition: { op: 'equals', key: 'route', value: 'deep' } },
+        { id: 'route-quick', from: 'route', to: 'quick', condition: { op: 'equals', key: 'route', value: 'quick' } },
+        { id: 'deep-merge', from: 'deep', to: 'merge' },
+        { id: 'quick-merge', from: 'quick', to: 'merge' },
+      ],
+    })
+
+    const result = await executeWorkflowAgentPlan({
+      graph,
+      objective: 'Choose one branch and merge',
+      executeAtomicNode: async (request) => {
+        if (request.nodeId === 'route') return { content: 'deep' }
+        return { content: `unexpected ${request.nodeId}` }
+      },
+      dispatch: async (request) => {
+        if (request.nodeId === 'deep') return { content: 'deep done' }
+        return { content: `merged ${Object.keys(request.inputs).join(',')}` }
+      },
+    })
+
+    expect(result.status).toBe('completed')
+    expect(result.atomicExecutions.map((item) => item.nodeId)).toEqual(['route'])
+    expect(result.executions.map((item) => item.nodeId)).toEqual(['deep', 'merge'])
+    expect(result.executions.at(-1)?.inputs).toEqual({ deepResult: 'deep done' })
+    expect(result.state).toEqual({
+      route: 'deep',
+      deepResult: 'deep done',
+      deliverable: 'merged deepResult',
+    })
+    expect(result.skippedNodeIds).toEqual(['quick'])
   })
 
   it('dispatches independent ready agent nodes in the same wave before joining downstream', async () => {

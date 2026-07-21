@@ -2495,6 +2495,7 @@ export type WorkflowStatus = 'draft' | 'active' | 'archived'
 export type WorkflowNodeKind =
   | 'input'
   | 'plan'
+  | 'route'
   | 'agent'
   | 'subagent'
   | 'skill'
@@ -2505,6 +2506,12 @@ export type WorkflowNodeKind =
   | 'review'
   | 'artifact'
   | 'loop'
+
+export interface WorkflowRouteOption {
+  value: string
+  label?: string
+  description?: string
+}
 
 export interface WorkflowNodeConfig {
   prompt?: string
@@ -2536,6 +2543,8 @@ export interface WorkflowNodeConfig {
   resultKey?: string
   /** loop 节点是否把每轮 resultKey 产出全部聚合；缺省 false，只返回最后一轮。 */
   collectAll?: boolean
+  /** route 节点的允许分支值；运行时只接受其中一个 value 作为输出。 */
+  routeOptions?: WorkflowRouteOption[]
   [key: string]: unknown
 }
 

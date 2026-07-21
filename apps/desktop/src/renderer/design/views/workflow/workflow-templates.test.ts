@@ -5,6 +5,7 @@ import { WORKFLOW_TEMPLATES } from './workflow-templates'
 const VALID_KINDS: ReadonlySet<string> = new Set<WorkflowNodeKind>([
   'input',
   'plan',
+  'route',
   'agent',
   'subagent',
   'skill',
@@ -55,7 +56,7 @@ describe('workflow-templates', () => {
     expect(WORKFLOW_TEMPLATES.length).toBeGreaterThanOrEqual(8)
   })
 
-  it('全部 12 类节点至少在一个模板里出现', () => {
+  it('全部 13 类节点至少在一个模板里出现', () => {
     const usedKinds = new Set<string>()
     for (const template of WORKFLOW_TEMPLATES) {
       for (const node of template.graph.nodes) usedKinds.add(node.kind)

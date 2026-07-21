@@ -13586,6 +13586,15 @@ body.inspector-resizing {
 .wf-field-help.wf-field-warn {
   color: var(--warning);
 }
+.wf-condition-key-chip {
+  margin-top: 6px;
+}
+.wf-route-option-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
 /* 条件边：停掉流动动画换虚线 + 警示色，与普通边区分出"这里有分支判断" */
 .workflow-builder-v2 .wf-flow .react-flow__edge.wf-edge-conditional path.react-flow__edge-path {
   stroke: var(--warning);

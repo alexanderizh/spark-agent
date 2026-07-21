@@ -37,6 +37,7 @@ import type {
   WorkflowNode,
   WorkflowNodeKind,
   WorkflowOrientation,
+  WorkflowRouteOption,
   WorkflowStatus,
 } from '@spark/protocol'
 import {
@@ -112,6 +113,17 @@ function defaultLoopBodyGraph(): WorkflowGraph {
 
 function defaultWorkflowNodeConfig(kind: WorkflowNodeKind): WorkflowNode['config'] {
   const meta = getNodeKindMeta(kind)
+  if (kind === 'route') {
+    return {
+      prompt: meta.defaultPrompt,
+      retryCount: 1,
+      outputKey: 'route',
+      routeOptions: [
+        { value: 'deep', label: '深度处理', description: '需要完整实现或多步骤处理' },
+        { value: 'quick', label: '快速处理', description: '只需要摘要、答复或轻量处理' },
+      ],
+    }
+  }
   if (kind !== 'loop') return { prompt: meta.defaultPrompt, retryCount: 1 }
   return {
     prompt: meta.defaultPrompt,
@@ -720,6 +732,8 @@ function WorkflowViewInner() {
         )
         if (exists) return prev
         const id = `${connection.source}-${connection.target}-${Date.now().toString(36)}`
+        setSelectedEdgeId(id)
+        setSelectedNodeId(null)
         return addEdge({ ...connection, id, type: 'smoothstep', animated: true }, prev)
       })
     },
@@ -780,6 +794,8 @@ function WorkflowViewInner() {
       if (position == null) return
       event.preventDefault()
       event.stopPropagation()
+      setSelectedEdgeId(edge.id)
+      setSelectedNodeId(null)
       setContextMenu({ kind: 'edge', edgeId: edge.id, ...position })
     },
     [contextMenuPosition],
@@ -1051,6 +1067,10 @@ function WorkflowViewInner() {
               onClose={closeContextMenu}
               onDuplicateNode={duplicateNode}
               onDeleteNode={removeNode}
+              onConfigureEdge={(edgeId) => {
+                setSelectedEdgeId(edgeId)
+                setSelectedNodeId(null)
+              }}
               onDeleteEdge={removeEdge}
               onAddNode={addNodeAt}
             />
@@ -1111,6 +1131,7 @@ function WorkflowListCard({
   onDelete: () => void
 }) {
   const visibleNodes = workflow.graph.nodes.slice(0, 4)
+  const conditionalEdgeCount = workflow.graph.edges.filter((edge) => edge.condition != null).length
   const menuItems = {
     items: [
       {
@@ -1178,6 +1199,12 @@ function WorkflowListCard({
         <span>{workflow.graph.nodes.length} 节点</span>
         <span className="wf-list-dot" />
         <span>{workflow.graph.edges.length} 连线</span>
+        {conditionalEdgeCount > 0 && (
+          <>
+            <span className="wf-list-dot" />
+            <span>{conditionalEdgeCount} 条件</span>
+          </>
+        )}
       </span>
       <span className="workflow-card-route">
         {visibleNodes.length > 0 ? (
@@ -1284,12 +1311,26 @@ function WorkflowInspector(props: InspectorProps) {
   const isSubagent = node.data.kind === 'subagent'
   const isVerify = node.data.kind === 'verify'
   const isLoop = node.data.kind === 'loop'
+  const isRoute = node.data.kind === 'route'
+  const routeOptions = asRouteOptions(config.routeOptions)
   const selectableAgents = agents.filter((agent) => agent.workflowId !== currentWorkflowId)
   const handleKindChange = (value: unknown) => {
     const kind = value as WorkflowNodeKind
     props.onPatch({ kind })
     if (kind === 'loop' && !isWorkflowGraphLike(config.body)) {
       props.onPatchConfig(defaultWorkflowNodeConfig('loop'))
+      return
+    }
+    if (kind === 'route' && asRouteOptions(config.routeOptions).length === 0) {
+      const prompt =
+        typeof config.prompt === 'string' && config.prompt.trim().length > 0
+          ? config.prompt
+          : NODE_KIND_META.route.defaultPrompt
+      props.onPatchConfig({
+        ...defaultWorkflowNodeConfig('route'),
+        prompt,
+        outputKey: typeof config.outputKey === 'string' && config.outputKey.trim().length > 0 ? config.outputKey : 'route',
+      })
     }
   }
   const patchLoopBodyDraft = (value: string) => {
@@ -1394,6 +1435,21 @@ function WorkflowInspector(props: InspectorProps) {
           />
           <div className="wf-field-help">下游节点的输入与连线条件都按此键读取本节点的输出。</div>
         </InspectorField>
+        {isRoute && (
+          <InspectorField label="路由分支">
+            <LobeTextArea
+              rows={5}
+              placeholder={
+                'deep | 深度处理 | 需要完整实现或多步骤处理\nquick | 快速处理 | 只需要摘要、答复或轻量处理'
+              }
+              value={formatRouteOptionsText(routeOptions)}
+              onChange={(event) =>
+                props.onPatchConfig({ routeOptions: parseRouteOptionsText(event.target.value) })
+              }
+            />
+            <div className="wf-field-help">每行一个分支：value | label | description。运行时只接受 value，并写入 outputKey。</div>
+          </InspectorField>
+        )}
         {isLoop && (
           <>
             <InspectorField label="最大迭代次数">
@@ -1619,6 +1675,54 @@ function formatEdgeConditionValue(value: string | number | boolean | null | unde
   return String(value)
 }
 
+function asRouteOptions(value: unknown): WorkflowRouteOption[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  return value.flatMap((item) => {
+    if (item == null || typeof item !== 'object') return []
+    const record = item as Record<string, unknown>
+    const routeValue = typeof record.value === 'string' ? record.value.trim() : ''
+    if (routeValue.length === 0 || seen.has(routeValue)) return []
+    seen.add(routeValue)
+    const label = typeof record.label === 'string' ? record.label.trim() : ''
+    const description = typeof record.description === 'string' ? record.description.trim() : ''
+    return [
+      {
+        value: routeValue,
+        ...(label.length > 0 ? { label } : {}),
+        ...(description.length > 0 ? { description } : {}),
+      },
+    ]
+  })
+}
+
+function formatRouteOptionsText(options: WorkflowRouteOption[]): string {
+  return options
+    .map((option) => [option.value, option.label ?? '', option.description ?? ''].join(' | ').replace(/(?:\s\|\s)*$/u, ''))
+    .join('\n')
+}
+
+function parseRouteOptionsText(raw: string): WorkflowRouteOption[] {
+  const seen = new Set<string>()
+  return raw
+    .split(/\r?\n/u)
+    .flatMap((line): WorkflowRouteOption[] => {
+      const [rawValue, rawLabel, ...rawDescription] = line.split('|')
+      const value = (rawValue ?? '').trim()
+      if (value.length === 0 || seen.has(value)) return []
+      seen.add(value)
+      const label = (rawLabel ?? '').trim()
+      const description = rawDescription.join('|').trim()
+      return [
+        {
+          value,
+          ...(label.length > 0 ? { label } : {}),
+          ...(description.length > 0 ? { description } : {}),
+        },
+      ]
+    })
+}
+
 /** 选中连线时的右侧检查器：编辑边条件（条件分支）或删除连线。 */
 function WorkflowEdgeInspector({
   edge,
@@ -1636,6 +1740,8 @@ function WorkflowEdgeInspector({
   const targetNode = nodes.find((node) => node.id === edge.target) ?? null
   const sourceOutputKey =
     typeof sourceNode?.data.config.outputKey === 'string' ? sourceNode.data.config.outputKey.trim() : ''
+  const sourceRouteOptions =
+    sourceNode?.data.kind === 'route' ? asRouteOptions(sourceNode.data.config.routeOptions) : []
   const op: EdgeConditionOpChoice = condition?.op ?? 'none'
   const key = condition?.key ?? ''
   const needsValue = op === 'equals' || op === 'not_equals'
@@ -1690,6 +1796,15 @@ function WorkflowEdgeInspector({
               value={key}
               onChange={(event) => onPatchCondition(rebuild(op, event.target.value, valueText))}
             />
+            {sourceOutputKey.length > 0 && key !== sourceOutputKey && (
+              <button
+                type="button"
+                className="tool-chip wf-condition-key-chip"
+                onClick={() => onPatchCondition(rebuild(op, sourceOutputKey, valueText))}
+              >
+                <Icons.Check size={11} /> 使用 {sourceOutputKey}
+              </button>
+            )}
             {key.trim().length === 0 && (
               <div className="wf-field-help wf-field-warn">状态键为空时条件不生效（保存后会被忽略）。</div>
             )}
@@ -1703,6 +1818,27 @@ function WorkflowEdgeInspector({
               onChange={(event) => onPatchCondition(rebuild(op, key, event.target.value))}
             />
             <div className="wf-field-help">true/false 按布尔、null 按空值、纯数字按数值比较，其余按字符串。</div>
+            {sourceRouteOptions.length > 0 && sourceOutputKey.length > 0 && (
+              <div className="wf-route-option-chips">
+                {sourceRouteOptions.map((option) => {
+                  const active = key === sourceOutputKey && valueText === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`tool-chip ${active ? 'active' : ''}`}
+                      title={option.description ?? option.label ?? option.value}
+                      onClick={() =>
+                        onPatchCondition({ op: 'equals', key: sourceOutputKey, value: option.value })
+                      }
+                    >
+                      {active && <Icons.Check size={11} />}
+                      {option.label ?? option.value}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </InspectorField>
         )}
       </div>

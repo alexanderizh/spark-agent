@@ -28,6 +28,7 @@ import {
   buildWorkflowAtomicInstruction,
   resolveWorkflowArtifactExportPath,
   validateWorkflowInputStructuredContent,
+  validateWorkflowRouteDecisionContent,
   isWorkflowApprovalApprovedImpl,
   extractWorkflowApprovalCommentImpl,
 } from './session.service.js'
@@ -40,8 +41,8 @@ function node(kind: NormalizedWorkflowNode['kind'], config: Record<string, unkno
 }
 
 describe('shouldRunWorkflowAtomicNodeAsAgent', () => {
-  it('skill/tool/mcp/plan/review/artifact 默认真实执行', () => {
-    for (const kind of ['skill', 'tool', 'mcp', 'plan', 'review', 'artifact'] as const) {
+  it('route/skill/tool/mcp/plan/review/artifact 默认真实执行', () => {
+    for (const kind of ['route', 'skill', 'tool', 'mcp', 'plan', 'review', 'artifact'] as const) {
       expect(shouldRunWorkflowAtomicNodeAsAgent(node(kind))).toBe(true)
     }
   })
@@ -143,6 +144,28 @@ describe('buildWorkflowAtomicInstruction', () => {
     })
     expect(text).toContain('value: {"a":1,"b":["x"]}')
   })
+
+  it('route kind：列出允许分支并要求只输出 value', () => {
+    const text = buildWorkflowAtomicInstruction({
+      kind: 'route',
+      title: '复杂度路由',
+      objective: '实现工作流',
+      inputs: { objective: '补条件节点' },
+      config: {
+        prompt: '判断复杂度。',
+        routeOptions: [
+          { value: 'deep', label: '深度处理', description: '完整实现' },
+          { value: 'quick', label: '快速处理' },
+        ],
+      },
+    })
+    expect(text).toContain('工作流「复杂度路由」的路由节点')
+    expect(text).toContain('- deep (深度处理): 完整实现')
+    expect(text).toContain('- quick (快速处理)')
+    expect(text).toContain('[Workflow objective]')
+    expect(text).toContain('[Upstream inputs]')
+    expect(text).toContain('严格只输出一个分支 value 本身')
+  })
 })
 
 describe('validateWorkflowInputStructuredContent', () => {
@@ -175,6 +198,43 @@ describe('validateWorkflowInputStructuredContent', () => {
   it('半截 JSON：视为非法、回落透传', () => {
     const r = validateWorkflowInputStructuredContent('{"objective":"x"', 'fb')
     expect(r.ok).toBe(false)
+  })
+})
+
+describe('validateWorkflowRouteDecisionContent', () => {
+  it('纯文本分支值命中 routeOptions 时返回规范 value', () => {
+    const r = validateWorkflowRouteDecisionContent(' deep \n原因不用看', {
+      routeOptions: [{ value: 'deep' }, { value: 'quick' }],
+    })
+    expect(r.ok).toBe(true)
+    expect((r as { content: string }).content).toBe('deep')
+  })
+
+  it('JSON 字符串或对象也可解析为分支值', () => {
+    const stringResult = validateWorkflowRouteDecisionContent('"quick"', {
+      routeOptions: [{ value: 'deep' }, { value: 'quick' }],
+    })
+    const objectResult = validateWorkflowRouteDecisionContent('{"route":"deep"}', {
+      routeOptions: [{ value: 'deep' }, { value: 'quick' }],
+    })
+    expect(stringResult.ok).toBe(true)
+    expect((stringResult as { content: string }).content).toBe('quick')
+    expect(objectResult.ok).toBe(true)
+    expect((objectResult as { content: string }).content).toBe('deep')
+  })
+
+  it('输出不在 routeOptions 中时失败，避免误走错误分支', () => {
+    const r = validateWorkflowRouteDecisionContent('maybe', {
+      routeOptions: [{ value: 'deep' }, { value: 'quick' }],
+    })
+    expect(r.ok).toBe(false)
+    expect((r as { message: string }).message).toContain('不在允许分支值中')
+  })
+
+  it('未配置 routeOptions 时接受任意非空分支值', () => {
+    const r = validateWorkflowRouteDecisionContent('manual', {})
+    expect(r.ok).toBe(true)
+    expect((r as { content: string }).content).toBe('manual')
   })
 })
 

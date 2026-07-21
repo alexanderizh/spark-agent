@@ -385,7 +385,7 @@ export interface OrchestrationStatusEvent extends BaseEvent {
   memberCount: number
 }
 
-export type WorkflowProgressNodeStatus = 'pending' | 'running' | 'completed' | 'failed'
+export type WorkflowProgressNodeStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
 
 export interface WorkflowProgressNode {
   nodeId: string
