@@ -13,46 +13,43 @@ import { Button, Modal } from 'antd'
 import { Icons } from '../../../Icons'
 import { formatTimestamp } from './videoWorkbench.types'
 import { ResourceThumb } from './VideoWorkbenchResourceThumb'
+import {
+  filterVideoWorkbenchPickerCandidates,
+  type VideoWorkbenchPickerCandidate,
+  type VideoWorkbenchResourceFilter,
+} from './videoWorkbenchResourcePickerModel'
 
-type Filter = 'all' | 'video' | 'image'
-
-/** Picker 所需的最小候选字段（CanvasResourceOption / LocalResourceFile 都满足） */
-export interface PickerCandidate {
-  id: string
-  title: string
-  kind: 'video' | 'image'
-  url: string
-  thumbnailUrl?: string
-  durationSec?: number
-  width?: number
-  height?: number
-}
-
-interface Props<T extends PickerCandidate> {
+interface Props<T extends VideoWorkbenchPickerCandidate> {
   open: boolean
   candidates: T[]
   busy?: boolean
+  selectionMode?: 'multiple' | 'single'
+  title?: string
+  confirmLabel?: string
   onConfirm: (selected: T[]) => void
   onCancel: () => void
 }
 
-const FILTER_LABELS: Record<Filter, string> = {
+const FILTER_LABELS: Record<VideoWorkbenchResourceFilter, string> = {
   all: '全部',
   video: '视频',
   image: '图片',
 }
 
-export function VideoWorkbenchResourcePicker<T extends PickerCandidate>({
+export function VideoWorkbenchResourcePicker<T extends VideoWorkbenchPickerCandidate>({
   open,
   candidates,
   busy = false,
+  selectionMode = 'multiple',
+  title = '从画布选择资源',
+  confirmLabel = '加入资源面板',
   onConfirm,
   onCancel,
 }: Props<T>): ReactElement {
-  // Modal 用 destroyOnClose，每次打开都会 remount，这里 state 初始值即为重置。
-  const [filter, setFilter] = useState<Filter>('all')
+  const [filter, setFilter] = useState<VideoWorkbenchResourceFilter>('all')
   const [query, setQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [highlightedId, setHighlightedId] = useState<string | null>(candidates[0]?.id ?? null)
 
   const counts = useMemo(() => {
     let video = 0
@@ -64,20 +61,32 @@ export function VideoWorkbenchResourcePicker<T extends PickerCandidate>({
     return { all: candidates.length, video, image }
   }, [candidates])
 
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return candidates.filter((c) => {
-      if (filter !== 'all' && c.kind !== filter) return false
-      if (!q) return true
-      return c.title.toLowerCase().includes(q) || c.url.toLowerCase().includes(q)
-    })
-  }, [candidates, filter, query])
+  const visible = useMemo(
+    () => filterVideoWorkbenchPickerCandidates(candidates, filter, query),
+    [candidates, filter, query],
+  )
+  const highlighted =
+    visible.find((candidate) => candidate.id === highlightedId) ?? visible[0] ?? null
 
   const toggle = (id: string) => {
     setSelectedIds((prev) => {
+      if (selectionMode === 'single') return new Set([id])
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
+      return next
+    })
+  }
+
+  const allVisibleSelected =
+    visible.length > 0 && visible.every((candidate) => selectedIds.has(candidate.id))
+
+  const toggleVisible = () => {
+    if (selectionMode === 'single') return
+    setSelectedIds((previous) => {
+      const next = new Set(previous)
+      if (allVisibleSelected) visible.forEach((candidate) => next.delete(candidate.id))
+      else visible.forEach((candidate) => next.add(candidate.id))
       return next
     })
   }
@@ -90,9 +99,9 @@ export function VideoWorkbenchResourcePicker<T extends PickerCandidate>({
   return (
     <Modal
       open={open}
-      title="从画布选择资源"
+      title={title}
       onCancel={onCancel}
-      width={720}
+      width={680}
       destroyOnClose
       maskClosable={!busy}
       rootClassName="vwb-picker-modal"
@@ -108,7 +117,8 @@ export function VideoWorkbenchResourcePicker<T extends PickerCandidate>({
           disabled={selectedIds.size === 0}
           onClick={handleOk}
         >
-          加入资源面板{selectedIds.size > 0 ? `（${selectedIds.size}）` : ''}
+          {confirmLabel}
+          {selectedIds.size > 0 ? `（${selectedIds.size}）` : ''}
         </Button>,
       ]}
     >
@@ -120,7 +130,7 @@ export function VideoWorkbenchResourcePicker<T extends PickerCandidate>({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          {(['all', 'video', 'image'] as Filter[]).map((key) => (
+          {(['all', 'video', 'image'] as VideoWorkbenchResourceFilter[]).map((key) => (
             <button
               key={key}
               type="button"
@@ -132,12 +142,22 @@ export function VideoWorkbenchResourcePicker<T extends PickerCandidate>({
           ))}
         </div>
 
+        <div className="vwb-picker-summary">
+          <span>
+            {filter === 'all' ? '图片与视频' : FILTER_LABELS[filter]}
+            <small>{visible.length}</small>
+          </span>
+          {selectionMode === 'multiple' && visible.length > 0 && (
+            <button type="button" onClick={toggleVisible}>
+              {allVisibleSelected ? '取消全选当前结果' : '全选当前结果'}
+            </button>
+          )}
+        </div>
+
         {visible.length === 0 ? (
           <div className="vwb-picker-empty">
             <Icons.Layers size={28} />
-            <strong>
-              {candidates.length === 0 ? '当前画布没有可选资源' : '没有匹配的资源'}
-            </strong>
+            <strong>{candidates.length === 0 ? '当前画布没有可选资源' : '没有匹配的资源'}</strong>
             <div className="muted">
               {candidates.length === 0
                 ? '先在画布上创建图片或视频节点，再回到这里选择。'
@@ -145,43 +165,66 @@ export function VideoWorkbenchResourcePicker<T extends PickerCandidate>({
             </div>
           </div>
         ) : (
-          <div className="vwb-picker-grid">
-            {visible.map((c) => {
-              const selected = selectedIds.has(c.id)
-              const isVideo = c.kind === 'video'
-              return (
-                <button
-                  type="button"
-                  key={c.id}
-                  className={`vwb-picker-card${selected ? ' is-selected' : ''}`}
-                  onClick={() => toggle(c.id)}
-                  title={c.title}
-                >
-                  <div className="vwb-picker-card-thumb">
-                    <ResourceThumb resource={c} className="vwb-picker-card-media" />
-                    <span className={`vwb-picker-card-type type-${c.kind}`}>
-                      {isVideo ? '视频' : '图片'}
+          <div className="vwb-picker-browser">
+            <div
+              className="vwb-picker-results"
+              role="listbox"
+              aria-multiselectable={selectionMode === 'multiple'}
+            >
+              {visible.map((candidate) => {
+                const selected = selectedIds.has(candidate.id)
+                const metadata = resourceMetadata(candidate)
+                return (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    key={candidate.id}
+                    className={`vwb-picker-result${selected ? ' is-selected' : ''}${
+                      highlighted?.id === candidate.id ? ' is-highlighted' : ''
+                    }`}
+                    onMouseEnter={() => setHighlightedId(candidate.id)}
+                    onFocus={() => setHighlightedId(candidate.id)}
+                    onClick={() => toggle(candidate.id)}
+                    title={candidate.title}
+                  >
+                    <span className="vwb-picker-result-thumb">
+                      <ResourceThumb resource={candidate} />
                     </span>
-                    {isVideo && c.durationSec ? (
-                      <span className="vwb-picker-card-dur">{formatTimestamp(c.durationSec)}</span>
-                    ) : !isVideo && c.width && c.height ? (
-                      <span className="vwb-picker-card-dur">
-                        {c.width}×{c.height}
-                      </span>
-                    ) : null}
-                    {selected && (
-                      <span className="vwb-picker-card-check">
-                        <Icons.Check size={14} />
-                      </span>
-                    )}
-                  </div>
-                  <div className="vwb-picker-card-name">{c.title}</div>
-                </button>
-              )
-            })}
+                    <span className="vwb-picker-result-copy">
+                      <strong>{candidate.title}</strong>
+                      <small>{metadata}</small>
+                    </span>
+                    <span className="vwb-picker-result-check" aria-hidden="true">
+                      {selected ? <Icons.Check size={13} /> : null}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            {highlighted && (
+              <aside className="vwb-picker-preview" aria-label={`${highlighted.title}预览`}>
+                <div className="vwb-picker-preview-media">
+                  <ResourceThumb resource={highlighted} />
+                </div>
+                <div className="vwb-picker-preview-copy">
+                  <strong>{highlighted.title}</strong>
+                  <small>{resourceMetadata(highlighted)}</small>
+                </div>
+              </aside>
+            )}
           </div>
         )}
       </div>
     </Modal>
   )
+}
+
+function resourceMetadata(candidate: VideoWorkbenchPickerCandidate): string {
+  const parts = [candidate.kind === 'video' ? '视频' : '图片']
+  if (candidate.kind === 'video' && candidate.durationSec) {
+    parts.push(formatTimestamp(candidate.durationSec))
+  }
+  if (candidate.width && candidate.height) parts.push(`${candidate.width}×${candidate.height}`)
+  return parts.join(' · ')
 }

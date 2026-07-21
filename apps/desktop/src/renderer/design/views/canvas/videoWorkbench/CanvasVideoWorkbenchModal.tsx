@@ -31,20 +31,22 @@ import {
 } from './videoWorkbench.types'
 import { VideoWorkbenchFramePanel } from './VideoWorkbenchFramePanel'
 import { VideoWorkbenchEditPanel } from './VideoWorkbenchEditPanel'
-import { VideoTimeline } from './VideoTimeline'
 import { VideoWorkbenchResourcePanel } from './VideoWorkbenchResourcePanel'
 import { VideoWorkbenchTrackTimeline } from './VideoWorkbenchTrackTimeline'
 import { VideoWorkbenchOutputPanel } from './VideoWorkbenchOutputPanel'
 import type { ThumbnailMeta } from './VideoWorkbenchResourceThumb'
 import { VideoWorkbenchResourcePicker } from './VideoWorkbenchResourcePicker'
 import { useVideoWorkbenchPlayback } from './useVideoWorkbenchPlayback'
-import { insertResourceIntoTrack, mergeResources, removeTrackClip } from './resourcePanelUtils'
-import type { TrackClip, WorkbenchResource } from './videoWorkbench.types'
 import {
-  normalizeTimelineRange,
-  splitTimelineRange,
-  type TimelineRange,
-} from './videoTimelineModel'
+  indexResourcesById,
+  insertResourceIntoTrack,
+  mergeResources,
+  removeTrackClip,
+  resolveClipAtGlobalTime,
+  shouldSeedSourceTrack,
+  splitTrackClip,
+} from './resourcePanelUtils'
+import type { TrackClip, WorkbenchResource } from './videoWorkbench.types'
 import './videoWorkbench.less'
 
 /** macOS 无边框窗口红绿灯安全区 */
@@ -223,13 +225,6 @@ export function CanvasVideoWorkbenchModal({
   const [videoMetaDuration, setVideoMetaDuration] = useState(0)
   /** 当前播放位置（秒），用于手动标记 */
   const [currentTime, setCurrentTime] = useState(0)
-  /** 时间轴选区与源地址绑定，切换源视频后自然回到全长选区。 */
-  const [timelineSelection, setTimelineSelection] = useState<{
-    sourceUrl: string
-    range: TimelineRange
-  }>({ sourceUrl: '', range: { startSec: 0, endSec: 0 } })
-  /** true=关键帧无损快切，false=重新编码精确切 */
-  const [trimCopy, setTrimCopy] = useState(true)
   /** 资源面板当前选中的资源 id（用于在主预览区单独预览） */
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null)
   /** 多段轨道连播状态机（active 时主预览区按 clip 顺序连播，详见 useVideoWorkbenchPlayback） */
@@ -241,7 +236,12 @@ export function CanvasVideoWorkbenchModal({
   /** 「从画布选择资源」Picker 的打开状态与候选列表（UI 在 Modal 内部，避免改动父级） */
   const [canvasPickerOpen, setCanvasPickerOpen] = useState(false)
   const [canvasPickerCandidates, setCanvasPickerCandidates] = useState<CanvasResourceOption[]>([])
+  const [canvasPickerPurpose, setCanvasPickerPurpose] = useState<'resources' | 'source'>(
+    'resources',
+  )
   const autoCollectTriggeredRef = useRef(false)
+  /** 已同步到统一轨道的源视频；用于区分首次迁移与工作台内切换源视频。 */
+  const seededSourceUrlRef = useRef('')
 
   const sourceVideoUrl = useMemo(() => {
     const raw = node?.data?.url as string | undefined
@@ -278,7 +278,13 @@ export function CanvasVideoWorkbenchModal({
       previewKind: sourceVideoUrl ? ('video' as const) : null,
       isPlayback: false as const,
     }
-  }, [draft.resourcePanel, selectedResourceId, sourceVideoUrl, playback.active, playback.currentResource])
+  }, [
+    draft.resourcePanel,
+    selectedResourceId,
+    sourceVideoUrl,
+    playback.active,
+    playback.currentResource,
+  ])
   const { selectedResource, previewUrl, previewKind, isPlayback } = preview
   // 解构 playback 的稳定函数与状态，避免依赖整个对象导致下游 useCallback 频繁重建
   const {
@@ -288,6 +294,7 @@ export function CanvasVideoWorkbenchModal({
     handleVideoTimeUpdate: playbackOnTimeUpdate,
     handleVideoPlay: playbackOnPlay,
     handleVideoPause: playbackOnPause,
+    exit: playbackExit,
     playing: playbackPlaying,
     active: playbackActive,
     globalTimeSec: playbackGlobalTime,
@@ -297,21 +304,6 @@ export function CanvasVideoWorkbenchModal({
 
   const probe = draft.probeInfo
   const duration = probe?.durationSec ?? videoMetaDuration ?? 0
-  const timelineRange = useMemo(
-    () =>
-      normalizeTimelineRange(
-        timelineSelection.sourceUrl === sourceVideoUrl
-          ? timelineSelection.range
-          : { startSec: 0, endSec: 0 },
-        duration,
-      ),
-    [duration, sourceVideoUrl, timelineSelection],
-  )
-  const handleTimelineRangeChange = useCallback(
-    (range: TimelineRange) => setTimelineSelection({ sourceUrl: sourceVideoUrl, range }),
-    [sourceVideoUrl],
-  )
-
   // ── 检测 ffmpeg 可用性 ──────────────────────────────────────────
   useEffect(() => {
     if (!open) return
@@ -513,59 +505,6 @@ export function CanvasVideoWorkbenchModal({
     [node, probe, extractConfig],
   )
 
-  // 手动标记时间点
-  const addManualMark = useCallback(() => {
-    const t = Math.round(currentTime * 10) / 10
-    setDraft((d) => {
-      if (d.manualMarks.includes(t)) return d
-      const marks = [...d.manualMarks, t].sort((a, b) => a - b)
-      return { ...d, manualMarks: marks }
-    })
-  }, [currentTime])
-
-  const removeManualMark = useCallback((t: number) => {
-    setDraft((d) => ({ ...d, manualMarks: d.manualMarks.filter((x) => x !== t) }))
-  }, [])
-
-  // 收窄依赖：manualMarks 单独读，避免整 draft 变化时整个回调重建
-  const manualMarks = draft.manualMarks
-  const extractManualMarks = useCallback(async () => {
-    if (!node || manualMarks.length === 0) return
-    setBusy(true)
-    setProgress(0)
-    try {
-      const reqId = shortId()
-      const res = await window.spark.invoke('video:process', {
-        operation: 'extractFramesAtTimes',
-        input: resolveDiskPath((node.data as { url?: string }).url ?? ''),
-        params: { timesSec: manualMarks },
-        requestId: reqId,
-      })
-      if (res.success && res.result) {
-        const result = res.result as Array<{ path: string; timestampSec: number; index: number }>
-        setDraft((d) => {
-          // 重新分配全局唯一 index，避免与已有 keyframes 的 index 冲突
-          const baseIdx = d.keyframes.length
-          const frames: WorkbenchKeyframe[] = result.map((f, i) => ({
-            path: f.path,
-            previewUrl: encodeToSafeFileUrl(f.path),
-            timestampSec: f.timestampSec,
-            index: baseIdx + i,
-          }))
-          return { ...d, keyframes: [...d.keyframes, ...frames] }
-        })
-        // result.length === frames.length（frames 定义在 setDraft updater 内部，
-        // 外部访问会 ReferenceError，用 result.length 计数）
-        message.success(`提取了 ${result.length} 个标记帧`)
-      }
-    } catch (err) {
-      message.error(`提取失败: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setBusy(false)
-      setProgress(null)
-    }
-  }, [node, manualMarks])
-
   // 跳转到指定时间点
   const seekTo = useCallback((sec: number) => {
     const v = videoRef.current
@@ -712,84 +651,48 @@ export function CanvasVideoWorkbenchModal({
     [recordOutputs],
   )
 
-  const handleApplyTimelineTrim = useCallback(async () => {
-    const range = normalizeTimelineRange(timelineRange, duration)
-    const res = await handleProcess('trim', {
-      startSec: range.startSec,
-      endSec: range.endSec,
-      copy: trimCopy,
-    })
-    if (!res.success || !res.result) {
-      message.error(res.error ?? '选区导出失败')
-      return
-    }
-
-    const path = (res.result as { path?: string }).path ?? ''
-    if (!path) {
-      message.error('选区导出失败：未返回产物路径')
-      return
-    }
-    recordOutput(
-      `轨道裁剪 ${formatTimestamp(range.startSec)}-${formatTimestamp(range.endSec)}`,
-      path,
-      'trim',
-    )
-    message.success(`已导出 ${formatTimestamp(range.endSec - range.startSec)} 片段`)
-  }, [duration, handleProcess, recordOutput, timelineRange, trimCopy])
-
-  const handleSplitTimeline = useCallback(async () => {
-    const ranges = splitTimelineRange(timelineRange, currentTime, duration)
-    if (!ranges) {
-      message.warning('请把播放头放在选区内部后再分割')
-      return
-    }
-
-    const jobs = [
-      { range: ranges[0], label: '前段' },
-      { range: ranges[1], label: '后段' },
-    ] as const
-    const outputs: Array<{ path: string; range: TimelineRange; label: string }> = []
-    const persistSuccessfulOutputs = () => {
-      recordOutputs(
-        outputs.map((output) => ({
-          summary: `轨道分割·${output.label} ${formatTimestamp(output.range.startSec)}-${formatTimestamp(output.range.endSec)}`,
-          outputPath: output.path,
-          type: 'trim' as const,
-        })),
-      )
-    }
-    for (const job of jobs) {
-      const { range, label } = job
-      const res = await handleProcess('trim', {
-        startSec: range.startSec,
-        endSec: range.endSec,
-        copy: trimCopy,
-      })
-      if (!res.success || !res.result) {
-        persistSuccessfulOutputs()
-        const reason = res.error ?? `${label}分割失败`
-        message.error(outputs.length > 0 ? `${reason}，已保留成功片段` : reason)
-        return
-      }
-      const path = (res.result as { path?: string }).path ?? ''
-      if (!path) {
-        persistSuccessfulOutputs()
-        const reason = `${label}分割失败：未返回产物路径`
-        message.error(outputs.length > 0 ? `${reason}，已保留成功片段` : reason)
-        return
-      }
-      outputs.push({ path, range, label })
-    }
-
-    persistSuccessfulOutputs()
-    message.success(`已在 ${formatTimestamp(currentTime)} 分割并导出 2 个片段`)
-  }, [currentTime, duration, handleProcess, recordOutputs, timelineRange, trimCopy])
-
   // ── 资源面板 / 多段轨道 handlers ───────────────────────────────
   // updater 必须是纯函数（无 IPC 副作用）；持久化由 useEffect 防抖接管
   const updateDraft = useCallback((updater: (d: VideoWorkbenchData) => VideoWorkbenchData) => {
     setDraft((d) => updater(d))
   }, [])
+
+  // 旧工作台把 node.data.url 放在独立单视频时间线；首次打开时迁入统一资源轨道。
+  // 工作台保持打开时若切换源视频，父级会重置持久化数据，这里同步重置本地 draft，
+  // 避免防抖保存把旧轨道重新写回节点。
+  useEffect(() => {
+    if (!sourceVideoUrl || seededSourceUrlRef.current === sourceVideoUrl) return
+    const sourceChanged = seededSourceUrlRef.current !== ''
+    seededSourceUrlRef.current = sourceVideoUrl
+    updateDraft((current) => {
+      const resourceId = `source:${node?.id ?? 'video'}`
+      const persistedSource = current.resourcePanel.find((resource) => resource.id === resourceId)
+      const sourceResource: WorkbenchResource = {
+        id: resourceId,
+        source: 'canvas',
+        kind: 'video',
+        title: node?.title?.replace(/^视频工作台\s*[—-]?\s*/, '') || '源视频',
+        url: sourceVideoUrl,
+        originPath: resolveDiskPath(sourceVideoUrl) || sourceVideoUrl,
+        importedAt: Date.now(),
+      }
+      if (sourceChanged || (persistedSource != null && persistedSource.url !== sourceVideoUrl)) {
+        const reset = createDefaultVideoWorkbenchData()
+        return {
+          ...reset,
+          resourcePanel: [sourceResource],
+          track: insertResourceIntoTrack([], sourceResource),
+        }
+      }
+      if (!shouldSeedSourceTrack(current.track, current.resourcePanel, resourceId)) return current
+      const resourcePanel = mergeResources(current.resourcePanel, [sourceResource])
+      return {
+        ...current,
+        resourcePanel,
+        track: insertResourceIntoTrack([], sourceResource),
+      }
+    })
+  }, [node?.id, node?.title, sourceVideoUrl, updateDraft])
 
   const handleAddResourceToTrack = useCallback(
     (resource: WorkbenchResource, insertAfterClipId?: string | null) => {
@@ -819,6 +722,41 @@ export function CanvasVideoWorkbenchModal({
     updateDraft((d) => ({ ...d, track: [] }))
   }, [updateDraft])
 
+  const handleTrackDurationChange = useCallback(
+    (clipId: string, nextDuration: number) => {
+      updateDraft((current) => {
+        const resources = indexResourcesById(current.resourcePanel)
+        return {
+          ...current,
+          track: current.track.map((clip) => {
+            if (clip.id !== clipId) return clip
+            const resource = resources.get(clip.resourceId)
+            if (resource?.kind === 'image') return { ...clip, staticDuration: nextDuration }
+            const startSec = clip.range?.startSec ?? 0
+            const maxEnd = resource?.durationSec ?? startSec + nextDuration
+            return {
+              ...clip,
+              range: { startSec, endSec: Math.min(maxEnd, startSec + nextDuration) },
+            }
+          }),
+        }
+      })
+    },
+    [updateDraft],
+  )
+
+  const handleSplitTrackAtPlayhead = useCallback(() => {
+    const resources = indexResourcesById(draft.resourcePanel)
+    const resolved = resolveClipAtGlobalTime(draft.track, resources, playbackGlobalTime)
+    if (!resolved) return
+    const nextTrack = splitTrackClip(draft.track, resources, resolved.clip.id, resolved.offsetSec)
+    if (nextTrack.length === draft.track.length) {
+      message.info('请把播放头移到片段内部后再分割')
+      return
+    }
+    handleReorderTrack(nextTrack)
+  }, [draft.resourcePanel, draft.track, handleReorderTrack, playbackGlobalTime])
+
   const handleExportWhole = useCallback(() => {
     if (draft.track.length === 0) {
       message.warning('请先把资源加入轨道再导出整条')
@@ -828,9 +766,13 @@ export function CanvasVideoWorkbenchModal({
     message.info('导出整条需要 ffmpeg concat 流程（P2 任务），当前为占位')
   }, [draft.track.length])
 
-  const handlePreviewResource = useCallback((resource: WorkbenchResource) => {
-    setSelectedResourceId(resource.id)
-  }, [])
+  const handlePreviewResource = useCallback(
+    (resource: WorkbenchResource) => {
+      playbackExit()
+      setSelectedResourceId(resource.id)
+    },
+    [playbackExit],
+  )
 
   const handleRemoveResource = useCallback(
     (resourceId: string) => {
@@ -972,6 +914,7 @@ export function CanvasVideoWorkbenchModal({
     try {
       const candidates = await onPickCanvasResources()
       if (candidates.length === 0) return // hook 内部已 message 提示
+      setCanvasPickerPurpose('resources')
       setCanvasPickerCandidates(candidates)
       setCanvasPickerOpen(true)
     } catch (err) {
@@ -979,13 +922,36 @@ export function CanvasVideoWorkbenchModal({
     }
   }, [onPickCanvasResources])
 
+  const handlePickSourceVideo = useCallback(() => {
+    if (!onSelectVideo || !videoNodes || videoNodes.length === 0) return
+    setCanvasPickerPurpose('source')
+    setCanvasPickerCandidates(
+      videoNodes.map((video) => ({
+        ...video,
+        kind: 'video' as const,
+      })),
+    )
+    setCanvasPickerOpen(true)
+  }, [onSelectVideo, videoNodes])
+
   const handlePickerConfirm = useCallback(
     (selected: CanvasResourceOption[]) => {
       setCanvasPickerOpen(false)
       setCanvasPickerCandidates([])
+      if (canvasPickerPurpose === 'source') {
+        const source = selected[0]
+        if (source && onSelectVideo) {
+          void onSelectVideo(source.url).catch((error) => {
+            message.error(
+              `切换源视频失败：${error instanceof Error ? error.message : String(error)}`,
+            )
+          })
+        }
+        return
+      }
       handleAddResourcesFromProps(selected)
     },
-    [handleAddResourcesFromProps],
+    [canvasPickerPurpose, handleAddResourcesFromProps, onSelectVideo],
   )
 
   const handlePickerCancel = useCallback(() => {
@@ -1032,18 +998,16 @@ export function CanvasVideoWorkbenchModal({
       if (onAddVideo) {
         items.push({
           key: 'video-from-file',
-          label: '🎬 从文件添加视频（设置源）',
+          label: '🎬 从本机设置主视频',
           onClick: () => void onAddVideo(),
         })
       }
       if (onSelectVideo && videoNodes && videoNodes.length > 0) {
-        for (const v of videoNodes) {
-          items.push({
-            key: `pick-video-${v.id}`,
-            label: `🎬 设为源：${v.title}`,
-            onClick: () => void onSelectVideo(v.url),
-          })
-        }
+        items.push({
+          key: 'video-source-from-canvas',
+          label: '🎬 从画布设置主视频…',
+          onClick: handlePickSourceVideo,
+        })
       }
     }
     return items
@@ -1056,10 +1020,11 @@ export function CanvasVideoWorkbenchModal({
     videoNodes,
     handlePickLocal,
     handlePickCanvas,
+    handlePickSourceVideo,
     handleCollectUpstream,
   ])
   // 播放器快捷键：Space 播放/暂停、←/→ 逐帧、Shift+←/→ 5s 跳转、Home 回到开头、Esc 关闭。
-  // 守卫：输入框 / 下拉菜单聚焦时不拦截；VideoTimeline（单视频剪辑轨道）聚焦时把箭头键交给它。
+  // 守卫：输入框 / 下拉菜单聚焦时不拦截。
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -1135,6 +1100,7 @@ export function CanvasVideoWorkbenchModal({
               <Dropdown
                 trigger={['click']}
                 placement="bottomRight"
+                overlayClassName="vwb-add-resource-menu"
                 menu={{ items: addResourceMenuItems }}
               >
                 <Button
@@ -1196,7 +1162,7 @@ export function CanvasVideoWorkbenchModal({
                   onTimeUpdate={(e) => {
                     const t = e.currentTarget.currentTime
                     // 连播模式下 currentTime 无人消费（控件显示 playbackGlobalTime、
-                    // VideoTimeline 已隐藏），跳过 setCurrentTime 避免一次全量 re-render；
+                    // 编辑轨道读取 playbackGlobalTime，跳过 setCurrentTime 避免一次全量 re-render；
                     // 只把时间转发给连播状态机驱动播放头。
                     if (isPlayback) playbackOnTimeUpdate(t)
                     else setCurrentTime(t)
@@ -1260,17 +1226,13 @@ export function CanvasVideoWorkbenchModal({
                   {formatTimestamp(isPlayback ? playbackTotal : duration)}
                 </span>
                 <div className="vwb-player-spacer" />
-                <button
-                  className="vwb-player-btn"
-                  onClick={handleToStart}
-                  title="回到开头（Home）"
-                >
+                <button className="vwb-player-btn" onClick={handleToStart} title="回到开头（Home）">
                   <Icons.RotateCcw size={14} />
                 </button>
               </div>
             )}
 
-            {/* 多段拼接轨道（设计稿：主时间线 V1） */}
+            {/* 唯一主编辑轨道：多资源拼接、播放、排序、切分与时长调整 */}
             <VideoWorkbenchTrackTimeline
               track={draft.track}
               resources={draft.resourcePanel}
@@ -1281,6 +1243,11 @@ export function CanvasVideoWorkbenchModal({
               onAddResourceToTrack={handleAddResourceToTrack}
               onExportWhole={handleExportWhole}
               onClearTrack={handleClearTrack}
+              onOpenFrames={() => setActiveTab('frames')}
+              onOpenEdit={() => setActiveTab('edit')}
+              onOpenOutput={() => setActiveTab('output')}
+              onSplitAtPlayhead={handleSplitTrackAtPlayhead}
+              onDurationChange={handleTrackDurationChange}
               playback={{
                 active: playbackActive,
                 playing: playbackPlaying,
@@ -1291,28 +1258,6 @@ export function CanvasVideoWorkbenchModal({
               onPlaybackSeek={handlePlaybackSeek}
               onPlaybackToggle={handlePlaybackToggle}
             />
-
-            {/* 单视频源编辑轨道（已有关联源视频且尚未开始多段拼接时展示，作为补充工具） */}
-            {sourceVideoUrl && draft.track.length === 0 && (
-              <VideoTimeline
-                duration={duration}
-                currentTime={currentTime}
-                keyframes={draft.keyframes}
-                manualMarks={draft.manualMarks}
-                range={timelineRange}
-                trimCopy={trimCopy}
-                processingReady={ffmpegReady === true}
-                onSeek={seekTo}
-                onRangeChange={handleTimelineRangeChange}
-                onTrimCopyChange={setTrimCopy}
-                onApplyTrim={() => void handleApplyTimelineTrim()}
-                onSplit={() => void handleSplitTimeline()}
-                onMark={addManualMark}
-                onRemoveMark={removeManualMark}
-                onExtractMarks={extractManualMarks}
-                busy={busy}
-              />
-            )}
           </div>
 
           {/* 右侧：Tab 面板 */}
@@ -1392,12 +1337,17 @@ export function CanvasVideoWorkbenchModal({
           </div>
         </div>
       </div>
-      <VideoWorkbenchResourcePicker
-        open={canvasPickerOpen}
-        candidates={canvasPickerCandidates}
-        onConfirm={handlePickerConfirm}
-        onCancel={handlePickerCancel}
-      />
+      {canvasPickerOpen && (
+        <VideoWorkbenchResourcePicker
+          open
+          candidates={canvasPickerCandidates}
+          selectionMode={canvasPickerPurpose === 'source' ? 'single' : 'multiple'}
+          title={canvasPickerPurpose === 'source' ? '从画布设置主视频' : '从画布选择资源'}
+          confirmLabel={canvasPickerPurpose === 'source' ? '设为主视频' : '加入资源面板'}
+          onConfirm={handlePickerConfirm}
+          onCancel={handlePickerCancel}
+        />
+      )}
     </div>
   )
 }

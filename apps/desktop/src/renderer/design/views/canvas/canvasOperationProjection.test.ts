@@ -87,6 +87,20 @@ describe('canvas operation projection', () => {
     expect(projection.visibleEdges).toHaveLength(1)
   })
 
+  it('keeps a video workbench visible when a legacy manual edge was stored as generated', () => {
+    const operation = node('source-operation', 'text_to_video')
+    const workbench = node('workbench', 'text')
+    workbench.data.subtype = 'video_workbench'
+
+    const projection = buildCanvasOperationProjection(
+      [operation, workbench],
+      [edge('legacy-manual-generated', operation.id, workbench.id, 'generated')],
+    )
+
+    expect(projection.visibleNodes.map((item) => item.id)).toEqual([operation.id, workbench.id])
+    expect(projection.embeddedOutputNodeIds).toEqual(new Set())
+  })
+
   it('shows generated outputs after they are materialized inside a real group', () => {
     const operation = node('generate-frames', 'text_to_image')
     const group = node('frame-group', 'group')

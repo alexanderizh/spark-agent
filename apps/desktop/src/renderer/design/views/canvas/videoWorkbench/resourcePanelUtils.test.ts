@@ -16,6 +16,8 @@ import {
   removeTrackClip,
   reorderTrack,
   resolveClipAtGlobalTime,
+  shouldSeedSourceTrack,
+  splitTrackClip,
   upstreamNodeToResource,
   type UpstreamNodeRef,
 } from './resourcePanelUtils'
@@ -60,6 +62,17 @@ function makeClip(partial: Partial<TrackClip> & { id: string; resourceId: string
 }
 
 describe('resourcePanelUtils', () => {
+  describe('shouldSeedSourceTrack', () => {
+    it('seeds a legacy source only when neither a track nor migrated resource exists', () => {
+      const source = makeResource({ id: 'source:workbench' })
+      expect(shouldSeedSourceTrack([], [], source.id)).toBe(true)
+      expect(
+        shouldSeedSourceTrack([makeClip({ id: 'clip', resourceId: source.id })], [], source.id),
+      ).toBe(false)
+      expect(shouldSeedSourceTrack([], [source], source.id)).toBe(false)
+    })
+  })
+
   describe('pickPrimaryArtifact', () => {
     it('returns null for empty input', () => {
       expect(pickPrimaryArtifact([])).toBeNull()
@@ -338,6 +351,35 @@ describe('resourcePanelUtils', () => {
 
     it('returns 0 for an empty track', () => {
       expect(calculateTrackDuration([], new Map())).toBe(0)
+    })
+  })
+
+  describe('splitTrackClip', () => {
+    it('splits a video clip into adjacent source ranges', () => {
+      const resource = makeResource({ id: 'video', kind: 'video', durationSec: 12 })
+      const next = splitTrackClip(
+        [makeClip({ id: 'clip', resourceId: resource.id, order: 0 })],
+        indexResourcesById([resource]),
+        'clip',
+        5,
+      )
+
+      expect(next).toHaveLength(2)
+      expect(next[0]?.range).toEqual({ startSec: 0, endSec: 5 })
+      expect(next[1]?.range).toEqual({ startSec: 5, endSec: 12 })
+      expect(next.map((clip) => clip.order)).toEqual([0, 1])
+    })
+
+    it('splits an image clip by its static display duration', () => {
+      const resource = makeResource({ id: 'image', kind: 'image' })
+      const next = splitTrackClip(
+        [makeClip({ id: 'clip', resourceId: resource.id, staticDuration: 8 })],
+        indexResourcesById([resource]),
+        'clip',
+        3,
+      )
+
+      expect(next.map((clip) => clip.staticDuration)).toEqual([3, 5])
     })
   })
 

@@ -1,0 +1,98 @@
+// Ant Design 复合控件由外层容器拥有表面，内部原生输入只负责文本交互。
+// 该层必须最后加载，用于消除历史样式对内外两层重复设置背景、边框和焦点环的问题。
+.canvas-workspace.canvas-uiux-v4,
+:is(
+  .canvas-operation-preset-dialog,
+  .canvas-node-edit-modal,
+  .canvas-project-modal,
+  .canvas-grid-split-modal,
+  .canvas-annotate-modal,
+  .canvas-media-input-picker-modal
+) {
+  --canvas-control-border: var(--canvas-v4-divider, var(--divider));
+  --canvas-control-border-hover: color-mix(in srgb, var(--primary) 46%, transparent);
+  --canvas-control-border-focus: var(--primary);
+  --canvas-control-background: var(
+    --canvas-v4-surface-muted,
+    var(--canvas-field-bg, var(--bg-sunken))
+  );
+
+  :is(
+    .ant-input,
+    .ant-input-affix-wrapper,
+    textarea.ant-input,
+    .ant-select-selector,
+    .ant-input-number,
+    .ant-picker
+  ) {
+    border-color: var(--canvas-control-border) !important;
+    border-radius: var(--canvas-v4-radius-sm, 6px) !important;
+    background: var(--canvas-control-background) !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  :is(
+    .ant-input:hover,
+    .ant-input-affix-wrapper:hover,
+    .ant-select:not(.ant-select-disabled):hover .ant-select-selector,
+    .ant-input-number:not(.ant-input-number-disabled):hover,
+    .ant-picker:not(.ant-picker-disabled):hover
+  ) {
+    border-color: var(--canvas-control-border-hover) !important;
+  }
+
+  :is(
+    .ant-input:focus,
+    .ant-input:focus-visible,
+    .ant-input-affix-wrapper-focused,
+    .ant-select-focused .ant-select-selector,
+    .ant-input-number-focused,
+    .ant-picker-focused
+  ) {
+    border-color: var(--canvas-control-border-focus) !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  // 前后缀、数字、选择和日期控件的内部输入不再绘制第二层表面。
+  :is(
+    .ant-input-affix-wrapper > input.ant-input,
+    .ant-input-affix-wrapper > textarea.ant-input,
+    .ant-input-number input.ant-input-number-input,
+    .ant-select input.ant-select-selection-search-input,
+    .ant-picker input
+  ) {
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  :is(
+    .ant-input-affix-wrapper > input.ant-input:hover,
+    .ant-input-affix-wrapper > input.ant-input:focus,
+    .ant-input-affix-wrapper > input.ant-input:focus-visible,
+    .ant-input-number input.ant-input-number-input:hover,
+    .ant-input-number input.ant-input-number-input:focus,
+    .ant-input-number input.ant-input-number-input:focus-visible,
+    .ant-select input.ant-select-selection-search-input:focus,
+    .ant-select input.ant-select-selection-search-input:focus-visible,
+    .ant-picker input:focus,
+    .ant-picker input:focus-visible
+  ) {
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  // TextArea 的包装层只负责字数统计和布局，表面由 textarea 本身拥有。
+  .ant-input-textarea {
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+}

@@ -48,9 +48,11 @@ export function useVideoWorkbenchPlayback({ track, resources, videoRef }: Args) 
   const [playing, setPlaying] = useState(false)
   const [currentClipId, setCurrentClipId] = useState<string | null>(null)
   const [globalTimeSec, setGlobalTimeSec] = useState(0)
+  /** 保留用户的连续播放意图，避免切换 video src 触发的 pause 事件误停下一段。 */
+  const playIntentRef = useRef(false)
 
   const currentClip = useMemo(
-    () => (currentClipId ? sortedTrack.find((c) => c.id === currentClipId) ?? null : null),
+    () => (currentClipId ? (sortedTrack.find((c) => c.id === currentClipId) ?? null) : null),
     [sortedTrack, currentClipId],
   )
   const currentResource = currentClip ? resourcesById.get(currentClip.resourceId) : undefined
@@ -67,7 +69,10 @@ export function useVideoWorkbenchPlayback({ track, resources, videoRef }: Args) 
       const target = resolveClipAtGlobalTime(sortedTrack, resourcesById, sec)
       if (!target) return
       setActive(true)
-      if (autoPlay) setPlaying(true)
+      if (autoPlay) {
+        playIntentRef.current = true
+        setPlaying(true)
+      }
       if (target.clip.id !== currentClipId) {
         setCurrentClipId(target.clip.id)
         pendingSeekRef.current = target.offsetSec
@@ -91,10 +96,14 @@ export function useVideoWorkbenchPlayback({ track, resources, videoRef }: Args) 
       playFromStart()
       return
     }
-    setPlaying((p) => !p)
+    setPlaying((current) => {
+      playIntentRef.current = !current
+      return !current
+    })
   }, [active, playFromStart])
 
   const exit = useCallback(() => {
+    playIntentRef.current = false
     setActive(false)
     setPlaying(false)
   }, [])
@@ -102,29 +111,45 @@ export function useVideoWorkbenchPlayback({ track, resources, videoRef }: Args) 
   // video 事件转发 ────────────────────────────────────────────────────
   // video.currentTime 是原视频绝对时间；clip 内偏移 = currentTime - range.startSec；
   // 全局时间 = currentClipStartSec + clip 内偏移。
-  const handleVideoTimeUpdate = useCallback(
-    (currentTime: number) => {
-      const rangeStart = currentClip?.range?.startSec ?? 0
-      setGlobalTimeSec(currentClipStartSec + Math.max(0, currentTime - rangeStart))
-    },
-    [currentClip, currentClipStartSec],
-  )
-
-  const handleVideoEnded = useCallback(() => {
-    if (!active) return
-    const idx = sortedTrack.findIndex((c) => c.id === currentClipId)
+  const advanceToNextClip = useCallback(() => {
+    const idx = sortedTrack.findIndex((clip) => clip.id === currentClipId)
     const next = idx >= 0 ? sortedTrack[idx + 1] : undefined
     if (next) {
       setCurrentClipId(next.id)
       pendingSeekRef.current = 0
       setGlobalTimeSec(clipStartSecInTrack(sortedTrack, resourcesById, next.id))
-    } else {
-      setPlaying(false)
+      return
     }
-  }, [active, currentClipId, resourcesById, sortedTrack])
+    playIntentRef.current = false
+    setPlaying(false)
+  }, [currentClipId, resourcesById, sortedTrack])
 
-  const handleVideoPlay = useCallback(() => setPlaying(true), [])
-  const handleVideoPause = useCallback(() => setPlaying(false), [])
+  const handleVideoTimeUpdate = useCallback(
+    (currentTime: number) => {
+      const rangeStart = currentClip?.range?.startSec ?? 0
+      const rangeEnd = currentClip?.range?.endSec
+      if (rangeEnd != null && currentTime >= rangeEnd - 0.02) {
+        advanceToNextClip()
+        return
+      }
+      const duration = clipDurationSec(currentClip ?? undefined, currentResource)
+      const offset = Math.min(duration, Math.max(0, currentTime - rangeStart))
+      setGlobalTimeSec(currentClipStartSec + offset)
+    },
+    [advanceToNextClip, currentClip, currentClipStartSec, currentResource],
+  )
+
+  const handleVideoEnded = useCallback(() => {
+    if (!active) return
+    advanceToNextClip()
+  }, [active, advanceToNextClip])
+
+  const handleVideoPlay = useCallback(() => {
+    if (!active || playIntentRef.current) setPlaying(true)
+  }, [active])
+  const handleVideoPause = useCallback(() => {
+    if (!playIntentRef.current) setPlaying(false)
+  }, [])
 
   // 切 clip 后 seek + play/pause（仅视频 clip；图片 clip 时 video 不渲染）
   useEffect(() => {
@@ -158,31 +183,23 @@ export function useVideoWorkbenchPlayback({ track, resources, videoRef }: Args) 
     const offsetInClip = Math.max(0, globalTimeSec - currentClipStartSec)
     const remainingMs = Math.max(50, (dur - offsetInClip) * 1000)
     const timer = setTimeout(() => {
-      const idx = sortedTrack.findIndex((c) => c.id === currentClip.id)
-      const next = idx >= 0 ? sortedTrack[idx + 1] : undefined
-      if (next) {
-        setCurrentClipId(next.id)
-        pendingSeekRef.current = 0
-        setGlobalTimeSec(clipStartSecInTrack(sortedTrack, resourcesById, next.id))
-      } else {
-        setPlaying(false)
-      }
+      advanceToNextClip()
     }, remainingMs)
     return () => clearTimeout(timer)
   }, [
     active,
+    advanceToNextClip,
     currentClip,
     currentClipStartSec,
     currentResource,
     globalTimeSec,
     playing,
-    resourcesById,
-    sortedTrack,
   ])
 
   // track 清空时退出连播
   useEffect(() => {
     if (active && sortedTrack.length === 0) {
+      playIntentRef.current = false
       setActive(false)
       setPlaying(false)
       setCurrentClipId(null)

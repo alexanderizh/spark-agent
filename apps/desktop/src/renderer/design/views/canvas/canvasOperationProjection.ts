@@ -26,6 +26,9 @@ export function buildCanvasOperationProjection(
     const producer = nodeById.get(edge.sourceNodeId)
     const output = nodeById.get(edge.targetNodeId)
     if (!producer || !output || !isOperationNode(producer)) continue
+    // 旧版手工连线曾误把「操作节点 → 视频工作台」写成 generated。
+    // 工作台是用户创建的交互节点，不是可内嵌任务产物，必须始终保留在画布上。
+    if (output.data.subtype === 'video_workbench') continue
     if (!producerByOutputNodeId.has(output.id)) {
       producerByOutputNodeId.set(output.id, producer.id)
     }

@@ -15,6 +15,7 @@ describe('canvas UI/UX V4 integration', () => {
       'nodes.less',
       'panels.less',
       'workbenches.less',
+      'form-controls.less',
     ]
 
     expect(workspace).toContain("import './uiux-v4/index.less'")
@@ -74,6 +75,17 @@ describe('canvas UI/UX V4 integration', () => {
     expect(modals).toContain('.canvas-operation-preset-dialog')
     expect(modals).toContain('.canvas-node-edit-modal')
     expect(modals).not.toMatch(/(^|\n)\s*\.ant-modal\s*\{/)
+  })
+
+  it('gives composite form controls a single visual surface owner', () => {
+    const controls = readCanvasSource('./uiux-v4/form-controls.less')
+    const storyboard = readCanvasSource('./CanvasShotScriptEditor.less')
+
+    expect(controls).toContain('.ant-input-affix-wrapper > input.ant-input')
+    expect(controls).toContain('.ant-input-number input.ant-input-number-input')
+    expect(controls).toContain('background: transparent !important')
+    expect(controls).toContain('box-shadow: none !important')
+    expect(storyboard).not.toContain('.ant-input-affix-wrapper-focused')
   })
 
   it('uses real media elements in asset preview and supports Escape close', () => {

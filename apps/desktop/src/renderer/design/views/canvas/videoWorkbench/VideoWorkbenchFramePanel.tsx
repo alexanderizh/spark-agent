@@ -7,7 +7,7 @@
  *   - 关键帧缩略图墙（时间戳 + 点击跳转 + 删除 + 批量导出画布）
  */
 import type { ReactElement } from 'react'
-import { Button, Segmented, Slider, Tooltip, message } from 'antd'
+import { Button, Segmented, Slider, Tooltip } from 'antd'
 import { Icons } from '../../../Icons'
 import {
   formatTimestamp,
@@ -27,12 +27,6 @@ interface Props {
   onSeek: (sec: number) => void
   onExport: () => void
   onRemoveKeyframe: (index: number) => void
-}
-
-const STRATEGY_LABELS: Record<KeyframeStrategy, string> = {
-  scene: '场景突变',
-  iframe: 'I帧',
-  uniform: '均匀采样',
 }
 
 const STRATEGY_DESCS: Record<KeyframeStrategy, string> = {
@@ -141,12 +135,7 @@ export function VideoWorkbenchFramePanel({
           </span>
           {draft.keyframes.length > 0 && (
             <Tooltip title="把关键帧导出为画布图片节点">
-              <Button
-                size="small"
-                type="text"
-                onClick={onExport}
-                icon={<Icons.Image size={14} />}
-              >
+              <Button size="small" type="text" onClick={onExport} icon={<Icons.Image size={14} />}>
                 导入画布
               </Button>
             </Tooltip>
@@ -157,7 +146,7 @@ export function VideoWorkbenchFramePanel({
           <div className="vwb-frames-empty">
             <Icons.Film size={28} />
             <span>暂无关键帧</span>
-            <span className="muted">点击上方按钮自动提取，或在时间线上手动标记后提取</span>
+            <span className="muted">点击上方按钮按当前策略自动提取</span>
           </div>
         ) : (
           <div className="vwb-frame-grid">

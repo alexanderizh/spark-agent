@@ -73,6 +73,7 @@ describe('canvas pane context menu', () => {
     expect(taskMenuSource).not.toContain('>资源内容节点</div>')
     expect(filmMenuSource).toContain('onAddImage={handleAddImageFromPane}')
     expect(filmMenuSource).toContain('onAddDirectorStage3D=')
+    expect(filmMenuSource).toContain('onAddVideoWorkbench=')
     expect(filmMenuSource).toContain('onInsertAsset=')
     expect(filmMenuSource).not.toContain('onAddText=')
     expect(filmMenuSource).not.toContain('onAddPrompt=')
