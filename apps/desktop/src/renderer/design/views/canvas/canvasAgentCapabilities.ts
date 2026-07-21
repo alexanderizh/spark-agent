@@ -295,7 +295,7 @@ function commonToolActions(node: CanvasNode): CanvasAgentAvailableAction[] {
       source: 'canvas_tool',
       execution: 'tool',
       description: '更新节点内容、流水线角色、生产状态或生成配置。',
-      toolName: 'canvas_update_node_data',
+      toolName: 'canvas_update_node',
     },
     {
       id: 'node.save_to_library',

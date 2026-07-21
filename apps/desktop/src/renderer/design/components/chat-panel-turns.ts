@@ -36,8 +36,9 @@ export function getChatPanelUserText(message: UIMessage | undefined): string {
 }
 
 export function sanitizeCanvasUserMessage(content: string): string {
-  const marker = '\n\n---\n\n'
+  const marker = '\n---\n\n'
   if (content.startsWith('[画布绑定]\n') || content.startsWith('[当前选中节点]\n')) {
+    // 兼容首轮同时包含画布绑定和节点上下文；不要误截用户正文里的 Markdown 分隔线。
     const index = content.indexOf(marker)
     if (index >= 0) return content.slice(index + marker.length).trim()
   }

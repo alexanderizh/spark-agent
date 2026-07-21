@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CanvasSnapshot } from './canvas.types'
+import type { CanvasWorkspaceActions } from './canvas.tools'
 
 import { executeCanvasTool, getCanvasToolSchemas } from './canvas.tools'
 
@@ -83,9 +84,124 @@ describe('canvas agent tool schemas', () => {
   it('exposes operation inspection and persistent configuration tools', () => {
     const schemas = Object.fromEntries(getCanvasToolSchemas().map((tool) => [tool.name, tool]))
 
+    expect(schemas.canvas_update_node).toBeDefined()
+    expect(schemas.canvas_update_node?.description).toContain('强制刷新')
     expect(schemas.canvas_get_operation_config).toBeDefined()
     expect(schemas.canvas_update_operation_config).toBeDefined()
     expect(schemas.canvas_run_operation?.inputSchema).toHaveProperty('required', ['nodeId'])
+  })
+
+  it('updates visible node content through one atomic workspace action', async () => {
+    const snapshot = screenplaySnapshot()
+    const calls: string[] = []
+    let receivedPatch: { title?: string; data?: Record<string, unknown> } | undefined
+    const updateNode = async (
+      _nodeId: string,
+      patch: { title?: string; data?: Record<string, unknown> },
+    ) => {
+      calls.push('update')
+      receivedPatch = patch
+    }
+    const workspace = {
+      updateNode,
+    } as unknown as CanvasWorkspaceActions
+
+    await executeCanvasTool(
+      { projectId: snapshot.project.id, getSnapshot: () => snapshot, workspace },
+      'canvas_update_node',
+      { nodeId: 'screenplay-1', title: '第二集', content: '# 场2 外景 码头 夜' },
+    )
+
+    expect(calls).toEqual(['update'])
+    expect(receivedPatch).toEqual({
+      title: '第二集',
+      data: { text: '# 场2 外景 码头 夜' },
+    })
+  })
+
+  it('keeps prompt-card visible text in sync for legacy data-only updates', async () => {
+    const snapshot = screenplaySnapshot()
+    snapshot.nodes[0] = { ...snapshot.nodes[0]!, type: 'prompt', data: { text: '旧提示词' } }
+    let received: { data?: Record<string, unknown> } | undefined
+    const workspace = {
+      updateNode: async (_nodeId: string, patch: { data?: Record<string, unknown> }) => {
+        received = patch
+      },
+    } as unknown as CanvasWorkspaceActions
+
+    await executeCanvasTool(
+      { projectId: snapshot.project.id, getSnapshot: () => snapshot, workspace },
+      'canvas_update_node_data',
+      { nodeId: 'screenplay-1', data: { prompt: '新提示词' } },
+    )
+
+    expect(received).toEqual({ data: { prompt: '新提示词', text: '新提示词' } })
+  })
+
+  it('keeps prompt-card execution content in sync when legacy callers update text', async () => {
+    const snapshot = screenplaySnapshot()
+    snapshot.nodes[0] = {
+      ...snapshot.nodes[0]!,
+      type: 'prompt',
+      data: { text: '旧提示词', prompt: '旧提示词' },
+    }
+    let received: { data?: Record<string, unknown> } | undefined
+    const workspace = {
+      updateNode: async (_nodeId: string, patch: { data?: Record<string, unknown> }) => {
+        received = patch
+      },
+    } as unknown as CanvasWorkspaceActions
+
+    await executeCanvasTool(
+      { projectId: snapshot.project.id, getSnapshot: () => snapshot, workspace },
+      'canvas_update_node_data',
+      { nodeId: 'screenplay-1', data: { text: '新提示词' } },
+    )
+
+    expect(received).toEqual({ data: { text: '新提示词', prompt: '新提示词' } })
+  })
+
+  it('rejects conflicting prompt-card text before writing', async () => {
+    const snapshot = screenplaySnapshot()
+    snapshot.nodes[0] = {
+      ...snapshot.nodes[0]!,
+      type: 'prompt',
+      data: { text: '旧提示词', prompt: '旧提示词' },
+    }
+    let updated = false
+    const workspace = {
+      updateNode: async () => {
+        updated = true
+      },
+    } as unknown as CanvasWorkspaceActions
+
+    await expect(
+      executeCanvasTool(
+        { projectId: snapshot.project.id, getSnapshot: () => snapshot, workspace },
+        'canvas_update_node_data',
+        { nodeId: 'screenplay-1', data: { text: '可见内容', prompt: '执行内容' } },
+      ),
+    ).rejects.toThrow('必须一致')
+    expect(updated).toBe(false)
+  })
+
+  it('validates unsupported content before writing any part of the node update', async () => {
+    const snapshot = screenplaySnapshot()
+    snapshot.nodes[0] = { ...snapshot.nodes[0]!, type: 'image', data: { url: 'image.png' } }
+    const updateNode = async () => {
+      throw new Error('updateNode should not be called')
+    }
+    const workspace = {
+      updateNode,
+    } as unknown as CanvasWorkspaceActions
+
+    await expect(
+      executeCanvasTool(
+        { projectId: snapshot.project.id, getSnapshot: () => snapshot, workspace },
+        'canvas_update_node',
+        { nodeId: 'screenplay-1', title: '新标题', content: '不适用的正文' },
+      ),
+    ).rejects.toThrow('不支持 content')
   })
 
   it('exposes dynamic node actions and recommended production planning tools', () => {

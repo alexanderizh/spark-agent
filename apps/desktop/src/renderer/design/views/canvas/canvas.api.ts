@@ -549,6 +549,18 @@ function now(): string {
   return new Date().toISOString()
 }
 
+/**
+ * Entity versions are ISO timestamps and are also used by the renderer to decide
+ * whether an in-memory node can be reused. Two Agent edits can land in the same
+ * millisecond, so make data mutations strictly monotonic per node.
+ */
+function nextEntityUpdatedAt(previous?: string): string {
+  const candidate = now()
+  if (!previous || candidate > previous) return candidate
+  const previousTime = Date.parse(previous)
+  return Number.isFinite(previousTime) ? new Date(previousTime + 1).toISOString() : candidate
+}
+
 function toCanvasProject(project: CanvasProjectListItem): CanvasProject {
   return {
     ...project,
@@ -3966,24 +3978,52 @@ export const canvasApi = {
     return this.updateManyNodeData(projectId, [{ nodeId, data }])
   },
 
+  async updateNode(
+    projectId: string,
+    nodeId: string,
+    patch: { title?: string; data?: Partial<CanvasNode['data']> },
+  ): Promise<CanvasSnapshot> {
+    return this.updateManyNodeData(projectId, [
+      {
+        nodeId,
+        data: patch.data ?? {},
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+      },
+    ])
+  },
+
   async updateManyNodeData(
     projectId: string,
-    updates: Array<{ nodeId: string; data: Partial<CanvasNode['data']> }>,
+    updates: Array<{
+      nodeId: string
+      data: Partial<CanvasNode['data']>
+      title?: string
+    }>,
   ): Promise<CanvasSnapshot> {
     if (updates.length === 0) return this.openSnapshot(projectId)
     const db = readDb()
-    const at = now()
-    for (const { nodeId, data } of updates) {
-      const node = db.nodes.find((item) => item.id === nodeId && item.projectId === projectId)
+    for (const { nodeId, data, title } of updates) {
+      const nodeIndex = db.nodes.findIndex(
+        (item) => item.id === nodeId && item.projectId === projectId,
+      )
+      const node = db.nodes[nodeIndex]
       if (!node) continue
+      const at = nextEntityUpdatedAt(node.updatedAt)
       const nextData = { ...node.data, ...data }
       for (const key of Object.keys(nextData)) {
         if ((nextData as Record<string, unknown>)[key] === undefined) {
           delete (nextData as Record<string, unknown>)[key]
         }
       }
-      node.data = nextData
-      node.updatedAt = at
+      // openSnapshot returns entity references from the hot store. Never mutate
+      // those objects in place: React may currently hold the same node reference
+      // and would then see no identity change to render.
+      db.nodes[nodeIndex] = {
+        ...node,
+        ...(title !== undefined ? { title } : {}),
+        data: nextData,
+        updatedAt: at,
+      }
 
       // Operation node data is editable current configuration. Only the pending
       // placeholder task may follow those edits; once execution starts, the task is
@@ -3996,26 +4036,30 @@ export const canvasApi = {
         task.outputNodeIds.length === 0 &&
         task.outputAssetIds.length === 0
       ) {
-        if (Object.prototype.hasOwnProperty.call(data, 'prompt')) task.prompt = data.prompt ?? null
+        const nextTask = { ...task }
+        if (Object.prototype.hasOwnProperty.call(data, 'prompt'))
+          nextTask.prompt = data.prompt ?? null
         if (Object.prototype.hasOwnProperty.call(data, 'negativePrompt'))
-          task.negativePrompt = data.negativePrompt ?? null
+          nextTask.negativePrompt = data.negativePrompt ?? null
         if (Object.prototype.hasOwnProperty.call(data, 'modelParams'))
-          task.modelParams = data.modelParams ?? {}
+          nextTask.modelParams = data.modelParams ?? {}
         if (Object.prototype.hasOwnProperty.call(data, 'agentId'))
-          task.agentId = data.agentId ?? null
+          nextTask.agentId = data.agentId ?? null
         if (Object.prototype.hasOwnProperty.call(data, 'providerProfileId'))
-          task.providerProfileId = data.providerProfileId ?? null
+          nextTask.providerProfileId = data.providerProfileId ?? null
         if (Object.prototype.hasOwnProperty.call(data, 'manifestId'))
-          task.manifestId = data.manifestId ?? null
+          nextTask.manifestId = data.manifestId ?? null
         if (Object.prototype.hasOwnProperty.call(data, 'modelId'))
-          task.modelId = data.modelId ?? null
+          nextTask.modelId = data.modelId ?? null
         if (Object.prototype.hasOwnProperty.call(data, 'skillIds'))
-          task.skillIds = data.skillIds ?? []
+          nextTask.skillIds = data.skillIds ?? []
         if (Object.prototype.hasOwnProperty.call(data, 'reasoningEffort'))
-          task.reasoningEffort = data.reasoningEffort ?? null
+          nextTask.reasoningEffort = data.reasoningEffort ?? null
         if (Object.prototype.hasOwnProperty.call(data, 'shotScriptConfig'))
-          task.shotScriptConfig = data.shotScriptConfig ?? null
-        task.updatedAt = at
+          nextTask.shotScriptConfig = data.shotScriptConfig ?? null
+        nextTask.updatedAt = at
+        const taskIndex = db.tasks.indexOf(task)
+        if (taskIndex >= 0) db.tasks[taskIndex] = nextTask
       }
 
       const asset = node.assetId ? db.assets.find((item) => item.id === node.assetId) : null
@@ -4024,8 +4068,10 @@ export const canvasApi = {
         (node.type === 'text' || node.type === 'prompt') &&
         Object.prototype.hasOwnProperty.call(data, 'text')
       ) {
-        asset.contentText = data.text ?? ''
-        asset.updatedAt = at
+        const assetIndex = db.assets.indexOf(asset)
+        if (assetIndex >= 0) {
+          db.assets[assetIndex] = { ...asset, contentText: data.text ?? '', updatedAt: at }
+        }
       }
     }
     updateProjectCounts(db, projectId)

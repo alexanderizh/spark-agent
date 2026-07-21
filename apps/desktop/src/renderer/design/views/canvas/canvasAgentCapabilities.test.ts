@@ -114,6 +114,10 @@ describe('getCanvasAgentAvailableActions', () => {
     expect(groupedChild.find((action) => action.id === 'node.bring_to_front')).toMatchObject({
       toolName: 'canvas_bring_to_front',
     })
+    expect(groupedChild.find((action) => action.id === 'node.update')).toMatchObject({
+      execution: 'tool',
+      toolName: 'canvas_update_node',
+    })
     expect(groupedChild.find((action) => action.id === 'node.save_to_library')).toMatchObject({
       execution: 'requires_user_interaction',
     })

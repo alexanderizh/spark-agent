@@ -13,6 +13,7 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   canvas_list_group_members: '读取分组成员',
   canvas_create_text_node: '创建文本节点',
   canvas_create_prompt_node: '创建 Prompt 节点',
+  canvas_update_node: '更新节点',
   canvas_update_node_data: '更新节点内容',
   canvas_patch_nodes: '更新节点属性',
   canvas_delete_nodes: '删除节点',

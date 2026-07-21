@@ -35,4 +35,31 @@ describe('chat panel turns', () => {
     user.blocks = [{ kind: 'text', content: selectedContext, isStreaming: false }]
     expect(getChatPanelUserText(user)).toBe('继续生成镜头')
   })
+
+  it('removes combined canvas binding and selected-node context from display text', () => {
+    const combinedContext = [
+      '[画布绑定]',
+      'canvasProjectId: project-a',
+      'activeBoardId: board-a',
+      '',
+      '当前会话已启用 builtin:canvas-studio。',
+      '',
+      '---',
+      '[当前选中节点]',
+      '- 节点 node-a',
+      '',
+      '[节点能力使用要求] 请先查询可用动作。',
+      '---',
+      '',
+      '继续生成镜头',
+      '',
+      '---',
+      '',
+      '保留用户正文里的分隔线',
+    ].join('\n')
+
+    expect(sanitizeCanvasUserMessage(combinedContext)).toBe(
+      '继续生成镜头\n\n---\n\n保留用户正文里的分隔线',
+    )
+  })
 })

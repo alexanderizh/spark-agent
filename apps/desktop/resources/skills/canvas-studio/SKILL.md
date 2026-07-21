@@ -114,7 +114,8 @@ CanvasProject
 - `canvas_get_available_actions(nodeId)`：读取该节点当前可用的流水线动作、推荐流程、通用生成和 UI 右键能力。针对节点行动前先用。
 - `canvas_get_operation_config(nodeId)`：读取 AI 操作节点的当前配置、关联任务、连线输入和能力约束。
 - `canvas_create_text_node(text, x?, y?)`、`canvas_create_prompt_node(prompt, title?, x?, y?)`。`canvas_create_text_node` 只用于普通笔记，不能靠后续打 `pipelineRole` 把它伪装成剧本、分镜或影视资产。
-- `canvas_update_node_data(nodeId, data)`：可写 `text/prompt/negativePrompt/modelParams/agentId/providerProfileId/manifestId/modelId/reasoningEffort/skillIds/pipelineRole/outputPipelineRole/productionState/shotGroupId/shotSegmentId` 等字段。
+- `canvas_update_node(nodeId, title?, content?, data?)`：通用节点更新入口；可同时修改标题、可见正文和扩展数据，写入后会刷新画布 UI。侧面板 Agent 修改已有节点时优先使用本工具。
+- `canvas_update_node_data(nodeId, data)`：兼容用的底层 data 更新工具，可写 `text/prompt/negativePrompt/modelParams/agentId/providerProfileId/manifestId/modelId/reasoningEffort/skillIds/pipelineRole/outputPipelineRole/productionState/shotGroupId/shotSegmentId` 等字段；写入后同样刷新画布。Prompt 卡片应优先通过 `canvas_update_node.content` 修改，避免 `text` / `prompt` 双字段不一致。
 - `canvas_update_operation_config(nodeId, config, title?)`：持久化更新操作节点配置并同步关联任务，适合精确调参。
 - `canvas_patch_nodes(nodeIds, patch)`：批量改坐标、尺寸、标题、锁定、隐藏、层级。
 - `canvas_delete_nodes`、`canvas_duplicate_nodes`、`canvas_connect_nodes`。
@@ -192,18 +193,18 @@ CanvasProject
 
 ### 三层参数
 
-| 层           | 存放位置                                                                                                                                   | 怎么写                                          | 是否持久化                                           |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- | ---------------------------------------------------- |
-| 节点存储配置 | `node.data`（prompt/negativePrompt/modelParams/agentId/providerProfileId/manifestId/modelId/operation/pipelineRole/outputPipelineRole 等） | `canvas_update_node_data({ nodeId, data })`     | ✅ 持久化，影响 retry 和 UI 默认值                   |
-| 运行时参数   | `canvas_run_operation` 入参                                                                                                                | `canvas_run_operation({ nodeId, prompt, ... })` | ⚠️ 仅本次任务生效，**不回写节点**（除 inputNodeIds） |
-| 连线输入     | `used_as_input` edge                                                                                                                       | `canvas_connect_nodes` 或运行时 `inputNodeIds`  | ✅ 运行时传 inputNodeIds 会重建连线并持久化          |
+| 层           | 存放位置                                                                                                                                   | 怎么写                                           | 是否持久化                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ | ---------------------------------------------------- |
+| 节点存储配置 | `node.data`（prompt/negativePrompt/modelParams/agentId/providerProfileId/manifestId/modelId/operation/pipelineRole/outputPipelineRole 等） | `canvas_update_node({ nodeId, content?, data })` | ✅ 持久化、刷新 UI，影响 retry 和 UI 默认值          |
+| 运行时参数   | `canvas_run_operation` 入参                                                                                                                | `canvas_run_operation({ nodeId, prompt, ... })`  | ⚠️ 仅本次任务生效，**不回写节点**（除 inputNodeIds） |
+| 连线输入     | `used_as_input` edge                                                                                                                       | `canvas_connect_nodes` 或运行时 `inputNodeIds`   | ✅ 运行时传 inputNodeIds 会重建连线并持久化          |
 
 ### 三种提交方式
 
 1. **改节点存储参数 → 用新参数重跑**（最稳妥，用户在 UI 看到的也是新值）：
 
    ```
-   canvas_update_node_data({ nodeId, data: { prompt, negativePrompt, modelParams, modelId, agentId } })
+   canvas_update_node({ nodeId, content: prompt, data: { negativePrompt, modelParams, modelId, agentId } })
    canvas_run_operation({ nodeId, prompt })   // prompt 必填，其余会从节点读取
    ```
 
@@ -289,7 +290,7 @@ Agent 工具不直接读写这些元数据，但应：
 
 1. `canvas_get_node({ nodeId })` 取回当前节点参数。
 2. `canvas_list_media_models` 挑目标模型，拿到 `providerProfileId/manifestId/modelId`。
-3. `canvas_update_node_data({ nodeId, data: { prompt, negativePrompt, modelParams, providerProfileId, manifestId, modelId } })` 持久化新参数（文本类任务改 `agentId`）。
+3. `canvas_update_node({ nodeId, content: prompt, data: { negativePrompt, modelParams, providerProfileId, manifestId, modelId } })` 持久化新参数并刷新 UI（文本类任务改 `agentId`）。
 4. `canvas_run_operation({ nodeId, prompt })` 提交任务（prompt 用刚写入的值，其余从节点读取）。
 5. 只想临时试不持久化，跳过第 3 步、把参数直接塞进第 4 步的 run。
 

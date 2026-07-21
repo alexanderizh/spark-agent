@@ -45,6 +45,7 @@ import { resolveCanvasAssetFocusNodeIds } from './canvasAssetFocus'
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel, buildOperationPanelSnapshotSignature } from './CanvasOperationPanel'
 import { CanvasPromptNodePickerBanner } from './CanvasPromptNodePickerBanner'
+import { CanvasShotScriptEditor } from './CanvasShotScriptEditor'
 import { useCanvasPromptNodePicker } from './useCanvasPromptNodePicker'
 import { CanvasBatchTaskPanel } from './CanvasBatchTaskPanel'
 import { useCanvasBatchTasks } from './useCanvasBatchTasks'
@@ -125,10 +126,8 @@ import {
   resolveShotSegmentContext,
 } from './canvasWorkspaceFilm'
 import {
-  formatStoryboardCameraParamsForEditor,
   formatStoryboardRowsAsMarkdown,
   resolveStoryboardRowsForEditing,
-  updateStoryboardCameraParams,
 } from './canvasTextInputPresentation'
 import { resolveStoryboardSplitSourceNode, splitStoryboardNode } from './canvasStoryboardNodeSplit'
 import {
@@ -250,7 +249,6 @@ import type {
   DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
-  WheelEvent as ReactWheelEvent,
 } from 'react'
 import './CanvasWorkspaceView.less'
 import './uiux-v4/index.less'
@@ -1619,6 +1617,7 @@ export function CanvasWorkspaceView({
     deleteNodes,
     duplicateNodes,
     patchNodes,
+    updateNode,
     updateNodeData,
     updateManyNodeData,
     updateProjectSettings,
@@ -2295,6 +2294,17 @@ export function CanvasWorkspaceView({
   useEffect(() => {
     setInlineOperationFullscreen(false)
   }, [inlinePanelNodeId])
+
+  useEffect(() => {
+    if (!inlineOperationFullscreen) return
+    const handleFullscreenKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setInlineOperationFullscreen(false)
+    }
+    window.addEventListener('keydown', handleFullscreenKeyDown)
+    return () => window.removeEventListener('keydown', handleFullscreenKeyDown)
+  }, [inlineOperationFullscreen])
 
   const { viewportRef: canvasViewportRef, onViewportChange: handleCanvasViewportChange } =
     useFloatingViewportGeometry(inlinePanelNode, getFloatingEditorGeometry)
@@ -7291,6 +7301,8 @@ export function CanvasWorkspaceView({
               key={opNode.id}
               node={opNode}
               snapshot={snapshot}
+              fullscreen={inlineOperationFullscreen}
+              onFullscreenChange={setInlineOperationFullscreen}
               onSaveOutput={handleSaveNodeEdit}
               onRenameNode={async (title) => {
                 await patchNodes([opNode.id], { title })
@@ -7773,6 +7785,7 @@ export function CanvasWorkspaceView({
               deleteNodes,
               duplicateNodes,
               patchNodes,
+              updateNode,
               updateNodeData,
               connectNodes,
               deleteEdges,
@@ -7797,7 +7810,6 @@ export function CanvasWorkspaceView({
               runOperationNode,
               cancelTask,
               updateProjectSettings,
-              refresh,
             }}
           />
         </aside>
@@ -7905,7 +7917,7 @@ export function CanvasWorkspaceView({
           />
           {inlinePanelNode && floatingEditorPanel && (
             <div
-              className="canvas-node-bottom-editor nodrag nopan"
+              className={`canvas-node-bottom-editor nodrag nopan${inlineOperationFullscreen ? ' is-fullscreen' : ''}`}
               onMouseDown={(event) => event.stopPropagation()}
               onPointerDown={(event) => event.stopPropagation()}
             >
@@ -8858,284 +8870,6 @@ function resolveCanvasFloatingIcon(iconKey: string | undefined, size = 14): Reac
   return <IconFn size={size} />
 }
 
-const EMPTY_SHOT_ROW: ParsedShotRow = {
-  title: '镜头',
-  description: '',
-}
-
-function serializeShotRowsToMarkdown(rows: ParsedShotRow[]): string {
-  return formatStoryboardRowsAsMarkdown(rows)
-}
-
-function updateShotRowField(
-  rows: ParsedShotRow[],
-  index: number,
-  patch: Partial<ParsedShotRow>,
-): ParsedShotRow[] {
-  return rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row))
-}
-
-function CanvasShotScriptEditPanel({
-  rows,
-  characterAssets,
-  onRowsChange,
-}: {
-  rows: ParsedShotRow[]
-  characterAssets: CanvasAsset[]
-  onRowsChange: (rows: ParsedShotRow[]) => void
-}) {
-  const tableWrapRef = useRef<HTMLDivElement | null>(null)
-  const updateRow = (index: number, patch: Partial<ParsedShotRow>) =>
-    onRowsChange(updateShotRowField(rows, index, patch))
-  const toggleCharacter = (index: number, characterName: string) => {
-    const current = rows[index]?.characterNames ?? []
-    updateRow(index, {
-      characterNames: current.includes(characterName)
-        ? current.filter((name) => name !== characterName)
-        : [...current, characterName],
-    })
-  }
-  const handleTableWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-    if (!event.shiftKey) return
-    const tableWrap = tableWrapRef.current
-    if (!tableWrap) return
-    const maxScrollLeft = tableWrap.scrollWidth - tableWrap.clientWidth
-    if (maxScrollLeft <= 0) return
-    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
-    if (delta === 0) return
-    event.preventDefault()
-    tableWrap.scrollLeft += delta
-  }
-  return (
-    <div className="canvas-shot-script-editor">
-      <div className="canvas-shot-script-editor-toolbar">
-        <span>{rows.length} 个镜头</span>
-        <Button
-          size="middle"
-          type="text"
-          icon={<Icons.Plus size={13} />}
-          onClick={() =>
-            onRowsChange([
-              ...rows,
-              {
-                ...EMPTY_SHOT_ROW,
-                index: rows.length + 1,
-                title: `镜${rows.length + 1}`,
-              },
-            ])
-          }
-        >
-          添加镜头
-        </Button>
-      </div>
-      <div
-        ref={tableWrapRef}
-        className="canvas-shot-script-editor-table-wrap"
-        onWheel={handleTableWheel}
-      >
-        <table className="canvas-shot-script-editor-table">
-          <thead>
-            <tr>
-              <th>镜号</th>
-              <th>时长</th>
-              <th>景别</th>
-              <th>运镜</th>
-              <th>场景描述</th>
-              <th>站位调度</th>
-              <th>光照</th>
-              <th>镜头参数</th>
-              <th>微表情动作</th>
-              <th>画面 / 动作</th>
-              <th>对白</th>
-              <th>角色</th>
-              <th>生成提示词</th>
-              <th>反向提示词</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={index}>
-                <td>
-                  <Input
-                    size="middle"
-                    value={row.index ?? index + 1}
-                    onChange={(event) => {
-                      const next = Number.parseInt(event.target.value, 10)
-                      if (Number.isFinite(next)) {
-                        updateRow(index, { index: next })
-                        return
-                      }
-                      onRowsChange(
-                        rows.map((item, rowIndex) => {
-                          if (rowIndex !== index) return item
-                          const { index: _index, ...rest } = item
-                          return rest
-                        }),
-                      )
-                    }}
-                  />
-                </td>
-                <td>
-                  <Input
-                    size="middle"
-                    value={row.durationSec ?? ''}
-                    suffix="s"
-                    onChange={(event) => {
-                      const next = Number.parseFloat(event.target.value)
-                      if (Number.isFinite(next) && next > 0) {
-                        updateRow(index, { durationSec: next })
-                        return
-                      }
-                      onRowsChange(
-                        rows.map((item, rowIndex) => {
-                          if (rowIndex !== index) return item
-                          const { durationSec: _durationSec, ...rest } = item
-                          return rest
-                        }),
-                      )
-                    }}
-                  />
-                </td>
-                <td>
-                  <Input
-                    size="middle"
-                    value={row.shotSize ?? ''}
-                    onChange={(event) => updateRow(index, { shotSize: event.target.value })}
-                  />
-                </td>
-                <td>
-                  <Input
-                    size="middle"
-                    value={row.movement ?? ''}
-                    onChange={(event) => updateRow(index, { movement: event.target.value })}
-                  />
-                </td>
-                <td className="canvas-shot-script-editor-cell is-multiline">
-                  <Input.TextArea
-                    className="canvas-shot-script-editor-textarea"
-                    value={row.sceneLayout ?? ''}
-                    onChange={(event) => updateRow(index, { sceneLayout: event.target.value })}
-                  />
-                </td>
-                <td className="canvas-shot-script-editor-cell is-multiline">
-                  <Input.TextArea
-                    className="canvas-shot-script-editor-textarea"
-                    value={row.blocking ?? ''}
-                    onChange={(event) => updateRow(index, { blocking: event.target.value })}
-                  />
-                </td>
-                <td className="canvas-shot-script-editor-cell is-multiline">
-                  <Input.TextArea
-                    className="canvas-shot-script-editor-textarea"
-                    value={row.lighting ?? ''}
-                    onChange={(event) => updateRow(index, { lighting: event.target.value })}
-                  />
-                </td>
-                <td className="canvas-shot-script-editor-cell is-multiline">
-                  <Input.TextArea
-                    className="canvas-shot-script-editor-textarea"
-                    value={formatStoryboardCameraParamsForEditor(row)}
-                    onChange={(event) =>
-                      onRowsChange(updateStoryboardCameraParams(rows, index, event.target.value))
-                    }
-                  />
-                </td>
-                <td className="canvas-shot-script-editor-cell is-multiline">
-                  <Input.TextArea
-                    className="canvas-shot-script-editor-textarea"
-                    value={row.performance ?? ''}
-                    onChange={(event) => updateRow(index, { performance: event.target.value })}
-                  />
-                </td>
-                <td className="canvas-shot-script-editor-cell is-multiline">
-                  <Input.TextArea
-                    className="canvas-shot-script-editor-textarea"
-                    autoSize={{ minRows: 3, maxRows: 10 }}
-                    value={row.description ?? row.title ?? ''}
-                    onChange={(event) =>
-                      updateRow(index, {
-                        description: event.target.value,
-                        title: row.title || `镜${row.index ?? index + 1}`,
-                      })
-                    }
-                  />
-                </td>
-                <td className="canvas-shot-script-editor-cell is-multiline">
-                  <Input.TextArea
-                    className="canvas-shot-script-editor-textarea"
-                    value={row.dialogue ?? ''}
-                    onChange={(event) => updateRow(index, { dialogue: event.target.value })}
-                  />
-                </td>
-                <td className="canvas-shot-script-editor-cell is-character">
-                  <div className="canvas-shot-script-character-cell">
-                    {characterAssets.length > 0 ? (
-                      characterAssets.map((asset) => {
-                        const name = asset.title ?? asset.id
-                        const active = row.characterNames?.includes(name)
-                        return (
-                          <button
-                            key={asset.id}
-                            type="button"
-                            className={`canvas-shot-script-character-chip${active ? ' is-active' : ''}`}
-                            onClick={() => toggleCharacter(index, name)}
-                          >
-                            {name}
-                          </button>
-                        )
-                      })
-                    ) : (
-                      <span className="canvas-shot-script-empty">暂无角色资产</span>
-                    )}
-                    <Input
-                      size="middle"
-                      value={row.characterNames?.join('、') ?? ''}
-                      placeholder="可手动输入角色名"
-                      onChange={(event) =>
-                        updateRow(index, {
-                          characterNames: event.target.value
-                            .split(/[,，、/\s]+/)
-                            .map((item) => item.trim())
-                            .filter(Boolean),
-                        })
-                      }
-                    />
-                  </div>
-                </td>
-                <td className="canvas-shot-script-editor-cell is-multiline">
-                  <Input.TextArea
-                    className="canvas-shot-script-editor-textarea"
-                    autoSize={{ minRows: 3, maxRows: 10 }}
-                    value={row.shotPrompt ?? ''}
-                    onChange={(event) => updateRow(index, { shotPrompt: event.target.value })}
-                  />
-                </td>
-                <td className="canvas-shot-script-editor-cell is-multiline">
-                  <Input.TextArea
-                    className="canvas-shot-script-editor-textarea"
-                    value={row.negativePrompt ?? ''}
-                    onChange={(event) => updateRow(index, { negativePrompt: event.target.value })}
-                  />
-                </td>
-                <td>
-                  <Button
-                    size="middle"
-                    type="text"
-                    icon={<Icons.Trash size={13} />}
-                    disabled={rows.length <= 1}
-                    onClick={() => onRowsChange(rows.filter((_, rowIndex) => rowIndex !== index))}
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
 function CanvasNodeEditModal({
   node,
   open,
@@ -9186,6 +8920,17 @@ function CanvasNodeEditModal({
     setOptimizeModalOpen(false)
     setOptimizeRequirement('')
   }, [node, nodes])
+
+  useEffect(() => {
+    if (!editFullscreen) return
+    const handleFullscreenKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setEditFullscreen(false)
+    }
+    window.addEventListener('keydown', handleFullscreenKeyDown)
+    return () => window.removeEventListener('keydown', handleFullscreenKeyDown)
+  }, [editFullscreen])
 
   const insertPromptText = (fragment: string) => {
     setText((current) => appendPromptFragment(current, fragment))
@@ -9243,7 +8988,7 @@ function CanvasNodeEditModal({
     try {
       const nextData: CanvasNode['data'] = { ...node.data }
       if (node.type === 'text' || node.type === 'prompt' || node.type === 'group') {
-        nextData.text = isShotScriptNode ? serializeShotRowsToMarkdown(shotRows) : text
+        nextData.text = isShotScriptNode ? formatStoryboardRowsAsMarkdown(shotRows) : text
       }
       if (node.type === 'text' || node.type === 'prompt') {
         nextData.format = node.type === 'prompt' ? 'prompt' : 'markdown'
@@ -9314,7 +9059,7 @@ function CanvasNodeEditModal({
         <div className="canvas-bottom-floating-head canvas-node-edit-bottom-head">
           <div>
             <strong>编辑分镜脚本</strong>
-            <span>以表格方式编辑镜号、景别、运镜、画面、对白和角色</span>
+            <span>{shotRows.length} 个镜头 · 专业分镜配置</span>
           </div>
           <div className="canvas-node-edit-bottom-actions">
             <Tooltip title={fullscreenLabel}>
@@ -9332,7 +9077,7 @@ function CanvasNodeEditModal({
           </div>
         </div>
         <div className="canvas-bottom-floating-body canvas-node-edit-bottom-body">
-          <CanvasShotScriptEditPanel
+          <CanvasShotScriptEditor
             rows={shotRows}
             characterAssets={assets.filter((asset) => readAssetKind(asset) === 'character')}
             onRowsChange={setShotRows}

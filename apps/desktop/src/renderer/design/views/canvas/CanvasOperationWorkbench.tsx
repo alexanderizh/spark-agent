@@ -49,6 +49,8 @@ export function CanvasOperationWorkbench({
   onSetPrimaryOutput,
   onExpandOutputs,
   onDeleteOutputs,
+  fullscreen = false,
+  onFullscreenChange,
 }: {
   node: CanvasNode
   snapshot: CanvasSnapshot
@@ -65,6 +67,8 @@ export function CanvasOperationWorkbench({
   onSetPrimaryOutput?: (output: CanvasOperationOutputView) => Promise<void> | void
   onExpandOutputs?: (outputs: CanvasOperationOutputView[]) => Promise<void> | void
   onDeleteOutputs?: (outputs: CanvasOperationOutputView[]) => Promise<void> | void
+  fullscreen?: boolean
+  onFullscreenChange?: (fullscreen: boolean) => void
 }) {
   const runs = useMemo(() => buildCanvasOperationRunViews(node, snapshot), [node, snapshot])
   const outputState = useMemo(() => resolveCanvasOperationOutputState(node, runs), [node, runs])
@@ -171,185 +175,16 @@ export function CanvasOperationWorkbench({
 
   return (
     <div className="canvas-operation-workbench">
-      <div className="canvas-operation-workbench-head">
-        <div className="canvas-operation-workbench-tabs">
-          {tabButton('output', '产物', <Icons.File size={13} />, outputCount)}
-          {tabButton('history', '运行历史', <Icons.RotateCcw size={13} />, runs.length)}
-          {tabButton('config', '任务配置', <Icons.Settings size={13} />)}
-          {tabButton('settings', '节点设置', <Icons.Edit size={13} />)}
-        </div>
-        {activeTab === 'output' && activeRun ? (
-          <div className="canvas-operation-workbench-actions">
-            <Tag color={activeRun.status === 'completed' ? 'green' : 'default'} bordered={false}>
-              {runStatusLabel(activeRun.status)}
-            </Tag>
-            <Tag bordered={false}>{OUTPUT_MODE_LABEL[outputState.mode]}</Tag>
-            {activeOutput && !isPrimaryOutput && onSetPrimaryOutput ? (
-              <Button
-                size="middle"
-                type="text"
-                icon={<Icons.Check size={13} />}
-                onClick={() => void onSetPrimaryOutput(activeOutput)}
-              >
-                {primaryActionLabel}
-              </Button>
-            ) : null}
-            {activeOutput && onExpandOutputs ? (
-              <Button
-                size="middle"
-                type="text"
-                loading={state.busy}
-                icon={<Icons.Layers size={13} />}
-                onClick={() => void runExpansion([activeOutput])}
-              >
-                展开当前
-              </Button>
-            ) : null}
-            {outputs.length > 1 ? (
-              <Button
-                size="middle"
-                type={state.selectionMode ? 'primary' : 'text'}
-                icon={<Icons.Check size={13} />}
-                onClick={() => dispatch({ type: 'toggle-selection-mode' })}
-              >
-                {state.selectionMode ? '退出多选' : '多选'}
-              </Button>
-            ) : null}
-            {onExpandOutputs || (activeOutput && onDeleteOutputs) ? (
-              <Popover
-                trigger="click"
-                placement="bottomRight"
-                content={
-                  <div className="canvas-operation-expand-menu">
-                    {onExpandOutputs ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void runExpansion(
-                              activeRun
-                                ? selectCanvasOperationOutputs(runs, {
-                                    scope: 'run',
-                                    taskId: activeRun.taskId,
-                                  })
-                                : [],
-                            )
-                          }
-                        >
-                          展开本次运行
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void runExpansion(selectCanvasOperationOutputs(runs, { scope: 'all' }))
-                          }
-                        >
-                          展开全部历史
-                        </button>
-                      </>
-                    ) : null}
-                    {activeOutput && onDeleteOutputs ? (
-                      <button
-                        type="button"
-                        className="is-danger"
-                        onClick={() => confirmOutputDeletion([activeOutput])}
-                      >
-                        删除当前产物
-                      </button>
-                    ) : null}
-                  </div>
-                }
-              >
-                <Button
-                  size="middle"
-                  type="text"
-                  icon={<Icons.More size={14} />}
-                  aria-label="更多产物操作"
-                />
-              </Popover>
-            ) : null}
-            {canPreviewPanorama && outputNode && onPreviewPanoramaOutput ? (
-              <Button
-                size="middle"
-                type="text"
-                icon={<Icons.Maximize size={13} />}
-                onClick={() => onPreviewPanoramaOutput(outputNode.id)}
-              >
-                全景预览
-              </Button>
-            ) : null}
-            {canDownload && outputNode && onDownloadOutput ? (
-              <Tooltip title="下载当前产物">
-                <Button
-                  size="middle"
-                  type="text"
-                  icon={<Icons.Download size={14} />}
-                  aria-label="下载当前产物"
-                  onClick={() => onDownloadOutput(outputNode.id)}
-                />
-              </Tooltip>
-            ) : null}
-            {activeOutput?.assetId && onOpenAssetLibrary ? (
-              <Button
-                size="middle"
-                type="text"
-                icon={<Icons.Folder size={13} />}
-                onClick={() => onOpenAssetLibrary(activeOutput.assetId!)}
-              >
-                资源库
-              </Button>
-            ) : null}
-            {outputNode ? (
-              <Button
-                size="middle"
-                type={state.editingOutput ? 'default' : 'primary'}
-                icon={state.editingOutput ? <Icons.Eye size={13} /> : <Icons.Edit size={13} />}
-                onClick={() => dispatch({ type: 'toggle-editing' })}
-              >
-                {state.editingOutput ? '返回预览' : '编辑产物'}
-              </Button>
-            ) : null}
+      {!state.editingOutput ? (
+        <div className="canvas-operation-workbench-head">
+          <div className="canvas-operation-workbench-tabs">
+            {tabButton('output', '产物', <Icons.File size={13} />, outputCount)}
+            {tabButton('history', '运行历史', <Icons.RotateCcw size={13} />, runs.length)}
+            {tabButton('config', '任务配置', <Icons.Settings size={13} />)}
+            {tabButton('settings', '节点设置', <Icons.Edit size={13} />)}
           </div>
-        ) : null}
-      </div>
-
-      <div className="canvas-operation-workbench-content">
-        {activeTab === 'settings' ? (
-          <CanvasOperationNodeSettings
-            key={`${node.id}:${node.title ?? ''}`}
-            nodeId={node.id}
-            title={node.title ?? null}
-            disabled={state.busy}
-            onRename={onRenameNode}
-          />
-        ) : activeTab === 'config' ? (
-          configPanel
-        ) : activeTab === 'history' ? (
-          <div className="canvas-operation-history" aria-label="运行历史">
-            {runs.map((run, index) => (
-              <button
-                key={run.taskId}
-                type="button"
-                className={index === effectiveRunIndex ? 'is-active' : ''}
-                onClick={() => dispatch({ type: 'select-run', runIndex: index })}
-              >
-                <span className={`canvas-operation-history-status is-${run.status}`} />
-                <span className="canvas-operation-history-main">
-                  <strong>第 {runs.length - index} 次运行</strong>
-                  <small>{new Date(run.createdAt).toLocaleString()}</small>
-                </span>
-                <span>{run.provider ?? '自动 Provider'}</span>
-                <span>{run.modelId ?? '默认模型'}</span>
-                <span>{run.outputs.length} 个产物</span>
-                <Tag color={run.status === 'completed' ? 'green' : 'default'} bordered={false}>
-                  {runStatusLabel(run.status)}
-                </Tag>
-              </button>
-            ))}
-          </div>
-        ) : activeRun && activeOutput ? (
-          <div className="canvas-operation-result-panel">
-            <div className="canvas-operation-workbench-nav">
+          {activeTab === 'output' && activeRun && activeOutput ? (
+            <div className="canvas-operation-workbench-context">
               <div className="canvas-operation-workbench-run-nav">
                 <button
                   type="button"
@@ -360,7 +195,7 @@ export function CanvasOperationWorkbench({
                   <Icons.ChevronLeft size={14} />
                 </button>
                 <span>
-                  第 {displayRunNumber} 次运行{runs.length > 1 ? ` / 共 ${runs.length} 次` : ''}
+                  第 {displayRunNumber} 次{runs.length > 1 ? ` / ${runs.length}` : ''}
                 </span>
                 <button
                   type="button"
@@ -400,7 +235,181 @@ export function CanvasOperationWorkbench({
                 })}
               </div>
             </div>
+          ) : null}
+          {activeTab === 'output' && activeRun ? (
+            <div className="canvas-operation-workbench-actions">
+              <Tag color={activeRun.status === 'completed' ? 'green' : 'default'} bordered={false}>
+                {runStatusLabel(activeRun.status)}
+              </Tag>
+              <Tag bordered={false}>{OUTPUT_MODE_LABEL[outputState.mode]}</Tag>
+              {activeOutput && !isPrimaryOutput && onSetPrimaryOutput ? (
+                <Button
+                  size="middle"
+                  type="text"
+                  icon={<Icons.Check size={13} />}
+                  onClick={() => void onSetPrimaryOutput(activeOutput)}
+                >
+                  {primaryActionLabel}
+                </Button>
+              ) : null}
+              {activeOutput && onExpandOutputs ? (
+                <Button
+                  size="middle"
+                  type="text"
+                  loading={state.busy}
+                  icon={<Icons.Layers size={13} />}
+                  onClick={() => void runExpansion([activeOutput])}
+                >
+                  展开当前
+                </Button>
+              ) : null}
+              {outputs.length > 1 ? (
+                <Button
+                  size="middle"
+                  type={state.selectionMode ? 'primary' : 'text'}
+                  icon={<Icons.Check size={13} />}
+                  onClick={() => dispatch({ type: 'toggle-selection-mode' })}
+                >
+                  {state.selectionMode ? '退出多选' : '多选'}
+                </Button>
+              ) : null}
+              {onExpandOutputs || (activeOutput && onDeleteOutputs) ? (
+                <Popover
+                  trigger="click"
+                  placement="bottomRight"
+                  content={
+                    <div className="canvas-operation-expand-menu">
+                      {onExpandOutputs ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void runExpansion(
+                                activeRun
+                                  ? selectCanvasOperationOutputs(runs, {
+                                      scope: 'run',
+                                      taskId: activeRun.taskId,
+                                    })
+                                  : [],
+                              )
+                            }
+                          >
+                            展开本次运行
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void runExpansion(
+                                selectCanvasOperationOutputs(runs, { scope: 'all' }),
+                              )
+                            }
+                          >
+                            展开全部历史
+                          </button>
+                        </>
+                      ) : null}
+                      {activeOutput && onDeleteOutputs ? (
+                        <button
+                          type="button"
+                          className="is-danger"
+                          onClick={() => confirmOutputDeletion([activeOutput])}
+                        >
+                          删除当前产物
+                        </button>
+                      ) : null}
+                    </div>
+                  }
+                >
+                  <Button
+                    size="middle"
+                    type="text"
+                    icon={<Icons.More size={14} />}
+                    aria-label="更多产物操作"
+                  />
+                </Popover>
+              ) : null}
+              {canPreviewPanorama && outputNode && onPreviewPanoramaOutput ? (
+                <Button
+                  size="middle"
+                  type="text"
+                  icon={<Icons.Maximize size={13} />}
+                  onClick={() => onPreviewPanoramaOutput(outputNode.id)}
+                >
+                  全景预览
+                </Button>
+              ) : null}
+              {canDownload && outputNode && onDownloadOutput ? (
+                <Tooltip title="下载当前产物">
+                  <Button
+                    size="middle"
+                    type="text"
+                    icon={<Icons.Download size={14} />}
+                    aria-label="下载当前产物"
+                    onClick={() => onDownloadOutput(outputNode.id)}
+                  />
+                </Tooltip>
+              ) : null}
+              {activeOutput?.assetId && onOpenAssetLibrary ? (
+                <Button
+                  size="middle"
+                  type="text"
+                  icon={<Icons.Folder size={13} />}
+                  onClick={() => onOpenAssetLibrary(activeOutput.assetId!)}
+                >
+                  资源库
+                </Button>
+              ) : null}
+              {outputNode ? (
+                <Button
+                  size="middle"
+                  type={state.editingOutput ? 'default' : 'primary'}
+                  icon={state.editingOutput ? <Icons.Eye size={13} /> : <Icons.Edit size={13} />}
+                  onClick={() => dispatch({ type: 'toggle-editing' })}
+                >
+                  {state.editingOutput ? '返回预览' : '编辑产物'}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
+      <div className="canvas-operation-workbench-content">
+        {activeTab === 'settings' ? (
+          <CanvasOperationNodeSettings
+            key={`${node.id}:${node.title ?? ''}`}
+            nodeId={node.id}
+            title={node.title ?? null}
+            disabled={state.busy}
+            onRename={onRenameNode}
+          />
+        ) : activeTab === 'config' ? (
+          configPanel
+        ) : activeTab === 'history' ? (
+          <div className="canvas-operation-history" aria-label="运行历史">
+            {runs.map((run, index) => (
+              <button
+                key={run.taskId}
+                type="button"
+                className={index === effectiveRunIndex ? 'is-active' : ''}
+                onClick={() => dispatch({ type: 'select-run', runIndex: index })}
+              >
+                <span className={`canvas-operation-history-status is-${run.status}`} />
+                <span className="canvas-operation-history-main">
+                  <strong>第 {runs.length - index} 次运行</strong>
+                  <small>{new Date(run.createdAt).toLocaleString()}</small>
+                </span>
+                <span>{run.provider ?? '自动 Provider'}</span>
+                <span>{run.modelId ?? '默认模型'}</span>
+                <span>{run.outputs.length} 个产物</span>
+                <Tag color={run.status === 'completed' ? 'green' : 'default'} bordered={false}>
+                  {runStatusLabel(run.status)}
+                </Tag>
+              </button>
+            ))}
+          </div>
+        ) : activeRun && activeOutput ? (
+          <div className="canvas-operation-result-panel">
             {state.selectionMode ? (
               <div className="canvas-operation-selection-bar">
                 <div className="canvas-operation-selection-summary">
@@ -458,6 +467,8 @@ export function CanvasOperationWorkbench({
                   tasks={snapshot.tasks}
                   nodes={snapshot.nodes}
                   placement="inline"
+                  showInlineBack
+                  {...(onFullscreenChange ? { fullscreen, onFullscreenChange } : {})}
                   onClose={() => dispatch({ type: 'toggle-editing' })}
                   onSave={async (targetNode, patch, data) => {
                     await onSaveOutput(targetNode, patch, data)

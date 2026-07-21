@@ -517,6 +517,13 @@ export function useCanvasWorkspace(projectId: string) {
     [applyCanvasMutationSnapshot, projectId],
   )
 
+  const updateNode = useCallback(
+    async (nodeId: string, patch: Parameters<typeof canvasApi.updateNode>[2]) => {
+      await applyCanvasMutationSnapshot(canvasApi.updateNode(projectId, nodeId, patch))
+    },
+    [applyCanvasMutationSnapshot, projectId],
+  )
+
   const updateManyNodeData = useCallback(
     async (
       updates: Array<{ nodeId: string; data: Parameters<typeof canvasApi.updateNodeData>[2] }>,
@@ -1039,6 +1046,7 @@ export function useCanvasWorkspace(projectId: string) {
     deleteNodes,
     duplicateNodes,
     patchNodes,
+    updateNode,
     updateNodeData,
     updateManyNodeData,
     updateProjectSettings,
