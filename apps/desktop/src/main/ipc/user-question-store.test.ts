@@ -42,6 +42,7 @@ describe('PendingUserQuestionStore', () => {
       questionId: 'tool-2',
       sessionId: 'session-1',
       questions: prompt,
+      sourceTurnId: 'turn-1',
       signal: controller.signal,
     })
 
@@ -59,6 +60,7 @@ describe('PendingUserQuestionStore', () => {
     expect(onDetachedAnswer).toHaveBeenCalledWith(
       expect.objectContaining({ questionId: 'tool-2' }),
       { answers: [{ answer: '继续' }] },
+      { sourceTurnId: 'turn-1' },
     )
     expect(onClose).toHaveBeenCalledWith(
       expect.objectContaining({ questionId: 'tool-2' }),

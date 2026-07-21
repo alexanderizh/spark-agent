@@ -2705,7 +2705,7 @@ export class SessionService {
                 const releaseQuestionGate = this.pendingUserQuestionGate.enter(sid)
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
                 try {
-                  return await this.onQuestion!(sid, questions, context)
+                  return await this.onQuestion!(sid, questions, { ...context, turnId })
                 } finally {
                   releaseQuestionGate()
                   this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')
@@ -6116,7 +6116,7 @@ export class SessionService {
               const releaseQuestionGate = this.pendingUserQuestionGate.enter(sid)
               this.emitAgentStatusEvent(sid, turnId, eventRepo, 'waiting_user')
               try {
-                return await this.onQuestion!(sid, questions, context)
+                return await this.onQuestion!(sid, questions, { ...context, turnId })
               } finally {
                 releaseQuestionGate()
                 this.emitAgentStatusEvent(sid, turnId, eventRepo, 'thinking')

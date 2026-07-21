@@ -438,6 +438,7 @@ export interface SDKPermissionRequestContext {
 export interface SDKQuestionRequestContext {
   questionId?: string
   requestId?: string
+  turnId?: string
   signal?: AbortSignal
 }
 

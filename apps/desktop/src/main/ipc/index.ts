@@ -50,7 +50,10 @@ import {
 } from './canvas-task-lifecycle-log.js'
 import { resolveTelemetryLogLevel } from './telemetry-settings.js'
 import { PendingUserQuestionStore } from './user-question-store.js'
-import { buildDetachedQuestionContinuationMessage } from './user-question-recovery.js'
+import {
+  buildDetachedQuestionContinuationMessage,
+  recoverDetachedQuestionAttachments,
+} from './user-question-recovery.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { getCanvasWindowService } from '../services/CanvasWindowService.js'
 import {
@@ -197,6 +200,7 @@ import type {
 import type {
   CanvasAssetDownloadBatchResultItem,
   PermissionApprovalDecision,
+  SessionAttachment,
   SessionListResponse,
   SystemNotificationNavigateRequest,
 } from '@spark/protocol'
@@ -1886,16 +1890,47 @@ const pendingUserQuestions = new PendingUserQuestionStore({
       reason,
     })
   },
-  onDetachedAnswer: async (request, answers) => {
+  onDetachedAnswer: async (request, answers, context) => {
     const message = buildDetachedQuestionContinuationMessage(request, answers)
+    const history = await getSessionService().getHistory({
+      sessionId: request.sessionId,
+      limit: 200,
+    })
+    const attachments = await filterExistingSessionAttachments(
+      recoverDetachedQuestionAttachments(history.events, context.sourceTurnId),
+    )
     log.warn('User answered after the SDK question stream detached; enqueueing recovery turn', {
       sessionId: request.sessionId,
       questionId: request.questionId,
+      sourceTurnId: context.sourceTurnId,
+      attachmentCount: attachments?.length ?? 0,
     })
-    await getSessionService().submitTurn({ sessionId: request.sessionId, message })
+    await getSessionService().submitTurn({
+      sessionId: request.sessionId,
+      message,
+      ...(attachments != null ? { attachments } : {}),
+    })
   },
 })
 const remoteTurnTargets = new Map<string, { connectionId: string; externalId: string }>()
+
+async function filterExistingSessionAttachments(
+  attachments: SessionAttachment[] | undefined,
+): Promise<SessionAttachment[] | undefined> {
+  if (attachments == null || attachments.length === 0) return undefined
+  const existing: SessionAttachment[] = []
+  for (const attachment of attachments) {
+    try {
+      const stat = await fs.stat(attachment.path)
+      if (attachment.type === 'directory' ? stat.isDirectory() : stat.isFile()) {
+        existing.push(attachment)
+      }
+    } catch {
+      // The original attachment may have lived in a temp directory that has since been cleaned.
+    }
+  }
+  return existing.length > 0 ? existing : undefined
+}
 
 function registerRemoteTurn(
   turnId: string,
@@ -2017,6 +2052,7 @@ function getSessionService(): SessionService {
         questionId: context.questionId ?? crypto.randomUUID(),
         sessionId,
         questions,
+        sourceTurnId: context.turnId,
         ...(context.signal != null ? { signal: context.signal } : {}),
       })
     }
