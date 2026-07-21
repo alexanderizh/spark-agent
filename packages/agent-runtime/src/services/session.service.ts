@@ -19,7 +19,6 @@ import {
   TeamDispatchRepository,
   TeamDiscussionRepository,
   TeamDefinitionRepository,
-  MediaModelManifestRepository,
   UsageLedgerRepository,
   GoalRepository,
   ConnectorConnectionRepository,
@@ -63,12 +62,10 @@ import type { SessionPermissionMode } from '@spark/protocol'
 import {
   LOCAL_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
-  isMediaProviderKind,
   isBuiltInLocalCliProvider,
   isLocalCodexCliProvider,
   getAutoRouterAdapterForProviderId,
   WORKFLOW_RESTRICTABLE_TOOL_NAMES,
-  type MediaProviderKind,
 } from '@spark/protocol'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
@@ -170,8 +167,7 @@ import { EmbeddingService } from './memory/embedding.service.js'
 import { MemorySearchService } from './memory/memory-search.service.js'
 import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
 import { MemoryConsolidationService } from './memory/memory-consolidation.service.js'
-import { MediaModelCatalogService } from './media/media-model-catalog.service.js'
-import { resolveProfileMediaModels, type MediaProfileLike } from './media/media-model-resolver.js'
+import { resolveMediaMcpProviderRoutes } from './media/media-mcp-runtime-config.js'
 import {
   buildMediaGenerationSystemPrompt,
   SPARK_MEDIA_TOOL_NAMES,
@@ -182,7 +178,6 @@ import {
   persistAndPublishAgentEvent,
   persistAndPublishAgentEvents,
 } from './session-event-sequencer.js'
-import type { ProviderMediaModelRef } from '@spark/protocol'
 import {
   createLogger,
   resolveProviderContextWindow,
@@ -2013,8 +2008,11 @@ export class SessionService {
         ...(runtimePatch?.skillIds !== undefined ? { replaceAgentSkills: true } : {}),
       },
     )
-    const imageGenerationContext = await this.resolveImageGenerationContext(workspaceRootPath)
     const mediaGenerationContext = await this.resolveMediaGenerationContext(workspaceRootPath)
+    const imageGenerationContext =
+      mediaGenerationContext == null
+        ? await this.resolveImageGenerationContext(workspaceRootPath)
+        : null
     const platformMcpServer = await this.resolvePlatformManagementMcpServer(sessionId)
     const webSearchMcpServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
     const presentFilesMcpServer = resolvePresentFilesMcpServer(workspaceRootPath)
@@ -4384,106 +4382,22 @@ export class SessionService {
   /**
    * 解析 spark_media MCP server 配置。
    *
-   * 选择策略：首个 enabled 且满足以下任一条件的 provider：
-   *   - modelType=voice/video 的专用多媒体 provider
-   *   - 非 legacy image profile，但显式声明了 image/audio/video 能力或 manifest
-   *     （用于 Agnes 这类“文本 + 图片/视频”单 profile 场景）
-   * 旧 modelType=image 仍继续走 spark_image，避免重复注入。
-   * 同时要求 keystore 可读 API key、有 defaultModel、MCP server 脚本可解析。
+   * 聚合所有 enabled 且凭据可用的图片/语音/视频 Provider。每个模型保留所属
+   * profile 的 API key、endpoint、adapter 与 manifest，spark_media 子进程按显式
+   * model 参数切换路由。只要统一服务可用，就不再同时注入旧 spark_image。
    */
   private async resolveMediaGenerationContext(
     workspaceRootPath: string,
   ): Promise<MediaGenerationRuntimeContext | null> {
-    const providerRepo = new ProviderProfileRepository(this.db)
-    if (typeof providerRepo.listAll !== 'function') return null
-    const catalog = new MediaModelCatalogService(new MediaModelManifestRepository(this.db))
-    catalog.seedBuiltinManifests()
-    const MEDIA_CAPABILITIES = new Set([
-      'image.generate',
-      'image.edit',
-      'image.variations',
-      'audio.speech',
-      'audio.transcription',
-      'video.generate',
-      'video.image_to_video',
-      'video.reference_to_video',
-      'video.edit',
-      'video.extend',
-    ])
-    const selectedProvider = providerRepo.listAll().find((row) => {
-      if (row.enabled !== 1) return false
-      try {
-        const config = JSON.parse(row.config_json) as {
-          modelType?: string
-          mediaCapabilities?: string[]
-          mediaModelRefs?: ProviderMediaModelRef[]
-        }
-        const isDedicatedMediaModelType =
-          config.modelType === 'voice' || config.modelType === 'video'
-        const caps = Array.isArray(config.mediaCapabilities) ? config.mediaCapabilities : []
-        const hasExplicitMediaCap = caps.some((cap) => MEDIA_CAPABILITIES.has(cap))
-        const refs = Array.isArray(config.mediaModelRefs) ? config.mediaModelRefs : []
-        const hasManifestCap = refs
-          .filter((ref) => ref.enabled !== false && typeof ref.manifestId === 'string')
-          .some((ref) => {
-            const manifest = ref.manifest ?? catalog.describe(ref.manifestId)
-            return (
-              manifest?.capabilities.some((capability) => MEDIA_CAPABILITIES.has(capability.id)) ===
-              true
-            )
-          })
-        const isNonLegacyMediaProfile =
-          config.modelType !== 'image' && (hasExplicitMediaCap || hasManifestCap)
-        return isDedicatedMediaModelType || isNonLegacyMediaProfile
-      } catch {
-        return false
-      }
-    })
-    if (selectedProvider == null || selectedProvider.keystore_ref == null) return null
-
-    const apiKey = await resolveProviderApiKey(selectedProvider)
-    if (apiKey.trim().length === 0) return null
-
-    const config = JSON.parse(selectedProvider.config_json) as {
-      defaultModel?: string
-      model?: string
-      apiEndpoint?: string
-      modelType?: string
-      mediaProvider?: string | null
-      mediaApiType?: string | null
-      mediaCapabilities?: string[]
-      mediaDefaults?: Record<string, unknown>
-      mediaModelRefs?: ProviderMediaModelRef[]
-    }
-    const model = (config.defaultModel ?? config.model ?? '').trim()
-    if (!model) return null
-
     const serverPath = resolveMediaGenerationMcpServerPath()
     if (serverPath == null) {
       log.warn('Media provider configured but spark_media MCP server script was not found')
       return null
     }
-
+    const providers = await resolveMediaMcpProviderRoutes(this.db)
+    const [primary] = providers
+    if (primary == null) return null
     const outputDir = path.join(workspaceRootPath, '.spark-artifacts', 'media')
-    const mediaProviderKindValue =
-      typeof config.mediaProvider === 'string' ? config.mediaProvider.trim() : ''
-    const providerName = (
-      isMediaProviderKind(mediaProviderKindValue) ? mediaProviderKindValue : 'openai-compatible'
-    ) as MediaProviderKind
-    const apiType = config.mediaApiType ?? 'auto'
-    // 与画布共用同一解析优先级：内联自定义 Manifest → 目录 → 旧引用合成兜底。
-    const mediaProfileLike: MediaProfileLike = {
-      mediaModelRefs: Array.isArray(config.mediaModelRefs) ? config.mediaModelRefs : [],
-      defaultModel: model,
-      mediaProvider: config.mediaProvider ?? null,
-      ...(config.modelType !== undefined ? { modelType: config.modelType } : {}),
-      ...(config.mediaCapabilities !== undefined
-        ? { mediaCapabilities: config.mediaCapabilities }
-        : {}),
-    }
-    const mediaManifests = resolveProfileMediaModels(mediaProfileLike, catalog, {
-      enabledOnly: true,
-    }).map((resolved) => resolved.manifest)
     return {
       mcpServer: {
         type: 'stdio',
@@ -4492,35 +4406,40 @@ export class SessionService {
         cwd: workspaceRootPath,
         env: {
           ELECTRON_RUN_AS_NODE: '1',
-          SPARK_MEDIA_API_KEY: apiKey,
-          SPARK_MEDIA_MODEL: model,
-          SPARK_MEDIA_PROVIDER: providerName,
-          SPARK_MEDIA_API_TYPE: apiType,
+          SPARK_MEDIA_API_KEY: primary.apiKey,
+          SPARK_MEDIA_MODEL: primary.model,
+          SPARK_MEDIA_PROVIDER: primary.provider,
+          SPARK_MEDIA_API_TYPE: primary.mode,
           SPARK_MEDIA_OUTPUT_DIR: outputDir,
-          ...(config.apiEndpoint != null && config.apiEndpoint.trim().length > 0
-            ? { SPARK_MEDIA_BASE_URL: config.apiEndpoint.trim() }
+          SPARK_MEDIA_PROVIDERS_JSON: JSON.stringify(providers),
+          ...(primary.baseUrl != null ? { SPARK_MEDIA_BASE_URL: primary.baseUrl } : {}),
+          ...(Object.keys(primary.mediaDefaults).length > 0
+            ? { SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify(primary.mediaDefaults) }
             : {}),
-          ...(config.mediaDefaults != null
-            ? { SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify(config.mediaDefaults) }
-            : {}),
-          ...(mediaManifests.length > 0
-            ? { SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify(mediaManifests) }
+          ...(primary.manifests.length > 0
+            ? { SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify(primary.manifests) }
             : {}),
         },
       },
       systemPrompt: buildMediaGenerationSystemPrompt({
-        name: selectedProvider.name,
-        model,
-        provider: providerName,
-        apiType,
+        name: primary.name,
+        model: primary.model,
+        provider: primary.provider,
+        apiType: primary.mode,
         outputDir,
-        capabilities: Array.isArray(config.mediaCapabilities) ? config.mediaCapabilities : [],
-        modelManifests: mediaManifests.map((manifest) => ({
-          id: manifest.id,
-          modelId: manifest.modelId,
-          capabilities: manifest.capabilities.map((capability) => capability.id),
+        capabilities: [...new Set(providers.flatMap((provider) => provider.capabilities))],
+        providerConfigurations: providers.map((provider) => ({
+          id: provider.id,
+          name: provider.name,
+          model: provider.model,
+          provider: provider.provider,
+          modelManifests: provider.manifests.map((manifest) => ({
+            id: manifest.id,
+            modelId: manifest.modelId,
+            capabilities: manifest.capabilities.map((capability) => capability.id),
+          })),
         })),
-        ...(config.apiEndpoint !== undefined ? { apiEndpoint: config.apiEndpoint } : {}),
+        ...(primary.baseUrl !== undefined ? { apiEndpoint: primary.baseUrl } : {}),
       }),
     }
   }

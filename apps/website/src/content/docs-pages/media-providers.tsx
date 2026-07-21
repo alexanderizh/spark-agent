@@ -115,7 +115,7 @@ hailuo-video               — Hailuo 2.3 视频 (async)`}
     </ul>
 
     <h2 id="spark-media-mcp">7. spark_media MCP</h2>
-    <p>当会话存在启用的语音/视频 Provider（图片继续用 <code>spark_image</code>），Spark 注入内部 stdio MCP server <code>spark_media</code>：</p>
+    <p>当会话存在启用的图片、语音或视频 Provider 时，Spark 将全部可用配置聚合到内部 stdio MCP server <code>spark_media</code>：</p>
     <pre>
 {`mcp__spark_media__generate_image     — 文生图 / 图生图
 mcp__spark_media__edit_image         — 编辑 / 合成
@@ -129,10 +129,12 @@ mcp__spark_media__cancel_task        — 取消任务（如支持）`}
     </pre>
     <ul>
       <li>API Key 只注入到本地 MCP 子进程环境，Agent 永远看不到凭据。</li>
+      <li>每个模型保留所属 Provider 的 API Key、endpoint 与 adapter；生成工具通过 <code>model</code> 切换实际路由。</li>
+      <li><code>list_models</code> 返回 <code>providerProfileId</code> 与唯一 <code>selectionKey</code>；同名模型必须使用唯一键，不能静默回退到默认模型。</li>
       <li>产物路径 <code>.spark-artifacts/media/&#123;images,audio,videos,text&#125;</code>。</li>
       <li>Agent system prompt 仅在「有可用 Provider」时附加模型信息。</li>
-      <li>如果有 <code>mediaModelRefs</code>，会通过 <code>SPARK_MEDIA_MANIFESTS_JSON</code> 注入；
-          否则 MCP 用最小化环境变量推导。</li>
+      <li>所有可用 Profile 通过 <code>SPARK_MEDIA_PROVIDERS_JSON</code> 注入；单 Provider 环境变量与
+          <code>SPARK_MEDIA_MANIFESTS_JSON</code> 继续作为兼容协议。</li>
       <li>通用参数 <code>aspectRatio</code> / <code>resolution</code> / <code>durationSeconds</code> / <code>mode</code> /
           <code>negative_prompt</code> / <code>seed</code> / <code>output_format</code> / <code>prompt_optimizer</code> /
           音频标志都直接暴露，私有参数走 <code>extraJson</code>。</li>
@@ -168,7 +170,7 @@ export const mediaProviders: DocsPageContent = {
     },
     {
       question: 'spark_image 还能用吗？',
-      answer: '可以。image.generate 仍走 spark_image；image.edit / audio / video 走新的 spark_media。',
+      answer: '保留为旧配置兼容兜底。只要存在可解析的统一媒体配置，普通会话会使用 spark_media 完成图片、音频和视频生成，避免两个工具产生模型选择冲突。',
     },
     {
       question: '需要真实 API Key 才能测试吗？',
@@ -183,8 +185,8 @@ export const mediaProviders: DocsPageContent = {
     { key: '统一能力 id', value: 'image.generate/edit/variations · audio.speech/transcription · video.generate/image_to_video/edit/extend' },
     { key: 'Manifest 存储', value: 'media_model_manifests + media_provider_models（migration 033）' },
     { key: '默认端点', value: 'APIMart api.apimart.ai/v1 · xAI api.x.ai/v1 · 阿里百炼 dashscope.aliyuncs.com · 火山 ark.cn-beijing.volces.com' },
-    { key: '图片 MCP', value: 'spark_image（兼容 imageProvider/imageApiType）' },
-    { key: '统一 MCP', value: 'spark_media（image edit / audio / video）' },
+    { key: '兼容图片 MCP', value: 'spark_image（仅旧配置兜底）' },
+    { key: '统一 MCP', value: 'spark_media（image / audio / video，多 Provider 模型路由）' },
     { key: '产物目录', value: '.spark-artifacts/media/{images,audio,videos,text}' },
   ],
   howTo: {
@@ -196,7 +198,7 @@ export const mediaProviders: DocsPageContent = {
       '选「生图模型」，preset 选 APIMart 图片',
       '填入 Model ID（默认 GPT Image 2）与 API Key',
       '确认 mediaProvider=apimart、mediaApiType=auto、mediaCapabilities 含 image.generate',
-      '保存后在新会话中可用，Agent 通过 mcp__spark_image__generate_image 调用',
+      '保存后在新会话中可用，Agent 通过 mcp__spark_media__generate_image 调用，并传入所选模型',
     ],
   },
   aiSummary:

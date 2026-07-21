@@ -12,7 +12,7 @@ export function SettingsLogViewer() {
   const [filePath, setFilePath] = useState<string | null>(null)
   const [sizeBytes, setSizeBytes] = useState(0)
   const [loading, setLoading] = useState(false)
-  const [scope, setScope] = useState<LogViewerScope>('canvas')
+  const [scope, setScope] = useState<LogViewerScope>('all')
   const [levelFilter, setLevelFilter] = useState<LogViewerLevel>('all')
   const [keyword, setKeyword] = useState('')
 

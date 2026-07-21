@@ -23,6 +23,13 @@ export function buildMediaGenerationSystemPrompt(input: {
   outputDir: string
   capabilities: string[]
   modelManifests?: Array<{ id: string; modelId: string; capabilities: string[] }>
+  providerConfigurations?: Array<{
+    id: string
+    name: string
+    model: string
+    provider: string
+    modelManifests: Array<{ id: string; modelId: string; capabilities: string[] }>
+  }>
   apiEndpoint?: string
 }): string {
   const caps =
@@ -31,9 +38,16 @@ export function buildMediaGenerationSystemPrompt(input: {
     (manifest) =>
       `  - ${manifest.id} (${manifest.modelId}): ${manifest.capabilities.join(', ') || 'no declared capabilities'}`,
   )
+  const providerLines = (input.providerConfigurations ?? []).flatMap((configuration) => [
+    `  - ${configuration.name} [${configuration.id}] — ${configuration.provider}, default ${configuration.model}`,
+    ...configuration.modelManifests.map(
+      (manifest) =>
+        `    - ${manifest.id} (${manifest.modelId}): ${manifest.capabilities.join(', ') || 'no declared capabilities'}`,
+    ),
+  ])
   return [
     '## Media Generation Capability',
-    'The current runtime has a configured multimedia model (image / audio / video).',
+    'The current runtime has configured multimedia models (image / audio / video) and can route each selected model to its owning provider.',
     'Credentials are injected only into the local media MCP server — never ask for or reveal API keys.',
     '',
     `- Configuration name: ${input.name}`,
@@ -44,6 +58,9 @@ export function buildMediaGenerationSystemPrompt(input: {
     `- Declared capabilities: ${caps}`,
     `- Output directory: ${input.outputDir}`,
     ...(manifestLines.length > 0 ? ['', 'Configured model manifests:', ...manifestLines] : []),
+    ...(providerLines.length > 0
+      ? ['', 'Configured provider/model routes:', ...providerLines]
+      : []),
     '',
     'Available tools (call the one matching the user intent):',
     '- `mcp__spark_media__list_models` — inspect configured media models and capabilities.',
@@ -61,6 +78,7 @@ export function buildMediaGenerationSystemPrompt(input: {
     '- `mcp__spark_media__cancel_task` — cancel a pending/running media task when supported.',
     '',
     'Before calling `generate_video`, `generate_image`, or `edit_image`, you must call `mcp__spark_media__describe_model` for the selected model/capability unless you already inspected it in this turn.',
+    'When the user names a configured model, pass that exact manifest id or model id in the generation tool `model` field. The media server will select the matching provider credentials and endpoint; never substitute the default model silently.',
     'Use the returned `maxImages`, `maxVideos`, `maxAudios`, `rolePolicy`, and parameter schema to tell the user: supported input counts, supported roles (first frame / last frame / reference image/video/audio), and the default role assignment rule.',
     'If the user provides more media inputs than a declared maximum, ask which inputs to keep before generation; do not silently drop extra inputs.',
     'Provider file objects must be active before model use. Files API ids for Chat/Responses understanding must not be passed to media generation endpoints unless that model schema explicitly supports file ids.',

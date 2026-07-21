@@ -180,3 +180,12 @@ paramPolicy: {
 - Provider 文档未明确给出阈值时不要猜测；历史兼容值即使暂时保留，也只能产生 advisory warning。
 - 专用 validator/adapter 不要重复实现长度硬限制。确定性的缺参、输入格式和文件访问安全问题可以继续阻断。
 - 画布媒体 prompt 使用 protocol 的共享拼接器，预检与执行必须保持同一拼接口径，并去除 System/User 中已逐字包含的文本引用正文。
+
+## 八、普通会话的多 Provider 模型路由
+
+- 普通 Agent 会话不能只把第一个媒体 Provider 的 key、endpoint 和默认模型注入 `spark_media`；否则 `list_models` 即使能展示其他模型，生成请求也无法切换渠道。
+- 会话运行时通过 `SPARK_MEDIA_PROVIDERS_JSON` 聚合所有启用且凭据可用的媒体 Profile。每条路由包含 Profile ID、Provider kind、默认模型、API key、base URL、默认参数与 manifests；凭据只存在本地 MCP 子进程环境。
+- `list_models` 返回 `providerProfileId`、`providerName` 与 `selectionKey`。显式模型选择优先使用 `selectionKey`，唯一 modelId 也可用；同名模型跨 Profile 冲突时必须报歧义，不能挑第一个。
+- 生成工具收到显式 `model` 后，必须同时切换所属 Profile 的凭据、endpoint、adapter 和 manifest，并校验该模型确实支持目标 capability；未知或不支持的模型不能回退到默认模型。
+- 未指定模型时才允许按配置顺序选择第一个支持目标 capability 的默认模型，以保持兼容。
+- 只要统一 `spark_media` 可用，普通会话不应同时注入固定单模型的旧 `spark_image`，避免 Agent 被两套相互冲突的提示词误导；旧工具仅作为无法解析统一媒体配置时的兜底。

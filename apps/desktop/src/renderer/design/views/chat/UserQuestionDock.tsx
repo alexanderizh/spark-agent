@@ -411,36 +411,38 @@ export function UserQuestionDock(
   const total = props.data.questions.length
 
   return (
-    <div className={`user-question-dock${collapsed ? ' is-collapsed' : ''}`}>
-      <div className="user-question-dock-head">
-        <div className="user-question-dock-icon">
-          <Icons.HelpCircle size={17} />
-        </div>
-        <button
-          type="button"
-          className="user-question-dock-toggle"
-          onClick={() => setCollapsed((value) => !value)}
-          aria-expanded={!collapsed}
-          title={collapsed ? '展开问答面板' : '折叠问答面板'}
-        >
-          {collapsed ? <Icons.ChevronUp size={14} /> : <Icons.ChevronDown size={14} />}
-        </button>
-        <div className="user-question-dock-heading">
-          <div className="user-question-dock-title">Agent 正在等您回复</div>
-          <div className="user-question-dock-subtitle">
-            逐题作答，支持回退、跳过，以及输入自定义答案
+    <div className="composer-inner user-question-dock-frame">
+      <div className={`user-question-dock${collapsed ? ' is-collapsed' : ''}`}>
+        <div className="user-question-dock-head">
+          <div className="user-question-dock-icon">
+            <Icons.HelpCircle size={17} />
+          </div>
+          <button
+            type="button"
+            className="user-question-dock-toggle"
+            onClick={() => setCollapsed((value) => !value)}
+            aria-expanded={!collapsed}
+            title={collapsed ? '展开问答面板' : '折叠问答面板'}
+          >
+            {collapsed ? <Icons.ChevronUp size={14} /> : <Icons.ChevronDown size={14} />}
+          </button>
+          <div className="user-question-dock-heading">
+            <div className="user-question-dock-title">Agent 正在等您回复</div>
+            <div className="user-question-dock-subtitle">
+              逐题作答，支持回退、跳过，以及输入自定义答案
+            </div>
+          </div>
+          <div className="user-question-dock-badge">
+            {Math.min(currentIndex + 1, total)} / {total}
           </div>
         </div>
-        <div className="user-question-dock-badge">
-          {Math.min(currentIndex + 1, total)} / {total}
+        <div className="user-question-dock-panel" hidden={collapsed}>
+          <UserQuestionWizard
+            {...props}
+            currentIndex={currentIndex}
+            onCurrentIndexChange={setCurrentIndex}
+          />
         </div>
-      </div>
-      <div className="user-question-dock-panel" hidden={collapsed}>
-        <UserQuestionWizard
-          {...props}
-          currentIndex={currentIndex}
-          onCurrentIndexChange={setCurrentIndex}
-        />
       </div>
     </div>
   )

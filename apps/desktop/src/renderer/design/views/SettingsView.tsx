@@ -418,7 +418,7 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
         { id: 'integrity', icon: <Icons.Shield size={13} />, label: '完整性' },
         { id: 'playwright', icon: <Icons.Globe size={13} />, label: '浏览器自动化' },
         { id: 'usage', icon: <Icons.Activity size={13} />, label: '用量统计' },
-        { id: 'telemetry', icon: <Icons.Activity size={13} />, label: '遥测与日志' },
+        { id: 'telemetry', icon: <Icons.Activity size={13} />, label: '本地日志' },
         { id: 'hooks', icon: <Icons.Bell size={13} />, label: 'Hooks' },
         { id: 'storage', icon: <Icons.Database size={13} />, label: '存储与备份' },
         { id: 'archived', icon: <Icons.Archive size={13} />, label: '已归档' },
@@ -4368,11 +4368,10 @@ function TelemetrySection() {
   const [s, set] = usePersistedSettings(SETTINGS_TELEMETRY_KEY, DEFAULT_TELEMETRY)
 
   return (
-    <div className="settings-section">
-      <h2>遥测与日志</h2>
+    <div className="settings-section settings-section--fill">
+      <h2>本地日志</h2>
       <div className="lede">
-        运行时日志会写入本地文件，可在此查看最近内容。OpenTelemetry、trace
-        查看和诊断包导出仍在待开发阶段。
+        运行时日志会写入本地文件，可在此查看最近内容。所有日志仅保留在本地，不会上传。
       </div>
 
       {/* ── 本地日志级别 ── */}
