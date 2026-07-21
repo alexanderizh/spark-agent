@@ -15,7 +15,11 @@ vi.mock('./AppContext', () => {
 })
 
 import { ToastProvider } from './components/Toast'
-import { SessionSidebarProvider, useSessionSidebar } from './SessionSidebarContext'
+import {
+  filterSessionsByTime,
+  SessionSidebarProvider,
+  useSessionSidebar,
+} from './SessionSidebarContext'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('SessionSidebarContext', () => {
@@ -942,5 +946,87 @@ describe('SessionSidebarContext', () => {
         modelId: 'next-model',
       }),
     )
+  })
+
+  it('refreshes a session activity time when an old session starts running', async () => {
+    const oldUpdatedAt = '2026-07-01T00:00:00.000Z'
+    let queueChangedHandler: ((event: Record<string, unknown>) => void) | null = null
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'old-session',
+              title: 'Old session',
+              projectId: null,
+              workspaceIds: [],
+              providerProfileId: null,
+              modelId: null,
+              agentId: null,
+              agentAdapter: 'codex',
+              permissionMode: 'codex-default',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: oldUpdatedAt,
+              updatedAt: oldUpdatedAt,
+              messageCount: 1,
+            },
+          ],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:session:queue-changed') queueChangedHandler = callback
+        return vi.fn()
+      }),
+    })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(latestCtxRef.current?.sessions).toHaveLength(1)
+    expect(latestCtxRef.current?.sessions[0]?.updatedAt).toBe(oldUpdatedAt)
+    const activityStartedAt = Date.now()
+
+    await act(async () => {
+      queueChangedHandler?.({ sessionId: 'old-session', running: true, queuedTurns: [] })
+    })
+
+    expect(latestCtxRef.current?.sessions[0]?.status).toBe('running')
+    expect(
+      new Date(latestCtxRef.current?.sessions[0]?.updatedAt ?? 0).getTime(),
+    ).toBeGreaterThanOrEqual(activityStartedAt)
+    expect(filterSessionsByTime(latestCtxRef.current?.sessions ?? [], '1d')).toHaveLength(1)
   })
 })
