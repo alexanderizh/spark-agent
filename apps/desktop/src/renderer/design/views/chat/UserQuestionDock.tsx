@@ -108,16 +108,31 @@ function UserQuestionWizard({
   }
 
   const handleSkip = () => {
-    updateDraft({
-      skipped: true,
-      selectedLabel: '',
-      selectedValue: '',
-      otherText: '',
-      text: '',
+    if (submitted || currentQuestion.allowSkip === false) return
+    setSubmitted(true)
+    const answerList = data.questions.map((question, index) => {
+      const draft = drafts[index]
+      const submissionDraft =
+        index < currentIndex && isQuestionAnswered(question, draft)
+          ? draft
+          : {
+              skipped: true,
+              selectedLabel: '',
+              selectedValue: '',
+              selectedLabels: [],
+              selectedValues: [],
+              otherText: '',
+              text: '',
+            }
+      return buildQuestionAnswer(question, submissionDraft, index)
     })
-    if (canGoNext) {
-      onCurrentIndexChange((prev) => Math.min(prev + 1, total - 1))
-    }
+    onAnswer({
+      skipped: true,
+      reason: '用户选择跳过这些问题。',
+      answers: answerList,
+      questionCount: total,
+      answeredCount: answerList.filter((answer) => answer.skipped !== true).length,
+    })
   }
 
   const handleSubmit = () => {
@@ -368,7 +383,7 @@ function buildQuestionAnswer(
     question: question.question,
     type: resolvedType,
     skipped: isSkipped,
-    answer: isSkipped ? '' : answerValue,
+    answer: isSkipped ? '用户选择跳过' : answerValue,
     ...(isMultiChoiceQuestion(question)
       ? {
           ...(draft?.selectedLabels && draft.selectedLabels.length > 0
@@ -392,15 +407,25 @@ export function UserQuestionDock(
   props: Omit<Parameters<typeof UserQuestionWizard>[0], 'currentIndex' | 'onCurrentIndexChange'>,
 ) {
   const [currentIndex, setCurrentIndex] = useState(0)
+  const [collapsed, setCollapsed] = useState(false)
   const total = props.data.questions.length
 
   return (
-    <div className="user-question-dock">
+    <div className={`user-question-dock${collapsed ? ' is-collapsed' : ''}`}>
       <div className="user-question-dock-head">
         <div className="user-question-dock-icon">
           <Icons.HelpCircle size={17} />
         </div>
-        <div style={{ minWidth: 0 }}>
+        <button
+          type="button"
+          className="user-question-dock-toggle"
+          onClick={() => setCollapsed((value) => !value)}
+          aria-expanded={!collapsed}
+          title={collapsed ? '展开问答面板' : '折叠问答面板'}
+        >
+          {collapsed ? <Icons.ChevronUp size={14} /> : <Icons.ChevronDown size={14} />}
+        </button>
+        <div className="user-question-dock-heading">
           <div className="user-question-dock-title">Agent 正在等您回复</div>
           <div className="user-question-dock-subtitle">
             逐题作答，支持回退、跳过，以及输入自定义答案
@@ -410,7 +435,7 @@ export function UserQuestionDock(
           {Math.min(currentIndex + 1, total)} / {total}
         </div>
       </div>
-      <div className="user-question-dock-panel">
+      <div className="user-question-dock-panel" hidden={collapsed}>
         <UserQuestionWizard
           {...props}
           currentIndex={currentIndex}
