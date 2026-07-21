@@ -74,9 +74,11 @@ describe('WorkflowRunRepository', () => {
       }],
       atomicExecutions: [],
       completedNodeIds: ['plan'],
+      skippedNodeIds: ['quick-path'],
     })
     expect(working?.status).toBe('working')
     expect(working?.completed_node_ids_json).toBe(JSON.stringify(['plan']))
+    expect(working?.skipped_node_ids_json).toBe(JSON.stringify(['quick-path']))
     expect(JSON.parse(working!.state_json)).toEqual({ plan: 'ready' })
 
     const completed = repo.updateSnapshot('run-1', {
@@ -85,6 +87,7 @@ describe('WorkflowRunRepository', () => {
       executions: [],
       atomicExecutions: [],
       completedNodeIds: ['plan'],
+      skippedNodeIds: ['quick-path'],
       endedAt: '2026-06-30T00:00:00.000Z',
     })
     expect(completed?.status).toBe('completed')

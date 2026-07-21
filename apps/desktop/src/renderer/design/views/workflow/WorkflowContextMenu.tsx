@@ -13,6 +13,7 @@ type WorkflowContextMenuProps = {
   onClose: () => void
   onDuplicateNode: (nodeId: string) => void
   onDeleteNode: (nodeId: string) => void
+  onConfigureEdge: (edgeId: string) => void
   onDeleteEdge: (edgeId: string) => void
   onAddNode: (kind: WorkflowNodeKind, position: { x: number; y: number }) => void
 }
@@ -46,6 +47,7 @@ export function WorkflowContextMenu({
   onClose,
   onDuplicateNode,
   onDeleteNode,
+  onConfigureEdge,
   onDeleteEdge,
   onAddNode,
 }: WorkflowContextMenuProps) {
@@ -81,12 +83,20 @@ export function WorkflowContextMenu({
         </>
       )}
       {menu.kind === 'edge' && (
-        <MenuItem
-          icon={<Icons.Trash size={14} />}
-          label="删除连线"
-          danger
-          onClick={() => closeAnd(() => onDeleteEdge(menu.edgeId))}
-        />
+        <>
+          <MenuItem
+            icon={<Icons.Branch size={14} />}
+            label="配置条件"
+            onClick={() => closeAnd(() => onConfigureEdge(menu.edgeId))}
+          />
+          <div className="wf-context-menu-divider" role="separator" />
+          <MenuItem
+            icon={<Icons.Trash size={14} />}
+            label="删除连线"
+            danger
+            onClick={() => closeAnd(() => onDeleteEdge(menu.edgeId))}
+          />
+        </>
       )}
       {menu.kind === 'pane' && (
         <>

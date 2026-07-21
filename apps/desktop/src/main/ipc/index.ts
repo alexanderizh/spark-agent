@@ -167,6 +167,7 @@ import type {
   PlaywrightInstallProgress,
   ManagedAgent,
   WorkflowItem as ProtocolWorkflowItem,
+  WorkflowEdgeCondition,
   WorkflowGraph,
   WorkflowOrientation,
   ProviderExportPayload,
@@ -8521,12 +8522,20 @@ function toWorkflowGraph(value: Record<string, unknown>): WorkflowGraph {
         const from = typeof record.from === 'string' ? record.from : ''
         const to = typeof record.to === 'string' ? record.to : ''
         if (!from || !to) return []
+        const condition = normalizeWorkflowEdgeCondition(record.condition)
         return [
-          {
-            id: typeof record.id === 'string' ? record.id : `${from}-${to}`,
-            from,
-            to,
-          },
+          condition != null
+            ? {
+                id: typeof record.id === 'string' ? record.id : `${from}-${to}`,
+                from,
+                to,
+                condition,
+              }
+            : {
+                id: typeof record.id === 'string' ? record.id : `${from}-${to}`,
+                from,
+                to,
+              },
         ]
       })
     : []
@@ -8534,6 +8543,27 @@ function toWorkflowGraph(value: Record<string, unknown>): WorkflowGraph {
   const orientation: WorkflowOrientation | undefined =
     value.orientation === 'vertical' ? 'vertical' : undefined
   return orientation != null ? { nodes, edges, orientation } : { nodes, edges }
+}
+
+function normalizeWorkflowEdgeCondition(condition: unknown): WorkflowEdgeCondition | undefined {
+  if (condition == null || typeof condition !== 'object') return undefined
+  const record = condition as Record<string, unknown>
+  const op = typeof record.op === 'string' ? record.op : ''
+  const key = typeof record.key === 'string' ? record.key.trim() : ''
+  if (key.length === 0) return undefined
+  if (op === 'exists' || op === 'truthy' || op === 'falsy') return { op, key }
+  if (op === 'equals' || op === 'not_equals') {
+    const value = record.value
+    if (
+      value === null ||
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      return { op, key, value }
+    }
+  }
+  return undefined
 }
 
 function isProtocolPermissionMode(value: string): value is ManagedAgent['permissionMode'] {
@@ -8566,6 +8596,7 @@ function isWorkflowNodeKind(
   return (
     kind === 'input' ||
     kind === 'plan' ||
+    kind === 'route' ||
     kind === 'agent' ||
     kind === 'subagent' ||
     kind === 'skill' ||

@@ -4284,6 +4284,7 @@ function WorkflowProgressBlockView({
   block: Extract<UIBlock, { kind: 'workflow_progress' }>
 }) {
   const completed = block.nodes.filter((node) => node.status === 'completed').length
+  const skipped = block.nodes.filter((node) => node.status === 'skipped').length
   const total = block.nodes.length
   const failed = block.nodes.some((node) => node.status === 'failed')
   return (
@@ -4291,8 +4292,11 @@ function WorkflowProgressBlockView({
       <div className="workflow-progress-head">
         <Icons.Workflow size={13} />
         <span>工作流进度</span>
-        <span className={`workflow-progress-count ${failed ? 'has-failure' : ''}`}>
-          {completed}/{total}
+        <span
+          className={`workflow-progress-count ${failed ? 'has-failure' : ''}`}
+          title={skipped > 0 ? `已完成 ${completed} 个，条件跳过 ${skipped} 个` : undefined}
+        >
+          {completed + skipped}/{total}
         </span>
       </div>
       <div className="workflow-progress-list">
@@ -4312,6 +4316,8 @@ function WorkflowProgressItem({ node }: { node: WorkflowProgressNode }) {
       <Icons.Spinner size={13} />
     ) : node.status === 'failed' ? (
       <Icons.X size={13} style={{ color: 'var(--c-err, #ef4444)' }} />
+    ) : node.status === 'skipped' ? (
+      <Icons.Minus size={13} style={{ color: 'var(--text-faint)' }} />
     ) : (
       <span className="workflow-progress-dot" />
     )

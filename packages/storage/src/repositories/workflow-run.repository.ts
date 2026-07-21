@@ -16,6 +16,7 @@ export interface WorkflowRunRow {
   executions_json: string
   atomic_executions_json: string
   completed_node_ids_json: string
+  skipped_node_ids_json: string
   failed_node_json: string | null
   started_at: string
   updated_at: string
@@ -37,6 +38,7 @@ export interface UpdateWorkflowRunSnapshotParams {
   executions: unknown[]
   atomicExecutions: unknown[]
   completedNodeIds: string[]
+  skippedNodeIds?: string[]
   failedNode?: unknown
   endedAt?: string | null
 }
@@ -54,8 +56,9 @@ export class WorkflowRunRepository extends BaseRepository {
         `INSERT INTO workflow_runs (
           id, session_id, turn_id, workflow_id, status, objective, graph_json,
           state_json, executions_json, atomic_executions_json, completed_node_ids_json,
+          skipped_node_ids_json,
           started_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -66,6 +69,7 @@ export class WorkflowRunRepository extends BaseRepository {
         params.objective,
         this.toJson(params.graph),
         '{}',
+        '[]',
         '[]',
         '[]',
         '[]',
@@ -89,6 +93,7 @@ export class WorkflowRunRepository extends BaseRepository {
              executions_json = ?,
              atomic_executions_json = ?,
              completed_node_ids_json = ?,
+             skipped_node_ids_json = ?,
              failed_node_json = ?,
              updated_at = ?,
              ended_at = ?
@@ -100,6 +105,7 @@ export class WorkflowRunRepository extends BaseRepository {
         this.toJson(params.executions),
         this.toJson(params.atomicExecutions),
         this.toJson(params.completedNodeIds),
+        this.toJson(params.skippedNodeIds ?? []),
         params.failedNode === undefined ? null : this.toJson(params.failedNode),
         now,
         params.endedAt ?? null,

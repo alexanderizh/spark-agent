@@ -5328,6 +5328,7 @@ export class SessionService {
                 runStatus: 'working' | 'completed' | 'failed' | 'canceled',
                 runningNodeIds: ReadonlySet<string>,
                 completedNodeIds: ReadonlySet<string>,
+                skippedNodeIds: ReadonlySet<string>,
                 failedNodeId?: string,
               ): void => {
                 const nodes = ctx.workflowGraph!.nodes.map((node) => {
@@ -5337,6 +5338,8 @@ export class SessionService {
                       ? 'failed'
                       : completedNodeIds.has(node.id)
                         ? 'completed'
+                        : skippedNodeIds.has(node.id)
+                          ? 'skipped'
                         : runningNodeIds.has(node.id)
                           ? 'running'
                           : 'pending'
@@ -5372,6 +5375,7 @@ export class SessionService {
               let runId: string | null = null
               let initialState: Record<string, unknown> | undefined
               let initialCompletedNodeIds: string[] | undefined
+              let initialSkippedNodeIds: string[] | undefined
               if (ctx.workflowId != null) {
                 const resumable = runRepo.findLatestResumable(ctx.sessionId, ctx.workflowId)
                 if (resumable != null) {
@@ -5388,6 +5392,14 @@ export class SessionService {
                       : undefined
                   } catch {
                     initialCompletedNodeIds = undefined
+                  }
+                  try {
+                    const ids = JSON.parse(resumable.skipped_node_ids_json) as string[]
+                    initialSkippedNodeIds = Array.isArray(ids)
+                      ? ids.filter((id) => graphNodeIds.has(id))
+                      : undefined
+                  } catch {
+                    initialSkippedNodeIds = undefined
                   }
                   log.info('workflow run: resume', {
                     sessionId: ctx.sessionId,
@@ -5421,6 +5433,7 @@ export class SessionService {
                 availableWorkerIds: new Set(ctx.members.map((member) => member.id)),
                 ...(initialState != null ? { initialState } : {}),
                 ...(initialCompletedNodeIds != null ? { initialCompletedNodeIds } : {}),
+                ...(initialSkippedNodeIds != null ? { initialSkippedNodeIds } : {}),
                 onSnapshot: (snap) => {
                   if (runId != null) {
                     runRepo.updateSnapshot(runId, {
@@ -5429,6 +5442,7 @@ export class SessionService {
                       executions: snap.executions,
                       atomicExecutions: snap.atomicExecutions,
                       completedNodeIds: snap.completedNodeIds,
+                      skippedNodeIds: snap.skippedNodeIds,
                       ...(snap.failedNode != null ? { failedNode: snap.failedNode } : {}),
                       ...(snap.status !== 'working' ? { endedAt: new Date().toISOString() } : {}),
                     })
@@ -5437,6 +5451,7 @@ export class SessionService {
                     snap.status,
                     new Set(snap.runningNodeIds),
                     new Set(snap.completedNodeIds),
+                    new Set(snap.skippedNodeIds),
                     snap.failedNode?.nodeId,
                   )
                 },
@@ -5446,6 +5461,7 @@ export class SessionService {
                   // - approval：经 onQuestion 暂停等待用户审批，拒绝则节点失败、停止工作流。
                   // - input：LLM 把 prompt/objective/constraint/value 拆解为结构化 JSON；派发失败或
                   //   LLM 输出非法 JSON 时回落透传 getDefaultWorkflowAtomicContent 并追加提示。
+                  // - route：经纯 LLM 临时 worker 只输出 routeOptions 中的一个 value，用于条件边分流。
                   // - skill/tool/mcp/plan/review/artifact：config.execution!=='static' 时经临时受限
                   //   worker 真实派发单轮执行（skill 只挂 skillIds、tool 收窄 toolIds；MCP 使用
                   //   全局已启用集合；input/plan/review 使用只读工具集）；artifact 另外支持 exportPath 写盘。
@@ -5456,6 +5472,7 @@ export class SessionService {
                     case 'approval':
                       return this.runWorkflowApprovalNode(ctx.sessionId, request)
                     case 'input':
+                    case 'route':
                     case 'skill':
                     case 'tool':
                     case 'mcp':
@@ -5508,6 +5525,28 @@ export class SessionService {
                               node: request.nodeId,
                             },
                           )
+                        }
+                        return { content: validated.content }
+                      }
+                      if (request.kind === 'route') {
+                        const validated = validateWorkflowRouteDecisionContent(
+                          reply.content,
+                          request.config,
+                        )
+                        if (!validated.ok) {
+                          log.warn('workflow route: invalid decision from LLM', {
+                            sessionId: ctx.sessionId,
+                            node: request.nodeId,
+                            decision: validated.decision,
+                          })
+                          return {
+                            state: 'failed',
+                            content: reply.content,
+                            error: {
+                              code: 'workflow_route_invalid_output',
+                              message: validated.message,
+                            },
+                          }
                         }
                         return { content: validated.content }
                       }
@@ -9543,10 +9582,29 @@ function formatWorkflowVerifyCommandOutput(
 }
 
 function getDefaultWorkflowAtomicContent(request: {
+  kind?: import('@spark/protocol').WorkflowNodeKind
   title: string
   objective: string
   config: Record<string, unknown>
 }): string {
+  if (request.kind === 'route') {
+    const rawValue = request.config.value
+    const configuredValue =
+      typeof rawValue === 'string'
+        ? rawValue.trim()
+        : typeof rawValue === 'number' || typeof rawValue === 'boolean'
+          ? String(rawValue)
+          : ''
+    const routeOptions = normalizeWorkflowRouteOptions(request.config)
+    if (
+      configuredValue.length > 0 &&
+      (routeOptions.length === 0 || routeOptions.some((option) => option.value === configuredValue))
+    ) {
+      return configuredValue
+    }
+    const [firstRoute] = routeOptions
+    if (firstRoute != null) return firstRoute.value
+  }
   const value = request.config.value
   if (typeof value === 'string') return value
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
@@ -9584,6 +9642,77 @@ export function validateWorkflowInputStructuredContent(
     return { ok: true, content: rawContent }
   } catch {
     return { ok: false, content: `${fallback}\n\n[input 结构化解析失败，已回落透传]` }
+  }
+}
+
+export function normalizeWorkflowRouteOptions(
+  config: Record<string, unknown>,
+): Array<{ value: string; label?: string; description?: string }> {
+  const raw = Array.isArray(config.routeOptions) ? config.routeOptions : []
+  const seen = new Set<string>()
+  return raw.flatMap((item) => {
+    if (item == null || typeof item !== 'object') return []
+    const record = item as Record<string, unknown>
+    const value = typeof record.value === 'string' ? record.value.trim() : ''
+    if (value.length === 0 || seen.has(value)) return []
+    seen.add(value)
+    const label = typeof record.label === 'string' ? record.label.trim() : ''
+    const description = typeof record.description === 'string' ? record.description.trim() : ''
+    return [
+      {
+        value,
+        ...(label.length > 0 ? { label } : {}),
+        ...(description.length > 0 ? { description } : {}),
+      },
+    ]
+  })
+}
+
+function extractWorkflowRouteDecision(rawContent: string): string {
+  const stripped = trimJsonFence(rawContent.trim()).trim()
+  if (stripped.length === 0) return ''
+  try {
+    const parsed = JSON.parse(stripped) as unknown
+    if (typeof parsed === 'string') return parsed.trim()
+    if (parsed != null && typeof parsed === 'object') {
+      const record = parsed as Record<string, unknown>
+      for (const candidate of [record.route, record.decision, record.value]) {
+        if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate.trim()
+      }
+    }
+  } catch {
+    // Plain-text route values are the preferred output; JSON is only accepted for resilience.
+  }
+  return stripped.split(/\r?\n/, 1)[0]?.trim().replace(/^["']|["']$/g, '') ?? ''
+}
+
+export function validateWorkflowRouteDecisionContent(
+  rawContent: string,
+  config: Record<string, unknown>,
+):
+  | { ok: true; content: string; decision: string }
+  | { ok: false; content: string; decision: string; message: string } {
+  const decision = extractWorkflowRouteDecision(rawContent)
+  if (decision.length === 0) {
+    return {
+      ok: false,
+      content: rawContent,
+      decision,
+      message: '路由节点没有输出分支值。',
+    }
+  }
+  const options = normalizeWorkflowRouteOptions(config)
+  if (options.length === 0) {
+    return { ok: true, content: decision, decision }
+  }
+  if (options.some((option) => option.value === decision)) {
+    return { ok: true, content: decision, decision }
+  }
+  return {
+    ok: false,
+    content: rawContent,
+    decision,
+    message: `路由节点输出 "${decision}" 不在允许分支值中：${options.map((option) => option.value).join(', ')}`,
   }
 }
 
@@ -9674,6 +9803,7 @@ export function extractWorkflowApprovalCommentImpl(
  */
 const WORKFLOW_LLM_ATOMIC_KINDS = new Set<import('@spark/protocol').WorkflowNodeKind>([
   'input',
+  'route',
   'skill',
   'tool',
   'mcp',
@@ -9732,8 +9862,10 @@ export function shouldRunWorkflowAtomicNodeAsAgent(node: NormalizedWorkflowNode)
 function createWorkflowAtomicMember(node: NormalizedWorkflowNode, hostAgent: AgentItem): AgentItem {
   const workerId = workflowAtomicMemberId(node.id)
   const base = createWorkflowSubagentMember(node, hostAgent, workerId)
-  if (node.kind !== 'input' && node.kind !== 'plan' && node.kind !== 'review') return base
-  // input/plan/review：若节点自己配了 toolIds 就取「所选 ∩ 只读集」，否则直接用整个只读集。
+  if (node.kind !== 'input' && node.kind !== 'route' && node.kind !== 'plan' && node.kind !== 'review') {
+    return base
+  }
+  // input/route/plan/review：若节点自己配了 toolIds 就取「所选 ∩ 只读集」，否则直接用整个只读集。
   const configured = stringArrayConfig(node.config.toolIds)
   const readonlyIds =
     configured.length > 0
@@ -9765,6 +9897,9 @@ export function buildWorkflowAtomicInstruction(request: {
   if (request.kind === 'input') {
     return buildWorkflowInputStructuredInstruction(request)
   }
+  if (request.kind === 'route') {
+    return buildWorkflowRouteDecisionInstruction(request)
+  }
   const prompt =
     typeof request.config.prompt === 'string' && request.config.prompt.trim().length > 0
       ? request.config.prompt.trim()
@@ -9778,6 +9913,50 @@ export function buildWorkflowAtomicInstruction(request: {
     parts.push(`[Upstream inputs]\n${JSON.stringify(request.inputs)}`)
   }
   return parts.join('\n\n')
+}
+
+function buildWorkflowRouteDecisionInstruction(request: {
+  title: string
+  objective: string
+  inputs: Record<string, unknown>
+  config: Record<string, unknown>
+}): string {
+  const title = request.title.trim().length > 0 ? request.title.trim() : '(untitled route)'
+  const prompt =
+    typeof request.config.prompt === 'string' && request.config.prompt.trim().length > 0
+      ? request.config.prompt.trim()
+      : '根据工作流目标和上游输入选择一个后续路由。'
+  const options = normalizeWorkflowRouteOptions(request.config)
+  const optionLines =
+    options.length > 0
+      ? options
+          .map((option) => {
+            const label = option.label != null ? ` (${option.label})` : ''
+            const description = option.description != null ? `: ${option.description}` : ''
+            return `- ${option.value}${label}${description}`
+          })
+          .join('\n')
+      : '- 任意一个非空分支值'
+  const parts = [
+    `你是工作流「${title}」的路由节点。`,
+    prompt,
+    '',
+    '[Allowed route values]',
+    optionLines,
+  ]
+  if (request.objective.trim().length > 0) {
+    parts.push('', '[Workflow objective]', request.objective.trim())
+  }
+  const inputKeys = Object.keys(request.inputs)
+  if (inputKeys.length > 0) {
+    parts.push('', '[Upstream inputs]', JSON.stringify(request.inputs))
+  }
+  parts.push(
+    '',
+    '[Output format]',
+    '严格只输出一个分支 value 本身，不要 JSON、不要解释、不要标点、不要换行。',
+  )
+  return parts.join('\n')
 }
 
 /**

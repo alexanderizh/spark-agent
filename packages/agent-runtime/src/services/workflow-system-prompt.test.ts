@@ -39,6 +39,40 @@ describe('buildWorkflowSystemPrompt', () => {
     expect(prompt).toContain('1. New plan step [kind=plan]')
   })
 
+  it('renders workflow edges and conditions for guided runtimes', () => {
+    const workflow = makeWorkflow()
+    workflow.graph = {
+      nodes: [
+        {
+          id: 'route',
+          kind: 'plan',
+          title: 'Route',
+          config: { prompt: 'Choose a route.', outputKey: 'route' },
+        },
+        {
+          id: 'deep',
+          kind: 'agent',
+          title: 'Deep implementation',
+          config: { outputKey: 'implementation' },
+        },
+      ],
+      edges: [
+        {
+          id: 'route-deep',
+          from: 'route',
+          to: 'deep',
+          condition: { op: 'equals', key: 'route', value: 'deep' },
+        },
+      ],
+    }
+
+    const prompt = buildWorkflowSystemPrompt(workflow, 'codex_guided')
+
+    expect(prompt).toContain('Route [kind=plan; outputKey=route]')
+    expect(prompt).toContain('[Workflow Edges]')
+    expect(prompt).toContain('- Route -> Deep implementation [condition: route equals "deep"]')
+  })
+
   it('limits binding precedence to workflow conflicts and preserves unrelated prompt layers', () => {
     const prompt = buildWorkflowBindingAuthorityPrompt(makeWorkflow())
 

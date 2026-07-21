@@ -184,17 +184,31 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     },
   },
 
-  // 8. 条件路由流 —— plan 决策 equals，二分支独立终点
+  // 8. 条件路由流 —— route 决策 equals，二分支独立终点
   {
     id: 'conditional-routing',
     name: '条件路由流',
-    description: '计划节点判断复杂度严格输出 deep/quick，条件边 equals 路由到两条独立支线，各产各的交付物。',
+    description: '路由节点从 routeOptions 中选择 deep/quick，条件边 equals 路由到两条独立支线，各产各的交付物。',
     tags: ['条件分支', '路由'],
-    needsBinding: '执行节点需绑定 Agent；条件依赖 plan 节点严格输出 deep 或 quick',
+    needsBinding: '执行节点需绑定 Agent；条件依赖 route 节点输出 deep 或 quick',
     graph: {
       nodes: [
         { id: 'input-1', kind: 'input', title: '需求输入', x: 80, y: 160, config: { prompt: '解析目标与交付物。', outputKey: 'objective', retryCount: 1 } },
-        { id: 'plan-1', kind: 'plan', title: '决策路由', x: 360, y: 160, config: { prompt: "判断任务复杂度，严格只输出 'deep'（需要完整实现）或 'quick'（快速摘要）一个词，不要输出其他内容。", outputKey: 'route' } },
+        {
+          id: 'route-1',
+          kind: 'route',
+          title: '决策路由',
+          x: 360,
+          y: 160,
+          config: {
+            prompt: '判断任务复杂度，选择 deep 或 quick。',
+            outputKey: 'route',
+            routeOptions: [
+              { value: 'deep', label: '深度处理', description: '需要完整实现或多步骤处理' },
+              { value: 'quick', label: '快速处理', description: '只需要摘要、答复或轻量处理' },
+            ],
+          },
+        },
         { id: 'agent-1', kind: 'agent', title: '深度实现', x: 640, y: 60, config: { prompt: '按计划完成完整实现。', outputKey: 'implementation' } },
         { id: 'verify-1', kind: 'verify', title: '验证', x: 900, y: 60, config: { prompt: '运行验证命令。', outputKey: 'verification', verifyCommands: ['echo ok'] } },
         { id: 'artifact-deep', kind: 'artifact', title: '深度交付', x: 1160, y: 60, config: { prompt: '整理完整实现交付物。', outputKey: 'deliverable_deep' } },
@@ -202,11 +216,11 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
         { id: 'artifact-quick', kind: 'artifact', title: '摘要交付', x: 900, y: 320, config: { prompt: '整理摘要交付物。', outputKey: 'deliverable_quick' } },
       ],
       edges: [
-        { id: 'e-input-plan', from: 'input-1', to: 'plan-1' },
-        { id: 'e-plan-agent', from: 'plan-1', to: 'agent-1', condition: { op: 'equals', key: 'route', value: 'deep' } },
+        { id: 'e-input-route', from: 'input-1', to: 'route-1' },
+        { id: 'e-route-agent', from: 'route-1', to: 'agent-1', condition: { op: 'equals', key: 'route', value: 'deep' } },
         { id: 'e-agent-verify', from: 'agent-1', to: 'verify-1' },
         { id: 'e-verify-artifact-deep', from: 'verify-1', to: 'artifact-deep' },
-        { id: 'e-plan-review', from: 'plan-1', to: 'review-1', condition: { op: 'equals', key: 'route', value: 'quick' } },
+        { id: 'e-route-review', from: 'route-1', to: 'review-1', condition: { op: 'equals', key: 'route', value: 'quick' } },
         { id: 'e-review-artifact-quick', from: 'review-1', to: 'artifact-quick' },
       ],
     },

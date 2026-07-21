@@ -23,6 +23,7 @@ export type WorkflowAtomicNodeExecutionRequest = {
   title: string
   objective: string
   inputs: Record<string, unknown>
+  skippedNodeIds?: string[]
   config: Record<string, unknown>
 }
 
@@ -60,6 +61,7 @@ export type WorkflowAgentPlanResult = {
   state: WorkflowState
   executions: WorkflowAgentExecutionRecord[]
   atomicExecutions: WorkflowAtomicNodeExecutionRecord[]
+  skippedNodeIds: string[]
   failedNode?: {
     nodeId: string
     agentId: string
@@ -76,6 +78,8 @@ export type WorkflowRunSnapshot = {
   executions: WorkflowAgentExecutionRecord[]
   atomicExecutions: WorkflowAtomicNodeExecutionRecord[]
   completedNodeIds: string[]
+  /** 本次快照时刻因条件分支未命中或上游被跳过而明确跳过的节点。 */
+  skippedNodeIds: string[]
   /** 本次快照时刻正在执行（已开始派发/执行、尚未完成）的节点，供 UI 渲染实时进度用。 */
   runningNodeIds: string[]
   failedNode?: WorkflowAgentPlanResult['failedNode']
@@ -103,6 +107,7 @@ export type NormalizedWorkflowGraph = {
 const WORKFLOW_NODE_KINDS = new Set<WorkflowNodeKind>([
   'input',
   'plan',
+  'route',
   'agent',
   'subagent',
   'skill',
@@ -234,11 +239,13 @@ export function buildWorkflowNodeInputs(
   nodeId: string,
   graph: NormalizedWorkflowGraph,
   state: WorkflowState,
+  skippedNodeIds: ReadonlySet<string> = new Set(),
 ): Record<string, unknown> {
   const byId = new Map(graph.nodes.map((node) => [node.id, node]))
   const inputs: Record<string, unknown> = {}
   for (const edge of graph.edges) {
     if (edge.to !== nodeId) continue
+    if (skippedNodeIds.has(edge.from)) continue
     if (!evaluateWorkflowEdgeCondition(edge.condition, state)) continue
     const upstream = byId.get(edge.from)
     const outputKey = typeof upstream?.config.outputKey === 'string' ? upstream.config.outputKey.trim() : ''
@@ -266,21 +273,41 @@ export function isWorkflowNodeReady(
   graph: NormalizedWorkflowGraph,
   state: WorkflowState,
   completedNodeIds: ReadonlySet<string>,
+  skippedNodeIds: ReadonlySet<string> = new Set(),
 ): boolean {
   const byId = new Map(graph.nodes.map((node) => [node.id, node]))
-  for (const edge of graph.edges) {
-    if (edge.to !== nodeId) continue
-    if (!evaluateWorkflowEdgeCondition(edge.condition, state)) return false
+  const incoming = graph.edges.filter((edge) => edge.to === nodeId)
+  if (incoming.length === 0) return true
+  let hasActiveIncoming = false
+  for (const edge of incoming) {
+    if (skippedNodeIds.has(edge.from)) continue
     const upstream = byId.get(edge.from)
     if (upstream != null && !completedNodeIds.has(upstream.id)) return false
+    if (!evaluateWorkflowEdgeCondition(edge.condition, state)) continue
+    hasActiveIncoming = true
   }
-  return true
+  return hasActiveIncoming
+}
+
+function isWorkflowEdgeInactive(
+  edge: NormalizedWorkflowEdge,
+  graphNodeById: ReadonlyMap<string, NormalizedWorkflowNode>,
+  state: WorkflowState,
+  completedNodeIds: ReadonlySet<string>,
+  skippedNodeIds: ReadonlySet<string>,
+): boolean {
+  if (skippedNodeIds.has(edge.from)) return true
+  const upstream = graphNodeById.get(edge.from)
+  if (upstream != null && !completedNodeIds.has(upstream.id)) return false
+  return !evaluateWorkflowEdgeCondition(edge.condition, state)
 }
 
 function collectWorkflowInactiveNodeIds(
   graph: NormalizedWorkflowGraph,
   state: WorkflowState,
   pendingNodeIds: ReadonlySet<string>,
+  completedNodeIds: ReadonlySet<string>,
+  skippedNodeIds: ReadonlySet<string>,
 ): Set<string> {
   const byId = new Map(graph.nodes.map((node) => [node.id, node]))
   const incomingByNodeId = new Map<string, NormalizedWorkflowEdge[]>()
@@ -296,10 +323,9 @@ function collectWorkflowInactiveNodeIds(
       if (inactiveNodeIds.has(nodeId)) continue
       const incoming = incomingByNodeId.get(nodeId) ?? []
       if (incoming.length === 0) continue
-      const inactive = incoming.some((edge) => {
-        if (!evaluateWorkflowEdgeCondition(edge.condition, state)) return true
-        const upstream = byId.get(edge.from)
-        return upstream != null && inactiveNodeIds.has(upstream.id)
+      const combinedSkipped = new Set([...skippedNodeIds, ...inactiveNodeIds])
+      const inactive = incoming.every((edge) => {
+        return isWorkflowEdgeInactive(edge, byId, state, completedNodeIds, combinedSkipped)
       })
       if (!inactive) continue
       inactiveNodeIds.add(nodeId)
@@ -347,6 +373,8 @@ export async function executeWorkflowAgentPlan(input: {
   executeAtomicNode?: (request: WorkflowAtomicNodeExecutionRequest) => Promise<WorkflowAtomicNodeExecutionReply>
   /** 续跑：预置为已完成的节点 id，执行器跳过它们（断点续跑）。 */
   initialCompletedNodeIds?: Iterable<string>
+  /** 续跑：预置为已因条件未命中而跳过的节点 id。 */
+  initialSkippedNodeIds?: Iterable<string>
   /** 进度快照回调：每个节点完成后 + 终态时触发，调用方据此持久化（审计/续跑）。 */
   onSnapshot?: (snapshot: WorkflowRunSnapshot) => void | Promise<void>
 }): Promise<WorkflowAgentPlanResult> {
@@ -354,6 +382,7 @@ export async function executeWorkflowAgentPlan(input: {
   const executions: WorkflowAgentExecutionRecord[] = []
   const atomicExecutions: WorkflowAtomicNodeExecutionRecord[] = []
   const completedNodeIds = new Set<string>(input.initialCompletedNodeIds ?? [])
+  const skippedNodeIds = new Set<string>(input.initialSkippedNodeIds ?? [])
   const orderedNodes = orderWorkflowNodes(input.graph.nodes, input.graph.edges)
   // 注意：dispatchable 节点（agent/subagent）即使 workerId 为空也保留进 pendingNodes，
   // 让 executeWorkflowAgentNode 显式失败（missing_agent_id）——避免用户画了 agent 节点却未
@@ -361,6 +390,7 @@ export async function executeWorkflowAgentPlan(input: {
   const pendingNodes = new Map(
     orderedNodes
       .filter((node) => !completedNodeIds.has(node.id))
+      .filter((node) => !skippedNodeIds.has(node.id))
       .map((node) => [node.id, node]),
   )
 
@@ -376,6 +406,7 @@ export async function executeWorkflowAgentPlan(input: {
       executions,
       atomicExecutions,
       completedNodeIds: [...completedNodeIds],
+      skippedNodeIds: [...skippedNodeIds],
       runningNodeIds: [...runningNodeIds],
       ...(failedNode != null ? { failedNode } : {}),
     })
@@ -383,12 +414,23 @@ export async function executeWorkflowAgentPlan(input: {
 
   while (pendingNodes.size > 0) {
     const readyNodes = orderedNodes.filter((node) =>
-      pendingNodes.has(node.id) && isWorkflowNodeReady(node.id, input.graph, state, completedNodeIds),
+      pendingNodes.has(node.id) &&
+        isWorkflowNodeReady(node.id, input.graph, state, completedNodeIds, skippedNodeIds),
     )
     if (readyNodes.length === 0) {
-      const inactiveNodeIds = collectWorkflowInactiveNodeIds(input.graph, state, new Set(pendingNodes.keys()))
+      const inactiveNodeIds = collectWorkflowInactiveNodeIds(
+        input.graph,
+        state,
+        new Set(pendingNodes.keys()),
+        completedNodeIds,
+        skippedNodeIds,
+      )
       if (inactiveNodeIds.size > 0) {
-        for (const nodeId of inactiveNodeIds) pendingNodes.delete(nodeId)
+        for (const nodeId of inactiveNodeIds) {
+          pendingNodes.delete(nodeId)
+          skippedNodeIds.add(nodeId)
+        }
+        await emitSnapshot('working')
         continue
       }
       const [firstPendingNodeId] = pendingNodes.keys()
@@ -403,6 +445,7 @@ export async function executeWorkflowAgentPlan(input: {
         state,
         executions,
         atomicExecutions,
+        skippedNodeIds: [...skippedNodeIds],
         failedNode,
       }
     }
@@ -418,6 +461,7 @@ export async function executeWorkflowAgentPlan(input: {
           objective: input.objective,
           ...(input.attachments != null && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
           state,
+          skippedNodeIds,
           dispatch: input.dispatch,
           ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
           ...(input.availableWorkerIds != null ? { availableWorkerIds: input.availableWorkerIds } : {}),
@@ -438,6 +482,7 @@ export async function executeWorkflowAgentPlan(input: {
           state,
           executions,
           atomicExecutions,
+          skippedNodeIds: [...skippedNodeIds],
           failedNode: result.failedNode,
         }
       }
@@ -455,6 +500,7 @@ export async function executeWorkflowAgentPlan(input: {
         objective: input.objective,
         ...(input.attachments != null && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
         state: stateSnapshot,
+        skippedNodeIds,
         dispatch: input.dispatch,
         parallel: readyNodes.length > 1,
         ...(input.fallbackAgentId != null ? { fallbackAgentId: input.fallbackAgentId } : {}),
@@ -484,13 +530,14 @@ export async function executeWorkflowAgentPlan(input: {
         state,
         executions,
         atomicExecutions,
+        skippedNodeIds: [...skippedNodeIds],
         failedNode: failedResult.failedNode,
       }
     }
   }
 
   await emitSnapshot('completed')
-  return { status: 'completed', state, executions, atomicExecutions }
+  return { status: 'completed', state, executions, atomicExecutions, skippedNodeIds: [...skippedNodeIds] }
 }
 
 type WorkflowAgentNodeResult =
@@ -535,6 +582,7 @@ async function executeWorkflowAtomicNode(input: {
   objective: string
   attachments?: WorkflowDispatchAttachment[]
   state: WorkflowState
+  skippedNodeIds: ReadonlySet<string>
   dispatch: (
     request: WorkflowAgentDispatchRequest,
     options?: WorkflowAgentDispatchOptions,
@@ -606,13 +654,15 @@ function buildWorkflowAtomicNodeExecutionRequest(input: {
   node: NormalizedWorkflowNode
   objective: string
   state: WorkflowState
+  skippedNodeIds: ReadonlySet<string>
 }): WorkflowAtomicNodeExecutionRequest {
   return {
     nodeId: input.node.id,
     kind: input.node.kind,
     title: input.node.title,
     objective: input.objective,
-    inputs: buildWorkflowNodeInputs(input.node.id, input.graph, input.state),
+    inputs: buildWorkflowNodeInputs(input.node.id, input.graph, input.state, input.skippedNodeIds),
+    skippedNodeIds: [...input.skippedNodeIds],
     config: input.node.config,
   }
 }
@@ -623,6 +673,7 @@ async function executeWorkflowLoopNode(input: {
   objective: string
   attachments?: WorkflowDispatchAttachment[]
   state: WorkflowState
+  skippedNodeIds: ReadonlySet<string>
   dispatch: (
     request: WorkflowAgentDispatchRequest,
     options?: WorkflowAgentDispatchOptions,
@@ -654,7 +705,7 @@ async function executeWorkflowLoopNode(input: {
   const breakCondition = normalizeWorkflowEdgeCondition(input.node.config.breakCondition)
   const iterationContents: string[] = []
   let iterationState: WorkflowState = {
-    ...buildWorkflowNodeInputs(input.node.id, input.graph, input.state),
+    ...buildWorkflowNodeInputs(input.node.id, input.graph, input.state, input.skippedNodeIds),
   }
   let lastContent = ''
 
@@ -766,6 +817,7 @@ async function executeWorkflowAgentNode(input: {
   objective: string
   attachments?: WorkflowDispatchAttachment[]
   state: WorkflowState
+  skippedNodeIds: ReadonlySet<string>
   dispatch: (
     request: WorkflowAgentDispatchRequest,
     options?: WorkflowAgentDispatchOptions,
@@ -826,7 +878,7 @@ async function executeWorkflowAgentNode(input: {
     nodeId: node.id,
     agentId,
     instruction,
-    inputs: buildWorkflowNodeInputs(node.id, input.graph, input.state),
+    inputs: buildWorkflowNodeInputs(node.id, input.graph, input.state, input.skippedNodeIds),
     ...(input.attachments != null && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
   }
   // 任务 1：subagent.parallelism 真实 fan-out。仅 subagent 节点读取，agent 节点忽略（恒为 1）。
