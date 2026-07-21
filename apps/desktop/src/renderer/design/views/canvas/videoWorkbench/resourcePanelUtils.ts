@@ -129,6 +129,15 @@ export function indexResourcesById(resources: WorkbenchResource[]): Map<string, 
   return map
 }
 
+/** 旧版独立源视频只在尚未迁入资源面板且轨道为空时自动加入一次。 */
+export function shouldSeedSourceTrack(
+  track: TrackClip[],
+  resources: WorkbenchResource[],
+  sourceResourceId: string,
+): boolean {
+  return track.length === 0 && !resources.some((resource) => resource.id === sourceResourceId)
+}
+
 /** 给定资源 id，返回是否已加入轨道（任一 TrackClip 引用即视为已加入）。 */
 export function isResourceUsedInTrack(track: TrackClip[], resourceId: string): boolean {
   if (!Array.isArray(track) || !resourceId) return false
@@ -209,6 +218,38 @@ export function removeTrackClip(track: TrackClip[], clipId: string): TrackClip[]
   if (!Array.isArray(track) || track.length === 0) return track.slice()
   const next = track.filter((c) => c.id !== clipId)
   return next.map((clip, i) => ({ ...clip, order: i }))
+}
+
+/** 在片段内部按偏移秒数切成前后两段；边界位置不切分。 */
+export function splitTrackClip(
+  track: TrackClip[],
+  resourcesById: Map<string, WorkbenchResource>,
+  clipId: string,
+  offsetSec: number,
+): TrackClip[] {
+  const sorted = track.slice().sort((a, b) => a.order - b.order)
+  const index = sorted.findIndex((clip) => clip.id === clipId)
+  const original = sorted[index]
+  if (!original) return track.slice()
+  const clip: TrackClip = { ...original }
+  sorted[index] = clip
+  const resource = resourcesById.get(clip.resourceId)
+  const duration = clipDurationSec(clip, resource)
+  if (offsetSec <= 0.1 || offsetSec >= duration - 0.1) return track.slice()
+
+  const second: TrackClip = { ...clip, id: generateClipId() }
+  if (resource?.kind === 'image') {
+    clip.staticDuration = offsetSec
+    second.staticDuration = duration - offsetSec
+  } else {
+    const startSec = clip.range?.startSec ?? 0
+    const endSec = clip.range?.endSec ?? resource?.durationSec ?? duration
+    const splitSec = startSec + offsetSec
+    clip.range = { startSec, endSec: splitSec }
+    second.range = { startSec: splitSec, endSec }
+  }
+  sorted.splice(index + 1, 0, second)
+  return sorted.map((item, order) => ({ ...item, order }))
 }
 
 /**

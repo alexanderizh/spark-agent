@@ -7892,6 +7892,7 @@ export function CanvasWorkspaceView({
             onAddImageAtPosition={uploadFirstImage}
             onDropFiles={handleDropFiles}
             onAddDirectorStage3DAtPosition={addDirectorStage3D}
+            onAddVideoWorkbenchAtPosition={addVideoWorkbench}
             onInsertAssetFromPane={onInsertAssetFromPaneStable}
             onCreateOperationAtPosition={handleCreateOperationAtPosition}
             onCreatePipelineAtPosition={handleCreatePipelineAtPosition}

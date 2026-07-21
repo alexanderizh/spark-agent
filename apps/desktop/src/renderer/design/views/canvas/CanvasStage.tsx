@@ -332,11 +332,13 @@ function CanvasPaneResourceNodeActions({
   onAddText,
   onAddImage,
   onAddDirectorStage3D,
+  onAddVideoWorkbench,
   onInsertAsset,
 }: {
   onAddText?: (() => void) | undefined
   onAddImage?: (() => void) | undefined
   onAddDirectorStage3D?: (() => void) | undefined
+  onAddVideoWorkbench?: (() => void) | undefined
   onInsertAsset?: (() => void) | undefined
 }) {
   return (
@@ -357,6 +359,12 @@ function CanvasPaneResourceNodeActions({
         <button type="button" role="menuitem" onClick={onAddDirectorStage3D}>
           <Icons.Box size={14} />
           <span>新建 3D 导演台</span>
+        </button>
+      )}
+      {onAddVideoWorkbench && (
+        <button type="button" role="menuitem" onClick={onAddVideoWorkbench}>
+          <Icons.Video size={14} />
+          <span>新建视频工作台</span>
         </button>
       )}
       {onInsertAsset && (
@@ -655,6 +663,7 @@ function CanvasStageInner({
   onAddImageAtPosition,
   onDropFiles,
   onAddDirectorStage3DAtPosition,
+  onAddVideoWorkbenchAtPosition,
   onInsertAssetFromPane,
   onDeleteSelectedNodes,
   onCreateOperationAtPosition,
@@ -726,6 +735,8 @@ function CanvasStageInner({
   onDropFiles?: (position: CanvasStagePoint, files: File[]) => void
   /** 空白右键：新建真·3D 导演台节点 */
   onAddDirectorStage3DAtPosition?: CanvasStageCreateAction
+  /** 空白右键或拖线菜单：新建视频工作台节点 */
+  onAddVideoWorkbenchAtPosition?: CanvasStageCreateAction
   /** 空白右键：从资产插入（打开资产面板） */
   onInsertAssetFromPane?: (
     position: CanvasStagePoint,
@@ -1735,6 +1746,11 @@ function CanvasStageInner({
     void runPaneCreateAction(onAddDirectorStage3DAtPosition)
   }, [onAddDirectorStage3DAtPosition, runPaneCreateAction])
 
+  const handleAddVideoWorkbenchFromPane = useCallback(() => {
+    if (!onAddVideoWorkbenchAtPosition) return
+    void runPaneCreateAction(onAddVideoWorkbenchAtPosition)
+  }, [onAddVideoWorkbenchAtPosition, runPaneCreateAction])
+
   const handleInsertAssetFromPane = useCallback(() => {
     if (!paneContextMenu) return
     const position = paneContextMenu.flowPosition
@@ -2596,6 +2612,9 @@ function CanvasStageInner({
                     onAddDirectorStage3DAtPosition
                       ? handleAddDirectorStage3DFromPane
                       : undefined
+                  }
+                  onAddVideoWorkbench={
+                    onAddVideoWorkbenchAtPosition ? handleAddVideoWorkbenchFromPane : undefined
                   }
                   onInsertAsset={onInsertAssetFromPane ? handleInsertAssetFromPane : undefined}
                 />

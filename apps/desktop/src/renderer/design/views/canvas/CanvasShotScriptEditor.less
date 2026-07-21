@@ -338,22 +338,8 @@
   font-size: 10px;
 }
 
-.canvas-storyboard-field :where(.ant-input, .ant-input-affix-wrapper, textarea.ant-input) {
-  border-color: color-mix(in srgb, var(--divider) 72%, transparent) !important;
-  border-radius: 9px;
-  background: color-mix(in srgb, #ffffff 4%, transparent) !important;
-  color: var(--text-strong);
-  box-shadow: none !important;
-}
-
-.canvas-storyboard-field :where(.ant-input, .ant-input-affix-wrapper, textarea.ant-input):hover {
-  border-color: color-mix(in srgb, var(--primary) 46%, transparent) !important;
-}
-
-.canvas-storyboard-field :where(.ant-input, .ant-input-affix-wrapper, textarea.ant-input):focus,
-.canvas-storyboard-field .ant-input-affix-wrapper-focused {
-  border-color: var(--primary) !important;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 14%, transparent) !important;
+.canvas-storyboard-field :where(.ant-input, .ant-input-affix-wrapper) {
+  min-height: 40px;
 }
 
 .canvas-storyboard-field textarea.ant-input {

@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 import { message } from 'antd'
 import { encodeToSafeFileUrl } from '../canvas-safe-file'
+import { isVideoWorkbenchUpstreamEdge } from '../canvasConnectionSemantics'
 import type { CanvasNode, CanvasSnapshot } from '../canvas.types'
 import type { CanvasResourceOption, LocalResourceFile } from './CanvasVideoWorkbenchModal'
 
@@ -115,7 +116,7 @@ export function useCanvasVideoWorkbenchResources({
     if (!snapshot || !workbenchNodeId) return []
     const upstreamNodeIds = new Set(
       snapshot.edges
-        .filter((edge) => edge.targetNodeId === workbenchNodeId && edge.type === 'used_as_input')
+        .filter((edge) => isVideoWorkbenchUpstreamEdge(edge, workbenchNodeId))
         .map((edge) => edge.sourceNodeId),
     )
     const resources: CanvasResourceOption[] = []

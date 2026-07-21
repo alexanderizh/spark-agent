@@ -69,7 +69,7 @@ function snapshot(node: CanvasNode): CanvasSnapshot {
 }
 
 describe('CanvasOperationWorkbench', () => {
-  it('places node settings after task config and keeps it available without outputs', async () => {
+  it('places history after node settings and keeps settings available without outputs', async () => {
     const node = operationNode()
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -92,13 +92,13 @@ describe('CanvasOperationWorkbench', () => {
     )
     expect(tabs.map((tab) => tab.textContent?.trim())).toEqual([
       '产物',
-      '运行历史',
       '任务配置',
       '节点设置',
+      '运行历史',
     ])
-    expect(tabs[3]?.disabled).toBe(false)
+    expect(tabs[2]?.disabled).toBe(false)
 
-    await act(async () => tabs[3]?.click())
+    await act(async () => tabs[2]?.click())
     expect(container.querySelector<HTMLInputElement>('[aria-label="节点名称"]')?.value).toBe(
       '海边日落',
     )

@@ -22,7 +22,10 @@
   color: var(--text);
   background: var(--bg);
 
-  :where(button, [role='button'], input, textarea, select):focus-visible {
+  :where(button, [role='button'], select):focus-visible,
+  :where(input, textarea):not(.ant-input):not(.ant-input-number-input):not(
+      .ant-select-selection-search-input
+    ):focus-visible {
     outline: 2px solid color-mix(in srgb, var(--primary) 70%, transparent);
     outline-offset: 2px;
   }

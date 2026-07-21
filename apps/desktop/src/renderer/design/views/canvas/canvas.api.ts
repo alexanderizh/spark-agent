@@ -16,6 +16,7 @@ import type {
   ShotScriptConfig,
 } from './canvas.types'
 import { getCanvasCapability, isOperationNode } from './canvas.capabilities'
+import { inferCanvasConnectionType } from './canvasConnectionSemantics'
 import { encodeToSafeFileUrl, readFileAsDataUrl, resolveMediaDisplayUrl } from './canvas-safe-file'
 import {
   filmKindToAssetType,
@@ -3844,13 +3845,7 @@ export const canvasApi = {
     const board = db.boards.find((item) => item.projectId === projectId)
     if (!source || !target || !board) return this.openSnapshot(projectId)
 
-    const edgeType: CanvasEdge['type'] =
-      input.type ??
-      (target.type === 'task' || isOperationNode(target)
-        ? 'used_as_input'
-        : source.type === 'task' || isOperationNode(source)
-          ? 'generated'
-          : 'references')
+    const edgeType: CanvasEdge['type'] = input.type ?? inferCanvasConnectionType(source, target)
     const duplicate = db.edges.some(
       (edge) =>
         edge.projectId === projectId &&

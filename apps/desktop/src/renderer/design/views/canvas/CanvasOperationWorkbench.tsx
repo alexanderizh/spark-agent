@@ -179,9 +179,9 @@ export function CanvasOperationWorkbench({
         <div className="canvas-operation-workbench-head">
           <div className="canvas-operation-workbench-tabs">
             {tabButton('output', '产物', <Icons.File size={13} />, outputCount)}
-            {tabButton('history', '运行历史', <Icons.RotateCcw size={13} />, runs.length)}
             {tabButton('config', '任务配置', <Icons.Settings size={13} />)}
             {tabButton('settings', '节点设置', <Icons.Edit size={13} />)}
+            {tabButton('history', '运行历史', <Icons.RotateCcw size={13} />, runs.length)}
           </div>
           {activeTab === 'output' && activeRun && activeOutput ? (
             <div className="canvas-operation-workbench-context">
