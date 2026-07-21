@@ -163,6 +163,107 @@ const wanVideoEditSchema = {
   },
 }
 
+/**
+ * 构造 qwen-image-2.0 系列的 manifest（文生图 + 图生图二合一）。
+ * 2.0 全系列（别名版与带日期快照）的参数 schema、请求结构、安全约束完全一致，
+ * 差异仅在 modelId / displayName，因此用工厂统一生成，避免逐个手写高度重复的字面量。
+ */
+function createQwenImageManifest(input: {
+  modelId: string
+  displayName: string
+}): MediaModelManifest {
+  return {
+    id: `bailian:${input.modelId}`,
+    providerKind: 'bailian',
+    modelId: input.modelId,
+    displayName: input.displayName,
+    domains: ['image'],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: {
+          types: ['image'] as MediaManifestOutputKind[],
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
+        paramSchema: bailianQwenImageSchema,
+        defaults: { size: '2048*2048', n: 1, prompt_extend: true, watermark: false },
+      },
+      {
+        id: 'image.edit',
+        label: '图生图 / 图片编辑',
+        input: {
+          required: ['prompt', 'image'] as MediaManifestInputKind[],
+          maxImages: 3,
+          acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
+        output: {
+          types: ['image'] as MediaManifestOutputKind[],
+          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
+        paramSchema: bailianQwenImageSchema,
+        defaults: { size: '2048*2048', n: 1, prompt_extend: true, watermark: false },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/multimodal-generation/generation',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: {
+          messages: [
+            {
+              role: 'user',
+              content: '{{content}}',
+            },
+          ],
+        },
+        parameters: {
+          size: '{{size}}',
+          n: '{{n}}',
+          negative_prompt: '{{negative_prompt}}',
+          prompt_extend: '{{prompt_extend}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'url',
+        jsonPaths: ['output.choices[].message.content[].image'],
+        download: true,
+      },
+    },
+    docs: {
+      sourceUrls: [
+        'https://help.aliyun.com/zh/model-studio/qwen-image-api',
+        'https://help.aliyun.com/zh/model-studio/qwen-image-edit-api',
+      ],
+      lastCheckedAt: '2026-07-22',
+    },
+    safety: {
+      maxPromptLength: 1300,
+      promptLengthUnit: 'tokens',
+      promptOverflowBehavior: 'truncate',
+      allowLocalFiles: true,
+      maxInputBytes: 50 * 1024 * 1024,
+    },
+  }
+}
+
+/**
+ * qwen-image-2.0 系列带日期历史快照。参数与别名版（qwen-image-2.0 / qwen-image-2.0-pro）完全一致，
+ * 仅 modelId 不同；保留快照可锁定历史版本以保证生成结果可复现。顺序：pro 最新 → 最旧，再 2.0。
+ */
+const qwenImageSnapshotManifests: MediaModelManifest[] = [
+  { modelId: 'qwen-image-2.0-pro-2026-06-22', displayName: 'Qwen Image 2.0 Pro (2026-06-22)' },
+  { modelId: 'qwen-image-2.0-pro-2026-04-22', displayName: 'Qwen Image 2.0 Pro (2026-04-22)' },
+  { modelId: 'qwen-image-2.0-pro-2026-03-03', displayName: 'Qwen Image 2.0 Pro (2026-03-03)' },
+  { modelId: 'qwen-image-2.0-2026-03-03', displayName: 'Qwen Image 2.0 (2026-03-03)' },
+].map((item) => createQwenImageManifest(item))
+
 export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
   {
     id: 'bailian:wan2.7-image-pro',
@@ -494,6 +595,7 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       maxInputBytes: 50 * 1024 * 1024,
     },
   },
+  ...qwenImageSnapshotManifests,
   {
     id: 'bailian:wan2.7-i2v-2026-04-25',
     providerKind: 'bailian',
@@ -652,6 +754,83 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
     },
     docs: { sourceUrls: ['https://help.aliyun.com/zh/model-studio/text-to-video-guide'] },
+    safety: {
+      maxPromptLength: 5000,
+      promptLengthUnit: 'characters',
+      promptOverflowBehavior: 'truncate',
+      allowLocalFiles: true,
+      maxInputBytes: 100 * 1024 * 1024,
+    },
+  },
+  {
+    id: 'bailian:wan2.7-t2v-2026-04-25',
+    providerKind: 'bailian',
+    modelId: 'wan2.7-t2v-2026-04-25',
+    displayName: 'Wan 2.7 Text-to-Video (2026-04-25)',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '文生视频',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: wanTextToVideoSchema,
+        aliases: {
+          aspectRatio: 'ratio',
+          durationSeconds: 'duration',
+          promptExtend: 'prompt_extend',
+        },
+        defaults: {
+          resolution: '1080P',
+          ratio: '16:9',
+          duration: 5,
+          prompt_extend: true,
+          watermark: false,
+        },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/video-generation/video-synthesis',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: {
+          prompt: '{{prompt}}',
+          negative_prompt: '{{negativePrompt}}',
+          audio_url: '{{audio}}',
+        },
+        parameters: {
+          resolution: '{{resolution}}',
+          ratio: '{{ratio}}',
+          duration: '{{duration}}',
+          prompt_extend: '{{prompt_extend}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['output.task_id', 'task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: [
+          'output.video_url',
+          'data[].video_url',
+          'data[].url',
+          'data.video_url',
+          'output.url',
+          'video_url',
+          'url',
+        ],
+      },
+      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+    },
+    docs: {
+      sourceUrls: ['https://help.aliyun.com/zh/model-studio/text-to-video-api-reference'],
+      lastCheckedAt: '2026-07-22',
+    },
     safety: {
       maxPromptLength: 5000,
       promptLengthUnit: 'characters',
@@ -1145,6 +1324,67 @@ export const BAILIAN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       sourceUrls: [
         'https://help.aliyun.com/zh/model-studio/happyhorse-reference-to-video-api-reference',
       ],
+    },
+    safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:happyhorse-1.0-r2v',
+    providerKind: 'bailian',
+    modelId: 'happyhorse-1.0-r2v',
+    displayName: 'HappyHorse 1.0 Reference-to-Video',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.image_to_video',
+        label: '参考生视频',
+        input: {
+          required: ['prompt', 'image'] as MediaManifestInputKind[],
+          maxImages: 9,
+          acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'],
+        },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: happyhorseTextOrReferenceVideoSchema,
+        defaults: { resolution: '1080P', ratio: '16:9', duration: 5, watermark: true },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/video-generation/video-synthesis',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: { prompt: '{{prompt}}', media: '{{media}}' },
+        parameters: {
+          resolution: '{{resolution}}',
+          ratio: '{{ratio}}',
+          duration: '{{duration}}',
+          watermark: '{{watermark}}',
+          seed: '{{seed}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['output.task_id', 'task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: [
+          'output.video_url',
+          'data[].video_url',
+          'data[].url',
+          'data.video_url',
+          'output.url',
+          'video_url',
+          'url',
+        ],
+      },
+      polling: { intervalMs: 15000, timeoutMs: 1800000, statusMap: bailianVideoStatusMap },
+    },
+    docs: {
+      sourceUrls: [
+        'https://help.aliyun.com/zh/model-studio/happyhorse-reference-to-video-api-reference',
+      ],
+      lastCheckedAt: '2026-07-22',
     },
     safety: { maxPromptLength: 5000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
   },

@@ -2163,7 +2163,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       displayName: 'APIMart GPT-Image-1',
     },
     {
-      id: 'apimart:gpt-image-1-5-official',
+      id: 'apimart:gpt-image-1.5-official',
       modelId: 'gpt-image-1.5-official',
       displayName: 'APIMart GPT-Image-1.5',
     },
@@ -2955,6 +2955,13 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
   },
   ...VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS,
   ...[
+    {
+      id: 'kling:kling-video-3.0',
+      modelId: 'kling-video-3.0',
+      displayName: 'Kling 3.0',
+      modes: ['standard', 'professional'],
+      audio: true,
+    },
     {
       id: 'kling:kling-video-3.0-omni',
       modelId: 'kling-video-3.0-omni',

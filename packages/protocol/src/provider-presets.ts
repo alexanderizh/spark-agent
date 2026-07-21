@@ -1684,7 +1684,16 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'openai',
     apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
     defaultModel: 'wan2.7-image-pro',
-    modelIds: ['wan2.7-image-pro', 'wan2.7-image', 'qwen-image-2.0-pro', 'qwen-image-2.0'],
+    modelIds: [
+      'wan2.7-image-pro',
+      'wan2.7-image',
+      'qwen-image-2.0-pro',
+      'qwen-image-2.0-pro-2026-06-22',
+      'qwen-image-2.0-pro-2026-04-22',
+      'qwen-image-2.0-pro-2026-03-03',
+      'qwen-image-2.0',
+      'qwen-image-2.0-2026-03-03',
+    ],
     modelType: 'image',
     mediaProvider: 'bailian',
     mediaApiType: 'async',
@@ -1693,7 +1702,27 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       { manifestId: 'bailian:wan2.7-image-pro', modelId: 'wan2.7-image-pro', enabled: true },
       { manifestId: 'bailian:wan2.7-image', modelId: 'wan2.7-image', enabled: true },
       { manifestId: 'bailian:qwen-image-2.0-pro', modelId: 'qwen-image-2.0-pro', enabled: true },
+      {
+        manifestId: 'bailian:qwen-image-2.0-pro-2026-06-22',
+        modelId: 'qwen-image-2.0-pro-2026-06-22',
+        enabled: true,
+      },
+      {
+        manifestId: 'bailian:qwen-image-2.0-pro-2026-04-22',
+        modelId: 'qwen-image-2.0-pro-2026-04-22',
+        enabled: true,
+      },
+      {
+        manifestId: 'bailian:qwen-image-2.0-pro-2026-03-03',
+        modelId: 'qwen-image-2.0-pro-2026-03-03',
+        enabled: true,
+      },
       { manifestId: 'bailian:qwen-image-2.0', modelId: 'qwen-image-2.0', enabled: true },
+      {
+        manifestId: 'bailian:qwen-image-2.0-2026-03-03',
+        modelId: 'qwen-image-2.0-2026-03-03',
+        enabled: true,
+      },
     ],
     mediaDefaults: {
       image: { size: '2K', n: 1 },
@@ -1714,6 +1743,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'happyhorse-1.1-i2v',
       'happyhorse-1.0-i2v',
       'happyhorse-1.1-r2v',
+      'happyhorse-1.0-r2v',
       'happyhorse-1.0-video-edit',
     ],
     modelType: 'video',
@@ -1726,6 +1756,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       { manifestId: 'bailian:happyhorse-1.1-i2v', modelId: 'happyhorse-1.1-i2v', enabled: true },
       { manifestId: 'bailian:happyhorse-1.0-i2v', modelId: 'happyhorse-1.0-i2v', enabled: true },
       { manifestId: 'bailian:happyhorse-1.1-r2v', modelId: 'happyhorse-1.1-r2v', enabled: true },
+      { manifestId: 'bailian:happyhorse-1.0-r2v', modelId: 'happyhorse-1.0-r2v', enabled: true },
       {
         manifestId: 'bailian:happyhorse-1.0-video-edit',
         modelId: 'happyhorse-1.0-video-edit',
@@ -1752,6 +1783,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     defaultModel: 'wan2.7-t2v-2026-06-12',
     modelIds: [
       'wan2.7-t2v-2026-06-12',
+      'wan2.7-t2v-2026-04-25',
       'wan2.7-i2v-2026-04-25',
       'wan2.7-r2v-2026-06-12',
       'wan2.7-videoedit',
@@ -1767,6 +1799,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaModelRefs: [
       { manifestId: 'bailian:wan2.7-t2v', modelId: 'wan2.7-t2v-2026-06-12', enabled: true },
+      {
+        manifestId: 'bailian:wan2.7-t2v-2026-04-25',
+        modelId: 'wan2.7-t2v-2026-04-25',
+        enabled: true,
+      },
       {
         manifestId: 'bailian:wan2.7-i2v-2026-04-25',
         modelId: 'wan2.7-i2v-2026-04-25',
