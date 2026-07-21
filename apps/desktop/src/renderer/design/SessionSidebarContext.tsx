@@ -492,7 +492,9 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           prev.map((item) => {
             if (item.id !== snapshot.sessionId) return item
             if (snapshot.running)
-              return item.status === 'running' ? item : { ...item, status: 'running' }
+              return item.status === 'running'
+                ? item
+                : { ...item, status: 'running', updatedAt: new Date().toISOString() }
             return item.status === 'running' ? { ...item, status: 'idle' } : item
           }),
         )
@@ -518,7 +520,9 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
             if (terminal) {
               return item.status === 'running' ? { ...item, status: 'idle' } : item
             }
-            return item.status === 'running' ? item : { ...item, status: 'running' }
+            return item.status === 'running'
+              ? item
+              : { ...item, status: 'running', updatedAt: new Date().toISOString() }
           }),
         )
         setSessionAgentStatuses((prev) => {
