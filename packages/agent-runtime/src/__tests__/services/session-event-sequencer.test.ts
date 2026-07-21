@@ -136,4 +136,64 @@ describe('SessionEventSequencer', () => {
       expect(publish).toHaveBeenCalledWith(event)
     },
   )
+
+  it('persists every non-delta subagent lifecycle event with its correlation fields', () => {
+    const events = [
+      {
+        id: 'subagent-started',
+        type: 'subagent_started',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        timestamp: '2026-07-22T00:00:00.000Z',
+        seq: 10,
+        toolCallId: 'tool-1',
+        taskId: 'task-1',
+        name: 'researcher',
+        role: 'Research',
+        task: 'Inspect persistence.',
+      },
+      {
+        id: 'subagent-progress',
+        type: 'subagent_progress',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        timestamp: '2026-07-22T00:00:01.000Z',
+        seq: 11,
+        toolCallId: 'tool-1',
+        taskId: 'task-1',
+        summary: 'Checking storage',
+        status: 'running',
+      },
+      {
+        id: 'subagent-completed',
+        type: 'subagent_completed',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        timestamp: '2026-07-22T00:00:02.000Z',
+        seq: 12,
+        toolCallId: 'tool-1',
+        taskId: 'task-1',
+        name: 'researcher',
+        status: 'success',
+        resultSummary: 'Storage verified',
+        output: 'Full persisted result',
+      },
+    ] as AgentEvent[]
+    const repo = { insertBatch: vi.fn() }
+
+    persistAndPublishAgentEvents(repo, events, vi.fn())
+
+    const rows = repo.insertBatch.mock.calls[0]?.[0] as Array<{ eventJson: string }> | undefined
+    expect(rows).toHaveLength(3)
+    expect(rows?.map((row) => JSON.parse(row.eventJson))).toMatchObject([
+      { type: 'subagent_started', taskId: 'task-1', task: 'Inspect persistence.' },
+      { type: 'subagent_progress', taskId: 'task-1', summary: 'Checking storage' },
+      {
+        type: 'subagent_completed',
+        taskId: 'task-1',
+        resultSummary: 'Storage verified',
+        output: 'Full persisted result',
+      },
+    ])
+  })
 })

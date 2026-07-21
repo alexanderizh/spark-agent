@@ -739,6 +739,7 @@ export function SubagentCard({
   tokens,
   output,
   progressSummary,
+  resultSummary,
   lastToolName,
   toolUses,
   durationMs,
@@ -752,6 +753,7 @@ export function SubagentCard({
   tokens: string
   output?: string | undefined
   progressSummary?: string | undefined
+  resultSummary?: string | undefined
   lastToolName?: string | undefined
   toolUses?: number | undefined
   durationMs?: number | undefined
@@ -776,7 +778,13 @@ export function SubagentCard({
       : t('chat.subagent.defaultName')
   const taskPreview = taskText.length > 0 ? clipSubagentLabel(firstTaskLine(taskText), 86) : ''
   const progressText = progressSummary?.trim() ?? ''
-  const activityText = [progressText, lastToolName]
+  const resultSummaryText = resultSummary?.trim() ?? ''
+  const activityText = [
+    status === 'done' || status === 'error' || status === 'stopped'
+      ? resultSummaryText || progressText
+      : progressText,
+    lastToolName,
+  ]
     .filter(
       (item, index, items) => item != null && item.length > 0 && items.indexOf(item) === index,
     )
@@ -786,15 +794,25 @@ export function SubagentCard({
     .join(' · ')
   const outputText = output?.trim() ?? ''
   const hasInternalOutput = outputText.length > 0 && isAsyncSubagentLaunchMetadata(outputText)
-  const displayOutput = hasInternalOutput ? '' : outputText
+  const displayOutput =
+    hasInternalOutput || outputText === taskText || outputText === progressText ? '' : outputText
   const hasDisplayOutput = displayOutput.length > 0
+  const displayProgress = progressText.length > 0 && progressText !== taskText ? progressText : ''
+  const displayResultSummary =
+    resultSummaryText.length > 0 &&
+    resultSummaryText !== taskText &&
+    resultSummaryText !== displayProgress &&
+    resultSummaryText !== displayOutput
+      ? resultSummaryText
+      : ''
   const transcriptEntries = transcript?.filter((entry) => entry.content.trim().length > 0) ?? []
   const hasTranscript = transcriptEntries.length > 0
   const isExpandable =
     taskText.length > 0 ||
     hasDisplayOutput ||
     hasInternalOutput ||
-    progressText.length > 0 ||
+    displayProgress.length > 0 ||
+    displayResultSummary.length > 0 ||
     hasTranscript
   const statusLabel =
     status === 'done'
@@ -883,13 +901,19 @@ export function SubagentCard({
               <div className="subagent-task-full">{taskText}</div>
             </section>
           )}
-          {progressText.length > 0 && (
+          {displayProgress.length > 0 && (
             <section className="subagent-detail-section">
               <div className="subagent-detail-label">{t('chat.subagent.progressLabel')}</div>
-              <div className="subagent-task-full">{progressText}</div>
+              <div className="subagent-task-full">{displayProgress}</div>
               {activityStats.length > 0 && (
                 <div className="subagent-status-note">{activityStats}</div>
               )}
+            </section>
+          )}
+          {displayResultSummary.length > 0 && (
+            <section className="subagent-detail-section">
+              <div className="subagent-detail-label">{t('chat.subagent.resultSummaryLabel')}</div>
+              <div className="subagent-task-full">{displayResultSummary}</div>
             </section>
           )}
           {hasTranscript && (
@@ -926,6 +950,13 @@ export function SubagentCard({
           {!hasDisplayOutput && !hasInternalOutput && !hasTranscript && status === 'running' && (
             <div className="subagent-status-note">{t('chat.subagent.waitingForResult')}</div>
           )}
+          {!hasDisplayOutput &&
+            !hasInternalOutput &&
+            !hasTranscript &&
+            (status === 'done' || status === 'error' || status === 'stopped') &&
+            displayResultSummary.length === 0 && (
+              <div className="subagent-status-note">{t('chat.subagent.noAdditionalResult')}</div>
+            )}
         </div>
       )}
     </div>

@@ -26,7 +26,7 @@ vi.mock('./components/FileDisplay', () => ({
   getFileTypeBadge: () => ({ label: 'TS', tone: 'code' }),
 }))
 
-const { TurnFileSummaryCard } = await import('./ChatInteractions')
+const { SubagentCard, TurnFileSummaryCard } = await import('./ChatInteractions')
 type FileChangeSummaryItem = import('./ChatInteractions').FileChangeSummaryItem
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -116,5 +116,93 @@ describe('TurnFileSummaryCard', () => {
     const path = container.querySelector('.file-path')
     expect(path?.textContent).toBe('packages/app/src/index.ts')
     expect(path?.getAttribute('title')).toBe(fullPath)
+  })
+})
+
+describe('SubagentCard', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    window.localStorage.setItem('spark-settings-general', JSON.stringify({ language: 'zh-CN' }))
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+    window.localStorage.clear()
+  })
+
+  it('does not present a repeated task label as progress or execution output', async () => {
+    await act(async () => {
+      root.render(
+        <SubagentCard
+          name="Subagent"
+          role="List ComfyUI embeddings"
+          task="List ComfyUI embeddings"
+          status="done"
+          tokens=""
+          progressSummary="List ComfyUI embeddings"
+          resultSummary="List ComfyUI embeddings"
+          output="List ComfyUI embeddings"
+        />,
+      )
+    })
+
+    await act(async () => container.querySelector<HTMLElement>('[role="button"]')?.click())
+
+    expect(container.textContent).toContain('任务说明')
+    expect(container.textContent).not.toContain('当前进度')
+    expect(container.textContent).not.toContain('执行结果')
+    expect(container.textContent).toContain('Provider 未提供额外的可读结果')
+  })
+
+  it('renders distinct progress, result summary, and structured full output separately', async () => {
+    await act(async () => {
+      root.render(
+        <SubagentCard
+          name="researcher"
+          role="Authentication specialist"
+          task="Trace authentication callbacks."
+          status="done"
+          tokens="640"
+          progressSummary="Reviewing callback registry"
+          resultSummary="Two callbacks verified"
+          output="Both callbacks preserve the permission scope."
+        />,
+      )
+    })
+
+    await act(async () => container.querySelector<HTMLElement>('[role="button"]')?.click())
+
+    expect(container.textContent).toContain('当前进度')
+    expect(container.textContent).toContain('Reviewing callback registry')
+    expect(container.textContent).toContain('结果摘要')
+    expect(container.textContent).toContain('Two callbacks verified')
+    expect(container.textContent).toContain('执行结果')
+    expect(container.textContent).toContain('Both callbacks preserve the permission scope.')
+  })
+
+  it('does not describe a paused subagent as ended', async () => {
+    await act(async () => {
+      root.render(
+        <SubagentCard
+          name="researcher"
+          role="Research"
+          task="Wait for user input."
+          status="paused"
+          tokens=""
+          output=""
+        />,
+      )
+    })
+
+    await act(async () => container.querySelector<HTMLElement>('[role="button"]')?.click())
+
+    expect(container.textContent).toContain('已暂停')
+    expect(container.textContent).not.toContain('任务已结束')
   })
 })

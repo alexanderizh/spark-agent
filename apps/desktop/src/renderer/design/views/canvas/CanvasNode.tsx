@@ -853,17 +853,6 @@ export const CanvasNode = memo(function CanvasNode({
           ),
           onClick: () => actions.duplicateNode(node.id),
         },
-        {
-          key: 'edit',
-          label: (
-            <span className="canvas-menu-item">
-              <Icons.Edit size={14} /> 编辑节点
-            </span>
-          ),
-          // 等下拉菜单先完成本次点击和关闭，避免其收尾事件立即关掉刚打开的面板。
-          // editNode 与节点双击共用同一入口：操作节点打开任务配置，内容节点打开内容编辑。
-          onClick: () => window.requestAnimationFrame(() => actions.editNode(node.id)),
-        },
         ...(isImageContent && hasOperationOutput
           ? [
               ...(canExtractCharacterSubview
@@ -1056,24 +1045,6 @@ export const CanvasNode = memo(function CanvasNode({
               { type: 'divider' as const },
             ]
           : []),
-        {
-          key: 'lock',
-          label: (
-            <span className="canvas-menu-item">
-              <Icons.Lock size={14} /> {locked ? '解锁节点' : '锁定节点'}
-            </span>
-          ),
-          onClick: () => actions.toggleLockNode(node.id),
-        },
-        {
-          key: 'front',
-          label: (
-            <span className="canvas-menu-item">
-              <Icons.Layers size={14} /> 置于顶层
-            </span>
-          ),
-          onClick: () => actions.bringNodeToFront(node.id),
-        },
         {
           key: 'delete',
           label: (

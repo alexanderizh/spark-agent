@@ -1278,4 +1278,331 @@ describe('MessageBuilder', () => {
     expect(transcript.at(-1)?.content).toBe(`new:${'b'.repeat(13_000)}`)
     expect(transcript[0]?.content.startsWith('old:')).toBe(false)
   })
+
+  it('keeps task, live progress, final summary, and full output as distinct lifecycle fields', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      type: 'subagent_started',
+      toolCallId: 'sa-lifecycle',
+      taskId: 'task-lifecycle',
+      name: 'researcher',
+      role: 'Authentication specialist',
+      task: 'Trace authentication callbacks and report concrete findings.',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_progress'),
+      id: 'subagent-progress-lifecycle',
+      type: 'subagent_progress',
+      toolCallId: 'sa-lifecycle',
+      taskId: 'task-lifecycle',
+      description: 'Inspect authentication',
+      summary: 'Reviewing the callback registry',
+      status: 'running',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_completed'),
+      id: 'subagent-completed-lifecycle',
+      type: 'subagent_completed',
+      toolCallId: 'sa-lifecycle',
+      taskId: 'task-lifecycle',
+      name: 'researcher',
+      status: 'success',
+      resultSummary: 'Two callbacks verified',
+      output: 'Both callbacks preserve the permission scope.',
+    } as AgentEvent)
+
+    const block = builder.getAllMessages()[0]?.blocks.find((item) => item.kind === 'subagent')
+    expect(block).toMatchObject({
+      kind: 'subagent',
+      task: 'Trace authentication callbacks and report concrete findings.',
+      progressSummary: 'Reviewing the callback registry',
+      resultSummary: 'Two callbacks verified',
+      output: 'Both callbacks preserve the permission scope.',
+      status: 'done',
+    })
+  })
+
+  it('correlates a task by taskId when the SDK tool call id becomes available later', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      type: 'subagent_started',
+      toolCallId: 'claude-task:task-late-tool-id',
+      taskId: 'task-late-tool-id',
+      name: 'researcher',
+      role: 'Research',
+      task: 'Inspect the SDK lifecycle.',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_progress'),
+      id: 'subagent-progress-late-tool-id',
+      type: 'subagent_progress',
+      toolCallId: 'tool-real-id',
+      taskId: 'task-late-tool-id',
+      summary: 'Reading SDK events',
+      status: 'running',
+    })
+
+    const blocks = builder
+      .getAllMessages()
+      .flatMap((message) => message.blocks)
+      .filter((block) => block.kind === 'subagent')
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toMatchObject({
+      kind: 'subagent',
+      taskId: 'task-late-tool-id',
+      toolCallId: 'tool-real-id',
+      task: 'Inspect the SDK lifecycle.',
+      progressSummary: 'Reading SDK events',
+    })
+  })
+
+  it('scopes reused subagent tool call ids to the originating turn', () => {
+    const builder = new MessageBuilder()
+    const start = (turnId: string, id: string, task: string): AgentEvent => ({
+      ...baseEvent('subagent_started'),
+      id,
+      turnId,
+      type: 'subagent_started',
+      toolCallId: 'reused-subagent-tool-id',
+      name: 'researcher',
+      role: 'Research',
+      task,
+    })
+    const complete = (turnId: string, id: string, output: string): AgentEvent => ({
+      ...baseEvent('subagent_completed'),
+      id,
+      turnId,
+      type: 'subagent_completed',
+      toolCallId: 'reused-subagent-tool-id',
+      name: 'researcher',
+      status: 'success',
+      resultSummary: `${output} summary`,
+      output,
+    })
+
+    builder.processEvent(start('turn-1', 'subagent-start-turn-1', 'First turn task'))
+    builder.processEvent(complete('turn-1', 'subagent-complete-turn-1', 'First turn output'))
+    builder.processEvent(start('turn-2', 'subagent-start-turn-2', 'Second turn task'))
+    builder.processEvent(complete('turn-2', 'subagent-complete-turn-2', 'Second turn output'))
+
+    const blocksByTurn = new Map(
+      builder
+        .getAllMessages()
+        .map((message) => [
+          message.turnId,
+          message.blocks.filter((block) => block.kind === 'subagent'),
+        ]),
+    )
+    expect(blocksByTurn.get('turn-1')).toEqual([
+      expect.objectContaining({ task: 'First turn task', output: 'First turn output' }),
+    ])
+    expect(blocksByTurn.get('turn-2')).toEqual([
+      expect.objectContaining({ task: 'Second turn task', output: 'Second turn output' }),
+    ])
+  })
+
+  it('does not let late non-terminal events regress a completed subagent card', () => {
+    const builder = new MessageBuilder()
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      type: 'subagent_started',
+      toolCallId: 'sa-terminal',
+      taskId: 'task-terminal',
+      name: 'researcher',
+      role: 'Research',
+      task: 'Inspect terminal ordering.',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_completed'),
+      id: 'subagent-completed-terminal',
+      type: 'subagent_completed',
+      toolCallId: 'sa-terminal',
+      taskId: 'task-terminal',
+      name: 'researcher',
+      status: 'success',
+      resultSummary: 'Inspection complete',
+      output: 'Terminal result',
+      totalTokens: 500,
+      toolUses: 5,
+      durationMs: 2_000,
+    } as AgentEvent)
+    builder.processEvent({
+      ...baseEvent('subagent_progress'),
+      id: 'subagent-progress-late',
+      type: 'subagent_progress',
+      toolCallId: 'sa-terminal',
+      taskId: 'task-terminal',
+      summary: 'Stale running update',
+      totalTokens: 100,
+      toolUses: 1,
+      durationMs: 100,
+      status: 'running',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      id: 'subagent-started-late',
+      type: 'subagent_started',
+      toolCallId: 'sa-terminal',
+      taskId: 'task-terminal',
+      name: 'researcher',
+      role: 'Research',
+      task: 'Stale task text',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_completed'),
+      id: 'subagent-completed-late',
+      type: 'subagent_completed',
+      toolCallId: 'sa-terminal',
+      taskId: 'task-terminal',
+      name: 'researcher',
+      status: 'success',
+      resultSummary: 'Late shorter summary',
+      output: 'Late',
+      totalTokens: 50,
+      toolUses: 1,
+      durationMs: 50,
+    } as AgentEvent)
+    builder.processEvent({
+      ...baseEvent('subagent_completed'),
+      id: 'subagent-completed-contradictory',
+      type: 'subagent_completed',
+      toolCallId: 'sa-terminal',
+      taskId: 'task-terminal',
+      name: 'researcher',
+      status: 'error',
+      resultSummary: 'Contradictory late failure',
+      output: 'Contradictory late failure output that must not replace a successful result.',
+      totalTokens: 900,
+      toolUses: 9,
+      durationMs: 9_000,
+    } as AgentEvent)
+
+    const block = builder.getAllMessages()[0]?.blocks.find((item) => item.kind === 'subagent')
+    expect(block).toMatchObject({
+      kind: 'subagent',
+      status: 'done',
+      task: 'Inspect terminal ordering.',
+      resultSummary: 'Inspection complete',
+      output: 'Terminal result',
+      tokens: '500',
+      toolUses: 5,
+      durationMs: 2_000,
+    })
+  })
+
+  it('applies subagent errors only to the matching turn without regressing prior success', () => {
+    const builder = new MessageBuilder()
+    const start = (turnId: string, id: string, task: string): AgentEvent => ({
+      ...baseEvent('subagent_started'),
+      id,
+      turnId,
+      type: 'subagent_started',
+      toolCallId: 'reused-error-tool-id',
+      name: 'researcher',
+      role: 'Research',
+      task,
+    })
+
+    builder.processEvent(start('turn-1', 'error-scope-start-1', 'Completed task'))
+    builder.processEvent({
+      ...baseEvent('subagent_completed'),
+      id: 'error-scope-complete-1',
+      turnId: 'turn-1',
+      type: 'subagent_completed',
+      toolCallId: 'reused-error-tool-id',
+      name: 'researcher',
+      status: 'success',
+      resultSummary: 'Completed successfully',
+      output: 'Stable result',
+    })
+    builder.processEvent(start('turn-2', 'error-scope-start-2', 'Failing task'))
+    builder.processEvent({
+      ...baseEvent('agent_error'),
+      id: 'error-scope-agent-error',
+      turnId: 'turn-2',
+      type: 'agent_error',
+      code: 'CLAUDE_RATE_LIMIT',
+      message: 'Subagent request was rate limited.',
+      retryable: true,
+      origin: { kind: 'subagent', toolCallId: 'reused-error-tool-id', name: 'researcher' },
+    })
+
+    const subagentByTurn = new Map(
+      builder
+        .getAllMessages()
+        .map((message) => [
+          message.turnId,
+          message.blocks.find((block) => block.kind === 'subagent'),
+        ]),
+    )
+    expect(subagentByTurn.get('turn-1')).toMatchObject({
+      kind: 'subagent',
+      status: 'done',
+      resultSummary: 'Completed successfully',
+      output: 'Stable result',
+    })
+    expect(subagentByTurn.get('turn-2')).toMatchObject({
+      kind: 'subagent',
+      status: 'error',
+      resultSummary: 'Subagent request was rate limited.',
+    })
+  })
+
+  it('replays the persisted subagent lifecycle into the same card state', () => {
+    const events: AgentEvent[] = [
+      {
+        ...baseEvent('subagent_started'),
+        id: 'persisted-subagent-started',
+        type: 'subagent_started',
+        toolCallId: 'persisted-subagent-tool',
+        taskId: 'persisted-subagent-task',
+        name: 'researcher',
+        role: 'Research',
+        task: 'Inspect persisted lifecycle.',
+      },
+      {
+        ...baseEvent('subagent_progress'),
+        id: 'persisted-subagent-progress',
+        type: 'subagent_progress',
+        toolCallId: 'persisted-subagent-tool',
+        taskId: 'persisted-subagent-task',
+        summary: 'Reading persisted events',
+        totalTokens: 300,
+        status: 'running',
+      },
+      {
+        ...baseEvent('subagent_completed'),
+        id: 'persisted-subagent-completed',
+        type: 'subagent_completed',
+        toolCallId: 'persisted-subagent-tool',
+        taskId: 'persisted-subagent-task',
+        name: 'researcher',
+        status: 'success',
+        resultSummary: 'Replay verified',
+        output: 'Persisted full output',
+        totalTokens: 480,
+      } as AgentEvent,
+    ]
+    const replayed = JSON.parse(JSON.stringify(events)) as AgentEvent[]
+    const liveBuilder = new MessageBuilder()
+    const historyBuilder = new MessageBuilder()
+    for (const event of events) liveBuilder.processEvent(event)
+    for (const event of replayed) historyBuilder.processEvent(event)
+
+    expect(historyBuilder.getAllMessages()).toEqual(liveBuilder.getAllMessages())
+    expect(
+      historyBuilder.getAllMessages()[0]?.blocks.find((block) => block.kind === 'subagent'),
+    ).toMatchObject({
+      kind: 'subagent',
+      taskId: 'persisted-subagent-task',
+      status: 'done',
+      task: 'Inspect persisted lifecycle.',
+      progressSummary: 'Reading persisted events',
+      resultSummary: 'Replay verified',
+      output: 'Persisted full output',
+      tokens: '480',
+    })
+  })
 })

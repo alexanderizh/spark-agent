@@ -387,18 +387,18 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     {
       group: '通用',
       items: [
-        { id: 'general', icon: <Icons.Settings size={13} />, label: '通用' },
-        { id: 'appearance', icon: <Icons.Sparkles size={13} />, label: '外观' },
-        { id: 'shortcuts', icon: <Icons.Command size={13} />, label: '快捷键' },
+        { id: 'general', icon: <Icons.Settings size={13} />, label: '通用', keywords: ['语言', '启动', '开机自启', '通知', '默认会话'] },
+        { id: 'appearance', icon: <Icons.Sparkles size={13} />, label: '外观', keywords: ['主题', '暗黑', '深色', '浅色', '字体', '字号', '强调色', '动画'] },
+        { id: 'shortcuts', icon: <Icons.Command size={13} />, label: '快捷键', keywords: ['键盘', '绑定', '热键', 'shortcut'] },
       ],
     },
     {
       group: 'Agent',
       items: [
-        { id: 'rules', icon: <Icons.Beaker size={13} />, label: '规则' },
-        { id: 'custom-commands', icon: <Icons.Command size={13} />, label: '自定义命令' },
-        { id: 'permissions', icon: <Icons.Shield size={13} />, label: '权限策略' },
-        { id: 'memory', icon: <Icons.Brain size={13} />, label: '记忆' },
+        { id: 'rules', icon: <Icons.Beaker size={13} />, label: '规则', keywords: ['项目规则', 'AGENTS', 'CLAUDE', '约定'] },
+        { id: 'custom-commands', icon: <Icons.Command size={13} />, label: '自定义命令', keywords: ['斜杠命令', 'slash', '/命令', '指令'] },
+        { id: 'permissions', icon: <Icons.Shield size={13} />, label: '权限策略', keywords: ['自动执行', '允许', '拒绝', '审批', '权限'] },
+        { id: 'memory', icon: <Icons.Brain size={13} />, label: '记忆', keywords: ['长期记忆', '记忆库', '记住'] },
       ],
     },
     {
@@ -406,8 +406,8 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
       items: [
         // MCP 设置暂未完全实现，隐藏导航项
         // { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
-        { id: 'remote-connections', icon: <Icons.Globe size={13} />, label: '远程连接' },
-        { id: 'system-prompt', icon: <Icons.Chat size={13} />, label: '系统提示词' },
+        { id: 'remote-connections', icon: <Icons.Globe size={13} />, label: '远程连接', keywords: ['API Key', '供应商', 'Provider', '模型', '密钥', '渠道'] },
+        { id: 'system-prompt', icon: <Icons.Chat size={13} />, label: '系统提示词', keywords: ['身份', 'prompt', '提示词', '人设'] },
         // 工作流模板暂未实现，隐藏导航项
         // { id: 'workflows', icon: <Icons.Workflow />, label: '工作流模板' },
       ],
@@ -415,18 +415,28 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     {
       group: '系统',
       items: [
-        { id: 'integrity', icon: <Icons.Shield size={13} />, label: '完整性' },
-        { id: 'playwright', icon: <Icons.Globe size={13} />, label: '浏览器自动化' },
-        { id: 'usage', icon: <Icons.Activity size={13} />, label: '用量统计' },
-        { id: 'telemetry', icon: <Icons.Activity size={13} />, label: '本地日志' },
-        { id: 'hooks', icon: <Icons.Bell size={13} />, label: 'Hooks' },
-        { id: 'storage', icon: <Icons.Database size={13} />, label: '存储与备份' },
-        { id: 'archived', icon: <Icons.Archive size={13} />, label: '已归档' },
-        { id: 'updates', icon: <Icons.Refresh size={13} />, label: '更新' },
-        { id: 'about', icon: <Icons.Sparkles size={13} />, label: '关于' },
+        { id: 'integrity', icon: <Icons.Shield size={13} />, label: '完整性', keywords: ['校验', '修复', 'Chromium', '下载', '完整性'] },
+        { id: 'playwright', icon: <Icons.Globe size={13} />, label: '浏览器自动化', keywords: ['Playwright', '自动化', '网页', '爬虫', 'E2E'] },
+        { id: 'usage', icon: <Icons.Activity size={13} />, label: '用量统计', keywords: ['token', '额度', '统计', '消耗'] },
+        { id: 'telemetry', icon: <Icons.Activity size={13} />, label: '本地日志', keywords: ['日志', '调试', 'telemetry'] },
+        { id: 'hooks', icon: <Icons.Bell size={13} />, label: 'Hooks', keywords: ['钩子', '回调', '事件', '钩子函数'] },
+        { id: 'storage', icon: <Icons.Database size={13} />, label: '存储与备份', keywords: ['导出', '备份', '恢复', '清理', '缓存', '数据'] },
+        { id: 'archived', icon: <Icons.Archive size={13} />, label: '已归档', keywords: ['归档', '历史', '会话'] },
+        { id: 'updates', icon: <Icons.Refresh size={13} />, label: '更新', keywords: ['版本', '升级', '检查更新', 'release'] },
+        { id: 'about', icon: <Icons.Sparkles size={13} />, label: '关于', keywords: ['版本号', '信息', '关于本机', '应用'] },
       ],
     },
   ]
+  const [navQuery, setNavQuery] = React.useState('')
+  const navQ = navQuery.trim().toLowerCase()
+  const navItemMatches = (label: string, group: string, keywords: string[] = []) =>
+    !navQ ||
+    label.toLowerCase().includes(navQ) ||
+    group.toLowerCase().includes(navQ) ||
+    keywords.some((k) => k.toLowerCase().includes(navQ))
+  const navGroups = nav
+    .map((g) => ({ ...g, items: g.items.filter((it) => navItemMatches(it.label, g.group, it.keywords)) }))
+    .filter((g) => g.items.length > 0)
 
   const Section: Record<string, () => React.ReactElement> = {
     general: GeneralSection,
@@ -456,34 +466,51 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
 
   return (
     <div className="settings-layout">
-      <div className="settings-nav scroll">
-        <button
-          type="button"
-          className="settings-nav-return"
-          onClick={() => {
-            // workspace 已废弃，返回当前标准主会话页面。
-            setTweak('chatMode', 'vibe')
-            setTweak('view', 'chat')
-          }}
-        >
-          <Icons.ArrowLeft size={16} />
-          <span>返回工作台</span>
-        </button>
-        {nav.map((g) => (
-          <div key={g.group}>
-            <div className="settings-nav-h">{g.group}</div>
-            {g.items.map((it) => (
-              <button
-                key={it.id}
-                className={`nav-item ${section === it.id ? 'active' : ''}`}
-                onClick={() => setSection(it.id)}
-              >
-                <span className="nav-icon">{it.icon}</span>
-                <span className="nav-label">{it.label}</span>
-              </button>
-            ))}
-          </div>
-        ))}
+      <div className="settings-nav">
+        <div className="settings-nav-fixed">
+          <button
+            type="button"
+            className="settings-nav-return"
+            onClick={() => {
+              // workspace 已废弃，返回当前标准主会话页面。
+              setTweak('chatMode', 'vibe')
+              setTweak('view', 'chat')
+            }}
+          >
+            <Icons.ArrowLeft size={16} />
+            <span>返回工作台</span>
+          </button>
+          <Input
+            className="settings-nav-search"
+            size="middle"
+            allowClear
+            prefix={<Icons.Search size={14} />}
+            value={navQuery}
+            onChange={(e) => setNavQuery(e.target.value)}
+            placeholder="搜索设置..."
+          />
+        </div>
+        <div className="settings-nav-list scroll">
+          {navGroups.length === 0 ? (
+            <div className="settings-nav-empty">没有匹配的设置</div>
+          ) : (
+            navGroups.map((g) => (
+              <div key={g.group}>
+                <div className="settings-nav-h">{g.group}</div>
+                {g.items.map((it) => (
+                  <button
+                    key={it.id}
+                    className={`nav-item ${section === it.id ? 'active' : ''}`}
+                    onClick={() => setSection(it.id)}
+                  >
+                    <span className="nav-icon">{it.icon}</span>
+                    <span className="nav-label">{it.label}</span>
+                  </button>
+                ))}
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       <div className="settings-content scroll">

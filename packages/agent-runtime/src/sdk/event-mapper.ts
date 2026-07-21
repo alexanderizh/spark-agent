@@ -55,6 +55,25 @@ interface SubagentTaskState {
   skipTranscript: boolean
 }
 
+interface StructuredAgentCompletedResult {
+  status: 'completed'
+  agentId: string
+  agentType?: string
+  output: string
+  totalToolUseCount?: number
+  totalDurationMs?: number
+  totalTokens?: number
+  inputTokens?: number
+  outputTokens?: number
+}
+
+interface StructuredAgentAsyncResult {
+  status: 'async_launched'
+  agentId: string
+}
+
+type StructuredAgentResult = StructuredAgentCompletedResult | StructuredAgentAsyncResult
+
 /**
  * 消息段状态：同一 turn 内每条 SDK assistant message（被工具调用分隔的一段
  * 正文/思考）分配一个 segmentId。complete 事件携带 segmentId 后，下游只替换
@@ -179,6 +198,16 @@ function subagentTaskIdentity(
   }
   tasks.set(taskId, next)
   return next
+}
+
+function findSubagentTask(
+  ctx: EventContext,
+  toolCallId: string,
+): { taskId: string; state: SubagentTaskState } | undefined {
+  for (const [taskId, task] of getSubagentTasks(ctx)) {
+    if (task.toolCallId === toolCallId) return { taskId, state: task }
+  }
+  return undefined
 }
 
 function baseEvent(ctx: EventContext) {
@@ -310,11 +339,14 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
         ...baseEvent(ctx),
         type: 'subagent_completed',
         toolCallId: task.toolCallId,
+        taskId: msg.task_id,
         name: task.name,
         status:
           msg.status === 'completed' ? 'success' : msg.status === 'stopped' ? 'stopped' : 'error',
         resultSummary: msg.summary,
-        output: msg.summary,
+        // task_notification.summary 是简短通知，不是完整 Agent 输出。完整结果会由
+        // 后续 SDKUserMessage.tool_use_result 补齐；此处保留空值以避免 UI 冒充结果。
+        output: '',
         ...(msg.usage != null
           ? {
               totalTokens: msg.usage.total_tokens,
@@ -680,8 +712,56 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
   return events
 }
 
+function extractStructuredAgentResult(value: unknown): StructuredAgentResult | null {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (record.status === 'async_launched' && typeof record.agentId === 'string') {
+    return { status: 'async_launched', agentId: record.agentId }
+  }
+  if (record.status !== 'completed' || typeof record.agentId !== 'string') return null
+
+  const content = Array.isArray(record.content)
+    ? record.content
+        .flatMap((entry) => {
+          if (entry == null || typeof entry !== 'object' || Array.isArray(entry)) return []
+          const block = entry as Record<string, unknown>
+          return block.type === 'text' && typeof block.text === 'string' ? [block.text] : []
+        })
+        .join('\n')
+        .trim()
+    : ''
+  const usage =
+    record.usage != null && typeof record.usage === 'object' && !Array.isArray(record.usage)
+      ? (record.usage as Record<string, unknown>)
+      : null
+  const finiteNumber = (candidate: unknown): number | undefined =>
+    typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : undefined
+  const totalToolUseCount = finiteNumber(record.totalToolUseCount)
+  const totalDurationMs = finiteNumber(record.totalDurationMs)
+  const totalTokens = finiteNumber(record.totalTokens)
+  const inputTokens = finiteNumber(usage?.input_tokens)
+  const outputTokens = finiteNumber(usage?.output_tokens)
+
+  return {
+    status: 'completed',
+    agentId: record.agentId,
+    ...(typeof record.agentType === 'string' ? { agentType: record.agentType } : {}),
+    output: content,
+    ...(totalToolUseCount != null ? { totalToolUseCount } : {}),
+    ...(totalDurationMs != null ? { totalDurationMs } : {}),
+    ...(totalTokens != null ? { totalTokens } : {}),
+    ...(inputTokens != null ? { inputTokens } : {}),
+    ...(outputTokens != null ? { outputTokens } : {}),
+  }
+}
+
+function summarizeSubagentOutput(output: string): string {
+  return output.length > 200 ? `${output.slice(0, 197)}...` : output
+}
+
 function mapUserMessage(msg: SDKUserMessage, ctx: EventContext): AgentEvent[] {
   const parentToolUseId = msg.parent_tool_use_id
+  const structuredAgentResult = extractStructuredAgentResult(msg.tool_use_result)
   if (typeof msg.message.content === 'string') {
     if (parentToolUseId == null || msg.message.content.length === 0) return []
     const event: AgentEvent = {
@@ -710,7 +790,7 @@ function mapUserMessage(msg: SDKUserMessage, ctx: EventContext): AgentEvent[] {
         },
       ]
     }
-    return mapContentBlock(block, ctx)
+    return mapContentBlock(block, ctx, structuredAgentResult)
   })
   // user 消息（工具结果等）到达即意味着上一段 assistant 输出已结束
   if (parentToolUseId != null) closeSubagentSegments(ctx, parentToolUseId)
@@ -1091,7 +1171,11 @@ function rememberSDKMessageEvents(
   )
 }
 
-function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[] {
+function mapContentBlock(
+  block: SDKContentBlock,
+  ctx: EventContext,
+  structuredAgentResult?: StructuredAgentResult | null,
+): AgentEvent[] {
   switch (block.type) {
     case 'text':
       return [
@@ -1181,31 +1265,67 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
       }
 
       // Intercept subagent tool results → emit SubagentCompletedEvent
-      if (toolName === 'subagent') {
+      if (toolName === 'subagent' || structuredAgentResult != null) {
         const subagentInput = getToolInputs(ctx).get(block.tool_use_id)
-        const name = typeof subagentInput?.agent === 'string' ? subagentInput.agent : 'Subagent'
-        if (!isError && isAsyncSubagentLaunchResult(content)) {
-          const agentId = extractAsyncSubagentAgentId(content)
+        const task = findSubagentTask(ctx, block.tool_use_id)
+        const name =
+          structuredAgentResult?.status === 'completed' && structuredAgentResult.agentType != null
+            ? structuredAgentResult.agentType
+            : typeof subagentInput?.agent === 'string'
+              ? subagentInput.agent
+              : (task?.state.name ?? 'Subagent')
+        if (
+          !isError &&
+          (structuredAgentResult?.status === 'async_launched' ||
+            isAsyncSubagentLaunchResult(content))
+        ) {
+          const agentId =
+            structuredAgentResult?.status === 'async_launched'
+              ? structuredAgentResult.agentId
+              : extractAsyncSubagentAgentId(content)
           if (agentId != null) {
             getAsyncSubagentLaunches(ctx).set(agentId, { toolCallId: block.tool_use_id, name })
           }
           return []
         }
         unregisterActiveSubagent(ctx, block.tool_use_id)
-        const summary = content.length > 200 ? `${content.slice(0, 197)}...` : content
+        const fullOutput =
+          !isError && structuredAgentResult?.status === 'completed'
+            ? structuredAgentResult.output
+            : content
+        const summary = summarizeSubagentOutput(fullOutput)
         const usage = getSubagentUsage(ctx).get(block.tool_use_id)
         return [
           {
             ...baseEvent(ctx),
             type: 'subagent_completed',
             toolCallId: block.tool_use_id,
+            ...(task != null ? { taskId: task.taskId } : {}),
             name,
             status: isError ? 'error' : 'success',
             resultSummary: isError ? content || 'Subagent failed' : summary,
-            output: content || '',
-            ...(usage != null
-              ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
-              : {}),
+            output: fullOutput || '',
+            ...(structuredAgentResult?.status === 'completed'
+              ? {
+                  ...(structuredAgentResult.inputTokens != null
+                    ? { inputTokens: structuredAgentResult.inputTokens }
+                    : {}),
+                  ...(structuredAgentResult.outputTokens != null
+                    ? { outputTokens: structuredAgentResult.outputTokens }
+                    : {}),
+                  ...(structuredAgentResult.totalTokens != null
+                    ? { totalTokens: structuredAgentResult.totalTokens }
+                    : {}),
+                  ...(structuredAgentResult.totalToolUseCount != null
+                    ? { toolUses: structuredAgentResult.totalToolUseCount }
+                    : {}),
+                  ...(structuredAgentResult.totalDurationMs != null
+                    ? { durationMs: structuredAgentResult.totalDurationMs }
+                    : {}),
+                }
+              : usage != null
+                ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
+                : {}),
           },
         ]
       }
@@ -1213,7 +1333,7 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
       const asyncSubagent = findAsyncSubagentForSendMessage(ctx, block.tool_use_id, toolName)
       if (asyncSubagent != null) {
         unregisterActiveSubagent(ctx, asyncSubagent.toolCallId)
-        const summary = content.length > 200 ? `${content.slice(0, 197)}...` : content
+        const summary = summarizeSubagentOutput(content)
         return [
           {
             ...baseEvent(ctx),

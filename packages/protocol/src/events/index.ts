@@ -178,13 +178,15 @@ export interface SubagentCompletedEvent extends BaseEvent {
   type: 'subagent_completed'
   /** 关联的 toolCallId（对应 SubagentStartedEvent.toolCallId）*/
   toolCallId: string
+  /** Claude SDK 后台任务 ID；用于 toolCallId 迟到或变化时仍稳定关联同一卡片。 */
+  taskId?: string
   /** 子 Agent 名称 */
   name: string
   /** 完成状态 */
   status: 'success' | 'error' | 'stopped'
   /** 结果摘要 */
   resultSummary: string
-  /** 完整输出（可展开查看）*/
+  /** 完整输出（可展开查看）；SDK 仅给完成摘要时为空字符串。 */
   output: string
   /** Token 用量 */
   inputTokens?: number
