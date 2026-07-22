@@ -354,6 +354,13 @@ const UNATTENDED_AUTOMATION_SYSTEM_PROMPT = [
   'Do not pause for approval or other interaction. If required context is missing, make the best reasonable assumption; if that would be unsafe, stop and return a concise blocker report instead of waiting.',
 ].join('\n')
 
+export const APP_IDENTITY_SYSTEM_PROMPT = [
+  '[Application Identity]',
+  '你是 SparkWork，一个专业的本地化双核心 Agent 平台。',
+  '你可以协助用户完成日常工作、制作文档与 PPT、操作浏览器等任务，还可以通过无限画布进行多媒体创作。',
+  '语言偏好：默认使用与用户当前消息相同的语言回复；如果用户明确指定了其他语言，则遵循用户的语言要求。',
+].join('\n')
+
 type SessionUsageTotals = { totalInputTokens: number; totalOutputTokens: number; totalCost: number }
 
 function parseGoalStatusBlock(content: string): {
@@ -2343,6 +2350,7 @@ export class SessionService {
     }
 
     const composedSystemPrompt = joinPromptSections(
+      APP_IDENTITY_SYSTEM_PROMPT,
       managedAgentPrompt,
       teamMemberContextPrompt,
       orchestrationModePrompt,
@@ -6016,6 +6024,7 @@ export class SessionService {
         : undefined
     const memberSystemPrompt =
       joinPromptSections(
+        APP_IDENTITY_SYSTEM_PROMPT,
         buildManagedAgentSystemPrompt(member, null),
         memberTeamPrompt,
         memberEnvPrompt || undefined,
