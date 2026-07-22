@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Brain,
   CalendarClock,
@@ -502,18 +502,18 @@ function CanvasView() {
             aria-hidden
           >
             {/* 剧本 → 场景 */}
-            <path className="is-dim" d="M19,24 C30,24 30,45 35,45" />
+            <path className="is-dim" d="M24,22 C36,22 36,52 42,52" />
             {/* 角色 → 场景 */}
-            <path className="is-dim" d="M19,66 C30,66 30,45 35,45" />
+            <path className="is-dim" d="M24,82 C36,82 36,52 42,52" />
             {/* 场景 → 分镜（选中链路，高亮） */}
-            <path className="is-hot" d="M45,45 C55,45 55,24 61,24" />
+            <path className="is-hot" d="M58,52 C70,52 70,22 76,22" />
             {/* 场景 → AI 视频 */}
-            <path className="is-dim" d="M45,45 C55,45 55,66 61,66" />
+            <path className="is-dim" d="M58,52 C70,52 70,82 76,82" />
           </svg>
 
           {/* 剧本 */}
-          <div className="hero-canvas__node is-text" style={{ left: '14%', top: '24%' }}>
-            <span className="hero-canvas__node-thumb">
+          <div className="hero-canvas__node is-text" style={{ left: '16%', top: '22%' }}>
+            <span className="hero-canvas__node-thumb is-text-bg">
               <FileText size={16} />
             </span>
             <span className="hero-canvas__node-title">剧本·开篇</span>
@@ -521,10 +521,7 @@ function CanvasView() {
           </div>
 
           {/* 角色（主角 符青黛）：用真实人物设定表作为缩略图，aspect 1:1 适配人像竖版。 */}
-          <div
-            className="hero-canvas__node is-avatar"
-            style={{ left: '14%', top: '66%', '--thumb-aspect': '1 / 1' } as CSSProperties}
-          >
+          <div className="hero-canvas__node is-avatar" style={{ left: '16%', top: '82%' }}>
             <span className="hero-canvas__node-thumb is-image">
               <img
                 className="hero-canvas__node-img"
@@ -539,10 +536,7 @@ function CanvasView() {
           </div>
 
           {/* 场景（卧室）：用真实场景分镜作为缩略图，aspect 16:9 适配横版场景图。 */}
-          <div
-            className="hero-canvas__node is-scene"
-            style={{ left: '40%', top: '45%', '--thumb-aspect': '16 / 9' } as CSSProperties}
-          >
+          <div className="hero-canvas__node is-scene" style={{ left: '50%', top: '52%' }}>
             <span className="hero-canvas__node-thumb is-image">
               <img
                 className="hero-canvas__node-img"
@@ -559,7 +553,7 @@ function CanvasView() {
           {/* 分镜（选中）：分镜 03 取苏烬作为画面主体，aspect 1:1 适配人像。 */}
           <div
             className="hero-canvas__node is-shot is-selected"
-            style={{ left: '66%', top: '24%', '--thumb-aspect': '1 / 1' } as CSSProperties}
+            style={{ left: '84%', top: '22%' }}
           >
             <span className="hero-canvas__node-thumb is-image">
               <img
@@ -575,7 +569,7 @@ function CanvasView() {
           </div>
 
           {/* AI 生视频（仍用占位 icon：AI 生成中还没有真实画面） */}
-          <div className="hero-canvas__node is-video" style={{ left: '66%', top: '66%' }}>
+          <div className="hero-canvas__node is-video" style={{ left: '84%', top: '82%' }}>
             <span className="hero-canvas__node-thumb is-video-bg">
               <Play size={15} />
             </span>

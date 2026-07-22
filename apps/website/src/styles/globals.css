@@ -2484,9 +2484,9 @@ h3 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.5rem 0.55rem 0.45rem;
-  width: var(--node-w, 92px);
+  gap: 0.32rem;
+  padding: 0 0 0.42rem;
+  width: var(--node-w, 124px);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--panel);
@@ -2495,22 +2495,22 @@ h3 {
   color: var(--text-strong);
 }
 .hero-canvas__node-thumb {
-  /* 支持真实截图：作为 <img> 容器时可自定义 aspect-ratio，1:1 兼顾人像（竖）和场景（横）；
-     默认 16:10 与历史占位图标一致；overflow: hidden 让 cover 图片不溢出。 */
+  /* 统一 4:3，让所有节点（图标 / 人像 / 场景）等高排列，画布节点不再高低参差；
+     overflow: hidden 让 cover 图片不溢出。 */
   display: inline-grid;
   place-items: center;
   width: 100%;
-  aspect-ratio: var(--thumb-aspect, 16 / 10);
-  border-radius: 0.35rem;
+  aspect-ratio: var(--thumb-aspect, 4 / 3);
+  border-radius: var(--radius) var(--radius) 0 0;
   background: var(--panel-2);
   color: var(--text-muted);
   overflow: hidden;
   isolation: isolate;
 }
 .hero-canvas__node-thumb.is-image {
-  /* 真实截图缩略图：去掉色块背景，露出图片本身；边缘加一圈浅描边让缩略更利落。 */
+  /* 贴边真实截图：露出图片本身，左右紧贴卡片边缘，不再描边。 */
   background: transparent;
-  border: 1px solid var(--border);
+  border: none;
 }
 /* 真实截图节点：缩略图填满容器 + 居中裁切，object-position 微调以保留人脸/主体。 */
 .hero-canvas__node-img {
@@ -2519,6 +2519,17 @@ h3 {
   object-fit: cover;
   object-position: center;
   display: block;
+}
+/* 人像节点（角色 / 分镜）：统一 4:3 横框 cover 会裁掉竖图两侧，
+   object-position 上移保留脸部，避免「头重脚轻」。 */
+.hero-canvas__node.is-avatar .hero-canvas__node-img,
+.hero-canvas__node.is-shot .hero-canvas__node-img {
+  object-position: center 28%;
+}
+/* 剧本（纯图标）节点缩略图：给蓝青渐变背景，与 AI 视频节点一样饱满，不再空旷。 */
+.hero-canvas__node-thumb.is-text-bg {
+  background: linear-gradient(135deg, rgba(79, 124, 255, 0.22), rgba(94, 234, 212, 0.18));
+  color: var(--primary);
 }
 .hero-canvas__node-thumb.is-scene-bg {
   background: linear-gradient(135deg, rgba(34, 197, 94, 0.22), rgba(20, 184, 166, 0.22));
@@ -2539,6 +2550,8 @@ h3 {
   font-size: 0.95rem;
 }
 .hero-canvas__node-title {
+  /* 缩略图贴边后，标题区自己留左右内边距，文字不顶到卡片边缘。 */
+  padding: 0 0.45rem;
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
@@ -2546,11 +2559,44 @@ h3 {
   max-width: 100%;
 }
 .hero-canvas__node-kind {
-  font-size: 0.55rem;
+  /* 角标：浮在缩略图左上角。实心彩色 + 白字 + 阴影，保证压在任意图片上都清晰。 */
+  position: absolute;
+  top: 0.32rem;
+  left: 0.32rem;
+  z-index: 3;
+  display: inline-block;
+  padding: 0.1rem 0.42rem;
+  border-radius: 999px;
+  font-size: 0.5rem;
   font-weight: 700;
-  color: var(--text-faint);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
+  background: var(--panel-2);
+  color: var(--text-muted);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
+/* 类型色药丸：与左栏节点库（lib-thumb）配色一致，类型一眼可辨。
+   color-mix 把类型色调暗一档，让白字在缩略图上对比度足够。 */
+.hero-canvas__node.is-text > .hero-canvas__node-kind {
+  background: color-mix(in srgb, var(--primary) 82%, #000);
+  color: #fff;
+}
+.hero-canvas__node.is-avatar > .hero-canvas__node-kind {
+  background: color-mix(in srgb, var(--brand-pink) 80%, #000);
+  color: #fff;
+}
+.hero-canvas__node.is-scene > .hero-canvas__node-kind {
+  background: color-mix(in srgb, var(--success) 72%, #000);
+  color: #fff;
+}
+.hero-canvas__node.is-shot > .hero-canvas__node-kind {
+  background: color-mix(in srgb, var(--amber) 75%, #000);
+  color: #fff;
+}
+.hero-canvas__node.is-video > .hero-canvas__node-kind {
+  background: color-mix(in srgb, var(--primary) 82%, #000);
+  color: #fff;
 }
 .hero-canvas__node.is-selected {
   border-color: var(--primary);
