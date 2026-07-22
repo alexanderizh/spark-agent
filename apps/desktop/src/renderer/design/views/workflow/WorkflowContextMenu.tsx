@@ -10,6 +10,7 @@ export type WfContextMenuState =
 
 type WorkflowContextMenuProps = {
   menu: WfContextMenuState | null
+  disabledNodeKinds?: ReadonlySet<WorkflowNodeKind>
   onClose: () => void
   onDuplicateNode: (nodeId: string) => void
   onDeleteNode: (nodeId: string) => void
@@ -44,6 +45,7 @@ function MenuItem({
 
 export function WorkflowContextMenu({
   menu,
+  disabledNodeKinds = new Set(),
   onClose,
   onDuplicateNode,
   onDeleteNode,
@@ -103,6 +105,7 @@ export function WorkflowContextMenu({
           <div className="wf-context-menu-section">添加节点</div>
           {NODE_KIND_ORDER.map((kind) => {
             const meta = NODE_KIND_META[kind]
+            const disabled = disabledNodeKinds.has(kind)
             return (
               <button
                 key={kind}
@@ -110,8 +113,10 @@ export function WorkflowContextMenu({
                 role="menuitem"
                 className="wf-context-menu-node-kind"
                 style={{ ['--node-accent' as string]: `var(${meta.accent})` }}
+                disabled={disabled}
+                title={disabled && kind === 'loop' ? '运行时 v1 不支持嵌套循环' : undefined}
                 onClick={() =>
-                  closeAnd(() => onAddNode(kind, { x: menu.flowX, y: menu.flowY }))
+                  !disabled && closeAnd(() => onAddNode(kind, { x: menu.flowX, y: menu.flowY }))
                 }
               >
                 <span className="wf-context-menu-icon">{meta.icon}</span>
