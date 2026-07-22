@@ -1,7 +1,18 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import type { ComponentType } from 'react'
 import {
-  ActionIcon, Button, Tag, Checkbox, Drawer, Alert, Input, InputPassword, Select, Modal, SearchBar, Dropdown,
+  ActionIcon,
+  Button,
+  Tag,
+  Checkbox,
+  Drawer,
+  Alert,
+  Input,
+  InputPassword,
+  Select,
+  Modal,
+  SearchBar,
+  Dropdown,
 } from '@lobehub/ui'
 // TODO(lobe-migration): @lobehub/ui 没有 Badge/Switch 命名导出;临时从 antd 引用,与 SparkOverlays 行为一致
 import { Badge, Switch } from 'antd'
@@ -90,14 +101,20 @@ import { canHealthCheckProviderCardKind, type ProviderCardKind } from './provide
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
 import { ProviderManifestContractEditor } from '../components/ProviderManifestContractEditor'
 import { ManagedModelPreferencesModal } from './platform-model/ManagedModelPreferencesModal'
-import {
-  editableProviderApiKeyPayload,
-  loadEditableProviderSnapshot,
-} from './providerApiKeyEcho'
+import { editableProviderApiKeyPayload, loadEditableProviderSnapshot } from './providerApiKeyEcho'
 import './ProvidersView.less'
 
 type ProviderKind = 'anthropic' | 'openai'
-type ImageProviderKind = 'openai' | 'apimart' | 'openrouter' | 'gemini' | 'seeddance' | 'bailian' | 'zhipu' | 'xai' | 'custom'
+type ImageProviderKind =
+  | 'openai'
+  | 'apimart'
+  | 'openrouter'
+  | 'gemini'
+  | 'seeddance'
+  | 'bailian'
+  | 'zhipu'
+  | 'xai'
+  | 'custom'
 type ConnectionFeedback = {
   tone: 'success' | 'error'
   message: string
@@ -213,14 +230,28 @@ function usesClaudeTierMapping(form: Pick<ProviderForm, 'modelType' | 'provider'
   return !isMediaProviderModelType(form.modelType) && form.provider === 'anthropic'
 }
 
-function getProviderBaseUrlPlaceholder(form: Pick<ProviderForm, 'modelType' | 'provider' | 'imageProvider'>): string {
+function getProviderBaseUrlPlaceholder(
+  form: Pick<ProviderForm, 'modelType' | 'provider' | 'imageProvider'>,
+): string {
   if (isMediaProviderModelType(form.modelType)) return 'https://api.example.com'
-  if (form.modelType === 'image') return imageProviderDefaults(form.imageProvider).endpoint || 'https://api.example.com/v1'
+  if (form.modelType === 'image')
+    return imageProviderDefaults(form.imageProvider).endpoint || 'https://api.example.com/v1'
   return form.provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1'
 }
 
-function buildRequestEndpointPreview(form: Pick<ProviderForm,
-  'modelType' | 'provider' | 'imageProvider' | 'mediaProvider' | 'mediaCapabilities' | 'defaultModel' | 'endpoint' | 'codexApiKind'>): EndpointPreview | null {
+function buildRequestEndpointPreview(
+  form: Pick<
+    ProviderForm,
+    | 'modelType'
+    | 'provider'
+    | 'imageProvider'
+    | 'mediaProvider'
+    | 'mediaCapabilities'
+    | 'defaultModel'
+    | 'endpoint'
+    | 'codexApiKind'
+  >,
+): EndpointPreview | null {
   const baseUrl = (form.endpoint.trim() || getProviderBaseUrlPlaceholder(form)).replace(/\/+$/, '')
   if (isMediaProviderModelType(form.modelType)) {
     const mediaProvider = form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)
@@ -232,16 +263,18 @@ function buildRequestEndpointPreview(form: Pick<ProviderForm,
 
   // codexApiKind 选 embedding 时显示 embeddings 端点（自动按 baseURL 是否带 /v\d+ 决定拼 /embeddings 还是 /v1/embeddings）
   return {
-    label: form.codexApiKind === 'responses'
-      ? '实际请求地址'
-      : form.codexApiKind === 'embedding'
-        ? 'Embeddings 地址'
-        : 'Chat 地址',
-    url: form.codexApiKind === 'responses'
-      ? getOpenAiCompatibleResponsesPreviewUrl(baseUrl)
-      : form.codexApiKind === 'embedding'
-        ? getOpenAiCompatibleEmbeddingsPreviewUrl(baseUrl)
-        : getOpenAiCompatibleChatPreviewUrl(baseUrl),
+    label:
+      form.codexApiKind === 'responses'
+        ? '实际请求地址'
+        : form.codexApiKind === 'embedding'
+          ? 'Embeddings 地址'
+          : 'Chat 地址',
+    url:
+      form.codexApiKind === 'responses'
+        ? getOpenAiCompatibleResponsesPreviewUrl(baseUrl)
+        : form.codexApiKind === 'embedding'
+          ? getOpenAiCompatibleEmbeddingsPreviewUrl(baseUrl)
+          : getOpenAiCompatibleChatPreviewUrl(baseUrl),
   }
 }
 
@@ -264,7 +297,8 @@ function getOpenAiCompatibleChatPreviewUrl(apiEndpoint: string): string {
 function getOpenAiCompatibleResponsesPreviewUrl(apiEndpoint: string): string {
   const base = apiEndpoint.replace(/\/+$/, '')
   if (base.endsWith('/responses')) return base
-  if (base.endsWith('/chat/completions')) return `${base.slice(0, -'/chat/completions'.length)}/responses`
+  if (base.endsWith('/chat/completions'))
+    return `${base.slice(0, -'/chat/completions'.length)}/responses`
   if (endsWithVersionSegment(base)) return `${base}/responses`
   if (base.endsWith('/v1')) return `${base}/responses`
   return `${base}/v1/responses`
@@ -299,16 +333,22 @@ function findPresetForProtocolSwitch(
   if (currentPresetId === 'custom') return null
   const currentPreset = getProviderPresetById(currentPresetId)
   if (currentPreset == null) return null
-  return getPresetsByVendor(currentPreset.vendorId).find((preset) => preset.provider === targetProvider) ?? null
+  return (
+    getPresetsByVendor(currentPreset.vendorId).find(
+      (preset) => preset.provider === targetProvider,
+    ) ?? null
+  )
 }
 
 function shouldDefaultOpenAiCodexResponses(apiEndpoint?: string): boolean {
   const base = apiEndpoint?.trim().replace(/\/+$/, '').toLowerCase()
   if (!base) return false
   if (base.endsWith('/api/coding')) return true
-  return base === 'https://open.bigmodel.cn/api/coding/paas/v4' ||
+  return (
+    base === 'https://open.bigmodel.cn/api/coding/paas/v4' ||
     base === 'https://coding.dashscope.aliyuncs.com/v1' ||
     base === 'https://api.lkeap.cloud.tencent.com/coding/v3'
+  )
 }
 
 function buildAutoFetchModelsSignature(
@@ -317,13 +357,9 @@ function buildAutoFetchModelsSignature(
   if (form.modelType !== 'multimodal') return null
   const apiKey = form.apiKey.trim()
   if (apiKey.length < 8) return null
-  return [
-    form.presetId,
-    form.provider,
-    form.endpoint.trim(),
-    apiKey.length,
-    apiKey.slice(-6),
-  ].join('|')
+  return [form.presetId, form.provider, form.endpoint.trim(), apiKey.length, apiKey.slice(-6)].join(
+    '|',
+  )
 }
 
 function endsWithVersionSegment(value: string): boolean {
@@ -349,7 +385,9 @@ function mediaProviderFromImageKind(imageProvider: ImageProviderKind): MediaProv
 }
 
 /** 从统一媒体 adapter 反推旧版图片接口来源，避免模板只写 mediaProvider 时回落到 openai。 */
-function imageProviderFromMediaProvider(mediaProvider: string | null | undefined): ImageProviderKind | null {
+function imageProviderFromMediaProvider(
+  mediaProvider: string | null | undefined,
+): ImageProviderKind | null {
   if (mediaProvider === 'apimart') return 'apimart'
   if (mediaProvider === 'xai') return 'xai'
   if (mediaProvider === 'bailian') return 'bailian'
@@ -366,7 +404,7 @@ function imageProviderForMediaConfig(
 ): ImageProviderKind {
   const normalized = normalizeImageProvider(imageProvider)
   return normalized === 'openai'
-    ? imageProviderFromMediaProvider(mediaProvider) ?? normalized
+    ? (imageProviderFromMediaProvider(mediaProvider) ?? normalized)
     : normalized
 }
 
@@ -376,34 +414,57 @@ function hasAnyMediaFields(
   mediaCapabilities: readonly unknown[] | undefined,
   mediaModelRefs: readonly unknown[] | undefined,
 ): boolean {
-  return (typeof mediaProvider === 'string' && mediaProvider.trim().length > 0)
-    || (Array.isArray(mediaCapabilities) && mediaCapabilities.length > 0)
-    || (Array.isArray(mediaModelRefs) && mediaModelRefs.length > 0)
+  return (
+    (typeof mediaProvider === 'string' && mediaProvider.trim().length > 0) ||
+    (Array.isArray(mediaCapabilities) && mediaCapabilities.length > 0) ||
+    (Array.isArray(mediaModelRefs) && mediaModelRefs.length > 0)
+  )
 }
 
 function hasVideoTaskConfig(
   modelType: string | null | undefined,
   mediaCapabilities: readonly unknown[] | undefined,
 ): boolean {
-  return modelType === 'video' || (mediaCapabilities ?? []).some(
-    (capability) => typeof capability === 'string' && capability.startsWith('video.'),
+  return (
+    modelType === 'video' ||
+    (mediaCapabilities ?? []).some(
+      (capability) => typeof capability === 'string' && capability.startsWith('video.'),
+    )
   )
 }
 
 /** 把 preset 的 mediaProvider/mediaApiType/mediaCapabilities/mediaDefaults 投影成 ProviderForm 媒体字段 */
-function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
-  | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaModelRefs' | 'mediaGenerationEnabled'
-  | 'mediaImageSize' | 'mediaImageN' | 'mediaImageQuality'
-  | 'mediaAudioVoice' | 'mediaAudioFormat'
-  | 'mediaVideoAspectRatio' | 'mediaVideoDuration' | 'mediaVideoQuality'
-  | 'mediaPollInterval' | 'mediaPollTimeout'> {
+function presetMediaForm(
+  preset: ProviderPreset,
+): Pick<
+  ProviderForm,
+  | 'mediaProvider'
+  | 'mediaApiType'
+  | 'mediaCapabilities'
+  | 'mediaModelRefs'
+  | 'mediaGenerationEnabled'
+  | 'mediaImageSize'
+  | 'mediaImageN'
+  | 'mediaImageQuality'
+  | 'mediaAudioVoice'
+  | 'mediaAudioFormat'
+  | 'mediaVideoAspectRatio'
+  | 'mediaVideoDuration'
+  | 'mediaVideoQuality'
+  | 'mediaPollInterval'
+  | 'mediaPollTimeout'
+> {
   const d = preset.mediaDefaults
   return {
     mediaProvider: preset.mediaProvider ?? '',
     mediaApiType: preset.mediaApiType ?? preset.imageApiType ?? 'auto',
     mediaCapabilities: preset.mediaCapabilities ?? [],
     mediaModelRefs: preset.mediaModelRefs ?? [],
-    mediaGenerationEnabled: hasAnyMediaFields(preset.mediaProvider, preset.mediaCapabilities, preset.mediaModelRefs),
+    mediaGenerationEnabled: hasAnyMediaFields(
+      preset.mediaProvider,
+      preset.mediaCapabilities,
+      preset.mediaModelRefs,
+    ),
     mediaImageSize: d?.image?.size ?? d?.image?.aspectRatio ?? '',
     mediaImageN: d?.image?.n != null ? String(d.image.n) : '',
     mediaImageQuality: d?.image?.resolution ?? d?.image?.quality ?? '',
@@ -415,25 +476,45 @@ function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
     mediaPollInterval: d?.polling?.intervalMs != null ? String(d.polling.intervalMs) : '',
     mediaPollTimeout: String(
       d?.polling?.timeoutMs ??
-      (hasVideoTaskConfig(preset.modelType, preset.mediaCapabilities) ? DEFAULT_VIDEO_POLL_TIMEOUT_MS : ''),
+        (hasVideoTaskConfig(preset.modelType, preset.mediaCapabilities)
+          ? DEFAULT_VIDEO_POLL_TIMEOUT_MS
+          : ''),
     ),
   }
 }
 
 /** 把已保存 profile 的 media 字段投影成 ProviderForm 媒体字段 */
-function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
-  | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaModelRefs' | 'mediaGenerationEnabled'
-  | 'mediaImageSize' | 'mediaImageN' | 'mediaImageQuality'
-  | 'mediaAudioVoice' | 'mediaAudioFormat'
-  | 'mediaVideoAspectRatio' | 'mediaVideoDuration' | 'mediaVideoQuality'
-  | 'mediaPollInterval' | 'mediaPollTimeout'> {
+function profileMediaForm(
+  p: ProviderProfile,
+): Pick<
+  ProviderForm,
+  | 'mediaProvider'
+  | 'mediaApiType'
+  | 'mediaCapabilities'
+  | 'mediaModelRefs'
+  | 'mediaGenerationEnabled'
+  | 'mediaImageSize'
+  | 'mediaImageN'
+  | 'mediaImageQuality'
+  | 'mediaAudioVoice'
+  | 'mediaAudioFormat'
+  | 'mediaVideoAspectRatio'
+  | 'mediaVideoDuration'
+  | 'mediaVideoQuality'
+  | 'mediaPollInterval'
+  | 'mediaPollTimeout'
+> {
   const d = p.mediaDefaults
   return {
     mediaProvider: p.mediaProvider ?? '',
     mediaApiType: p.mediaApiType ?? p.imageApiType ?? 'auto',
     mediaCapabilities: p.mediaCapabilities ?? [],
     mediaModelRefs: p.mediaModelRefs ?? [],
-    mediaGenerationEnabled: hasAnyMediaFields(p.mediaProvider, p.mediaCapabilities, p.mediaModelRefs),
+    mediaGenerationEnabled: hasAnyMediaFields(
+      p.mediaProvider,
+      p.mediaCapabilities,
+      p.mediaModelRefs,
+    ),
     mediaImageSize: d?.image?.size ?? d?.image?.aspectRatio ?? '',
     mediaImageN: d?.image?.n != null ? String(d.image.n) : '',
     mediaImageQuality: d?.image?.resolution ?? d?.image?.quality ?? '',
@@ -445,7 +526,7 @@ function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
     mediaPollInterval: d?.polling?.intervalMs != null ? String(d.polling.intervalMs) : '',
     mediaPollTimeout: String(
       d?.polling?.timeoutMs ??
-      (hasVideoTaskConfig(p.modelType, p.mediaCapabilities) ? DEFAULT_VIDEO_POLL_TIMEOUT_MS : ''),
+        (hasVideoTaskConfig(p.modelType, p.mediaCapabilities) ? DEFAULT_VIDEO_POLL_TIMEOUT_MS : ''),
     ),
   }
 }
@@ -456,16 +537,24 @@ function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
  * - 对话模型：仅当「附加生成能力」开关打开时才下发；关闭时主动清空（传 null/[]），
  *   避免表单里残留的旧值在关闭开关后被误保存。
  */
-function buildMediaUpdateFields(form: ProviderForm): Pick<ProviderUpdateRequest,
-  'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaDefaults' | 'mediaModelRefs'> {
-  const shouldPersistMedia = isMediaProviderModelType(form.modelType)
-    || (form.modelType === 'multimodal' && form.mediaGenerationEnabled)
+function buildMediaUpdateFields(
+  form: ProviderForm,
+): Pick<
+  ProviderUpdateRequest,
+  'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaDefaults' | 'mediaModelRefs'
+> {
+  const shouldPersistMedia =
+    isMediaProviderModelType(form.modelType) ||
+    (form.modelType === 'multimodal' && form.mediaGenerationEnabled)
   if (!shouldPersistMedia) {
     return { mediaProvider: null, mediaApiType: null, mediaCapabilities: [], mediaModelRefs: [] }
   }
-  const provider = (form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)) as MediaProviderKind
-  const result: Pick<ProviderUpdateRequest,
-    'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaDefaults' | 'mediaModelRefs'> = {
+  const provider = (form.mediaProvider ||
+    mediaProviderFromImageKind(form.imageProvider)) as MediaProviderKind
+  const result: Pick<
+    ProviderUpdateRequest,
+    'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaDefaults' | 'mediaModelRefs'
+  > = {
     mediaProvider: provider,
     mediaApiType: form.mediaApiType,
     mediaCapabilities: form.mediaCapabilities,
@@ -496,7 +585,8 @@ function normalizeMediaModelRefs(refs: ProviderMediaModelRef[]): ProviderMediaMo
 function buildMediaDefaults(form: ProviderForm): ProviderMediaDefaults | undefined {
   const imageSizeValue = form.mediaImageSize.trim()
   const imageSizeField = imageSizeValue
-    ? (form.mediaProvider === 'xai' || form.mediaProvider === 'minimax-hailuo') && imageSizeValue.includes(':')
+    ? (form.mediaProvider === 'xai' || form.mediaProvider === 'minimax-hailuo') &&
+      imageSizeValue.includes(':')
       ? { aspectRatio: imageSizeValue }
       : { size: imageSizeValue }
     : {}
@@ -511,10 +601,14 @@ function buildMediaDefaults(form: ProviderForm): ProviderMediaDefaults | undefin
   }
   const audio = {
     ...(form.mediaAudioVoice.trim() ? { voice: form.mediaAudioVoice.trim() } : {}),
-    ...(form.mediaAudioFormat.trim() ? { format: form.mediaAudioFormat.trim() as 'mp3' | 'wav' | 'opus' | 'aac' | 'flac' | 'pcm' } : {}),
+    ...(form.mediaAudioFormat.trim()
+      ? { format: form.mediaAudioFormat.trim() as 'mp3' | 'wav' | 'opus' | 'aac' | 'flac' | 'pcm' }
+      : {}),
   }
   const video = {
-    ...(form.mediaVideoAspectRatio.trim() ? { aspectRatio: form.mediaVideoAspectRatio.trim() } : {}),
+    ...(form.mediaVideoAspectRatio.trim()
+      ? { aspectRatio: form.mediaVideoAspectRatio.trim() }
+      : {}),
     ...(form.mediaVideoDuration.trim() ? { durationSeconds: Number(form.mediaVideoDuration) } : {}),
     ...(form.mediaVideoQuality.trim()
       ? /p$/i.test(form.mediaVideoQuality.trim())
@@ -538,21 +632,40 @@ function buildMediaDefaults(form: ProviderForm): ProviderMediaDefaults | undefin
   return Object.keys(result).length > 0 ? result : undefined
 }
 
-function mediaModelMatchesType(model: CanvasMediaModelSummary, modelType: ProviderModelType): boolean {
+function mediaModelMatchesType(
+  model: CanvasMediaModelSummary,
+  modelType: ProviderModelType,
+): boolean {
   if (modelType === 'image') {
-    return model.domains.includes('image') || model.capabilities.some((capability) => capability.id.startsWith('image.'))
+    return (
+      model.domains.includes('image') ||
+      model.capabilities.some((capability) => capability.id.startsWith('image.'))
+    )
   }
   if (modelType === 'voice') {
-    return model.domains.includes('audio') || model.capabilities.some((capability) => capability.id.startsWith('audio.'))
+    return (
+      model.domains.includes('audio') ||
+      model.capabilities.some((capability) => capability.id.startsWith('audio.'))
+    )
   }
   if (modelType === 'video') {
-    return model.domains.includes('video') || model.capabilities.some((capability) => capability.id.startsWith('video.'))
+    return (
+      model.domains.includes('video') ||
+      model.capabilities.some((capability) => capability.id.startsWith('video.'))
+    )
   }
   if (modelType === 'multimodal') {
-    return model.domains.some((domain) => domain === 'image' || domain === 'audio' || domain === 'video')
-      || model.capabilities.some((capability) =>
-        capability.id.startsWith('image.') || capability.id.startsWith('audio.') || capability.id.startsWith('video.'),
+    return (
+      model.domains.some(
+        (domain) => domain === 'image' || domain === 'audio' || domain === 'video',
+      ) ||
+      model.capabilities.some(
+        (capability) =>
+          capability.id.startsWith('image.') ||
+          capability.id.startsWith('audio.') ||
+          capability.id.startsWith('video.'),
       )
+    )
   }
   return false
 }
@@ -580,8 +693,10 @@ function hasConfiguredMediaStack(
   mediaCapabilities: readonly unknown[] | undefined,
   mediaModelRefs: readonly unknown[] | undefined,
 ): boolean {
-  return supportsMediaConfigModelType(modelType)
-    && hasAnyMediaFields(mediaProvider, mediaCapabilities, mediaModelRefs)
+  return (
+    supportsMediaConfigModelType(modelType) &&
+    hasAnyMediaFields(mediaProvider, mediaCapabilities, mediaModelRefs)
+  )
 }
 
 function mediaModelMatchesProvider(model: CanvasMediaModelSummary, form: ProviderForm): boolean {
@@ -605,7 +720,9 @@ interface CustomMediaModelRef {
   modelId: string
 }
 
-function isCustomModelRef(ref: ProviderMediaModelRef): ref is ProviderMediaModelRef & CustomMediaModelRef {
+function isCustomModelRef(
+  ref: ProviderMediaModelRef,
+): ref is ProviderMediaModelRef & CustomMediaModelRef {
   return ref.manifestId.startsWith(CUSTOM_MODEL_REF_PREFIX)
 }
 
@@ -651,11 +768,20 @@ function enumOptionsFromModels(
         const rawEnum = (spec as Record<string, unknown>).enum
         if (Array.isArray(rawEnum)) {
           rawEnum
-            .filter((value) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+            .filter(
+              (value) =>
+                typeof value === 'string' ||
+                typeof value === 'number' ||
+                typeof value === 'boolean',
+            )
             .forEach((value) => values.add(String(value)))
         }
         const defaultValue = (spec as Record<string, unknown>).default
-        if (typeof defaultValue === 'string' || typeof defaultValue === 'number' || typeof defaultValue === 'boolean') {
+        if (
+          typeof defaultValue === 'string' ||
+          typeof defaultValue === 'number' ||
+          typeof defaultValue === 'boolean'
+        ) {
           values.add(String(defaultValue))
         }
       }
@@ -671,7 +797,10 @@ function enumOptionsFromModels(
  * 一张卡片只归一类，避免与「默认 Provider」「内置」等已有 tag 语义重叠。
  */
 /** 每个类别对应的图标（项目本地 Lucide 风格）、文案、胶囊 CSS 修饰类 */
-const CARD_KIND_META: Record<ProviderCardKind, { label: string; icon: ComponentType<{ size?: number }>; kindClass: string }> = {
+const CARD_KIND_META: Record<
+  ProviderCardKind,
+  { label: string; icon: ComponentType<{ size?: number }>; kindClass: string }
+> = {
   router: { label: '路由', icon: Icons.Shuffle, kindClass: 'pv_kind--router' },
   cli: { label: 'CLI', icon: Icons.Terminal, kindClass: 'pv_kind--cli' },
   image: { label: '图片', icon: Icons.Image, kindClass: 'pv_kind--image' },
@@ -733,14 +862,44 @@ export function resolveProviderCardKind(profile: ProviderProfile): ProviderCardK
 }
 
 const EMPTY_TIER_MODELS = { haikuModel: '', sonnetModel: '', opusModel: '' } as const
-const IMAGE_PROVIDER_OPTIONS: Array<{ value: ImageProviderKind; label: string; endpoint: string; mode: ImageGenApiType }> = [
+const IMAGE_PROVIDER_OPTIONS: Array<{
+  value: ImageProviderKind
+  label: string
+  endpoint: string
+  mode: ImageGenApiType
+}> = [
   { value: 'openai', label: 'OpenAI Images', endpoint: 'https://api.openai.com/v1', mode: 'sync' },
   { value: 'apimart', label: 'APIMart', endpoint: 'https://api.apimart.ai/v1', mode: 'async' },
-  { value: 'openrouter', label: 'OpenRouter', endpoint: 'https://openrouter.ai/api/v1', mode: 'sync' },
-  { value: 'gemini', label: 'Gemini / Imagen', endpoint: 'https://generativelanguage.googleapis.com/v1beta', mode: 'sync' },
-  { value: 'seeddance', label: '火山方舟 Seedream / Seedance', endpoint: 'https://ark.cn-beijing.volces.com/api/v3', mode: 'sync' },
-  { value: 'bailian', label: '阿里百炼', endpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc', mode: 'async' },
-  { value: 'zhipu', label: '智谱 GLM Image', endpoint: 'https://open.bigmodel.cn/api/paas/v4', mode: 'sync' },
+  {
+    value: 'openrouter',
+    label: 'OpenRouter',
+    endpoint: 'https://openrouter.ai/api/v1',
+    mode: 'sync',
+  },
+  {
+    value: 'gemini',
+    label: 'Gemini / Imagen',
+    endpoint: 'https://generativelanguage.googleapis.com/v1beta',
+    mode: 'sync',
+  },
+  {
+    value: 'seeddance',
+    label: '火山方舟 Seedream / Seedance',
+    endpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+    mode: 'sync',
+  },
+  {
+    value: 'bailian',
+    label: '阿里百炼',
+    endpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
+    mode: 'async',
+  },
+  {
+    value: 'zhipu',
+    label: '智谱 GLM Image',
+    endpoint: 'https://open.bigmodel.cn/api/paas/v4',
+    mode: 'sync',
+  },
   { value: 'xai', label: 'xAI Imagine', endpoint: 'https://api.x.ai/v1', mode: 'sync' },
   { value: 'custom', label: '自定义兼容接口', endpoint: '', mode: 'sync' },
 ]
@@ -748,7 +907,7 @@ const IMAGE_PROVIDER_OPTIONS: Array<{ value: ImageProviderKind; label: string; e
 function normalizeImageProvider(value: unknown): ImageProviderKind {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
   return IMAGE_PROVIDER_OPTIONS.some((option) => option.value === normalized)
-    ? normalized as ImageProviderKind
+    ? (normalized as ImageProviderKind)
     : 'openai'
 }
 
@@ -756,7 +915,10 @@ function normalizeImageApiType(value: unknown): ImageGenApiType {
   return value === 'async' || value === 'auto' ? value : 'sync'
 }
 
-function imageProviderDefaults(provider: ImageProviderKind): { endpoint: string; mode: ImageGenApiType } {
+function imageProviderDefaults(provider: ImageProviderKind): {
+  endpoint: string
+  mode: ImageGenApiType
+} {
   const option = IMAGE_PROVIDER_OPTIONS.find((item) => item.value === provider)
   return { endpoint: option?.endpoint ?? '', mode: option?.mode ?? 'sync' }
 }
@@ -826,9 +988,11 @@ function ProvidersView() {
   }, [refresh])
 
   useEffect(() => {
-    return window.spark?.on?.('stream:config:changed', (event) => {
-      if (event.scope === 'provider' || event.scope === 'model') refresh()
-    }) ?? (() => {})
+    return (
+      window.spark?.on?.('stream:config:changed', (event) => {
+        if (event.scope === 'provider' || event.scope === 'model') refresh()
+      }) ?? (() => {})
+    )
   }, [refresh])
 
   const handleDelete = async (id: string) => {
@@ -874,7 +1038,13 @@ function ProvidersView() {
   }, [])
 
   const selectAll = useCallback(() => {
-    setSelectedIds(new Set(profiles.filter((p) => !isBuiltInLocalCliProvider(p) && !isAutoRouterProvider(p)).map((p) => p.id)))
+    setSelectedIds(
+      new Set(
+        profiles
+          .filter((p) => !isBuiltInLocalCliProvider(p) && !isAutoRouterProvider(p))
+          .map((p) => p.id),
+      ),
+    )
   }, [profiles])
 
   const clearSelection = useCallback(() => {
@@ -883,11 +1053,11 @@ function ProvidersView() {
 
   const invertSelection = useCallback(() => {
     setSelectedIds((prev) => {
-    const next = new Set<string>()
-    for (const p of profiles) {
-      if (isBuiltInLocalCliProvider(p) || isAutoRouterProvider(p)) continue
-      if (!prev.has(p.id)) next.add(p.id)
-    }
+      const next = new Set<string>()
+      for (const p of profiles) {
+        if (isBuiltInLocalCliProvider(p) || isAutoRouterProvider(p)) continue
+        if (!prev.has(p.id)) next.add(p.id)
+      }
       return next
     })
   }, [profiles])
@@ -1043,10 +1213,7 @@ function ProvidersView() {
   )
 
   /** 已有 name 集合：用于预览时标记冲突 */
-  const existingNamesForPreview = useMemo(
-    () => new Set(profiles.map((p) => p.name)),
-    [profiles],
-  )
+  const existingNamesForPreview = useMemo(() => new Set(profiles.map((p) => p.name)), [profiles])
 
   /**
    * 按搜索关键字 / 类型筛选 / 排序 后用于渲染的 profiles。
@@ -1099,10 +1266,11 @@ function ProvidersView() {
         <div className="pv_header">
           <div className="pv_header_left">
             <h2>Providers</h2>
-            <Tag size="middle" color="gray">{profiles.length}</Tag>
+            <Tag size="middle" color="gray">
+              {profiles.length}
+            </Tag>
           </div>
           <div className="pv_header_right">
-
             <span className="flex-1" />
             <Button
               size="middle"
@@ -1234,10 +1402,7 @@ function ProvidersView() {
               size="middle"
               value={cardKindFilter}
               onChange={(v) => setCardKindFilter(v as 'all' | ProviderCardKind)}
-              options={[
-                { value: 'all', label: '全部类型' },
-                ...CARD_KIND_FILTER_OPTIONS,
-              ]}
+              options={[{ value: 'all', label: '全部类型' }, ...CARD_KIND_FILTER_OPTIONS]}
             />
             <Select
               className="pv_filters_select"
@@ -1250,7 +1415,9 @@ function ProvidersView() {
                 { value: 'nameDesc', label: '名称 Z→A' },
               ]}
             />
-            <span className="pv_filters_count">{visibleProfiles.length}/{profiles.length}</span>
+            <span className="pv_filters_count">
+              {visibleProfiles.length}/{profiles.length}
+            </span>
           </div>
         )}
 
@@ -1261,9 +1428,7 @@ function ProvidersView() {
               尚未配置 Provider — 点击「从模板添加」快速开始，或「自定义添加」手动配置
             </div>
           ) : visibleProfiles.length === 0 ? (
-            <div className="pv_empty">
-              没有匹配的 Provider — 调整搜索关键字或类型筛选试试
-            </div>
+            <div className="pv_empty">没有匹配的 Provider — 调整搜索关键字或类型筛选试试</div>
           ) : (
             <div className="pv_grid">
               {visibleProfiles.map((p) => {
@@ -1293,7 +1458,10 @@ function ProvidersView() {
                 const mediaModelChips = isMediaProvider
                   ? (p.mediaModelRefs ?? [])
                       .filter((ref) => ref.enabled !== false)
-                      .map((ref) => (ref.modelId ?? '').trim() || ref.manifestId.replace(/^custom:/, ''))
+                      .map(
+                        (ref) =>
+                          (ref.modelId ?? '').trim() || ref.manifestId.replace(/^custom:/, ''),
+                      )
                       .filter((id) => id.length > 0)
                   : null
                 const cardModelIds =
@@ -1308,10 +1476,10 @@ function ProvidersView() {
                       p.managed
                         ? `平台官方 · 默认 ${p.defaultModel} · 与第三方 Provider 并存`
                         : builtin
-                        ? builtinDesc
-                        : isMediaProvider
-                          ? `${mediaProviderDisplayName(p.mediaProvider ?? p.imageProvider ?? undefined)} · 默认 ${p.defaultModel}`
-                          : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
+                          ? builtinDesc
+                          : isMediaProvider
+                            ? `${mediaProviderDisplayName(p.mediaProvider ?? p.imageProvider ?? undefined)} · 默认 ${p.defaultModel}`
+                            : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
                     }
                     status={status}
                     modelIds={builtin ? [] : cardModelIds}
@@ -1378,9 +1546,7 @@ function ProvidersView() {
               ))}
             </div>
           ) : (
-            <div className="pv_catalog_empty">
-              没有找到匹配的模板厂商
-            </div>
+            <div className="pv_catalog_empty">没有找到匹配的模板厂商</div>
           )}
         </div>
       </Modal>
@@ -1528,9 +1694,14 @@ function providerIconForPreset(preset: ProviderPreset): ProviderIconConfig {
   return providerIconFromVendorId(preset.vendorId)
 }
 
-function resolveProviderIconForProfile(provider: ProviderProfile, vendor: VendorMeta | null): ProviderIconConfig {
-  return normalizeProviderIconConfig(provider.providerIcon) ??
+function resolveProviderIconForProfile(
+  provider: ProviderProfile,
+  vendor: VendorMeta | null,
+): ProviderIconConfig {
+  return (
+    normalizeProviderIconConfig(provider.providerIcon) ??
     providerIconFromVendorId(vendor?.id ?? (provider.provider === 'openai' ? 'openai' : 'claude'))
+  )
 }
 
 const CLAUDE_AUTO_ROUTER_VENDOR: VendorMeta = {
@@ -1587,9 +1758,7 @@ function VendorPresetCard({
     >
       <ProviderLogo vendor={vendor} size={36} shape="rounded" />
       <div className="pv_vendor_info">
-        <div className="pv_vendor_name">
-          {vendor.name}
-        </div>
+        <div className="pv_vendor_name">{vendor.name}</div>
         <div className="pv_vendor_desc">{vendor.desc}</div>
       </div>
       {vendor.purchaseUrl ? (
@@ -1678,16 +1847,23 @@ function ProviderCardX({
 
   // 状态颜色映射（用于 Arco Badge / Tag）
   const statusColor =
-    status === 'ok' ? 'green'
-    : status === 'warning' ? 'orange'
-    : status === 'error' ? 'red'
-    : 'gray'
+    status === 'ok'
+      ? 'green'
+      : status === 'warning'
+        ? 'orange'
+        : status === 'error'
+          ? 'red'
+          : 'gray'
   const statusLabel =
-    status === 'ok' ? '在线'
-    : status === 'warning' ? '需注意'
-    : status === 'error' ? '错误'
-    : status === 'off' ? '未启用'
-    : '未验证'
+    status === 'ok'
+      ? '在线'
+      : status === 'warning'
+        ? '需注意'
+        : status === 'error'
+          ? '错误'
+          : status === 'off'
+            ? '未启用'
+            : '未验证'
 
   return (
     <div
@@ -1733,8 +1909,16 @@ function ProviderCardX({
         <div className="pv_card_top_info">
           <div className="pv_card_name_row">
             <span className="pv_card_name">{name}</span>
-            {isBuiltin && <Tag size="middle" color="gray">内置</Tag>}
-            {isManaged && <Tag size="middle" color="arcoblue">平台官方</Tag>}
+            {isBuiltin && (
+              <Tag size="middle" color="gray">
+                内置
+              </Tag>
+            )}
+            {isManaged && (
+              <Tag size="middle" color="arcoblue">
+                平台官方
+              </Tag>
+            )}
           </div>
           <div className="pv_card_tags_row">
             {isDefault && (
@@ -1743,12 +1927,21 @@ function ProviderCardX({
               </Tag>
             )}
             <Tag size="middle" color={statusColor as any}>
-              <Badge status={status === 'ok' ? 'success' : status === 'error' ? 'error' : status === 'warning' ? 'warning' : 'default'} />
+              <Badge
+                status={
+                  status === 'ok'
+                    ? 'success'
+                    : status === 'error'
+                      ? 'error'
+                      : status === 'warning'
+                        ? 'warning'
+                        : 'default'
+                }
+              />
               <span className="ml-1">{statusLabel}</span>
             </Tag>
           </div>
         </div>
-        
       </div>
 
       {/* ─── 行 2：格式描述（Anthropic / OpenAI / 多媒体 + 默认模型） ─── */}
@@ -1780,41 +1973,39 @@ function ProviderCardX({
             <span className="pv_card_kind_label">{kindMeta.label}</span>
           </span>
           {!multiSelect && (
-          <div className="pv_card_actions" onClick={(e) => e.stopPropagation()}>
-            
-            
-            {!isBuiltin && !isManaged && (
-              <ActionIcon
-                icon={Icons.Trash}
-                size="small"
-                variant="borderless"
-                danger
-                onClick={onDelete}
-                title="删除"
-                aria-label="删除"
-              />
-            )}
-            {canHealthCheck && (
-              <ActionIcon
-                icon={Icons.Refresh}
-                size="small"
-                variant="borderless"
-                onClick={onHealthCheck}
-                title="健康检查"
-                aria-label="健康检查"
-              />
-            )}
-            {!isBuiltin && (
-              <ActionIcon
-                icon={Icons.Edit}
-                size="small"
-                variant="borderless"
-                title={isManaged ? '设置本机启用模型' : '编辑'}
-                onClick={onEdit}
-              />
-            )}
-          </div>
-        )}
+            <div className="pv_card_actions" onClick={(e) => e.stopPropagation()}>
+              {!isBuiltin && !isManaged && (
+                <ActionIcon
+                  icon={Icons.Trash}
+                  size="small"
+                  variant="borderless"
+                  danger
+                  onClick={onDelete}
+                  title="删除"
+                  aria-label="删除"
+                />
+              )}
+              {canHealthCheck && (
+                <ActionIcon
+                  icon={Icons.Refresh}
+                  size="small"
+                  variant="borderless"
+                  onClick={onHealthCheck}
+                  title="健康检查"
+                  aria-label="健康检查"
+                />
+              )}
+              {!isBuiltin && (
+                <ActionIcon
+                  icon={Icons.Edit}
+                  size="small"
+                  variant="borderless"
+                  title={isManaged ? '设置本机启用模型' : '编辑'}
+                  onClick={onEdit}
+                />
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1861,7 +2052,9 @@ function routeModelToDraft(model: ModelProfile, providers: ProviderProfile[]): R
   if (config == null) return createEmptyRouteDraft(providers, 'claude')
   return {
     id: model.id,
-    providerId: isAutoRouterProvider(model.providerId) ? model.providerId : getRouteProviderId(config.adapter),
+    providerId: isAutoRouterProvider(model.providerId)
+      ? model.providerId
+      : getRouteProviderId(config.adapter),
     name: model.name,
     adapter: config.adapter,
     enabled: model.enabled,
@@ -1985,10 +2178,15 @@ function RouteModelManagerModal({
   const { invoke: updateModel } = useIpcInvoke('model:update')
   const { invoke: deleteModel } = useIpcInvoke('model:delete')
   const routeModels = useMemo(
-    () => models.filter((model) => isAutoRouterProvider(model.providerId) && parseRouteModelConfig(model) != null),
+    () =>
+      models.filter(
+        (model) => isAutoRouterProvider(model.providerId) && parseRouteModelConfig(model) != null,
+      ),
     [models],
   )
-  const [draft, setDraft] = useState<RouteModelDraft>(() => createEmptyRouteDraft(providers, 'claude'))
+  const [draft, setDraft] = useState<RouteModelDraft>(() =>
+    createEmptyRouteDraft(providers, 'claude'),
+  )
   const [saving, setSaving] = useState(false)
   const [pendingDeleteModel, setPendingDeleteModel] = useState<ModelProfile | null>(null)
 
@@ -2001,7 +2199,9 @@ function RouteModelManagerModal({
       const current = prev.id ? routeModels.find((model) => model.id === prev.id) : null
       if (current) return routeModelToDraft(current, providers)
       const first = routeModels[0]
-      return first ? routeModelToDraft(first, providers) : createEmptyRouteDraft(providers, 'claude')
+      return first
+        ? routeModelToDraft(first, providers)
+        : createEmptyRouteDraft(providers, 'claude')
     })
   }, [open, providers, routeModels])
 
@@ -2028,7 +2228,9 @@ function RouteModelManagerModal({
   const changeAdapter = (adapter: RoutingAdapter) => {
     setPendingDeleteModel(null)
     setDraft((prev) => {
-      const candidateValues = new Set(getRouteCandidateOptions(providers, adapter).map((option) => option.value))
+      const candidateValues = new Set(
+        getRouteCandidateOptions(providers, adapter).map((option) => option.value),
+      )
       const candidates = ROUTING_SLOTS.reduce<RouteModelDraft['candidates']>((acc, slot) => {
         acc[slot.value] = prev.candidates[slot.value].filter((candidate) =>
           candidateValues.has(encodeRouteCandidateValue(candidate)),
@@ -2104,7 +2306,11 @@ function RouteModelManagerModal({
       await deleteModel({ id: model.id })
       toast.success('自动路由模型已删除')
       const remaining = routeModels.filter((item) => item.id !== model.id)
-      setDraft(remaining[0] ? routeModelToDraft(remaining[0], providers) : createEmptyRouteDraft(providers, draft.adapter))
+      setDraft(
+        remaining[0]
+          ? routeModelToDraft(remaining[0], providers)
+          : createEmptyRouteDraft(providers, draft.adapter),
+      )
       setPendingDeleteModel(null)
       onChanged()
     } catch (err) {
@@ -2169,12 +2375,7 @@ function RouteModelManagerModal({
         <div className="pv_route_sidebar">
           <div className="pv_route_sidebar_head">
             <span>模型卡</span>
-            <Button
-              size="small"
-              type="text"
-              icon={<Icons.Plus />}
-              onClick={() => createNewDraft()}
-            >
+            <Button size="small" type="text" icon={<Icons.Plus />} onClick={() => createNewDraft()}>
               新建
             </Button>
           </div>
@@ -2194,9 +2395,14 @@ function RouteModelManagerModal({
                   >
                     <span className="pv_route_item_name">{model.name}</span>
                     <span className="pv_route_item_meta">
-                      {config?.adapter === 'claude' ? 'Claude' : 'Codex'} · {providerNameById(providers, model.providerId)}
+                      {config?.adapter === 'claude' ? 'Claude' : 'Codex'} ·{' '}
+                      {providerNameById(providers, model.providerId)}
                     </span>
-                    {!model.enabled && <Tag size="middle" color="gray">已停用</Tag>}
+                    {!model.enabled && (
+                      <Tag size="middle" color="gray">
+                        已停用
+                      </Tag>
+                    )}
                   </button>
                 )
               })
@@ -2276,7 +2482,9 @@ function RouteModelManagerModal({
                       }
                       options={candidateOptions}
                       allowClear={slot.value !== 'default'}
-                      placeholder={slot.value === 'default' ? '至少选择一个默认模型' : '未配置则回退默认'}
+                      placeholder={
+                        slot.value === 'default' ? '至少选择一个默认模型' : '未配置则回退默认'
+                      }
                     />
                   </div>
                 )
@@ -2335,7 +2543,8 @@ export function ProviderEditPanel({
   const [customManifestDraft, setCustomManifestDraft] = useState('')
   const [customManifestError, setCustomManifestError] = useState('')
   const [dryRunInput, setDryRunInput] = useState('{\n  "prompt": "a red apple"\n}')
-  const [dryRunResult, setDryRunResult] = useState<CanvasMediaPruneModelParamsByInlineManifestResponse | null>(null)
+  const [dryRunResult, setDryRunResult] =
+    useState<CanvasMediaPruneModelParamsByInlineManifestResponse | null>(null)
   const [dryRunError, setDryRunError] = useState('')
   const [dryRunLoading, setDryRunLoading] = useState(false)
   // 自定义上下文窗口的"意图"状态：与 form.contextWindow 数值解耦，
@@ -2356,15 +2565,15 @@ export function ProviderEditPanel({
   const fetchedModelIds = useMemo(
     () =>
       uniqPreserveOrder(
-        fetchedModels
-          .map((model) => model.id.trim())
-          .filter((id): id is string => id.length > 0),
+        fetchedModels.map((model) => model.id.trim()).filter((id): id is string => id.length > 0),
       ),
     [fetchedModels],
   )
   const filteredFetchedModelIds = useMemo(() => {
     const query = modelPickerSearch.trim().toLowerCase()
-    return query ? fetchedModelIds.filter((id) => id.toLowerCase().includes(query)) : fetchedModelIds
+    return query
+      ? fetchedModelIds.filter((id) => id.toLowerCase().includes(query))
+      : fetchedModelIds
   }, [fetchedModelIds, modelPickerSearch])
   const filteredProviderIcons = useMemo(() => {
     const query = iconPickerSearch.trim().toLowerCase()
@@ -2451,7 +2660,11 @@ export function ProviderEditPanel({
             setApiKeyDirty(false)
             setIsCustomContextWindow(false)
             // 模板自带的候选模型只自动启用默认模型；其余进「候选模型目录」，用户点选后才计入已启用列表。
-            setFetchedModels(uniqPreserveOrder([preset.defaultModel, ...preset.modelIds]).map((modelId) => ({ id: modelId })))
+            setFetchedModels(
+              uniqPreserveOrder([preset.defaultModel, ...preset.modelIds]).map((modelId) => ({
+                id: modelId,
+              })),
+            )
             setForm({
               presetId: preset.id,
               name: preset.name,
@@ -2460,14 +2673,21 @@ export function ProviderEditPanel({
               defaultModel: preset.defaultModel,
               modelIds: [preset.defaultModel],
               endpoint: preset.apiEndpoint,
-              codexApiKind: resolveCodexApiKind(preset.provider, preset.apiEndpoint, preset.codexApiKind),
+              codexApiKind: resolveCodexApiKind(
+                preset.provider,
+                preset.apiEndpoint,
+                preset.codexApiKind,
+              ),
               supportsMillionContext: false,
               contextWindow: 0,
               apiKey: '',
               isDefault: false,
               ...EMPTY_TIER_MODELS,
               modelType: normalizeLegacyModelType(preset.modelType),
-              imageProvider: imageProviderForMediaConfig(preset.imageProvider, preset.mediaProvider),
+              imageProvider: imageProviderForMediaConfig(
+                preset.imageProvider,
+                preset.mediaProvider,
+              ),
               imageApiType: normalizeImageApiType(preset.mediaApiType ?? preset.imageApiType),
               ...presetMediaForm(preset),
             })
@@ -2509,24 +2729,32 @@ export function ProviderEditPanel({
           const effectiveContextWindow =
             typeof p.contextWindow === 'number' && p.contextWindow > 0
               ? p.contextWindow
-              : (p.supportsMillionContext === true ? 1_000_000 : 0)
+              : p.supportsMillionContext === true
+                ? 1_000_000
+                : 0
           // 非预设值（如 50K / 256K 之外的自定义数）打开时直接进入自定义模式。
           setIsCustomContextWindow(
-            effectiveContextWindow > 0
-              && !CONTEXT_WINDOW_PRESETS.some((opt) => opt.value === effectiveContextWindow),
+            effectiveContextWindow > 0 &&
+              !CONTEXT_WINDOW_PRESETS.some((opt) => opt.value === effectiveContextWindow),
           )
           setForm({
             presetId: 'custom',
             name: p.name,
             provider: normalizeProviderKind(p.provider),
-            providerIcon: normalizeProviderIconConfig(p.providerIcon) ?? providerIconFromVendorId(
-              vendorForMediaProvider(p.mediaProvider ?? p.imageProvider ?? undefined)?.id ??
-              (normalizeProviderKind(p.provider) === 'openai' ? 'openai' : 'claude'),
-            ),
+            providerIcon:
+              normalizeProviderIconConfig(p.providerIcon) ??
+              providerIconFromVendorId(
+                vendorForMediaProvider(p.mediaProvider ?? p.imageProvider ?? undefined)?.id ??
+                  (normalizeProviderKind(p.provider) === 'openai' ? 'openai' : 'claude'),
+              ),
             defaultModel: p.defaultModel,
             modelIds: uniqPreserveOrder(p.modelIds),
             endpoint: p.apiEndpoint ?? '',
-            codexApiKind: resolveCodexApiKind(normalizeProviderKind(p.provider), p.apiEndpoint, p.codexApiKind),
+            codexApiKind: resolveCodexApiKind(
+              normalizeProviderKind(p.provider),
+              p.apiEndpoint,
+              p.codexApiKind,
+            ),
             supportsMillionContext: p.supportsMillionContext === true,
             contextWindow: effectiveContextWindow,
             apiKey,
@@ -2541,7 +2769,11 @@ export function ProviderEditPanel({
           })
           setApiKeyDirty(false)
           if (apiKeyError) {
-            setError(apiKeyError instanceof Error ? `API Key 读取失败：${apiKeyError.message}` : 'API Key 读取失败')
+            setError(
+              apiKeyError instanceof Error
+                ? `API Key 读取失败：${apiKeyError.message}`
+                : 'API Key 读取失败',
+            )
           }
         }
       })
@@ -2565,8 +2797,17 @@ export function ProviderEditPanel({
 
   // ── 衍生：当前选中 preset 对应的 vendor（用于 hero 渲染真实 logo） ──
   const currentVendor: VendorMeta | null = useMemo(() => {
-    if (hasConfiguredMediaStack(form.modelType, form.mediaProvider, form.mediaCapabilities, form.mediaModelRefs)) {
-      return vendorForMediaProvider(form.mediaProvider || mediaProviderFromImageKind(form.imageProvider))
+    if (
+      hasConfiguredMediaStack(
+        form.modelType,
+        form.mediaProvider,
+        form.mediaCapabilities,
+        form.mediaModelRefs,
+      )
+    ) {
+      return vendorForMediaProvider(
+        form.mediaProvider || mediaProviderFromImageKind(form.imageProvider),
+      )
     }
     if (form.presetId !== 'custom') {
       const preset = getProviderPresetById(form.presetId)
@@ -2588,7 +2829,16 @@ export function ProviderEditPanel({
     }
     // 未匹配到当前格式的供应商 → 按协议格式显示官方图标（openai → OpenAI，anthropic → Claude）
     return form.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META
-  }, [form.modelType, form.mediaProvider, form.mediaCapabilities, form.mediaModelRefs, form.imageProvider, form.presetId, form.name, form.provider])
+  }, [
+    form.modelType,
+    form.mediaProvider,
+    form.mediaCapabilities,
+    form.mediaModelRefs,
+    form.imageProvider,
+    form.presetId,
+    form.name,
+    form.provider,
+  ])
   const availablePresets = useMemo(
     () =>
       PROVIDER_PRESETS.filter((preset) => {
@@ -2597,12 +2847,18 @@ export function ProviderEditPanel({
         if (isMediaProviderModelType(form.modelType)) {
           if (preset.modelType !== form.modelType) return false
           if (form.modelType === 'image' || form.modelType === 'video') {
-            return SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS.includes(preset.mediaProvider as MediaProviderKind)
+            return SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS.includes(
+              preset.mediaProvider as MediaProviderKind,
+            )
           }
           return true
         }
         if (preset.provider !== form.provider) return false
-        return preset.modelType !== 'image' && preset.modelType !== 'voice' && preset.modelType !== 'video'
+        return (
+          preset.modelType !== 'image' &&
+          preset.modelType !== 'voice' &&
+          preset.modelType !== 'video'
+        )
       }),
     [form.modelType, form.provider],
   )
@@ -2616,29 +2872,52 @@ export function ProviderEditPanel({
     return providerFiltered.length > 0 ? providerFiltered : byType
   }, [form, mediaCatalog])
   const selectedManifestIds = useMemo(
-    () => new Set(form.mediaModelRefs.filter((ref) => ref.enabled !== false).map((ref) => ref.manifestId)),
+    () =>
+      new Set(
+        form.mediaModelRefs.filter((ref) => ref.enabled !== false).map((ref) => ref.manifestId),
+      ),
     [form.mediaModelRefs],
   )
   const selectedMediaCatalogModels = useMemo(
     () => mediaCatalogForForm.filter((model) => selectedManifestIds.has(model.manifestId)),
     [mediaCatalogForForm, selectedManifestIds],
   )
-  const mediaDefaultOptionSets = useMemo(() => ({
-    imageSize: enumOptionsFromModels(selectedMediaCatalogModels, ['size', 'aspectRatio', 'aspect_ratio']),
-    imageQuality: enumOptionsFromModels(selectedMediaCatalogModels, ['quality']),
-    audioFormat: enumOptionsFromModels(selectedMediaCatalogModels, ['format', 'output_format', 'response_format']),
-    videoAspectRatio: enumOptionsFromModels(selectedMediaCatalogModels, ['aspectRatio', 'aspect_ratio', 'size']),
-    videoDuration: enumOptionsFromModels(selectedMediaCatalogModels, ['durationSeconds', 'duration']),
-    videoQuality: enumOptionsFromModels(selectedMediaCatalogModels, ['quality', 'resolution']),
-  }), [selectedMediaCatalogModels])
+  const mediaDefaultOptionSets = useMemo(
+    () => ({
+      imageSize: enumOptionsFromModels(selectedMediaCatalogModels, [
+        'size',
+        'aspectRatio',
+        'aspect_ratio',
+      ]),
+      imageQuality: enumOptionsFromModels(selectedMediaCatalogModels, ['quality']),
+      audioFormat: enumOptionsFromModels(selectedMediaCatalogModels, [
+        'format',
+        'output_format',
+        'response_format',
+      ]),
+      videoAspectRatio: enumOptionsFromModels(selectedMediaCatalogModels, [
+        'aspectRatio',
+        'aspect_ratio',
+        'size',
+      ]),
+      videoDuration: enumOptionsFromModels(selectedMediaCatalogModels, [
+        'durationSeconds',
+        'duration',
+      ]),
+      videoQuality: enumOptionsFromModels(selectedMediaCatalogModels, ['quality', 'resolution']),
+    }),
+    [selectedMediaCatalogModels],
+  )
   const mediaCapabilityOptions = useMemo(
-    () => MEDIA_CAPABILITY_IDS.filter((capability) => capabilitiesForModelType(form.modelType).includes(capability)),
+    () =>
+      MEDIA_CAPABILITY_IDS.filter((capability) =>
+        capabilitiesForModelType(form.modelType).includes(capability),
+      ),
     [form.modelType],
   )
   const templateConfigured = form.presetId !== 'custom'
-  const effectiveMediaProvider = (
-    form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)
-  ) as MediaProviderKind
+  const effectiveMediaProvider = (form.mediaProvider ||
+    mediaProviderFromImageKind(form.imageProvider)) as MediaProviderKind
   const showMediaDefaults = useMemo(() => {
     if (form.modelType === 'image') return true
     if (form.modelType === 'voice') return true
@@ -2654,10 +2933,19 @@ export function ProviderEditPanel({
     [form.mediaModelRefs],
   )
   const advancedSummary = useMemo(() => {
-    if (hasConfiguredMediaStack(form.modelType, form.mediaProvider, form.mediaCapabilities, form.mediaModelRefs)) {
-      const adapter = MEDIA_PROVIDER_LABELS[
-        (form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)) as MediaProviderKind
-      ]
+    if (
+      hasConfiguredMediaStack(
+        form.modelType,
+        form.mediaProvider,
+        form.mediaCapabilities,
+        form.mediaModelRefs,
+      )
+    ) {
+      const adapter =
+        MEDIA_PROVIDER_LABELS[
+          (form.mediaProvider ||
+            mediaProviderFromImageKind(form.imageProvider)) as MediaProviderKind
+        ]
       const enabledModels = form.mediaModelRefs.filter((ref) => ref.enabled !== false).length
       const details = [adapter, enabledModels > 0 ? `${enabledModels} 个模型` : '使用默认模型']
       return `${templateConfigured ? '模板已自动配置' : '当前配置'} · ${details.join(' · ')}`
@@ -2667,10 +2955,7 @@ export function ProviderEditPanel({
       ? '模板已自动配置 · 可按需调整模型与上下文'
       : `可选：协议、${routingLabel}`
   }, [form, templateConfigured])
-  const requestEndpointPreview = useMemo(
-    () => buildRequestEndpointPreview(form),
-    [form],
-  )
+  const requestEndpointPreview = useMemo(() => buildRequestEndpointPreview(form), [form])
 
   const toggleMediaModelRef = (model: CanvasMediaModelSummary, checked: boolean) => {
     setForm((prev) => {
@@ -2699,9 +2984,15 @@ export function ProviderEditPanel({
         ...prev,
         mediaModelRefs: [...existing.values()],
         mediaCapabilities: [...capabilitySet],
-        mediaProvider: checked ? adapterKindFromManifestProvider(model.providerKind) : prev.mediaProvider,
+        mediaProvider: checked
+          ? adapterKindFromManifestProvider(model.providerKind)
+          : prev.mediaProvider,
         mediaApiType: checked
-          ? model.invocationMode === 'sync' ? 'sync' : model.invocationMode === 'async_polling' ? 'async' : prev.mediaApiType
+          ? model.invocationMode === 'sync'
+            ? 'sync'
+            : model.invocationMode === 'async_polling'
+              ? 'async'
+              : prev.mediaApiType
           : prev.mediaApiType,
         defaultModel: prev.defaultModel.trim() ? prev.defaultModel : model.effectiveModelId,
         modelIds,
@@ -2716,17 +3007,20 @@ export function ProviderEditPanel({
     setForm((prev) => {
       // 已存在（内置或自定义）同名引用则不重复添加
       const exists = prev.mediaModelRefs.some(
-        (ref) => ref.manifestId === manifestId || (ref.modelId?.trim() === modelId),
+        (ref) => ref.manifestId === manifestId || ref.modelId?.trim() === modelId,
       )
       const existing = new Map(prev.mediaModelRefs.map((ref) => [ref.manifestId, ref]))
       if (!exists) {
-        const mode = prev.mediaApiType === 'async' ||
+        const mode =
+          prev.mediaApiType === 'async' ||
           (prev.mediaApiType === 'auto' && prev.modelType === 'video')
-          ? 'async_polling'
-          : 'sync'
+            ? 'async_polling'
+            : 'sync'
         let manifest: MediaModelManifest | undefined
-        if (prev.mediaProvider === 'custom' &&
-          (prev.modelType === 'image' || prev.modelType === 'video')) {
+        if (
+          prev.mediaProvider === 'custom' &&
+          (prev.modelType === 'image' || prev.modelType === 'video')
+        ) {
           manifest = createBasicCustomMediaManifest({ modelId, modelType: prev.modelType, mode })
         }
         existing.set(manifestId, {
@@ -2753,16 +3047,18 @@ export function ProviderEditPanel({
   }
 
   const openCustomManifestEditor = (ref: ProviderMediaModelRef) => {
-    const fallback = form.modelType === 'image' || form.modelType === 'video'
-      ? createBasicCustomMediaManifest({
-          modelId: ref.modelId ?? ref.manifestId.replace(/^custom:/, ''),
-          modelType: form.modelType,
-          mode: form.mediaApiType === 'async' ||
-            (form.mediaApiType === 'auto' && form.modelType === 'video')
-            ? 'async_polling'
-            : 'sync',
-        })
-      : null
+    const fallback =
+      form.modelType === 'image' || form.modelType === 'video'
+        ? createBasicCustomMediaManifest({
+            modelId: ref.modelId ?? ref.manifestId.replace(/^custom:/, ''),
+            modelType: form.modelType,
+            mode:
+              form.mediaApiType === 'async' ||
+              (form.mediaApiType === 'auto' && form.modelType === 'video')
+                ? 'async_polling'
+                : 'sync',
+          })
+        : null
     const manifest = ref.manifest ?? fallback
     if (!manifest) return
     setEditingCustomManifestId(ref.manifestId)
@@ -2777,16 +3073,20 @@ export function ProviderEditPanel({
       // 双重校验：Zod schema + semantic 校验（id 唯一性 / capability 数量 / 跨字段引用等）。
       const schemaResult = MediaModelManifestSchema.safeParse(manifest)
       if (!schemaResult.success) {
-        setCustomManifestError(schemaResult.error.issues
-          .map((issue) => `${issue.path.join('.') || 'manifest'}: ${issue.message}`)
-          .join('\n'))
+        setCustomManifestError(
+          schemaResult.error.issues
+            .map((issue) => `${issue.path.join('.') || 'manifest'}: ${issue.message}`)
+            .join('\n'),
+        )
         return
       }
       const semanticIssues = validateMediaModelManifestSemantics(schemaResult.data)
       if (semanticIssues.length > 0) {
-        setCustomManifestError(semanticIssues
-          .map((issue) => `${issue.path?.join('.') ?? issue.code}: ${issue.message}`)
-          .join('\n'))
+        setCustomManifestError(
+          semanticIssues
+            .map((issue) => `${issue.path?.join('.') ?? issue.code}: ${issue.message}`)
+            .join('\n'),
+        )
         return
       }
       const current = form.mediaModelRefs.find((ref) => ref.manifestId === editingCustomManifestId)
@@ -2797,9 +3097,11 @@ export function ProviderEditPanel({
         manifest,
       })
       if (!parsed.success) {
-        setCustomManifestError(parsed.error.issues
-          .map((issue) => `${issue.path.join('.') || 'manifest'}: ${issue.message}`)
-          .join('\n'))
+        setCustomManifestError(
+          parsed.error.issues
+            .map((issue) => `${issue.path.join('.') || 'manifest'}: ${issue.message}`)
+            .join('\n'),
+        )
         return
       }
       setForm((prev) => ({
@@ -2831,7 +3133,9 @@ export function ProviderEditPanel({
     try {
       manifestObj = JSON.parse(customManifestDraft) as MediaModelManifest
     } catch (err) {
-      setDryRunError(err instanceof Error ? `manifest JSON 解析失败：${err.message}` : 'manifest JSON 解析失败')
+      setDryRunError(
+        err instanceof Error ? `manifest JSON 解析失败：${err.message}` : 'manifest JSON 解析失败',
+      )
       return
     }
     if (!Array.isArray(manifestObj.capabilities) || manifestObj.capabilities.length === 0) {
@@ -2842,7 +3146,11 @@ export function ProviderEditPanel({
     try {
       paramsObj = dryRunInput.trim().length === 0 ? {} : JSON.parse(dryRunInput)
     } catch (err) {
-      setDryRunError(err instanceof Error ? `modelParams JSON 解析失败：${err.message}` : 'modelParams JSON 解析失败')
+      setDryRunError(
+        err instanceof Error
+          ? `modelParams JSON 解析失败：${err.message}`
+          : 'modelParams JSON 解析失败',
+      )
       return
     }
     const capabilityId = manifestObj.capabilities[0]?.id
@@ -2994,45 +3302,56 @@ export function ProviderEditPanel({
     ...editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty),
   })
 
-  const applyFetchedProviderModels = useCallback((
-    models: ProviderFetchedModel[],
-    options: { forceFirstDefault?: boolean; onlyFirstEnabled?: boolean } = {},
-  ) => {
-    setFetchedModels(models)
-    const ids = uniqPreserveOrder(
-      models
-        .map((model) => model.id.trim())
-        .filter((id): id is string => id.length > 0),
-    )
-    if (ids.length === 0) return 0
-    const firstModelId = ids[0]
-    if (firstModelId == null) return 0
-    setForm((prev) => {
-      const nextDefault = options.forceFirstDefault || !prev.defaultModel.trim()
-        ? firstModelId
-        : prev.defaultModel.trim()
-      return {
-        ...prev,
-        defaultModel: nextDefault,
-        modelIds: options.onlyFirstEnabled
-          ? [nextDefault]
-          : uniqPreserveOrder([nextDefault, ...prev.modelIds]),
-      }
-    })
-    return ids.length
-  }, [])
+  const applyFetchedProviderModels = useCallback(
+    (
+      models: ProviderFetchedModel[],
+      options: { forceFirstDefault?: boolean; onlyFirstEnabled?: boolean } = {},
+    ) => {
+      setFetchedModels(models)
+      const ids = uniqPreserveOrder(
+        models.map((model) => model.id.trim()).filter((id): id is string => id.length > 0),
+      )
+      if (ids.length === 0) return 0
+      const firstModelId = ids[0]
+      if (firstModelId == null) return 0
+      setForm((prev) => {
+        const nextDefault =
+          options.forceFirstDefault || !prev.defaultModel.trim()
+            ? firstModelId
+            : prev.defaultModel.trim()
+        return {
+          ...prev,
+          defaultModel: nextDefault,
+          modelIds: options.onlyFirstEnabled
+            ? [nextDefault]
+            : uniqPreserveOrder([nextDefault, ...prev.modelIds]),
+        }
+      })
+      return ids.length
+    },
+    [],
+  )
 
-  const fetchAndApplyProviderModels = useCallback(async (
-    options: { forceFirstDefault?: boolean; onlyFirstEnabled?: boolean } = {},
-  ) => {
-    const result = await fetchProviderModels({
-      ...(profileId ? { id: profileId } : {}),
-      provider: form.provider,
-      apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
-      ...editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty),
-    })
-    return applyFetchedProviderModels(result.models, options)
-  }, [apiKeyDirty, applyFetchedProviderModels, fetchProviderModels, form.apiKey, form.endpoint, form.provider, profileId])
+  const fetchAndApplyProviderModels = useCallback(
+    async (options: { forceFirstDefault?: boolean; onlyFirstEnabled?: boolean } = {}) => {
+      const result = await fetchProviderModels({
+        ...(profileId ? { id: profileId } : {}),
+        provider: form.provider,
+        apiEndpoint: form.endpoint.trim().length > 0 ? form.endpoint.trim() : null,
+        ...editableProviderApiKeyPayload(profileId, form.apiKey, apiKeyDirty),
+      })
+      return applyFetchedProviderModels(result.models, options)
+    },
+    [
+      apiKeyDirty,
+      applyFetchedProviderModels,
+      fetchProviderModels,
+      form.apiKey,
+      form.endpoint,
+      form.provider,
+      profileId,
+    ],
+  )
 
   const autoFetchApiKey = form.apiKey
   const autoFetchEndpoint = form.endpoint
@@ -3040,13 +3359,14 @@ export function ProviderEditPanel({
   const autoFetchPresetId = form.presetId
   const autoFetchProvider = form.provider
   const autoFetchModelsSignature = useMemo(
-    () => buildAutoFetchModelsSignature({
-      apiKey: autoFetchApiKey,
-      endpoint: autoFetchEndpoint,
-      modelType: autoFetchModelType,
-      presetId: autoFetchPresetId,
-      provider: autoFetchProvider,
-    }),
+    () =>
+      buildAutoFetchModelsSignature({
+        apiKey: autoFetchApiKey,
+        endpoint: autoFetchEndpoint,
+        modelType: autoFetchModelType,
+        presetId: autoFetchPresetId,
+        provider: autoFetchProvider,
+      }),
     [autoFetchApiKey, autoFetchEndpoint, autoFetchModelType, autoFetchPresetId, autoFetchProvider],
   )
 
@@ -3067,7 +3387,14 @@ export function ProviderEditPanel({
     }, 800)
 
     return () => window.clearTimeout(id)
-  }, [autoFetchModelsSignature, fetchAndApplyProviderModels, fetchingModels, profileId, saving, visible])
+  }, [
+    autoFetchModelsSignature,
+    fetchAndApplyProviderModels,
+    fetchingModels,
+    profileId,
+    saving,
+    visible,
+  ])
 
   const handleTestConnection = async () => {
     if (!form.defaultModel.trim()) {
@@ -3154,7 +3481,11 @@ export function ProviderEditPanel({
     lastAutoDefaultModelRef.current = null
     setIsCustomContextWindow(false)
     // 模板自带的候选模型只自动启用默认模型；其余进「候选模型目录」，用户点选后才计入已启用列表。
-    setFetchedModels(uniqPreserveOrder([preset.defaultModel, ...preset.modelIds]).map((modelId) => ({ id: modelId })))
+    setFetchedModels(
+      uniqPreserveOrder([preset.defaultModel, ...preset.modelIds]).map((modelId) => ({
+        id: modelId,
+      })),
+    )
     setForm((prev) => ({
       ...prev,
       presetId: preset.id,
@@ -3195,11 +3526,7 @@ export function ProviderEditPanel({
           <Button type="text" onClick={onClose} disabled={saving}>
             取消
           </Button>
-          <Button
-            type="primary"
-            loading={saving}
-            onClick={() => void handleSave()}
-          >
+          <Button type="primary" loading={saving} onClick={() => void handleSave()}>
             保存
           </Button>
         </div>
@@ -3231,54 +3558,60 @@ export function ProviderEditPanel({
           </div>
           <div className="pv_section_body">
             <div className="pv_form_grid">
-              <label className="pv_form_label">
-                模型类型
-              </label>
+              <label className="pv_form_label">模型类型</label>
               <Select
-                  value={form.modelType}
-                  onChange={(v) => {
-                    const modelType = v as ProviderModelType
-                    const isDedicatedMedia = isMediaProviderModelType(modelType)
-                    setFetchedModels([])
-                    setForm((prev) => {
-                      const supportsMediaConfig = isDedicatedMedia || (modelType === 'multimodal' && prev.mediaGenerationEnabled)
-                      const imageProvider = modelType === 'image' && !SUPPORTED_IMAGE_PROVIDERS.includes(prev.imageProvider)
+                value={form.modelType}
+                onChange={(v) => {
+                  const modelType = v as ProviderModelType
+                  const isDedicatedMedia = isMediaProviderModelType(modelType)
+                  setFetchedModels([])
+                  setForm((prev) => {
+                    const supportsMediaConfig =
+                      isDedicatedMedia ||
+                      (modelType === 'multimodal' && prev.mediaGenerationEnabled)
+                    const imageProvider =
+                      modelType === 'image' &&
+                      !SUPPORTED_IMAGE_PROVIDERS.includes(prev.imageProvider)
                         ? 'apimart'
                         : modelType === 'image'
                           ? prev.imageProvider
                           : 'openai'
-                      const mediaProvider = isDedicatedMedia
-                        ? (() => {
-                            const candidate = prev.mediaProvider || mediaProviderFromImageKind(imageProvider)
-                            return (modelType === 'image' || modelType === 'video') &&
-                              !SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS.includes(candidate)
-                              ? modelType === 'image' ? mediaProviderFromImageKind(imageProvider) : 'apimart'
-                              : candidate
-                          })()
-                        : supportsMediaConfig
-                          ? prev.mediaProvider
-                          : ''
-                      return {
-                        ...prev,
-                        modelType,
-                        presetId: 'custom',
-                        provider: isDedicatedMedia ? 'openai' : prev.provider,
-                        codexApiKind: isDedicatedMedia
-                          ? 'chat'
-                          : prev.provider === 'openai'
-                            ? 'responses'
-                            : prev.codexApiKind,
-                        imageProvider,
-                        imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
-                        mediaProvider,
-                        mediaApiType: supportsMediaConfig ? prev.mediaApiType : 'auto',
-                        mediaPollTimeout:
-                          hasVideoTaskConfig(modelType, prev.mediaCapabilities) && !prev.mediaPollTimeout.trim()
-                            ? String(DEFAULT_VIDEO_POLL_TIMEOUT_MS)
-                            : prev.mediaPollTimeout,
-                      }
-                    })
-                  }}
+                    const mediaProvider = isDedicatedMedia
+                      ? (() => {
+                          const candidate =
+                            prev.mediaProvider || mediaProviderFromImageKind(imageProvider)
+                          return (modelType === 'image' || modelType === 'video') &&
+                            !SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS.includes(candidate)
+                            ? modelType === 'image'
+                              ? mediaProviderFromImageKind(imageProvider)
+                              : 'apimart'
+                            : candidate
+                        })()
+                      : supportsMediaConfig
+                        ? prev.mediaProvider
+                        : ''
+                    return {
+                      ...prev,
+                      modelType,
+                      presetId: 'custom',
+                      provider: isDedicatedMedia ? 'openai' : prev.provider,
+                      codexApiKind: isDedicatedMedia
+                        ? 'chat'
+                        : prev.provider === 'openai'
+                          ? 'responses'
+                          : prev.codexApiKind,
+                      imageProvider,
+                      imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
+                      mediaProvider,
+                      mediaApiType: supportsMediaConfig ? prev.mediaApiType : 'auto',
+                      mediaPollTimeout:
+                        hasVideoTaskConfig(modelType, prev.mediaCapabilities) &&
+                        !prev.mediaPollTimeout.trim()
+                          ? String(DEFAULT_VIDEO_POLL_TIMEOUT_MS)
+                          : prev.mediaPollTimeout,
+                    }
+                  })
+                }}
                 options={[
                   { label: '对话模型', value: 'multimodal' },
                   { label: '生图模型', value: 'image' },
@@ -3289,14 +3622,15 @@ export function ProviderEditPanel({
 
               {isChatModel && (
                 <>
-                  <label className="pv_form_label">
-                    API 协议格式
-                  </label>
+                  <label className="pv_form_label">API 协议格式</label>
                   <Select
                     value={form.provider}
                     onChange={(v) => {
                       const targetProvider = normalizeProviderKind(v)
-                      const matchedPreset = findPresetForProtocolSwitch(form.presetId, targetProvider)
+                      const matchedPreset = findPresetForProtocolSwitch(
+                        form.presetId,
+                        targetProvider,
+                      )
                       setFetchedModels([])
                       if (matchedPreset) {
                         applyPreset(matchedPreset)
@@ -3393,8 +3727,12 @@ export function ProviderEditPanel({
                 />
                 {requestEndpointPreview && (
                   <div className="pv_endpoint_inline_hint" role="note" aria-live="polite">
-                    <span className="pv_endpoint_inline_hint_label">{requestEndpointPreview.label}：</span>
-                    <code className="pv_endpoint_inline_hint_code">{requestEndpointPreview.url}</code>
+                    <span className="pv_endpoint_inline_hint_label">
+                      {requestEndpointPreview.label}：
+                    </span>
+                    <code className="pv_endpoint_inline_hint_code">
+                      {requestEndpointPreview.url}
+                    </code>
                   </div>
                 )}
               </div>
@@ -3407,9 +3745,7 @@ export function ProviderEditPanel({
                 />
               )}
 
-              <label className="pv_form_label">
-                API Key
-              </label>
+              <label className="pv_form_label">API Key</label>
               <InputPassword
                 value={form.apiKey}
                 onChange={(e) => {
@@ -3420,17 +3756,15 @@ export function ProviderEditPanel({
                   profileId
                     ? '已读取保存的 Key；修改后保存才会更新'
                     : isDedicatedMediaType
-                    ? '媒体平台 API Key'
-                    : 'sk-ant-...'
+                      ? '媒体平台 API Key'
+                      : 'sk-ant-...'
                 }
                 autoComplete="new-password"
               />
 
               {isChatModel && (
                 <>
-                  <label className="pv_form_label">
-                    连接与模型
-                  </label>
+                  <label className="pv_form_label">连接与模型</label>
                   <div className="pv_connection_actions">
                     <div className="pv_form_control_inline">
                       <Button
@@ -3445,7 +3779,11 @@ export function ProviderEditPanel({
                       </Button>
                     </div>
                     {connectionFeedback && (
-                      <div className={`pv_inline_status pv_inline_status_${connectionFeedback.tone}`} role="status" aria-live="polite">
+                      <div
+                        className={`pv_inline_status pv_inline_status_${connectionFeedback.tone}`}
+                        role="status"
+                        aria-live="polite"
+                      >
                         <span className="pv_inline_status_dot" aria-hidden="true" />
                         <span>{connectionFeedback.message}</span>
                       </div>
@@ -3454,7 +3792,9 @@ export function ProviderEditPanel({
                 </>
               )}
 
-              <label className="pv_form_label">{isDedicatedMediaType ? '默认调用模型' : '默认 Provider'}</label>
+              <label className="pv_form_label">
+                {isDedicatedMediaType ? '默认调用模型' : '默认 Provider'}
+              </label>
               <div className="pv_form_control_inline">
                 <Switch
                   size="middle"
@@ -3476,9 +3816,7 @@ export function ProviderEditPanel({
           </div>
           <div className="pv_section_body">
             <div className="pv_form_grid">
-              <label className="pv_form_label">
-                默认模型 ID
-              </label>
+              <label className="pv_form_label">默认模型 ID</label>
               <div className="pv_field_stack">
                 <div className="pv_form_control_inline pv_form_control_inline-wrap">
                   <Input
@@ -3492,8 +3830,8 @@ export function ProviderEditPanel({
                     }}
                     placeholder="例：claude-sonnet-4-20250514"
                   />
-                  {isChatModel && (
-                    fetchedModelIds.length > 0 ? (
+                  {isChatModel &&
+                    (fetchedModelIds.length > 0 ? (
                       <Dropdown
                         menu={{ items: [] }}
                         open={modelPickerOpen}
@@ -3554,7 +3892,7 @@ export function ProviderEditPanel({
                       >
                         <Button
                           type="text"
-                          style={{height: '100%'}}
+                          style={{ height: '100%' }}
                           icon={<Icons.ChevronDown size={12} />}
                           loading={fetchingModels}
                           disabled={saving || testingConnection}
@@ -3571,8 +3909,7 @@ export function ProviderEditPanel({
                       >
                         获取模型
                       </Button>
-                    )
-                  )}
+                    ))}
                 </div>
                 {isChatModel && (
                   <span className="pv_form_hint">
@@ -3592,7 +3929,9 @@ export function ProviderEditPanel({
                 aria-controls="provider-advanced-settings"
                 onClick={() => setAdvancedOpen((open) => !open)}
               >
-                <span className="pv_advanced_toggle_icon"><Icons.Settings size={14} /></span>
+                <span className="pv_advanced_toggle_icon">
+                  <Icons.Settings size={14} />
+                </span>
                 <span className="pv_advanced_toggle_text">
                   <span className="pv_advanced_toggle_title">高级设置</span>
                   <span className="pv_advanced_toggle_summary">{advancedSummary}</span>
@@ -3603,384 +3942,434 @@ export function ProviderEditPanel({
               {advancedOpen && (
                 <div id="provider-advanced-settings" className="pv_advanced_fields">
                   <div className="pv_form_grid">
-
-              {isChatModel && (
-                <>
-                  <label className="pv_form_label">
-                    附加生成能力
-                  </label>
-                  <div className="pv_form_control_inline">
-                    <Switch
-                      size="middle"
-                      checked={form.mediaGenerationEnabled}
-                      onChange={(checked: boolean) => set('mediaGenerationEnabled', checked)}
-                    />
-                  </div>
-                </>
-              )}
-
-              {/* ─── 多媒体能力（图片 / 语音 / 视频）─── */}
-              {mediaPanelVisible && (
-                <>
-                  <ProviderMediaRoutingFields
-                    templateConfigured={templateConfigured}
-                    mediaProvider={effectiveMediaProvider}
-                    mediaApiType={form.mediaApiType}
-                    providerOptions={mediaProviderOptionsForModelType(form.modelType).map((kind) => ({
-                      label: MEDIA_PROVIDER_LABELS[kind],
-                      value: kind,
-                    }))}
-                    onConvertToCustom={() => set('presetId', 'custom')}
-                    onMediaProviderChange={changeMediaProvider}
-                    onMediaApiTypeChange={(mediaApiType) => setForm((prev) => ({
-                      ...prev,
-                      mediaApiType,
-                      imageApiType: prev.modelType === 'image'
-                        ? normalizeImageApiType(mediaApiType)
-                        : prev.imageApiType,
-                    }))}
-                  />
-
-                  <label className="pv_form_label">
-                    模型清单
-                  </label>
-                  <div className="pv_media_model_refs">
-                    <ProviderMediaModelCatalog
-                      models={mediaCatalogForForm}
-                      loading={mediaCatalogLoading}
-                      isChatModel={isChatModel}
-                      selectedManifestIds={selectedManifestIds}
-                      defaultModel={form.defaultModel}
-                      onToggleModel={toggleMediaModelRef}
-                      onSetDefaultModel={setMediaDefaultModel}
-                    />
-
-                    {/* ─── 自定义模型引用（不在内置目录里，可手动增删） ─── */}
-                    {customModelRefs.length > 0 && (
-                      <div className="pv_media_manifest_list">
-                        {customModelRefs.map((ref) => (
-                          <div key={ref.manifestId} className="pv_media_manifest_item pv_media_manifest_item_selected pv_media_manifest_item_static">
-                            <div className="pv_media_manifest_main">
-                              <div className="pv_media_manifest_title">
-                                <span>{ref.modelId}</span>
-                                <Tag size="middle" color="purple">自定义</Tag>
-                                {ref.manifest && <Tag size="middle" color="green">协议已配置</Tag>}
-                                <Tag size="middle" color="gray">{form.mediaProvider || form.imageProvider}</Tag>
-                              </div>
-                              <div className="pv_media_manifest_meta">
-                                {form.defaultModel.trim() === ref.modelId?.trim()
-                                  ? `${ref.modelId} · 当前默认`
-                                  : ref.modelId}
-                              </div>
-                            </div>
-                            <div className="pv_media_manifest_actions">
-                              {(form.modelType === 'image' || form.modelType === 'video') && (
-                                <Button
-                                  size="middle"
-                                  type="text"
-                                  icon={<Icons.Settings size={12} />}
-                                  onClick={() => openCustomManifestEditor(ref)}
-                                >
-                                  编辑协议
-                                </Button>
-                              )}
-                              {form.defaultModel.trim() === ref.modelId?.trim() ? (
-                                <Tag size="middle" color="green">默认</Tag>
-                              ) : (
-                                <Button
-                                  size="middle"
-                                  type="text"
-                                  icon={<Icons.Star size={12} />}
-                                  onClick={() => setMediaDefaultModel(ref.modelId ?? '')}
-                                  title="设为默认调用模型"
-                                  aria-label={`将 ${ref.modelId} 设为默认`}
-                                >
-                                  设为默认
-                                </Button>
-                              )}
-                              <Button
-                                size="middle"
-                                type="text"
-                                danger
-                                icon={<Icons.X />}
-                                onClick={() => removeMediaModelRef(ref.manifestId)}
-                                title="移除自定义模型"
-                                aria-label={`移除自定义模型 ${ref.modelId}`}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                    {isChatModel && (
+                      <>
+                        <label className="pv_form_label">附加生成能力</label>
+                        <div className="pv_form_control_inline">
+                          <Switch
+                            size="middle"
+                            checked={form.mediaGenerationEnabled}
+                            onChange={(checked: boolean) => set('mediaGenerationEnabled', checked)}
+                          />
+                        </div>
+                      </>
                     )}
-                  </div>
 
-                  {showCustomMediaModelInput && (
-                    <>
-                      <label className="pv_form_label">
-                        添加自定义模型
-                        <span className="pv_form_sub">直接输入模型 ID 添加</span>
-                      </label>
-                      <div className="pv_custom_model_add">
-                        <Input
-                          value={customModelInput}
-                          onChange={(e) => setCustomModelInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault()
-                              if (customModelInput.trim()) {
-                                addCustomMediaModel(customModelInput)
-                                setCustomModelInput('')
-                              }
-                            }
-                          }}
-                          placeholder="输入模型 ID 后按 Enter 添加"
-                        />
-                        <Button
-                          type="primary"
-                          icon={<Icons.Plus />}
-                          disabled={!customModelInput.trim()}
-                          onClick={() => {
-                            if (customModelInput.trim()) {
-                              addCustomMediaModel(customModelInput)
-                              setCustomModelInput('')
-                            }
-                          }}
-                        >
-                          添加
-                        </Button>
-                      </div>
-                    </>
-                  )}
-
-                  {mediaCapabilityOptions.length > 0 && (
-                    <>
-                      <label className="pv_form_label">
-                        支持能力
-                      </label>
-                      <div className="pv_media_capabilities">
-                        {mediaCapabilityOptions.map((capability) => (
-                          <Checkbox
-                            key={capability}
-                            checked={form.mediaCapabilities.includes(capability)}
-                            onChange={(checked: boolean) => {
-                              setForm((prev) => {
-                                const set = new Set(prev.mediaCapabilities)
-                                if (checked) set.add(capability)
-                                else set.delete(capability)
-                                return { ...prev, mediaCapabilities: [...set] }
-                              })
-                            }}
-                          >
-                            {MEDIA_CAPABILITY_LABELS[capability]}
-                          </Checkbox>
-                        ))}
-                      </div>
-                    </>
-                  )}
-
-                  {showMediaDefaults && (
-                    <>
-                      <label className="pv_form_label">
-                        参数默认值
-                      </label>
-                      <div className="pv_media_defaults">
-                        {form.modelType === 'image' && (
-                          <>
-                            {(mediaDefaultOptionSets.imageSize.length > 0 || form.mediaImageSize) &&
-                              (mediaDefaultOptionSets.imageSize.length > 0 ? (
-                                <Select
-                                  value={form.mediaImageSize || undefined}
-                                  allowClear
-                                  onChange={(value) => set('mediaImageSize', value == null ? '' : String(value))}
-                                  placeholder="图片尺寸 / 比例"
-                                  options={mediaDefaultOptionSets.imageSize}
-                                />
-                              ) : (
-                                <Input
-                                  value={form.mediaImageSize}
-                                  onChange={(e) => set('mediaImageSize', e.target.value)}
-                                  placeholder="图片尺寸 (1024x1024 / 16:9)"
-                                />
-                              ))}
-                            {(mediaDefaultOptionSets.imageSize.length > 0 || form.mediaImageN) && (
-                              <Input
-                                value={form.mediaImageN}
-                                onChange={(e) => set('mediaImageN', e.target.value)}
-                                placeholder="图片数量 n"
-                              />
-                            )}
-                            {(mediaDefaultOptionSets.imageQuality.length > 0 || form.mediaImageQuality) &&
-                              (mediaDefaultOptionSets.imageQuality.length > 0 ? (
-                                <Select
-                                  value={form.mediaImageQuality || undefined}
-                                  allowClear
-                                  onChange={(value) => set('mediaImageQuality', value == null ? '' : String(value))}
-                                  placeholder="图片质量"
-                                  options={mediaDefaultOptionSets.imageQuality}
-                                />
-                              ) : (
-                                <Input
-                                  value={form.mediaImageQuality}
-                                  onChange={(e) => set('mediaImageQuality', e.target.value)}
-                                  placeholder="图片质量 (hd / standard)"
-                                />
-                              ))}
-                          </>
-                        )}
-                        {form.modelType === 'voice' && (
-                          <>
-                            <Input
-                              value={form.mediaAudioVoice}
-                              onChange={(e) => set('mediaAudioVoice', e.target.value)}
-                              placeholder="语音 voice (alloy / nova)"
-                            />
-                            {(mediaDefaultOptionSets.audioFormat.length > 0 || form.mediaAudioFormat) &&
-                              (mediaDefaultOptionSets.audioFormat.length > 0 ? (
-                                <Select
-                                  value={form.mediaAudioFormat || undefined}
-                                  allowClear
-                                  onChange={(value) => set('mediaAudioFormat', value == null ? '' : String(value))}
-                                  placeholder="语音格式 / 输出格式"
-                                  options={mediaDefaultOptionSets.audioFormat}
-                                />
-                              ) : (
-                                <Input
-                                  value={form.mediaAudioFormat}
-                                  onChange={(e) => set('mediaAudioFormat', e.target.value)}
-                                  placeholder="语音格式 (mp3 / wav)"
-                                />
-                              ))}
-                          </>
-                        )}
-                        {form.modelType === 'video' && (
-                          <>
-                            {(mediaDefaultOptionSets.videoAspectRatio.length > 0 || form.mediaVideoAspectRatio) &&
-                              (mediaDefaultOptionSets.videoAspectRatio.length > 0 ? (
-                                <Select
-                                  value={form.mediaVideoAspectRatio || undefined}
-                                  allowClear
-                                  onChange={(value) => set('mediaVideoAspectRatio', value == null ? '' : String(value))}
-                                  placeholder="视频比例"
-                                  options={mediaDefaultOptionSets.videoAspectRatio}
-                                />
-                              ) : (
-                                <Input
-                                  value={form.mediaVideoAspectRatio}
-                                  onChange={(e) => set('mediaVideoAspectRatio', e.target.value)}
-                                  placeholder="视频比例 (16:9)"
-                                />
-                              ))}
-                            {(mediaDefaultOptionSets.videoDuration.length > 0 || form.mediaVideoDuration) &&
-                              (mediaDefaultOptionSets.videoDuration.length > 0 ? (
-                                <Select
-                                  value={form.mediaVideoDuration || undefined}
-                                  allowClear
-                                  onChange={(value) => set('mediaVideoDuration', value == null ? '' : String(value))}
-                                  placeholder="视频时长 (秒)"
-                                  options={mediaDefaultOptionSets.videoDuration}
-                                />
-                              ) : (
-                                <Input
-                                  value={form.mediaVideoDuration}
-                                  onChange={(e) => set('mediaVideoDuration', e.target.value)}
-                                  placeholder="视频时长 (秒)"
-                                />
-                              ))}
-                            {(mediaDefaultOptionSets.videoQuality.length > 0 || form.mediaVideoQuality) &&
-                              (mediaDefaultOptionSets.videoQuality.length > 0 ? (
-                                <Select
-                                  value={form.mediaVideoQuality || undefined}
-                                  allowClear
-                                  onChange={(value) => set('mediaVideoQuality', value == null ? '' : String(value))}
-                                  placeholder="视频质量 / 分辨率"
-                                  options={mediaDefaultOptionSets.videoQuality}
-                                />
-                              ) : (
-                                <Input
-                                  value={form.mediaVideoQuality}
-                                  onChange={(e) => set('mediaVideoQuality', e.target.value)}
-                                  placeholder="视频质量 (hd)"
-                                />
-                              ))}
-                          </>
-                        )}
-                        {(form.modelType === 'image' || form.modelType === 'video') && (
-                          <>
-                            <Input
-                              value={form.mediaPollInterval}
-                              onChange={(e) => set('mediaPollInterval', e.target.value)}
-                              placeholder="轮询间隔 ms"
-                            />
-                            <Input
-                              value={form.mediaPollTimeout}
-                              onChange={(e) => set('mediaPollTimeout', e.target.value)}
-                              placeholder="轮询超时 ms"
-                            />
-                          </>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-
-              {isChatModel && (
-                <>
-                  <label className="pv_form_label">
-                    上下文窗口
-                  </label>
-                  <div className="pv_form_control_inline">
-                    <Select
-                      size="middle"
-                      style={{ width: 160 }}
-                      value={
-                        isCustomContextWindow
-                          ? -1
-                          : resolveContextWindowSelectValue(form.contextWindow)
-                      }
-                      onChange={(value: number) => {
-                        if (value === -1) {
-                          // 切到自定义：保留当前值或回落 200k；isCustomContextWindow 独立标记意图
-                          setIsCustomContextWindow(true)
-                          const next = form.contextWindow > 0 ? form.contextWindow : 200_000
-                          setForm((prev) => ({ ...prev, contextWindow: next, supportsMillionContext: next === 1_000_000 }))
-                        } else {
-                          setIsCustomContextWindow(false)
-                          setForm((prev) => ({
-                            ...prev,
-                            contextWindow: value,
-                            supportsMillionContext: value === 1_000_000,
-                          }))
-                        }
-                      }}
-                      options={CONTEXT_WINDOW_PRESETS}
-                    />
-                    {isCustomContextWindow && (
-                      <Input
-                        size="middle"
-                        style={{ width: 140, marginInlineStart: 8 }}
-                        type="number"
-                        min={1024}
-                        max={10_000_000}
-                        step={1024}
-                        value={form.contextWindow > 0 ? String(form.contextWindow) : ''}
-                        placeholder="tokens"
-                        onChange={(e) => {
-                          const raw = Number((e.target as HTMLInputElement).value)
-                          // 空 / 非数 / <=0 → 0 视为暂未输入，不退出自定义模式（由 isCustomContextWindow 维持）；
-                          // 上限 10_000_000 与后端 zod .max 一致，避免提交时才报错。
-                          let next = 0
-                          if (Number.isFinite(raw) && raw > 0) {
-                            next = Math.min(Math.floor(raw), 10_000_000)
+                    {/* ─── 多媒体能力（图片 / 语音 / 视频）─── */}
+                    {mediaPanelVisible && (
+                      <>
+                        <ProviderMediaRoutingFields
+                          templateConfigured={templateConfigured}
+                          mediaProvider={effectiveMediaProvider}
+                          mediaApiType={form.mediaApiType}
+                          providerOptions={mediaProviderOptionsForModelType(form.modelType).map(
+                            (kind) => ({
+                              label: MEDIA_PROVIDER_LABELS[kind],
+                              value: kind,
+                            }),
+                          )}
+                          onConvertToCustom={() => set('presetId', 'custom')}
+                          onMediaProviderChange={changeMediaProvider}
+                          onMediaApiTypeChange={(mediaApiType) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              mediaApiType,
+                              imageApiType:
+                                prev.modelType === 'image'
+                                  ? normalizeImageApiType(mediaApiType)
+                                  : prev.imageApiType,
+                            }))
                           }
-                          setForm((prev) => ({ ...prev, contextWindow: next, supportsMillionContext: next === 1_000_000 }))
-                        }}
-                      />
-                    )}
-                  </div>
-                </>
-              )}
+                        />
 
+                        <label className="pv_form_label">模型清单</label>
+                        <div className="pv_media_model_refs">
+                          <ProviderMediaModelCatalog
+                            models={mediaCatalogForForm}
+                            loading={mediaCatalogLoading}
+                            isChatModel={isChatModel}
+                            selectedManifestIds={selectedManifestIds}
+                            defaultModel={form.defaultModel}
+                            onToggleModel={toggleMediaModelRef}
+                            onSetDefaultModel={setMediaDefaultModel}
+                          />
+
+                          {/* ─── 自定义模型引用（不在内置目录里，可手动增删） ─── */}
+                          {customModelRefs.length > 0 && (
+                            <div className="pv_media_manifest_list">
+                              {customModelRefs.map((ref) => (
+                                <div
+                                  key={ref.manifestId}
+                                  className="pv_media_manifest_item pv_media_manifest_item_selected pv_media_manifest_item_static"
+                                >
+                                  <div className="pv_media_manifest_main">
+                                    <div className="pv_media_manifest_title">
+                                      <span>{ref.modelId}</span>
+                                      <Tag size="middle" color="purple">
+                                        自定义
+                                      </Tag>
+                                      {ref.manifest && (
+                                        <Tag size="middle" color="green">
+                                          协议已配置
+                                        </Tag>
+                                      )}
+                                      <Tag size="middle" color="gray">
+                                        {form.mediaProvider || form.imageProvider}
+                                      </Tag>
+                                    </div>
+                                    <div className="pv_media_manifest_meta">
+                                      {form.defaultModel.trim() === ref.modelId?.trim()
+                                        ? `${ref.modelId} · 当前默认`
+                                        : ref.modelId}
+                                    </div>
+                                  </div>
+                                  <div className="pv_media_manifest_actions">
+                                    {(form.modelType === 'image' || form.modelType === 'video') && (
+                                      <Button
+                                        size="middle"
+                                        type="text"
+                                        icon={<Icons.Settings size={12} />}
+                                        onClick={() => openCustomManifestEditor(ref)}
+                                      >
+                                        编辑协议
+                                      </Button>
+                                    )}
+                                    {form.defaultModel.trim() === ref.modelId?.trim() ? (
+                                      <Tag size="middle" color="green">
+                                        默认
+                                      </Tag>
+                                    ) : (
+                                      <Button
+                                        size="middle"
+                                        type="text"
+                                        icon={<Icons.Star size={12} />}
+                                        onClick={() => setMediaDefaultModel(ref.modelId ?? '')}
+                                        title="设为默认调用模型"
+                                        aria-label={`将 ${ref.modelId} 设为默认`}
+                                      >
+                                        设为默认
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="middle"
+                                      type="text"
+                                      danger
+                                      icon={<Icons.X />}
+                                      onClick={() => removeMediaModelRef(ref.manifestId)}
+                                      title="移除自定义模型"
+                                      aria-label={`移除自定义模型 ${ref.modelId}`}
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {showCustomMediaModelInput && (
+                          <>
+                            <label className="pv_form_label">
+                              添加自定义模型
+                              <span className="pv_form_sub">直接输入模型 ID 添加</span>
+                            </label>
+                            <div className="pv_custom_model_add">
+                              <Input
+                                value={customModelInput}
+                                onChange={(e) => setCustomModelInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    if (customModelInput.trim()) {
+                                      addCustomMediaModel(customModelInput)
+                                      setCustomModelInput('')
+                                    }
+                                  }
+                                }}
+                                placeholder="输入模型 ID 后按 Enter 添加"
+                              />
+                              <Button
+                                type="primary"
+                                icon={<Icons.Plus />}
+                                disabled={!customModelInput.trim()}
+                                onClick={() => {
+                                  if (customModelInput.trim()) {
+                                    addCustomMediaModel(customModelInput)
+                                    setCustomModelInput('')
+                                  }
+                                }}
+                              >
+                                添加
+                              </Button>
+                            </div>
+                          </>
+                        )}
+
+                        {mediaCapabilityOptions.length > 0 && (
+                          <>
+                            <label className="pv_form_label">支持能力</label>
+                            <div className="pv_media_capabilities">
+                              {mediaCapabilityOptions.map((capability) => (
+                                <Checkbox
+                                  key={capability}
+                                  checked={form.mediaCapabilities.includes(capability)}
+                                  onChange={(checked: boolean) => {
+                                    setForm((prev) => {
+                                      const set = new Set(prev.mediaCapabilities)
+                                      if (checked) set.add(capability)
+                                      else set.delete(capability)
+                                      return { ...prev, mediaCapabilities: [...set] }
+                                    })
+                                  }}
+                                >
+                                  {MEDIA_CAPABILITY_LABELS[capability]}
+                                </Checkbox>
+                              ))}
+                            </div>
+                          </>
+                        )}
+
+                        {showMediaDefaults && (
+                          <>
+                            <label className="pv_form_label">参数默认值</label>
+                            <div className="pv_media_defaults">
+                              {form.modelType === 'image' && (
+                                <>
+                                  {(mediaDefaultOptionSets.imageSize.length > 0 ||
+                                    form.mediaImageSize) &&
+                                    (mediaDefaultOptionSets.imageSize.length > 0 ? (
+                                      <Select
+                                        value={form.mediaImageSize || undefined}
+                                        allowClear
+                                        onChange={(value) =>
+                                          set('mediaImageSize', value == null ? '' : String(value))
+                                        }
+                                        placeholder="图片尺寸 / 比例"
+                                        options={mediaDefaultOptionSets.imageSize}
+                                      />
+                                    ) : (
+                                      <Input
+                                        value={form.mediaImageSize}
+                                        onChange={(e) => set('mediaImageSize', e.target.value)}
+                                        placeholder="图片尺寸 (1024x1024 / 16:9)"
+                                      />
+                                    ))}
+                                  {(mediaDefaultOptionSets.imageSize.length > 0 ||
+                                    form.mediaImageN) && (
+                                    <Input
+                                      value={form.mediaImageN}
+                                      onChange={(e) => set('mediaImageN', e.target.value)}
+                                      placeholder="图片数量 n"
+                                    />
+                                  )}
+                                  {(mediaDefaultOptionSets.imageQuality.length > 0 ||
+                                    form.mediaImageQuality) &&
+                                    (mediaDefaultOptionSets.imageQuality.length > 0 ? (
+                                      <Select
+                                        value={form.mediaImageQuality || undefined}
+                                        allowClear
+                                        onChange={(value) =>
+                                          set(
+                                            'mediaImageQuality',
+                                            value == null ? '' : String(value),
+                                          )
+                                        }
+                                        placeholder="图片质量"
+                                        options={mediaDefaultOptionSets.imageQuality}
+                                      />
+                                    ) : (
+                                      <Input
+                                        value={form.mediaImageQuality}
+                                        onChange={(e) => set('mediaImageQuality', e.target.value)}
+                                        placeholder="图片质量 (hd / standard)"
+                                      />
+                                    ))}
+                                </>
+                              )}
+                              {form.modelType === 'voice' && (
+                                <>
+                                  <Input
+                                    value={form.mediaAudioVoice}
+                                    onChange={(e) => set('mediaAudioVoice', e.target.value)}
+                                    placeholder="语音 voice (alloy / nova)"
+                                  />
+                                  {(mediaDefaultOptionSets.audioFormat.length > 0 ||
+                                    form.mediaAudioFormat) &&
+                                    (mediaDefaultOptionSets.audioFormat.length > 0 ? (
+                                      <Select
+                                        value={form.mediaAudioFormat || undefined}
+                                        allowClear
+                                        onChange={(value) =>
+                                          set(
+                                            'mediaAudioFormat',
+                                            value == null ? '' : String(value),
+                                          )
+                                        }
+                                        placeholder="语音格式 / 输出格式"
+                                        options={mediaDefaultOptionSets.audioFormat}
+                                      />
+                                    ) : (
+                                      <Input
+                                        value={form.mediaAudioFormat}
+                                        onChange={(e) => set('mediaAudioFormat', e.target.value)}
+                                        placeholder="语音格式 (mp3 / wav)"
+                                      />
+                                    ))}
+                                </>
+                              )}
+                              {form.modelType === 'video' && (
+                                <>
+                                  {(mediaDefaultOptionSets.videoAspectRatio.length > 0 ||
+                                    form.mediaVideoAspectRatio) &&
+                                    (mediaDefaultOptionSets.videoAspectRatio.length > 0 ? (
+                                      <Select
+                                        value={form.mediaVideoAspectRatio || undefined}
+                                        allowClear
+                                        onChange={(value) =>
+                                          set(
+                                            'mediaVideoAspectRatio',
+                                            value == null ? '' : String(value),
+                                          )
+                                        }
+                                        placeholder="视频比例"
+                                        options={mediaDefaultOptionSets.videoAspectRatio}
+                                      />
+                                    ) : (
+                                      <Input
+                                        value={form.mediaVideoAspectRatio}
+                                        onChange={(e) =>
+                                          set('mediaVideoAspectRatio', e.target.value)
+                                        }
+                                        placeholder="视频比例 (16:9)"
+                                      />
+                                    ))}
+                                  {(mediaDefaultOptionSets.videoDuration.length > 0 ||
+                                    form.mediaVideoDuration) &&
+                                    (mediaDefaultOptionSets.videoDuration.length > 0 ? (
+                                      <Select
+                                        value={form.mediaVideoDuration || undefined}
+                                        allowClear
+                                        onChange={(value) =>
+                                          set(
+                                            'mediaVideoDuration',
+                                            value == null ? '' : String(value),
+                                          )
+                                        }
+                                        placeholder="视频时长 (秒)"
+                                        options={mediaDefaultOptionSets.videoDuration}
+                                      />
+                                    ) : (
+                                      <Input
+                                        value={form.mediaVideoDuration}
+                                        onChange={(e) => set('mediaVideoDuration', e.target.value)}
+                                        placeholder="视频时长 (秒)"
+                                      />
+                                    ))}
+                                  {(mediaDefaultOptionSets.videoQuality.length > 0 ||
+                                    form.mediaVideoQuality) &&
+                                    (mediaDefaultOptionSets.videoQuality.length > 0 ? (
+                                      <Select
+                                        value={form.mediaVideoQuality || undefined}
+                                        allowClear
+                                        onChange={(value) =>
+                                          set(
+                                            'mediaVideoQuality',
+                                            value == null ? '' : String(value),
+                                          )
+                                        }
+                                        placeholder="视频质量 / 分辨率"
+                                        options={mediaDefaultOptionSets.videoQuality}
+                                      />
+                                    ) : (
+                                      <Input
+                                        value={form.mediaVideoQuality}
+                                        onChange={(e) => set('mediaVideoQuality', e.target.value)}
+                                        placeholder="视频质量 (hd)"
+                                      />
+                                    ))}
+                                </>
+                              )}
+                              {(form.modelType === 'image' || form.modelType === 'video') && (
+                                <>
+                                  <Input
+                                    value={form.mediaPollInterval}
+                                    onChange={(e) => set('mediaPollInterval', e.target.value)}
+                                    placeholder="轮询间隔 ms"
+                                  />
+                                  <Input
+                                    value={form.mediaPollTimeout}
+                                    onChange={(e) => set('mediaPollTimeout', e.target.value)}
+                                    placeholder="轮询超时 ms"
+                                  />
+                                </>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+
+                    {isChatModel && (
+                      <>
+                        <label className="pv_form_label">上下文窗口</label>
+                        <div className="pv_form_control_inline">
+                          <Select
+                            size="middle"
+                            style={{ width: 160 }}
+                            value={
+                              isCustomContextWindow
+                                ? -1
+                                : resolveContextWindowSelectValue(form.contextWindow)
+                            }
+                            onChange={(value: number) => {
+                              if (value === -1) {
+                                // 切到自定义：保留当前值或回落 200k；isCustomContextWindow 独立标记意图
+                                setIsCustomContextWindow(true)
+                                const next = form.contextWindow > 0 ? form.contextWindow : 200_000
+                                setForm((prev) => ({
+                                  ...prev,
+                                  contextWindow: next,
+                                  supportsMillionContext: next === 1_000_000,
+                                }))
+                              } else {
+                                setIsCustomContextWindow(false)
+                                setForm((prev) => ({
+                                  ...prev,
+                                  contextWindow: value,
+                                  supportsMillionContext: value === 1_000_000,
+                                }))
+                              }
+                            }}
+                            options={CONTEXT_WINDOW_PRESETS}
+                          />
+                          {isCustomContextWindow && (
+                            <Input
+                              size="middle"
+                              style={{ width: 140, marginInlineStart: 8 }}
+                              type="number"
+                              min={1024}
+                              max={10_000_000}
+                              step={1024}
+                              value={form.contextWindow > 0 ? String(form.contextWindow) : ''}
+                              placeholder="tokens"
+                              onChange={(e) => {
+                                const raw = Number((e.target as HTMLInputElement).value)
+                                // 空 / 非数 / <=0 → 0 视为暂未输入，不退出自定义模式（由 isCustomContextWindow 维持）；
+                                // 上限 10_000_000 与后端 zod .max 一致，避免提交时才报错。
+                                let next = 0
+                                if (Number.isFinite(raw) && raw > 0) {
+                                  next = Math.min(Math.floor(raw), 10_000_000)
+                                }
+                                setForm((prev) => ({
+                                  ...prev,
+                                  contextWindow: next,
+                                  supportsMillionContext: next === 1_000_000,
+                                }))
+                              }}
+                            />
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
@@ -4069,7 +4458,9 @@ export function ProviderEditPanel({
                 <div className="pv_model_picker_block">
                   <div className="pv_model_picker_head">
                     <span className="pv_model_picker_title">已启用模型（全局可用）</span>
-                    <span className="pv_model_picker_hint">点击 chip 可切换默认；也支持手动补充自定义模型 ID</span>
+                    <span className="pv_model_picker_hint">
+                      点击 chip 可切换默认；也支持手动补充自定义模型 ID
+                    </span>
                   </div>
                   <ChipList
                     value={form.modelIds}
@@ -4116,7 +4507,9 @@ export function ProviderEditPanel({
                       <Input
                         value={form.haikuModel}
                         onChange={(e) => set('haikuModel', e.target.value)}
-                        placeholder={form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'}
+                        placeholder={
+                          form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'
+                        }
                       />
                     </div>
                     <div className="pv_tier_cell">
@@ -4127,7 +4520,9 @@ export function ProviderEditPanel({
                       <Input
                         value={form.sonnetModel}
                         onChange={(e) => set('sonnetModel', e.target.value)}
-                        placeholder={form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'}
+                        placeholder={
+                          form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'
+                        }
                       />
                     </div>
                     <div className="pv_tier_cell">
@@ -4138,7 +4533,9 @@ export function ProviderEditPanel({
                       <Input
                         value={form.opusModel}
                         onChange={(e) => set('opusModel', e.target.value)}
-                        placeholder={form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'}
+                        placeholder={
+                          form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'
+                        }
                       />
                     </div>
                   </div>
@@ -4172,7 +4569,8 @@ export function ProviderEditPanel({
           </div>
           <div className="pv_icon_picker_grid">
             {filteredProviderIcons.map((item) => {
-              const selected = form.providerIcon.id === item.id && form.providerIcon.style === iconPickerStyle
+              const selected =
+                form.providerIcon.id === item.id && form.providerIcon.style === iconPickerStyle
               return (
                 <button
                   key={item.id}
@@ -4245,7 +4643,11 @@ export function ProviderEditPanel({
           aria-label="自定义模型 Manifest JSON"
         />
         {customManifestError && (
-          <Alert type="error" message="协议校验失败" description={<pre className="pv_manifest_error">{customManifestError}</pre>} />
+          <Alert
+            type="error"
+            message="协议校验失败"
+            description={<pre className="pv_manifest_error">{customManifestError}</pre>}
+          />
         )}
         <details style={{ marginTop: 12 }}>
           <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
@@ -4253,14 +4655,18 @@ export function ProviderEditPanel({
           </summary>
           <div style={{ marginTop: 8 }}>
             <div style={{ marginBottom: 4, fontSize: 12, opacity: 0.75 }}>
-              对 manifest 的第一个 capability（id: <code>{(() => {
-                try {
-                  const m = JSON.parse(customManifestDraft) as MediaModelManifest
-                  return m?.capabilities?.[0]?.id ?? '(未解析)'
-                } catch {
-                  return '(manifest JSON 无效)'
-                }
-              })()}</code>）执行裁剪；可观察 strict / passthrough / forbidden 的实际效果。
+              对 manifest 的第一个 capability（id:{' '}
+              <code>
+                {(() => {
+                  try {
+                    const m = JSON.parse(customManifestDraft) as MediaModelManifest
+                    return m?.capabilities?.[0]?.id ?? '(未解析)'
+                  } catch {
+                    return '(manifest JSON 无效)'
+                  }
+                })()}
+              </code>
+              ）执行裁剪；可观察 strict / passthrough / forbidden 的实际效果。
             </div>
             <textarea
               value={dryRunInput}
@@ -4279,9 +4685,7 @@ export function ProviderEditPanel({
               >
                 {dryRunLoading ? '运行中…' : '运行裁剪'}
               </button>
-              {dryRunError && (
-                <span style={{ color: '#cf1322', fontSize: 12 }}>{dryRunError}</span>
-              )}
+              {dryRunError && <span style={{ color: '#cf1322', fontSize: 12 }}>{dryRunError}</span>}
             </div>
             {dryRunResult && (
               <div style={{ marginTop: 8 }}>
@@ -4289,7 +4693,9 @@ export function ProviderEditPanel({
                   <Alert
                     type="warning"
                     message="跳过裁剪（fallback）"
-                    description={<pre className="pv_manifest_error">{dryRunResult.fallbackReason}</pre>}
+                    description={
+                      <pre className="pv_manifest_error">{dryRunResult.fallbackReason}</pre>
+                    }
                   />
                 )}
                 <div style={{ marginBottom: 4, marginTop: 6, fontSize: 12, opacity: 0.75 }}>
@@ -4300,7 +4706,9 @@ export function ProviderEditPanel({
                 </pre>
                 {dryRunResult.droppedParams.length > 0 && (
                   <>
-                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>被丢弃的参数（droppedParams）</div>
+                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                      被丢弃的参数（droppedParams）
+                    </div>
                     <pre className="pv_manifest_error" style={{ maxHeight: 180 }}>
                       {JSON.stringify(dryRunResult.droppedParams, null, 2)}
                     </pre>
@@ -4308,7 +4716,9 @@ export function ProviderEditPanel({
                 )}
                 {dryRunResult.warnings.length > 0 && (
                   <>
-                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>警告（warnings）</div>
+                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                      警告（warnings）
+                    </div>
                     <pre className="pv_manifest_error" style={{ maxHeight: 160 }}>
                       {JSON.stringify(dryRunResult.warnings, null, 2)}
                     </pre>

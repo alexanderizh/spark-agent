@@ -90,13 +90,7 @@ function renderTyped(count: number) {
     if (used >= count) return
     const show = Math.min(text.length, count - used)
     const piece = text.slice(0, show)
-    out.push(
-      seg.c ? (
-        <code key={i}>{piece}</code>
-      ) : (
-        <span key={i}>{piece}</span>
-      ),
-    )
+    out.push(seg.c ? <code key={i}>{piece}</code> : <span key={i}>{piece}</span>)
     used += text.length
   })
   return out
@@ -158,16 +152,10 @@ function WorkbenchView() {
     }, 900)
 
     // 三个 ticker 错开启动（0 / 1.4s / 2.8s），周期 4.2s，避免同时切导致眼花
-    tickerModelRef.current = setInterval(
-      () => setModelIdx((v) => (v + 1) % MODELS.length),
-      4200,
-    )
+    tickerModelRef.current = setInterval(() => setModelIdx((v) => (v + 1) % MODELS.length), 4200)
     const timerMode = setTimeout(() => {
       setModeIdx((v) => (v + 1) % MODES.length)
-      tickerModeRef.current = setInterval(
-        () => setModeIdx((v) => (v + 1) % MODES.length),
-        4200,
-      )
+      tickerModeRef.current = setInterval(() => setModeIdx((v) => (v + 1) % MODES.length), 4200)
     }, 1400)
     const timerEffort = setTimeout(() => {
       setEffortIdx((v) => (v + 1) % EFFORTS.length)
@@ -333,7 +321,8 @@ function WorkbenchView() {
             />
             <div className="hero-app__ai-body">
               <p className="hero-app__ai-text">
-                找到了：<code>middleware.ts</code> 把令牌校验和会话查询耦合在一起，高并发时会拖慢响应。建议拆成两步并补回归测试。
+                找到了：<code>middleware.ts</code>{' '}
+                把令牌校验和会话查询耦合在一起，高并发时会拖慢响应。建议拆成两步并补回归测试。
               </p>
             </div>
           </div>
@@ -350,7 +339,7 @@ function WorkbenchView() {
               alt=""
             />
           </div>
-     
+
           <div className="hero-app__msg--ai">
             <img
               className="hero-app__avatar hero-app__avatar--sm hero-app__avatar-img hero-app__avatar--ai"
@@ -748,54 +737,54 @@ export function HeroAppMockup() {
       onMouseLeave={() => setHovering(false)}
     >
       <div className="hero-app__scaler" ref={scalerRef}>
-      <div className="hero-app__chrome">
-        {/* titlebar */}
-        <div className="hero-app__titlebar">
-          <span className="hero-app__dots">
-            <i />
-            <i />
-            <i />
-          </span>
-          <span className="hero-app__title">Spark Agent</span>
+        <div className="hero-app__chrome">
+          {/* titlebar */}
+          <div className="hero-app__titlebar">
+            <span className="hero-app__dots">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="hero-app__title">Spark Agent</span>
 
-          {/* 视图切换器（手动切换），进度条独立放到下方作为全宽细条 */}
-          <div className="hero-app__switch" role="tablist" aria-label="预览视图切换">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={view === 'workbench'}
-              className={`hero-app__switch-btn ${view === 'workbench' ? 'is-active' : ''}`}
-              onClick={() => switchTo('workbench')}
+            {/* 视图切换器（手动切换），进度条独立放到下方作为全宽细条 */}
+            <div className="hero-app__switch" role="tablist" aria-label="预览视图切换">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'workbench'}
+                className={`hero-app__switch-btn ${view === 'workbench' ? 'is-active' : ''}`}
+                onClick={() => switchTo('workbench')}
+              >
+                <Home size={12} /> 工作台
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'canvas'}
+                className={`hero-app__switch-btn ${view === 'canvas' ? 'is-active' : ''}`}
+                onClick={() => switchTo('canvas')}
+              >
+                <Workflow size={12} /> 无限画布
+              </button>
+            </div>
+          </div>
+
+          {/* 自动轮播进度条：全宽细条，放在 titlebar 下方、body 上方 */}
+          {!reduce && (
+            <div
+              key={`${view}-${resetKey}`}
+              className={`hero-app__progress${hovering ? ' is-paused' : ''}`}
+              aria-hidden
             >
-              <Home size={12} /> 工作台
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={view === 'canvas'}
-              className={`hero-app__switch-btn ${view === 'canvas' ? 'is-active' : ''}`}
-              onClick={() => switchTo('canvas')}
-            >
-              <Workflow size={12} /> 无限画布
-            </button>
+              <i />
+            </div>
+          )}
+
+          <div className="hero-app__body">
+            {view === 'workbench' ? <WorkbenchView /> : <CanvasView />}
           </div>
         </div>
-
-        {/* 自动轮播进度条：全宽细条，放在 titlebar 下方、body 上方 */}
-        {!reduce && (
-          <div
-            key={`${view}-${resetKey}`}
-            className={`hero-app__progress${hovering ? ' is-paused' : ''}`}
-            aria-hidden
-          >
-            <i />
-          </div>
-        )}
-
-        <div className="hero-app__body">
-          {view === 'workbench' ? <WorkbenchView /> : <CanvasView />}
-        </div>
-      </div>
       </div>
 
       {/* SEO / 无障碍：完整正文以隐藏文本输出，避免打字机导致爬虫拿不到 */}

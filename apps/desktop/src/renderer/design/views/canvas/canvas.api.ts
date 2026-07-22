@@ -110,8 +110,10 @@ import {
   buildCanvasOperationPrompt,
   mergeCanvasPresetTargetModelParams,
   mergeCanvasOperationPresetNegativePrompt,
+  readCanvasExecutionPresetPrompt,
   readCanvasResolvedPresetTarget,
   resolveCanvasPresetTarget,
+  sanitizeLegacyCanvasSystemPrompt,
 } from './canvasOperationPresets'
 import { canvasTaskErrorMessage } from './canvasTaskErrorMessage'
 import {
@@ -905,8 +907,7 @@ function fullSnapshotFromDb(
 
 /**
  * 工作区展示用快照：按激活 board 过滤 nodes/edges/tasks（文档 §7.1：切换 board
- * 时不要把其他 board 的节点全部渲染进 Stage）。assets 保持项目级（无 boardId）。
- * assets/tasks 不过滤——assets 项目级共享；tasks 仍展示全项目任务以便任务队列复用。
+ * 时不要把其他 board 的节点与任务渲染进当前工作区）。assets 保持项目级共享。
  */
 export function snapshotFromDb(
   db: CanvasDb,
@@ -924,12 +925,14 @@ export function snapshotFromDb(
     (node) => node.projectId === projectId && node.boardId === boardId && !node.hidden,
   )
   let edges = db.edges.filter((edge) => edge.projectId === projectId && edge.boardId === boardId)
-  // 防御性兜底：若按 boardId 过滤后无节点，但项目实际存在非隐藏节点，
-  // 说明节点 boardId 与当前 board 不匹配（旧数据 / 迁移残留），回退显示全部，
-  // 避免画布「节点全部消失」。这种情况通常出现在旧项目首次进入多 board 视图时。
+  // 防御性兜底：仅当项目节点全部指向已不存在的 board（旧数据 / 迁移残留）时
+  // 才回退显示全部。若节点属于另一个仍然有效的 board，当前空 board 必须保持为空，
+  // 避免跨 board 渲染节点。
   if (nodes.length === 0) {
     const allProjectNodes = db.nodes.filter((node) => node.projectId === projectId && !node.hidden)
-    if (allProjectNodes.length > 0) {
+    const projectBoardIds = new Set(boards.map((board) => board.id))
+    const hasNodeOnKnownBoard = allProjectNodes.some((node) => projectBoardIds.has(node.boardId))
+    if (allProjectNodes.length > 0 && !hasNodeOnKnownBoard) {
       nodes = allProjectNodes
       edges = db.edges.filter((edge) => edge.projectId === projectId)
     }
@@ -942,7 +945,7 @@ export function snapshotFromDb(
     nodes: sortCanvasNodes(nodes),
     edges,
     assets: db.assets.filter((asset) => asset.projectId === projectId),
-    tasks: db.tasks.filter((task) => task.projectId === projectId),
+    tasks: db.tasks.filter((task) => task.projectId === projectId && task.boardId === boardId),
   }
 }
 
@@ -4606,7 +4609,9 @@ export const canvasApi = {
       // An explicit functional contract is authoritative. Generic operation presets
       // are only a fallback for generic nodes and must not be concatenated into it.
       explicitSystemPrompt.length === 0 || presetTargetId !== input.operation
-        ? operationPreset.prompt
+        ? readCanvasExecutionPresetPrompt(presetTargetId, {
+            hasImageInput: inputNodes.some((node) => node.type === 'image'),
+          })
         : undefined,
       project?.settings?.prompt,
       explicitSystemPrompt || undefined,
@@ -4869,8 +4874,15 @@ export const canvasApi = {
     const resolvedRetryTaskPipelineRole =
       retryTaskPipelineRole ??
       (retryPresetTargetId !== oldTask.operation ? retryOutputPipelineRole : undefined)
+    const project = db.projects.find((item) => item.id === projectId)
     const retrySystemPrompt = normalizeCanvasFunctionalSystemPrompt(
-      oldTask.systemPrompt,
+      sanitizeLegacyCanvasSystemPrompt({
+        operation: oldTask.operation,
+        targetId: retryPresetTargetId,
+        ...(oldTask.systemPrompt != null ? { systemPrompt: oldTask.systemPrompt } : {}),
+        ...(project?.settings?.prompt != null ? { projectPrompt: project.settings.prompt } : {}),
+        context: { hasImageInput: retryInputNodes.some((inputNode) => inputNode.type === 'image') },
+      }),
       retryPresetTargetId,
     )
     const request: CreateCanvasTaskRequest & { inputFiles?: CanvasMediaTaskInputFile[] } = {
@@ -4930,6 +4942,7 @@ export const canvasApi = {
     const db = readDb()
     const node = db.nodes.find((n) => n.id === nodeId && n.projectId === projectId && !n.hidden)
     if (!node) throw new Error('操作节点不存在')
+    const project = db.projects.find((item) => item.id === projectId)
     // 取输入节点（used_as_input edge 的 source）
     const existingInputNodeIds = db.edges
       .filter(
@@ -4972,10 +4985,20 @@ export const canvasApi = {
       node.data.pipelineRole ??
       (presetTargetId !== operation ? node.data.outputPipelineRole : undefined)
     const modelParams = mergeCanvasPresetTargetModelParams(presetTargetId, params.modelParams)
+    const sanitizedSystemPrompt = sanitizeLegacyCanvasSystemPrompt({
+      operation,
+      targetId: presetTargetId,
+      ...((params.systemPrompt ?? node.data.systemPrompt) != null
+        ? { systemPrompt: params.systemPrompt ?? node.data.systemPrompt }
+        : {}),
+      ...(project?.settings?.prompt != null ? { projectPrompt: project.settings.prompt } : {}),
+      context: { hasImageInput: inputNodes.some((inputNode) => inputNode.type === 'image') },
+    })
     const normalizedSystemPrompt = normalizeCanvasFunctionalSystemPrompt(
-      params.systemPrompt ?? node.data.systemPrompt,
+      sanitizedSystemPrompt,
       presetTargetId,
     )
+    if (!normalizedSystemPrompt && node.data.systemPrompt) delete node.data.systemPrompt
     let request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
       inputFiles?: CanvasMediaTaskInputFile[]
     } = {
@@ -5028,16 +5051,24 @@ export const canvasApi = {
       writeDb(db)
     }
     return isTextModelOperation(request.operation)
-      ? this.createTextTask(projectId, request, {
-          bindToNodeId: nodeId,
-          ...(params.userPrompt !== undefined ? { userPrompt: params.userPrompt } : {}),
-          ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
-        })
-      : this.createMediaTask(projectId, request, {
-          bindToNodeId: nodeId,
-          ...(params.userPrompt !== undefined ? { userPrompt: params.userPrompt } : {}),
-          ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
-        })
+      ? this.createTextTask(
+          projectId,
+          { ...request, boardId: node.boardId },
+          {
+            bindToNodeId: nodeId,
+            ...(params.userPrompt !== undefined ? { userPrompt: params.userPrompt } : {}),
+            ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
+          },
+        )
+      : this.createMediaTask(
+          projectId,
+          { ...request, boardId: node.boardId },
+          {
+            bindToNodeId: nodeId,
+            ...(params.userPrompt !== undefined ? { userPrompt: params.userPrompt } : {}),
+            ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
+          },
+        )
   },
   async cancelTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
     const db = readDb()
@@ -5131,7 +5162,7 @@ export const canvasApi = {
    */
   async createMediaTask(
     projectId: string,
-    requestInput: Omit<CreateCanvasTaskRequest, 'boardId'> & {
+    requestInput: CreateCanvasTaskRequest & {
       inputFiles?: CanvasMediaTaskInputFile[]
     },
     options?: {
@@ -5141,7 +5172,11 @@ export const canvasApi = {
     },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
-    const board = db.boards.find((item) => item.projectId === projectId)
+    const bindNode = options?.bindToNodeId
+      ? db.nodes.find((node) => node.id === options.bindToNodeId && node.projectId === projectId)
+      : null
+    const boardId = bindNode?.boardId ?? requestInput.boardId
+    const board = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
     const project = db.projects.find((item) => item.id === projectId)
     if (!board || !project) throw new Error('Canvas board not found')
     const request =
@@ -5210,9 +5245,6 @@ export const canvasApi = {
         nextCanvasNodeSequence(db, projectId, request.operation as CanvasNodeType),
       )
     let taskNode: CanvasNode
-    const bindNode = options?.bindToNodeId
-      ? db.nodes.find((n) => n.id === options.bindToNodeId && n.projectId === projectId)
-      : null
     const replacedActiveTaskId =
       bindNode?.taskId != null &&
       db.tasks.some(
@@ -5357,7 +5389,7 @@ export const canvasApi = {
    */
   async createTextTask(
     projectId: string,
-    requestInput: Omit<CreateCanvasTaskRequest, 'boardId'> & {
+    requestInput: CreateCanvasTaskRequest & {
       inputFiles?: CanvasMediaTaskInputFile[]
     },
     options?: {
@@ -5367,7 +5399,11 @@ export const canvasApi = {
     },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
-    const board = db.boards.find((item) => item.projectId === projectId)
+    const bindNode = options?.bindToNodeId
+      ? db.nodes.find((node) => node.id === options.bindToNodeId && node.projectId === projectId)
+      : null
+    const boardId = bindNode?.boardId ?? requestInput.boardId
+    const board = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
     const project = db.projects.find((item) => item.id === projectId)
     if (!board || !project) throw new Error('Canvas board not found')
     const request =
@@ -5419,9 +5455,6 @@ export const canvasApi = {
         nextCanvasNodeSequence(db, projectId, request.operation as CanvasNodeType),
       )
     let taskNode: CanvasNode
-    const bindNode = options?.bindToNodeId
-      ? db.nodes.find((n) => n.id === options.bindToNodeId && n.projectId === projectId)
-      : null
     const replacedActiveTaskId =
       bindNode?.taskId != null &&
       db.tasks.some(
@@ -5562,7 +5595,7 @@ export const canvasApi = {
           error: { code: 'ipc_error', message: err instanceof Error ? err.message : String(err) },
         })
       })
-    return this.openSnapshot(projectId)
+    return this.openSnapshot(projectId, board.id)
   },
 
   async applyTextTaskResult(
@@ -5576,9 +5609,9 @@ export const canvasApi = {
     const taskNode = taskNodeLookup?.node ?? null
     const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
     if (!task || !taskNode) return this.openSnapshot(projectId)
-    if (task.status === 'cancelled') return this.openSnapshot(projectId)
+    if (task.status === 'cancelled') return this.openSnapshot(projectId, task.boardId)
     if (task.status === 'completed' || task.status === 'failed') {
-      return this.openSnapshot(projectId)
+      return this.openSnapshot(projectId, task.boardId)
     }
 
     if (response.status === 'failed' || response.error || !response.text) {
@@ -5619,7 +5652,7 @@ export const canvasApi = {
       }
       updateProjectCounts(db, projectId)
       writeDb(db)
-      return this.openSnapshot(projectId)
+      return this.openSnapshot(projectId, task.boardId)
     }
 
     const outputRole = task.outputPipelineRole ?? taskNode.data.outputPipelineRole
@@ -5659,7 +5692,7 @@ export const canvasApi = {
       }
       updateProjectCounts(db, projectId)
       writeDb(db)
-      return this.openSnapshot(projectId)
+      return this.openSnapshot(projectId, task.boardId)
     }
 
     const outputText = semanticValidation.text
@@ -5785,7 +5818,7 @@ export const canvasApi = {
     })
     updateProjectCounts(db, projectId)
     writeDb(db)
-    return this.openSnapshot(projectId)
+    return this.openSnapshot(projectId, task.boardId)
   },
 
   async markMediaTaskSubmitted(
@@ -5799,8 +5832,10 @@ export const canvasApi = {
     const taskNode = taskNodeLookup?.node ?? null
     const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
     if (!task || !taskNode) return this.openSnapshot(projectId)
-    if (task.status === 'cancelled') return this.openSnapshot(projectId)
-    if (task.status === 'completed' || task.status === 'failed') return this.openSnapshot(projectId)
+    if (task.status === 'cancelled') return this.openSnapshot(projectId, task.boardId)
+    if (task.status === 'completed' || task.status === 'failed') {
+      return this.openSnapshot(projectId, task.boardId)
+    }
     task.status = 'running'
     task.progress = Math.max(task.progress, 35)
     task.requestId = response.requestId ?? task.requestId ?? response.runtimeTaskId ?? null
@@ -5829,7 +5864,7 @@ export const canvasApi = {
     }
     updateProjectCounts(db, projectId)
     writeDb(db)
-    return this.openSnapshot(projectId)
+    return this.openSnapshot(projectId, task.boardId)
   },
 
   /** 把平台 adapter 的输出写回 canvas_assets / canvas_nodes / canvas_edges */
@@ -5844,11 +5879,13 @@ export const canvasApi = {
     const taskNode = taskNodeLookup?.node ?? null
     const patchTaskNode = taskNodeLookup ? canPatchCanvasTaskNode(taskNodeLookup, taskId) : false
     if (!task || !taskNode) return this.openSnapshot(projectId)
-    if (task.status === 'cancelled') return this.openSnapshot(projectId)
+    if (task.status === 'cancelled') return this.openSnapshot(projectId, task.boardId)
 
     // Terminal state is monotonic once outputs are materialized. A duplicated or
     // delayed failure/cancel event must not hide an already playable artifact.
-    if (isCompletedCanvasTaskWithOutputs(task)) return this.openSnapshot(projectId)
+    if (isCompletedCanvasTaskWithOutputs(task)) {
+      return this.openSnapshot(projectId, task.boardId)
+    }
 
     const responseRequestId = response.requestId ?? response.runtimeTaskId ?? null
     if (
@@ -5858,7 +5895,7 @@ export const canvasApi = {
       task.outputAssetIds.length > 0 &&
       task.requestId === responseRequestId
     ) {
-      return this.openSnapshot(projectId)
+      return this.openSnapshot(projectId, task.boardId)
     }
 
     if (response.error || response.status === 'failed' || response.status === 'cancelled') {
@@ -5895,7 +5932,7 @@ export const canvasApi = {
       }
       updateProjectCounts(db, projectId)
       writeDb(db)
-      return this.openSnapshot(projectId)
+      return this.openSnapshot(projectId, task.boardId)
     }
 
     task.status = 'completed'
@@ -6162,7 +6199,7 @@ export const canvasApi = {
     if (task.outputNodeIds.length > 1) {
       return this.createGroupNode(projectId, task.outputNodeIds)
     }
-    return this.openSnapshot(projectId)
+    return this.openSnapshot(projectId, task.boardId)
   },
 
   /** 拉取当前可用的多媒体 provider 列表（不含 API key） */

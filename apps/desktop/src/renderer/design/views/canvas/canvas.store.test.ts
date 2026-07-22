@@ -152,6 +152,52 @@ describe('createHistoryEntry', () => {
 })
 
 describe('mergeCanvasBackgroundTaskSnapshot', () => {
+  it('does not switch boards when a background task from another board finishes', () => {
+    const current = makeSnapshot({
+      nodes: makeSnapshot().nodes.filter((node) => node.boardId === 'board-1'),
+    })
+    const next = makeSnapshot({
+      board: {
+        ...makeSnapshot().board,
+        id: 'board-2',
+        name: 'Board 2',
+      },
+      activeBoardId: 'board-2',
+      nodes: [
+        {
+          ...makeSnapshot().nodes[0]!,
+          id: 'node-board-2',
+          boardId: 'board-2',
+        },
+      ],
+      tasks: [
+        {
+          ...makeSnapshot().tasks[0]!,
+          id: 'task-board-2',
+          boardId: 'board-2',
+          status: 'completed',
+          progress: 100,
+        },
+      ],
+      assets: [
+        ...makeSnapshot().assets,
+        {
+          ...makeSnapshot().assets[0]!,
+          id: 'asset-board-2',
+          title: 'Board 2 output',
+        },
+      ],
+    })
+
+    const merged = mergeCanvasBackgroundTaskSnapshot(current, next)
+
+    expect(merged.activeBoardId).toBe('board-1')
+    expect(merged.board.id).toBe('board-1')
+    expect(merged.nodes.some((node) => node.boardId === 'board-2')).toBe(false)
+    expect(merged.tasks.some((task) => task.boardId === 'board-2')).toBe(false)
+    expect(merged.assets.some((asset) => asset.id === 'asset-board-2')).toBe(true)
+  })
+
   it('preserves current nodes, assets, tasks, and edges missing from an async task snapshot', () => {
     const current = makeSnapshot({
       nodes: [

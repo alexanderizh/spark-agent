@@ -21,6 +21,7 @@ import {
   resetCanvasLastUsedPresetTarget,
   resetCanvasOperationPreset,
   resolveCanvasPresetTarget,
+  sanitizeLegacyCanvasSystemPrompt,
   writeCanvasLastUsedPresetTarget,
   writeCanvasPresetTarget,
   writeCanvasOperationPreset,
@@ -74,6 +75,27 @@ describe('canvasOperationPresets', () => {
     expect(second).toBe(first)
     expect(third).toBe(first)
     expect(first?.match(/入参\/场景要求：/g)).toHaveLength(1)
+  })
+
+  it('sanitizes only exact legacy generic preset system prompts', () => {
+    writeCanvasOperationPreset('text_to_image', {
+      prompt: '另一个项目的角色身份板提示词',
+    })
+
+    expect(
+      sanitizeLegacyCanvasSystemPrompt({
+        operation: 'text_to_image',
+        targetId: 'text_to_image',
+        systemPrompt: '另一个项目的角色身份板提示词',
+      }),
+    ).toBe('请基于输入内容生成一张高质量图片。')
+    expect(
+      sanitizeLegacyCanvasSystemPrompt({
+        operation: 'text_to_image',
+        targetId: 'text_to_image',
+        systemPrompt: '当前节点显式指定的摄影棚布光规则',
+      }),
+    ).toBe('当前节点显式指定的摄影棚布光规则')
   })
 
   it('persists custom per-operation presets in localStorage', () => {
@@ -218,6 +240,19 @@ describe('canvasOperationPresets', () => {
     })
   })
 
+  it('does not persist user prompts in global last-used runtime preferences', () => {
+    writeCanvasLastUsedPresetTarget('text_to_image', {
+      prompt: '当前项目的私密角色设定',
+      modelId: 'gpt-image-2',
+      modelParams: { quality: 'high' },
+    })
+
+    expect(readCanvasLastUsedPresetTarget('text_to_image')).toEqual({
+      modelId: 'gpt-image-2',
+      modelParams: { quality: 'high' },
+    })
+  })
+
   it('keeps the configured system prompt while reusing runtime selections', () => {
     writeCanvasPresetTarget('chapter.to_screenplay', {
       prompt: '预设版转剧本',
@@ -232,7 +267,6 @@ describe('canvasOperationPresets', () => {
     })
 
     expect(readCanvasLastUsedPresetTarget('chapter.to_screenplay')).toEqual({
-      prompt: '上次实际使用的转剧本配置',
       modelId: 'gpt-5.1',
       modelParams: { temperature: 0.2 },
     })

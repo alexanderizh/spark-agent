@@ -146,6 +146,20 @@ export function mergeCanvasBackgroundTaskSnapshot(
   next: CanvasSnapshot,
 ): CanvasSnapshot {
   if (!current || current.project.id !== next.project.id) return next
+  const currentBoardId = current.activeBoardId ?? current.board.id
+  const nextBoardId = next.activeBoardId ?? next.board.id
+  if (currentBoardId !== nextBoardId) {
+    const boards =
+      current.boards && next.boards
+        ? mergeTaskEntities(current.boards, next.boards, true)
+        : (current.boards ?? next.boards)
+    return {
+      ...current,
+      project: next.project,
+      ...(boards ? { boards } : {}),
+      assets: mergeTaskEntities(current.assets, next.assets, true),
+    }
+  }
   // Stream callbacks can finish out of order. Preserve entities missing from a stale callback
   // snapshot so it cannot erase nodes/assets/tasks created by a newer foreground action.
   return mergeCanvasSnapshot(current, next, true)
@@ -552,9 +566,13 @@ export function useCanvasWorkspace(projectId: string) {
       if (!current) return
       // 多媒体 operation 走真实平台 adapter；文本 operation 走真实文本模型；其余记录为待接入执行器的任务。
       if (isMediaOperation(request.operation)) {
-        await applyTaskSnapshot(canvasApi.createMediaTask(projectId, request))
+        await applyTaskSnapshot(
+          canvasApi.createMediaTask(projectId, { ...request, boardId: current.board.id }),
+        )
       } else if (isTextModelOperation(request.operation)) {
-        await applyTaskSnapshot(canvasApi.createTextTask(projectId, request))
+        await applyTaskSnapshot(
+          canvasApi.createTextTask(projectId, { ...request, boardId: current.board.id }),
+        )
       } else {
         await applyTaskSnapshot(
           canvasApi.createTask(projectId, { ...request, boardId: current.board.id }),

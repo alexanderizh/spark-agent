@@ -216,7 +216,7 @@ describe('M5 builtin manifest contract — Seedream 5 Pro', () => {
 })
 
 describe('M5 builtin manifest contract — Google Gemini image', () => {
-  const manifestId = 'google:gemini-3-pro-image'
+  const manifestId = 'google-generative-ai:gemini-3-pro-image'
 
   it('declares strict paramPolicy on each capability', () => {
     const manifest = findManifest(manifestId)
@@ -231,9 +231,9 @@ describe('M5 builtin manifest contract — Google Gemini image', () => {
     expect(manifest.error?.codePaths).toContain('error.status')
   })
 
-  it('canonical outputFormat -> provider output_format alias is preserved', () => {
+  it('canonical outputFormat -> provider mime_type alias is preserved', () => {
     const result = compileFromManifest(manifestId, 'image.generate', { outputFormat: 'jpeg' })
-    expect(result.providerParams.output_format).toBe('jpeg')
+    expect(result.providerParams.mime_type).toBe('jpeg')
   })
 
   it('drops unknown params (e.g. style, debug) under strict policy', () => {

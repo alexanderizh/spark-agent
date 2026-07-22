@@ -414,6 +414,56 @@ export function buildCanvasOperationSystemPrompt(
   return values.filter((section, index) => values.indexOf(section) === index).join('\n\n')
 }
 
+/**
+ * Prompt presets authored in the global preset center must never become hidden
+ * instructions for a generic node in another project. Generic operations keep
+ * only their built-in capability prompt; dedicated pipeline targets retain
+ * their explicit functional contract.
+ */
+export function readCanvasExecutionPresetPrompt(
+  targetId: CanvasPresetTargetId,
+  context: CanvasPresetResolutionContext = {},
+): string {
+  const target = getCanvasPresetTargetDefinition(targetId)
+  if (!target) return ''
+  return target.kind === 'pipeline'
+    ? readCanvasResolvedPresetTarget(targetId, context).prompt
+    : readBuiltinCanvasOperationPreset(target.operation).prompt
+}
+
+/**
+ * Repair nodes created before generic preset prompts were isolated. The value
+ * is removed only when the whole composed system prompt exactly matches the
+ * legacy global preset composition, so explicit node prompts are preserved.
+ */
+export function sanitizeLegacyCanvasSystemPrompt(input: {
+  operation: CanvasOperationType
+  targetId: CanvasPresetTargetId
+  systemPrompt?: string | null
+  projectPrompt?: string | null
+  context?: CanvasPresetResolutionContext
+}): string {
+  const current = input.systemPrompt?.trim() ?? ''
+  if (!current || input.targetId !== input.operation) return current
+  const context = input.context ?? {}
+  const legacyPresetPrompt = readCanvasResolvedPresetTarget(input.targetId, context).prompt
+  const safePresetPrompt = readCanvasExecutionPresetPrompt(input.targetId, context)
+  if (!legacyPresetPrompt.trim() || legacyPresetPrompt.trim() === safePresetPrompt.trim()) {
+    return current
+  }
+  const legacySystemPrompt = buildCanvasOperationSystemPrompt(
+    input.operation,
+    legacyPresetPrompt,
+    input.projectPrompt,
+  )
+  const legacySystemPromptWithoutProject = buildCanvasOperationSystemPrompt(
+    input.operation,
+    legacyPresetPrompt,
+  )
+  if (current !== legacySystemPrompt && current !== legacySystemPromptWithoutProject) return current
+  return buildCanvasOperationSystemPrompt(input.operation, safePresetPrompt, input.projectPrompt)
+}
+
 export function buildCanvasOperationPrompt(
   operation: CanvasOperationType,
   prompt: string | undefined,
@@ -494,8 +544,7 @@ export function readCanvasInheritedPresetTarget(
     // A dedicated pipeline contract owns its task identity and output schema.
     // Reuse runtime/model defaults from the generic operation, but never inherit
     // its authored prompt (for example a character extractor into a shot task).
-    prompt:
-      target.id === target.operation ? (operationOverrides.prompt ?? builtin.prompt) : '',
+    prompt: target.id === target.operation ? (operationOverrides.prompt ?? builtin.prompt) : '',
     negativePrompt: operationOverrides.negativePrompt ?? builtin.negativePrompt,
     ...((operationOverrides.providerProfileId ?? taskDefault.providerProfileId)
       ? {
@@ -605,7 +654,9 @@ export function writeCanvasLastUsedPresetTarget(
   preset: Partial<CanvasOperationPreset>,
 ): void {
   const store = readLastUsedStore()
-  const next = normalizeStoredPreset(preset)
+  const runtimeOnlyPreset = { ...preset }
+  delete runtimeOnlyPreset.prompt
+  const next = normalizeStoredPreset(runtimeOnlyPreset)
   if (!hasStoredPresetValue(next)) {
     delete store[targetId]
   } else {
@@ -700,9 +751,8 @@ export function enforceCanvasPresetTargetModelParams(
   targetId: CanvasPresetTargetId,
   modelParams: Record<string, unknown>,
 ): Record<string, unknown> {
-  const workflow = CANVAS_PIPELINE_MODEL_PARAM_DEFAULTS[
-    targetId as CanvasPipelinePresetTargetId
-  ]?.workflow
+  const workflow =
+    CANVAS_PIPELINE_MODEL_PARAM_DEFAULTS[targetId as CanvasPipelinePresetTargetId]?.workflow
   return typeof workflow === 'string' ? { ...modelParams, workflow } : { ...modelParams }
 }
 
