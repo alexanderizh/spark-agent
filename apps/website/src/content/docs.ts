@@ -353,7 +353,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '工作流编排',
     detail: '13 种节点、路由循环、完整编码流程与排错',
     description:
-      'Spark Work 工作流（Workflow）完整教程：13 种节点作用与配置、outputKey 状态传递、条件路由、循环子图、verify 失败语义，以及覆盖审批、并行子代理、Skill / Tool / MCP 审计和双交付物的编码功能任务示例。',
+      'Spark Work 工作流（Workflow）完整教程：13 种节点作用与配置、outputKey 状态传递、条件路由、循环体子图可视化编辑、verify 失败语义，以及覆盖审批、并行子代理、Skill / Tool / MCP 审计和双交付物的编码功能任务示例。',
     category: 'team',
     level: 'intermediate',
     keywords: [
