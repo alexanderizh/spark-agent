@@ -181,6 +181,23 @@ describe('CanvasInlineAiComposer node default model params', () => {
     })
   })
 
+  it('preserves JSON Schema numeric bounds for range-based controls', () => {
+    expect(
+      schemaFields({
+        properties: {
+          duration: {
+            type: 'integer',
+            minimum: 2,
+            maximum: 15,
+          },
+        },
+      })[0],
+    ).toMatchObject({
+      minimum: 2,
+      maximum: 15,
+    })
+  })
+
   it('falls back to the model default when a persisted value is incompatible', () => {
     expect(
       resolveInitialModelParamDraftValue({

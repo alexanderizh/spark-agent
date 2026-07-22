@@ -105,7 +105,10 @@ export function CanvasParameterControl({
         compact={compact}
       />
     )
-  } else if (control === 'resolution' || control === 'count' || control === 'duration') {
+  } else if (
+    (control === 'resolution' || control === 'count' || control === 'duration') &&
+    field.enumValues.length > 0
+  ) {
     controlNode = (
       <CompactOptions
         presentation={presentation}
@@ -146,10 +149,18 @@ export function CanvasParameterControl({
       />
     )
   } else {
+    const numeric =
+      control === 'duration' ||
+      control === 'count' ||
+      field.type === 'integer' ||
+      field.type === 'number'
     controlNode = (
       <Input
         value={value}
-        type={control === 'number' ? 'number' : 'text'}
+        type={numeric ? 'number' : 'text'}
+        min={numeric ? field.minimum : undefined}
+        max={numeric ? field.maximum : undefined}
+        step={numeric && field.type === 'integer' ? 1 : undefined}
         placeholder={field.placeholder}
         onChange={(event) => onChange(event.target.value)}
       />

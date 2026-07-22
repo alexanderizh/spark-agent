@@ -3,6 +3,8 @@ export type SchemaField = {
   title: string
   type: string
   enumValues: string[]
+  minimum?: number
+  maximum?: number
   allowCustom?: boolean
   pattern?: string
   description?: string
