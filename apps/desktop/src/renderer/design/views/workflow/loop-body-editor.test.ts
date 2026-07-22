@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkflowGraph, WorkflowNodeKind } from '@spark/protocol'
 import {
+  completeWorkflowEditorGraph,
   commitLoopBodyGraph,
   createScopedWorkflowNodeId,
   defaultLoopBodyGraph,
@@ -60,6 +61,28 @@ describe('workflow loop body editor helpers', () => {
       root.nodes.find((item) => item.id === 'sibling'),
     )
     expect(root.nodes.find((item) => item.id === 'loop-1')?.config.body).toEqual(body)
+  })
+
+  it('composes the currently edited child graph into the complete root graph', () => {
+    const root = rootGraph()
+    const changedBody: WorkflowGraph = {
+      orientation: 'vertical',
+      nodes: [node('changed-body')],
+      edges: [],
+    }
+
+    expect(
+      completeWorkflowEditorGraph(
+        {
+          kind: 'loop-body',
+          loopNodeId: 'loop-1',
+          loopTitle: '实现与自检',
+          rootGraph: root,
+        },
+        changedBody,
+      ).nodes.find((item) => item.id === 'loop-1')?.config.body,
+    ).toEqual(changedBody)
+    expect(completeWorkflowEditorGraph({ kind: 'root' }, changedBody)).toBe(changedBody)
   })
 
   it('uses a cloned fallback body when a loop has no body', () => {
