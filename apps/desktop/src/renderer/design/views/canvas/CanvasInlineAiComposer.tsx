@@ -1475,11 +1475,17 @@ export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
       //（既保留下拉推荐值，又允许用户在范围内输入自定义值，如 Seedream size）。
       const allowCustom = spec['x-allow-custom'] === true || spec.allowCustom === true
       const pattern = typeof spec.pattern === 'string' ? spec.pattern : undefined
+      const minimum =
+        typeof spec.minimum === 'number' && Number.isFinite(spec.minimum) ? spec.minimum : undefined
+      const maximum =
+        typeof spec.maximum === 'number' && Number.isFinite(spec.maximum) ? spec.maximum : undefined
       return {
         name,
         title: typeof spec.title === 'string' ? spec.title : name,
         type,
         enumValues,
+        ...(minimum !== undefined ? { minimum } : {}),
+        ...(maximum !== undefined ? { maximum } : {}),
         ...(allowCustom ? { allowCustom: true } : {}),
         ...(pattern ? { pattern } : {}),
         ...(typeof spec.description === 'string' ? { description: spec.description } : {}),

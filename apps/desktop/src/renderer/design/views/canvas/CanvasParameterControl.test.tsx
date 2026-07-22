@@ -91,6 +91,28 @@ describe('CanvasParameterControl', () => {
     expect(duration.container.textContent).toContain('8秒')
   })
 
+  it('renders a bounded number input for duration ranges without enum options', async () => {
+    const { container, onChange } = await renderControl(
+      field('duration', [], 'integer', { minimum: 2, maximum: 15 }),
+      '5',
+    )
+    const input = container.querySelector('input')
+
+    expect(input?.type).toBe('number')
+    expect(input?.min).toBe('2')
+    expect(input?.max).toBe('15')
+    expect(input?.step).toBe('1')
+
+    if (!input) throw new Error('Expected duration input')
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    if (!valueSetter) throw new Error('Expected native input value setter')
+    await act(async () => {
+      valueSetter.call(input, '8')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onChange).toHaveBeenCalledWith('8')
+  })
+
   it('wraps long option lists into a three-column grid', async () => {
     const values = ['2K', '4K', '2048x2048', '2304x1728', '1728x2304', '2848x1600', '1600x2848']
     const { container } = await renderControl(field('resolution', values), '4K')
