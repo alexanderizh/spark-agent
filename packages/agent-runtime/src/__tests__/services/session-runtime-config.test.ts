@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fileURLToPath } from 'node:url'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AgentEvent } from '@spark/protocol'
@@ -55,6 +55,12 @@ type EventRow = {
   event_json: string
   seq: number
   created_at: string
+}
+
+function requireEnvValue(env: Record<string, string>, key: string): string {
+  const value = env[key]
+  if (value == null || value.length === 0) throw new Error(`Missing required env value: ${key}`)
+  return value
 }
 
 type MockAgentItem = {
@@ -1590,10 +1596,29 @@ describe('SessionService runtime provider/model resolution', () => {
         spark_media: { env: Record<string, string> }
       }
     ).spark_media
-    expect(mediaServer.env.SPARK_MEDIA_PROVIDER).toBe('agnes')
-    expect(mediaServer.env.SPARK_MEDIA_MODEL).toBe('agnes-2.0-flash')
-    expect(mediaServer.env.SPARK_MEDIA_MANIFESTS_JSON).toContain('agnes:agnes-image-2.0-flash')
-    expect(mediaServer.env.SPARK_MEDIA_MANIFESTS_JSON).toContain('agnes:agnes-video-v2.0')
+    expect(Object.keys(mediaServer.env).sort()).toEqual([
+      'ELECTRON_RUN_AS_NODE',
+      'SPARK_MEDIA_API_KEY_0',
+      'SPARK_MEDIA_CONFIG_FILE',
+    ])
+    expect(JSON.stringify(mediaServer.env).length).toBeLessThan(2_048)
+    const serializedRuntimeConfig = readFileSync(
+      requireEnvValue(mediaServer.env, 'SPARK_MEDIA_CONFIG_FILE'),
+      'utf8',
+    )
+    const runtimeConfig = JSON.parse(serializedRuntimeConfig) as {
+      provider: string
+      model: string
+      providers: Array<{ apiKeyEnv: string; apiKey?: string; manifests: Array<{ id: string }> }>
+    }
+    expect(mediaServer.env.SPARK_MEDIA_API_KEY_0).toBe('test-api-key')
+    expect(serializedRuntimeConfig).not.toContain('test-api-key')
+    expect(runtimeConfig.providers[0]).toMatchObject({ apiKeyEnv: 'SPARK_MEDIA_API_KEY_0' })
+    expect(runtimeConfig.providers[0]).not.toHaveProperty('apiKey')
+    expect(runtimeConfig.provider).toBe('agnes')
+    expect(runtimeConfig.model).toBe('agnes-2.0-flash')
+    expect(runtimeConfig.providers.flatMap((provider) => provider.manifests.map((item) => item.id)))
+      .toEqual(expect.arrayContaining(['agnes:agnes-image-2.0-flash', 'agnes:agnes-video-v2.0']))
   })
 
   it('injects all enabled image providers into one routable spark_media server', async () => {
@@ -1694,11 +1719,13 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(config?.mcpServers).not.toHaveProperty('spark_image')
     const mediaServer = (config?.mcpServers as { spark_media: { env: Record<string, string> } })
       .spark_media
-    const providers = JSON.parse(mediaServer.env.SPARK_MEDIA_PROVIDERS_JSON ?? '[]') as Array<{
-      id: string
-      model: string
-      provider: string
-    }>
+    const providers = (
+      JSON.parse(
+        readFileSync(requireEnvValue(mediaServer.env, 'SPARK_MEDIA_CONFIG_FILE'), 'utf8'),
+      ) as {
+        providers: Array<{ id: string; model: string; provider: string }>
+      }
+    ).providers
     expect(providers).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'xai-image-provider', model: 'grok-imagine-image' }),
@@ -1789,9 +1816,13 @@ describe('SessionService runtime provider/model resolution', () => {
     const mediaServer = (
       mockState.sdkConfigs[0]?.mcpServers as { spark_media: { env: Record<string, string> } }
     ).spark_media
-    const providers = JSON.parse(mediaServer.env.SPARK_MEDIA_PROVIDERS_JSON ?? '[]') as Array<{
-      id: string
-    }>
+    const providers = (
+      JSON.parse(
+        readFileSync(requireEnvValue(mediaServer.env, 'SPARK_MEDIA_CONFIG_FILE'), 'utf8'),
+      ) as {
+        providers: Array<{ id: string }>
+      }
+    ).providers
     expect(providers.map((provider) => provider.id)).toContain('working-image-provider')
     expect(providers.map((provider) => provider.id)).not.toContain('broken-image-provider')
   })

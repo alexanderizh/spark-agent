@@ -12,7 +12,9 @@
  *   generate_video     — 文生视频 / 图生视频 / 视频编辑（prompt + 可选 inputImages/inputVideos）
  *   upload/get/list/delete_file、list/get/cancel_task — Provider 文件与异步任务生命周期
  *
- * 配置全部来自环境变量（API key 仅在本子进程内存内，不外泄）：
+ * 配置优先从 SPARK_MEDIA_CONFIG_FILE 指向的受控运行时文件读取；
+ * 下列环境变量作为向后兼容的回退：
+ *   SPARK_MEDIA_CONFIG_FILE   运行时 JSON 配置路径（Windows 上避免超大 env 触发 ENAMETOOLONG）
  *   SPARK_MEDIA_API_KEY       API key（必填）
  *   SPARK_MEDIA_PROVIDER      apimart | xai | bailian | volcengine-ark | openai-compatible | custom（默认 openai-compatible）
  *   SPARK_MEDIA_MODEL         默认模型 id
@@ -23,6 +25,7 @@
  *   SPARK_MEDIA_MANIFESTS_JSON 可选；已启用 MediaModelManifest[]，用于 list/describe
  *   SPARK_MEDIA_PROVIDERS_JSON 可选；可路由 Provider 配置数组，优先于上方单 Provider 变量
  */
+import { readFileSync } from 'node:fs'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import readline from 'node:readline'
@@ -917,45 +920,66 @@ function requestIdSuffix(body) {
 
 
 function configFromEnv() {
+  const runtimeConfig = loadRuntimeConfigFile()
   let mediaDefaults
   let manifests
   try {
-    mediaDefaults = env.SPARK_MEDIA_DEFAULTS_JSON ? JSON.parse(env.SPARK_MEDIA_DEFAULTS_JSON) : {}
+    mediaDefaults = runtimeConfig?.mediaDefaults ??
+      (env.SPARK_MEDIA_DEFAULTS_JSON ? JSON.parse(env.SPARK_MEDIA_DEFAULTS_JSON) : {})
   } catch {
     mediaDefaults = {}
   }
   try {
-    const parsed = env.SPARK_MEDIA_MANIFESTS_JSON ? JSON.parse(env.SPARK_MEDIA_MANIFESTS_JSON) : []
+    const parsed = runtimeConfig?.manifests ??
+      (env.SPARK_MEDIA_MANIFESTS_JSON ? JSON.parse(env.SPARK_MEDIA_MANIFESTS_JSON) : [])
     manifests = Array.isArray(parsed) ? parsed.filter(isManifestLike) : []
   } catch {
     manifests = []
   }
-  const provider = (env.SPARK_MEDIA_PROVIDER || 'openai-compatible').trim().toLowerCase()
-  const configuredBaseUrl = (env.SPARK_MEDIA_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')
-  const outputDir = env.SPARK_MEDIA_OUTPUT_DIR || path.join(process.cwd(), '.spark-artifacts', 'media')
+  const provider = String(runtimeConfig?.provider || env.SPARK_MEDIA_PROVIDER || 'openai-compatible').trim().toLowerCase()
+  const configuredBaseUrl = String(runtimeConfig?.baseUrl || env.SPARK_MEDIA_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')
+  const outputDir = String(runtimeConfig?.outputDir || env.SPARK_MEDIA_OUTPUT_DIR || path.join(process.cwd(), '.spark-artifacts', 'media'))
   const legacy = normalizeProviderConfig({
-    apiKey: env.SPARK_MEDIA_API_KEY || '',
+    apiKey: runtimeConfig?.apiKey ||
+      (runtimeConfig?.apiKeyEnv ? env[runtimeConfig.apiKeyEnv] : '') ||
+      env.SPARK_MEDIA_API_KEY || '',
     provider,
-    model: env.SPARK_MEDIA_MODEL || '',
-    mode: env.SPARK_MEDIA_API_TYPE || 'auto',
+    model: runtimeConfig?.model || env.SPARK_MEDIA_MODEL || '',
+    mode: runtimeConfig?.mode || env.SPARK_MEDIA_API_TYPE || 'auto',
     baseUrl: configuredBaseUrl,
     outputDir,
     mediaDefaults,
     manifests,
   }, outputDir)
-  const providers = parseProviderConfigs(env.SPARK_MEDIA_PROVIDERS_JSON, outputDir)
+  const providers = Array.isArray(runtimeConfig?.providers)
+    ? normalizeProviderConfigs(runtimeConfig.providers, outputDir)
+    : parseProviderConfigs(env.SPARK_MEDIA_PROVIDERS_JSON, outputDir)
   return { ...(providers[0] || legacy), providers: providers.length > 0 ? providers : [legacy] }
+}
+
+function loadRuntimeConfigFile() {
+  const filePath = String(env.SPARK_MEDIA_CONFIG_FILE || '').trim()
+  if (!filePath) return null
+  const parsed = JSON.parse(readFileSync(filePath, 'utf8'))
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('SPARK_MEDIA_CONFIG_FILE must contain a JSON object')
+  }
+  return parsed
 }
 
 function parseProviderConfigs(raw, outputDir) {
   try {
     const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed)
-      ? parsed.filter((item) => item && typeof item === 'object').map((item) => normalizeProviderConfig(item, outputDir))
-      : []
+    return normalizeProviderConfigs(parsed, outputDir)
   } catch {
     return []
   }
+}
+
+function normalizeProviderConfigs(value, outputDir) {
+  return Array.isArray(value)
+    ? value.filter((item) => item && typeof item === 'object').map((item) => normalizeProviderConfig(item, outputDir))
+    : []
 }
 
 function normalizeProviderConfig(value, outputDir) {
@@ -964,7 +988,7 @@ function normalizeProviderConfig(value, outputDir) {
   return {
     id: String(value.id || '').trim(),
     name: String(value.name || '').trim(),
-    apiKey: String(value.apiKey || ''),
+    apiKey: String(value.apiKey || (value.apiKeyEnv ? env[value.apiKeyEnv] : '') || ''),
     provider,
     model: String(value.model || ''),
     mode: String(value.mode || 'auto'),
