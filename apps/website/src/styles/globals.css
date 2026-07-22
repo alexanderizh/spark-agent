@@ -145,8 +145,15 @@ body {
   flex-direction: column;
   min-height: 100vh;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    'PingFang SC', 'Microsoft YaHei UI', sans-serif;
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Microsoft YaHei UI',
+    sans-serif;
   color: var(--text);
   background-color: var(--bg);
   background-image: var(--bg-glow);
@@ -173,10 +180,18 @@ main {
 @keyframes bg-drift {
   0%,
   100% {
-    background-position: 0% 0%, 100% 0%, 100% 100%, 0% 100%;
+    background-position:
+      0% 0%,
+      100% 0%,
+      100% 100%,
+      0% 100%;
   }
   50% {
-    background-position: 4% 3%, 96% -2%, 104% 97%, -3% 103%;
+    background-position:
+      4% 3%,
+      96% -2%,
+      104% 97%,
+      -3% 103%;
   }
 }
 /* iOS Safari 的 fixed 背景会卡顿，降级为 scroll */
@@ -485,9 +500,7 @@ h3 {
     var(--glass-shadow);
   padding: var(--space-6);
 }
-@supports not (
-  (backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))
-) {
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
   .card,
   .arch-node,
   .timeline-item,
@@ -827,20 +840,8 @@ h3 {
   flex-direction: column;
   gap: 0.9rem;
   /* 边缘渐隐遮罩 */
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    #000 7%,
-    #000 93%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    #000 7%,
-    #000 93%,
-    transparent 100%
-  );
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 7%, #000 93%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 7%, #000 93%, transparent 100%);
 }
 .pmq-row {
   overflow: hidden;
@@ -1420,7 +1421,7 @@ h3 {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
-  object-fit:fill;
+  object-fit: fill;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--panel);
@@ -2788,7 +2789,9 @@ h3 {
   backdrop-filter: blur(var(--glass-blur));
   color: var(--text-strong);
   box-shadow: var(--shadow-side);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .docs-search:focus-within {
   border-color: var(--primary);
@@ -2843,7 +2846,10 @@ h3 {
   font-weight: 700;
   font-size: 0.86rem;
   cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    background 0.2s ease;
 }
 .docs-filter-chip:hover {
   border-color: var(--primary);
@@ -2878,7 +2884,10 @@ h3 {
   padding: 1rem 1.1rem;
   text-decoration: none;
   color: inherit;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .docs-cards .card:hover {
   transform: translateY(-4px);
@@ -3104,6 +3113,295 @@ h3 {
   color: var(--text-muted);
   line-height: 1.5;
 }
+
+/* Workflow usage guide: responsive diagrams built from semantic HTML so they stay
+ * readable, searchable and theme-aware without shipping a large screenshot. */
+.workflow-doc-figure {
+  margin: 1.25rem 0 1.5rem;
+}
+.workflow-doc-figure > :first-child {
+  padding: clamp(1rem, 3vw, 1.75rem);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, #8b5cf6 18%);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(59, 130, 246, 0.12), transparent 32%),
+    radial-gradient(circle at 92% 100%, rgba(139, 92, 246, 0.1), transparent 30%),
+    linear-gradient(145deg, color-mix(in srgb, var(--panel-2) 88%, #0b1220 12%), var(--panel));
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.035),
+    0 18px 45px rgba(0, 0, 0, 0.14);
+}
+.workflow-doc-node {
+  width: min(100%, 310px);
+  padding: 0.8rem 0.9rem 0.85rem;
+  border: 1px solid var(--workflow-node-border, var(--border));
+  border-left: 4px solid var(--workflow-node-accent, #64748b);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 91%, var(--workflow-node-accent, #64748b) 9%);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.14);
+  text-align: left;
+}
+.workflow-doc-node-blue {
+  --workflow-node-accent: #3b82f6;
+  --workflow-node-border: rgba(59, 130, 246, 0.35);
+}
+.workflow-doc-node-green {
+  --workflow-node-accent: #22c55e;
+  --workflow-node-border: rgba(34, 197, 94, 0.34);
+}
+.workflow-doc-node-amber {
+  --workflow-node-accent: #f59e0b;
+  --workflow-node-border: rgba(245, 158, 11, 0.36);
+}
+.workflow-doc-node-violet {
+  --workflow-node-accent: #8b5cf6;
+  --workflow-node-border: rgba(139, 92, 246, 0.36);
+}
+.workflow-doc-node-slate {
+  --workflow-node-accent: #94a3b8;
+  --workflow-node-border: rgba(148, 163, 184, 0.3);
+}
+.workflow-doc-node-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.45rem;
+}
+.workflow-doc-node-head code {
+  color: var(--workflow-node-accent, #94a3b8);
+  background: color-mix(in srgb, var(--workflow-node-accent, #94a3b8) 13%, transparent);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.workflow-doc-node-head span {
+  color: var(--text-faint);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.workflow-doc-node > strong,
+.workflow-doc-node > small {
+  display: block;
+}
+.workflow-doc-node > strong {
+  color: var(--text-strong);
+  font-size: 0.96rem;
+  line-height: 1.35;
+}
+.workflow-doc-node > small {
+  margin-top: 0.28rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.workflow-doc-state-flow {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 0.9fr) auto minmax(190px, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+}
+.workflow-doc-state-card,
+.workflow-doc-mini-stack {
+  display: grid;
+  gap: 0.38rem;
+  padding: 0.85rem;
+  border: 1px dashed rgba(94, 234, 212, 0.35);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.3);
+  text-align: left;
+}
+.workflow-doc-state-card > span {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.workflow-doc-mini-stack span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.workflow-doc-inline-arrow {
+  color: var(--text-faint);
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-align: center;
+}
+.workflow-doc-arrow {
+  display: flex;
+  min-height: 2.2rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--text-faint) 80%, #60a5fa 20%);
+  line-height: 1;
+}
+.workflow-doc-arrow span {
+  font-size: 1.35rem;
+}
+.workflow-doc-arrow small {
+  margin-top: 0.1rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text-faint);
+  font-size: 0.68rem;
+}
+.workflow-doc-route {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+}
+.workflow-doc-route-branches,
+.workflow-doc-example-branches {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.workflow-doc-route-branches > div,
+.workflow-doc-example-branches > div {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+}
+.workflow-doc-route-branches > div > span,
+.workflow-doc-example-branches > div > span {
+  position: relative;
+  padding-top: 1rem;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+}
+.workflow-doc-route-branches > div > span::before,
+.workflow-doc-example-branches > div > span::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 0.8rem;
+  background: var(--border);
+  content: '';
+}
+.workflow-doc-loop {
+  border-color: rgba(245, 158, 11, 0.35) !important;
+}
+.workflow-doc-loop-head,
+.workflow-doc-loop-outcomes {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+.workflow-doc-loop-head {
+  margin-bottom: 1rem;
+  color: var(--text-strong);
+  font-weight: 800;
+}
+.workflow-doc-loop-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: center;
+}
+.workflow-doc-loop-body .workflow-doc-node {
+  width: 100%;
+}
+.workflow-doc-loop-outcomes {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.workflow-doc-full-flow {
+  display: grid;
+  justify-items: center;
+}
+.workflow-doc-full-flow > .workflow-doc-node {
+  width: min(100%, 360px);
+}
+.workflow-doc-example-branches {
+  max-width: 760px;
+}
+.workflow-doc-skip-card {
+  display: grid;
+  width: min(100%, 310px);
+  min-height: 5.5rem;
+  place-items: center;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  color: var(--text-faint);
+  font-size: 0.82rem;
+}
+.workflow-doc-loop-compact {
+  display: grid;
+  width: min(100%, 620px);
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(245, 158, 11, 0.38);
+  border-radius: 14px;
+  background: rgba(245, 158, 11, 0.06);
+  text-align: center;
+}
+.workflow-doc-loop-compact > span {
+  color: #fbbf24;
+  font-size: 0.74rem;
+}
+.workflow-doc-loop-compact > strong {
+  color: var(--text-strong);
+  font-size: 0.88rem;
+}
+.workflow-doc-parallel-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+.workflow-doc-parallel-row .workflow-doc-node {
+  width: 100%;
+  height: 100%;
+}
+.workflow-doc-example-branches-final {
+  margin-top: 0.3rem;
+}
+
+@media (max-width: 720px) {
+  .workflow-doc-page table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .workflow-doc-state-flow,
+  .workflow-doc-loop-body {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+  .workflow-doc-state-flow .workflow-doc-inline-arrow,
+  .workflow-doc-loop-body .workflow-doc-inline-arrow {
+    transform: rotate(90deg);
+  }
+  .workflow-doc-route-branches,
+  .workflow-doc-example-branches,
+  .workflow-doc-parallel-row {
+    grid-template-columns: 1fr;
+  }
+  .workflow-doc-loop-head,
+  .workflow-doc-loop-outcomes {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .workflow-doc-parallel-row .workflow-doc-node,
+  .workflow-doc-example-branches .workflow-doc-node,
+  .workflow-doc-route-branches .workflow-doc-node {
+    width: min(100%, 360px);
+  }
+}
 .docs-quickref {
   margin-top: 1.75rem;
   padding: 1.1rem 1.25rem;
@@ -3244,7 +3542,9 @@ h3 {
   color: var(--text-muted);
   font-size: 0.92rem;
   line-height: 1.45;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
 }
 .docs-topic-toc a:hover,
 .docs-toc-inline a:hover {
@@ -3312,7 +3612,9 @@ h3 {
   color: var(--text-muted);
   font-size: 0.94rem;
   line-height: 1.3;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
 }
 .docs-sidebar-link:hover {
   background: var(--panel-2);
@@ -3379,7 +3681,10 @@ h3 {
   backdrop-filter: blur(var(--glass-blur));
   color: inherit;
   text-decoration: none;
-  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .docs-search-result:hover,
 .docs-search-result:focus-visible {
@@ -3407,7 +3712,9 @@ h3 {
 .docs-search-result-arrow {
   flex: 0 0 auto;
   color: var(--text-faint);
-  transition: color 0.2s ease, transform 0.2s ease;
+  transition:
+    color 0.2s ease,
+    transform 0.2s ease;
 }
 .docs-search-result:hover .docs-search-result-arrow {
   color: var(--primary);
