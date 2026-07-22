@@ -167,7 +167,10 @@ import { EmbeddingService } from './memory/embedding.service.js'
 import { MemorySearchService } from './memory/memory-search.service.js'
 import { MemoryEvolutionService } from './memory/memory-evolution.service.js'
 import { MemoryConsolidationService } from './memory/memory-consolidation.service.js'
-import { resolveMediaMcpProviderRoutes } from './media/media-mcp-runtime-config.js'
+import {
+  resolveMediaMcpProviderRoutes,
+  writeMediaMcpRuntimeConfig,
+} from './media/media-mcp-runtime-config.js'
 import {
   buildMediaGenerationSystemPrompt,
   SPARK_MEDIA_TOOL_NAMES,
@@ -4398,6 +4401,21 @@ export class SessionService {
     const [primary] = providers
     if (primary == null) return null
     const outputDir = path.join(workspaceRootPath, '.spark-artifacts', 'media')
+    const runtimeProviders = providers.map(({ apiKey: _apiKey, ...provider }, index) => ({
+      ...provider,
+      apiKeyEnv: `SPARK_MEDIA_API_KEY_${index}`,
+    }))
+    const runtimeConfigFile = writeMediaMcpRuntimeConfig({
+      apiKeyEnv: 'SPARK_MEDIA_API_KEY_0',
+      provider: primary.provider,
+      model: primary.model,
+      mode: primary.mode,
+      ...(primary.baseUrl != null ? { baseUrl: primary.baseUrl } : {}),
+      outputDir,
+      mediaDefaults: primary.mediaDefaults,
+      manifests: primary.manifests,
+      providers: runtimeProviders,
+    })
     return {
       mcpServer: {
         type: 'stdio',
@@ -4406,19 +4424,10 @@ export class SessionService {
         cwd: workspaceRootPath,
         env: {
           ELECTRON_RUN_AS_NODE: '1',
-          SPARK_MEDIA_API_KEY: primary.apiKey,
-          SPARK_MEDIA_MODEL: primary.model,
-          SPARK_MEDIA_PROVIDER: primary.provider,
-          SPARK_MEDIA_API_TYPE: primary.mode,
-          SPARK_MEDIA_OUTPUT_DIR: outputDir,
-          SPARK_MEDIA_PROVIDERS_JSON: JSON.stringify(providers),
-          ...(primary.baseUrl != null ? { SPARK_MEDIA_BASE_URL: primary.baseUrl } : {}),
-          ...(Object.keys(primary.mediaDefaults).length > 0
-            ? { SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify(primary.mediaDefaults) }
-            : {}),
-          ...(primary.manifests.length > 0
-            ? { SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify(primary.manifests) }
-            : {}),
+          SPARK_MEDIA_CONFIG_FILE: runtimeConfigFile,
+          ...Object.fromEntries(
+            providers.map((provider, index) => [`SPARK_MEDIA_API_KEY_${index}`, provider.apiKey]),
+          ),
         },
       },
       systemPrompt: buildMediaGenerationSystemPrompt({

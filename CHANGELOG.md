@@ -4,6 +4,13 @@
 
 ---
 
+## [0.7.5] - 2026-07-23
+
+### Bug 修复
+
+- **Windows Claude/Codex 对话启动失败**：统一媒体 MCP 不再把完整 Provider 路由和模型 Manifest 写入子进程环境变量，避免超过 Windows `CreateProcess` 限制后导致 Claude SDK 与 Codex SDK 同时报 `spawn ENAMETOOLONG`。
+- **媒体凭据不落盘**：大体积路由/Manifest 改为通过用户私有临时文件传递，API Key 仍仅通过短环境变量注入 MCP 子进程；保留旧单 Provider 环境变量协议兼容。
+
 ## [Unreleased] - Skill 商店开发中
 
 ### 行为调整 — MCP 全局可用（2026-07-16）

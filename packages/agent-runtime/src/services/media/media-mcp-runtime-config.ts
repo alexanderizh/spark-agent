@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import {
   MediaModelManifestRepository,
   ProviderProfileRepository,
@@ -15,6 +19,8 @@ import { MediaModelCatalogService } from './media-model-catalog.service.js'
 import { resolveProfileMediaModels, type MediaProfileLike } from './media-model-resolver.js'
 
 const log = createLogger('media-mcp-runtime-config')
+let mediaRuntimeDir: string | null = null
+let cleanupRegistered = false
 
 const MEDIA_CAPABILITIES = new Set([
   'image.generate',
@@ -56,6 +62,54 @@ export type MediaMcpProviderRoute = {
   mediaDefaults: Record<string, unknown>
   capabilities: string[]
   manifests: MediaModelManifest[]
+}
+
+export type MediaMcpRuntimeFileConfig = {
+  apiKeyEnv: string
+  provider: MediaProviderKind
+  model: string
+  mode: string
+  baseUrl?: string
+  outputDir: string
+  mediaDefaults: Record<string, unknown>
+  manifests: MediaModelManifest[]
+  providers: Array<Omit<MediaMcpProviderRoute, 'apiKey'> & { apiKeyEnv: string }>
+}
+
+/**
+ * Windows CreateProcess has a small combined environment/command-line budget.
+ * Media manifests can exceed it on their own, so only a short file path is
+ * passed to SDK-managed child processes. API keys are deliberately excluded
+ * and remain in short per-provider environment variables. The per-process
+ * directory is private to the current OS user and removed on clean shutdown.
+ */
+export function writeMediaMcpRuntimeConfig(config: MediaMcpRuntimeFileConfig): string {
+  const serialized = JSON.stringify(config)
+  const runtimeDirectory = ensureMediaRuntimeDirectory()
+  const digest = createHash('sha256').update(serialized).digest('hex')
+  const filePath = path.join(runtimeDirectory, `${digest}.json`)
+  try {
+    writeFileSync(filePath, serialized, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+  }
+  return filePath
+}
+
+function ensureMediaRuntimeDirectory(): string {
+  if (mediaRuntimeDir != null) return mediaRuntimeDir
+  mediaRuntimeDir = mkdtempSync(path.join(tmpdir(), `spark-agent-media-${process.pid}-`))
+  try {
+    chmodSync(mediaRuntimeDir, 0o700)
+  } catch {
+    // Windows ACLs are inherited from the user-scoped temporary directory.
+  }
+  if (cleanupRegistered) return mediaRuntimeDir
+  cleanupRegistered = true
+  process.once('exit', () => {
+    if (mediaRuntimeDir != null) rmSync(mediaRuntimeDir, { recursive: true, force: true })
+  })
+  return mediaRuntimeDir
 }
 
 export async function resolveMediaMcpProviderRoutes(

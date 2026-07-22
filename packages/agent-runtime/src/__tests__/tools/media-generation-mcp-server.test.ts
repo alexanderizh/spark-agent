@@ -392,6 +392,93 @@ describe('spark_media MCP server', () => {
     rmSync(tmpDir, { recursive: true, force: true })
   })
 
+  it('loads oversized provider and manifest configuration from a runtime file', async () => {
+    const manifest = {
+      id: 'custom:large-image-model',
+      providerKind: 'custom',
+      modelId: 'large-image-model',
+      displayName: 'Large Image Model',
+      description: 'x'.repeat(40_000),
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'] },
+          paramSchema: {},
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    }
+    const configPath = path.join(tmpDir, 'runtime-config.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        outputDir: tmpDir,
+        providers: [
+          {
+            id: 'large-provider',
+            name: 'Large Provider',
+            apiKeyEnv: 'SPARK_MEDIA_API_KEY_0',
+            provider: 'custom',
+            model: 'large-image-model',
+            mode: 'sync',
+            baseUrl,
+            mediaDefaults: {},
+            manifests: [manifest],
+          },
+        ],
+      }),
+    )
+
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY_0: 'sk-test',
+        SPARK_MEDIA_CONFIG_FILE: configPath,
+      },
+    })
+
+    const listed = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'list_models', arguments: {} },
+    })
+
+    expect(listed.error).toBeUndefined()
+    expect(listed.result.structuredContent.models).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          modelId: 'large-image-model',
+          providerProfileId: 'large-provider',
+        }),
+      ]),
+    )
+
+    const generated = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'generate_image',
+        arguments: { model: 'custom:large-image-model', prompt: 'large config test' },
+      },
+    })
+    expect(generated.error).toBeUndefined()
+    expect(postedHeaders.authorization).toBe('Bearer sk-test')
+  })
+
   it('renders manifest templates, applies aliases, and materializes image output', async () => {
     const manifest = {
       id: 'test:image-template',
