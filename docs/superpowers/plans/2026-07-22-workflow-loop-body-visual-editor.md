@@ -1,6 +1,6 @@
 # Workflow Loop Body Visual Editor Implementation Plan
 
-> 状态: 实施中 | 最后核对: 2026-07-22
+> 状态: 已落地 | 最后核对: 2026-07-22
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -23,7 +23,8 @@
 - Modify `apps/desktop/src/renderer/design/views/WorkflowView.tsx`: 接入编辑范围、保存、返回、禁用嵌套 loop 和 Inspector 回调。
 - Modify `apps/desktop/src/renderer/design/views/workflow/WorkflowContextMenu.tsx`: 支持禁用指定节点类型。
 - Modify `apps/desktop/src/renderer/design/views/workflow/graph-adapter.test.ts`: 增加 loop body 条件边与方向往返测试。
-- Modify `apps/desktop/src/renderer/design/styles/views.css`: 子图工具栏、摘要、禁用节点样式。
+- Create `apps/desktop/src/renderer/design/styles/workflow-loop-body.css`: 子图工具栏、摘要、禁用节点样式。
+- Modify `apps/desktop/src/renderer/main.tsx`: 加载循环体编辑器独立样式。
 - Modify `apps/website/src/content/docs-pages/workflow-usage.tsx`: 明确 Skill、Tool、MCP 为可选扩展，并加入可视化循环体编辑说明。
 - Modify `apps/website/src/content/docs.ts`: 刷新工作流文档摘要与核对日期（若正文搜索摘要发生变化）。
 - Modify `docs/superpowers/specs/2026-07-22-workflow-loop-body-visual-editor-design.md`: 完成后标记“已落地”。
@@ -36,7 +37,7 @@
 - Create: `apps/desktop/src/renderer/design/views/workflow/loop-body-editor.ts`
 - Create: `apps/desktop/src/renderer/design/views/workflow/loop-body-editor.test.ts`
 
-- [ ] **Step 1: Write failing tests for graph lookup, summary and commit**
+- [x] **Step 1: Write failing tests for graph lookup, summary and commit**
 
 ```ts
 it('opens an existing loop body and commits it back without changing siblings', () => {
@@ -62,7 +63,7 @@ it('summarizes nodes, edges, conditional edges and orientation', () => {
 })
 ```
 
-- [ ] **Step 2: Run the helper test and verify it fails**
+- [x] **Step 2: Run the helper test and verify it fails**
 
 Run:
 
@@ -72,7 +73,7 @@ pnpm --filter @spark/desktop exec vitest run src/renderer/design/views/workflow/
 
 Expected: FAIL because `loop-body-editor.ts` and its exports do not exist.
 
-- [ ] **Step 3: Implement the scope types and immutable graph operations**
+- [x] **Step 3: Implement the scope types and immutable graph operations**
 
 ```ts
 export type WorkflowEditorScope =
@@ -112,7 +113,7 @@ export function commitLoopBodyGraph(
 
 Also export `defaultLoopBodyGraph`, `summarizeLoopBodyGraph`, `isWorkflowGraph`, and `collectWorkflowNodeIds` so defaults and validation have one source of truth.
 
-- [ ] **Step 4: Add failing validation tests**
+- [x] **Step 4: Add failing validation tests**
 
 Cover these exact error codes:
 
@@ -129,7 +130,7 @@ expect(validateLoopBodyGraph(danglingEdgeGraph, rootGraph, 'loop-1')[0]?.code).t
 expect(validateLoopBodyGraph(cyclicGraph, rootGraph, 'loop-1')[0]?.code).toBe('cycle')
 ```
 
-- [ ] **Step 5: Implement deterministic validation and scoped ID creation**
+- [x] **Step 5: Implement deterministic validation and scoped ID creation**
 
 `validateLoopBodyGraph` must return all discoverable errors in stable node/edge order. `createScopedWorkflowNodeId` must generate `{loopNodeId}__{kind}-{sequence}` and retry while the ID exists in either graph.
 
@@ -149,13 +150,13 @@ export type LoopBodyValidationError = {
 }
 ```
 
-- [ ] **Step 6: Run helper tests**
+- [x] **Step 6: Run helper tests**
 
 Run the Task 1 Vitest command again.
 
 Expected: all loop body helper tests PASS.
 
-- [ ] **Step 7: Commit Task 1**
+- [x] **Step 7: Commit Task 1**
 
 ```bash
 git add apps/desktop/src/renderer/design/views/workflow/loop-body-editor.ts \
@@ -173,7 +174,7 @@ git commit -m "feat(workflow): add loop body graph helpers"
 - Create: `apps/desktop/src/renderer/design/views/workflow/WorkflowLoopBodySummary.test.tsx`
 - Modify: `apps/desktop/src/renderer/design/views/workflow/WorkflowContextMenu.tsx`
 
-- [ ] **Step 1: Write static rendering tests**
+- [x] **Step 1: Write static rendering tests**
 
 Use `renderToStaticMarkup` to assert:
 
@@ -205,7 +206,7 @@ expect(summary).toContain('编辑循环体')
 expect(summary).toContain('高级 JSON')
 ```
 
-- [ ] **Step 2: Run component tests and verify they fail**
+- [x] **Step 2: Run component tests and verify they fail**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run \
@@ -215,11 +216,11 @@ pnpm --filter @spark/desktop exec vitest run \
 
 Expected: FAIL because both components do not exist.
 
-- [ ] **Step 3: Implement toolbar and summary components**
+- [x] **Step 3: Implement toolbar and summary components**
 
 The toolbar uses the existing `Button` and `Icons.ArrowLeft`. The summary uses a semantic `<details>` for Advanced JSON and receives all state through props; it must not own a second body graph.
 
-- [ ] **Step 4: Extend the context menu with disabled node kinds**
+- [x] **Step 4: Extend the context menu with disabled node kinds**
 
 Add:
 
@@ -229,11 +230,11 @@ disabledNodeKinds?: ReadonlySet<WorkflowNodeKind>
 
 Pane menu buttons must set `disabled`, add a tooltip for loop, and never call `onAddNode` when disabled.
 
-- [ ] **Step 5: Run Task 2 tests**
+- [x] **Step 5: Run Task 2 tests**
 
 Expected: both component tests PASS. Add a context-menu assertion if the component is exported through a testable render path.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```bash
 git add apps/desktop/src/renderer/design/views/workflow/WorkflowLoopBodyToolbar.tsx \
@@ -251,11 +252,11 @@ git commit -m "feat(workflow): add loop body editor controls"
 - Modify: `apps/desktop/src/renderer/design/views/WorkflowView.tsx`
 - Modify: `apps/desktop/src/renderer/design/views/workflow/graph-adapter.test.ts`
 
-- [ ] **Step 1: Move the default body and graph guards to the helper module**
+- [x] **Step 1: Move the default body and graph guards to the helper module**
 
 Delete `defaultLoopBodyGraph` and `isWorkflowGraphLike` duplicates from `WorkflowView.tsx`, importing their tested equivalents from `loop-body-editor.ts`.
 
-- [ ] **Step 2: Add editor scope and root graph snapshot state**
+- [x] **Step 2: Add editor scope and root graph snapshot state**
 
 ```ts
 const [editorScope, setEditorScope] = useState<WorkflowEditorScope>({ kind: 'root' })
@@ -264,7 +265,7 @@ const editingLoopBody = editorScope.kind === 'loop-body'
 
 `loadWorkflowIntoCanvas` always resets to root scope. Entering a body first serializes the current root canvas, stores it in scope, then loads the body through `graphToReactFlow`.
 
-- [ ] **Step 3: Add one composition function used by dirty state, return and save**
+- [x] **Step 3: Add one composition function used by dirty state, return and save**
 
 ```ts
 const currentEditorGraph = () => reactFlowToGraph(nodes, edges, orientation)
@@ -276,7 +277,7 @@ const completeRootGraph = () =>
 
 Do not duplicate this composition in three callbacks. Dirty comparison must serialize `completeRootGraph()` so body edits immediately mark the page dirty.
 
-- [ ] **Step 4: Implement enter, return and save callbacks**
+- [x] **Step 4: Implement enter, return and save callbacks**
 
 `openLoopBodyEditor(loopNodeId)` loads body nodes/edges/direction, clears selection, closes menus, then fits the child graph.
 
@@ -284,7 +285,7 @@ Do not duplicate this composition in three callbacks. Dirty comparison must seri
 
 `saveWorkflow()` validates and composes the body before invoking `workflow:update`. After saving while in child mode, update the scope root snapshot from the saved graph but keep the user inside the same child editor.
 
-- [ ] **Step 5: Prevent nested loops through every creation path**
+- [x] **Step 5: Prevent nested loops through every creation path**
 
 - Palette: loop button is disabled in child mode with title “运行时 v1 不支持嵌套循环”。
 - Pane context menu: pass `new Set(['loop'])` as `disabledNodeKinds`.
@@ -292,7 +293,7 @@ Do not duplicate this composition in three callbacks. Dirty comparison must seri
 - Inspector kind selector: remove `loop` from options in child mode and guard `handleKindChange`.
 - Duplication: existing non-loop nodes remain duplicable; malformed old nested loop nodes can be deleted but not copied.
 
-- [ ] **Step 6: Replace the raw loop JSON section with WorkflowLoopBodySummary**
+- [x] **Step 6: Replace the raw loop JSON section with WorkflowLoopBodySummary**
 
 Extend `InspectorProps` with:
 
@@ -304,15 +305,15 @@ onResetLoopBody: (loopNodeId: string) => void
 
 Only root loop nodes show the visual editor entry. Advanced JSON keeps the existing parse-without-write-on-error behavior. Reset uses the existing confirmation service before applying `defaultLoopBodyGraph()`.
 
-- [ ] **Step 7: Add the child toolbar**
+- [x] **Step 7: Add the child toolbar**
 
 Render `WorkflowLoopBodyToolbar` instead of the root name/status controls while `editingLoopBody`. Keep orientation, node palette and Save actions visible. Delete Workflow must only be available in root mode.
 
-- [ ] **Step 8: Expand graph adapter regression coverage**
+- [x] **Step 8: Expand graph adapter regression coverage**
 
 Add a root graph containing a loop whose body has vertical orientation and a conditional edge. Round trip the root graph and separately round trip the body; expect both conditions and orientations unchanged.
 
-- [ ] **Step 9: Run focused tests and desktop typecheck**
+- [x] **Step 9: Run focused tests and desktop typecheck**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run \
@@ -325,7 +326,7 @@ pnpm --filter @spark/desktop exec tsc --noEmit -p tsconfig.json
 
 Expected: focused tests PASS and renderer typecheck exits 0.
 
-- [ ] **Step 10: Commit Task 3**
+- [x] **Step 10: Commit Task 3**
 
 ```bash
 git add apps/desktop/src/renderer/design/views/WorkflowView.tsx \
@@ -337,15 +338,16 @@ git commit -m "feat(workflow): edit loop bodies visually"
 
 **Files:**
 
-- Modify: `apps/desktop/src/renderer/design/styles/views.css`
+- Create: `apps/desktop/src/renderer/design/styles/workflow-loop-body.css`
+- Modify: `apps/desktop/src/renderer/main.tsx`
 - Modify: `apps/website/src/content/docs-pages/workflow-usage.tsx`
 - Modify: `apps/website/src/content/docs.ts`
 
-- [ ] **Step 1: Add focused styles**
+- [x] **Step 1: Add focused styles**
 
 Add styles for `.wf-loop-body-toolbar`, `.wf-loop-breadcrumb`, `.wf-loop-summary`, `.wf-loop-summary-stats`, `.wf-loop-json-details`, and disabled palette/context-menu buttons. Preserve the existing 980px responsive breakpoint.
 
-- [ ] **Step 2: Update the website guide**
+- [x] **Step 2: Update the website guide**
 
 Add an “打开循环体可视化编辑器” procedure and explicitly label Skill / Tool / MCP as optional parallel audit extensions:
 
@@ -354,7 +356,7 @@ Skill = 固定方法论；Tool = 限制手段；MCP = 连接外部系统。
 普通本地编码流程可以删除 MCP；没有独立审计需求时可以删除 Tool。
 ```
 
-- [ ] **Step 3: Run formatting and website build**
+- [x] **Step 3: Run formatting and website build**
 
 ```bash
 pnpm exec prettier --write \
@@ -362,7 +364,8 @@ pnpm exec prettier --write \
   apps/desktop/src/renderer/design/views/workflow/loop-body-editor.ts \
   apps/desktop/src/renderer/design/views/workflow/WorkflowLoopBodyToolbar.tsx \
   apps/desktop/src/renderer/design/views/workflow/WorkflowLoopBodySummary.tsx \
-  apps/desktop/src/renderer/design/styles/views.css \
+  apps/desktop/src/renderer/design/styles/workflow-loop-body.css \
+  apps/desktop/src/renderer/main.tsx \
   apps/website/src/content/docs-pages/workflow-usage.tsx \
   apps/website/src/content/docs.ts
 pnpm --filter @spark/website build
@@ -370,10 +373,11 @@ pnpm --filter @spark/website build
 
 Expected: formatting exits 0 and website production build succeeds.
 
-- [ ] **Step 4: Commit Task 4**
+- [x] **Step 4: Commit Task 4**
 
 ```bash
-git add apps/desktop/src/renderer/design/styles/views.css \
+git add apps/desktop/src/renderer/design/styles/workflow-loop-body.css \
+  apps/desktop/src/renderer/main.tsx \
   apps/website/src/content/docs-pages/workflow-usage.tsx \
   apps/website/src/content/docs.ts
 git commit -m "docs(workflow): explain visual loop body editing"
@@ -386,7 +390,7 @@ git commit -m "docs(workflow): explain visual loop body editing"
 - Modify: `docs/superpowers/specs/2026-07-22-workflow-loop-body-visual-editor-design.md`
 - Modify: `docs/superpowers/plans/2026-07-22-workflow-loop-body-visual-editor.md`
 
-- [ ] **Step 1: Run desktop visual QA**
+- [x] **Step 1: Run desktop visual QA**
 
 Launch the desktop app or a controlled component harness and verify with normal clicks:
 
@@ -400,7 +404,7 @@ Launch the desktop app or a controlled component harness and verify with normal 
 
 Capture root, child editor, Advanced JSON, and validation-error screenshots.
 
-- [ ] **Step 2: Run full relevant verification**
+- [x] **Step 2: Run full relevant verification**
 
 ```bash
 pnpm --filter @spark/desktop exec vitest run src/renderer/design/views/workflow \
@@ -413,7 +417,7 @@ git diff --check
 
 Expected: tests, both desktop TypeScript configs, desktop build, website build and diff check all succeed. If the runtime test path is not owned by desktop Vitest, run it through `@spark/agent-runtime` instead.
 
-- [ ] **Step 3: Review the diff and fix findings**
+- [x] **Step 3: Review the diff and fix findings**
 
 Review these failure modes explicitly:
 
@@ -427,15 +431,15 @@ Review these failure modes explicitly:
 
 Re-run the focused tests and typecheck after every fix.
 
-- [ ] **Step 4: Refresh docs status**
+- [x] **Step 4: Refresh docs status**
 
 Set the design and plan status to `已落地`, refresh `最后核对: 2026-07-22`, and mark all completed plan checkboxes.
 
-- [ ] **Step 5: Update GitNexus index or record the documented fallback**
+- [x] **Step 5: Update GitNexus index or record the documented fallback**
 
 Run the repository GitNexus incremental analyze command from the project skill. If unavailable or incompatible, use direct caller search, focused tests and `git diff` as required by `AGENTS.md`, then note the downgrade in delivery.
 
-- [ ] **Step 6: Final commit**
+- [x] **Step 6: Final commit**
 
 ```bash
 git add docs/superpowers/specs/2026-07-22-workflow-loop-body-visual-editor-design.md \

@@ -25,6 +25,7 @@ export type LoopBodySummary = {
 export type LoopBodyValidationError = {
   code:
     | 'empty_body'
+    | 'invalid_body'
     | 'nested_loop'
     | 'duplicate_node_id'
     | 'node_id_collision'
@@ -36,10 +37,52 @@ export type LoopBodyValidationError = {
   edgeId?: string
 }
 
+const WORKFLOW_EDGE_CONDITION_OPS = new Set(['exists', 'equals', 'not_equals', 'truthy', 'falsy'])
+
 export function isWorkflowGraph(value: unknown): value is WorkflowGraph {
   if (value == null || typeof value !== 'object') return false
   const record = value as Record<string, unknown>
-  return Array.isArray(record.nodes) && Array.isArray(record.edges)
+  if (!Array.isArray(record.nodes) || !Array.isArray(record.edges)) return false
+  if (
+    record.orientation !== undefined &&
+    record.orientation !== 'horizontal' &&
+    record.orientation !== 'vertical'
+  ) {
+    return false
+  }
+  const nodesValid = record.nodes.every((node) => {
+    if (node == null || typeof node !== 'object') return false
+    const item = node as Record<string, unknown>
+    return (
+      typeof item.id === 'string' &&
+      typeof item.kind === 'string' &&
+      typeof item.title === 'string' &&
+      item.config != null &&
+      typeof item.config === 'object' &&
+      !Array.isArray(item.config)
+    )
+  })
+  const edgesValid = record.edges.every((edge) => {
+    if (edge == null || typeof edge !== 'object') return false
+    const item = edge as Record<string, unknown>
+    if (
+      typeof item.id !== 'string' ||
+      typeof item.from !== 'string' ||
+      typeof item.to !== 'string'
+    ) {
+      return false
+    }
+    if (item.condition == null) return true
+    if (typeof item.condition !== 'object') return false
+    const condition = item.condition as Record<string, unknown>
+    return (
+      typeof condition.op === 'string' &&
+      WORKFLOW_EDGE_CONDITION_OPS.has(condition.op) &&
+      typeof condition.key === 'string' &&
+      ((condition.op !== 'equals' && condition.op !== 'not_equals') || 'value' in condition)
+    )
+  })
+  return nodesValid && edgesValid
 }
 
 export function defaultLoopBodyGraph(): WorkflowGraph {
@@ -76,11 +119,17 @@ export function openLoopBodyGraph(
   rootGraph: WorkflowGraph,
   loopNodeId: string,
   fallback: WorkflowGraph,
-): { graph: WorkflowGraph; loopTitle: string } {
+): { graph: WorkflowGraph; loopTitle: string; usedFallback: boolean } {
   const loopNode = rootGraph.nodes.find((node) => node.id === loopNodeId && node.kind === 'loop')
   if (loopNode == null) throw new Error(`Loop node ${loopNodeId} not found.`)
-  const body = isWorkflowGraph(loopNode.config.body) ? loopNode.config.body : fallback
-  return { graph: structuredClone(body), loopTitle: loopNode.title }
+  const configuredBody = loopNode.config.body
+  const hasValidBody = isWorkflowGraph(configuredBody)
+  const body = hasValidBody ? configuredBody : fallback
+  return {
+    graph: structuredClone(body),
+    loopTitle: loopNode.title,
+    usedFallback: !hasValidBody,
+  }
 }
 
 export function commitLoopBodyGraph(
@@ -156,7 +205,8 @@ function graphHasCycle(nodes: WorkflowNode[], edges: WorkflowEdge[]): boolean {
   const queue = nodes.filter((node) => (incoming.get(node.id) ?? 0) === 0).map((node) => node.id)
   let visited = 0
   while (queue.length > 0) {
-    const current = queue.shift()!
+    const current = queue.shift()
+    if (current == null) break
     visited += 1
     for (const target of outgoing.get(current) ?? []) {
       const next = (incoming.get(target) ?? 0) - 1
@@ -228,6 +278,23 @@ export function validateLoopBodyGraph(
       code: 'cycle',
       message: `循环节点 ${loopNodeId} 的内部子图必须保持无环。`,
     })
+  }
+  return errors
+}
+
+export function validateWorkflowLoopBodies(rootGraph: WorkflowGraph): LoopBodyValidationError[] {
+  const errors: LoopBodyValidationError[] = []
+  for (const node of rootGraph.nodes) {
+    if (node.kind !== 'loop') continue
+    if (!isWorkflowGraph(node.config.body)) {
+      errors.push({
+        code: 'invalid_body',
+        message: `循环节点 ${node.title || node.id} 的循环体格式无效。`,
+        nodeId: node.id,
+      })
+      continue
+    }
+    errors.push(...validateLoopBodyGraph(node.config.body, rootGraph, node.id))
   }
   return errors
 }

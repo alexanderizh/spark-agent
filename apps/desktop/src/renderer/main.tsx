@@ -6,6 +6,7 @@ import { readCanvasWindowProjectId } from './canvasWindowParams'
 
 import './design/styles/styles.css'
 import './design/styles/views.css'
+import './design/styles/workflow-loop-body.css'
 import './design/styles/interactions.css'
 import './design/styles/board.css'
 import './design/styles/global-overrides.css'
@@ -16,7 +17,5 @@ if (rootElement == null) {
 }
 
 createRoot(rootElement).render(
-  <StrictMode>
-    {readCanvasWindowProjectId() == null ? <App /> : <CanvasWindowApp />}
-  </StrictMode>,
+  <StrictMode>{readCanvasWindowProjectId() == null ? <App /> : <CanvasWindowApp />}</StrictMode>,
 )
