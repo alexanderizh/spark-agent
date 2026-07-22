@@ -60,7 +60,17 @@ export function CanvasTaskQueue({
     () => new Set(nodes.map((node) => node.taskId).filter(Boolean) as string[]),
     [nodes],
   )
-  const isOrphanTask = (task: CanvasTask) => isTaskActive(task) && !hostedTaskIds.has(task.id)
+  const visibleNodeIds = useMemo(() => new Set(nodes.map((node) => node.id)), [nodes])
+  const visibleBoardIds = useMemo(() => new Set(nodes.map((node) => node.boardId)), [nodes])
+  const isOrphanTask = (task: CanvasTask) => {
+    if (!isTaskActive(task)) return false
+    // 任务列表是项目级，nodes 仅包含当前画板。其他画板的任务不能据此判为孤儿；
+    // 当前画板没有任何节点时也缺少可靠的画板范围信息，宁可不提供破坏性清理入口。
+    if (visibleBoardIds.size === 0 || !visibleBoardIds.has(task.boardId)) return false
+    // taskId 只代表节点最近一次运行；历史任务仍通过 operationNodeId 归属于同一操作节点。
+    if (task.operationNodeId && visibleNodeIds.has(task.operationNodeId)) return false
+    return !hostedTaskIds.has(task.id)
+  }
   const orphanTasks = tasks.filter(isOrphanTask)
   const orphanCount = orphanTasks.length
   const detailTask = tasks.find((task) => task.id === detailTaskId) ?? null

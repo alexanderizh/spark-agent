@@ -4,6 +4,7 @@ import {
   createHistoryEntry,
   mergeCanvasBackgroundTaskSnapshot,
   mergeCanvasMutationSnapshot,
+  mergeCanvasTaskSnapshot,
   shouldRefreshCanvasProjectsForTaskStream,
 } from './canvas.store'
 import type { CanvasSnapshot } from './canvas.types'
@@ -294,6 +295,56 @@ describe('mergeCanvasBackgroundTaskSnapshot', () => {
     expect(merged.board.viewport).toEqual({ x: -120, y: 64, zoom: 0.9 })
     expect(merged.nodes).toHaveLength(1)
     expect(merged.nodes[0]?.id).toBe('node-1')
+  })
+})
+
+describe('mergeCanvasTaskSnapshot', () => {
+  it('honors an authoritative task deletion when a node starts a replacement run', () => {
+    const baseTask = makeSnapshot().tasks[0]
+    if (!baseTask) throw new Error('test snapshot must include a task')
+    const current = makeSnapshot({
+      board: {
+        ...makeSnapshot().board,
+        viewport: { x: -120, y: 64, zoom: 0.9 },
+      },
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1' ? { ...node, taskId: 'task-old' } : node,
+      ),
+      tasks: [
+        {
+          ...baseTask,
+          id: 'task-old',
+          status: 'running',
+          operationNodeId: 'node-1',
+        },
+      ],
+    })
+    const next = makeSnapshot({
+      board: { ...makeSnapshot().board, viewport: { x: 0, y: 0, zoom: 1 } },
+      nodes: makeSnapshot().nodes.map((node) =>
+        node.id === 'node-1'
+          ? {
+              ...node,
+              taskId: 'task-new',
+              updatedAt: '2026-06-01T00:02:00.000Z',
+            }
+          : node,
+      ),
+      tasks: [
+        {
+          ...baseTask,
+          id: 'task-new',
+          status: 'running',
+          operationNodeId: 'node-1',
+          updatedAt: '2026-06-01T00:02:00.000Z',
+        },
+      ],
+    })
+
+    const merged = mergeCanvasTaskSnapshot(current, next)
+
+    expect(merged.board.viewport).toEqual({ x: -120, y: 64, zoom: 0.9 })
+    expect(merged.tasks.map((task) => task.id)).toEqual(['task-new'])
   })
 })
 

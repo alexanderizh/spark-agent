@@ -89,15 +89,15 @@ function mergeTaskEntities<T extends VersionedCanvasEntity>(
 }
 
 /**
- * Merge a task-related snapshot without replacing the active canvas board.
- * Task APIs return full snapshots for IPC compatibility, but task status
- * changes must not reset the user's viewport or recreate unrelated entities.
+ * Merge an authoritative foreground task snapshot without replacing the active viewport.
+ * Run/retry/cancel APIs read the latest hot database before returning, so entity removals in
+ * their snapshots are intentional (for example, replacing an active run on the same node).
  */
 export function mergeCanvasTaskSnapshot(
   current: CanvasSnapshot | null,
   next: CanvasSnapshot,
 ): CanvasSnapshot {
-  return mergeCanvasSnapshot(current, next, true)
+  return mergeCanvasSnapshot(current, next, false)
 }
 
 /** Merge a normal canvas mutation without replacing the active board viewport. */
@@ -146,7 +146,9 @@ export function mergeCanvasBackgroundTaskSnapshot(
   next: CanvasSnapshot,
 ): CanvasSnapshot {
   if (!current || current.project.id !== next.project.id) return next
-  return mergeCanvasTaskSnapshot(current, next)
+  // Stream callbacks can finish out of order. Preserve entities missing from a stale callback
+  // snapshot so it cannot erase nodes/assets/tasks created by a newer foreground action.
+  return mergeCanvasSnapshot(current, next, true)
 }
 
 export function useCanvasProjects() {
