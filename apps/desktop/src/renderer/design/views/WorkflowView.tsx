@@ -50,10 +50,30 @@ import {
 } from './workflow/graph-adapter'
 import { SparkNode } from './workflow/SparkNode'
 import { WorkflowContextMenu, type WfContextMenuState } from './workflow/WorkflowContextMenu'
+import { WorkflowLoopBodySummary } from './workflow/WorkflowLoopBodySummary'
+import { WorkflowLoopBodyToolbar } from './workflow/WorkflowLoopBodyToolbar'
+import {
+  collectWorkflowNodeIds,
+  commitLoopBodyGraph,
+  completeWorkflowEditorGraph,
+  createScopedWorkflowNodeId,
+  defaultLoopBodyGraph,
+  isWorkflowGraph,
+  openLoopBodyGraph,
+  summarizeLoopBodyGraph,
+  validateLoopBodyGraph,
+  type WorkflowEditorScope,
+} from './workflow/loop-body-editor'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
 import { WorkflowTemplatePicker } from './workflow/WorkflowTemplatePicker'
 import type { WorkflowTemplate } from './workflow/workflow-templates'
-import { Button, Dropdown, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
+import {
+  Button,
+  Dropdown,
+  Input as LobeInput,
+  Select as LobeSelect,
+  TextArea as LobeTextArea,
+} from '@lobehub/ui'
 import { Modal as AntdModal, Switch } from 'antd'
 
 const NODE_TYPES: NodeTypes = { spark: SparkNode }
@@ -78,38 +98,12 @@ function deferEffect(task: () => void | Promise<void>): () => void {
 }
 
 function createWorkflowNodeId(kind: WorkflowNodeKind): string {
-  workflowNodeSequence = (workflowNodeSequence + 1) % Number.MAX_SAFE_INTEGER
-  return `${kind}-${workflowNodeSequence.toString(36)}`
+  return `${kind}-${nextWorkflowNodeSuffix()}`
 }
 
-function defaultLoopBodyGraph(): WorkflowGraph {
-  return {
-    nodes: [
-      {
-        id: 'loop-draft',
-        kind: 'review',
-        title: '迭代产出',
-        x: 80,
-        y: 120,
-        config: {
-          prompt: '基于上游输入和上一轮结果，产出本轮改进版本。',
-          outputKey: 'draft',
-        },
-      },
-      {
-        id: 'loop-check',
-        kind: 'review',
-        title: '退出判断',
-        x: 360,
-        y: 120,
-        config: {
-          prompt: "评估本轮结果是否达标。严格只输出 'pass' 或 'retry'。",
-          outputKey: 'verdict',
-        },
-      },
-    ],
-    edges: [{ id: 'loop-draft-check', from: 'loop-draft', to: 'loop-check' }],
-  }
+function nextWorkflowNodeSuffix(): string {
+  workflowNodeSequence = (workflowNodeSequence + 1) % Number.MAX_SAFE_INTEGER
+  return workflowNodeSequence.toString(36)
 }
 
 function defaultWorkflowNodeConfig(kind: WorkflowNodeKind): WorkflowNode['config'] {
@@ -138,17 +132,9 @@ function defaultWorkflowNodeConfig(kind: WorkflowNodeKind): WorkflowNode['config
   }
 }
 
-function isWorkflowGraphLike(value: unknown): value is WorkflowGraph {
-  if (value == null || typeof value !== 'object') return false
-  const record = value as Record<string, unknown>
-  return Array.isArray(record.nodes) && Array.isArray(record.edges)
-}
-
 function serializeWorkflowDraft(
   workflow: Pick<WorkflowItem, 'name' | 'description' | 'status' | 'tags'> | null,
-  nodes: SparkFlowNode[],
-  edges: Edge[],
-  orientation: WorkflowOrientation,
+  graph: WorkflowGraph,
 ): string {
   if (workflow == null) return ''
   return JSON.stringify({
@@ -156,7 +142,7 @@ function serializeWorkflowDraft(
     description: workflow.description,
     status: workflow.status,
     tags: workflow.tags,
-    graph: reactFlowToGraph(nodes, edges, orientation),
+    graph,
   })
 }
 
@@ -209,6 +195,7 @@ function WorkflowViewInner() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   // 编排方向：横向（左右 handle）/纵向（上下 handle）；smoothstep 边自动跟随 handle 朝向画折线。
   const [orientation, setOrientation] = useState<WorkflowOrientation>('vertical')
+  const [editorScope, setEditorScope] = useState<WorkflowEditorScope>({ kind: 'root' })
   const [screen, setScreen] = useState<WorkflowScreen>('list')
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
@@ -241,11 +228,27 @@ function WorkflowViewInner() {
   const { invoke: writeTextFile } = useIpcInvoke('file:write-text')
   const { invoke: readTextFile } = useIpcInvoke('file:read-text')
 
+  const loadGraphIntoCanvas = useCallback(
+    (graph: WorkflowGraph, selectedNodeId?: string | null) => {
+      // 旧数据没有 orientation 字段：其坐标按横向排布存储，故回退到横向以正确显示布局。
+      setOrientation(graph.orientation ?? 'horizontal')
+      const { nodes: flowNodes, edges: flowEdges } = graphToReactFlow(graph)
+      setNodes(flowNodes)
+      setEdges(flowEdges)
+      setSelectedNodeId(selectedNodeId ?? flowNodes[0]?.id ?? null)
+      setSelectedEdgeId(null)
+      setContextMenu(null)
+      requestAnimationFrame(() => flowInstanceRef.current?.fitView({ padding: 0.2, maxZoom: 1 }))
+    },
+    [setEdges, setNodes],
+  )
+
   const loadWorkflowIntoCanvas = useCallback(
     (workflow: WorkflowItem | null) => {
       setDraft(workflow)
       draftIdRef.current = workflow?.id ?? null
       setSavedSnapshot(serializeSavedWorkflow(workflow))
+      setEditorScope({ kind: 'root' })
       if (workflow == null) {
         setNodes([])
         setEdges([])
@@ -254,16 +257,9 @@ function WorkflowViewInner() {
         setOrientation('vertical')
         return
       }
-      // 旧数据没有 orientation 字段：其坐标按横向排布存储，故回退到横向以正确显示布局；
-      // 新建工作流由 defaultStarterGraph 显式带 orientation: 'vertical'，走下面这条分支。
-      setOrientation(workflow.graph.orientation ?? 'horizontal')
-      const { nodes: flowNodes, edges: flowEdges } = graphToReactFlow(workflow.graph)
-      setNodes(flowNodes)
-      setEdges(flowEdges)
-      setSelectedNodeId(flowNodes[0]?.id ?? null)
-      setSelectedEdgeId(null)
+      loadGraphIntoCanvas(workflow.graph)
     },
-    [setNodes, setEdges],
+    [loadGraphIntoCanvas, setEdges, setNodes],
   )
 
   const refresh = useCallback(async () => {
@@ -317,9 +313,17 @@ function WorkflowViewInner() {
     return deferEffect(refresh)
   }, [refresh])
 
+  const currentEditorGraph = useMemo(
+    () => reactFlowToGraph(nodes, edges, orientation),
+    [edges, nodes, orientation],
+  )
+  const completeRootGraph = useMemo(
+    () => completeWorkflowEditorGraph(editorScope, currentEditorGraph),
+    [currentEditorGraph, editorScope],
+  )
   const dirty = useMemo(
-    () => serializeWorkflowDraft(draft, nodes, edges, orientation) !== savedSnapshot,
-    [draft, edges, nodes, orientation, savedSnapshot],
+    () => serializeWorkflowDraft(draft, completeRootGraph) !== savedSnapshot,
+    [completeRootGraph, draft, savedSnapshot],
   )
 
   useEffect(() => {
@@ -343,14 +347,22 @@ function WorkflowViewInner() {
   }, [registerNavGuard, requestConfirm])
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
-  const selectedEdge = selectedEdgeId != null ? edges.find((edge) => edge.id === selectedEdgeId) ?? null : null
+  const selectedEdge =
+    selectedEdgeId != null ? (edges.find((edge) => edge.id === selectedEdgeId) ?? null) : null
+  const editingLoopBody = editorScope.kind === 'loop-body'
+  const disabledNodeKinds = useMemo<ReadonlySet<WorkflowNodeKind>>(
+    () => (editingLoopBody ? new Set(['loop']) : new Set()),
+    [editingLoopBody],
+  )
 
   const modelOptions = useMemo(
     () =>
       Array.from(
         new Set(
           providers
-            .flatMap((provider) => (provider.modelIds.length ? provider.modelIds : [provider.defaultModel]))
+            .flatMap((provider) =>
+              provider.modelIds.length ? provider.modelIds : [provider.defaultModel],
+            )
             .filter(Boolean),
         ),
       ),
@@ -450,9 +462,86 @@ function WorkflowViewInner() {
     [createWorkflowFromGraph],
   )
 
+  const openLoopBodyEditor = useCallback(
+    (loopNodeId: string) => {
+      if (editorScope.kind !== 'root') return
+      const opened = openLoopBodyGraph(currentEditorGraph, loopNodeId, defaultLoopBodyGraph())
+      const errors = validateLoopBodyGraph(opened.graph, currentEditorGraph, loopNodeId)
+      if (errors.length > 0) {
+        toast.warning(`循环体需要修正：${errors[0]?.message ?? '配置无效'}`)
+      }
+      setEditorScope({
+        kind: 'loop-body',
+        loopNodeId,
+        loopTitle: opened.loopTitle,
+        rootGraph: currentEditorGraph,
+      })
+      loadGraphIntoCanvas(opened.graph, null)
+    },
+    [currentEditorGraph, editorScope.kind, loadGraphIntoCanvas, toast],
+  )
+
+  const returnToRootGraph = useCallback(() => {
+    if (editorScope.kind !== 'loop-body') return
+    const errors = validateLoopBodyGraph(
+      currentEditorGraph,
+      editorScope.rootGraph,
+      editorScope.loopNodeId,
+    )
+    if (errors.length > 0) {
+      toast.error(errors[0]?.message ?? '循环体配置无效。')
+      return
+    }
+    const rootGraph = commitLoopBodyGraph(
+      editorScope.rootGraph,
+      editorScope.loopNodeId,
+      currentEditorGraph,
+    )
+    const loopNodeId = editorScope.loopNodeId
+    setEditorScope({ kind: 'root' })
+    loadGraphIntoCanvas(rootGraph, loopNodeId)
+  }, [currentEditorGraph, editorScope, loadGraphIntoCanvas, toast])
+
+  const resetLoopBody = useCallback(
+    async (loopNodeId: string) => {
+      if (editorScope.kind !== 'root') return
+      const confirmed = await requestConfirm({
+        title: '重置循环体？',
+        description: '当前循环体节点、连线和配置将恢复为默认内容。',
+        confirmText: '重置',
+      })
+      if (!confirmed) return
+      setNodes((prev) =>
+        prev.map((node) =>
+          node.id === loopNodeId && node.data.kind === 'loop'
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  config: { ...node.data.config, body: defaultLoopBodyGraph() },
+                },
+              }
+            : node,
+        ),
+      )
+    },
+    [editorScope.kind, requestConfirm, setNodes],
+  )
+
   const saveWorkflow = async () => {
     if (draft == null) return
-    const graph: WorkflowGraph = reactFlowToGraph(nodes, edges, orientation)
+    if (editorScope.kind === 'loop-body') {
+      const errors = validateLoopBodyGraph(
+        currentEditorGraph,
+        editorScope.rootGraph,
+        editorScope.loopNodeId,
+      )
+      if (errors.length > 0) {
+        toast.error(errors[0]?.message ?? '循环体配置无效。')
+        return
+      }
+    }
+    const graph = completeRootGraph
     const saved = (
       await updateWorkflow({
         id: draft.id,
@@ -466,6 +555,13 @@ function WorkflowViewInner() {
     toast.success('工作流已保存')
     activeIdRef.current = saved.id
     setWorkflows((prev) => prev.map((item) => (item.id === saved.id ? saved : item)))
+    if (editorScope.kind === 'loop-body') {
+      setDraft(saved)
+      draftIdRef.current = saved.id
+      setSavedSnapshot(serializeSavedWorkflow(saved))
+      setEditorScope({ ...editorScope, rootGraph: saved.graph })
+      return
+    }
     loadWorkflowIntoCanvas(saved)
     void refresh()
   }
@@ -516,7 +612,8 @@ function WorkflowViewInner() {
 
   const exportWorkflowIds = useCallback(
     async (ids: string[]) => {
-      const targets = ids.length > 0 ? workflows.filter((workflow) => ids.includes(workflow.id)) : workflows
+      const targets =
+        ids.length > 0 ? workflows.filter((workflow) => ids.includes(workflow.id)) : workflows
       if (targets.length === 0) {
         toast.warning('没有可导出的工作流')
         return
@@ -573,11 +670,18 @@ function WorkflowViewInner() {
           ...(typeof workflow.version === 'string' && workflow.version.trim().length > 0
             ? { version: workflow.version }
             : {}),
-          name: typeof workflow.name === 'string' && workflow.name.trim().length > 0 ? workflow.name : '导入的工作流',
+          name:
+            typeof workflow.name === 'string' && workflow.name.trim().length > 0
+              ? workflow.name
+              : '导入的工作流',
           description: typeof workflow.description === 'string' ? workflow.description : '',
           status:
-            workflow.status === 'active' || workflow.status === 'archived' ? workflow.status : 'draft',
-          tags: Array.isArray(workflow.tags) ? workflow.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+            workflow.status === 'active' || workflow.status === 'archived'
+              ? workflow.status
+              : 'draft',
+          tags: Array.isArray(workflow.tags)
+            ? workflow.tags.filter((tag): tag is string => typeof tag === 'string')
+            : [],
           enabled: typeof workflow.enabled === 'boolean' ? workflow.enabled : true,
           graph: workflow.graph,
         })
@@ -617,9 +721,24 @@ function WorkflowViewInner() {
 
   const addNodeAt = useCallback(
     (kind: WorkflowNodeKind, position?: { x: number; y: number }) => {
+      if (editorScope.kind === 'loop-body' && kind === 'loop') {
+        toast.warning('运行时 v1 不支持嵌套循环。')
+        return
+      }
       const meta = getNodeKindMeta(kind)
-      const id = createWorkflowNodeId(kind)
       setNodes((prev) => {
+        const id =
+          editorScope.kind === 'loop-body'
+            ? createScopedWorkflowNodeId(
+                editorScope.loopNodeId,
+                kind,
+                new Set([
+                  ...collectWorkflowNodeIds(editorScope.rootGraph),
+                  ...prev.map((node) => node.id),
+                ]),
+                nextWorkflowNodeSuffix,
+              )
+            : createWorkflowNodeId(kind)
         const baseX = position?.x ?? 160 + (prev.length % 4) * 240
         const baseY = position?.y ?? 120 + Math.floor(prev.length / 4) * 180
         const node: SparkFlowNode = {
@@ -633,11 +752,11 @@ function WorkflowViewInner() {
             orientation,
           },
         }
+        setSelectedNodeId(id)
         return [...prev, node]
       })
-      setSelectedNodeId(id)
     },
-    [setNodes, orientation],
+    [editorScope, orientation, setNodes, toast],
   )
 
   const addNode = (kind: WorkflowNodeKind) => {
@@ -649,7 +768,22 @@ function WorkflowViewInner() {
       setNodes((prev) => {
         const source = prev.find((node) => node.id === nodeId)
         if (source == null) return prev
-        const id = createWorkflowNodeId(source.data.kind)
+        if (editorScope.kind === 'loop-body' && source.data.kind === 'loop') {
+          toast.warning('运行时 v1 不支持嵌套循环。')
+          return prev
+        }
+        const id =
+          editorScope.kind === 'loop-body'
+            ? createScopedWorkflowNodeId(
+                editorScope.loopNodeId,
+                source.data.kind,
+                new Set([
+                  ...collectWorkflowNodeIds(editorScope.rootGraph),
+                  ...prev.map((node) => node.id),
+                ]),
+                nextWorkflowNodeSuffix,
+              )
+            : createWorkflowNodeId(source.data.kind)
         const newNode: SparkFlowNode = {
           id,
           type: 'spark',
@@ -665,7 +799,7 @@ function WorkflowViewInner() {
         return [...prev, newNode]
       })
     },
-    [setNodes],
+    [editorScope, setNodes, toast],
   )
 
   /**
@@ -802,26 +936,23 @@ function WorkflowViewInner() {
     [contextMenuPosition],
   )
 
-  const handlePaneContextMenu = useCallback(
-    (event: MouseEvent | ReactMouseEvent) => {
-      const rect = flowWrapRef.current?.getBoundingClientRect()
-      const instance = flowInstanceRef.current
-      if (rect == null || instance == null) return
-      event.preventDefault()
-      const flowPosition = instance.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      })
-      setContextMenu({
-        kind: 'pane',
-        flowX: flowPosition.x,
-        flowY: flowPosition.y,
-        left: event.clientX - rect.left,
-        top: event.clientY - rect.top,
-      })
-    },
-    [],
-  )
+  const handlePaneContextMenu = useCallback((event: MouseEvent | ReactMouseEvent) => {
+    const rect = flowWrapRef.current?.getBoundingClientRect()
+    const instance = flowInstanceRef.current
+    if (rect == null || instance == null) return
+    event.preventDefault()
+    const flowPosition = instance.screenToFlowPosition({
+      x: event.clientX,
+      y: event.clientY,
+    })
+    setContextMenu({
+      kind: 'pane',
+      flowX: flowPosition.x,
+      flowY: flowPosition.y,
+      left: event.clientX - rect.left,
+      top: event.clientY - rect.top,
+    })
+  }, [])
 
   const handleFlowInit = useCallback((instance: ReactFlowInstance<SparkFlowNode, Edge>) => {
     flowInstanceRef.current = instance
@@ -836,12 +967,19 @@ function WorkflowViewInner() {
             <div className="agents-desc">管理可复用的 Agent 执行流程。</div>
           </div>
           <div className="agents-actions">
-            <Button size="middle" type="text" loading={loading} disabled={loading} icon={loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} onClick={() => void refresh()}>
+            <Button
+              size="middle"
+              type="text"
+              loading={loading}
+              disabled={loading}
+              icon={loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />}
+              onClick={() => void refresh()}
+            >
               刷新
             </Button>
             {workflows.length > 0 && (
               <Button
-                size="middle" 
+                size="middle"
                 type={selectionMode ? 'primary' : 'text'}
                 icon={<Icons.CheckSquare size={12} />}
                 onClick={() => {
@@ -856,16 +994,36 @@ function WorkflowViewInner() {
                 {selectionMode ? '退出选择' : '选择'}
               </Button>
             )}
-            <Button size="middle" type="text" icon={<Icons.Upload size={12} />} onClick={() => void handleImport()}>
+            <Button
+              size="middle"
+              type="text"
+              icon={<Icons.Upload size={12} />}
+              onClick={() => void handleImport()}
+            >
               导入
             </Button>
-            <Button size="middle" type="text" icon={<Icons.Download size={12} />} onClick={() => void exportWorkflowIds([])}>
+            <Button
+              size="middle"
+              type="text"
+              icon={<Icons.Download size={12} />}
+              onClick={() => void exportWorkflowIds([])}
+            >
               导出全部
             </Button>
-            <Button size="middle" type="text" icon={<Icons.Layers size={12} />} onClick={() => setTemplatePickerOpen(true)}>
+            <Button
+              size="middle"
+              type="text"
+              icon={<Icons.Layers size={12} />}
+              onClick={() => setTemplatePickerOpen(true)}
+            >
               模板库
             </Button>
-            <Button size="middle" type="primary" icon={<Icons.Plus size={12} />} onClick={() => void createNewWorkflow()}>
+            <Button
+              size="middle"
+              type="primary"
+              icon={<Icons.Plus size={12} />}
+              onClick={() => void createNewWorkflow()}
+            >
               新建工作流
             </Button>
           </div>
@@ -913,7 +1071,9 @@ function WorkflowViewInner() {
                   onToggleSelect={() => toggleSelect(workflow.id)}
                   onOpen={() => openWorkflow(workflow)}
                   onExport={() => void exportWorkflowIds([workflow.id])}
-                  onDelete={() => confirmDeleteWorkflow(workflow.name, () => void performDelete(workflow.id))}
+                  onDelete={() =>
+                    confirmDeleteWorkflow(workflow.name, () => void performDelete(workflow.id))
+                  }
                 />
               ))}
             </div>
@@ -927,10 +1087,17 @@ function WorkflowViewInner() {
                 </div>
                 <div className="empty-title">创建第一个工作流</div>
                 <div className="empty-actions">
-                  <Button type="primary" icon={<Icons.Plus size={12} />} onClick={() => void createNewWorkflow()}>
+                  <Button
+                    type="primary"
+                    icon={<Icons.Plus size={12} />}
+                    onClick={() => void createNewWorkflow()}
+                  >
                     创建工作流
                   </Button>
-                  <Button icon={<Icons.Layers size={12} />} onClick={() => setTemplatePickerOpen(true)}>
+                  <Button
+                    icon={<Icons.Layers size={12} />}
+                    onClick={() => setTemplatePickerOpen(true)}
+                  >
                     从模板开始
                   </Button>
                 </div>
@@ -954,33 +1121,43 @@ function WorkflowViewInner() {
     <div className="workflow-layout workflow-builder workflow-builder-v2">
       <div className="wf-stage">
         <div className="wf-toolbar">
-          <Button
-            size="middle"
-            type="text"
-            onClick={showWorkflowList}
-            title="返回列表"
-            icon={<Icons.ArrowLeft size={12} />}
-          >
-            列表
-          </Button>
-          <LobeInput
-            className="wf-title-input"
-            size="middle"
-            value={draft.name}
-            onChange={(event) => patchDraftMeta({ name: event.target.value })}
-            placeholder="工作流名称"
-          />
-          <LobeSelect
-            className="wf-status-select"
-            size="middle"
-            value={draft.status}
-            onChange={(value) => patchDraftMeta({ status: value as WorkflowStatus })}
-            options={[
-              { label: 'draft', value: 'draft' },
-              { label: 'active', value: 'active' },
-              { label: 'archived', value: 'archived' },
-            ]}
-          />
+          {editorScope.kind === 'loop-body' ? (
+            <WorkflowLoopBodyToolbar
+              workflowName={draft.name}
+              loopTitle={editorScope.loopTitle}
+              onBack={returnToRootGraph}
+            />
+          ) : (
+            <>
+              <Button
+                size="middle"
+                type="text"
+                onClick={showWorkflowList}
+                title="返回列表"
+                icon={<Icons.ArrowLeft size={12} />}
+              >
+                列表
+              </Button>
+              <LobeInput
+                className="wf-title-input"
+                size="middle"
+                value={draft.name}
+                onChange={(event) => patchDraftMeta({ name: event.target.value })}
+                placeholder="工作流名称"
+              />
+              <LobeSelect
+                className="wf-status-select"
+                size="middle"
+                value={draft.status}
+                onChange={(value) => patchDraftMeta({ status: value as WorkflowStatus })}
+                options={[
+                  { label: 'draft', value: 'draft' },
+                  { label: 'active', value: 'active' },
+                  { label: 'archived', value: 'archived' },
+                ]}
+              />
+            </>
+          )}
           <div className="wf-toolbar-spacer" />
           <Button
             size="middle"
@@ -995,14 +1172,31 @@ function WorkflowViewInner() {
             size="middle"
             type="text"
             onClick={toggleOrientation}
-            title={orientation === 'vertical' ? '当前纵向编排，点击切换为横向' : '当前横向编排，点击切换为纵向'}
+            title={
+              orientation === 'vertical'
+                ? '当前纵向编排，点击切换为横向'
+                : '当前横向编排，点击切换为纵向'
+            }
           >
             {orientation === 'vertical' ? '↕ 纵向' : '↔ 横向'}
           </Button>
-          <Button size="middle" type="text" danger icon={<Icons.Trash size={12} />} onClick={() => void removeWorkflow()}>
-            删除
-          </Button>
-          <Button size="middle" type="primary" icon={<Icons.Check size={12} />} onClick={() => void saveWorkflow()}>
+          {!editingLoopBody && (
+            <Button
+              size="middle"
+              type="text"
+              danger
+              icon={<Icons.Trash size={12} />}
+              onClick={() => void removeWorkflow()}
+            >
+              删除
+            </Button>
+          )}
+          <Button
+            size="middle"
+            type="primary"
+            icon={<Icons.Check size={12} />}
+            onClick={() => void saveWorkflow()}
+          >
             保存
           </Button>
         </div>
@@ -1016,10 +1210,13 @@ function WorkflowViewInner() {
               </div>
               {NODE_KIND_ORDER.map((kind) => {
                 const meta = NODE_KIND_META[kind]
+                const disabled = disabledNodeKinds.has(kind)
                 return (
                   <button
                     key={kind}
-                    className="wf-palette-item"
+                    className={`wf-palette-item${disabled ? ' is-disabled' : ''}`}
+                    disabled={disabled}
+                    title={disabled ? '运行时 v1 不支持嵌套循环' : undefined}
                     onClick={() => addNode(kind)}
                     style={{ ['--node-accent' as string]: `var(${meta.accent})` }}
                   >
@@ -1065,6 +1262,7 @@ function WorkflowViewInner() {
             </ReactFlow>
             <WorkflowContextMenu
               menu={contextMenu}
+              disabledNodeKinds={disabledNodeKinds}
               onClose={closeContextMenu}
               onDuplicateNode={duplicateNode}
               onDeleteNode={removeNode}
@@ -1096,6 +1294,9 @@ function WorkflowViewInner() {
           mcpServers={mcpServers}
           agents={agents}
           currentWorkflowId={draft.id}
+          editingLoopBody={editingLoopBody}
+          onOpenLoopBody={openLoopBodyEditor}
+          onResetLoopBody={(loopNodeId) => void resetLoopBody(loopNodeId)}
           onDelete={() => selectedNodeId != null && removeNode(selectedNodeId)}
           onPatch={(patch) =>
             patchSelectedNodeData((node) => ({ ...node, data: { ...node.data, ...patch } }))
@@ -1274,13 +1475,26 @@ type InspectorProps = {
   mcpServers: McpServerItem[]
   agents: ManagedAgent[]
   currentWorkflowId: string
+  editingLoopBody: boolean
+  onOpenLoopBody: (loopNodeId: string) => void
+  onResetLoopBody: (loopNodeId: string) => void
   onPatch: (patch: Partial<SparkFlowNode['data']>) => void
   onPatchConfig: (patch: WorkflowNode['config']) => void
   onDelete: () => void
 }
 
 function WorkflowInspector(props: InspectorProps) {
-  const { node, providers, modelOptions, skills, rules, mcpServers, agents, currentWorkflowId } = props
+  const {
+    node,
+    providers,
+    modelOptions,
+    skills,
+    rules,
+    mcpServers,
+    agents,
+    currentWorkflowId,
+    editingLoopBody,
+  } = props
   const [loopBodyDraft, setLoopBodyDraft] = useState('')
   const [loopBodyError, setLoopBodyError] = useState('')
 
@@ -1290,7 +1504,7 @@ function WorkflowInspector(props: InspectorProps) {
       setLoopBodyError('')
       return
     }
-    const body = isWorkflowGraphLike(node.data.config.body)
+    const body = isWorkflowGraph(node.data.config.body)
       ? node.data.config.body
       : defaultLoopBodyGraph()
     setLoopBodyDraft(JSON.stringify(body, null, 2))
@@ -1314,11 +1528,14 @@ function WorkflowInspector(props: InspectorProps) {
   const isLoop = node.data.kind === 'loop'
   const isRoute = node.data.kind === 'route'
   const routeOptions = asRouteOptions(config.routeOptions)
+  const loopBody = isLoop && isWorkflowGraph(config.body) ? config.body : defaultLoopBodyGraph()
+  const loopBodySummary = summarizeLoopBodyGraph(loopBody)
   const selectableAgents = agents.filter((agent) => agent.workflowId !== currentWorkflowId)
   const handleKindChange = (value: unknown) => {
     const kind = value as WorkflowNodeKind
+    if (editingLoopBody && kind === 'loop') return
     props.onPatch({ kind })
-    if (kind === 'loop' && !isWorkflowGraphLike(config.body)) {
+    if (kind === 'loop' && !isWorkflowGraph(config.body)) {
       props.onPatchConfig(defaultWorkflowNodeConfig('loop'))
       return
     }
@@ -1330,7 +1547,10 @@ function WorkflowInspector(props: InspectorProps) {
       props.onPatchConfig({
         ...defaultWorkflowNodeConfig('route'),
         prompt,
-        outputKey: typeof config.outputKey === 'string' && config.outputKey.trim().length > 0 ? config.outputKey : 'route',
+        outputKey:
+          typeof config.outputKey === 'string' && config.outputKey.trim().length > 0
+            ? config.outputKey
+            : 'route',
       })
     }
   }
@@ -1338,7 +1558,7 @@ function WorkflowInspector(props: InspectorProps) {
     setLoopBodyDraft(value)
     try {
       const parsed = JSON.parse(value) as unknown
-      if (!isWorkflowGraphLike(parsed)) {
+      if (!isWorkflowGraph(parsed)) {
         setLoopBodyError('循环体必须包含 nodes 和 edges 数组。')
         return
       }
@@ -1371,7 +1591,10 @@ function WorkflowInspector(props: InspectorProps) {
   return (
     <div className="wf-inspector">
       <div className="wf-insp-head">
-        <div className="wf-insp-icon" style={{ ['--node-accent' as string]: `var(${meta.accent})` }}>
+        <div
+          className="wf-insp-icon"
+          style={{ ['--node-accent' as string]: `var(${meta.accent})` }}
+        >
           {meta.icon}
         </div>
         <div className="flex1">
@@ -1387,21 +1610,24 @@ function WorkflowInspector(props: InspectorProps) {
       <div className="wf-insp-body scroll">
         <div className="wf-runtime-note">{meta.runtimeHint}</div>
         <InspectorField label="标题">
-          <LobeInput value={node.data.title} onChange={(event) => props.onPatch({ title: event.target.value })} />
+          <LobeInput
+            value={node.data.title}
+            onChange={(event) => props.onPatch({ title: event.target.value })}
+          />
         </InspectorField>
         <InspectorField label="节点类型">
           <LobeSelect
             value={node.data.kind}
             onChange={handleKindChange}
-            options={NODE_KIND_ORDER.map((kind) => ({ label: NODE_KIND_META[kind].label, value: kind }))}
+            options={NODE_KIND_ORDER.filter((kind) => !(editingLoopBody && kind === 'loop')).map(
+              (kind) => ({ label: NODE_KIND_META[kind].label, value: kind }),
+            )}
           />
         </InspectorField>
         <InspectorField label="Provider">
           <LobeSelect
             value={String(config.providerProfileId ?? '')}
-            onChange={(value) =>
-              props.onPatchConfig({ providerProfileId: String(value) || null })
-            }
+            onChange={(value) => props.onPatchConfig({ providerProfileId: String(value) || null })}
             options={[
               { label: '继承 Agent', value: '' },
               ...providers.map((provider) => ({ label: provider.name, value: provider.id })),
@@ -1448,7 +1674,9 @@ function WorkflowInspector(props: InspectorProps) {
                 props.onPatchConfig({ routeOptions: parseRouteOptionsText(event.target.value) })
               }
             />
-            <div className="wf-field-help">每行一个分支：value | label | description。运行时只接受 value，并写入 outputKey。</div>
+            <div className="wf-field-help">
+              每行一个分支：value | label | description。运行时只接受 value，并写入 outputKey。
+            </div>
           </InspectorField>
         )}
         {isLoop && (
@@ -1459,9 +1687,13 @@ function WorkflowInspector(props: InspectorProps) {
                 min={1}
                 max={50}
                 value={Number(config.maxIterations ?? 5)}
-                onChange={(event) => props.onPatchConfig({ maxIterations: Number(event.target.value) })}
+                onChange={(event) =>
+                  props.onPatchConfig({ maxIterations: Number(event.target.value) })
+                }
               />
-              <div className="wf-field-help">运行时硬上限为 50；中断后 v1 会从第 0 轮重新执行该 loop。</div>
+              <div className="wf-field-help">
+                运行时硬上限为 50；中断后 v1 会从第 0 轮重新执行该 loop。
+              </div>
             </InspectorField>
             <InspectorField label="循环变量 loopVar">
               <LobeInput
@@ -1484,7 +1716,9 @@ function WorkflowInspector(props: InspectorProps) {
                 checked={config.collectAll === true}
                 onChange={(collectAll) => props.onPatchConfig({ collectAll })}
               />
-              <div className="wf-field-help">开启后 outputKey 写入每轮 resultKey 的聚合文本；关闭则只写最后一轮。</div>
+              <div className="wf-field-help">
+                开启后 outputKey 写入每轮 resultKey 的聚合文本；关闭则只写最后一轮。
+              </div>
             </InspectorField>
             <InspectorField label="退出条件">
               <LobeSelect
@@ -1533,21 +1767,25 @@ function WorkflowInspector(props: InspectorProps) {
                     })
                   }
                 />
-                <div className="wf-field-help">true/false 按布尔、null 按空值、纯数字按数值比较，其余按字符串。</div>
+                <div className="wf-field-help">
+                  true/false 按布尔、null 按空值、纯数字按数值比较，其余按字符串。
+                </div>
               </InspectorField>
             )}
-            <InspectorField label="循环体 JSON">
-              <LobeTextArea
-                rows={8}
-                value={loopBodyDraft}
-                onChange={(event) => patchLoopBodyDraft(event.target.value)}
+            {editingLoopBody ? (
+              <div className="wf-runtime-note wf-field-warn">
+                运行时 v1 不支持循环体内再嵌套 loop。请删除或转换这个旧节点。
+              </div>
+            ) : (
+              <WorkflowLoopBodySummary
+                summary={loopBodySummary}
+                jsonDraft={loopBodyDraft}
+                jsonError={loopBodyError}
+                onOpen={() => props.onOpenLoopBody(node.id)}
+                onReset={() => props.onResetLoopBody(node.id)}
+                onJsonChange={patchLoopBodyDraft}
               />
-              {loopBodyError.length > 0 ? (
-                <div className="wf-field-help wf-field-warn">{loopBodyError}</div>
-              ) : (
-                <div className="wf-field-help">循环体是独立 WorkflowGraph；v1 不支持在 body 内再放 loop。</div>
-              )}
-            </InspectorField>
+            )}
           </>
         )}
         {isAgent && (
@@ -1580,13 +1818,20 @@ function WorkflowInspector(props: InspectorProps) {
                 min={1}
                 max={8}
                 value={Number(config.parallelism ?? 1)}
-                onChange={(event) => props.onPatchConfig({ parallelism: Number(event.target.value) })}
+                onChange={(event) =>
+                  props.onPatchConfig({ parallelism: Number(event.target.value) })
+                }
               />
-              <div className="agent-field-hint">parallelism≥2 时该子代理节点并发执行 N 次，结果按分支拼接。</div>
+              <div className="agent-field-hint">
+                parallelism≥2 时该子代理节点并发执行 N 次，结果按分支拼接。
+              </div>
             </InspectorField>
             <InspectorField label="工具">
               <TagPicker
-                items={WORKFLOW_RESTRICTABLE_TOOLS.map((tool) => ({ id: tool.name, label: tool.label }))}
+                items={WORKFLOW_RESTRICTABLE_TOOLS.map((tool) => ({
+                  id: tool.name,
+                  label: tool.label,
+                }))}
                 selected={asStringArray(config.toolIds)}
                 onChange={(toolIds) => props.onPatchConfig({ toolIds })}
               />
@@ -1628,7 +1873,10 @@ function WorkflowInspector(props: InspectorProps) {
           <div className="wf-field-help">
             所有已启用的 MCP 会自动挂载到该节点，无需逐节点绑定。
             {mcpServers.some((server) => server.enabled)
-              ? ` 当前启用：${mcpServers.filter((server) => server.enabled).map((server) => server.name).join('、')}`
+              ? ` 当前启用：${mcpServers
+                  .filter((server) => server.enabled)
+                  .map((server) => server.name)
+                  .join('、')}`
               : ' 当前没有已启用的 MCP。'}
           </div>
         </InspectorField>
@@ -1699,29 +1947,31 @@ function asRouteOptions(value: unknown): WorkflowRouteOption[] {
 
 function formatRouteOptionsText(options: WorkflowRouteOption[]): string {
   return options
-    .map((option) => [option.value, option.label ?? '', option.description ?? ''].join(' | ').replace(/(?:\s\|\s)*$/u, ''))
+    .map((option) =>
+      [option.value, option.label ?? '', option.description ?? '']
+        .join(' | ')
+        .replace(/(?:\s\|\s)*$/u, ''),
+    )
     .join('\n')
 }
 
 function parseRouteOptionsText(raw: string): WorkflowRouteOption[] {
   const seen = new Set<string>()
-  return raw
-    .split(/\r?\n/u)
-    .flatMap((line): WorkflowRouteOption[] => {
-      const [rawValue, rawLabel, ...rawDescription] = line.split('|')
-      const value = (rawValue ?? '').trim()
-      if (value.length === 0 || seen.has(value)) return []
-      seen.add(value)
-      const label = (rawLabel ?? '').trim()
-      const description = rawDescription.join('|').trim()
-      return [
-        {
-          value,
-          ...(label.length > 0 ? { label } : {}),
-          ...(description.length > 0 ? { description } : {}),
-        },
-      ]
-    })
+  return raw.split(/\r?\n/u).flatMap((line): WorkflowRouteOption[] => {
+    const [rawValue, rawLabel, ...rawDescription] = line.split('|')
+    const value = (rawValue ?? '').trim()
+    if (value.length === 0 || seen.has(value)) return []
+    seen.add(value)
+    const label = (rawLabel ?? '').trim()
+    const description = rawDescription.join('|').trim()
+    return [
+      {
+        value,
+        ...(label.length > 0 ? { label } : {}),
+        ...(description.length > 0 ? { description } : {}),
+      },
+    ]
+  })
 }
 
 /** 选中连线时的右侧检查器：编辑边条件（条件分支）或删除连线。 */
@@ -1740,7 +1990,9 @@ function WorkflowEdgeInspector({
   const sourceNode = nodes.find((node) => node.id === edge.source) ?? null
   const targetNode = nodes.find((node) => node.id === edge.target) ?? null
   const sourceOutputKey =
-    typeof sourceNode?.data.config.outputKey === 'string' ? sourceNode.data.config.outputKey.trim() : ''
+    typeof sourceNode?.data.config.outputKey === 'string'
+      ? sourceNode.data.config.outputKey.trim()
+      : ''
   const sourceRouteOptions =
     sourceNode?.data.kind === 'route' ? asRouteOptions(sourceNode.data.config.routeOptions) : []
   const op: EdgeConditionOpChoice = condition?.op ?? 'none'
@@ -1781,19 +2033,24 @@ function WorkflowEdgeInspector({
       </div>
       <div className="wf-insp-body scroll">
         <div className="wf-runtime-note">
-          条件按工作流状态求值：不满足时本连线不通，目标节点因此不可达则整段下游被跳过。状态键来自上游节点的「输出键 outputKey」。
+          条件按工作流状态求值：不满足时本连线不通，目标节点因此不可达则整段下游被跳过。状态键来自上游节点的「输出键
+          outputKey」。
         </div>
         <InspectorField label="触发条件">
           <LobeSelect
             value={op}
-            onChange={(value) => onPatchCondition(rebuild(value as EdgeConditionOpChoice, key, valueText))}
+            onChange={(value) =>
+              onPatchCondition(rebuild(value as EdgeConditionOpChoice, key, valueText))
+            }
             options={EDGE_CONDITION_OP_OPTIONS}
           />
         </InspectorField>
         {op !== 'none' && (
           <InspectorField label="状态键">
             <LobeInput
-              placeholder={sourceOutputKey.length > 0 ? `如上游输出键：${sourceOutputKey}` : '上游节点的输出键'}
+              placeholder={
+                sourceOutputKey.length > 0 ? `如上游输出键：${sourceOutputKey}` : '上游节点的输出键'
+              }
               value={key}
               onChange={(event) => onPatchCondition(rebuild(op, event.target.value, valueText))}
             />
@@ -1807,7 +2064,9 @@ function WorkflowEdgeInspector({
               </button>
             )}
             {key.trim().length === 0 && (
-              <div className="wf-field-help wf-field-warn">状态键为空时条件不生效（保存后会被忽略）。</div>
+              <div className="wf-field-help wf-field-warn">
+                状态键为空时条件不生效（保存后会被忽略）。
+              </div>
             )}
           </InspectorField>
         )}
@@ -1818,7 +2077,9 @@ function WorkflowEdgeInspector({
               value={valueText}
               onChange={(event) => onPatchCondition(rebuild(op, key, event.target.value))}
             />
-            <div className="wf-field-help">true/false 按布尔、null 按空值、纯数字按数值比较，其余按字符串。</div>
+            <div className="wf-field-help">
+              true/false 按布尔、null 按空值、纯数字按数值比较，其余按字符串。
+            </div>
             {sourceRouteOptions.length > 0 && sourceOutputKey.length > 0 && (
               <div className="wf-route-option-chips">
                 {sourceRouteOptions.map((option) => {
@@ -1830,7 +2091,11 @@ function WorkflowEdgeInspector({
                       className={`tool-chip ${active ? 'active' : ''}`}
                       title={option.description ?? option.label ?? option.value}
                       onClick={() =>
-                        onPatchCondition({ op: 'equals', key: sourceOutputKey, value: option.value })
+                        onPatchCondition({
+                          op: 'equals',
+                          key: sourceOutputKey,
+                          value: option.value,
+                        })
                       }
                     >
                       {active && <Icons.Check size={11} />}
@@ -1892,5 +2157,7 @@ function TagPicker({
 }
 
 function asStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
 }
