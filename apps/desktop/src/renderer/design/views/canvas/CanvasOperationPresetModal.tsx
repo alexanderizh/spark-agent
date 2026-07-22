@@ -24,6 +24,7 @@ import {
   formatCanvasOperationPresetModelParams,
   getCanvasPresetTargetDefinition,
   hasCanvasPresetTargetOverride,
+  readBuiltinCanvasOperationPreset,
   readCanvasOperationPresetPromptPrefix,
   readCanvasInheritedPresetTarget,
   readCanvasPresetTarget,
@@ -133,6 +134,7 @@ export function CanvasOperationPresetModal({
     [activeTargetId],
   )
   const activeOperation = activeTarget?.operation ?? 'text_generate'
+  const canEditPresetPrompt = activeTarget?.kind === 'pipeline'
   const isTextOperation = useMemo(() => isTextModelOperation(activeOperation), [activeOperation])
   const configuredPresetCount =
     Object.keys(readCanvasPresetTargetOverrides()).length +
@@ -440,7 +442,9 @@ export function CanvasOperationPresetModal({
         }
       : {}
     return {
-      prompt,
+      prompt: canEditPresetPrompt
+        ? prompt
+        : readBuiltinCanvasOperationPreset(activeOperation).prompt,
       negativePrompt,
       ...preservedRuntime,
       ...(nodeRuntimeTouched && isTextOperation && selectedAgentId
@@ -467,7 +471,9 @@ export function CanvasOperationPresetModal({
     activeStoredPreset.manifestId,
     activeStoredPreset.modelId,
     activeStoredPreset.providerProfileId,
+    activeOperation,
     buildCurrentModelParams,
+    canEditPresetPrompt,
     isTextOperation,
     negativePrompt,
     nodeRuntimeTouched,
@@ -1018,20 +1024,40 @@ export function CanvasOperationPresetModal({
                     </label>
                   ) : null}
                   <label className="canvas-operation-preset-field">
-                    <span>{readonlyPromptPrefix ? '补充提示词' : '预置提示词'}</span>
+                    <span>
+                      {canEditPresetPrompt
+                        ? readonlyPromptPrefix
+                          ? '补充提示词'
+                          : '预置提示词'
+                        : '系统内置能力 Prompt（只读）'}
+                    </span>
                     <Input.TextArea
-                      value={prompt}
+                      value={
+                        canEditPresetPrompt
+                          ? prompt
+                          : readBuiltinCanvasOperationPreset(activeOperation).prompt
+                      }
                       rows={5}
+                      readOnly={!canEditPresetPrompt}
                       placeholder={
                         readonlyPromptPrefix
                           ? '例如：描述具体场景、主体、氛围和构图要求'
                           : '例如：统一镜头语言、品牌语气、结构要求'
                       }
-                      onChange={(event) => {
-                        setNodeFormTouched(true)
-                        setPrompt(event.target.value)
-                      }}
+                      onChange={
+                        canEditPresetPrompt
+                          ? (event) => {
+                              setNodeFormTouched(true)
+                              setPrompt(event.target.value)
+                            }
+                          : undefined
+                      }
                     />
+                    {!canEditPresetPrompt ? (
+                      <span className="canvas-operation-preset-hint">
+                        普通节点的自定义 Prompt 请在项目或节点内填写，避免跨项目静默复用。
+                      </span>
+                    ) : null}
                   </label>
                 </section>
 

@@ -68,9 +68,10 @@ const task = (overrides: Partial<CanvasTask> = {}): CanvasTask => ({
   ...overrides,
 })
 
-function renderQueue(tasks: CanvasTask[], nodes: CanvasNode[]): string {
+function renderQueue(tasks: CanvasTask[], nodes: CanvasNode[], boardId = 'board-1'): string {
   return renderToStaticMarkup(
     <CanvasTaskQueue
+      boardId={boardId}
       tasks={tasks}
       nodes={nodes}
       assets={[]}
@@ -99,5 +100,12 @@ describe('CanvasTaskQueue orphan detection', () => {
 
     expect(html).not.toContain('承载节点已被删除')
     expect(html).not.toContain('>无节点<')
+  })
+
+  it('calls an active task orphaned when the current board has no nodes', () => {
+    const html = renderQueue([task()], [])
+
+    expect(html).toContain('承载节点已被删除')
+    expect(html).toContain('>无节点<')
   })
 })

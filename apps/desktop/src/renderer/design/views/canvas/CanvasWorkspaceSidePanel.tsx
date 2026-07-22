@@ -5,10 +5,7 @@ import { downloadAsset } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasInspector } from './CanvasInspector'
 import { CanvasProjectInfoPanel } from './CanvasProjectInfoPanel'
-import {
-  CanvasTaskQueue,
-  type CanvasTaskRetryRuntimeSource,
-} from './CanvasTaskQueue'
+import { CanvasTaskQueue, type CanvasTaskRetryRuntimeSource } from './CanvasTaskQueue'
 import type { CanvasNode, CanvasProjectSettings } from './canvas.types'
 
 export type CanvasSidePanelTab = 'details' | 'tasks' | 'assets' | 'project'
@@ -185,6 +182,7 @@ export function CanvasWorkspaceSidePanel({
           {sidePanelTab === 'tasks' && (
             <div className="canvas-side-panel-content">
               <CanvasTaskQueue
+                boardId={snapshot.board.id}
                 tasks={snapshot.tasks}
                 nodes={snapshot.nodes}
                 assets={snapshot.assets}

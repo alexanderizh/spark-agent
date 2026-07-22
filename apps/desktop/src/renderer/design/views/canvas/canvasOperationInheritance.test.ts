@@ -94,6 +94,306 @@ describe('canvas operation inheritance', () => {
     })
   })
 
+  it('does not inherit a global generic prompt into a new project operation node', async () => {
+    writeCanvasOperationPreset('text_to_image', {
+      prompt: '另一个项目的角色身份板提示词',
+      providerProfileId: 'provider-image',
+      modelId: 'gpt-image-2',
+    })
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Current project',
+          status: 'active',
+          nodeCount: 0,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [],
+      edges: [],
+      tasks: [],
+    })
+
+    const snapshot = await canvasApi.createOperationNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      operation: 'text_to_image',
+      inputNodeIds: [],
+      x: 0,
+      y: 0,
+    })
+
+    const node = snapshot.nodes.find((item) => item.type === 'text_to_image')
+    const task = snapshot.tasks.find((item) => item.id === node?.taskId)
+    expect(node?.data.systemPrompt).not.toContain('另一个项目的角色身份板提示词')
+    expect(task?.systemPrompt).not.toContain('另一个项目的角色身份板提示词')
+    expect(task?.providerProfileId).toBe('provider-image')
+    expect(task?.modelId).toBe('gpt-image-2')
+  })
+
+  it('removes a legacy global generic prompt before rerunning a polluted node', async () => {
+    const leakedPrompt = '另一个项目的苏烬角色身份板提示词'
+    writeCanvasOperationPreset('text_to_image', { prompt: leakedPrompt })
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Current project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 1,
+          assetCount: 0,
+          taskCount: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [
+        {
+          id: 'node-op',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          type: 'text_to_image',
+          title: '文生图',
+          taskId: 'task-pending',
+          parentNodeId: null,
+          x: 0,
+          y: 0,
+          width: 460,
+          height: 420,
+          rotation: 0,
+          zIndex: 1,
+          locked: false,
+          hidden: false,
+          data: {
+            operation: 'text_to_image',
+            status: 'pending',
+            prompt: '一只银渐层小猫',
+            systemPrompt: leakedPrompt,
+          },
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      edges: [],
+      tasks: [
+        {
+          id: 'task-pending',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'pending',
+          progress: 0,
+          title: '文生图',
+          prompt: '一只银渐层小猫',
+          systemPrompt: leakedPrompt,
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+    const invoke = mockMediaInvoke({ status: 'running', assets: [] })
+    Object.assign(window, { spark: { invoke } })
+
+    const snapshot = await canvasApi.runOperationNode('project-1', 'node-op', {
+      prompt: '一只银渐层小猫',
+      systemPrompt: leakedPrompt,
+      inputNodeIds: [],
+      skipParameterValidation: true,
+    })
+
+    expect(invoke).toHaveBeenCalledWith(
+      'canvas:task:create-media',
+      expect.not.objectContaining({ systemPrompt: leakedPrompt }),
+    )
+    const node = snapshot.nodes.find((item) => item.id === 'node-op')
+    const task = snapshot.tasks.find((item) => item.id === node?.taskId)
+    expect(node?.data.systemPrompt).toBe('请基于输入内容生成一张高质量图片。')
+    expect(task?.systemPrompt).toBe('请基于输入内容生成一张高质量图片。')
+  })
+
+  it('returns only tasks belonging to the active board snapshot', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          nodeCount: 0,
+          assetCount: 0,
+          taskCount: 2,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board 1',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'board-2',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board 2',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [],
+      edges: [],
+      tasks: [
+        {
+          id: 'task-board-1',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'completed',
+          progress: 100,
+          prompt: 'board 1',
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'task-board-2',
+          projectId: 'project-1',
+          boardId: 'board-2',
+          userId: 0,
+          operation: 'text_to_image',
+          status: 'completed',
+          progress: 100,
+          prompt: 'board 2',
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+    })
+
+    const snapshot = await canvasApi.openSnapshot('project-1', 'board-2')
+
+    expect(snapshot.tasks.map((task) => task.id)).toEqual(['task-board-2'])
+  })
+
+  it('creates media tasks on the requested board instead of the first project board', async () => {
+    seedCanvasDb({
+      projects: [
+        {
+          id: 'project-1',
+          userId: 0,
+          title: 'Project',
+          status: 'active',
+          rootPath: '/tmp/project-1',
+          nodeCount: 0,
+          assetCount: 0,
+          taskCount: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      boards: [
+        {
+          id: 'board-1',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board 1',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: 'board-2',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board 2',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      assets: [],
+      nodes: [],
+      edges: [],
+      tasks: [],
+    })
+    Object.assign(window, {
+      spark: { invoke: mockMediaInvoke({ status: 'running', assets: [] }) },
+    })
+
+    const snapshot = await canvasApi.createMediaTask('project-1', {
+      boardId: 'board-2',
+      operation: 'text_to_image',
+      prompt: 'board 2 prompt',
+      skipParameterValidation: true,
+    })
+
+    expect(snapshot.activeBoardId).toBe('board-2')
+    expect(snapshot.tasks).toHaveLength(1)
+    expect(snapshot.tasks[0]?.boardId).toBe('board-2')
+    expect(snapshot.nodes[0]?.boardId).toBe('board-2')
+  })
+
   it('backfills diagnostics for legacy failed tasks without changing their status', async () => {
     seedCanvasDb({
       projects: [
@@ -728,6 +1028,7 @@ describe('canvas operation inheritance', () => {
       },
     })
     await canvasApi.createMediaTask('project-1', {
+      boardId: 'board-1',
       operation: 'storyboard_grid',
       prompt: '用户输入',
       promptDocument: document,
@@ -1394,6 +1695,7 @@ describe('canvas operation inheritance', () => {
     })
 
     await canvasApi.createMediaTask('project-1', {
+      boardId: 'board-1',
       operation: 'image_to_video',
       prompt: '根据输入生成镜头视频',
       inputNodeIds: ['node-shot', 'node-image'],
@@ -1414,7 +1716,7 @@ describe('canvas operation inheritance', () => {
     )
   })
 
-  it('applies app-level panorama presets and keeps 2:1 defaults for panorama nodes', async () => {
+  it('isolates app-level panorama prompt overrides while keeping runtime and 2:1 defaults', async () => {
     window.localStorage.setItem(
       'spark-canvas:operation-presets:v1',
       JSON.stringify({
@@ -1468,7 +1770,10 @@ describe('canvas operation inheritance', () => {
     const operationNode = snapshot.nodes.find((node) => node.type === 'panorama_360')
     const pendingTask = snapshot.tasks.find((task) => task.id === operationNode?.taskId)
     expect(pendingTask?.prompt).toBeNull()
-    expect(pendingTask?.systemPrompt).toContain('日落海边栈道，电影感氛围，真实云层与海浪')
+    expect(pendingTask?.systemPrompt).not.toContain('日落海边栈道，电影感氛围，真实云层与海浪')
+    expect(pendingTask?.systemPrompt).toContain(
+      '请基于输入内容生成一张可用于 360° 全景预览的等距柱状投影场景图。',
+    )
     expect(pendingTask?.systemPrompt).toContain('2:1 等距柱状投影')
     expect(pendingTask?.modelParams).toEqual({
       aspect_ratio: '2:1',
@@ -1482,7 +1787,7 @@ describe('canvas operation inheritance', () => {
     })
   })
 
-  it('initializes text operation nodes from app-level runtime presets', async () => {
+  it('initializes text nodes from app-level runtime presets without inheriting their prompt', async () => {
     window.localStorage.setItem(
       'spark-canvas:operation-presets:v1',
       JSON.stringify({
@@ -1540,7 +1845,8 @@ describe('canvas operation inheritance', () => {
     const operationNode = snapshot.nodes.find((node) => node.type === 'text_generate')
     const pendingTask = snapshot.tasks.find((task) => task.id === operationNode?.taskId)
     expect(pendingTask?.prompt).toBeNull()
-    expect(pendingTask?.systemPrompt).toContain('请输出三段式文案结构')
+    expect(pendingTask?.systemPrompt).not.toContain('请输出三段式文案结构')
+    expect(pendingTask?.systemPrompt).toContain('请基于输入内容生成结构清晰、信息完整的文本。')
     expect(pendingTask?.agentId).toBe('agent:copywriter')
     expect(pendingTask?.providerProfileId).toBe('provider:text')
     expect(pendingTask?.modelId).toBe('gpt-5')
@@ -1912,6 +2218,7 @@ describe('canvas operation inheritance', () => {
       canvasApi.createTextTask(
         'project-1',
         {
+          boardId: 'board-1',
           operation: 'text_generate',
           prompt: '提取角色',
           taskTitle: '提取角色',
@@ -2070,6 +2377,16 @@ describe('canvas operation inheritance', () => {
           createdAt: at,
           updatedAt: at,
         },
+        {
+          id: 'board-2',
+          projectId: 'project-1',
+          userId: 0,
+          name: 'Board 2',
+          viewport: { x: 0, y: 0, zoom: 1 },
+          settings: {},
+          createdAt: at,
+          updatedAt: at,
+        },
       ],
       assets: [],
       nodes: [],
@@ -2089,7 +2406,8 @@ describe('canvas operation inheritance', () => {
       },
     })
 
-    await canvasApi.createTextTask('project-1', {
+    const snapshot = await canvasApi.createTextTask('project-1', {
+      boardId: 'board-2',
       operation: 'text_generate',
       prompt: '把场次拆成分镜',
       taskPipelineRole: 'shot',
@@ -2101,6 +2419,8 @@ describe('canvas operation inheritance', () => {
         taskPipelineRole: 'shot',
       }),
     )
+    expect(snapshot.activeBoardId).toBe('board-2')
+    expect(snapshot.tasks[0]?.boardId).toBe('board-2')
   })
 
   it('stores the provider task id and submit response while a polling task is running', async () => {

@@ -218,6 +218,7 @@ import {
   mergeCanvasOperationPresetNegativePrompt,
   mergeCanvasPresetTargetModelParams,
   readBuiltinCanvasOperationPreset,
+  readCanvasExecutionPresetPrompt,
   readCanvasOperationPreset,
   readCanvasOperationPresetOverrides,
   readCanvasResolvedPresetTarget,
@@ -4080,9 +4081,7 @@ export function CanvasWorkspaceView({
       (snapshot?.nodes ?? [])
         .filter(
           (n) =>
-            n.type === 'video' &&
-            typeof n.data.url === 'string' &&
-            n.id !== videoWorkbenchNodeId,
+            n.type === 'video' && typeof n.data.url === 'string' && n.id !== videoWorkbenchNodeId,
         )
         .map((n) => ({
           id: n.id,
@@ -4778,7 +4777,10 @@ export function CanvasWorkspaceView({
       nodes: hydratedTaskInputNodes,
       assets: snapshot.assets,
     })
-    const systemPrompt = buildCanvasOperationSystemPrompt(operation, operationPreset.prompt)
+    const systemPrompt = buildCanvasOperationSystemPrompt(
+      operation,
+      readCanvasExecutionPresetPrompt(presetTargetId),
+    )
     const promptSubmission = await buildCanvasPromptSubmission({
       document: promptDocument,
       snapshot,
@@ -7389,14 +7391,14 @@ export function CanvasWorkspaceView({
                         ) ||
                         buildCanvasOperationSystemPrompt(
                           operation,
-                          readCanvasResolvedPresetTarget(
+                          readCanvasExecutionPresetPrompt(
                             resolveCanvasPresetTarget({
                               operation,
                               taskPipelineRole: opNode.data.pipelineRole ?? null,
                               outputPipelineRole: opNode.data.outputPipelineRole ?? null,
                               workflow: currentModelParams.workflow,
                             }),
-                          ).prompt,
+                          ),
                         )
                       const promptSubmission = await buildCanvasPromptSubmission({
                         document: promptDocument,
@@ -7468,10 +7470,12 @@ export function CanvasWorkspaceView({
                         nodes: snapshot.nodes,
                         assets: snapshot.assets,
                       })
-                    const resolvedPreset = readCanvasResolvedPresetTarget(presetTargetId)
                     const baseSystemPrompt =
                       normalizeCanvasFunctionalSystemPrompt(params.systemPrompt, presetTargetId) ||
-                      buildCanvasOperationSystemPrompt(operation, resolvedPreset.prompt)
+                      buildCanvasOperationSystemPrompt(
+                        operation,
+                        readCanvasExecutionPresetPrompt(presetTargetId),
+                      )
                     const systemPrompt = params.shotScriptConfig
                       ? applyShotScriptConfigToPrompt(baseSystemPrompt, params.shotScriptConfig)
                       : baseSystemPrompt
@@ -8300,6 +8304,7 @@ export function CanvasWorkspaceView({
             {sidePanelTab === 'tasks' && (
               <div className="canvas-side-panel-content">
                 <CanvasTaskQueue
+                  boardId={snapshot.board.id}
                   tasks={snapshot.tasks}
                   nodes={snapshot.nodes}
                   assets={snapshot.assets}

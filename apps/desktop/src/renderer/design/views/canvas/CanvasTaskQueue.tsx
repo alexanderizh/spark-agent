@@ -13,6 +13,7 @@ type ClearTaskScope = 'active' | 'failed'
 export type CanvasTaskRetryRuntimeSource = 'current-node' | 'original-task'
 
 export function CanvasTaskQueue({
+  boardId,
   tasks,
   nodes,
   assets,
@@ -22,6 +23,7 @@ export function CanvasTaskQueue({
   onRetryTask,
   onSelectNode,
 }: {
+  boardId: string
   tasks: CanvasTask[]
   nodes: CanvasNode[]
   assets: CanvasAsset[]
@@ -61,12 +63,11 @@ export function CanvasTaskQueue({
     [nodes],
   )
   const visibleNodeIds = useMemo(() => new Set(nodes.map((node) => node.id)), [nodes])
-  const visibleBoardIds = useMemo(() => new Set(nodes.map((node) => node.boardId)), [nodes])
   const isOrphanTask = (task: CanvasTask) => {
     if (!isTaskActive(task)) return false
-    // 任务列表是项目级，nodes 仅包含当前画板。其他画板的任务不能据此判为孤儿；
-    // 当前画板没有任何节点时也缺少可靠的画板范围信息，宁可不提供破坏性清理入口。
-    if (visibleBoardIds.size === 0 || !visibleBoardIds.has(task.boardId)) return false
+    // nodes 与正常任务列表都属于当前画板。显式校验 boardId 后，即使空画板没有
+    // 任何节点，也能安全识别残留任务；意外传入的其他画板任务仍不会被误删。
+    if (task.boardId !== boardId) return false
     // taskId 只代表节点最近一次运行；历史任务仍通过 operationNodeId 归属于同一操作节点。
     if (task.operationNodeId && visibleNodeIds.has(task.operationNodeId)) return false
     return !hostedTaskIds.has(task.id)

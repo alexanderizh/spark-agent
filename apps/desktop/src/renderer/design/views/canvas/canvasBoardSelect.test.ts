@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  readProjectBoards,
-  resolveActiveBoard,
-  snapshotFromDb,
-  type CanvasDb,
-} from './canvas.api'
+import { readProjectBoards, resolveActiveBoard, snapshotFromDb, type CanvasDb } from './canvas.api'
 import type { CanvasBoard, CanvasNode, CanvasProject } from './canvas.types'
 
 function makeBoard(overrides: Partial<CanvasBoard>): CanvasBoard {
@@ -111,7 +106,10 @@ describe('resolveActiveBoard', () => {
   })
 
   it('falls back to first board when preferred id not found and no isDefault', () => {
-    const noDefault = [makeBoard({ id: 'x1', settings: { grid: true } }), makeBoard({ id: 'x2', settings: { grid: true } })]
+    const noDefault = [
+      makeBoard({ id: 'x1', settings: { grid: true } }),
+      makeBoard({ id: 'x2', settings: { grid: true } }),
+    ]
     const result = resolveActiveBoard(noDefault, 'nonexistent')
     expect(result?.active.id).toBe('x1')
   })
@@ -120,10 +118,7 @@ describe('resolveActiveBoard', () => {
 describe('snapshotFromDb', () => {
   it('filters nodes/edges by active board id', () => {
     const db = makeDb({
-      boards: [
-        makeBoard({ id: 'board-a' }),
-        makeBoard({ id: 'board-b' }),
-      ],
+      boards: [makeBoard({ id: 'board-a' }), makeBoard({ id: 'board-b' })],
       nodes: [
         makeNode({ id: 'n1', boardId: 'board-a' }),
         makeNode({ id: 'n2', boardId: 'board-a' }),
@@ -151,6 +146,17 @@ describe('snapshotFromDb', () => {
     expect(snapshot.nodes.map((n) => n.id)).toEqual(['legacy-1', 'legacy-2'])
   })
 
+  it('keeps an empty active board isolated from nodes on another valid board', () => {
+    const db = makeDb({
+      boards: [makeBoard({ id: 'board-empty' }), makeBoard({ id: 'board-with-content' })],
+      nodes: [makeNode({ id: 'other-board-node', boardId: 'board-with-content' })],
+    })
+
+    const snapshot = snapshotFromDb(db, 'project-1', 'board-empty')
+
+    expect(snapshot.nodes).toEqual([])
+  })
+
   it('excludes hidden nodes', () => {
     const db = makeDb({
       nodes: [
@@ -165,8 +171,26 @@ describe('snapshotFromDb', () => {
   it('keeps assets project-scoped (not filtered by board)', () => {
     const db = makeDb({
       assets: [
-        { id: 'a1', projectId: 'project-1', userId: 0, type: 'image', source: 'upload', metadata: {}, createdAt: '', updatedAt: '' },
-        { id: 'a2', projectId: 'project-2', userId: 0, type: 'image', source: 'upload', metadata: {}, createdAt: '', updatedAt: '' },
+        {
+          id: 'a1',
+          projectId: 'project-1',
+          userId: 0,
+          type: 'image',
+          source: 'upload',
+          metadata: {},
+          createdAt: '',
+          updatedAt: '',
+        },
+        {
+          id: 'a2',
+          projectId: 'project-2',
+          userId: 0,
+          type: 'image',
+          source: 'upload',
+          metadata: {},
+          createdAt: '',
+          updatedAt: '',
+        },
       ],
     })
     const snapshot = snapshotFromDb(db, 'project-1', 'board-1')

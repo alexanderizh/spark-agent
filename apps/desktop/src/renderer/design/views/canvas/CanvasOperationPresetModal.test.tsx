@@ -279,7 +279,7 @@ describe('CanvasOperationPresetModal', () => {
     expect(storedNodeOverrides.text_generate).toMatchObject(storedOverride)
   })
 
-  it('preserves unavailable runtime values when only the node prompt is edited', async () => {
+  it('preserves unavailable runtime values when a dedicated pipeline prompt is edited', async () => {
     const storedOverride = {
       prompt: '原节点提示词',
       agentId: 'agent:offline',
@@ -289,7 +289,7 @@ describe('CanvasOperationPresetModal', () => {
     }
     window.localStorage.setItem(
       'spark-canvas:operation-presets:v1',
-      JSON.stringify({ text_generate: storedOverride }),
+      JSON.stringify({ 'chapter.to_screenplay': storedOverride }),
     )
 
     await act(async () => {
@@ -301,6 +301,11 @@ describe('CanvasOperationPresetModal', () => {
       (button) => button.textContent?.includes('按节点覆盖'),
     )
     await act(async () => overrideTab?.click())
+
+    const pipelineTarget = container.querySelector<HTMLButtonElement>(
+      '[data-preset-target="chapter.to_screenplay"]',
+    )
+    await act(async () => pipelineTarget?.click())
 
     const promptInput = Array.from(
       container.querySelectorAll<HTMLTextAreaElement>('textarea'),
@@ -323,7 +328,7 @@ describe('CanvasOperationPresetModal', () => {
     const storedNodeOverrides = JSON.parse(
       window.localStorage.getItem('spark-canvas:operation-presets:v1') ?? '{}',
     ) as Record<string, Record<string, unknown>>
-    expect(storedNodeOverrides.text_generate).toMatchObject({
+    expect(storedNodeOverrides['chapter.to_screenplay']).toMatchObject({
       ...storedOverride,
       prompt: '更新后的节点提示词',
     })
