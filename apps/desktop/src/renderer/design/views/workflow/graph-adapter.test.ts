@@ -44,4 +44,62 @@ describe('workflow graph adapter', () => {
 
     expect(reactFlowToGraph(flow.nodes, flow.edges, 'vertical')).toEqual(graph)
   })
+
+  it('preserves a loop body orientation and conditional edge through the root round trip', () => {
+    const graph: WorkflowGraph = {
+      nodes: [
+        {
+          id: 'loop',
+          kind: 'loop',
+          title: 'Iterate',
+          x: 80,
+          y: 120,
+          config: {
+            outputKey: 'final',
+            body: {
+              orientation: 'vertical',
+              nodes: [
+                {
+                  id: 'draft',
+                  kind: 'agent',
+                  title: 'Draft',
+                  x: 80,
+                  y: 120,
+                  config: { outputKey: 'draft' },
+                },
+                {
+                  id: 'judge',
+                  kind: 'review',
+                  title: 'Judge',
+                  x: 80,
+                  y: 320,
+                  config: { outputKey: 'verdict' },
+                },
+              ],
+              edges: [
+                {
+                  id: 'draft-judge',
+                  from: 'draft',
+                  to: 'judge',
+                  condition: { op: 'exists', key: 'draft' },
+                },
+              ],
+            },
+          },
+        },
+      ],
+      edges: [],
+      orientation: 'vertical',
+    }
+
+    const rootFlow = graphToReactFlow(graph)
+    const roundTripped = reactFlowToGraph(rootFlow.nodes, rootFlow.edges, 'vertical')
+    const body = roundTripped.nodes[0]?.config.body
+    if (body == null) throw new Error('loop body missing after round trip')
+
+    expect(body.orientation).toBe('vertical')
+    expect(body.edges[0]?.condition).toEqual({ op: 'exists', key: 'draft' })
+    const bodyFlow = graphToReactFlow(body)
+    expect(reactFlowToGraph(bodyFlow.nodes, bodyFlow.edges, 'vertical')).toEqual(body)
+  })
 })
