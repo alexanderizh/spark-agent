@@ -1,6 +1,6 @@
 # 采集原始页面列表
 
-> 状态: 实施中 | 最后核对: 2026-07-22
+> 状态: 已落地 | 最后核对: 2026-07-23
 
 记录本次实际通过 spark_browser 打开爬取的腾讯云文档页面 URL。
 
@@ -106,17 +106,14 @@
 - https://cloud.tencent.com/document/product/1823/131595
 - https://cloud.tencent.com/document/product/1823/130078
 
-## 仍待二次采集
+## 仍待扩展（不属于本次 TokenHub 文生/图生落地范围）
 
 - 图片唱演 SubmitPortraitSingJob / DescribePortraitSingJob
 - 人脸融合 SubmitVideoFaceFusionJob / DescribeVideoFaceFusionJob
-- Kling-Omni-Video 详细参数
-- Kling 动作控制 详细参数
-- 视频延长 SubmitVideoExtendKlingJob / DescribeVideoExtendKlingJob 详细参数
-- 主体库 创建/查询/删除 详细参数
+- Kling-Omni-Video、动作控制、视频延长和主体库页面已打开并确认接口入口；它们属于 VCLM 签名 API，TokenHub 当前未声明等价 capability，待单独新增 VCLM Provider 时实现
 - 百变头像（1668）详细接口
 - AI 写真 / 模特换装 / 商品背景生成 / 线稿生图 / 图像编辑（1668）
-- Vidu 图生视频 详细参数
+- Vidu 图生视频参数已于 2026-07-23 从 130530 补采并用于 Manifest；参考生视频仍待独立 capability 接入
 - OpenAI 兼容接口同步调用示例
 - 价格 / 计费 / 免费额度（产品计费页）
 - 模型价格

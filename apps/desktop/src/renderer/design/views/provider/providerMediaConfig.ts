@@ -1,8 +1,4 @@
-import type {
-  MediaCapabilityId,
-  MediaProviderKind,
-  ProviderModelType,
-} from '@spark/protocol'
+import type { MediaCapabilityId, MediaProviderKind, ProviderModelType } from '@spark/protocol'
 
 export const MEDIA_PROVIDER_LABELS: Record<MediaProviderKind, string> = {
   apimart: 'APIMart',
@@ -20,6 +16,7 @@ export const MEDIA_PROVIDER_LABELS: Record<MediaProviderKind, string> = {
   happyhorse: 'HappyHorse',
   omni: 'Omni',
   midjourney: 'Midjourney 网关',
+  'tencent-tokenhub': '腾讯云 TokenHub',
   custom: '自定义',
 }
 
@@ -36,6 +33,7 @@ const USABLE_MEDIA_PROVIDER_KINDS: readonly MediaProviderKind[] = [
   'volcengine-ark',
   'kling',
   'minimax-hailuo',
+  'tencent-tokenhub',
   'custom',
 ]
 
@@ -46,6 +44,7 @@ export const SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS: readonly MediaProviderKind[]
   'bailian',
   'openai-images',
   'google-generative-ai',
+  'tencent-tokenhub',
   'custom',
 ]
 
@@ -106,6 +105,11 @@ export function getMediaRequestPreviewUrl(
     }
     if (mediaProvider === 'midjourney') return `${baseUrl}/imagine`
     if (mediaProvider === 'bailian') return `${baseUrl}/multimodal-generation/generation`
+    if (mediaProvider === 'tencent-tokenhub') {
+      return form.defaultModel === 'hy-image-lite'
+        ? `${baseUrl}/v1/api/image/lite`
+        : `${baseUrl}/v1/api/image/submit`
+    }
     return `${baseUrl}/images/generations`
   }
 
@@ -130,6 +134,7 @@ export function getMediaRequestPreviewUrl(
     }
     if (mediaProvider === 'volcengine-ark') return `${baseUrl}/contents/generations/tasks`
     if (mediaProvider === 'bailian') return `${baseUrl}/video-generation/video-synthesis`
+    if (mediaProvider === 'tencent-tokenhub') return `${baseUrl}/v1/api/video/submit`
     return `${baseUrl}/videos/generations`
   }
 

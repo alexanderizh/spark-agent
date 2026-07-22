@@ -29,6 +29,7 @@ export type MediaProviderKind =
   | 'happyhorse'
   | 'omni'
   | 'midjourney'
+  | 'tencent-tokenhub'
   | 'custom'
 
 export interface MediaResponseTrace {
@@ -96,6 +97,7 @@ export const MEDIA_PROVIDER_KINDS = [
   'happyhorse',
   'omni',
   'midjourney',
+  'tencent-tokenhub',
   'custom',
 ] as const satisfies readonly MediaProviderKind[]
 
