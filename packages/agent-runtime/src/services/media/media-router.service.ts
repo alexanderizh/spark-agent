@@ -44,6 +44,7 @@ import { TemplateMediaAdapter } from './adapters/template-media.adapter.js'
 import { GoogleGenerativeAiMediaAdapter } from './adapters/google-generative-ai-media.adapter.js'
 import { OpenAiOfficialMediaAdapter } from './adapters/openai-official-media.adapter.js'
 import { MidjourneyMediaAdapter } from './adapters/midjourney-media.adapter.js'
+import { TencentTokenhubMediaAdapter } from './adapters/tencent-tokenhub-media.adapter.js'
 import { compactForLog } from './media-debug-log.js'
 import {
   logCanvasBlockEnd,
@@ -112,6 +113,9 @@ export class MediaRouterService {
     this.register(new GoogleGenerativeAiMediaAdapter('google-generative-ai'))
     this.register(new GoogleGenerativeAiMediaAdapter('omni'))
     this.register(new MidjourneyMediaAdapter())
+    // 腾讯云 TokenHub（图片 + 视频）：query 是 POST + body {model, id}，
+    // 模板适配器 pollTask 写死 GET 无法表达，故用专用 adapter。
+    this.register(new TencentTokenhubMediaAdapter())
   }
 
   register(adapter: MediaProviderAdapter): void {
@@ -147,8 +151,8 @@ export class MediaRouterService {
     options: Pick<InvokeOptions, 'providers' | 'providerProfileId' | 'modelId' | 'manifestId'>,
   ): MediaCapabilityId | null {
     if (
-      (input.operation === 'text_to_video' || input.operation === 'image_to_video')
-      && this.prefersReferenceCapability(input)
+      (input.operation === 'text_to_video' || input.operation === 'image_to_video') &&
+      this.prefersReferenceCapability(input)
     ) {
       const selectedProviders = options.providerProfileId
         ? options.providers.filter((provider) => provider.id === options.providerProfileId)
@@ -190,12 +194,17 @@ export class MediaRouterService {
   private prefersReferenceCapability(input: MediaGenerateInput): boolean {
     const files = input.inputFiles ?? []
     if (input.operation === 'text_to_video') {
-      return files.some((file) => file.type === 'image' || file.type === 'video' || file.type === 'audio')
+      return files.some(
+        (file) => file.type === 'image' || file.type === 'video' || file.type === 'audio',
+      )
     }
     if (files.some((file) => file.type === 'video' || file.type === 'audio')) return true
     const images = files.filter((file) => file.type === 'image')
     if (images.some((file) => file.role === 'reference')) return true
-    return images.length > 1 && !images.some((file) => file.role === 'first_frame' || file.role === 'last_frame')
+    return (
+      images.length > 1 &&
+      !images.some((file) => file.role === 'first_frame' || file.role === 'last_frame')
+    )
   }
 
   supports(profile: MediaProviderProfile, capability: MediaCapabilityId): boolean {
@@ -284,9 +293,7 @@ export class MediaRouterService {
         modelId: effectiveModelId,
         capability,
         ...(manifestMatch?.manifest ? { manifest: manifestMatch.manifest } : {}),
-        ...(manifestMatch?.capability
-          ? { manifestCapability: manifestMatch.capability }
-          : {}),
+        ...(manifestMatch?.capability ? { manifestCapability: manifestMatch.capability } : {}),
         ...(chosen.mediaDefaults ? { providerDefaults: chosen.mediaDefaults } : {}),
         mode: 'adapter',
       })
@@ -303,7 +310,7 @@ export class MediaRouterService {
     const isCustomManifest = manifestMatch?.manifest.providerKind === 'custom'
     const shouldUseManifestAdapter = Boolean(
       manifestMatch &&
-        (isCustomManifest || !adapter || !adapter.supports(capability) || kind === 'custom'),
+      (isCustomManifest || !adapter || !adapter.supports(capability) || kind === 'custom'),
     )
     // 包装 fetch，捕获发给 provider 的请求（method + url + body），用于任务详情展示。
     // 只取最后一个带 body 的 POST：adapter 内部对单次能力调用只发一个主请求；
@@ -341,7 +348,10 @@ export class MediaRouterService {
         ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
       }
       const providerKind = effectiveProviderKind(chosen) ?? 'custom'
-      logCanvasBlockStart({ label: `${effectiveModelId ?? '(model)'} · ${capability}`, kind: 'media' })
+      logCanvasBlockStart({
+        label: `${effectiveModelId ?? '(model)'} · ${capability}`,
+        kind: 'media',
+      })
       logCanvasModelRequest({
         provider: providerKind,
         capability,
@@ -365,7 +375,10 @@ export class MediaRouterService {
             ...(output.assets?.length != null ? { assetCount: output.assets.length } : {}),
           })
         }
-        logCanvasBlockEnd({ label: `${effectiveModelId ?? '(model)'} · ${capability}`, kind: 'media' })
+        logCanvasBlockEnd({
+          label: `${effectiveModelId ?? '(model)'} · ${capability}`,
+          kind: 'media',
+        })
         return {
           output: { ...output, requestCall: output.requestCall ?? capture.getCaptured() },
           providerProfileId: chosen.id,
@@ -390,7 +403,10 @@ export class MediaRouterService {
             body: captured.body,
           })
         }
-        logCanvasBlockEnd({ label: `${effectiveModelId ?? '(model)'} · ${capability}`, kind: 'media' })
+        logCanvasBlockEnd({
+          label: `${effectiveModelId ?? '(model)'} · ${capability}`,
+          kind: 'media',
+        })
         attachCapturedRequest(err, capture)
         throw err
       }
@@ -420,7 +436,10 @@ export class MediaRouterService {
       ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
     }
     try {
-      logCanvasBlockStart({ label: `${effectiveModelId ?? '(model)'} · ${capability}`, kind: 'media' })
+      logCanvasBlockStart({
+        label: `${effectiveModelId ?? '(model)'} · ${capability}`,
+        kind: 'media',
+      })
       logCanvasModelRequest({
         provider: kind ?? 'custom',
         capability,
@@ -442,7 +461,10 @@ export class MediaRouterService {
           ...(output.assets?.length != null ? { assetCount: output.assets.length } : {}),
         })
       }
-      logCanvasBlockEnd({ label: `${effectiveModelId ?? '(model)'} · ${capability}`, kind: 'media' })
+      logCanvasBlockEnd({
+        label: `${effectiveModelId ?? '(model)'} · ${capability}`,
+        kind: 'media',
+      })
       return {
         output: { ...output, requestCall: output.requestCall ?? capture.getCaptured() },
         providerProfileId: chosen.id,
@@ -466,7 +488,10 @@ export class MediaRouterService {
           body: captured.body,
         })
       }
-      logCanvasBlockEnd({ label: `${effectiveModelId ?? '(model)'} · ${capability}`, kind: 'media' })
+      logCanvasBlockEnd({
+        label: `${effectiveModelId ?? '(model)'} · ${capability}`,
+        kind: 'media',
+      })
       attachCapturedRequest(err, capture)
       throw err
     }

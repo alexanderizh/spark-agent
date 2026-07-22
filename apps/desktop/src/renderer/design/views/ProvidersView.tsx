@@ -626,7 +626,8 @@ function vendorForMediaProvider(kind: string | undefined): VendorMeta | null {
   if (kind === 'minimax-hailuo') return getVendorMeta('minimax') ?? null
   if (kind === 'volcengine-ark') return getVendorMeta('volcengine') ?? null
   if (kind === 'google-generative-ai') return getVendorMeta('google-gemini') ?? null
-  if (kind === 'apimart' || kind === 'xai' || kind === 'openrouter') return getVendorMeta(kind) ?? null
+  if (kind === 'apimart' || kind === 'xai' || kind === 'openrouter' || kind === 'tencent-tokenhub')
+    return getVendorMeta(kind) ?? null
   return null
 }
 

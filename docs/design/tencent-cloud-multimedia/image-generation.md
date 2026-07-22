@@ -1,6 +1,6 @@
 # 图像生成（TokenHub）
 
-> 状态: 实施中 | 最后核对: 2026-07-22
+> 状态: 已落地 | 最后核对: 2026-07-23
 > 来源: https://cloud.tencent.com/document/product/1823/130080
 
 ## 端点
@@ -12,10 +12,10 @@
 
 ## 支持模型
 
-| model | 端点 | 同步/异步 | 任务 |
-| --- | --- | --- | --- |
-| `hy-image-lite` | `/v1/api/image/lite` | 同步 | 文生图 |
-| `hy-image-v3.0` | `/v1/api/image/submit` + `/v1/api/image/query` | 异步 | 文生图 / 图生图 |
+| model           | 端点                                           | 同步/异步 | 任务            |
+| --------------- | ---------------------------------------------- | --------- | --------------- |
+| `hy-image-lite` | `/v1/api/image/lite`                           | 同步      | 文生图          |
+| `hy-image-v3.0` | `/v1/api/image/submit` + `/v1/api/image/query` | 异步      | 文生图 / 图生图 |
 
 ## 字段命名约定
 
@@ -42,9 +42,7 @@ Content-Type: application/json
 {
   "created": 1774806537,
   "request_id": "ce************c3",
-  "data": [
-    { "url": "https://hyimg*************9c81de85" }
-  ]
+  "data": [{ "url": "https://hyimg*************9c81de85" }]
 }
 ```
 
@@ -116,19 +114,25 @@ Content-Type: application/json
 
 `queued` → `in_progress`（如返回中包含） → `completed` 或失败。失败时返回错误结构（见 `error-codes.md`）。
 
+## Spark-Agent 接入状态
+
+- `hy-image-lite` 已接入同步文生图。
+- `hy-image-v3.0` 已接入异步文生图 / 图生图，查询使用 `POST /v1/api/image/query` + `{model, id}`。
+- Adapter 会主动下载生成结果到本地产物目录，不依赖临时 URL 的有效期假设。
+
 ## 详情页（按混元原生接口，与 TokenHub 同步）
 
-| 接口名 | 文档 |
-| --- | --- |
-| TextToImageLite | https://cloud.tencent.com/document/product/1668/120721 |
-| TextToImageRapid（2.0） | https://cloud.tencent.com/document/product/1668/120720 |
-| SubmitTextToImageJob（3.0 提交） | https://cloud.tencent.com/document/product/1668/124632 |
-| QueryTextToImageJob（3.0 查询） | https://cloud.tencent.com/document/product/1668/124633 |
-| ImageToImage（图生图） | https://cloud.tencent.com/document/product/1668/88066 |
-| SubmitTextToImageProJob（高级版，即将下线） | https://cloud.tencent.com/document/product/1668/88046 区 |
-| ChangeClothes（模特换装） | 同 API 文档 |
-| ReplaceBackground（商品背景生成） | 同 API 文档 |
-| SketchToImage（线稿生图） | 同 API 文档 |
-| RefineImage / ImageInpaintingRemoval / ImageOutpainting | 图像编辑 |
+| 接口名                                                  | 文档                                                     |
+| ------------------------------------------------------- | -------------------------------------------------------- |
+| TextToImageLite                                         | https://cloud.tencent.com/document/product/1668/120721   |
+| TextToImageRapid（2.0）                                 | https://cloud.tencent.com/document/product/1668/120720   |
+| SubmitTextToImageJob（3.0 提交）                        | https://cloud.tencent.com/document/product/1668/124632   |
+| QueryTextToImageJob（3.0 查询）                         | https://cloud.tencent.com/document/product/1668/124633   |
+| ImageToImage（图生图）                                  | https://cloud.tencent.com/document/product/1668/88066    |
+| SubmitTextToImageProJob（高级版，即将下线）             | https://cloud.tencent.com/document/product/1668/88046 区 |
+| ChangeClothes（模特换装）                               | 同 API 文档                                              |
+| ReplaceBackground（商品背景生成）                       | 同 API 文档                                              |
+| SketchToImage（线稿生图）                               | 同 API 文档                                              |
+| RefineImage / ImageInpaintingRemoval / ImageOutpainting | 图像编辑                                                 |
 
 完整原生接口列表见 `legacy-hunyuan-image.md`。

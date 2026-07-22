@@ -4,6 +4,7 @@ import { validateApimartMediaRequest } from './apimart-media.validator.js'
 import { validateGoogleGenerativeAiMediaRequest } from './google-generative-ai-media.validator.js'
 import { validateMidjourneyMediaRequest } from './midjourney-media.validator.js'
 import { validateOpenAiCompatibleMediaRequest } from './openai-compatible-media.validator.js'
+import { validateTencentTokenhubMediaRequest } from './tencent-tokenhub-media.validator.js'
 import { validateVolcengineArkMediaRequest } from './volcengine-ark-media.validator.js'
 import { validateXaiMediaRequest } from './xai-media.validator.js'
 import type { MediaProviderValidator } from './media-validator.types.js'
@@ -18,6 +19,7 @@ const VALIDATORS = new Map<MediaProviderKind, MediaProviderValidator>([
   ['omni', validateGoogleGenerativeAiMediaRequest],
   ['volcengine-ark', validateVolcengineArkMediaRequest],
   ['midjourney', validateMidjourneyMediaRequest],
+  ['tencent-tokenhub', validateTencentTokenhubMediaRequest],
 ])
 
 export function mediaProviderValidator(

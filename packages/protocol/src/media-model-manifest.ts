@@ -16,16 +16,14 @@ import {
   apimartVideoCapabilityDefaults,
   apimartVideoInputContracts,
 } from './apimart-video-input-contracts.js'
-import {
-  MediaInputRolePolicySchema,
-  type MediaInputRolePolicy,
-} from './media-config.js'
+import { MediaInputRolePolicySchema, type MediaInputRolePolicy } from './media-config.js'
 import { XAI_TTS_PARAM_SCHEMA, XAI_VIDEO_15_MANIFESTS } from './xai-media-model-manifests.js'
 import { VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS } from './volcengine-ark-media-model-manifests.js'
 import { BAILIAN_MEDIA_MODEL_MANIFESTS } from './bailian-media-model-manifests.js'
 import { OPENAI_MEDIA_MODEL_MANIFESTS } from './openai-media-model-manifests.js'
 import { GOOGLE_MEDIA_MODEL_MANIFESTS } from './google-media-model-manifests.js'
 import { OMNI_MEDIA_MODEL_MANIFESTS } from './omni-media-model-manifests.js'
+import { TENCENT_TOKENHUB_MEDIA_MODEL_MANIFESTS } from './tencent-tokenhub-media-model-manifests.js'
 import {
   midjourneyGatewayImageSchema,
   apimartSeedance2VideoSchema,
@@ -909,7 +907,12 @@ const apimartVideoModelSchemas: Record<
       additionalProperties: true,
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
-        durationSeconds: { type: 'integer', title: '时长（秒）', enum: [4, 8, 12, 16, 20], default: 4 },
+        durationSeconds: {
+          type: 'integer',
+          title: '时长（秒）',
+          enum: [4, 8, 12, 16, 20],
+          default: 4,
+        },
         resolution: { type: 'string', title: '分辨率', enum: ['720p'], default: '720p' },
       },
     },
@@ -921,8 +924,18 @@ const apimartVideoModelSchemas: Record<
       additionalProperties: true,
       properties: {
         aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16'], default: '16:9' },
-        durationSeconds: { type: 'integer', title: '时长（秒）', enum: [4, 8, 12, 16, 20], default: 4 },
-        resolution: { type: 'string', title: '分辨率', enum: ['720p', '1024p', '1080p'], default: '720p' },
+        durationSeconds: {
+          type: 'integer',
+          title: '时长（秒）',
+          enum: [4, 8, 12, 16, 20],
+          default: 4,
+        },
+        resolution: {
+          type: 'string',
+          title: '分辨率',
+          enum: ['720p', '1024p', '1080p'],
+          default: '720p',
+        },
       },
     },
     defaults: { aspectRatio: '16:9', durationSeconds: 4, resolution: '720p' },
@@ -951,7 +964,13 @@ const apimartVideoModelSchemas: Record<
         camerafixed: { type: 'boolean', title: '固定摄像头', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', audio: true, camerafixed: false },
+    defaults: {
+      aspectRatio: '16:9',
+      durationSeconds: 5,
+      resolution: '720p',
+      audio: true,
+      camerafixed: false,
+    },
   },
   'doubao-seedance-1-0-pro-fast': {
     schema: {
@@ -1661,7 +1680,13 @@ const apimartVideoModelSchemas: Record<
         return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false },
+    defaults: {
+      aspectRatio: '16:9',
+      durationSeconds: 5,
+      resolution: '720p',
+      generate_audio: true,
+      return_last_frame: false,
+    },
   },
   'doubao-seedance-2-0-mini': {
     schema: {
@@ -1681,7 +1706,13 @@ const apimartVideoModelSchemas: Record<
         return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
       },
     },
-    defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', generate_audio: true, return_last_frame: false },
+    defaults: {
+      aspectRatio: '16:9',
+      durationSeconds: 5,
+      resolution: '720p',
+      generate_audio: true,
+      return_last_frame: false,
+    },
   },
 }
 
@@ -2116,7 +2147,12 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         video_urls: '{{inputVideoUrls}}',
         audio_urls: '{{inputAudioUrls}}',
       },
-      response: { kind: 'task_poll', taskIdPaths: ['task_id', 'request_id', 'id'], statusEndpoint: '/tasks/{{taskId}}', resultPaths: ['data.result.videos[].url[]', 'video_url', 'data[].url', 'output.url'] },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['data.result.videos[].url[]', 'video_url', 'data[].url', 'output.url'],
+      },
       polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
     },
     docs: { sourceUrls: ['https://docs.apimart.ai/cn'] },
@@ -2425,7 +2461,12 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         video_urls: '{{inputVideoUrls}}',
         audio_urls: '{{inputAudioUrls}}',
       },
-      response: { kind: 'task_poll' as const, taskIdPaths: ['task_id', 'request_id', 'id'], statusEndpoint: '/tasks/{{taskId}}', resultPaths: ['data.result.videos[].url[]', 'video_url', 'data[].url', 'output.url'] },
+      response: {
+        kind: 'task_poll' as const,
+        taskIdPaths: ['task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['data.result.videos[].url[]', 'video_url', 'data[].url', 'output.url'],
+      },
       polling: { intervalMs: 5000, timeoutMs: 1800000, statusMap: commonStatusMap },
     },
     docs: { sourceUrls: ['https://docs.apimart.ai/cn'] },
@@ -2521,7 +2562,11 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       {
         id: 'video.image_to_video',
         label: '图生视频',
-        input: { required: ['image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        input: {
+          required: ['image'] as MediaManifestInputKind[],
+          maxImages: 1,
+          acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+        },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: xaiVideoSchema,
         defaults: { durationSeconds: 8, resolution: '720p' },
@@ -2708,6 +2753,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     safety: { maxPromptLength: 6000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
   },
   ...VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS,
+  ...TENCENT_TOKENHUB_MEDIA_MODEL_MANIFESTS,
   ...[
     {
       id: 'kling:kling-video-3.0',

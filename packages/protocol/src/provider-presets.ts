@@ -369,6 +369,15 @@ export const VENDOR_CATALOG: VendorMeta[] = [
     logoPath: 'providers/midjourney.svg',
     purchaseUrl: 'https://www.midjourney.com/',
   },
+  {
+    id: 'tencent-tokenhub',
+    name: '腾讯云 TokenHub',
+    emoji: 'TX',
+    color: '#006eff',
+    desc: '混元/优图图片视频 + Kling + Vidu',
+    logoPath: 'providers/tencent-coding-plan.png',
+    purchaseUrl: 'https://console.cloud.tencent.com/tokenhub/apikey',
+  },
 ]
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -2184,7 +2193,12 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelType: 'video',
     mediaProvider: 'google-generative-ai',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.reference_to_video', 'video.edit'],
+    mediaCapabilities: [
+      'video.generate',
+      'video.image_to_video',
+      'video.reference_to_video',
+      'video.edit',
+    ],
     mediaModelRefs: [
       {
         manifestId: 'google-generative-ai:gemini-omni-flash-preview',
@@ -2341,6 +2355,132 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       polling: { intervalMs: 5000, timeoutMs: 1_800_000 },
     },
     sourceUrls: ['https://platform.minimaxi.com/document/video_generation'],
+  },
+
+  /* ─── 腾讯云 TokenHub 多媒体（图片 + 视频）─── */
+  {
+    id: 'tencent-tokenhub-image',
+    vendorId: 'tencent-tokenhub',
+    name: '腾讯云 TokenHub 图片',
+    provider: 'openai',
+    apiEndpoint: 'https://tokenhub.tencentmaas.com',
+    defaultModel: 'hy-image-v3.0',
+    modelIds: ['hy-image-lite', 'hy-image-v3.0'],
+    modelType: 'image',
+    mediaProvider: 'tencent-tokenhub',
+    mediaApiType: 'auto',
+    mediaCapabilities: ['image.generate', 'image.edit'],
+    mediaModelRefs: [
+      { manifestId: 'tencent-tokenhub:hy-image-lite', modelId: 'hy-image-lite', enabled: true },
+      { manifestId: 'tencent-tokenhub:hy-image-v3.0', modelId: 'hy-image-v3.0', enabled: true },
+    ],
+    mediaDefaults: {
+      image: { responseFormat: 'url' },
+      polling: { intervalMs: 3000, timeoutMs: 600000 },
+    },
+    sourceUrls: [
+      'https://cloud.tencent.com/document/product/1823/130080',
+      'https://cloud.tencent.com/document/product/1823/130051',
+    ],
+  },
+  {
+    id: 'tencent-tokenhub-video',
+    vendorId: 'tencent-tokenhub',
+    name: '腾讯云 TokenHub 视频',
+    provider: 'openai',
+    apiEndpoint: 'https://tokenhub.tencentmaas.com',
+    defaultModel: 'hy-video-1.5',
+    modelIds: [
+      'hy-video-1.5',
+      'yt-video-2.0',
+      'yt-video-fx',
+      'yt-video-humanactor',
+      'kl-video-v3',
+      'kl-video-v2-6',
+      'kl-video-v2-5-turbo',
+      'kl-video-v2-1-master',
+      'kl-video-v2-1',
+      'kl-video-v2-master',
+      'kl-video-v1-6',
+      'kl-video-v1-5',
+      'kl-video-v1',
+      'vd-video-q3-pro',
+      'vd-video-q3-turbo',
+      'vd-video-q2-pro',
+      'vd-video-q2-pro-fast',
+      'vd-video-q2-turbo',
+      'vd-video-q2',
+    ],
+    modelType: 'video',
+    mediaProvider: 'tencent-tokenhub',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaModelRefs: [
+      { manifestId: 'tencent-tokenhub:hy-video-1.5', modelId: 'hy-video-1.5', enabled: true },
+      { manifestId: 'tencent-tokenhub:yt-video-2.0', modelId: 'yt-video-2.0', enabled: true },
+      { manifestId: 'tencent-tokenhub:yt-video-fx', modelId: 'yt-video-fx', enabled: true },
+      {
+        manifestId: 'tencent-tokenhub:yt-video-humanactor',
+        modelId: 'yt-video-humanactor',
+        enabled: true,
+      },
+      { manifestId: 'tencent-tokenhub:kl-video-v3', modelId: 'kl-video-v3', enabled: true },
+      { manifestId: 'tencent-tokenhub:kl-video-v2-6', modelId: 'kl-video-v2-6', enabled: true },
+      {
+        manifestId: 'tencent-tokenhub:kl-video-v2-5-turbo',
+        modelId: 'kl-video-v2-5-turbo',
+        enabled: true,
+      },
+      {
+        manifestId: 'tencent-tokenhub:kl-video-v2-1-master',
+        modelId: 'kl-video-v2-1-master',
+        enabled: true,
+      },
+      { manifestId: 'tencent-tokenhub:kl-video-v2-1', modelId: 'kl-video-v2-1', enabled: true },
+      {
+        manifestId: 'tencent-tokenhub:kl-video-v2-master',
+        modelId: 'kl-video-v2-master',
+        enabled: true,
+      },
+      { manifestId: 'tencent-tokenhub:kl-video-v1-6', modelId: 'kl-video-v1-6', enabled: true },
+      { manifestId: 'tencent-tokenhub:kl-video-v1-5', modelId: 'kl-video-v1-5', enabled: true },
+      { manifestId: 'tencent-tokenhub:kl-video-v1', modelId: 'kl-video-v1', enabled: true },
+      {
+        manifestId: 'tencent-tokenhub:vd-video-q3-pro',
+        modelId: 'vd-video-q3-pro',
+        enabled: true,
+      },
+      {
+        manifestId: 'tencent-tokenhub:vd-video-q3-turbo',
+        modelId: 'vd-video-q3-turbo',
+        enabled: true,
+      },
+      {
+        manifestId: 'tencent-tokenhub:vd-video-q2-pro',
+        modelId: 'vd-video-q2-pro',
+        enabled: true,
+      },
+      {
+        manifestId: 'tencent-tokenhub:vd-video-q2-pro-fast',
+        modelId: 'vd-video-q2-pro-fast',
+        enabled: true,
+      },
+      {
+        manifestId: 'tencent-tokenhub:vd-video-q2-turbo',
+        modelId: 'vd-video-q2-turbo',
+        enabled: true,
+      },
+      { manifestId: 'tencent-tokenhub:vd-video-q2', modelId: 'vd-video-q2', enabled: true },
+    ],
+    mediaDefaults: {
+      video: { durationSeconds: 5, resolution: '720p' },
+      polling: { intervalMs: 5000, timeoutMs: 1800000 },
+    },
+    sourceUrls: [
+      'https://cloud.tencent.com/document/product/1823/130081',
+      'https://cloud.tencent.com/document/product/1616/130564',
+      'https://cloud.tencent.com/document/product/1616/130563',
+    ],
   },
 ]
 
