@@ -100,6 +100,15 @@ export function commitLoopBodyGraph(
   }
 }
 
+export function completeWorkflowEditorGraph(
+  scope: WorkflowEditorScope,
+  currentGraph: WorkflowGraph,
+): WorkflowGraph {
+  return scope.kind === 'loop-body'
+    ? commitLoopBodyGraph(scope.rootGraph, scope.loopNodeId, currentGraph)
+    : currentGraph
+}
+
 export function summarizeLoopBodyGraph(graph: WorkflowGraph): LoopBodySummary {
   return {
     nodeCount: graph.nodes.length,
