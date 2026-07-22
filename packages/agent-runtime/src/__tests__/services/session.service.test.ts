@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
 import type { TeamA2ATask } from '@spark/protocol'
 import {
+  APP_IDENTITY_SYSTEM_PROMPT,
   buildConversationHistoryPromptFromEvents,
   buildMemberUserMessage,
   collectCompleteAssistantTurnText,
@@ -20,6 +21,18 @@ import {
 import { normalizeWorkflowGraph } from '../../services/workflow-executor.js'
 import { SessionQuestionGate } from '../../services/session-question-gate.js'
 import { CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor } from '../../sdk/index.js'
+
+describe('SparkWork application identity prompt', () => {
+  it('introduces the platform and its core capabilities', () => {
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('你是 SparkWork')
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('本地化双核心 Agent 平台')
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('制作文档与 PPT')
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('操作浏览器')
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('无限画布进行多媒体创作')
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('与用户当前消息相同的语言回复')
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('用户明确指定了其他语言')
+  })
+})
 
 function baseEvent(
   sessionId: string,
