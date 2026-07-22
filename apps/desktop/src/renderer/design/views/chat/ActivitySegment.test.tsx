@@ -1,11 +1,18 @@
 // @vitest-environment jsdom
 
 import React from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ActivitySegment } from './ActivitySegment'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+const activitySegmentCss = readFileSync(
+  resolve(process.cwd(), 'src/renderer/design/views/chat/ActivitySegment.css'),
+  'utf8',
+)
 
 describe('ActivitySegment', () => {
   let container: HTMLDivElement
@@ -30,11 +37,78 @@ describe('ActivitySegment', () => {
     return button
   }
 
+  it('renders a single activity item directly without the redundant segment disclosure', () => {
+    act(() => {
+      root.render(
+        <ActivitySegment summary="查看了 1 个文件" running={false} sealed autoCollapseEnabled>
+          <div className="single-activity-item">查看 1 个文件</div>
+        </ActivitySegment>,
+      )
+    })
+
+    expect(container.querySelector('.chat-activity-segment')).toBeNull()
+    expect(container.querySelector('.chat-activity-segment-toggle')).toBeNull()
+    expect(container.querySelector('.single-activity-item')).not.toBeNull()
+  })
+
+  it('ignores empty renderer fragments when deciding whether a segment has one item', () => {
+    act(() => {
+      root.render(
+        <ActivitySegment summary="运行了 1 条命令" running={false} sealed autoCollapseEnabled>
+          <div className="single-command-item">执行 1 条命令</div>
+          <React.Fragment>{null}</React.Fragment>
+        </ActivitySegment>,
+      )
+    })
+
+    expect(container.querySelector('.chat-activity-segment')).toBeNull()
+    expect(container.querySelector('.single-command-item')).not.toBeNull()
+  })
+
+  it('hides a direct single activity item with the master tool-log visibility toggle', () => {
+    act(() => {
+      root.render(
+        <div className="msg-bubble-agent tool-logs-hidden">
+          <ActivitySegment summary="查看了 1 个文件" running={false} sealed autoCollapseEnabled>
+            <div>查看 1 个文件</div>
+          </ActivitySegment>
+        </div>,
+      )
+    })
+
+    const singleItem = container.querySelector<HTMLElement>('.chat-activity-segment-single')
+    expect(singleItem).not.toBeNull()
+    expect(activitySegmentCss).toMatch(
+      /\.msg-bubble-agent\.tool-logs-hidden[\s\S]*\.chat-activity-segment-single\s*\{\s*display:\s*none/,
+    )
+  })
+
+  it('keeps the segment disclosure when it contains multiple activity items', () => {
+    act(() => {
+      root.render(
+        <ActivitySegment
+          summary="查看了 1 个文件 · 进行了思考"
+          running={false}
+          sealed
+          autoCollapseEnabled
+        >
+          <div>查看 1 个文件</div>
+          <div>思考过程</div>
+        </ActivitySegment>,
+      )
+    })
+
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect(container.textContent).not.toContain('查看 1 个文件')
+    expect(container.textContent).not.toContain('思考过程')
+  })
+
   it('auto-collapses the current segment while it is running', () => {
     act(() => {
       root.render(
         <ActivitySegment summary="查看了 2 个文件" running sealed={false} autoCollapseEnabled>
           <div>活动明细</div>
+          <div>更多活动</div>
         </ActivitySegment>,
       )
     })
@@ -50,6 +124,7 @@ describe('ActivitySegment', () => {
           autoCollapseEnabled
         >
           <div>活动明细</div>
+          <div>更多活动</div>
         </ActivitySegment>,
       )
     })
@@ -59,6 +134,7 @@ describe('ActivitySegment', () => {
       root.render(
         <ActivitySegment summary="查看了 2 个文件" running={false} sealed autoCollapseEnabled>
           <div>活动明细</div>
+          <div>更多活动</div>
         </ActivitySegment>,
       )
     })
@@ -71,6 +147,7 @@ describe('ActivitySegment', () => {
       root.render(
         <ActivitySegment summary={summary} running={running} sealed={sealed} autoCollapseEnabled>
           <div>活动明细</div>
+          <div>更多活动</div>
         </ActivitySegment>,
       )
     }
@@ -100,9 +177,11 @@ describe('ActivitySegment', () => {
         <>
           <ActivitySegment summary="第一段" running={false} sealed autoCollapseEnabled>
             <div>第一段明细</div>
+            <div>第一段更多活动</div>
           </ActivitySegment>
           <ActivitySegment summary="第二段" running={false} sealed autoCollapseEnabled>
             <div>第二段明细</div>
+            <div>第二段更多活动</div>
           </ActivitySegment>
         </>,
       )
@@ -124,6 +203,7 @@ describe('ActivitySegment', () => {
           autoCollapseEnabled={false}
         >
           <div>活动明细</div>
+          <div>更多活动</div>
         </ActivitySegment>,
       )
     })
@@ -137,6 +217,7 @@ describe('ActivitySegment', () => {
         <div style={{ display: hidden ? 'none' : 'block' }}>
           <ActivitySegment summary="查看了 2 个文件" running={false} sealed autoCollapseEnabled>
             <div>活动明细</div>
+            <div>更多活动</div>
           </ActivitySegment>
         </div>,
       )
