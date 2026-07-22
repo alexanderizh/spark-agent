@@ -8,6 +8,7 @@ import {
   openLoopBodyGraph,
   summarizeLoopBodyGraph,
   validateLoopBodyGraph,
+  validateWorkflowLoopBodies,
 } from './loop-body-editor'
 
 function node(id: string, kind: WorkflowNodeKind = 'agent'): WorkflowGraph['nodes'][number] {
@@ -46,7 +47,7 @@ describe('workflow loop body editor helpers', () => {
     const root = rootGraph(body)
 
     const opened = openLoopBodyGraph(root, 'loop-1', defaultLoopBodyGraph())
-    expect(opened).toEqual({ graph: body, loopTitle: '实现与自检' })
+    expect(opened).toEqual({ graph: body, loopTitle: '实现与自检', usedFallback: false })
     expect(opened.graph).not.toBe(body)
 
     const changed: WorkflowGraph = {
@@ -96,6 +97,41 @@ describe('workflow loop body editor helpers', () => {
 
     expect(opened.graph).toEqual(fallback)
     expect(opened.graph).not.toBe(fallback)
+    expect(opened.usedFallback).toBe(true)
+  })
+
+  it('rejects malformed graph members before they reach the React Flow adapter', () => {
+    expect(
+      openLoopBodyGraph(
+        rootGraph({ nodes: [null], edges: [] } as unknown as WorkflowGraph),
+        'loop-1',
+        defaultLoopBodyGraph(),
+      ).usedFallback,
+    ).toBe(true)
+    expect(
+      openLoopBodyGraph(
+        rootGraph({ nodes: [], edges: [{ id: 'broken' }] } as unknown as WorkflowGraph),
+        'loop-1',
+        defaultLoopBodyGraph(),
+      ).usedFallback,
+    ).toBe(true)
+    expect(
+      openLoopBodyGraph(
+        rootGraph({
+          nodes: [node('source'), node('target')],
+          edges: [
+            {
+              id: 'bad-op',
+              from: 'source',
+              to: 'target',
+              condition: { op: 'unknown', key: 'status' },
+            },
+          ],
+        } as unknown as WorkflowGraph),
+        'loop-1',
+        defaultLoopBodyGraph(),
+      ).usedFallback,
+    ).toBe(true)
   })
 
   it('summarizes nodes, edges, conditional edges and orientation', () => {
@@ -155,6 +191,26 @@ describe('workflow loop body editor helpers', () => {
       'dangling_edge',
       'invalid_condition',
       'cycle',
+    ])
+  })
+
+  it('validates every root loop body before the complete workflow is saved', () => {
+    const root = rootGraph()
+    const target = root.nodes.find((item) => item.id === 'loop-1')
+    if (target == null) throw new Error('fixture loop missing')
+    target.config.body = { nodes: [], edges: [] }
+    root.nodes.push({
+      id: 'loop-2',
+      kind: 'loop',
+      title: '损坏循环',
+      x: 640,
+      y: 120,
+      config: { body: { nodes: [null], edges: [] } as unknown as WorkflowGraph },
+    })
+
+    expect(validateWorkflowLoopBodies(root).map((error) => error.code)).toEqual([
+      'empty_body',
+      'invalid_body',
     ])
   })
 
