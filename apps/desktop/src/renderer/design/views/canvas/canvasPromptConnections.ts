@@ -6,10 +6,14 @@ export function addConnectionReference(
   node: CanvasNode,
   relation: CanvasPromptRelation = relationForNode(node),
 ): CanvasPromptDocument {
-  const alreadyConnected = document.blocks.some(
-    (block) => block.kind === 'reference' && block.source === 'connection' && block.sourceNodeId === node.id,
+  const alreadyRepresented = document.blocks.some(
+    (block) =>
+      (block.kind === 'structured' && block.sourceNodeId === node.id) ||
+      (block.kind === 'reference' &&
+        block.sourceNodeId === node.id &&
+        (block.source === 'connection' || (!block.suppressed && !block.disconnected))),
   )
-  if (alreadyConnected) return cloneDocument(document)
+  if (alreadyRepresented) return cloneDocument(document)
   const reference: CanvasPromptReferenceBlock = {
     kind: 'reference',
     id: `connection-${node.id}`,
@@ -75,7 +79,41 @@ export function ensureConnectionReferences(
   document: CanvasPromptDocument,
   nodes: CanvasNode[],
 ): CanvasPromptDocument {
-  return nodes.reduce((current, node) => addConnectionReference(current, node), cloneDocument(document))
+  const visibleManualSourceNodeIds = new Set(
+    document.blocks.flatMap((block) => {
+      if (block.kind === 'structured') return [block.sourceNodeId]
+      if (
+        block.kind === 'reference' &&
+        block.source !== 'connection' &&
+        !block.suppressed &&
+        !block.disconnected
+      ) {
+        return [block.sourceNodeId]
+      }
+      return []
+    }),
+  )
+  const deduplicated: CanvasPromptDocument = {
+    version: 2,
+    blocks: document.blocks
+      .filter((block) => {
+        if (
+          block.kind !== 'reference' ||
+          block.source !== 'connection' ||
+          !visibleManualSourceNodeIds.has(block.sourceNodeId)
+        ) {
+          return true
+        }
+        if (block.connectionRelation == null) return true
+        const editedRelation =
+          block.relation !== block.connectionRelation
+        return Boolean(
+          block.suppressed || block.disconnected || block.note?.trim() || editedRelation,
+        )
+      })
+      .map(cloneBlock),
+  }
+  return nodes.reduce((current, node) => addConnectionReference(current, node), deduplicated)
 }
 
 function relationForNode(node: CanvasNode): CanvasPromptRelation {

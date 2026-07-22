@@ -40,6 +40,7 @@ import {
 import { selectCanvasMediaCapability } from './canvasMediaCapabilitySelection'
 import { canvasApi } from './canvas.api'
 import { expandCanvasInputNodes } from './canvasWorkspaceTaskInput'
+import { resolveCanvasOperationResourceNode } from './canvasOperationOutputModel'
 import { readCanvasTextInputContent } from './canvasTextInputPresentation'
 import { confirmVideoSubmission, isVideoSubmissionOperation } from './canvasVideoSubmissionGate'
 import { useCanvasInputBindings } from './useCanvasInputBindings'
@@ -1568,6 +1569,15 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     () => snapshot.nodes.filter((item) => !item.hidden && item.id !== node.id),
     [node.id, snapshot.nodes],
   )
+  const promptPresentationNodeBySourceId = useMemo(() => {
+    const resolved = new Map<string, CanvasNode>()
+    for (const candidate of promptCandidateNodes) {
+      if (!isOperationNode(candidate)) continue
+      const output = resolveCanvasOperationResourceNode(candidate, snapshot)
+      if (output) resolved.set(candidate.id, output)
+    }
+    return resolved
+  }, [promptCandidateNodes, snapshot])
   const handlePromptMentionSelect = useCallback(
     (_selectedNode: CanvasNode) => {
       if (running) return false
@@ -1881,6 +1891,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               document={promptDocument}
               placeholder={`输入${operationText}的提示词...`}
               mentionNodes={promptCandidateNodes}
+              presentationNodeBySourceId={promptPresentationNodeBySourceId}
               connectionNodes={promptConnectionNodes}
               assets={snapshot.assets}
               onChange={handlePromptChange}
@@ -2337,6 +2348,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               document={promptDocument}
               placeholder={`输入${operationText}的提示词...`}
               mentionNodes={promptCandidateNodes}
+              presentationNodeBySourceId={promptPresentationNodeBySourceId}
               connectionNodes={promptConnectionNodes}
               assets={snapshot.assets}
               onChange={handlePromptChange}

@@ -53,9 +53,12 @@ import {
 
 export type CanvasPromptCanvasNodePickHandler = (onPick: (node: CanvasNode) => void) => void
 
+const EMPTY_PRESENTATION_NODE_MAP = new Map<string, CanvasNode>()
+
 export type CanvasPromptComposerProps = {
   document: CanvasPromptDocument
   mentionNodes: CanvasNode[]
+  presentationNodeBySourceId?: ReadonlyMap<string, CanvasNode>
   assets: CanvasAsset[]
   placeholder?: string
   disabled?: boolean
@@ -70,6 +73,7 @@ export type CanvasPromptComposerProps = {
 export function CanvasPromptComposer({
   document,
   mentionNodes,
+  presentationNodeBySourceId = EMPTY_PRESENTATION_NODE_MAP,
   assets,
   placeholder,
   disabled = false,
@@ -89,10 +93,19 @@ export function CanvasPromptComposer({
     [mentionNodes],
   )
   const assetById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets])
-  const mentionItems = useMemo(() => buildCanvasPromptMentionItems(mentionNodes), [mentionNodes])
+  const mentionItems = useMemo(
+    () => buildCanvasPromptMentionItems(mentionNodes, presentationNodeBySourceId),
+    [mentionNodes, presentationNodeBySourceId],
+  )
   const decoratorContext = useMemo(
-    () => ({ nodeById, assetById, disabled, ...(onBlockEdit ? { onBlockEdit } : {}) }),
-    [assetById, disabled, nodeById, onBlockEdit],
+    () => ({
+      nodeById,
+      presentationNodeBySourceId,
+      assetById,
+      disabled,
+      ...(onBlockEdit ? { onBlockEdit } : {}),
+    }),
+    [assetById, disabled, nodeById, onBlockEdit, presentationNodeBySourceId],
   )
   const initialConfig = useMemo(
     () => ({

@@ -14,6 +14,7 @@ export function CanvasPromptMentionTextArea({
   disabled,
   className,
   mentionNodes,
+  presentationNodeBySourceId,
   connectionNodes,
   assets,
   onChange,
@@ -28,6 +29,7 @@ export function CanvasPromptMentionTextArea({
   disabled?: boolean
   className?: string
   mentionNodes?: CanvasNode[]
+  presentationNodeBySourceId?: ReadonlyMap<string, CanvasNode>
   connectionNodes?: CanvasNode[]
   assets?: CanvasAsset[]
   onChange: (value: string) => void
@@ -117,6 +119,7 @@ export function CanvasPromptMentionTextArea({
     <CanvasPromptComposer
       document={resolvedDocument}
       mentionNodes={nodes}
+      {...(presentationNodeBySourceId ? { presentationNodeBySourceId } : {})}
       assets={promptAssets}
       {...(placeholder != null ? { placeholder } : {})}
       {...(disabled != null ? { disabled } : {})}

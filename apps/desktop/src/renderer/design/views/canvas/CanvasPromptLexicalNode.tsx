@@ -36,6 +36,7 @@ export type SerializedCanvasPromptAtomicNode = Spread<
 
 type CanvasPromptDecoratorContextValue = {
   nodeById: Map<string, CanvasNode>
+  presentationNodeBySourceId: ReadonlyMap<string, CanvasNode>
   assetById: Map<string, CanvasAsset>
   disabled: boolean
   onBlockEdit?: (blockId: string) => void
@@ -208,7 +209,10 @@ function CanvasPromptAtomicDecorator({
     )
   }
 
-  const node = context.nodeById.get(block.sourceNodeId)
+  const sourceNode = context.nodeById.get(block.sourceNodeId)
+  const node = sourceNode
+    ? (context.presentationNodeBySourceId.get(sourceNode.id) ?? sourceNode)
+    : undefined
   const asset = node?.assetId ? context.assetById.get(node.assetId) : undefined
   const label = block.kind === 'reference' ? block.label : block.summary
   const disconnected = block.kind === 'reference' && block.disconnected === true
