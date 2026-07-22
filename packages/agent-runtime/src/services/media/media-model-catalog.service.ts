@@ -40,6 +40,15 @@ export interface MediaProviderModelItem extends MediaModelCatalogItem {
   defaults: Record<string, unknown>
 }
 
+const OBSOLETE_OFFICIAL_MEDIA_MANIFEST_IDS = [
+  'openai:gpt-image-1',
+  'google:gemini-3.1-flash-image',
+  'google:gemini-3.1-flash-lite-image',
+  'google:gemini-3-pro-image',
+  'google:gemini-2.5-flash-image',
+  'google:veo',
+] as const
+
 export class MediaModelCatalogService {
   constructor(private readonly repo: MediaModelManifestRepository) {
     this.repo.ensureSchema()
@@ -62,6 +71,12 @@ export class MediaModelCatalogService {
         lastCheckedAt: parsed.docs.lastCheckedAt ?? null,
       })
       seeded.push(parsed)
+    }
+    for (const id of OBSOLETE_OFFICIAL_MEDIA_MANIFEST_IDS) {
+      const stale = this.repo.getById(id)
+      if (stale?.built_in === 1 && stale.enabled === 1) {
+        this.repo.update(id, { enabled: false })
+      }
     }
     return seeded
   }

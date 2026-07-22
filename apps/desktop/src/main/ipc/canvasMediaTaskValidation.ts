@@ -76,6 +76,7 @@ function operationForCapability(capability: string): CanvasOperationType {
       return 'image_edit'
     case 'image.variations':
       return 'image_to_image'
+    case 'audio.music':
     case 'audio.speech':
       return 'text_to_audio'
     case 'audio.transcription':

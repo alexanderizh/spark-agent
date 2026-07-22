@@ -106,10 +106,13 @@ describe('spark_media MCP server', () => {
   let server: Server
   let baseUrl = ''
   let postedBody: Record<string, unknown> | null = null
+  let postedRawBody = ''
   let postedHeaders: Record<string, string | string[] | undefined> = {}
   let postedPath = ''
   let fileUploadCount = 0
   let fileUploadBody = ''
+  let omniFilePollCount = 0
+  let googleDownloadApiKey = ''
   let child: ChildProcessWithoutNullStreams | null = null
 
   beforeEach(async () => {
@@ -120,8 +123,11 @@ describe('spark_media MCP server', () => {
     mkdirSync(tmpDir, { recursive: true })
     fileUploadCount = 0
     fileUploadBody = ''
+    omniFilePollCount = 0
+    googleDownloadApiKey = ''
     postedHeaders = {}
     postedPath = ''
+    postedRawBody = ''
     server = createServer((req, res) => {
       if (
         req.method === 'POST' &&
@@ -140,9 +146,63 @@ describe('spark_media MCP server', () => {
         })
         return
       }
+      if (req.method === 'POST' && req.url === '/interactions') {
+        const chunks: Buffer[] = []
+        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+        req.on('end', () => {
+          postedHeaders = req.headers
+          postedBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(
+            JSON.stringify({
+              id: 'interaction-omni',
+              status: 'completed',
+              steps: [
+                {
+                  type: 'model_output',
+                  content: [
+                    {
+                      type: 'video',
+                      mime_type: 'video/mp4',
+                      uri: `${baseUrl}/files/omni-file:download?alt=media`,
+                    },
+                  ],
+                },
+              ],
+            }),
+          )
+        })
+        return
+      }
+      if (req.method === 'POST' && req.url === '/videos') {
+        const chunks: Buffer[] = []
+        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+        req.on('end', () => {
+          postedHeaders = req.headers
+          postedRawBody = Buffer.concat(chunks).toString('latin1')
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ id: 'sora-request', status: 'queued' }))
+        })
+        return
+      }
       if (
         req.method === 'POST' &&
-        (req.url === '/videos/generations' || req.url === '/videos/extensions')
+        req.url?.startsWith('/models/veo-3.1-generate-preview:predictLongRunning')
+      ) {
+        const chunks: Buffer[] = []
+        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+        req.on('end', () => {
+          postedBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ name: 'operations/veo-task' }))
+        })
+        return
+      }
+      if (
+        req.method === 'POST' &&
+        (req.url === '/videos/generations' ||
+          req.url === '/provider-b/videos/generations' ||
+          req.url === '/videos/extensions')
       ) {
         const chunks: Buffer[] = []
         req.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
@@ -199,12 +259,39 @@ describe('spark_media MCP server', () => {
         })
         return
       }
-      if (req.method === 'GET' && req.url === '/videos/request-1') {
+      if (
+        req.method === 'GET' &&
+        (req.url === '/videos/request-1' || req.url === '/provider-b/videos/request-1')
+      ) {
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(
           JSON.stringify({
             status: 'done',
             video: { file_output: { file_id: 'file-video', public_url: `${baseUrl}/asset.mp4` } },
+          }),
+        )
+        return
+      }
+      if (req.method === 'GET' && req.url === '/videos/sora-request') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ id: 'sora-request', status: 'completed' }))
+        return
+      }
+      if (req.method === 'GET' && req.url === '/videos/sora-request/content') {
+        res.writeHead(200, { 'content-type': 'video/mp4' })
+        res.end(Buffer.from('sora-video'))
+        return
+      }
+      if (req.method === 'GET' && req.url === '/operations/veo-task') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            done: true,
+            response: {
+              generateVideoResponse: {
+                generatedSamples: [{ video: { uri: `${baseUrl}/asset.mp4` } }],
+              },
+            },
           }),
         )
         return
@@ -240,6 +327,18 @@ describe('spark_media MCP server', () => {
             purpose: 'user_data',
           }),
         )
+        return
+      }
+      if (req.method === 'GET' && req.url === '/files/omni-file') {
+        omniFilePollCount += 1
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ state: omniFilePollCount === 1 ? 'PROCESSING' : 'ACTIVE' }))
+        return
+      }
+      if (req.method === 'GET' && req.url === '/files/omni-file:download?alt=media') {
+        googleDownloadApiKey = String(req.headers['x-goog-api-key'] ?? '')
+        res.writeHead(200, { 'content-type': 'video/mp4' })
+        res.end(Buffer.from('omni-video'))
         return
       }
       if (req.method === 'GET' && req.url?.startsWith('/files?')) {
@@ -389,6 +488,38 @@ describe('spark_media MCP server', () => {
     })
     const providerA = buildManifest('custom:model-a', 'model-a')
     const providerB = buildManifest('custom:model-b', 'model-b')
+    const providerBVideo = {
+      ...buildManifest('custom:video-model', 'video-model'),
+      displayName: 'Provider B Video Model',
+      domains: ['video'],
+      capabilities: [
+        {
+          id: 'video.generate',
+          label: '文生视频',
+          input: { required: ['prompt'] },
+          output: { types: ['video'], mimeTypes: ['video/mp4'] },
+          paramSchema: {},
+        },
+      ],
+      invocation: {
+        mode: 'async_polling',
+        endpoint: '/videos/generations',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: {
+          kind: 'task_poll',
+          taskIdPaths: ['request_id'],
+          statusEndpoint: '/videos/{{taskId}}',
+          resultPaths: ['video.file_output.public_url'],
+        },
+        polling: {
+          intervalMs: 1,
+          timeoutMs: 3000,
+          statusMap: { done: 'succeeded', failed: 'failed' },
+        },
+      },
+    }
     child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
       cwd: path.resolve('..', 'agent-runtime'),
       env: {
@@ -413,7 +544,7 @@ describe('spark_media MCP server', () => {
             model: 'model-b',
             mode: 'sync',
             baseUrl: `${baseUrl}/provider-b`,
-            manifests: [providerB],
+            manifests: [providerB, providerBVideo],
           },
         ]),
       },
@@ -482,6 +613,144 @@ describe('spark_media MCP server', () => {
       },
     })
     expect(unsupported.error?.message).toContain('does not support video.generate')
+
+    const generatedVideo = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: {
+        name: 'generate_video',
+        arguments: { prompt: 'choose the capable model from provider b' },
+      },
+    })
+    expect(generatedVideo.error).toBeUndefined()
+    expect(postedBody).toMatchObject({
+      model: 'video-model',
+      prompt: 'choose the capable model from provider b',
+    })
+  })
+
+  it('polls Google Omni URI files and downloads them with the owning credential', async () => {
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'google-generative-ai:gemini-omni-flash-preview',
+    )
+    expect(manifest).toBeDefined()
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'google-test-key',
+        SPARK_MEDIA_PROVIDER: 'google-generative-ai',
+        SPARK_MEDIA_MODEL: 'gemini-omni-flash-preview',
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify({ polling: { intervalMs: 1, timeoutMs: 3000 } }),
+        SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify([manifest]),
+      },
+    })
+
+    const response = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/call',
+      params: {
+        name: 'generate_video',
+        arguments: {
+          prompt: 'a copper robot walking through rain',
+          delivery: 'uri',
+        },
+      },
+    })
+
+    expect(response.error).toBeUndefined()
+    expect(omniFilePollCount).toBe(2)
+    expect(googleDownloadApiKey).toBe('google-test-key')
+    expect(existsSync(response.result.structuredContent.files[0])).toBe(true)
+  })
+
+  it('submits Sora image-to-video as multipart from the Skill path', async () => {
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'openai-images:sora-2',
+    )
+    expect(manifest).toBeDefined()
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'openai-test-key',
+        SPARK_MEDIA_PROVIDER: 'openai-images',
+        SPARK_MEDIA_MODEL: 'sora-2',
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify({ polling: { intervalMs: 1, timeoutMs: 3000 } }),
+        SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify([manifest]),
+      },
+    })
+
+    const response = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'tools/call',
+      params: {
+        name: 'generate_video',
+        arguments: {
+          model: manifest?.id,
+          capability: 'video.image_to_video',
+          prompt: 'animate the reference image',
+          firstFrame: `data:image/png;base64,${PNG_PIXEL}`,
+        },
+      },
+    })
+
+    expect(response.error).toBeUndefined()
+    expect(String(postedHeaders['content-type'])).toContain('multipart/form-data; boundary=')
+    expect(postedRawBody).toContain('name="input_reference"')
+    expect(postedRawBody).not.toContain('data:image/png;base64')
+    expect(existsSync(response.result.structuredContent.files[0])).toBe(true)
+  })
+
+  it('keeps Veo Skill reference images out of the first-frame field', async () => {
+    const manifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'google-generative-ai:veo-3.1-generate-preview',
+    )
+    expect(manifest).toBeDefined()
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'google-test-key',
+        SPARK_MEDIA_PROVIDER: 'google-generative-ai',
+        SPARK_MEDIA_MODEL: 'veo-3.1-generate-preview',
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify({ polling: { intervalMs: 1, timeoutMs: 3000 } }),
+        SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify([manifest]),
+      },
+    })
+
+    const response = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 8,
+      method: 'tools/call',
+      params: {
+        name: 'generate_video',
+        arguments: {
+          model: manifest?.id,
+          capability: 'video.reference_to_video',
+          prompt: 'keep the two references consistent',
+          referenceImages: [
+            `data:image/png;base64,${PNG_PIXEL}`,
+            `data:image/png;base64,${PNG_PIXEL}`,
+          ],
+        },
+      },
+    })
+
+    expect(response.error).toBeUndefined()
+    const instance = (postedBody?.instances as Array<Record<string, unknown>>)[0]
+    if (!instance) throw new Error('Expected a Veo request instance')
+    expect(instance).not.toHaveProperty('image')
+    expect(instance.referenceImages).toHaveLength(2)
   })
 
   it('drops unsupported output_format for strict models before reaching provider', async () => {

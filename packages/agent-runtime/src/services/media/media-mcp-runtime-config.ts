@@ -21,6 +21,7 @@ const MEDIA_CAPABILITIES = new Set([
   'image.edit',
   'image.variations',
   'audio.speech',
+  'audio.music',
   'audio.transcription',
   'video.generate',
   'video.image_to_video',

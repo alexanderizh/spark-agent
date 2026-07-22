@@ -26,6 +26,7 @@
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import readline from 'node:readline'
+import { URL } from 'node:url'
 // 响应解析逻辑复用 TS adapter 的单一事实源（media-extract.mjs），避免分叉
 import {
   extractImages,
@@ -37,6 +38,13 @@ import {
 // Contract V2 裁剪：MCP 子进程独立纯 JS 实现，与 TS 编译器同语义。
 // 多余字段不会到达 provider；describe_model 也能告诉 agent 字段约束。
 import { pruneModelParamsByManifest } from '../services/media/media-request-compiler.mjs'
+import {
+  buildMcpMultipart,
+  googleMcpImagePart,
+  googleMcpVeoImage,
+  googleMcpVideoPart,
+  openAiMcpUpload,
+} from './official-media-mcp-helpers.mjs'
 
 const env = process.env
 
@@ -91,11 +99,20 @@ const TOOLS = [
         model: { type: 'string', description: MODEL_SELECTOR_DESCRIPTION },
         size: { type: 'string', description: `Size, pixel dimensions, or aspect ratio (e.g. 1024x1024, 16:9, portrait). ${DESCRIBE_MODEL_HINT}` },
         resolution: { type: 'string', description: `Provider-specific image resolution. ${DESCRIBE_MODEL_HINT}` },
+        imageSize: { type: 'string', description: `Provider-specific image size tier such as 1K, 2K, or 4K. ${DESCRIBE_MODEL_HINT}` },
         aspectRatio: { type: 'string', description: `Provider-specific image aspect ratio. ${DESCRIBE_MODEL_HINT}` },
-        n: { type: 'integer', minimum: 1, maximum: 4, description: 'Number of images. Default 1.' },
+        n: { type: 'integer', minimum: 1, maximum: 10, description: 'Number of images. Provider/model limits come from describe_model.' },
         negative_prompt: { type: 'string' },
         seed: { type: 'integer' },
         output_format: { type: 'string', description: `Provider-specific output format or response container. ${DESCRIBE_MODEL_HINT}` },
+        quality: { type: 'string', description: DESCRIBE_MODEL_HINT },
+        background: { type: 'string', description: DESCRIBE_MODEL_HINT },
+        moderation: { type: 'string', description: DESCRIBE_MODEL_HINT },
+        outputCompression: { type: 'integer', minimum: 0, maximum: 100, description: DESCRIBE_MODEL_HINT },
+        delivery: { type: 'string', description: DESCRIBE_MODEL_HINT },
+        numberOfImages: { type: 'integer', minimum: 1, maximum: 4, description: DESCRIBE_MODEL_HINT },
+        personGeneration: { type: 'string', description: DESCRIBE_MODEL_HINT },
+        user: { type: 'string', description: 'Optional end-user identifier supported by OpenAI image models.' },
         inputImages: {
           type: 'array',
           items: { type: 'string' },
@@ -121,11 +138,19 @@ const TOOLS = [
         mask: { type: 'string' },
         size: { type: 'string' },
         resolution: { type: 'string' },
+        imageSize: { type: 'string' },
         aspectRatio: { type: 'string' },
-        n: { type: 'integer', minimum: 1, maximum: 4 },
+        n: { type: 'integer', minimum: 1, maximum: 10 },
         negative_prompt: { type: 'string' },
         seed: { type: 'integer' },
         output_format: { type: 'string' },
+        quality: { type: 'string' },
+        background: { type: 'string' },
+        moderation: { type: 'string' },
+        outputCompression: { type: 'integer', minimum: 0, maximum: 100 },
+        inputFidelity: { type: 'string' },
+        delivery: { type: 'string' },
+        user: { type: 'string', description: 'Optional end-user identifier supported by OpenAI image models.' },
         filename: { type: 'string' },
         extraJson: { type: 'object', additionalProperties: true },
       },
@@ -133,7 +158,7 @@ const TOOLS = [
   },
   {
     name: 'generate_audio',
-    description: 'Synthesize speech audio from text (text-to-speech).',
+    description: 'Generate speech or music audio from text, depending on the selected model.',
     inputSchema: {
       type: 'object',
       required: ['text'],
@@ -146,6 +171,11 @@ const TOOLS = [
         output_format: { type: 'string', enum: ['url', 'hex'], description: 'Provider-specific output container, e.g. MiniMax url/hex.' },
         speed: { type: 'number' },
         language_boost: { type: 'string' },
+        inputImages: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional reference image urls, data urls, or local paths for music generation.',
+        },
         filename: { type: 'string' },
         extraJson: { type: 'object', additionalProperties: true },
       },
@@ -1089,6 +1119,18 @@ function configForTool(config, toolName, args) {
       if (defaultManifest) return { ...providerConfig, model: defaultManifest.modelId }
     }
   }
+  for (const capabilityId of candidates) {
+    for (const providerConfig of config.providers) {
+      const manifests = providerConfig.manifests.length > 0
+        ? providerConfig.manifests
+        : [fallbackManifest(providerConfig)].filter(Boolean)
+      const capableManifest = manifests.find((manifest) =>
+        manifestCapabilities(manifest).includes(capabilityId))
+      if (capableManifest) {
+        return { ...providerConfig, model: capableManifest.modelId, manifests: [capableManifest] }
+      }
+    }
+  }
   return config.providers[0] || config
 }
 
@@ -1137,6 +1179,9 @@ async function pollTask(config, url, inspect, fallbackTimeoutMs = 600_000) {
 }
 
 function authHeaders(config) {
+  if (config.provider === 'google-generative-ai') {
+    return { 'content-type': 'application/json', 'x-goog-api-key': config.apiKey }
+  }
   return { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` }
 }
 
@@ -1355,7 +1400,7 @@ async function materializeImage(config, image, filename, index, total) {
   const dir = path.join(config.outputDir, 'images')
   await mkdir(dir, { recursive: true })
   const buffer = image.kind === 'url'
-    ? Buffer.from(await (await fetch(image.value)).arrayBuffer())
+    ? Buffer.from(await (await fetch(image.value, { headers: artifactDownloadHeaders(config, image.value) })).arrayBuffer())
     : Buffer.from(image.value, 'base64')
   const parsed = path.parse(filename || `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`)
   const suffix = total > 1 ? `_${String(index + 1).padStart(3, '0')}` : ''
@@ -1368,7 +1413,7 @@ async function materializeImage(config, image, filename, index, total) {
 async function downloadMedia(config, url, kind, filename) {
   const dir = path.join(config.outputDir, kind === 'audio' ? 'audio' : 'videos')
   await mkdir(dir, { recursive: true })
-  const buffer = Buffer.from(await (await fetch(url)).arrayBuffer())
+  const buffer = Buffer.from(await (await fetch(url, { headers: artifactDownloadHeaders(config, url) })).arrayBuffer())
   const parsed = path.parse(filename || `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`)
   const name = `${parsed.name}${parsed.ext || (kind === 'audio' ? '.mp3' : '.mp4')}`
   const file = path.join(dir, name)
@@ -1401,7 +1446,7 @@ const TOOL_CAPABILITY_CANDIDATES = {
     ? ['image.image_to_image', 'image.edit', 'image.generate']
     : ['image.generate'],
   edit_image: () => ['image.edit', 'image.compose', 'image.image_to_image'],
-  generate_audio: () => ['audio.speech'],
+  generate_audio: () => ['audio.music', 'audio.speech'],
   transcribe_audio: () => ['audio.transcription'],
   generate_video: (args) => {
     if (args.capability === 'video.extend' || args.videoMode === 'extend') return ['video.extend']
@@ -1445,11 +1490,21 @@ function argsToModelParams(toolName, args) {
   const params = { ...(args.extraJson && typeof args.extraJson === 'object' ? args.extraJson : {}) }
   for (const key of [
     'size',
+    'imageSize',
     'n',
     'mask',
     'voice',
     'format',
     'output_format',
+    'quality',
+    'background',
+    'moderation',
+    'outputCompression',
+    'inputFidelity',
+    'delivery',
+    'numberOfImages',
+    'personGeneration',
+    'user',
     'speed',
     'language',
     'language_boost',
@@ -1501,6 +1556,24 @@ async function normalizeBailianMcpInputs(args, capabilityId) {
           `Bailian ${capabilityId} video/audio inputs must use HTTP(S) or OSS temporary URLs; local files are supported from Canvas after public upload, but not from the isolated spark_media process.`,
         )
       }
+    }
+  }
+  return next
+}
+
+async function normalizeGoogleMcpInputs(args) {
+  const next = { ...args }
+  for (const key of ['inputImages', 'referenceImages', 'imageUrls', 'imageFiles']) {
+    if (!Array.isArray(args[key])) continue
+    next[key] = await Promise.all(
+      args[key]
+        .filter((value) => typeof value === 'string' && value.trim())
+        .map((value) => bailianMcpImageReference(value)),
+    )
+  }
+  for (const key of ['firstFrame', 'lastFrame']) {
+    if (typeof args[key] === 'string' && args[key].trim()) {
+      next[key] = await bailianMcpImageReference(args[key])
     }
   }
   return next
@@ -1624,7 +1697,13 @@ function buildManifestVariables(toolName, args, manifest, capability, modelId, p
     : undefined
   const content = manifest.providerKind === 'bailian' && capability.id.startsWith('image.')
     ? [...images.map((imageUrl) => ({ image: imageUrl })), { text: prompt }]
-    : undefined
+    : manifest.providerKind === 'google-generative-ai'
+      ? [
+          { type: 'text', text },
+          ...images.map((imageValue) => googleMcpImagePart(imageValue)),
+          ...(video ? [googleMcpVideoPart(video)] : []),
+        ]
+      : undefined
   if (manifest.providerKind === 'bailian') {
     delete providerParams.negativePrompt
     delete providerParams.negative_prompt
@@ -1667,7 +1746,9 @@ async function handleManifestTool(config, toolName, args, match) {
   // capability.aliases 把 canonical → provider-native 字段。
   const resolvedArgs = manifest.providerKind === 'bailian'
     ? await normalizeBailianMcpInputs(args, capability.id)
-    : args
+    : manifest.providerKind === 'google-generative-ai' || manifest.providerKind === 'openai-images'
+      ? await normalizeGoogleMcpInputs(args)
+      : args
   const collectedParams = argsToModelParams(toolName, resolvedArgs)
   const prune = pruneModelParamsByManifest({
     manifest,
@@ -1691,22 +1772,50 @@ async function handleManifestTool(config, toolName, args, match) {
   const endpoint = renderTemplateString(manifest.invocation.endpoint || '', variables)
   const url = resolveManifestUrl(config.baseUrl, endpoint)
   const invocationHeaders = renderTemplate(manifest.invocation.headers || {}, variables)
-  const requestBody = mergeProviderParams(
+  if (manifest.providerKind === 'openai-images' && capability.id === 'image.edit') {
+    return handleOpenAiManifestImageEdit(config, args, manifest, capability, variables, prune, url)
+  }
+  const genericRequestBody = mergeProviderParams(
     renderTemplate(manifest.invocation.requestTemplate || {}, variables),
     variables.providerParams,
   )
+  const requestBody = normalizeProviderManifestRequest(manifest, capability, genericRequestBody, variables)
   const responseSpec = manifest.invocation.response || { kind: 'url', jsonPaths: ['data[].url'], download: true }
+  let requestHeaders = {
+    ...authHeaders(config),
+    ...stringHeaders(invocationHeaders),
+  }
+  let serializedRequestBody = JSON.stringify(requestBody)
+  if (
+    manifest.providerKind === 'openai-images' &&
+    manifest.modelId.startsWith('sora-') &&
+    variables.image &&
+    !/^https?:\/\//i.test(variables.image)
+  ) {
+    const upload = await openAiMcpUpload(variables.image, 'input-reference')
+    const form = buildMcpMultipart(
+      {
+        model: manifest.modelId,
+        prompt: variables.prompt,
+        ...variables.providerParams,
+      },
+      [{ field: 'input_reference', ...upload }],
+    )
+    requestHeaders = {
+      authorization: `Bearer ${config.apiKey}`,
+      'content-type': form.contentType,
+      ...stringHeaders(invocationHeaders),
+    }
+    serializedRequestBody = form.body
+  }
   let raw
   try {
     raw = await fetchJson(
       url,
       {
         method: manifest.invocation.method || 'POST',
-        headers: {
-          ...authHeaders(config),
-          ...stringHeaders(invocationHeaders),
-        },
-        body: JSON.stringify(requestBody),
+        headers: requestHeaders,
+        body: serializedRequestBody,
       },
       60_000,
       responseSpec.kind === 'binary_response',
@@ -1739,6 +1848,30 @@ async function handleManifestTool(config, toolName, args, match) {
     }
   }
 
+  if (manifest.providerKind === 'openai-images' && manifest.modelId.startsWith('sora-') && requestId) {
+    const content = await fetchJson(
+      `${String(config.baseUrl || '').replace(/\/+$/, '')}/videos/${encodeURIComponent(requestId)}/content`,
+      { headers: authHeaders(config) },
+      300_000,
+      true,
+    )
+    const file = await writeBinaryAsset(config, content, 'video', args.filename || '', 'mp4')
+    return {
+      success: true,
+      provider: `${manifest.providerKind}/${modelId}`,
+      manifestId: manifest.id,
+      model: modelId,
+      mode: 'async',
+      requestId,
+      files: [file],
+      ...(prune.droppedParams.length > 0 ? { droppedParams: prune.droppedParams } : {}),
+      ...(prune.warnings.length > 0 ? { paramWarnings: prune.warnings } : {}),
+      ...(prune.validationIssues.length > 0 ? { validationIssues: prune.validationIssues } : {}),
+    }
+  }
+  if (manifest.providerKind === 'google-generative-ai' && manifest.modelId.startsWith('gemini-omni-')) {
+    await waitForGoogleManifestFiles(config, responseSpec, raw)
+  }
   const materialized = await materializeManifestResult(config, responseSpec, raw, capability, args)
   return {
     success: true,
@@ -1747,6 +1880,54 @@ async function handleManifestTool(config, toolName, args, match) {
     model: modelId,
     mode,
     ...(requestId ? { requestId } : {}),
+    ...materialized,
+    ...(prune.droppedParams.length > 0 ? { droppedParams: prune.droppedParams } : {}),
+    ...(prune.warnings.length > 0 ? { paramWarnings: prune.warnings } : {}),
+    ...(prune.validationIssues.length > 0 ? { validationIssues: prune.validationIssues } : {}),
+  }
+}
+
+async function handleOpenAiManifestImageEdit(config, args, manifest, capability, variables, prune, url) {
+  const images = Array.isArray(variables.images) ? variables.images : []
+  if (images.length === 0) throw new Error('OpenAI image edit requires at least one input image')
+  const uploads = []
+  for (let index = 0; index < images.length; index++) {
+    uploads.push(await openAiMcpUpload(images[index], `image-${index + 1}`))
+  }
+  const providerParams = { ...variables.providerParams }
+  const maskValue = typeof providerParams.mask === 'string' ? providerParams.mask : ''
+  delete providerParams.mask
+  const maskUpload = maskValue
+    ? await openAiMcpUpload(await bailianMcpImageReference(maskValue), 'mask')
+    : null
+  const form = buildMcpMultipart(
+    { model: manifest.modelId, prompt: variables.prompt, ...providerParams },
+    [
+      ...uploads.map((upload) => ({ field: 'image[]', ...upload })),
+      ...(maskUpload ? [{ field: 'mask', ...maskUpload }] : []),
+    ],
+  )
+  let raw
+  try {
+    raw = await fetchJson(url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': form.contentType },
+      body: form.body,
+    }, 180_000)
+  } catch (err) {
+    const normalized = normalizeMcpMediaError(manifest, err)
+    const wrapped = new Error(normalized.message)
+    wrapped.normalized = normalized
+    throw wrapped
+  }
+  const responseSpec = manifest.invocation.response || { kind: 'inline_base64', jsonPaths: ['data[].b64_json'] }
+  const materialized = await materializeManifestResult(config, responseSpec, raw, capability, args)
+  return {
+    success: true,
+    provider: `${manifest.providerKind}/${manifest.modelId}`,
+    manifestId: manifest.id,
+    model: manifest.modelId,
+    mode: 'sync',
     ...materialized,
     ...(prune.droppedParams.length > 0 ? { droppedParams: prune.droppedParams } : {}),
     ...(prune.warnings.length > 0 ? { paramWarnings: prune.warnings } : {}),
@@ -1861,6 +2042,141 @@ function mergeProviderParams(body, providerParams) {
     if (value !== undefined && value !== null && value !== '') next[key] = value
   }
   return next
+}
+
+function normalizeProviderManifestRequest(manifest, capability, body, variables) {
+  if (!isPlainRecord(body)) return body
+  if (manifest.providerKind === 'openai-images') {
+    if (manifest.modelId.startsWith('sora-') && variables.image) {
+      return { ...body, input_reference: { image_url: variables.image } }
+    }
+    return body
+  }
+  if (manifest.providerKind !== 'google-generative-ai') return body
+  const params = isPlainRecord(variables.providerParams) ? variables.providerParams : {}
+  if (manifest.modelId.startsWith('imagen-')) {
+    return {
+      instances: [{ prompt: variables.prompt }],
+      parameters: compactObject({
+        sampleCount: params.numberOfImages,
+        imageSize: params.imageSize,
+        aspectRatio: params.aspectRatio,
+        personGeneration: params.personGeneration,
+      }),
+    }
+  }
+  if (manifest.modelId.startsWith('veo-')) {
+    const instance = { prompt: variables.prompt }
+    if (capability.id === 'video.reference_to_video') {
+      const references = Array.isArray(variables.referenceImages)
+        ? variables.referenceImages.slice(0, 3)
+        : []
+      if (references.length > 0) {
+        instance.referenceImages = references.map((value) => ({
+          image: googleMcpVeoImage(value),
+          referenceType: 'asset',
+        }))
+      }
+    } else if (capability.id === 'video.image_to_video') {
+      if (variables.firstFrame) instance.image = googleMcpVeoImage(variables.firstFrame)
+      if (variables.lastFrame) instance.lastFrame = googleMcpVeoImage(variables.lastFrame)
+    }
+    if (variables.video) instance.video = { uri: variables.video }
+    return {
+      instances: [instance],
+      parameters: compactObject({
+        aspectRatio: params.aspectRatio,
+        durationSeconds: params.durationSeconds,
+        resolution: params.resolution,
+        personGeneration: params.personGeneration,
+      }),
+    }
+  }
+  if (manifest.modelId.startsWith('gemini-omni-')) {
+    const task = capability.id === 'video.edit'
+      ? 'edit'
+      : capability.id === 'video.reference_to_video'
+        ? 'reference_to_video'
+        : capability.id === 'video.image_to_video'
+          ? 'image_to_video'
+          : 'text_to_video'
+    return {
+      model: manifest.modelId,
+      input: variables.content,
+      background: true,
+      response_format: compactObject({
+        type: 'video',
+        aspect_ratio: params.aspectRatio,
+        delivery: params.delivery,
+      }),
+      generation_config: {
+        video_config: compactObject({ task, duration_seconds: params.durationSeconds }),
+      },
+    }
+  }
+  if (manifest.modelId.startsWith('lyria-')) {
+    return { model: manifest.modelId, input: variables.content, response_format: { type: 'audio' } }
+  }
+  if (capability.id.startsWith('image.')) {
+    const tools = []
+    if (params.google_search === true) tools.push({ type: 'google_search' })
+    if (params.google_image_search === true) tools.push({ type: 'google_image_search' })
+    return {
+      model: manifest.modelId,
+      input: variables.content,
+      response_format: compactObject({
+        type: 'image',
+        aspect_ratio: params.aspect_ratio,
+        image_size: params.image_size,
+        mime_type: params.mime_type === 'jpeg' ? 'image/jpeg' : params.mime_type === 'png' ? 'image/png' : undefined,
+        delivery: params.delivery,
+      }),
+      ...(tools.length > 0 ? { tools } : {}),
+    }
+  }
+  return body
+}
+
+function compactObject(value) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== ''),
+  )
+}
+
+function artifactDownloadHeaders(config, url) {
+  if (config.provider !== 'google-generative-ai' || !config.apiKey) return {}
+  try {
+    const target = new URL(url)
+    const configured = config.baseUrl ? new URL(config.baseUrl) : null
+    if (
+      /(^|\.)generativelanguage\.googleapis\.com$/i.test(target.hostname) ||
+      configured?.origin === target.origin
+    ) {
+      return { 'x-goog-api-key': config.apiKey }
+    }
+  } catch {
+    return {}
+  }
+  return {}
+}
+
+async function waitForGoogleManifestFiles(config, responseSpec, raw) {
+  const urls = stringsAtPaths(raw, responseSpec.resultPaths || [])
+  const fileNames = [...new Set(urls.map(googleFileNameFromUri).filter(Boolean))]
+  for (const fileName of fileNames) {
+    const statusUrl = `${String(config.baseUrl || '').replace(/\/+$/, '')}/files/${encodeURIComponent(fileName)}`
+    await pollTask(config, statusUrl, (payload) => {
+      const state = firstStringAtPaths(payload, ['state', 'file.state']).toUpperCase()
+      if (state === 'ACTIVE') return 'done'
+      if (state === 'FAILED') return 'failed'
+      return 'pending'
+    }, 1_800_000)
+  }
+}
+
+function googleFileNameFromUri(uri) {
+  const match = /\/files\/([^/:?]+)(?::download)?(?:\?|$)/i.exec(String(uri || ''))
+  return match?.[1] ? decodeURIComponent(match[1]) : ''
 }
 
 function resolveManifestUrl(baseUrl, endpoint) {

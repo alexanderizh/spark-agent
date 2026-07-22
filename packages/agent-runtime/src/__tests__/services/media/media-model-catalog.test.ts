@@ -31,6 +31,33 @@ describe('MediaModelCatalogService', () => {
     expect(items[0]?.capabilities).toContain('image.generate')
     expect(items[0]?.defaults).toMatchObject({ size: '1024x1024' })
   })
+
+  it('disables only obsolete built-in OpenAI and Google aliases after reseeding', () => {
+    const repo = createRepo()
+    const service = new MediaModelCatalogService(repo)
+    service.seedBuiltinManifests()
+    const current = service.describe('google-generative-ai:gemini-3.1-flash-image')
+    expect(current).not.toBeNull()
+    repo.upsert({
+      id: 'google:gemini-3.1-flash-image',
+      providerKind: 'google-generative-ai',
+      modelId: 'gemini-3.1-flash-image',
+      displayName: 'Old Google alias',
+      manifestJson: JSON.stringify({ ...current, id: 'google:gemini-3.1-flash-image' }),
+      builtIn: true,
+      enabled: true,
+    })
+
+    service.seedBuiltinManifests()
+
+    expect(repo.getById('google:gemini-3.1-flash-image')?.enabled).toBe(0)
+    expect(service.list({ providerKind: 'google-generative-ai', enabledOnly: true })).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'google:gemini-3.1-flash-image' }),
+      ]),
+    )
+    expect(service.describe('google-generative-ai:gemini-3.1-flash-image')).not.toBeNull()
+  })
 })
 
 function createRepo(): MediaModelManifestRepository {
@@ -72,6 +99,22 @@ function createRepo(): MediaModelManifestRepository {
       }
       manifests.set(row.id, row)
       return row
+    },
+    update(
+      id: string,
+      fields: Partial<{ displayName: string; manifestJson: string; enabled: boolean }>,
+    ): MediaModelManifestRow | null {
+      const existing = manifests.get(id)
+      if (!existing) return null
+      const updated: MediaModelManifestRow = {
+        ...existing,
+        display_name: fields.displayName ?? existing.display_name,
+        manifest_json: fields.manifestJson ?? existing.manifest_json,
+        enabled: fields.enabled === undefined ? existing.enabled : fields.enabled ? 1 : 0,
+        updated_at: now(),
+      }
+      manifests.set(id, updated)
+      return updated
     },
     listProviderModels(providerProfileId: string): MediaProviderModelRow[] {
       return [...providerModels.values()].filter((row) => row.provider_profile_id === providerProfileId)

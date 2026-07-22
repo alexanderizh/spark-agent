@@ -6,11 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ProviderEditPanel,
-  getMediaRequestPreviewUrl,
   resolveCodexApiKind,
   resolveProviderCardKind,
   sortProviderProfilesForCards,
 } from './ProvidersView'
+import { getMediaRequestPreviewUrl } from './provider/providerMediaConfig'
 import { canHealthCheckProviderCardKind } from './provider-card-actions'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

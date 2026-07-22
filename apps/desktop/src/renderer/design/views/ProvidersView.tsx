@@ -12,6 +12,14 @@ import { ProviderConversationProtocolFields } from './provider/ProviderConversat
 import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingFields'
 import { ProviderMediaModelCatalog } from './provider/ProviderMediaModelCatalog'
 import {
+  MEDIA_CAPABILITY_LABELS,
+  MEDIA_PROVIDER_LABELS,
+  SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS,
+  capabilitiesForModelType,
+  getMediaRequestPreviewUrl,
+  mediaProviderOptionsForModelType,
+} from './provider/providerMediaConfig'
+import {
   ProviderLogo,
   PROVIDER_ICON_CATALOG,
   PROVIDER_ICON_STYLES,
@@ -66,6 +74,7 @@ import type {
   ProviderMediaModelRef,
   CanvasMediaModelSummary,
   MediaModelManifest,
+  ProviderModelType,
   CanvasMediaPruneModelParamsByInlineManifestRequest,
   CanvasMediaPruneModelParamsByInlineManifestResponse,
   ModelProfile,
@@ -88,7 +97,6 @@ import {
 import './ProvidersView.less'
 
 type ProviderKind = 'anthropic' | 'openai'
-type ProviderModelType = 'image' | 'text' | 'multimodal' | 'voice' | 'video'
 type ImageProviderKind = 'openai' | 'apimart' | 'openrouter' | 'gemini' | 'seeddance' | 'bailian' | 'zhipu' | 'xai' | 'custom'
 type ConnectionFeedback = {
   tone: 'success' | 'error'
@@ -237,43 +245,6 @@ function buildRequestEndpointPreview(form: Pick<ProviderForm,
   }
 }
 
-export function getMediaRequestPreviewUrl(
-  baseUrl: string,
-  form: Pick<ProviderForm, 'modelType' | 'defaultModel' | 'mediaCapabilities'>,
-  mediaProvider: MediaProviderKind,
-): string {
-  if (form.modelType === 'image') {
-    if (mediaProvider === 'google-generative-ai' || mediaProvider === 'omni') return `${baseUrl}/interactions`
-    if (mediaProvider === 'midjourney') return `${baseUrl}/imagine`
-    // 百炼（DashScope 原生）：qwen-image / wan 图片统一走 multimodal-generation/generation，
-    // 与 OpenAI 兼容的 /images/generations 不同；适配器 bailian-media.adapter.ts 同源。
-    if (mediaProvider === 'bailian') return `${baseUrl}/multimodal-generation/generation`
-    return `${baseUrl}/images/generations`
-  }
-
-  if (form.modelType === 'voice') {
-    const capabilities = new Set(form.mediaCapabilities)
-    if (capabilities.has('audio.transcription') && !capabilities.has('audio.speech')) {
-      return `${baseUrl}/audio/transcriptions`
-    }
-    return `${baseUrl}/audio/speech`
-  }
-
-  if (form.modelType === 'video') {
-    if (mediaProvider === 'agnes') return `${baseUrl}/videos`
-    if (mediaProvider === 'google-generative-ai' || mediaProvider === 'omni') {
-      const model = encodeURIComponent(form.defaultModel.trim() || '{model}')
-      return `${baseUrl}/models/${model}:predictLongRunning`
-    }
-    if (mediaProvider === 'volcengine-ark') return `${baseUrl}/contents/generations/tasks`
-    // 百炼（DashScope 原生）：wan 视频 / qwen 视频统一走 video-generation/video-synthesis。
-    if (mediaProvider === 'bailian') return `${baseUrl}/video-generation/video-synthesis`
-    return `${baseUrl}/videos/generations`
-  }
-
-  return baseUrl
-}
-
 function getAnthropicMessagesPreviewUrl(apiEndpoint: string): string {
   const base = apiEndpoint.replace(/\/+$/, '')
   if (base.endsWith('/v1/messages')) return base
@@ -360,87 +331,12 @@ function endsWithVersionSegment(value: string): boolean {
   return /^v\d+$/i.test(last)
 }
 
-const MEDIA_PROVIDER_LABELS: Record<MediaProviderKind, string> = {
-  apimart: 'APIMart',
-  agnes: 'Agnes AI',
-  xai: 'xAI',
-  bailian: '阿里百炼',
-  'openai-compatible': 'OpenAI Compatible',
-  'openai-images': 'OpenAI Images',
-  'google-generative-ai': 'Google Gemini / Veo',
-  'volcengine-ark': '火山方舟 / Seedance',
-  kling: 'Kling',
-  pixverse: 'PixVerse',
-  'minimax-hailuo': 'MiniMax Hailuo',
-  wan: 'Wan',
-  happyhorse: 'HappyHorse',
-  omni: 'Omni',
-  midjourney: 'Midjourney 网关',
-  custom: '自定义',
-}
-
-/**
- * 表单「平台适配器」下拉的可用选项。
- *
- * 只暴露有真实实现的 kind：apimart/agnes/xai 有专用 adapter；
- * bailian/openai-images/google-generative-ai/omni/midjourney/volcengine-ark/
- * kling/minimax-hailuo 有 adapter 或内置 manifest 模型；openai-compatible 是 OpenAI
- * 兼容图片兜底；custom 是自定义。
- *
- * pixverse / wan / happyhorse 这几个 kind 没有注册 adapter、没有内置 manifest
- * 模型，也没有 preset 引用——选了只会让模型清单变空、误导用户，故从下拉里剔除。
- * protocol 的 MEDIA_PROVIDER_KINDS / 联合类型保持不动，避免影响 zod schema 与既有数据。
- */
-const USABLE_MEDIA_PROVIDER_KINDS: readonly MediaProviderKind[] = [
-  'apimart',
-  'agnes',
-  'xai',
-  'bailian',
-  'openai-compatible',
-  'openai-images',
-  'google-generative-ai',
-  'omni',
-  'midjourney',
-  'volcengine-ark',
-  'kling',
-  'minimax-hailuo',
-  'custom',
-]
-
-/**
- * 当前阶段只在生图 / 视频配置中展示已验证可用的平台。
- *
- * 其他平台的 manifest 和 adapter 仍保留在协议层，避免影响已有配置与运行时兼容；
- * 这里只收窄配置 UI，待后续逐个平台验证通过后再加入白名单。
- */
-const SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS: readonly MediaProviderKind[] = [
-  'apimart',
-  'xai',
-  'volcengine-ark',
-  'bailian',
-  // 自定义不是第三方平台，保留用于用户手动填写已验证的兼容接口。
-  'custom',
-]
-
 const SUPPORTED_IMAGE_PROVIDERS: readonly ImageProviderKind[] = [
   'apimart',
   'xai',
   'seeddance',
   'bailian',
 ]
-
-const MEDIA_CAPABILITY_LABELS: Record<MediaCapabilityId, string> = {
-  'image.generate': '生图',
-  'image.edit': '图生图 / 图片编辑',
-  'image.variations': '图片变体',
-  'audio.speech': '语音合成',
-  'audio.transcription': '语音转写',
-  'video.generate': '文生视频',
-  'video.image_to_video': '图生视频',
-  'video.reference_to_video': '参考图生视频',
-  'video.edit': '视频编辑',
-  'video.extend': '视频扩展',
-}
 
 /** 从 imageProvider 字符串推导 mediaProvider 兜底值 */
 function mediaProviderFromImageKind(imageProvider: ImageProviderKind): MediaProviderKind {
@@ -700,12 +596,6 @@ function mediaModelMatchesProvider(model: CanvasMediaModelSummary, form: Provide
   return candidates.has(model.providerKind)
 }
 
-function mediaProviderOptionsForModelType(modelType: ProviderModelType): readonly MediaProviderKind[] {
-  return modelType === 'image' || modelType === 'video'
-    ? SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS
-    : USABLE_MEDIA_PROVIDER_KINDS
-}
-
 /** 自定义模型 manifestId 前缀：不匹配内置目录，不会在 mediaCatalogForForm 中出现，单独渲染。 */
 const CUSTOM_MODEL_REF_PREFIX = 'custom:'
 
@@ -720,13 +610,6 @@ function isCustomModelRef(ref: ProviderMediaModelRef): ref is ProviderMediaModel
 }
 
 /** 按模型类型推导自定义模型声明的多媒体能力（内置目录 manifest 自带能力，无需推导）。 */
-function capabilitiesForModelType(modelType: ProviderModelType): MediaCapabilityId[] {
-  if (modelType === 'image') return ['image.generate', 'image.edit']
-  if (modelType === 'voice') return ['audio.speech', 'audio.transcription']
-  if (modelType === 'video') return ['video.generate', 'video.image_to_video', 'video.reference_to_video', 'video.edit', 'video.extend']
-  return []
-}
-
 function adapterKindFromManifestProvider(providerKind: string): MediaProviderKind {
   if (isMediaProviderKind(providerKind)) return providerKind
   if (providerKind === 'apimart') return 'apimart'

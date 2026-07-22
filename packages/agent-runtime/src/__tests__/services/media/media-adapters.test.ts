@@ -141,7 +141,7 @@ describe('media HTTP util extractors', () => {
 describe('capabilityForOperation mapping', () => {
   it('maps canvas operations to capabilities', () => {
     expect(capabilityForOperation('text_to_image')).toEqual(['image.generate'])
-    expect(capabilityForOperation('text_to_audio')).toEqual(['audio.speech'])
+    expect(capabilityForOperation('text_to_audio')).toEqual(['audio.music', 'audio.speech'])
     expect(capabilityForOperation('audio_transcribe')).toEqual(['audio.transcription'])
     expect(capabilityForOperation('text_to_video')).toEqual(['video.generate'])
     expect(capabilityForOperation('image_to_video')).toEqual(['video.image_to_video'])
@@ -3880,13 +3880,17 @@ describe('VolcengineArkMediaAdapter', () => {
 
   it('Google Omni and Midjourney manifests are registered', () => {
     expect(
-      BUILTIN_MEDIA_MODEL_MANIFESTS.some((entry) => entry.id === 'omni:gemini-omni-flash-preview'),
+      BUILTIN_MEDIA_MODEL_MANIFESTS.some(
+        (entry) => entry.id === 'google-generative-ai:gemini-omni-flash-preview',
+      ),
     ).toBe(true)
     expect(BUILTIN_MEDIA_MODEL_MANIFESTS.some((entry) => entry.id === 'midjourney:gateway')).toBe(
       true,
     )
     expect(
-      BUILTIN_MEDIA_MODEL_MANIFESTS.some((entry) => entry.id === 'google:gemini-3.1-flash-image'),
+      BUILTIN_MEDIA_MODEL_MANIFESTS.some(
+        (entry) => entry.id === 'google-generative-ai:gemini-3.1-flash-image',
+      ),
     ).toBe(true)
   })
 
