@@ -428,6 +428,12 @@ quick | 快速实施 | 局部且边界清晰
       <strong>内部保存独立 WorkflowGraph 的原子节点</strong>。 只有写入 <code>config.body</code>{' '}
       的节点会被重复执行。不要把外层执行节点连回上游形成环；外层图应保持无环。
     </p>
+    <p>
+      选中循环节点后，在右侧“循环体子图”卡片点击<strong>编辑循环体</strong>
+      ，工作流编辑区会下钻到专属子图画布。
+      你可以继续使用节点面板、拖拽、连线、条件边、横纵布局、缩放、小地图和 Inspector；完成后点击
+      “返回主工作流”。高级 JSON 只用于导入和排错，不再是普通配置的必经步骤。
+    </p>
     <Figure caption="每一轮完整执行 body 子图；评审输出 pass 时退出，否则开始下一轮，最多执行配置的轮数。">
       <div
         className="workflow-doc-loop"
@@ -780,6 +786,21 @@ breakCondition:
         <code>no_external_check_needed</code>。
       </li>
     </ul>
+    <div className="docs-callout">
+      <strong>这三个节点是可选扩展，不是编码工作流的固定套餐</strong>
+      <ul>
+        <li>
+          <strong>Skill</strong> 固定“使用什么方法论”，团队有验证规范时再选。
+        </li>
+        <li>
+          <strong>Tool</strong> 限制“允许用什么手段”，需要独立受限审计时再放。
+        </li>
+        <li>
+          <strong>MCP</strong> 连接外部系统；普通本地编码没有浏览器、官方文档、Issue
+          或远程平台依赖时可以删除。
+        </li>
+      </ul>
+    </div>
     <p>
       三条并行分支汇合后，<code>verify</code> 执行 <code>git diff --check</code>
       。这是通用门禁；项目自己的单测、类型检查和构建命令， 应根据仓库情况追加到{' '}
@@ -807,7 +828,8 @@ breakCondition:
         ，然后与 quick 分支汇合。
       </li>
       <li>
-        打开循环节点右侧 Inspector，在“循环体 JSON”里放置 <code>agent → review</code> 子图。
+        打开循环节点右侧 Inspector，点击“编辑循环体”，在子图画布放置 <code>agent → review</code>{' '}
+        并连线，然后返回主工作流。
       </li>
       <li>
         循环后并排放置 <code>skill / tool / mcp</code>，再统一连接到 <code>verify</code>。
@@ -886,7 +908,7 @@ breakCondition:
         <tr>
           <td>循环节点直接失败</td>
           <td>body 为空、节点 ID 与外层冲突或嵌套 loop</td>
-          <td>检查循环体 JSON 和节点 ID</td>
+          <td>打开循环体可视化编辑器，按提示检查节点、连线和 ID；必要时再展开高级 JSON</td>
         </tr>
         <tr>
           <td>Agent 不能编辑文件</td>
@@ -990,7 +1012,7 @@ export const workflowUsage: DocsPageContent = {
     'Spark Agent 工作流是一张可视化、可执行、可审计的任务图，由节点、依赖边、outputKey 状态和条件边共同驱动。当前支持 input、plan、route、agent、subagent、skill、tool、mcp、approval、verify、review、artifact、loop 共 13 种节点。' +
     'route 从 routeOptions 中选择字符串 value，分支条件应优先使用 equals；字符串 false 仍为 truthy。loop 是封装独立 config.body 子图的原子节点，支持 maxIterations、loopVar、resultKey、collectAll 和 breakCondition，外层图不应使用回边，v1 不支持嵌套 loop。' +
     'verify 会在工作区执行 verifyCommands，任一命令非零退出即终止工作流，因此业务层“未通过后继续修改”应放进 loop：由 Agent 运行测试并正常返回报告，再由 Review 或 Route 输出 pass/retry，循环结束后再用 verify 做最终硬门禁。' +
-    '完整编码示例为 input→plan→approval→复杂度 route→可选并行 subagent→主 agent→修复 loop→skill/tool/mcp 并行审计→verify→最终 review→accept/follow_up route→双 artifact。所有需要传递的节点必须配置 outputKey；MCP 在应用层全局启用。',
+    '完整编码示例为 input→plan→approval→复杂度 route→可选并行 subagent→主 agent→修复 loop→可选的 skill/tool/mcp 并行审计→verify→最终 review→accept/follow_up route→双 artifact。循环体可从 Inspector 进入专属子图画布可视化编辑；所有需要传递的节点必须配置 outputKey；MCP 在应用层全局启用。',
   Body,
 }
 
