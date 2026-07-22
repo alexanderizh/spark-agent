@@ -72,6 +72,7 @@ export type MediaCapabilityId =
   | 'image.edit'
   | 'image.variations'
   | 'audio.speech'
+  | 'audio.music'
   | 'audio.transcription'
   | 'video.generate'
   | 'video.image_to_video'
@@ -108,6 +109,7 @@ export const MEDIA_CAPABILITY_IDS = [
   'image.edit',
   'image.variations',
   'audio.speech',
+  'audio.music',
   'audio.transcription',
   'video.generate',
   'video.image_to_video',
@@ -122,9 +124,10 @@ export const IMAGE_CAPABILITIES: readonly MediaCapabilityId[] = [
   'image.edit',
   'image.variations',
 ]
-/** audio.speech / audio.transcription */
+/** audio.speech / audio.music / audio.transcription */
 export const AUDIO_CAPABILITIES: readonly MediaCapabilityId[] = [
   'audio.speech',
+  'audio.music',
   'audio.transcription',
 ]
 /** video.generate / video.image_to_video / video.edit / video.extend */
@@ -290,7 +293,7 @@ export function capabilityForOperation(operation: CanvasOperationType): MediaCap
     case 'panorama_360':
       return ['image.generate']
     case 'text_to_audio':
-      return ['audio.speech']
+      return ['audio.music', 'audio.speech']
     case 'audio_transcribe':
       return ['audio.transcription']
     case 'text_to_video':

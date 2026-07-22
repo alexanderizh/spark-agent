@@ -101,6 +101,17 @@ describe('selectCanvasMediaCapability', () => {
     ).toBe('image.edit')
   })
 
+  it('selects Lyria music for text-to-audio when the model exposes audio.music', () => {
+    expect(
+      selectCanvasMediaCapability({
+        operation: 'text_to_audio',
+        model: { ...multiDomainModel, capabilities: [capability('audio.music')] },
+        selectedInputNodeIds: [],
+        mediaInputOptions: [],
+      })?.id,
+    ).toBe('audio.music')
+  })
+
   it('uses reference-to-video for multiple unassigned images', () => {
     expect(
       selectCanvasMediaCapability({

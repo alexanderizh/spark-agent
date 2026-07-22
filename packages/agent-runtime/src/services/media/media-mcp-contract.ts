@@ -67,7 +67,7 @@ export function buildMediaGenerationSystemPrompt(input: {
     '- `mcp__spark_media__describe_model` — inspect parameter schema before calling a model.',
     '- `mcp__spark_media__generate_image` — text-to-image / image-to-image.',
     '- `mcp__spark_media__edit_image` — edit / compose existing images with a prompt.',
-    '- `mcp__spark_media__generate_audio` — text-to-speech.',
+    '- `mcp__spark_media__generate_audio` — text-to-speech or text-to-music, depending on the selected model.',
     '- `mcp__spark_media__transcribe_audio` — audio-to-text transcription.',
     '- `mcp__spark_media__generate_video` — text-to-video / image-to-video.',
     '- `mcp__spark_media__upload_file` — upload/import a file to the configured provider file platform.',

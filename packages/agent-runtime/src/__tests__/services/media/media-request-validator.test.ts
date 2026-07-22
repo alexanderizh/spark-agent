@@ -427,13 +427,13 @@ describe('validateMediaRequest', () => {
 
   it('does not apply the Veo three-reference limit to Google image editing', () => {
     const mediaManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
-      (entry) => entry.id === 'google:gemini-3.1-flash-image',
+      (entry) => entry.id === 'google-generative-ai:gemini-3.1-flash-image',
     )
     const mediaCapability = mediaManifest?.capabilities.find(
       (entry) => entry.id === 'image.edit',
     )
     expect(mediaManifest).toBeDefined()
-    expect(mediaCapability?.input.maxImages).toBe(8)
+    expect(mediaCapability?.input.maxImages).toBe(10)
 
     const result = validateMediaRequest({
       input: {

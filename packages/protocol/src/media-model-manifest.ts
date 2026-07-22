@@ -23,21 +23,17 @@ import {
 import { XAI_TTS_PARAM_SCHEMA, XAI_VIDEO_15_MANIFESTS } from './xai-media-model-manifests.js'
 import { VOLCENGINE_ARK_MEDIA_MODEL_MANIFESTS } from './volcengine-ark-media-model-manifests.js'
 import { BAILIAN_MEDIA_MODEL_MANIFESTS } from './bailian-media-model-manifests.js'
+import { OPENAI_MEDIA_MODEL_MANIFESTS } from './openai-media-model-manifests.js'
+import { GOOGLE_MEDIA_MODEL_MANIFESTS } from './google-media-model-manifests.js'
+import { OMNI_MEDIA_MODEL_MANIFESTS } from './omni-media-model-manifests.js'
 import {
-  googleGenerativeAiErrorContract,
-  googleImageParamPolicy,
-  googleImageSchema,
-  googleVeoVideoSchema,
-  googleOmniVideoSchema,
   midjourneyGatewayImageSchema,
-  bailianImageSchema,
   apimartSeedance2VideoSchema,
   klingVideoSchema,
   minimaxImageSchema,
   minimaxSpeechSchema,
   minimaxMusicSchema,
   minimaxHailuoVideoSchema,
-  audioSpeechSchema,
   agnesImageSchema,
   agnesVideoSchema,
 } from './media-model-shared-manifest-parts.js'
@@ -63,6 +59,7 @@ export type MediaManifestCapabilityId =
   | 'video.edit'
   | 'video.extend'
   | 'audio.speech'
+  | 'audio.music'
   | 'audio.transcription'
   | string
 
@@ -2638,252 +2635,9 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     },
   },
   ...BAILIAN_MEDIA_MODEL_MANIFESTS,
-  {
-    id: 'openai:gpt-image-1',
-    providerKind: 'openai-images',
-    modelId: 'gpt-image-1',
-    displayName: 'OpenAI GPT Image 1',
-    domains: ['image'],
-    capabilities: [
-      {
-        id: 'image.generate',
-        label: '文生图',
-        input: { required: ['prompt'] },
-        output: {
-          types: ['image'] as MediaManifestOutputKind[],
-          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
-        },
-        paramSchema: imageSizeSchema,
-        defaults: { n: 1, size: '1024x1024' },
-      },
-      {
-        id: 'image.edit',
-        label: '图片编辑',
-        input: {
-          required: ['prompt', 'image'],
-          maxImages: 16,
-          acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
-        },
-        output: {
-          types: ['image'] as MediaManifestOutputKind[],
-          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
-        },
-        paramSchema: imageSizeSchema,
-      },
-    ],
-    invocation: {
-      mode: 'sync',
-      endpoint: '/images/generations',
-      method: 'POST',
-      contentType: 'json',
-      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
-      response: { kind: 'inline_base64', jsonPaths: ['data[].b64_json', 'data[].url'] },
-    },
-    docs: { sourceUrls: ['https://platform.openai.com/docs/guides/image-generation'] },
-    safety: { maxPromptLength: 32000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
-  },
-  ...[
-    {
-      id: 'google:gemini-3.1-flash-image',
-      modelId: 'gemini-3.1-flash-image',
-      displayName: 'Google Gemini 3.1 Flash Image',
-    },
-    {
-      id: 'google:gemini-3.1-flash-lite-image',
-      modelId: 'gemini-3.1-flash-lite-image',
-      displayName: 'Google Gemini 3.1 Flash Lite Image',
-    },
-    {
-      id: 'google:gemini-3-pro-image',
-      modelId: 'gemini-3-pro-image',
-      displayName: 'Google Gemini 3 Pro Image',
-    },
-    {
-      id: 'google:gemini-2.5-flash-image',
-      modelId: 'gemini-2.5-flash-image',
-      displayName: 'Google Gemini 2.5 Flash Image',
-    },
-  ].map((entry) => ({
-    id: entry.id,
-    providerKind: 'google-generative-ai',
-    modelId: entry.modelId,
-    displayName: entry.displayName,
-    domains: ['image'] as MediaDomain[],
-    capabilities: [
-      {
-        id: 'image.generate',
-        label: '文生图',
-        input: { required: ['prompt'] as MediaManifestInputKind[] },
-        output: {
-          types: ['image'] as MediaManifestOutputKind[],
-          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
-        },
-        paramSchema: googleImageSchema,
-        defaults: { n: 1, resolution: '1K', outputFormat: 'png' },
-        aliases: { outputFormat: 'output_format' },
-        paramPolicy: googleImageParamPolicy,
-      },
-      {
-        id: 'image.edit',
-        label: '多轮图片编辑 / 图生图',
-        input: {
-          required: ['prompt', 'image'] as MediaManifestInputKind[],
-          maxImages: 8,
-          acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
-        },
-        output: {
-          types: ['image'] as MediaManifestOutputKind[],
-          mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
-        },
-        paramSchema: googleImageSchema,
-        defaults: { n: 1, resolution: '1K', outputFormat: 'png' },
-        aliases: { outputFormat: 'output_format' },
-        paramPolicy: googleImageParamPolicy,
-      },
-    ],
-    invocation: {
-      mode: 'sync' as MediaInvocationMode,
-      endpoint: '/interactions',
-      method: 'POST' as const,
-      contentType: 'json' as const,
-      requestTemplate: { model: '{{modelId}}', input: '{{prompt}}' },
-      response: {
-        kind: 'inline_base64' as const,
-        jsonPaths: ['output_image.data', 'outputImage.data'],
-      },
-    },
-    docs: {
-      sourceUrls: ['https://ai.google.dev/gemini-api/docs/image-generation'],
-      lastCheckedAt: '2026-07-01',
-    },
-    safety: { maxPromptLength: 32000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
-    error: googleGenerativeAiErrorContract,
-  })),
-  {
-    id: 'google:veo',
-    providerKind: 'google-generative-ai',
-    modelId: 'veo-3.1-generate-preview',
-    displayName: 'Google Veo 3.1',
-    domains: ['video'],
-    capabilities: [
-      {
-        id: 'video.generate',
-        label: '文生视频',
-        input: { required: ['prompt'] },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: googleVeoVideoSchema,
-        defaults: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
-      },
-      {
-        id: 'video.image_to_video',
-        label: '首尾帧 / 参考图生视频',
-        input: {
-          required: ['prompt', 'image'],
-          maxImages: 3,
-          acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
-        },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: googleVeoVideoSchema,
-        defaults: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
-      },
-      {
-        id: 'video.reference_to_video',
-        label: '参考图生视频',
-        input: {
-          required: ['prompt', 'images'],
-          maxImages: 3,
-          acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
-        },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: googleVeoVideoSchema,
-        defaults: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
-      },
-    ],
-    invocation: {
-      mode: 'async_polling',
-      endpoint: '/models/{{modelId}}:predictLongRunning',
-      method: 'POST',
-      contentType: 'json',
-      requestTemplate: { instances: [{ prompt: '{{prompt}}' }] },
-      response: {
-        kind: 'task_poll',
-        taskIdPaths: ['name'],
-        statusEndpoint: '/{{taskId}}',
-        resultPaths: [
-          'response.videos[].uri',
-          'response.generateVideoResponse.generatedSamples[].video.uri',
-        ],
-      },
-      polling: { intervalMs: 10000, timeoutMs: 1800000, statusMap: commonStatusMap },
-    },
-    docs: {
-      sourceUrls: ['https://ai.google.dev/gemini-api/docs/veo'],
-      lastCheckedAt: '2026-07-01',
-    },
-    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
-  },
-  {
-    id: 'omni:gemini-omni-flash-preview',
-    providerKind: 'omni',
-    modelId: 'gemini-omni-flash-preview',
-    displayName: 'Gemini Omni Flash Preview',
-    domains: ['video'],
-    capabilities: [
-      {
-        id: 'video.generate',
-        label: '对话式文生视频',
-        input: { required: ['prompt'] as MediaManifestInputKind[] },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: googleOmniVideoSchema,
-        defaults: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
-      },
-      {
-        id: 'video.image_to_video',
-        label: '图生视频 / 视频编辑',
-        input: {
-          required: ['prompt', 'image'] as MediaManifestInputKind[],
-          maxImages: 3,
-          acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
-        },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: googleOmniVideoSchema,
-        defaults: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
-      },
-      {
-        id: 'video.edit',
-        label: '自然语言视频编辑',
-        input: {
-          required: ['prompt', 'video'] as MediaManifestInputKind[],
-          acceptedMimeTypes: ['video/mp4', 'video/webm'],
-        },
-        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: googleOmniVideoSchema,
-        defaults: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
-      },
-    ],
-    invocation: {
-      mode: 'async_polling',
-      endpoint: '/models/{{modelId}}:predictLongRunning',
-      method: 'POST',
-      contentType: 'json',
-      requestTemplate: { instances: [{ prompt: '{{prompt}}' }] },
-      response: {
-        kind: 'task_poll',
-        taskIdPaths: ['name'],
-        statusEndpoint: '/{{taskId}}',
-        resultPaths: [
-          'response.generateVideoResponse.generatedSamples[].video.uri',
-          'response.generatedVideos[].video.uri',
-        ],
-      },
-      polling: { intervalMs: 10000, timeoutMs: 1800000, statusMap: commonStatusMap },
-    },
-    docs: {
-      sourceUrls: ['https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash'],
-      lastCheckedAt: '2026-07-01',
-    },
-    safety: { maxPromptLength: 32000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
-  },
+  ...OPENAI_MEDIA_MODEL_MANIFESTS,
+  ...GOOGLE_MEDIA_MODEL_MANIFESTS,
+  ...OMNI_MEDIA_MODEL_MANIFESTS,
   {
     id: 'midjourney:gateway',
     providerKind: 'midjourney',

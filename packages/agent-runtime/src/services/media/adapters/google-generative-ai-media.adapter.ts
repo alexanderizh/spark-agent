@@ -30,6 +30,7 @@ const DEFAULT_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta'
 const CAPABILITIES: readonly MediaCapabilityId[] = [
   'image.generate',
   'image.edit',
+  'audio.music',
   'video.generate',
   'video.image_to_video',
   'video.reference_to_video',
@@ -41,7 +42,9 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
   readonly id: MediaProviderKind
   private readonly artifact = new MediaArtifactService()
 
-  constructor(id: Extract<MediaProviderKind, 'google-generative-ai' | 'omni'> = 'google-generative-ai') {
+  constructor(
+    id: Extract<MediaProviderKind, 'google-generative-ai' | 'omni'> = 'google-generative-ai',
+  ) {
     this.id = id
   }
 
@@ -53,9 +56,21 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
     if (!ctx.apiKey) throw new MediaProviderError('api_key_missing', 'Missing Gemini API key')
     const capability = input.capability
     if (!capability || !this.supports(capability)) {
-      throw new MediaProviderError('capability_not_supported', `${this.id} does not support ${capability ?? '(unknown)'}`)
+      throw new MediaProviderError(
+        'capability_not_supported',
+        `${this.id} does not support ${capability ?? '(unknown)'}`,
+      )
     }
-    if (capability.startsWith('image.')) return this.generateImage(input, ctx)
+    const model = ctx.defaultModel
+    if (capability === 'audio.music') return this.generateMusic(input, ctx)
+    if (capability.startsWith('image.')) {
+      return model.startsWith('imagen-')
+        ? this.generateImagen(input, ctx)
+        : this.generateImage(input, ctx)
+    }
+    if (this.id === 'google-generative-ai' && model.startsWith('gemini-omni-')) {
+      return this.generateInteractionVideo(input, ctx)
+    }
     return this.generateVideo(input, ctx)
   }
 
@@ -73,10 +88,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
     )
     const body: Record<string, unknown> = {
       model,
-      input: [
-        { type: 'text', text: prompt },
-        ...imageInputs,
-      ],
+      input: [{ type: 'text', text: prompt }, ...imageInputs],
       ...googleImageParams(input.modelParams, ctx),
     }
     const tools = googleTools(input.modelParams)
@@ -101,16 +113,283 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
     })
     const images = googleOutputImages(data)
     if (images.length === 0) {
-      logMediaResult({ provider: this.id, capability: input.capability, ok: false, error: 'No images in response' })
-      throw new MediaProviderError('provider_http_error', `No images in response: ${JSON.stringify(data).slice(0, 800)}`)
+      logMediaResult({
+        provider: this.id,
+        capability: input.capability,
+        ok: false,
+        error: 'No images in response',
+      })
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No images in response: ${JSON.stringify(data).slice(0, 800)}`,
+      )
     }
     const assets = await Promise.all(
       images.map((image, index) =>
-        this.artifact.writeImage(image, input.outputDir, filenameHelper(input, 'gemini', index, images.length), googleDownloadFetch(ctx)),
+        this.artifact.writeImage(
+          image,
+          input.outputDir,
+          filenameHelper(input, 'gemini', index, images.length),
+          googleDownloadFetch(ctx),
+        ),
       ),
     )
-    logMediaResult({ provider: this.id, capability: input.capability, ok: true, assetCount: assets.length })
+    logMediaResult({
+      provider: this.id,
+      capability: input.capability,
+      ok: true,
+      assetCount: assets.length,
+    })
     return { provider: this.id, model, mode: 'sync', assets, rawResponse: data }
+  }
+
+  private async generateImagen(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
+    const prompt = (input.prompt ?? '').trim()
+    if (!prompt) throw new MediaProviderError('invalid_input', 'prompt is required')
+    const model = ctx.defaultModel
+    const body = {
+      instances: [{ prompt }],
+      parameters: googleImagenParams(input.modelParams),
+    }
+    const url = `${baseEndpoint(ctx)}/models/${encodeURIComponent(model)}:predict`
+    logMediaCall({
+      provider: this.id,
+      capability: input.capability,
+      model,
+      method: 'POST',
+      url,
+      body,
+      extra: { prompt: prompt.slice(0, 120) },
+    })
+    const data = await fetchJson(url, {
+      method: 'POST',
+      headers: googleHeaders(ctx),
+      body: JSON.stringify(body),
+      fetchImpl: ctx.fetch,
+      timeoutMs: 180_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
+    })
+    const images = googleImagenImages(data)
+    if (images.length === 0) {
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No Imagen output: ${JSON.stringify(data).slice(0, 800)}`,
+      )
+    }
+    const assets = await Promise.all(
+      images.map((image, index) =>
+        this.artifact.writeImage(
+          image,
+          input.outputDir,
+          filenameHelper(input, 'imagen', index, images.length),
+          googleDownloadFetch(ctx),
+        ),
+      ),
+    )
+    logMediaResult({
+      provider: this.id,
+      capability: input.capability,
+      ok: true,
+      assetCount: assets.length,
+    })
+    return { provider: this.id, model, mode: 'sync', assets, rawResponse: data }
+  }
+
+  private async generateMusic(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
+    const prompt = (input.prompt ?? '').trim()
+    if (!prompt)
+      throw new MediaProviderError('invalid_input', 'prompt is required for music generation')
+    const model = ctx.defaultModel
+    const inputParts = await googleInteractionInput(input, this.artifact, false)
+    const body = { model, input: inputParts, response_format: { type: 'audio' } }
+    const url = `${baseEndpoint(ctx)}/interactions`
+    logMediaCall({
+      provider: this.id,
+      capability: input.capability,
+      model,
+      method: 'POST',
+      url,
+      body,
+      extra: { prompt: prompt.slice(0, 120), referenceImages: inputParts.length - 1 },
+    })
+    const data = await fetchJson(url, {
+      method: 'POST',
+      headers: googleHeaders(ctx),
+      body: JSON.stringify(body),
+      fetchImpl: ctx.fetch,
+      timeoutMs: 300_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
+    })
+    const audios = googleInlineAudios(data)
+    const audioUrls = [
+      ...new Set([
+        ...extractMediaUrls(data, { kind: 'audio' }),
+        ...googleTypedMediaUris(data, 'audio'),
+      ]),
+    ]
+    if (audios.length === 0 && audioUrls.length === 0) {
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No Lyria audio output: ${JSON.stringify(data).slice(0, 800)}`,
+      )
+    }
+    const assets = [
+      ...(await Promise.all(
+        audios.map((audio, index) =>
+          this.artifact.writeBinaryAsset(
+            'audio',
+            Buffer.from(audio.data, 'base64'),
+            input.outputDir,
+            filenameHelper(input, 'lyria', index, audios.length),
+            audio.mimeType,
+          ),
+        ),
+      )),
+      ...(await Promise.all(
+        audioUrls.map((audioUrl, index) =>
+          this.artifact.downloadMediaAsset(
+            'audio',
+            audioUrl,
+            input.outputDir,
+            filenameHelper(input, 'lyria-url', index, audioUrls.length),
+            googleDownloadFetch(ctx),
+          ),
+        ),
+      )),
+    ]
+    logMediaResult({
+      provider: this.id,
+      capability: input.capability,
+      ok: true,
+      assetCount: assets.length,
+    })
+    return { provider: this.id, model, mode: 'sync', assets, rawResponse: data }
+  }
+
+  private async generateInteractionVideo(
+    input: MediaGenerateInput,
+    ctx: MediaProviderContext,
+  ): Promise<MediaGenerateOutput> {
+    const prompt = (input.prompt ?? '').trim()
+    if (!prompt)
+      throw new MediaProviderError('invalid_input', 'prompt is required for Omni video generation')
+    const model = ctx.defaultModel
+    const inputParts = await googleInteractionInput(input, this.artifact, true)
+    const params = input.modelParams ?? {}
+    const task = omniTask(input.capability)
+    const body = {
+      model,
+      input: inputParts,
+      background: true,
+      response_format: {
+        type: 'video',
+        aspect_ratio: params.aspectRatio ?? params.aspect_ratio ?? '16:9',
+        delivery: params.delivery ?? 'base64',
+      },
+      generation_config: {
+        video_config: {
+          task,
+          duration_seconds: params.durationSeconds ?? 6,
+        },
+      },
+    }
+    const url = `${baseEndpoint(ctx)}/interactions`
+    logMediaCall({
+      provider: this.id,
+      capability: input.capability,
+      model,
+      method: 'POST',
+      url,
+      body,
+      extra: { prompt: prompt.slice(0, 120), task },
+    })
+    const initial = await fetchJson(url, {
+      method: 'POST',
+      headers: googleHeaders(ctx),
+      body: JSON.stringify(body),
+      fetchImpl: ctx.fetch,
+      timeoutMs: 120_000,
+      ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
+    })
+    const interactionId = stringProperty(initial, 'id')
+    const initialArtifacts = googleInlineVideos(initial).length + googleVideoUrls(initial).length
+    let raw = initial
+    let mode: 'sync' | 'async' = 'sync'
+    if (initialArtifacts === 0 && interactionId) {
+      mode = 'async'
+      ctx.onTaskSubmitted?.({ requestId: interactionId, response: initial })
+      raw = await pollTask(
+        `${baseEndpoint(ctx)}/interactions/${encodeURIComponent(interactionId)}`,
+        googleHeaders(ctx),
+        {
+          fetchImpl: ctx.fetch,
+          intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
+          timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
+          inspect: (payload) => {
+            if (googleInlineVideos(payload).length > 0 || googleVideoUrls(payload).length > 0)
+              return 'done'
+            const status = stringProperty(payload, 'status').toLowerCase()
+            if (status === 'failed' || status === 'cancelled') return 'failed'
+            return 'pending'
+          },
+          ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
+        },
+      )
+    }
+    const inlineVideos = googleInlineVideos(raw)
+    const urlVideos = googleVideoUrls(raw)
+    if (inlineVideos.length === 0 && urlVideos.length === 0) {
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No Omni video output: ${JSON.stringify(raw).slice(0, 800)}`,
+      )
+    }
+    await waitForGoogleFilesActive(urlVideos, ctx)
+    const assets = [
+      ...(await Promise.all(
+        inlineVideos.map((video, index) =>
+          this.artifact.writeBinaryAsset(
+            'video',
+            Buffer.from(video.data, 'base64'),
+            input.outputDir,
+            filenameHelper(input, 'omni', index, inlineVideos.length),
+            video.mimeType,
+          ),
+        ),
+      )),
+      ...(await Promise.all(
+        urlVideos.map((videoUrl, index) =>
+          this.artifact.downloadMediaAsset(
+            'video',
+            videoUrl,
+            input.outputDir,
+            filenameHelper(input, 'omni-url', index, urlVideos.length),
+            googleDownloadFetch(ctx),
+          ),
+        ),
+      )),
+    ]
+    logMediaResult({
+      provider: this.id,
+      capability: input.capability,
+      ok: true,
+      assetCount: assets.length,
+      requestId: interactionId,
+    })
+    return {
+      provider: this.id,
+      model,
+      mode,
+      ...(interactionId ? { requestId: interactionId } : {}),
+      assets,
+      rawResponse: raw,
+    }
   }
 
   private async generateVideo(
@@ -148,7 +427,10 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
     })
     const operationName = operationNameFrom(initial)
     if (!operationName) {
-      throw new MediaProviderError('provider_http_error', `No operation name in response: ${JSON.stringify(initial).slice(0, 800)}`)
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No operation name in response: ${JSON.stringify(initial).slice(0, 800)}`,
+      )
     }
     ctx.onTaskSubmitted?.({ requestId: operationName, response: initial })
     const pollUrl = `${baseEndpoint(ctx)}/${operationName.replace(/^\/+/, '')}`
@@ -168,22 +450,50 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
     const inlineVideos = googleInlineVideos(raw)
     const urlVideos = googleVideoUrls(raw)
     if (inlineVideos.length === 0 && urlVideos.length === 0) {
-      throw new MediaProviderError('provider_http_error', `No video produced: ${JSON.stringify(raw).slice(0, 800)}`)
+      throw new MediaProviderError(
+        'provider_http_error',
+        `No video produced: ${JSON.stringify(raw).slice(0, 800)}`,
+      )
     }
     const assets = [
       ...(await Promise.all(
         inlineVideos.map((video, index) =>
-          this.artifact.writeBinaryAsset('video', Buffer.from(video.data, 'base64'), input.outputDir, filenameHelper(input, 'google-video', index, inlineVideos.length), video.mimeType),
+          this.artifact.writeBinaryAsset(
+            'video',
+            Buffer.from(video.data, 'base64'),
+            input.outputDir,
+            filenameHelper(input, 'google-video', index, inlineVideos.length),
+            video.mimeType,
+          ),
         ),
       )),
       ...(await Promise.all(
         urlVideos.map((videoUrl, index) =>
-          this.artifact.downloadMediaAsset('video', videoUrl, input.outputDir, filenameHelper(input, 'google-video-url', index, urlVideos.length), googleDownloadFetch(ctx)),
+          this.artifact.downloadMediaAsset(
+            'video',
+            videoUrl,
+            input.outputDir,
+            filenameHelper(input, 'google-video-url', index, urlVideos.length),
+            googleDownloadFetch(ctx),
+          ),
         ),
       )),
     ]
-    logMediaResult({ provider: this.id, capability: input.capability, ok: true, assetCount: assets.length, requestId: operationName })
-    return { provider: this.id, model, mode: 'async', requestId: operationName, assets, rawResponse: raw }
+    logMediaResult({
+      provider: this.id,
+      capability: input.capability,
+      ok: true,
+      assetCount: assets.length,
+      requestId: operationName,
+    })
+    return {
+      provider: this.id,
+      model,
+      mode: 'async',
+      requestId: operationName,
+      assets,
+      rawResponse: raw,
+    }
   }
 }
 
@@ -202,8 +512,14 @@ function googleDownloadFetch(ctx: MediaProviderContext): typeof fetch {
   const baseFetch = ctx.fetch ?? fetch
   return ((input: string | URL | Request, init?: RequestInit) => {
     const headers = new Headers(init?.headers)
-    const url = typeof input === 'string' ? input : input.toString()
-    if (/generativelanguage\.googleapis\.com/i.test(url) && !headers.has('x-goog-api-key')) {
+    const url =
+      typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString()
+    let shouldAuthenticate = /(^|\.)generativelanguage\.googleapis\.com$/i.test(
+      safeUrl(url)?.hostname ?? '',
+    )
+    const configuredOrigin = safeUrl(baseEndpoint(ctx))?.origin
+    if (configuredOrigin && safeUrl(url)?.origin === configuredOrigin) shouldAuthenticate = true
+    if (shouldAuthenticate && !headers.has('x-goog-api-key')) {
       headers.set('x-goog-api-key', ctx.apiKey)
     }
     return baseFetch(input, { ...init, headers })
@@ -218,24 +534,73 @@ async function googleImagePart(
   return { type: 'image', mime_type: mimeType, data }
 }
 
+async function googleInteractionInput(
+  input: MediaGenerateInput,
+  artifact: MediaArtifactService,
+  includeVideo: boolean,
+): Promise<Array<Record<string, unknown>>> {
+  const parts: Array<Record<string, unknown>> = [
+    { type: 'text', text: (input.prompt ?? '').trim() },
+  ]
+  const imageFiles = (input.inputFiles ?? []).filter(
+    (file) => file.type === 'image' || file.type === 'file',
+  )
+  for (const file of imageFiles) parts.push(await googleImagePart(file, artifact))
+  if (includeVideo) {
+    const videoFile = (input.inputFiles ?? []).find((file) => file.type === 'video')
+    if (videoFile?.url && /^https?:\/\//i.test(videoFile.url)) {
+      parts.push({ type: 'video', uri: videoFile.url })
+    } else if (videoFile?.dataUrl) {
+      const match = /^data:([^;,]+);base64,(.*)$/i.exec(videoFile.dataUrl)
+      if (!match?.[2]) throw new MediaProviderError('invalid_input', 'Invalid base64 video input')
+      parts.push({
+        type: 'video',
+        mime_type: match[1] ?? videoFile.mimeType ?? 'video/mp4',
+        data: match[2],
+      })
+    } else if (videoFile?.path) {
+      const data = await artifact.readLocalFile(videoFile.path)
+      parts.push({
+        type: 'video',
+        mime_type: videoFile.mimeType ?? 'video/mp4',
+        data: data.toString('base64'),
+      })
+    }
+  }
+  return parts
+}
+
 async function attachVideoInputs(
   instance: Record<string, unknown>,
   input: MediaGenerateInput,
   artifact: MediaArtifactService,
 ): Promise<void> {
-  const imageFiles = (input.inputFiles ?? []).filter((file) => file.type === 'image' || file.type === 'file')
-  const firstFrame = imageFiles.find((file) => file.role === 'first_frame') ?? imageFiles[0]
-  const lastFrame = imageFiles.find((file) => file.role === 'last_frame')
-  const referenceFiles = imageFiles.filter((file) => file.role === 'reference').slice(0, 3)
-  if (firstFrame) instance.image = { inlineData: await inlineImage(firstFrame, artifact) }
-  if (lastFrame) instance.lastFrame = { inlineData: await inlineImage(lastFrame, artifact) }
-  if (referenceFiles.length > 0) {
+  const imageFiles = (input.inputFiles ?? []).filter(
+    (file) => file.type === 'image' || file.type === 'file',
+  )
+  if (input.capability === 'video.reference_to_video') {
+    const explicitReferences = imageFiles.filter((file) => file.role === 'reference')
+    const referenceFiles = (explicitReferences.length > 0 ? explicitReferences : imageFiles).slice(
+      0,
+      3,
+    )
     instance.referenceImages = await Promise.all(
       referenceFiles.map(async (file) => ({
         image: { inlineData: await inlineImage(file, artifact) },
         referenceType: 'asset',
       })),
     )
+  } else if (input.capability === 'video.image_to_video') {
+    const firstFrame =
+      imageFiles.find((file) => file.role === 'first_frame') ??
+      imageFiles.find((file) => file.role !== 'last_frame')
+    const lastFrame = imageFiles.find((file) => file.role === 'last_frame')
+    if (firstFrame) instance.image = { inlineData: await inlineImage(firstFrame, artifact) }
+    if (lastFrame) instance.lastFrame = { inlineData: await inlineImage(lastFrame, artifact) }
+  }
+  const videoFile = (input.inputFiles ?? []).find((file) => file.type === 'video')
+  if (videoFile?.url && /^https?:\/\//i.test(videoFile.url)) {
+    instance.video = { uri: videoFile.url }
   }
 }
 
@@ -245,31 +610,55 @@ async function inlineImage(
 ): Promise<{ mimeType: string; data: string }> {
   if (file.dataUrl) {
     const match = /^data:([^;,]+);base64,(.*)$/i.exec(file.dataUrl)
-    return { mimeType: match?.[1] ?? file.mimeType ?? 'image/png', data: match?.[2] ?? file.dataUrl }
+    return {
+      mimeType: match?.[1] ?? file.mimeType ?? 'image/png',
+      data: match?.[2] ?? file.dataUrl,
+    }
   }
   if (file.path) {
     const buffer = await artifact.readLocalFile(file.path)
     return { mimeType: file.mimeType ?? 'image/png', data: buffer.toString('base64') }
   }
-  throw new MediaProviderError('invalid_input', 'Google media inputs require dataUrl or local path images')
+  throw new MediaProviderError(
+    'invalid_input',
+    'Google media inputs require dataUrl or local path images',
+  )
 }
 
 function googleImageParams(
   modelParams: Record<string, unknown> | undefined,
   ctx: MediaProviderContext,
 ): Record<string, unknown> {
-  const params: Record<string, unknown> = {}
-  for (const [source, target] of [
-    ['size', 'size'],
-    ['resolution', 'resolution'],
-    ['n', 'candidate_count'],
-    ['outputFormat', 'output_format'],
-    ['output_format', 'output_format'],
-  ] as const) {
-    const value = modelParams?.[source]
-    if (value !== undefined && value !== null && value !== '') params[target] = value
+  const filtered = filterByManifestSchema(ctx, {
+    aspectRatio: modelParams?.aspectRatio ?? modelParams?.aspect_ratio,
+    imageSize: modelParams?.imageSize ?? modelParams?.image_size,
+    outputFormat: modelParams?.outputFormat ?? modelParams?.mime_type,
+    delivery: modelParams?.delivery,
+  })
+  const outputFormat = filtered.outputFormat
+  return {
+    response_format: {
+      type: 'image',
+      ...(filtered.aspectRatio ? { aspect_ratio: filtered.aspectRatio } : {}),
+      ...(filtered.imageSize ? { image_size: filtered.imageSize } : {}),
+      ...(outputFormat ? { mime_type: outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png' } : {}),
+      ...(filtered.delivery ? { delivery: filtered.delivery } : {}),
+    },
   }
-  return filterByManifestSchema(ctx, params)
+}
+
+function googleImagenParams(
+  modelParams: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const source = modelParams ?? {}
+  return Object.fromEntries(
+    Object.entries({
+      sampleCount: source.numberOfImages ?? 4,
+      imageSize: source.imageSize ?? '1K',
+      aspectRatio: source.aspectRatio ?? '1:1',
+      personGeneration: source.personGeneration ?? 'allow_adult',
+    }).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+  )
 }
 
 function googleVideoParams(
@@ -280,7 +669,8 @@ function googleVideoParams(
   const defaults = ctx.mediaDefaults?.video
   const values: Record<string, unknown> = {
     aspectRatio: modelParams?.aspectRatio ?? modelParams?.aspect_ratio ?? defaults?.aspectRatio,
-    durationSeconds: modelParams?.durationSeconds ?? modelParams?.duration ?? defaults?.durationSeconds,
+    durationSeconds:
+      modelParams?.durationSeconds ?? modelParams?.duration ?? defaults?.durationSeconds,
     resolution: modelParams?.resolution ?? defaults?.resolution,
     personGeneration: modelParams?.personGeneration,
     seed: modelParams?.seed,
@@ -319,15 +709,22 @@ function filterByManifestSchema(
       filtered[key] = value
       continue
     }
-    const canonicalOfProvider = Object.entries(aliases).find(([, provider]) => provider === key)?.[0]
-    if (canonicalOfProvider && (declared.has(canonicalOfProvider) || allow.has(canonicalOfProvider))) {
+    const canonicalOfProvider = Object.entries(aliases).find(
+      ([, provider]) => provider === key,
+    )?.[0]
+    if (
+      canonicalOfProvider &&
+      (declared.has(canonicalOfProvider) || allow.has(canonicalOfProvider))
+    ) {
       filtered[key] = value
     }
   }
   return filtered
 }
 
-function googleTools(modelParams: Record<string, unknown> | undefined): Array<Record<string, string>> {
+function googleTools(
+  modelParams: Record<string, unknown> | undefined,
+): Array<Record<string, string>> {
   const tools: Array<Record<string, string>> = []
   if (modelParams?.google_search === true) tools.push({ type: 'google_search' })
   if (modelParams?.google_image_search === true) tools.push({ type: 'google_image_search' })
@@ -343,15 +740,134 @@ function googleOutputImages(data: unknown): ExtractedImage[] {
   return dedupeImages(images)
 }
 
+function googleImagenImages(data: unknown): ExtractedImage[] {
+  const images: ExtractedImage[] = []
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item)
+      return
+    }
+    if (!value || typeof value !== 'object') return
+    const record = value as Record<string, unknown>
+    for (const key of ['bytesBase64Encoded', 'imageBytes']) {
+      const image = record[key]
+      if (typeof image === 'string' && image.length > 64) {
+        images.push({ kind: 'base64', value: image, mimeType: 'image/png' })
+      }
+    }
+    for (const child of Object.values(record)) visit(child)
+  }
+  visit(data)
+  return dedupeImages(images)
+}
+
 function googleInlineVideos(data: unknown): Array<{ data: string; mimeType: string }> {
   return findInlineData(data, ['video'])
 }
 
-function googleVideoUrls(data: unknown): string[] {
-  return [...new Set([...extractMediaUrls(data, { kind: 'video' }), ...stringsByKey(data, ['uri'])])]
+function googleInlineAudios(data: unknown): Array<{ data: string; mimeType: string }> {
+  return findInlineData(data, ['output_audio', 'outputAudio', 'audio']).map((audio) => ({
+    ...audio,
+    mimeType: audio.mimeType.startsWith('audio/') ? audio.mimeType : 'audio/mpeg',
+  }))
 }
 
-function findInlineData(data: unknown, parentKeys: string[]): Array<{ data: string; mimeType: string }> {
+function googleVideoUrls(data: unknown): string[] {
+  return [
+    ...new Set([
+      ...extractMediaUrls(data, { kind: 'video' }),
+      ...googleTypedMediaUris(data, 'video'),
+    ]),
+  ]
+}
+
+function googleTypedMediaUris(data: unknown, kind: 'audio' | 'video'): string[] {
+  const values: string[] = []
+  const parentKeys =
+    kind === 'audio'
+      ? new Set(['audio', 'output_audio', 'outputAudio'])
+      : new Set(['video', 'output_video', 'outputVideo'])
+  const visit = (value: unknown, parentKey = ''): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, parentKey)
+      return
+    }
+    if (!value || typeof value !== 'object') return
+    const record = value as Record<string, unknown>
+    const nodeType = typeof record.type === 'string' ? record.type.toLowerCase() : ''
+    const mimeType = String(record.mime_type ?? record.mimeType ?? '').toLowerCase()
+    if (nodeType === kind || parentKeys.has(parentKey) || mimeType.startsWith(`${kind}/`)) {
+      for (const key of ['uri', 'url']) {
+        const candidate = record[key]
+        if (typeof candidate === 'string' && /^https?:\/\//i.test(candidate)) values.push(candidate)
+      }
+    }
+    for (const [key, child] of Object.entries(record)) visit(child, key)
+  }
+  visit(data)
+  return [...new Set(values)]
+}
+
+function safeUrl(value: string): URL | null {
+  try {
+    return new URL(value)
+  } catch {
+    return null
+  }
+}
+
+async function waitForGoogleFilesActive(
+  urls: readonly string[],
+  ctx: MediaProviderContext,
+): Promise<void> {
+  const fileNames = [
+    ...new Set(urls.map(googleFileNameFromUri).filter((value): value is string => value != null)),
+  ]
+  await Promise.all(
+    fileNames.map((fileName) =>
+      pollTask(`${baseEndpoint(ctx)}/files/${encodeURIComponent(fileName)}`, googleHeaders(ctx), {
+        fetchImpl: ctx.fetch,
+        intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
+        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
+        inspect: (payload) => {
+          const state = firstStringByKey(payload, 'state').toUpperCase()
+          if (state === 'ACTIVE') return 'done'
+          if (state === 'FAILED') return 'failed'
+          return 'pending'
+        },
+        ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
+      }),
+    ),
+  )
+}
+
+function googleFileNameFromUri(uri: string): string | null {
+  const match = /\/files\/([^/:?]+)(?::download)?(?:\?|$)/i.exec(uri)
+  return match?.[1] ? decodeURIComponent(match[1]) : null
+}
+
+function firstStringByKey(data: unknown, key: string): string {
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const value = firstStringByKey(item, key)
+      if (value) return value
+    }
+    return ''
+  }
+  if (!data || typeof data !== 'object') return ''
+  const record = data as Record<string, unknown>
+  if (typeof record[key] === 'string') return record[key]
+  for (const value of Object.values(record)) {
+    const found = firstStringByKey(value, key)
+    if (found) return found
+  }
+  return ''
+}
+
+function findInlineData(
+  data: unknown,
+  parentKeys: string[],
+): Array<{ data: string; mimeType: string }> {
   const found: Array<{ data: string; mimeType: string }> = []
   const visit = (value: unknown, parentKey = ''): void => {
     if (Array.isArray(value)) {
@@ -363,12 +879,20 @@ function findInlineData(data: unknown, parentKeys: string[]): Array<{ data: stri
     const dataValue = record.data
     if (
       typeof dataValue === 'string' &&
-      dataValue.length > 64 &&
+      dataValue.length > 0 &&
       (parentKeys.includes(parentKey) || record.mime_type || record.mimeType)
     ) {
       found.push({
         data: dataValue,
-        mimeType: String(record.mime_type ?? record.mimeType ?? (parentKey === 'video' ? 'video/mp4' : 'image/png')),
+        mimeType: String(
+          record.mime_type ??
+            record.mimeType ??
+            (parentKey === 'video'
+              ? 'video/mp4'
+              : parentKey === 'audio' || parentKey === 'output_audio' || parentKey === 'outputAudio'
+                ? 'audio/mpeg'
+                : 'image/png'),
+        ),
       })
     }
     const inlineData = record.inlineData
@@ -389,31 +913,27 @@ function dedupeImages(images: ExtractedImage[]): ExtractedImage[] {
   })
 }
 
-function stringsByKey(data: unknown, keys: string[]): string[] {
-  const values: string[] = []
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item)
-      return
-    }
-    if (!value || typeof value !== 'object') return
-    for (const [key, child] of Object.entries(value)) {
-      if (keys.includes(key) && typeof child === 'string' && /^https?:\/\//i.test(child)) {
-        values.push(child)
-      }
-      visit(child)
-    }
-  }
-  visit(data)
-  return values
-}
-
 function operationNameFrom(data: unknown): string {
   if (!data || typeof data !== 'object') return ''
   const name = (data as Record<string, unknown>).name
   return typeof name === 'string' ? name : ''
 }
 
+function stringProperty(data: unknown, key: string): string {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return ''
+  const value = (data as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function omniTask(capability: MediaCapabilityId | undefined): string {
+  if (capability === 'video.image_to_video') return 'image_to_video'
+  if (capability === 'video.reference_to_video') return 'reference_to_video'
+  if (capability === 'video.edit') return 'edit'
+  return 'text_to_video'
+}
+
 function operationDone(data: unknown): boolean {
-  return Boolean(data && typeof data === 'object' && (data as Record<string, unknown>).done === true)
+  return Boolean(
+    data && typeof data === 'object' && (data as Record<string, unknown>).done === true,
+  )
 }
