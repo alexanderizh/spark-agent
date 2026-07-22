@@ -318,11 +318,11 @@ export function CanvasPromptInsertMenu({
                 onClick={() => onInsertReference(item)}
               >
                 <span className="canvas-prompt-menu-thumb">
-                  {renderCanvasPromptNodeThumbnail(item.node, assetById)}
+                  {renderCanvasPromptNodeThumbnail(item.presentationNode, assetById)}
                 </span>
                 <span className="canvas-prompt-menu-copy">
                   <strong>{item.label}</strong>
-                  <small>{canvasPromptNodeTypeLabel(item.node)}</small>
+                  <small>{canvasPromptNodeTypeLabel(item.presentationNode)}</small>
                 </span>
               </button>
               <button
@@ -400,14 +400,14 @@ function PromptInsertPreview({
   assetById: Map<string, CanvasAsset>
   side: 'left' | 'right'
 }) {
-  const media = renderCanvasPromptNodeHoverMedia(item.node, assetById)
-  const content = previewCanvasPromptNodeContent(item.node, assetById)
+  const media = renderCanvasPromptNodeHoverMedia(item.presentationNode, assetById)
+  const content = previewCanvasPromptNodeContent(item.presentationNode, assetById)
   return (
     <aside className={`canvas-prompt-insert-preview is-${side}`} aria-label={`${item.label}预览`}>
       {media ? <div className="canvas-prompt-insert-preview-media">{media}</div> : null}
       <div className="canvas-prompt-insert-preview-copy">
         <strong>{item.label}</strong>
-        <small>{canvasPromptNodeTypeLabel(item.node)}</small>
+        <small>{canvasPromptNodeTypeLabel(item.presentationNode)}</small>
         {!media ? <div className="canvas-prompt-insert-preview-text">{content}</div> : null}
       </div>
     </aside>

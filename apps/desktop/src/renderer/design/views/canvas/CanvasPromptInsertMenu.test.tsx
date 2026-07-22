@@ -359,6 +359,50 @@ describe('CanvasPromptInsertMenu', () => {
     ).toContain('xiaoman.png')
   })
 
+  it('uses a task node resolved output in the @ result preview', async () => {
+    const operation = node('image-edit-operation', '苏烬-家居角色卡', 'image_edit', {
+      operation: 'image_edit',
+      prompt: '将图片改为家居服角色身份板',
+    })
+    const output = node('image-edit-output', '苏烬角色卡产物', 'image', {
+      url: 'https://example.com/sujin-home-card.png',
+      origin: 'task_output',
+    })
+    const items = buildCanvasPromptMentionItems([operation], new Map([[operation.id, output]]))
+    expect(
+      filterCanvasPromptInsertItems(items, '苏烬角色卡产物', 'all', new Map()),
+    ).toEqual(items)
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    mountedRoots.push({ root, container })
+    await act(async () => {
+      root.render(
+        <CanvasPromptInsertMenu
+          items={items}
+          assetById={new Map()}
+          query=""
+          onQueryChange={vi.fn()}
+          onInsertParameter={vi.fn()}
+          onInsertReference={vi.fn()}
+          onRequestClose={vi.fn()}
+        />,
+      )
+    })
+
+    const operationResult = buttonByText(container, operation.title ?? '')
+    await act(async () => {
+      operationResult.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    })
+
+    expect(
+      container.querySelector<HTMLImageElement>('.canvas-prompt-insert-preview img')?.src,
+    ).toBe('https://example.com/sujin-home-card.png')
+    expect(container.querySelector('.canvas-prompt-insert-preview')?.textContent).not.toContain(
+      '将图片改为家居服角色身份板',
+    )
+  })
+
   it('closes on outside pointer down but not when interacting inside the menu', async () => {
     const onRequestClose = vi.fn()
     const mounted = await mountMenu({ onRequestClose })

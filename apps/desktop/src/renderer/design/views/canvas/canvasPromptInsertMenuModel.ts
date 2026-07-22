@@ -19,15 +19,17 @@ export function filterCanvasPromptInsertItems(
   const normalizedQuery = query.trim().toLocaleLowerCase()
   return items
     .filter((item) => {
-      if (filter !== 'all' && item.node.type !== filter) return false
+      if (filter !== 'all' && item.presentationNode.type !== filter) return false
       if (!normalizedQuery) return true
-      const asset = item.node.assetId ? assetById.get(item.node.assetId) : undefined
+      const presentationNode = item.presentationNode
+      const asset = presentationNode.assetId ? assetById.get(presentationNode.assetId) : undefined
       const searchable = [
         item.id,
         item.label,
-        canvasPromptNodeTypeLabel(item.node),
-        previewCanvasPromptNodeContent(item.node, assetById),
-        ...canvasPromptFileNames(item, asset),
+        presentationNode.title,
+        canvasPromptNodeTypeLabel(presentationNode),
+        previewCanvasPromptNodeContent(presentationNode, assetById),
+        ...canvasPromptFileNames(item, presentationNode, asset),
       ]
         .join('\n')
         .toLocaleLowerCase()
@@ -46,6 +48,7 @@ export function filterCanvasPromptInsertItems(
 
 function canvasPromptFileNames(
   item: CanvasPromptMentionItem,
+  presentationNode: CanvasPromptMentionItem['presentationNode'],
   asset: CanvasAsset | undefined,
 ): string[] {
   const metadata = asset?.metadata ?? {}
@@ -56,8 +59,8 @@ function canvasPromptFileNames(
     metadata.originalFilename,
   ].filter((value): value is string => typeof value === 'string')
   const fileNames = [
-    item.node.data.url,
-    item.node.data.thumbnailUrl,
+    presentationNode.data.url,
+    presentationNode.data.thumbnailUrl,
     asset?.storageKey,
     asset?.url,
     asset?.thumbnailKey,

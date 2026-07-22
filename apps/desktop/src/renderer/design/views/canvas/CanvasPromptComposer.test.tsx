@@ -122,6 +122,7 @@ async function mountComposer(
   nodes: CanvasNode[] = [imageNode()],
   assets: CanvasAsset[] = [asset],
   onRequestCanvasNodePick?: (onPick: (node: CanvasNode) => void) => void,
+  presentationNodeBySourceId?: ReadonlyMap<string, CanvasNode>,
 ) {
   const container = window.document.createElement('div')
   window.document.body.appendChild(container)
@@ -138,6 +139,7 @@ async function mountComposer(
         document={document}
         mentionNodes={nodes}
         assets={assets}
+        {...(presentationNodeBySourceId ? { presentationNodeBySourceId } : {})}
         placeholder="输入提示词"
         onChange={setDocument}
         {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
@@ -200,6 +202,50 @@ describe('CanvasPromptComposer', () => {
       mounted.container.querySelector<HTMLImageElement>('.canvas-prompt-chip-thumb img')?.src,
     ).toBe('https://example.com/hero-thumb.png')
     expect(mounted.container.textContent).toContain('小满')
+  })
+
+  it('renders an operation reference from its resolved image output', async () => {
+    const operation = {
+      ...imageNode(),
+      id: 'image-edit-operation',
+      type: 'image_edit' as const,
+      assetId: null,
+      title: '苏烬-家居角色卡',
+      data: {
+        operation: 'image_edit' as const,
+        prompt: '将图片改为家居服角色身份板',
+      },
+    }
+    const output = {
+      ...imageNode(),
+      id: 'image-edit-output',
+      assetId: null,
+      data: { url: 'https://example.com/sujin-home-card.png', origin: 'task_output' as const },
+    }
+    const mounted = await mountComposer(
+      {
+        version: 2,
+        blocks: [
+          {
+            kind: 'reference',
+            id: 'operation-reference',
+            source: 'manual',
+            sourceNodeId: operation.id,
+            relation: 'generic',
+            label: operation.title,
+            order: 0,
+          },
+        ],
+      },
+      [operation],
+      [],
+      undefined,
+      new Map([[operation.id, output]]),
+    )
+
+    expect(
+      mounted.container.querySelector<HTMLImageElement>('.canvas-prompt-chip-thumb img')?.src,
+    ).toBe('https://example.com/sujin-home-card.png')
   })
 
   it('renders the referenced image instead of its URL data in the hover card', async () => {

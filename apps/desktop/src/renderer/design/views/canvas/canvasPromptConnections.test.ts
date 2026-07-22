@@ -80,6 +80,67 @@ describe('canvasPromptConnections', () => {
     expect(result.blocks.filter((block) => block.kind === 'reference').map((block) => block.sourceNodeId)).toEqual(['hero', 'scene'])
   })
 
+  it('does not append a connection tag when the connected node already has a visible manual tag', () => {
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [
+        {
+          kind: 'reference',
+          id: 'manual-hero',
+          source: 'manual',
+          sourceNodeId: 'hero',
+          relation: 'character',
+          label: '角色苏烬',
+          order: 0,
+        },
+      ],
+    }
+
+    const result = ensureConnectionReferences(document, [node('hero')])
+
+    expect(result.blocks).toEqual(document.blocks)
+  })
+
+  it('removes a previously persisted automatic duplicate of a visible manual tag', () => {
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [
+        {
+          kind: 'reference', id: 'manual-hero', source: 'manual', sourceNodeId: 'hero',
+          relation: 'character', label: '角色苏烬', order: 0,
+        },
+        {
+          kind: 'reference', id: 'connection-hero', source: 'connection', sourceNodeId: 'hero',
+          relation: 'reference_image', connectionRelation: 'reference_image', label: '角色苏烬', order: 1,
+        },
+      ],
+    }
+
+    const result = ensureConnectionReferences(document, [node('hero')])
+
+    expect(result.blocks).toEqual([document.blocks[0]])
+  })
+
+  it('keeps a legacy connection tag when its original relation is unknown', () => {
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [
+        {
+          kind: 'reference', id: 'manual-hero', source: 'manual', sourceNodeId: 'hero',
+          relation: 'character', label: '角色苏烬', order: 0,
+        },
+        {
+          kind: 'reference', id: 'legacy-connection-hero', source: 'connection', sourceNodeId: 'hero',
+          relation: 'scene', label: '用户调整过的连接', order: 1,
+        },
+      ],
+    }
+
+    const result = ensureConnectionReferences(document, [node('hero')])
+
+    expect(result.blocks).toEqual(document.blocks)
+  })
+
   it('does not recreate a connection reference explicitly suppressed by the user', () => {
     const document: CanvasPromptDocument = {
       version: 2,

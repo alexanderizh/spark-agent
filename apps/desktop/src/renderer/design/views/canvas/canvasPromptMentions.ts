@@ -6,6 +6,7 @@ export type CanvasPromptMentionItem = {
   marker: string
   token: string
   node: CanvasNode
+  presentationNode: CanvasNode
 }
 
 export type CanvasPromptMentionQuery = {
@@ -15,13 +16,17 @@ export type CanvasPromptMentionQuery = {
   query: string
 }
 
-export function buildCanvasPromptMentionItems(nodes: CanvasNode[]): CanvasPromptMentionItem[] {
+export function buildCanvasPromptMentionItems(
+  nodes: CanvasNode[],
+  presentationNodeBySourceId: ReadonlyMap<string, CanvasNode> = new Map(),
+): CanvasPromptMentionItem[] {
   return nodes.map((node, index) => ({
     id: node.id,
     label: node.title?.trim() || defaultCanvasMentionLabel(node, index + 1),
     marker: `参考图${index + 1}`,
     token: buildCanvasPromptMentionToken(node, index + 1),
     node,
+    presentationNode: presentationNodeBySourceId.get(node.id) ?? node,
   }))
 }
 
