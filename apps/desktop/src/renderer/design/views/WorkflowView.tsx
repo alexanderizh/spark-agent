@@ -62,6 +62,7 @@ import {
   openLoopBodyGraph,
   summarizeLoopBodyGraph,
   validateLoopBodyGraph,
+  validateWorkflowLoopBodies,
   type WorkflowEditorScope,
 } from './workflow/loop-body-editor'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
@@ -467,7 +468,9 @@ function WorkflowViewInner() {
       if (editorScope.kind !== 'root') return
       const opened = openLoopBodyGraph(currentEditorGraph, loopNodeId, defaultLoopBodyGraph())
       const errors = validateLoopBodyGraph(opened.graph, currentEditorGraph, loopNodeId)
-      if (errors.length > 0) {
+      if (opened.usedFallback) {
+        toast.warning('原循环体格式无效，已载入默认子图供修复。')
+      } else if (errors.length > 0) {
         toast.warning(`循环体需要修正：${errors[0]?.message ?? '配置无效'}`)
       }
       setEditorScope({
@@ -530,16 +533,10 @@ function WorkflowViewInner() {
 
   const saveWorkflow = async () => {
     if (draft == null) return
-    if (editorScope.kind === 'loop-body') {
-      const errors = validateLoopBodyGraph(
-        currentEditorGraph,
-        editorScope.rootGraph,
-        editorScope.loopNodeId,
-      )
-      if (errors.length > 0) {
-        toast.error(errors[0]?.message ?? '循环体配置无效。')
-        return
-      }
+    const loopBodyErrors = validateWorkflowLoopBodies(completeRootGraph)
+    if (loopBodyErrors.length > 0) {
+      toast.error(loopBodyErrors[0]?.message ?? '循环体配置无效。')
+      return
     }
     const graph = completeRootGraph
     const saved = (
@@ -726,37 +723,36 @@ function WorkflowViewInner() {
         return
       }
       const meta = getNodeKindMeta(kind)
-      setNodes((prev) => {
-        const id =
-          editorScope.kind === 'loop-body'
-            ? createScopedWorkflowNodeId(
-                editorScope.loopNodeId,
-                kind,
-                new Set([
-                  ...collectWorkflowNodeIds(editorScope.rootGraph),
-                  ...prev.map((node) => node.id),
-                ]),
-                nextWorkflowNodeSuffix,
-              )
-            : createWorkflowNodeId(kind)
-        const baseX = position?.x ?? 160 + (prev.length % 4) * 240
-        const baseY = position?.y ?? 120 + Math.floor(prev.length / 4) * 180
-        const node: SparkFlowNode = {
-          id,
-          type: 'spark',
-          position: { x: baseX, y: baseY },
-          data: {
-            kind,
-            title: meta.label,
-            config: defaultWorkflowNodeConfig(kind),
-            orientation,
-          },
-        }
-        setSelectedNodeId(id)
-        return [...prev, node]
-      })
+      const id =
+        editorScope.kind === 'loop-body'
+          ? createScopedWorkflowNodeId(
+              editorScope.loopNodeId,
+              kind,
+              new Set([
+                ...collectWorkflowNodeIds(editorScope.rootGraph),
+                ...nodes.map((node) => node.id),
+              ]),
+              nextWorkflowNodeSuffix,
+            )
+          : createWorkflowNodeId(kind)
+      const baseX = position?.x ?? 160 + (nodes.length % 4) * 240
+      const baseY = position?.y ?? 120 + Math.floor(nodes.length / 4) * 180
+      const node: SparkFlowNode = {
+        id,
+        type: 'spark',
+        position: { x: baseX, y: baseY },
+        data: {
+          kind,
+          title: meta.label,
+          config: defaultWorkflowNodeConfig(kind),
+          orientation,
+        },
+      }
+      setNodes((prev) => [...prev, node])
+      setSelectedNodeId(id)
+      setSelectedEdgeId(null)
     },
-    [editorScope, orientation, setNodes, toast],
+    [editorScope, nodes, orientation, setNodes, toast],
   )
 
   const addNode = (kind: WorkflowNodeKind) => {
@@ -765,41 +761,40 @@ function WorkflowViewInner() {
 
   const duplicateNode = useCallback(
     (nodeId: string) => {
-      setNodes((prev) => {
-        const source = prev.find((node) => node.id === nodeId)
-        if (source == null) return prev
-        if (editorScope.kind === 'loop-body' && source.data.kind === 'loop') {
-          toast.warning('运行时 v1 不支持嵌套循环。')
-          return prev
-        }
-        const id =
-          editorScope.kind === 'loop-body'
-            ? createScopedWorkflowNodeId(
-                editorScope.loopNodeId,
-                source.data.kind,
-                new Set([
-                  ...collectWorkflowNodeIds(editorScope.rootGraph),
-                  ...prev.map((node) => node.id),
-                ]),
-                nextWorkflowNodeSuffix,
-              )
-            : createWorkflowNodeId(source.data.kind)
-        const newNode: SparkFlowNode = {
-          id,
-          type: 'spark',
-          position: { x: source.position.x + 48, y: source.position.y + 48 },
-          data: {
-            kind: source.data.kind,
-            title: `${source.data.title} 副本`,
-            config: structuredClone(source.data.config),
-            orientation: source.data.orientation,
-          },
-        }
-        setSelectedNodeId(id)
-        return [...prev, newNode]
-      })
+      const source = nodes.find((node) => node.id === nodeId)
+      if (source == null) return
+      if (editorScope.kind === 'loop-body' && source.data.kind === 'loop') {
+        toast.warning('运行时 v1 不支持嵌套循环。')
+        return
+      }
+      const id =
+        editorScope.kind === 'loop-body'
+          ? createScopedWorkflowNodeId(
+              editorScope.loopNodeId,
+              source.data.kind,
+              new Set([
+                ...collectWorkflowNodeIds(editorScope.rootGraph),
+                ...nodes.map((node) => node.id),
+              ]),
+              nextWorkflowNodeSuffix,
+            )
+          : createWorkflowNodeId(source.data.kind)
+      const newNode: SparkFlowNode = {
+        id,
+        type: 'spark',
+        position: { x: source.position.x + 48, y: source.position.y + 48 },
+        data: {
+          kind: source.data.kind,
+          title: `${source.data.title} 副本`,
+          config: structuredClone(source.data.config),
+          orientation: source.data.orientation,
+        },
+      }
+      setNodes((prev) => [...prev, newNode])
+      setSelectedNodeId(id)
+      setSelectedEdgeId(null)
     },
-    [editorScope, setNodes, toast],
+    [editorScope, nodes, setNodes, toast],
   )
 
   /**
@@ -1559,7 +1554,7 @@ function WorkflowInspector(props: InspectorProps) {
     try {
       const parsed = JSON.parse(value) as unknown
       if (!isWorkflowGraph(parsed)) {
-        setLoopBodyError('循环体必须包含 nodes 和 edges 数组。')
+        setLoopBodyError('循环体格式无效，请检查节点、连线、条件和编排方向。')
         return
       }
       props.onPatchConfig({ body: parsed })
