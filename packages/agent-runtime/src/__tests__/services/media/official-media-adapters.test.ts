@@ -41,6 +41,30 @@ function context(
 describe('OpenAI official media adapter', () => {
   const adapter = new OpenAiOfficialMediaAdapter()
 
+  it('uses the provider interface timeout for synchronous image requests', async () => {
+    const fetchImpl = ((_: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('This operation was aborted', 'AbortError'))
+        })
+        setTimeout(() => reject(new Error('fallback timeout')), 20)
+      })) as typeof fetch
+    const ctx = context('openai-images', 'gpt-image-2', fetchImpl)
+    ctx.mediaDefaults = { timeoutMs: 5 }
+
+    await expect(
+      adapter.invoke(
+        {
+          operation: 'text_to_image',
+          capability: 'image.generate',
+          prompt: 'a slow observatory render',
+          outputDir,
+        },
+        ctx,
+      ),
+    ).rejects.toThrow('timed out after 5ms')
+  })
+
   it('uses synchronous image generation by default', async () => {
     let body: Record<string, unknown> = {}
     const fetchImpl: typeof fetch = async (_url, init) => {

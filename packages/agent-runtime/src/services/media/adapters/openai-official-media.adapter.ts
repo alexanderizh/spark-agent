@@ -10,6 +10,7 @@ import type {
 import { MediaArtifactService } from '../media-artifact.service.js'
 import { extractImages, fetchJson, pollTask } from '../media-http.util.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
+import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 import { filenameHelper } from './openai-compatible-media.adapter.js'
 
 const CAPABILITIES: readonly MediaCapabilityId[] = [
@@ -67,7 +68,7 @@ export class OpenAiOfficialMediaAdapter implements MediaProviderAdapter {
       headers: jsonHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 180_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 180_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     return this.materializeImages(data, input, ctx, model, 'openai-image')
@@ -127,7 +128,7 @@ export class OpenAiOfficialMediaAdapter implements MediaProviderAdapter {
       },
       body: form.body,
       fetchImpl: ctx.fetch,
-      timeoutMs: 180_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 180_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     return this.materializeImages(data, input, ctx, model, 'openai-edit')
@@ -153,7 +154,7 @@ export class OpenAiOfficialMediaAdapter implements MediaProviderAdapter {
           image,
           input.outputDir,
           filenameHelper(input, suffix, index, images.length),
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -226,7 +227,7 @@ export class OpenAiOfficialMediaAdapter implements MediaProviderAdapter {
       headers,
       body: requestBody,
       fetchImpl: ctx.fetch,
-      timeoutMs: 120_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const videoId = stringAt(initial, 'id')
@@ -243,7 +244,7 @@ export class OpenAiOfficialMediaAdapter implements MediaProviderAdapter {
       {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 10_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
         inspect: (payload) => {
           const status = stringAt(payload, 'status').toLowerCase()
           if (status === 'completed') return 'done'
@@ -257,7 +258,7 @@ export class OpenAiOfficialMediaAdapter implements MediaProviderAdapter {
     const buffer = await fetchJson<Buffer>(contentUrl, {
       headers: { authorization: `Bearer ${ctx.apiKey}` },
       fetchImpl: ctx.fetch,
-      timeoutMs: 300_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 300_000),
       binary: true,
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })

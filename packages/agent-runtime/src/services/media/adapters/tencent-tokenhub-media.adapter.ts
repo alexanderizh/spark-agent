@@ -47,6 +47,7 @@ import {
   compileTencentProviderParams,
 } from '../tencent-tokenhub-media-request.js'
 import { filenameHelper } from './openai-compatible-media.adapter.js'
+import { configuredMediaInterfaceTimeoutMs, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 
 const log = createLogger('media:tencent-tokenhub')
 
@@ -127,7 +128,7 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       errorExtractor: tencentErrorExtractor,
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
@@ -145,7 +146,7 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
           img,
           input.outputDir,
           filenameHelper(input, 'hyimage', i, images.length),
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -187,7 +188,7 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       errorExtractor: tencentErrorExtractor,
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
@@ -203,7 +204,7 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
               img,
               input.outputDir,
               filenameHelper(input, 'hyimage', i, images.length),
-              ctx.fetch,
+              ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
             ),
           ),
         )
@@ -228,7 +229,7 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
       extractDone: (data) => extractImages(data).length > 0,
       capability,
       intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 3_000,
-      timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 10 * 60 * 1_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 10 * 60 * 1_000),
     })
     const images = extractImages(finalResp)
     if (images.length === 0) {
@@ -243,7 +244,7 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
           img,
           input.outputDir,
           filenameHelper(input, 'hyimage', i, images.length),
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -283,7 +284,7 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       errorExtractor: tencentErrorExtractor,
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
@@ -319,7 +320,7 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
         extractDone: (data) => extractMediaUrls(data, { kind: 'video' }).length > 0,
         capability,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 30 * 60 * 1_000,
+        timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 30 * 60 * 1_000),
       })
       videoUrls = extractMediaUrls(raw, { kind: 'video' })
     }
@@ -339,7 +340,7 @@ export class TencentTokenhubMediaAdapter implements MediaProviderAdapter {
           u,
           input.outputDir,
           filenameHelper(input, videoPrefix(capability), i, videoUrls.length),
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -390,7 +391,10 @@ async function pollTencentTask(input: {
       headers,
       body,
       fetchImpl: input.ctx.fetch,
-      timeoutMs: 30_000,
+      timeoutMs: Math.min(
+        configuredMediaInterfaceTimeoutMs(input.ctx.mediaDefaults) ?? 30_000,
+        Math.max(1, deadline - Date.now()),
+      ),
       errorExtractor: tencentErrorExtractor,
       ...(input.ctx.mediaManifest?.error ? { errorContract: input.ctx.mediaManifest.error } : {}),
     })
@@ -406,7 +410,9 @@ async function pollTencentTask(input: {
     log.debug(
       `event=pending attempts=${attempts} capability=${input.capability} requestId=${input.taskId} status=${status || '(unknown)'} nextIntervalMs=${interval}`,
     )
-    await new Promise((r) => setTimeout(r, interval))
+    await new Promise((r) =>
+      setTimeout(r, Math.max(0, Math.min(interval, deadline - Date.now()))),
+    )
     interval = Math.min(Math.max(interval * 1.3, interval), 15_000)
   }
   throw new MediaProviderError('task_timeout', `TokenHub task timed out after ${input.timeoutMs}ms`)

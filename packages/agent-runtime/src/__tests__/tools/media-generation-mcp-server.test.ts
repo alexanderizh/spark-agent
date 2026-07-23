@@ -113,6 +113,7 @@ describe('spark_media MCP server', () => {
   let fileUploadBody = ''
   let omniFilePollCount = 0
   let googleDownloadApiKey = ''
+  let imageResponseDelayMs = 0
   let child: ChildProcessWithoutNullStreams | null = null
 
   beforeEach(async () => {
@@ -125,6 +126,7 @@ describe('spark_media MCP server', () => {
     fileUploadBody = ''
     omniFilePollCount = 0
     googleDownloadApiKey = ''
+    imageResponseDelayMs = 0
     postedHeaders = {}
     postedPath = ''
     postedRawBody = ''
@@ -141,8 +143,12 @@ describe('spark_media MCP server', () => {
           postedPath = req.url ?? ''
           postedHeaders = req.headers
           postedBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
-          res.writeHead(200, { 'content-type': 'application/json' })
-          res.end(JSON.stringify({ data: [{ url: `${baseUrl}/asset.png` }] }))
+          const respond = () => {
+            res.writeHead(200, { 'content-type': 'application/json' })
+            res.end(JSON.stringify({ data: [{ url: `${baseUrl}/asset.png` }] }))
+          }
+          if (imageResponseDelayMs > 0) setTimeout(respond, imageResponseDelayMs)
+          else respond()
         })
         return
       }
@@ -477,6 +483,60 @@ describe('spark_media MCP server', () => {
     })
     expect(generated.error).toBeUndefined()
     expect(postedHeaders.authorization).toBe('Bearer sk-test')
+  })
+
+  it('uses the provider interface timeout for synchronous manifest requests', async () => {
+    imageResponseDelayMs = 50
+    const manifest = {
+      id: 'test:slow-image',
+      providerKind: 'custom',
+      modelId: 'slow-image',
+      displayName: 'Slow Image',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'], mimeTypes: ['image/png'] },
+          paramSchema: {},
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    }
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY: 'sk-test',
+        SPARK_MEDIA_PROVIDER: 'custom',
+        SPARK_MEDIA_MODEL: 'slow-image',
+        SPARK_MEDIA_BASE_URL: baseUrl,
+        SPARK_MEDIA_OUTPUT_DIR: tmpDir,
+        SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify({ timeoutMs: 20 }),
+        SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify([manifest]),
+      },
+    })
+
+    const response = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 99,
+      method: 'tools/call',
+      params: {
+        name: 'generate_image',
+        arguments: { model: 'test:slow-image', prompt: 'slow image' },
+      },
+    })
+
+    expect(response.error?.message).toContain('timed out after 20ms')
   })
 
   it('renders manifest templates, applies aliases, and materializes image output', async () => {

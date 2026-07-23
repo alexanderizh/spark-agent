@@ -19,6 +19,7 @@ import {
   pollTask,
 } from '../media-http.util.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
+import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 import { filenameHelper } from './openai-compatible-media.adapter.js'
 
 const CAPABILITIES: readonly MediaCapabilityId[] = [
@@ -124,7 +125,7 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
       headers: headers(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 180_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 180_000),
       errorExtractor: bailianError,
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
@@ -159,7 +160,7 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
             index,
             imagesOut.length,
           ),
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -207,7 +208,7 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
       headers: { ...headers(ctx), 'x-dashscope-async': 'enable' },
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 120_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
       errorExtractor: bailianError,
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
@@ -224,7 +225,7 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
       {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 15_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
         errorExtractor: bailianError,
         ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
         inspect: (value) => {
@@ -247,7 +248,7 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
           video,
           input.outputDir,
           filenameHelper(input, 'wan-video', index, urls.length),
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )

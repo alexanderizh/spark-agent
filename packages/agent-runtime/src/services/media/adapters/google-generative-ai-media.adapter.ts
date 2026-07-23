@@ -24,6 +24,7 @@ import {
   type ExtractedImage,
 } from '../media-http.util.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
+import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 import { filenameHelper } from './openai-compatible-media.adapter.js'
 
 const DEFAULT_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta'
@@ -108,7 +109,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
       headers: googleHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 120_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const images = googleOutputImages(data)
@@ -130,7 +131,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
           image,
           input.outputDir,
           filenameHelper(input, 'gemini', index, images.length),
-          googleDownloadFetch(ctx),
+          googleDownloadFetch(ctx), configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -169,7 +170,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
       headers: googleHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 180_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 180_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const images = googleImagenImages(data)
@@ -185,7 +186,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
           image,
           input.outputDir,
           filenameHelper(input, 'imagen', index, images.length),
-          googleDownloadFetch(ctx),
+          googleDownloadFetch(ctx), configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -223,7 +224,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
       headers: googleHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 300_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 300_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const audios = googleInlineAudios(data)
@@ -258,7 +259,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
             audioUrl,
             input.outputDir,
             filenameHelper(input, 'lyria-url', index, audioUrls.length),
-            googleDownloadFetch(ctx),
+            googleDownloadFetch(ctx), configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
           ),
         ),
       )),
@@ -314,7 +315,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
       headers: googleHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 120_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const interactionId = stringProperty(initial, 'id')
@@ -330,7 +331,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
         {
           fetchImpl: ctx.fetch,
           intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-          timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
+          ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
           inspect: (payload) => {
             if (googleInlineVideos(payload).length > 0 || googleVideoUrls(payload).length > 0)
               return 'done'
@@ -370,7 +371,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
             videoUrl,
             input.outputDir,
             filenameHelper(input, 'omni-url', index, urlVideos.length),
-            googleDownloadFetch(ctx),
+            googleDownloadFetch(ctx), configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
           ),
         ),
       )),
@@ -422,7 +423,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
       headers: googleHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const operationName = operationNameFrom(initial)
@@ -437,7 +438,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
     const raw = await pollTask(pollUrl, googleHeaders(ctx), {
       fetchImpl: ctx.fetch,
       intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 10_000,
-      timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
+      ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
       inspect: (payload) => {
         if (googleVideoUrls(payload).length > 0 || googleInlineVideos(payload).length > 0) {
           return 'done'
@@ -474,7 +475,7 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
             videoUrl,
             input.outputDir,
             filenameHelper(input, 'google-video-url', index, urlVideos.length),
-            googleDownloadFetch(ctx),
+            googleDownloadFetch(ctx), configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
           ),
         ),
       )),
@@ -828,7 +829,7 @@ async function waitForGoogleFilesActive(
       pollTask(`${baseEndpoint(ctx)}/files/${encodeURIComponent(fileName)}`, googleHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
         inspect: (payload) => {
           const state = firstStringByKey(payload, 'state').toUpperCase()
           if (state === 'ACTIVE') return 'done'

@@ -11,7 +11,20 @@ import {
 } from '../schemas/index.js'
 import { BUILTIN_MEDIA_MODEL_MANIFESTS, MediaModelManifestSchema } from '../media-model-manifest.js'
 import { validateMediaModelManifestSemantics } from '../media-model-manifest-validation.js'
-import { inferRolePolicy } from '../media-config.js'
+import { inferRolePolicy, ProviderMediaDefaultsSchema } from '../media-config.js'
+
+describe('ProviderMediaDefaultsSchema', () => {
+  it('accepts a provider-wide media interface timeout', () => {
+    expect(ProviderMediaDefaultsSchema.parse({ timeoutMs: 6_000_000 })).toEqual({
+      timeoutMs: 6_000_000,
+    })
+  })
+
+  it('rejects interface timeouts outside the supported range', () => {
+    expect(() => ProviderMediaDefaultsSchema.parse({ timeoutMs: 999 })).toThrow()
+    expect(() => ProviderMediaDefaultsSchema.parse({ timeoutMs: 172_800_001 })).toThrow()
+  })
+})
 
 describe('IPC schemas', () => {
   it('accepts the canvas log scope and rejects unknown log scopes', () => {

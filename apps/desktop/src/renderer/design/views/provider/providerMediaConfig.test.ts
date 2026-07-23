@@ -4,12 +4,28 @@ import {
   MEDIA_CAPABILITY_LABELS,
   capabilitiesForModelType,
   getMediaRequestPreviewUrl,
+  mediaInterfaceTimeoutFormValue,
+  mediaInterfaceTimeoutUpdate,
   mediaProviderOptionsForModelType,
 } from './providerMediaConfig'
 
 const BASE_URL = 'https://media.example/v1beta'
 
 describe('provider media configuration', () => {
+  it('reads and writes the provider-wide interface timeout with legacy fallback', () => {
+    expect(
+      mediaInterfaceTimeoutFormValue({
+        timeoutMs: 6_000_000,
+        polling: { timeoutMs: 600_000 },
+      }),
+    ).toBe('6000000')
+    expect(mediaInterfaceTimeoutFormValue({ polling: { timeoutMs: 600_000 } })).toBe('600000')
+    expect(mediaInterfaceTimeoutUpdate('6000000', '5000')).toEqual({
+      timeoutMs: 6_000_000,
+      polling: { intervalMs: 5_000 },
+    })
+  })
+
   it('exposes OpenAI and Google official adapters for image and video profiles', () => {
     for (const modelType of ['image', 'video'] as const) {
       expect(mediaProviderOptionsForModelType(modelType)).toEqual(

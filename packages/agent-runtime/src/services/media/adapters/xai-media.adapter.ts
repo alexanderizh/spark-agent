@@ -31,6 +31,7 @@ import type { ExtractedImage } from '../media-http.util.js'
 import { FAILED_STATUSES } from './openai-compatible-media.adapter.js'
 import { filenameHelper } from './openai-compatible-media.adapter.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
+import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 import { resolveXaiMediaReference, type XaiMediaReference } from '../xai-media-input.js'
 
 const log = createLogger('media:xai')
@@ -188,7 +189,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
         headers: authHeaders(ctx),
         body: JSON.stringify(body),
         fetchImpl: ctx.fetch,
-        timeoutMs: 120_000,
+        timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
         ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       })
     } catch (error) {
@@ -208,7 +209,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     const raw = await pollTask(`${baseEndpoint(ctx)}/videos/${encodeURIComponent(taskId)}`, authHeaders(ctx), {
       fetchImpl: ctx.fetch,
       intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-      timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
+      ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
       inspect: (response) => {
         const status = extractStatus(response)
         if (extractXaiVideoUrls(response).length > 0 || status === 'done') return 'done'
@@ -236,7 +237,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
           videoUrl,
           input.outputDir,
           filenameHelper(input, 'video', index, videoUrls.length),
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -302,7 +303,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       ...(!withTimestamps ? { binary: true } : {}),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
@@ -427,7 +428,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     // 同步直出视频 url（少数情况），否则取 request_id 轮询。
@@ -448,7 +449,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
         inspect: (d) => {
           const urls = extractXaiVideoUrls(d)
           const s = extractStatus(d)
@@ -474,7 +475,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     )
     const assets = await Promise.all(
       videoUrls.map((u, i) =>
-        this.artifact.downloadMediaAsset('video', u, input.outputDir, filenameHelper(input, isExtend ? 'extend' : 'edit', i, videoUrls.length), ctx.fetch),
+        this.artifact.downloadMediaAsset('video', u, input.outputDir, filenameHelper(input, isExtend ? 'extend' : 'edit', i, videoUrls.length), ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults)),
       ),
     )
     log.info(
@@ -509,7 +510,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     const url = `${baseEndpoint(ctx)}${endpoint}`
     logMediaCall({ provider: this.id, capability, model: ctx.defaultModel, method: 'POST', url, body })
     const data = await fetchJson(url, {
-      method: 'POST', headers: authHeaders(ctx), body: JSON.stringify(body), fetchImpl: ctx.fetch, timeoutMs: 120_000,
+      method: 'POST', headers: authHeaders(ctx), body: JSON.stringify(body), fetchImpl: ctx.fetch, timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const images = extractXaiImages(data)
@@ -522,7 +523,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
         image.extracted,
         input.outputDir,
         filenameHelper(input, capability === 'image.edit' ? 'edit' : 'image', index, images.length),
-        ctx.fetch,
+        ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
       )
       if (image.publicUrl) return { ...asset, url: image.publicUrl }
       if (ctx.fallbackUploader?.canHandle('xai') && asset.filePath) {

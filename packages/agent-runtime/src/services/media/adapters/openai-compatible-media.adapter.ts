@@ -34,6 +34,7 @@ import {
   pollTask,
 } from '../media-http.util.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
+import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 import { apimartNativeModelId, buildApimartVideoInputFields } from './apimart-video-input.js'
 
 export interface OpenAiCompatibleAdapterOptions {
@@ -189,7 +190,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     let images = extractImages(data)
@@ -205,7 +206,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         const polled = await pollTask(pollUrl, authHeaders(ctx), {
           fetchImpl: ctx.fetch,
           intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 4_000,
-          timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 600_000,
+          ...mediaPollTimeoutOptions(ctx.mediaDefaults, 600_000),
           inspect: (d) => {
             const imgs = extractImages(d)
             if (imgs.length > 0) return 'done'
@@ -242,7 +243,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
           image,
           input.outputDir,
           filename(input, 'img', i, images.length),
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -325,7 +326,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const images = extractImages(data)
@@ -353,7 +354,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
           image,
           input.outputDir,
           filename(input, 'edit', i, images.length),
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -401,7 +402,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       binary: true,
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
@@ -462,7 +463,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         headers: authHeaders(ctx),
         body: JSON.stringify(body),
         fetchImpl: ctx.fetch,
-        timeoutMs: 120_000,
+        timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
         ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       })
       return this.materializeTranscription(data, input, model)
@@ -502,7 +503,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       headers: { authorization: `Bearer ${ctx.apiKey}`, 'content-type': form.contentType },
       body: form.body,
       fetchImpl: ctx.fetch,
-      timeoutMs: 120_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     return this.materializeTranscription(data, input, model)
@@ -727,7 +728,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     // 1) 同步直接返回视频 url
@@ -756,7 +757,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
         logContext: `provider=${this.id} capability=${capability} requestId=${taskId}`,
         inspect: (d) => {
           const urls = extractMediaUrls(d, { kind: 'video' })
@@ -794,7 +795,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
           u,
           input.outputDir,
           filename(input, 'video', i, videoUrls.length),
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )

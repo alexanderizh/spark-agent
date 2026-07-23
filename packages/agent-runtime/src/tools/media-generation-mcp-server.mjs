@@ -547,7 +547,7 @@ async function handleUploadFile(config, args) {
       headers: { authorization: `Bearer ${config.apiKey}` },
       body: form,
     },
-    300_000,
+    interfaceTimeoutMs(config, 300_000),
   )
   if (!uploaded?.id) throw new Error('Volcengine Files response missing id')
   const file =
@@ -563,7 +563,7 @@ async function handleGetFile(config, args) {
   const file = await fetchJson(
     `${volcengineFilesBaseUrl(config.baseUrl)}/files/${encodeURIComponent(fileId)}`,
     { headers: authHeaders(config) },
-    30_000,
+    interfaceTimeoutMs(config, 30_000),
   )
   return { success: true, provider: config.provider, file }
 }
@@ -583,7 +583,7 @@ async function handleListFiles(config, args) {
   const files = await fetchJson(
     `${volcengineFilesBaseUrl(config.baseUrl)}/files?${query.toString()}`,
     { headers: authHeaders(config) },
-    30_000,
+    interfaceTimeoutMs(config, 30_000),
   )
   return { success: true, provider: config.provider, ...files }
 }
@@ -596,7 +596,7 @@ async function handleDeleteFile(config, args) {
   const deleted = await fetchJson(
     `${volcengineFilesBaseUrl(config.baseUrl)}/files/${encodeURIComponent(fileId)}`,
     { method: 'DELETE', headers: authHeaders(config) },
-    30_000,
+    interfaceTimeoutMs(config, 30_000),
   )
   return { success: true, provider: config.provider, deleted }
 }
@@ -635,7 +635,7 @@ async function handleBailianUploadFile(config, args) {
   const response = await fetchJson(
     `${baseUrl}/files`,
     { method: 'POST', headers: { authorization: `Bearer ${config.apiKey}` }, body: form },
-    300_000,
+    interfaceTimeoutMs(config, 300_000),
   )
   const failed = response?.data?.failed_uploads?.[0]
   const file = response?.data?.uploaded_files?.[0]
@@ -653,7 +653,7 @@ async function handleBailianGetFile(config, args) {
   const response = await fetchJson(
     `${baseUrl}/files/${encodeURIComponent(fileId)}`,
     { headers: { authorization: `Bearer ${config.apiKey}` } },
-    30_000,
+    interfaceTimeoutMs(config, 30_000),
   )
   if (!response?.data?.file_id) throw new Error(`Bailian Files response missing file_id${requestIdSuffix(response)}`)
   return { success: true, provider: config.provider, file: response.data, requestId: response.request_id || null }
@@ -669,7 +669,7 @@ async function handleBailianListFiles(config, args) {
   const response = await fetchJson(
     `${baseUrl}/files?page_no=${pageNo}&page_size=${pageSize}`,
     { headers: { authorization: `Bearer ${config.apiKey}` } },
-    30_000,
+    interfaceTimeoutMs(config, 30_000),
   )
   return { success: true, provider: config.provider, ...(response?.data || {}), requestId: response?.request_id || null }
 }
@@ -681,7 +681,7 @@ async function handleBailianDeleteFile(config, args) {
   const response = await fetchJson(
     `${baseUrl}/files/${encodeURIComponent(fileId)}`,
     { method: 'DELETE', headers: { authorization: `Bearer ${config.apiKey}` } },
-    30_000,
+    interfaceTimeoutMs(config, 30_000),
   )
   return { success: true, provider: config.provider, deleted: true, id: fileId, requestId: response?.request_id || null }
 }
@@ -691,7 +691,7 @@ async function handleBailianGetTask(config, taskId) {
   const response = await fetchJson(
     `${baseUrl}/tasks/${encodeURIComponent(taskId)}`,
     { headers: { authorization: `Bearer ${config.apiKey}` } },
-    30_000,
+    interfaceTimeoutMs(config, 30_000),
   )
   return { success: true, provider: config.provider, task: response?.output || response, requestId: response?.request_id || null }
 }
@@ -723,7 +723,7 @@ async function handleBailianListTasks(config, args) {
   const response = await fetchJson(
     `${baseUrl}/tasks/?${query.toString()}`,
     { headers: { authorization: `Bearer ${config.apiKey}` } },
-    30_000,
+    interfaceTimeoutMs(config, 30_000),
   )
   return { success: true, provider: config.provider, ...(response || {}) }
 }
@@ -733,7 +733,7 @@ async function handleBailianCancelTask(config, taskId) {
   const response = await fetchJson(
     `${baseUrl}/tasks/${encodeURIComponent(taskId)}/cancel`,
     { method: 'POST', headers: { authorization: `Bearer ${config.apiKey}` } },
-    30_000,
+    interfaceTimeoutMs(config, 30_000),
   )
   return { success: true, provider: config.provider, cancelled: true, taskId, requestId: response?.request_id || null }
 }
@@ -788,13 +788,14 @@ function appendVolcengineVideoPreprocess(form, raw) {
 }
 
 async function waitForVolcengineFile(config, fileId) {
-  const deadline = Date.now() + 300_000
+  const timeoutMs = interfaceTimeoutMs(config, 300_000)
+  const deadline = Date.now() + timeoutMs
   let interval = 1000
   while (Date.now() < deadline) {
     const file = await fetchJson(
       `${volcengineFilesBaseUrl(config.baseUrl)}/files/${encodeURIComponent(fileId)}`,
       { headers: authHeaders(config) },
-      30_000,
+      pollingRequestTimeoutMs(config, deadline),
     )
     if (file?.status === 'active') return file
     if (file?.status === 'failed') {
@@ -802,10 +803,12 @@ async function waitForVolcengineFile(config, fileId) {
         `Volcengine file preprocessing failed: ${file?.error?.code || ''} ${file?.error?.message || ''}`.trim(),
       )
     }
-    await new Promise((resolve) => setTimeout(resolve, interval))
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.max(0, Math.min(interval, deadline - Date.now()))),
+    )
     interval = Math.min(Math.ceil(interval * 1.5), 5000)
   }
-  throw new Error(`Volcengine file ${fileId} did not become active within 5 minutes`)
+  throw new Error(`Volcengine file ${fileId} did not become active within ${timeoutMs}ms`)
 }
 
 function mimeFromFilename(filename) {
@@ -1160,9 +1163,34 @@ function configForTool(config, toolName, args) {
 
 const FAILED_STATUSES = ['failed', 'error', 'expired', 'cancelled', 'canceled']
 
+function validInterfaceTimeoutMs(value) {
+  return Number.isInteger(value) && value > 0 && value <= 172_800_000 ? value : undefined
+}
+
+function configuredInterfaceTimeoutMs(config) {
+  return validInterfaceTimeoutMs(config.mediaDefaults?.timeoutMs)
+    ?? validInterfaceTimeoutMs(config.mediaDefaults?.polling?.timeoutMs)
+}
+
+function interfaceTimeoutMs(config, fallbackMs) {
+  return configuredInterfaceTimeoutMs(config) ?? fallbackMs
+}
+
+function pollingRequestTimeoutMs(config, deadlineMs) {
+  return Math.min(
+    configuredInterfaceTimeoutMs(config) ?? 30_000,
+    Math.max(1, deadlineMs - Date.now()),
+  )
+}
+
 async function fetchJson(url, init, timeoutMs, binary = false) {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs ?? 30_000)
+  const effectiveTimeoutMs = timeoutMs ?? 30_000
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, effectiveTimeoutMs)
   try {
     const res = await fetch(url, { ...init, signal: controller.signal })
     if (binary) {
@@ -1182,6 +1210,21 @@ async function fetchJson(url, init, timeoutMs, binary = false) {
       throw new Error(`HTTP ${res.status}: ${providerDetail || String(text).slice(0, 800)}`)
     }
     return body
+  } catch (error) {
+    if (timedOut) {
+      const method = init?.method || 'GET'
+      let safeUrl = String(url).split(/[?#]/, 1)[0]
+      try {
+        const parsed = new URL(url)
+        safeUrl = `${parsed.origin}${parsed.pathname}`
+      } catch {
+        // 保留已剔除 query/hash 的回退地址。
+      }
+      throw new Error(`${method} ${safeUrl} timed out after ${effectiveTimeoutMs}ms`, {
+        cause: error,
+      })
+    }
+    throw error
   } finally {
     clearTimeout(timer)
   }
@@ -1189,14 +1232,20 @@ async function fetchJson(url, init, timeoutMs, binary = false) {
 
 async function pollTask(config, url, inspect, fallbackTimeoutMs = 600_000) {
   const defaults = config.mediaDefaults?.polling || {}
-  const deadline = Date.now() + (defaults.timeoutMs || fallbackTimeoutMs)
+  const deadline = Date.now() + interfaceTimeoutMs(config, fallbackTimeoutMs)
   let interval = Math.max(1000, defaults.intervalMs || 5000)
   while (Date.now() < deadline) {
-    const data = await fetchJson(url, { headers: authHeaders(config) }, 30_000)
+    const data = await fetchJson(
+      url,
+      { headers: authHeaders(config) },
+      pollingRequestTimeoutMs(config, deadline),
+    )
     const state = inspect(data)
     if (state === 'done') return data
     if (state === 'failed') throw new Error(`Task failed: ${JSON.stringify(data).slice(0, 800)}`)
-    await new Promise((r) => setTimeout(r, interval))
+    await new Promise((r) =>
+      setTimeout(r, Math.max(0, Math.min(interval, deadline - Date.now()))),
+    )
     interval = Math.min(interval * 1.3, Math.max(interval, 15_000))
   }
   throw new Error('Task timed out')
@@ -1424,7 +1473,12 @@ async function materializeImage(config, image, filename, index, total) {
   const dir = path.join(config.outputDir, 'images')
   await mkdir(dir, { recursive: true })
   const buffer = image.kind === 'url'
-    ? Buffer.from(await (await fetch(image.value, { headers: artifactDownloadHeaders(config, image.value) })).arrayBuffer())
+    ? await fetchJson(
+      image.value,
+      { headers: artifactDownloadHeaders(config, image.value) },
+      interfaceTimeoutMs(config, 60_000),
+      true,
+    )
     : Buffer.from(image.value, 'base64')
   const parsed = path.parse(filename || `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`)
   const suffix = total > 1 ? `_${String(index + 1).padStart(3, '0')}` : ''
@@ -1437,7 +1491,12 @@ async function materializeImage(config, image, filename, index, total) {
 async function downloadMedia(config, url, kind, filename) {
   const dir = path.join(config.outputDir, kind === 'audio' ? 'audio' : 'videos')
   await mkdir(dir, { recursive: true })
-  const buffer = Buffer.from(await (await fetch(url, { headers: artifactDownloadHeaders(config, url) })).arrayBuffer())
+  const buffer = await fetchJson(
+    url,
+    { headers: artifactDownloadHeaders(config, url) },
+    interfaceTimeoutMs(config, 60_000),
+    true,
+  )
   const parsed = path.parse(filename || `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`)
   const name = `${parsed.name}${parsed.ext || (kind === 'audio' ? '.mp3' : '.mp4')}`
   const file = path.join(dir, name)
@@ -1841,7 +1900,7 @@ async function handleManifestTool(config, toolName, args, match) {
         headers: requestHeaders,
         body: serializedRequestBody,
       },
-      60_000,
+      interfaceTimeoutMs(config, 60_000),
       responseSpec.kind === 'binary_response',
     )
   } catch (err) {
@@ -1876,7 +1935,7 @@ async function handleManifestTool(config, toolName, args, match) {
     const content = await fetchJson(
       `${String(config.baseUrl || '').replace(/\/+$/, '')}/videos/${encodeURIComponent(requestId)}/content`,
       { headers: authHeaders(config) },
-      300_000,
+      interfaceTimeoutMs(config, 300_000),
       true,
     )
     const file = await writeBinaryAsset(config, content, 'video', args.filename || '', 'mp4')
@@ -1937,7 +1996,7 @@ async function handleOpenAiManifestImageEdit(config, args, manifest, capability,
       method: 'POST',
       headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': form.contentType },
       body: form.body,
-    }, 180_000)
+    }, interfaceTimeoutMs(config, 180_000))
   } catch (err) {
     const normalized = normalizeMcpMediaError(manifest, err)
     const wrapped = new Error(normalized.message)
@@ -1971,17 +2030,23 @@ async function pollManifestTask(config, manifest, responseSpec, taskId) {
   const defaultTimeoutMs = Array.isArray(manifest.domains) && manifest.domains.includes('video')
     ? 1_800_000
     : 600_000
-  const deadline = Date.now() + (config.mediaDefaults?.polling?.timeoutMs || polling.timeoutMs || defaultTimeoutMs)
+  const deadline = Date.now() + interfaceTimeoutMs(config, polling.timeoutMs || defaultTimeoutMs)
   let interval = Math.max(1, config.mediaDefaults?.polling?.intervalMs || polling.intervalMs || 5000)
   while (Date.now() < deadline) {
-    const data = await fetchJson(pollUrl, { headers: authHeaders(config) }, 30_000)
+    const data = await fetchJson(
+      pollUrl,
+      { headers: authHeaders(config) },
+      pollingRequestTimeoutMs(config, deadline),
+    )
     if (firstStringAtPaths(data, responseSpec.resultPaths || [])) return data
     const status = String(extractStatus(data) || '').toLowerCase()
     const mapped = polling.statusMap?.[status]
     if (mapped === 'succeeded') return data
     if (mapped === 'failed' || mapped === 'cancelled') throw new Error(`Task failed: ${JSON.stringify(data).slice(0, 800)}`)
     if (FAILED_STATUSES.includes(status)) throw new Error(`Task failed: ${JSON.stringify(data).slice(0, 800)}`)
-    await new Promise((resolve) => setTimeout(resolve, interval))
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.max(0, Math.min(interval, deadline - Date.now()))),
+    )
     interval = Math.min(Math.max(interval * 1.3, interval), 15_000)
   }
   throw new Error('Task timed out')
@@ -2364,7 +2429,7 @@ async function xaiInputReference(config, value, kind, explicitFileId = '') {
     form.append('file', new globalThis.Blob([buffer], { type: mimeType }), filename)
     const uploaded = await fetchJson(`${config.baseUrl}/files`, {
       method: 'POST', headers: { authorization: `Bearer ${config.apiKey}` }, body: form,
-    }, 120_000)
+    }, interfaceTimeoutMs(config, 120_000))
     if (!uploaded?.id) throw new Error('xAI Files response missing id')
     return { file_id: uploaded.id }
   } catch (error) {
@@ -2407,7 +2472,7 @@ async function handleGenerateImage(config, args) {
     }),
   }
   const url = `${config.baseUrl}/images/generations`
-  const data = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 60_000)
+  const data = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, interfaceTimeoutMs(config, 60_000))
   let images = config.provider === 'xai' ? xaiImageResults(data) : extractImages(data)
   let mode = 'sync'
   if (images.length === 0 && (config.mode === 'async' || config.mode === 'auto')) {
@@ -2455,7 +2520,7 @@ async function handleEditImage(config, args) {
       ...xaiImageParams(args),
       storage_options: xaiStorageOptions(args, 'png'),
     }
-    const data = await fetchJson(`${config.baseUrl}/images/edits`, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 120_000)
+    const data = await fetchJson(`${config.baseUrl}/images/edits`, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, interfaceTimeoutMs(config, 120_000))
     const images = xaiImageResults(data)
     if (images.length === 0) throw new Error(`No images in xAI edit response: ${JSON.stringify(data).slice(0, 800)}`)
     const files = []
@@ -2474,7 +2539,7 @@ async function handleEditImage(config, args) {
     ...(args.extraJson || {}),
   }
   const url = `${config.baseUrl}/images/edits`
-  const data = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 60_000)
+  const data = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, interfaceTimeoutMs(config, 60_000))
   const images = extractImages(data)
   if (images.length === 0) throw new Error(`No images in edit response: ${JSON.stringify(data).slice(0, 800)}`)
   const files = []
@@ -2502,7 +2567,7 @@ async function handleGenerateAudio(config, args) {
     }
     const audio = await fetchJson(`${config.baseUrl}/tts`, {
       method: 'POST', headers: authHeaders(config), body: JSON.stringify(body),
-    }, 60_000, true)
+    }, interfaceTimeoutMs(config, 60_000), true)
     const file = await writeBinaryAsset(config, audio, 'audio', args.filename || '', codec)
     return { success: true, provider: `${config.provider}/${config.model}`, mode: 'sync', files: [file] }
   }
@@ -2517,7 +2582,7 @@ async function handleGenerateAudio(config, args) {
     ...(args.extraJson || {}),
   }
   const url = `${config.baseUrl}/audio/speech`
-  const buffer = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 60_000, true)
+  const buffer = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, interfaceTimeoutMs(config, 60_000), true)
   const file = await downloadMedia(config, `data:audio/${format};base64,${buffer.toString('base64')}`, 'audio', args.filename || '')
   return { success: true, provider: `${config.provider}/${config.model}`, mode: 'sync', files: [file] }
 }
@@ -2534,7 +2599,7 @@ async function handleTranscribeAudio(config, args) {
       method: 'POST',
       headers: authHeaders(config),
       body: JSON.stringify({ model: config.model, url: args.audioUrl, ...(args.language ? { language: args.language } : {}), ...(args.extraJson || {}) }),
-    }, 120_000)
+    }, interfaceTimeoutMs(config, 120_000))
   } else if (args.audioFile) {
     const { readFile } = await import('node:fs/promises')
     const buffer = await readFile(args.audioFile)
@@ -2542,7 +2607,7 @@ async function handleTranscribeAudio(config, args) {
       method: 'POST',
       headers: { authorization: `Bearer ${config.apiKey}` },
       body: buffer,
-    }, 120_000)
+    }, interfaceTimeoutMs(config, 120_000))
   } else {
     throw new Error('audioFile or audioUrl is required')
   }
@@ -2703,7 +2768,7 @@ async function handleVolcengineVideoManifestTool(config, args, match) {
         headers: authHeaders(config),
         body: JSON.stringify(requestBody),
       },
-      60_000,
+      interfaceTimeoutMs(config, 60_000),
     )
     const taskId = firstStringAtPaths(raw, responseSpec.taskIdPaths || [])
     if (!taskId) throw new Error(`No task id in response: ${JSON.stringify(raw).slice(0, 800)}`)
@@ -2844,7 +2909,7 @@ async function handleGenerateVideo(config, args) {
     body.storage_options = xaiStorageOptions(args, 'mp4')
     if (wantsEdit && !video && !explicitVideoFileId) throw new Error('xAI video edit requires videoUrl/videoFile/videoFileId/inputVideos')
     if (wantsExtend && !video && !explicitVideoFileId) throw new Error('xAI video extend requires videoUrl/videoFile/videoFileId/inputVideos')
-    const data = await fetchJson(`${config.baseUrl}${endpoint}`, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 60_000)
+    const data = await fetchJson(`${config.baseUrl}${endpoint}`, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, interfaceTimeoutMs(config, 60_000))
     let videoUrls = xaiPublicUrls(data)
     let requestId = null
     if (videoUrls.length === 0) {
@@ -2882,7 +2947,7 @@ async function handleGenerateVideo(config, args) {
     ...(args.extraJson || {}),
   }
   const url = `${config.baseUrl}/videos/generations`
-  const data = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 60_000)
+  const data = await fetchJson(url, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, interfaceTimeoutMs(config, 60_000))
   let videoUrls = extractMediaUrls(data, { kind: 'video' })
   if (videoUrls.length === 0) {
     const taskId = extractTaskId(data)

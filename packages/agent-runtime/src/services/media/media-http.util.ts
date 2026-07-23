@@ -136,6 +136,8 @@ export interface PollOptions {
   fetchImpl?: typeof fetch | undefined
   intervalMs: number
   timeoutMs: number
+  /** 单次轮询 HTTP 请求超时；最终还会受任务剩余总时限约束。 */
+  requestTimeoutMs?: number | undefined
   /** 检查响应：返回 'done' | 'pending' | 'failed' */
   inspect: (data: unknown) => 'done' | 'pending' | 'failed'
   /** Provider 专属错误消息提取器；轮询中非 ok 响应也走此提取器 */
@@ -165,7 +167,7 @@ export async function pollTask(
   )
   // 允许调用方传小间隔（测试场景）；生产环境由 mediaDefaults.polling.intervalMs 控制（默认 5s）
   let interval = Math.max(1, opts.intervalMs)
-  const fetchOpts: FetchJsonOptions = { headers, timeoutMs: 30_000 }
+  const fetchOpts: FetchJsonOptions = { headers }
   if (opts.fetchImpl !== undefined) fetchOpts.fetchImpl = opts.fetchImpl
   if (opts.errorExtractor !== undefined) fetchOpts.errorExtractor = opts.errorExtractor
   if (opts.errorContract !== undefined) fetchOpts.errorContract = opts.errorContract
@@ -173,7 +175,10 @@ export async function pollTask(
     attempts += 1
     let data: unknown
     try {
-      data = await fetchJson(url, fetchOpts)
+      data = await fetchJson(url, {
+        ...fetchOpts,
+        timeoutMs: pollRequestTimeoutMs(deadline, opts.requestTimeoutMs),
+      })
     } catch (error) {
       pollLog.warn(
         `event=request-failed url=${safeUrl} attempts=${attempts} elapsedMs=${Date.now() - startedAt} message=${JSON.stringify(error instanceof Error ? error.message : String(error))}`,
@@ -201,7 +206,7 @@ export async function pollTask(
     pollLog.debug(
       `event=pending attempts=${attempts} elapsedMs=${Date.now() - startedAt} nextIntervalMs=${interval} url=${safeUrl}${logContext}${responseSummary}`,
     )
-    await new Promise((resolve) => setTimeout(resolve, interval))
+    await new Promise((resolve) => setTimeout(resolve, pollSleepIntervalMs(deadline, interval)))
     // 简单退避，上限 15s，避免长时间任务的高频轮询
     interval = Math.min(Math.max(interval * 1.3, interval), 15_000)
   }
@@ -209,6 +214,25 @@ export async function pollTask(
     `event=finished state=timeout attempts=${attempts} elapsedMs=${Date.now() - startedAt} url=${safeUrl}${logContext}${lastResponseSummary}`,
   )
   throw new MediaProviderError('task_timeout', `Task timed out after ${opts.timeoutMs}ms`)
+}
+
+/** 单次轮询不能超过配置值，也不能越过任务的剩余总时限。 */
+export function pollRequestTimeoutMs(
+  deadlineMs: number,
+  configuredRequestTimeoutMs: number | undefined,
+  nowMs = Date.now(),
+): number {
+  const remainingMs = Math.max(1, deadlineMs - nowMs)
+  return Math.min(configuredRequestTimeoutMs ?? 30_000, remainingMs)
+}
+
+/** 轮询退避等待同样不能越过任务总时限。 */
+export function pollSleepIntervalMs(
+  deadlineMs: number,
+  intervalMs: number,
+  nowMs = Date.now(),
+): number {
+  return Math.max(0, Math.min(intervalMs, deadlineMs - nowMs))
 }
 
 function sanitizePollingUrl(url: string): string {

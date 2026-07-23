@@ -1,7 +1,23 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fetchJson, pollTask } from '../../../services/media/media-http.util.js'
+import {
+  fetchJson,
+  pollRequestTimeoutMs,
+  pollSleepIntervalMs,
+  pollTask,
+} from '../../../services/media/media-http.util.js'
 
 describe('pollTask diagnostics', () => {
+  it('caps each polling request by the remaining operation deadline', () => {
+    expect(pollRequestTimeoutMs(2_000, 6_000, 1_500)).toBe(500)
+    expect(pollRequestTimeoutMs(60_000, undefined, 10_000)).toBe(30_000)
+    expect(pollRequestTimeoutMs(10_001, undefined, 10_000)).toBe(1)
+  })
+
+  it('caps polling sleep by the remaining operation deadline', () => {
+    expect(pollSleepIntervalMs(2_000, 5_000, 1_500)).toBe(500)
+    expect(pollSleepIntervalMs(20_000, 5_000, 1_500)).toBe(5_000)
+  })
+
   it('logs the sanitized polling endpoint and terminal timing', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {})
     const fetchImpl = vi.fn(
@@ -56,14 +72,18 @@ describe('pollTask diagnostics', () => {
     ) as unknown as typeof fetch
 
     await expect(
-      pollTask('https://ark.cn-beijing.volces.com/api/v3/tasks/task-1', {}, {
-        fetchImpl,
-        intervalMs: 1,
-        timeoutMs: 5,
-        inspect: () => 'pending',
-        logContext: 'provider=volcengine-ark requestId=task-1',
-        describeResponse: (data) => data,
-      }),
+      pollTask(
+        'https://ark.cn-beijing.volces.com/api/v3/tasks/task-1',
+        {},
+        {
+          fetchImpl,
+          intervalMs: 1,
+          timeoutMs: 5,
+          inspect: () => 'pending',
+          logContext: 'provider=volcengine-ark requestId=task-1',
+          describeResponse: (data) => data,
+        },
+      ),
     ).rejects.toMatchObject({ code: 'task_timeout' })
 
     expect(warn.mock.calls.map((call) => String(call[0])).join('\n')).toContain(

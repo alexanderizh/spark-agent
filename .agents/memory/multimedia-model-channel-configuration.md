@@ -60,13 +60,16 @@ Provider 配置常见字段：
   mediaCapabilities: ['image.generate', 'image.edit'],
   mediaDefaults: {
     image: { size: '1:1', n: 1 },
-    polling: { intervalMs: 5000, timeoutMs: 600000 },
+    timeoutMs: 600000,
+    polling: { intervalMs: 5000 },
   },
   mediaModelRefs: [
     { manifestId: 'apimart:some-model', modelId: 'some-model', enabled: true },
   ],
 }
 ```
+
+`mediaDefaults.timeoutMs` 是 Provider 级统一接口超时，同步请求、异步任务提交、轮询总时限、单次轮询请求和结果下载都必须遵守。`mediaDefaults.polling.intervalMs` 只控制轮询间隔。历史 `mediaDefaults.polling.timeoutMs` 仅作为兼容回退读取，新配置不要继续写入旧字段。
 
 ### 3. 内置预设和模型列表
 

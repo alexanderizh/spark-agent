@@ -405,6 +405,8 @@ describe('ProviderEditPanel progressive configuration', () => {
     expect(container.textContent).toContain('平台适配器')
     expect(container.textContent).toContain('调用方式')
     expect(container.textContent).not.toContain('生图接口来源')
+    expect(container.querySelector('input[placeholder="接口超时 ms"]')).not.toBeNull()
+    expect(container.querySelector('input[placeholder="轮询超时 ms"]')).toBeNull()
   })
 
   it('maps Volcengine Seedream template to Seedream image source before advanced settings are opened', async () => {

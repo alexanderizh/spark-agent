@@ -17,6 +17,7 @@ import {
   pollTask,
 } from '../media-http.util.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
+import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 import { extraAllowed, filenameHelper, mediaInputRef } from './openai-compatible-media.adapter.js'
 
 const FAILED_STATUSES = ['failed', 'error', 'cancelled', 'canceled']
@@ -112,7 +113,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 120_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     const images = extractImages(data)
@@ -123,7 +124,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
     logMediaResult({ provider: this.id, capability: input.capability, ok: true, assetCount: images.length })
     const assets = await Promise.all(
       images.map((image, index) =>
-        this.artifact.writeImage(image, input.outputDir, filenameHelper(input, imageRefs.length > 0 ? 'edit' : 'img', index, images.length), ctx.fetch),
+        this.artifact.writeImage(image, input.outputDir, filenameHelper(input, imageRefs.length > 0 ? 'edit' : 'img', index, images.length), ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults)),
       ),
     )
     return { provider: this.id, model, mode: 'sync', assets, rawResponse: data }
@@ -203,7 +204,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 120_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     let videoUrls = extractAgnesVideoUrls(data)
@@ -224,7 +225,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 1_800_000,
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 1_800_000),
         inspect: (payload) => {
           const urls = extractAgnesVideoUrls(payload)
           if (urls.length > 0) return 'done'
@@ -242,7 +243,7 @@ export class AgnesMediaAdapter implements MediaProviderAdapter {
     logMediaResult({ provider: this.id, capability, ok: true, assetCount: videoUrls.length, requestId })
     const assets = await Promise.all(
       videoUrls.map((videoUrl, index) =>
-        this.artifact.downloadMediaAsset('video', videoUrl, input.outputDir, filenameHelper(input, 'video', index, videoUrls.length), ctx.fetch),
+        this.artifact.downloadMediaAsset('video', videoUrl, input.outputDir, filenameHelper(input, 'video', index, videoUrls.length), ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults)),
       ),
     )
     return {

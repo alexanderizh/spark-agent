@@ -24,6 +24,7 @@ import {
   pollTask,
 } from '../media-http.util.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
+import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 import { filenameHelper } from './openai-compatible-media.adapter.js'
 
 const FAILED_STATUSES = ['failed', 'error', 'cancelled', 'canceled', 'rejected']
@@ -77,7 +78,7 @@ export class MidjourneyMediaAdapter implements MediaProviderAdapter {
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
     let raw = data
@@ -95,7 +96,7 @@ export class MidjourneyMediaAdapter implements MediaProviderAdapter {
       raw = await pollTask(statusEndpointFor(ctx, taskId), authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 900_000,
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 900_000),
         inspect: (payload) => {
           if (extractImages(payload).length > 0) return 'done'
           return FAILED_STATUSES.includes(extractStatus(payload)) ? 'failed' : 'pending'
@@ -109,7 +110,7 @@ export class MidjourneyMediaAdapter implements MediaProviderAdapter {
     }
     const assets = await Promise.all(
       images.map((image, index) =>
-        this.artifact.writeImage(image, input.outputDir, filenameHelper(input, 'midjourney', index, images.length), ctx.fetch),
+        this.artifact.writeImage(image, input.outputDir, filenameHelper(input, 'midjourney', index, images.length), ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults)),
       ),
     )
     logMediaResult({ provider: this.id, capability, ok: true, assetCount: assets.length, requestId })

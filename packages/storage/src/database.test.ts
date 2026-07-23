@@ -370,6 +370,51 @@ describe('SparkDatabase', () => {
     expect(imageManifest.timeout).toBe(600_000)
   })
 
+  it('should copy legacy media polling timeouts into provider interface timeouts', () => {
+    const dbPath = join(testDir, 'test.db')
+    const migrationsDir = join(process.cwd(), 'migrations')
+
+    db = new SparkDatabase(dbPath)
+    applyMigrationsThrough(db, migrationsDir, 59)
+    const insertProvider = db.raw.prepare(`
+      INSERT INTO provider_profiles (id, provider_type, name, config_json)
+      VALUES (?, 'openai', ?, ?)
+    `)
+    insertProvider.run(
+      'legacy-timeout',
+      'Legacy timeout',
+      JSON.stringify({ mediaDefaults: { polling: { intervalMs: 5000, timeoutMs: 600000 } } }),
+    )
+    insertProvider.run(
+      'new-timeout',
+      'New timeout',
+      JSON.stringify({
+        mediaDefaults: {
+          timeoutMs: 6000000,
+          polling: { intervalMs: 5000, timeoutMs: 600000 },
+        },
+      }),
+    )
+    insertProvider.run(
+      'invalid-timeout',
+      'Invalid timeout',
+      JSON.stringify({ mediaDefaults: { polling: { timeoutMs: 500 } } }),
+    )
+
+    db.runMigrations(migrationsDir)
+
+    const timeout = (id: string, path: string): number | null =>
+      (
+        db.raw
+          .prepare(`SELECT json_extract(config_json, ?) AS timeout FROM provider_profiles WHERE id = ?`)
+          .get(path, id) as { timeout: number | null }
+      ).timeout
+    expect(timeout('legacy-timeout', '$.mediaDefaults.timeoutMs')).toBe(600_000)
+    expect(timeout('legacy-timeout', '$.mediaDefaults.polling.timeoutMs')).toBe(600_000)
+    expect(timeout('new-timeout', '$.mediaDefaults.timeoutMs')).toBe(6_000_000)
+    expect(timeout('invalid-timeout', '$.mediaDefaults.timeoutMs')).toBeNull()
+  })
+
   it('should throw error for invalid migration filename', () => {
     const dbPath = join(testDir, 'test.db')
     const invalidDir = join(testDir, 'migrations')
