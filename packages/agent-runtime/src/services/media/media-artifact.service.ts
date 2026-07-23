@@ -50,12 +50,14 @@ export class MediaArtifactService {
     outputDir: string,
     filename: string,
     fetchImpl?: typeof fetch,
+    timeoutMs?: number,
   ): Promise<MediaGeneratedAsset> {
     const dir = path.join(outputDir, 'images')
     await mkdir(dir, { recursive: true })
-    const buffer = image.kind === 'url'
-      ? await this.downloadBuffer(image.value, fetchImpl)
-      : Buffer.from(image.value, 'base64')
+    const buffer =
+      image.kind === 'url'
+        ? await this.downloadBuffer(image.value, fetchImpl, timeoutMs)
+        : Buffer.from(image.value, 'base64')
     const mimeType = image.mimeType ?? 'image/png'
     const file = this.resolveUniquePath(dir, filename, extFromMime(mimeType))
     await writeFile(file, buffer)
@@ -90,8 +92,9 @@ export class MediaArtifactService {
     outputDir: string,
     filename: string,
     fetchImpl?: typeof fetch,
+    timeoutMs?: number,
   ): Promise<MediaGeneratedAsset> {
-    const buffer = await this.downloadBuffer(url, fetchImpl)
+    const buffer = await this.downloadBuffer(url, fetchImpl, timeoutMs)
     // 从 url 后缀或 content-type 推断 mime
     const ext = path.extname(new URL(url).pathname).toLowerCase()
     const mimeType = mimeFromExt(`x${ext}`) ?? (kind === 'audio' ? 'audio/mpeg' : 'video/mp4')
@@ -130,10 +133,23 @@ export class MediaArtifactService {
     return path.join(dir, `${base}${finalExt}`)
   }
 
-  private async downloadBuffer(url: string, fetchImpl?: typeof fetch): Promise<Buffer> {
+  private async downloadBuffer(
+    url: string,
+    fetchImpl?: typeof fetch,
+    timeoutMs?: number,
+  ): Promise<Buffer> {
     const impl = fetchImpl ?? fetch
+    const controller = timeoutMs != null ? new AbortController() : undefined
+    let timedOut = false
+    const timer =
+      controller && timeoutMs != null
+        ? setTimeout(() => {
+            timedOut = true
+            controller.abort()
+          }, timeoutMs)
+        : undefined
     try {
-      const res = await impl(url)
+      const res = await impl(url, controller ? { signal: controller.signal } : undefined)
       if (!res.ok) {
         throw new MediaProviderError(
           'artifact_download_failed',
@@ -144,10 +160,18 @@ export class MediaArtifactService {
       return Buffer.from(await res.arrayBuffer())
     } catch (err) {
       if (err instanceof MediaProviderError) throw err
+      if (timedOut) {
+        throw new MediaProviderError(
+          'artifact_download_failed',
+          `Download timed out after ${timeoutMs}ms`,
+        )
+      }
       throw new MediaProviderError(
         'artifact_download_failed',
         `Download failed: ${err instanceof Error ? err.message : String(err)}`,
       )
+    } finally {
+      if (timer !== undefined) clearTimeout(timer)
     }
   }
 }

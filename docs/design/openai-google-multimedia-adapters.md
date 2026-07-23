@@ -1,6 +1,6 @@
 # OpenAI 与 Google 官方多媒体适配设计
 
-> 状态: 已落地 | 最后核对: 2026-07-22
+> 状态: 已落地 | 最后核对: 2026-07-24
 
 OpenAI 官方多媒体统一使用 `openai-images` Provider，Google 官方多媒体统一使用 `google-generative-ai` Provider。Manifest 全局键固定为 `<providerKind>:<完整 modelId>`；完整 ID（包括 snapshot 后缀）逐个保存。其他 Provider 即使存在同名 `modelId`，也拥有独立 manifest、凭据、endpoint 和 adapter，不能跨渠道去重、覆盖或复用配置。
 
@@ -23,6 +23,7 @@ OpenAI 官方多媒体统一使用 `openai-images` Provider，Google 官方多�
 - `OpenAiOfficialMediaAdapter`：处理 OpenAI Bearer 鉴权、同步图片、multipart 图片编辑和 Sora 任务取件。
 - `GoogleGenerativeAiMediaAdapter`：处理 Google API Key 鉴权，并按 Nano Banana、Imagen、Veo、Omni、Lyria 的真实协议分支组装请求和解析响应。
 - `spark_media` 子进程同步识别 `audio.music`，并按 Google/OpenAI 官方协议处理鉴权、参数嵌套、multipart 编辑和 Sora 内容下载。
+- Provider 的 `mediaDefaults.timeoutMs` 统一约束同步图片、异步任务提交、轮询和产物下载；历史 `mediaDefaults.polling.timeoutMs` 只作为兼容回退，`polling.intervalMs` 继续仅控制轮询间隔。
 
 画布的 `text_to_audio` 会优先匹配 `audio.music`，模型未提供音乐能力时再回落 `audio.speech`。`spark_media` 未显式指定模型时，会在配置顺序内选择首个支持目标能力的 manifest，不会把图片默认模型错误用于视频或音乐请求。
 

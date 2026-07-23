@@ -4,6 +4,7 @@ import { createLogger } from '@spark/shared'
 import type { MediaInputFile, MediaProviderContext } from './media-adapter.types.js'
 import { MediaProviderError } from './media-adapter.types.js'
 import { XaiFilesClient } from './xai-files.client.js'
+import { configuredMediaInterfaceTimeoutMs } from './media-timeout.js'
 
 export type XaiMediaReference = { url: string } | { file_id: string }
 const log = createLogger('media:xai-input')
@@ -24,11 +25,15 @@ export async function resolveXaiMediaReference(
 
   const materialized = await materializeInput(file)
   if (!materialized) {
-    throw new MediaProviderError('invalid_input', `xAI ${kind} input must be a public URL, file_id, data URL, or readable local file`)
+    throw new MediaProviderError(
+      'invalid_input',
+      `xAI ${kind} input must be a public URL, file_id, data URL, or readable local file`,
+    )
   }
 
   try {
     const startedAt = Date.now()
+    const timeoutMs = configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults)
     log.info(
       `event=upload-started kind=${kind} bytes=${materialized.buffer.byteLength} mime=${materialized.mimeType ?? 'unknown'}`,
     )
@@ -36,6 +41,7 @@ export async function resolveXaiMediaReference(
       apiKey: ctx.apiKey,
       apiEndpoint: ctx.apiEndpoint,
       ...(ctx.fetch ? { fetch: ctx.fetch } : {}),
+      ...(timeoutMs != null ? { timeoutMs } : {}),
     }).upload({
       buffer: materialized.buffer,
       filename: materialized.filename,

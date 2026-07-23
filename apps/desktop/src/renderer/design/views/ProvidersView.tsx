@@ -28,6 +28,8 @@ import {
   SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS,
   capabilitiesForModelType,
   getMediaRequestPreviewUrl,
+  mediaInterfaceTimeoutFormValue,
+  mediaInterfaceTimeoutUpdate,
   mediaProviderOptionsForModelType,
 } from './provider/providerMediaConfig'
 import {
@@ -168,7 +170,7 @@ type ProviderForm = {
   mediaVideoDuration: string
   mediaVideoQuality: string
   mediaPollInterval: string
-  mediaPollTimeout: string
+  mediaTimeout: string
 }
 
 type RouteModelDraft = {
@@ -223,7 +225,7 @@ const EMPTY_MEDIA_FORM = {
   mediaVideoDuration: '',
   mediaVideoQuality: '',
   mediaPollInterval: '',
-  mediaPollTimeout: '',
+  mediaTimeout: '',
 } as const
 
 function usesClaudeTierMapping(form: Pick<ProviderForm, 'modelType' | 'provider'>): boolean {
@@ -452,7 +454,7 @@ function presetMediaForm(
   | 'mediaVideoDuration'
   | 'mediaVideoQuality'
   | 'mediaPollInterval'
-  | 'mediaPollTimeout'
+  | 'mediaTimeout'
 > {
   const d = preset.mediaDefaults
   return {
@@ -474,11 +476,11 @@ function presetMediaForm(
     mediaVideoDuration: d?.video?.durationSeconds != null ? String(d.video.durationSeconds) : '',
     mediaVideoQuality: d?.video?.resolution ?? d?.video?.quality ?? '',
     mediaPollInterval: d?.polling?.intervalMs != null ? String(d.polling.intervalMs) : '',
-    mediaPollTimeout: String(
-      d?.polling?.timeoutMs ??
-        (hasVideoTaskConfig(preset.modelType, preset.mediaCapabilities)
-          ? DEFAULT_VIDEO_POLL_TIMEOUT_MS
-          : ''),
+    mediaTimeout: mediaInterfaceTimeoutFormValue(
+      d,
+      hasVideoTaskConfig(preset.modelType, preset.mediaCapabilities)
+        ? DEFAULT_VIDEO_POLL_TIMEOUT_MS
+        : undefined,
     ),
   }
 }
@@ -502,7 +504,7 @@ function profileMediaForm(
   | 'mediaVideoDuration'
   | 'mediaVideoQuality'
   | 'mediaPollInterval'
-  | 'mediaPollTimeout'
+  | 'mediaTimeout'
 > {
   const d = p.mediaDefaults
   return {
@@ -524,9 +526,11 @@ function profileMediaForm(
     mediaVideoDuration: d?.video?.durationSeconds != null ? String(d.video.durationSeconds) : '',
     mediaVideoQuality: d?.video?.resolution ?? d?.video?.quality ?? '',
     mediaPollInterval: d?.polling?.intervalMs != null ? String(d.polling.intervalMs) : '',
-    mediaPollTimeout: String(
-      d?.polling?.timeoutMs ??
-        (hasVideoTaskConfig(p.modelType, p.mediaCapabilities) ? DEFAULT_VIDEO_POLL_TIMEOUT_MS : ''),
+    mediaTimeout: mediaInterfaceTimeoutFormValue(
+      d,
+      hasVideoTaskConfig(p.modelType, p.mediaCapabilities)
+        ? DEFAULT_VIDEO_POLL_TIMEOUT_MS
+        : undefined,
     ),
   }
 }
@@ -616,19 +620,17 @@ function buildMediaDefaults(form: ProviderForm): ProviderMediaDefaults | undefin
         : { quality: form.mediaVideoQuality.trim() }
       : {}),
   }
-  const polling = {
-    ...(form.mediaPollInterval.trim() ? { intervalMs: Number(form.mediaPollInterval) } : {}),
-    ...(form.mediaPollTimeout.trim()
-      ? { timeoutMs: Number(form.mediaPollTimeout) }
-      : hasVideoTaskConfig(form.modelType, form.mediaCapabilities)
-        ? { timeoutMs: DEFAULT_VIDEO_POLL_TIMEOUT_MS }
-        : {}),
-  }
-  const result: ProviderMediaDefaults = {}
+  const timeoutDefaults = mediaInterfaceTimeoutUpdate(
+    form.mediaTimeout,
+    form.mediaPollInterval,
+    hasVideoTaskConfig(form.modelType, form.mediaCapabilities)
+      ? DEFAULT_VIDEO_POLL_TIMEOUT_MS
+      : undefined,
+  )
+  const result: ProviderMediaDefaults = { ...timeoutDefaults }
   if (Object.keys(image).length > 0) result.image = image
   if (Object.keys(audio).length > 0) result.audio = audio
   if (Object.keys(video).length > 0) result.video = video
-  if (Object.keys(polling).length > 0) result.polling = polling
   return Object.keys(result).length > 0 ? result : undefined
 }
 
@@ -3604,11 +3606,11 @@ export function ProviderEditPanel({
                       imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
                       mediaProvider,
                       mediaApiType: supportsMediaConfig ? prev.mediaApiType : 'auto',
-                      mediaPollTimeout:
+                      mediaTimeout:
                         hasVideoTaskConfig(modelType, prev.mediaCapabilities) &&
-                        !prev.mediaPollTimeout.trim()
+                        !prev.mediaTimeout.trim()
                           ? String(DEFAULT_VIDEO_POLL_TIMEOUT_MS)
-                          : prev.mediaPollTimeout,
+                          : prev.mediaTimeout,
                     }
                   })
                 }}
@@ -4289,18 +4291,18 @@ export function ProviderEditPanel({
                                 </>
                               )}
                               {(form.modelType === 'image' || form.modelType === 'video') && (
-                                <>
-                                  <Input
-                                    value={form.mediaPollInterval}
-                                    onChange={(e) => set('mediaPollInterval', e.target.value)}
-                                    placeholder="轮询间隔 ms"
-                                  />
-                                  <Input
-                                    value={form.mediaPollTimeout}
-                                    onChange={(e) => set('mediaPollTimeout', e.target.value)}
-                                    placeholder="轮询超时 ms"
-                                  />
-                                </>
+                                <Input
+                                  value={form.mediaPollInterval}
+                                  onChange={(e) => set('mediaPollInterval', e.target.value)}
+                                  placeholder="轮询间隔 ms"
+                                />
+                              )}
+                              {(isDedicatedMediaType || form.mediaGenerationEnabled) && (
+                                <Input
+                                  value={form.mediaTimeout}
+                                  onChange={(e) => set('mediaTimeout', e.target.value)}
+                                  placeholder="接口超时 ms"
+                                />
                               )}
                             </div>
                           </>

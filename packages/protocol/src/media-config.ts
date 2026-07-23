@@ -155,6 +155,8 @@ export function isMediaApiType(value: unknown): value is MediaApiType {
 
 /** Provider 多媒体能力默认值（按能力族分组） */
 export interface ProviderMediaDefaults {
+  /** Provider 媒体接口统一超时：同步请求与异步任务链路共同遵守。 */
+  timeoutMs?: number | undefined
   image?:
     | {
         size?: string | undefined
@@ -211,6 +213,7 @@ export const MediaApiTypeSchema = z.enum(MEDIA_API_TYPES)
 export const MediaCapabilityIdSchema = z.enum(MEDIA_CAPABILITY_IDS)
 
 export const ProviderMediaDefaultsSchema = z.object({
+  timeoutMs: z.number().int().min(1_000).max(172_800_000).optional(),
   image: z
     .object({
       size: z.string().max(80).optional(),

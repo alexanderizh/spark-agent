@@ -55,6 +55,7 @@ import {
 } from '../media-http.util.js'
 import { logMediaCall, logMediaResult } from '../media-debug-log.js'
 import { resolveVolcengineMediaReference } from '../volcengine-ark-media-input.js'
+import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 import { clampInt, filenameHelper } from './openai-compatible-media.adapter.js'
 
 const log = createLogger('media:volcengine-ark')
@@ -160,7 +161,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
         headers: authHeaders(ctx),
         body: JSON.stringify(body),
         fetchImpl: ctx.fetch,
-        timeoutMs: 60_000,
+        timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
         errorExtractor: volcengineErrorExtractor,
         ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
       })
@@ -201,7 +202,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
       raw = await pollTask(pollUrl, authHeaders(ctx), {
         fetchImpl: ctx.fetch,
         intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 5_000,
-        timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 172_800_000,
+        ...mediaPollTimeoutOptions(ctx.mediaDefaults, 172_800_000),
         errorExtractor: volcengineErrorExtractor,
         inspect: (data) => {
           const urls = extractMediaUrls(data, { kind: 'video' })
@@ -235,7 +236,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
           u,
           input.outputDir,
           filenameHelper(input, videoPrefix(capability), i, videoUrls.length),
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )
@@ -299,7 +300,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 120_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 120_000),
       errorExtractor: volcengineErrorExtractor,
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
@@ -318,7 +319,7 @@ export class VolcengineArkMediaAdapter implements MediaProviderAdapter {
           image,
           input.outputDir,
           filenameHelper(input, 'seedream', index, images.length),
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         ),
       ),
     )

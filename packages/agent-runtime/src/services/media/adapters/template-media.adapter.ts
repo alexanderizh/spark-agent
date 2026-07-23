@@ -25,6 +25,7 @@ import { MediaArtifactService } from '../media-artifact.service.js'
 import { extractStatus, fetchJson, pollTask } from '../media-http.util.js'
 import { logMediaCall } from '../media-debug-log.js'
 import { compileMediaRequest } from '../media-request-compiler.js'
+import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 import { filenameHelper, mimeFromFormat } from './openai-compatible-media.adapter.js'
 
 export class TemplateMediaAdapter {
@@ -101,7 +102,7 @@ export class TemplateMediaAdapter {
       headers,
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       binary: manifest.invocation.response.kind === 'binary_response',
       ...(manifest.error ? { errorContract: manifest.error } : {}),
     })
@@ -152,10 +153,10 @@ export class TemplateMediaAdapter {
     return pollTask(pollUrl, headers, {
       fetchImpl: ctx.fetch,
       intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? polling?.intervalMs ?? 5_000,
-      timeoutMs:
-        ctx.mediaDefaults?.polling?.timeoutMs ??
-        polling?.timeoutMs ??
-        (manifest.domains.includes('video') ? 1_800_000 : 600_000),
+      ...mediaPollTimeoutOptions(
+        ctx.mediaDefaults,
+        polling?.timeoutMs ?? (manifest.domains.includes('video') ? 1_800_000 : 600_000),
+      ),
       inspect: (data) => {
         if (firstStringAtPaths(data, response.resultPaths)) return 'done'
         const rawStatus = extractStatus(data).toLowerCase()
@@ -184,7 +185,7 @@ export class TemplateMediaAdapter {
         return [await this.artifact.writeBinaryAsset(outputKind, buffer, input.outputDir, name, defaultMime(outputKind, input))]
       }
       if (outputKind === 'image') {
-        return [await this.artifact.writeImage({ kind: 'base64', value: buffer.toString('base64'), mimeType: 'image/png' }, input.outputDir, name, ctx.fetch)]
+        return [await this.artifact.writeImage({ kind: 'base64', value: buffer.toString('base64'), mimeType: 'image/png' }, input.outputDir, name, ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults))]
       }
       return [await this.artifact.writeTextAsset(buffer.toString('utf8'), input.outputDir, name)]
     }
@@ -221,11 +222,11 @@ export class TemplateMediaAdapter {
       if (isHttpUrl(value)) {
         if (outputKind === 'image') {
           if (options.download === false) return { type: 'image', url: value, raw: { url: value } }
-          return this.artifact.writeImage({ kind: 'url', value }, input.outputDir, name, ctx.fetch)
+          return this.artifact.writeImage({ kind: 'url', value }, input.outputDir, name, ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults))
         }
         if (outputKind === 'audio' || outputKind === 'video') {
           if (options.download === false) return { type: outputKind, url: value, raw: { url: value } }
-          return this.artifact.downloadMediaAsset(outputKind, value, input.outputDir, name, ctx.fetch)
+          return this.artifact.downloadMediaAsset(outputKind, value, input.outputDir, name, ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults))
         }
       }
       if (outputKind === 'image') {
@@ -233,7 +234,7 @@ export class TemplateMediaAdapter {
           { kind: 'base64', value: normalizeBase64(value), mimeType: mimeFromDataUrl(value) ?? 'image/png' },
           input.outputDir,
           name,
-          ctx.fetch,
+          ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults),
         )
       }
       if (outputKind === 'audio' || outputKind === 'video') {

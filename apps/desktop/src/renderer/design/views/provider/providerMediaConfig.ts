@@ -1,4 +1,30 @@
-import type { MediaCapabilityId, MediaProviderKind, ProviderModelType } from '@spark/protocol'
+import type {
+  MediaCapabilityId,
+  MediaProviderKind,
+  ProviderMediaDefaults,
+  ProviderModelType,
+} from '@spark/protocol'
+
+export function mediaInterfaceTimeoutFormValue(
+  defaults: ProviderMediaDefaults | undefined,
+  fallbackMs?: number,
+): string {
+  const timeoutMs = defaults?.timeoutMs ?? defaults?.polling?.timeoutMs ?? fallbackMs
+  return timeoutMs == null ? '' : String(timeoutMs)
+}
+
+export function mediaInterfaceTimeoutUpdate(
+  timeoutValue: string,
+  pollIntervalValue: string,
+  fallbackTimeoutMs?: number,
+): Pick<ProviderMediaDefaults, 'timeoutMs' | 'polling'> {
+  const timeoutMs = timeoutValue.trim() ? Number(timeoutValue) : fallbackTimeoutMs
+  const intervalMs = pollIntervalValue.trim() ? Number(pollIntervalValue) : undefined
+  return {
+    ...(timeoutMs != null ? { timeoutMs } : {}),
+    ...(intervalMs != null ? { polling: { intervalMs } } : {}),
+  }
+}
 
 export const MEDIA_PROVIDER_LABELS: Record<MediaProviderKind, string> = {
   apimart: 'APIMart',

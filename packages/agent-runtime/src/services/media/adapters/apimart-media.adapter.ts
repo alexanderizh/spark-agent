@@ -28,6 +28,7 @@ import {
   pollTask,
 } from '../media-http.util.js'
 import { MediaArtifactService } from '../media-artifact.service.js'
+import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
 import {
   buildImageRequestParams,
   extraAllowed,
@@ -106,7 +107,7 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
       headers: authHeaders(ctx),
       body: JSON.stringify(body),
       fetchImpl: ctx.fetch,
-      timeoutMs: 60_000,
+      timeoutMs: resolveMediaInterfaceTimeoutMs(ctx.mediaDefaults, 60_000),
       ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
     })
 
@@ -123,7 +124,7 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
         raw = await pollTask(`${baseEndpoint(ctx)}/tasks/${encodeURIComponent(taskId)}`, authHeaders(ctx), {
           fetchImpl: ctx.fetch,
           intervalMs: ctx.mediaDefaults?.polling?.intervalMs ?? 4_000,
-          timeoutMs: ctx.mediaDefaults?.polling?.timeoutMs ?? 300_000,
+          ...mediaPollTimeoutOptions(ctx.mediaDefaults, 300_000),
           inspect: (payload) => {
             if (extractImages(payload).length > 0) return 'done'
             const status = extractStatus(payload).toLowerCase()
@@ -139,7 +140,7 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
     }
     const assets = await Promise.all(
       images.map((image, index) =>
-        this.artifact.writeImage(image, input.outputDir, filenameHelper(input, 'edit', index, images.length), ctx.fetch),
+        this.artifact.writeImage(image, input.outputDir, filenameHelper(input, 'edit', index, images.length), ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults)),
       ),
     )
     return { provider: this.id, model, mode, ...(requestId ? { requestId } : {}), assets, rawResponse: raw }

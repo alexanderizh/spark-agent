@@ -10,7 +10,7 @@ describe('provider presets', () => {
         preset.modelType === 'video' ||
         preset.mediaCapabilities?.some((capability) => capability.startsWith('video.')) === true
       if (!supportsVideo) continue
-      expect(preset.mediaDefaults?.polling?.timeoutMs, preset.id).toBeGreaterThanOrEqual(
+      expect(preset.mediaDefaults?.timeoutMs, preset.id).toBeGreaterThanOrEqual(
         DEFAULT_VIDEO_POLL_TIMEOUT_MS,
       )
     }
@@ -58,7 +58,7 @@ describe('provider presets', () => {
   })
 
   it('keeps image provider defaults aligned with each default model schema', () => {
-    expect(getProviderPresetById('apimart-images')?.mediaDefaults?.polling?.timeoutMs).toBe(600_000)
+    expect(getProviderPresetById('apimart-images')?.mediaDefaults?.timeoutMs).toBe(600_000)
     expect(getProviderPresetById('bailian-images')?.mediaDefaults?.image).toEqual({
       size: '2K',
       n: 1,

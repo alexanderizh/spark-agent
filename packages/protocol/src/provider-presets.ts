@@ -462,7 +462,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ].map((modelId) => ({ manifestId: `openai-images:${modelId}`, modelId, enabled: true })),
     mediaDefaults: {
       video: { durationSeconds: 4 },
-      polling: { intervalMs: 10000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 10000 },
     },
     sourceUrls: [
       'https://developers.openai.com/api/docs/guides/video-generation',
@@ -1334,7 +1335,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaDefaults: {
       image: { size: '1024x1024', responseFormat: 'url' },
       video: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
-      polling: { intervalMs: 5000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 5000 },
     },
     sourceUrls: ['https://agnes-ai.com/zh-Hans/docs/overview'],
   },
@@ -1441,7 +1443,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       image: { size: '1:1', n: 1, resolution: '1k', outputFormat: 'png' },
-      polling: { intervalMs: 4000, timeoutMs: 600_000 },
+      timeoutMs: 600_000,
+      polling: { intervalMs: 4000 },
     },
     sourceUrls: [
       'https://docs.apimart.ai/cn/api-reference/images/gpt-image-2/official',
@@ -1507,7 +1510,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, quality: 'hd' },
-      polling: { intervalMs: 6000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 6000 },
     },
     sourceUrls: ['https://docs.apimart.ai/cn/api-reference/videos/veo3/generation'],
   },
@@ -1531,7 +1535,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, quality: 'hd' },
-      polling: { intervalMs: 6000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 6000 },
     },
     sourceUrls: ['https://docs.apimart.ai/cn/api-reference/videos/sora-2/generation'],
   },
@@ -1650,7 +1655,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
-      polling: { intervalMs: 6000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 6000 },
     },
     sourceUrls: ['https://docs.apimart.ai/cn/api-reference/videos'],
   },
@@ -1732,7 +1738,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
-      polling: { intervalMs: 5000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 5000 },
     },
     sourceUrls: [
       'https://docs.x.ai/developers/model-capabilities/video/generation',
@@ -1791,7 +1798,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       image: { size: '2K', n: 1 },
-      polling: { intervalMs: 5000, timeoutMs: 600_000 },
+      timeoutMs: 600_000,
+      polling: { intervalMs: 5000 },
     },
     sourceUrls: ['https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market'],
   },
@@ -1830,7 +1838,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { resolution: '1080P', durationSeconds: 5 },
-      polling: { intervalMs: 15000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 15000 },
     },
     sourceUrls: [
       'https://help.aliyun.com/zh/model-studio/happyhorse-text-to-video-api-reference',
@@ -1879,7 +1888,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { resolution: '1080P', durationSeconds: 5, watermark: false },
-      polling: { intervalMs: 15000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 15000 },
     },
     sourceUrls: [
       'https://help.aliyun.com/zh/model-studio/text-to-video-api-reference',
@@ -1970,7 +1980,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p' },
-      polling: { intervalMs: 8000, timeoutMs: 172_800_000 },
+      timeoutMs: 172_800_000,
+      polling: { intervalMs: 8000 },
     },
     sourceUrls: [
       'https://www.volcengine.com/docs/82379/2291680',
@@ -2152,7 +2163,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     })),
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
-      polling: { intervalMs: 10000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 10000 },
     },
     sourceUrls: ['https://ai.google.dev/gemini-api/docs/veo'],
   },
@@ -2177,7 +2189,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
-      polling: { intervalMs: 10000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 10000 },
     },
     sourceUrls: ['https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash'],
   },
@@ -2208,7 +2221,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 6, resolution: '720p' },
-      polling: { intervalMs: 5000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 5000 },
     },
     sourceUrls: [
       'https://ai.google.dev/gemini-api/docs/omni',
@@ -2253,7 +2267,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaModelRefs: [{ manifestId: 'midjourney:gateway', modelId: 'midjourney', enabled: true }],
     mediaDefaults: {
       image: { aspectRatio: '1:1', n: 1 },
-      polling: { intervalMs: 5000, timeoutMs: 900_000 },
+      timeoutMs: 900_000,
+      polling: { intervalMs: 5000 },
     },
     sourceUrls: ['https://docs.midjourney.com/', 'https://www.midjourney.com/'],
   },
@@ -2288,7 +2303,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 5 },
-      polling: { intervalMs: 5000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 5000 },
     },
     sourceUrls: ['https://klingapi.com/zh/docs/text-to-video'],
   },
@@ -2352,7 +2368,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { durationSeconds: 6, resolution: '768P' },
-      polling: { intervalMs: 5000, timeoutMs: 1_800_000 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 5000 },
     },
     sourceUrls: ['https://platform.minimaxi.com/document/video_generation'],
   },
@@ -2376,7 +2393,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       image: { responseFormat: 'url' },
-      polling: { intervalMs: 3000, timeoutMs: 600000 },
+      timeoutMs: 600000,
+      polling: { intervalMs: 3000 },
     },
     sourceUrls: [
       'https://cloud.tencent.com/document/product/1823/130080',
@@ -2474,7 +2492,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
     mediaDefaults: {
       video: { durationSeconds: 5, resolution: '720p' },
-      polling: { intervalMs: 5000, timeoutMs: 1800000 },
+      timeoutMs: 1800000,
+      polling: { intervalMs: 5000 },
     },
     sourceUrls: [
       'https://cloud.tencent.com/document/product/1823/130081',
