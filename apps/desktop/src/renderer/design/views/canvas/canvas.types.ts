@@ -259,6 +259,13 @@ export type CanvasNodeData = {
     taskId?: string
     materializedAt: string
   }
+  /** 画布工作流产物血缘，用于从节点和资产中心追溯到固定运行版本。 */
+  workflowProvenance?: {
+    definitionId: string
+    version: number
+    runId: string
+    stepNodeId: string
+  }
   status?: CanvasTaskStatus
   progress?: number
   message?: string

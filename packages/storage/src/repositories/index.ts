@@ -15,6 +15,34 @@ export type {
   CanvasSnapshotRow,
   UpsertCanvasProjectParams,
 } from './canvas.repository.js'
+export { CanvasWorkflowRepository } from './canvas-workflow.repository.js'
+export type {
+  CanvasWorkflowRow,
+  CanvasWorkflowItem,
+  CanvasWorkflowScope,
+  CanvasWorkflowStatus,
+  CreateCanvasWorkflowParams,
+  UpdateCanvasWorkflowParams,
+  ListCanvasWorkflowsParams,
+  DuplicateCanvasWorkflowParams,
+} from './canvas-workflow.repository.js'
+export {
+  CanvasWorkflowRunRepository,
+  CanvasWorkflowVersionRepository,
+} from './canvas-workflow-runtime.repository.js'
+export type {
+  CanvasWorkflowVersionRow,
+  CreateCanvasWorkflowVersionParams,
+  CanvasWorkflowRunStatus,
+  CanvasWorkflowRunStepStatus,
+  CanvasWorkflowRunRow,
+  CanvasWorkflowRunStepRow,
+  CreateCanvasWorkflowRunParams,
+  CreateCanvasWorkflowRunStepParams,
+  ListCanvasWorkflowRunsParams,
+  UpdateCanvasWorkflowRunParams,
+  UpdateCanvasWorkflowRunStepParams,
+} from './canvas-workflow-runtime.repository.js'
 export { EventRepository } from './event.repository.js'
 export { TurnRequestRepository } from './turn-request.repository.js'
 export type { TurnRequestRow, TurnRequestStatus } from './turn-request.repository.js'

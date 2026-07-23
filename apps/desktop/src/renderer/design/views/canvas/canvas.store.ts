@@ -16,6 +16,7 @@ import type {
   CanvasTextTaskStreamPayload,
   CanvasInputBinding,
   CanvasPromptTaskFields,
+  CanvasWorkflowPackage,
   SessionReasoningEffort,
 } from '@spark/protocol'
 import { captureCanvasAcceptanceTaskEvidence } from './acceptance/canvasAcceptanceEvidence'
@@ -23,6 +24,7 @@ import {
   applyCanvasNodeLayoutUpdates,
   type CanvasNodeLayoutUpdate,
 } from './canvasNodeLayoutPersistence'
+import { buildCanvasWorkflowTemplateBlueprint } from './canvasWorkflowMaterialization'
 
 export type CanvasViewMode = { mode: 'projects' } | { mode: 'workspace'; projectId: string }
 
@@ -576,20 +578,25 @@ export function useCanvasWorkspace(projectId: string) {
     ) => {
       const current = snapshot
       if (!current) return
+      const existingTaskIds = new Set(current.tasks.map((task) => task.id))
+      let next: CanvasSnapshot
       // 多媒体 operation 走真实平台 adapter；文本 operation 走真实文本模型；其余记录为待接入执行器的任务。
       if (isMediaOperation(request.operation)) {
-        await applyTaskSnapshot(
+        next = await applyTaskSnapshot(
           canvasApi.createMediaTask(projectId, { ...request, boardId: current.board.id }),
         )
       } else if (isTextModelOperation(request.operation)) {
-        await applyTaskSnapshot(
+        next = await applyTaskSnapshot(
           canvasApi.createTextTask(projectId, { ...request, boardId: current.board.id }),
         )
       } else {
-        await applyTaskSnapshot(
+        next = await applyTaskSnapshot(
           canvasApi.createTask(projectId, { ...request, boardId: current.board.id }),
         )
       }
+      return next.tasks.find(
+        (task) => !existingTaskIds.has(task.id) && task.operation === request.operation,
+      )
     },
     [applyTaskSnapshot, projectId, snapshot],
   )
@@ -759,10 +766,34 @@ export function useCanvasWorkspace(projectId: string) {
       edges?: Array<{
         from: string
         to: string
-        type?: 'used_as_input' | 'generated' | 'references'
+        type?: import('./canvas.types').CanvasEdgeType
+        sourceHandle?: string
+        targetHandle?: string
       }>
     }) => {
       await applyCanvasMutationSnapshot(canvasApi.applyTemplate({ projectId, ...input }))
+    },
+    [applyCanvasMutationSnapshot, projectId],
+  )
+
+  const materializeWorkflow = useCallback(
+    async (input: {
+      boardId: string
+      originX: number
+      originY: number
+      workflowPackage: CanvasWorkflowPackage
+    }) => {
+      const blueprint = buildCanvasWorkflowTemplateBlueprint(input.workflowPackage)
+      return applyCanvasMutationSnapshot(
+        canvasApi.applyTemplate({
+          projectId,
+          boardId: input.boardId,
+          originX: input.originX,
+          originY: input.originY,
+          nodes: blueprint.nodes,
+          edges: blueprint.edges,
+        }),
+      )
     },
     [applyCanvasMutationSnapshot, projectId],
   )
@@ -1100,6 +1131,7 @@ export function useCanvasWorkspace(projectId: string) {
     insertAsset,
     // 模板
     applyTemplate,
+    materializeWorkflow,
     // 项目元数据（影视等行业模式）
     updateProjectMetadata,
     // 影视公用资产

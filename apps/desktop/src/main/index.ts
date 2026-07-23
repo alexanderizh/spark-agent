@@ -89,6 +89,11 @@ import {
   runShutdownCleanupSteps,
 } from './app-shutdown.js'
 import { disposeSessionServiceForShutdown } from './session-service-shutdown.js'
+import {
+  resolveAuthKeytarService,
+  shouldEnableSingleInstanceLock,
+  shouldRegisterDefaultProtocolClient,
+} from './startup-isolation.js'
 
 const log = createLogger('main')
 let tray: Tray | null = null
@@ -167,10 +172,12 @@ async function processPendingPlatformRedeemCodes(): Promise<void> {
   }
 }
 
-if (is.dev && process.argv[1]) {
-  app.setAsDefaultProtocolClient('spark-agent', process.execPath, [process.argv[1]])
-} else {
-  app.setAsDefaultProtocolClient('spark-agent')
+if (shouldRegisterDefaultProtocolClient(process.env)) {
+  if (is.dev && process.argv[1]) {
+    app.setAsDefaultProtocolClient('spark-agent', process.execPath, [process.argv[1]])
+  } else {
+    app.setAsDefaultProtocolClient('spark-agent')
+  }
 }
 
 app.on('open-url', (event, value) => {
@@ -181,7 +188,7 @@ app.on('open-url', (event, value) => {
 const ownsSingleInstanceLock = installSingleInstanceLock(app, showMainWindow, (commandLine) => {
   const code = findPlatformModelRedeemCode(commandLine)
   if (code) queuePlatformRedeemDeepLink(`spark-agent://redeem?code=${encodeURIComponent(code)}`)
-}, !is.dev)
+}, shouldEnableSingleInstanceLock(is.dev, process.env))
 
 const initialRedeemCode = findPlatformModelRedeemCode(process.argv)
 if (initialRedeemCode) pendingRedeemCodes.add(initialRedeemCode)
@@ -703,7 +710,7 @@ async function initializeApp(): Promise<void> {
     initAuthService({
       defaultBaseUrl:
         process.env.SPARK_EDUGEN_BASE_URL?.trim() || 'https://spark.yiqibyte.com/',
-      keytarService: 'SparkAgent.CloudAuth',
+      keytarService: resolveAuthKeytarService(process.env),
       requestTimeoutMs: 30_000,
     })
     await getAuthService().start()

@@ -6,7 +6,7 @@
  * 「从模板生成节点组合」由 canvasApi.applyTemplate 落地。
  */
 
-import type { CanvasNodeData, CanvasNodeType } from './canvas.types'
+import type { CanvasEdgeType, CanvasNodeData, CanvasNodeType } from './canvas.types'
 
 /** 模板内单个节点蓝图（相对坐标，应用到画布时加 originX/originY 偏移） */
 export type NodeBlueprint = {
@@ -26,7 +26,9 @@ export type NodeBlueprint = {
 export type EdgeBlueprint = {
   from: string
   to: string
-  type?: 'used_as_input' | 'generated' | 'references'
+  type?: CanvasEdgeType
+  sourceHandle?: string
+  targetHandle?: string
 }
 
 export type CanvasTemplateType =

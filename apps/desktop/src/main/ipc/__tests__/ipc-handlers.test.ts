@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 
-const PROTOCOL_IPC = join(__dirname, '../../../../../../packages/protocol/src/ipc/index.ts')
+const PROTOCOL_DIR = join(__dirname, '../../../../../../packages/protocol/src')
 const MAIN_IPC_DIR = join(__dirname, '..')
 const MAIN_SERVICES_DIR = join(__dirname, '../../services')
 
@@ -29,25 +29,30 @@ function readAllTsUnder(dir: string): string {
   return out
 }
 
-function extractChannels(src: string): string[] {
-  const matches = src.match(/'[a-z]+:[a-z-]+'/g) ?? []
-  return [...new Set(matches.map((m) => m.slice(1, -1)))]
+function extractIpcMapChannels(src: string): string[] {
+  const matches = src.matchAll(/^\s*'([a-z][a-z-]*(?::[a-z][a-z-]*)+)'\s*:\s*\[/gm)
+  return [
+    ...new Set(
+      [...matches].flatMap((match) => (match[1] === undefined ? [] : [match[1]])),
+    ),
+  ]
+}
+
+function extractRegisteredChannels(src: string): string[] {
+  const matches = src.match(/'[a-z][a-z-]*(?::[a-z][a-z-]*)+'/g) ?? []
+  return [...new Set(matches.map((match) => match.slice(1, -1)))]
 }
 
 describe('IPC handler registration completeness', () => {
-  const protocolSrc = readFileSync(PROTOCOL_IPC, 'utf-8')
+  const protocolSrc = readAllTsUnder(PROTOCOL_DIR)
   // 拼接：main/ipc 与 main/services（很多 register*.ts 在 services 目录下）
   const handlerSrc = readAllTsUnder(MAIN_IPC_DIR) + '\n' + readAllTsUnder(MAIN_SERVICES_DIR)
 
-  // Extract channels defined in IpcChannelMap
-  const mapBlock = protocolSrc.slice(
-    protocolSrc.indexOf('export interface IpcChannelMap {'),
-    protocolSrc.indexOf('\n}', protocolSrc.indexOf('export interface IpcChannelMap {')),
-  )
-  const definedChannels = extractChannels(mapBlock)
+  // IPC map interfaces are split across protocol modules and joined via declaration merging.
+  const definedChannels = extractIpcMapChannels(protocolSrc)
 
   // Extract channels registered via typedIpcHandle in handlers
-  const registeredChannels = extractChannels(handlerSrc)
+  const registeredChannels = extractRegisteredChannels(handlerSrc)
 
   it('IpcChannelMap has at least 27 channels', () => {
     expect(definedChannels.length).toBeGreaterThanOrEqual(27)
@@ -65,6 +70,7 @@ describe('IPC handler registration completeness', () => {
         'agent',
         'app',
         'auth',
+        'binary',
         'board',
         'browser',
         'canvas',
@@ -73,26 +79,39 @@ describe('IPC handler registration completeness', () => {
         'context',
         'dialog',
         'env',
+        'env-config',
+        'ffmpeg',
         'file',
+        'font-assets',
+        'github-connector',
+        'history-import',
         'hook',
         'log',
         'mcp',
         'memory',
         'model',
         'permission',
+        'platform-model',
         'playwright',
+        'prompt-config',
         'provider',
         'remote',
         'rules',
+        'scheduled-task',
         'sdk',
         'session',
         'settings',
         'skill',
+        'skill-config',
+        'skill-registry',
+        'task-execution',
         'team',
         'terminal',
         'tool',
         'update',
         'usage',
+        'video',
+        'voice',
         'window',
         'workflow',
         'workspace',

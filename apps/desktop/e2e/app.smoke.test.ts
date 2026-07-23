@@ -28,25 +28,30 @@ function readAllTsUnder(dir: string): string {
 describe('App Smoke Tests', () => {
   it('should have correct app metadata', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')) as Record<string, unknown>
-    expect(pkg.name).toBe('@spark/desktop-dev')
+    expect(pkg.name).toBe('@spark/desktop')
     expect(typeof pkg.version).toBe('string')
     expect((pkg.version as string)).toMatch(/^\d+\.\d+\.\d+/)
   })
 
   it('should register all IPC channels defined in protocol', () => {
-    const protocolSrc = readFileSync(
-      join(ROOT, '../../packages/protocol/src/ipc/index.ts'),
-      'utf-8',
-    )
+    const protocolSrc = readAllTsUnder(join(ROOT, '../../packages/protocol/src'))
     // 扫描 main/ipc + main/services（registerAuthIpc / registerTerminalIpc 等都贡献 channel 注册）
     const handlerSrc =
       readAllTsUnder(join(ROOT, 'src/main/ipc')) + '\n' + readAllTsUnder(join(ROOT, 'src/main/services'))
-    const mapBlock = protocolSrc.slice(
-      protocolSrc.indexOf('export interface IpcChannelMap {'),
-      protocolSrc.indexOf('\n}', protocolSrc.indexOf('export interface IpcChannelMap {')),
-    )
-    const defined = [...new Set((mapBlock.match(/'[a-z]+:[a-z-]+'/g) ?? []).map((m) => m.slice(1, -1)))]
-    const registered = [...new Set((handlerSrc.match(/'[a-z]+:[a-z-]+'/g) ?? []).map((m) => m.slice(1, -1)))]
+    const defined = [
+      ...new Set(
+        [...protocolSrc.matchAll(/^\s*'([a-z][a-z-]*(?::[a-z][a-z-]*)+)'\s*:\s*\[/gm)].map(
+          (match) => match[1],
+        ),
+      ),
+    ]
+    const registered = [
+      ...new Set(
+        (handlerSrc.match(/'[a-z][a-z-]*(?::[a-z][a-z-]*)+'/g) ?? []).map((match) =>
+          match.slice(1, -1),
+        ),
+      ),
+    ]
     const missing = defined.filter((ch) => !registered.includes(ch))
     expect(missing, `Unregistered channels: ${missing.join(', ')}`).toHaveLength(0)
     expect(defined.length).toBeGreaterThanOrEqual(19)

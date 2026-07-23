@@ -22,6 +22,8 @@ import {
   CODEX_AUTO_ROUTER_PROVIDER_ID,
 } from '../auto-router-provider.js'
 import { ProviderFilesIpcSchemaRegistry } from '../provider-files.js'
+import { CanvasWorkflowIpcSchemaRegistry } from '../canvas-workflow.js'
+import { CanvasWorkflowRuntimeIpcSchemaRegistry } from '../canvas-workflow-runtime.js'
 
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
@@ -781,6 +783,8 @@ const CanvasPromptTaskFieldsSchema = {
  * P0-07 中的 handle 封装会用此表自动校验每个 channel 的 request payload
  */
 export const IpcSchemaRegistry = {
+  ...CanvasWorkflowIpcSchemaRegistry,
+  ...CanvasWorkflowRuntimeIpcSchemaRegistry,
   'session:create': SessionCreateRequestSchema,
   'session:send-turn': SessionSendTurnRequestSchema,
   'session:submit-turn': SessionSendTurnRequestSchema,

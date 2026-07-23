@@ -14,6 +14,10 @@ const fluentEmojiEntryPath = resolve(
   dirname(nodeRequire.resolve('@lobehub/fluent-emoji/package.json')),
   'es/FluentEmoji/index.js',
 )
+const emojiMartDataShimPath = resolve(
+  __dirname,
+  'src/renderer/tests/__mocks__/emoji-mart-data-shim.js',
+)
 
 export default defineConfig({
   test: {
@@ -32,7 +36,8 @@ export default defineConfig({
       // 避免 Node 原生 ESM 在解析这些包时撞上目录 import 或 CJS/ESM 混用问题。
       deps: {
         inline: [
-          /^@lobehub\//,
+          /@lobehub\//,
+          /@emoji-mart\/data/,
           /^antd($|\/)/,
           /^antd-style($|\/)/,
           /^rc-/,
@@ -43,18 +48,22 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      '@renderer': resolve(__dirname, 'src/renderer'),
-      '@main': resolve(__dirname, 'src/main'),
-      '@': resolve(__dirname, 'src/renderer'),
+    alias: [
+      { find: '@renderer', replacement: resolve(__dirname, 'src/renderer') },
+      { find: '@main', replacement: resolve(__dirname, 'src/main') },
+      { find: '@', replacement: resolve(__dirname, 'src/renderer') },
       // fluent-emoji 的 es/index.js 用了 `from './FluentEmoji'` 目录 import,
       // Node 原生 ESM 解析不支持，vitest 走到 native resolver 时会炸。
       // 直接 alias 到具体 .js 文件,绕过目录 import。
-      '@lobehub/fluent-emoji/es/FluentEmoji': fluentEmojiEntryPath,
+      { find: '@lobehub/fluent-emoji/es/FluentEmoji', replacement: fluentEmojiEntryPath },
       // emojilib 主入口是 index.json，Node 24 ESM 严格模式不允许裸 JSON import
       // （需要 `with { type: 'json' }`）。alias 到一个 .js shim，
       // shim 通过 fs.readFileSync 同步加载 JSON。
-      '@lobehub/emojilib': resolve(__dirname, 'src/renderer/tests/__mocks__/emojilib-shim.js'),
-    },
+      {
+        find: '@lobehub/emojilib',
+        replacement: resolve(__dirname, 'src/renderer/tests/__mocks__/emojilib-shim.js'),
+      },
+      { find: /^@emoji-mart\/data$/, replacement: emojiMartDataShimPath },
+    ],
   },
 })

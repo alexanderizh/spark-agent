@@ -1,17 +1,19 @@
 /**
  * Playwright E2E 测试配置 — @spark/desktop
  *
- * 注意：Electron 应用的 E2E 测试需要特殊配置。
- * Phase 0 阶段只建立框架，Phase 1 再编写具体用例。
+ * Electron release acceptance uses an isolated user profile and credential namespace.
+ * Keep these tests separate from browser-only smoke tests and unit suites.
  */
 
 import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  testMatch: '**/*.e2e.ts',
   timeout: 30_000,
   expect: {
-    timeout: 5_000,
+    // A fresh profile applies every migration before the first production shell is ready.
+    timeout: 15_000,
   },
   fullyParallel: false,
   retries: 0,
@@ -23,10 +25,7 @@ export default defineConfig({
   projects: [
     {
       name: 'electron',
-      use: {
-        // Electron Playwright 配置将在 Phase 1 补充
-        // 需要安装 @playwright/test 的 Electron 支持
-      },
+      use: {},
     },
   ],
 })
