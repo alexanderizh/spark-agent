@@ -265,22 +265,24 @@ export const ProviderMediaConfigSchema = z.object({
  * canvas operation → capability 映射。
  * 见 design doc §5.2。
  */
-export type CanvasOperationType =
-  | 'text_to_image'
-  | 'image_to_image'
-  | 'image_edit'
-  | 'image_compose'
-  | 'storyboard_grid'
-  | 'panorama_360'
-  | 'text_generate'
-  | 'text_rewrite'
-  | 'prompt_optimize'
-  | 'text_to_audio'
-  | 'audio_transcribe'
-  | 'text_to_video'
-  | 'image_to_video'
-  | 'video_edit'
-  | 'video_extend'
+export const CanvasOperationTypeSchema = z.enum([
+  'text_to_image',
+  'image_to_image',
+  'image_edit',
+  'image_compose',
+  'storyboard_grid',
+  'panorama_360',
+  'text_generate',
+  'text_rewrite',
+  'prompt_optimize',
+  'text_to_audio',
+  'audio_transcribe',
+  'text_to_video',
+  'image_to_video',
+  'video_edit',
+  'video_extend',
+])
+export type CanvasOperationType = z.infer<typeof CanvasOperationTypeSchema>
 
 /** operation → 所需 capability（多候选时取首个 provider 支持的） */
 export function capabilityForOperation(operation: CanvasOperationType): MediaCapabilityId[] {

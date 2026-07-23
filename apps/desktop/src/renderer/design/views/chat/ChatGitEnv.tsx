@@ -55,6 +55,8 @@ export function GitSessionTrigger({
         <button
           type="button"
           className={`git-session-trigger ${open ? 'active' : ''}`}
+          aria-label="环境信息"
+          aria-expanded={open}
           onClick={onToggle}
         >
           {icon}

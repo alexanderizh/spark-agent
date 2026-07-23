@@ -72,6 +72,25 @@ describe('SessionSidebarContext', () => {
     }
     const providerId = 'provider-1'
     const agentId = 'platform-manager-agent'
+    const createdSession = {
+      id: 'session-created',
+      title: 'Team session',
+      projectId: 'workspace-1',
+      workspaceIds: ['workspace-1'],
+      providerProfileId: providerId,
+      modelId: null,
+      agentId,
+      agentAdapter: 'claude',
+      permissionMode: 'claude-ask',
+      chatMode: 'agent',
+      reasoningEffort: 'medium',
+      status: 'idle',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-05-27T00:00:00.000Z',
+      updatedAt: '2026-05-27T00:00:00.000Z',
+      messageCount: 0,
+    }
     let sessionCreated = false
     let configChangedHandler: ((event: Record<string, unknown>) => void) | null = null
     let sessionCreatedHandler: ((event: Record<string, unknown>) => void) | null = null
@@ -83,27 +102,7 @@ describe('SessionSidebarContext', () => {
       if (channel === 'session:list') {
         return {
           sessions: sessionCreated
-            ? [
-                {
-                  id: 'session-created',
-                  title: 'Team session',
-                  projectId: 'workspace-1',
-                  workspaceIds: ['workspace-1'],
-                  providerProfileId: providerId,
-                  modelId: null,
-                  agentId,
-                  agentAdapter: 'claude',
-                  permissionMode: 'claude-ask',
-                  chatMode: 'agent',
-                  reasoningEffort: 'medium',
-                  status: 'idle',
-                  pinnedAt: null,
-                  archivedAt: null,
-                  createdAt: '2026-05-27T00:00:00.000Z',
-                  updatedAt: '2026-05-27T00:00:00.000Z',
-                  messageCount: 0,
-                },
-              ]
+            ? [createdSession]
             : [],
           total: sessionCreated ? 1 : 0,
         }
@@ -148,9 +147,13 @@ describe('SessionSidebarContext', () => {
       if (channel === 'session:create') {
         sessionCreated = true
         window.setTimeout(() => {
-          sessionCreatedHandler?.({ sessionId: 'session-created' })
+          sessionCreatedHandler?.({ sessionId: 'session-created', session: createdSession })
         }, 5)
-        return { sessionId: 'session-created', createdAt: '2026-05-27T00:00:00.000Z' }
+        return {
+          sessionId: 'session-created',
+          createdAt: '2026-05-27T00:00:00.000Z',
+          session: createdSession,
+        }
       }
       if (channel === 'team:update') {
         window.setTimeout(() => {
@@ -230,7 +233,7 @@ describe('SessionSidebarContext', () => {
     expect(
       invoke.mock.calls.filter(([channel]) => channel === 'workspace:list').length -
         refreshCountBeforeCreate,
-    ).toBe(1)
+    ).toBe(0)
   })
 
   it('keeps a newly created session active when an older refresh resolves late', async () => {

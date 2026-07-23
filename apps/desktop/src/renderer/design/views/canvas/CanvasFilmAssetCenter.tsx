@@ -381,6 +381,16 @@ function AssetListTab({
     return Array.from(set).sort()
   }, [assets])
 
+  const resolveCoverAsset = (asset: CanvasAsset): CanvasAsset => {
+    const refs = readReferences(asset.metadata)
+    if (refs.length === 0) return asset
+    return snapshot.assets.find((a) => a.id === refs[0]?.assetId) ?? asset
+  }
+  const assetHasImage = (asset: CanvasAsset): boolean => {
+    const cover = resolveCoverAsset(asset)
+    return Boolean(cover.thumbnailUrl ?? (cover.type === 'image' ? cover.url : null))
+  }
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     const list = assets.filter((asset) => {
@@ -400,12 +410,15 @@ function AssetListTab({
       return true
     })
     return list.sort((a, b) => {
+      const aImg = assetHasImage(a)
+      const bImg = assetHasImage(b)
+      if (aImg !== bImg) return aImg ? -1 : 1
       if (sortBy === 'name') return (a.title ?? '').localeCompare(b.title ?? '')
       if (sortBy === 'created') return b.createdAt.localeCompare(a.createdAt)
       if (sortBy === 'usage') return (usageMap.get(b.id) ?? 0) - (usageMap.get(a.id) ?? 0)
       return b.updatedAt.localeCompare(a.updatedAt)
     })
-  }, [assets, query, tagFilter, sortBy, usageMap])
+  }, [assets, query, tagFilter, sortBy, usageMap, snapshot])
 
   const editingAsset = editingId ? (assets.find((a) => a.id === editingId) ?? null) : null
 
@@ -576,35 +589,49 @@ function AssetListTab({
         >
           {filtered.slice(0, visibleCount).map((asset) => {
             const refs = readReferences(asset.metadata)
-            const cover =
-              refs.length > 0 ? snapshot.assets.find((a) => a.id === refs[0]?.assetId) : null
             const usage = usageMap.get(asset.id) ?? 0
             const hasCanvasNode = resolveCanvasAssetFocusNodeIds(snapshot, asset.id).length > 0
             const tags = readTags(asset.metadata)
+            const coverAsset = resolveCoverAsset(asset)
+            const hasImage = assetHasImage(asset)
             return (
-              <div key={asset.id} className="canvas-film-asset-card">
-                <div className="canvas-film-asset-card-thumb">
-                  {cover ? <AssetThumbnail asset={cover} /> : <AssetThumbnail asset={asset} />}
-                  {refs.length > 1 && (
-                    <span
-                      className="canvas-film-asset-card-refcount"
-                      title={`${refs.length} 张参考图`}
-                    >
-                      <Icons.Image size={11} /> {refs.length}
-                    </span>
-                  )}
-                  {usage > 0 && (
-                    <span className="canvas-film-asset-card-usage" title={`被引用 ${usage} 次`}>
-                      <Icons.Link size={11} /> {usage}
-                    </span>
+              <div key={asset.id} className="canvas-film-asset-card" data-kind={kind}>
+                <div className="canvas-film-asset-card-bg">
+                  {hasImage ? (
+                    <AssetThumbnail asset={coverAsset} />
+                  ) : (
+                    <div className="canvas-film-asset-card-placeholder" data-kind={kind}>
+                      <span className="canvas-film-asset-card-placeholder-icon">
+                        {asset.type === 'video' ? (
+                          <Icons.Play size={36} />
+                        ) : asset.type === 'prompt' ? (
+                          <Icons.Edit size={36} />
+                        ) : (
+                          <Icons.File size={36} />
+                        )}
+                      </span>
+                    </div>
                   )}
                 </div>
-                <div className="canvas-film-asset-card-main">
+                {refs.length > 1 && (
+                  <span
+                    className="canvas-film-asset-card-refcount"
+                    title={`${refs.length} 张参考图`}
+                  >
+                    <Icons.Image size={11} /> {refs.length}
+                  </span>
+                )}
+                {usage > 0 && (
+                  <span className="canvas-film-asset-card-usage" title={`被引用 ${usage} 次`}>
+                    <Icons.Link size={11} /> {usage}
+                  </span>
+                )}
+                <div className="canvas-film-asset-card-overlay">
                   <div className="canvas-film-asset-card-name" title={asset.title ?? ''}>
                     {asset.title ?? '未命名'}
                   </div>
                   <div className="canvas-film-asset-card-preview">
-                    {(asset.contentText ?? refs[0]?.description ?? '').slice(0, 60) || '(无内容)'}
+                    {(asset.contentText ?? refs[0]?.description ?? '').slice(0, 80) || '(无内容)'}
                   </div>
                   {tags.length > 0 && (
                     <div className="canvas-film-asset-card-tags">

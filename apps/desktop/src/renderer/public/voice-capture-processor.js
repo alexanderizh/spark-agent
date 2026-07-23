@@ -2,6 +2,7 @@
  * AudioWorklet global script. Keep this file as plain JavaScript and in renderer/public:
  * electron-vite copies it as a same-origin asset allowed by `script-src 'self'`.
  */
+/* global AudioWorkletProcessor, sampleRate, registerProcessor */
 class VoiceCaptureProcessor extends AudioWorkletProcessor {
   constructor() {
     super()
