@@ -248,6 +248,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     const image = new Image()
     image.onload = () => resolve(image)
     image.onerror = () => reject(new Error('角色参考图加载失败'))
+    image.crossOrigin = 'anonymous'
     image.src = src
   })
 }

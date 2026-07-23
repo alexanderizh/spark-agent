@@ -159,8 +159,9 @@ export function registerSafeFileSchemes(): void {
         standard: true,
         secure: true,
         supportFetchAPI: true,
+        corsEnabled: true,
+        stream: true,
         // 不需要 bypassCSP — 我们的 CSP 允许 safe-file: 资源
-        // 不需要 stream — Node.js fs 一次性读取足够
         // 不需要 codeCache — 静态图片资源
       },
     },

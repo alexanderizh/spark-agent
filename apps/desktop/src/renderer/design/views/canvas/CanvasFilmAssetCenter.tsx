@@ -12,9 +12,10 @@ import {
   Tooltip,
   message,
 } from 'antd'
-import { Button } from '@lobehub/ui'
+import { Button, Dropdown, Segmented } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
+import { ShotSegmentTable } from './CanvasShotSegmentTable'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
 import type { CanvasPromptLibraryEntry } from './CanvasPromptLibraryPanel'
 import { CanvasFilmPromptLibraryTab } from './CanvasFilmPromptLibraryTab'
@@ -743,6 +744,7 @@ function AssetListTab({
       )}
       <Modal
         open={sheetAsset !== null}
+        zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
         title={`生成角色图 · ${sheetAsset?.title ?? ''}`}
         okText={`生成 ${sheetAspects.length} 组`}
         cancelText="取消"
@@ -2283,6 +2285,7 @@ function ShotGroupTab({
         </div>
         <Modal
           open={presetOpen}
+          zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
           title="项目风格与风格预设"
           okText="保存预设"
           cancelText="关闭"
@@ -2442,6 +2445,7 @@ function ShotGroupTab({
         </Modal>
         <Modal
           open={edlOpen}
+          zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
           title="成片清单 (EDL)"
           width={720}
           okText="插入画布为文本节点"
@@ -2488,16 +2492,18 @@ function ShotGroupTab({
               >
                 <div className="canvas-film-shots-group-name">{group.name}</div>
                 <div className="canvas-film-shots-group-meta">{group.segments.length} 片段</div>
-                <Button
-                  size="middle"
-                  type="text"
-                  danger
-                  icon={<Icons.Trash size={12} />}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void handlers.deleteShotGroup(group.id)
-                  }}
-                />
+                <div className="canvas-film-shots-group-actions">
+                  <Button
+                    size="small"
+                    type="text"
+                    danger
+                    icon={<Icons.Trash size={12} />}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handlers.deleteShotGroup(group.id)
+                    }}
+                  />
+                </div>
               </div>
             ))}
           </div>
@@ -2663,48 +2669,15 @@ function ShotSegmentEditor({
             <span className="canvas-film-segments-desc">{group.description}</span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Button
-            size="middle"
-            type={viewMode === 'table' ? 'primary' : 'default'}
-            icon={<Icons.FileText size={13} />}
-            onClick={() => setViewMode('table')}
-          >
-            分镜表
-          </Button>
-          <Button
-            size="middle"
-            type={viewMode === 'card' ? 'primary' : 'default'}
-            icon={<Icons.Grid size={13} />}
-            onClick={() => setViewMode('card')}
-          >
-            卡片
-          </Button>
-          {handlers.onGenerateStoryboardGrid && group.segments.length > 0 && (
-            <Tooltip title="在画布上创建分镜图（宫格）任务节点">
-              <Button
-                size="middle"
-                icon={<Icons.Combine size={13} />}
-                onClick={() => {
-                  void handlers.onGenerateStoryboardGrid?.(group)
-                }}
-              >
-                生成分镜图
-              </Button>
-            </Tooltip>
-          )}
-          {handlers.onExpandShotsToCanvas && group.segments.length > 0 && (
-            <Button
-              size="middle"
-              icon={<Icons.Layers size={13} />}
-              onClick={async () => {
-                const count = (await handlers.onExpandShotsToCanvas?.(group)) ?? 0
-                if (count > 0) message.success(`已在画布展开 ${count} 个分镜节点`)
-              }}
-            >
-              展开到画布
-            </Button>
-          )}
+        <div className="canvas-film-segments-toolbar">
+          <Segmented
+            value={viewMode}
+            onChange={(v) => setViewMode(v as 'table' | 'card')}
+            options={[
+              { label: '分镜表', value: 'table' },
+              { label: '卡片', value: 'card' },
+            ]}
+          />
           <Button
             size="middle"
             icon={<Icons.Workflow size={13} />}
@@ -2712,15 +2685,6 @@ function ShotSegmentEditor({
           >
             按剧本自动分镜
           </Button>
-          <Tooltip title="粘贴分镜 agent 生成的 JSON 或 Markdown 分镜表，解析为分镜片段">
-            <Button
-              size="middle"
-              icon={<Icons.FilePlus size={13} />}
-              onClick={() => setImportOpen(true)}
-            >
-              导入分镜表
-            </Button>
-          </Tooltip>
           <Button
             size="middle"
             type="primary"
@@ -2729,10 +2693,56 @@ function ShotSegmentEditor({
           >
             新建片段
           </Button>
+          <Dropdown
+            trigger={['click']}
+            placement="bottomRight"
+            menu={{
+              items: [
+                ...(handlers.onGenerateStoryboardGrid && group.segments.length > 0
+                  ? [
+                      {
+                        key: 'storyboard',
+                        icon: <Icons.Combine size={14} />,
+                        label: '生成分镜图',
+                        onClick: () => {
+                          void handlers.onGenerateStoryboardGrid?.(group)
+                        },
+                      },
+                    ]
+                  : []),
+                ...(handlers.onExpandShotsToCanvas && group.segments.length > 0
+                  ? [
+                      {
+                        key: 'expand',
+                        icon: <Icons.Layers size={14} />,
+                        label: '展开到画布',
+                        onClick: () => {
+                          void (async () => {
+                            const count = (await handlers.onExpandShotsToCanvas?.(group)) ?? 0
+                            if (count > 0) message.success(`已在画布展开 ${count} 个分镜节点`)
+                          })()
+                        },
+                      },
+                    ]
+                  : []),
+                {
+                  key: 'import',
+                  icon: <Icons.FilePlus size={14} />,
+                  label: '导入分镜表',
+                  onClick: () => setImportOpen(true),
+                },
+              ],
+            }}
+          >
+            <Tooltip title="更多操作">
+              <Button size="middle" type="text" icon={<Icons.More size={14} />} />
+            </Tooltip>
+          </Dropdown>
         </div>
       </div>
       <Modal
         open={autoOpen}
+        zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
         title="按剧本自动分镜（按秒）"
         width={680}
         okText={plannedShots.length > 0 ? `生成 ${plannedShots.length} 个分镜` : '生成'}
@@ -2802,6 +2812,7 @@ function ShotSegmentEditor({
       </Modal>
       <Modal
         open={splitTarget != null}
+        zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
         title={`拆分「${splitTarget?.title ?? ''}」为多段`}
         width={560}
         okText={splitPreview.length > 1 ? `拆成 ${splitPreview.length} 段` : '无需拆分'}
@@ -2842,6 +2853,7 @@ function ShotSegmentEditor({
       </Modal>
       <Modal
         open={importOpen}
+        zIndex={FILM_CENTER_NESTED_MODAL_Z_INDEX}
         title="导入分镜表（解析 JSON / Markdown）"
         width={720}
         okText={parsedRows.length > 0 ? `导入 ${parsedRows.length} 个分镜` : '解析'}
@@ -3040,167 +3052,6 @@ function ShotSegmentEditor({
           })}
         </div>
       )}
-    </div>
-  )
-}
-
-/**
- * 分镜表（按秒）：以表格方式展示一个分镜分组的全部片段，带累计时间码列。
- * 每行支持生成关键帧 / 设关键帧 / 生成视频 / 拆分 / 编辑 / 删除。
- */
-function ShotSegmentTable({
-  group,
-  characterAssets,
-  sceneAssets,
-  handlers,
-  onEdit,
-  onSplit,
-}: {
-  group: ShotGroup
-  characterAssets: CanvasAsset[]
-  sceneAssets: CanvasAsset[]
-  handlers: FilmCenterHandlers
-  onEdit: (id: string) => void
-  onSplit: (segment: ShotSegment) => void
-}) {
-  // 累计时间码：优先用片段自带 inSec，否则按时长顺序累加
-  let cursor = 0
-  const rows = group.segments.map((segment) => {
-    const duration = resolveSegmentDuration(segment)
-    const inSec = typeof segment.inSec === 'number' ? segment.inSec : cursor
-    const outSec = typeof segment.outSec === 'number' ? segment.outSec : inSec + duration
-    cursor = outSec
-    const characters = (segment.characterAssetIds ?? [])
-      .map((id) => characterAssets.find((asset) => asset.id === id))
-      .filter((asset): asset is CanvasAsset => Boolean(asset))
-    const scene = segment.sceneAssetId
-      ? sceneAssets.find((asset) => asset.id === segment.sceneAssetId)
-      : undefined
-    return { segment, duration, inSec, outSec, characters, scene }
-  })
-  const totalSec = rows.reduce((sum, row) => sum + row.duration, 0)
-
-  return (
-    <div className="canvas-shot-table-wrap">
-      <table className="canvas-shot-table">
-        <thead>
-          <tr>
-            <th>镜号</th>
-            <th>时间码</th>
-            <th>时长</th>
-            <th>画面 / 动作</th>
-            <th>镜头</th>
-            <th>对白</th>
-            <th>角色 / 场景</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(({ segment, duration, inSec, outSec, characters, scene }) => {
-            const overLimit = duration > DEFAULT_MAX_CLIP_SEC
-            return (
-              <tr key={segment.id}>
-                <td className="canvas-shot-table-idx">
-                  #{segment.index}
-                  {segment.keyframeNodeIds && segment.keyframeNodeIds.length > 0 && (
-                    <span className="canvas-shot-table-kf" title="已设关键帧">
-                      🎞{segment.keyframeNodeIds.length}
-                    </span>
-                  )}
-                </td>
-                <td className="canvas-shot-table-time">
-                  {formatTimecode(inSec)}–{formatTimecode(outSec)}
-                </td>
-                <td className={overLimit ? 'canvas-shot-table-over' : undefined}>
-                  {duration}s
-                  {overLimit && (
-                    <Tooltip title={`超过单段上限 ${DEFAULT_MAX_CLIP_SEC}s，建议拆分`}>
-                      <span className="canvas-shot-table-warn">!</span>
-                    </Tooltip>
-                  )}
-                </td>
-                <td className="canvas-shot-table-desc">
-                  <div className="canvas-shot-table-title">{segment.title}</div>
-                  {segment.description && <div>{segment.description}</div>}
-                </td>
-                <td className="canvas-shot-table-shot">{segment.shotPrompt || '—'}</td>
-                <td className="canvas-shot-table-line">{segment.dialogue || '—'}</td>
-                <td>
-                  <div className="canvas-shot-table-refs">
-                    {scene && <Tag color="blue">{scene.title ?? '场景'}</Tag>}
-                    {characters.map((character) => (
-                      <Tag key={character.id} color="orange">
-                        {character.title}
-                      </Tag>
-                    ))}
-                    {!scene && characters.length === 0 && '—'}
-                  </div>
-                </td>
-                <td className="canvas-shot-table-ops">
-                  {handlers.onGenerateSegmentKeyframes && (
-                    <Tooltip title="生成关键帧（首/尾帧）">
-                      <Button
-                        size="middle"
-                        type="text"
-                        icon={<Icons.Image size={13} />}
-                        onClick={() =>
-                          handlers.onGenerateSegmentKeyframes?.({
-                            group,
-                            segment,
-                            characters,
-                            ...(scene ? { scene } : {}),
-                          })
-                        }
-                      />
-                    </Tooltip>
-                  )}
-                  {handlers.onGenerateSegmentVideo && (
-                    <Tooltip title="生成视频">
-                      <Button
-                        size="middle"
-                        type="text"
-                        icon={<Icons.Play size={13} />}
-                        onClick={() =>
-                          handlers.onGenerateSegmentVideo?.({
-                            group,
-                            segment,
-                            characters,
-                            ...(scene ? { scene } : {}),
-                          })
-                        }
-                      />
-                    </Tooltip>
-                  )}
-                  <Tooltip title="拆分为多段（适配短视频模型）">
-                    <Button
-                      size="middle"
-                      type="text"
-                      icon={<Icons.Scissors size={13} />}
-                      onClick={() => onSplit(segment)}
-                    />
-                  </Tooltip>
-                  <Button
-                    size="middle"
-                    type="text"
-                    icon={<Icons.Edit size={13} />}
-                    onClick={() => onEdit(segment.id)}
-                  />
-                  <Button
-                    size="middle"
-                    type="text"
-                    danger
-                    icon={<Icons.Trash size={13} />}
-                    onClick={() => void handlers.deleteShotSegment(group.id, segment.id)}
-                  />
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      <div className="canvas-shot-table-foot">
-        共 {rows.length} 镜 · 总时长 {formatTimecode(totalSec)}（{totalSec}s）
-      </div>
     </div>
   )
 }
