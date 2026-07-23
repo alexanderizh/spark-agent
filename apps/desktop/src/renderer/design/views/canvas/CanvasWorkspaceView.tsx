@@ -35,10 +35,7 @@ import { canvasWorkflowApi } from './canvasWorkflow.api'
 import { executeCanvasWorkflowPlan } from './canvasWorkflowRunner'
 import { executeCanvasWorkflowCanvasStep } from './canvasWorkflowCanvasExecutor'
 import { waitForCanvasWorkflowTask } from './canvasWorkflowTaskAdapter'
-import {
-  extractCanvasWorkflowDraft,
-  type CanvasWorkflowDraft,
-} from './canvasWorkflowExtraction'
+import { extractCanvasWorkflowDraft, type CanvasWorkflowDraft } from './canvasWorkflowExtraction'
 import { CanvasInlineNodeTitleEditor } from './CanvasInlineNodeTitleEditor'
 import { CanvasCharacterLibraryPanel } from './CanvasCharacterLibraryPanel'
 import { CanvasCharacterSubviewEditor } from './CanvasCharacterSubviewEditor'
@@ -186,6 +183,10 @@ import {
   type FilmCharacterSubview,
 } from './canvasCharacterLibrary'
 import {
+  insertCharacterSubviewToCanvas,
+  resolveCharacterSubviewCanvasSourceNode,
+} from './canvasCharacterSubviewInsertion'
+import {
   placeAutoGridNode,
   placeAutoNodeToRight,
   stackAutoNodesToRight,
@@ -303,6 +304,7 @@ type InsertPreparedImagesResult = {
 }
 type CharacterSubviewEditorContext = {
   node: CanvasNode
+  sourceNode: CanvasNode
   ownerAsset: CanvasAsset
   sourceImageAsset: CanvasAsset
   subviews: FilmCharacterSubview[]
@@ -1743,7 +1745,9 @@ export function CanvasWorkspaceView({
   )
   const characterSubviewEditorContext = useMemo<CharacterSubviewEditorContext | null>(() => {
     if (!characterSubviewEditorNodeId || !snapshot) return null
-    const node = resolveCanvasResourceActionNode(characterSubviewEditorNodeId)
+    const sourceNode = snapshot.nodes.find((item) => item.id === characterSubviewEditorNodeId)
+    if (!sourceNode) return null
+    const node = resolveCanvasResourceActionNode(sourceNode.id)
     if (!node?.assetId) return null
     const sourceImageAsset =
       snapshot.assets.find((item) => item.id === node.assetId && item.type === 'image') ?? null
@@ -1756,6 +1760,7 @@ export function CanvasWorkspaceView({
     if (!sourceImageAsset || !ownerAsset) return null
     return {
       node,
+      sourceNode,
       sourceImageAsset,
       ownerAsset,
       // 子视图按来源图片分区：只回显属于当前来源图片的子视图，避免同一角色资产的
@@ -3702,10 +3707,60 @@ export function CanvasWorkspaceView({
       characterAsset: CanvasAsset,
       sourceImageAsset: CanvasAsset,
       subview: FilmCharacterSubview,
+      options?: { sourceNodeId?: string },
     ) => {
       const sourceUrl = characterSourceImageUrl(sourceImageAsset)
       if (!sourceUrl) {
         message.warning('当前图片没有可用的源图')
+        return
+      }
+      const cropSubviewToDataUrl = (url: string, cropPx: FilmCharacterSubview['cropPx']) =>
+        cropCharacterSubviewToDataUrl(url, cropPx)
+      const currentCanvasNodes = snapshotRef.current?.nodes ?? []
+      const sourceNode = resolveCharacterSubviewCanvasSourceNode({
+        ...(options?.sourceNodeId ? { preferredSourceNodeId: options.sourceNodeId } : {}),
+        sourceAssetId: sourceImageAsset.id,
+        canvasNodes: currentCanvasNodes,
+      })
+      if (sourceNode) {
+        try {
+          const inserted = await insertCharacterSubviewToCanvas(
+            {
+              sourceNode,
+              canvasNodes: currentCanvasNodes,
+              ownerAsset: characterAsset,
+              sourceImageAsset,
+              sourceImageUrl: sourceUrl,
+              subview,
+            },
+            {
+              cropToDataUrl: cropSubviewToDataUrl,
+              dataUrlToFile,
+              saveImage: (input) =>
+                window.spark.invoke('file:save-pasted-image', {
+                  ...input,
+                  storageScope: 'canvas',
+                  ...(snapshotRef.current?.project.rootPath
+                    ? { projectRootPath: snapshotRef.current.project.rootPath }
+                    : {}),
+                }),
+              createImageNode,
+              patchNodes,
+              updateNodeData,
+              connectNodes,
+              selectNode: (nodeId) => setSelectedNodeIds([nodeId]),
+            },
+          )
+          if (!inserted) {
+            message.error('子视图插入失败')
+            return
+          }
+          message.success(`已将子视图「${subview.label}」插入原产物右侧并连线`)
+        } catch (error) {
+          message.error(
+            error instanceof Error ? `子视图插入失败：${error.message}` : '子视图插入失败',
+          )
+        }
         return
       }
       const baseName =
@@ -3718,17 +3773,30 @@ export function CanvasWorkspaceView({
           .replace(/[^\p{L}\p{N}_-]+/gu, '-')
           .replace(/^-+|-+$/g, '')
           .slice(0, 24) || 'detail'
-      const dataUrl = await cropCharacterSubviewToDataUrl(sourceUrl, subview.cropPx)
-      const file = dataUrlToFile(dataUrl, `${baseName}-${viewName}-${Date.now()}.png`)
-      const assetId = await uploadImageAsset(file)
-      if (!assetId) {
-        message.error('子视图生成失败')
-        return
+      try {
+        const dataUrl = await cropSubviewToDataUrl(sourceUrl, subview.cropPx)
+        const file = dataUrlToFile(dataUrl, `${baseName}-${viewName}-${Date.now()}.png`)
+        const assetId = await uploadImageAsset(file)
+        if (!assetId) {
+          message.error('子视图生成失败')
+          return
+        }
+        await handleInsertAsset(assetId)
+        message.success(`已将子视图「${subview.label}」插入画布`)
+      } catch (error) {
+        message.error(
+          error instanceof Error ? `子视图插入失败：${error.message}` : '子视图插入失败',
+        )
       }
-      await handleInsertAsset(assetId)
-      message.success(`已将子视图「${subview.label}」插入画布`)
     },
-    [handleInsertAsset, uploadImageAsset],
+    [
+      connectNodes,
+      createImageNode,
+      handleInsertAsset,
+      patchNodes,
+      updateNodeData,
+      uploadImageAsset,
+    ],
   )
 
   const handleUpdateCharacterSubviews = useCallback(
@@ -3893,9 +3961,7 @@ export function CanvasWorkspaceView({
         workflowPackage: workflow.package,
       })
       setSelectedNodeIds(
-        nextSnapshot.nodes
-          .filter((node) => !previousNodeIds.has(node.id))
-          .map((node) => node.id),
+        nextSnapshot.nodes.filter((node) => !previousNodeIds.has(node.id)).map((node) => node.id),
       )
       setWorkflowDrawerOpen(false)
       message.success(`已将“${workflow.name}”添加到画布`)
@@ -8352,6 +8418,7 @@ export function CanvasWorkspaceView({
                 context.ownerAsset,
                 context.sourceImageAsset,
                 subview,
+                { sourceNodeId: context.sourceNode.id },
               )
             }}
             onSave={async (nextSubviews) => {

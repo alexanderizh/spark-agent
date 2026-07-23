@@ -7583,8 +7583,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   padding: 10px 12px 12px;
 }
 
-.canvas-shot-script-edit-panel
-  .canvas-node-edit-bottom-body:has(.canvas-storyboard-editor) {
+.canvas-shot-script-edit-panel .canvas-node-edit-bottom-body:has(.canvas-storyboard-editor) {
   overflow: hidden;
 }
 
@@ -8800,8 +8799,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   bottom: auto;
   left: auto;
   flex: none;
-  width: min(92vw, 1280px);
-  height: min(88vh, 860px);
+  width: min(94vw, 1600px);
+  height: min(92vh, 1040px);
   max-width: none;
   max-height: none;
   transform: none;
@@ -10056,6 +10055,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-height: 34px;
   padding: 9px 10px;
   border: 1px solid transparent;
   border-radius: var(--r-md);
@@ -10083,8 +10083,25 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 }
 
 .canvas-film-shots-group-meta {
+  flex-shrink: 0;
+  white-space: nowrap;
   font-size: 10px;
   color: var(--text-muted);
+}
+
+.canvas-film-shots-group-actions {
+  flex-shrink: 0;
+  display: flex;
+  opacity: 0;
+  transition: opacity 0.14s ease;
+  pointer-events: none;
+}
+
+.canvas-film-shots-group-item:hover .canvas-film-shots-group-actions,
+.canvas-film-shots-group-item.active .canvas-film-shots-group-actions,
+.canvas-film-shots-group-item:focus-within .canvas-film-shots-group-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .canvas-film-shots-main {
@@ -10102,12 +10119,21 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 12px;
 
   strong {
     font-size: 14px;
     color: var(--text);
   }
+}
+
+.canvas-film-segments-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .canvas-film-segments-desc {
@@ -10124,7 +10150,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   align-content: start;
 }
 
-// ── 分镜表（按秒）─────────────────────────────────────────────
+// 导入预览仍使用轻量原生表格，保留其独立样式。
 .canvas-shot-table-wrap {
   overflow: auto;
 }
@@ -10156,45 +10182,6 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     background: var(--canvas-row-hover, rgba(0, 0, 0, 0.03));
   }
 
-  .canvas-shot-table-idx {
-    white-space: nowrap;
-    font-weight: 600;
-  }
-
-  .canvas-shot-table-kf {
-    margin-left: 4px;
-    font-weight: 400;
-    opacity: 0.75;
-  }
-
-  .canvas-shot-table-time {
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-    color: var(--lobe-color-text-secondary, #888);
-  }
-
-  .canvas-shot-table-over {
-    color: var(--lobe-color-warning, #e0a500);
-    font-weight: 600;
-  }
-
-  .canvas-shot-table-warn {
-    display: inline-block;
-    margin-left: 4px;
-    width: 14px;
-    height: 14px;
-    line-height: 14px;
-    text-align: center;
-    border-radius: 50%;
-    background: var(--lobe-color-warning, #e0a500);
-    color: #fff;
-    font-size: 10px;
-  }
-
-  .canvas-shot-table-title {
-    font-weight: 600;
-  }
-
   .canvas-shot-table-desc {
     min-width: 160px;
     max-width: 280px;
@@ -10206,22 +10193,120 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
     color: var(--lobe-color-text-secondary, #888);
     word-break: break-word;
   }
+}
 
-  .canvas-shot-table-refs {
+// ── 分镜表（按秒，分镜分组面板；antd Table + 自写可拖拽列宽）──────────
+.canvas-shot-segment-table-wrap {
+  .ant-table {
+    font-size: 12px;
+    background: transparent;
+
+    .ant-table-thead > tr > th {
+      position: relative;
+      background: var(--canvas-panel-bg, rgba(255, 255, 255, 0.04));
+      color: var(--lobe-color-text-secondary, #888);
+      font-weight: 600;
+      white-space: nowrap;
+      padding: 8px;
+      border-bottom: 1px solid var(--canvas-border, rgba(0, 0, 0, 0.08));
+    }
+
+    .ant-table-tbody > tr > td {
+      padding: 6px 8px;
+      vertical-align: top;
+      border-bottom: 1px solid var(--canvas-border, rgba(0, 0, 0, 0.08));
+      word-break: break-word;
+    }
+
+    .ant-table-tbody > tr:hover > td {
+      background: var(--canvas-row-hover, rgba(0, 0, 0, 0.03));
+    }
+  }
+
+  // 表头拖拽手柄：右缘 4px 热区
+  .ant-table-thead > tr > th .canvas-shot-segment-resizer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 4px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+    z-index: 2;
+
+    &:hover,
+    &:active {
+      background: var(--primary, #1677ff);
+    }
+  }
+
+  .canvas-shot-seg-idx {
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .canvas-shot-seg-kf {
+    margin-left: 4px;
+    font-weight: 400;
+    opacity: 0.75;
+  }
+  .canvas-shot-seg-time {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--lobe-color-text-secondary, #888);
+  }
+  .canvas-shot-seg-over {
+    color: var(--lobe-color-warning, #e0a500);
+    font-weight: 600;
+  }
+  .canvas-shot-seg-warn {
+    display: inline-block;
+    margin-left: 4px;
+    width: 14px;
+    height: 14px;
+    line-height: 14px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--lobe-color-warning, #e0a500);
+    color: #fff;
+    font-size: 10px;
+  }
+  .canvas-shot-seg-title {
+    font-weight: 600;
+  }
+  .canvas-shot-seg-desc {
+    min-width: 0;
+  }
+  .canvas-shot-seg-text {
+    display: inline-block;
+    max-width: 100%;
+    color: var(--lobe-color-text-secondary, #888);
+    word-break: break-word;
+  }
+  .canvas-shot-seg-refs {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
   }
 
-  .canvas-shot-table-ops {
+  // 操作列：hover 才浮现（沿用原交互）
+  .canvas-shot-seg-ops {
+    opacity: 0;
+    transition: opacity 0.14s ease;
     white-space: nowrap;
+    display: flex;
+    gap: 2px;
+    align-items: center;
   }
-}
+  .ant-table-tbody > tr:hover .canvas-shot-seg-ops,
+  .ant-table-tbody > tr:focus-within .canvas-shot-seg-ops {
+    opacity: 1;
+  }
 
-.canvas-shot-table-foot {
-  padding: 8px 4px 0;
-  font-size: 12px;
-  color: var(--lobe-color-text-secondary, #888);
+  .canvas-shot-seg-foot {
+    padding: 8px 4px 0;
+    font-size: 12px;
+    color: var(--lobe-color-text-secondary, #888);
+  }
 }
 
 // ── 分镜脚本节点（传统分镜脚本表）──────────────────────────────────
