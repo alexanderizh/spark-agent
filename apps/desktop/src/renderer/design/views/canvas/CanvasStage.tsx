@@ -72,6 +72,7 @@ import {
 import { getOperationVisual } from './canvasOperationIcons'
 import { readCharacterSubviews } from './canvasCharacterLibrary'
 import { readAssetKind } from './canvasFilmAssets'
+import { dispatchCanvasStageDrop } from './canvasWorkflowDrag'
 import type { CanvasPipelineAssetKind } from './canvasPipelineOps'
 import {
   buildCanvasOperationRunViews,
@@ -641,6 +642,7 @@ function CanvasStageInner({
   onToggleLockSelectedNodes,
   onBringSelectedNodesToFront,
   onAddNodesToAgent,
+  onExtractSelectionToWorkflow,
   /** 单节点右键：把该节点加入画布 Agent 对话引用列表（节点富菜单入口） */
   onAddNodeToAgent,
   onRunOperationNode,
@@ -662,6 +664,7 @@ function CanvasStageInner({
   onAddTextAtPosition,
   onAddImageAtPosition,
   onDropFiles,
+  onDropWorkflow,
   onAddDirectorStage3DAtPosition,
   onAddVideoWorkbenchAtPosition,
   onInsertAssetFromPane,
@@ -698,6 +701,8 @@ function CanvasStageInner({
   onBringSelectedNodesToFront?: () => void
   /** 右键选中节点 → 加入画布 Agent 对话的引用列表 */
   onAddNodesToAgent?: () => void
+  /** 多选节点右键 → 以规则拓扑提取画布工作流草稿 */
+  onExtractSelectionToWorkflow?: () => void
   /** 单节点右键 → 加入画布 Agent 对话（节点富菜单入口） */
   onAddNodeToAgent?: (nodeId: string) => void
   /** 单节点右键 → 使用已保存配置提交任务 */
@@ -733,6 +738,8 @@ function CanvasStageInner({
   onAddImageAtPosition: CanvasStageCreateAction
   /** 拖入外部文件落到画布上（图片/视频/音频/文本），位置已转为 flow 坐标 */
   onDropFiles?: (position: CanvasStagePoint, files: File[]) => void
+  /** 从工作流侧栏拖入工作流图，位置已转为 flow 坐标 */
+  onDropWorkflow?: (position: CanvasStagePoint, workflowId: string) => void
   /** 空白右键：新建真·3D 导演台节点 */
   onAddDirectorStage3DAtPosition?: CanvasStageCreateAction
   /** 空白右键或拖线菜单：新建视频工作台节点 */
@@ -2192,48 +2199,49 @@ function CanvasStageInner({
   // screenToFlowPosition，保证落点与视觉一致。
   const handleStageDragOver = useCallback(
     (event: ReactDragEvent<HTMLDivElement>) => {
-      if (!onDropFiles) return
+      if (!onDropFiles && !onDropWorkflow) return
       event.preventDefault()
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
     },
-    [onDropFiles],
+    [onDropFiles, onDropWorkflow],
   )
 
   const handleStageDragEnter = useCallback(
     (event: ReactDragEvent<HTMLDivElement>) => {
-      if (!onDropFiles) return
+      if (!onDropFiles && !onDropWorkflow) return
       event.preventDefault()
       dragDepthRef.current += 1
       if (dragDepthRef.current === 1) setDropActive(true)
     },
-    [onDropFiles],
+    [onDropFiles, onDropWorkflow],
   )
 
   const handleStageDragLeave = useCallback(
     (event: ReactDragEvent<HTMLDivElement>) => {
-      if (!onDropFiles) return
+      if (!onDropFiles && !onDropWorkflow) return
       event.preventDefault()
       dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
       if (dragDepthRef.current === 0) setDropActive(false)
     },
-    [onDropFiles],
+    [onDropFiles, onDropWorkflow],
   )
 
   const handleStageDrop = useCallback(
     (event: ReactDragEvent<HTMLDivElement>) => {
-      if (!onDropFiles) return
+      if (!onDropFiles && !onDropWorkflow) return
       event.preventDefault()
       dragDepthRef.current = 0
       setDropActive(false)
-      const files = Array.from(event.dataTransfer?.files ?? [])
-      if (files.length === 0) return
       const instance = flowInstanceRef.current
-      const position: CanvasStagePoint = instance
-        ? instance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
-        : { x: event.clientX, y: event.clientY }
-      onDropFiles(position, files)
+      dispatchCanvasStageDrop({
+        dataTransfer: event.dataTransfer,
+        clientPoint: { x: event.clientX, y: event.clientY },
+        toFlowPosition: (point) => (instance ? instance.screenToFlowPosition(point) : point),
+        ...(onDropWorkflow ? { onDropWorkflow } : {}),
+        ...(onDropFiles ? { onDropFiles } : {}),
+      })
     },
-    [onDropFiles],
+    [onDropFiles, onDropWorkflow],
   )
 
   return (
@@ -2412,6 +2420,22 @@ function CanvasStageInner({
             {selectedNodeIds.length > 0 && (
               <>
                 <div className="canvas-pane-context-section-title">选中节点</div>
+                {selectedNodeIds.length > 1 && onExtractSelectionToWorkflow && (
+                  <>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closePaneContextMenu()
+                        onExtractSelectionToWorkflow()
+                      }}
+                    >
+                      <Icons.Workflow size={14} />
+                      <span>提取为画布工作流（{selectedNodeIds.length}）</span>
+                    </button>
+                    <div className="canvas-pane-context-divider" />
+                  </>
+                )}
                 {(onConfigureSelectedTasks || onSubmitSelectedTasks) && (
                   <>
                     {onConfigureSelectedTasks && (

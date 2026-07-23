@@ -18,9 +18,11 @@ import { useCanvasProjects } from './canvas.store'
 import { openCanvasProjectWindow } from './canvas-window-client'
 import { CanvasProjectCard } from './CanvasProjectCard'
 import { CanvasAcceptanceLauncher } from './acceptance/CanvasAcceptanceLauncher'
+import { CanvasWorkflowLibraryView } from './CanvasWorkflowLibraryView'
 import './CanvasProjectsView.less'
 import './uiux-v4/projects.less'
 import './uiux-v4/modals.less'
+import './canvas-workflow.less'
 
 export function CanvasProjectsView({
   onWorkspaceActiveChange,
@@ -51,6 +53,7 @@ export function CanvasProjectsView({
   const [exportingProjectId, setExportingProjectId] = useState<string | null>(null)
   const [togglingPinId, setTogglingPinId] = useState<string | null>(null)
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null)
+  const [section, setSection] = useState<'projects' | 'workflows'>('projects')
 
   const filteredProjects = useMemo(() => {
     const keyword = query.trim().toLowerCase()
@@ -300,11 +303,15 @@ export function CanvasProjectsView({
     <div className="canvas-projects-view canvas-uiux-v4-projects">
       <header className="canvas-projects-header">
         <div className="canvas-projects-heading">
-          <span>PROJECT CANVAS</span>
-          <h2>画布项目</h2>
-          <p>以项目为入口管理无限画布、素材、任务和生成血缘。</p>
+          <span>CANVAS STUDIO</span>
+          <h2>无限画布</h2>
+          <p>
+            {section === 'projects'
+              ? '以项目为入口管理画布、素材、任务和生成血缘。'
+              : '管理可跨项目复用的内容生产流程和项目工作流。'}
+          </p>
         </div>
-        <div className="canvas-projects-header-actions">
+        {section === 'projects' && <div className="canvas-projects-header-actions">
           {import.meta.env.DEV && (
             <CanvasAcceptanceLauncher
               onReady={async (projectId) => {
@@ -325,9 +332,29 @@ export function CanvasProjectsView({
           <Button size="medium" type="primary" icon={<Icons.Plus size={15} />} onClick={openCreate}>
             新建项目
           </Button>
-        </div>
+        </div>}
       </header>
 
+      <nav className="canvas-hub-tabs" aria-label="无限画布内容">
+        <button
+          type="button"
+          className={section === 'projects' ? 'is-active' : ''}
+          aria-current={section === 'projects' ? 'page' : undefined}
+          onClick={() => setSection('projects')}
+        >
+          画布项目
+        </button>
+        <button
+          type="button"
+          className={section === 'workflows' ? 'is-active' : ''}
+          aria-current={section === 'workflows' ? 'page' : undefined}
+          onClick={() => setSection('workflows')}
+        >
+          画布工作流库
+        </button>
+      </nav>
+
+      {section === 'projects' ? <>
       <div className="canvas-projects-toolbar">
         <LobeSearchBar
           value={query}
@@ -415,6 +442,7 @@ export function CanvasProjectsView({
           </div>
         )}
       </main>
+      </> : <CanvasWorkflowLibraryView projects={projects} />}
 
       <Modal
         className="canvas-project-modal"

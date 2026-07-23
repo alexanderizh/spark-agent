@@ -20,6 +20,7 @@ export function CanvasBottomDock({
   onAddNodeItem,
   onOpenAddMenu,
   onOpenFilmCenter,
+  onOpenWorkflowLibrary,
   onOpenCharacterLibrary,
   onAddDirectorStage3D,
   onAddVideoWorkbench,
@@ -41,6 +42,7 @@ export function CanvasBottomDock({
   onAddNodeItem: (item: AddNodeMenuItem) => void
   onOpenAddMenu: () => void
   onOpenFilmCenter: () => void
+  onOpenWorkflowLibrary: () => void
   onOpenCharacterLibrary: () => void
   /** 分镜导演台面板入口（保留 API 以兼容其他调用方） */
   onOpenShotDirector?: () => void
@@ -127,6 +129,15 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-divider" />
 
         <div className="canvas-bottom-dock-group">
+          <Tooltip title="画布工作流（项目流程 / 个人库 / 从选区提取）" placement="top">
+            <Button
+              size="middle"
+              type="text"
+              icon={<Icons.Workflow size={15} />}
+              aria-label="画布工作流"
+              onClick={() => closeAddMenuAndRun(onOpenWorkflowLibrary)}
+            />
+          </Tooltip>
           <Tooltip title="项目资产中心（剧本/角色/场景/道具/分镜/提示词库）" placement="top">
             <Button
               size="middle"

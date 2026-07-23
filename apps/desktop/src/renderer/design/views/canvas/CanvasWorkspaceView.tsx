@@ -25,6 +25,20 @@ import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { downloadAsset, downloadCanvasResource } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
+import { CanvasWorkflowDrawer } from './CanvasWorkflowDrawer'
+import { CanvasWorkflowExtractDialog } from './CanvasWorkflowExtractDialog'
+import {
+  CanvasWorkflowRunPanel,
+  type CanvasWorkflowRunExecutionInput,
+} from './CanvasWorkflowRunPanel'
+import { canvasWorkflowApi } from './canvasWorkflow.api'
+import { executeCanvasWorkflowPlan } from './canvasWorkflowRunner'
+import { executeCanvasWorkflowCanvasStep } from './canvasWorkflowCanvasExecutor'
+import { waitForCanvasWorkflowTask } from './canvasWorkflowTaskAdapter'
+import {
+  extractCanvasWorkflowDraft,
+  type CanvasWorkflowDraft,
+} from './canvasWorkflowExtraction'
 import { CanvasInlineNodeTitleEditor } from './CanvasInlineNodeTitleEditor'
 import { CanvasCharacterLibraryPanel } from './CanvasCharacterLibraryPanel'
 import { CanvasCharacterSubviewEditor } from './CanvasCharacterSubviewEditor'
@@ -243,6 +257,9 @@ import type {
 import type {
   CanvasMediaTaskInputFile,
   CanvasPromptTaskFields,
+  CanvasWorkflowDefinition,
+  CanvasWorkflowRun,
+  CanvasWorkflowValueType,
   SessionReasoningEffort,
 } from '@spark/protocol'
 import type {
@@ -1639,6 +1656,7 @@ export function CanvasWorkspaceView({
     insertAsset,
     refresh,
     applyTemplate,
+    materializeWorkflow,
     updateProjectMetadata,
     createFilmAsset,
     importManuscript,
@@ -1662,6 +1680,10 @@ export function CanvasWorkspaceView({
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
   const [filmCenterOpen, setFilmCenterOpen] = useState(false)
   const [characterLibraryOpen, setCharacterLibraryOpen] = useState(false)
+  const [workflowDrawerOpen, setWorkflowDrawerOpen] = useState(false)
+  const [workflowExtractDraft, setWorkflowExtractDraft] = useState<CanvasWorkflowDraft | null>(null)
+  const [workflowToUpdate, setWorkflowToUpdate] = useState<CanvasWorkflowDefinition | null>(null)
+  const [workflowToRun, setWorkflowToRun] = useState<CanvasWorkflowDefinition | null>(null)
   const [presetModalOpen, setPresetModalOpen] = useState(false)
   const [configuredPresetCount, setConfiguredPresetCount] = useState(
     () => Object.keys(readCanvasOperationPresetOverrides()).length,
@@ -2482,6 +2504,7 @@ export function CanvasWorkspaceView({
         | 'inline-ai'
         | 'operation'
         | 'film-center'
+        | 'workflow'
         | 'character-library'
         | 'shot-director'
         | 'agent'
@@ -2492,6 +2515,7 @@ export function CanvasWorkspaceView({
       if (except !== 'operation') setActiveOperationPanelNodeId(null)
       if (except !== 'operation' && except !== 'node-edit') setInlinePanelFocusRequest(null)
       if (except !== 'film-center') setFilmCenterOpen(false)
+      if (except !== 'workflow') setWorkflowDrawerOpen(false)
       if (except !== 'character-library') setCharacterLibraryOpen(false)
       if (except !== 'shot-director') setShotDirectorOpen(false)
       if (except !== 'agent') setAgentOpen(false)
@@ -2499,6 +2523,49 @@ export function CanvasWorkspaceView({
       if (except !== 'asset-detail') setAssetDetailResetKey((key) => key + 1)
     },
     [],
+  )
+
+  const openWorkflowExtraction = useCallback(() => {
+    if (!snapshot) return
+    try {
+      const draft = extractCanvasWorkflowDraft({
+        projectId,
+        boardId: snapshot.board.id,
+        selectedNodes,
+        allNodes: snapshot.nodes,
+        allEdges: snapshot.edges,
+      })
+      setWorkflowDrawerOpen(false)
+      setWorkflowToUpdate(null)
+      setWorkflowExtractDraft(draft)
+    } catch (extractError) {
+      message.warning(
+        extractError instanceof Error ? extractError.message : '当前选区无法提取为画布工作流',
+      )
+    }
+  }, [projectId, selectedNodes, snapshot])
+
+  const openWorkflowUpdate = useCallback(
+    (workflow: CanvasWorkflowDefinition) => {
+      if (!snapshot) return
+      try {
+        const draft = extractCanvasWorkflowDraft({
+          projectId,
+          boardId: snapshot.board.id,
+          selectedNodes,
+          allNodes: snapshot.nodes,
+          allEdges: snapshot.edges,
+        })
+        setWorkflowDrawerOpen(false)
+        setWorkflowToUpdate(workflow)
+        setWorkflowExtractDraft(draft)
+      } catch (extractError) {
+        message.warning(
+          extractError instanceof Error ? extractError.message : '当前选区无法更新画布工作流',
+        )
+      }
+    },
+    [projectId, selectedNodes, snapshot],
   )
 
   // Agent 面板改为 overlay 后不再全局抑制画布手势——面板自身的 pointer-events 会阻挡覆盖区域的交互，
@@ -3815,6 +3882,56 @@ export function CanvasWorkspaceView({
     [applyTemplate, snapshot],
   )
 
+  const materializeCanvasWorkflowAt = useCallback(
+    async (workflow: CanvasWorkflowDefinition, position: { x: number; y: number }) => {
+      if (!snapshot) return
+      const previousNodeIds = new Set(snapshot.nodes.map((node) => node.id))
+      const nextSnapshot = await materializeWorkflow({
+        boardId: snapshot.board.id,
+        originX: position.x,
+        originY: position.y,
+        workflowPackage: workflow.package,
+      })
+      setSelectedNodeIds(
+        nextSnapshot.nodes
+          .filter((node) => !previousNodeIds.has(node.id))
+          .map((node) => node.id),
+      )
+      setWorkflowDrawerOpen(false)
+      message.success(`已将“${workflow.name}”添加到画布`)
+    },
+    [materializeWorkflow, snapshot],
+  )
+
+  const handleAddCanvasWorkflow = useCallback(
+    async (workflow: CanvasWorkflowDefinition) => {
+      const position = positionNodeInViewport(
+        canvasViewportRef.current,
+        { width: 560, height: 360 },
+        { x: 200, y: 160 },
+      )
+      try {
+        await materializeCanvasWorkflowAt(workflow, position)
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '添加画布工作流失败')
+      }
+    },
+    [materializeCanvasWorkflowAt],
+  )
+
+  const handleDropCanvasWorkflow = useCallback(
+    async (position: { x: number; y: number }, workflowId: string) => {
+      try {
+        const workflow = await canvasWorkflowApi.get(workflowId)
+        if (!workflow) throw new Error('画布工作流不存在或已被删除')
+        await materializeCanvasWorkflowAt(workflow, position)
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '添加画布工作流失败')
+      }
+    },
+    [materializeCanvasWorkflowAt],
+  )
+
   const referencedAssetIds = useMemo(
     () =>
       new Set(
@@ -4489,7 +4606,13 @@ export function CanvasWorkspaceView({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableKeyboardTarget(event.target)) return
-      if (leaveOpen || saveToLibraryNodeId != null || annotatingImageNodeId != null) return
+      if (
+        leaveOpen ||
+        saveToLibraryNodeId != null ||
+        annotatingImageNodeId != null ||
+        workflowToRun != null
+      )
+        return
       if (
         agentOpen ||
         characterLibraryOpen ||
@@ -4593,6 +4716,7 @@ export function CanvasWorkspaceView({
     historyOpen,
     inlineAiOpen,
     leaveOpen,
+    workflowToRun,
     refresh,
     saveToLibraryNodeId,
     shortcutHelpOpen,
@@ -4622,8 +4746,14 @@ export function CanvasWorkspaceView({
       } else if (editingNodeId != null) {
         setEditingNodeId(null)
         setSelectedNodeIds([])
+      } else if (workflowToRun != null) {
+        setWorkflowToRun(null)
+      } else if (workflowExtractDraft != null) {
+        setWorkflowExtractDraft(null)
       } else if (agentOpen) {
         setAgentOpen(false)
+      } else if (workflowDrawerOpen) {
+        setWorkflowDrawerOpen(false)
       } else if (characterLibraryOpen) {
         setCharacterLibraryOpen(false)
       } else if (filmCenterOpen) {
@@ -4650,7 +4780,10 @@ export function CanvasWorkspaceView({
     annotatingImageNodeId,
     activeOperationPanelNodeId,
     editingNodeId,
+    workflowExtractDraft,
+    workflowToRun,
     agentOpen,
+    workflowDrawerOpen,
     characterLibraryOpen,
     filmCenterOpen,
     inlineAiOpen,
@@ -4817,7 +4950,7 @@ export function CanvasWorkspaceView({
       },
     )
 
-    await runWithCanvasTaskViewport(
+    const createdTask = await runWithCanvasTaskViewport(
       () => viewportBeforeCreate,
       restoreCanvasViewport,
       () =>
@@ -4867,7 +5000,137 @@ export function CanvasWorkspaceView({
       ...(effectiveSkillIds.length > 0 ? { skillIds: effectiveSkillIds } : {}),
       ...(Object.keys(modelParams ?? {}).length > 0 ? { modelParams } : {}),
     })
+    return createdTask ?? null
   }
+
+  const executeCanvasWorkflow = async ({
+    workflow,
+    run,
+    plan,
+    signal,
+  }: CanvasWorkflowRunExecutionInput): Promise<CanvasWorkflowRun> =>
+    executeCanvasWorkflowPlan({
+      run,
+      plan,
+      signal,
+      updateStep: (request) => canvasWorkflowApi.updateRunStep(request),
+      cancelRun: (runId) => canvasWorkflowApi.cancelRun(runId),
+      executeStep: (context) =>
+        executeCanvasWorkflowCanvasStep(context, {
+          contract: plan.contract,
+          createOperation: async (request) => {
+            const task = await handleCreateTask({
+              operation: request.operation as CanvasOperationType,
+              prompt: request.prompt,
+              ...(request.negativePrompt ? { negativePrompt: request.negativePrompt } : {}),
+              inputNodeIds: request.inputNodeIds,
+              ...(request.providerProfileId
+                ? { providerProfileId: request.providerProfileId }
+                : {}),
+              ...(request.manifestId ? { manifestId: request.manifestId } : {}),
+              ...(request.modelId ? { modelId: request.modelId } : {}),
+              modelParams: request.modelParams,
+              ...(request.agentId ? { agentId: request.agentId } : {}),
+              ...(request.skillIds ? { skillIds: request.skillIds } : {}),
+              taskTitle: request.taskTitle,
+              ...(request.outputTitle ? { outputTitle: request.outputTitle } : {}),
+            })
+            return task ? { id: task.id } : null
+          },
+          waitForTask: async (taskId, taskSignal) => {
+            const task = await waitForCanvasWorkflowTask({
+              projectId,
+              taskId,
+              readSnapshot: (currentProjectId) => canvasApi.openSnapshot(currentProjectId),
+              ...(taskSignal ? { signal: taskSignal } : {}),
+            })
+            return {
+              id: task.id,
+              outputNodeIds: task.outputNodeIds,
+              outputAssetIds: task.outputAssetIds,
+            }
+          },
+          markProvenance: async (task, context) => {
+            const provenance = {
+              definitionId: workflow.id,
+              version: run.workflowVersion,
+              runId: run.id,
+              stepNodeId: context.step.nodeId,
+            }
+            if (task.outputNodeIds.length > 0) {
+              await updateManyNodeData(
+                task.outputNodeIds.map((nodeId) => ({
+                  nodeId,
+                  data: { workflowProvenance: provenance },
+                })),
+              )
+            }
+            if (task.outputAssetIds.length > 0) {
+              const latest = await canvasApi.openSnapshot(projectId)
+              for (const assetId of task.outputAssetIds) {
+                const asset = latest.assets.find((item) => item.id === assetId)
+                const attributes =
+                  asset?.metadata.attributes &&
+                  typeof asset.metadata.attributes === 'object' &&
+                  !Array.isArray(asset.metadata.attributes)
+                    ? (asset.metadata.attributes as Record<string, string>)
+                    : {}
+                await updateFilmAsset(assetId, {
+                  attributes: {
+                    ...attributes,
+                    workflowDefinitionId: workflow.id,
+                    workflowVersion: String(run.workflowVersion),
+                    workflowRunId: run.id,
+                    workflowStepNodeId: context.step.nodeId,
+                  },
+                })
+              }
+            }
+          },
+          executeSubworkflow: async (request) => {
+            const childWorkflow = await canvasWorkflowApi.get(request.workflowId)
+            if (!childWorkflow) {
+              throw new Error(`找不到子工作流“${request.workflowId}”`)
+            }
+            const childRun = await canvasWorkflowApi.createRun({
+              workflowId: childWorkflow.id,
+              workflowVersion: request.workflowVersion,
+              projectId,
+              inputs: request.inputs,
+              exposedParams: request.exposedParams,
+              idempotencyKey: request.idempotencyKey,
+            })
+            const completed = await executeCanvasWorkflow({
+              workflow: childWorkflow,
+              run: childRun.run,
+              plan: childRun.plan,
+              signal: request.signal ?? new AbortController().signal,
+            })
+            if (completed.status !== 'completed') {
+              throw new Error(`子工作流“${childWorkflow.name}”未完成：${completed.status}`)
+            }
+            return {
+              runId: completed.id,
+              workflowVersion: completed.workflowVersion,
+              outputs: completed.outputs,
+            }
+          },
+        }),
+    })
+
+  const workflowInputNodes = useMemo(
+    () =>
+      (snapshot?.nodes ?? []).flatMap((node) => {
+        if (node.type === 'group' || isOperationNode(node)) return []
+        const valueTypes: CanvasWorkflowValueType[] = ['node']
+        if (node.type === 'image' || node.type === 'video' || node.type === 'audio') {
+          valueTypes.push(node.type)
+        }
+        if (node.assetId) valueTypes.push('asset')
+        return [{ id: node.id, label: node.title?.trim() || node.type, valueTypes }]
+      }),
+    [snapshot?.nodes],
+  )
 
   const runTrackedCanvasWorkflow = async (
     request: {
@@ -7869,6 +8132,7 @@ export function CanvasWorkspaceView({
             onToggleLockSelectedNodes={() => void handleToggleLock()}
             onBringSelectedNodesToFront={() => void handleBringToFront()}
             onAddNodesToAgent={handleAddSelectedToAgent}
+            onExtractSelectionToWorkflow={openWorkflowExtraction}
             onAddNodeToAgent={handleAddNodeToAgent}
             onRunOperationNode={(nodeId) => {
               void batchTasks.controller.runSingle(nodeId).catch(() => undefined)
@@ -7895,6 +8159,9 @@ export function CanvasWorkspaceView({
             onAddTextAtPosition={addText}
             onAddImageAtPosition={uploadFirstImage}
             onDropFiles={handleDropFiles}
+            onDropWorkflow={(position, workflowId) => {
+              void handleDropCanvasWorkflow(position, workflowId)
+            }}
             onAddDirectorStage3DAtPosition={addDirectorStage3D}
             onAddVideoWorkbenchAtPosition={addVideoWorkbench}
             onInsertAssetFromPane={onInsertAssetFromPaneStable}
@@ -7969,6 +8236,10 @@ export function CanvasWorkspaceView({
               closeCanvasFloatPanels('film-center')
               setFilmCenterOpen(true)
             }}
+            onOpenWorkflowLibrary={() => {
+              closeCanvasFloatPanels('workflow')
+              setWorkflowDrawerOpen(true)
+            }}
             onOpenCharacterLibrary={() => {
               closeCanvasFloatPanels('character-library')
               setCharacterLibraryOpen(true)
@@ -8020,6 +8291,37 @@ export function CanvasWorkspaceView({
             onCreateTask={async (input) => {
               await handleCreateTask(input)
               setInlineAiOpen(false)
+            }}
+          />
+          <CanvasWorkflowDrawer
+            open={workflowDrawerOpen}
+            projectId={projectId}
+            projectName={snapshot.project.title}
+            selectedNodeCount={selectedNodes.length}
+            onClose={() => setWorkflowDrawerOpen(false)}
+            onExtractSelection={openWorkflowExtraction}
+            onAddWorkflow={(workflow) => void handleAddCanvasWorkflow(workflow)}
+            onUpdateFromSelection={openWorkflowUpdate}
+          />
+          <CanvasWorkflowRunPanel
+            open={workflowToRun != null}
+            projectId={projectId}
+            workflow={workflowToRun}
+            availableInputNodes={workflowInputNodes}
+            onClose={() => setWorkflowToRun(null)}
+            onExecute={executeCanvasWorkflow}
+          />
+          <CanvasWorkflowExtractDialog
+            open={workflowExtractDraft != null}
+            projectId={projectId}
+            draft={workflowExtractDraft}
+            workflowToUpdate={workflowToUpdate}
+            onClose={() => setWorkflowExtractDraft(null)}
+            onSaved={(workflow) => {
+              setWorkflowExtractDraft(null)
+              setWorkflowToUpdate(null)
+              message.success(`已保存画布工作流“${workflow.name}”`)
+              setWorkflowDrawerOpen(true)
             }}
           />
           <CanvasImageAnnotationModal

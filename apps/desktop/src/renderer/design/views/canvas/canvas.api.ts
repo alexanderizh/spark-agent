@@ -121,6 +121,7 @@ import {
   isCompletedCanvasTaskWithOutputs,
   recoverCanvasTaskFromMaterializedOutputs,
 } from './canvasTaskOutputIntegrity'
+import { resolveCanvasNodeDeletionIds } from './canvasNodeDeletion'
 import {
   applyCanvasNodeLayoutUpdates,
   type CanvasNodeLayoutUpdate,
@@ -2546,7 +2547,9 @@ export const canvasApi = {
     edges?: Array<{
       from: string
       to: string
-      type?: 'used_as_input' | 'generated' | 'references'
+      type?: CanvasEdge['type']
+      sourceHandle?: string
+      targetHandle?: string
     }>
   }): Promise<CanvasSnapshot> {
     const db = readDb()
@@ -2561,15 +2564,48 @@ export const canvasApi = {
     )
     const refToId = new Map<string, string>()
 
+    for (const blueprint of input.nodes) {
+      if (refToId.has(blueprint.ref)) {
+        throw new Error(`Duplicate canvas template node ref: ${blueprint.ref}`)
+      }
+      refToId.set(blueprint.ref, uid('canvas_node'))
+    }
+
     // 创建节点
     for (const bp of input.nodes) {
-      const nodeId = uid('canvas_node')
-      refToId.set(bp.ref, nodeId)
-      const baseData: CanvasNode['data'] = { ...(bp.data ?? {}), origin: 'template' }
+      const nodeId = refToId.get(bp.ref)
+      if (!nodeId) throw new Error(`Canvas template node ref was not allocated: ${bp.ref}`)
+      const remappedData: Partial<CanvasNode['data']> = {
+        ...(bp.data ?? {}),
+        ...(bp.data?.inputBindings
+          ? {
+              inputBindings: bp.data.inputBindings.map((binding) => ({
+                ...binding,
+                sourceNodeId: refToId.get(binding.sourceNodeId) ?? binding.sourceNodeId,
+              })),
+            }
+          : {}),
+        ...(bp.data?.staleFrom
+          ? {
+              staleFrom: bp.data.staleFrom.map((nodeRef) => refToId.get(nodeRef) ?? nodeRef),
+            }
+          : {}),
+      }
+      const baseData: CanvasNode['data'] = {
+        ...remappedData,
+        ...(isOperationNode({ type: bp.type })
+          ? {
+              status: 'pending',
+              progress: 0,
+              message: remappedData.message ?? '工作流已添加到画布，配置后可运行',
+            }
+          : {}),
+        origin: 'template',
+      }
       const defaultSize =
         bp.type === 'group'
           ? GROUP_NODE_DEFAULT_SIZE
-          : bp.type === 'task'
+          : isOperationNode({ type: bp.type })
             ? OPERATION_NODE_DEFAULT_SIZE
             : TEXT_NODE_DEFAULT_SIZE
       const node = createNodeBase({
@@ -2608,7 +2644,10 @@ export const canvasApi = {
       }
 
       // task 节点同步创建 CanvasTask（pending，等用户运行）
-      if (bp.type === 'task' && baseData.operation) {
+      if (isOperationNode(node)) {
+        const operation =
+          baseData.operation ?? (bp.type !== 'task' ? (bp.type as CanvasOperationType) : null)
+        if (!operation) continue
         const taskId = uid('canvas_task')
         node.taskId = taskId
         const task: CanvasTask = {
@@ -2616,17 +2655,30 @@ export const canvasApi = {
           projectId: input.projectId,
           boardId: input.boardId,
           userId: USER_ID,
-          operation: baseData.operation,
+          operation,
           status: 'pending',
           progress: 0,
           title: bp.title ?? null,
+          operationNodeId: nodeId,
           prompt: baseData.prompt ?? null,
-          negativePrompt: null,
+          negativePrompt: baseData.negativePrompt ?? null,
           inputNodeIds: [],
           inputAssetIds: [],
           outputNodeIds: [],
           outputAssetIds: [],
-          modelParams: {},
+          providerProfileId: baseData.providerProfileId ?? null,
+          manifestId: baseData.manifestId ?? null,
+          modelId: baseData.modelId ?? null,
+          agentId: baseData.agentId ?? null,
+          skillIds: baseData.skillIds ?? [],
+          reasoningEffort: baseData.reasoningEffort ?? null,
+          modelParams: { ...(baseData.modelParams ?? {}) },
+          taskPipelineRole: baseData.pipelineRole ?? null,
+          outputPipelineRole: baseData.outputPipelineRole ?? null,
+          shotScriptConfig: baseData.shotScriptConfig ?? null,
+          ...(baseData.promptDocument ? { promptDocument: baseData.promptDocument } : {}),
+          ...(baseData.inputBindings ? { inputBindings: baseData.inputBindings } : {}),
+          ...(baseData.systemPrompt ? { systemPrompt: baseData.systemPrompt } : {}),
           createdAt: at,
           updatedAt: at,
         }
@@ -2649,12 +2701,20 @@ export const canvasApi = {
           sourceNodeId: sourceId,
           targetNodeId: targetId,
           type: edgeType,
-          metadata: { fromTemplate: true },
+          taskId: (() => {
+            const targetNode = db.nodes.find((node) => node.id === targetId)
+            return targetNode && isOperationNode(targetNode) ? (targetNode.taskId ?? null) : null
+          })(),
+          metadata: {
+            fromTemplate: true,
+            ...(edgeBp.sourceHandle ? { sourceHandle: edgeBp.sourceHandle } : {}),
+            ...(edgeBp.targetHandle ? { targetHandle: edgeBp.targetHandle } : {}),
+          },
           createdAt: at,
         })
         // 若目标节点是 task，把源节点加入 task.inputNodeIds（与 connectNodes 行为一致）
         const targetNode = db.nodes.find((n) => n.id === targetId)
-        if (targetNode?.type === 'task' && targetNode.taskId) {
+        if (targetNode && isOperationNode(targetNode) && targetNode.taskId) {
           const task = db.tasks.find((t) => t.id === targetNode.taskId)
           if (task && !task.inputNodeIds.includes(sourceId)) {
             task.inputNodeIds.push(sourceId)
@@ -4142,7 +4202,12 @@ export const canvasApi = {
 
   async deleteNodes(projectId: string, nodeIds: string[]): Promise<void> {
     const db = readDb()
-    const remove = new Set(nodeIds)
+    const remove = resolveCanvasNodeDeletionIds({
+      projectId,
+      nodeIds,
+      nodes: db.nodes,
+      edges: db.edges,
+    })
     const removedGroups = new Map(
       db.nodes
         .filter(

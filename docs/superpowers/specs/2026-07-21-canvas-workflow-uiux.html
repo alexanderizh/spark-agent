@@ -1418,6 +1418,7 @@
           <p class="head-copy">
             这份 HTML 文稿定义画布工作流的管理页、详情页、画布内编排、框选提取和运行应用体验。
             核心决策：管理和复用有独立入口，真实编排和提取发生在当前画布里，避免把创作上下文搬离用户正在工作的空间。
+            当前状态为实施中；自动化测试、类型检查、lint 和生产构建已通过，隔离后的真实 Electron 关键路径验收通过前不得发布。
           </p>
         </div>
         <div class="meta-panel" aria-label="设计摘要">
@@ -1427,8 +1428,8 @@
               <div class="meta-v">CanvasWorkflow</div>
             </div>
             <div class="meta-item">
-              <div class="meta-k">应用方式</div>
-              <div class="meta-v">拖入 / 展开 / 选区应用</div>
+              <div class="meta-k">当前应用方式</div>
+              <div class="meta-v">项目抽屉运行 / 选区更新</div>
             </div>
             <div class="meta-item">
               <div class="meta-k">编排场景</div>
@@ -1458,8 +1459,8 @@
           </article>
           <article class="principle">
             <div class="num">02</div>
-            <h3>工作流节点先轻后重</h3>
-            <p>默认以折叠节点出现，只暴露输入和高频参数；需要精修时再展开成普通画布节点，避免每次运行都进入复杂编辑器。</p>
+            <h3>拖入即展开，落图即独立</h3>
+            <p>工作流是可复用图模板。拖入后直接生成普通节点、连线和配置，不保留定义或版本关联，用户可立即移动、改线、换模型和删除。</p>
           </article>
           <article class="principle">
             <div class="num">03</div>
@@ -1473,7 +1474,7 @@
         <div class="section-head">
           <div>
             <h2>工作流管理页</h2>
-            <p class="lead">入口位于画布侧栏“工作流库”。它是资产库式页面，不是画布编辑器：快速找到、判断能不能跑、拖入当前画布。</p>
+            <p class="lead">入口位于无限画布首页的“画布工作流库”二级导航。它是资产库式页面，不是画布编辑器：快速找到、判断能不能跑、添加到项目。</p>
           </div>
           <span class="section-tag">Library View</span>
         </div>
@@ -1729,7 +1730,7 @@
         <div class="section-head">
           <div>
             <h2>画布内编排与应用</h2>
-            <p class="lead">编排可以就在当前画布中完成：用户拖入工作流节点、连接素材、运行后产物落在旁边。需要深改时再进入“内部编排层”。</p>
+            <p class="lead">编排就在当前画布中完成：用户把工作流拖到目标位置，系统按相对布局展开真实节点和连线；之后的编辑、连接与运行都沿用普通画布交互。</p>
           </div>
           <span class="section-tag">Canvas First</span>
         </div>
@@ -1773,7 +1774,7 @@
                 </div>
                 <div class="tool-cluster" aria-label="工作流操作">
                   <button class="icon-btn" type="button" aria-label="提取为画布工作流"><svg viewBox="0 0 24 24"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/><path d="M8 5v14"/><path d="M16 5v14"/></svg></button>
-                  <button class="icon-btn" type="button" aria-label="打开运行面板"><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></svg></button>
+                  <button class="icon-btn" type="button" aria-label="打开画布工作流"><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></svg></button>
                 </div>
               </div>
 
@@ -1789,12 +1790,12 @@
               <div class="canvas-card n1"><div class="kind">Structured</div><div class="name">分镜表 · 12 镜</div></div>
               <div class="canvas-card n2"><div class="kind">Operation</div><div class="name">镜头 Prompt 优化</div></div>
               <div class="canvas-card n3"><div class="kind">Image</div><div class="name">角色参考图</div></div>
-              <div class="canvas-card n4"><div class="kind">Canvas Workflow</div><div class="name">分镜到镜头图片组</div></div>
+              <div class="canvas-card n4"><div class="kind">Operation</div><div class="name">镜头图片生成</div></div>
             </div>
 
             <aside class="inspector">
-              <h3>工作流节点</h3>
-              <p class="wf-desc">折叠运行，不展开内部步骤。输出将生成到当前节点右侧。</p>
+              <h3>普通操作节点</h3>
+              <p class="wf-desc">由工作流模板展开，现已与定义解耦；配置、连线和运行方式与手工创建节点一致。</p>
               <div class="form-stack">
                 <label>
                   分镜输入
@@ -1960,8 +1961,8 @@
           </article>
           <article class="flow-step">
             <div class="k">Flow 02</div>
-            <h3>填输入</h3>
-            <p>工作流节点 Inspector 自动匹配选中素材，不确定的输入再让用户选择。</p>
+            <h3>改节点</h3>
+            <p>工作流展开为真实节点后，用户直接连接素材，并在节点 Inspector 中修改 Prompt、模型和参数。</p>
           </article>
           <article class="flow-step">
             <div class="k">Flow 03</div>
@@ -2025,11 +2026,11 @@
           <tbody>
             <tr>
               <th>信息架构</th>
-              <td>工作流库、详情页、画布工作流节点、运行面板、提取确认面板。复杂图编辑从详情页或节点 Inspector 进入“在当前画布中编排”。</td>
+              <td>工作流库、详情页、画布工作流抽屉、真实节点图、提取确认面板。图编辑始终发生在当前画布，不创建折叠工作流节点或第二套图编辑器。</td>
             </tr>
             <tr>
               <th>主导航</th>
-              <td>画布侧栏新增“工作流库”；多选右键新增“提取为画布工作流”和“套用画布工作流”；顶部工具栏保留图标入口。</td>
+              <td>无限画布首页新增“画布工作流库”二级导航；多选右键新增“提取为画布工作流”；项目底部工具坞提供工作流抽屉入口。</td>
             </tr>
             <tr>
               <th>详情页标签</th>
