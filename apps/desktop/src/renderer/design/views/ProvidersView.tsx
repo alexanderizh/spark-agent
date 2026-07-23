@@ -46,6 +46,10 @@ import { useDebouncedCallback } from '../hooks/useDebounce'
 import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
 import {
+  AUTO_ROUTER_UI_VISIBLE,
+  filterProvidersForVisibleUi,
+} from '../utils/auto-router-ui'
+import {
   PROVIDER_PRESETS,
   getProviderPresetById,
   getVendorMeta,
@@ -818,7 +822,7 @@ const CARD_KIND_FILTER_OPTIONS: Array<{ value: ProviderCardKind; label: string }
   { value: 'video', label: '视频' },
   { value: 'voice', label: '语音' },
   { value: 'cli', label: 'CLI' },
-  { value: 'router', label: '路由' },
+  ...(AUTO_ROUTER_UI_VISIBLE ? [{ value: 'router' as const, label: '路由' }] : []),
 ]
 
 /** 名称排序用的中文 collator（模块级单例，避免每次排序重新构造） */
@@ -1225,15 +1229,16 @@ function ProvidersView() {
    * - 排序：平台受管项始终最前；'default' 下其余项保持原序；nameAsc/nameDesc
    *   下 router/cli 内置项其次，其他项按名称排序。
    */
+  const uiProfiles = useMemo(() => filterProvidersForVisibleUi(profiles), [profiles])
   const visibleProfiles = useMemo(() => {
     const keyword = cardSearch.trim().toLowerCase()
-    const filtered = profiles.filter((p) => {
+    const filtered = uiProfiles.filter((p) => {
       if (cardKindFilter !== 'all' && resolveProviderCardKind(p) !== cardKindFilter) return false
       if (keyword && !p.name.toLowerCase().includes(keyword)) return false
       return true
     })
     return sortProviderProfilesForCards(filtered, cardSortBy)
-  }, [profiles, cardSearch, cardKindFilter, cardSortBy])
+  }, [uiProfiles, cardSearch, cardKindFilter, cardSortBy])
 
   /** 点击 vendor 卡片 → 直接以 Anthropic 格式打开编辑面板 */
   const handleSelectVendor = (vendorId: string) => {
@@ -1269,7 +1274,7 @@ function ProvidersView() {
           <div className="pv_header_left">
             <h2>Providers</h2>
             <Tag size="middle" color="gray">
-              {profiles.length}
+              {uiProfiles.length}
             </Tag>
           </div>
           <div className="pv_header_right">
@@ -1330,7 +1335,7 @@ function ProvidersView() {
                 type="text"
                 icon={<Icons.CheckSquare />}
                 onClick={enterMultiSelect}
-                disabled={profiles.length === 0}
+                disabled={uiProfiles.length === 0}
                 title="进入多选模式"
               >
                 批量
@@ -1347,15 +1352,17 @@ function ProvidersView() {
             >
               从模板添加
             </Button>
-            <Button
-              size="middle"
-              type={showRouteModels ? 'primary' : 'default'}
-              icon={<Icons.Shuffle />}
-              onClick={() => setShowRouteModels(true)}
-              title="配置 Claude / Codex 自动路由模型卡"
-            >
-              自动路由
-            </Button>
+            {AUTO_ROUTER_UI_VISIBLE && (
+              <Button
+                size="middle"
+                type={showRouteModels ? 'primary' : 'default'}
+                icon={<Icons.Shuffle />}
+                onClick={() => setShowRouteModels(true)}
+                title="配置 Claude / Codex 自动路由模型卡"
+              >
+                自动路由
+              </Button>
+            )}
             <Button
               size="middle"
               type="primary"
@@ -1375,7 +1382,7 @@ function ProvidersView() {
         {multiSelect && (
           <MultiSelectToolbar
             selectedCount={selectedIds.size}
-            totalCount={profiles.length}
+            totalCount={uiProfiles.length}
             hasSelection={selectedIds.size > 0}
             onSelectAll={selectAll}
             onClearSelection={clearSelection}
@@ -1388,7 +1395,7 @@ function ProvidersView() {
         )}
 
         {/* ─── 筛选 / 排序 工具栏（非多选模式才显示，避免与批量工具栏争抢空间） ─── */}
-        {!multiSelect && profiles.length > 0 && (
+        {!multiSelect && uiProfiles.length > 0 && (
           <div className="pv_filters">
             <Input
               className="pv_filters_search"
@@ -1418,14 +1425,14 @@ function ProvidersView() {
               ]}
             />
             <span className="pv_filters_count">
-              {visibleProfiles.length}/{profiles.length}
+              {visibleProfiles.length}/{uiProfiles.length}
             </span>
           </div>
         )}
 
         {/* ─── 可滚动内容区（catalog + cards / empty） ─── */}
         <div className="pv_scroll">
-          {profiles.length === 0 ? (
+          {uiProfiles.length === 0 ? (
             <div className="pv_empty">
               尚未配置 Provider — 点击「从模板添加」快速开始，或「自定义添加」手动配置
             </div>

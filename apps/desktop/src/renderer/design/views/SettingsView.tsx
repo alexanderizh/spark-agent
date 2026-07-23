@@ -32,6 +32,7 @@ import type { ShortcutBinding } from '../hooks/useKeyboard'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
+import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import { ModelCapabilityRegistry } from '@spark/shared'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import { FfmpegStatusCard } from './FfmpegStatusCard'
@@ -2218,8 +2219,10 @@ function ModelsSection() {
     setError('')
     Promise.all([listModels({}), listProviders({})])
       .then(([mRes, pRes]) => {
-        setModels(mRes.models)
-        setProviders(pRes.profiles)
+        const visibleProviders = filterProvidersForVisibleUi(pRes.profiles)
+        const visibleProviderIds = new Set(visibleProviders.map((provider) => provider.id))
+        setModels(mRes.models.filter((model) => visibleProviderIds.has(model.providerId)))
+        setProviders(visibleProviders)
       })
       .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
       .finally(() => setLoading(false))

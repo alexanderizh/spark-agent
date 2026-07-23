@@ -7,6 +7,7 @@ import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import type { ProviderProfile, SessionListResponse, WorkspaceInfo } from '@spark/protocol'
 import { useApp } from '../AppContext'
+import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 
 type SessionSummary = SessionListResponse['sessions'][number]
 
@@ -41,7 +42,7 @@ export function HomeView() {
         getCurrentWorkspace({}),
       ])
       setSessions(sessionRes.sessions)
-      setProviders(providerRes.profiles)
+      setProviders(filterProvidersForVisibleUi(providerRes.profiles))
       setWorkspace(workspaceRes.workspace)
       setNotice(null)
     } catch (error) {

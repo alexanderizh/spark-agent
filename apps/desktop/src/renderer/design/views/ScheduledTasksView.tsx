@@ -37,6 +37,7 @@ import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
+import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import './ScheduledTasksView.less'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -926,7 +927,7 @@ function TaskFormPage({ task, onClose }: {
     ]).then(([agentRes, teamRes, providerRes, workspaceRes]) => {
       setAgents(agentRes.agents ?? [])
       setTeams(teamRes.teams ?? [])
-      setProviders(providerRes.profiles ?? [])
+      setProviders(filterProvidersForVisibleUi(providerRes.profiles ?? []))
       setWorkspaces(workspaceRes.workspaces ?? [])
     }).catch(console.error)
   }, [listAgents, listTeams, listProviders, listWorkspaces])

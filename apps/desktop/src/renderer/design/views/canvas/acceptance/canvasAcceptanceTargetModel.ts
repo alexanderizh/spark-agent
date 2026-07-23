@@ -1,5 +1,6 @@
 import type { CanvasMediaModelSummary, ProviderProfile } from '@spark/protocol'
 
+import { filterProvidersForVisibleUi } from '../../../utils/auto-router-ui'
 import { mediaModelKey } from '../canvasModelPickerModel'
 import type {
   CanvasAcceptanceModelTarget,
@@ -11,7 +12,7 @@ export function textTargetKey(providerId: string, modelId: string): string {
 }
 
 export function listTextTargetOptions(providers: readonly ProviderProfile[]) {
-  return providers.flatMap((provider) =>
+  return filterProvidersForVisibleUi(providers).flatMap((provider) =>
     Array.from(new Set([provider.defaultModel, ...provider.modelIds].filter(Boolean))).map(
       (modelId) => ({
         label: `${provider.name} · ${modelId}`,

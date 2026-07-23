@@ -1,5 +1,6 @@
 import type { ProviderProfile, SessionAgentAdapter } from '@spark/protocol'
 import { getProviderAdapterKind } from '../../utils/provider-adapter'
+import { isProviderVisibleInUi } from '../../utils/auto-router-ui'
 
 export interface CanvasAgentModelGroup {
   provider: ProviderProfile
@@ -16,6 +17,7 @@ export interface CanvasAgentModelSelection {
 
 export function isCanvasAgentConversationProvider(provider: ProviderProfile): boolean {
   return (
+    isProviderVisibleInUi(provider) &&
     provider.modelType !== 'image' &&
     provider.modelType !== 'voice' &&
     provider.modelType !== 'video'

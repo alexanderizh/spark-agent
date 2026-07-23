@@ -24,6 +24,7 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
+import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import { WORKFLOW_RESTRICTABLE_TOOLS } from '@spark/protocol'
 import type {
   ManagedAgent,
@@ -277,7 +278,7 @@ function WorkflowViewInner() {
         listAgents({}),
       ])
       setWorkflows(workflowRes.workflows)
-      setProviders(providerRes.profiles)
+      setProviders(filterProvidersForVisibleUi(providerRes.profiles))
       setSkills(skillRes.skills)
       setMcpServers(mcpRes.servers)
       setRules(ruleRes.rules)
