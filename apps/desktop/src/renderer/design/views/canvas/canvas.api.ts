@@ -121,6 +121,10 @@ import {
   isCompletedCanvasTaskWithOutputs,
   recoverCanvasTaskFromMaterializedOutputs,
 } from './canvasTaskOutputIntegrity'
+import {
+  applyCanvasNodeLayoutUpdates,
+  type CanvasNodeLayoutUpdate,
+} from './canvasNodeLayoutPersistence'
 
 const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
@@ -3816,13 +3820,16 @@ export const canvasApi = {
     return this.openSnapshot(projectId)
   },
 
-  async updateNodes(projectId: string, nodes: CanvasNode[]): Promise<void> {
+  async updateNodes(projectId: string, nodes: CanvasNodeLayoutUpdate[]): Promise<void> {
     const db = readDb()
-    const byId = new Map(nodes.map((node) => [node.id, node]))
-    db.nodes = db.nodes.map((node) => {
-      const next = byId.get(node.id)
-      return next ? { ...node, ...next, updatedAt: now() } : node
+    const result = applyCanvasNodeLayoutUpdates({
+      nodes: db.nodes,
+      projectId,
+      updates: nodes,
+      updatedAt: now(),
     })
+    if (!result.changed) return
+    db.nodes = result.nodes
     updateProjectCounts(db, projectId)
     writeDb(db)
   },

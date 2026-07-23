@@ -3,7 +3,6 @@ import { canvasApi, isMediaOperation, isTextModelOperation } from './canvas.api'
 import type {
   CanvasBoard,
   CanvasEdge,
-  CanvasNode,
   CanvasProject,
   CanvasProjectSettings,
   CanvasSnapshot,
@@ -20,6 +19,10 @@ import type {
   SessionReasoningEffort,
 } from '@spark/protocol'
 import { captureCanvasAcceptanceTaskEvidence } from './acceptance/canvasAcceptanceEvidence'
+import {
+  applyCanvasNodeLayoutUpdates,
+  type CanvasNodeLayoutUpdate,
+} from './canvasNodeLayoutPersistence'
 
 export type CanvasViewMode = { mode: 'projects' } | { mode: 'workspace'; projectId: string }
 
@@ -351,8 +354,17 @@ export function useCanvasWorkspace(projectId: string) {
   }, [projectId])
 
   const updateNodes = useCallback(
-    async (nodes: CanvasNode[]) => {
-      setSnapshot((prev) => (prev ? { ...prev, nodes } : prev))
+    async (nodes: CanvasNodeLayoutUpdate[]) => {
+      setSnapshot((prev) => {
+        if (!prev) return prev
+        const result = applyCanvasNodeLayoutUpdates({
+          nodes: prev.nodes,
+          projectId,
+          updates: nodes,
+          updatedAt: new Date().toISOString(),
+        })
+        return result.changed ? { ...prev, nodes: result.nodes } : prev
+      })
       await canvasApi.updateNodes(projectId, nodes)
     },
     [projectId],
