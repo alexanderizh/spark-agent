@@ -399,7 +399,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'openai-images',
     vendorId: 'openai',
-    name: 'OpenAI 图片',
+    name: 'OpenAI',
     provider: 'openai',
     apiEndpoint: 'https://api.openai.com/v1',
     defaultModel: 'gpt-image-2',
@@ -438,7 +438,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'openai-sora-video',
     vendorId: 'openai',
-    name: 'OpenAI Sora 视频',
+    name: 'OpenAI',
     provider: 'openai',
     apiEndpoint: 'https://api.openai.com/v1',
     defaultModel: 'sora-2',
@@ -1343,7 +1343,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'apimart-images',
     vendorId: 'apimart',
-    name: 'APIMart 图片',
+    name: 'APIMart',
     provider: 'openai',
     apiEndpoint: 'https://api.apimart.ai/v1',
     defaultModel: 'gpt-image-2',
@@ -1456,7 +1456,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'apimart-audio-whisper',
     vendorId: 'apimart',
-    name: 'APIMart 语音转写',
+    name: 'APIMart Whisper',
     provider: 'openai',
     apiEndpoint: 'https://api.apimart.ai/v1',
     defaultModel: 'whisper-1',
@@ -1473,7 +1473,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'apimart-audio-tts',
     vendorId: 'apimart',
-    name: 'APIMart 语音合成',
+    name: 'APIMart TTS',
     provider: 'openai',
     apiEndpoint: 'https://api.apimart.ai/v1',
     defaultModel: 'tts-1',
@@ -1490,7 +1490,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'apimart-video-veo3',
     vendorId: 'apimart',
-    name: 'APIMart 视频 VEO 3',
+    name: 'APIMart VEO 3',
     provider: 'openai',
     apiEndpoint: 'https://api.apimart.ai/v1',
     defaultModel: 'veo3.1-quality',
@@ -1516,7 +1516,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'apimart-video-sora2',
     vendorId: 'apimart',
-    name: 'APIMart 视频 Sora 2',
+    name: 'APIMart Sora 2',
     provider: 'openai',
     apiEndpoint: 'https://api.apimart.ai/v1',
     defaultModel: 'sora-2',
@@ -1540,7 +1540,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'apimart-video-collection',
     vendorId: 'apimart',
-    name: 'APIMart 视频合集',
+    name: 'APIMart 综合',
     provider: 'openai',
     apiEndpoint: 'https://api.apimart.ai/v1',
     defaultModel: 'kling-v3',
@@ -1659,7 +1659,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'xai-imagine-image',
     vendorId: 'xai',
-    name: 'xAI Imagine 图片',
+    name: 'xAI',
     provider: 'openai',
     apiEndpoint: 'https://api.x.ai/v1',
     defaultModel: 'grok-imagine-image-quality',
@@ -1692,7 +1692,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'xai-imagine-video',
     vendorId: 'xai',
-    name: 'xAI Imagine 视频',
+    name: 'xAI',
     provider: 'openai',
     apiEndpoint: 'https://api.x.ai/v1',
     defaultModel: 'grok-imagine-video',
@@ -1745,7 +1745,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'bailian-images',
     vendorId: 'bailian',
-    name: '阿里云百炼 图片',
+    name: '阿里云百炼',
     provider: 'openai',
     apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
     defaultModel: 'wan2.7-image-pro',
@@ -1798,7 +1798,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'bailian-video-happyhorse',
     vendorId: 'bailian',
-    name: '阿里云百炼 HappyHorse 视频',
+    name: '阿里云百炼 HappyHorse',
     provider: 'openai',
     apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
     defaultModel: 'happyhorse-1.1-t2v',
@@ -1842,7 +1842,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'bailian-video-wan-i2v',
     vendorId: 'bailian',
-    name: '阿里云百炼 Wan 视频',
+    name: '阿里云百炼 Wan',
     provider: 'openai',
     apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
     defaultModel: 'wan2.7-t2v-2026-06-12',
@@ -1891,7 +1891,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'bailian-audio-tts',
     vendorId: 'bailian',
-    name: '阿里云百炼 语音合成',
+    name: '阿里云百炼',
     provider: 'openai',
     apiEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     defaultModel: 'qwen3-tts-flash',
@@ -1911,7 +1911,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'volcengine-seedance-video',
     vendorId: 'volcengine',
-    name: '火山方舟 Seedance 视频',
+    name: '火山方舟',
     provider: 'openai',
     // endpoint 必须含 /api/v3，VolcengineArkMediaAdapter 在其后拼接
     // /contents/generations/tasks。原 /api 会导致 /api/contents/... 缺版本号。
@@ -1983,7 +1983,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'volcengine-seedream-image',
     vendorId: 'volcengine',
-    name: '火山方舟 Seedream 图片',
+    name: '火山方舟',
     provider: 'openai',
     apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
     // 默认最新的 5.0 Pro；需要组图、流式或联网搜索时切到 5.0 Lite。
@@ -2046,7 +2046,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'xai-tts',
     vendorId: 'xai',
-    name: 'xAI 语音合成',
+    name: 'xAI',
     provider: 'openai',
     apiEndpoint: 'https://api.x.ai/v1',
     defaultModel: 'grok-tts',
@@ -2064,7 +2064,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'google-gemini-images',
     vendorId: 'google-gemini',
-    name: 'Google Gemini Images',
+    name: 'Google Gemini',
     provider: 'openai',
     apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
     defaultModel: 'gemini-3.1-flash-image',
@@ -2123,7 +2123,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'google-veo-video',
     vendorId: 'google-gemini',
-    name: 'Google Veo 视频',
+    name: 'Google Gemini Veo',
     provider: 'openai',
     apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
     defaultModel: 'veo-3.1-generate-preview',
@@ -2159,7 +2159,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'google-omni-video',
     vendorId: 'google-gemini',
-    name: 'Gemini Omni Flash 视频',
+    name: 'Google Gemini Omni Flash',
     provider: 'openai',
     apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
     defaultModel: 'gemini-omni-flash-preview',
@@ -2185,7 +2185,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'google-gemini-omni-video',
     vendorId: 'google-gemini',
-    name: 'Google 官方 Gemini Omni Flash 视频',
+    name: 'Google Gemini Omni Flash 官方',
     provider: 'openai',
     apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
     defaultModel: 'gemini-omni-flash-preview',
@@ -2219,7 +2219,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'google-lyria-music',
     vendorId: 'google-gemini',
-    name: 'Google Lyria 音乐',
+    name: 'Google Gemini Lyria',
     provider: 'openai',
     apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
     defaultModel: 'lyria-3-clip-preview',
@@ -2317,7 +2317,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'minimax-speech',
     vendorId: 'minimax',
-    name: 'MiniMax 语音合成',
+    name: 'MiniMax',
     provider: 'openai',
     apiEndpoint: 'https://api.minimaxi.com',
     defaultModel: 'speech-2.8-turbo',
@@ -2361,7 +2361,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'tencent-tokenhub-image',
     vendorId: 'tencent-tokenhub',
-    name: '腾讯云 TokenHub 图片',
+    name: '腾讯云',
     provider: 'openai',
     apiEndpoint: 'https://tokenhub.tencentmaas.com',
     defaultModel: 'hy-image-v3.0',
@@ -2386,7 +2386,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'tencent-tokenhub-video',
     vendorId: 'tencent-tokenhub',
-    name: '腾讯云 TokenHub 视频',
+    name: '腾讯云',
     provider: 'openai',
     apiEndpoint: 'https://tokenhub.tencentmaas.com',
     defaultModel: 'hy-video-1.5',
