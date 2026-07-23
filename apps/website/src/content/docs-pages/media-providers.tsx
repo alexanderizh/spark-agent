@@ -41,7 +41,7 @@ const Body = () => (
     <ol>
       <li>打开「Provider」新建或编辑一条 Provider。</li>
       <li><strong>模型类型</strong>选「生图模型 / 语音模型 / 视频模型」。</li>
-      <li>选预设（APIMart 图片 / xAI Imagine 视频 / APIMart 视频 VEO 3 …），预设会预填端点、默认模型、能力、轮询参数。</li>
+      <li>选预设（APIMart / xAI / APIMart VEO 3 …），预设会预填端点、默认模型、能力、轮询参数。</li>
       <li>在「多媒体能力」段：
         <ul>
           <li><strong>平台适配器</strong>：APIMart / xAI / OpenAI Compatible / Custom。</li>
@@ -55,20 +55,20 @@ const Body = () => (
 
     <h2 id="presets">4. 内置预设速查</h2>
     <pre>
-{`apimart-images             — APIMart 图片 (GPT Image 1/1.5/2 + 全部 Gemini Nano Banana + Seedream 系列 + Wan 2.7 + Imagen 4.0 + Qwen Image 2.0/Pro + Z-Image-Turbo + Grok Imagine 1.5)
-apimart-audio-whisper      — APIMart 语音转写 (Whisper)
-apimart-audio-tts          — APIMart 语音合成 (TTS)
-apimart-video-veo3         — APIMart 视频 VEO 3.x 系列 (veo3 / veo3.1-fast / veo3.1-quality / veo3.1-lite)
-apimart-video-sora2        — APIMart 视频 Sora 2 / Sora 2 Pro
-apimart-video-collection   — APIMart 视频合集（Kling 2.6/3.0/3.0 Turbo/v3 Omni/O1、Vidu Q3、Wan 2.5/2.6/2.7+R2V+VideoEdit、HappyHorse 1.0/1.1、SkyReels V4 fast/std、Pixverse v6、Gemini Omni Flash、Omni-Flash-Ext、MiniMax Hailuo 02/2.3、Grok Imagine 1.5 Video、Doubao Seedance 1.5/2.0 系列）
-xai-imagine-image          — xAI Imagine 图片
-xai-imagine-video          — xAI Imagine 视频 (async, generate/i2v/edit/extend)
-xai-tts                    — xAI 语音合成
-bailian-images             — 阿里云百炼 图片
-bailian-video-happyhorse   — 阿里云百炼 HappyHorse 视频
-bailian-video-wan-i2v      — 阿里云百炼 Wan 图生视频
-bailian-audio-tts          — 阿里云百炼 语音合成
-volcengine-seedance-video  — 火山方舟 Seedance 视频 (async)
+{`apimart-images             — APIMart (GPT Image 1/1.5/2 + 全部 Gemini Nano Banana + Seedream 系列 + Wan 2.7 + Imagen 4.0 + Qwen Image 2.0/Pro + Z-Image-Turbo + Grok Imagine 1.5)
+apimart-audio-whisper      — APIMart Whisper
+apimart-audio-tts          — APIMart TTS
+apimart-video-veo3         — APIMart VEO 3.x 系列 (veo3 / veo3.1-fast / veo3.1-quality / veo3.1-lite)
+apimart-video-sora2        — APIMart Sora 2 / Sora 2 Pro
+apimart-video-collection   — APIMart 综合（Kling 2.6/3.0/3.0 Turbo/v3 Omni/O1、Vidu Q3、Wan 2.5/2.6/2.7+R2V+VideoEdit、HappyHorse 1.0/1.1、SkyReels V4 fast/std、Pixverse v6、Gemini Omni Flash、Omni-Flash-Ext、MiniMax Hailuo 02/2.3、Grok Imagine 1.5 Video、Doubao Seedance 1.5/2.0 系列）
+xai-imagine-image          — xAI
+xai-imagine-video          — xAI (async, generate/i2v/edit/extend)
+xai-tts                    — xAI
+bailian-images             — 阿里云百炼
+bailian-video-happyhorse   — 阿里云百炼 HappyHorse
+bailian-video-wan-i2v      — 阿里云百炼 Wan
+bailian-audio-tts          — 阿里云百炼
+volcengine-seedance-video  — 火山方舟 (async)
 kling-video                — Kling 可灵视频 (3.0 / 2.x, async)
 hailuo-video               — Hailuo 2.3 视频 (async)`}
     </pre>
@@ -195,7 +195,7 @@ export const mediaProviders: DocsPageContent = {
     totalTime: 'PT5M',
     steps: [
       '打开「设置 → Provider」，点「新建」',
-      '选「生图模型」，preset 选 APIMart 图片',
+      '选「生图模型」，preset 选 APIMart',
       '填入 Model ID（默认 GPT Image 2）与 API Key',
       '确认 mediaProvider=apimart、mediaApiType=auto、mediaCapabilities 含 image.generate',
       '保存后在新会话中可用，Agent 通过 mcp__spark_media__generate_image 调用，并传入所选模型',
