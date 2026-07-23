@@ -34,6 +34,7 @@ import {
   isProviderCompatibleWithAdapter,
 } from '../../utils/provider-adapter'
 import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../../avatar'
+import { filterProvidersForVisibleUi } from '../../utils/auto-router-ui'
 import { countExistingMembers } from '../../teamMembership'
 import { normalizeEduAssetUrl, resolveProviderContextWindow } from '@spark/shared'
 import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from '../chat-copy'
@@ -4365,7 +4366,7 @@ function ProviderModelPicker({
   // （它们由内置工具调用，不适合出现在对话模型选择弹窗里）
   const conversationalProviders = useMemo(
     () =>
-      providers.filter(
+      filterProvidersForVisibleUi(providers).filter(
         (provider) =>
           provider.modelType !== 'image' &&
           provider.modelType !== 'voice' &&
@@ -4411,7 +4412,9 @@ function ProviderModelPicker({
       })
       .filter((group) => group.models.length > 0),
   )
-  const selectedProviderById = providers.find((provider) => provider.id === selectedProviderId)
+  const selectedProviderById = conversationalProviders.find(
+    (provider) => provider.id === selectedProviderId,
+  )
   const selectedProviderByModel = findProviderForModel(conversationalProviders, selectedModelId)
   const selectedProvider =
     (selectedModelId.trim().length === 0 ||
@@ -4420,8 +4423,7 @@ function ProviderModelPicker({
       : undefined) ??
     selectedProviderByModel ??
     selectedProviderById ??
-    conversationalProviders[0] ??
-    providers[0]
+    conversationalProviders[0]
   const resolvedSelectedProviderId = selectedProvider?.id ?? selectedProviderId
   const label = getPickerModelDisplayLabel(selectedProvider, selectedModelId, modelNameById)
   const selectedVendor = resolveProviderVendor(selectedProvider)

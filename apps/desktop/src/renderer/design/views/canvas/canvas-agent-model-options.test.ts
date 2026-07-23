@@ -59,6 +59,13 @@ describe('canvas agent model options', () => {
     modelIds: ['video-1'],
     modelType: 'video',
   })
+  const autoRouterProvider = profile({
+    id: 'claude-auto-router',
+    provider: 'anthropic',
+    name: 'Claude Auto Router',
+    defaultModel: 'route-balanced',
+    modelIds: ['route-balanced'],
+  })
 
   it('builds one provider/model list that carries the hidden adapter per option', () => {
     const groups = buildCanvasAgentModelOptions([claudeProvider, codexProvider])
@@ -86,6 +93,7 @@ describe('canvas agent model options', () => {
       imageProvider,
       voiceProvider,
       videoProvider,
+      autoRouterProvider,
       codexProvider,
     ])
 

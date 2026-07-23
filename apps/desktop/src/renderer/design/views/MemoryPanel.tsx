@@ -13,6 +13,7 @@ import type { MemoryEntry, MemoryScope, MemoryType, ProviderProfile, ManagedAgen
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useSessionSidebar } from '../SessionSidebarContext'
+import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import './MemoryPanel.less'
 
 type ScopeFilter = 'user' | 'project' | 'agent'
@@ -476,7 +477,9 @@ function MemorySettings() {
 
   useEffect(() => {
     void settingsGetCategory({ category: 'memory' }).then((r) => setCfg(r?.settings ?? {}))
-    void listProviders({}).then((r) => setProviders(r?.profiles ?? [])).catch(() => {})
+    void listProviders({})
+      .then((r) => setProviders(filterProvidersForVisibleUi(r?.profiles ?? [])))
+      .catch(() => {})
   }, [settingsGetCategory, listProviders])
 
   const getStr = (k: string) => (typeof cfg[k] === 'string' ? (cfg[k] as string) : '')

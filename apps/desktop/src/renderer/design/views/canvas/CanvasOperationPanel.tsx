@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { Input, InputNumber, Popover, Select, Tag, Tooltip, message } from 'antd'
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
+import { isProviderVisibleInUi } from '../../utils/auto-router-ui'
 import {
   capabilityForOperation,
   capabilitySupportsFrameRoles,
@@ -2527,9 +2528,10 @@ function isTextModelOperation(operation: CanvasOperationType): boolean {
 
 function isTextProviderProfile(provider: ProviderProfile): boolean {
   return (
-    provider.modelType == null ||
-    provider.modelType === 'text' ||
-    provider.modelType === 'multimodal'
+    isProviderVisibleInUi(provider) &&
+    (provider.modelType == null ||
+      provider.modelType === 'text' ||
+      provider.modelType === 'multimodal')
   )
 }
 

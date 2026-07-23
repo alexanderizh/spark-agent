@@ -30,6 +30,7 @@ import {
 } from '../teamNavigation'
 import { countExistingRefs, resolveExistingRefs } from './agent-config-counts'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../utils/permission-options'
+import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
 import { NO_PROJECT_WORKSPACE_NAME, useSessionSidebar } from '../SessionSidebarContext'
 import {
   getDefaultAgentModelForProvider,
@@ -334,7 +335,7 @@ function AgentsTabContent({
         ])
       setAgents(agentRes.agents)
       onAgentsChange?.(agentRes.agents)
-      setProviders(providerRes.profiles)
+      setProviders(filterProvidersForVisibleUi(providerRes.profiles))
       setModelCards(modelRes.models)
       setSkills(skillRes.skills)
       setMcpServers(mcpRes.servers)
