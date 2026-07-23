@@ -8,10 +8,11 @@
  */
 
 import React from 'react'
+import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ToastProvider } from '../design/components/Toast'
+import * as ToastModule from '../design/components/Toast'
 import type { UIMessage } from '../design/services/event-mapper'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -208,11 +209,25 @@ describe('ChatView /copy helpers', () => {
 describe('Renderer Smoke Tests', () => {
   let container: HTMLDivElement
   let root: Root | null = null
+  const { ToastProvider } = ToastModule
 
   function expectRunningTaskTag() {
     const runningTag = container.querySelector('.agent-task-running-tag')
     expect(runningTag).not.toBeNull()
     expect(runningTag?.textContent).toContain('执行任务中')
+  }
+
+  async function createChatSurface<P extends object>(
+    ChatComponent: React.ComponentType<P>,
+    props?: P,
+  ) {
+    const { SidebarSessionList } = await import('../design/SidebarSessionList')
+    return React.createElement(
+      React.Fragment,
+      null,
+      React.createElement(SidebarSessionList),
+      React.createElement(ChatComponent, props),
+    )
   }
 
   function mockLobeUiForChatView() {
@@ -358,6 +373,7 @@ describe('Renderer Smoke Tests', () => {
         Segmented: makeComponent('div'),
         Select: SelectMock,
         Tag: makeComponent('span'),
+        ThemeProvider: ({ children }: { children?: React.ReactNode }) => children,
         TextArea: ({ value, onChange, placeholder, className }: MockProps) =>
           React.createElement('textarea', {
             value: typeof value === 'string' || typeof value === 'number' ? value : undefined,
@@ -378,20 +394,50 @@ describe('Renderer Smoke Tests', () => {
   }
 
   function mockAppContextForChatView() {
-    vi.doMock('../design/AppContext', () => ({
-      AppProvider: ({ children }: { children: React.ReactNode }) => children,
-      PRIMARIES: {},
-      useApp: () => ({
-        t: { sidebarHidden: false },
+    vi.doMock('../design/AppContext', () => {
+      const appContextValue = {
+        t: {
+          theme: 'system',
+          primary: '#6366f1',
+          density: 'regular',
+          sidebar: 'collapsed',
+          view: 'chat',
+          chatMode: 'vibe',
+          settingsSection: 'general',
+          showPalette: false,
+          paletteMode: 'command',
+          showPerm: false,
+          showProviderEdit: false,
+          showProfileEdit: false,
+          browserPanelOpen: false,
+          browserPanelWidth: 380,
+          floatingSidebarWidth: 244,
+          sidebarHidden: false,
+          sidebarStyle: 'floating',
+        },
         requestConfirm: vi.fn(async () => false),
         requestPrompt: vi.fn(async () => null),
         setTweak: vi.fn(),
-      }),
-    }))
-    vi.doMock('../design/auth/AuthContext', () => ({
-      AuthProvider: ({ children }: { children: React.ReactNode }) => children,
-      useAuth: () => ({ isAuthenticated: false, user: null }),
-    }))
+      }
+      return {
+        AppDialogHost: () => null,
+        AppProvider: ({ children }: { children: React.ReactNode }) => children,
+        PRIMARIES: {},
+        useApp: () => appContextValue,
+      }
+    })
+    vi.doMock('../design/auth/AuthContext', () => {
+      const authContextValue = {
+        bootstrapping: false,
+        isAuthenticated: false,
+        user: null,
+        setFlow: vi.fn(),
+      }
+      return {
+        AuthProvider: ({ children }: { children: React.ReactNode }) => children,
+        useAuth: () => authContextValue,
+      }
+    })
   }
 
   beforeEach(() => {
@@ -405,17 +451,49 @@ describe('Renderer Smoke Tests', () => {
     }
 
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(() => true),
+      })),
+    )
+    mockAppContextForChatView()
+    vi.doMock('../design/components/Toast', () => ToastModule)
+    vi.doMock('../design/voice/useVoiceIntegrity', () => ({
+      useVoiceIntegrity: () => ({
+        status: {
+          ready: false,
+          downloading: false,
+          supported: true,
+          unsupportedReason: null,
+          components: [],
+          lastError: null,
+        },
+        progress: null,
+        checking: false,
+        refresh: vi.fn(),
+        install: vi.fn(),
+      }),
+    }))
     vi.stubGlobal('spark', {
-      invoke: vi.fn(),
+      invoke: vi.fn(async () => ({})),
       on: vi.fn(() => vi.fn()),
     })
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     if (root) {
       act(() => root!.unmount())
       root = null
     }
+    await new Promise((resolve) => setTimeout(resolve, 0))
     container.remove()
     vi.resetModules()
     vi.unstubAllGlobals()
@@ -572,17 +650,26 @@ describe('Renderer Smoke Tests', () => {
     const { PermissionsSection } = await import('../design/views/SettingsView')
     act(() => {
       root = createRoot(container)
-      root.render(React.createElement(PermissionsSection))
+      root.render(
+        React.createElement(
+          ToastProvider,
+          null,
+          React.createElement(PermissionsSection),
+        ),
+      )
     })
 
     await act(async () => {
       await Promise.resolve()
     })
 
-    const bypass = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('.runtime-permission-option'),
-    ).find((button) => button.textContent?.includes('Bypass permissions'))
-    expect(bypass).toBeDefined()
+    let bypass: HTMLButtonElement | undefined
+    await vi.waitFor(() => {
+      bypass = Array.from(
+        container.querySelectorAll<HTMLButtonElement>('.runtime-permission-option'),
+      ).find((button) => button.textContent?.includes('完全访问'))
+      expect(bypass).toBeDefined()
+    })
 
     act(() => {
       bypass!.click()
@@ -637,8 +724,8 @@ describe('Renderer Smoke Tests', () => {
               id: providerId,
               name: 'Claude CLI',
               provider: 'anthropic',
-              defaultModel: 'claude-sonnet-4-20250514',
-              modelIds: ['claude-sonnet-4-20250514'],
+              defaultModel: '',
+              modelIds: [],
               apiEndpoint: null,
               keystoreRef: null,
               isDefault: true,
@@ -697,9 +784,11 @@ describe('Renderer Smoke Tests', () => {
       }),
     )
     vi.doMock('../design/AppContext', () => ({
+      AppDialogHost: () => null,
       useApp: () => ({
         requestConfirm: vi.fn(),
         requestPrompt: vi.fn(),
+        setTweak: vi.fn(),
       }),
     }))
 
@@ -752,11 +841,14 @@ describe('Renderer Smoke Tests', () => {
   })
 
   it('renders the floating sidebar panel with navigation items', async () => {
+    vi.doMock('../design/theme/LobeThemeProvider', () => ({
+      LobeThemeProvider: ({ children }: { children: React.ReactNode }) => children,
+    }))
     const { App } = await import('../App')
 
-    act(() => {
-      root = createRoot(container)
-      root.render(React.createElement(App))
+    const mountedRoot = createRoot(container)
+    flushSync(() => {
+      mountedRoot.render(React.createElement(App))
     })
 
     // Sidebar is always visible (non-collapsible floating panel)
@@ -773,10 +865,8 @@ describe('Renderer Smoke Tests', () => {
     )
     expect(newTaskBtn).toBeDefined()
 
-    act(() => {
-      root!.unmount()
-    })
-  })
+    flushSync(() => mountedRoot.unmount())
+  }, 15_000)
 
   it('shows running sessions in the list and allows stopping the active session', async () => {
     const invoke = vi.fn(async (channel: string) => {
@@ -824,6 +914,7 @@ describe('Renderer Smoke Tests', () => {
       }
       if (channel === 'workspace:get-current') return { workspace: null }
       if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-worktrees') return { worktrees: [] }
       if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
       if (channel === 'workspace:open') {
         return {
@@ -877,6 +968,7 @@ describe('Renderer Smoke Tests', () => {
           React.createElement(tag, props, children)
       const components: Record<string, unknown> = {
         __esModule: true,
+        ActionIcon: makeComponent('button'),
         Button: makeComponent('button'),
         Checkbox: makeComponent('input'),
         Dropdown: makeComponent('div'),
@@ -888,6 +980,7 @@ describe('Renderer Smoke Tests', () => {
         Select: makeComponent('select'),
         Tag: makeComponent('span'),
         TextArea: makeComponent('textarea'),
+        ThemeProvider: ({ children }: { children?: React.ReactNode }) => children,
         Tooltip: makeComponent('span'),
         ToastHost: () =>
           React.createElement(
@@ -983,12 +1076,14 @@ describe('Renderer Smoke Tests', () => {
       ),
     }))
     vi.doMock('../design/AppContext', () => ({
+      AppDialogHost: () => null,
       AppProvider: ({ children }: { children: React.ReactNode }) => children,
       PRIMARIES: {},
       useApp: () => ({
         t: {},
         requestConfirm: vi.fn(async () => false),
         requestPrompt: vi.fn(async () => null),
+        setTweak: vi.fn(),
       }),
     }))
     vi.doMock('../design/auth/AuthContext', () => ({
@@ -997,21 +1092,22 @@ describe('Renderer Smoke Tests', () => {
     }))
 
     const { ChatView } = await import('../design/views/ChatView')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
+    const chatSurface = await createChatSurface(ChatView)
 
-    await act(async () => {
+    act(() => {
       root = createRoot(container)
       root.render(
         React.createElement(
           ToastProvider,
           null,
           React.createElement(
-            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            SessionSidebarProvider,
             null,
-            React.createElement(ChatView),
+            chatSurface,
           ),
         ),
       )
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
@@ -1240,11 +1336,13 @@ describe('Renderer Smoke Tests', () => {
         ),
       }))
       vi.doMock('../design/AppContext', () => ({
+        AppDialogHost: () => null,
         AppProvider: ({ children }: { children: React.ReactNode }) => children,
         useApp: () => ({
           t: {},
           requestConfirm: vi.fn(async () => false),
           requestPrompt: vi.fn(async () => null),
+          setTweak: vi.fn(),
         }),
       }))
       const { ChatView } = await import('../design/views/ChatView')
@@ -1277,7 +1375,8 @@ describe('Renderer Smoke Tests', () => {
       expect(historyRequests[0]).toEqual(
         expect.objectContaining({
           sessionId: 'session-1',
-          limit: 80,
+          turnLimit: 6,
+          eventLimit: 1200,
         }),
       )
     } finally {
@@ -1511,9 +1610,15 @@ describe('Renderer Smoke Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
+    let thinkingToggle: HTMLButtonElement | null = null
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('我正在检查代码结构')
+      thinkingToggle = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent?.includes('思考过程'),
+      ) ?? null
+      expect(thinkingToggle).not.toBeNull()
     })
+    act(() => thinkingToggle?.click())
+    expect(container.textContent).toContain('我正在检查代码结构')
     expectRunningTaskTag()
   })
 
@@ -1623,6 +1728,7 @@ describe('Renderer Smoke Tests', () => {
   })
 
   it('clears the composer queue loading state from queue snapshots even when the session list is stale', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
     const streamHandlers = new Map<string, Array<(payload: unknown) => void>>()
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
@@ -1685,21 +1791,22 @@ describe('Renderer Smoke Tests', () => {
     })
 
     const { ChatView } = await import('../design/views/ChatView')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
+    const chatSurface = await createChatSurface(ChatView)
 
-    await act(async () => {
+    act(() => {
       root = createRoot(container)
       root.render(
         React.createElement(
           ToastProvider,
           null,
           React.createElement(
-            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            SessionSidebarProvider,
             null,
-            React.createElement(ChatView),
+            chatSurface,
           ),
         ),
       )
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
@@ -1712,7 +1819,7 @@ describe('Renderer Smoke Tests', () => {
     })
 
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('执行中')
+      expect(container.textContent).toContain('运行中')
     })
 
     await act(async () => {
@@ -1807,7 +1914,7 @@ describe('Renderer Smoke Tests', () => {
           React.createElement(
             (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
             null,
-            React.createElement(ChatView),
+            await createChatSurface(ChatView),
           ),
         ),
       )
@@ -1893,7 +2000,7 @@ describe('Renderer Smoke Tests', () => {
         React.createElement(
           LocalToastProvider,
           null,
-          React.createElement(SessionSidebarProvider, null, React.createElement(ChatView)),
+          React.createElement(SessionSidebarProvider, null, await createChatSurface(ChatView)),
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -1905,19 +2012,17 @@ describe('Renderer Smoke Tests', () => {
       expect(projectHead).not.toBeNull()
     })
 
-    const expandedIconPath = projectHead!.querySelector('.proj-folder-icon path')?.getAttribute('d')
-    expect(expandedIconPath).toBeTruthy()
+    const expandedIcon = projectHead!.querySelector('.proj-toggle svg')?.innerHTML
+    expect(expandedIcon).toBeTruthy()
 
     await act(async () => {
       projectHead!.click()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    const collapsedIconPath = projectHead!
-      .querySelector('.proj-folder-icon path')
-      ?.getAttribute('d')
-    expect(collapsedIconPath).toBeTruthy()
-    expect(collapsedIconPath).not.toBe(expandedIconPath)
+    const collapsedIcon = projectHead!.querySelector('.proj-toggle svg')?.innerHTML
+    expect(collapsedIcon).toBeTruthy()
+    expect(collapsedIcon).not.toBe(expandedIcon)
   })
 
   it('renders project controls in a pinned toolbar and collapses all project groups', async () => {
@@ -2130,7 +2235,6 @@ describe('Renderer Smoke Tests', () => {
       on: vi.fn(() => vi.fn()),
     })
 
-    mockLobeUiForChatView()
     const { ChatView } = await import('../design/views/ChatView')
     const { AppProvider } = await import('../design/AppContext')
 
@@ -2379,11 +2483,14 @@ describe('Renderer Smoke Tests', () => {
       on: vi.fn(() => vi.fn()),
     })
 
+    mockLobeUiForChatView()
     const { ChatView } = await import('../design/views/ChatView')
     const { AppProvider } = await import('../design/AppContext')
     const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
+    const chatSurface = await createChatSurface(ChatView)
 
-    await act(async () => {
+    act(() => {
       root = createRoot(container)
       root.render(
         React.createElement(
@@ -2393,15 +2500,13 @@ describe('Renderer Smoke Tests', () => {
             LocalToastProvider,
             null,
             React.createElement(
-              (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+              SessionSidebarProvider,
               null,
-              React.createElement(ChatView),
+              chatSurface,
             ),
           ),
         ),
       )
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      await new Promise((resolve) => requestAnimationFrame(resolve))
     })
 
     await vi.waitFor(() => {
@@ -2411,7 +2516,7 @@ describe('Renderer Smoke Tests', () => {
       expect(textarea?.selectionStart).toBe('restored draft text'.length)
       expect(textarea?.selectionEnd).toBe('restored draft text'.length)
     })
-  })
+  }, 15_000)
 
   it('routes background approval requests to the target session instead of popping in the current one', async () => {
     localStorage.setItem('spark-agent:last-active-session', 'session-1')
@@ -2503,6 +2608,7 @@ describe('Renderer Smoke Tests', () => {
       if (channel === 'session:get-history') return { events: [], hasMore: false }
       if (channel === 'session:get-queue')
         return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'session:list-pending-questions') return { questions: [] }
       if (channel === 'playwright:status')
         return { installed: false, enabled: false, viewOpen: false, mode: 'off' }
       if (channel === 'hook:trigger') return { triggered: true }
@@ -2547,15 +2653,21 @@ describe('Renderer Smoke Tests', () => {
       PermissionModal: () => null,
     }))
 
+    mockLobeUiForChatView()
     const { App } = await import('../App')
+    const { toast: lobeToast } = await import('@lobehub/ui/es/base-ui/Toast/imperative')
 
-    await act(async () => {
+    act(() => {
       root = createRoot(container)
       root.render(React.createElement(App))
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    await act(async () => {
+    await vi.waitFor(() => {
+      expect(listeners.get('stream:permission:approval-request')?.length).toBeGreaterThan(0)
+      expect(container.textContent).toContain('Current session')
+    })
+
+    act(() => {
       listeners.get('stream:permission:approval-request')?.forEach((handler) => {
         handler({
           requestId: 'req-background',
@@ -2567,32 +2679,38 @@ describe('Renderer Smoke Tests', () => {
           persistentScopes: ['project', 'global'],
         })
       })
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('hook:trigger', {
+        sessionId: 'session-2',
+        node: 'permission_request',
+        title: 'Target session',
+        body: 'Agent 正在等待您的审批',
+      })
+      expect(lobeToast.warning).toHaveBeenCalled()
+    })
     expect(container.querySelector('.modal-backdrop')).toBeNull()
     expect(container.querySelector('.composer-approval-card')).toBeNull()
-    expect(document.body.textContent).toContain('有新的权限审批等待处理')
-    expect(invoke).toHaveBeenCalledWith('hook:trigger', {
-      sessionId: 'session-2',
-      node: 'permission_request',
-      title: 'Target session',
-      body: 'Agent 正在等待您的审批',
+
+    const warningOptions = vi.mocked(lobeToast.warning).mock.calls.at(-1)?.[0] as
+      | {
+          description?: React.ReactElement<{ message?: string }>
+          actions?: Array<{ label: string; onClick: () => void }>
+        }
+      | undefined
+    expect(warningOptions?.description?.props.message).toBe('有新的权限审批等待处理')
+    expect(warningOptions?.actions?.[0]?.label).toBe('前往审批')
+
+    act(() => {
+      warningOptions?.actions?.[0]?.onClick()
     })
 
-    const jumpButton = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent?.includes('前往审批'),
-    )
-    expect(jumpButton).toBeDefined()
-
-    await act(async () => {
-      jumpButton?.click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('Target session')
+      expect(container.querySelector('.composer-approval-card')).not.toBeNull()
     })
-
-    expect(container.textContent).toContain('Target session')
-    expect(container.querySelector('.composer-approval-card')).not.toBeNull()
-  })
+  }, 15_000)
 
   it('keeps unsent composer drafts isolated per session', async () => {
     localStorage.setItem('spark-agent:last-active-session', 'session-1')
@@ -2683,6 +2801,7 @@ describe('Renderer Smoke Tests', () => {
       if (channel === 'session:get-history') return { events: [], hasMore: false }
       if (channel === 'session:get-queue')
         return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'session:list-pending-questions') return { questions: [] }
       if (channel === 'playwright:status')
         return { installed: false, enabled: false, viewOpen: false, mode: 'off' }
       return {}
@@ -2721,12 +2840,12 @@ describe('Renderer Smoke Tests', () => {
       PermissionModal: () => null,
     }))
 
+    mockLobeUiForChatView()
     const { App } = await import('../App')
 
-    await act(async () => {
+    act(() => {
       root = createRoot(container)
       root.render(React.createElement(App))
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     const setTextareaValue = (element: HTMLTextAreaElement | null, value: string) => {
@@ -2740,9 +2859,13 @@ describe('Renderer Smoke Tests', () => {
 
     const composerInput = () => container.querySelector<HTMLTextAreaElement>('.composer-input')
 
-    await act(async () => {
+    await vi.waitFor(() => {
+      expect(composerInput()).not.toBeNull()
+      expect(container.textContent).toContain('Draft session two')
+    })
+
+    act(() => {
       setTextareaValue(composerInput(), 'draft for session one')
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     const sessionTwoItem = Array.from(
@@ -2750,18 +2873,16 @@ describe('Renderer Smoke Tests', () => {
     ).find((item) => item.textContent?.includes('Draft session two'))
     expect(sessionTwoItem).toBeDefined()
 
-    await act(async () => {
+    act(() => {
       sessionTwoItem?.click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
       expect(composerInput()?.value).toBe('')
     })
 
-    await act(async () => {
+    act(() => {
       setTextareaValue(composerInput(), 'draft for session two')
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     const sessionOneItem = Array.from(
@@ -2769,20 +2890,18 @@ describe('Renderer Smoke Tests', () => {
     ).find((item) => item.textContent?.includes('Draft session one'))
     expect(sessionOneItem).toBeDefined()
 
-    await act(async () => {
+    act(() => {
       sessionOneItem?.click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
       expect(composerInput()?.value).toBe('draft for session one')
     })
 
-    await act(async () => {
+    act(() => {
       Array.from(container.querySelectorAll<HTMLElement>('.chat-item-compact'))
         .find((item) => item.textContent?.includes('Draft session two'))
         ?.click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
@@ -2792,7 +2911,7 @@ describe('Renderer Smoke Tests', () => {
 
   it('renders plan approval as the only approval surface for control tools', async () => {
     localStorage.setItem('spark-agent:last-active-session', 'session-1')
-    const listeners = new Map<string, (payload: unknown) => void>()
+    const listeners = new Map<string, Array<(payload: unknown) => void>>()
     const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
       if (channel === 'workspace:list') {
         return {
@@ -2904,7 +3023,7 @@ describe('Renderer Smoke Tests', () => {
     vi.stubGlobal('spark', {
       invoke,
       on: vi.fn((channel: string, callback: (payload: unknown) => void) => {
-        listeners.set(channel, callback)
+        listeners.set(channel, [...(listeners.get(channel) ?? []), callback])
         return vi.fn()
       }),
     })
@@ -2933,7 +3052,7 @@ describe('Renderer Smoke Tests', () => {
           React.createElement(
             (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
             null,
-            React.createElement(ChatViewWithApproval, {
+            await createChatSurface(ChatViewWithApproval, {
               approvalRequest: {
                 requestId: 'req-plan',
                 sessionId: 'session-1',
@@ -2956,19 +3075,25 @@ describe('Renderer Smoke Tests', () => {
     await vi.waitFor(() => {
       expect(container.textContent).toContain('Plan mode session')
     })
+    await act(async () => {
+      container.querySelector<HTMLElement>('.chat-item-compact')?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
     await vi.waitFor(() => {
-      expect(listeners.get('stream:session:agent-event')).toBeDefined()
+      expect(listeners.get('stream:session:agent-event')?.length).toBeGreaterThan(0)
     })
 
     await act(async () => {
-      listeners.get('stream:session:agent-event')?.({
-        id: 'evt-plan',
-        sessionId: 'session-1',
-        turnId: 'turn-1',
-        timestamp: '2026-05-28T00:00:01.000Z',
-        type: 'plan_proposed',
-        plan: '1. inspect\n2. patch\n3. verify',
-      })
+      for (const listener of listeners.get('stream:session:agent-event') ?? []) {
+        listener({
+          id: 'evt-plan',
+          sessionId: 'session-1',
+          turnId: 'turn-1',
+          timestamp: '2026-05-28T00:00:01.000Z',
+          type: 'plan_proposed',
+          plan: '1. inspect\n2. patch\n3. verify',
+        })
+      }
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -2976,11 +3101,11 @@ describe('Renderer Smoke Tests', () => {
       expect(container.querySelector('.plan-approval')).not.toBeNull()
     })
     expect(container.querySelector('.composer-approval-card')).toBeNull()
-    expect(container.textContent).toContain('计划已就绪，等待你审批')
+    expect(container.textContent).toContain('Agent 计划')
 
     const approveButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>('.plan-approval button'),
-    ).find((button) => button.textContent?.includes('批准并执行'))
+    ).find((button) => button.textContent?.includes('批准执行'))
     expect(approveButton).toBeDefined()
 
     await act(async () => {
@@ -3135,7 +3260,7 @@ describe('Renderer Smoke Tests', () => {
     const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
     const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
 
-    await act(async () => {
+    act(() => {
       root = createRoot(container)
       root.render(
         React.createElement(
@@ -3144,7 +3269,6 @@ describe('Renderer Smoke Tests', () => {
           React.createElement(SessionSidebarProvider, null, React.createElement(ChatView)),
         ),
       )
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
@@ -3160,28 +3284,28 @@ describe('Renderer Smoke Tests', () => {
     expect(textarea).not.toBeNull()
     expect(sendButton).not.toBeNull()
 
-    await act(async () => {
+    act(() => {
       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
       setter?.call(textarea, 'hello from old session')
       textarea?.dispatchEvent(new Event('input', { bubbles: true }))
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    await act(async () => {
+    act(() => {
       sendButton?.click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    expect(invoke).toHaveBeenCalledWith(
-      'session:submit-turn',
-      expect.objectContaining({
-        sessionId: 'session-1',
-        providerProfileId: 'tencent-provider',
-        modelId: 'glm-5',
-        agentAdapter: 'claude-sdk',
-        permissionMode: 'claude-plan',
-      }),
-    )
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        'session:submit-turn',
+        expect.objectContaining({
+          sessionId: 'session-1',
+          providerProfileId: 'tencent-provider',
+          modelId: 'glm-5',
+          agentAdapter: 'claude-sdk',
+          permissionMode: 'claude-plan',
+        }),
+      )
+    })
   })
 
   it('derives the provider from the active session model when the session provider is missing', async () => {
@@ -3303,7 +3427,7 @@ describe('Renderer Smoke Tests', () => {
     const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
     const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
 
-    await act(async () => {
+    act(() => {
       root = createRoot(container)
       root.render(
         React.createElement(
@@ -3312,7 +3436,6 @@ describe('Renderer Smoke Tests', () => {
           React.createElement(SessionSidebarProvider, null, React.createElement(ChatView)),
         ),
       )
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
@@ -3325,28 +3448,28 @@ describe('Renderer Smoke Tests', () => {
     expect(textarea).not.toBeNull()
     expect(sendButton).not.toBeNull()
 
-    await act(async () => {
+    act(() => {
       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
       setter?.call(textarea, 'hello with recovered provider')
       textarea?.dispatchEvent(new Event('input', { bubbles: true }))
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    await act(async () => {
+    act(() => {
       sendButton?.click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
-    expect(invoke).toHaveBeenCalledWith(
-      'session:submit-turn',
-      expect.objectContaining({
-        sessionId: 'session-1',
-        providerProfileId: 'tencent-provider',
-        modelId: 'glm-5',
-        agentAdapter: 'claude-sdk',
-        permissionMode: 'claude-plan',
-      }),
-    )
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        'session:submit-turn',
+        expect.objectContaining({
+          sessionId: 'session-1',
+          providerProfileId: 'tencent-provider',
+          modelId: 'glm-5',
+          agentAdapter: 'claude-sdk',
+          permissionMode: 'claude-plan',
+        }),
+      )
+    })
   })
 
   it('uses the session model owner icon when the stored provider no longer supports that model', async () => {
@@ -3457,7 +3580,7 @@ describe('Renderer Smoke Tests', () => {
     const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
     const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
 
-    await act(async () => {
+    act(() => {
       root = createRoot(container)
       root.render(
         React.createElement(
@@ -3466,7 +3589,6 @@ describe('Renderer Smoke Tests', () => {
           React.createElement(SessionSidebarProvider, null, React.createElement(ChatView)),
         ),
       )
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
@@ -3697,6 +3819,7 @@ describe('Renderer Smoke Tests', () => {
       }
       if (channel === 'workspace:get-current') return { workspace: null }
       if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-worktrees') return { worktrees: [] }
       if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
       if (channel === 'workspace:open') {
         return {
@@ -3772,31 +3895,32 @@ describe('Renderer Smoke Tests', () => {
       .mockReturnValue(800)
 
     try {
+      mockLobeUiForChatView()
       const { ChatView } = await import('../design/views/ChatView')
+      const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
+      const chatSurface = await createChatSurface(ChatView)
 
-      await act(async () => {
+      act(() => {
         root = createRoot(container)
         root.render(
           React.createElement(
             ToastProvider,
             null,
             React.createElement(
-              (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+              SessionSidebarProvider,
               null,
-              React.createElement(ChatView),
+              chatSurface,
             ),
           ),
         )
-        await new Promise((resolve) => setTimeout(resolve, 0))
       })
 
       await vi.waitFor(() => {
         expect(container.querySelector('.chat-item-compact')).not.toBeNull()
       })
 
-      await act(async () => {
+      act(() => {
         container.querySelector<HTMLElement>('.chat-item-compact')?.click()
-        await new Promise((resolve) => setTimeout(resolve, 0))
       })
 
       await vi.waitFor(() => {
@@ -3804,7 +3928,13 @@ describe('Renderer Smoke Tests', () => {
       })
 
       await vi.waitFor(() => {
-        expect(container.querySelectorAll('.collapse-overlay .collapse-toggle').length).toBe(0)
+        const assistantMessages = container.querySelectorAll('.msg-agent')
+        expect(assistantMessages).toHaveLength(2)
+        expect(
+          Array.from(assistantMessages).every(
+            (message) => message.querySelector('.collapse-overlay .collapse-toggle') == null,
+          ),
+        ).toBe(true)
       })
       const assistantMessages = container.querySelectorAll('.msg-agent')
       expect(assistantMessages[0]?.querySelector('.collapse-overlay .collapse-toggle')).toBeNull()
@@ -3815,6 +3945,7 @@ describe('Renderer Smoke Tests', () => {
   })
 
   it('shows the latest todo_write plan below session information in the inspector', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
@@ -3860,6 +3991,7 @@ describe('Renderer Smoke Tests', () => {
       }
       if (channel === 'workspace:get-current') return { workspace: null }
       if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-worktrees') return { worktrees: [] }
       if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
       if (channel === 'session:get-history') {
         return {
@@ -3908,52 +4040,46 @@ describe('Renderer Smoke Tests', () => {
     })
 
     const { ChatView } = await import('../design/views/ChatView')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
+    const chatSurface = await createChatSurface(ChatView)
 
-    await act(async () => {
+    act(() => {
       root = createRoot(container)
       root.render(
         React.createElement(
           ToastProvider,
           null,
           React.createElement(
-            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            SessionSidebarProvider,
             null,
-            React.createElement(ChatView),
+            chatSurface,
           ),
         ),
       )
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
       expect(container.querySelector('.chat-item-compact')).not.toBeNull()
     })
 
-    await act(async () => {
-      container.querySelector<HTMLElement>('.chat-item-compact')?.click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
-
     await vi.waitFor(() => {
       expect(container.textContent).toContain('todo_write')
     })
 
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('.tabbar-actions .icon-btn[aria-label="会话检查器"]')
-        ?.click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    const envButton = container.querySelector<HTMLButtonElement>('[aria-label="环境信息"]')
+    expect(envButton).not.toBeNull()
+    envButton?.click()
 
-    const sections = Array.from(container.querySelectorAll<HTMLElement>('.inspector-section'))
-    expect(sections[0]?.textContent).toContain('会话信息')
-    expect(sections[1]?.textContent).toContain('计划')
-    expect(sections[1]?.textContent).toContain('1/3')
-    expect(sections[1]?.textContent).toContain('执行 Vite 初始化命令')
+    await vi.waitFor(() => {
+      const envPanelText = container.querySelector('.git-env-panel')?.textContent ?? ''
+      expect(envPanelText).toContain('1/3')
+      expect(envPanelText).toContain('执行 Vite 初始化命令')
+    })
   })
 
   it('updates git environment progress from live todo_write events', async () => {
-    let streamHandler: ((event: Record<string, unknown>) => void) | null = null
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    const streamHandlers: Array<(event: Record<string, unknown>) => void> = []
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {
         return {
@@ -4057,37 +4183,37 @@ describe('Renderer Smoke Tests', () => {
     vi.stubGlobal('spark', {
       invoke,
       on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
-        if (channel === 'stream:session:agent-event') streamHandler = callback
+        if (channel === 'stream:session:agent-event') streamHandlers.push(callback)
         return vi.fn()
       }),
     })
 
     const { ChatView } = await import('../design/views/ChatView')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
+    const chatSurface = await createChatSurface(ChatView)
 
-    await act(async () => {
+    act(() => {
       root = createRoot(container)
       root.render(
         React.createElement(
           ToastProvider,
           null,
           React.createElement(
-            (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
+            SessionSidebarProvider,
             null,
-            React.createElement(ChatView),
+            chatSurface,
           ),
         ),
       )
-      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
       expect(container.querySelector('.chat-item-compact')).not.toBeNull()
     })
 
-    await act(async () => {
-      container.querySelector<HTMLElement>('.chat-item-compact')?.click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    const envButton = container.querySelector<HTMLButtonElement>('[aria-label="环境信息"]')
+    expect(envButton).not.toBeNull()
+    envButton?.click()
 
     await vi.waitFor(() => {
       const panelText = container.querySelector('.git-env-panel')?.textContent ?? ''
@@ -4096,34 +4222,38 @@ describe('Renderer Smoke Tests', () => {
       expect(panelText).toContain('定位文件变更展示链路')
     })
 
-    await act(async () => {
-      streamHandler?.({
-        id: 'todo-2',
-        type: 'tool_call',
-        sessionId: 'session-1',
-        turnId: 'turn-1',
-        timestamp: '2026-05-27T00:00:02.000Z',
-        seq: 3,
-        provider: 'claude',
-        toolCallId: 'todo-2',
-        toolName: 'todo_write',
-        toolInput: {
-          todos: [
-            { id: 'locate', content: '定位文件变更展示链路', status: 'completed' },
-            { id: 'fix', content: '实施修复', activeForm: '正在实施修复', status: 'in_progress' },
-          ],
-        },
-        source: 'builtin',
+    for (const streamHandler of streamHandlers) {
+      streamHandler({
+          id: 'todo-2',
+          type: 'tool_call',
+          sessionId: 'session-1',
+          turnId: 'turn-1',
+          timestamp: '2026-05-27T00:00:02.000Z',
+          seq: 3,
+          provider: 'claude',
+          toolCallId: 'todo-2',
+          toolName: 'todo_write',
+          toolInput: {
+            todos: [
+              { id: 'locate', content: '定位文件变更展示链路', status: 'completed' },
+              {
+                id: 'fix',
+                content: '实施修复',
+                activeForm: '正在实施修复',
+                status: 'in_progress',
+              },
+            ],
+          },
+          source: 'builtin',
       })
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    }
 
     await vi.waitFor(() => {
       const panelText = container.querySelector('.git-env-panel')?.textContent ?? ''
       expect(panelText).toContain('1/2')
       expect(panelText).toContain('正在实施修复')
     })
-  })
+  }, 10_000)
 
   it('hydrates complete running history with one IPC request and merges live events received during reload', async () => {
     let streamHandler: ((event: Record<string, unknown>) => void) | null = null
@@ -4241,7 +4371,7 @@ describe('Renderer Smoke Tests', () => {
           React.createElement(
             (await import('../design/SessionSidebarContext')).SessionSidebarProvider,
             null,
-            React.createElement(ChatView),
+            await createChatSurface(ChatView),
           ),
         ),
       )

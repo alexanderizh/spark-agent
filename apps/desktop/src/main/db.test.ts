@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { join } from 'node:path'
 
 const mocks = vi.hoisted(() => ({
   isDev: false,
@@ -27,12 +28,12 @@ describe('database path', () => {
   })
 
   it('uses spark.db in production', () => {
-    expect(getDatabasePath()).toBe(`${mocks.userDataPath}\\spark.db`)
+    expect(getDatabasePath()).toBe(join(mocks.userDataPath, 'spark.db'))
   })
 
   it('uses the production spark.db in development', () => {
     mocks.isDev = true
 
-    expect(getDatabasePath()).toBe(`${mocks.userDataPath}\\spark.db`)
+    expect(getDatabasePath()).toBe(join(mocks.userDataPath, 'spark.db'))
   })
 })

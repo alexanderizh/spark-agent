@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 const { buildNodeOptions, MIN_BUILD_HEAP_MB } =
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   require('../../../../scripts/run-electron-vite-build.js') as {
     MIN_BUILD_HEAP_MB: number
     buildNodeOptions: (current?: string) => string

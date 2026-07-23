@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { pruneMacElectronLocales } = require('../../../../scripts/after-pack.js') as {
   pruneMacElectronLocales: (appPath: string) => Promise<{ kept: string[]; removed: number }>
 }

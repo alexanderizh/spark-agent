@@ -9848,10 +9848,11 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 .canvas-film-asset-cards {
   flex: 1;
   overflow-y: auto;
-  padding: 10px 12px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+  align-content: start;
 }
 
 .canvas-film-asset-loadmore {
@@ -9873,16 +9874,13 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   }
 }
 
-// 注：.canvas-film-asset-card / -thumb 的视觉定义统一在下方网格布局处（约 5340 行），
-// 此处只保留卡片内文字列样式，避免重复定义互相覆盖导致缩略图与栅格列错位。
-.canvas-film-asset-card-main {
-  min-width: 0;
-}
-
+// 注：海报卡本体（.canvas-film-asset-card / -bg / -placeholder / -overlay）的视觉定义
+// 统一在下方（约 10909 行），此处只保留卡片内文字与操作浮层样式。
 .canvas-film-asset-card-name {
   font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
+  font-weight: 700;
+  line-height: 1.35;
+  color: #fff;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -9890,16 +9888,54 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 .canvas-film-asset-card-preview {
   font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 3px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .canvas-film-asset-card-actions {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 3;
   display: flex;
-  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 2px;
+  justify-content: center;
+  padding: 4px;
+  border-radius: var(--r-sm);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+
+  .ant-btn {
+    color: rgba(255, 255, 255, 0.88);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
+    }
+    &[disabled] {
+      color: rgba(255, 255, 255, 0.35);
+    }
+  }
+}
+.canvas-film-asset-card:hover .canvas-film-asset-card-actions {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
 .canvas-film-empty {
@@ -10908,48 +10944,80 @@ body.canvas-agent-panel-resizing {
 
 .canvas-film-asset-card {
   position: relative;
-  display: grid;
-  grid-template-columns: 84px minmax(0, 1fr) auto;
-  gap: 10px;
-  min-height: 76px;
-  padding: 8px 10px;
+  min-height: 288px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-sm);
   background: var(--canvas-film-card);
-  align-items: center;
   box-shadow: var(--shadow-sm);
   transition:
-    border-color 140ms ease,
-    box-shadow 140ms ease;
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
 
   &:hover {
+    transform: translateY(-2px);
     border-color: var(--primary);
     box-shadow: var(--shadow-md);
   }
 }
-.canvas-film-asset-card-thumb {
-  position: relative;
-  width: 84px;
-  height: 60px;
-  border-radius: var(--r-lg);
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--canvas-film-cyan) 12%, transparent),
-      transparent
-    ),
-    var(--bg-sunken);
+.canvas-film-asset-card-bg {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
+.canvas-film-asset-card-bg img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.canvas-film-asset-card-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 88px;
+  background: var(--bg-sunken);
+  background-image: radial-gradient(
+    circle at 50% 42%,
+    color-mix(in srgb, var(--text) 5%, transparent) 0%,
+    transparent 62%
+  );
+}
+.canvas-film-asset-card-placeholder-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+.canvas-film-asset-card-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: 10px 12px 11px;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.82) 0%,
+    rgba(0, 0, 0, 0.6) 55%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  color: #fff;
+}
 .canvas-film-asset-card-refcount,
 .canvas-film-asset-card-usage {
   position: absolute;
-  bottom: 4px;
+  top: 8px;
+  z-index: 2;
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -10963,22 +11031,35 @@ body.canvas-agent-panel-resizing {
   -webkit-backdrop-filter: blur(8px);
 }
 .canvas-film-asset-card-refcount {
-  left: 4px;
+  left: 8px;
 }
 .canvas-film-asset-card-usage {
-  right: 4px;
+  right: 8px;
   background: color-mix(in srgb, var(--primary) 82%, rgba(0, 0, 0, 0.48));
 }
 .canvas-film-asset-card-tags {
-  margin-top: 4px;
+  margin-top: 5px;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   align-items: center;
+
+  .canvas-film-tag-chip {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
 }
 .canvas-film-asset-card-tagmore {
   font-size: 11px;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .canvas-film-editor-section {
@@ -11881,19 +11962,9 @@ body.canvas-agent-panel-resizing {
     flex-direction: column;
   }
 
-  .canvas-film-asset-card {
-    grid-template-columns: 78px minmax(0, 1fr);
-
-    .canvas-film-asset-card-actions {
-      grid-column: 1 / -1;
-      justify-content: flex-end;
-      flex-wrap: wrap;
-    }
-  }
-
-  .canvas-film-asset-card-thumb {
-    width: 78px;
-    height: 58px;
+  .canvas-film-asset-cards {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
   }
 
   .canvas-film-shots-tab {

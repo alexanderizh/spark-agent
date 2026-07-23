@@ -18,6 +18,7 @@ const KEY_REFRESH = 'refresh_token'
 const KEY_USER_ID = 'user_id'
 const BACKUP_FILE_NAME = 'cloud-auth-session.enc'
 const BACKUP_VERSION = 1
+const DEFAULT_KEYTAR_OPERATION_TIMEOUT_MS = 3_000
 
 interface EncryptedBackupPayload {
   version: number
@@ -25,13 +26,24 @@ interface EncryptedBackupPayload {
   session: AuthSession
 }
 
+interface TokenStoreOptions {
+  keytarOperationTimeoutMs?: number
+}
+
 export class TokenStore {
   private cache: Partial<AuthSession> = {}
   private keytarUnavailable = false
   private encryptedBackupAvailable = false
   private lastError: string | null = null
+  private readonly keytarOperationTimeoutMs: number
 
-  constructor(private readonly service: string) {}
+  constructor(
+    private readonly service: string,
+    options: TokenStoreOptions = {},
+  ) {
+    this.keytarOperationTimeoutMs =
+      options.keytarOperationTimeoutMs ?? DEFAULT_KEYTAR_OPERATION_TIMEOUT_MS
+  }
 
   async load(): Promise<Partial<AuthSession>> {
     const backup = await this.loadEncryptedBackup()
@@ -43,12 +55,17 @@ export class TokenStore {
     }
 
     try {
-      const keytar = await importKeytar()
-      const [token, refreshToken, userId] = await Promise.all([
-        keytar.getPassword(this.service, KEY_TOKEN),
-        keytar.getPassword(this.service, KEY_REFRESH),
-        keytar.getPassword(this.service, KEY_USER_ID),
-      ])
+      const [token, refreshToken, userId] = await this.runKeytarOperation(
+        'load',
+        async () => {
+          const keytar = await importKeytar()
+          return await Promise.all([
+            keytar.getPassword(this.service, KEY_TOKEN),
+            keytar.getPassword(this.service, KEY_REFRESH),
+            keytar.getPassword(this.service, KEY_USER_ID),
+          ])
+        },
+      )
       this.cache = {
         ...(token ? { token } : {}),
         ...(refreshToken ? { refreshToken } : {}),
@@ -117,14 +134,19 @@ export class TokenStore {
 
     if (this.keytarUnavailable) return
     try {
-      const keytar = await importKeytar()
-      await Promise.all([
-        keytar.deletePassword(this.service, KEY_TOKEN),
-        keytar.deletePassword(this.service, KEY_REFRESH),
-        keytar.deletePassword(this.service, KEY_USER_ID),
-      ])
+      await this.runKeytarOperation('clear', async () => {
+        const keytar = await importKeytar()
+        await Promise.all([
+          keytar.deletePassword(this.service, KEY_TOKEN),
+          keytar.deletePassword(this.service, KEY_REFRESH),
+          keytar.deletePassword(this.service, KEY_USER_ID),
+        ])
+      })
+      this.lastError = null
     } catch (e) {
-      log.warn(`keytar.deletePassword failed: ${(e as Error).message ?? String(e)}`)
+      this.keytarUnavailable = true
+      this.lastError = (e as Error).message ?? String(e)
+      log.warn(`keytar.deletePassword failed: ${this.lastError}`)
     }
   }
 
@@ -141,12 +163,25 @@ export class TokenStore {
   }
 
   private async saveKeytar(session: AuthSession): Promise<void> {
-    const keytar = await importKeytar()
-    await Promise.all([
-      keytar.setPassword(this.service, KEY_TOKEN, session.token),
-      keytar.setPassword(this.service, KEY_REFRESH, session.refreshToken),
-      keytar.setPassword(this.service, KEY_USER_ID, session.userId),
-    ])
+    await this.runKeytarOperation('save', async () => {
+      const keytar = await importKeytar()
+      await Promise.all([
+        keytar.setPassword(this.service, KEY_TOKEN, session.token),
+        keytar.setPassword(this.service, KEY_REFRESH, session.refreshToken),
+        keytar.setPassword(this.service, KEY_USER_ID, session.userId),
+      ])
+    })
+  }
+
+  private async runKeytarOperation<T>(
+    operation: 'load' | 'save' | 'clear',
+    callback: () => Promise<T>,
+  ): Promise<T> {
+    return await withTimeout(
+      callback(),
+      this.keytarOperationTimeoutMs,
+      `keytar ${operation}`,
+    )
   }
 
   private async loadEncryptedBackup(): Promise<AuthSession | null> {
@@ -257,4 +292,23 @@ function isMissingFileError(e: unknown): boolean {
 
 async function importKeytar(): Promise<typeof import('keytar')> {
   return await import('keytar')
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  operation: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${operation} timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+  })
+
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }

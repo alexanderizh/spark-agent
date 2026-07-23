@@ -17,9 +17,10 @@ export function isPathStrictlyInsideRoot(
 ): boolean {
   const trimmed = target?.trim()
   if (!trimmed) return false
-  const resolvedTarget = path.resolve(trimmed)
-  const resolvedRoot = path.resolve(root)
+  const pathApi = /^(?:[a-z]:[\\/]|\\\\)/i.test(root) ? path.win32 : path.posix
+  const resolvedTarget = pathApi.resolve(trimmed)
+  const resolvedRoot = pathApi.resolve(root)
   if (resolvedTarget === resolvedRoot) return false
-  const rel = path.relative(resolvedRoot, resolvedTarget)
-  return rel.length > 0 && !rel.startsWith('..') && !path.isAbsolute(rel)
+  const rel = pathApi.relative(resolvedRoot, resolvedTarget)
+  return rel.length > 0 && !rel.startsWith('..') && !pathApi.isAbsolute(rel)
 }

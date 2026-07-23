@@ -6,7 +6,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Dropdown } from 'antd'
 import { Checkbox as LobeCheckbox, TextArea as LobeTextArea } from '@lobehub/ui'
-import { AppProvider, useApp } from '../design/AppContext'
+import { AppDialogHost, AppProvider, useApp } from '../design/AppContext'
 import { ComposerActionsMenu } from '../design/components/ComposerActionsMenu'
 import { ToastProvider } from '../design/components/Toast'
 
@@ -26,15 +26,6 @@ function mouseOver(element: Element) {
   element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }))
 }
 
-function pointerDown(element: Element) {
-  element.dispatchEvent(new PointerEvent('pointerdown', {
-    bubbles: true,
-    cancelable: true,
-    button: 0,
-    ctrlKey: false,
-  }))
-}
-
 function setInputValue(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
   const proto = input instanceof HTMLTextAreaElement
     ? HTMLTextAreaElement.prototype
@@ -46,8 +37,9 @@ function setInputValue(input: HTMLInputElement | HTMLTextAreaElement, value: str
 }
 
 function buttonByText(text: string): HTMLButtonElement {
+  const normalizedText = text.replace(/\s/g, '')
   const button = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
-    .find((candidate) => candidate.textContent?.includes(text))
+    .find((candidate) => candidate.textContent?.replace(/\s/g, '').includes(normalizedText))
   expect(button).toBeDefined()
   if (button == null) throw new Error(`Button not found: ${text}`)
   return button
@@ -59,6 +51,20 @@ describe('Desktop UI system overlays', () => {
 
   beforeEach(() => {
     localStorage.clear()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query.includes('min-width'),
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
     container = document.createElement('div')
     document.body.appendChild(container)
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
@@ -94,13 +100,18 @@ describe('Desktop UI system overlays', () => {
     })
 
     await act(async () => {
-      pointerDown(buttonByText('筛选'))
+      mouseOver(buttonByText('筛选'))
     })
 
     const clipper = container.querySelector('[data-testid="clipper"]')
-    const menu = document.body.querySelector('[data-testid="filter-menu"]')
+    let menu: Element | null = null
+    await vi.waitFor(() => {
+      menu = Array.from(document.body.querySelectorAll('.ant-dropdown')).find((candidate) =>
+        candidate.textContent?.includes('最近 7 天'),
+      ) ?? null
+      expect(menu).not.toBeNull()
+    })
 
-    expect(menu).not.toBeNull()
     expect(clipper?.contains(menu)).toBe(false)
     expect(document.body.contains(menu)).toBe(true)
   })
@@ -130,7 +141,12 @@ describe('Desktop UI system overlays', () => {
 
     act(() => {
       root = createRoot(container)
-      root.render(<AppProvider><ConfirmHarness /></AppProvider>)
+      root.render(
+        <AppProvider>
+          <ConfirmHarness />
+          <AppDialogHost />
+        </AppProvider>,
+      )
     })
 
     await act(async () => {
@@ -173,7 +189,12 @@ describe('Desktop UI system overlays', () => {
 
     act(() => {
       root = createRoot(container)
-      root.render(<AppProvider><PromptHarness /></AppProvider>)
+      root.render(
+        <AppProvider>
+          <PromptHarness />
+          <AppDialogHost />
+        </AppProvider>,
+      )
     })
 
     await act(async () => {
