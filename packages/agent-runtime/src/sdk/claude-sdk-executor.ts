@@ -720,7 +720,6 @@ export class ClaudeSDKExecutor {
         // trigger from starting a second, invisible orchestration layer.
         disableWorkflows: true,
         workflowKeywordTriggerEnabled: false,
-        ...buildApplicationHooks(config, sessionId),
         ...buildElicitationHandler(config, sessionId),
         // 本地技能插件（托管技能目录）→ 启用 SDK 原生技能发现 + 渐进式披露。
         ...(config.skillPlugins != null && config.skillPlugins.length > 0
@@ -1292,39 +1291,6 @@ function allowTool(
 
 function normalizeApprovalResult(result: boolean | SDKApprovalResult): SDKApprovalResult {
   return typeof result === 'boolean' ? { allowed: result } : result
-}
-
-function buildApplicationHooks(
-  config: SDKExecutorConfig,
-  sessionId: string,
-): Pick<SDKQueryOptions, 'hooks'> | Record<string, never> {
-  const callback = config.applicationHookCallback
-  if (callback == null) return {}
-  return {
-    hooks: {
-      PermissionRequest: [
-        {
-          hooks: [
-            async (input) => {
-              try {
-                await callback(sessionId, 'permission_request', {
-                  title: 'Spark Agent - 权限请求',
-                  body: `Claude 请求使用 ${input.tool_name}`,
-                })
-              } catch (error) {
-                log.warn('Application permission hook failed', {
-                  sessionId,
-                  toolName: input.tool_name,
-                  error: error instanceof Error ? error.message : String(error),
-                })
-              }
-              return { continue: true }
-            },
-          ],
-        },
-      ],
-    },
-  }
 }
 
 interface ElicitationField {
