@@ -37,7 +37,7 @@ cd node_modules/better-sqlite3 && npm run build-release
 cd /Users/zhangyang/spark_ai_project/Spark-Agent
 pnpm --filter @spark/agent-runtime exec vitest run src/services/memory/__evals__/eval.test.ts
 # 跑完务必还原 Electron ABI：
-# cd node_modules/better-sqlite3 && prebuild-install --runtime electron --target 31.7.7
+# cd node_modules/better-sqlite3 && prebuild-install --runtime electron --target 43.2.0
 ```
 
 输出含 `gate: N/M precision = X%` 与 `search: N/M recall = X%` 汇总。
