@@ -990,7 +990,7 @@ describe('ClaudeSDKExecutor', () => {
     })
   })
 
-  it('bridges only SDK permission-request hooks into Spark application hooks', async () => {
+  it('does not notify from raw SDK permission checks that may be auto-approved', async () => {
     queryMock.mockReturnValue(
       messages([
         {
@@ -1010,26 +1010,8 @@ describe('ClaudeSDKExecutor', () => {
     })
 
     const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
-    expect(Object.keys(options.hooks ?? {})).toEqual(['PermissionRequest'])
-    const hook = options.hooks?.PermissionRequest?.[0]?.hooks[0]
-    await expect(
-      hook?.(
-        {
-          hook_event_name: 'PermissionRequest',
-          session_id: 'sdk-session-1',
-          transcript_path: '/private/transcript.jsonl',
-          cwd: '/tmp',
-          tool_name: 'Bash',
-          tool_input: { command: 'pnpm test' },
-        },
-        'tool-1',
-        { signal: new AbortController().signal },
-      ),
-    ).resolves.toEqual({ continue: true })
-    expect(applicationHookCallback).toHaveBeenCalledWith('sess-1', 'permission_request', {
-      title: 'Spark Agent - 权限请求',
-      body: 'Claude 请求使用 Bash',
-    })
+    expect(options.hooks).toBeUndefined()
+    expect(applicationHookCallback).not.toHaveBeenCalled()
   })
 
   it('bridges form MCP elicitations through the existing structured question UI', async () => {
