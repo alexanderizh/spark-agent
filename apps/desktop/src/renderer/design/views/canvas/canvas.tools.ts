@@ -986,10 +986,13 @@ const tools: CanvasToolDescriptor[] = [
       properties: { nodeIds: array(string('节点 id'), '要分组的节点 id 列表（≥2）') },
     },
     handler: async (ctx, input: { nodeIds: string[] }) => {
-      await ctx.workspace.createGroupNode(input.nodeIds)
-      const snap = requireSnapshot(ctx)
-      // 最新一个 group 节点
-      const group = [...snap.nodes].reverse().find((n) => n.type === 'group')
+      const beforeIds = new Set(requireSnapshot(ctx).nodes.map((n) => n.id))
+      const updated = await ctx.workspace.createGroupNode(input.nodeIds)
+      let group = updated?.nodes?.find((n) => !beforeIds.has(n.id) && n.type === 'group')
+      if (!group) {
+        const fallback = requireSnapshot(ctx)
+        group = [...fallback.nodes].reverse().find((n) => !beforeIds.has(n.id) && n.type === 'group')
+      }
       return { groupId: group?.id ?? null }
     },
   },
@@ -1258,7 +1261,8 @@ const tools: CanvasToolDescriptor[] = [
       const bid = activeBoardId(ctx)
       const pos =
         input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
-      await ctx.workspace.createOperationNode({
+      const beforeIds = new Set(snap.nodes.map((n) => n.id))
+      const updated = await ctx.workspace.createOperationNode({
         boardId: bid,
         operation: input.operation,
         inputNodeIds: input.inputNodeIds ?? [],
@@ -1275,8 +1279,17 @@ const tools: CanvasToolDescriptor[] = [
         ...(input.outputPipelineRole ? { outputPipelineRole: input.outputPipelineRole } : {}),
         ...pos,
       })
-      const next = requireSnapshot(ctx)
-      const created = [...next.nodes].reverse().find((n) => n.type === input.operation)
+      // 优先用返回快照 diff 出新节点（createOperationNode 返回的 state 此刻可能尚未刷新到 React）；
+      // 返回快照异常时才退化为重读最新 state，并叠加 beforeId 约束避免误匹配旧同类节点
+      let created = updated?.nodes?.find(
+        (n) => !beforeIds.has(n.id) && n.type === input.operation,
+      )
+      if (!created) {
+        const fallback = requireSnapshot(ctx)
+        created = [...fallback.nodes]
+          .reverse()
+          .find((n) => !beforeIds.has(n.id) && n.type === input.operation)
+      }
       return { nodeId: created?.id ?? null, operationLabel: operationLabel(input.operation) }
     },
   },
