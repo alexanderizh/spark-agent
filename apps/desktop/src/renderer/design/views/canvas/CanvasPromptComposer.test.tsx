@@ -123,6 +123,7 @@ async function mountComposer(
   assets: CanvasAsset[] = [asset],
   onRequestCanvasNodePick?: (onPick: (node: CanvasNode) => void) => void,
   presentationNodeBySourceId?: ReadonlyMap<string, CanvasNode>,
+  onUploadLocalFile?: (file: File) => Promise<CanvasNode | null | undefined>,
 ) {
   const container = window.document.createElement('div')
   window.document.body.appendChild(container)
@@ -143,6 +144,7 @@ async function mountComposer(
         placeholder="输入提示词"
         onChange={setDocument}
         {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
+        {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
         onEditorReady={(nextEditor) => {
           editor = nextEditor
         }}
@@ -463,6 +465,89 @@ describe('CanvasPromptComposer', () => {
         label: '小满',
       }),
     )
+  })
+
+  it('uploads a local file from the toolbar menu and inserts the created node reference', async () => {
+    const uploadedNode = { ...textNode(), id: 'local-reference', title: 'reference.txt' }
+    const mounted = await mountComposer(
+      { version: 2, blocks: [] },
+      [],
+      [],
+      undefined,
+      undefined,
+      async () => uploadedNode,
+    )
+    await act(async () =>
+      mounted.container.querySelector<HTMLButtonElement>('.canvas-prompt-composer-add')!.click(),
+    )
+
+    const file = new File(['local reference'], 'reference.txt', { type: 'text/plain' })
+    const input = document.querySelector<HTMLInputElement>(
+      '[aria-label="选择本地文件上传到画布并引用"]',
+    )!
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushEditor()
+
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({
+        kind: 'reference',
+        sourceNodeId: 'local-reference',
+        label: 'reference.txt',
+      }),
+    )
+  })
+
+  it('replaces an active @ query with the uploaded node reference', async () => {
+    const uploadedNode = { ...imageNode(), id: 'local-image', title: 'local.png' }
+    const mounted = await mountComposer(
+      { version: 2, blocks: [] },
+      [],
+      [],
+      undefined,
+      undefined,
+      async () => uploadedNode,
+    )
+    await act(async () => {
+      mounted.getEditor().update(() => {
+        const root = $getRoot()
+        root.clear()
+        const paragraph = $createParagraphNode()
+        const text = $createTextNode('@本地')
+        paragraph.append(text)
+        root.append(paragraph)
+        text.selectEnd()
+      })
+      mounted.getEditor().focus()
+    })
+    await flushEditor()
+
+    const file = new File(['image'], 'local.png', { type: 'image/png' })
+    const input = document.querySelector<HTMLInputElement>(
+      '[aria-label="选择本地文件上传到画布并引用"]',
+    )!
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushEditor()
+
+    expect(mounted.getDocument().blocks).toContainEqual(
+      expect.objectContaining({
+        kind: 'reference',
+        sourceNodeId: 'local-image',
+        label: 'local.png',
+      }),
+    )
+    expect(
+      mounted
+        .getDocument()
+        .blocks.some((block) => block.kind === 'text' && block.text.includes('@本地')),
+    ).toBe(false)
   })
 
   it('uses the shared searchable menu for the toolbar and @ trigger', async () => {

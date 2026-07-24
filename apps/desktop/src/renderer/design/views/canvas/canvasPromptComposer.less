@@ -296,7 +296,7 @@
   box-shadow: var(--shadow-lg);
 }
 
-.canvas-prompt-insert-menu.has-canvas-pick {
+.canvas-prompt-insert-menu.has-primary-actions {
   grid-template-rows: auto auto auto auto minmax(0, 1fr);
 }
 
@@ -319,13 +319,23 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 16%, transparent);
 }
 
+.canvas-prompt-insert-primary-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.canvas-prompt-insert-primary-actions > :only-child {
+  grid-column: 1 / -1;
+}
+
 .canvas-prompt-insert-canvas-pick {
   display: flex;
   width: 100%;
   min-height: 48px;
   align-items: center;
   gap: 10px;
-  margin-top: 8px;
   padding: 8px 10px;
   border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border-strong));
   border-radius: 9px;
@@ -367,6 +377,40 @@
 .canvas-prompt-insert-canvas-pick small {
   color: var(--text-muted);
   font-size: 10px;
+}
+
+.canvas-prompt-insert-local-upload {
+  display: grid;
+  min-width: 86px;
+  min-height: 48px;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+}
+
+.canvas-prompt-insert-local-upload:hover:not(:disabled),
+.canvas-prompt-insert-local-upload:focus-visible {
+  border-color: var(--primary);
+  outline: none;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.canvas-prompt-insert-local-upload:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.canvas-prompt-insert-local-file-input {
+  display: none;
 }
 
 .canvas-prompt-insert-shortcuts {

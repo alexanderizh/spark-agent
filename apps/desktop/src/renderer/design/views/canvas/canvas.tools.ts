@@ -22,11 +22,18 @@ import type {
   CanvasTask,
 } from './canvas.types'
 import type { CreateFilmAssetInput, ShotGroup, ShotSegment } from './canvasFilmAssets'
-import type { SessionReasoningEffort } from '@spark/protocol'
+import type {
+  CanvasWorkflowDefinition,
+  CanvasWorkflowExecutionPlan,
+  CanvasWorkflowPackage,
+  CanvasWorkflowRun,
+  SessionReasoningEffort,
+} from '@spark/protocol'
 import { getCanvasCapability, isOperationNode, nodeOperation } from './canvas.capabilities'
 import { getCanvasAgentAvailableActions, resolveNodeAssetKinds } from './canvasAgentCapabilities'
 import { buildCanvasAgentProductionPlan } from './canvasAgentProductionPlan'
 import { SPECIALIZED_CANVAS_NODE_TOOLS } from './canvasSpecializedNodeTools'
+import { CANVAS_WORKFLOW_TOOLS } from './canvasWorkflowAgentTools'
 
 type JSONSchema = Record<string, unknown>
 
@@ -144,6 +151,18 @@ export type CanvasWorkspaceActions = {
   ) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   updateProjectSettings: (settings: { prompt?: string; negativePrompt?: string }) => Promise<void>
+  materializeWorkflow: (input: {
+    boardId: string
+    originX: number
+    originY: number
+    workflowPackage: CanvasWorkflowPackage
+  }) => Promise<CanvasSnapshot>
+  runCanvasWorkflow?: (input: {
+    workflow: CanvasWorkflowDefinition
+    run: CanvasWorkflowRun
+    plan: Readonly<CanvasWorkflowExecutionPlan>
+    signal: AbortSignal
+  }) => Promise<CanvasWorkflowRun>
 }
 
 /** 工具执行上下文 */
@@ -2005,6 +2024,8 @@ const tools: CanvasToolDescriptor[] = [
     },
   },
 ]
+
+tools.push(...CANVAS_WORKFLOW_TOOLS)
 
 export const CANVAS_TOOLS: ReadonlyArray<CanvasToolDescriptor> = tools
 const canvasToolEntries: Array<[string, CanvasToolDescriptor]> = tools.map((t) => [t.name, t])

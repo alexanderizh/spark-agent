@@ -52,6 +52,9 @@ import {
 } from './CanvasPromptLexicalNode'
 
 export type CanvasPromptCanvasNodePickHandler = (onPick: (node: CanvasNode) => void) => void
+export type CanvasPromptLocalFileUploadHandler = (
+  file: File,
+) => Promise<CanvasNode | null | undefined>
 
 const EMPTY_PRESENTATION_NODE_MAP = new Map<string, CanvasNode>()
 
@@ -66,6 +69,7 @@ export type CanvasPromptComposerProps = {
   onChange(document: CanvasPromptDocument): void
   onMentionSelect?(node: CanvasNode, relation: CanvasPromptRelation): boolean | void
   onRequestCanvasNodePick?: CanvasPromptCanvasNodePickHandler
+  onUploadLocalFile?: CanvasPromptLocalFileUploadHandler
   onBlockEdit?(blockId: string): void
   onEditorReady?(editor: LexicalEditor): void
 }
@@ -81,6 +85,7 @@ export function CanvasPromptComposer({
   onChange,
   onMentionSelect,
   onRequestCanvasNodePick,
+  onUploadLocalFile,
   onBlockEdit,
   onEditorReady,
 }: CanvasPromptComposerProps) {
@@ -139,6 +144,7 @@ export function CanvasPromptComposer({
             onOpenChange={setInsertMenuOpen}
             onMentionSelect={onMentionSelect}
             {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
+            {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
           />
           <CanvasPromptEditorSurface
             document={document}
@@ -149,6 +155,7 @@ export function CanvasPromptComposer({
             onChange={onChange}
             onMentionSelect={onMentionSelect}
             {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
+            {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
             onEditorReady={onEditorReady}
           />
         </div>
@@ -165,6 +172,7 @@ function CanvasPromptToolbar({
   onOpenChange,
   onMentionSelect,
   onRequestCanvasNodePick,
+  onUploadLocalFile,
 }: {
   open: boolean
   disabled: boolean
@@ -173,6 +181,7 @@ function CanvasPromptToolbar({
   onOpenChange(open: boolean): void
   onMentionSelect?: CanvasPromptComposerProps['onMentionSelect']
   onRequestCanvasNodePick?: CanvasPromptCanvasNodePickHandler
+  onUploadLocalFile?: CanvasPromptLocalFileUploadHandler
 }) {
   const [editor] = useLexicalComposerContext()
   const [query, setQuery] = useState('')
@@ -197,6 +206,11 @@ function CanvasPromptToolbar({
       const item = mentionItems.find((candidate) => candidate.node.id === node.id)
       if (item) insertReference(node, item.label)
     })
+  }
+
+  const uploadAndInsertReference = async (file: File) => {
+    const node = await onUploadLocalFile?.(file)
+    if (node) insertReference(node, node.title || file.name)
   }
 
   return (
@@ -229,6 +243,7 @@ function CanvasPromptToolbar({
               onInsertParameter={insertParameter}
               onInsertReference={(item) => insertReference(item.node, item.label)}
               {...(onRequestCanvasNodePick ? { onPickFromCanvas: pickReferenceFromCanvas } : {})}
+              {...(onUploadLocalFile ? { onUploadLocalFile: uploadAndInsertReference } : {})}
               onRequestClose={() => onOpenChange(false)}
             />,
             document.body,
@@ -247,6 +262,7 @@ function CanvasPromptEditorSurface({
   onChange,
   onMentionSelect,
   onRequestCanvasNodePick,
+  onUploadLocalFile,
   onEditorReady,
 }: {
   document: CanvasPromptDocument
@@ -257,6 +273,7 @@ function CanvasPromptEditorSurface({
   onChange(document: CanvasPromptDocument): void
   onMentionSelect?: CanvasPromptComposerProps['onMentionSelect']
   onRequestCanvasNodePick?: CanvasPromptCanvasNodePickHandler
+  onUploadLocalFile?: CanvasPromptLocalFileUploadHandler
   onEditorReady?: CanvasPromptComposerProps['onEditorReady']
 }) {
   const [editor] = useLexicalComposerContext()
@@ -290,6 +307,7 @@ function CanvasPromptEditorSurface({
         assetById={assetById}
         onMentionSelect={onMentionSelect}
         {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
+        {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
       />
     </div>
   )
@@ -368,11 +386,13 @@ function CanvasPromptMentionPlugin({
   assetById,
   onMentionSelect,
   onRequestCanvasNodePick,
+  onUploadLocalFile,
 }: {
   items: ReturnType<typeof buildCanvasPromptMentionItems>
   assetById: Map<string, CanvasAsset>
   onMentionSelect?: CanvasPromptComposerProps['onMentionSelect']
   onRequestCanvasNodePick?: CanvasPromptCanvasNodePickHandler
+  onUploadLocalFile?: CanvasPromptLocalFileUploadHandler
 }) {
   const [editor] = useLexicalComposerContext()
   const [searchQuery, setSearchQuery] = useState('')
@@ -451,6 +471,23 @@ function CanvasPromptMentionPlugin({
                             bookmark,
                           )
                         })
+                      },
+                    }
+                  : {})}
+                {...(onUploadLocalFile
+                  ? {
+                      onUploadLocalFile: async (file: File) => {
+                        const bookmark = captureTypeaheadCanvasNodePick(editor, matchingString)
+                        const node = await onUploadLocalFile(file)
+                        if (!node) return
+                        const relation = defaultCanvasPromptRelationForNode(node)
+                        if (onMentionSelect?.(node, relation) === false) return
+                        insertAtomicBlockAtTypeaheadBookmark(
+                          editor,
+                          createReferenceBlock(node, node.title || file.name, relation),
+                          bookmark,
+                        )
+                        closeLexicalTypeahead(editor)
                       },
                     }
                   : {})}

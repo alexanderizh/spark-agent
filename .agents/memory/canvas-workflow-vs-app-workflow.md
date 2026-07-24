@@ -43,6 +43,14 @@
 - 运行完成时，输出契约按 `sourceNodeId + sourceHandle` 投影步骤结果；工作流已有运行历史后只能归档，不能永久删除定义和破坏追溯链。
 - 真实 Electron E2E 必须使用临时用户目录、独立认证 keytar service，并跳过默认协议注册和单实例锁；用户应用正在运行时不能直接启动未隔离的第二实例，也不能把受实例冲突污染的截图作为发布证据。
 
+## 画布 Agent 工具边界
+
+- 画布 Agent 面板通过现有 `spark_canvas` MCP 工具桥调用 `canvas_workflow_list/get/create/update/extract_selection/delete/apply/run/run_*`，不新增一套工作流管理 UI。
+- 工具仍只操作无限画布工作流和当前画布项目；不能调用应用工作台的 `workflow:*` 或 `workflow_runs`。
+- `delete`、`apply`、`run` 第一次调用只返回待确认摘要，用户在对话中明确确认后，Agent 才能带 `confirmed: true` 重试。
+- Agent 默认只看到当前画布项目级工作流、个人库和内置模板；任何项目级定义或运行记录都要再次校验 `projectId`，不得跨项目读取、修改、删除、运行、取消、重试或恢复。
+- `apply` 复用画布物化服务，生成普通节点和连线，不保留工作流 id、版本或来源绑定；`run` 复用 `canvas_workflow_runs` 和画布任务执行循环。
+
 ## 相关设计文档
 
 - `docs/superpowers/specs/2026-07-21-canvas-workflow-design.md`

@@ -111,4 +111,36 @@ describe('useCanvasToolHost', () => {
       expect.objectContaining({ requestId: 'request-1', ok: true }),
     )
   })
+
+  it('forwards canvas workflow calls from the attached Agent session', async () => {
+    toolMocks.executeCanvasTool.mockImplementationOnce(
+      async () => ({ workflows: [] }) as never,
+    )
+
+    await act(async () => controller().ensureAttached('session-workflow'))
+    await act(async () => {
+      toolCallListener?.({
+        requestId: 'workflow-request-1',
+        sessionId: 'session-workflow',
+        toolName: 'canvas_workflow_list',
+        args: {},
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(toolMocks.executeCanvasTool).toHaveBeenCalledWith(
+      expect.anything(),
+      'canvas_workflow_list',
+      {},
+    )
+    expect(invoke).toHaveBeenCalledWith(
+      'canvas:tool-result',
+      expect.objectContaining({
+        requestId: 'workflow-request-1',
+        ok: true,
+        result: { workflows: [] },
+      }),
+    )
+  })
 })

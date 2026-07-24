@@ -26,6 +26,7 @@ export type CanvasPromptInsertMenuProps = {
   onInsertParameter(parameter: CanvasPromptParameterBlock['parameter']): void
   onInsertReference(item: CanvasPromptMentionItem): void
   onPickFromCanvas?(): void
+  onUploadLocalFile?(file: File): Promise<void> | void
   onRequestClose(): void
 }
 
@@ -43,6 +44,7 @@ export function CanvasPromptInsertMenu({
   onInsertParameter,
   onInsertReference,
   onPickFromCanvas,
+  onUploadLocalFile,
   onRequestClose,
 }: CanvasPromptInsertMenuProps) {
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -61,6 +63,8 @@ export function CanvasPromptInsertMenu({
   } | null>(null)
   const resultsRef = useRef<HTMLDivElement | null>(null)
   const [showJumpToBottom, setShowJumpToBottom] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const localFileInputRef = useRef<HTMLInputElement | null>(null)
   const filteredItems = useMemo(
     () => filterCanvasPromptInsertItems(items, query, filter, assetById, sort, pinnedIds),
     [assetById, filter, items, pinnedIds, query, sort],
@@ -207,7 +211,7 @@ export function CanvasPromptInsertMenu({
   return (
     <div
       ref={rootRef}
-      className={`canvas-prompt-insert-menu${onPickFromCanvas ? ' has-canvas-pick' : ''}`}
+      className={`canvas-prompt-insert-menu${onPickFromCanvas || onUploadLocalFile ? ' has-primary-actions' : ''}`}
       style={
         fixedToTrigger
           ? {
@@ -245,21 +249,52 @@ export function CanvasPromptInsertMenu({
           }
         }}
       />
-      {onPickFromCanvas ? (
-        <button
-          type="button"
-          className="canvas-prompt-insert-canvas-pick"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={onPickFromCanvas}
-        >
-          <span className="canvas-prompt-insert-canvas-pick-icon">
-            <Icons.MousePointer size={16} />
-          </span>
-          <span>
-            <strong>从画布点选节点</strong>
-            <small>菜单关闭后，单击画布中的节点插入 Tag</small>
-          </span>
-        </button>
+      {onPickFromCanvas || onUploadLocalFile ? (
+        <div className="canvas-prompt-insert-primary-actions">
+          {onPickFromCanvas ? (
+            <button
+              type="button"
+              className="canvas-prompt-insert-canvas-pick"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={onPickFromCanvas}
+            >
+              <span className="canvas-prompt-insert-canvas-pick-icon">
+                <Icons.MousePointer size={16} />
+              </span>
+              <span>
+                <strong>从画布点选节点</strong>
+                <small>菜单关闭后，单击画布中的节点插入 Tag</small>
+              </span>
+            </button>
+          ) : null}
+          {onUploadLocalFile ? (
+            <>
+              <button
+                type="button"
+                className="canvas-prompt-insert-local-upload"
+                disabled={uploading}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => localFileInputRef.current?.click()}
+              >
+                {uploading ? <Icons.Spinner size={16} /> : <Icons.Upload size={16} />}
+                <span>{uploading ? '上传中' : '本地上传'}</span>
+              </button>
+              <input
+                ref={localFileInputRef}
+                type="file"
+                aria-label="选择本地文件上传到画布并引用"
+                className="canvas-prompt-insert-local-file-input"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (!file) return
+                  setUploading(true)
+                  void Promise.resolve(onUploadLocalFile(file)).finally(() => setUploading(false))
+                }}
+              />
+            </>
+          ) : null}
+        </div>
       ) : null}
       <div className="canvas-prompt-insert-shortcuts">
         <Shortcut
