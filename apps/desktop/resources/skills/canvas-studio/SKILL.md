@@ -95,9 +95,12 @@ CanvasProject
 2. **只操作当前画布**：节点/任务默认作用于当前打开的画布。不要尝试创建、删除、复制、重命名或切换画板；如果用户提出多画板需求，说明当前 UI 暂未开放，建议先在当前画布用分组、区域和命名整理。
 3. **不要凭空重复建资产**：影视资产先 `canvas_search_assets` 或 `canvas_list_assets({kind})` 去重；同名同 kind 资产优先复用。
 4. **破坏性操作先确认**：删除节点、删除影视资产、删除分镜分组/片段、解散分组前先问用户。
-5. **复杂生成先建操作节点**：影视流水线优先使用 `canvas_create_pipeline_operation_node`；其他通用生成才使用 `canvas_create_operation_node`。先让用户在画布上检查，用户明确要求立即执行时再 `canvas_run_operation`。
-6. **大流水线分阶段确认**：剧本、角色/场景设定、分镜、关键帧都先落为 draft，用户确认后标 `confirmed` 再推进。
-7. **结果要落回画布**：普通说明/便签可用 `canvas_insert_generated_text`，普通图片可用 `canvas_insert_generated_image`；剧本、分镜、影视资产、设定图卡、关键帧、视频片段和全景图必须使用对应专用工具，不要只在聊天里给结果。
+5. **完整流程必须原子创建**：用户要求创建、搭建或复用一个多节点工作流时，必须优先调用 `canvas_create_reusable_workflow_graph`，不要连续调用低层创建工具后遗漏连线。声明所有可替换输入；图片、视频、音频输入没有现成素材时仍要创建空媒体占位。每个操作通过 `dependsOn` 明确上游，终点操作用 `isOutput/expectedOutputTypes` 声明输出。
+6. **创建后必须检查**：原子工具会自动复核；使用低层工具局部改线、改节点或改配置后，必须调用 `canvas_validate_workflow_graph` 校验本次流程子图。只约束 input/operation/output 流程节点，独立 note 和画布其他内容不要求连线。存在 error 时不得声称流程完成。
+7. **保存是独立动作**：在画布创建流程不会自动写入工作流库。只有用户明确要求保存/沉淀时，才框选正确子图并调用 `canvas_workflow_extract_selection`；不要擅自创建大量工作流定义。
+8. **复杂生成先建操作节点**：单个影视流水线步骤优先使用 `canvas_create_pipeline_operation_node`；其他单个通用生成才使用 `canvas_create_operation_node`。先让用户在画布上检查，用户明确要求立即执行时再 `canvas_run_operation`。
+9. **大流水线分阶段确认**：剧本、角色/场景设定、分镜、关键帧都先落为 draft，用户确认后标 `confirmed` 再推进。
+10. **结果要落回画布**：普通说明/便签可用 `canvas_insert_generated_text`，普通图片可用 `canvas_insert_generated_image`；剧本、分镜、影视资产、设定图卡、关键帧、视频片段和全景图必须使用对应专用工具，不要只在聊天里给结果。
 
 ## 工具清单
 
@@ -119,6 +122,8 @@ CanvasProject
 - `canvas_update_operation_config(nodeId, config, title?)`：持久化更新操作节点配置并同步关联任务，适合精确调参。
 - `canvas_patch_nodes(nodeIds, patch)`：批量改坐标、尺寸、标题、锁定、隐藏、层级。
 - `canvas_delete_nodes`、`canvas_duplicate_nodes`、`canvas_connect_nodes`。
+- `canvas_create_reusable_workflow_graph(name, description?, nodes)`：完整多节点流程的首选入口。`input` 支持文本、Prompt 和空图片/视频/音频占位；`operation.dependsOn` 自动生成真实连线；工具自动布局并在落图前后校验。
+- `canvas_validate_workflow_graph(nodeIds?)`：只读检查指定子图；省略 nodeIds 时使用当前选区。检查输入输出边界、操作配置、连线、类型、环路和重叠，不检查画布无关节点。
 - `canvas_create_group`、`canvas_dissolve_group`、`canvas_add_to_group`、`canvas_remove_from_group`。
 
 ### 资产 / 影视资产
@@ -273,6 +278,13 @@ Agent 工具不直接读写这些元数据，但应：
 - 在文本类生成（剧本/分镜）的 prompt 尾部可加一句「保持全片视觉风格统一」的约束。
 
 ## 常用组合
+
+**创建一个可复用的多节点流程**
+
+1. `canvas_get_project_summary`，必要时再 `canvas_list_capabilities` / `canvas_list_media_models`。
+2. 一次调用 `canvas_create_reusable_workflow_graph`：为用户后续填写的内容声明 `input`，媒体没有现成素材时保留空占位；所有操作必须写完整 `dependsOn`；终点操作声明 `isOutput: true` 和正确的 `expectedOutputTypes`。
+3. 检查返回的 `valid`、`diagnostics`、`inputNodeIds`、`outputNodeIds` 和 `edgeCount`。存在 error 时立即修复并调用 `canvas_validate_workflow_graph`，不得只汇报节点已创建。
+4. 只有用户明确说“保存为工作流”时，才对创建结果调用 `canvas_workflow_extract_selection`。
 
 **创建一个可检查的 AI 操作节点**
 

@@ -460,6 +460,22 @@ export function useCanvasWorkspace(projectId: string) {
     [applyCanvasMutationSnapshot, projectId, snapshot],
   )
 
+  /** 创建空图片节点（工厂菜单直接落位、后续上传填充；不建 asset）。 */
+  const createEmptyImageNode = useCallback(
+    async (input: { x: number; y: number; width?: number; height?: number }) => {
+      const current = snapshot
+      if (!current) return
+      const node = await canvasApi.createEmptyImageNode({
+        projectId,
+        boardId: current.board.id,
+        ...input,
+      })
+      await applyCanvasMutationSnapshot(canvasApi.openSnapshot(projectId))
+      return node
+    },
+    [applyCanvasMutationSnapshot, projectId, snapshot],
+  )
+
   /** 创建视频/音频节点（拖入外部媒体文件时使用），与 createImageNode 对称。 */
   const createMediaNode = useCallback(
     async (input: {
@@ -771,7 +787,7 @@ export function useCanvasWorkspace(projectId: string) {
         targetHandle?: string
       }>
     }) => {
-      await applyCanvasMutationSnapshot(canvasApi.applyTemplate({ projectId, ...input }))
+      return applyCanvasMutationSnapshot(canvasApi.applyTemplate({ projectId, ...input }))
     },
     [applyCanvasMutationSnapshot, projectId],
   )
@@ -1100,6 +1116,7 @@ export function useCanvasWorkspace(projectId: string) {
     deleteEdges,
     createTextNode,
     createImageNode,
+    createEmptyImageNode,
     createMediaNode,
     uploadImageAsset,
     createGroupNode,

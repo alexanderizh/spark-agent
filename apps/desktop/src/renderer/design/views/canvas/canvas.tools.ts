@@ -34,6 +34,7 @@ import { getCanvasAgentAvailableActions, resolveNodeAssetKinds } from './canvasA
 import { buildCanvasAgentProductionPlan } from './canvasAgentProductionPlan'
 import { SPECIALIZED_CANVAS_NODE_TOOLS } from './canvasSpecializedNodeTools'
 import { CANVAS_WORKFLOW_TOOLS } from './canvasWorkflowAgentTools'
+import { CANVAS_AGENT_WORKFLOW_GRAPH_TOOLS } from './canvasAgentWorkflowGraphTools'
 
 type JSONSchema = Record<string, unknown>
 
@@ -151,6 +152,28 @@ export type CanvasWorkspaceActions = {
   ) => Promise<void>
   cancelTask: (taskId: string) => Promise<void>
   updateProjectSettings: (settings: { prompt?: string; negativePrompt?: string }) => Promise<void>
+  applyTemplate: (input: {
+    boardId: string
+    originX: number
+    originY: number
+    nodes: Array<{
+      ref: string
+      type: CanvasNodeType
+      title?: string
+      x: number
+      y: number
+      width?: number
+      height?: number
+      data?: Partial<CanvasNodeData>
+    }>
+    edges?: Array<{
+      from: string
+      to: string
+      type?: import('./canvas.types').CanvasEdgeType
+      sourceHandle?: string
+      targetHandle?: string
+    }>
+  }) => Promise<CanvasSnapshot>
   materializeWorkflow: (input: {
     boardId: string
     originX: number
@@ -170,6 +193,8 @@ export type CanvasToolContext = {
   projectId: string
   /** 返回当前最新的 snapshot；可能为 null（加载中） */
   getSnapshot: () => CanvasSnapshot | null
+  /** 当前画布选区，仅供显式的子图校验；不扩大到整个画布。 */
+  getSelectedNodeIds?: () => string[]
   /** 渲染进程的画布 actions */
   workspace: CanvasWorkspaceActions
 }
@@ -754,7 +779,7 @@ const tools: CanvasToolDescriptor[] = [
   {
     name: 'canvas_create_text_node',
     description:
-      '创建普通纯文本笔记节点（同时生成同步的文本 asset）。不得用于剧本、分镜或影视资产；这些内容必须使用对应专用工具。坐标省略时自动放在画布空白处。',
+      '创建单个普通纯文本笔记节点（同时生成同步的文本 asset），适合局部编辑。不得用于剧本、分镜或影视资产；完整可复用流程请使用 canvas_create_reusable_workflow_graph。坐标省略时自动放在画布空白处。',
     paramsSchema: {
       type: 'object',
       required: ['text'],
@@ -776,7 +801,7 @@ const tools: CanvasToolDescriptor[] = [
   {
     name: 'canvas_create_prompt_node',
     description:
-      '创建 Prompt 节点（与 text 节点结构相同，data.format=prompt，用于专门承载提示词）。',
+      '创建单个 Prompt 节点（与 text 节点结构相同，data.format=prompt），适合局部编辑。完整可复用流程请使用 canvas_create_reusable_workflow_graph。',
     paramsSchema: {
       type: 'object',
       required: ['prompt'],
@@ -963,7 +988,8 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_connect_nodes',
-    description: '在两个节点之间建立连线（type 自动推断：操作节点入边为 used_as_input）。',
+    description:
+      '在两个现有节点之间建立单条连线（操作节点入边为 used_as_input），适合局部修复。完整流程创建请使用 canvas_create_reusable_workflow_graph；修改完流程后调用 canvas_validate_workflow_graph 检查。',
     paramsSchema: {
       type: 'object',
       required: ['sourceNodeId', 'targetNodeId'],
@@ -1211,7 +1237,8 @@ const tools: CanvasToolDescriptor[] = [
   },
   {
     name: 'canvas_create_operation_node',
-    description: '创建一个 AI 操作节点（不立即执行），可后续调 canvas_run_operation 触发。',
+    description:
+      '创建一个 AI 操作节点（不立即执行），适合对现有流程做局部修改。创建完整可复用流程时优先使用 canvas_create_reusable_workflow_graph，以自动生成输入占位、连线、布局和校验。',
     paramsSchema: {
       type: 'object',
       required: ['operation'],
@@ -1667,7 +1694,7 @@ const tools: CanvasToolDescriptor[] = [
   {
     name: 'canvas_batch_create_nodes',
     description:
-      '一次性批量创建多个文本/Prompt 节点，并可指定它们之间的连线。大幅减少往返次数。返回所有创建的节点 id。',
+      '一次性批量创建多个文本/Prompt 节点，并可指定它们之间的连线，适合局部内容卡片。完整可复用流程请使用 canvas_create_reusable_workflow_graph。返回所有创建的节点 id。',
     paramsSchema: {
       type: 'object',
       required: ['nodes'],
@@ -2038,7 +2065,7 @@ const tools: CanvasToolDescriptor[] = [
   },
 ]
 
-tools.push(...CANVAS_WORKFLOW_TOOLS)
+tools.push(...CANVAS_AGENT_WORKFLOW_GRAPH_TOOLS, ...CANVAS_WORKFLOW_TOOLS)
 
 export const CANVAS_TOOLS: ReadonlyArray<CanvasToolDescriptor> = tools
 const canvasToolEntries: Array<[string, CanvasToolDescriptor]> = tools.map((t) => [t.name, t])

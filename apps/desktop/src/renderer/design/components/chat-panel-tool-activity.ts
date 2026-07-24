@@ -19,6 +19,8 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   canvas_delete_nodes: '删除节点',
   canvas_duplicate_nodes: '复制节点',
   canvas_connect_nodes: '连接节点',
+  canvas_create_reusable_workflow_graph: '创建可复用工作流',
+  canvas_validate_workflow_graph: '检查工作流',
   canvas_create_group: '创建分组',
   canvas_dissolve_group: '解散分组',
   canvas_add_to_group: '加入分组',
@@ -71,6 +73,7 @@ const READONLY_CANVAS_TOOLS = new Set([
   'canvas_find_nodes',
   'canvas_search_assets',
   'canvas_query_nodes',
+  'canvas_validate_workflow_graph',
 ])
 
 export function getChatPanelToolBlocks(

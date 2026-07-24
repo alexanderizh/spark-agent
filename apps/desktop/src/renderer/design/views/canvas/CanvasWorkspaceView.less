@@ -1110,10 +1110,17 @@
   flex: 1;
 }
 
-.canvas-node-subview-chip {
+.canvas-node-image-chips {
   position: absolute;
   right: 10px;
   bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 2;
+}
+
+.canvas-node-subview-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1158,6 +1165,31 @@
     var(--canvas-node-body-bg);
   text-align: center;
   font-size: 12px;
+}
+
+.canvas-node-image-placeholder-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 6px 14px;
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.12s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    background: color-mix(in srgb, var(--primary) 28%, transparent);
+    border-color: color-mix(in srgb, var(--primary) 64%, transparent);
+  }
 }
 
 .canvas-node-text {
@@ -10664,6 +10696,7 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
     .chat-panel-message-body {
       max-width: 100%;
+      width: 100%;
     }
 
     .chat-panel-text {

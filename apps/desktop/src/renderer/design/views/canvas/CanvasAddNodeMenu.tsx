@@ -73,7 +73,8 @@ export function useAddNodeMenuItems(): AddNodeMenuItem[] {
         category: 'resource',
         icon: <Icons.Image size={15} />,
         colorClass: 'canvas-op-color-image',
-        action: 'upload_image',
+        nodeType: 'image',
+        data: {},
       },
       {
         id: 'resource:group',
