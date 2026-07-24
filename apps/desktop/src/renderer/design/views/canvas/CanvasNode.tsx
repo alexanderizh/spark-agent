@@ -183,21 +183,29 @@ function OperationOutputDeck({
   mode,
   fallback,
   isolateWheel,
+  primaryRunIndex,
+  primaryOutputIndex,
+  onSelectOutput,
 }: {
   runs: CanvasOperationRunView[]
   mode: CanvasOperationOutputMode
   fallback: ReactNode
   isolateWheel: boolean
+  primaryRunIndex: number
+  primaryOutputIndex: number
+  onSelectOutput?: (output: CanvasOperationRunView['outputs'][number]) => void
 }) {
-  const [runIndex, setRunIndex] = useState(0)
-  const [outputIndex, setOutputIndex] = useState(0)
+  const [runIndex, setRunIndex] = useState(Math.max(0, primaryRunIndex))
+  const [outputIndex, setOutputIndex] = useState(Math.max(0, primaryOutputIndex))
   const runsKey = runs.map((run) => `${run.taskId}:${run.status}:${run.outputs.length}`).join('|')
 
   useEffect(() => {
-    // 新一轮运行进入列表或状态变化时回到最新运行；用户手动切换产物不会触发。
-    setRunIndex(0)
-    setOutputIndex(0)
-  }, [runsKey])
+    // 跟随默认产物：新一轮运行进入、状态变化、或默认产物在别处被改变时，回到
+    // primaryRunIndex/primaryOutputIndex 指向的产物（未设置时上层取最新 run）。
+    // 用户在本卡片切换产物会同步写 primaryOutputId，触发这里对齐到切到的产物，不会循环。
+    setRunIndex(Math.max(0, primaryRunIndex))
+    setOutputIndex(Math.max(0, primaryOutputIndex))
+  }, [runsKey, primaryRunIndex, primaryOutputIndex])
 
   const activeRun = runs[runIndex]
   const outputs = activeRun?.outputs ?? []
@@ -240,8 +248,11 @@ function OperationOutputDeck({
               disabled={runIndex === 0}
               onClick={(event) => {
                 event.stopPropagation()
-                setRunIndex((current) => Math.max(0, current - 1))
+                const nextRunIndex = Math.max(0, runIndex - 1)
+                setRunIndex(nextRunIndex)
                 setOutputIndex(0)
+                const next = runs[nextRunIndex]?.outputs[0]
+                if (next) onSelectOutput?.(next)
               }}
             >
               <Icons.ChevronLeft size={13} />
@@ -256,8 +267,11 @@ function OperationOutputDeck({
               disabled={runIndex >= runs.length - 1}
               onClick={(event) => {
                 event.stopPropagation()
-                setRunIndex((current) => Math.min(runs.length - 1, current + 1))
+                const nextRunIndex = Math.min(runs.length - 1, runIndex + 1)
+                setRunIndex(nextRunIndex)
                 setOutputIndex(0)
+                const next = runs[nextRunIndex]?.outputs[0]
+                if (next) onSelectOutput?.(next)
               }}
             >
               <Icons.ChevronRight size={13} />
@@ -274,6 +288,7 @@ function OperationOutputDeck({
                   onClick={(event) => {
                     event.stopPropagation()
                     setOutputIndex(index)
+                    onSelectOutput?.(output)
                   }}
                 />
               ))}
@@ -333,6 +348,8 @@ export type CanvasFlowNodeData = {
     splitGridImage?: (nodeId: string) => void
     splitStoryboard?: (nodeId: string) => void
     extractCharacterSubview?: (nodeId: string) => void
+    /** 图片节点：右键/chip/占位按钮 → 替换图片（复用画布替换管线） */
+    replaceImage?: (nodeId: string) => void
     /** 360 全景产物节点：右键 → 全景预览（与普通图片「编辑」解耦） */
     previewPanorama: (nodeId: string) => void
     /** 视频节点：右键 → 视频编辑（打开视频工作台） */
@@ -587,6 +604,11 @@ export const CanvasNode = memo(function CanvasNode({
   const showResizer = !locked && (selected || resizeHovered || resizing)
   const imageSrc = node.data.thumbnailUrl ?? node.data.url
   const isFullBleedImageNode = isFullBleedCanvasImageNode(node)
+  // 空图片节点也走 full-bleed 布局（圆角 + 内容铺满 + 头尾浮叠），与有图状态结构一致。
+  // 不修改 isFullBleedCanvasImageNode：它被 CanvasStage(hasOverlayChrome) / canvasNodeChrome
+  // 高度计算 / 尺寸计算 / 单测共用，改语义会破坏舞台 chrome 与测试；仅在渲染层扩展。
+  const isEmptyImageNode = node.type === 'image' && !isFullBleedImageNode
+  const useImageFullBleedLayout = isFullBleedImageNode || isEmptyImageNode
   const normalizedImageSrc = imageSrc ? normalizeEduAssetUrl(imageSrc) : ''
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
   const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
@@ -853,6 +875,19 @@ export const CanvasNode = memo(function CanvasNode({
           ),
           onClick: () => actions.duplicateNode(node.id),
         },
+        ...(isImageContent
+          ? [
+              {
+                key: 'replace-image',
+                label: (
+                  <span className="canvas-menu-item">
+                    <Icons.Refresh size={14} /> 替换图片
+                  </span>
+                ),
+                onClick: () => actions.replaceImage?.(node.id),
+              },
+            ]
+          : []),
         ...(isImageContent && hasOperationOutput
           ? [
               ...(canExtractCharacterSubview
@@ -1255,7 +1290,7 @@ export const CanvasNode = memo(function CanvasNode({
       >
         <div
           data-canvas-node-id={node.id}
-          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && operationStatus === 'running' ? ' canvas-node-task-running' : ''}${isTask && operationStatus === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}${isFullBleedImageNode ? ' canvas-node-image-full-bleed' : ''}${connectionTargetsNode ? ' canvas-node-connection-target' : ''}${connectionTargetIsValid ? ' canvas-node-connection-valid' : ''}`}
+          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && operationStatus === 'running' ? ' canvas-node-task-running' : ''}${isTask && operationStatus === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}${useImageFullBleedLayout ? ' canvas-node-image-full-bleed' : ''}${isEmptyImageNode ? ' canvas-node-image-empty' : ''}${connectionTargetsNode ? ' canvas-node-connection-target' : ''}${connectionTargetIsValid ? ' canvas-node-connection-valid' : ''}`}
           style={nodeStyle}
           onPointerEnter={() => setResizeHovered(true)}
           onPointerLeave={() => setResizeHovered(false)}
@@ -1307,27 +1342,53 @@ export const CanvasNode = memo(function CanvasNode({
                       decoding="async"
                     />
                     {!isTask && (
-                      <button
-                        type="button"
-                        className={`canvas-node-subview-chip${assetSubviewCount > 0 ? ' has-subviews' : ''}`}
-                        onClick={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          actions.extractCharacterSubview?.(node.id)
-                        }}
-                      >
-                        <Icons.Crop size={12} />
-                        <span>
-                          {assetSubviewCount > 0 ? `子视图 ${assetSubviewCount}` : '提取子视图'}
-                        </span>
-                      </button>
+                      <div className="canvas-node-image-chips">
+                        <button
+                          type="button"
+                          className="canvas-node-subview-chip canvas-node-image-chip-replace"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            actions.replaceImage?.(node.id)
+                          }}
+                        >
+                          <Icons.Refresh size={12} />
+                          <span>替换图片</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`canvas-node-subview-chip${assetSubviewCount > 0 ? ' has-subviews' : ''}`}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            actions.extractCharacterSubview?.(node.id)
+                          }}
+                        >
+                          <Icons.Crop size={12} />
+                          <span>
+                            {assetSubviewCount > 0 ? `子视图 ${assetSubviewCount}` : '提取子视图'}
+                          </span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 ) : (
                   <div className="canvas-node-image-placeholder">
                     <Icons.Image size={30} />
-                    <strong>{node.data.message ?? '暂无图片'}</strong>
+                    <strong>{node.data.message ?? '图片节点'}</strong>
                     <span>双击节点添加内容</span>
+                    <button
+                      type="button"
+                      className="canvas-node-image-placeholder-upload"
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        actions.replaceImage?.(node.id)
+                      }}
+                    >
+                      <Icons.Upload size={14} />
+                      <span>上传图片</span>
+                    </button>
                   </div>
                 )
               ) : node.type === 'audio' ? (
@@ -1385,6 +1446,14 @@ export const CanvasNode = memo(function CanvasNode({
                     runs={operationRuns}
                     mode={operationOutputState.mode}
                     isolateWheel={selected}
+                    primaryRunIndex={operationOutputState.primaryRunIndex}
+                    primaryOutputIndex={operationOutputState.primaryOutputIndex}
+                    onSelectOutput={(output) => {
+                      actions.updateNodeData?.(node.id, {
+                        primaryOutputId: output.id,
+                        primaryOutputSelection: 'manual',
+                      })
+                    }}
                     fallback={
                       <div className="canvas-operation-empty-state">
                         <div className="canvas-operation-empty-icon">
@@ -1446,12 +1515,16 @@ export const CanvasNode = memo(function CanvasNode({
                 </div>
               )}
             </div>
-            {shouldShowContentTitle && isMediaContentNode && !isFullBleedImageNode ? (
+            {/* 图片节点：有图走 full-bleed overlay、空状态走 placeholder，
+                两种情况都不需要这条 media 标题栏（会多出一条 surface 栏 + 分隔线，
+                在空状态被夹在 placeholder 与 quick-footer 之间，形成“两层边框 / footer 错位”）。
+                content-title-media 仅留给 audio/video。 */}
+            {shouldShowContentTitle && isMediaContentNode && !isFullBleedImageNode && node.type !== 'image' ? (
               <div className="canvas-node-content-title canvas-node-content-title-media">
                 <strong title={title}>{title}</strong>
               </div>
             ) : null}
-            {isFullBleedImageNode ? (
+            {useImageFullBleedLayout ? (
               <div className="canvas-node-image-overlay-footer nodrag nopan">
                 <span className="canvas-node-image-overlay-copy">
                   <strong title={title}>{title}</strong>

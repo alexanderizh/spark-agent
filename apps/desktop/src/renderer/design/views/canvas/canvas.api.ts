@@ -3551,6 +3551,53 @@ export const canvasApi = {
   },
 
   /**
+   * 创建空图片节点（工厂菜单「图片」直接落位、后续再上传图片填充）。
+   * 不构建 CanvasAsset（与「替换图片不同步 asset」一致），仅写 type:'image' + 空 data；
+   * 渲染层 CanvasNode 对空 url 图片节点已有 placeholder 占位。
+   */
+  async createEmptyImageNode(input: {
+    projectId: string
+    boardId: string
+    x: number
+    y: number
+    width?: number
+    height?: number
+  }): Promise<CanvasNode> {
+    const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
+    const size = {
+      width: input.width ?? IMAGE_NODE_DEFAULT_SIZE.width,
+      height: input.height ?? IMAGE_NODE_DEFAULT_SIZE.height,
+    }
+    const position = resolveCollisionFreeNodePosition({
+      preferred: { x: input.x, y: input.y },
+      size,
+      nodes: db.nodes,
+      boardId: input.boardId,
+    })
+    const node = createNodeBase({
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: 'image',
+      title: null,
+      assetId: null,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      data: {},
+    })
+    node.zIndex = maxZ + 1
+    db.nodes.push(node)
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return node
+  },
+
+  /**
    * 创建视频/音频节点（拖入外部视频/音频文件时使用）。
    *
    * 与 {@link createImageNode} 对称：构建 CanvasAsset（source='upload'，按磁盘路径编码
@@ -4242,17 +4289,29 @@ export const canvasApi = {
     if (removedTaskIds.size > 0) {
       db.tasks = db.tasks.filter((task) => !removedTaskIds.has(task.id))
     }
+    // 收集被删节点关联的资产 id，同步清理 task.outputAssetIds；否则 collectOutputs
+    // 会仅凭残留 assetId 把已删产物重新投影成无 nodeId 的幽灵产物（canvasOperationRuns.ts:162-170）。
+    const removedAssetIds = new Set<string>()
+    for (const node of db.nodes) {
+      if (remove.has(node.id) && node.projectId === projectId && node.assetId) {
+        removedAssetIds.add(node.assetId)
+      }
+    }
     db.tasks = db.tasks.map((task) => {
       if (task.projectId !== projectId) return task
       const inputNodeIds = task.inputNodeIds.filter((id) => !remove.has(id))
       const outputNodeIds = task.outputNodeIds.filter((id) => !remove.has(id))
+      const outputAssetIds = removedAssetIds.size
+        ? task.outputAssetIds.filter((id) => !removedAssetIds.has(id))
+        : task.outputAssetIds
       if (
         inputNodeIds.length === task.inputNodeIds.length &&
-        outputNodeIds.length === task.outputNodeIds.length
+        outputNodeIds.length === task.outputNodeIds.length &&
+        outputAssetIds.length === task.outputAssetIds.length
       ) {
         return task
       }
-      return { ...task, inputNodeIds, outputNodeIds, updatedAt: at }
+      return { ...task, inputNodeIds, outputNodeIds, outputAssetIds, updatedAt: at }
     })
     updateProjectCounts(db, projectId)
     writeDb(db)

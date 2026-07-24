@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { canvasApi, __resetCanvasHotCache } from './canvas.api'
 import type { CanvasDb } from './canvas.api'
 import type { CanvasEdge, CanvasNode, CanvasTask } from './canvas.types'
+import { buildCanvasOperationRunViews } from './canvasOperationRuns'
 
 const STORAGE_KEY = 'spark-canvas:v1'
 const at = '2026-07-23T00:00:00.000Z'
@@ -169,5 +170,21 @@ describe('canvas node deletion', () => {
     expect(snapshot.edges).toEqual([])
     expect(snapshot.tasks).toEqual([])
     expect(snapshot.assets.map((item) => item.id)).toEqual(['asset-1'])
+  })
+
+  it('clears task outputAssetIds when deleting output nodes so ghost outputs do not reappear', async () => {
+    // 只删产物节点（不删操作节点）：task 应保留，但其 outputNodeIds / outputAssetIds
+    // 必须同步清空，否则 collectOutputs 会仅凭残留 assetId 把已删产物重新投影成无 nodeId 的幽灵。
+    await canvasApi.deleteNodes('project-1', ['embedded-output'])
+
+    const snapshot = await canvasApi.openSnapshot('project-1')
+    const task = snapshot.tasks.find((item) => item.id === 'task-1')
+    expect(task).toBeTruthy()
+    expect(task!.outputNodeIds).toEqual([])
+    expect(task!.outputAssetIds).toEqual([])
+
+    const operation = snapshot.nodes.find((item) => item.id === 'operation-1')!
+    const runs = buildCanvasOperationRunViews(operation, snapshot)
+    expect(runs.flatMap((run) => run.outputs)).toEqual([])
   })
 })

@@ -74,6 +74,8 @@ describe('canvas agent tool schemas', () => {
     expect(names).toContain('canvas_workflow_list')
     expect(names).toContain('canvas_workflow_apply')
     expect(names).toContain('canvas_workflow_run')
+    expect(names).toContain('canvas_create_reusable_workflow_graph')
+    expect(names).toContain('canvas_validate_workflow_graph')
   })
 
   it('keeps board ids out of public node and asset schemas', () => {

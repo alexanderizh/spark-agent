@@ -1253,12 +1253,6 @@ export function PlanSummary({
 
   return (
     <div className="inspector-plan">
-      <div className="inspector-plan-head">
-        <span className="strong truncate">{plan.title}</span>
-        <span className="mono-sm">
-          {completed}/{total}
-        </span>
-      </div>
       {percent && percent > 0 ? (
         <div className="inspector-progress">
           <span style={{ width: `${percent}%` }} />

@@ -353,7 +353,7 @@ function CanvasPaneResourceNodeActions({
       {onAddImage && (
         <button type="button" role="menuitem" onClick={onAddImage}>
           <Icons.Image size={14} />
-          <span>上传图片</span>
+          <span>图片节点</span>
         </button>
       )}
       {onAddDirectorStage3D && (
@@ -655,6 +655,7 @@ function CanvasStageInner({
   onSplitGridImage,
   onSplitStoryboard,
   onExtractCharacterSubview,
+  onReplaceImage,
   onPreviewPanorama,
   onEditVideo,
   onExpandOperationOutputs,
@@ -675,6 +676,7 @@ function CanvasStageInner({
   onViewportChange,
   onViewportControlsChange,
   onInlinePanelResize,
+  onPointerFlowPositionChange,
   nodeInlineExtension,
 }: {
   snapshot: CanvasSnapshot
@@ -718,6 +720,8 @@ function CanvasStageInner({
   onSplitGridImage: (nodeId: string) => void
   onSplitStoryboard: (nodeId: string) => void
   onExtractCharacterSubview?: (nodeId: string) => void
+  /** 图片节点右键/chip/占位按钮 → 替换图片 */
+  onReplaceImage?: (nodeId: string) => void
   /** 360 全景产物节点右键 → 全景预览 */
   onPreviewPanorama: (nodeId: string) => void
   /** 视频节点右键 → 视频编辑（打开视频工作台） */
@@ -768,6 +772,11 @@ function CanvasStageInner({
   onViewportChange?: (viewport: CanvasStageViewport) => void
   onViewportControlsChange?: (controls: CanvasStageViewportControls | null) => void
   onInlinePanelResize?: (nodeId: string, extraHeight: number) => void
+  /**
+   * 鼠标在画布坐标系（flow 坐标）下的实时位置。鼠标移入/移动时上报坐标，
+   * 鼠标离开画布或结束交互时上报 null。供粘贴等无坐标事件 fallback 到鼠标位置使用。
+   */
+  onPointerFlowPositionChange?: (position: CanvasStagePoint | null) => void
   nodeInlineExtension?: CanvasNodeInlineExtension | null
 }) {
   const nodesInitialized = useNodesInitialized()
@@ -793,6 +802,7 @@ function CanvasStageInner({
       splitGridImage: onSplitGridImage,
       splitStoryboard: onSplitStoryboard,
       ...(onExtractCharacterSubview ? { extractCharacterSubview: onExtractCharacterSubview } : {}),
+      ...(onReplaceImage ? { replaceImage: onReplaceImage } : {}),
       previewPanorama: onPreviewPanorama,
       ...(onEditVideo ? { editVideo: onEditVideo } : {}),
       expandOperationOutputs: onExpandOperationOutputs,
@@ -815,6 +825,7 @@ function CanvasStageInner({
       onOpenAiComposer,
       onAnnotateImage,
       onExtractCharacterSubview,
+      onReplaceImage,
       onSplitGridImage,
       onSplitStoryboard,
       onPreviewPanorama,
@@ -980,6 +991,9 @@ function CanvasStageInner({
   const pendingGuideDragRef = useRef<Node<CanvasFlowNodeData>[] | null>(null)
   const pointerAuraFrameRef = useRef<number | null>(null)
   const pendingPointerRef = useRef<{ clientX: number; clientY: number } | null>(null)
+  // 用 ref 暂存回调，避免 handleStagePointerMove 因回调引用变化而重建（保持 rAF 节流稳定）。
+  const onPointerFlowPositionChangeRef = useRef(onPointerFlowPositionChange)
+  onPointerFlowPositionChangeRef.current = onPointerFlowPositionChange
   const viewportInteractingRef = useRef(false)
   const pendingConnectionRef = useRef<PendingCanvasConnection | null>(null)
   const suppressNextPaneClickRef = useRef(false)
@@ -1061,27 +1075,19 @@ function CanvasStageInner({
   useEffect(() => {
     if (!onViewportControlsChange) return
     const resolveNodeBounds = (nodeIds: string[]) => {
-      const nodeIdSet = new Set(nodeIds)
-      const nodesToCenter = flowNodesRef.current.filter((item) => nodeIdSet.has(item.id))
+      const instance = flowInstanceRef.current
+      if (!instance) return null
+      const nodesToCenter = nodeIds
+        .map((nodeId) => instance.getInternalNode(nodeId))
+        .filter((node): node is NonNullable<typeof node> => Boolean(node))
       if (nodesToCenter.length === 0) return null
-      return nodesToCenter.reduce(
-        (acc, node) => {
-          const width = typeof node.width === 'number' ? node.width : 0
-          const height = typeof node.height === 'number' ? node.height : 0
-          return {
-            minX: Math.min(acc.minX, node.position.x),
-            minY: Math.min(acc.minY, node.position.y),
-            maxX: Math.max(acc.maxX, node.position.x + width),
-            maxY: Math.max(acc.maxY, node.position.y + height),
-          }
-        },
-        {
-          minX: Number.POSITIVE_INFINITY,
-          minY: Number.POSITIVE_INFINITY,
-          maxX: Number.NEGATIVE_INFINITY,
-          maxY: Number.NEGATIVE_INFINITY,
-        },
-      )
+      const bounds = instance.getNodesBounds(nodesToCenter)
+      return {
+        minX: bounds.x,
+        minY: bounds.y,
+        maxX: bounds.x + bounds.width,
+        maxY: bounds.y + bounds.height,
+      }
     }
     onViewportControlsChange({
       getViewport: () => {
@@ -2165,6 +2171,12 @@ function CanvasStageInner({
       pendingPointerRef.current = null
       const stage = stageRef.current
       if (!stage || !point) return
+      // 同步鼠标的画布坐标给父组件，供粘贴等无坐标事件就近落点使用。
+      const instance = flowInstanceRef.current
+      const flowPosition = instance
+        ? instance.screenToFlowPosition({ x: point.clientX, y: point.clientY })
+        : null
+      onPointerFlowPositionChangeRef.current?.(flowPosition)
       const rect = stage.getBoundingClientRect()
       const localX = point.clientX - rect.left
       const localY = point.clientY - rect.top
@@ -2191,6 +2203,7 @@ function CanvasStageInner({
       pointerAuraFrameRef.current = null
     }
     delete stage.dataset.pointerActive
+    onPointerFlowPositionChangeRef.current?.(null)
   }, [])
 
   // ─── 外部文件拖拽到画布 ──────────────────────────────────────────────────
@@ -2631,7 +2644,6 @@ function CanvasStageInner({
                 openUp={paneContextMenu.openSubmenusUp}
               >
                 <CanvasPaneResourceNodeActions
-                  onAddImage={handleAddImageFromPane}
                   onAddDirectorStage3D={
                     onAddDirectorStage3DAtPosition
                       ? handleAddDirectorStage3DFromPane
@@ -2686,6 +2698,7 @@ function CanvasStageInner({
               >
                 <CanvasPaneResourceNodeActions
                   onAddText={handleAddTextFromPane}
+                  onAddImage={handleAddImageFromPane}
                 />
                 <div className="canvas-pane-context-divider" />
                 {CANVAS_BASE_CREATE_OPERATION_GROUPS.map((group) => (

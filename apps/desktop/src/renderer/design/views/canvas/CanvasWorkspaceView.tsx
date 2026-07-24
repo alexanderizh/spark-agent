@@ -1629,6 +1629,7 @@ export function CanvasWorkspaceView({
     deleteEdges,
     createTextNode,
     createImageNode,
+    createEmptyImageNode,
     createMediaNode,
     uploadImageAsset,
     createGroupNode,
@@ -1805,6 +1806,8 @@ export function CanvasWorkspaceView({
   const pendingImageConnectionRef = useRef<PendingCanvasConnection | null>(null)
   const pendingAssetConnectionRef = useRef<PendingCanvasConnection | null>(null)
   const pendingAssetPositionRef = useRef<CanvasPoint | null>(null)
+  // 鼠标在画布坐标系下的最近位置；粘贴等无坐标事件用它就近落点，鼠标不在画布上时为 null。
+  const pointerFlowPositionRef = useRef<CanvasPoint | null>(null)
   const compositingImageLockRef = useRef(new Set<string>())
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true)
@@ -1814,6 +1817,8 @@ export function CanvasWorkspaceView({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadFilesInputRef = useRef<HTMLInputElement>(null)
   const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
+  /** 非空时表示下一次 fileInput 选择是「替换该图片节点」而非新增节点 */
+  const replaceImageNodeIdRef = useRef<string | null>(null)
   const activeToolRef = useRef<CanvasTool>('pan')
   const { registerNavGuard, requestConfirm, t, setTweak, setHasUnsavedChanges } = useApp()
   useEffect(() => {
@@ -2671,6 +2676,14 @@ export function CanvasWorkspaceView({
     [applyPendingCanvasViewportRestore],
   )
 
+  // CanvasStage 上报鼠标的画布坐标；粘贴等无坐标事件就近落点用。
+  const handlePointerFlowPositionChange = useCallback(
+    (position: CanvasPoint | null) => {
+      pointerFlowPositionRef.current = position
+    },
+    [],
+  )
+
   const handleFitCanvasView = useCallback(() => {
     canvasViewportControlsRef.current?.fitView()
   }, [])
@@ -3157,6 +3170,12 @@ export function CanvasWorkspaceView({
         setVideoWorkbenchNodeId(nodeId)
         return
       }
+      // 空图片节点双击 → 触发上传（复用替换图片管线）
+      if (node?.type === 'image' && !node.data.url) {
+        replaceImageNodeIdRef.current = nodeId
+        fileInputRef.current?.click()
+        return
+      }
       closeCanvasFloatPanels('node-edit')
       setInlinePanelFocusRequest({ nodeId, nonce: Date.now() })
       setSelectedNodeIds([nodeId])
@@ -3300,6 +3319,9 @@ export function CanvasWorkspaceView({
     async (operationNodeId: string, outputs: CanvasOperationOutputView[]) => {
       const current = snapshotRef.current
       if (!current || outputs.length === 0) return
+      const operationNode = current.nodes.find(
+        (node) => node.id === operationNodeId && isOperationNode(node),
+      )
       const plan = planCanvasOperationOutputDeletion({
         operationNodeId,
         outputs,
@@ -3310,8 +3332,57 @@ export function CanvasWorkspaceView({
         return
       }
 
+      // 删除前预算，避免依赖 await 后的 snapshot 时序：
+      // 1) 被删产物是否命中 primaryOutputId（命中则清空悬空指针，让 resolve 回退到最新 run）；
+      // 2) 哪些 completed run 删完后产物全空 —— 按决策①连带删除空 task，
+      //    避免运行历史残留可切到空白的空 run。
+      const deletedKeys = new Set<string>()
+      for (const item of outputs) {
+        deletedKeys.add(item.id)
+        if (item.nodeId) deletedKeys.add(item.nodeId)
+        if (item.assetId) deletedKeys.add(item.assetId)
+      }
+      const primaryOutputId = operationNode?.data.primaryOutputId
+      const primaryHit = primaryOutputId
+        ? outputs.some(
+            (item) =>
+              item.id === primaryOutputId ||
+              item.nodeId === primaryOutputId ||
+              item.assetId === primaryOutputId,
+          )
+        : false
+      const emptyTaskIds: string[] = []
+      if (operationNode) {
+        const runs = buildCanvasOperationRunViews(operationNode, current)
+        for (const run of runs) {
+          if (run.status !== 'completed') continue
+          const remaining = run.outputs.filter((item) => {
+            if (deletedKeys.has(item.id)) return false
+            if (item.nodeId && deletedKeys.has(item.nodeId)) return false
+            if (item.assetId && deletedKeys.has(item.assetId)) return false
+            return true
+          })
+          if (remaining.length === 0) emptyTaskIds.push(run.taskId)
+        }
+      }
+
       await deleteEdges(plan.edgeIds)
       await deleteNodes(plan.nodeIds)
+      if (primaryHit) {
+        // primaryOutputId 是 optional 字段；updateManyNodeData 的清理逻辑（canvas.api.ts:4125-4129）
+        // 会删除值为 undefined 的 key，借此清除悬空指针。exactOptionalPropertyTypes 下用双重断言表达删除语义。
+        await updateNodeData(
+          operationNodeId,
+          {
+            primaryOutputId: undefined,
+            primaryOutputSelection: 'auto_latest',
+          } as unknown as Partial<CanvasNode['data']>,
+        )
+      }
+      if (emptyTaskIds.length > 0) {
+        await deleteTasks(emptyTaskIds)
+      }
+
       if (plan.skippedOutputIds.length > 0) {
         message.warning(
           `已删除 ${plan.nodeIds.length} 个产物，另有 ${plan.skippedOutputIds.length} 个未关联画布节点，已跳过`,
@@ -3322,7 +3393,7 @@ export function CanvasWorkspaceView({
         plan.nodeIds.length === 1 ? '已删除产物节点' : `已删除 ${plan.nodeIds.length} 个产物节点`,
       )
     },
-    [deleteEdges, deleteNodes],
+    [deleteEdges, deleteNodes, deleteTasks, updateNodeData],
   )
 
   const handleExpandOperationOutputs = useCallback(
@@ -3533,6 +3604,27 @@ export function CanvasWorkspaceView({
       })
     },
     [createTextNode],
+  )
+
+  /** 工厂菜单「图片」直接落空节点（后续点占位按钮/双击再上传填充）。不建 asset。 */
+  const addEmptyImage = useCallback(
+    async (preferredPosition?: CanvasPoint) => {
+      const position = preferredPosition
+        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+        : positionNodeInViewport(canvasViewportRef.current, IMAGE_NODE_DEFAULT_SIZE, {
+            x: 140,
+            y: 120,
+          })
+      const node = await createEmptyImageNode({
+        x: position.x,
+        y: position.y,
+      })
+      if (node) {
+        setSelectedNodeIds([node.id])
+      }
+      return node
+    },
+    [createEmptyImageNode],
   )
 
   const handleSplitStoryboard = useCallback(
@@ -4038,8 +4130,13 @@ export function CanvasWorkspaceView({
         void createGroupNode(selectedTopLevelNodes.map((node) => node.id))
         return
       }
-      // 图片走上传链路
-      if (item.action === 'upload_image' || item.nodeType === 'image') {
+      // 图片：工厂菜单直接落空节点（后续再上传填充）
+      if (item.nodeType === 'image') {
+        void addEmptyImage()
+        return
+      }
+      // 旧入口兜底：选图即加
+      if (item.action === 'upload_image') {
         uploadFirstImage()
         return
       }
@@ -4869,6 +4966,44 @@ export function CanvasWorkspaceView({
     if (selectedFiles.length === 0) return
     const snapshot = snapshotRef.current
     if (!snapshot) return
+
+    const replaceImageNodeId = replaceImageNodeIdRef.current
+    replaceImageNodeIdRef.current = null
+    if (replaceImageNodeId) {
+      const file = selectedFiles[0]
+      if (!file) return
+      if (!file.type.startsWith('image/')) {
+        message.warning('请选择图片文件')
+        return
+      }
+      try {
+        const targetNode = snapshot.nodes.find((node) => node.id === replaceImageNodeId)
+        if (!targetNode || targetNode.type !== 'image') {
+          message.error('未找到目标图片节点')
+          return
+        }
+        const prepared = await prepareCanvasImageUpload(file)
+        const fileUrl = encodeToSafeFileUrl(prepared.filePath)
+        // 保持节点中心点不变，按新图宽高重算节点框
+        const centerX = targetNode.x + targetNode.width / 2
+        const centerY = targetNode.y + targetNode.height / 2
+        await patchNodes([replaceImageNodeId], {
+          width: prepared.width,
+          height: prepared.height,
+          x: Math.round(centerX - prepared.width / 2),
+          y: Math.round(centerY - prepared.height / 2),
+        })
+        await updateNodeData(replaceImageNodeId, {
+          url: fileUrl,
+          thumbnailUrl: fileUrl,
+          mimeType: file.type,
+        })
+        message.success('已替换图片')
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '替换图片失败')
+      }
+      return
+    }
 
     const imageFiles = selectedFiles.filter((file) => file.type.startsWith('image/'))
     if (imageFiles.length === 0) {
@@ -6224,6 +6359,18 @@ export function CanvasWorkspaceView({
     const nodeId = inlinePanelResourceNodeRef.current?.id
     if (nodeId) setGridSplitImageNodeId(nodeId)
   }, [])
+  const replaceInlinePanelImageStable = useCallback(() => {
+    const nodeId = inlinePanelResourceNodeRef.current?.id
+    if (!nodeId) return
+    replaceImageNodeIdRef.current = nodeId
+    fileInputRef.current?.click()
+  }, [])
+
+  /** 节点右键/chip/占位按钮 → 替换图片（复用替换管线，接收 nodeId 参数） */
+  const onReplaceImageStable = useCallback((nodeId: string) => {
+    replaceImageNodeIdRef.current = nodeId
+    fileInputRef.current?.click()
+  }, [])
 
   /** 生成分镜脚本：剧本/文本节点 → 任务节点 → 分镜脚本产物节点（专用包装 + 血缘） */
   const handleGenerateShotScript = async (node: CanvasNode, sourceText: string) => {
@@ -6521,11 +6668,15 @@ export function CanvasWorkspaceView({
       event.preventDefault()
       event.stopPropagation()
 
-      const preferredPosition = positionNodeInViewport(
-        canvasViewportRef.current,
-        imageFiles.length > 0 ? IMAGE_NODE_DEFAULT_SIZE : TEXT_NODE_DEFAULT_SIZE,
-        { x: 200, y: 150 },
-      )
+      // 优先落在鼠标当前位置；鼠标不在画布上时回退到视口中心。
+      const pointerPosition = pointerFlowPositionRef.current
+      const preferredPosition = pointerPosition
+        ? { x: Math.round(pointerPosition.x), y: Math.round(pointerPosition.y) }
+        : positionNodeInViewport(
+            canvasViewportRef.current,
+            imageFiles.length > 0 ? IMAGE_NODE_DEFAULT_SIZE : TEXT_NODE_DEFAULT_SIZE,
+            { x: 200, y: 150 },
+          )
 
       void (async () => {
         try {
@@ -8173,6 +8324,7 @@ export function CanvasWorkspaceView({
               runOperationNode,
               cancelTask,
               updateProjectSettings,
+              applyTemplate,
               materializeWorkflow,
               runCanvasWorkflow: executeCanvasWorkflow,
             }}
@@ -8251,11 +8403,12 @@ export function CanvasWorkspaceView({
             onSplitGridImage={onSplitGridImageStable}
             onSplitStoryboard={(nodeId) => void handleSplitStoryboard(nodeId)}
             onExtractCharacterSubview={onExtractCharacterSubviewStable}
+            onReplaceImage={onReplaceImageStable}
             onCreateOperationChild={onCreateOperationChildStable}
             onPipelineAction={onPipelineActionStable}
             onSetProductionState={onSetProductionStateStable}
             onAddTextAtPosition={addText}
-            onAddImageAtPosition={uploadFirstImage}
+            onAddImageAtPosition={addEmptyImage}
             onDropFiles={handleDropFiles}
             onDropWorkflow={(position, workflowId) => {
               void handleDropCanvasWorkflow(position, workflowId)
@@ -8268,6 +8421,7 @@ export function CanvasWorkspaceView({
             onNodeSelectIntent={handleNodeSelectIntent}
             onViewportChange={handleCanvasViewportChange}
             onViewportControlsChange={handleCanvasViewportControlsChange}
+            onPointerFlowPositionChange={handlePointerFlowPositionChange}
             onDeleteSelectedNodes={handleDeleteSelectedNodes}
           />
           <CanvasBatchTaskPanel
@@ -8308,6 +8462,7 @@ export function CanvasWorkspaceView({
                   onDownload={downloadInlinePanelNodeStable}
                   onAnnotate={annotateInlinePanelStable}
                   onSplitGrid={splitInlinePanelGridStable}
+                  onReplaceImage={replaceInlinePanelImageStable}
                   onExtractCharacterSubview={extractCharacterSubviewInlinePanelStable}
                   onPreviewPanorama={previewInlinePanelPanoramaStable}
                   onOpenInlineAi={openInlinePanelAiStable}
@@ -8934,6 +9089,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   onDownload,
   onAnnotate,
   onSplitGrid,
+  onReplaceImage,
   onExtractCharacterSubview,
   onPreviewPanorama,
   onOpenInlineAi,
@@ -8961,6 +9117,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
   onDownload: () => void
   onAnnotate: () => void
   onSplitGrid: () => void
+  onReplaceImage: () => void
   onExtractCharacterSubview: () => void
   onPreviewPanorama: () => void
   onOpenInlineAi: () => void
@@ -9193,6 +9350,7 @@ const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
               {isMedia && menuButton('下载到本地', <Icons.Download size={14} />, onDownload)}
               {isImage && (
                 <>
+                  {menuButton('替换图片', <Icons.Refresh size={14} />, onReplaceImage)}
                   {menuButton('提取子视图', <Icons.Crop size={14} />, onExtractCharacterSubview)}
                   {menuButton('图片标注', <Icons.Crop size={14} />, onAnnotate)}
                   {menuButton('宫格切分', <Icons.Grid size={14} />, onSplitGrid)}

@@ -7,7 +7,7 @@
     --canvas-node-meta-height: 39px;
     // 锚点与 NodeResizer 位于节点边界外；内容裁切由 .canvas-node-core 负责。
     overflow: visible;
-    border: 1px solid var(--canvas-v4-border);
+    // border: 1px solid var(--canvas-v4-border);
     border-radius: 8px;
     background: var(--canvas-v4-surface);
     box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow-color, #000) 14%, transparent);
@@ -266,6 +266,14 @@
     background: color-mix(in srgb, var(--bg-sunken) 92%, #000);
   }
 
+  // 空图片节点：容器背景与占位同色（surface-muted），消除遗留 2px transparent border
+  // (CanvasWorkspaceView.less) 错位缝隙露出的 surface 浅色「外层圆角形状」。
+  // 不动 border（保留 v4 的 hover/selected border-color 设计）；有图状态图片 cover
+  // 铺满不受影响。
+  .canvas-node.canvas-node-image-empty {
+    background: var(--canvas-v4-surface-muted);
+  }
+
   .canvas-node-image-full-bleed {
     background: var(--bg-sunken);
 
@@ -311,6 +319,17 @@
 
     .canvas-node-image {
       object-fit: cover;
+    }
+
+    // 空图片节点走 full-bleed 布局时，body 是 absolute inset:0（非 flex），
+    // 原有的 flex:1 失效，这里让 placeholder 铺满 body、内容在安全区居中，
+    // 避开顶部 meta-bar 与底部 overlay-footer，保证「上传图片」按钮可点。
+    .canvas-node-image-placeholder {
+      position: absolute;
+      inset: 0;
+      box-sizing: border-box;
+      border-radius: inherit;
+      padding: 44px 14px 58px;
     }
 
     .canvas-node-subview-chip {

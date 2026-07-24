@@ -47,6 +47,7 @@ const READONLY_TOOL_NAMES = new Set<string>([
   'canvas_workflow_get',
   'canvas_workflow_run_list',
   'canvas_workflow_run_get',
+  'canvas_validate_workflow_graph',
 ])
 
 /** 写串行队列：按 projectId 排队，保证同一项目的写操作不并发。 */
@@ -83,6 +84,7 @@ export interface CanvasToolHostOptions {
   sessionId: string | null
   projectId: string
   getSnapshot: () => CanvasSnapshot | null
+  getSelectedNodeIds?: () => string[]
   workspace: CanvasWorkspaceActions
 }
 
@@ -113,6 +115,7 @@ export function useCanvasToolHost(opts: CanvasToolHostOptions): CanvasToolHostCo
   const ctxRef = useRef<CanvasToolContext>({
     projectId: opts.projectId,
     getSnapshot: opts.getSnapshot,
+    ...(opts.getSelectedNodeIds ? { getSelectedNodeIds: opts.getSelectedNodeIds } : {}),
     workspace: opts.workspace,
   })
   const bindingRef = useRef<ActiveCanvasBinding | null>(null)
@@ -125,9 +128,10 @@ export function useCanvasToolHost(opts: CanvasToolHostOptions): CanvasToolHostCo
     ctxRef.current = {
       projectId: opts.projectId,
       getSnapshot: opts.getSnapshot,
+      ...(opts.getSelectedNodeIds ? { getSelectedNodeIds: opts.getSelectedNodeIds } : {}),
       workspace: opts.workspace,
     }
-  }, [opts.projectId, opts.getSnapshot, opts.workspace])
+  }, [opts.projectId, opts.getSnapshot, opts.getSelectedNodeIds, opts.workspace])
 
   const detachBinding = useCallback((binding: ActiveCanvasBinding) => {
     void binding.promise

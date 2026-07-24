@@ -384,6 +384,7 @@ export function CanvasAgentModal({
     sessionId,
     projectId: snapshot.project.id,
     getSnapshot: useCallback(() => snapshot, [snapshot]),
+    getSelectedNodeIds: useCallback(() => selectedNodes.map((node) => node.id), [selectedNodes]),
     workspace,
   })
 

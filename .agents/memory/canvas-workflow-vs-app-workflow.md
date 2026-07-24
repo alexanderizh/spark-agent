@@ -1,6 +1,6 @@
 # 无限画布工作流与应用工作台工作流边界记忆
 
-> 最后核对: 2026-07-24
+> 最后核对: 2026-07-25
 
 ## 一句话区分
 
@@ -46,6 +46,8 @@
 ## 画布 Agent 工具边界
 
 - 画布 Agent 面板通过现有 `spark_canvas` MCP 工具桥调用 `canvas_workflow_list/get/create/update/extract_selection/delete/apply/run/run_*`，不新增一套工作流管理 UI。
+- 创建完整可复用流程使用 `canvas_create_reusable_workflow_graph`，默认只在当前画布生成可编辑的真实节点和连线；不要自动保存到工作流库。
+- 图片/视频/音频输入可以是空媒体占位，操作依赖必须形成真实连线，终点操作声明输出契约。局部修改后使用 `canvas_validate_workflow_graph` 校验指定/选中子图；独立 note 和画布其他节点不要求连线。
 - 工具仍只操作无限画布工作流和当前画布项目；不能调用应用工作台的 `workflow:*` 或 `workflow_runs`。
 - `delete`、`apply`、`run` 第一次调用只返回待确认摘要，用户在对话中明确确认后，Agent 才能带 `confirmed: true` 重试。
 - Agent 默认只看到当前画布项目级工作流、个人库和内置模板；任何项目级定义或运行记录都要再次校验 `projectId`，不得跨项目读取、修改、删除、运行、取消、重试或恢复。

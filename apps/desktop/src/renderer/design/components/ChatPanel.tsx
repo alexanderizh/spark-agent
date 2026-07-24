@@ -8,8 +8,8 @@
  * 给画布 Agent 弹窗 / Board 内嵌等场景使用；ChatView 仍是主聊天页，
  * 这里只承担"嵌入式会话面板"职责。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Spin } from 'antd'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Popover, Spin } from 'antd'
 import type { AgentEvent, ManagedAgent, SessionAttachment, SessionId } from '@spark/protocol'
 import type { UserQuestionOption, UserQuestionPrompt } from '@spark/protocol'
 import { Icons } from '../Icons'
@@ -36,6 +36,7 @@ import {
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { MarkdownText } from '../views/ChatView'
+import { resolveComposerImageSrc } from '../views/chat/ComposerV2'
 import { getLatestAgentStatus, isRunningAgentStatus } from '../views/chat-session-status'
 import './ChatPanel.less'
 
@@ -207,6 +208,7 @@ export function ChatPanel({
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
   const { invoke: statFileKind } = useIpcInvoke('file:stat-kind')
+  const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
   const { invoke: cancelTurn } = useIpcInvoke('session:cancel')
   const { toast } = useToast()
@@ -502,6 +504,48 @@ export function ChatPanel({
   const handleRemoveAttachment = useCallback((id: string) => {
     setAttachments((current) => current.filter((attachment) => attachment.id !== id))
   }, [])
+
+  // 粘贴图片：把剪贴板里的图片存到本地，作为 image 附件引用（与主聊天 ComposerV2 行为一致）。
+  // 粘贴纯文本时无 image 项，直接放行走默认文本粘贴。
+  const handlePaste = useCallback(
+    async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = Array.from(event.clipboardData?.items ?? [])
+      const imageItems = items.filter((item) => item.type.startsWith('image/'))
+      if (imageItems.length === 0) return
+
+      event.preventDefault()
+      try {
+        const pastedAttachmentsRaw = await Promise.all(
+          imageItems.map(async (item, index) => {
+            const file = item.getAsFile()
+            if (file == null) return null
+            const dataUrl = await readBlobAsDataUrl(file)
+            const result = await savePastedImage({
+              dataUrl,
+              suggestedBaseName: `pasted-image-${index + 1}`,
+              ...(file.type ? { mimeType: file.type } : {}),
+            })
+            const attachment: ChatPanelAttachment = {
+              id: `${Date.now()}-${index}-${result.filePath}`,
+              type: 'image',
+              path: result.filePath,
+              name: result.fileName,
+            }
+            return attachment
+          }),
+        )
+        const pastedAttachments = pastedAttachmentsRaw.filter(
+          (attachment): attachment is ChatPanelAttachment => attachment != null,
+        )
+        const added = appendAttachments(pastedAttachments)
+        if (added > 0) toast.success(`已粘贴 ${added} 张图片`)
+      } catch (err) {
+        console.error('粘贴图片失败', err)
+        toast.error(err instanceof Error ? err.message : '粘贴图片失败')
+      }
+    },
+    [appendAttachments, savePastedImage, toast],
+  )
 
   const submitTurn = useCallback(
     async (
@@ -812,6 +856,9 @@ export function ChatPanel({
               placeholder={inputPlaceholder}
               disabled={disabled}
               onChange={(e) => applyInput(e.target.value)}
+              onPaste={(e) => {
+                void handlePaste(e)
+              }}
               onKeyDown={(e) => {
                 const nativeEvent = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
                 if (nativeEvent.isComposing || e.keyCode === 229) return
@@ -1577,6 +1624,61 @@ function formatChatPanelTurnTime(timestamp: string | undefined): string {
   return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
+/** 图片附件悬浮预览：鼠标悬停在 image chip 上时弹出大图浮窗。
+ *  复用 resolveComposerImageSrc + file:prepare-image-preview 的预览链路
+ *  （与 ChatView.UserMessageImageAttachment 一致），覆盖 temp 粘贴图等需 prepare 的场景。 */
+function AttachmentImageHoverPreview({
+  path,
+  name,
+  children,
+}: {
+  path: string
+  name: string
+  children: React.ReactNode
+}) {
+  const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')
+  const [resolvedSrc, setResolvedSrc] = useState(() => resolveComposerImageSrc(path))
+  const [imgError, setImgError] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setResolvedSrc(resolveComposerImageSrc(path))
+    setImgError(false)
+    void prepareImagePreview({ sourcePath: path })
+      .then((preview) => {
+        if (!cancelled) setResolvedSrc(preview.fileUrl)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [path, prepareImagePreview])
+
+  return (
+    <Popover
+      trigger="hover"
+      mouseEnterDelay={0.2}
+      mouseLeaveDelay={0.1}
+      placement="top"
+      arrow={false}
+      overlayClassName="chat-panel-attachment-preview-popover"
+      getPopupContainer={() => document.body}
+      content={
+        <div className="chat-panel-attachment-preview">
+          {imgError ? (
+            <div className="chat-panel-attachment-preview-fallback">预览不可用</div>
+          ) : (
+            <img src={resolvedSrc} alt={name} onError={() => setImgError(true)} />
+          )}
+          <div className="chat-panel-attachment-preview-name">{name}</div>
+        </div>
+      }
+    >
+      {children}
+    </Popover>
+  )
+}
+
 function ComposerAttachmentsStrip({
   attachments,
   onRemove,
@@ -1590,36 +1692,50 @@ function ComposerAttachmentsStrip({
     expanded || hiddenCount === 0
       ? attachments
       : attachments.slice(0, CHAT_PANEL_ATTACHMENT_COLLAPSE_LIMIT)
+  const renderChip = (attachment: ChatPanelAttachment) => (
+    <div
+      className={`chat-panel-attachment-chip${attachment.type === 'directory' ? ' is-directory' : ''}`}
+      title={attachment.path}
+    >
+      {attachment.type === 'directory' ? (
+        <Icons.Folder size={13} />
+      ) : attachment.type === 'image' ? (
+        <Icons.Image size={13} />
+      ) : (
+        <Icons.File size={13} />
+      )}
+      <span>{attachment.name}</span>
+      <button
+        type="button"
+        className="chat-panel-attachment-remove"
+        aria-label={`移除 ${attachment.name}`}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onRemove(attachment.id)
+        }}
+      >
+        <Icons.X size={12} />
+      </button>
+    </div>
+  )
   return (
     <div className="chat-panel-composer-attachments">
-      {visibleAttachments.map((attachment) => (
-        <div
-          key={attachment.id}
-          className={`chat-panel-attachment-chip${attachment.type === 'directory' ? ' is-directory' : ''}`}
-          title={attachment.path}
-        >
-          {attachment.type === 'directory' ? (
-            <Icons.Folder size={13} />
-          ) : attachment.type === 'image' ? (
-            <Icons.Image size={13} />
-          ) : (
-            <Icons.File size={13} />
-          )}
-          <span>{attachment.name}</span>
-          <button
-            type="button"
-            className="chat-panel-attachment-remove"
-            aria-label={`移除 ${attachment.name}`}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              onRemove(attachment.id)
-            }}
-          >
-            <Icons.X size={12} />
-          </button>
-        </div>
-      ))}
+      {visibleAttachments.map((attachment) => {
+        const chip = renderChip(attachment)
+        if (attachment.type === 'image') {
+          return (
+            <AttachmentImageHoverPreview
+              key={attachment.id}
+              path={attachment.path}
+              name={attachment.name}
+            >
+              {chip}
+            </AttachmentImageHoverPreview>
+          )
+        }
+        return <React.Fragment key={attachment.id}>{chip}</React.Fragment>
+      })}
       {hiddenCount > 0 && (
         <button
           type="button"
@@ -1780,6 +1896,18 @@ function getFileNameFromPath(filePath: string): string {
 function isImageAttachmentPath(filePath: string): boolean {
   const extension = getFileNameFromPath(filePath).split('.').pop()?.toLowerCase()
   return extension != null && IMAGE_ATTACHMENT_EXTENSIONS.has(extension)
+}
+
+function readBlobAsDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read pasted image'))
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('Failed to read pasted image'))
+    }
+    reader.readAsDataURL(blob)
+  })
 }
 
 function toSessionAttachments(attachments: ChatPanelAttachment[]): SessionAttachment[] {

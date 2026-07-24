@@ -149,4 +149,60 @@ describe('canvasApi.applyTemplate for canvas workflows', () => {
     expect(JSON.stringify(snapshot)).not.toContain('workflow-prompt')
     expect(JSON.stringify(snapshot)).not.toContain('workflow-operation')
   })
+
+  it('creates an empty image input placeholder while keeping the operation connected', async () => {
+    const snapshot = await canvasApi.applyTemplate({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      originX: 80,
+      originY: 80,
+      nodes: [
+        {
+          ref: 'image-input',
+          type: 'image',
+          title: '上传参考图',
+          x: 0,
+          y: 0,
+          width: 460,
+          height: 300,
+          data: { subtype: 'workflow_input', productionState: 'empty' },
+        },
+        {
+          ref: 'video-operation',
+          type: 'image_to_video',
+          title: '生成视频',
+          x: 556,
+          y: 0,
+          width: 460,
+          height: 420,
+          data: {
+            operation: 'image_to_video',
+            prompt: '保持主体一致，添加自然运镜',
+            subtype: 'workflow_output',
+          },
+        },
+      ],
+      edges: [{ from: 'image-input', to: 'video-operation', type: 'used_as_input' }],
+    })
+
+    const imageNode = snapshot.nodes.find((node) => node.type === 'image')
+    const operationNode = snapshot.nodes.find((node) => node.type === 'image_to_video')
+    expect(imageNode).toMatchObject({
+      assetId: null,
+      data: { subtype: 'workflow_input', productionState: 'empty' },
+    })
+    expect(operationNode?.taskId).toBeTruthy()
+    expect(snapshot.edges).toEqual([
+      expect.objectContaining({
+        sourceNodeId: imageNode?.id,
+        targetNodeId: operationNode?.id,
+        type: 'used_as_input',
+      }),
+    ])
+    expect(snapshot.tasks[0]).toMatchObject({
+      operation: 'image_to_video',
+      inputNodeIds: [imageNode?.id],
+      inputAssetIds: [],
+    })
+  })
 })
