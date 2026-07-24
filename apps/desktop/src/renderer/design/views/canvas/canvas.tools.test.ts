@@ -71,6 +71,9 @@ describe('canvas agent tool schemas', () => {
     expect(names).not.toContain('canvas_copy_nodes_to_board')
     expect(names).not.toContain('canvas_insert_asset_to_board')
     expect(names).toContain('canvas_insert_asset')
+    expect(names).toContain('canvas_workflow_list')
+    expect(names).toContain('canvas_workflow_apply')
+    expect(names).toContain('canvas_workflow_run')
   })
 
   it('keeps board ids out of public node and asset schemas', () => {

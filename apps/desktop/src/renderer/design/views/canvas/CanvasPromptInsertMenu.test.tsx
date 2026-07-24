@@ -106,6 +106,8 @@ async function mountMenu(
     onQueryChange?: (query: string) => void
     onInsertParameter?: ReturnType<typeof vi.fn>
     onInsertReference?: ReturnType<typeof vi.fn>
+    onPickFromCanvas?: ReturnType<typeof vi.fn>
+    onUploadLocalFile?: ReturnType<typeof vi.fn>
     onRequestClose?: ReturnType<typeof vi.fn>
   } = {},
 ) {
@@ -117,6 +119,8 @@ async function mountMenu(
     onQueryChange: overrides.onQueryChange ?? vi.fn(),
     onInsertParameter: overrides.onInsertParameter ?? vi.fn(),
     onInsertReference: overrides.onInsertReference ?? vi.fn(),
+    ...(overrides.onPickFromCanvas ? { onPickFromCanvas: overrides.onPickFromCanvas } : {}),
+    ...(overrides.onUploadLocalFile ? { onUploadLocalFile: overrides.onUploadLocalFile } : {}),
     onRequestClose: overrides.onRequestClose ?? vi.fn(),
   }
   await act(async () => {
@@ -266,6 +270,30 @@ describe('CanvasPromptInsertMenu', () => {
     ).toEqual(['雨夜片段'])
   })
 
+  it('places local upload beside canvas picking and forwards the selected file', async () => {
+    const onUploadLocalFile = vi.fn().mockResolvedValue(undefined)
+    const mounted = await mountMenu({
+      onPickFromCanvas: vi.fn(),
+      onUploadLocalFile,
+    })
+
+    const actions = mounted.container.querySelector('.canvas-prompt-insert-primary-actions')
+    expect(actions?.textContent).toContain('从画布点选节点')
+    expect(actions?.textContent).toContain('本地上传')
+
+    const file = new File(['prompt reference'], 'reference.txt', { type: 'text/plain' })
+    const input = mounted.container.querySelector<HTMLInputElement>(
+      '[aria-label="选择本地文件上传到画布并引用"]',
+    )!
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onUploadLocalFile).toHaveBeenCalledWith(file)
+  })
+
   it('matches text content from the search field', async () => {
     const onQueryChange = vi.fn()
     const mounted = await mountMenu({ query: '公文包', onQueryChange })
@@ -369,9 +397,7 @@ describe('CanvasPromptInsertMenu', () => {
       origin: 'task_output',
     })
     const items = buildCanvasPromptMentionItems([operation], new Map([[operation.id, output]]))
-    expect(
-      filterCanvasPromptInsertItems(items, '苏烬角色卡产物', 'all', new Map()),
-    ).toEqual(items)
+    expect(filterCanvasPromptInsertItems(items, '苏烬角色卡产物', 'all', new Map())).toEqual(items)
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)

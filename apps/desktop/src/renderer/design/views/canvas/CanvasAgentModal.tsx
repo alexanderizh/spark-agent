@@ -47,6 +47,7 @@ import {
 } from '../../utils/provider-adapter'
 import type { CanvasNode, CanvasSnapshot } from './canvas.types'
 import { buildSelectedNodesContext } from './canvasAgentContextBuilder'
+import { resolveCanvasAgentContextNodes } from './canvasAgentMessageContext'
 import {
   buildCanvasAgentModelOptions,
   filterCanvasAgentConversationProviders,
@@ -1005,11 +1006,12 @@ export function CanvasAgentModal({
         ])
 
         let message = text
-        // 以用户显式引用的节点为准（右键「添加到 Agent 对话」）；为空时不注入节点上下文
-        const nodesContext = buildSelectedNodesContext(nodeRefs)
+        const contextNodes = resolveCanvasAgentContextNodes(nodeRefs, selectedNodes)
+        // 显式引用优先；没有显式引用时，把当前选区作为 Agent 的工作上下文。
+        const nodesContext = buildSelectedNodesContext(contextNodes)
         const shouldSendBinding = firstTurnRef.current
         if (shouldSendBinding) {
-          message = buildCanvasBindingMessage(snapshot, text, nodeRefs)
+          message = buildCanvasBindingMessage(snapshot, text, contextNodes)
         } else if (nodesContext) {
           // 后续轮：有引用节点时注入，让 agent 能用 node id 定位用户所指节点
           message = `${nodesContext}\n\n---\n\n${text}`

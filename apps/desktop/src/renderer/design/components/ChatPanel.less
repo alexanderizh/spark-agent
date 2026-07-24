@@ -465,9 +465,15 @@
 .chat-panel-message-assistant .chat-panel-text {
   padding: 8px 12px;
   color: var(--text);
-  background: var(--bg-sunken);
+  background: color-mix(in srgb, var(--bg-sunken) 88%, transparent);
   border-radius: var(--r-md);
   border-left: 2px solid color-mix(in srgb, var(--primary) 40%, transparent);
+
+  &.chat-panel-text-group.is-multi-segment {
+    padding-block: 10px;
+    border-left-color: color-mix(in srgb, var(--primary) 52%, transparent);
+    box-shadow: inset 0 1px color-mix(in srgb, var(--text) 3%, transparent);
+  }
 }
 
 .chat-panel-message-pending {

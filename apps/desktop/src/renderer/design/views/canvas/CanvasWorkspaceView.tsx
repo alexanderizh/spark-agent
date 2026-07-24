@@ -298,6 +298,7 @@ type InsertPreparedImagesResult = {
   createdNodeCount: number
   grouped: boolean
   createdNodeIds: string[]
+  createdNodes: CanvasNode[]
   selectedNodeIds: string[]
   occupiedBounds?: LayoutBounds
   groupNodeId?: string
@@ -6367,6 +6368,7 @@ export function CanvasWorkspaceView({
           createdNodeCount: 0,
           grouped: false,
           createdNodeIds: [],
+          createdNodes: [],
           selectedNodeIds: [],
         }
       }
@@ -6377,6 +6379,7 @@ export function CanvasWorkspaceView({
             createdNodeCount: 0,
             grouped: false,
             createdNodeIds: [],
+            createdNodes: [],
             selectedNodeIds: [],
           }
         }
@@ -6404,6 +6407,7 @@ export function CanvasWorkspaceView({
           createdNodeCount: node ? 1 : 0,
           grouped: false,
           createdNodeIds: node ? [node.id] : [],
+          createdNodes: node ? [node] : [],
           selectedNodeIds: node ? [node.id] : [],
           ...(node
             ? {
@@ -6434,6 +6438,7 @@ export function CanvasWorkspaceView({
           })
       const placedImages = layoutGroupedImages(preparedImages, groupPosition)
       const createdNodeIds: string[] = []
+      const createdNodes: CanvasNode[] = []
       const createdBounds: LayoutBounds[] = []
       let groupNodeId: string | undefined
       for (const image of placedImages) {
@@ -6449,6 +6454,7 @@ export function CanvasWorkspaceView({
         })
         if (node) {
           createdNodeIds.push(node.id)
+          createdNodes.push(node)
           createdBounds.push({
             left: image.x,
             top: image.y,
@@ -6478,6 +6484,7 @@ export function CanvasWorkspaceView({
         createdNodeCount: createdNodeIds.length,
         grouped: createdNodeIds.length > 1,
         createdNodeIds,
+        createdNodes,
         selectedNodeIds,
         ...(createdBounds.length > 0
           ? {
@@ -6568,10 +6575,14 @@ export function CanvasWorkspaceView({
    * 多文件按 drop 点原点级联排布。
    */
   const handleDropFiles = useCallback(
-    async (position: CanvasPoint, files: File[]) => {
+    async (
+      position: CanvasPoint,
+      files: File[],
+      options?: { keepPanelsOpen?: boolean },
+    ): Promise<CanvasNode[]> => {
       const current = snapshotRef.current
-      if (!current || files.length === 0) return
-      closeCanvasFloatPanels()
+      if (!current || files.length === 0) return []
+      if (!options?.keepPanelsOpen) closeCanvasFloatPanels()
       const origin = { x: Math.round(position.x), y: Math.round(position.y) }
       const projectRootPath = current.project.rootPath || undefined
 
@@ -6591,6 +6602,7 @@ export function CanvasWorkspaceView({
       }
 
       const createdNodeIds: string[] = []
+      const createdNodes: CanvasNode[] = []
       let selectionNodeIds: string[] = []
       let nextOrigin = origin
 
@@ -6602,6 +6614,7 @@ export function CanvasWorkspaceView({
           )
           const result = await insertPreparedImages(prepared, nextOrigin)
           for (const id of result.createdNodeIds) createdNodeIds.push(id)
+          createdNodes.push(...result.createdNodes)
           if (result.selectedNodeIds.length > 0) selectionNodeIds = result.selectedNodeIds
           if (result.occupiedBounds) nextOrigin = nextOriginAfterBounds(result.occupiedBounds)
         }
@@ -6622,6 +6635,7 @@ export function CanvasWorkspaceView({
               })
               if (node) {
                 createdNodeIds.push(node.id)
+                createdNodes.push(node)
                 successfulTextIds[index] = node.id
               }
             }),
@@ -6658,6 +6672,7 @@ export function CanvasWorkspaceView({
               })
               if (node) {
                 createdNodeIds.push(node.id)
+                createdNodes.push(node)
                 successfulDocIds[index] = node.id
               }
             }),
@@ -6719,6 +6734,7 @@ export function CanvasWorkspaceView({
               })
               if (node) {
                 createdNodeIds.push(node.id)
+                createdNodes.push(node)
                 successfulMediaIds[index] = node.id
               }
             }),
@@ -6743,6 +6759,7 @@ export function CanvasWorkspaceView({
       if (unsupportedCount > 0) {
         message.warning(`已跳过 ${unsupportedCount} 个不支持的文件`)
       }
+      return createdNodes
     },
     [
       projectId,
@@ -6770,7 +6787,19 @@ export function CanvasWorkspaceView({
       })
       await handleDropFiles(position, selectedFiles)
     },
-    [handleDropFiles],
+    [canvasViewportRef, handleDropFiles],
+  )
+
+  const handlePromptLocalUpload = useCallback(
+    async (file: File): Promise<CanvasNode | undefined> => {
+      const position = positionNodeInViewport(canvasViewportRef.current, TEXT_NODE_DEFAULT_SIZE, {
+        x: 260,
+        y: 200,
+      })
+      const createdNodes = await handleDropFiles(position, [file], { keepPanelsOpen: true })
+      return createdNodes[0]
+    },
+    [canvasViewportRef, handleDropFiles],
   )
 
   /**
@@ -7652,6 +7681,7 @@ export function CanvasWorkspaceView({
                   fullscreen={inlineOperationFullscreen}
                   onFullscreenChange={setInlineOperationFullscreen}
                   onRequestCanvasNodePick={(onPick) => startPromptNodePicker(opNode.id, onPick)}
+                  onUploadLocalFile={handlePromptLocalUpload}
                   {...(opTask ? { task: opTask } : {})}
                   onClose={() => {
                     setActiveOperationPanelNodeId(null)
@@ -8143,6 +8173,8 @@ export function CanvasWorkspaceView({
               runOperationNode,
               cancelTask,
               updateProjectSettings,
+              materializeWorkflow,
+              runCanvasWorkflow: executeCanvasWorkflow,
             }}
           />
         </aside>

@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CanvasPromptDocument } from '@spark/protocol'
 import { CanvasPromptComposer } from './CanvasPromptComposer'
-import type { CanvasPromptCanvasNodePickHandler } from './CanvasPromptComposer'
+import type {
+  CanvasPromptCanvasNodePickHandler,
+  CanvasPromptLocalFileUploadHandler,
+} from './CanvasPromptComposer'
 import type { CanvasAsset, CanvasNode } from './canvas.types'
 import { migrateLegacyPrompt, toCanvasPromptLegacyText } from './canvasPromptDocument'
 import { ensureConnectionReferences, reconcilePromptConnections } from './canvasPromptConnections'
@@ -20,6 +23,7 @@ export function CanvasPromptMentionTextArea({
   onChange,
   onMentionSelect,
   onRequestCanvasNodePick,
+  onUploadLocalFile,
   onDocumentChange,
 }: {
   value: string
@@ -35,6 +39,7 @@ export function CanvasPromptMentionTextArea({
   onChange: (value: string) => void
   onMentionSelect?: (node: CanvasNode, marker: string) => boolean | void
   onRequestCanvasNodePick?: CanvasPromptCanvasNodePickHandler
+  onUploadLocalFile?: CanvasPromptLocalFileUploadHandler
   onDocumentChange?: (document: CanvasPromptDocument) => void
 }) {
   const nodes = useMemo(() => mentionNodes ?? [], [mentionNodes])
@@ -127,6 +132,7 @@ export function CanvasPromptMentionTextArea({
       onChange={handleChange}
       onMentionSelect={(node, relation) => onMentionSelect?.(node, relation)}
       {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
+      {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
     />
   )
 }

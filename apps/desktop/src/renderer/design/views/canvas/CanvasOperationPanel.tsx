@@ -440,6 +440,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   onRetry,
   onSaveDraft,
   onRequestCanvasNodePick,
+  onUploadLocalFile,
   onCancelTask,
   fullscreen: controlledFullscreen,
   onFullscreenChange,
@@ -454,6 +455,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   onRetry: () => void
   onSaveDraft: (params: OperationDraftParams) => Promise<void> | void
   onRequestCanvasNodePick?: (onPick: (node: CanvasNode) => void) => void
+  onUploadLocalFile?: (file: File) => Promise<CanvasNode | null | undefined>
   /** 强制取消当前任务；不传则不渲染取消按钮 */
   onCancelTask?: (taskId: string) => Promise<void> | void
   fullscreen?: boolean
@@ -1899,6 +1901,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               onDocumentChange={setPromptDocument}
               onMentionSelect={handlePromptMentionSelect}
               {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
+              {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
               disabled={running}
             />
             <span className="canvas-operation-prompt-count">
@@ -2356,6 +2359,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               onDocumentChange={setPromptDocument}
               onMentionSelect={handlePromptMentionSelect}
               {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
+              {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
               disabled={running}
             />
             <span className="canvas-operation-prompt-count">

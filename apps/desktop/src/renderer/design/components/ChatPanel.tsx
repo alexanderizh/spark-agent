@@ -25,9 +25,9 @@ import { CancellationNotice } from '../views/chat/CancellationNotice'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
 import { ChatPanelThinkingGroup } from './ChatPanelThinkingGroup'
-import { getChatPanelThinkingBlocks } from './chat-panel-thinking'
 import { ChatPanelToolActivity } from './ChatPanelToolActivity'
-import { getChatPanelToolBlocks, isCanvasMutationTool } from './chat-panel-tool-activity'
+import { isCanvasMutationTool } from './chat-panel-tool-activity'
+import { buildChatPanelRenderItems, getChatPanelTextGroupContent } from './chat-panel-render-items'
 import {
   getChatPanelUserText,
   groupChatPanelMessagesByTurn,
@@ -905,14 +905,10 @@ function MessageView({
 }): React.ReactElement {
   const assistantIdentity = resolveAssistantIdentity(message, agents, fallbackAssistant)
   const attachments = message.role === 'user' ? (message.attachments ?? []) : []
-  const thinkingBlocks = getChatPanelThinkingBlocks(message.blocks)
-  const firstThinkingIndex = message.blocks.findIndex((block) => block.kind === 'thinking')
-  const compactToolBlocks = getChatPanelToolBlocks(message.blocks, toolNamePrefixFilter)
-  const firstCompactToolIndex = message.blocks.findIndex(
-    (block) =>
-      block.kind === 'tool_call' &&
-      (toolNamePrefixFilter == null || block.toolName.startsWith(toolNamePrefixFilter)),
-  )
+  const renderItems = buildChatPanelRenderItems(message.blocks, {
+    toolCallDisplay,
+    ...(toolNamePrefixFilter != null ? { toolNamePrefix: toolNamePrefixFilter } : {}),
+  })
   return (
     <div className={`chat-panel-message chat-panel-message-${message.role}`}>
       <div className="chat-panel-message-avatar">
@@ -928,25 +924,44 @@ function MessageView({
       </div>
       <div className="chat-panel-message-body">
         {attachments.length > 0 && <MessageAttachmentsView attachments={attachments} />}
-        {message.blocks.map((block, idx) => {
-          if (block.kind === 'thinking') {
-            if (idx !== firstThinkingIndex) return null
-            return <ChatPanelThinkingGroup key="thinking-group" blocks={thinkingBlocks} />
+        {renderItems.map((item) => {
+          if (item.kind === 'thinking_group') {
+            return <ChatPanelThinkingGroup key={item.key} blocks={item.blocks} />
           }
-          if (block.kind === 'tool_call' && toolCallDisplay !== 'full') {
-            if (toolCallDisplay === 'hidden' || idx !== firstCompactToolIndex) return null
+          if (item.kind === 'tool_activity') {
             return (
               <ChatPanelToolActivity
-                key="tool-activity"
-                blocks={compactToolBlocks}
+                key={item.key}
+                blocks={item.blocks}
                 {...(onFocusNode ? { onFocusNode } : {})}
               />
             )
           }
+          if (item.kind === 'text_group') {
+            const content = getChatPanelTextGroupContent(item.blocks)
+            if (content.length === 0) return null
+            return (
+              <div
+                key={item.key}
+                className={`chat-panel-text chat-panel-text-group md-surface${
+                  item.blocks.length > 1 ? ' is-multi-segment' : ''
+                }`}
+                data-segment-count={item.blocks.length}
+              >
+                <MarkdownText
+                  content={message.role === 'user' ? sanitizeUserDisplayText(content) : content}
+                  isStreaming={item.blocks.some((block) => block.isStreaming)}
+                />
+                {item.blocks.some((block) => block.isStreaming) && (
+                  <span className="chat-panel-cursor">▋</span>
+                )}
+              </div>
+            )
+          }
           return (
             <BlockView
-              key={idx}
-              block={block}
+              key={item.key}
+              block={item.block}
               role={message.role}
               sessionId={sessionId}
               onQuestionAnswered={onQuestionAnswered}

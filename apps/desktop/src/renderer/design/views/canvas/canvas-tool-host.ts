@@ -43,6 +43,10 @@ const READONLY_TOOL_NAMES = new Set<string>([
   'canvas_find_nodes',
   'canvas_search_assets',
   'canvas_query_nodes',
+  'canvas_workflow_list',
+  'canvas_workflow_get',
+  'canvas_workflow_run_list',
+  'canvas_workflow_run_get',
 ])
 
 /** 写串行队列：按 projectId 排队，保证同一项目的写操作不并发。 */
