@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useState,
   type HTMLAttributes,
   type MouseEvent as ReactMouseEvent,
@@ -54,6 +55,29 @@ const DEFAULT_COL_WIDTHS: Record<ColKey, number> = {
 
 const MIN_COL_WIDTH = 60
 const RESIZABLE_KEY = 'data-resizable-key' as const
+
+/** 列宽持久化：纯 UI 偏好走 localStorage（与 CanvasPromptInsertMenu / CanvasAgentModal 等
+ *  canvas 内组件的既有 pattern 一致）。全局 key，所有分镜分组共用一套列宽。 */
+const STORAGE_KEY = 'spark-canvas:shot-seg-col-widths:v1'
+
+/** 读取并合并：以默认值为底，仅采纳合法的存储值；新增列/脏数据自动回退默认。 */
+function loadStoredWidths(): Record<ColKey, number> {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return DEFAULT_COL_WIDTHS
+    const parsed = JSON.parse(raw) as Partial<Record<ColKey, number>>
+    const merged = { ...DEFAULT_COL_WIDTHS }
+    for (const key of Object.keys(DEFAULT_COL_WIDTHS) as ColKey[]) {
+      const v = parsed[key]
+      if (typeof v === 'number' && Number.isFinite(v) && v >= MIN_COL_WIDTH) {
+        merged[key] = v
+      }
+    }
+    return merged
+  } catch {
+    return DEFAULT_COL_WIDTHS
+  }
+}
 
 type ResizeHandler = (key: ColKey, width: number) => void
 const ColumnResizeContext = createContext<ResizeHandler>(() => {})
@@ -139,9 +163,22 @@ export function ShotSegmentTable({
   onEdit: (id: string) => void
   onSplit: (segment: ShotSegment) => void
 }) {
-  const [widths, setWidths] = useState<Record<ColKey, number>>(DEFAULT_COL_WIDTHS)
+  const [widths, setWidths] = useState<Record<ColKey, number>>(loadStoredWidths)
   const handleResize: ResizeHandler = (key, width) =>
     setWidths((prev) => ({ ...prev, [key]: width }))
+
+  // 拖拽过程中防抖落盘（停顿 250ms 后写一次），避免 mousemove 高频写 localStorage；
+  // 每次 widths 变化都重建 timer，连续拖拽只在收尾时真正写一次。
+  useEffect(() => {
+    const id = setTimeout(() => {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(widths))
+      } catch {
+        // 隐私模式 / 配额超限：静默降级，拖拽功能不受影响
+      }
+    }, 250)
+    return () => clearTimeout(id)
+  }, [widths])
 
   // 累计时间码：优先用片段自带 inSec，否则按时长顺序累加（算法沿用原实现）
   let cursor = 0
