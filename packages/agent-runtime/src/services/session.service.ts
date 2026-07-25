@@ -8531,7 +8531,10 @@ function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeCon
       memberAgentIds: Array.isArray(team.memberAgentIds)
         ? team.memberAgentIds.filter((id) => typeof id === 'string')
         : [],
-      maxDepth: typeof team.maxDepth === 'number' ? team.maxDepth : 1,
+      maxDepth:
+        typeof team.maxDepth === 'number' && Number.isFinite(team.maxDepth)
+          ? Math.max(1, Math.min(10, Math.floor(team.maxDepth)))
+          : 1,
       allowNesting: team.allowNesting === true,
       ...(typeof team.dispatchTimeoutMs === 'number'
         ? { dispatchTimeoutMs: team.dispatchTimeoutMs }
