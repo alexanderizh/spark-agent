@@ -19,6 +19,7 @@
  */
 
 import type { RemoteSkillItem, SkillHubShowcaseSection } from '@spark/protocol'
+import { fetchJson, HttpError } from '@spark/shared'
 import type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './adapter.js'
 import { createRemoteSkillItem } from './adapter.js'
 
@@ -372,15 +373,19 @@ export class SkillHubAdapter implements SkillRegistryAdapter {
   }
 
   private async fetchJson<T>(url: string): Promise<T> {
-    const res = await globalThis.fetch(url, {
-      headers: this.headers,
-      signal: AbortSignal.timeout(15000),
-    })
-    if (!res.ok) {
-      if (res.status === 429) throw new Error('SkillHub API rate limit exceeded.')
-      throw new Error(`SkillHub API error: ${res.status} ${res.statusText}`)
+    try {
+      return await fetchJson<T>(url, {
+        headers: this.headers,
+        timeoutMs: 15_000,
+        // GET 查询幂等，可重试瞬时错误
+        maxRetries: 0,
+      })
+    } catch (err) {
+      if (err instanceof HttpError && err.statusCode === 429) {
+        throw new Error('SkillHub API rate limit exceeded.')
+      }
+      throw err
     }
-    return res.json() as Promise<T>
   }
 
   private async fetchText(url: string): Promise<string> {

@@ -22,9 +22,13 @@ vi.mock('@spark/shared/keystore', () => ({
 }))
 
 // Mock logger
-vi.mock('@spark/shared', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-}))
+vi.mock('@spark/shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@spark/shared')>()
+  return {
+    ...actual,
+    createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  }
+})
 
 // Hoisted mock for node:util promisify — 让 isLocalCliAvailable 平台测试可控。
 // 用 hoisted 可变 map，避免 vi.doMock + resetModules 的时序竞态（原 flaky 根因）。
@@ -1053,7 +1057,7 @@ describe('ProviderService', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({
+      text: async () => JSON.stringify({
         data: [
           { id: 'glm-5.1', owned_by: 'zhipu' },
           { id: 'glm-5.2', owned_by: 'zhipu' },
@@ -1090,7 +1094,7 @@ describe('ProviderService', () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ data: [{ id: 'deepseek-v4-flash' }] }),
+        text: async () => JSON.stringify({ data: [{ id: 'deepseek-v4-flash' }] }),
       })
     vi.stubGlobal('fetch', fetchMock)
 

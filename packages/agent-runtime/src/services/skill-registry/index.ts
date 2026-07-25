@@ -7,6 +7,7 @@
 import crypto from 'node:crypto'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
+import { fetchJson, HttpError } from '@spark/shared'
 import type {
   RemoteSkillItem,
   SkillHubShowcaseSection,
@@ -894,12 +895,19 @@ export class SkillRegistryService {
   async searchGithub(query: string, limit = 8): Promise<GithubSkillCandidate[]> {
     const q = `${query} skill SKILL.md`.trim()
     const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&sort=stars&order=desc&per_page=${Math.min(Math.max(limit, 1), 20)}`
-    const res = await fetch(url, {
-      headers: this.githubHeaders(),
-      signal: AbortSignal.timeout(15000),
-    })
-    if (!res.ok) throw new Error(`GitHub search failed: ${res.status} ${res.statusText}`)
-    const data = (await res.json()) as { items?: GithubRepoApi[] }
+    let data: { items?: GithubRepoApi[] }
+    try {
+      data = await fetchJson<{ items?: GithubRepoApi[] }>(url, {
+        headers: this.githubHeaders(),
+        timeoutMs: 15_000,
+        maxRetries: 3,
+      })
+    } catch (err) {
+      if (err instanceof HttpError) {
+        throw new Error(`GitHub search failed: ${err.statusCode ?? 'network'} ${err.message}`)
+      }
+      throw err
+    }
     return (data.items ?? []).map((r) => ({
       repo: r.full_name,
       name: r.name,
@@ -1026,13 +1034,22 @@ export class SkillRegistryService {
   }
 
   private async fetchDefaultBranch(repo: string): Promise<string> {
-    const res = await fetch(`https://api.github.com/repos/${repo}`, {
-      headers: this.githubHeaders(),
-      signal: AbortSignal.timeout(15000),
-    })
-    if (!res.ok) throw new Error(`Failed to resolve repo ${repo}: ${res.status}`)
-    const data = (await res.json()) as { default_branch?: string }
-    return data.default_branch || 'main'
+    try {
+      const data = await fetchJson<{ default_branch?: string }>(
+        `https://api.github.com/repos/${repo}`,
+        {
+          headers: this.githubHeaders(),
+          timeoutMs: 15_000,
+          maxRetries: 3,
+        },
+      )
+      return data.default_branch || 'main'
+    } catch (err) {
+      if (err instanceof HttpError) {
+        throw new Error(`Failed to resolve repo ${repo}: ${err.statusCode ?? 'network'}`)
+      }
+      throw err
+    }
   }
 
   /** 递归收集目录文件（限 60 个文件，单文件 ≤1MB） */
@@ -1045,12 +1062,19 @@ export class SkillRegistryService {
   ): Promise<GithubFile[]> {
     if (depth > 6 || acc.length >= 60) return acc
     const url = `https://api.github.com/repos/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`
-    const res = await fetch(url, {
-      headers: this.githubHeaders(),
-      signal: AbortSignal.timeout(15000),
-    })
-    if (!res.ok) throw new Error(`Failed to list ${repo}/${path}: ${res.status}`)
-    const data = await res.json()
+    let data: unknown
+    try {
+      data = await fetchJson(url, {
+        headers: this.githubHeaders(),
+        timeoutMs: 15_000,
+        maxRetries: 3,
+      })
+    } catch (err) {
+      if (err instanceof HttpError) {
+        throw new Error(`Failed to list ${repo}/${path}: ${err.statusCode ?? 'network'}`)
+      }
+      throw err
+    }
     const entries: GithubContentApi[] = Array.isArray(data) ? data : [data]
     for (const entry of entries) {
       if (acc.length >= 60) break
@@ -1064,12 +1088,19 @@ export class SkillRegistryService {
   }
 
   private async downloadGithubFile(downloadUrl: string): Promise<Buffer> {
-    const res = await fetch(downloadUrl, {
-      headers: this.githubHeaders(),
-      signal: AbortSignal.timeout(20000),
-    })
-    if (!res.ok) throw new Error(`Failed to download ${downloadUrl}: ${res.status}`)
-    return Buffer.from(await res.arrayBuffer())
+    try {
+      return await fetchJson<Buffer>(downloadUrl, {
+        headers: this.githubHeaders(),
+        timeoutMs: 20_000,
+        binary: true,
+        maxRetries: 3,
+      })
+    } catch (err) {
+      if (err instanceof HttpError) {
+        throw new Error(`Failed to download ${downloadUrl}: ${err.statusCode ?? 'network'}`)
+      }
+      throw err
+    }
   }
 
   // ─── Private Helpers ────────────────────────────────────────────────

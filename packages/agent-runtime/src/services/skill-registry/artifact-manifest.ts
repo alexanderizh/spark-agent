@@ -5,6 +5,7 @@
  * 用于国内/企业内网弱网场景下优先下载技能包、运行时安装包和离线依赖包。
  */
 
+import { fetchJson, HttpError } from '@spark/shared'
 import { DEFAULT_SPARK_INSTALL_MANIFEST_URL } from './installable-catalog.js'
 
 export type SparkInstallArtifactType =
@@ -62,17 +63,22 @@ export interface SparkInstallManifest {
 export async function fetchSparkInstallManifest(
   manifestUrl = DEFAULT_SPARK_INSTALL_MANIFEST_URL,
 ): Promise<SparkInstallManifest> {
-  const res = await fetch(manifestUrl, {
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'Spark-Agent',
-    },
-    signal: AbortSignal.timeout(20000),
-  })
-  if (!res.ok) {
-    throw new Error(`Spark install manifest download failed: ${res.status} ${res.statusText}`)
+  let manifest: Partial<SparkInstallManifest>
+  try {
+    manifest = await fetchJson<Partial<SparkInstallManifest>>(manifestUrl, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'Spark-Agent',
+      },
+      timeoutMs: 20_000,
+      maxRetries: 3,
+    })
+  } catch (err) {
+    if (err instanceof HttpError) {
+      throw new Error(`Spark install manifest download failed: ${err.statusCode ?? 'network'} ${err.message}`)
+    }
+    throw err
   }
-  const manifest = (await res.json()) as Partial<SparkInstallManifest>
   if (!Array.isArray(manifest.artifacts)) {
     throw new Error('Spark install manifest is invalid: artifacts must be an array')
   }
