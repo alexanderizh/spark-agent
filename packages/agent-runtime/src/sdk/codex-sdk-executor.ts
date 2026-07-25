@@ -12,7 +12,7 @@ import type {
   ThreadOptions,
 } from '@openai/codex-sdk'
 import type { AgentEvent } from '@spark/protocol'
-import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
+import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
 import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
 import { toCodexReasoningEffort } from './reasoning-effort.js'
@@ -144,7 +144,7 @@ export class CodexSdkExecutor {
     this.emit({
       ...makeBase(),
       type: 'context_usage',
-      estimatedTokens: Math.ceil(prompt.length / 3),
+      estimatedTokens: estimateTokens(prompt),
       softLimitTokens: resolveSoftContextLimit(config.model),
       contextWindowTokens: config.contextWindowTokens ?? resolveModelContextWindow(config.model),
       compacted: false,

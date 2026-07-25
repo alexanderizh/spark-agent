@@ -499,6 +499,17 @@ export interface SDKQueryOptions {
   env?: Record<string, string | undefined> | undefined
   model?: string | undefined
   effort?: SDKEffort | undefined
+  /**
+   * Claude SDK 扩展思考配置（与 `effort` 协同）。
+   * - `{ type: 'adaptive' }` — Claude 决定（Opus 4.6+ 默认）
+   * - `{ type: 'enabled', budgetTokens: N }` — 显式预算
+   * - `{ type: 'disabled' }` — 关闭扩展思考
+   */
+  thinking?:
+    | { type: 'adaptive'; display?: 'summarized' | 'omitted' }
+    | { type: 'enabled'; budgetTokens?: number; display?: 'summarized' | 'omitted' }
+    | { type: 'disabled' }
+    | undefined
   permissionMode?: SDKPermissionMode | undefined
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined
@@ -670,6 +681,14 @@ export interface SDKExecutorConfig {
   maxBudgetUsd?: number | undefined
   workspaceRootPath: string
   reasoningEffort?: SparkReasoningEffort | undefined
+  /**
+   * 显式 extended-thinking 预算（Claude SDK 的 `thinking.budgetTokens`）。
+   * 设置后 Claude executor 会注入 `thinking: { type: 'enabled', budgetTokens: N }`，
+   * 与 `reasoningEffort`（effort 档位）协同工作：effort 引导思考深度，budgetTokens 锁定 token 上限。
+   * 仅适用于支持 extended thinking 的模型；未设置时走 SDK 默认（adaptive）。
+   * Codex/OpenAI 路径目前没有等价字段，会忽略此值。
+   */
+  reasoningBudgetTokens?: number | undefined
   /** Codex sandbox network access. Defaults to false. */
   networkAccessEnabled?: boolean | undefined
   /** Codex built-in web search mode. Defaults to disabled. */

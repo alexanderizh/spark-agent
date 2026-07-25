@@ -4,7 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@spark/protocol'
-import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
+import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { extractCodexCompactionEvent } from './codex-compaction-event.js'
 import { resolveCodexPermissionPolicy } from './codex-permission-policy.js'
 import { toCodexReasoningEffort, type CodexReasoningEffort } from './reasoning-effort.js'
@@ -114,7 +114,7 @@ export class CodexCliExecutor {
     this.emit({
       ...makeBase(),
       type: 'context_usage',
-      estimatedTokens: Math.ceil(prompt.length / 3),
+      estimatedTokens: estimateTokens(prompt),
       softLimitTokens: resolveSoftContextLimit(config.model),
       contextWindowTokens: resolveModelContextWindow(config.model),
       compacted: false,
