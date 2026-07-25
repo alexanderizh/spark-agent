@@ -2,7 +2,6 @@
  * Session 对话历史辅助纯函数（从 session.service.ts 拆分，D-13）。
  *
  * 包含：
- * - buildConversationHistoryPrompt：从 EventRepository 取事件 → 拼装 prompt
  * - buildConversationHistoryPromptFromEvents：给定事件 → 拼装 prompt（导出供测试）
  * - buildDialogueEntries / joinHistoryParts：把事件拆成 User/Assistant 对话条目
  * - resolveProviderContextWindowFromProviderRow：从 ProviderProfileRow 解析 ctx 窗口
@@ -10,7 +9,7 @@
  * - limitHistoryContextEntries / truncateHistoryEntry：条目裁剪与单条截断
  *
  * 依赖：
- * - @spark/storage 的 EventRepository
+ * - @spark/protocol 的 AgentEvent
  * - @spark/shared 的 estimateTokens / clipTextHeadTail / resolveProviderContextWindow
  *
  * session.service.ts 顶部 re-export `buildConversationHistoryPromptFromEvents`，
@@ -18,14 +17,12 @@
  */
 
 import type { AgentEvent } from '@spark/protocol'
-import type { EventRepository } from '@spark/storage'
 import {
   clipTextHeadTail,
   estimateTokens,
   resolveProviderContextWindow,
 } from '@spark/shared'
 
-const HISTORY_CONTEXT_EVENT_LIMIT = 240
 const HISTORY_CONTEXT_ENTRY_LIMIT = 40
 /**
  * 历史上下文总 token 预算。
@@ -36,27 +33,6 @@ const HISTORY_CONTEXT_MAX_TOKENS = 8_000
 const HISTORY_CONTEXT_ENTRY_TOKEN_BUDGET = 1_500
 
 export type DialogueEntry = { role: 'User' | 'Assistant'; content: string }
-
-export function buildConversationHistoryPrompt(
-  eventRepo: EventRepository,
-  sessionId: string,
-): string | undefined {
-  const rows = eventRepo.queryBySession({
-    sessionId,
-    limit: HISTORY_CONTEXT_EVENT_LIMIT,
-  }).events
-
-  const events: AgentEvent[] = []
-  for (const row of rows) {
-    try {
-      events.push(JSON.parse(row.event_json) as AgentEvent)
-    } catch {
-      // Ignore malformed historical rows.
-    }
-  }
-
-  return buildConversationHistoryPromptFromEvents(events)
-}
 
 export function buildConversationHistoryPromptFromEvents(events: AgentEvent[]): string | undefined {
   const entries = limitHistoryContextEntries(buildDialogueEntries(events))

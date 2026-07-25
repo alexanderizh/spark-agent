@@ -2556,7 +2556,11 @@ export class SessionService {
           truncated: projectContext.budget?.truncated ?? false,
         },
         {
-          label: 'Conversation History',
+          // W1.1b 联动：SDK resume 路径下 conversationHistoryPrompt 是 fallback（recent N 条），
+          // SDK 内部维持完整 history（更多 token）。label 后缀提示用户实际 history 远高于此值。
+          label: canResumeSdkSession
+            ? 'Conversation History (SDK resume fallback)'
+            : 'Conversation History',
           estimatedTokens: estimateSectionTokens(conversationHistoryPrompt),
           charCount: estimateChars(conversationHistoryPrompt),
           truncated: false,
@@ -6045,6 +6049,25 @@ export class SessionService {
         `Member env injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
       )
     }
+    // W1.1b 联动细致审查修复：member turn 注入 memory block（按 member.id scope）。
+    // 之前 member turn 完全失忆——既不挂载 spark_memory MCP 也不注入 memory block，
+    // member 无法访问长期记忆。这里复用 loadMemoryBlockForTurn（已抽到 method）按
+    // member scope 加载，与 Host 行为一致。仍不挂载 spark_memory MCP（避免增加 member
+    // 主动 search_memory 的复杂度；member 通过 prompt 摘要已足够）。
+    let memberMemoryBlock: string | undefined
+    try {
+      const memberWorkspaceId = new SessionRepository(this.db).getWorkspaceIds(sessionId)[0]
+      memberMemoryBlock = await this.loadMemoryBlockForTurn(
+        sessionId,
+        workspaceRootPath,
+        memberWorkspaceId,
+        member,
+      )
+    } catch (err) {
+      log.warn(
+        `Member memory injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
     const hostAgentForPrompt = new AgentRepository(this.db).get(teamConfig.hostAgentId) ?? member
     const memberCanUseNestedTeamTools = teamConfig.allowNesting && memberDepth < teamConfig.maxDepth
     // peer messaging（agent_message）与嵌套派发（agent_dispatch）是两个独立能力：
@@ -6074,6 +6097,8 @@ export class SessionService {
         buildManagedAgentSystemPrompt(member, null),
         memberTeamPrompt,
         memberEnvPrompt || undefined,
+        memberMemoryBlock,
+        MEMORY_BEHAVIOR_SYSTEM_PROMPT,
       ) ?? ''
     const userMessage = memberRouteMessage
     const canContinueDiscussionSession =
