@@ -245,4 +245,18 @@ export class UsageLedgerRepository extends BaseRepository {
     const result = stmt.run(cutoff)
     return result.changes
   }
+
+  /**
+   * Delete all usage records for a given session.
+   *
+   * 三轮功能逻辑审查修复：session 删除时必须清理 usage_ledger，否则：
+   * - 用户隐私期望"删除 session"= "清除所有相关数据"被违背
+   * - usage_ledger 表长期累积导致膨胀
+   * Returns the number of deleted records.
+   */
+  deleteBySession(sessionId: string): number {
+    const stmt = this.raw.prepare(`DELETE FROM ${this.tableName} WHERE session_id = ?`)
+    const result = stmt.run(sessionId)
+    return result.changes
+  }
 }

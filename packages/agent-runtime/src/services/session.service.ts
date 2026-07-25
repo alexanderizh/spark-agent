@@ -7859,7 +7859,20 @@ export class SessionService {
     const sessionRepo = new SessionRepository(this.db)
     this.clearSessionMemory(sessionId)
     const deleted = sessionRepo.delete(sessionId)
-    if (deleted) this.cleanupSessionEventsInBackground(sessionId)
+    if (deleted) {
+      this.cleanupSessionEventsInBackground(sessionId)
+      // 三轮功能逻辑审查修复：清理 usage_ledger 表（之前 deleteSession 漏清，违背
+      // 用户"删除 session = 清除所有相关数据"期望；usage_ledger 表长期累积膨胀）。
+      try {
+        new UsageLedgerRepository(this.db).deleteBySession(sessionId)
+      } catch (err) {
+        log.warn(
+          `Failed to delete usage ledger for session ${sessionId} (non-fatal): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+      }
+    }
     return { deleted }
   }
 
