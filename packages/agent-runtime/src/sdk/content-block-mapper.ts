@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent, BaseEvent } from '@spark/protocol'
+import { clipTextHeadTail } from '@spark/shared'
 import { mapSDKToolName } from './tool-name-mapper.js'
 
 export interface ExtendedContentBlockContext {
@@ -22,7 +23,16 @@ const RESULT_TOOL_NAMES: Readonly<Record<string, string>> = {
 
 const RESULT_BLOCK_TYPES = new Set([...Object.keys(RESULT_TOOL_NAMES), 'mcp_tool_result'])
 const SENSITIVE_KEYS = new Set(['data', 'encrypted_content', 'encrypted_stdout', 'signature'])
-const MAX_SERIALIZED_RESULT_CHARS = 100_000
+/**
+ * 工具结果序列化后的 token 上限（D-08 改造）。
+ *
+ * 旧值 MAX_SERIALIZED_RESULT_CHARS=100_000 按字符算：
+ *   - 英文 ~25k tokens（合理）
+ *   - 中文 ~50k tokens（过大，挤占 context window）
+ * 改 25k tokens 后中英文都受控，且头尾保留可让 stdout 顶部的命令/上下文 + 底部的
+ * 最终输出都保留（替换原来的"前 N 字符"粗暴截断）。
+ */
+const MAX_SERIALIZED_RESULT_TOKENS = 25_000
 
 export function mapExtendedContentBlock(
   block: unknown,
@@ -168,8 +178,11 @@ function containsErrorResult(value: unknown): boolean {
 }
 
 function truncateResult(value: string): string {
-  if (value.length <= MAX_SERIALIZED_RESULT_CHARS) return value
-  return `${value.slice(0, MAX_SERIALIZED_RESULT_CHARS - 31)}\n[tool result truncated by Spark]`
+  // D-08：token+头尾保留替换字符粗暴截断。tool result 头部通常是工具调用上下文
+  // （命令、文件路径），尾部是最终输出（exit code、关键结果）——两侧都重要。
+  return clipTextHeadTail(value, MAX_SERIALIZED_RESULT_TOKENS, {
+    ellipsis: '\n[tool result truncated by Spark — middle omitted]\n',
+  })
 }
 
 function describeFallback(block: UnknownRecord): string {
