@@ -20,6 +20,7 @@ import {
   TeamDiscussionRepository,
   TeamDefinitionRepository,
   UsageLedgerRepository,
+  SessionSummaryRepository,
   GoalRepository,
   ConnectorConnectionRepository,
   TurnRequestRepository,
@@ -7861,13 +7862,19 @@ export class SessionService {
     const deleted = sessionRepo.delete(sessionId)
     if (deleted) {
       this.cleanupSessionEventsInBackground(sessionId)
-      // 三轮功能逻辑审查修复：清理 usage_ledger 表（之前 deleteSession 漏清，违背
-      // 用户"删除 session = 清除所有相关数据"期望；usage_ledger 表长期累积膨胀）。
+      // 三轮功能逻辑审查修复：清理 session 关联的所有表，避免数据残留。
+      // 之前 deleteSession 漏清 usage_ledger / session_summary / team_dispatch /
+      // team_discussion / workflow_runs 5 个表，违背用户"删除 session = 清除所有
+      // 相关数据"的隐私期望，长期累积导致表膨胀。
       try {
         new UsageLedgerRepository(this.db).deleteBySession(sessionId)
+        new SessionSummaryRepository(this.db).deleteBySession(sessionId)
+        new TeamDispatchRepository(this.db).deleteBySession(sessionId)
+        new TeamDiscussionRepository(this.db).deleteBySession(sessionId)
+        new WorkflowRunRepository(this.db).deleteBySession(sessionId)
       } catch (err) {
         log.warn(
-          `Failed to delete usage ledger for session ${sessionId} (non-fatal): ${
+          `Failed to cleanup session-related tables for ${sessionId} (non-fatal): ${
             err instanceof Error ? err.message : String(err)
           }`,
         )

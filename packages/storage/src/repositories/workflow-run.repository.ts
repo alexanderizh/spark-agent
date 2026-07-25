@@ -135,6 +135,18 @@ export class WorkflowRunRepository extends BaseRepository {
       .all(sessionId, limit) as WorkflowRunRow[]
   }
 
+  /**
+   * Delete all workflow runs for a given session.
+   *
+   * 三轮功能逻辑审查修复：deleteSession 时清理 workflow_runs（之前漏清）。
+   * workflow_runs 存的是 workflow 在 session 内的执行历史，与 session 强关联。
+   * 删除 session 不应影响 workflow 表（workflow 定义本身保留）。
+   */
+  deleteBySession(sessionId: string): number {
+    const result = this.raw.prepare('DELETE FROM workflow_runs WHERE session_id = ?').run(sessionId)
+    return result.changes
+  }
+
   markStaleAsFailed(olderThanIso: string): number {
     const now = new Date().toISOString()
     const result = this.raw
