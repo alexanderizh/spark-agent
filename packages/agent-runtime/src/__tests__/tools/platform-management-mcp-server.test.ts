@@ -3,9 +3,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { PLATFORM_TOOL_NAMES } from '../../services/session-mcp-tooling-helpers.js'
 
 const SERVER = path.resolve('src/tools/platform-management-mcp-server.mjs')
-const SESSION_SERVICE = path.resolve('src/services/session.service.ts')
 
 describe('spark_platform MCP server', () => {
   let child: ChildProcessWithoutNullStreams | null = null
@@ -191,10 +191,7 @@ describe('spark_platform MCP server', () => {
 })
 
 function readPlatformAllowedToolNames(): string[] {
-  const source = readFileSync(SESSION_SERVICE, 'utf8')
-  const match = source.match(/const PLATFORM_TOOL_NAMES:[\s\S]*?= \[([\s\S]*?)\]/)
-  if (!match) throw new Error('PLATFORM_TOOL_NAMES not found')
-  return [...match[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!)
+  return [...PLATFORM_TOOL_NAMES]
 }
 
 function callMcp(

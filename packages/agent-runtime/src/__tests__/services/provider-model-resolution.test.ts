@@ -154,15 +154,23 @@ describe('Provider/Model resolution regression', () => {
   // ── isSdkResumeSafe ────────────────────────────────────────────────────
 
   describe('isSdkResumeSafe', () => {
-    it('returns false when feature flag is off (current state)', () => {
-      // ENABLE_CLAUDE_SDK_RESUME is currently false
+    it('returns true for native Anthropic + Claude model + api.anthropic.com (D-09 enabled)', () => {
+      // ENABLE_CLAUDE_SDK_RESUME 已打开（D-09）；严格白名单：仅原生 Anthropic 走 SDK resume
       expect(
         isSdkResumeSafe({
           providerType: 'anthropic',
           model: 'claude-sonnet-4-5',
           agentAdapter: 'claude-sdk',
         }),
-      ).toBe(false)
+      ).toBe(true)
+      expect(
+        isSdkResumeSafe({
+          providerType: 'anthropic',
+          apiEndpoint: 'https://api.anthropic.com',
+          model: 'claude-opus-4-7',
+          agentAdapter: 'claude-sdk',
+        }),
+      ).toBe(true)
     })
 
     it('returns false for non-claude adapters', () => {
@@ -204,6 +212,17 @@ describe('Provider/Model resolution regression', () => {
           agentAdapter: 'claude-sdk',
         }),
       ).toBe(false)
+    })
+
+    it('returns true when apiEndpoint is empty (defaults to api.anthropic.com)', () => {
+      expect(
+        isSdkResumeSafe({
+          providerType: 'anthropic',
+          apiEndpoint: '',
+          model: 'claude-sonnet-4-5',
+          agentAdapter: 'claude-sdk',
+        }),
+      ).toBe(true)
     })
   })
 

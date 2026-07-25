@@ -81,6 +81,94 @@ import {
   buildWorkflowSystemPrompt,
   type WorkflowExecutionMode,
 } from './workflow-system-prompt.js'
+
+// ─── D-13 拆分出的小工具 ───
+import { ResumeGateManager, type AgentAdapterKind } from './session-resume-gate.js'
+export { isSdkResumeSafe, makeSdkRuntimeSessionId } from './session-resume-gate.js'
+export type { AgentAdapterKind } from './session-resume-gate.js'
+
+import {
+  createUserCancelledTurnEvent,
+  createInterruptedTurnEvents,
+  shouldRunTurnPostProcessing,
+  collectCompleteAssistantTurnText,
+} from './session-event-helpers.js'
+export {
+  createUserCancelledTurnEvent,
+  createInterruptedTurnEvents,
+  shouldRunTurnPostProcessing,
+  collectCompleteAssistantTurnText,
+}
+
+import {
+  buildConversationHistoryPromptFromEvents,
+  computeHistoryEntryTokenBudget,
+  computeHistoryTokenBudget,
+  resolveProviderContextWindowFromProviderRow,
+} from './session-history-helpers.js'
+export { buildConversationHistoryPromptFromEvents } from './session-history-helpers.js'
+
+import {
+  PLATFORM_TOOL_NAMES,
+  PLATFORM_MANAGEMENT_SYSTEM_PROMPT,
+  DEBUG_TOOL_NAMES,
+  DEBUG_MODE_SYSTEM_PROMPT,
+  SEARCH_TOOL_NAMES,
+  PRESENT_FILES_TOOL_NAMES,
+  PRESENT_FILES_SYSTEM_PROMPT,
+  WEB_SEARCH_SYSTEM_PROMPT,
+  SPARK_WEB_TOOL_SYSTEM_PROMPT,
+  VALIDATION_SUGGESTION_TOOL_NAMES,
+  VALIDATION_SUGGESTION_TOOL_DESCRIPTION,
+  buildImageGenerationSystemPrompt,
+  extractPresentedFiles,
+  mergeUniqueStrings,
+  resolveDebugMcpServerPath,
+  resolveImageGenerationMcpServerPath,
+  resolveMediaGenerationMcpServerPath,
+  resolvePlatformManagementMcpServerPath,
+  resolvePresentFilesMcpServer,
+  resolveSparkCanvasMcpServerPath,
+  resolveSparkMemoryMcpServerPath,
+  resolveWebSearchMcpServerPath,
+} from './session-mcp-tooling-helpers.js'
+
+import {
+  buildManagedAgentSystemPrompt,
+  buildWorkflowAtomicInstruction,
+  extractWorkflowApprovalCommentImpl,
+  extractWorkflowApprovalTextImpl,
+  findWorkflowApprovalAnswerImpl,
+  isWorkflowApprovalApprovedImpl,
+  hasWorkflowExecutableNodes,
+  resolveWorkflowArtifactExportPath,
+  shouldRunWorkflowAtomicNodeAsAgent,
+  validateWorkflowInputStructuredContent,
+  validateWorkflowRouteDecisionContent,
+  workflowAtomicMemberId,
+  // 内部使用
+  createWorkflowSubagentMember,
+  applyWorkflowNodeOverrides,
+  createWorkflowAtomicMember,
+  getDefaultWorkflowAtomicContent,
+  memberDisallowedToolsFromConfig,
+  normalizeWorkflowRouteOptions,
+  runWorkflowVerifyNode,
+  stringArrayConfig,
+  stringConfig,
+  workflowNodeToolIdsMeta,
+} from './session-workflow-helpers.js'
+export {
+  buildWorkflowAtomicInstruction,
+  extractWorkflowApprovalCommentImpl,
+  isWorkflowApprovalApprovedImpl,
+  hasWorkflowExecutableNodes,
+  resolveWorkflowArtifactExportPath,
+  shouldRunWorkflowAtomicNodeAsAgent,
+  validateWorkflowInputStructuredContent,
+  validateWorkflowRouteDecisionContent,
+  workflowAtomicMemberId,
+} from './session-workflow-helpers.js'
 import {
   AGENT_MESSAGE_DELIVERY_MODES,
   qualifyTeamToolName,
@@ -231,7 +319,7 @@ export type QuestionHandler = (
   questions: UserQuestionPrompt[],
   context: SDKQuestionRequestContext,
 ) => Promise<Record<string, unknown>>
-type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
+// AgentAdapterKind 类型定义迁出至 ./session-resume.ts（D-13 拆分）
 type ActiveExecution = {
   cancel(): void
   /** Hot-swap the permission mode for the currently executing turn. */
@@ -338,13 +426,9 @@ type SendTurnParams = {
 const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
 const SESSION_TITLE_MAX_LENGTH = 40
 const RECOVERY_SESSION_LIMIT = 10_000
-const HISTORY_CONTEXT_EVENT_LIMIT = 240
-const HISTORY_CONTEXT_ENTRY_LIMIT = 40
-const HISTORY_CONTEXT_MAX_CHARS = 24_000
-const HISTORY_CONTEXT_ENTRY_MAX_CHARS = 4_000
+// HISTORY_CONTEXT_* 常量与对话历史相关纯函数已迁出至 ./session-history-helpers.ts（D-13）。
 const TERMINAL_AGENT_STATUSES = new Set<string>(['idle', 'completed', 'cancelled', 'error'])
-// Keep SDK resume opt-in until the Claude Code child process can recover cleanly from resume failures.
-const ENABLE_CLAUDE_SDK_RESUME = false
+// ENABLE_CLAUDE_SDK_RESUME 从 ./session-resume.ts 导入（D-13 拆分）。
 const UNATTENDED_AUTOMATION_SYSTEM_PROMPT = [
   '[Automation Execution]',
   'This turn is running as an unattended scheduled automation.',
@@ -584,6 +668,7 @@ export class SessionService {
   >()
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
   private readonly commandRegistry = createBuiltinRegistry()
+  private readonly resumeGate = new ResumeGateManager()
   private readonly mcpService: McpService
   private teamDispatchService: TeamDispatchService | null = null
   private readonly teamMcpToolNames = new WeakMap<object, ReadonlySet<string>>()
@@ -1848,15 +1933,15 @@ export class SessionService {
     // 非 mention turn 保持现有 hash（向后兼容续会话）；
     // mention turn 把被 @ 的 agent.id 加入 hash，避免与 Host SDK session 冲突且让重复 @ 同一 member 可续会话。
     const stableSdkSessionId = isMentionTurn
-      ? makeSdkRuntimeSessionId(
+      ? this.resumeGate.makeRuntimeSessionId(
           sessionId,
           effectiveRuntimeProviderProfileId,
           model,
           agentAdapter,
           `mention:${agent.id}`,
         )
-      : makeSdkRuntimeSessionId(sessionId, effectiveRuntimeProviderProfileId, model, agentAdapter)
-    const sdkResumeSafe = isSdkResumeSafe({
+      : this.resumeGate.makeRuntimeSessionId(sessionId, effectiveRuntimeProviderProfileId, model, agentAdapter)
+    const sdkResumeSafe = this.resumeGate.isSafe({
       providerType: provider.provider_type,
       model,
       agentAdapter,
@@ -1872,7 +1957,7 @@ export class SessionService {
       previousPromptSnapshot.sdkSessionId === stableSdkSessionId
     const sdkSessionId = sdkResumeSafe
       ? stableSdkSessionId
-      : makeSdkRuntimeSessionId(
+      : this.resumeGate.makeRuntimeSessionId(
           sessionId,
           effectiveRuntimeProviderProfileId,
           model,
@@ -2253,102 +2338,12 @@ export class SessionService {
       }
     }
 
-    // ── Memory System：加载长期记忆注入 system prompt ──
-    let memoryBlock: string | undefined
-    try {
-      const settingsRepo = new SettingsRepository(this.db)
-      const settingsGet = (cat: string, key: string) => settingsRepo.get(cat, key)
-      const memoryEnabled = settingsGet('memory', 'enabled')
-      const memoryDisabled = memoryEnabled === false || memoryEnabled === 0
-      const memoryRepo = new MemoryRepository(this.db)
-      const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
-      // V2 检索栈：跨 turn 复用（getMemoryEmbeddingService 缓存负缓存状态），
-      // 让会话注入从「全量 description」升级为「feedback 全量 + 其余按种子查询的相关子集」。
-      const memorySearchRepo = this.getMemorySearchRepo()
-      const embeddingService = this.getMemoryEmbeddingService()
-      const modelService = new ModelService(
-        new ModelProfileRepository(this.db),
-        new ProviderProfileRepository(this.db),
-        settingsGet,
-        () => this.activeChatModelBySession.get(sessionId) ?? null,
-      )
-      const memorySearchService = new MemorySearchService(
-        memorySearchRepo,
-        embeddingService,
-        settingsGet,
-      )
-      // 触发检索索引回填 + 整合 job —— 仅在 memory.enabled 时（禁用时不产生 embedding API
-      // 调用 / 向量写入 / 整合 LLM 调用 / 全量 FTS 回填）。loadForSession 内部也有 enabled 短路。
-      if (!memoryDisabled) {
-        try {
-          memorySearchRepo.backfillFtsIfNeeded()
-        } catch (err) {
-          log.debug(
-            `memory FTS backfill skipped: ${err instanceof Error ? err.message : String(err)}`,
-          )
-        }
-        void embeddingService.backfillMissingVectors()
-        // 整合 job 触发（fire-and-forget）：条目达阈值 + 距上次整合≥间隔时回顾 MERGE/ELEVATE。
-        try {
-          const memModelService = modelService
-          const memCallLLM = async (prompt: string): Promise<string> => {
-            const r = await memModelService.complete(prompt)
-            return r.available ? r.text : '[]'
-          }
-          const memEntityRepo = new MemoryEntityRepository(this.db)
-          const consolidationService = new MemoryConsolidationService(
-            memoryRepo,
-            memoryStore,
-            settingsGet,
-            memCallLLM,
-            memEntityRepo,
-            (c: string, k: string, v: unknown) => settingsRepo.set(c, k, v),
-          )
-          const consoScopes: Array<{
-            scope: 'user' | 'project' | 'agent'
-            scopeRef: string | null
-          }> = [{ scope: 'user', scopeRef: null }]
-          if (primaryWorkspaceId != null && primaryWorkspaceId.length > 0) {
-            consoScopes.push({ scope: 'project', scopeRef: primaryWorkspaceId })
-          }
-          consoScopes.push({ scope: 'agent', scopeRef: runtimeAgent.id })
-          // info 级让"整合 job 是否被触发"在默认日志级别下可观测（审查 HIGH#17）
-          log.info(
-            `memory consolidation trigger fired for agent=${runtimeAgent.id} (fire-and-forget)`,
-          )
-          void consolidationService.maybeConsolidate(consoScopes)
-        } catch (err) {
-          log.warn(
-            `memory consolidation trigger failed: ${err instanceof Error ? err.message : String(err)}`,
-          )
-        }
-      }
-      const memoryReader = new MemoryReaderService(
-        memoryRepo,
-        memoryStore,
-        settingsGet,
-        memorySearchService,
-      )
-      // 种子查询：agent 身份 + workspace 名，驱动非 feedback 记忆的相关性检索
-      const wsName = workspaceRootPath ? path.basename(workspaceRootPath) : ''
-      const seedQuery = [runtimeAgent.name, runtimeAgent.description, wsName]
-        .filter((s) => typeof s === 'string' && s.length > 0)
-        .join(' ')
-        .slice(0, 500)
-      const memoryInjection = await memoryReader.loadForSession({
-        workspaceId: primaryWorkspaceId ?? '',
-        agentId: runtimeAgent.id,
-        ...(seedQuery.length > 0 ? { seedQuery } : {}),
-      })
-      memoryBlock = memoryInjection.block || undefined
-      if (memoryBlock != null) {
-        log.debug(`Memory injected: ${memoryInjection.injectedIds.length} entries`)
-      }
-    } catch (err) {
-      log.warn(
-        `Memory injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
-      )
-    }
+    const memoryBlock = await this.loadMemoryBlockForTurn(
+      sessionId,
+      workspaceRootPath,
+      primaryWorkspaceId,
+      runtimeAgent,
+    )
 
     const composedSystemPrompt = joinPromptSections(
       APP_IDENTITY_SYSTEM_PROMPT,
@@ -3146,141 +3141,7 @@ export class SessionService {
     // recall_memory 工具，进程内 MCP server（无子进程 / 无 bridge HTTP），直接闭包访问
     // this.db。CLI 路径（codex CLI / claude CLI）在 tryStartCodexCliTurn 里走 stdio
     // resolveSparkMemoryMcpServer；本方法（tryStartSDKTurn）只处理 SDK 路径。
-    try {
-      const memoryEnabled = new SettingsRepository(this.db).get('memory', 'enabled')
-      if (memoryEnabled !== false && memoryEnabled !== 0) {
-        const memFactory = await loadSdkMcpFactory()
-        if (memFactory != null) {
-          const { createSdkMcpServer: memCreateServer, tool: memTool } = memFactory
-          const memSettingsRepo = new SettingsRepository(this.db)
-          const memSettingsGet = (c: string, k: string) => memSettingsRepo.get(c, k)
-          const memRepo = new MemoryRepository(this.db)
-          const memStore = new MemoryStoreService(undefined, config.workspaceRootPath)
-          const memSearchRepo = new MemorySearchRepository(this.db)
-          const memEntityRepo = new MemoryEntityRepository(this.db)
-          const memModelService = new ModelService(
-            new ModelProfileRepository(this.db),
-            new ProviderProfileRepository(this.db),
-            memSettingsGet,
-            () => this.activeChatModelBySession.get(sessionId) ?? null,
-          )
-          const memEmbeddingService = new EmbeddingService(
-            memModelService,
-            memSearchRepo,
-            memSettingsGet,
-          )
-          const memSearchService = new MemorySearchService(
-            memSearchRepo,
-            memEmbeddingService,
-            memSettingsGet,
-          )
-          const memReader = new MemoryReaderService(
-            memRepo,
-            memStore,
-            memSettingsGet,
-            memSearchService,
-          )
-          const memScopes: MemoryScopeFilter[] = [{ scope: 'user', scopeRef: null }]
-          if (options.primaryWorkspaceId != null && options.primaryWorkspaceId.length > 0) {
-            memScopes.push({ scope: 'project', scopeRef: options.primaryWorkspaceId })
-          }
-          if (options.agentId != null && options.agentId.length > 0) {
-            memScopes.push({ scope: 'agent', scopeRef: options.agentId })
-          }
-
-          const searchMemoryTool = memTool(
-            'search_memory',
-            [
-              '按语义/关键词搜索长期记忆（user/project/agent 三层，自动混合 FTS+向量检索）。',
-              '返回匹配条目的 id + 摘要列表；需要某条的完整正文时再用 recall_memory。',
-              '何时调用：system prompt 里的记忆摘要不足以决策、或想确认是否有相关历史记忆时。',
-            ].join(' '),
-            {
-              query: z.string().min(1).max(500),
-              type: z.enum(['user', 'feedback', 'project', 'reference']).optional(),
-              limit: z.number().int().min(1).max(20).optional(),
-            } as Record<string, unknown>,
-            async (args: Record<string, unknown>) => {
-              const query = typeof args.query === 'string' ? args.query : ''
-              const type = typeof args.type === 'string' ? args.type : undefined
-              const limit = typeof args.limit === 'number' ? args.limit : 8
-              const opts = {
-                scopes: memScopes,
-                ...(type != null ? { type } : {}),
-                limit,
-              }
-              const hits = await memSearchService.search(query, opts)
-              if (hits == null) {
-                return {
-                  content: [{ type: 'text' as const, text: '记忆检索暂不可用（已降级）。' }],
-                }
-              }
-              if (hits.length === 0) {
-                return { content: [{ type: 'text' as const, text: '没有匹配的长期记忆。' }] }
-              }
-              const lines = hits.map(
-                (h) =>
-                  `- [${h.entry.id}] ${h.entry.name} (${h.entry.type}): ${h.entry.description}`,
-              )
-              // 一跳实体扩展：对 top 命中查共享实体的其他有效记忆，去重（排除已命中）
-              const hitIds = new Set(hits.map((h) => h.entry.id))
-              const relatedMap = new Map<
-                string,
-                { id: string; name: string; type: string; description: string }
-              >()
-              for (const h of hits.slice(0, 3)) {
-                try {
-                  for (const r of memEntityRepo.findRelated(h.entry.id, 3)) {
-                    if (!hitIds.has(r.id) && !relatedMap.has(r.id)) {
-                      relatedMap.set(r.id, {
-                        id: r.id,
-                        name: r.name,
-                        type: r.type,
-                        description: r.description,
-                      })
-                    }
-                  }
-                } catch {
-                  // entity 表未就绪（旧库未跑 043）→ 静默跳过扩展
-                }
-              }
-              let text = lines.join('\n')
-              if (relatedMap.size > 0) {
-                const relLines = [...relatedMap.values()]
-                  .slice(0, 5)
-                  .map((r) => `- [${r.id}] ${r.name} (${r.type}): ${r.description}`)
-                text += `\n\n经实体关联的其他记忆：\n${relLines.join('\n')}`
-              }
-              return { content: [{ type: 'text' as const, text }] }
-            },
-          )
-
-          const recallMemoryTool = memTool(
-            'recall_memory',
-            '读取一条长期记忆的完整正文（含 Why / How to apply）。传入 search_memory 返回或 system prompt 摘要里方括号内的 id。',
-            { id: z.string().min(1) } as Record<string, unknown>,
-            async (args: Record<string, unknown>) => {
-              const id = typeof args.id === 'string' ? args.id : ''
-              const r = await memReader.recall(id)
-              const text = r.error != null ? `recall 失败：${r.error}` : r.content
-              return { content: [{ type: 'text' as const, text }] }
-            },
-          )
-
-          mcpServers.spark_memory = memCreateServer({
-            name: 'spark_memory',
-            version: '1.0.0',
-            tools: [searchMemoryTool, recallMemoryTool],
-          })
-        }
-      }
-    } catch (err) {
-      log.warn(
-        `spark_memory MCP server setup failed (non-fatal): ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      )
-    }
+    await this.attachSparkMemoryMcpServer(sessionId, config, options, mcpServers)
 
     const completeAssistantEvents: AssistantMessageEvent[] = []
     // 标题精炼、目标契约/进度解析、记忆抽取都依赖完整 assistant 正文。
@@ -4011,6 +3872,258 @@ export class SessionService {
       log.warn(
         `refineSessionTitleAsync failed: ${err instanceof Error ? err.message : String(err)}`,
       )
+    }
+  }
+
+  /**
+   * Attach spark_memory MCP server (search_memory + recall_memory tools) to the
+   * provided mcpServers map. Skipped silently if memory is disabled or setup fails.
+   *
+   * Extracted from tryStartSDKTurn (W4.3 B-2.1) — closure-free, pure instance method.
+   */
+  private async attachSparkMemoryMcpServer(
+    sessionId: string,
+    config: SDKExecutorConfig,
+    options: TryStartSDKTurnOptions,
+    mcpServers: Record<string, SDKMcpServerConfig>,
+  ): Promise<void> {
+    try {
+      const memoryEnabled = new SettingsRepository(this.db).get('memory', 'enabled')
+      if (memoryEnabled !== false && memoryEnabled !== 0) {
+        const memFactory = await loadSdkMcpFactory()
+        if (memFactory != null) {
+          const { createSdkMcpServer: memCreateServer, tool: memTool } = memFactory
+          const memSettingsRepo = new SettingsRepository(this.db)
+          const memSettingsGet = (c: string, k: string) => memSettingsRepo.get(c, k)
+          const memRepo = new MemoryRepository(this.db)
+          const memStore = new MemoryStoreService(undefined, config.workspaceRootPath)
+          const memSearchRepo = new MemorySearchRepository(this.db)
+          const memEntityRepo = new MemoryEntityRepository(this.db)
+          const memModelService = new ModelService(
+            new ModelProfileRepository(this.db),
+            new ProviderProfileRepository(this.db),
+            memSettingsGet,
+            () => this.activeChatModelBySession.get(sessionId) ?? null,
+          )
+          const memEmbeddingService = new EmbeddingService(
+            memModelService,
+            memSearchRepo,
+            memSettingsGet,
+          )
+          const memSearchService = new MemorySearchService(
+            memSearchRepo,
+            memEmbeddingService,
+            memSettingsGet,
+          )
+          const memReader = new MemoryReaderService(
+            memRepo,
+            memStore,
+            memSettingsGet,
+            memSearchService,
+          )
+          const memScopes: MemoryScopeFilter[] = [{ scope: 'user', scopeRef: null }]
+          if (options.primaryWorkspaceId != null && options.primaryWorkspaceId.length > 0) {
+            memScopes.push({ scope: 'project', scopeRef: options.primaryWorkspaceId })
+          }
+          if (options.agentId != null && options.agentId.length > 0) {
+            memScopes.push({ scope: 'agent', scopeRef: options.agentId })
+          }
+
+          const searchMemoryTool = memTool(
+            'search_memory',
+            [
+              '按语义/关键词搜索长期记忆（user/project/agent 三层，自动混合 FTS+向量检索）。',
+              '返回匹配条目的 id + 摘要列表；需要某条的完整正文时再用 recall_memory。',
+              '何时调用：system prompt 里的记忆摘要不足以决策、或想确认是否有相关历史记忆时。',
+            ].join(' '),
+            {
+              query: z.string().min(1).max(500),
+              type: z.enum(['user', 'feedback', 'project', 'reference']).optional(),
+              limit: z.number().int().min(1).max(20).optional(),
+            } as Record<string, unknown>,
+            async (args: Record<string, unknown>) => {
+              const query = typeof args.query === 'string' ? args.query : ''
+              const type = typeof args.type === 'string' ? args.type : undefined
+              const limit = typeof args.limit === 'number' ? args.limit : 8
+              const opts = {
+                scopes: memScopes,
+                ...(type != null ? { type } : {}),
+                limit,
+              }
+              const hits = await memSearchService.search(query, opts)
+              if (hits == null) {
+                return {
+                  content: [{ type: 'text' as const, text: '记忆检索暂不可用（已降级）。' }],
+                }
+              }
+              if (hits.length === 0) {
+                return { content: [{ type: 'text' as const, text: '没有匹配的长期记忆。' }] }
+              }
+              const lines = hits.map(
+                (h) =>
+                  `- [${h.entry.id}] ${h.entry.name} (${h.entry.type}): ${h.entry.description}`,
+              )
+              const hitIds = new Set(hits.map((h) => h.entry.id))
+              const relatedMap = new Map<
+                string,
+                { id: string; name: string; type: string; description: string }
+              >()
+              for (const h of hits.slice(0, 3)) {
+                try {
+                  for (const r of memEntityRepo.findRelated(h.entry.id, 3)) {
+                    if (!hitIds.has(r.id) && !relatedMap.has(r.id)) {
+                      relatedMap.set(r.id, {
+                        id: r.id,
+                        name: r.name,
+                        type: r.type,
+                        description: r.description,
+                      })
+                    }
+                  }
+                } catch {
+                  // entity 表未就绪（旧库未跑 043）→ 静默跳过扩展
+                }
+              }
+              let text = lines.join('\n')
+              if (relatedMap.size > 0) {
+                const relLines = [...relatedMap.values()]
+                  .slice(0, 5)
+                  .map((r) => `- [${r.id}] ${r.name} (${r.type}): ${r.description}`)
+                text += `\n\n经实体关联的其他记忆：\n${relLines.join('\n')}`
+              }
+              return { content: [{ type: 'text' as const, text }] }
+            },
+          )
+
+          const recallMemoryTool = memTool(
+            'recall_memory',
+            '读取一条长期记忆的完整正文（含 Why / How to apply）。传入 search_memory 返回或 system prompt 摘要里方括号内的 id。',
+            { id: z.string().min(1) } as Record<string, unknown>,
+            async (args: Record<string, unknown>) => {
+              const id = typeof args.id === 'string' ? args.id : ''
+              const r = await memReader.recall(id)
+              const text = r.error != null ? `recall 失败：${r.error}` : r.content
+              return { content: [{ type: 'text' as const, text }] }
+            },
+          )
+
+          mcpServers.spark_memory = memCreateServer({
+            name: 'spark_memory',
+            version: '1.0.0',
+            tools: [searchMemoryTool, recallMemoryTool],
+          })
+        }
+      }
+    } catch (err) {
+      log.warn(
+        `spark_memory MCP server setup failed (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    }
+  }
+
+  /**
+   * Load long-term memory block to inject into system prompt for the current turn.
+   * Returns undefined if memory is disabled, not configured, or load failed (non-fatal).
+   *
+   * Extracted from startTurn (W4.3 B-2.2) — closure-free, pure instance method.
+   * Fires memory consolidation job as fire-and-forget when enabled.
+   */
+  private async loadMemoryBlockForTurn(
+    sessionId: string,
+    workspaceRootPath: string | undefined,
+    primaryWorkspaceId: string | undefined,
+    runtimeAgent: { id: string; name: string; description?: string },
+  ): Promise<string | undefined> {
+    try {
+      const settingsRepo = new SettingsRepository(this.db)
+      const settingsGet = (cat: string, key: string) => settingsRepo.get(cat, key)
+      const memoryEnabled = settingsGet('memory', 'enabled')
+      const memoryDisabled = memoryEnabled === false || memoryEnabled === 0
+      const memoryRepo = new MemoryRepository(this.db)
+      const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
+      const memorySearchRepo = this.getMemorySearchRepo()
+      const embeddingService = this.getMemoryEmbeddingService()
+      const modelService = new ModelService(
+        new ModelProfileRepository(this.db),
+        new ProviderProfileRepository(this.db),
+        settingsGet,
+        () => this.activeChatModelBySession.get(sessionId) ?? null,
+      )
+      const memorySearchService = new MemorySearchService(
+        memorySearchRepo,
+        embeddingService,
+        settingsGet,
+      )
+      if (!memoryDisabled) {
+        try {
+          memorySearchRepo.backfillFtsIfNeeded()
+        } catch (err) {
+          log.debug(
+            `memory FTS backfill skipped: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
+        void embeddingService.backfillMissingVectors()
+        try {
+          const memModelService = modelService
+          const memCallLLM = async (prompt: string): Promise<string> => {
+            const r = await memModelService.complete(prompt)
+            return r.available ? r.text : '[]'
+          }
+          const memEntityRepo = new MemoryEntityRepository(this.db)
+          const consolidationService = new MemoryConsolidationService(
+            memoryRepo,
+            memoryStore,
+            settingsGet,
+            memCallLLM,
+            memEntityRepo,
+            (c: string, k: string, v: unknown) => settingsRepo.set(c, k, v),
+          )
+          const consoScopes: Array<{
+            scope: 'user' | 'project' | 'agent'
+            scopeRef: string | null
+          }> = [{ scope: 'user', scopeRef: null }]
+          if (primaryWorkspaceId != null && primaryWorkspaceId.length > 0) {
+            consoScopes.push({ scope: 'project', scopeRef: primaryWorkspaceId })
+          }
+          consoScopes.push({ scope: 'agent', scopeRef: runtimeAgent.id })
+          log.info(
+            `memory consolidation trigger fired for agent=${runtimeAgent.id} (fire-and-forget)`,
+          )
+          void consolidationService.maybeConsolidate(consoScopes)
+        } catch (err) {
+          log.warn(
+            `memory consolidation trigger failed: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
+      }
+      const memoryReader = new MemoryReaderService(
+        memoryRepo,
+        memoryStore,
+        settingsGet,
+        memorySearchService,
+      )
+      const wsName = workspaceRootPath ? path.basename(workspaceRootPath) : ''
+      const seedQuery = [runtimeAgent.name, runtimeAgent.description, wsName]
+        .filter((s) => typeof s === 'string' && s.length > 0)
+        .join(' ')
+        .slice(0, 500)
+      const memoryInjection = await memoryReader.loadForSession({
+        workspaceId: primaryWorkspaceId ?? '',
+        agentId: runtimeAgent.id,
+        ...(seedQuery.length > 0 ? { seedQuery } : {}),
+      })
+      const memoryBlock = memoryInjection.block || undefined
+      if (memoryBlock != null) {
+        log.debug(`Memory injected: ${memoryInjection.injectedIds.length} entries`)
+      }
+      return memoryBlock
+    } catch (err) {
+      log.warn(
+        `Memory injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
+      return undefined
     }
   }
 
@@ -5961,14 +6074,14 @@ export class SessionService {
     const canContinueDiscussionSession =
       discussionId != null &&
       !isCodexMember &&
-      isSdkResumeSafe({
+      this.resumeGate.isSafe({
         providerType: provider.provider_type,
         model,
         agentAdapter: memberAdapter,
         ...(providerConfig.apiEndpoint != null ? { apiEndpoint: providerConfig.apiEndpoint } : {}),
       })
     const memberSdkSessionId = canContinueDiscussionSession
-      ? makeSdkRuntimeSessionId(
+      ? this.resumeGate.makeRuntimeSessionId(
           sessionId,
           providerProfileId,
           model,
@@ -7962,185 +8075,9 @@ function getLatestTurnIdFromEvents(eventRepo: EventRepository, sessionId: string
   return turnId
 }
 
-export function createUserCancelledTurnEvent(
-  sessionId: string,
-  turnId: string,
-  timestamp: string = new Date().toISOString(),
-): AgentStatusEvent {
-  return {
-    id: crypto.randomUUID(),
-    type: 'agent_status',
-    sessionId,
-    turnId,
-    timestamp,
-    seq: 0,
-    status: 'cancelled',
-    message: 'Stopped by user',
-  }
-}
 
-export function createInterruptedTurnEvents(
-  sessionId: string,
-  turnId: string,
-  seq: number,
-  timestamp: string = new Date().toISOString(),
-  persistedEvents: AgentEvent[] = [],
-): AgentEvent[] {
-  let nextSeq = seq
-  const terminalizer = new StreamTerminalizer()
-  for (const event of persistedEvents) terminalizer.observe(event)
-  const completed = terminalizer.finalize(() => ({
-    id: crypto.randomUUID(),
-    sessionId,
-    turnId,
-    timestamp,
-    seq: nextSeq++,
-  }))
-  return [
-    ...completed,
-    {
-      id: crypto.randomUUID(),
-      type: 'agent_error',
-      sessionId,
-      turnId,
-      timestamp,
-      seq: nextSeq++,
-      code: 'APP_RESTARTED',
-      message: 'The previous turn was stopped because Spark Agent restarted.',
-      retryable: true,
-    },
-    {
-      id: crypto.randomUUID(),
-      type: 'agent_status',
-      sessionId,
-      turnId,
-      timestamp,
-      seq: nextSeq,
-      status: 'cancelled',
-      message: 'Stopped after app restart',
-    },
-  ]
-}
 
-export function shouldRunTurnPostProcessing(status: AgentStatusEvent['status'] | null): boolean {
-  return status === 'completed'
-}
 
-function buildConversationHistoryPrompt(
-  eventRepo: EventRepository,
-  sessionId: string,
-): string | undefined {
-  const rows = eventRepo.queryBySession({
-    sessionId,
-    limit: HISTORY_CONTEXT_EVENT_LIMIT,
-  }).events
-
-  const events: AgentEvent[] = []
-  for (const row of rows) {
-    try {
-      events.push(JSON.parse(row.event_json) as AgentEvent)
-    } catch {
-      // Ignore malformed historical rows.
-    }
-  }
-
-  return buildConversationHistoryPromptFromEvents(events)
-}
-
-export function buildConversationHistoryPromptFromEvents(events: AgentEvent[]): string | undefined {
-  const entries = limitHistoryContextEntries(buildDialogueEntries(events))
-  if (entries.length === 0) return undefined
-
-  const transcript = entries
-    .map((entry) => `${entry.role}: ${truncateHistoryEntry(entry.content)}`)
-    .join('\n\n')
-
-  return [
-    '[Spark Session History]',
-    'The following transcript is persisted from earlier turns in this same Spark session. Use it as conversation context for the current user message. Do not restate it unless it is relevant.',
-    transcript,
-  ].join('\n\n')
-}
-
-type DialogueEntry = { role: 'User' | 'Assistant'; content: string }
-
-function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
-  const turns = new Map<
-    string,
-    {
-      userParts: string[]
-      snapshotUserMessage?: string
-      assistantParts: string[]
-      assistantFinal?: string
-    }
-  >()
-  const turnOrder: string[] = []
-
-  const getTurn = (turnId: string) => {
-    let turn = turns.get(turnId)
-    if (turn == null) {
-      turn = { userParts: [], assistantParts: [] }
-      turns.set(turnId, turn)
-      turnOrder.push(turnId)
-    }
-    return turn
-  }
-
-  for (const event of events) {
-    if (
-      event.type !== 'user_message' &&
-      event.type !== 'assistant_message' &&
-      event.type !== 'turn_prompt_snapshot'
-    )
-      continue
-    const turn = getTurn(event.turnId)
-    if (event.type === 'turn_prompt_snapshot') {
-      const userMessage = event.userMessage.trim()
-      if (userMessage.length > 0) turn.snapshotUserMessage = userMessage
-      continue
-    }
-    if (event.type === 'user_message') {
-      turn.userParts.push(event.content)
-      continue
-    }
-    if (event.mode === 'complete' && event.isFinal) {
-      turn.assistantFinal = event.content
-    } else {
-      turn.assistantParts.push(event.content)
-    }
-  }
-
-  const entries: DialogueEntry[] = []
-  for (const turnId of turnOrder) {
-    const turn = turns.get(turnId)
-    if (turn == null) continue
-    const userContent = turn.snapshotUserMessage?.trim() || joinHistoryParts(turn.userParts) || ''
-    if (userContent.length > 0) entries.push({ role: 'User', content: userContent })
-    const assistantContent = turn.assistantFinal?.trim() || joinHistoryParts(turn.assistantParts)
-    if (assistantContent.length > 0) entries.push({ role: 'Assistant', content: assistantContent })
-  }
-  return entries
-}
-
-function joinHistoryParts(parts: string[]): string {
-  return parts.join('\n').replace(/\s+\n/g, '\n').trim()
-}
-
-function limitHistoryContextEntries(entries: DialogueEntry[]): DialogueEntry[] {
-  const selected = entries.slice(-HISTORY_CONTEXT_ENTRY_LIMIT)
-  let total = selected.reduce((sum, entry) => sum + entry.content.length, 0)
-  while (selected.length > 0 && total > HISTORY_CONTEXT_MAX_CHARS) {
-    const removed = selected.shift()
-    total -= removed?.content.length ?? 0
-  }
-  return selected
-}
-
-function truncateHistoryEntry(content: string): string {
-  const normalized = content.trim()
-  if (normalized.length <= HISTORY_CONTEXT_ENTRY_MAX_CHARS) return normalized
-  return `${normalized.slice(0, HISTORY_CONTEXT_ENTRY_MAX_CHARS).trimEnd()}\n[truncated]`
-}
 
 function listSessionCheckpointsFromEvents(
   eventRepo: EventRepository,
@@ -8850,1124 +8787,8 @@ export function formatReplyForHost(reply: import('@spark/protocol').TeamA2AReply
   return `${header}\n${reply.content}${artifactsLine}`
 }
 
-function buildManagedAgentSystemPrompt(
-  agent: AgentItem,
-  workflow: WorkflowItem | null,
-  workflowExecutionMode: WorkflowExecutionMode = 'guided',
-): string {
-  const sections: string[] = [
-    '[Managed Agent]',
-    `Agent: ${agent.name} (${agent.id})`,
-    agent.description.trim() ? `Description: ${agent.description.trim()}` : '',
-    agent.prompt.trim() ? `[Agent Instructions]\n${agent.prompt.trim()}` : '',
-  ].filter((section) => section.trim().length > 0)
 
-  const workflowPrompt =
-    workflow != null ? buildWorkflowSystemPrompt(workflow, workflowExecutionMode) : ''
-  if (workflowPrompt.trim().length > 0) sections.push(workflowPrompt)
-  return sections.join('\n\n')
-}
 
-/**
- * 判定一个 workflow 是否有真正可派发执行的节点——只有命中 true 时，宿主才会被
- * 归类为「编排宿主」（注入 workflow_run 工具面 + [Orchestration Mode] 引导提示词；
- * 不再剥离任何工具，见 buildOrchestrationModeSystemPrompt）。
- * kind:"agent" 节点若没有绑定 config.agentId，或绑定到不可用 worker，语义上是继承
- * fallbackAgentId 指向的宿主 Agent；没有 fallback 时才保持旧的 guided 判定。
- * 单独导出以便直接用真实 graph 数据做回归测试。
- */
-export function hasWorkflowExecutableNodes(
-  graph: NormalizedWorkflowGraph,
-  enabledWorkflowWorkerIds?: ReadonlySet<string>,
-  fallbackAgentId?: string,
-): boolean {
-  const fallback = typeof fallbackAgentId === 'string' ? fallbackAgentId.trim() : ''
-  return graph.nodes.some((node) => {
-    if (node.kind !== 'agent' && node.kind !== 'subagent') return true
-    const workerId = getWorkflowNodeWorkerId(node)
-    if (workerId == null || workerId.length === 0) return fallback.length > 0
-    if (node.kind === 'subagent') return true
-    if (enabledWorkflowWorkerIds == null) return true
-    return enabledWorkflowWorkerIds.has(workerId) || fallback.length > 0
-  })
-}
-
-function resolveImageGenerationMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/image-generation-mcp-server.mjs'),
-    path.resolve(here, '../tools/image-generation-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/image-generation-mcp-server.mjs'),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
-}
-
-function resolveMediaGenerationMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/media-generation-mcp-server.mjs'),
-    path.resolve(here, '../tools/media-generation-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/media-generation-mcp-server.mjs'),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
-}
-
-function buildImageGenerationSystemPrompt(input: {
-  name: string
-  model: string
-  provider: string
-  apiType: string
-  outputDir: string
-  apiEndpoint?: string
-}): string {
-  return [
-    '## Image Generation Capability',
-    'The current runtime has a configured image generation model.',
-    '',
-    `- Configuration name: ${input.name}`,
-    `- Model ID: ${input.model}`,
-    `- Image provider: ${input.provider}`,
-    `- Invocation mode: ${input.apiType}`,
-    `- API base URL: ${input.apiEndpoint ?? '(provider default)'}`,
-    `- Output directory: ${input.outputDir}`,
-    '',
-    'Use `mcp__spark_image__generate_image` when the user explicitly asks to create an image, poster, illustration, visual draft, icon, cover, or other generated image asset.',
-    'Do not ask for or reveal API keys. Credentials are injected only into the local image MCP server.',
-    'If the user gives semantic sizing such as square, portrait, landscape, poster, or banner, translate it to an appropriate `size` value before calling the tool.',
-    'Pass provider-specific fields through `extraJson` only when they are relevant and reasonably supported by the configured provider.',
-    'After success, show the generated `urls` or `files` from the structured result. Local file paths can be shown directly as Markdown image links.',
-    'Do not auto-retry image generation after a provider failure; report the error and suggest model, prompt, size, or provider-configuration adjustments.',
-  ].join('\n')
-}
-
-function mergeUniqueStrings(a: string[] | undefined, b: string[]): string[] {
-  return [...new Set([...(a ?? []), ...b])]
-}
-
-function extractPresentedFiles(
-  event: AgentEvent,
-  workspaceRootPath: string,
-): Array<{ path: string; title?: string }> | null {
-  if (
-    event.type !== 'tool_result' ||
-    event.status !== 'success' ||
-    !event.toolName.toLowerCase().endsWith('present_files')
-  ) {
-    return null
-  }
-
-  const payload = parsePresentedFilesPayload(event.output)
-  if (payload == null || !Array.isArray(payload.files)) return null
-
-  let workspaceRoot: string
-  try {
-    workspaceRoot = realpathSync(workspaceRootPath)
-  } catch {
-    return null
-  }
-
-  const files: Array<{ path: string; title?: string }> = []
-  const seen = new Set<string>()
-  for (const item of payload.files.slice(0, 20)) {
-    if (item == null || typeof item !== 'object' || Array.isArray(item)) continue
-    const record = item as Record<string, unknown>
-    if (typeof record.path !== 'string' || record.path.trim().length === 0) continue
-    try {
-      const resolved = realpathSync(
-        path.isAbsolute(record.path) ? record.path : path.resolve(workspaceRoot, record.path),
-      )
-      const relative = path.relative(workspaceRoot, resolved)
-      const outsideWorkspace =
-        relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)
-      if (outsideWorkspace || !statSync(resolved).isFile()) {
-        continue
-      }
-      if (seen.has(resolved)) continue
-      seen.add(resolved)
-      const title = typeof record.title === 'string' ? record.title.trim().slice(0, 120) : ''
-      files.push({ path: resolved, ...(title ? { title } : {}) })
-    } catch {
-      // The tool result is untrusted input; silently drop invalid or vanished files.
-    }
-  }
-  return files
-}
-
-function parsePresentedFilesPayload(output: unknown): Record<string, unknown> | null {
-  if (output != null && typeof output === 'object' && !Array.isArray(output)) {
-    const record = output as Record<string, unknown>
-    if (Array.isArray(record.files)) return record
-    if (Array.isArray(record.content)) {
-      for (const block of record.content) {
-        const parsed = parsePresentedFilesPayload(block)
-        if (parsed != null) return parsed
-      }
-    }
-    if (typeof record.text === 'string') return parsePresentedFilesPayload(record.text)
-  }
-  if (typeof output !== 'string') return null
-  try {
-    const parsed = JSON.parse(output) as unknown
-    return parsePresentedFilesPayload(parsed)
-  } catch {
-    return null
-  }
-}
-
-/**
- * All platform management tool names (SDK namespace: mcp__spark_platform__).
- *
- * The Platform Management MCP server (`packages/agent-runtime/src/tools/platform-management-mcp-server.mjs`)
- * exposes this set; if you add a new tool to `toolDefinitions()` in that file,
- * also append its SDK-namespaced name here, otherwise Claude SDK will refuse
- * to dispatch the tool call (it filters by the `allowedTools` allow-list).
- */
-const PLATFORM_TOOL_NAMES: string[] = [
-  // Skills
-  'mcp__spark_platform__skills_list',
-  'mcp__spark_platform__skills_load',
-  'mcp__spark_platform__skills_search',
-  'mcp__spark_platform__skills_search_github',
-  'mcp__spark_platform__skills_install',
-  'mcp__spark_platform__skills_install_github',
-  'mcp__spark_platform__skills_uninstall',
-  'mcp__spark_platform__skills_toggle',
-  // MCP Servers
-  'mcp__spark_platform__mcp_list',
-  'mcp__spark_platform__mcp_create',
-  'mcp__spark_platform__mcp_update',
-  'mcp__spark_platform__mcp_delete',
-  'mcp__spark_platform__mcp_status',
-  // Providers
-  'mcp__spark_platform__providers_list',
-  'mcp__spark_platform__providers_get',
-  'mcp__spark_platform__providers_create',
-  'mcp__spark_platform__providers_update',
-  'mcp__spark_platform__providers_delete',
-  'mcp__spark_platform__providers_health_check',
-  'mcp__spark_platform__providers_set_default',
-  'mcp__spark_platform__providers_set_default_model',
-  // Workflows
-  'mcp__spark_platform__workflows_list',
-  'mcp__spark_platform__workflows_get',
-  'mcp__spark_platform__workflows_create',
-  'mcp__spark_platform__workflows_update',
-  'mcp__spark_platform__workflows_delete',
-  // Agents
-  'mcp__spark_platform__agents_list',
-  'mcp__spark_platform__agents_get',
-  'mcp__spark_platform__agents_create',
-  'mcp__spark_platform__agents_update',
-  'mcp__spark_platform__agents_delete',
-  // Teams
-  'mcp__spark_platform__teams_list',
-  'mcp__spark_platform__teams_get',
-  'mcp__spark_platform__teams_create',
-  'mcp__spark_platform__teams_update',
-  'mcp__spark_platform__teams_delete',
-  // Spark install artifacts
-  'mcp__spark_platform__artifacts_list',
-  'mcp__spark_platform__artifacts_resolve',
-  // Settings
-  'mcp__spark_platform__settings_get',
-  'mcp__spark_platform__settings_set',
-  'mcp__spark_platform__settings_get_category',
-  'mcp__spark_platform__settings_get_all',
-  // GitHub Connector
-  'mcp__spark_platform__github_status',
-  'mcp__spark_platform__github_list_repositories',
-  'mcp__spark_platform__github_get_repository',
-  'mcp__spark_platform__github_read_repository_file',
-  'mcp__spark_platform__github_create_branch',
-  'mcp__spark_platform__github_upsert_repository_file',
-  'mcp__spark_platform__github_list_issues',
-  'mcp__spark_platform__github_get_issue',
-  'mcp__spark_platform__github_create_issue',
-  'mcp__spark_platform__github_update_issue',
-  'mcp__spark_platform__github_comment_issue',
-  'mcp__spark_platform__github_list_pull_requests',
-  'mcp__spark_platform__github_get_pull_request',
-  'mcp__spark_platform__github_create_pull_request',
-  'mcp__spark_platform__github_comment_pull_request',
-  // Sessions (self-management)
-  'mcp__spark_platform__sessions_get',
-  'mcp__spark_platform__sessions_switch_model',
-  'mcp__spark_platform__sessions_switch_provider',
-  'mcp__spark_platform__sessions_switch_mode',
-  'mcp__spark_platform__sessions_switch_permission',
-  'mcp__spark_platform__sessions_switch_reasoning_effort',
-  // Board Tasks
-  'mcp__spark_platform__board_list',
-  'mcp__spark_platform__board_get',
-  'mcp__spark_platform__board_create',
-  'mcp__spark_platform__board_update',
-  'mcp__spark_platform__board_delete',
-  'mcp__spark_platform__board_batch_create',
-  'mcp__spark_platform__board_batch_update',
-  'mcp__spark_platform__board_batch_delete',
-  'mcp__spark_platform__board_restore',
-  'mcp__spark_platform__board_permanent_delete',
-]
-
-function resolvePlatformManagementMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    // Packed desktop build: `apps/desktop/out/main/index.js` + copied `tools/*.mjs`
-    path.resolve(here, 'tools/platform-management-mcp-server.mjs'),
-    // When bundled one level deeper (defensive)
-    path.resolve(here, '../tools/platform-management-mcp-server.mjs'),
-    // Dev / monorepo source checkout
-    path.resolve(
-      process.cwd(),
-      'packages/agent-runtime/src/tools/platform-management-mcp-server.mjs',
-    ),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
-}
-
-function resolveWebSearchMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/web-search-mcp-server.mjs'),
-    path.resolve(here, '../tools/web-search-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/web-search-mcp-server.mjs'),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
-}
-
-function resolveSparkMemoryMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/spark-memory-mcp-server.mjs'),
-    path.resolve(here, '../tools/spark-memory-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/spark-memory-mcp-server.mjs'),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
-}
-
-function resolveSparkCanvasMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/spark-canvas-mcp-server.mjs'),
-    path.resolve(here, '../tools/spark-canvas-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/spark-canvas-mcp-server.mjs'),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
-}
-
-function resolvePresentFilesMcpServer(workspaceRootPath: string): SDKMcpServerConfig | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/present-files-mcp-server.mjs'),
-    path.resolve(here, '../tools/present-files-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/present-files-mcp-server.mjs'),
-  ]
-  const serverPath = candidates.find((candidate) => existsSync(candidate))
-  if (serverPath == null) {
-    log.warn('Present files MCP server script not found')
-    return null
-  }
-  return {
-    type: 'stdio',
-    command: process.execPath,
-    args: [serverPath],
-    cwd: workspaceRootPath,
-    env: {
-      ELECTRON_RUN_AS_NODE: '1',
-      SPARK_WORKSPACE_ROOT: workspaceRootPath,
-    },
-  }
-}
-
-function resolveDebugMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/debug-mode-mcp-server.mjs'),
-    path.resolve(here, '../tools/debug-mode-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/debug-mode-mcp-server.mjs'),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
-}
-
-/** SDK-namespaced tool names exposed by the spark_search MCP server. */
-const SEARCH_TOOL_NAMES: string[] = [
-  'mcp__spark_search__web_search',
-  'mcp__spark_search__fetch_url',
-]
-
-const PRESENT_FILES_TOOL_NAMES = ['mcp__spark_files__present_files']
-
-const VALIDATION_SUGGESTION_TOOL_NAMES = ['mcp__spark_verify__suggest_validation']
-
-const VALIDATION_SUGGESTION_TOOL_DESCRIPTION = [
-  'Show the user a "run validation" card suggesting relevant project scripts (typecheck/lint/tests) for the files you changed this turn.',
-  'When to use: after making source-code changes, if a quick validation pass would genuinely help the user catch regressions.',
-  'When NOT to use: trivial or doc-only edits, changes outside source code, or when you already ran the equivalent checks yourself this turn.',
-  'This is optional — skip it whenever it would just be noise.',
-].join('\n')
-
-const PRESENT_FILES_SYSTEM_PROMPT = [
-  '## User-facing file cards',
-  'When this turn produces or identifies files that should be delivered to the user, call `mcp__spark_files__present_files` immediately before the final response.',
-  'Include only files the user should open, preview, or otherwise receive as deliverables.',
-  'Do not include source files, dependencies, temporary files, caches, build metadata, or incidental workspace changes unless the user explicitly asked to receive that file.',
-  'Do not call the tool when there are no user-facing files to present.',
-  'The tool call controls the app file cards; mentioning a path in prose does not add it to that list.',
-  'After calling the tool, do not repeat the same paths as standalone file links in the final response.',
-].join('\n')
-
-/**
- * System prompt section injected when the built-in web search MCP server is
- * available. The whole point: SDK 自带 WebSearch/WebFetch 在第三方 provider 下失效，
- * 这里指引模型改用始终可用的 spark_search 工具。
- */
-const WEB_SEARCH_SYSTEM_PROMPT = [
-  '## Web Search Capability (built-in, always available)',
-  'You have a built-in internet search that works regardless of the model provider:',
-  '- `mcp__spark_search__web_search` — search the web, returns ranked {title, url, snippet}.',
-  '- `mcp__spark_search__fetch_url` — fetch a page and return its readable text.',
-  '',
-  'Use these whenever you need current information, to verify facts, or to read a page.',
-  'Prefer them over the SDK built-in `WebSearch`/`WebFetch`, which are unavailable when',
-  'running on third-party (non-default) API providers. Cite the source URLs you used.',
-].join('\n')
-
-/**
- * System prompt section injected when the built-in `builtin:spark-web-tool` skill is
- * available for the session. Nudges the model to prefer that skill for the common
- * "produce a document / deck / web page / report" intents instead of hand-rolling
- * output, and tells it how to load the skill on demand (progressive disclosure).
- */
-const SPARK_WEB_TOOL_SYSTEM_PROMPT = [
-  '## Content Authoring Capability (built-in skill: spark-web-tool)',
-  'When the user asks to produce any of the following, prefer the `builtin:spark-web-tool` skill over hand-writing output:',
-  '- 演示文稿 / PPT / slide decks / 幻灯片',
-  '- 文档与文件（DOCX / Markdown / PPTX）',
-  '- 调研报告、专题报告、数据分析报告',
-  '- 网页 / HTML 内容',
-  '- 课件、交互式讲解、数据可视化页面',
-  '',
-  'The skill runs a clarify → outline → produce workflow and emits high-quality artifacts.',
-  'Load its full instructions on demand:',
-  '  - via the native `Skill` tool with name `builtin:spark-web-tool`, OR',
-  '  - via `mcp__spark_platform__skills_load` with id `builtin:spark-web-tool`.',
-  "After loading, follow the skill's guidance instead of improvising the artifact by hand.",
-].join('\n')
-
-/** SDK-namespaced tool names exposed by the spark_debug MCP server. */
-const DEBUG_TOOL_NAMES: string[] = [
-  'mcp__spark_debug__begin',
-  'mcp__spark_debug__read',
-  'mcp__spark_debug__next_round',
-  'mcp__spark_debug__status',
-  'mcp__spark_debug__finish',
-]
-
-/**
- * System prompt section injected only when the session has debug mode enabled.
- * Brief — the full state machine lives in the `builtin:spark-debug` skill. The
- * point here is to make the agent aware the闭环 tools exist and the human is in
- * the loop for reproduction.
- */
-const DEBUG_MODE_SYSTEM_PROMPT = [
-  '## Debug Mode (enabled for this session)',
-  'You are in interactive debug mode. A local log server is running; instrumentation you',
-  'add reports back to it (browser/webview logs included — CORS is handled). Use the',
-  '`mcp__spark_debug__*` tools to run a hypothesis-driven loop WITH the user in the loop:',
-  '1. `begin` to get the session id + ready-to-paste instrumentation snippets.',
-  '2. Form a hypothesis, instrument the code (wrap logs in the `__SPARK_DEBUG_*` markers',
-  '   from the snippet), then ask the user to reproduce and END your turn.',
-  "3. When the user says they reproduced, call `read` to pull this round's logs and analyze.",
-  '   If `status.thisRound` is 0, they likely did not hit the path — adjust, do not guess.',
-  '4. Fix or re-hypothesize; use `next_round` (record the hypothesis) before each new batch.',
-  '5. When the user confirms it is fixed, call `finish`, then strip ALL instrumentation',
-  '   (grep `__SPARK_DEBUG`), verify zero residue, and deliver root cause + fix + evidence.',
-  "Never claim you reproduced the bug yourself — reproduction is always the user's step.",
-].join('\n')
-
-/**
- * System prompt section injected when the Platform Management MCP server is available.
- * Brief — the full instructions live in the `builtin:platform-manager` skill definition.
- */
-const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
-  '## Platform Management Capability',
-  'You can manage this platform using `mcp__spark_platform__*` tools.',
-  'Available capabilities:',
-  '- **Skills**: list, load, search, search_github, install, install_github, uninstall, toggle',
-  '- **MCP Servers**: list, create, update, delete, status',
-  '- **Providers**: list, get, create, update, delete, health_check, set_default, set_default_model',
-  '- **Workflows**: list, get, create, update, delete',
-  '- **Agents**: list, get, create, update, delete',
-  '- **Teams**: list, get, create, update, delete',
-  '- **Install Artifacts**: list, resolve (Spark self-hosted skill/runtime/dependency packages)',
-  '- **Settings**: get, set, get_category, get_all',
-  '- **Sessions (self)**: get, switch_model, switch_provider, switch_mode, switch_permission, switch_reasoning_effort',
-  '- **Board Tasks**: list, get, create, update, delete, batch_create, batch_update, batch_delete, restore, permanent_delete',
-  '',
-  'When the user asks to manage any of these, use the corresponding tool directly.',
-  'When a task requires external dependency, runtime, or environment installation, first call `mcp__spark_platform__artifacts_list` / `mcp__spark_platform__artifacts_resolve` to look in the Spark self-hosted artifact manifest (`https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/index.json`), then use domestic mirrors, and only then fall back to public overseas sources.',
-  'For missing Python on Windows, do not start with `winget install Python...`; first resolve `runtime.python-3.11.9.win32-x64` from the Spark artifact manifest. For ppt-master Python packages, resolve the platform-specific `python-wheelhouse.ppt-master-py311.*` artifact before using pip indexes.',
-  'Before installing Node.js on the host, check whether Spark exposes an app-bundled Electron Node runtime via `SPARK_ELECTRON_NODE` with `ELECTRON_RUN_AS_NODE=1`. Use it for Node-script/MCP subprocess needs when suitable; install a system/portable Node.js only when npm/npx or normal shell `node` is required and the bundled runtime is insufficient.',
-  'When the environment is missing, prefer helping the user install and verify the needed environment after explaining the plan and obtaining consent for network/system changes; do not treat bypassing the missing environment as the first option.',
-  'For destructive operations (delete, uninstall), always confirm with the user first.',
-  'Never reveal or ask for full API keys — only show whether a key is configured.',
-].join('\n')
-
-function createWorkflowSubagentMember(
-  node: NormalizedWorkflowNode,
-  hostAgent: AgentItem,
-  workerId: string,
-): AgentItem {
-  const now = new Date(0).toISOString()
-  const prompt =
-    typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0
-      ? node.config.prompt.trim()
-      : node.title
-  const role =
-    typeof node.config.role === 'string' && node.config.role.trim().length > 0
-      ? node.config.role.trim()
-      : ''
-  return {
-    id: workerId,
-    name: node.title,
-    description: role,
-    builtIn: false,
-    enabled: true,
-    isDefault: false,
-    providerProfileId:
-      typeof node.config.providerProfileId === 'string'
-        ? node.config.providerProfileId
-        : (hostAgent.providerProfileId ?? null),
-    modelId:
-      typeof node.config.modelId === 'string' ? node.config.modelId : (hostAgent.modelId ?? null),
-    agentAdapter:
-      typeof node.config.agentAdapter === 'string'
-        ? node.config.agentAdapter
-        : hostAgent.agentAdapter,
-    // 节点级 permissionMode 覆盖已下线：executeMemberTurn 里成员权限统一走 claude-auto
-    // （避免并行 dispatch 时多个审批框互相打断），节点上配这个字段从来不会真正生效，
-    // 干脆不再提供这个"看起来能配但没用"的入口。
-    permissionMode: hostAgent.permissionMode,
-    reasoningEffort:
-      typeof node.config.reasoningEffort === 'string'
-        ? node.config.reasoningEffort
-        : hostAgent.reasoningEffort,
-    prompt,
-    ruleIds: stringArrayConfig(node.config.ruleIds),
-    skillIds: stringArrayConfig(node.config.skillIds),
-    disabledSkillIds: stringArrayConfig(node.config.disabledSkillIds),
-    mcpServerIds: stringArrayConfig(node.config.mcpServerIds),
-    hookConfig: {},
-    workflowId: null,
-    metadata: {
-      workflowNodeId: node.id,
-      temporaryWorkflowSubagent: true,
-      ...workflowNodeToolIdsMeta(node),
-    },
-    createdAt: now,
-    updatedAt: now,
-  }
-}
-
-function applyWorkflowNodeOverrides(member: AgentItem, node: NormalizedWorkflowNode): AgentItem {
-  const prompt =
-    typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0
-      ? node.config.prompt.trim()
-      : member.prompt
-  const description =
-    typeof node.config.role === 'string' && node.config.role.trim().length > 0
-      ? node.config.role.trim()
-      : member.description
-  return {
-    ...member,
-    description,
-    providerProfileId: nullableStringConfig(
-      node.config.providerProfileId,
-      member.providerProfileId,
-    ),
-    modelId: nullableStringConfig(node.config.modelId, member.modelId),
-    agentAdapter: stringConfig(node.config.agentAdapter, member.agentAdapter),
-    reasoningEffort: stringConfig(node.config.reasoningEffort, member.reasoningEffort),
-    prompt,
-    ruleIds: Array.isArray(node.config.ruleIds)
-      ? stringArrayConfig(node.config.ruleIds)
-      : member.ruleIds,
-    skillIds: Array.isArray(node.config.skillIds)
-      ? stringArrayConfig(node.config.skillIds)
-      : member.skillIds,
-    disabledSkillIds: Array.isArray(node.config.disabledSkillIds)
-      ? stringArrayConfig(node.config.disabledSkillIds)
-      : member.disabledSkillIds,
-    mcpServerIds: Array.isArray(node.config.mcpServerIds)
-      ? stringArrayConfig(node.config.mcpServerIds)
-      : member.mcpServerIds,
-    metadata: {
-      ...member.metadata,
-      workflowNodeId: node.id,
-      workflowNodeOverrides: true,
-      ...workflowNodeToolIdsMeta(node),
-    },
-  }
-}
-
-/**
- * 只在节点显式配置了 toolIds 时才写入 metadata——省略时代表"不限制"，
- * 与"用户显式选了空集合"（理论上不该出现，TagPicker 不允许提交空选择又不同于未配置）区分开，
- * 避免 executeMemberTurn 把"未配置"误判成"限制为空工具集"。
- */
-function workflowNodeToolIdsMeta(node: NormalizedWorkflowNode): { toolIds?: string[] } {
-  const toolIds = stringArrayConfig(node.config.toolIds)
-  return toolIds.length > 0 ? { toolIds } : {}
-}
-
-/** member.metadata.toolIds（工作流「工具」选择器）→ 该 member 这次 dispatch 要禁用的工具列表。未配置时不额外限制。 */
-function memberDisallowedToolsFromConfig(member: AgentItem): string[] {
-  const toolIds = stringArrayConfig(member.metadata?.toolIds)
-  if (toolIds.length === 0) return []
-  const allowed = new Set(toolIds)
-  return WORKFLOW_RESTRICTABLE_TOOL_NAMES.filter((name) => !allowed.has(name))
-}
-
-function nullableStringConfig(value: unknown, fallback: string | null | undefined): string | null {
-  if (value === null) return null
-  if (typeof value !== 'string') return fallback ?? null
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : (fallback ?? null)
-}
-
-function stringConfig(value: unknown, fallback: string): string {
-  if (typeof value !== 'string') return fallback
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : fallback
-}
-
-function stringArrayConfig(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((item) => {
-    if (typeof item !== 'string') return []
-    const trimmed = item.trim()
-    return trimmed.length > 0 ? [trimmed] : []
-  })
-}
-
-async function runWorkflowVerifyNode(
-  request: {
-    nodeId: string
-    title: string
-    objective: string
-    config: Record<string, unknown>
-  },
-  workspaceRootPath: string,
-): Promise<
-  | { state?: 'completed'; content: string }
-  | { state: 'failed'; content: string; error: { code: string; message: string } }
-> {
-  const commands = stringArrayConfig(request.config.verifyCommands)
-  if (commands.length === 0) {
-    return { content: getDefaultWorkflowAtomicContent(request) }
-  }
-  const { exec } = await import('node:child_process')
-  const { promisify } = await import('node:util')
-  const execAsync = promisify(exec)
-  const outputs: string[] = []
-  for (const command of commands) {
-    try {
-      const { stdout, stderr } = await execAsync(command, {
-        cwd: workspaceRootPath,
-        timeout: 600_000,
-        // 1MB 对大型 monorepo 的 test/lint 输出太小，超限时 exec 直接抛错，把"命令其实跑成功
-        // 只是输出太长"误报成 verify 失败。放宽到 20MB，给复杂项目留够余量。
-        maxBuffer: 20 * 1024 * 1024,
-      })
-      outputs.push(formatWorkflowVerifyCommandOutput(command, stdout, stderr))
-    } catch (error) {
-      const stdout =
-        typeof (error as { stdout?: unknown }).stdout === 'string'
-          ? (error as { stdout: string }).stdout
-          : ''
-      const stderr =
-        typeof (error as { stderr?: unknown }).stderr === 'string'
-          ? (error as { stderr: string }).stderr
-          : ''
-      const message = error instanceof Error ? error.message : String(error)
-      const content = formatWorkflowVerifyCommandOutput(command, stdout, stderr)
-      return {
-        state: 'failed',
-        content,
-        error: {
-          code: 'verify_failed',
-          message,
-        },
-      }
-    }
-  }
-  return { content: outputs.join('\n\n') }
-}
-
-function formatWorkflowVerifyCommandOutput(
-  command: string,
-  stdout: string,
-  stderr: string,
-): string {
-  return [
-    `$ ${command}`,
-    stdout.trim().length > 0 ? stdout.trim() : '',
-    stderr.trim().length > 0 ? stderr.trim() : '',
-  ]
-    .filter(Boolean)
-    .join('\n')
-}
-
-function getDefaultWorkflowAtomicContent(request: {
-  kind?: import('@spark/protocol').WorkflowNodeKind
-  title: string
-  objective: string
-  config: Record<string, unknown>
-}): string {
-  if (request.kind === 'route') {
-    const rawValue = request.config.value
-    const configuredValue =
-      typeof rawValue === 'string'
-        ? rawValue.trim()
-        : typeof rawValue === 'number' || typeof rawValue === 'boolean'
-          ? String(rawValue)
-          : ''
-    const routeOptions = normalizeWorkflowRouteOptions(request.config)
-    if (
-      configuredValue.length > 0 &&
-      (routeOptions.length === 0 || routeOptions.some((option) => option.value === configuredValue))
-    ) {
-      return configuredValue
-    }
-    const [firstRoute] = routeOptions
-    if (firstRoute != null) return firstRoute.value
-  }
-  const value = request.config.value
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  if (value != null) return JSON.stringify(value)
-  const prompt = typeof request.config.prompt === 'string' ? request.config.prompt.trim() : ''
-  if (prompt.length > 0) return prompt
-  if (request.objective.trim().length > 0) return request.objective.trim()
-  return request.title
-}
-
-/**
- * 剥离 LLM 输出常见的 ```json / ``` 代码块围栏（仅当整段被 fence 包裹时），
- * 用于 input 节点结构化 JSON 校验前的预处理。非围栏包裹的原样返回。
- */
-function trimJsonFence(text: string): string {
-  const match = /^```(?:json|JSON)?\s*\n([\s\S]*?)\n```\s*$/.exec(text)
-  if (match == null) return text
-  return match[1] ?? text
-}
-
-/**
- * 校验 input 节点经 LLM 派发后的输出是否为合法 JSON。
- * - 合法（含 ```json fence 包裹）：返回原内容（保留 fence 不破坏 LLM 原意），ok:true。
- * - 非法：回落透传 fallback + 追加 `[input 结构化解析失败，已回落透传]` 提示，ok:false。
- *
- * 单独导出以便单测直接覆盖成功/失败两条路径（executeAtomicNode 回调里调用它）。
- */
-export function validateWorkflowInputStructuredContent(
-  rawContent: string,
-  fallback: string,
-): { ok: true; content: string } | { ok: false; content: string } {
-  const stripped = trimJsonFence(rawContent.trim())
-  try {
-    JSON.parse(stripped)
-    return { ok: true, content: rawContent }
-  } catch {
-    return { ok: false, content: `${fallback}\n\n[input 结构化解析失败，已回落透传]` }
-  }
-}
-
-export function normalizeWorkflowRouteOptions(
-  config: Record<string, unknown>,
-): Array<{ value: string; label?: string; description?: string }> {
-  const raw = Array.isArray(config.routeOptions) ? config.routeOptions : []
-  const seen = new Set<string>()
-  return raw.flatMap((item) => {
-    if (item == null || typeof item !== 'object') return []
-    const record = item as Record<string, unknown>
-    const value = typeof record.value === 'string' ? record.value.trim() : ''
-    if (value.length === 0 || seen.has(value)) return []
-    seen.add(value)
-    const label = typeof record.label === 'string' ? record.label.trim() : ''
-    const description = typeof record.description === 'string' ? record.description.trim() : ''
-    return [
-      {
-        value,
-        ...(label.length > 0 ? { label } : {}),
-        ...(description.length > 0 ? { description } : {}),
-      },
-    ]
-  })
-}
-
-function extractWorkflowRouteDecision(rawContent: string): string {
-  const stripped = trimJsonFence(rawContent.trim()).trim()
-  if (stripped.length === 0) return ''
-  try {
-    const parsed = JSON.parse(stripped) as unknown
-    if (typeof parsed === 'string') return parsed.trim()
-    if (parsed != null && typeof parsed === 'object') {
-      const record = parsed as Record<string, unknown>
-      for (const candidate of [record.route, record.decision, record.value]) {
-        if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate.trim()
-      }
-    }
-  } catch {
-    // Plain-text route values are the preferred output; JSON is only accepted for resilience.
-  }
-  return stripped.split(/\r?\n/, 1)[0]?.trim().replace(/^["']|["']$/g, '') ?? ''
-}
-
-export function validateWorkflowRouteDecisionContent(
-  rawContent: string,
-  config: Record<string, unknown>,
-):
-  | { ok: true; content: string; decision: string }
-  | { ok: false; content: string; decision: string; message: string } {
-  const decision = extractWorkflowRouteDecision(rawContent)
-  if (decision.length === 0) {
-    return {
-      ok: false,
-      content: rawContent,
-      decision,
-      message: '路由节点没有输出分支值。',
-    }
-  }
-  const options = normalizeWorkflowRouteOptions(config)
-  if (options.length === 0) {
-    return { ok: true, content: decision, decision }
-  }
-  if (options.some((option) => option.value === decision)) {
-    return { ok: true, content: decision, decision }
-  }
-  return {
-    ok: false,
-    content: rawContent,
-    decision,
-    message: `路由节点输出 "${decision}" 不在允许分支值中：${options.map((option) => option.value).join(', ')}`,
-  }
-}
-
-// ── 审批节点答案解析（双问询：decision + comment） ─────────────────────────────
-//
-// 现在 onQuestion 一次问两个问题：decision（single_choice，下标 0）+ comment（text，下标 1）。
-// 这组纯函数把解析逻辑从 SessionService 私有方法里提出来导出，便于单测直接覆盖；
-// answers.answers 可能是数组（按 id/question/index/rawIndex 定位）或映射（按 question/id/index key），
-// 取值候选 answer/text/optionLabel/optionValue/value——与 claude-sdk-executor 的约定一致。
-
-/** 在 answers.answers（对象数组或映射）里按 question 引用 + 数组下标定位原始答案条目。 */
-export function findWorkflowApprovalAnswerImpl(
-  rawAnswers: unknown,
-  question: UserQuestionPrompt,
-  index = 0,
-): unknown {
-  if (Array.isArray(rawAnswers)) {
-    return rawAnswers.find((entry, rawIndex) => {
-      if (typeof entry !== 'object' || entry == null) return rawIndex === index
-      const obj = entry as Record<string, unknown>
-      return (
-        obj.id === question.id ||
-        obj.question === question.question ||
-        obj.index === index ||
-        rawIndex === index
-      )
-    })
-  }
-  if (typeof rawAnswers === 'object' && rawAnswers != null) {
-    const map = rawAnswers as Record<string, unknown>
-    return (
-      map[question.question] ??
-      (question.id != null ? map[question.id] : undefined) ??
-      map[String(index)]
-    )
-  }
-  return undefined
-}
-
-/** 从单条答案里取出可读文本（候选：answer/text/optionLabel/optionValue/value）。 */
-export function extractWorkflowApprovalTextImpl(raw: unknown): string {
-  if (typeof raw === 'string') return raw
-  if (typeof raw !== 'object' || raw == null) return ''
-  const obj = raw as Record<string, unknown>
-  for (const candidate of [obj.answer, obj.text, obj.optionLabel, obj.optionValue, obj.value]) {
-    if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate
-  }
-  return ''
-}
-
-/** 判断审批 decision 问题是否被「明确批准」（cancelled/declined/skipped/无明确 approve 视为未批准）。 */
-export function isWorkflowApprovalApprovedImpl(
-  answers: Record<string, unknown>,
-  question: UserQuestionPrompt,
-  index = 0,
-): boolean {
-  if (answers.cancelled === true || answers.declined === true) return false
-  const raw = findWorkflowApprovalAnswerImpl(answers.answers, question, index)
-  if (typeof raw === 'object' && raw != null) {
-    const obj = raw as Record<string, unknown>
-    if (obj.skipped === true || obj.declined === true) return false
-  }
-  const text = extractWorkflowApprovalTextImpl(raw).trim().toLowerCase()
-  if (text.length === 0) return false
-  return text.includes('批准') || text.includes('approve')
-}
-
-/** 从 answers 提取审批修改意见（comment 文本）；空串或 skipped/declined 一律视为无意见。 */
-export function extractWorkflowApprovalCommentImpl(
-  answers: Record<string, unknown>,
-  question: UserQuestionPrompt,
-  index: number,
-): string {
-  const raw = findWorkflowApprovalAnswerImpl(answers.answers, question, index)
-  if (typeof raw === 'object' && raw != null) {
-    const obj = raw as Record<string, unknown>
-    if (obj.skipped === true || obj.declined === true) return ''
-  }
-  return extractWorkflowApprovalTextImpl(raw).trim()
-}
-
-// ── 原子节点真实执行（skill / tool / mcp / plan / review / artifact） ─────────────
-
-/**
- * 允许经临时 worker 真实派发执行的原子节点类型。
- * verify（自跑命令）、approval（暂停问询）有各自的专用路径，不在此列；
- * input 走 LLM 结构化解析（与 plan/review 同机制：纯 LLM，不挂外部工具）。
- */
-const WORKFLOW_LLM_ATOMIC_KINDS = new Set<import('@spark/protocol').WorkflowNodeKind>([
-  'input',
-  'route',
-  'skill',
-  'tool',
-  'mcp',
-  'plan',
-  'review',
-  'artifact',
-])
-
-/**
- * plan / review 节点限制为「只读」工具集：禁掉写与执行类工具（Write/Edit/MultiEdit/NotebookEdit/Bash），
- * 只保留探索（Read/Grep/Glob/Web*）与协作类，产出计划/复核文本而不去改动工作区。
- * 用禁用名单而不是白名单，是为了与 memberDisallowedToolsFromConfig 的 disallowedTools 语义一致
- * （allowedTools 在 SDK 里只是免审批名单，挡不住其它工具）。
- */
-const WORKFLOW_READONLY_DISALLOWED_TOOLS: string[] = [
-  'Write',
-  'Edit',
-  'MultiEdit',
-  'NotebookEdit',
-  'Bash',
-]
-
-/** 供 plan/review 节点用的「只读」toolIds 白名单（= 全量可限制工具 - 写/执行类）。 */
-const WORKFLOW_READONLY_ALLOWED_TOOL_IDS: string[] = WORKFLOW_RESTRICTABLE_TOOL_NAMES.filter(
-  (name) => !WORKFLOW_READONLY_DISALLOWED_TOOLS.includes(name),
-)
-
-/** 临时原子 worker 的合成 id：与 agent/subagent 的真实 workerId 命名空间隔离，避免冲突。 */
-export function workflowAtomicMemberId(nodeId: string): string {
-  return `workflow-atomic:${nodeId}`
-}
-
-/**
- * 判断某原子节点这一轮该走「真实执行」还是「静态回显」。
- * - config.execution === 'static' 强制走旧的静态回显（兼容/降本）。
- * - config.execution === 'auto'（或缺省）时，input/skill/tool/mcp/plan/review/artifact 走真实执行；
- *   其中 artifact 只有配了 exportPath 或没配 value 静态值时才需要 LLM 产出内容——
- *   为保持行为可预期，这里对 auto 的 artifact 也一律走真实执行，导出/透传在回调里再分流。
- *   input 走 LLM 结构化解析（拆解 prompt/objective/constraint/value 为结构化 JSON），
- *   解析失败或 execution:'static' 时回落透传 getDefaultWorkflowAtomicContent。
- */
-export function shouldRunWorkflowAtomicNodeAsAgent(node: NormalizedWorkflowNode): boolean {
-  const execution = typeof node.config.execution === 'string' ? node.config.execution.trim() : ''
-  if (execution === 'static') return false
-  return WORKFLOW_LLM_ATOMIC_KINDS.has(node.kind)
-}
-
-/**
- * 为原子节点构造临时受限 worker：复用 createWorkflowSubagentMember 的 provider/model 继承逻辑，
- * 再按节点类型收窄能力面：
- * - skill：只挂节点所选 skillIds；tool：把 toolIds 交给 metadata（executeMemberTurn 换算 disallowedTools）。
- *   MCP 不再按 Agent 或节点收窄，所有已启用的应用 MCP 都由运行时统一挂载。
- * - input / plan / review：纯 LLM 任务（结构化解析 / 计划 / 复核），不需要外部写与执行类工具——
- *   额外用只读 toolIds 覆盖，禁掉 Write/Edit/Bash 等。
- */
-function createWorkflowAtomicMember(node: NormalizedWorkflowNode, hostAgent: AgentItem): AgentItem {
-  const workerId = workflowAtomicMemberId(node.id)
-  const base = createWorkflowSubagentMember(node, hostAgent, workerId)
-  if (node.kind !== 'input' && node.kind !== 'route' && node.kind !== 'plan' && node.kind !== 'review') {
-    return base
-  }
-  // input/route/plan/review：若节点自己配了 toolIds 就取「所选 ∩ 只读集」，否则直接用整个只读集。
-  const configured = stringArrayConfig(node.config.toolIds)
-  const readonlyIds =
-    configured.length > 0
-      ? configured.filter((id) => WORKFLOW_READONLY_ALLOWED_TOOL_IDS.includes(id))
-      : WORKFLOW_READONLY_ALLOWED_TOOL_IDS
-  return {
-    ...base,
-    metadata: {
-      ...base.metadata,
-      toolIds: readonlyIds,
-    },
-  }
-}
-
-/**
- * 原子节点真实执行时给临时 worker 的指令：config.prompt 优先（缺省用标题），
- * 再拼上工作流目标与上游 inputs——与 agent 节点派发路径的指令组装保持一致。
- *
- * 特例：input 节点要求 LLM 把节点的 prompt/objective/constraint/value 拆解为结构化 JSON，
- * 输出格式严格、只输出 JSON、不带任何解释（解析失败由 executeAtomicNode 回落透传兜底）。
- */
-export function buildWorkflowAtomicInstruction(request: {
-  kind?: import('@spark/protocol').WorkflowNodeKind
-  title: string
-  objective: string
-  inputs: Record<string, unknown>
-  config: Record<string, unknown>
-}): string {
-  if (request.kind === 'input') {
-    return buildWorkflowInputStructuredInstruction(request)
-  }
-  if (request.kind === 'route') {
-    return buildWorkflowRouteDecisionInstruction(request)
-  }
-  const prompt =
-    typeof request.config.prompt === 'string' && request.config.prompt.trim().length > 0
-      ? request.config.prompt.trim()
-      : request.title
-  const parts = [prompt]
-  if (request.objective.trim().length > 0) {
-    parts.push(`[Workflow objective]\n${request.objective.trim()}`)
-  }
-  const inputKeys = Object.keys(request.inputs)
-  if (inputKeys.length > 0) {
-    parts.push(`[Upstream inputs]\n${JSON.stringify(request.inputs)}`)
-  }
-  return parts.join('\n\n')
-}
-
-function buildWorkflowRouteDecisionInstruction(request: {
-  title: string
-  objective: string
-  inputs: Record<string, unknown>
-  config: Record<string, unknown>
-}): string {
-  const title = request.title.trim().length > 0 ? request.title.trim() : '(untitled route)'
-  const prompt =
-    typeof request.config.prompt === 'string' && request.config.prompt.trim().length > 0
-      ? request.config.prompt.trim()
-      : '根据工作流目标和上游输入选择一个后续路由。'
-  const options = normalizeWorkflowRouteOptions(request.config)
-  const optionLines =
-    options.length > 0
-      ? options
-          .map((option) => {
-            const label = option.label != null ? ` (${option.label})` : ''
-            const description = option.description != null ? `: ${option.description}` : ''
-            return `- ${option.value}${label}${description}`
-          })
-          .join('\n')
-      : '- 任意一个非空分支值'
-  const parts = [
-    `你是工作流「${title}」的路由节点。`,
-    prompt,
-    '',
-    '[Allowed route values]',
-    optionLines,
-  ]
-  if (request.objective.trim().length > 0) {
-    parts.push('', '[Workflow objective]', request.objective.trim())
-  }
-  const inputKeys = Object.keys(request.inputs)
-  if (inputKeys.length > 0) {
-    parts.push('', '[Upstream inputs]', JSON.stringify(request.inputs))
-  }
-  parts.push(
-    '',
-    '[Output format]',
-    '严格只输出一个分支 value 本身，不要 JSON、不要解释、不要标点、不要换行。',
-  )
-  return parts.join('\n')
-}
-
-/**
- * input 节点的结构化解析指令：把节点已有的 prompt/value/objective/constraint 喂给 LLM，
- * 要求输出固定 schema 的 JSON（objective/constraints/deliverables），且只输出 JSON、不要解释。
- */
-function buildWorkflowInputStructuredInstruction(request: {
-  title: string
-  objective: string
-  inputs: Record<string, unknown>
-  config: Record<string, unknown>
-}): string {
-  const fields: string[] = []
-  const prompt = typeof request.config.prompt === 'string' ? request.config.prompt.trim() : ''
-  if (prompt.length > 0) fields.push(`prompt: ${prompt}`)
-  const value = request.config.value
-  if (value != null) {
-    fields.push(typeof value === 'string' ? `value: ${value}` : `value: ${JSON.stringify(value)}`)
-  }
-  const objective =
-    typeof request.config.objective === 'string' ? request.config.objective.trim() : ''
-  if (objective.length > 0) {
-    fields.push(`objective: ${objective}`)
-  } else if (request.objective.trim().length > 0) {
-    fields.push(`objective: ${request.objective.trim()}`)
-  }
-  const constraint = request.config.constraint
-  if (constraint != null) {
-    fields.push(
-      typeof constraint === 'string'
-        ? `constraint: ${constraint}`
-        : `constraint: ${JSON.stringify(constraint)}`,
-    )
-  }
-  const title = request.title.trim().length > 0 ? request.title.trim() : '(untitled input)'
-  const inputKeys = Object.keys(request.inputs)
-  if (inputKeys.length > 0) {
-    fields.push(`upstream_inputs: ${JSON.stringify(request.inputs)}`)
-  }
-  return [
-    `你是工作流「${title}」输入节点的结构化解析器。`,
-    '请基于以下节点配置，把用户意图拆解为结构化 JSON。',
-    '',
-    '[Node fields]',
-    fields.length > 0 ? fields.join('\n') : '(no fields configured)',
-    '',
-    '[Output format]',
-    '严格输出以下 JSON（不要 ```json 围栏、不要任何解释文字、只输出 JSON 本身）：',
-    '{"objective":"...","constraints":["..."],"deliverables":["..."]}',
-    '- objective：本次输入的核心目标（一句话）。',
-    '- constraints：约束/限制条件数组（每条一句话；没有就给空数组）。',
-    '- deliverables：期望产出物数组（每条一句话；没有就给空数组）。',
-  ].join('\n')
-}
-
-/**
- * artifact 节点的导出目标解析：config.exportPath 配置后，把 resolve 后的绝对路径交给调用方写文件。
- * 防路径穿越——resolve 后必须仍在 workspaceRootPath 内，否则返回 null 并给出原因。
- */
-export function resolveWorkflowArtifactExportPath(
-  config: Record<string, unknown>,
-  workspaceRootPath: string,
-): { ok: true; absolutePath: string } | { ok: false; reason?: string } {
-  const raw = typeof config.exportPath === 'string' ? config.exportPath.trim() : ''
-  if (raw.length === 0) return { ok: false }
-  if (path.isAbsolute(raw)) return { ok: false, reason: 'exportPath 必须是工作区相对路径' }
-  const root = path.resolve(workspaceRootPath)
-  const absolutePath = path.resolve(root, raw)
-  // 用 root + path.sep 前缀判定，避免 /root-evil 这类同前缀目录被误判为在 root 内。
-  if (absolutePath !== root && !absolutePath.startsWith(root + path.sep)) {
-    return { ok: false, reason: 'exportPath 超出工作区范围' }
-  }
-  return { ok: true, absolutePath }
-}
 
 function collectManagedRuleContents(
   rulesRepo: RulesRepository,
@@ -10148,50 +8969,7 @@ function getProviderModelIds(configJson: string | null | undefined): string[] {
   }
 }
 
-export function makeSdkRuntimeSessionId(
-  sessionId: string,
-  providerProfileId: string,
-  model: string,
-  agentAdapter: AgentAdapterKind,
-  turnId?: string,
-): string {
-  const hash = crypto
-    .createHash('sha256')
-    .update([sessionId, providerProfileId, model, agentAdapter, turnId ?? 'stable'].join('\0'))
-    .digest()
-  hash[6] = ((hash[6] ?? 0) & 0x0f) | 0x40
-  hash[8] = ((hash[8] ?? 0) & 0x3f) | 0x80
-  const hex = hash.subarray(0, 16).toString('hex')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-}
 
-export function collectCompleteAssistantTurnText(events: AssistantMessageEvent[]): string {
-  const textBySegment = new Map<string, string>()
-  const segmentOrder: string[] = []
-  const anonymousParts: string[] = []
-  let finalText = ''
-
-  for (const event of events) {
-    if (event.mode !== 'complete' || typeof event.content !== 'string') continue
-    if (event.isFinal) {
-      finalText = event.content
-      continue
-    }
-    if (typeof event.segmentId === 'string' && event.segmentId.length > 0) {
-      if (!textBySegment.has(event.segmentId)) segmentOrder.push(event.segmentId)
-      textBySegment.set(event.segmentId, event.content)
-      continue
-    }
-    anonymousParts.push(event.content)
-  }
-
-  if (finalText.length > 0) return finalText
-
-  return [...segmentOrder.map((segmentId) => textBySegment.get(segmentId) ?? ''), ...anonymousParts]
-    .map((text) => text.trim())
-    .filter((text) => text.length > 0)
-    .join('\n\n')
-}
 
 function getLocalCliDefaultModel(provider: { id: string }): string {
   return isLocalCodexCliProvider(provider) ? LOCAL_CODEX_CLI_DEFAULT_MODEL : LOCAL_CLI_DEFAULT_MODEL
@@ -10327,26 +9105,6 @@ export function resolveCodexMemberExecutionProfile(args: {
   return { isCodexMember, permissionMode, extras }
 }
 
-export function isSdkResumeSafe(params: {
-  providerType: string
-  apiEndpoint?: string
-  model: string
-  agentAdapter: AgentAdapterKind
-}): boolean {
-  if (!ENABLE_CLAUDE_SDK_RESUME) return false
-
-  if (params.agentAdapter !== 'claude' && params.agentAdapter !== 'claude-sdk') return false
-  if (!params.model.toLowerCase().startsWith('claude')) return false
-  if (params.providerType !== 'anthropic') return false
-  if (params.apiEndpoint == null || params.apiEndpoint.length === 0) return true
-
-  try {
-    const url = new URL(params.apiEndpoint)
-    return url.hostname === 'api.anthropic.com'
-  } catch {
-    return false
-  }
-}
 
 function getLatestTurnPromptSnapshot(
   eventRepo: EventRepository,
