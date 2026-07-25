@@ -6414,8 +6414,37 @@ export class SessionService {
           }
         } else if (event.mode === 'delta') deltaText += event.content
       } else if (event.type === 'usage_update') {
+        // 三轮功能逻辑审查修复：member dispatch 的 token usage 必须记录到 session。
+        // 直接累计到 UsageLedgerRepository，不走 emitAndPersist（emit 会触发
+        // recordUsageUpdate，它的 prev/last 模型假设 single-source，member emit
+        // 会覆盖 host prev 导致 session 总计错乱）。
+        // 取舍：UI 看不到 member 实时 token 流（但 session 累计准确，计费/统计正确）。
+        // 未来可通过扩展 recordUsageUpdate 支持 dispatch 维度 source key 修复实时性。
         inputTokens = event.inputTokens
         outputTokens = event.outputTokens
+        try {
+          const memberSession = sessionRepo.get(sessionId)
+          const memberProviderId = memberSession?.provider_profile_id ?? event.provider
+          const memberModelId = event.model || memberSession?.model_id || 'unknown'
+          new UsageLedgerRepository(this.db).record({
+            sessionId,
+            providerId: memberProviderId,
+            modelId: memberModelId,
+            inputTokens: Math.max(0, event.inputTokens),
+            outputTokens: Math.max(0, event.outputTokens),
+            reasoningOutputTokens: Math.max(0, event.reasoningOutputTokens ?? 0),
+            cacheReadTokens: Math.max(0, event.cacheHitTokens ?? 0),
+            cacheWriteTokens: Math.max(0, event.cacheWriteTokens ?? 0),
+            costUsd: Math.max(0, event.estimatedCostUsd ?? 0),
+            requestTimestamp: event.timestamp,
+          })
+        } catch (err) {
+          log.warn(
+            `member usage ledger record failed (non-fatal): ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          )
+        }
       } else if (event.type === 'agent_error') {
         memberError = event.message
       } else if (
@@ -8573,6 +8602,13 @@ function buildOrchestrationModeSystemPrompt(
     '- Reserve direct tool use for glue work: final assembly of member outputs, quick verification commands, or tiny fixes that are clearly cheaper to do than to delegate.',
     '- Do NOT solo the whole task while capable members sit idle — if a member could plausibly own a piece, dispatch it.',
     '- If the user explicitly asks YOU to edit/run something directly, doing it yourself is fine.',
+    // 功能逻辑审查修复：避免 Host 与 member 内容冗余。
+    // member dispatch 时 UI 已显示独立 member 气泡（team_member_message event），
+    // 用户直接看到 member 的完整回复。Host 不应再 paraphrase member 已说的内容，
+    // 否则用户看到双重表达（member 气泡 + Host 重复），感知冗余、噪音。
+    '- Member/worker replies are shown to the user directly as separate message bubbles. Do NOT restate or paraphrase what a member already said.',
+    '- Your final output should add value beyond member replies: cross-member synthesis, tradeoff analysis, decisions, next-step recommendations, or glue work that members cannot do themselves.',
+    '- If a single member fully answered the user, a brief acknowledgment ("Member X handled this — see their reply above") is enough; do not re-explain.',
   ].join('\n')
 }
 
