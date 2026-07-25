@@ -296,8 +296,9 @@ describe('ConversationSummarizer', () => {
       expect(result.prompt).toContain('What was the original requirement?')
     })
 
-    it('W1.1b: skipForSdkResume=true 时返回 undefined 且不查 DB', () => {
-      // 准备一个有大量 events 的场景，正常路径会生成摘要 + 写 DB
+    it('W1.1b: skipForSdkResume=true 时返回 recent fallback 而非 undefined（细致审查修正）', () => {
+      // 场景：SDK resume 可用路径下，summarizer 仍提供 recent entries 作为
+      // fresh session fallback 兜底（防止 SDK 内部 resume 失败时 agent 失忆）。
       const events: AgentEvent[] = [userMsg('t1', 'Topic A requirement', 1)]
       for (let i = 0; i < 25; i++) {
         events.push(assistantMsg('t1', `Assistant response ${i} with details`, 100 + i))
@@ -321,11 +322,26 @@ describe('ConversationSummarizer', () => {
       const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 500, {
         skipForSdkResume: true,
       })
-      // SDK resume 接管时，summarizer 立即返回 undefined
-      expect(result.prompt).toBeUndefined()
+      // 仍返回 prompt（recent fallback），不是 undefined
+      expect(result.prompt).toBeDefined()
+      expect(result.prompt).toContain('SDK resume fallback')
+      // 不返回 summarization stats（没有真正生成摘要）
       expect(result.summarization).toBeUndefined()
-      // 不应触发任何 DB 查询/写入（包括 summaryRepo.getLatest / summaryRepo.create）
+      // 不应触发 DB 查询/写入
       expect(dbAccessed).toBe(false)
+    })
+
+    it('W1.1b: skipForSdkResume=true 且无对话事件时仍返回 undefined', () => {
+      const mockEventRepo = {
+        queryBySession: () => ({ events: [] }),
+        queryDialogueEvents: () => [],
+      } as any
+      const mockDb = { raw: { prepare: () => ({ get: () => null, run: () => {} }) } } as any
+
+      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 0, {
+        skipForSdkResume: true,
+      })
+      expect(result.prompt).toBeUndefined()
     })
   })
 

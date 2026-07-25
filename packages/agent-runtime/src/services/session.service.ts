@@ -1861,10 +1861,12 @@ export class SessionService {
         providers: providersForRouting,
         message,
         // W1.1b：history 加载延后到 sdkResume 判定后，此处用 eventCount 估算。
-        // 平均每 event ~60 token，与历史 prompt 长度同数量级，不影响路由决策。
+        // 系数 100 token/event 是保守上界（typical assistant message 200-500 token，
+        // user message 50-200）。原 / 3 字符估算在长会话下偏低，这里取保守值
+        // 避免 longContext 路径（128k threshold）漏判。
         estimatedTokens: Math.max(
           Math.ceil(message.length / 3),
-          existingEventCount * 60,
+          existingEventCount * 100,
         ),
       })
       if (routeSelection == null) {

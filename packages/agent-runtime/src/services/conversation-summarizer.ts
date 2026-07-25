@@ -93,7 +93,41 @@ export function buildConversationHistoryWithSummary(
   },
 ): { prompt: string | undefined; summarization?: SummarizationResult['stats'] } {
   if (options?.skipForSdkResume === true) {
-    return { prompt: undefined }
+    // W1.1b 修正（细致审查发现）：SDK resume 路径下仍加载 recent entries 作为兜底，
+    // 而非完全跳过。原因：SDK executor 内部 resume 失败 + circuit breaker 未开时，
+    // 会自动 fallback 到 fresh session（claude-sdk-executor.ts:1075-1082）。Fresh
+    // session 没有 conversation history，此时若 Spark 也跳过 history prompt，
+    // agent 将完全失忆。
+    //
+    // 取舍：SDK resume 成功时这部分 prompt 是冗余（SDK 已维持完整 history），
+    // 但 token 成本可控（recent 默认 ≤ 30 条 + 头尾截断）；SDK fallback fresh
+    // 时它提供基本上下文避免 agent 行为异常。仍跳过 SessionSummaryRepository
+    // 的读取与写入（避免 Spark 摘要逻辑干扰 SDK compaction）。
+    const fallbackEntries = buildDialogueEntries(
+      loadDialogueEvents(eventRepo, sessionId),
+      options?.agentNameById,
+    )
+    if (fallbackEntries.length === 0) return { prompt: undefined }
+    const fallbackTokenBudget = Math.max(
+      200,
+      Math.floor(options?.entryTokenBudget ?? DEFAULT_ENTRY_TOKEN_BUDGET),
+    )
+    const fallbackRecent = fallbackEntries.slice(-Math.min(fallbackEntries.length, 30))
+    const fallbackText = formatEntriesWithinBudget(
+      fallbackRecent,
+      RECENT_ENTRIES_MAX_CHARS,
+      fallbackTokenBudget,
+    )
+    if (fallbackText.length === 0) return { prompt: undefined }
+    return {
+      prompt: [
+        '[Recent Exchanges — SDK resume fallback]',
+        'SDK resume is enabled; the runtime maintains full conversation history internally.',
+        'The following recent exchanges are provided as fallback in case the SDK falls',
+        'back to a fresh session (e.g., on session expiry). Do not restate unless relevant.',
+        fallbackText,
+      ].join('\n\n'),
+    }
   }
   const entryTokenBudget = Math.max(200, Math.floor(options?.entryTokenBudget ?? DEFAULT_ENTRY_TOKEN_BUDGET))
   const summaryRepo = new SessionSummaryRepository(db)
