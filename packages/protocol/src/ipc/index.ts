@@ -4055,6 +4055,32 @@ export interface FileSavePastedImageResponse {
   fileName: string
 }
 
+/**
+ * `file:save-pasted-media` — 把渲染端视频/音频 dataURL 写入画布 assets/videos
+ * 或 assets/audio，返回绝对路径。粘贴/拖入/上传按钮三条视频入口共用。
+ */
+export interface FileSavePastedMediaRequest {
+  /** `data:video/mp4;base64,...` / `data:audio/mpeg;base64,...` 形式的数据 URL */
+  dataUrl: string
+  /** 媒体类型，决定写入 videos 还是 audio 子目录及扩展名映射 */
+  kind: 'video' | 'audio'
+  /** 可选 MIME 类型；主进程会优先从 dataUrl 中解析 */
+  mimeType?: string
+  /** 可选建议文件名前缀，不含扩展名 */
+  suggestedBaseName?: string
+  /** 默认写临时目录；画布项目使用持久目录。 */
+  storageScope?: 'temp' | 'canvas'
+  /** 画布项目目录；提供时写入该项目的 assets/videos 或 assets/audio。 */
+  projectRootPath?: string
+}
+
+export interface FileSavePastedMediaResponse {
+  /** 写入后的绝对路径 */
+  filePath: string
+  /** 根据 MIME / 文件名推导出的 basename */
+  fileName: string
+}
+
 /** 把可编辑图片标注文档写入画布项目的 assets/annotations 目录。 */
 export interface FileSaveCanvasAnnotationRequest {
   documentJson: string
@@ -5566,6 +5592,7 @@ export interface IpcChannelMap extends ProviderFilesIpcChannelMap {
   // File Save Image — show save dialog and copy a local image to the user's chosen path
   'file:save-image': [FileSaveImageRequest, FileSaveImageResponse]
   'file:save-pasted-image': [FileSavePastedImageRequest, FileSavePastedImageResponse]
+  'file:save-pasted-media': [FileSavePastedMediaRequest, FileSavePastedMediaResponse]
   'file:save-canvas-annotation': [FileSaveCanvasAnnotationRequest, FileSaveCanvasAnnotationResponse]
   'file:prepare-image-preview': [FilePrepareImagePreviewRequest, FilePrepareImagePreviewResponse]
   'file:stat-kind': [FileStatKindRequest, FileStatKindResponse]

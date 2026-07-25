@@ -292,6 +292,17 @@ type PreparedImageUpload = {
   imageHeight: number
   title?: string
 }
+type PreparedMediaUpload = {
+  kind: 'video' | 'audio'
+  file: File
+  filePath: string
+  fileName: string
+  fileMimeType?: string
+  fileSize: number
+  mediaWidth?: number
+  mediaHeight?: number
+  durationMs?: number
+}
 type LayoutBounds = {
   left: number
   top: number
@@ -6562,6 +6573,47 @@ export function CanvasWorkspaceView({
     [],
   )
 
+  /**
+   * 视频/音频落盘 helper：dataUrl → 主进程写盘 → 编码 safe-file:// → 取宽高/时长。
+   * 拖入/上传按钮/粘贴三条路径共用，避免再出现"磁盘路径拿不到 → 静默 return"的回归。
+   */
+  const prepareCanvasMediaUpload = useCallback(
+    async (file: File, kind: 'video' | 'audio'): Promise<PreparedMediaUpload> => {
+      const snapshot = snapshotRef.current
+      if (!snapshot) throw new Error('画布尚未加载')
+      const dataUrl = await readFileAsDataUrl(file)
+      const saved = await window.spark.invoke('file:save-pasted-media', {
+        dataUrl,
+        kind,
+        mimeType: file.type,
+        suggestedBaseName: file.name.replace(/\.[^.]+$/, '') || `canvas-${kind}`,
+        storageScope: 'canvas',
+        ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+      })
+      let mediaWidth: number | undefined
+      let mediaHeight: number | undefined
+      let durationMs: number | undefined
+      if (kind === 'video') {
+        const dims = await readVideoDimensions(encodeToSafeFileUrl(saved.filePath))
+        mediaWidth = dims.width || undefined
+        mediaHeight = dims.height || undefined
+        durationMs = dims.durationMs
+      }
+      return {
+        kind,
+        file,
+        filePath: saved.filePath,
+        fileName: file.name,
+        ...(file.type ? { fileMimeType: file.type } : {}),
+        fileSize: file.size,
+        ...(mediaWidth ? { mediaWidth } : {}),
+        ...(mediaHeight ? { mediaHeight } : {}),
+        ...(durationMs ? { durationMs } : {}),
+      }
+    },
+    [],
+  )
+
   const insertPreparedImages = useCallback(
     async (
       preparedImages: PreparedImageUpload[],
@@ -6715,12 +6767,21 @@ export function CanvasWorkspaceView({
       const snapshot = snapshotRef.current
       if (!snapshot || !event.clipboardData) return
 
-      const imageFiles = Array.from(event.clipboardData.items)
-        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      // 不再用 startsWith('image/') 硬过滤：粘贴视频/音频也会被丢弃。
+      // 按 classifyDroppedFile 分流到 图片 / 视频 / 音频，document/text 等忽略。
+      const fileItems = Array.from(event.clipboardData.items)
+        .filter((item) => item.kind === 'file')
         .map((item) => item.getAsFile())
         .filter((file): file is File => Boolean(file))
+      const imageFiles: File[] = []
+      const mediaFiles: Array<{ file: File; kind: 'video' | 'audio' }> = []
+      for (const file of fileItems) {
+        const kind = classifyDroppedFile(file)
+        if (kind === 'image') imageFiles.push(file)
+        else if (kind === 'video' || kind === 'audio') mediaFiles.push({ file, kind })
+      }
       const text = event.clipboardData.getData('text/plain').trim()
-      if (imageFiles.length === 0 && !text) return
+      if (imageFiles.length === 0 && mediaFiles.length === 0 && !text) return
 
       event.preventDefault()
       event.stopPropagation()
@@ -6731,7 +6792,11 @@ export function CanvasWorkspaceView({
         ? { x: Math.round(pointerPosition.x), y: Math.round(pointerPosition.y) }
         : positionNodeInViewport(
             canvasViewportRef.current,
-            imageFiles.length > 0 ? IMAGE_NODE_DEFAULT_SIZE : TEXT_NODE_DEFAULT_SIZE,
+            imageFiles.length > 0
+              ? IMAGE_NODE_DEFAULT_SIZE
+              : mediaFiles.length > 0
+                ? VIDEO_NODE_DEFAULT_SIZE
+                : TEXT_NODE_DEFAULT_SIZE,
             { x: 200, y: 150 },
           )
 
@@ -6752,17 +6817,56 @@ export function CanvasWorkspaceView({
                   : `已粘贴 ${result.createdNodeCount} 张图片到画布`,
               )
             }
-            return
           }
 
-          const node = await createTextNode({
-            text,
-            x: preferredPosition.x,
-            y: preferredPosition.y,
-          })
-          if (node) {
-            setSelectedNodeIds([node.id])
-            message.success('已粘贴文本到画布')
+          // 媒体走与拖入管线一致的 prepareCanvasMediaUpload，确保三条入口共用同一落盘路径。
+          if (mediaFiles.length > 0) {
+            const preparedMedia = await Promise.all(
+              mediaFiles.map((entry) => prepareCanvasMediaUpload(entry.file, entry.kind)),
+            )
+            const positions = layoutDroppedFiles(
+              preparedMedia.length,
+              preferredPosition,
+              VIDEO_NODE_DEFAULT_SIZE,
+            )
+            const createdMediaIds: string[] = []
+            for (let i = 0; i < preparedMedia.length; i += 1) {
+              const prepared = preparedMedia[i]!
+              const basePos = positions[i] ?? preferredPosition
+              const node = await createMediaNode({
+                kind: prepared.kind,
+                fileName: prepared.fileName,
+                ...(prepared.fileMimeType ? { fileMimeType: prepared.fileMimeType } : {}),
+                fileSize: prepared.fileSize,
+                filePath: prepared.filePath,
+                x: basePos.x,
+                y: basePos.y,
+                ...(prepared.mediaWidth ? { mediaWidth: prepared.mediaWidth } : {}),
+                ...(prepared.mediaHeight ? { mediaHeight: prepared.mediaHeight } : {}),
+                ...(prepared.durationMs ? { durationMs: prepared.durationMs } : {}),
+              })
+              if (node) createdMediaIds.push(node.id)
+            }
+            if (createdMediaIds.length > 0) {
+              setSelectedNodeIds([createdMediaIds[createdMediaIds.length - 1]!])
+              message.success(
+                createdMediaIds.length === 1
+                  ? '已粘贴媒体到画布'
+                  : `已粘贴 ${createdMediaIds.length} 个媒体到画布`,
+              )
+            }
+          }
+
+          if (imageFiles.length === 0 && mediaFiles.length === 0 && text) {
+            const node = await createTextNode({
+              text,
+              x: preferredPosition.x,
+              y: preferredPosition.y,
+            })
+            if (node) {
+              setSelectedNodeIds([node.id])
+              message.success('已粘贴文本到画布')
+            }
           }
         } catch (error) {
           message.error(error instanceof Error ? error.message : '粘贴到画布失败')
@@ -6772,7 +6876,7 @@ export function CanvasWorkspaceView({
 
     window.addEventListener('paste', handler)
     return () => window.removeEventListener('paste', handler)
-  }, [createTextNode, insertPreparedImages, prepareCanvasImageUpload])
+  }, [createTextNode, insertPreparedImages, prepareCanvasImageUpload, prepareCanvasMediaUpload, createMediaNode])
 
   /**
    * 拖入外部文件到画布：按类型路由成节点。
@@ -6897,7 +7001,9 @@ export function CanvasWorkspaceView({
           }
         }
 
-        // ── 视频/音频：复制进项目 assets 目录后建节点 ─────────────────────
+        // ── 视频/音频：dataUrl 落盘 → safe-file URL → 媒体节点 ─────────────
+        //    不再依赖 (file as File & { path?: string }).path：Electron 32+ 已
+        //    移除该字段；统一走 dataUrl + file:save-pasted-media，与粘贴路径同源。
         if (media.length > 0) {
           const mediaPositions = layoutDroppedFiles(
             media.length,
@@ -6907,43 +7013,31 @@ export function CanvasWorkspaceView({
           const successfulMediaIds = Array<string | null>(media.length).fill(null)
           await Promise.all(
             media.map(async (entry, index) => {
-              const electronPath = (entry.file as File & { path?: string }).path
-              if (!electronPath) return // 非 Electron 环境拿不到磁盘路径，跳过
-              const copyResult = await window.spark.invoke('canvas:asset:copy-to-project', {
-                projectId,
-                ...(projectRootPath ? { projectRootPath } : {}),
-                sourcePath: electronPath,
-                type: entry.kind,
-              })
-              if (copyResult.error || !copyResult.filePath) return
-              const filePath = copyResult.filePath as string
-              const fileUrl = encodeToSafeFileUrl(filePath)
-              let mediaWidth: number | undefined
-              let mediaHeight: number | undefined
-              let durationMs: number | undefined
-              if (entry.kind === 'video') {
-                const dims = await readVideoDimensions(fileUrl)
-                mediaWidth = dims.width || undefined
-                mediaHeight = dims.height || undefined
-                durationMs = dims.durationMs
-              }
-              const basePos = mediaPositions[index] ?? nextOrigin
-              const node = await createMediaNode({
-                kind: entry.kind,
-                fileName: entry.file.name,
-                ...(entry.file.type ? { fileMimeType: entry.file.type } : {}),
-                fileSize: entry.file.size,
-                filePath,
-                x: basePos.x,
-                y: basePos.y,
-                ...(mediaWidth ? { mediaWidth } : {}),
-                ...(mediaHeight ? { mediaHeight } : {}),
-                ...(durationMs ? { durationMs } : {}),
-              })
-              if (node) {
-                createdNodeIds.push(node.id)
-                createdNodes.push(node)
-                successfulMediaIds[index] = node.id
+              try {
+                const prepared = await prepareCanvasMediaUpload(entry.file, entry.kind)
+                const basePos = mediaPositions[index] ?? nextOrigin
+                const node = await createMediaNode({
+                  kind: entry.kind,
+                  fileName: prepared.fileName,
+                  ...(prepared.fileMimeType ? { fileMimeType: prepared.fileMimeType } : {}),
+                  fileSize: prepared.fileSize,
+                  filePath: prepared.filePath,
+                  x: basePos.x,
+                  y: basePos.y,
+                  ...(prepared.mediaWidth ? { mediaWidth: prepared.mediaWidth } : {}),
+                  ...(prepared.mediaHeight ? { mediaHeight: prepared.mediaHeight } : {}),
+                  ...(prepared.durationMs ? { durationMs: prepared.durationMs } : {}),
+                })
+                if (node) {
+                  createdNodeIds.push(node.id)
+                  createdNodes.push(node)
+                  successfulMediaIds[index] = node.id
+                }
+              } catch (error) {
+                // 单个文件失败不影响其他，错误明确提示，不再静默吞。
+                message.error(
+                  `添加 ${entry.file.name} 失败：${error instanceof Error ? error.message : String(error)}`,
+                )
               }
             }),
           )
@@ -6976,6 +7070,7 @@ export function CanvasWorkspaceView({
       createMediaNode,
       insertPreparedImages,
       prepareCanvasImageUpload,
+      prepareCanvasMediaUpload,
     ],
   )
 

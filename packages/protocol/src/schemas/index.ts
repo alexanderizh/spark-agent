@@ -267,6 +267,15 @@ export const FileSavePastedImageRequestSchema = z.object({
   projectRootPath: z.string().min(1).max(2000).optional(),
 })
 
+export const FileSavePastedMediaRequestSchema = z.object({
+  dataUrl: z.string().min(1).max(200_000_000),
+  kind: z.enum(['video', 'audio']),
+  mimeType: z.string().min(1).max(120).optional(),
+  suggestedBaseName: z.string().min(1).max(120).optional(),
+  storageScope: z.enum(['temp', 'canvas']).optional(),
+  projectRootPath: z.string().min(1).max(2000).optional(),
+})
+
 export const FilePrepareImagePreviewRequestSchema = z.object({
   sourcePath: z.string().min(1),
 })
@@ -863,6 +872,7 @@ export const IpcSchemaRegistry = {
   'dialog:open-directory': DialogOpenDirectoryRequestSchema,
   'dialog:open-file': DialogOpenFileRequestSchema,
   'file:save-pasted-image': FileSavePastedImageRequestSchema,
+  'file:save-pasted-media': FileSavePastedMediaRequestSchema,
   'file:prepare-image-preview': FilePrepareImagePreviewRequestSchema,
   'file:stat-kind': FileStatKindRequestSchema,
   'clipboard:write-text': ClipboardWriteTextRequestSchema,
