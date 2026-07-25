@@ -352,6 +352,9 @@ importers:
       '@spark/protocol':
         specifier: workspace:*
         version: link:../protocol
+      gpt-tokenizer:
+        specifier: ^3.4.0
+        version: 3.4.0
       keytar:
         specifier: ^7.9.0
         version: 7.9.0
@@ -4621,6 +4624,9 @@ packages:
   gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
+
+  gpt-tokenizer@3.4.0:
+    resolution: {integrity: sha512-wxFLnhIXTDjYebd9A9pGl3e31ZpSypbpIJSOswbgop5jLte/AsZVDvjlbEuVFlsqZixVKqbcoNmRlFDf6pz/UQ==}
 
   graceful-fs@1.1.14:
     resolution: {integrity: sha512-JUrvoFoQbLZpOZilKTXZX2e1EV0DTnuG5vsRFNFv4mPf/mnYbwNAFw/5x0rxeyaJslIdObGSgTTsMnM/acRaVw==}
@@ -12392,6 +12398,8 @@ snapshots:
   glur@1.1.2: {}
 
   gopd@1.2.0: {}
+
+  gpt-tokenizer@3.4.0: {}
 
   graceful-fs@1.1.14:
     optional: true
