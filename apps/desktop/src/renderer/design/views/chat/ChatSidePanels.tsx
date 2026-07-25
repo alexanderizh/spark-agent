@@ -4,8 +4,8 @@ import { Icons } from '../../Icons'
 
 export type UnifiedSidePanelKind = 'config' | 'terminal' | 'side-chat' | 'review' | 'plan'
 
+// 配置入口已上移到会话头部按钮组；统一面板只保留终端/侧聊/审查/计划 4 个 tab。
 const UNIFIED_SIDE_PANEL_QUICK_ITEMS: UnifiedSidePanelKind[] = [
-  'config',
   'terminal',
   'side-chat',
   'review',

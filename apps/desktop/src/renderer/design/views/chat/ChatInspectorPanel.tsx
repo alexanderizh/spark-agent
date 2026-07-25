@@ -451,7 +451,7 @@ export function ChatConfigPanel({
 
   return (
     <div
-      className={embedded ? 'inspector-frame embedded' : 'inspector-frame'}
+      className={embedded ? 'inspector-frame embedded config-panel-frame' : 'inspector-frame config-panel-frame'}
       style={{ '--inspector-width': `${width}px` } as React.CSSProperties}
     >
       {!embedded && (
@@ -735,6 +735,9 @@ export function ChatInspector({
   runningTeamAgentIds,
   onChangeTeamConfig,
   onOpenProjectFolder,
+  checkpointAvailable,
+  checkpointEnabled,
+  onOpenCheckpointTimeline,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -753,6 +756,9 @@ export function ChatInspector({
   runningTeamAgentIds: string[]
   onChangeTeamConfig: (patch: Partial<TeamModeConfig>) => void
   onOpenProjectFolder: () => void
+  checkpointAvailable: boolean
+  checkpointEnabled: boolean
+  onOpenCheckpointTimeline: () => void
 }) {
   const subagents = extractInspectorSubagents(messages)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
@@ -980,6 +986,29 @@ export function ChatInspector({
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {checkpointAvailable && (
+          <div className="inspector-section">
+            <h4>
+              <Icons.History size={11} /> 代码还原点
+              {checkpointEnabled && <span className="badge success dot">已开启</span>}
+            </h4>
+            <div className="checkpoint-card">
+              <p className="checkpoint-desc">
+                {checkpointEnabled
+                  ? '已按轮记录已跟踪文件状态，可在时间线中回溯还原。'
+                  : '本轮未开启记录；打开时间线后可手动开启。'}
+              </p>
+              <button
+                type="button"
+                className="btn primary sm checkpoint-open-btn"
+                onClick={onOpenCheckpointTimeline}
+              >
+                打开时间线
+              </button>
             </div>
           </div>
         )}
