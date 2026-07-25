@@ -6304,6 +6304,17 @@ export class SessionService {
       ...(member.reasoningEffort != null
         ? { reasoningEffort: normalizeReasoningEffort(member.reasoningEffort) }
         : {}),
+      // 三轮功能逻辑审查修复（产品逻辑维度）：member dispatch 必须有 iteration limit。
+      // SDK 默认 maxTurns=200，单个 member dispatch 跑 200 turn 会消耗巨量 token，
+      // 且 dispatch timeout 限制总时间但不限制 iterations。设 maxTurnCount=30 让单个
+      // member 任务最多 30 turn，足够完成多数子任务，避免 member 失控。
+      // 节点级覆盖：node config.maxTurnCount 优先（如 review/input 节点可能需要更少）。
+      maxTurnCount:
+        typeof member.metadata?.maxTurnCount === 'number' &&
+        Number.isFinite(member.metadata.maxTurnCount) &&
+        member.metadata.maxTurnCount > 0
+          ? Math.min(50, Math.floor(member.metadata.maxTurnCount))
+          : 30,
       // A-03 细致审查修复：member allowedTools 必须包含所有已加载 MCP 的工具，否则
       // SDK 视为非免审批 → member 在 unattended dispatch 时卡在 approval 等待。
       // 镜像 Host 路径（line 3253-3295）按 mcpServers 实际加载的工具构建 allowedTools。
