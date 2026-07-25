@@ -33,7 +33,7 @@ import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { filterProvidersForVisibleUi } from '../utils/auto-router-ui'
-import { ModelCapabilityRegistry } from '@spark/shared'
+import { estimateTokens, ModelCapabilityRegistry } from '@spark/shared'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import { FfmpegStatusCard } from './FfmpegStatusCard'
 import { VoiceIntegritySettingsItem } from '../voice/VoiceIntegritySettingsItem'
@@ -3822,7 +3822,7 @@ function SystemPromptSection() {
   }
 
   const charCount = systemPrompt.length
-  const estimatedTokens = Math.ceil(charCount / 4)
+  const estimatedTokenCount = estimateTokens(systemPrompt)
 
   return (
     <div className="settings-section">
@@ -3846,7 +3846,7 @@ function SystemPromptSection() {
         <div className="prompt-editor-stats">
           <span>{charCount} 字符</span>
           <span className="prompt-stats-sep">·</span>
-          <span>约 {estimatedTokens} tokens</span>
+          <span>约 {estimatedTokenCount} tokens</span>
           {charCount > 10000 && (
             <>
               <span className="prompt-stats-sep">·</span>
