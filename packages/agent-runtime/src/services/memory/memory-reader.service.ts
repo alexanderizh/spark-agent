@@ -17,7 +17,7 @@
 
 import { MemoryRepository } from '@spark/storage'
 import type { MemoryEntryRow, MemoryScopeFilter } from '@spark/storage'
-import { createLogger } from '@spark/shared'
+import { createLogger, estimateTokensWithOverhead } from '@spark/shared'
 import { MemoryStoreService } from './memory-store.service.js'
 import type { MemorySearchService } from './memory-search.service.js'
 
@@ -303,10 +303,9 @@ function trimToTokenBudget(
   const selected: MemoryEntryRow[] = []
 
   for (const entry of entries) {
-    // 估算：description 字符数 × 1.5 + 固定开销
-    const estimatedTokens = Math.ceil(entry.description.length * 1.5) + 20
+    // 估算：description 实际 token 数 + 每条 entry 的 XML 标签固定开销
+    const estimatedTokens = estimateTokensWithOverhead(entry.description, 20)
     if (usedTokens + estimatedTokens > maxTokens) {
-      // 预算已满，后续全部丢弃
       break
     }
     usedTokens += estimatedTokens

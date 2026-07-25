@@ -138,8 +138,11 @@ describe('MemoryReaderService V2 injection (search-driven)', () => {
     const big2 = makeEntry('b2', { type: 'user', description: 'Y'.repeat(2000) })
     const repo = makeRepo({ 'user:': [feedback, big1, big2] })
     const { svc } = makeSearch(new Map([['seed', [big1, big2]]]))
+    // 真实 token 数（gpt-tokenizer o200k_base）：feedback ≈ 21（含 +20 overhead），
+    // big1 ≈ 145（'X'*2000 BPE 合并到 125 token），big2 ≈ 520（'Y'*2000 → 500 token）。
+    // 预算 100 让 feedback 入选，big1/big2 因超出剩余预算被裁。
     const getTokens = (cat: string, key: string): unknown | null =>
-      cat === 'memory' && key === 'maxInjectTokens' ? 1500 : null
+      cat === 'memory' && key === 'maxInjectTokens' ? 100 : null
     const reader = new MemoryReaderService(repo, {} as never, getTokens, svc)
     const res = await reader.loadForSession({ workspaceId: 'ws', agentId: 'a1', seedQuery: 'seed' })
     expect(res.injectedIds).toContain('fb') // feedback 必入
