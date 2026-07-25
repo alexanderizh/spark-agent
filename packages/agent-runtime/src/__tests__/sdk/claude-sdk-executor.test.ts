@@ -409,6 +409,75 @@ describe('ClaudeSDKExecutor', () => {
     expect(options.effort).toBe('xhigh')
   })
 
+  it('injects thinking with explicit budgetTokens when reasoningBudgetTokens is set', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          total_cost_usd: 0,
+        },
+      ]),
+    )
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      reasoningEffort: 'high',
+      reasoningBudgetTokens: 8192,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    // effort 与 thinking 协同：effort 引导深度，thinking.budgetTokens 锁定 token 上限
+    expect(options.effort).toBe('high')
+    expect(options.thinking).toEqual({ type: 'enabled', budgetTokens: 8192 })
+  })
+
+  it('leaves thinking unset when reasoningBudgetTokens is not provided', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          total_cost_usd: 0,
+        },
+      ]),
+    )
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      reasoningEffort: 'high',
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    expect(options.thinking).toBeUndefined()
+  })
+
+  it('treats zero or negative reasoningBudgetTokens as unset (fall back to SDK default)', async () => {
+    queryMock.mockReturnValue(
+      messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          result: 'ok',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          total_cost_usd: 0,
+        },
+      ]),
+    )
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      reasoningBudgetTokens: 0,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    expect(options.thinking).toBeUndefined()
+  })
+
   it('emits completed when the SDK stream ends without a result status', async () => {
     queryMock.mockReturnValue(messages([]))
     const events: AgentEvent[] = []
