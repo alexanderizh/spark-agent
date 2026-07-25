@@ -295,6 +295,38 @@ describe('ConversationSummarizer', () => {
       expect(result.prompt).toContain('Important original requirement')
       expect(result.prompt).toContain('What was the original requirement?')
     })
+
+    it('W1.1b: skipForSdkResume=true 时返回 undefined 且不查 DB', () => {
+      // 准备一个有大量 events 的场景，正常路径会生成摘要 + 写 DB
+      const events: AgentEvent[] = [userMsg('t1', 'Topic A requirement', 1)]
+      for (let i = 0; i < 25; i++) {
+        events.push(assistantMsg('t1', `Assistant response ${i} with details`, 100 + i))
+        events.push(userMsg(`t${i + 2}`, `User follow-up ${i}`, 200 + i * 10))
+      }
+
+      let dbAccessed = false
+      const mockEventRepo = {
+        queryBySession: () => ({ events: [] }),
+        queryDialogueEvents: () => dialogueRows(events),
+      } as any
+      const mockDb = {
+        raw: {
+          prepare: () => {
+            dbAccessed = true
+            return { get: () => null, run: () => ({ changes: 0 }) }
+          },
+        },
+      } as any
+
+      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 500, {
+        skipForSdkResume: true,
+      })
+      // SDK resume 接管时，summarizer 立即返回 undefined
+      expect(result.prompt).toBeUndefined()
+      expect(result.summarization).toBeUndefined()
+      // 不应触发任何 DB 查询/写入（包括 summaryRepo.getLatest / summaryRepo.create）
+      expect(dbAccessed).toBe(false)
+    })
   })
 
 })

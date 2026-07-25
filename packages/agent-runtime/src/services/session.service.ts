@@ -1804,10 +1804,7 @@ export class SessionService {
         if (m != null) agentNameById[m.id] = m.name
       }
     }
-    const { prompt: conversationHistoryPrompt, summarization: summarizationStats } =
-      buildConversationHistoryWithSummary(eventRepo, this.db, sessionId, currentSeq, {
-        agentNameById,
-      })
+    // W1.1b：history 加载延后到 sdkResume 判定后，避免 SDK resume 路径下重复摘要写入。
     const isFirstTurn = existingEventCount === 0 && shouldDeriveSessionTitle(session.title)
     if (isFirstTurn) {
       const derivedTitle = deriveSessionTitle(message)
@@ -1863,7 +1860,12 @@ export class SessionService {
         modelProfiles: modelProfilesForRouting,
         providers: providersForRouting,
         message,
-        estimatedTokens: Math.ceil(((conversationHistoryPrompt?.length ?? 0) + message.length) / 3),
+        // W1.1b：history 加载延后到 sdkResume 判定后，此处用 eventCount 估算。
+        // 平均每 event ~60 token，与历史 prompt 长度同数量级，不影响路由决策。
+        estimatedTokens: Math.max(
+          Math.ceil(message.length / 3),
+          existingEventCount * 60,
+        ),
       })
       if (routeSelection == null) {
         throw new Error(`Routing model not found or disabled: ${selectedRoutingModelId}`)
@@ -1964,6 +1966,14 @@ export class SessionService {
           agentAdapter,
           isMentionTurn ? `mention:${agent.id}:${turnId}` : turnId,
         )
+    // W1.1b：SDK resume 已接管历史时跳过 Spark 自做摘要（不写 SessionSummaryRepository）。
+    // canResumeSdkSession 综合了 sdkResumeSafe + previousPromptSnapshot 一致性检查：
+    // 只有 claude-sdk adapter + 原生 anthropic + 同一 sdkSessionId 才真生效。
+    const { prompt: conversationHistoryPrompt, summarization: summarizationStats } =
+      buildConversationHistoryWithSummary(eventRepo, this.db, sessionId, currentSeq, {
+        agentNameById,
+        ...(canResumeSdkSession ? { skipForSdkResume: true } : {}),
+      })
     // 选中的模式即唯一权威：mention turn 用被 @ 成员自身的模式，否则用会话存储的模式。
     // 不再叠加 /approval override 层——bypass 一旦选中就不会被任何旁路降级。
     const permissionMode = isMentionTurn
