@@ -6071,21 +6071,45 @@ export class SessionService {
     // 并把脱敏清单追加进成员系统提示词，避免成员泄露敏感信息。
     let memberCustomEnv: Record<string, string> | undefined
     let memberEnvPrompt = ''
+    let memberSkillSystemPrompt: string | undefined
     try {
-      // 二轮核查修复：复用上层已查的 sessionRepo + session，避免重复 DB 查询。
+      // 三轮联合场景审查修复（Skill + Team）：member 也走 composeRuntimeContext 加载
+      // 自己的 skillIds 对应的 skill system prompt，否则 member 看不到自己 agent 配置内
+      // 启用的 skills（如 web-search / canvas-studio 等），无法主动调用。
+      // 之前只调 getEnvConfig（env），完全忽略 skill 链路。
       const memberWorkspaceIds = sessionRepo.getWorkspaceIdsFromRow(session)
-      const envConfig = new RuntimeCompositionService(
+      const memberRuntimeContext = new RuntimeCompositionService(
         new SkillRepository(this.db),
         new SettingsRepository(this.db),
-      ).getEnvConfig({
-        ...(memberWorkspaceIds[0] != null ? { workspaceId: memberWorkspaceIds[0] } : {}),
-        sessionId,
-      })
-      if (Object.keys(envConfig.effectiveEnv).length > 0) memberCustomEnv = envConfig.effectiveEnv
-      memberEnvPrompt = envConfig.envSystemPrompt
+      ).composeRuntimeContext(
+        {
+          ...(memberWorkspaceIds[0] != null ? { workspaceId: memberWorkspaceIds[0] } : {}),
+          sessionId,
+          agentId: member.id,
+        },
+        undefined,
+        {
+          agentSkillIds: member.skillIds,
+          agentDisabledSkillIds: member.disabledSkillIds,
+        },
+      )
+      if (memberRuntimeContext.customEnv != null) {
+        memberCustomEnv = memberRuntimeContext.customEnv
+      }
+      if (memberRuntimeContext.envSystemPrompt != null) {
+        memberEnvPrompt = memberRuntimeContext.envSystemPrompt
+      }
+      if (
+        memberRuntimeContext.skillSystemPrompt != null &&
+        memberRuntimeContext.skillSystemPrompt.trim().length > 0
+      ) {
+        memberSkillSystemPrompt = memberRuntimeContext.skillSystemPrompt
+      }
     } catch (err) {
       log.warn(
-        `Member env injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        `Member env + skill injection failed (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       )
     }
     // W1.1b 联动细致审查修复：member turn 注入 memory block（按 member.id scope）。
@@ -6137,6 +6161,7 @@ export class SessionService {
         buildManagedAgentSystemPrompt(member, null),
         memberTeamPrompt,
         memberEnvPrompt || undefined,
+        memberSkillSystemPrompt,
         memberMemoryBlock,
         MEMORY_BEHAVIOR_SYSTEM_PROMPT,
       ) ?? ''
