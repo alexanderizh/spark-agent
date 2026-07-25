@@ -72,6 +72,10 @@ interface Props {
   onClearNodeRefs?: () => void
   /** 在画布中选中并定位节点。 */
   onFocusNode?: (nodeId: string) => void
+  /** 当前 React Flow 实时视口。 */
+  getViewport?: CanvasToolHostOptions['getViewport']
+  /** 选中并定位 Agent 新创建的一组节点。 */
+  revealNodes?: CanvasToolHostOptions['revealNodes']
   /** 宽屏切换回调：父组件据此时将侧栏宽度设为屏幕一半 / 恢复原宽 */
   onWideModeChange?: (wide: boolean) => void
 }
@@ -343,6 +347,8 @@ export function CanvasAgentModal({
   onRemoveNodeRef,
   onClearNodeRefs,
   onFocusNode,
+  getViewport,
+  revealNodes,
   onWideModeChange,
 }: Props) {
   const projectId = snapshot.project.id
@@ -384,6 +390,8 @@ export function CanvasAgentModal({
     sessionId,
     projectId: snapshot.project.id,
     getSnapshot: useCallback(() => snapshot, [snapshot]),
+    getViewport,
+    revealNodes,
     getSelectedNodeIds: useCallback(() => selectedNodes.map((node) => node.id), [selectedNodes]),
     workspace,
   })

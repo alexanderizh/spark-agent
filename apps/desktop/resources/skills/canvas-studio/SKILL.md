@@ -1,7 +1,7 @@
 ---
 name: 画布工作室
 description: '用 mcp__spark_canvas__* 工具操作 SparkWork 的无限画布。凡是用户提到画布、节点、素材、影视资产、文稿拆章、剧本拆解、角色/场景/道具/特效设定、分镜、关键帧、首尾帧视频、360 全景图、导演台构图、宫格切分、图片标注、成片清单或把 Agent 产物放回画布，都应优先加载本技能并使用 spark_canvas 工具，而不是只用普通对话描述。'
-version: 1.6.0
+version: 1.7.0
 author: Spark AI
 category: utility
 tags:
@@ -103,6 +103,7 @@ CanvasProject
 3. **不要凭空重复建资产**：影视资产先 `canvas_search_assets` 或 `canvas_list_assets({kind})` 去重；同名同 kind 资产优先复用。
 4. **破坏性操作先确认**：删除节点、删除影视资产、删除分镜分组/片段、解散分组前先问用户。
 5. **完整流程必须原子创建**：用户要求创建、搭建或复用一个多节点工作流时，必须优先调用 `canvas_create_reusable_workflow_graph`，不要连续调用低层创建工具后遗漏连线。声明所有可替换输入；图片、视频、音频输入没有现成素材时仍要创建空媒体占位。每个操作通过 `dependsOn` 明确上游，终点操作用 `isOutput/expectedOutputTypes` 声明输出。
+   - 不要为了靠近用户视口而自行猜测或拼接绝对坐标。工具会优先在当前可视区域寻找完整空位；若空间不足，会在画布外侧创建并自动选中、定位全部新节点。
 6. **创建后必须检查**：原子工具会自动复核；使用低层工具局部改线、改节点或改配置后，必须调用 `canvas_validate_workflow_graph` 校验本次流程子图。只约束 input/operation/output 流程节点，独立 note 和画布其他内容不要求连线。存在 error 时不得声称流程完成。
 7. **保存是独立动作**：在画布创建流程不会自动写入工作流库。只有用户明确要求保存/沉淀时，才框选正确子图并调用 `canvas_workflow_extract_selection`；不要擅自创建大量工作流定义。
 8. **复杂生成先建操作节点**：单个影视流水线步骤优先使用 `canvas_create_pipeline_operation_node`；其他单个通用生成才使用 `canvas_create_operation_node`。先让用户在画布上检查，用户明确要求立即执行时再 `canvas_run_operation`。

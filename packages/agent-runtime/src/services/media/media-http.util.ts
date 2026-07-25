@@ -102,9 +102,10 @@ export async function fetchJson<T = unknown>(url: string, opts: FetchJsonOptions
         `${opts.method ?? 'GET'} ${sanitizeRequestUrl(url)} timed out after ${timeoutMs}ms`,
       )
     }
+    const networkHint = describeNetworkError(err, opts.method ?? 'GET', url)
     throw new MediaProviderError(
       'provider_http_error',
-      err instanceof Error ? err.message : String(err),
+      networkHint ?? (err instanceof Error ? err.message : String(err)),
     )
   } finally {
     clearTimeout(timer)
@@ -148,6 +149,14 @@ export interface PollOptions {
   logContext?: string | undefined
   /** 返回不含密钥和 URL 的响应摘要，供逐次轮询诊断。 */
   describeResponse?: ((data: unknown) => unknown) | undefined
+  /**
+   * 单次轮询请求遇到瞬时错误（底层网络错误 / 5xx / 请求超时）时的最大重试次数，默认 3。
+   * GET 轮询幂等，重试无副作用；重试始终受任务总时限 timeoutMs 约束，不会无限挂起。
+   * 确定性错误（4xx、inspect 判定的 task_failed）不会重试。
+   */
+  maxRetries?: number | undefined
+  /** 瞬时错误重试退避基数（ms），默认 1000，每次 ×2、上限 8s。 */
+  retryBackoffMs?: number | undefined
 }
 
 /** 轮询直到 inspect 返回 done/failed 或超时 */
@@ -160,10 +169,17 @@ export async function pollTask(
   const deadline = Date.now() + opts.timeoutMs
   const safeUrl = sanitizePollingUrl(url)
   const logContext = opts.logContext ? ` ${opts.logContext}` : ''
+  // GET 轮询幂等：单次请求遇瞬时网络错误 / 5xx 在总时限内退避重试，避免一次抖动判死刑。
+  const maxRetries = Math.max(0, opts.maxRetries ?? 3)
+  const retryBackoffMs = Math.max(1, opts.retryBackoffMs ?? 1_000)
   let attempts = 0
+  let retryCount = 0
+  let nextBackoffMs = retryBackoffMs
   let lastResponseSummary = ''
+  const messageOf = (error: unknown) =>
+    JSON.stringify(error instanceof Error ? error.message : String(error))
   pollLog.info(
-    `event=started url=${safeUrl} intervalMs=${opts.intervalMs} timeoutMs=${opts.timeoutMs}${logContext}`,
+    `event=started url=${safeUrl} intervalMs=${opts.intervalMs} timeoutMs=${opts.timeoutMs} maxRetries=${maxRetries}${logContext}`,
   )
   // 允许调用方传小间隔（测试场景）；生产环境由 mediaDefaults.polling.intervalMs 控制（默认 5s）
   let interval = Math.max(1, opts.intervalMs)
@@ -172,7 +188,6 @@ export async function pollTask(
   if (opts.errorExtractor !== undefined) fetchOpts.errorExtractor = opts.errorExtractor
   if (opts.errorContract !== undefined) fetchOpts.errorContract = opts.errorContract
   while (Date.now() < deadline) {
-    attempts += 1
     let data: unknown
     try {
       data = await fetchJson(url, {
@@ -180,11 +195,26 @@ export async function pollTask(
         timeoutMs: pollRequestTimeoutMs(deadline, opts.requestTimeoutMs),
       })
     } catch (error) {
+      const elapsedMs = Date.now() - startedAt
+      // 确定性错误（4xx、task_failed）不重试；task_failed/task_timeout 不走此分支。
+      if (retryCount < maxRetries && isRetryableMediaError(error) && Date.now() < deadline) {
+        retryCount += 1
+        const backoff = Math.min(nextBackoffMs, MAX_RETRY_BACKOFF_MS)
+        nextBackoffMs = Math.min(nextBackoffMs * 2, MAX_RETRY_BACKOFF_MS)
+        pollLog.warn(
+          `event=request-failed-retryable url=${safeUrl} attempts=${attempts} retryCount=${retryCount}/${maxRetries} elapsedMs=${elapsedMs} backoffMs=${backoff} message=${messageOf(error)}${logContext}`,
+        )
+        await new Promise((resolve) => setTimeout(resolve, pollSleepIntervalMs(deadline, backoff)))
+        continue
+      }
       pollLog.warn(
-        `event=request-failed url=${safeUrl} attempts=${attempts} elapsedMs=${Date.now() - startedAt} message=${JSON.stringify(error instanceof Error ? error.message : String(error))}`,
+        `event=request-failed url=${safeUrl} attempts=${attempts} retryCount=${retryCount} elapsedMs=${elapsedMs} message=${messageOf(error)}${logContext}`,
       )
       throw error
     }
+    attempts += 1
+    retryCount = 0
+    nextBackoffMs = retryBackoffMs
     const state = opts.inspect(data)
     const responseSummary = describePollResponse(opts, data)
     lastResponseSummary = responseSummary
@@ -235,11 +265,62 @@ export function pollSleepIntervalMs(
   return Math.max(0, Math.min(intervalMs, deadlineMs - nowMs))
 }
 
+const MAX_RETRY_BACKOFF_MS = 8_000
+
+/** Node fetch 底层网络错误（含 err.cause）的特征串，命中则视为可重试的瞬时错误。 */
+const TRANSIENT_NETWORK_ERROR_MARKERS = [
+  'fetch failed',
+  'enotfound',
+  'econnrefused',
+  'econnreset',
+  'econnaborted',
+  'eai_again',
+  'etimedout',
+  'ehostunreach',
+  'enetunreach',
+  'und_err_connect_timeout',
+  'und_err_socket',
+  'other side closed',
+  'hang up',
+  'socket hang up',
+] as const
+
+/**
+ * 判断 MediaProviderError 是否为可安全重试的瞬时错误：底层网络错误（statusCode 缺省）
+ * 或 HTTP 5xx。4xx、task_failed、task_timeout 不在此列，确定性失败不应重试。
+ */
+export function isRetryableMediaError(error: unknown): boolean {
+  if (!(error instanceof MediaProviderError)) return false
+  if (error.code !== 'provider_http_error') return false
+  if (error.statusCode === undefined) return true
+  return error.statusCode >= 500
+}
+
+/**
+ * 识别 Node fetch 的 'fetch failed' 等对用户毫无信息量的网络错误，从 err.cause 提取
+ * 具体原因并给出可读提示。命中返回提示文本，未命中返回 undefined（由调用方保留原 message）。
+ */
+export function describeNetworkError(
+  error: unknown,
+  method: string,
+  url: string,
+): string | undefined {
+  if (!(error instanceof Error)) return undefined
+  const msg = error.message ?? ''
+  const cause = (error as { cause?: unknown }).cause
+  const causeText =
+    cause instanceof Error ? (cause.message ?? '') : typeof cause === 'string' ? cause : ''
+  const haystack = `${msg} ${causeText}`.toLowerCase()
+  if (!TRANSIENT_NETWORK_ERROR_MARKERS.some((marker) => haystack.includes(marker))) return undefined
+  const detail = (causeText || msg || '连接失败').slice(0, 300)
+  return `${method} ${sanitizeRequestUrl(url)} 网络请求失败：${detail}。可能原因：endpoint 不可达、网络中断、DNS 解析失败或 TLS 握手失败。`
+}
+
 function sanitizePollingUrl(url: string): string {
   return sanitizeRequestUrl(url)
 }
 
-function sanitizeRequestUrl(url: string): string {
+export function sanitizeRequestUrl(url: string): string {
   try {
     const parsed = new URL(url)
     return `${parsed.origin}${parsed.pathname}`

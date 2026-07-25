@@ -476,10 +476,10 @@
   padding: 10px;
 }
 
-.canvas-operation-history > button {
+.canvas-operation-history-item {
   display: grid;
   min-height: 58px;
-  grid-template-columns: 10px minmax(160px, 1.4fr) minmax(110px, 1fr) minmax(110px, 1fr) 90px auto;
+  grid-template-columns: 10px minmax(150px, 1.4fr) minmax(100px, 1fr) minmax(100px, 1fr) 80px auto 28px;
   align-items: center;
   gap: 12px;
   padding: 8px 10px;
@@ -491,9 +491,9 @@
   text-align: left;
 }
 
-.canvas-operation-history > button:hover,
-.canvas-operation-history > button:focus-visible,
-.canvas-operation-history > button.is-active {
+.canvas-operation-history-item:hover,
+.canvas-operation-history-item:focus-visible,
+.canvas-operation-history-item.is-active {
   outline: none;
   background: color-mix(in srgb, var(--primary) 10%, transparent);
   color: var(--text);
@@ -559,10 +559,60 @@
 .canvas-operation-workbench-empty {
   display: flex;
   min-height: 320px;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 10px;
+  padding: 16px;
   color: var(--text-muted);
   font-size: 13px;
+  text-align: center;
+}
+
+.canvas-operation-workbench-empty > strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.canvas-operation-workbench-empty.is-failed > strong {
+  color: var(--danger, #ef4444);
+}
+
+.canvas-operation-workbench-empty.is-running > strong {
+  color: var(--primary);
+}
+
+.canvas-operation-workbench-empty-msg {
+  max-width: 460px;
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.canvas-operation-workbench-empty-detail {
+  max-width: 520px;
+  max-height: 160px;
+  overflow: auto;
+  text-align: left;
+
+  & summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  & pre {
+    margin: 6px 0 0;
+    padding: 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--panel) 80%, transparent);
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
 }
 
 // editing 包了一层，使内层面板不再是 content 的直接子项，content 那条
@@ -597,4 +647,82 @@
     border-top: 1px solid color-mix(in srgb, var(--divider) 62%, transparent);
     padding-top: 4px;
   }
+}
+
+// 运行中横幅：已有产物再运行时，让进度/参数在任一 tab 都可见（不自动切 tab）。
+.canvas-operation-workbench-run-banner {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 24%, transparent);
+  background: color-mix(in srgb, var(--primary) 9%, transparent);
+}
+
+.canvas-operation-workbench-run-banner-progress {
+  flex: 1 1 auto;
+  min-width: 120px;
+}
+
+.canvas-operation-workbench-run-banner-meta {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.canvas-operation-workbench-run-banner-meta strong {
+  color: var(--text-strong);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-operation-workbench-run-banner-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+
+  & span strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+}
+
+// 当前 run 无产物时，产物列表区的占位（翻页器仍常驻）。
+.canvas-operation-workbench-output-list-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+// 运行历史条目的删除按钮（仅失败/无产物 run 出现；成功有产物的用占位保持对齐）。
+.canvas-operation-history-delete,
+.canvas-operation-history-delete-placeholder {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.canvas-operation-history-delete:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #ef4444) 14%, transparent);
+  color: var(--danger, #ef4444);
+}
+
+.canvas-operation-history-delete:disabled {
+  opacity: 0.45;
+  cursor: default;
 }

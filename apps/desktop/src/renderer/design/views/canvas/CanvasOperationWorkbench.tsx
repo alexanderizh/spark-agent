@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, type ReactNode } from 'react'
 import { Button, Tag } from '@lobehub/ui'
-import { Modal, Popover } from 'antd'
+import { Modal, Popover, Progress } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasNodeEditModal } from './CanvasNodeEditModal'
 import { CanvasOperationNodeSettings } from './CanvasOperationNodeSettings'
@@ -9,10 +9,12 @@ import {
   resolveCanvasOperationOutputState,
   selectCanvasOperationOutputs,
 } from './canvasOperationOutputModel'
+import { buildCanvasOperationParamSummary } from './canvasOperationParamSummary'
 import {
   buildCanvasOperationRunViews,
   canvasOperationRunsFingerprint,
   type CanvasOperationOutputView,
+  type CanvasOperationRunView,
 } from './canvasOperationRuns'
 import {
   createCanvasOperationWorkbenchState,
@@ -49,6 +51,7 @@ export function CanvasOperationWorkbench({
   onSetPrimaryOutput,
   onExpandOutputs,
   onDeleteOutputs,
+  onDeleteRun,
   fullscreen = false,
   onFullscreenChange,
 }: {
@@ -67,6 +70,7 @@ export function CanvasOperationWorkbench({
   onSetPrimaryOutput?: (output: CanvasOperationOutputView) => Promise<void> | void
   onExpandOutputs?: (outputs: CanvasOperationOutputView[]) => Promise<void> | void
   onDeleteOutputs?: (outputs: CanvasOperationOutputView[]) => Promise<void> | void
+  onDeleteRun?: (run: CanvasOperationRunView) => Promise<void> | void
   fullscreen?: boolean
   onFullscreenChange?: (fullscreen: boolean) => void
 }) {
@@ -122,6 +126,30 @@ export function CanvasOperationWorkbench({
     activeOutput && outputState.primaryOutput && activeOutput.id === outputState.primaryOutput.id,
   )
   const primaryActionLabel = outputState.mode === 'collection' ? '设为默认预览' : '设为主产物'
+  const latestRun = runs[0]
+  const isLatestRunRunning = latestRun?.status === 'running'
+  const runBannerParamSummary = isLatestRunRunning
+    ? buildCanvasOperationParamSummary(node.data.modelParams, 3)
+    : []
+
+  const confirmRunDeletion = (run: CanvasOperationRunView) => {
+    if (!onDeleteRun || state.busy) return
+    Modal.confirm({
+      title: '删除这次运行记录？',
+      content: '该运行的任务记录、连线与产物节点会同步清理；资源库中的资产仍会保留。',
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        dispatch({ type: 'set-busy', busy: true })
+        try {
+          await onDeleteRun(run)
+        } finally {
+          dispatch({ type: 'set-busy', busy: false })
+        }
+      },
+    })
+  }
 
   const runExpansion = async (targetOutputs: CanvasOperationOutputView[]) => {
     if (!onExpandOutputs || targetOutputs.length === 0 || state.busy) return
@@ -184,7 +212,7 @@ export function CanvasOperationWorkbench({
             {tabButton('settings', '节点设置', <Icons.Edit size={13} />)}
             {tabButton('history', '运行历史', <Icons.RotateCcw size={13} />, runs.length)}
           </div>
-          {activeTab === 'output' && activeRun && activeOutput ? (
+          {activeTab === 'output' && activeRun ? (
             <div className="canvas-operation-workbench-context">
               <div className="canvas-operation-workbench-run-nav">
                 <button
@@ -212,32 +240,38 @@ export function CanvasOperationWorkbench({
                 aria-label="可横向滚动的本次运行产物"
                 tabIndex={0}
               >
-                {outputs.map((output, index) => {
-                  const selected = selectedOutputIdSet.has(output.id)
-                  const primary = outputState.primaryOutput?.id === output.id
-                  return (
-                    <button
-                      key={output.id}
-                      type="button"
-                      className={`${index === effectiveOutputIndex ? 'is-active' : ''}${selected ? ' is-selected' : ''}`}
-                      aria-pressed={state.selectionMode ? selected : index === effectiveOutputIndex}
-                      onClick={() => {
-                        dispatch({ type: 'select-output', outputIndex: index })
-                        if (state.selectionMode) {
-                          dispatch({ type: 'toggle-output-selection', outputId: output.id })
-                        }
-                      }}
-                    >
-                      {state.selectionMode ? (
-                        <span className="canvas-operation-output-check">{selected ? '✓' : ''}</span>
-                      ) : null}
-                      <span>{output.title}</span>
-                      {primary ? (
-                        <small>{outputState.mode === 'collection' ? '默认' : '主'}</small>
-                      ) : null}
-                    </button>
-                  )
-                })}
+                {outputs.length === 0 ? (
+                  <span className="canvas-operation-workbench-output-list-empty">
+                    本次运行无产物
+                  </span>
+                ) : (
+                  outputs.map((output, index) => {
+                    const selected = selectedOutputIdSet.has(output.id)
+                    const primary = outputState.primaryOutput?.id === output.id
+                    return (
+                      <button
+                        key={output.id}
+                        type="button"
+                        className={`${index === effectiveOutputIndex ? 'is-active' : ''}${selected ? ' is-selected' : ''}`}
+                        aria-pressed={state.selectionMode ? selected : index === effectiveOutputIndex}
+                        onClick={() => {
+                          dispatch({ type: 'select-output', outputIndex: index })
+                          if (state.selectionMode) {
+                            dispatch({ type: 'toggle-output-selection', outputId: output.id })
+                          }
+                        }}
+                      >
+                        {state.selectionMode ? (
+                          <span className="canvas-operation-output-check">{selected ? '✓' : ''}</span>
+                        ) : null}
+                        <span>{output.title}</span>
+                        {primary ? (
+                          <small>{outputState.mode === 'collection' ? '默认' : '主'}</small>
+                        ) : null}
+                      </button>
+                    )
+                  })
+                )}
               </div>
             </div>
           ) : null}
@@ -374,6 +408,37 @@ export function CanvasOperationWorkbench({
         </div>
       ) : null}
 
+      {isLatestRunRunning ? (
+        <div className="canvas-operation-workbench-run-banner" role="status" aria-live="polite">
+          <div className="canvas-operation-workbench-run-banner-progress">
+            <Progress percent={Math.round(latestRun?.progress ?? 0)} size="small" status="active" />
+          </div>
+          <div className="canvas-operation-workbench-run-banner-meta">
+            <strong>
+              第 {runs.length} 次任务运行中
+              {latestRun?.modelId ? <span> · {latestRun.modelId}</span> : null}
+            </strong>
+            {runBannerParamSummary.length > 0 ? (
+              <div className="canvas-operation-workbench-run-banner-params">
+                {runBannerParamSummary.map((item) => (
+                  <span key={item.key}>
+                    {item.label} <strong>{item.value}</strong>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <Button
+            size="small"
+            type="primary"
+            ghost
+            onClick={() => dispatch({ type: 'select-tab', tab: 'config' })}
+          >
+            查看进度
+          </Button>
+        </div>
+      ) : null}
+
       <div className="canvas-operation-workbench-content">
         {activeTab === 'settings' ? (
           <CanvasOperationNodeSettings
@@ -387,26 +452,58 @@ export function CanvasOperationWorkbench({
           configPanel
         ) : activeTab === 'history' ? (
           <div className="canvas-operation-history" aria-label="运行历史">
-            {runs.map((run, index) => (
-              <button
-                key={run.taskId}
-                type="button"
-                className={index === effectiveRunIndex ? 'is-active' : ''}
-                onClick={() => dispatch({ type: 'select-run', runIndex: index })}
-              >
-                <span className={`canvas-operation-history-status is-${run.status}`} />
-                <span className="canvas-operation-history-main">
-                  <strong>第 {runs.length - index} 次运行</strong>
-                  <small>{new Date(run.createdAt).toLocaleString()}</small>
-                </span>
-                <span>{run.provider ?? '自动 Provider'}</span>
-                <span>{run.modelId ?? '默认模型'}</span>
-                <span>{run.outputs.length} 个产物</span>
-                <Tag color={run.status === 'completed' ? 'green' : 'default'} bordered={false}>
-                  {runStatusLabel(run.status)}
-                </Tag>
-              </button>
-            ))}
+            {runs.map((run, index) => {
+              const deletable =
+                run.status === 'failed' ||
+                run.status === 'cancelled' ||
+                (run.outputs.length === 0 && run.status !== 'running')
+              return (
+                <div
+                  key={run.taskId}
+                  role="button"
+                  tabIndex={0}
+                  className={`canvas-operation-history-item${index === effectiveRunIndex ? ' is-active' : ''}`}
+                  onClick={() => dispatch({ type: 'select-run', runIndex: index })}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      dispatch({ type: 'select-run', runIndex: index })
+                    }
+                  }}
+                >
+                  <span className={`canvas-operation-history-status is-${run.status}`} />
+                  <span className="canvas-operation-history-main">
+                    <strong>第 {runs.length - index} 次运行</strong>
+                    <small>{new Date(run.createdAt).toLocaleString()}</small>
+                  </span>
+                  <span>{run.provider ?? '自动 Provider'}</span>
+                  <span>{run.modelId ?? '默认模型'}</span>
+                  <span>{run.outputs.length} 个产物</span>
+                  <Tag color={run.status === 'completed' ? 'green' : 'default'} bordered={false}>
+                    {runStatusLabel(run.status)}
+                  </Tag>
+                  {deletable && onDeleteRun ? (
+                    <button
+                      type="button"
+                      className="canvas-operation-history-delete"
+                      aria-label="删除这次运行记录"
+                      disabled={state.busy}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        confirmRunDeletion(run)
+                      }}
+                    >
+                      <Icons.Trash size={14} />
+                    </button>
+                  ) : (
+                    <span
+                      className="canvas-operation-history-delete-placeholder"
+                      aria-hidden="true"
+                    />
+                  )}
+                </div>
+              )
+            })}
           </div>
         ) : activeRun && activeOutput ? (
           <div className="canvas-operation-result-panel">
@@ -481,6 +578,52 @@ export function CanvasOperationWorkbench({
                 <CanvasOperationOutputPreview output={activeOutput} variant="detail" />
               </div>
             )}
+          </div>
+        ) : activeRun ? (
+          <div
+            className={`canvas-operation-workbench-empty is-${activeRun.status}`}
+            aria-label="本次运行结果"
+          >
+            <Tag
+              color={
+                activeRun.status === 'failed'
+                  ? 'red'
+                  : activeRun.status === 'running'
+                    ? 'blue'
+                    : 'default'
+              }
+              bordered
+            >
+              {runStatusLabel(activeRun.status)}
+            </Tag>
+            <strong>
+              第 {runs.length - effectiveRunIndex} 次运行
+              {activeRun.status === 'failed'
+                ? '失败'
+                : activeRun.status === 'cancelled'
+                  ? '已取消'
+                  : activeRun.status === 'running'
+                    ? '进行中'
+                    : '未生成产物'}
+            </strong>
+            {activeRun.status === 'failed' && activeRun.errorMsg ? (
+              <p className="canvas-operation-workbench-empty-msg">{activeRun.errorMsg}</p>
+            ) : null}
+            {activeRun.status === 'failed' && activeRun.errorDetail ? (
+              <details className="canvas-operation-workbench-empty-detail">
+                <summary>详细错误</summary>
+                <pre>{activeRun.errorDetail}</pre>
+              </details>
+            ) : null}
+            {activeRun.status === 'failed' || activeRun.status === 'running' ? (
+              <Button
+                size="small"
+                type="primary"
+                onClick={() => dispatch({ type: 'select-tab', tab: 'config' })}
+              >
+                {activeRun.status === 'failed' ? '打开任务配置' : '查看任务配置'}
+              </Button>
+            ) : null}
           </div>
         ) : (
           <div className="canvas-operation-workbench-empty">当前任务还没有可展示的产物</div>

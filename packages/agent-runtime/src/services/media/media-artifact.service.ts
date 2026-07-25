@@ -7,6 +7,7 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { MediaProviderError } from './media-adapter.types.js'
 import type { MediaGeneratedAsset, MediaArtifactType } from './media-adapter.types.js'
+import { describeNetworkError, sanitizeRequestUrl } from './media-http.util.js'
 import type { ExtractedImage } from './media-http.util.js'
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -43,7 +44,26 @@ export function mimeFromExt(filename: string): string | undefined {
   return undefined
 }
 
+export interface MediaArtifactServiceOptions {
+  /**
+   * 瞬时错误重试退避基数（ms），默认 1000，每次 ×2、上限 8s。
+   * 测试场景传 1 以加速；生产由默认值控制，调用方无需显式传入。
+   */
+  retryDelayMs?: number | undefined
+}
+
+/** 单次产物下载的最大尝试次数（初始请求 + 两次重试）。 */
+const MAX_DOWNLOAD_ATTEMPTS = 3
+/** 产物下载重试退避上限（ms）。 */
+const MAX_DOWNLOAD_BACKOFF_MS = 8_000
+
 export class MediaArtifactService {
+  private readonly retryDelayMs: number
+
+  constructor(options: MediaArtifactServiceOptions = {}) {
+    this.retryDelayMs = Math.max(1, options.retryDelayMs ?? 1_000)
+  }
+
   /** 把图片（url 或 base64）落盘，返回 asset 元信息 */
   async writeImage(
     image: ExtractedImage,
@@ -133,47 +153,131 @@ export class MediaArtifactService {
     return path.join(dir, `${base}${finalExt}`)
   }
 
+  /**
+   * 下载远程 url 为 Buffer。瞬时网络错误与 HTTP 408/425/429/5xx 在总时限内退避重试，
+   * 最多 MAX_DOWNLOAD_ATTEMPTS 次；确定性 4xx、超时、用尽重试后立即抛
+   * artifact_download_failed。错误消息含底层 cause 与尝试次数，但不带签名 URL。
+   * timeoutMs 为整轮下载（所有尝试 + 退避等待）的总时限。
+   */
   private async downloadBuffer(
     url: string,
     fetchImpl?: typeof fetch,
     timeoutMs?: number,
   ): Promise<Buffer> {
     const impl = fetchImpl ?? fetch
-    const controller = timeoutMs != null ? new AbortController() : undefined
-    let timedOut = false
-    const timer =
-      controller && timeoutMs != null
-        ? setTimeout(() => {
-            timedOut = true
-            controller.abort()
-          }, timeoutMs)
-        : undefined
-    try {
-      const res = await impl(url, controller ? { signal: controller.signal } : undefined)
-      if (!res.ok) {
-        throw new MediaProviderError(
-          'artifact_download_failed',
-          `Download failed HTTP ${res.status}: ${url}`,
-          res.status,
-        )
-      }
-      return Buffer.from(await res.arrayBuffer())
-    } catch (err) {
-      if (err instanceof MediaProviderError) throw err
-      if (timedOut) {
+    const deadline = timeoutMs != null ? Date.now() + timeoutMs : undefined
+    let attempt = 0
+    let nextBackoffMs = this.retryDelayMs
+
+    for (;;) {
+      attempt += 1
+      // 总时限耗尽：不再尝试，直接判超时
+      if (deadline != null && Date.now() >= deadline) {
         throw new MediaProviderError(
           'artifact_download_failed',
           `Download timed out after ${timeoutMs}ms`,
         )
       }
-      throw new MediaProviderError(
-        'artifact_download_failed',
-        `Download failed: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      const budgetMs = deadline != null ? Math.max(1, deadline - Date.now()) : undefined
+      const result = await this.attemptDownload(url, impl, budgetMs)
+      if (result.kind === 'ok') return result.buffer
+
+      // 超时统一以配置的总时限表述，避免单次预算随尝试次数漂移
+      const error =
+        result.timedOut && timeoutMs != null
+          ? new MediaProviderError(
+              'artifact_download_failed',
+              `Download timed out after ${timeoutMs}ms`,
+            )
+          : result.error
+
+      const canRetry =
+        attempt < MAX_DOWNLOAD_ATTEMPTS &&
+        (deadline == null || Date.now() < deadline) &&
+        isRetryableDownloadError(error)
+      if (!canRetry) throw enrichDownloadError(error, attempt)
+
+      const backoff = Math.min(nextBackoffMs, MAX_DOWNLOAD_BACKOFF_MS)
+      nextBackoffMs = Math.min(nextBackoffMs * 2, MAX_DOWNLOAD_BACKOFF_MS)
+      const waitMs =
+        deadline != null ? Math.min(backoff, Math.max(0, deadline - Date.now())) : backoff
+      if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs))
+    }
+  }
+
+  /** 单次下载尝试；不决策重试，把结果（含是否超时）交回外层。 */
+  private async attemptDownload(
+    url: string,
+    impl: typeof fetch,
+    budgetMs: number | undefined,
+  ): Promise<DownloadAttemptResult> {
+    const controller = budgetMs != null ? new AbortController() : undefined
+    let timedOut = false
+    const timer =
+      controller && budgetMs != null
+        ? setTimeout(() => {
+            timedOut = true
+            controller.abort()
+          }, budgetMs)
+        : undefined
+    try {
+      let res: Response
+      try {
+        res = await impl(url, controller ? { signal: controller.signal } : undefined)
+      } catch (err) {
+        if (timedOut) return { kind: 'error', timedOut: true, error: TIMED_OUT_PLACEHOLDER }
+        return { kind: 'error', timedOut: false, error: toDownloadNetworkError(err, url) }
+      }
+      if (!res.ok) {
+        return {
+          kind: 'error',
+          timedOut: false,
+          error: new MediaProviderError(
+            'artifact_download_failed',
+            `Download failed HTTP ${res.status}: ${sanitizeRequestUrl(url)}`,
+            res.status,
+          ),
+        }
+      }
+      return { kind: 'ok', buffer: Buffer.from(await res.arrayBuffer()) }
     } finally {
       if (timer !== undefined) clearTimeout(timer)
     }
   }
+}
+
+type DownloadAttemptResult =
+  | { kind: 'ok'; buffer: Buffer }
+  | { kind: 'error'; timedOut: boolean; error: MediaProviderError }
+
+/** 超时占位错误；外层会按 timeoutMs 重建消息，此处内容不对外暴露。 */
+const TIMED_OUT_PLACEHOLDER = new MediaProviderError('artifact_download_failed', 'timed out')
+
+/** 把底层网络错误转成带可读提示的 artifact 下载错误，命中特征时附带原因与排查方向。 */
+function toDownloadNetworkError(err: unknown, url: string): MediaProviderError {
+  const hint = describeNetworkError(err, 'GET', url)
+  return new MediaProviderError(
+    'artifact_download_failed',
+    hint ?? `Download failed: ${err instanceof Error ? err.message : String(err)}`,
+  )
+}
+
+/** 判断 artifact 下载错误是否可安全重试：网络错误或 408/425/429/5xx；其余 4xx 不重试。 */
+function isRetryableDownloadError(error: MediaProviderError): boolean {
+  if (error.statusCode === undefined) return true
+  return (
+    error.statusCode === 408 ||
+    error.statusCode === 425 ||
+    error.statusCode === 429 ||
+    error.statusCode >= 500
+  )
+}
+
+/** 用尽重试后追加尝试次数，便于排查；首次失败保持原始消息不变。 */
+function enrichDownloadError(error: MediaProviderError, attempt: number): MediaProviderError {
+  if (attempt <= 1) return error
+  error.message = `${error.message}（已重试 ${attempt - 1} 次，共 ${MAX_DOWNLOAD_ATTEMPTS} 次尝试）`
+  return error
 }
 
 export function defaultOutputDir(workspaceRootPath: string, kind: MediaArtifactType): string {
