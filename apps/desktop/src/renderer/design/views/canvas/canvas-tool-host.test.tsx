@@ -4,7 +4,7 @@ import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CanvasToolCallEvent } from '@spark/protocol'
-import type { CanvasWorkspaceActions } from './canvas.tools'
+import type { CanvasToolContext, CanvasWorkspaceActions } from './canvas.tools'
 import {
   useCanvasToolHost,
   type CanvasToolHostController,
@@ -12,7 +12,12 @@ import {
 } from './canvas-tool-host'
 
 const toolMocks = vi.hoisted(() => ({
-  executeCanvasTool: vi.fn(async () => ({ ok: true, nodeId: 'node-1' })),
+  executeCanvasTool: vi.fn(
+    async (_ctx: CanvasToolContext, _name: string, _input: unknown) => ({
+      ok: true,
+      nodeId: 'node-1',
+    }),
+  ),
   getCanvasToolSchemas: vi.fn(() => []),
 }))
 
@@ -113,9 +118,7 @@ describe('useCanvasToolHost', () => {
   })
 
   it('forwards canvas workflow calls from the attached Agent session', async () => {
-    toolMocks.executeCanvasTool.mockImplementationOnce(
-      async () => ({ workflows: [] }) as never,
-    )
+    toolMocks.executeCanvasTool.mockImplementationOnce(async () => ({ workflows: [] }) as never)
 
     await act(async () => controller().ensureAttached('session-workflow'))
     await act(async () => {
@@ -142,5 +145,44 @@ describe('useCanvasToolHost', () => {
         result: { workflows: [] },
       }),
     )
+  })
+
+  it('forwards the latest live viewport and reveal callbacks without reattaching', async () => {
+    const getViewport = vi.fn(() => ({ x: -120, y: -80, zoom: 1, width: 1200, height: 800 }))
+    const revealNodes = vi.fn()
+    act(() =>
+      root?.render(
+        <Harness
+          options={{
+            ...baseOptions,
+            getViewport,
+            revealNodes,
+          }}
+        />,
+      ),
+    )
+    await act(async () => controller().ensureAttached('session-viewport'))
+
+    await act(async () => {
+      toolCallListener?.({
+        requestId: 'viewport-request-1',
+        sessionId: 'session-viewport',
+        toolName: 'canvas_create_reusable_workflow_graph',
+        args: {},
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const context = toolMocks.executeCanvasTool.mock.calls.at(-1)?.[0]
+    expect(context?.getViewport?.()).toEqual({
+      x: -120,
+      y: -80,
+      zoom: 1,
+      width: 1200,
+      height: 800,
+    })
+    context?.revealNodes?.(['node-a', 'node-b'])
+    expect(revealNodes).toHaveBeenCalledWith(['node-a', 'node-b'])
   })
 })

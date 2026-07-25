@@ -1,5 +1,9 @@
 import type { CanvasToolContext, CanvasToolDescriptor } from './canvas.tools'
 import {
+  areCanvasNodesFullyVisible,
+  chooseCanvasWorkflowPlacement,
+} from './canvasAgentWorkflowViewport'
+import {
   buildCanvasAgentWorkflowBlueprint,
   validateCanvasAgentWorkflowGraph,
   validateCanvasWorkflowSubgraph,
@@ -33,9 +37,21 @@ const operationNodeSchema: JSONSchema = {
     operation: {
       type: 'string',
       enum: [
-        'text_to_image', 'image_to_image', 'image_edit', 'image_compose', 'storyboard_grid',
-        'panorama_360', 'text_generate', 'text_rewrite', 'prompt_optimize', 'text_to_video',
-        'image_to_video', 'video_edit', 'video_extend', 'text_to_audio', 'audio_transcribe',
+        'text_to_image',
+        'image_to_image',
+        'image_edit',
+        'image_compose',
+        'storyboard_grid',
+        'panorama_360',
+        'text_generate',
+        'text_rewrite',
+        'prompt_optimize',
+        'text_to_video',
+        'image_to_video',
+        'video_edit',
+        'video_extend',
+        'text_to_audio',
+        'audio_transcribe',
       ],
     },
     title: { type: 'string' },
@@ -121,7 +137,7 @@ function selectionEmptyDiagnostic(): CanvasWorkflowGraphDiagnostic {
 const createTool: CanvasToolDescriptor = {
   name: 'canvas_create_reusable_workflow_graph',
   description:
-    '首选工具：在当前无限画布中原子创建完整可复用流程。根据语义依赖自动创建空媒体输入占位、真实节点、任务、连线和从左到右布局，并在创建前后校验输入/输出与链路。不会自动保存到工作流库。',
+    '首选工具：在当前无限画布中原子创建完整可复用流程。根据语义依赖自动创建空媒体输入占位、真实节点、任务、连线和从左到右布局，并在创建前后校验输入/输出与链路。优先使用用户当前可视区域的空位；空间不足时在外侧创建并自动定位过去。不会自动保存到工作流库。',
   paramsSchema: graphSchema,
   handler: async (ctx, rawInput) => {
     const input = requireGraphSpec(rawInput)
@@ -136,22 +152,32 @@ const createTool: CanvasToolDescriptor = {
       }
     }
     const boardId = activeBoardId(ctx)
-    const blueprint = buildCanvasAgentWorkflowBlueprint(input, {
-      obstacles: snapshot.nodes
-        .filter((node) => node.boardId === boardId && !node.hidden)
-        .map((node) => ({
-          id: node.id,
-          x: node.x,
-          y: node.y,
-          width: node.width,
-          height: node.height,
-        })),
+    const obstacles = snapshot.nodes
+      .filter((node) => node.boardId === boardId && !node.hidden)
+      .map((node) => ({
+        id: node.id,
+        x: node.x,
+        y: node.y,
+        width: node.width,
+        height: node.height,
+      }))
+    const blueprint = buildCanvasAgentWorkflowBlueprint(input, { obstacles })
+    const placement = chooseCanvasWorkflowPlacement({
+      viewport: ctx.getViewport?.(),
+      workflowNodes: blueprint.nodes.map((node) => ({
+        x: node.x,
+        y: node.y,
+        width: node.width ?? 320,
+        height: node.height ?? 220,
+      })),
+      obstacles,
+      fallbackOrigin: { x: blueprint.originX, y: blueprint.originY },
     })
     const beforeIds = new Set(snapshot.nodes.map((node) => node.id))
     const next = await ctx.workspace.applyTemplate({
       boardId,
-      originX: blueprint.originX,
-      originY: blueprint.originY,
+      originX: placement.originX,
+      originY: placement.originY,
       nodes: blueprint.nodes,
       edges: blueprint.edges,
     })
@@ -176,11 +202,17 @@ const createTool: CanvasToolDescriptor = {
       })
     }
     const valid = !diagnostics.some((item) => item.severity === 'error')
+    const createdNodeIds = createdNodes.map((node) => node.id)
+    const fullyVisible = areCanvasNodesFullyVisible(createdNodes, ctx.getViewport?.())
+    const focusedAfterCreate = !fullyVisible && createdNodeIds.length > 0 && ctx.revealNodes != null
+    if (focusedAfterCreate) ctx.revealNodes?.(createdNodeIds)
     return {
       created: true,
       valid,
       name: input.name,
-      createdNodeIds: createdNodes.map((node) => node.id),
+      createdNodeIds,
+      placement: placement.placement,
+      focusedAfterCreate,
       inputNodeIds: blueprint.inputRefs
         .map((ref) => refToNodeId.get(ref))
         .filter((id): id is string => Boolean(id)),
@@ -190,7 +222,9 @@ const createTool: CanvasToolDescriptor = {
       edgeCount: createdEdges.length,
       diagnostics,
       instruction: valid
-        ? '工作流子图已创建并复核，可继续局部修改；只有用户明确要求时才保存到工作流库。'
+        ? focusedAfterCreate
+          ? '工作流子图已创建并复核，画布已定位到全部新节点；只有用户明确要求时才保存到工作流库。'
+          : '工作流子图已创建并复核，结果位于当前可视区域；只有用户明确要求时才保存到工作流库。'
         : '创建后复核发现阻断错误，必须先修复并再次调用 canvas_validate_workflow_graph。',
     }
   },

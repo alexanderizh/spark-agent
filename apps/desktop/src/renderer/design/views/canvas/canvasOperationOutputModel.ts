@@ -60,8 +60,11 @@ export function resolveCanvasOperationOutputState(
   runs: CanvasOperationRunView[],
 ): CanvasOperationOutputState {
   const latestRunWithOutputsIndex = runs.findIndex((run) => run.outputs.length > 0)
-  let primaryRunIndex = latestRunWithOutputsIndex
-  let primaryOutputIndex = latestRunWithOutputsIndex >= 0 ? 0 : -1
+  // runs 已按 createdAt 降序，index 0 即最新一次运行。默认指向它，无论成败：
+  // 成功 → 展示最新产物；运行中/失败（outputs 为空）→ 落到节点卡片/面板的进度与错误展示。
+  // latestRunWithOutputsIndex 仍保留，供「操作节点作为下游输入」的投影使用。
+  let primaryRunIndex = runs.length > 0 ? 0 : -1
+  let primaryOutputIndex = runs[0] && runs[0].outputs.length > 0 ? 0 : -1
 
   const primaryOutputId = node.data.primaryOutputId
   if (primaryOutputId) {

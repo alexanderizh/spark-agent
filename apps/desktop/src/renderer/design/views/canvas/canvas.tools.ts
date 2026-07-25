@@ -36,6 +36,7 @@ import { SPECIALIZED_CANVAS_NODE_TOOLS } from './canvasSpecializedNodeTools'
 import { CANVAS_WORKFLOW_TOOLS } from './canvasWorkflowAgentTools'
 import { CANVAS_AGENT_WORKFLOW_GRAPH_TOOLS } from './canvasAgentWorkflowGraphTools'
 import { formatCanvasToolInputIssues, validateCanvasToolInput } from './canvasToolInputValidation'
+import type { CanvasAgentLiveViewport } from './canvasAgentWorkflowViewport'
 
 type JSONSchema = Record<string, unknown>
 
@@ -194,6 +195,10 @@ export type CanvasToolContext = {
   projectId: string
   /** 返回当前最新的 snapshot；可能为 null（加载中） */
   getSnapshot: () => CanvasSnapshot | null
+  /** 返回 React Flow 当前实时视口，用于将 Agent 新内容放在用户正在查看的区域。 */
+  getViewport?: () => CanvasAgentLiveViewport | null
+  /** 选中并平滑定位一组节点；仅在新内容不完整可见时调用。 */
+  revealNodes?: (nodeIds: string[]) => void
   /** 当前画布选区，仅供显式的子图校验；不扩大到整个画布。 */
   getSelectedNodeIds?: () => string[]
   /** 渲染进程的画布 actions */

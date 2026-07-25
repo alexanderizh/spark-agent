@@ -34,6 +34,8 @@ export type CanvasOperationRunView = {
   provider?: string
   modelId?: string
   workflow?: string
+  errorMsg?: string | null
+  errorDetail?: string | null
   outputs: CanvasOperationOutputView[]
 }
 
@@ -189,6 +191,8 @@ export function buildCanvasOperationRunViews(
         ...(typeof task.modelParams?.workflow === 'string'
           ? { workflow: task.modelParams.workflow }
           : {}),
+        ...(task.errorMsg ? { errorMsg: task.errorMsg } : {}),
+        ...(task.errorDetail ? { errorDetail: task.errorDetail } : {}),
         outputs,
       }
     })

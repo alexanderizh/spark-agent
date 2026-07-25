@@ -70,7 +70,11 @@ import {
 } from './canvasOperationOutputModel'
 import { planCanvasOperationOutputMaterialization } from './canvasOperationOutputMaterialization'
 import { planCanvasOperationOutputDeletion } from './canvasOperationOutputDeletion'
-import { buildCanvasOperationRunViews, type CanvasOperationOutputView } from './canvasOperationRuns'
+import {
+  buildCanvasOperationRunViews,
+  type CanvasOperationOutputView,
+  type CanvasOperationRunView,
+} from './canvasOperationRuns'
 import { CanvasOperationPresetModal } from './CanvasOperationPresetModal'
 import { CanvasPanoramaViewerModal } from './CanvasPanoramaViewerModal'
 import { CanvasImageAnnotationModal } from './CanvasImageAnnotationModal'
@@ -3392,6 +3396,59 @@ export function CanvasWorkspaceView({
       message.success(
         plan.nodeIds.length === 1 ? '已删除产物节点' : `已删除 ${plan.nodeIds.length} 个产物节点`,
       )
+    },
+    [deleteEdges, deleteNodes, deleteTasks, updateNodeData],
+  )
+
+  const handleDeleteOperationRun = useCallback(
+    async (operationNodeId: string, run: CanvasOperationRunView) => {
+      const current = snapshotRef.current
+      if (!current) return
+      const operationNode = current.nodes.find(
+        (node) => node.id === operationNodeId && isOperationNode(node),
+      )
+      if (!operationNode) return
+
+      // 1. 该 task 的 generated 连线（sourceNodeId 命中 + 同一 taskId）
+      const edgeIds = current.edges
+        .filter(
+          (edge) =>
+            edge.type === 'generated' &&
+            edge.sourceNodeId === operationNodeId &&
+            edge.taskId === run.taskId,
+        )
+        .map((edge) => edge.id)
+
+      // 2. 该 task 的产物节点（失败/取消 run 通常为空）
+      const nodeIds = run.outputs
+        .map((output) => output.nodeId)
+        .filter((id): id is string => Boolean(id))
+
+      // 3. primaryOutputId 是否命中该 run 的产物（命中则清空悬空指针）
+      const primaryOutputId = operationNode.data.primaryOutputId
+      const primaryHit = primaryOutputId
+        ? run.outputs.some(
+            (item) =>
+              item.id === primaryOutputId ||
+              item.nodeId === primaryOutputId ||
+              item.assetId === primaryOutputId,
+          )
+        : false
+
+      if (edgeIds.length > 0) await deleteEdges(edgeIds)
+      if (nodeIds.length > 0) await deleteNodes(nodeIds)
+      await deleteTasks([run.taskId])
+      if (primaryHit) {
+        await updateNodeData(
+          operationNodeId,
+          {
+            primaryOutputId: undefined,
+            primaryOutputSelection: 'auto_latest',
+          } as unknown as Partial<CanvasNode['data']>,
+        )
+      }
+
+      message.success('已删除该运行记录')
     },
     [deleteEdges, deleteNodes, deleteTasks, updateNodeData],
   )
@@ -7824,6 +7881,7 @@ export function CanvasWorkspaceView({
               onSetPrimaryOutput={(output) => handleSetOperationPrimaryOutput(opNode.id, output)}
               onExpandOutputs={(outputs) => handleExpandOperationOutputs(opNode.id, outputs)}
               onDeleteOutputs={(outputs) => handleDeleteOperationOutputs(opNode.id, outputs)}
+              onDeleteRun={(run) => handleDeleteOperationRun(opNode.id, run)}
               configPanel={
                 <CanvasOperationPanel
                   node={opNode}
@@ -8280,6 +8338,20 @@ export function CanvasWorkspaceView({
                   canvasViewportControlsRef.current?.focusNodes([nodeId], {
                     preferredWidth: 520,
                     maxZoom: 1.08,
+                  })
+                })
+              })
+            }}
+            getViewport={() => canvasViewportRef.current}
+            revealNodes={(nodeIds) => {
+              if (nodeIds.length === 0) return
+              setSelectedNodeIds(nodeIds)
+              window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(() => {
+                  canvasViewportControlsRef.current?.focusNodes(nodeIds, {
+                    padding: { top: 96, right: 56, bottom: 96, left: 56 },
+                    minZoom: 0.18,
+                    maxZoom: 1,
                   })
                 })
               })

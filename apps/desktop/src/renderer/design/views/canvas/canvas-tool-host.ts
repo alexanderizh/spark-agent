@@ -85,6 +85,8 @@ export interface CanvasToolHostOptions {
   sessionId: string | null
   projectId: string
   getSnapshot: () => CanvasSnapshot | null
+  getViewport?: CanvasToolContext['getViewport']
+  revealNodes?: CanvasToolContext['revealNodes']
   getSelectedNodeIds?: () => string[]
   workspace: CanvasWorkspaceActions
 }
@@ -116,6 +118,8 @@ export function useCanvasToolHost(opts: CanvasToolHostOptions): CanvasToolHostCo
   const ctxRef = useRef<CanvasToolContext>({
     projectId: opts.projectId,
     getSnapshot: opts.getSnapshot,
+    ...(opts.getViewport ? { getViewport: opts.getViewport } : {}),
+    ...(opts.revealNodes ? { revealNodes: opts.revealNodes } : {}),
     ...(opts.getSelectedNodeIds ? { getSelectedNodeIds: opts.getSelectedNodeIds } : {}),
     workspace: opts.workspace,
   })
@@ -129,10 +133,19 @@ export function useCanvasToolHost(opts: CanvasToolHostOptions): CanvasToolHostCo
     ctxRef.current = {
       projectId: opts.projectId,
       getSnapshot: opts.getSnapshot,
+      ...(opts.getViewport ? { getViewport: opts.getViewport } : {}),
+      ...(opts.revealNodes ? { revealNodes: opts.revealNodes } : {}),
       ...(opts.getSelectedNodeIds ? { getSelectedNodeIds: opts.getSelectedNodeIds } : {}),
       workspace: opts.workspace,
     }
-  }, [opts.projectId, opts.getSnapshot, opts.getSelectedNodeIds, opts.workspace])
+  }, [
+    opts.projectId,
+    opts.getSnapshot,
+    opts.getViewport,
+    opts.revealNodes,
+    opts.getSelectedNodeIds,
+    opts.workspace,
+  ])
 
   const detachBinding = useCallback((binding: ActiveCanvasBinding) => {
     void binding.promise

@@ -52,7 +52,7 @@ export function reduceCanvasOperationWorkbenchState(
       return {
         ...state,
         tab:
-          state.tab === 'config' || state.tab === 'settings'
+          state.tab === 'config' || state.tab === 'settings' || state.tab === 'history'
             ? state.tab
             : action.hasOutputs
               ? 'output'

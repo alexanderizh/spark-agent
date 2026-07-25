@@ -191,6 +191,65 @@ describe('canvas operation output model', () => {
     })
   })
 
+  it('keeps the newest run selected when it failed without outputs', () => {
+    // 诉求：最新一次运行失败（无产物）时，应停在最新失败 run，而不是回退到旧的成功产物。
+    const operation = operationNode({ status: 'failed' })
+    operation.taskId = 'task-failed'
+    const failedTask: CanvasTask = {
+      id: 'task-failed',
+      projectId: 'project-1',
+      boardId: 'board-1',
+      userId: 1,
+      operation: 'text_to_image',
+      status: 'failed',
+      progress: 0,
+      inputNodeIds: [],
+      inputAssetIds: [],
+      outputNodeIds: [],
+      outputAssetIds: [],
+      errorMsg: '生成失败',
+      errorDetail: 'detail-reason',
+      modelParams: {},
+      createdAt: '2026-07-10T00:03:00.000Z',
+      updatedAt: at,
+    }
+    const oldOutput = outputNode('output-old', 'asset-old', '旧方案')
+    const base = snapshotFixture()
+    const snapshot: CanvasSnapshot = {
+      ...base,
+      nodes: [operation, oldOutput],
+      edges: [
+        {
+          id: 'edge-old',
+          projectId: 'project-1',
+          boardId: 'board-1',
+          userId: 1,
+          sourceNodeId: operation.id,
+          targetNodeId: 'output-old',
+          type: 'generated' as const,
+          taskId: 'task-1',
+          metadata: {},
+          createdAt: at,
+        },
+      ],
+      assets: [asset('asset-old', '旧方案')],
+      tasks: [failedTask, task('task-1', ['output-old'], ['asset-old'])],
+    }
+
+    const runs = buildCanvasOperationRunViews(operation, snapshot)
+    // runs 按 createdAt 降序：task-failed (00:03) 在前，task-1 (00:01) 在后
+    expect(runs[0]).toMatchObject({
+      taskId: 'task-failed',
+      status: 'failed',
+      errorMsg: '生成失败',
+      errorDetail: 'detail-reason',
+    })
+    expect(resolveCanvasOperationOutputState(operation, runs)).toMatchObject({
+      primaryRunIndex: 0,
+      primaryOutputIndex: -1,
+    })
+  })
+
   it('passes only the primary candidate into downstream tasks', () => {
     const snapshot = snapshotFixture()
     const node = snapshot.nodes[0]!
