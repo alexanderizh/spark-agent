@@ -150,6 +150,7 @@ import {
   getDefaultWorkflowAtomicContent,
   memberDisallowedToolsFromConfig,
   runWorkflowVerifyNode,
+  stringArrayConfig,
 } from './session-workflow-helpers.js'
 export {
   buildWorkflowAtomicInstruction,
@@ -6164,42 +6165,50 @@ export class SessionService {
     // 内置联网搜索对团队成员同样默认挂载
     const memberWebSearchServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
     if (memberWebSearchServer != null) memberMcpServers.spark_search = memberWebSearchServer
-    // 细致审查修复（A-02）：member turn 镜像 Host 路径加载条件性 MCP，避免 member 缺能力
-    // 导致 dispatch 任务失败。Host 与 Member 加载同一组 MCP server，保证能力对等。
+    // 三轮核查修复（联合场景：Workflow + Team）：readonly atomic member（input/route/
+    // plan/review 节点的临时 worker）不应加载写入类 MCP——这些节点的语义是"纯 LLM 任务"，
+    // metadata.toolIds 已限定 SDK 内置工具为只读集，但 MCP 工具不在 WORKFLOW_RESTRICTABLE
+    // 列表内，commit 9 的"全 member 加载 conditional MCP"破坏了 readonly 语义。
+    // 通过 member.metadata?.toolIds 非空识别 readonly atomic（createWorkflowAtomicMember
+    // 只对 input/route/plan/review 设置该字段）。
+    const memberConfiguredToolIds = stringArrayConfig(member.metadata?.toolIds)
+    const isReadonlyAtomicMember = memberConfiguredToolIds.length > 0
     try {
-      const memberMediaContext = await this.resolveMediaGenerationContext(workspaceRootPath)
-      const memberImageContext =
-        memberMediaContext == null
-          ? await this.resolveImageGenerationContext(workspaceRootPath)
-          : null
-      const memberPlatformServer = await this.resolvePlatformManagementMcpServer(sessionId)
-      const memberPresentFilesServer = resolvePresentFilesMcpServer(workspaceRootPath)
-      if (memberMediaContext != null) {
-        memberMcpServers.spark_media = memberMediaContext.mcpServer
+      if (!isReadonlyAtomicMember) {
+        const memberMediaContext = await this.resolveMediaGenerationContext(workspaceRootPath)
+        const memberImageContext =
+          memberMediaContext == null
+            ? await this.resolveImageGenerationContext(workspaceRootPath)
+            : null
+        const memberPlatformServer = await this.resolvePlatformManagementMcpServer(sessionId)
+        const memberPresentFilesServer = resolvePresentFilesMcpServer(workspaceRootPath)
+        if (memberMediaContext != null) {
+          memberMcpServers.spark_media = memberMediaContext.mcpServer
+        }
+        if (memberImageContext != null) {
+          memberMcpServers.spark_image = memberImageContext.mcpServer
+        }
+        if (memberPlatformServer != null) {
+          memberMcpServers.spark_platform = memberPlatformServer
+        }
+        if (memberPresentFilesServer != null) {
+          memberMcpServers.spark_files = memberPresentFilesServer
+        }
+        // 浏览器自动化：仅当 desktop 注入了 browserAutomationMcpProvider
+        if (this.browserAutomationMcpProvider != null) {
+          const memberBrowserServer = await this.browserAutomationMcpProvider(
+            sessionId,
+            workspaceRootPath,
+          )
+          if (memberBrowserServer != null) memberMcpServers.spark_browser = memberBrowserServer
+        }
       }
-      if (memberImageContext != null) {
-        memberMcpServers.spark_image = memberImageContext.mcpServer
-      }
-      if (memberPlatformServer != null) {
-        memberMcpServers.spark_platform = memberPlatformServer
-      }
-      if (memberPresentFilesServer != null) {
-        memberMcpServers.spark_files = memberPresentFilesServer
-      }
-      // 调试模式：member 也需要 spark_debug 工具状态机（仅当 session 启用 debug mode）
-      // 二轮核查修复：复用上层 session 变量，避免重复 findByIdOrFail 查询。
+      // spark_debug 对所有 member（含 readonly atomic）保持挂载——debug session 内
+      // readonly atomic 也可能需要查询调试状态（如 spark_debug.get_hypotheses）。
       const memberDebugModeEnabled = getDebugModeFromMetadata(session.metadata_json)
       if (memberDebugModeEnabled) {
         const memberDebugServer = await this.resolveDebugMcpServer(sessionId, workspaceRootPath)
         if (memberDebugServer != null) memberMcpServers.spark_debug = memberDebugServer
-      }
-      // 浏览器自动化：仅当 desktop 注入了 browserAutomationMcpProvider
-      if (this.browserAutomationMcpProvider != null) {
-        const memberBrowserServer = await this.browserAutomationMcpProvider(
-          sessionId,
-          workspaceRootPath,
-        )
-        if (memberBrowserServer != null) memberMcpServers.spark_browser = memberBrowserServer
       }
     } catch (err) {
       log.warn(
