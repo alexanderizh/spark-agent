@@ -6071,7 +6071,8 @@ export class SessionService {
     let memberCustomEnv: Record<string, string> | undefined
     let memberEnvPrompt = ''
     try {
-      const memberWorkspaceIds = new SessionRepository(this.db).getWorkspaceIds(sessionId)
+      // 二轮核查修复：复用上层已查的 sessionRepo + session，避免重复 DB 查询。
+      const memberWorkspaceIds = sessionRepo.getWorkspaceIdsFromRow(session)
       const envConfig = new RuntimeCompositionService(
         new SkillRepository(this.db),
         new SettingsRepository(this.db),
@@ -6093,7 +6094,8 @@ export class SessionService {
     // 主动 search_memory 的复杂度；member 通过 prompt 摘要已足够）。
     let memberMemoryBlock: string | undefined
     try {
-      const memberWorkspaceId = new SessionRepository(this.db).getWorkspaceIds(sessionId)[0]
+      // 二轮核查修复：复用 sessionRepo + session，避免重复 DB 查询。
+      const memberWorkspaceId = sessionRepo.getWorkspaceIdsFromRow(session)[0]
       memberMemoryBlock = await this.loadMemoryBlockForTurn(
         sessionId,
         workspaceRootPath,
@@ -6185,9 +6187,8 @@ export class SessionService {
         memberMcpServers.spark_files = memberPresentFilesServer
       }
       // 调试模式：member 也需要 spark_debug 工具状态机（仅当 session 启用 debug mode）
-      const memberDebugModeEnabled = getDebugModeFromMetadata(
-        new SessionRepository(this.db).findByIdOrFail(sessionId).metadata_json,
-      )
+      // 二轮核查修复：复用上层 session 变量，避免重复 findByIdOrFail 查询。
+      const memberDebugModeEnabled = getDebugModeFromMetadata(session.metadata_json)
       if (memberDebugModeEnabled) {
         const memberDebugServer = await this.resolveDebugMcpServer(sessionId, workspaceRootPath)
         if (memberDebugServer != null) memberMcpServers.spark_debug = memberDebugServer
