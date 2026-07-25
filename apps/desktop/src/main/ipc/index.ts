@@ -7956,6 +7956,55 @@ export function registerAllIpcHandlers(): void {
     return { filePath, fileName }
   })
 
+  typedIpcHandle('file:save-pasted-media', async (req) => {
+    const dataUrl = req.dataUrl?.trim()
+    if (!dataUrl) {
+      throw new Error('dataUrl is required')
+    }
+    const kind: CanvasAssetKind | null =
+      req.kind === 'audio' ? 'audio' : req.kind === 'video' ? 'video' : null
+    if (kind == null) {
+      throw new Error('kind must be "video" or "audio"')
+    }
+
+    const match = dataUrl.match(/^data:([^;,]+)?;base64,(.+)$/)
+    if (match == null) {
+      throw new Error('Invalid media data URL')
+    }
+
+    const mimeType = (match[1] ?? req.mimeType ?? '').toLowerCase()
+    const base64Payload = match[2]
+    if (base64Payload == null || base64Payload.length === 0) {
+      throw new Error('Clipboard media is empty')
+    }
+    const buffer = Buffer.from(base64Payload, 'base64')
+    if (buffer.length === 0) {
+      throw new Error('Clipboard media is empty')
+    }
+
+    const subdir = canvasAssetSubdir(kind)
+    const extension = extensionFromMimeType(
+      mimeType && mimeType !== 'application/octet-stream' ? mimeType : undefined,
+      kind,
+    )
+    const defaultBaseName = kind === 'audio' ? 'pasted-audio' : 'pasted-video'
+
+    const rootDir = req.projectRootPath?.trim()
+      ? path.join(path.resolve(req.projectRootPath), 'assets', subdir)
+      : req.storageScope === 'canvas'
+        ? path.join(getDefaultCanvasMediaDir(), subdir)
+        : path.join(app.getPath('temp'), `spark-agent-pasted-${subdir}`)
+    await fs.mkdir(rootDir, { recursive: true })
+    const baseName = (req.suggestedBaseName?.trim() || defaultBaseName).replace(
+      /[^a-zA-Z0-9._-]+/g,
+      '-',
+    )
+    const fileName = `${baseName}-${crypto.randomUUID()}.${extension}`
+    const filePath = path.join(rootDir, fileName)
+    await fs.writeFile(filePath, buffer)
+    return { filePath, fileName }
+  })
+
   typedIpcHandle('file:save-canvas-annotation', async (req) => {
     const documentJson = req.documentJson?.trim()
     if (!documentJson) throw new Error('documentJson is required')
