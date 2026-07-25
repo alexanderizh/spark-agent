@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path'
+import { clipTextHeadTail, estimateTokens } from '@spark/shared'
 
 export interface ProjectContextSource {
   kind: 'rule' | 'skill' | 'agent'
@@ -53,6 +54,13 @@ interface MarkdownDoc {
 }
 
 const MAX_FILE_CHARS = 20_000
+/**
+ * 项目上下文 system prompt 的 token 上限（D-07 改造）。
+ * 旧值 MAX_PROMPT_CHARS=80_000 按字符算，对中文（chars/2）实际 ~40k tokens 偏多；
+ * 改 20k tokens 是更合理的全局上限，留更多预算给 history + tool 结果。
+ */
+const MAX_PROMPT_TOKEN_BUDGET = 20_000
+/** @deprecated 保留兼容引用，新代码用 MAX_PROMPT_TOKEN_BUDGET */
 const MAX_PROMPT_CHARS = 80_000
 const MIN_PARTIAL_DOC_TOKENS = 200
 const MAX_SKILL_DESCRIPTION_CHARS = 220
@@ -384,8 +392,12 @@ function applyContextBudget(
 }
 
 function truncateDocToTokens<T extends ProjectDoc>(doc: T, tokens: number): T {
-  const maxChars = Math.max(0, tokens * 3)
-  const body = `${doc.body.slice(0, maxChars)}\n\n[Project context source truncated by Context Governor]`
+  // D-07 改造：旧实现按字符（tokens × 3）粗暴从头截断 → 末尾信息完全丢失。
+  // 对带 frontmatter 的项目文档，frontmatter 在顶部、关键代码块可能在底部
+  // （如 agents.md 的"约束"/"禁止"清单），头尾保留比纯头截断信息密度高得多。
+  const body = clipTextHeadTail(doc.body, Math.max(0, tokens), {
+    ellipsis: '\n\n[Project context source truncated by Context Governor]\n\n',
+  })
   const next = {
     ...doc,
     body,
@@ -462,8 +474,12 @@ function normalizeInstructionBody(text: string): string {
 }
 
 function clampPrompt(text: string): string {
-  if (text.length <= MAX_PROMPT_CHARS) return text
-  return `${text.slice(0, MAX_PROMPT_CHARS)}\n\n[Project context truncated at ${MAX_PROMPT_CHARS} characters]`
+  // D-07：MAX_PROMPT_CHARS 旧按字符粗暴截断（前 80k 字符）→ 后段 system prompt 丢失。
+  // 改为 token+头尾保留，预算 ~20k tokens（约等于旧 80k chars 英文/27k 中文）。
+  // system prompt 头部是身份/工具描述，尾部是关键约束，两侧都重要。
+  return clipTextHeadTail(text, MAX_PROMPT_TOKEN_BUDGET, {
+    ellipsis: `\n\n[Project context system prompt truncated at ${MAX_PROMPT_TOKEN_BUDGET} tokens]\n\n`,
+  })
 }
 
 function safeRead(filePath: string): string {
@@ -530,10 +546,6 @@ function firstBodyLine(body: string): string {
     .split(/\r?\n/)
     .map((line) => line.trim().replace(/^#+\s*/, ''))
     .find((line) => line.length > 0) ?? ''
-}
-
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 3)
 }
 
 function uniqueFiles(files: string[]): string[] {

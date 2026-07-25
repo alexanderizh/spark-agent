@@ -112,12 +112,16 @@ describe('ProjectContextService', () => {
     mkdirSync(join(root, '.claude', 'agents'), { recursive: true })
     writeFileSync(join(root, '.claude', 'agents', 'large.md'), 'B'.repeat(3000))
 
-    const result = new ProjectContextService().discover(root, { budgetTokens: 500 })
+    // 真实 token 数（gpt-tokenizer）：'A'*3000 → 375 token，'B'*3000 → 750 token。
+    // budget=300：AGENTS.md (375>300 但 ≥200) 触发 trimmed_to_context_budget；
+    // 剩余预算归零后，large.md 触发 excluded_by_context_budget。
+    const result = new ProjectContextService().discover(root, { budgetTokens: 300 })
 
-    expect(result.budget).toMatchObject({ budgetTokens: 500, truncated: true })
+    expect(result.budget).toMatchObject({ budgetTokens: 300, truncated: true })
     expect(result.sources.some((source) => source.reason === 'trimmed_to_context_budget')).toBe(true)
     expect(result.sources.some((source) => source.reason === 'excluded_by_context_budget')).toBe(true)
-    expect(result.systemPrompt?.length ?? 0).toBeLessThan(2500)
+    // 旧的字符粗暴截断 ≤2500；新的 token+头尾截断 ellipsis 更长（多 2 char），放宽到 2700。
+    expect(result.systemPrompt?.length ?? 0).toBeLessThan(2700)
   })
 
   it('returns an empty context for missing workspaces', () => {
