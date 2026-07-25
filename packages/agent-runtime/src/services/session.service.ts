@@ -6125,6 +6125,51 @@ export class SessionService {
     // 内置联网搜索对团队成员同样默认挂载
     const memberWebSearchServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
     if (memberWebSearchServer != null) memberMcpServers.spark_search = memberWebSearchServer
+    // 细致审查修复（A-02）：member turn 镜像 Host 路径加载条件性 MCP，避免 member 缺能力
+    // 导致 dispatch 任务失败。Host 与 Member 加载同一组 MCP server，保证能力对等。
+    try {
+      const memberMediaContext = await this.resolveMediaGenerationContext(workspaceRootPath)
+      const memberImageContext =
+        memberMediaContext == null
+          ? await this.resolveImageGenerationContext(workspaceRootPath)
+          : null
+      const memberPlatformServer = await this.resolvePlatformManagementMcpServer(sessionId)
+      const memberPresentFilesServer = resolvePresentFilesMcpServer(workspaceRootPath)
+      if (memberMediaContext != null) {
+        memberMcpServers.spark_media = memberMediaContext.mcpServer
+      }
+      if (memberImageContext != null) {
+        memberMcpServers.spark_image = memberImageContext.mcpServer
+      }
+      if (memberPlatformServer != null) {
+        memberMcpServers.spark_platform = memberPlatformServer
+      }
+      if (memberPresentFilesServer != null) {
+        memberMcpServers.spark_files = memberPresentFilesServer
+      }
+      // 调试模式：member 也需要 spark_debug 工具状态机（仅当 session 启用 debug mode）
+      const memberDebugModeEnabled = getDebugModeFromMetadata(
+        new SessionRepository(this.db).findByIdOrFail(sessionId).metadata_json,
+      )
+      if (memberDebugModeEnabled) {
+        const memberDebugServer = await this.resolveDebugMcpServer(sessionId, workspaceRootPath)
+        if (memberDebugServer != null) memberMcpServers.spark_debug = memberDebugServer
+      }
+      // 浏览器自动化：仅当 desktop 注入了 browserAutomationMcpProvider
+      if (this.browserAutomationMcpProvider != null) {
+        const memberBrowserServer = await this.browserAutomationMcpProvider(
+          sessionId,
+          workspaceRootPath,
+        )
+        if (memberBrowserServer != null) memberMcpServers.spark_browser = memberBrowserServer
+      }
+    } catch (err) {
+      log.warn(
+        `Member conditional MCP load failed (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    }
     // 成员的 spark_team 工具面，三个独立触发条件（满足其一即注入 server）：
     //  - 嵌套派发（agent_dispatch/agent_dispatch_batch）：allowNesting && memberDepth < maxDepth；
     //  - 对等消息（agent_message）：enablePeerMessaging && 真实讨论存在（memberCanPeerMessage）；
