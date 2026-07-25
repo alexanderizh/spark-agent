@@ -261,7 +261,16 @@ export function buildMemoryExtractionRecentContext(
     maxChars?: number
   },
 ): string {
-  const historyOptions = options?.agentNameById != null ? { agentNameById: options.agentNameById } : undefined
+  // W1.1b：memory 抽取只需要 recent context（slice 尾部 maxChars），不需要完整摘要。
+  // 强制 skipForSdkResume=true 跳过 SessionSummaryRepository 读写，避免与
+  // SDK compaction 冲突 + 节省摘要生成开销。
+  const historyOptions: {
+    agentNameById?: Record<string, string>
+    skipForSdkResume?: boolean
+  } = { skipForSdkResume: true }
+  if (options?.agentNameById != null) {
+    historyOptions.agentNameById = options.agentNameById
+  }
   const { prompt } = buildConversationHistoryWithSummary(eventRepo, db, sessionId, currentSeq, historyOptions)
   if (prompt == null || prompt.trim().length === 0) return ''
 
