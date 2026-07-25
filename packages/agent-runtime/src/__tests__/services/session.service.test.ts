@@ -371,15 +371,17 @@ describe('SessionService recovery helpers', () => {
     expect(prompt).toContain('I extracted the document')
   })
 
-  it('keeps SDK resume disabled while persisted history provides continuity', () => {
+  it('enables SDK resume for native Anthropic + Claude model (D-09)', () => {
+    // D-09 已打开：原生 Anthropic + Claude 模型走 SDK resume，其余分支仍是 fresh session
     expect(
       isSdkResumeSafe({
         providerType: 'anthropic',
         model: 'claude-sonnet-4-5',
         agentAdapter: 'claude-sdk',
       }),
-    ).toBe(false)
+    ).toBe(true)
 
+    // GLM 走 lkeap 代理：不是 api.anthropic.com，仍走 fresh
     expect(
       isSdkResumeSafe({
         providerType: 'anthropic',
@@ -389,6 +391,7 @@ describe('SessionService recovery helpers', () => {
       }),
     ).toBe(false)
 
+    // Claude 模型但通过非 anthropic 域名代理：保持 fresh
     expect(
       isSdkResumeSafe({
         providerType: 'anthropic',
