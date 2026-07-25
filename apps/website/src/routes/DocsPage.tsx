@@ -79,12 +79,12 @@ export function DocsPage() {
     <>
       <Seo
         seo={{
-          title: '使用文档 - Spark Agent 教程',
+          title: '使用文档 - Spark Work 教程',
           description:
-            'Spark Agent 官方文档：覆盖代码开发、团队 Agent、无限画布、多媒体 Provider、MCP / Skills、权限治理、自动更新与发布。可搜索、按需加载。',
+            'Spark Work 官方文档：覆盖代码开发、团队 Agent、无限画布、多媒体 Provider、MCP / Skills、权限治理、自动更新与发布。可搜索、按需加载。',
           path: '/docs',
           keywords: [
-            'Spark Agent 文档',
+            'Spark Work 文档',
             'AI Agent 教程',
             'MCP 教程',
             '团队模式',
@@ -135,7 +135,7 @@ export function DocsPage() {
 
       <Section
         title="建议阅读路径"
-        intro="如果你是第一次接触 Spark Agent，先按这条路径建立心智模型，再回头挑你当前需要的能力主题。"
+        intro="如果你是第一次接触 Spark Work，先按这条路径建立心智模型，再回头挑你当前需要的能力主题。"
       >
         <div className="workflow">
           {recommendedPath.map((topic, index) => (
@@ -227,9 +227,9 @@ function buildDocsIndexJsonLd() {
     {
       '@context': 'https://schema.org',
       '@type': 'ItemList',
-      name: 'Spark Agent 文档主题目录',
+      name: 'Spark Work 文档主题目录',
       description:
-        'Spark Agent 官方文档主题索引：覆盖代码开发、团队 Agent、无限画布、多媒体 Provider、MCP / Skills、权限治理、自动更新与发布。',
+        'Spark Work 官方文档主题索引：覆盖代码开发、团队 Agent、无限画布、多媒体 Provider、MCP / Skills、权限治理、自动更新与发布。',
       numberOfItems: docsTopics.length,
       itemListOrder: 'https://schema.org/ItemListOrderAscending',
       itemListElement: items,

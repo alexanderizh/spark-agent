@@ -732,7 +732,7 @@ export function HeroAppMockup() {
     <div
       className="hero-app"
       ref={outerRef}
-      aria-label="Spark Agent 桌面工作台界面预览"
+      aria-label="Spark Work 桌面工作台界面预览"
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
     >
@@ -745,7 +745,7 @@ export function HeroAppMockup() {
               <i />
               <i />
             </span>
-            <span className="hero-app__title">Spark Agent</span>
+            <span className="hero-app__title">Spark Work</span>
 
             {/* 视图切换器（手动切换），进度条独立放到下方作为全宽细条 */}
             <div className="hero-app__switch" role="tablist" aria-label="预览视图切换">

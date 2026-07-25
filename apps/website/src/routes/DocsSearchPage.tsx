@@ -66,10 +66,10 @@ export function DocsSearchPage() {
     }
   }, [])
 
-  const seoTitle = query ? `搜索：${query} - Spark Agent 文档` : '搜索文档 - Spark Agent'
+  const seoTitle = query ? `搜索：${query} - Spark Work 文档` : '搜索文档 - Spark Work'
   const seoDescription = query
-    ? `在 Spark Agent 文档中搜索「${query}」的结果。`
-    : '在 Spark Agent 官方文档中搜索关键词，支持标题、描述、章节、FAQ 与正文摘要的全文检索。'
+    ? `在 Spark Work 文档中搜索「${query}」的结果。`
+    : '在 Spark Work 官方文档中搜索关键词，支持标题、描述、章节、FAQ 与正文摘要的全文检索。'
 
   return (
     <>
@@ -79,8 +79,8 @@ export function DocsSearchPage() {
           description: seoDescription,
           path: `/docs/search${query ? `?q=${encodeURIComponent(query)}` : ''}`,
           keywords: query
-            ? ['Spark Agent 文档搜索', `Spark Agent ${query}`, query]
-            : ['Spark Agent 文档搜索'],
+            ? ['Spark Work 文档搜索', `Spark Work ${query}`, query]
+            : ['Spark Work 文档搜索'],
         }}
         jsonLd={{
           '@context': 'https://schema.org',

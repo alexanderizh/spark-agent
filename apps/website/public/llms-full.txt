@@ -1,9 +1,9 @@
-# Spark Agent full product summary
+# Spark Work full product summary
 
-Spark Agent is an open-source, local-first AI Agent workbench. It is designed for users who want AI assistance to operate inside real projects while keeping context, permissions, file changes, model usage, assets, and audit records visible in one desktop app.
+Spark Work is an open-source, local-first AI Agent workbench. It is designed for users who want AI assistance to operate inside real projects while keeping context, permissions, file changes, model usage, assets, and audit records visible in one desktop app.
 
-## What Spark Agent does
-Spark Agent helps users develop code, debug failures, review AI-generated changes, isolate risky work, coordinate multiple agents, configure models and tools, and organize multimedia production workflows. It also supports writing documentation, drafting plans and PRDs, preparing presentation outlines, generating web content, and processing local files.
+## What Spark Work does
+Spark Work helps users develop code, debug failures, review AI-generated changes, isolate risky work, coordinate multiple agents, configure models and tools, and organize multimedia production workflows. It also supports writing documentation, drafting plans and PRDs, preparing presentation outlines, generating web content, and processing local files.
 
 ## Development workbench
 The coding surface combines side chat, built-in terminal, file context, change review, checkpoints, debug mode, browser automation, task status, and optional remote connections. The goal is to make agent edits observable, confirmable, and reversible instead of hiding them behind a chat transcript.
@@ -21,13 +21,13 @@ The infinite canvas is the creative hub. It can organize scripts, characters, sc
 Image, voice, and video generation flow through a unified media capability registry. The runtime injects a `spark_image` MCP for image generation (legacy compatibility) and a `spark_media` MCP for image edit, audio speech/transcription, and video generate/image-to-video/edit/extend. Supported platforms include APIMart, xAI Grok, Alibaba Bailian, Volcengine Ark (Seedance), Kling, PixVerse, Hailuo, and more. Each provider carries `mediaProvider`, `mediaApiType`, `mediaCapabilities`, `mediaDefaults`, and `mediaModelRefs`. MediaModelManifest is the single source of truth for model discovery and parameter schemas.
 
 ## Browser automation
-Spark Agent ships a managed Playwright MCP server (`@playwright/mcp`) that exposes `mcp__playwright__browser_*` tools. Users can install the package and Chromium from Settings. The embedded BrowserWindow communicates with Playwright over CDP 9223 (loopback). The default Skill prompt forbids the agent from accessing payment and banking pages.
+Spark Work ships a managed Playwright MCP server (`@playwright/mcp`) that exposes `mcp__playwright__browser_*` tools. Users can install the package and Chromium from Settings. The embedded BrowserWindow communicates with Playwright over CDP 9223 (loopback). The default Skill prompt forbids the agent from accessing payment and banking pages.
 
 ## Built-in web search
 A separate `spark_search` MCP server provides `web_search` and `fetch_url`. It works under any OpenAI-compatible provider (Anthropic's built-in `WebSearch`/`WebFetch` is server-side and gets stripped). Backends: free default chain (cn.bing.com → 百度 → DuckDuckGo) plus keyed providers (bocha, tavily, serper). Configuration lives in `app_settings.webSearch`. Keys are injected only as `SPARK_SEARCH_*` environment variables and never enter prompts.
 
 ## Remote connections
-Users can pair Telegram, Feishu (Lark), QQ, and WeChat Claw bots to Spark Agent. Each connection runs through a local bridge runtime (`127.0.0.1:32178`, fallback to random port). Telegram uses long polling; Feishu uses the official WebSocket SDK. Common commands: `/help`, `/sessions`, `/use-session`, `/models`, `/use-model`, `/providers`, `/use-provider`, `/agents`, `/use-agent`, `/workspaces`, `/new-session`, `/open-workspace`, `/send`, `/status`.
+Users can pair Telegram, Feishu (Lark), QQ, and WeChat Claw bots to Spark Work. Each connection runs through a local bridge runtime (`127.0.0.1:32178`, fallback to random port). Telegram uses long polling; Feishu uses the official WebSocket SDK. Common commands: `/help`, `/sessions`, `/use-session`, `/models`, `/use-model`, `/providers`, `/use-provider`, `/agents`, `/use-agent`, `/workspaces`, `/new-session`, `/open-workspace`, `/send`, `/status`.
 
 ## Auto update
 Desktop releases use electron-builder + GitHub Releases + a hosted releases API at spark.yiqibyte.com. UpdateService reads the hosted API first, falls back to GitHub on failure. macOS publishes separate arm64 and x64 DMGs; Windows publishes x64 EXE. Native modules (`better-sqlite3`, `keytar`, `node-pty`) are rebuilt against the Electron ABI before each release. Code signing on macOS uses `Developer ID Application`; Windows uses `WIN_CSC_LINK` + `WIN_CSC_KEY_PASSWORD`.
@@ -51,8 +51,8 @@ The website documents all of the above. Documentation is treated as first-class 
 - /contact links to GitHub Issues, Discussions, and private security reporting.
 
 ## FAQ
-Q: Is Spark Agent local-first? A: Yes, project data and runtime state are designed around local desktop storage.
-Q: Is Spark Agent only for developers? A: No, developers can use the coding loop, while product, operations, education, consulting, and film teams can use canvas, assets, and media workflows.
+Q: Is Spark Work local-first? A: Yes, project data and runtime state are designed around local desktop storage.
+Q: Is Spark Work only for developers? A: No, developers can use the coding loop, while product, operations, education, consulting, and film teams can use canvas, assets, and media workflows.
 Q: Can it create film storyboards? A: It includes an infinite-canvas film workflow with script breakdown, shot planning, storyboard grids, film assets, timelines, and generation-task organization.
 Q: Which models are supported? A: Text paths include Claude Agent SDK and Codex. Model, image, video, and audio capabilities depend on configured providers and manifests.
 Q: How does it reduce Agent risk? A: It exposes isolated work, checkpoints, change review, permission approval, usage records, and audit events.

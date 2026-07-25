@@ -49,7 +49,7 @@ const showcase = [
   {
     src: '/showcase/remote-connection.png',
     title: '把远程会话接进桌面端',
-    text: '通过 Telegram、飞书在远程桌面或移动端继续与 Spark Agent 通信，消息按平台路由进入默认会话，跨设备也能保持上下文。',
+    text: '通过 Telegram、飞书在远程桌面或移动端继续与 Spark Work 通信，消息按平台路由进入默认会话，跨设备也能保持上下文。',
   },
 ]
 
@@ -90,7 +90,7 @@ export function HomePage() {
       <Seo jsonLd={faqJsonLd()} />
       <section className="hero enhanced-hero">
         <div className="hero-text">
-          <h1>Spark Agent</h1>
+          <h1>Spark Work</h1>
           <p className="hero-subtitle">
             本地优先的桌面端 AI Agent 工作台。把代码开发、办公文档、主题调研、多媒体创作和可重复执行的工作流放进同一个可审查的工作台。
           </p>
@@ -144,7 +144,7 @@ export function HomePage() {
       </Section>
       <Section
         title="从目标到交付的执行链路"
-        intro="官网先讲结构，不靠过时截图。你可以把 Spark Agent 理解为一个把任务描述、真实执行、过程审查和结果沉淀串起来的桌面运行时。"
+        intro="官网先讲结构，不靠过时截图。你可以把 Spark Work 理解为一个把任务描述、真实执行、过程审查和结果沉淀串起来的桌面运行时。"
       >
         <div className="workflow">
           {executionFlow.map(([step, detail], index) => (
@@ -178,7 +178,7 @@ export function HomePage() {
       </Section>
       <Section
         title="推荐阅读路径"
-        intro="如果你第一次接触 Spark Agent，按这条路径读官网文档会更快建立整体心智模型。"
+        intro="如果你第一次接触 Spark Work，按这条路径读官网文档会更快建立整体心智模型。"
       >
         <div className="link-list large">
           {docsRoadmap.map(([label, href]) => (

@@ -68,7 +68,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '快速开始',
     detail: '从安装到完成第一个真实任务',
     description:
-      'Spark Agent 快速开始指南：下载适合你系统的安装包、完成首次启动、接入模型服务、创建第一个 Agent 并完成第一个任务。',
+      'Spark Work 快速开始指南：下载适合你系统的安装包、完成首次启动、接入模型服务、创建第一个 Agent 并完成第一个任务。',
     category: 'getting-started',
     level: 'beginner',
     keywords: ['安装', '下载', '首次启动', '快速开始', 'quick start', 'getting started'],
@@ -82,7 +82,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '代码开发',
     detail: 'Worktree、终端、审查与补丁',
     description:
-      '在 Spark Agent 中做真实的代码开发：打开项目、选择分支、用 Git Worktree 隔离、在终端跑验证、逐文件审查 AI 改动并生成 Pull Request。',
+      '在 Spark Work 中做真实的代码开发：打开项目、选择分支、用 Git Worktree 隔离、在终端跑验证、逐文件审查 AI 改动并生成 Pull Request。',
     category: 'code',
     level: 'intermediate',
     keywords: ['代码', 'worktree', '终端', '审查', 'PR', 'code development', 'review'],
@@ -96,7 +96,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: 'Agent 工作流',
     detail: 'Agent 配置、真实执行工作流、工具选择与上下文',
     description:
-      'Spark Agent 中 Agent 的工作机制：默认 Agent、Provider/Model/Skill/Rule 配置、全局已启用 MCP 自动挂载、可真实执行的 Workflow Graph、workflow_run、运行快照与 [Runtime Rules] 段。',
+      'Spark Work 中 Agent 的工作机制：默认 Agent、Provider/Model/Skill/Rule 配置、全局已启用 MCP 自动挂载、可真实执行的 Workflow Graph、workflow_run、运行快照与 [Runtime Rules] 段。',
     category: 'team',
     level: 'intermediate',
     keywords: ['Agent', '工作流', 'workflow', 'skills', 'rules', 'MCP', 'spark_platform'],
@@ -111,7 +111,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '团队模式',
     detail: 'Host / Member 调度、事件流与预算',
     description:
-      'Spark Agent 团队模式（Team Mode）：Host Agent 把子任务分派给多个 Member Agent，每个 Member 有独立模型/工具/Skills，事件流式展示分派、回复与完成。',
+      'Spark Work 团队模式（Team Mode）：Host Agent 把子任务分派给多个 Member Agent，每个 Member 有独立模型/工具/Skills，事件流式展示分派、回复与完成。',
     category: 'team',
     level: 'advanced',
     keywords: ['团队', '多 Agent', 'host', 'member', 'dispatch', 'agent_dispatch'],
@@ -126,7 +126,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '无限画布',
     detail: '节点、资产、任务、影视创作与生成链路',
     description:
-      'Spark Agent 无限画布（Infinite Canvas）能力全景：项目管理、节点类型、AI 操作、任务队列、生成结果节点、lineage 边、资产中心、媒体任务路由与持久化。',
+      'Spark Work 无限画布（Infinite Canvas）能力全景：项目管理、节点类型、AI 操作、任务队列、生成结果节点、lineage 边、资产中心、媒体任务路由与持久化。',
     category: 'canvas',
     level: 'intermediate',
     keywords: [
@@ -155,7 +155,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '多媒体 Provider',
     detail: '图片、语音、视频的统一能力注册与平台适配',
     description:
-      'Spark Agent 多媒体 Provider 配置：图片生成 / 编辑、语音合成 / 转写、视频生成 / 图生视频 / 视频编辑的统一能力注册表、平台适配器（APIMart / xAI / 火山 / 百炼 / 可灵 / Hailuo 等）。',
+      'Spark Work 多媒体 Provider 配置：图片生成 / 编辑、语音合成 / 转写、视频生成 / 图生视频 / 视频编辑的统一能力注册表、平台适配器（APIMart / xAI / 火山 / 百炼 / 可灵 / Hailuo 等）。',
     category: 'provider',
     level: 'advanced',
     keywords: [
@@ -179,7 +179,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '图片生成 Provider',
     detail: 'spark_image MCP 与图片模型适配',
     description:
-      'Spark Agent 图片生成 Provider：imageProvider / imageApiType 字段、内置预设（OpenAI、APIMart、OpenRouter、Gemini、Seedream 等）、spark_image MCP 工具、.spark-artifacts/images 输出目录、与 spark_media 统一栈的关系。',
+      'Spark Work 图片生成 Provider：imageProvider / imageApiType 字段、内置预设（OpenAI、APIMart、OpenRouter、Gemini、Seedream 等）、spark_image MCP 工具、.spark-artifacts/images 输出目录、与 spark_media 统一栈的关系。',
     category: 'provider',
     level: 'intermediate',
     keywords: ['image', '生图', 'imageProvider', 'spark_image', 'seedream', 'openai image'],
@@ -194,7 +194,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '联网搜索',
     detail: 'spark_search MCP、免密链与 keyed 后端',
     description:
-      'Spark Agent 内置联网搜索 spark_search：web_search / fetch_url 工具、免密默认链（Bing / 百度 / DuckDuckGo）、keyed 后端（博查 / Tavily / Serper）、配置项与降级策略。',
+      'Spark Work 内置联网搜索 spark_search：web_search / fetch_url 工具、免密默认链（Bing / 百度 / DuckDuckGo）、keyed 后端（博查 / Tavily / Serper）、配置项与降级策略。',
     category: 'mcp',
     level: 'beginner',
     keywords: ['搜索', 'web_search', 'fetch_url', 'Bing', 'DuckDuckGo', 'bocha', 'tavily', '联网'],
@@ -209,7 +209,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '浏览器自动化',
     detail: 'Playwright MCP 与 spark_browser 可见窗口',
     description:
-      'Spark Agent 浏览器自动化：Playwright managed MCP 负责网页流程，spark_browser 内置 MCP 提供应用内可见窗口、本地 HTML 调试、console/network 和 profile 登录态。',
+      'Spark Work 浏览器自动化：Playwright managed MCP 负责网页流程，spark_browser 内置 MCP 提供应用内可见窗口、本地 HTML 调试、console/network 和 profile 登录态。',
     category: 'mcp',
     level: 'intermediate',
     keywords: [
@@ -232,7 +232,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '远程连接',
     detail: 'Telegram / 飞书 桥接',
     description:
-      'Spark Agent 远程连接（Telegram / 飞书）：连接配置、配对流程、本地 webhook（127.0.0.1:32178）、内置命令（/help /sessions /models 等）、启动项集成。',
+      'Spark Work 远程连接（Telegram / 飞书）：连接配置、配对流程、本地 webhook（127.0.0.1:32178）、内置命令（/help /sessions /models 等）、启动项集成。',
     category: 'governance',
     level: 'intermediate',
     keywords: ['remote', 'telegram', 'feishu', 'webhook', '/bind'],
@@ -247,7 +247,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '自动更新',
     detail: 'GitHub Release + 官网版本中心 + UpdateService',
     description:
-      'Spark Agent 桌面端自动更新：electron-builder + GitHub Release + 官网版本中心（spark.yiqibyte.com）、UpdateService 检查/下载/安装状态、应用内更新入口、stable/beta 通道、Windows / macOS 签名构建。',
+      'Spark Work 桌面端自动更新：electron-builder + GitHub Release + 官网版本中心（spark.yiqibyte.com）、UpdateService 检查/下载/安装状态、应用内更新入口、stable/beta 通道、Windows / macOS 签名构建。',
     category: 'release',
     level: 'intermediate',
     keywords: ['更新', 'update', 'release', 'electron-builder', 'WIN_CSC_LINK', 'CSC_LINK'],
@@ -262,7 +262,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: 'MCP 与 Skills',
     detail: '可安装技能、加载策略与按需读取',
     description:
-      'Spark Agent MCP / Skills 体系：内置技能（apps/desktop/resources/skills）、可安装技能目录（INSTALLABLE_SKILL_CATALOG）、tarball 与 GitHub 两种安装路径、按需加载与运行时上下文注入。',
+      'Spark Work MCP / Skills 体系：内置技能（apps/desktop/resources/skills）、可安装技能目录（INSTALLABLE_SKILL_CATALOG）、tarball 与 GitHub 两种安装路径、按需加载与运行时上下文注入。',
     category: 'mcp',
     level: 'intermediate',
     keywords: ['skill', 'SKILL.md', 'installable', 'tarball', 'spark_platform'],
@@ -277,7 +277,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '权限与治理',
     detail: '审批、Rules、Hooks、用量账本与审计',
     description:
-      'Spark Agent 权限治理：高风险操作审批（删除 / 联网 / 写文件）、Rules 约束 Agent 行为、Hooks 在工具调用前后插入自定义逻辑、用量账本、审计面板与事件流。',
+      'Spark Work 权限治理：高风险操作审批（删除 / 联网 / 写文件）、Rules 约束 Agent 行为、Hooks 在工具调用前后插入自定义逻辑、用量账本、审计面板与事件流。',
     category: 'governance',
     level: 'advanced',
     keywords: ['权限', 'permission', 'rules', 'hooks', '审计', 'audit', 'approval', '用量'],
@@ -291,7 +291,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '桌面端架构',
     detail: 'Renderer / Main / IPC / 服务层与本地数据',
     description:
-      'Spark Agent 桌面端架构总览：Electron 主进程 / 渲染进程 / Preload / IPC 桥、Agent Runtime 服务层（Provider / Session / Skill / MCP / Permission）、SQLite 与本地文件存储、Keychain 凭据存储。',
+      'Spark Work 桌面端架构总览：Electron 主进程 / 渲染进程 / Preload / IPC 桥、Agent Runtime 服务层（Provider / Session / Skill / MCP / Permission）、SQLite 与本地文件存储、Keychain 凭据存储。',
     category: 'getting-started',
     level: 'advanced',
     keywords: ['desktop', 'electron', 'renderer', 'main', 'IPC', 'sqlite', 'keytar'],
@@ -306,7 +306,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '内置工具',
     detail: '15 个内置 Skill 全览与挑选指南',
     description:
-      'Spark Agent 应用内置的全部 15 个 Skill 教程：claude-api / commit / react / frontend-design / skill-creator / multi-search-engine / browser-use / canvas-studio / multimedia-use / spark-web-tool / echarts / ui-ux-pro-max / spark-debug / find-skills / platform-manager。每条都说明触发场景、典型使用、跳过条件与配套 MCP。',
+      'Spark Work 应用内置的全部 15 个 Skill 教程：claude-api / commit / react / frontend-design / skill-creator / multi-search-engine / browser-use / canvas-studio / multimedia-use / spark-web-tool / echarts / ui-ux-pro-max / spark-debug / find-skills / platform-manager。每条都说明触发场景、典型使用、跳过条件与配套 MCP。',
     category: 'mcp',
     level: 'intermediate',
     keywords: [
@@ -329,7 +329,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '长期记忆',
     detail: '三层作用域、后台抽取、混合检索与整合进化',
     description:
-      'Spark Agent 三层长期记忆系统：User / Project / Agent 作用域隔离不串味，后台独立 LLM 抽取（与 OpenAI Memory、Mem0 同款架构）不干扰主对话，FTS5+sqlite-vec 混合检索，自动整合进化，search_memory / recall_memory 工具按需深挖。',
+      'Spark Work 三层长期记忆系统：User / Project / Agent 作用域隔离不串味，后台独立 LLM 抽取（与 OpenAI Memory、Mem0 同款架构）不干扰主对话，FTS5+sqlite-vec 混合检索，自动整合进化，search_memory / recall_memory 工具按需深挖。',
     category: 'mcp',
     level: 'intermediate',
     keywords: [
@@ -353,7 +353,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '工作流编排',
     detail: '13 种节点、路由循环、完整编码流程与排错',
     description:
-      'Spark Agent 工作流（Workflow）完整教程：13 种节点作用与配置、outputKey 状态传递、条件路由、循环子图、verify 失败语义，以及覆盖审批、并行子代理、Skill / Tool / MCP 审计和双交付物的编码功能任务示例。',
+      'Spark Work 工作流（Workflow）完整教程：13 种节点作用与配置、outputKey 状态传递、条件路由、循环子图、verify 失败语义，以及覆盖审批、并行子代理、Skill / Tool / MCP 审计和双交付物的编码功能任务示例。',
     category: 'team',
     level: 'intermediate',
     keywords: [
@@ -380,7 +380,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '任务面板',
     detail: '6 个状态列、拖拽、内联编辑与回收站',
     description:
-      'Spark Agent 任务面板（BoardView）使用教程：6 个状态列（todo / in-progress / bug-fix / done / accepted / closed）、TaskCard 完整字段（id / title / description / status / priority / assignee / project / tags / dueDate / processingAgent / acceptanceCriteria / testAgent / comments / attachments / sortOrder）、内联创建 / 编辑、拖拽改变状态、右键菜单、回收站软删除、多维筛选、通过 platform-manager Skill 让 Agent 自动操作。',
+      'Spark Work 任务面板（BoardView）使用教程：6 个状态列（todo / in-progress / bug-fix / done / accepted / closed）、TaskCard 完整字段（id / title / description / status / priority / assignee / project / tags / dueDate / processingAgent / acceptanceCriteria / testAgent / comments / attachments / sortOrder）、内联创建 / 编辑、拖拽改变状态、右键菜单、回收站软删除、多维筛选、通过 platform-manager Skill 让 Agent 自动操作。',
     category: 'governance',
     level: 'beginner',
     keywords: ['看板', 'board', '任务面板', 'kanban', 'todo', 'in-progress', 'accepted', '回收站'],

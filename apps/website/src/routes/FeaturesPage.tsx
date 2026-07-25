@@ -18,9 +18,9 @@ export function FeaturesPage() {
     <>
       <Seo
         seo={{
-          title: '功能 - Spark Agent AI 内容创作工作台',
+          title: '功能 - Spark Work AI 内容创作工作台',
           description:
-            '了解 Spark Agent 如何把可执行工作流、代码开发、团队 Agent、权限治理、无限画布、多媒体生成、MCP 和 Skills 放进一个本地优先工作台。',
+            '了解 Spark Work 如何把可执行工作流、代码开发、团队 Agent、权限治理、无限画布、多媒体生成、MCP 和 Skills 放进一个本地优先工作台。',
           path: '/features',
           keywords: ['AI 工作流', 'AI 内容创作', 'AI 办公', 'AI 写代码', 'AI 文档工具', '多 Agent'],
         }}
@@ -29,7 +29,7 @@ export function FeaturesPage() {
       <Section
         eyebrow="功能总览"
         title="覆盖工作流、开发、协作和创作的完整工作台"
-        intro="从修复代码到生成视觉资产，Spark Agent 把常用 AI 流程做成可执行、可审查、可复用的桌面工作流。"
+        intro="从修复代码到生成视觉资产，Spark Work 把常用 AI 流程做成可执行、可审查、可复用的桌面工作流。"
       >
         <div className="grid cards">
           {featureGroups.map((g) => (
@@ -39,7 +39,7 @@ export function FeaturesPage() {
       </Section>
       <Section
         title="功能不是散点，而是一条执行流程"
-        intro="Spark Agent 的重点不是堆很多按钮，而是把复杂任务稳定地走完。下面这条链路描述的是产品能力如何协同工作。"
+        intro="Spark Work 的重点不是堆很多按钮，而是把复杂任务稳定地走完。下面这条链路描述的是产品能力如何协同工作。"
       >
         <div className="workflow">
           {featureFlow.map(([step, detail], index) => (
@@ -59,7 +59,7 @@ export function FeaturesPage() {
       </Section>
       <Section
         title="为什么值得信任"
-        intro="Spark Agent 的核心设计围绕本地优先、过程可见和能力可扩展展开。模型服务能力会按你的配置和服务商限制生效。"
+        intro="Spark Work 的核心设计围绕本地优先、过程可见和能力可扩展展开。模型服务能力会按你的配置和服务商限制生效。"
       >
         <div className="evidence">
           {codeEvidence.map((e) => (

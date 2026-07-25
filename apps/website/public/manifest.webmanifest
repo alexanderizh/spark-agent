@@ -1,6 +1,6 @@
 {
-  "name": "Spark Agent Website",
-  "short_name": "Spark Agent",
+  "name": "Spark Work Website",
+  "short_name": "Spark Work",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#070A12",

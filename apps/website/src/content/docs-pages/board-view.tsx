@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      「任务面板」（BoardView）是 Spark Agent 内的全局任务看板，按状态分列管理任务。
+      「任务面板」（BoardView）是 Spark Work 内的全局任务看板，按状态分列管理任务。
       适合跟踪「需要多步处理、有验收标准、有负责人」的工作项，例如：实现某个功能、跟进一个 PR、处理用户反馈。
     </p>
 
@@ -205,7 +205,7 @@ export const boardView: DocsPageContent = {
     { key: 'Agent 操作', value: 'mcp__spark_platform__board_tasks_*（platform-manager Skill）' },
   ],
   howTo: {
-    name: '用 Spark Agent 任务面板跟踪一次功能上线',
+    name: '用 Spark Work 任务面板跟踪一次功能上线',
     description: '从创建任务到验收关闭的完整流程',
     totalTime: 'PT10M',
     steps: [
@@ -219,7 +219,7 @@ export const boardView: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 任务面板（BoardView）使用教程：6 个状态列（todo 待办 / in-progress 进行中 / bug-fix Bug 修复 / done 已完成 / ' +
+    'Spark Work 任务面板（BoardView）使用教程：6 个状态列（todo 待办 / in-progress 进行中 / bug-fix Bug 修复 / done 已完成 / ' +
     'accepted 已验收 / closed 已关闭），4 个优先级（low/medium/high/urgent）。' +
     'TaskCard 字段：id / title / description / status / priority / assignee / project / tags / dueDate / ' +
     'processingAgent / acceptanceCriteria / testAgent / comments / attachments / sortOrder。' +

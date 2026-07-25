@@ -6,11 +6,11 @@ export function OpenSourcePage() {
     <>
       <Seo
         seo={{
-          title: '开源 - Spark Agent',
+          title: '开源 - Spark Work',
           description:
-            'Spark Agent 开源、透明、可扩展。了解源码仓库、贡献方式、本地开发、许可证和技术栈。',
+            'Spark Work 开源、透明、可扩展。了解源码仓库、贡献方式、本地开发、许可证和技术栈。',
           path: '/open-source',
-          keywords: ['Spark Agent 开源', 'AI Agent GitHub', 'MCP 开源', 'Electron AI'],
+          keywords: ['Spark Work 开源', 'AI Agent GitHub', 'MCP 开源', 'Electron AI'],
         }}
       />
       <Section

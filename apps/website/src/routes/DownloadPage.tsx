@@ -6,12 +6,12 @@ export function DownloadPage() {
     <>
       <Seo
         seo={{
-          title: '下载 Spark Agent - 跨平台 AI 桌面应用',
+          title: '下载 Spark Work - 跨平台 AI 桌面应用',
           description:
-            '下载 Spark Agent macOS、Windows 桌面版本。页面会自动识别系统，并推荐适合当前设备的安装包。',
+            '下载 Spark Work macOS、Windows 桌面版本。页面会自动识别系统，并推荐适合当前设备的安装包。',
           path: '/download',
           keywords: [
-            'Spark Agent 下载',
+            'Spark Work 下载',
             'AI 桌面应用下载',
             '跨平台 AI 工具',
             'macOS AI',
@@ -21,7 +21,7 @@ export function DownloadPage() {
       />
       <Section
         eyebrow="桌面客户端下载"
-        title="下载适合你设备的 Spark Agent"
+        title="下载适合你设备的 Spark Work"
         intro="支持 macOS 与 Windows。页面会自动识别当前系统，并高亮推荐对应版本。"
       >
         <DownloadPanel />

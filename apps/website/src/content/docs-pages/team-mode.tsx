@@ -166,7 +166,7 @@ export const teamMode: DocsPageContent = {
     { key: '持久化', value: 'agent_teams / team_dispatches' },
   ],
   howTo: {
-    name: '在 Spark Agent 中使用团队模式',
+    name: '在 Spark Work 中使用团队模式',
     description: '把一个复杂任务拆给多个 Agent 并行执行',
     totalTime: 'PT3M',
     steps: [
@@ -178,7 +178,7 @@ export const teamMode: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 团队模式（Team Mode / Agent-to-Agent）：Host Agent 通过 mcp__spark_team__agent_dispatch 把子任务分派给 Member Agent，' +
+    'Spark Work 团队模式（Team Mode / Agent-to-Agent）：Host Agent 通过 mcp__spark_team__agent_dispatch 把子任务分派给 Member Agent，' +
     '每个 Member 使用独立的 Provider/Model/Skills 与隔离的 sdkSessionId，应用中所有已启用 MCP 自动对 Host 和 Member 可用；事件流（team_dispatch_requested / team_member_message / ' +
     'team_member_status / team_dispatch_completed）以群聊方式呈现。嵌套（allowNesting/maxDepth=3）、单轮预算（5 次 / turn）、' +
     '超时（默认 120s，最大 600s）、agent_teams 持久化与 team:list-dispatches 历史查询、群成员头像（DiceBear URL）。',

@@ -8,9 +8,9 @@ export interface PageSeo {
 }
 
 export const defaultSeo: PageSeo = {
-  title: 'Spark Agent - 本地优先的 AI 内容创作工作台',
+  title: 'Spark Work - 本地优先的 AI 内容创作工作台',
   description:
-    'Spark Agent 是一个开源、本地优先的 AI 内容创作工作台，支持写代码、写文档、做 PPT、网页、文件处理、多 Agent 协作与影视无限画布创作。',
+    'Spark Work 是一个开源、本地优先的 AI 内容创作工作台，支持写代码、写文档、做 PPT、网页、文件处理、多 Agent 协作与影视无限画布创作。',
   path: '/',
   keywords: [
     'AI 内容创作工作台',
@@ -34,7 +34,7 @@ export function softwareJsonLd() {
   return {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
-    name: 'Spark Agent',
+    name: 'Spark Work',
     applicationCategory: 'ProductivityApplication',
     operatingSystem: 'macOS, Windows',
     description: defaultSeo.description,

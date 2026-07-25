@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Spark Agent 提供两套互补浏览器能力：managed <code>playwright</code> MCP
+      Spark Work 提供两套互补浏览器能力：managed <code>playwright</code> MCP
       负责成熟网页自动化；内置 <code>spark_browser</code> MCP 负责应用内可见独立窗口、
       本地 HTML 调试、持久脚本、profile 登录态、console 与网络观察。
     </p>
@@ -122,7 +122,7 @@ export const browserAutomation: DocsPageContent = {
     { key: '运行模式', value: 'Playwright headful / headless' },
   ],
   aiSummary:
-    'Spark Agent 浏览器自动化由 playwright managed MCP 与 spark_browser 内置 MCP 并存提供。' +
+    'Spark Work 浏览器自动化由 playwright managed MCP 与 spark_browser 内置 MCP 并存提供。' +
     'playwright 适合 snapshot/ref、点击输入、采集和 E2E；spark_browser 打开应用内可见 BrowserWindow，支持 file:// HTML、eval、持久脚本、profile 登录态、console 捕获和 webRequest 级网络规则。' +
     '旧 CDP 9223 嵌入式视图已移除。远程使用 spark_browser 默认关闭，需开启 useInternalBrowser。',
   Body,

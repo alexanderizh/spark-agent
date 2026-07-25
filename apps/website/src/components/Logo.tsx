@@ -1,11 +1,11 @@
-// Spark Agent 应用标识 —— 直接引用桌面端同源图标 icon.png
+// Spark Work 应用标识 —— 直接引用桌面端同源图标 icon.png
 // （public/icon.png 由 apps/desktop/resources/icon.png 复制而来，md5 一致）。
 // 用真实位图替代手绘 SVG 近似，保证官网 logo / favicon / og:image / manifest
 // 与桌面端 taskbar 图标像素级一致。props 与旧版完全兼容，调用方无需改动。
 export function Logo({
   size = 32,
   showBackground = true,
-  title = 'Spark Agent',
+  title = 'Spark Work',
   className,
 }: {
   size?: number

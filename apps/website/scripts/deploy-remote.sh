@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #==============================================================
-# Spark Agent 官网：SSH 拉取镜像并替换 spark-website 容器
+# Spark Work 官网：SSH 拉取镜像并替换 spark-website 容器
 # 供 GitHub Actions 或本地 CI 调用。
 #
 # 必需环境变量:

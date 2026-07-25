@@ -4,7 +4,7 @@ const Body = () => (
   <>
     <p>
       默认情况下，AI 助手每次对话都从零开始 —— 你说过的偏好、项目背景、长期约定，
-      下一会话就忘了。Spark Agent 内置<strong>三层长期记忆系统</strong>，让 Agent
+      下一会话就忘了。Spark Work 内置<strong>三层长期记忆系统</strong>，让 Agent
       自动沉淀跨会话、跨时间仍然有用的事实与反馈，后续会话开箱即得你之前的上下文。
     </p>
 
@@ -158,7 +158,7 @@ const page: DocsPageContent = {
     },
   ],
   aiSummary:
-    'Spark Agent 三层长期记忆系统：User/Project/Agent 三层作用域隔离，记忆不会跨项目串味；后台独立 LLM 抽取（与 OpenAI Memory、Mem0 同款架构）不干扰主对话、可用便宜模型降本、故障不影响主流程、支持回顾性整合进化；FTS5+sqlite-vec 混合检索 + 会话自动注入 + search_memory/recall_memory 工具按需深挖；本地优先存储，项目级记忆跟随代码目录。',
+    'Spark Work 三层长期记忆系统：User/Project/Agent 三层作用域隔离，记忆不会跨项目串味；后台独立 LLM 抽取（与 OpenAI Memory、Mem0 同款架构）不干扰主对话、可用便宜模型降本、故障不影响主流程、支持回顾性整合进化；FTS5+sqlite-vec 混合检索 + 会话自动注入 + search_memory/recall_memory 工具按需深挖；本地优先存储，项目级记忆跟随代码目录。',
   quickReference: [
     { key: '作用域', value: 'User（跨项目）/ Project（项目专属）/ Agent（角色专属）' },
     { key: '抽取架构', value: '后台独立 LLM（OpenAI 兼容 / anthropic 原生），未配则回退对话模型' },

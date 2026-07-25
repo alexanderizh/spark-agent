@@ -16,9 +16,9 @@ export function ArchitecturePage() {
     <>
       <Seo
         seo={{
-          title: '架构 - Spark Agent Agent Runtime 与本地优先设计',
+          title: '架构 - Spark Work Agent Runtime 与本地优先设计',
           description:
-            '了解 Spark Agent 如何用本地优先架构、Agent Runtime、MCP、Provider、权限治理和 SQLite 数据层支撑可信 AI 工作流。',
+            '了解 Spark Work 如何用本地优先架构、Agent Runtime、MCP、Provider、权限治理和 SQLite 数据层支撑可信 AI 工作流。',
           path: '/architecture',
           keywords: ['AI Agent Runtime', 'MCP', 'Electron AI 应用', '本地优先 AI', 'SQLite'],
         }}
@@ -26,7 +26,7 @@ export function ArchitecturePage() {
       <Section
         eyebrow="架构设计"
         title="为可信 AI 工作流设计的本地架构"
-        intro="Spark Agent 把桌面端、Agent Runtime、MCP、Provider、Skills、本地数据和权限治理组合在一起，让自动化过程可见、可控、可扩展。"
+        intro="Spark Work 把桌面端、Agent Runtime、MCP、Provider、Skills、本地数据和权限治理组合在一起，让自动化过程可见、可控、可扩展。"
       >
         <ArchitectureMap />
       </Section>

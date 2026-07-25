@@ -243,7 +243,7 @@ export const canvasMvp: DocsPageContent = {
     { key: '安全协议', value: 'safe-file://x/<base64>（CSP 允许 media-src safe-file:）' },
   ],
   howTo: {
-    name: '用 Spark Agent 无限画布完成一次文生图迭代',
+    name: '用 Spark Work 无限画布完成一次文生图迭代',
     description: '从空画布到生成第一个图像节点',
     totalTime: 'PT5M',
     steps: [
@@ -255,7 +255,7 @@ export const canvasMvp: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 无限画布（Infinite Canvas）核心：项目管理页 + 节点画布，节点类型（image / text / video / task / group / panorama），' +
+    'Spark Work 无限画布（Infinite Canvas）核心：项目管理页 + 节点画布，节点类型（image / text / video / task / group / panorama），' +
     'AI 操作（文生图 / 图生图 / 编辑 / 多图合成 / 文本生成 / 图生视频 / 九宫格），任务状态机（pending/running/completed/failed/cancelled）与 lineage 边，' +
     '资产管理（按类型/状态/关键词筛选）。媒体任务链路：localStorage 热存储 + 500ms debounce 的 canvas:snapshot:save 写入 SQLite（canvas_projects + canvas_snapshots），' +
     '.spark-artifacts/media/{images,audio,videos} 产物，safe-file:// 协议，MediaRouterService + Manifest / APIMart / xAI / Volcengine 适配器，' +

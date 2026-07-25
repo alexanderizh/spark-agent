@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      这份快速开始指南帮你在 5 分钟内完成 Spark Agent 的首次安装、模型配置并跑通第一个真实任务。
+      这份快速开始指南帮你在 5 分钟内完成 Spark Work 的首次安装、模型配置并跑通第一个真实任务。
       整个过程不需要写代码，但请准备一个你常用的模型服务 API Key（OpenAI、Anthropic、OpenRouter、
       Ollama 或任何兼容 OpenAI 协议的供应商均可）。
     </p>
@@ -29,7 +29,7 @@ const Body = () => (
 
     <h2 id="provider">2. 接入模型服务（Provider）</h2>
     <p>
-      Spark Agent 用 Provider 统一管理所有模型服务。打开 <strong>设置 → Provider</strong>，
+      Spark Work 用 Provider 统一管理所有模型服务。打开 <strong>设置 → Provider</strong>，
       新建一条配置，至少填写：
     </p>
     <ol>
@@ -85,7 +85,7 @@ const Body = () => (
 
     <h2 id="first-task">4. 跑通第一个任务</h2>
     <p>
-      打开主页会话，输入一句自然语言描述。Spark Agent 会：
+      打开主页会话，输入一句自然语言描述。Spark Work 会：
     </p>
     <ol>
       <li>解析任务，按需调度工具（文件、终端、搜索、画布）。</li>
@@ -103,7 +103,7 @@ const Body = () => (
     <h2 id="troubleshoot">5. 常见问题排查</h2>
     <ul>
       <li>
-        <strong>启动后看不到窗口</strong>：检查 dock / 任务栏里 Spark Agent 是否被最小化，或在「窗口」菜单里重新唤起。
+        <strong>启动后看不到窗口</strong>：检查 dock / 任务栏里 Spark Work 是否被最小化，或在「窗口」菜单里重新唤起。
       </li>
       <li>
         <strong>模型调用失败</strong>：在 Provider 列表点「测试连接」拿到准确错误码；
@@ -130,7 +130,7 @@ export const quickStart: DocsPageContent = {
   ],
   faq: [
     {
-      question: 'Spark Agent 支持哪些操作系统？',
+      question: 'Spark Work 支持哪些操作系统？',
       answer: 'macOS（Apple Silicon 与 Intel）、Windows 10/11（x64）。',
     },
     {
@@ -158,7 +158,7 @@ export const quickStart: DocsPageContent = {
     { key: '项目数据库', value: 'SQLite（本地文件）' },
   ],
   howTo: {
-    name: 'Spark Agent 首次跑通',
+    name: 'Spark Work 首次跑通',
     description: '下载安装 → 接入模型 → 创建 Agent → 跑通第一个任务',
     totalTime: 'PT5M',
     steps: [
@@ -170,7 +170,7 @@ export const quickStart: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 快速开始指南：macOS / Windows 两平台安装步骤，首次启动权限申请说明，Provider 配置（模型类型、协议、模型 ID、API Key），' +
+    'Spark Work 快速开始指南：macOS / Windows 两平台安装步骤，首次启动权限申请说明，Provider 配置（模型类型、协议、模型 ID、API Key），' +
     '默认 Agent 与自定义 Agent 创建，权限模式（默认 / 接受编辑 / 计划模式），第一个真实任务的端到端流程，' +
     '常见问题排查清单（窗口、模型 401/404、终端权限、字体）。',
   Body,

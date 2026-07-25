@@ -5,7 +5,7 @@ const Body = () => (
     <p>
       SDK 自带的 <code>WebSearch</code> / <code>WebFetch</code> 是 Anthropic 第一方服务端工具 —
       一旦会话走第三方 OpenAI 兼容供应商就会被剥离失效。为了让 Agent 在任意供应商下都能联网，
-      Spark Agent 内置了独立的 <code>spark_search</code> MCP server，它在本地子进程内自己发 HTTP，
+      Spark Work 内置了独立的 <code>spark_search</code> MCP server，它在本地子进程内自己发 HTTP，
       与模型供应商完全解耦，<strong>所有 session / 所有 Agent（含团队成员）默认挂载</strong>。
     </p>
 
@@ -132,7 +132,7 @@ export const webSearch: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 内置联网搜索 spark_search：解决 Anthropic WebSearch/WebFetch 在第三方供应商下失效的问题，' +
+    'Spark Work 内置联网搜索 spark_search：解决 Anthropic WebSearch/WebFetch 在第三方供应商下失效的问题，' +
     '本地子进程发 HTTP 与供应商解耦，所有 session / Agent（含 team member）默认挂载。' +
     '工具：mcp__spark_search__web_search（query, count 1-20, time_range day/week/month/year/all, site）、' +
     'mcp__spark_search__fetch_url（url, max_chars 默认 8000 最大 50000）。后端：免密默认链 cn.bing.com → 百度 → DuckDuckGo（自动降级）；' +

@@ -49,7 +49,7 @@ function Figure({ children, caption }: { children: ReactNode; caption: string })
 const Body = () => (
   <div className="workflow-doc-page">
     <p>
-      工作流是 Spark Agent 里一张<strong>可视化、可执行、可审计</strong>
+      工作流是 Spark Work 里一张<strong>可视化、可执行、可审计</strong>
       的任务图。节点描述每一步做什么，连线描述先后关系，
       <code>outputKey</code> 把上一步结果写入工作流状态，条件边再根据状态决定下一条路径。
     </p>
@@ -987,7 +987,7 @@ export const workflowUsage: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 工作流是一张可视化、可执行、可审计的任务图，由节点、依赖边、outputKey 状态和条件边共同驱动。当前支持 input、plan、route、agent、subagent、skill、tool、mcp、approval、verify、review、artifact、loop 共 13 种节点。' +
+    'Spark Work 工作流是一张可视化、可执行、可审计的任务图，由节点、依赖边、outputKey 状态和条件边共同驱动。当前支持 input、plan、route、agent、subagent、skill、tool、mcp、approval、verify、review、artifact、loop 共 13 种节点。' +
     'route 从 routeOptions 中选择字符串 value，分支条件应优先使用 equals；字符串 false 仍为 truthy。loop 是封装独立 config.body 子图的原子节点，支持 maxIterations、loopVar、resultKey、collectAll 和 breakCondition，外层图不应使用回边，v1 不支持嵌套 loop。' +
     'verify 会在工作区执行 verifyCommands，任一命令非零退出即终止工作流，因此业务层“未通过后继续修改”应放进 loop：由 Agent 运行测试并正常返回报告，再由 Review 或 Route 输出 pass/retry，循环结束后再用 verify 做最终硬门禁。' +
     '完整编码示例为 input→plan→approval→复杂度 route→可选并行 subagent→主 agent→修复 loop→skill/tool/mcp 并行审计→verify→最终 review→accept/follow_up route→双 artifact。所有需要传递的节点必须配置 outputKey；MCP 在应用层全局启用。',

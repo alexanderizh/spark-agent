@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Spark Agent 把高频能力的最佳实践打包成「内置 Skill」，随应用一起发布，开箱即用。
+      Spark Work 把高频能力的最佳实践打包成「内置 Skill」，随应用一起发布，开箱即用。
       每个 Skill 都是一份 SKILL.md：包含触发场景、推荐工作流和注意事项，Agent 加载后会按里面的方法执行。
       本页列出应用内置的全部 15 个 Skill，便于你按任务挑选合适的工具。
     </p>
@@ -89,7 +89,7 @@ const Body = () => (
     <h2 id="canvas">4. 画布 / 内容生产类</h2>
     <h3 id="canvas-studio">4.1 Canvas Studio（canvas-studio）</h3>
     <p>
-      用 <code>mcp__spark_canvas__*</code> 工具操作 Spark Agent 的无限画布。
+      用 <code>mcp__spark_canvas__*</code> 工具操作 Spark Work 的无限画布。
       用户提到画布 / 节点 / 素材 / 影视资产 / 文稿拆章 / 剧本拆解 / 角色 / 场景 / 道具 / 特效 / 分镜 / 关键帧 /
       首尾帧视频 / 360 全景 / 导演台 / 成片清单 时应优先加载。
     </p>
@@ -164,7 +164,7 @@ const Body = () => (
 
     <h3 id="platform-manager">6.3 Platform Manager（platform-manager）</h3>
     <p>
-      内置管理 Skill：管理 Spark Agent 的 Skills / MCP / Providers / Workflows / Agents / Teams / Settings / 看板任务。
+      内置管理 Skill：管理 Spark Work 的 Skills / MCP / Providers / Workflows / Agents / Teams / Settings / 看板任务。
       命名空间 <code>mcp__spark_platform__*</code>，所有会话默认挂载。详细见
       <a href="/docs/agents-workflows#platform-tools">Agent 工作流 / Platform 管理工具</a>。
     </p>
@@ -273,7 +273,7 @@ export const builtinTools: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 内置 15 个 Skill（apps/desktop/resources/skills/）：编程工程类（claude-api / commit / react / frontend-design / ' +
+    'Spark Work 内置 15 个 Skill（apps/desktop/resources/skills/）：编程工程类（claude-api / commit / react / frontend-design / ' +
     'skill-creator）、联网浏览器类（multi-search-engine / browser-use）、画布内容生产类（canvas-studio / multimedia-use / spark-web-tool / echarts）、' +
     'UI 设计类（ui-ux-pro-max）、调试平台管理类（spark-debug / find-skills / platform-manager）。' +
     '每个 Skill 是一份 SKILL.md（frontmatter + markdown 正文），元信息常驻、正文按需注入。' +
