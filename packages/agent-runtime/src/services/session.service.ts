@@ -6297,6 +6297,13 @@ export class SessionService {
       ...(memberSystemPrompt.trim().length > 0 ? { systemPrompt: memberSystemPrompt } : {}),
       ...(memberCustomEnv != null ? { customEnv: memberCustomEnv } : {}),
       ...(Object.keys(memberMcpServers).length > 0 ? { mcpServers: memberMcpServers } : {}),
+      // 三轮联合场景审查修复（Reasoning + Member）：member 继承 agent 配置的
+      // reasoningEffort，否则 member 用 SDK 默认（standard），违背用户在 agent 上
+      // 配置 max/high 的意图。createWorkflowSubagentMember 已让 atomic member
+      // 继承 hostAgent.reasoningEffort，真实 team member 自己有 reasoningEffort 字段。
+      ...(member.reasoningEffort != null
+        ? { reasoningEffort: normalizeReasoningEffort(member.reasoningEffort) }
+        : {}),
       // A-03 细致审查修复：member allowedTools 必须包含所有已加载 MCP 的工具，否则
       // SDK 视为非免审批 → member 在 unattended dispatch 时卡在 approval 等待。
       // 镜像 Host 路径（line 3253-3295）按 mcpServers 实际加载的工具构建 allowedTools。
