@@ -9,6 +9,9 @@ import {
   clearLogFile,
   getLogInfo,
   setLogLevel,
+  setDebugNamespaces,
+  getDebugNamespaces,
+  getLogLevel,
 } from './index.js'
 
 describe('shared logger file logging', () => {
@@ -23,6 +26,9 @@ describe('shared logger file logging', () => {
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true })
     // 文件 logger 指向的是上面的临时目录，目录已删；下一轮用例会重新 init
+    // D-14：重置 namespace 白名单，避免影响其它用例
+    setDebugNamespaces(null)
+    setLogLevel('debug')
   })
 
   it('filters messages below the configured log level', () => {
@@ -163,5 +169,55 @@ describe('shared logger file logging', () => {
     expect(existsSync(join(dir, 'main.log'))).toBe(true)
     const current = readFileSync(join(dir, 'main.log'), 'utf8')
     expect(current).toContain('after-rotation')
+  })
+
+  describe('D-14: namespace-aware debug filtering', () => {
+    it('setDebugNamespaces / getDebugNamespaces round-trip', () => {
+      expect(getDebugNamespaces()).toBeNull()
+      setDebugNamespaces(['session.service', 'memory'])
+      expect(getDebugNamespaces()).toEqual(['session.service', 'memory'])
+      setDebugNamespaces(null)
+      expect(getDebugNamespaces()).toBeNull()
+    })
+
+    it('suppresses debug for namespaces not in the whitelist', () => {
+      setLogLevel('debug')
+      setDebugNamespaces(['session.service'])
+      const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
+
+      createLogger('memory:reader').debug('should be filtered')
+      createLogger('session.service:turn').debug('should pass')
+
+      const calls = debugSpy.mock.calls.map((c) => String(c[0]))
+      expect(calls.some((l) => l.includes('should be filtered'))).toBe(false)
+      expect(calls.some((l) => l.includes('should pass'))).toBe(true)
+
+      debugSpy.mockRestore()
+    })
+
+    it('does NOT filter info/warn/error (only debug is namespaced)', () => {
+      setLogLevel('debug')
+      setDebugNamespaces(['session.service'])
+      const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+
+      createLogger('memory:reader').info('info should pass')
+
+      const calls = infoSpy.mock.calls.map((c) => String(c[0]))
+      expect(calls.some((l) => l.includes('info should pass'))).toBe(true)
+
+      infoSpy.mockRestore()
+    })
+
+    it('empty array is treated as no filter', () => {
+      setDebugNamespaces([])
+      expect(getDebugNamespaces()).toBeNull()
+    })
+
+    it('getLogLevel reflects setLogLevel', () => {
+      setLogLevel('warn')
+      expect(getLogLevel()).toBe('warn')
+      setLogLevel('error')
+      expect(getLogLevel()).toBe('error')
+    })
   })
 })

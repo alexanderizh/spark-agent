@@ -26,18 +26,71 @@ type ProcessLike = {
   env?: Record<string, string | undefined>
 }
 
-const nodeEnv = (globalThis as typeof globalThis & { process?: ProcessLike }).process?.env?.[
-  'NODE_ENV'
-]
+const processEnv = (globalThis as typeof globalThis & { process?: ProcessLike }).process?.env
+const nodeEnv = processEnv?.['NODE_ENV']
 
-let currentLevel: LogLevel = nodeEnv === 'production' ? 'warn' : 'debug'
+/**
+ * 解析初始日志级别（D-14：日志可配置）。
+ *
+ * 优先级：
+ *   1. SPARK_LOG_LEVEL 环境变量（debug/info/warn/error，大小写不敏感）
+ *   2. NODE_ENV=production → warn
+ *   3. 其它 → debug（开发默认）
+ *
+ * 设置页/IPC 仍可在运行时通过 setLogLevel 覆盖。
+ */
+function resolveInitialLevel(): LogLevel {
+  const raw = processEnv?.['SPARK_LOG_LEVEL']?.trim().toLowerCase()
+  if (raw === 'debug' || raw === 'info' || raw === 'warn' || raw === 'error') return raw
+  return nodeEnv === 'production' ? 'warn' : 'debug'
+}
+
+let currentLevel: LogLevel = resolveInitialLevel()
+
+/**
+ * 解析"详细日志 namespace 前缀白名单"（D-14）。
+ *
+ * SPARK_LOG_NAMESPACES=namespace1,namespace2 时，只有 namespace 以前缀命中的 logger
+ * 才输出 debug 级别日志（其它 namespace 在 warn 以下静默）。这对核心模块
+ * （session.service 这种巨量日志的）很有用：用户可单独打开它，其它静默。
+ *
+ * 未设置时返回 null（不做 namespace 过滤，所有 logger 一视同仁）。
+ */
+let debugNamespacePrefixes: string[] | null = (() => {
+  const raw = processEnv?.['SPARK_LOG_NAMESPACES']?.trim()
+  if (!raw) return null
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean)
+  return parts.length > 0 ? parts : null
+})()
 
 export function setLogLevel(level: LogLevel): void {
   currentLevel = level
 }
 
-function shouldLog(level: LogLevel): boolean {
-  return LEVELS[level] >= LEVELS[currentLevel]
+export function getLogLevel(): LogLevel {
+  return currentLevel
+}
+
+/**
+ * 设置 debug namespace 前缀白名单（D-14）。
+ * 传 null 清空（所有 logger 一视同仁）。传非空数组后，只有 namespace 命中前缀的 logger 才输出 debug。
+ */
+export function setDebugNamespaces(prefixes: string[] | null): void {
+  debugNamespacePrefixes = prefixes && prefixes.length > 0 ? prefixes : null
+}
+
+export function getDebugNamespaces(): string[] | null {
+  return debugNamespacePrefixes ? [...debugNamespacePrefixes] : null
+}
+
+function shouldLog(level: LogLevel, namespace?: string): boolean {
+  if (LEVELS[level] < LEVELS[currentLevel]) return false
+  // D-14：debug 级别受 namespace 白名单约束（仅当设置了 SPARK_LOG_NAMESPACES 时）。
+  // 其它级别（info/warn/error）不受影响，保证错误始终可见。
+  if (level === 'debug' && debugNamespacePrefixes != null && namespace != null) {
+    return debugNamespacePrefixes.some((prefix) => namespace.startsWith(prefix))
+  }
+  return true
 }
 
 function formatMessage(level: LogLevel, namespace: string, message: string): string {
@@ -253,28 +306,28 @@ function safeStringify(args: unknown[]): string {
 export function createLogger(namespace: string) {
   return {
     debug(message: string, ...args: unknown[]) {
-      if (!shouldLog('debug')) return
+      if (!shouldLog('debug', namespace)) return
       const safeArgs = sanitizeArgs(args)
       const formatted = formatMessage('debug', namespace, message)
       console.debug(formatted, ...safeArgs)
       writeToFile(formatted, safeArgs)
     },
     info(message: string, ...args: unknown[]) {
-      if (!shouldLog('info')) return
+      if (!shouldLog('info', namespace)) return
       const safeArgs = sanitizeArgs(args)
       const formatted = formatMessage('info', namespace, message)
       console.info(formatted, ...safeArgs)
       writeToFile(formatted, safeArgs)
     },
     warn(message: string, ...args: unknown[]) {
-      if (!shouldLog('warn')) return
+      if (!shouldLog('warn', namespace)) return
       const safeArgs = sanitizeArgs(args)
       const formatted = formatMessage('warn', namespace, message)
       console.warn(formatted, ...safeArgs)
       writeToFile(formatted, safeArgs)
     },
     error(message: string, ...args: unknown[]) {
-      if (!shouldLog('error')) return
+      if (!shouldLog('error', namespace)) return
       const safeArgs = sanitizeArgs(args)
       const formatted = formatMessage('error', namespace, message)
       console.error(formatted, ...safeArgs)
