@@ -14,6 +14,7 @@ import { rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { clipTextHeadTail } from '@spark/shared'
 import type { ParsedCommand } from './command-parser.js'
 
 /* ============================================================
@@ -220,8 +221,12 @@ export function isValidCustomCommandName(name: string): boolean {
   return /^[a-z][a-z0-9-]{1,62}$/.test(normalizeCustomCommandName(name))
 }
 
-function clipCommandSectionOutput(output: string, maxLength = 4000): string {
-  return output.length > maxLength ? `${output.slice(0, maxLength)}\n... output truncated ...` : output
+/**
+ * 截断命令输出到 token 预算（替换旧的字符粗暴截断）。
+ * 头尾保留可让 stdout 顶部的 echo / 错误概要 + 底部最终输出都保留。
+ */
+function clipCommandSectionOutput(output: string, maxTokens = 1500): string {
+  return clipTextHeadTail(output, maxTokens, { ellipsis: '\n... output truncated ...\n' })
 }
 
 /* ============================================================
@@ -453,10 +458,10 @@ function formatCustomScriptOutput(
 ): string {
   const sections = [`脚本执行完成（${language}，exit ${result.exitCode}）。`]
   if (result.stdout.trim()) {
-    sections.push(`**stdout**\n\n\`\`\`\n${clipCommandSectionOutput(result.stdout, 6000)}\n\`\`\``)
+    sections.push(`**stdout**\n\n\`\`\`\n${clipCommandSectionOutput(result.stdout, 1500)}\n\`\`\``)
   }
   if (result.stderr.trim()) {
-    sections.push(`**stderr**\n\n\`\`\`\n${clipCommandSectionOutput(result.stderr, 3000)}\n\`\`\``)
+    sections.push(`**stderr**\n\n\`\`\`\n${clipCommandSectionOutput(result.stderr, 800)}\n\`\`\``)
   }
   return sections.join('\n\n')
 }
