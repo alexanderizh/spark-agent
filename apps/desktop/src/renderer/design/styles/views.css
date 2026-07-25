@@ -5185,7 +5185,10 @@ body.inspector-resizing {
 }
 .inspector-section {
   padding: var(--pad-sm) var(--pad-sm);
-  /* border-bottom: 1px solid var(--divider); */
+}
+/* 板块分割线:相邻兄弟选择器,首个 section 顶部无线、末个底部无线,避免首尾出现多余边框 */
+.inspector-section + .inspector-section {
+  border-top: 1px solid var(--divider);
 }
 .inspector-section h4 {
   font-size: 10px;
@@ -5274,6 +5277,26 @@ body.inspector-resizing {
   margin: 8px 0;
   justify-content: center;
   gap: 6px;
+}
+
+/* 代码还原点卡片:把说明与主操作聚合成一个视觉单元,与其它区块的卡片感统一 */
+.checkpoint-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.checkpoint-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.checkpoint-open-btn {
+  width: 100%;
 }
 
 .tool-chip {
@@ -11803,13 +11826,19 @@ body.inspector-resizing {
   opacity: 0.8;
 }
 .runtime-env-row {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(56px, 1fr) minmax(56px, 1.4fr) minmax(56px, 1.4fr) auto;
+  align-items: start;
   gap: 6px;
   padding: 8px;
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
+}
+/* EnvVarRow 内 input 默认 width:100% / flex-basis:100% 在窄面板下无法 shrink，
+   显式 min-width:0 让 grid 列宽真正生效，避免右侧溢出截断。 */
+.runtime-env-row > .form-input {
+  min-width: 0;
 }
 .runtime-env-fields {
   display: grid;

@@ -25,10 +25,10 @@ import {
   FilePenLine,
   FileSearch,
   FolderOpen,
-  History,
   Lightbulb,
   MoreHorizontal,
   PanelRight,
+  SlidersHorizontal,
   Server,
   SquareTerminal,
   Trash,
@@ -464,13 +464,13 @@ export function ChatView({
   const latestPanelStateRef = useRef<PanelSnapshot>(emptyPanelSnapshot)
 
   const openUnifiedSidePanel = useCallback((kind: UnifiedSidePanelKind) => {
-    // 互斥：会话检查器 / 统一面板 / 文件预览三者同一时刻只显示一个
+    // 互斥：会话检查器 / 配置面板 / 统一面板 / 文件预览 同一时刻只显示一个
     setShowInspector(false)
+    setShowConfigPanel(false)
     setFilePreview(null)
     setUnifiedPanelOpen(true)
     setUnifiedSideTabs((tabs) => (tabs.includes(kind) ? tabs : [...tabs, kind]))
     setActiveUnifiedSideTab(kind)
-    if (kind === 'config') setShowConfigPanel(true)
     if (kind === 'terminal') setShowTerminalPanel(true)
     if (kind === 'review') setShowGitReviewPanel(true)
     if (kind === 'side-chat') {
@@ -487,13 +487,39 @@ export function ChatView({
       )
       return next
     })
-    if (kind === 'config') setShowConfigPanel(false)
     if (kind === 'terminal') setShowTerminalPanel(false)
     if (kind === 'review') setShowGitReviewPanel(false)
     if (kind === 'side-chat') setShowSideChatPanel(false)
   }, [])
 
-  // 代码还原点时间线抽屉：把「按会话撤回代码」做成集中可还原视图，按钮在 ChatTabbar 右上。
+  // 头部「配置面板」按钮：打开独立的 ChatConfigPanel 侧栏（不再嵌入统一面板容器）。
+  // 与 inspector / 统一面板 / 文件预览互斥。
+  const toggleConfigPanel = useCallback(() => {
+    setShowConfigPanel((prev) => {
+      const next = !prev
+      if (next) {
+        setShowInspector(false)
+        setUnifiedPanelOpen(false)
+        setFilePreview(null)
+      }
+      return next
+    })
+  }, [])
+
+  // 头部「统一侧边面板」按钮：toggle 整个统一面板（terminal/side-chat/review/plan 容器）。
+  const toggleUnifiedPanel = useCallback(() => {
+    setUnifiedPanelOpen((prev) => {
+      const next = !prev
+      if (next) {
+        setShowInspector(false)
+        setShowConfigPanel(false)
+        setFilePreview(null)
+      }
+      return next
+    })
+  }, [])
+
+  // 代码还原点时间线抽屉：把「按会话撤回代码」做成集中可还原视图，入口在会话检查器内。
   const [showCheckpointTimeline, setShowCheckpointTimeline] = useState(false)
   // 代码还原点：会话开关（开/关样式）+ 可用性（仅 git 仓库可用，否则隐藏入口）。
   const [checkpointEnabled, setCheckpointEnabled] = useState(false)
@@ -1034,9 +1060,10 @@ export function ChatView({
     setFilePreview({ filePath, fileType })
   }, [])
 
-  // 打开会话检查器：与统一面板、文件预览互斥（三者同一时刻只显示一个）
+  // 打开会话检查器：与配置面板、统一面板、文件预览互斥（同一时刻只显示一个）
   const openInspector = useCallback(() => {
     setShowInspector(true)
+    setShowConfigPanel(false)
     setUnifiedPanelOpen(false)
     setFilePreview(null)
   }, [])
@@ -1754,6 +1781,7 @@ export function ChatView({
   const openSideChatPanel = useCallback(
     async (options: { replace?: boolean } = {}) => {
       setShowInspector(false)
+      setShowConfigPanel(false)
       setFilePreview(null)
       setUnifiedPanelOpen(true)
       setUnifiedSideTabs((tabs) => (tabs.includes('side-chat') ? tabs : [...tabs, 'side-chat']))
@@ -1996,21 +2024,6 @@ export function ChatView({
                   <TabbarIcon icon={FolderOpen} />
                 </button>
               )}
-              {checkpointAvailable && (
-                <button
-                  type="button"
-                  className={`icon-btn checkpoint-entry ${showCheckpointTimeline ? 'active' : ''} ${checkpointEnabled ? 'checkpoint-on' : ''}`}
-                  title={
-                    checkpointEnabled
-                      ? '代码还原点（已开启：按轮记录已跟踪文件状态）'
-                      : '代码还原点（未开启）'
-                  }
-                  aria-label="代码还原点"
-                  onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
-                >
-                  <TabbarIcon icon={History} />
-                </button>
-              )}
               <button
                 className={`icon-btn ${showInspector ? 'active' : ''}`}
                 title="会话检查器"
@@ -2019,6 +2032,7 @@ export function ChatView({
                   setShowInspector(!showInspector)
                   if (!showInspector) {
                     setUnifiedPanelOpen(false)
+                    setShowConfigPanel(false)
                     setFilePreview(null)
                   }
                 }}
@@ -2026,17 +2040,20 @@ export function ChatView({
                 <TabbarIcon icon={PanelRight} />
               </button>
               <button
-                className={`icon-btn ${unifiedPanelOpen ? 'active' : ''}`}
+                className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
                 title={activeWorkspace ? '配置面板' : '请先选择项目文件夹'}
                 aria-label="配置面板"
                 disabled={!activeWorkspace}
-                onClick={() => {
-                  setUnifiedPanelOpen((v) => !v)
-                  if (!unifiedPanelOpen) {
-                    setShowInspector(false)
-                    setFilePreview(null)
-                  }
-                }}
+                onClick={toggleConfigPanel}
+              >
+                <TabbarIcon icon={SlidersHorizontal} />
+              </button>
+              <button
+                className={`icon-btn ${unifiedPanelOpen ? 'active' : ''}`}
+                title={activeWorkspace ? '统一侧边面板（终端/侧聊/审查/计划）' : '请先选择项目文件夹'}
+                aria-label="统一侧边面板"
+                disabled={!activeWorkspace}
+                onClick={toggleUnifiedPanel}
               >
                 <TabbarIcon icon={MoreHorizontal} />
               </button>
@@ -2099,18 +2116,15 @@ export function ChatView({
                   setShowInspector(v)
                   if (v) {
                     setUnifiedPanelOpen(false)
+                    setShowConfigPanel(false)
                     setFilePreview(null)
                   }
                   if (v) setShowGitReviewPanel(false)
                 }}
-                showConfigPanel={unifiedPanelOpen}
-                setShowConfigPanel={(v: boolean) => {
-                  setUnifiedPanelOpen(v)
-                  if (v) {
-                    setShowInspector(false)
-                    setFilePreview(null)
-                  }
-                }}
+                showConfigPanel={showConfigPanel}
+                onToggleConfig={toggleConfigPanel}
+                showUnifiedPanel={unifiedPanelOpen}
+                onToggleUnifiedPanel={toggleUnifiedPanel}
                 showTerminalPanel={showTerminalPanel}
                 setShowTerminalPanel={(v) =>
                   v ? openUnifiedSidePanel('terminal') : closeUnifiedSidePanel('terminal')
@@ -2120,10 +2134,6 @@ export function ChatView({
                   if (showSideChatPanel) closeUnifiedSidePanel('side-chat')
                   else void openSideChatPanel()
                 }}
-                showCheckpointTimeline={showCheckpointTimeline}
-                setShowCheckpointTimeline={setShowCheckpointTimeline}
-                checkpointEnabled={checkpointEnabled}
-                checkpointAvailable={checkpointAvailable}
                 teamConfig={teamConfig}
                 orchestration={activeSessionOrchestration}
                 effectiveHostAgentId={effectiveHostAgentId}
@@ -2225,6 +2235,9 @@ export function ChatView({
             const workspaceToOpen = activeSessionWorkspace ?? activeWorkspace
             if (workspaceToOpen) void sessionCtx.handleOpenProjectFolder(workspaceToOpen)
           }}
+          checkpointAvailable={checkpointAvailable}
+          checkpointEnabled={checkpointEnabled}
+          onOpenCheckpointTimeline={() => setShowCheckpointTimeline(true)}
         />
       )}
 
@@ -2264,6 +2277,21 @@ export function ChatView({
         />
       )}
 
+      {showConfigPanel && (active != null || activeWorkspace != null) && (
+        <ChatConfigPanel
+          session={activeSession}
+          workspace={activeWorkspace}
+          width={inspectorWidth}
+          onWidthChange={setInspectorWidth}
+          {...(() => {
+            const aid = teamConfig.enabled
+              ? (effectiveHostAgentId ?? teamConfig.hostAgentId)
+              : (activeSession?.agentId ?? undefined)
+            return aid != null ? { agentId: aid } : {}
+          })()}
+        />
+      )}
+
       {unifiedPanelOpen && (active != null || activeWorkspace != null) && (
         <UnifiedSessionSidePanel
           tabs={unifiedSideTabs}
@@ -2276,21 +2304,7 @@ export function ChatView({
           onOpen={openUnifiedSidePanel}
           onCloseTab={closeUnifiedSidePanel}
         >
-          {activeUnifiedSideTab === 'config' && showConfigPanel ? (
-            <ChatConfigPanel
-              session={activeSession}
-              workspace={activeWorkspace}
-              width={sideChatWidth}
-              onWidthChange={setSideChatWidth}
-              embedded
-              {...(() => {
-                const aid = teamConfig.enabled
-                  ? (effectiveHostAgentId ?? teamConfig.hostAgentId)
-                  : (activeSession?.agentId ?? undefined)
-                return aid != null ? { agentId: aid } : {}
-              })()}
-            />
-          ) : activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
+          {activeUnifiedSideTab === 'review' && showGitReviewPanel ? (
             <GitReviewPanel
               workspaceId={gitWorkspaceId}
               workspaceRootPath={gitWorkspace?.rootPath ?? null}

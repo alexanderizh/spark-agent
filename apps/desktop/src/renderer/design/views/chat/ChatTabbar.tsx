@@ -5,7 +5,7 @@ import type {
   WorkspaceGitStatusResponse,
   WorkspaceInfo,
 } from '@spark/protocol'
-import { Copy, History, MoreHorizontal, PanelRight, Server, Trash } from 'lucide-react'
+import { Copy, MoreHorizontal, PanelRight, Server, SlidersHorizontal, Trash } from 'lucide-react'
 import { Icons } from '../../Icons'
 import {
   NO_PROJECT_WORKSPACE_NAME,
@@ -39,15 +39,13 @@ export function ChatTabbar({
   showInspector,
   setShowInspector,
   showConfigPanel,
-  setShowConfigPanel,
+  onToggleConfig,
   showTerminalPanel,
   setShowTerminalPanel,
   showSideChatPanel,
   onToggleSideChat,
-  showCheckpointTimeline,
-  setShowCheckpointTimeline,
-  checkpointEnabled,
-  checkpointAvailable,
+  showUnifiedPanel,
+  onToggleUnifiedPanel,
   teamConfig,
   orchestration,
   effectiveHostAgentId,
@@ -70,15 +68,13 @@ export function ChatTabbar({
   showInspector: boolean
   setShowInspector: (v: boolean) => void
   showConfigPanel: boolean
-  setShowConfigPanel: (v: boolean) => void
+  onToggleConfig: () => void
   showTerminalPanel: boolean
   setShowTerminalPanel: (v: boolean) => void
   showSideChatPanel: boolean
   onToggleSideChat: () => void
-  showCheckpointTimeline: boolean
-  setShowCheckpointTimeline: (v: boolean) => void
-  checkpointEnabled: boolean
-  checkpointAvailable: boolean
+  showUnifiedPanel: boolean
+  onToggleUnifiedPanel: () => void
   teamConfig: TeamModeConfig
   orchestration: OrchestrationSnapshot | null
   effectiveHostAgentId: string | null
@@ -219,20 +215,14 @@ export function ChatTabbar({
             <TabbarIcon icon={Trash} />
           </TabbarTooltipButton>
         )}
-        {checkpointAvailable && (
-          <TabbarTooltipButton
-            title={
-              checkpointEnabled
-                ? '代码还原点（已开启：按轮记录已跟踪文件状态）'
-                : '代码还原点（未开启）'
-            }
-            ariaLabel="代码还原点"
-            className={`icon-btn checkpoint-entry ${showCheckpointTimeline ? 'active' : ''} ${checkpointEnabled ? 'checkpoint-on' : ''}`}
-            onClick={() => setShowCheckpointTimeline(!showCheckpointTimeline)}
-          >
-            <TabbarIcon icon={History} />
-          </TabbarTooltipButton>
-        )}
+        <TabbarTooltipButton
+          title="配置面板（环境变量 / 提示词 / Skills / 工具）"
+          ariaLabel="配置面板"
+          className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
+          onClick={onToggleConfig}
+        >
+          <TabbarIcon icon={SlidersHorizontal} />
+        </TabbarTooltipButton>
         <TabbarTooltipButton
           title="会话检查器"
           ariaLabel="会话检查器"
@@ -242,10 +232,10 @@ export function ChatTabbar({
           <TabbarIcon icon={PanelRight} />
         </TabbarTooltipButton>
         <TabbarTooltipButton
-          title="配置面板"
-          ariaLabel="配置面板"
-          className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
-          onClick={() => setShowConfigPanel(!showConfigPanel)}
+          title="统一侧边面板（终端 / 侧聊 / 审查 / 计划）"
+          ariaLabel="统一侧边面板"
+          className={`icon-btn ${showUnifiedPanel ? 'active' : ''}`}
+          onClick={onToggleUnifiedPanel}
         >
           <TabbarIcon icon={MoreHorizontal} />
         </TabbarTooltipButton>

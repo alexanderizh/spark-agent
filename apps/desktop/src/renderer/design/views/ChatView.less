@@ -4396,6 +4396,22 @@ body.side-chat-resizing {
   min-width: 0;
 }
 
+// 配置面板（独立侧栏）：窄窗口下与统一侧面板同样优先压缩自身 + 关闭横向滚动。
+// 否则 .inspector-frame 默认 flex-shrink:0 会撑宽 chat-layout 触发滚动条，
+// 用户看到的就是「面板右侧被截断 + 整个聊天区能横向滚到最右」。
+.chat-layout:has(> .config-panel-frame) {
+  overflow-x: hidden;
+}
+
+.chat-layout:has(> .config-panel-frame) > .chat-main {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.config-panel-frame {
+  flex: 0 1 var(--inspector-width, 360px);
+}
+
 // .platform-win32 .unified-side-panel {
 //   height: calc(100vh - 45px);
 // }
