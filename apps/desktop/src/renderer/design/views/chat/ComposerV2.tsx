@@ -405,6 +405,9 @@ const CONTEXT_LEDGER_SECTION_META: Record<string, { label: string; color: string
   'Skill Prompt': { label: '技能', color: '#d99a2b' },
   'Project Context': { label: '项目上下文', color: '#2f9e6b' },
   'Conversation History': { label: '对话历史', color: '#3f7d8c' },
+  // W1.1b 联动：SDK resume 路径下 history 是 fallback（recent entries），实际 SDK 内部
+  // 维持完整 history。用橙色提示用户 token 显示远低于实际占用。
+  'Conversation History (SDK resume fallback)': { label: '对话历史 (SDK 兜底)', color: '#e07b39' },
   'User Message': { label: '用户消息', color: '#7c5cd6' },
   Attachments: { label: '附件', color: '#c2569b' },
 }
