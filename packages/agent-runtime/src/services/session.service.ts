@@ -6469,6 +6469,23 @@ export class SessionService {
     if (memberError != null && !aborted) {
       throw new Error(memberError)
     }
+    // 三轮联合场景审查修复（Memory + Team）：member turn 完成后触发 memory 抽取
+    // （按 member scope）。之前 member 回复不被 maybeWriteMemoryFromTurn 捕获——
+    // Host 路径的 collectCompleteAssistantTurnText 只聚合 assistant_message 事件，
+    // 不含 team_member_message。结果：member 的技术决策、用户偏好发现等不被记忆。
+    // 这里按 member.id scope 触发抽取，与 Host 路径独立（不冲突，scope 不同）。
+    if (content.trim().length > 0) {
+      void this.maybeWriteMemoryFromTurn(
+        sessionId,
+        sessionRepo.getWorkspaceIdsFromRow(session)[0] ?? '',
+        member.id,
+        workspaceRootPath,
+        memberRouteMessage,
+        content,
+      ).catch(() => {
+        /* swallow — never affect member dispatch flow */
+      })
+    }
     return {
       content,
       ...(aborted ? { partial: true } : {}),
