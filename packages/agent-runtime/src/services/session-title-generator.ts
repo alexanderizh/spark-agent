@@ -5,7 +5,7 @@
  * 生成简短中文标题（≤ 16 字符）。失败时返回 null，由调用方决定是否回退。
  */
 
-import { createLogger } from '@spark/shared'
+import { createLogger, fetchJson, HttpError } from '@spark/shared'
 
 const log = createLogger('session-title-generator')
 
@@ -74,22 +74,25 @@ async function callAnthropic(params: GenerateTitleParams, prompt: string): Promi
     max_tokens: 64,
     messages: [{ role: 'user', content: prompt }],
   }
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': params.apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) {
-    log.debug(`Anthropic title request failed: HTTP ${res.status}`)
+  try {
+    const data = await fetchJson<{ content?: Array<{ type?: string; text?: string }> }>(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': params.apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      maxRetries: 0,
+    })
+    const text = data.content?.find((item) => item.type === 'text')?.text
+    return typeof text === 'string' ? text : null
+  } catch (err) {
+    if (err instanceof HttpError) log.debug(`Anthropic title request failed: HTTP ${err.statusCode}`)
+    else log.debug(`Anthropic title request failed: ${err instanceof Error ? err.message : String(err)}`)
     return null
   }
-  const data = (await res.json()) as { content?: Array<{ type?: string; text?: string }> }
-  const text = data.content?.find((item) => item.type === 'text')?.text
-  return typeof text === 'string' ? text : null
 }
 
 async function callOpenAICompatible(params: GenerateTitleParams, prompt: string): Promise<string | null> {
@@ -101,38 +104,29 @@ async function callOpenAICompatible(params: GenerateTitleParams, prompt: string)
     temperature: 0.3,
     messages: [{ role: 'user', content: prompt }],
   }
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${params.apiKey}`,
-    },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) {
-    log.debug(`OpenAI-compatible title request failed: HTTP ${res.status}`)
+  try {
+    const data = await fetchJson<{ choices?: Array<{ message?: { content?: string } }> }>(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${params.apiKey}`,
+      },
+      body: JSON.stringify(body),
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      maxRetries: 0,
+    })
+    const text = data.choices?.[0]?.message?.content
+    return typeof text === 'string' ? text : null
+  } catch (err) {
+    if (err instanceof HttpError) log.debug(`OpenAI-compatible title request failed: HTTP ${err.statusCode}`)
+    else log.debug(`OpenAI-compatible title request failed: ${err instanceof Error ? err.message : String(err)}`)
     return null
   }
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
-  }
-  const text = data.choices?.[0]?.message?.content
-  return typeof text === 'string' ? text : null
 }
 
 function normalizeEndpoint(custom: string | undefined, fallback: string): string {
   const base = (custom?.trim() || fallback).replace(/\/+$/, '')
   return base
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-  try {
-    return await fetch(url, { ...init, signal: controller.signal })
-  } finally {
-    clearTimeout(timer)
-  }
 }
 
 function clip(value: string, maxChars: number): string {
