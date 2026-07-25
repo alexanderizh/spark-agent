@@ -27,6 +27,7 @@ import type { CanvasSnapshot } from './canvas.types'
  * 显式列出而非前缀匹配，避免新增工具时误判。
  */
 const READONLY_TOOL_NAMES = new Set<string>([
+  'canvas_describe_tool',
   'canvas_get_project_summary',
   'canvas_get_available_actions',
   'canvas_get_production_plan',

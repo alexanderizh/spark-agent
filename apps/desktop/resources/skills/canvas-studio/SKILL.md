@@ -1,7 +1,7 @@
 ---
 name: 画布工作室
 description: '用 mcp__spark_canvas__* 工具操作 SparkWork 的无限画布。凡是用户提到画布、节点、素材、影视资产、文稿拆章、剧本拆解、角色/场景/道具/特效设定、分镜、关键帧、首尾帧视频、360 全景图、导演台构图、宫格切分、图片标注、成片清单或把 Agent 产物放回画布，都应优先加载本技能并使用 spark_canvas 工具，而不是只用普通对话描述。'
-version: 1.5.0
+version: 1.6.0
 author: Spark AI
 category: utility
 tags:
@@ -83,6 +83,13 @@ CanvasProject
 
 ## 黄金规则
 
+### 工具调用可靠性（强制）
+
+- 画布工具必须由当前主 Agent 直接调用，不要委派给子 Agent。子 Agent 不持有当前画布 attach 上下文，也不应通过 shell、源码或解包 `app.asar` 推断工具参数。
+- 参数字段不确定、校验失败或返回提示要求修正字段时，调用 `canvas_describe_tool({toolName})` 获取精确 `inputSchema`，按错误中的字段路径修正后再调用。禁止猜测字段名或把其他工具的字段套用过来。
+- 工具显示 `completed with no output` 时，不等于画布断开。写操作先调用对应只读工具核对状态，确认未生效后最多重试一次；读操作可轻量重试一次。只有工具明确返回 attach/detach 错误时，才能告诉用户画布连接已断开。
+- 写操作空结果后必须先读回验证，不能立即重复写入，以免节点、资产或任务被创建两次。工具返回结构化错误时应向用户说明具体失败字段或业务约束，不要用泛化的“工具不可用”代替。
+
 ### 能力发现与推荐流程（强制）
 
 - 用户提出“制作短剧 / 做视频 / 继续制作 / 下一步做什么”等宽泛目标时，在创建节点前先调用 `canvas_get_project_summary` 和 `canvas_get_production_plan`，按返回的阶段、阻塞项和 `nextActions` 推进。
@@ -106,6 +113,7 @@ CanvasProject
 
 ### 项目 / 当前画布
 
+- `canvas_describe_tool(toolName)`：返回任一画布工具的完整说明和精确输入 Schema。字段不确定或参数校验失败时使用。
 - `canvas_get_project_summary`：项目概览。编辑前先用。
 - `canvas_get_production_plan`：根据实时资产、节点和分镜状态返回当前制作阶段、阻塞项与推荐下一步。宽泛影视任务创建节点前先用。
 - `canvas_update_project_settings(prompt?, negativePrompt?)`：项目级默认提示词/反向提示词。

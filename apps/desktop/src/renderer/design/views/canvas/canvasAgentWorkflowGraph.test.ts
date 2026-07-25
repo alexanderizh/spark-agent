@@ -64,6 +64,18 @@ describe('canvas agent reusable workflow graph', () => {
     expect(codes).toContain('cycle')
   })
 
+  it('returns diagnostics instead of throwing when untrusted nodes omit ref', () => {
+    const malformed = {
+      name: '错误流程',
+      nodes: [{ role: 'input', type: 'image', title: '参考图' }],
+    } as unknown as CanvasAgentWorkflowGraphSpec
+
+    expect(() => validateCanvasAgentWorkflowGraph(malformed)).not.toThrow()
+    expect(validateCanvasAgentWorkflowGraph(malformed).diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'empty_ref' })]),
+    )
+  })
+
   it('allows independent notes but rejects disconnected operation nodes', () => {
     const spec = imageFlow()
     spec.nodes.push(
@@ -109,13 +121,23 @@ describe('canvas agent reusable workflow graph', () => {
         { ref: 'product', role: 'input', type: 'image', title: '商品图' },
         { ref: 'brief', role: 'input', type: 'prompt', title: '创作要求', content: '输入卖点' },
         {
-          ref: 'copy', role: 'operation', operation: 'text_generate', title: '生成文案',
-          prompt: '生成商品文案', dependsOn: ['brief'], isOutput: true,
+          ref: 'copy',
+          role: 'operation',
+          operation: 'text_generate',
+          title: '生成文案',
+          prompt: '生成商品文案',
+          dependsOn: ['brief'],
+          isOutput: true,
           expectedOutputTypes: ['text'],
         },
         {
-          ref: 'poster', role: 'operation', operation: 'image_edit', title: '生成海报',
-          prompt: '合成商业海报', dependsOn: ['product', 'brief'], isOutput: true,
+          ref: 'poster',
+          role: 'operation',
+          operation: 'image_edit',
+          title: '生成海报',
+          prompt: '合成商业海报',
+          dependsOn: ['product', 'brief'],
+          isOutput: true,
           expectedOutputTypes: ['image'],
         },
       ],
@@ -139,7 +161,10 @@ describe('canvas agent reusable workflow graph', () => {
     expect(first).toEqual(second)
     expect(first.originX).toBeGreaterThanOrEqual(964)
     expect(first.nodes[0]).toMatchObject({ ref: 'image-input', type: 'image' })
-    expect(first.nodes[0]?.data).toMatchObject({ subtype: 'workflow_input', productionState: 'empty' })
+    expect(first.nodes[0]?.data).toMatchObject({
+      subtype: 'workflow_input',
+      productionState: 'empty',
+    })
     expect(first.nodes[1]!.x).toBeGreaterThan(first.nodes[0]!.x + first.nodes[0]!.width!)
     expect(first.edges).toEqual([
       expect.objectContaining({ from: 'image-input', to: 'animate', type: 'used_as_input' }),
@@ -151,11 +176,27 @@ describe('canvas agent reusable workflow graph', () => {
       name: '分支汇合',
       nodes: [
         { ref: 'brief', role: 'input', type: 'prompt', title: '需求' },
-        { ref: 'a', role: 'operation', operation: 'text_generate', title: 'A', dependsOn: ['brief'] },
-        { ref: 'b', role: 'operation', operation: 'text_generate', title: 'B', dependsOn: ['brief'] },
         {
-          ref: 'merge', role: 'operation', operation: 'text_generate', title: '汇总',
-          dependsOn: ['a', 'b'], isOutput: true,
+          ref: 'a',
+          role: 'operation',
+          operation: 'text_generate',
+          title: 'A',
+          dependsOn: ['brief'],
+        },
+        {
+          ref: 'b',
+          role: 'operation',
+          operation: 'text_generate',
+          title: 'B',
+          dependsOn: ['brief'],
+        },
+        {
+          ref: 'merge',
+          role: 'operation',
+          operation: 'text_generate',
+          title: '汇总',
+          dependsOn: ['a', 'b'],
+          isOutput: true,
         },
       ],
     }

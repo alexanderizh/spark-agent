@@ -20,6 +20,16 @@
 
 ## Agent 工具
 
+### 统一工具契约与调用可靠性
+
+本次问题并非只存在于工作流工具。所有 `spark_canvas` 工具共用同一条 JSON Schema → MCP Zod → IPC → 渲染端处理链，因此采用统一防线：
+
+- MCP Schema 转换必须保留 `oneOf` / `anyOf`、`const`、嵌套对象、数组约束、数值约束和 `additionalProperties` 语义，不能把复杂节点退化为 `unknown`。
+- 渲染端 `executeCanvasTool` 在进入具体 handler 前按原始 JSON Schema 统一校验参数，错误必须包含精确字段路径；无效参数不得触发 workspace 写操作。
+- `canvas_describe_tool(toolName)` 提供只读的自描述入口，返回工具说明和精确 `inputSchema`。Agent 字段不确定或校验失败时必须查询契约，禁止通过源码、shell 或解包应用猜测参数。
+- IPC 已成功但渲染端结果为 `undefined` 时，MCP 层返回非空完成结果，避免 SDK 映射成无信息的 `completed with no output`。写操作若仍出现空输出，Agent 必须先用只读工具核对状态，避免重复写入。
+- 空输出本身不代表画布 detach。只有桥接层明确返回 attach/detach 错误时才能判断连接中断；画布工具调用不得委派给不持有当前画布上下文的子 Agent。
+
 ### `canvas_create_reusable_workflow_graph`
 
 输入为语义化节点、依赖引用、输入/输出角色和配置，不要求模型计算真实坐标。工具执行以下步骤：
@@ -74,3 +84,7 @@
 - 创建后快照中的节点、任务、输入绑定和边均已重映射为真实 id。
 - 新子图避让已有节点且无严重重叠。
 - Agent 工具注册描述明确优先使用高层工具，并在创建后校验。
+- MCP 暴露的工作流节点联合类型包含每个分支的必填字段，不接受猜测字段或额外字段。
+- 任一画布工具缺少必填参数时，在 handler 和 workspace action 之前返回带字段路径的校验错误。
+- `canvas_describe_tool` 能返回目标工具的完整 Schema，未知工具返回明确错误。
+- 渲染端返回 `undefined` 时 MCP 仍产生非空文本和结构化完成结果。
