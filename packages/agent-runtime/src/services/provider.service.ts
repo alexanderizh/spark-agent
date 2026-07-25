@@ -45,7 +45,7 @@ import {
 } from '@spark/protocol'
 import { ProviderProfileRepository } from '@spark/storage'
 import * as keystore from '@spark/shared/keystore'
-import { createLogger } from '@spark/shared'
+import { createLogger, describeNetworkError, fetchJson, HttpError } from '@spark/shared'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
 
 const log = createLogger('provider.service')
@@ -1029,29 +1029,32 @@ export class ProviderService {
 
     let lastNotFound: string | null = null
     for (const url of candidates) {
-      const res = await fetch(url, {
-        headers: getModelsRequestHeaders(providerType, apiKey),
-        signal: AbortSignal.timeout(PROVIDER_HTTP_TIMEOUT_MS),
-      })
-      if (res.ok) {
-        const json = await res.json() as ModelsListResponse
+      try {
+        const json = await fetchJson<ModelsListResponse>(url, {
+          headers: getModelsRequestHeaders(providerType, apiKey),
+          timeoutMs: PROVIDER_HTTP_TIMEOUT_MS,
+          maxRetries: 2,
+        })
         const models = normalizeFetchedModels(json)
         log.info(
           `fetchModels success, provider=${providerType}, id=${params.id ?? '(draft)'}, `
           + `url=${url}, count=${models.length}`,
         )
         return models
+      } catch (err) {
+        const isHttp = err instanceof HttpError
+        const status = isHttp ? err.statusCode ?? 'network' : 'network'
+        const body = truncateResponseBody(isHttp ? err.message.replace(/^HTTP \d+:\s*/, '') : String(err))
+        log.warn(
+          `fetchModels endpoint failed, provider=${providerType}, id=${params.id ?? '(draft)'}, `
+          + `url=${url}, status=${status}, body="${body}"`,
+        )
+        if (isHttp && (err.statusCode === 404 || err.statusCode === 405)) {
+          lastNotFound = `HTTP ${status}: ${body}`
+          continue
+        }
+        throw new Error(`HTTP ${status}: ${body}`)
       }
-      const body = truncateResponseBody(await res.text().catch(() => ''))
-      log.warn(
-        `fetchModels endpoint failed, provider=${providerType}, id=${params.id ?? '(draft)'}, `
-        + `url=${url}, status=${res.status}, body="${body}"`,
-      )
-      if (res.status === 404 || res.status === 405) {
-        lastNotFound = `HTTP ${res.status}: ${body}`
-        continue
-      }
-      throw new Error(`HTTP ${res.status}: ${body}`)
     }
     log.warn(
       `fetchModels all-endpoints-failed, provider=${providerType}, id=${params.id ?? '(draft)'}, `
@@ -1379,6 +1382,10 @@ function formatProviderConnectionError(err: unknown, timeoutMs: number): string 
   ) {
     return `连接测试超时（>${Math.ceil(timeoutMs / 1000)}s），请检查网络、代理或接口地址后重试`
   }
+  // D-11：用 shared 的 describeNetworkError 识别 Node fetch 的 'fetch failed' 等无信息错误
+  // （从 err.cause 提取真实原因：ENOTFOUND/ECONNREFUSED/TLS 握手失败 等）
+  const networkHint = describeNetworkError(err, 'POST', '<provider-ping>')
+  if (networkHint) return networkHint
   return err.message || fallback
 }
 

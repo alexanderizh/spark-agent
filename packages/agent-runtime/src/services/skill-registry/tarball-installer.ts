@@ -17,6 +17,7 @@
 
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
+import { fetchJson, HttpError } from '@spark/shared'
 import {
   createReadStream,
   createWriteStream,
@@ -446,13 +447,22 @@ async function resolveDefaultBranch(repo: string, token?: string): Promise<strin
     'User-Agent': 'Spark-Agent',
   }
   if (token) headers.Authorization = `Bearer ${token}`
-  const res = await fetch(`https://api.github.com/repos/${repo}`, {
-    headers,
-    signal: AbortSignal.timeout(15000),
-  })
-  if (!res.ok) throw new Error(`Failed to resolve default branch for ${repo}: ${res.status}`)
-  const data = (await res.json()) as { default_branch?: string }
-  return data.default_branch || 'main'
+  try {
+    const data = await fetchJson<{ default_branch?: string }>(
+      `https://api.github.com/repos/${repo}`,
+      {
+        headers,
+        timeoutMs: 15_000,
+        maxRetries: 3,
+      },
+    )
+    return data.default_branch || 'main'
+  } catch (err) {
+    if (err instanceof HttpError) {
+      throw new Error(`Failed to resolve default branch for ${repo}: ${err.statusCode ?? 'network'}`)
+    }
+    throw err
+  }
 }
 
 // ─── Download ──────────────────────────────────────────────────────────

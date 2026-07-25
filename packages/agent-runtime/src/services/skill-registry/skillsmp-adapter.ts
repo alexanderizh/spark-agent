@@ -13,6 +13,7 @@
  */
 
 import type { RemoteSkillItem } from '@spark/protocol'
+import { fetchJson, HttpError } from '@spark/shared'
 import type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './adapter.js'
 import { createRemoteSkillItem } from './adapter.js'
 
@@ -245,19 +246,19 @@ export class SkillsMPAdapter implements SkillRegistryAdapter {
   }
 
   private async fetchJson<T>(url: string): Promise<T> {
-    const res = await globalThis.fetch(url, {
-      headers: this.headers,
-      signal: AbortSignal.timeout(15000),
-    })
-
-    if (!res.ok) {
-      if (res.status === 429) {
+    try {
+      return await fetchJson<T>(url, {
+        headers: this.headers,
+        timeoutMs: 15_000,
+        // 同 SkillHub：UI 调用方已有 catch → 返回 [] 兜底，重试反而让单测/真实网络问题卡顿。
+        maxRetries: 0,
+      })
+    } catch (err) {
+      if (err instanceof HttpError && err.statusCode === 429) {
         throw new Error('SkillsMP API rate limit exceeded. Consider adding an API key.')
       }
-      throw new Error(`SkillsMP API error: ${res.status} ${res.statusText}`)
+      throw err
     }
-
-    return res.json() as Promise<T>
   }
 
   /** 从 GitHub URL 推断分类 */
