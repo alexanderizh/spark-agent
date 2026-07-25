@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Spark Agent 把「权限审批 / Rules / Hooks / 用量账本 / 审计」作为治理面（Governance）的核心。
+      Spark Work 把「权限审批 / Rules / Hooks / 用量账本 / 审计」作为治理面（Governance）的核心。
       它的目标：让 Agent 自动化既能扩展，也能被审查、可回退、可解释。
     </p>
 
@@ -56,7 +56,7 @@ const Body = () => (
 
     <h2 id="usage">4. 用量账本</h2>
     <p>
-      Spark Agent 记录每次会话的模型调用：
+      Spark Work 记录每次会话的模型调用：
     </p>
     <ul>
       <li>Provider / Model / 角色（user / assistant / tool）。</li>
@@ -70,7 +70,7 @@ const Body = () => (
 
     <h2 id="audit">5. 审计事件</h2>
     <p>
-      Spark Agent 把所有可观察事件写入审计日志：
+      Spark Work 把所有可观察事件写入审计日志：
     </p>
     <ul>
       <li>文件写入、删除、改名。</li>
@@ -143,7 +143,7 @@ export const governance: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 权限治理：高风险操作审批（Always Ask / Allow Session / Allow Always / Deny，按工具名+危险模式粒度），' +
+    'Spark Work 权限治理：高风险操作审批（Always Ask / Allow Session / Allow Always / Deny，按工具名+危险模式粒度），' +
     'Rules（System / Project / Agent / Workflow Node 四级作用域，注入 prompt 的策略），' +
     'Hooks（permission-request / user-question / session-complete / failure 事件回调，Agent 级覆盖全局），' +
     '用量账本（Provider/Model/角色/token/工具调用，按会话/Agent/项目/时间聚合，可导出 CSV/JSON），' +

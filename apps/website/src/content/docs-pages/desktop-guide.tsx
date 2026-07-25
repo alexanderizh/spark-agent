@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Spark Agent 桌面端基于 Electron + 本地优先架构，把 UI、Agent Runtime、Provider、Skill、MCP、
+      Spark Work 桌面端基于 Electron + 本地优先架构，把 UI、Agent Runtime、Provider、Skill、MCP、
       权限治理、本地存储、媒体运行时串成一条可审查的链路。本主题帮你快速理解桌面端的整体结构。
     </p>
 
@@ -142,7 +142,7 @@ export const desktopGuide: DocsPageContent = {
     { key: '媒体运行时', value: 'spark_image / spark_media / MediaRouterService / MediaTaskRuntimeService / safe-file 协议' },
   ],
   howTo: {
-    name: '从源码读懂 Spark Agent 桌面端',
+    name: '从源码读懂 Spark Work 桌面端',
     description: '从进程模型到一次画布文生图',
     totalTime: 'PT30M',
     steps: [
@@ -154,7 +154,7 @@ export const desktopGuide: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 桌面端架构：Electron + 本地优先。进程模型：Main（Node.js 窗口/IPC/SQLite/Keychain/Updater/Media/Remote Bridge）' +
+    'Spark Work 桌面端架构：Electron + 本地优先。进程模型：Main（Node.js 窗口/IPC/SQLite/Keychain/Updater/Media/Remote Bridge）' +
     '/ Renderer（React 19 + Vite）/ Preload（暴露 window.spark.* 受限 API）/ Managed MCP 子进程（如 @playwright/mcp）/ SDK 子进程（Claude Agent SDK / Codex，每 turn 独立）。' +
     'Agent Runtime 服务层：provider / session / agent / workflow / skill-registry / mcp-registry / permission / rules-engine / hooks-engine / usage / audit / ' +
     'team-dispatch / media-router / media-task-runtime / web-search-mcp-server / remote-bridge / update-service。' +

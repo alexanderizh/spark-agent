@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Spark Agent 多媒体 Provider 采用「能力注册表 + 平台适配器」架构，覆盖图片、语音、视频
+      Spark Work 多媒体 Provider 采用「能力注册表 + 平台适配器」架构，覆盖图片、语音、视频
       三大类共 9 种能力（image.generate / image.edit / image.variations / audio.speech /
       audio.transcription / video.generate / video.image_to_video / video.edit / video.extend）。
     </p>
@@ -190,7 +190,7 @@ export const mediaProviders: DocsPageContent = {
     { key: '产物目录', value: '.spark-artifacts/media/{images,audio,videos,text}' },
   ],
   howTo: {
-    name: '在 Spark Agent 中接入 APIMart 多媒体服务',
+    name: '在 Spark Work 中接入 APIMart 多媒体服务',
     description: '从创建 Provider 到生成第一张图',
     totalTime: 'PT5M',
     steps: [
@@ -202,7 +202,7 @@ export const mediaProviders: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 多媒体 Provider：能力注册表 + 平台适配器，9 种能力（image.generate/edit/variations · audio.speech/transcription · ' +
+    'Spark Work 多媒体 Provider：能力注册表 + 平台适配器，9 种能力（image.generate/edit/variations · audio.speech/transcription · ' +
     'video.generate/image_to_video/edit/extend）。核心字段：mediaProvider（apimart/xai/bailian/openai-images/google-generative-ai/volcengine-ark/kling/pixverse/wan/hailuo/happyhorse/omni/custom）、' +
     'mediaApiType（sync/async/auto）、mediaCapabilities、mediaDefaults、mediaModelRefs。MediaModelManifest 是模型元数据单一来源，' +
     '驱动 Provider 编辑默认值、画布 AI 操作参数面板、spark_media MCP 工具 schema。内置预设：apimart-images/tts/whisper/video-veo3/video-sora2、xai-imagine-image/video/tts、' +

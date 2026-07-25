@@ -3,9 +3,9 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Spark Agent 通过「远程连接」让你从 Telegram / 飞书这几个 IM 通道继续与
+      Spark Work 通过「远程连接」让你从 Telegram / 飞书这几个 IM 通道继续与
       本地 Agent 通信。设计参考 TeamAgentX 的桥接 Bot 流程：外部消息由平台适配器规范化，
-      <code>/bind CODE</code> 配对，配对后所有消息路由进 Spark Agent 会话或内置远程命令。
+      <code>/bind CODE</code> 配对，配对后所有消息路由进 Spark Work 会话或内置远程命令。
     </p>
 
     <h2 id="channels">1. 通道</h2>
@@ -108,7 +108,7 @@ const Body = () => (
         <strong>飞书</strong>：通过 <code>@larksuiteoapi/node-sdk</code> 的官方 WebSocket 长连接，只需 App ID / App Secret。
         推荐用 <code>https://open.feishu.cn/page/openclaw?form=multiAgent</code> 作为搭建入口（自建机器人应用 + 常用能力勾选）。
         回复走 <code>im/v1/messages</code>，<code>chat_id</code> 默认作为接收 ID 类型。
-        Spark Agent 在收到配对消息后会给源消息加 <code>Typing</code> 表情反应。
+        Spark Work 在收到配对消息后会给源消息加 <code>Typing</code> 表情反应。
       </li>
     </ul>
 
@@ -169,7 +169,7 @@ export const remoteConnections: DocsPageContent = {
     { key: 'QR 配对', value: 'spark-agent://remote-pair (含 connectionId/channel/code/expiry)' },
   ],
   howTo: {
-    name: '用 Telegram 远程控制 Spark Agent',
+    name: '用 Telegram 远程控制 Spark Work',
     description: '从创建 Bot 到发第一条 /send 消息',
     totalTime: 'PT8M',
     steps: [
@@ -181,7 +181,7 @@ export const remoteConnections: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 远程连接（Telegram / 飞书）：配置存在 app_settings.remote-connections.data，包含 global pairing defaults 与 connection 列表；' +
+    'Spark Work 远程连接（Telegram / 飞书）：配置存在 app_settings.remote-connections.data，包含 global pairing defaults 与 connection 列表；' +
     '本地桥接运行时暴露 GET /remote/health、POST /remote/webhook/:channel/:connectionId，默认监听 127.0.0.1:32178（端口占用时随机回退）。' +
     'Telegram 走 getUpdates 轮询；飞书走 @larksuiteoapi/node-sdk 官方 WebSocket 长连接（仅需 App ID / App Secret，无需公网 webhook），' +
     '可通过 https://open.feishu.cn/page/openclaw?form=multiAgent 一键搭建。配对流程：保存凭据 → 生成 CODE → 外部聊天 /bind CODE → ' +

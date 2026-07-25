@@ -3,13 +3,13 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Spark Agent 的代码开发面把 AI 放进你真实的项目里：它能读你打开的项目、写文件、跑命令、
+      Spark Work 的代码开发面把 AI 放进你真实的项目里：它能读你打开的项目、写文件、跑命令、
       看 diff、生成 Pull Request，并且所有改动都可逐文件审查。下面是日常会用到的几个关键面。
     </p>
 
     <h2 id="workspace">1. 项目与工作区</h2>
     <p>
-      Spark Agent 以「项目（Project）」为单位管理代码工作区，每个项目对应一个本地目录。
+      Spark Work 以「项目（Project）」为单位管理代码工作区，每个项目对应一个本地目录。
       进入 <strong>「Workspace」</strong> 选择仓库根目录后，Agent 可以访问：
     </p>
     <ul>
@@ -22,7 +22,7 @@ const Body = () => (
 
     <h2 id="branch">2. 选择分支与 Worktree 隔离</h2>
     <p>
-      为了避免 AI 改动污染主分支，Spark Agent 默认建议把工作放到 Git Worktree：
+      为了避免 AI 改动污染主分支，Spark Work 默认建议把工作放到 Git Worktree：
     </p>
     <ol>
       <li>在右上角点「Worktree」 → 选源分支（通常 <code>main</code> / <code>develop</code>）。</li>
@@ -36,7 +36,7 @@ const Body = () => (
 
     <h2 id="terminal">3. 内置终端</h2>
     <p>
-      Spark Agent 通过内嵌 <code>node-pty</code> 提供真终端，支持：
+      Spark Work 通过内嵌 <code>node-pty</code> 提供真终端，支持：
     </p>
     <ul>
       <li>任意 shell（默认 zsh / bash / PowerShell，可在设置切换）。</li>
@@ -47,7 +47,7 @@ const Body = () => (
 
     <h2 id="review">4. 审查与补丁</h2>
     <p>
-      Spark Agent 的代码审查分为两个层级：
+      Spark Work 的代码审查分为两个层级：
     </p>
     <ul>
       <li>
@@ -62,7 +62,7 @@ const Body = () => (
 
     <h2 id="pr">5. Pull Request 与补丁</h2>
     <p>
-      审查通过后点「生成 PR」，Spark Agent 会：
+      审查通过后点「生成 PR」，Spark Work 会：
     </p>
     <ol>
       <li>把当前 Worktree 分支推送到远端。</li>
@@ -124,7 +124,7 @@ export const codeDevelopment: DocsPageContent = {
     { key: '补丁导出', value: 'git format-patch → git am' },
   ],
   howTo: {
-    name: '用 Spark Agent 完成一次代码改动并生成 PR',
+    name: '用 Spark Work 完成一次代码改动并生成 PR',
     description: '在隔离分支上让 AI 修改代码、跑测试、生成 Pull Request',
     totalTime: 'PT15M',
     steps: [
@@ -137,7 +137,7 @@ export const codeDevelopment: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 代码开发工作流：项目工作区与 Git Worktree 隔离、内置终端（node-pty）、Code Review 面板（逐文件 diff）、' +
+    'Spark Work 代码开发工作流：项目工作区与 Git Worktree 隔离、内置终端（node-pty）、Code Review 面板（逐文件 diff）、' +
     'Pull Request 自动生成（GitHub / Gitee / 自建 GitLab）、conventional commits 模板、补丁导出 (git format-patch / git am)、' +
     '命令级权限审批（rm -rf / git push --force 等高风险命令）。最佳实践：Worktree 隔离 + 小步提交 + 跑测试。',
   Body,

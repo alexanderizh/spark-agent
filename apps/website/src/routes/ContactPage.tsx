@@ -6,10 +6,10 @@ export function ContactPage() {
     <>
       <Seo
         seo={{
-          title: '联系我们 - Spark Agent',
-          description: '通过 GitHub Issue、Discussions 和私有安全报告反馈 Spark Agent 的产品问题、使用建议和安全问题。',
+          title: '联系我们 - Spark Work',
+          description: '通过 GitHub Issue、Discussions 和私有安全报告反馈 Spark Work 的产品问题、使用建议和安全问题。',
           path: '/contact',
-          keywords: ['联系 Spark Agent', 'Spark Agent 反馈', 'AI Agent 社区'],
+          keywords: ['联系 Spark Work', 'Spark Work 反馈', 'AI Agent 社区'],
         }}
       />
       <Section eyebrow="联系我们" title="反馈与支持" intro="选择最合适的渠道，让问题、建议或安全报告更快到达维护者。">

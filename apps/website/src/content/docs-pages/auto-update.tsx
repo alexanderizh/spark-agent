@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Spark Agent 桌面端使用 <strong>electron-builder + GitHub Releases + 官网版本中心 + 自定义更新服务</strong>
+      Spark Work 桌面端使用 <strong>electron-builder + GitHub Releases + 官网版本中心 + 自定义更新服务</strong>
       作为发布与更新源。流程由 GitHub Actions 自动化触发，元数据先登记到官网版本中心，
       应用启动时先读官网版本中心，失败或不可用时回退 GitHub Release。
     </p>
@@ -157,7 +157,7 @@ export const autoUpdate: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 桌面端自动更新：electron-builder + GitHub Releases + 官网版本中心（spark.yiqibyte.com）+ 自定义 UpdateService。' +
+    'Spark Work 桌面端自动更新：electron-builder + GitHub Releases + 官网版本中心（spark.yiqibyte.com）+ 自定义 UpdateService。' +
     '发布流程：合并 master → apps/desktop/package.json 变化才触发 → 对比 version 变化 → 自动建 tag → electron-builder 打包 → ' +
     'CI 把元数据登记到官网版本中心 → App 启动先读官网版本中心失败时回退 GitHub Release。' +
     'macOS Release：arm64 dmg（Apple Silicon runner） + x64 dmg（Intel runner），不再发布 universal。' +

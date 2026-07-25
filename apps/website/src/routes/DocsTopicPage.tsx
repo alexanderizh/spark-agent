@@ -190,10 +190,10 @@ export function DocsTopicPage({ slug }: { slug: string }) {
       <>
         <Seo
           seo={{
-            title: '未找到文档主题 - Spark Agent',
+            title: '未找到文档主题 - Spark Work',
             description: '该主题不存在或已被移除。',
             path: `/docs/${slug}`,
-            keywords: ['Spark Agent 文档'],
+            keywords: ['Spark Work 文档'],
           }}
         />
         <DocsTopicNotFound slug={slug} />
@@ -202,7 +202,7 @@ export function DocsTopicPage({ slug }: { slug: string }) {
   }
 
   // 文档详情页的 SEO：title / description / canonical / JSON-LD
-  const seoTitle = `${meta.title} - Spark Agent 文档`
+  const seoTitle = `${meta.title} - Spark Work 文档`
   const seoDescription = meta.description
   const jsonLd = buildDocsJsonLd(meta)
 
@@ -216,7 +216,7 @@ export function DocsTopicPage({ slug }: { slug: string }) {
           keywords: [
             meta.title,
             ...meta.keywords,
-            'Spark Agent 文档',
+            'Spark Work 文档',
             'AI Agent 教程',
           ],
         }}
@@ -269,20 +269,20 @@ function buildDocsJsonLd(meta: ReturnType<typeof findDocsTopic>) {
   const article = {
     '@context': 'https://schema.org',
     '@type': 'TechArticle',
-    headline: `${meta.title} - Spark Agent 文档`,
+    headline: `${meta.title} - Spark Work 文档`,
     description: meta.description,
     inLanguage: 'zh-CN',
     keywords: meta.keywords.join(', '),
     dateModified: meta.updatedAt,
     datePublished: meta.updatedAt,
     mainEntityOfPage: { '@type': 'WebPage', '@id': url },
-    author: { '@type': 'Organization', name: 'Spark Agent' },
+    author: { '@type': 'Organization', name: 'Spark Work' },
     publisher: {
       '@type': 'Organization',
-      name: 'Spark Agent',
+      name: 'Spark Work',
       logo: { '@type': 'ImageObject', url: 'https://spark-agent.dev/icon.png' },
     },
-    about: { '@type': 'SoftwareApplication', name: 'Spark Agent' },
+    about: { '@type': 'SoftwareApplication', name: 'Spark Work' },
     proficiencyLevel: meta.level,
     timeRequired: `PT${meta.readTime}M`,
   }

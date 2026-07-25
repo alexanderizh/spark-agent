@@ -1,7 +1,7 @@
 export const faqs = [
   {
-    q: 'Spark Agent 是什么？',
-    a: 'Spark Agent 是本地优先的 AI Agent 工作台，帮助你在一个桌面环境里完成代码开发、问题定位、团队 Agent 协作、模型治理和无限画布创作。',
+    q: 'Spark Work 是什么？',
+    a: 'Spark Work 是本地优先的 AI Agent 工作台，帮助你在一个桌面环境里完成代码开发、问题定位、团队 Agent 协作、模型治理和无限画布创作。',
   },
   {
     q: '数据是否保存在本地？',

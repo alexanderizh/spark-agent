@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Spark Agent 把 Skills 与 MCP Servers 作为可扩展的「能力层」。Skills 是给 Agent 读的「说明书」，
+      Spark Work 把 Skills 与 MCP Servers 作为可扩展的「能力层」。Skills 是给 Agent 读的「说明书」，
       MCP 是给 Agent 调的「工具集」。本主题聚焦于内置 + 可安装 + 按需加载的完整机制。
     </p>
 
@@ -11,7 +11,7 @@ const Body = () => (
     <p>
       部分技能（如 <code>ppt-master</code> ~96MB、上万文件）体积大，直接随包内置会显著膨胀安装包；
       另一些技能（如 <code>playwright</code> 终端 CLI 技能）虽不大，但并非所有用户都需要。
-      为此 Spark Agent 采用「<strong>内置安装卡片 + 一键按需安装完整原装技能</strong>」的方式：
+      为此 Spark Work 采用「<strong>内置安装卡片 + 一键按需安装完整原装技能</strong>」的方式：
     </p>
     <ul>
       <li>应用只内置技能的<strong>元信息卡片</strong>（名字、描述、来源），新机器装完即可在「技能 → 精选技能」看到；</li>
@@ -206,7 +206,7 @@ export const mcpSkills: DocsPageContent = {
     { key: '当前收录', value: 'ppt-master / playwright（multi-search-engine 直接内置）' },
   ],
   howTo: {
-    name: '在 Spark Agent 中安装一个可安装技能',
+    name: '在 Spark Work 中安装一个可安装技能',
     description: '从打开技能市场到启用 Skill',
     totalTime: 'PT3M',
     steps: [
@@ -218,7 +218,7 @@ export const mcpSkills: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent MCP 与 Skills：内置安装卡片（INSTALLABLE_SKILL_CATALOG）+ 按需从 GitHub 下载完整原装技能，' +
+    'Spark Work MCP 与 Skills：内置安装卡片（INSTALLABLE_SKILL_CATALOG）+ 按需从 GitHub 下载完整原装技能，' +
     '数据流 SkillStoreView ↔ SkillRegistryService (listInstallableCatalog / installFromCatalog / uninstallFromCatalog) ↔ stream:skill:install-progress。' +
     '安装路径：tarball（codeload.github.com/<repo>/tar.gz/refs/heads/<ref>，解压到 {userData}/skills/<slug>/，无 60 文件/1MB 限制）' +
     '与 github（Contents API，≤60 文件/单文件 ≤1MB）。当前收录：ppt-master（hugohe3/ppt-master，AI SVG→PPTX 全链路）、' +

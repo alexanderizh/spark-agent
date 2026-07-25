@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Spark Agent 通过 <code>modelType=image</code> 的 Provider 接入图片生成。
+      Spark Work 通过 <code>modelType=image</code> 的 Provider 接入图片生成。
       图片模型不走默认 Anthropic 聊天协议，携带两个额外字段：<code>imageProvider</code>（图片 API 家族）
       与 <code>imageApiType</code>（调用方式）。
     </p>
@@ -97,7 +97,7 @@ export const imageProviders: DocsPageContent = {
     { key: '向后兼容', value: '保存时自动同步 mediaProvider / mediaApiType / mediaCapabilities' },
   ],
   howTo: {
-    name: '在 Spark Agent 中接入 OpenAI 图片生成',
+    name: '在 Spark Work 中接入 OpenAI 图片生成',
     description: '从创建 Provider 到让 Agent 生成第一张图',
     totalTime: 'PT3M',
     steps: [
@@ -109,7 +109,7 @@ export const imageProviders: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 图片生成 Provider：modelType=image 携带 imageProvider（openai/apimart/openrouter/gemini/seedance/bailian/zhipu/xai/custom）' +
+    'Spark Work 图片生成 Provider：modelType=image 携带 imageProvider（openai/apimart/openrouter/gemini/seedance/bailian/zhipu/xai/custom）' +
     '与 imageApiType（sync/async/auto）。运行时注入 stdio MCP server spark_image，工具 mcp__spark_image__generate_image，' +
     '产物落到 .spark-artifacts/images。Agent 仅在存在可用图片 Provider 时追加图片生成 system prompt。' +
     '与统一栈的关系：图片编辑 / 语音 / 视频走 spark_media；保存图片 Provider 时自动同步 mediaProvider/mediaApiType/mediaCapabilities，' +

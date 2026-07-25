@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Spark Agent 官网镜像 —— 多阶段构建（自包含，任何机器 clone 后即可 build）
+# Spark Work 官网镜像 —— 多阶段构建（自包含，任何机器 clone 后即可 build）
 # 用法: docker build -t <tag> -f apps/website/Dockerfile apps/website
 #
 # 说明: 官网 @spark/website 是纯静态 Vite SPA，无 workspace 依赖，
@@ -29,7 +29,7 @@ RUN pnpm build
 # ============ Stage 2: nginx 托管静态产物 ============
 FROM nginx:1.27-alpine AS runtime
 LABEL org.opencontainers.image.title="spark-website" \
-      org.opencontainers.image.description="Spark Agent 官网 (nginx + 静态产物)" \
+      org.opencontainers.image.description="Spark Work 官网 (nginx + 静态产物)" \
       org.opencontainers.image.source="https://github.com/alexanderizh/spark-agent"
 
 RUN rm -f /etc/nginx/conf.d/default.conf

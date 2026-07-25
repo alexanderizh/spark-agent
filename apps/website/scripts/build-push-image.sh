@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #==============================================================
-# Spark Agent 官网：构建 Docker 镜像并推送到腾讯云镜像仓库
+# Spark Work 官网：构建 Docker 镜像并推送到腾讯云镜像仓库
 #
 # 用法（在仓库根目录或任意目录执行均可）:
 #   bash apps/website/scripts/build-push-image.sh

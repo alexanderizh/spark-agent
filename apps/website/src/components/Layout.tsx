@@ -55,8 +55,8 @@ export function Layout({ children, currentPath = '/' }: { children: React.ReactN
     <>
       <header className={`nav${menuOpen ? ' is-menu-open' : ''}`}>
         <a className="brand" href="/">
-          <Logo size={34} className="brand-mark" title="Spark Agent 首页" />
-          <span>Spark Agent</span>
+          <Logo size={34} className="brand-mark" title="Spark Work 首页" />
+          <span>Spark Work</span>
         </a>
         <nav>
           {visibleNav.map(({ label, href, icon: Icon }) => {
@@ -137,8 +137,8 @@ function Footer() {
     <footer className="footer">
       <div>
         <a className="brand" href="/">
-          <Logo size={30} className="brand-mark" title="Spark Agent 首页" />
-          <span>Spark Agent</span>
+          <Logo size={30} className="brand-mark" title="Spark Work 首页" />
+          <span>Spark Work</span>
         </a>
         <p>本地优先的 AI Agent 工作台，覆盖代码开发、团队协作、运行时治理和无限画布创作。</p>
       </div>

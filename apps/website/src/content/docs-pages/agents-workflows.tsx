@@ -3,7 +3,7 @@ import type { DocsPageContent } from './_shared'
 const Body = () => (
   <>
     <p>
-      Agent 是 Spark Agent 中「会用工具的 LLM 角色」。一个 Agent 由 <em>Provider / Model / Adapter /
+      Agent 是 Spark Work 中「会用工具的 LLM 角色」。一个 Agent 由 <em>Provider / Model / Adapter /
       Permission Mode / Reasoning Effort / Prompt / Skills / Rules / Hooks</em> 等组成，
       可以按项目复用，也可以按会话临时覆盖。
     </p>
@@ -32,7 +32,7 @@ const Body = () => (
 
     <h2 id="runtime-injection">2. 运行时注入</h2>
     <p>
-      当会话启动时，Spark Agent 会按以下顺序构造系统 prompt：
+      当会话启动时，Spark Work 会按以下顺序构造系统 prompt：
     </p>
     <ol>
       <li><strong>[Runtime Rules]</strong>：激活的系统/项目规则 + 项目指令文件 + Agent 规则 + Workflow 节点规则。</li>
@@ -191,7 +191,7 @@ export const agentsWorkflows: DocsPageContent = {
     { key: '权限模式', value: 'default / accept-edits / plan / dont-ask' },
   ],
   howTo: {
-    name: '用 Spark Agent 创建并使用自定义 Agent',
+    name: '用 Spark Work 创建并使用自定义 Agent',
     description: '在「设置 → Agents」创建一个绑定特定模型和 Skills 的 Agent；已启用 MCP 自动可用',
     totalTime: 'PT5M',
     steps: [
@@ -204,7 +204,7 @@ export const agentsWorkflows: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Agent 工作流核心机制：Agent Profile（Provider/Model/Adapter/Permission Mode/Prompt/Skills/Rules/Hooks/Workflow）与全局已启用 MCP 自动挂载、' +
+    'Spark Work 工作流核心机制：Agent Profile（Provider/Model/Adapter/Permission Mode/Prompt/Skills/Rules/Hooks/Workflow）与全局已启用 MCP 自动挂载、' +
     '运行时注入顺序（[Runtime Rules] → [Workflow Execution Plan] → [Platform Tools]）、Workflow Graphs (nodes + edges, 11 种节点 input/plan/agent/subagent/skill/tool/mcp/approval/verify/review/artifact)、' +
     'Workflow 视图（卡片列表 + 图编辑器）、Hooks（permission-request/user-question/session-complete/failure）、' +
     'Platform 管理 MCP（mcp__spark_platform__*: skills/mcp_servers/providers/workflows/agents/teams/settings/sessions/board_tasks）、' +

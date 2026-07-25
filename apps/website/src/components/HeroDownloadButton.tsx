@@ -74,7 +74,7 @@ export function HeroDownloadButton() {
       <div className="hero-download hero-download--mobile">
         <Download size={16} strokeWidth={1.8} aria-hidden="true" />
         <span className="hero-download-mobile-hint">
-          Spark Agent 目前仅提供桌面端，请前往桌面设备下载使用。
+          Spark Work 目前仅提供桌面端，请前往桌面设备下载使用。
         </span>
         <a className="hero-download-mobile-link" href={RELEASES_URL}>
           查看历史版本

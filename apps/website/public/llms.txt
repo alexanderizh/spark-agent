@@ -1,6 +1,6 @@
-# Spark Agent
+# Spark Work
 
-Spark Agent is a local-first AI Agent workbench for people who want AI to work inside real projects. It combines code development, debugging, review, multi-agent collaboration, model and tool governance, and infinite-canvas creative production in one desktop app.
+Spark Work is a local-first AI Agent workbench for people who want AI to work inside real projects. It combines code development, debugging, review, multi-agent collaboration, model and tool governance, and infinite-canvas creative production in one desktop app.
 
 ## Key pages
 - Homepage: /

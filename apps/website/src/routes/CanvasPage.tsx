@@ -24,9 +24,9 @@ export function CanvasPage() {
     <>
       <Seo
         seo={{
-          title: '无限画布 - Spark Agent AI 影视创作工作台',
+          title: '无限画布 - Spark Work AI 影视创作工作台',
           description:
-            'Spark Agent 无限画布帮助团队组织剧本、角色、场景、镜头、分镜、Prompt、生成任务和多媒体资产。',
+            'Spark Work 无限画布帮助团队组织剧本、角色、场景、镜头、分镜、Prompt、生成任务和多媒体资产。',
           path: '/canvas',
           keywords: ['AI 无限画布', 'AI 影视创作', 'AI 分镜', 'AI 剧本创作', 'Storyboard'],
         }}
@@ -58,26 +58,26 @@ export function CanvasPage() {
           </article>
         </div>
       </Section>
-      <Section title="画布里的真实工作场景" intro="下面是 Spark Agent 桌面端截图，展示导演台、资产中心和 360 全景预览如何服务同一个项目。">
+      <Section title="画布里的真实工作场景" intro="下面是 Spark Work 桌面端截图，展示导演台、资产中心和 360 全景预览如何服务同一个项目。">
         <div className="grid cards canvas-gallery">
           <article className="card image-card" id="film">
-            <img src="/showcase/director-stage.png" alt="Spark Agent 3D 导演台截图" loading="lazy" decoding="async" />
+            <img src="/showcase/director-stage.png" alt="Spark Work 3D 导演台截图" loading="lazy" decoding="async" />
             <h3>3D 导演台</h3>
             <p>先规划角色站位、相机和构图，再生成稳定的镜头描述，减少反复试错。</p>
           </article>
           <article className="card image-card">
-            <img src="/showcase/asset-center.png" alt="Spark Agent 画布资产中心截图" loading="lazy" decoding="async" />
+            <img src="/showcase/asset-center.png" alt="Spark Work 画布资产中心截图" loading="lazy" decoding="async" />
             <h3>画布资产中心</h3>
             <p>集中查看每条分镜的角色、场景、镜头描述与生成结果，方便比较版本并沉淀可复用资产。</p>
           </article>
           <article className="card image-card">
-            <img src="/showcase/panorama-360.png" alt="Spark Agent 360 全景预览截图" loading="lazy" decoding="async" />
+            <img src="/showcase/panorama-360.png" alt="Spark Work 360 全景预览截图" loading="lazy" decoding="async" />
             <h3>360 全景预览</h3>
             <p>在继续生成前确认空间关系、光线方向和材质细节，让后续镜头保持一致。</p>
           </article>
         </div>
       </Section>
-      <Section title="Spark Agent 无限画布是什么？">
+      <Section title="Spark Work 无限画布是什么？">
         <p className="answer-block">
           它是一张可持续迭代的视觉生产台：剧本、分镜、提示词、素材和 AI 生成任务会保留上下文与来源关系，方便团队继续修改、派生和复用。
         </p>
