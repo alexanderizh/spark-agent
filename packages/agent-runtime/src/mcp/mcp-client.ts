@@ -19,6 +19,7 @@ import { StdioTransport } from './transport/stdio-transport.js'
 import { SseTransport } from './transport/sse-transport.js'
 import { StreamableHttpTransport } from './transport/streamable-http-transport.js'
 import { createLogger } from '@spark/shared'
+import { callMcpToolWithRetry, type McpRetryOptions } from './mcp-retry.js'
 
 const log = createLogger('mcp:client')
 
@@ -179,7 +180,30 @@ export class McpClient {
   }
 
   /** 调用指定工具 */
-  async callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
+  async callTool(
+    name: string,
+    args: Record<string, unknown>,
+    options: { retry?: McpRetryOptions } = {},
+  ): Promise<McpToolResult> {
+    if (!this._connected) {
+      throw new Error(`MCP client not connected: ${this.serverName}`)
+    }
+
+    // 应用层重试（D-10）：默认对幂等工具自动重试 5xx/网络错误，maxRetries=3。
+    // 调用方传 options.retry 可覆盖或显式关闭（{ maxRetries: 0 }）。
+    return callMcpToolWithRetry(
+      this.serverName,
+      name,
+      () => this.callToolInternal(name, args),
+      options.retry,
+    )
+  }
+
+  /** 不带 retry 的实际调用 —— callTool + retry 包装器共用 */
+  private async callToolInternal(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<McpToolResult> {
     if (!this._connected) {
       throw new Error(`MCP client not connected: ${this.serverName}`)
     }
