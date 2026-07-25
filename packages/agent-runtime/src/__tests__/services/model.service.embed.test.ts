@@ -10,14 +10,18 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { ModelService } from '../../services/model.service.js'
 
-vi.mock('@spark/shared', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}))
+vi.mock('@spark/shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@spark/shared')>()
+  return {
+    ...actual,
+    createLogger: () => ({
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    }),
+  }
+})
 
 vi.mock('@spark/shared/keystore', () => ({
   getSecret: vi.fn(async () => 'test-key'),

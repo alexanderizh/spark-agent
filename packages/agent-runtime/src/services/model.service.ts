@@ -1,6 +1,6 @@
 import type { ModelProfileRepository, ModelProfileRow, ProviderProfileRepository, ProviderProfileRow } from '@spark/storage'
 import type { ModelProfile } from '@spark/protocol'
-import { createLogger } from '@spark/shared'
+import { createLogger, fetchJson, HttpError } from '@spark/shared'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
 
 const log = createLogger('model.service')
@@ -114,31 +114,37 @@ export class ModelService {
       }
 
       const url = getEmbeddingsEndpoint(apiEndpoint)
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey.length > 0 ? { Authorization: `Bearer ${apiKey}` } : {}),
-        },
-        body: JSON.stringify({ model, input: texts }),
-        signal: AbortSignal.timeout(EMBED_HTTP_TIMEOUT_MS),
-      })
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => '')
-        return { available: false, reason: `HTTP ${res.status}: ${body.slice(0, 200)}` }
+      // D-15：embed 是幂等的（同样输入 → 同样向量），可用 shared.fetchJson 加 1 次重试，
+      // 抵抗瞬时网络/5xx 错误。LLM complete 路径不走此路（非幂等，避免重复扣费）。
+      let json: {
+        data?: Array<{ index?: number; embedding?: number[] }>
+        vectors?: unknown
+        base_resp?: { status_code?: number; status_msg?: string }
+      }
+      try {
+        json = await fetchJson<typeof json>(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey.length > 0 ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify({ model, input: texts }),
+          timeoutMs: EMBED_HTTP_TIMEOUT_MS,
+          maxRetries: 1,
+        })
+      } catch (err) {
+        if (err instanceof HttpError) {
+          const status = err.statusCode ?? 'network'
+          const body = err.message.replace(/^HTTP \d+:\s*/, '').slice(0, 200)
+          return { available: false, reason: `HTTP ${status}: ${body}` }
+        }
+        return { available: false, reason: err instanceof Error ? err.message : String(err) }
       }
 
       // 兼容两种 embeddings 响应格式：
       //   - OpenAI 标准：{ data: [{ embedding: number[], index: number }] }
       //   - 智谱原生（embedding-3 较新后端）：{ vectors: number[][], base_resp?: { status_code, status_msg } }
       // 同一端点在不同请求来源/负载下可能返回任一种，故两侧都识别。
-      const json = (await res.json()) as {
-        data?: Array<{ index?: number; embedding?: number[] }>
-        vectors?: unknown
-        base_resp?: { status_code?: number; status_msg?: string }
-      }
-
       const vectors: number[][] = []
 
       if (Array.isArray(json.data)) {
