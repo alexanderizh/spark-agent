@@ -5,10 +5,13 @@
 
 import { mkdir, writeFile, readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { createLogger } from '@spark/shared'
 import { MediaProviderError } from './media-adapter.types.js'
 import type { MediaGeneratedAsset, MediaArtifactType } from './media-adapter.types.js'
 import { describeNetworkError, sanitizeRequestUrl } from './media-http.util.js'
 import type { ExtractedImage } from './media-http.util.js'
+
+const log = createLogger('media:artifact')
 
 const MIME_TO_EXT: Record<string, string> = {
   'image/png': '.png',
@@ -179,8 +182,15 @@ export class MediaArtifactService {
         )
       }
       const budgetMs = deadline != null ? Math.max(1, deadline - Date.now()) : undefined
+      log.info(
+        `event=download-attempt attempt=${attempt}/${MAX_DOWNLOAD_ATTEMPTS} url=${JSON.stringify(sanitizeRequestUrl(url))} budgetMs=${budgetMs ?? '(unlimited)'}`,
+      )
       const result = await this.attemptDownload(url, impl, budgetMs)
       if (result.kind === 'ok') return result.buffer
+
+      log.warn(
+        `event=download-attempt-failed attempt=${attempt}/${MAX_DOWNLOAD_ATTEMPTS} url=${JSON.stringify(sanitizeRequestUrl(url))} timedOut=${result.timedOut} error=${JSON.stringify(describeError(result.error))}`,
+      )
 
       // 超时统一以配置的总时限表述，避免单次预算随尝试次数漂移
       const error =
@@ -225,10 +235,21 @@ export class MediaArtifactService {
       try {
         res = await impl(url, controller ? { signal: controller.signal } : undefined)
       } catch (err) {
-        if (timedOut) return { kind: 'error', timedOut: true, error: TIMED_OUT_PLACEHOLDER }
+        if (timedOut) {
+          log.warn(
+            `event=download-fetch-timeout url=${JSON.stringify(sanitizeRequestUrl(url))} error=${JSON.stringify(describeError(err))}`,
+          )
+          return { kind: 'error', timedOut: true, error: TIMED_OUT_PLACEHOLDER }
+        }
+        log.warn(
+          `event=download-fetch-failed url=${JSON.stringify(sanitizeRequestUrl(url))} error=${JSON.stringify(describeError(err))}`,
+        )
         return { kind: 'error', timedOut: false, error: toDownloadNetworkError(err, url) }
       }
       if (!res.ok) {
+        log.warn(
+          `event=download-response-failed url=${JSON.stringify(sanitizeRequestUrl(url))} status=${res.status}`,
+        )
         return {
           kind: 'error',
           timedOut: false,
@@ -239,7 +260,21 @@ export class MediaArtifactService {
           ),
         }
       }
-      return { kind: 'ok', buffer: Buffer.from(await res.arrayBuffer()) }
+      log.info(
+        `event=download-response-ok url=${JSON.stringify(sanitizeRequestUrl(url))} status=${res.status} contentType=${JSON.stringify(res.headers.get('content-type') ?? '(none)')} contentLength=${JSON.stringify(res.headers.get('content-length') ?? '(unknown)')}`,
+      )
+      try {
+        const buffer = Buffer.from(await res.arrayBuffer())
+        log.info(
+          `event=download-body-read-ok url=${JSON.stringify(sanitizeRequestUrl(url))} bytes=${buffer.byteLength}`,
+        )
+        return { kind: 'ok', buffer }
+      } catch (err) {
+        log.warn(
+          `event=download-body-read-failed url=${JSON.stringify(sanitizeRequestUrl(url))} error=${JSON.stringify(describeError(err))}`,
+        )
+        throw err
+      }
     } finally {
       if (timer !== undefined) clearTimeout(timer)
     }
@@ -278,6 +313,22 @@ function enrichDownloadError(error: MediaProviderError, attempt: number): MediaP
   if (attempt <= 1) return error
   error.message = `${error.message}（已重试 ${attempt - 1} 次，共 ${MAX_DOWNLOAD_ATTEMPTS} 次尝试）`
   return error
+}
+
+function describeError(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) return { value: String(error) }
+  const cause = (error as { cause?: unknown }).cause
+  const code = (error as { code?: unknown }).code
+  return {
+    name: error.name,
+    message: error.message,
+    ...(typeof code === 'string' ? { code } : {}),
+    ...(cause instanceof Error
+      ? { cause: { name: cause.name, message: cause.message } }
+      : typeof cause === 'string'
+        ? { cause }
+        : {}),
+  }
 }
 
 export function defaultOutputDir(workspaceRootPath: string, kind: MediaArtifactType): string {

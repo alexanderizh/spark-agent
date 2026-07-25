@@ -14,6 +14,7 @@
 
 import { OpenAiCompatibleMediaAdapter } from './openai-compatible-media.adapter.js'
 import { MediaProviderError } from '../media-adapter.types.js'
+import { createLogger } from '@spark/shared'
 import type {
   MediaGenerateInput,
   MediaGenerateOutput,
@@ -26,6 +27,7 @@ import {
   extractTaskId,
   fetchJson,
   pollTask,
+  sanitizeRequestUrl,
 } from '../media-http.util.js'
 import { MediaArtifactService } from '../media-artifact.service.js'
 import { configuredMediaInterfaceTimeoutMs, mediaPollTimeoutOptions, resolveMediaInterfaceTimeoutMs } from '../media-timeout.js'
@@ -35,6 +37,8 @@ import {
   filenameHelper,
   normalizeImageAliasParams,
 } from './openai-compatible-media.adapter.js'
+
+const log = createLogger('media:apimart')
 
 const FAILED_STATUSES = ['failed', 'error', 'cancelled', 'canceled']
 const APIMART_IMAGE_DATA_URL_MAX_BYTES = 3 * 1024 * 1024
@@ -112,6 +116,9 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
     })
 
     let images = extractImages(data)
+    log.info(
+      `event=edit-response mode=sync imageCount=${images.length} response=${JSON.stringify(describeImageResponse(data))}`,
+    )
     let mode: 'sync' | 'async' = 'sync'
     let requestId: string | undefined
     let raw = data
@@ -133,15 +140,41 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
           ...(ctx.mediaManifest?.error ? { errorContract: ctx.mediaManifest.error } : {}),
         })
         images = extractImages(raw)
+        log.info(
+          `event=task-result requestId=${JSON.stringify(taskId)} imageCount=${images.length} response=${JSON.stringify(describeImageResponse(raw))}`,
+        )
       }
     }
     if (images.length === 0) {
       throw new MediaProviderError('provider_http_error', `No images in edit response: ${JSON.stringify(raw).slice(0, 800)}`)
     }
+    const artifactTimeoutMs = configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults)
     const assets = await Promise.all(
-      images.map((image, index) =>
-        this.artifact.writeImage(image, input.outputDir, filenameHelper(input, 'edit', index, images.length), ctx.fetch, configuredMediaInterfaceTimeoutMs(ctx.mediaDefaults)),
-      ),
+      images.map(async (image, index) => {
+        const artifactStartedAt = Date.now()
+        const filename = filenameHelper(input, 'edit', index, images.length)
+        log.info(
+          `event=artifact-write-start requestId=${JSON.stringify(requestId ?? '(sync)')} index=${index} image=${JSON.stringify(describeImage(image))} filename=${JSON.stringify(filename)} timeoutMs=${artifactTimeoutMs}`,
+        )
+        try {
+          const asset = await this.artifact.writeImage(
+            image,
+            input.outputDir,
+            filename,
+            ctx.fetch,
+            artifactTimeoutMs,
+          )
+          log.info(
+            `event=artifact-write-success requestId=${JSON.stringify(requestId ?? '(sync)')} index=${index} elapsedMs=${Date.now() - artifactStartedAt} filePath=${JSON.stringify(asset.filePath ?? '(none)')}`,
+          )
+          return asset
+        } catch (error) {
+          log.warn(
+            `event=artifact-write-failed requestId=${JSON.stringify(requestId ?? '(sync)')} index=${index} elapsedMs=${Date.now() - artifactStartedAt} error=${JSON.stringify(describeError(error))}`,
+          )
+          throw error
+        }
+      }),
     )
     return { provider: this.id, model, mode, ...(requestId ? { requestId } : {}), assets, rawResponse: raw }
   }
@@ -230,4 +263,44 @@ function authHeaders(ctx: MediaProviderContext): Record<string, string> {
 
 function isAsync(ctx: MediaProviderContext): boolean {
   return ctx.mediaApiType === 'async' || ctx.mediaApiType === 'auto'
+}
+
+function describeImage(image: ReturnType<typeof extractImages>[number]): Record<string, unknown> {
+  return {
+    kind: image.kind,
+    mimeType: image.mimeType ?? '(unknown)',
+    ...(image.kind === 'url'
+      ? { url: sanitizeRequestUrl(image.value) }
+      : { base64Chars: image.value.length }),
+  }
+}
+
+function describeImageResponse(data: unknown): Record<string, unknown> {
+  const images = extractImages(data)
+  const keys =
+    data !== null && typeof data === 'object' && !Array.isArray(data)
+      ? Object.keys(data as Record<string, unknown>).slice(0, 30)
+      : []
+  return {
+    status: extractStatus(data) || '(none)',
+    keys,
+    imageCount: images.length,
+    imageKinds: images.map((image) => image.kind),
+  }
+}
+
+function describeError(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) return { value: String(error) }
+  const cause = (error as { cause?: unknown }).cause
+  const code = (error as { code?: unknown }).code
+  return {
+    name: error.name,
+    message: error.message,
+    ...(typeof code === 'string' ? { code } : {}),
+    ...(cause instanceof Error
+      ? { cause: { name: cause.name, message: cause.message } }
+      : typeof cause === 'string'
+        ? { cause }
+        : {}),
+  }
 }
