@@ -735,6 +735,11 @@ export class ClaudeSDKExecutor {
         maxTurns,
         ...(config.maxBudgetUsd != null ? { maxBudgetUsd: config.maxBudgetUsd } : {}),
         effort: mapReasoningEffort(config.reasoningEffort),
+        // 显式 extended-thinking 预算：用户在 agent 配置中指定 reasoningBudgetTokens 时，
+        // 切换到 enabled 模式并锁定 token 上限；否则走 SDK 默认（adaptive on Opus 4.6+）。
+        ...(config.reasoningBudgetTokens != null && config.reasoningBudgetTokens > 0
+          ? { thinking: { type: 'enabled' as const, budgetTokens: config.reasoningBudgetTokens } }
+          : {}),
         ...(resumeExistingSession ? { resume: sdkSessionId } : { sessionId: sdkSessionId }),
         ...(config.additionalDirectories != null && config.additionalDirectories.length > 0
           ? { additionalDirectories: config.additionalDirectories }

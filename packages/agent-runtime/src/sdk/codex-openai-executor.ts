@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import OpenAI from 'openai'
 import type { AgentEvent } from '@spark/protocol'
-import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
+import { estimateTokens, resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import type { SDKExecutorConfig, SDKTurnAttachment } from './types.js'
 
 type Listener = (event: AgentEvent) => void
@@ -77,7 +77,7 @@ export class CodexOpenAIExecutor {
     this.emit({
       ...makeBase(),
       type: 'context_usage',
-      estimatedTokens: Math.ceil(prompt.length / 3),
+      estimatedTokens: estimateTokens(prompt),
       softLimitTokens: resolveSoftContextLimit(config.model),
       contextWindowTokens: config.contextWindowTokens ?? resolveModelContextWindow(config.model),
       compacted: false,
