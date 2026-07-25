@@ -4137,6 +4137,43 @@ export class SessionService {
   }
 
   /**
+   * A-03 细致审查：构建 member turn 的 allowedTools 列表。
+   *
+   * 镜像 Host 路径（startTurn line 3253-3295）按 mcpServers 实际加载的 MCP
+   * 推导免审批工具列表。否则 member 在 unattended dispatch 模式下会因工具
+   * 未列入 allowedTools 而卡在 approval 等待。
+   */
+  private buildMemberAllowedTools(
+    memberMcpServers: Record<string, SDKMcpServerConfig>,
+    memberTeamServer: SDKMcpServerConfig | undefined,
+  ): string[] {
+    const tools: string[] = []
+    if (memberMcpServers.spark_image != null) {
+      tools.push('mcp__spark_image__generate_image')
+    }
+    if (memberMcpServers.spark_media != null) {
+      tools.push(...SPARK_MEDIA_TOOL_NAMES)
+    }
+    if (memberTeamServer != null) {
+      const teamToolNames =
+        this.teamMcpToolNames.get(memberTeamServer) ??
+        new Set<TeamToolName>(['agent_dispatch', 'agent_dispatch_batch'])
+      tools.push(
+        ...[...teamToolNames].map((name) => qualifyTeamToolName(name as TeamToolName)),
+      )
+    }
+    if (memberMcpServers.spark_platform != null) tools.push(...PLATFORM_TOOL_NAMES)
+    if (memberMcpServers.spark_search != null) tools.push(...SEARCH_TOOL_NAMES)
+    if (memberMcpServers.spark_files != null) tools.push(...PRESENT_FILES_TOOL_NAMES)
+    if (memberMcpServers.spark_browser != null) tools.push(...BROWSER_TOOL_NAMES)
+    if (memberMcpServers.spark_memory != null) {
+      tools.push('mcp__spark_memory__search_memory', 'mcp__spark_memory__recall_memory')
+    }
+    if (memberMcpServers.spark_debug != null) tools.push(...DEBUG_TOOL_NAMES)
+    return Array.from(new Set(tools))
+  }
+
+  /**
    * Build MCP server configs in the SDK's expected format from our McpService.
    */
   private async buildMcpServersForSDK(): Promise<Record<string, SDKMcpServerConfig>> {
@@ -6225,19 +6262,10 @@ export class SessionService {
       ...(memberSystemPrompt.trim().length > 0 ? { systemPrompt: memberSystemPrompt } : {}),
       ...(memberCustomEnv != null ? { customEnv: memberCustomEnv } : {}),
       ...(Object.keys(memberMcpServers).length > 0 ? { mcpServers: memberMcpServers } : {}),
-      // 有团队工具时预批准（含内置搜索）；始终禁用内置 Task（§7.4）。
-      // teamMcpToolNames 记录的是 server 实际注册的 defs（嵌套关时只有 agent_message）。
-      ...(memberTeamServer != null
-        ? {
-            allowedTools: [
-              ...[
-                ...(this.teamMcpToolNames.get(memberTeamServer) ??
-                  new Set<TeamToolName>(['agent_dispatch', 'agent_dispatch_batch'])),
-              ].map((toolName) => qualifyTeamToolName(toolName as TeamToolName)),
-              ...SEARCH_TOOL_NAMES,
-            ],
-          }
-        : {}),
+      // A-03 细致审查修复：member allowedTools 必须包含所有已加载 MCP 的工具，否则
+      // SDK 视为非免审批 → member 在 unattended dispatch 时卡在 approval 等待。
+      // 镜像 Host 路径（line 3253-3295）按 mcpServers 实际加载的工具构建 allowedTools。
+      allowedTools: this.buildMemberAllowedTools(memberMcpServers, memberTeamServer),
       // 始终禁用 Task；节点配了 toolIds（工作流「工具」选择器）时额外收窄到白名单——
       // 用 disallowedTools = 全量可限制工具 - toolIds，而不是直接把 toolIds 当 allowedTools，
       // 因为 allowedTools 在 SDK 里只是"免审批"名单，不是"仅允许"名单，压根挡不住其它工具。
