@@ -17,6 +17,7 @@ import type { EventRepository } from '@spark/storage'
 import { SessionSummaryRepository } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import type { AgentEvent } from '@spark/protocol'
+import { clipTextHeadTail, estimateTokens } from '@spark/shared'
 import crypto from 'node:crypto'
 
 /** Max characters of recent entries to keep verbatim (beyond summary) */
@@ -26,6 +27,12 @@ const SUMMARIZATION_ENTRY_THRESHOLD = 20
 /** Max characters per summary */
 const MAX_SUMMARY_CHARS = 4_000
 const MEMORY_EXTRACTION_CONTEXT_MAX_CHARS = 3_000
+/** 单条 entry 内部超过这个 token 上限时，启用头尾保留截断（替换旧的 4000 字符粗暴截断）。 */
+const ENTRY_TOKEN_BUDGET = 1_500
+/** 历史上下文 token 预算的默认上限（未传入时使用）。 */
+const DEFAULT_HISTORY_TOKEN_BUDGET = 8_000
+/** 单条 entry token 预算的默认上限（未传入时使用）。 */
+const DEFAULT_ENTRY_TOKEN_BUDGET = 1_500
 
 type DialogueEntry = { role: 'User' | 'Assistant'; content: string }
 
@@ -63,8 +70,32 @@ export function buildConversationHistoryWithSummary(
      * 让后续任意 agent（Host 或被 @ 的 Member）都能看到完整群聊上下文。
      */
     agentNameById?: Record<string, string>
+    /**
+     * 历史 token 预算（D-06 动态化）。未传时回落到 DEFAULT_HISTORY_TOKEN_BUDGET。
+     * 推荐由调用方按 provider contextWindow 算（如 contextWindow × 0.3，上限 100k）。
+     */
+    historyTokenBudget?: number
+    /**
+     * 单条 entry token 预算（D-06 动态化）。未传时回落到 DEFAULT_ENTRY_TOKEN_BUDGET。
+     */
+    entryTokenBudget?: number
+    /**
+     * W1.1b：SDK resume 已接管历史时跳过 Spark 自做摘要。
+     *
+     * 原生 Anthropic + claude 模型 + api.anthropic.com 走 SDK compaction/resume，
+     * Spark 不再生成 session summary 也不再拼接 history prompt——SDK 通过
+     * `query.resume({ sessionId })` 在多 turn 间维持完整上下文。
+     *
+     * 调用方负责判定 resume 是否真生效（既要 provider/adapter/model 满足白名单，
+     * 也要 previousPromptSnapshot 匹配，避免换 provider 后 resume 失效）。
+     */
+    skipForSdkResume?: boolean
   },
 ): { prompt: string | undefined; summarization?: SummarizationResult['stats'] } {
+  if (options?.skipForSdkResume === true) {
+    return { prompt: undefined }
+  }
+  const entryTokenBudget = Math.max(200, Math.floor(options?.entryTokenBudget ?? DEFAULT_ENTRY_TOKEN_BUDGET))
   const summaryRepo = new SessionSummaryRepository(db)
 
   const events = loadDialogueEvents(eventRepo, sessionId)
@@ -89,10 +120,14 @@ export function buildConversationHistoryWithSummary(
     const coveredCount = Math.min(cachedSummary.summarized_entry_count, oldEntries.length)
     const uncoveredOld = oldEntries.slice(coveredCount)
     if (uncoveredOld.length < SUMMARIZATION_ENTRY_THRESHOLD) {
-      const recentText = formatEntriesWithinBudget(recentEntries, RECENT_ENTRIES_MAX_CHARS)
+      const recentText = formatEntriesWithinBudget(
+        recentEntries,
+        RECENT_ENTRIES_MAX_CHARS,
+        entryTokenBudget,
+      )
       const midText =
         uncoveredOld.length > 0
-          ? formatEntriesWithinBudget(uncoveredOld, RECENT_ENTRIES_MAX_CHARS)
+          ? formatEntriesWithinBudget(uncoveredOld, RECENT_ENTRIES_MAX_CHARS, entryTokenBudget)
           : ''
       const combined = [
         '[Session History — Earlier Summary]',
@@ -119,16 +154,21 @@ export function buildConversationHistoryWithSummary(
 
   // If old entries are below threshold, just use the regular approach (no summarization)
   if (oldEntries.length < SUMMARIZATION_ENTRY_THRESHOLD) {
-    return { prompt: buildPlainPrompt(entries) }
+    const historyTokenBudget = Math.max(
+      1_000,
+      Math.floor(options?.historyTokenBudget ?? DEFAULT_HISTORY_TOKEN_BUDGET),
+    )
+    return { prompt: buildPlainPrompt(entries, historyTokenBudget, entryTokenBudget) }
   }
 
   // Generate a new summary for old entries
   const summaryText = generateExtractiveSummary(oldEntries)
 
   // Estimate tokens saved
-  const oldChars = oldEntries.reduce((sum, e) => sum + e.content.length, 0)
-  const tokensSaved = Math.max(0, Math.ceil((oldChars - summaryText.length) / 3))
-  const summaryTokens = Math.ceil(summaryText.length / 3)
+  const oldTokens = estimateTokens(oldEntries.map((e) => e.content).join(''))
+  const newTokens = estimateTokens(summaryText)
+  const tokensSaved = Math.max(0, oldTokens - newTokens)
+  const summaryTokens = newTokens
 
   // Cache the summary
   summaryRepo.create({
@@ -142,7 +182,11 @@ export function buildConversationHistoryWithSummary(
     estimatedTokens: summaryTokens,
   })
 
-  const recentText = formatEntriesWithinBudget(recentEntries, RECENT_ENTRIES_MAX_CHARS)
+  const recentText = formatEntriesWithinBudget(
+    recentEntries,
+    RECENT_ENTRIES_MAX_CHARS,
+    entryTokenBudget,
+  )
   const combined = [
     '[Session History — Earlier Summary]',
     `The following is a condensed summary of ${oldEntries.length} earlier exchanges:`,
@@ -284,7 +328,11 @@ function generateExtractiveSummary(entries: DialogueEntry[]): string {
 /**
  * Format recent entries within a character budget, trimming from the front.
  */
-function formatEntriesWithinBudget(entries: DialogueEntry[], maxChars: number): string {
+function formatEntriesWithinBudget(
+  entries: DialogueEntry[],
+  maxChars: number,
+  entryTokenBudget: number,
+): string {
   let total = entries.reduce((sum, e) => sum + e.content.length + e.role.length + 4, 0)
   const selected = [...entries]
   while (selected.length > 0 && total > maxChars) {
@@ -294,9 +342,7 @@ function formatEntriesWithinBudget(entries: DialogueEntry[], maxChars: number): 
 
   return selected
     .map((entry) => {
-      const content = entry.content.length > 4000
-        ? `${entry.content.slice(0, 3990)}\n[truncated]`
-        : entry.content
+      const content = clipTextHeadTail(entry.content, entryTokenBudget)
       return `${entry.role}: ${content}`
     })
     .join('\n\n')
@@ -305,19 +351,21 @@ function formatEntriesWithinBudget(entries: DialogueEntry[], maxChars: number): 
 /**
  * Standard plain prompt without summarization (fallback).
  */
-function buildPlainPrompt(entries: DialogueEntry[]): string {
+function buildPlainPrompt(
+  entries: DialogueEntry[],
+  historyTokenBudget: number,
+  entryTokenBudget: number,
+): string {
   const selected = entries.slice(-40)
-  let total = selected.reduce((sum, e) => sum + e.content.length, 0)
-  while (selected.length > 0 && total > 24_000) {
+  let total = selected.reduce((sum, e) => sum + estimateTokens(e.content), 0)
+  while (selected.length > 0 && total > historyTokenBudget) {
     const removed = selected.shift()!
-    total -= removed.content.length
+    total -= estimateTokens(removed.content)
   }
 
   const transcript = selected
     .map((entry) => {
-      const content = entry.content.length > 4000
-        ? `${entry.content.slice(0, 3990)}\n[truncated]`
-        : entry.content
+      const content = clipTextHeadTail(entry.content, entryTokenBudget)
       return `${entry.role}: ${content}`
     })
     .join('\n\n')
