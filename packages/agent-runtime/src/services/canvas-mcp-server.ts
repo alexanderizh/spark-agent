@@ -38,29 +38,68 @@ function jsonPropToZod(prop: unknown): z.ZodTypeAny {
   if (prop == null || typeof prop !== 'object') return z.unknown()
   const p = prop as Record<string, unknown>
 
-  if (Array.isArray(p.enum) && p.enum.every((v) => typeof v === 'string')) {
-    const arr = p.enum as string[]
-    if (arr.length === 0) return z.string()
-    const result = z.enum([arr[0]!, ...arr.slice(1)] as [string, ...string[]])
-    return typeof p.description === 'string' ? result.describe(p.description) : result
+  if (typeof p.const === 'string' || typeof p.const === 'number' || typeof p.const === 'boolean') {
+    return z.literal(p.const)
   }
 
-  if (p.oneOf != null || p.anyOf != null) return z.unknown()
+  if (Array.isArray(p.enum) && p.enum.every((v) => typeof v === 'string')) {
+    const arr = p.enum as string[]
+    const [first, ...rest] = arr
+    if (first === undefined) return z.string()
+    const result = z.enum([first, ...rest])
+    return typeof p.description === 'string' ? result.describe(p.description) : result
+  }
 
   const desc = typeof p.description === 'string' ? p.description : undefined
   const withDesc = <T extends z.ZodTypeAny>(s: T): z.ZodTypeAny => (desc ? s.describe(desc) : s)
 
+  const unionSource = Array.isArray(p.oneOf) ? p.oneOf : Array.isArray(p.anyOf) ? p.anyOf : null
+  if (unionSource != null) {
+    const branches = unionSource.map(jsonPropToZod)
+    const [first, second, ...rest] = branches
+    if (first === undefined) return z.unknown()
+    if (second === undefined) return withDesc(first)
+    return withDesc(z.union([first, second, ...rest]))
+  }
+
   switch (p.type) {
-    case 'string':
-      return withDesc(z.string())
+    case 'string': {
+      let schema = z.string()
+      if (typeof p.minLength === 'number') schema = schema.min(p.minLength)
+      if (typeof p.maxLength === 'number') schema = schema.max(p.maxLength)
+      if (typeof p.pattern === 'string') {
+        try {
+          schema = schema.regex(new RegExp(p.pattern))
+        } catch {
+          // Invalid schema patterns should not make the complete canvas toolset unavailable.
+        }
+      }
+      return withDesc(schema)
+    }
     case 'number':
-    case 'integer':
-      return withDesc(z.number())
+    case 'integer': {
+      let schema = p.type === 'integer' ? z.number().int() : z.number()
+      if (typeof p.minimum === 'number') schema = schema.min(p.minimum)
+      if (typeof p.maximum === 'number') schema = schema.max(p.maximum)
+      return withDesc(schema)
+    }
     case 'boolean':
       return withDesc(z.boolean())
     case 'array': {
       const items = p.items != null ? jsonPropToZod(p.items) : z.unknown()
-      return withDesc(z.array(items))
+      let schema = z.array(items)
+      if (typeof p.minItems === 'number') schema = schema.min(p.minItems)
+      if (typeof p.maxItems === 'number') schema = schema.max(p.maxItems)
+      if (p.uniqueItems === true) {
+        return withDesc(
+          schema.refine(
+            (values) =>
+              new Set(values.map((value) => JSON.stringify(value))).size === values.length,
+            'Array items must be unique',
+          ),
+        )
+      }
+      return withDesc(schema)
     }
     case 'object': {
       if (p.properties != null && typeof p.properties === 'object') {
@@ -73,7 +112,11 @@ function jsonPropToZod(prop: unknown): z.ZodTypeAny {
           shape[k] = inner
         }
         const obj = z.object(shape)
-        return withDesc(p.additionalProperties != null ? obj.passthrough() : obj)
+        if (p.additionalProperties === false) return withDesc(obj.strict())
+        if (p.additionalProperties != null && typeof p.additionalProperties === 'object') {
+          return withDesc(obj.catchall(jsonPropToZod(p.additionalProperties)))
+        }
+        return withDesc(obj.passthrough())
       }
       return withDesc(z.record(z.unknown()))
     }
@@ -83,7 +126,9 @@ function jsonPropToZod(prop: unknown): z.ZodTypeAny {
 }
 
 /** 把顶层 JSON Schema (type=object) 转成 SDK tool() 需要的 shape map */
-function jsonSchemaToShape(schema: Record<string, unknown>): Record<string, z.ZodTypeAny> {
+export function canvasJsonSchemaToZodShape(
+  schema: Record<string, unknown>,
+): Record<string, z.ZodTypeAny> {
   if (schema.type !== 'object' || schema.properties == null) return {}
   const props = schema.properties as Record<string, unknown>
   const required = new Set(Array.isArray(schema.required) ? (schema.required as string[]) : [])
@@ -119,11 +164,11 @@ function getOrComputeShape(inputSchema: Record<string, unknown>): Record<string,
     key = JSON.stringify(inputSchema)
   } catch {
     // 含不可序列化内容时回退为每次计算（极罕见）
-    return jsonSchemaToShape(inputSchema)
+    return canvasJsonSchemaToZodShape(inputSchema)
   }
   const hit = shapeCache.get(key)
   if (hit != null) return hit
-  const shape = jsonSchemaToShape(inputSchema)
+  const shape = canvasJsonSchemaToZodShape(inputSchema)
   if (shapeCache.size >= SHAPE_CACHE_MAX) {
     // LRU 粗略淘汰：删最早的 key
     const firstKey = shapeCache.keys().next().value
@@ -155,8 +200,14 @@ export async function createCanvasMcpServer(
       shape as Record<string, unknown>,
       async (args: Record<string, unknown>) => {
         try {
-          const result = await opts.bridge.callTool(opts.sessionId, schema.name, args)
-          const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+          const rawResult = await opts.bridge.callTool(opts.sessionId, schema.name, args)
+          const result = rawResult === undefined ? { ok: true } : rawResult
+          const text =
+            rawResult === undefined
+              ? `画布工具 ${schema.name} 执行完成。`
+              : typeof result === 'string'
+                ? result
+                : JSON.stringify(result, null, 2)
           return {
             content: [{ type: 'text' as const, text }],
             structuredContent: result as unknown,
@@ -180,8 +231,6 @@ export async function createCanvasMcpServer(
 }
 
 /** 把工具 schema 名映射成 SDK allowedTools 里的全名（mcp__spark_canvas__<name>） */
-export function canvasAllowedToolNames(
-  toolSchemas: ReadonlyArray<CanvasToolSchema>,
-): string[] {
+export function canvasAllowedToolNames(toolSchemas: ReadonlyArray<CanvasToolSchema>): string[] {
   return toolSchemas.map((s) => `mcp__spark_canvas__${s.name}`)
 }

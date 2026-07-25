@@ -35,6 +35,7 @@ import { buildCanvasAgentProductionPlan } from './canvasAgentProductionPlan'
 import { SPECIALIZED_CANVAS_NODE_TOOLS } from './canvasSpecializedNodeTools'
 import { CANVAS_WORKFLOW_TOOLS } from './canvasWorkflowAgentTools'
 import { CANVAS_AGENT_WORKFLOW_GRAPH_TOOLS } from './canvasAgentWorkflowGraphTools'
+import { formatCanvasToolInputIssues, validateCanvasToolInput } from './canvasToolInputValidation'
 
 type JSONSchema = Record<string, unknown>
 
@@ -536,6 +537,32 @@ const SHOT_SEGMENT_TOOL_FIELDS = {
 const tools: CanvasToolDescriptor[] = [
   // ───────── 项目 / 概览 ─────────
   {
+    name: 'canvas_describe_tool',
+    description:
+      '返回指定画布工具的完整名称、说明和精确 inputSchema。参数字段不确定或调用校验失败时先用本工具查询，不要猜测字段。',
+    paramsSchema: {
+      type: 'object',
+      required: ['toolName'],
+      additionalProperties: false,
+      properties: {
+        toolName: {
+          type: 'string',
+          minLength: 1,
+          description: '要查询的画布工具完整名称，例如 canvas_create_reusable_workflow_graph',
+        },
+      },
+    },
+    handler: async (_ctx, input: { toolName: string }) => {
+      const tool = tools.find((candidate) => candidate.name === input.toolName)
+      if (!tool) throw new Error(`未知画布工具: ${input.toolName}`)
+      return {
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.paramsSchema,
+      }
+    },
+  },
+  {
     name: 'canvas_get_project_summary',
     description:
       '获取当前画布项目的整体概览（项目信息、当前画布、节点/资产/任务计数）。任何编辑前先调一次。',
@@ -1017,7 +1044,9 @@ const tools: CanvasToolDescriptor[] = [
       let group = updated?.nodes?.find((n) => !beforeIds.has(n.id) && n.type === 'group')
       if (!group) {
         const fallback = requireSnapshot(ctx)
-        group = [...fallback.nodes].reverse().find((n) => !beforeIds.has(n.id) && n.type === 'group')
+        group = [...fallback.nodes]
+          .reverse()
+          .find((n) => !beforeIds.has(n.id) && n.type === 'group')
       }
       return { groupId: group?.id ?? null }
     },
@@ -1308,9 +1337,7 @@ const tools: CanvasToolDescriptor[] = [
       })
       // 优先用返回快照 diff 出新节点（createOperationNode 返回的 state 此刻可能尚未刷新到 React）；
       // 返回快照异常时才退化为重读最新 state，并叠加 beforeId 约束避免误匹配旧同类节点
-      let created = updated?.nodes?.find(
-        (n) => !beforeIds.has(n.id) && n.type === input.operation,
-      )
+      let created = updated?.nodes?.find((n) => !beforeIds.has(n.id) && n.type === input.operation)
       if (!created) {
         const fallback = requireSnapshot(ctx)
         created = [...fallback.nodes]
@@ -2098,5 +2125,9 @@ export async function executeCanvasTool(
 ): Promise<unknown> {
   const tool = CANVAS_TOOL_INDEX[name]
   if (!tool) throw new Error(`未知画布工具: ${name}`)
+  const validation = validateCanvasToolInput(tool.paramsSchema, input)
+  if (!validation.valid) {
+    throw new Error(formatCanvasToolInputIssues(name, validation.issues))
+  }
   return await tool.handler(ctx, input as never)
 }

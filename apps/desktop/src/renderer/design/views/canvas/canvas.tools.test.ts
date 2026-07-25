@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { CanvasSnapshot } from './canvas.types'
 import type { CanvasWorkspaceActions } from './canvas.tools'
 
@@ -76,6 +76,42 @@ describe('canvas agent tool schemas', () => {
     expect(names).toContain('canvas_workflow_run')
     expect(names).toContain('canvas_create_reusable_workflow_graph')
     expect(names).toContain('canvas_validate_workflow_graph')
+    expect(names).toContain('canvas_describe_tool')
+  })
+
+  it('lets the agent inspect the exact input contract for a canvas tool', async () => {
+    const snapshot = screenplaySnapshot()
+    const workspace = {} as CanvasWorkspaceActions
+
+    const result = await executeCanvasTool(
+      { projectId: snapshot.project.id, getSnapshot: () => snapshot, workspace },
+      'canvas_describe_tool',
+      { toolName: 'canvas_create_reusable_workflow_graph' },
+    )
+
+    expect(result).toMatchObject({
+      name: 'canvas_create_reusable_workflow_graph',
+      inputSchema: {
+        properties: {
+          nodes: {
+            items: { oneOf: expect.any(Array) },
+          },
+        },
+      },
+    })
+  })
+
+  it('returns a useful error when describing an unknown canvas tool', async () => {
+    const snapshot = screenplaySnapshot()
+    const workspace = {} as CanvasWorkspaceActions
+
+    await expect(
+      executeCanvasTool(
+        { projectId: snapshot.project.id, getSnapshot: () => snapshot, workspace },
+        'canvas_describe_tool',
+        { toolName: 'canvas_missing_tool' },
+      ),
+    ).rejects.toThrow('未知画布工具: canvas_missing_tool')
   })
 
   it('keeps board ids out of public node and asset schemas', () => {
@@ -207,6 +243,21 @@ describe('canvas agent tool schemas', () => {
         { nodeId: 'screenplay-1', title: '新标题', content: '不适用的正文' },
       ),
     ).rejects.toThrow('不支持 content')
+  })
+
+  it('rejects invalid tool arguments with field paths before calling the workspace', async () => {
+    const snapshot = screenplaySnapshot()
+    const connectNodes = vi.fn()
+    const workspace = { connectNodes } as unknown as CanvasWorkspaceActions
+
+    await expect(
+      executeCanvasTool(
+        { projectId: snapshot.project.id, getSnapshot: () => snapshot, workspace },
+        'canvas_connect_nodes',
+        { sourceNodeId: 'screenplay-1' },
+      ),
+    ).rejects.toThrow('targetNodeId')
+    expect(connectNodes).not.toHaveBeenCalled()
   })
 
   it('exposes dynamic node actions and recommended production planning tools', () => {

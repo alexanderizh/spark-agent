@@ -3,6 +3,7 @@ import type { UIBlock } from '../services/event-mapper'
 export type ChatPanelToolBlock = Extract<UIBlock, { kind: 'tool_call' }>
 
 const CANVAS_TOOL_LABELS: Record<string, string> = {
+  canvas_describe_tool: '读取工具说明',
   canvas_get_project_summary: '读取画布摘要',
   canvas_get_available_actions: '读取可用动作',
   canvas_get_production_plan: '读取制作计划',
@@ -57,6 +58,7 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
 }
 
 const READONLY_CANVAS_TOOLS = new Set([
+  'canvas_describe_tool',
   'canvas_get_project_summary',
   'canvas_get_available_actions',
   'canvas_get_production_plan',

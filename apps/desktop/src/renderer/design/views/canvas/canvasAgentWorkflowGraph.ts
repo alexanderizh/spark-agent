@@ -111,7 +111,9 @@ function operationDependencies(node: CanvasAgentWorkflowNodeSpec): string[] {
   return node.role === 'operation' ? Array.from(new Set(node.dependsOn ?? [])) : []
 }
 
-function operationOutputs(node: CanvasAgentWorkflowOperationNodeSpec): CanvasAgentWorkflowOutputType[] {
+function operationOutputs(
+  node: CanvasAgentWorkflowOperationNodeSpec,
+): CanvasAgentWorkflowOutputType[] {
   return (getCanvasCapability(node.operation)?.outputTypes ?? []) as CanvasAgentWorkflowOutputType[]
 }
 
@@ -189,7 +191,7 @@ export function validateCanvasAgentWorkflowGraph(
   const duplicateRefs = new Set<string>()
 
   for (const node of spec.nodes) {
-    const ref = node.ref.trim()
+    const ref = typeof node.ref === 'string' ? node.ref.trim() : ''
     if (!ref) {
       pushDiagnostic(diagnostics, {
         severity: 'error',
@@ -449,7 +451,12 @@ function blueprintData(node: CanvasAgentWorkflowNodeSpec): Partial<CanvasNodeDat
   if (node.role === 'input') {
     const textData =
       node.type === 'text' || node.type === 'prompt'
-        ? { text: node.content ?? '', ...(node.type === 'prompt' ? { prompt: node.content ?? '', format: 'prompt' as const } : { format: 'markdown' as const }) }
+        ? {
+            text: node.content ?? '',
+            ...(node.type === 'prompt'
+              ? { prompt: node.content ?? '', format: 'prompt' as const }
+              : { format: 'markdown' as const }),
+          }
         : {}
     return {
       ...textData,
@@ -462,7 +469,9 @@ function blueprintData(node: CanvasAgentWorkflowNodeSpec): Partial<CanvasNodeDat
   if (node.role === 'note') {
     return {
       text: node.content ?? '',
-      ...(node.type === 'prompt' ? { prompt: node.content ?? '', format: 'prompt' as const } : { format: 'markdown' as const }),
+      ...(node.type === 'prompt'
+        ? { prompt: node.content ?? '', format: 'prompt' as const }
+        : { format: 'markdown' as const }),
       subtype: 'workflow_note',
       displayCategory: 'content',
     }
@@ -484,9 +493,7 @@ function blueprintData(node: CanvasAgentWorkflowNodeSpec): Partial<CanvasNodeDat
   }
 }
 
-function topologicalDepths(
-  nodes: readonly CanvasAgentWorkflowNodeSpec[],
-): Map<string, number> {
+function topologicalDepths(nodes: readonly CanvasAgentWorkflowNodeSpec[]): Map<string, number> {
   const depth = new Map<string, number>()
   const nodeByRef = new Map(nodes.map((node) => [node.ref, node]))
   const calculate = (ref: string, active: Set<string>): number => {
@@ -500,7 +507,9 @@ function topologicalDepths(
     if (active.has(ref)) return 0
     const nextActive = new Set(active)
     nextActive.add(ref)
-    const dependencies = operationDependencies(node).filter((dependency) => nodeByRef.has(dependency))
+    const dependencies = operationDependencies(node).filter((dependency) =>
+      nodeByRef.has(dependency),
+    )
     const value = dependencies.length
       ? Math.max(...dependencies.map((dependency) => calculate(dependency, nextActive))) + 1
       : 1
@@ -511,10 +520,15 @@ function topologicalDepths(
   return depth
 }
 
-function workflowOrigin(obstacles: readonly CanvasAgentWorkflowObstacle[]): { x: number; y: number } {
+function workflowOrigin(obstacles: readonly CanvasAgentWorkflowObstacle[]): {
+  x: number
+  y: number
+} {
   if (obstacles.length === 0) return { x: CANVAS_MARGIN, y: CANVAS_MARGIN }
   return {
-    x: Math.round(Math.max(...obstacles.map((obstacle) => obstacle.x + obstacle.width)) + VERTICAL_GAP),
+    x: Math.round(
+      Math.max(...obstacles.map((obstacle) => obstacle.x + obstacle.width)) + VERTICAL_GAP,
+    ),
     y: Math.round(Math.min(...obstacles.map((obstacle) => obstacle.y))),
   }
 }
@@ -540,7 +554,8 @@ export function buildCanvasAgentWorkflowBlueprint(
     entries.push(node)
     layers.set(layer, entries)
   }
-  for (const entries of layers.values()) entries.sort((left, right) => left.ref.localeCompare(right.ref))
+  for (const entries of layers.values())
+    entries.sort((left, right) => left.ref.localeCompare(right.ref))
 
   const layerWidths = new Map<number, number>()
   for (const [layer, entries] of layers) {
@@ -571,7 +586,11 @@ export function buildCanvasAgentWorkflowBlueprint(
         : cursorY
       const y = Math.round(Math.max(cursorY, desiredY, 0))
       const type: CanvasNodeType =
-        node.role === 'operation' ? node.operation : node.role === 'note' ? (node.type ?? 'text') : node.type
+        node.role === 'operation'
+          ? node.operation
+          : node.role === 'note'
+            ? (node.type ?? 'text')
+            : node.type
       nodes.push({
         ref: node.ref,
         type,

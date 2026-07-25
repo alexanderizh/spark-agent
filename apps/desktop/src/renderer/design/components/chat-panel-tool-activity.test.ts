@@ -34,8 +34,10 @@ describe('chat panel tool activity', () => {
 
   it('uses readable labels and distinguishes read-only from mutation tools', () => {
     expect(getChatPanelToolLabel('mcp__spark_canvas__canvas_patch_nodes')).toBe('更新节点属性')
+    expect(getChatPanelToolLabel('mcp__spark_canvas__canvas_describe_tool')).toBe('读取工具说明')
     expect(isCanvasMutationTool('mcp__spark_canvas__canvas_patch_nodes')).toBe(true)
     expect(isCanvasMutationTool('mcp__spark_canvas__canvas_list_nodes')).toBe(false)
+    expect(isCanvasMutationTool('mcp__spark_canvas__canvas_describe_tool')).toBe(false)
   })
 
   it('extracts unique node ids from tool input and output', () => {
