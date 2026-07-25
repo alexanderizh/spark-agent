@@ -52,7 +52,11 @@ export class ResumeGateManager {
   isSafe(params: ResumeSafeParams): boolean {
     if (!this.enabled) return false
     if (!this.allowedAdapterKinds.has(params.agentAdapter)) return false
-    if (!this.allowedModelPrefixes.some((p) => params.model.toLowerCase().startsWith(p))) return false
+    if (
+      !this.allowedModelPrefixes.some((p) => params.model.toLowerCase().startsWith(p.toLowerCase()))
+    ) {
+      return false
+    }
     if (!this.allowedProviderTypes.has(params.providerType)) return false
     if (params.apiEndpoint == null || params.apiEndpoint.length === 0) return true
 
@@ -83,6 +87,9 @@ export class ResumeGateManager {
 }
 
 const defaultGate = new ResumeGateManager()
+
+/** 默认共享实例，供 shim 与外部模块级调用复用。 */
+export const defaultResumeGate: ResumeGateManager = defaultGate
 
 /** 默认实例的 isSafe，兼容历史 module-level 名字。 */
 export function isSdkResumeSafe(params: ResumeSafeParams): boolean {
