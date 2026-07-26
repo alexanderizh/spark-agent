@@ -1868,3 +1868,40 @@
     border-radius: 0;
   }
 }
+
+/* ─── 页面级 header（独立 view 时的返回导航 + 标题） ─── */
+.canvas-workflow-page-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 28px;
+  border-bottom: 1px solid var(--divider);
+  background: color-mix(in srgb, var(--panel) 96%, var(--bg));
+  flex-shrink: 0;
+
+  h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 680;
+    color: var(--text-strong);
+    letter-spacing: -0.01em;
+  }
+}
+.canvas-workflow-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px 4px 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: var(--r-sm, 4px);
+  transition: background 0.12s ease, color 0.12s ease;
+
+  &:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+}

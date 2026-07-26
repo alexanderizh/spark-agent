@@ -8,8 +8,10 @@ import {
   FLOATING_SIDEBAR_WIDTH_MIN,
   FLOATING_SIDEBAR_WIDTH_MAX,
   type ViewId,
+  type WorkspaceMode,
 } from './design/AppContext'
 import { SessionSidebarProvider, useSessionSidebar } from './design/SessionSidebarContext'
+import { CanvasProjectSelectionProvider } from './design/views/canvas/CanvasProjectSelectionContext'
 import { ToastProvider, ToastContainer, useToast } from './design/components/Toast'
 import { ErrorBoundary } from './design/components/ErrorBoundary'
 import { AvatarImage } from './design/components/AvatarImage'
@@ -37,6 +39,7 @@ import { SidebarExpandButton } from './design/SidebarExpandButton'
 import { MacWindowDragHeader } from './design/components/MacWindowDragHeader'
 import { WindowControls } from './design/components/WindowControls'
 import { SidebarSessionList } from './design/SidebarSessionList'
+import { CanvasProjectSidebarList } from './design/CanvasProjectSidebarList'
 import { Icons } from './design/Icons'
 import { useI18n, type TranslationKey } from './design/i18n'
 import './FloatingSidebar.less'
@@ -58,6 +61,7 @@ const WorkflowView = React.lazy(async () => ({ default: (await import('./design/
 const AgentsView = React.lazy(async () => ({ default: (await import('./design/views/AgentsView')).AgentsView }))
 const BoardView = React.lazy(async () => ({ default: (await import('./design/views/BoardView')).BoardView }))
 const CanvasProjectsView = React.lazy(async () => ({ default: (await import('./design/views/canvas/CanvasProjectsView')).CanvasProjectsView }))
+const CanvasWorkflowLibraryView = React.lazy(async () => ({ default: (await import('./design/views/canvas/CanvasWorkflowLibraryView')).CanvasWorkflowLibraryView }))
 const ScheduledTasksView = React.lazy(async () => ({ default: (await import('./design/views/ScheduledTasksView')).ScheduledTasksView }))
 const McpView = React.lazy(async () => ({ default: (await import('./design/views/McpView')).McpView }))
 const SkillStoreView = React.lazy(async () => ({ default: (await import('./design/views/SkillStoreView')).SkillStoreView }))
@@ -131,6 +135,7 @@ const SYSTEM_NOTIFICATION_VIEW_TARGETS = new Set<ViewId>([
   'agents',
   'board',
   'canvas',
+  'canvas-workflows',
   'scheduled-tasks',
   'skills',
   'skill-store',
@@ -197,10 +202,54 @@ const NAV_ITEMS: Array<{
   { id: 'board', labelKey: 'nav.board', icon: Icons.Board },
 ]
 
+// ── 侧栏三层结构（模式切换器架构）──────────────────────────────
+// canvas 由顶部模式切换器承担，不再作为 nav item 渲染（仍保留在 NAV_ITEMS
+// 供全局搜索派生）。
+// L2 工作台上下文工具：随 workbench 模式显示。pin 偏好仍对其生效。
+const WORKBENCH_TOOL_IDS = ['workflows', 'board', 'scheduled-tasks']
+// L3 全局共享资源：常驻底部图标条，永不随模式切换。两边都用，故独立成层。
+// 记忆不在此列——按用户决策，记忆入口收归设置页。
+const SHARED_RESOURCE_IDS = ['agents', 'providers', 'skill-store', 'mcp']
+
+// 按 id 集合从 NAV_ITEMS 取子集，保序
+function pickNavItems(ids: string[]) {
+  return ids
+    .map((id) => NAV_ITEMS.find((item) => item.id === id))
+    .filter((item): item is (typeof NAV_ITEMS)[number] => item != null)
+}
+
 /* ---------- FloatingSidebar — navigation menu + full session list ---------- */
 function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
   const { t: tr } = useI18n()
+  const isCanvasMode = t.workspaceMode === 'canvas'
+
+  // 切换侧栏工作模式 = 切换主功能。无条件联动主区 view 到该模式的主视图，
+  // 避免「侧栏画布 + 主区聊天」的割裂。切模式意味着用户想换到另一个主功能，
+  // 即使当前在 settings/providers 等次级页面也应当切走。
+  const handleSwitchMode = useCallback(
+    (mode: WorkspaceMode) => {
+      if (mode === t.workspaceMode) return
+      setTweak('workspaceMode', mode)
+      setTweak('view', mode === 'workbench' ? 'chat' : 'canvas')
+    },
+    [setTweak, t.workspaceMode],
+  )
+
+  // 侧栏「新建项目」：切到 canvas view 并触发 CanvasProjectsView 的创建弹窗。
+  // canvasCreateSignal 是非持久化计数器，CanvasProjectsView 监听其变化打开弹窗。
+  const handleNewCanvasProject = useCallback(() => {
+    setTweak('view', 'canvas')
+    setTweak('canvasCreateSignal', t.canvasCreateSignal + 1)
+  }, [setTweak, t.canvasCreateSignal])
+
+  // 侧栏「画布工作流库」：直接切到独立工作流库页面（不再用弹窗/信号）。
+  // 工作流库是画布模式的子页，点击确保 workspaceMode 在画布模式。
+  const handleOpenCanvasWorkflowLib = useCallback(() => {
+    setTweak('workspaceMode', 'canvas')
+    setTweak('view', 'canvas-workflows')
+  }, [setTweak])
+
   const { toast } = useToast()
   const auth = useAuth()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -295,8 +344,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     )
   }
 
-  const VISIBLE_COUNT = 3 // nav items visible before fold (excludes "新建任务")
-  const resolvedNavItems = NAV_ITEMS.map((item) => ({ ...item, label: tr(item.labelKey) }))
+  const VISIBLE_COUNT = 3 // L2 nav items visible before fold
+  // L2 工作台上下文工具（canvas 模式下为空，整个 L2 section 不渲染）。
+  // pin 偏好仍对其生效：固定项始终排前且优先显示。
+  const l2SourceItems = isCanvasMode ? [] : pickNavItems(WORKBENCH_TOOL_IDS)
+  const resolvedNavItems = l2SourceItems.map((item) => ({ ...item, label: tr(item.labelKey) }))
   // 已固定的菜单项始终排在最前，且始终显示在可见区域
   const pinnedItems = resolvedNavItems.filter((item) => pinnedNavIds.includes(item.id))
   const unpinnedItems = resolvedNavItems.filter((item) => !pinnedNavIds.includes(item.id))
@@ -487,50 +539,140 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         </div>
       </div>
 
-      {/* ── Navigation: 新建任务 + feature nav items in one section for uniform spacing ── */}
-      <div className="sidebar-nav-section">
-        <button className="nav-item" onClick={onNewTask} title={tr('app.sidebar.newTask')}>
-          <span className="nav-icon">
-            <Icons.MessageSquarePlus />
-          </span>
-          <span className="nav-label">{tr('app.sidebar.newTask')}</span>
+      {/* ── Mode Switcher: 工作台 / 画布（两大平级主功能） ── */}
+      <div className="sidebar-mode-switcher" role="tablist" aria-label={tr('nav.mode.workbench')}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!isCanvasMode}
+          className={`mode-switcher-btn${!isCanvasMode ? ' active' : ''}`}
+          onClick={() => handleSwitchMode('workbench')}
+          title={tr('nav.mode.workbenchHint')}
+        >
+          <Icons.MessageSquarePlus size={14} />
+          <span>{tr('nav.mode.workbench')}</span>
         </button>
-        {visibleItems.map((item) => navItem(item.id, item.label, item.icon))}
-        {hasCollapsed && (
-          <Dropdown
-            menu={{ items: [] }}
-            open={navMoreOpen}
-            onOpenChange={setNavMoreOpen}
-            trigger={['hover']}
-            placement="bottomRight"
-            mouseEnterDelay={0.08}
-            mouseLeaveDelay={0.12}
-            popupRender={() => (
-              <div className="nav-more-menu">
-                {collapsedItems.map((item) => navItem(item.id, item.label, item.icon))}
-              </div>
-            )}
-          >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isCanvasMode}
+          className={`mode-switcher-btn${isCanvasMode ? ' active' : ''}`}
+          onClick={() => handleSwitchMode('canvas')}
+          title={tr('nav.mode.canvasHint')}
+        >
+          <Icons.Canvas size={14} />
+          <span>{tr('nav.mode.canvas')}</span>
+        </button>
+      </div>
+
+      {/* ── L1: 主动作（随模式） ── */}
+      <div className="sidebar-nav-section" style={{paddingBottom: 0}}>
+        {isCanvasMode ? (
+          <>
             <button
-              type="button"
-              className={`nav-more-trigger${navMoreOpen ? ' is-open' : ''}`}
-              title={tr('app.sidebar.expandMore')}
+              className="nav-item"
+              onClick={handleNewCanvasProject}
+              title={tr('nav.canvas.newProject')}
             >
-              <span className="nav-more-icon">
-                <Icons.More />
+              <span className="nav-icon">
+                <Icons.ImagePlus size={16} />
               </span>
-              <span className="nav-label">{tr('app.sidebar.expandMore')}</span>
+              <span className="nav-label">{tr('nav.canvas.newProject')}</span>
             </button>
-          </Dropdown>
+            <button
+              className="nav-item"
+              onClick={handleOpenCanvasWorkflowLib}
+              title={tr('nav.canvas.workflowLibrary')}
+            >
+              <span className="nav-icon">
+                <Icons.Workflow size={16} />
+              </span>
+              <span className="nav-label">{tr('nav.canvas.workflowLibrary')}</span>
+            </button>
+          </>
+        ) : (
+          <button className="nav-item" onClick={onNewTask} title={tr('app.sidebar.newTask')}>
+            <span className="nav-icon">
+              <Icons.MessageSquarePlus />
+            </span>
+            <span className="nav-label">{tr('app.sidebar.newTask')}</span>
+          </button>
         )}
       </div>
 
-      {/* ── Divider between nav and session list ── */}
-      <div className="sidebar-session-divider" />
+      {/* ── L2: 上下文工具（仅 workbench 模式显示；canvas 模式画布的素材/角色等
+           面板在独立画布窗口内，主窗口暂不承载，留空为未来扩展） ── */}
+      {!isCanvasMode && (
+        <>
+          {/* <div className="sidebar-section-label">{tr('nav.group.workbenchTools')}</div> */}
+          <div className="sidebar-nav-section" style={{paddingTop: 0}}>
+            {visibleItems.map((item) => navItem(item.id, item.label, item.icon))}
+            {hasCollapsed && (
+              <Dropdown
+                menu={{ items: [] }}
+                open={navMoreOpen}
+                onOpenChange={setNavMoreOpen}
+                trigger={['hover']}
+                placement="bottomRight"
+                mouseEnterDelay={0.08}
+                mouseLeaveDelay={0.12}
+                popupRender={() => (
+                  <div className="nav-more-menu">
+                    {collapsedItems.map((item) => navItem(item.id, item.label, item.icon))}
+                  </div>
+                )}
+              >
+                <button
+                  type="button"
+                  className={`nav-more-trigger${navMoreOpen ? ' is-open' : ''}`}
+                  title={tr('app.sidebar.expandMore')}
+                >
+                  <span className="nav-more-icon">
+                    <Icons.More />
+                  </span>
+                  <span className="nav-label">{tr('app.sidebar.expandMore')}</span>
+                </button>
+              </Dropdown>
+            )}
+          </div>
+        </>
+      )}
 
-      {/* ── Full session list (exact same functionality as original ChatView sidebar) ── */}
+      {/* ── Divider between nav and main list ── */}
+      {/* <div className="sidebar-session-divider" /> */}
+
+      {/* ── L1 主列表（随模式切换主体） ── */}
       <div className="sidebar-session-list">
-        <SidebarSessionList />
+        {isCanvasMode ? (
+          <>
+            <div className="sidebar-section-label">{tr('nav.canvas.projects')}</div>
+            <CanvasProjectSidebarList />
+          </>
+        ) : (
+          <SidebarSessionList />
+        )}
+      </div>
+
+      {/* ── L3: 全局共享资源条（常驻，不随模式切换） ──
+           智能体 / 模型服务 / 技能 / MCP 两边都用，沉到不漂移的位置；
+           记忆按用户决策收归设置页，不在此列。 */}
+      <div
+        className="sidebar-shared-resources"
+        role="toolbar"
+        aria-label={tr('nav.group.shared')}
+      >
+        {pickNavItems(SHARED_RESOURCE_IDS).map((item) => (
+          <Tooltip key={item.id} title={tr(item.labelKey)} mouseEnterDelay={0.3}>
+            <button
+              type="button"
+              className={`shared-resource-btn${t.view === item.id ? ' active' : ''}`}
+              onClick={() => setTweak('view', item.id as ViewId)}
+              aria-label={tr(item.labelKey)}
+            >
+              <item.icon size={16} />
+            </button>
+          </Tooltip>
+        ))}
       </div>
 
       {/* Bottom area: user + window controls */}
@@ -1322,6 +1464,8 @@ function Shell() {
         return <BoardView />
       case 'canvas':
         return <CanvasProjectsView onWorkspaceActiveChange={setCanvasWorkspaceActive} />
+      case 'canvas-workflows':
+        return <CanvasWorkflowLibraryView />
       case 'scheduled-tasks':
         return <ScheduledTasksView />
       case 'skills':
@@ -1367,6 +1511,10 @@ function Shell() {
     ? 0
     : t.floatingSidebarWidth + (t.sidebarStyle === 'flat' ? 0 : SIDEBAR_VISIBLE_GUTTER)
   const useIntegratedTitlebar = t.view === 'chat' && t.chatMode !== 'workspace'
+  // canvas / canvas-workflows view 自己实现 header（含窗口拖拽、双击最大化、
+  // 侧栏折叠展开按钮、macOS 红绿灯空间预留），不使用公用 MacWindowDragHeader
+  // 与 shell-titlebar。Windows 仍保留 win-titlebar（窗口控制按钮必须存在）。
+  const canvasOwnHeader = t.view === 'canvas' || t.view === 'canvas-workflows'
   // Keep the shared drag strip, but allow full-bleed views to extend their
   // surface into it. This preserves the native-window hit area while avoiding
   // a disconnected default-colour band above settings and the auth gate.
@@ -1426,6 +1574,7 @@ function Shell() {
             {!useIntegratedTitlebar &&
               !isPlatformWin32 &&
               sidebarHidden &&
+              !canvasOwnHeader &&
               !(t.view === 'canvas' && canvasWorkspaceActive) && (
                 <div
                   className={`shell-titlebar${isPlatformDarwin ? ' shell-titlebar-darwin' : ''}`}
@@ -1456,10 +1605,12 @@ function Shell() {
 
               {/* macOS: unified drag strip atop the content area while the sidebar
                   is visible. When the sidebar is hidden, the shell-titlebar above
-                  takes over. 画布工作区自带 canvas-workspace-header，此处不再渲染以免重叠。 */}
+                  takes over. 画布工作区自带 canvas-workspace-header，此处不再渲染以免重叠。
+                  canvas/canvas-workflows view 自带 header 承担拖拽，跳过公用拖拽条。 */}
               {!useIntegratedTitlebar &&
                 isPlatformDarwin &&
                 !sidebarHidden &&
+                !canvasOwnHeader &&
                 !(t.view === 'canvas' && canvasWorkspaceActive) && (
                   <MacWindowDragHeader />
                 )}
@@ -1588,8 +1739,10 @@ export function App() {
         <AuthProvider>
           <ToastProvider>
             <SessionSidebarProvider>
-              <GateAwareShell />
-              <AppDialogHost />
+              <CanvasProjectSelectionProvider>
+                <GateAwareShell />
+                <AppDialogHost />
+              </CanvasProjectSelectionProvider>
             </SessionSidebarProvider>
           </ToastProvider>
         </AuthProvider>

@@ -1030,7 +1030,7 @@ body.sidebar-resizing {
   -webkit-app-region: drag;
 }
 .titlebar-integrated .chat-tabbar {
-  height: var(--integrated-titlebar-height, 54px);
+  height: var(--integrated-titlebar-height, 52px);
   padding-left: calc(var(--pad-md) + var(--integrated-titlebar-left-reserve, 0px));
   padding-right: var(--pad-md);
 }
@@ -12021,15 +12021,7 @@ body.inspector-resizing {
   font-size: var(--font-sm);
 }
 
-/* ── HomeView helpers ── */
-.home-warning-card {
-  padding: 10px 14px;
-  margin-bottom: 14px;
-  color: var(--warning);
-}
-.home-card-body-sm {
-  padding: 4px 16px 12px;
-}
+/* ── Shared small helpers (formerly HomeView helpers) ── */
 .provider-logo-sm {
   width: 24px;
   height: 24px;

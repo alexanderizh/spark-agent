@@ -1,25 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Dropdown, Empty, Modal } from '@lobehub/ui'
+import { Button, Dropdown, Modal } from '@lobehub/ui'
 import { Modal as AntdModal, Spin, message } from 'antd'
 import { Icons } from '../../Icons'
 import {
   Input as LobeInput,
-  SearchBar as LobeSearchBar,
   TextArea as LobeTextArea,
 } from '@lobehub/ui'
 import { canvasApi } from './canvas.api'
-import {
-  CANVAS_PROJECT_SORT_LABELS as SORT_LABELS,
-  sortCanvasProjects,
-  type CanvasProjectSortDir,
-  type CanvasProjectSortKey,
-} from './canvasProjectSort'
 import { useCanvasProjects } from './canvas.store'
 import { openCanvasProjectWindow } from './canvas-window-client'
-import { CanvasProjectCard } from './CanvasProjectCard'
+import { CanvasProjectDetail } from './CanvasProjectDetail'
 import { CanvasAcceptanceLauncher } from './acceptance/CanvasAcceptanceLauncher'
-import { CanvasWorkflowLibraryView } from './CanvasWorkflowLibraryView'
+import { SidebarExpandButton } from '../../SidebarExpandButton'
+import { useApp } from '../../AppContext'
+import { useCanvasProjectSelection } from './CanvasProjectSelectionContext'
 import './CanvasProjectsView.less'
+
+// 记录已被本组件处理过的「新建项目」信号值（来自侧栏 L1「新建项目」按钮）。
+// 用 module-level 而非 ref，确保 unmount→remount（切走再切回 canvas view）
+// 时不会重复响应同一个已处理过的信号——用户切走再回来不应自动弹窗。
+let handledCanvasCreateSignal = 0
 import './uiux-v4/projects.less'
 import './uiux-v4/modals.less'
 import './canvas-workflow.less'
@@ -30,9 +30,8 @@ export function CanvasProjectsView({
   onWorkspaceActiveChange?: (active: boolean) => void
 }) {
   const { projects, loading, refresh } = useCanvasProjects()
-  const [query, setQuery] = useState('')
-  const [sortKey, setSortKey] = useState<CanvasProjectSortKey>('updated')
-  const [sortDir, setSortDir] = useState<CanvasProjectSortDir>('desc')
+  const { t } = useApp()
+  const { selectedProjectId, selectProject } = useCanvasProjectSelection()
   const [createOpen, setCreateOpen] = useState(false)
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
   const [title, setTitle] = useState('')
@@ -53,23 +52,33 @@ export function CanvasProjectsView({
   const [exportingProjectId, setExportingProjectId] = useState<string | null>(null)
   const [togglingPinId, setTogglingPinId] = useState<string | null>(null)
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null)
-  const [section, setSection] = useState<'projects' | 'workflows'>('projects')
 
-  const filteredProjects = useMemo(() => {
-    const keyword = query.trim().toLowerCase()
-    const base = keyword
-      ? projects.filter(
-          (project) =>
-            project.title.toLowerCase().includes(keyword) ||
-            (project.description ?? '').toLowerCase().includes(keyword),
-        )
-      : projects
-    return sortCanvasProjects(base, sortKey, sortDir)
-  }, [projects, query, sortKey, sortDir])
+  // 详情页模式下，主区根据 selectedProjectId 显示详情；未选中显示欢迎页
+  const selectedProject = useMemo(
+    () => projects.find((p) => p.id === selectedProjectId) ?? null,
+    [projects, selectedProjectId],
+  )
+  // 欢迎页最近项目缩略（最多 4 个，按更新时间降序）
+  const recentProjects = useMemo(
+    () => [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 4),
+    [projects],
+  )
 
   useEffect(() => {
     onWorkspaceActiveChange?.(false)
   }, [onWorkspaceActiveChange])
+
+  // 监听侧栏「新建项目」按钮触发：canvasCreateSignal 递增时打开创建弹窗。
+  // 信号可能在 CanvasProjectsView mount 之前就已发出（用户从别的模式点击），
+  // 所以用 module-level 变量比对，只响应当前未处理的信号值。
+  useEffect(() => {
+    const signal = t.canvasCreateSignal
+    if (signal > 0 && signal !== handledCanvasCreateSignal) {
+      handledCanvasCreateSignal = signal
+      openCreate()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t.canvasCreateSignal])
 
   const handleOpenProject = async (projectId: string) => {
     setOpeningProjectId(projectId)
@@ -250,23 +259,12 @@ export function CanvasProjectsView({
     })
   }
 
+  // 导入走默认项目根目录（canvas.api 内的 ensureCanvasProjectDirectory 兜底），
+  // 避免每次导入都强制弹两次系统对话框（先选保存位置、再选 .json）。
   const handleImportProject = async () => {
     setImporting(true)
     try {
-      let targetParentDirectory = ''
-      try {
-        targetParentDirectory = await canvasApi.getDefaultProjectsRoot()
-      } catch {
-        targetParentDirectory = ''
-      }
-      const selectedDirectory = await window.spark.invoke('dialog:open-directory', {
-        title: '选择导入项目保存位置',
-        ...(targetParentDirectory ? { defaultPath: targetParentDirectory } : {}),
-      })
-      if (!selectedDirectory.canceled && selectedDirectory.filePath) {
-        targetParentDirectory = selectedDirectory.filePath
-      }
-      const snapshot = await canvasApi.importProjectFromFile(targetParentDirectory || undefined)
+      const snapshot = await canvasApi.importProjectFromFile()
       if (!snapshot) return
       message.success(`已导入「${snapshot.project.title}」`)
       await refresh()
@@ -287,6 +285,32 @@ export function CanvasProjectsView({
     }
   }
 
+  // 详情页封面点击上传/更换：校验类型+大小后调 uploadProjectCoverFromFile。
+  // 复用新建/编辑对话框里的同款校验，保持一致。
+  const handleUploadCover = async (file: File) => {
+    if (!selectedProject) return
+    if (!/^image\//i.test(file.type)) {
+      message.warning('请选择图片文件')
+      return
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      message.warning('封面图大小请控制在 8MB 以内')
+      return
+    }
+    try {
+      await canvasApi.uploadProjectCoverFromFile(
+        selectedProject.id,
+        file,
+        selectedProject.rootPath ?? null,
+      )
+      await refresh()
+      message.success('封面已更新')
+    } catch (err) {
+      console.warn('[canvas] upload cover failed from detail page', err)
+      message.error('封面上传失败')
+    }
+  }
+
   const handleExportProject = async (projectId: string) => {
     setExportingProjectId(projectId)
     try {
@@ -301,17 +325,18 @@ export function CanvasProjectsView({
 
   return (
     <div className="canvas-projects-view canvas-uiux-v4-projects">
-      <header className="canvas-projects-header">
+      <header
+        className="canvas-projects-header canvas-view-titlebar"
+        onDoubleClick={() => {
+          window.spark?.invoke('window:maximize', {}).catch(() => {})
+        }}
+      >
+        {t.sidebarHidden && <SidebarExpandButton />}
         <div className="canvas-projects-heading">
-          <span>CANVAS STUDIO</span>
+          {/* <span>CANVAS STUDIO</span> */}
           <h2>无限画布</h2>
-          <p>
-            {section === 'projects'
-              ? '以项目为入口管理画布、素材、任务和生成血缘。'
-              : '管理可跨项目复用的内容生产流程和项目工作流。'}
-          </p>
         </div>
-        {section === 'projects' && <div className="canvas-projects-header-actions">
+        <div className="canvas-projects-header-actions">
           {import.meta.env.DEV && (
             <CanvasAcceptanceLauncher
               onReady={async (projectId) => {
@@ -320,129 +345,76 @@ export function CanvasProjectsView({
               }}
             />
           )}
-          <Button
-            size="medium"
-            type="text"
-            icon={<Icons.Upload size={15} />}
-            loading={importing}
-            onClick={() => void handleImportProject()}
-          >
-            导入项目
-          </Button>
-          <Button size="medium" type="primary" icon={<Icons.Plus size={15} />} onClick={openCreate}>
-            新建项目
-          </Button>
-        </div>}
+          <Button size="medium" type="text" onClick={()=> void handleImportProject()} icon={<Icons.Plus size={15} />}>
+              导入项目
+            </Button>
+        </div>
       </header>
 
-      <nav className="canvas-hub-tabs" aria-label="无限画布内容">
-        <button
-          type="button"
-          className={section === 'projects' ? 'is-active' : ''}
-          aria-current={section === 'projects' ? 'page' : undefined}
-          onClick={() => setSection('projects')}
-        >
-          画布项目
-        </button>
-        <button
-          type="button"
-          className={section === 'workflows' ? 'is-active' : ''}
-          aria-current={section === 'workflows' ? 'page' : undefined}
-          onClick={() => setSection('workflows')}
-        >
-          画布工作流库
-        </button>
-      </nav>
-
-      {section === 'projects' ? <>
-      <div className="canvas-projects-toolbar">
-        <LobeSearchBar
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索项目名称或描述..."
-          className="canvas-projects-search"
-        />
-        <div className="canvas-projects-toolbar-right">
-          <div className="canvas-projects-sort">
-            <Dropdown
-              trigger={['click']}
-              placement="bottomRight"
-              menu={{
-                items: (Object.keys(SORT_LABELS) as CanvasProjectSortKey[]).map((key) => ({
-                  key,
-                  label: SORT_LABELS[key],
-                  icon:
-                    sortKey === key ? (
-                      <Icons.Check size={13} />
-                    ) : (
-                      <span className="canvas-projects-sort-icon-placeholder" />
-                    ),
-                  onClick: () => setSortKey(key),
-                })),
-              }}
-            >
-              <Button size="middle" type="text">
-                <span className="canvas-projects-sort-label">排序：{SORT_LABELS[sortKey]}</span>
-                <Icons.ChevronDown size={13} />
-              </Button>
-            </Dropdown>
-            <Button
-              size="middle"
-              type="text"
-              icon={
-                sortDir === 'desc' ? <Icons.ArrowDown size={13} /> : <Icons.ArrowUp size={13} />
-              }
-              onClick={() => setSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
-              title={sortDir === 'desc' ? '当前降序，点击切换升序' : '当前升序，点击切换降序'}
-            />
-          </div>
-          {/* <div className="canvas-projects-stats">
-            <Tag color="blue">{projects.length} projects</Tag>
-            <Tag color="green">
-              {projects.reduce((sum, project) => sum + project.taskCount, 0)} tasks
-            </Tag>
-            <Tag color="orange">
-              {projects.reduce((sum, project) => sum + project.assetCount, 0)} assets
-            </Tag>
-          </div> */}
-        </div>
-      </div>
-
-      <main className="canvas-projects-main">
+      <main className="canvas-projects-main canvas-projects-detail-main">
         {loading ? (
           <div className="canvas-projects-empty">
             <Spin description="正在加载 Canvas 项目..." />
           </div>
-        ) : filteredProjects.length === 0 ? (
-          <div className="canvas-projects-empty">
-            <Empty description={projects.length === 0 ? '还没有画布项目' : '没有匹配的项目'} />
-            {projects.length === 0 && (
-              <Button type="primary" icon={<Icons.Plus size={15} />} onClick={openCreate}>
-                创建第一个项目
-              </Button>
-            )}
-          </div>
+        ) : selectedProject ? (
+          <CanvasProjectDetail
+            project={selectedProject}
+            opening={openingProjectId === selectedProject.id}
+            onOpen={(projectId) => void handleOpenProject(projectId)}
+            onEdit={openEdit}
+            onExport={(projectId) => void handleExportProject(projectId)}
+            onArchive={(projectId) => void handleArchiveProject(projectId)}
+            onDelete={(projectId) => void handleDeleteProject(projectId)}
+            onOpenFolder={(projectId) => void handleOpenProjectFolder(projectId)}
+            onTogglePin={(projectId) => void handleTogglePin(projectId)}
+            onUploadCover={handleUploadCover}
+          />
         ) : (
-          <div className="canvas-projects-grid">
-            {filteredProjects.map((project) => (
-              <CanvasProjectCard
-                key={project.id}
-                project={project}
-                opening={openingProjectId === project.id}
-                busy={exportingProjectId === project.id || togglingPinId === project.id}
-                onOpen={(projectId) => void handleOpenProject(projectId)}
-                onTogglePin={(projectId) => void handleTogglePin(projectId)}
-                onEdit={openEdit}
-                onOpenFolder={(projectId) => void handleOpenProjectFolder(projectId)}
-                onExport={(projectId) => void handleExportProject(projectId)}
-                onArchive={(projectId) => void handleArchiveProject(projectId)}
-                onDelete={(projectId) => void handleDeleteProject(projectId)}
-              />
-            ))}
+          <div className="canvas-projects-welcome">
+            <div className="canvas-welcome-hero">
+              <Icons.Canvas size={48} />
+              <h3>选择左侧项目查看详情，或新建画布开始创作</h3>
+              <p>
+                无限画布以项目为单位组织素材、节点、任务与生成血缘。
+                点击侧栏项目查看详情，双击直接进入画布。
+              </p>
+              <Button
+                size="middle"
+                type="primary"
+                icon={<Icons.Plus size={16} />}
+                onClick={openCreate}
+              >
+                新建项目
+              </Button>
+            </div>
+            {recentProjects.length > 0 && (
+              <div className="canvas-welcome-recent">
+                <h4>最近项目</h4>
+                <div className="canvas-welcome-recent-grid">
+                  {recentProjects.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="canvas-welcome-recent-card"
+                      onClick={() => selectProject(p.id)}
+                      title={p.title}
+                    >
+                      {p.coverUrl ? (
+                        <img src={p.coverUrl} alt={p.title} draggable={false} />
+                      ) : (
+                        <span className="canvas-welcome-recent-placeholder">
+                          <Icons.Canvas size={20} />
+                        </span>
+                      )}
+                      <span className="canvas-welcome-recent-name">{p.title}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
-      </> : <CanvasWorkflowLibraryView projects={projects} />}
 
       <Modal
         className="canvas-project-modal"

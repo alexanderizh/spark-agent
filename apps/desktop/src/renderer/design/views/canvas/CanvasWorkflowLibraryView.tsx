@@ -8,8 +8,12 @@ import type {
 } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import type { CanvasProject } from './canvas.types'
+import { useCanvasProjects } from './canvas.store'
 import { canvasWorkflowApi } from './canvasWorkflow.api'
 import { buildCanvasWorkflowExport, parseCanvasWorkflowImport } from './canvasWorkflowTransfer'
+import { useApp } from '../../AppContext'
+import { SidebarExpandButton } from '../../SidebarExpandButton'
+import './canvas-workflow.less'
 
 type ScopeFilter = 'all' | CanvasWorkflowScope | 'archived'
 const WORKFLOW_PAGE_SIZE = 30
@@ -52,7 +56,12 @@ function formatUpdatedAt(value: string): string {
   }).format(date)
 }
 
-export function CanvasWorkflowLibraryView({ projects }: { projects: CanvasProject[] }) {
+export function CanvasWorkflowLibraryView({ projects: projectsProp }: { projects?: CanvasProject[] }) {
+  // 作为独立 view 使用时不传 projects，自己从 store 获取；
+  // 保留 prop 向后兼容（CanvasProjectsView 等仍可显式传入）。
+  const { projects: projectsFromStore } = useCanvasProjects()
+  const projects = projectsProp ?? projectsFromStore
+  const { t, setTweak } = useApp()
   const [workflows, setWorkflows] = useState<CanvasWorkflowDefinition[]>([])
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
@@ -306,6 +315,24 @@ export function CanvasWorkflowLibraryView({ projects }: { projects: CanvasProjec
 
   return (
     <section className="canvas-workflow-library" aria-label="画布工作流库">
+      <header
+        className="canvas-workflow-page-header canvas-view-titlebar"
+        onDoubleClick={() => {
+          window.spark?.invoke('window:maximize', {}).catch(() => {})
+        }}
+      >
+        {t.sidebarHidden && <SidebarExpandButton />}
+        <button
+          type="button"
+          className="canvas-workflow-back-btn"
+          onClick={() => setTweak('view', 'canvas')}
+          aria-label="返回画布项目"
+        >
+          <Icons.ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} />
+          <span>返回项目</span>
+        </button>
+        <h2>画布工作流库</h2>
+      </header>
       <div className="canvas-workflow-library-toolbar">
         <label className="canvas-workflow-search">
           <Icons.Search size={15} aria-hidden="true" />

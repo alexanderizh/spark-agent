@@ -8,10 +8,13 @@
   background: var(--bg);
 
   .canvas-projects-header {
-    min-height: 96px;
-    padding: 20px 28px 16px;
+    min-height: 52px;
+    padding: 4px 28px;
     background: var(--canvas-v4-surface);
     border-bottom: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
 
   .canvas-projects-heading {
@@ -23,9 +26,9 @@
     }
 
     h2 {
-      margin: 3px 0 5px;
+      margin: 2px 0 3px;
       color: var(--text-strong);
-      font-size: 22px;
+      font-size: 18px;
       font-weight: 680;
       letter-spacing: -0.025em;
     }
@@ -171,4 +174,457 @@
   :where(.ant-btn, button, input, textarea, .ant-input, .ant-modal-content) {
     border-radius: var(--canvas-v4-radius-sm);
   }
+
+  // ── 详情模式 main：滚动容器，留更多内边距 ──────────────────────────────
+  .canvas-projects-detail-main {
+    padding: 24px 32px 48px;
+    overflow-y: auto;
+  }
+
+  // ── 项目详情页 ────────────────────────────────────────────────────────
+  .canvas-project-detail {
+    max-width: 920px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .canvas-detail-cover {
+    position: relative;
+    height: 240px;
+    border-radius: var(--canvas-v4-radius-md);
+    overflow: hidden;
+    background: var(--canvas-v4-surface-muted);
+    border: 1px solid var(--canvas-v4-border);
+    // 可上传时鼠标变手指，提示可点击
+    &.is-uploadable {
+      cursor: pointer;
+    }
+  }
+  // 封面 hover 遮罩：半透明黑 + 上传图标/文案，默认透明 hover 显示
+  .canvas-detail-cover-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    transition: opacity 0.18s ease;
+    pointer-events: none; // 不拦截点击，让 onClick 冒泡到 cover
+  }
+  .canvas-detail-cover.is-uploadable:hover .canvas-detail-cover-overlay {
+    opacity: 1;
+  }
+  .canvas-detail-cover-input {
+    display: none;
+  }
+  .canvas-detail-cover-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .canvas-detail-cover-empty {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+  .canvas-detail-cover-actions {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .canvas-detail-pin-btn,
+  .canvas-detail-icon-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--canvas-v4-radius-sm);
+    background: color-mix(in srgb, var(--panel) 80%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.12s ease;
+    &:hover {
+      background: color-mix(in srgb, var(--panel) 95%, transparent);
+    }
+  }
+  .canvas-detail-pin-btn.is-pinned {
+    color: var(--primary);
+  }
+
+  .canvas-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .canvas-detail-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0; // 允许标题 ellipsis
+  }
+  .canvas-detail-header-right {
+    flex-shrink: 0; // 打开按钮不被超长标题挤走
+  }
+  .canvas-detail-title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 680;
+    color: var(--text-strong);
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .canvas-detail-title-pin {
+    color: var(--primary);
+  }
+  .canvas-detail-description {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .canvas-detail-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .canvas-detail-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 14px;
+    border-radius: var(--canvas-v4-radius-md);
+    background: var(--canvas-v4-surface);
+    border: 1px solid var(--canvas-v4-border);
+  }
+  .canvas-detail-stat-icon {
+    color: var(--primary);
+  }
+  .canvas-detail-stat-value {
+    font-size: 22px;
+    font-weight: 650;
+    color: var(--text-strong);
+  }
+  .canvas-detail-stat-label {
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  // ── 项目资源网格（图片/视频卡片，首批 20 个） ──────────────────────────
+  .canvas-detail-assets {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .canvas-detail-assets-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 650;
+      color: var(--text-strong);
+    }
+  }
+  .canvas-detail-asset-filters {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    background: var(--canvas-v4-surface-muted);
+    border-radius: var(--canvas-v4-radius-sm);
+  }
+  .canvas-detail-asset-filter {
+    padding: 4px 12px;
+    border: none;
+    background: transparent;
+    border-radius: calc(var(--canvas-v4-radius-sm) - 2px);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+    &:hover:not(.active) {
+      color: var(--text);
+    }
+    &.active {
+      background: var(--panel);
+      color: var(--text-strong);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    }
+  }
+  .canvas-detail-assets-loading,
+  .canvas-detail-assets-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 12px;
+    color: var(--text-faint);
+    font-size: 12px;
+    border-radius: var(--canvas-v4-radius-md);
+    background: var(--canvas-v4-surface-muted);
+    border: 1px dashed var(--canvas-v4-border);
+  }
+  // 瀑布流：CSS columns，列宽 140px 自动算列数，图片按原始比例展示不裁剪。
+  // 顺序列优先（从上到下、再左到右），如需行优先 masonry 需要 JS 计算。
+  .canvas-detail-asset-grid {
+    column-width: 140px;
+    column-gap: 6px;
+  }
+  // 加载更多按钮：瀑布流下方居中，分页累加（每页 20）
+  .canvas-detail-load-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 4px auto 0;
+    padding: 9px 22px;
+    width: fit-content;
+    border-radius: var(--canvas-v4-radius-sm);
+    background: var(--canvas-v4-surface);
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+    &:hover {
+      color: var(--text);
+      background: var(--canvas-v4-surface-muted);
+    }
+  }
+  .canvas-detail-asset-tile {
+    position: relative;
+    display: block;
+    break-inside: avoid;
+    margin: 0 0 6px;
+    min-height: 80px; // 兜底：图片未加载/加载失败时保证最小高度，防止瀑布流塌缩
+    border-radius: var(--canvas-v4-radius-sm);
+    background: var(--canvas-v4-surface-muted);
+    overflow: hidden;
+    cursor: zoom-in; // 点击预览的视觉提示
+    img,
+    video {
+      width: 100%;
+      height: auto;
+      display: block;
+      transition: transform 0.18s ease;
+      pointer-events: none; // 点击穿透到 tile，避免 video/img 拦截 onClick
+    }
+    &:hover img,
+    &:hover video {
+      transform: scale(1.03);
+    }
+  }
+  .canvas-detail-asset-tile-empty {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-weight);
+  }
+  .canvas-detail-asset-badge {
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+  }
+
+  .canvas-detail-times {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 16px;
+    border-radius: var(--canvas-v4-radius-md);
+    background: var(--canvas-v4-surface-muted);
+    border: 1px solid var(--canvas-v4-border);
+  }
+  .canvas-detail-time-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .canvas-detail-time-icon {
+    color: var(--text-faint);
+  }
+  .canvas-detail-time-label {
+    color: var(--text-muted);
+    min-width: 70px;
+  }
+  .canvas-detail-time-value {
+    color: var(--text);
+  }
+
+  // ── 欢迎页（未选中项目时） ────────────────────────────────────────────
+  .canvas-projects-welcome {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 40px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 36px;
+  }
+  .canvas-welcome-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    text-align: center;
+    color: var(--text-faint);
+    h3 {
+      margin: 4px 0 0;
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text-strong);
+    }
+    p {
+      margin: 0;
+      font-size: 12.5px;
+      line-height: 1.6;
+      max-width: 420px;
+    }
+    .ant-btn {
+      margin-top: 8px;
+    }
+  }
+  .canvas-welcome-recent {
+    h4 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+  }
+  .canvas-welcome-recent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+  }
+  .canvas-welcome-recent-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid var(--canvas-v4-border);
+    border-radius: var(--canvas-v4-radius-sm);
+    background: var(--canvas-v4-surface);
+    cursor: pointer;
+    transition: border-color 0.12s ease;
+    &:hover {
+      border-color: var(--primary);
+    }
+    img,
+    .canvas-welcome-recent-placeholder {
+      width: 100%;
+      height: 80px;
+      border-radius: 4px;
+      object-fit: cover;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--canvas-v4-surface-muted);
+      color: var(--text-faint);
+    }
+  }
+  .canvas-welcome-recent-name {
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+  }
+
+  // ── 工作流库弹窗：内边距适配 ──────────────────────────────────────────
+  .canvas-workflow-lib-modal {
+    .ant-modal-body {
+      padding: 16px 20px 24px;
+    }
+  }
+}
+
+/* ─── 资源预览 lightbox（Modal portal 到 body，全局样式） ─── */
+.canvas-detail-preview-modal .ant-modal-body {
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  // 窗口高度不足时 body 内部滚动，避免整个 Modal 从底部溢出视口
+  max-height: calc(90vh - 60px); // 减去 Modal header(~40px) + 上下间距
+  overflow: auto;
+}
+.canvas-detail-preview-media {
+  max-width: 86vw;
+  max-height: calc(90vh - 100px); // 减去 header + body padding，保证不溢出
+  object-fit: contain;
+  border-radius: 6px;
+  display: block;
+}
+
+/* 预览翻页按钮：fixed 定位固定在视口左右两侧，不随图片宽度移动 */
+.canvas-detail-preview-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.canvas-detail-preview-nav {
+  position: fixed; // 固定视口，不随 Modal/图片宽度漂移
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1002; // 高于 antd Modal 的 mask(1000)/wrap
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.42);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  -webkit-app-region: no-drag;
+  &:hover {
+    background: rgba(0, 0, 0, 0.66);
+  }
+  &.prev { left: 20px; }
+  &.next { right: 20px; }
 }
