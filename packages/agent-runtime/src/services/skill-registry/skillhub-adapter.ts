@@ -19,7 +19,7 @@
  */
 
 import type { RemoteSkillItem, SkillHubShowcaseSection } from '@spark/protocol'
-import { fetchJson, HttpError } from '@spark/shared'
+import { fetchJson, fetchText, HttpError } from '@spark/shared'
 import type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './adapter.js'
 import { createRemoteSkillItem } from './adapter.js'
 
@@ -270,12 +270,13 @@ export class SkillHubAdapter implements SkillRegistryAdapter {
     const start = Date.now()
     try {
       const url = `${this.apiBaseUrl}/api/v1/showcase/recommended`
-      const res = await globalThis.fetch(url, {
+      await fetchJson(url, {
         headers: this.headers,
-        signal: AbortSignal.timeout(10000),
+        timeoutMs: 10_000,
+        maxRetries: 2,
+        retryBackoffMs: 250,
       })
       const latencyMs = Date.now() - start
-      if (!res.ok) return { healthy: false, latencyMs, error: `HTTP ${res.status}` }
       return { healthy: true, latencyMs }
     } catch (err) {
       return {
@@ -378,23 +379,23 @@ export class SkillHubAdapter implements SkillRegistryAdapter {
         headers: this.headers,
         timeoutMs: 15_000,
         // GET 查询幂等，可重试瞬时错误
-        maxRetries: 0,
+        maxRetries: 2,
+        retryBackoffMs: 250,
       })
     } catch (err) {
       if (err instanceof HttpError && err.statusCode === 429) {
-        throw new Error('SkillHub API rate limit exceeded.')
+        throw new Error('SkillHub API rate limit exceeded.', { cause: err })
       }
       throw err
     }
   }
 
   private async fetchText(url: string): Promise<string> {
-    const res = await globalThis.fetch(url, {
+    return fetchText(url, {
       headers: this.headers,
-      signal: AbortSignal.timeout(20000),
-      redirect: 'follow',
+      timeoutMs: 20_000,
+      maxRetries: 2,
+      retryBackoffMs: 250,
     })
-    if (!res.ok) throw new Error(`SkillHub fetch failed: ${res.status} ${res.statusText}`)
-    return res.text()
   }
 }

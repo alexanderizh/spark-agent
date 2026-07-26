@@ -36,6 +36,7 @@ import type {
 } from '@spark/protocol'
 import {
   createLogger,
+  estimateTokens,
   resolveModelContextWindow,
   resolveSoftContextLimit,
   resolveSoftContextLimitForWindow,
@@ -1738,10 +1739,9 @@ function isEditTool(toolName: string): boolean {
 }
 
 function estimateSDKPromptTokens(userMessage: string, config: SDKExecutorConfig): number {
-  const chars = [userMessage, config.systemPrompt ?? '', config.skillSystemPrompt ?? ''].join(
-    '\n',
-  ).length
-  return Math.ceil(chars / 3)
+  return estimateTokens(
+    [userMessage, config.systemPrompt ?? '', config.skillSystemPrompt ?? ''].join('\n'),
+  )
 }
 
 function contextWindow(model: string, configuredContextWindow?: number): number {

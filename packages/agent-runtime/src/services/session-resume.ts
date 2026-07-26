@@ -15,7 +15,7 @@ export type { AgentAdapterKind, ResumeGateConfig, ResumeSafeParams } from './ses
 // api.anthropic.com endpoint 走 resume；其余 provider 继续 fresh session。
 // 失败兜底：claude-sdk-executor 已实现熔断器 + 自动 fallback fresh session。
 // 真机灰度监控点：context_events 表的 SDK_RESUME_CIRCUIT_OPEN 计数。
-export const ENABLE_CLAUDE_SDK_RESUME: true = true
+export const ENABLE_CLAUDE_SDK_RESUME = true as const
 
 export function isSdkResumeSafe(params: ResumeSafeParams): boolean {
   return defaultResumeGate.isSafe(params)

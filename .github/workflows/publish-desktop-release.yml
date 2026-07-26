@@ -74,6 +74,7 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           # workflow_dispatch 时为 'workflow_dispatch'，push 时为 'push'
           EVENT_NAME: ${{ github.event_name }}
+          PUBLISH_TO_RELEASE: ${{ github.event.inputs.publish_to_release }}
         run: |
           git fetch --force --tags
           VERSION=$(node -p "require('./apps/desktop/package.json').version")
@@ -82,25 +83,37 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "ref=${{ github.event.inputs.ref || github.ref }}" >> "$GITHUB_OUTPUT"
 
-          # 手动触发：直接允许发布，跳过版本变化检测
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+          # 手动的纯构建/签名验证不依赖 tag，也不会改变远端发布状态。
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ "${PUBLISH_TO_RELEASE}" != "true" ]; then
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
-            echo "[manual trigger] should_publish=true, version=${VERSION}"
+            echo "[manual build-only] should_publish=true, version=${VERSION}"
             exit 0
           fi
 
-          # push 触发：检查 version 是否真的变化
-          PREV_VERSION=""
-          if [ -n "${BEFORE_SHA}" ] && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-            PREV_VERSION=$(git show "${BEFORE_SHA}:apps/desktop/package.json" 2>/dev/null | node -p "const fs=require('fs'); const raw=fs.readFileSync(0,'utf8'); raw ? JSON.parse(raw).version ?? '' : ''" || true)
+          if [ "${EVENT_NAME}" = "push" ]; then
+            # push 触发：检查 version 是否真的变化
+            PREV_VERSION=""
+            if [ -n "${BEFORE_SHA}" ] && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+              PREV_VERSION=$(git show "${BEFORE_SHA}:apps/desktop/package.json" 2>/dev/null | node -p "const fs=require('fs'); const raw=fs.readFileSync(0,'utf8'); raw ? JSON.parse(raw).version ?? '' : ''" || true)
+            fi
+
+            if [ -n "${PREV_VERSION}" ] && [ "${PREV_VERSION}" = "${VERSION}" ]; then
+              echo "should_publish=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
 
-          if [ -n "${PREV_VERSION}" ] && [ "${PREV_VERSION}" = "${VERSION}" ]; then
-            echo "should_publish=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if ! git rev-parse "${TAG}" >/dev/null 2>&1; then
+          # electron-builder 的并行任务会直接发布到该版本对应的 GitHub Release，
+          # 因而 tag 仍需在构建前存在。若构建失败可能留下无 Release 的 tag；后续
+          # 对同一提交可安全重跑。绝不能复用指向旧提交的同名 tag。
+          HEAD_SHA=$(git rev-parse HEAD)
+          if git rev-parse "${TAG}^{commit}" >/dev/null 2>&1; then
+            TAG_SHA=$(git rev-parse "${TAG}^{commit}")
+            if [ "${TAG_SHA}" != "${HEAD_SHA}" ]; then
+              echo "::error::${TAG} 已指向 ${TAG_SHA}，当前发布提交为 ${HEAD_SHA}。请提升版本号，禁止把新产物发布到旧标签。"
+              exit 1
+            fi
+          else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag "${TAG}"

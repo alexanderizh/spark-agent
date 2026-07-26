@@ -17,6 +17,7 @@ import {
   DEFAULT_THREAD_TOKEN_BUDGET,
   THREAD_MESSAGE_PREVIEW_CHARS,
 } from './team-discussion.repository.js'
+import { estimateTokens } from '@spark/shared'
 import { join } from 'path'
 import { mkdirSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
@@ -344,6 +345,25 @@ describe('TeamDiscussionRepository', () => {
     // 不应把整条 5000+ 字塞进来
     expect(rendered.length).toBeLessThan(huge.length)
     expect(rendered).toContain('A'.repeat(200)) // 至少能看到开头正文
+  })
+
+  it('strictly keeps Chinese discussion output within the requested token budget', () => {
+    repo.createDiscussion({ id: 'd1', sessionId: 'sess-1', hostAgentId: 'host', maxRounds: 6 })
+    repo.appendMessage({
+      id: 'm-cn',
+      discussionId: 'd1',
+      senderAgentId: 'alice',
+      targetAgentId: 'bob',
+      roundIndex: 0,
+      kind: 'peer_message',
+      delivery: 'note',
+      content: `开头锚点${'这是很长的中文讨论内容'.repeat(300)}结尾锚点`,
+    })
+
+    const rendered = repo.renderThreadForPrompt('d1', 100, 'bob')
+    expect(estimateTokens(rendered)).toBeLessThanOrEqual(100)
+    expect(rendered).toContain('开头锚点')
+    expect(rendered).toContain('结尾锚点')
   })
 
   it('listPeerMessagesSince returns only peer_messages written after the given timestamp', async () => {

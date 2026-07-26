@@ -79,12 +79,14 @@ export class McpClient {
   private serverCapabilities: McpServerCapabilities | {}
   private tools: McpToolDefinition[] = []
   private _connected = false
+  private reconnectAllowed = true
+  private reconnectPromise: Promise<void> | null = null
   private toolsChangedEmitter: ((payload: { serverId: string; serverName: string; toolCount: number }) => void) | null = null
 
   constructor(
     private readonly serverId: string,
     private readonly serverName: string,
-    config: McpTransportConfig,
+    private readonly config: McpTransportConfig,
   ) {
     this.serverCapabilities = {}
     this.transport = this.createTransport(config)
@@ -100,6 +102,26 @@ export class McpClient {
 
   /** 连接并初始化 MCP 服务器 */
   async connect(): Promise<void> {
+    this.reconnectAllowed = true
+    await this.connectTransportAndInitialize()
+  }
+
+  private async connectTransportAndInitialize(): Promise<void> {
+    try {
+      await this.connectTransportAndInitializeUnsafe()
+    } catch (error) {
+      // initialize / initialized notification / tools-list 任一步失败，都不能留下一个
+      // transport 已连接但 client 自称未连接的半初始化对象。
+      this._connected = false
+      this.serverInfo = null
+      this.serverCapabilities = {}
+      this.tools = []
+      await this.transport.disconnect().catch(() => undefined)
+      throw error
+    }
+  }
+
+  private async connectTransportAndInitializeUnsafe(): Promise<void> {
     log.info(`Connecting to MCP server: ${this.serverName} (${this.serverId})`)
 
     await this.transport.connect()
@@ -117,7 +139,6 @@ export class McpClient {
     })
 
     if (initResponse.error != null) {
-      await this.transport.disconnect()
       throw new Error(`MCP initialize failed for ${this.serverName}: ${initResponse.error.message}`)
     }
 
@@ -168,6 +189,10 @@ export class McpClient {
   /** 断开连接 */
   async disconnect(): Promise<void> {
     log.info(`Disconnecting MCP server: ${this.serverName} (${this.serverId})`)
+    this.reconnectAllowed = false
+    if (this.reconnectPromise != null) {
+      await this.reconnectPromise.catch(() => undefined)
+    }
     this._connected = false
     await this.transport.disconnect()
     this.tools = []
@@ -189,12 +214,29 @@ export class McpClient {
       throw new Error(`MCP client not connected: ${this.serverName}`)
     }
 
+    if (!this.transport.isConnected() && this.isRemoteTransport()) {
+      await this.reconnectTransport()
+    }
+
     // 应用层重试（D-10）：默认对幂等工具自动重试 5xx/网络错误，maxRetries=3。
     // 调用方传 options.retry 可覆盖或显式关闭（{ maxRetries: 0 }）。
     return callMcpToolWithRetry(
       this.serverName,
       name,
-      () => this.callToolInternal(name, args),
+      async () => {
+        try {
+          return await this.callToolInternal(name, args)
+        } catch (error) {
+          if (!this.shouldReconnectTransport(error)) throw error
+          await this.reconnectTransport()
+          throw new Error(
+            `MCP transport reconnected after transient failure: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            { cause: error },
+          )
+        }
+      },
       options.retry,
     )
   }
@@ -281,6 +323,56 @@ export class McpClient {
         return new StreamableHttpTransport(config)
       default:
         throw new Error(`Unknown MCP transport type: ${(config as { type: string }).type}`)
+    }
+  }
+
+  private isRemoteTransport(): boolean {
+    return this.config.type === 'sse' || this.config.type === 'http'
+  }
+
+  private shouldReconnectTransport(error: unknown): boolean {
+    if (!this.reconnectAllowed || !this.isRemoteTransport() || !(error instanceof Error)) {
+      return false
+    }
+    const message = error.message.toLowerCase()
+    return (
+      message.includes('not connected') ||
+      message.includes('transport disconnected') ||
+      message.includes('stream closed') ||
+      message.includes('fetch failed') ||
+      message.includes('econnreset') ||
+      message.includes('econnrefused') ||
+      message.includes('socket') ||
+      message.includes('request timeout') ||
+      message.includes('timed out') ||
+      /mcp http request failed:\s*(404|410|5\d\d)\b/.test(message)
+    )
+  }
+
+  private async reconnectTransport(): Promise<void> {
+    if (!this.reconnectAllowed) {
+      throw new Error(`MCP client disconnect requested: ${this.serverName}`)
+    }
+    if (!this.isRemoteTransport()) {
+      throw new Error(`MCP transport reconnect is unsupported for ${this.config.type}`)
+    }
+    if (this.reconnectPromise != null) return this.reconnectPromise
+
+    const reconnect = (async () => {
+      this._connected = false
+      await this.transport.disconnect().catch(() => undefined)
+      if (!this.reconnectAllowed) {
+        throw new Error(`MCP client disconnect requested: ${this.serverName}`)
+      }
+      this.transport = this.createTransport(this.config)
+      await this.connectTransportAndInitialize()
+      log.info(`MCP transport reconnected: ${this.serverName}`)
+    })()
+    this.reconnectPromise = reconnect
+    try {
+      await reconnect
+    } finally {
+      if (this.reconnectPromise === reconnect) this.reconnectPromise = null
     }
   }
 

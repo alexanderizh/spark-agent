@@ -1,7 +1,7 @@
 import { Segmented } from '@lobehub/ui'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { Icons } from '../../Icons'
-import { downloadAsset } from './CanvasAssetsPanel'
+import { downloadCanvasResource } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasInspector } from './CanvasInspector'
 import { CanvasProjectInfoPanel } from './CanvasProjectInfoPanel'
@@ -205,7 +205,7 @@ export function CanvasWorkspaceSidePanel({
                 }}
                 onInsertOne={onInsertAsset}
                 onInsertSubview={onInsertSubview}
-                onDownloadOne={(asset) => downloadAsset(asset)}
+                onDownloadOne={(resource) => downloadCanvasResource(resource)}
                 detailResetKey={assetDetailResetKey}
                 onOpenDetail={onOpenAssetDetail}
                 onRemoveReferences={onRemoveAssetReferences}

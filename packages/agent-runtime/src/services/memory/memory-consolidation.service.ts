@@ -138,7 +138,8 @@ export class MemoryConsolidationService {
       try {
         const dropBody = await this.storeService.readFile(drop.file_path).catch(() => '')
         if (dropBody.length > 0 || drop.description.length > 0) {
-          mergedBody += `\n\n## 合并自 ${drop.id}（${drop.name}）\n${drop.description}${dropBody.length > 0 ? '\n\n' + dropBody.slice(0, 400) : ''}`
+          // drop 随后会失效；这里必须保留全文，否则旧实现只取前 400 字会造成不可恢复的数据丢失。
+          mergedBody += `\n\n## 合并自 ${drop.id}（${drop.name}）\n${drop.description}${dropBody.length > 0 ? '\n\n' + dropBody : ''}`
         }
       } catch { /* 读不到也继续 */ }
     }

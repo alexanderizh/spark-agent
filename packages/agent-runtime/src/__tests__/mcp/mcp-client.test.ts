@@ -5,8 +5,10 @@ import type { McpTransport, JsonRpcRequest, JsonRpcResponse } from '../../mcp/tr
 // ─── Mock Transport Factory ──────────────────────────────────────────────────
 
 let mockSendFn: ((req: JsonRpcRequest) => Promise<JsonRpcResponse>) | null = null
+let mockTransportCreateCount = 0
 
 function createMockTransport(): McpTransport {
+  mockTransportCreateCount += 1
   return {
     connect: vi.fn(async () => {}),
     disconnect: vi.fn(async () => {}),
@@ -40,6 +42,7 @@ describe('McpClient', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockSendFn = null
+    mockTransportCreateCount = 0
   })
 
   it('exposes serverId and serverName', () => {
@@ -256,5 +259,80 @@ describe('McpClient', () => {
     await client.connect()
     expect(client.isConnected()).toBe(true)
     expect(client.getStatus().serverInfo?.version).toBe('2.0')
+  })
+
+  it('reconnects and reinitializes a remote transport before retrying an idempotent tool', async () => {
+    let initializeCount = 0
+    let toolAttempts = 0
+    mockSendFn = async (req: JsonRpcRequest) => {
+      if (req.method === 'initialize') {
+        initializeCount += 1
+        return {
+          jsonrpc: '2.0',
+          id: req.id,
+          result: {
+            protocolVersion: '2024-11-05',
+            capabilities: {},
+            serverInfo: { name: 'remote-server', version: '2.0' },
+          },
+        } as JsonRpcResponse
+      }
+      if (req.method === 'tools/list') {
+        return { jsonrpc: '2.0', id: req.id, result: { tools: [] } } as JsonRpcResponse
+      }
+      if (req.method === 'tools/call') {
+        toolAttempts += 1
+        if (toolAttempts === 1) throw new Error('MCP SSE transport is not connected')
+        return {
+          jsonrpc: '2.0',
+          id: req.id,
+          result: { content: [{ type: 'text', text: 'recovered' }] },
+        } as JsonRpcResponse
+      }
+      return { jsonrpc: '2.0', id: req.id, result: {} } as JsonRpcResponse
+    }
+
+    const client = new McpClient('srv-reconnect', 'remote-server', {
+      type: 'sse',
+      url: 'http://localhost:3000/mcp',
+    })
+    await client.connect()
+    const result = await client.callTool('read_resource', { id: 'x' }, {
+      retry: { maxRetries: 1, retryBackoffMs: 1 },
+    })
+
+    expect(result.content[0]?.text).toBe('recovered')
+    expect(toolAttempts).toBe(2)
+    expect(initializeCount).toBe(2)
+    expect(mockTransportCreateCount).toBe(2)
+  })
+
+  it('reconnects but never replays a non-idempotent tool after an ambiguous failure', async () => {
+    let toolAttempts = 0
+    mockSendFn = async (req: JsonRpcRequest) => {
+      if (req.method === 'initialize') {
+        return { jsonrpc: '2.0', id: req.id, result: { capabilities: {} } } as JsonRpcResponse
+      }
+      if (req.method === 'tools/list') {
+        return { jsonrpc: '2.0', id: req.id, result: { tools: [] } } as JsonRpcResponse
+      }
+      if (req.method === 'tools/call') {
+        toolAttempts += 1
+        throw new Error('MCP SSE transport is not connected')
+      }
+      return { jsonrpc: '2.0', id: req.id, result: {} } as JsonRpcResponse
+    }
+
+    const client = new McpClient('srv-no-replay', 'remote-server', {
+      type: 'sse',
+      url: 'http://localhost:3000/mcp',
+    })
+    await client.connect()
+
+    await expect(client.callTool('create_record', { value: 1 })).rejects.toThrow(
+      'transport reconnected',
+    )
+    expect(toolAttempts).toBe(1)
+    expect(mockTransportCreateCount).toBe(2)
   })
 })

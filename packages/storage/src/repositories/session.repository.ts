@@ -264,6 +264,15 @@ export class SessionRepository extends BaseRepository {
       conditions.push('project_id = ?')
       args.push(projectId)
     }
+    if (workspaceId != null) {
+      conditions.push(
+        `EXISTS (
+          SELECT 1 FROM json_each(sessions.workspace_ids_json)
+          WHERE json_each.value = ?
+        )`,
+      )
+      args.push(workspaceId)
+    }
     if (status != null) {
       conditions.push('status = ?')
       args.push(status)
@@ -285,16 +294,7 @@ export class SessionRepository extends BaseRepository {
        LIMIT ? OFFSET ?`,
     )
     const sessions = listStmt.all(...args, limit, offset) as SessionRow[]
-
-    // 如果指定了 workspaceId，在内存中过滤（workspace_ids_json 是 JSON 数组）
-    const filtered = workspaceId != null
-      ? sessions.filter((s) => {
-          const wsIds = this.fromJson<string[]>(s.workspace_ids_json, [])
-          return wsIds.includes(workspaceId)
-        })
-      : sessions
-
-    return { sessions: filtered, total: countRow.count }
+    return { sessions, total: countRow.count }
   }
 
   /** 获取 workspace_ids_json 解析后的数组 */
@@ -323,18 +323,57 @@ export class SessionRepository extends BaseRepository {
     return this.deleteById(id)
   }
 
+  /**
+   * 原子清理会话及其非外键关联数据。
+   *
+   * agent_events 可能非常大，由 runtime 在提交本事务后分批删除；其余小表必须在同一
+   * 事务内完成，避免某一张表失败后跳过后续清理。带外键的 goals/team/workflow/turn
+   * 表由 sessions 的 ON DELETE CASCADE 处理。
+   *
+   * memory_entry 是独立长期记忆，不随聊天删除；这里只清除来源关联。
+   */
+  deleteWithRelatedData(id: string): boolean {
+    const remove = this.raw.transaction(() => this.deleteWithRelatedDataInTransaction(id))
+    return remove()
+  }
+
   /** 删除指定 workspace 下的会话记录 */
   deleteByWorkspaceId(workspaceId: string): string[] {
-    const rows = this.list({ workspaceId, includeArchived: true, limit: 1000 }).sessions
-    const stmt = this.raw.prepare('DELETE FROM sessions WHERE id = ?')
+    // 不能复用 list(...limit:1000) 后在内存过滤：当全库前 1000 条恰好属于其它
+    // workspace 时会漏删。SQLite JSON1 直接筛出全部目标 session，数量不设静默上限。
+    const rows = this.raw
+      .prepare(
+        `SELECT id FROM sessions
+         WHERE EXISTS (
+           SELECT 1 FROM json_each(sessions.workspace_ids_json)
+           WHERE json_each.value = ?
+         )`,
+      )
+      .all(workspaceId) as Array<{ id: string }>
     const deletedIds: string[] = []
     const remove = this.raw.transaction(() => {
       for (const row of rows) {
-        const result = stmt.run(row.id)
-        if (result.changes > 0) deletedIds.push(row.id)
+        if (this.deleteWithRelatedDataInTransaction(row.id)) deletedIds.push(row.id)
       }
     })
     remove()
     return deletedIds
+  }
+
+  private deleteWithRelatedDataInTransaction(id: string): boolean {
+    const exists = this.raw.prepare('SELECT 1 FROM sessions WHERE id = ?').get(id)
+    if (exists == null) return false
+
+    this.raw.prepare('DELETE FROM usage_ledger WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM session_summaries WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM run_usage_summaries WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM media_artifacts WHERE session_id = ?').run(id)
+    this.raw.prepare('DELETE FROM task_executions WHERE session_id = ?').run(id)
+    // Memory 是跨会话长期数据；删除会话只解除来源引用，不能误删记忆本体。
+    this.raw
+      .prepare('UPDATE memory_entry SET source_session_id = NULL WHERE source_session_id = ?')
+      .run(id)
+
+    return this.raw.prepare('DELETE FROM sessions WHERE id = ?').run(id).changes > 0
   }
 }

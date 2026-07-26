@@ -34,13 +34,22 @@ const HISTORY_CONTEXT_ENTRY_TOKEN_BUDGET = 1_500
 
 export type DialogueEntry = { role: 'User' | 'Assistant'; content: string }
 
-export function buildConversationHistoryPromptFromEvents(events: AgentEvent[]): string | undefined {
-  const entries = limitHistoryContextEntries(buildDialogueEntries(events))
-  if (entries.length === 0) return undefined
+export interface ConversationHistoryPromptOptions {
+  agentNameById?: Record<string, string>
+  historyTokenBudget?: number
+  entryTokenBudget?: number
+  entryLimit?: number
+}
 
-  const transcript = entries
-    .map((entry) => `${entry.role}: ${truncateHistoryEntry(entry.content)}`)
-    .join('\n\n')
+export function buildConversationHistoryPromptFromEvents(
+  events: AgentEvent[],
+  options: ConversationHistoryPromptOptions = {},
+): string | undefined {
+  const transcript = formatDialogueEntriesWithinTokenBudget(
+    buildDialogueEntries(events, options.agentNameById),
+    options,
+  )
+  if (transcript.length === 0) return undefined
 
   return [
     '[Spark Session History]',
@@ -49,14 +58,61 @@ export function buildConversationHistoryPromptFromEvents(events: AgentEvent[]): 
   ].join('\n\n')
 }
 
-export function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
+export function buildDialogueEntries(
+  events: AgentEvent[],
+  agentNameById?: Record<string, string>,
+): DialogueEntry[] {
+  type SegmentAccum = {
+    bySegment: Map<string, string>
+    order: string[]
+    looseParts: string[]
+    final?: string
+  }
+  const newSegmentAccum = (): SegmentAccum => ({
+    bySegment: new Map(),
+    order: [],
+    looseParts: [],
+  })
+  const addSegment = (
+    accum: SegmentAccum,
+    content: string,
+    segmentId: string | undefined,
+    isFinal: boolean,
+  ): void => {
+    if (isFinal) {
+      accum.final = content
+      return
+    }
+    if (segmentId != null) {
+      if (!accum.bySegment.has(segmentId)) accum.order.push(segmentId)
+      accum.bySegment.set(segmentId, content)
+      return
+    }
+    accum.looseParts.push(content)
+  }
+  const resolveSegmentText = (accum: SegmentAccum): string => {
+    const segmentParts = accum.order
+      .map((id) => accum.bySegment.get(id) ?? '')
+      .filter((text) => text.trim().length > 0)
+    if (segmentParts.length > 0) return segmentParts.join('\n').trim()
+    if (accum.final != null) return accum.final.trim()
+    return accum.looseParts.join('\n').trim()
+  }
+
+  type MemberDispatch = {
+    memberAgentId: string
+    accum: SegmentAccum
+    order: number
+  }
   const turns = new Map<
     string,
     {
       userParts: string[]
+      userMentionAgentId?: string
       snapshotUserMessage?: string
-      assistantParts: string[]
-      assistantFinal?: string
+      assistant: SegmentAccum
+      memberByDispatch: Map<string, MemberDispatch>
+      memberOrderCounter: number
     }
   >()
   const turnOrder: string[] = []
@@ -64,18 +120,29 @@ export function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
   const getTurn = (turnId: string) => {
     let turn = turns.get(turnId)
     if (turn == null) {
-      turn = { userParts: [], assistantParts: [] }
+      turn = {
+        userParts: [],
+        assistant: newSegmentAccum(),
+        memberByDispatch: new Map(),
+        memberOrderCounter: 0,
+      }
       turns.set(turnId, turn)
       turnOrder.push(turnId)
     }
     return turn
   }
 
+  const resolveName = (agentId: string): string => {
+    const name = agentNameById?.[agentId]?.trim()
+    return name != null && name.length > 0 ? name : agentId
+  }
+
   for (const event of events) {
     if (
       event.type !== 'user_message' &&
       event.type !== 'assistant_message' &&
-      event.type !== 'turn_prompt_snapshot'
+      event.type !== 'turn_prompt_snapshot' &&
+      event.type !== 'team_member_message'
     )
       continue
     const turn = getTurn(event.turnId)
@@ -86,29 +153,101 @@ export function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
     }
     if (event.type === 'user_message') {
       turn.userParts.push(event.content)
+      if (event.mentionAgentId != null && event.mentionAgentId.length > 0) {
+        turn.userMentionAgentId = event.mentionAgentId
+      }
       continue
     }
-    if (event.mode === 'complete' && event.isFinal) {
-      turn.assistantFinal = event.content
-    } else {
-      turn.assistantParts.push(event.content)
+    if (event.type === 'team_member_message') {
+      if (event.mode !== 'complete') continue
+      let dispatch = turn.memberByDispatch.get(event.dispatchId)
+      if (dispatch == null) {
+        dispatch = {
+          memberAgentId: event.memberAgentId,
+          accum: newSegmentAccum(),
+          order: turn.memberOrderCounter++,
+        }
+        turn.memberByDispatch.set(event.dispatchId, dispatch)
+      }
+      addSegment(dispatch.accum, event.content, event.segmentId, event.isFinal)
+      continue
     }
+    if (event.mode !== 'complete') continue
+    addSegment(turn.assistant, event.content, event.segmentId, event.isFinal)
   }
 
   const entries: DialogueEntry[] = []
   for (const turnId of turnOrder) {
     const turn = turns.get(turnId)
     if (turn == null) continue
-    const userContent = turn.snapshotUserMessage?.trim() || joinHistoryParts(turn.userParts) || ''
-    if (userContent.length > 0) entries.push({ role: 'User', content: userContent })
-    const assistantContent = turn.assistantFinal?.trim() || joinHistoryParts(turn.assistantParts)
+    const rawUserContent =
+      turn.snapshotUserMessage?.trim() || joinHistoryParts(turn.userParts) || ''
+    if (rawUserContent.length > 0) {
+      const mentionPrefix =
+        turn.userMentionAgentId != null ? `(@${resolveName(turn.userMentionAgentId)}) ` : ''
+      entries.push({ role: 'User', content: `${mentionPrefix}${rawUserContent}` })
+    }
+    const assistantContent = resolveSegmentText(turn.assistant)
     if (assistantContent.length > 0) entries.push({ role: 'Assistant', content: assistantContent })
+    const dispatches = Array.from(turn.memberByDispatch.values()).sort(
+      (left, right) => left.order - right.order,
+    )
+    for (const dispatch of dispatches) {
+      const text = resolveSegmentText(dispatch.accum)
+      if (text.length === 0) continue
+      entries.push({
+        role: 'Assistant',
+        content: `[${resolveName(dispatch.memberAgentId)}] ${text}`,
+      })
+    }
   }
   return entries
 }
 
 export function joinHistoryParts(parts: string[]): string {
   return parts.join('\n').replace(/\s+\n/g, '\n').trim()
+}
+
+/**
+ * 单一历史裁剪实现：先裁每条 entry，再按总 token 预算从最新记录向前选择。
+ * 这样超长的最新 entry 会保留头尾，不会因为原始长度超预算而被整条移除。
+ */
+export function formatDialogueEntriesWithinTokenBudget(
+  entries: DialogueEntry[],
+  options: Pick<
+    ConversationHistoryPromptOptions,
+    'historyTokenBudget' | 'entryTokenBudget' | 'entryLimit'
+  > = {},
+): string {
+  const historyTokenBudget = Math.max(
+    1,
+    Math.floor(options.historyTokenBudget ?? HISTORY_CONTEXT_MAX_TOKENS),
+  )
+  const entryTokenBudget = Math.max(
+    1,
+    Math.floor(options.entryTokenBudget ?? HISTORY_CONTEXT_ENTRY_TOKEN_BUDGET),
+  )
+  const entryLimit = Math.max(1, Math.floor(options.entryLimit ?? HISTORY_CONTEXT_ENTRY_LIMIT))
+  const formatted = entries.slice(-entryLimit).map((entry) => {
+    const content = clipTextHeadTail(entry.content.trim(), entryTokenBudget)
+    return `${entry.role}: ${content}`
+  })
+
+  const selected: string[] = []
+  for (let index = formatted.length - 1; index >= 0; index -= 1) {
+    const entry = formatted[index]
+    if (entry == null) continue
+    const candidate = [entry, ...selected].join('\n\n')
+    if (estimateTokens(candidate) <= historyTokenBudget) {
+      selected.unshift(entry)
+      continue
+    }
+    if (selected.length === 0) {
+      selected.push(clipTextHeadTail(entry, historyTokenBudget))
+    }
+    break
+  }
+  return selected.join('\n\n')
 }
 
 /**
@@ -161,11 +300,14 @@ export function computeHistoryEntryTokenBudget(contextWindow: number): number {
 }
 
 export function limitHistoryContextEntries(entries: DialogueEntry[]): DialogueEntry[] {
-  const selected = entries.slice(-HISTORY_CONTEXT_ENTRY_LIMIT)
-  let total = selected.reduce((sum, entry) => sum + estimateTokens(entry.content), 0)
-  while (selected.length > 0 && total > HISTORY_CONTEXT_MAX_TOKENS) {
-    const removed = selected.shift()
-    total -= removed ? estimateTokens(removed.content) : 0
+  const selected = entries.slice(-HISTORY_CONTEXT_ENTRY_LIMIT).map((entry) => ({
+    ...entry,
+    content: truncateHistoryEntry(entry.content),
+  }))
+  while (selected.length > 1) {
+    const transcript = selected.map((entry) => `${entry.role}: ${entry.content}`).join('\n\n')
+    if (estimateTokens(transcript) <= HISTORY_CONTEXT_MAX_TOKENS) break
+    selected.shift()
   }
   return selected
 }

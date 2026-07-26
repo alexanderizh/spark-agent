@@ -58,6 +58,11 @@ import {
   isAutoRouterProvider,
   isRoutingModelConfig,
 } from '@spark/protocol'
+import {
+  MAX_REASONING_BUDGET_TOKENS,
+  MIN_REASONING_BUDGET_TOKENS,
+  normalizeReasoningBudgetTokens,
+} from '@spark/shared'
 
 type AgentScreen = 'list' | 'detail'
 type AgentFilterTab = 'all' | 'mine'
@@ -145,6 +150,7 @@ type AgentDraft = {
   agentAdapter: SessionAgentAdapter
   permissionMode: SessionPermissionMode
   reasoningEffort: SessionReasoningEffort
+  reasoningBudgetTokens: string
   prompt: string
   skillIds: string[]
   ruleIds: string[]
@@ -172,6 +178,7 @@ const EMPTY_DRAFT: AgentDraft = {
   agentAdapter: 'claude-sdk',
   permissionMode: 'claude-ask',
   reasoningEffort: 'medium',
+  reasoningBudgetTokens: '',
   prompt: '',
   skillIds: [
     'builtin:multi-search-engine',
@@ -540,6 +547,15 @@ function AgentsTabContent({
   }
 
   const handleSave = async () => {
+    if (
+      draft.reasoningBudgetTokens.trim().length > 0 &&
+      normalizeReasoningBudgetTokens(draft.reasoningBudgetTokens) == null
+    ) {
+      toast.warning(
+        `推理 Token 预算必须是 ${MIN_REASONING_BUDGET_TOKENS}–${MAX_REASONING_BUDGET_TOKENS} 的整数`,
+      )
+      return
+    }
     const payload = draftToPayload(draft, selectedProvider)
     if (!payload.name.trim()) {
       toast.warning('Agent 名称不能为空')
@@ -973,9 +989,6 @@ function AgentsTabContent({
             <div className="agents-home-title-block">
               <div className="agents-home-title-row">
                 <h1 className="agents-home-title">Agent 管理</h1>
-                <button type="button" className="agents-home-help" title="了解更多">
-                  <Icons.HelpCircle size={14} />
-                </button>
               </div>
               <div className="agents-home-subtitle">管理和配置你的智能体，让 AI 更好地为你服务</div>
             </div>
@@ -1435,6 +1448,21 @@ function AgentsTabContent({
               />
             </Field>
             <Field
+              label="推理 Token 预算"
+              hint="可选；仅 Claude SDK 显式 extended thinking 使用。留空则由 SDK/模型自动决定。"
+            >
+              <LobeInput
+                type="number"
+                min={MIN_REASONING_BUDGET_TOKENS}
+                max={MAX_REASONING_BUDGET_TOKENS}
+                step={1024}
+                value={draft.reasoningBudgetTokens}
+                disabled={effectiveAgentAdapter !== 'claude-sdk'}
+                placeholder="自动"
+                onChange={(event) => updateDraft('reasoningBudgetTokens', event.target.value)}
+              />
+            </Field>
+            <Field
               label="工作流"
               hint={
                 activeWorkflow
@@ -1456,7 +1484,6 @@ function AgentsTabContent({
               <PromptEditor
                 value={draft.prompt}
                 onChange={(next) => updateDraft('prompt', next)}
-                onToast={(msg) => toast.info(msg)}
               />
             </div>
           </div>
@@ -1524,11 +1551,6 @@ function AgentsTabContent({
             title="规则"
             count={countExistingRefs(draft.ruleIds, rules)}
             description="约束 Agent 的行为与输出"
-            footer={
-              <button type="button" className="agent-config-link">
-                <Icons.Shield size={12} /> 管理规则
-              </button>
-            }
           >
             {rules.length > 0 ? (
               <PickList
@@ -1545,24 +1567,8 @@ function AgentsTabContent({
             title="Hook"
             count={draft.hookConfig.enabled ? 1 : 0}
             description="在特定事件触发 Agent 专属逻辑"
-            footer={
-              <button type="button" className="agent-config-link">
-                <Icons.Bell size={12} /> 配置 Hook
-              </button>
-            }
           >
             <HookEditor value={draft.hookConfig} onChange={(c) => updateDraft('hookConfig', c)} />
-          </ConfigSection>
-
-          <ConfigSection
-            title="高级设置"
-            description="更多个性化配置"
-            interactive
-            onActivate={() => toast.info('更多高级设置（即将推出）')}
-          >
-            <div className="agent-config-advanced">
-              <Icons.ChevronRight size={14} />
-            </div>
           </ConfigSection>
         </aside>
       </div>
@@ -2040,18 +2046,16 @@ function SectionHeader({ title, desc }: { title: string; desc?: string }) {
 
 /**
  * 提示词（System Prompt）代码编辑器：
- *  - 头部：标题 + 模板/优化/全屏 按钮（视觉对齐参考图，模板/优化为占位，全屏为真实 toggle）
+ *  - 头部：标题 + 全屏按钮
  *  - 主体：行号 + textarea，monospace，code 主题
  *  - 全屏：toggle 一个 className，CSS 用 fixed 定位撑满屏幕
  */
 function PromptEditor({
   value,
   onChange,
-  onToast,
 }: {
   value: string
   onChange: (next: string) => void
-  onToast: (msg: string) => void
 }) {
   const [fullscreen, setFullscreen] = useState(false)
   const lineCount = Math.max(1, value.split('\n').length)
@@ -2069,22 +2073,6 @@ function PromptEditor({
           <span className="agent-prompt-toolbar-sub">System Prompt</span>
         </div>
         <div className="agent-prompt-toolbar-actions">
-          <button
-            type="button"
-            className="agent-prompt-toolbar-btn"
-            onClick={() => onToast('模板库即将推出')}
-            title="从模板库选择"
-          >
-            <Icons.Book size={12} /> 模板
-          </button>
-          <button
-            type="button"
-            className="agent-prompt-toolbar-btn"
-            onClick={() => onToast('提示词优化即将推出')}
-            title="AI 优化提示词"
-          >
-            <Icons.Sparkles size={12} /> 优化
-          </button>
           <button
             type="button"
             className="agent-prompt-toolbar-btn"
@@ -2121,8 +2109,6 @@ function ConfigSection({
   count,
   description,
   footer,
-  interactive,
-  onActivate,
   children,
 }: {
   title: string
@@ -2130,18 +2116,10 @@ function ConfigSection({
   description?: string
   /** 卡片底部链接 / 按钮 */
   footer?: ReactNode
-  /** 整张卡片可点击（用于「高级设置」导航卡） */
-  interactive?: boolean
-  onActivate?: () => void
   children?: ReactNode
 }) {
   return (
-    <section
-      className={`agent-config-section${interactive ? ' is-interactive' : ''}`}
-      onClick={interactive ? onActivate : undefined}
-      role={interactive ? 'button' : undefined}
-      tabIndex={interactive ? 0 : undefined}
-    >
+    <section className="agent-config-section">
       <div className="agent-config-head">
         <span className="agent-config-title">{title}</span>
         {count != null && <span className="agent-config-count">{count}</span>}
@@ -2212,6 +2190,8 @@ function agentToDraft(agent: ManagedAgent): AgentDraft {
     agentAdapter: agent.agentAdapter,
     permissionMode: agent.permissionMode,
     reasoningEffort: normalizeReasoningEffort(agent.reasoningEffort),
+    reasoningBudgetTokens:
+      normalizeReasoningBudgetTokens(agent.metadata.reasoningBudgetTokens)?.toString() ?? '',
     prompt: agent.prompt,
     skillIds: agent.skillIds,
     ruleIds: agent.ruleIds,
@@ -2254,6 +2234,9 @@ function isRoutingModelCard(model: ModelProfile): boolean {
 
 function draftToPayload(draft: AgentDraft, provider?: ProviderProfile | null) {
   const normalized = normalizeDraftForProvider(draft, provider)
+  const metadata = { ...normalized.metadata }
+  delete metadata.reasoningBudgetTokens
+  const reasoningBudgetTokens = normalizeReasoningBudgetTokens(normalized.reasoningBudgetTokens)
   return {
     name: normalized.name.trim(),
     description: normalized.description.trim(),
@@ -2271,7 +2254,8 @@ function draftToPayload(draft: AgentDraft, provider?: ProviderProfile | null) {
     hookConfig: normalized.hookConfig,
     workflowId: normalized.workflowId || null,
     metadata: {
-      ...normalized.metadata,
+      ...metadata,
+      ...(reasoningBudgetTokens != null ? { reasoningBudgetTokens } : {}),
       avatar: normalizeDraftAvatar(normalized),
     },
   }

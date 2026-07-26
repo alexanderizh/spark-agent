@@ -260,8 +260,10 @@ export class MediaArtifactService {
           ),
         }
       }
+      const responseHeaders =
+        res.headers != null && typeof res.headers.get === 'function' ? res.headers : null
       log.info(
-        `event=download-response-ok url=${JSON.stringify(sanitizeRequestUrl(url))} status=${res.status} contentType=${JSON.stringify(res.headers.get('content-type') ?? '(none)')} contentLength=${JSON.stringify(res.headers.get('content-length') ?? '(unknown)')}`,
+        `event=download-response-ok url=${JSON.stringify(sanitizeRequestUrl(url))} status=${res.status} contentType=${JSON.stringify(responseHeaders?.get('content-type') ?? '(none)')} contentLength=${JSON.stringify(responseHeaders?.get('content-length') ?? '(unknown)')}`,
       )
       try {
         const buffer = Buffer.from(await res.arrayBuffer())

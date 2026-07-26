@@ -1,7 +1,6 @@
-import { StrictMode } from 'react'
+import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
-import { CanvasWindowApp } from './CanvasWindowApp'
 import { readCanvasWindowProjectId } from './canvasWindowParams'
 
 import './design/styles/styles.css'
@@ -15,8 +14,15 @@ if (rootElement == null) {
   throw new Error('Root element #root not found in DOM')
 }
 
+const CanvasWindowApp = lazy(async () => ({
+  default: (await import('./CanvasWindowApp')).CanvasWindowApp,
+}))
+const isCanvasWindow = readCanvasWindowProjectId() != null
+
 createRoot(rootElement).render(
   <StrictMode>
-    {readCanvasWindowProjectId() == null ? <App /> : <CanvasWindowApp />}
+    <Suspense fallback={<div className="app window" aria-label="正在加载" />}>
+      {isCanvasWindow ? <CanvasWindowApp /> : <App />}
+    </Suspense>
   </StrictMode>,
 )

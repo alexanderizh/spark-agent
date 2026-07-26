@@ -70,6 +70,8 @@ import {
   registerSafeFileProtocol,
   registerSafeFileSchemes,
 } from './services/SafeFileProtocol.js'
+import { isWebviewSourceAllowed, openExternalUrlSafely } from './services/ExternalUrlPolicy.js'
+import { ensurePreMigrationBackup, restoreDatabaseBackup } from './services/DatabaseBackupService.js'
 import { installSingleInstanceLock } from './single-instance.js'
 import { getDatabase } from './db.js'
 import { getRecentSessionsForTray } from './ipc/index.js'
@@ -556,7 +558,7 @@ function createWindow(): BrowserWindow {
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
     // 开发模式下自动打开 DevTools
-    if (is.dev) {
+    if (is.dev && process.env.SPARK_DISABLE_DEVTOOLS !== '1') {
       mainWindow.webContents.openDevTools()
     }
   })
@@ -570,8 +572,27 @@ function createWindow(): BrowserWindow {
 
   // 在系统默认浏览器中打开外部链接，不在 Electron 窗口内导航
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    void openExternalUrlSafely(details.url, (url) => shell.openExternal(url))
     return { action: 'deny' }
+  })
+
+  // 内嵌浏览器保留任意站点与调试能力，但远程页面不能通过标签属性注入 preload
+  // 或重新开启 Node。这样不缩小网页能力，同时隔离主进程与本地文件权限。
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    if (!isWebviewSourceAllowed(params.src ?? '')) {
+      log.warn(`Blocked unsafe webview source: ${(params.src ?? '').slice(0, 200)}`)
+      event.preventDefault()
+      return
+    }
+    delete webPreferences.preload
+    delete (webPreferences as typeof webPreferences & { preloadURL?: string }).preloadURL
+    webPreferences.nodeIntegration = false
+    webPreferences.nodeIntegrationInSubFrames = false
+    webPreferences.nodeIntegrationInWorker = false
+    webPreferences.contextIsolation = true
+    webPreferences.sandbox = true
+    webPreferences.webSecurity = true
+    webPreferences.allowRunningInsecureContent = false
   })
 
   // 开发模式：加载 Vite dev server；生产模式：加载打包后的 HTML
@@ -646,6 +667,21 @@ async function initializeApp(): Promise<void> {
   // 1. 初始化数据库
   const dbPath = getDatabasePath()
   log.info(`Database path: ${dbPath}`)
+  let databaseBackup: Awaited<ReturnType<typeof ensurePreMigrationBackup>>
+  try {
+    databaseBackup = await ensurePreMigrationBackup({
+      databasePath: dbPath,
+      backupRoot: join(app.getPath('userData'), 'backups', 'database'),
+      appVersion: app.getVersion(),
+    })
+  } catch (error) {
+    log.error(`Failed to create pre-migration database backup: ${String(error)}`)
+    dialog.showErrorBox(
+      'SparkWork 无法创建升级恢复点',
+      '现有数据库无法安全备份，应用将退出且不会执行迁移。请检查磁盘空间和应用数据目录权限后重试。',
+    )
+    throw error
+  }
 
   try {
     const { createDatabase } = await import('@spark/storage')
@@ -696,8 +732,23 @@ async function initializeApp(): Promise<void> {
     )
   } catch (err) {
     log.error(`Database initialization failed: ${String(err)}`)
-    // 数据库初始化失败不阻止应用启动，但大部分功能不可用
-    // 用户会看到错误提示
+    let restored = false
+    if (databaseBackup?.createdThisStartup === true) {
+      try {
+        await restoreDatabaseBackup(databaseBackup)
+        restored = true
+        log.warn(`Database restored from pre-migration backup: ${databaseBackup.directory}`)
+      } catch (restoreError) {
+        log.error(`Database backup restore failed: ${String(restoreError)}`)
+      }
+    }
+    dialog.showErrorBox(
+      'SparkWork 数据库启动失败',
+      restored
+        ? `升级前数据已自动恢复。应用将退出，请保留以下恢复点并联系支持：\n${databaseBackup!.directory}`
+        : '数据库无法安全初始化，应用将退出以避免继续写入或扩大损坏。请保留应用数据后联系支持。',
+    )
+    throw err
   }
 
   // 2. 注册 IPC handlers

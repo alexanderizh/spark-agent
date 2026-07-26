@@ -429,26 +429,22 @@ export function LoginForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): Rea
             {tab === 'password' ? (
               <>
                 <span className="auth-foot-muted">忘记密码？</span>{' '}
-                <a
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    handleTabChange('code')
-                  }}
+                <button
+                  type="button"
+                  className="auth-foot-link"
+                  onClick={() => handleTabChange('code')}
                 >
                   用验证码登录
-                </a>
+                </button>
               </>
             ) : (
-              <a
-                href="#"
-                onClick={(e) => {
-                  e.preventDefault()
-                  handleTabChange('password')
-                }}
+              <button
+                type="button"
+                className="auth-foot-link"
+                onClick={() => handleTabChange('password')}
               >
                 返回密码登录
-              </a>
+              </button>
             )}
           </div>
           {flowSwitch}

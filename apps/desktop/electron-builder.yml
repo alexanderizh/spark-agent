@@ -56,11 +56,14 @@ win:
     - zh-TW
   # Windows 10+ / Electron 43 仅使用 SHA-256。RFC 3161 时间戳让已签名版本在
   # 自签名证书到期后仍可验证其签名时点；时间戳服务本身不改变证书信任级别。
-  publisherName: Spark Foundation
   requestedExecutionLevel: asInvoker
-  signingHashAlgorithms:
-    - sha256
-  rfc3161TimeStampServer: http://timestamp.digicert.com
+  # electron-builder 26 将签名参数收进 signtoolOptions。没有证书时这些字段不会
+  # 强制签名，ALLOW_UNSIGNED_WINDOWS_RELEASE=1 的发布路径保持可用。
+  signtoolOptions:
+    publisherName: Spark Foundation
+    signingHashAlgorithms:
+      - sha256
+    rfc3161TimeStampServer: http://timestamp.digicert.com
 nsis:
   shortcutName: SparkWork
   uninstallDisplayName: SparkWork ${version}
@@ -71,7 +74,8 @@ linux:
     - zh-CN
     - zh-TW
   desktop:
-    Name: SparkWork
+    entry:
+      Name: SparkWork
 asar: true
 asarUnpack:
   - '**/*.node'

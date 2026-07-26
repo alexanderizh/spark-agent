@@ -75,7 +75,10 @@ export async function fetchSparkInstallManifest(
     })
   } catch (err) {
     if (err instanceof HttpError) {
-      throw new Error(`Spark install manifest download failed: ${err.statusCode ?? 'network'} ${err.message}`)
+      throw new Error(
+        `Spark install manifest download failed: ${err.statusCode ?? 'network'} ${err.message}`,
+        { cause: err },
+      )
     }
     throw err
   }

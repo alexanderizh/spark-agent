@@ -32,6 +32,9 @@ import {
   type TranscodeOpts,
 } from './FfmpegRunner.js'
 import { getSafeFileAllowedRoots } from './SafeFileProtocol.js'
+import { createLogger } from '@spark/shared'
+
+const log = createLogger('video-workbench')
 
 /** 视频产物落盘根目录：{userData}/.spark-artifacts/media/video-workbench/ */
 function getVideoArtifactDir(): string {
@@ -100,7 +103,7 @@ export async function handleVideoProcess(
     return { success: true, result }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[video-workbench] handleVideoProcess error:', message, err instanceof Error ? err.stack : '')
+    log.error(`handleVideoProcess failed: ${message}`)
     return { success: false, error: message }
   }
 }
@@ -110,7 +113,7 @@ async function dispatch(
   onProgress?: (p: FfmpegProgress) => void,
 ): Promise<unknown> {
   const { operation, input, params } = req
-  console.log('[video-workbench] dispatch:', { operation, input: input.slice(0, 100), paramKeys: Object.keys(params) })
+  log.debug(`dispatch operation=${operation} inputLength=${input.length} paramKeys=${Object.keys(params).join(',')}`)
 
   // ── 统一输入校验：路径白名单 + 数值范围 ──────────────────────────
   assertPathAllowed(input, 'read')

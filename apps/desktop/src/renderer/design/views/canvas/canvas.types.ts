@@ -238,6 +238,8 @@ export type CanvasImageAnnotationRef = {
 }
 
 export type CanvasNodeData = {
+  /** 当前画板内的稳定节点编号；新节点按现存节点最大编号 + 1 分配。 */
+  nodeSequence?: number
   text?: string
   format?: 'plain' | 'markdown' | 'prompt'
   url?: string

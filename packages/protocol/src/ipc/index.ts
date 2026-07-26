@@ -2067,25 +2067,6 @@ export interface SkillImportBatchLocalResponse {
   errors: string[]
 }
 
-export interface SkillExportRequest {
-  skillId: string
-  targetPath: string
-}
-
-export interface SkillExportResponse {
-  filePath: string
-}
-
-export interface SkillExportBatchRequest {
-  skillIds: string[]
-  targetPath: string
-}
-
-export interface SkillExportBatchResponse {
-  filePath: string
-  count: number
-}
-
 export interface SkillInstallToAppRequest {
   sourcePath: string
 }
@@ -5474,8 +5455,6 @@ export interface IpcChannelMap extends ProviderFilesIpcChannelMap {
   'skill:import-file': [SkillImportFileRequest, SkillImportFileResponse]
   'skill:import-directory': [SkillImportDirectoryRequest, SkillImportDirectoryResponse]
   'skill:import-batch-local': [SkillImportBatchLocalRequest, SkillImportBatchLocalResponse]
-  'skill:export': [SkillExportRequest, SkillExportResponse]
-  'skill:export-batch': [SkillExportBatchRequest, SkillExportBatchResponse]
   'skill:install-to-app': [SkillInstallToAppRequest, SkillInstallToAppResponse]
   'skill:uninstall-from-app': [SkillUninstallFromAppRequest, SkillUninstallFromAppResponse]
   'skill:link': [SkillLinkRequest, SkillLinkResponse]

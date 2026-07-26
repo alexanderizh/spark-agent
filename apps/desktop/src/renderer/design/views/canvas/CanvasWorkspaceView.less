@@ -196,6 +196,8 @@
   overflow: hidden;
   --canvas-side-panel-width: 360px;
   --canvas-agent-panel-width: 0px;
+  --canvas-side-panel-center-offset: 0px;
+  --canvas-agent-panel-center-offset: 0px;
   // 两列布局：主画布 | 右信息面板（Agent 面板改为 overlay 叠加，不占画布空间）
   grid-template-columns: minmax(0, 1fr) var(--canvas-side-panel-width);
   background:
@@ -427,6 +429,12 @@
   height: 100%;
   overflow: hidden;
   background: var(--bg-sunken);
+}
+
+// 平移只更新 React Flow 视口容器的 transform。交互期间临时建立合成层，避免媒体节点
+// 较多时 Chromium 反复栅格化整个节点层；结束后释放，避免超大画布长期占用合成内存。
+.canvas-stage[data-viewport-moving='true'] .react-flow__viewport {
+  will-change: transform;
 }
 
 .canvas-stage::before {
@@ -7982,7 +7990,11 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
 
 .canvas-bottom-dock {
   position: absolute;
-  left: 50%;
+  // 在 Agent 左面板与右侧详情面板之间居中，避免可见按钮落到面板下方而无法点击。
+  left: calc(
+    50% + var(--canvas-agent-panel-center-offset, 0px) -
+      var(--canvas-side-panel-center-offset, 0px)
+  );
   bottom: var(--canvas-float-bottom);
   transform: translateX(-50%);
   z-index: 20;

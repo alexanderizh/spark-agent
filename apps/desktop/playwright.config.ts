@@ -17,7 +17,7 @@ export default defineConfig({
   },
   fullyParallel: false,
   retries: 0,
-  reporter: 'html',
+  reporter: [['html', { open: 'never' }]],
   use: {
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   describeNetworkError,
   fetchJson,
+  fetchText,
   HttpError,
   isRetryableHttpError,
   sanitizeRequestUrl,
@@ -15,11 +16,12 @@ function makeResponse(
 ): Response {
   const text = typeof body === 'string' ? body : JSON.stringify(body)
   const buf = binary ? Buffer.from(body as string) : undefined
+  const bytes = buf ?? Buffer.from(text)
   return {
     ok,
     status,
     text: async () => text,
-    arrayBuffer: async () => (buf ?? Buffer.from(text)).buffer,
+    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
   } as Response
 }
 
@@ -37,6 +39,18 @@ describe('http-retry', () => {
       const fetchImpl = vi.fn(async () => makeResponse(true, 200, { hello: 'world' }))
       const result = await fetchJson<{ hello: string }>('https://example.com/api', { fetchImpl })
       expect(result).toEqual({ hello: 'world' })
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+    })
+
+    it('rejects malformed JSON on 2xx without retrying', async () => {
+      const fetchImpl = vi.fn(async () => makeResponse(true, 200, 'not-json'))
+      await expect(
+        fetchJson('https://example.com/protocol', { fetchImpl }),
+      ).rejects.toMatchObject({
+        name: 'HttpError',
+        code: 'invalid_json_response',
+        statusCode: 200,
+      })
       expect(fetchImpl).toHaveBeenCalledTimes(1)
     })
 
@@ -206,6 +220,24 @@ describe('http-retry', () => {
         }),
       ).rejects.toMatchObject({ statusCode: 418 })
       expect(fetchImpl).toHaveBeenCalledTimes(3)
+    })
+  })
+
+  describe('fetchText', () => {
+    it('uses the shared retry path without requiring JSON', async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(makeResponse(false, 503, 'temporarily unavailable', true))
+        .mockResolvedValueOnce(makeResponse(true, 200, '# Skill\n正文', true))
+
+      await expect(
+        fetchText('https://example.com/SKILL.md', {
+          fetchImpl,
+          maxRetries: 1,
+          retryBackoffMs: 1,
+        }),
+      ).resolves.toBe('# Skill\n正文')
+      expect(fetchImpl).toHaveBeenCalledTimes(2)
     })
   })
 

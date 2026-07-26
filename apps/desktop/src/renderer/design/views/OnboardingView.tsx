@@ -36,6 +36,8 @@ import type {
   SessionAgentAdapter,
   SessionPermissionMode,
 } from '@spark/protocol'
+import { writeOnboardingState } from './onboarding-state'
+export { clearOnboardingState, shouldShowOnboardingAsync } from './onboarding-state'
 
 export type OnboardingStep =
   | 'welcome'
@@ -82,92 +84,6 @@ type Action =
   | { type: 'set-agent'; agentId: string }
   | { type: 'set-template'; templateId: TemplateId }
   | { type: 'set-first-prompt'; firstPrompt: string }
-
-const ONBOARDING_COMPLETED_KEY = 'spark-agent:onboarding-completed'
-const ONBOARDING_DISMISSED_KEY = 'spark-agent:onboarding-dismissed'
-
-// Onboarding 完成标记的真实存储：主进程的 app_settings 表（SQLite）。
-// 不能只放 localStorage —— localStorage 按 origin 隔离，开发态
-// (http://localhost:5173) 与生产态 (file://) 分属不同 origin，互相读不到，
-// 会导致「开发态完成的引导，生产态每次启动还弹」（实测 leveldb 取证确认）。
-// 主进程 SQLite 作为 single source of truth；localStorage 仅保留给
-// 老版本数据一次性迁移，不再参与启动判定。
-const ONBOARDING_SETTINGS_CATEGORY = 'onboarding'
-const ONBOARDING_SETTINGS_KEY = 'data'
-
-type OnboardingStateRecord = {
-  completed: boolean
-  dismissed: boolean
-}
-
-/** 同步读取当前 origin 的 localStorage（仅用于老版本数据迁移）。 */
-function readLocalOnboarding(): OnboardingStateRecord {
-  if (typeof window === 'undefined') return { completed: false, dismissed: false }
-  return {
-    completed: window.localStorage.getItem(ONBOARDING_COMPLETED_KEY) === 'true',
-    dismissed: window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) === 'true',
-  }
-}
-
-/**
- * 把状态写到主进程 SQLite（权威存储）。
- * 不再同步刷 localStorage —— localStorage 按 origin 隔离，写它反而制造
- * dev/prod 数据不一致。启动判定只信主进程值。
- */
-function writeOnboardingState(state: OnboardingStateRecord): void {
-  window.spark
-    ?.invoke('settings:set', {
-      category: ONBOARDING_SETTINGS_CATEGORY,
-      key: ONBOARDING_SETTINGS_KEY,
-      value: state,
-    })
-    .catch(() => {
-      // IPC 失败不阻塞引导流程；下次启动会再读主进程，最坏情况是本次会话内
-      // 重复进入引导（远比"每次启动都弹"可接受）。
-    })
-}
-
-/**
- * 异步从主进程读取权威 onboarding 状态。
- *
- * 迁移：若主进程尚无记录（老用户首次升级到此版本），用当前 origin 的
- * localStorage 值初始化主进程，并把 localStorage 清掉，避免后续混淆。
- * 这样老用户无论从哪个 origin 登录，完成状态都会被正确迁移到主进程。
- */
-async function readRemoteOnboarding(): Promise<OnboardingStateRecord> {
-  try {
-    const res = await window.spark?.invoke('settings:get', {
-      category: ONBOARDING_SETTINGS_CATEGORY,
-      key: ONBOARDING_SETTINGS_KEY,
-    })
-    const value = res?.value
-    if (value != null && typeof value === 'object') {
-      const v = value as Partial<OnboardingStateRecord>
-      return {
-        completed: v.completed === true,
-        dismissed: v.dismissed === true,
-      }
-    }
-    // 主进程无记录 → 用当前 origin 的 localStorage 迁移过去（一次性）
-    const local = readLocalOnboarding()
-    if (local.completed || local.dismissed) {
-      await window.spark?.invoke('settings:set', {
-        category: ONBOARDING_SETTINGS_CATEGORY,
-        key: ONBOARDING_SETTINGS_KEY,
-        value: local,
-      })
-      // 迁移成功后清掉 localStorage，避免后续读取的歧义
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem(ONBOARDING_COMPLETED_KEY)
-        window.localStorage.removeItem(ONBOARDING_DISMISSED_KEY)
-      }
-    }
-    return local
-  } catch {
-    // IPC 完全不可用（极端情况）→ 回退到 localStorage，保证函数有返回值
-    return readLocalOnboarding()
-  }
-}
 
 const initialState: OnboardingState = {
   step: 'welcome',
@@ -510,37 +426,6 @@ function dismissOnboarding(): void {
   // 跳过（"稍后再说" / 中途离开）：completed 也置为 true（不再自动弹），
   // dismissed 同时置为 true 用于区分两种语义。
   writeOnboardingState({ completed: true, dismissed: true })
-}
-
-/**
- * 清空主进程权威记录（用于设置页"重新打开"）。
- * value:null 在主进程 settings:set handler 里会被解释为 delete。
- */
-export function clearOnboardingState(): void {
-  window.spark
-    ?.invoke('settings:set', {
-      category: ONBOARDING_SETTINGS_CATEGORY,
-      key: ONBOARDING_SETTINGS_KEY,
-      value: null,
-    })
-    .catch(() => {
-      /* ignore */
-    })
-}
-
-/**
- * 异步判定：是否需要展示新手引导。读主进程 SQLite 权威值，
- * 跨 origin / 跨环境一致。**App 启动期的唯一判定入口。**
- *
- * 历史教训：曾存在同步版本 shouldShowOnboarding()（读 localStorage），
- * 但 localStorage 按 origin 隔离 (file:// vs http://localhost:5173)，
- * dev/prod 互不可见，导致「生产环境每次重启都弹引导」。已删除同步版本，
- * 避免调用方误用。
- */
-export async function shouldShowOnboardingAsync(): Promise<boolean> {
-  if (typeof window === 'undefined') return false
-  const { completed, dismissed } = await readRemoteOnboarding()
-  return !completed && !dismissed
 }
 
 export function OnboardingView(): React.ReactElement {

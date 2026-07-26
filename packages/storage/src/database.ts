@@ -323,6 +323,12 @@ export class SparkDatabase {
  */
 export function createDatabase(dbPath: string, migrationsDir?: string): SparkDatabase {
   const db = new SparkDatabase(dbPath)
-  db.runMigrations(migrationsDir)
-  return db
+  try {
+    db.runMigrations(migrationsDir)
+    return db
+  } catch (error) {
+    // 迁移失败时必须先释放 WAL/文件锁，主进程才能安全恢复升级前快照。
+    db.close()
+    throw error
+  }
 }

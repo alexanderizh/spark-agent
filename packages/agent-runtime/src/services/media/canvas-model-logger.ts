@@ -19,7 +19,7 @@
 
 import { createLogger } from '@spark/shared'
 import type { Logger } from '@spark/shared'
-import { compactForLog } from './media-debug-log.js'
+import { compactForLog, redactPrivateContentForLog, sanitizeUrlForLog } from './media-debug-log.js'
 
 const log: Logger = createLogger('canvas:model')
 
@@ -71,12 +71,13 @@ export function logCanvasModelRequest(input: CanvasModelRequestLog): void {
     parts.push(field('capability', input.capability))
     parts.push(field('model', input.model))
     parts.push(`method=${JSON.stringify(input.method)}`)
-    parts.push(`url=${JSON.stringify(input.url)}`)
+    parts.push(`url=${JSON.stringify(sanitizeUrlForLog(input.url))}`)
     if (input.body !== undefined) {
       parts.push(`body=${stringifyBody(input.body)}`)
     }
     if (input.extra) {
-      for (const [key, value] of Object.entries(input.extra)) {
+      const safeExtra = redactPrivateContentForLog(input.extra) as Record<string, unknown>
+      for (const [key, value] of Object.entries(safeExtra)) {
         parts.push(`${key}=${formatValue(value)}`)
       }
     }
@@ -154,7 +155,14 @@ export function logCanvasBlockEnd(input: CanvasModelBlockLog): void {
 
 function stringifyBody(body: unknown): string {
   try {
-    return JSON.stringify(compactForLog(body))
+    if (typeof body === 'string') {
+      try {
+        return JSON.stringify(redactPrivateContentForLog(JSON.parse(body)))
+      } catch {
+        return JSON.stringify(`[REDACTED content chars=${body.length}]`)
+      }
+    }
+    return JSON.stringify(redactPrivateContentForLog(body))
   } catch {
     return '"[unserializable body]"'
   }

@@ -21,55 +21,57 @@ import type {
   PermissionApprovalRequest,
   SessionId,
   UpdateStatus,
-  UserQuestionRequest,
 } from '@spark/protocol'
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
 import { isModalOverlayVisible } from './design/hooks/useAppDialogKeyboard'
 import { useAppearanceEffects } from './design/hooks/useAppearance'
 import { useResolvedTheme } from './design/hooks/useResolvedTheme'
 
-import { ChatView } from './design/views/ChatView'
-import { ProjectView } from './design/views/ProjectView'
-import { WorkflowView } from './design/views/WorkflowView'
-import { AgentsView } from './design/views/AgentsView'
-import { BoardView } from './design/views/BoardView'
-import { CanvasProjectsView } from './design/views/canvas/CanvasProjectsView'
-import { ScheduledTasksView } from './design/views/ScheduledTasksView'
-import { McpView } from './design/views/McpView'
-import { SkillStoreView } from './design/views/SkillStoreView'
-import { SettingsView, ProfileEditModal } from './design/views/SettingsView'
-import { AccountCenterView } from './design/views/AccountCenterView'
-import ProvidersView from './design/views/ProvidersView'
-import { LobePreviewView } from './design/theme/LobePreviewView'
-import { BrowserPanelView } from './design/views/BrowserPanelView'
-import { OnboardingView, shouldShowOnboardingAsync } from './design/views/OnboardingView'
-import { PlatformQuotaGuideModal } from './design/views/platform-model/PlatformQuotaGuideModal'
+import { shouldShowOnboardingAsync } from './design/views/onboarding-state'
 import {
   isManagedPlatformQuotaError,
   PLATFORM_QUOTA_GUIDE_EVENT,
   type PlatformQuotaGuideReason,
 } from './design/views/platform-model/platform-quota-guide'
-import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
 import { MacWindowDragHeader } from './design/components/MacWindowDragHeader'
 import { WindowControls } from './design/components/WindowControls'
 import { SidebarSessionList } from './design/SidebarSessionList'
-import { GlobalQuickTaskModal } from './design/components/GlobalQuickTaskModal'
-import { HistoryImportModal } from './design/components/HistoryImportModal'
 import { Icons } from './design/Icons'
 import { useI18n, type TranslationKey } from './design/i18n'
 import './FloatingSidebar.less'
-import sparkLogo from './assets/spark-logo.png'
 import { Button, Dropdown, Modal, type MenuProps } from 'antd'
 import { Tooltip } from '@lobehub/ui'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { getSidebarAutoSyncAction } from './sidebarAutoSync'
 import { resolveSidebarActiveWorkspaceId } from './design/sidebar-session-routing'
+import sparkLogo from './assets/spark-logo.png'
 import {
   enqueueUserQuestions,
   removeUserQuestion,
   type UserQuestionQueues,
 } from './user-question-queue'
+
+const ChatView = React.lazy(async () => ({ default: (await import('./design/views/ChatView')).ChatView }))
+const ProjectView = React.lazy(async () => ({ default: (await import('./design/views/ProjectView')).ProjectView }))
+const WorkflowView = React.lazy(async () => ({ default: (await import('./design/views/WorkflowView')).WorkflowView }))
+const AgentsView = React.lazy(async () => ({ default: (await import('./design/views/AgentsView')).AgentsView }))
+const BoardView = React.lazy(async () => ({ default: (await import('./design/views/BoardView')).BoardView }))
+const CanvasProjectsView = React.lazy(async () => ({ default: (await import('./design/views/canvas/CanvasProjectsView')).CanvasProjectsView }))
+const ScheduledTasksView = React.lazy(async () => ({ default: (await import('./design/views/ScheduledTasksView')).ScheduledTasksView }))
+const McpView = React.lazy(async () => ({ default: (await import('./design/views/McpView')).McpView }))
+const SkillStoreView = React.lazy(async () => ({ default: (await import('./design/views/SkillStoreView')).SkillStoreView }))
+const SettingsView = React.lazy(async () => ({ default: (await import('./design/views/SettingsView')).SettingsView }))
+const AccountCenterView = React.lazy(async () => ({ default: (await import('./design/views/AccountCenterView')).AccountCenterView }))
+const ProvidersView = React.lazy(() => import('./design/views/ProvidersView'))
+const LobePreviewView = React.lazy(async () => ({ default: (await import('./design/theme/LobePreviewView')).LobePreviewView }))
+const BrowserPanelView = React.lazy(async () => ({ default: (await import('./design/views/BrowserPanelView')).BrowserPanelView }))
+const PlatformQuotaGuideModal = React.lazy(async () => ({ default: (await import('./design/views/platform-model/PlatformQuotaGuideModal')).PlatformQuotaGuideModal }))
+const CommandPalette = React.lazy(async () => ({ default: (await import('./design/views/overlays')).CommandPalette }))
+const PermissionModal = React.lazy(async () => ({ default: (await import('./design/views/overlays')).PermissionModal }))
+const OnboardingView = React.lazy(async () => ({ default: (await import('./design/views/OnboardingView')).OnboardingView }))
+const GlobalQuickTaskModal = React.lazy(async () => ({ default: (await import('./design/components/GlobalQuickTaskModal')).GlobalQuickTaskModal }))
+const HistoryImportModal = React.lazy(async () => ({ default: (await import('./design/components/HistoryImportModal')).HistoryImportModal }))
 
 const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
 const isPlatformDarwin = sparkPlatform === 'darwin'
@@ -79,9 +81,6 @@ const GITHUB_ISSUES_URL = 'https://github.com/alexanderizh/spark-agent/issues'
 const OFFICIAL_SITE_URL = 'https://spark.yiqibyte.com'
 const CONTACT_EMAIL = 'open@yiqibyte.com'
 const QQ_GROUP_URL = 'https://qm.qq.com/q/diT40hGAyQ'
-const SETTINGS_GENERAL_KEY = 'spark-settings-general'
-const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
-
 type RuntimeErrorDetails = {
   title: string
   summary: string
@@ -153,16 +152,8 @@ function getUpdateSourceLabel(source?: UpdateStatus['updateSource'] | UpdateStat
   return '尚未确定'
 }
 
-function SparkLogoMark() {
-  return (
-    <img
-      src={sparkLogo}
-      alt=""
-      aria-hidden="true"
-      draggable={false}
-      style={{ width: '100%', height: '100%', display: 'block' }}
-    />
-  )
+function ViewLoadingFallback() {
+  return <div className="view-loading" role="status" aria-label="正在加载页面" />
 }
 
 function CircularProgressGlyph({ progress }: { progress: number }) {
@@ -939,26 +930,6 @@ function Shell() {
     return () => window.removeEventListener('resize', handleResize)
   }, [setTweak])
 
-  // 启动期 onboarding 判定：只信主进程 SQLite 权威值（shouldShowOnboardingAsync）。
-  // 不能用同步的 shouldShowOnboarding()（读 localStorage）—— localStorage 按 origin
-  // 隔离 (file:// vs http://localhost:5173)，dev/prod 互不可见，曾导致「生产环境每次
-  // 重启都弹引导」。
-  // 注意：此 effect 在 Shell 挂载后才跑（GateAwareShell 的 splash 之后）。本地 SQLite
-  // 的 settings:get 通常极快（毫秒级），但若确需消除"先闪一下 chat 再切 onboarding"，
-  // 可把判定前移到 GateAwareShell 的 bootstrapping 阶段预取。当前未做此优化。
-  useEffect(() => {
-    let cancelled = false
-    void shouldShowOnboardingAsync().then((show) => {
-      if (cancelled) return
-      if (show && viewRef.current !== 'onboarding') {
-        setTweak('view', 'onboarding')
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [setTweak])
-
   useEffect(() => {
     viewRef.current = t.view
     chatModeRef.current = t.chatMode
@@ -1183,7 +1154,6 @@ function Shell() {
       t.showPalette ||
       t.showPerm ||
       t.showProviderEdit ||
-      t.showProfileEdit ||
       quickTaskOpen ||
       isModalOverlayVisible(),
   })
@@ -1424,7 +1394,9 @@ function Shell() {
             main-content-area shell. Render it directly so it covers the whole
             window instead of being inset inside the right content pane. */}
         {t.view === 'onboarding' ? (
-          <OnboardingView />
+          <React.Suspense fallback={<ViewLoadingFallback />}>
+            <OnboardingView />
+          </React.Suspense>
         ) : (
           <>
             {!isSettingsWorkspace && <FloatingSidebar onNewTask={handleNewBlankSession} />}
@@ -1478,15 +1450,21 @@ function Shell() {
                 <div className="main-with-browser">
                   <div className="main">
                     <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
-                      {viewElement}
+                      <React.Suspense fallback={<ViewLoadingFallback />}>
+                        {viewElement}
+                      </React.Suspense>
                     </div>
                   </div>
-                  <BrowserPanelView />
+                  <React.Suspense fallback={null}>
+                    <BrowserPanelView />
+                  </React.Suspense>
                 </div>
               ) : (
                 <div className="main">
                   <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
-                    {viewElement}
+                    <React.Suspense fallback={<ViewLoadingFallback />}>
+                      {viewElement}
+                    </React.Suspense>
                   </div>
                 </div>
               )}
@@ -1495,52 +1473,64 @@ function Shell() {
         )}
 
         {/* Overlays */}
-        <GlobalQuickTaskModal open={quickTaskOpen} onClose={() => setQuickTaskOpen(false)} />
-        <HistoryImportModal />
-        <PlatformQuotaGuideModal
-          open={quotaGuideReason != null}
-          reason={quotaGuideReason ?? 'low-balance'}
-          onClose={() => setQuotaGuideReason(null)}
-          onOpenAccount={() => {
-            setQuotaGuideReason(null)
-            setTweak('view', 'account-center')
-          }}
-          onConfigureProviders={() => {
-            setQuotaGuideReason(null)
-            setTweak('view', 'providers')
-          }}
-        />
+        {quickTaskOpen && (
+          <React.Suspense fallback={null}>
+            <GlobalQuickTaskModal open onClose={() => setQuickTaskOpen(false)} />
+          </React.Suspense>
+        )}
+        {sessionCtx.historyImportOpen && (
+          <React.Suspense fallback={null}>
+            <HistoryImportModal />
+          </React.Suspense>
+        )}
+        {quotaGuideReason != null && (
+          <React.Suspense fallback={null}>
+            <PlatformQuotaGuideModal
+              open
+              reason={quotaGuideReason}
+              onClose={() => setQuotaGuideReason(null)}
+              onOpenAccount={() => {
+                setQuotaGuideReason(null)
+                setTweak('view', 'account-center')
+              }}
+              onConfigureProviders={() => {
+                setQuotaGuideReason(null)
+                setTweak('view', 'providers')
+              }}
+            />
+          </React.Suspense>
+        )}
         {t.showPalette && (
-          <CommandPalette
-            onClose={() => setTweak('showPalette', false)}
-            onNavigate={handleNavigate}
-            onNewSession={handleNewBlankSession}
-            onQuickTask={handleQuickTask}
-            sessionContext={t.view === 'chat'}
-            onInsertCommand={(commandText) => {
-              setPaletteCommandRequest({ id: Date.now(), commandText })
-            }}
-            mode={t.paletteMode}
-            menuItems={paletteMenuItems}
-          />
+          <React.Suspense fallback={null}>
+            <CommandPalette
+              onClose={() => setTweak('showPalette', false)}
+              onNavigate={handleNavigate}
+              onNewSession={handleNewBlankSession}
+              onQuickTask={handleQuickTask}
+              sessionContext={t.view === 'chat'}
+              onInsertCommand={(commandText) => {
+                setPaletteCommandRequest({ id: Date.now(), commandText })
+              }}
+              mode={t.paletteMode}
+              menuItems={paletteMenuItems}
+            />
+          </React.Suspense>
         )}
         {t.showPerm && (
-          <PermissionModal
-            request={{
-              requestId: 'preview',
-              sessionId: 'preview-session',
-              toolName: 'write_file',
-              action: 'file_write',
-              toolInput: {},
-              riskLevel: 'medium',
-              persistentScopes: ['global'],
-            }}
-            onClose={() => setTweak('showPerm', false)}
-          />
-        )}
-
-        {t.showProfileEdit && (
-          <ProfileEditModal onClose={() => setTweak('showProfileEdit', false)} />
+          <React.Suspense fallback={null}>
+            <PermissionModal
+              request={{
+                requestId: 'preview',
+                sessionId: 'preview-session',
+                toolName: 'write_file',
+                action: 'file_write',
+                toolInput: {},
+                riskLevel: 'medium',
+                persistentScopes: ['global'],
+              }}
+              onClose={() => setTweak('showPerm', false)}
+            />
+          </React.Suspense>
         )}
 
         <Modal
@@ -1612,8 +1602,10 @@ function LobeThemeBridge({ children }: { children: React.ReactNode }) {
  */
 function GateAwareShell(): React.ReactElement {
   const auth = useAuth()
+  const { setTweak } = useApp()
   const { t: tr } = useI18n()
   const [appVersion, setAppVersion] = useState<string | null>(null)
+  const [onboardingResolved, setOnboardingResolved] = useState(false)
 
   // 启动 splash 期间顺手取一下版本号，渲染到 spinner 下方的小字。
   // 即便请求在 splash 消失前没回来，也只是不显示这行字，不影响主流程。
@@ -1634,7 +1626,21 @@ function GateAwareShell(): React.ReactElement {
     }
   }, [])
 
-  if (auth.bootstrapping) {
+  // 与认证启动并行读取 SQLite 权威状态。判定完成前维持原生风格 splash，
+  // 避免先加载/闪现 Chat，再切换到首次引导并浪费首屏 chunk。
+  useEffect(() => {
+    let cancelled = false
+    void shouldShowOnboardingAsync().then((show) => {
+      if (cancelled) return
+      if (show) setTweak('view', 'onboarding')
+      setOnboardingResolved(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [setTweak])
+
+  if (auth.bootstrapping || !onboardingResolved) {
     return (
       <div className="boot-splash" role="status" aria-label={tr('app.boot.starting')}>
         <div className="boot-splash-inner" aria-hidden="true">

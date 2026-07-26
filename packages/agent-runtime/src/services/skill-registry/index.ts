@@ -7,7 +7,7 @@
 import crypto from 'node:crypto'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
-import { fetchJson, HttpError } from '@spark/shared'
+import { fetchJson, fetchText, HttpError } from '@spark/shared'
 import type {
   RemoteSkillItem,
   SkillHubShowcaseSection,
@@ -17,7 +17,6 @@ import type {
 import type { SparkDatabase } from '@spark/storage'
 import { SkillRegistryRepository, SkillRepository } from '@spark/storage'
 import type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './adapter.js'
-import { MockSkillRegistryAdapter } from './mock-adapter.js'
 import { SkillHubAdapter } from './skillhub-adapter.js'
 import { SkillsMPAdapter } from './skillsmp-adapter.js'
 import {
@@ -62,6 +61,8 @@ const REGISTRY_ID_ALIASES: Record<string, string> = {
   内置精选: 'catalog',
   精选: 'catalog',
 }
+
+const SUPPORTED_REMOTE_REGISTRY_IDS = new Set(['skillhub', 'skillsmp'])
 
 /** 把 agent 传入的 registryId 归一化：去空白、转小写、映射常见显示名。 */
 export function normalizeRegistryId(raw: string): string {
@@ -116,6 +117,11 @@ export class SkillRegistryService {
     this.registryRepo.ensureDefaults()
     const registries = this.registryRepo.listEnabled()
     for (const reg of registries) {
+      if (!SUPPORTED_REMOTE_REGISTRY_IDS.has(reg.id)) {
+        // 旧数据库可能仍有实验市场（例如 mcp-market）。正式版不显示 Mock 数据，
+        // 但也不能让一条遗留配置阻断 SkillHub/内置目录初始化。
+        continue
+      }
       if (!this.adapters.has(reg.id)) {
         this.adapters.set(
           reg.id,
@@ -132,7 +138,9 @@ export class SkillRegistryService {
   // ─── Registry CRUD ─────────────────────────────────────────────────
 
   listRegistries(): SkillRegistry[] {
-    return this.registryRepo.list().map(toSkillRegistry)
+    return this.registryRepo.list()
+      .filter((row) => SUPPORTED_REMOTE_REGISTRY_IDS.has(row.id))
+      .map(toSkillRegistry)
   }
 
   updateRegistry(id: string, fields: { enabled?: boolean; configJson?: string }): SkillRegistry {
@@ -904,7 +912,9 @@ export class SkillRegistryService {
       })
     } catch (err) {
       if (err instanceof HttpError) {
-        throw new Error(`GitHub search failed: ${err.statusCode ?? 'network'} ${err.message}`)
+        throw new Error(`GitHub search failed: ${err.statusCode ?? 'network'} ${err.message}`, {
+          cause: err,
+        })
       }
       throw err
     }
@@ -959,12 +969,12 @@ export class SkillRegistryService {
     )
 
     // 解析 SKILL.md 元数据
-    const skillMdRes = await fetch(skillFile.downloadUrl, {
+    const skillMd = await fetchText(skillFile.downloadUrl, {
       headers: this.githubHeaders(),
-      signal: AbortSignal.timeout(15000),
+      timeoutMs: 15_000,
+      maxRetries: 2,
+      retryBackoffMs: 250,
     })
-    if (!skillMdRes.ok) throw new Error(`Failed to fetch SKILL.md: ${skillMdRes.status}`)
-    const skillMd = await skillMdRes.text()
     const meta = parseSkillFrontmatter(skillMd)
     const skillName = meta.name || repo.split('/')[1] || 'github-skill'
 
@@ -1046,7 +1056,9 @@ export class SkillRegistryService {
       return data.default_branch || 'main'
     } catch (err) {
       if (err instanceof HttpError) {
-        throw new Error(`Failed to resolve repo ${repo}: ${err.statusCode ?? 'network'}`)
+        throw new Error(`Failed to resolve repo ${repo}: ${err.statusCode ?? 'network'}`, {
+          cause: err,
+        })
       }
       throw err
     }
@@ -1071,7 +1083,9 @@ export class SkillRegistryService {
       })
     } catch (err) {
       if (err instanceof HttpError) {
-        throw new Error(`Failed to list ${repo}/${path}: ${err.statusCode ?? 'network'}`)
+        throw new Error(`Failed to list ${repo}/${path}: ${err.statusCode ?? 'network'}`, {
+          cause: err,
+        })
       }
       throw err
     }
@@ -1097,7 +1111,9 @@ export class SkillRegistryService {
       })
     } catch (err) {
       if (err instanceof HttpError) {
-        throw new Error(`Failed to download ${downloadUrl}: ${err.statusCode ?? 'network'}`)
+        throw new Error(`Failed to download ${downloadUrl}: ${err.statusCode ?? 'network'}`, {
+          cause: err,
+        })
       }
       throw err
     }
@@ -1162,8 +1178,7 @@ export class SkillRegistryService {
       case 'skillsmp':
         return new SkillsMPAdapter(config)
       default:
-        // 未实现的 registry 类型使用 Mock Adapter
-        return new MockSkillRegistryAdapter(config)
+        throw new Error(`Unsupported skill registry adapter: ${config.registryId}`)
     }
   }
 

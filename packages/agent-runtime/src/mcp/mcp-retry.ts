@@ -13,7 +13,7 @@
  * - 用户主动 disconnect 引发的错误不重试
  */
 
-import { isRetryableHttpError } from '@spark/shared'
+import { HttpError, isRetryableHttpError } from '@spark/shared'
 
 export interface McpRetryOptions {
   /** 最大重试次数（不含首次调用），默认 3。设 0 关闭重试。 */
@@ -47,7 +47,7 @@ const MAX_RETRY_BACKOFF_MS = 4_000
  *
  * 注意：默认保守 —— 不在前缀白名单里的工具，一律视为非幂等（不重试）。
  */
-const IDEMPOTENT_PREFIXES = [
+const IDEMPOTENT_VERBS = [
   'list',
   'search',
   'get',
@@ -60,7 +60,7 @@ const IDEMPOTENT_PREFIXES = [
   'lookup',
 ] as const
 
-const NON_IDEMPOTENT_PREFIXES = [
+const NON_IDEMPOTENT_VERBS = [
   'write',
   'edit',
   'create',
@@ -88,14 +88,53 @@ const NON_IDEMPOTENT_PREFIXES = [
   'cancel',
 ] as const
 
+const NON_IDEMPOTENT_TOKENS = new Set<string>([
+  ...NON_IDEMPOTENT_VERBS,
+  'writes',
+  'written',
+  'editing',
+  'edits',
+  'creates',
+  'created',
+  'creating',
+  'deletes',
+  'deleted',
+  'deleting',
+  'removes',
+  'removed',
+  'removing',
+  'updates',
+  'updated',
+  'updating',
+  'inserts',
+  'inserted',
+  'inserting',
+  'moves',
+  'moved',
+  'moving',
+  'renames',
+  'renamed',
+  'renaming',
+  'submits',
+  'submitted',
+  'sending',
+  'sends',
+])
+
+function splitToolName(toolName: string): string[] {
+  return toolName
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+}
+
 export function isMcpToolIdempotent(serverName: string, toolName: string): boolean {
-  const name = toolName.toLowerCase()
-  // 黑名单优先：即使是 list_X_but_actually_writes，命中黑名单也不重试
-  for (const prefix of NON_IDEMPOTENT_PREFIXES) {
-    if (name.startsWith(prefix)) return false
-  }
-  for (const prefix of IDEMPOTENT_PREFIXES) {
-    if (name.startsWith(prefix)) return true
+  void serverName
+  const tokens = splitToolName(toolName)
+  if (tokens.some((token) => NON_IDEMPOTENT_TOKENS.has(token))) return false
+  if (tokens[0] != null && IDEMPOTENT_VERBS.includes(tokens[0] as (typeof IDEMPOTENT_VERBS)[number])) {
+    return true
   }
   // 默认非幂等（保守）
   return false
@@ -109,14 +148,28 @@ export function isMcpToolIdempotent(serverName: string, toolName: string): boole
  */
 export function isRetryableMcpError(error: unknown): boolean {
   if (error == null) return false
-  // 已经断开的 transport 不重试（用户主动取消）
+  if (error instanceof HttpError) return isRetryableHttpError(error)
   if (error instanceof Error) {
-    const msg = error.message.toLowerCase()
-    if (msg.includes('not connected') || msg.includes('transport disconnected')) {
-      return false
-    }
+    const statusCode = (error as Error & { statusCode?: unknown }).statusCode
+    if (typeof statusCode === 'number') return isRetryableHttpError(error)
+    const message = error.message.toLowerCase()
+    return [
+      'fetch failed',
+      'connection lost',
+      'econnreset',
+      'econnrefused',
+      'eai_again',
+      'etimedout',
+      'socket',
+      'timed out',
+      'timeout',
+      'not connected',
+      'disconnected',
+      'stream closed',
+      'transport reconnected',
+    ].some((marker) => message.includes(marker))
   }
-  return isRetryableHttpError(error)
+  return false
 }
 
 function computeBackoff(attempt: number, base: number): number {

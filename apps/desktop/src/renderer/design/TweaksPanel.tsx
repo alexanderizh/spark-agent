@@ -234,9 +234,6 @@ export function TweaksPanel() {
         <Row label="Provider 编辑" inline>
           <Toggle value={t.showProviderEdit} onChange={(v) => setTweak('showProviderEdit', v)} />
         </Row>
-        <Row label="模型 Profile 编辑" inline>
-          <Toggle value={t.showProfileEdit} onChange={(v) => setTweak('showProfileEdit', v)} />
-        </Row>
       </div>
     </div>
   )

@@ -46,14 +46,30 @@ export function clipTextHeadTail(
   opts: { headRatio?: number; ellipsis?: string } = {},
 ): string {
   if (text.length === 0) return text
+  const normalizedBudget = Math.max(0, Math.floor(budgetTokens))
+  if (normalizedBudget === 0) return ''
   const ids = encode(text)
-  if (ids.length <= budgetTokens) return text
-  const headRatio = opts.headRatio ?? 0.6
-  const headTokens = Math.max(1, Math.floor(budgetTokens * headRatio))
-  const tailTokens = Math.max(1, budgetTokens - headTokens)
-  const ellipsis = opts.ellipsis ?? '\n…[truncated middle]…\n'
-  const head = decode(ids.slice(0, headTokens))
-  const tail = decode(ids.slice(ids.length - tailTokens))
-  return `${head}${ellipsis}${tail}`
-}
+  if (ids.length <= normalizedBudget) return text
 
+  const headRatio = Math.max(0, Math.min(1, opts.headRatio ?? 0.6))
+  const ellipsis = opts.ellipsis ?? '\n…[truncated middle]…\n'
+  const ellipsisIds = encode(ellipsis)
+
+  // 极小预算装不下占位符时优先保留正文开头，且仍严格遵守预算。
+  if (ellipsisIds.length >= normalizedBudget) {
+    return decode(ids.slice(0, normalizedBudget))
+  }
+
+  const contentBudget = normalizedBudget - ellipsisIds.length
+  let headTokens = Math.floor(contentBudget * headRatio)
+  if (contentBudget >= 2) {
+    headTokens = Math.max(1, Math.min(contentBudget - 1, headTokens))
+  }
+  const tailTokens = contentBudget - headTokens
+  const resultIds = [
+    ...ids.slice(0, headTokens),
+    ...ellipsisIds,
+    ...(tailTokens > 0 ? ids.slice(ids.length - tailTokens) : []),
+  ]
+  return decode(resultIds)
+}

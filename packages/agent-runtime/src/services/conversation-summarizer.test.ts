@@ -1,11 +1,9 @@
 /**
- * ConversationSummarizer unit tests
- *
- * Tests the extractive summarization logic and prompt generation.
+ * Conversation history recovery tests.
  */
 
 import { describe, it, expect } from 'vitest'
-import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
+import { buildConversationHistory } from './conversation-summarizer.js'
 import type { AgentEvent } from '@spark/protocol'
 
 function mockRows(events: AgentEvent[], eventType?: string): Array<{ event_json: string; id: string }> {
@@ -73,27 +71,15 @@ function promptSnapshot(turnId: string, userMessage: string, seq: number): Agent
   }
 }
 
-// We test the summarization logic without DB by directly testing the core functions.
-// Since the function needs EventRepository and SparkDatabase, we test the internal
-// logic via the exported buildConversationHistoryWithSummary.
-
-describe('ConversationSummarizer', () => {
-  describe('buildConversationHistoryWithSummary', () => {
+describe('ConversationHistory', () => {
+  describe('buildConversationHistory', () => {
     it('returns undefined when no events exist', () => {
-      // With a mock event repo that returns empty results
       const mockEventRepo = {
-        queryBySession: () => ({ events: [] }),
         queryDialogueEvents: () => [],
       } as any
-      const mockDb = {
-        raw: {
-          prepare: () => ({ get: () => null, run: () => {} }),
-        },
-      } as any
 
-      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 0)
+      const result = buildConversationHistory(mockEventRepo, 's1')
       expect(result.prompt).toBeUndefined()
-      expect(result.summarization).toBeUndefined()
     })
 
     it('aggregates multi-segment assistant text and ignores delta rows', () => {
@@ -119,14 +105,10 @@ describe('ConversationSummarizer', () => {
       ]
 
       const mockEventRepo = {
-        queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
         queryDialogueEvents: () => dialogueRows(events),
       } as any
-      const mockDb = {
-        raw: { prepare: () => ({ get: () => null, run: () => ({ changes: 0 }) }) },
-      } as any
 
-      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 5)
+      const result = buildConversationHistory(mockEventRepo, 's1')
       expect(result.prompt).toContain('first analysis paragraph')
       expect(result.prompt).toContain('second conclusion paragraph')
       // delta 噪声不得进入历史
@@ -136,7 +118,7 @@ describe('ConversationSummarizer', () => {
       expect(occurrences).toBe(1)
     })
 
-    it('produces a plain prompt for short conversations (below threshold)', () => {
+    it('produces a plain prompt without a Spark-generated summary', () => {
       const events: AgentEvent[] = [
         userMsg('t1', 'Hello, help me with something', 1),
         assistantMsg('t1', 'Sure, I can help!', 2),
@@ -145,19 +127,13 @@ describe('ConversationSummarizer', () => {
       ]
 
       const mockEventRepo = {
-        queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
         queryDialogueEvents: () => dialogueRows(events),
       } as any
-      const mockDb = {
-        raw: {
-          prepare: () => ({ get: () => null, run: () => ({ changes: 0 }) }),
-        },
-      } as any
 
-      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 4)
+      const result = buildConversationHistory(mockEventRepo, 's1')
       expect(result.prompt).toContain('[Session History]')
       expect(result.prompt).toContain('Fix the bug in parser')
-      expect(result.summarization).toBeUndefined()
+      expect(result.prompt).not.toContain('Earlier Summary')
     })
 
     it('preserves attachment ledger from turn snapshots during history recovery', () => {
@@ -172,23 +148,16 @@ describe('ConversationSummarizer', () => {
       ]
 
       const mockEventRepo = {
-        queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
         queryDialogueEvents: () => dialogueRows(events),
       } as any
-      const mockDb = {
-        raw: {
-          prepare: () => ({ get: () => null, run: () => ({ changes: 0 }) }),
-        },
-      } as any
 
-      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 3)
+      const result = buildConversationHistory(mockEventRepo, 's1')
       expect(result.prompt).toContain('Attachments:')
       expect(result.prompt).toContain('/tmp/第二季度工作述职报告.docx')
       expect(result.prompt).toContain('I extracted the document')
     })
 
-    it('produces a summarized prompt for long conversations', () => {
-      // Generate 40 turns with longer content to exceed thresholds
+    it('uses a larger supplied history budget for long conversations', () => {
       const events: AgentEvent[] = []
       for (let i = 0; i < 40; i++) {
         events.push(userMsg(`t${i}`, `User message ${i}: Please help me implement feature ${i} in the codebase. I need to add a new module that handles data processing and validation.`, events.length + 1))
@@ -196,69 +165,28 @@ describe('ConversationSummarizer', () => {
       }
 
       const mockEventRepo = {
-        queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
         queryDialogueEvents: () => dialogueRows(events),
       } as any
-      const mockDb = {
-        raw: {
-          prepare: (sql: string) => {
-            if (sql.includes('ORDER BY')) {
-              return { get: () => null }
-            }
-            return { get: () => null, run: () => ({ changes: 1 }) }
-          },
-        },
-      } as any
-
-      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 80)
-      expect(result.prompt).toContain('[Session History — Earlier Summary]')
-      expect(result.prompt).toContain('[Recent Exchanges]')
-      expect(result.summarization).toBeDefined()
-      expect(result.summarization!.summarizedEntryCount).toBeGreaterThan(0)
+      const small = buildConversationHistory(mockEventRepo, 's1', { historyTokenBudget: 1_000 })
+      const large = buildConversationHistory(mockEventRepo, 's1', { historyTokenBudget: 20_000 })
+      expect(large.prompt!.length).toBeGreaterThan(small.prompt!.length)
+      expect(large.prompt).toContain('User message 0')
+      expect(large.prompt).not.toContain('Earlier Summary')
     })
 
-    it('uses cached summary when available', () => {
-      // Generate 25 turns
-      const events: AgentEvent[] = []
-      for (let i = 0; i < 25; i++) {
-        events.push(userMsg(`t${i}`, `User message ${i}`, events.length + 1))
-        events.push(assistantMsg(`t${i}`, `Assistant response ${i}`, events.length + 1))
-      }
+    it('clips an oversized latest entry before applying the total budget', () => {
+      const longContent = `START-${'x'.repeat(100_000)}-END`
+      const events: AgentEvent[] = [userMsg('t1', longContent, 1)]
+      const mockEventRepo = { queryDialogueEvents: () => dialogueRows(events) } as any
 
-      const cachedSummary = {
-        id: 'summary-1',
-        session_id: 's1',
-        summary_turn_id: 'summary-50',
-        summary_text: 'Cached summary of earlier work.',
-        summarized_entry_count: 20,
-        summarized_from_seq: 0,
-        summarized_to_seq: 40,
-        estimated_tokens: 100,
-        model_id: null,
-        created_at: new Date().toISOString(),
-      }
-
-      const mockEventRepo = {
-        queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
-        queryDialogueEvents: () => dialogueRows(events),
-      } as any
-      const mockDb = {
-        raw: {
-          prepare: (sql: string) => {
-            if (sql.includes('ORDER BY')) {
-              return { get: () => cachedSummary }
-            }
-            return { get: () => null, run: () => ({ changes: 0 }) }
-          },
-        },
-      } as any
-
-      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 50)
-      expect(result.prompt).toContain('Cached summary of earlier work.')
-      expect(result.prompt).toContain('[Recent Exchanges]')
-      // No new summarization when using cache
-      expect(result.summarization).toBeUndefined()
-    })
+      const result = buildConversationHistory(mockEventRepo, 's1', {
+        historyTokenBudget: 1_000,
+        entryTokenBudget: 200,
+      })
+      expect(result.prompt).toContain('START-')
+      expect(result.prompt).toContain('-END')
+      expect(result.prompt).toContain('[truncated middle]')
+    }, 15_000)
 
     it('keeps dialogue history even when many tool events are newer', () => {
       const events: AgentEvent[] = [
@@ -282,22 +210,16 @@ describe('ConversationSummarizer', () => {
       events.push(userMsg('t2', 'What was the original requirement?', 500))
 
       const mockEventRepo = {
-        queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
         queryDialogueEvents: () => dialogueRows(events),
       } as any
-      const mockDb = {
-        raw: {
-          prepare: () => ({ get: () => null, run: () => ({ changes: 0 }) }),
-        },
-      } as any
 
-      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 500)
+      const result = buildConversationHistory(mockEventRepo, 's1')
       expect(result.prompt).toContain('Important original requirement')
       expect(result.prompt).toContain('What was the original requirement?')
     })
 
     it('W1.1b: skipForSdkResume=true 时返回 recent fallback 而非 undefined（细致审查修正）', () => {
-      // 场景：SDK resume 可用路径下，summarizer 仍提供 recent entries 作为
+      // 场景：SDK resume 可用路径下，history builder 仍提供 recent entries 作为
       // fresh session fallback 兜底（防止 SDK 内部 resume 失败时 agent 失忆）。
       const events: AgentEvent[] = [userMsg('t1', 'Topic A requirement', 1)]
       for (let i = 0; i < 25; i++) {
@@ -305,44 +227,27 @@ describe('ConversationSummarizer', () => {
         events.push(userMsg(`t${i + 2}`, `User follow-up ${i}`, 200 + i * 10))
       }
 
-      let dbAccessed = false
       const mockEventRepo = {
-        queryBySession: () => ({ events: [] }),
         queryDialogueEvents: () => dialogueRows(events),
       } as any
-      const mockDb = {
-        raw: {
-          prepare: () => {
-            dbAccessed = true
-            return { get: () => null, run: () => ({ changes: 0 }) }
-          },
-        },
-      } as any
 
-      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 500, {
+      const result = buildConversationHistory(mockEventRepo, 's1', {
         skipForSdkResume: true,
       })
       // 仍返回 prompt（recent fallback），不是 undefined
       expect(result.prompt).toBeDefined()
       expect(result.prompt).toContain('SDK resume fallback')
-      // 不返回 summarization stats（没有真正生成摘要）
-      expect(result.summarization).toBeUndefined()
-      // 不应触发 DB 查询/写入
-      expect(dbAccessed).toBe(false)
     })
 
     it('W1.1b: skipForSdkResume=true 且无对话事件时仍返回 undefined', () => {
       const mockEventRepo = {
-        queryBySession: () => ({ events: [] }),
         queryDialogueEvents: () => [],
       } as any
-      const mockDb = { raw: { prepare: () => ({ get: () => null, run: () => {} }) } } as any
 
-      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 0, {
+      const result = buildConversationHistory(mockEventRepo, 's1', {
         skipForSdkResume: true,
       })
       expect(result.prompt).toBeUndefined()
     })
   })
-
 })

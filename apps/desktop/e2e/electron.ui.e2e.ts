@@ -12,6 +12,18 @@ import {
 const DESKTOP_ROOT = resolve(__dirname, '..')
 const MAIN_ENTRY = join(DESKTOP_ROOT, 'out/main/index.js')
 
+async function dismissOnboarding(page: Page): Promise<void> {
+  const skip = page.getByRole('button', { name: '稍后再说', exact: true })
+  const sidebar = page.locator('.floating-sidebar')
+  await expect.poll(async () => {
+    if (await skip.isVisible().catch(() => false)) return 'onboarding'
+    if (await sidebar.isVisible().catch(() => false)) return 'shell'
+    return 'loading'
+  }).not.toBe('loading')
+  if (await skip.isVisible().catch(() => false)) await skip.click()
+  await expect(sidebar).toBeVisible()
+}
+
 test.describe.serial('SparkWork Electron release acceptance', () => {
   let electronApp: ElectronApplication
   let page: Page
@@ -32,6 +44,7 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
         SPARK_ALLOW_MULTIPLE_INSTANCES: '1',
         SPARK_SKIP_PROTOCOL_REGISTRATION: '1',
         SPARK_AUTH_KEYTAR_SERVICE: isolatedAuthService,
+        SPARK_DISABLE_DEVTOOLS: '1',
       },
       timeout: 20_000,
     })
@@ -47,19 +60,21 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
 
   test('launches the production shell with the primary sidebar', async () => {
     await expect(page).toHaveTitle('SparkWork')
-    await expect(page.locator('.floating-sidebar')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '欢迎使用 SparkWork', exact: true })).toBeVisible()
+    await dismissOnboarding(page)
     await expect(page.getByText('新建任务', { exact: true })).toBeVisible()
     expect(pageErrors).toEqual([])
   })
 
-  test('opens the infinite-canvas workflow library', async ({}, testInfo) => {
+  test('opens the infinite-canvas workflow library', async (_fixtures, testInfo) => {
+    await dismissOnboarding(page)
     await page.locator('.nav-item', { hasText: '无限画布' }).first().click()
     await expect(page.getByRole('heading', { name: '无限画布', exact: true })).toBeVisible()
 
     await page.getByRole('button', { name: '画布工作流库', exact: true }).click()
     await expect(page.getByRole('region', { name: '画布工作流库' })).toBeVisible()
     await expect(page.getByRole('navigation', { name: '工作流范围' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '新建工作流' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '新建画布工作流', exact: true })).toBeVisible()
     await page.screenshot({
       path: testInfo.outputPath('canvas-workflow-library.png'),
       fullPage: true,
@@ -67,7 +82,8 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
     expect(pageErrors).toEqual([])
   })
 
-  test('creates a canvas project and opens its workflow drawer', async ({}, testInfo) => {
+  test('creates a canvas project and opens its workflow drawer', async (_fixtures, testInfo) => {
+    await dismissOnboarding(page)
     await page.locator('.nav-item', { hasText: '无限画布' }).first().click()
     await page.getByRole('button', { name: '新建项目', exact: true }).click()
 
@@ -77,7 +93,11 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
     await createDialog
       .getByPlaceholder('这个项目要生成什么、有哪些素材和风格约束')
       .fill('验证项目内画布工作流入口与抽屉。')
+    const canvasWindowPromise = electronApp.waitForEvent('window')
     await createDialog.getByRole('button', { name: '创建并进入画布' }).click()
+    page = await canvasWindowPromise
+    page.on('pageerror', (error) => pageErrors.push(error))
+    await page.waitForLoadState('domcontentloaded')
 
     const workflowButton = page.getByRole('button', { name: '画布工作流', exact: true })
     await expect(workflowButton).toBeVisible({ timeout: 15_000 })

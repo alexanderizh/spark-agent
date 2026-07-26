@@ -6,7 +6,7 @@
  *   - 5xx/网络错误重试，4xx/JSON-RPC error 不重试
  *   - 指数退避 500ms → 1s → 2s（上限 4s）
  *   - maxRetries 严格按次数
- *   - 用户主动断开（not connected）不重试
+ *   - transport 断线在 client 完成重连后可重试；业务/解析错误不重试
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
@@ -40,13 +40,13 @@ describe('mcp-retry', () => {
       expect(isMcpToolIdempotent('server', 'submit_form')).toBe(false)
     })
 
-    it('blacklist takes precedence over idempotent prefixes (list_X_but_writes)', () => {
-      // "list_then_delete" starts with "list" but the blacklisted "delete" appears later
-      // → since "list" prefix is checked AFTER blacklist, and "list_then_delete" doesn't
-      // start with any blacklisted prefix, it returns true.
-      // However, this test verifies the documented contract: prefix-based check.
+    it('rejects compound read-looking names that contain a mutation verb', () => {
       expect(isMcpToolIdempotent('server', 'list_files')).toBe(true)
       expect(isMcpToolIdempotent('server', 'delete_then_list')).toBe(false)
+      expect(isMcpToolIdempotent('server', 'get_or_create')).toBe(false)
+      expect(isMcpToolIdempotent('server', 'find_and_update')).toBe(false)
+      expect(isMcpToolIdempotent('server', 'listFilesThenDelete')).toBe(false)
+      expect(isMcpToolIdempotent('server', 'list_files_but_actually_writes')).toBe(false)
     })
 
     it('defaults to non-idempotent for unknown verbs', () => {
@@ -72,9 +72,14 @@ describe('mcp-retry', () => {
       expect(isRetryableMcpError(err)).toBe(true)
     })
 
-    it('does NOT retry when transport is explicitly disconnected', () => {
-      expect(isRetryableMcpError(new Error('MCP client not connected: server'))).toBe(false)
-      expect(isRetryableMcpError(new Error('Transport disconnected'))).toBe(false)
+    it('allows retry after a reconnectable transport disconnection', () => {
+      expect(isRetryableMcpError(new Error('MCP client not connected: server'))).toBe(true)
+      expect(isRetryableMcpError(new Error('Transport disconnected'))).toBe(true)
+    })
+
+    it('does not retry deterministic plain errors', () => {
+      expect(isRetryableMcpError(new Error('invalid tool arguments'))).toBe(false)
+      expect(isRetryableMcpError(new Error('failed to parse MCP response'))).toBe(false)
     })
   })
 

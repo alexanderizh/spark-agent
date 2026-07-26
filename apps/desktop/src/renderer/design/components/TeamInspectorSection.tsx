@@ -139,18 +139,6 @@ export function TeamInspectorSection({
         maxH = Math.max(140, Math.floor(bottomSpace - gap))
       }
 
-      // 【debug-invite-overflow】方向判断证据，定位完会移除
-      console.log('[debug-invite-overflow]', {
-        btnTop: Math.round(rect.top),
-        btnBottom: Math.round(rect.bottom),
-        cTop: Math.round(cTop),
-        cBottom: Math.round(cBottom),
-        topSpace: Math.round(topSpace),
-        bottomSpace: Math.round(bottomSpace),
-        placement,
-        maxH,
-      })
-
       setInvitePlacement(placement)
       setInviteMaxH(maxH)
     }

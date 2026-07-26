@@ -360,9 +360,6 @@ export function RegisterForm({ flowSwitch }: { flowSwitch?: React.ReactNode }): 
         </Form.Item>
 
         <div className={`auth-footer-row ${flowSwitch ? 'auth-footer-row--split' : ''}`}>
-          <div className="auth-tos-line">
-            注册即同意 <a href="#">服务协议</a> 与 <a href="#">隐私政策</a>
-          </div>
           {flowSwitch}
         </div>
       </Form>

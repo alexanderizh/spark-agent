@@ -15,6 +15,7 @@
  */
 
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { createWriteStream, existsSync, readFileSync } from 'node:fs'
 import { mkdir, rename, rm, stat } from 'node:fs/promises'
@@ -85,6 +86,8 @@ interface GithubReleaseAsset {
   browser_download_url: string
   size?: number
   content_type?: string
+  /** GitHub 资产摘要（例如 sha256:<hex>），或版本中心映射出的 sha512:<base64>。 */
+  digest?: string | null
 }
 
 interface GithubRelease {
@@ -109,6 +112,7 @@ interface VersionCenterRelease {
   arch: 'arm64' | 'x64' | 'universal'
   fileName: string
   fileSize: number
+  sha512?: string | null
   publicUrl: string
   releaseNotes: string | null
   publishedAt: string | null
@@ -311,6 +315,7 @@ function toGithubLikeRelease(release: VersionCenterRelease): GithubRelease {
         name: release.fileName,
         browser_download_url: release.publicUrl,
         size: release.fileSize,
+        digest: release.sha512 == null ? null : `sha512:${release.sha512}`,
       },
     ],
   }
@@ -327,6 +332,48 @@ function normalizeUpdateErrorMessage(message: string): string {
     return '当前仓库还没有可用的正式发布版本。'
   }
   return message
+}
+
+interface ParsedAssetDigest {
+  algorithm: 'sha256' | 'sha512'
+  expected: string
+  encoding: 'hex' | 'base64'
+}
+
+function parseAssetDigest(digest: string | null | undefined): ParsedAssetDigest | null {
+  if (digest == null || digest.trim().length === 0) return null
+  const separator = digest.indexOf(':')
+  if (separator <= 0) throw new Error('更新包完整性摘要格式无效')
+  const algorithm = digest.slice(0, separator).toLowerCase()
+  const expected = digest.slice(separator + 1).trim()
+  if (algorithm !== 'sha256' && algorithm !== 'sha512') {
+    throw new Error(`不支持的更新包摘要算法：${algorithm}`)
+  }
+  if (expected.length === 0) throw new Error('更新包完整性摘要为空')
+  const expectedHexLength = algorithm === 'sha256' ? 64 : 128
+  return {
+    algorithm,
+    expected,
+    encoding: expected.length === expectedHexLength && /^[a-f\d]+$/i.test(expected) ? 'hex' : 'base64',
+  }
+}
+
+export function verifyDownloadedAsset(
+  transferred: number,
+  expectedSize: number | undefined,
+  digest: ParsedAssetDigest | null,
+  actualDigest: string | null,
+): void {
+  if (expectedSize != null && expectedSize > 0 && transferred !== expectedSize) {
+    throw new Error(`更新包大小校验失败：应为 ${expectedSize} 字节，实际为 ${transferred} 字节`)
+  }
+  if (digest != null) {
+    const actual = digest.encoding === 'hex' ? actualDigest?.toLowerCase() : actualDigest
+    const expected = digest.encoding === 'hex' ? digest.expected.toLowerCase() : digest.expected
+    if (actual !== expected) {
+      throw new Error(`更新包 ${digest.algorithm.toUpperCase()} 完整性校验失败`)
+    }
+  }
 }
 
 function formatRetryAtLabel(timestamp: number): string {
@@ -673,10 +720,20 @@ export class UpdateService {
         throw new Error(`下载更新失败：服务器返回 ${response.status}`)
       }
 
-      const total = Number.parseInt(
-        response.headers.get('content-length') ?? `${this.releaseAsset.asset.size ?? 0}`,
-        10,
-      )
+      const declaredAssetSize = this.releaseAsset.asset.size
+      const responseSize = Number.parseInt(response.headers.get('content-length') ?? '0', 10)
+      if (declaredAssetSize != null && declaredAssetSize > 0 && responseSize > 0 && responseSize !== declaredAssetSize) {
+        throw new Error(`更新包大小声明不一致：发布信息为 ${declaredAssetSize} 字节，服务器返回 ${responseSize} 字节`)
+      }
+      const expectedSize = declaredAssetSize != null && declaredAssetSize > 0
+        ? declaredAssetSize
+        : responseSize > 0 ? responseSize : undefined
+      const total = expectedSize ?? 0
+      const expectedDigest = parseAssetDigest(this.releaseAsset.asset.digest)
+      const hasher = expectedDigest == null ? null : createHash(expectedDigest.algorithm)
+      if (expectedDigest == null) {
+        log.warn(`Update asset ${this.releaseAsset.asset.name} has no integrity digest; keeping compatibility with legacy releases`)
+      }
       const writer = createWriteStream(tempPath)
       const reader = response.body.getReader()
       let transferred = 0
@@ -687,7 +744,9 @@ export class UpdateService {
           if (done) break
           if (value == null) continue
           transferred += value.byteLength
-          if (!writer.write(Buffer.from(value))) {
+          const chunk = Buffer.from(value)
+          hasher?.update(chunk)
+          if (!writer.write(chunk)) {
             await once(writer, 'drain')
           }
           const progressInfo: UpdateProgressInfo = {
@@ -709,6 +768,10 @@ export class UpdateService {
         ])
         writer.end()
         await finishPromise
+        const actualDigest = expectedDigest == null
+          ? null
+          : hasher!.digest(expectedDigest.encoding)
+        verifyDownloadedAsset(transferred, expectedSize, expectedDigest, actualDigest)
       } catch (error) {
         writer.destroy()
         await rm(tempPath, { force: true }).catch(() => undefined)

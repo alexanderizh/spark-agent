@@ -20,12 +20,14 @@
  * 配置来自环境变量（由 session.service 注入）：
  *   SPARK_PLATFORM_BRIDGE_PORT  PlatformBridgeService 端口（必需，与 platform-management MCP 同源）
  *   SPARK_MEMORY_SID            本对话对应的 spark 会话 id（必需，用于解析 scope 集合）
+ *   SPARK_MEMORY_AGENT_ID       可选；Team Member 使用自身 agent scope 覆盖会话 Host
  */
 import readline from 'node:readline'
 
 const env = process.env
 const PORT = Number.parseInt(env.SPARK_PLATFORM_BRIDGE_PORT || '', 10) || 0
 const SID = (env.SPARK_MEMORY_SID || '').trim()
+const AGENT_ID = (env.SPARK_MEMORY_AGENT_ID || '').trim()
 const BASE = PORT ? `http://127.0.0.1:${PORT}` : ''
 
 // ── JSON-RPC framing ───────────────────────────────────────────────────────
@@ -65,6 +67,7 @@ async function searchMemory(args) {
   if (!query) throw new Error('query is required')
   const params = {
     sessionId: SID,
+    ...(AGENT_ID ? { agentId: AGENT_ID } : {}),
     query,
     ...(args.type != null ? { type: args.type } : {}),
     ...(typeof args.limit === 'number' ? { limit: args.limit } : {}),

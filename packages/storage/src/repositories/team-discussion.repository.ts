@@ -22,6 +22,7 @@
 
 import { BaseRepository } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
+import { clipTextHeadTail, estimateTokens } from '@spark/shared'
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────
 
@@ -119,15 +120,9 @@ export const DEFAULT_THREAD_TOKEN_BUDGET = 6000
  * 关键修复：旧渲染循环遇到放不下的消息直接 `break` 整体放弃——若最新一条本身
  * 超预算，成员就只剩截断提示，看不到任何正文。现在每条先截到这个预览长度，
  * 全文改由 team_thread_read 工具按需读取，既保证「都能看到大意」又不撑爆上下文。
- * ~1800 字符 ≈ 600 token，足够看懂一条消息在说什么。
+ * 1800 字符足够看懂一条消息在说什么；最终总预算由共享 tokenizer 严格约束。
  */
 export const THREAD_MESSAGE_PREVIEW_CHARS = 1800
-
-/**
- * 粗略 token 估算系数：英文 ~4 chars/token，中文按 2 chars/token 估算更准；
- * 取折中 3 chars/token 兼顾中英文，宁可少给也别给超。
- */
-const CHARS_PER_TOKEN = 3
 
 // ─── Repository ──────────────────────────────────────────────────────────────
 
@@ -388,7 +383,7 @@ export class TeamDiscussionRepository extends BaseRepository {
    *  2. 余下预算留给最近 N 条非 summary 消息（倒序累加，超出预算即停）；
    *  3. 若发生截断，前面加一行 `[older messages truncated]` 提示。
    *
-   * @param tokenBudget 渲染上限（粗估，chars / 3）。默认 1500。
+   * @param tokenBudget 渲染上限（使用 @spark/shared tokenizer 估算）。默认 6000。
    * @returns 已渲染好的文本块；空线程返回空字符串（caller 自行决定要不要拼）。
    */
   renderThreadForPrompt(
@@ -399,7 +394,7 @@ export class TeamDiscussionRepository extends BaseRepository {
     const messages = this.listMessages(discussionId, 500)
     if (messages.length === 0) return ''
 
-    const charBudget = Math.max(tokenBudget, 1) * CHARS_PER_TOKEN
+    const normalizedTokenBudget = Math.max(Math.floor(tokenBudget), 1)
 
     const summaries: TeamThreadMessageRow[] = []
     const nonSummaries: TeamThreadMessageRow[] = []
@@ -411,23 +406,24 @@ export class TeamDiscussionRepository extends BaseRepository {
     }
 
     const rendered: string[] = []
-    let used = 0
+    let usedTokens = 0
     let truncated = false
 
     // 先把所有 summary 渲染（轮次小结是低成本的"知道别人聊到哪了"锚点）
     for (const s of summaries) {
       const line = `# Round ${s.round_index} summary: ${truncateForPreview(s.content)}`
-      if (used + line.length > charBudget) {
+      const lineTokens = estimateTokens(line)
+      if (usedTokens + lineTokens > normalizedTokenBudget) {
         // summary 自己就超预算的情况：尽量保留截断版
         if (rendered.length === 0) {
-          const remain = Math.max(charBudget - used - 1, 0)
-          rendered.push(line.slice(0, remain))
-          used += remain
+          const remain = Math.max(normalizedTokenBudget - usedTokens, 0)
+          if (remain > 0) rendered.push(clipTextHeadTail(line, remain))
         }
+        truncated = true
         break
       }
       rendered.push(line)
-      used += line.length + 1
+      usedTokens += lineTokens
     }
 
     // 余下预算留给最近 N 条非 summary 消息（倒序累加）。每条已被 formatThreadMessageLine
@@ -437,18 +433,19 @@ export class TeamDiscussionRepository extends BaseRepository {
     for (let i = nonSummaries.length - 1; i >= 0; i--) {
       const m = nonSummaries[i]!
       const line = formatThreadMessageLine(m)
-      if (used + line.length > charBudget) {
+      const lineTokens = estimateTokens(line)
+      if (usedTokens + lineTokens > normalizedTokenBudget) {
         // 预算不足以再放整条：若目前一条正文都还没放进去，至少塞一个硬截断版，
         // 确保成员总能看到「最新消息」的开头，而不是只剩截断提示。
         if (recent.length === 0) {
-          const remain = Math.max(charBudget - used - 1, 0)
-          if (remain > 0) recent.unshift(line.slice(0, remain))
+          const remain = Math.max(normalizedTokenBudget - usedTokens, 0)
+          if (remain > 0) recent.unshift(clipTextHeadTail(line, remain, { headRatio: 0.85 }))
         }
         truncated = true
         break
       }
       recent.unshift(line)
-      used += line.length + 1
+      usedTokens += lineTokens
     }
     if (recent.length < nonSummaries.length) truncated = true
 
@@ -462,8 +459,13 @@ export class TeamDiscussionRepository extends BaseRepository {
       }
     }
 
-    // 去掉末尾空行
-    return parts.filter((s) => s.length > 0).join('\n')
+    // Notes 过去绕开预算无上限追加。最终统一做一次严格 token 裁剪：头部保留 summaries，
+    // 尾部保留最新消息/定向 notes，且省略标记本身也计入预算。
+    return clipTextHeadTail(
+      parts.filter((s) => s.length > 0).join('\n'),
+      normalizedTokenBudget,
+      { headRatio: 0.55 },
+    )
   }
 
   /** 删除某 session 的所有讨论（含线程消息，由 ON DELETE CASCADE 级联）。 */
@@ -497,7 +499,10 @@ function formatThreadMessageLine(m: TeamThreadMessageRow, prefix = ''): string {
  */
 function truncateForPreview(content: string): string {
   if (content.length <= THREAD_MESSAGE_PREVIEW_CHARS) return content
-  const head = content.slice(0, THREAD_MESSAGE_PREVIEW_CHARS).trimEnd()
-  const omitted = content.length - head.length
-  return `${head}…〔省略 ${omitted} 字，用 team_thread_read(messageId) 读全文〕`
+  const omitted = content.length - THREAD_MESSAGE_PREVIEW_CHARS
+  const marker = `\n…〔省略约 ${omitted} 字，用 team_thread_read(messageId) 读全文〕…\n`
+  const contentBudget = Math.max(THREAD_MESSAGE_PREVIEW_CHARS - marker.length, 2)
+  const headChars = Math.max(1, Math.floor(contentBudget * 0.7))
+  const tailChars = Math.max(1, contentBudget - headChars)
+  return `${content.slice(0, headChars).trimEnd()}${marker}${content.slice(-tailChars).trimStart()}`
 }

@@ -60,7 +60,6 @@ export type Tweaks = {
   paletteMode: 'command' | 'global'
   showPerm: boolean
   showProviderEdit: boolean
-  showProfileEdit: boolean
   /** Browser automation side panel visibility (chat view only). Default: closed. */
   browserPanelOpen: boolean
   /** Browser panel width in pixels, persisted across sessions. */
@@ -85,7 +84,6 @@ export const DEFAULT_TWEAKS: Tweaks = {
   paletteMode: 'command',
   showPerm: false,
   showProviderEdit: false,
-  showProfileEdit: false,
   browserPanelOpen: false,
   browserPanelWidth: 380,
   floatingSidebarWidth: 244,

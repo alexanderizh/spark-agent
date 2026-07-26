@@ -1367,6 +1367,16 @@ describe('spark_media MCP server', () => {
       },
     })
 
+    const listedTools = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 59,
+      method: 'tools/list',
+      params: {},
+    })
+    expect(listedTools.result.tools.map((tool: { name: string }) => tool.name)).toEqual(
+      expect.arrayContaining(['upload_file', 'get_file', 'list_files', 'delete_file']),
+    )
+
     const uploaded = await callMcp(child, {
       jsonrpc: '2.0',
       id: 60,
@@ -1453,10 +1463,9 @@ describe('spark_media MCP server', () => {
     }>
     const image = tools.find((tool) => tool.name === 'generate_image')
     const video = tools.find((tool) => tool.name === 'generate_video')
-    const uploadFile = tools.find((tool) => tool.name === 'upload_file')
     expect(image).toBeDefined()
     expect(video).toBeDefined()
-    expect(uploadFile).toBeDefined()
+    expect(tools.find((tool) => tool.name === 'upload_file')).toBeUndefined()
     const imageProps = image!.inputSchema.properties
     const videoProps = video!.inputSchema.properties
     expect(imageProps.resolution).toBeDefined()

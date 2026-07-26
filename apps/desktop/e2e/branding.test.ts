@@ -20,7 +20,7 @@ interface BuilderConfig {
     }
   }
   nsis?: { shortcutName?: string; uninstallDisplayName?: string }
-  linux?: { desktop?: { Name?: string } }
+  linux?: { desktop?: { entry?: { Name?: string } } }
 }
 
 describe('desktop branding boundaries', () => {
@@ -37,7 +37,7 @@ describe('desktop branding boundaries', () => {
     expect(config.mac?.extendInfo?.NSMicrophoneUsageDescription).toContain('麦克风')
     expect(config.nsis?.shortcutName).toBe('SparkWork')
     expect(config.nsis?.uninstallDisplayName).toBe('SparkWork ${version}')
-    expect(config.linux?.desktop?.Name).toBe('SparkWork')
+    expect(config.linux?.desktop?.entry?.Name).toBe('SparkWork')
   })
 
   it('keeps the macOS microphone declarations required by Hardened Runtime', () => {

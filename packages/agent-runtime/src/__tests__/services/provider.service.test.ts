@@ -929,7 +929,7 @@ describe('ProviderService', () => {
       updated_at: '',
     })
     vi.mocked(keystore.getSecret).mockResolvedValue('sk-test' as never)
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '{}' })
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await service.healthCheck('id-anthropic-compatible')
@@ -954,7 +954,7 @@ describe('ProviderService', () => {
   })
 
   it('testConnection validates OpenAI-compatible Chat Completions providers with the selected model', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '{}' })
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await service.testConnection({
@@ -984,8 +984,31 @@ describe('ProviderService', () => {
     )
   })
 
+  it('testConnection retries a transient provider 5xx response', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        text: async () => JSON.stringify({ error: 'temporarily unavailable' }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => '{}' })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await service.testConnection({
+      provider: 'openai-compatible',
+      apiEndpoint: 'https://api.deepseek.com',
+      defaultModel: 'deepseek-v4-flash',
+      codexApiKind: 'chat',
+      apiKey: 'sk-test',
+    })
+
+    expect(result.healthy).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('testConnection preserves versioned coding base URLs for Chat Completions providers', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '{}' })
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await service.testConnection({
@@ -1004,7 +1027,7 @@ describe('ProviderService', () => {
   })
 
   it('testConnection validates OpenAI Responses providers with the selected model', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '{}' })
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await service.testConnection({
@@ -1035,7 +1058,7 @@ describe('ProviderService', () => {
   })
 
   it('testConnection preserves versioned coding base URLs for Responses providers', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '{}' })
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await service.testConnection({

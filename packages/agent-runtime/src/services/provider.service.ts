@@ -948,35 +948,20 @@ export class ProviderService {
     const start = Date.now()
 
     try {
-      const res = providerType === 'anthropic'
-        ? await fetchAnthropicMessagesPing(endpoint, apiKey, defaultModel)
-        : await fetchOpenAiCompatiblePing(
+      await (providerType === 'anthropic'
+        ? fetchAnthropicMessagesPing(endpoint, apiKey, defaultModel)
+        : fetchOpenAiCompatiblePing(
           endpoint ?? getDefaultEndpointBase(providerType),
           apiKey,
           defaultModel,
           params.codexApiKind ?? 'chat',
-        )
+        ))
       const latencyMs = Date.now() - start
-      if (res.ok || res.status === 401) {
-        // 401 means key is wrong but endpoint is reachable
-        if (res.ok) {
-          log.info(
-            `testConnection success, provider=${providerType}, id=${params.id ?? '(draft)'}, `
-            + `latencyMs=${latencyMs}, status=${res.status}`,
-          )
-          return { healthy: true, latencyMs }
-        }
-        log.warn(
-          `testConnection auth-failed, provider=${providerType}, id=${params.id ?? '(draft)'}, `
-          + `latencyMs=${latencyMs}, status=${res.status}`,
-        )
-        return { healthy: false, latencyMs, errorMessage: `HTTP ${res.status}` }
-      }
-      log.warn(
-        `testConnection failed, provider=${providerType}, id=${params.id ?? '(draft)'}, `
-        + `latencyMs=${latencyMs}, status=${res.status}`,
+      log.info(
+        `testConnection success, provider=${providerType}, id=${params.id ?? '(draft)'}, `
+        + `latencyMs=${latencyMs}`,
       )
-      return { healthy: false, latencyMs, errorMessage: `HTTP ${res.status}` }
+      return { healthy: true, latencyMs }
     } catch (err) {
       const latencyMs = Date.now() - start
       log.warn(
@@ -1053,7 +1038,7 @@ export class ProviderService {
           lastNotFound = `HTTP ${status}: ${body}`
           continue
         }
-        throw new Error(`HTTP ${status}: ${body}`)
+        throw new Error(`HTTP ${status}: ${body}`, { cause: err })
       }
     }
     log.warn(
@@ -1307,8 +1292,8 @@ function fetchAnthropicMessagesPing(
   apiEndpoint: string | undefined,
   apiKey: string,
   model: string,
-): Promise<Response> {
-  return fetch(getAnthropicMessagesEndpoint(apiEndpoint), {
+): Promise<unknown> {
+  return fetchJson(getAnthropicMessagesEndpoint(apiEndpoint), {
     method: 'POST',
     headers: {
       'x-api-key': apiKey,
@@ -1320,7 +1305,10 @@ function fetchAnthropicMessagesPing(
       max_tokens: 1,
       messages: [{ role: 'user', content: 'ping' }],
     }),
-    signal: AbortSignal.timeout(PROVIDER_CONNECTION_TIMEOUT_MS),
+    timeoutMs: PROVIDER_CONNECTION_TIMEOUT_MS,
+    // 这是无副作用的健康检查 POST；瞬时网络/5xx 可安全重试。
+    maxRetries: 2,
+    retryBackoffMs: 250,
   })
 }
 
@@ -1329,18 +1317,20 @@ function fetchOpenAiCompatiblePing(
   apiKey: string,
   model: string,
   codexApiKind: 'chat' | 'responses' | 'embedding',
-): Promise<Response> {
+): Promise<unknown> {
   // embedding 模型（如智谱 embedding-3、OpenAI text-embedding-3）不支持 chat/responses，
   // 必须用 /embeddings 端点 ping，否则会被服务端拒绝为 4xx，导致健康检查误判为不健康。
   if (codexApiKind === 'embedding') {
-    return fetch(getOpenAiEmbeddingsEndpoint(apiEndpoint), {
+    return fetchJson(getOpenAiEmbeddingsEndpoint(apiEndpoint), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'content-type': 'application/json',
       },
       body: JSON.stringify({ model, input: 'ping' }),
-      signal: AbortSignal.timeout(PROVIDER_CONNECTION_TIMEOUT_MS),
+      timeoutMs: PROVIDER_CONNECTION_TIMEOUT_MS,
+      maxRetries: 2,
+      retryBackoffMs: 250,
     })
   }
   const endpoint = codexApiKind === 'responses'
@@ -1360,14 +1350,16 @@ function fetchOpenAiCompatiblePing(
       stream: false,
     }
 
-  return fetch(endpoint, {
+  return fetchJson(endpoint, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(PROVIDER_CONNECTION_TIMEOUT_MS),
+    timeoutMs: PROVIDER_CONNECTION_TIMEOUT_MS,
+    maxRetries: 2,
+    retryBackoffMs: 250,
   })
 }
 
