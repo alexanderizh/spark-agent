@@ -664,6 +664,13 @@ export interface SDKExecutorConfig {
   codexApiKind?: 'chat' | 'responses' | 'embedding' | undefined
   codexCliProvider?: CodexCliModelProviderConfig | undefined
   systemPrompt?: string | undefined
+  /**
+   * Standby history used when a planned native resume becomes a fresh attempt
+   * (resume failure, runtime invalidation, or MCP inventory change). It is never
+   * injected on a successful resume, avoiding duplicate recent dialogue in the
+   * provider-owned history.
+   */
+  resumeFallbackSystemPrompt?: string | undefined
   skillSystemPrompt?: string | undefined
   /**
    * 用户在会话/项目级配置的自定义环境变量（真实值）。注入子进程环境，使 agent 的

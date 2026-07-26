@@ -1778,6 +1778,31 @@ describe('ClaudeSDKExecutor', () => {
   // ── Resume Recovery Tests ──────────────────────────────────────────────────
 
   describe('resume recovery', () => {
+    it('injects standby recovery history when a planned resume is forced fresh before execution', async () => {
+      queryMock.mockReturnValue(
+        messages([
+          {
+            type: 'result',
+            subtype: 'success',
+            result: 'fresh',
+            usage: { input_tokens: 1, output_tokens: 1 },
+            total_cost_usd: 0,
+          },
+        ]),
+      )
+
+      await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+        ...baseConfig(),
+        sdkSessionId: 'sdk-session-1',
+        continueSession: false,
+        resumeFallbackSystemPrompt: '[Recovery history sentinel]',
+      })
+
+      const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+      expect(options.resume).toBeUndefined()
+      expect(JSON.stringify(options.systemPrompt)).toContain('[Recovery history sentinel]')
+    })
+
     it('falls back to a fresh session when resume throws a session-not-found error', async () => {
       queryMock
         .mockImplementationOnce(() => {
@@ -1803,6 +1828,7 @@ describe('ClaudeSDKExecutor', () => {
         ...baseConfig(),
         sdkSessionId: 'sdk-session-1',
         continueSession: true,
+        resumeFallbackSystemPrompt: '[Recovery history sentinel]',
       })
 
       expect(queryMock).toHaveBeenCalledTimes(2)
@@ -1810,6 +1836,7 @@ describe('ClaudeSDKExecutor', () => {
       // First call should have used resume
       const firstOptions = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
       expect(firstOptions.resume).toBe('sdk-session-1')
+      expect(JSON.stringify(firstOptions.systemPrompt)).not.toContain('[Recovery history sentinel]')
 
       // Second call should use sessionId (fresh mode, no resume)
       const secondOptions = queryMock.mock.calls[1]?.[0]?.options as SDKQueryOptions
@@ -1818,6 +1845,7 @@ describe('ClaudeSDKExecutor', () => {
       expect(typeof secondOptions.sessionId).toBe('string')
       // Fresh session id should differ from the original resume id
       expect(secondOptions.sessionId).not.toBe('sdk-session-1')
+      expect(JSON.stringify(secondOptions.systemPrompt)).toContain('[Recovery history sentinel]')
 
       // Should emit a telemetry status about the recovery
       expect(events).toContainEqual(

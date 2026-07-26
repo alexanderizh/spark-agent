@@ -592,8 +592,6 @@ export class ClaudeSDKExecutor {
       useSparkCanUseTool,
     )
 
-    // Build composite system prompt
-    const systemPrompt = buildCompositeSystemPrompt(config)
     const claudeCodeExecutable = resolveClaudeCodeExecutable()
 
     let terminalStatusEmitted = false
@@ -677,6 +675,12 @@ export class ClaudeSDKExecutor {
       // Declared before SDK options because canUseTool closes over the prompt hold API.
       // eslint-disable-next-line prefer-const
       let interactivePrompt: InteractivePrompt | undefined
+      const systemPrompt = buildCompositeSystemPrompt(config, {
+        // SessionService may force continueSession=false after planning (for
+        // example when the MCP inventory changed). A supplied fallback therefore
+        // belongs to every fresh attempt, not only an exception-driven retry.
+        includeResumeFallback: !resumeExistingSession,
+      })
       const options: SDKQueryOptions = {
         abortController,
         model: effectiveModel,
@@ -1233,7 +1237,10 @@ function sanitizeClaudeQueryOptions(
   }
 }
 
-function buildCompositeSystemPrompt(config: SDKExecutorConfig): string | undefined {
+function buildCompositeSystemPrompt(
+  config: SDKExecutorConfig,
+  options: { includeResumeFallback?: boolean } = {},
+): string | undefined {
   const sections: string[] = [SDK_HOST_TOOL_INSTRUCTIONS]
 
   // 计划模式告知提示词：让 agent 明确知道自己处于只读计划模式，应该先做什么、
@@ -1249,6 +1256,10 @@ function buildCompositeSystemPrompt(config: SDKExecutorConfig): string | undefin
 
   if (config.systemPrompt?.trim()) {
     sections.push(config.systemPrompt)
+  }
+
+  if (options.includeResumeFallback === true && config.resumeFallbackSystemPrompt?.trim()) {
+    sections.push(config.resumeFallbackSystemPrompt)
   }
 
   return sections.join('\n\n')
