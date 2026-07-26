@@ -8,23 +8,42 @@ nodeLinker: hoisted
 packages:
   - 'apps/*'
   - 'packages/*'
-# @playwright/mcp@0.0.30 imports `playwright-core/lib/server` directly but only
-# declares `playwright` as a dependency — it relies on playwright-core being a
-# transitive dep. With playwright 1.60.0 also in the tree, pnpm hoists
-# playwright-core@1.60.0 into the resolution path, and 1.60.0 dropped the
-# `./lib/server` export → the MCP cli crashes on startup with
-# ERR_PACKAGE_PATH_NOT_EXPORTED. Pinning playwright-core@1.54.1 as a direct dep
-# of @playwright/mcp gives it its own symlink so it resolves the matching core.
-packageExtensions:
-  '@playwright/mcp@0.0.30':
-    dependencies:
-      playwright-core: 1.54.1
+# Release-security pins for vulnerable transitive runtime/build dependencies.
+# Keep these at patched, API-compatible versions until their parents catch up.
+overrides:
+  '@fast-csv/parse': 4.3.6
+  '@hono/node-server': 2.0.12
+  '@xmldom/xmldom@0.7.13': 0.8.13
+  axios: 1.18.1
+  body-parser: 2.3.0
+  'brace-expansion@1.1.14': 1.1.16
+  'brace-expansion@2.1.1': 2.1.2
+  'brace-expansion@5.0.6': 5.0.8
+  builder-util-runtime: 9.7.0
+  dompurify: 3.4.12
+  esbuild: 0.25.12
+  fast-uri: 3.1.4
+  fast-csv: 4.3.6
+  form-data: 4.0.6
+  hono: 4.12.32
+  immutable: 4.3.9
+  lodash: 4.18.1
+  lodash-es: 4.18.1
+  'nanoid@3.3.3': 3.3.16
+  'nanoid@4.0.2': 5.0.9
+  postcss: 8.5.23
+  protobufjs: 7.6.5
+  'undici@7.26.0': 7.28.0
+  uuid: 11.1.1
+  vite: 6.4.3
+  vitest: 3.2.6
 allowBuilds:
   '@file-viewer/web': true
   better-sqlite3: true
   canvas: false
   core-js: true
   electron: true
+  electron-winstaller: true
   es5-ext: true
   esbuild: true
   keytar: true
@@ -44,3 +63,4 @@ minimumReleaseAgeExclude:
   - '@anthropic-ai/sdk'
   - '@openai/codex'
   - '@openai/codex-sdk'
+  - '@hono/node-server@2.0.12'

@@ -70,7 +70,8 @@ describe('MemoryConsolidationService execution (real DB)', () => {
 
   it('MERGE: keep updated, drops invalidated + superseded_by=keep', async () => {
     const a = await seed('log-rule', '用 console.log 调试')
-    const b = await seed('logger-rule', '用 logger 输出日志')
+    const longDropBody = `开头-${'完整记忆正文'.repeat(120)}-结尾不可丢`
+    const b = await seed('logger-rule', '用 logger 输出日志', longDropBody)
     const c = await seed('debug-log', '禁止 console')
     const raw = JSON.stringify([
       { action: 'MERGE', keepId: a, dropIds: [b, c], mergedDescription: '日志统一用 logger，禁用 console.log', reason: '语义重复' },
@@ -89,6 +90,8 @@ describe('MemoryConsolidationService execution (real DB)', () => {
     // keep 文件含合并段
     const body = await store.readFile(keepRow.file_path)
     expect(body).toContain('合并自')
+    expect(body).toContain(longDropBody)
+    expect(body).toContain('结尾不可丢')
   })
 
   it('ELEVATE: new high-level feedback with source_session_id=consolidation', async () => {

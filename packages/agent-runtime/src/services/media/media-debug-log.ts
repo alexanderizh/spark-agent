@@ -45,7 +45,8 @@ const CAPABILITY_COLOR = {
   text: COLORS.green,
 } as const
 
-const SECRET_KEY_PATTERN = /^(authorization|api[-_]?key|.*[-_]?token)$/i
+const SECRET_KEY_PATTERN = /^(authorization|cookie|set-cookie|password|secret|api[-_]?key|.*[-_]?token)$/i
+const PRIVATE_CONTENT_KEY_PATTERN = /^(prompt|negative[-_]?prompt|messages?|contents?|text|input)$/i
 const BASE64_KEY_PATTERN = /(base64|b64(?:_json)?|dataurl)$/i
 const DATA_URL_PATTERN = /^data:([^;,]+)?;base64,(.*)$/is
 const MAX_LOG_STRING_CHARS = 800
@@ -58,9 +59,7 @@ function base64Summary(value: string, mimeType?: string): string {
       (normalized.endsWith('==') ? 2 : normalized.endsWith('=') ? 1 : 0),
   )
   const digest = createHash('sha256').update(normalized).digest('hex').slice(0, 12)
-  const preview =
-    normalized.length > 16 ? `${normalized.slice(0, 8)}...${normalized.slice(-8)}` : normalized
-  return `[base64${mimeType ? ` mime=${mimeType}` : ''} bytes~${estimatedBytes} sha256=${digest} preview=${preview}]`
+  return `[base64${mimeType ? ` mime=${mimeType}` : ''} bytes~${estimatedBytes} sha256=${digest}]`
 }
 
 /** 按 capability 选色：image.* → 品红，audio.* → 青，video.* → 黄，其余灰 */
@@ -91,6 +90,11 @@ export function compactForLog(value: unknown, seen: WeakSet<object> = new WeakSe
   for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
     if (SECRET_KEY_PATTERN.test(key)) {
       out[key] = '[REDACTED]'
+    } else if (typeof val === 'string' && DATA_URL_PATTERN.test(val)) {
+      const dataUrl = DATA_URL_PATTERN.exec(val)
+      out[key] = base64Summary(dataUrl?.[2] ?? '', dataUrl?.[1])
+    } else if (typeof val === 'string' && /(?:url|uri)$/i.test(key)) {
+      out[key] = sanitizeUrlForLog(val)
     } else if (typeof val === 'string' && BASE64_KEY_PATTERN.test(key)) {
       const dataUrl = DATA_URL_PATTERN.exec(val)
       out[key] = dataUrl ? base64Summary(dataUrl[2] ?? '', dataUrl[1]) : base64Summary(val)
@@ -99,6 +103,59 @@ export function compactForLog(value: unknown, seen: WeakSet<object> = new WeakSe
     }
   }
   return out
+}
+
+/** 落盘日志专用：移除用户正文，同时保留原始长度供排障。 */
+export function redactPrivateContentForLog(
+  value: unknown,
+  seen: WeakSet<object> = new WeakSet(),
+): unknown {
+  if (value == null || typeof value !== 'object') return compactForLog(value)
+  if (seen.has(value as object)) return '[Circular]'
+  seen.add(value as object)
+  if (Array.isArray(value)) {
+    return value.map((item) => redactPrivateContentForLog(item, seen))
+  }
+  const result: Record<string, unknown> = {}
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    if (PRIVATE_CONTENT_KEY_PATTERN.test(key)) {
+      result[key] = `[REDACTED content chars=${contentLength(nested)}]`
+    } else if (SECRET_KEY_PATTERN.test(key)) {
+      result[key] = '[REDACTED]'
+    } else if (typeof nested === 'string' && DATA_URL_PATTERN.test(nested)) {
+      const dataUrl = DATA_URL_PATTERN.exec(nested)
+      result[key] = base64Summary(dataUrl?.[2] ?? '', dataUrl?.[1])
+    } else if (typeof nested === 'string' && BASE64_KEY_PATTERN.test(key)) {
+      result[key] = base64Summary(nested)
+    } else if (typeof nested === 'string' && /(?:url|uri)$/i.test(key)) {
+      result[key] = sanitizeUrlForLog(nested)
+    } else {
+      result[key] = redactPrivateContentForLog(nested, seen)
+    }
+  }
+  return result
+}
+
+function contentLength(value: unknown): number {
+  if (typeof value === 'string') return value.length
+  try {
+    return JSON.stringify(value ?? null).length
+  } catch {
+    return 0
+  }
+}
+
+export function sanitizeUrlForLog(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl)
+    url.username = ''
+    url.password = ''
+    url.hash = ''
+    if (url.search.length > 0) url.search = '?redacted=1'
+    return url.toString()
+  } catch {
+    return rawUrl.split(/[?#]/, 1)[0]?.slice(0, 300) ?? '[invalid-url]'
+  }
 }
 
 export interface MediaCallLogInput {
@@ -128,13 +185,14 @@ export function logMediaCall(input: MediaCallLogInput): void {
   parts.push(`capability=${JSON.stringify(input.capability ?? 'unknown')}`)
   if (input.model) parts.push(`model=${JSON.stringify(input.model)}`)
   parts.push(`method=${JSON.stringify(input.method)}`)
-  parts.push(`url=${JSON.stringify(input.url)}`)
+  parts.push(`url=${JSON.stringify(sanitizeUrlForLog(input.url))}`)
   if (input.body !== undefined) {
     const bodyStr = stringifyBody(input.body)
     parts.push(`body=${bodyStr}`)
   }
   if (input.extra) {
-    for (const [key, value] of Object.entries(input.extra)) {
+    const safeExtra = redactPrivateContentForLog(input.extra) as Record<string, unknown>
+    for (const [key, value] of Object.entries(safeExtra)) {
       parts.push(`${key}=${formatExtraValue(value)}`)
     }
   }
@@ -187,7 +245,14 @@ export function logMediaResult(input: MediaCallResultInput): void {
 
 function stringifyBody(body: unknown): string {
   try {
-    return JSON.stringify(compactForLog(body))
+    if (typeof body === 'string') {
+      try {
+        return JSON.stringify(redactPrivateContentForLog(JSON.parse(body)))
+      } catch {
+        return JSON.stringify(`[REDACTED content chars=${body.length}]`)
+      }
+    }
+    return JSON.stringify(redactPrivateContentForLog(body))
   } catch {
     return '"[unserializable body]"'
   }
@@ -215,7 +280,7 @@ function writeConsoleSummary(input: MediaCallLogInput): void {
   // 控制台用单行着色摘要（避免 ANSI 多行盒式框）
   // eslint-disable-next-line no-console
   console.log(
-    `${COLORS.bold}media:adapter${COLORS.reset} · ${color}${cap}${COLORS.reset} · ${COLORS.dim}${input.provider}${COLORS.reset} ${input.method} ${input.url}`,
+    `${COLORS.bold}media:adapter${COLORS.reset} · ${color}${cap}${COLORS.reset} · ${COLORS.dim}${input.provider}${COLORS.reset} ${input.method} ${sanitizeUrlForLog(input.url)}`,
   )
 }
 

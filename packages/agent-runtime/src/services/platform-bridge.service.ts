@@ -89,6 +89,7 @@ export interface PlatformBridgeDeps {
      */
     bridgeMemorySearch(params: {
       sessionId: string
+      agentId?: string
       query: string
       type?: 'user' | 'feedback' | 'project' | 'reference'
       limit?: number
@@ -1142,12 +1143,19 @@ export class PlatformBridgeService {
 
   private async memorySearch(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const sessionId = String(params.sessionId ?? '')
+    const agentId = typeof params.agentId === 'string' ? params.agentId.trim() : ''
     const query = typeof params.query === 'string' ? params.query : ''
     if (!sessionId) throw new Error('Missing parameter: sessionId')
     if (!query) throw new Error('Missing parameter: query')
     const type = typeof params.type === 'string' ? (params.type as 'user' | 'feedback' | 'project' | 'reference') : undefined
     const limit = typeof params.limit === 'number' && params.limit > 0 ? Math.min(params.limit, 20) : 8
-    return d.sessionService.bridgeMemorySearch({ sessionId, query, ...(type != null ? { type } : {}), limit })
+    return d.sessionService.bridgeMemorySearch({
+      sessionId,
+      ...(agentId.length > 0 ? { agentId } : {}),
+      query,
+      ...(type != null ? { type } : {}),
+      limit,
+    })
   }
 
   private async memoryRecall(d: PlatformBridgeDeps, params: Record<string, unknown>) {

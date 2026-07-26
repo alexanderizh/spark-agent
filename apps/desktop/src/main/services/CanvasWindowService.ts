@@ -3,6 +3,7 @@ import type { BrowserWindowConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { createLogger, SparkError } from '@spark/shared'
 import { registerAppWindow } from '../windows/index.js'
+import { openExternalUrlSafely } from './ExternalUrlPolicy.js'
 
 const log = createLogger('canvas-window')
 const { app, BrowserWindow: ElectronBrowserWindow, shell } = electron
@@ -210,7 +211,7 @@ export function getCanvasWindowService(): CanvasWindowService {
       getRendererFile: () => join(__dirname, '../renderer/index.html'),
       isDev: process.env['ELECTRON_RENDERER_URL'] != null,
       openExternal: (url) => {
-        void shell.openExternal(url)
+        void openExternalUrlSafely(url, (target) => shell.openExternal(target))
       },
     })
     app.on('before-quit', () => {

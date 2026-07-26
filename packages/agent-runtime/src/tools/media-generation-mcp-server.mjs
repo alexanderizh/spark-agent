@@ -371,6 +371,13 @@ const TOOLS = [
   },
 ]
 
+const PROVIDER_FILE_TOOL_NAMES = new Set(['upload_file', 'get_file', 'list_files', 'delete_file'])
+
+function toolsForConfig(config) {
+  if (config.provider === 'volcengine-ark' || config.provider === 'bailian') return TOOLS
+  return TOOLS.filter((tool) => !PROVIDER_FILE_TOOL_NAMES.has(tool.name))
+}
+
 const TASKS = new Map()
 
 function createTaskRecord(toolName, args, config) {
@@ -461,7 +468,7 @@ async function handleCancelTask(config, args) {
 function assertVolcengineFilesConfig(config) {
   if (config.provider !== 'volcengine-ark') {
     throw new Error(
-      `Provider file management is not implemented for ${config.provider}; select a Volcengine Ark provider`,
+      `Provider file management is unavailable for ${config.provider}; select a Volcengine Ark provider`,
     )
   }
   if (!config.apiKey) throw new Error('No media API key configured')
@@ -2978,7 +2985,7 @@ async function handle(request) {
       return
     }
     if (request.method === 'tools/list') {
-      result(id, { tools: TOOLS })
+      result(id, { tools: toolsForConfig(configFromEnv()) })
       return
     }
     if (request.method === 'tools/call') {

@@ -1,20 +1,23 @@
 import { describe, expect, it, vi } from 'vitest'
 import { join, resolve } from 'node:path'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
 const workspaceRoot = join('G:', 'spark', 'spark-agent')
 
 const electronMocks = vi.hoisted(() => ({
   registerSchemesAsPrivileged: vi.fn(),
+  paths: {
+    userData: 'C:/Users/Test/AppData/Roaming/SparkAgent',
+    temp: 'C:/Users/Test/AppData/Local/Temp',
+  },
 }))
 
 vi.mock('electron', () => ({
   app: {
     getPath: (name: string) => {
-      if (name === 'userData')
-        return join('C:', 'Users', 'Test', 'AppData', 'Roaming', 'SparkAgent')
-      if (name === 'temp') return join('C:', 'Users', 'Test', 'AppData', 'Local', 'Temp')
+      if (name === 'userData') return electronMocks.paths.userData
+      if (name === 'temp') return electronMocks.paths.temp
       return ''
     },
   },
@@ -76,6 +79,25 @@ describe('SafeFileProtocol', () => {
     expect(isSafeFilePathAllowed(outsideFile)).toBe(false)
   })
 
+  it.runIf(process.platform !== 'win32')('rejects an existing file that escapes an allowed root through a symlink', () => {
+    const allowedRoot = mkdtempSync(join(tmpdir(), 'safe-file-root-'))
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'safe-file-outside-'))
+    const outsideFile = join(outsideRoot, 'secret.txt')
+    mkdirSync(join(allowedRoot, 'links'))
+    writeFileSync(outsideFile, 'secret')
+    symlinkSync(outsideRoot, join(allowedRoot, 'links', 'outside'), 'dir')
+    const previousTemp = electronMocks.paths.temp
+    electronMocks.paths.temp = allowedRoot
+
+    try {
+      expect(isSafeFilePathAllowed(join(allowedRoot, 'links', 'outside', 'secret.txt'))).toBe(false)
+    } finally {
+      electronMocks.paths.temp = previousTemp
+      rmSync(allowedRoot, { recursive: true, force: true })
+      rmSync(outsideRoot, { recursive: true, force: true })
+    }
+  })
+
   it('exposes workspace roots in the allowlist', () => {
     expect(getSafeFileAllowedRoots()).toContain(resolve(workspaceRoot))
   })
@@ -96,6 +118,7 @@ describe('SafeFileProtocol', () => {
       expect(response.headers.get('accept-ranges')).toBe('bytes')
       expect(response.headers.get('content-range')).toBe('bytes 2-5/8')
       expect(response.headers.get('content-length')).toBe('4')
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff')
       expect([...new Uint8Array(await response.arrayBuffer())]).toEqual([2, 3, 4, 5])
     } finally {
       rmSync(dir, { recursive: true, force: true })

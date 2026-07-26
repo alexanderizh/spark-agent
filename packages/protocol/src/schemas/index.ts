@@ -1005,8 +1005,6 @@ export const IpcSchemaRegistry = {
   'skill:import-file': z.object({
     filePath: z.string().min(1).max(1000),
   }),
-  'skill:export': z.object({}),
-  'skill:export-batch': z.object({}),
   'skill:install-to-app': z.object({
     sourcePath: z.string().min(1).max(2000),
   }),

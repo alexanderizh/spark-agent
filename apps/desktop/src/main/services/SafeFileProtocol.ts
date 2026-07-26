@@ -26,7 +26,7 @@
 
 import { app, protocol } from 'electron'
 import { createLogger } from '@spark/shared'
-import { createReadStream, existsSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, realpathSync, statSync } from 'node:fs'
 import { resolve as resolvePath, isAbsolute, sep, extname } from 'node:path'
 import { Readable } from 'node:stream'
 import { getDatabase } from '../db.js'
@@ -196,9 +196,23 @@ export function isSafeFilePathAllowed(absolutePath: string): boolean {
   const resolved = resolvePath(absolutePath)
   const allowedRoots = getSafeFileAllowedRoots()
   for (const root of allowedRoots) {
-    if (isSamePathOrChild(resolved, root)) return true
+    if (!isSamePathOrChild(resolved, root)) continue
+    // 词法路径在根目录内仍可能经符号链接逃逸。目标存在时同时比较真实路径；
+    // 不存在的路径由后续 existsSync 拒绝，保留创建中临时资源的兼容性。
+    if (!existsSync(resolved)) return true
+    const canonicalTarget = canonicalPath(resolved)
+    const canonicalRoot = canonicalPath(root)
+    if (isSamePathOrChild(canonicalTarget, canonicalRoot)) return true
   }
   return false
+}
+
+function canonicalPath(filePath: string): string {
+  try {
+    return realpathSync.native(filePath)
+  } catch {
+    return resolvePath(filePath)
+  }
 }
 
 function isSamePathOrChild(targetPath: string, rootPath: string): boolean {
@@ -254,24 +268,24 @@ export function registerSafeFileProtocol(): void {
     const absolutePath = decodeSafeFileUrl(url)
 
     if (absolutePath == null) {
-      log.warn(`safe-file: invalid URL: ${url}`)
+      log.warn('safe-file: invalid URL')
       return new Response('Invalid safe-file URL', { status: 400 })
     }
 
     if (!isSafeFilePathAllowed(absolutePath)) {
-      log.warn(`safe-file: path not allowed: ${absolutePath}`)
+      log.warn('safe-file: path not allowed')
       return new Response('Forbidden', { status: 403 })
     }
 
     if (!existsSync(absolutePath)) {
-      log.warn(`safe-file: file not found: ${absolutePath}`)
+      log.warn('safe-file: file not found')
       return new Response('Not Found', { status: 404 })
     }
 
     try {
       return createSafeFileResponse(absolutePath, request)
     } catch (err) {
-      log.error(`safe-file: failed to fetch ${absolutePath}: ${String(err)}`)
+      log.error(`safe-file: failed to fetch allowed file: ${String(err)}`)
       return new Response('Internal Error', { status: 500 })
     }
   })
@@ -288,6 +302,7 @@ export function createSafeFileResponse(absolutePath: string, request: Request): 
   const baseHeaders = {
     'accept-ranges': 'bytes',
     'content-type': mimeType,
+    'x-content-type-options': 'nosniff',
     // safe-file:// 已按白名单根目录校验来源，附带 ACAO 不扩大攻击面；
     // 有此头后 CORS 图片加载干净，WebGL 贴图不被跨域污染（截图 toDataURL 可用）。
     'access-control-allow-origin': '*',

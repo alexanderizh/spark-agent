@@ -53,15 +53,14 @@ interface MarkdownDoc {
   truncated: boolean
 }
 
-const MAX_FILE_CHARS = 20_000
+const MAX_FILE_TOKEN_BUDGET = 20_000
+const FILE_TRUNCATION_MARKER = '[Project context source truncated at file token budget]'
 /**
  * 项目上下文 system prompt 的 token 上限（D-07 改造）。
  * 旧值 MAX_PROMPT_CHARS=80_000 按字符算，对中文（chars/2）实际 ~40k tokens 偏多；
  * 改 20k tokens 是更合理的全局上限，留更多预算给 history + tool 结果。
  */
 const MAX_PROMPT_TOKEN_BUDGET = 20_000
-/** @deprecated 保留兼容引用，新代码用 MAX_PROMPT_TOKEN_BUDGET */
-const MAX_PROMPT_CHARS = 80_000
 const MIN_PARTIAL_DOC_TOKENS = 200
 const MAX_SKILL_DESCRIPTION_CHARS = 220
 const DEFAULT_BUDGET_BY_MODE: Record<ContextMode, number> = {
@@ -222,7 +221,7 @@ function discoverRuleDocs(root: string): Array<MarkdownDoc & { relativePath: str
         content: `[${relativePath}]\n${raw.trim()}`,
         relativePath,
         estimatedTokens: estimateTokens(raw),
-        truncated: raw.length >= MAX_FILE_CHARS,
+        truncated: raw.includes(FILE_TRUNCATION_MARKER),
       }
     })
     .filter((doc): doc is MarkdownDoc & { relativePath: string; content: string } => doc != null)
@@ -277,7 +276,7 @@ function toProjectDoc(root: string, filePath: string, fallbackName: string): (Ma
     ...parsed,
     relativePath: toPosix(relative(root, filePath)),
     estimatedTokens: estimateTokens(parsed.body),
-    truncated: raw.length >= MAX_FILE_CHARS,
+    truncated: raw.includes(FILE_TRUNCATION_MARKER),
   }
 }
 
@@ -484,7 +483,10 @@ function clampPrompt(text: string): string {
 
 function safeRead(filePath: string): string {
   try {
-    return readFileSync(filePath, 'utf-8').slice(0, MAX_FILE_CHARS)
+    const content = readFileSync(filePath, 'utf-8')
+    return clipTextHeadTail(content, MAX_FILE_TOKEN_BUDGET, {
+      ellipsis: `\n\n${FILE_TRUNCATION_MARKER}\n\n`,
+    })
   } catch {
     return ''
   }

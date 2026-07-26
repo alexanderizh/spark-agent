@@ -56,7 +56,6 @@ interface Props {
    * - 传 insertAfterClipId: 插入到该 clip 之后（用于指定拖入位置）
    */
   onAddResourceToTrack: (resource: WorkbenchResource, insertAfterClipId?: string | null) => void
-  onExportWhole: () => void
   onClearTrack: () => void
   onOpenFrames: () => void
   onOpenEdit: () => void
@@ -88,7 +87,6 @@ export function VideoWorkbenchTrackTimeline({
   onRemoveClip,
   onPreviewResource,
   onAddResourceToTrack,
-  onExportWhole,
   onClearTrack,
   onOpenFrames,
   onOpenEdit,
@@ -323,15 +321,6 @@ export function VideoWorkbenchTrackTimeline({
           </button>
         </div>
         <div className="vwb-track-actions">
-          <Button
-            size="small"
-            type="primary"
-            icon={<Icons.Download size={13} />}
-            onClick={onExportWhole}
-            disabled={busy || sortedTrack.length === 0}
-          >
-            导出整条
-          </Button>
           <Button
             size="small"
             type="text"

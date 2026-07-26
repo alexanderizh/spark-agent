@@ -126,6 +126,7 @@ import {
   applyCanvasNodeLayoutUpdates,
   type CanvasNodeLayoutUpdate,
 } from './canvasNodeLayoutPersistence'
+import { canvasNodeTypeLabel, createCanvasNodeNaming, renameCanvasNode } from './canvasNodeNaming'
 
 const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
@@ -1302,6 +1303,7 @@ async function loadSnapshotFromStorage(
 }
 
 function createNodeBase(input: {
+  nodes: readonly CanvasNode[]
   id?: string
   projectId: string
   boardId: string
@@ -1317,13 +1319,19 @@ function createNodeBase(input: {
   at?: string
 }): CanvasNode {
   const at = input.at ?? now()
+  const naming = createCanvasNodeNaming({
+    nodes: input.nodes,
+    boardId: input.boardId,
+    type: input.type,
+    title: input.title,
+  })
   return {
     id: input.id ?? uid('canvas_node'),
     projectId: input.projectId,
     boardId: input.boardId,
     userId: USER_ID,
     type: input.type,
-    title: input.title ?? null,
+    title: naming.title,
     assetId: input.assetId ?? null,
     taskId: input.taskId ?? null,
     parentNodeId: null,
@@ -1335,7 +1343,7 @@ function createNodeBase(input: {
     zIndex: 1,
     locked: false,
     hidden: false,
-    data: input.data,
+    data: { ...input.data, nodeSequence: naming.nodeNumber },
     createdAt: at,
     updatedAt: at,
   }
@@ -1380,38 +1388,6 @@ function findCanvasTaskNode(
 
 function canPatchCanvasTaskNode(lookup: CanvasTaskNodeLookup, taskId: string): boolean {
   return lookup.ownsTask || lookup.node.taskId == null || lookup.node.taskId === taskId
-}
-
-function defaultCanvasNodeTitle(type: CanvasNode['type'], sequence: number): string {
-  const labelByType: Partial<Record<CanvasNode['type'], string>> = {
-    image: '图片',
-    audio: '音频',
-    video: '视频',
-    text: '文本',
-    prompt: 'Prompt',
-    group: '分组',
-    text_to_image: '文生图',
-    image_to_image: '图生图',
-    image_edit: '图片编辑',
-    image_compose: '多图合成',
-    storyboard_grid: '故事板',
-    panorama_360: '全景图',
-    text_generate: '文本生成',
-    text_rewrite: '文本改写',
-    prompt_optimize: 'Prompt 优化',
-    text_to_video: '文生视频',
-    image_to_video: '图生视频',
-    video_edit: '视频编辑',
-    video_extend: '视频扩展',
-    text_to_audio: '文生音频',
-    audio_transcribe: '语音转写',
-    task: '任务',
-  }
-  return `${labelByType[type] ?? '节点'} #${sequence}`
-}
-
-function nextCanvasNodeSequence(db: CanvasDb, projectId: string, type: CanvasNode['type']): number {
-  return db.nodes.filter((node) => node.projectId === projectId && node.type === type).length + 1
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -1620,100 +1596,6 @@ function readDisplayImageDimensions(
     image.onerror = () => resolve(null)
     image.src = src
   })
-}
-
-// ─── 画布 AI 调用彩色日志（DevTools %c CSS） ───────────────────────────────
-// 在 createMediaTask 发 IPC 前，把组装好的参数按产物类型分色打印成一块，
-// 方便排查「prompt/model/inputFiles/modelParams 没拼对」。
-// 颜色与主进程 adapter 的 ANSI 配色保持一致：image=品红 / audio=青 / video=黄 / text=绿。
-type MediaCallKind = 'image' | 'audio' | 'video' | 'text' | 'other'
-
-const MEDIA_CALL_STYLES: Record<MediaCallKind, { emoji: string; color: string }> = {
-  image: { emoji: '🎨', color: '#a855f7' },
-  audio: { emoji: '🔊', color: '#0891b2' },
-  video: { emoji: '🎬', color: '#ca8a04' },
-  text: { emoji: '📝', color: '#16a34a' },
-  other: { emoji: '⚡', color: '#6b7280' },
-}
-
-function mediaCallKind(operation: CanvasOperationType): MediaCallKind {
-  if (operation === 'storyboard_grid') return 'image'
-  if (operation.includes('video')) return 'video'
-  if (operation.includes('image')) return 'image'
-  if (operation.includes('audio')) return 'audio'
-  return 'text'
-}
-
-const LOG_PREVIEW_MAX = 80
-
-function previewText(value: string | null | undefined): string {
-  const text = (value ?? '').replace(/\s+/g, ' ').trim()
-  if (text.length <= LOG_PREVIEW_MAX) return text || '(空)'
-  return `${text.slice(0, LOG_PREVIEW_MAX)}…`
-}
-
-/** 截断 dataUrl 等 base64 内容，避免日志被一张图刷屏 */
-function previewInputFiles(files: CanvasMediaTaskInputFile[] | undefined): {
-  summary: string
-  types: string[]
-} {
-  if (!files || files.length === 0) return { summary: '无', types: [] }
-  const types = files.map((file) => file.type)
-  const detail = files
-    .map((file) => {
-      const ref = file.url ?? file.dataUrl ?? file.path ?? '(空)'
-      // dataUrl/base64 只保留前 50 字符
-      const shown =
-        ref.startsWith('data:') || ref.length > 60 ? `${ref.slice(0, 50)}…<len=${ref.length}>` : ref
-      return `${file.type}:${shown}`
-    })
-    .join(', ')
-  return { summary: `${files.length} 个：${detail}`, types }
-}
-
-function logCanvasMediaCall(
-  operation: CanvasOperationType,
-  request: {
-    prompt?: string | null
-    providerProfileId?: string | null
-    manifestId?: string | null
-    modelId?: string | null
-    modelParams?: Record<string, unknown> | null
-    inputFiles?: CanvasMediaTaskInputFile[]
-  },
-): void {
-  if (typeof console === 'undefined' || typeof console.log !== 'function') return
-  const kind = mediaCallKind(operation)
-  const style = MEDIA_CALL_STYLES[kind]
-  const dim = 'color:#9ca3af;font-weight:normal'
-  const val = `color:${style.color};font-weight:600`
-  const header = `color:#fff;background:${style.color};font-weight:bold;padding:2px 8px;border-radius:3px`
-
-  const { summary: inputsSummary, types: inputTypes } = previewInputFiles(request.inputFiles)
-  const params =
-    request.modelParams && Object.keys(request.modelParams).length > 0
-      ? JSON.stringify(request.modelParams)
-      : '(默认)'
-
-  const segments: Array<[string, string]> = [
-    [`${style.emoji} ${operationLabel(operation)}`, header],
-    [` → canvas:task:create-media\n`, dim],
-    [`  prompt:   `, dim],
-    [`${previewText(request.prompt)}\n`, val],
-    [`  provider: `, dim],
-    [`${request.providerProfileId || '(自动选择)'}\n`, val],
-    [`  model:    `, dim],
-    [
-      `${request.modelId || '(默认)'}${request.manifestId ? `  · manifest=${request.manifestId}` : ''}\n`,
-      val,
-    ],
-    [`  inputs:   `, dim],
-    [`${inputsSummary}${inputTypes.length > 0 ? `  [${inputTypes.join(', ')}]` : ''}\n`, val],
-    [`  params:   `, dim],
-    [params, val],
-  ]
-  const format = segments.map(([text]) => `%c${text}`).join('')
-  console.log(format, ...segments.map(([, css]) => css))
 }
 
 export const canvasApi = {
@@ -2294,10 +2176,18 @@ export const canvasApi = {
     const idMap = new Map<string, string>()
     for (const node of sourceNodes) idMap.set(node.id, uid('canvas_node'))
     for (const node of sourceNodes) {
+      const naming = createCanvasNodeNaming({
+        nodes: db.nodes,
+        boardId: newBoardId,
+        type: node.type,
+        title: node.title,
+      })
       const clone: CanvasNode = {
         ...node,
         id: idMap.get(node.id)!,
         boardId: newBoardId,
+        title: naming.title,
+        data: { ...node.data, nodeSequence: naming.nodeNumber },
         x: node.x + 32,
         y: node.y + 32,
         locked: false,
@@ -2480,6 +2370,12 @@ export const canvasApi = {
             },
           }
         : {}
+      const naming = createCanvasNodeNaming({
+        nodes: db.nodes,
+        boardId: targetBoardId,
+        type: node.type,
+        title: node.title,
+      })
       db.nodes.push({
         ...node,
         id: idMap.get(node.id)!,
@@ -2493,6 +2389,11 @@ export const canvasApi = {
           ? { parentNodeId: idMap.get(node.parentNodeId)! }
           : { parentNodeId: null }),
         ...operationClonePatch,
+        title: naming.title,
+        data: {
+          ...('data' in operationClonePatch ? operationClonePatch.data : node.data),
+          nodeSequence: naming.nodeNumber,
+        },
       })
     }
     // 复制选中节点之间的内部 edge
@@ -2609,6 +2510,7 @@ export const canvasApi = {
             ? OPERATION_NODE_DEFAULT_SIZE
             : TEXT_NODE_DEFAULT_SIZE
       const node = createNodeBase({
+        nodes: db.nodes,
         id: nodeId,
         projectId: input.projectId,
         boardId: input.boardId,
@@ -2791,6 +2693,7 @@ export const canvasApi = {
             origin: 'asset',
           }
     const node = createNodeBase({
+      nodes: db.nodes,
       projectId: input.projectId,
       boardId: input.boardId,
       type: nodeType,
@@ -3408,6 +3311,7 @@ export const canvasApi = {
       boardId: input.boardId,
     })
     const node = createNodeBase({
+      nodes: db.nodes,
       projectId: input.projectId,
       boardId: input.boardId,
       type: kind,
@@ -3531,6 +3435,7 @@ export const canvasApi = {
       updatedAt: now(),
     }
     const node = createNodeBase({
+      nodes: db.nodes,
       projectId: input.projectId,
       boardId: input.boardId,
       type: 'image',
@@ -3579,6 +3484,7 @@ export const canvasApi = {
       boardId: input.boardId,
     })
     const node = createNodeBase({
+      nodes: db.nodes,
       projectId: input.projectId,
       boardId: input.boardId,
       type: 'image',
@@ -3669,6 +3575,7 @@ export const canvasApi = {
       origin: 'asset',
     }
     const node = createNodeBase({
+      nodes: db.nodes,
       projectId: input.projectId,
       boardId: input.boardId,
       type: input.kind,
@@ -3721,6 +3628,7 @@ export const canvasApi = {
     }))
 
     const groupNode = createNodeBase({
+      nodes: db.nodes,
       projectId,
       boardId: board.id,
       type: 'group',
@@ -4067,9 +3975,24 @@ export const canvasApi = {
     const selected = new Set(nodeIds)
     db.nodes = db.nodes.map((node) => {
       if (!selected.has(node.id) || node.projectId !== projectId) return node
+      const numberedTitle: string | null =
+        patch.title === undefined
+          ? (node.title ?? null)
+          : renameCanvasNode(node, patch.title, canvasNodeTypeLabel(node.type))
+      const numberedData: CanvasNode['data'] =
+        patch.data === undefined ? node.data : { ...patch.data }
+      if (patch.data !== undefined) {
+        if (node.data.nodeSequence !== undefined) {
+          numberedData.nodeSequence = node.data.nodeSequence
+        } else {
+          delete numberedData.nodeSequence
+        }
+      }
       return {
         ...node,
         ...patch,
+        title: numberedTitle,
+        data: numberedData,
         id: node.id,
         projectId: node.projectId,
         boardId: node.boardId,
@@ -4122,6 +4045,11 @@ export const canvasApi = {
       if (!node) continue
       const at = nextEntityUpdatedAt(node.updatedAt)
       const nextData = { ...node.data, ...data }
+      if (node.data.nodeSequence !== undefined) {
+        nextData.nodeSequence = node.data.nodeSequence
+      } else {
+        delete nextData.nodeSequence
+      }
       for (const key of Object.keys(nextData)) {
         if ((nextData as Record<string, unknown>)[key] === undefined) {
           delete (nextData as Record<string, unknown>)[key]
@@ -4132,7 +4060,9 @@ export const canvasApi = {
       // and would then see no identity change to render.
       db.nodes[nodeIndex] = {
         ...node,
-        ...(title !== undefined ? { title } : {}),
+        ...(title !== undefined
+          ? { title: renameCanvasNode(node, title, canvasNodeTypeLabel(node.type)) }
+          : {}),
         data: nextData,
         updatedAt: at,
       }
@@ -4199,6 +4129,7 @@ export const canvasApi = {
     )
     const idMap = new Map<string, string>()
     const at = now()
+    const allocatedNodes = [...db.nodes]
     const clones = sourceNodes.map((node) => {
       const nextId = uid('canvas_node')
       idMap.set(node.id, nextId)
@@ -4213,17 +4144,29 @@ export const canvasApi = {
             },
           }
         : {}
-      return {
+      const naming = createCanvasNodeNaming({
+        nodes: allocatedNodes,
+        boardId: node.boardId,
+        type: node.type,
+        title: node.title ? `${node.title} copy` : null,
+      })
+      const clone: CanvasNode = {
         ...node,
         id: nextId,
         x: node.x + 36,
         y: node.y + 36,
         locked: false,
-        title: node.title ? `${node.title} copy` : null,
+        title: naming.title,
         createdAt: at,
         updatedAt: at,
         ...operationClonePatch,
+        data: {
+          ...('data' in operationClonePatch ? operationClonePatch.data : node.data),
+          nodeSequence: naming.nodeNumber,
+        },
       }
+      allocatedNodes.push(clone)
+      return clone
     })
     const clonedEdges = db.edges
       .filter((edge) => selected.has(edge.sourceNodeId) && selected.has(edge.targetNodeId))
@@ -4355,13 +4298,10 @@ export const canvasApi = {
     if (request.systemPrompt != null) taskNodeData.systemPrompt = request.systemPrompt
     if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
     const defaultTaskTitle =
-      request.taskTitle ??
-      defaultCanvasNodeTitle(
-        request.operation as CanvasNodeType,
-        nextCanvasNodeSequence(db, projectId, request.operation as CanvasNodeType),
-      )
+      request.taskTitle ?? canvasNodeTypeLabel(request.operation as CanvasNodeType)
 
     const taskNode = createNodeBase({
+      nodes: db.nodes,
       projectId,
       boardId: board.id,
       // 类型化操作节点：type === operation（如 text_to_image）
@@ -4383,7 +4323,7 @@ export const canvasApi = {
       operation: request.operation,
       status: 'pending',
       progress: 12,
-      title: defaultTaskTitle,
+      title: taskNode.title ?? defaultTaskTitle,
       operationNodeId: taskNode.id,
       prompt: requestPrompt ?? null,
       negativePrompt: request.negativePrompt ?? null,
@@ -4501,13 +4441,14 @@ export const canvasApi = {
           ),
       )
       bindNode.taskId = taskId
-      bindNode.title = request.title
+      bindNode.title = renameCanvasNode(bindNode, request.title, canvasNodeTypeLabel(bindNode.type))
       bindNode.data = { ...bindNode.data, ...taskNodeData }
       if (request.promptDocument != null && !visibleUserPrompt) delete bindNode.data.prompt
       bindNode.updatedAt = at
       taskNode = bindNode
     } else {
       taskNode = createNodeBase({
+        nodes: db.nodes,
         projectId,
         boardId: board.id,
         type: operation as CanvasNodeType,
@@ -4530,7 +4471,7 @@ export const canvasApi = {
       operation,
       status: 'running',
       progress,
-      title: request.title,
+      title: taskNode.title ?? request.title,
       operationNodeId: taskNode.id,
       prompt: requestPrompt ?? null,
       negativePrompt: null,
@@ -4822,16 +4763,12 @@ export const canvasApi = {
       boardId: input.boardId,
     })
     const node = createNodeBase({
+      nodes: db.nodes,
       projectId: input.projectId,
       boardId: input.boardId,
       type: input.operation as CanvasNodeType,
       taskId,
-      title:
-        input.title ??
-        defaultCanvasNodeTitle(
-          input.operation as CanvasNodeType,
-          nextCanvasNodeSequence(db, input.projectId, input.operation as CanvasNodeType),
-        ),
+      title: input.title ?? canvasNodeTypeLabel(input.operation as CanvasNodeType),
       x: position.x,
       y: position.y,
       width: operationNodeSize.width,
@@ -4874,12 +4811,7 @@ export const canvasApi = {
       operation: input.operation,
       status: 'pending',
       progress: 0,
-      title:
-        input.title ??
-        defaultCanvasNodeTitle(
-          input.operation as CanvasNodeType,
-          nextCanvasNodeSequence(db, input.projectId, input.operation as CanvasNodeType),
-        ),
+      title: node.title ?? input.title ?? canvasNodeTypeLabel(input.operation as CanvasNodeType),
       operationNodeId: node.id,
       prompt: explicitPrompt ?? null,
       negativePrompt: negativePrompt ?? null,
@@ -5370,11 +5302,7 @@ export const canvasApi = {
     if (request.outputTitle != null) taskNodeData.outputTitle = request.outputTitle
     if (request.shotScriptConfig != null) taskNodeData.shotScriptConfig = request.shotScriptConfig
     const defaultTaskTitle =
-      request.taskTitle ??
-      defaultCanvasNodeTitle(
-        request.operation as CanvasNodeType,
-        nextCanvasNodeSequence(db, projectId, request.operation as CanvasNodeType),
-      )
+      request.taskTitle ?? canvasNodeTypeLabel(request.operation as CanvasNodeType)
     let taskNode: CanvasNode
     const replacedActiveTaskId =
       bindNode?.taskId != null &&
@@ -5404,6 +5332,7 @@ export const canvasApi = {
       taskNode = bindNode
     } else {
       taskNode = createNodeBase({
+        nodes: db.nodes,
         projectId,
         boardId: board.id,
         type: request.operation as CanvasNodeType,
@@ -5430,7 +5359,7 @@ export const canvasApi = {
       operation: request.operation,
       status: 'running',
       progress: 24,
-      title: defaultTaskTitle,
+      title: taskNode.title ?? defaultTaskTitle,
       operationNodeId: taskNode.id,
       prompt: requestPrompt ?? null,
       negativePrompt: request.negativePrompt ?? null,
@@ -5493,8 +5422,6 @@ export const canvasApi = {
       outputDir: `${project.rootPath}/assets`,
       waitForCompletion: false,
     }
-    // 调 IPC 前打印彩色参数块，便于排查「prompt/model/inputs/params 没拼对」。
-    logCanvasMediaCall(request.operation, request)
     let response: CanvasMediaTaskCreateResponse
     try {
       response = await window.spark.invoke('canvas:task:create-media', ipcRequest)
@@ -5580,11 +5507,7 @@ export const canvasApi = {
     if (request.shotScriptConfig != null) taskNodeData.shotScriptConfig = request.shotScriptConfig
     if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
     const defaultTaskTitle =
-      request.taskTitle ??
-      defaultCanvasNodeTitle(
-        request.operation as CanvasNodeType,
-        nextCanvasNodeSequence(db, projectId, request.operation as CanvasNodeType),
-      )
+      request.taskTitle ?? canvasNodeTypeLabel(request.operation as CanvasNodeType)
     let taskNode: CanvasNode
     const replacedActiveTaskId =
       bindNode?.taskId != null &&
@@ -5618,6 +5541,7 @@ export const canvasApi = {
       taskNode = bindNode
     } else {
       taskNode = createNodeBase({
+        nodes: db.nodes,
         projectId,
         boardId: board.id,
         type: request.operation as CanvasNodeType,
@@ -5644,7 +5568,7 @@ export const canvasApi = {
       operation: request.operation,
       status: 'running',
       progress: 30,
-      title: defaultTaskTitle,
+      title: taskNode.title ?? defaultTaskTitle,
       operationNodeId: taskNode.id,
       prompt: request.prompt ?? null,
       negativePrompt: request.negativePrompt ?? null,
@@ -5850,7 +5774,10 @@ export const canvasApi = {
       userId: USER_ID,
       type: 'text',
       source: 'ai_generated',
-      title: defaultCanvasNodeTitle('text', nextCanvasNodeSequence(db, projectId, 'text')),
+      title:
+        typeof taskNode.data.outputTitle === 'string' && taskNode.data.outputTitle.trim()
+          ? taskNode.data.outputTitle.trim()
+          : canvasNodeTypeLabel('text'),
       contentText: outputText,
       metadata: {
         taskId,
@@ -5886,6 +5813,7 @@ export const canvasApi = {
       boardId: task.boardId,
     })
     const resultNode = createNodeBase({
+      nodes: db.nodes,
       projectId,
       boardId: task.boardId,
       type: 'text',
@@ -6135,30 +6063,11 @@ export const canvasApi = {
       const assetWidth = assetOut.width ?? detectedImageSize?.width ?? null
       const assetHeight = assetOut.height ?? detectedImageSize?.height ?? null
       const isPanorama360 = task.operation === 'panorama_360' && assetType === 'image'
-      const defaultAssetTitle = defaultCanvasNodeTitle(
-        assetType === 'text'
-          ? 'text'
-          : assetType === 'image'
-            ? 'image'
-            : assetType === 'audio'
-              ? 'audio'
-              : assetType === 'video'
-                ? 'video'
-                : 'text',
-        nextCanvasNodeSequence(
-          db,
-          projectId,
-          assetType === 'text'
-            ? 'text'
-            : assetType === 'image'
-              ? 'image'
-              : assetType === 'audio'
-                ? 'audio'
-                : assetType === 'video'
-                  ? 'video'
-                  : 'text',
-        ) + preparedOutputs.length,
-      )
+      const outputNodeType: CanvasNodeType =
+        assetType === 'image' || assetType === 'audio' || assetType === 'video' ? assetType : 'text'
+      const defaultAssetTitle = `${canvasNodeTypeLabel(outputNodeType)}${
+        response.assets.length > 1 ? ` ${preparedOutputs.length + 1}` : ''
+      }`
       const customOutputTitle =
         typeof taskNode.data.outputTitle === 'string' && taskNode.data.outputTitle.trim().length > 0
           ? taskNode.data.outputTitle.trim()
@@ -6275,6 +6184,7 @@ export const canvasApi = {
       const placement = outputPlacements[index]
       if (!placement) continue
       const resultNode = createNodeBase({
+        nodes: db.nodes,
         projectId,
         boardId: task.boardId,
         type: output.nodeType,

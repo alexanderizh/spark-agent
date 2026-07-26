@@ -4785,12 +4785,10 @@ function InlinePermissionCard({
   const { action, riskLevel, description, paths, command, domains } = block
 
   const handleAllow = () => {
-    console.log('[PermCard] allowed:', block.requestId)
     toast.success(`已允许: ${description}`)
   }
 
   const handleDeny = () => {
-    console.log('[PermCard] denied:', block.requestId)
     toast.info(`已拒绝: ${description}`)
   }
 

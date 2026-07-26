@@ -107,11 +107,31 @@ describe('ModelService.complete', () => {
   })
 
   it('unavailable on network error (caught, never throws)', async () => {
-    globalThis.fetch = vi.fn(async () => { throw new Error('connection refused') }) as unknown as typeof globalThis.fetch
+    const fetchMock = vi.fn(async () => { throw new Error('connection refused') })
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
     const { svc } = makeService()
     const r = await svc.complete('prompt')
     expect(r.available).toBe(false)
     if (!r.available) expect(r.reason).toMatch(/connection refused/)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('recovers from one transient 5xx response', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('temporary', { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ choices: [{ message: { content: '["recovered"]' } }] }), {
+          status: 200,
+        }),
+      )
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
+    const { svc } = makeService()
+
+    const result = await svc.complete('prompt')
+
+    expect(result).toEqual({ available: true, text: '["recovered"]' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('unavailable on malformed response (empty content)', async () => {

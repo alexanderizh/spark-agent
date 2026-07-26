@@ -282,10 +282,19 @@
 }
 
 .chat-panel-message-attachments,
+.chat-panel-message-node-refs,
 .chat-panel-composer-attachments {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.chat-panel-message-node-refs {
+  max-width: 100%;
+
+  .chat-panel-node-ref-chip.is-readonly {
+    padding-right: 7px;
+  }
 }
 
 .chat-panel-composer-attachments {

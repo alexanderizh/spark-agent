@@ -206,6 +206,79 @@ describe('SessionRepository', () => {
     expect(session.workspace_ids_json).toBe('[]')
   })
 
+  it('atomically deletes non-FK session data and detaches promoted memories', () => {
+    repo.create({
+      id: 'sess-delete',
+      kind: 'chat',
+      title: 'Delete me',
+      status: 'idle',
+      projectId: 'proj-1',
+    })
+    db.raw
+      .prepare(
+        'INSERT INTO usage_ledger (id, session_id, provider_id, model_id) VALUES (?, ?, ?, ?)',
+      )
+      .run('usage-delete', 'sess-delete', 'provider', 'model')
+    db.raw
+      .prepare(
+        `INSERT INTO session_summaries (
+          id, session_id, summary_turn_id, summary_text, summarized_entry_count,
+          summarized_from_seq, summarized_to_seq, estimated_tokens
+        ) VALUES (?, ?, ?, ?, 1, 0, 1, 1)`,
+      )
+      .run('summary-delete', 'sess-delete', 'turn', 'legacy summary')
+    db.raw
+      .prepare('INSERT INTO run_usage_summaries (id, run_id, session_id) VALUES (?, ?, ?)')
+      .run('run-usage-delete', 'run-delete', 'sess-delete')
+    db.raw
+      .prepare(
+        `INSERT INTO media_artifacts (
+          id, session_id, kind, mime_type, storage_uri
+        ) VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run('media-delete', 'sess-delete', 'image', 'image/png', '/tmp/media.png')
+    db.raw
+      .prepare(
+        'INSERT INTO scheduled_tasks (id, name, prompt_template) VALUES (?, ?, ?)',
+      )
+      .run('task-delete', 'Task', 'Run')
+    db.raw
+      .prepare(
+        'INSERT INTO task_executions (id, task_id, session_id) VALUES (?, ?, ?)',
+      )
+      .run('execution-delete', 'task-delete', 'sess-delete')
+    db.raw
+      .prepare(
+        `INSERT INTO memory_entry (
+          id, scope, scope_ref, type, name, description, file_path,
+          source_session_id, created_at, updated_at
+        ) VALUES (?, 'agent', 'agent-1', 'reference', ?, ?, ?, ?, 1, 1)`,
+      )
+      .run('memory-keep', 'Memory', 'Description', '/tmp/memory.md', 'sess-delete')
+
+    expect(repo.deleteWithRelatedData('sess-delete')).toBe(true)
+
+    for (const table of [
+      'usage_ledger',
+      'session_summaries',
+      'run_usage_summaries',
+      'media_artifacts',
+      'task_executions',
+    ]) {
+      const row = db.raw
+        .prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE session_id = ?`)
+        .get('sess-delete') as { count: number }
+      expect(row.count, table).toBe(0)
+    }
+    expect(
+      (
+        db.raw
+          .prepare('SELECT source_session_id FROM memory_entry WHERE id = ?')
+          .get('memory-keep') as { source_session_id: string | null }
+      ).source_session_id,
+    ).toBeNull()
+  })
+
   it('should create a session with workspace ids', () => {
     const session = repo.create({
       id: 'sess-2',
@@ -218,6 +291,43 @@ describe('SessionRepository', () => {
 
     const workspaceIds = repo.getWorkspaceIds('sess-2')
     expect(workspaceIds).toEqual(['ws-1', 'ws-2'])
+  })
+
+  it('deletes every session for a workspace and applies the same related-data cleanup', () => {
+    repo.create({
+      id: 'sess-ws-target',
+      kind: 'project',
+      title: 'Target',
+      status: 'idle',
+      projectId: 'proj-1',
+      workspaceIds: ['ws-target'],
+    })
+    repo.create({
+      id: 'sess-ws-other',
+      kind: 'project',
+      title: 'Other',
+      status: 'idle',
+      projectId: 'proj-2',
+      workspaceIds: ['ws-other'],
+    })
+    db.raw
+      .prepare(
+        `INSERT INTO run_usage_summaries
+         (id, run_id, session_id, input_tokens, output_tokens, tool_call_count, updated_at)
+         VALUES (?, ?, ?, 1, 1, 1, ?)`,
+      )
+      .run('run-ws', 'run-ws', 'sess-ws-target', new Date().toISOString())
+
+    expect(repo.deleteByWorkspaceId('ws-target')).toEqual(['sess-ws-target'])
+    expect(repo.get('sess-ws-target')).toBeNull()
+    expect(repo.get('sess-ws-other')).not.toBeNull()
+    expect(
+      (
+        db.raw
+          .prepare('SELECT COUNT(*) AS count FROM run_usage_summaries WHERE session_id = ?')
+          .get('sess-ws-target') as { count: number }
+      ).count,
+    ).toBe(0)
   })
 
   it('should update session status', () => {
@@ -271,7 +381,14 @@ describe('SessionRepository', () => {
   })
 
   it('should list sessions with filters', () => {
-    repo.create({ id: 'sess-1', kind: 'chat', title: 'A', status: 'idle', projectId: 'proj-1' })
+    repo.create({
+      id: 'sess-1',
+      kind: 'chat',
+      title: 'A',
+      status: 'idle',
+      projectId: 'proj-1',
+      workspaceIds: ['ws-1'],
+    })
     repo.create({
       id: 'sess-2',
       kind: 'project',
@@ -293,6 +410,10 @@ describe('SessionRepository', () => {
     // 无过滤
     const all = repo.list()
     expect(all.total).toBe(3)
+
+    const workspace = repo.list({ workspaceId: 'ws-1', limit: 1 })
+    expect(workspace.total).toBe(1)
+    expect(workspace.sessions.map((session) => session.id)).toEqual(['sess-1'])
   })
 })
 
@@ -411,6 +532,38 @@ describe('EventRepository', () => {
     const evt = result.events[0]!
     expect(evt.id).toBe('evt-1')
     expect(evt.event_type).toBe('user_message')
+  })
+
+  it('finds the latest event matching a JSON field value', () => {
+    repo.insertBatch([
+      {
+        id: 'snapshot-host-old',
+        sessionId: 'sess-1',
+        eventType: 'turn_prompt_snapshot',
+        eventJson: JSON.stringify({ seq: 1, sdkSessionId: 'host-sdk' }),
+      },
+      {
+        id: 'snapshot-member',
+        sessionId: 'sess-1',
+        eventType: 'turn_prompt_snapshot',
+        eventJson: JSON.stringify({ seq: 2, sdkSessionId: 'member-sdk' }),
+      },
+      {
+        id: 'snapshot-host-latest',
+        sessionId: 'sess-1',
+        eventType: 'turn_prompt_snapshot',
+        eventJson: JSON.stringify({ seq: 3, sdkSessionId: 'host-sdk' }),
+      },
+    ])
+
+    expect(
+      repo.getLatestByTypeAndJsonValue(
+        'sess-1',
+        'turn_prompt_snapshot',
+        '$.sdkSessionId',
+        'host-sdk',
+      )?.id,
+    ).toBe('snapshot-host-latest')
   })
 
   it('should insert batch events in a transaction', () => {

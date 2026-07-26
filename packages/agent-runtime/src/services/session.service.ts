@@ -1,7 +1,6 @@
 import crypto from 'node:crypto'
-import { existsSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { stat } from 'node:fs/promises'
 import {
   EventRepository,
@@ -20,7 +19,6 @@ import {
   TeamDiscussionRepository,
   TeamDefinitionRepository,
   UsageLedgerRepository,
-  SessionSummaryRepository,
   GoalRepository,
   ConnectorConnectionRepository,
   TurnRequestRepository,
@@ -66,8 +64,8 @@ import {
   isBuiltInLocalCliProvider,
   isLocalCodexCliProvider,
   getAutoRouterAdapterForProviderId,
-  WORKFLOW_RESTRICTABLE_TOOL_NAMES,
 } from '@spark/protocol'
+import { estimateTokens, normalizeReasoningBudgetTokens } from '@spark/shared'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
 import { runMemberExecutorIfActive } from './member-execution-lifecycle.js'
@@ -79,8 +77,6 @@ import {
 import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-continuity.js'
 import {
   buildWorkflowBindingAuthorityPrompt,
-  buildWorkflowSystemPrompt,
-  type WorkflowExecutionMode,
 } from './workflow-system-prompt.js'
 
 // ─── D-13 拆分出的小工具 ───
@@ -102,7 +98,8 @@ export {
 }
 
 import {
-  buildConversationHistoryPromptFromEvents,
+  computeHistoryEntryTokenBudget,
+  computeHistoryTokenBudget,
 } from './session-history-helpers.js'
 export { buildConversationHistoryPromptFromEvents } from './session-history-helpers.js'
 
@@ -151,7 +148,6 @@ import {
   getDefaultWorkflowAtomicContent,
   memberDisallowedToolsFromConfig,
   runWorkflowVerifyNode,
-  stringArrayConfig,
 } from './session-workflow-helpers.js'
 export {
   buildWorkflowAtomicInstruction,
@@ -173,7 +169,6 @@ import {
 } from './team-tool-names.js'
 import { buildGoalContractDraftPrompt, parseGoalContractBlock } from './goal-contract.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
-import { StreamTerminalizer } from '../sdk/stream-terminalizer.js'
 import { z } from 'zod'
 import { isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
 import { TodoStore } from '../core/todo-store.js'
@@ -205,7 +200,6 @@ import {
   getWorkflowNodeWorkerId,
   normalizeWorkflowGraph,
   type NormalizedWorkflowGraph,
-  type NormalizedWorkflowNode,
   type WorkflowDispatchAttachment,
 } from './workflow-executor.js'
 import { WorkspaceSnapshotService, type FileSnapshot } from './workspace-snapshot.service.js'
@@ -234,7 +228,7 @@ import {
   type SparkReasoningEffort,
 } from '../sdk/reasoning-effort.js'
 import {
-  buildConversationHistoryWithSummary,
+  buildConversationHistory,
   buildMemoryExtractionRecentContext,
 } from './conversation-summarizer.js'
 import { generateSessionTitle } from './session-title-generator.js'
@@ -803,7 +797,10 @@ export class SessionService {
    * 这里复用与 claude SDK in-process MCP 完全相同的 scope 构造逻辑，保证两条路径
    * 的 agent 工具看到的记忆范围一致。
    */
-  private resolveMemoryScopesForSession(sessionId: string): MemoryScopeFilter[] {
+  private resolveMemoryScopesForSession(
+    sessionId: string,
+    agentIdOverride?: string,
+  ): MemoryScopeFilter[] {
     const scopes: MemoryScopeFilter[] = [{ scope: 'user', scopeRef: null }]
     try {
       const sessionRepo = new SessionRepository(this.db)
@@ -819,8 +816,9 @@ export class SessionService {
         if (workspaceId != null && workspaceId.length > 0) {
           scopes.push({ scope: 'project', scopeRef: workspaceId })
         }
-        if (session.agent_id != null && session.agent_id.length > 0) {
-          scopes.push({ scope: 'agent', scopeRef: session.agent_id })
+        const agentId = agentIdOverride?.trim() || session.agent_id
+        if (agentId != null && agentId.length > 0) {
+          scopes.push({ scope: 'agent', scopeRef: agentId })
         }
       }
     } catch {
@@ -836,6 +834,7 @@ export class SessionService {
    */
   async bridgeMemorySearch(params: {
     sessionId: string
+    agentId?: string
     query: string
     type?: 'user' | 'feedback' | 'project' | 'reference'
     limit?: number
@@ -844,7 +843,7 @@ export class SessionService {
     related: Array<{ id: string; name: string; type: string; description: string }>
     degraded?: boolean
   }> {
-    const scopes = this.resolveMemoryScopesForSession(params.sessionId)
+    const scopes = this.resolveMemoryScopesForSession(params.sessionId, params.agentId)
     const settingsRepo = new SettingsRepository(this.db)
     const settingsGet = (c: string, k: string) => settingsRepo.get(c, k)
     const searchRepo = new MemorySearchRepository(this.db)
@@ -1786,7 +1785,6 @@ export class SessionService {
     }
 
     const existingEventCount = eventRepo.countBySession(sessionId)
-    const currentSeq = this.eventSequencer.peek(sessionId, eventRepo)
     // Team Mode：构造 agentId→displayName 映射，让 conversation history 把 team_member_message
     // 也纳入历史（每条 member 发言前缀 [<name>]）。Mention 路径继承上下文的关键步骤。
     const agentNameById: Record<string, string> = {}
@@ -1857,12 +1855,9 @@ export class SessionService {
         message,
         // W1.1b：history 加载延后到 sdkResume 判定后，此处用 eventCount 估算。
         // 系数 100 token/event 是保守上界（typical assistant message 200-500 token，
-        // user message 50-200）。原 / 3 字符估算在长会话下偏低，这里取保守值
+        // user message 50-200）。消息本身统一走 shared tokenizer，避免中文低估；这里取保守值
         // 避免 longContext 路径（128k threshold）漏判。
-        estimatedTokens: Math.max(
-          Math.ceil(message.length / 3),
-          existingEventCount * 100,
-        ),
+        estimatedTokens: Math.max(estimateTokens(message), existingEventCount * 100),
       })
       if (routeSelection == null) {
         throw new Error(`Routing model not found or disabled: ${selectedRoutingModelId}`)
@@ -1946,14 +1941,13 @@ export class SessionService {
       agentAdapter,
       ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
     })
-    const previousPromptSnapshot = getLatestTurnPromptSnapshot(eventRepo, sessionId)
-    const canResumeSdkSession =
-      sdkResumeSafe &&
-      previousPromptSnapshot != null &&
-      previousPromptSnapshot.adapterKind === adapterKind &&
-      previousPromptSnapshot.model === model &&
-      previousPromptSnapshot.providerProfileId === effectiveRuntimeProviderProfileId &&
-      previousPromptSnapshot.sdkSessionId === stableSdkSessionId
+    const previousPromptSnapshot = getLatestMatchingTurnPromptSnapshot(eventRepo, sessionId, {
+      adapterKind,
+      model,
+      providerProfileId: effectiveRuntimeProviderProfileId,
+      sdkSessionId: stableSdkSessionId,
+    })
+    const canResumeSdkSession = sdkResumeSafe && previousPromptSnapshot != null
     const sdkSessionId = sdkResumeSafe
       ? stableSdkSessionId
       : this.resumeGate.makeRuntimeSessionId(
@@ -1963,14 +1957,18 @@ export class SessionService {
           agentAdapter,
           isMentionTurn ? `mention:${agent.id}:${turnId}` : turnId,
         )
-    // W1.1b：SDK resume 已接管历史时跳过 Spark 自做摘要（不写 SessionSummaryRepository）。
-    // canResumeSdkSession 综合了 sdkResumeSafe + previousPromptSnapshot 一致性检查：
-    // 只有 claude-sdk adapter + 原生 anthropic + 同一 sdkSessionId 才真生效。
-    const { prompt: conversationHistoryPrompt, summarization: summarizationStats } =
-      buildConversationHistoryWithSummary(eventRepo, this.db, sessionId, currentSeq, {
-        agentNameById,
-        ...(canResumeSdkSession ? { skipForSdkResume: true } : {}),
-      })
+    const contextWindowTokens = resolveProviderContextWindow(
+      config.supportsMillionContext === true,
+      config.contextWindow,
+    )
+    // 原生 SDK resume/compaction 是唯一摘要层。Spark 只按真实模型窗口构造 token
+    // 边界内的恢复提示词；resume 成功时缩成 recent fallback，fresh fallback 仍不失忆。
+    const { prompt: conversationHistoryPrompt } = buildConversationHistory(eventRepo, sessionId, {
+      agentNameById,
+      historyTokenBudget: computeHistoryTokenBudget(contextWindowTokens),
+      entryTokenBudget: computeHistoryEntryTokenBudget(contextWindowTokens),
+      ...(canResumeSdkSession ? { skipForSdkResume: true } : {}),
+    })
     // 选中的模式即唯一权威：mention turn 用被 @ 成员自身的模式，否则用会话存储的模式。
     // 不再叠加 /approval override 层——bypass 一旦选中就不会被任何旁路降级。
     const permissionMode = isMentionTurn
@@ -2007,10 +2005,6 @@ export class SessionService {
           worktreeMeta?: WorktreePromptMeta
         }
       | undefined
-    const contextWindowTokens = resolveProviderContextWindow(
-      config.supportsMillionContext === true,
-      config.contextWindow,
-    )
     const softContextLimitTokens = resolveSoftContextLimitForWindow(contextWindowTokens)
     const projectContextBudgetTokens = Math.max(
       2_000,
@@ -2152,7 +2146,6 @@ export class SessionService {
       let activeDiscussionId: string | undefined
       let activeDiscussionRound = 0
       const hasWorkflowExecutionPlan = workflowCanUseManagedExecutor
-      const hasDispatchableWorkflow = workflowGraph != null && enabledWorkflowWorkerIds.size > 0
       if (teamConfig?.enabled) {
         teamRosterPrompt = buildTeamRosterPrompt(agent, teamMembers, teamConfig)
       }
@@ -2535,7 +2528,8 @@ export class SessionService {
     {
       const estimateChars = (s: string | undefined): number => s?.trim().length ?? 0
       const estimateSectionTokens = (s: string | undefined): number =>
-        Math.ceil(estimateChars(s) / 3)
+        estimateTokens(s?.trim() ?? '')
+      const attachmentPromptLedger = buildAttachmentPromptLedger(turnAttachments)
 
       const ledgerSections = [
         {
@@ -2575,8 +2569,8 @@ export class SessionService {
         },
         {
           label: 'Attachments',
-          estimatedTokens: Math.ceil(buildAttachmentPromptLedger(turnAttachments).length / 3),
-          charCount: buildAttachmentPromptLedger(turnAttachments).length,
+          estimatedTokens: estimateTokens(attachmentPromptLedger),
+          charCount: attachmentPromptLedger.length,
           truncated: false,
         },
       ].filter((section) => section.charCount > 0 || section.estimatedTokens > 0)
@@ -2604,28 +2598,6 @@ export class SessionService {
             softContextLimitTokens > 0
               ? Math.round((totalEstimatedTokens / softContextLimitTokens) * 100)
               : 0,
-        },
-        eventRepo,
-      )
-    }
-
-    // ── Context Summarization Event ───────────────────────────────────────
-    if (summarizationStats != null) {
-      this.emitAndPersist(
-        sessionId,
-        turnId,
-        {
-          id: crypto.randomUUID(),
-          type: 'context_summarized',
-          sessionId,
-          turnId,
-          timestamp: new Date().toISOString(),
-          seq: 0,
-          summarizedEntryCount: summarizationStats.summarizedEntryCount,
-          fromSeq: summarizationStats.fromSeq,
-          toSeq: summarizationStats.toSeq,
-          tokensSaved: summarizationStats.tokensSaved,
-          summaryTokens: summarizationStats.summaryTokens,
         },
         eventRepo,
       )
@@ -2684,6 +2656,13 @@ export class SessionService {
         contextWindowTokens,
         ...(session.reasoning_effort != null
           ? { reasoningEffort: normalizeReasoningEffort(session.reasoning_effort) }
+          : {}),
+        ...(normalizeReasoningBudgetTokens(agent.metadata.reasoningBudgetTokens) != null
+          ? {
+              reasoningBudgetTokens: normalizeReasoningBudgetTokens(
+                agent.metadata.reasoningBudgetTokens,
+              ),
+            }
           : {}),
         ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
         ...(attachmentDirectories.length > 0
@@ -3152,7 +3131,17 @@ export class SessionService {
     // recall_memory 工具，进程内 MCP server（无子进程 / 无 bridge HTTP），直接闭包访问
     // this.db。CLI 路径（codex CLI / claude CLI）在 tryStartCodexCliTurn 里走 stdio
     // resolveSparkMemoryMcpServer；本方法（tryStartSDKTurn）只处理 SDK 路径。
-    await this.attachSparkMemoryMcpServer(sessionId, config, options, mcpServers)
+    await this.attachSparkMemoryMcpServer(
+      sessionId,
+      {
+        workspaceRootPath: config.workspaceRootPath,
+        ...(options.primaryWorkspaceId != null
+          ? { primaryWorkspaceId: options.primaryWorkspaceId }
+          : {}),
+        ...(options.agentId != null ? { agentId: options.agentId } : {}),
+      },
+      mcpServers,
+    )
 
     const completeAssistantEvents: AssistantMessageEvent[] = []
     // 标题精炼、目标契约/进度解析、记忆抽取都依赖完整 assistant 正文。
@@ -3799,13 +3788,7 @@ export class SessionService {
       const memoryRepo = new MemoryRepository(this.db)
       const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
       const eventRepo = new EventRepository(this.db)
-      const currentSeq = this.eventSequencer.peek(sessionId, eventRepo)
-      const recentSummary = buildMemoryExtractionRecentContext(
-        eventRepo,
-        this.db,
-        sessionId,
-        currentSeq,
-      )
+      const recentSummary = buildMemoryExtractionRecentContext(eventRepo, sessionId)
       // 真实 LLM 抽取：走 ModelService.complete()（OpenAI 兼容 /chat/completions 或 anthropic /v1/messages）。
       // 未配置 extraction 模型 / 调用失败 → complete 返回 unavailable，这里降级为 '[]'，
       // 写入静默跳过（与原 stub 行为一致，绝不阻塞主对话）。
@@ -3894,8 +3877,11 @@ export class SessionService {
    */
   private async attachSparkMemoryMcpServer(
     sessionId: string,
-    config: SDKExecutorConfig,
-    options: TryStartSDKTurnOptions,
+    context: {
+      workspaceRootPath: string
+      primaryWorkspaceId?: string
+      agentId?: string
+    },
     mcpServers: Record<string, SDKMcpServerConfig>,
   ): Promise<void> {
     try {
@@ -3907,7 +3893,7 @@ export class SessionService {
           const memSettingsRepo = new SettingsRepository(this.db)
           const memSettingsGet = (c: string, k: string) => memSettingsRepo.get(c, k)
           const memRepo = new MemoryRepository(this.db)
-          const memStore = new MemoryStoreService(undefined, config.workspaceRootPath)
+          const memStore = new MemoryStoreService(undefined, context.workspaceRootPath)
           const memSearchRepo = new MemorySearchRepository(this.db)
           const memEntityRepo = new MemoryEntityRepository(this.db)
           const memModelService = new ModelService(
@@ -3933,11 +3919,11 @@ export class SessionService {
             memSearchService,
           )
           const memScopes: MemoryScopeFilter[] = [{ scope: 'user', scopeRef: null }]
-          if (options.primaryWorkspaceId != null && options.primaryWorkspaceId.length > 0) {
-            memScopes.push({ scope: 'project', scopeRef: options.primaryWorkspaceId })
+          if (context.primaryWorkspaceId != null && context.primaryWorkspaceId.length > 0) {
+            memScopes.push({ scope: 'project', scopeRef: context.primaryWorkspaceId })
           }
-          if (options.agentId != null && options.agentId.length > 0) {
-            memScopes.push({ scope: 'agent', scopeRef: options.agentId })
+          if (context.agentId != null && context.agentId.length > 0) {
+            memScopes.push({ scope: 'agent', scopeRef: context.agentId })
           }
 
           const searchMemoryTool = memTool(
@@ -4362,6 +4348,7 @@ export class SessionService {
   private async resolveSparkMemoryMcpServer(
     sessionId: string,
     _workspaceRootPath: string,
+    agentId?: string,
   ): Promise<SDKMcpServerConfig | null> {
     let memoryEnabled: unknown = true
     try {
@@ -4387,6 +4374,9 @@ export class SessionService {
           ELECTRON_RUN_AS_NODE: '1',
           SPARK_PLATFORM_BRIDGE_PORT: String(port),
           SPARK_MEMORY_SID: sessionId,
+          ...(agentId != null && agentId.trim().length > 0
+            ? { SPARK_MEMORY_AGENT_ID: agentId.trim() }
+            : {}),
         },
       }
     } catch (err) {
@@ -6005,7 +5995,7 @@ export class SessionService {
         modelProfiles: modelProfilesForRouting,
         providers: providersForRouting,
         message: memberRouteMessage,
-        estimatedTokens: Math.ceil(memberRouteMessage.length / 3),
+        estimatedTokens: estimateTokens(memberRouteMessage),
       })
       if (routeSelection == null)
         throw new Error(`Member routing model not found or disabled: ${selectedRoutingModelId}`)
@@ -6067,6 +6057,9 @@ export class SessionService {
     })
     const { isCodexMember } = memberProfile
     const effectiveMemberMode = memberProfile.permissionMode
+    // Workflow 的只读语义必须由显式能力标记表达，不能从 toolIds 是否非空反推。
+    // tool/mcp 节点和普通 Agent 都可能主动配置 toolIds，但它们仍是可执行成员。
+    const isReadonlyAtomicMember = member.metadata?.workflowCapability === 'readonly'
 
     // 团队成员运行在同一会话内，沿用 host 会话/项目级自定义环境变量：注入真实值供其工具引用，
     // 并把脱敏清单追加进成员系统提示词，避免成员泄露敏感信息。
@@ -6113,15 +6106,16 @@ export class SessionService {
         }`,
       )
     }
-    // W1.1b 联动细致审查修复：member turn 注入 memory block（按 member.id scope）。
-    // 之前 member turn 完全失忆——既不挂载 spark_memory MCP 也不注入 memory block，
-    // member 无法访问长期记忆。这里复用 loadMemoryBlockForTurn（已抽到 method）按
-    // member scope 加载，与 Host 行为一致。仍不挂载 spark_memory MCP（避免增加 member
-    // 主动 search_memory 的复杂度；member 通过 prompt 摘要已足够）。
+    // Member turn 注入 memory block（按 member.id scope），并在下方挂载与 Host 同源的
+    // spark_memory MCP。提示词与真实工具能力必须一致，不能宣称存在 search/recall 却不提供。
+    let memberWorkspaceId: string | undefined
+    try {
+      memberWorkspaceId = sessionRepo.getWorkspaceIdsFromRow(session)[0]
+    } catch {
+      // 旧库/精简测试仓储无该 helper 时按无 project scope 处理。
+    }
     let memberMemoryBlock: string | undefined
     try {
-      // 二轮核查修复：复用 sessionRepo + session，避免重复 DB 查询。
-      const memberWorkspaceId = sessionRepo.getWorkspaceIdsFromRow(session)[0]
       memberMemoryBlock = await this.loadMemoryBlockForTurn(
         sessionId,
         workspaceRootPath,
@@ -6156,16 +6150,6 @@ export class SessionService {
             ),
           })
         : undefined
-    const memberSystemPrompt =
-      joinPromptSections(
-        APP_IDENTITY_SYSTEM_PROMPT,
-        buildManagedAgentSystemPrompt(member, null),
-        memberTeamPrompt,
-        memberEnvPrompt || undefined,
-        memberSkillSystemPrompt,
-        memberMemoryBlock,
-        MEMORY_BEHAVIOR_SYSTEM_PROMPT,
-      ) ?? ''
     const userMessage = memberRouteMessage
     const canContinueDiscussionSession =
       discussionId != null &&
@@ -6186,21 +6170,13 @@ export class SessionService {
         )
       : crypto.randomUUID()
 
-    // 所有已启用的应用 MCP 对团队成员默认可用，与 Host / 单 Agent 保持一致。
-    const memberMcpServers = await this.buildMcpServersForSDK()
-    // 内置联网搜索对团队成员同样默认挂载
-    const memberWebSearchServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
-    if (memberWebSearchServer != null) memberMcpServers.spark_search = memberWebSearchServer
-    // 三轮核查修复（联合场景：Workflow + Team）：readonly atomic member（input/route/
-    // plan/review 节点的临时 worker）不应加载写入类 MCP——这些节点的语义是"纯 LLM 任务"，
-    // metadata.toolIds 已限定 SDK 内置工具为只读集，但 MCP 工具不在 WORKFLOW_RESTRICTABLE
-    // 列表内，commit 9 的"全 member 加载 conditional MCP"破坏了 readonly 语义。
-    // 通过 member.metadata?.toolIds 非空识别 readonly atomic（createWorkflowAtomicMember
-    // 只对 input/route/plan/review 设置该字段）。
-    const memberConfiguredToolIds = stringArrayConfig(member.metadata?.toolIds)
-    const isReadonlyAtomicMember = memberConfiguredToolIds.length > 0
+    // 显式 readonly 原子节点从空能力集开始，避免在判断前加载用户自定义（可能写入型）MCP。
+    // 普通 Team/Workflow tool/mcp 成员则与 Host 一致加载已启用的应用 MCP。
+    const memberMcpServers = isReadonlyAtomicMember ? {} : await this.buildMcpServersForSDK()
     try {
       if (!isReadonlyAtomicMember) {
+        const memberWebSearchServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
+        if (memberWebSearchServer != null) memberMcpServers.spark_search = memberWebSearchServer
         const memberMediaContext = await this.resolveMediaGenerationContext(workspaceRootPath)
         const memberImageContext =
           memberMediaContext == null
@@ -6241,6 +6217,26 @@ export class SessionService {
         `Member conditional MCP load failed (non-fatal): ${
           err instanceof Error ? err.message : String(err)
         }`,
+      )
+    }
+
+    // Memory 是只读检索能力。Claude SDK 使用进程内 MCP；Codex/CLI 使用 stdio bridge。
+    if (isCodexMember) {
+      const memoryServer = await this.resolveSparkMemoryMcpServer(
+        sessionId,
+        workspaceRootPath,
+        member.id,
+      )
+      if (memoryServer != null) memberMcpServers.spark_memory = memoryServer
+    } else {
+      await this.attachSparkMemoryMcpServer(
+        sessionId,
+        {
+          workspaceRootPath,
+          ...(memberWorkspaceId != null ? { primaryWorkspaceId: memberWorkspaceId } : {}),
+          agentId: member.id,
+        },
+        memberMcpServers,
       )
     }
     // 成员的 spark_team 工具面，三个独立触发条件（满足其一即注入 server）：
@@ -6284,6 +6280,16 @@ export class SessionService {
       if (memberTeamServer != null) memberMcpServers.spark_team = memberTeamServer
     }
 
+    const memberSystemPrompt =
+      joinPromptSections(
+        APP_IDENTITY_SYSTEM_PROMPT,
+        buildManagedAgentSystemPrompt(member, null),
+        memberTeamPrompt,
+        memberEnvPrompt || undefined,
+        memberMemoryBlock,
+        memberMcpServers.spark_memory != null ? MEMORY_BEHAVIOR_SYSTEM_PROMPT : undefined,
+      ) ?? ''
+
     const sdkConfig: SDKExecutorConfig = {
       apiKey,
       model,
@@ -6296,14 +6302,30 @@ export class SessionService {
       ...(providerConfig.sonnetModel != null ? { sonnetModel: providerConfig.sonnetModel } : {}),
       ...(providerConfig.opusModel != null ? { opusModel: providerConfig.opusModel } : {}),
       ...(memberSystemPrompt.trim().length > 0 ? { systemPrompt: memberSystemPrompt } : {}),
+      ...(!isReadonlyAtomicMember && memberSkillSystemPrompt != null
+        ? { skillSystemPrompt: memberSkillSystemPrompt }
+        : {}),
       ...(memberCustomEnv != null ? { customEnv: memberCustomEnv } : {}),
       ...(Object.keys(memberMcpServers).length > 0 ? { mcpServers: memberMcpServers } : {}),
+      ...(!isCodexMember && !isReadonlyAtomicMember
+        ? (() => {
+            const plugins = this.resolveNativeSkillPlugins()
+            return plugins != null ? { skillPlugins: plugins, nativeSkills: 'all' as const } : {}
+          })()
+        : {}),
       // 三轮联合场景审查修复（Reasoning + Member）：member 继承 agent 配置的
       // reasoningEffort，否则 member 用 SDK 默认（standard），违背用户在 agent 上
       // 配置 max/high 的意图。createWorkflowSubagentMember 已让 atomic member
       // 继承 hostAgent.reasoningEffort，真实 team member 自己有 reasoningEffort 字段。
       ...(member.reasoningEffort != null
         ? { reasoningEffort: normalizeReasoningEffort(member.reasoningEffort) }
+        : {}),
+      ...(normalizeReasoningBudgetTokens(member.metadata.reasoningBudgetTokens) != null
+        ? {
+            reasoningBudgetTokens: normalizeReasoningBudgetTokens(
+              member.metadata.reasoningBudgetTokens,
+            ),
+          }
         : {}),
       // 三轮功能逻辑审查修复（产品逻辑维度）：member dispatch 必须有 iteration limit。
       // SDK 默认 maxTurns=200，单个 member dispatch 跑 200 turn 会消耗巨量 token，
@@ -6426,37 +6448,15 @@ export class SessionService {
           }
         } else if (event.mode === 'delta') deltaText += event.content
       } else if (event.type === 'usage_update') {
-        // 三轮功能逻辑审查修复：member dispatch 的 token usage 必须记录到 session。
-        // 直接累计到 UsageLedgerRepository，不走 emitAndPersist（emit 会触发
-        // recordUsageUpdate，它的 prev/last 模型假设 single-source，member emit
-        // 会覆盖 host prev 导致 session 总计错乱）。
-        // 取舍：UI 看不到 member 实时 token 流（但 session 累计准确，计费/统计正确）。
-        // 未来可通过扩展 recordUsageUpdate 支持 dispatch 维度 source key 修复实时性。
         inputTokens = event.inputTokens
         outputTokens = event.outputTokens
-        try {
-          const memberSession = sessionRepo.get(sessionId)
-          const memberProviderId = memberSession?.provider_profile_id ?? event.provider
-          const memberModelId = event.model || memberSession?.model_id || 'unknown'
-          new UsageLedgerRepository(this.db).record({
-            sessionId,
-            providerId: memberProviderId,
-            modelId: memberModelId,
-            inputTokens: Math.max(0, event.inputTokens),
-            outputTokens: Math.max(0, event.outputTokens),
-            reasoningOutputTokens: Math.max(0, event.reasoningOutputTokens ?? 0),
-            cacheReadTokens: Math.max(0, event.cacheHitTokens ?? 0),
-            cacheWriteTokens: Math.max(0, event.cacheWriteTokens ?? 0),
-            costUsd: Math.max(0, event.estimatedCostUsd ?? 0),
-            requestTimestamp: event.timestamp,
-          })
-        } catch (err) {
-          log.warn(
-            `member usage ledger record failed (non-fatal): ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          )
-        }
+        // SDK usage_update 是累计快照；按 dispatch 隔离 delta 状态，避免多次快照重复计费，
+        // 也避免覆盖同一 Host turn 的累计基线。Provider/Model 必须使用成员实际路由结果。
+        this.recordUsageUpdate(sessionId, turnId, event, {
+          sourceKey: `member:${dispatchId}`,
+          providerId: providerProfileId,
+          modelId: model,
+        })
       } else if (event.type === 'agent_error') {
         memberError = event.message
       } else if (
@@ -6535,13 +6535,16 @@ export class SessionService {
     }
   }
 
-  private usageLedgerKey(sessionId: string, turnId: string): string {
-    return `${sessionId}:${turnId}`
+  private usageLedgerKey(sessionId: string, turnId: string, sourceKey = 'host'): string {
+    return `${sessionId}:${turnId}:${sourceKey}`
   }
 
   private clearUsageLedgerTurnState(sessionId: string, turnId?: string): void {
     if (turnId != null) {
-      this.usageLedgerLastByTurn.delete(this.usageLedgerKey(sessionId, turnId))
+      const turnPrefix = `${sessionId}:${turnId}:`
+      for (const key of this.usageLedgerLastByTurn.keys()) {
+        if (key.startsWith(turnPrefix)) this.usageLedgerLastByTurn.delete(key)
+      }
       return
     }
     const prefix = `${sessionId}:`
@@ -6554,8 +6557,13 @@ export class SessionService {
     sessionId: string,
     turnId: string,
     event: Extract<AgentEvent, { type: 'usage_update' }>,
+    options: {
+      sourceKey?: string
+      providerId?: string
+      modelId?: string
+    } = {},
   ): void {
-    const key = this.usageLedgerKey(sessionId, turnId)
+    const key = this.usageLedgerKey(sessionId, turnId, options.sourceKey)
     const prev = this.usageLedgerLastByTurn.get(key) ?? {
       inputTokens: 0,
       outputTokens: 0,
@@ -6595,8 +6603,8 @@ export class SessionService {
 
     try {
       const session = new SessionRepository(this.db).get(sessionId)
-      const providerId = session?.provider_profile_id ?? event.provider
-      const modelId = event.model || session?.model_id || 'unknown'
+      const providerId = options.providerId ?? session?.provider_profile_id ?? event.provider
+      const modelId = options.modelId ?? (event.model || session?.model_id || 'unknown')
       new UsageLedgerRepository(this.db).record({
         sessionId,
         providerId,
@@ -7859,26 +7867,9 @@ export class SessionService {
   async deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
     const sessionRepo = new SessionRepository(this.db)
     this.clearSessionMemory(sessionId)
-    const deleted = sessionRepo.delete(sessionId)
+    const deleted = sessionRepo.deleteWithRelatedData(sessionId)
     if (deleted) {
       this.cleanupSessionEventsInBackground(sessionId)
-      // 三轮功能逻辑审查修复：清理 session 关联的所有表，避免数据残留。
-      // 之前 deleteSession 漏清 usage_ledger / session_summary / team_dispatch /
-      // team_discussion / workflow_runs 5 个表，违背用户"删除 session = 清除所有
-      // 相关数据"的隐私期望，长期累积导致表膨胀。
-      try {
-        new UsageLedgerRepository(this.db).deleteBySession(sessionId)
-        new SessionSummaryRepository(this.db).deleteBySession(sessionId)
-        new TeamDispatchRepository(this.db).deleteBySession(sessionId)
-        new TeamDiscussionRepository(this.db).deleteBySession(sessionId)
-        new WorkflowRunRepository(this.db).deleteBySession(sessionId)
-      } catch (err) {
-        log.warn(
-          `Failed to cleanup session-related tables for ${sessionId} (non-fatal): ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        )
-      }
     }
     return { deleted }
   }
@@ -9338,21 +9329,39 @@ export function resolveCodexMemberExecutionProfile(args: {
 }
 
 
-function getLatestTurnPromptSnapshot(
+function getLatestMatchingTurnPromptSnapshot(
   eventRepo: EventRepository,
   sessionId: string,
+  expected: {
+    model: string
+    providerProfileId: string
+    adapterKind: 'claude-sdk' | 'codex'
+    sdkSessionId: string
+  },
 ): {
   model: string
   providerProfileId?: string
   adapterKind: 'claude-sdk' | 'codex'
   sdkSessionId?: string
 } | null {
-  const row = eventRepo.queryBySession({ sessionId, eventType: 'turn_prompt_snapshot', limit: 1 })
-    .events[0]
+  const row = eventRepo.getLatestByTypeAndJsonValue(
+    sessionId,
+    'turn_prompt_snapshot',
+    '$.sdkSessionId',
+    expected.sdkSessionId,
+  )
   if (row == null) return null
   try {
     const event = JSON.parse(row.event_json) as AgentEvent
     if (event.type !== 'turn_prompt_snapshot') return null
+    if (
+      event.model !== expected.model ||
+      event.adapterKind !== expected.adapterKind ||
+      event.providerProfileId !== expected.providerProfileId ||
+      event.sdkSessionId !== expected.sdkSessionId
+    ) {
+      return null
+    }
     return {
       model: event.model,
       adapterKind: event.adapterKind,

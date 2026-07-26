@@ -3,6 +3,9 @@ import { readStylePresets } from './canvasPipeline'
 import type { CharacterPromptFields } from './canvasCharacterSheetPrompts'
 import type { CanvasAsset } from './canvas.types'
 import { SCENE_NO_PEOPLE_PROMPT } from './canvasScenePrompt'
+import { clipTextHeadTail } from '@spark/shared'
+
+const CHAPTER_SOURCE_TOKEN_BUDGET = 4_000
 
 export type ShotSegmentContext = {
   group: ShotGroup
@@ -442,7 +445,7 @@ export function buildChapterToScreenplayInstruction(chapterText: string): string
     '请把下面的小说/长文稿章节改写为影视剧本（场次剧本）。',
     '要求：按场次切分，每场标注【场号 内/外景 地点 时间】；正文用「动作描述 + 角色对白 + 旁白」格式；',
     '保留关键情节与人物关系；对白口语化、可表演；输出可直接用于后续角色/场景/分镜拆解，不要解释过程。',
-    `章节原文：\n${chapterText.slice(0, 8000)}`,
+    `章节原文：\n${clipTextHeadTail(chapterText, CHAPTER_SOURCE_TOKEN_BUDGET)}`,
   ].join('\n\n')
 }
 

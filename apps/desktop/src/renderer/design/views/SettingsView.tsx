@@ -39,7 +39,7 @@ import { FfmpegStatusCard } from './FfmpegStatusCard'
 import { VoiceIntegritySettingsItem } from '../voice/VoiceIntegritySettingsItem'
 import { FontAssetControl } from '../components/FontAssetControl'
 import { SdkInstallProgressView } from '../components/SdkInstallProgress'
-import { clearOnboardingState } from './OnboardingView'
+import { clearOnboardingState } from './onboarding-state'
 import { canvasApi } from './canvas/canvas.api'
 import { CanvasBatchSubmitPreferenceSetting } from './canvas/CanvasBatchSubmitPreferenceSetting'
 import { resolveSupportedLanguage, SUPPORTED_LANGUAGES, useI18n } from '../i18n'
@@ -80,18 +80,7 @@ import type {
   RemoteRuntimeStatusResponse,
 } from '@spark/protocol'
 
-// 工作流模板暂未实现，保留类型定义以便后续启用
-type WorkflowTemplate = {
-  id: string
-  name: string
-  desc: string
-  nodes: number
-  updatedAt: string
-}
 const SANDBOX_LEVEL_KEY = 'spark-sandbox-level'
-const AUDIT_ENABLED_KEY = 'spark-audit-enabled'
-// 工作流模板暂未实现，保留常量定义以便后续启用
-const WORKFLOW_TEMPLATES_KEY = 'spark-workflow-templates'
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
@@ -207,17 +196,7 @@ function localStorageKeyToCategory(key: string): string {
 type GeneralSettings = {
   userName: string
   language: string
-  startupBehavior: string
-  defaultWorkspace: string
-  systemTray: boolean
   autoStart: boolean
-  defaultSandbox: number
-  unsavedPrompt: boolean
-  checkpointRetention: number
-  notifyTaskComplete: boolean
-  notifyPermission: boolean
-  notifyWorkflowFail: boolean
-  notifyMcpOffline: boolean
   notifyNewVersion: boolean
 }
 
@@ -265,22 +244,12 @@ type CustomCommandItem = {
 const DEFAULT_GENERAL: GeneralSettings = {
   userName: 'User',
   language: resolveSupportedLanguage(undefined),
-  startupBehavior: 'last',
-  defaultWorkspace: '',
-  systemTray: true,
   autoStart: false,
-  defaultSandbox: 2,
-  unsavedPrompt: true,
-  checkpointRetention: 50,
-  notifyTaskComplete: true,
-  notifyPermission: true,
-  notifyWorkflowFail: true,
-  notifyMcpOffline: false,
   notifyNewVersion: true,
 }
 
 const DEFAULT_TELEMETRY: TelemetrySettings = {
-  logLevel: 'info',
+  logLevel: 'warn',
 }
 
 const DEFAULT_UPDATES: UpdatesSettings = {
@@ -340,24 +309,6 @@ function usePersistedSettings<T>(key: string, defaults: T): [T, (patch: Partial<
   return [state, update]
 }
 
-// 工作流模板暂未实现，保留默认模板数据以便后续启用
-const DEFAULT_WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
-  {
-    id: 'template:agent-dev',
-    name: 'Agent 开发流程',
-    desc: '需求分析、计划、编码、测试、审查',
-    nodes: 6,
-    updatedAt: '内置模板',
-  },
-  {
-    id: 'template:research',
-    name: '资料研究流程',
-    desc: '检索、摘要、交叉验证、报告生成',
-    nodes: 4,
-    updatedAt: '内置模板',
-  },
-]
-
 function readStoredJson<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
   const raw = window.localStorage.getItem(key)
@@ -409,8 +360,6 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
         // { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
         { id: 'remote-connections', icon: <Icons.Globe size={13} />, label: '远程连接', keywords: ['API Key', '供应商', 'Provider', '模型', '密钥', '渠道'] },
         { id: 'system-prompt', icon: <Icons.Chat size={13} />, label: '系统提示词', keywords: ['身份', 'prompt', '提示词', '人设'] },
-        // 工作流模板暂未实现，隐藏导航项
-        // { id: 'workflows', icon: <Icons.Workflow />, label: '工作流模板' },
       ],
     },
     {
@@ -450,8 +399,6 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     // 'mcp-settings': McpSection,
     'remote-connections': RemoteConnectionsSection,
     'system-prompt': SystemPromptSection,
-    // 工作流模板暂未实现，隐藏
-    // workflows: WorkflowTemplatesSection,
     integrity: IntegritySection,
     playwright: PlaywrightStatusCard,
     telemetry: TelemetrySection,
@@ -534,7 +481,6 @@ function GeneralSection() {
   const { setTweak } = useApp()
   const { t: tr } = useI18n()
   const [s, set] = usePersistedSettings(SETTINGS_GENERAL_KEY, DEFAULT_GENERAL)
-  const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
   const [autoStartSupported, setAutoStartSupported] = useState(true)
   const [autoStartBusy, setAutoStartBusy] = useState(false)
 
@@ -556,17 +502,6 @@ function GeneralSection() {
       cancelled = true
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleBrowseWorkspace = async () => {
-    try {
-      const selected = await openDirectory({ title: '选择默认工作区' })
-      if (!selected.canceled && selected.filePath !== undefined) {
-        set({ defaultWorkspace: selected.filePath })
-      }
-    } catch {
-      /* user cancelled */
-    }
-  }
 
   const handleToggleAutoStart = async () => {
     if (!autoStartSupported || autoStartBusy) return
@@ -633,46 +568,6 @@ function GeneralSection() {
         />
 
         <label>
-          启动行为<span className="sub">应用启动时的默认动作</span>
-        </label>
-        <Select
-          value={s.startupBehavior}
-          onChange={(v) => set({ startupBehavior: v })}
-          options={[
-            { label: '恢复上次会话', value: 'last' },
-            { label: '打开 Home', value: 'home' },
-            { label: '打开上次项目', value: 'last-project' },
-            { label: '空白会话', value: 'blank' },
-          ]}
-        />
-
-        <label>
-          默认工作区<span className="sub">新建项目会话时的预选根目录</span>
-        </label>
-        <div className="control">
-          <Input
-            className="flex1"
-            size="middle"
-            value={s.defaultWorkspace || ''}
-            onChange={(e) => set({ defaultWorkspace: e.target.value })}
-            placeholder="点击浏览选择…"
-          />
-          <Button
-            size="middle"
-            type="text"
-            icon={<Icons.Folder size={13} />}
-            onClick={() => void handleBrowseWorkspace()}
-          >
-            浏览…
-          </Button>
-        </div>
-
-        <label>
-          系统托盘<span className="sub">关闭主窗口后保留后台运行</span>
-        </label>
-        <Switch size="middle" checked={s.systemTray} onChange={(v) => set({ systemTray: v })} />
-
-        <label>
           开机自启动
           <span className="sub">
             {autoStartSupported ? '登录系统后自动启动 SparkWork' : '当前系统环境不支持读取登录项'}
@@ -686,92 +581,10 @@ function GeneralSection() {
           onChange={() => void handleToggleAutoStart()}
         />
 
-        <label>新会话默认沙箱</label>
-        <Segmented
-          value={s.defaultSandbox}
-          onChange={(v) => set({ defaultSandbox: Number(v) as 0 | 1 | 2 | 3 })}
-          options={[
-            { label: 'L0 仅聊天', value: 0 },
-            { label: 'L1 只读', value: 1 },
-            { label: 'L2 受控', value: 2 },
-            { label: 'L3 完全', value: 3 },
-          ]}
-        />
-
-        <label>
-          未保存修改提示<span className="sub">关闭会话或退出前提示</span>
-        </label>
-        <Switch
-          size="middle"
-          checked={s.unsavedPrompt}
-          onChange={(v) => set({ unsavedPrompt: v })}
-        />
-
-        <label>
-          检查点保留<span className="sub">每个会话保留多少历史检查点</span>
-        </label>
-        <div className="control">
-          <Space.Compact>
-            <InputNumber
-              min={10}
-              max={500}
-              step={10}
-              value={s.checkpointRetention}
-              onChange={(v) => set({ checkpointRetention: typeof v === 'number' ? v : 50 })}
-              className="input-w-sm"
-            />
-            <Button className="input-suffix-addon">个</Button>
-          </Space.Compact>
-          <span className="muted text-xs-12">超出后按时间淘汰</span>
-        </div>
       </div>
 
       <div className="subsec-h">通知</div>
       <div className="settings-card">
-        <SettingsRow
-          title="任务完成"
-          desc="长任务（≥30s）结束后系统通知"
-          right={
-            <Switch
-              size="middle"
-              checked={s.notifyTaskComplete}
-              onChange={(v) => set({ notifyTaskComplete: v })}
-            />
-          }
-        />
-        <SettingsRow
-          title="权限请求"
-          desc="需要审批时弹出系统通知"
-          right={
-            <Switch
-              size="middle"
-              checked={s.notifyPermission}
-              onChange={(v) => set({ notifyPermission: v })}
-            />
-          }
-        />
-        <SettingsRow
-          title="工作流失败"
-          desc="任意节点失败时通知"
-          right={
-            <Switch
-              size="middle"
-              checked={s.notifyWorkflowFail}
-              onChange={(v) => set({ notifyWorkflowFail: v })}
-            />
-          }
-        />
-        <SettingsRow
-          title="MCP 离线"
-          desc="服务器连接断开时通知"
-          right={
-            <Switch
-              size="middle"
-              checked={s.notifyMcpOffline}
-              onChange={(v) => set({ notifyMcpOffline: v })}
-            />
-          }
-        />
         <SettingsRow
           title="新版本可用"
           right={
@@ -1723,9 +1536,6 @@ function AppearanceSection() {
             </span>
           </button>
         ))}
-        <button className="color-add-btn">
-          <Icons.Plus size={14} />
-        </button>
       </div>
 
       <div className="subsec-h">布局与字体</div>
@@ -1769,7 +1579,7 @@ function AppearanceSection() {
               onChange={(v) => setA({ fontSize: typeof v === 'number' ? v : 15 })}
               className="font-size-input"
             />
-            <Button className="input-suffix-addon">px</Button>
+            <span className="input-suffix-addon">px</span>
           </Space.Compact>
         </div>
 
@@ -1796,7 +1606,7 @@ function AppearanceSection() {
               }}
               className="ui-zoom-input"
             />
-            <Button className="input-suffix-addon">%</Button>
+            <span className="input-suffix-addon">%</span>
           </Space.Compact>
         </div>
 
@@ -2065,136 +1875,6 @@ function ShortcutsSection() {
       {groups.every((group) => groupedShortcuts[group.id].length === 0) && (
         <div className="empty-hint">没有找到匹配的快捷键。</div>
       )}
-    </div>
-  )
-}
-
-/* ───────── PROFILE EDIT MODAL ───────── */
-export function ProfileEditModal({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-h">
-          <div className="modal-h-icon modal-h-icon-primary">
-            <Icons.Brain size={18} />
-          </div>
-          <div>
-            <div className="modal-title">编辑模型 Profile</div>
-            <div className="modal-subtitle">Anthropic · Claude Sonnet 4.5</div>
-          </div>
-        </div>
-        <div className="modal-body modal-body-scroll">
-          <div className="form-grid">
-            <label>显示名称</label>
-            <Input defaultValue="Sonnet 4.5 · 默认" />
-
-            <label>模型 ID</label>
-            <Input className="mono-sm" defaultValue="claude-sonnet-4-5-20250929" />
-
-            <label>
-              角色<span className="sub">该 profile 适配的角色</span>
-            </label>
-            <div className="row row-gap-xs">
-              {['default', 'planner', 'coder', 'reviewer', 'fast', 'vision', 'long-context'].map(
-                (r) => (
-                  <span
-                    key={r}
-                    className={`badge ${['default', 'coder', 'reviewer'].includes(r) ? 'primary' : ''} badge-role-tag`}
-                  >
-                    {r}
-                  </span>
-                ),
-              )}
-            </div>
-
-            <label>Temperature</label>
-            <div className="control">
-              <Input type="range" min="0" max="2" step="0.1" defaultValue="0.7" className="flex1" />
-              <span className="mono-sm muted range-value">0.7</span>
-            </div>
-
-            <label>最大输入 token</label>
-            <Input type="number" defaultValue="180000" />
-
-            <label>最大输出 token</label>
-            <Input type="number" defaultValue="8192" />
-
-            <label>
-              推理强度<span className="sub">extended thinking 时使用</span>
-            </label>
-            <Segmented
-              defaultValue="medium"
-              options={[
-                { label: 'none', value: 'none' },
-                { label: 'minimal', value: 'minimal' },
-                { label: 'low', value: 'low' },
-                { label: 'medium', value: 'medium' },
-                { label: 'high', value: 'high' },
-              ]}
-            />
-
-            <label>单次运行成本上限</label>
-            <div className="control">
-              <span className="muted">$</span>
-              <Input type="number" defaultValue="5.00" step="0.50" className="flex1" />
-              <span className="muted text-xs-12">USD · 超出后切换到 fallback</span>
-            </div>
-
-            <label>超时</label>
-            <div className="control">
-              <Input type="number" defaultValue="120" className="flex1" />
-              <span className="muted text-xs-12">秒</span>
-            </div>
-
-            <label>
-              Fallback 链<span className="sub">主模型失败或超限时按顺序尝试</span>
-            </label>
-            <div className="fallback-list">
-              <div className="row fallback-row">
-                <span className="mono-sm faint">1.</span>
-                <Icons.Brain size={13} className="color-primary" />
-                <span className="strong fallback-name">Claude Opus 4</span>
-                <span className="badge fallback-badge">当延迟 &gt; 5s</span>
-                <button className="icon-btn fallback-close">
-                  <Icons.X size={11} />
-                </button>
-              </div>
-              <div className="row fallback-row">
-                <span className="mono-sm faint">2.</span>
-                <Icons.Brain size={13} className="color-primary" />
-                <span className="strong fallback-name">Claude Haiku 4.5</span>
-                <span className="badge fallback-badge">当成本超限</span>
-                <button className="icon-btn fallback-close">
-                  <Icons.X size={11} />
-                </button>
-              </div>
-              <Button
-                className="add-fallback-btn"
-                size="middle"
-                type="text"
-                icon={<Icons.Plus size={11} />}
-              >
-                添加 fallback
-              </Button>
-            </div>
-
-            <label>启用</label>
-            <Switch size="middle" defaultChecked />
-          </div>
-        </div>
-        <div className="modal-foot">
-          <Button size="middle" type="text" danger>
-            删除 Profile
-          </Button>
-          <div className="flex1" />
-          <Button size="middle" type="text" onClick={onClose}>
-            取消
-          </Button>
-          <Button size="middle" type="primary" icon={<Icons.Check size={13} />} onClick={onClose}>
-            保存
-          </Button>
-        </div>
-      </div>
     </div>
   )
 }
@@ -2568,9 +2248,6 @@ function RuleLayer({
             <Icons.Plus size={13} />
           </button>
         )}
-        <button className="icon-btn">
-          <Icons.ChevronDown size={13} />
-        </button>
       </div>
       <div className="rule-layer-body">
         {rules.length === 0 && (
@@ -3877,60 +3554,11 @@ function SystemPromptSection() {
 }
 
 /* ───────── WORKFLOW TEMPLATES ───────── */
-// 工作流模板暂未实现，从导航和 Section 映射中移除
-// 代码保留以便后续启用
-function WorkflowTemplatesSection() {
-  const [templates, setTemplates] = useState<WorkflowTemplate[]>(() =>
-    readStoredJson(WORKFLOW_TEMPLATES_KEY, DEFAULT_WORKFLOW_TEMPLATES),
-  )
-
-  const restoreDefaults = () => {
-    setTemplates(DEFAULT_WORKFLOW_TEMPLATES)
-    writeStoredJson(WORKFLOW_TEMPLATES_KEY, DEFAULT_WORKFLOW_TEMPLATES)
-  }
-
-  return (
-    <div className="settings-section">
-      <div className="row section-header-row">
-        <div className="flex1">
-          <h2 className="section-h2">工作流模板</h2>
-          <div className="lede section-lede">
-            管理共享 DAG 模板与版本。模板会作为 Workflow 页创建新流程时的起点。
-          </div>
-        </div>
-        <Button
-          size="middle"
-          type="text"
-          icon={<Icons.Refresh size={11} />}
-          onClick={restoreDefaults}
-        >
-          恢复内置
-        </Button>
-      </div>
-
-      <div className="card">
-        {templates.map((template) => (
-          <SettingsRow
-            key={template.id}
-            title={template.name}
-            desc={`${template.desc} · ${template.nodes} 个节点 · ${template.updatedAt}`}
-            right={<span className="badge">模板</span>}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-// 工作流模板 section 结束 - 保留代码以便后续启用
-
 /* ───────── PERMISSIONS ───────── */
 export function PermissionsSection() {
   const [profiles, setProfiles] = useState<PermissionProfileItem[]>([])
   const [activeProfileId, setActiveProfileId] = useState('project-standard')
   const [loading, setLoading] = useState(true)
-  const [auditEnabled, setAuditEnabled] = useState(
-    () => window.localStorage.getItem(AUDIT_ENABLED_KEY) !== 'false',
-  )
   const [runtimePrefs, setRuntimePrefs] = useState<RuntimePermissionPrefs>(() =>
     readRuntimePermissionPrefs(),
   )
@@ -4002,12 +3630,6 @@ export function PermissionsSection() {
   const handleRuleChange = (action: string, mode: PermissionMode) => {
     if (!activeProfile) return
     void updateRule({ profileId: activeProfile.id, action, mode }).then(refresh)
-  }
-
-  const toggleAudit = () => {
-    const next = !auditEnabled
-    setAuditEnabled(next)
-    window.localStorage.setItem(AUDIT_ENABLED_KEY, String(next))
   }
 
   const updateRuntimePrefs = (patch: RuntimePermissionPrefs) => {
@@ -4284,35 +3906,6 @@ export function PermissionsSection() {
         </>
       )}
 
-      <div className="subsec-h">审计</div>
-      <div className="card">
-        <SettingsRow
-          title="记录所有权限决策"
-          desc="写入 SQLite · 不可篡改"
-          right={<Switch size="middle" checked={auditEnabled} onChange={toggleAudit} />}
-        />
-        <SettingsRow
-          title="导出团队审计报告"
-          desc="按周生成可签发的 JSON 报告"
-          right={<Switch size="middle" />}
-        />
-        <SettingsRow
-          title="审计日志保留"
-          right={
-            <div className="select-sm">
-              <Select
-                defaultValue="90"
-                options={[
-                  { label: '30 天', value: '30' },
-                  { label: '90 天', value: '90' },
-                  { label: '1 年', value: '365' },
-                  { label: '永久', value: 'forever' },
-                ]}
-              />
-            </div>
-          }
-        />
-      </div>
     </div>
   )
 }
@@ -5012,39 +4605,11 @@ function StorageSection() {
         )}
       </div>
 
-      <div className="subsec-h">备份</div>
+      <div className="subsec-h">导入与恢复</div>
       <div className="card">
         <SettingsRow
-          title="自动备份"
-          desc="每日凌晨 3:00 增量备份到 Time Machine / 指定目录"
-          right={<Switch size="middle" defaultChecked />}
-        />
-        <SettingsRow
-          title="备份目录"
-          desc="~/Backups/SparkAgent"
-          right={
-            <Button size="middle" type="text" icon={<Icons.Folder size={11} />}>
-              修改
-            </Button>
-          }
-        />
-        <SettingsRow
-          title="最近一次备份"
-          desc="今天 03:00 · 成功 · 41 MB"
-          right={
-            <Button size="middle" type="text">
-              查看历史
-            </Button>
-          }
-        />
-        <SettingsRow
-          title="导出全部数据"
-          desc="JSONL + 文件 · 可在另一台机器导入"
-          right={
-            <Button size="middle" type="text" icon={<Icons.Download size={11} />}>
-              导出
-            </Button>
-          }
+          title="升级前自动恢复点"
+          desc="每个新版本首次启动、执行数据库迁移前自动保留恢复点；迁移失败会立即还原并安全退出"
         />
         <SettingsRow
           title={tr('app.sidebar.importHistory')}

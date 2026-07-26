@@ -32,6 +32,8 @@ import {
   isWorkflowApprovalApprovedImpl,
   extractWorkflowApprovalCommentImpl,
 } from './session.service.js'
+import { createWorkflowAtomicMember } from './session-workflow-helpers.js'
+import type { AgentItem } from '@spark/storage'
 import type { NormalizedWorkflowNode } from './workflow-executor.js'
 import type { UserQuestionPrompt } from '@spark/protocol'
 import path from 'node:path'
@@ -73,6 +75,50 @@ describe('shouldRunWorkflowAtomicNodeAsAgent', () => {
 describe('workflowAtomicMemberId', () => {
   it('与 agent/subagent workerId 命名空间隔离', () => {
     expect(workflowAtomicMemberId('abc')).toBe('workflow-atomic:abc')
+  })
+})
+
+describe('createWorkflowAtomicMember capability policy', () => {
+  const hostAgent = {
+    id: 'host',
+    name: 'Host',
+    description: '',
+    builtIn: false,
+    enabled: true,
+    isDefault: false,
+    providerProfileId: 'provider',
+    modelId: 'model',
+    agentAdapter: 'claude-sdk',
+    permissionMode: 'claude-plan',
+    reasoningEffort: 'high',
+    prompt: '',
+    ruleIds: [],
+    skillIds: [],
+    disabledSkillIds: [],
+    mcpServerIds: [],
+    hookConfig: {},
+    workflowId: null,
+    metadata: { reasoningBudgetTokens: 8192 },
+    createdAt: '2026-07-26T00:00:00.000Z',
+    updatedAt: '2026-07-26T00:00:00.000Z',
+  } satisfies AgentItem
+
+  it('marks only input/route/plan/review workers as explicitly readonly', () => {
+    for (const kind of ['input', 'route', 'plan', 'review'] as const) {
+      expect(createWorkflowAtomicMember(node(kind), hostAgent).metadata).toMatchObject({
+        workflowCapability: 'readonly',
+      })
+    }
+    for (const kind of ['tool', 'mcp', 'skill', 'artifact'] as const) {
+      expect(createWorkflowAtomicMember(node(kind, { toolIds: ['Read'] }), hostAgent).metadata)
+        .not.toHaveProperty('workflowCapability')
+    }
+  })
+
+  it('inherits the host explicit reasoning token budget for temporary workers', () => {
+    expect(createWorkflowAtomicMember(node('review'), hostAgent).metadata).toMatchObject({
+      reasoningBudgetTokens: 8192,
+    })
   })
 })
 

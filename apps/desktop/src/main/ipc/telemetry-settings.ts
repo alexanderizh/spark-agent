@@ -9,5 +9,5 @@ export function resolveTelemetryLogLevel(value: unknown): LogLevel {
       return configured as LogLevel
     }
   }
-  return 'info'
+  return 'warn'
 }

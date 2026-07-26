@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { compactForLog } from '../../../services/media/media-debug-log.js'
+import {
+  compactForLog,
+  redactPrivateContentForLog,
+  sanitizeUrlForLog,
+} from '../../../services/media/media-debug-log.js'
 
 describe('compactForLog', () => {
   it('summarizes data URLs and bare base64 without retaining their full payloads', () => {
@@ -27,10 +31,15 @@ describe('compactForLog', () => {
     expect((result.nested as Record<string, unknown>).access_token).toBe('[REDACTED]')
   })
 
-  it('truncates long prompt text while retaining its character count', () => {
-    const result = compactForLog({ prompt: '场'.repeat(5_000) }) as Record<string, string>
+  it('redacts prompt text while retaining only its character count', () => {
+    const result = redactPrivateContentForLog({ prompt: '场'.repeat(5_000) }) as Record<string, string>
 
-    expect(result.prompt).toContain('[truncated chars=5000]')
-    expect(result.prompt?.length).toBeLessThan(1_000)
+    expect(result.prompt).toBe('[REDACTED content chars=5000]')
+  })
+
+  it('removes credentials, query parameters, and fragments from logged URLs', () => {
+    expect(sanitizeUrlForLog('https://user:pass@example.com/media?token=secret#result')).toBe(
+      'https://example.com/media?redacted=1',
+    )
   })
 })

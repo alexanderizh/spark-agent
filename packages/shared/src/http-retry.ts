@@ -108,6 +108,13 @@ export async function fetchJson<T = unknown>(
       try {
         body = text ? JSON.parse(text) : null
       } catch {
+        if (res.ok) {
+          throw new HttpError(
+            'invalid_json_response',
+            `Expected JSON response from ${safeUrl}, received: ${text.slice(0, 200)}`,
+            res.status,
+          )
+        }
         body = text
       }
       if (!res.ok) {
@@ -134,6 +141,15 @@ export async function fetchJson<T = unknown>(
       clearTimeout(timer)
     }
   }
+}
+
+/** Text/binary-safe GET helper backed by the same timeout/retry/error policy as fetchJson. */
+export async function fetchText(
+  url: string,
+  opts: Omit<FetchJsonOptions, 'binary'> = {},
+): Promise<string> {
+  const buffer = await fetchJson<Buffer>(url, { ...opts, binary: true })
+  return buffer.toString('utf8')
 }
 
 function buildError(

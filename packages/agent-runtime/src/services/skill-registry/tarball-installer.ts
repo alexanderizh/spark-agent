@@ -459,7 +459,10 @@ async function resolveDefaultBranch(repo: string, token?: string): Promise<strin
     return data.default_branch || 'main'
   } catch (err) {
     if (err instanceof HttpError) {
-      throw new Error(`Failed to resolve default branch for ${repo}: ${err.statusCode ?? 'network'}`)
+      throw new Error(
+        `Failed to resolve default branch for ${repo}: ${err.statusCode ?? 'network'}`,
+        { cause: err },
+      )
     }
     throw err
   }

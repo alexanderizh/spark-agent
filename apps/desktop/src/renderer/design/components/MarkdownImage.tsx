@@ -215,6 +215,7 @@ export function MarkdownImage({ src, alt }: Props): ReactNode {
             alt={alt}
             className="md-image-img"
             loading="lazy"
+            referrerPolicy="no-referrer"
             onClick={handlePreview}
             onError={() => setError(true)}
           />

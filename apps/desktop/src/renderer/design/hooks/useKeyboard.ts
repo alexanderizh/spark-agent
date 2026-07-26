@@ -292,7 +292,6 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
               setTweak('showPalette', false)
               setTweak('showPerm', false)
               setTweak('showProviderEdit', false)
-              setTweak('showProfileEdit', false)
             }
             break
           }

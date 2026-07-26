@@ -1238,8 +1238,7 @@ export function SidebarSessionList() {
     if (
       appState.showPalette ||
       appState.showPerm ||
-      appState.showProviderEdit ||
-      appState.showProfileEdit
+      appState.showProviderEdit
     ) {
       return true
     }
@@ -1247,7 +1246,6 @@ export function SidebarSessionList() {
   }, [
     appState.showPalette,
     appState.showPerm,
-    appState.showProfileEdit,
     appState.showProviderEdit,
     ctx.historyImportOpen,
     hasDialogOpen,

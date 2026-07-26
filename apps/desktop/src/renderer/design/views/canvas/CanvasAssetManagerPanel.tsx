@@ -4,7 +4,7 @@ import { Button, SearchBar as LobeSearchBar, Select as LobeSelect, Segmented } f
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
-import { downloadCanvasResourceBatch } from './CanvasAssetsPanel'
+import { downloadCanvasResourceBatch, type CanvasDownloadResource } from './CanvasAssetsPanel'
 import { CanvasCharacterSubviewPreview } from './CanvasCharacterSubviewPreview'
 import {
   CHARACTER_SUBVIEW_KIND_LABELS,
@@ -14,6 +14,7 @@ import {
 } from './canvasCharacterLibrary'
 import { readAssetKind } from './canvasFilmAssets'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
+import { canvasNodeDownloadName, readCanvasNodeNumber } from './canvasNodeNaming'
 import type { CanvasAsset, CanvasNode, CanvasTask } from './canvas.types'
 
 type AssetTypeFilter = 'all' | CanvasAsset['type']
@@ -56,13 +57,36 @@ export function CanvasAssetManagerPanel({
     sourceImageAsset: CanvasAsset,
     subview: FilmCharacterSubview,
   ) => Promise<void> | void
-  onDownloadOne: (asset: CanvasAsset) => Promise<void>
+  onDownloadOne: (resource: CanvasDownloadResource) => Promise<void>
   detailResetKey?: number
   onOpenDetail?: () => void
 }) {
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<AssetTypeFilter>('all')
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
+  const downloadResourceByAssetId = useMemo(() => {
+    const linkedNodeByAssetId = new Map<string, CanvasNode>()
+    for (const node of nodes) {
+      if (node.hidden || !node.assetId) continue
+      const current = linkedNodeByAssetId.get(node.assetId)
+      if (
+        !current ||
+        (readCanvasNodeNumber(node) ?? Number.MAX_SAFE_INTEGER) <
+          (readCanvasNodeNumber(current) ?? Number.MAX_SAFE_INTEGER)
+      ) {
+        linkedNodeByAssetId.set(node.assetId, node)
+      }
+    }
+    const result = new Map<string, CanvasDownloadResource>()
+    for (const asset of assets) {
+      const linkedNode = linkedNodeByAssetId.get(asset.id)
+      result.set(asset.id, {
+        ...asset,
+        suggestedFileName: canvasNodeDownloadName(linkedNode, asset.title, asset.type),
+      })
+    }
+    return result
+  }, [assets, nodes])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [detailAsset, setDetailAsset] = useState<CanvasAsset | null>(null)
 
@@ -207,7 +231,9 @@ export function CanvasAssetManagerPanel({
   const handleBatchDownload = async () => {
     if (selectedIds.length === 0) return
     // 批量下载：只弹一次目录选择对话框，一次性写入，不再逐个弹窗
-    const selectedAssets = filteredAssets.filter((asset) => selectedSet.has(asset.id))
+    const selectedAssets = filteredAssets
+      .filter((asset) => selectedSet.has(asset.id))
+      .map((asset) => downloadResourceByAssetId.get(asset.id) ?? asset)
     const succeeded = await downloadCanvasResourceBatch(selectedAssets)
     if (succeeded > 0) setSelectedIds([])
   }
@@ -455,7 +481,9 @@ export function CanvasAssetManagerPanel({
                       onToggle={() => toggleSelect(asset.id)}
                       onShowDetail={() => showDetail(asset)}
                       onInsertOne={onInsertOne}
-                      onDownloadOne={onDownloadOne}
+                      onDownloadOne={(asset) =>
+                        onDownloadOne(downloadResourceByAssetId.get(asset.id) ?? asset)
+                      }
                     />
                   </div>
                 )

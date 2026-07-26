@@ -143,8 +143,7 @@ const x: number = 42
       const budget = 50
       const result = clipTextHeadTail(text, budget)
       const tokens = estimateTokens(result)
-      // head=30 + tail=20 + ellipsis(~10 tokens) → allow generous upper bound
-      expect(tokens).toBeLessThanOrEqual(budget + 30)
+      expect(tokens).toBeLessThanOrEqual(budget)
       expect(result).toContain('[truncated middle]')
     })
 
@@ -154,7 +153,7 @@ const x: number = 42
       // head 20%, tail 80% → tail should be much larger
       expect(result).toContain('[truncated middle]')
       // Smoke: result token count is bounded
-      expect(estimateTokens(result)).toBeLessThan(100)
+      expect(estimateTokens(result)).toBeLessThanOrEqual(50)
     })
 
     it('preserves head and tail content', () => {
@@ -169,6 +168,16 @@ const x: number = 42
       const result = clipTextHeadTail(text, 30, { ellipsis: '\n[SNIP]\n' })
       expect(result).toContain('[SNIP]')
       expect(result).not.toContain('[truncated middle]')
+    })
+
+    it('counts the ellipsis inside the strict token budget', () => {
+      const result = clipTextHeadTail('START-' + 'x'.repeat(10_000) + '-END', 10)
+      expect(estimateTokens(result)).toBeLessThanOrEqual(10)
+    })
+
+    it('returns an empty string for a non-positive budget', () => {
+      expect(clipTextHeadTail('must not leak', 0)).toBe('')
+      expect(clipTextHeadTail('must not leak', -100)).toBe('')
     })
   })
 })

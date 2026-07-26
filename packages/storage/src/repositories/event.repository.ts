@@ -266,6 +266,29 @@ export class EventRepository extends BaseRepository {
     return (stmt.get(sessionId, eventType) as AgentEventRow | undefined) ?? null
   }
 
+  /**
+   * 取指定事件类型中 JSON 字段匹配的最近一条记录。
+   * JSON path 与值均使用参数绑定；用于按稳定 SDK session id 查找各自最近快照，
+   * 避免 Host/Member 交替执行时被全局“最后一条快照”干扰。
+   */
+  getLatestByTypeAndJsonValue(
+    sessionId: string,
+    eventType: string,
+    jsonPath: string,
+    value: string,
+  ): AgentEventRow | null {
+    const stmt = this.raw.prepare(
+      `SELECT * FROM agent_events
+       WHERE session_id = ? AND event_type = ?
+         AND json_extract(event_json, ?) = ?
+       ORDER BY seq DESC, created_at DESC, rowid DESC
+       LIMIT 1`,
+    )
+    return (
+      (stmt.get(sessionId, eventType, jsonPath, value) as AgentEventRow | undefined) ?? null
+    )
+  }
+
   /** 按 session 查询完整事件历史，按时间线正序返回。 */
   queryAllBySession(sessionId: string): AgentEventRow[] {
     const seqOrder = 'seq'

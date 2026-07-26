@@ -193,6 +193,9 @@ const mockState = vi.hoisted(() => ({
   >(),
   nextSdkTurnErrors: [] as string[],
   nextSdkTurnStatuses: [] as Array<'completed' | 'cancelled' | 'error'>,
+  nextSdkUsageEvents: [] as Array<
+    Array<Extract<AgentEvent, { type: 'usage_update' }>>
+  >,
   turnRequests: new Map<
     string,
     {
@@ -671,6 +674,21 @@ vi.mock('@spark/storage', () => {
       )
       return rows.length > 0 ? rows[rows.length - 1]! : null
     }
+
+    getLatestByTypeAndJsonValue(
+      sessionId: string,
+      eventType: string,
+      jsonPath: string,
+      value: string,
+    ): EventRow | null {
+      const key = jsonPath.replace(/^\$\./, '')
+      const rows = mockState.events.filter((row) => {
+        if (row.session_id !== sessionId || row.event_type !== eventType) return false
+        const event = JSON.parse(row.event_json) as Record<string, unknown>
+        return event[key] === value
+      })
+      return rows.length > 0 ? rows[rows.length - 1]! : null
+    }
   }
 
   class RulesRepository {
@@ -960,6 +978,9 @@ vi.mock('../../sdk/index.js', () => {
           retryable: false,
         })
       }
+      for (const usageEvent of mockState.nextSdkUsageEvents.shift() ?? []) {
+        this.handler?.({ ...usageEvent, sessionId, turnId })
+      }
       const status = mockState.nextSdkTurnStatuses.shift() ?? 'completed'
       this.handler?.({
         id: `${status}-${turnId}`,
@@ -1084,6 +1105,7 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.workflowRuns.clear()
     mockState.nextSdkTurnErrors.length = 0
     mockState.nextSdkTurnStatuses.length = 0
+    mockState.nextSdkUsageEvents.length = 0
     mockState.turnRequests.clear()
     mockState.settings.clear()
     mockState.usageRecords.length = 0
@@ -2445,6 +2467,7 @@ describe('SessionService runtime provider/model resolution', () => {
         name: 'Team Host',
         providerProfileId: 'team-host-provider',
         modelId: 'team-host-model',
+        metadata: { reasoningBudgetTokens: 8192 },
       }),
     )
     mockState.agents.set(
@@ -2453,6 +2476,7 @@ describe('SessionService runtime provider/model resolution', () => {
         id: 'team-member',
         name: 'Team Member',
         providerProfileId: 'tencent-provider',
+        metadata: { reasoningBudgetTokens: 4096 },
       }),
     )
     const service = new SessionService({} as never, (event) => events.push(event))
@@ -2476,6 +2500,7 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(mockState.sdkConfigs[0]).toMatchObject({
       model: 'team-host-model',
       apiEndpoint: 'https://api.example.test/team-host/anthropic',
+      reasoningBudgetTokens: 8192,
     })
     const teamServer = (
       mockState.sdkConfigs[0]?.mcpServers as {
@@ -2496,6 +2521,7 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(mockState.sdkConfigs[1]).toMatchObject({
       model: 'glm-5',
       apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+      reasoningBudgetTokens: 4096,
     })
   })
 
@@ -2597,6 +2623,113 @@ describe('SessionService runtime provider/model resolution', () => {
     }
   })
 
+  it('records cumulative member usage as deltas under the member provider and model', async () => {
+    mockState.agents.set(
+      'host-agent',
+      makeAgent({
+        id: 'host-agent',
+        name: 'Host',
+        providerProfileId: 'anthropic-provider',
+      }),
+    )
+    mockState.agents.set(
+      'worker-usage',
+      makeAgent({
+        id: 'worker-usage',
+        name: 'Usage Worker',
+        providerProfileId: 'xiaomi-provider',
+        modelId: 'mimo-v2.5-pro',
+      }),
+    )
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'anthropic-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Member usage session',
+    })
+    const row = mockState.sessions.get(sessionId)
+    if (row == null) throw new Error('expected session row')
+    row.metadata_json = JSON.stringify({
+      team: {
+        enabled: true,
+        hostAgentId: 'host-agent',
+        memberAgentIds: ['worker-usage'],
+      },
+    })
+
+    await service.sendTurn({ sessionId, message: 'coordinate usage', agentId: 'host-agent' })
+    const teamServer = (
+      mockState.sdkConfigs[0]?.mcpServers as {
+        spark_team: {
+          instance: {
+            tools: Array<{
+              name: string
+              handler: (args: Record<string, unknown>) => Promise<unknown>
+            }>
+          }
+        }
+      }
+    ).spark_team
+    const dispatchTool = teamServer.instance.tools.find((tool) => tool.name === 'agent_dispatch')
+    if (dispatchTool == null) throw new Error('expected agent_dispatch tool')
+    mockState.nextSdkUsageEvents.push([
+      {
+        id: 'member-usage-1',
+        type: 'usage_update',
+        sessionId,
+        turnId: 'member-turn',
+        timestamp: '2026-05-28T00:00:01.000Z',
+        seq: 0,
+        provider: 'claude',
+        model: 'mimo-v2.5-pro',
+        inputTokens: 100,
+        outputTokens: 20,
+        reasoningOutputTokens: 8,
+        cacheHitTokens: 5,
+        estimatedCostUsd: 0.01,
+      },
+      {
+        id: 'member-usage-2',
+        type: 'usage_update',
+        sessionId,
+        turnId: 'member-turn',
+        timestamp: '2026-05-28T00:00:02.000Z',
+        seq: 0,
+        provider: 'claude',
+        model: 'mimo-v2.5-pro',
+        inputTokens: 140,
+        outputTokens: 35,
+        reasoningOutputTokens: 14,
+        cacheHitTokens: 7,
+        estimatedCostUsd: 0.015,
+      },
+    ])
+
+    await dispatchTool.handler({ targetAgentId: 'worker-usage', instruction: 'measure usage' })
+
+    expect(mockState.usageRecords).toEqual([
+      expect.objectContaining({
+        providerId: 'xiaomi-provider',
+        modelId: 'mimo-v2.5-pro',
+        inputTokens: 100,
+        outputTokens: 20,
+        reasoningOutputTokens: 8,
+        cacheReadTokens: 5,
+        costUsd: 0.01,
+      }),
+      expect.objectContaining({
+        providerId: 'xiaomi-provider',
+        modelId: 'mimo-v2.5-pro',
+        inputTokens: 40,
+        outputTokens: 15,
+        reasoningOutputTokens: 6,
+        cacheReadTokens: 2,
+        costUsd: expect.closeTo(0.005),
+      }),
+    ])
+  })
+
   it('grants members agent_message (and only it) when peer messaging is on and nesting is off', async () => {
     mockState.mcpServers.push({
       id: 'mcp-member-global',
@@ -2621,6 +2754,7 @@ describe('SessionService runtime provider/model resolution', () => {
         id: 'worker-1',
         name: 'Worker One',
         providerProfileId: 'anthropic-provider',
+        metadata: { toolIds: ['Read'] },
       }),
     )
     const service = new SessionService({} as never, (event) => events.push(event))
@@ -2698,6 +2832,9 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(memberConfig?.allowedTools).not.toEqual(
       expect.arrayContaining(['mcp__spark_team__agent_dispatch']),
     )
+    expect(memberConfig?.mcpServers).toHaveProperty('member_search')
+    expect(memberConfig?.mcpServers).toHaveProperty('spark_memory')
+    expect(String(memberConfig?.systemPrompt ?? '')).toContain('search_memory')
   })
 
   it('gives an @-mentioned member the roster + agent_message tools without stripping its work tools', async () => {
@@ -2775,6 +2912,55 @@ describe('SessionService runtime provider/model resolution', () => {
     const disallowed = (config?.disallowedTools as string[] | undefined) ?? []
     expect(disallowed).not.toContain('Edit')
     expect(disallowed).not.toContain('Bash')
+  })
+
+  it('resumes each stable SDK session after Host and mentioned Member turns alternate', async () => {
+    mockState.agents.set(
+      'host-agent',
+      makeAgent({
+        id: 'host-agent',
+        name: 'Host',
+        providerProfileId: 'anthropic-provider',
+      }),
+    )
+    mockState.agents.set(
+      'worker-1',
+      makeAgent({
+        id: 'worker-1',
+        name: 'Worker One',
+        providerProfileId: 'anthropic-provider',
+      }),
+    )
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'anthropic-provider',
+      agentId: 'host-agent',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Alternating resume session',
+    })
+    const row = mockState.sessions.get(sessionId)
+    if (row == null) throw new Error('expected session row')
+    row.metadata_json = JSON.stringify({
+      team: {
+        enabled: true,
+        hostAgentId: 'host-agent',
+        memberAgentIds: ['worker-1'],
+      },
+    })
+
+    await service.sendTurn({ sessionId, message: 'host first', agentId: 'host-agent' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+    await service.sendTurn({ sessionId, message: 'member turn', mentionAgentId: 'worker-1' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(2))
+    await service.sendTurn({ sessionId, message: 'host returns', agentId: 'host-agent' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(3))
+
+    expect(mockState.sdkConfigs[0]?.continueSession).toBe(false)
+    expect(mockState.sdkConfigs[1]?.continueSession).toBe(false)
+    expect(mockState.sdkConfigs[2]?.continueSession).toBe(true)
+    expect(mockState.sdkConfigs[2]?.sdkSessionId).toBe(mockState.sdkConfigs[0]?.sdkSessionId)
+    expect(mockState.sdkConfigs[1]?.sdkSessionId).not.toBe(mockState.sdkConfigs[0]?.sdkSessionId)
   })
 
   it('exposes workflow_run for a managed host with an enabled explicit workflow worker', async () => {
@@ -2991,6 +3177,15 @@ describe('SessionService runtime provider/model resolution', () => {
   })
 
   it('exposes workflow_run for an atomic-only workflow so the host can execute it reliably', async () => {
+    mockState.mcpServers.push({
+      id: 'mcp-write-capable',
+      scope: 'user',
+      name: 'write_capable_custom',
+      config_json: JSON.stringify({ command: 'node', args: ['write-capable.mjs'] }),
+      enabled: 1,
+      created_at: '2026-07-16T00:00:00.000Z',
+      updated_at: '2026-07-16T00:00:00.000Z',
+    })
     mockState.agents.set(
       'workflow-host',
       makeAgent({
@@ -3033,11 +3228,27 @@ describe('SessionService runtime provider/model resolution', () => {
     const config = mockState.sdkConfigs[0]
     const teamServer = (
       config?.mcpServers as {
-        spark_team: { instance: { tools: Array<{ name: string }> } }
+        spark_team: {
+          instance: {
+            tools: Array<{
+              name: string
+              handler: (args: Record<string, unknown>) => Promise<unknown>
+            }>
+          }
+        }
       }
     ).spark_team
     expect(teamServer.instance.tools.map((tool) => tool.name)).toEqual(['workflow_run'])
     expect(config?.allowedTools).toEqual(expect.arrayContaining(['mcp__spark_team__workflow_run']))
+
+    const workflowRun = teamServer.instance.tools[0]
+    if (workflowRun == null) throw new Error('expected workflow_run tool')
+    await workflowRun.handler({ objective: 'parse an atomic brief' })
+    const atomicConfig = mockState.sdkConfigs[1]
+    expect(atomicConfig?.mcpServers).not.toHaveProperty('write_capable_custom')
+    expect(atomicConfig?.mcpServers).toHaveProperty('spark_memory')
+    expect(atomicConfig).not.toHaveProperty('skillPlugins')
+    expect(atomicConfig).not.toHaveProperty('nativeSkills')
   })
 
   it('returns a structured failed workflow_run result when a workflow worker fails', async () => {

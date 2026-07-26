@@ -47,6 +47,7 @@
 import path from 'node:path'
 import type { UserQuestionPrompt, WorkflowNodeKind } from '@spark/protocol'
 import { WORKFLOW_RESTRICTABLE_TOOL_NAMES } from '@spark/protocol'
+import { normalizeReasoningBudgetTokens } from '@spark/shared'
 import type { AgentItem, WorkflowItem } from '@spark/storage'
 import type { NormalizedWorkflowGraph, NormalizedWorkflowNode } from './workflow-executor.js'
 import { getWorkflowNodeWorkerId } from './workflow-executor.js'
@@ -103,6 +104,9 @@ export function createWorkflowSubagentMember(
   workerId: string,
 ): AgentItem {
   const now = new Date(0).toISOString()
+  const reasoningBudgetTokens = normalizeReasoningBudgetTokens(
+    hostAgent.metadata.reasoningBudgetTokens,
+  )
   const prompt =
     typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0
       ? node.config.prompt.trim()
@@ -146,6 +150,7 @@ export function createWorkflowSubagentMember(
     metadata: {
       workflowNodeId: node.id,
       temporaryWorkflowSubagent: true,
+      ...(reasoningBudgetTokens != null ? { reasoningBudgetTokens } : {}),
       ...workflowNodeToolIdsMeta(node),
     },
     createdAt: now,
@@ -595,6 +600,7 @@ export function createWorkflowAtomicMember(node: NormalizedWorkflowNode, hostAge
     ...base,
     metadata: {
       ...base.metadata,
+      workflowCapability: 'readonly',
       toolIds: readonlyIds,
     },
   }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
+import { estimateTokens } from '@spark/shared'
 import { buildMemoryExtractionRecentContext } from './conversation-summarizer.js'
 
 function userMsg(turnId: string, content: string, seq: number): AgentEvent {
@@ -43,13 +44,9 @@ describe('buildMemoryExtractionRecentContext', () => {
     const mockEventRepo = {
       queryDialogueEvents: () => dialogueRows(events),
     } as any
-    const mockDb = {
-      raw: { prepare: () => ({ get: () => null, run: () => ({ changes: 0 }) }) },
-    } as any
+    const result = buildMemoryExtractionRecentContext(mockEventRepo, 's1', { maxTokens: 120 })
 
-    const result = buildMemoryExtractionRecentContext(mockEventRepo, mockDb, 's1', 3, { maxChars: 120 })
-
-    expect(result.length).toBeLessThanOrEqual(120)
+    expect(estimateTokens(result)).toBeLessThanOrEqual(120)
     expect(result).toContain('记忆抽取近期上下文')
     expect(result).toContain('刚才那个方式')
   })
@@ -58,11 +55,7 @@ describe('buildMemoryExtractionRecentContext', () => {
     const mockEventRepo = {
       queryDialogueEvents: () => [],
     } as any
-    const mockDb = {
-      raw: { prepare: () => ({ get: () => null, run: () => ({ changes: 0 }) }) },
-    } as any
-
-    const result = buildMemoryExtractionRecentContext(mockEventRepo, mockDb, 's1', 0)
+    const result = buildMemoryExtractionRecentContext(mockEventRepo, 's1')
 
     expect(result).toBe('')
   })

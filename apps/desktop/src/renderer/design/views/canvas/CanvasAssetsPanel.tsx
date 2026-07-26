@@ -11,7 +11,7 @@ type AssetSourceFilter = 'all' | CanvasAssetSource
 export type CanvasDownloadResource = Pick<
   CanvasAsset,
   'id' | 'type' | 'title' | 'mimeType' | 'storageKey' | 'url' | 'thumbnailUrl' | 'contentText'
->
+> & { suggestedFileName?: string }
 
 /**
  * 左侧工作台「资产」tab（文档 §7.2 / §7.3）。
@@ -176,7 +176,10 @@ export async function downloadCanvasResource(resource: CanvasDownloadResource): 
       ...(resource.contentText != null ? { contentText: resource.contentText } : {}),
       ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
       type: resource.type,
-      suggestedFileName: resource.title?.trim() || `canvas-${resource.type}-${resource.id}`,
+      suggestedFileName:
+        resource.suggestedFileName?.trim() ||
+        resource.title?.trim() ||
+        `canvas-${resource.type}-${resource.id}`,
     })
     if (result.saved) {
       message.success(result.savedPath ? `资产已下载到 ${result.savedPath}` : '资产已下载')
@@ -221,7 +224,10 @@ function toBatchDownloadItem(resource: CanvasDownloadResource): {
     ...(resource.contentText != null ? { contentText: resource.contentText } : {}),
     ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
     type: resource.type,
-    suggestedFileName: resource.title?.trim() || `canvas-${resource.type}-${resource.id}`,
+    suggestedFileName:
+      resource.suggestedFileName?.trim() ||
+      resource.title?.trim() ||
+      `canvas-${resource.type}-${resource.id}`,
   }
 }
 

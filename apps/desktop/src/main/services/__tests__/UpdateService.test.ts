@@ -40,7 +40,7 @@ vi.mock('electron', () => ({
   powerMonitor: mocks.powerMonitor,
 }))
 
-import { UpdateService } from '../UpdateService.js'
+import { UpdateService, verifyDownloadedAsset } from '../UpdateService.js'
 
 const THIRTY_MINUTES_MS = 30 * 60 * 1000
 
@@ -178,5 +178,24 @@ describe('UpdateService automatic checks', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('UpdateService asset integrity', () => {
+  it('accepts an asset only when both size and digest match', () => {
+    expect(() => verifyDownloadedAsset(4, 4, {
+      algorithm: 'sha512',
+      expected: 'AbC+/=',
+      encoding: 'base64',
+    }, 'AbC+/=')).not.toThrow()
+  })
+
+  it('rejects truncated and tampered assets', () => {
+    expect(() => verifyDownloadedAsset(3, 4, null, null)).toThrow('大小校验失败')
+    expect(() => verifyDownloadedAsset(4, 4, {
+      algorithm: 'sha256',
+      expected: 'a'.repeat(64),
+      encoding: 'hex',
+    }, 'b'.repeat(64))).toThrow('完整性校验失败')
   })
 })

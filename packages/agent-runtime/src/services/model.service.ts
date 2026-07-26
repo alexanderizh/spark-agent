@@ -114,8 +114,8 @@ export class ModelService {
       }
 
       const url = getEmbeddingsEndpoint(apiEndpoint)
-      // D-15：embed 是幂等的（同样输入 → 同样向量），可用 shared.fetchJson 加 1 次重试，
-      // 抵抗瞬时网络/5xx 错误。LLM complete 路径不走此路（非幂等，避免重复扣费）。
+      // D-15：embed 是幂等的（同样输入 → 同样向量），用 shared.fetchJson 加 1 次重试，
+      // 抵抗瞬时网络/5xx 错误。
       let json: {
         data?: Array<{ index?: number; embedding?: number[] }>
         vectors?: unknown
@@ -280,51 +280,48 @@ export class ModelService {
         `model=${model} 接口=${url} ${keyDesc} ` +
         `provider_type=${provider.provider_type} isAnthropic=${isAnthropic} prompt=${prompt.length}字符 maxTokens=${maxTokens}`,
       )
-      let res: Response
-      if (isAnthropic) {
-        // anthropic 原生 /v1/messages：x-api-key + anthropic-version；max_tokens 必填
-        res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey.length > 0 ? { 'x-api-key': apiKey } : {}),
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model,
-            max_tokens: maxTokens,
-            messages: [{ role: 'user', content: prompt }],
-          }),
-          signal: AbortSignal.timeout(COMPLETE_HTTP_TIMEOUT_MS),
-        })
-      } else {
-        res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey.length > 0 ? { Authorization: `Bearer ${apiKey}` } : {}),
-          },
-          body: JSON.stringify({
-            model,
-            messages: [{ role: 'user', content: prompt }],
-            max_tokens: maxTokens,
-            temperature: 0,
-          }),
-          signal: AbortSignal.timeout(COMPLETE_HTTP_TIMEOUT_MS),
-        })
-      }
+      const json = await fetchJson<{
+        content?: Array<{ type?: string; text?: string }>
+        choices?: Array<{ message?: { content?: string } }>
+      }>(url, {
+        method: 'POST',
+        headers: isAnthropic
+          ? {
+              'Content-Type': 'application/json',
+              ...(apiKey.length > 0 ? { 'x-api-key': apiKey } : {}),
+              'anthropic-version': '2023-06-01',
+            }
+          : {
+              'Content-Type': 'application/json',
+              ...(apiKey.length > 0 ? { Authorization: `Bearer ${apiKey}` } : {}),
+            },
+        body: JSON.stringify(
+          isAnthropic
+            ? {
+                model,
+                max_tokens: maxTokens,
+                messages: [{ role: 'user', content: prompt }],
+              }
+            : {
+                model,
+                messages: [{ role: 'user', content: prompt }],
+                max_tokens: maxTokens,
+                temperature: 0,
+              },
+        ),
+        timeoutMs: COMPLETE_HTTP_TIMEOUT_MS,
+        // 该路径只做确定性记忆抽取；瞬时失败允许一次重试，避免单次抖动静默丢记忆。
+        maxRetries: 1,
+        retryBackoffMs: 250,
+        onRetry: ({ retryCount, error }) => {
+          log.warn(
+            `【抽取LLM调用】瞬时失败，准备重试 ${retryCount}/1：${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          )
+        },
+      })
       const elapsedMs = Date.now() - t0
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => '')
-        log.warn(
-          `【抽取LLM调用】HTTP 失败：${res.status} ${res.statusText} 耗时=${elapsedMs}ms url=${url} ` +
-          `body=${body.slice(0, 300)}`,
-        )
-        return { available: false, reason: `HTTP ${res.status}: ${body.slice(0, 200)}` }
-      }
-
-      const json = await res.json()
       let text: string | undefined
       if (isAnthropic) {
         const data = json as { content?: Array<{ type?: string; text?: string }> }
@@ -335,7 +332,7 @@ export class ModelService {
       }
       // 【响应日志】让"真调了 + 返回什么 + 多快"全可见，打消"接口没真调"的怀疑。
       log.info(
-        `【抽取LLM调用】成功：HTTP ${res.status} 耗时=${elapsedMs}ms ` +
+        `【抽取LLM调用】成功：HTTP 2xx 耗时=${elapsedMs}ms ` +
         `返回 text=${text?.length ?? 0}字符 预览=${(text ?? '(空)').slice(0, 150).replace(/\s+/g, ' ')}`,
       )
       if (typeof text !== 'string' || text.length === 0) {

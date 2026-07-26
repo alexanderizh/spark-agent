@@ -1381,12 +1381,14 @@ function CanvasStageInner({
     setPaneContextMenu(null)
     setEdgeContextMenu(null)
     viewportInteractingRef.current = true
+    stageRef.current?.setAttribute('data-viewport-moving', 'true')
     cancelScheduledSync()
   }, [cancelScheduledSync])
 
   const handleViewportMoveEnd = useCallback(
     (_event?: MouseEvent | TouchEvent | null, viewport?: Viewport) => {
       viewportInteractingRef.current = false
+      stageRef.current?.removeAttribute('data-viewport-moving')
       flushPendingNodesSync()
       if (viewport) notifyViewportChange(viewport)
     },
@@ -2297,7 +2299,10 @@ function CanvasStageInner({
           minZoom={CANVAS_MIN_ZOOM}
           maxZoom={CANVAS_MAX_ZOOM}
           nodeOrigin={defaultNodeOrigin}
-          onlyRenderVisibleElements
+          // Keep media nodes mounted while the viewport moves. React Flow's visible-element
+          // culling recalculates every node on every transform and unmounts nodes at the viewport
+          // boundary; for image/video-heavy boards that both stalls panning and restarts media
+          // loading whenever a node comes back into view.
           // 连接热区略大于可见锚点，方便从节点边缘开始牵线并降低误操作。
           connectionRadius={32}
           nodesDraggable={activeTool === 'select' && nodesInitialized}
@@ -2644,6 +2649,7 @@ function CanvasStageInner({
                 openUp={paneContextMenu.openSubmenusUp}
               >
                 <CanvasPaneResourceNodeActions
+                  onAddImage={handleAddImageFromPane}
                   onAddDirectorStage3D={
                     onAddDirectorStage3DAtPosition
                       ? handleAddDirectorStage3DFromPane
@@ -2696,10 +2702,7 @@ function CanvasStageInner({
                 openLeft={paneContextMenu.openSubmenusLeft}
                 openUp={paneContextMenu.openSubmenusUp}
               >
-                <CanvasPaneResourceNodeActions
-                  onAddText={handleAddTextFromPane}
-                  onAddImage={handleAddImageFromPane}
-                />
+                <CanvasPaneResourceNodeActions onAddText={handleAddTextFromPane} />
                 <div className="canvas-pane-context-divider" />
                 {CANVAS_BASE_CREATE_OPERATION_GROUPS.map((group) => (
                   <div key={group.id} className="canvas-pane-context-group">

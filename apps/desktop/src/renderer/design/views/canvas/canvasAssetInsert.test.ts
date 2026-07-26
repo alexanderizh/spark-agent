@@ -88,9 +88,47 @@ describe('canvas asset insertion', () => {
     const asset = snapshot.assets.find((item) => item.id === node.assetId)
 
     expect(node.type).toBe('prompt')
-    expect(node.title).toBe('Prompt')
+    expect(node.title).toBe('#1 Prompt')
+    expect(node.data.nodeSequence).toBe(1)
     expect(node.data.format).toBe('prompt')
     expect(asset?.type).toBe('prompt')
+  })
+
+  it('keeps a stable board number across renames and allocates from the largest number', async () => {
+    const first = await canvasApi.createTextNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      text: 'first',
+      x: 0,
+      y: 0,
+    })
+    const second = await canvasApi.createTextNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      text: 'second',
+      x: 320,
+      y: 0,
+    })
+
+    await canvasApi.patchNodes('project-1', [first.id], { title: '开场文案' })
+    await canvasApi.updateNodeData('project-1', first.id, { nodeSequence: 99 })
+    const renamedSnapshot = await canvasApi.openSnapshot('project-1')
+    expect(renamedSnapshot.nodes.find((item) => item.id === first.id)?.title).toBe('#1 开场文案')
+    expect(renamedSnapshot.nodes.find((item) => item.id === first.id)?.data.nodeSequence).toBe(1)
+    await canvasApi.deleteNodes('project-1', [first.id])
+    const third = await canvasApi.createTextNode({
+      projectId: 'project-1',
+      boardId: 'board-1',
+      text: 'third',
+      x: 640,
+      y: 0,
+    })
+    const snapshot = await canvasApi.openSnapshot('project-1')
+
+    expect(snapshot.nodes.some((item) => item.id === first.id)).toBe(false)
+    expect(second.title).toBe('#2 Text note')
+    expect(third.title).toBe('#3 Text note')
+    expect(third.data.nodeSequence).toBe(3)
   })
 
   it('keeps screenplay text after inserting a film asset and tagging pipeline role', async () => {

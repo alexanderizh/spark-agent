@@ -22,7 +22,7 @@ import {
 import type { PendingCanvasConnection } from './canvasPendingConnection'
 import { CanvasTaskQueue, type CanvasTaskRetryRuntimeSource } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
-import { downloadAsset, downloadCanvasResource } from './CanvasAssetsPanel'
+import { downloadCanvasResource } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
 import { CanvasWorkflowDrawer } from './CanvasWorkflowDrawer'
@@ -37,6 +37,7 @@ import { executeCanvasWorkflowCanvasStep } from './canvasWorkflowCanvasExecutor'
 import { waitForCanvasWorkflowTask } from './canvasWorkflowTaskAdapter'
 import { extractCanvasWorkflowDraft, type CanvasWorkflowDraft } from './canvasWorkflowExtraction'
 import { CanvasInlineNodeTitleEditor } from './CanvasInlineNodeTitleEditor'
+import { canvasNodeDownloadName } from './canvasNodeNaming'
 import { CanvasCharacterLibraryPanel } from './CanvasCharacterLibraryPanel'
 import { CanvasCharacterSubviewEditor } from './CanvasCharacterSubviewEditor'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
@@ -135,6 +136,7 @@ import {
   resolveCanvasPipelineTextSource,
 } from './canvasWorkspaceTaskInput'
 import {
+  buildChapterToScreenplayInstruction,
   buildShotNodeText,
   buildShotSegmentKeyframePrompt,
   buildShotSegmentVideoPrompt,
@@ -1505,15 +1507,6 @@ function findSegmentStyleFragments(
     .filter((fragment): fragment is string => Boolean(fragment))
 }
 
-function buildChapterToScreenplayInstruction(chapterText: string): string {
-  return [
-    '请把下面的小说/长文稿章节改写为影视剧本（场次剧本）。',
-    '要求：按场次切分，每场标注【场号 内/外景 地点 时间】；正文用「动作描述 + 角色对白 + 旁白」格式；',
-    '保留关键情节与人物关系；对白口语化、可表演；输出可直接用于后续角色/场景/分镜拆解，不要解释过程。',
-    `章节原文：\n${chapterText.slice(0, 8000)}`,
-  ].join('\n\n')
-}
-
 function buildPromptOptimizationInstruction(
   prompt: string,
   negativePrompt: string,
@@ -1865,6 +1858,8 @@ export function CanvasWorkspaceView({
       ({
         '--canvas-side-panel-width': sidePanelCollapsed ? '0px' : `${sidePanelWidth}px`,
         '--canvas-agent-panel-width': agentOpen ? `${agentPanelWidth}px` : '0px',
+        '--canvas-side-panel-center-offset': sidePanelCollapsed ? '0px' : `${sidePanelWidth / 2}px`,
+        '--canvas-agent-panel-center-offset': agentOpen ? `${agentPanelWidth / 2}px` : '0px',
       }) as CSSProperties,
     [sidePanelCollapsed, sidePanelWidth, agentOpen, agentPanelWidth],
   )
@@ -3302,6 +3297,11 @@ export function CanvasWorkspaceView({
       id: linkedAsset?.id ?? resolved.id,
       type: linkedAsset?.type ?? (resolved.type === 'video' ? 'video' : 'image'),
       title: linkedAsset?.title ?? resolved.title ?? null,
+      suggestedFileName: canvasNodeDownloadName(
+        node,
+        linkedAsset?.title ?? resolved.title,
+        resolved.type === 'video' ? '视频' : '图片',
+      ),
       mimeType: linkedAsset?.mimeType ?? resolved.data.mimeType ?? null,
       storageKey: linkedAsset?.storageKey ?? null,
       url: resolved.data.url ?? linkedAsset?.url ?? null,
@@ -9052,7 +9052,7 @@ export function CanvasWorkspaceView({
                   onInsertSubview={(ownerAsset, sourceImageAsset, subview) =>
                     void handleApplyCharacterSubview(ownerAsset, sourceImageAsset, subview)
                   }
-                  onDownloadOne={(asset) => downloadAsset(asset)}
+                  onDownloadOne={(resource) => downloadCanvasResource(resource)}
                   detailResetKey={assetDetailResetKey}
                   onOpenDetail={() => closeCanvasFloatPanels('asset-detail')}
                   onRemoveReferences={async (assetIds) => {

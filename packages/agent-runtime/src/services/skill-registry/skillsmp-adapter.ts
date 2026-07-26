@@ -13,7 +13,7 @@
  */
 
 import type { RemoteSkillItem } from '@spark/protocol'
-import { fetchJson, HttpError } from '@spark/shared'
+import { fetchJson, fetchText, HttpError } from '@spark/shared'
 import type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './adapter.js'
 import { createRemoteSkillItem } from './adapter.js'
 
@@ -164,14 +164,12 @@ export class SkillsMPAdapter implements SkillRegistryAdapter {
   async fetchManifest(manifestUrl: string): Promise<string> {
     // SkillsMP Skills 基于 SKILL.md 标准
     // manifestUrl 指向 skill 详情页或 GitHub raw 内容
-    const res = await globalThis.fetch(manifestUrl, {
+    const text = await fetchText(manifestUrl, {
       headers: this.headers,
-      signal: AbortSignal.timeout(15000),
+      timeoutMs: 15_000,
+      maxRetries: 2,
+      retryBackoffMs: 250,
     })
-    if (!res.ok) {
-      throw new Error(`Failed to fetch manifest: ${res.status} ${res.statusText}`)
-    }
-    const text = await res.text()
     // 如果返回的是 SKILL.md (Markdown)，包装为 JSON manifest
     if (text.startsWith('#') || text.startsWith('---')) {
       return JSON.stringify({
@@ -194,17 +192,13 @@ export class SkillsMPAdapter implements SkillRegistryAdapter {
     const start = Date.now()
     try {
       const url = `${this.apiBaseUrl}/skills/search?limit=1`
-      const res = await globalThis.fetch(url, {
+      const data = await fetchJson<{ success?: boolean }>(url, {
         headers: this.headers,
-        signal: AbortSignal.timeout(10000),
+        timeoutMs: 10_000,
+        maxRetries: 2,
+        retryBackoffMs: 250,
       })
       const latencyMs = Date.now() - start
-
-      if (!res.ok) {
-        return { healthy: false, latencyMs, error: `HTTP ${res.status}` }
-      }
-
-      const data = await res.json() as { success?: boolean }
       if (data.success === false) {
         return { healthy: false, latencyMs, error: 'API returned success=false' }
       }
@@ -250,12 +244,15 @@ export class SkillsMPAdapter implements SkillRegistryAdapter {
       return await fetchJson<T>(url, {
         headers: this.headers,
         timeoutMs: 15_000,
-        // 同 SkillHub：UI 调用方已有 catch → 返回 [] 兜底，重试反而让单测/真实网络问题卡顿。
-        maxRetries: 0,
+        // GET 查询幂等；短退避重试瞬时网络/5xx，4xx 仍立即失败。
+        maxRetries: 2,
+        retryBackoffMs: 250,
       })
     } catch (err) {
       if (err instanceof HttpError && err.statusCode === 429) {
-        throw new Error('SkillsMP API rate limit exceeded. Consider adding an API key.')
+        throw new Error('SkillsMP API rate limit exceeded. Consider adding an API key.', {
+          cause: err,
+        })
       }
       throw err
     }

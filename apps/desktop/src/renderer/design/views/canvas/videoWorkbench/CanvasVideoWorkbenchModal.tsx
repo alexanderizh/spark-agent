@@ -757,15 +757,6 @@ export function CanvasVideoWorkbenchModal({
     handleReorderTrack(nextTrack)
   }, [draft.resourcePanel, draft.track, handleReorderTrack, playbackGlobalTime])
 
-  const handleExportWhole = useCallback(() => {
-    if (draft.track.length === 0) {
-      message.warning('请先把资源加入轨道再导出整条')
-      return
-    }
-    // P1：UI 入口已就位；真实 ffmpeg concat 流程由父级 / IPC 在后续 P2 接入
-    message.info('导出整条需要 ffmpeg concat 流程（P2 任务），当前为占位')
-  }, [draft.track.length])
-
   const handlePreviewResource = useCallback(
     (resource: WorkbenchResource) => {
       playbackExit()
@@ -1241,7 +1232,6 @@ export function CanvasVideoWorkbenchModal({
               onRemoveClip={handleRemoveClip}
               onPreviewResource={handlePreviewResource}
               onAddResourceToTrack={handleAddResourceToTrack}
-              onExportWhole={handleExportWhole}
               onClearTrack={handleClearTrack}
               onOpenFrames={() => setActiveTab('frames')}
               onOpenEdit={() => setActiveTab('edit')}

@@ -6468,16 +6468,6 @@ export function registerAllIpcHandlers(): void {
     return result
   })
 
-  typedIpcHandle('skill:export', async (_req) => {
-    // TODO: T-12 Skill 包导入/导出
-    throw new Error('Not implemented yet: skill:export')
-  })
-
-  typedIpcHandle('skill:export-batch', async (_req) => {
-    // TODO: T-12 Skill 包导入/导出
-    throw new Error('Not implemented yet: skill:export-batch')
-  })
-
   // ─── App Skills Manager Handlers ─────────────────────────────────────────
 
   typedIpcHandle('skill:install-to-app', async (req) => {
@@ -6529,7 +6519,7 @@ export function registerAllIpcHandlers(): void {
   // ─── Command Handlers ───────────────────────────────────────────────────────
 
   typedIpcHandle('command:execute', async (req) => {
-    log.info(`command:execute requested, sessionId=${req.sessionId}, message=${req.message}`)
+    log.info(`command:execute requested, sessionId=${req.sessionId}, messageLength=${req.message.length}`)
     const cmdResult = await getSessionService().executeCommandAsEvents({
       sessionId: req.sessionId,
       message: req.message,

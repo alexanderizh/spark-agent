@@ -29,9 +29,11 @@ import { ChatPanelToolActivity } from './ChatPanelToolActivity'
 import { isCanvasMutationTool } from './chat-panel-tool-activity'
 import { buildChatPanelRenderItems, getChatPanelTextGroupContent } from './chat-panel-render-items'
 import {
+  getChatPanelUserNodeReferences,
   getChatPanelUserText,
   groupChatPanelMessagesByTurn,
   sanitizeCanvasUserMessage,
+  type ChatPanelMessageNodeReference,
 } from './chat-panel-turns'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
@@ -103,11 +105,7 @@ type AssistantStatus = 'idle' | 'sending' | 'streaming'
 type ChatPanelDisplayAttachment = SessionAttachment & { name?: string }
 type ChatPanelAttachment = SessionAttachment & { id: string; name: string }
 /** 输入框上方引用的画布节点 chip */
-export type ChatPanelNodeReference = {
-  id: string
-  type: string
-  title?: string
-}
+export type ChatPanelNodeReference = ChatPanelMessageNodeReference
 type UserQuestionDraft = {
   skipped?: boolean
   selectedLabel?: string
@@ -173,6 +171,9 @@ export function ChatPanel({
   const [pendingUserAttachments, setPendingUserAttachments] = useState<
     ChatPanelDisplayAttachment[]
   >([])
+  const [pendingUserNodeReferences, setPendingUserNodeReferences] = useState<
+    ChatPanelNodeReference[]
+  >([])
   const [showAssistantPending, setShowAssistantPending] = useState(false)
   const [hasMoreHistory, setHasMoreHistory] = useState(false)
   const [loadingOlderHistory, setLoadingOlderHistory] = useState(false)
@@ -234,6 +235,7 @@ export function ChatPanel({
       setStatus('idle')
       setPendingUserText(null)
       setPendingUserAttachments([])
+      setPendingUserNodeReferences([])
       setShowAssistantPending(false)
       preservePendingHistoryLoadRef.current = false
     } else {
@@ -324,6 +326,7 @@ export function ChatPanel({
       if (evt.type === 'user_message') {
         setPendingUserText(null)
         setPendingUserAttachments([])
+        setPendingUserNodeReferences([])
         preservePendingHistoryLoadRef.current = false
       }
       if (
@@ -361,7 +364,13 @@ export function ChatPanel({
       })
       return () => window.cancelAnimationFrame(frame)
     }
-  }, [messages, pendingUserAttachments, pendingUserText, showAssistantPending])
+  }, [
+    messages,
+    pendingUserAttachments,
+    pendingUserNodeReferences,
+    pendingUserText,
+    showAssistantPending,
+  ])
 
   const loadOlderHistory = useCallback(async () => {
     if (
@@ -564,6 +573,7 @@ export function ChatPanel({
       setSendError(null)
       setPendingUserText(rawText)
       setPendingUserAttachments(turnAttachments)
+      setPendingUserNodeReferences(nodeReferences?.map((reference) => ({ ...reference })) ?? [])
       setShowAssistantPending(true)
       preservePendingOnSessionBindRef.current = onSend != null && sessionId == null
       try {
@@ -597,10 +607,11 @@ export function ChatPanel({
         setSendError(err instanceof Error ? err.message : '发送失败')
         setPendingUserText(null)
         setPendingUserAttachments([])
+        setPendingUserNodeReferences([])
         setShowAssistantPending(false)
       }
     },
-    [applyInput, attachments, onAfterSend, onSend, sessionId, status],
+    [applyInput, attachments, nodeReferences, onAfterSend, onSend, sessionId, status],
   )
 
   const handleSend = useCallback(async () => {
@@ -805,7 +816,12 @@ export function ChatPanel({
           )
         })}
         {pendingUserText != null && (
-          <PendingUserMessageView text={pendingUserText} attachments={pendingUserAttachments} />
+          <PendingUserMessageView
+            text={pendingUserText}
+            attachments={pendingUserAttachments}
+            nodeReferences={pendingUserNodeReferences}
+            {...(onFocusNodeReference ? { onFocusNode: onFocusNodeReference } : {})}
+          />
         )}
         {showAssistantPending && (
           <PendingAssistantMessageView
@@ -952,6 +968,7 @@ function MessageView({
 }): React.ReactElement {
   const assistantIdentity = resolveAssistantIdentity(message, agents, fallbackAssistant)
   const attachments = message.role === 'user' ? (message.attachments ?? []) : []
+  const nodeReferences = getChatPanelUserNodeReferences(message)
   const renderItems = buildChatPanelRenderItems(message.blocks, {
     toolCallDisplay,
     ...(toolNamePrefixFilter != null ? { toolNamePrefix: toolNamePrefixFilter } : {}),
@@ -970,6 +987,12 @@ function MessageView({
         )}
       </div>
       <div className="chat-panel-message-body">
+        {nodeReferences.length > 0 && (
+          <MessageNodeReferencesView
+            references={nodeReferences}
+            {...(onFocusNode ? { onFocus: onFocusNode } : {})}
+          />
+        )}
         {attachments.length > 0 && <MessageAttachmentsView attachments={attachments} />}
         {renderItems.map((item) => {
           if (item.kind === 'thinking_group') {
@@ -1074,11 +1097,7 @@ function BlockView({
         !hideToolInputOutput && block.output && block.status === 'success' ? (
           <details className="chat-panel-tool-output">
             <summary>结果</summary>
-            <pre>
-              {block.output.length > 4000
-                ? block.output.slice(0, 4000) + '\n…(已截断)'
-                : block.output}
-            </pre>
+            <pre>{block.output}</pre>
           </details>
         ) : null
       const hasDetail = inputDetails != null || errorBlock != null || outputDetails != null
@@ -1518,9 +1537,13 @@ function InlineUserQuestionCard({
 function PendingUserMessageView({
   text,
   attachments,
+  nodeReferences,
+  onFocusNode,
 }: {
   text: string
   attachments: ChatPanelDisplayAttachment[]
+  nodeReferences: ChatPanelNodeReference[]
+  onFocusNode?: (nodeId: string) => void
 }) {
   return (
     <div className="chat-panel-message chat-panel-message-user chat-panel-message-pending">
@@ -1528,6 +1551,12 @@ function PendingUserMessageView({
         <Icons.MousePointer size={14} />
       </div>
       <div className="chat-panel-message-body">
+        {nodeReferences.length > 0 && (
+          <MessageNodeReferencesView
+            references={nodeReferences}
+            {...(onFocusNode ? { onFocus: onFocusNode } : {})}
+          />
+        )}
         {attachments.length > 0 && <MessageAttachmentsView attachments={attachments} />}
         <div className="chat-panel-text md-surface">
           <MarkdownText content={text} />
@@ -1885,6 +1914,42 @@ function MessageAttachmentsView({ attachments }: { attachments: ChatPanelDisplay
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function MessageNodeReferencesView({
+  references,
+  onFocus,
+}: {
+  references: ChatPanelNodeReference[]
+  onFocus?: (id: string) => void
+}) {
+  return (
+    <div className="chat-panel-message-node-refs">
+      {references.map((reference) => (
+        <div
+          key={reference.id}
+          className="chat-panel-node-ref-chip is-readonly"
+          title={nodeRefLabel(reference)}
+        >
+          {onFocus ? (
+            <button
+              type="button"
+              className="chat-panel-node-ref-focus"
+              onClick={() => onFocus(reference.id)}
+            >
+              {nodeRefIcon(reference.type)}
+              <span>{nodeRefLabel(reference)}</span>
+            </button>
+          ) : (
+            <>
+              {nodeRefIcon(reference.type)}
+              <span>{nodeRefLabel(reference)}</span>
+            </>
+          )}
+        </div>
+      ))}
     </div>
   )
 }

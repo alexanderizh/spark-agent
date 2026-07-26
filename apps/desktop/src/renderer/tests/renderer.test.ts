@@ -408,7 +408,6 @@ describe('Renderer Smoke Tests', () => {
           paletteMode: 'command',
           showPerm: false,
           showProviderEdit: false,
-          showProfileEdit: false,
           browserPanelOpen: false,
           browserPanelWidth: 380,
           floatingSidebarWidth: 244,
@@ -844,14 +843,34 @@ describe('Renderer Smoke Tests', () => {
     vi.doMock('../design/theme/LobeThemeProvider', () => ({
       LobeThemeProvider: ({ children }: { children: React.ReactNode }) => children,
     }))
+    vi.stubGlobal('spark', {
+      invoke: vi.fn(async (channel: string) => {
+        if (channel === 'settings:get') return { value: { completed: true, dismissed: false } }
+        if (channel === 'workspace:list') return { workspaces: [] }
+        if (channel === 'session:list') return { sessions: [] }
+        if (channel === 'workspace:get-current') return { workspace: null }
+        if (channel === 'provider:list') return { profiles: [] }
+        if (channel === 'agent:list') return { agents: [] }
+        if (channel === 'terminal:list-active') return { sessions: [] }
+        if (channel === 'session:list-pending-questions') return { questions: [] }
+        return {}
+      }),
+      on: vi.fn(() => vi.fn()),
+    })
     const { App } = await import('../App')
 
     const mountedRoot = createRoot(container)
-    flushSync(() => {
+    await act(async () => {
       mountedRoot.render(React.createElement(App))
+      await Promise.resolve()
     })
 
-    // Sidebar is always visible (non-collapsible floating panel)
+    // Startup resolves the persisted onboarding state before mounting the shell.
+    await vi.waitFor(() => {
+      expect(container.querySelector('.floating-sidebar'), container.innerHTML).not.toBeNull()
+    })
+
+    // Sidebar is always visible after the startup gate resolves (non-collapsible floating panel)
     const sidebar = container.querySelector('.floating-sidebar')
     expect(sidebar).not.toBeNull()
 

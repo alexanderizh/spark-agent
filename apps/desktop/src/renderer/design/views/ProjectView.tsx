@@ -51,20 +51,13 @@ export function ProjectView() {
   useEffect(() => {
     if (workspaceId == null) return
 
-    let cancelled = false
     startWatch({ workspaceId })
-      .then(() => {
-        if (!cancelled) {
-          // eslint-disable-next-line no-console
-          console.log(`[FileWatcher] Started watching workspace ${workspaceId}`)
-        }
-      })
+      .then(() => undefined)
       .catch((err) => {
         console.error('[FileWatcher] Failed to start:', err)
       })
 
     return () => {
-      cancelled = true
       stopWatch({ workspaceId }).catch(() => {})
     }
   }, [workspaceId, startWatch, stopWatch])

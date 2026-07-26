@@ -124,6 +124,27 @@ describe('ProjectContextService', () => {
     expect(result.systemPrompt?.length ?? 0).toBeLessThan(2700)
   })
 
+  it('preserves both the head and tail of a file that exceeds the per-file token budget', () => {
+    const root = mkdtempSync(join(tmpdir(), 'spark-project-context-long-file-'))
+    roots.push(root)
+    writeFileSync(
+      join(root, 'AGENTS.md'),
+      `START-OF-RULES\n${'middle content '.repeat(30_000)}\nEND-OF-RULES`,
+    )
+
+    const result = new ProjectContextService().discover(root, {
+      mode: 'deep-research',
+      budgetTokens: 80_000,
+    })
+
+    expect(result.systemPrompt).toContain('START-OF-RULES')
+    expect(result.systemPrompt).toContain('END-OF-RULES')
+    expect(result.systemPrompt).toContain('Project context system prompt truncated')
+    expect(result.sources).toContainEqual(
+      expect.objectContaining({ path: 'AGENTS.md', included: true, truncated: true }),
+    )
+  })
+
   it('returns an empty context for missing workspaces', () => {
     expect(new ProjectContextService().discover(join(tmpdir(), 'missing-spark-context'))).toEqual({
       rules: [],

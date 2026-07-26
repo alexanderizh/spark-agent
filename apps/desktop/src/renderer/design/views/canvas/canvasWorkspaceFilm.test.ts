@@ -2,10 +2,23 @@ import { describe, expect, it } from 'vitest'
 import type { CanvasAsset } from './canvas.types'
 import type { ShotGroup, ShotSegment } from './canvasFilmAssets'
 import {
+  buildChapterToScreenplayInstruction,
   buildFilmAssetReferencePrompt,
   buildShotSegmentKeyframePrompt,
   buildShotSegmentVideoPrompt,
 } from './canvasWorkspaceFilm'
+
+describe('buildChapterToScreenplayInstruction', () => {
+  it('uses token-aware head/tail clipping for oversized chapters', () => {
+    const prompt = buildChapterToScreenplayInstruction(
+      `START-OF-CHAPTER\n${'middle scene '.repeat(20_000)}\nEND-OF-CHAPTER`,
+    )
+
+    expect(prompt).toContain('START-OF-CHAPTER')
+    expect(prompt).toContain('END-OF-CHAPTER')
+    expect(prompt).toContain('[truncated middle]')
+  })
+})
 
 describe('buildFilmAssetReferencePrompt', () => {
   it('场景图提示词强制为无人物的纯场景', () => {
