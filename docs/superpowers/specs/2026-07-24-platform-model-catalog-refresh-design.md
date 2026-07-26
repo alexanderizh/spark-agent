@@ -1,6 +1,6 @@
 # 平台官方模型目录事件刷新设计
 
-> 状态: 待开发 | 最后核对: 2026-07-24
+> 状态: 已落地 | 最后核对: 2026-07-27
 
 ## 背景
 
@@ -29,8 +29,8 @@
 `PlatformModelService` 提供独立的模型目录刷新方法：
 
 1. 确认当前存在已登录的 Spark 用户和可用的平台管理客户端。
-2. 调用现有 `NewApiClient.getModels()` 获取目录。
-3. 仅更新托管 Provider 的 `availableModelIds`、`modelIds` 和 `defaultModel`，不创建或轮换 API Key。
+2. 调用现有 `NewApiClient.getModelCatalog()` 获取包含 tags 的完整目录。
+3. 将文本模型写入 `availableModelIds` / `modelIds`，将 `model:image` 条目转换后整表写入 `mediaModelRefs`，不创建或轮换 API Key。
 4. 发出 Provider 配置变化事件，使所有相关渲染界面读取最新本地数据。
 
 刷新方法采用 singleflight 合并并发调用。非强制刷新在最近一次成功同步后的 5 分钟内直接返回当前目录；调用失败不更新时间戳，以便后续事件可以重试。
@@ -39,8 +39,9 @@
 
 `ProviderService` 增加只更新托管模型目录的窄接口，复用当前 `ensureManagedNewApiProvider` 的偏好归并规则：
 
-- `availableModelIds` 完全替换为服务端本次返回的去重列表。
+- `availableModelIds` 完全替换为服务端本次返回的去重文本模型列表。
 - 现有 `modelIds` 只保留仍在新目录中的模型。
+- `mediaModelRefs` 完全替换为本次标签映射结果，并默认启用；旧版本误存进 `modelIds` 的图片模型会随刷新自动移出聊天模型。
 - 如果仍有已启用模型，保留原默认模型；原默认模型被移除时使用首个剩余启用模型。
 - 如果所有已启用模型都被移除，则启用新目录全部模型，并使用第一个模型作为默认值，保持现有首次初始化语义。
 - 新目录为空时返回明确错误，不破坏当前本地可用配置。
@@ -54,6 +55,7 @@
 1. 模型管理页首次挂载。
 2. 模型管理页已挂载且 `document.visibilityState` 从隐藏变为可见。
 3. 用户点击模型管理页刷新按钮时执行强制同步，不受 5 分钟间隔限制。
+4. 应用恢复已有登录态并创建平台模型服务时执行一次后台同步，使用户不进入 Provider 页面也能更新会话、画布和 skill 数据源。
 
 自动触发失败时保留本地目录并记录错误，不用错误提示打断用户；用户主动点击刷新失败时显示现有 Toast 错误反馈。
 
@@ -69,6 +71,8 @@
 6. 强制刷新绕过最短刷新间隔。
 7. ProvidersView 首次进入和恢复可见时触发目录同步。
 8. ProvidersView 主动刷新会请求强制同步，然后重载 Provider 列表。
+9. 旧 Provider 中混存的图片模型会从聊天字段迁移到启用的 `mediaModelRefs`。
+10. 画布调用保留平台模型别名并复用标签指定的适配器；skill 的 `spark_media` 路由读取同一份 refs。
 
 ## 错误处理与兼容性
 

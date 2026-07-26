@@ -625,6 +625,16 @@ export interface PlatformModelStatus {
   }
 }
 
+export interface PlatformModelRefreshCatalogRequest {
+  force?: boolean
+}
+
+export interface PlatformModelRefreshCatalogResponse {
+  models: string[]
+  mediaModels: string[]
+  refreshed: boolean
+}
+
 export interface PlatformModelPlan {
   id: number
   title: string
@@ -5315,6 +5325,10 @@ export interface IpcChannelMap extends ProviderFilesIpcChannelMap {
   'platform-model:redeem': [PlatformModelRedeemRequest, PlatformModelRedeemResponse]
   'platform-model:pay': [PlatformModelPayRequest, PlatformModelPayResponse]
   'platform-model:get-usage': [void, PlatformModelUsage]
+  'platform-model:refresh-catalog': [
+    PlatformModelRefreshCatalogRequest,
+    PlatformModelRefreshCatalogResponse,
+  ]
   'platform-model:update-model-preferences': [
     PlatformModelUpdatePreferencesRequest,
     PlatformModelUpdatePreferencesResponse,

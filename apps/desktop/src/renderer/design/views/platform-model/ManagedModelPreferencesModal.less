@@ -20,6 +20,27 @@
   overflow-y: auto;
 }
 
+.managed-model-preferences__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.managed-model-preferences__section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+
+  small {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 400;
+  }
+}
+
 .managed-model-preferences__item {
   display: flex;
   align-items: center;
@@ -41,6 +62,10 @@
     margin-left: auto;
     color: var(--primary);
   }
+}
+
+.managed-model-preferences__item--managed {
+  cursor: default;
 }
 
 .managed-model-preferences__footer {

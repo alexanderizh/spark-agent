@@ -91,6 +91,7 @@ Spark 平台模型仍使用现有受管 NewAPI Provider 的地址、API Key 和�
 - `model_name` 是真正发送给平台接口的 `model` 值。例如 `spark-img` 不会被替换成 `gpt-image-2`。
 - 标签中的 `gpt-image-2` 只用于查找参数 schema、默认值、能力、校验规则和适配器。解析后的 `adapterModelId` 会保留该模板身份，画布和 skill 的模型专属分支不会误把 `spark-img` 当成一种未知模型。
 - 文本模型继续使用平台根地址；媒体模型使用平台 `${baseUrl}/v1` 入口。
+- 平台设置弹窗把对话模型与图片模型分区展示；图片模型由 tags 生成并自动启用，不参与默认对话模型选择。
 - 只有 `managedType: newapi` 的平台受管 Provider 会按模型 Manifest 间接选择适配器。普通 Provider 的适配器选择规则保持不变。
 - `spark_media` 运行时会把平台图片模型作为该渠道的媒体默认模型，并在用户显式选择模型时按 Manifest 切换对应适配行为；普通渠道的默认模型规则保持不变。
 - 分页模型目录会逐页读取（最多 100 页），避免平台模型超过首屏数量后在画布或 skill 中缺失。
@@ -98,4 +99,4 @@ Spark 平台模型仍使用现有受管 NewAPI Provider 的地址、API Key 和�
 
 ## 更新与兼容
 
-平台模型目录是映射关系的唯一来源。登录 bootstrap 获取目录后，普通条目写入文本 `modelIds`，图片条目写入 `mediaModelRefs`。原有 Provider、用户自定义渠道及所有已有适配器配置不需要迁移。
+平台模型目录是映射关系的唯一来源。登录 bootstrap、应用恢复已有登录态以及 Provider 页面事件刷新都会重新获取目录：普通条目写入文本 `modelIds`，图片条目写入 `mediaModelRefs`。旧版本中误存进聊天 `modelIds` 的图片模型会自动迁移；原有 Provider、用户自定义渠道及所有已有适配器配置不需要迁移。

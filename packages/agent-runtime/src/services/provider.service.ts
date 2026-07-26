@@ -1109,6 +1109,41 @@ export class ProviderService {
     }))
   }
 
+  async refreshManagedNewApiModels(params: {
+    ownerUserId: string
+    modelIds: string[]
+    mediaModelRefs: ProviderMediaModelRef[]
+  }): Promise<ProviderProfile> {
+    const row = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
+    if (!row || !isManagedProviderRow(row)) throw new Error('平台官方 Provider 尚未就绪')
+    const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+    if (config.managedOwnerUserId !== params.ownerUserId) {
+      throw new Error('平台官方 Provider 属于其他登录账号')
+    }
+
+    const availableModelIds = [...new Set(params.modelIds.map(model => model.trim()).filter(Boolean))]
+    if (availableModelIds.length === 0) throw new Error('平台账户当前没有可用文本模型')
+    const preferredModelIds = config.modelIds.filter(model => availableModelIds.includes(model))
+    const modelIds = preferredModelIds.length > 0 ? preferredModelIds : availableModelIds
+    const defaultModel = modelIds.includes(config.defaultModel) ? config.defaultModel : modelIds[0]
+    if (!defaultModel) throw new Error('平台账户当前没有可用文本模型')
+
+    this.repo.update(PLATFORM_NEWAPI_PROVIDER_ID, {
+      config: normalizeProviderConfig({
+        ...config,
+        availableModelIds,
+        modelIds,
+        defaultModel,
+        // 平台目录是受管多媒体模型的唯一来源。整表替换可同时完成新增、下线
+        // 和旧版“图片模型误存进 modelIds”数据的迁移。
+        mediaModelRefs: params.mediaModelRefs,
+      }),
+    })
+    const updated = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
+    if (!updated) throw new Error('平台官方 Provider 更新后无法读取')
+    return rowToProfile(updated)
+  }
+
   async updateManagedNewApiModelPreferences(params: {
     modelIds: string[]
     defaultModel: string

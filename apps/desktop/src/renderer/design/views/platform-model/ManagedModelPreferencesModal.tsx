@@ -21,6 +21,14 @@ export function ManagedModelPreferencesModal({
     () => profile.availableModelIds?.length ? profile.availableModelIds : profile.modelIds,
     [profile],
   )
+  const imageModels = useMemo(
+    () => (profile.mediaModelRefs ?? []).map(ref => ({
+      id: ref.manifestId,
+      name: ref.displayName ?? ref.modelId ?? ref.manifestId,
+      enabled: ref.enabled !== false,
+    })),
+    [profile.mediaModelRefs],
+  )
 
   const toggleModel = (model: string, enabled: boolean): void => {
     setSelected((current) => {
@@ -74,18 +82,41 @@ export function ManagedModelPreferencesModal({
             onChange={value => setDefaultModel(String(value))}
           />
         </div>
-        <div className="managed-model-preferences__list">
-          {available.map(model => (
-            <label key={model} className="managed-model-preferences__item">
-              <Checkbox
-                checked={selected.includes(model)}
-                onChange={checked => toggleModel(model, Boolean(checked))}
-              />
-              <span>{model}</span>
-              {model === defaultModel ? <small>默认</small> : null}
-            </label>
-          ))}
-        </div>
+        <section className="managed-model-preferences__section">
+          <div className="managed-model-preferences__section-title">对话模型</div>
+          <div className="managed-model-preferences__list">
+            {available.map(model => (
+              <label key={model} className="managed-model-preferences__item">
+                <Checkbox
+                  checked={selected.includes(model)}
+                  onChange={checked => toggleModel(model, Boolean(checked))}
+                />
+                <span>{model}</span>
+                {model === defaultModel ? <small>默认</small> : null}
+              </label>
+            ))}
+          </div>
+        </section>
+        {imageModels.length > 0 ? (
+          <section className="managed-model-preferences__section">
+            <div className="managed-model-preferences__section-title">
+              <span>图片模型</span>
+              <small>由平台标签自动启用</small>
+            </div>
+            <div className="managed-model-preferences__list">
+              {imageModels.map(model => (
+                <div
+                  key={model.id}
+                  className="managed-model-preferences__item managed-model-preferences__item--managed"
+                >
+                  <Checkbox checked={model.enabled} disabled />
+                  <span>{model.name}</span>
+                  <small>图片</small>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
     </Modal>
   )

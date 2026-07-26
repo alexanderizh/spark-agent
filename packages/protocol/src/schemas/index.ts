@@ -833,6 +833,9 @@ export const IpcSchemaRegistry = {
     modelIds: z.array(z.string().min(1).max(200)).min(1).max(200),
     defaultModel: z.string().min(1).max(200),
   }),
+  'platform-model:refresh-catalog': z.object({
+    force: z.boolean().optional(),
+  }),
   'github-connector:verify': GitHubConnectorVerifyRequestSchema,
   'github-connector:get': z.object({}),
   'github-connector:connect': GitHubConnectorConnectRequestSchema,
