@@ -32,6 +32,7 @@ import type {
   SkillConfigGetResponse,
   TeamModeConfig,
   TurnPromptSnapshotEvent,
+  UsageGetSessionResponse,
   WorkspaceInfo,
 } from '@spark/protocol'
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '@spark/protocol'
@@ -717,6 +718,43 @@ export function ChatConfigPanel({
   )
 }
 
+/**
+ * 会话累计用量 —— 取自 usage_ledger（唯一权威来源）。
+ *
+ * 不能用事件流累加代替：ChatView 的历史是按轮次窗口化加载的（默认只取最近 6 轮），
+ * 从窗口内 usage_update 累加出来的成本对长会话会严重低估，且向上翻页也不会补算。
+ * usage_ledger 由 SessionService.recordUsageUpdate 按 turn 做 delta 记账，覆盖全部轮次。
+ */
+function useSessionLedgerUsage(
+  sessionId: string | undefined,
+  refreshKey: number,
+): UsageGetSessionResponse['summary'] | null {
+  const { invoke: getSessionUsage } = useIpcInvoke('usage:get-session')
+  const [summary, setSummary] = useState<UsageGetSessionResponse['summary'] | null>(null)
+
+  useEffect(() => {
+    if (sessionId == null) {
+      setSummary(null)
+      return
+    }
+    let cancelled = false
+    getSessionUsage({ sessionId })
+      .then((res) => {
+        if (!cancelled) setSummary(res.summary)
+      })
+      .catch((err) => {
+        // 取不到累计用量不该影响面板其余部分；退回 null 由调用方回落到本轮数据
+        console.warn('Failed to load session usage summary', err)
+        if (!cancelled) setSummary(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [getSessionUsage, sessionId, refreshKey])
+
+  return summary
+}
+
 export function ChatInspector({
   session,
   workspace,
@@ -764,6 +802,8 @@ export function ChatInspector({
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const projectContextSources = projectContext?.sources ?? []
   const fileChangeSummaries = extractInspectorFileChanges(messages)
+  // 每来一条 usage_update 就重取一次累计值，保证面板打开期间跟着当前轮实时长
+  const ledgerUsage = useSessionLedgerUsage(session?.id, usageData.turns.length)
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: width }
@@ -1061,6 +1101,7 @@ export function ChatInspector({
             cacheHitTokens={usageData.cacheHitTokens}
             cacheWriteTokens={usageData.cacheWriteTokens}
             estimatedCostUsd={usageData.estimatedCostUsd}
+            sessionTotal={ledgerUsage}
           />
         </div>
 
@@ -1375,6 +1416,18 @@ function TaskListItem({ task }: { task: InspectorTask }) {
 
 /* ── Token Usage Visualization Components ── */
 
+function formatCostUsd(value: number): string {
+  return `$${value < 0.01 && value > 0 ? '<0.01' : value.toFixed(4)}`
+}
+
+/**
+ * Token 用量面板。
+ *
+ * 刻意区分两种口径——之前把两者混在同一张卡片里，「输入/输出/总计」是最后一轮的值，
+ * 「预估成本」却是累计值，同一块区域两种语义且没有任何标注：
+ *   - 本轮：来自实时 usage_update 事件，反映当前/最近一轮
+ *   - 会话累计：来自 usage_ledger（权威，覆盖全部轮次，不受历史窗口化影响）
+ */
 function TokenUsagePanel({
   inputTokens,
   outputTokens,
@@ -1383,6 +1436,7 @@ function TokenUsagePanel({
   cacheHitTokens,
   cacheWriteTokens,
   estimatedCostUsd,
+  sessionTotal,
 }: {
   inputTokens: number
   outputTokens: number
@@ -1391,10 +1445,21 @@ function TokenUsagePanel({
   cacheHitTokens: number
   cacheWriteTokens: number
   estimatedCostUsd: number
+  /** 会话累计（usage_ledger）。取不到时回落为仅展示本轮口径。 */
+  sessionTotal: UsageGetSessionResponse['summary'] | null
 }) {
   const hasUsage = totalTokens > 0
+  const sessionTotalTokens =
+    sessionTotal == null
+      ? 0
+      : sessionTotal.totalInputTokens +
+        sessionTotal.totalOutputTokens +
+        sessionTotal.totalReasoningOutputTokens
+  const hasSessionTotal = sessionTotal != null && sessionTotalTokens > 0
+
   return (
     <div className="token-usage-panel">
+      <div className="token-usage-scope">本轮</div>
       <div className="token-usage-stats">
         <div className="token-stat">
           <span className="token-stat-label">输入</span>
@@ -1405,7 +1470,7 @@ function TokenUsagePanel({
           <span className="token-stat-value">{formatTokenCount(outputTokens)}</span>
         </div>
         <div className="token-stat token-stat-total">
-          <span className="token-stat-label">总计</span>
+          <span className="token-stat-label">合计</span>
           <span className="token-stat-value">{formatTokenCount(totalTokens)}</span>
         </div>
       </div>
@@ -1427,18 +1492,30 @@ function TokenUsagePanel({
           <span className="token-row-value">{formatTokenCount(cacheWriteTokens)}</span>
         </div>
       )}
-      {hasUsage && (
+      {!hasUsage && !hasSessionTotal && <div className="inspector-muted">暂无用量数据</div>}
+
+      {hasSessionTotal && (
+        <>
+          <div className="token-usage-scope token-usage-scope-divider">会话累计</div>
+          <div className="token-usage-row">
+            <span className="token-row-label">Token 总计</span>
+            <span className="token-row-value">{formatTokenCount(sessionTotalTokens)}</span>
+          </div>
+          <div className="token-usage-row">
+            <span className="token-row-label">预估成本</span>
+            <span className="token-row-value token-cost">
+              {formatCostUsd(sessionTotal.totalCostUsd)}
+            </span>
+          </div>
+        </>
+      )}
+      {/* ledger 不可用时（首次写入前 / 查询失败）至少保留本轮成本，不让成本行整个消失 */}
+      {!hasSessionTotal && hasUsage && (
         <div className="token-usage-row">
-          <span className="token-row-label">预估成本</span>
-          <span className="token-row-value token-cost">
-            $
-            {estimatedCostUsd < 0.01 && estimatedCostUsd > 0
-              ? '<0.01'
-              : estimatedCostUsd.toFixed(4)}
-          </span>
+          <span className="token-row-label">预估成本（本轮）</span>
+          <span className="token-row-value token-cost">{formatCostUsd(estimatedCostUsd)}</span>
         </div>
       )}
-      {!hasUsage && <div className="inspector-muted">暂无用量数据</div>}
     </div>
   )
 }
@@ -1564,6 +1641,14 @@ function TurnUsageChart({ turns }: { turns: UsageSnapshot[] }) {
   )
 }
 
+/**
+ * 从事件流重建用量数据。
+ *
+ * ⚠️ 口径：token 字段是**最后一条 usage_update 的值**（即最近一轮），
+ * `estimatedCostUsd` 是传入 events 范围内的累加。由于 ChatView 的历史是按轮次
+ * 窗口化加载的，这里的累加**不等于会话累计** —— 会话累计必须走 `usage:get-session`
+ * 读 usage_ledger。面板上这两种口径要分开展示，不要混。
+ */
 export function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData {
   let inputTokens = 0
   let outputTokens = 0

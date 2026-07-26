@@ -51,6 +51,7 @@ export function ChatTabbar({
   effectiveHostAgentId,
   agents,
   onClearMessages,
+  clearWillStopRun = false,
   onCopyAllMessages,
   onExpandSidebar,
 }: {
@@ -80,6 +81,8 @@ export function ChatTabbar({
   effectiveHostAgentId: string | null
   agents: ManagedAgent[]
   onClearMessages?: () => void
+  /** 会话正在运行：清空会强制终止执行器，确认条需要给出更重的提示 */
+  clearWillStopRun?: boolean
   onCopyAllMessages?: () => void
   onExpandSidebar?: () => void
 }) {
@@ -189,7 +192,10 @@ export function ChatTabbar({
         )}
         {showClearConfirm && onClearMessages && (
           <div className="clear-confirm-bar">
-            <span className="clear-confirm-text">确认清空？</span>
+            {/* 运行中清空会强制终止执行器，确认条必须把这个后果说出来 */}
+            <span className={`clear-confirm-text${clearWillStopRun ? ' danger' : ''}`}>
+              {clearWillStopRun ? '正在运行，清空将终止任务？' : '确认清空？'}
+            </span>
             <button
               className="btn ghost sm clear-confirm-cancel"
               onClick={() => setShowClearConfirm(false)}

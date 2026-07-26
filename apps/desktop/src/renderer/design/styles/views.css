@@ -4749,6 +4749,19 @@ body.sidebar-resizing {
   color: var(--text-strong);
   font-variant-numeric: tabular-nums;
 }
+/* 用量口径分隔标签：区分「本轮」与「会话累计」，避免两种语义混在一起看不出来 */
+.token-usage-scope {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+.token-usage-scope-divider {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
 .token-usage-row {
   display: flex;
   align-items: center;

@@ -181,8 +181,13 @@ const ACTIVE_AGENT_STATUSES = new Set<AgentStatusValue>([
   'waiting_user',
 ])
 
-/** 判断会话是否处于运行中状态，一键清空时需跳过。 */
-function isSessionActive(
+/**
+ * 判断会话是否处于运行中状态。
+ *
+ * 用于所有「会破坏正在执行的任务」的破坏性操作：一键清空跳过、单个删除改用更重的
+ * 确认文案、清空历史前二次确认。
+ */
+export function isSessionActive(
   sessionId: string,
   agentStatuses: Record<string, AgentStatusValue>,
 ): boolean {
@@ -1246,9 +1251,14 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
 
   const handleDeleteSession = useCallback(
     async (session: SessionSummary) => {
+      // 运行中的会话删除后端会强制终止执行器（可能打断正在改文件的工具调用），
+      // 这一后果必须在确认框里说清楚，不能和删除一个空闲会话共用同一句话。
+      const running = isSessionActive(session.id, sessionAgentStatuses)
       const confirmed = await requestConfirm({
         title: t('common.confirm'),
-        description: t('session.deleteDesc', { title: session.title ?? t('session.untitled') }),
+        description: running
+          ? t('session.deleteRunningDesc', { title: session.title ?? t('session.untitled') })
+          : t('session.deleteDesc', { title: session.title ?? t('session.untitled') }),
         confirmText: t('common.delete'),
         danger: true,
       })
@@ -1303,6 +1313,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       deleteSession,
       removeWorktree,
       requestConfirm,
+      sessionAgentStatuses,
       sessions,
       t,
       toast,

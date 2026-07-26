@@ -959,6 +959,7 @@ export function PermissionModal({
   request: PermissionApprovalRequest
   onClose: () => void
 }) {
+  const { toast } = useToast()
   const riskIcon =
     request.riskLevel === 'high' ? (
       <Icons.AlertTriangle className="ico" />
@@ -969,12 +970,16 @@ export function PermissionModal({
 
   async function respond(decision: PermissionApprovalDecision) {
     try {
-      await window.spark.invoke('permission:approval-respond', {
+      const result = await window.spark.invoke('permission:approval-respond', {
         requestId: request.requestId,
         decision,
       })
-    } catch {
-      // best-effort
+      // ok:false = 审批已在主进程失效（超时自动拒绝 / 会话取消），用户的选择没生效，必须说明
+      if (result?.ok === false) {
+        toast.warning('该权限请求已失效（等待超时或会话已取消），你的选择未生效')
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '提交权限审批失败')
     }
     onClose()
   }

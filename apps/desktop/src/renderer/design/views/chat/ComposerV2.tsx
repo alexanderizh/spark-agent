@@ -24,6 +24,7 @@ import {
   buildComposerAttachmentsFromPaths,
   getDataTransferFilePaths,
   hasFileDataTransfer,
+  isUnresolvableFileDrop,
 } from '../../services/composer-attachments'
 import { canReuseComposerSession, canShowComposerWorktreeToggle } from '../chat-session-routing'
 import { resolveComposerRunningAgentIds } from '../../services/composer-working-state'
@@ -71,6 +72,13 @@ import {
   type VendorMeta,
 } from '@spark/protocol'
 import { EMPTY_COMPOSER_DRAFT } from './ChatComposerTypes'
+import {
+  createComposerDraftWriter,
+  gcComposerDraftBuckets,
+  readComposerDrafts,
+  NEW_SESSION_DRAFT_BUCKET,
+  type ComposerDraftMap,
+} from './composer-drafts'
 import { ComposerBranchSelect } from './BranchPicker'
 import { ReasoningMaxParticles } from './ReasoningMaxParticles'
 import {
@@ -130,7 +138,6 @@ type ContextLedgerState = {
 
 const SAFE_FILE_SCHEME = 'safe-file'
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
-const COMPOSER_DRAFTS_KEY = 'spark-agent:composer-drafts'
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 // 用户置顶的斜杠命令：复用通用 settings IPC 持久化（与 custom-commands 同一套机制）
@@ -301,6 +308,7 @@ function InlineApprovalRequest({
   request: PermissionApprovalRequest
   onClose?: () => void
 }) {
+  const { toast } = useToast()
   const [busyDecision, setBusyDecision] = useState<PermissionApprovalDecision | null>(null)
   const riskLabel = { low: '低', medium: '中', high: '高' }[request.riskLevel]
   const riskTone =
@@ -310,18 +318,23 @@ function InlineApprovalRequest({
     async (decision: PermissionApprovalDecision) => {
       setBusyDecision(decision)
       try {
-        await window.spark.invoke('permission:approval-respond', {
+        const result = await window.spark.invoke('permission:approval-respond', {
           requestId: request.requestId,
           decision,
         })
-      } catch {
-        // best-effort
+        // ok:false = 这条审批在主进程已经不存在了（等待超时被自动拒绝，或会话被取消）。
+        // 不能静默关掉卡片——那会让用户以为自己的「允许」生效了，实际 agent 早已被拒。
+        if (result?.ok === false) {
+          toast.warning('该权限请求已失效（等待超时或会话已取消），你的选择未生效')
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '提交权限审批失败')
       } finally {
         setBusyDecision(null)
         onClose?.()
       }
     },
-    [onClose, request.requestId],
+    [onClose, request.requestId, toast],
   )
 
   useEffect(() => {
@@ -786,9 +799,10 @@ export function ComposerV2({
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
   if (initialPrefsRef.current == null) initialPrefsRef.current = readComposerPrefs()
   const initialPrefs = initialPrefsRef.current
-  const [drafts, setDrafts] = useState<Record<string, ComposerDraftSnapshot>>(() =>
-    readComposerDrafts(),
-  )
+  const [drafts, setDrafts] = useState<ComposerDraftMap>(() => readComposerDrafts())
+  const draftWriterRef = useRef<ReturnType<typeof createComposerDraftWriter> | null>(null)
+  // 仅用于草稿 GC：按当前存活会话回收孤儿草稿条目
+  const { sessions } = useSessionSidebar()
   const [sending, setSending] = useState(false)
   useEffect(() => {
     onDispatchStateChange?.(sending)
@@ -964,7 +978,7 @@ export function ComposerV2({
     selectedProvider?.supportsMillionContext === true,
     selectedProvider?.contextWindow,
   )
-  const draftBucketKey = session?.id ?? 'draft:new'
+  const draftBucketKey = session?.id ?? NEW_SESSION_DRAFT_BUCKET
   const sessionWorkspaceId = session?.workspaceIds[0] ?? null
   const canReuseCurrentSession = canReuseComposerSession({
     sessionId: session?.id,
@@ -1036,12 +1050,53 @@ export function ComposerV2({
           return current
         }
         const nextDrafts = { ...current, [draftBucketKey]: next }
-        writeComposerDrafts(nextDrafts)
+        // per-bucket 写：只序列化当前 bucket 这一条草稿，不碰其他 bucket
+        draftWriterRef.current?.writeBucket(draftBucketKey, next)
         return nextDrafts
       })
     },
     [draftBucketKey],
   )
+
+  // 草稿写入器：节流落盘 + 配额失败上报（静默失败会让用户在不知情的情况下丢草稿）
+  useEffect(() => {
+    const writer = createComposerDraftWriter({
+      onPersistError: () => {
+        toast.warning('本地存储空间不足，输入草稿暂时无法保存，请先发送或清理已有草稿')
+      },
+    })
+    draftWriterRef.current = writer
+    // 页面隐藏/卸载是「再不写就来不及」的时机，必须同步 flush 掉待写内容
+    const flush = () => writer.flush()
+    window.addEventListener('beforeunload', flush)
+    document.addEventListener('visibilitychange', flush)
+    return () => {
+      window.removeEventListener('beforeunload', flush)
+      document.removeEventListener('visibilitychange', flush)
+      writer.dispose()
+      if (draftWriterRef.current === writer) draftWriterRef.current = null
+    }
+  }, [toast])
+
+  // 切换会话时立即把上一个会话的待写草稿落盘，避免 debounce 窗口内切走导致丢失
+  useEffect(() => {
+    return () => draftWriterRef.current?.flush()
+  }, [draftBucketKey])
+
+  // 回收孤儿草稿：会话被删除/清空后，其草稿 bucket 会永远留在 localStorage 里。
+  // 会话列表就绪后按存活会话做一次 GC——per-bucket 方案下 GC 直接 removeItem，O(1)。
+  const sessionIdsKey = sessions.map((item) => item.id).join(',')
+  useEffect(() => {
+    if (sessions.length === 0) return // 列表未加载完时不做删除，否则会误删全部草稿
+    const liveIds = new Set(sessions.map((item) => item.id))
+    setDrafts((current) => {
+      const { kept } = gcComposerDraftBuckets(liveIds)
+      if (Object.keys(kept).length === Object.keys(current).length) return current
+      return kept
+    })
+    // sessionIdsKey 而非 sessions：后者每次 refresh 都是新引用，会让 GC 空转
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionIdsKey])
 
   const setValue = useCallback(
     (next: React.SetStateAction<string>) => {
@@ -1082,12 +1137,13 @@ export function ComposerV2({
       for (const key of uniqueKeys) {
         const existing = next[key]
         if (existing != null && (existing.value !== '' || existing.attachments.length > 0)) {
+          // 内存里清成空草稿（UI 立即反映），localStorage 里直接删 key（per-bucket O(1)）
           next[key] = { ...existing, value: '', attachments: [] }
+          draftWriterRef.current?.removeBucket(key)
           changed = true
         }
       }
       if (!changed) return current
-      writeComposerDrafts(next)
       return next
     })
   }, [])
@@ -1307,18 +1363,23 @@ export function ComposerV2({
       const detail = (event as CustomEvent<{ sessionId?: string }>).detail ?? {}
       const targetId = detail.sessionId
       setDrafts((current) => {
-        const next: Record<string, ComposerDraftSnapshot> = { ...current }
+        const next: ComposerDraftMap = { ...current }
         let changed = false
         if (targetId != null && next[targetId] != null) {
           next[targetId] = { ...next[targetId], value: '', attachments: [] }
+          draftWriterRef.current?.removeBucket(targetId)
           changed = true
         }
-        if (next['draft:new'] != null) {
-          next['draft:new'] = { ...next['draft:new'], value: '', attachments: [] }
+        if (next[NEW_SESSION_DRAFT_BUCKET] != null) {
+          next[NEW_SESSION_DRAFT_BUCKET] = {
+            ...next[NEW_SESSION_DRAFT_BUCKET],
+            value: '',
+            attachments: [],
+          }
+          draftWriterRef.current?.removeBucket(NEW_SESSION_DRAFT_BUCKET)
           changed = true
         }
         if (!changed) return current
-        writeComposerDrafts(next)
         return next
       })
     }
@@ -1408,7 +1469,7 @@ export function ComposerV2({
           try {
             await writeClipboardText({ text: markdown })
             toast.success('已复制上一条 Assistant 消息。')
-            clearDraftBuckets([draftBucketKey, session?.id, 'draft:new'])
+            clearDraftBuckets([draftBucketKey, session?.id, NEW_SESSION_DRAFT_BUCKET])
           } catch (err) {
             console.error('复制上一条 Assistant 消息失败', err)
             toast.error(err instanceof Error ? err.message : '复制失败')
@@ -1479,7 +1540,7 @@ export function ComposerV2({
               setQueueVisible(false)
             }
             await refreshQueueState(sessionId)
-            clearDraftBuckets([draftBucketKey, sessionId, 'draft:new'])
+            clearDraftBuckets([draftBucketKey, sessionId, NEW_SESSION_DRAFT_BUCKET])
             onSent(sessionId)
             return
           }
@@ -1487,7 +1548,7 @@ export function ComposerV2({
           if (res.session != null) onCommandComplete(res.session)
           await refreshQueueState(sessionId)
           if (res.started === true) {
-            clearDraftBuckets([draftBucketKey, sessionId, 'draft:new'])
+            clearDraftBuckets([draftBucketKey, sessionId, NEW_SESSION_DRAFT_BUCKET])
             onSent(sessionId)
           }
         } catch (err) {
@@ -1552,7 +1613,7 @@ export function ComposerV2({
           setQueueVisible(false)
         }
         await refreshQueueState(targetSessionId)
-        clearDraftBuckets([draftBucketKey, targetSessionId, 'draft:new'])
+        clearDraftBuckets([draftBucketKey, targetSessionId, NEW_SESSION_DRAFT_BUCKET])
         onSent(targetSessionId)
       } catch (err) {
         console.error('发送失败', err)
@@ -1712,7 +1773,14 @@ export function ComposerV2({
       }
       event.preventDefault()
       const filePaths = getDataTransferFilePaths(event.dataTransfer)
+      const unresolvable = isUnresolvableFileDrop(event.dataTransfer, filePaths)
       resetDragState()
+      if (unresolvable) {
+        // 拖进来了文件却一个路径都解析不出来：几乎只可能是 webUtils 通道失效。
+        // 绝不能静默——用户会以为附件已加上。
+        toast.error('无法读取拖入文件的路径，请改用「添加文件或图片」按钮')
+        return
+      }
       void handleDropFilePaths(filePaths)
     }
 
@@ -1728,7 +1796,7 @@ export function ComposerV2({
       window.removeEventListener('drop', handleDrop)
       window.removeEventListener('blur', resetDragState)
     }
-  }, [handleDropFilePaths, sending])
+  }, [handleDropFilePaths, sending, toast])
 
   const handlePaste = useCallback(
     async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -4989,27 +5057,6 @@ export function writeComposerPrefs(patch: ComposerPrefs): void {
       .catch(() => {
         /* settings persistence is best-effort from the renderer */
       })
-  }
-}
-
-function readComposerDrafts(): Record<string, ComposerDraftSnapshot> {
-  if (typeof window === 'undefined') return {}
-  try {
-    const raw = window.localStorage.getItem(COMPOSER_DRAFTS_KEY)
-    if (raw == null) return {}
-    const parsed = JSON.parse(raw) as Record<string, ComposerDraftSnapshot>
-    return parsed && typeof parsed === 'object' ? parsed : {}
-  } catch {
-    return {}
-  }
-}
-
-function writeComposerDrafts(drafts: Record<string, ComposerDraftSnapshot>): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(COMPOSER_DRAFTS_KEY, JSON.stringify(drafts))
-  } catch {
-    // Ignore local persistence failures and keep in-memory drafts usable.
   }
 }
 
