@@ -111,7 +111,8 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
       },
       ...(Object.keys(params).length > 0 ? { parameters: params } : {}),
     }
-    const url = `${aigcBaseUrl(ctx)}/multimodal-generation/generation`
+    const url =
+      ctx.requestEndpointOverride ?? `${aigcBaseUrl(ctx)}/multimodal-generation/generation`
     logMediaCall({
       provider: this.id,
       capability,
