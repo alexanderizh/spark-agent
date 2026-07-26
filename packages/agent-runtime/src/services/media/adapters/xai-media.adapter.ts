@@ -20,7 +20,7 @@
 
 import { OpenAiCompatibleMediaAdapter } from './openai-compatible-media.adapter.js'
 import { createLogger } from '@spark/shared'
-import { MediaProviderError } from '../media-adapter.types.js'
+import { MediaProviderError, mediaAdapterModelId } from '../media-adapter.types.js'
 import type {
   MediaGenerateInput,
   MediaGenerateOutput,
@@ -89,7 +89,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
     }
 
     const model = ctx.defaultModel
-    const isVideo15 = model.startsWith('grok-imagine-video-1.5')
+    const isVideo15 = mediaAdapterModelId(ctx).startsWith('grok-imagine-video-1.5')
     if (
       isVideo15 &&
       capability !== 'video.image_to_video' &&

@@ -14,6 +14,38 @@ import {
 import type { MediaModelManifest } from '@spark/protocol'
 
 describe('resolveProfileMediaModels', () => {
+  it('clones a built-in template for a platform model alias', () => {
+    const catalog = newCatalog()
+    const source = catalog.describe('openai-images:gpt-image-2')
+    expect(source).toBeTruthy()
+    if (!source) throw new Error('missing OpenAI image template')
+
+    const models = resolveProfileMediaModels(
+      {
+        mediaModelRefs: [
+          {
+            manifestId: 'platform:spark-img:test',
+            modelId: 'spark-img',
+            displayName: 'Spark Image',
+            templateManifestId: source.id,
+          },
+        ],
+      },
+      catalog,
+    )
+
+    expect(models).toHaveLength(1)
+    expect(models[0]?.manifest).toMatchObject({
+      id: 'platform:spark-img:test',
+      modelId: 'spark-img',
+      adapterModelId: 'gpt-image-2',
+      displayName: 'Spark Image',
+      providerKind: 'openai-images',
+    })
+    expect(models[0]?.effectiveModelId).toBe('spark-img')
+    expect(models[0]?.synthesized).toBe(false)
+  })
+
   it('优先使用 ref 携带的完整 manifest，不再克隆目录模型', () => {
     const catalog = newCatalog()
     const manifest: MediaModelManifest = {

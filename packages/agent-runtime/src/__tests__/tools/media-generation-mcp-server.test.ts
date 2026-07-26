@@ -134,6 +134,7 @@ describe('spark_media MCP server', () => {
       if (
         req.method === 'POST' &&
         (req.url === '/images' ||
+          req.url === '/images/generations' ||
           req.url === '/provider-a/images' ||
           req.url === '/provider-b/images')
       ) {
@@ -483,6 +484,76 @@ describe('spark_media MCP server', () => {
     })
     expect(generated.error).toBeUndefined()
     expect(postedHeaders.authorization).toBe('Bearer sk-test')
+  })
+
+  it('routes a platform alias through the adapter declared by its manifest', async () => {
+    const manifest = {
+      id: 'platform:spark-xai:test',
+      providerKind: 'xai',
+      modelId: 'spark-xai',
+      adapterModelId: 'grok-imagine-image',
+      displayName: 'Spark xAI Image',
+      domains: ['image'],
+      capabilities: [{
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['prompt'] },
+        output: { types: ['image'] },
+        paramSchema: {},
+      }],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/images/generations',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    }
+    const configPath = path.join(tmpDir, 'platform-runtime-config.json')
+    writeFileSync(configPath, JSON.stringify({
+      outputDir: tmpDir,
+      providers: [{
+        id: 'spark-platform-newapi',
+        name: 'Spark Platform',
+        apiKeyEnv: 'SPARK_MEDIA_API_KEY_0',
+        provider: 'openai-compatible',
+        adapterFromManifest: true,
+        model: 'spark-xai',
+        mode: 'sync',
+        baseUrl,
+        mediaDefaults: {},
+        manifests: [manifest],
+      }],
+    }))
+
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY_0: 'sk-platform',
+        SPARK_MEDIA_CONFIG_FILE: configPath,
+      },
+    })
+    const generated = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'generate_image',
+        arguments: { model: 'spark-xai', prompt: 'platform adapter routing' },
+      },
+    })
+
+    expect(generated.error).toBeUndefined()
+    expect(postedPath).toBe('/images/generations')
+    expect(postedHeaders.authorization).toBe('Bearer sk-platform')
+    expect(postedBody).toMatchObject({
+      model: 'spark-xai',
+      prompt: 'platform adapter routing',
+      storage_options: expect.any(Object),
+    })
   })
 
   it('uses the provider interface timeout for synchronous manifest requests', async () => {

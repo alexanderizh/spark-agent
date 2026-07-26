@@ -161,9 +161,26 @@ export function resolveProfileMediaModels(
   const refs = profile.mediaModelRefs ?? []
   for (const ref of refs) {
     if (filters?.enabledOnly !== false && ref.enabled === false) continue
-    const catalogManifest = ref.manifest == null ? catalog.describe(ref.manifestId) : null
+    const templateManifest =
+      ref.manifest == null && ref.templateManifestId
+        ? catalog.describe(ref.templateManifestId)
+        : null
+    const catalogManifest =
+      ref.manifest == null && ref.templateManifestId == null
+        ? catalog.describe(ref.manifestId)
+        : null
+    const templateBackedManifest = templateManifest
+      ? {
+          ...templateManifest,
+          id: ref.manifestId,
+          modelId: ref.modelId ?? templateManifest.modelId,
+          adapterModelId: templateManifest.adapterModelId ?? templateManifest.modelId,
+          displayName: ref.displayName ?? ref.modelId ?? templateManifest.displayName,
+        }
+      : null
     const manifest =
       ref.manifest ??
+      templateBackedManifest ??
       catalogManifest ??
       synthesizeMediaManifestForRef(profile, ref, catalog, filters)
     if (!manifest || !capabilityMatches(manifest) || !providerKindMatches(manifest)) continue
@@ -171,6 +188,7 @@ export function resolveProfileMediaModels(
     seen.add(manifest.id)
     const synthesized =
       ref.manifest == null &&
+      templateBackedManifest == null &&
       catalogManifest == null &&
       manifest.id.startsWith(CUSTOM_MANIFEST_PREFIX)
     resolved.push({

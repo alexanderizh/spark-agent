@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { isMediaProviderKind, type MediaCapabilityId, type MediaProviderKind } from '@spark/protocol'
 import { MediaArtifactService } from '../media-artifact.service.js'
-import { MediaProviderError } from '../media-adapter.types.js'
+import { MediaProviderError, mediaAdapterModelId } from '../media-adapter.types.js'
 import type {
   MediaGenerateInput,
   MediaGenerateOutput,
@@ -80,7 +80,7 @@ export class BailianMediaAdapter implements MediaProviderAdapter {
     if (capability === 'image.edit' && images.length === 0) {
       throw new MediaProviderError('invalid_input', '图像编辑至少需要一张参考图')
     }
-    const qwenModel = isQwenImageModel(ctx.defaultModel)
+    const qwenModel = isQwenImageModel(mediaAdapterModelId(ctx))
     const maxInputImages = qwenModel ? 3 : 9
     if (images.length > maxInputImages && !ctx.skipParameterValidation) {
       throw new MediaProviderError(
@@ -290,7 +290,7 @@ async function buildVideoMedia(
   ctx: MediaProviderContext,
   capability: MediaCapabilityId,
 ): Promise<BailianMedia[]> {
-  const model = ctx.defaultModel
+  const model = mediaAdapterModelId(ctx)
   const files = input.inputFiles ?? []
   const images = files.filter((file) => file.type === 'image' || file.type === 'file')
   const videos = files.filter((file) => file.type === 'video')

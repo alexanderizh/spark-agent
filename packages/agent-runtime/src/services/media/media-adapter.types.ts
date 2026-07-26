@@ -34,6 +34,8 @@ export interface MediaProviderContext {
   apiKey: string
   apiEndpoint: string
   defaultModel: string
+  /** Model id used only for adapter-specific branching; outbound requests use defaultModel. */
+  adapterModelId?: string
   modelIds?: string[]
   mediaProvider: MediaProviderKind
   mediaApiType: MediaApiType
@@ -162,4 +164,8 @@ export interface MediaProviderAdapter {
   readonly id: MediaProviderKind
   supports(capability: MediaCapabilityId): boolean
   invoke(input: MediaGenerateInput, context: MediaProviderContext): Promise<MediaGenerateOutput>
+}
+
+export function mediaAdapterModelId(context: MediaProviderContext): string {
+  return context.adapterModelId ?? context.defaultModel
 }

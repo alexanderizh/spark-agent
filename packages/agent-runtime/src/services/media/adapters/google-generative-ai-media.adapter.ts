@@ -7,7 +7,7 @@
  */
 
 import type { MediaCapabilityId, MediaProviderKind } from '@spark/protocol'
-import { MediaProviderError } from '../media-adapter.types.js'
+import { MediaProviderError, mediaAdapterModelId } from '../media-adapter.types.js'
 import type {
   MediaGenerateInput,
   MediaGenerateOutput,
@@ -62,14 +62,14 @@ export class GoogleGenerativeAiMediaAdapter implements MediaProviderAdapter {
         `${this.id} does not support ${capability ?? '(unknown)'}`,
       )
     }
-    const model = ctx.defaultModel
+    const adapterModelId = mediaAdapterModelId(ctx)
     if (capability === 'audio.music') return this.generateMusic(input, ctx)
     if (capability.startsWith('image.')) {
-      return model.startsWith('imagen-')
+      return adapterModelId.startsWith('imagen-')
         ? this.generateImagen(input, ctx)
         : this.generateImage(input, ctx)
     }
-    if (this.id === 'google-generative-ai' && model.startsWith('gemini-omni-')) {
+    if (this.id === 'google-generative-ai' && adapterModelId.startsWith('gemini-omni-')) {
       return this.generateInteractionVideo(input, ctx)
     }
     return this.generateVideo(input, ctx)

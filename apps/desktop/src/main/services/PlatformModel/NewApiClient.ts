@@ -1,4 +1,9 @@
-import type { PlatformModelPlan, PlatformModelSubscription, PlatformModelUsage } from '@spark/protocol'
+import type {
+  PlatformModelCatalogItem,
+  PlatformModelPlan,
+  PlatformModelSubscription,
+  PlatformModelUsage,
+} from '@spark/protocol'
 
 type Envelope<T> = { success?: boolean; code?: number; message?: string; data?: T; url?: string }
 type TokenSummary = { id: number; name: string; key?: string; status?: number }
@@ -83,9 +88,26 @@ export class NewApiClient {
   }
 
   async getModels(): Promise<string[]> {
-    const value = await this.dashboardGet<unknown>('/api/user/models')
-    const rows = Array.isArray(value) ? value : isRecord(value) && Array.isArray(value.models) ? value.models : []
-    return [...new Set(rows.map(item => typeof item === 'string' ? item : isRecord(item) ? String(item.id ?? item.model ?? '') : '').filter(Boolean))]
+    return (await this.getModelCatalog()).map((item) => item.modelId)
+  }
+
+  async getModelCatalog(): Promise<PlatformModelCatalogItem[]> {
+    const catalog = new Map<string, PlatformModelCatalogItem>()
+    let value = await this.dashboardGet<unknown>('/api/user/models')
+    let fetchedRows = 0
+    let page = modelCatalogPage(value)
+    for (let pageCount = 0; pageCount < 100; pageCount += 1) {
+      const rows = modelCatalogRows(value)
+      fetchedRows += rows.length
+      appendModelCatalogRows(catalog, rows)
+      if (!page || fetchedRows >= page.total || rows.length === 0) break
+      const nextPage = page.page + 1
+      value = await this.dashboardGet<unknown>(
+        `/api/user/models?p=${nextPage}&page_size=${page.pageSize}`,
+      )
+      page = modelCatalogPage(value) ?? { ...page, page: nextPage }
+    }
+    return [...catalog.values()]
   }
 
   async getUsage(): Promise<PlatformModelUsage> {
@@ -252,6 +274,52 @@ export class NewApiClient {
       return { ...json.data, url: json.url } as T
     }
     return (json.data ?? json) as T
+  }
+}
+
+function modelCatalogRows(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value
+  if (!isRecord(value)) return []
+  if (Array.isArray(value.items)) return value.items
+  if (Array.isArray(value.models)) return value.models
+  return []
+}
+
+function modelCatalogPage(
+  value: unknown,
+): { page: number; pageSize: number; total: number } | null {
+  if (!isRecord(value)) return null
+  const page = Number(value.page)
+  const pageSize = Number(value.page_size ?? value.pageSize)
+  const total = Number(value.total)
+  if (!Number.isInteger(page) || page < 1) return null
+  if (!Number.isInteger(pageSize) || pageSize < 1) return null
+  if (!Number.isInteger(total) || total < 0) return null
+  return { page, pageSize, total }
+}
+
+function appendModelCatalogRows(
+  catalog: Map<string, PlatformModelCatalogItem>,
+  rows: readonly unknown[],
+): void {
+  for (const item of rows) {
+    if (isRecord(item) && item.status != null && Number(item.status) !== 1) continue
+    const modelId = typeof item === 'string'
+      ? item.trim()
+      : isRecord(item)
+        ? String(item.model_name ?? item.model ?? item.id ?? '').trim()
+        : ''
+    if (!modelId || catalog.has(modelId)) continue
+    const rawTags = isRecord(item) ? item.tags : undefined
+    const tags = Array.isArray(rawTags)
+      ? rawTags
+          .filter((tag): tag is string => typeof tag === 'string')
+          .map((tag) => tag.trim())
+          .filter(Boolean)
+      : typeof rawTags === 'string'
+        ? rawTags.split(',').map((tag) => tag.trim()).filter(Boolean)
+        : []
+    catalog.set(modelId, { modelId, tags })
   }
 }
 

@@ -563,6 +563,8 @@ export interface ProviderProfile {
   providerIcon?: ProviderIconConfig
   /** 自定义 API Endpoint */
   apiEndpoint?: string
+  /** 多媒体调用专用 Endpoint；平台受管模型可与文本 Endpoint 分开。 */
+  mediaApiEndpoint?: string
   /** OpenAI/Codex provider API style. */
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   /** Whether this provider should use a 1M-token context window fallback. */

@@ -1006,6 +1006,7 @@ function normalizeProviderConfig(value, outputDir) {
     outputDir,
     mediaDefaults: value.mediaDefaults && typeof value.mediaDefaults === 'object' ? value.mediaDefaults : {},
     manifests: Array.isArray(value.manifests) ? value.manifests.filter(isManifestLike) : [],
+    adapterFromManifest: value.adapterFromManifest === true,
   }
 }
 
@@ -1051,6 +1052,10 @@ function fallbackManifest(config) {
 
 function manifestCapabilities(manifest) {
   return [...new Set((manifest.capabilities || []).map((cap) => cap?.id).filter(Boolean))]
+}
+
+function manifestAdapterModelId(manifest) {
+  return String(manifest.adapterModelId || manifest.modelId || '')
 }
 
 function handleListModels(config, args) {
@@ -1139,7 +1144,7 @@ function configForTool(config, toolName, args) {
         `Media model ${requestedModel} does not support ${candidates.join(' or ') || toolName}`,
       )
     }
-    return { ...match.config, model: match.manifest.modelId, manifests: [match.manifest] }
+    return configWithSelectedManifest(match.config, match.manifest)
   }
   const candidates = TOOL_CAPABILITY_CANDIDATES[toolName]?.(args) || []
   for (const capabilityId of candidates) {
@@ -1150,7 +1155,7 @@ function configForTool(config, toolName, args) {
       const defaultManifest = manifests.find((manifest) =>
         (manifest.modelId === providerConfig.model || manifest.id === providerConfig.model) &&
         manifestCapabilities(manifest).includes(capabilityId))
-      if (defaultManifest) return { ...providerConfig, model: defaultManifest.modelId }
+      if (defaultManifest) return configWithSelectedManifest(providerConfig, defaultManifest)
     }
   }
   for (const capabilityId of candidates) {
@@ -1161,11 +1166,20 @@ function configForTool(config, toolName, args) {
       const capableManifest = manifests.find((manifest) =>
         manifestCapabilities(manifest).includes(capabilityId))
       if (capableManifest) {
-        return { ...providerConfig, model: capableManifest.modelId, manifests: [capableManifest] }
+        return configWithSelectedManifest(providerConfig, capableManifest)
       }
     }
   }
   return config.providers[0] || config
+}
+
+function configWithSelectedManifest(config, manifest) {
+  return {
+    ...config,
+    model: manifest.modelId,
+    manifests: [manifest],
+    ...(config.adapterFromManifest ? { provider: manifest.providerKind } : {}),
+  }
 }
 
 const FAILED_STATUSES = ['failed', 'error', 'expired', 'cancelled', 'canceled']
@@ -1878,7 +1892,7 @@ async function handleManifestTool(config, toolName, args, match) {
   let serializedRequestBody = JSON.stringify(requestBody)
   if (
     manifest.providerKind === 'openai-images' &&
-    manifest.modelId.startsWith('sora-') &&
+    manifestAdapterModelId(manifest).startsWith('sora-') &&
     variables.image &&
     !/^https?:\/\//i.test(variables.image)
   ) {
@@ -1938,7 +1952,7 @@ async function handleManifestTool(config, toolName, args, match) {
     }
   }
 
-  if (manifest.providerKind === 'openai-images' && manifest.modelId.startsWith('sora-') && requestId) {
+  if (manifest.providerKind === 'openai-images' && manifestAdapterModelId(manifest).startsWith('sora-') && requestId) {
     const content = await fetchJson(
       `${String(config.baseUrl || '').replace(/\/+$/, '')}/videos/${encodeURIComponent(requestId)}/content`,
       { headers: authHeaders(config) },
@@ -1959,7 +1973,7 @@ async function handleManifestTool(config, toolName, args, match) {
       ...(prune.validationIssues.length > 0 ? { validationIssues: prune.validationIssues } : {}),
     }
   }
-  if (manifest.providerKind === 'google-generative-ai' && manifest.modelId.startsWith('gemini-omni-')) {
+  if (manifest.providerKind === 'google-generative-ai' && manifestAdapterModelId(manifest).startsWith('gemini-omni-')) {
     await waitForGoogleManifestFiles(config, responseSpec, raw)
   }
   const materialized = await materializeManifestResult(config, responseSpec, raw, capability, args)
@@ -2143,14 +2157,14 @@ function mergeProviderParams(body, providerParams) {
 function normalizeProviderManifestRequest(manifest, capability, body, variables) {
   if (!isPlainRecord(body)) return body
   if (manifest.providerKind === 'openai-images') {
-    if (manifest.modelId.startsWith('sora-') && variables.image) {
+    if (manifestAdapterModelId(manifest).startsWith('sora-') && variables.image) {
       return { ...body, input_reference: { image_url: variables.image } }
     }
     return body
   }
   if (manifest.providerKind !== 'google-generative-ai') return body
   const params = isPlainRecord(variables.providerParams) ? variables.providerParams : {}
-  if (manifest.modelId.startsWith('imagen-')) {
+  if (manifestAdapterModelId(manifest).startsWith('imagen-')) {
     return {
       instances: [{ prompt: variables.prompt }],
       parameters: compactObject({
@@ -2161,7 +2175,7 @@ function normalizeProviderManifestRequest(manifest, capability, body, variables)
       }),
     }
   }
-  if (manifest.modelId.startsWith('veo-')) {
+  if (manifestAdapterModelId(manifest).startsWith('veo-')) {
     const instance = { prompt: variables.prompt }
     if (capability.id === 'video.reference_to_video') {
       const references = Array.isArray(variables.referenceImages)
@@ -2188,7 +2202,7 @@ function normalizeProviderManifestRequest(manifest, capability, body, variables)
       }),
     }
   }
-  if (manifest.modelId.startsWith('gemini-omni-')) {
+  if (manifestAdapterModelId(manifest).startsWith('gemini-omni-')) {
     const task = capability.id === 'video.edit'
       ? 'edit'
       : capability.id === 'video.reference_to_video'
@@ -2210,7 +2224,7 @@ function normalizeProviderManifestRequest(manifest, capability, body, variables)
       },
     }
   }
-  if (manifest.modelId.startsWith('lyria-')) {
+  if (manifestAdapterModelId(manifest).startsWith('lyria-')) {
     return { model: manifest.modelId, input: variables.content, response_format: { type: 'audio' } }
   }
   if (capability.id.startsWith('image.')) {

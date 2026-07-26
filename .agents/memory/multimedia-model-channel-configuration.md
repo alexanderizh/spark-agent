@@ -192,3 +192,14 @@ paramPolicy: {
 - 生成工具收到显式 `model` 后，必须同时切换所属 Profile 的凭据、endpoint、adapter 和 manifest，并校验该模型确实支持目标 capability；未知或不支持的模型不能回退到默认模型。
 - 未指定模型时才允许按配置顺序选择第一个支持目标 capability 的默认模型，以保持兼容。
 - 只要统一 `spark_media` 可用，普通会话不应同时注入固定单模型的旧 `spark_image`，避免 Agent 被两套相互冲突的提示词误导；旧工具仅作为无法解析统一媒体配置时的兜底。
+
+## 九、平台受管模型的标签映射
+
+- Spark 平台的 NewAPI Provider 同时承载文本模型和多媒体模型时，不能把 `model:image` 条目写入文本 `modelIds`，否则会污染聊天模型选择器。
+- 平台目录标签使用 `model:image` 声明图片域，使用 `<adapter>:<template-model-id>` 引用应用内已有 Manifest，例如 `openai:gpt-image-2`。
+- 平台 `model_name` 是实际发送给网关的模型 ID；模板模型 ID 只负责参数 schema、校验、能力和适配器选择，二者不得互换。
+- 映射生成 template-backed `mediaModelRefs`。Resolver 克隆模板并覆盖 manifest id、modelId 和显示名，允许多个平台别名复用同一个内置模板。
+- 克隆 Manifest 必须保留 `adapterModelId`（模板的真实 modelId）：`modelId` 用于发给平台，`adapterModelId` 用于 Canvas validator/native adapter 与 `spark_media` skill 的模型专属行为判断。
+- 只有 `managedType=newapi` 的受管 Provider 才按命中 Manifest 的 `providerKind` 选择已有适配器；普通 Provider 保持渠道级适配器逻辑。
+- 文本 Anthropic SDK 使用平台根地址，多媒体适配器使用平台 `/v1` 地址，因此受管配置需要分别保存 `apiEndpoint` 与 `mediaApiEndpoint`。
+- `spark_media` 路由对受管平台渠道写入 `adapterFromManifest=true`，并把首个有效平台媒体模型设为媒体默认；普通渠道不得因此改写原有默认模型。

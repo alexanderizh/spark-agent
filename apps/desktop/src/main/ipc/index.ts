@@ -956,12 +956,15 @@ async function resolveCanvasMediaProviders(): Promise<MediaProviderProfileRuntim
         name: profile.name,
         defaultModel: profile.defaultModel,
         ...(profile.modelIds ? { modelIds: profile.modelIds } : {}),
-        ...(profile.apiEndpoint ? { apiEndpoint: profile.apiEndpoint } : {}),
+        ...(profile.mediaApiEndpoint ?? profile.apiEndpoint
+          ? { apiEndpoint: profile.mediaApiEndpoint ?? profile.apiEndpoint }
+          : {}),
         mediaProvider: profile.mediaProvider ?? null,
         mediaApiType: profile.mediaApiType ?? 'auto',
         mediaCapabilities: caps,
         ...(mediaModelManifests.length > 0 ? { mediaModelManifests } : {}),
         ...(profile.mediaDefaults ? { mediaDefaults: profile.mediaDefaults } : {}),
+        ...(profile.managedType ? { managedType: profile.managedType } : {}),
         apiKey,
       })
     } catch {
