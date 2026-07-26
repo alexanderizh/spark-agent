@@ -319,7 +319,8 @@ export class MediaRouterService {
     // 只取最后一个带 body 的 POST：adapter 内部对单次能力调用只发一个主请求；
     // APIMart 编辑会先 POST /uploads/images 再 POST /images/generations，取后者即主请求。
     const capture = createRequestCapture(options.fetch)
-    const routedFetch = createManagedNewApiImageFetch(chosen, capability, capture.fetch)
+    const requestEndpointOverride = managedNewApiImageEndpoint(chosen, capability)
+    const routedFetch = createManagedNewApiImageFetch(requestEndpointOverride, capture.fetch)
     const onTaskSubmitted = options.onTaskSubmitted
       ? (submission: MediaTaskSubmission): void => {
           try {
@@ -349,6 +350,7 @@ export class MediaRouterService {
         ...(options.extraParams ? { extraParams: options.extraParams } : {}),
         ...(options.skipValidation === true ? { skipParameterValidation: true } : {}),
         fetch: routedFetch,
+        ...(requestEndpointOverride ? { requestEndpointOverride } : {}),
         ...(options.fallbackUploader ? { fallbackUploader: options.fallbackUploader } : {}),
         ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
       }
@@ -438,6 +440,7 @@ export class MediaRouterService {
       ...(options.extraParams ? { extraParams: options.extraParams } : {}),
       ...(options.skipValidation === true ? { skipParameterValidation: true } : {}),
       fetch: routedFetch,
+      ...(requestEndpointOverride ? { requestEndpointOverride } : {}),
       ...(options.fallbackUploader ? { fallbackUploader: options.fallbackUploader } : {}),
       ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
     }
@@ -505,11 +508,9 @@ export class MediaRouterService {
 }
 
 function createManagedNewApiImageFetch(
-  profile: Pick<MediaProviderProfile, 'apiEndpoint' | 'managedType'>,
-  capability: MediaCapabilityId,
+  endpoint: string | null,
   fetchImpl: typeof fetch,
 ): typeof fetch {
-  const endpoint = managedNewApiImageEndpoint(profile, capability)
   if (!endpoint) return fetchImpl
 
   return async (input, init) => {

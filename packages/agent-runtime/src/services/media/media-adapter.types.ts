@@ -50,6 +50,11 @@ export interface MediaProviderContext {
   skipParameterValidation?: boolean
   /** 可注入的 fetch（测试用 mock）；缺省走全局 fetch */
   fetch?: typeof fetch
+  /**
+   * 平台托管请求的最终传输入口。适配器仍按自身协议组装参数与解析响应，
+   * 但主请求 URL（包括适配器日志）使用该入口。
+   */
+  requestEndpointOverride?: string
   /** 桌面主进程可注入的 Spark 公开文件上传回退；agent-runtime 不反向依赖 desktop。 */
   fallbackUploader?: MediaUploader
   /** 轮询任务拿到渠道任务 ID 后立即上报提交响应，不必等待最终产物。 */

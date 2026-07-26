@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BUILTIN_MEDIA_MODEL_MANIFESTS } from '@spark/protocol'
 import {
   MediaRouterService,
@@ -12,6 +12,7 @@ import {
 const outputDirs: string[] = []
 
 afterEach(() => {
+  vi.restoreAllMocks()
   for (const outputDir of outputDirs.splice(0)) {
     rmSync(outputDir, { recursive: true, force: true })
   }
@@ -145,6 +146,7 @@ describe('platform media adapter routing', () => {
       }
       const outputDir = mkdtempSync(path.join(tmpdir(), 'spark-platform-bailian-'))
       outputDirs.push(outputDir)
+      const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
 
       await new MediaRouterService().invoke(
         {
@@ -183,6 +185,15 @@ describe('platform media adapter routing', () => {
       expect(requestUrl).toBe(`https://newapi.example/v1${expectedPath}`)
       expect(requestBody).toContain('"model":"spark-bailian-image"')
       expect(requestBody).toContain('"messages"')
+      const adapterLog = consoleLog.mock.calls
+        .map((args) => args.map(String).join(' '))
+        .find(
+          (line) =>
+            line.includes('media:adapter') &&
+            line.includes(`https://newapi.example/v1${expectedPath}`),
+        )
+      expect(adapterLog).toContain(`https://newapi.example/v1${expectedPath}`)
+      expect(adapterLog).not.toContain('/api/v1/services/aigc/multimodal-generation/generation')
     },
   )
 })
