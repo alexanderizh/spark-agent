@@ -38,10 +38,17 @@ type PlatformModelServiceOptions = {
   refreshCatalogOnStart?: boolean
 }
 
+type PlatformModelCatalogMetadataResponse = {
+  items?: unknown
+}
+
 export class PlatformModelService {
   private status: PlatformModelStatus = emptyStatus()
   private readonly bootstrapInflight = new Map<string, Promise<PlatformModelStatus>>()
-  private readonly catalogRefreshInflight = new Map<string, Promise<PlatformModelRefreshCatalogResponse>>()
+  private readonly catalogRefreshInflight = new Map<
+    string,
+    Promise<PlatformModelRefreshCatalogResponse>
+  >()
   private readonly lastCatalogRefreshAt = new Map<string, number>()
   private readonly lastCatalogMediaModelIds = new Map<string, string[]>()
   private readonly credentialRecoveryInflight = new Map<string, Promise<string | null>>()
@@ -51,8 +58,10 @@ export class PlatformModelService {
   constructor(options: PlatformModelServiceOptions = {}) {
     const auth = getAuthService()
     auth.addLogoutHook(async (userId) => this.logout(userId))
-    auth.addLoginHook(async () => { await this.bootstrap(false) })
-    setManagedCredentialRecoveryHandler(request => this.recoverManagedCredential(request))
+    auth.addLoginHook(async () => {
+      await this.bootstrap(false)
+    })
+    setManagedCredentialRecoveryHandler((request) => this.recoverManagedCredential(request))
     // AuthService.start() 已在创建本服务前加载本地登录态。若此时没有用户，说明上次
     // 进程可能在正常 logout hook 运行前退出；立即隐藏遗留的官方 Provider，避免未登录
     // 的 renderer 在首次 provider:list 时短暂读到上一账号的平台模型。
@@ -124,11 +133,13 @@ export class PlatformModelService {
     if (sparkUserId) {
       const store = new PlatformCredentialStore(sparkUserId)
       const pending = await store.getPendingPayment()
-      const paymentConfirmed = pending && subscription?.planId === pending.planId
-        && subscription.status.toLowerCase() === 'active'
-        && (pending.baselineSubscriptionId == null
-          || subscription.id !== pending.baselineSubscriptionId
-          || Number(subscription.expiresAt ?? 0) > Number(pending.baselineExpiresAt ?? 0))
+      const paymentConfirmed =
+        pending &&
+        subscription?.planId === pending.planId &&
+        subscription.status.toLowerCase() === 'active' &&
+        (pending.baselineSubscriptionId == null ||
+          subscription.id !== pending.baselineSubscriptionId ||
+          Number(subscription.expiresAt ?? 0) > Number(pending.baselineExpiresAt ?? 0))
       if (paymentConfirmed) {
         await store.clearPendingPayment()
         delete this.status.pendingPayment
@@ -142,34 +153,37 @@ export class PlatformModelService {
   }
 
   async getPurchaseLinks(): Promise<PlatformModelPurchaseLink[]> {
-    const links = await getAuthService().platformGet<Array<{
-      id?: unknown
-      name?: unknown
-      url?: unknown
-      description?: unknown
-      sortOrder?: unknown
-    }>>('/wallet/purchase-links')
+    const links = await getAuthService().platformGet<
+      Array<{
+        id?: unknown
+        name?: unknown
+        url?: unknown
+        description?: unknown
+        sortOrder?: unknown
+      }>
+    >('/wallet/purchase-links')
     return Array.isArray(links)
       ? links
-        .filter((link): link is typeof link & { name: string; url: string } => (
-          Number.isInteger(Number(link.id))
-          && Number(link.id) > 0
-          && typeof link.name === 'string'
-          && typeof link.url === 'string'
-        ))
-        .map(link => ({
-          id: Number(link.id),
-          name: link.name,
-          url: link.url,
-          ...(typeof link.description === 'string' ? { description: link.description } : {}),
-          sortOrder: Number.isFinite(Number(link.sortOrder)) ? Number(link.sortOrder) : 0,
-        }))
-        .sort((left, right) => left.sortOrder - right.sortOrder)
+          .filter(
+            (link): link is typeof link & { name: string; url: string } =>
+              Number.isInteger(Number(link.id)) &&
+              Number(link.id) > 0 &&
+              typeof link.name === 'string' &&
+              typeof link.url === 'string',
+          )
+          .map((link) => ({
+            id: Number(link.id),
+            name: link.name,
+            url: link.url,
+            ...(typeof link.description === 'string' ? { description: link.description } : {}),
+            sortOrder: Number.isFinite(Number(link.sortOrder)) ? Number(link.sortOrder) : 0,
+          }))
+          .sort((left, right) => left.sortOrder - right.sortOrder)
       : []
   }
 
   async openPurchaseLink(id: number): Promise<{ ok: true }> {
-    const link = (await this.getPurchaseLinks()).find(item => Number(item.id) === id)
+    const link = (await this.getPurchaseLinks()).find((item) => Number(item.id) === id)
     if (!link) throw new Error('购买渠道不存在或已停用')
     const target = new URL(link.url)
     if (target.protocol !== 'https:' && target.protocol !== 'http:') {
@@ -218,7 +232,8 @@ export class PlatformModelService {
     const result = await client.createPayment(planId, paymentMethod)
     if (result.url) {
       const target = new URL(result.url)
-      if (target.protocol !== 'https:' && target.protocol !== 'http:') throw new Error('支付地址协议不安全')
+      if (target.protocol !== 'https:' && target.protocol !== 'http:')
+        throw new Error('支付地址协议不安全')
       await shell.openExternal(target.toString())
     } else if ('postForm' in result && result.postForm) {
       await openExternalPostForm(result.postForm.action, result.postForm.fields)
@@ -262,12 +277,12 @@ export class PlatformModelService {
     ownerUserId: string,
   ): Promise<PlatformModelRefreshCatalogResponse> {
     const client = await this.readyClient()
-    const modelMapping = mapPlatformModelCatalog(await client.getModelCatalog())
+    const modelMapping = await this.loadPlatformModelMapping(client)
     if (getAuthService().getCurrentUserId() !== ownerUserId) {
       throw new Error('平台模型目录刷新期间登录账号已切换')
     }
     const mediaModelIds = modelMapping.mediaModelRefs
-      .map(ref => ref.modelId)
+      .map((ref) => ref.modelId)
       .filter((modelId): modelId is string => typeof modelId === 'string' && modelId.length > 0)
     for (const issue of modelMapping.issues) {
       log.warn(issue.message, { modelId: issue.modelId, reason: issue.reason })
@@ -284,10 +299,7 @@ export class PlatformModelService {
       if (!(error instanceof Error) || !error.message.includes('尚未就绪')) throw error
       const status = await this.bootstrap(false)
       this.lastCatalogRefreshAt.set(ownerUserId, Date.now())
-      this.lastCatalogMediaModelIds.set(
-        ownerUserId,
-        mediaModelIds,
-      )
+      this.lastCatalogMediaModelIds.set(ownerUserId, mediaModelIds)
       return {
         models: status.models,
         mediaModels: mediaModelIds,
@@ -308,10 +320,7 @@ export class PlatformModelService {
       ...(this.status.pendingPayment ? { pendingPayment: this.status.pendingPayment } : {}),
     }
     this.lastCatalogRefreshAt.set(ownerUserId, Date.now())
-    this.lastCatalogMediaModelIds.set(
-      ownerUserId,
-      mediaModelIds,
-    )
+    this.lastCatalogMediaModelIds.set(ownerUserId, mediaModelIds)
     this.emitProviderChanged('update')
     return {
       models: [...profile.modelIds],
@@ -372,13 +381,12 @@ export class PlatformModelService {
       await store.setAccessToken(token)
     }
 
-    const [catalog, apiKey] = await Promise.all([
-      client.getModelCatalog(),
+    const [modelMapping, apiKey] = await Promise.all([
+      this.loadPlatformModelMapping(client),
       client.ensureApiKey(),
     ])
-    const modelMapping = mapPlatformModelCatalog(catalog)
     const mediaModelIds = modelMapping.mediaModelRefs
-      .map(ref => ref.modelId)
+      .map((ref) => ref.modelId)
       .filter((modelId): modelId is string => typeof modelId === 'string' && modelId.length > 0)
     for (const issue of modelMapping.issues) {
       log.warn(issue.message, { modelId: issue.modelId, reason: issue.reason })
@@ -394,10 +402,7 @@ export class PlatformModelService {
       credentialState: 'ready',
     })
     this.lastCatalogRefreshAt.set(sparkUserId, Date.now())
-    this.lastCatalogMediaModelIds.set(
-      sparkUserId,
-      mediaModelIds,
-    )
+    this.lastCatalogMediaModelIds.set(sparkUserId, mediaModelIds)
     this.emitProviderChanged('update')
     const pendingPayment = await store.getPendingPayment()
     this.status = {
@@ -409,6 +414,54 @@ export class PlatformModelService {
       ...(pendingPayment ? { pendingPayment } : {}),
     }
     return this.getStatus()
+  }
+
+  private async loadPlatformModelMapping(client: NewApiClient) {
+    const availableCatalog = await client.getModelCatalog()
+    const modelIds: string[] = []
+    const availableModelIds = new Set<string>()
+    for (const item of availableCatalog) {
+      const modelId = item.modelId.trim()
+      if (!modelId || availableModelIds.has(modelId)) continue
+      availableModelIds.add(modelId)
+      modelIds.push(modelId)
+    }
+
+    const response = await getAuthService().platformPost<PlatformModelCatalogMetadataResponse>(
+      '/platform-model/catalog',
+      { modelIds },
+    )
+    if (!response || typeof response !== 'object' || !Array.isArray(response.items)) {
+      throw new Error('平台模型目录元数据格式不正确')
+    }
+
+    const tagsByModelId = new Map<string, string[]>()
+    for (const row of response.items) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+      const item = row as Record<string, unknown>
+      if (typeof item.modelId !== 'string') continue
+      const modelId = item.modelId.trim()
+      if (!availableModelIds.has(modelId)) continue
+      if (!Array.isArray(item.tags) || item.tags.some((tag) => typeof tag !== 'string')) {
+        throw new Error(`平台模型 ${modelId} 的标签格式不正确`)
+      }
+      tagsByModelId.set(
+        modelId,
+        item.tags.map((tag) => String(tag)),
+      )
+    }
+
+    const missingModelId = modelIds.find((modelId) => !tagsByModelId.has(modelId))
+    if (missingModelId) {
+      throw new Error(`平台模型目录缺少 ${missingModelId} 的元数据`)
+    }
+
+    return mapPlatformModelCatalog(
+      modelIds.map((modelId) => ({
+        modelId,
+        tags: tagsByModelId.get(modelId) ?? [],
+      })),
+    )
   }
 
   private async readyClient(): Promise<NewApiClient> {
@@ -472,8 +525,11 @@ export class PlatformModelService {
 
     const now = Date.now()
     const cachedKey = this.lastValidatedApiKeys.get(request.ownerUserId)
-    if (request.currentSecret && cachedKey?.value === request.currentSecret
-        && cachedKey.expiresAt > now) {
+    if (
+      request.currentSecret &&
+      cachedKey?.value === request.currentSecret &&
+      cachedKey.expiresAt > now
+    ) {
       return request.currentSecret
     }
 

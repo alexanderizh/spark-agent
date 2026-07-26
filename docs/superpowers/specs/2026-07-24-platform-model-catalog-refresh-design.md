@@ -4,11 +4,11 @@
 
 ## 背景
 
-平台官方模型目录目前主要在登录后的 `PlatformModelService.bootstrap()` 中从现有 `/api/user/models` 接口获取。模型管理页顶部的刷新按钮只重新读取本地 Provider 和模型数据，不会重新请求平台目录。因此，应用持续运行期间平台模型发生上下线变化时，本地 `availableModelIds` 可能保持旧值。
+平台官方模型目录主要在登录后的 `PlatformModelService.bootstrap()` 中同步。NewAPI `/api/user/models` 只返回当前账号可用的模型 ID，不包含可靠的 tags；图片分类 tags 由 Spark 服务端受保护的 `/api/v1/platform-model/catalog` 补齐。模型管理页顶部的刷新按钮只重新读取本地 Provider 和模型数据，不会重新请求平台目录。因此，应用持续运行期间平台模型发生上下线变化时，本地 `availableModelIds` 可能保持旧值。
 
 ## 目标
 
-- 只修改当前 Spark-Agent 项目，不调整任何服务端接口或服务端过滤逻辑。
+- 桌面端与 Spark 服务端共同完成目录同步；NewAPI 管理员权限不进入桌面端。
 - 增加仅同步平台模型目录的轻量流程，不复用包含账号初始化和 API Key 维护的完整 bootstrap 流程。
 - 进入模型管理页时尝试同步平台模型目录。
 - 应用从隐藏恢复可见时尝试同步平台模型目录。
@@ -17,7 +17,7 @@
 
 ## 非目标
 
-- 不修改 `/api/user/models` 或其他平台服务端行为。
+- 不修改 NewAPI `/api/user/models` 行为，也不让桌面端访问 NewAPI 管理接口。
 - 不在创建会话的关键路径中等待网络刷新。
 - 不增加后台固定周期轮询。
 - 不通过逐模型推理请求判断模型是否可用。
@@ -29,9 +29,10 @@
 `PlatformModelService` 提供独立的模型目录刷新方法：
 
 1. 确认当前存在已登录的 Spark 用户和可用的平台管理客户端。
-2. 调用现有 `NewApiClient.getModelCatalog()` 获取包含 tags 的完整目录。
-3. 将文本模型写入 `availableModelIds` / `modelIds`，将 `model:image` 条目转换后整表写入 `mediaModelRefs`，不创建或轮换 API Key。
-4. 发出 Provider 配置变化事件，使所有相关渲染界面读取最新本地数据。
+2. 调用现有 `NewApiClient.getModelCatalog()` 获取当前账号可用模型 ID。
+3. 把这些 ID 提交到 Spark 服务端 `/platform-model/catalog`，由服务端通过 NewAPI 管理接口读取对应 tags。
+4. 客户端再次按可用 ID 取交集，将文本模型写入 `availableModelIds` / `modelIds`，将 `model:image` 条目转换后整表写入 `mediaModelRefs`，不创建或轮换 API Key。
+5. 发出 Provider 配置变化事件，使所有相关渲染界面读取最新本地数据。
 
 刷新方法采用 singleflight 合并并发调用。非强制刷新在最近一次成功同步后的 5 分钟内直接返回当前目录；调用失败不更新时间戳，以便后续事件可以重试。
 
@@ -78,5 +79,5 @@
 
 - 未登录、管理会话冲突或网络失败时继续使用现有本地目录。
 - 自动刷新不得清空 Provider，也不得影响已有会话创建。
-- 新 IPC 仅供当前桌面客户端使用，不要求服务端升级。
+- 该版本要求 Spark 服务端提供受认证的 `/api/v1/platform-model/catalog`；旧服务端下目录同步失败时保留当前本地 Provider。
 - 现有登录 bootstrap 继续保留，作为首次创建托管 Provider 和凭据恢复的完整流程。

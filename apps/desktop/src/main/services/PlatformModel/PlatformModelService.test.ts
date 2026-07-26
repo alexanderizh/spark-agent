@@ -4,13 +4,13 @@ const mocks = vi.hoisted(() => ({
   currentUserId: 'spark-user-1' as string | null,
   secrets: new Map<string, string>(),
   settings: new Map<string, unknown>(),
-  recoveryHandler: null as null | ((request: {
-    ownerUserId: string
-    currentSecret: string | null
-  }) => Promise<string | null>),
+  recoveryHandler: null as
+    | null
+    | ((request: { ownerUserId: string; currentSecret: string | null }) => Promise<string | null>),
   addLoginHook: vi.fn(),
   addLogoutHook: vi.fn(),
   platformPost: vi.fn(),
+  platformCatalogItems: [] as Array<{ modelId: string; tags: string[] }>,
   platformGet: vi.fn(),
   validateSession: vi.fn(),
   getModelCatalog: vi.fn(),
@@ -52,13 +52,22 @@ vi.mock('@spark/agent-runtime', () => ({
 vi.mock('@spark/storage', () => ({
   ProviderProfileRepository: class {},
   SettingsRepository: class {
-    get(category: string, key: string) { return mocks.settings.get(`${category}:${key}`) ?? null }
-    set(category: string, key: string, value: unknown) { mocks.settings.set(`${category}:${key}`, value) }
-    delete(category: string, key: string) { return mocks.settings.delete(`${category}:${key}`) }
+    get(category: string, key: string) {
+      return mocks.settings.get(`${category}:${key}`) ?? null
+    }
+    set(category: string, key: string, value: unknown) {
+      mocks.settings.set(`${category}:${key}`, value)
+    }
+    delete(category: string, key: string) {
+      return mocks.settings.delete(`${category}:${key}`)
+    }
     deleteByCategory(category: string) {
       let count = 0
       for (const key of mocks.settings.keys()) {
-        if (key.startsWith(`${category}:`)) { mocks.settings.delete(key); count++ }
+        if (key.startsWith(`${category}:`)) {
+          mocks.settings.delete(key)
+          count++
+        }
       }
       return count
     }
@@ -102,10 +111,11 @@ vi.mock('./NewApiClient.js', () => {
 
 import { PlatformModelService } from './PlatformModelService.js'
 
-const ref = (kind: string, userId = 'spark-user-1') =>
-  `newapi:spark-user-${userId}-${kind}`
+const ref = (kind: string, userId = 'spark-user-1') => `newapi:spark-user-${userId}-${kind}`
 
-function seedReadyCredentials(overrides: Partial<Record<'base-url' | 'user-id' | 'access-token' | 'api-key', string>> = {}) {
+function seedReadyCredentials(
+  overrides: Partial<Record<'base-url' | 'user-id' | 'access-token' | 'api-key', string>> = {},
+) {
   const values = {
     'base-url': 'https://newapi.example',
     'user-id': '42',
@@ -115,7 +125,10 @@ function seedReadyCredentials(overrides: Partial<Record<'base-url' | 'user-id' |
   }
   for (const [kind, value] of Object.entries(values)) {
     if (kind === 'base-url' || kind === 'user-id') {
-      mocks.settings.set(`platform-model:spark-user-1:${kind}`, kind === 'user-id' ? Number(value) : value)
+      mocks.settings.set(
+        `platform-model:spark-user-1:${kind}`,
+        kind === 'user-id' ? Number(value) : value,
+      )
     } else {
       mocks.secrets.set(ref(kind), value)
     }
@@ -133,12 +146,16 @@ describe('PlatformModelService delivery boundaries', () => {
     mocks.secrets.clear()
     mocks.settings.clear()
     mocks.recoveryHandler = null
-    mocks.platformPost.mockResolvedValue({
-      bound: true,
-      newapiUserId: 42,
-      newapiUsername: 'sp_42',
-      password: 'derived-password',
-      baseUrl: 'https://newapi.example',
+    mocks.platformCatalogItems = [{ modelId: 'gpt-5.4-mini', tags: [] }]
+    mocks.platformPost.mockImplementation(async (path: string) => {
+      if (path === '/platform-model/catalog') return { items: mocks.platformCatalogItems }
+      return {
+        bound: true,
+        newapiUserId: 42,
+        newapiUsername: 'sp_42',
+        password: 'derived-password',
+        baseUrl: 'https://newapi.example',
+      }
     })
     mocks.platformGet.mockResolvedValue([])
     mocks.validateSession.mockResolvedValue(undefined)
@@ -152,7 +169,9 @@ describe('PlatformModelService delivery boundaries', () => {
       modelIds: ['gpt-5.4-mini'],
       defaultModel: 'gpt-5.4-mini',
     })
-    mocks.recoverApiKey.mockImplementation(async (current: string | null) => current ?? 'sk-recovered')
+    mocks.recoverApiKey.mockImplementation(
+      async (current: string | null) => current ?? 'sk-recovered',
+    )
     mocks.getSubscription.mockResolvedValue(null)
     mocks.updateManagedModelPreferences.mockResolvedValue({
       modelIds: ['MiniMax-M3', 'deepseek-v4'],
@@ -163,10 +182,12 @@ describe('PlatformModelService delivery boundaries', () => {
   it('updates only the local managed model preferences', async () => {
     const service = createService()
 
-    await expect(service.updateModelPreferences({
-      modelIds: ['deepseek-v4', 'MiniMax-M3'],
-      defaultModel: 'MiniMax-M3',
-    })).resolves.toMatchObject({
+    await expect(
+      service.updateModelPreferences({
+        modelIds: ['deepseek-v4', 'MiniMax-M3'],
+        defaultModel: 'MiniMax-M3',
+      }),
+    ).resolves.toMatchObject({
       modelIds: ['MiniMax-M3', 'deepseek-v4'],
       defaultModel: 'MiniMax-M3',
     })
@@ -180,8 +201,16 @@ describe('PlatformModelService delivery boundaries', () => {
 
   it('singleflights concurrent catalog refreshes and persists media refs separately', async () => {
     seedReadyCredentials()
+    mocks.platformCatalogItems = [
+      { modelId: 'gpt-5.4-mini', tags: [] },
+      { modelId: 'spark-img', tags: ['model:image', 'openai:gpt-image-2'] },
+    ]
     let finishCatalog!: (value: Array<{ modelId: string; tags: string[] }>) => void
-    mocks.getModelCatalog.mockReturnValue(new Promise(resolve => { finishCatalog = resolve }))
+    mocks.getModelCatalog.mockReturnValue(
+      new Promise((resolve) => {
+        finishCatalog = resolve
+      }),
+    )
     const service = createService()
 
     const first = service.refreshModelCatalog(false)
@@ -190,7 +219,7 @@ describe('PlatformModelService delivery boundaries', () => {
     expect(second).toBe(first)
     finishCatalog([
       { modelId: 'gpt-5.4-mini', tags: [] },
-      { modelId: 'spark-img', tags: ['model:image', 'openai:gpt-image-2'] },
+      { modelId: 'spark-img', tags: [] },
     ])
     await expect(Promise.all([first, second])).resolves.toEqual([
       { models: ['gpt-5.4-mini'], mediaModels: ['spark-img'], refreshed: true },
@@ -200,11 +229,13 @@ describe('PlatformModelService delivery boundaries', () => {
     expect(mocks.refreshManagedProvider).toHaveBeenCalledWith({
       ownerUserId: 'spark-user-1',
       modelIds: ['gpt-5.4-mini'],
-      mediaModelRefs: [expect.objectContaining({
-        modelId: 'spark-img',
-        templateManifestId: 'openai-images:gpt-image-2',
-        enabled: true,
-      })],
+      mediaModelRefs: [
+        expect.objectContaining({
+          modelId: 'spark-img',
+          templateManifestId: 'openai-images:gpt-image-2',
+          enabled: true,
+        }),
+      ],
     })
     expect(mocks.sendToMainWindow).toHaveBeenCalledWith(
       'stream:config:changed',
@@ -230,7 +261,11 @@ describe('PlatformModelService delivery boundaries', () => {
   it('does not persist a catalog response after the active account changes', async () => {
     seedReadyCredentials()
     let finishCatalog!: (value: Array<{ modelId: string; tags: string[] }>) => void
-    mocks.getModelCatalog.mockReturnValue(new Promise(resolve => { finishCatalog = resolve }))
+    mocks.getModelCatalog.mockReturnValue(
+      new Promise((resolve) => {
+        finishCatalog = resolve
+      }),
+    )
     const service = createService()
 
     const refresh = service.refreshModelCatalog(false)
@@ -287,7 +322,9 @@ describe('PlatformModelService delivery boundaries', () => {
   it('singleflights concurrent inference-key recovery requests', async () => {
     seedReadyCredentials()
     let finishRecovery!: (value: string) => void
-    const recovery = new Promise<string>(resolve => { finishRecovery = resolve })
+    const recovery = new Promise<string>((resolve) => {
+      finishRecovery = resolve
+    })
     mocks.recoverApiKey.mockReturnValue(recovery)
     createService()
 
@@ -306,17 +343,23 @@ describe('PlatformModelService delivery boundaries', () => {
     seedReadyCredentials()
     createService()
 
-    await expect(mocks.recoveryHandler!({
-      ownerUserId: 'spark-user-2',
-      currentSecret: 'sk-other-user',
-    })).rejects.toThrow('属于其他登录账号')
+    await expect(
+      mocks.recoveryHandler!({
+        ownerUserId: 'spark-user-2',
+        currentSecret: 'sk-other-user',
+      }),
+    ).rejects.toThrow('属于其他登录账号')
     expect(mocks.recoverApiKey).not.toHaveBeenCalled()
   })
 
   it('never shares an in-flight credential promise across different owners', async () => {
     seedReadyCredentials()
     let finishRecovery!: (value: string) => void
-    mocks.recoverApiKey.mockReturnValue(new Promise<string>(resolve => { finishRecovery = resolve }))
+    mocks.recoverApiKey.mockReturnValue(
+      new Promise<string>((resolve) => {
+        finishRecovery = resolve
+      }),
+    )
     createService()
 
     const activeOwnerRecovery = mocks.recoveryHandler!({
@@ -325,10 +368,12 @@ describe('PlatformModelService delivery boundaries', () => {
     })
     await vi.waitFor(() => expect(mocks.recoverApiKey).toHaveBeenCalledTimes(1))
 
-    await expect(mocks.recoveryHandler!({
-      ownerUserId: 'spark-user-2',
-      currentSecret: 'sk-other-user',
-    })).rejects.toThrow('属于其他登录账号')
+    await expect(
+      mocks.recoveryHandler!({
+        ownerUserId: 'spark-user-2',
+        currentSecret: 'sk-other-user',
+      }),
+    ).rejects.toThrow('属于其他登录账号')
 
     finishRecovery('sk-user-1-recovered')
     await expect(activeOwnerRecovery).resolves.toBe('sk-user-1-recovered')
@@ -336,13 +381,15 @@ describe('PlatformModelService delivery boundaries', () => {
 
   it('continues inference with a valid API key even when the dashboard token is stale', async () => {
     seedReadyCredentials({ 'access-token': 'stale-management-token' })
-    mocks.recoverApiKey.mockImplementation(async current => current)
+    mocks.recoverApiKey.mockImplementation(async (current) => current)
     createService()
 
-    await expect(mocks.recoveryHandler!({
-      ownerUserId: 'spark-user-1',
-      currentSecret: 'sk-still-valid',
-    })).resolves.toBe('sk-still-valid')
+    await expect(
+      mocks.recoveryHandler!({
+        ownerUserId: 'spark-user-1',
+        currentSecret: 'sk-still-valid',
+      }),
+    ).resolves.toBe('sk-still-valid')
 
     expect(mocks.recoverApiKey).toHaveBeenCalledWith('sk-still-valid')
     expect(mocks.validateSession).not.toHaveBeenCalled()
@@ -403,21 +450,66 @@ describe('PlatformModelService delivery boundaries', () => {
 
   it('keeps tagged image models out of chat models and persists media template refs', async () => {
     seedReadyCredentials()
-    mocks.getModelCatalog.mockResolvedValue([
+    mocks.platformCatalogItems = [
       { modelId: 'gpt-5.4-mini', tags: [] },
       { modelId: 'spark-img', tags: ['model:image', 'openai:gpt-image-2'] },
+      { modelId: 'not-available-img', tags: ['model:image', 'openai:gpt-image-2'] },
+    ]
+    mocks.getModelCatalog.mockResolvedValue([
+      { modelId: 'gpt-5.4-mini', tags: [] },
+      { modelId: 'spark-img', tags: [] },
     ])
     const service = createService()
 
     await service.bootstrap()
 
-    expect(mocks.ensureManagedProvider).toHaveBeenCalledWith(expect.objectContaining({
-      modelIds: ['gpt-5.4-mini'],
-      mediaModelRefs: [expect.objectContaining({
-        modelId: 'spark-img',
-        templateManifestId: 'openai-images:gpt-image-2',
-      })],
-    }))
+    expect(mocks.ensureManagedProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelIds: ['gpt-5.4-mini'],
+        mediaModelRefs: [
+          expect.objectContaining({
+            modelId: 'spark-img',
+            templateManifestId: 'openai-images:gpt-image-2',
+          }),
+        ],
+      }),
+    )
+    expect(mocks.platformPost).toHaveBeenCalledWith('/platform-model/catalog', {
+      modelIds: ['gpt-5.4-mini', 'spark-img'],
+    })
+  })
+
+  it('preserves the current provider when platform catalog metadata cannot be loaded', async () => {
+    seedReadyCredentials()
+    mocks.platformPost.mockImplementation(async (path: string) => {
+      if (path === '/platform-model/catalog') throw new Error('目录服务暂时不可用')
+      return {
+        bound: true,
+        newapiUserId: 42,
+        newapiUsername: 'sp_42',
+        password: 'derived-password',
+        baseUrl: 'https://newapi.example',
+      }
+    })
+    const service = createService()
+
+    await expect(service.refreshModelCatalog(true)).rejects.toThrow('目录服务暂时不可用')
+    expect(mocks.refreshManagedProvider).not.toHaveBeenCalled()
+  })
+
+  it('does not downgrade a model to chat when its metadata is missing', async () => {
+    seedReadyCredentials()
+    mocks.getModelCatalog.mockResolvedValue([
+      { modelId: 'gpt-5.4-mini', tags: [] },
+      { modelId: 'spark-img', tags: [] },
+    ])
+    mocks.platformCatalogItems = [{ modelId: 'gpt-5.4-mini', tags: [] }]
+    const service = createService()
+
+    await expect(service.refreshModelCatalog(true)).rejects.toThrow(
+      '平台模型目录缺少 spark-img 的元数据',
+    )
+    expect(mocks.refreshManagedProvider).not.toHaveBeenCalled()
   })
 
   it('throttles native notifications for a management-token device conflict', () => {
