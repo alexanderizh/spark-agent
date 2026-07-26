@@ -25,16 +25,38 @@ export function hasFileDataTransfer(dataTransfer: DataTransfer | null | undefine
   return Array.from(dataTransfer.items ?? []).some((item) => item.kind === 'file')
 }
 
-export function getDataTransferFilePaths(dataTransfer: DataTransfer | null | undefined): string[] {
+/**
+ * 把 File 解析成磁盘绝对路径。
+ *
+ * Electron 32 起 `File.prototype.path` 已被移除，必须走 preload 转发的
+ * `webUtils.getPathForFile`（见 preload SparkApi.getPathForFile）。保留 `file.path`
+ * 兜底只是为了兼容旧 Electron 与单元测试里的桩对象，生产路径依赖前者。
+ */
+export type FilePathResolver = (file: File) => string
+
+function defaultFilePathResolver(file: File): string {
+  // 走 globalThis 而非 window：本模块也会被 node 环境的单测导入，直接引用 window 会 ReferenceError。
+  // 浏览器里 globalThis === window，语义完全一致。
+  const bridge = (globalThis as { spark?: { getPathForFile?: (file: File) => string } }).spark
+  const viaWebUtils = bridge?.getPathForFile?.(file)
+  if (typeof viaWebUtils === 'string' && viaWebUtils.length > 0) return viaWebUtils
+  const legacy = (file as File & { path?: string }).path
+  return typeof legacy === 'string' ? legacy : ''
+}
+
+export function getDataTransferFilePaths(
+  dataTransfer: DataTransfer | null | undefined,
+  resolveFilePath: FilePathResolver = defaultFilePathResolver,
+): string[] {
   if (dataTransfer == null) return []
   const paths: string[] = []
 
   for (const item of Array.from(dataTransfer.items ?? [])) {
     if (item.kind !== 'file') continue
-    addFilePath(paths, item.getAsFile())
+    addFilePath(paths, item.getAsFile(), resolveFilePath)
   }
   for (const file of Array.from(dataTransfer.files ?? [])) {
-    addFilePath(paths, file)
+    addFilePath(paths, file, resolveFilePath)
   }
 
   if (paths.length === 0) {
@@ -43,6 +65,19 @@ export function getDataTransferFilePaths(dataTransfer: DataTransfer | null | und
   }
 
   return Array.from(new Set(paths))
+}
+
+/**
+ * 拖拽事件里确实携带了文件，但一个路径都解析不出来。
+ *
+ * 用于把「静默什么都没发生」变成可解释的失败提示——这类情况通常意味着
+ * webUtils 通道不可用（preload 未加载/被旧版本覆盖），必须让用户看见。
+ */
+export function isUnresolvableFileDrop(
+  dataTransfer: DataTransfer | null | undefined,
+  filePaths: string[],
+): boolean {
+  return filePaths.length === 0 && hasFileDataTransfer(dataTransfer)
 }
 
 export async function buildComposerAttachmentsFromPaths(
@@ -87,9 +122,20 @@ export function isImageAttachmentPath(filePath: string): boolean {
   return extension != null && IMAGE_ATTACHMENT_EXTENSIONS.has(extension)
 }
 
-function addFilePath(paths: string[], file: File | null | undefined): void {
-  const maybePath = (file as (File & { path?: string }) | null | undefined)?.path
-  if (typeof maybePath === 'string' && maybePath.trim().length > 0) paths.push(maybePath.trim())
+function addFilePath(
+  paths: string[],
+  file: File | null | undefined,
+  resolveFilePath: FilePathResolver,
+): void {
+  if (file == null) return
+  let resolved = ''
+  try {
+    resolved = resolveFilePath(file)
+  } catch {
+    // 解析失败按「无路径」处理，交由 isUnresolvableFileDrop 统一提示
+    return
+  }
+  if (typeof resolved === 'string' && resolved.trim().length > 0) paths.push(resolved.trim())
 }
 
 function addTextPaths(paths: string[], value: string | undefined): void {

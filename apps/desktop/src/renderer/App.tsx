@@ -1188,6 +1188,24 @@ function Shell() {
     })
   }, [getSessionNotificationTitle, navigateToSession, toast, tr])
 
+  // 审批在用户没操作的情况下失效（等待超时 / 会话被取消）：收起卡片。
+  // 超时还要额外告知用户——agent 已按「拒绝」继续，不解释的话它的后续行为无从理解。
+  useEffect(() => {
+    const api = window.spark
+    if (!api?.on) return
+    return api.on('stream:permission:approval-resolved', (expired) => {
+      dismissApprovalRequest(expired.sessionId, expired.requestId)
+      if (expired.reason !== 'timeout') return
+      const minutes = Math.round((expired.timeoutMs ?? 0) / 60000)
+      toast.warning(tr('app.permission.timedOut', { minutes: String(minutes) }), {
+        duration: 10000,
+        actions: [
+          { label: tr('app.permission.goReview'), onClick: () => navigateToSession(expired.sessionId) },
+        ],
+      })
+    })
+  }, [dismissApprovalRequest, navigateToSession, toast, tr])
+
   useEffect(() => {
     const api = window.spark
     if (!api?.on) return

@@ -12,7 +12,7 @@
  *   - 这样渲染进程可以使用标准的 try/catch 处理错误
  */
 
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type {
   IpcChannel,
@@ -94,6 +94,17 @@ export interface SparkApi {
    * OnlineRecognizer 做增量解码。
    */
   sendVoiceAudioChunk: (payload: VoiceAudioChunkPayload) => void
+
+  /**
+   * 取拖拽/选择得到的 File 在磁盘上的真实路径。
+   *
+   * Electron 32 移除了渲染进程里的 `File.prototype.path` 补丁，唯一受支持的方式是
+   * 主进程侧的 `webUtils.getPathForFile`。渲染进程不能直接 import electron，
+   * 因此这里由 preload 转发——这是拖拽附件能拿到路径的唯一通道。
+   *
+   * @returns 真实绝对路径；非本地文件（如浏览器内合成的 File）返回空字符串。
+   */
+  getPathForFile: (file: File) => string
 }
 
 /**
@@ -153,6 +164,16 @@ contextBridge.exposeInMainWorld('spark', {
   // 语音音频 chunk 流：fire-and-forget，主进程 ipcMain.on 接收
   sendVoiceAudioChunk: (payload: VoiceAudioChunkPayload): void => {
     ipcRenderer.send(VOICE_AUDIO_CHUNK_CHANNEL, payload)
+  },
+
+  // 拖拽/文件选择 → 磁盘真实路径（Electron 32+ 唯一受支持方式，详见 SparkApi 定义）
+  getPathForFile: (file: File): string => {
+    try {
+      return webUtils.getPathForFile(file)
+    } catch {
+      // 非本地文件（渲染进程合成的 Blob/File）会抛出，视为「无路径」
+      return ''
+    }
   },
 } satisfies SparkApi)
 

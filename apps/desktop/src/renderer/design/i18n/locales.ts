@@ -110,6 +110,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'session.renameFailed': '重命名会话失败',
     'session.untitled': '未命名',
     'session.deleteDesc': '是否确定删除会话「{{title}}」？',
+    'session.deleteRunningDesc':
+      '会话「{{title}}」正在运行。删除会立即终止它正在执行的任务，已进行的文件改动不会自动回滚。确定删除？',
     'worktree.cleanupTitle': '清理 worktree',
     'worktree.cleanupDesc':
       '该会话在隔离 worktree（分支 {{branch}}）中运行，是否一并删除该 worktree 及其分支？',
@@ -264,6 +266,7 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'app.permission.notificationBody': 'Agent 正在等待您的审批',
     'app.permission.waiting': '有新的权限审批等待处理',
     'app.permission.goReview': '前往审批',
+    'app.permission.timedOut': '权限审批等待超过 {{minutes}} 分钟已自动拒绝，Agent 已跳过该操作',
     'app.question.waiting': '有会话需要您补充信息',
     'app.plan.notificationTitle': 'SparkWork - 计划审批',
     'app.plan.notificationBody': '计划已就绪，等待你审批',
@@ -400,6 +403,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'session.renameFailed': 'Failed to rename session',
     'session.untitled': 'Untitled',
     'session.deleteDesc': 'Delete session “{{title}}”?',
+    'session.deleteRunningDesc':
+      'Session “{{title}}” is still running. Deleting it stops the task immediately; file changes already made are not rolled back. Delete anyway?',
     'worktree.cleanupTitle': 'Clean up worktree',
     'worktree.cleanupDesc':
       'This session runs in an isolated worktree (branch {{branch}}). Also delete this worktree and its branch?',
@@ -559,6 +564,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'app.permission.notificationBody': 'Agent is waiting for your approval',
     'app.permission.waiting': 'A new permission approval is waiting',
     'app.permission.goReview': 'Review approval',
+    'app.permission.timedOut':
+      'Permission request auto-denied after waiting {{minutes}} min; the agent skipped that action',
     'app.question.waiting': 'A session needs more information from you',
     'app.plan.notificationTitle': 'SparkWork - Plan approval',
     'app.plan.notificationBody': 'The plan is ready and waiting for your approval',

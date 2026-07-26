@@ -167,7 +167,7 @@ import {
 import { GitDiffContent, parseUnifiedDiff, type DiffHunk } from './chat/ChatDiffUtils'
 import { useApp } from '../AppContext'
 import { Icons } from '../Icons'
-import { useSessionSidebar, type SessionSummary } from '../SessionSidebarContext'
+import { isSessionActive, useSessionSidebar, type SessionSummary } from '../SessionSidebarContext'
 import {
   ErrorCard,
   FilePermCard,
@@ -214,11 +214,6 @@ import {
   isComposerSessionWorking,
   resolveComposerRunningAgentIds,
 } from '../services/composer-working-state'
-import {
-  buildComposerAttachmentsFromPaths,
-  getDataTransferFilePaths,
-  hasFileDataTransfer,
-} from '../services/composer-attachments'
 import { shouldShowScrollToBottom } from './chat-scroll'
 import {
   getLastAssistantMessageMarkdown,
@@ -1030,15 +1025,22 @@ export function ChatView({
   )
 
   // ── Handlers ──
-  const handleClearMessages = useCallback(() => {
+  // 清空会强制终止运行中的执行器（后端 clearEvents 会 cancel），
+  // 由 ChatTabbar 的内联确认条据此给出更重的提示文案。
+  const clearWillStopRun =
+    active != null && isSessionActive(active, sessionCtx.sessionAgentStatuses)
+
+  const handleClearMessages = useCallback(async () => {
     if (!active) return
-    clearEvents({ sessionId: active })
-      .then(() => {
-        setClearTrigger((prev) => prev + 1)
-        sessionCtx.refreshData().catch(console.error)
-      })
-      .catch(console.error)
-  }, [active, clearEvents, sessionCtx])
+    try {
+      await clearEvents({ sessionId: active })
+      setClearTrigger((prev) => prev + 1)
+      sessionCtx.refreshData().catch(console.error)
+    } catch (err) {
+      console.error(err)
+      toast.error(err instanceof Error ? err.message : '清空对话记录失败')
+    }
+  }, [active, clearEvents, sessionCtx, toast])
 
   // Goal 控制：UI 触发后只调 IPC，goal_* 事件回流时由 onGoalChange 同步更新状态。
   const handleGoalControl = useCallback(
@@ -2138,7 +2140,7 @@ export function ChatView({
                 orchestration={activeSessionOrchestration}
                 effectiveHostAgentId={effectiveHostAgentId}
                 agents={agents}
-                {...(active ? { onClearMessages: handleClearMessages } : {})}
+                {...(active ? { onClearMessages: handleClearMessages, clearWillStopRun } : {})}
                 {...(onExpandSidebar ? { onExpandSidebar } : {})}
               />
             )}
