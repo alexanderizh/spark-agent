@@ -497,19 +497,21 @@ describe('PlatformModelService delivery boundaries', () => {
     expect(mocks.refreshManagedProvider).not.toHaveBeenCalled()
   })
 
-  it('does not downgrade a model to chat when its metadata is missing', async () => {
+  it('treats models missing from metadata as text models without blocking refresh', async () => {
     seedReadyCredentials()
     mocks.getModelCatalog.mockResolvedValue([
       { modelId: 'gpt-5.4-mini', tags: [] },
-      { modelId: 'spark-img', tags: [] },
+      { modelId: 'GLM-5.2-NO-IMG', tags: [] },
     ])
     mocks.platformCatalogItems = [{ modelId: 'gpt-5.4-mini', tags: [] }]
     const service = createService()
 
-    await expect(service.refreshModelCatalog(true)).rejects.toThrow(
-      '平台模型目录缺少 spark-img 的元数据',
-    )
-    expect(mocks.refreshManagedProvider).not.toHaveBeenCalled()
+    await expect(service.refreshModelCatalog(true)).resolves.toMatchObject({ refreshed: true })
+    expect(mocks.refreshManagedProvider).toHaveBeenCalledWith({
+      ownerUserId: 'spark-user-1',
+      modelIds: ['gpt-5.4-mini', 'GLM-5.2-NO-IMG'],
+      mediaModelRefs: [],
+    })
   })
 
   it('throttles native notifications for a management-token device conflict', () => {

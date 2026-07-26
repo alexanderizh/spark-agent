@@ -451,9 +451,11 @@ export class PlatformModelService {
       )
     }
 
-    const missingModelId = modelIds.find((modelId) => !tagsByModelId.has(modelId))
-    if (missingModelId) {
-      throw new Error(`平台模型目录缺少 ${missingModelId} 的元数据`)
+    const missingModelIds = modelIds.filter((modelId) => !tagsByModelId.has(modelId))
+    if (missingModelIds.length > 0) {
+      log.warn('平台模型目录未返回部分模型元数据，按文本模型处理', {
+        modelIds: missingModelIds,
+      })
     }
 
     return mapPlatformModelCatalog(
