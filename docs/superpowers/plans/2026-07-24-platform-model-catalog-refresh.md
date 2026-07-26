@@ -4,9 +4,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在不修改任何服务端的前提下，让桌面客户端在恢复登录态、进入模型管理页、恢复可见或主动刷新时重新同步平台官方模型目录，并把文本与图片模型分类持久化。
+**Goal:** 让桌面客户端在恢复登录态、进入模型管理页、恢复可见或主动刷新时重新同步平台官方模型目录，并结合 Spark 服务端提供的 tags 把文本与图片模型分类持久化。
 
-**Architecture:** 主进程新增带 singleflight 和 5 分钟成功缓存的轻量目录同步方法，调用现有 `/api/user/models`，将文本模型归并到聊天字段，将标签映射后的图片模型写入 `mediaModelRefs`。渲染进程把事件监听封装为独立 Hook，避免继续扩大超过 3000 行的 `ProvidersView.tsx`；首次进入与恢复可见使用节流刷新，用户点击刷新执行强制同步。
+**Architecture:** 主进程新增带 singleflight 和 5 分钟成功缓存的轻量目录同步方法：调用 NewAPI `/api/user/models` 获取当前账号可用 ID，再调用 Spark 服务端 `/api/v1/platform-model/catalog` 补齐 tags；将文本模型归并到聊天字段，将标签映射后的图片模型写入 `mediaModelRefs`。渲染进程把事件监听封装为独立 Hook，避免继续扩大超过 3000 行的 `ProvidersView.tsx`；首次进入与恢复可见使用节流刷新，用户点击刷新执行强制同步。
 
 **Tech Stack:** TypeScript、Electron IPC、React 19、Vitest、SQLite Provider Profile
 
@@ -29,6 +29,7 @@
 ### Task 1: Provider 目录偏好归并
 
 **Files:**
+
 - Modify: `packages/agent-runtime/src/__tests__/services/provider.service.test.ts`
 - Modify: `packages/agent-runtime/src/services/provider.service.ts`
 
@@ -89,10 +90,12 @@ it('does not overwrite the managed provider with an empty catalog', async () => 
   })
   const before = repo.rows.get('spark-platform-newapi')?.config_json
 
-  await expect(service.refreshManagedNewApiModels({
-    ownerUserId: '42',
-    modelIds: [],
-  })).rejects.toThrow('当前没有可用模型')
+  await expect(
+    service.refreshManagedNewApiModels({
+      ownerUserId: '42',
+      modelIds: [],
+    }),
+  ).rejects.toThrow('当前没有可用模型')
 
   expect(repo.rows.get('spark-platform-newapi')?.config_json).toBe(before)
 })
@@ -142,6 +145,7 @@ Expected: PASS，新增三个回归用例全部通过。
 ### Task 2: 主进程轻量同步、节流与 IPC
 
 **Files:**
+
 - Modify: `packages/protocol/src/ipc/index.ts`
 - Modify: `apps/desktop/src/main/services/PlatformModel/PlatformModelService.test.ts`
 - Modify: `apps/desktop/src/main/services/PlatformModel/PlatformModelService.ts`
@@ -225,9 +229,9 @@ private readonly lastCatalogRefreshAt = new Map<string, number>()
 注册代码：
 
 ```ts
-typedIpcHandle('platform-model:refresh-catalog', async (req) => (
-  getPlatformModelService().refreshModelCatalog(req.force === true)
-))
+typedIpcHandle('platform-model:refresh-catalog', async (req) =>
+  getPlatformModelService().refreshModelCatalog(req.force === true),
+)
 ```
 
 Run: `pnpm --filter @spark/desktop exec vitest run src/main/services/PlatformModel/PlatformModelService.test.ts`
@@ -237,6 +241,7 @@ Expected: PASS，节流、强制刷新、singleflight 和原有平台模型测�
 ### Task 3: 模型管理页事件 Hook
 
 **Files:**
+
 - Create: `apps/desktop/src/renderer/design/views/platform-model/usePlatformModelCatalogRefresh.test.tsx`
 - Create: `apps/desktop/src/renderer/design/views/platform-model/usePlatformModelCatalogRefresh.ts`
 - Modify: `apps/desktop/src/renderer/design/views/ProvidersView.tsx`
@@ -311,9 +316,9 @@ Expected: FAIL，错误包含无法解析 `usePlatformModelCatalogRefresh` 模�
 Hook 接口固定为：
 
 ```ts
-export function usePlatformModelCatalogRefresh(
-  reloadLocal: () => void,
-): { refreshPlatformCatalog: () => void }
+export function usePlatformModelCatalogRefresh(reloadLocal: () => void): {
+  refreshPlatformCatalog: () => void
+}
 ```
 
 内部 `sync(force, notifyError)` 始终在 `finally` 调用 `reloadLocal()`；mount 调用 `sync(false, false)`，`visibilitychange` 只在 `document.visibilityState === 'visible'` 时调用自动同步，返回的 `refreshPlatformCatalog` 调用 `sync(true, true)`。仅用户主动刷新失败时显示 `平台模型目录刷新失败` Toast。
@@ -337,6 +342,7 @@ Expected: PASS，Hook 新用例和现有 Provider 表单/卡片用例全部通�
 ### Task 4: 完整验证、文档保鲜与变更核对
 
 **Files:**
+
 - Modify: `docs/superpowers/specs/2026-07-24-platform-model-catalog-refresh-design.md`
 - Modify: `docs/superpowers/plans/2026-07-24-platform-model-catalog-refresh.md`
 
