@@ -998,7 +998,7 @@ export function useCanvasWorkspace(projectId: string) {
         shotScriptConfig?: ShotScriptConfig
       } & CanvasPromptTaskFields,
     ) => {
-      await applyTaskSnapshot(canvasApi.runOperationNode(projectId, nodeId, params))
+      return applyTaskSnapshot(canvasApi.runOperationNode(projectId, nodeId, params))
     },
     [applyTaskSnapshot, projectId],
   )

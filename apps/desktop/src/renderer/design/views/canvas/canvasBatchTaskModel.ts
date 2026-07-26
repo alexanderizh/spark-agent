@@ -1,9 +1,5 @@
 import { isOperationNode } from './canvas.capabilities'
-import type {
-  CanvasNode,
-  CanvasNodeData,
-  CanvasOperationType,
-} from './canvas.types'
+import type { CanvasEdge, CanvasNode, CanvasNodeData, CanvasOperationType } from './canvas.types'
 
 export type CanvasBatchEditableData = Pick<
   CanvasNodeData,
@@ -46,6 +42,10 @@ export type CanvasBatchTaskSelectionSummary = {
   operationCount: number
 }
 
+export type CanvasBatchTaskFlowPlan =
+  | { ok: true; layers: string[][] }
+  | { ok: false; message: string; nodeIds: string[] }
+
 type CanvasBatchSelectionNode = Pick<CanvasNode, 'id' | 'type'> & {
   data?: Pick<CanvasNodeData, 'operation' | 'status'>
 }
@@ -79,9 +79,7 @@ export function summarizeBatchTaskSelection(
     canBatchConfigure: allTasks,
     canBatchSubmit: allTasks && !hasRunningTask,
     configureReason: selectionReason,
-    submitReason:
-      selectionReason ??
-      (hasRunningTask ? '选中任务包含正在运行的节点' : null),
+    submitReason: selectionReason ?? (hasRunningTask ? '选中任务包含正在运行的节点' : null),
     taskNodeIds,
     operationCount,
   }
@@ -166,6 +164,54 @@ export function findStaleCanvasBatchNodeIds(
   return session.entries
     .filter((entry) => currentById.get(entry.nodeId)?.updatedAt !== entry.baseUpdatedAt)
     .map((entry) => entry.nodeId)
+}
+
+export function planCanvasBatchTaskFlow(
+  session: CanvasBatchTaskSession,
+  edges: CanvasEdge[],
+): CanvasBatchTaskFlowPlan {
+  const selectedIds = new Set(session.entries.map((entry) => entry.nodeId))
+  const order = new Map(session.entries.map((entry, index) => [entry.nodeId, index]))
+  const dependencies = new Map<string, Set<string>>(
+    session.entries.map((entry) => [entry.nodeId, new Set<string>()]),
+  )
+
+  for (const edge of edges) {
+    if (edge.type !== 'used_as_input') continue
+    if (!selectedIds.has(edge.sourceNodeId) || !selectedIds.has(edge.targetNodeId)) continue
+    if (edge.sourceNodeId === edge.targetNodeId) {
+      return {
+        ok: false,
+        message: '任务流程包含自连接，无法自动运行',
+        nodeIds: [edge.sourceNodeId],
+      }
+    }
+    dependencies.get(edge.targetNodeId)?.add(edge.sourceNodeId)
+  }
+
+  const completed = new Set<string>()
+  const remaining = new Set(selectedIds)
+  const layers: string[][] = []
+
+  while (remaining.size > 0) {
+    const ready = [...remaining]
+      .filter((nodeId) => [...(dependencies.get(nodeId) ?? [])].every((dep) => completed.has(dep)))
+      .sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0))
+    if (ready.length === 0) {
+      return {
+        ok: false,
+        message: '任务流程包含环形依赖，无法自动运行',
+        nodeIds: [...remaining].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)),
+      }
+    }
+    layers.push(ready)
+    for (const nodeId of ready) {
+      remaining.delete(nodeId)
+      completed.add(nodeId)
+    }
+  }
+
+  return { ok: true, layers }
 }
 
 export function rebaseCanvasBatchTaskSession(

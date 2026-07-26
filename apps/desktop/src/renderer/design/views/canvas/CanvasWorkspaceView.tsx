@@ -1801,6 +1801,14 @@ export function CanvasWorkspaceView({
     getSnapshot: () => snapshot,
     updateManyNodeData,
     runOperationNode,
+    waitForTask: async (taskId) => {
+      await waitForCanvasWorkflowTask({
+        projectId,
+        taskId,
+        readSnapshot: (currentProjectId) => canvasApi.openSnapshot(currentProjectId),
+      })
+      await refreshTaskSnapshot()
+    },
     onSingleValidationError: (nodeId, error) => {
       setActiveOperationPanelNodeId(nodeId)
       setSelectedNodeIds([nodeId])
