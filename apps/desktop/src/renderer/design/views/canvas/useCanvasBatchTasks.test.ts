@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { createCanvasBatchTaskController } from './useCanvasBatchTasks'
 import { CanvasTaskValidationError } from './canvasTaskSubmissionValidation'
 import type { PreparedCanvasOperationSubmission } from './canvasOperationSubmission'
-import type { CanvasNode, CanvasNodeData, CanvasSnapshot } from './canvas.types'
+import type { CanvasEdge, CanvasNode, CanvasNodeData, CanvasSnapshot } from './canvas.types'
 
-function operationNode(id: string, type: 'text_to_image' | 'text_to_video'): CanvasNode {
+function operationNode(
+  id: string,
+  type: 'text_to_image' | 'text_to_video' | 'image_to_video',
+): CanvasNode {
   return {
     id,
     projectId: 'project',
@@ -31,10 +34,24 @@ function operationNode(id: string, type: 'text_to_image' | 'text_to_video'): Can
   }
 }
 
-function snapshot(nodes = [
-  operationNode('node-1', 'text_to_image'),
-  operationNode('node-2', 'text_to_video'),
-]): CanvasSnapshot {
+function edge(sourceNodeId: string, targetNodeId: string): CanvasEdge {
+  return {
+    id: `${sourceNodeId}-${targetNodeId}`,
+    projectId: 'project',
+    boardId: 'board',
+    userId: 1,
+    sourceNodeId,
+    targetNodeId,
+    type: 'used_as_input',
+    metadata: {},
+    createdAt: '2026-07-16T00:00:00.000Z',
+  }
+}
+
+function snapshot(
+  nodes = [operationNode('node-1', 'text_to_image'), operationNode('node-2', 'text_to_video')],
+  edges: CanvasEdge[] = [],
+): CanvasSnapshot {
   return {
     project: {
       id: 'project',
@@ -58,7 +75,7 @@ function snapshot(nodes = [
       updatedAt: '2026-07-16T00:00:00.000Z',
     },
     nodes,
-    edges: [],
+    edges,
     assets: [],
     tasks: [],
   }
@@ -77,42 +94,48 @@ function setup(input?: {
   skipConfirmation?: boolean
   skipParameterValidation?: boolean
   nodes?: CanvasNode[]
+  edges?: CanvasEdge[]
   prepare?: (
     nodeId: string,
     options?: { skipParameterValidation?: boolean },
+    snapshot?: CanvasSnapshot,
   ) => Promise<PreparedCanvasOperationSubmission>
-  run?: (nodeId: string) => Promise<void>
+  run?: (nodeId: string, snapshot: CanvasSnapshot) => Promise<CanvasSnapshot | void>
+  waitForTask?: (taskId: string) => Promise<void>
   onSingleValidationError?: (nodeId: string, error: unknown) => void
   confirmParameterValidation?: () => Promise<{
     confirmed: boolean
     skipFutureValidation: boolean
   }>
 }) {
-  let current = snapshot(input?.nodes)
+  let current = snapshot(input?.nodes, input?.edges)
   const updateManyNodeData = vi.fn(
     async (updates: Array<{ nodeId: string; data: Partial<CanvasNodeData> }>) => {
-    current = {
-      ...current,
-      nodes: current.nodes.map((node) => {
-        const update = updates.find((item) => item.nodeId === node.id)
-        return update
-          ? {
-              ...node,
-              data: { ...node.data, ...update.data },
-              updatedAt: '2026-07-16T00:01:00.000Z',
-            }
-          : node
-      }),
-    }
-    return current
+      current = {
+        ...current,
+        nodes: current.nodes.map((node) => {
+          const update = updates.find((item) => item.nodeId === node.id)
+          return update
+            ? {
+                ...node,
+                data: { ...node.data, ...update.data },
+                updatedAt: '2026-07-16T00:01:00.000Z',
+              }
+            : node
+        }),
+      }
+      return current
     },
   )
   const runOperationNode = vi.fn(async (nodeId: string) => {
-    await input?.run?.(nodeId)
+    const next = await input?.run?.(nodeId, current)
+    if (next) current = next
+    return next
   })
+  const waitForTask = vi.fn(async (taskId: string) => input?.waitForTask?.(taskId))
   const prepareSubmission = vi.fn(
     async ({ node }: { node: CanvasNode }, options?: { skipParameterValidation?: boolean }) =>
-      input?.prepare ? input.prepare(node.id, options) : prepared(node.id),
+      input?.prepare ? input.prepare(node.id, options, current) : prepared(node.id),
   )
   const writeSkipConfirmation = vi.fn()
   const writeSkipParameterValidation = vi.fn()
@@ -120,6 +143,7 @@ function setup(input?: {
     getSnapshot: () => current,
     updateManyNodeData,
     runOperationNode,
+    waitForTask,
     prepareSubmission,
     readSkipConfirmation: () => input?.skipConfirmation ?? false,
     writeSkipConfirmation,
@@ -137,6 +161,7 @@ function setup(input?: {
     controller,
     updateManyNodeData,
     runOperationNode,
+    waitForTask,
     prepareSubmission,
     writeSkipConfirmation,
     writeSkipParameterValidation,
@@ -177,13 +202,15 @@ describe('useCanvasBatchTasks controller', () => {
         path: ['modelId'],
       },
     ])
-    const { controller, runOperationNode, writeSkipParameterValidation, prepareSubmission } = setup({
-      skipConfirmation: true,
-      prepare: async (nodeId, options) => {
-        if (nodeId === 'node-2' && !options?.skipParameterValidation) throw validationError
-        return prepared(nodeId)
+    const { controller, runOperationNode, writeSkipParameterValidation, prepareSubmission } = setup(
+      {
+        skipConfirmation: true,
+        prepare: async (nodeId, options) => {
+          if (nodeId === 'node-2' && !options?.skipParameterValidation) throw validationError
+          return prepared(nodeId)
+        },
       },
-    })
+    )
 
     await controller.openSubmit(['node-1', 'node-2'])
 
@@ -264,6 +291,108 @@ describe('useCanvasBatchTasks controller', () => {
     ])
   })
 
+  it('runs connected selected tasks layer by layer after upstream outputs settle', async () => {
+    const events: string[] = []
+    const { controller, runOperationNode, waitForTask } = setup({
+      skipConfirmation: true,
+      nodes: [operationNode('node-1', 'text_to_image'), operationNode('node-2', 'image_to_video')],
+      edges: [edge('node-1', 'node-2')],
+      prepare: async (nodeId, _options, current) => {
+        const upstreamTaskId = current?.nodes.find((node) => node.id === 'node-1')?.taskId ?? 'none'
+        events.push(`prepare:${nodeId}:${upstreamTaskId}`)
+        return prepared(nodeId)
+      },
+      run: async (nodeId, current) => {
+        events.push(`run:${nodeId}`)
+        return {
+          ...current,
+          nodes: current.nodes.map((node) =>
+            node.id === nodeId
+              ? { ...node, taskId: `task-${nodeId}`, updatedAt: '2026-07-16T00:02:00.000Z' }
+              : node,
+          ),
+        }
+      },
+      waitForTask: async (taskId) => {
+        events.push(`wait:${taskId}`)
+      },
+    })
+
+    await controller.openSubmit(['node-1', 'node-2'])
+
+    expect(events).toEqual([
+      'prepare:node-1:none',
+      'run:node-1',
+      'wait:task-node-1',
+      'prepare:node-2:task-node-1',
+      'run:node-2',
+      'wait:task-node-2',
+    ])
+    expect(runOperationNode.mock.calls.map(([nodeId]) => nodeId)).toEqual(['node-1', 'node-2'])
+    expect(waitForTask.mock.calls.map(([taskId]) => taskId)).toEqual(['task-node-1', 'task-node-2'])
+    expect(controller.getState().results).toEqual([
+      { nodeId: 'node-1', batchId: 'batch-1', status: 'succeeded' },
+      { nodeId: 'node-2', batchId: 'batch-1', status: 'succeeded' },
+    ])
+  })
+
+  it('continues downstream layers after retrying a failed upstream task', async () => {
+    let nodeOneAttempts = 0
+    const events: string[] = []
+    const { controller } = setup({
+      skipConfirmation: true,
+      nodes: [operationNode('node-1', 'text_to_image'), operationNode('node-2', 'image_to_video')],
+      edges: [edge('node-1', 'node-2')],
+      prepare: async (nodeId, _options, current) => {
+        const upstreamTaskId = current?.nodes.find((node) => node.id === 'node-1')?.taskId ?? 'none'
+        events.push(`prepare:${nodeId}:${upstreamTaskId}`)
+        return prepared(nodeId)
+      },
+      run: async (nodeId, current) => {
+        events.push(`run:${nodeId}`)
+        if (nodeId === 'node-1' && nodeOneAttempts++ === 0) {
+          throw new Error('temporary upstream failure')
+        }
+        return {
+          ...current,
+          nodes: current.nodes.map((node) =>
+            node.id === nodeId ? { ...node, taskId: `task-${nodeId}` } : node,
+          ),
+        }
+      },
+      waitForTask: async (taskId) => {
+        events.push(`wait:${taskId}`)
+      },
+    })
+
+    await controller.openSubmit(['node-1', 'node-2'])
+
+    expect(controller.getState().results).toEqual([
+      {
+        nodeId: 'node-1',
+        batchId: 'batch-1',
+        status: 'failed',
+        error: 'temporary upstream failure',
+      },
+    ])
+
+    await controller.retryFailed()
+
+    expect(events).toEqual([
+      'prepare:node-1:none',
+      'run:node-1',
+      'run:node-1',
+      'wait:task-node-1',
+      'prepare:node-2:task-node-1',
+      'run:node-2',
+      'wait:task-node-2',
+    ])
+    expect(controller.getState().results).toEqual([
+      { nodeId: 'node-1', batchId: 'batch-1', status: 'succeeded' },
+      { nodeId: 'node-2', batchId: 'batch-1', status: 'succeeded' },
+    ])
+  })
+
   it('ignores duplicate confirmation while the batch is submitting', async () => {
     let releaseRun: (() => void) | undefined
     const runPending = new Promise<void>((resolve) => {
@@ -278,7 +407,7 @@ describe('useCanvasBatchTasks controller', () => {
     const second = controller.confirmSubmit()
 
     expect(controller.getState().mode).toBe('submitting')
-    expect(runOperationNode).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => expect(runOperationNode).toHaveBeenCalledTimes(2))
     releaseRun?.()
     await Promise.all([first, second])
     expect(runOperationNode).toHaveBeenCalledTimes(2)

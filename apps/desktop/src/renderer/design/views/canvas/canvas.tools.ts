@@ -151,7 +151,7 @@ export type CanvasWorkspaceActions = {
       skillIds?: string[]
       userPrompt?: string
     },
-  ) => Promise<void>
+  ) => Promise<CanvasSnapshot | void>
   cancelTask: (taskId: string) => Promise<void>
   updateProjectSettings: (settings: { prompt?: string; negativePrompt?: string }) => Promise<void>
   applyTemplate: (input: {

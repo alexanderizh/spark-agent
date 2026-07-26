@@ -5,6 +5,7 @@ import {
   findStaleCanvasBatchNodeIds,
   patchCanvasBatchTaskGroup,
   patchCanvasBatchTaskNode,
+  planCanvasBatchTaskFlow,
   rebaseCanvasBatchTaskSession,
   refreshCanvasBatchTaskSession,
   type CanvasBatchTaskPatch,
@@ -32,12 +33,7 @@ import type {
   CanvasSnapshot,
 } from './canvas.types'
 
-export type CanvasBatchPanelMode =
-  | 'closed'
-  | 'configure'
-  | 'confirm'
-  | 'submitting'
-  | 'result'
+export type CanvasBatchPanelMode = 'closed' | 'configure' | 'confirm' | 'submitting' | 'result'
 
 export type CanvasBatchValidationIssue = {
   nodeId: string
@@ -68,7 +64,11 @@ export type CanvasBatchTaskControllerDependencies = {
   updateManyNodeData: (
     updates: Array<{ nodeId: string; data: Partial<CanvasNodeData> }>,
   ) => Promise<CanvasSnapshot | void>
-  runOperationNode: (nodeId: string, params: SavedCanvasOperationRunParams) => Promise<void>
+  runOperationNode: (
+    nodeId: string,
+    params: SavedCanvasOperationRunParams,
+  ) => Promise<CanvasSnapshot | void>
+  waitForTask?: (taskId: string) => Promise<void>
   prepareSubmission?: (
     input: Parameters<typeof prepareSavedCanvasOperationSubmission>[0],
     options?: { skipParameterValidation?: boolean },
@@ -103,13 +103,12 @@ export function createCanvasBatchTaskController(
   let dependencies = withDefaults(inputDependencies)
   let state: CanvasBatchTaskState = INITIAL_STATE
   let preparedSubmissions: PreparedCanvasOperationSubmission[] = []
+  let flowLayers: string[][] = []
   let sessionGeneration = 0
   const listeners = new Set<() => void>()
 
   const setState = (
-    next:
-      | CanvasBatchTaskState
-      | ((current: CanvasBatchTaskState) => CanvasBatchTaskState),
+    next: CanvasBatchTaskState | ((current: CanvasBatchTaskState) => CanvasBatchTaskState),
   ) => {
     state = typeof next === 'function' ? next(state) : next
     for (const listener of listeners) listener()
@@ -131,12 +130,10 @@ export function createCanvasBatchTaskController(
       session: createCanvasBatchTaskSession(selected),
     })
     preparedSubmissions = []
+    flowLayers = []
   }
 
-  const patchGroup = (
-    operation: CanvasOperationType,
-    patch: CanvasBatchTaskPatch,
-  ) => {
+  const patchGroup = (operation: CanvasOperationType, patch: CanvasBatchTaskPatch) => {
     if (!state.session) return
     setState({
       ...state,
@@ -169,10 +166,7 @@ export function createCanvasBatchTaskController(
           ? '节点配置已变化，已合并最新值，请检查后重试'
           : '任务节点已被删除',
       }))
-      const refreshedSession = refreshCanvasBatchTaskSession(
-        session,
-        currentSnapshot.nodes,
-      )
+      const refreshedSession = refreshCanvasBatchTaskSession(session, currentSnapshot.nodes)
       const firstStaleEntry = refreshedSession.entries.find(
         (entry) => entry.nodeId === staleNodeIds[0],
       )
@@ -208,9 +202,27 @@ export function createCanvasBatchTaskController(
   const collectPreflight = async (snapshot: CanvasSnapshot, generation: number) => {
     const session = state.session
     if (!session || generation !== sessionGeneration) return
+    const planned = planCanvasBatchTaskFlow(session, snapshot.edges)
+    if (!planned.ok) {
+      preparedSubmissions = []
+      flowLayers = []
+      setState({
+        ...state,
+        mode: 'configure',
+        issues: planned.nodeIds.map((nodeId) => ({
+          nodeId,
+          fieldPath: [],
+          message: planned.message,
+        })),
+        validationWarnings: [],
+      })
+      return
+    }
+    flowLayers = planned.layers
+    const firstLayer = planned.layers[0] ?? []
     const nodeById = new Map(snapshot.nodes.map((node) => [node.id, node]))
     const results = await runWithConcurrency(
-      session.entries,
+      session.entries.filter((entry) => firstLayer.includes(entry.nodeId)),
       BATCH_TASK_CONCURRENCY,
       async (entry) => {
         const node = nodeById.get(entry.nodeId)
@@ -266,9 +278,7 @@ export function createCanvasBatchTaskController(
     const validationWarnings = results.flatMap((result) => result.validationWarnings ?? [])
     if (issues.length > 0) {
       preparedSubmissions = []
-      const firstIssueEntry = session.entries.find(
-        (entry) => entry.nodeId === issues[0]?.nodeId,
-      )
+      const firstIssueEntry = session.entries.find((entry) => entry.nodeId === issues[0]?.nodeId)
       setState({
         ...state,
         mode: 'configure',
@@ -284,9 +294,7 @@ export function createCanvasBatchTaskController(
       })
       return
     }
-    preparedSubmissions = results.flatMap((result) =>
-      result.prepared ? [result.prepared] : [],
-    )
+    preparedSubmissions = results.flatMap((result) => (result.prepared ? [result.prepared] : []))
     if (dependencies.readSkipConfirmation()) {
       if (validationWarnings.length > 0) {
         setState({
@@ -299,11 +307,7 @@ export function createCanvasBatchTaskController(
         })
         return
       }
-      await executePrepared(
-        preparedSubmissions,
-        dependencies.createBatchId(),
-        generation,
-      )
+      await executePrepared(preparedSubmissions, dependencies.createBatchId(), generation)
       return
     }
     setState({
@@ -339,7 +343,15 @@ export function createCanvasBatchTaskController(
       BATCH_TASK_CONCURRENCY,
       async (submission): Promise<CanvasBatchSubmitResult> => {
         try {
-          await dependencies.runOperationNode(submission.nodeId, submission.params)
+          const submittedSnapshot = await dependencies.runOperationNode(
+            submission.nodeId,
+            submission.params,
+          )
+          const taskId = resolveSubmittedTaskId(
+            submittedSnapshot ?? dependencies.getSnapshot(),
+            submission.nodeId,
+          )
+          if (taskId) await dependencies.waitForTask(taskId)
           return {
             nodeId: submission.nodeId,
             batchId,
@@ -363,9 +375,105 @@ export function createCanvasBatchTaskController(
   ) => {
     if (generation !== sessionGeneration) return
     setState({ ...state, mode: 'submitting', issues: [], validationWarnings: [] })
-    const nextResults = await runPreparedSubmissions(submissions, batchId)
+    const nextResults = await runPreparedFlow(submissions, batchId, generation)
     if (generation !== sessionGeneration) return
     setState({ ...state, mode: 'result', results: nextResults })
+  }
+
+  const prepareLayerSubmissions = async (
+    nodeIds: string[],
+  ): Promise<PreparedCanvasOperationSubmission[]> => {
+    const snapshot = requireSnapshot()
+    const nodeById = new Map(snapshot.nodes.map((node) => [node.id, node]))
+    const skipParameterValidation = dependencies.readSkipParameterValidation()
+    return runWithConcurrency(nodeIds, BATCH_TASK_CONCURRENCY, async (nodeId) => {
+      const node = nodeById.get(nodeId)
+      if (!node) throw new Error(`任务节点已被删除：${nodeId}`)
+      return dependencies.prepareSubmission(
+        { snapshot, node },
+        skipParameterValidation ? { skipParameterValidation: true } : undefined,
+      )
+    })
+  }
+
+  const runPreparedFlow = async (
+    initialSubmissions: PreparedCanvasOperationSubmission[],
+    batchId: string,
+    generation: number,
+  ): Promise<CanvasBatchSubmitResult[]> => {
+    const plannedLayers =
+      flowLayers.length > 0
+        ? flowLayers
+        : [initialSubmissions.map((submission) => submission.nodeId)]
+    return runFlowLayers(plannedLayers, initialSubmissions, batchId, generation)
+  }
+
+  const runFlowLayers = async (
+    plannedLayers: string[][],
+    initialSubmissions: PreparedCanvasOperationSubmission[],
+    batchId: string,
+    generation: number,
+  ): Promise<CanvasBatchSubmitResult[]> => {
+    const results: CanvasBatchSubmitResult[] = []
+    const initialByNodeId = new Map(
+      initialSubmissions.map((submission) => [submission.nodeId, submission]),
+    )
+
+    for (const layer of plannedLayers) {
+      if (generation !== sessionGeneration) return results
+      const preparedLayer = await runWithConcurrency(
+        layer,
+        BATCH_TASK_CONCURRENCY,
+        async (
+          nodeId,
+        ): Promise<
+          | { ok: true; submission: PreparedCanvasOperationSubmission }
+          | { ok: false; result: CanvasBatchSubmitResult }
+        > => {
+          const initial = initialByNodeId.get(nodeId)
+          if (initial) return { ok: true, submission: initial }
+          try {
+            const [prepared] = await prepareLayerSubmissions([nodeId])
+            if (!prepared) throw new Error(`任务节点无法准备：${nodeId}`)
+            preparedSubmissions = [
+              ...preparedSubmissions.filter((item) => item.nodeId !== nodeId),
+              prepared,
+            ]
+            return { ok: true, submission: prepared }
+          } catch (error) {
+            return {
+              ok: false,
+              result: {
+                nodeId,
+                batchId,
+                status: 'failed',
+                error: errorMessage(error),
+              },
+            }
+          }
+        },
+      )
+      const preparationFailures = preparedLayer.flatMap((item) => (item.ok ? [] : [item.result]))
+      if (preparationFailures.length > 0) {
+        results.push(...preparationFailures)
+        break
+      }
+      const submissions = preparedLayer.flatMap((item) => (item.ok ? [item.submission] : []))
+      const layerResults = await runPreparedSubmissions(submissions, batchId)
+      results.push(...layerResults)
+      if (layerResults.some((result) => result.status === 'failed')) break
+    }
+    return orderResultsBySession(results)
+  }
+
+  const orderResultsBySession = (results: CanvasBatchSubmitResult[]): CanvasBatchSubmitResult[] => {
+    const resultByNodeId = new Map(results.map((result) => [result.nodeId, result]))
+    const orderedNodeIds =
+      state.session?.entries.map((entry) => entry.nodeId) ?? results.map((result) => result.nodeId)
+    return orderedNodeIds.flatMap((nodeId) => {
+      const result = resultByNodeId.get(nodeId)
+      return result ? [result] : []
+    })
   }
 
   const confirmSubmit = async () => {
@@ -388,20 +496,14 @@ export function createCanvasBatchTaskController(
     }
     if (state.skipNextConfirmation) dependencies.writeSkipConfirmation(true)
     if (state.skipParameterValidation) dependencies.writeSkipParameterValidation(true)
-    await executePrepared(
-      preparedSubmissions,
-      dependencies.createBatchId(),
-      generation,
-    )
+    await executePrepared(preparedSubmissions, dependencies.createBatchId(), generation)
   }
 
   const retryFailed = async () => {
     if (state.mode !== 'result') return
     const generation = sessionGeneration
     const failedIds = new Set(
-      state.results
-        .filter((result) => result.status === 'failed')
-        .map((result) => result.nodeId),
+      state.results.filter((result) => result.status === 'failed').map((result) => result.nodeId),
     )
     if (failedIds.size === 0) return
     const retrySubmissions = preparedSubmissions.filter((submission) =>
@@ -409,15 +511,23 @@ export function createCanvasBatchTaskController(
     )
     const successful = state.results.filter((result) => result.status === 'succeeded')
     const batchId = state.results[0]?.batchId ?? dependencies.createBatchId()
-    setState({ ...state, mode: 'submitting' })
-    const retried = await runPreparedSubmissions(retrySubmissions, batchId)
-    const byNodeId = new Map(
-      [...successful, ...retried].map((result) => [result.nodeId, result]),
+    const successfulIds = new Set(successful.map((result) => result.nodeId))
+    const failedLayerIndex = flowLayers.findIndex((layer) =>
+      layer.some((nodeId) => failedIds.has(nodeId)),
     )
-    const ordered = preparedSubmissions.flatMap((submission) => {
-      const result = byNodeId.get(submission.nodeId)
-      return result ? [result] : []
-    })
+    const retryLayers =
+      failedLayerIndex >= 0
+        ? flowLayers
+            .slice(failedLayerIndex)
+            .map((layer, index) =>
+              index === 0 ? layer.filter((nodeId) => !successfulIds.has(nodeId)) : layer,
+            )
+            .filter((layer) => layer.length > 0)
+        : [retrySubmissions.map((submission) => submission.nodeId)]
+    setState({ ...state, mode: 'submitting' })
+    const retried = await runFlowLayers(retryLayers, retrySubmissions, batchId, generation)
+    const byNodeId = new Map([...successful, ...retried].map((result) => [result.nodeId, result]))
+    const ordered = orderResultsBySession([...byNodeId.values()])
     if (generation !== sessionGeneration) return
     setState({ ...state, mode: 'result', results: ordered })
   }
@@ -453,9 +563,7 @@ export function createCanvasBatchTaskController(
     }
     await dependencies.runOperationNode(nodeId, {
       ...prepared.params,
-      ...(dependencies.readSkipParameterValidation()
-        ? { skipParameterValidation: true }
-        : {}),
+      ...(dependencies.readSkipParameterValidation() ? { skipParameterValidation: true } : {}),
     })
   }
 
@@ -477,22 +585,20 @@ export function createCanvasBatchTaskController(
     confirmSubmit,
     retryFailed,
     runSingle,
-    setSkipNextConfirmation: (skip: boolean) =>
-      setState({ ...state, skipNextConfirmation: skip }),
+    setSkipNextConfirmation: (skip: boolean) => setState({ ...state, skipNextConfirmation: skip }),
     setSkipParameterValidation: (skip: boolean) =>
       setState({ ...state, skipParameterValidation: skip }),
     backToConfigure: () => setState({ ...state, mode: 'configure' }),
     close: () => {
       sessionGeneration += 1
       preparedSubmissions = []
+      flowLayers = []
       setState(INITIAL_STATE)
     },
   }
 }
 
-export function useCanvasBatchTasks(
-  dependencies: CanvasBatchTaskControllerDependencies,
-) {
+export function useCanvasBatchTasks(dependencies: CanvasBatchTaskControllerDependencies) {
   const dependenciesRef = useRef(dependencies)
   dependenciesRef.current = dependencies
   const controllerRef = useRef<CanvasBatchTaskController | null>(null)
@@ -500,8 +606,7 @@ export function useCanvasBatchTasks(
     controllerRef.current = createCanvasBatchTaskController({
       ...dependencies,
       getSnapshot: () => dependenciesRef.current.getSnapshot(),
-      updateManyNodeData: (updates) =>
-        dependenciesRef.current.updateManyNodeData(updates),
+      updateManyNodeData: (updates) => dependenciesRef.current.updateManyNodeData(updates),
       runOperationNode: (nodeId, params) =>
         dependenciesRef.current.runOperationNode(nodeId, params),
       onSingleValidationError: (nodeId, error) =>
@@ -511,10 +616,8 @@ export function useCanvasBatchTasks(
   controllerRef.current.updateDependencies({
     ...dependencies,
     getSnapshot: () => dependenciesRef.current.getSnapshot(),
-    updateManyNodeData: (updates) =>
-      dependenciesRef.current.updateManyNodeData(updates),
-    runOperationNode: (nodeId, params) =>
-      dependenciesRef.current.runOperationNode(nodeId, params),
+    updateManyNodeData: (updates) => dependenciesRef.current.updateManyNodeData(updates),
+    runOperationNode: (nodeId, params) => dependenciesRef.current.runOperationNode(nodeId, params),
     onSingleValidationError: (nodeId, error) =>
       dependenciesRef.current.onSingleValidationError?.(nodeId, error),
   })
@@ -527,31 +630,24 @@ export function useCanvasBatchTasks(
 
 function withDefaults(
   dependencies: CanvasBatchTaskControllerDependencies,
-): Required<
-  Omit<CanvasBatchTaskControllerDependencies, 'onSingleValidationError'>
-> &
+): Required<Omit<CanvasBatchTaskControllerDependencies, 'onSingleValidationError'>> &
   Pick<CanvasBatchTaskControllerDependencies, 'onSingleValidationError'> {
   return {
     ...dependencies,
     prepareSubmission:
       dependencies.prepareSubmission ??
-      ((input, options) =>
-        prepareSavedCanvasOperationSubmission(input, undefined, options)),
+      ((input, options) => prepareSavedCanvasOperationSubmission(input, undefined, options)),
     readSkipConfirmation:
-      dependencies.readSkipConfirmation ??
-      readSkipCanvasBatchSubmitConfirmation,
+      dependencies.readSkipConfirmation ?? readSkipCanvasBatchSubmitConfirmation,
     writeSkipConfirmation:
-      dependencies.writeSkipConfirmation ??
-      writeSkipCanvasBatchSubmitConfirmation,
+      dependencies.writeSkipConfirmation ?? writeSkipCanvasBatchSubmitConfirmation,
     readSkipParameterValidation:
-      dependencies.readSkipParameterValidation ??
-      readSkipCanvasParameterValidation,
+      dependencies.readSkipParameterValidation ?? readSkipCanvasParameterValidation,
     writeSkipParameterValidation:
-      dependencies.writeSkipParameterValidation ??
-      writeSkipCanvasParameterValidation,
+      dependencies.writeSkipParameterValidation ?? writeSkipCanvasParameterValidation,
+    waitForTask: dependencies.waitForTask ?? (async () => undefined),
     confirmParameterValidation:
-      dependencies.confirmParameterValidation ??
-      confirmCanvasTaskValidation,
+      dependencies.confirmParameterValidation ?? confirmCanvasTaskValidation,
     createBatchId:
       dependencies.createBatchId ??
       (() => globalThis.crypto?.randomUUID?.() ?? `batch-${Date.now()}`),
@@ -563,10 +659,7 @@ function selectNodes(snapshot: CanvasSnapshot, nodeIds: string[]): CanvasNode[] 
   return snapshot.nodes.filter((node) => selected.has(node.id))
 }
 
-function issuesFromError(
-  nodeId: string,
-  error: unknown,
-): CanvasBatchValidationIssue[] {
+function issuesFromError(nodeId: string, error: unknown): CanvasBatchValidationIssue[] {
   if (error instanceof CanvasTaskValidationError) {
     return error.issues.map((issue) => ({
       nodeId,
@@ -581,6 +674,19 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '提交任务失败'
 }
 
+function resolveSubmittedTaskId(
+  snapshot: CanvasSnapshot | null | undefined,
+  nodeId: string,
+): string | null {
+  if (!snapshot) return null
+  const nodeTaskId = snapshot.nodes.find((node) => node.id === nodeId)?.taskId
+  if (nodeTaskId) return nodeTaskId
+  const task = [...snapshot.tasks]
+    .filter((item) => item.operationNodeId === nodeId)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+  return task?.id ?? null
+}
+
 async function runWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -588,17 +694,14 @@ async function runWithConcurrency<T, R>(
 ): Promise<R[]> {
   const results = new Array<R>(items.length)
   let cursor = 0
-  const runners = Array.from(
-    { length: Math.min(concurrency, items.length) },
-    async () => {
-      while (cursor < items.length) {
-        const index = cursor++
-        const item = items[index]
-        if (item === undefined) continue
-        results[index] = await worker(item)
-      }
-    },
-  )
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++
+      const item = items[index]
+      if (item === undefined) continue
+      results[index] = await worker(item)
+    }
+  })
   await Promise.all(runners)
   return results
 }

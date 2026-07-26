@@ -5,9 +5,10 @@ import {
   findStaleCanvasBatchNodeIds,
   patchCanvasBatchTaskGroup,
   patchCanvasBatchTaskNode,
+  planCanvasBatchTaskFlow,
   summarizeBatchTaskSelection,
 } from './canvasBatchTaskModel'
-import type { CanvasNode, CanvasNodeData, CanvasNodeType } from './canvas.types'
+import type { CanvasEdge, CanvasNode, CanvasNodeData, CanvasNodeType } from './canvas.types'
 
 function node(
   id: string,
@@ -37,6 +38,20 @@ function node(
   }
 }
 
+function edge(sourceNodeId: string, targetNodeId: string): CanvasEdge {
+  return {
+    id: `${sourceNodeId}-${targetNodeId}`,
+    projectId: 'project',
+    boardId: 'board',
+    userId: 1,
+    sourceNodeId,
+    targetNodeId,
+    type: 'used_as_input',
+    metadata: {},
+    createdAt: '2026-07-16T00:00:00.000Z',
+  }
+}
+
 describe('canvasBatchTaskModel', () => {
   it('enables batch actions only when every selected node is an operation node', () => {
     expect(
@@ -54,10 +69,7 @@ describe('canvasBatchTaskModel', () => {
     })
 
     expect(
-      summarizeBatchTaskSelection([
-        node('image-task', 'text_to_image'),
-        node('note', 'text'),
-      ]),
+      summarizeBatchTaskSelection([node('image-task', 'text_to_image'), node('note', 'text')]),
     ).toMatchObject({
       canBatchConfigure: false,
       canBatchSubmit: false,
@@ -140,4 +152,33 @@ describe('canvasBatchTaskModel', () => {
     ).toEqual(['a', 'b'])
   })
 
+  it('plans selected task nodes by used_as_input dependency layers', () => {
+    const session = createCanvasBatchTaskSession([
+      node('prompt', 'text_generate'),
+      node('image', 'text_to_image'),
+      node('video', 'image_to_video'),
+      node('caption', 'text_generate'),
+    ])
+
+    expect(
+      planCanvasBatchTaskFlow(session, [
+        edge('prompt', 'image'),
+        edge('image', 'video'),
+        edge('prompt', 'caption'),
+      ]),
+    ).toEqual({ ok: true, layers: [['prompt'], ['image', 'caption'], ['video']] })
+  })
+
+  it('reports a cycle instead of scheduling an invalid task flow', () => {
+    const session = createCanvasBatchTaskSession([
+      node('a', 'text_to_image'),
+      node('b', 'image_to_video'),
+    ])
+
+    expect(planCanvasBatchTaskFlow(session, [edge('a', 'b'), edge('b', 'a')])).toEqual({
+      ok: false,
+      message: '任务流程包含环形依赖，无法自动运行',
+      nodeIds: ['a', 'b'],
+    })
+  })
 })
