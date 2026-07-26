@@ -64,6 +64,7 @@ html[data-theme="light"],
   --text-strong: #11100e;
   --text-muted: #b2a997;
   --text-faint: #9b9489;
+  --text-weight: #8d8a86;
   --text-inverse: #ffffff;
 
   --code-bg: #f4f3f0;
@@ -117,6 +118,7 @@ html[data-theme="dark"],
   --text-strong: #fafafa;
   --text-muted: #9ca3af;
   --text-faint: #6b7280;
+  --text-weight: #6d6f72;
   --text-inverse: #09090b;
   /* 品牌主色按钮在暗色界面始终使用浅色前景，避免组件库暗色算法改成深色文字。 */
   --primary-fg: #ffffff;
@@ -515,14 +517,14 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  height: 54px;
+  height: 52px;
   padding: 8px 10px 4px;
   position: relative;
   z-index: 1;
   -webkit-app-region: drag;
 }
 .platform-darwin .floating-sidebar-header {
-  padding-top: 8px;
+  padding-top: 0px;
 }
 .sidebar-hide-btn {
   -webkit-app-region: no-drag;
@@ -738,7 +740,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 /* ─── Sidebar bottom ─── */
 .sidebar-bottom {
   margin-top: auto;
-  padding: 8px;
+  padding: 4px 8px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1327,11 +1329,11 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
   --integrated-titlebar-right-reserve: 138px;
 }
 .platform-darwin.titlebar-integrated {
-  --integrated-titlebar-height: 56px;
+  --integrated-titlebar-height: 52px;
   --integrated-titlebar-right-reserve: 0px;
 }
 .platform-darwin.sidebar-hidden.titlebar-integrated {
-  --integrated-titlebar-left-reserve: 60px;
+  --integrated-titlebar-left-reserve: 70px;
 }
 
 /* ─── macOS / Linux Shell Title Bar (sidebar hidden) ─── */
@@ -1359,6 +1361,35 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
 /* macOS hiddenInset: traffic lights at x≈22, ~60px wide — keep content clear */
 .shell-titlebar-darwin {
   padding-left: 90px;
+}
+
+/* canvas / canvas-workflows view 自带 header 承担窗口拖拽
+   （替代公用 MacWindowDragHeader / shell-titlebar）。
+   header 整体是 drag region，内部交互元素 no-drag。 */
+.canvas-view-titlebar {
+  -webkit-app-region: drag;
+}
+.canvas-view-titlebar button,
+.canvas-view-titlebar [role='button'],
+.canvas-view-titlebar a,
+.canvas-view-titlebar input,
+.canvas-view-titlebar select,
+.canvas-view-titlebar textarea,
+.canvas-view-titlebar .ant-btn,
+.canvas-view-titlebar .ant-dropdown-trigger {
+  -webkit-app-region: no-drag;
+}
+/* macOS 侧栏折叠时，红绿灯（traffic lights）压到 main-content-area 左上角，
+   view header 需预留红绿灯空间（红绿灯 x≈22, 宽约 60px，与 shell-titlebar
+   的 90px 预留一致），否则标题/按钮会被遮挡。 */
+.platform-darwin.app.sidebar-hidden .canvas-view-titlebar {
+  padding-left: 90px;
+}
+/* canvas-projects-header 用 space-between，侧栏折叠时多出 SidebarExpandButton，
+   让 heading 占满中间，避免标题居中错位、actions 始终靠右。 */
+.canvas-view-titlebar .canvas-projects-heading {
+  flex: 1;
+  min-width: 0;
 }
 /*
  * Full-bleed pages still use the shared titlebar as their drag target. Give

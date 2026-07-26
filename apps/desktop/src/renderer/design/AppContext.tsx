@@ -23,7 +23,11 @@ export type SidebarState = 'collapsed' | 'expanded'
  *  Independent of the actual OS — both styles are available on every platform.
  *  Defaults to flat on macOS/Windows unless the user has switched. */
 export type SidebarStyle = 'floating' | 'flat'
-export type ViewId = 'chat' | 'workflows' | 'agents' | 'board' | 'canvas' | 'scheduled-tasks' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'memory' | 'settings' | 'lobe-preview' | 'account-center' | 'onboarding'
+/** 侧栏工作模式。'workbench' = 对话式任务工作台，'canvas' = 无限画布。
+ *  两者是平级主功能，切换只改变侧栏上半部分（主列表 + 上下文入口），
+ *  底部的全局共享资源（智能体/模型服务/技能/MCP）不随模式变化。 */
+export type WorkspaceMode = 'workbench' | 'canvas'
+export type ViewId ='chat' | 'workflows' | 'agents' | 'board' | 'canvas' | 'canvas-workflows' | 'scheduled-tasks' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'memory' | 'settings' | 'lobe-preview' | 'account-center' | 'onboarding'
 /**
  * 会话模式。workspace 仅为历史状态保留，已废弃；新入口必须使用 vibe。
  * @deprecated workspace 不再是当前工作台页面，不要用于新的导航或交互。
@@ -70,6 +74,12 @@ export type Tweaks = {
   sidebarHidden: boolean
   /** Sidebar panel appearance (floating vs flat), user-selectable & persisted. */
   sidebarStyle: SidebarStyle
+  /** 当前侧栏工作模式（工作台 / 画布），持久化。 */
+  workspaceMode: WorkspaceMode
+  /** 侧栏「新建项目」按钮触发计数器（非持久化）。
+   *  CanvasProjectsView 监听其变化，>0 时打开新建弹窗。
+   *  用于跨视图触发：用户在任意模式点新建项目 → 切到 canvas view + 弹窗。 */
+  canvasCreateSignal: number
 }
 
 export const DEFAULT_TWEAKS: Tweaks = {
@@ -89,6 +99,8 @@ export const DEFAULT_TWEAKS: Tweaks = {
   floatingSidebarWidth: 244,
   sidebarHidden: false,
   sidebarStyle: 'floating',
+  workspaceMode: 'workbench',
+  canvasCreateSignal: 0,
 }
 
 /** Min/max bounds for the floating sidebar width (px). */
@@ -106,6 +118,7 @@ const BROWSER_PANEL_WIDTH_KEY = 'spark-agent:browser-panel-width'
 const FLOATING_SIDEBAR_WIDTH_KEY = 'spark-agent:floating-sidebar-width'
 const SIDEBAR_HIDDEN_KEY = 'spark-agent:sidebar-hidden'
 const SIDEBAR_STYLE_KEY = 'spark-agent:sidebar-style'
+const WORKSPACE_MODE_KEY = 'spark-agent:workspace-mode'
 
 /** Min/max bounds for the browser panel width (px). */
 export const BROWSER_PANEL_WIDTH_MIN = 280
@@ -250,6 +263,18 @@ function readInitialTweaks(): Tweaks {
     tweaks = { ...tweaks, sidebarStyle: 'flat' }
   }
 
+  const savedWorkspaceMode = window.localStorage.getItem(WORKSPACE_MODE_KEY)
+  if (savedWorkspaceMode === 'workbench' || savedWorkspaceMode === 'canvas') {
+    tweaks = { ...tweaks, workspaceMode: savedWorkspaceMode }
+  }
+
+  // view 不持久化（每次启动回到主视图），但启动时要和 workspaceMode 联动，
+  // 否则上次切到画布模式后重启，会出现「侧栏画布 + 主区聊天」的割裂：
+  // 画布模式 → view 默认 'canvas'；工作台模式 → view 默认 'chat'。
+  if (tweaks.workspaceMode === 'canvas' && tweaks.view === 'chat') {
+    tweaks = { ...tweaks, view: 'canvas' }
+  }
+
   return tweaks
 }
 
@@ -337,6 +362,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       window.localStorage.setItem(SIDEBAR_HIDDEN_KEY, String(val))
     } else if (key === 'sidebarStyle') {
       window.localStorage.setItem(SIDEBAR_STYLE_KEY, val as SidebarStyle)
+    } else if (key === 'workspaceMode') {
+      window.localStorage.setItem(WORKSPACE_MODE_KEY, val as WorkspaceMode)
     }
     setT((prev) => {
       if (prev[key] === val) return prev
