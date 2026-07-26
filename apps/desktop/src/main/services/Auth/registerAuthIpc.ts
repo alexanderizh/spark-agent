@@ -169,7 +169,7 @@ export function registerAuthIpc(): void {
       const refs = configuredSecretRefs()
       const willReadSecrets = refs.length > 0 || auth().getCurrentUserId() != null
       if (app.isPackaged && willReadSecrets) await showKeychainDisclosureOnce()
-      await preloadSecrets(refs)
+      if (willReadSecrets) await preloadSecrets(refs)
     } catch (error) {
       // 用户可以拒绝 macOS Keychain 授权；本地 DB/系统凭证库暂不可用也不应阻断 Spark 登录。
       log.warn(`credential startup preparation skipped: ${error instanceof Error ? error.message : String(error)}`)

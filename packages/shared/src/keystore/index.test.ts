@@ -71,6 +71,26 @@ describe.runIf(process.platform === 'darwin')('consolidated credential vault', (
     expect(keytar.getPassword).toHaveBeenCalledTimes(1)
   })
 
+  it('loads persisted platform credentials when the explicit preload has no provider refs', async () => {
+    const keytar = (await import('keytar')).default
+    const keystore = await import('./index')
+    mocks.persistedVault = JSON.stringify({
+      version: 1,
+      secrets: { 'newapi-platform-access-token': 'platform-token' },
+      legacyChecked: ['newapi-platform-access-token'],
+    })
+    keystore.configureCredentialVaultPersistence(mocks.persistence)
+
+    await keystore.preloadSecrets([])
+
+    expect(mocks.persistence.load).toHaveBeenCalledOnce()
+    expect(mocks.persistence.save).not.toHaveBeenCalled()
+    expect(keytar.getPassword).not.toHaveBeenCalled()
+    await expect(
+      keystore.getSecret('newapi-platform-access-token' as KeystoreRef),
+    ).resolves.toBe('platform-token')
+  })
+
   it('does not probe legacy keychain items during startup preload', async () => {
     const keytar = (await import('keytar')).default
     const keystore = await import('./index')

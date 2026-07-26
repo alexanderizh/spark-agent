@@ -30,6 +30,11 @@ interface TokenStoreOptions {
   keytarOperationTimeoutMs?: number
 }
 
+interface TokenStoreLoadOptions {
+  /** Existing installations may need one final read to migrate sessions saved before encrypted backups existed. */
+  allowLegacyKeytarFallback?: boolean
+}
+
 export class TokenStore {
   private cache: Partial<AuthSession> = {}
   private keytarUnavailable = false
@@ -45,13 +50,21 @@ export class TokenStore {
       options.keytarOperationTimeoutMs ?? DEFAULT_KEYTAR_OPERATION_TIMEOUT_MS
   }
 
-  async load(): Promise<Partial<AuthSession>> {
+  async load(options: TokenStoreLoadOptions = {}): Promise<Partial<AuthSession>> {
     const backup = await this.loadEncryptedBackup()
     if (backup) {
       this.cache = backup
       this.lastError = null
       log.info(`token store loaded from encrypted backup (service=${this.service})`)
       return { ...this.cache }
+    }
+
+    if (options.allowLegacyKeytarFallback === false) {
+      this.cache = {}
+      this.keytarUnavailable = false
+      this.lastError = null
+      log.info(`skipped legacy keytar lookup for fresh installation (service=${this.service})`)
+      return {}
     }
 
     try {

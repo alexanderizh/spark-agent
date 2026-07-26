@@ -4,7 +4,7 @@ import React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AppProvider, useApp } from './AppContext'
+import { AppProvider, DEFAULT_TWEAKS, useApp } from './AppContext'
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -56,6 +56,10 @@ describe('AppContext visual tweak persistence', () => {
     container.remove()
     document.documentElement.removeAttribute('style')
     vi.unstubAllGlobals()
+  })
+
+  it('uses a wider sidebar for new users', () => {
+    expect(DEFAULT_TWEAKS.floatingSidebarWidth).toBe(272)
   })
 
   it('follows the system theme by default when no theme has been persisted', async () => {
