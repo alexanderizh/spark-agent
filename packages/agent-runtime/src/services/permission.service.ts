@@ -11,6 +11,7 @@ import type {
   PermissionMode,
   PermissionApprovalRequest,
   PermissionApprovalDecision,
+  PermissionApprovalResolved,
   PermissionDecisionScope,
 } from '@spark/protocol'
 
@@ -79,7 +80,17 @@ const TOOL_ACTION_MAP: Record<string, string> = {
   web_search: 'network_known',
 }
 
-const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes; agent will treat 'deny' on timeout
+/**
+ * 等待用户审批的上限。
+ *
+ * 桌面端的长任务里用户离开几分钟是常态，原来的 5 分钟太短：超时被静默当成拒绝，
+ * 用户回来只看到 agent 莫名其妙放弃。这里放宽到 30 分钟，并且超时必须通过
+ * `onExpire` 通知渲染端（见 promptForApproval），让「为什么被拒」可解释。
+ *
+ * 仍然保留上限而不是无限等待：pending 的 Promise 会挂住整个 turn 的执行器，
+ * 无限等待意味着崩溃/关窗后这个 turn 永远无法收敛。
+ */
+const APPROVAL_TIMEOUT_MS = 30 * 60 * 1000
 
 interface RequestApprovalOptions {
   /** The caller already decided this tool call must ask the user. */
@@ -88,6 +99,11 @@ interface RequestApprovalOptions {
   workspaceIds?: string[]
   sdkRequestId?: string
   onDecision?: (decision: PermissionApprovalDecision) => void
+  /**
+   * 一条审批请求在没有用户操作的情况下失效时回调（超时 / 会话被取消）。
+   * 调用方据此把 `stream:permission:approval-resolved` 推给渲染端收起卡片。
+   */
+  onExpire?: (expired: PermissionApprovalResolved) => void
 }
 
 // Risk level per action
@@ -360,9 +376,24 @@ export class PermissionService {
     const persistentScopes = this.getPersistentScopes(params.options.projectId)
 
     return await new Promise<PermissionApprovalDecision>((resolve) => {
+      // 包装一层让 toolName 自动带上：timeout 和 cancelled 两条失效路径都经过这里，
+      // 不用在两处分别传 toolName。主进程写时间线记录、渲染端 toast 都要用它。
+      const onExpireRaw = params.options.onExpire
+      const fireExpired = (payload: Omit<PermissionApprovalResolved, 'toolName'>): void => {
+        onExpireRaw?.({ ...payload, toolName: params.toolName })
+      }
       const timer = setTimeout(() => {
         if (this._pendingApprovals.delete(requestId)) {
           this._approvalSessions.delete(requestId)
+          this._approvalExpireNotifiers.delete(requestId)
+          // 必须先通知渲染端再 resolve：否则卡片会永远挂在界面上，用户事后点「允许」
+          // 拿到的是 ok:false，而 agent 早已按拒绝继续走了。
+          fireExpired({
+            requestId,
+            sessionId: params.sessionId,
+            reason: 'timeout',
+            timeoutMs: APPROVAL_TIMEOUT_MS,
+          })
           resolve('deny') // timeout 视为拒绝，避免 agent 永久挂起
         }
       }, APPROVAL_TIMEOUT_MS)
@@ -370,9 +401,14 @@ export class PermissionService {
       this._pendingApprovals.set(requestId, (decision) => {
         clearTimeout(timer)
         this._approvalSessions.delete(requestId)
+        this._approvalExpireNotifiers.delete(requestId)
         resolve(decision)
       })
       this._approvalSessions.set(requestId, params.sessionId)
+      if (onExpireRaw != null) {
+        // cancelled 路径（cancelPendingApprovals）从这里取出并调用，toolName 已闭包在内
+        this._approvalExpireNotifiers.set(requestId, fireExpired)
+      }
       params.pushFn({
         requestId,
         ...(params.options.sdkRequestId != null
@@ -397,6 +433,7 @@ export class PermissionService {
     if (!resolve) return false
     this._pendingApprovals.delete(requestId)
     this._approvalSessions.delete(requestId)
+    this._approvalExpireNotifiers.delete(requestId)
     resolve(decision)
     return true
   }
@@ -409,8 +446,12 @@ export class PermissionService {
     let cancelled = 0
     for (const [requestId, resolve] of this._pendingApprovals.entries()) {
       if (this._approvalSessions.get(requestId) !== sessionId) continue
+      const notifyExpired = this._approvalExpireNotifiers.get(requestId)
       this._pendingApprovals.delete(requestId)
       this._approvalSessions.delete(requestId)
+      this._approvalExpireNotifiers.delete(requestId)
+      // 与超时同理：用户没做任何操作，卡片必须由主进程主动收回
+      notifyExpired?.({ requestId, sessionId, reason: 'cancelled' })
       resolve('deny')
       cancelled += 1
     }
@@ -486,6 +527,17 @@ export class PermissionService {
 
   private _pendingApprovals = new Map<string, (d: PermissionApprovalDecision) => void>()
   private _approvalSessions = new Map<string, string>() // requestId → sessionId（用于 cancel）
+  /**
+   * requestId → 失效通知器。审批在用户没操作的情况下消失（超时 / 会话取消）时调用，
+   * 让渲染端收起那张已经没有意义的审批卡片。
+   *
+   * 存的是 fireExpired 包装函数（toolName 已闭包在内），所以参数类型不需要 toolName ——
+   * 调用方只传基础字段即可。
+   */
+  private _approvalExpireNotifiers = new Map<
+    string,
+    (expired: Omit<PermissionApprovalResolved, 'toolName'>) => void
+  >()
   private _sessionAllowances = new Map<string, Set<string>>() // sessionId → 已临时允许的 actions
   private _sessionDenials = new Map<string, Set<string>>() // sessionId → 已临时拒绝的 actions
 
