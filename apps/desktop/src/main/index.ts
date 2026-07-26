@@ -691,6 +691,25 @@ async function initializeApp(): Promise<void> {
     const backgroundMaintenanceWorker = startBackgroundMaintenanceWorker(dbPath)
     log.info('Database initialized successfully')
 
+    // 061 会话搜索 FTS 索引的存量事件回填（幂等）。
+    // 迁移只建表，回填需要 JS 侧 segmentCjk 分词，必须在代码侧分批做。
+    // 这里 fire-and-forget：用户首次启动后即可用历史会话搜索，不阻塞主流程。
+    // 失败/表不存在都不影响应用启动——searchByContent 自带 LIKE 兜底。
+    void (async () => {
+      try {
+        const { EventRepository } = await import('@spark/storage')
+        const repo = new EventRepository(db)
+        const processed = await repo.backfillSearchIndexIfNeeded()
+        if (processed > 0) {
+          log.info(`Session search FTS backfill completed: ${processed} events indexed`)
+        }
+      } catch (err) {
+        log.warn('Session search FTS backfill failed (LIKE fallback will be used)', {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    })()
+
     // 关闭数据库连接在应用退出时
     app.on(
       'before-quit',

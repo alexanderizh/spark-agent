@@ -2053,6 +2053,18 @@ function getSessionService(): SessionService {
           onDecision: (decision) => {
             selectedDecision = decision
           },
+          // 超时/会话取消导致审批失效时主动收回卡片，否则渲染端会一直挂着一张
+          // 点了也没用的审批卡（resolveApproval 已经找不到这个 requestId）。
+          onExpire: (expired) => {
+            pushStreamEvent('stream:permission:approval-resolved', expired)
+            // 写一条会话时间线记录：toast 10 秒就消失，但用户翻历史时需要看到
+            // 「为什么 agent 跳过了这一步」的可追溯解释。
+            getSessionService().recordPermissionOutcome(expired.sessionId, {
+              reason: expired.reason,
+              toolName: expired.toolName ?? '',
+              ...(expired.timeoutMs != null ? { timeoutMs: expired.timeoutMs } : {}),
+            })
+          },
         },
       )
       const scope = toSDKApprovalScope(selectedDecision)
