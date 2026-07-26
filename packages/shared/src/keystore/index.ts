@@ -209,7 +209,6 @@ export async function hasSecret(ref: KeystoreRef): Promise<boolean> {
  * 旧条目会在真正使用对应凭据时由 getSecret() 按需迁移。
  */
 export async function preloadSecrets(refs: readonly KeystoreRef[]): Promise<void> {
-  if (refs.length === 0) return
   if (USE_CONSOLIDATED_VAULT) {
     await loadVault()
     return

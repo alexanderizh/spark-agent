@@ -82,4 +82,17 @@ describe('auth bootstrap credential preload', () => {
     expect(mocks.preloadSecrets).not.toHaveBeenCalled()
     expect(mocks.bootstrap).toHaveBeenCalledOnce()
   })
+
+  it('preloads the consolidated vault for an authenticated platform-only profile', async () => {
+    mocks.providerRefs = []
+    mocks.connectorRefs = []
+    mocks.currentUserId = 'spark-user-1'
+    registerAuthIpc()
+    const bootstrapHandler = mocks.handlers.get('auth:bootstrap')
+
+    await expect(bootstrapHandler?.()).resolves.toMatchObject({ isAuthenticated: true })
+    expect(mocks.preloadSecrets).toHaveBeenCalledOnce()
+    expect(mocks.preloadSecrets).toHaveBeenCalledWith([])
+    expect(mocks.bootstrap).toHaveBeenCalledOnce()
+  })
 })
