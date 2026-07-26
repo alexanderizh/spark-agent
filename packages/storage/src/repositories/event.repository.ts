@@ -339,6 +339,55 @@ export class EventRepository extends BaseRepository {
     return rows.reverse()
   }
 
+  /**
+   * 从给定 seq 水位之后按正序读取最早一批对话事件。
+   *
+   * 连续性胶囊必须严格按水位推进，不能使用“最近 N 条”查询后把中间未处理区间
+   * 一并标记为已覆盖。该查询只返回 complete 对话事件并从最早未覆盖行开始。
+   */
+  queryDialogueEventsAfterSeq(
+    sessionId: string,
+    afterSeq: number,
+    limit: number = 100,
+  ): AgentEventRow[] {
+    return this.raw
+      .prepare(
+        `SELECT * FROM agent_events
+         WHERE session_id = ?
+           AND seq > ?
+           AND (
+             event_type IN ('user_message', 'turn_prompt_snapshot')
+             OR (
+               event_type IN ('assistant_message', 'team_member_message')
+               AND event_mode = 'complete'
+             )
+           )
+         ORDER BY seq ASC, created_at ASC, rowid ASC
+         LIMIT ?`,
+      )
+      .all(sessionId, afterSeq, limit) as AgentEventRow[]
+  }
+
+  /** Count complete dialogue events after a capsule waterline without loading their payloads. */
+  countDialogueEventsAfterSeq(sessionId: string, afterSeq: number): number {
+    const row = this.raw
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM agent_events
+         WHERE session_id = ?
+           AND seq > ?
+           AND (
+             event_type IN ('user_message', 'turn_prompt_snapshot')
+             OR (
+               event_type IN ('assistant_message', 'team_member_message')
+               AND event_mode = 'complete'
+             )
+           )`,
+      )
+      .get(sessionId, afterSeq) as { count: number }
+    return row.count
+  }
+
   /** 统计指定 session 的事件数量 */
   countBySession(sessionId: string): number {
     const stmt = this.raw.prepare('SELECT COUNT(*) as count FROM agent_events WHERE session_id = ?')

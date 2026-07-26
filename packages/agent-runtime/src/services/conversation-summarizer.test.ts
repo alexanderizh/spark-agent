@@ -6,7 +6,10 @@ import { describe, it, expect } from 'vitest'
 import { buildConversationHistory } from './conversation-summarizer.js'
 import type { AgentEvent } from '@spark/protocol'
 
-function mockRows(events: AgentEvent[], eventType?: string): Array<{ event_json: string; id: string }> {
+function mockRows(
+  events: AgentEvent[],
+  eventType?: string,
+): Array<{ event_json: string; id: string }> {
   return events
     .filter((event) => eventType == null || event.type === eventType)
     .map((event, i) => ({ event_json: JSON.stringify(event), id: `row-${event.type}-${i}` }))
@@ -160,8 +163,20 @@ describe('ConversationHistory', () => {
     it('uses a larger supplied history budget for long conversations', () => {
       const events: AgentEvent[] = []
       for (let i = 0; i < 40; i++) {
-        events.push(userMsg(`t${i}`, `User message ${i}: Please help me implement feature ${i} in the codebase. I need to add a new module that handles data processing and validation.`, events.length + 1))
-        events.push(assistantMsg(`t${i}`, `Assistant response ${i}: Done with task ${i}. I have updated file_${i}.ts with the new implementation. Created a new file called module_${i}.ts. Fixed the validation logic. Added comprehensive tests for the new feature.`, events.length + 1))
+        events.push(
+          userMsg(
+            `t${i}`,
+            `User message ${i}: Please help me implement feature ${i} in the codebase. I need to add a new module that handles data processing and validation.`,
+            events.length + 1,
+          ),
+        )
+        events.push(
+          assistantMsg(
+            `t${i}`,
+            `Assistant response ${i}: Done with task ${i}. I have updated file_${i}.ts with the new implementation. Created a new file called module_${i}.ts. Fixed the validation logic. Added comprehensive tests for the new feature.`,
+            events.length + 1,
+          ),
+        )
       }
 
       const mockEventRepo = {
@@ -248,6 +263,58 @@ describe('ConversationHistory', () => {
         skipForSdkResume: true,
       })
       expect(result.prompt).toBeUndefined()
+    })
+
+    it('combines a validated capsule with exact dialogue after its seq waterline', () => {
+      const events: AgentEvent[] = [
+        userMsg('t1', 'old requirement already summarized', 1),
+        assistantMsg('t1', 'old result already summarized', 2),
+        userMsg('t2', 'new exact requirement', 3),
+        assistantMsg('t2', 'new exact result', 4),
+      ]
+      const mockEventRepo = {
+        queryDialogueEvents: () => dialogueRows(events),
+      } as any
+
+      const result = buildConversationHistory(mockEventRepo, 's1', {
+        continuitySummary: {
+          summaryText: JSON.stringify({
+            version: 1,
+            objective: 'Keep the durable objective',
+            constraints: [],
+            decisions: [],
+            completedWork: [],
+            artifacts: [],
+            openItems: [],
+            risks: [],
+            lastOutcome: '',
+          }),
+          summarizedToSeq: 2,
+        },
+      })
+
+      expect(result.prompt).toContain('[Session Continuity Capsule]')
+      expect(result.prompt).toContain('Keep the durable objective')
+      expect(result.prompt).toContain('new exact requirement')
+      expect(result.prompt).not.toContain('old requirement already summarized')
+    })
+
+    it('keeps recovery history on standby for native SDK resume', () => {
+      const events: AgentEvent[] = [
+        userMsg('t1', 'recover this requirement', 1),
+        assistantMsg('t1', 'recover this outcome', 2),
+      ]
+      const mockEventRepo = {
+        queryDialogueEvents: () => dialogueRows(events),
+      } as any
+
+      const result = buildConversationHistory(mockEventRepo, 's1', {
+        deferForSdkResume: true,
+      })
+
+      expect(result.prompt).toBeUndefined()
+      expect(result.recoveryPrompt).toContain('recover this requirement')
+      expect(result.recoveryPrompt).toContain('recover this outcome')
     })
   })
 })

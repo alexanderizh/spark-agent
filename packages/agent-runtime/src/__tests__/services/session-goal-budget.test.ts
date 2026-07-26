@@ -110,6 +110,8 @@ vi.mock('@spark/storage', () => {
     queryBySession(): { events: unknown[]; hasMore: boolean } { return { events: [], hasMore: false } }
     queryStreamEventsByTurn(): unknown[] { return [] }
     queryDialogueEvents(): unknown[] { return [] }
+    queryDialogueEventsAfterSeq(): unknown[] { return [] }
+    countDialogueEventsAfterSeq(): number { return 0 }
     getLatestByTypeAndJsonValue(): null { return null }
     deleteOrphanedSessionEventsBatch(): number { return 0 }
   }

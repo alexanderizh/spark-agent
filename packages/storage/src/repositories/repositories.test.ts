@@ -767,6 +767,43 @@ describe('EventRepository', () => {
     ).not.toContain('evt-subagent-delta')
   })
 
+  it('pages complete dialogue forward from a continuity waterline without delta gaps', () => {
+    repo.insertBatch([
+      {
+        id: 'dialogue-user-1',
+        sessionId: 'sess-capsule',
+        eventType: 'user_message',
+        eventJson: JSON.stringify({ seq: 1, content: 'first' }),
+      },
+      {
+        id: 'dialogue-delta',
+        sessionId: 'sess-capsule',
+        eventType: 'assistant_message',
+        eventJson: JSON.stringify({ seq: 2, mode: 'delta', content: 'partial' }),
+      },
+      {
+        id: 'dialogue-complete-1',
+        sessionId: 'sess-capsule',
+        eventType: 'assistant_message',
+        eventJson: JSON.stringify({ seq: 3, mode: 'complete', content: 'done' }),
+      },
+      {
+        id: 'dialogue-user-2',
+        sessionId: 'sess-capsule',
+        eventType: 'user_message',
+        eventJson: JSON.stringify({ seq: 4, content: 'second' }),
+      },
+    ])
+
+    expect(repo.countDialogueEventsAfterSeq('sess-capsule', 1)).toBe(2)
+    expect(repo.queryDialogueEventsAfterSeq('sess-capsule', 1, 1).map((row) => row.id)).toEqual([
+      'dialogue-complete-1',
+    ])
+    expect(repo.queryDialogueEventsAfterSeq('sess-capsule', 3, 10).map((row) => row.id)).toEqual([
+      'dialogue-user-2',
+    ])
+  })
+
   it('should query events with pagination', () => {
     // 插入 5 个事件
     for (let i = 0; i < 5; i++) {

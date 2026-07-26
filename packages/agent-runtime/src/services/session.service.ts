@@ -22,6 +22,7 @@ import {
   GoalRepository,
   ConnectorConnectionRepository,
   TurnRequestRepository,
+  SessionSummaryRepository,
 } from '@spark/storage'
 import type {
   AgentItem,
@@ -231,6 +232,7 @@ import {
   buildConversationHistory,
   buildMemoryExtractionRecentContext,
 } from './conversation-summarizer.js'
+import { SessionContinuityCoordinator } from './session-continuity-coordinator.js'
 import { generateSessionTitle } from './session-title-generator.js'
 import { MemoryRepository } from '@spark/storage'
 import { MemorySearchRepository, ModelProfileRepository } from '@spark/storage'
@@ -676,6 +678,7 @@ export class SessionService {
    */
   private memorySearchRepo?: MemorySearchRepository
   private memoryEmbeddingService?: EmbeddingService
+  private readonly continuityCoordinator: SessionContinuityCoordinator
 
   /**
    * Increments whenever any MCP server is created/updated/deleted/started/stopped/
@@ -749,6 +752,12 @@ export class SessionService {
   ) {
     this.mcpService = mcpService ?? new McpService(new McpServerRepository(db), mcpOAuthProvider)
     this.platformBridge = new PlatformBridgeService()
+    this.continuityCoordinator = new SessionContinuityCoordinator(
+      db,
+      (sessionId, turnId, event, eventRepo) =>
+        this.emitAndPersist(sessionId, turnId, event, eventRepo),
+      (sessionId) => this.activeChatModelBySession.get(sessionId) ?? null,
+    )
     this.mcpService.onChange((_event: McpChangeEvent) => {
       this.mcpVersion += 1
     })
@@ -1961,14 +1970,25 @@ export class SessionService {
       config.supportsMillionContext === true,
       config.contextWindow,
     )
-    // 原生 SDK resume/compaction 是唯一摘要层。Spark 只按真实模型窗口构造 token
-    // 边界内的恢复提示词；resume 成功时缩成 recent fallback，fresh fallback 仍不失忆。
-    const { prompt: conversationHistoryPrompt } = buildConversationHistory(eventRepo, sessionId, {
+    const storedContinuitySummary = new SessionSummaryRepository(this.db).getLatest(sessionId)
+    // Provider 原生 resume 管理逐轮历史；Spark 的结构化胶囊 + 精确近期历史只服务
+    // fresh 路径或 resume 失败恢复。成功 resume 时不再重复注入近期对话。
+    const conversationContext = buildConversationHistory(eventRepo, sessionId, {
       agentNameById,
       historyTokenBudget: computeHistoryTokenBudget(contextWindowTokens),
       entryTokenBudget: computeHistoryEntryTokenBudget(contextWindowTokens),
-      ...(canResumeSdkSession ? { skipForSdkResume: true } : {}),
+      ...(storedContinuitySummary != null
+        ? {
+            continuitySummary: {
+              summaryText: storedContinuitySummary.summary_text,
+              summarizedToSeq: storedContinuitySummary.summarized_to_seq,
+            },
+          }
+        : {}),
+      ...(canResumeSdkSession ? { deferForSdkResume: true } : {}),
     })
+    const conversationHistoryPrompt = conversationContext.prompt
+    const resumeRecoveryHistoryPrompt = conversationContext.recoveryPrompt
     // 选中的模式即唯一权威：mention turn 用被 @ 成员自身的模式，否则用会话存储的模式。
     // 不再叠加 /approval override 层——bypass 一旦选中就不会被任何旁路降级。
     const permissionMode = isMentionTurn
@@ -2552,11 +2572,13 @@ export class SessionService {
           truncated: projectContext.budget?.truncated ?? false,
         },
         {
-          // W1.1b 联动：SDK resume 路径下 conversationHistoryPrompt 是 fallback（recent N 条），
-          // SDK 内部维持完整 history（更多 token）。label 后缀提示用户实际 history 远高于此值。
+          // resume 成功路径不注入 Spark 历史；SDK 内部维护完整 history。
+          // resumeRecoveryHistoryPrompt 是 standby，不计入本轮实际 prompt ledger。
           label: canResumeSdkSession
-            ? 'Conversation History (SDK resume fallback)'
-            : 'Conversation History',
+            ? 'Conversation History (native resume)'
+            : storedContinuitySummary != null
+              ? 'Continuity Capsule + Recent Exact History'
+              : 'Conversation History',
           estimatedTokens: estimateSectionTokens(conversationHistoryPrompt),
           charCount: estimateChars(conversationHistoryPrompt),
           truncated: false,
@@ -2629,6 +2651,9 @@ export class SessionService {
         ...(config.sonnetModel != null ? { sonnetModel: config.sonnetModel } : {}),
         ...(config.opusModel != null ? { opusModel: config.opusModel } : {}),
         ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
+        ...(resumeRecoveryHistoryPrompt != null
+          ? { resumeFallbackSystemPrompt: resumeRecoveryHistoryPrompt }
+          : {}),
         ...(composedSkillSystemPrompt != null
           ? { skillSystemPrompt: composedSkillSystemPrompt }
           : {}),
@@ -3344,6 +3369,10 @@ export class SessionService {
           this.updateGoalContractFromAssistantBlock(sessionId, assistantTurnText)
         }
 
+        // Context Architecture V2：异步推进结构化会话胶囊。成功 resume 不读取它，
+        // 但 Provider 切换、fresh 路径或 resume 失败恢复时可用；失败不影响主 turn。
+        this.continuityCoordinator.schedule(sessionId, turnId, config.model)
+
         // ── Memory System：turn 完成后异步写入记忆（fire-and-forget） ──
         void this.maybeWriteMemoryFromTurn(
           sessionId,
@@ -3725,6 +3754,7 @@ export class SessionService {
         ) {
           sessionRepo.updateStatus(sessionId, 'idle')
         }
+        this.continuityCoordinator.schedule(sessionId, turnId, config.model)
         void this.maybeWriteMemoryFromTurn(
           sessionId,
           options.primaryWorkspaceId ?? '',

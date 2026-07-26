@@ -658,6 +658,14 @@ vi.mock('@spark/storage', () => {
       return []
     }
 
+    queryDialogueEventsAfterSeq(_sessionId: string, _afterSeq: number, _limit: number): EventRow[] {
+      return []
+    }
+
+    countDialogueEventsAfterSeq(_sessionId: string, _afterSeq: number): number {
+      return 0
+    }
+
     queryStreamEventsByTurn(sessionId: string, turnId: string): EventRow[] {
       return mockState.events
         .filter((row) => row.session_id === sessionId && row.turn_id === turnId)
@@ -840,6 +848,9 @@ vi.mock('@spark/storage', () => {
       return null
     }
     create(): void {}
+    deleteBySession(): number {
+      return 0
+    }
   }
   class GoalRepository {
     getCurrent(): null {
