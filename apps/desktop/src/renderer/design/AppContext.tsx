@@ -96,7 +96,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
   showProviderEdit: false,
   browserPanelOpen: false,
   browserPanelWidth: 380,
-  floatingSidebarWidth: 244,
+  floatingSidebarWidth: 272,
   sidebarHidden: false,
   sidebarStyle: 'floating',
   workspaceMode: 'workbench',

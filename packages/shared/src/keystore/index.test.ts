@@ -71,6 +71,18 @@ describe.runIf(process.platform === 'darwin')('consolidated credential vault', (
     expect(keytar.getPassword).toHaveBeenCalledTimes(1)
   })
 
+  it('does not initialize credential storage when there are no configured refs', async () => {
+    const keytar = (await import('keytar')).default
+    const keystore = await import('./index')
+    keystore.configureCredentialVaultPersistence(mocks.persistence)
+
+    await keystore.preloadSecrets([])
+
+    expect(mocks.persistence.load).not.toHaveBeenCalled()
+    expect(mocks.persistence.save).not.toHaveBeenCalled()
+    expect(keytar.getPassword).not.toHaveBeenCalled()
+  })
+
   it('does not probe legacy keychain items during startup preload', async () => {
     const keytar = (await import('keytar')).default
     const keystore = await import('./index')
