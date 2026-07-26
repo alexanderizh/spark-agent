@@ -783,7 +783,11 @@ async function initializeApp(): Promise<void> {
       keytarService: resolveAuthKeytarService(process.env),
       requestTimeoutMs: 30_000,
     })
-    await getAuthService().start()
+    await getAuthService().start({
+      // 全新安装没有任何旧会话可迁移，不应为了探测不存在的条目访问系统钥匙串。
+      // 已有数据库的升级安装仍允许读取一次旧 keytar 会话并写入加密备份。
+      allowLegacyKeytarFallback: databaseBackup != null,
+    })
     getPlatformModelService()
     getAuthService().addLoginHook(async () => processPendingPlatformRedeemCodes())
     platformRedeemReady = true

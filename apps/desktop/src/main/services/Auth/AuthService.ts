@@ -66,9 +66,9 @@ export class AuthService {
 
   // ─── 生命周期 ─────────────────────────────────────────────────────────────────
 
-  /** 启动：从 keytar 加载会话 */
-  async start(): Promise<void> {
-    await this.tokenStore.load()
+  /** 启动：优先从加密备份加载会话；已有安装可回退读取旧 keytar 会话。 */
+  async start(options: { allowLegacyKeytarFallback?: boolean } = {}): Promise<void> {
+    await this.tokenStore.load(options)
     log.info(
       `auth service started, isAuthenticated=${this.tokenStore.isAuthenticated()}`,
     )

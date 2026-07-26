@@ -100,6 +100,17 @@ describe('TokenStore persistent fallback', () => {
     expect(keytar.getPassword).not.toHaveBeenCalled()
   })
 
+  it('does not probe keychain on a fresh installation without an encrypted backup', async () => {
+    const { TokenStore } = await import('./TokenStore')
+    const store = new TokenStore('SparkAgent.CloudAuth')
+
+    const loaded = await store.load({ allowLegacyKeytarFallback: false })
+
+    expect(loaded).toEqual({})
+    expect(keytar.getPassword).not.toHaveBeenCalled()
+    expect(store.isPersistent()).toBe(true)
+  })
+
   it('persists across restarts when keytar is unavailable', async () => {
     const { TokenStore } = await import('./TokenStore')
     mocks.keytarUnavailable = true
