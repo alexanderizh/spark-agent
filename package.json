@@ -5,10 +5,10 @@
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "description": "Spark Agent — Local-first AI Agent desktop workbench",
-  "packageManager": "pnpm@11.7.0",
+  "packageManager": "pnpm@11.13.0",
   "engines": {
     "node": ">=22.14.0 <23",
-    "pnpm": ">=11.7.0 <12"
+    "pnpm": ">=11.13.0 <12"
   },
   "scripts": {
     "dev": "cd apps/desktop && pnpm run dev",

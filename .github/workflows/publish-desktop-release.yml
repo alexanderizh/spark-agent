@@ -189,7 +189,9 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 11.7.0
+          # pnpm 11.7.0 的 list/why 在大型依赖树上会无界并发读取 package.json，
+          # Windows/macOS 会触发 EMFILE；11.13.0 起已限制读取并发。
+          version: 11.13.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
