@@ -25,15 +25,29 @@ export function DownloadPanel() {
   const { releases } = useLatestReleases('stable')
   const downloads = useMemo(() => buildDownloadItems(releases), [releases])
 
-  const recommended = useMemo(
-    () =>
-      downloads.find(
-        (d) => d.platform === guess.platform && (guess.arch === 'unknown' || d.arch === guess.arch),
-      ) ??
-      downloads.find((d) => d.platform === guess.platform) ??
-      downloads[0],
-    [downloads, guess],
-  )
+  const recommended = useMemo(() => {
+    // 1) 已知架构时精确匹配 platform + arch
+    if (guess.arch !== 'unknown') {
+      const exact = downloads.find(
+        (d) => d.platform === guess.platform && d.arch === guess.arch,
+      )
+      if (exact) return exact
+    }
+    // 2) Mac 上架构无法识别（Safari/Firefox 无 userAgentData、Chrome 隐私模式等）
+    //    时，默认回退到 x64：Intel 用户必须拿 x64 才能跑（arm64 完全无法运行），
+    //    Apple Silicon 用户拿 x64 还能通过 Rosetta 兜底——这是更安全的默认值。
+    //    与 HeroDownloadButton 中的逻辑保持一致。
+    if (guess.platform === 'mac') {
+      return (
+        downloads.find((d) => d.platform === 'mac' && d.arch === 'x64') ??
+        downloads[0]
+      )
+    }
+    // 3) 其他平台 / 完全未识别：取同平台首项，否则取数组首项
+    return (
+      downloads.find((d) => d.platform === guess.platform) ?? downloads[0]
+    )
+  }, [downloads, guess])
 
   return (
     <div className="download-panel">
