@@ -45,6 +45,7 @@ import { useRefreshable } from '../hooks/useRefreshable'
 import { useDebouncedCallback } from '../hooks/useDebounce'
 import { useSaveShortcut } from '../hooks/useSaveShortcut'
 import { useToast } from '../components/Toast'
+import { usePlatformModelCatalogRefresh } from './platform-model/usePlatformModelCatalogRefresh'
 import {
   AUTO_ROUTER_UI_VISIBLE,
   filterProvidersForVisibleUi,
@@ -987,11 +988,8 @@ function ProvidersView() {
       .catch(console.error)
   }, [listModels, listProviders])
 
-  useRefreshable(refresh)
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
+  const { refreshPlatformCatalog } = usePlatformModelCatalogRefresh(refresh)
+  useRefreshable(refreshPlatformCatalog)
 
   useEffect(() => {
     return (
@@ -1284,7 +1282,7 @@ function ProvidersView() {
               shape="circle"
               type="text"
               icon={<Icons.Refresh />}
-              onClick={refresh}
+              onClick={() => void refreshPlatformCatalog()}
               title="刷新 (Ctrl+R)"
               aria-label="刷新"
             />

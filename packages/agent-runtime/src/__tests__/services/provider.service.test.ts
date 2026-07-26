@@ -1461,6 +1461,86 @@ describe('ProviderService', () => {
     ])
   })
 
+  it('moves tagged platform image models out of stale chat preferences during catalog refresh', async () => {
+    await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5', 'doubao-seedream-4-5-251128'],
+      apiKey: 'sk-platform-secret',
+    })
+
+    const refreshed = await service.refreshManagedNewApiModels({
+      ownerUserId: '42',
+      modelIds: ['glm-5'],
+      mediaModelRefs: [{
+        manifestId: 'platform:doubao-seedream-4-5-251128:test',
+        modelId: 'doubao-seedream-4-5-251128',
+        templateManifestId: 'openai-images:gpt-image-2',
+        displayName: 'doubao-seedream-4-5-251128',
+        enabled: true,
+      }],
+    })
+
+    expect(refreshed.availableModelIds).toEqual(['glm-5'])
+    expect(refreshed.modelIds).toEqual(['glm-5'])
+    expect(refreshed.defaultModel).toBe('glm-5')
+    expect(refreshed.mediaModelRefs).toEqual([
+      expect.objectContaining({
+        modelId: 'doubao-seedream-4-5-251128',
+        templateManifestId: 'openai-images:gpt-image-2',
+        enabled: true,
+      }),
+    ])
+  })
+
+  it('preserves valid text preferences and replaces managed media refs on catalog refresh', async () => {
+    await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5', 'MiniMax-M3', 'retired-model'],
+      mediaModelRefs: [{
+        manifestId: 'platform:retired-image:test',
+        modelId: 'retired-image',
+        templateManifestId: 'openai-images:gpt-image-2',
+        enabled: true,
+      }],
+      apiKey: 'sk-platform-secret',
+    })
+    await service.updateManagedNewApiModelPreferences({
+      modelIds: ['MiniMax-M3', 'retired-model'],
+      defaultModel: 'MiniMax-M3',
+    })
+
+    const refreshed = await service.refreshManagedNewApiModels({
+      ownerUserId: '42',
+      modelIds: ['glm-5', 'MiniMax-M3', 'new-model'],
+      mediaModelRefs: [],
+    })
+
+    expect(refreshed.availableModelIds).toEqual(['glm-5', 'MiniMax-M3', 'new-model'])
+    expect(refreshed.modelIds).toEqual(['MiniMax-M3'])
+    expect(refreshed.defaultModel).toBe('MiniMax-M3')
+    expect(refreshed.mediaModelRefs).toEqual([])
+  })
+
+  it('does not overwrite a managed provider with a catalog that has no text models', async () => {
+    await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example',
+      modelIds: ['glm-5'],
+      apiKey: 'sk-platform-secret',
+    })
+    const before = repo.rows.get('spark-platform-newapi')?.config_json
+
+    await expect(service.refreshManagedNewApiModels({
+      ownerUserId: '42',
+      modelIds: [],
+      mediaModelRefs: [],
+    })).rejects.toThrow('没有可用文本模型')
+
+    expect(repo.rows.get('spark-platform-newapi')?.config_json).toBe(before)
+  })
+
   it('requires at least one platform model to stay enabled', async () => {
     await service.ensureManagedNewApiProvider({
       ownerUserId: '42',

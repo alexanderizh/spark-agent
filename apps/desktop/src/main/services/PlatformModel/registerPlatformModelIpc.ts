@@ -18,6 +18,9 @@ export function registerPlatformModelIpc(): void {
   typedIpcHandle('platform-model:redeem', async (req) => getPlatformModelService().redeem(req.code))
   typedIpcHandle('platform-model:pay', async (req) => getPlatformModelService().pay(req.planId, req.paymentMethod))
   typedIpcHandle('platform-model:get-usage', async () => getPlatformModelService().getUsage())
+  typedIpcHandle('platform-model:refresh-catalog', async (req) => (
+    getPlatformModelService().refreshModelCatalog(req.force === true)
+  ))
   typedIpcHandle('platform-model:update-model-preferences', async (req) => (
     getPlatformModelService().updateModelPreferences(req)
   ))

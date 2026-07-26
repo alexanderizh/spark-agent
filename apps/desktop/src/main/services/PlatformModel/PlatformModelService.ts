@@ -1,7 +1,9 @@
 import type {
+  ProviderProfile,
   PlatformModelPlan,
   PlatformModelPurchaseLink,
   PlatformModelRedeemResponse,
+  PlatformModelRefreshCatalogResponse,
   PlatformModelStatus,
   PlatformModelSubscription,
 } from '@spark/protocol'
@@ -30,15 +32,23 @@ type BootstrapCredentials = {
 }
 
 const log = createLogger('platform-model:service')
+const PLATFORM_MODEL_CATALOG_REFRESH_INTERVAL_MS = 5 * 60_000
+
+type PlatformModelServiceOptions = {
+  refreshCatalogOnStart?: boolean
+}
 
 export class PlatformModelService {
   private status: PlatformModelStatus = emptyStatus()
   private readonly bootstrapInflight = new Map<string, Promise<PlatformModelStatus>>()
+  private readonly catalogRefreshInflight = new Map<string, Promise<PlatformModelRefreshCatalogResponse>>()
+  private readonly lastCatalogRefreshAt = new Map<string, number>()
+  private readonly lastCatalogMediaModelIds = new Map<string, string[]>()
   private readonly credentialRecoveryInflight = new Map<string, Promise<string | null>>()
   private readonly lastValidatedApiKeys = new Map<string, { value: string; expiresAt: number }>()
   private lastConflictNotificationAt = 0
 
-  constructor() {
+  constructor(options: PlatformModelServiceOptions = {}) {
     const auth = getAuthService()
     auth.addLogoutHook(async (userId) => this.logout(userId))
     auth.addLoginHook(async () => { await this.bootstrap(false) })
@@ -52,6 +62,14 @@ export class PlatformModelService {
         .catch((error) => {
           log.warn(`startup managed provider cleanup failed: ${(error as Error).message}`)
         })
+    } else if (options.refreshCatalogOnStart !== false) {
+      // AuthService.start() 已恢复本地登录态。后台同步目录可把旧版本误存进
+      // modelIds 的图片模型迁移到 mediaModelRefs，并通过配置事件刷新聊天与画布。
+      queueMicrotask(() => {
+        void this.refreshModelCatalog(false).catch((error) => {
+          log.warn(`startup platform model catalog refresh failed: ${(error as Error).message}`)
+        })
+      })
     }
   }
 
@@ -69,6 +87,30 @@ export class PlatformModelService {
       }
     })
     this.bootstrapInflight.set(ownerUserId, operation)
+    return operation
+  }
+
+  refreshModelCatalog(force = false): Promise<PlatformModelRefreshCatalogResponse> {
+    const ownerUserId = getAuthService().getCurrentUserId()
+    if (!ownerUserId) return Promise.reject(new Error('请先登录 Spark 账号'))
+    const existing = this.catalogRefreshInflight.get(ownerUserId)
+    if (existing) return existing
+
+    const lastRefreshAt = this.lastCatalogRefreshAt.get(ownerUserId) ?? 0
+    if (!force && Date.now() - lastRefreshAt < PLATFORM_MODEL_CATALOG_REFRESH_INTERVAL_MS) {
+      return Promise.resolve({
+        models: [...this.status.models],
+        mediaModels: [...(this.lastCatalogMediaModelIds.get(ownerUserId) ?? [])],
+        refreshed: false,
+      })
+    }
+
+    const operation = this.refreshModelCatalogInternal(ownerUserId).finally(() => {
+      if (this.catalogRefreshInflight.get(ownerUserId) === operation) {
+        this.catalogRefreshInflight.delete(ownerUserId)
+      }
+    })
+    this.catalogRefreshInflight.set(ownerUserId, operation)
     return operation
   }
 
@@ -209,7 +251,72 @@ export class PlatformModelService {
     const currentUserId = getAuthService().getCurrentUserId()
     if (!currentUserId || currentUserId === userId) {
       this.lastValidatedApiKeys.delete(userId)
+      this.lastCatalogRefreshAt.delete(userId)
+      this.lastCatalogMediaModelIds.delete(userId)
+      this.catalogRefreshInflight.delete(userId)
       this.status = emptyStatus()
+    }
+  }
+
+  private async refreshModelCatalogInternal(
+    ownerUserId: string,
+  ): Promise<PlatformModelRefreshCatalogResponse> {
+    const client = await this.readyClient()
+    const modelMapping = mapPlatformModelCatalog(await client.getModelCatalog())
+    if (getAuthService().getCurrentUserId() !== ownerUserId) {
+      throw new Error('平台模型目录刷新期间登录账号已切换')
+    }
+    const mediaModelIds = modelMapping.mediaModelRefs
+      .map(ref => ref.modelId)
+      .filter((modelId): modelId is string => typeof modelId === 'string' && modelId.length > 0)
+    for (const issue of modelMapping.issues) {
+      log.warn(issue.message, { modelId: issue.modelId, reason: issue.reason })
+    }
+
+    let profile: ProviderProfile
+    try {
+      profile = await this.providerService().refreshManagedNewApiModels({
+        ownerUserId,
+        modelIds: modelMapping.textModelIds,
+        mediaModelRefs: modelMapping.mediaModelRefs,
+      })
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('尚未就绪')) throw error
+      const status = await this.bootstrap(false)
+      this.lastCatalogRefreshAt.set(ownerUserId, Date.now())
+      this.lastCatalogMediaModelIds.set(
+        ownerUserId,
+        mediaModelIds,
+      )
+      return {
+        models: status.models,
+        mediaModels: mediaModelIds,
+        refreshed: true,
+      }
+    }
+
+    if (getAuthService().getCurrentUserId() !== ownerUserId) {
+      throw new Error('平台模型目录刷新期间登录账号已切换')
+    }
+
+    this.status = {
+      bound: true,
+      providerReady: true,
+      sessionConflict: false,
+      credentialState: 'ready',
+      models: [...profile.modelIds],
+      ...(this.status.pendingPayment ? { pendingPayment: this.status.pendingPayment } : {}),
+    }
+    this.lastCatalogRefreshAt.set(ownerUserId, Date.now())
+    this.lastCatalogMediaModelIds.set(
+      ownerUserId,
+      mediaModelIds,
+    )
+    this.emitProviderChanged('update')
+    return {
+      models: [...profile.modelIds],
+      mediaModels: mediaModelIds,
+      refreshed: true,
     }
   }
 
@@ -270,6 +377,9 @@ export class PlatformModelService {
       client.ensureApiKey(),
     ])
     const modelMapping = mapPlatformModelCatalog(catalog)
+    const mediaModelIds = modelMapping.mediaModelRefs
+      .map(ref => ref.modelId)
+      .filter((modelId): modelId is string => typeof modelId === 'string' && modelId.length > 0)
     for (const issue of modelMapping.issues) {
       log.warn(issue.message, { modelId: issue.modelId, reason: issue.reason })
     }
@@ -283,6 +393,11 @@ export class PlatformModelService {
       apiKey,
       credentialState: 'ready',
     })
+    this.lastCatalogRefreshAt.set(sparkUserId, Date.now())
+    this.lastCatalogMediaModelIds.set(
+      sparkUserId,
+      mediaModelIds,
+    )
     this.emitProviderChanged('update')
     const pendingPayment = await store.getPendingPayment()
     this.status = {
