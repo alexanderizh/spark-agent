@@ -319,6 +319,7 @@ export class MediaRouterService {
     // 只取最后一个带 body 的 POST：adapter 内部对单次能力调用只发一个主请求；
     // APIMart 编辑会先 POST /uploads/images 再 POST /images/generations，取后者即主请求。
     const capture = createRequestCapture(options.fetch)
+    const routedFetch = createManagedNewApiImageFetch(chosen, capability, capture.fetch)
     const onTaskSubmitted = options.onTaskSubmitted
       ? (submission: MediaTaskSubmission): void => {
           try {
@@ -347,7 +348,7 @@ export class MediaRouterService {
         mediaManifestCapability: manifestMatch.capability,
         ...(options.extraParams ? { extraParams: options.extraParams } : {}),
         ...(options.skipValidation === true ? { skipParameterValidation: true } : {}),
-        fetch: capture.fetch,
+        fetch: routedFetch,
         ...(options.fallbackUploader ? { fallbackUploader: options.fallbackUploader } : {}),
         ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
       }
@@ -436,7 +437,7 @@ export class MediaRouterService {
       ...(manifestMatch?.capability ? { mediaManifestCapability: manifestMatch.capability } : {}),
       ...(options.extraParams ? { extraParams: options.extraParams } : {}),
       ...(options.skipValidation === true ? { skipParameterValidation: true } : {}),
-      fetch: capture.fetch,
+      fetch: routedFetch,
       ...(options.fallbackUploader ? { fallbackUploader: options.fallbackUploader } : {}),
       ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
     }
@@ -501,6 +502,41 @@ export class MediaRouterService {
       throw err
     }
   }
+}
+
+function createManagedNewApiImageFetch(
+  profile: Pick<MediaProviderProfile, 'apiEndpoint' | 'managedType'>,
+  capability: MediaCapabilityId,
+  fetchImpl: typeof fetch,
+): typeof fetch {
+  const endpoint = managedNewApiImageEndpoint(profile, capability)
+  if (!endpoint) return fetchImpl
+
+  return async (input, init) => {
+    const method = (init?.method ?? 'GET').toUpperCase()
+    const requestUrl = String(input)
+    if (method !== 'POST' || isAuxiliaryMediaRequest(requestUrl)) {
+      return fetchImpl(input, init)
+    }
+    return fetchImpl(endpoint, init)
+  }
+}
+
+function managedNewApiImageEndpoint(
+  profile: Pick<MediaProviderProfile, 'apiEndpoint' | 'managedType'>,
+  capability: MediaCapabilityId,
+): string | null {
+  if (profile.managedType !== 'newapi' || !profile.apiEndpoint) return null
+  const baseUrl = profile.apiEndpoint.replace(/\/+$/, '')
+  if (capability === 'image.generate') return `${baseUrl}/images/generations`
+  if (capability === 'image.edit' || capability === 'image.variations') {
+    return `${baseUrl}/images/edits`
+  }
+  return null
+}
+
+function isAuxiliaryMediaRequest(url: string): boolean {
+  return /\/(?:files|uploads|tasks)(?:\/|\?|$)/i.test(url)
 }
 
 /**

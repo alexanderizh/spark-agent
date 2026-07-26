@@ -93,6 +93,7 @@ NewAPI 管理端模型记录示例（由 Spark 服务端读取，桌面端不会
 - `model_name` 是真正发送给平台接口的 `model` 值。例如 `spark-img` 不会被替换成 `gpt-image-2`。
 - 标签中的 `gpt-image-2` 只用于查找参数 schema、默认值、能力、校验规则和适配器。解析后的 `adapterModelId` 会保留该模板身份，画布和 skill 的模型专属分支不会误把 `spark-img` 当成一种未知模型。
 - 文本模型继续使用平台根地址；媒体模型使用平台 `${baseUrl}/v1` 入口。
+- 平台受管图片模型统一调用 NewAPI 的 OpenAI 图片路径：`image.generate` 使用 `/images/generations`，`image.edit` 与 `image.variations` 使用 `/images/edits`。请求参数、校验和响应解析仍由标签指定的应用内适配器与模板负责；普通用户自定义 Provider 继续使用各供应商原生路径。
 - 平台设置弹窗把对话模型与图片模型分区展示；图片模型由 tags 生成并自动启用，不参与默认对话模型选择。
 - 只有 `managedType: newapi` 的平台受管 Provider 会按模型 Manifest 间接选择适配器。普通 Provider 的适配器选择规则保持不变。
 - `spark_media` 运行时会把平台图片模型作为该渠道的媒体默认模型，并在用户显式选择模型时按 Manifest 切换对应适配行为；普通渠道的默认模型规则保持不变。

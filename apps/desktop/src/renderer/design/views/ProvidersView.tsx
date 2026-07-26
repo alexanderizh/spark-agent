@@ -105,6 +105,7 @@ import type {
 } from '@spark/protocol'
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import { canHealthCheckProviderCardKind, type ProviderCardKind } from './provider-card-actions'
+import { limitProviderCardModelIds, resolveProviderCardModelIds } from './provider-card-models'
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
 import { ProviderManifestContractEditor } from '../components/ProviderManifestContractEditor'
 import { ManagedModelPreferencesModal } from './platform-model/ManagedModelPreferencesModal'
@@ -1462,17 +1463,11 @@ function ProvidersView() {
                   p.mediaCapabilities,
                   p.mediaModelRefs,
                 )
-                const mediaModelChips = isMediaProvider
-                  ? (p.mediaModelRefs ?? [])
-                      .filter((ref) => ref.enabled !== false)
-                      .map(
-                        (ref) =>
-                          (ref.modelId ?? '').trim() || ref.manifestId.replace(/^custom:/, ''),
-                      )
-                      .filter((id) => id.length > 0)
-                  : null
-                const cardModelIds =
-                  mediaModelChips && mediaModelChips.length > 0 ? mediaModelChips : p.modelIds
+                const cardModelIds = resolveProviderCardModelIds({
+                  textModelIds: p.modelIds,
+                  mediaModelRefs: isMediaProvider ? (p.mediaModelRefs ?? []) : [],
+                  includeTextModels: !isMediaProvider || p.managed === true,
+                })
                 return (
                   <ProviderCardX
                     key={p.id}
@@ -1832,8 +1827,7 @@ function ProviderCardX({
   onDelete: () => void
   onHealthCheck: () => void
 }) {
-  // 不再在 JS 里截断：CSS 用 max-height + overflow 限制到 3 行，
-  // 多余模型自然截断；DOM 数量由 provider 自身 model 数量决定，典型 < 20，可控。
+  const { visibleModelIds, hiddenModelIds } = limitProviderCardModelIds(modelIds)
 
   // 用一个合成的 vendor-meta 来渲染 fallback（无 vendor 时显示首字母 + 中性色）
   const fallbackVendor: VendorMeta | null = vendor ?? {
@@ -1958,16 +1952,25 @@ function ProviderCardX({
       {modelIds.length > 0 && (
         <div className="pv_card_row pv_card_row_models">
           <div className="pv_card_models">
-            {modelIds.map((m) => (
+            {visibleModelIds.map((m) => (
               <span
                 key={m}
                 className={`pv_model_pill${m === defaultModel ? ' pv_model_default' : ''}`}
                 title={m}
               >
                 {m === defaultModel && <Icons.StarFill size={9} />}
-                {m}
+                <span className="pv_model_pill_label">{m}</span>
               </span>
             ))}
+            {hiddenModelIds.length > 0 && (
+              <span
+                className="pv_model_pill pv_model_pill_more"
+                title={hiddenModelIds.join('\n')}
+                aria-label={`还有 ${hiddenModelIds.length} 个模型`}
+              >
+                …
+              </span>
+            )}
           </div>
         </div>
       )}

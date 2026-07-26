@@ -105,4 +105,84 @@ describe('platform media adapter routing', () => {
     expect(result.output.model).toBe('spark-img')
     expect(result.output.assets).toHaveLength(1)
   })
+
+  it.each([
+    ['image.generate', 'text_to_image', '/images/generations'],
+    ['image.edit', 'image_edit', '/images/edits'],
+  ] as const)(
+    'uses the NewAPI OpenAI image path for managed Bailian %s calls',
+    async (capability, operation, expectedPath) => {
+      const source = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+        (manifest) =>
+          manifest.id === 'bailian:qwen-image-2.0-pro' &&
+          manifest.capabilities.some((item) => item.id === capability),
+      )
+      if (!source) throw new Error('missing Bailian image template')
+      const manifest = {
+        ...source,
+        id: `platform:spark-bailian:${capability}`,
+        modelId: 'spark-bailian-image',
+        adapterModelId: source.modelId,
+      }
+      const pngBase64 =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII='
+      let requestUrl = ''
+      let requestBody = ''
+      const fetchImpl: typeof fetch = async (input, init) => {
+        requestUrl = String(input)
+        requestBody = String(init?.body ?? '')
+        return new Response(
+          JSON.stringify({
+            request_id: 'bailian-request',
+            output: {
+              choices: [
+                { message: { content: [{ type: 'image', image: `data:image/png;base64,${pngBase64}` }] } },
+              ],
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      const outputDir = mkdtempSync(path.join(tmpdir(), 'spark-platform-bailian-'))
+      outputDirs.push(outputDir)
+
+      await new MediaRouterService().invoke(
+        {
+          operation,
+          prompt: 'platform bailian image',
+          ...(capability === 'image.edit'
+            ? {
+                inputFiles: [
+                  { type: 'image' as const, dataUrl: `data:image/png;base64,${pngBase64}` },
+                ],
+              }
+            : {}),
+          outputDir,
+        },
+        {
+          providers: [
+            {
+              id: 'spark-platform-newapi',
+              name: 'Spark Platform',
+              defaultModel: 'spark-bailian-image',
+              apiEndpoint: 'https://newapi.example/v1',
+              mediaProvider: null,
+              mediaApiType: 'sync',
+              mediaModelManifests: [manifest],
+              apiKey: 'sk-platform',
+              managedType: 'newapi',
+            },
+          ],
+          providerProfileId: 'spark-platform-newapi',
+          modelId: 'spark-bailian-image',
+          capability,
+          fetch: fetchImpl,
+        },
+      )
+
+      expect(requestUrl).toBe(`https://newapi.example/v1${expectedPath}`)
+      expect(requestBody).toContain('"model":"spark-bailian-image"')
+      expect(requestBody).toContain('"messages"')
+    },
+  )
 })
