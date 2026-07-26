@@ -634,10 +634,24 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 
+  .pv_model_pill_label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   &.pv_model_default {
     background: var(--primary-soft);
     color: var(--primary);
     font-weight: 500;
+  }
+
+  &.pv_model_pill_more {
+    flex: 0 0 auto;
+    min-width: 24px;
+    justify-content: center;
+    font-family: inherit;
   }
 }
 

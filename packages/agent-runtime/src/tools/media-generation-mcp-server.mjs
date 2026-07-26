@@ -995,6 +995,7 @@ function normalizeProviderConfigs(value, outputDir) {
 function normalizeProviderConfig(value, outputDir) {
   const provider = String(value.provider || 'openai-compatible').trim().toLowerCase()
   const configuredBaseUrl = String(value.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')
+  const adapterFromManifest = value.adapterFromManifest === true
   return {
     id: String(value.id || '').trim(),
     name: String(value.name || '').trim(),
@@ -1002,11 +1003,13 @@ function normalizeProviderConfig(value, outputDir) {
     provider,
     model: String(value.model || ''),
     mode: String(value.mode || 'auto'),
-    baseUrl: provider === 'bailian' ? bailianMediaBaseUrl(configuredBaseUrl) : configuredBaseUrl,
+    baseUrl: provider === 'bailian' && !adapterFromManifest
+      ? bailianMediaBaseUrl(configuredBaseUrl)
+      : configuredBaseUrl,
     outputDir,
     mediaDefaults: value.mediaDefaults && typeof value.mediaDefaults === 'object' ? value.mediaDefaults : {},
     manifests: Array.isArray(value.manifests) ? value.manifests.filter(isManifestLike) : [],
-    adapterFromManifest: value.adapterFromManifest === true,
+    adapterFromManifest,
   }
 }
 
@@ -1873,7 +1876,8 @@ async function handleManifestTool(config, toolName, args, match) {
     prune.prunedParams,
   )
 
-  const endpoint = renderTemplateString(manifest.invocation.endpoint || '', variables)
+  const endpoint = managedNewApiImageEndpoint(config, capability.id) ??
+    renderTemplateString(manifest.invocation.endpoint || '', variables)
   const url = resolveManifestUrl(config.baseUrl, endpoint)
   const invocationHeaders = renderTemplate(manifest.invocation.headers || {}, variables)
   if (manifest.providerKind === 'openai-images' && capability.id === 'image.edit') {
@@ -2294,6 +2298,13 @@ function resolveManifestUrl(baseUrl, endpoint) {
   const cleanBase = String(baseUrl || '').replace(/\/+$/, '')
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
   return `${cleanBase}${cleanEndpoint}`
+}
+
+function managedNewApiImageEndpoint(config, capabilityId) {
+  if (config.adapterFromManifest !== true) return null
+  if (capabilityId === 'image.generate') return '/images/generations'
+  if (capabilityId === 'image.edit' || capabilityId === 'image.variations') return '/images/edits'
+  return null
 }
 
 function stringsAtPaths(data, paths) {

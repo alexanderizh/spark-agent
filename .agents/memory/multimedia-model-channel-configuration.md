@@ -202,4 +202,5 @@ paramPolicy: {
 - 克隆 Manifest 必须保留 `adapterModelId`（模板的真实 modelId）：`modelId` 用于发给平台，`adapterModelId` 用于 Canvas validator/native adapter 与 `spark_media` skill 的模型专属行为判断。
 - 只有 `managedType=newapi` 的受管 Provider 才按命中 Manifest 的 `providerKind` 选择已有适配器；普通 Provider 保持渠道级适配器逻辑。
 - 文本 Anthropic SDK 使用平台根地址，多媒体适配器使用平台 `/v1` 地址，因此受管配置需要分别保存 `apiEndpoint` 与 `mediaApiEndpoint`。
+- 平台受管图片模型只复用目标适配器的参数、校验和响应处理，不继承供应商官方请求路径；统一通过 NewAPI 的 `/images/generations` 与 `/images/edits` 入口调用。该路径覆盖必须以 `managedType=newapi` 为边界，普通自定义 Provider 保持原生路径。
 - `spark_media` 路由对受管平台渠道写入 `adapterFromManifest=true`，并把首个有效平台媒体模型设为媒体默认；普通渠道不得因此改写原有默认模型。

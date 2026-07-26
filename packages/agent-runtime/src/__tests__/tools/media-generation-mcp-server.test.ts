@@ -135,6 +135,7 @@ describe('spark_media MCP server', () => {
         req.method === 'POST' &&
         (req.url === '/images' ||
           req.url === '/images/generations' ||
+          req.url === '/images/edits' ||
           req.url === '/provider-a/images' ||
           req.url === '/provider-b/images')
       ) {
@@ -143,10 +144,30 @@ describe('spark_media MCP server', () => {
         req.on('end', () => {
           postedPath = req.url ?? ''
           postedHeaders = req.headers
-          postedBody = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+          const currentPostedBody = JSON.parse(
+            Buffer.concat(chunks).toString('utf8'),
+          ) as Record<string, unknown>
+          postedBody = currentPostedBody
           const respond = () => {
             res.writeHead(200, { 'content-type': 'application/json' })
-            res.end(JSON.stringify({ data: [{ url: `${baseUrl}/asset.png` }] }))
+            res.end(
+              JSON.stringify(
+                currentPostedBody.input
+                  ? {
+                      request_id: 'bailian-request',
+                      output: {
+                        choices: [
+                          {
+                            message: {
+                              content: [{ type: 'image', image: `${baseUrl}/asset.png` }],
+                            },
+                          },
+                        ],
+                      },
+                    }
+                  : { data: [{ url: `${baseUrl}/asset.png` }] },
+              ),
+            )
           }
           if (imageResponseDelayMs > 0) setTimeout(respond, imageResponseDelayMs)
           else respond()
@@ -553,6 +574,87 @@ describe('spark_media MCP server', () => {
       model: 'spark-xai',
       prompt: 'platform adapter routing',
       storage_options: expect.any(Object),
+    })
+  })
+
+  it('keeps Bailian parameters but uses the NewAPI image endpoint for platform models', async () => {
+    const source = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (manifest) => manifest.id === 'bailian:qwen-image-2.0-pro',
+    )
+    if (!source) throw new Error('missing Bailian image template')
+    const manifest = {
+      ...source,
+      id: 'platform:spark-bailian:test',
+      modelId: 'spark-bailian-image',
+      adapterModelId: source.modelId,
+    }
+    const configPath = path.join(tmpDir, 'platform-bailian-runtime-config.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        outputDir: tmpDir,
+        providers: [
+          {
+            id: 'spark-platform-newapi',
+            name: 'Spark Platform',
+            apiKeyEnv: 'SPARK_MEDIA_API_KEY_0',
+            provider: 'openai-compatible',
+            adapterFromManifest: true,
+            model: 'spark-bailian-image',
+            mode: 'sync',
+            baseUrl,
+            mediaDefaults: {},
+            manifests: [manifest],
+          },
+        ],
+      }),
+    )
+
+    child = spawn(process.execPath, [path.resolve('src/tools/media-generation-mcp-server.mjs')], {
+      cwd: path.resolve('..', 'agent-runtime'),
+      env: {
+        ...process.env,
+        SPARK_MEDIA_API_KEY_0: 'sk-platform',
+        SPARK_MEDIA_CONFIG_FILE: configPath,
+      },
+    })
+    const generated = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'generate_image',
+        arguments: { model: 'spark-bailian-image', prompt: 'platform Bailian routing' },
+      },
+    })
+
+    expect(generated.error).toBeUndefined()
+    expect(postedPath).toBe('/images/generations')
+    expect(postedBody).toMatchObject({
+      model: 'spark-bailian-image',
+      input: { messages: [{ role: 'user' }] },
+      parameters: expect.objectContaining({ size: '2048*2048', n: 1 }),
+    })
+
+    const edited = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'edit_image',
+        arguments: {
+          model: 'spark-bailian-image',
+          prompt: 'platform Bailian edit routing',
+          inputImages: [`data:image/png;base64,${PNG_PIXEL}`],
+        },
+      },
+    })
+
+    expect(edited.error).toBeUndefined()
+    expect(postedPath).toBe('/images/edits')
+    expect(postedBody).toMatchObject({
+      model: 'spark-bailian-image',
+      input: { messages: [{ role: 'user' }] },
     })
   })
 
