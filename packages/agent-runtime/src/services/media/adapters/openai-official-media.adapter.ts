@@ -1,5 +1,5 @@
 import type { MediaCapabilityId, MediaProviderKind } from '@spark/protocol'
-import { MediaProviderError } from '../media-adapter.types.js'
+import { MediaProviderError, mediaAdapterModelId } from '../media-adapter.types.js'
 import type {
   MediaGenerateInput,
   MediaGenerateOutput,
@@ -317,7 +317,7 @@ function openAiImageParams(
     output_format: source.outputFormat ?? source.output_format ?? defaults?.outputFormat,
     output_compression: source.outputCompression ?? source.output_compression,
     user: source.user,
-    ...(editing && !ctx.defaultModel.startsWith('gpt-image-2')
+    ...(editing && !mediaAdapterModelId(ctx).startsWith('gpt-image-2')
       ? { input_fidelity: source.inputFidelity ?? source.input_fidelity }
       : {}),
   }

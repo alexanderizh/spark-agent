@@ -117,6 +117,8 @@ export interface MediaModelManifest {
   id: string
   providerKind: string
   modelId: string
+  /** Model id whose adapter-specific behavior this alias inherits. Requests still send modelId. */
+  adapterModelId?: string | undefined
   displayName: string
   version?: string | undefined
   domains: MediaDomain[]
@@ -167,6 +169,15 @@ export interface ProviderMediaModelRef {
   modelId?: string | undefined
   enabled?: boolean | undefined
   defaults?: Record<string, unknown> | undefined
+  /**
+   * Optional built-in manifest used as the protocol/parameter template for this ref.
+   * The resolved manifest keeps `manifestId`/`modelId` from this ref, allowing a
+   * gateway model alias to reuse an existing adapter without changing the source
+   * manifest or the model id sent to the gateway.
+   */
+  templateManifestId?: string | undefined
+  /** Display name override for template-backed model aliases. */
+  displayName?: string | undefined
   /** Complete user-defined contract. Built-in references keep this omitted. */
   manifest?: MediaModelManifest | undefined
 }
@@ -229,6 +240,7 @@ export const MediaModelManifestSchema: z.ZodType<MediaModelManifest> = z.object(
   id: z.string().min(1).max(160),
   providerKind: z.string().min(1).max(120),
   modelId: z.string().min(1).max(200),
+  adapterModelId: z.string().min(1).max(200).optional(),
   displayName: z.string().min(1).max(200),
   version: z.string().min(1).max(80).optional(),
   domains: z
@@ -287,6 +299,8 @@ export const ProviderMediaModelRefSchema: z.ZodType<ProviderMediaModelRef> = z
     modelId: z.string().min(1).max(200).optional(),
     enabled: z.boolean().optional(),
     defaults: JsonObjectSchema.optional(),
+    templateManifestId: z.string().min(1).max(160).optional(),
+    displayName: z.string().min(1).max(200).optional(),
     manifest: MediaModelManifestSchema.optional(),
   })
   .superRefine((ref, ctx) => {

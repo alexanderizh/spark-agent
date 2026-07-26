@@ -228,6 +228,51 @@ describe('NewApiClient', () => {
       'POST /api/user/topup',
     ]))
   })
+
+  it('parses detailed model items and comma-separated media mapping tags', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => envelope({
+      items: [
+        { id: 1, model_name: 'glm-5', tags: '' },
+        { id: 2, model_name: 'spark-img', tags: 'openai:gpt-image-2,model:image' },
+        { id: 3, model_name: 'disabled-img', tags: 'openai:gpt-image-2,model:image', status: 0 },
+      ],
+    })))
+
+    const client = new NewApiClient('https://newapi.example', 42, 'management-token')
+    await expect(client.getModelCatalog()).resolves.toEqual([
+      { modelId: 'glm-5', tags: [] },
+      { modelId: 'spark-img', tags: ['openai:gpt-image-2', 'model:image'] },
+    ])
+  })
+
+  it('loads every page of a paginated model catalog', async () => {
+    const requests: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      requests.push(url)
+      if (url.includes('p=2')) {
+        return envelope({
+          items: [{ id: 2, model_name: 'spark-img', tags: 'model:image,openai:gpt-image-2' }],
+          page: 2,
+          page_size: 1,
+          total: 2,
+        })
+      }
+      return envelope({
+        items: [{ id: 1, model_name: 'glm-5', tags: '' }],
+        page: 1,
+        page_size: 1,
+        total: 2,
+      })
+    }))
+
+    const client = new NewApiClient('https://newapi.example', 42, 'management-token')
+    await expect(client.getModelCatalog()).resolves.toEqual([
+      { modelId: 'glm-5', tags: [] },
+      { modelId: 'spark-img', tags: ['model:image', 'openai:gpt-image-2'] },
+    ])
+    expect(requests.some((url) => url.includes('/api/user/models?p=2&page_size=1'))).toBe(true)
+  })
 })
 
 function envelope(data: unknown): Response {

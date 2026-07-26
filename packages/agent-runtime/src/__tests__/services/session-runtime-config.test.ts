@@ -1654,6 +1654,72 @@ describe('SessionService runtime provider/model resolution', () => {
       .toEqual(expect.arrayContaining(['agnes:agnes-image-2.0-flash', 'agnes:agnes-video-v2.0']))
   })
 
+  it('injects platform image aliases as manifest-routed spark_media models', async () => {
+    seedProvider({
+      id: 'spark-platform-newapi',
+      provider_type: 'anthropic',
+      name: 'Spark 平台模型',
+      config_json: JSON.stringify({
+        defaultModel: 'glm-5',
+        modelIds: ['glm-5'],
+        apiEndpoint: 'https://newapi.example',
+        mediaApiEndpoint: 'https://newapi.example/v1',
+        modelType: 'text',
+        managedType: 'newapi',
+        mediaModelRefs: [{
+          manifestId: 'platform:spark-img:test',
+          modelId: 'spark-img',
+          templateManifestId: 'openai-images:gpt-image-2',
+          displayName: 'spark-img',
+          enabled: true,
+        }],
+      }),
+      keystore_ref: 'key-platform',
+      is_default: 0,
+    })
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Platform media session',
+    })
+
+    await service.sendTurn({ sessionId, message: 'draw with the platform image model' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    const mediaServer = (
+      mockState.sdkConfigs[0]?.mcpServers as {
+        spark_media: { env: Record<string, string> }
+      }
+    ).spark_media
+    const runtimeConfig = JSON.parse(
+      readFileSync(requireEnvValue(mediaServer.env, 'SPARK_MEDIA_CONFIG_FILE'), 'utf8'),
+    ) as {
+      providers: Array<{
+        id: string
+        model: string
+        baseUrl?: string
+        adapterFromManifest?: boolean
+        manifests: Array<{ modelId: string; adapterModelId?: string; providerKind: string }>
+      }>
+    }
+    const platformRoute = runtimeConfig.providers.find(
+      (provider) => provider.id === 'spark-platform-newapi',
+    )
+
+    expect(platformRoute).toMatchObject({
+      model: 'spark-img',
+      baseUrl: 'https://newapi.example/v1',
+      adapterFromManifest: true,
+      manifests: [expect.objectContaining({
+        modelId: 'spark-img',
+        adapterModelId: 'gpt-image-2',
+        providerKind: 'openai-images',
+      })],
+    })
+  })
+
   it('injects all enabled image providers into one routable spark_media server', async () => {
     const imageManifest = (id: string, providerKind: string, modelId: string) => ({
       id,

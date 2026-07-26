@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   platformPost: vi.fn(),
   platformGet: vi.fn(),
   validateSession: vi.fn(),
-  getModels: vi.fn(),
+  getModelCatalog: vi.fn(),
   ensureApiKey: vi.fn(),
   recoverApiKey: vi.fn(),
   getSubscription: vi.fn(),
@@ -89,7 +89,7 @@ vi.mock('./NewApiClient.js', () => {
     NewApiSessionConflictError,
     NewApiClient: class {
       validateSession = mocks.validateSession
-      getModels = mocks.getModels
+      getModelCatalog = mocks.getModelCatalog
       ensureApiKey = mocks.ensureApiKey
       recoverApiKey = mocks.recoverApiKey
       getSubscription = mocks.getSubscription
@@ -135,7 +135,7 @@ describe('PlatformModelService delivery boundaries', () => {
     })
     mocks.platformGet.mockResolvedValue([])
     mocks.validateSession.mockResolvedValue(undefined)
-    mocks.getModels.mockResolvedValue(['gpt-5.4-mini'])
+    mocks.getModelCatalog.mockResolvedValue([{ modelId: 'gpt-5.4-mini', tags: [] }])
     mocks.ensureApiKey.mockResolvedValue('sk-current')
     mocks.ensureManagedProvider.mockResolvedValue({
       modelIds: ['gpt-5.4-mini'],
@@ -316,6 +316,25 @@ describe('PlatformModelService delivery boundaries', () => {
     mocks.getSubscription.mockResolvedValue({ ...unchanged, id: 10, expiresAt: 300 })
     await service.getSubscription()
     expect(service.getStatus().pendingPayment).toBeUndefined()
+  })
+
+  it('keeps tagged image models out of chat models and persists media template refs', async () => {
+    seedReadyCredentials()
+    mocks.getModelCatalog.mockResolvedValue([
+      { modelId: 'gpt-5.4-mini', tags: [] },
+      { modelId: 'spark-img', tags: ['model:image', 'openai:gpt-image-2'] },
+    ])
+    const service = new PlatformModelService()
+
+    await service.bootstrap()
+
+    expect(mocks.ensureManagedProvider).toHaveBeenCalledWith(expect.objectContaining({
+      modelIds: ['gpt-5.4-mini'],
+      mediaModelRefs: [expect.objectContaining({
+        modelId: 'spark-img',
+        templateManifestId: 'openai-images:gpt-image-2',
+      })],
+    }))
   })
 
   it('throttles native notifications for a management-token device conflict', () => {

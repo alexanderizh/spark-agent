@@ -41,6 +41,7 @@ type MediaProviderConfig = {
   model?: string
   modelIds?: string[]
   apiEndpoint?: string
+  mediaApiEndpoint?: string
   modelType?: string
   imageProvider?: string | null
   imageApiType?: string | null
@@ -49,6 +50,7 @@ type MediaProviderConfig = {
   mediaCapabilities?: string[]
   mediaDefaults?: Record<string, unknown>
   mediaModelRefs?: ProviderMediaModelRef[]
+  managedType?: 'newapi'
 }
 
 export type MediaMcpProviderRoute = {
@@ -62,6 +64,8 @@ export type MediaMcpProviderRoute = {
   mediaDefaults: Record<string, unknown>
   capabilities: string[]
   manifests: MediaModelManifest[]
+  /** Resolve provider-specific skill behavior from the selected manifest. */
+  adapterFromManifest?: boolean
 }
 
 export type MediaMcpRuntimeFileConfig = {
@@ -156,20 +160,35 @@ export async function resolveMediaMcpProviderRoutes(
     const manifests = resolveProfileMediaModels(profile, catalog, { enabledOnly: true }).map(
       (resolved) => resolved.manifest,
     )
+    const mediaModel = config.managedType === 'newapi' ? routeMediaModel(model, manifests) : model
+    const baseUrl = mediaBaseUrl(config)
     routes.push({
       id: row.id,
       name: row.name,
       apiKey,
       provider: resolveProviderKind(config),
-      model,
+      model: mediaModel,
       mode: config.mediaApiType ?? config.imageApiType ?? 'auto',
-      ...(config.apiEndpoint?.trim() ? { baseUrl: config.apiEndpoint.trim() } : {}),
+      ...(baseUrl ? { baseUrl } : {}),
       mediaDefaults: config.mediaDefaults ?? {},
       capabilities: collectCapabilities(config, manifests),
       manifests,
+      ...(config.managedType === 'newapi' ? { adapterFromManifest: true } : {}),
     })
   }
   return routes
+}
+
+function routeMediaModel(defaultModel: string, manifests: readonly MediaModelManifest[]): string {
+  if (manifests.some((manifest) => manifest.modelId === defaultModel || manifest.id === defaultModel)) {
+    return defaultModel
+  }
+  return manifests[0]?.modelId ?? defaultModel
+}
+
+function mediaBaseUrl(config: MediaProviderConfig): string | undefined {
+  const value = (config.mediaApiEndpoint ?? config.apiEndpoint)?.trim()
+  return value || undefined
 }
 
 function isMediaConfig(config: MediaProviderConfig, catalog: MediaModelCatalogService): boolean {

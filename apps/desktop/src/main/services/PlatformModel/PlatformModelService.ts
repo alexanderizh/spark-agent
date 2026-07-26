@@ -5,6 +5,7 @@ import type {
   PlatformModelStatus,
   PlatformModelSubscription,
 } from '@spark/protocol'
+import { mapPlatformModelCatalog } from '@spark/protocol'
 import { ProviderService, setManagedCredentialRecoveryHandler } from '@spark/agent-runtime'
 import { createLogger } from '@spark/shared'
 import { ProviderProfileRepository } from '@spark/storage'
@@ -264,16 +265,21 @@ export class PlatformModelService {
       await store.setAccessToken(token)
     }
 
-    const [models, apiKey] = await Promise.all([
-      client.getModels(),
+    const [catalog, apiKey] = await Promise.all([
+      client.getModelCatalog(),
       client.ensureApiKey(),
     ])
+    const modelMapping = mapPlatformModelCatalog(catalog)
+    for (const issue of modelMapping.issues) {
+      log.warn(issue.message, { modelId: issue.modelId, reason: issue.reason })
+    }
     await store.setApiKey(apiKey)
     this.lastValidatedApiKeys.set(sparkUserId, { value: apiKey, expiresAt: Date.now() + 60_000 })
     const profile = await this.providerService().ensureManagedNewApiProvider({
       ownerUserId: sparkUserId,
       baseUrl: credentials.baseUrl,
-      modelIds: models,
+      modelIds: modelMapping.textModelIds,
+      mediaModelRefs: modelMapping.mediaModelRefs,
       apiKey,
       credentialState: 'ready',
     })

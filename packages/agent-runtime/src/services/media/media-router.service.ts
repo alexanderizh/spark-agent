@@ -72,6 +72,8 @@ export interface MediaProviderProfile {
   mediaDefaults?: ProviderMediaDefaults
   apiKey: string
   modelParams?: Record<string, unknown>
+  /** 平台受管渠道允许按模型 manifest 间接选择已有适配器。 */
+  managedType?: 'newapi'
 }
 
 export interface InvokeOptions {
@@ -285,12 +287,13 @@ export class MediaRouterService {
     const manifestMatch = resolveManifestMatch(chosen, capability, manifestOptions)
     const effectiveModelId =
       options.modelId ?? manifestMatch?.manifest.modelId ?? chosen.defaultModel
-    const kind = effectiveProviderKind(chosen)
+    const adapterModelId = manifestMatch?.manifest.adapterModelId ?? effectiveModelId
+    const kind = invocationProviderKind(chosen, manifestMatch?.manifest)
     if (!options.skipValidation) {
       const validation = validateMediaRequest({
         input: { ...input, capability },
         providerKind: kind ?? 'custom',
-        modelId: effectiveModelId,
+        modelId: adapterModelId,
         capability,
         ...(manifestMatch?.manifest ? { manifest: manifestMatch.manifest } : {}),
         ...(manifestMatch?.capability ? { manifestCapability: manifestMatch.capability } : {}),
@@ -335,9 +338,10 @@ export class MediaRouterService {
         apiKey: chosen.apiKey,
         apiEndpoint: chosen.apiEndpoint ?? '',
         defaultModel: effectiveModelId,
+        adapterModelId,
         ...(chosen.mediaDefaults ? { mediaDefaults: chosen.mediaDefaults } : {}),
         ...(chosen.modelIds ? { modelIds: chosen.modelIds } : {}),
-        mediaProvider: effectiveProviderKind(chosen) ?? 'custom',
+        mediaProvider: kind ?? 'custom',
         mediaApiType: chosen.mediaApiType ?? 'auto',
         mediaManifest: manifestMatch.manifest,
         mediaManifestCapability: manifestMatch.capability,
@@ -347,7 +351,7 @@ export class MediaRouterService {
         ...(options.fallbackUploader ? { fallbackUploader: options.fallbackUploader } : {}),
         ...(onTaskSubmitted ? { onTaskSubmitted } : {}),
       }
-      const providerKind = effectiveProviderKind(chosen) ?? 'custom'
+      const providerKind = kind ?? 'custom'
       logCanvasBlockStart({
         label: `${effectiveModelId ?? '(model)'} · ${capability}`,
         kind: 'media',
@@ -423,6 +427,7 @@ export class MediaRouterService {
       apiKey: chosen.apiKey,
       apiEndpoint: chosen.apiEndpoint ?? '',
       defaultModel: effectiveModelId,
+      adapterModelId,
       ...(chosen.mediaDefaults ? { mediaDefaults: chosen.mediaDefaults } : {}),
       ...(chosen.modelIds ? { modelIds: chosen.modelIds } : {}),
       mediaProvider: kind ?? 'custom',
@@ -728,4 +733,24 @@ export function effectiveProviderKind(
     return profile.mediaProvider
   }
   return null
+}
+
+/**
+ * Platform-managed models are an indirect routing layer: their manifest selects
+ * an existing application adapter, while the managed profile still supplies the
+ * platform endpoint and credential. Ordinary providers retain the legacy
+ * profile-level adapter decision unchanged.
+ */
+export function invocationProviderKind(
+  profile: Pick<MediaProviderProfile, 'mediaProvider' | 'managedType'>,
+  manifest?: Pick<MediaModelManifest, 'providerKind'>,
+): MediaProviderKind | null {
+  if (
+    profile.managedType === 'newapi' &&
+    manifest != null &&
+    isMediaProviderKind(manifest.providerKind)
+  ) {
+    return manifest.providerKind
+  }
+  return effectiveProviderKind(profile)
 }

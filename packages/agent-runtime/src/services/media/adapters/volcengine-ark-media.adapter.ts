@@ -35,7 +35,7 @@
 
 import type { MediaCapabilityId, MediaProviderKind } from '@spark/protocol'
 import { createLogger } from '@spark/shared'
-import { MediaProviderError } from '../media-adapter.types.js'
+import { MediaProviderError, mediaAdapterModelId } from '../media-adapter.types.js'
 import type {
   MediaGenerateInput,
   MediaGenerateOutput,
@@ -341,7 +341,8 @@ function assertSeedanceInputMode(
   const firstFrames = images.filter((file) => file.role === 'first_frame')
   const lastFrames = images.filter((file) => file.role === 'last_frame')
   const explicitReferences = images.filter((file) => file.role === 'reference')
-  const isSeedance2 = ctx.defaultModel.startsWith('doubao-seedance-2-0-')
+  const adapterModelId = mediaAdapterModelId(ctx)
+  const isSeedance2 = adapterModelId.startsWith('doubao-seedance-2-0-')
 
   if (firstFrames.length > 1 || lastFrames.length > 1) {
     throw new MediaProviderError('invalid_input', 'Seedance 首帧和尾帧都最多只能选择 1 张')
@@ -350,7 +351,7 @@ function assertSeedanceInputMode(
     throw new MediaProviderError('invalid_input', 'Seedance 尾帧不能脱离首帧单独提交')
   }
   if (
-    ctx.defaultModel.includes('seedance-1-0-pro-fast') &&
+    adapterModelId.includes('seedance-1-0-pro-fast') &&
     (lastFrames.length > 0 || images.length > 1)
   ) {
     throw new MediaProviderError(

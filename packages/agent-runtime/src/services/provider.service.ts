@@ -316,6 +316,7 @@ function rowToProfile(row: {
     ...(config.availableModelIds !== undefined && { availableModelIds: config.availableModelIds }),
     ...(config.providerIcon !== undefined && { providerIcon: config.providerIcon }),
     ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
+    ...(config.mediaApiEndpoint !== undefined && { mediaApiEndpoint: config.mediaApiEndpoint }),
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
     supportsMillionContext: config.supportsMillionContext === true,
     ...(typeof config.contextWindow === 'number' && config.contextWindow > 0 && { contextWindow: config.contextWindow }),
@@ -1052,6 +1053,7 @@ export class ProviderService {
     ownerUserId: string
     baseUrl: string
     modelIds: string[]
+    mediaModelRefs?: ProviderMediaModelRef[]
     apiKey: string
     credentialState?: 'ready' | 'session_conflict' | 'quota_exhausted' | 'unavailable'
   }): Promise<ProviderProfile> {
@@ -1075,12 +1077,15 @@ export class ProviderService {
       // Claude/Anthropic SDK appends /v1/messages itself. Keeping the OpenAI-style
       // /v1 suffix here would send managed models to /v1/v1/messages.
       apiEndpoint: params.baseUrl.replace(/\/+$/, ''),
+      // 媒体适配器按 OpenAI 兼容路径拼接 /images/*，因此使用平台 /v1 入口。
+      mediaApiEndpoint: `${params.baseUrl.replace(/\/+$/, '')}/v1`,
       maxTokens: PLATFORM_NEWAPI_MAX_TOKENS,
       modelType: 'text',
       managed: true,
       managedType: 'newapi',
       managedOwnerUserId: params.ownerUserId,
       credentialState: params.credentialState ?? 'ready',
+      ...(params.mediaModelRefs !== undefined ? { mediaModelRefs: params.mediaModelRefs } : {}),
     })
     if (existing) {
       this.repo.update(PLATFORM_NEWAPI_PROVIDER_ID, {
@@ -1387,6 +1392,7 @@ interface ProviderConfig {
   modelIds?: string[]
   availableModelIds?: string[]
   apiEndpoint?: string
+  mediaApiEndpoint?: string
   codexApiKind?: 'chat' | 'responses' | 'embedding'
   supportsMillionContext?: boolean
   /** 自定义上下文窗口（tokens），优先级高于 supportsMillionContext。 */
@@ -1567,6 +1573,12 @@ function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConf
           ...(ref.modelId != null && ref.modelId.trim().length > 0 ? { modelId: ref.modelId.trim() } : {}),
           ...(ref.enabled !== undefined ? { enabled: ref.enabled } : {}),
           ...(ref.defaults !== undefined ? { defaults: ref.defaults } : {}),
+          ...(ref.templateManifestId != null && ref.templateManifestId.trim().length > 0
+            ? { templateManifestId: ref.templateManifestId.trim() }
+            : {}),
+          ...(ref.displayName != null && ref.displayName.trim().length > 0
+            ? { displayName: ref.displayName.trim() }
+            : {}),
           ...(ref.manifest !== undefined ? { manifest: ref.manifest } : {}),
         }
         return ProviderMediaModelRefSchema.parse(normalizedRef)

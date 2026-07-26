@@ -1308,6 +1308,7 @@ describe('ProviderService', () => {
       name: 'Spark 平台模型',
       provider: 'anthropic',
       apiEndpoint: 'https://newapi.example',
+      mediaApiEndpoint: 'https://newapi.example/v1',
       managed: true,
       managedType: 'newapi',
       managedOwnerUserId: '42',
@@ -1318,6 +1319,31 @@ describe('ProviderService', () => {
       'newapi-spark-user-42-api-key',
       'sk-platform-secret',
     )
+  })
+
+  it('stores platform image aliases as media refs without adding them to chat models', async () => {
+    const profile = await service.ensureManagedNewApiProvider({
+      ownerUserId: '42',
+      baseUrl: 'https://newapi.example/',
+      modelIds: ['glm-5'],
+      mediaModelRefs: [{
+        manifestId: 'platform:spark-img:test',
+        modelId: 'spark-img',
+        templateManifestId: 'openai-images:gpt-image-2',
+        displayName: 'spark-img',
+        enabled: true,
+      }],
+      apiKey: 'sk-platform-secret',
+    })
+
+    expect(profile.modelIds).toEqual(['glm-5'])
+    expect(profile.mediaModelRefs).toEqual([
+      expect.objectContaining({
+        modelId: 'spark-img',
+        templateManifestId: 'openai-images:gpt-image-2',
+      }),
+    ])
+    expect(profile.mediaApiEndpoint).toBe('https://newapi.example/v1')
   })
 
   it('hides the managed platform provider after logout disables its credentials', async () => {
