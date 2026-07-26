@@ -1410,6 +1410,23 @@ export interface PermissionApprovalRequest {
   persistentScopes: PermissionDecisionScope[]
 }
 
+/**
+ * 一条审批请求已经有结果、渲染端应当收起卡片。
+ *
+ * `reason` 决定 UI 表现：
+ *   - `timeout`  等待用户超时，已按拒绝处理 → 需要显式告知用户，否则 agent 的行为无法解释
+ *   - `cancelled` 会话被取消/删除，审批随之作废 → 静默收起即可
+ */
+export interface PermissionApprovalResolved {
+  requestId: string
+  sessionId: string
+  reason: 'timeout' | 'cancelled'
+  /** 超时阈值（毫秒），供 UI 说明「等待超过 N 分钟」 */
+  timeoutMs?: number
+  /** 触发审批的工具名，供主进程写时间线记录、渲染端展示更具体的提示 */
+  toolName?: string
+}
+
 export type PermissionApprovalDecision =
   | 'allow-once'
   | 'allow-session'
@@ -5884,6 +5901,13 @@ export interface IpcStreamChannelMap {
   }
   /** 工具审批请求（主进程推送，渲染进程弹窗）*/
   'stream:permission:approval-request': PermissionApprovalRequest
+  /**
+   * 工具审批已失效（主进程推送，渲染进程收起对应卡片）。
+   *
+   * 没有这条通道时，超时自动拒绝在渲染端是完全不可见的：卡片会一直挂着，
+   * 用户事后点「允许」只会拿到 ok:false，而 agent 其实早就被拒绝了。
+   */
+  'stream:permission:approval-resolved': PermissionApprovalResolved
   /** 工作区文件变更（由 fs.watch 检测外部文件变化，主进程推送）*/
   'stream:workspace:file-change': WorkspaceFileChangePayload
   /** 可安装技能下载进度（主进程推送，渲染进程显示进度条）*/

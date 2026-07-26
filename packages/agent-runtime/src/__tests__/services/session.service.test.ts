@@ -494,6 +494,98 @@ describe('SessionService recovery helpers', () => {
   })
 })
 
+describe('SessionService.clearSessionMemory (删除/清空会话的执行器回收)', () => {
+  type ClearSessionMemoryInternals = {
+    activeLoops: Map<string, { cancel: () => void }>
+    clearSessionMemory: (sessionId: string) => boolean
+    eventSequencer: { clear: (sessionId: string) => void }
+    iterationOverrides: Map<string, number>
+    onApprovalCancel: (sessionId: string) => void
+    onQueueChanged?: () => void
+    pendingPlanApprovals: Set<string>
+    pendingTurns: Map<string, unknown[]>
+    pendingUserQuestionGate: SessionQuestionGate
+    startingSessions: Set<string>
+    teamDispatchService: { cancelBySession: (sessionId: string) => number }
+  }
+
+  function makeService(
+    activeLoops: Array<[string, { cancel: () => void }]> = [],
+  ): ClearSessionMemoryInternals {
+    const service = Object.create(SessionService.prototype) as ClearSessionMemoryInternals
+    service.activeLoops = new Map(activeLoops)
+    service.eventSequencer = { clear: vi.fn() }
+    service.iterationOverrides = new Map()
+    service.onApprovalCancel = vi.fn()
+    // emitQueueChanged 会走 onQueueChanged?.(queueSnapshot(...))，这里只关心不抛错
+    service.onQueueChanged = vi.fn()
+    service.pendingPlanApprovals = new Set()
+    service.pendingTurns = new Map()
+    service.pendingUserQuestionGate = new SessionQuestionGate()
+    service.startingSessions = new Set()
+    service.teamDispatchService = { cancelBySession: vi.fn(() => 0) }
+    return service
+  }
+
+  it('cancels the running executor before dropping it from activeLoops', () => {
+    // 只 delete 不 cancel 会让 SDK/CLI 子进程成为孤儿：继续改磁盘、继续计费。
+    const execution = { cancel: vi.fn() }
+    const service = makeService([['session-1', execution]])
+    service.pendingTurns.set('session-1', [{ turnId: 'turn-2' }])
+    service.pendingPlanApprovals.add('session-1')
+    service.startingSessions.add('session-1')
+    service.iterationOverrides.set('session-1', 12)
+
+    const wasRunning = service.clearSessionMemory('session-1')
+
+    expect(execution.cancel).toHaveBeenCalledOnce()
+    expect(wasRunning).toBe(true)
+    expect(service.activeLoops.has('session-1')).toBe(false)
+    expect(service.pendingTurns.has('session-1')).toBe(false)
+    expect(service.pendingPlanApprovals.has('session-1')).toBe(false)
+    expect(service.startingSessions.has('session-1')).toBe(false)
+    expect(service.iterationOverrides.has('session-1')).toBe(false)
+    expect(service.onApprovalCancel).toHaveBeenCalledWith('session-1')
+  })
+
+  it('cancels only this session team dispatches, not every session', () => {
+    const service = makeService([['session-1', { cancel: vi.fn() }]])
+
+    service.clearSessionMemory('session-1')
+
+    expect(service.teamDispatchService.cancelBySession).toHaveBeenCalledWith('session-1')
+  })
+
+  it('releases a pending user-question gate so the session cannot stay blocked', () => {
+    const service = makeService()
+    service.pendingUserQuestionGate.enter('session-1')
+    service.pendingUserQuestionGate.enter('session-1')
+    expect(service.pendingUserQuestionGate.isBlocked('session-1')).toBe(true)
+
+    service.clearSessionMemory('session-1')
+
+    expect(service.pendingUserQuestionGate.isBlocked('session-1')).toBe(false)
+  })
+
+  it('reports false when the session had no running executor', () => {
+    const service = makeService()
+
+    expect(service.clearSessionMemory('session-1')).toBe(false)
+  })
+
+  it('still clears state when the executor throws on cancel', () => {
+    const execution = {
+      cancel: vi.fn(() => {
+        throw new Error('executor already gone')
+      }),
+    }
+    const service = makeService([['session-1', execution]])
+
+    expect(() => service.clearSessionMemory('session-1')).not.toThrow()
+    expect(service.activeLoops.has('session-1')).toBe(false)
+  })
+})
+
 describe('buildMemberUserMessage (agent_dispatch / workflow_run inputs delivery)', () => {
   const baseTask: TeamA2ATask = {
     taskId: 'task-1',
@@ -534,6 +626,206 @@ describe('buildMemberUserMessage (agent_dispatch / workflow_run inputs delivery)
     expect(message).toContain('image_ref: /tmp/screenshot.png')
     expect(message).toContain('file_ref: /tmp/spec.md')
     expect(message).toContain('Use the Read tool')
+  })
+})
+
+describe('SessionService.startNextQueuedTurn (全局并发上限)', () => {
+  type ConcurrencyInternals = {
+    activeLoops: Map<string, { cancel: () => void }>
+    disposing: boolean
+    maxConcurrentSessions: number
+    pendingPlanApprovals: Set<string>
+    pendingTurns: Map<string, unknown[]>
+    pendingUserQuestionGate: SessionQuestionGate
+    startingSessions: Set<string>
+    startNextQueuedTurn: (sessionId: string) => void
+    emitQueueChanged: (sessionId: string) => void
+  }
+
+  function makeService(maxConcurrent: number, activeCount: number): ConcurrencyInternals {
+    const activeLoops = new Map<string, { cancel: () => void }>()
+    for (let i = 0; i < activeCount; i++) {
+      activeLoops.set(`active-${i}`, { cancel: vi.fn() })
+    }
+    const service = Object.create(SessionService.prototype) as ConcurrencyInternals
+    service.activeLoops = activeLoops
+    service.disposing = false
+    service.maxConcurrentSessions = maxConcurrent
+    service.pendingPlanApprovals = new Set()
+    service.pendingTurns = new Map()
+    service.pendingUserQuestionGate = new SessionQuestionGate()
+    service.startingSessions = new Set()
+    service.emitQueueChanged = vi.fn()
+    return service
+  }
+
+  it('达到全局上限时不再起跑新 turn，保留在队列里', () => {
+    // 全局已有 3 个执行器在跑，上限=3；新 turn 必须排队等待
+    const service = makeService(3, 3)
+    service.pendingTurns.set('session-new', [
+      { turnId: 'turn-1', message: 'hi', enqueuedAt: '2026-07-26T00:00:00.000Z' },
+    ])
+
+    service.startNextQueuedTurn('session-new')
+
+    // 队列没被消费——turn 留在里面等槽位释放
+    expect(service.pendingTurns.get('session-new')).toHaveLength(1)
+    expect(service.activeLoops.has('session-new')).toBe(false)
+  })
+
+  it('同一 session 已在跑时即使全局未满也不重复起跑', () => {
+    const service = makeService(6, 1)
+    service.activeLoops.set('session-a', { cancel: vi.fn() })
+    service.pendingTurns.set('session-a', [
+      { turnId: 'turn-2', message: 'second', enqueuedAt: '2026-07-26T00:00:00.000Z' },
+    ])
+
+    service.startNextQueuedTurn('session-a')
+
+    expect(service.pendingTurns.get('session-a')).toHaveLength(1)
+  })
+
+  it('全局上限不阻挡已在跑的 session 继续推进自己的队列（单 session 串行由 activeLoops 检查保证）', () => {
+    // 关键不变量：全局上限只压跨 session 并行度，不破坏单 session 的串行语义
+    const service = makeService(1, 1) // 上限=1，已有一个在跑
+    // 那个在跑的就是 session-a 自己；它的队列不应被全局上限二次阻挡
+    service.activeLoops.clear()
+    service.activeLoops.set('session-a', { cancel: vi.fn() })
+    service.pendingTurns.set('session-a', [
+      { turnId: 'turn-2', message: 'next', enqueuedAt: '2026-07-26T00:00:00.000Z' },
+    ])
+
+    service.startNextQueuedTurn('session-a')
+
+    // session-a 自己还在跑（activeLoops.has），turn 留在队列等当前 turn 结束
+    expect(service.pendingTurns.get('session-a')).toHaveLength(1)
+  })
+
+  it('上限检查把 startingSessions 也算进去（防止同步调度循环放行超限）', () => {
+    // 场景：schedulePendingQueuesGlobally 的同步循环里调 startNextQueuedTurn，
+    // 后者 startingSessions.add 是同步的、activeLoops.set 要等异步 startTurn。
+    // 如果上限只看 activeLoops.size，循环里它永远是 0，全部 candidates 被放行。
+    // 这条用例锁住 startingSessions 必须纳入计数。
+    const service = makeService(3, 1) // 上限 3，1 个已在 activeLoops
+    // 再模拟 2 个已进入 startingSessions（刚 startNextQueuedTurn 还没注册 activeLoops）
+    service.startingSessions.add('starting-1')
+    service.startingSessions.add('starting-2')
+    // 此时 inflight = activeLoops(1) + startingSessions(2) = 3 = 上限
+    service.pendingTurns.set('session-new', [
+      { turnId: 'turn-1', message: 'hi', enqueuedAt: '2026-07-26T00:00:00.000Z' },
+    ])
+
+    service.startNextQueuedTurn('session-new')
+
+    // 被上限挡住，队列保留
+    expect(service.pendingTurns.get('session-new')).toHaveLength(1)
+  })
+})
+
+describe('SessionService.startTurn (入口全局上限兜底)', () => {
+  type StartTurnInternals = {
+    activeLoops: Map<string, { cancel: () => void }>
+    enqueueTurn: (sessionId: string, turn: unknown) => void
+    makePendingTurn: (
+      turnId: string,
+      message: string,
+    ) => { turnId: string; message: string; enqueuedAt: string }
+    maxConcurrentSessions: number
+    startingSessions: Set<string>
+    startTurn: (sessionId: string, turnId: string, message: string) => Promise<void>
+  }
+
+  function makeStartTurnService(maxConcurrent: number, activeCount: number): StartTurnInternals {
+    const activeLoops = new Map<string, { cancel: () => void }>()
+    for (let i = 0; i < activeCount; i++) {
+      activeLoops.set(`active-${i}`, { cancel: vi.fn() })
+    }
+    const service = Object.create(SessionService.prototype) as StartTurnInternals
+    service.activeLoops = activeLoops
+    service.maxConcurrentSessions = maxConcurrent
+    service.startingSessions = new Set()
+    service.enqueueTurn = vi.fn()
+    service.makePendingTurn = vi.fn(
+      (turnId: string, message: string) => ({
+        turnId,
+        message,
+        enqueuedAt: '2026-07-26T00:00:00.000Z',
+      }),
+    )
+    return service
+  }
+
+  it('全局已满时，直接调 startTurn 也被挡住并入队（兜底 sendTurn/goal 等绕过路径）', async () => {
+    // sendTurn（非 durable）、命令 follow-up、goal 迭代直接调 startTurn，
+    // 不经过 startNextQueuedTurn。startTurn 入口必须有全局检查，否则上限形同虚设。
+    const service = makeStartTurnService(2, 2) // 上限 2，2 个在跑
+    const enqueueTurn = service.enqueueTurn as unknown as ReturnType<typeof vi.fn>
+
+    await service.startTurn('session-new', 'turn-1', 'hi')
+
+    // 没注册成 activeLoop，而是被入队
+    expect(service.activeLoops.has('session-new')).toBe(false)
+    expect(enqueueTurn).toHaveBeenCalledOnce()
+    expect(enqueueTurn.mock.calls[0]![0]).toBe('session-new')
+  })
+
+  it('全局未满时 startTurn 正常进入（不被误拦）', async () => {
+    const service = makeStartTurnService(3, 2) // 上限 3，2 个在跑，还有 1 个槽位
+
+    // startTurn 内部会调 sessionRepo/providerRepo 等（需要完整 db），这里只验证
+    // 它没有被上限挡回 enqueueTurn——抛错说明它通过了上限检查、进入了后续逻辑
+    const enqueueTurn = service.enqueueTurn as unknown as ReturnType<typeof vi.fn>
+    await service.startTurn('session-new', 'turn-1', 'hi').catch(() => {
+      // 后续逻辑因桩 db 抛错，预期内
+    })
+
+    expect(enqueueTurn).not.toHaveBeenCalled()
+  })
+})
+
+describe('SessionService.deleteMessage (轮次完整性)', () => {
+  type DeleteMessageInternals = {
+    db: { raw: { prepare: (sql: string) => { all: (...args: unknown[]) => unknown[] } } }
+    deleteMessage: (sessionId: string, eventIds: string[]) => Promise<{ deleted: number }>
+  }
+
+  it('空 eventIds 直接返回 0，不查库', async () => {
+    const prepare = vi.fn()
+    const service = Object.create(SessionService.prototype) as DeleteMessageInternals
+    service.db = { raw: { prepare } } as unknown as DeleteMessageInternals['db']
+
+    const result = await service.deleteMessage('s1', [])
+
+    expect(result).toEqual({ deleted: 0 })
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
+  it('删 user_message 时把同轮的 assistant_message 一起纳入（避免留下半截轮次）', async () => {
+    // 模拟：用户要删 user-1（turn-1），但 turn-1 还有 assistant-1。
+    // 不展开就会留下 assistant-1，回放时模型会把上一轮回答当新输入。
+    const userMessageRow = { id: 'user-1', turn_id: 'turn-1', event_type: 'user_message' }
+    const expandedSameTurnRows = [{ id: 'user-1' }, { id: 'assistant-1' }]
+    const allMock = vi
+      .fn()
+      // 第一次查询：按传入 eventIds 找命中的消息事件
+      .mockReturnValueOnce([userMessageRow])
+      // 第二次查询：按 turn_id 展开同轮所有消息事件
+      .mockReturnValueOnce(expandedSameTurnRows)
+    const prepare = vi.fn().mockReturnValue({ all: allMock })
+    const service = Object.create(SessionService.prototype) as DeleteMessageInternals
+    service.db = { raw: { prepare } } as unknown as DeleteMessageInternals['db']
+
+    // deleteMessage 会走到 eventRepo.deleteEventsByIds（真实 EventRepository 构造
+    // 需要完整 db）。我们只验证扩展查询发生了——这是完整性逻辑的核心。
+    await service.deleteMessage('s1', ['user-1']).catch(() => {
+      // deleteEventsByIds 因桩 db 抛错，预期内
+    })
+
+    // 验证完整性扩展查询发生过：一次按 event_id 查消息事件，一次按 turn_id 展开同轮。
+    // 不锁定总调用次数——EventRepository 构造时的 sqlite_master 探测也会调 prepare。
+    const sqls = prepare.mock.calls.map((call) => String(call[0]))
+    expect(sqls.some((sql) => sql.includes('id IN') && sql.includes('event_type'))).toBe(true)
+    expect(sqls.some((sql) => sql.includes('turn_id IN') && sql.includes('event_type'))).toBe(true)
   })
 })
 

@@ -129,8 +129,14 @@ export class TeamDispatchService {
   private readonly peerCallCountByTurn = new Map<string, number>()
   /** turnId → 同一 turn 内 member 执行队列，避免多个 Claude SDK 进程并发抢同一 cwd/session */
   private readonly executionQueueByTurn = new Map<string, Promise<unknown>>()
-  /** dispatchId → AbortController（取消传播） */
-  private readonly controllers = new Map<string, AbortController>()
+  /**
+   * dispatchId → { 取消句柄, 所属会话 }。
+   *
+   * 必须带 sessionId：多个会话可以同时跑团队协作，取消单个会话时只能收掉它自己的
+   * dispatch。早期这里只存 AbortController，导致 cancelAll() 成了唯一手段，
+   * 在 A 会话点「停止」会把 B 会话正在跑的成员一起打断。
+   */
+  private readonly controllers = new Map<string, { controller: AbortController; sessionId: string }>()
   private readonly activeRunPromises = new Set<Promise<unknown>>()
   private shuttingDown = false
 
@@ -239,7 +245,7 @@ export class TeamDispatchService {
 
     // ── 超时 / 取消 ─────────────────────────────────────────────────────────
     const controller = new AbortController()
-    this.controllers.set(dispatchId, controller)
+    this.controllers.set(dispatchId, { controller, sessionId: ctx.sessionId })
     const onParentAbort = () => controller.abort()
     ctx.signal?.addEventListener('abort', onParentAbort)
     // parallel=true 时绕过 turn 串行队列（agent_dispatch_batch 显式并行场景）。
@@ -683,10 +689,31 @@ export class TeamDispatchService {
     void discussionId
   }
 
-  /** 取消所有进行中的 dispatch（session cancel 时调用） */
+  /**
+   * 取消所有进行中的 dispatch。
+   *
+   * 仅用于进程级收尾（dispose / cancelAllAndWait）。**不要**在单会话的取消路径上调用，
+   * 那会误伤其他会话正在进行的团队协作——单会话请用 {@link cancelBySession}。
+   */
   cancelAll(): void {
-    for (const controller of this.controllers.values()) controller.abort()
+    for (const entry of this.controllers.values()) entry.controller.abort()
     this.controllers.clear()
+  }
+
+  /**
+   * 只取消指定会话名下进行中的 dispatch，其他会话不受影响。
+   *
+   * @returns 被取消的 dispatch 数量
+   */
+  cancelBySession(sessionId: string): number {
+    let cancelled = 0
+    for (const [dispatchId, entry] of this.controllers.entries()) {
+      if (entry.sessionId !== sessionId) continue
+      entry.controller.abort()
+      this.controllers.delete(dispatchId)
+      cancelled += 1
+    }
+    return cancelled
   }
 
   async cancelAllAndWait(): Promise<void> {

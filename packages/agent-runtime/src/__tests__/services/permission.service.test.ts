@@ -380,15 +380,90 @@ describe('PermissionService', () => {
   })
 
   describe('Approval timeout & cancellation (Bug 3)', () => {
-    it('5 分钟内无响应自动视为 deny（不会永久挂起）', async () => {
+    // 审批等待上限：桌面端长任务里用户离开十几分钟是常态，原先的 5 分钟过短。
+    const APPROVAL_TIMEOUT_MS = 30 * 60 * 1000
+
+    it('超过等待上限自动视为 deny（不会永久挂起）', async () => {
       const repo = makeMockRepo([{ action: 'command_exec', mode: 'ask' }])
       const svc = new PermissionService(repo)
       const push = vi.fn()
       const promise = svc.requestApproval('sess-1', 'bash', { command: 'ls' }, push)
 
-      // 推进时间到 5 分钟 + 1ms
-      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1)
+      await vi.advanceTimersByTimeAsync(APPROVAL_TIMEOUT_MS + 1)
       await expect(promise).resolves.toBe(false)
+    })
+
+    it('等待上限之前不会提前拒绝', async () => {
+      const repo = makeMockRepo([{ action: 'command_exec', mode: 'ask' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+      let settled = false
+      const promise = svc
+        .requestApproval('sess-1', 'bash', { command: 'ls' }, push)
+        .then((allowed) => {
+          settled = true
+          return allowed
+        })
+
+      // 旧的 5 分钟阈值处必须仍在等待，否则就是超时被悄悄改短了
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1)
+      expect(settled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(APPROVAL_TIMEOUT_MS)
+      await expect(promise).resolves.toBe(false)
+    })
+
+    it('超时会通知调用方收回审批卡片（否则 UI 上会永久挂着一张点了没用的卡）', async () => {
+      const repo = makeMockRepo([{ action: 'command_exec', mode: 'ask' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+      const onExpire = vi.fn()
+      const promise = svc.requestApproval('sess-1', 'bash', { command: 'ls' }, push, { onExpire })
+
+      await vi.advanceTimersByTimeAsync(APPROVAL_TIMEOUT_MS + 1)
+      await expect(promise).resolves.toBe(false)
+
+      expect(onExpire).toHaveBeenCalledOnce()
+      const expired = onExpire.mock.calls[0]![0]
+      expect(expired).toMatchObject({
+        sessionId: 'sess-1',
+        reason: 'timeout',
+        timeoutMs: APPROVAL_TIMEOUT_MS,
+        // toolName 必须带上：主进程写时间线记录的消息里要用它
+        toolName: 'bash',
+      })
+      expect(expired.requestId).toBe(push.mock.calls[0]![0].requestId)
+    })
+
+    it('会话取消导致的失效同样通知调用方，但标记为 cancelled', async () => {
+      const repo = makeMockRepo([{ action: 'command_exec', mode: 'ask' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+      const onExpire = vi.fn()
+      const promise = svc.requestApproval('sess-X', 'bash', { command: 'ls' }, push, { onExpire })
+
+      expect(svc.cancelPendingApprovals('sess-X')).toBe(1)
+      await expect(promise).resolves.toBe(false)
+
+      expect(onExpire).toHaveBeenCalledOnce()
+      expect(onExpire.mock.calls[0]![0]).toMatchObject({
+        sessionId: 'sess-X',
+        reason: 'cancelled',
+      })
+    })
+
+    it('用户正常作答后不会再触发失效通知', async () => {
+      const repo = makeMockRepo([{ action: 'command_exec', mode: 'ask' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+      const onExpire = vi.fn()
+      const promise = svc.requestApproval('sess-1', 'bash', { command: 'ls' }, push, { onExpire })
+
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
+      await expect(promise).resolves.toBe(true)
+
+      await vi.advanceTimersByTimeAsync(APPROVAL_TIMEOUT_MS + 1)
+      expect(onExpire).not.toHaveBeenCalled()
     })
 
     it('cancelPendingApprovals 立即解析所有该 session 的挂起 approval 为 deny', async () => {

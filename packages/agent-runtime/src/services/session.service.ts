@@ -417,6 +417,13 @@ type SendTurnParams = {
 const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
 const SESSION_TITLE_MAX_LENGTH = 40
 const RECOVERY_SESSION_LIMIT = 10_000
+/**
+ * 同时运行的会话执行器数量默认上限。
+ *
+ * 每个执行器 = 一个 Claude SDK query 或 Codex CLI 子进程，吃内存和文件句柄。
+ * 6 覆盖「主任务 + 几个并行子任务/团队协作」的常见场景，对开发机不构成压力。
+ */
+const DEFAULT_MAX_CONCURRENT_SESSIONS = 6
 // HISTORY_CONTEXT_* 常量与对话历史相关纯函数已迁出至 ./session-history-helpers.ts（D-13）。
 const TERMINAL_AGENT_STATUSES = new Set<string>(['idle', 'completed', 'cancelled', 'error'])
 // ENABLE_CLAUDE_SDK_RESUME 从 ./session-resume.ts 导入（D-13 拆分）。
@@ -633,6 +640,17 @@ export class SessionService {
   private userSkillsDir: string | null = null
   /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
   private pendingPlanApprovals = new Set<string>()
+  /**
+   * 全局并发运行上限：同时执行的会话执行器（Claude SDK query / Codex CLI 子进程）数量。
+   *
+   * 每个执行器是一个 SDK query 或 CLI 子进程，吃内存 + 文件句柄。没有上限时用户连开十几个
+   * 会话就能把机器打爆，且没有任何降级提示。超限的 turn 留在各 session 自己的队列里，
+   * 等任意一个执行器结束（continueGoalOrQueue）时全局重新调度。
+   *
+   * 默认 6：覆盖「主任务 + 几个并行子任务/团队协作」的常见场景，对开发机不构成压力。
+   * 可通过构造参数覆盖。
+   */
+  private readonly maxConcurrentSessions: number = DEFAULT_MAX_CONCURRENT_SESSIONS
   /** 结构化问答独立闸门：SDK 流提前结束时仍保持，直到用户回答或明确关闭。 */
   private readonly pendingUserQuestionGate = new SessionQuestionGate()
   private readonly eventSequencer = new SessionEventSequencer()
@@ -1669,7 +1687,8 @@ export class SessionService {
         // 不再依赖上一个 plan turn 的 finally 兜底（时机不可控，会被用户感知为"卡住"）。
         const loop = this.activeLoops.get(sessionId)!
         this.onApprovalCancel?.(sessionId)
-        this.teamDispatchService?.cancelAll()
+        // 仅收本会话的 team dispatch（原为 cancelAll，会误伤其他会话的协作）
+        this.teamDispatchService?.cancelBySession(sessionId)
         loop.cancel()
         this.activeLoops.delete(sessionId)
         new SessionRepository(this.db).updateStatus(sessionId, 'idle')
@@ -1729,6 +1748,27 @@ export class SessionService {
     invocationObserver?: (snapshot: SDKInvocationSnapshot) => void,
   ): Promise<void> {
     if (this.activeLoops.has(sessionId)) {
+      this.enqueueTurn(
+        sessionId,
+        this.makePendingTurn(
+          turnId,
+          message,
+          runtimePatch,
+          skillId,
+          skillParams,
+          attachments,
+          mentionAgentId,
+        ),
+      )
+      return
+    }
+    // 全局并发上限兜底：startNextQueuedTurn 已有检查，但 sendTurn（非 durable 路径）、
+    // 命令 follow-up、goal 迭代等直接调 startTurn 的路径会绕过它。这里统一拦截，
+    // 超限时入队等待槽位释放（continueGoalOrQueue → schedulePendingQueuesGlobally 会重新调度）。
+    //
+    // goal 迭代不受误伤：它在该 session 的 turn 刚结束（activeLoops 已删、释放一个槽位）
+    // 后发起，此时全局数 = max-1，不会触发这个检查。
+    if (this.activeLoops.size + this.startingSessions.size >= this.maxConcurrentSessions) {
       this.enqueueTurn(
         sessionId,
         this.makePendingTurn(
@@ -6851,9 +6891,21 @@ export class SessionService {
     // 中断当前正在执行的任务（不清理队列）
     const loop = this.activeLoops.get(sessionId)!
     this.onApprovalCancel?.(sessionId)
-    this.teamDispatchService?.cancelAll()
+    // 仅收本会话的 team dispatch，避免误伤其他会话（原为 cancelAll）
+    this.teamDispatchService?.cancelBySession(sessionId)
     loop.cancel()
     this.activeLoops.delete(sessionId)
+
+    // 被插队打断的那一轮必须留下终结事件，否则时间线上是一段无解释的断尾：
+    // 消息停在半截、没有终态 agent_status，回放时还会被当成"仍在运行"。
+    const eventRepo = new EventRepository(this.db)
+    const interruptedTurnId = getLatestTurnIdFromEvents(eventRepo, sessionId)
+    this.emitAndPersist(
+      sessionId,
+      interruptedTurnId,
+      createUserCancelledTurnEvent(sessionId, interruptedTurnId),
+      eventRepo,
+    )
 
     // 将目标 turn 放回队首，其余保持原序
     queue.unshift(targetTurn)
@@ -6910,6 +6962,18 @@ export class SessionService {
       return
     }
     if (this.activeLoops.has(sessionId) || this.startingSessions.has(sessionId)) {
+      this.emitQueueChanged(sessionId)
+      return
+    }
+    // 全局并发上限：跨所有会话统计正在跑的执行器。超限时本 session 的 turn 留在
+    // 队列里，等任意一个执行器结束（continueGoalOrQueue → schedulePendingQueuesGlobally）时重新调度。
+    // 不阻断同一 session 自己的队列推进——上面那个 activeLoops.has 检查已经保证了
+    // 单 session 串行；这里只压全局并行度。
+    //
+    // startingSessions 也要算：那是"已决定起跑、执行器尚未注册进 activeLoops"的过渡态，
+    // 窗口虽短（一次事件循环），但多 session 同时被调度时会让实际并行度短暂超限。
+    const inflight = this.activeLoops.size + this.startingSessions.size
+    if (inflight >= this.maxConcurrentSessions) {
       this.emitQueueChanged(sessionId)
       return
     }
@@ -7081,6 +7145,41 @@ export class SessionService {
       return
     }
     this.startNextQueuedTurn(sessionId)
+    // 全局并发上限可能让其他 session 的队列被阻塞；本 turn 结束腾出一个槽位，
+    // 扫一遍所有有待发队列的 session，让它们重新尝试调度。
+    this.schedulePendingQueuesGlobally()
+  }
+
+  /**
+   * 全局队列调度：在并发上限内让每个有待发队列的 session 都有机会起跑。
+   *
+   * startNextQueuedTurn 本身有上限检查（activeLoops.size >= max），所以这里
+   * 只是无脑遍历——超限的 session 会在自己的 startNextQueuedTurn 里被挡住并保留队列。
+   * 用 setTimeout(0) 避免在 finally 链里同步触发大量 IPC 推送。
+   */
+  private schedulePendingQueuesGlobally(): void {
+    if (this.disposing) return
+    if (this.pendingTurns.size === 0) return
+    setTimeout(() => {
+      if (this.disposing) return
+      // 排序保证可预测：按入队时间最早的 turn 优先（FIFO 跨 session 公平）
+      const candidates: Array<{ sessionId: string; enqueuedAt: number }> = []
+      for (const [sid, queue] of this.pendingTurns.entries()) {
+        if (queue.length === 0) continue
+        const first = queue[0]
+        if (first == null) continue
+        candidates.push({ sessionId: sid, enqueuedAt: Date.parse(first.enqueuedAt) || 0 })
+      }
+      candidates.sort((a, b) => a.enqueuedAt - b.enqueuedAt)
+      for (const { sessionId: sid } of candidates) {
+        // 必须算上 startingSessions：startNextQueuedTurn 调完后 startingSessions.add 是同步的，
+        // 但 activeLoops.set 要等异步 startTurn 内部才发生。只看 activeLoops.size 会让循环
+        // 放行全部 candidates——全局上限形同虚设。
+        if (this.activeLoops.size + this.startingSessions.size >= this.maxConcurrentSessions)
+          break
+        this.startNextQueuedTurn(sid)
+      }
+    }, 0)
   }
 
   private updateGoalFromAssistantBlock(sessionId: string, content: string): void {
@@ -7519,8 +7618,9 @@ export class SessionService {
     this.pendingPlanApprovals.delete(sessionId)
     // 先取消挂起的 approval（如果 agent 正卡在用户审批弹窗上）
     this.onApprovalCancel?.(sessionId)
-    // 取消所有进行中的 team dispatch（连同其 member 执行器）
-    this.teamDispatchService?.cancelAll()
+    // 只取消**本会话**进行中的 team dispatch（连同其 member 执行器）。
+    // 这里曾经是 cancelAll()，会把其他会话正在跑的团队协作一并打断。
+    this.teamDispatchService?.cancelBySession(sessionId)
     if (loop == null) {
       this.emitQueueChanged(sessionId)
       return { cancelled: false }
@@ -7588,20 +7688,88 @@ export class SessionService {
   }
 
   /**
-   * Session 删除时调用：清理 session 相关的内存状态。
-   * 由 deleteSession 内部调用，避免 long-lived 进程内存泄漏。
+   * 审批超时/取消时往会话事件流写一条可解释的时间线记录。
+   *
+   * 没有这条记录时，审批超时被拒的操作在会话历史里完全不可见——toast 10 秒后消失，
+   * 用户翻历史只看到 agent 莫名跳过了某步。这条 agent_error 让"为什么跳过"可追溯。
+   *
+   * 不在 permission.service 里直接写：permission.service 是纯权限决策层，不持有
+   * EventRepository/SessionService 引用；由调用方（ipc handler）在 onExpire 时调用本方法。
    */
-  private clearSessionMemory(sessionId: string): void {
+  recordPermissionOutcome(
+    sessionId: string,
+    params: {
+      reason: 'timeout' | 'cancelled'
+      toolName: string
+      timeoutMs?: number
+    },
+  ): void {
+    const eventRepo = new EventRepository(this.db)
+    // session 已不存在时不写——避免给已删除的会话留垃圾事件
+    const sessionRepo = new SessionRepository(this.db)
+    if (sessionRepo.get(sessionId) == null) return
+    const turnId = getLatestTurnIdFromEvents(eventRepo, sessionId)
+    const minutes =
+      params.timeoutMs != null ? Math.round(params.timeoutMs / 60000) : 0
+    const message =
+      params.reason === 'timeout'
+        ? `权限审批「${params.toolName}」等待超过 ${minutes} 分钟已自动拒绝，已跳过该操作`
+        : `权限审批「${params.toolName}」因会话取消而失效`
+    this.emitAndPersist(
+      sessionId,
+      turnId,
+      {
+        id: crypto.randomUUID(),
+        type: 'agent_error',
+        sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: 0,
+        code: params.reason === 'timeout' ? 'PERMISSION_TIMEOUT' : 'PERMISSION_CANCELLED',
+        message,
+        retryable: true,
+      },
+      eventRepo,
+    )
+  }
+
+  /**
+   * Session 删除/清空时调用：终止在跑的执行器并清理 session 相关的内存状态。
+   * 由 deleteSession / clearEvents 内部调用，避免 long-lived 进程内存泄漏。
+   *
+   * 关键：必须先 `cancel()` 再从 activeLoops 摘除。activeLoops 里存的是唯一能停掉
+   * Claude SDK query / Codex CLI 子进程的句柄——只 delete 不 cancel 会让执行器变成
+   * 孤儿：继续跑工具（Write/Edit/Bash 会真的改用户磁盘）、继续计费、继续往已删除的
+   * session 写事件，而 UI 已经认为该会话不存在/已空闲。
+   *
+   * @returns 是否终止了一个正在运行的执行器（调用方据此决定要不要写取消事件）。
+   */
+  private clearSessionMemory(sessionId: string): boolean {
+    const activeLoop = this.activeLoops.get(sessionId)
+    if (activeLoop != null) {
+      try {
+        activeLoop.cancel()
+      } catch (error) {
+        log.warn('failed to cancel active executor while clearing session', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
     this.activeLoops.delete(sessionId)
+    // 同一会话下正在进行的团队成员执行也要一起收掉，否则 member executor 会成为孤儿。
+    this.teamDispatchService?.cancelBySession(sessionId)
     this.startingSessions.delete(sessionId)
     this.pendingTurns.delete(sessionId)
     this.pendingPlanApprovals.delete(sessionId)
+    this.pendingUserQuestionGate.releaseSession(sessionId)
     this.eventSequencer.clear(sessionId)
     this.iterationOverrides.delete(sessionId)
     TodoStore.clear(sessionId)
     getDebugLogServer().deleteSession(sessionId)
     this.onApprovalCancel?.(sessionId)
     this.emitQueueChanged(sessionId)
+    return activeLoop != null
   }
 
   async getHistory(params: {
@@ -7896,7 +8064,11 @@ export class SessionService {
 
   async deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
     const sessionRepo = new SessionRepository(this.db)
-    this.clearSessionMemory(sessionId)
+    // 先终止在跑的执行器再删数据：否则子进程会成为孤儿，继续改磁盘、继续计费。
+    const wasRunning = this.clearSessionMemory(sessionId)
+    if (wasRunning) {
+      log.info('cancelled running executor before deleting session', { sessionId })
+    }
     const deleted = sessionRepo.deleteWithRelatedData(sessionId)
     if (deleted) {
       this.cleanupSessionEventsInBackground(sessionId)
@@ -7972,13 +8144,71 @@ export class SessionService {
 
   async clearEvents(sessionId: string): Promise<{ cleared: boolean }> {
     const eventRepo = new EventRepository(this.db)
-    this.clearSessionMemory(sessionId)
+    // 清空历史同样要先终止在跑的执行器。否则它会成为孤儿：UI 认为会话已空闲、
+    // 用户随即再发一条消息，两个 executor 就会并发抢同一个 cwd / 同一个会话。
+    const wasRunning = this.clearSessionMemory(sessionId)
     eventRepo.deleteBySession(sessionId)
+    if (wasRunning) {
+      // 执行器已被杀，DB 里的 running 状态必须落回 idle，否则重启恢复流程会把
+      // 这个会话当成"上次崩溃残留"再处理一遍。
+      new SessionRepository(this.db).updateStatus(sessionId, 'idle')
+      log.info('cancelled running executor before clearing session events', { sessionId })
+    }
     return { cleared: true }
   }
 
   async deleteMessage(sessionId: string, eventIds: string[]): Promise<{ deleted: number }> {
+    if (eventIds.length === 0) return { deleted: 0 }
     const eventRepo = new EventRepository(this.db)
+
+    // 完整性校验：单条 user_message / assistant_message 不能硬删。
+    //
+    // 历史回放（queryBySession / SDK resume）按事件序列重建对话轮次；
+    // 删掉一条 user_message 而留下它对应的 assistant_message（或反过来），
+    // 会让后续 turn 的边界错乱，送给模型的历史就是坏的——模型可能把上一轮的
+    // 回答当成新的用户输入。要"撤回"必须按整轮删，或用 message deletion marker
+    // 软隐藏（这里走硬删路径，所以按轮次拦截）。
+    const placeholders = eventIds.map(() => '?').join(',')
+    const rows = this.db.raw
+      .prepare(
+        `SELECT id, turn_id, event_type
+         FROM agent_events
+         WHERE session_id = ? AND id IN (${placeholders})`,
+      )
+      .all(sessionId, ...eventIds) as Array<{
+      id: string
+      turn_id: string | null
+      event_type: string
+    }>
+
+    if (rows.length === 0) return { deleted: 0 }
+
+    const messageIdTypes = new Set(['user_message', 'assistant_message'])
+    const partialTurnDeletes = rows.filter(
+      (row) => messageIdTypes.has(row.event_type) && row.turn_id != null,
+    )
+
+    if (partialTurnDeletes.length > 0) {
+      // 把同一轮的所有消息事件一起纳入删除范围，避免留下半截轮次。
+      // 仍允许删纯工具事件（tool_call / tool_result / file_change 等）——
+      // 它们不影响轮次边界，删了只是少一段工具记录。
+      const turnIds = Array.from(
+        new Set(partialTurnDeletes.map((row) => row.turn_id).filter((id): id is string => id != null)),
+      )
+      if (turnIds.length > 0) {
+        const turnPlaceholders = turnIds.map(() => '?').join(',')
+        const turnRows = this.db.raw
+          .prepare(
+            `SELECT id FROM agent_events
+             WHERE session_id = ? AND turn_id IN (${turnPlaceholders})
+               AND event_type IN ('user_message', 'assistant_message')`,
+          )
+          .all(sessionId, ...turnIds) as Array<{ id: string }>
+        const expandedIds = new Set([...eventIds, ...turnRows.map((r) => r.id)])
+        eventIds = Array.from(expandedIds)
+      }
+    }
+
     const count = eventRepo.deleteEventsByIds(eventIds)
     return { deleted: count }
   }
