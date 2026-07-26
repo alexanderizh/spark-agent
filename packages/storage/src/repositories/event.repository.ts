@@ -17,6 +17,83 @@
 
 import { BaseRepository, type SqliteDatabase } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
+import { buildFtsMatchQuery, segmentCjk } from '../segment-cjk.js'
+
+/**
+ * 参与会话内容检索的事件类型。
+ *
+ * 只索引真正的对话正文：工具调用参数、文件 diff、终端输出、base64 之类的载荷
+ * 既是噪音也会把索引撑爆。用户搜「会话里说过什么」，指的就是这两类。
+ */
+const SEARCHABLE_EVENT_TYPES = new Set(['user_message', 'assistant_message'])
+
+/** 单条事件参与索引的正文上限，防止超长贴文把 FTS 索引撑爆 */
+const MAX_INDEXED_BODY_CHARS = 20_000
+
+/**
+ * 从事件 JSON 中取出可检索的纯文本正文。
+ *
+ * @returns 可索引正文；该事件不参与检索时返回 null。
+ */
+export function extractSearchableEventBody(eventType: string, eventJson: string): string | null {
+  if (!SEARCHABLE_EVENT_TYPES.has(eventType)) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(eventJson)
+  } catch {
+    return null
+  }
+  if (parsed == null || typeof parsed !== 'object') return null
+  const event = parsed as { content?: unknown; mode?: unknown }
+  // 流式 delta 是同一段正文的碎片，索引它们会产生大量重复命中；只索引完整消息。
+  if (event.mode === 'delta') return null
+  if (typeof event.content !== 'string') return null
+  const content = event.content.trim()
+  if (content.length === 0) return null
+  return content.slice(0, MAX_INDEXED_BODY_CHARS)
+}
+
+/** snippet 上下文窗口：匹配点前后各保留的字符数 */
+const SNIPPET_CONTEXT_CHARS = 40
+/** snippet 总长度上限（含前后省略号），避免超长正文撑爆搜索结果列表 */
+const SNIPPET_MAX_TOTAL_CHARS = 160
+
+/**
+ * 从纯文本正文里围绕第一个匹配位置切一个短片段。
+ *
+ * 这是给会话搜索结果列表用的「预览」，不是完整正文：
+ *   - 大小写不敏感地找第一个匹配位置
+ *   - 前后各留 {@link SNIPPET_CONTEXT_CHARS} 字符上下文
+ *   - 超出总长 {@link SNIPPET_MAX_TOTAL_CHARS} 时两端加省略号
+ *
+ * 输入必须是纯文本（已通过 extractSearchableEventBody 从 event_json 取出），
+ * 不能是原始 JSON——否则用户看到的就是 `..."content":"...` 这种乱码。
+ */
+export function makeTextSnippet(body: string, query: string): string {
+  if (body.length === 0) return ''
+  const needle = query.toLowerCase()
+  const haystack = body.toLowerCase()
+  const idx = needle.length > 0 ? haystack.indexOf(needle) : -1
+
+  if (idx < 0) {
+    // FTS 命中但 JS 字面量找不到（CJK 分词后 token 序列匹配，但原文里大小写/组合不同）：
+    // 返回正文头部作为预览，总比空字符串好
+    const head = body.slice(0, SNIPPET_MAX_TOTAL_CHARS)
+    return body.length > SNIPPET_MAX_TOTAL_CHARS ? head + '...' : head
+  }
+
+  const end = idx + query.length
+  const start = Math.max(0, idx - SNIPPET_CONTEXT_CHARS)
+  const maxEnd = Math.min(body.length, end + SNIPPET_CONTEXT_CHARS)
+  let snippet = body.slice(start, maxEnd)
+  if (start > 0) snippet = '...' + snippet
+  if (maxEnd < body.length) snippet = snippet + '...'
+  // 兜底：极少数情况下（前后省略号 + 长匹配词）仍可能超长，硬截断
+  if (snippet.length > SNIPPET_MAX_TOTAL_CHARS + 6) {
+    snippet = snippet.slice(0, SNIPPET_MAX_TOTAL_CHARS) + '...'
+  }
+  return snippet
+}
 
 /** agent_events 表行类型 */
 export interface AgentEventRow {
@@ -72,14 +149,21 @@ export class EventRepository extends BaseRepository {
       VALUES (?, ?, ?, ?, ?, ?)
     `)
 
-    stmt.run(
-      params.id,
-      params.sessionId,
-      params.runId ?? null,
-      params.turnId ?? null,
-      params.eventType,
-      params.eventJson,
-    )
+    // 同一事务内同步更新会话内容搜索索引（FTS5）。
+    // 与主表分离：非 user/assistant 消息 / 流式 delta 不进 FTS，
+    // 既避免噪音也避免把索引撑爆。详见 061_agent_event_fts.sql。
+    const tx = this.raw.transaction(() => {
+      stmt.run(
+        params.id,
+        params.sessionId,
+        params.runId ?? null,
+        params.turnId ?? null,
+        params.eventType,
+        params.eventJson,
+      )
+      this.indexEventForSearch(params)
+    })
+    tx()
   }
 
   /** 批量写入事件（在单个事务中） */
@@ -99,10 +183,64 @@ export class EventRepository extends BaseRepository {
           event.eventType,
           event.eventJson,
         )
+        this.indexEventForSearch(event)
       }
     })
 
     insertAll()
+  }
+
+  /**
+   * 把一条事件的可检索正文写入 agent_event_fts。
+   *
+   * 失败不能让事件写入回滚——搜索是次要能力，主表完整性优先。
+   * FTS 表可能因为未迁移（旧库升级到 061 前）或迁移跳过而不存在，
+   * 用 sqlite_master 探测一次后缓存结果避免每条事件都查。
+   */
+  private indexEventForSearch(params: InsertEventParams): void {
+    if (!this.ensureSearchIndexAvailable()) return
+    const body = extractSearchableEventBody(params.eventType, params.eventJson)
+    if (body == null) return
+    try {
+      // 先在映射表里插入，拿到稳定的 rowid，再用它写 FTS。
+      // 映射表 event_id UNIQUE，并发或重放不会重复建项。
+      const info = this.raw
+        .prepare(`INSERT OR IGNORE INTO agent_event_fts_map (event_id, session_id) VALUES (?, ?)`)
+        .run(params.id, params.sessionId)
+      const rowid =
+        info.lastInsertRowid != null
+          ? (info.lastInsertRowid as number | bigint)
+          : (this.raw
+              .prepare('SELECT rowid FROM agent_event_fts_map WHERE event_id = ?')
+              .get(params.id) as { rowid: number | bigint } | undefined)?.rowid
+      if (rowid == null) return
+      // segmentCjk 必须与查询侧一致——这是 FTS5 CJK 检索的硬约束。
+      this.raw
+        .prepare('INSERT OR REPLACE INTO agent_event_fts (rowid, body) VALUES (?, ?)')
+        .run(rowid, segmentCjk(body))
+    } catch {
+      // 静默：FTS 是次要能力，且表缺失已在 ensureSearchIndexAvailable 处理
+    }
+  }
+
+  /** agent_event_fts 是否可用（061 已应用且表真实存在）。结果缓存。 */
+  private searchIndexEnabled: boolean | undefined
+
+  private ensureSearchIndexAvailable(): boolean {
+    if (this.searchIndexEnabled === true) return true
+    if (this.searchIndexEnabled === undefined) {
+      try {
+        const row = this.raw
+          .prepare(
+            `SELECT name FROM sqlite_master WHERE type='table' AND name='agent_event_fts'`,
+          )
+          .get() as { name: string } | undefined
+        this.searchIndexEnabled = row?.name === 'agent_event_fts'
+      } catch {
+        this.searchIndexEnabled = false
+      }
+    }
+    return this.searchIndexEnabled === true
   }
 
   /** 按 session 查询事件（支持分页）。默认取最新页，并以时间线正序返回。 */
@@ -498,39 +636,217 @@ export class EventRepository extends BaseRepository {
     return result.changes
   }
 
-  /** 按事件内容模糊搜索，返回匹配的 session ID 列表和内容片段 */
+  /**
+   * 按事件内容搜索，返回匹配的 session ID 列表和内容片段。
+   *
+   * 走 agent_event_fts（FTS5）+ segmentCjk CJK 预分词：
+   *   - 索引覆盖 user_message / assistant_message 的纯文本正文，不再搜序列化 JSON
+   *   - FTS5 只负责检索 + bm25 排序（解决性能问题）；
+   *     snippet 由 JS 从原始纯文本正文切，不依赖 FTS5 snippet() 在 contentless 表上
+   *     不稳定的行为，且能保证 snippet 就是纯文本而非 JSON 乱码
+   *   - 失败回退到 LIKE 全表扫描——升级过程中 FTS 表可能尚未建好或未回填完
+   *
+   * @param query 用户原始输入；特殊字符由 buildFtsMatchQuery 转义为 FTS5 短语
+   */
   searchByContent(
     query: string,
     limit: number = 20,
   ): Array<{ sessionId: string; snippet: string }> {
-    const pattern = `%${query}%`
+    if (typeof query !== 'string' || query.trim().length === 0) return []
+
+    // 优先走 FTS5。索引不可用 / MATCH 解析失败时回落到 LIKE 全表扫描。
+    if (this.ensureSearchIndexAvailable()) {
+      const match = buildFtsMatchQuery(query)
+      if (match != null) {
+        try {
+          // FTS5 只负责检索 + 排序，回 event_id 再读原始正文切 snippet。
+          // LIMIT 放大到 limit*5 给 session 去重留余量。
+          const ftsRows = this.raw
+            .prepare(
+              `SELECT m.event_id AS eventId,
+                      m.session_id AS sessionId,
+                      bm25(agent_event_fts) AS rank
+               FROM agent_event_fts
+               JOIN agent_event_fts_map m ON m.rowid = agent_event_fts.rowid
+               WHERE agent_event_fts MATCH ?
+               ORDER BY rank
+               LIMIT ? * 5`,
+            )
+            .all(match, limit) as Array<{
+            eventId: string
+            sessionId: string
+            rank: number
+          }>
+
+          if (ftsRows.length > 0) {
+            return this.buildSnippetsFromEvents(ftsRows, query, limit)
+          }
+          // FTS 命中为空时直接返回空——不要回落到 LIKE，那只会得到同样的空结果却多扫一遍全表
+          return []
+        } catch {
+          // MATCH 语法异常（例如用户输入触发了 FTS5 解析边界）→ 落到 LIKE
+        }
+      }
+    }
+
+    return this.searchByContentFallback(query, limit)
+  }
+
+  /**
+   * 把 FTS 命中的 event_id 列表转成带 snippet 的结果。
+   *
+   * 按 session 去重（保留相关度最高的一条），snippet 从原始事件正文切。
+   * event_id 一次性 IN 查询，避免 N+1。
+   */
+  private buildSnippetsFromEvents(
+    ftsRows: Array<{ eventId: string; sessionId: string; rank: number }>,
+    query: string,
+    limit: number,
+  ): Array<{ sessionId: string; snippet: string }> {
+    const eventIds = ftsRows.map((r) => r.eventId)
+    const placeholders = eventIds.map(() => '?').join(',')
+    const rows = this.raw
+      .prepare(
+        `SELECT id, session_id, event_type, event_json
+         FROM agent_events
+         WHERE id IN (${placeholders})`,
+      )
+      .all(...eventIds) as Array<{
+      id: string
+      session_id: string
+      event_type: string
+      event_json: string
+    }>
+
+    // event_id → 纯文本正文（只为 snippet 用；检索已由 FTS 完成）
+    const bodyById = new Map<string, string>()
+    for (const row of rows) {
+      const body = extractSearchableEventBody(row.event_type, row.event_json)
+      if (body != null) bodyById.set(row.id, body)
+    }
+
+    const seen = new Set<string>()
+    const results: Array<{ sessionId: string; snippet: string }> = []
+    for (const hit of ftsRows) {
+      if (seen.has(hit.sessionId)) continue
+      const body = bodyById.get(hit.eventId)
+      if (body == null) continue
+      seen.add(hit.sessionId)
+      results.push({ sessionId: hit.sessionId, snippet: makeTextSnippet(body, query) })
+      if (results.length >= limit) break
+    }
+    return results
+  }
+
+  /** LIKE 兜底：FTS 不可用、未回填完成或查询无法解析时使用 */
+  private searchByContentFallback(
+    query: string,
+    limit: number,
+  ): Array<{ sessionId: string; snippet: string }> {
+    const pattern = `%${this.escapeLikePattern(query)}%`
     const stmt = this.raw.prepare(
       `SELECT DISTINCT session_id, event_json
        FROM agent_events
-       WHERE event_json LIKE ?
+       WHERE event_json LIKE ? ESCAPE '\\'
        ORDER BY created_at DESC
        LIMIT ?`,
     )
     const rows = stmt.all(pattern, limit * 3) as AgentEventRow[]
 
-    // Deduplicate by session_id, keep the first match per session
     const seen = new Set<string>()
     const results: Array<{ sessionId: string; snippet: string }> = []
     for (const row of rows) {
       if (seen.has(row.session_id)) continue
       seen.add(row.session_id)
-      // Extract a text snippet from event_json around the match
-      const json = row.event_json
-      const idx = json.toLowerCase().indexOf(query.toLowerCase())
-      const start = Math.max(0, idx - 40)
-      const end = Math.min(json.length, idx + query.length + 60)
-      let snippet = json.slice(start, end)
-      if (start > 0) snippet = '...' + snippet
-      if (end < json.length) snippet = snippet + '...'
-      results.push({ sessionId: row.session_id, snippet })
+      const body = extractSearchableEventBody(row.event_type, row.event_json)
+      // 只在真正的对话正文里找匹配点——避免命中字段名/工具参数等 JSON 结构噪音
+      const haystack = body ?? row.event_json
+      if (!haystack.toLowerCase().includes(query.toLowerCase())) continue
+      results.push({ sessionId: row.session_id, snippet: makeTextSnippet(haystack, query) })
       if (results.length >= limit) break
     }
     return results
+  }
+
+  /** 转义 LIKE 的通配符，让用户搜 `%` `_` 不会被当成通配符 */
+  private escapeLikePattern(input: string): string {
+    return input.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+  }
+
+  /**
+   * 回填存量事件的搜索索引（幂等）。
+   *
+   * 061 迁移只建表，不回填——回填需要 segmentCjk 分词，必须在 JS 侧分批做。
+   * 标记写在 app_settings(session-search / ftsBackfillDone)，重复调用直接返回。
+   *
+   * **异步分批**：better-sqlite3 是同步 API，纯 while 循环会在万级事件量上
+   * 阻塞 Electron main 进程数秒、UI 卡死。每批之间 yield 给事件循环（setTimeout 0），
+   * 让 IPC/渲染保持响应。批大小 500 是 token 化 + 事务提交的吞吐与 yield 频次的折中。
+   *
+   * @returns 本次回填处理的事件数（已回填过则为 0）。
+   */
+  async backfillSearchIndexIfNeeded(): Promise<number> {
+    if (!this.ensureSearchIndexAvailable()) return 0
+    const settings = this.raw.prepare(
+      `SELECT value FROM app_settings WHERE category = ? AND key = ?`,
+    )
+    const done = settings.get('session-search', 'ftsBackfillDone') as
+      | { value: string }
+      | undefined
+    if (done?.value === 'true') return 0
+
+    const BACKFILL_BATCH = 500
+    let lastEventId: string | null = null
+    let processed = 0
+    const scanStmt = this.raw.prepare(
+      `SELECT id, session_id, event_type, event_json
+       FROM agent_events
+       WHERE event_type IN ('user_message', 'assistant_message')
+         AND id > ?
+       ORDER BY id ASC
+       LIMIT ?`,
+    )
+    const mapStmt = this.raw.prepare(
+      `INSERT OR IGNORE INTO agent_event_fts_map (event_id, session_id) VALUES (?, ?)`,
+    )
+    const ftsStmt = this.raw.prepare(
+      `INSERT OR REPLACE INTO agent_event_fts (rowid, body) VALUES (?, ?)`,
+    )
+    const lookupStmt = this.raw.prepare(
+      `SELECT rowid FROM agent_event_fts_map WHERE event_id = ?`,
+    )
+
+    while (true) {
+      const rows = scanStmt.all(lastEventId ?? '', BACKFILL_BATCH) as Array<{
+        id: string
+        session_id: string
+        event_type: string
+        event_json: string
+      }>
+      if (rows.length === 0) break
+      const tx = this.raw.transaction(() => {
+        for (const row of rows) {
+          lastEventId = row.id
+          const body = extractSearchableEventBody(row.event_type, row.event_json)
+          if (body == null) continue
+          mapStmt.run(row.id, row.session_id)
+          const mapped = lookupStmt.get(row.id) as { rowid: number } | undefined
+          if (mapped == null) continue
+          ftsStmt.run(mapped.rowid, segmentCjk(body))
+          processed += 1
+        }
+      })
+      tx()
+      // yield 给事件循环：让 IPC/渲染保持响应，避免大库回填卡死 UI
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    }
+
+    const upsertSetting = this.raw.prepare(
+      `INSERT INTO app_settings (category, key, value, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(category, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    upsertSetting.run('session-search', 'ftsBackfillDone', 'true', new Date().toISOString())
+    return processed
   }
 }
 
