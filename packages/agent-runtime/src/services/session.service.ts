@@ -35,6 +35,9 @@ import type {
 } from '@spark/storage'
 import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
+import { APPLICATION_FOUNDATION_SYSTEM_PROMPT } from './core-agent-behavior-prompt.js'
+export { APP_IDENTITY_SYSTEM_PROMPT } from './core-agent-behavior-prompt.js'
+import { MEMORY_PROVENANCE_SYSTEM_PROMPT } from './memory-provenance-prompt.js'
 import type {
   AgentEvent,
   SessionCancelQueuedTurnResponse,
@@ -432,13 +435,6 @@ const UNATTENDED_AUTOMATION_SYSTEM_PROMPT = [
   'This turn is running as an unattended scheduled automation.',
   'Do not ask the user questions and do not call AskUserQuestion or request_user_input.',
   'Do not pause for approval or other interaction. If required context is missing, make the best reasonable assumption; if that would be unsafe, stop and return a concise blocker report instead of waiting.',
-].join('\n')
-
-export const APP_IDENTITY_SYSTEM_PROMPT = [
-  '[Application Identity]',
-  '你是 SparkWork，一个专业的本地化双核心 Agent 平台。',
-  '你可以协助用户完成日常工作、制作文档与 PPT、操作浏览器等任务，还可以通过无限画布进行多媒体创作。',
-  '语言偏好：默认使用与用户当前消息相同的语言回复；如果用户明确指定了其他语言，则遵循用户的语言要求。',
 ].join('\n')
 
 type SessionUsageTotals = { totalInputTokens: number; totalOutputTokens: number; totalCost: number }
@@ -2406,7 +2402,7 @@ export class SessionService {
     )
 
     const composedSystemPrompt = joinPromptSections(
-      APP_IDENTITY_SYSTEM_PROMPT,
+      APPLICATION_FOUNDATION_SYSTEM_PROMPT,
       managedAgentPrompt,
       teamMemberContextPrompt,
       orchestrationModePrompt,
@@ -2424,6 +2420,7 @@ export class SessionService {
       // 记忆行为引导紧跟 memoryBlock：先让 agent 看到具体记忆摘要，再说明两套记忆的
       // 区别与"记住"路由规则。无条件注入（所有 adapter 都挂载了应用记忆工具）。
       MEMORY_BEHAVIOR_SYSTEM_PROMPT,
+      MEMORY_PROVENANCE_SYSTEM_PROMPT,
       runtimeContext.systemPrompt,
       runtimeContext.envSystemPrompt,
       projectContext.systemPrompt,
@@ -6352,12 +6349,13 @@ export class SessionService {
 
     const memberSystemPrompt =
       joinPromptSections(
-        APP_IDENTITY_SYSTEM_PROMPT,
+        APPLICATION_FOUNDATION_SYSTEM_PROMPT,
         buildManagedAgentSystemPrompt(member, null),
         memberTeamPrompt,
         memberEnvPrompt || undefined,
         memberMemoryBlock,
         memberMcpServers.spark_memory != null ? MEMORY_BEHAVIOR_SYSTEM_PROMPT : undefined,
+        memberMcpServers.spark_memory != null ? MEMORY_PROVENANCE_SYSTEM_PROMPT : undefined,
       ) ?? ''
 
     const sdkConfig: SDKExecutorConfig = {
@@ -8820,31 +8818,26 @@ const SUBAGENT_USAGE_HINT_SYSTEM_PROMPT = [
  * 误走 `/memory` 写进 CLAUDE.md（桌面端不可见）却回答"记住了"，用户无法分辨去向。
  * 本段统一约定：用户说"记住"默认指应用长期记忆，回复措辞需明确去向。
  */
-const MEMORY_BEHAVIOR_SYSTEM_PROMPT = [
-  '[Memory Behavior] 本应用有两套长期记忆，语义不同，必须区分：',
+export const MEMORY_BEHAVIOR_SYSTEM_PROMPT = [
+  '[Memory Behavior] This application has two distinct long-term memory systems:',
   '',
-  '1. **应用长期记忆**（Application Memory）',
-  '   - 即上方可能出现的 `<user-memory>` / `<project-memory>` / `<agent-memory>` 摘要块，',
-  '     以及 search_memory / recall_memory 工具。',
-  '   - 存什么：用户偏好与身份、项目级动态事实、给当前 Agent 的角色/风格反馈、外部稳定指针。',
-  '   - **自动写入**：每轮对话结束后由后台自动抽取，你不需要、也不应该在本轮手动写文件。',
-  '   - 用户可在桌面端「设置 → Agent → 记忆」面板查看和管理。',
+  '1. **Application Memory**',
+  '   - This consists of the optional `<user-memory>`, `<project-memory>`, and `<agent-memory>` summaries above, plus the `search_memory` and `recall_memory` tools.',
+  "   - Store durable user preferences and identity, project-level changing facts, feedback about the current agent's role or style, and stable references to external systems.",
+  '   - The application extracts and writes these memories automatically after each turn. Do not manually write a file for application memory.',
+  '   - Users can review and manage these entries under Settings → Agent → Memory.',
   '',
-  '2. **项目规则文件**（Project Rule Files）',
-  '   - 指 AGENTS.md / CLAUDE.md，Claude Code 原生 `/memory` 命令维护的就是这一类。',
-  '   - 存什么：项目静态规则、团队约定、协作流程——需要 git 跟踪、团队共享、人手动维护的内容。',
-  '   - 写入是显式且手动的工作：编辑文件、提交到版本库。',
+  '2. **Project Rule Files**',
+  '   - These are `AGENTS.md` and `CLAUDE.md`; the native Claude Code `/memory` command manages this category.',
+  '   - Store static project rules, team conventions, and collaboration procedures that should be manually maintained, shared with the team, and tracked by git.',
+  '   - Updating this category is explicit work: edit the relevant file and include it in version control.',
   '',
-  '当用户说"记住这个" / "记一下" / "以后记得" / "写入记忆"时：',
-  '- **默认指应用长期记忆**。例如"好，我记下了"，后台会自动抽取——',
+  'When the user asks you to remember something, in any language:',
+  '- Interpret it as application memory by default. The application will extract it automatically after the turn.',
+  '- For application memory, say that it was noted or added to long-term memory. Do not claim that `CLAUDE.md` was updated.',
+  '- If you actually changed a project rule file, name the exact `AGENTS.md` or `CLAUDE.md` file you updated.',
   '',
-  '回复措辞（重要——用户借此判断记忆去向）：',
-  '- 走应用记忆：说"已记下 / 已进入长期记忆 / 下次会自动用到"。**不要**说"已写进 CLAUDE.md"。',
-  '- 改了规则文件：明确说"已更新 AGENTS.md / CLAUDE.md"。',
-  '',
-  '不要把以下内容当作应记忆的内容（后台闸门会丢弃，回复时也别承诺记住）：',
-  '日期 / 时间 / 当前时刻、实时数据（天气/股价/汇率）、单次查询结果、临时任务状态、',
-  '可从代码或 git log 推导的事实——这些让 agent 当场处理即可。',
+  'Do not promise to remember dates or the current time, live data such as weather, prices, or exchange rates, one-off query results, temporary task state, or facts that can be derived from code or git history. Handle those in the current turn instead.',
 ].join('\n')
 
 // ── Team Mode helpers ────────────────────────────────────────────────────────

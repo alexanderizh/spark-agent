@@ -367,6 +367,14 @@ export const WEB_SEARCH_SYSTEM_PROMPT = [
   'Use these whenever you need current information, to verify facts, or to read a page.',
   'Prefer them over the SDK built-in `WebSearch`/`WebFetch`, which are unavailable when',
   'running on third-party (non-default) API providers. Cite the source URLs you used.',
+  '',
+  'Search based on how quickly the answer can change. Verify present-day roles, laws, prices,',
+  'schedules, product capabilities, software versions, and other time-sensitive claims instead',
+  'of relying on model memory. Stable concepts and well-established historical facts usually do',
+  'not need a search unless the user asks for sources or verification.',
+  'Prefer primary and authoritative sources. Fetch the underlying page when snippets are not',
+  'enough, reconcile material conflicts instead of hiding them, and place source URLs near the',
+  'claims they support. Never present the absence of a search result as proof that something does not exist.',
 ].join('\n')
 
 /**

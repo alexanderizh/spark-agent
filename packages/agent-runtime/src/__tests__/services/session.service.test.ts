@@ -3,6 +3,7 @@ import type { AgentEvent } from '@spark/protocol'
 import type { TeamA2ATask } from '@spark/protocol'
 import {
   APP_IDENTITY_SYSTEM_PROMPT,
+  MEMORY_BEHAVIOR_SYSTEM_PROMPT,
   buildConversationHistoryPromptFromEvents,
   buildMemberUserMessage,
   collectCompleteAssistantTurnText,
@@ -24,13 +25,22 @@ import { CodexCliExecutor, CodexOpenAIExecutor, CodexSdkExecutor } from '../../s
 
 describe('SparkWork application identity prompt', () => {
   it('introduces the platform and its core capabilities', () => {
-    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('你是 SparkWork')
-    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('本地化双核心 Agent 平台')
-    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('制作文档与 PPT')
-    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('操作浏览器')
-    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('无限画布进行多媒体创作')
-    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('与用户当前消息相同的语言回复')
-    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('用户明确指定了其他语言')
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('You are SparkWork')
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('local-first dual-engine agent platform')
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('documents and presentations')
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('browser operations')
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('multimedia creation on an infinite canvas')
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain("same language as the user's current message")
+    expect(APP_IDENTITY_SYSTEM_PROMPT).toContain('explicitly requests another language')
+  })
+})
+
+describe('SparkWork memory behavior prompt', () => {
+  it('uses English-only instructions for both memory systems', () => {
+    expect(MEMORY_BEHAVIOR_SYSTEM_PROMPT).toContain('Application Memory')
+    expect(MEMORY_BEHAVIOR_SYSTEM_PROMPT).toContain('Project Rule Files')
+    expect(MEMORY_BEHAVIOR_SYSTEM_PROMPT).toContain('in any language')
+    expect(MEMORY_BEHAVIOR_SYSTEM_PROMPT).not.toMatch(/[\u3400-\u9fff]/u)
   })
 })
 
