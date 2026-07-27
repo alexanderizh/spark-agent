@@ -343,6 +343,9 @@ function assertSeedanceInputMode(
   const explicitReferences = images.filter((file) => file.role === 'reference')
   const adapterModelId = mediaAdapterModelId(ctx)
   const isSeedance2 = adapterModelId.startsWith('doubao-seedance-2-0-')
+  // 1.x 系列（1.0 / 1.5）只支持 t2v + i2v，不支持参考图生视频（r2v）。
+  // 正向精确匹配第 1 代，避免未来引入 2.x/2.5 时被 `!isSeedance2` 反向误判。
+  const isSeedance1x = adapterModelId.startsWith('doubao-seedance-1-')
 
   if (firstFrames.length > 1 || lastFrames.length > 1) {
     throw new MediaProviderError('invalid_input', 'Seedance 首帧和尾帧都最多只能选择 1 张')
@@ -367,8 +370,11 @@ function assertSeedanceInputMode(
   }
 
   const hasExplicitFrameMode = firstFrames.length > 0 || lastFrames.length > 0
+  // 1.x 系列在 video.generate 下也不支持参考图：无显式 role 的图走首帧/首尾帧兜底，
+  // 与 video.image_to_video 入口行为一致，避免被标成 reference_image 触发后端 r2v 报错。
   const usesImplicitFrameMode =
-    capability === 'video.image_to_video' &&
+    (capability === 'video.image_to_video' ||
+      (isSeedance1x && capability === 'video.generate')) &&
     !hasExplicitFrameMode &&
     explicitReferences.length === 0 &&
     images.length > 0
@@ -451,6 +457,7 @@ async function buildSeedanceContent(
   const imageFiles = files.filter(isImageInput)
   const videoFiles = files.filter(isVideoInput)
   const audioFiles = files.filter(isAudioInput)
+  const isSeedance1x = mediaAdapterModelId(ctx).startsWith('doubao-seedance-1-')
 
   const content: SeedanceContentItem[] = []
   if (prompt) content.push({ type: 'text', text: prompt })
@@ -468,8 +475,14 @@ async function buildSeedanceContent(
   //   - 第 2 张无 role 图 → last_frame（首尾帧是 Seedance 核心能力，需成对识别）
   //   - 其余 → reference_image
   // 有显式 role（first_frame/last_frame/reference）时尊重标注，不走兜底。
+  // 1.x 系列在 video.generate 下传图也走同一兜底（1.x 不支持参考图，否则会被标成
+  // reference_image 触发后端 r2v 报错）；2.x 系列仍按原语义标参考图。
   const i2vImplicit =
-    capability === 'video.image_to_video' && !firstFrameFile && !lastFrameFile && !hasExplicitRef
+    (capability === 'video.image_to_video' ||
+      (isSeedance1x && capability === 'video.generate')) &&
+    !firstFrameFile &&
+    !lastFrameFile &&
+    !hasExplicitRef
   if (i2vImplicit && referenceImageFiles[0]) {
     const ref = await resolveVolcengineMediaReference(referenceImageFiles[0], 'image', ctx)
     content.push({ type: 'image_url', image_url: { url: ref }, role: 'first_frame' })
