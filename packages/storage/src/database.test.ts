@@ -125,6 +125,247 @@ describe('SparkDatabase', () => {
     expect(canvasAssistant?.prompt).toContain('canvas_get_available_actions')
     expect(canvasAssistant?.prompt).toContain('canvas_get_production_plan')
     expect(canvasAssistant?.prompt).toContain('默认只创建并配置操作节点')
+
+    const sparkAssistant = db.raw
+      .prepare(
+        'SELECT name, description, permission_mode, reasoning_effort, skill_ids_json, prompt FROM agents WHERE id = ?',
+      )
+      .get('platform-manager-agent') as
+      | {
+          name: string
+          description: string
+          permission_mode: string
+          reasoning_effort: string
+          skill_ids_json: string
+          prompt: string
+        }
+      | undefined
+    expect(sparkAssistant?.name).toBe('Spark助手')
+    expect(sparkAssistant?.description).toContain('平台管理、全栈开发')
+    expect(sparkAssistant?.permission_mode).toBe('claude-auto-edits')
+    expect(sparkAssistant?.reasoning_effort).toBe('high')
+    expect(JSON.parse(sparkAssistant?.skill_ids_json ?? '[]')).toEqual(
+      expect.arrayContaining([
+        'builtin:platform-manager',
+        'builtin:browser-use',
+        'builtin:commit',
+        'builtin:react',
+        'builtin:spark-debug',
+      ]),
+    )
+    expect(sparkAssistant?.prompt).toContain('平台管理与全栈开发能力')
+
+    const removedFullstackAgent = db.raw
+      .prepare('SELECT id FROM agents WHERE id = ?')
+      .get('93785cf1-d570-4a2a-8919-108fbf7f39c3')
+    expect(removedFullstackAgent).toBeUndefined()
+  })
+
+  it('should migrate fullstack agent references into Spark助手', () => {
+    const dbPath = join(testDir, 'test.db')
+    const migrationsDir = join(process.cwd(), 'migrations')
+    const oldAgentId = '93785cf1-d570-4a2a-8919-108fbf7f39c3'
+
+    db = new SparkDatabase(dbPath)
+    applyMigrationsThrough(db, migrationsDir, 61)
+
+    db.raw
+      .prepare(
+        `UPDATE agents
+         SET prompt = 'custom fullstack prompt',
+             disabled_skill_ids_json = '["builtin:spark-debug"]',
+             hook_config_json = '{"enabled":true}'
+         WHERE id = ?`,
+      )
+      .run(oldAgentId)
+
+    db.raw
+      .prepare(
+        `INSERT INTO sessions (id, kind, title, status, project_id, agent_id, metadata_json)
+         VALUES ('merge-session', 'chat', 'merge', 'idle', 'default', ?, ?)`,
+      )
+      .run(
+        oldAgentId,
+        JSON.stringify({
+          team: {
+            hostAgentId: oldAgentId,
+            memberAgentIds: [oldAgentId, 'platform-manager-agent'],
+          },
+        }),
+      )
+    db.raw
+      .prepare(
+        `INSERT INTO scheduled_tasks (id, name, agent_id, prompt_template)
+         VALUES ('merge-task', 'merge', ?, 'test')`,
+      )
+      .run(oldAgentId)
+    db.raw
+      .prepare(
+        `INSERT INTO agent_teams (
+           id, name, host_agent_id, member_agent_ids_json, created_at, updated_at
+         ) VALUES ('merge-team', 'merge', ?, ?, datetime('now'), datetime('now'))`,
+      )
+      .run(oldAgentId, JSON.stringify([oldAgentId, 'platform-manager-agent']))
+    db.raw
+      .prepare(
+        `INSERT INTO rules (id, scope, scope_ref, name, content)
+         VALUES ('merge-rule', 'agent', ?, 'merge', 'test')`,
+      )
+      .run(oldAgentId)
+    db.raw
+      .prepare(
+        `INSERT INTO app_settings (category, key, value)
+         VALUES ('runtime.prompts', ?, '{"enabled":true,"content":"legacy"}')`,
+      )
+      .run(`agent:${oldAgentId}`)
+    db.raw
+      .prepare(
+        `INSERT INTO app_settings (category, key, value)
+         VALUES ('runtime.prompts', 'agent:platform-manager-agent', '{"enabled":true,"content":"base"}')`,
+      )
+      .run()
+    db.raw
+      .prepare(
+        `INSERT INTO app_settings (category, key, value)
+         VALUES ('runtime.skills', ?, '["skill:legacy"]')`,
+      )
+      .run(`agent:${oldAgentId}`)
+    db.raw
+      .prepare(
+        `INSERT INTO app_settings (category, key, value)
+         VALUES ('runtime.skills', 'agent:platform-manager-agent', '["skill:base"]')`,
+      )
+      .run()
+    db.raw
+      .prepare(
+        `INSERT INTO workflows (id, scope, name, version, graph_json)
+         VALUES ('merge-workflow', 'project', 'merge', '1.0.0', ?)`,
+      )
+      .run(JSON.stringify({ nodes: [{ config: { agentId: oldAgentId } }] }))
+    db.raw
+      .prepare(
+        `INSERT INTO memory_entry (
+           id, scope, scope_ref, type, name, description, file_path,
+           confidence, archived, created_at, updated_at
+         ) VALUES (?, 'agent', ?, 'feedback', 'shared-name', 'test', ?, 1, 0, 1, 1)`,
+      )
+      .run('memory-base', 'platform-manager-agent', '/tmp/memory-base.md')
+    db.raw
+      .prepare(
+        `INSERT INTO memory_entry (
+           id, scope, scope_ref, type, name, description, file_path,
+           confidence, archived, created_at, updated_at
+         ) VALUES (?, 'agent', ?, 'feedback', 'shared-name', 'test', ?, 1, 0, 1, 1)`,
+      )
+      .run('memory-legacy', oldAgentId, '/tmp/memory-legacy.md')
+    db.raw
+      .prepare(
+        `INSERT INTO memory_entity (id, scope, scope_ref, name, normalized_name, created_at)
+         VALUES ('entity-base', 'agent', 'platform-manager-agent', 'Shared', 'shared', 1),
+                ('entity-legacy', 'agent', ?, 'Shared', 'shared', 1)`,
+      )
+      .run(oldAgentId)
+    db.raw
+      .prepare(
+        `INSERT INTO memory_entity_link (memory_id, entity_id)
+         VALUES ('memory-legacy', 'entity-legacy')`,
+      )
+      .run()
+
+    db.runMigrations(migrationsDir)
+
+    expect(
+      (
+        db.raw.prepare("SELECT agent_id FROM sessions WHERE id = 'merge-session'").get() as {
+          agent_id: string
+        }
+      ).agent_id,
+    ).toBe('platform-manager-agent')
+    const sessionMetadata = db.raw
+      .prepare("SELECT metadata_json FROM sessions WHERE id = 'merge-session'")
+      .get() as { metadata_json: string }
+    expect(JSON.parse(sessionMetadata.metadata_json).team).toEqual({
+      hostAgentId: 'platform-manager-agent',
+      memberAgentIds: ['platform-manager-agent'],
+    })
+    expect(
+      (
+        db.raw.prepare("SELECT agent_id FROM scheduled_tasks WHERE id = 'merge-task'").get() as {
+          agent_id: string
+        }
+      ).agent_id,
+    ).toBe('platform-manager-agent')
+    const team = db.raw
+      .prepare(
+        "SELECT host_agent_id, member_agent_ids_json FROM agent_teams WHERE id = 'merge-team'",
+      )
+      .get() as { host_agent_id: string; member_agent_ids_json: string }
+    expect(team.host_agent_id).toBe('platform-manager-agent')
+    expect(JSON.parse(team.member_agent_ids_json)).toEqual(['platform-manager-agent'])
+    expect(
+      (
+        db.raw.prepare("SELECT scope_ref FROM rules WHERE id = 'merge-rule'").get() as {
+          scope_ref: string
+        }
+      ).scope_ref,
+    ).toBe('platform-manager-agent')
+    expect(
+      db.raw
+        .prepare("SELECT value FROM app_settings WHERE category = 'runtime.prompts' AND key = ?")
+        .get('agent:platform-manager-agent'),
+    ).toBeDefined()
+    const mergedPromptLayer = db.raw
+      .prepare("SELECT value FROM app_settings WHERE category = 'runtime.prompts' AND key = ?")
+      .get('agent:platform-manager-agent') as { value: string }
+    expect(JSON.parse(mergedPromptLayer.value)).toEqual({
+      enabled: true,
+      content: 'base\n\n[原全栈编码助手补充]\nlegacy',
+    })
+    const mergedSkillLayer = db.raw
+      .prepare("SELECT value FROM app_settings WHERE category = 'runtime.skills' AND key = ?")
+      .get('agent:platform-manager-agent') as { value: string }
+    expect(JSON.parse(mergedSkillLayer.value)).toEqual(
+      expect.arrayContaining(['skill:base', 'skill:legacy']),
+    )
+    const mergedAgent = db.raw
+      .prepare('SELECT disabled_skill_ids_json, metadata_json FROM agents WHERE id = ?')
+      .get('platform-manager-agent') as {
+      disabled_skill_ids_json: string
+      metadata_json: string
+    }
+    expect(JSON.parse(mergedAgent.disabled_skill_ids_json)).toContain('builtin:spark-debug')
+    expect(JSON.parse(mergedAgent.metadata_json).mergedFullstackConfig).toEqual(
+      expect.objectContaining({
+        prompt: 'custom fullstack prompt',
+        hookConfig: { enabled: true },
+      }),
+    )
+    const mergedMemories = db.raw
+      .prepare(
+        `SELECT id, name FROM memory_entry
+         WHERE scope = 'agent' AND scope_ref = 'platform-manager-agent'
+         ORDER BY id`,
+      )
+      .all() as Array<{ id: string; name: string }>
+    expect(mergedMemories).toHaveLength(2)
+    expect(mergedMemories.find((item) => item.id === 'memory-legacy')?.name).toContain(
+      '原全栈编码助手',
+    )
+    expect(
+      db.raw
+        .prepare(
+          `SELECT 1 FROM memory_entity_link
+           WHERE memory_id = 'memory-legacy' AND entity_id = 'entity-base'`,
+        )
+        .get(),
+    ).toBeDefined()
+    expect(
+      (
+        db.raw.prepare("SELECT graph_json FROM workflows WHERE id = 'merge-workflow'").get() as {
+          graph_json: string
+        }
+      ).graph_json,
+    ).toContain('platform-manager-agent')
   })
 
   it('should not re-apply already applied migrations', () => {

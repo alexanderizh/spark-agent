@@ -4680,8 +4680,8 @@ export class SessionService {
       repo.get(agentId ?? 'platform-manager-agent') ??
       repo.get('platform-manager-agent') ?? {
         id: 'platform-manager-agent',
-        name: '平台管理',
-        description: '系统内置平台管理智能体',
+        name: 'Spark助手',
+        description: '系统内置通用助手，统一承担平台管理与全栈开发任务',
         builtIn: true,
         enabled: true,
         isDefault: true,

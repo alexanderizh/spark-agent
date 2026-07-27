@@ -3032,7 +3032,7 @@ export function ComposerV2({
                 <Icons.Team size={12} /> 团队模式
               </span>
               <span className="composer-team-banner-text">
-                Host：{activeAgent?.name ?? '平台管理'} · 成员{' '}
+                Host：{activeAgent?.name ?? 'Spark助手'} · 成员{' '}
                 {countExistingMembers(teamConfig.memberAgentIds, agents)}
               </span>
               <button
@@ -4125,16 +4125,16 @@ function AgentPicker({
             ? '会话运行中不可切换'
             : teamMode
               ? teamConfig.teamId != null
-                ? `团队：${activeTeamName ?? '团队'}（主持：${selected?.name ?? '平台管理'}）`
-                : `团队模式（当前对话：${selected?.name ?? '平台管理'}）`
-              : (selected?.name ?? '平台管理')
+                ? `团队：${activeTeamName ?? '团队'}（主持：${selected?.name ?? 'Spark助手'}）`
+                : `团队模式（当前对话：${selected?.name ?? 'Spark助手'}）`
+              : (selected?.name ?? 'Spark助手')
         }
         onClick={() => setOpen((prev) => !prev)}
       >
         <span>
           {teamMode && teamConfig.teamId != null && activeTeamName
             ? activeTeamName
-            : (selected?.name ?? '平台管理')}
+            : (selected?.name ?? 'Spark助手')}
         </span>
         <Icons.ChevronDown size={12} />
       </button>

@@ -1541,7 +1541,7 @@ export function AgentPickerInline({
   agents,
   selectedId,
   disabled,
-  fallbackLabel = '平台管理',
+  fallbackLabel = 'Spark助手',
   open,
   openOnHover = false,
   onOpenChange,

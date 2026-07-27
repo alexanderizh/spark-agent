@@ -413,11 +413,11 @@ export function TeamModeEmptyHero({
       <div className="team-empty-copy">
         {/* <h1 className="chat-hero-title team-empty-title">{readyTitle}</h1> */}
         <span className="chat-hero-span team-empty-desc">
-          {hostAgent?.name ?? '平台管理'} 将协调成员 Agent 分工、执行和汇总结果
+          {hostAgent?.name ?? 'Spark助手'} 将协调成员 Agent 分工、执行和汇总结果
         </span>
         {memberCount ? (
           <div className="team-empty-meta">
-            <span>Host：{hostAgent?.name ?? '平台管理'}</span>
+            <span>Host：{hostAgent?.name ?? 'Spark助手'}</span>
             <span>成员：{memberCount}</span>
             {runningAgentIds.length > 0 && <span>{runningAgentIds.length} 位成员执行中</span>}
           </div>
@@ -432,4 +432,3 @@ export function TeamModeEmptyHero({
     </section>
   )
 }
-
