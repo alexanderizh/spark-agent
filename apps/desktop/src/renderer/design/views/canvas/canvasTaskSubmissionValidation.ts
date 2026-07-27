@@ -32,6 +32,7 @@ export async function validateCanvasMediaTaskSubmission(
     ...(request.manifestId ? { manifestId: request.manifestId } : {}),
     ...(request.providerProfileId ? { providerProfileId: request.providerProfileId } : {}),
     ...(request.modelId ? { modelId: request.modelId } : {}),
+    ...(request.capabilityId ? { capabilityId: request.capabilityId } : {}),
     ...(providerPrompt ? { prompt: providerPrompt } : {}),
     validateSubmission: true,
     modelParams: request.modelParams ?? {},
@@ -131,6 +132,9 @@ function validateBasicMediaSubmission(
   const imageCount = files.filter((file) => matchesMediaKind(file, 'image')).length
   const videoCount = files.filter((file) => matchesMediaKind(file, 'video')).length
   const audioCount = files.filter((file) => matchesMediaKind(file, 'audio')).length
+  const videoCapability = request.capabilityId?.startsWith('video.')
+    ? request.capabilityId
+    : undefined
 
   for (const [index, file] of files.entries()) {
     if (file.dataUrl && !/^data:[^;,]+;base64,.+$/is.test(file.dataUrl)) {
@@ -144,16 +148,23 @@ function validateBasicMediaSubmission(
     }
   }
 
-  if (operationRequiresPrompt(request.operation) && !providerPrompt) {
+  const requiresPrompt = videoCapability
+    ? videoCapability === 'video.generate'
+    : operationRequiresPrompt(request.operation)
+  const requiresImage = videoCapability
+    ? videoCapability === 'video.image_to_video'
+    : operationRequiresImage(request.operation)
+  const requiresVideo = videoCapability
+    ? videoCapability === 'video.edit' || videoCapability === 'video.extend'
+    : request.operation === 'video_edit' || request.operation === 'video_extend'
+
+  if (requiresPrompt && !providerPrompt) {
     issues.push(issue('missing_required', '请输入提示词', ['prompt']))
   }
-  if (operationRequiresImage(request.operation) && imageCount === 0) {
+  if (requiresImage && imageCount === 0) {
     issues.push(issue('missing_required', '请至少选择一张输入图片', ['inputFiles']))
   }
-  if (
-    (request.operation === 'video_edit' || request.operation === 'video_extend') &&
-    videoCount === 0
-  ) {
+  if (requiresVideo && videoCount === 0) {
     issues.push(issue('missing_required', '请选择输入视频', ['inputFiles']))
   }
   if (request.operation === 'audio_transcribe' && audioCount === 0) {

@@ -39,6 +39,26 @@ describe('canvasTaskSubmissionValidation', () => {
     expect(mockedPrune).not.toHaveBeenCalled()
   })
 
+  it('uses an explicit video capability instead of the legacy operation heuristic', async () => {
+    await expect(
+      validateCanvasMediaTaskSubmission({
+        operation: 'image_to_video',
+        capabilityId: 'video.generate',
+        prompt: 'generate without an image',
+        inputFiles: [],
+      }),
+    ).resolves.toMatchObject({ capabilityId: 'video.generate' })
+
+    await expect(
+      validateCanvasMediaTaskSubmission({
+        operation: 'text_to_video',
+        capabilityId: 'video.image_to_video',
+        prompt: 'animate this image',
+        inputFiles: [],
+      }),
+    ).rejects.toMatchObject({ message: '请至少选择一张输入图片' })
+  })
+
   it('classifies generic file inputs by MIME type during basic validation', async () => {
     await expect(
       validateCanvasMediaTaskSubmission({
@@ -87,6 +107,7 @@ describe('canvasTaskSubmissionValidation', () => {
       manifestId: 'xai:grok-imagine-video',
       providerProfileId: 'provider-1',
       modelId: 'grok-imagine-video',
+      capabilityId: 'video.image_to_video',
       modelParams: { durationSeconds: 8 },
       inputFiles: [
         {
@@ -103,6 +124,7 @@ describe('canvasTaskSubmissionValidation', () => {
         operation: 'image_to_video',
         prompt: 'animate',
         modelId: 'grok-imagine-video',
+        capabilityId: 'video.image_to_video',
         validateSubmission: true,
       }),
     )

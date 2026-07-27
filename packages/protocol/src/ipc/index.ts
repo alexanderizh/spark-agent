@@ -4738,6 +4738,7 @@ export interface CanvasMediaModelCapabilitySummary {
   id: string
   label: string
   input: MediaModelManifest['capabilities'][number]['input']
+  rolePolicy?: MediaModelManifest['capabilities'][number]['rolePolicy']
   output: MediaModelManifest['capabilities'][number]['output']
   paramSchema: Record<string, unknown>
   defaults?: Record<string, unknown>

@@ -8210,6 +8210,10 @@ export function CanvasWorkspaceView({
                           ? { negativePrompt: styledTask.negativePrompt }
                           : {}),
                         ...(params.inputNodeIds ? { inputNodeIds: params.inputNodeIds } : {}),
+                        ...(params.mediaInputMode
+                          ? { mediaInputMode: params.mediaInputMode }
+                          : {}),
+                        ...(params.capabilityId ? { capabilityId: params.capabilityId } : {}),
                         inputAssetIds: taskInputNodes
                           .map((item) => item.assetId)
                           .filter((id): id is string => Boolean(id)),
@@ -8277,6 +8281,10 @@ export function CanvasWorkspaceView({
                       ...opNode.data,
                       ...(params.promptDocument ? { promptDocument: params.promptDocument } : {}),
                       ...(params.inputBindings ? { inputBindings: params.inputBindings } : {}),
+                      ...(params.mediaInputMode
+                        ? { mediaInputMode: params.mediaInputMode }
+                        : {}),
+                      ...(params.capabilityId ? { capabilityId: params.capabilityId } : {}),
                       ...(params.systemPrompt
                         ? {
                             systemPrompt: normalizeCanvasFunctionalSystemPrompt(

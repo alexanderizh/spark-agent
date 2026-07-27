@@ -30,6 +30,58 @@ const snapshot = (): CanvasSnapshot => ({
 })
 
 describe('canvasPromptSubmission', () => {
+  it('preserves video reference semantics when applying generic reference roles', async () => {
+    const videoNode = {
+      ...imageNode(),
+      id: 'video-ref',
+      type: 'video' as const,
+      title: '动作参考',
+      assetId: 'video-asset',
+      data: { url: 'https://cdn.example.com/reference.mp4', mimeType: 'video/mp4' },
+    }
+    const videoAsset = {
+      ...asset,
+      id: 'video-asset',
+      type: 'video' as const,
+      title: '动作参考',
+      mimeType: 'video/mp4',
+      url: 'https://cdn.example.com/reference.mp4',
+    }
+    const document: CanvasPromptDocument = {
+      version: 2,
+      blocks: [
+        { kind: 'text', id: 'text', text: '参考动作生成' },
+        {
+          kind: 'reference',
+          id: 'ref',
+          source: 'manual',
+          sourceNodeId: 'video-ref',
+          relation: 'reference_video',
+          label: '动作参考',
+          order: 0,
+        },
+      ],
+    }
+    const result = await buildCanvasPromptSubmission({
+      document,
+      snapshot: {
+        ...snapshot(),
+        nodes: [videoNode],
+        assets: [videoAsset],
+      },
+      operation: 'text_to_video',
+      inputNodeIds: ['video-ref'],
+      inputRoles: { 'video-ref': 'reference' },
+    })
+
+    expect(result.relationManifest).toEqual([
+      expect.objectContaining({ sourceNodeId: 'video-ref', relation: 'reference_video' }),
+    ])
+    expect(result.inputFiles).toEqual([
+      expect.objectContaining({ type: 'video', role: 'reference' }),
+    ])
+  })
+
   it('keeps media inputs visible as tags in the editor document', () => {
     const document = buildCanvasPromptDocumentForInputs({
       prompt: '保持人物一致',

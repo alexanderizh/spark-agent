@@ -584,6 +584,8 @@ describe('IPC schemas', () => {
           promptBlockId: 'ref-1',
         },
       ],
+      mediaInputMode: 'reference',
+      capabilityId: 'image.edit',
       providerProfileId: 'provider-media-1',
       modelId: 'gpt-image-2',
       modelParams: { size: '1024x1024' },
@@ -594,6 +596,8 @@ describe('IPC schemas', () => {
     expect(taskRequest.systemPrompt).toBe('hidden capability')
     expect(taskRequest.relationManifest?.[0]?.relation).toBe('character')
     expect(taskRequest.inputBindings?.[0]?.sourceNodeId).toBe('node-1')
+    expect(taskRequest.mediaInputMode).toBe('reference')
+    expect(taskRequest.capabilityId).toBe('image.edit')
 
     const deleteRequest = IpcSchemaRegistry['canvas:project:delete'].parse({
       projectId: 'canvas_project_1',

@@ -7,6 +7,8 @@ export function pickCanvasPromptTaskFields(input: CanvasPromptTaskFields): Canva
     ...(input.inputBindings
       ? { inputBindings: input.inputBindings.map((binding) => ({ ...binding })) }
       : {}),
+    ...(input.mediaInputMode ? { mediaInputMode: input.mediaInputMode } : {}),
+    ...(input.capabilityId ? { capabilityId: input.capabilityId } : {}),
     ...(input.promptSnapshot ? { promptSnapshot: input.promptSnapshot } : {}),
     ...(input.compiledUserText != null ? { compiledUserText: input.compiledUserText } : {}),
     ...(input.inputSnapshots ? { inputSnapshots: input.inputSnapshots } : {}),

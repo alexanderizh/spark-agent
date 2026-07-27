@@ -82,6 +82,11 @@ export function syncCanvasTaskRuntimeToNode(task: CanvasTask, data: CanvasNodeDa
         ? (data.outputPipelineRole ?? null)
         : task.outputPipelineRole,
   })
+  if (task.mediaInputMode) data.mediaInputMode = task.mediaInputMode
+  else delete data.mediaInputMode
+  if (task.capabilityId) data.capabilityId = task.capabilityId
+  else delete data.capabilityId
+  if (task.inputBindings) data.inputBindings = task.inputBindings.map((binding) => ({ ...binding }))
 }
 
 function syncOptionalString(

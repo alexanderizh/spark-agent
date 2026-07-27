@@ -990,6 +990,7 @@ function toCanvasMediaModelSummary(
       id: capability.id,
       label: capability.label,
       input: capability.input,
+      ...(capability.rolePolicy ? { rolePolicy: capability.rolePolicy } : {}),
       output: capability.output,
       paramSchema: capability.paramSchema,
     }
@@ -3509,7 +3510,8 @@ export function registerAllIpcHandlers(): void {
       inputCount: req.inputFiles?.length ?? 0,
     })
     taskLog.started()
-    // capability 由 router 按 operation 推导（input.capability 留空）
+    // 新版画布会显式锁定用户在模型能力矩阵中选择的 capability；
+    // 旧任务缺省时仍由 router 按 operation 推导，保持快照兼容。
     try {
       const taskRuntime = getMediaTaskRuntimeService()
       const resolvedProviders = await resolveCanvasMediaProviders()
@@ -3555,6 +3557,7 @@ export function registerAllIpcHandlers(): void {
       const runtimeRequest = buildCanvasRuntimeRequest(req)
       const input = {
         operation: req.operation,
+        ...(req.capabilityId != null ? { capability: req.capabilityId } : {}),
         ...(runtimeRequest.prompt || req.prompt != null
           ? {
               prompt: buildCanvasMediaProviderPrompt({
@@ -3591,6 +3594,7 @@ export function registerAllIpcHandlers(): void {
           : {}),
         ...(req.manifestId != null ? { manifestId: req.manifestId } : {}),
         ...(req.modelId != null ? { modelId: req.modelId } : {}),
+        ...(req.capabilityId != null ? { capability: req.capabilityId } : {}),
         // Canvas performs structural checks and advisory manifest validation in
         // the renderer. Do not run a second, stricter manifest pass after the
         // final prompt has been expanded with system/context text.

@@ -205,6 +205,18 @@ export function reconcileCanvasInputBindings(input: {
     if (block.kind === 'reference' && (block.suppressed || block.disconnected)) continue
     const node = nodeById.get(block.sourceNodeId)
     if (!node) continue
+    // A visible prompt tag may point to an operation/group owner while the executable
+    // binding points to its materialized output. They represent one logical input.
+    // Do not re-add the owner as a second generic/file binding merely because the
+    // prompt block itself still uses the stable owner id.
+    const hasMaterializedOwnerBinding = next.some(
+      (binding) =>
+        binding.enabled &&
+        binding.promptBlockId === block.id &&
+        binding.sourceNodeId !== node.id &&
+        (input.promptOwnerNodeIdsBySourceNodeId?.get(binding.sourceNodeId) ?? []).includes(node.id),
+    )
+    if (hasMaterializedOwnerBinding) continue
     const relation =
       block.kind === 'reference' ? block.relation : relationForStructuredBlock(block.schema)
     const origin = block.kind === 'reference' ? block.source : 'manual'

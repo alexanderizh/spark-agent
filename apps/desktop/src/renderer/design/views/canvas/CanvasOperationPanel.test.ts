@@ -54,6 +54,7 @@ import {
   buildOperationPanelEditablePromptDocument,
   buildOperationPanelPromptOwnerNodeIds,
   expandOperationPanelPromptNodeIds,
+  materializeOperationPanelPromptNodeIds,
   isCommonOperationModelParam,
   isGeneratedCanvasFunctionalPrompt,
   buildOperationPanelRunInputNodeIds,
@@ -522,6 +523,7 @@ describe('CanvasOperationPanel negative prompt inheritance', () => {
     }
 
     expect(expandOperationPanelPromptNodeIds([group.id], snapshot)).toEqual(['group-1', 'image-1'])
+    expect(materializeOperationPanelPromptNodeIds([group.id], snapshot)).toEqual(['image-1'])
     expect(buildOperationPanelPromptOwnerNodeIds(snapshot).get(image.id)).toEqual([group.id])
   })
 

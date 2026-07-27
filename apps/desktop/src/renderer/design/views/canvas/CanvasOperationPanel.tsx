@@ -4,7 +4,6 @@ import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { isProviderVisibleInUi } from '../../utils/auto-router-ui'
 import {
-  capabilityForOperation,
   capabilitySupportsFrameRoles,
   capabilitySupportsImageRoles,
   inferRolePolicy,
@@ -17,7 +16,9 @@ import {
   type MediaInputRolePolicy,
   type SessionReasoningEffort,
   type CanvasInputBinding,
+  type CanvasMediaInputMode,
   type CanvasPromptDocument,
+  type MediaCapabilityId,
 } from '@spark/protocol'
 import { operationLabel } from './canvas.api'
 import { getCanvasCapability, isOperationNode, nodeOperation } from './canvas.capabilities'
@@ -72,6 +73,19 @@ import {
 } from './CanvasInlineAiComposer'
 import { mediaModelKey } from './canvasModelPickerModel'
 import { CanvasOperationParameterControls } from './CanvasOperationParameterControls'
+import { CanvasMediaInputConfigurator } from './CanvasMediaInputConfigurator'
+import {
+  applyCanvasMediaInputModeToBindings,
+  canvasInputRolesFromBindings,
+  canvasMediaCapabilityIdsForOperation,
+  canvasMediaInputAssignments,
+  canvasMediaInputModeIssue,
+  canvasMediaInputModeOptions,
+  capabilityIdForCanvasMediaInputMode,
+  executionCanvasInputBindings,
+  moveCanvasMediaInputBinding,
+  resolveCanvasMediaInputMode,
+} from './canvasMediaInputMode'
 import {
   mergeSeededModelParamDraft,
   sameCustomParamDrafts,
@@ -146,6 +160,8 @@ export type OperationRunParams = {
   prompt: string
   promptDocument?: CanvasPromptDocument
   inputBindings?: CanvasInputBinding[]
+  mediaInputMode?: CanvasMediaInputMode
+  capabilityId?: MediaCapabilityId
   /** 功能节点的隐藏指令；不进入用户可见提示词文档。 */
   systemPrompt?: string
   negativePrompt?: string
@@ -170,6 +186,8 @@ export type OperationDraftParams = {
   prompt: string
   promptDocument?: CanvasPromptDocument
   inputBindings?: CanvasInputBinding[]
+  mediaInputMode?: CanvasMediaInputMode
+  capabilityId?: MediaCapabilityId
   systemPrompt?: string
   negativePrompt: string
   modelParams: Record<string, unknown>
@@ -365,6 +383,22 @@ export function expandOperationPanelPromptNodeIds(
     }
   }
   return Array.from(expandedIds)
+}
+
+export function materializeOperationPanelPromptNodeIds(
+  nodeIds: readonly string[],
+  snapshot: CanvasSnapshot,
+): string[] {
+  const nodeById = new Map(snapshot.nodes.map((node) => [node.id, node]))
+  const materializedIds = new Set<string>()
+  for (const nodeId of nodeIds) {
+    const node = nodeById.get(nodeId)
+    if (!node) continue
+    for (const sourceNode of expandCanvasInputNodes([node], snapshot)) {
+      materializedIds.add(sourceNode.id)
+    }
+  }
+  return Array.from(materializedIds)
 }
 
 export function resolveOperationPanelActualInputNodes(
@@ -664,6 +698,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     document: promptDocument,
     setDocument: setPromptDocument,
     bindings: inputBindings,
+    setBindings: setInputBindings,
     selectedInputNodeIds,
     firstFrameNodeId,
     setFirstFrameNodeId,
@@ -671,6 +706,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     setLastFrameNodeId,
     referenceFrameNodeIds,
     setReferenceFrameNodeIds,
+    removeNode: removeInputNode,
   } = useCanvasInputBindings({
     resetKey: node.id,
     initialDocument: initialPromptDocument,
@@ -687,6 +723,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [selectedModelKey, setSelectedModelKey] = useState('')
+  const [mediaInputMode, setMediaInputMode] = useState<CanvasMediaInputMode | undefined>(
+    node.data.mediaInputMode ?? task?.mediaInputMode,
+  )
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [skills, setSkills] = useState<SkillItem[]>([])
@@ -754,6 +793,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     setPromptDocument(initialPromptDocument)
     setNegativePrompt(inheritedNegativePrompt)
     setMessageDraft(node.data.message ?? '')
+    setMediaInputMode(node.data.mediaInputMode ?? task?.mediaInputMode)
     setSelectedAgentId(node.data.agentId ?? task?.agentId ?? operationPreset.agentId ?? '')
     setSelectedTextProviderId(
       node.data.providerProfileId ??
@@ -851,7 +891,10 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     )
   }, [node.data.status])
 
-  const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
+  const mediaCapabilityIds = useMemo(
+    () => canvasMediaCapabilityIdsForOperation(operation),
+    [operation],
+  )
   const supportedMediaModels = useMemo(() => {
     if (mediaCapabilityIds.length === 0) return []
     return mediaModels.filter((model) =>
@@ -994,8 +1037,27 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     selectedTextModelId,
     selectedTextProvider,
   ])
+  const mediaInputModeOptions = useMemo(
+    () => canvasMediaInputModeOptions(operation, selectedModel),
+    [operation, selectedModel],
+  )
+  const effectiveMediaInputMode = useMemo(
+    () =>
+      resolveCanvasMediaInputMode({
+        preferred: mediaInputMode,
+        operation,
+        options: mediaInputModeOptions,
+        bindings: inputBindings,
+      }),
+    [inputBindings, mediaInputMode, mediaInputModeOptions, operation],
+  )
+  const selectedMediaInputModeOption = useMemo(
+    () => mediaInputModeOptions.find((option) => option.mode === effectiveMediaInputMode),
+    [effectiveMediaInputMode, mediaInputModeOptions],
+  )
   const selectedCapability = useMemo(() => {
     if (!selectedModel) return null
+    if (selectedMediaInputModeOption) return selectedMediaInputModeOption.capability
     return selectCanvasMediaCapability({
       operation,
       model: selectedModel,
@@ -1016,7 +1078,69 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     referenceFrameNodeIds,
     selectedInputNodeIds,
     selectedModel,
+    selectedMediaInputModeOption,
   ])
+  const normalizedInputBindings = useMemo(
+    () =>
+      effectiveMediaInputMode && selectedMediaInputModeOption
+        ? applyCanvasMediaInputModeToBindings({
+            bindings: inputBindings,
+            mode: effectiveMediaInputMode,
+            option: selectedMediaInputModeOption,
+          })
+        : inputBindings,
+    [effectiveMediaInputMode, inputBindings, selectedMediaInputModeOption],
+  )
+  const executionInputBindings = useMemo(
+    () =>
+      effectiveMediaInputMode && selectedMediaInputModeOption
+        ? executionCanvasInputBindings({
+            bindings: inputBindings,
+            mode: effectiveMediaInputMode,
+            option: selectedMediaInputModeOption,
+          })
+        : inputBindings,
+    [effectiveMediaInputMode, inputBindings, selectedMediaInputModeOption],
+  )
+  const mediaInputAssignments = useMemo(
+    () =>
+      effectiveMediaInputMode && selectedMediaInputModeOption
+        ? canvasMediaInputAssignments({
+            bindings: inputBindings,
+            mode: effectiveMediaInputMode,
+            option: selectedMediaInputModeOption,
+          })
+        : [],
+    [effectiveMediaInputMode, inputBindings, selectedMediaInputModeOption],
+  )
+  const selectedCapabilityId = capabilityIdForCanvasMediaInputMode(
+    effectiveMediaInputMode,
+    mediaInputModeOptions,
+  )
+  const selectedMediaInputIssue = selectedMediaInputModeOption
+    ? canvasMediaInputModeIssue(selectedMediaInputModeOption, inputBindings)
+    : undefined
+  const handleMediaInputModeChange = useCallback(
+    (mode: CanvasMediaInputMode) => {
+      markConfigurationTouched()
+      setMediaInputMode(mode)
+    },
+    [markConfigurationTouched],
+  )
+  const handleMediaInputMove = useCallback(
+    (sourceNodeId: string, direction: -1 | 1) => {
+      markConfigurationTouched()
+      setInputBindings((current) => moveCanvasMediaInputBinding(current, sourceNodeId, direction))
+    },
+    [markConfigurationTouched, setInputBindings],
+  )
+  const handleMediaInputRemove = useCallback(
+    (sourceNodeId: string) => {
+      markConfigurationTouched()
+      removeInputNode(sourceNodeId)
+    },
+    [markConfigurationTouched, removeInputNode],
+  )
   const supportsVideoFrameRoles = useMemo(
     () =>
       (selectedCapability ? capabilitySupportsFrameRoles(selectedCapability) : false) &&
@@ -1338,7 +1462,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       message: messageDraft.trim(),
       prompt: prompt.trim(),
       promptDocument,
-      inputBindings,
+      inputBindings: normalizedInputBindings,
+      ...(effectiveMediaInputMode ? { mediaInputMode: effectiveMediaInputMode } : {}),
+      ...(selectedCapabilityId ? { capabilityId: selectedCapabilityId } : {}),
       ...(hiddenFunctionalSystemPrompt ? { systemPrompt: hiddenFunctionalSystemPrompt } : {}),
       negativePrompt: negativePrompt.trim(),
       modelParams: buildCurrentModelParams(),
@@ -1349,12 +1475,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     buildCurrentModelParams,
     buildRuntimeDraft,
     hiddenFunctionalSystemPrompt,
-    inputBindings,
+    effectiveMediaInputMode,
     messageDraft,
     negativePrompt,
     prompt,
     promptDocument,
     resolveShotScriptConfig,
+    normalizedInputBindings,
+    selectedCapabilityId,
   ])
   const {
     saving: savingDraft,
@@ -1389,44 +1517,64 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     // 防重复提交：本地 running/submitting flag + 节点状态（含已完成节点重提场景）。
     // 旧实现仅拦 running，已完成(completed)节点重提会穿透 → 产生重复任务。
     if (running || submitting || node.data.status === 'running') return
-    const inputRoles = supportsVideoFrameRoles
-      ? buildVideoFrameInputRoles(
-          explicitFrameNodeIds,
-          firstFrameNodeId,
-          lastFrameNodeId,
-          referenceFrameNodeIds,
-        )
-      : supportsImageRoles
-        ? buildReferenceImageInputRoles(
-            selectedInputNodeIds.filter((id) =>
-              mediaInputOptions.some((option) => option.type === 'image' && option.value === id),
-            ),
+    if (selectedMediaInputIssue) {
+      message.warning(selectedMediaInputIssue)
+      return
+    }
+    const usesExplicitMediaMode = Boolean(effectiveMediaInputMode && selectedMediaInputModeOption)
+    const inputRoles = usesExplicitMediaMode
+      ? canvasInputRolesFromBindings(executionInputBindings)
+      : supportsVideoFrameRoles
+        ? buildVideoFrameInputRoles(
+            explicitFrameNodeIds,
+            firstFrameNodeId,
+            lastFrameNodeId,
+            referenceFrameNodeIds,
           )
-        : undefined
+        : supportsImageRoles
+          ? buildReferenceImageInputRoles(
+              selectedInputNodeIds.filter((id) =>
+                mediaInputOptions.some((option) => option.type === 'image' && option.value === id),
+              ),
+            )
+          : undefined
     const nextModelParams = buildCurrentModelParams()
     const activePromptNodeIds = readActiveOperationPromptNodeIds(promptDocument)
-    const activePromptNodeIdSet = new Set(activePromptNodeIds)
-    const runInputNodeIds = Array.from(
-      new Set([
-        ...buildOperationPanelRunInputNodeIds({
-          selectedInputNodeIds,
-          explicitFrameNodeIds,
-          textInputNodeIds: expandedSourceInputNodes
-            .filter(
-              (item) =>
-                (item.type === 'text' || item.type === 'prompt') &&
-                activePromptNodeIdSet.has(item.id),
-            )
-            .map((item) => item.id),
-          supportsVideoFrameRoles,
-          mediaInputOptions: mediaInputOptions.map((item) => ({
-            value: String(item.value),
-            type: item.type,
-          })),
-        }),
-        ...activePromptNodeIds,
-      ]),
+    const materializedPromptNodeIds = materializeOperationPanelPromptNodeIds(
+      activePromptNodeIds,
+      snapshot,
     )
+    const snapshotNodeById = new Map(snapshot.nodes.map((item) => [item.id, item]))
+    const textInputNodeIds = materializedPromptNodeIds.filter((id) => {
+      const item = snapshotNodeById.get(id)
+      return item?.type === 'text' || item?.type === 'prompt'
+    })
+    const mediaNodeIds = new Set(mediaInputOptions.map((option) => String(option.value)))
+    const runInputNodeIds = usesExplicitMediaMode
+      ? Array.from(
+          new Set([
+            ...executionInputBindings
+              .filter((binding) => ['image', 'video', 'audio', 'file'].includes(binding.kind))
+              .map((binding) => binding.sourceNodeId),
+            ...textInputNodeIds,
+            ...materializedPromptNodeIds.filter((id) => !mediaNodeIds.has(id)),
+          ]),
+        )
+      : Array.from(
+          new Set([
+            ...buildOperationPanelRunInputNodeIds({
+              selectedInputNodeIds,
+              explicitFrameNodeIds,
+              textInputNodeIds,
+              supportsVideoFrameRoles,
+              mediaInputOptions: mediaInputOptions.map((item) => ({
+                value: String(item.value),
+                type: item.type,
+              })),
+            }),
+            ...materializedPromptNodeIds,
+          ]),
+        )
     if (isVideoSubmissionOperation(operation)) {
       const proceed = await confirmVideoSubmission({
         prompt: prompt.trim(),
@@ -1446,7 +1594,9 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
       const runParams: OperationRunParams = {
         prompt: prompt.trim(),
         promptDocument,
-        inputBindings,
+        inputBindings: executionInputBindings,
+        ...(effectiveMediaInputMode ? { mediaInputMode: effectiveMediaInputMode } : {}),
+        ...(selectedCapabilityId ? { capabilityId: selectedCapabilityId } : {}),
         ...(hiddenFunctionalSystemPrompt ? { systemPrompt: hiddenFunctionalSystemPrompt } : {}),
         ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
         inputNodeIds: runInputNodeIds,
@@ -1499,14 +1649,19 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     onRun,
     prompt,
     promptDocument,
-    inputBindings,
+    effectiveMediaInputMode,
+    executionInputBindings,
     hiddenFunctionalSystemPrompt,
     resolveShotScriptConfig,
     saveDraftNow,
     selectedModel,
+    selectedCapabilityId,
+    selectedMediaInputModeOption,
+    selectedMediaInputIssue,
     running,
     submitting,
     selectedSkillIds,
+    snapshot,
     expandedSourceInputNodes,
     explicitFrameNodeIds,
     firstFrameNodeId,
@@ -1581,6 +1736,23 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     }
     return resolved
   }, [promptCandidateNodes, snapshot])
+  const mediaPresentationNodeBySourceId = useMemo(() => {
+    const resolved = new Map(promptPresentationNodeBySourceId)
+    for (const assignment of mediaInputAssignments) {
+      const direct = resolved.get(assignment.sourceNodeId)
+      if (direct?.assetId || direct?.data.thumbnailUrl || direct?.data.url) continue
+      const source = nodeById.get(assignment.sourceNodeId)
+      if (!source) continue
+      const preview = expandCanvasInputNodes([source], snapshot).find(
+        (candidate) =>
+          candidate.id !== source.id &&
+          (candidate.assetId || candidate.data.thumbnailUrl || candidate.data.url) &&
+          (candidate.type === assignment.kind || assignment.kind === 'file'),
+      )
+      if (preview) resolved.set(assignment.sourceNodeId, preview)
+    }
+    return resolved
+  }, [mediaInputAssignments, nodeById, promptPresentationNodeBySourceId, snapshot])
   const handlePromptMentionSelect = useCallback(
     (_selectedNode: CanvasNode) => {
       if (running) return false
@@ -1894,7 +2066,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               document={promptDocument}
               placeholder={`输入${operationText}的提示词...`}
               mentionNodes={promptCandidateNodes}
-              presentationNodeBySourceId={promptPresentationNodeBySourceId}
+              presentationNodeBySourceId={mediaPresentationNodeBySourceId}
               connectionNodes={promptConnectionNodes}
               assets={snapshot.assets}
               onChange={handlePromptChange}
@@ -1909,6 +2081,25 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             </span>
           </div>
         </div>
+
+        {mediaInputModeOptions.length > 0 && effectiveMediaInputMode && (
+          <div className="canvas-operation-composer-input-rail">
+            <CanvasMediaInputConfigurator
+              options={mediaInputModeOptions}
+              value={effectiveMediaInputMode}
+              assignments={mediaInputAssignments}
+              bindings={inputBindings}
+              nodes={snapshot.nodes}
+              assets={snapshot.assets}
+              presentationNodeBySourceId={mediaPresentationNodeBySourceId}
+              disabled={running}
+              variant="composer"
+              onChange={handleMediaInputModeChange}
+              onMove={handleMediaInputMove}
+              onRemove={handleMediaInputRemove}
+            />
+          </div>
+        )}
 
         <div className="canvas-operation-composer-bottom">
           <div className="canvas-operation-composer-params">
@@ -2000,7 +2191,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 onParameterChange={handleModelParamDraftChange}
               />
             )}
-            {supportsVideoFrameRoles && (
+            {supportsVideoFrameRoles && mediaInputModeOptions.length === 0 && (
               <>
                 {renderTextClickSelector({
                   pickerId: 'first-frame',
@@ -2118,7 +2309,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                   onClick={() => void handleCancelTask()}
                 />
               )}
-            <Tooltip title={node.data.status === 'running' ? '运行中' : '提交任务'}>
+            <Tooltip
+              title={
+                selectedMediaInputIssue ?? (node.data.status === 'running' ? '运行中' : '提交任务')
+              }
+            >
               <Button
                 size="middle"
                 type="primary"
@@ -2126,7 +2321,12 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 aria-label="提交任务"
                 icon={<Icons.Send size={14} />}
                 loading={running || submitting || node.data.status === 'running'}
-                disabled={running || submitting || node.data.status === 'running'}
+                disabled={
+                  Boolean(selectedMediaInputIssue) ||
+                  running ||
+                  submitting ||
+                  node.data.status === 'running'
+                }
                 onClick={() => void handleRun()}
               />
             </Tooltip>
@@ -2262,7 +2462,27 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           </div>
         )}
 
-        {supportsVideoFrameRoles && (
+        {mediaInputModeOptions.length > 0 && effectiveMediaInputMode && (
+          <div className="canvas-operation-panel-section canvas-operation-panel-section-inputs">
+            <div className="canvas-operation-panel-section-label">素材编排</div>
+            <CanvasMediaInputConfigurator
+              options={mediaInputModeOptions}
+              value={effectiveMediaInputMode}
+              assignments={mediaInputAssignments}
+              bindings={inputBindings}
+              nodes={snapshot.nodes}
+              assets={snapshot.assets}
+              presentationNodeBySourceId={promptPresentationNodeBySourceId}
+              disabled={running}
+              variant="panel"
+              onChange={handleMediaInputModeChange}
+              onMove={handleMediaInputMove}
+              onRemove={handleMediaInputRemove}
+            />
+          </div>
+        )}
+
+        {supportsVideoFrameRoles && mediaInputModeOptions.length === 0 && (
           <div className="canvas-operation-panel-section canvas-operation-panel-section-frame-params">
             <div className="canvas-operation-panel-section-label">视频帧 / 参考图</div>
             <div className="canvas-operation-panel-frame-roles">
@@ -2500,7 +2720,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             />
           </Tooltip>
         )}
-        <Tooltip title={node.data.status === 'running' ? '运行中' : '提交任务'}>
+        <Tooltip
+          title={
+            selectedMediaInputIssue ?? (node.data.status === 'running' ? '运行中' : '提交任务')
+          }
+        >
           <Button
             size="middle"
             type="primary"
@@ -2508,7 +2732,12 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
             aria-label="提交任务"
             icon={<Icons.Send size={14} />}
             loading={running || submitting || node.data.status === 'running'}
-            disabled={running || submitting || node.data.status === 'running'}
+            disabled={
+              Boolean(selectedMediaInputIssue) ||
+              running ||
+              submitting ||
+              node.data.status === 'running'
+            }
             onClick={() => void handleRun()}
           />
         </Tooltip>

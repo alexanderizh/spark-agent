@@ -127,6 +127,25 @@ export function useCanvasInputBindings(input: {
     [input.connectionNodeIds, input.nodes, input.promptOwnerNodeIdsBySourceNodeId],
   )
 
+  const setBindings = useCallback<Dispatch<SetStateAction<CanvasInputBinding[]>>>(
+    (action) => {
+      setState((current) => {
+        const bindings = typeof action === 'function' ? action(current.bindings) : action
+        return {
+          ...current,
+          bindings: reconcileCanvasInputBindings({
+            bindings,
+            document: current.document,
+            nodes: input.nodes,
+            connectionNodeIds: input.connectionNodeIds,
+            promptOwnerNodeIdsBySourceNodeId: input.promptOwnerNodeIdsBySourceNodeId,
+          }),
+        }
+      })
+    },
+    [input.connectionNodeIds, input.nodes, input.promptOwnerNodeIdsBySourceNodeId],
+  )
+
   const setSelectedInputNodeIds = useRoleSelectionSetter({
     setState,
     nodes: input.nodes,
@@ -186,6 +205,7 @@ export function useCanvasInputBindings(input: {
     document: state.document,
     setDocument,
     bindings: state.bindings,
+    setBindings,
     selectedInputNodeIds,
     setSelectedInputNodeIds,
     firstFrameNodeId,

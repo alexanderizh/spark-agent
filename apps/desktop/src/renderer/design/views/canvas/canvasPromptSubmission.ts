@@ -158,7 +158,12 @@ function applyInputRoles(
     const roles = Array.isArray(selected) ? selected : [selected]
     const mapped = roles.map<Extract<CanvasPromptBlock, { kind: 'reference' }>['relation']>((role) => {
       if (role === 'first_frame' || role === 'last_frame') return role
-      if (role === 'reference') return 'reference_image' as const
+      if (role === 'reference') {
+        if (block.relation === 'reference_video' || block.relation === 'reference_audio') {
+          return block.relation
+        }
+        return 'reference_image' as const
+      }
       return block.relation
     })
     return mapped.map((relation, index) => ({

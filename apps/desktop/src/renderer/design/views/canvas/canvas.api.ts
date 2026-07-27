@@ -4414,6 +4414,10 @@ export const canvasApi = {
     if (request.reasoningEffort != null) taskNodeData.reasoningEffort = request.reasoningEffort
     if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
     if (request.modelParams != null) taskNodeData.modelParams = request.modelParams
+    if (request.inputBindings != null)
+      taskNodeData.inputBindings = request.inputBindings.map((binding) => ({ ...binding }))
+    if (request.mediaInputMode != null) taskNodeData.mediaInputMode = request.mediaInputMode
+    if (request.capabilityId != null) taskNodeData.capabilityId = request.capabilityId
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)
       taskNodeData.outputPipelineRole = request.outputPipelineRole
@@ -5295,6 +5299,10 @@ export const canvasApi = {
     if (request.modelId != null) taskNodeData.modelId = request.modelId
     if (request.skillIds != null) taskNodeData.skillIds = request.skillIds
     if (request.modelParams != null) taskNodeData.modelParams = request.modelParams
+    if (request.inputBindings != null)
+      taskNodeData.inputBindings = request.inputBindings.map((binding) => ({ ...binding }))
+    if (request.mediaInputMode != null) taskNodeData.mediaInputMode = request.mediaInputMode
+    if (request.capabilityId != null) taskNodeData.capabilityId = request.capabilityId
     // 专用流水线节点：任务节点角色 + 暂存产物节点角色（供完成回写读取）
     if (request.taskPipelineRole != null) taskNodeData.pipelineRole = request.taskPipelineRole
     if (request.outputPipelineRole != null)

@@ -93,4 +93,38 @@ describe('canvas task lifecycle diagnostics', () => {
     expect(data.pipelineRole).toBe('shot')
     expect(data.outputPipelineRole).toBe('shot')
   })
+
+  it('restores the explicit media mode, capability and canonical bindings', () => {
+    const data: CanvasNodeData = {}
+    const task = {
+      agentId: null,
+      providerProfileId: null,
+      manifestId: null,
+      modelId: null,
+      reasoningEffort: null,
+      skillIds: [],
+      modelParams: {},
+      mediaInputMode: 'first_frame',
+      capabilityId: 'video.image_to_video',
+      inputBindings: [
+        {
+          id: 'picker:image:frame',
+          sourceNodeId: 'image',
+          origin: 'picker',
+          kind: 'image',
+          relation: 'first_frame',
+          role: 'first_frame',
+          enabled: true,
+          order: 0,
+        },
+      ],
+    } as unknown as CanvasTask
+
+    syncCanvasTaskRuntimeToNode(task, data)
+
+    expect(data.mediaInputMode).toBe('first_frame')
+    expect(data.capabilityId).toBe('video.image_to_video')
+    expect(data.inputBindings?.[0]).toMatchObject({ role: 'first_frame' })
+    expect(data.inputBindings).not.toBe(task.inputBindings)
+  })
 })
