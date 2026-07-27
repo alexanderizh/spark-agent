@@ -142,7 +142,7 @@ export function ChatTabbar({
                 <Icons.Team size={12} />
                 <span>团队模式</span>
                 <span className="chat-team-status-divider" />
-                <span>Host：{hostAgent?.name ?? '平台管理'}</span>
+                <span>Host：{hostAgent?.name ?? 'Spark助手'}</span>
               </button>
             )}
             {!teamConfig.enabled && orchestration != null && (

@@ -72,7 +72,7 @@ function idToLabel(id: string): string {
   if (id === DEFAULT_USER_AVATAR_ID) return '用户默认'
   if (id === DEFAULT_AGENT_AVATAR_ID) return 'Agent 默认'
   if (id === DEFAULT_TEAM_AVATAR_ID) return '团队默认'
-  if (id === PLATFORM_MANAGER_AVATAR_ID) return '平台管理'
+  if (id === PLATFORM_MANAGER_AVATAR_ID) return 'Spark助手'
   return id
     .replace(/^(animal|person|guofeng)-/, '')
     .split('-')

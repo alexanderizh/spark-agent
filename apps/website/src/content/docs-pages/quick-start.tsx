@@ -51,7 +51,8 @@ const Body = () => (
 
     <h2 id="first-agent">3. 创建第一个 Agent</h2>
     <p>
-      默认会有一个 <code>platform-manager-agent</code> 负责全局管理任务。
+      默认会有一个 <strong>Spark助手</strong>（稳定 ID 为 <code>platform-manager-agent</code>），
+      统一负责平台管理和全栈开发任务。
       你可以在 <strong>设置 → Agents</strong> 新建专属 Agent：
     </p>
     <ul>

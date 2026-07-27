@@ -25,8 +25,9 @@ const Body = () => (
       <li><strong>Workflow</strong>：可选的工作流绑定（见下文）。</li>
     </ul>
     <p>
-      内置默认 <code>platform-manager-agent</code> 负责所有「平台管理」类操作（Skills / MCP /
-      Provider / Workflow / Agent / Team / Settings / Session / Board Task 等）。
+      内置默认 <strong>Spark助手</strong>（稳定 ID 为 <code>platform-manager-agent</code>）统一负责
+      平台管理与全栈开发任务，包括 Skills / MCP / Provider / Workflow / Agent / Team /
+      Settings / Session / Board Task 管理，以及代码分析、实现、测试与交付。
       自定义 Agent 可以聚焦到具体工作，例如「React 审查 Agent」「i18n 重构 Agent」。
     </p>
 
@@ -183,7 +184,7 @@ export const agentsWorkflows: DocsPageContent = {
     },
   ],
   quickReference: [
-    { key: '默认 Agent', value: 'platform-manager-agent' },
+    { key: '默认 Agent', value: 'Spark助手（platform-manager-agent）' },
     { key: '运行时 prompt 段', value: '[Runtime Rules] / [Workflow Execution Plan] / [Platform Tools]' },
     { key: 'Workflow 存储', value: 'workflows.graph_json + workflow_runs 快照' },
     { key: '平台 MCP', value: 'spark_platform（命名空间 mcp__spark_platform__*）' },
@@ -204,7 +205,7 @@ export const agentsWorkflows: DocsPageContent = {
     ],
   },
   aiSummary:
-    'Spark Work 工作流核心机制：Agent Profile（Provider/Model/Adapter/Permission Mode/Prompt/Skills/Rules/Hooks/Workflow）与全局已启用 MCP 自动挂载、' +
+    'Spark Work 工作流核心机制：默认 Spark助手统一承担平台管理与全栈开发；Agent Profile（Provider/Model/Adapter/Permission Mode/Prompt/Skills/Rules/Hooks/Workflow）与全局已启用 MCP 自动挂载、' +
     '运行时注入顺序（[Runtime Rules] → [Workflow Execution Plan] → [Platform Tools]）、Workflow Graphs (nodes + edges, 11 种节点 input/plan/agent/subagent/skill/tool/mcp/approval/verify/review/artifact)、' +
     'Workflow 视图（卡片列表 + 图编辑器）、Hooks（permission-request/user-question/session-complete/failure）、' +
     'Platform 管理 MCP（mcp__spark_platform__*: skills/mcp_servers/providers/workflows/agents/teams/settings/sessions/board_tasks）、' +
