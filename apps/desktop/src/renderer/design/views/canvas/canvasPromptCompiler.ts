@@ -399,7 +399,14 @@ function inputRoleForRelation(
 ): NonNullable<CanvasPromptCompilation['inputFiles']>[number]['role'] {
   if (relation === 'first_frame') return 'first_frame'
   if (relation === 'last_frame') return 'last_frame'
-  if (relation === 'reference_image' || node.type === 'image') return 'reference'
+  if (
+    relation === 'reference_image' ||
+    relation === 'reference_video' ||
+    relation === 'reference_audio' ||
+    node.type === 'image'
+  ) {
+    return 'reference'
+  }
   return 'input'
 }
 

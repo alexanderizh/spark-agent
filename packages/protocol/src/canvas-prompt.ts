@@ -1,4 +1,4 @@
-import type { MediaInputMetadata } from './media-config.js'
+import type { MediaCapabilityId, MediaInputMetadata } from './media-config.js'
 
 /** Current cross-process canvas prompt document version. */
 export const CANVAS_PROMPT_VERSION = 2 as const
@@ -93,6 +93,15 @@ export type CanvasInputBindingRole =
   | 'reference'
   | 'mask'
 
+/** Explicit canvas media-input mode selected by the user. */
+export type CanvasMediaInputMode =
+  | 'text'
+  | 'first_frame'
+  | 'first_last_frame'
+  | 'reference'
+  | 'edit'
+  | 'extend'
+
 /** Canonical task-level binding shared by every canvas input entry point. */
 export type CanvasInputBinding = {
   id: string
@@ -183,6 +192,10 @@ export type CanvasPromptCompilation = {
 export interface CanvasPromptTaskFields {
   promptDocument?: CanvasPromptDocument
   inputBindings?: CanvasInputBinding[]
+  /** User-selected media input semantics; legacy tasks may omit it. */
+  mediaInputMode?: CanvasMediaInputMode
+  /** Capability locked during preflight so runtime does not infer it again. */
+  capabilityId?: MediaCapabilityId
   promptSnapshot?: CanvasPromptSnapshot
   compiledUserText?: string
   inputSnapshots?: CanvasPromptInputSnapshot[]

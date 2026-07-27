@@ -735,9 +735,19 @@ const CanvasInputBindingSchema = z.object({
   order: z.number().int().min(0),
   promptBlockId: z.string().max(200).optional(),
 })
+const CanvasMediaInputModeSchema = z.enum([
+  'text',
+  'first_frame',
+  'first_last_frame',
+  'reference',
+  'edit',
+  'extend',
+])
 const CanvasPromptTaskFieldsSchema = {
   promptDocument: CanvasPromptDocumentSchema.optional(),
   inputBindings: z.array(CanvasInputBindingSchema).max(128).optional(),
+  mediaInputMode: CanvasMediaInputModeSchema.optional(),
+  capabilityId: MediaCapabilityIdSchema.optional(),
   promptSnapshot: CanvasPromptDocumentSchema.extend({
     capturedAt: z.string().max(80).optional(),
   }).optional(),

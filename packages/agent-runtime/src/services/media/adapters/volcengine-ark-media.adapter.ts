@@ -393,7 +393,14 @@ function assertSeedanceInputMode(
     capability === 'video.reference_to_video' ||
     capability === 'video.edit' ||
     capability === 'video.extend'
-  if (hasFrameMode && hasReferenceMode) {
+  const rolePolicy = ctx.mediaManifestCapability?.rolePolicy
+  const supportsMixedFrameReferences = Boolean(
+    rolePolicy?.imageRoles?.includes('first_frame') &&
+    (rolePolicy.imageRoles?.includes('reference_image') ||
+      rolePolicy.videoRoles?.includes('reference_video') ||
+      rolePolicy.audioRoles?.includes('reference_audio')),
+  )
+  if (hasFrameMode && hasReferenceMode && !supportsMixedFrameReferences) {
     throw new MediaProviderError(
       'invalid_input',
       'Seedance 首帧/首尾帧模式不能与多模态参考模式混用',

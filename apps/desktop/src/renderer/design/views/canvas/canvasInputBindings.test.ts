@@ -299,6 +299,53 @@ describe('canvasInputBindings', () => {
     ).toEqual([])
   })
 
+  it('does not re-add an operation owner when its materialized output owns the same prompt tag', () => {
+    const operation = canvasNode('operation-1', 'text_to_image')
+    const image = canvasNode('image-1', 'image')
+    const owners = new Map<string, readonly string[]>([['image-1', ['operation-1']]])
+    const promptBlock = {
+      kind: 'reference' as const,
+      id: 'connection-operation',
+      source: 'connection' as const,
+      sourceNodeId: operation.id,
+      relation: 'generic' as const,
+      label: '角色图任务',
+      order: 0,
+    }
+
+    const result = reconcileCanvasInputBindings({
+      bindings: [
+        binding({
+          id: 'connection:image-1:first_frame',
+          sourceNodeId: image.id,
+          origin: 'connection',
+          role: 'first_frame',
+          relation: 'first_frame',
+          promptBlockId: promptBlock.id,
+        }),
+        binding({
+          id: 'connection:operation-1:input',
+          sourceNodeId: operation.id,
+          origin: 'connection',
+          kind: 'file',
+          role: 'input',
+          relation: 'generic',
+          promptBlockId: promptBlock.id,
+          order: 1,
+        }),
+      ],
+      nodes: [operation, image],
+      connectionNodeIds: [image.id],
+      document: { version: 2, blocks: [promptBlock] },
+      promptOwnerNodeIdsBySourceNodeId: owners,
+    })
+
+    expect(activeCanvasInputBindings(result).map((item) => item.sourceNodeId)).toEqual([image.id])
+    expect(result).toContainEqual(
+      expect.objectContaining({ sourceNodeId: operation.id, enabled: false }),
+    )
+  })
+
   it('removes every provider role for a tile and cleans linked prompt blocks', () => {
     const bindings = [
       binding({ id: 'reference', origin: 'connection', promptBlockId: 'connection-tag' }),
