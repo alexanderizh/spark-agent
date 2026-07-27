@@ -276,6 +276,9 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from 'react'
 import './CanvasWorkspaceView.less'
+// CanvasWorkflowDrawer、CanvasWorkflowRunPanel 和 CanvasWorkflowExtractDialog
+// 都在画布工作区内渲染；工作流样式不能只由工作流库页面按路由加载。
+import './canvas-workflow.less'
 import './uiux-v4/index.less'
 
 type CanvasPoint = { x: number; y: number }

@@ -111,7 +111,6 @@ export function ManagedModelPreferencesModal({
                 >
                   <Checkbox checked={model.enabled} disabled />
                   <span>{model.name}</span>
-                  <small>图片</small>
                 </div>
               ))}
             </div>

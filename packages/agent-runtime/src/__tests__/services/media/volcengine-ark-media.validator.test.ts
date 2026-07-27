@@ -159,6 +159,25 @@ describe('Volcengine Ark media request validation', () => {
     expect(result.blockingIssues.some((issue) => issue.message.includes('不支持首尾帧'))).toBe(true)
   })
 
+  it.each([
+    ['doubao-seedance-1-5-pro-251215', 2],
+    ['doubao-seedance-1-0-pro-250528', 2],
+    ['doubao-seedance-1-0-pro-fast-251015', 1],
+  ] as const)('accepts canvas reference roles as %s frame inputs', (modelId, imageCount) => {
+    const result = validate({
+      modelId,
+      capability: 'video.image_to_video',
+      prompt: '首尾帧平滑过渡',
+      inputFiles: Array.from({ length: imageCount }, (_, index) => ({
+        type: 'image' as const,
+        role: 'reference' as const,
+        url: `https://cdn/frame-${index}.png`,
+      })),
+      modelParams: { resolution: '720p' },
+    })
+    expect(result.blockingIssues).toEqual([])
+  })
+
   it('enforces Seedream group input plus output limit', () => {
     const result = validate({
       modelId: 'doubao-seedream-5-0-lite-260128',

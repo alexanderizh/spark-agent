@@ -43,8 +43,11 @@ function validateSeedanceRequest(context: MediaValidationContext): MediaContract
   const audios = inputFilesOfKind(context, 'audio')
   const firstFrames = images.filter((file) => file.role === 'first_frame')
   const lastFrames = images.filter((file) => file.role === 'last_frame')
-  const references = images.filter((file) => file.role === 'reference')
   const isSeedance2 = context.modelId.startsWith('doubao-seedance-2-0-')
+  const isSeedance1x = context.modelId.startsWith('doubao-seedance-1-')
+  // Seedance 1.x 不支持平台 reference_image；画布通用的 reference 图片会在
+  // adapter 边界按顺序归一化成首帧/尾帧，因此这里也按帧输入校验。
+  const references = isSeedance1x ? [] : images.filter((file) => file.role === 'reference')
   const isSeedance15 = context.modelId.startsWith('doubao-seedance-1-5-')
   const isSeedance10Fast = context.modelId.includes('seedance-1-0-pro-fast')
 
@@ -67,13 +70,16 @@ function validateSeedanceRequest(context: MediaValidationContext): MediaContract
 
   const hasExplicitFrameMode = firstFrames.length > 0 || lastFrames.length > 0
   const usesImplicitFrameMode =
-    context.capability === 'video.image_to_video' &&
-    !hasExplicitFrameMode &&
-    references.length === 0 &&
-    images.length > 0
-  const implicitReferenceImages = usesImplicitFrameMode
-    ? images.slice(2)
-    : images.filter((file) => file.role !== 'first_frame' && file.role !== 'last_frame')
+    (isSeedance1x && images.length > 0) ||
+    (context.capability === 'video.image_to_video' &&
+      !hasExplicitFrameMode &&
+      references.length === 0 &&
+      images.length > 0)
+  const implicitReferenceImages = isSeedance1x
+    ? []
+    : usesImplicitFrameMode
+      ? images.slice(2)
+      : images.filter((file) => file.role !== 'first_frame' && file.role !== 'last_frame')
   const hasFrameMode = hasExplicitFrameMode || usesImplicitFrameMode
   const hasReferenceMode =
     implicitReferenceImages.length > 0 ||
