@@ -2997,6 +2997,79 @@ describe('VolcengineArkMediaAdapter', () => {
     expect(refs).toHaveLength(0)
   })
 
+  it('Seedance 1.x converts explicit canvas references to first_frame + last_frame', async () => {
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
+      (entry) => entry.id === 'volcengine:doubao-seedance-1-0-pro-250528',
+    )!
+    let postedBody: Record<string, unknown> = {}
+    const fetchMock = makeFetch([
+      {
+        match: '/contents/generations/tasks',
+        respond: (init) => {
+          if (init?.method === 'POST') {
+            postedBody = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>
+            return { ok: true, status: 200, body: { id: 'seedance-1x-canvas' } }
+          }
+          return { ok: true, status: 200, body: { status: 'queued' } }
+        },
+      },
+      {
+        match: '/contents/generations/tasks/seedance-1x-canvas',
+        respond: () => ({
+          ok: true,
+          status: 200,
+          body: { status: 'succeeded', content: { video_url: 'https://cdn/seedance-1x.mp4' } },
+        }),
+      },
+      {
+        match: 'https://cdn/seedance-1x.mp4',
+        respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }),
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'image_to_video',
+        outputDir: tmpDir,
+        prompt: '首尾帧平滑过渡',
+        // 无限画布的通用连接会持久化为 reference；1.x 发送前必须转成首/尾帧。
+        inputFiles: [
+          { type: 'image', role: 'reference', url: 'https://cdn/start.png' },
+          { type: 'image', role: 'reference', url: 'https://cdn/end.png' },
+        ],
+        modelParams: { resolution: '720p' },
+      },
+      {
+        providers: [
+          makeProvider({
+            id: 'volc-prov',
+            name: '火山 Seedance 1.x',
+            defaultModel: 'doubao-seedance-1-0-pro-250528',
+            apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+            mediaProvider: 'volcengine-ark',
+            mediaCapabilities: ['video.generate', 'video.image_to_video'],
+            mediaModelManifests: [seedanceManifest],
+          }),
+        ],
+        manifestId: seedanceManifest.id,
+        modelId: seedanceManifest.modelId,
+        // 真实画布执行已在 renderer 预校验，main/runtime 会走这一分支。
+        skipValidation: true,
+        fetch: fetchMock,
+      },
+    )
+
+    const content = postedBody.content as Array<Record<string, unknown>>
+    expect(content.filter((item) => item.role === 'reference_image')).toHaveLength(0)
+    expect(content.find((item) => item.role === 'first_frame')).toMatchObject({
+      image_url: { url: 'https://cdn/start.png' },
+    })
+    expect(content.find((item) => item.role === 'last_frame')).toMatchObject({
+      image_url: { url: 'https://cdn/end.png' },
+    })
+  })
+
   it('Seedance rejects mixing implicit first-and-last frames with a third reference image', async () => {
     const seedanceManifest = BUILTIN_MEDIA_MODEL_MANIFESTS.find(
       (entry) => entry.id === 'volcengine:doubao-seedance-2-0-260128',

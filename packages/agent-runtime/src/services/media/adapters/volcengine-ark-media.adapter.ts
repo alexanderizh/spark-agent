@@ -340,12 +340,14 @@ function assertSeedanceInputMode(
   const audios = files.filter(isAudioInput)
   const firstFrames = images.filter((file) => file.role === 'first_frame')
   const lastFrames = images.filter((file) => file.role === 'last_frame')
-  const explicitReferences = images.filter((file) => file.role === 'reference')
   const adapterModelId = mediaAdapterModelId(ctx)
   const isSeedance2 = adapterModelId.startsWith('doubao-seedance-2-0-')
   // 1.x 系列（1.0 / 1.5）只支持 t2v + i2v，不支持参考图生视频（r2v）。
   // 正向精确匹配第 1 代，避免未来引入 2.x/2.5 时被 `!isSeedance2` 反向误判。
   const isSeedance1x = adapterModelId.startsWith('doubao-seedance-1-')
+  // 画布的通用输入绑定会把普通图片持久化为 reference。对只支持首/尾帧的
+  // Seedance 1.x，这个角色只是画布语义，不能原样映射成火山 reference_image。
+  const explicitReferences = isSeedance1x ? [] : images.filter((file) => file.role === 'reference')
 
   if (firstFrames.length > 1 || lastFrames.length > 1) {
     throw new MediaProviderError('invalid_input', 'Seedance 首帧和尾帧都最多只能选择 1 张')
@@ -370,17 +372,19 @@ function assertSeedanceInputMode(
   }
 
   const hasExplicitFrameMode = firstFrames.length > 0 || lastFrames.length > 0
-  // 1.x 系列在 video.generate 下也不支持参考图：无显式 role 的图走首帧/首尾帧兜底，
-  // 与 video.image_to_video 入口行为一致，避免被标成 reference_image 触发后端 r2v 报错。
+  // Seedance 1.x 的所有图片（包括画布显式 reference）都必须按首/尾帧解释；
+  // 不能让画布通用角色把请求切换成平台不支持的 r2v。
   const usesImplicitFrameMode =
-    (capability === 'video.image_to_video' ||
-      (isSeedance1x && capability === 'video.generate')) &&
-    !hasExplicitFrameMode &&
-    explicitReferences.length === 0 &&
-    images.length > 0
-  const implicitReferenceImages = usesImplicitFrameMode
-    ? images.slice(2)
-    : images.filter((file) => file.role !== 'first_frame' && file.role !== 'last_frame')
+    (isSeedance1x && images.length > 0) ||
+    (capability === 'video.image_to_video' &&
+      !hasExplicitFrameMode &&
+      explicitReferences.length === 0 &&
+      images.length > 0)
+  const implicitReferenceImages = isSeedance1x
+    ? []
+    : usesImplicitFrameMode
+      ? images.slice(2)
+      : images.filter((file) => file.role !== 'first_frame' && file.role !== 'last_frame')
   const hasFrameMode = hasExplicitFrameMode || usesImplicitFrameMode
   const hasReferenceMode =
     implicitReferenceImages.length > 0 ||
@@ -454,10 +458,16 @@ async function buildSeedanceContent(
   prompt: string,
 ): Promise<SeedanceContentItem[]> {
   const files = input.inputFiles ?? []
-  const imageFiles = files.filter(isImageInput)
+  const rawImageFiles = files.filter(isImageInput)
   const videoFiles = files.filter(isVideoInput)
   const audioFiles = files.filter(isAudioInput)
-  const isSeedance1x = mediaAdapterModelId(ctx).startsWith('doubao-seedance-1-')
+  const adapterModelId = mediaAdapterModelId(ctx)
+  const isSeedance1x = adapterModelId.startsWith('doubao-seedance-1-')
+  // 先在 provider 边界归一化一次。画布可能带显式 role=reference，且执行阶段会跳过
+  // 已确认的预校验；因此这里必须保证 1.x 最终永远不会发出 reference_image。
+  const imageFiles = isSeedance1x
+    ? normalizeSeedance1xFrameFiles(rawImageFiles, adapterModelId)
+    : rawImageFiles
 
   const content: SeedanceContentItem[] = []
   if (prompt) content.push({ type: 'text', text: prompt })
@@ -475,14 +485,10 @@ async function buildSeedanceContent(
   //   - 第 2 张无 role 图 → last_frame（首尾帧是 Seedance 核心能力，需成对识别）
   //   - 其余 → reference_image
   // 有显式 role（first_frame/last_frame/reference）时尊重标注，不走兜底。
-  // 1.x 系列在 video.generate 下传图也走同一兜底（1.x 不支持参考图，否则会被标成
-  // reference_image 触发后端 r2v 报错）；2.x 系列仍按原语义标参考图。
+  // Seedance 1.x 已在上方统一归一化成显式首/尾帧；这里的无 role 兜底只负责
+  // 普通 image_to_video。Seedance 2.x 的显式 reference 语义保持不变。
   const i2vImplicit =
-    (capability === 'video.image_to_video' ||
-      (isSeedance1x && capability === 'video.generate')) &&
-    !firstFrameFile &&
-    !lastFrameFile &&
-    !hasExplicitRef
+    capability === 'video.image_to_video' && !firstFrameFile && !lastFrameFile && !hasExplicitRef
   if (i2vImplicit && referenceImageFiles[0]) {
     const ref = await resolveVolcengineMediaReference(referenceImageFiles[0], 'image', ctx)
     content.push({ type: 'image_url', image_url: { url: ref }, role: 'first_frame' })
@@ -516,6 +522,51 @@ async function buildSeedanceContent(
     content.push({ type: 'audio_url', audio_url: { url: ref }, role: 'reference_audio' })
   }
   return content
+}
+
+/**
+ * 把 Seedance 1.x 的画布图片输入收敛为平台支持的首帧/尾帧协议。
+ * 显式 first/last 优先，其余（包括 role=reference）按输入顺序补齐空缺帧位。
+ */
+function normalizeSeedance1xFrameFiles(
+  imageFiles: MediaInputFile[],
+  adapterModelId: string,
+): MediaInputFile[] {
+  if (imageFiles.length === 0) return imageFiles
+  const maxFrames = adapterModelId.includes('seedance-1-0-pro-fast') ? 1 : 2
+  if (imageFiles.length > maxFrames) {
+    throw new MediaProviderError(
+      'invalid_input',
+      `${adapterModelId} 最多支持 ${maxFrames} 张${maxFrames === 1 ? '首帧' : '首尾帧'}图片`,
+    )
+  }
+
+  const explicitFirst = imageFiles.filter((file) => file.role === 'first_frame')
+  const explicitLast = imageFiles.filter((file) => file.role === 'last_frame')
+  if (explicitFirst.length > 1 || explicitLast.length > 1) {
+    throw new MediaProviderError('invalid_input', 'Seedance 首帧和尾帧都最多只能选择 1 张')
+  }
+
+  let firstFrame = explicitFirst[0]
+  let lastFrame = explicitLast[0]
+  const remaining = imageFiles.filter((file) => file !== firstFrame && file !== lastFrame)
+  if (!firstFrame) firstFrame = remaining.shift()
+  if (!lastFrame && maxFrames > 1) lastFrame = remaining.shift()
+  if (!firstFrame && lastFrame) {
+    throw new MediaProviderError('invalid_input', 'Seedance 尾帧不能脱离首帧单独提交')
+  }
+  if (remaining.length > 0) {
+    throw new MediaProviderError(
+      'invalid_input',
+      `${adapterModelId} 不支持参考图，只能提交${maxFrames === 1 ? '首帧' : '首帧和尾帧'}`,
+    )
+  }
+
+  return imageFiles.map((file) => {
+    if (file === firstFrame) return { ...file, role: 'first_frame' }
+    if (file === lastFrame) return { ...file, role: 'last_frame' }
+    return file
+  })
 }
 
 /**

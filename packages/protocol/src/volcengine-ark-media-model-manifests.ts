@@ -601,7 +601,7 @@ function seedreamSchema(variant: SeedreamVariant): Record<string, unknown> {
               title: '生成图片数',
               minimum: 1,
               maximum: 15,
-              default: 15,
+              default: 2,
             },
           }
         : {}),
