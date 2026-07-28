@@ -5,8 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId, WorkspaceInfo } from '@spark/protocol'
 import type { SessionSummary } from './SessionSidebarContext'
-import { ProjectSessionGroup } from './SidebarSessionList'
-
+import { ProjectSessionGroup, SidebarProjectToolbar } from './SidebarSessionList'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('./SessionSidebarContext', async (importOriginal) => ({
@@ -21,6 +20,11 @@ vi.mock('./i18n', () => ({
       ({
         'sidebar.showLess': '收起',
         'sidebar.showMore': '显示更多',
+        'sidebar.projectsToolbar.title': '项目',
+        'sidebar.projectsToolbar.collapseAll': '折叠所有项目',
+        'sidebar.projectsToolbar.expandAll': '展开所有项目',
+        'sidebar.importHistory': '「从Claude、Codex」导入继续会话',
+        'sidebar.addProject': '添加项目',
       })[key] ?? key,
   }),
 }))
@@ -117,5 +121,48 @@ describe('ProjectSessionGroup pagination', () => {
     act(() => paginationButton().click())
     expect(visibleSessionCount()).toBe(8)
     expect(paginationButton().textContent).toBe('显示更多30')
+  })
+})
+
+describe('SidebarProjectToolbar', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('opens history import from the first action with the requested title', () => {
+    const onImportHistory = vi.fn()
+
+    act(() => {
+      root.render(
+        <SidebarProjectToolbar
+          allCollapsed={false}
+          filterSlot={<button type="button">筛选</button>}
+          onImportHistory={onImportHistory}
+          onToggleAll={() => undefined}
+          onAddProject={() => undefined}
+        />,
+      )
+    })
+
+    const actions = container.querySelector('.sidebar-project-toolbar-actions')
+    const importButton = actions?.querySelector<HTMLButtonElement>(
+      '[title="「从Claude、Codex」导入继续会话"]',
+    )
+    expect(importButton).not.toBeNull()
+    expect(actions?.querySelector('button')).toBe(importButton)
+
+    act(() => importButton?.click())
+
+    expect(onImportHistory).toHaveBeenCalledOnce()
   })
 })
