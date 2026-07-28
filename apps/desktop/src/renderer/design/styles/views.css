@@ -690,7 +690,7 @@ body.sidebar-resizing {
   border: none;
   border-radius: var(--r-sm);
   background: transparent;
-  color: var(--sidebar-text, var(--text));
+  color: var(--text-muted);
   font-size: var(--font-xs);
   cursor: pointer;
   transition:
@@ -707,10 +707,10 @@ body.sidebar-resizing {
   color: inherit;
 }
 .proj-show-more-count {
-  color: var(--text-muted);
+  color: var(--text-faint);
   font-size: var(--font-xs);
   font-variant-numeric: tabular-nums;
-  opacity: 0.85;
+  opacity: 0.78;
 }
 .proj-show-more-btn:hover .proj-show-more-count {
   color: var(--primary);

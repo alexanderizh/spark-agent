@@ -13,7 +13,13 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { createLogger } from '@spark/shared'
-import type { McpTransport, JsonRpcRequest, JsonRpcResponse, JsonRpcNotification, StdioTransportConfig } from './types.js'
+import type {
+  McpTransport,
+  JsonRpcRequest,
+  JsonRpcResponse,
+  JsonRpcNotification,
+  StdioTransportConfig,
+} from './types.js'
 
 const log = createLogger('mcp:stdio')
 
@@ -76,7 +82,9 @@ export class StdioTransport implements McpTransport {
         // Reject all pending requests
         for (const [id, pending] of this.pendingRequests) {
           clearTimeout(pending.timer)
-          pending.reject(new Error(`MCP server process exited (code=${code}, signal=${signal})${suffix}`))
+          pending.reject(
+            new Error(`MCP server process exited (code=${code}, signal=${signal})${suffix}`),
+          )
           this.pendingRequests.delete(id)
         }
         this.connected = false
@@ -159,7 +167,10 @@ export class StdioTransport implements McpTransport {
           this.pendingRequests.delete(response.id)
           pending.resolve(response)
         }
-      } else if ('method' in message && !('id' in message && ('result' in message || 'error' in message))) {
+      } else if (
+        'method' in message &&
+        !('id' in message && ('result' in message || 'error' in message))
+      ) {
         // This is a notification (has method, might have id but no result/error)
         const notification = message as JsonRpcNotification
         for (const handler of this.notificationHandlers) {
@@ -190,15 +201,16 @@ export class StdioTransport implements McpTransport {
     this.readline = null
 
     // Kill process
-    if (this.process != null && !this.process.killed) {
+    const childProcess = this.process
+    if (childProcess != null && !childProcess.killed) {
       try {
-        this.process.stdin?.end()
-        this.process.kill('SIGTERM')
+        childProcess.stdin?.end()
+        childProcess.kill('SIGTERM')
 
         // Force kill after 3 seconds
         setTimeout(() => {
-          if (!this.process!.killed) {
-            this.process!.kill('SIGKILL')
+          if (!childProcess.killed) {
+            childProcess.kill('SIGKILL')
           }
         }, 3000)
       } catch {

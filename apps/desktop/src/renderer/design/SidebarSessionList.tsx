@@ -639,7 +639,10 @@ function ChatListItem({
 }
 
 /* ─── ProjectSessionGroup ─── */
-function ProjectSessionGroup({
+const PROJECT_SESSION_INITIAL_VISIBLE = 8
+const PROJECT_SESSION_PAGE_SIZE = 10
+
+export function ProjectSessionGroup({
   group,
   activeSessionId,
   activeWorkspaceId,
@@ -684,13 +687,15 @@ function ProjectSessionGroup({
 }) {
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [showAllSessions, setShowAllSessions] = useState(false)
+  const [visibleSessionCount, setVisibleSessionCount] = useState(
+    PROJECT_SESSION_INITIAL_VISIBLE,
+  )
   const isActiveProject = activeWorkspaceId === group.workspace.id
 
-  const MAX_VISIBLE = 8
   const sessions = group.sessions
-  const hasMore = sessions.length > MAX_VISIBLE
-  const visibleSessions = showAllSessions ? sessions : sessions.slice(0, MAX_VISIBLE)
+  const hasMoreSessions = sessions.length > visibleSessionCount
+  const canCollapseSessions = visibleSessionCount > PROJECT_SESSION_INITIAL_VISIBLE
+  const visibleSessions = sessions.slice(0, visibleSessionCount)
 
   return (
     <div className={`proj-group ${isActiveProject ? 'active-project' : ''}`}>
@@ -843,18 +848,27 @@ function ProjectSessionGroup({
                   </React.Fragment>
                 )
               })}
-              {hasMore && (
+              {(hasMoreSessions || canCollapseSessions) && (
                 <button
                   className="proj-show-more-btn"
-                  onClick={() => setShowAllSessions((prev) => !prev)}
+                  aria-expanded={canCollapseSessions}
+                  onClick={() => {
+                    setVisibleSessionCount((current) =>
+                      hasMoreSessions
+                        ? Math.min(current + PROJECT_SESSION_PAGE_SIZE, sessions.length)
+                        : PROJECT_SESSION_INITIAL_VISIBLE,
+                    )
+                  }}
                 >
-                  {showAllSessions ? (
-                    <span className="proj-show-more-label">{t('sidebar.showLess')}</span>
-                  ) : (
+                  {hasMoreSessions ? (
                     <>
                       <span className="proj-show-more-label">{t('sidebar.showMore')}</span>
-                      <span className="proj-show-more-count">{sessions.length - MAX_VISIBLE}</span>
+                      <span className="proj-show-more-count">
+                        {sessions.length - visibleSessionCount}
+                      </span>
                     </>
+                  ) : (
+                    <span className="proj-show-more-label">{t('sidebar.showLess')}</span>
                   )}
                 </button>
               )}
