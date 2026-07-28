@@ -9,29 +9,57 @@
  * 非持久化理由：每次进入画布模式默认不选中任何项目，主区显示欢迎页，
  * 避免上次选中的项目已删除/归档导致主区空白。
  */
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react'
+
+type CanvasProjectEditHandler = (projectId: string) => boolean
 
 type CanvasProjectSelectionCtx = {
   /** 当前选中的画布项目 id；null 表示未选中 */
   selectedProjectId: string | null
   /** 设置选中项；传 null 清除选中 */
   selectProject: (id: string | null) => void
+  /** 侧栏等兄弟组件请求打开指定项目的编辑弹窗。 */
+  requestProjectEdit: (id: string) => void
+  registerProjectEditHandler: (handler: CanvasProjectEditHandler) => () => void
 }
 
 const Ctx = createContext<CanvasProjectSelectionCtx | null>(null)
 
 export function CanvasProjectSelectionProvider({ children }: { children: ReactNode }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const editHandlerRef = useRef<CanvasProjectEditHandler | null>(null)
+  const pendingEditProjectIdRef = useRef<string | null>(null)
   const selectProject = useCallback((id: string | null) => setSelectedProjectId(id), [])
-  return <Ctx.Provider value={{ selectedProjectId, selectProject }}>{children}</Ctx.Provider>
+  const requestProjectEdit = useCallback((id: string) => {
+    if (editHandlerRef.current?.(id)) pendingEditProjectIdRef.current = null
+    else pendingEditProjectIdRef.current = id
+  }, [])
+  const registerProjectEditHandler = useCallback((handler: CanvasProjectEditHandler) => {
+    editHandlerRef.current = handler
+    const pendingProjectId = pendingEditProjectIdRef.current
+    if (pendingProjectId && handler(pendingProjectId)) pendingEditProjectIdRef.current = null
+    return () => {
+      if (editHandlerRef.current === handler) editHandlerRef.current = null
+    }
+  }, [])
+  return (
+    <Ctx.Provider
+      value={{
+        selectedProjectId,
+        selectProject,
+        requestProjectEdit,
+        registerProjectEditHandler,
+      }}
+    >
+      {children}
+    </Ctx.Provider>
+  )
 }
 
 export function useCanvasProjectSelection(): CanvasProjectSelectionCtx {
   const ctx = useContext(Ctx)
   if (!ctx) {
-    throw new Error(
-      'useCanvasProjectSelection must be used within CanvasProjectSelectionProvider',
-    )
+    throw new Error('useCanvasProjectSelection must be used within CanvasProjectSelectionProvider')
   }
   return ctx
 }

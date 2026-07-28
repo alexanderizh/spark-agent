@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { canvasApi, isMediaOperation, isTextModelOperation } from './canvas.api'
 import type {
   CanvasBoard,
@@ -170,24 +170,62 @@ export function mergeCanvasBackgroundTaskSnapshot(
   return mergeCanvasSnapshot(current, next, true)
 }
 
-export function useCanvasProjects() {
-  const [projects, setProjects] = useState<CanvasProject[]>([])
-  const [loading, setLoading] = useState(true)
+type CanvasProjectListSnapshot = {
+  projects: CanvasProject[]
+  loading: boolean
+}
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    try {
-      // 先从 SQLite 恢复（生产持久化层），再列项目；失败静默降级到 localStorage
-      try {
-        await canvasApi.hydrateFromStorage()
-      } catch {
-        // SQLite 不可用时忽略
+export function createCanvasProjectListStore(loadProjects: () => Promise<CanvasProject[]>) {
+  let snapshot: CanvasProjectListSnapshot = { projects: [], loading: true }
+  let refreshGeneration = 0
+  const listeners = new Set<() => void>()
+
+  const publish = (next: CanvasProjectListSnapshot) => {
+    snapshot = next
+    listeners.forEach((listener) => listener())
+  }
+
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
       }
-      setProjects(await canvasApi.listProjects())
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    refresh: async () => {
+      const generation = ++refreshGeneration
+      publish({ ...snapshot, loading: true })
+      try {
+        const projects = await loadProjects()
+        // 多个消费者可能同时触发刷新，只允许最后一次请求更新共享快照，
+        // 避免较早的慢请求覆盖删除/新建之后的最新项目列表。
+        if (generation === refreshGeneration) publish({ projects, loading: false })
+      } catch (error) {
+        if (generation === refreshGeneration) publish({ ...snapshot, loading: false })
+        throw error
+      }
+    },
+  }
+}
+
+const canvasProjectListStore = createCanvasProjectListStore(async () => {
+  // 先从 SQLite 恢复（生产持久化层），再列项目；失败静默降级到 localStorage
+  try {
+    await canvasApi.hydrateFromStorage()
+  } catch {
+    // SQLite 不可用时忽略
+  }
+  return canvasApi.listProjects()
+})
+
+export function useCanvasProjects() {
+  const { projects, loading } = useSyncExternalStore(
+    canvasProjectListStore.subscribe,
+    canvasProjectListStore.getSnapshot,
+    canvasProjectListStore.getSnapshot,
+  )
+  const refresh = canvasProjectListStore.refresh
 
   useEffect(() => {
     void refresh()
