@@ -1,0 +1,121 @@
+// @vitest-environment jsdom
+
+import React, { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SessionId, WorkspaceInfo } from '@spark/protocol'
+import type { SessionSummary } from './SessionSidebarContext'
+import { ProjectSessionGroup } from './SidebarSessionList'
+
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+vi.mock('./SessionSidebarContext', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./SessionSidebarContext')>()),
+  useSessionSidebar: () => ({ workspaces: [] }),
+}))
+
+vi.mock('./i18n', () => ({
+  useI18n: () => ({
+    lang: 'zh',
+    t: (key: string) =>
+      ({
+        'sidebar.showLess': '收起',
+        'sidebar.showMore': '显示更多',
+      })[key] ?? key,
+  }),
+}))
+
+function createSessions(count: number): SessionSummary[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `session-${index}` as SessionId,
+    title: `会话 ${index + 1}`,
+    status: 'idle',
+    updatedAt: '2026-07-29T08:00:00.000Z',
+    workspaceIds: ['workspace-1'],
+  })) as SessionSummary[]
+}
+
+describe('ProjectSessionGroup pagination', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    window.localStorage.setItem('spark-settings-general', JSON.stringify({ language: 'zh-CN' }))
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+    window.localStorage.clear()
+  })
+
+  it('reveals ten more sessions per click and collapses after all sessions are visible', () => {
+    const sessions = createSessions(38)
+    const workspace: WorkspaceInfo = {
+      archivedAt: null,
+      createdAt: '2026-07-29T08:00:00.000Z',
+      id: 'workspace-1',
+      name: 'Spark-Agent',
+      pinnedAt: null,
+      rootPath: '/tmp/spark-agent',
+      updatedAt: '2026-07-29T08:00:00.000Z',
+      worktreeMeta: null,
+    }
+
+    act(() => {
+      root.render(
+        <ProjectSessionGroup
+          group={{ workspace, sessions }}
+          activeSessionId={null}
+          activeWorkspaceId={workspace.id}
+          sessionAgentStatuses={{}}
+          sessionTerminalActivity={{}}
+          unreviewedCompletedSessions={new Set()}
+          open
+          onOpenChange={() => undefined}
+          onSelectWorkspace={async () => undefined}
+          onSelectSession={() => undefined}
+          onNewSession={() => undefined}
+          onRenameProject={() => undefined}
+          onToggleProjectPinned={() => undefined}
+          onArchiveProject={() => undefined}
+          onDeleteProject={() => undefined}
+          onOpenProjectFolder={() => undefined}
+          onRenameSession={() => undefined}
+          onToggleSessionPinned={() => undefined}
+          onArchiveSession={() => undefined}
+          onDeleteSession={() => undefined}
+        />,
+      )
+    })
+
+    const visibleSessionCount = () => container.querySelectorAll('.proj-session').length
+    const paginationButton = () => {
+      const button = container.querySelector<HTMLButtonElement>('.proj-show-more-btn')
+      if (button == null) throw new Error('Missing project session pagination button')
+      return button
+    }
+
+    expect(visibleSessionCount()).toBe(8)
+    expect(paginationButton().textContent).toBe('显示更多30')
+
+    act(() => paginationButton().click())
+    expect(visibleSessionCount()).toBe(18)
+    expect(paginationButton().textContent).toBe('显示更多20')
+
+    act(() => paginationButton().click())
+    expect(visibleSessionCount()).toBe(28)
+    expect(paginationButton().textContent).toBe('显示更多10')
+
+    act(() => paginationButton().click())
+    expect(visibleSessionCount()).toBe(38)
+    expect(paginationButton().textContent).toBe('收起')
+
+    act(() => paginationButton().click())
+    expect(visibleSessionCount()).toBe(8)
+    expect(paginationButton().textContent).toBe('显示更多30')
+  })
+})
