@@ -283,9 +283,11 @@ if (-not $sig.TimeStamperCertificate) {
 retry_windows_package_without_signing() {
   warn "Signed Windows packaging failed; retrying once without code signing"
 
-  unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD
-  export -n WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD 2>/dev/null || true
+  unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD SPARK_WINDOWS_PUBLISHER_THUMBPRINT
+  export -n WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD SPARK_WINDOWS_PUBLISHER_THUMBPRINT 2>/dev/null || true
   WINDOWS_SIGNING_MODE="unsigned"
+  SPARK_NATIVE_HOST_TRUST_MODE="local"
+  export SPARK_NATIVE_HOST_TRUST_MODE
 
   # Remove only Windows outputs so a partial signed attempt cannot be uploaded
   # or mistaken for the unsigned retry result.
@@ -327,6 +329,8 @@ EOF
 fi
 
 prepare_windows_signing
+SPARK_NATIVE_HOST_TRUST_MODE="$WINDOWS_SIGNING_MODE"
+export SPARK_NATIVE_HOST_TRUST_MODE
 
 if [ "${SKIP_DESKTOP_BUILD:-}" = "1" ]; then
   step "2/5 Build desktop source"

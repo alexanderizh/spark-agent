@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   NativeHostArtifactError,
   createMacCodeRequirement,
+  readNativeHostArtifactTrustMode,
+  verifyLocalNativeHostArtifact,
   verifyWindowsNativeHostArtifact,
   verifyNativeHostArtifact,
 } from './NativeHostArtifact.js'
@@ -17,6 +19,36 @@ afterEach(async () => {
   await Promise.all(
     cleanupDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
   )
+})
+
+describe('verifyLocalNativeHostArtifact', () => {
+  it('accepts a hash-bound local artifact without requiring a publisher certificate', async () => {
+    const fixture = await createLocalArtifactFixture()
+
+    await expect(readNativeHostArtifactTrustMode(fixture.manifestPath)).resolves.toBe('local')
+    await expect(
+      verifyLocalNativeHostArtifact({
+        executablePath: fixture.executablePath,
+        manifestPath: fixture.manifestPath,
+        platform: 'macos',
+        architecture: 'arm64',
+      }),
+    ).resolves.toMatchObject({ trustMode: 'local' })
+  })
+
+  it('rejects modified local Host bytes', async () => {
+    const fixture = await createLocalArtifactFixture()
+    await writeFile(fixture.executablePath, 'tampered')
+
+    await expect(
+      verifyLocalNativeHostArtifact({
+        executablePath: fixture.executablePath,
+        manifestPath: fixture.manifestPath,
+        platform: 'macos',
+        architecture: 'arm64',
+      }),
+    ).rejects.toThrowError('Native Host executable digest does not match its artifact manifest')
+  })
 })
 
 describe('verifyNativeHostArtifact', () => {
@@ -232,6 +264,33 @@ async function createWindowsArtifactFixture(): Promise<{
       executableFileName: 'SparkComputerHost.exe',
       sha256: createHash('sha256').update(executable).digest('hex'),
       signingPublisherThumbprint: 'd'.repeat(64),
+    }),
+  )
+  return { directory, executablePath, manifestPath }
+}
+
+async function createLocalArtifactFixture(): Promise<{
+  directory: string
+  executablePath: string
+  manifestPath: string
+}> {
+  const directory = await mkdtemp(join(tmpdir(), 'spark-local-native-host-artifact-'))
+  cleanupDirectories.push(directory)
+  const executablePath = join(directory, 'SparkComputerHost')
+  const manifestPath = join(directory, 'manifest.json')
+  const executable = Buffer.from('local-native-host-fixture')
+  await writeFile(executablePath, executable, { mode: 0o755 })
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: 1,
+      protocolVersion: 1,
+      hostVersion: '0.1.0',
+      trustMode: 'local',
+      platform: 'macos',
+      architecture: 'arm64',
+      executableFileName: 'SparkComputerHost',
+      sha256: createHash('sha256').update(executable).digest('hex'),
     }),
   )
   return { directory, executablePath, manifestPath }

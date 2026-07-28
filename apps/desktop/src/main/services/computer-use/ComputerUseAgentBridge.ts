@@ -127,21 +127,33 @@ const MCP_TOOLS = [
   {
     name: 'start_task',
     description:
-      'Start a governed Computer Use task. The Broker owns observation, actions, approval, stop, and verification.',
+      'Start a governed task on the real desktop. Minimal valid input example: {"goal":"Open the app and search for the requested topic","environment":"my_desktop"}. successCriteria is optional; when omitted Spark derives a visual criterion from quoted goal text or uses focused-app state. Do not retry safe_browser or safe_desktop: this build supports my_desktop execution.',
     inputSchema: {
       type: 'object',
       properties: {
-        goal: { type: 'string', minLength: 1, maxLength: 4_000 },
-        environment: { type: 'string', enum: ['safe_browser', 'safe_desktop', 'my_desktop'] },
+        goal: {
+          type: 'string',
+          description:
+            'Concrete end-to-end objective. Put expected visible result text in quotes when possible so Spark can derive verification, for example: Search for "ComfyUI latest tutorial".',
+          minLength: 1,
+          maxLength: 4_000,
+        },
+        environment: {
+          type: 'string',
+          description: "Use exactly my_desktop for the user's local Mac or Windows desktop.",
+          enum: ['my_desktop'],
+        },
         acceptanceCriteria: {
           type: 'array',
+          description:
+            'Optional shorthand list of visible text that must appear, for example ["ComfyUI latest tutorial"]. Do not send this together with successCriteria.',
           items: { type: 'string', maxLength: 1_000 },
           maxItems: 50,
         },
         successCriteria: {
           type: 'array',
           description:
-            'Deterministic VerificationSpec objects. Supported kinds are accessibility, visual with text_present/text_absent, and application_state.',
+            'Optional deterministic VerificationSpec objects. Supported kinds are accessibility, visual with text_present/text_absent, and application_state. Omit this field if unsure; Spark will derive a criterion.',
           items: VERIFICATION_SPEC_INPUT_SCHEMA,
           minItems: 1,
           maxItems: 100,
@@ -153,7 +165,7 @@ const MCP_TOOLS = [
   },
   ...['get_status', 'pause', 'resume', 'stop', 'takeover'].map((name) => ({
     name,
-    description: `${name.replace('_', ' ')} a governed Computer Use task by computerSessionId.`,
+    description: `${name.replace('_', ' ')} a governed Computer Use task. Pass exactly {"computerSessionId":"<id returned by start_task>"}.`,
     inputSchema: {
       type: 'object',
       properties: { computerSessionId: { type: 'string', minLength: 1, maxLength: 200 } },

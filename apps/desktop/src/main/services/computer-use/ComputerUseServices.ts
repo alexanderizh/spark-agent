@@ -75,7 +75,9 @@ export function createComputerUseServices(
   const backend =
     options.backend ??
     (
-      options.createBackend ?? ((evidenceSink) => createDefaultComputerUseBackend({ evidenceSink }))
+      options.createBackend ??
+      ((evidenceSink) =>
+        createDefaultComputerUseBackend({ evidenceSink, packaged: app.isPackaged }))
     )(evidence as NativeObservationEvidenceSink)
   const sessions = new ComputerSessionManager({
     sessions: new ComputerSessionRepository(database),

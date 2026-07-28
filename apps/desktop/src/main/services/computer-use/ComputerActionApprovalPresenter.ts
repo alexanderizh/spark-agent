@@ -15,12 +15,15 @@ export function createComputerActionApprovalPresenter(options: {
   requestExactApproval: (input: ExactComputerActionApprovalPrompt) => Promise<boolean>
 }): (request: ComputerActionApprovalRequest) => Promise<ComputerApprovalTicket | null> {
   return async (request) => {
-    const allowed = await options.requestExactApproval({
-      sessionId: request.session.sessionId,
-      toolName: `mcp__spark_computer__approve_${request.envelope.action.type}`,
-      toolInput: buildComputerActionApprovalDetails(request.envelope, request.riskLevel),
-      riskLevel: request.riskLevel,
-    })
+    const fullAccess = isFullAccess(request.permissionMode)
+    const allowed =
+      fullAccess ||
+      (await options.requestExactApproval({
+        sessionId: request.session.sessionId,
+        toolName: `mcp__spark_computer__approve_${request.envelope.action.type}`,
+        toolInput: buildComputerActionApprovalDetails(request.envelope, request.riskLevel),
+        riskLevel: request.riskLevel,
+      }))
     const approvals = options.getApprovals()
     if (!allowed) {
       approvals.deny(request.approvalId, request.session.id)
@@ -31,9 +34,13 @@ export function createComputerActionApprovalPresenter(options: {
       approvalId: request.approvalId,
       ...computeComputerApprovalDigests(request.envelope),
       approvedBy: 'local_user',
-      approverId: 'spark-main-renderer',
+      approverId: fullAccess ? 'spark-full-access' : 'spark-main-renderer',
     })
   }
+}
+
+function isFullAccess(permissionMode: string): boolean {
+  return permissionMode === 'claude-bypass' || permissionMode === 'codex-full-access'
 }
 
 export function buildComputerActionApprovalDetails(

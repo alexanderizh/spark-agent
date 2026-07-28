@@ -12,6 +12,11 @@ enum ParentProcessAuthorizationError: Error {
 
 enum ParentProcessAuthorizer {
   static func authorize() throws {
+#if DEBUG || SPARK_COMPUTER_LOCAL_TRUST
+    if ProcessInfo.processInfo.environment["SPARK_COMPUTER_LOCAL_TRUST"] == "1" {
+      return
+    }
+#endif
     var hostCode: SecCode?
     guard SecCodeCopySelf([], &hostCode) == errSecSuccess, let hostCode else {
       throw ParentProcessAuthorizationError.codeLookupFailed

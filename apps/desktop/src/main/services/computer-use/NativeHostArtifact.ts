@@ -23,7 +23,7 @@ const NativeHostArtifactBase = {
   sha256: Sha256Schema,
 }
 
-export const NativeHostArtifactManifestSchema = z.discriminatedUnion('platform', [
+const SignedNativeHostArtifactManifestSchema = z.discriminatedUnion('platform', [
   z
     .object({
       ...NativeHostArtifactBase,
@@ -41,6 +41,19 @@ export const NativeHostArtifactManifestSchema = z.discriminatedUnion('platform',
     .strict(),
 ])
 
+const LocalNativeHostArtifactManifestSchema = z
+  .object({
+    ...NativeHostArtifactBase,
+    trustMode: z.literal('local'),
+    platform: z.enum(['macos', 'windows']),
+  })
+  .strict()
+
+export const NativeHostArtifactManifestSchema = z.union([
+  SignedNativeHostArtifactManifestSchema,
+  LocalNativeHostArtifactManifestSchema,
+])
+
 export type NativeHostArtifactManifest = z.infer<typeof NativeHostArtifactManifestSchema>
 
 export interface NativeHostCodeSignature {
@@ -56,6 +69,56 @@ export interface VerifiedNativeHostArtifact {
   executablePath: string
   manifestPath: string
   manifest: NativeHostArtifactManifest
+  trustMode?: 'signed' | 'local'
+}
+
+export async function readNativeHostArtifactTrustMode(
+  manifestPath: string,
+): Promise<'signed' | 'local'> {
+  const resolvedManifestPath = resolve(manifestPath)
+  const manifestStat = await readTrustedFileStat(resolvedManifestPath, 'manifest')
+  assertManifestSize(manifestStat.size)
+  const manifestBytes = await readFile(resolvedManifestPath)
+  assertManifestSize(manifestBytes.length)
+  const manifest = parseManifest(manifestBytes)
+  return 'trustMode' in manifest && manifest.trustMode === 'local' ? 'local' : 'signed'
+}
+
+export async function verifyLocalNativeHostArtifact(options: {
+  executablePath: string
+  manifestPath: string
+  platform: 'macos' | 'windows'
+  architecture: NativeHostArtifactManifest['architecture']
+}): Promise<VerifiedNativeHostArtifact> {
+  const executablePath = resolve(options.executablePath)
+  const manifestPath = resolve(options.manifestPath)
+  const executableStat = await readTrustedFileStat(executablePath, 'executable')
+  const manifestStat = await readTrustedFileStat(manifestPath, 'manifest')
+  assertManifestSize(manifestStat.size)
+  if (executableStat.size > MAX_EXECUTABLE_BYTES) {
+    throw untrusted('Native Host executable exceeds the trusted artifact size limit')
+  }
+  const manifestBytes = await readFile(manifestPath)
+  assertManifestSize(manifestBytes.length)
+  const manifest = parseManifest(manifestBytes)
+  assertSupportedHostVersion(manifest.hostVersion)
+  if (
+    !('trustMode' in manifest) ||
+    manifest.trustMode !== 'local' ||
+    manifest.platform !== options.platform ||
+    manifest.architecture !== options.architecture ||
+    manifest.executableFileName !== basename(executablePath)
+  ) {
+    throw new NativeHostArtifactError(
+      'native_host_incompatible',
+      'Local Native Host artifact does not match this platform, architecture, or executable name',
+    )
+  }
+  const executableBytes = await readFile(executablePath)
+  if (createHash('sha256').update(executableBytes).digest('hex') !== manifest.sha256) {
+    throw untrusted('Native Host executable digest does not match its artifact manifest')
+  }
+  return { executablePath, manifestPath, manifest, trustMode: 'local' }
 }
 
 export class NativeHostArtifactError extends Error {
@@ -79,18 +142,17 @@ export async function verifyNativeHostArtifact(options: {
   const executablePath = resolve(options.executablePath)
   const manifestPath = resolve(options.manifestPath)
   const executableStat = await readTrustedFileStat(executablePath, 'executable')
-  await readTrustedFileStat(manifestPath, 'manifest')
+  const manifestStat = await readTrustedFileStat(manifestPath, 'manifest')
+  assertManifestSize(manifestStat.size)
   if (executableStat.size > MAX_EXECUTABLE_BYTES) {
     throw untrusted('Native Host executable exceeds the trusted artifact size limit')
   }
 
   const manifestBytes = await readFile(manifestPath)
-  if (manifestBytes.length > MAX_MANIFEST_BYTES) {
-    throw untrusted('Native Host artifact manifest exceeds the size limit')
-  }
+  assertManifestSize(manifestBytes.length)
   const manifest = parseManifest(manifestBytes)
   assertSupportedHostVersion(manifest.hostVersion)
-  if (manifest.platform !== 'macos') {
+  if (manifest.platform !== 'macos' || 'trustMode' in manifest) {
     throw new NativeHostArtifactError(
       'native_host_incompatible',
       'Native Host artifact does not contain a macOS signing identity',
@@ -133,7 +195,7 @@ export async function verifyNativeHostArtifact(options: {
     throw untrusted('Native Host code signature does not match its artifact manifest')
   }
 
-  return { executablePath, manifestPath, manifest }
+  return { executablePath, manifestPath, manifest, trustMode: 'signed' }
 }
 
 export async function verifyWindowsNativeHostArtifact(options: {
@@ -147,17 +209,22 @@ export async function verifyWindowsNativeHostArtifact(options: {
   const executablePath = resolve(options.executablePath)
   const manifestPath = resolve(options.manifestPath)
   const executableStat = await readTrustedFileStat(executablePath, 'executable')
-  await readTrustedFileStat(manifestPath, 'manifest')
+  const manifestStat = await readTrustedFileStat(manifestPath, 'manifest')
+  assertManifestSize(manifestStat.size)
   if (executableStat.size > MAX_EXECUTABLE_BYTES) {
     throw untrusted('Native Host executable exceeds the trusted artifact size limit')
   }
 
   const manifestBytes = await readFile(manifestPath)
-  if (manifestBytes.length > MAX_MANIFEST_BYTES) {
-    throw untrusted('Native Host artifact manifest exceeds the size limit')
-  }
+  assertManifestSize(manifestBytes.length)
   const manifest = parseManifest(manifestBytes)
   assertSupportedHostVersion(manifest.hostVersion)
+  if ('trustMode' in manifest) {
+    throw new NativeHostArtifactError(
+      'native_host_incompatible',
+      'Signed Windows Native Host verification cannot accept a local artifact',
+    )
+  }
   const expectedPublisherThumbprint = options.expectedPublisherThumbprint.toLowerCase()
   if (!/^[a-f0-9]{64}$/.test(expectedPublisherThumbprint)) {
     throw untrusted('SparkWork publisher certificate thumbprint is invalid')
@@ -191,7 +258,7 @@ export async function verifyWindowsNativeHostArtifact(options: {
   if (signature.publisherThumbprint.toLowerCase() !== manifest.signingPublisherThumbprint) {
     throw untrusted('Native Host publisher does not match its artifact manifest')
   }
-  return { executablePath, manifestPath, manifest }
+  return { executablePath, manifestPath, manifest, trustMode: 'signed' }
 }
 
 async function readTrustedFileStat(filePath: string, label: string) {
@@ -223,6 +290,12 @@ function parseManifest(bytes: Buffer): NativeHostArtifactManifest {
       'Native Host artifact manifest is invalid',
       { cause: error },
     )
+  }
+}
+
+function assertManifestSize(size: number): void {
+  if (size > MAX_MANIFEST_BYTES) {
+    throw untrusted('Native Host artifact manifest exceeds the size limit')
   }
 }
 

@@ -2,7 +2,7 @@
 
 > 状态: 实施中 | 最后核对: 2026-07-28
 
-本文是 CU-03 macOS Native Host 的可直接开发规格，记录已经落地的生产边界、wire、签名打包、故障恢复、ScreenCaptureKit、AXUIElement 和 CGEvent 控制闭环。当前代码可交付可信 Host 能力探测、窗口列表、前台单窗口 PNG、full/diff AX tree、语义动作、受限前台键鼠和加密应用快照；最终 Developer ID 包与真实应用矩阵仍是发布门槛。
+本文是 CU-03 macOS Native Host 的可直接开发规格，记录已经落地的生产边界、wire、signed/local 打包、故障恢复、ScreenCaptureKit、AXUIElement 和 CGEvent 控制闭环。当前代码可交付可信 Host 能力探测、窗口列表、前台单窗口 PNG、full/diff AX tree、语义动作、受限前台键鼠和加密应用快照；最终实体机矩阵仍是发布门槛。
 
 ## 1. 代码边界
 
@@ -43,6 +43,11 @@ offset  size  meaning
 
 ## 3. 启动信任链
 
+Runtime 只接受 manifest 明确声明的两种模式：
+
+- `signed`：执行下述 Developer ID、Team ID、designated requirement 和父进程签名链校验。
+- `local`：供开发模式和无 Developer ID 的本地安装包使用。Host 使用 ad-hoc identifier，artifact 仍必须位于固定目录且通过 regular file、非 symlink、不可 group/world write、大小、平台/架构、固定文件名、SHA-256 和握手校验。只有 DEBUG 或以 `SPARK_COMPUTER_LOCAL_TRUST` 编译的 Host 接受 local 父进程；signed Host 不包含该旁路。
+
 生产启动必须按顺序满足：
 
 1. 验证 SparkWork 主可执行文件的 Apple designated requirement，取得父应用 Team ID。
@@ -54,7 +59,7 @@ offset  size  meaning
 7. Host 启动后、创建 decoder 或读取 stdin 前，使用 Security framework 检查自身与 `getppid()` 指向的直接父进程：先执行 `SecCodeCheckValidity`，再读取代码身份；自身 identifier 必须为 `com.spark-agent.desktop.computer-host`，父进程 identifier 必须为 `com.spark-agent.desktop`，双方 Team ID 必须存在且相等，并分别通过 `anchor apple generic`。父 PID、`proc_bsdinfo` 启动时间 token 和双次 code lookup/identity 必须一致，防止 PID reuse。失败时只向 stderr 写固定清洗诊断并立即退出，release 不提供环境变量绕过。
 8. 启动后首个请求必须为 `get_capabilities`；Host 返回的 protocol/host version、platform、architecture 必须与 artifact manifest 一致。
 
-任何失败都返回稳定的 `native_host_missing|native_host_untrusted|native_host_incompatible`，不回退到 AppleScript、shell、`cliclick`、BrowserBridge 或坐标脚本。
+任何失败都返回稳定的 `native_host_missing|native_host_untrusted|native_host_incompatible`。Broker 不伪造执行结果；Agent Runtime 可按用户目标和当前权限模式回退到 AppleScript、shell、`cliclick`、BrowserBridge 或其他已有工具。
 
 ## 4. macOS 观察与执行闭环
 

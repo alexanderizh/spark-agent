@@ -17,6 +17,7 @@ describe('createDefaultComputerUseBackend', () => {
       platform: 'darwin',
       architecture: 'arm64',
       verifyArtifact,
+      readArtifactTrustMode: async () => 'signed',
       connectClient,
       appExecutablePath: '/Applications/SparkWork.app/Contents/MacOS/Spark Agent',
       inspectAppCodeSignature,
@@ -61,6 +62,74 @@ describe('createDefaultComputerUseBackend', () => {
     expect(verifyArtifact).not.toHaveBeenCalled()
   })
 
+  it('connects a declared local-trust artifact without inspecting an application signature', async () => {
+    const localArtifact = { ...ARTIFACT, trustMode: 'local' as const }
+    const verifyLocalArtifact = vi.fn(async () => localArtifact)
+    const inspectAppCodeSignature = vi.fn()
+    const connectClient = vi.fn(async () => CONNECTION)
+    const backend = createDefaultComputerUseBackend({
+      resourcesPath: '/workspace/resources',
+      platform: 'darwin',
+      architecture: 'arm64',
+      packaged: false,
+      readArtifactTrustMode: async () => 'local',
+      verifyLocalArtifact,
+      inspectAppCodeSignature,
+      connectClient,
+    })
+
+    await expect(backend.getCapabilities()).resolves.toMatchObject({ available: true })
+    expect(verifyLocalArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({ platform: 'macos', architecture: 'arm64' }),
+    )
+    expect(inspectAppCodeSignature).not.toHaveBeenCalled()
+    expect(connectClient).toHaveBeenCalledWith(localArtifact)
+  })
+
+  it('rejects a replacement local manifest when the packaged macOS app has a publisher identity', async () => {
+    const verifyLocalArtifact = vi.fn(async () => ({ ...ARTIFACT, trustMode: 'local' as const }))
+    const inspectAppCodeSignature = vi.fn(async () => ({
+      identifier: 'com.spark-agent.desktop',
+      teamIdentifier: 'ABCDE12345',
+    }))
+    const backend = createDefaultComputerUseBackend({
+      resourcesPath: '/Applications/SparkWork.app/Contents/Resources',
+      platform: 'darwin',
+      architecture: 'arm64',
+      packaged: true,
+      readArtifactTrustMode: async () => 'local',
+      verifyLocalArtifact,
+      inspectAppCodeSignature,
+      connectClient: async () => CONNECTION,
+    })
+
+    await expect(backend.getCapabilities()).resolves.toMatchObject({ available: false })
+    expect(inspectAppCodeSignature).toHaveBeenCalledOnce()
+    expect(verifyLocalArtifact).not.toHaveBeenCalled()
+  })
+
+  it('accepts local trust for an unsigned packaged macOS app', async () => {
+    const localArtifact = { ...ARTIFACT, trustMode: 'local' as const }
+    const verifyLocalArtifact = vi.fn(async () => localArtifact)
+    const inspectAppCodeSignature = vi.fn(async () => {
+      throw new Error('code object is not signed at all')
+    })
+    const backend = createDefaultComputerUseBackend({
+      resourcesPath: '/Applications/SparkWork.app/Contents/Resources',
+      platform: 'darwin',
+      architecture: 'arm64',
+      packaged: true,
+      readArtifactTrustMode: async () => 'local',
+      verifyLocalArtifact,
+      inspectAppCodeSignature,
+      connectClient: async () => CONNECTION,
+    })
+
+    await expect(backend.getCapabilities()).resolves.toMatchObject({ available: true })
+    expect(inspectAppCodeSignature).toHaveBeenCalledOnce()
+    expect(verifyLocalArtifact).toHaveBeenCalledOnce()
+  })
+
   it.each(['x64', 'arm64'] as const)(
     'selects and verifies the signed Windows %s native host',
     async (architecture) => {
@@ -73,7 +142,9 @@ describe('createDefaultComputerUseBackend', () => {
         resourcesPath: 'C:\\Program Files\\SparkWork\\resources',
         platform: 'win32',
         architecture,
+        packaged: true,
         verifyWindowsArtifact: verifyArtifact,
+        readArtifactTrustMode: async () => 'signed',
         connectClient,
         appExecutablePath: 'C:\\Program Files\\SparkWork\\SparkWork.exe',
         inspectWindowsCodeSignature,
@@ -99,6 +170,27 @@ describe('createDefaultComputerUseBackend', () => {
       expect(connectClient).toHaveBeenCalledWith(ARTIFACT)
     },
   )
+
+  it('rejects a replacement local manifest when the packaged Windows app is signed', async () => {
+    const verifyLocalArtifact = vi.fn(async () => ({ ...ARTIFACT, trustMode: 'local' as const }))
+    const inspectWindowsCodeSignature = vi.fn(async () => ({
+      publisherThumbprint: 'd'.repeat(64),
+    }))
+    const backend = createDefaultComputerUseBackend({
+      resourcesPath: 'C:\\Program Files\\SparkWork\\resources',
+      platform: 'win32',
+      architecture: 'x64',
+      packaged: true,
+      readArtifactTrustMode: async () => 'local',
+      verifyLocalArtifact,
+      inspectWindowsCodeSignature,
+      connectClient: async () => CONNECTION,
+    })
+
+    await expect(backend.getCapabilities()).resolves.toMatchObject({ available: false })
+    expect(inspectWindowsCodeSignature).toHaveBeenCalledOnce()
+    expect(verifyLocalArtifact).not.toHaveBeenCalled()
+  })
 })
 
 const MANIFEST: NativeHostCapabilityManifest = {

@@ -32,7 +32,7 @@ const DEFAULT_SETTINGS: ComputerUseSettings = {
   redactSensitiveContent: true,
   fullRecordingEnabled: false,
   evidenceRetentionDays: 30,
-  killSwitch: 'CommandOrControl+Shift+Escape',
+  killSwitch: 'CommandOrControl+Shift+Esc',
   remote: { observe: false, approveL2: false, control: false },
 }
 
@@ -231,22 +231,27 @@ describe('registerComputerUseIpc', () => {
     )
   })
 
-  it('persists My Desktop only after the global kill switch is armed', async () => {
+  it('keeps persisted My Desktop enabled when startup cannot arm the optional shortcut', async () => {
+    const enabled = {
+      ...DEFAULT_SETTINGS,
+      enabled: true,
+      environments: { ...DEFAULT_SETTINGS.environments, myDesktop: true },
+    }
+    const settings = createSettingsStore(enabled)
+    const services = createServices({ armKillSwitch: vi.fn(() => false) })
+
+    register({ settings, services })
+
+    await expect(harness.handlers.get('computer-use:get-settings')!({}, event())).resolves.toEqual(
+      enabled,
+    )
+    expect(settings.set).not.toHaveBeenCalled()
+  })
+
+  it('persists My Desktop when the optional global kill switch cannot be armed', async () => {
     const services = createServices({ armKillSwitch: vi.fn(() => false) })
     const { settings } = register({ services })
 
-    await expect(
-      harness.handlers.get('computer-use:update-settings')!(
-        {
-          enabled: true,
-          environments: { safeBrowser: false, safeDesktop: false, myDesktop: true },
-        },
-        event(),
-      ),
-    ).rejects.toMatchObject({ code: 'action_not_allowed' })
-    expect(settings.set).not.toHaveBeenCalled()
-
-    services.armKillSwitch.mockReturnValue(true)
     const updated = await harness.handlers.get('computer-use:update-settings')!(
       {
         enabled: true,
@@ -256,6 +261,7 @@ describe('registerComputerUseIpc', () => {
     )
     expect(updated.enabled).toBe(true)
     expect(updated.environments.myDesktop).toBe(true)
+    expect(services.armKillSwitch).toHaveBeenCalledWith(DEFAULT_SETTINGS.killSwitch)
     expect(settings.set).toHaveBeenCalledWith('computer-use', 'settings', updated)
   })
 
@@ -302,7 +308,7 @@ describe('registerComputerUseIpc', () => {
     )
   })
 
-  it('fails closed when kill switch reconfiguration removes the previous shortcut', async () => {
+  it('keeps Computer Use enabled when kill switch reconfiguration removes the previous shortcut', async () => {
     const services = createServices()
     services.sessions.listActiveSessionIds.mockReturnValue([SESSION.id])
     services.armKillSwitch.mockReturnValueOnce(true).mockReturnValueOnce(false)
@@ -314,22 +320,50 @@ describe('registerComputerUseIpc', () => {
     const settings = createSettingsStore(enabled)
     register({ settings, services })
 
-    await expect(
-      harness.handlers.get('computer-use:update-settings')!(
-        { killSwitch: 'CommandOrControl+Alt+Escape' },
-        event(),
-      ),
-    ).rejects.toMatchObject({ code: 'action_not_allowed' })
+    const updated = await harness.handlers.get('computer-use:update-settings')!(
+      { killSwitch: 'CommandOrControl+Alt+Escape' },
+      event(),
+    )
 
-    expect(services.broker.stop).toHaveBeenCalledWith(SESSION.id)
+    expect(services.broker.stop).not.toHaveBeenCalled()
+    expect(updated.enabled).toBe(true)
+    expect(updated.environments.myDesktop).toBe(true)
     expect(settings.set).toHaveBeenLastCalledWith(
       'computer-use',
       'settings',
       expect.objectContaining({
-        enabled: false,
-        environments: expect.objectContaining({ myDesktop: false }),
+        enabled: true,
+        environments: expect.objectContaining({ myDesktop: true }),
       }),
     )
+  })
+
+  it('starts My Desktop when the optional global kill switch is not armed', async () => {
+    const services = createServices({
+      killSwitch: { isArmed: vi.fn(() => false), disarm: vi.fn() },
+    })
+    const enabled = {
+      ...DEFAULT_SETTINGS,
+      enabled: true,
+      environments: { ...DEFAULT_SETTINGS.environments, myDesktop: true },
+    }
+    register({ settings: createSettingsStore(enabled), services })
+
+    await expect(
+      harness.handlers.get('computer-use:start')!(
+        {
+          sessionId: SESSION.sessionId,
+          turnId: SESSION.turnId,
+          workflowRunId: null,
+          environment: SESSION.environment,
+          providerProfileId: SESSION.providerProfileId,
+          modelId: SESSION.modelId,
+          taskContract: SESSION.taskContract,
+        },
+        event(),
+      ),
+    ).resolves.toMatchObject({ computerSession: { id: SESSION.id } })
+    expect(services.sessions.createSession).toHaveBeenCalledOnce()
   })
 
   it('preflights the native host before creating and leasing a session', async () => {

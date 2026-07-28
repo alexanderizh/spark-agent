@@ -83,9 +83,7 @@ import {
   type TeamToolDefinition,
 } from './team-mcp-http-bridge.js'
 import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-continuity.js'
-import {
-  buildWorkflowBindingAuthorityPrompt,
-} from './workflow-system-prompt.js'
+import { buildWorkflowBindingAuthorityPrompt } from './workflow-system-prompt.js'
 
 // ─── D-13 拆分出的小工具 ───
 import { ResumeGateManager, type AgentAdapterKind } from './session-resume-gate.js'
@@ -621,6 +619,7 @@ export interface ComputerUseMcpProvider {
       turnId: string
       providerProfileId: string
       modelId: string
+      permissionMode: SessionPermissionMode
     },
   ): Promise<{
     server: import('../sdk/types.js').SDKMcpServerConfig
@@ -2050,7 +2049,12 @@ export class SessionService {
           agentAdapter,
           `mention:${agent.id}`,
         )
-      : this.resumeGate.makeRuntimeSessionId(sessionId, effectiveRuntimeProviderProfileId, model, agentAdapter)
+      : this.resumeGate.makeRuntimeSessionId(
+          sessionId,
+          effectiveRuntimeProviderProfileId,
+          model,
+          agentAdapter,
+        )
     const sdkResumeSafe = this.resumeGate.isSafe({
       providerType: provider.provider_type,
       model,
@@ -2248,6 +2252,7 @@ export class SessionService {
           turnId,
           providerProfileId: effectiveRuntimeProviderProfileId,
           modelId: model,
+          permissionMode,
         })
       } catch (error) {
         log.warn(
@@ -3572,12 +3577,7 @@ export class SessionService {
                     collectionSource: 'workspace_snapshot',
                   }
                   mediaPresentationCollector.observe(fileChangeEvent)
-                  this.emitAndPersist(
-                    sessionId,
-                    turnId,
-                    fileChangeEvent,
-                    eventRepo,
-                  )
+                  this.emitAndPersist(sessionId, turnId, fileChangeEvent, eventRepo)
                 }
               }
               emitFrom(diffResult.added, 'create')
@@ -3794,12 +3794,7 @@ export class SessionService {
           collectionSource: 'git_fallback',
         }
         mediaPresentationCollector.observe(fileChangeEvent)
-        this.emitAndPersist(
-          sessionId,
-          turnId,
-          fileChangeEvent,
-          eventRepo,
-        )
+        this.emitAndPersist(sessionId, turnId, fileChangeEvent, eventRepo)
       }
     }
     const emitPendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
@@ -4362,9 +4357,7 @@ export class SessionService {
       const teamToolNames =
         this.teamMcpToolNames.get(memberTeamServer) ??
         new Set<TeamToolName>(['agent_dispatch', 'agent_dispatch_batch'])
-      tools.push(
-        ...[...teamToolNames].map((name) => qualifyTeamToolName(name as TeamToolName)),
-      )
+      tools.push(...[...teamToolNames].map((name) => qualifyTeamToolName(name as TeamToolName)))
     }
     if (memberMcpServers.spark_platform != null) tools.push(...PLATFORM_TOOL_NAMES)
     if (memberMcpServers.spark_search != null) tools.push(...SEARCH_TOOL_NAMES)
@@ -5636,9 +5629,9 @@ export class SessionService {
                         ? 'completed'
                         : skippedNodeIds.has(node.id)
                           ? 'skipped'
-                        : runningNodeIds.has(node.id)
-                          ? 'running'
-                          : 'pending'
+                          : runningNodeIds.has(node.id)
+                            ? 'running'
+                            : 'pending'
                   return {
                     nodeId: node.id,
                     title: meta?.title ?? node.id,
@@ -7315,8 +7308,7 @@ export class SessionService {
         // 必须算上 startingSessions：startNextQueuedTurn 调完后 startingSessions.add 是同步的，
         // 但 activeLoops.set 要等异步 startTurn 内部才发生。只看 activeLoops.size 会让循环
         // 放行全部 candidates——全局上限形同虚设。
-        if (this.activeLoops.size + this.startingSessions.size >= this.maxConcurrentSessions)
-          break
+        if (this.activeLoops.size + this.startingSessions.size >= this.maxConcurrentSessions) break
         this.startNextQueuedTurn(sid)
       }
     }, 0)
@@ -7850,8 +7842,7 @@ export class SessionService {
     const sessionRepo = new SessionRepository(this.db)
     if (sessionRepo.get(sessionId) == null) return
     const turnId = getLatestTurnIdFromEvents(eventRepo, sessionId)
-    const minutes =
-      params.timeoutMs != null ? Math.round(params.timeoutMs / 60000) : 0
+    const minutes = params.timeoutMs != null ? Math.round(params.timeoutMs / 60000) : 0
     const message =
       params.reason === 'timeout'
         ? `权限审批「${params.toolName}」等待超过 ${minutes} 分钟已自动拒绝，已跳过该操作`
@@ -8335,7 +8326,9 @@ export class SessionService {
       // 仍允许删纯工具事件（tool_call / tool_result / file_change 等）——
       // 它们不影响轮次边界，删了只是少一段工具记录。
       const turnIds = Array.from(
-        new Set(partialTurnDeletes.map((row) => row.turn_id).filter((id): id is string => id != null)),
+        new Set(
+          partialTurnDeletes.map((row) => row.turn_id).filter((id): id is string => id != null),
+        ),
       )
       if (turnIds.length > 0) {
         const turnPlaceholders = turnIds.map(() => '?').join(',')
@@ -8689,10 +8682,6 @@ function getLatestTurnIdFromEvents(eventRepo: EventRepository, sessionId: string
   }
   return turnId
 }
-
-
-
-
 
 function listSessionCheckpointsFromEvents(
   eventRepo: EventRepository,
@@ -9407,9 +9396,6 @@ export function formatReplyForHost(reply: import('@spark/protocol').TeamA2AReply
   return `${header}\n${reply.content}${artifactsLine}`
 }
 
-
-
-
 function collectManagedRuleContents(
   rulesRepo: RulesRepository,
   agent: AgentItem,
@@ -9589,8 +9575,6 @@ function getProviderModelIds(configJson: string | null | undefined): string[] {
   }
 }
 
-
-
 function getLocalCliDefaultModel(provider: { id: string }): string {
   return isLocalCodexCliProvider(provider) ? LOCAL_CODEX_CLI_DEFAULT_MODEL : LOCAL_CLI_DEFAULT_MODEL
 }
@@ -9724,7 +9708,6 @@ export function resolveCodexMemberExecutionProfile(args: {
   }
   return { isCodexMember, permissionMode, extras }
 }
-
 
 function getLatestMatchingTurnPromptSnapshot(
   eventRepo: EventRepository,

@@ -209,6 +209,7 @@ describe('ComputerTaskOperator', () => {
       operator.run({
         session: SESSION,
         lease: LEASE,
+        permissionMode: 'codex-full-access',
         adapter: { decide: vi.fn(async () => decisions.shift()!) },
       }),
     ).resolves.toMatchObject({ status: 'completed' })
@@ -217,6 +218,7 @@ describe('ComputerTaskOperator', () => {
       envelope: dispatch.mock.calls[0]?.[0],
       approvalId: ticket.id,
       riskLevel: 'L2',
+      permissionMode: 'codex-full-access',
     })
     expect(dispatch.mock.calls[1]?.[0]).toBe(dispatch.mock.calls[0]?.[0])
     expect(dispatch.mock.calls[1]?.[1]).toBe(ticket)

@@ -5,6 +5,10 @@ edition = "2024"
 license = "UNLICENSED"
 publish = false
 
+[features]
+default = []
+local-trust = []
+
 [lib]
 name = "spark_computer_host"
 path = "src/lib.rs"

@@ -28,6 +28,7 @@ const REQUEST = {
   },
   approvalId: 'approval-1',
   riskLevel: 'L2',
+  permissionMode: 'claude-ask',
 } as ComputerActionApprovalRequest
 
 describe('ComputerActionApprovalPresenter', () => {
@@ -83,5 +84,40 @@ describe('ComputerActionApprovalPresenter', () => {
     await expect(presenter(REQUEST)).resolves.toBeNull()
     expect(approvals.deny).toHaveBeenCalledWith('approval-1', 'computer-1')
     expect(approvals.approve).not.toHaveBeenCalled()
+  })
+
+  it('mints the exact Broker ticket without prompting in full-access mode', async () => {
+    const ticket = { id: 'approval-1' }
+    const approvals = { approve: vi.fn(() => ticket), deny: vi.fn() }
+    const requestExactApproval = vi.fn(async () => true)
+    const presenter = createComputerActionApprovalPresenter({
+      getApprovals: () => approvals as never,
+      requestExactApproval,
+    })
+
+    await expect(presenter({ ...REQUEST, permissionMode: 'codex-full-access' })).resolves.toBe(
+      ticket,
+    )
+    expect(requestExactApproval).not.toHaveBeenCalled()
+    expect(approvals.approve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        approvalId: 'approval-1',
+        approvedBy: 'local_user',
+        approverId: 'spark-full-access',
+      }),
+    )
+  })
+
+  it('still prompts when the effective turn is restricted regardless of the parent session mode', async () => {
+    const ticket = { id: 'approval-1' }
+    const approvals = { approve: vi.fn(() => ticket), deny: vi.fn() }
+    const requestExactApproval = vi.fn(async () => true)
+    const presenter = createComputerActionApprovalPresenter({
+      getApprovals: () => approvals as never,
+      requestExactApproval,
+    })
+
+    await expect(presenter({ ...REQUEST, permissionMode: 'claude-plan' })).resolves.toBe(ticket)
+    expect(requestExactApproval).toHaveBeenCalledOnce()
   })
 })

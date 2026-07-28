@@ -48,30 +48,54 @@ function createNativeHostManifest({ executable, architecture, signature }) {
   }
 }
 
+function createLocalNativeHostManifest({ executable, architecture }) {
+  if (!Buffer.isBuffer(executable) || executable.length === 0) {
+    throw new Error('Native Host executable is empty')
+  }
+  if (architecture !== 'arm64' && architecture !== 'x64') {
+    throw new Error(`Unsupported Native Host architecture: ${architecture}`)
+  }
+  return {
+    schemaVersion: 1,
+    protocolVersion: 1,
+    hostVersion: HOST_VERSION,
+    trustMode: 'local',
+    platform: 'macos',
+    architecture,
+    executableFileName: EXECUTABLE_NAME,
+    sha256: createHash('sha256').update(executable).digest('hex'),
+  }
+}
+
 async function packageMacNativeHost(context) {
   if (context.electronPlatformName !== 'darwin') return { packaged: false, reason: 'not-macos' }
   const architecture = Arch[context.arch]
   if (architecture !== 'arm64' && architecture !== 'x64') {
     throw new Error(`Native Host packaging does not support Electron architecture: ${architecture}`)
   }
-  const signingIdentity = await resolveSigningIdentity()
-  if (signingIdentity == null) {
-    if (process.env.CI === 'true') {
-      throw new Error(
-        'A Developer ID Application identity is required to package Native Host in CI',
-      )
-    }
-    console.warn(
-      '[after-pack] Native Host omitted: no Developer ID Application identity is installed',
-    )
-    return { packaged: false, reason: 'signing-identity-missing' }
+  const requestedTrustMode = resolveMacNativeHostTrustMode(process.env)
+  const signingIdentity = await resolveSigningIdentity(requestedTrustMode)
+  if (requestedTrustMode === 'signed' && signingIdentity == null) {
+    throw new Error('Signed macOS Native Host packaging requires a Developer ID identity')
   }
+  const localTrust = requestedTrustMode === 'local' || signingIdentity == null
 
   const packageRoot = path.resolve(__dirname, '../native/macos/SparkComputerHost')
   const swiftArchitecture = architecture === 'x64' ? 'x86_64' : 'arm64'
-  await runCommand('swift', ['build', '-c', 'release', '--arch', swiftArchitecture], {
-    cwd: packageRoot,
-  })
+  await runCommand(
+    'swift',
+    [
+      'build',
+      '-c',
+      'release',
+      '--arch',
+      swiftArchitecture,
+      ...(localTrust ? ['-Xswiftc', '-DSPARK_COMPUTER_LOCAL_TRUST'] : []),
+    ],
+    {
+      cwd: packageRoot,
+    },
+  )
   const sourceExecutable = path.join(
     packageRoot,
     '.build',
@@ -93,41 +117,61 @@ async function packageMacNativeHost(context) {
   await fs.copyFile(sourceExecutable, destinationExecutable)
   await fs.chmod(destinationExecutable, 0o755)
 
-  await runCommand(
-    '/usr/bin/codesign',
-    [
-      '--force',
-      '--options',
-      'runtime',
-      '--timestamp',
-      '--identifier',
-      SIGNING_IDENTIFIER,
-      '--sign',
-      signingIdentity,
+  await runCommand('/usr/bin/codesign', [
+    '--force',
+    ...(localTrust ? [] : ['--options', 'runtime', '--timestamp']),
+    '--identifier',
+    SIGNING_IDENTIFIER,
+    '--sign',
+    localTrust ? '-' : signingIdentity,
+    destinationExecutable,
+  ])
+  await runCommand('/usr/bin/codesign', [
+    '--verify',
+    '--strict',
+    '--verbose=2',
+    destinationExecutable,
+  ])
+  const executable = await fs.readFile(destinationExecutable)
+  let manifest
+  if (localTrust) {
+    manifest = createLocalNativeHostManifest({ executable, architecture })
+  } else {
+    const details = await runCommand('/usr/bin/codesign', [
+      '-d',
+      '--verbose=4',
       destinationExecutable,
-    ],
-    {},
-  )
-  await runCommand('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', destinationExecutable])
-  const details = await runCommand('/usr/bin/codesign', ['-d', '--verbose=4', destinationExecutable])
-  const signature = parseCodeSignatureOutput(`${details.stdout}\n${details.stderr}`)
-  if (process.env.APPLE_TEAM_ID != null && process.env.APPLE_TEAM_ID !== signature.teamIdentifier) {
-    throw new Error('Native Host signing Team ID differs from APPLE_TEAM_ID')
+    ])
+    const signature = parseCodeSignatureOutput(`${details.stdout}\n${details.stderr}`)
+    if (
+      process.env.APPLE_TEAM_ID != null &&
+      process.env.APPLE_TEAM_ID !== signature.teamIdentifier
+    ) {
+      throw new Error('Native Host signing Team ID differs from APPLE_TEAM_ID')
+    }
+    manifest = createNativeHostManifest({ executable, architecture, signature })
   }
-  const manifest = createNativeHostManifest({
-    executable: await fs.readFile(destinationExecutable),
-    architecture,
-    signature,
-  })
   const manifestPath = path.join(destinationDirectory, 'manifest.json')
   await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
   console.log(
-    `[after-pack] Native Host: packaged ${architecture}, team=${signature.teamIdentifier}, sha256=${manifest.sha256}`,
+    `[after-pack] Native Host: packaged ${architecture}, trust=${localTrust ? 'local' : 'signed'}, sha256=${manifest.sha256}`,
   )
   return { packaged: true, destinationExecutable, manifestPath, manifest }
 }
 
-async function resolveSigningIdentity() {
+function resolveMacNativeHostTrustMode(environment = process.env) {
+  const explicit = environment.SPARK_NATIVE_HOST_TRUST_MODE?.trim().toLowerCase()
+  if (explicit === 'local' || explicit === 'signed') return explicit
+  if (explicit != null && explicit !== '') {
+    throw new Error('SPARK_NATIVE_HOST_TRUST_MODE must be signed or local')
+  }
+  if (environment.CSC_IDENTITY_AUTO_DISCOVERY?.trim().toLowerCase() === 'false') return 'local'
+  if (environment.CSC_NAME?.trim()) return 'signed'
+  return 'auto'
+}
+
+async function resolveSigningIdentity(requestedTrustMode = resolveMacNativeHostTrustMode()) {
+  if (requestedTrustMode === 'local') return null
   if (process.env.CSC_NAME?.trim()) return process.env.CSC_NAME.trim()
   const result = await runCommand('security', ['find-identity', '-v', '-p', 'codesigning'], {
     allowFailure: true,
@@ -180,6 +224,8 @@ function runCommand(command, args, options = {}) {
 
 module.exports = {
   createNativeHostManifest,
+  createLocalNativeHostManifest,
   packageMacNativeHost,
   parseCodeSignatureOutput,
+  resolveMacNativeHostTrustMode,
 }

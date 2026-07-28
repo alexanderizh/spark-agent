@@ -1,6 +1,9 @@
 import type { ComputerSession, ComputerUseCapabilitySummary } from '@spark/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { ComputerUseAgentController } from './ComputerUseAgentController.js'
+import {
+  ComputerUseAgentController,
+  getExecutionCapabilitiesWithPermissionRequest,
+} from './ComputerUseAgentController.js'
 
 const CAPABILITIES: ComputerUseCapabilitySummary = {
   available: true,
@@ -37,7 +40,38 @@ const CAPABILITIES: ComputerUseCapabilitySummary = {
 }
 
 describe('ComputerUseAgentController', () => {
-  it('creates an owned governed session and starts the internal operator instead of exposing actions', async () => {
+  it('requests missing operating-system permissions before declaring execution unavailable', async () => {
+    const unavailable = {
+      ...CAPABILITIES,
+      nativeHost: {
+        ...CAPABILITIES.nativeHost!,
+        features: {
+          ...CAPABILITIES.nativeHost!.features,
+          fullTree: false,
+          semanticActions: false,
+          absolutePointer: false,
+          keyboard: false,
+        },
+      },
+      permissions: {
+        screen: 'not_determined' as const,
+        accessibility: 'not_determined' as const,
+        input: 'denied' as const,
+      },
+    }
+    const getCapabilities = vi
+      .fn()
+      .mockResolvedValueOnce(unavailable)
+      .mockResolvedValueOnce(CAPABILITIES)
+    const requestPermissions = vi.fn(async () => CAPABILITIES.nativeHost!)
+
+    await expect(
+      getExecutionCapabilitiesWithPermissionRequest({ getCapabilities, requestPermissions }),
+    ).resolves.toBe(CAPABILITIES)
+    expect(requestPermissions).toHaveBeenCalledWith(['screen', 'accessibility'])
+  })
+
+  it('starts governed execution when the optional emergency shortcut is unavailable', async () => {
     const computerSession = {
       id: 'computer-1',
       sessionId: 'session-1',
@@ -65,6 +99,17 @@ describe('ComputerUseAgentController', () => {
             focused: true,
             minimized: false,
           },
+          {
+            app: { id: 'app-bilibili', name: 'bilibili', bundleId: 'tv.danmaku.bilianime' },
+            window: {
+              id: 'window-bilibili',
+              title: 'bilibili',
+              bounds: { x: 900, y: 0, width: 600, height: 800 },
+            },
+            display: { id: 'display-1', width: 1920, height: 1080, scaleFactor: 1 },
+            focused: false,
+            minimized: false,
+          },
         ]),
       },
       sessions: {
@@ -74,7 +119,7 @@ describe('ComputerUseAgentController', () => {
       broker: {},
       approvals: {},
       evidence: { readLatestImage: vi.fn(), clearSession: vi.fn() },
-      killSwitch: { isArmed: vi.fn(() => true) },
+      killSwitch: { isArmed: vi.fn(() => false) },
     }
     const run = vi.fn(async () => ({ status: 'completed' as const }))
     const controller = new ComputerUseAgentController({
@@ -92,15 +137,13 @@ describe('ComputerUseAgentController', () => {
       turnId: 'turn-1',
       providerProfileId: 'provider-1',
       modelId: 'vision-model',
+      permissionMode: 'claude-ask',
     })
 
     await expect(
       controller.invoke('session-1', 'start_task', {
-        goal: 'Save the document',
+        goal: 'Search for "ComfyUI latest tutorial"',
         environment: 'my_desktop',
-        successCriteria: [
-          { kind: 'visual', assertion: { operator: 'text_present', expected: 'Saved' } },
-        ],
       }),
     ).resolves.toMatchObject({
       computerSession: { id: 'computer-1' },
@@ -111,8 +154,17 @@ describe('ComputerUseAgentController', () => {
         sessionId: 'session-1',
         turnId: 'turn-1',
         taskContract: expect.objectContaining({
-          objective: 'Save the document',
-          allowedApps: [{ kind: 'executable_identity', value: 'signed:publisher/editor.exe' }],
+          objective: 'Search for "ComfyUI latest tutorial"',
+          allowedApps: [
+            { kind: 'executable_identity', value: 'signed:publisher/editor.exe' },
+            { kind: 'bundle_id', value: 'tv.danmaku.bilianime' },
+          ],
+          successCriteria: [
+            {
+              kind: 'visual',
+              assertion: { operator: 'text_present', expected: 'ComfyUI latest tutorial' },
+            },
+          ],
         }),
       }),
     )
@@ -152,6 +204,12 @@ describe('ComputerUseAgentController', () => {
       createAdapter: vi.fn(() => ({ decide: vi.fn() }) as never),
       createOperator: vi.fn(() => ({ run }) as never),
     })
+    controller.bindSessionContext('session-1', {
+      turnId: 'turn-1',
+      providerProfileId: 'provider-1',
+      modelId: 'vision-model',
+      permissionMode: 'codex-full-access',
+    })
 
     await expect(
       controller.invoke('session-1', 'resume', { computerSessionId: paused.id }),
@@ -170,7 +228,7 @@ describe('ComputerUseAgentController', () => {
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ session: resumed, lease }))
   })
 
-  it('refuses My Desktop execution when the global emergency stop is not armed', async () => {
+  it('reports native execution as available when the optional emergency shortcut is not armed', async () => {
     const services = {
       backend: {
         getCapabilities: vi.fn(async () => CAPABILITIES),
@@ -180,19 +238,14 @@ describe('ComputerUseAgentController', () => {
     const controller = new ComputerUseAgentController({
       getServices: () => services as never,
     })
-    controller.bindSessionContext('session-1', {
-      turnId: 'turn-1',
-      providerProfileId: 'provider-1',
-      modelId: 'vision-model',
+    await expect(controller.promptCapabilities()).resolves.toMatchObject({
+      available: true,
+      executionAvailable: true,
     })
-
-    await expect(
-      controller.invoke('session-1', 'start_task', {
-        goal: 'Save the document',
-        environment: 'my_desktop',
-        acceptanceCriteria: ['Saved'],
-      }),
-    ).rejects.toMatchObject({ code: 'action_not_allowed' })
+    await expect(controller.invoke('session-1', 'get_capabilities', {})).resolves.toMatchObject({
+      executionAvailable: true,
+      killSwitchArmed: false,
+    })
   })
 
   it('advertises governed execution when semantic actions work without coordinate input permission', async () => {
@@ -252,6 +305,7 @@ describe('ComputerUseAgentController', () => {
       turnId: 'turn-1',
       providerProfileId: 'provider-1',
       modelId: 'vision-model',
+      permissionMode: 'claude-ask',
     })
 
     await expect(
@@ -328,6 +382,7 @@ describe('ComputerUseAgentController', () => {
         turnId: 'turn-1',
         providerProfileId: 'provider-1',
         modelId: 'vision-model',
+        permissionMode: 'claude-ask',
       })
       await controller.invoke('session-1', 'start_task', {
         goal: 'Save the document',

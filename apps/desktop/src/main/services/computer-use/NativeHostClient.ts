@@ -38,7 +38,11 @@ export interface NativeHostChildProcess extends EventEmitter {
 export type NativeHostSpawnOptions = SpawnOptions & {
   shell: false
   stdio: ['pipe', 'pipe', 'pipe']
-  env: { LANG: 'C'; LC_ALL: 'C' }
+  env: {
+    LANG: 'C'
+    LC_ALL: 'C'
+    SPARK_COMPUTER_LOCAL_TRUST?: '1'
+  }
 }
 
 export type NativeHostSpawn = (
@@ -118,10 +122,14 @@ export class NativeHostClient {
     const spawnProcess = options.spawnProcess ?? (spawn as unknown as NativeHostSpawn)
     let child: NativeHostChildProcess
     try {
+      const env: NativeHostSpawnOptions['env'] =
+        options.artifact.trustMode === 'local'
+          ? { LANG: 'C', LC_ALL: 'C', SPARK_COMPUTER_LOCAL_TRUST: '1' }
+          : { LANG: 'C', LC_ALL: 'C' }
       child = spawnProcess(options.artifact.executablePath, [], {
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { LANG: 'C', LC_ALL: 'C' },
+        env,
         windowsHide: true,
       })
     } catch {
@@ -482,10 +490,7 @@ export class NativeHostClient {
     this.child.kill(signal)
   }
 
-  private terminateAfterInputRelease(
-    error: ComputerUseBrokerError,
-    signal: NodeJS.Signals,
-  ): void {
+  private terminateAfterInputRelease(error: ComputerUseBrokerError, signal: NodeJS.Signals): void {
     if (this.terminalError != null) return
     this.terminalError = error
     this.awaitingBinary = null
