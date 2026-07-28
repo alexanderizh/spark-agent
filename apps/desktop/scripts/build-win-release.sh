@@ -153,6 +153,58 @@ NODE
   ok "Windows signing variables are ready"
 }
 
+derive_windows_publisher_thumbprint() {
+  [ "$WINDOWS_SIGNING_MODE" = "signed" ] || return
+
+  case "$WIN_CSC_LINK" in
+    http://*|https://*|data:*)
+      local configured
+      configured="$(printf '%s' "${SPARK_WINDOWS_PUBLISHER_THUMBPRINT:-}" \
+        | tr -d '[:space:]:' | tr '[:upper:]' '[:lower:]')"
+      [[ "$configured" =~ ^[a-f0-9]{64}$ ]] \
+        || fail "Remote/data Windows certificates require a 64-character SPARK_WINDOWS_PUBLISHER_THUMBPRINT"
+      SPARK_WINDOWS_PUBLISHER_THUMBPRINT="$configured"
+      export SPARK_WINDOWS_PUBLISHER_THUMBPRINT
+      ok "Using the configured SHA-256 publisher certificate fingerprint"
+      return
+      ;;
+  esac
+
+  local ps_cmd=""
+  if command -v pwsh >/dev/null 2>&1; then
+    ps_cmd="pwsh"
+  elif command -v powershell.exe >/dev/null 2>&1; then
+    ps_cmd="powershell.exe"
+  elif command -v powershell >/dev/null 2>&1; then
+    ps_cmd="powershell"
+  else
+    fail "PowerShell is required to inspect the Windows signing certificate"
+  fi
+
+  local fingerprint
+  fingerprint="$(
+    SPARK_PFX_PATH="$WIN_CSC_LINK" \
+    SPARK_PFX_PASSWORD="$WIN_CSC_KEY_PASSWORD" \
+      "$ps_cmd" -NoLogo -NoProfile -NonInteractive -Command '
+$flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+$certificates = [System.Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
+$certificates.Import($env:SPARK_PFX_PATH, $env:SPARK_PFX_PASSWORD, $flags)
+$certificate = $certificates | Where-Object HasPrivateKey | Select-Object -First 1
+if ($null -eq $certificate) { throw "The signing PFX does not contain a certificate with a private key" }
+$sha = [System.Security.Cryptography.SHA256]::Create()
+try { $hash = $sha.ComputeHash($certificate.RawData) } finally { $sha.Dispose() }
+[Convert]::ToHexString($hash).ToLowerInvariant()
+'
+  )"
+  fingerprint="$(printf '%s' "$fingerprint" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+  [[ "$fingerprint" =~ ^[a-f0-9]{64}$ ]] \
+    || fail "Unable to derive the SHA-256 publisher certificate fingerprint from WIN_CSC_LINK"
+
+  SPARK_WINDOWS_PUBLISHER_THUMBPRINT="$fingerprint"
+  export SPARK_WINDOWS_PUBLISHER_THUMBPRINT
+  ok "Derived the SHA-256 publisher certificate fingerprint from WIN_CSC_LINK"
+}
+
 verify_windows_signature() {
   step "5/5 Verify Windows signature"
 
@@ -329,6 +381,7 @@ EOF
 fi
 
 prepare_windows_signing
+derive_windows_publisher_thumbprint
 SPARK_NATIVE_HOST_TRUST_MODE="$WINDOWS_SIGNING_MODE"
 export SPARK_NATIVE_HOST_TRUST_MODE
 

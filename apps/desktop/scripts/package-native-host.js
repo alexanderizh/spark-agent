@@ -210,10 +210,9 @@ function runCommand(command, args, options = {}) {
         stderr: Buffer.concat(stderr).toString('utf8'),
       }
       if (result.code !== 0 && options.allowFailure !== true) {
+        const detail = `${result.stderr}\n${result.stdout}`.trim().slice(0, 2_000)
         reject(
-          new Error(
-            `${command} failed with exit ${result.code}: ${result.stderr.trim().slice(0, 2_000)}`,
-          ),
+          new Error(`${command} failed with exit ${result.code}: ${detail || '<empty output>'}`),
         )
       } else {
         resolve(result)

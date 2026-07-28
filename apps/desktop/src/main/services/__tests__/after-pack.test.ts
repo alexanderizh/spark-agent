@@ -268,6 +268,31 @@ TeamIdentifier=ABCDE12345
     expect(retryBody).toContain('SPARK_NATIVE_HOST_TRUST_MODE="local"')
   })
 
+  it('derives the signed Windows publisher fingerprint from the actual PFX', () => {
+    const releaseScript = readFileSync(
+      join(__dirname, '../../../../scripts/build-win-release.sh'),
+      'utf8',
+    )
+    const prepareIndex = releaseScript.lastIndexOf('\nprepare_windows_signing\n')
+    const deriveIndex = releaseScript.lastIndexOf('\nderive_windows_publisher_thumbprint\n')
+
+    expect(releaseScript).toContain('ComputeHash($certificate.RawData)')
+    expect(prepareIndex).toBeGreaterThan(-1)
+    expect(deriveIndex).toBeGreaterThan(prepareIndex)
+  })
+
+  it('publishes only supported desktop runner and architecture pairs', () => {
+    const workflow = readFileSync(
+      join(__dirname, '../../../../../../.github/workflows/publish-desktop-release.yml'),
+      'utf8',
+    )
+
+    expect(workflow).toContain('"os":"macos-26-intel","name":"mac-x64"')
+    expect(workflow).toContain('"os":"windows-2022","name":"win-x64"')
+    expect(workflow).not.toContain('win-arm64')
+    expect(workflow).not.toContain('SPARK_WINDOWS_PUBLISHER_THUMBPRINT: ${{ secrets.')
+  })
+
   it('verifies the final SparkWork.exe and packaged host share the timestamped publisher', async () => {
     const windowsRoot = mkdtempSync(join(tmpdir(), 'spark-windows-after-sign-'))
     const hostDirectory = join(windowsRoot, 'resources', 'native-host', 'windows-x64')
