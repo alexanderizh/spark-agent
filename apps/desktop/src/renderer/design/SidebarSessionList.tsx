@@ -1281,6 +1281,12 @@ export function SidebarSessionList() {
     return sortSessionsByPinned(applySessionFilters(source, filter))
   }, [ctx.sessions, filter, searchQuery, searchResultSessions, searchVisible])
 
+  const hideEmptyProjectGroups =
+    filter.status !== DEFAULT_SIDEBAR_FILTER.status ||
+    filter.projectId !== DEFAULT_SIDEBAR_FILTER.projectId ||
+    filter.lastActivity !== DEFAULT_SIDEBAR_FILTER.lastActivity ||
+    (searchVisible && searchQuery.trim().length > 0)
+
   // Build display groups based on groupBy mode
   const displayGroups = useMemo<DisplayGroup[]>(() => {
     if (filter.groupBy === 'date') return buildGroupsByDate(filteredSessions)
@@ -1299,7 +1305,9 @@ export function SidebarSessionList() {
         ? selectedBaseWorkspaceId
         : filter.projectId
     const projectGroups = buildProjectGroups(ctx.workspaces, filteredSessions).filter(
-      (group) => filter.projectId === 'all' || group.workspace.id === selectedProjectGroupId,
+      (group) =>
+        (!hideEmptyProjectGroups || group.sessions.length > 0) &&
+        (filter.projectId === 'all' || group.workspace.id === selectedProjectGroupId),
     )
     const noProjectWorkspace = ctx.noProjectWorkspace
     const noProject = noProjectWorkspace
@@ -1326,6 +1334,7 @@ export function SidebarSessionList() {
     ctx.workspaces,
     ctx.noProjectWorkspace,
     ctx.sessionAgentStatuses,
+    hideEmptyProjectGroups,
   ])
 
   const noProjectWorkspace = ctx.noProjectWorkspace
