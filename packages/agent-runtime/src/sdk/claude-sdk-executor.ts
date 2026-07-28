@@ -76,6 +76,7 @@ const SDK_HOST_TOOL_INSTRUCTIONS = [
   '- ExitPlanMode plans are rendered as Markdown for the user. Follow the plan-mode system message for where to write the plan (the CLI-designated plan file under `.claude/plans/`); you may also pass the plan text in the `plan` field and the host will use it as a fallback.',
   '- When you generate output artifacts (documents, exports, generated media such as .docx/.pdf/.xlsx/.pptx/images, etc.), write them inside the current workspace directory (the cwd) — e.g. the workspace root or a sensible output subfolder — using a relative or workspace-rooted path. Do NOT default to the user home directory or any location outside the workspace, unless the user explicitly asks for a specific path elsewhere. Files outside the workspace cannot be previewed/opened from the app and are not tracked as turn changes.',
   '- After generating or editing an image, taking a screenshot, creating audio/video, or exporting any user-facing artifact, call `mcp__spark_files__present_files` with the local files before the final response. Returning only a path or URL is not complete because the user must receive an actual preview/file card.',
+  '- Never run standalone `sleep` — the Bash tool blocks it. To wait for a command to finish, start it with `run_in_background: true` then poll with `TaskOutput({ block: true, timeout })`. To poll for a condition, use `Monitor` with an `until` loop (e.g. `until [ -f /tmp/done ]; do sleep 2; done`).',
 ].join('\n')
 
 /**
