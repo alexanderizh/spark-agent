@@ -236,6 +236,25 @@ describe('IPC schemas', () => {
     ])
   })
 
+  it('accepts application snapshot IDs without changing legacy attachment semantics', () => {
+    const request = SessionSendTurnRequestSchema.parse({
+      sessionId: '00000000-0000-4000-8000-000000000002',
+      message: 'use the app context I just captured',
+      attachments: [{ type: 'file', path: '/tmp/notes.md' }],
+      appSnapshotIds: ['snapshot-01JZ9M5K6DY3F0V4EJKS9A4X2H'],
+    })
+
+    expect(request.attachments).toEqual([{ type: 'file', path: '/tmp/notes.md' }])
+    expect(request.appSnapshotIds).toEqual(['snapshot-01JZ9M5K6DY3F0V4EJKS9A4X2H'])
+    expect(
+      SessionSendTurnRequestSchema.safeParse({
+        sessionId: '00000000-0000-4000-8000-000000000002',
+        message: 'duplicate snapshots must not be hydrated twice',
+        appSnapshotIds: ['snapshot-1', 'snapshot-1'],
+      }).success,
+    ).toBe(false)
+  })
+
   it('accepts multi-file open dialog options', () => {
     const request = DialogOpenFileRequestSchema.parse({
       title: 'Add attachments',

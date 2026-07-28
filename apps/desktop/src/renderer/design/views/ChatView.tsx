@@ -88,6 +88,7 @@ import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
 import { getRecentAssistantMessageIds } from './chat/recent-assistant-messages'
 import { EmptySessionModeLauncher } from './chat/EmptySessionModeLauncher'
 import { ChatOverlayScrollbar } from './chat/ChatOverlayScrollbar'
+import { ApplicationSnapshotPreviewCard } from './chat/ApplicationSnapshotPreviewCard'
 import {
   persistThenSyncTeamSelection,
   preserveExplicitEmptySessionTeamConfig,
@@ -4101,6 +4102,13 @@ function renderBlocks(
           </div>
         )
       }
+      case 'application_snapshot': {
+        return (
+          <div key={i} style={{ marginTop: 8, marginBottom: 8, maxWidth: 920 }}>
+            <ApplicationSnapshotPreviewCard {...block} />
+          </div>
+        )
+      }
       case 'user_question': {
         return (
           <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
@@ -4262,6 +4270,7 @@ function reorderTurnSummaryBlocks(blocks: UIBlock[]): UIBlock[] {
     if (b.kind === 'validation_suggestion') return 3
     if (b.kind === 'turn_file_summary') return 1
     if (b.kind === 'presented_files') return 2
+    if (b.kind === 'application_snapshot') return 2
     return 0
   }
   return blocks

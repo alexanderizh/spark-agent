@@ -7,6 +7,39 @@
  */
 
 export { BaseRepository } from './base.repository.js'
+export { ApplicationSnapshotRepository } from './application-snapshot.repository.js'
+export { ComputerSessionRepository } from './computer-session.repository.js'
+export type {
+  ComputerSessionRow,
+  CreateComputerSessionParams,
+  StoredComputerEnvironment,
+  StoredComputerSessionStatus,
+} from './computer-session.repository.js'
+export { ComputerActionRepository } from './computer-action.repository.js'
+export type {
+  ComputerActionRow,
+  CreateComputerActionParams,
+  StoredComputerActionStatus,
+} from './computer-action.repository.js'
+export { ComputerApprovalRepository } from './computer-approval.repository.js'
+export type {
+  ComputerApprovalRow,
+  CreatePendingComputerApprovalParams,
+} from './computer-approval.repository.js'
+export { ComputerVerificationRepository } from './computer-verification.repository.js'
+export type { ComputerVerificationRow } from './computer-verification.repository.js'
+export { ComputerActuatorLeaseRepository } from './computer-actuator-lease.repository.js'
+export type { ComputerActuatorLeaseRow } from './computer-actuator-lease.repository.js'
+export type {
+  ApplicationSnapshotRow,
+  SnapshotBlobRow,
+  SnapshotBlobKind,
+  ApplicationSnapshotKind,
+  SnapshotRetentionMode,
+  CreateSnapshotBlobParams,
+  CreateApplicationSnapshotParams,
+  CreateApplicationSnapshotWithBlobsParams,
+} from './application-snapshot.repository.js'
 export { SessionRepository } from './session.repository.js'
 export { WorkspaceRepository } from './workspace.repository.js'
 export { CanvasProjectRepository, CanvasSnapshotRepository } from './canvas.repository.js'

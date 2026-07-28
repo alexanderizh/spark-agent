@@ -14,6 +14,11 @@ import type {
   PermissionApprovalResolved,
   PermissionDecisionScope,
 } from '@spark/protocol'
+import {
+  isComputerSafetyControl,
+  isUnapprovableComputerAction,
+  resolveComputerPermissionAction,
+} from '../computer-use/computer-permission-action.js'
 
 const BUILTIN_PROFILES = [
   { id: 'strict', name: 'strict', sandboxLevel: 0 },
@@ -38,6 +43,14 @@ const DEFAULT_RULES: Array<{
   { action: 'mcp_tool', scope: 'server', mode: 'allow', sortOrder: 8 },
   { action: 'secret_read', scope: 'profile', mode: 'ask', sortOrder: 9 },
   { action: 'long_task', scope: 'session', mode: 'allow', sortOrder: 10 },
+  { action: 'computer_observe', scope: 'session', mode: 'allow', sortOrder: 11 },
+  { action: 'computer_task_start', scope: 'session', mode: 'ask', sortOrder: 12 },
+  { action: 'computer_pause', scope: 'session', mode: 'allow', sortOrder: 13 },
+  { action: 'computer_resume', scope: 'session', mode: 'ask', sortOrder: 14 },
+  { action: 'computer_stop', scope: 'session', mode: 'allow', sortOrder: 15 },
+  { action: 'computer_takeover', scope: 'session', mode: 'allow', sortOrder: 16 },
+  { action: 'computer_direct_action', scope: 'any', mode: 'deny', sortOrder: 17 },
+  { action: 'computer_unknown', scope: 'any', mode: 'deny', sortOrder: 18 },
 ]
 
 const ACTIVE_PROFILE_KEY = 'permission:active-profile'
@@ -116,9 +129,19 @@ const RISK_LEVEL_MAP: Record<string, 'low' | 'medium' | 'high'> = {
   network_unknown: 'medium',
   mcp_tool: 'medium',
   secret_read: 'high',
+  computer_observe: 'low',
+  computer_task_start: 'high',
+  computer_pause: 'low',
+  computer_resume: 'high',
+  computer_stop: 'low',
+  computer_takeover: 'low',
+  computer_direct_action: 'high',
+  computer_unknown: 'high',
 }
 
 function resolveToolAction(toolName: string, toolInput: Record<string, unknown>): string {
+  const computerAction = resolveComputerPermissionAction(toolName)
+  if (computerAction != null) return computerAction
   if (isMcpToolName(toolName)) return 'mcp_tool'
   const mapped = TOOL_ACTION_MAP[toolName] ?? TOOL_ACTION_MAP[toolName.toLowerCase()]
   if (mapped === 'command_exec' && isDangerousCommand(toolInput)) return 'command_dangerous'
@@ -270,6 +293,8 @@ export class PermissionService {
   ): Promise<boolean> {
     // 1) 查 session-scoped 临时决策（用户上一次选「会话允许 / 会话拒绝」）
     const action = resolveToolAction(toolName, toolInput)
+    if (isUnapprovableComputerAction(action)) return false
+    if (isComputerSafetyControl(action)) return true
     if (this.isSessionDenied(sessionId, action) && options.forcePrompt !== true) return false
     if (this.isSessionAllowed(sessionId, action)) return true
 

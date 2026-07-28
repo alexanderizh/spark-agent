@@ -1,0 +1,534 @@
+import AppKit
+@preconcurrency import ApplicationServices
+import CoreGraphics
+import CryptoKit
+import Foundation
+import ImageIO
+import ScreenCaptureKit
+import Security
+import SparkComputerHostCore
+import UniformTypeIdentifiers
+
+actor MacScreenCaptureProvider: NativeHostPlatformProviding {
+  private static let hostVersion = "0.1.0"
+  private var screenPermissionWasDenied = false
+  private var accessibilityPermissionWasDenied = false
+  private var inputPermissionWasDenied = false
+  private let accessibility = MacAccessibilityController()
+  private var observation: ObservationBinding?
+  private var canceledSessions: Set<String> = []
+
+  func capabilityManifest() -> NativeCapabilityManifest {
+    let permission: String
+    if CGPreflightScreenCaptureAccess() {
+      permission = "granted"
+    } else if screenPermissionWasDenied {
+      permission = "denied"
+    } else {
+      permission = "not_determined"
+    }
+    let controlObservationAvailable = captureIsSupported && accessibility.isAvailable
+    return .macosScreenCapture(
+      hostVersion: Self.hostVersion,
+      architecture: hostArchitecture,
+      screenPermission: permission,
+      accessibilityPermission: accessibilityPermission,
+      inputPermission: inputPermission,
+      captureWindowSupported: captureIsSupported,
+      accessibilityAvailable: controlObservationAvailable,
+      inputAvailable: controlObservationAvailable && MacCGEventController.isAvailable
+    )
+  }
+
+  func requestPermissions(
+    _ permissions: [NativeHostPermissionRequest]
+  ) -> NativeCapabilityManifest {
+    for permission in permissions {
+      switch permission {
+      case .screen:
+        screenPermissionWasDenied = !CGRequestScreenCaptureAccess()
+      case .accessibility:
+        let options =
+          [
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
+          ] as CFDictionary
+        accessibilityPermissionWasDenied = !AXIsProcessTrustedWithOptions(options)
+        inputPermissionWasDenied = !CGRequestPostEventAccess()
+      }
+    }
+    return capabilityManifest()
+  }
+
+  func listWindows() async throws -> [NativeWindowDescriptor] {
+    let content = try await loadShareableContent()
+    let displays = content.displays.map {
+      RawNativeDisplay(
+        id: String($0.displayID),
+        pixelWidth: $0.width,
+        pixelHeight: $0.height,
+        frame: NativeRect(
+          x: $0.frame.origin.x,
+          y: $0.frame.origin.y,
+          width: $0.frame.width,
+          height: $0.frame.height
+        )
+      )
+    }
+    let focusedWindowID = frontmostWindowID()
+    var identities: [pid_t: CodeIdentity] = [:]
+    let windows = content.windows.compactMap { window -> RawNativeWindow? in
+      guard let application = window.owningApplication,
+        application.processID != ProcessInfo.processInfo.processIdentifier,
+        window.frame.width > 0,
+        window.frame.height > 0
+      else { return nil }
+      let identity =
+        identities[application.processID]
+        ?? inspectCodeIdentity(
+          processID: application.processID
+        )
+      identities[application.processID] = identity
+      return RawNativeWindow(
+        id: String(window.windowID),
+        title: window.title ?? "",
+        frame: NativeRect(
+          x: window.frame.origin.x,
+          y: window.frame.origin.y,
+          width: window.frame.width,
+          height: window.frame.height
+        ),
+        isOnScreen: window.isOnScreen,
+        processID: application.processID,
+        applicationName: application.applicationName,
+        bundleID: application.bundleIdentifier,
+        executableIdentity: identity.identifier ?? application.bundleIdentifier,
+        signingIdentity: identity.teamIdentifier
+      )
+    }
+    return try NativeWindowInventoryMapper.map(
+      windows: windows,
+      displays: displays,
+      focusedWindowID: focusedWindowID
+    )
+  }
+
+  func captureWindow(id: String) async throws -> NativeCapturedWindow {
+    guard captureIsSupported else { throw NativeHostPlatformError.captureFailed }
+    guard let windowID = NativeWindowIDParser.parse(id) else {
+      throw NativeHostPlatformError.windowNotFound
+    }
+    let content = try await loadShareableContent()
+    guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
+      throw NativeHostPlatformError.windowNotFound
+    }
+    guard window.frame.width > 0, window.frame.height > 0 else {
+      throw NativeHostPlatformError.invalidWindowGeometry
+    }
+    guard #available(macOS 14.0, *) else {
+      throw NativeHostPlatformError.captureFailed
+    }
+
+    let scaleFactor = displayScale(for: window, displays: content.displays)
+    let width = max(1, min(16_384, Int((window.frame.width * scaleFactor).rounded())))
+    let height = max(1, min(16_384, Int((window.frame.height * scaleFactor).rounded())))
+    let configuration = SCStreamConfiguration()
+    configuration.width = width
+    configuration.height = height
+    configuration.showsCursor = true
+    configuration.ignoreShadowsSingleWindow = false
+    let filter = SCContentFilter(desktopIndependentWindow: window)
+    do {
+      let image = try await SCScreenshotManager.captureImage(
+        contentFilter: filter,
+        configuration: configuration
+      )
+      return NativeCapturedWindow(
+        bytes: try encodePNG(image),
+        width: image.width,
+        height: image.height
+      )
+    } catch {
+      if !CGPreflightScreenCaptureAccess() {
+        screenPermissionWasDenied = true
+        throw NativeHostPlatformError.screenPermissionDenied
+      }
+      throw NativeHostPlatformError.captureFailed
+    }
+  }
+
+  func observe(
+    snapshotID: String,
+    appID: String,
+    windowID: String,
+    previousTreeVersion: String?,
+    fullTree: Bool
+  ) async throws -> NativeObservedWindow {
+    guard accessibility.isAvailable else {
+      throw NativeHostPlatformError.accessibilityPermissionDenied
+    }
+    observation = nil
+    let before = try await focusedTarget(appID: appID, windowID: windowID)
+    let captured = try await captureWindow(id: windowID)
+    let tree = try accessibility.observe(
+      processID: before.processID,
+      expectedBounds: before.descriptor.window.bounds,
+      expectedTitle: before.descriptor.window.title,
+      previousTreeVersion: previousTreeVersion,
+      fullTree: fullTree
+    )
+    let after = try await focusedTarget(appID: appID, windowID: windowID)
+    try NativeInputPolicy.validateIdentity(expected: before.identity, current: after.identity)
+    let capturedAt = ISO8601DateFormatter().string(from: Date())
+    var frameHasher = SHA256()
+    frameHasher.update(data: captured.bytes)
+    frameHasher.update(data: Data(tree.treeVersion.utf8))
+    frameHasher.update(data: Data(capturedAt.utf8))
+    let frameID =
+      "frame-"
+      + frameHasher.finalize().prefix(16).map {
+        String(format: "%02x", $0)
+      }.joined()
+    observation = ObservationBinding(
+      frameID: frameID, treeVersion: tree.treeVersion, target: before.identity,
+      screenshotDigest: SHA256.hash(data: captured.bytes).map { String(format: "%02x", $0) }
+        .joined())
+    return NativeObservedWindow(
+      frameID: frameID,
+      treeVersion: tree.treeVersion,
+      capturedAt: capturedAt,
+      display: before.descriptor.display,
+      app: before.descriptor.app,
+      window: before.descriptor.window,
+      snapshotID: snapshotID,
+      capture: captured,
+      treeMode: tree.mode,
+      treeText: tree.text,
+      elements: tree.elements,
+      loading: false,
+      sensitiveRegions: tree.sensitiveRegions
+    )
+  }
+
+  func executeAction(
+    _ envelope: NativeComputerActionEnvelope
+  ) async throws -> NativeActionStatus {
+    guard !canceledSessions.contains(envelope.computerSessionID) else {
+      throw NativeHostPlatformError.sessionCanceled
+    }
+    guard let binding = observation else { throw NativeHostPlatformError.staleFrame }
+    guard binding.frameID == envelope.observedFrameID else {
+      throw NativeHostPlatformError.staleFrame
+    }
+    guard binding.treeVersion == envelope.observedTreeVersion else {
+      throw NativeHostPlatformError.staleTree
+    }
+    guard binding.target.appID == envelope.targetAppID,
+      binding.target.windowID == envelope.targetWindowID
+    else { throw NativeHostPlatformError.focusMismatch }
+    defer { invalidateObservation(preserveAccessibilityBaseline: true) }
+    let before = try await focusedTarget(
+      appID: envelope.targetAppID, windowID: envelope.targetWindowID)
+    try NativeInputPolicy.validateIdentity(expected: binding.target, current: before.identity)
+    if let elementID = envelope.action.elementID,
+      !accessibility.contains(
+        elementID: elementID, treeVersion: envelope.observedTreeVersion)
+    {
+      throw NativeHostPlatformError.staleTree
+    }
+    if accessibility.focusedElementIsSecure(processID: before.processID) {
+      switch envelope.action {
+      case .typeText:
+        throw NativeHostPlatformError.sensitiveInputBlocked
+      case .keypress(let keys) where NativeInputPolicy.keypressCanModifySecureField(keys):
+        throw NativeHostPlatformError.sensitiveInputBlocked
+      default:
+        break
+      }
+    }
+
+    let status: NativeActionStatus
+    switch envelope.action {
+    case .invokeElement, .setValue, .selectText:
+      status = try accessibility.execute(
+        envelope.action, treeVersion: envelope.observedTreeVersion)
+    case .click, .move, .drag, .keypress, .typeText,
+      .scroll(elementID: nil, point: _, deltaX: _, deltaY: _),
+      .scroll(elementID: .some, point: _, deltaX: _, deltaY: _):
+      let scrollBounds: NativeRect?
+      if case .scroll(let elementID?, _, _, _) = envelope.action {
+        scrollBounds = try accessibility.bounds(
+          elementID: elementID, treeVersion: envelope.observedTreeVersion)
+      } else {
+        scrollBounds = nil
+      }
+      status = try await MacCGEventController.execute(
+        envelope.action, windowBounds: before.identity.windowBounds,
+        scrollTargetBounds: scrollBounds,
+        validateTarget: { [weak self] in
+          guard let self else { throw NativeHostPlatformError.sessionCanceled }
+          guard !(await self.canceledSessions.contains(envelope.computerSessionID)) else {
+            throw NativeHostPlatformError.sessionCanceled
+          }
+          let current = try await self.focusedTarget(
+            appID: envelope.targetAppID, windowID: envelope.targetWindowID)
+          try NativeInputPolicy.validateIdentity(expected: binding.target, current: current.identity)
+        })
+    case .focusWindow(let windowID):
+      guard windowID == envelope.targetWindowID else {
+        throw NativeHostPlatformError.focusMismatch
+      }
+      status = try focusWindow(processID: before.processID)
+      try await Task.sleep(for: .milliseconds(100))
+    case .waitFor(let condition, let timeoutMs):
+      status = try await wait(
+        condition: condition, timeoutMs: timeoutMs, envelope: envelope)
+    case .observe:
+      status = .noop
+    }
+
+    guard !canceledSessions.contains(envelope.computerSessionID) else {
+      throw NativeHostPlatformError.sessionCanceled
+    }
+    let after = try await focusedTarget(
+      appID: envelope.targetAppID, windowID: envelope.targetWindowID)
+    try NativeInputPolicy.validateIdentity(expected: binding.target, current: after.identity)
+    return status
+  }
+
+  func cancelSession(id: String) async {
+    canceledSessions.insert(id)
+    invalidateObservation()
+  }
+
+  private func focusedTarget(appID: String, windowID: String) async throws -> FocusedTarget {
+    let matches = try await listWindows().filter {
+      $0.focused && !$0.minimized && $0.app.id == appID && $0.window.id == windowID
+    }
+    guard matches.count == 1, let descriptor = matches.first,
+      let processID = descriptor.app.processId, processID > 0,
+      descriptor.app.bundleId != nil,
+      descriptor.app.executableIdentity != nil,
+      descriptor.app.signingIdentity != nil
+    else { throw NativeHostPlatformError.focusMismatch }
+    guard
+      !NativeInputPolicy.isSensitiveTarget(
+        appName: descriptor.app.name, bundleID: descriptor.app.bundleId)
+    else { throw NativeHostPlatformError.sensitiveInputBlocked }
+    return FocusedTarget(
+      descriptor: descriptor,
+      identity: NativeTargetIdentity(
+        appID: descriptor.app.id,
+        windowID: descriptor.window.id,
+        processID: processID,
+        bundleID: descriptor.app.bundleId,
+        executableIdentity: descriptor.app.executableIdentity,
+        signingIdentity: descriptor.app.signingIdentity,
+        focused: descriptor.focused,
+        windowBounds: descriptor.window.bounds
+      )
+    )
+  }
+
+  private func focusWindow(processID: pid_t) throws -> NativeActionStatus {
+    guard let application = NSRunningApplication(processIdentifier: processID),
+      application.activate(options: [.activateAllWindows])
+    else { throw NativeHostPlatformError.actionNoop }
+    let axApplication = AXUIElementCreateApplication(processID)
+    guard let window: AXUIElement = copyAXAttribute(axApplication, kAXFocusedWindowAttribute),
+      AXUIElementPerformAction(window, kAXRaiseAction as CFString) == .success
+    else { throw NativeHostPlatformError.actionNoop }
+    return .executed
+  }
+
+  private func wait(
+    condition: NativeWaitCondition,
+    timeoutMs: Int,
+    envelope: NativeComputerActionEnvelope
+  ) async throws -> NativeActionStatus {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .milliseconds(timeoutMs))
+    while clock.now < deadline {
+      guard !canceledSessions.contains(envelope.computerSessionID) else {
+        throw NativeHostPlatformError.sessionCanceled
+      }
+      if try await conditionSatisfied(condition, envelope: envelope) { return .executed }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    throw NativeHostPlatformError.actionNoop
+  }
+
+  private func conditionSatisfied(
+    _ condition: NativeWaitCondition,
+    envelope: NativeComputerActionEnvelope
+  ) async throws -> Bool {
+    switch condition {
+    case .loadingStopped:
+      return accessibility.loadingStopped(processID: observation?.target.processID ?? 0)
+    case .elementPresent(let elementID):
+      return accessibility.contains(
+        elementID: elementID, treeVersion: envelope.observedTreeVersion)
+    case .elementAbsent(let elementID):
+      return !accessibility.contains(
+        elementID: elementID, treeVersion: envelope.observedTreeVersion)
+    case .windowFocused(let windowID):
+      guard windowID == envelope.targetWindowID else { return false }
+      return
+        (try? await focusedTarget(
+          appID: envelope.targetAppID, windowID: envelope.targetWindowID)) != nil
+    case .snapshotChanged(let previousFrameID):
+      guard let observation else { return true }
+      if observation.frameID != previousFrameID { return true }
+      let current = try await captureWindow(id: envelope.targetWindowID)
+      let digest = SHA256.hash(data: current.bytes).map { String(format: "%02x", $0) }.joined()
+      return digest != observation.screenshotDigest
+    }
+  }
+
+  private func invalidateObservation(preserveAccessibilityBaseline: Bool = false) {
+    observation = nil
+    if !preserveAccessibilityBaseline { accessibility.invalidate() }
+  }
+
+  private func loadShareableContent() async throws -> SCShareableContent {
+    do {
+      return try await SCShareableContent.excludingDesktopWindows(
+        false,
+        onScreenWindowsOnly: false
+      )
+    } catch {
+      if !CGPreflightScreenCaptureAccess() {
+        screenPermissionWasDenied = true
+        throw NativeHostPlatformError.screenPermissionDenied
+      }
+      throw NativeHostPlatformError.captureFailed
+    }
+  }
+
+  private var captureIsSupported: Bool {
+    if #available(macOS 14.0, *) { return true }
+    return false
+  }
+
+  private var accessibilityPermission: String {
+    if AXIsProcessTrusted() { return "granted" }
+    return accessibilityPermissionWasDenied ? "denied" : "not_determined"
+  }
+
+  private var inputPermission: String {
+    if CGPreflightPostEventAccess() { return "granted" }
+    return inputPermissionWasDenied ? "denied" : "not_determined"
+  }
+}
+
+private struct ObservationBinding {
+  let frameID: String
+  let treeVersion: String
+  let target: NativeTargetIdentity
+  let screenshotDigest: String
+}
+
+private struct FocusedTarget {
+  let descriptor: NativeWindowDescriptor
+  let identity: NativeTargetIdentity
+
+  var processID: pid_t { identity.processID }
+}
+
+private struct CodeIdentity {
+  let identifier: String?
+  let teamIdentifier: String?
+}
+
+private var hostArchitecture: String {
+  #if arch(arm64)
+    return "arm64"
+  #elseif arch(x86_64)
+    return "x64"
+  #else
+    return "unsupported"
+  #endif
+}
+
+private func inspectCodeIdentity(processID: pid_t) -> CodeIdentity {
+  let attributes = [kSecGuestAttributePid as String: NSNumber(value: processID)] as CFDictionary
+  var code: SecCode?
+  guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
+    let code
+  else { return CodeIdentity(identifier: nil, teamIdentifier: nil) }
+  var staticCode: SecStaticCode?
+  guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess,
+    let staticCode
+  else { return CodeIdentity(identifier: nil, teamIdentifier: nil) }
+  guard SecStaticCodeCheckValidity(staticCode, [], nil) == errSecSuccess else {
+    return CodeIdentity(identifier: nil, teamIdentifier: nil)
+  }
+  var information: CFDictionary?
+  guard SecCodeCopySigningInformation(staticCode, [], &information) == errSecSuccess,
+    let dictionary = information as? [String: Any]
+  else {
+    return CodeIdentity(identifier: nil, teamIdentifier: nil)
+  }
+  return CodeIdentity(
+    identifier: dictionary[kSecCodeInfoIdentifier as String] as? String,
+    teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier as String] as? String
+  )
+}
+
+private func frontmostWindowID() -> String? {
+  let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+  guard
+    let rows = CGWindowListCopyWindowInfo(
+      [.optionOnScreenOnly, .excludeDesktopElements],
+      kCGNullWindowID
+    ) as? [[String: Any]]
+  else { return nil }
+  let matching = rows.first { row in
+    guard (row[kCGWindowLayer as String] as? NSNumber)?.intValue == 0 else { return false }
+    if let frontmostPID {
+      return (row[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == frontmostPID
+    }
+    return true
+  }
+  guard let number = matching?[kCGWindowNumber as String] as? NSNumber else { return nil }
+  return number.stringValue
+}
+
+private func displayScale(for window: SCWindow, displays: [SCDisplay]) -> CGFloat {
+  let display = displays.max { left, right in
+    intersectionArea(window.frame, left.frame) < intersectionArea(window.frame, right.frame)
+  }
+  guard let display, display.frame.width > 0 else { return 1 }
+  let scale = CGFloat(display.width) / display.frame.width
+  return scale.isFinite && scale > 0 && scale <= 8 ? scale : 1
+}
+
+private func intersectionArea(_ left: CGRect, _ right: CGRect) -> CGFloat {
+  left.intersection(right).standardized.width * left.intersection(right).standardized.height
+}
+
+private func encodePNG(_ image: CGImage) throws -> Data {
+  let data = NSMutableData()
+  guard
+    let destination = CGImageDestinationCreateWithData(
+      data,
+      UTType.png.identifier as CFString,
+      1,
+      nil
+    )
+  else { throw NativeHostPlatformError.captureFailed }
+  CGImageDestinationAddImage(destination, image, nil)
+  guard CGImageDestinationFinalize(destination) else {
+    throw NativeHostPlatformError.captureFailed
+  }
+  return data as Data
+}
+
+private func copyAXAttribute<Value>(
+  _ element: AXUIElement, _ attribute: String
+) -> Value? {
+  var value: CFTypeRef?
+  guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+    let value
+  else { return nil }
+  return value as? Value
+}

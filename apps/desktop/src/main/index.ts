@@ -14,7 +14,18 @@
  *   - sandbox: true
  */
 
-import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, nativeTheme, shell } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  Notification,
+  Tray,
+  dialog,
+  globalShortcut,
+  nativeImage,
+  nativeTheme,
+  shell,
+} from 'electron'
 import { join } from 'path'
 
 // ─── EPIPE guard ─────────────────────────────────────────────────────────────
@@ -45,6 +56,12 @@ app.commandLine.appendSwitch('disable-features', 'OverlayScrollbar,OverlayScroll
 import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
 import { startBackgroundMaintenanceWorker } from './services/background-maintenance-worker.js'
+import { startSnapshotVaultMaintenance } from './services/computer-use/SnapshotVaultMaintenance.js'
+import {
+  disposeComputerUseServices,
+  initializeComputerUseServices,
+} from './services/computer-use/ComputerUseServices.js'
+import { disposeComputerUseMcpProvider } from './services/computer-use/ComputerUseMcpProvider.js'
 import { registerAllIpcHandlers, ensureNoProjectDirectoryExists } from './ipc/index.js'
 import {
   getMainWindow,
@@ -70,6 +87,10 @@ import {
   registerSafeFileProtocol,
   registerSafeFileSchemes,
 } from './services/SafeFileProtocol.js'
+import {
+  registerSnapshotProtocol,
+  registerSnapshotSchemes,
+} from './services/computer-use/SnapshotProtocol.js'
 import { isWebviewSourceAllowed, openExternalUrlSafely } from './services/ExternalUrlPolicy.js'
 import { ensurePreMigrationBackup, restoreDatabaseBackup } from './services/DatabaseBackupService.js'
 import { installSingleInstanceLock } from './single-instance.js'
@@ -126,6 +147,7 @@ app.on('before-quit', () => {
 // `safe-file://` 让渲染进程能读取 userData 下的本地图片（生成的图、附件等），
 // 必须在 app.whenReady() 之前调用，否则特权声明会失效。
 registerSafeFileSchemes()
+registerSnapshotSchemes()
 
 function getResourcePath(fileName: string): string {
   return is.dev
@@ -688,7 +710,14 @@ async function initializeApp(): Promise<void> {
     const migrationsDir = is.dev ? undefined : join(process.resourcesPath, 'migrations')
     const db = createDatabase(dbPath, migrationsDir)
     setDatabaseInstance(db)
+    initializeComputerUseServices(db, {
+      shortcutRegistrar: globalShortcut,
+      onKillSwitchError: (error) => {
+        log.error(`Computer Use kill switch failed: ${String(error)}`)
+      },
+    })
     const backgroundMaintenanceWorker = startBackgroundMaintenanceWorker(dbPath)
+    const snapshotVaultMaintenance = startSnapshotVaultMaintenance(db)
     log.info('Database initialized successfully')
 
     // 061 会话搜索 FTS 索引的存量事件回填（幂等）。
@@ -736,6 +765,18 @@ async function initializeApp(): Promise<void> {
                 run: () => backgroundMaintenanceWorker.dispose(),
               },
               {
+                name: 'snapshot vault maintenance',
+                run: () => snapshotVaultMaintenance.dispose(),
+              },
+              {
+                name: 'computer use agent bridge',
+                run: () => disposeComputerUseMcpProvider(),
+              },
+              {
+                name: 'computer use services',
+                run: () => disposeComputerUseServices(),
+              },
+              {
                 name: 'database',
                 run: () => closeDatabase(),
               },
@@ -769,6 +810,9 @@ async function initializeApp(): Promise<void> {
     )
     throw err
   }
+
+  // 快照协议按 snapshot ID 查询数据库并解密，必须在数据库初始化后、窗口创建前注册。
+  registerSnapshotProtocol()
 
   // 2. 注册 IPC handlers
   registerAllIpcHandlers()

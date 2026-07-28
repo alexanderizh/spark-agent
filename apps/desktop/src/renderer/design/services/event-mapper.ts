@@ -176,6 +176,14 @@ export type UIBlock =
       files: Array<{ path: string; title?: string }>
     }
   | {
+      kind: 'application_snapshot'
+      snapshotId: string
+      previewUrl: string
+      appName: string
+      windowTitle: string
+      capturedAt: string
+    }
+  | {
       kind: 'user_question'
       toolCallId: string
       questions: UserQuestionPrompt[]
@@ -626,6 +634,22 @@ export class MessageBuilder {
             block.error = event.error
             block.durationMs = event.durationMs
             if (event.teamMemberContext != null) block.teamMemberContext = event.teamMemberContext
+          }
+          if (
+            event.status === 'success' &&
+            event.toolName.toLowerCase().endsWith('capture_app_snapshot')
+          ) {
+            const snapshot = extractApplicationSnapshotPreview(event.output)
+            if (
+              snapshot != null &&
+              !msg.blocks.some(
+                (candidate) =>
+                  candidate.kind === 'application_snapshot' &&
+                  candidate.snapshotId === snapshot.snapshotId,
+              )
+            ) {
+              msg.blocks.push({ kind: 'application_snapshot', ...snapshot })
+            }
           }
         }
         break
@@ -1815,6 +1839,82 @@ function formatToolOutput(output: unknown): string | undefined {
   } catch {
     return String(output)
   }
+}
+
+function extractApplicationSnapshotPreview(output: unknown): Omit<
+  Extract<UIBlock, { kind: 'application_snapshot' }>,
+  'kind'
+> | null {
+  const candidates: unknown[] = [output]
+  for (let index = 0; index < candidates.length && index < 12; index += 1) {
+    let candidate = candidates[index]
+    if (typeof candidate === 'string') {
+      try {
+        candidate = JSON.parse(candidate) as unknown
+      } catch {
+        continue
+      }
+    }
+    if (candidate == null || typeof candidate !== 'object' || Array.isArray(candidate)) continue
+    const record = candidate as Record<string, unknown>
+    const snapshot = record.snapshot
+    if (snapshot != null && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
+      const parsed = parseApplicationSnapshotRecord(snapshot as Record<string, unknown>)
+      if (parsed != null) return parsed
+    }
+    for (const key of ['structuredContent', 'result', 'data']) {
+      if (record[key] != null) candidates.push(record[key])
+    }
+    if (Array.isArray(record.content)) {
+      for (const item of record.content.slice(0, 4)) {
+        if (item != null && typeof item === 'object' && !Array.isArray(item)) {
+          const text = (item as Record<string, unknown>).text
+          if (typeof text === 'string') candidates.push(text)
+        }
+      }
+    }
+  }
+  return null
+}
+
+function parseApplicationSnapshotRecord(
+  snapshot: Record<string, unknown>,
+): Omit<Extract<UIBlock, { kind: 'application_snapshot' }>, 'kind'> | null {
+  const app = snapshot.app
+  const window = snapshot.window
+  if (
+    app == null ||
+    typeof app !== 'object' ||
+    Array.isArray(app) ||
+    window == null ||
+    typeof window !== 'object' ||
+    Array.isArray(window)
+  ) {
+    return null
+  }
+  const snapshotId = snapshot.id
+  const previewUrl = snapshot.previewUrl
+  const appName = (app as Record<string, unknown>).name
+  const windowTitle = (window as Record<string, unknown>).title
+  const capturedAt = snapshot.capturedAt
+  if (
+    typeof snapshotId !== 'string' ||
+    snapshotId.length < 1 ||
+    snapshotId.length > 200 ||
+    typeof previewUrl !== 'string' ||
+    !/^spark-snapshot:\/\/snapshot\/[^/?#]+\/preview\?cap=[A-Za-z0-9_-]{43,128}$/u.test(
+      previewUrl,
+    ) ||
+    typeof appName !== 'string' ||
+    appName.length > 500 ||
+    typeof windowTitle !== 'string' ||
+    windowTitle.length > 2_000 ||
+    typeof capturedAt !== 'string' ||
+    !Number.isFinite(Date.parse(capturedAt))
+  ) {
+    return null
+  }
+  return { snapshotId, previewUrl, appName, windowTitle, capturedAt }
 }
 
 /** 从 unified diff 中解析新增/删除行数 */

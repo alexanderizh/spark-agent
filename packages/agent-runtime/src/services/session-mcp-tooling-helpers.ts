@@ -70,7 +70,8 @@ export function buildImageGenerationSystemPrompt(input: {
     'Do not ask for or reveal API keys. Credentials are injected only into the local image MCP server.',
     'If the user gives semantic sizing such as square, portrait, landscape, poster, or banner, translate it to an appropriate `size` value before calling the tool.',
     'Pass provider-specific fields through `extraJson` only when they are relevant and reasonably supported by the configured provider.',
-    'After success, show the generated `urls` or `files` from the structured result. Local file paths can be shown directly as Markdown image links.',
+    'After success, call `mcp__spark_files__present_files` with every generated local image file so the application renders a preview for the user.',
+    'Returning only a URL or filesystem path is not complete. If a provider returns only a URL, materialize it in the configured output directory before presenting it.',
     'Do not auto-retry image generation after a provider failure; report the error and suggest model, prompt, size, or provider-configuration adjustments.',
   ].join('\n')
 }
@@ -150,6 +151,15 @@ export function parsePresentedFilesPayload(output: unknown): Record<string, unkn
 }
 
 // ─── Platform / Web / Memory / Canvas / Debug MCP server paths ──────────────
+
+export function resolveMcpNodeRuntimeExecutable(): string {
+  const standalone = process.env.SPARK_STANDALONE_NODE?.trim()
+  if (standalone != null && standalone !== '' && existsSync(standalone)) return standalone
+  if (!('electron' in process.versions)) return process.execPath
+  throw new Error(
+    'Standalone Node runtime is unavailable; refusing to launch an MCP server through Electron RunAsNode',
+  )
+}
 
 /**
  * All platform management tool names (SDK namespace: mcp__spark_platform__).
@@ -306,11 +316,10 @@ export function resolvePresentFilesMcpServer(workspaceRootPath: string): SDKMcpS
   }
   return {
     type: 'stdio',
-    command: process.execPath,
+    command: resolveMcpNodeRuntimeExecutable(),
     args: [serverPath],
     cwd: workspaceRootPath,
     env: {
-      ELECTRON_RUN_AS_NODE: '1',
       SPARK_WORKSPACE_ROOT: workspaceRootPath,
     },
   }
@@ -346,6 +355,8 @@ export const VALIDATION_SUGGESTION_TOOL_DESCRIPTION = [
 export const PRESENT_FILES_SYSTEM_PROMPT = [
   '## User-facing file cards',
   'When this turn produces or identifies files that should be delivered to the user, call `mcp__spark_files__present_files` immediately before the final response.',
+  'This is mandatory for generated or edited images, screenshots, audio, video, documents, slides, spreadsheets, PDFs, and exported visual assets. Returning only a path or address is not complete.',
+  'For image, screenshot, audio, and video deliverables, make sure the file card is emitted so the chat can render an inline preview or playback control.',
   'Include only files the user should open, preview, or otherwise receive as deliverables.',
   'Do not include source files, dependencies, temporary files, caches, build metadata, or incidental workspace changes unless the user explicitly asked to receive that file.',
   'Do not call the tool when there are no user-facing files to present.',
@@ -452,7 +463,7 @@ export const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   'When the user asks to manage any of these, use the corresponding tool directly.',
   'When a task requires external dependency, runtime, or environment installation, first call `mcp__spark_platform__artifacts_list` / `mcp__spark_platform__artifacts_resolve` to look in the Spark self-hosted artifact manifest (`https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/index.json`), then use domestic mirrors, and only then fall back to public overseas sources.',
   'For missing Python on Windows, do not start with `winget install Python...`; first resolve `runtime.python-3.11.9.win32-x64` from the Spark artifact manifest. For ppt-master Python packages, resolve the platform-specific `python-wheelhouse.ppt-master-py311.*` artifact before using pip indexes.',
-  'Before installing Node.js on the host, check whether Spark exposes an app-bundled Electron Node runtime via `SPARK_ELECTRON_NODE` with `ELECTRON_RUN_AS_NODE=1`. Use it for Node-script/MCP subprocess needs when suitable; install a system/portable Node.js only when npm/npx or normal shell `node` is required and the bundled runtime is insufficient.',
+  'Before installing Node.js on the host, check whether Spark exposes a separately packaged Node runtime via `SPARK_STANDALONE_NODE`. Use it for Node-script/MCP subprocess needs when suitable; install a system/portable Node.js only when npm/npx or normal shell `node` is required and the bundled runtime is insufficient. Never launch the Electron executable with `ELECTRON_RUN_AS_NODE`.',
   'When the environment is missing, prefer helping the user install and verify the needed environment after explaining the plan and obtaining consent for network/system changes; do not treat bypassing the missing environment as the first option.',
   'For destructive operations (delete, uninstall), always confirm with the user first.',
   'Never reveal or ask for full API keys — only show whether a key is configured.',

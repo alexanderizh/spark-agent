@@ -33,6 +33,7 @@ mac:
   extendInfo:
     CFBundleDisplayName: SparkWork
     NSMicrophoneUsageDescription: SparkWork 需要访问麦克风，用于在本地将您的语音转换为文字。
+    NSScreenCaptureUsageDescription: SparkWork 仅在您启用电脑操作或应用快照时读取所选窗口画面。
   target:
     - dmg
   # 公证的前置条件：开启 hardened runtime
@@ -47,7 +48,13 @@ mac:
   # 优先匹配 Developer ID Application 证书；
   # 若环境里没有，electron-builder 会回退到 ad-hoc 签名（仅本地开发用）
   identity: 'Developer ID Application'
+  # Native Host 在 afterPack 中先独立 Developer ID 签名并生成最终 bytes hash；
+  # 外层 .app 随后封存 host + manifest。禁止 electron-builder 二次签名改变 hash。
+  signIgnore:
+    - 'Contents/Resources/native-host/'
 win:
+  # Native Host parent authorization binds to this stable executable name.
+  executableName: SparkWork
   icon: resources/icon.ico
   # Windows/Linux Electron locale 文件使用 BCP-47 风格的连字符命名。
   electronLanguages:
@@ -64,6 +71,8 @@ win:
     signingHashAlgorithms:
       - sha256
     rfc3161TimeStampServer: http://timestamp.digicert.com
+  signExts:
+    - .exe
 nsis:
   shortcutName: SparkWork
   uninstallDisplayName: SparkWork ${version}

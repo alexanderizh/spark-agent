@@ -115,7 +115,7 @@ function sparkArtifactSkill(options: {
 }
 
 const NODE_RUNTIME_HINT =
-  '若技能需要 Node.js/npm/npx，先检查 Spark 桌面端是否暴露了内置 Electron Node（SPARK_ELECTRON_NODE + ELECTRON_RUN_AS_NODE=1）或 manifest 中的 Node.js 包；不可用时再用国内镜像/外网安装系统 Node.js。'
+  '若技能需要 Node.js/npm/npx，先检查 Spark 桌面端是否暴露了独立打包的 Node 运行时（SPARK_STANDALONE_NODE）或 manifest 中的 Node.js 包；不可用时再用国内镜像/外网安装系统 Node.js。禁止通过 ELECTRON_RUN_AS_NODE 启动 Electron 主程序。'
 
 const SUPERPOWERS_SKILLS = [
   ['superpowers-using-superpowers', 'Using Superpowers', '技能调用总入口，帮助 agent 在任务开始时按需加载合适的 Superpowers 工作流。'],

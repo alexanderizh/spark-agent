@@ -3,10 +3,14 @@
  * `Contents/Resources/*.lproj` folders on macOS. Electron's framework keeps a
  * second, much larger copy unless we prune it before code signing.
  */
-const fs = require('fs/promises');
-const path = require('path');
+const fs = require('fs/promises')
+const path = require('path')
+const { packageMacNativeHost } = require('./package-native-host.js')
+const { packageWindowsNativeHost } = require('./package-windows-native-host.js')
+const { packageStandaloneNodeRuntime } = require('./package-standalone-node.js')
+const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses')
 
-const MAC_LOCALES_TO_KEEP = new Set(['en.lproj', 'zh_CN.lproj', 'zh_TW.lproj']);
+const MAC_LOCALES_TO_KEEP = new Set(['en.lproj', 'zh_CN.lproj', 'zh_TW.lproj'])
 
 async function pruneMacElectronLocales(appPath) {
   const resourcesDir = path.join(
@@ -17,36 +21,70 @@ async function pruneMacElectronLocales(appPath) {
     'Versions',
     'A',
     'Resources',
-  );
-  const entries = await fs.readdir(resourcesDir, { withFileTypes: true });
+  )
+  const entries = await fs.readdir(resourcesDir, { withFileTypes: true })
   const localeDirectories = entries
     .filter((entry) => entry.isDirectory() && entry.name.endsWith('.lproj'))
-    .map((entry) => entry.name);
+    .map((entry) => entry.name)
 
   await Promise.all(
     localeDirectories
       .filter((name) => !MAC_LOCALES_TO_KEEP.has(name))
       .map((name) => fs.rm(path.join(resourcesDir, name), { recursive: true, force: true })),
-  );
+  )
 
-  const kept = localeDirectories.filter((name) => MAC_LOCALES_TO_KEEP.has(name)).sort();
-  const expected = [...MAC_LOCALES_TO_KEEP].sort();
+  const kept = localeDirectories.filter((name) => MAC_LOCALES_TO_KEEP.has(name)).sort()
+  const expected = [...MAC_LOCALES_TO_KEEP].sort()
   if (JSON.stringify(kept) !== JSON.stringify(expected)) {
     throw new Error(
       `Electron locale pruning expected ${expected.join(', ')}, found ${kept.join(', ') || '<none>'}`,
-    );
+    )
   }
-  return { kept, removed: localeDirectories.length - kept.length };
+  return { kept, removed: localeDirectories.length - kept.length }
+}
+
+async function hardenElectronFuses(context, dependencies = { flipFuses }) {
+  const productFilename = context.packager.appInfo.productFilename
+  const executablePath =
+    context.electronPlatformName === 'darwin'
+      ? path.join(context.appOutDir, `${productFilename}.app`, 'Contents', 'MacOS', productFilename)
+      : context.electronPlatformName === 'win32'
+        ? path.join(
+            context.appOutDir,
+            `${context.packager.platformSpecificBuildOptions.executableName ?? productFilename}.exe`,
+          )
+        : path.join(context.appOutDir, productFilename)
+  await dependencies.flipFuses(executablePath, {
+    version: FuseVersion.V1,
+    [FuseV1Options.RunAsNode]: false,
+    [FuseV1Options.EnableCookieEncryption]: true,
+    [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+    [FuseV1Options.EnableNodeCliInspectArguments]: false,
+    [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+    [FuseV1Options.OnlyLoadAppFromAsar]: true,
+  })
 }
 
 module.exports = async function afterPack(context) {
-  if (context.electronPlatformName !== 'darwin') return;
-  const appName = context.packager.appInfo.productFilename;
-  const appPath = path.join(context.appOutDir, `${appName}.app`);
-  const result = await pruneMacElectronLocales(appPath);
+  await packageStandaloneNodeRuntime(context)
+  if (context.electronPlatformName === 'win32') {
+    await packageWindowsNativeHost(context)
+    await hardenElectronFuses(context)
+    return
+  }
+  if (context.electronPlatformName !== 'darwin') {
+    await hardenElectronFuses(context)
+    return
+  }
+  const appName = context.packager.appInfo.productFilename
+  const appPath = path.join(context.appOutDir, `${appName}.app`)
+  const result = await pruneMacElectronLocales(appPath)
   console.log(
     `[after-pack] Electron locales: kept ${result.kept.join(', ')}, removed ${result.removed}`,
-  );
-};
+  )
+  await packageMacNativeHost(context)
+  await hardenElectronFuses(context)
+}
 
-module.exports.pruneMacElectronLocales = pruneMacElectronLocales;
+module.exports.pruneMacElectronLocales = pruneMacElectronLocales
+module.exports.hardenElectronFuses = hardenElectronFuses

@@ -15,9 +15,15 @@
  * 若环境变量缺失则跳过公证（用于本地开发构建），CI 会强制要求。
  */
 const { spawn } = require('child_process');
+const { createHash } = require('crypto');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
+const { Arch } = require('builder-util');
+const {
+  inspectWindowsAuthenticode,
+  normalizePublisherThumbprint,
+} = require('./package-windows-native-host.js');
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const INITIAL_RETRY_DELAY_MS = 30000;
@@ -208,7 +214,74 @@ async function notarizeApp({ appPath, credentials }) {
   }
 }
 
+async function verifyWindowsPackageSigners(params, options = {}) {
+  const architecture = Arch[params.arch];
+  if (architecture !== 'x64' && architecture !== 'arm64') {
+    throw new Error(`Unsupported Windows after-sign architecture: ${architecture}`);
+  }
+  const expectedPublisherThumbprint = normalizePublisherThumbprint(
+    options.expectedPublisherThumbprint || process.env.SPARK_WINDOWS_PUBLISHER_THUMBPRINT || '',
+  );
+  const executableName =
+    params.packager.platformSpecificBuildOptions.executableName ||
+    params.packager.appInfo.productFilename;
+  const appExecutable = path.join(params.appOutDir, `${executableName}.exe`);
+  const hostDirectory = path.join(
+    params.appOutDir,
+    'resources',
+    'native-host',
+    `windows-${architecture}`,
+  );
+  const hostExecutable = path.join(hostDirectory, 'SparkComputerHost.exe');
+  const nodeExecutable = path.join(
+    params.appOutDir,
+    'resources',
+    'runtime',
+    'node',
+    'node.exe',
+  );
+  const manifestPath = path.join(hostDirectory, 'manifest.json');
+  const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+  if (
+    manifest.schemaVersion !== 1 ||
+    manifest.protocolVersion !== 1 ||
+    manifest.platform !== 'windows' ||
+    manifest.architecture !== architecture ||
+    manifest.executableFileName !== 'SparkComputerHost.exe' ||
+    manifest.signingPublisherThumbprint !== expectedPublisherThumbprint ||
+    typeof manifest.sha256 !== 'string'
+  ) {
+    throw new Error('Final Windows Native Host manifest is incompatible or untrusted');
+  }
+  const hostBytes = await fs.readFile(hostExecutable);
+  if (createHash('sha256').update(hostBytes).digest('hex') !== manifest.sha256) {
+    throw new Error('Final Windows Native Host bytes do not match the signed manifest');
+  }
+
+  const inspect = options.inspect || inspectWindowsAuthenticode;
+  const [appSignature, hostSignature, nodeSignature] = await Promise.all([
+    inspect(appExecutable),
+    inspect(hostExecutable),
+    inspect(nodeExecutable),
+  ]);
+  for (const signature of [appSignature, hostSignature, nodeSignature]) {
+    if (
+      normalizePublisherThumbprint(signature.publisherThumbprint) !==
+        expectedPublisherThumbprint ||
+      signature.timestamped !== true
+    ) {
+      throw new Error(
+        'Final SparkWork application, Native Host, and standalone Node runtime must share a timestamped Authenticode publisher',
+      );
+    }
+  }
+}
+
 module.exports = async function (params) {
+  if (params.electronPlatformName === 'win32') {
+    await verifyWindowsPackageSigners(params);
+    return;
+  }
   // 仅处理 macOS 产物
   if (process.platform !== 'darwin' && params.electronPlatformName !== 'darwin') {
     return;
@@ -248,3 +321,5 @@ module.exports = async function (params) {
     throw err;
   }
 };
+
+module.exports.verifyWindowsPackageSigners = verifyWindowsPackageSigners;

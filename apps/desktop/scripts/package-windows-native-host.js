@@ -1,0 +1,202 @@
+const { spawn } = require('child_process')
+const { createHash } = require('crypto')
+const fs = require('fs/promises')
+const path = require('path')
+const { Arch } = require('builder-util')
+
+const HOST_VERSION = '0.1.0'
+const EXECUTABLE_NAME = 'SparkComputerHost.exe'
+const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024
+
+function normalizePublisherThumbprint(value) {
+  const normalized = String(value).replace(/[\s:]/g, '').toLowerCase()
+  if (!/^[a-f0-9]{64}$/.test(normalized)) {
+    throw new Error('Windows publisher certificate SHA-256 thumbprint is invalid')
+  }
+  return normalized
+}
+
+function createWindowsNativeHostManifest({ executable, architecture, publisherThumbprint }) {
+  if (!Buffer.isBuffer(executable) || executable.length === 0) {
+    throw new Error('Windows Native Host executable is empty')
+  }
+  if (architecture !== 'arm64' && architecture !== 'x64') {
+    throw new Error(`Unsupported Windows Native Host architecture: ${architecture}`)
+  }
+  return {
+    schemaVersion: 1,
+    protocolVersion: 1,
+    hostVersion: HOST_VERSION,
+    platform: 'windows',
+    architecture,
+    executableFileName: EXECUTABLE_NAME,
+    sha256: createHash('sha256').update(executable).digest('hex'),
+    signingPublisherThumbprint: normalizePublisherThumbprint(publisherThumbprint),
+  }
+}
+
+async function packageWindowsNativeHost(context) {
+  if (context.electronPlatformName !== 'win32') return { packaged: false, reason: 'not-windows' }
+  const architecture = Arch[context.arch]
+  if (architecture !== 'arm64' && architecture !== 'x64') {
+    throw new Error(
+      `Windows Native Host packaging does not support Electron architecture: ${architecture}`,
+    )
+  }
+  const configuredThumbprint = process.env.SPARK_WINDOWS_PUBLISHER_THUMBPRINT
+  if (configuredThumbprint == null || configuredThumbprint.trim() === '') {
+    if (process.env.CI === 'true' || process.env.REQUIRE_WINDOWS_SIGNING === '1') {
+      throw new Error(
+        'SPARK_WINDOWS_PUBLISHER_THUMBPRINT is required for a signed Windows Native Host',
+      )
+    }
+    console.warn(
+      '[after-pack] Windows Native Host omitted: publisher certificate thumbprint is not configured',
+    )
+    return { packaged: false, reason: 'publisher-thumbprint-missing' }
+  }
+  const publisherThumbprint = normalizePublisherThumbprint(configuredThumbprint)
+  if (typeof context.packager.sign !== 'function') {
+    throw new Error('electron-builder Windows signer is unavailable for Native Host packaging')
+  }
+
+  const packageRoot = path.resolve(__dirname, '../native/windows/spark-computer-host')
+  const rustTarget =
+    architecture === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc'
+  await runCommand('cargo', ['build', '--locked', '--release', '--target', rustTarget], {
+    cwd: packageRoot,
+    env: { ...process.env, SPARK_WINDOWS_PUBLISHER_THUMBPRINT: publisherThumbprint },
+  })
+  const sourceExecutable = path.join(
+    packageRoot,
+    'target',
+    rustTarget,
+    'release',
+    EXECUTABLE_NAME,
+  )
+  const destinationDirectory = path.join(
+    context.appOutDir,
+    'resources',
+    'native-host',
+    `windows-${architecture}`,
+  )
+  const destinationExecutable = path.join(destinationDirectory, EXECUTABLE_NAME)
+  await fs.mkdir(destinationDirectory, { recursive: true })
+  await fs.copyFile(sourceExecutable, destinationExecutable)
+  await context.packager.sign(destinationExecutable)
+
+  const signature = await inspectWindowsAuthenticode(destinationExecutable)
+  if (signature.publisherThumbprint !== publisherThumbprint) {
+    throw new Error('Windows Native Host signer differs from SPARK_WINDOWS_PUBLISHER_THUMBPRINT')
+  }
+  if (!signature.timestamped) {
+    throw new Error('Windows Native Host Authenticode signature is missing its RFC 3161 timestamp')
+  }
+  const manifest = createWindowsNativeHostManifest({
+    executable: await fs.readFile(destinationExecutable),
+    architecture,
+    publisherThumbprint: signature.publisherThumbprint,
+  })
+  const manifestPath = path.join(destinationDirectory, 'manifest.json')
+  await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
+  console.log(
+    `[after-pack] Windows Native Host: packaged ${architecture}, publisher=${signature.publisherThumbprint}, sha256=${manifest.sha256}`,
+  )
+  return { packaged: true, destinationExecutable, manifestPath, manifest }
+}
+
+async function inspectWindowsAuthenticode(executablePath) {
+  const systemRoot = process.env.SystemRoot
+  if (systemRoot == null || !/^[A-Za-z]:\\Windows$/i.test(systemRoot)) {
+    throw new Error('Windows system directory is unavailable for Authenticode verification')
+  }
+  const powershell = path.join(
+    systemRoot,
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe',
+  )
+  const script = [
+    '$ErrorActionPreference = "Stop"',
+    '$signature = Get-AuthenticodeSignature -LiteralPath $args[0]',
+    'if ($signature.Status -ne "Valid" -or $null -eq $signature.SignerCertificate) { exit 3 }',
+    '$sha = [System.Security.Cryptography.SHA256]::Create()',
+    'try { $hash = $sha.ComputeHash($signature.SignerCertificate.RawData) } finally { $sha.Dispose() }',
+    '[Convert]::ToBase64String($hash)',
+    'if ($null -eq $signature.TimeStamperCertificate) { "0" } else { "1" }',
+  ].join('; ')
+  const result = await runCommand(
+    powershell,
+    [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      script,
+      executablePath,
+    ],
+    {},
+  )
+  const [encoded, timestamped] = result.stdout.trim().split(/\r?\n/)
+  if (encoded == null || (timestamped !== '0' && timestamped !== '1')) {
+    throw new Error('Windows Native Host Authenticode result is malformed')
+  }
+  const digest = Buffer.from(encoded, 'base64')
+  if (digest.length !== 32 || digest.toString('base64') !== encoded) {
+    throw new Error('Windows Native Host Authenticode signer certificate is invalid')
+  }
+  return { publisherThumbprint: digest.toString('hex'), timestamped: timestamped === '1' }
+}
+
+function runCommand(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: options.env ?? process.env,
+      shell: false,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const stdout = []
+    const stderr = []
+    let outputBytes = 0
+    const collect = (target) => (chunk) => {
+      outputBytes += chunk.length
+      if (outputBytes > MAX_COMMAND_OUTPUT_BYTES) {
+        child.kill('SIGKILL')
+        reject(new Error(`${command} exceeded the packaging log limit`))
+        return
+      }
+      target.push(chunk)
+    }
+    child.stdout.on('data', collect(stdout))
+    child.stderr.on('data', collect(stderr))
+    child.once('error', reject)
+    child.once('close', (code) => {
+      const result = {
+        code: code ?? -1,
+        stdout: Buffer.concat(stdout).toString('utf8'),
+        stderr: Buffer.concat(stderr).toString('utf8'),
+      }
+      if (result.code !== 0) {
+        reject(
+          new Error(
+            `${command} failed with exit ${result.code}: ${result.stderr.trim().slice(0, 2_000)}`,
+          ),
+        )
+      } else {
+        resolve(result)
+      }
+    })
+  })
+}
+
+module.exports = {
+  createWindowsNativeHostManifest,
+  inspectWindowsAuthenticode,
+  normalizePublisherThumbprint,
+  packageWindowsNativeHost,
+}

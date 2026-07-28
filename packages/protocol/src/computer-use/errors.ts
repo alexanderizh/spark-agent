@@ -1,0 +1,33 @@
+import { z } from 'zod'
+
+export const ComputerUseErrorCodeSchema = z.enum([
+  'computer_disabled',
+  'environment_unavailable',
+  'native_host_missing',
+  'native_host_incompatible',
+  'native_host_untrusted',
+  'screen_permission_denied',
+  'accessibility_permission_denied',
+  'app_not_allowed',
+  'domain_not_allowed',
+  'action_not_allowed',
+  'actuator_lease_conflict',
+  'stale_frame',
+  'stale_tree',
+  'focus_mismatch',
+  'display_topology_changed',
+  'privilege_mismatch',
+  'action_noop',
+  'action_timeout',
+  'sensitive_input_blocked',
+  'approval_required',
+  'approval_expired',
+  'approval_mismatch',
+  'prompt_injection_suspected',
+  'verification_failed',
+  'verification_inconclusive',
+  'handoff_required',
+  'session_paused',
+  'session_canceled',
+])
+export type ComputerUseErrorCode = z.infer<typeof ComputerUseErrorCodeSchema>

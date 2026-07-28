@@ -1,6 +1,6 @@
 {
   "name": "@spark/desktop",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "SparkWork desktop application — Electron + React + TypeScript",
   "author": "SparkWork Team",
   "private": true,
@@ -51,6 +51,7 @@
     "@electron-toolkit/preload": "^3.0.0",
     "@electron-toolkit/utils": "^3.0.0",
     "@electron/rebuild": "^4.2.0",
+    "@electron/fuses": "1.8.0",
     "@eslint/js": "^10.0.1",
     "@file-viewer/core": "^2.2.3",
     "@file-viewer/react": "^2.2.3",

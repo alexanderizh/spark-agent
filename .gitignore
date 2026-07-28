@@ -4,12 +4,15 @@
 
 # ---- 依赖 --------------------------------
 node_modules/
+apps/desktop/native/windows/spark-computer-host/target/
 .pnpm-store/
 
 # ---- 构建产物 ----------------------------
 dist/
 out/
 build/
+.build/
+.swiftpm/
 .vite/
 release/
 

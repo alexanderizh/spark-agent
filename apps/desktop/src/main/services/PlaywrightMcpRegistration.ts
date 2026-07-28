@@ -23,6 +23,7 @@ import { McpServerRepository } from '@spark/storage'
 import { MANAGED_MCP_SCOPE, PLAYWRIGHT_MCP_NAME } from '@spark/agent-runtime'
 import { createLogger } from '@spark/shared'
 import { getPlaywrightEnv, resolveBrowserStrategy } from './PlaywrightEnvironment.js'
+import { resolveStandaloneNodeRuntimePath } from './StandaloneNodeRuntime.js'
 
 const log = createLogger('playwright-mcp-registration')
 
@@ -89,15 +90,12 @@ export function buildPlaywrightConfig(
   }
   const config: PlaywrightMcpConfig = {
     type: 'stdio',
-    command: process.execPath,
+    command: resolveStandaloneNodeRuntimePath(),
     args,
-    env: {
-      ELECTRON_RUN_AS_NODE: '1',
-    },
   }
   const env = getPlaywrightEnv()
   if (Object.keys(env).length > 0) {
-    config.env = { ...config.env, ...env }
+    config.env = env
   }
   return config
 }

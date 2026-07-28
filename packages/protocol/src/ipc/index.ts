@@ -60,6 +60,10 @@ import type {
 } from '../connectors.js'
 import type { ProviderFilesIpcChannelMap } from '../provider-files.js'
 import type {
+  ApplicationSnapshotIpcChannelMap,
+  ComputerUseIpcChannelMap,
+} from '../computer-use/ipc.js'
+import type {
   FontAssetsInstallRequest,
   FontAssetsInstallResponse,
   FontAssetsStatusRequest,
@@ -216,6 +220,8 @@ export interface SessionSendTurnRequest {
   skillId?: string
   skillParams?: Record<string, unknown>
   attachments?: SessionAttachment[]
+  /** 用户显式确认发送的应用快照 ID；由主进程按会话所有权解析，不接受原始路径。 */
+  appSnapshotIds?: string[]
   /** 团队模式配置：仅在 Team Mode 下随 turn 提交，主进程据此分支到 runHostTurn */
   teamConfig?: TeamModeConfig
   /**
@@ -5261,7 +5267,8 @@ export interface CanvasProjectCleanupOrphansResponse {
  * const res = await invoke('session:create', { providerProfileId: '...' })
  * //    ^-- 类型自动推断为 SessionCreateResponse
  */
-export interface IpcChannelMap extends ProviderFilesIpcChannelMap {
+export interface IpcChannelMap
+  extends ProviderFilesIpcChannelMap, ComputerUseIpcChannelMap, ApplicationSnapshotIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]
