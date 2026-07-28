@@ -1030,7 +1030,7 @@ body.sidebar-resizing {
   -webkit-app-region: drag;
 }
 .titlebar-integrated .chat-tabbar {
-  height: var(--integrated-titlebar-height, 52px);
+  height: var(--integrated-titlebar-height, 48px);
   padding-left: calc(var(--pad-md) + var(--integrated-titlebar-left-reserve, 0px));
   padding-right: var(--pad-md);
 }
