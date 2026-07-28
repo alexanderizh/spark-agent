@@ -1,13 +1,75 @@
 import { describe, expect, it } from 'vitest'
 import {
   boardHistorySignature,
+  createCanvasProjectListStore,
   createHistoryEntry,
   mergeCanvasBackgroundTaskSnapshot,
   mergeCanvasMutationSnapshot,
   mergeCanvasTaskSnapshot,
   shouldRefreshCanvasProjectsForTaskStream,
 } from './canvas.store'
-import type { CanvasSnapshot } from './canvas.types'
+import type { CanvasProject, CanvasSnapshot } from './canvas.types'
+
+function makeProject(id: string): CanvasProject {
+  return {
+    id,
+    userId: 0,
+    title: id,
+    status: 'active',
+    nodeCount: 0,
+    assetCount: 0,
+    taskCount: 0,
+    createdAt: '2026-06-01T00:00:00.000Z',
+    updatedAt: '2026-06-01T00:00:00.000Z',
+    lastOpenedAt: '2026-06-01T00:00:00.000Z',
+  }
+}
+
+describe('createCanvasProjectListStore', () => {
+  it('publishes a refreshed project list to every subscriber', async () => {
+    let projects = [makeProject('project-1'), makeProject('project-2')]
+    const store = createCanvasProjectListStore(async () => projects)
+    const firstSubscriber: string[][] = []
+    const secondSubscriber: string[][] = []
+    const unsubscribeFirst = store.subscribe(() => {
+      firstSubscriber.push(store.getSnapshot().projects.map((project) => project.id))
+    })
+    const unsubscribeSecond = store.subscribe(() => {
+      secondSubscriber.push(store.getSnapshot().projects.map((project) => project.id))
+    })
+
+    await store.refresh()
+    projects = [makeProject('project-2')]
+    await store.refresh()
+
+    expect(firstSubscriber.at(-1)).toEqual(['project-2'])
+    expect(secondSubscriber.at(-1)).toEqual(['project-2'])
+    unsubscribeFirst()
+    unsubscribeSecond()
+  })
+
+  it('does not let an older refresh overwrite a newer project list', async () => {
+    let resolveFirst: ((projects: CanvasProject[]) => void) | undefined
+    const first = new Promise<CanvasProject[]>((resolve) => {
+      resolveFirst = resolve
+    })
+    let calls = 0
+    const store = createCanvasProjectListStore(() => {
+      calls += 1
+      return calls === 1 ? first : Promise.resolve([makeProject('project-2')])
+    })
+
+    const staleRefresh = store.refresh()
+    await store.refresh()
+    resolveFirst?.([makeProject('project-1')])
+    await staleRefresh
+
+    expect(store.getSnapshot()).toEqual({
+      projects: [makeProject('project-2')],
+      loading: false,
+    })
+  })
+})
 
 function makeSnapshot(overrides: Partial<CanvasSnapshot> = {}): CanvasSnapshot {
   return {

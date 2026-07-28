@@ -1,11 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Dropdown, Modal } from '@lobehub/ui'
 import { Modal as AntdModal, Spin, message } from 'antd'
 import { Icons } from '../../Icons'
-import {
-  Input as LobeInput,
-  TextArea as LobeTextArea,
-} from '@lobehub/ui'
+import { Input as LobeInput, TextArea as LobeTextArea } from '@lobehub/ui'
 import { canvasApi } from './canvas.api'
 import { useCanvasProjects } from './canvas.store'
 import { openCanvasProjectWindow } from './canvas-window-client'
@@ -31,7 +28,8 @@ export function CanvasProjectsView({
 }) {
   const { projects, loading, refresh } = useCanvasProjects()
   const { t } = useApp()
-  const { selectedProjectId, selectProject } = useCanvasProjectSelection()
+  const { selectedProjectId, selectProject, registerProjectEditHandler } =
+    useCanvasProjectSelection()
   const [createOpen, setCreateOpen] = useState(false)
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
   const [title, setTitle] = useState('')
@@ -110,18 +108,29 @@ export function CanvasProjectsView({
     setCreateOpen(true)
   }
 
-  const openEdit = (projectId: string) => {
-    const project = projects.find((item) => item.id === projectId)
-    if (!project) return
-    setEditingProjectId(projectId)
-    setTitle(project.title)
-    setDescription(project.description ?? '')
-    setProjectParentDirectory(project.rootPath ?? '')
-    setCoverFile(null)
-    setCoverPreviewUrl(project.coverUrl ?? null)
-    setCoverRemoved(false)
-    setCreateOpen(true)
-  }
+  const openEdit = useCallback(
+    (projectId: string) => {
+      const project = projects.find((item) => item.id === projectId)
+      // 项目列表尚在恢复时保留请求，加载完成仍不存在则消费掉失效请求。
+      if (!project) return !loading
+      setEditingProjectId(projectId)
+      setTitle(project.title)
+      setDescription(project.description ?? '')
+      setProjectParentDirectory(project.rootPath ?? '')
+      setCoverFile(null)
+      setCoverPreviewUrl(project.coverUrl ?? null)
+      setCoverRemoved(false)
+      setCreateOpen(true)
+      return true
+    },
+    [loading, projects],
+  )
+
+  // 侧栏项目右键菜单与主区是兄弟组件；通过选择上下文转交编辑请求，
+  // 等项目列表可用后复用这里唯一的一套完整编辑弹窗。
+  useEffect(() => {
+    return registerProjectEditHandler(openEdit)
+  }, [openEdit, registerProjectEditHandler])
 
   const handleSelectCoverFile = (file: File | null | undefined) => {
     if (!file) return
@@ -345,9 +354,14 @@ export function CanvasProjectsView({
               }}
             />
           )}
-          <Button size="medium" type="text" onClick={()=> void handleImportProject()} icon={<Icons.Plus size={15} />}>
-              导入项目
-            </Button>
+          <Button
+            size="medium"
+            type="text"
+            onClick={() => void handleImportProject()}
+            icon={<Icons.Plus size={15} />}
+          >
+            导入项目
+          </Button>
         </div>
       </header>
 
