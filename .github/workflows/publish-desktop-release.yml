@@ -25,7 +25,6 @@ on:
           - mac-arm64
           - mac-x64
           - win-x64
-          - win-arm64
       publish_to_release:
         description: '是否发布到 GitHub Release（关闭则只构建+签名+公证验证，不发布）'
         required: true
@@ -152,29 +151,30 @@ jobs:
           # 旧版 @electron/node-gyp，无法识别 Visual Studio 2026 (v18)——后者
           # 在 2026 年 5 月成为 windows-latest 默认（见 actions/runner-images#14017）。
           # node-pty 重建时会报 "Could not find any Visual Studio installation"。
-          TARGETS='{"os":"macos-latest","name":"mac-arm64","arch":"arm64","platform":"mac"},{"os":"macos-15-intel","name":"mac-x64","arch":"x64","platform":"mac"},{"os":"windows-2022","name":"win-x64","arch":"x64","platform":"win"},{"os":"windows-2022","name":"win-arm64","arch":"arm64","platform":"win"}'
+          # mac-x64 必须使用 macOS 26/Xcode 26。Native Host 使用的 Swift
+          # 源码可在 Xcode 26 编译；macos-15-intel 默认仍是 Xcode 16.4。
+          # Windows ARM64 需要真正的 ARM64 runner，不能在 windows-2022/x64
+          # 上复用宿主 Node runtime；当前正式发布只提供 Windows x64。
+          TARGETS='{"os":"macos-latest","name":"mac-arm64","arch":"arm64","platform":"mac"},{"os":"macos-26-intel","name":"mac-x64","arch":"x64","platform":"mac"},{"os":"windows-2022","name":"win-x64","arch":"x64","platform":"win"}'
 
           case "${PLATFORMS}" in
             all|"")
               SELECTED="${TARGETS}"
               ;;
             mac)
-              SELECTED='{"os":"macos-latest","name":"mac-arm64","arch":"arm64","platform":"mac"},{"os":"macos-15-intel","name":"mac-x64","arch":"x64","platform":"mac"}'
+              SELECTED='{"os":"macos-latest","name":"mac-arm64","arch":"arm64","platform":"mac"},{"os":"macos-26-intel","name":"mac-x64","arch":"x64","platform":"mac"}'
               ;;
             win)
-              SELECTED='{"os":"windows-2022","name":"win-x64","arch":"x64","platform":"win"},{"os":"windows-2022","name":"win-arm64","arch":"arm64","platform":"win"}'
+              SELECTED='{"os":"windows-2022","name":"win-x64","arch":"x64","platform":"win"}'
               ;;
             mac-arm64)
               SELECTED='{"os":"macos-latest","name":"mac-arm64","arch":"arm64","platform":"mac"}'
               ;;
             mac-x64)
-              SELECTED='{"os":"macos-15-intel","name":"mac-x64","arch":"x64","platform":"mac"}'
+              SELECTED='{"os":"macos-26-intel","name":"mac-x64","arch":"x64","platform":"mac"}'
               ;;
             win-x64)
               SELECTED='{"os":"windows-2022","name":"win-x64","arch":"x64","platform":"win"}'
-              ;;
-            win-arm64)
-              SELECTED='{"os":"windows-2022","name":"win-arm64","arch":"arm64","platform":"win"}'
               ;;
             *)
               echo "::error::未知的平台选择: ${PLATFORMS}"
@@ -251,7 +251,6 @@ jobs:
           # Windows 签名
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-          SPARK_WINDOWS_PUBLISHER_THUMBPRINT: ${{ secrets.SPARK_WINDOWS_PUBLISHER_THUMBPRINT }}
           # 正式发布必须同时签名外层应用和 Computer Use Native Host。
           REQUIRE_WINDOWS_SIGNING: '1'
           ALLOW_UNSIGNED_WINDOWS_RELEASE: '0'
