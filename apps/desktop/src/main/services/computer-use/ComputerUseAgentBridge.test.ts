@@ -132,6 +132,10 @@ describe('ComputerUseAgentBridge', () => {
       },
     })
     const startTask = listed.result.tools.find((tool: any) => tool.name === 'start_task')
+    expect(startTask.description).toContain('successCriteria is optional')
+    expect(startTask.description).toContain('"environment":"my_desktop"')
+    expect(startTask.inputSchema.properties.environment.enum).toEqual(['my_desktop'])
+    expect(startTask.inputSchema.required).toEqual(['goal', 'environment'])
     expect(startTask.inputSchema.properties.successCriteria.items).toMatchObject({
       oneOf: expect.arrayContaining([
         expect.objectContaining({

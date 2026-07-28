@@ -79,6 +79,25 @@ describe('NativeHostClient', () => {
     await client.close()
   })
 
+  it('enables unsigned-parent authorization only for a verified local artifact', async () => {
+    const process = new FakeNativeHostProcess()
+    const requests = observeRequests(process)
+    const spawnProcess = vi.fn<NativeHostSpawn>(() => process)
+    const connecting = NativeHostClient.connect({
+      artifact: { ...ARTIFACT, trustMode: 'local' },
+      spawnProcess,
+    })
+    await completeHandshake(process, requests)
+    const client = await connecting
+
+    expect(spawnProcess.mock.calls[0]?.[2]?.env).toEqual({
+      LANG: 'C',
+      LC_ALL: 'C',
+      SPARK_COMPUTER_LOCAL_TRUST: '1',
+    })
+    await client.close()
+  })
+
   it('keeps a capture response adjacent to its binary frame and verifies the payload digest', async () => {
     const process = new FakeNativeHostProcess()
     const requests = observeRequests(process)

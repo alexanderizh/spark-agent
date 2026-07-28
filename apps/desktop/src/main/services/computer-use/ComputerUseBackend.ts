@@ -2,6 +2,7 @@ import type {
   ComputerActionEnvelope,
   ComputerObservation,
   ComputerUseCapabilitySummary,
+  NativeHostCapabilityManifest,
   NativeHostPlatform,
   NativeWindowDescriptor,
 } from '@spark/protocol'
@@ -26,6 +27,9 @@ export interface ComputerExecutorBackend {
 
 export interface ComputerHostBackend {
   getCapabilities(): Promise<ComputerUseCapabilitySummary>
+  requestPermissions?(
+    permissions: Array<'screen' | 'accessibility'>,
+  ): Promise<NativeHostCapabilityManifest>
   listWindows(): Promise<NativeWindowDescriptor[]>
 }
 

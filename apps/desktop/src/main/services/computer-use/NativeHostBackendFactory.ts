@@ -4,8 +4,11 @@ import { UnavailableComputerUseBackend, currentNativeHostPlatform } from './Comp
 import {
   verifyNativeHostArtifact,
   verifyWindowsNativeHostArtifact,
+  verifyLocalNativeHostArtifact,
+  readNativeHostArtifactTrustMode,
   inspectMacCodeSignature,
   inspectWindowsCodeSignature,
+  NativeHostArtifactError,
   type NativeHostCodeSignature,
   type WindowsNativeHostCodeSignature,
   type VerifiedNativeHostArtifact,
@@ -24,8 +27,11 @@ export function createDefaultComputerUseBackend(
     resourcesPath?: string
     platform?: NodeJS.Platform
     architecture?: string
+    packaged?: boolean
     verifyArtifact?: typeof verifyNativeHostArtifact
     verifyWindowsArtifact?: typeof verifyWindowsNativeHostArtifact
+    verifyLocalArtifact?: typeof verifyLocalNativeHostArtifact
+    readArtifactTrustMode?: typeof readNativeHostArtifactTrustMode
     connectClient?: (artifact: VerifiedNativeHostArtifact) => Promise<NativeHostConnection>
     appExecutablePath?: string
     inspectAppCodeSignature?: (executablePath: string) => Promise<NativeHostCodeSignature>
@@ -37,6 +43,7 @@ export function createDefaultComputerUseBackend(
 ): DefaultComputerUseBackend {
   const platform = options.platform ?? process.platform
   const architecture = options.architecture ?? process.arch
+  const packaged = options.packaged ?? false
   if (
     (platform !== 'darwin' && platform !== 'win32') ||
     (architecture !== 'arm64' && architecture !== 'x64')
@@ -45,13 +52,15 @@ export function createDefaultComputerUseBackend(
   }
 
   const nativeArchitecture: 'x64' | 'arm64' = architecture
-  const nativePlatform: NativeHostPlatform = platform === 'darwin' ? 'macos' : 'windows'
+  const nativePlatform: 'macos' | 'windows' = platform === 'darwin' ? 'macos' : 'windows'
   const root =
     options.resourcesPath ??
     (typeof process.resourcesPath === 'string' ? process.resourcesPath : process.cwd())
   const artifactDirectory = join(root, 'native-host', `${nativePlatform}-${nativeArchitecture}`)
   const verifyArtifact = options.verifyArtifact ?? verifyNativeHostArtifact
   const verifyWindowsArtifact = options.verifyWindowsArtifact ?? verifyWindowsNativeHostArtifact
+  const verifyLocalArtifact = options.verifyLocalArtifact ?? verifyLocalNativeHostArtifact
+  const readArtifactTrustMode = options.readArtifactTrustMode ?? readNativeHostArtifactTrustMode
   const appExecutablePath = options.appExecutablePath ?? process.execPath
   const inspectAppCodeSignature = options.inspectAppCodeSignature ?? inspectMacCodeSignature
   const inspectWindowsAppCodeSignature =
@@ -64,18 +73,58 @@ export function createDefaultComputerUseBackend(
     platform: nativePlatform,
     ...(options.evidenceSink == null ? {} : { evidenceSink: options.evidenceSink }),
     connect: async () => {
+      const executablePath = join(
+        artifactDirectory,
+        nativePlatform === 'macos' ? 'SparkComputerHost' : 'SparkComputerHost.exe',
+      )
+      const manifestPath = join(artifactDirectory, 'manifest.json')
+      const trustMode = await readArtifactTrustMode(manifestPath)
       const artifact =
-        nativePlatform === 'macos'
-          ? await verifyMacArtifact()
-          : await verifyWindowsArtifact({
-              executablePath: join(artifactDirectory, 'SparkComputerHost.exe'),
-              manifestPath: join(artifactDirectory, 'manifest.json'),
-              platform: 'windows',
-              architecture: nativeArchitecture,
-              expectedPublisherThumbprint: (await inspectWindowsAppCodeSignature(appExecutablePath))
-                .publisherThumbprint,
-            })
+        trustMode === 'local'
+          ? await verifyLocalArtifactAfterAppTrustCheck()
+          : nativePlatform === 'macos'
+            ? await verifyMacArtifact()
+            : await verifyWindowsArtifact({
+                executablePath,
+                manifestPath,
+                platform: 'windows',
+                architecture: nativeArchitecture,
+                expectedPublisherThumbprint: (
+                  await inspectWindowsAppCodeSignature(appExecutablePath)
+                ).publisherThumbprint,
+              })
       return connectClient(artifact)
+
+      async function verifyLocalArtifactAfterAppTrustCheck(): Promise<VerifiedNativeHostArtifact> {
+        if (packaged) {
+          const signedApplication = await hasApplicationPublisherIdentity()
+          if (signedApplication) {
+            throw new NativeHostArtifactError(
+              'native_host_untrusted',
+              'A signed SparkWork application cannot load a local-trust Native Host artifact',
+            )
+          }
+        }
+        return verifyLocalArtifact({
+          executablePath,
+          manifestPath,
+          platform: nativePlatform,
+          architecture: nativeArchitecture,
+        })
+      }
+
+      async function hasApplicationPublisherIdentity(): Promise<boolean> {
+        try {
+          if (nativePlatform === 'macos') {
+            await inspectAppCodeSignature(appExecutablePath)
+          } else {
+            await inspectWindowsAppCodeSignature(appExecutablePath)
+          }
+          return true
+        } catch {
+          return false
+        }
+      }
     },
   })
 

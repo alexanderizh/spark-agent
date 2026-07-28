@@ -66,21 +66,21 @@ Appshots 的官方产品语义是“前台单个应用窗口的图像 + 应用�
 
 ### 2.2 当前代码完成度
 
-| 能力域             | 当前状态 | 已落地内容                                                                 | 仍需发布/后续门槛                                      |
-| ------------------ | -------- | -------------------------------------------------------------------------- | ------------------------------------------------------ |
-| Playwright 自动化  | 已落地   | managed MCP、headful/headless、独立 Node runtime、Electron fuses           | Safe Browser 与桌面任务的统一持久化时间线              |
-| `spark_browser`    | 已落地   | BrowserWindow、截图、console/network、profile                              | 保持与 Native Host 隔离，不能复用 SID/CORS/eval 边界   |
-| Agent 默认能力     | 已落地   | Claude SDK/Codex 每轮默认挂载 `spark_computer`、任务级工具和 capability 提示 | CLI 无受认证桥时继续明确 unavailable                    |
-| PermissionService  | 已落地   | Computer 工具独立分类、未知/低层动作拒绝、pause/stop/takeover 安全放行      | Workflow Computer 节点仍需独立产品化                    |
-| 应用快照           | 部分落地 | Agent 捕获、Vault、短期预览 capability、真实聊天图片卡、删除/保留期         | Composer draft、`appSnapshotIds` hydration、AX 屏外文本 |
-| 多媒体交付         | 已落地   | 提示词要求 `present_files`，Runtime 在终态前自动补发 `presented_files`      | 继续扩展新媒体工具的 structured result 识别             |
-| macOS Native Host  | 已实现   | ScreenCaptureKit、AX full/diff、语义动作、CGEvent、签名父进程、严格 wire     | Developer ID 安装包与真实应用矩阵                       |
-| Windows Native Host| 已实现   | Rust、WGC、UIA full/diff、语义 pattern、SendInput、签名/打包/双架构 CI      | 正式证书安装包与 Windows 10/11 实体机矩阵               |
-| 模型操作 loop      | 已落地   | Generic vision decision adapter、Broker-only 动作、审批重放、noop/超时预算  | OpenAI/Claude 原生 computer adapter 可作为后续增强       |
-| Computer 验收      | 部分落地 | full-tree accessibility/visual text、独立窗口清单、持久 verification record | 文件/DOM/external readback 与完整 timeline               |
-| Linux/远程/VM      | 待开发   | 能力协议与 fail-closed 后端                                                  | AT-SPI/Portal、Remote Monitor、Safe Desktop             |
+| 能力域              | 当前状态 | 已落地内容                                                                        | 仍需发布/后续门槛                                       |
+| ------------------- | -------- | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Playwright 自动化   | 已落地   | managed MCP、headful/headless、独立 Node runtime、Electron fuses                  | Safe Browser 与桌面任务的统一持久化时间线               |
+| `spark_browser`     | 已落地   | BrowserWindow、截图、console/network、profile                                     | 保持与 Native Host 隔离，不能复用 SID/CORS/eval 边界    |
+| Agent 默认能力      | 已落地   | Claude SDK/Codex 每轮默认挂载 `spark_computer`、任务级工具和 capability 提示      | CLI 无受认证桥时继续明确 unavailable                    |
+| PermissionService   | 已落地   | Computer 工具独立分类、未知/低层动作拒绝、pause/stop/takeover 安全放行            | Workflow Computer 节点仍需独立产品化                    |
+| 应用快照            | 部分落地 | Agent 捕获、Vault、短期预览 capability、真实聊天图片卡、删除/保留期               | Composer draft、`appSnapshotIds` hydration、AX 屏外文本 |
+| 多媒体交付          | 已落地   | 提示词要求 `present_files`，Runtime 在终态前自动补发 `presented_files`            | 继续扩展新媒体工具的 structured result 识别             |
+| macOS Native Host   | 已实现   | ScreenCaptureKit、AX full/diff、语义动作、CGEvent、signed/local 双信任、严格 wire | Developer ID 安装包与真实应用矩阵                       |
+| Windows Native Host | 已实现   | Rust、WGC、UIA full/diff、SendInput、signed/local 双信任、无签名打包              | Windows 10/11 实体机矩阵                                |
+| 模型操作 loop       | 已落地   | Generic vision decision adapter、Broker-only 动作、审批重放、noop/超时预算        | OpenAI/Claude 原生 computer adapter 可作为后续增强      |
+| Computer 验收       | 部分落地 | full-tree accessibility/visual text、独立窗口清单、持久 verification record       | 文件/DOM/external readback 与完整 timeline              |
+| Linux/远程/VM       | 待开发   | 能力协议与 fail-closed 后端                                                       | AT-SPI/Portal、Remote Monitor、Safe Desktop             |
 
-当前已经具备 Agent 默认发现、任务级启动、Broker 治理、模型决策、macOS/Windows 原生动作、动作后重观察和证据验收的正式主链；不存在脚本式临时控制回退。整体文档仍保持“实施中”，原因是 macOS/Windows 正式签名实体机 smoke，以及完整 Appshots/Monitor/Linux/远程等 GA 门槛尚未全部完成。
+当前已经具备 Agent 默认发现、任务级启动、Broker 治理、模型决策、macOS/Windows 原生动作、动作后重观察和证据验收的正式主链。Native Host 不可用时，Agent 会按用户目标自动选择浏览器、API/CLI 或平台自动化回退，并沿用会话权限模式。整体文档仍保持“实施中”，原因是 macOS/Windows 实体机矩阵，以及完整 Appshots/Monitor/Linux/远程等 GA 门槛尚未全部完成。
 
 ### 2.3 已完成的前置纠正
 
@@ -582,7 +582,7 @@ mcp__spark_computer__takeover
 mcp__spark_computer__capture_app_snapshot
 ```
 
-Claude SDK 与 Codex 本地 turn 默认装配同一进程内 `spark_computer` provider、上述 allowedTools 和 capability-aware 系统提示词。提示词要求先调用 `get_capabilities`，并禁止 AppleScript/JXA/cliclick/pyautogui/xdotool/PowerShell UI/AutoHotkey 等脚本或临时工具降级。MCP transport 是主进程内 loopback Bearer server，token 绑定 Agent session；低层动作只存在于受管 Operator loop。无论模型或 transport 状态如何，Broker 仍校验 lease、frame、tree、app、window、策略与审批票据。
+Claude SDK 与 Codex 本地 turn 默认装配同一进程内 `spark_computer` provider、全部任务级 allowedTools 和 capability-aware 系统提示词。提示词要求先调用 `get_capabilities`；Host/Broker/权限暂时不可用时，Agent 继续选择浏览器、API/CLI、AppleScript/JXA/cliclick/pyautogui/xdotool/PowerShell UI/AutoHotkey 等可行回退，并沿用当前权限模式。所有权限模式均可直接调用 `start_task`/`resume`，普通模式在 Broker 到达具体 L2/L3 动作时申请精确审批；`claude-bypass` 与 `codex-full-access` 由本地运行时直接签发 ticket，不重复弹出 Spark 审批。`start_task` 最小参数为 `goal` 与 `environment: "my_desktop"`，验收条件可省略并由引号文本/前台应用状态生成。MCP transport 是主进程内 loopback Bearer server，token 绑定 Agent session；低层动作只存在于受管 Operator loop。
 
 ## 10. 安全与审批
 
@@ -627,7 +627,7 @@ Ticket 绑定具体 action、目标、数据类别和过期时间，只能使用
 ### 10.4 停止与抢占
 
 - Monitor 常驻 Pause/Stop/Take over。
-- 全局 Kill Switch 快捷键由用户配置，注册失败时不得启用 My Desktop。
+- 全局 Kill Switch 快捷键由用户配置并 best-effort 注册；注册失败不影响 Host 执行能力或 My Desktop 启用状态，Renderer/Agent 仍可随时 Pause、Stop 或 Take over。
 - Stop 后立即撤销 lease、取消模型请求、清理 pending approval、通知 Native Host 丢弃队列。
 - 用户输入、目标窗口消失、显示器布局变化、连续 noop、同画面循环、可疑 prompt injection 均触发暂停。
 
@@ -836,7 +836,7 @@ app_snapshot_deleted
 
 ### CU-02 主进程 Broker 与租约（2.5 周，依赖 CU-00）
 
-实施状态：**已完成（2026-07-28）**。Broker、会话阶段、独占租约、心跳、结构化风险下限、精确审批摘要、幂等 pending approval、批准票据一次性交接、Pause/Stop/Kill Switch、真实 Storage 装配、15 个主进程 IPC 和 PermissionService 独立映射均已落地。设置默认关闭；禁用环境会先停止受影响 session；My Desktop 必须先成功注册全局 Kill Switch。生产默认 backend 已接入受信 Native Host factory；Host 缺失/不可信或未声明 observation/input 能力时仍返回 unavailable，不提供脚本或假执行器回退。由于当前迁移尚无 durable Computer Use event 表，timeline 通道明确返回 unavailable，不能伪造空审计记录。
+实施状态：**已完成（2026-07-28）**。Broker、会话阶段、独占租约、心跳、结构化风险下限、精确审批摘要、幂等 pending approval、批准票据一次性交接、Pause/Stop/Kill Switch、真实 Storage 装配、15 个主进程 IPC 和 PermissionService 独立映射均已落地。设置默认关闭；禁用环境会先停止受影响 session；Kill Switch 为 best-effort 辅助停止通道，注册失败不再把可执行 Host 降成只读或关闭 My Desktop。默认 backend 支持 signed/local 两种显式 artifact：开发模式和无签名安装包使用固定路径、非 symlink、权限与 SHA-256 约束的 local Host；有有效外层发布者身份的签名包拒绝替换的 local manifest，并继续使用发布者绑定。Host 不可用时 Broker 诚实返回 unavailable，Agent 层自动选择其他可行执行方案。由于当前迁移尚无 durable Computer Use event 表，timeline 通道明确返回 unavailable，不能伪造空审计记录。
 
 负责人：Electron Main/Security。
 
@@ -851,7 +851,7 @@ app_snapshot_deleted
 
 ### CU-03 macOS Native Host（3.5 周，依赖 CU-00）
 
-实施状态：**代码闭环已完成，签名包实机验收待执行（2026-07-28）**。最终 wire framing、可信进程生命周期、父应用 Team ID/PID start token 绑定、Host identifier/hash/manifest/握手验证、崩溃重连、ScreenCaptureKit、AX full/diff tree、secure field 过滤、语义动作、受限 CGEvent、动作前后身份复核、权限请求、Retina 映射、afterPack 独立签名及 notarization 接线已落地。capability 只按真实 Screen/AX/PostEvent 权限开放；最终 Developer ID `.app` 的 AX/CGEvent、Kill Switch 与真实应用矩阵未通过前仍保持发布阻断。
+实施状态：**代码闭环已完成，签名包实机验收待执行（2026-07-28）**。最终 wire framing、可信进程生命周期、父应用 Team ID/PID start token 绑定、Host identifier/hash/manifest/握手验证、崩溃重连、ScreenCaptureKit、AX full/diff tree、secure field 过滤、语义动作、受限 CGEvent、动作前后身份复核、权限请求、Retina 映射、afterPack 独立签名及 notarization 接线已落地。capability 只按真实 Screen/AX/PostEvent 权限开放；Kill Switch 快捷键不再作为执行硬门槛，最终 Developer ID `.app` 的 AX/CGEvent 与真实应用矩阵仍需验收。
 
 负责人：macOS 原生开发。
 

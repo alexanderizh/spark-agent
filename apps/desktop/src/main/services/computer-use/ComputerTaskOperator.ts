@@ -67,6 +67,7 @@ export interface ComputerActionApprovalRequest {
   envelope: ComputerActionEnvelope
   approvalId: string
   riskLevel: 'L2' | 'L3'
+  permissionMode: string
 }
 
 interface DecisionAdapter {
@@ -128,6 +129,7 @@ export class ComputerTaskOperator {
     session: ComputerSession
     lease: ComputerActuatorLease
     adapter: DecisionAdapter
+    permissionMode?: string
   }): Promise<ComputerTaskOperatorResult> {
     let observation: ComputerObservation
     let consecutiveNoops = 0
@@ -200,7 +202,12 @@ export class ComputerTaskOperator {
           this.createId(),
         )
         try {
-          const result = await this.dispatchWithApproval(input.session, envelope, input.lease)
+          const result = await this.dispatchWithApproval(
+            input.session,
+            envelope,
+            input.lease,
+            input.permissionMode ?? 'claude-ask',
+          )
           consecutiveNoops = 0
           observation = result.observation
         } catch (error) {
@@ -234,6 +241,7 @@ export class ComputerTaskOperator {
     session: ComputerSession,
     envelope: ComputerActionEnvelope,
     lease: ComputerActuatorLease,
+    permissionMode: string,
   ): Promise<{ observation: ComputerObservation; noop: boolean }> {
     try {
       return await this.broker.dispatch(envelope)
@@ -252,6 +260,7 @@ export class ComputerTaskOperator {
           envelope,
           approvalId,
           riskLevel,
+          permissionMode,
         })
         if (ticket == null) {
           throw new ComputerUseBrokerError(

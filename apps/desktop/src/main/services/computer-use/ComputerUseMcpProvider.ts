@@ -14,15 +14,6 @@ export const COMPUTER_USE_AGENT_TOOL_NAMES = [
   'mcp__spark_computer__takeover',
 ] as const
 
-const COMPUTER_USE_AGENT_AUTO_ALLOWED_TOOL_NAMES = [
-  'mcp__spark_computer__get_capabilities',
-  'mcp__spark_computer__capture_app_snapshot',
-  'mcp__spark_computer__get_status',
-  'mcp__spark_computer__pause',
-  'mcp__spark_computer__stop',
-  'mcp__spark_computer__takeover',
-] as const
-
 let bridge: ComputerUseAgentBridge | null = null
 
 export function createComputerUseMcpProvider(
@@ -50,9 +41,9 @@ export function createComputerUseMcpProvider(
           authorization: `Bearer ${binding.token}`,
         },
       },
-      // Starting or resuming control must pass through the normal user-facing
-      // tool approval callback. Read-only and emergency controls stay immediate.
-      allowedTools: [...COMPUTER_USE_AGENT_AUTO_ALLOWED_TOOL_NAMES],
+      // Every permission mode may start and resume a task. The Broker requests
+      // exact action approval later when the effective mode requires it.
+      allowedTools: [...COMPUTER_USE_AGENT_TOOL_NAMES],
       systemPrompt: buildComputerUseSystemPrompt(capabilities),
     }
   }

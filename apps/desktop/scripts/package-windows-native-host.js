@@ -35,6 +35,25 @@ function createWindowsNativeHostManifest({ executable, architecture, publisherTh
   }
 }
 
+function createLocalWindowsNativeHostManifest({ executable, architecture }) {
+  if (!Buffer.isBuffer(executable) || executable.length === 0) {
+    throw new Error('Windows Native Host executable is empty')
+  }
+  if (architecture !== 'arm64' && architecture !== 'x64') {
+    throw new Error(`Unsupported Windows Native Host architecture: ${architecture}`)
+  }
+  return {
+    schemaVersion: 1,
+    protocolVersion: 1,
+    hostVersion: HOST_VERSION,
+    trustMode: 'local',
+    platform: 'windows',
+    architecture,
+    executableFileName: EXECUTABLE_NAME,
+    sha256: createHash('sha256').update(executable).digest('hex'),
+  }
+}
+
 async function packageWindowsNativeHost(context) {
   if (context.electronPlatformName !== 'win32') return { packaged: false, reason: 'not-windows' }
   const architecture = Arch[context.arch]
@@ -44,36 +63,35 @@ async function packageWindowsNativeHost(context) {
     )
   }
   const configuredThumbprint = process.env.SPARK_WINDOWS_PUBLISHER_THUMBPRINT
-  if (configuredThumbprint == null || configuredThumbprint.trim() === '') {
-    if (process.env.CI === 'true' || process.env.REQUIRE_WINDOWS_SIGNING === '1') {
-      throw new Error(
-        'SPARK_WINDOWS_PUBLISHER_THUMBPRINT is required for a signed Windows Native Host',
-      )
-    }
-    console.warn(
-      '[after-pack] Windows Native Host omitted: publisher certificate thumbprint is not configured',
-    )
-    return { packaged: false, reason: 'publisher-thumbprint-missing' }
-  }
-  const publisherThumbprint = normalizePublisherThumbprint(configuredThumbprint)
-  if (typeof context.packager.sign !== 'function') {
+  const localTrust = resolveWindowsNativeHostTrustMode(process.env) === 'local'
+  const publisherThumbprint = localTrust ? null : normalizePublisherThumbprint(configuredThumbprint)
+  if (!localTrust && typeof context.packager.sign !== 'function') {
     throw new Error('electron-builder Windows signer is unavailable for Native Host packaging')
   }
 
   const packageRoot = path.resolve(__dirname, '../native/windows/spark-computer-host')
-  const rustTarget =
-    architecture === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc'
-  await runCommand('cargo', ['build', '--locked', '--release', '--target', rustTarget], {
-    cwd: packageRoot,
-    env: { ...process.env, SPARK_WINDOWS_PUBLISHER_THUMBPRINT: publisherThumbprint },
-  })
-  const sourceExecutable = path.join(
-    packageRoot,
-    'target',
-    rustTarget,
-    'release',
-    EXECUTABLE_NAME,
+  const rustTarget = architecture === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc'
+  await runCommand(
+    'cargo',
+    [
+      'build',
+      '--locked',
+      '--release',
+      '--target',
+      rustTarget,
+      ...(localTrust ? ['--features', 'local-trust'] : []),
+    ],
+    {
+      cwd: packageRoot,
+      env: {
+        ...process.env,
+        ...(publisherThumbprint == null
+          ? {}
+          : { SPARK_WINDOWS_PUBLISHER_THUMBPRINT: publisherThumbprint }),
+      },
+    },
   )
+  const sourceExecutable = path.join(packageRoot, 'target', rustTarget, 'release', EXECUTABLE_NAME)
   const destinationDirectory = path.join(
     context.appOutDir,
     'resources',
@@ -83,26 +101,45 @@ async function packageWindowsNativeHost(context) {
   const destinationExecutable = path.join(destinationDirectory, EXECUTABLE_NAME)
   await fs.mkdir(destinationDirectory, { recursive: true })
   await fs.copyFile(sourceExecutable, destinationExecutable)
-  await context.packager.sign(destinationExecutable)
-
-  const signature = await inspectWindowsAuthenticode(destinationExecutable)
-  if (signature.publisherThumbprint !== publisherThumbprint) {
-    throw new Error('Windows Native Host signer differs from SPARK_WINDOWS_PUBLISHER_THUMBPRINT')
+  const executable = await fs.readFile(destinationExecutable)
+  let manifest
+  if (localTrust) {
+    manifest = createLocalWindowsNativeHostManifest({ executable, architecture })
+  } else {
+    await context.packager.sign(destinationExecutable)
+    const signature = await inspectWindowsAuthenticode(destinationExecutable)
+    if (signature.publisherThumbprint !== publisherThumbprint) {
+      throw new Error('Windows Native Host signer differs from SPARK_WINDOWS_PUBLISHER_THUMBPRINT')
+    }
+    if (!signature.timestamped) {
+      throw new Error(
+        'Windows Native Host Authenticode signature is missing its RFC 3161 timestamp',
+      )
+    }
+    manifest = createWindowsNativeHostManifest({
+      executable: await fs.readFile(destinationExecutable),
+      architecture,
+      publisherThumbprint: signature.publisherThumbprint,
+    })
   }
-  if (!signature.timestamped) {
-    throw new Error('Windows Native Host Authenticode signature is missing its RFC 3161 timestamp')
-  }
-  const manifest = createWindowsNativeHostManifest({
-    executable: await fs.readFile(destinationExecutable),
-    architecture,
-    publisherThumbprint: signature.publisherThumbprint,
-  })
   const manifestPath = path.join(destinationDirectory, 'manifest.json')
   await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
   console.log(
-    `[after-pack] Windows Native Host: packaged ${architecture}, publisher=${signature.publisherThumbprint}, sha256=${manifest.sha256}`,
+    `[after-pack] Windows Native Host: packaged ${architecture}, trust=${localTrust ? 'local' : 'signed'}, sha256=${manifest.sha256}`,
   )
   return { packaged: true, destinationExecutable, manifestPath, manifest }
+}
+
+function resolveWindowsNativeHostTrustMode(environment = process.env) {
+  const explicit = environment.SPARK_NATIVE_HOST_TRUST_MODE?.trim().toLowerCase()
+  if (explicit === 'local' || explicit === 'signed') return explicit
+  if (explicit != null && explicit !== '') {
+    throw new Error('SPARK_NATIVE_HOST_TRUST_MODE must be signed or local')
+  }
+  const thumbprint = environment.SPARK_WINDOWS_PUBLISHER_THUMBPRINT?.trim()
+  const certificate = (environment.WIN_CSC_LINK ?? environment.CSC_LINK)?.trim()
+  const password = (environment.WIN_CSC_KEY_PASSWORD ?? environment.CSC_KEY_PASSWORD)?.trim()
+  return thumbprint && certificate && password ? 'signed' : 'local'
 }
 
 async function inspectWindowsAuthenticode(executablePath) {
@@ -196,7 +233,9 @@ function runCommand(command, args, options = {}) {
 
 module.exports = {
   createWindowsNativeHostManifest,
+  createLocalWindowsNativeHostManifest,
   inspectWindowsAuthenticode,
   normalizePublisherThumbprint,
   packageWindowsNativeHost,
+  resolveWindowsNativeHostTrustMode,
 }

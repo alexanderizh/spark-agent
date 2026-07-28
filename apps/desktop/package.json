@@ -6,7 +6,7 @@
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "pnpm run prepare:file-viewer-assets && electron-vite dev",
+    "dev": "pnpm run prepare:file-viewer-assets && pnpm run prepare:computer-use-host && electron-vite dev",
     "dev:rebuild": "pnpm run rebuild:native",
     "verify:migrations": "node ../../packages/storage/scripts/verify-migrations.mjs",
     "build": "pnpm run verify:migrations && pnpm run prepare:file-viewer-assets && node scripts/run-electron-vite-build.js",
@@ -30,7 +30,8 @@
     "test:e2e": "playwright test",
     "lint": "eslint src --ext .ts,.tsx",
     "i18n:scan": "node scripts/scan-client-i18n.mjs",
-    "prepare:file-viewer-assets": "node scripts/copy-file-viewer-assets.mjs"
+    "prepare:file-viewer-assets": "node scripts/copy-file-viewer-assets.mjs",
+    "prepare:computer-use-host": "node scripts/prepare-computer-use-host.js"
   },
   "//deps-note": "dependencies 仅保留 main/preload 运行时真正 require 的包（已据 out/main bundle 权威核实）。所有纯渲染端依赖被 vite 打进 out/renderer，移到 devDependencies，使 electron-builder 仅收生产依赖闭包，避免渲染库及其传递依赖被重复打包。配合 pnpm nodeLinker:hoisted 平铺布局，electron-builder 才能完整收集生产闭包。",
   "dependencies": {

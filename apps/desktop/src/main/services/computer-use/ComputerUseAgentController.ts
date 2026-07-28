@@ -6,6 +6,7 @@ import {
   type ComputerActuatorLease,
   type ComputerSession,
   type ComputerUseCapabilitySummary,
+  type NativeHostCapabilityManifest,
   type NativeWindowDescriptor,
 } from '@spark/protocol'
 import { z } from 'zod'
@@ -20,6 +21,7 @@ interface BoundAgentRuntime {
   turnId: string
   providerProfileId: string
   modelId: string
+  permissionMode: string
 }
 
 interface OperatorRunState {
@@ -93,7 +95,7 @@ export class ComputerUseAgentController {
   }> {
     const services = this.getServices()
     const capabilities = await services.backend.getCapabilities()
-    const executionAvailable = supportsExecution(capabilities) && services.killSwitch.isArmed()
+    const executionAvailable = supportsExecution(capabilities)
     return {
       platform: capabilities.platform,
       available: capabilities.available,
@@ -102,9 +104,7 @@ export class ComputerUseAgentController {
         ? { unavailableReason: capabilities.unavailableReason }
         : !executionAvailable
           ? {
-              unavailableReason: services.killSwitch.isArmed()
-                ? 'governed_task_execution_unavailable'
-                : 'global_emergency_stop_unavailable',
+              unavailableReason: 'governed_task_execution_unavailable',
             }
           : {}),
     }
@@ -117,7 +117,7 @@ export class ComputerUseAgentController {
         const capabilities = await services.backend.getCapabilities()
         return {
           ...capabilities,
-          executionAvailable: supportsExecution(capabilities) && services.killSwitch.isArmed(),
+          executionAvailable: supportsExecution(capabilities),
           killSwitchArmed: services.killSwitch.isArmed(),
           taskTools: [
             'get_capabilities',
@@ -158,16 +158,12 @@ export class ComputerUseAgentController {
       }
       case 'resume': {
         const computerSession = this.requireOwnedSession(services, sessionId, args)
+        const context = this.sessionContexts.get(sessionId)
+        if (context == null) throw unavailable('Agent turn context is unavailable')
         if (computerSession.status !== 'paused') {
           throw new ComputerUseBrokerError(
             'action_not_allowed',
             'Only a paused Computer Use task can be resumed',
-          )
-        }
-        if (computerSession.environment === 'my_desktop' && !services.killSwitch.isArmed()) {
-          throw new ComputerUseBrokerError(
-            'action_not_allowed',
-            'My Desktop requires an armed global emergency stop',
           )
         }
         const model = await this.resolveDecisionModel(sessionId)
@@ -186,7 +182,7 @@ export class ComputerUseAgentController {
           await services.broker.pause(computerSession.id).catch(() => undefined)
           throw error
         }
-        this.launchOperator(services, resumed, lease, operator, adapter)
+        this.launchOperator(services, resumed, lease, operator, adapter, context.permissionMode)
         return { computerSession: resumed, operatorStatus: 'running' }
       }
       case 'capture_app_snapshot': {
@@ -214,7 +210,7 @@ export class ComputerUseAgentController {
         }
       }
       case 'start_task': {
-        const capabilities = await services.backend.getCapabilities()
+        const capabilities = await getExecutionCapabilitiesWithPermissionRequest(services.backend)
         if (!supportsExecution(capabilities)) {
           throw unavailable(
             capabilities.unavailableReason ??
@@ -227,18 +223,17 @@ export class ComputerUseAgentController {
         if (request.environment !== 'my_desktop') {
           throw unavailable('This build currently provides governed execution only on My Desktop')
         }
-        if (!services.killSwitch.isArmed()) {
-          throw new ComputerUseBrokerError(
-            'action_not_allowed',
-            'My Desktop requires an armed global emergency stop',
-          )
-        }
-        const target = requireFocusedWindow(await services.backend.listWindows())
+        const windows = await services.backend.listWindows()
+        const target = requireFocusedWindow(windows)
         const model = await this.resolveDecisionModel(sessionId)
+        const successCriteria =
+          request.successCriteria.length > 0
+            ? request.successCriteria
+            : deriveSuccessCriteria(request.goal, target)
         const taskContract = ComputerTaskContractSchema.parse({
           objective: request.goal,
-          successCriteria: request.successCriteria,
-          allowedApps: [strongestAppRule(target)],
+          successCriteria,
+          allowedApps: allowedAppRules(target, windows),
           allowedDomains: [],
           allowedDataClasses: ['public', 'internal', 'personal'],
           forbiddenActions: [],
@@ -263,7 +258,14 @@ export class ComputerUseAgentController {
         })
         const operator = this.createOperator(services)
         const adapter = this.createAdapter(model)
-        this.launchOperator(services, computerSession, lease, operator, adapter)
+        this.launchOperator(
+          services,
+          computerSession,
+          lease,
+          operator,
+          adapter,
+          context.permissionMode,
+        )
         return { computerSession, operatorStatus: 'running' }
       }
       default:
@@ -277,11 +279,12 @@ export class ComputerUseAgentController {
     lease: ComputerActuatorLease,
     operator: ComputerTaskOperator,
     adapter: GenericComputerDecisionAdapter,
+    permissionMode: string,
   ): void {
     const token = {}
     this.runTokens.set(session.id, token)
     this.runs.set(session.id, { status: 'running' })
-    const run = operator.run({ session, lease, adapter })
+    const run = operator.run({ session, lease, adapter, permissionMode })
     void run.then(
       (result) => {
         if (this.runTokens.get(session.id) !== token) return
@@ -338,20 +341,11 @@ export class ComputerUseAgentController {
 const StartTaskSchema = z
   .object({
     goal: z.string().trim().min(1).max(4_000),
-    environment: z.enum(['safe_browser', 'safe_desktop', 'my_desktop']),
+    environment: z.literal('my_desktop'),
     successCriteria: z.array(VerificationSpecSchema).min(1).max(100).optional(),
     acceptanceCriteria: z.array(z.string().trim().min(1).max(1_000)).min(1).max(50).optional(),
   })
   .strict()
-  .superRefine((value, context) => {
-    if (value.successCriteria == null && value.acceptanceCriteria == null) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'success criteria are required',
-        path: ['successCriteria'],
-      })
-    }
-  })
 
 const SnapshotCaptureSchema = z
   .object({
@@ -384,6 +378,31 @@ function parseStartTask(args: unknown): {
   }
 }
 
+function deriveSuccessCriteria(
+  goal: string,
+  target: NativeWindowDescriptor,
+): z.infer<typeof VerificationSpecSchema>[] {
+  const quotedText = [...goal.matchAll(/"([^"\n]{1,200})"|“([^”\n]{1,200})”/g)]
+    .map((match) => (match[1] ?? match[2] ?? '').trim())
+    .filter((value) => value.length > 0)
+    .sort((left, right) => right.length - left.length)[0]
+  if (quotedText != null) {
+    return [
+      {
+        kind: 'visual',
+        assertion: { operator: 'text_present', expected: quotedText },
+      },
+    ]
+  }
+  return [
+    {
+      kind: 'application_state',
+      appId: target.app.id,
+      assertion: { operator: 'frontmost', expected: true },
+    },
+  ]
+}
+
 function requireFocusedWindow(windows: NativeWindowDescriptor[]): NativeWindowDescriptor {
   const focused = windows.filter((window) => window.focused && !window.minimized)
   if (focused.length !== 1 || focused[0] == null) {
@@ -410,6 +429,23 @@ function strongestAppRule(
   return { kind: 'app_id', value: target.app.id }
 }
 
+function allowedAppRules(
+  focused: NativeWindowDescriptor,
+  windows: NativeWindowDescriptor[],
+): ComputerSession['taskContract']['allowedApps'] {
+  const rules: ComputerSession['taskContract']['allowedApps'] = []
+  const seen = new Set<string>()
+  for (const window of [focused, ...windows]) {
+    const rule = strongestAppRule(window)
+    const key = `${rule.kind}:${rule.value}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    rules.push(rule)
+    if (rules.length >= 200) break
+  }
+  return rules
+}
+
 function supportsExecution(capabilities: ComputerUseCapabilitySummary): boolean {
   const features = capabilities.nativeHost?.features
   const semanticExecution = features?.semanticActions === true
@@ -425,6 +461,34 @@ function supportsExecution(capabilities: ComputerUseCapabilitySummary): boolean 
   )
 }
 
+export async function getExecutionCapabilitiesWithPermissionRequest(backend: {
+  getCapabilities(): Promise<ComputerUseCapabilitySummary>
+  requestPermissions?: (
+    permissions: Array<'screen' | 'accessibility'>,
+  ) => Promise<NativeHostCapabilityManifest>
+}): Promise<ComputerUseCapabilitySummary> {
+  const initial = await backend.getCapabilities()
+  if (
+    supportsExecution(initial) ||
+    initial.nativeHost == null ||
+    backend.requestPermissions == null
+  ) {
+    return initial
+  }
+  const permissions: Array<'screen' | 'accessibility'> = []
+  if (initial.permissions.screen !== 'granted') permissions.push('screen')
+  if (initial.permissions.accessibility !== 'granted' || initial.permissions.input !== 'granted') {
+    permissions.push('accessibility')
+  }
+  if (permissions.length === 0) return initial
+  try {
+    await backend.requestPermissions(permissions)
+  } catch {
+    // A denied OS prompt is an unavailable capability, not a reason to abort fallback routing.
+  }
+  return backend.getCapabilities().catch(() => initial)
+}
+
 function readComputerSessionId(args: unknown): string {
   if (args == null || typeof args !== 'object' || Array.isArray(args)) throw invalidArguments()
   const value = (args as Record<string, unknown>).computerSessionId
@@ -435,7 +499,10 @@ function readComputerSessionId(args: unknown): string {
 }
 
 function invalidArguments(): ComputerUseBrokerError {
-  return new ComputerUseBrokerError('action_not_allowed', 'Invalid Computer Use tool arguments')
+  return new ComputerUseBrokerError(
+    'action_not_allowed',
+    'Invalid Computer Use tool arguments. For start_task use at least {"goal":"...","environment":"my_desktop"}; for status/control tools pass {"computerSessionId":"..."}.',
+  )
 }
 
 function unavailable(message: string): ComputerUseBrokerError {

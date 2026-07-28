@@ -18,7 +18,7 @@ const log = createLogger('snapshot-protocol')
 const BASE_RESPONSE_HEADERS = {
   'cache-control': 'private, no-store',
   'content-security-policy': "default-src 'none'; sandbox",
-  'cross-origin-resource-policy': 'same-origin',
+  'cross-origin-resource-policy': 'cross-origin',
   'x-content-type-options': 'nosniff',
 }
 
@@ -37,6 +37,7 @@ export function registerSnapshotSchemes(): void {
       privileges: {
         standard: true,
         secure: true,
+        corsEnabled: true,
         supportFetchAPI: true,
         stream: true,
       },

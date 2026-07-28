@@ -71,4 +71,10 @@ describe('avatar config', () => {
     expect(html).toContain('img-src')
     expect(html).toContain('data:')
   })
+
+  it('allows governed application snapshot images through the renderer CSP', () => {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf-8')
+
+    expect(html).toMatch(/img-src[^;]*spark-snapshot:/)
+  })
 })

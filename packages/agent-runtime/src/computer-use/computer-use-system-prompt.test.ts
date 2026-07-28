@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildComputerUseSystemPrompt } from './computer-use-system-prompt.js'
 
 describe('buildComputerUseSystemPrompt', () => {
-  it('teaches the agent to use the governed capability and forbids temporary desktop scripting', () => {
+  it('teaches the agent to prefer governed control and automatically fall back when unavailable', () => {
     const prompt = buildComputerUseSystemPrompt({
       platform: 'macos',
       available: false,
@@ -18,8 +18,9 @@ describe('buildComputerUseSystemPrompt', () => {
     expect(prompt).toContain('xdotool')
     expect(prompt).toContain('PowerShell')
     expect(prompt).toContain('input_permission_unsupported')
-    expect(prompt).toMatch(/do not install|不得安装/i)
-    expect(prompt).toMatch(/tell the user|告诉用户/i)
+    expect(prompt).toMatch(/fallback|alternative|continue/i)
+    expect(prompt).toMatch(/permission|approval/i)
+    expect(prompt).not.toMatch(/Never emulate or replace Computer Use/i)
   })
 
   it('requires evidence-backed completion when task execution is available', () => {
@@ -30,6 +31,9 @@ describe('buildComputerUseSystemPrompt', () => {
     })
 
     expect(prompt).toContain('mcp__spark_computer__start_task')
+    expect(prompt).toContain('"environment":"my_desktop"')
+    expect(prompt).toContain('successCriteria` is optional')
+    expect(prompt).toContain('all permission modes')
     expect(prompt).toContain('verification')
     expect(prompt).toContain('pause')
     expect(prompt).toContain('stop')

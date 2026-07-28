@@ -4,42 +4,59 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-const { pruneMacElectronLocales, hardenElectronFuses } = require('../../../../scripts/after-pack.js') as {
-  pruneMacElectronLocales: (appPath: string) => Promise<{ kept: string[]; removed: number }>
-  hardenElectronFuses: (
-    context: unknown,
-    dependencies: { flipFuses(path: string, options: Record<string | number, unknown>): Promise<void> },
-  ) => Promise<void>
-}
-const { createNativeHostManifest, parseCodeSignatureOutput } =
-  require('../../../../scripts/package-native-host.js') as {
-    createNativeHostManifest: (input: {
-      executable: Buffer
-      architecture: 'arm64' | 'x64'
-      signature: { identifier: string; teamIdentifier: string }
-    }) => Record<string, unknown>
-    parseCodeSignatureOutput: (output: string) => {
-      identifier: string
-      teamIdentifier: string
-    }
+const { pruneMacElectronLocales, hardenElectronFuses } =
+  require('../../../../scripts/after-pack.js') as {
+    pruneMacElectronLocales: (appPath: string) => Promise<{ kept: string[]; removed: number }>
+    hardenElectronFuses: (
+      context: unknown,
+      dependencies: {
+        flipFuses(path: string, options: Record<string | number, unknown>): Promise<void>
+      },
+    ) => Promise<void>
   }
+const {
+  createNativeHostManifest,
+  createLocalNativeHostManifest,
+  parseCodeSignatureOutput,
+  resolveMacNativeHostTrustMode,
+} = require('../../../../scripts/package-native-host.js') as {
+  createNativeHostManifest: (input: {
+    executable: Buffer
+    architecture: 'arm64' | 'x64'
+    signature: { identifier: string; teamIdentifier: string }
+  }) => Record<string, unknown>
+  createLocalNativeHostManifest: (input: {
+    executable: Buffer
+    architecture: 'arm64' | 'x64'
+  }) => Record<string, unknown>
+  parseCodeSignatureOutput: (output: string) => {
+    identifier: string
+    teamIdentifier: string
+  }
+  resolveMacNativeHostTrustMode: (environment: NodeJS.ProcessEnv) => 'signed' | 'local' | 'auto'
+}
 const { Arch } = require('builder-util') as { Arch: Record<string | number, string | number> }
 const { FuseV1Options } = require('@electron/fuses') as {
   FuseV1Options: Record<string, number>
 }
-const { createWindowsNativeHostManifest, normalizePublisherThumbprint, packageWindowsNativeHost } =
-  require('../../../../scripts/package-windows-native-host.js') as {
-    createWindowsNativeHostManifest: (input: {
-      executable: Buffer
-      architecture: 'arm64' | 'x64'
-      publisherThumbprint: string
-    }) => Record<string, unknown>
-    normalizePublisherThumbprint: (value: string) => string
-    packageWindowsNativeHost: (context: unknown) => Promise<{
-      packaged: boolean
-      reason?: string
-    }>
-  }
+const {
+  createWindowsNativeHostManifest,
+  createLocalWindowsNativeHostManifest,
+  normalizePublisherThumbprint,
+  resolveWindowsNativeHostTrustMode,
+} = require('../../../../scripts/package-windows-native-host.js') as {
+  createWindowsNativeHostManifest: (input: {
+    executable: Buffer
+    architecture: 'arm64' | 'x64'
+    publisherThumbprint: string
+  }) => Record<string, unknown>
+  createLocalWindowsNativeHostManifest: (input: {
+    executable: Buffer
+    architecture: 'arm64' | 'x64'
+  }) => Record<string, unknown>
+  normalizePublisherThumbprint: (value: string) => string
+  resolveWindowsNativeHostTrustMode: (environment: NodeJS.ProcessEnv) => 'signed' | 'local'
+}
 const { verifyWindowsPackageSigners } = require('../../../../scripts/notarize.js') as {
   verifyWindowsPackageSigners: (
     context: unknown,
@@ -197,31 +214,58 @@ TeamIdentifier=ABCDE12345
     })
   })
 
-  it('omits an unconfigured local Windows host but fails a release CI build closed', async () => {
-    const previousCi = process.env.CI
-    const previousThumbprint = process.env.SPARK_WINDOWS_PUBLISHER_THUMBPRINT
-    delete process.env.CI
-    delete process.env.SPARK_WINDOWS_PUBLISHER_THUMBPRINT
-    const context = {
-      electronPlatformName: 'win32',
-      arch: Arch.x64,
-      packager: {},
-    }
-    try {
-      await expect(packageWindowsNativeHost(context)).resolves.toEqual({
-        packaged: false,
-        reason: 'publisher-thumbprint-missing',
-      })
-      process.env.CI = 'true'
-      await expect(packageWindowsNativeHost(context)).rejects.toThrow(
-        'SPARK_WINDOWS_PUBLISHER_THUMBPRINT is required',
-      )
-    } finally {
-      if (previousCi == null) delete process.env.CI
-      else process.env.CI = previousCi
-      if (previousThumbprint == null) delete process.env.SPARK_WINDOWS_PUBLISHER_THUMBPRINT
-      else process.env.SPARK_WINDOWS_PUBLISHER_THUMBPRINT = previousThumbprint
-    }
+  it('creates hash-bound local manifests when no publisher certificate is available', () => {
+    expect(
+      createLocalNativeHostManifest({
+        executable: Buffer.from('local-macos-host'),
+        architecture: 'arm64',
+      }),
+    ).toMatchObject({ trustMode: 'local', platform: 'macos', architecture: 'arm64' })
+    expect(
+      createLocalWindowsNativeHostManifest({
+        executable: Buffer.from('local-windows-host'),
+        architecture: 'x64',
+      }),
+    ).toMatchObject({ trustMode: 'local', platform: 'windows', architecture: 'x64' })
+  })
+
+  it('forces local macOS Host trust when signing discovery is disabled', () => {
+    expect(resolveMacNativeHostTrustMode).toBeTypeOf('function')
+    expect(
+      resolveMacNativeHostTrustMode({
+        CSC_IDENTITY_AUTO_DISCOVERY: 'false',
+        CSC_NAME: 'Developer ID Application: Example (ABCDE12345)',
+      }),
+    ).toBe('local')
+  })
+
+  it('uses local Windows Host trust unless outer-package signing credentials are complete', () => {
+    expect(resolveWindowsNativeHostTrustMode).toBeTypeOf('function')
+    expect(
+      resolveWindowsNativeHostTrustMode({
+        SPARK_WINDOWS_PUBLISHER_THUMBPRINT: 'd'.repeat(64),
+      }),
+    ).toBe('local')
+    expect(
+      resolveWindowsNativeHostTrustMode({
+        SPARK_NATIVE_HOST_TRUST_MODE: 'signed',
+        SPARK_WINDOWS_PUBLISHER_THUMBPRINT: 'd'.repeat(64),
+      }),
+    ).toBe('signed')
+  })
+
+  it('clears all Native Host publisher metadata before an unsigned Windows retry', () => {
+    const retryScript = readFileSync(
+      join(__dirname, '../../../../scripts/build-win-release.sh'),
+      'utf8',
+    )
+    const retryBody = retryScript.slice(
+      retryScript.indexOf('retry_windows_package_without_signing()'),
+      retryScript.indexOf('step "0/5 Build parameters"'),
+    )
+
+    expect(retryBody).toContain('SPARK_WINDOWS_PUBLISHER_THUMBPRINT')
+    expect(retryBody).toContain('SPARK_NATIVE_HOST_TRUST_MODE="local"')
   })
 
   it('verifies the final SparkWork.exe and packaged host share the timestamped publisher', async () => {

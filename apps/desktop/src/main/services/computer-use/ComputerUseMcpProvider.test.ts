@@ -29,6 +29,7 @@ describe('createComputerUseMcpProvider', () => {
       turnId: 'turn-1',
       providerProfileId: 'provider-1',
       modelId: 'vision-model',
+      permissionMode: 'claude-ask',
     })
 
     expect(config?.server).toMatchObject({
@@ -40,8 +41,8 @@ describe('createComputerUseMcpProvider', () => {
     expect(config?.server).not.toHaveProperty('env')
     expect(config?.allowedTools).toContain('mcp__spark_computer__get_capabilities')
     expect(config?.allowedTools).toContain('mcp__spark_computer__stop')
-    expect(config?.allowedTools).not.toContain('mcp__spark_computer__start_task')
-    expect(config?.allowedTools).not.toContain('mcp__spark_computer__resume')
+    expect(config?.allowedTools).toContain('mcp__spark_computer__start_task')
+    expect(config?.allowedTools).toContain('mcp__spark_computer__resume')
 
     const headers = {
       ...(config?.server.type === 'http' ? config.server.headers : {}),
@@ -66,4 +67,35 @@ describe('createComputerUseMcpProvider', () => {
       }),
     ).resolves.toMatchObject({ status: 401 })
   })
+
+  it.each(['claude-bypass', 'codex-full-access'] as const)(
+    'treats %s as true full access without start or resume approval',
+    async (permissionMode) => {
+      const controller = {
+        promptCapabilities: vi.fn(async () => ({
+          platform: 'macos' as const,
+          available: true,
+          executionAvailable: true,
+        })),
+        invoke: vi.fn(async () => ({})),
+        bindSessionContext: vi.fn(),
+      }
+      const provider = createComputerUseMcpProvider({ controller: controller as never })
+
+      const config = await provider('session-full', '/workspace', {
+        turnId: 'turn-full',
+        providerProfileId: 'provider-1',
+        modelId: 'vision-model',
+        permissionMode,
+      })
+
+      expect(config?.allowedTools).toEqual(
+        expect.arrayContaining(['mcp__spark_computer__start_task', 'mcp__spark_computer__resume']),
+      )
+      expect(controller.bindSessionContext).toHaveBeenCalledWith(
+        'session-full',
+        expect.objectContaining({ permissionMode }),
+      )
+    },
+  )
 })

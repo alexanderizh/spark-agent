@@ -8,7 +8,7 @@
       - default-src 'self'：只允许来自当前 origin 的资源
       - script-src 'self'：禁止 inline scripts，防止 XSS
       - style-src 'self' 'unsafe-inline'：允许内联样式（React 组件库需要）
-      - img-src 'self' data: safe-file: https: http: blob:：允许本地图片、DiceBear、云端账号头像与封面图 blob 预览
+      - img-src 'self' data: safe-file: spark-snapshot: https: http: blob:：允许本地图片、受权应用快照、头像与封面图预览
       - media-src 'self' data: safe-file: https: http: blob:：允许画布音频/视频播放本地产物
       - font-src 'self' data: safe-file:：允许系统字体与下载到 userData 的托管字体
       - connect-src 'self' safe-file:：IPC 通过 contextBridge + safe-file 协议读取
@@ -16,7 +16,7 @@
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data: safe-file:; img-src 'self' data: safe-file: https: http: blob:; media-src 'self' data: safe-file: https: http: blob:; connect-src 'self' safe-file:; frame-src 'self' safe-file:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data: safe-file:; img-src 'self' data: safe-file: spark-snapshot: https: http: blob:; media-src 'self' data: safe-file: https: http: blob:; connect-src 'self' safe-file:; frame-src 'self' safe-file:"
     />
     <title>SparkWork</title>
     <!--

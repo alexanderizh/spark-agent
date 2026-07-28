@@ -31,7 +31,7 @@ describe('SnapshotProtocol', () => {
     vi.clearAllMocks()
   })
 
-  it('registers a dedicated secure streaming scheme without bypassing CSP', () => {
+  it('registers a dedicated secure streaming scheme that renderer images may load', () => {
     registerSnapshotSchemes()
 
     expect(electronMocks.registerSchemesAsPrivileged).toHaveBeenCalledWith([
@@ -40,6 +40,7 @@ describe('SnapshotProtocol', () => {
         privileges: {
           standard: true,
           secure: true,
+          corsEnabled: true,
           supportFetchAPI: true,
           stream: true,
         },
@@ -82,7 +83,7 @@ describe('SnapshotProtocol', () => {
     expect(response.headers.get('content-length')).toBe(String(png.length))
     expect(response.headers.get('x-content-type-options')).toBe('nosniff')
     expect(response.headers.get('cache-control')).toBe('private, no-store')
-    expect(response.headers.get('cross-origin-resource-policy')).toBe('same-origin')
+    expect(response.headers.get('cross-origin-resource-policy')).toBe('cross-origin')
     expect(Buffer.from(await response.arrayBuffer())).toEqual(png)
   })
 

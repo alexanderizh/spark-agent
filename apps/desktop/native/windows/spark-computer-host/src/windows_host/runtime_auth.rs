@@ -41,9 +41,11 @@ pub enum RuntimeAuthorizationError {
 pub fn authorize_parent() -> Result<(), RuntimeAuthorizationError> {
     let expected_thumbprint = option_env!("SPARK_WINDOWS_PUBLISHER_THUMBPRINT");
     if expected_thumbprint.is_none() {
-        #[cfg(debug_assertions)]
+        #[cfg(any(debug_assertions, feature = "local-trust"))]
         if std::env::var_os("SPARK_COMPUTER_DEBUG_ALLOW_UNSIGNED_PARENT").as_deref()
             == Some(std::ffi::OsStr::new("1"))
+            || std::env::var_os("SPARK_COMPUTER_LOCAL_TRUST").as_deref()
+                == Some(std::ffi::OsStr::new("1"))
         {
             return Ok(());
         }

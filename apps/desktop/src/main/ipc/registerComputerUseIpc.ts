@@ -44,7 +44,7 @@ export const DEFAULT_COMPUTER_USE_SETTINGS: ComputerUseSettings = ComputerUseSet
   redactSensitiveContent: true,
   fullRecordingEnabled: false,
   evidenceRetentionDays: 30,
-  killSwitch: 'CommandOrControl+Shift+Escape',
+  killSwitch: 'CommandOrControl+Shift+Esc',
   remote: {
     observe: false,
     approveL2: false,
@@ -105,20 +105,7 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
       const current = loadSettings(settingsStore)
       const next = ComputerUseSettingsSchema.parse({ ...current, ...patch })
       const runtime = services()
-      try {
-        ensureKillSwitchSafety(next, runtime)
-      } catch (error) {
-        if (current.enabled && current.environments.myDesktop) {
-          const disabled = {
-            ...current,
-            enabled: false,
-            environments: { ...current.environments, myDesktop: false },
-          }
-          await applyDisabledEnvironmentTransition(current, disabled, runtime)
-          settingsStore.set(SETTINGS_CATEGORY, SETTINGS_KEY, disabled)
-        }
-        throw error
-      }
+      armKillSwitchBestEffort(next, runtime)
       await applyDisabledEnvironmentTransition(current, next, runtime)
       settingsStore.set(SETTINGS_CATEGORY, SETTINGS_KEY, next)
       return next
@@ -131,12 +118,6 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
       const configured = loadSettings(settingsStore)
       assertEnvironmentEnabled(configured, request.environment)
       const runtime = services()
-      if (request.environment === 'my_desktop' && !runtime.killSwitch.isArmed()) {
-        throw new ComputerUseBrokerError(
-          'action_not_allowed',
-          'My Desktop requires an armed global kill switch',
-        )
-      }
       const capabilities = await runtime.backend.getCapabilities()
       if (!capabilities.available) {
         throw new ComputerUseBrokerError(
@@ -316,17 +297,12 @@ function loadSettings(store: ComputerUseSettingsStore): ComputerUseSettings {
   return parsed.success ? parsed.data : structuredClone(DEFAULT_COMPUTER_USE_SETTINGS)
 }
 
-function ensureKillSwitchSafety(
+function armKillSwitchBestEffort(
   settings: ComputerUseSettings,
   services: ComputerUseServices,
 ): void {
   if (!settings.enabled || !settings.environments.myDesktop) return
-  if (settings.killSwitch == null || !services.armKillSwitch(settings.killSwitch)) {
-    throw new ComputerUseBrokerError(
-      'action_not_allowed',
-      'My Desktop cannot be enabled until the global kill switch is armed',
-    )
-  }
+  if (settings.killSwitch != null) services.armKillSwitch(settings.killSwitch)
 }
 
 async function applyDisabledEnvironmentTransition(
@@ -362,12 +338,7 @@ function reconcilePersistedKillSwitch(
   const parsed = ComputerUseSettingsSchema.safeParse(store.get(SETTINGS_CATEGORY, SETTINGS_KEY))
   if (!parsed.success || !parsed.data.enabled || !parsed.data.environments.myDesktop) return
   const accelerator = parsed.data.killSwitch
-  if (accelerator != null && getServices().armKillSwitch(accelerator)) return
-  store.set(SETTINGS_CATEGORY, SETTINGS_KEY, {
-    ...parsed.data,
-    enabled: false,
-    environments: { ...parsed.data.environments, myDesktop: false },
-  })
+  if (accelerator != null) getServices().armKillSwitch(accelerator)
 }
 
 function assertEnvironmentEnabled(
