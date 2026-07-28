@@ -118,6 +118,14 @@ export {
 } from './services/local-skill-importer.js'
 export type { LocalSkillCandidate, LocalSkillSource } from './services/local-skill-importer.js'
 export { PermissionService } from './services/permission.service.js'
+export {
+  buildComputerUseSystemPrompt,
+  type ComputerUsePromptCapabilities,
+} from './computer-use/computer-use-system-prompt.js'
+export {
+  buildComputerDecisionModelConfig,
+  type ComputerDecisionModelConfig,
+} from './computer-use/computer-decision-model.js'
 export type {
   CreateRuleParams,
   ListRulesParams,
@@ -139,6 +147,7 @@ export type {
   PlatformConfigChangedHandler,
   CanvasMcpProvider,
   BrowserAutomationMcpProvider,
+  ComputerUseMcpProvider,
 } from './services/session.service.js'
 export {
   createCanvasMcpServer,

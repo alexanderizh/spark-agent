@@ -9,20 +9,10 @@
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
     <!--
-        关键：本项目使用了大量未签名的原生模块和第三方二进制：
-        - better-sqlite3 / node-pty / keytar 等原生 .node 模块
-        - @anthropic-ai/claude-agent-sdk 内置的 claude 可执行文件
-        - playwright / 浏览器内核
-        必须禁用库验证，否则启动即崩溃。
+        Release packaging signs bundled native modules with the application identity.
+        Library validation and DYLD protections intentionally remain enabled so the
+        signed Electron parent cannot be repurposed to satisfy Native Host trust.
     -->
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    <!-- 允许 DYLD 环境变量（调试 / 部分插件加载需要） -->
-    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
-    <true/>
-    <!-- 允许加载已签名的动态库（Electron 标准项） -->
-    <key>com.apple.security.cs.disable-executable-page-protection</key>
-    <true/>
     <!-- Hardened Runtime 下请求麦克风权限必须声明音频输入能力，否则 TCC 不会展示应用或弹出授权框 -->
     <key>com.apple.security.device.audio-input</key>
     <true/>

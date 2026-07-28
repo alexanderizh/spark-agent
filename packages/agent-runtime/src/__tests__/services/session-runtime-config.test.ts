@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fileURLToPath } from 'node:url'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AgentEvent } from '@spark/protocol'
@@ -196,6 +196,7 @@ const mockState = vi.hoisted(() => ({
   nextSdkUsageEvents: [] as Array<
     Array<Extract<AgentEvent, { type: 'usage_update' }>>
   >,
+  nextSdkTurnEvents: [] as AgentEvent[][],
   turnRequests: new Map<
     string,
     {
@@ -992,6 +993,9 @@ vi.mock('../../sdk/index.js', () => {
       for (const usageEvent of mockState.nextSdkUsageEvents.shift() ?? []) {
         this.handler?.({ ...usageEvent, sessionId, turnId })
       }
+      for (const event of mockState.nextSdkTurnEvents.shift() ?? []) {
+        this.handler?.({ ...event, sessionId, turnId })
+      }
       const status = mockState.nextSdkTurnStatuses.shift() ?? 'completed'
       this.handler?.({
         id: `${status}-${turnId}`,
@@ -1093,6 +1097,8 @@ describe('buildMediaGenerationSystemPrompt', () => {
     expect(prompt).toContain('maxImages')
     expect(prompt).toContain('rolePolicy')
     expect(prompt).toContain('ask which inputs to keep')
+    expect(prompt).toContain('mcp__spark_files__present_files')
+    expect(prompt).toContain('not complete')
   })
 })
 
@@ -1117,6 +1123,7 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.nextSdkTurnErrors.length = 0
     mockState.nextSdkTurnStatuses.length = 0
     mockState.nextSdkUsageEvents.length = 0
+    mockState.nextSdkTurnEvents.length = 0
     mockState.turnRequests.clear()
     mockState.settings.clear()
     mockState.usageRecords.length = 0
@@ -1160,6 +1167,50 @@ describe('SessionService runtime provider/model resolution', () => {
       is_default: 0,
     })
   })
+
+  it.each(['claude-sdk', 'codex'] as const)(
+    'mounts the governed spark_computer server and prompt for every %s session',
+    async (agentAdapter) => {
+      const service = new SessionService({} as never, (event) => events.push(event))
+      service.setComputerUseMcpProvider(async (sessionId) => ({
+        server: {
+          type: 'stdio',
+          command: '/app/SparkWork',
+          args: ['/resources/tools/computer-use-mcp-server.mjs'],
+          env: { SPARK_COMPUTER_SESSION_ID: sessionId },
+        },
+        allowedTools: [
+          'mcp__spark_computer__get_capabilities',
+          'mcp__spark_computer__start_task',
+        ],
+        systemPrompt: 'GOVERNED COMPUTER USE PROMPT',
+      }))
+      const { sessionId } = await service.createSession({
+        providerProfileId: 'tencent-provider',
+        modelId: 'glm-5',
+        agentAdapter,
+        permissionMode: agentAdapter === 'codex' ? 'codex-default' : 'claude-auto-edits',
+        title: 'Computer use session',
+      })
+
+      await service.sendTurn({ sessionId, message: 'Can you control my computer?' })
+      await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+      const config = mockState.sdkConfigs[0]
+      expect(config?.mcpServers).toMatchObject({
+        spark_computer: expect.objectContaining({ type: 'stdio' }),
+      })
+      expect(config?.allowedTools).toEqual(
+        expect.arrayContaining([
+          'mcp__spark_computer__get_capabilities',
+          'mcp__spark_computer__start_task',
+        ]),
+      )
+      expect(String(config?.skillSystemPrompt ?? '')).toContain(
+        'GOVERNED COMPUTER USE PROMPT',
+      )
+    },
+  )
 
   it('persists a terminal error when a provider credential cannot be resolved before start', async () => {
     vi.mocked(keystore.getSecret).mockResolvedValueOnce(null)
@@ -1630,7 +1681,6 @@ describe('SessionService runtime provider/model resolution', () => {
       }
     ).spark_media
     expect(Object.keys(mediaServer.env).sort()).toEqual([
-      'ELECTRON_RUN_AS_NODE',
       'SPARK_MEDIA_API_KEY_0',
       'SPARK_MEDIA_CONFIG_FILE',
     ])
@@ -1652,6 +1702,63 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(runtimeConfig.model).toBe('agnes-2.0-flash')
     expect(runtimeConfig.providers.flatMap((provider) => provider.manifests.map((item) => item.id)))
       .toEqual(expect.arrayContaining(['agnes:agnes-image-2.0-flash', 'agnes:agnes-video-v2.0']))
+  })
+
+  it('emits a real presented_files event at turn end when a media tool forgot present_files', async () => {
+    const workspaceRoot = mkdtempSync(path.join(tmpdir(), 'spark-media-presentation-'))
+    const imagePath = path.join(workspaceRoot, 'generated-preview.png')
+    writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+    try {
+      mockState.workspaces.set('media-workspace', {
+        id: 'media-workspace',
+        name: 'media-workspace',
+        root_path: workspaceRoot,
+        project_kind: 'node',
+        worktree_meta_json: null,
+      })
+      mockState.nextSdkTurnEvents.push([
+        {
+          id: 'generated-image-result',
+          sessionId: 'placeholder-session',
+          turnId: 'placeholder-turn',
+          timestamp: '2026-05-28T00:00:00.000Z',
+          seq: 0,
+          type: 'tool_result',
+          toolCallId: 'image-call-1',
+          toolName: 'mcp__spark_media__generate_image',
+          status: 'success',
+          output: { files: [{ path: imagePath, title: 'Generated preview' }] },
+        },
+      ])
+      const service = new SessionService({} as never, (event) => events.push(event))
+      const { sessionId } = await service.createSession({
+        providerProfileId: 'tencent-provider',
+        agentAdapter: 'claude-sdk',
+        permissionMode: 'claude-plan',
+        title: 'Media delivery session',
+        workspaceId: 'media-workspace',
+      })
+
+      await service.sendTurn({ sessionId, message: 'generate an image' })
+
+      await vi.waitFor(() => {
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            type: 'presented_files',
+            sessionId,
+            files: [{ path: realpathSync(imagePath), title: 'Generated preview' }],
+          }),
+        )
+      })
+      const presentedIndex = events.findIndex((event) => event.type === 'presented_files')
+      const terminalIndex = events.findIndex(
+        (event) => event.type === 'agent_status' && event.status === 'completed',
+      )
+      expect(presentedIndex).toBeGreaterThanOrEqual(0)
+      expect(terminalIndex).toBeGreaterThan(presentedIndex)
+    } finally {
+      rmSync(workspaceRoot, { recursive: true, force: true })
+    }
   })
 
   it('injects platform image aliases as manifest-routed spark_media models', async () => {

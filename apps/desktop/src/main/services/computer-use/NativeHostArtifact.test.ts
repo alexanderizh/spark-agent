@@ -1,0 +1,238 @@
+import { createHash } from 'node:crypto'
+import { mkdtemp, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  NativeHostArtifactError,
+  createMacCodeRequirement,
+  verifyWindowsNativeHostArtifact,
+  verifyNativeHostArtifact,
+} from './NativeHostArtifact.js'
+
+const cleanupDirectories: string[] = []
+
+afterEach(async () => {
+  const { rm } = await import('node:fs/promises')
+  await Promise.all(
+    cleanupDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
+  )
+})
+
+describe('verifyNativeHostArtifact', () => {
+  it('anchors the designated requirement to Apple, the signing identifier, and the team', () => {
+    expect(
+      createMacCodeRequirement({
+        identifier: 'com.spark-agent.desktop.computer-host',
+        teamIdentifier: 'ABCDE12345',
+      }),
+    ).toBe(
+      'anchor apple generic and identifier "com.spark-agent.desktop.computer-host" and certificate leaf[subject.OU] = "ABCDE12345"',
+    )
+  })
+
+  it('binds the executable bytes, wire version, platform, architecture, and code signature', async () => {
+    const fixture = await createArtifactFixture()
+    const inspectCodeSignature = vi.fn(async () => ({
+      identifier: 'com.spark-agent.desktop.computer-host',
+      teamIdentifier: 'ABCDE12345',
+    }))
+
+    const artifact = await verifyNativeHostArtifact({
+      executablePath: fixture.executablePath,
+      manifestPath: fixture.manifestPath,
+      platform: 'macos',
+      architecture: 'arm64',
+      expectedTeamIdentifier: 'ABCDE12345',
+      inspectCodeSignature,
+    })
+
+    expect(artifact.manifest.hostVersion).toBe('0.1.0')
+    expect(artifact.executablePath).toBe(fixture.executablePath)
+    expect(inspectCodeSignature).toHaveBeenCalledWith(fixture.executablePath)
+  })
+
+  it('rejects a symlink even when it resolves to bytes with the expected hash', async () => {
+    const fixture = await createArtifactFixture()
+    const linkedPath = join(fixture.directory, 'LinkedComputerHost')
+    await symlink(fixture.executablePath, linkedPath)
+
+    await expect(
+      verifyNativeHostArtifact({
+        executablePath: linkedPath,
+        manifestPath: fixture.manifestPath,
+        platform: 'macos',
+        architecture: 'arm64',
+        expectedTeamIdentifier: 'ABCDE12345',
+        inspectCodeSignature: vi.fn(),
+      }),
+    ).rejects.toMatchObject({
+      code: 'native_host_untrusted',
+    } satisfies Partial<NativeHostArtifactError>)
+  })
+
+  it('rejects executable bytes that no longer match the signed artifact manifest', async () => {
+    const fixture = await createArtifactFixture()
+    await writeFile(fixture.executablePath, 'tampered')
+
+    await expect(
+      verifyNativeHostArtifact({
+        executablePath: fixture.executablePath,
+        manifestPath: fixture.manifestPath,
+        platform: 'macos',
+        architecture: 'arm64',
+        expectedTeamIdentifier: 'ABCDE12345',
+        inspectCodeSignature: vi.fn(),
+      }),
+    ).rejects.toThrowError('Native Host executable digest does not match its artifact manifest')
+  })
+
+  it('rejects a valid signature from a different team or signing identifier', async () => {
+    const fixture = await createArtifactFixture()
+
+    await expect(
+      verifyNativeHostArtifact({
+        executablePath: fixture.executablePath,
+        manifestPath: fixture.manifestPath,
+        platform: 'macos',
+        architecture: 'arm64',
+        expectedTeamIdentifier: 'ABCDE12345',
+        inspectCodeSignature: async () => ({
+          identifier: 'com.attacker.host',
+          teamIdentifier: 'ZZZZZ99999',
+        }),
+      }),
+    ).rejects.toThrowError('Native Host code signature does not match its artifact manifest')
+  })
+
+  it('rejects a manifest and host signed together by a different Apple developer team', async () => {
+    const fixture = await createArtifactFixture('ZZZZZ99999')
+
+    await expect(
+      verifyNativeHostArtifact({
+        executablePath: fixture.executablePath,
+        manifestPath: fixture.manifestPath,
+        platform: 'macos',
+        architecture: 'arm64',
+        expectedTeamIdentifier: 'ABCDE12345',
+        inspectCodeSignature: async () => ({
+          identifier: 'com.spark-agent.desktop.computer-host',
+          teamIdentifier: 'ZZZZZ99999',
+        }),
+      }),
+    ).rejects.toThrowError('Native Host signing team does not match the SparkWork application')
+  })
+
+  it('rejects a correctly signed Host below the minimum trusted security version', async () => {
+    const fixture = await createArtifactFixture('ABCDE12345', '0.0.9')
+
+    await expect(
+      verifyNativeHostArtifact({
+        executablePath: fixture.executablePath,
+        manifestPath: fixture.manifestPath,
+        platform: 'macos',
+        architecture: 'arm64',
+        expectedTeamIdentifier: 'ABCDE12345',
+        inspectCodeSignature: async () => ({
+          identifier: 'com.spark-agent.desktop.computer-host',
+          teamIdentifier: 'ABCDE12345',
+        }),
+      }),
+    ).rejects.toThrowError('Native Host version is below the minimum trusted release')
+  })
+})
+
+describe('verifyWindowsNativeHostArtifact', () => {
+  it('binds the EXE hash and WinVerifyTrust publisher thumbprint to the outer application signer', async () => {
+    const fixture = await createWindowsArtifactFixture()
+    const inspectCodeSignature = vi.fn(async () => ({ publisherThumbprint: 'd'.repeat(64) }))
+
+    const artifact = await verifyWindowsNativeHostArtifact({
+      executablePath: fixture.executablePath,
+      manifestPath: fixture.manifestPath,
+      platform: 'windows',
+      architecture: 'x64',
+      expectedPublisherThumbprint: 'd'.repeat(64),
+      inspectCodeSignature,
+    })
+
+    expect(artifact.manifest).toMatchObject({
+      platform: 'windows',
+      signingPublisherThumbprint: 'd'.repeat(64),
+    })
+    expect(inspectCodeSignature).toHaveBeenCalledWith(fixture.executablePath)
+  })
+
+  it('rejects a trusted executable signed by a different publisher certificate', async () => {
+    const fixture = await createWindowsArtifactFixture()
+
+    await expect(
+      verifyWindowsNativeHostArtifact({
+        executablePath: fixture.executablePath,
+        manifestPath: fixture.manifestPath,
+        platform: 'windows',
+        architecture: 'x64',
+        expectedPublisherThumbprint: 'd'.repeat(64),
+        inspectCodeSignature: async () => ({ publisherThumbprint: 'e'.repeat(64) }),
+      }),
+    ).rejects.toThrowError('Native Host publisher does not match its artifact manifest')
+  })
+})
+
+async function createArtifactFixture(
+  signingTeamIdentifier = 'ABCDE12345',
+  hostVersion = '0.1.0',
+): Promise<{
+  directory: string
+  executablePath: string
+  manifestPath: string
+}> {
+  const directory = await mkdtemp(join(tmpdir(), 'spark-native-host-artifact-'))
+  cleanupDirectories.push(directory)
+  const executablePath = join(directory, 'SparkComputerHost')
+  const manifestPath = join(directory, 'manifest.json')
+  const executable = Buffer.from('trusted-native-host-fixture')
+  await writeFile(executablePath, executable, { mode: 0o755 })
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: 1,
+      protocolVersion: 1,
+      hostVersion,
+      platform: 'macos',
+      architecture: 'arm64',
+      executableFileName: 'SparkComputerHost',
+      sha256: createHash('sha256').update(executable).digest('hex'),
+      signingIdentifier: 'com.spark-agent.desktop.computer-host',
+      signingTeamIdentifier,
+    }),
+  )
+  return { directory, executablePath, manifestPath }
+}
+
+async function createWindowsArtifactFixture(): Promise<{
+  directory: string
+  executablePath: string
+  manifestPath: string
+}> {
+  const directory = await mkdtemp(join(tmpdir(), 'spark-windows-native-host-artifact-'))
+  cleanupDirectories.push(directory)
+  const executablePath = join(directory, 'SparkComputerHost.exe')
+  const manifestPath = join(directory, 'manifest.json')
+  const executable = Buffer.from('trusted-windows-native-host-fixture')
+  await writeFile(executablePath, executable, { mode: 0o755 })
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: 1,
+      protocolVersion: 1,
+      hostVersion: '0.1.0',
+      platform: 'windows',
+      architecture: 'x64',
+      executableFileName: 'SparkComputerHost.exe',
+      sha256: createHash('sha256').update(executable).digest('hex'),
+      signingPublisherThumbprint: 'd'.repeat(64),
+    }),
+  )
+  return { directory, executablePath, manifestPath }
+}

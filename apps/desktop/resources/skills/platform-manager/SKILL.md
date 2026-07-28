@@ -178,7 +178,7 @@ Agent 可通过这些工具查看和修改当前会话的运行时参数，实�
 1. **识别用户意图**：当用户提到管理平台功能时，主动使用对应工具。**不要**用文件系统操作（如手动写文件到 `~/.claude/skills/`）来替代平台工具。
 2. **依赖与运行环境安装策略**（重要）：
    - 当任务需要从网络安装依赖库、运行时环境或系统安装包（如 Python / Node.js / npm 包 / pip 包 / Playwright 浏览器内核 / skill 依赖）时，查找和下载顺序必须是：**先查 Spark 自建安装源** `https://minio.yiqibyte.com/spark-desktop/artifact-repository/v1/index.json`，再查国内镜像源（如 npmmirror、阿里云 PyPI、清华/中科大镜像、Playwright 国内镜像等），最后才使用 GitHub、npmjs、PyPI、python.org、nodejs.org 等外网源。
-   - 在主机上安装 Node.js 前，先检查 Spark 是否已暴露应用内置 Electron Node：环境变量 `SPARK_ELECTRON_NODE` 指向可执行文件，配合 `ELECTRON_RUN_AS_NODE=1` 可运行 Node 脚本/MCP 子进程。只有在任务需要普通 shell 里的 `node`、`npm`、`npx`，或内置运行时不足时，才安装系统/portable Node.js。
+   - 在主机上安装 Node.js 前，先检查 Spark 是否已暴露独立打包的 Node 运行时：环境变量 `SPARK_STANDALONE_NODE` 指向可执行文件，可运行 Node 脚本/MCP 子进程。禁止通过 `ELECTRON_RUN_AS_NODE` 启动 Electron 主程序。只有在任务需要普通 shell 里的 `node`、`npm`、`npx`，或内置运行时不足时，才安装系统/portable Node.js。
    - 发现当前任务缺少环境或依赖时，默认目标是**帮助用户把环境补齐**：先说明缺少什么、为什么需要、将安装到哪里、预计使用哪个来源；需要联网、写入系统目录或安装较大依赖时先征得用户同意，然后尽量自动完成安装和验证。
    - 不要把“缺少环境”当成首选绕过约束的理由。只有在用户拒绝安装、安装失败且已尝试自建源/国内镜像/外网源，或当前权限明确不允许安装时，才选择降级方案，并清楚说明能力损失。
    - 安装后要做最小验证（如 `node --version`、`python3.11 --version`、`pip show`、`npx playwright --version`、技能自带 smoke test 等），并把结果告诉用户。

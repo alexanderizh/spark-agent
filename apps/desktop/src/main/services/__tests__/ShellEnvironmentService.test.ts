@@ -57,7 +57,7 @@ describe('ShellEnvironmentService', () => {
     vi.resetModules()
     vi.clearAllMocks()
     originalBundledNpmCli = process.env.SPARK_BUNDLED_NPM_CLI
-    originalBundledNode = process.env.SPARK_ELECTRON_NODE
+    originalBundledNode = process.env.SPARK_STANDALONE_NODE
     originalPath = process.env.PATH
     originalShell = process.env.SHELL
     mocks.homeDir = null
@@ -70,9 +70,9 @@ describe('ShellEnvironmentService', () => {
       process.env.SPARK_BUNDLED_NPM_CLI = originalBundledNpmCli
     }
     if (originalBundledNode == null) {
-      delete process.env.SPARK_ELECTRON_NODE
+      delete process.env.SPARK_STANDALONE_NODE
     } else {
-      process.env.SPARK_ELECTRON_NODE = originalBundledNode
+      process.env.SPARK_STANDALONE_NODE = originalBundledNode
     }
     if (originalPath == null) {
       delete process.env.PATH
@@ -94,13 +94,16 @@ describe('ShellEnvironmentService', () => {
   it('detects bundled npm when npm is not available on PATH', async () => {
     tempDir = join(tmpdir(), `spark-bundled-npm-${Date.now()}`)
     const npmCli = join(tempDir, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+    const nodeRuntime = join(tempDir, 'runtime', 'node')
     mkdirSync(join(tempDir, 'node_modules', 'npm', 'bin'), { recursive: true })
+    mkdirSync(join(tempDir, 'runtime'), { recursive: true })
     writeFileSync(npmCli, '')
+    writeFileSync(nodeRuntime, '')
     process.env.SPARK_BUNDLED_NPM_CLI = npmCli
-    process.env.SPARK_ELECTRON_NODE = process.execPath
+    process.env.SPARK_STANDALONE_NODE = nodeRuntime
 
     mockExecFile((command, args) => {
-      if (command === process.execPath && args[0] === npmCli && args[1] === '--version') {
+      if (command === nodeRuntime && args[0] === npmCli && args[1] === '--version') {
         return { stdout: '10.9.2\n' }
       }
       return { error: new Error(`not found: ${command}`) }

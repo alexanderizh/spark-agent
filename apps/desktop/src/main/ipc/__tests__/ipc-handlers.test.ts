@@ -69,6 +69,7 @@ describe('IPC handler registration completeness', () => {
       [
         'agent',
         'app',
+        'app-snapshot',
         'auth',
         'binary',
         'board',
@@ -76,6 +77,7 @@ describe('IPC handler registration completeness', () => {
         'canvas',
         'clipboard',
         'command',
+        'computer-use',
         'context',
         'dialog',
         'env',

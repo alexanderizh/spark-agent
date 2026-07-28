@@ -23,13 +23,13 @@ vi.mock('electron', () => ({
 import { buildPlaywrightConfig } from '../PlaywrightMcpRegistration.js'
 
 describe('buildPlaywrightConfig', () => {
-  it('always produces a stdio config using the bundled Electron Node runtime', () => {
+  it('always produces a stdio config using a standalone Node runtime', () => {
     const config = buildPlaywrightConfig('headful', null)
     expect(config.type).toBe('stdio')
     expect(config.command).toBe(process.execPath)
     expect(Array.isArray(config.args)).toBe(true)
     expect(config.args.length).toBeGreaterThanOrEqual(1)
-    expect(config.env?.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(config.env?.ELECTRON_RUN_AS_NODE).toBeUndefined()
   })
 
   it('passes the packaged @playwright/mcp cli path before flags', () => {
@@ -95,9 +95,9 @@ describe('buildPlaywrightConfig', () => {
     expect(Array.isArray(parsed.args)).toBe(true)
   })
 
-  it('always includes Electron node env and optionally bundled browser env', () => {
+  it('never enables Electron RunAsNode and optionally includes bundled browser env', () => {
     const config = buildPlaywrightConfig('headful', null)
-    expect(config.env?.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(config.env?.ELECTRON_RUN_AS_NODE).toBeUndefined()
     if (config.env?.PLAYWRIGHT_BROWSERS_PATH) {
       expect(config.env).toHaveProperty('PLAYWRIGHT_BROWSERS_PATH')
     }

@@ -214,6 +214,78 @@ describe('PermissionService', () => {
       svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
       await expect(promise).resolves.toBe(true)
     })
+
+    it('将 spark_computer 任务工具映射为独立权限动作', async () => {
+      const repo = makeMockRepo([
+        { action: 'computer_observe', mode: 'allow' },
+        { action: 'computer_task_start', mode: 'ask' },
+        { action: 'computer_stop', mode: 'allow' },
+      ])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+
+      await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__get_status', {}, push),
+      ).resolves.toBe(true)
+      await expect(
+        svc.requestApproval('sess-1', 'mcp:spark_computer:capture_app_snapshot', {}, push),
+      ).resolves.toBe(true)
+      expect(push).not.toHaveBeenCalled()
+
+      const start = svc.requestApproval(
+        'sess-1',
+        'mcp__spark_computer__start_task',
+        { objective: 'Edit the approved document' },
+        push,
+      )
+      expect(push.mock.calls[0]![0]).toMatchObject({
+        action: 'computer_task_start',
+        riskLevel: 'high',
+      })
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
+      await expect(start).resolves.toBe(true)
+
+      push.mockClear()
+      await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__stop', {}, push),
+      ).resolves.toBe(true)
+      expect(push).not.toHaveBeenCalled()
+    })
+
+    it('未知或低层 spark_computer 工具即使 profile 配置 allow 也 fail-closed', async () => {
+      const repo = makeMockRepo([
+        { action: 'computer_unknown', mode: 'allow' },
+        { action: 'computer_direct_action', mode: 'allow' },
+        { action: 'mcp_tool', mode: 'allow' },
+      ])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+
+      await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__invent_magic', {}, push),
+      ).resolves.toBe(false)
+      await expect(
+        svc.requestApproval('sess-1', 'mcp__spark_computer__click', { x: 0.5, y: 0.5 }, push),
+      ).resolves.toBe(false)
+      expect(push).not.toHaveBeenCalled()
+    })
+
+    it('Pause、Stop、Takeover 不会被旧 profile 或记忆决策阻断', async () => {
+      const repo = makeMockRepo([
+        { action: 'computer_pause', mode: 'deny' },
+        { action: 'computer_stop', mode: 'deny' },
+        { action: 'computer_takeover', mode: 'deny' },
+      ])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+
+      for (const action of ['pause', 'stop', 'takeover']) {
+        await expect(
+          svc.requestApproval('sess-1', `mcp__spark_computer__${action}`, {}, push),
+        ).resolves.toBe(true)
+      }
+      expect(push).not.toHaveBeenCalled()
+    })
   })
 
   describe('session-scoped approval decisions (Bug 2)', () => {
@@ -546,13 +618,9 @@ describe('PermissionService', () => {
       await expect(first).resolves.toBe(false)
 
       push.mockClear()
-      const second = svc.requestApproval(
-        's',
-        'bash',
-        { command: 'git fetch origin main' },
-        push,
-        { forcePrompt: true },
-      )
+      const second = svc.requestApproval('s', 'bash', { command: 'git fetch origin main' }, push, {
+        forcePrompt: true,
+      })
 
       expect(push).toHaveBeenCalledTimes(1)
       svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
@@ -571,13 +639,10 @@ describe('PermissionService', () => {
       await expect(first).resolves.toBe(false)
 
       push.mockClear()
-      const second = svc.requestApproval(
-        's1',
-        'bash',
-        { command: 'git merge feature' },
-        push,
-        { forcePrompt: true, projectId: 'project-1' },
-      )
+      const second = svc.requestApproval('s1', 'bash', { command: 'git merge feature' }, push, {
+        forcePrompt: true,
+        projectId: 'project-1',
+      })
 
       expect(push).toHaveBeenCalledTimes(1)
       svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')

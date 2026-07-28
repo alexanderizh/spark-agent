@@ -23,6 +23,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
+import { resolveStandaloneNodeRuntimePath } from './StandaloneNodeRuntime.js'
 
 const log = createLogger('shell-env')
 
@@ -477,8 +478,12 @@ async function detectBundledTool(tool: ToolDefinition): Promise<RuntimeToolStatu
 }
 
 async function detectBundledNode(tool: ToolDefinition): Promise<RuntimeToolStatus | null> {
-  const nodePath = process.env.SPARK_ELECTRON_NODE ?? process.execPath
-  if (!nodePath || !existsSync(nodePath)) return null
+  let nodePath: string
+  try {
+    nodePath = resolveStandaloneNodeRuntimePath()
+  } catch {
+    return null
+  }
 
   try {
     const { stdout } = await execFileAsync(nodePath, tool.versionArgs, {
@@ -503,8 +508,12 @@ async function detectBundledNpm(tool: ToolDefinition): Promise<RuntimeToolStatus
   const npmCli = findBundledNpmCli()
   if (npmCli == null) return null
 
-  const nodePath = process.env.SPARK_ELECTRON_NODE ?? process.execPath
-  if (!nodePath || !existsSync(nodePath)) return null
+  let nodePath: string
+  try {
+    nodePath = resolveStandaloneNodeRuntimePath()
+  } catch {
+    return null
+  }
 
   try {
     const { stdout } = await execFileAsync(nodePath, [npmCli, ...tool.versionArgs], {
@@ -526,10 +535,8 @@ async function detectBundledNpm(tool: ToolDefinition): Promise<RuntimeToolStatus
 }
 
 function getBundledNodeEnv(): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    ELECTRON_RUN_AS_NODE: '1',
-  }
+  const { ELECTRON_RUN_AS_NODE: _runAsNode, NODE_OPTIONS: _nodeOptions, ...safeEnv } = process.env
+  return safeEnv
 }
 
 function findBundledNpmCli(): string | null {
@@ -585,8 +592,11 @@ function getBundledRuntimeRootCandidates(): string[] {
 let _cachedStatus: ShellEnvironmentStatus | null = null
 
 function exposeBundledNodeRuntime(): void {
-  process.env.SPARK_ELECTRON_NODE = process.execPath
-  process.env.SPARK_ELECTRON_NODE_ENV = 'ELECTRON_RUN_AS_NODE=1'
+  try {
+    process.env.SPARK_STANDALONE_NODE = resolveStandaloneNodeRuntimePath()
+  } catch {
+    delete process.env.SPARK_STANDALONE_NODE
+  }
 }
 
 /**

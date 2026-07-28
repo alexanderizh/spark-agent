@@ -24,6 +24,11 @@ import {
 import { ProviderFilesIpcSchemaRegistry } from '../provider-files.js'
 import { CanvasWorkflowIpcSchemaRegistry } from '../canvas-workflow.js'
 import { CanvasWorkflowRuntimeIpcSchemaRegistry } from '../canvas-workflow-runtime.js'
+import {
+  ApplicationSnapshotIpcSchemaRegistry,
+  ComputerUseIdentifierSchema,
+  ComputerUseIpcSchemaRegistry,
+} from '../computer-use/index.js'
 
 const PLATFORM_NEWAPI_PROVIDER_ID = 'spark-platform-newapi'
 
@@ -233,6 +238,18 @@ export const SessionSendTurnRequestSchema = z.object({
       }),
     )
     .max(20)
+    .optional(),
+  appSnapshotIds: z
+    .array(ComputerUseIdentifierSchema)
+    .max(20)
+    .superRefine((ids, context) => {
+      if (new Set(ids).size !== ids.length) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'appSnapshotIds must not contain duplicates',
+        })
+      }
+    })
     .optional(),
   teamConfig: TeamModeConfigSchema.optional(),
   mentionAgentId: z.string().min(1).max(160).optional(),
@@ -804,6 +821,8 @@ const CanvasPromptTaskFieldsSchema = {
 export const IpcSchemaRegistry = {
   ...CanvasWorkflowIpcSchemaRegistry,
   ...CanvasWorkflowRuntimeIpcSchemaRegistry,
+  ...ComputerUseIpcSchemaRegistry,
+  ...ApplicationSnapshotIpcSchemaRegistry,
   'session:create': SessionCreateRequestSchema,
   'session:send-turn': SessionSendTurnRequestSchema,
   'session:submit-turn': SessionSendTurnRequestSchema,
@@ -1456,7 +1475,11 @@ export const IpcSchemaRegistry = {
     vadSilenceMs: z.number().int().min(100).max(5000).optional(),
   }),
   'voice:stop': z.object({
-    sessionId: z.string().regex(/^voice-\d+-\d+$/).max(120).optional(),
+    sessionId: z
+      .string()
+      .regex(/^voice-\d+-\d+$/)
+      .max(120)
+      .optional(),
   }),
   // video:probe 与 video:process 共享 VideoProcessRequest 结构。
   // params 是宽松的 Record（具体校验在主进程 videoProcessHandler 做路径白名单 + 数值范围）。

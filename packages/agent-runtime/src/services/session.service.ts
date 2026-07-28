@@ -35,6 +35,10 @@ import type {
 } from '@spark/storage'
 import type { SparkDatabase, MemoryScopeFilter } from '@spark/storage'
 import { resolveProviderApiKey } from './provider-credential-resolver.js'
+import {
+  buildComputerDecisionModelConfig,
+  type ComputerDecisionModelConfig,
+} from '../computer-use/computer-decision-model.js'
 import { APPLICATION_FOUNDATION_SYSTEM_PROMPT } from './core-agent-behavior-prompt.js'
 export { APP_IDENTITY_SYSTEM_PROMPT } from './core-agent-behavior-prompt.js'
 import { MEMORY_PROVENANCE_SYSTEM_PROMPT } from './memory-provenance-prompt.js'
@@ -125,6 +129,7 @@ import {
   resolveDebugMcpServerPath,
   resolveImageGenerationMcpServerPath,
   resolveMediaGenerationMcpServerPath,
+  resolveMcpNodeRuntimeExecutable,
   resolvePlatformManagementMcpServerPath,
   resolvePresentFilesMcpServer,
   resolveSparkCanvasMcpServerPath,
@@ -153,6 +158,7 @@ import {
   memberDisallowedToolsFromConfig,
   runWorkflowVerifyNode,
 } from './session-workflow-helpers.js'
+import { MediaPresentationCollector } from './media/media-presentation-collector.js'
 export {
   buildWorkflowAtomicInstruction,
   extractWorkflowApprovalCommentImpl,
@@ -606,6 +612,24 @@ export type BrowserAutomationMcpProvider = (
   workspaceRootPath: string,
 ) => Promise<import('../sdk/types.js').SDKMcpServerConfig | null>
 
+/** Desktop main-process provider for governed Computer Use tools. */
+export interface ComputerUseMcpProvider {
+  (
+    sessionId: string,
+    workspaceRootPath: string,
+    context: {
+      turnId: string
+      providerProfileId: string
+      modelId: string
+    },
+  ): Promise<{
+    server: import('../sdk/types.js').SDKMcpServerConfig
+    allowedTools: string[]
+    systemPrompt: string
+  } | null>
+  revokeSession?(sessionId: string): void
+}
+
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>() // sessionId → active execution
   private activeExecutionPromises = new Map<
@@ -623,6 +647,8 @@ export class SessionService {
   private canvasMcpProvider: CanvasMcpProvider | null = null
   /** 应用内可见浏览器 MCP server 提供器（由桌面主进程注入） */
   private browserAutomationMcpProvider: BrowserAutomationMcpProvider | null = null
+  /** 受治理的 Computer Use MCP server 提供器（由桌面主进程注入） */
+  private computerUseMcpProvider: ComputerUseMcpProvider | null = null
   /**
    * SDK 原生托管技能插件目录（由主进程 AppSkillsManager 注入）。
    * 设置后，Claude SDK 会以本地插件方式加载其中所有已启用技能，启用原生渐进式披露。
@@ -790,6 +816,22 @@ export class SessionService {
     this.browserAutomationMcpProvider = provider
   }
 
+  /** 注入受治理的 Computer Use MCP provider（主进程启动后调用一次）。 */
+  setComputerUseMcpProvider(provider: ComputerUseMcpProvider | null): void {
+    this.computerUseMcpProvider = provider
+  }
+
+  private revokeComputerUseSession(sessionId: string): void {
+    try {
+      this.computerUseMcpProvider?.revokeSession?.(sessionId)
+    } catch (error) {
+      log.warn('failed to revoke Computer Use session capability', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   /** 注入 SDK 原生托管技能插件目录（主进程启动技能系统后调用） */
   setSkillsPluginDir(dir: string | null): void {
     this.skillsPluginDir = dir
@@ -812,6 +854,35 @@ export class SessionService {
   /** 测试/调试用：清空某会话生效模型。 */
   clearActiveChatModel(sessionId: string): void {
     this.activeChatModelBySession.delete(sessionId)
+  }
+
+  /** Resolves the current turn's real provider/model for the governed desktop decision loop. */
+  async resolveComputerDecisionModel(sessionId: string): Promise<ComputerDecisionModelConfig> {
+    const session = new SessionRepository(this.db).get(sessionId)
+    if (session == null) throw new Error('Computer decision session does not exist')
+    const active = this.activeChatModelBySession.get(sessionId)
+    const providerId = active?.providerId ?? session.provider_profile_id
+    if (providerId == null || providerId.trim().length === 0) {
+      throw new Error('Computer decision provider is not configured')
+    }
+    const provider = new ProviderProfileRepository(this.db).get(providerId)
+    if (provider == null) throw new Error('Computer decision provider does not exist')
+    const providerConfig = JSON.parse(provider.config_json) as {
+      defaultModel?: unknown
+      model?: unknown
+    }
+    const fallbackModel =
+      typeof providerConfig.defaultModel === 'string'
+        ? providerConfig.defaultModel
+        : typeof providerConfig.model === 'string'
+          ? providerConfig.model
+          : ''
+    const model = active?.model ?? session.model_id ?? fallbackModel
+    return buildComputerDecisionModelConfig({
+      provider,
+      model,
+      apiKey: await resolveProviderApiKey(provider),
+    })
   }
 
   /**
@@ -2170,6 +2241,20 @@ export class SessionService {
       this.browserAutomationMcpProvider != null
         ? await this.browserAutomationMcpProvider(sessionId, workspaceRootPath)
         : null
+    let computerUseMcp: Awaited<ReturnType<ComputerUseMcpProvider>> = null
+    if (this.computerUseMcpProvider != null) {
+      try {
+        computerUseMcp = await this.computerUseMcpProvider(sessionId, workspaceRootPath, {
+          turnId,
+          providerProfileId: effectiveRuntimeProviderProfileId,
+          modelId: model,
+        })
+      } catch (error) {
+        log.warn(
+          `spark_computer MCP setup failed closed: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
     const sparkWebToolEnabled =
       runtimeContext.skillConfig.effectiveSkillIds.includes('builtin:spark-web-tool')
     const workflowCanUseManagedExecutor =
@@ -2436,6 +2521,7 @@ export class SessionService {
       webSearchMcpServer != null ? WEB_SEARCH_SYSTEM_PROMPT : undefined,
       presentFilesMcpServer != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
       browserAutomationMcpServer != null ? BROWSER_AUTOMATION_SYSTEM_PROMPT : undefined,
+      computerUseMcp?.systemPrompt,
       debugMcpServer != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
       sparkWebToolEnabled ? SPARK_WEB_TOOL_SYSTEM_PROMPT : undefined,
     )
@@ -2712,6 +2798,13 @@ export class SessionService {
         ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
         ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
         ...(browserAutomationMcpServer != null ? { browserAutomationMcpServer } : {}),
+        ...(computerUseMcp != null
+          ? {
+              computerUseMcpServer: computerUseMcp.server,
+              computerUseAllowedTools: computerUseMcp.allowedTools,
+              allowedTools: computerUseMcp.allowedTools,
+            }
+          : {}),
         ...(debugMcpServer != null ? { debugMcpServer } : {}),
         ...(iterationOverride != null ? { maxTurnCount: iterationOverride } : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
@@ -2845,6 +2938,13 @@ export class SessionService {
       ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
       ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
       ...(browserAutomationMcpServer != null ? { browserAutomationMcpServer } : {}),
+      ...(computerUseMcp != null
+        ? {
+            computerUseMcpServer: computerUseMcp.server,
+            computerUseAllowedTools: computerUseMcp.allowedTools,
+            allowedTools: computerUseMcp.allowedTools,
+          }
+        : {}),
       ...(debugMcpServer != null ? { debugMcpServer } : {}),
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       contextWindowTokens,
@@ -3073,6 +3173,9 @@ export class SessionService {
     if (config.browserAutomationMcpServer != null) {
       mcpServers.spark_browser = config.browserAutomationMcpServer
     }
+    if (config.computerUseMcpServer != null) {
+      mcpServers.spark_computer = config.computerUseMcpServer
+    }
 
     // Debug mode MCP server (spark_debug) — only when the session enabled debug mode
     if (config.debugMcpServer != null) {
@@ -3113,6 +3216,17 @@ export class SessionService {
       workspaceRootPath != null && workspaceRootPath.length > 0
         ? new WorkspaceSnapshotService()
         : null
+    const mediaPresentationCollector = new MediaPresentationCollector(workspaceRootPath)
+    const emitUnpresentedMedia = (): void => {
+      const files = mediaPresentationCollector.takeUnpresented()
+      if (files.length === 0) return
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        { ...makeBase(), type: 'presented_files', files },
+        eventRepo,
+      )
+    }
     const snapshotBeforePromise: Promise<FileSnapshot | null> =
       snapshotService != null && workspaceRootPath != null
         ? snapshotService.snapshot(workspaceRootPath).catch((err) => {
@@ -3238,6 +3352,7 @@ export class SessionService {
         pendingTerminalStatus = withAgentSnapshot(event, turnAgent) as AgentStatusEvent
         return
       }
+      mediaPresentationCollector.observe(event)
       if (event.type === 'file_change') changedFiles.add(event.path)
       let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
       if (mentionAgentId != null) {
@@ -3331,6 +3446,9 @@ export class SessionService {
     if (config.browserAutomationMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, BROWSER_TOOL_NAMES)
     }
+    if (config.computerUseAllowedTools != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, config.computerUseAllowedTools)
+    }
     if (mcpServers.spark_verify != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, VALIDATION_SUGGESTION_TOOL_NAMES)
     }
@@ -3379,6 +3497,8 @@ export class SessionService {
     executionPromise
       .then(async () => {
         if (!shouldRunTurnPostProcessing(pendingTerminalStatus?.status ?? null)) {
+          emitUnpresentedMedia()
+          this.revokeComputerUseSession(sessionId)
           const ownsSession = this.activeLoops.get(sessionId) === executor
           const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
           if (
@@ -3444,16 +3564,18 @@ export class SessionService {
                     : path.join(workspaceRootPath, relPath)
                   if (changedFiles.has(abs) || changedFiles.has(relPath)) continue
                   changedFiles.add(abs)
+                  const fileChangeEvent: AgentEvent = {
+                    ...makeBase(),
+                    type: 'file_change',
+                    changeType,
+                    path: abs,
+                    collectionSource: 'workspace_snapshot',
+                  }
+                  mediaPresentationCollector.observe(fileChangeEvent)
                   this.emitAndPersist(
                     sessionId,
                     turnId,
-                    {
-                      ...makeBase(),
-                      type: 'file_change',
-                      changeType,
-                      path: abs,
-                      collectionSource: 'workspace_snapshot',
-                    },
+                    fileChangeEvent,
                     eventRepo,
                   )
                 }
@@ -3468,6 +3590,8 @@ export class SessionService {
             })
           }
         }
+        emitUnpresentedMedia()
+        this.revokeComputerUseSession(sessionId)
         const ownsSession = this.activeLoops.get(sessionId) === executor
         const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
         if (
@@ -3480,6 +3604,8 @@ export class SessionService {
         }
       })
       .catch(() => {
+        emitUnpresentedMedia()
+        this.revokeComputerUseSession(sessionId)
         const ownsSession = this.activeLoops.get(sessionId) === executor
         const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
         if (ownsSession && terminalStatus !== 'completed' && terminalStatus !== 'cancelled') {
@@ -3583,6 +3709,9 @@ export class SessionService {
     if (config.browserAutomationMcpServer != null) {
       mcpServers.spark_browser = config.browserAutomationMcpServer
     }
+    if (config.computerUseMcpServer != null) {
+      mcpServers.spark_computer = config.computerUseMcpServer
+    }
 
     if (this.canvasMcpProvider != null) {
       try {
@@ -3636,6 +3765,17 @@ export class SessionService {
     const turnAgent = this.resolveAgent(options.agentId)
     const initialWorkspaceChangesPromise = collectWorkspaceChangeSnapshot(config.workspaceRootPath)
     const observedFileChangePaths = new Set<string>()
+    const mediaPresentationCollector = new MediaPresentationCollector(config.workspaceRootPath)
+    const emitUnpresentedMedia = (): void => {
+      const files = mediaPresentationCollector.takeUnpresented()
+      if (files.length === 0) return
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        { ...makeBase(), type: 'presented_files', files },
+        eventRepo,
+      )
+    }
     let pendingTerminalStatus: AgentStatusEvent | null = null
     const emitDiscoveredWorkspaceChanges = async (): Promise<void> => {
       const initialWorkspaceChanges = await initialWorkspaceChangesPromise
@@ -3646,16 +3786,18 @@ export class SessionService {
       for (const change of discovered) {
         if (observedFileChangePaths.has(change.path)) continue
         observedFileChangePaths.add(change.path)
+        const fileChangeEvent: AgentEvent = {
+          ...makeBase(),
+          type: 'file_change',
+          changeType: change.changeType,
+          path: change.path,
+          collectionSource: 'git_fallback',
+        }
+        mediaPresentationCollector.observe(fileChangeEvent)
         this.emitAndPersist(
           sessionId,
           turnId,
-          {
-            ...makeBase(),
-            type: 'file_change',
-            changeType: change.changeType,
-            path: change.path,
-            collectionSource: 'git_fallback',
-          },
+          fileChangeEvent,
           eventRepo,
         )
       }
@@ -3681,6 +3823,7 @@ export class SessionService {
         pendingTerminalStatus = withAgentSnapshot(event, turnAgent) as AgentStatusEvent
         return
       }
+      mediaPresentationCollector.observe(event)
       if (event.type === 'file_change') observedFileChangePaths.add(event.path)
       let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
       if (mentionAgentId != null) {
@@ -3767,6 +3910,8 @@ export class SessionService {
     executionPromise
       .then(async () => {
         if (!shouldRunTurnPostProcessing(pendingTerminalStatus?.status ?? null)) {
+          emitUnpresentedMedia()
+          this.revokeComputerUseSession(sessionId)
           const ownsSession = this.activeLoops.get(sessionId) === executor
           const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
           if (
@@ -3780,6 +3925,8 @@ export class SessionService {
           return
         }
         await emitDiscoveredWorkspaceChanges()
+        emitUnpresentedMedia()
+        this.revokeComputerUseSession(sessionId)
         const assistantTurnText = collectCompleteAssistantTurnText(completeAssistantEvents)
         const ownsSession = this.activeLoops.get(sessionId) === executor
         const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
@@ -3805,6 +3952,8 @@ export class SessionService {
       })
       .catch(async () => {
         await emitDiscoveredWorkspaceChanges().catch(() => undefined)
+        emitUnpresentedMedia()
+        this.revokeComputerUseSession(sessionId)
         const ownsSession = this.activeLoops.get(sessionId) === executor
         const terminalStatus = ownsSession ? emitPendingTerminalStatus() : null
         if (ownsSession && terminalStatus !== 'completed' && terminalStatus !== 'cancelled') {
@@ -4346,10 +4495,9 @@ export class SessionService {
       const port = await this.ensurePlatformBridge()
       return {
         type: 'stdio',
-        command: process.execPath,
+        command: resolveMcpNodeRuntimeExecutable(),
         args: [serverPath],
         env: {
-          ELECTRON_RUN_AS_NODE: '1',
           SPARK_PLATFORM_BRIDGE_PORT: String(port),
           SPARK_SESSION_ID: sessionId,
         },
@@ -4384,10 +4532,9 @@ export class SessionService {
       const port = await this.ensurePlatformBridge()
       return {
         type: 'stdio',
-        command: process.execPath,
+        command: resolveMcpNodeRuntimeExecutable(),
         args: [serverPath],
         env: {
-          ELECTRON_RUN_AS_NODE: '1',
           SPARK_PLATFORM_BRIDGE_PORT: String(port),
           SPARK_CANVAS_SID: sessionId,
           SPARK_CANVAS_TOOL_SCHEMAS_JSON: JSON.stringify(canvas.toolSchemas),
@@ -4435,10 +4582,9 @@ export class SessionService {
       const port = await this.ensurePlatformBridge()
       return {
         type: 'stdio',
-        command: process.execPath,
+        command: resolveMcpNodeRuntimeExecutable(),
         args: [serverPath],
         env: {
-          ELECTRON_RUN_AS_NODE: '1',
           SPARK_PLATFORM_BRIDGE_PORT: String(port),
           SPARK_MEMORY_SID: sessionId,
           ...(agentId != null && agentId.trim().length > 0
@@ -4482,11 +4628,10 @@ export class SessionService {
     }
     return {
       type: 'stdio',
-      command: process.execPath,
+      command: resolveMcpNodeRuntimeExecutable(),
       args: [serverPath],
       cwd: workspaceRootPath,
       env: {
-        ELECTRON_RUN_AS_NODE: '1',
         ...(provider ? { SPARK_SEARCH_PROVIDER: provider } : {}),
         ...(apiKey ? { SPARK_SEARCH_API_KEY: apiKey } : {}),
         ...(baseUrl ? { SPARK_SEARCH_BASE_URL: baseUrl } : {}),
@@ -4522,11 +4667,10 @@ export class SessionService {
     }
     return {
       type: 'stdio',
-      command: process.execPath,
+      command: resolveMcpNodeRuntimeExecutable(),
       args: [serverPath],
       cwd: workspaceRootPath,
       env: {
-        ELECTRON_RUN_AS_NODE: '1',
         SPARK_DEBUG_LOG_PORT: String(port),
         SPARK_DEBUG_SID: sessionId,
       },
@@ -4574,11 +4718,10 @@ export class SessionService {
     return {
       mcpServer: {
         type: 'stdio',
-        command: process.execPath,
+        command: resolveMcpNodeRuntimeExecutable(),
         args: [serverPath],
         cwd: workspaceRootPath,
         env: {
-          ELECTRON_RUN_AS_NODE: '1',
           SPARK_IMAGE_API_KEY: apiKey,
           SPARK_IMAGE_MODEL: model,
           SPARK_IMAGE_PROVIDER: providerName,
@@ -4637,11 +4780,10 @@ export class SessionService {
     return {
       mcpServer: {
         type: 'stdio',
-        command: process.execPath,
+        command: resolveMcpNodeRuntimeExecutable(),
         args: [serverPath],
         cwd: workspaceRootPath,
         env: {
-          ELECTRON_RUN_AS_NODE: '1',
           SPARK_MEDIA_CONFIG_FILE: runtimeConfigFile,
           ...Object.fromEntries(
             providers.map((provider, index) => [`SPARK_MEDIA_API_KEY_${index}`, provider.apiKey]),
@@ -7613,6 +7755,7 @@ export class SessionService {
 
   async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
     const loop = this.activeLoops.get(sessionId)
+    this.revokeComputerUseSession(sessionId)
     this.pendingPlanApprovals.delete(sessionId)
     // 先取消挂起的 approval（如果 agent 正卡在用户审批弹窗上）
     this.onApprovalCancel?.(sessionId)
@@ -7743,6 +7886,7 @@ export class SessionService {
    * @returns 是否终止了一个正在运行的执行器（调用方据此决定要不要写取消事件）。
    */
   private clearSessionMemory(sessionId: string): boolean {
+    this.revokeComputerUseSession(sessionId)
     const activeLoop = this.activeLoops.get(sessionId)
     if (activeLoop != null) {
       try {

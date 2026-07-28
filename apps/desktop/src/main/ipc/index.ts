@@ -216,6 +216,7 @@ import type {
   SessionRenamedHandler,
   PlatformConfigChangedHandler,
   BrowserAutomationMcpProvider,
+  ComputerUseMcpProvider,
 } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { isSafeFilePathAllowed, toSafeFileUrl } from '../services/SafeFileProtocol.js'
@@ -229,6 +230,13 @@ import { registerProviderFilesIpc } from './registerProviderFilesIpc.js'
 import { registerFontAssetIpc } from './registerFontAssetIpc.js'
 import { registerVoiceIpc } from './registerVoiceIpc.js'
 import { registerCanvasWorkflowIpc } from './registerCanvasWorkflowIpc.js'
+import { registerComputerUseIpc } from './registerComputerUseIpc.js'
+import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc.js'
+import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
+import { ComputerUseAgentController } from '../services/computer-use/ComputerUseAgentController.js'
+import { getComputerUseServices } from '../services/computer-use/ComputerUseServices.js'
+import { createComputerActionApprovalPresenter } from '../services/computer-use/ComputerActionApprovalPresenter.js'
+import { createNativeComputerActionApprovalPrompt } from '../services/computer-use/NativeComputerActionApprovalPrompt.js'
 import { sparkMediaUploader } from '../services/media/SparkMediaUploader.js'
 import { registerPlatformModelIpc } from '../services/PlatformModel/registerPlatformModelIpc.js'
 import {
@@ -261,6 +269,7 @@ import {
   setEnabled as setPlaywrightEnabled,
 } from '../services/PlaywrightMcpRegistration.js'
 import { getBrowserBridgeServer } from '../services/BrowserBridgeServer.js'
+import { resolveStandaloneNodeRuntimePath } from '../services/StandaloneNodeRuntime.js'
 import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
 import type { RemoteInboundMessage } from '../services/RemoteConnectionService.js'
 import { registerGitHubConnectorIpc } from '../services/GitHubConnector/registerGitHubConnectorIpc.js'
@@ -351,16 +360,25 @@ const browserAutomationMcpProvider: BrowserAutomationMcpProvider = async (
   bridge.allowSid(sessionId)
   return {
     type: 'stdio',
-    command: process.execPath,
+    command: resolveStandaloneNodeRuntimePath(),
     args: [serverPath],
     cwd: workspaceRootPath,
     env: {
-      ELECTRON_RUN_AS_NODE: '1',
       SPARK_BROWSER_PORT: String(port),
       SPARK_BROWSER_SID: sessionId,
     },
   }
 }
+
+const computerUseMcpProvider: ComputerUseMcpProvider = createComputerUseMcpProvider({
+  controller: new ComputerUseAgentController({
+    resolveDecisionModel: (sessionId) => getSessionService().resolveComputerDecisionModel(sessionId),
+    requestActionApproval: createComputerActionApprovalPresenter({
+      getApprovals: () => getComputerUseServices().approvals,
+      requestExactApproval: createNativeComputerActionApprovalPrompt(),
+    }),
+  }),
+})
 
 let autoWindowWidthState: { baselineWidth: number; managedWidth: number } | null = null
 
@@ -2133,6 +2151,7 @@ function getSessionService(): SessionService {
     // 接入画布 Agent 桥：仅当 session 已 attach 到画布弹窗时返回 MCP server
     _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())
     _sessionService.setBrowserAutomationMcpProvider(browserAutomationMcpProvider)
+    _sessionService.setComputerUseMcpProvider(computerUseMcpProvider)
   }
   return _sessionService
 }
@@ -8471,6 +8490,10 @@ export function registerAllIpcHandlers(): void {
 
   // ─── GitHub Connector 持久化与验证通道 ─────────────────────────────────
   registerGitHubConnectorIpc()
+
+  // ─── Governed Computer Use and encrypted application snapshots ───────────
+  registerComputerUseIpc()
+  registerApplicationSnapshotIpc()
 
   log.info('All IPC handlers registered')
 }

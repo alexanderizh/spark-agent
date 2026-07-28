@@ -83,7 +83,8 @@ export function buildMediaGenerationSystemPrompt(input: {
     'If the user provides more media inputs than a declared maximum, ask which inputs to keep before generation; do not silently drop extra inputs.',
     'Provider file objects must be active before model use. Files API ids for Chat/Responses understanding must not be passed to media generation endpoints unless that model schema explicitly supports file ids.',
     '',
-    'After success, show the generated `files` from the structured result. Local file paths can be shown as Markdown links.',
+    'After success, call `mcp__spark_files__present_files` with every generated or edited image, audio, and video file from the structured result.',
+    'Returning only a URL or filesystem path is not complete; the application must receive a file card so it can render a preview or playback control.',
     'Do not auto-retry after a provider failure; report the error and suggest model, prompt, or provider-configuration adjustments.',
   ].join('\n')
 }

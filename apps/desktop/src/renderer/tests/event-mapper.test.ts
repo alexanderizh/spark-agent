@@ -850,6 +850,45 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('turns a governed Agent application snapshot result into an image preview block', () => {
+    const builder = new MessageBuilder()
+    const previewUrl = `spark-snapshot://snapshot/snapshot-1/preview?cap=${'a'.repeat(43)}`
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'snapshot-call-1',
+      toolName: 'mcp__spark_computer__capture_app_snapshot',
+      toolInput: { accessibleTextMode: 'visible_only' },
+      source: 'mcp',
+    })
+    builder.processEvent({
+      ...baseEvent('tool_result'),
+      id: 'snapshot-result-1',
+      type: 'tool_result',
+      toolCallId: 'snapshot-call-1',
+      toolName: 'mcp__spark_computer__capture_app_snapshot',
+      status: 'success',
+      output: JSON.stringify({
+        snapshot: {
+          id: 'snapshot-1',
+          app: { name: 'Editor' },
+          window: { title: 'Document' },
+          capturedAt: '2026-07-28T00:00:00.000Z',
+          previewUrl,
+        },
+      }),
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toContainEqual({
+      kind: 'application_snapshot',
+      snapshotId: 'snapshot-1',
+      previewUrl,
+      appName: 'Editor',
+      windowTitle: 'Document',
+      capturedAt: '2026-07-28T00:00:00.000Z',
+    })
+  })
+
   it('does not convert ordinary file changes into presented files', () => {
     const builder = new MessageBuilder()
 

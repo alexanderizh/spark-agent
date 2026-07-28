@@ -718,6 +718,10 @@ export interface SDKExecutorConfig {
   debugMcpServer?: SDKMcpServerConfig | undefined
   /** Visible in-app browser MCP server (spark_browser) — provided by the desktop main process. */
   browserAutomationMcpServer?: SDKMcpServerConfig | undefined
+  /** Governed desktop Computer Use MCP server — provided by the desktop main process. */
+  computerUseMcpServer?: SDKMcpServerConfig | undefined
+  /** Reviewed task-level Computer Use tools exposed by the injected server. */
+  computerUseAllowedTools?: string[] | undefined
   /** 画布 Agent in-process MCP server（spark_canvas）：仅在 session 已 attach 到画布弹窗时注入 */
   canvasMcpServer?: SDKMcpServerConfig | undefined
   nativeSkills?: string[] | 'all' | undefined
