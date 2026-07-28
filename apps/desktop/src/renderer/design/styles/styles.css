@@ -1329,7 +1329,7 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
   --integrated-titlebar-right-reserve: 138px;
 }
 .platform-darwin.titlebar-integrated {
-  --integrated-titlebar-height: 52px;
+  --integrated-titlebar-height: 48px;
   --integrated-titlebar-right-reserve: 0px;
 }
 .platform-darwin.sidebar-hidden.titlebar-integrated {
