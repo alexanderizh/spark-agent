@@ -2238,6 +2238,114 @@ describe('Renderer Smoke Tests', () => {
     expect(container.textContent).not.toContain('Other Project')
   })
 
+  it('hides project groups with no sessions matching the active filters', async () => {
+    localStorage.setItem(
+      'spark-agent:sidebar-filter',
+      JSON.stringify({
+        status: 'active',
+        projectId: 'all',
+        lastActivity: '1d',
+        groupBy: 'project',
+      }),
+    )
+
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [
+            {
+              id: 'workspace-recent',
+              name: 'Recent Project',
+              rootPath: '/tmp/recent-project',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+            {
+              id: 'workspace-stale',
+              name: 'Stale Project',
+              rootPath: '/tmp/stale-project',
+              projectKind: 'node',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
+          total: 2,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'session-recent',
+              title: 'Recent session',
+              status: 'idle',
+              workspaceIds: ['workspace-recent'],
+              archivedAt: null,
+              pinnedAt: null,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+            {
+              id: 'session-stale',
+              title: 'Stale session',
+              status: 'idle',
+              workspaceIds: ['workspace-stale'],
+              archivedAt: null,
+              pinnedAt: null,
+              createdAt: '2026-05-27T00:00:00.000Z',
+              updatedAt: '2026-05-27T00:00:00.000Z',
+            },
+          ],
+          total: 2,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    mockLobeUiForChatView()
+    mockAppContextForChatView()
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+    const { SessionSidebarProvider } = await import('../design/SessionSidebarContext')
+    const { SidebarSessionList } = await import('../design/SidebarSessionList')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        React.createElement(
+          LocalToastProvider,
+          null,
+          React.createElement(
+            SessionSidebarProvider,
+            null,
+            React.createElement(SidebarSessionList),
+          ),
+        ),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('Recent Project')
+      expect(container.textContent).toContain('Recent session')
+    })
+    expect(container.textContent).not.toContain('Stale Project')
+    expect(container.textContent).not.toContain('Stale session')
+  })
+
   it('renders only four permission approval actions inline above the composer', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') return { workspaces: [], total: 0 }
