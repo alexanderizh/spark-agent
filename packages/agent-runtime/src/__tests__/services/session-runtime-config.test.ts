@@ -2191,6 +2191,95 @@ describe('SessionService runtime provider/model resolution', () => {
     })
   })
 
+  it('stops an attached Codex canvas turn when the canvas MCP runtime is unavailable', async () => {
+    seedProvider({
+      id: 'codex-canvas-missing-runtime-provider',
+      provider_type: 'openai',
+      name: 'Codex Canvas Missing Runtime',
+      config_json: JSON.stringify({
+        defaultModel: 'gpt-5.2-codex',
+        modelIds: ['gpt-5.2-codex'],
+        apiEndpoint: 'https://api.openai.com/v1',
+        codexApiKind: 'responses',
+      }),
+      keystore_ref: 'key-codex-canvas-missing-runtime',
+      is_default: 0,
+    })
+
+    const service = new SessionService({} as never, (event) => events.push(event))
+    let attachedSessionId = ''
+    service.setCanvasMcpProvider(async (sessionId) => {
+      if (sessionId !== attachedSessionId) return null
+      return {
+        server: { type: 'sdk', name: 'spark_canvas', instance: { tools: [] } },
+        allowedTools: [],
+        toolSchemas: [],
+        callTool: async () => ({ ok: true }),
+      }
+    })
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'codex-canvas-missing-runtime-provider',
+      agentAdapter: 'codex',
+      permissionMode: 'codex-default',
+      title: 'Codex canvas missing runtime session',
+    })
+    attachedSessionId = sessionId
+
+    await service.sendTurn({ sessionId, message: 'add a node' })
+
+    expect(mockState.sdkConfigs).toHaveLength(0)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'agent_error',
+        code: 'CANVAS_MCP_UNAVAILABLE',
+        retryable: true,
+      }),
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'agent_status',
+        status: 'error',
+      }),
+    )
+  })
+
+  it('stops an attached Claude canvas turn when its in-process MCP server is unavailable', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    let attachedSessionId = ''
+    service.setCanvasMcpProvider(async (sessionId) => {
+      if (sessionId !== attachedSessionId) return null
+      return {
+        allowedTools: [],
+        toolSchemas: [],
+        callTool: async () => ({ ok: true }),
+      }
+    })
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Claude canvas missing runtime session',
+    })
+    attachedSessionId = sessionId
+
+    await service.sendTurn({ sessionId, message: 'add a node' })
+
+    expect(mockState.sdkConfigs).toHaveLength(0)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'agent_error',
+        code: 'CANVAS_MCP_UNAVAILABLE',
+        retryable: true,
+      }),
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'agent_status',
+        status: 'error',
+      }),
+    )
+  })
+
   it('updates the persisted session title when /rename is executed as chat events', async () => {
     const service = new SessionService({} as never, (event) => events.push(event))
     const { sessionId } = await service.createSession({

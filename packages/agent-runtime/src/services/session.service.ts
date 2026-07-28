@@ -84,6 +84,7 @@ import {
 } from './team-mcp-http-bridge.js'
 import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-continuity.js'
 import { buildWorkflowBindingAuthorityPrompt } from './workflow-system-prompt.js'
+import { createCanvasMcpUnavailableEvents } from './canvas-mcp-startup-events.js'
 
 // ─── D-13 拆分出的小工具 ───
 import { ResumeGateManager, type AgentAdapterKind } from './session-resume-gate.js'
@@ -3189,16 +3190,31 @@ export class SessionService {
 
     // Canvas Agent in-process MCP server — only when session is attached to a canvas modal
     let canvasAllowedTools: string[] | undefined
+    let canvasSetupFailure: string | null = null
     if (this.canvasMcpProvider != null) {
       try {
         const canvas = await this.canvasMcpProvider(sessionId)
         if (canvas?.server != null) {
           mcpServers.spark_canvas = canvas.server
           canvasAllowedTools = canvas.allowedTools
+        } else if (canvas != null) {
+          canvasSetupFailure = 'The attached canvas MCP runtime could not be created.'
         }
       } catch (err) {
         log.warn(`canvas mcp provider failed: ${err instanceof Error ? err.message : String(err)}`)
       }
+    }
+    if (canvasSetupFailure != null) {
+      for (const event of createCanvasMcpUnavailableEvents({
+        sessionId,
+        turnId,
+        userMessage: message,
+        rawError: canvasSetupFailure,
+      })) {
+        this.emitAndPersist(sessionId, turnId, event, eventRepo)
+      }
+      sessionRepo.updateStatus(sessionId, 'error')
+      return
     }
 
     // MCP hot-reload: if the MCP set changed since the last SDK query was built,
@@ -3713,19 +3729,42 @@ export class SessionService {
       mcpServers.spark_computer = config.computerUseMcpServer
     }
 
+    let canvasSetupFailure: string | null = null
+    let canvasAttached = false
     if (this.canvasMcpProvider != null) {
       try {
         const canvas = await this.canvasMcpProvider(sessionId)
-        const canvasServer =
-          canvas != null ? await this.resolveSparkCanvasMcpServer(sessionId, canvas) : null
-        if (canvasServer != null) mcpServers.spark_canvas = canvasServer
+        if (canvas != null) {
+          canvasAttached = true
+          const canvasServer = await this.resolveSparkCanvasMcpServer(sessionId, canvas)
+          if (canvasServer != null) {
+            mcpServers.spark_canvas = canvasServer
+          } else {
+            canvasSetupFailure = 'The attached canvas MCP runtime could not be resolved or started.'
+          }
+        }
       } catch (err) {
-        log.warn(
-          `spark_canvas stdio MCP setup failed (non-fatal): ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        )
+        const detail = err instanceof Error ? err.message : String(err)
+        if (canvasAttached) canvasSetupFailure = detail
+        else log.warn(`spark_canvas provider lookup failed (non-fatal): ${detail}`)
       }
+    }
+
+    // 已绑定画布的会话必须真正拿到 spark_canvas 工具。若在这里静默降级，模型仍可能
+    // 借助 Bash 直接改持久化文件并声称“已添加节点”，但 renderer 不会收到实时快照，
+    // 造成必须重开画布才看见结果。这里 fail closed，明确告知用户本轮没有执行修改。
+    if (canvasSetupFailure != null) {
+      log.error(`spark_canvas stdio MCP setup failed: ${canvasSetupFailure}`)
+      for (const event of createCanvasMcpUnavailableEvents({
+        sessionId,
+        turnId,
+        userMessage: message,
+        rawError: canvasSetupFailure,
+      })) {
+        this.emitAndPersist(sessionId, turnId, event, eventRepo)
+      }
+      sessionRepo.updateStatus(sessionId, 'error')
+      return
     }
 
     // spark_memory（CLI 路径专用）—— stdio 子进程通过 PlatformBridgeService HTTP RPC 回到
