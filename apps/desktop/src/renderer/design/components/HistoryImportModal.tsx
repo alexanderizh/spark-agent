@@ -1,25 +1,33 @@
 /**
  * HistoryImportModal — 检测并导入宿主机 Claude Code / Codex 对话历史。
  *
- * 三步交互：
- *   1. 扫描中    —— 打开即扫描两个来源
- *   2. 选择      —— 按来源分页 + 搜索 + 多选 + 右侧预览（已导入置灰）
- *   3. 导入/完成 —— 进度条 + 完成汇总（前往会话）
- *
- * UI 全部使用 lobe-ui 组件（Modal/Segmented/SearchBar/Checkbox/Tag/Button/Block/Empty），
- * 进度条用 antd Progress（lobe-ui 无对应组件）。
+ * 交互阶段：
+ *   1. 扫描中    —— 并行扫描两个来源，展示来源状态与实时发现数量
+ *   2. 选择      —— 虚拟列表 + 搜索/项目/时间筛选 + 完整对话预览
+ *   3. 导入/完成 —— 进度反馈 + 完成汇总
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Modal, SearchBar, Segmented, Checkbox, Tag, Button, Block, Empty } from '@lobehub/ui'
+import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
+import {
+  Block,
+  Button,
+  Checkbox,
+  Empty,
+  Modal,
+  SearchBar,
+  Segmented,
+  Select,
+  Tag,
+} from '@lobehub/ui'
 import { Progress } from 'antd'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type {
   HistoryImportItem,
-  HistoryImportSource,
-  HistoryImportProgress,
   HistoryImportPreviewMessage,
+  HistoryImportProgress,
   HistoryImportResponse,
   HistoryImportSelection,
+  HistoryImportSource,
 } from '@spark/protocol'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useSessionSidebar } from '../SessionSidebarContext'
@@ -29,17 +37,95 @@ import { Icons } from '../Icons'
 import './HistoryImportModal.less'
 
 type Phase = 'scanning' | 'select' | 'importing' | 'done'
+type TimeFilter = 'all' | '7' | '30' | '90'
+type ScanStatus = 'scanning' | 'done' | 'unavailable'
+
+type ScanSourceState = {
+  status: ScanStatus
+  count: number
+  rootPath: string
+  error?: string
+}
 
 const SOURCE_LABEL: Record<HistoryImportSource, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
 }
 
+const TIME_FILTER_OPTIONS = [
+  { label: '全部时间', value: 'all' },
+  { label: '最近 7 天', value: '7' },
+  { label: '最近 30 天', value: '30' },
+  { label: '最近 90 天', value: '90' },
+]
+
+const EMPTY_SCAN_STATE: Record<HistoryImportSource, ScanSourceState> = {
+  'claude-code': { status: 'scanning', count: 0, rootPath: '~/.claude/projects' },
+  codex: { status: 'scanning', count: 0, rootPath: '~/.codex/sessions' },
+}
+
+function freshScanState(): Record<HistoryImportSource, ScanSourceState> {
+  return {
+    'claude-code': { ...EMPTY_SCAN_STATE['claude-code'] },
+    codex: { ...EMPTY_SCAN_STATE.codex },
+  }
+}
+
 function formatTime(iso: string | null): string {
   if (iso == null) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatRowTime(iso: string | null): string {
+  if (iso == null) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const now = new Date()
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const targetStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const time = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  if (targetStart === dayStart) return `今天 ${time}`
+  if (targetStart === dayStart - 86_400_000) return `昨天 ${time}`
+  if (date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+  return formatTime(iso)
+}
+
+function formatMessageTime(iso: string | null): string {
+  if (iso == null) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const value = bytes / 1024 ** index
+  return `${value >= 10 || index === 0 ? Math.round(value) : value.toFixed(1)} ${units[index]}`
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function classNames(...values: Array<string | false | null | undefined>): string {
+  return values.filter(Boolean).join(' ')
 }
 
 export function HistoryImportModal() {
@@ -55,197 +141,456 @@ export function HistoryImportModal() {
   const [items, setItems] = useState<HistoryImportItem[]>([])
   const [sourceTab, setSourceTab] = useState<HistoryImportSource>('claude-code')
   const [search, setSearch] = useState('')
+  const [projectFilter, setProjectFilter] = useState('all')
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
+  const [showImported, setShowImported] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [progress, setProgress] = useState<HistoryImportProgress | null>(null)
   const [summary, setSummary] = useState<HistoryImportResponse | null>(null)
+  const [scanSources, setScanSources] =
+    useState<Record<HistoryImportSource, ScanSourceState>>(freshScanState)
   const [previewItem, setPreviewItem] = useState<HistoryImportItem | null>(null)
   const [previewMsgs, setPreviewMsgs] = useState<HistoryImportPreviewMessage[]>([])
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewTruncated, setPreviewTruncated] = useState(false)
+  const [userOnly, setUserOnly] = useState(false)
+  const [previewExpanded, setPreviewExpanded] = useState(false)
+  const listScrollRef = useRef<HTMLDivElement>(null)
+  const previewScrollRef = useRef<HTMLDivElement>(null)
+  const scanRequestRef = useRef(0)
+  const previewRequestRef = useRef(0)
 
   const reset = useCallback(() => {
     setPhase('scanning')
     setItems([])
     setSearch('')
+    setProjectFilter('all')
+    setTimeFilter('all')
+    setShowImported(false)
     setSelected(new Set())
     setProgress(null)
     setSummary(null)
+    setScanSources(freshScanState())
     setPreviewItem(null)
     setPreviewMsgs([])
+    setPreviewTruncated(false)
+    setUserOnly(false)
+    setPreviewExpanded(false)
   }, [])
 
   const doScan = useCallback(async () => {
+    const requestId = ++scanRequestRef.current
+    previewRequestRef.current++
     setPhase('scanning')
+    setScanSources(freshScanState())
+    const startedAt = Date.now()
+
+    const scanOne = async (source: HistoryImportSource) => {
+      try {
+        const response = await scan({ sources: [source] })
+        const sourceSummary = response.sources.find((entry) => entry.source === source)
+        if (requestId === scanRequestRef.current) {
+          setScanSources((current) => ({
+            ...current,
+            [source]: {
+              status: sourceSummary?.available === false ? 'unavailable' : 'done',
+              count: sourceSummary?.count ?? response.items.length,
+              rootPath: sourceSummary?.rootPath ?? current[source].rootPath,
+              ...(sourceSummary?.error != null ? { error: sourceSummary.error } : {}),
+            },
+          }))
+        }
+        return response
+      } catch (error) {
+        if (requestId === scanRequestRef.current) {
+          setScanSources((current) => ({
+            ...current,
+            [source]: {
+              ...current[source],
+              status: 'unavailable',
+              error: error instanceof Error ? error.message : String(error),
+            },
+          }))
+        }
+        throw error
+      }
+    }
+
     try {
-      const res = await scan({})
-      setItems(res.items)
-      // 默认选中条目较多的来源页签
-      const counts = res.sources.reduce<Record<string, number>>((acc, s) => {
-        acc[s.source] = s.count
-        return acc
-      }, {})
-      setSourceTab((counts['codex'] ?? 0) > (counts['claude-code'] ?? 0) ? 'codex' : 'claude-code')
+      const settled = await Promise.allSettled([scanOne('claude-code'), scanOne('codex')])
+      const responses = settled.flatMap((result) =>
+        result.status === 'fulfilled' ? [result.value] : [],
+      )
+      if (responses.length === 0) {
+        const reason = settled.find((result) => result.status === 'rejected')
+        throw reason?.status === 'rejected' ? reason.reason : new Error('没有可用的会话来源')
+      }
+
+      const nextItems = responses
+        .flatMap((response) => response.items)
+        .sort((a, b) => (b.lastTimestamp ?? '').localeCompare(a.lastTimestamp ?? ''))
+      const counts = nextItems.reduce<Record<HistoryImportSource, number>>(
+        (result, item) => ({ ...result, [item.source]: result[item.source] + 1 }),
+        { 'claude-code': 0, codex: 0 },
+      )
+
+      const minimumDuration = 720
+      const remaining = minimumDuration - (Date.now() - startedAt)
+      if (remaining > 0) await wait(remaining)
+      if (requestId !== scanRequestRef.current) return
+      setItems(nextItems)
+      setSourceTab(counts.codex > counts['claude-code'] ? 'codex' : 'claude-code')
       setPhase('select')
-    } catch (err) {
-      toast.error(`扫描失败：${err instanceof Error ? err.message : String(err)}`)
+    } catch (error) {
+      if (requestId !== scanRequestRef.current) return
+      toast.error(`扫描失败：${error instanceof Error ? error.message : String(error)}`)
       ctx.setHistoryImportOpen(false)
     }
-  }, [scan, toast, ctx])
+  }, [ctx, scan, toast])
 
-  // 打开时扫描；关闭时重置
   useEffect(() => {
     if (open) {
       reset()
       void doScan()
+    } else {
+      scanRequestRef.current++
+      previewRequestRef.current++
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  useIpcStream('stream:history-import:progress', (p) => {
-    setProgress(p)
+  useIpcStream('stream:history-import:progress', (nextProgress) => {
+    setProgress(nextProgress)
   })
 
   const counts = useMemo(() => {
-    let cc = 0
-    let cx = 0
-    for (const it of items) {
-      if (it.source === 'claude-code') cc++
-      else cx++
-    }
-    return { 'claude-code': cc, codex: cx }
+    const result = { 'claude-code': 0, codex: 0 }
+    for (const item of items) result[item.source]++
+    return result
   }, [items])
+
+  const importableCount = useMemo(
+    () => items.filter((item) => !item.alreadyImported).length,
+    [items],
+  )
+  const importedCount = items.length - importableCount
+
+  const projects = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          items
+            .filter((item) => item.source === sourceTab)
+            .map((item) => item.project || 'no-project'),
+        ),
+      ).sort((a, b) => a.localeCompare(b, 'zh-CN')),
+    [items, sourceTab],
+  )
+
+  const sourceOptions = useMemo(
+    () => [
+      { label: `Claude Code ${counts['claude-code'].toLocaleString()}`, value: 'claude-code' },
+      { label: `Codex ${counts.codex.toLocaleString()}`, value: 'codex' },
+    ],
+    [counts],
+  )
+
+  const projectOptions = useMemo(
+    () => [
+      { label: '全部项目', value: 'all' },
+      ...projects.map((project) => ({ label: project, value: project })),
+    ],
+    [projects],
+  )
 
   const filtered = useMemo(() => {
     const lower = search.trim().toLowerCase()
-    return items.filter((it) => {
-      if (it.source !== sourceTab) return false
+    const cutoff = timeFilter === 'all' ? null : Date.now() - Number(timeFilter) * 86_400_000
+
+    return items.filter((item) => {
+      if (item.source !== sourceTab) return false
+      if (!showImported && item.alreadyImported) return false
+      if (projectFilter !== 'all' && item.project !== projectFilter) return false
+      if (cutoff != null) {
+        const timestamp =
+          item.lastTimestamp == null ? Number.NaN : new Date(item.lastTimestamp).getTime()
+        if (!Number.isFinite(timestamp) || timestamp < cutoff) return false
+      }
       if (lower.length === 0) return true
       return (
-        it.title.toLowerCase().includes(lower) ||
-        it.project.toLowerCase().includes(lower) ||
-        (it.cwd ?? '').toLowerCase().includes(lower)
+        item.title.toLowerCase().includes(lower) ||
+        item.project.toLowerCase().includes(lower) ||
+        item.sourceSessionId.toLowerCase().includes(lower) ||
+        (item.cwd ?? '').toLowerCase().includes(lower)
       )
     })
-  }, [items, sourceTab, search])
+  }, [items, projectFilter, search, showImported, sourceTab, timeFilter])
 
-  const selectableVisible = useMemo(() => filtered.filter((it) => !it.alreadyImported), [filtered])
-  const allSelected = selectableVisible.length > 0 && selectableVisible.every((it) => selected.has(it.filePath))
-  const someSelected = selectableVisible.some((it) => selected.has(it.filePath)) && !allSelected
+  const selectableVisible = useMemo(
+    () => filtered.filter((item) => !item.alreadyImported),
+    [filtered],
+  )
+  const allSelected =
+    selectableVisible.length > 0 && selectableVisible.every((item) => selected.has(item.filePath))
+  const someSelected = selectableVisible.some((item) => selected.has(item.filePath)) && !allSelected
+
+  const selectedStats = useMemo(
+    () =>
+      items.reduce(
+        (result, item) =>
+          selected.has(item.filePath)
+            ? {
+                messages: result.messages + item.messageCount,
+                bytes: result.bytes + item.sizeBytes,
+              }
+            : result,
+        { messages: 0, bytes: 0 },
+      ),
+    [items, selected],
+  )
+
+  const visiblePreviewMsgs = useMemo(
+    () => (userOnly ? previewMsgs.filter((message) => message.role === 'user') : previewMsgs),
+    [previewMsgs, userOnly],
+  )
+
+  const listVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: () => 78,
+    overscan: 10,
+  })
+
+  useEffect(() => {
+    listScrollRef.current?.scrollTo({ top: 0 })
+  }, [projectFilter, search, showImported, sourceTab, timeFilter])
 
   const toggle = useCallback((filePath: string, checked: boolean) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
+    setSelected((current) => {
+      const next = new Set(current)
       if (checked) next.add(filePath)
       else next.delete(filePath)
       return next
     })
   }, [])
 
-  const toggleAll = useCallback((checked: boolean) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      for (const it of selectableVisible) {
-        if (checked) next.add(it.filePath)
-        else next.delete(it.filePath)
-      }
-      return next
-    })
-  }, [selectableVisible])
+  const toggleAll = useCallback(
+    (checked: boolean) => {
+      setSelected((current) => {
+        const next = new Set(current)
+        for (const item of selectableVisible) {
+          if (checked) next.add(item.filePath)
+          else next.delete(item.filePath)
+        }
+        return next
+      })
+    },
+    [selectableVisible],
+  )
 
-  const loadPreview = useCallback(async (it: HistoryImportItem) => {
-    setPreviewItem(it)
-    setPreviewLoading(true)
-    setPreviewMsgs([])
-    try {
-      const res = await preview({ source: it.source, filePath: it.filePath, limit: 30 })
-      setPreviewMsgs(res.messages)
-    } catch (err) {
-      toast.error(`预览失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setPreviewLoading(false)
-    }
-  }, [preview, toast])
+  const loadPreview = useCallback(
+    async (item: HistoryImportItem, loadAll = false) => {
+      const requestId = ++previewRequestRef.current
+      setPreviewItem(item)
+      setPreviewLoading(true)
+      setPreviewMsgs([])
+      setPreviewTruncated(false)
+      setUserOnly(false)
+      if (previewScrollRef.current != null) previewScrollRef.current.scrollTop = 0
+      try {
+        const previewLimit = loadAll ? 100_000 : Math.max(500, item.messageCount * 6 + 100)
+        const response = await preview({
+          source: item.source,
+          filePath: item.filePath,
+          limit: previewLimit,
+        })
+        if (requestId !== previewRequestRef.current) return
+        setPreviewMsgs(response.messages)
+        setPreviewTruncated(response.truncated)
+      } catch (error) {
+        if (requestId !== previewRequestRef.current) return
+        toast.error(`预览失败：${error instanceof Error ? error.message : String(error)}`)
+      } finally {
+        if (requestId === previewRequestRef.current) setPreviewLoading(false)
+      }
+    },
+    [preview, toast],
+  )
 
   const doImport = useCallback(async () => {
     const selections: HistoryImportSelection[] = items
-      .filter((it) => selected.has(it.filePath) && !it.alreadyImported)
-      .map((it) => ({
-        source: it.source,
-        filePath: it.filePath,
-        sourceSessionId: it.sourceSessionId,
-        cwd: it.cwd,
-        title: it.title,
+      .filter((item) => selected.has(item.filePath) && !item.alreadyImported)
+      .map((item) => ({
+        source: item.source,
+        filePath: item.filePath,
+        sourceSessionId: item.sourceSessionId,
+        cwd: item.cwd,
+        title: item.title,
       }))
     if (selections.length === 0) return
     setPhase('importing')
     setProgress({ phase: 'parsing', current: 0, total: selections.length })
     try {
-      const res = await runImport({ selections })
-      setSummary(res)
+      const response = await runImport({ selections })
+      setSummary(response)
       setPhase('done')
       await ctx.refreshData()
-      if (res.imported > 0) toast.success(`成功导入 ${res.imported} 个会话`)
-    } catch (err) {
-      toast.error(`导入失败：${err instanceof Error ? err.message : String(err)}`)
+      if (response.imported > 0) toast.success(`成功导入 ${response.imported} 个会话`)
+    } catch (error) {
+      toast.error(`导入失败：${error instanceof Error ? error.message : String(error)}`)
       setPhase('select')
     }
-  }, [items, selected, runImport, ctx, toast])
+  }, [ctx, items, runImport, selected, toast])
 
   const close = useCallback(() => ctx.setHistoryImportOpen(false), [ctx])
-
   const selectedCount = selected.size
+  const discoveredCount = scanSources['claude-code'].count + scanSources.codex.count
+  const importingPercent =
+    progress != null && progress.total > 0
+      ? Math.round((progress.current / progress.total) * 100)
+      : 0
+  const modalTitle = useMemo(
+    () => (
+      <div className="hi-modal-title">
+        <span className="hi-modal-title-icon">
+          <Icons.ListFilter size={19} />
+        </span>
+        <span>
+          <strong>{t('app.sidebar.importHistory')}</strong>
+          <small>
+            {phase === 'scanning'
+              ? '正在读取本地索引，不会上传任何会话内容'
+              : '选择需要导入的本地会话，可在右侧完整预览'}
+          </small>
+        </span>
+      </div>
+    ),
+    [phase, t],
+  )
 
   return (
     <Modal
       open={open}
-      title={t('app.sidebar.importHistory')}
+      title={modalTitle}
       onCancel={close}
       footer={null}
-      width={880}
+      width={1440}
       destroyOnHidden
       centered
       className="history-import-modal"
     >
       {phase === 'scanning' && (
-        <div className="hi-state hi-scanning" aria-live="polite">
-          <div className="hi-scan-visual" aria-hidden="true">
-            <span className="hi-scan-ring hi-scan-ring-outer" />
-            <span className="hi-scan-ring hi-scan-ring-inner" />
-            <span className="hi-scan-beam" />
-            <span className="hi-scan-center"><Icons.Search size={22} /></span>
+        <div className="hi-scan-state" aria-live="polite">
+          <div className="hi-scan-heading">
+            <h2>正在检索本机会话</h2>
+            <p>并行扫描 Claude Code 与 Codex，本地解析后生成可预览列表</p>
           </div>
-          <div className="hi-state-title">正在扫描宿主机对话历史…</div>
-          <div className="hi-state-desc">检测 Claude Code 与 Codex 的本地会话记录</div>
-          <div className="hi-scan-sources"><span>Claude Code</span><span>Codex</span></div>
+          <div className="hi-scan-flow" aria-hidden="true">
+            <ScanSourceCard source="claude-code" state={scanSources['claude-code']} />
+            <ScanSourceCard source="codex" state={scanSources.codex} />
+            <div className="hi-scan-lines hi-scan-lines-top">
+              <i />
+              <i />
+              <i />
+            </div>
+            <div className="hi-scan-lines hi-scan-lines-bottom">
+              <i />
+              <i />
+              <i />
+            </div>
+            <div className="hi-scan-collector">
+              <span>
+                <Icons.Database size={27} />
+              </span>
+            </div>
+            <div className="hi-scan-result-line" />
+            <div className="hi-scan-results">
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+          <div className="hi-scan-count">
+            <strong>{discoveredCount.toLocaleString()}</strong>
+            <span>个会话已发现</span>
+          </div>
+          <div className="hi-scan-path">
+            {scanSources.codex.status === 'scanning'
+              ? `正在读取 ${scanSources.codex.rootPath}/…`
+              : `正在整理 ${scanSources['claude-code'].rootPath}/…`}
+          </div>
+          <div className="hi-scan-progress">
+            <span />
+          </div>
+          <div className="hi-scan-statuses">
+            <ScanStatusLabel source="claude-code" state={scanSources['claude-code']} />
+            <ScanStatusLabel source="codex" state={scanSources.codex} />
+            <span>完成后自动进入选择页面</span>
+          </div>
+          <p className="hi-scan-hint">可随时关闭，已扫描结果不会自动导入</p>
         </div>
       )}
 
       {phase === 'select' && (
         <div className="hi-select">
-          <div className="hi-overview">
-            <div><strong>{items.length}</strong><span>个会话已找到</span></div>
-            <span className="hi-overview-note">已导入的会话会自动跳过</span>
-          </div>
-          <div className="hi-toolbar">
-            <Segmented
-              value={sourceTab}
-              onChange={(v) => {
-                setSourceTab(v as HistoryImportSource)
-                setPreviewItem(null)
-              }}
-              options={[
-                { label: `Claude Code (${counts['claude-code']})`, value: 'claude-code' },
-                { label: `Codex (${counts.codex})`, value: 'codex' },
-              ]}
-            />
-            <SearchBar
-              value={search}
-              onChange={(e) => setSearch((e.target as HTMLInputElement).value)}
-              placeholder="搜索标题 / 项目…"
-              style={{ flex: 1 }}
-            />
+          <div className="hi-controls">
+            <div className="hi-overview">
+              <div className="hi-overview-total">
+                <strong>{items.length.toLocaleString()}</strong>
+                <span>个会话已找到</span>
+              </div>
+              <i />
+              <div className="hi-overview-detail">
+                <strong>{importableCount.toLocaleString()} 个可导入</strong>
+                <span>{importedCount.toLocaleString()} 个已存在 · 默认隐藏</span>
+              </div>
+            </div>
+            <div className="hi-toolbar">
+              <Segmented
+                value={sourceTab}
+                onChange={(value) => {
+                  previewRequestRef.current++
+                  setSourceTab(value as HistoryImportSource)
+                  setProjectFilter('all')
+                  setPreviewItem(null)
+                  setPreviewMsgs([])
+                  setPreviewExpanded(false)
+                }}
+                options={sourceOptions}
+              />
+              <SearchBar
+                value={search}
+                onChange={(event) => setSearch((event.target as HTMLInputElement).value)}
+                placeholder="搜索标题、项目或路径…"
+                className="hi-search"
+              />
+              <Select
+                aria-label="项目筛选"
+                className="hi-filter-select hi-project-filter"
+                size="small"
+                value={projectFilter}
+                onChange={(value) => setProjectFilter(value as string)}
+                options={projectOptions}
+              />
+              <Select
+                aria-label="时间筛选"
+                className="hi-filter-select hi-time-filter"
+                size="small"
+                value={timeFilter}
+                onChange={(value) => setTimeFilter(value as TimeFilter)}
+                options={TIME_FILTER_OPTIONS}
+              />
+              <label className="hi-show-imported">
+                <Checkbox
+                  checked={showImported}
+                  onChange={(checked) => setShowImported(Boolean(checked))}
+                />
+                <span>显示已导入</span>
+              </label>
+            </div>
           </div>
 
-          <div className="hi-body">
+          <div className={classNames('hi-body', previewExpanded && 'is-preview-expanded')}>
             <div className="hi-list">
               <div className="hi-list-head">
                 <Checkbox
@@ -253,83 +598,184 @@ export function HistoryImportModal() {
                   indeterminate={someSelected}
                   onChange={(checked) => toggleAll(Boolean(checked))}
                 >
-                  全选（{selectableVisible.length}）
+                  选择当前结果
                 </Checkbox>
+                <span>{selectableVisible.length.toLocaleString()} 个可选</span>
               </div>
-              <div className="hi-list-body">
+              <div ref={listScrollRef} className="hi-list-body">
                 {filtered.length === 0 ? (
-                  <Empty description={search ? '没有匹配的会话' : '该来源暂无可导入的历史'} />
+                  <Empty description={search ? '没有匹配的会话' : '当前筛选下没有可导入会话'} />
                 ) : (
-                  filtered.map((it) => {
-                    const checked = selected.has(it.filePath)
-                    const isActive = previewItem?.filePath === it.filePath
-                    return (
-                      <div
-                        key={it.filePath}
-                        className={`hi-row${isActive ? ' is-active' : ''}${it.alreadyImported ? ' is-imported' : ''}`}
-                        onClick={() => void loadPreview(it)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(event) => {
-                          if (event.key !== 'Enter' && event.key !== ' ') return
-                          event.preventDefault()
-                          void loadPreview(it)
-                        }}
-                      >
-                        <div className="hi-row-check" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={checked}
-                            disabled={it.alreadyImported}
-                            onChange={(c) => toggle(it.filePath, Boolean(c))}
-                          />
-                        </div>
-                        <div className="hi-row-main">
-                          <div className="hi-row-title">
-                            <span className="hi-row-title-text">{it.title}</span>
-                            {it.alreadyImported && <Tag className="hi-tag-imported">已导入</Tag>}
-                          </div>
-                          <div className="hi-row-meta">
-                            <span className="hi-row-project">{it.project}</span>
-                            <span className="hi-dot">·</span>
-                            <span>{it.messageCount} 条消息</span>
-                            {it.lastTimestamp && (
-                              <>
-                                <span className="hi-dot">·</span>
-                                <span>{formatTime(it.lastTimestamp)}</span>
-                              </>
+                  <div
+                    className="hi-virtual-list"
+                    style={{ height: listVirtualizer.getTotalSize() }}
+                  >
+                    {listVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const item = filtered[virtualRow.index]
+                      if (item == null) return null
+                      const checked = selected.has(item.filePath)
+                      const isActive = previewItem?.filePath === item.filePath
+                      return (
+                        <div
+                          key={item.filePath}
+                          ref={listVirtualizer.measureElement}
+                          data-index={virtualRow.index}
+                          className="hi-row-shell"
+                          style={{ transform: `translateY(${virtualRow.start}px)` }}
+                        >
+                          <div
+                            className={classNames(
+                              'hi-row',
+                              isActive && 'is-active',
+                              item.alreadyImported && 'is-imported',
                             )}
+                          >
+                            <div className="hi-row-check">
+                              <Checkbox
+                                checked={checked}
+                                disabled={item.alreadyImported}
+                                onChange={(value) => toggle(item.filePath, Boolean(value))}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              className="hi-row-open"
+                              aria-label={`预览会话：${item.title || '未命名会话'}`}
+                              onClick={() => void loadPreview(item)}
+                            >
+                              <div className="hi-row-main">
+                                <div className="hi-row-title">
+                                  <span>{item.title || '未命名会话'}</span>
+                                  {item.alreadyImported && (
+                                    <Tag className="hi-tag-imported">已导入</Tag>
+                                  )}
+                                </div>
+                                <div className="hi-row-meta">
+                                  <span className="hi-row-project">
+                                    {item.project || 'no-project'}
+                                  </span>
+                                  <span>·</span>
+                                  <span>{item.messageCount.toLocaleString()} 条消息</span>
+                                  <span>·</span>
+                                  <span>{SOURCE_LABEL[item.source]}</span>
+                                </div>
+                              </div>
+                              <time className="hi-row-time">
+                                {formatRowTime(item.lastTimestamp)}
+                              </time>
+                            </button>
                           </div>
                         </div>
-                      </div>
-                    )
-                  })
+                      )
+                    })}
+                  </div>
                 )}
               </div>
             </div>
 
             <div className="hi-preview">
               {previewItem == null ? (
-                <div className="hi-preview-empty">点击左侧会话查看预览</div>
+                <div className="hi-preview-empty">
+                  <span>
+                    <Icons.MessageSquare size={24} />
+                  </span>
+                  <strong>选择一个会话查看完整内容</strong>
+                  <p>预览不会导入或修改原始会话</p>
+                </div>
               ) : (
                 <>
                   <div className="hi-preview-head">
-                    <div className="hi-preview-heading">
-                      <span className="hi-preview-kicker">会话预览</span>
-                      <span className="hi-preview-title">{previewItem.title}</span>
+                    <div className="hi-preview-title-row">
+                      <div className="hi-preview-heading">
+                        <span className="hi-preview-kicker">会话预览</span>
+                        <strong>{previewItem.title || '未命名会话'}</strong>
+                      </div>
+                      <div className="hi-preview-actions">
+                        <Button size="small" onClick={() => setUserOnly((current) => !current)}>
+                          {userOnly ? '显示全部消息' : '仅看用户消息'}
+                        </Button>
+                        <Button
+                          size="small"
+                          onClick={() => setPreviewExpanded((current) => !current)}
+                        >
+                          <Icons.ExternalLink size={13} />
+                          {previewExpanded ? '退出专注预览' : '专注预览'}
+                        </Button>
+                      </div>
                     </div>
-                    <Tag>{SOURCE_LABEL[previewItem.source]}</Tag>
+                    <div className="hi-preview-meta">
+                      <Tag>{SOURCE_LABEL[previewItem.source]}</Tag>
+                      <Tag>{previewItem.project || 'no-project'}</Tag>
+                      <span>{previewItem.messageCount.toLocaleString()} 条消息</span>
+                      <span>{formatTime(previewItem.lastTimestamp)}</span>
+                      {previewItem.cwd && (
+                        <span className="hi-preview-cwd">
+                          <Icons.Folder size={12} />
+                          {previewItem.cwd}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  {previewItem.cwd && <div className="hi-preview-cwd">{previewItem.cwd}</div>}
-                  <div className="hi-preview-body">
+                  <div className="hi-preview-toolbar">
+                    <span className="hi-role-legend">
+                      <i className="is-user" />
+                      用户
+                    </span>
+                    <span className="hi-role-legend">
+                      <i className="is-assistant" />
+                      助手
+                    </span>
+                    <span className="hi-role-legend">
+                      <i />
+                      工具 / 思考
+                    </span>
+                    <span className="hi-preview-toolbar-note">内容可完整滚动 · 不再截断消息</span>
+                  </div>
+                  <div ref={previewScrollRef} className="hi-preview-body">
                     {previewLoading ? (
-                      <div className="hi-preview-loading">加载中…</div>
+                      <div className="hi-preview-loading">
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                    ) : visiblePreviewMsgs.length === 0 ? (
+                      <Empty
+                        description={userOnly ? '该会话没有用户消息' : '该会话没有可预览的文本消息'}
+                      />
                     ) : (
-                      previewMsgs.map((m, i) => (
-                        <div key={i} className={`hi-msg hi-msg-${m.role}`}>
-                          <span className="hi-msg-role">{roleLabel(m.role)}</span>
-                          <div className="hi-msg-bubble"><span className="hi-msg-text">{m.text}</span></div>
-                        </div>
-                      ))
+                      <>
+                        <div className="hi-thread-line" />
+                        {visiblePreviewMsgs.map((message, index) => (
+                          <div
+                            key={`${message.timestamp ?? 'message'}-${index}`}
+                            className={classNames('hi-msg', `hi-msg-${message.role}`)}
+                          >
+                            <span className="hi-msg-avatar">{roleShortLabel(message.role)}</span>
+                            <div className="hi-msg-content">
+                              <div className="hi-msg-head">
+                                <strong>{roleLabel(message.role)}</strong>
+                                <time>{formatMessageTime(message.timestamp)}</time>
+                              </div>
+                              <div className="hi-msg-bubble">
+                                <span className="hi-msg-text">{message.text}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {previewTruncated && (
+                          <div className="hi-preview-truncated">
+                            <span>
+                              该会话较长，当前仅展示前 {previewMsgs.length.toLocaleString()} 条
+                            </span>
+                            <Button
+                              size="small"
+                              onClick={() => void loadPreview(previewItem, true)}
+                            >
+                              加载完整会话
+                            </Button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </>
@@ -338,13 +784,26 @@ export function HistoryImportModal() {
           </div>
 
           <div className="hi-footer">
-            <div className="hi-footer-left">
-              <Tag className="hi-tag-count">{selectedCount} 已选</Tag>
+            <div className="hi-selection-summary">
+              <strong>{selectedCount}</strong>
+              <span>已选择 {selectedCount.toLocaleString()} 个会话</span>
+              {selectedCount > 0 && (
+                <small>
+                  共 {selectedStats.messages.toLocaleString()} 条消息 · 约{' '}
+                  {formatBytes(selectedStats.bytes)}
+                </small>
+              )}
+              {selectedCount > 0 && (
+                <button type="button" onClick={() => setSelected(new Set())}>
+                  清空选择
+                </button>
+              )}
             </div>
-            <div className="hi-footer-right">
+            <div className="hi-footer-actions">
               <Button onClick={close}>取消</Button>
               <Button type="primary" disabled={selectedCount === 0} onClick={() => void doImport()}>
-                导入所选
+                <Icons.Download size={15} />
+                导入 {selectedCount.toLocaleString()} 个会话
               </Button>
             </div>
           </div>
@@ -352,12 +811,14 @@ export function HistoryImportModal() {
       )}
 
       {phase === 'importing' && (
-        <div className="hi-state">
-          <div className="hi-state-title">正在导入…</div>
-          <Progress
-            percent={progress != null && progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0}
-            status="active"
-          />
+        <div className="hi-state hi-importing" aria-live="polite">
+          <span className="hi-state-icon">
+            <Icons.Download size={24} />
+          </span>
+          <div className="hi-state-title">正在导入会话</div>
+          <div className="hi-import-progress">
+            <Progress percent={importingPercent} status="active" />
+          </div>
           <div className="hi-state-desc">
             {progress != null ? `${progress.current} / ${progress.total}` : ''}
             {progress?.currentTitle ? ` · ${progress.currentTitle}` : ''}
@@ -366,7 +827,11 @@ export function HistoryImportModal() {
       )}
 
       {phase === 'done' && summary != null && (
-        <div className="hi-state">
+        <div className="hi-state hi-done">
+          <span className="hi-state-icon is-success">
+            <Icons.CheckCircle size={26} />
+          </span>
+          <div className="hi-state-title">导入完成</div>
           <Block variant="outlined" className="hi-summary">
             <div className="hi-summary-row">
               <span>成功导入</span>
@@ -397,17 +862,80 @@ export function HistoryImportModal() {
   )
 }
 
+function ScanSourceCard({
+  source,
+  state,
+}: {
+  source: HistoryImportSource
+  state: ScanSourceState
+}) {
+  return (
+    <div className={classNames('hi-scan-source', `hi-scan-source-${source}`)}>
+      <div className="hi-scan-source-head">
+        <span className="hi-scan-source-icon">
+          <Icons.Terminal size={16} />
+        </span>
+        <span>
+          <strong>{SOURCE_LABEL[source]}</strong>
+          <small>
+            {state.status === 'scanning'
+              ? '扫描会话索引'
+              : state.status === 'done'
+                ? '扫描完成'
+                : '来源不可用'}
+          </small>
+        </span>
+        <b>{state.count > 0 ? state.count.toLocaleString() : '—'}</b>
+      </div>
+      <div className={classNames('hi-scan-source-progress', `is-${state.status}`)}>
+        <span />
+      </div>
+    </div>
+  )
+}
+
+function ScanStatusLabel({
+  source,
+  state,
+}: {
+  source: HistoryImportSource
+  state: ScanSourceState
+}) {
+  return (
+    <span className={classNames('hi-scan-status', `is-${state.status}`)} title={state.error}>
+      <i />
+      {SOURCE_LABEL[source]} ·{' '}
+      {state.status === 'scanning' ? '正在检索' : state.status === 'done' ? '已完成' : '不可用'}
+    </span>
+  )
+}
+
 function roleLabel(role: HistoryImportPreviewMessage['role']): string {
   switch (role) {
     case 'user':
       return '用户'
     case 'assistant':
-      return '助手'
+      return 'Spark Agent'
     case 'thinking':
       return '思考'
     case 'tool':
       return '工具'
     default:
       return role
+  }
+}
+
+function roleShortLabel(role: HistoryImportPreviewMessage['role']): string {
+  switch (role) {
+    case 'user':
+      return '你'
+    case 'assistant':
+      return 'AI'
+    case 'thinking':
+      return '思'
+    case 'tool':
+      return '工'
+    default:
+      return ''
   }
 }
