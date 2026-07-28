@@ -306,14 +306,29 @@ export function useCanvasWorkspace(projectId: string) {
     }
   }, [snapshot])
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    try {
-      setSnapshot(await canvasApi.openSnapshot(projectId, activeBoardIdRef.current))
-    } finally {
-      setLoading(false)
-    }
-  }, [projectId])
+  const refresh = useCallback(
+    async (options: { resetHistory?: boolean } = {}) => {
+      setLoading(true)
+      try {
+        const next = await canvasApi.openSnapshot(projectId, activeBoardIdRef.current)
+        if (options.resetHistory) {
+          if (historyTimerRef.current) clearTimeout(historyTimerRef.current)
+          historyTimerRef.current = null
+          pendingHistorySnapshotRef.current = null
+          undoStackRef.current = []
+          redoStackRef.current = []
+          agentTurnCheckpointsRef.current.clear()
+          restoringHistoryRef.current = true
+          lastRecordedSnapshotRef.current = null
+          setHistoryVersion((version) => version + 1)
+        }
+        setSnapshot(next)
+      } finally {
+        setLoading(false)
+      }
+    },
+    [projectId],
+  )
 
   const refreshTaskSnapshot = useCallback(async () => {
     const next = await canvasApi.openSnapshot(projectId, activeBoardIdRef.current)

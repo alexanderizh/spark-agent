@@ -195,13 +195,29 @@ export class CanvasHostBridge implements CanvasToolCallBridge {
       if (!this.isAttached(sessionId)) return null
       if (this.toolSchemas.length === 0) {
         log.warn(`canvas attached but no tool schemas registered; sessionId=${sessionId}`)
-        return null
+        // 已 attach 与普通会话必须可区分：返回空上下文，让 SessionService 在模型
+        // 执行前 fail closed；返回 null 会被误判为普通会话并静默移除画布工具。
+        return {
+          allowedTools: [],
+          toolSchemas: [],
+          callTool: (sid: string, toolName: string, args: unknown) =>
+            this.callTool(sid, toolName, args),
+        }
       }
-      const server = await createCanvasMcpServer({
-        sessionId,
-        bridge: this,
-        toolSchemas: this.toolSchemas,
-      })
+      let server = null
+      try {
+        server = await createCanvasMcpServer({
+          sessionId,
+          bridge: this,
+          toolSchemas: this.toolSchemas,
+        })
+      } catch (error) {
+        log.warn(
+          `createCanvasMcpServer failed for attached session ${sessionId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        )
+      }
       if (server == null) {
         log.warn('createCanvasMcpServer returned null (SDK unavailable)')
       }

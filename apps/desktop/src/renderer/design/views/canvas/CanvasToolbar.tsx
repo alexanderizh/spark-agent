@@ -17,6 +17,8 @@ export type CanvasTool = 'select' | 'pan' | 'text' | 'image'
 export function CanvasToolbar({
   saveState,
   onSave,
+  onRefresh,
+  refreshing = false,
   onAutoSaveChange,
   onExport,
   onUploadFiles,
@@ -47,6 +49,8 @@ export function CanvasToolbar({
   }
   onSave: () => void
   onAutoSaveChange: (enabled: boolean) => void
+  onRefresh: () => void
+  refreshing?: boolean
   onExport: () => void
   onUploadFiles?: () => void
   arranging?: boolean
@@ -88,6 +92,17 @@ export function CanvasToolbar({
             />
           </Tooltip>
         </div>
+        <Tooltip title="从已保存数据重新加载画布">
+          <Button
+            size="middle"
+            type="text"
+            icon={<Icons.Refresh size={15} />}
+            aria-label="刷新画布"
+            loading={refreshing}
+            disabled={saveState.saving || saveState.autoSaving}
+            onClick={onRefresh}
+          />
+        </Tooltip>
         <Button
           size="middle"
           icon={<Icons.Check size={15} />}

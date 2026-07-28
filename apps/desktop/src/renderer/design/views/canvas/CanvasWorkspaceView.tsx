@@ -27,6 +27,7 @@ import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
 import { CanvasWorkflowDrawer } from './CanvasWorkflowDrawer'
 import { CanvasWorkflowExtractDialog } from './CanvasWorkflowExtractDialog'
+import { useCanvasReload } from './useCanvasReload'
 import {
   CanvasWorkflowRunPanel,
   type CanvasWorkflowRunExecutionInput,
@@ -2109,6 +2110,22 @@ export function CanvasWorkspaceView({
     },
     [clearAutoSaveTimer],
   )
+
+  const { refreshing: refreshingCanvas, reload: reloadCanvas } = useCanvasReload({
+    projectId,
+    savingRef,
+    requestConfirm,
+    refresh,
+    onBeforeReload: () => {
+      clearAutoSaveTimer()
+      autoSavePendingRef.current = false
+    },
+    onReloaded: () => {
+      setSelectedNodeIds([])
+      setAgentNodeRefs([])
+      setEditingNodeId(null)
+    },
+  })
 
   useEffect(() => {
     clearAutoSaveTimer()
@@ -8407,6 +8424,8 @@ export function CanvasWorkspaceView({
           arranging={arrangingCanvas}
           onArrange={handleArrangeCanvas}
           onSave={() => void doSave()}
+          onRefresh={() => void reloadCanvas()}
+          refreshing={refreshingCanvas}
           onAutoSaveChange={handleAutoSaveToggle}
           onExport={() => void handleExportProject()}
           onUploadFiles={() => uploadFilesInputRef.current?.click()}
