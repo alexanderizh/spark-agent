@@ -1104,14 +1104,16 @@ function CreateProjectModal({
   )
 }
 
-function SidebarProjectToolbar({
+export function SidebarProjectToolbar({
   allCollapsed,
   filterSlot,
+  onImportHistory,
   onToggleAll,
   onAddProject,
 }: {
   allCollapsed: boolean
   filterSlot: ReactNode
+  onImportHistory: () => void
   onToggleAll: () => void
   onAddProject: () => void
 }) {
@@ -1126,8 +1128,17 @@ function SidebarProjectToolbar({
         <span>{t('sidebar.projectsToolbar.title')}</span>
       </div>
       <div className="sidebar-project-toolbar-actions">
+        <button
+          type="button"
+          className="icon-btn sidebar-project-toolbar-btn"
+          title={t('sidebar.importHistory')}
+          aria-label={t('sidebar.importHistory')}
+          onClick={onImportHistory}
+        >
+          <Icons.Upload />
+        </button>
         <ActionIcon
-          className="sidebar-project-toolbar-btn"
+          className="sidebar-project-toolbar-btn sidebar-project-toolbar-collapse-btn"
           icon={allCollapsed ? Maximize2 : Minimize2}
           size="small"
           variant="borderless"
@@ -1389,6 +1400,7 @@ export function SidebarSessionList() {
         <SidebarProjectToolbar
           allCollapsed={allVisibleGroupsCollapsed}
           filterSlot={filterSlot}
+          onImportHistory={() => ctx.setHistoryImportOpen(true)}
           onToggleAll={handleToggleAllGroups}
           onAddProject={() => ctx.setProjectDialog('create')}
         />
