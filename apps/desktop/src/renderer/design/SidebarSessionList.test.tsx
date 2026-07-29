@@ -122,6 +122,65 @@ describe('ProjectSessionGroup pagination', () => {
     expect(visibleSessionCount()).toBe(8)
     expect(paginationButton().textContent).toBe('显示更多30')
   })
+
+  it('places archive before the more-actions button and archives without opening a menu', () => {
+    const sessions = createSessions(1)
+    const onArchiveSession = vi.fn()
+    const workspace: WorkspaceInfo = {
+      archivedAt: null,
+      createdAt: '2026-07-29T08:00:00.000Z',
+      id: 'workspace-1',
+      name: 'Spark-Agent',
+      pinnedAt: null,
+      rootPath: '/tmp/spark-agent',
+      updatedAt: '2026-07-29T08:00:00.000Z',
+      worktreeMeta: null,
+    }
+
+    act(() => {
+      root.render(
+        <ProjectSessionGroup
+          group={{ workspace, sessions }}
+          activeSessionId={null}
+          activeWorkspaceId={workspace.id}
+          sessionAgentStatuses={{}}
+          sessionTerminalActivity={{}}
+          unreviewedCompletedSessions={new Set()}
+          open
+          onOpenChange={() => undefined}
+          onSelectWorkspace={async () => undefined}
+          onSelectSession={() => undefined}
+          onNewSession={() => undefined}
+          onRenameProject={() => undefined}
+          onToggleProjectPinned={() => undefined}
+          onArchiveProject={() => undefined}
+          onDeleteProject={() => undefined}
+          onOpenProjectFolder={() => undefined}
+          onRenameSession={() => undefined}
+          onToggleSessionPinned={() => undefined}
+          onArchiveSession={onArchiveSession}
+          onDeleteSession={() => undefined}
+        />,
+      )
+    })
+
+    const actions = container.querySelector('.session-item-actions')
+    const archiveButton = actions?.querySelector<HTMLButtonElement>('.session-archive-btn')
+    const moreButton = actions?.querySelector<HTMLButtonElement>('.item-menu-btn')
+
+    if (archiveButton == null || moreButton == null) {
+      throw new Error('Missing session row actions')
+    }
+    expect(archiveButton).not.toBeNull()
+    expect(moreButton).not.toBeNull()
+    expect(archiveButton.compareDocumentPosition(moreButton)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+
+    act(() => archiveButton.click())
+
+    expect(onArchiveSession).toHaveBeenCalledOnce()
+    expect(onArchiveSession).toHaveBeenCalledWith(sessions[0])
+    expect(document.querySelector('.action-menu')).toBeNull()
+  })
 })
 
 describe('SidebarProjectToolbar', () => {

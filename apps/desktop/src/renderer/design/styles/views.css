@@ -8636,6 +8636,15 @@ body.inspector-resizing {
   color: var(--text);
   font-family: inherit;
 }
+.palette-search input:hover {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 15px;
+  color: var(--text);
+  font-family: inherit;
+}
 .palette-search input::placeholder {
   color: var(--text-faint);
 }

@@ -9,6 +9,17 @@ import { CanvasWorkflowLibraryView } from './CanvasWorkflowLibraryView'
 import { canvasWorkflowApi } from './canvasWorkflow.api'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+vi.mock('../../AppContext', () => ({
+  useApp: () => ({
+    t: { sidebarHidden: false },
+    setTweak: vi.fn(),
+  }),
+}))
+
+vi.mock('./canvas.store', () => ({
+  useCanvasProjects: () => ({ projects: [], loading: false, refresh: vi.fn() }),
+}))
+
 vi.mock('./canvasWorkflow.api', () => ({
   canvasWorkflowApi: {
     list: vi.fn(),

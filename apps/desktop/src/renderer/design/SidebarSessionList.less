@@ -356,6 +356,41 @@
 //   display: flex;
 // }
 
+/* 会话行快捷操作：悬浮时将“归档”提升到“更多”左侧，两者保持同一层级。 */
+.session-item-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.chat-item-compact:hover .session-item-actions,
+.chat-item-compact:focus-within .session-item-actions,
+.session-item-actions.menu-open {
+  display: flex;
+}
+
+/* views.css 默认仅在 hover 时展示 item-menu-wrap；此处的外层已经统一控制显隐。 */
+.chat-item-compact .session-item-actions .item-menu-wrap {
+  display: flex;
+}
+
+.session-row-action-btn {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  color: var(--text-muted);
+}
+
+.session-row-action-btn:hover,
+.session-row-action-btn:focus-visible {
+  color: var(--text);
+}
+
+.session-item-actions .item-menu-btn {
+  opacity: 1;
+}
+
 /* ─── Sidebar 空态：更轻、更克制的项目/筛选空态 ─── */
 .sidebar-empty-state {
   justify-content: center;

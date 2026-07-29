@@ -582,56 +582,68 @@ function ChatListItem({
         ) : (
           <span className="chat-item-time-compact">{formatSidebarTime(s.updatedAt)}</span>
         )}
-        <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
-          <Dropdown
-            menu={{ items: [] }}
-            open={menuOpen}
-            onOpenChange={(open) => {
-              setMenuOpen(open)
-              if (!open) setContextOpen(false)
+        <div className={`session-item-actions${menuOpen ? ' menu-open' : ''}`}>
+          <button
+            type="button"
+            className="icon-btn session-row-action-btn session-archive-btn"
+            title={t('sidebar.session.archive')}
+            aria-label={t('sidebar.session.archive')}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation()
+              onArchive?.(s)
             }}
-            trigger={['click']}
-            placement="topRight"
-            align={{ overflow: { shiftX: true, adjustY: true } }}
-            popupRender={() => (
-              <ActionMenu
-                onAction={() => setMenuOpen(false)}
-                items={[
-                  {
-                    icon: s.pinnedAt == null ? <Pin size={14} /> : <PinOff size={14} />,
-                    label:
-                      s.pinnedAt == null ? t('sidebar.session.pin') : t('sidebar.session.unpin'),
-                    onClick: () => onTogglePinned?.(s),
-                  },
-                  {
-                    icon: <Icons.Edit size={14} />,
-                    label: t('sidebar.session.rename'),
-                    onClick: () => onRename?.(s),
-                  },
-                  {
-                    icon: <Icons.Box size={14} />,
-                    label: t('sidebar.session.archive'),
-                    onClick: () => onArchive?.(s),
-                  },
-                  {
-                    icon: <Icons.Trash size={14} />,
-                    label: t('sidebar.session.delete'),
-                    danger: true,
-                    onClick: () => onDelete?.(s),
-                  },
-                ]}
-              />
-            )}
           >
-            <button
-              className="icon-btn item-menu-btn"
-              title={t('sidebar.session.actions')}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
+            <Icons.Box size={15} />
+          </button>
+          <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
+            <Dropdown
+              menu={{ items: [] }}
+              open={menuOpen}
+              onOpenChange={(open) => {
+                setMenuOpen(open)
+                if (!open) setContextOpen(false)
+              }}
+              trigger={['click']}
+              placement="topRight"
+              align={{ overflow: { shiftX: true, adjustY: true } }}
+              popupRender={() => (
+                <ActionMenu
+                  onAction={() => setMenuOpen(false)}
+                  items={[
+                    {
+                      icon: s.pinnedAt == null ? <Pin size={14} /> : <PinOff size={14} />,
+                      label:
+                        s.pinnedAt == null ? t('sidebar.session.pin') : t('sidebar.session.unpin'),
+                      onClick: () => onTogglePinned?.(s),
+                    },
+                    {
+                      icon: <Icons.Edit size={14} />,
+                      label: t('sidebar.session.rename'),
+                      onClick: () => onRename?.(s),
+                    },
+                    {
+                      icon: <Icons.Trash size={14} />,
+                      label: t('sidebar.session.delete'),
+                      danger: true,
+                      onClick: () => onDelete?.(s),
+                    },
+                  ]}
+                />
+              )}
             >
-              <Icons.More size={15} />
-            </button>
-          </Dropdown>
+              <button
+                type="button"
+                className="icon-btn item-menu-btn session-row-action-btn"
+                title={t('sidebar.session.actions')}
+                aria-label={t('sidebar.session.actions')}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Icons.More size={15} />
+              </button>
+            </Dropdown>
+          </div>
         </div>
       </div>
     </div>
@@ -687,9 +699,7 @@ export function ProjectSessionGroup({
 }) {
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [visibleSessionCount, setVisibleSessionCount] = useState(
-    PROJECT_SESSION_INITIAL_VISIBLE,
-  )
+  const [visibleSessionCount, setVisibleSessionCount] = useState(PROJECT_SESSION_INITIAL_VISIBLE)
   const isActiveProject = activeWorkspaceId === group.workspace.id
 
   const sessions = group.sessions
@@ -820,10 +830,7 @@ export function ProjectSessionGroup({
           ) : (
             <>
               {visibleSessions.map((session, index) => {
-                const dateMarker = shouldShowSessionDateMarker(
-                  session,
-                  visibleSessions[index - 1],
-                )
+                const dateMarker = shouldShowSessionDateMarker(session, visibleSessions[index - 1])
                   ? formatSessionDateMarker(session.updatedAt)
                   : null
                 return (
@@ -1260,11 +1267,7 @@ export function SidebarSessionList() {
 
   const isDeleteShortcutBlocked = useCallback(() => {
     if (hasDialogOpen || ctx.historyImportOpen) return true
-    if (
-      appState.showPalette ||
-      appState.showPerm ||
-      appState.showProviderEdit
-    ) {
+    if (appState.showPalette || appState.showPerm || appState.showProviderEdit) {
       return true
     }
     return isModalOverlayVisible()
@@ -1312,7 +1315,8 @@ export function SidebarSessionList() {
       filter.projectId === 'all' ? null : ctx.workspaces.find((w) => w.id === filter.projectId)
     const selectedBaseWorkspaceId = selectedWorkspace?.worktreeMeta?.baseWorkspaceId
     const selectedProjectGroupId =
-      selectedBaseWorkspaceId != null && ctx.workspaces.some((w) => w.id === selectedBaseWorkspaceId)
+      selectedBaseWorkspaceId != null &&
+      ctx.workspaces.some((w) => w.id === selectedBaseWorkspaceId)
         ? selectedBaseWorkspaceId
         : filter.projectId
     const projectGroups = buildProjectGroups(ctx.workspaces, filteredSessions).filter(
@@ -1358,9 +1362,7 @@ export function SidebarSessionList() {
     />
   )
   const [collapsedProjectIds, setCollapsedProjectIds] = useState(() => getCollapsedProjects())
-  const [collapsedFlatGroupIds, setCollapsedFlatGroupIds] = useState(() =>
-    getCollapsedFlatGroups(),
-  )
+  const [collapsedFlatGroupIds, setCollapsedFlatGroupIds] = useState(() => getCollapsedFlatGroups())
   const handleProjectOpenChange = useCallback((workspaceId: string, nextOpen: boolean) => {
     setProjectCollapsed(workspaceId, !nextOpen)
     setCollapsedProjectIds(getCollapsedProjects())

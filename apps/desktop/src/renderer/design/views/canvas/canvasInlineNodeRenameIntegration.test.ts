@@ -8,24 +8,23 @@ const readCanvasSource = (relativePath: string) =>
 describe('canvas inline node rename integration', () => {
   it('routes ordinary node titles through the inline editor and patchNodes', () => {
     const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
+    const toolbar = readCanvasSource('./CanvasFloatingNodeToolbar.tsx')
 
-    expect(workspace).toContain(
+    expect(toolbar).toContain(
       "import { CanvasInlineNodeTitleEditor } from './CanvasInlineNodeTitleEditor'",
     )
-    expect(workspace).toContain(
-      'onRenameNode: (title: string | null) => Promise<void> | void',
-    )
-    expect(workspace).toContain('<CanvasInlineNodeTitleEditor')
+    expect(toolbar).toContain('onRenameNode: (title: string | null) => Promise<void> | void')
+    expect(toolbar).toContain('<CanvasInlineNodeTitleEditor')
     expect(workspace).toContain('onRenameNode={renameInlinePanelNodeStable}')
     expect(workspace).toContain('await patchNodes([nodeId], { title })')
   })
 
   it('keeps operation node titles on their existing settings path', () => {
-    const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
+    const toolbar = readCanvasSource('./CanvasFloatingNodeToolbar.tsx')
 
-    expect(workspace).toContain('isOperation ? (')
-    expect(workspace).toContain('<span>{operationTitle}</span>')
-    expect(workspace).toContain('<CanvasInlineNodeTitleEditor')
+    expect(toolbar).toContain('isOperation ? (')
+    expect(toolbar).toContain('<span>{operationTitle}</span>')
+    expect(toolbar).toContain('<CanvasInlineNodeTitleEditor')
   })
 
   it('keeps the inline title control within the existing toolbar height', () => {

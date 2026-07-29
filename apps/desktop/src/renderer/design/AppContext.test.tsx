@@ -6,7 +6,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProvider, DEFAULT_TWEAKS, useApp } from './AppContext'
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('./components/ConfirmDialog', () => ({
   ConfirmDialog: () => null,
@@ -62,6 +62,31 @@ describe('AppContext visual tweak persistence', () => {
     expect(DEFAULT_TWEAKS.floatingSidebarWidth).toBe(272)
   })
 
+  it('uses the floating sidebar by default on desktop platforms', async () => {
+    vi.stubGlobal('spark', {
+      platform: 'darwin',
+      invoke: vi.fn(async () => ({ value: null })),
+      on: vi.fn(() => vi.fn()),
+    })
+
+    function SidebarStyleHarness() {
+      const { t } = useApp()
+      return <span data-testid="sidebar-style">{t.sidebarStyle}</span>
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <AppProvider>
+          <SidebarStyleHarness />
+        </AppProvider>,
+      )
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="sidebar-style"]')?.textContent).toBe('floating')
+  })
+
   it('follows the system theme by default when no theme has been persisted', async () => {
     function ThemeHarness() {
       const { t } = useApp()
@@ -70,7 +95,11 @@ describe('AppContext visual tweak persistence', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(<AppProvider><ThemeHarness /></AppProvider>)
+      root.render(
+        <AppProvider>
+          <ThemeHarness />
+        </AppProvider>,
+      )
       await Promise.resolve()
     })
 
@@ -110,7 +139,11 @@ describe('AppContext visual tweak persistence', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(<AppProvider><VisualTweaksHarness /></AppProvider>)
+      root.render(
+        <AppProvider>
+          <VisualTweaksHarness />
+        </AppProvider>,
+      )
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -161,7 +194,11 @@ describe('AppContext visual tweak persistence', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(<AppProvider><VisualTweaksHarness /></AppProvider>)
+      root.render(
+        <AppProvider>
+          <VisualTweaksHarness />
+        </AppProvider>,
+      )
       await Promise.resolve()
       await Promise.resolve()
     })
