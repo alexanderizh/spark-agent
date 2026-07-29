@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { pruneMacElectronLocales, hardenElectronFuses } =
+const { pruneMacElectronLocales, hardenElectronFuses, signWindowsStandaloneNodeRuntime } =
   require('../../../../scripts/after-pack.js') as {
     pruneMacElectronLocales: (appPath: string) => Promise<{ kept: string[]; removed: number }>
     hardenElectronFuses: (
@@ -13,6 +13,18 @@ const { pruneMacElectronLocales, hardenElectronFuses } =
         flipFuses(path: string, options: Record<string | number, unknown>): Promise<void>
       },
     ) => Promise<void>
+    signWindowsStandaloneNodeRuntime: (
+      context: unknown,
+      runtime: { executablePath: string },
+      dependencies: {
+        environment: NodeJS.ProcessEnv
+        sign: (packager: unknown, executablePath: string) => Promise<void>
+        inspect: (
+          executablePath: string,
+          options: { expectedPublisherThumbprint: string },
+        ) => Promise<{ publisherThumbprint: string; timestamped: boolean }>
+      },
+    ) => Promise<{ signed: boolean }>
   }
 const {
   createNativeHostManifest,
@@ -188,6 +200,46 @@ describe('after-pack Native Host artifact manifest', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  it('signs the copied Windows Node runtime with the configured release publisher', async () => {
+    const sign = vi.fn().mockResolvedValue(undefined)
+    const inspect = vi.fn().mockResolvedValue({
+      publisherThumbprint: 'd'.repeat(64),
+      timestamped: true,
+    })
+    const packager = { signIf: vi.fn() }
+
+    await expect(
+      signWindowsStandaloneNodeRuntime(
+        { packager },
+        { executablePath: 'C:\\SparkWork\\resources\\runtime\\node\\node.exe' },
+        {
+          environment: {
+            SPARK_NATIVE_HOST_TRUST_MODE: 'signed',
+            SPARK_WINDOWS_PUBLISHER_THUMBPRINT: 'd'.repeat(64),
+            WIN_CSC_LINK: 'C:\\signing.pfx',
+            WIN_CSC_KEY_PASSWORD: 'secret',
+          },
+          sign,
+          inspect,
+        },
+      ),
+    ).resolves.toEqual({
+      signed: true,
+      signature: {
+        publisherThumbprint: 'd'.repeat(64),
+        timestamped: true,
+      },
+    })
+    expect(sign).toHaveBeenCalledWith(
+      packager,
+      'C:\\SparkWork\\resources\\runtime\\node\\node.exe',
+    )
+    expect(inspect).toHaveBeenCalledWith(
+      'C:\\SparkWork\\resources\\runtime\\node\\node.exe',
+      expect.objectContaining({ expectedPublisherThumbprint: 'd'.repeat(64) }),
+    )
   })
 
   it('binds the final signed executable bytes to the protocol and designated identity', () => {
