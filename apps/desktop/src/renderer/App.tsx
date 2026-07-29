@@ -48,6 +48,7 @@ import { Tooltip } from '@lobehub/ui'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { getSidebarAutoSyncAction } from './sidebarAutoSync'
 import { resolveSidebarActiveWorkspaceId } from './design/sidebar-session-routing'
+import { EMPTY_HERO_THEMES } from './design/views/chat/emptyHeroThemes'
 import sparkLogo from './assets/spark-logo.png'
 import {
   enqueueUserQuestions,
@@ -722,6 +723,23 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                     },
                     { type: 'divider' as const },
                     {
+                      key: 'empty-hero-theme',
+                      label: menuLabel(<Icons.Sparkles size={14} />, '会话主题'),
+                      children: EMPTY_HERO_THEMES.map((theme) => ({
+                        key: `empty-hero-theme-${theme.id}`,
+                        title: theme.description,
+                        label: menuLabel(
+                          <span
+                            className="user-menu-accent-swatch"
+                            style={{ background: theme.preview }}
+                          />,
+                          theme.name,
+                          t.emptyHeroTheme === theme.id,
+                        ),
+                      })),
+                    },
+                    { type: 'divider' as const },
+                    {
                       key: 'accent',
                       label: menuLabel(
                         <span className="user-menu-accent-dot" style={{ background: t.primary }} />,
@@ -828,7 +846,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                     setTweak('sidebarStyle', 'flat')
                     break
                   default:
-                    if (key.startsWith('accent-')) {
+                    if (key.startsWith('empty-hero-theme-')) {
+                      const nextTheme = key.slice('empty-hero-theme-'.length)
+                      const theme = EMPTY_HERO_THEMES.find((item) => item.id === nextTheme)
+                      if (theme != null) setTweak('emptyHeroTheme', theme.id)
+                    } else if (key.startsWith('accent-')) {
                       setTweak('primary', key.slice('accent-'.length))
                     } else if (key === 'remote') {
                       setTweak('view', 'settings')

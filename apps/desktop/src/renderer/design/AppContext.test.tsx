@@ -84,6 +84,7 @@ describe('AppContext visual tweak persistence', () => {
         return {
           value: {
             theme: 'dark',
+            emptyHeroTheme: 'moss',
             primary: '#10b981',
             density: 'compact',
             font: 'inter',
@@ -101,7 +102,9 @@ describe('AppContext visual tweak persistence', () => {
     function VisualTweaksHarness() {
       const { t } = useApp()
       return (
-        <span data-testid="visual-tweaks">{`${t.theme}:${t.primary}:${t.density}`}</span>
+        <span data-testid="visual-tweaks">
+          {`${t.theme}:${t.emptyHeroTheme}:${t.primary}:${t.density}`}
+        </span>
       )
     }
 
@@ -112,10 +115,12 @@ describe('AppContext visual tweak persistence', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('[data-testid="visual-tweaks"]')?.textContent)
-      .toBe('dark:#10b981:compact')
+    expect(container.querySelector('[data-testid="visual-tweaks"]')?.textContent).toBe(
+      'dark:moss:#10b981:compact',
+    )
     expect(JSON.parse(localStorage.getItem('spark-settings-appearance') ?? '{}')).toMatchObject({
       theme: 'dark',
+      emptyHeroTheme: 'moss',
       primary: '#10b981',
       density: 'compact',
       font: 'inter',
@@ -200,6 +205,58 @@ describe('AppContext visual tweak persistence', () => {
         font: 'inter',
         fontSize: 16,
       }),
+    })
+  })
+
+  it('persists the empty conversation theme as an appearance setting', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'settings:get') return { value: null }
+      return { ok: true }
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    function EmptyHeroThemeHarness() {
+      const { t, setTweak } = useApp()
+      return (
+        <>
+          <button type="button" onClick={() => setTweak('emptyHeroTheme', 'midnight')}>
+            Midnight hero
+          </button>
+          <span data-testid="empty-hero-theme">{t.emptyHeroTheme}</span>
+        </>
+      )
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <AppProvider>
+          <EmptyHeroThemeHarness />
+        </AppProvider>,
+      )
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      const button = container.querySelector('button')
+      if (button == null) throw new Error('Button missing')
+      click(button)
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="empty-hero-theme"]')?.textContent).toBe(
+      'midnight',
+    )
+    expect(JSON.parse(localStorage.getItem('spark-settings-appearance') ?? '{}')).toMatchObject({
+      emptyHeroTheme: 'midnight',
+    })
+    expect(invoke).toHaveBeenCalledWith('settings:set', {
+      category: 'appearance',
+      key: 'data',
+      value: expect.objectContaining({ emptyHeroTheme: 'midnight' }),
     })
   })
 })

@@ -4,19 +4,15 @@ import { Icons } from '../../Icons'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../../avatar'
 import { AvatarImage } from '../../components/AvatarImage'
 import { formatShortcut } from '../../hooks/useKeyboard'
+import { getEmptyHeroTheme, type EmptyHeroThemeId } from './emptyHeroThemes'
 
 export function resolveAgentDisplay(agents: ManagedAgent[], agentId: string | null | undefined) {
   if (agentId == null || agentId.length === 0) return null
   return agents.find((agent) => agent.id === agentId) ?? null
 }
 
-type HeroGreetingCopy = {
-  title: string
-  body: string
-}
-
 /**
- * 空会话推荐卡片：每次展示 3 个，5s 自动轮换一组，鼠标悬停暂停。
+ * 空会话推荐卡片：桌面端每次展示 4 个，5s 自动轮换一组，鼠标悬停暂停。
  *
  * 卡片规范：
  * - 标题 ≤ 6 字，简短有力
@@ -26,77 +22,64 @@ type HeroGreetingCopy = {
  */
 const SINGLE_AGENT_HERO_ACTIONS = [
   {
+    title: '制作网页',
+    desc: 'Web · 从设计到部署',
+    Icon: Icons.Globe,
+    prompt: '使用spark-web-tool 技能。做一个在线网页，主题是：',
+  },
+  {
+    title: '创建团队',
+    desc: 'Teams · 多 Agent 协作',
+    Icon: Icons.Team,
+    prompt: '帮我创建一个团队，用来做：',
+  },
+  {
+    title: '打开浏览器',
+    desc: 'Browser · 浏览与操作',
+    Icon: Icons.Monitor,
+    prompt:
+      '优先 browser-use 技能。告诉我你想打开的网址、要做什么（抓取信息 / 操作页面 / 截图），确认后再执行。',
+  },
+  {
+    title: '分析项目',
+    desc: 'Codebase · 理清结构',
+    Icon: Icons.Search,
+    prompt:
+      '请先阅读当前项目，梳理架构、关键执行流程和需要优先关注的风险，然后给我一份简洁的项目导览。',
+  },
+  {
     title: '创建 Agent',
-    desc: 'agent-identifier',
+    desc: 'Agent · 定义专属角色',
     Icon: Icons.Bot,
     prompt:
       '使用 agent-identifier 技能。先问我 Agent 的职责、适用场景和权限边界，给一份可落地的配置方案，等我确认再落地。',
   },
   {
     title: '安装 Skill',
-    desc: 'skill-installer',
+    desc: 'Skills · 扩展新能力',
     Icon: Icons.Skills,
     prompt: '优先 skill-installer 技能。先列出候选技能清单和风险，等我选定再装，不要自动安装。',
   },
   {
     title: '制作 PPT',
-    desc: 'ppt-master',
+    desc: 'Slides · 可编辑演示稿',
     Icon: Icons.Sparkles,
     prompt:
       '先检查是否已安装 ppt-master；未安装时请通过精选市场 catalog 安装（优先 Spark 自建安装源），再使用 ppt-master 制作高质量可编辑 PPTX。主题是：',
   },
   {
-    title: '制作网页',
-    desc: 'spark-web-tool',
-    Icon: Icons.Globe,
-    prompt: '使用spark-web-tool 技能。做一个在线网页，主题是：',
-  },
-  {
-    title: '创建团队',
-    desc: 'teams',
-    Icon: Icons.Team,
-    prompt: '帮我创建一个团队，用来做：',
-  },
-  {
-    title: '打开浏览器',
-    desc: 'browser-use',
-    Icon: Icons.Monitor,
+    title: '继续开发',
+    desc: 'Workspace · 接续上下文',
+    Icon: Icons.Code,
     prompt:
-      '优先 browser-use 技能。告诉我你想打开的网址、要做什么（抓取信息 / 操作页面 / 截图），确认后再执行。',
+      '请读取当前工作区和最近改动，概括上次做到哪里、还有哪些未完成事项，然后从最合理的下一步继续开发。',
   },
 ] as const
 
-/** 空会话推荐卡片：每页展示几张（与 CSS grid 列数保持一致）。 */
-const SINGLE_AGENT_HERO_VISIBLE_COUNT = 3
+/** 空会话推荐卡片：宽屏每页展示几张（与主题 CSS grid 保持一致）。 */
+const SINGLE_AGENT_HERO_VISIBLE_COUNT = 4
 /** 轮换间隔，参考底部 hero-tips 节奏（5s）。 */
 const SINGLE_AGENT_HERO_ROTATE_MS = 5000
-
-/** 单 Agent 空会话问候：按时段给出正式、稳定的开场语。 */
-function getHeroGreeting(): HeroGreetingCopy {
-  const h = new Date().getHours()
-  if (h < 5) {
-    return {
-      title: '稳步推进当前任务',
-      body: '把目标告诉我，我会先梳理上下文，再给出清晰的执行路径。',
-    }
-  }
-  if (h < 11) {
-    return {
-      title: '早安，准备开始',
-      body: '可以从一个问题、一段代码或一个项目目标开始，我会协助拆解并执行。',
-    }
-  }
-  if (h < 18) {
-    return {
-      title: '下午好，继续推进',
-      body: '我可以接手修改、运行验证，或先帮你把复杂需求整理成可执行步骤。',
-    }
-  }
-  return {
-    title: '晚上好，整理下一步',
-    body: '适合做代码收尾、环境检查、文档更新，或把明天的任务先规划清楚。',
-  }
-}
 
 /* 空会话底部：纵向轮播的功能 / 快捷键 / 小技巧提示（淡色，5s 切换，悬停暂停）。 */
 type HeroTipKind = 'shortcut' | 'feature' | 'tip'
@@ -196,11 +179,17 @@ export function HeroTipsTicker() {
   )
 }
 
-export function SingleAgentEmptyHero({ onSelectPrompt }: { onSelectPrompt: (prompt: string) => void }) {
-  const greeting = getHeroGreeting()
+export function SingleAgentEmptyHero({
+  themeId,
+  onSelectPrompt,
+}: {
+  themeId: EmptyHeroThemeId
+  onSelectPrompt: (prompt: string) => void
+}) {
+  const theme = getEmptyHeroTheme(themeId)
 
   // 推荐卡片按窗口宽度决定每页展示几张；移动端 grid 会塌成单列（见 .less），
-  // 用 matchMedia 跟 grid 列数同步，桌面端 3 列 / 移动端 1 列。
+  // 用 matchMedia 跟 grid 列数同步：宽屏 4 列、中等窗口 2 列、窄屏 1 列。
   // 双层 cross-fade 用一个 phase state 描述：activePage 是当前渲染页；
   // outgoingPage 是正在淡出的旧页（动画完成前为非 null）。
   // 用 setState callback 在 setInterval 回调里推进，避免 effect 同步 setState。
@@ -213,20 +202,31 @@ export function SingleAgentEmptyHero({ onSelectPrompt }: { onSelectPrompt: (prom
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const mql = window.matchMedia('(max-width: 720px)')
+    const narrowMql = window.matchMedia('(max-width: 720px)')
+    const mediumMql = window.matchMedia('(max-width: 1100px)')
     const apply = () => {
       // 列数变化时同步重置 phase（避免越界）。回调里 setState 是合法的。
-      setVisibleCount(mql.matches ? 1 : SINGLE_AGENT_HERO_VISIBLE_COUNT)
+      setVisibleCount(
+        narrowMql.matches ? 1 : mediumMql.matches ? 2 : SINGLE_AGENT_HERO_VISIBLE_COUNT,
+      )
       setPhase({ activePage: 0, outgoingPage: null })
     }
     apply()
     // Safari < 14 走 addListener；新版走 addEventListener。
-    if (typeof mql.addEventListener === 'function') {
-      mql.addEventListener('change', apply)
-      return () => mql.removeEventListener('change', apply)
+    if (typeof narrowMql.addEventListener === 'function') {
+      narrowMql.addEventListener('change', apply)
+      mediumMql.addEventListener('change', apply)
+      return () => {
+        narrowMql.removeEventListener('change', apply)
+        mediumMql.removeEventListener('change', apply)
+      }
     }
-    mql.addListener(apply)
-    return () => mql.removeListener(apply)
+    narrowMql.addListener(apply)
+    mediumMql.addListener(apply)
+    return () => {
+      narrowMql.removeListener(apply)
+      mediumMql.removeListener(apply)
+    }
   }, [])
 
   const totalActions = SINGLE_AGENT_HERO_ACTIONS.length
@@ -261,10 +261,29 @@ export function SingleAgentEmptyHero({ onSelectPrompt }: { onSelectPrompt: (prom
   const outgoingActions = phase.outgoingPage != null ? sliceFor(phase.outgoingPage) : []
 
   return (
-    <section className="single-empty-hero" aria-label="空会话欢迎提示">
-      <div className="single-empty-copy">
-        <h1 className="chat-hero-title single-empty-title">{greeting.title}</h1>
-        {/* <p className="single-empty-body">{greeting.body}</p> */}
+    <section
+      className={`single-empty-hero single-empty-hero-${theme.id}`}
+      data-empty-theme={theme.id}
+      aria-label={`${theme.name}空会话欢迎提示`}
+    >
+      <div className="single-empty-heading">
+        <div className="single-empty-copy">
+          <span className="single-empty-eyebrow">{theme.eyebrow}</span>
+          <h1 className="chat-hero-title single-empty-title">
+            {theme.titleLines.map((line) => (
+              <span key={line}>{line}</span>
+            ))}
+          </h1>
+          <p className="single-empty-body">{theme.body}</p>
+        </div>
+        <div className="single-empty-art" aria-hidden="true">
+          <span className="single-empty-art-orb" />
+          <span className="single-empty-art-ring ring-one" />
+          <span className="single-empty-art-ring ring-two" />
+          <span className="single-empty-art-spark" />
+          <span className="single-empty-art-dot dot-one" />
+          <span className="single-empty-art-dot dot-two" />
+        </div>
       </div>
       <div
         className="single-empty-actions"
@@ -314,6 +333,9 @@ export function SingleAgentEmptyHero({ onSelectPrompt }: { onSelectPrompt: (prom
               <span className="single-empty-action-copy">
                 <strong>{title}</strong>
                 <span>{desc}</span>
+              </span>
+              <span className="single-empty-action-arrow" aria-hidden="true">
+                →
               </span>
             </button>
           ))}
