@@ -13,7 +13,9 @@ import { createPortal } from 'react-dom'
 import type { ChatTurnNavItem } from './chat-turn-navigation'
 import './ChatTurnNavigator.less'
 
-const MIN_LEFT_GUTTER = 56
+// 展开后的最长线到滚动区左侧约 44px；正文自身另有 16px 内边距，
+// 因此 28px 的外侧留白已经足够避免与正文重叠。
+const MIN_LEFT_GUTTER = 28
 const PREVIEW_OPEN_DELAY_MS = 100
 const PREVIEW_CLOSE_DELAY_MS = 80
 const PREVIEW_EDGE_GAP = 10

@@ -101,6 +101,7 @@ describe('ChatTurnNavigator', () => {
   let container: HTMLDivElement
   let root: Root
   let rectSpy: ReturnType<typeof vi.spyOn>
+  let contentLeft: number
 
   beforeEach(() => {
     vi.useFakeTimers()
@@ -109,6 +110,7 @@ describe('ChatTurnNavigator', () => {
       'matchMedia',
       vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
     )
+    contentLeft = 150
     rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: HTMLElement,
     ) {
@@ -116,7 +118,14 @@ describe('ChatTurnNavigator', () => {
         return { left: 0, right: 1200, top: 0, bottom: 700, width: 1200, height: 700 }
       }
       if (this.classList.contains('chat-stream-inner')) {
-        return { left: 150, right: 1050, top: 0, bottom: 900, width: 900, height: 900 }
+        return {
+          left: contentLeft,
+          right: contentLeft + 900,
+          top: 0,
+          bottom: 900,
+          width: 900,
+          height: 900,
+        }
       }
       if (this.classList.contains('chat-stream')) {
         return { left: 0, right: 1200, top: 0, bottom: 700, width: 1200, height: 700 }
@@ -193,5 +202,12 @@ describe('ChatTurnNavigator', () => {
     )
     act(() => root.render(<Harness {...props} navItems={updatedItems} />))
     expect(document.body.textContent).toContain('新的流式回答片段')
+  })
+
+  it('stays visible with the compact 28px content gutter', () => {
+    contentLeft = 28
+    act(() => root.render(<Harness onNavigate={vi.fn()} onLoadOlder={vi.fn()} />))
+
+    expect(container.querySelector('[aria-label="对话轮次导航"]')).not.toBeNull()
   })
 })
