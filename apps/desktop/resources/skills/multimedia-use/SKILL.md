@@ -49,6 +49,7 @@ tags:
    - 先 `mcp__spark_media__list_models` 找候选。
    - 调用生成前，先 `mcp__spark_media__describe_model` 查看参数 schema。
    - 用户明确指定模型时，把 `list_models` 返回的 `selectionKey`（优先）或唯一 `modelId` 原样传给生成工具的 `model` 参数；不得静默改用默认模型。
+   - Spark 平台自带的图片模型也通过 `spark_media` 调用。它们可能使用平台别名作为 `modelId`，不要把适配器模板模型 ID 当成实际模型发送，也不要尝试把图片模型当作聊天模型调用。
    - 再调用 `generate_image` / `edit_image` / `generate_video` / `generate_audio` / `transcribe_audio`。
    - Provider 文件平台使用 `upload_file` / `get_file` / `list_files`；删除前先取得用户明确确认，再调用 `delete_file`。
    - 异步任务用 `get_task` 查询，必要时 `cancel_task`。
