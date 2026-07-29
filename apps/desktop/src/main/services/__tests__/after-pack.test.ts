@@ -327,14 +327,17 @@ TeamIdentifier=ABCDE12345
   })
 
   it('passes the Windows Authenticode path through the PowerShell environment', async () => {
-    const runCommand = vi.fn(async () => ({
+    const runCommand = vi.fn(async (..._args: unknown[]) => ({
       stdout: `${Buffer.alloc(32, 0xdd).toString('base64')}\n1\n`,
       stderr: '',
     }))
 
     await expect(
       inspectWindowsAuthenticode('D:\\SparkComputerHost.exe', {
-        environment: { SystemRoot: 'C:\\Windows' },
+        environment: {
+          SystemRoot: 'C:\\Windows',
+          SPARK_WINDOWS_PUBLISHER_THUMBPRINT: 'dd'.repeat(32),
+        },
         runCommand,
       }),
     ).resolves.toEqual({ publisherThumbprint: 'dd'.repeat(32), timestamped: true })
@@ -344,10 +347,25 @@ TeamIdentifier=ABCDE12345
       expect.objectContaining({
         env: expect.objectContaining({
           SPARK_AUTHENTICODE_PATH: 'D:\\SparkComputerHost.exe',
+          SPARK_AUTHENTICODE_EXPECTED_PUBLISHER: Buffer.alloc(32, 0xdd).toString('base64'),
         }),
       }),
     )
     expect(runCommand.mock.calls[0]?.[1]).not.toContain('D:\\SparkComputerHost.exe')
+    expect(runCommand.mock.calls[0]?.[1]).toEqual(
+      expect.arrayContaining([
+        '-Command',
+        expect.stringContaining(
+          '[System.Security.Cryptography.X509Certificates.StoreName]::Root',
+        ),
+      ]),
+    )
+    expect(runCommand.mock.calls[0]?.[1]).toEqual(
+      expect.arrayContaining([
+        '-Command',
+        expect.stringContaining('$store.Remove($certificate)'),
+      ]),
+    )
   })
 
   it('publishes only supported desktop runner and architecture pairs', () => {
@@ -386,7 +404,15 @@ TeamIdentifier=ABCDE12345
         signingPublisherThumbprint: 'd'.repeat(64),
       }),
     )
-    const inspect = async () => ({ publisherThumbprint: 'd'.repeat(64), timestamped: true })
+    let activeInspections = 0
+    let maxActiveInspections = 0
+    const inspect = async () => {
+      activeInspections += 1
+      maxActiveInspections = Math.max(maxActiveInspections, activeInspections)
+      await Promise.resolve()
+      activeInspections -= 1
+      return { publisherThumbprint: 'd'.repeat(64), timestamped: true }
+    }
 
     try {
       await expect(
@@ -400,6 +426,7 @@ TeamIdentifier=ABCDE12345
           { expectedPublisherThumbprint: 'd'.repeat(64), inspect },
         ),
       ).resolves.toBeUndefined()
+      expect(maxActiveInspections).toBe(1)
     } finally {
       rmSync(windowsRoot, { recursive: true, force: true })
     }

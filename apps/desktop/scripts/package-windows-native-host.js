@@ -104,7 +104,9 @@ async function packageWindowsNativeHost(context) {
     manifest = createLocalWindowsNativeHostManifest({ executable, architecture })
   } else {
     await signWindowsNativeHost(context.packager, destinationExecutable)
-    const signature = await inspectWindowsAuthenticode(destinationExecutable)
+    const signature = await inspectWindowsAuthenticode(destinationExecutable, {
+      expectedPublisherThumbprint: publisherThumbprint,
+    })
     if (signature.publisherThumbprint !== publisherThumbprint) {
       throw new Error('Windows Native Host signer differs from SPARK_WINDOWS_PUBLISHER_THUMBPRINT')
     }
@@ -151,6 +153,14 @@ function resolveWindowsNativeHostTrustMode(environment = process.env) {
 
 async function inspectWindowsAuthenticode(executablePath, options = {}) {
   const environment = options.environment ?? process.env
+  const expectedPublisherThumbprint =
+    options.expectedPublisherThumbprint ?? environment.SPARK_WINDOWS_PUBLISHER_THUMBPRINT
+  const expectedPublisherFingerprint =
+    expectedPublisherThumbprint == null || expectedPublisherThumbprint.trim() === ''
+      ? null
+      : Buffer.from(normalizePublisherThumbprint(expectedPublisherThumbprint), 'hex').toString(
+          'base64',
+        )
   const systemRoot = environment.SystemRoot
   if (systemRoot == null || !/^[A-Za-z]:\\Windows$/i.test(systemRoot)) {
     throw new Error('Windows system directory is unavailable for Authenticode verification')
@@ -162,17 +172,73 @@ async function inspectWindowsAuthenticode(executablePath, options = {}) {
     'v1.0',
     'powershell.exe',
   )
-  const script = [
-    '$ErrorActionPreference = "Stop"',
-    '$path = $env:SPARK_AUTHENTICODE_PATH',
-    'if ([string]::IsNullOrWhiteSpace($path)) { throw "SPARK_AUTHENTICODE_PATH is empty" }',
-    '$signature = Get-AuthenticodeSignature -LiteralPath $path',
-    'if ($signature.Status -ne "Valid" -or $null -eq $signature.SignerCertificate) { exit 3 }',
-    '$sha = [System.Security.Cryptography.SHA256]::Create()',
-    'try { $hash = $sha.ComputeHash($signature.SignerCertificate.RawData) } finally { $sha.Dispose() }',
-    '[Convert]::ToBase64String($hash)',
-    'if ($null -eq $signature.TimeStamperCertificate) { "0" } else { "1" }',
-  ].join('; ')
+  const script = `
+$ErrorActionPreference = "Stop"
+$path = $env:SPARK_AUTHENTICODE_PATH
+if ([string]::IsNullOrWhiteSpace($path)) {
+  throw "SPARK_AUTHENTICODE_PATH is empty"
+}
+$signature = Get-AuthenticodeSignature -LiteralPath $path
+$certificate = $signature.SignerCertificate
+if ($null -eq $certificate) {
+  throw "Authenticode signature has no signer certificate: $($signature.Status) - $($signature.StatusMessage)"
+}
+$sha = [System.Security.Cryptography.SHA256]::Create()
+try {
+  $hash = $sha.ComputeHash($certificate.RawData)
+}
+finally {
+  $sha.Dispose()
+}
+$encoded = [Convert]::ToBase64String($hash)
+$expectedPublisher = $env:SPARK_AUTHENTICODE_EXPECTED_PUBLISHER
+if (
+  -not [string]::IsNullOrWhiteSpace($expectedPublisher) -and
+  $encoded -cne $expectedPublisher
+) {
+  throw "Authenticode signer differs from the configured publisher"
+}
+if (
+  ($signature.Status -eq "UnknownError" -or $signature.Status -eq "NotTrusted") -and
+  $certificate.Subject -eq $certificate.Issuer
+) {
+  $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+    [System.Security.Cryptography.X509Certificates.StoreName]::Root,
+    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+  )
+  $certificateAdded = $false
+  try {
+    $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+    $existing = $store.Certificates.Find(
+      [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
+      $certificate.Thumbprint,
+      $false
+    )
+    if ($existing.Count -eq 0) {
+      $store.Add($certificate)
+      $certificateAdded = $true
+    }
+    $store.Close()
+    $signature = Get-AuthenticodeSignature -LiteralPath $path
+  }
+  finally {
+    try {
+      if ($certificateAdded) {
+        $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+        $store.Remove($certificate)
+      }
+    }
+    finally {
+      $store.Close()
+    }
+  }
+}
+if ($signature.Status -ne "Valid") {
+  throw "Authenticode signature verification failed: $($signature.Status) - $($signature.StatusMessage)"
+}
+$encoded
+if ($null -eq $signature.TimeStamperCertificate) { "0" } else { "1" }
+`.trim()
   const result = await (options.runCommand ?? runCommand)(
     powershell,
     [
@@ -185,7 +251,13 @@ async function inspectWindowsAuthenticode(executablePath, options = {}) {
       script,
     ],
     {
-      env: { ...environment, SPARK_AUTHENTICODE_PATH: executablePath },
+      env: {
+        ...environment,
+        SPARK_AUTHENTICODE_PATH: executablePath,
+        ...(expectedPublisherFingerprint == null
+          ? {}
+          : { SPARK_AUTHENTICODE_EXPECTED_PUBLISHER: expectedPublisherFingerprint }),
+      },
     },
   )
   const [encoded, timestamped] = result.stdout.trim().split(/\r?\n/)

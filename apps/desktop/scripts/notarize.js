@@ -258,12 +258,18 @@ async function verifyWindowsPackageSigners(params, options = {}) {
     throw new Error('Final Windows Native Host bytes do not match the signed manifest');
   }
 
-  const inspect = options.inspect || inspectWindowsAuthenticode;
-  const [appSignature, hostSignature, nodeSignature] = await Promise.all([
-    inspect(appExecutable),
-    inspect(hostExecutable),
-    inspect(nodeExecutable),
-  ]);
+  const inspect =
+    options.inspect ||
+    ((executablePath) =>
+      inspectWindowsAuthenticode(executablePath, {
+        expectedPublisherThumbprint,
+      }));
+  // Self-signed release certificates are trusted only for the lifetime of one
+  // inspection. Keep these checks sequential so concurrent temporary root-store
+  // cleanup cannot invalidate another verification.
+  const appSignature = await inspect(appExecutable);
+  const hostSignature = await inspect(hostExecutable);
+  const nodeSignature = await inspect(nodeExecutable);
   for (const signature of [appSignature, hostSignature, nodeSignature]) {
     if (
       normalizePublisherThumbprint(signature.publisherThumbprint) !==
