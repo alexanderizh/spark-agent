@@ -1722,7 +1722,12 @@ export function ProviderModelPickerInline({
                 <div className="composer-model-group-title">
                   {groupVendor && (
                     <span className="composer-model-group-icon">
-                      <ProviderLogo vendor={groupVendor} size={14} shape="rounded" />
+                      <ProviderLogo
+                        vendor={groupVendor}
+                        icon={provider.providerIcon}
+                        size={14}
+                        shape="rounded"
+                      />
                     </span>
                   )}
                   <span>{provider.name}</span>
@@ -1758,7 +1763,12 @@ export function ProviderModelPickerInline({
       >
         <span className="composer-select-icon">
           {vendor ? (
-            <ProviderLogo vendor={vendor} size={16} shape="circle" />
+            <ProviderLogo
+              vendor={vendor}
+              icon={selectedProvider?.providerIcon}
+              size={16}
+              shape="circle"
+            />
           ) : (
             <Icons.Sparkles size={11} />
           )}

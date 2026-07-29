@@ -436,12 +436,12 @@ summary:focus {
   background: var(--panel-elev);
   /* Sidebar nav / session labels — slightly softer than main body text */
   --sidebar-text: color-mix(in srgb, var(--text) 90%, var(--text-muted));
-  /* border: 1px solid var(--border); */
+  border: 1px solid transparent;
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
-  backdrop-filter: var(--backdrop-blur);
-  -webkit-backdrop-filter: var(--backdrop-blur);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   /* Slide + fade in/out. visibility transition delays taking the element
      out of the tab order until the slide finishes, so keyboard focus
      never lands on the hidden sidebar. */
@@ -461,14 +461,40 @@ summary:focus {
     opacity 0.16s ease,
     visibility 0s linear 0.2s;
 }
-html[data-backdrop-blur="1"] .floating-sidebar {
-  background: color-mix(in srgb, var(--panel-elev) 88%, transparent);
-}
 /* Sidebar panel appearance is a user-selectable preference (floating vs flat),
-   independent of the OS. 'floating' mirrors the macOS look: translucent panel
-   sitting on top of the elevated background. */
+   independent of the OS. Without backdrop blur it stays opaque for readability;
+   the glass material is enabled only when the appearance preference allows it. */
 .sidebar-style-floating .floating-sidebar {
-  background: color-mix(in srgb, var(--panel-elev) 88%, transparent);
+  background: var(--panel-elev);
+  border-color: color-mix(in srgb, var(--border-strong) 38%, transparent);
+  box-shadow:
+    0 18px 48px rgba(30, 27, 48, 0.13),
+    0 3px 12px rgba(30, 27, 48, 0.07),
+    inset 0 1px 0 color-mix(in srgb, #fff 58%, transparent);
+}
+
+html[data-backdrop-blur='1'] .sidebar-style-floating .floating-sidebar {
+  background: color-mix(in srgb, var(--panel-elev) 80%, transparent);
+  backdrop-filter: blur(18px) saturate(1.18);
+  -webkit-backdrop-filter: blur(18px) saturate(1.18);
+}
+
+html[data-theme='light'][data-backdrop-blur='1']
+  .sidebar-style-floating.theme-light
+  .floating-sidebar {
+  background: color-mix(in srgb, #fff 78%, transparent);
+  border-color: rgba(255, 255, 255, 0.72);
+}
+
+html[data-theme='dark'][data-backdrop-blur='1']
+  .sidebar-style-floating.theme-dark
+  .floating-sidebar {
+  background: color-mix(in srgb, var(--panel-elev) 84%, transparent);
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow:
+    0 20px 52px rgba(0, 0, 0, 0.34),
+    0 3px 12px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
 }
 /* 'flat' mirrors the Windows look: sidebar is flush to the window edges
    (no floating design, no rounded corners, no shadow). Its background can
@@ -495,6 +521,14 @@ html[data-backdrop-blur="1"] .sidebar-style-flat .floating-sidebar {
 }
 html[data-theme="light"][data-backdrop-blur="1"] .sidebar-style-flat.theme-light .floating-sidebar {
   background: color-mix(in srgb, #f5f5f5 84%, transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-backdrop-blur='1'] .sidebar-style-floating .floating-sidebar {
+    background: var(--panel-elev);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 /* Prevent text selection during resize drag */
 body.floating-sidebar-resizing { user-select: none; cursor: col-resize; }

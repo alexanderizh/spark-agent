@@ -140,10 +140,7 @@ function resolveModelForProvider(
   )
 }
 
-function resolveNewSessionTeamConfig(
-  teamConfig: unknown,
-  hostAgentId: string,
-): TeamModeConfig {
+function resolveNewSessionTeamConfig(teamConfig: unknown, hostAgentId: string): TeamModeConfig {
   if (teamConfig != null) return teamConfig as TeamModeConfig
   return {
     enabled: false,
@@ -380,11 +377,16 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const [unreviewedCompleted, setUnreviewedCompleted] = useState<Set<string>>(() => new Set())
   const justCreatedSessionRef = useRef<SessionId | null>(null)
   const pendingCreatedWorkspaceIdsRef = useRef(new Map<SessionId, string | null>())
-  const pinMutationsRef = useRef(new Map<SessionId, {
-    desiredPinned: boolean
-    confirmedPinnedAt: string | null
-    running: boolean
-  }>())
+  const pinMutationsRef = useRef(
+    new Map<
+      SessionId,
+      {
+        desiredPinned: boolean
+        confirmedPinnedAt: string | null
+        running: boolean
+      }
+    >(),
+  )
   const activeRef = useRef<SessionId | null>(active)
   const workspaceSyncedSessionRef = useRef<SessionId | null>(null)
   const manualWorkspaceSelectionRef = useRef<{
@@ -613,11 +615,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
               setSelectedProviderId((prev) =>
                 res.profiles.some((profile) => profile.id === prev)
                   ? prev
-                  : (getPreferredProvider(
-                      res.profiles,
-                      readComposerPrefs(),
-                      DEFAULT_AGENT_ADAPTER,
-                    )?.id ?? ''),
+                  : (getPreferredProvider(res.profiles, readComposerPrefs(), DEFAULT_AGENT_ADAPTER)
+                      ?.id ?? ''),
               )
             })
             .catch(console.error)
@@ -1366,11 +1365,35 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       try {
         await updateSession({ sessionId: session.id, archived: true })
         setSessions((current) => current.filter((item) => item.id !== session.id))
+
+        let undoStarted = false
+        let archiveToastId = ''
+        archiveToastId = toast.success(t('session.archived'), {
+          actions: [
+            {
+              label: t('common.undo'),
+              onClick: () => {
+                if (undoStarted) return
+                undoStarted = true
+                if (archiveToastId) optionalToast?.dismiss(archiveToastId)
+                void (async () => {
+                  try {
+                    const restored = await updateSession({ sessionId: session.id, archived: false })
+                    upsertSessionInList(restored.session)
+                    toast.success(t('session.archiveUndoSuccess'))
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : t('session.archiveUndoFailed'))
+                  }
+                })()
+              },
+            },
+          ],
+        })
       } catch (err) {
         toast.error(err instanceof Error ? err.message : t('session.archiveFailed'))
       }
     },
-    [toast, updateSession],
+    [optionalToast, t, toast, updateSession, upsertSessionInList],
   )
 
   const handleOpenSessionFolder = useCallback(

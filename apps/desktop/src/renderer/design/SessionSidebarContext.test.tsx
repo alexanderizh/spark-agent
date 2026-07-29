@@ -4,6 +4,25 @@ import React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SessionId } from '@spark/protocol'
+
+const toastMocks = vi.hoisted(() => {
+  const toast = Object.assign(
+    vi.fn(() => 'toast-id'),
+    {
+      success: vi.fn(
+        (
+          _message: string,
+          _options?: { actions?: Array<{ label: string; onClick: () => void }> },
+        ) => 'toast-id',
+      ),
+      error: vi.fn(() => 'toast-id'),
+      info: vi.fn(() => 'toast-id'),
+      warning: vi.fn(() => 'toast-id'),
+    },
+  )
+  return { dismiss: vi.fn(), toast }
+})
 
 vi.mock('./AppContext', () => {
   return {
@@ -14,11 +33,17 @@ vi.mock('./AppContext', () => {
   }
 })
 
+vi.mock('./components/Toast', () => ({
+  ToastProvider: ({ children }: { children: React.ReactNode }) => children,
+  useOptionalToast: () => toastMocks,
+}))
+
 import { ToastProvider } from './components/Toast'
 import {
   filterSessionsByTime,
   SessionSidebarProvider,
   useSessionSidebar,
+  type SessionSummary,
 } from './SessionSidebarContext'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -101,9 +126,7 @@ describe('SessionSidebarContext', () => {
       }
       if (channel === 'session:list') {
         return {
-          sessions: sessionCreated
-            ? [createdSession]
-            : [],
+          sessions: sessionCreated ? [createdSession] : [],
           total: sessionCreated ? 1 : 0,
         }
       }
@@ -1031,5 +1054,100 @@ describe('SessionSidebarContext', () => {
       new Date(latestCtxRef.current?.sessions[0]?.updatedAt ?? 0).getTime(),
     ).toBeGreaterThanOrEqual(activityStartedAt)
     expect(filterSessionsByTime(latestCtxRef.current?.sessions ?? [], '1d')).toHaveLength(1)
+  })
+
+  it('archives immediately and restores the session from the toast undo action', async () => {
+    const session: SessionSummary = {
+      id: 'session-archive' as SessionId,
+      title: 'Archive me',
+      projectId: 'workspace-archive',
+      workspaceIds: [],
+      providerProfileId: 'provider-archive',
+      modelId: null,
+      agentId: 'agent-archive',
+      agentAdapter: 'codex',
+      permissionMode: 'codex-default',
+      chatMode: 'agent',
+      reasoningEffort: 'medium',
+      status: 'idle',
+      pinnedAt: null,
+      archivedAt: null,
+      createdAt: '2026-07-29T08:00:00.000Z',
+      updatedAt: '2026-07-29T08:00:00.000Z',
+      messageCount: 1,
+    }
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [session], total: 1 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'terminal:list-active') return { sessions: [] }
+      if (channel === 'session:update') {
+        return {
+          session: {
+            ...session,
+            archivedAt: request?.archived ? '2026-07-29T09:00:00.000Z' : null,
+          },
+        }
+      }
+      return {}
+    })
+
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <CaptureSessionSidebarContext />
+          </SessionSidebarProvider>
+        </ToastProvider>,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    await vi.waitFor(() => expect(latestCtxRef.current?.sessions).toHaveLength(1))
+
+    await act(async () => {
+      await latestCtxRef.current?.handleArchiveSession(session)
+    })
+
+    expect(latestCtxRef.current?.sessions).toHaveLength(0)
+    expect(invoke).toHaveBeenCalledWith('session:update', {
+      sessionId: session.id,
+      archived: true,
+    })
+    expect(toastMocks.toast.success).toHaveBeenCalledWith(
+      '已归档',
+      expect.objectContaining({ actions: expect.any(Array) }),
+    )
+
+    const archiveToastOptions = toastMocks.toast.success.mock.calls.at(-1)?.[1]
+    const undoAction = archiveToastOptions?.actions?.[0]
+    expect(undoAction?.label).toBe('撤销')
+
+    await act(async () => {
+      undoAction?.onClick()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(toastMocks.dismiss).toHaveBeenCalledWith('toast-id')
+    expect(invoke).toHaveBeenCalledWith('session:update', {
+      sessionId: session.id,
+      archived: false,
+    })
+    expect(latestCtxRef.current?.sessions).toEqual([expect.objectContaining({ id: session.id })])
+    expect(toastMocks.toast.success).toHaveBeenLastCalledWith('已撤销归档')
   })
 })

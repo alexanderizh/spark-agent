@@ -6,60 +6,87 @@
  */
 
 /*
- * The floating sidebar intentionally leaves a small shell gutter before the
- * content area. That gutter belongs to `.app.window`, so give the shell the
- * empty theme's left-edge base colour instead of exposing the global page bg.
+ * Empty-session atmosphere belongs to the application shell, not to the chat
+ * pane. Keeping the full backdrop here lets the floating sidebar, its outer
+ * inset and the content gutter all sit over one continuous surface.
  */
 .app:has(.chat-main-empty[data-empty-theme='celestial']) {
-  --empty-session-shell-bg: #fbfaff;
+  --empty-session-backdrop:
+    radial-gradient(circle at 74% 18%, rgba(141, 119, 255, 0.18), transparent 28%),
+    radial-gradient(circle at 20% 82%, rgba(91, 178, 255, 0.1), transparent 30%), #fbfaff;
 }
 
 .app:has(.chat-main-empty[data-empty-theme='studio']) {
-  --empty-session-shell-bg: #fbf7ef;
+  --empty-session-backdrop:
+    radial-gradient(ellipse at 72% 20%, rgba(255, 159, 129, 0.18), transparent 29%),
+    radial-gradient(ellipse at 83% 38%, rgba(169, 139, 242, 0.13), transparent 24%), #fbf7ef;
 }
 
 .app:has(.chat-main-empty[data-empty-theme='luminous']) {
-  --empty-session-shell-bg: #f7f9ff;
+  --empty-session-backdrop:
+    radial-gradient(circle at 79% 14%, rgba(111, 191, 255, 0.24), transparent 28%),
+    radial-gradient(circle at 61% 44%, rgba(128, 109, 245, 0.14), transparent 32%),
+    linear-gradient(145deg, #f7f9ff, #eef4ff 64%, #f8f9ff);
 }
 
 .app:has(.chat-main-empty[data-empty-theme='midnight']) {
-  --empty-session-shell-bg: #f7f8ff;
+  --empty-session-backdrop:
+    radial-gradient(circle at 73% 17%, rgba(112, 99, 220, 0.2), transparent 29%),
+    radial-gradient(circle at 28% 58%, rgba(89, 144, 190, 0.12), transparent 32%),
+    linear-gradient(160deg, #f7f8ff, #eef1fb 58%, #f4f7ff);
 }
 
 .app:has(.chat-main-empty[data-empty-theme='moss']) {
-  --empty-session-shell-bg: #f7f7f1;
+  --empty-session-backdrop:
+    radial-gradient(circle at 7% 18%, rgba(242, 194, 155, 0.28), transparent 25%),
+    radial-gradient(circle at 91% 73%, rgba(140, 168, 122, 0.15), transparent 31%), #f7f7f1;
 }
 
 .app:has(.chat-main-empty[data-empty-theme='geometry']) {
-  --empty-session-shell-bg: #faf8f2;
+  --empty-session-backdrop: #faf8f2;
 }
 
 .app:has(.chat-main-empty[data-empty-theme]) {
-  background: var(--empty-session-shell-bg, var(--bg));
+  background: var(--empty-session-backdrop, var(--bg));
 }
 
 .app.theme-dark:has(.chat-main-empty[data-empty-theme='celestial']) {
-  --empty-session-shell-bg: #11111c;
+  --empty-session-backdrop:
+    radial-gradient(circle at 74% 18%, rgba(130, 105, 255, 0.22), transparent 30%),
+    radial-gradient(circle at 20% 82%, rgba(70, 151, 225, 0.12), transparent 32%),
+    linear-gradient(150deg, #11111c, #151426 56%, #101522);
 }
 
 .app.theme-dark:has(.chat-main-empty[data-empty-theme='studio']) {
-  --empty-session-shell-bg: #181411;
+  --empty-session-backdrop:
+    radial-gradient(ellipse at 72% 20%, rgba(204, 103, 79, 0.18), transparent 31%),
+    radial-gradient(ellipse at 83% 38%, rgba(142, 112, 209, 0.14), transparent 26%),
+    linear-gradient(150deg, #181411, #201915 56%, #171419);
 }
 
 .app.theme-dark:has(.chat-main-empty[data-empty-theme='luminous']) {
-  --empty-session-shell-bg: #101521;
+  --empty-session-backdrop:
+    radial-gradient(circle at 79% 14%, rgba(74, 158, 220, 0.22), transparent 30%),
+    radial-gradient(circle at 61% 44%, rgba(104, 88, 218, 0.18), transparent 34%),
+    linear-gradient(145deg, #101521, #11192b 64%, #141525);
 }
 
 .app.theme-dark:has(.chat-main-empty[data-empty-theme='midnight']) {
-  --empty-session-shell-bg: #242426;
+  --empty-session-backdrop:
+    radial-gradient(circle at 73% 17%, rgba(101, 88, 238, 0.2), transparent 29%),
+    radial-gradient(circle at 28% 58%, rgba(40, 105, 151, 0.13), transparent 32%),
+    linear-gradient(105deg, #242426 0%, #171a25 13%, #0a1022 52%, #07101f);
 }
 
 .app.theme-dark:has(.chat-main-empty[data-empty-theme='moss']) {
-  --empty-session-shell-bg: #121712;
+  --empty-session-backdrop:
+    radial-gradient(circle at 7% 18%, rgba(184, 125, 86, 0.18), transparent 27%),
+    radial-gradient(circle at 91% 73%, rgba(100, 133, 83, 0.18), transparent 33%),
+    linear-gradient(150deg, #121712, #182017 58%, #111914);
 }
 
 .app.theme-dark:has(.chat-main-empty[data-empty-theme='geometry']) {
-  --empty-session-shell-bg: #151515;
+  --empty-session-backdrop: #151515;
 }
 
 .chat-main-empty[data-empty-theme] {
@@ -1050,10 +1077,6 @@
     linear-gradient(145deg, #101521, #11192b 64%, #141525);
 }
 
-.app.theme-dark .chat-main-empty[data-empty-theme='luminous'] .single-empty-heading {
-  background: linear-gradient(110deg, rgba(31, 28, 76, 0.98) 0 54%, transparent 54%);
-}
-
 .app.theme-dark .chat-main-empty[data-empty-theme='moss'] {
   --eh-accent: #9ab78b;
   --eh-accent-2: #6f9166;
@@ -1100,6 +1123,20 @@
 .app.theme-dark .chat-main-empty[data-empty-theme='geometry'] .composer.composer-v2 {
   border-color: rgba(245, 243, 255, 0.72);
   box-shadow: 7px 8px 0 #4967e7;
+}
+
+/*
+ * The shell now paints the theme once for the whole window. Remove the opaque
+ * chat wrappers only while the empty-session theme is mounted, otherwise they
+ * would cut that backdrop off at the content boundary and reveal the gutter.
+ */
+.app:has(.chat-main-empty[data-empty-theme]) .main-content-area,
+.app:has(.chat-main-empty[data-empty-theme]) .main-with-browser,
+.app:has(.chat-main-empty[data-empty-theme]) .main,
+.app:has(.chat-main-empty[data-empty-theme]) .view-body,
+.app:has(.chat-main-empty[data-empty-theme]) .chat-layout,
+.app:has(.chat-main-empty[data-empty-theme]) .chat-main-empty[data-empty-theme] {
+  background: transparent;
 }
 
 /* Responsive layout */

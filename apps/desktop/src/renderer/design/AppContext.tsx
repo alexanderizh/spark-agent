@@ -26,13 +26,29 @@ export type SidebarState = 'collapsed' | 'expanded'
  *  'floating' = macOS-style: inset, rounded, shadowed, translucent.
  *  'flat'     = Windows-style: flush to edges, no rounding/shadow/blur.
  *  Independent of the actual OS — both styles are available on every platform.
- *  Defaults to flat on macOS/Windows unless the user has switched. */
+ *  Defaults to floating on every platform unless the user has switched. */
 export type SidebarStyle = 'floating' | 'flat'
 /** 侧栏工作模式。'workbench' = 对话式任务工作台，'canvas' = 无限画布。
  *  两者是平级主功能，切换只改变侧栏上半部分（主列表 + 上下文入口），
  *  底部的全局共享资源（智能体/模型服务/技能/MCP）不随模式变化。 */
 export type WorkspaceMode = 'workbench' | 'canvas'
-export type ViewId ='chat' | 'workflows' | 'agents' | 'board' | 'canvas' | 'canvas-workflows' | 'scheduled-tasks' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'memory' | 'settings' | 'lobe-preview' | 'account-center' | 'onboarding'
+export type ViewId =
+  | 'chat'
+  | 'workflows'
+  | 'agents'
+  | 'board'
+  | 'canvas'
+  | 'canvas-workflows'
+  | 'scheduled-tasks'
+  | 'skills'
+  | 'skill-store'
+  | 'mcp'
+  | 'providers'
+  | 'memory'
+  | 'settings'
+  | 'lobe-preview'
+  | 'account-center'
+  | 'onboarding'
 /**
  * 会话模式。workspace 仅为历史状态保留，已废弃；新入口必须使用 vibe。
  * @deprecated workspace 不再是当前工作台页面，不要用于新的导航或交互。
@@ -224,7 +240,10 @@ function readInitialTweaks(): Tweaks {
   tweaks = { ...tweaks, ...savedAppearanceTweaks }
 
   const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
-  if (savedAppearanceTweaks.theme == null && (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system')) {
+  if (
+    savedAppearanceTweaks.theme == null &&
+    (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system')
+  ) {
     tweaks = { ...tweaks, theme: savedTheme }
   }
 
@@ -267,13 +286,11 @@ function readInitialTweaks(): Tweaks {
   }
 
   // Sidebar panel appearance: floating vs flat.
-  // If the user has explicitly switched, honor the saved value.
-  // Otherwise default to flat on macOS/Windows; Linux keeps the floating look.
+  // If the user has explicitly switched, honor the saved value; otherwise keep
+  // DEFAULT_TWEAKS.floating so every platform starts with the same glass panel.
   const savedSidebarStyle = window.localStorage.getItem(SIDEBAR_STYLE_KEY)
   if (savedSidebarStyle === 'floating' || savedSidebarStyle === 'flat') {
     tweaks = { ...tweaks, sidebarStyle: savedSidebarStyle }
-  } else if (window.spark?.platform === 'win32' || window.spark?.platform === 'darwin') {
-    tweaks = { ...tweaks, sidebarStyle: 'flat' }
   }
 
   const savedWorkspaceMode = window.localStorage.getItem(WORKSPACE_MODE_KEY)
@@ -326,8 +343,12 @@ const Ctx = createContext<AppCtx | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [t, setT] = useState<Tweaks>(readInitialTweaks)
-  const [confirmRequest, setConfirmRequest] = useState<(ConfirmOptions & { resolve: (value: boolean) => void }) | null>(null)
-  const [promptRequest, setPromptRequest] = useState<(PromptOptions & { resolve: (value: string | null) => void }) | null>(null)
+  const [confirmRequest, setConfirmRequest] = useState<
+    (ConfirmOptions & { resolve: (value: boolean) => void }) | null
+  >(null)
+  const [promptRequest, setPromptRequest] = useState<
+    (PromptOptions & { resolve: (value: string | null) => void }) | null
+  >(null)
   const navGuardRef = useRef<NavGuard | null>(null)
   const confirmHandledRef = useRef(false)
   const promptHandledRef = useRef(false)
@@ -342,16 +363,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setHasUnsavedChanges = useCallback<AppCtx['setHasUnsavedChanges']>((value) => {
     hasUnsavedChangesRef.current = value
   }, [])
-  const requestConfirm = useCallback<AppCtx['requestConfirm']>((options) => (
-    new Promise<boolean>((resolve) => {
-      setConfirmRequest({ ...options, resolve })
-    })
-  ), [])
-  const requestPrompt = useCallback<AppCtx['requestPrompt']>((options) => (
-    new Promise<string | null>((resolve) => {
-      setPromptRequest({ ...options, resolve })
-    })
-  ), [])
+  const requestConfirm = useCallback<AppCtx['requestConfirm']>(
+    (options) =>
+      new Promise<boolean>((resolve) => {
+        setConfirmRequest({ ...options, resolve })
+      }),
+    [],
+  )
+  const requestPrompt = useCallback<AppCtx['requestPrompt']>(
+    (options) =>
+      new Promise<string | null>((resolve) => {
+        setPromptRequest({ ...options, resolve })
+      }),
+    [],
+  )
   const applyTweak = useCallback<AppCtx['setTweak']>((key, val) => {
     if (key === 'theme') {
       window.localStorage.setItem(THEME_STORAGE_KEY, val as ThemeMode)
@@ -387,19 +412,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const setTweak = useCallback<AppCtx['setTweak']>((key, val) => {
-    if (key === 'view' && navGuardRef.current && val !== t.view) {
-      void (async () => {
-        if (await navGuardRef.current?.()) applyTweak(key, val)
-      })()
-      return
-    }
-    applyTweak(key, val)
-  }, [applyTweak, t.view])
+  const setTweak = useCallback<AppCtx['setTweak']>(
+    (key, val) => {
+      if (key === 'view' && navGuardRef.current && val !== t.view) {
+        void (async () => {
+          if (await navGuardRef.current?.()) applyTweak(key, val)
+        })()
+        return
+      }
+      applyTweak(key, val)
+    },
+    [applyTweak, t.view],
+  )
   useEffect(() => {
     let cancelled = false
     window.spark
-      ?.invoke('settings:get', { category: APPEARANCE_SETTINGS_CATEGORY, key: APPEARANCE_SETTINGS_KEY })
+      ?.invoke('settings:get', {
+        category: APPEARANCE_SETTINGS_CATEGORY,
+        key: APPEARANCE_SETTINGS_KEY,
+      })
       .then((res) => {
         if (cancelled || hasUserVisualChangeRef.current) return
         const remote = isRecord(res?.value) ? res.value : {}
@@ -511,11 +542,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       promptRequest,
     ],
   )
-  return (
-    <Ctx.Provider value={value}>
-      {children}
-    </Ctx.Provider>
-  )
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
 type ConfirmRequest = ConfirmOptions & { resolve: (value: boolean) => void }

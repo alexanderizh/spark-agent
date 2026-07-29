@@ -6,7 +6,17 @@
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Input, InputNumber, Modal, Segmented, Select, Tag, TextArea } from '@lobehub/ui'
+import {
+  Button,
+  Checkbox,
+  Input,
+  InputNumber,
+  Modal,
+  Segmented,
+  Select,
+  Tag,
+  TextArea,
+} from '@lobehub/ui'
 // TODO(lobe-migration): @lobehub/ui 没有 Switch 命名导出;从 antd 引用,与项目其他 view 保持一致
 import { Modal as AntdModal, Space, Switch } from 'antd'
 import { QRCodeSVG } from '@rc-component/qrcode'
@@ -72,6 +82,7 @@ import type {
   SdkIntegrityInstallProgress,
   RuntimeToolStatus,
   SessionListResponse,
+  SessionId,
   RemoteChannelType,
   RemoteCommandDefinition,
   RemoteConnectionCapabilities,
@@ -339,18 +350,53 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     {
       group: '通用',
       items: [
-        { id: 'general', icon: <Icons.Settings size={13} />, label: '通用', keywords: ['语言', '启动', '开机自启', '通知', '默认会话'] },
-        { id: 'appearance', icon: <Icons.Sparkles size={13} />, label: '外观', keywords: ['主题', '暗黑', '深色', '浅色', '字体', '字号', '强调色', '动画'] },
-        { id: 'shortcuts', icon: <Icons.Command size={13} />, label: '快捷键', keywords: ['键盘', '绑定', '热键', 'shortcut'] },
+        {
+          id: 'general',
+          icon: <Icons.Settings size={13} />,
+          label: '通用',
+          keywords: ['语言', '启动', '开机自启', '通知', '默认会话'],
+        },
+        {
+          id: 'appearance',
+          icon: <Icons.Sparkles size={13} />,
+          label: '外观',
+          keywords: ['主题', '暗黑', '深色', '浅色', '字体', '字号', '强调色', '动画'],
+        },
+        {
+          id: 'shortcuts',
+          icon: <Icons.Command size={13} />,
+          label: '快捷键',
+          keywords: ['键盘', '绑定', '热键', 'shortcut'],
+        },
       ],
     },
     {
       group: 'Agent',
       items: [
-        { id: 'rules', icon: <Icons.Beaker size={13} />, label: '规则', keywords: ['项目规则', 'AGENTS', 'CLAUDE', '约定'] },
-        { id: 'custom-commands', icon: <Icons.Command size={13} />, label: '自定义命令', keywords: ['斜杠命令', 'slash', '/命令', '指令'] },
-        { id: 'permissions', icon: <Icons.Shield size={13} />, label: '权限策略', keywords: ['自动执行', '允许', '拒绝', '审批', '权限'] },
-        { id: 'memory', icon: <Icons.Brain size={13} />, label: '记忆', keywords: ['长期记忆', '记忆库', '记住'] },
+        {
+          id: 'rules',
+          icon: <Icons.Beaker size={13} />,
+          label: '规则',
+          keywords: ['项目规则', 'AGENTS', 'CLAUDE', '约定'],
+        },
+        {
+          id: 'custom-commands',
+          icon: <Icons.Command size={13} />,
+          label: '自定义命令',
+          keywords: ['斜杠命令', 'slash', '/命令', '指令'],
+        },
+        {
+          id: 'permissions',
+          icon: <Icons.Shield size={13} />,
+          label: '权限策略',
+          keywords: ['自动执行', '允许', '拒绝', '审批', '权限'],
+        },
+        {
+          id: 'memory',
+          icon: <Icons.Brain size={13} />,
+          label: '记忆',
+          keywords: ['长期记忆', '记忆库', '记住'],
+        },
       ],
     },
     {
@@ -358,22 +404,77 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
       items: [
         // MCP 设置暂未完全实现，隐藏导航项
         // { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
-        { id: 'remote-connections', icon: <Icons.Globe size={13} />, label: '远程连接', keywords: ['API Key', '供应商', 'Provider', '模型', '密钥', '渠道'] },
-        { id: 'system-prompt', icon: <Icons.Chat size={13} />, label: '系统提示词', keywords: ['身份', 'prompt', '提示词', '人设'] },
+        {
+          id: 'remote-connections',
+          icon: <Icons.Globe size={13} />,
+          label: '远程连接',
+          keywords: ['API Key', '供应商', 'Provider', '模型', '密钥', '渠道'],
+        },
+        {
+          id: 'system-prompt',
+          icon: <Icons.Chat size={13} />,
+          label: '系统提示词',
+          keywords: ['身份', 'prompt', '提示词', '人设'],
+        },
       ],
     },
     {
       group: '系统',
       items: [
-        { id: 'integrity', icon: <Icons.Shield size={13} />, label: '完整性', keywords: ['校验', '修复', 'Chromium', '下载', '完整性'] },
-        { id: 'playwright', icon: <Icons.Globe size={13} />, label: '浏览器自动化', keywords: ['Playwright', '自动化', '网页', '爬虫', 'E2E'] },
-        { id: 'usage', icon: <Icons.Activity size={13} />, label: '用量统计', keywords: ['token', '额度', '统计', '消耗'] },
-        { id: 'telemetry', icon: <Icons.Activity size={13} />, label: '本地日志', keywords: ['日志', '调试', 'telemetry'] },
-        { id: 'hooks', icon: <Icons.Bell size={13} />, label: 'Hooks', keywords: ['钩子', '回调', '事件', '钩子函数'] },
-        { id: 'storage', icon: <Icons.Database size={13} />, label: '存储与备份', keywords: ['导出', '备份', '恢复', '清理', '缓存', '数据'] },
-        { id: 'archived', icon: <Icons.Archive size={13} />, label: '已归档', keywords: ['归档', '历史', '会话'] },
-        { id: 'updates', icon: <Icons.Refresh size={13} />, label: '更新', keywords: ['版本', '升级', '检查更新', 'release'] },
-        { id: 'about', icon: <Icons.Sparkles size={13} />, label: '关于', keywords: ['版本号', '信息', '关于本机', '应用'] },
+        {
+          id: 'integrity',
+          icon: <Icons.Shield size={13} />,
+          label: '完整性',
+          keywords: ['校验', '修复', 'Chromium', '下载', '完整性'],
+        },
+        {
+          id: 'playwright',
+          icon: <Icons.Globe size={13} />,
+          label: '浏览器自动化',
+          keywords: ['Playwright', '自动化', '网页', '爬虫', 'E2E'],
+        },
+        {
+          id: 'usage',
+          icon: <Icons.Activity size={13} />,
+          label: '用量统计',
+          keywords: ['token', '额度', '统计', '消耗'],
+        },
+        {
+          id: 'telemetry',
+          icon: <Icons.Activity size={13} />,
+          label: '本地日志',
+          keywords: ['日志', '调试', 'telemetry'],
+        },
+        {
+          id: 'hooks',
+          icon: <Icons.Bell size={13} />,
+          label: 'Hooks',
+          keywords: ['钩子', '回调', '事件', '钩子函数'],
+        },
+        {
+          id: 'storage',
+          icon: <Icons.Database size={13} />,
+          label: '存储与备份',
+          keywords: ['导出', '备份', '恢复', '清理', '缓存', '数据'],
+        },
+        {
+          id: 'archived',
+          icon: <Icons.Archive size={13} />,
+          label: '已归档',
+          keywords: ['归档', '历史', '会话'],
+        },
+        {
+          id: 'updates',
+          icon: <Icons.Refresh size={13} />,
+          label: '更新',
+          keywords: ['版本', '升级', '检查更新', 'release'],
+        },
+        {
+          id: 'about',
+          icon: <Icons.Sparkles size={13} />,
+          label: '关于',
+          keywords: ['版本号', '信息', '关于本机', '应用'],
+        },
       ],
     },
   ]
@@ -385,7 +486,10 @@ export function SettingsView({ initialSection }: { initialSection?: string } = {
     group.toLowerCase().includes(navQ) ||
     keywords.some((k) => k.toLowerCase().includes(navQ))
   const navGroups = nav
-    .map((g) => ({ ...g, items: g.items.filter((it) => navItemMatches(it.label, g.group, it.keywords)) }))
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((it) => navItemMatches(it.label, g.group, it.keywords)),
+    }))
     .filter((g) => g.items.length > 0)
 
   const Section: Record<string, () => React.ReactElement> = {
@@ -580,7 +684,6 @@ function GeneralSection() {
           disabled={!autoStartSupported}
           onChange={() => void handleToggleAutoStart()}
         />
-
       </div>
 
       <div className="subsec-h">通知</div>
@@ -3905,7 +4008,6 @@ export function PermissionsSection() {
           </div>
         </>
       )}
-
     </div>
   )
 }
@@ -4703,6 +4805,8 @@ function ArchivedSection() {
   const [sessions, setSessions] = useState<SessionListResponse['sessions']>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<SessionId>>(new Set())
+  const [batchDeleting, setBatchDeleting] = useState(false)
   const { toast } = useToast()
   const { requestConfirm } = useApp()
 
@@ -4723,6 +4827,8 @@ function ArchivedSection() {
       ])
       setWorkspaces(wsRes.workspaces.filter((w) => w.archivedAt != null))
       setSessions(sessRes.sessions.filter((s) => s.archivedAt != null))
+      // 列表刷新后清空选中，避免选中已不存在的会话
+      setSelectedSessionIds(new Set())
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -4773,7 +4879,7 @@ function ArchivedSection() {
 
   const handleDeleteSession = async (session: SessionListResponse['sessions'][number]) => {
     const confirmed = await requestConfirm({
-      title: `永久删除会话「${session.title || '新会话'}」？`,
+      title: `永久删除会话？`,
       description: '此操作不可撤销。',
       confirmText: '永久删除',
       danger: true,
@@ -4785,6 +4891,57 @@ function ArchivedSection() {
       refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '删除会话失败')
+    }
+  }
+
+  const toggleSelectSession = (id: SessionId, checked: boolean) => {
+    setSelectedSessionIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  const allSessionsSelected = sessions.length > 0 && selectedSessionIds.size === sessions.length
+  const someSessionsSelected = selectedSessionIds.size > 0 && !allSessionsSelected
+
+  const toggleSelectAllSessions = (checked: boolean) => {
+    setSelectedSessionIds(checked ? new Set(sessions.map((s) => s.id)) : new Set())
+  }
+
+  const handleBatchDeleteSessions = async () => {
+    const ids = Array.from(selectedSessionIds)
+    if (ids.length === 0) return
+    const confirmed = await requestConfirm({
+      title: `永久删除选中的 ${ids.length} 个会话？`,
+      description: '此操作不可撤销。',
+      confirmText: '永久删除',
+      danger: true,
+    })
+    if (!confirmed) return
+    setBatchDeleting(true)
+    let ok = 0
+    let fail = 0
+    try {
+      // 顺序删除：每个会话删除时会清理 PTY / executor 等副作用，
+      // 串行执行更安全，归档会话数量有限（≤100）性能足够。
+      for (const id of ids) {
+        try {
+          await deleteSession({ sessionId: id })
+          ok++
+        } catch {
+          fail++
+        }
+      }
+      if (fail === 0) {
+        toast.success(`已删除 ${ok} 个会话`)
+      } else {
+        toast.warning(`已删除 ${ok} 个会话，${fail} 个失败`)
+      }
+    } finally {
+      setBatchDeleting(false)
+      refresh()
     }
   }
 
@@ -4847,38 +5004,75 @@ function ArchivedSection() {
         {!loading && sessions.length === 0 && (
           <div className="settings-card-row">暂无已归档的会话</div>
         )}
-        {!loading &&
-          sessions.length > 0 &&
-          sessions.map((s) => (
-            <div key={s.id} className="settings-card-row archived-item-row">
-              <div className="flex1 min-w-0">
-                <div className="row-title">{s.title || '新会话'}</div>
-                <div className="row-desc">
-                  {s.messageCount} 条消息 · {formatDate(s.createdAt)} · 归档于{' '}
-                  {formatDate(s.archivedAt)}
-                </div>
-              </div>
-              <div className="archived-item-actions">
-                <Button
-                  size="middle"
-                  type="text"
-                  icon={<Icons.Refresh size={11} />}
-                  onClick={() => handleRestoreSession(s)}
-                >
-                  恢复
-                </Button>
+        {!loading && sessions.length > 0 && (
+          <>
+            {/* 批量操作栏 */}
+            <div
+              className="settings-card-row"
+              style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--pad-sm)' }}
+            >
+              <Checkbox
+                checked={allSessionsSelected}
+                indeterminate={someSessionsSelected}
+                onChange={(checked) => toggleSelectAllSessions(checked)}
+              >
+                全选
+              </Checkbox>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--pad-sm)' }}>
+                {selectedSessionIds.size > 0 && (
+                  <span className="row-desc">已选 {selectedSessionIds.size} 项</span>
+                )}
                 <Button
                   size="middle"
                   type="text"
                   danger
                   icon={<Icons.Trash size={11} />}
-                  onClick={() => handleDeleteSession(s)}
+                  disabled={selectedSessionIds.size === 0 || batchDeleting}
+                  loading={batchDeleting}
+                  onClick={handleBatchDeleteSessions}
                 >
-                  删除
+                  批量删除
                 </Button>
               </div>
             </div>
-          ))}
+            {sessions.map((s) => (
+              <div key={s.id} className="settings-card-row archived-item-row">
+                <div style={{ flexShrink: 0, alignSelf: 'center' }}>
+                  <Checkbox
+                    checked={selectedSessionIds.has(s.id)}
+                    onChange={(checked) => toggleSelectSession(s.id, checked)}
+                  />
+                </div>
+                <div className="flex1 min-w-0">
+                  <div className="row-title">{s.title || '新会话'}</div>
+                  <div className="row-desc">
+                    {s.messageCount} 条消息 · {formatDate(s.createdAt)} · 归档于{' '}
+                    {formatDate(s.archivedAt)}
+                  </div>
+                </div>
+                <div className="archived-item-actions">
+                  <Button
+                    size="middle"
+                    type="text"
+                    icon={<Icons.Refresh size={11} />}
+                    onClick={() => handleRestoreSession(s)}
+                  >
+                    恢复
+                  </Button>
+                  <Button
+                    size="middle"
+                    type="text"
+                    danger
+                    icon={<Icons.Trash size={11} />}
+                    onClick={() => handleDeleteSession(s)}
+                  >
+                    删除
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   )

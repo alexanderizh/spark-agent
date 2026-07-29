@@ -84,6 +84,7 @@ import {
 } from './team-mcp-http-bridge.js'
 import { buildMemberContinuityKey, buildTeamContinuityScope } from './team-continuity.js'
 import { buildWorkflowBindingAuthorityPrompt } from './workflow-system-prompt.js'
+import { buildContextLedger } from './context-ledger.js'
 import { createCanvasMcpUnavailableEvents } from './canvas-mcp-startup-events.js'
 
 // ─── D-13 拆分出的小工具 ───
@@ -2509,7 +2510,7 @@ export class SessionService {
       runtimeAgent,
     )
 
-    const composedSystemPrompt = joinPromptSections(
+    const systemPromptSections = [
       APPLICATION_FOUNDATION_SYSTEM_PROMPT,
       managedAgentPrompt,
       teamMemberContextPrompt,
@@ -2531,9 +2532,21 @@ export class SessionService {
       MEMORY_PROVENANCE_SYSTEM_PROMPT,
       runtimeContext.systemPrompt,
       runtimeContext.envSystemPrompt,
+    ]
+    const trailingSystemPromptSections = [
+      workflow != null ? buildWorkflowBindingAuthorityPrompt(workflow) : undefined,
+    ]
+    const composedSystemPrompt = joinPromptSections(
+      ...systemPromptSections,
       projectContext.systemPrompt,
       conversationHistoryPrompt,
-      workflow != null ? buildWorkflowBindingAuthorityPrompt(workflow) : undefined,
+      ...trailingSystemPromptSections,
+    )
+    // context_ledger 的各段必须互斥。实际运行 prompt 仍保持上面的原始顺序，
+    // 这里只为账本把项目上下文和对话历史从 System Prompt 分类中排除。
+    const contextLedgerSystemPrompt = joinPromptSections(
+      ...systemPromptSections,
+      ...trailingSystemPromptSections,
     )
     const composedSkillSystemPrompt = joinPromptSections(
       runtimeContext.skillSystemPrompt,
@@ -2692,61 +2705,26 @@ export class SessionService {
     // ── Context Ledger ──────────────────────────────────────────────────
     // Emit a detailed token breakdown of all context sections for UI display
     {
-      const estimateChars = (s: string | undefined): number => s?.trim().length ?? 0
-      const estimateSectionTokens = (s: string | undefined): number =>
-        estimateTokens(s?.trim() ?? '')
       const attachmentPromptLedger = buildAttachmentPromptLedger(turnAttachments)
-
-      const ledgerSections = [
-        {
-          label: 'Skill Prompt',
-          estimatedTokens: estimateSectionTokens(composedSkillSystemPrompt),
-          charCount: estimateChars(composedSkillSystemPrompt),
-          truncated: false,
-        },
-        {
-          label: 'System Prompt',
-          estimatedTokens: estimateSectionTokens(composedSystemPrompt),
-          charCount: estimateChars(composedSystemPrompt),
-          truncated: false,
-        },
-        {
-          label: 'Project Context',
-          estimatedTokens:
-            projectContext.budget?.usedTokens ?? estimateSectionTokens(projectContext.systemPrompt),
-          charCount: estimateChars(projectContext.systemPrompt),
-          truncated: projectContext.budget?.truncated ?? false,
-        },
-        {
-          // resume 成功路径不注入 Spark 历史；SDK 内部维护完整 history。
-          // resumeRecoveryHistoryPrompt 是 standby，不计入本轮实际 prompt ledger。
-          label: canResumeSdkSession
-            ? 'Conversation History (native resume)'
-            : storedContinuitySummary != null
-              ? 'Continuity Capsule + Recent Exact History'
-              : 'Conversation History',
-          estimatedTokens: estimateSectionTokens(conversationHistoryPrompt),
-          charCount: estimateChars(conversationHistoryPrompt),
-          truncated: false,
-        },
-        {
-          label: 'User Message',
-          estimatedTokens: estimateSectionTokens(message),
-          charCount: estimateChars(message),
-          truncated: false,
-        },
-        {
-          label: 'Attachments',
-          estimatedTokens: estimateTokens(attachmentPromptLedger),
-          charCount: attachmentPromptLedger.length,
-          truncated: false,
-        },
-      ].filter((section) => section.charCount > 0 || section.estimatedTokens > 0)
-
-      const totalEstimatedTokens = ledgerSections.reduce(
-        (sum, section) => sum + section.estimatedTokens,
-        0,
-      )
+      const { sections: ledgerSections, totalEstimatedTokens } = buildContextLedger({
+        skillPrompt: composedSkillSystemPrompt,
+        systemPrompt: contextLedgerSystemPrompt,
+        projectContextPrompt: projectContext.systemPrompt,
+        ...(projectContext.budget?.usedTokens != null
+          ? { projectContextUsedTokens: projectContext.budget.usedTokens }
+          : {}),
+        projectContextTruncated: projectContext.budget?.truncated ?? false,
+        // resume 成功路径不注入 Spark 历史；SDK 内部维护完整 history。
+        // resumeRecoveryHistoryPrompt 是 standby，不计入本轮实际 prompt ledger。
+        conversationHistoryLabel: canResumeSdkSession
+          ? 'Conversation History (native resume)'
+          : storedContinuitySummary != null
+            ? 'Continuity Capsule + Recent Exact History'
+            : 'Conversation History',
+        conversationHistoryPrompt,
+        userMessage: message,
+        attachmentPrompt: attachmentPromptLedger,
+      })
 
       this.emitAndPersist(
         sessionId,

@@ -7,10 +7,7 @@ import type {
 } from '@spark/protocol'
 import { Copy, MoreHorizontal, PanelRight, Server, SlidersHorizontal, Trash } from 'lucide-react'
 import { Icons } from '../../Icons'
-import {
-  NO_PROJECT_WORKSPACE_NAME,
-  type SessionSummary,
-} from '../../SessionSidebarContext'
+import { NO_PROJECT_WORKSPACE_NAME, type SessionSummary } from '../../SessionSidebarContext'
 import type { OrchestrationSnapshot } from '../../services/event-mapper'
 import { countExistingMembers } from '../../teamMembership'
 import { resolveDisplayedGitBranch } from '../chat-session-routing'
@@ -18,11 +15,7 @@ import type { BranchState } from './ChatComposerTypes'
 import { GitSessionTrigger } from './ChatGitEnv'
 import { resolveAgentDisplay } from './ChatHero'
 import { ChatTitlebarEnd, ChatTitlebarStart } from './ChatTitlebar'
-import {
-  ProjectOpenDropdown,
-  TabbarIcon,
-  TabbarTooltipButton,
-} from './ChatToolbar'
+import { ProjectOpenDropdown, TabbarIcon, TabbarTooltipButton } from './ChatToolbar'
 
 export function ChatTabbar({
   session,
@@ -151,7 +144,6 @@ export function ChatTabbar({
                 title={`${orchestration.hostAgentName} 当前挂了可派发的工作流，本轮以委派为主（保留全部工具，提示词引导优先派发给 ${orchestration.memberCount} 个成员执行）。`}
               >
                 <Icons.Workflow size={12} />
-                <span>Workflow</span>
               </span>
             )}
           </>
