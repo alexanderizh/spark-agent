@@ -3,9 +3,14 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 
 const DEFAULT_VIRTUALIZE_AT = 40
 const DEFAULT_ESTIMATED_ROW_SIZE = 180
+const START_ALIGN_SCROLL_MARGIN = 24
 
 export interface VirtualMessageListHandle {
-  scrollToIndex: (index: number, align?: 'start' | 'center' | 'end' | 'auto') => void
+  scrollToIndex: (
+    index: number,
+    align?: 'start' | 'center' | 'end' | 'auto',
+    behavior?: ScrollBehavior,
+  ) => void
 }
 
 interface VirtualMessageListProps<T> {
@@ -37,11 +42,11 @@ function StaticMessageListInner<T>(
   useImperativeHandle(
     ref,
     () => ({
-      scrollToIndex(index, align = 'auto') {
+      scrollToIndex(index, align = 'auto', behavior = 'smooth') {
         const row = scrollElementRef.current?.querySelector<HTMLElement>(
           `[data-virtual-message-index="${index}"]`,
         )
-        row?.scrollIntoView({ behavior: 'smooth', block: align === 'auto' ? 'nearest' : align })
+        row?.scrollIntoView({ behavior, block: align === 'auto' ? 'nearest' : align })
       },
     }),
     [scrollElementRef],
@@ -50,7 +55,12 @@ function StaticMessageListInner<T>(
   return (
     <div className="chat-message-list" role="list" aria-label="会话消息">
       {items.map((item, index) => (
-        <div key={getItemKey(item, index)} data-virtual-message-index={index} role="listitem">
+        <div
+          key={getItemKey(item, index)}
+          data-virtual-message-index={index}
+          role="listitem"
+          style={{ scrollMarginTop: START_ALIGN_SCROLL_MARGIN }}
+        >
           {renderItem(item, index)}
           {renderAfterItem?.(item, index)}
         </div>
@@ -94,11 +104,22 @@ function VirtualizedMessageListInner<T>(
   useImperativeHandle(
     ref,
     () => ({
-      scrollToIndex(index, align = 'auto') {
-        virtualizer.scrollToIndex(index, { align })
+      scrollToIndex(index, align = 'auto', behavior = 'smooth') {
+        virtualizer.scrollToIndex(index, { align, behavior })
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const row = scrollElementRef.current?.querySelector<HTMLElement>(
+              `[data-virtual-message-index="${index}"]`,
+            )
+            row?.scrollIntoView?.({
+              behavior,
+              block: align === 'auto' ? 'nearest' : align,
+            })
+          })
+        })
       },
     }),
-    [virtualizer],
+    [scrollElementRef, virtualizer],
   )
 
   const virtualItems = virtualizer.getVirtualItems()
@@ -121,7 +142,10 @@ function VirtualizedMessageListInner<T>(
             data-virtual-message-index={virtualRow.index}
             className="chat-virtual-message-row"
             role="listitem"
-            style={{ transform: `translateY(${virtualRow.start}px)` }}
+            style={{
+              transform: `translateY(${virtualRow.start}px)`,
+              scrollMarginTop: START_ALIGN_SCROLL_MARGIN,
+            }}
           >
             {renderItem(item, virtualRow.index)}
             {renderAfterItem?.(item, virtualRow.index)}
