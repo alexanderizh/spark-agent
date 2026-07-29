@@ -821,7 +821,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                       key: 'app-version',
                       label: menuLabel(
                         <Icons.Hash size={14} />,
-                        `${tr('app.user.version')} ${appVersion ? `v${appVersion}` : '--'}`,
+                        `${appVersion ? `v${appVersion}` : '--'}`,
                       ),
                     },
                   ],
