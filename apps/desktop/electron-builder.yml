@@ -119,6 +119,16 @@ extraResources:
     to: migrations
     filter:
       - '**/*.sql'
+  # 这些 stdio MCP 由独立 Node 进程执行，不能留在 app.asar 内。
+  - from: out/main/tools
+    to: tools
+    filter:
+      - '**/*.mjs'
+  # spark_media 的独立 Node 子进程通过 ../services/media 复用请求编译与响应解析。
+  - from: out/main/services/media
+    to: services/media
+    filter:
+      - '**/*.mjs'
   - from: resources/icon.png
     to: icon.png
   - from: resources/trayTemplate.png

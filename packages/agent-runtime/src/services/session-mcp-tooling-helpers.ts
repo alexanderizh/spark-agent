@@ -25,26 +25,66 @@ import { createLogger } from '@spark/shared'
 
 const log = createLogger('session.service')
 
+type RuntimeToolPathOptions = {
+  moduleDirectory?: string
+  cwd?: string
+  resourcesPath?: string | null
+}
+
+function electronResourcesPath(): string | null {
+  const candidate = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath
+  return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate : null
+}
+
+function isAsarArchivePath(candidate: string): boolean {
+  return /\.asar(?:[\\/]|$)/i.test(candidate)
+}
+
+/**
+ * Resolve a runtime MCP script to a path that a standalone Node process can execute.
+ *
+ * Electron's patched fs APIs can report files inside app.asar as existing, but the
+ * separately packaged Node runtime cannot execute those archive paths. Packaged
+ * builds therefore prefer Resources/tools (copied through electron-builder's
+ * extraResources), while development keeps the source-tree fallbacks.
+ */
+export function resolveRuntimeToolPath(
+  fileName: string,
+  options: RuntimeToolPathOptions = {},
+): string | null {
+  const here = options.moduleDirectory ?? path.dirname(fileURLToPath(import.meta.url))
+  const cwd = options.cwd ?? process.cwd()
+  const resourcesPath =
+    options.resourcesPath === undefined ? electronResourcesPath() : options.resourcesPath
+  const candidates = [
+    ...(resourcesPath ? [path.resolve(resourcesPath, 'tools', fileName)] : []),
+    path.resolve(here, 'tools', fileName),
+    path.resolve(here, '../tools', fileName),
+    path.resolve(cwd, 'packages/agent-runtime/src/tools', fileName),
+  ]
+  return (
+    candidates.find((candidate) => !isAsarArchivePath(candidate) && existsSync(candidate)) ?? null
+  )
+}
+
 // ─── Image generation ────────────────────────────────────────────────────────
 
 export function resolveImageGenerationMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/image-generation-mcp-server.mjs'),
-    path.resolve(here, '../tools/image-generation-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/image-generation-mcp-server.mjs'),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
+  return resolveRuntimeToolPath('image-generation-mcp-server.mjs')
 }
 
-export function resolveMediaGenerationMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/media-generation-mcp-server.mjs'),
-    path.resolve(here, '../tools/media-generation-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/media-generation-mcp-server.mjs'),
+export function resolveMediaGenerationMcpServerPath(
+  options: RuntimeToolPathOptions = {},
+): string | null {
+  const serverPath = resolveRuntimeToolPath('media-generation-mcp-server.mjs', options)
+  if (serverPath == null) return null
+  const toolsDirectory = path.dirname(serverPath)
+  const dependencies = [
+    path.resolve(toolsDirectory, 'official-media-mcp-helpers.mjs'),
+    path.resolve(toolsDirectory, '../services/media/media-extract.mjs'),
+    path.resolve(toolsDirectory, '../services/media/media-request-compiler.mjs'),
   ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
+  return dependencies.every((candidate) => existsSync(candidate)) ? serverPath : null
 }
 
 export function buildImageGenerationSystemPrompt(input: {
@@ -257,59 +297,23 @@ export const PLATFORM_TOOL_NAMES: string[] = [
 ]
 
 export function resolvePlatformManagementMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    // Packed desktop build: `apps/desktop/out/main/index.js` + copied `tools/*.mjs`
-    path.resolve(here, 'tools/platform-management-mcp-server.mjs'),
-    // When bundled one level deeper (defensive)
-    path.resolve(here, '../tools/platform-management-mcp-server.mjs'),
-    // Dev / monorepo source checkout
-    path.resolve(
-      process.cwd(),
-      'packages/agent-runtime/src/tools/platform-management-mcp-server.mjs',
-    ),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
+  return resolveRuntimeToolPath('platform-management-mcp-server.mjs')
 }
 
 export function resolveWebSearchMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/web-search-mcp-server.mjs'),
-    path.resolve(here, '../tools/web-search-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/web-search-mcp-server.mjs'),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
+  return resolveRuntimeToolPath('web-search-mcp-server.mjs')
 }
 
 export function resolveSparkMemoryMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/spark-memory-mcp-server.mjs'),
-    path.resolve(here, '../tools/spark-memory-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/spark-memory-mcp-server.mjs'),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
+  return resolveRuntimeToolPath('spark-memory-mcp-server.mjs')
 }
 
 export function resolveSparkCanvasMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/spark-canvas-mcp-server.mjs'),
-    path.resolve(here, '../tools/spark-canvas-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/spark-canvas-mcp-server.mjs'),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
+  return resolveRuntimeToolPath('spark-canvas-mcp-server.mjs')
 }
 
 export function resolvePresentFilesMcpServer(workspaceRootPath: string): SDKMcpServerConfig | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/present-files-mcp-server.mjs'),
-    path.resolve(here, '../tools/present-files-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/present-files-mcp-server.mjs'),
-  ]
-  const serverPath = candidates.find((candidate) => existsSync(candidate))
+  const serverPath = resolveRuntimeToolPath('present-files-mcp-server.mjs')
   if (serverPath == null) {
     log.warn('Present files MCP server script not found')
     return null
@@ -326,13 +330,7 @@ export function resolvePresentFilesMcpServer(workspaceRootPath: string): SDKMcpS
 }
 
 export function resolveDebugMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/debug-mode-mcp-server.mjs'),
-    path.resolve(here, '../tools/debug-mode-mcp-server.mjs'),
-    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/debug-mode-mcp-server.mjs'),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
+  return resolveRuntimeToolPath('debug-mode-mcp-server.mjs')
 }
 
 /** SDK-namespaced tool names exposed by the spark_search MCP server. */

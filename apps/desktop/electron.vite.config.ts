@@ -38,12 +38,25 @@ function copyRuntimeToolsPlugin() {
   return {
     name: 'copy-runtime-tools',
     closeBundle() {
-      const srcDir = resolve(__dirname, '../../packages/agent-runtime/src/tools')
-      const destDir = resolve(__dirname, 'out/main/tools')
-      mkdirSync(destDir, { recursive: true })
-      for (const file of readdirSync(srcDir)) {
+      const runtimeRoot = resolve(__dirname, '../../packages/agent-runtime/src')
+      const toolsSrcDir = resolve(runtimeRoot, 'tools')
+      const toolsDestDir = resolve(__dirname, 'out/main/tools')
+      mkdirSync(toolsDestDir, { recursive: true })
+      for (const file of readdirSync(toolsSrcDir)) {
         if (file.endsWith('.mjs')) {
-          copyFileSync(resolve(srcDir, file), resolve(destDir, file))
+          copyFileSync(resolve(toolsSrcDir, file), resolve(toolsDestDir, file))
+        }
+      }
+
+      // spark_media 从 tools/ 跨目录复用这些纯 JS 运行时模块。独立 Node
+      // 子进程不会读取 app.asar，因此必须在 out 与最终 Resources 中保持
+      // 和源码一致的相对目录结构，避免生产包启动时报 ERR_MODULE_NOT_FOUND。
+      const mediaSrcDir = resolve(runtimeRoot, 'services/media')
+      const mediaDestDir = resolve(__dirname, 'out/main/services/media')
+      mkdirSync(mediaDestDir, { recursive: true })
+      for (const file of readdirSync(mediaSrcDir)) {
+        if (file.endsWith('.mjs')) {
+          copyFileSync(resolve(mediaSrcDir, file), resolve(mediaDestDir, file))
         }
       }
     },
