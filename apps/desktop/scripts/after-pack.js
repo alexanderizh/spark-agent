@@ -6,7 +6,13 @@
 const fs = require('fs/promises')
 const path = require('path')
 const { packageMacNativeHost } = require('./package-native-host.js')
-const { packageWindowsNativeHost } = require('./package-windows-native-host.js')
+const {
+  inspectWindowsAuthenticode,
+  normalizePublisherThumbprint,
+  packageWindowsNativeHost,
+  resolveWindowsNativeHostTrustMode,
+  signWindowsNativeHost,
+} = require('./package-windows-native-host.js')
 const { packageStandaloneNodeRuntime } = require('./package-standalone-node.js')
 const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses')
 
@@ -65,9 +71,38 @@ async function hardenElectronFuses(context, dependencies = { flipFuses }) {
   })
 }
 
+async function signWindowsStandaloneNodeRuntime(context, runtime, dependencies = {}) {
+  const environment = dependencies.environment ?? process.env
+  if (resolveWindowsNativeHostTrustMode(environment) === 'local') {
+    return { signed: false }
+  }
+
+  const expectedPublisherThumbprint = normalizePublisherThumbprint(
+    environment.SPARK_WINDOWS_PUBLISHER_THUMBPRINT,
+  )
+  const sign = dependencies.sign ?? signWindowsNativeHost
+  const inspect = dependencies.inspect ?? inspectWindowsAuthenticode
+  await sign(context.packager, runtime.executablePath)
+  const signature = await inspect(runtime.executablePath, {
+    environment,
+    expectedPublisherThumbprint,
+  })
+  if (
+    signature.publisherThumbprint !== expectedPublisherThumbprint ||
+    signature.timestamped !== true
+  ) {
+    throw new Error(
+      'Standalone Node runtime must use the configured timestamped Authenticode publisher',
+    )
+  }
+  console.log('[after-pack] Standalone Node runtime: signed and publisher verified')
+  return { signed: true, signature }
+}
+
 module.exports = async function afterPack(context) {
-  await packageStandaloneNodeRuntime(context)
+  const standaloneNodeRuntime = await packageStandaloneNodeRuntime(context)
   if (context.electronPlatformName === 'win32') {
+    await signWindowsStandaloneNodeRuntime(context, standaloneNodeRuntime)
     await packageWindowsNativeHost(context)
     await hardenElectronFuses(context)
     return
@@ -88,3 +123,4 @@ module.exports = async function afterPack(context) {
 
 module.exports.pruneMacElectronLocales = pruneMacElectronLocales
 module.exports.hardenElectronFuses = hardenElectronFuses
+module.exports.signWindowsStandaloneNodeRuntime = signWindowsStandaloneNodeRuntime

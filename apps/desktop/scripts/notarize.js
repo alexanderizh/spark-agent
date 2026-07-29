@@ -264,9 +264,8 @@ async function verifyWindowsPackageSigners(params, options = {}) {
       inspectWindowsAuthenticode(executablePath, {
         expectedPublisherThumbprint,
       }));
-  // Self-signed release certificates are trusted only for the lifetime of one
-  // inspection. Keep these checks sequential so concurrent temporary root-store
-  // cleanup cannot invalidate another verification.
+  // Keep checks sequential so the first signer mismatch fails before inspecting
+  // later executables and the verification log remains deterministic.
   const appSignature = await inspect(appExecutable);
   const hostSignature = await inspect(hostExecutable);
   const nodeSignature = await inspect(nodeExecutable);
