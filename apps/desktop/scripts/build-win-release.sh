@@ -47,48 +47,7 @@ BUILDER_ARGS=("$@")
 
 TMP_DIR=""
 WINDOWS_SIGNING_MODE="unsigned"
-WINDOWS_ROOT_CERT_THUMBPRINT=""
-WINDOWS_ROOT_CERT_ADDED="0"
 cleanup() {
-  if [ "$WINDOWS_ROOT_CERT_ADDED" = "1" ] && [ -n "$WINDOWS_ROOT_CERT_THUMBPRINT" ]; then
-    local ps_cmd=""
-    if command -v pwsh >/dev/null 2>&1; then
-      ps_cmd="pwsh"
-    elif command -v powershell.exe >/dev/null 2>&1; then
-      ps_cmd="powershell.exe"
-    elif command -v powershell >/dev/null 2>&1; then
-      ps_cmd="powershell"
-    fi
-
-    if [ -z "$ps_cmd" ]; then
-      warn "Unable to remove the temporary Windows root certificate: PowerShell is unavailable"
-    elif ! SPARK_ROOT_CERT_THUMBPRINT="$WINDOWS_ROOT_CERT_THUMBPRINT" \
-      "$ps_cmd" -NoLogo -NoProfile -NonInteractive -Command '
-$store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-  [System.Security.Cryptography.X509Certificates.StoreName]::Root,
-  [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-)
-try {
-  $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-  $matches = $store.Certificates.Find(
-    [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-    $env:SPARK_ROOT_CERT_THUMBPRINT,
-    $false
-  )
-  foreach ($certificate in $matches) {
-    $store.Remove($certificate)
-  }
-}
-finally {
-  $store.Close()
-}
-'; then
-      warn "Failed to remove the temporary Windows root certificate"
-    else
-      ok "Removed the temporary Windows root certificate"
-    fi
-  fi
-
   if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then
     rm -rf "$TMP_DIR"
   fi
@@ -246,104 +205,6 @@ try { $hash = $sha.ComputeHash($certificate.RawData) } finally { $sha.Dispose() 
   ok "Derived the SHA-256 publisher certificate fingerprint from WIN_CSC_LINK"
 }
 
-trust_windows_signing_certificate() {
-  [ "$WINDOWS_SIGNING_MODE" = "signed" ] || return
-  is_windows_runner || return
-
-  case "$WIN_CSC_LINK" in
-    http://*|https://*|data:*)
-      warn "Remote/data Windows signing certificates cannot be pre-trusted; per-artifact verification will be used"
-      return
-      ;;
-  esac
-
-  local ps_cmd=""
-  if command -v pwsh >/dev/null 2>&1; then
-    ps_cmd="pwsh"
-  elif command -v powershell.exe >/dev/null 2>&1; then
-    ps_cmd="powershell.exe"
-  elif command -v powershell >/dev/null 2>&1; then
-    ps_cmd="powershell"
-  else
-    fail "PowerShell is required to prepare Windows signing trust"
-  fi
-
-  local trust_result
-  trust_result="$(
-    SPARK_PFX_PATH="$WIN_CSC_LINK" \
-    SPARK_PFX_PASSWORD="$WIN_CSC_KEY_PASSWORD" \
-    SPARK_EXPECTED_PUBLISHER_SHA256="$SPARK_WINDOWS_PUBLISHER_THUMBPRINT" \
-      "$ps_cmd" -NoLogo -NoProfile -NonInteractive -Command '
-$flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
-$certificates = [System.Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
-$certificates.Import($env:SPARK_PFX_PATH, $env:SPARK_PFX_PASSWORD, $flags)
-$certificate = $certificates | Where-Object HasPrivateKey | Select-Object -First 1
-if ($null -eq $certificate) {
-  throw "The signing PFX does not contain a certificate with a private key"
-}
-
-$sha = [System.Security.Cryptography.SHA256]::Create()
-try {
-  $fingerprint = [Convert]::ToHexString($sha.ComputeHash($certificate.RawData)).ToLowerInvariant()
-}
-finally {
-  $sha.Dispose()
-}
-if ($fingerprint -cne $env:SPARK_EXPECTED_PUBLISHER_SHA256) {
-  throw "The Windows signing certificate differs from the configured publisher fingerprint"
-}
-if ($certificate.Subject -ne $certificate.Issuer) {
-  "public"
-  exit 0
-}
-
-$publicCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
-  $certificate.RawData
-)
-$store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-  [System.Security.Cryptography.X509Certificates.StoreName]::Root,
-  [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-)
-try {
-  $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-  $existing = $store.Certificates.Find(
-    [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-    $publicCertificate.Thumbprint,
-    $false
-  )
-  if ($existing.Count -eq 0) {
-    $store.Add($publicCertificate)
-    "added:$($publicCertificate.Thumbprint)"
-  }
-  else {
-    "existing:$($publicCertificate.Thumbprint)"
-  }
-}
-finally {
-  $store.Close()
-}
-'
-  )"
-  trust_result="$(printf '%s\n' "$trust_result" | tail -n 1 | tr -d '\r')"
-
-  case "$trust_result" in
-    added:*)
-      WINDOWS_ROOT_CERT_THUMBPRINT="${trust_result#added:}"
-      WINDOWS_ROOT_CERT_ADDED="1"
-      ok "Temporarily trusted the self-signed Windows publisher certificate"
-      ;;
-    existing:*)
-      ok "The self-signed Windows publisher certificate is already trusted"
-      ;;
-    public)
-      ok "The Windows publisher certificate uses a public trust chain"
-      ;;
-    *)
-      fail "Unable to prepare Windows signing trust"
-      ;;
-  esac
-}
-
 verify_windows_signature() {
   step "5/5 Verify Windows signature"
 
@@ -399,62 +260,39 @@ if ($sig.TimeStamperCertificate) {
   Write-Host ("  Timestamp signer: {0}" -f $sig.TimeStamperCertificate.Subject)
 }
 
-if (($sig.Status -eq "UnknownError" -or $sig.Status -eq "NotTrusted") -and
-    $sig.SignerCertificate -and
-    $sig.SignerCertificate.Subject -eq $sig.SignerCertificate.Issuer) {
+if (-not $sig.SignerCertificate) {
   if ($allowUnsignedRelease) {
-    Write-Warning "The self-signed signature is not trusted on this runner; skipping temporary root-store trust because unsigned Windows releases are allowed"
+    Write-Warning "Authenticode signature has no signer certificate, but unsigned releases are allowed"
     exit 0
   }
-
-  # A self-signed certificate proves that the artifact was signed, but a clean
-  # CI runner does not trust it as a root CA. Temporarily trust only its public
-  # certificate and run Authenticode verification again so hash/signature
-  # failures still fail the build. Never persist this trust beyond the check.
-  Write-Host "  Self-signed certificate detected; verifying with temporary CurrentUser trust"
-  $certificate = $sig.SignerCertificate
-  $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-    [System.Security.Cryptography.X509Certificates.StoreName]::Root,
-    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-  )
-  $certificateAdded = $false
-
-  try {
-    $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-    $existing = $store.Certificates.Find(
-      [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-      $certificate.Thumbprint,
-      $false
-    )
-    if ($existing.Count -eq 0) {
-      $store.Add($certificate)
-      $certificateAdded = $true
-    }
-    $store.Close()
-
-    $sig = Get-AuthenticodeSignature -LiteralPath $path
-    Write-Host ("  Trusted status : {0}" -f $sig.Status)
-    Write-Host ("  Trusted message: {0}" -f $sig.StatusMessage)
-  }
-  finally {
-    try {
-      if ($certificateAdded) {
-        $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-        $store.Remove($certificate)
-      }
-    }
-    finally {
-      $store.Close()
-    }
-  }
+  throw "Authenticode signature has no signer certificate"
+}
+$sha = [System.Security.Cryptography.SHA256]::Create()
+try {
+  $publisherFingerprint = [Convert]::ToHexString(
+    $sha.ComputeHash($sig.SignerCertificate.RawData)
+  ).ToLowerInvariant()
+}
+finally {
+  $sha.Dispose()
+}
+if ($publisherFingerprint -cne $env:SPARK_WINDOWS_PUBLISHER_THUMBPRINT) {
+  throw "Authenticode signer differs from the configured publisher fingerprint"
 }
 
-if ($sig.Status -ne "Valid") {
+$expectedSelfSignedPublisher = (
+  ($sig.Status -eq "UnknownError" -or $sig.Status -eq "NotTrusted") -and
+  $sig.SignerCertificate.Subject -eq $sig.SignerCertificate.Issuer
+)
+if ($sig.Status -ne "Valid" -and -not $expectedSelfSignedPublisher) {
   if ($allowUnsignedRelease) {
     Write-Warning ("Authenticode verification failed, but the Windows release may continue: {0} - {1}" -f $sig.Status, $sig.StatusMessage)
     exit 0
   }
   throw "Authenticode signature verification failed: $($sig.Status) - $($sig.StatusMessage)"
+}
+if ($expectedSelfSignedPublisher) {
+  Write-Host "  Self-signed publisher matches the configured SHA-256 fingerprint"
 }
 if (-not $sig.TimeStamperCertificate) {
   if ($allowUnsignedRelease) {
@@ -463,7 +301,7 @@ if (-not $sig.TimeStamperCertificate) {
   }
   throw "Authenticode signature is valid but has no RFC 3161 timestamp"
 }
-' "$verify_path"
+'
   if [ "${ALLOW_UNSIGNED_WINDOWS_RELEASE:-0}" = "1" ]; then
     ok "Windows signature verification step completed (unsigned fallback is allowed)"
   else
@@ -521,7 +359,6 @@ fi
 
 prepare_windows_signing
 derive_windows_publisher_thumbprint
-trust_windows_signing_certificate
 SPARK_NATIVE_HOST_TRUST_MODE="$WINDOWS_SIGNING_MODE"
 export SPARK_NATIVE_HOST_TRUST_MODE
 
