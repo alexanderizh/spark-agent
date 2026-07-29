@@ -1,6 +1,6 @@
 # Computer Use 与应用快照生产级开发计划
 
-> 状态: 实施中 | 最后核对: 2026-07-29
+> 状态: 实施中 | 最后核对: 2026-07-30
 
 本文是 Spark Agent Computer Use、应用快照（App Snapshot）和自主验收能力的开发规格与交付计划。目标读者是产品负责人、架构师、Electron/Agent Runtime/原生端开发、测试和发布工程师。本文中的模块边界、数据契约、安全规则、工作包和验收门槛应作为实现时的共同基线。
 
@@ -499,14 +499,14 @@ export interface ComputerActionEnvelope {
 
 ### 8.3 Windows
 
-实施状态（2026-07-28）：Rust + `windows-rs` 自包含 Host、严格 wire、Windows Graphics Capture、UIA full/diff tree、secure/password 过滤、Host 内 element runtime reference、Invoke/Value/SelectionItem/Scroll/Focus/ExpandCollapse、受限 SendInput、secure desktop/焦点/进程身份复核均已落地。WGC 不捕获光标；窗口图像在捕获前后绑定 HWND/PID/executable identity。SendInput 使用释放守卫处理拖拽、组合键和 UTF-16 输入的中途失败，拖拽限定 5 秒并由 Client 按动作时长扩展 watchdog。x64/arm64 构建、Authenticode/时间戳/同 publisher 校验与发布 CI 已接线；正式证书安装包和 Windows 10/11 实体机矩阵仍是发布阻断门槛。
+实施状态（2026-07-30）：Rust + `windows-rs` 自包含 Host、严格 wire、Windows Graphics Capture、UIA full/diff tree、secure/password 过滤、Host 内 element runtime reference、Invoke/Value/SelectionItem/Scroll/Focus/ExpandCollapse、受限 SendInput、secure desktop/焦点/进程身份复核均已落地。WGC 不捕获光标；窗口图像在捕获前后绑定 HWND/PID/executable identity。SendInput 使用释放守卫处理拖拽、组合键和 UTF-16 输入的中途失败，拖拽限定 5 秒并由 Client 按动作时长扩展 watchdog。x64/arm64 构建、Authenticode/时间戳/同 publisher 校验与发布 CI 已接线；正式证书安装包和 Windows 10/11 实体机矩阵仍是发布阻断门槛。
 
 - Rust 自包含 EXE，不要求用户安装 .NET、Node 或自动化工具。
 - Windows Graphics Capture 获取窗口图像，不使用 GDI 临时截图降级；Host capability manifest 通过 `GraphicsCaptureApi::is_supported()` 实测 WGC，失败时关闭 `captureWindow` 并报告 `screen=restricted`。
 - UI Automation 获取 full/diff tree、pattern、bounds 和 password 属性；旧 tree/element ref 拒绝；password/provider-secure 节点的 value 与 provider-controlled name 都在 Host 内替换。
 - 语义操作优先使用 Invoke/Value/SelectionItem/Scroll/Focus/ExpandCollapse，SendInput 负责受限坐标、拖拽、滚动、按键和 UTF-16 文本。
 - 每个输入动作前后复核前台 HWND、PID、规范化 executable path SHA-256（inventory、capture 与 SendInput 使用同一身份算法）；secure desktop、取消 session、焦点漂移和身份变化 fail-closed。
-- Host、SparkWork.exe 与独立 Node runtime 必须使用同一 Authenticode publisher 并带时间戳；运行时 publisher 比较只读取 WinVerifyTrust 已验证 signer chain 的 leaf certificate，不扫描 PKCS#7 附带证书包；发布 CI 缺证书直接失败。
+- Host、SparkWork.exe 与独立 Node runtime 必须使用同一 Authenticode publisher 并带时间戳；运行时 publisher 比较只读取 WinVerifyTrust 已验证 signer chain 的 leaf certificate，不扫描 PKCS#7 附带证书包；发布 CI 缺证书直接失败。自签名发布证书只允许在 SHA-256 publisher 指纹与 PFX 完全匹配后，于单次 Windows 打包进程内临时加入 CurrentUser Root，并由退出清理钩子删除，避免对每个产物重复建立证书链。
 
 ### 8.4 Linux
 
