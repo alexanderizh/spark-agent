@@ -90,6 +90,9 @@
 }
 .quick-task-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .quick-task-thumb span { position: absolute; top: 5px; right: 5px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: rgba(15, 23, 42, .72); color: white; }
+/* 源文件已被清理（如 macOS temp 被回收）→ safe-file 加载失败降级占位，避免控制台刷 404。 */
+.quick-task-thumb.is-missing { border-style: dashed; background: var(--bg-sunken, #f7f6f4); cursor: pointer; }
+.quick-task-thumb-placeholder { width: 100%; height: 100%; display: grid; place-items: center; color: var(--muted-foreground, #94a3b8); }
 
 .quick-task-fields {
   display: grid;

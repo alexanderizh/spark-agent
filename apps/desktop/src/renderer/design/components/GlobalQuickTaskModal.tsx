@@ -91,6 +91,8 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
   const [dueDate, setDueDate] = useState('')
   const [priority, setPriority] = useState<Priority>('medium')
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
+  // safe-file 加载失败的附件 id（如源文件被清理），降级显示占位，避免控制台刷 404。
+  const [brokenIds, setBrokenIds] = useState<Set<string>>(() => new Set())
   const [submitting, setSubmitting] = useState(false)
   const [position, setPosition] = useState(getInitialPosition)
   const dragRef = useRef<{ startX: number; startY: number; x: number; y: number } | null>(null)
@@ -120,11 +122,21 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
       setDueDate('')
       setPriority('medium')
       setAttachments([])
+      setBrokenIds(new Set())
       setPosition(getInitialPosition())
       textareaRef.current?.focus()
     }, 0)
     return () => window.clearTimeout(timer)
   }, [open, resolveDefaults])
+
+  const handleAttachmentImageError = useCallback((id: string) => {
+    setBrokenIds((prev) => {
+      if (prev.has(id)) return prev
+      const next = new Set(prev)
+      next.add(id)
+      return next
+    })
+  }, [])
 
   const handlePaste = useCallback(async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const imageItems = Array.from(event.clipboardData?.items ?? []).filter((item) => item.type.startsWith('image/'))
@@ -248,12 +260,30 @@ export function GlobalQuickTaskModal({ open, onClose }: { open: boolean; onClose
 
         {attachments.length > 0 && (
           <div className="quick-task-attachments">
-            {attachments.map((attachment) => (
-              <button key={attachment.id} className="quick-task-thumb" onClick={() => setAttachments((prev) => prev.filter((item) => item.id !== attachment.id))} title="点击移除图片">
-                <img src={resolveImageSrc(attachment.previewPath ?? attachment.path)} alt={attachment.name} />
-                <span><Icons.X size={10} /></span>
-              </button>
-            ))}
+            {attachments.map((attachment) => {
+              const broken = brokenIds.has(attachment.id)
+              return (
+                <button
+                  key={attachment.id}
+                  className={`quick-task-thumb${broken ? ' is-missing' : ''}`}
+                  onClick={() => setAttachments((prev) => prev.filter((item) => item.id !== attachment.id))}
+                  title={broken ? `${attachment.name} 不可访问，点击移除` : '点击移除图片'}
+                >
+                  {broken ? (
+                    <div className="quick-task-thumb-placeholder" aria-label={`${attachment.name} 不可访问`}>
+                      <Icons.Image size={18} />
+                    </div>
+                  ) : (
+                    <img
+                      src={resolveImageSrc(attachment.previewPath ?? attachment.path)}
+                      alt={attachment.name}
+                      onError={() => handleAttachmentImageError(attachment.id)}
+                    />
+                  )}
+                  <span><Icons.X size={10} /></span>
+                </button>
+              )
+            })}
           </div>
         )}
 

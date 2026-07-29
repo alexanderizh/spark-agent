@@ -987,7 +987,6 @@ body.sidebar-resizing {
      main-content-area. Win32 (45px win-titlebar) and sidebar-hidden macOS
      (40px shell-titlebar) override below with their own offsets. */
   height: calc(100vh - 20px);
-  background: var(--bg);
 }
 
 /* Windows: subtract the 45px .win-titlebar so the chat area matches the
@@ -1026,7 +1025,7 @@ body.sidebar-resizing {
   padding: 0 var(--pad-md);
   align-items: center;
   gap: 8px;
-  background: var(--bg);
+  /* background: var(--bg); */
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
@@ -1040,7 +1039,6 @@ body.sidebar-resizing {
 }
 .chat-tabbar .sidebar-expand-btn {
   flex-shrink: 0;
-  margin-left: 12px;
 }
 .chat-titlebar-start {
   display: flex;
@@ -1182,7 +1180,7 @@ body.sidebar-resizing {
   overflow-x: hidden;
   overflow-y: auto;
   padding: var(--pad-xl) 0;
-  background: var(--bg);
+  /* background: var(--bg); */
   display: flex;
   flex-direction: column;
 }
@@ -2701,7 +2699,7 @@ body.sidebar-resizing {
 .composer-wrap {
   flex-shrink: 0;
   min-width: 0;
-  background: var(--bg);
+  /* background: var(--bg); */
   padding: 0;
   z-index: 5;
   padding-top: 4px;
@@ -2711,7 +2709,7 @@ body.sidebar-resizing {
   width: 100%;
   min-width: 0;
   margin: 0 auto;
-  padding: 0 clamp(8px, 2.4vw, var(--pad-xl)) var(--pad-lg);
+  padding: 0 clamp(12px, 2.4vw, var(--pad-xl)) var(--pad-lg);
 }
 .composer {
   border-radius: var(--r-lg);
@@ -2721,7 +2719,7 @@ body.sidebar-resizing {
     0 1px 8px rgba(39, 39, 39, 0.01),
     0 0 0 1px rgba(39, 39, 39, 0.01),
     var(--shadow-sm);
-  border: 1px solid var(--border);
+  /* border: 1px solid var(--border); */
 
 }
 

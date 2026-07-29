@@ -278,7 +278,17 @@ import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
 import { getWindowForIpcSender } from './window-controls.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { getDefaultSystemTempRoots, healBoardTasks } from './board-tasks-heal.js'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 
 const log = createLogger('ipc:register')
@@ -1216,8 +1226,14 @@ function readBoardTasks(): BoardTaskRecord[] {
       }
       return t as unknown as BoardTaskRecord
     })
-    if (needsMigration) writeBoardTasks(tasks)
-    return tasks
+    // 历史数据自愈：剔除指向已被 macOS 清理的系统临时目录的死链接附件，
+    // 避免打开面板时渲染端加载坏 path 刷 404。幂等，仅 changed 才写盘。
+    const healResult = healBoardTasks(tasks, { tempRoots: getBoardTaskHealTempRoots() })
+    const healedTasks = healResult.tasks
+    // heal 会删除数据 → 走备份原子写；纯 sortOrder 迁移（仅补字段）维持原写法。
+    if (healResult.changed) writeBoardTasksWithBackup(healedTasks)
+    else if (needsMigration) writeBoardTasks(healedTasks)
+    return healedTasks
   } catch {
     return []
   }
@@ -1227,6 +1243,43 @@ function writeBoardTasks(tasks: BoardTaskRecord[]): void {
   const dir = path.dirname(BOARD_TASKS_FILE)
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   writeFileSync(BOARD_TASKS_FILE, JSON.stringify(tasks), 'utf-8')
+}
+
+/**
+ * 自愈专用写盘：先备份 board-tasks.json → .bak（覆盖式，只留最近一份），
+ * 再写 .tmp 后 rename 原子替换。仅自愈路径调用，避免改动既有 writeBoardTasks 的回归面。
+ * 备份/原子写任一环节失败都只记日志、不抛出——自愈是尽力而为，不应阻断任务读取。
+ */
+function writeBoardTasksWithBackup(tasks: BoardTaskRecord[]): void {
+  const dir = path.dirname(BOARD_TASKS_FILE)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  try {
+    if (existsSync(BOARD_TASKS_FILE)) copyFileSync(BOARD_TASKS_FILE, `${BOARD_TASKS_FILE}.bak`)
+  } catch (err) {
+    log.warn(`board-tasks self-heal backup failed: ${String(err)}`)
+  }
+  const tmp = `${BOARD_TASKS_FILE}.tmp`
+  try {
+    writeFileSync(tmp, JSON.stringify(tasks), 'utf-8')
+    renameSync(tmp, BOARD_TASKS_FILE)
+  } catch (err) {
+    log.warn(`board-tasks self-heal atomic write failed: ${String(err)}`)
+  }
+}
+
+/**
+ * 自愈用的系统临时目录根集合：在默认根（os.tmpdir() + 硬编码前缀）基础上，
+ * 追加当前 app temp 目录（通常等价于 os.tmpdir()，但显式纳入更稳妥）。
+ * app.getPath 在启动早期可能抛出，try 包裹兜底。
+ */
+function getBoardTaskHealTempRoots(): string[] {
+  const roots = new Set(getDefaultSystemTempRoots())
+  try {
+    roots.add(path.resolve(app.getPath('temp')))
+  } catch {
+    /* app 未就绪时忽略，默认根已覆盖 os.tmpdir() */
+  }
+  return Array.from(roots)
 }
 
 function boardTaskUid(): string {

@@ -97,7 +97,7 @@
 
 .chat-main-active.git-env-panel-open .chat-stream-inner,
 .chat-main-active.git-env-panel-open .composer-inner {
-  --git-gutter-base: clamp(16px, 2.4vw, var(--pad-xl, 24px));
+  --git-gutter-base: clamp(24px, 2.4vw, var(--pad-xl, 24px));
   --git-center-free: max(0px, calc((100% - min(100%, var(--git-content-max))) / 2));
   --git-padding-free: max(0px, calc(var(--git-gutter-base) - var(--git-gutter-min)));
   /* 右侧还需补多少才够面板宽度；已够则 need=0，不再从左侧补贴 */
@@ -119,7 +119,7 @@
 
 .chat-main-active.git-env-panel-open .chat-stream-inner,
 .chat-main-active.git-env-panel-open .composer-inner {
-  --git-gutter-base: 16px;
+  --git-gutter-base: 24px;
 }
 
 /* 侧栏收起且内容区全宽时，不存在 900px 居中留白，仅允许内边距零和转移 */
@@ -2184,8 +2184,8 @@ body.git-review-tree-resizing {
   min-width: 0;
   margin: 0 auto;
   box-sizing: border-box;
-  padding-left: max(16px, var(--chat-turn-nav-content-inset, 0px));
-  padding-right: 16px;
+  padding-left: max(24px, var(--chat-turn-nav-content-inset, 0px));
+  padding-right: 24px;
 }
 
 .chat-stream-inner {
