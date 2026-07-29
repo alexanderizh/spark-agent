@@ -49,9 +49,10 @@ mac:
   # 若环境里没有，electron-builder 会回退到 ad-hoc 签名（仅本地开发用）
   identity: 'Developer ID Application'
   # Native Host 在 afterPack 中先独立 Developer ID 签名并生成最终 bytes hash；
-  # 外层 .app 随后封存 host + manifest。禁止 electron-builder 二次签名改变 hash。
+  # 可执行文件直属 Helpers，manifest 留在 Resources，避免非代码文件进入嵌套代码目录。
+  # 禁止 electron-builder 二次签名 Host 改变 manifest 绑定的 hash。
   signIgnore:
-    - 'Contents/Helpers/native-host/'
+    - 'Contents/Helpers/SparkComputerHost$'
 win:
   # Native Host parent authorization binds to this stable executable name.
   executableName: SparkWork

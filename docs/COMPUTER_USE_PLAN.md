@@ -486,7 +486,7 @@ export interface ComputerActionEnvelope {
 
 ### 8.2 macOS
 
-实施状态（2026-07-29）：Swift Package、ScreenCaptureKit、AXUIElement full/diff tree、视觉空树兜底、secure field redaction、版本化 element refs、语义动作、受限 CGEvent、稳定应用身份复核、取消、Screen Recording/Accessibility/Input 权限、签名/公证接线均已落地。为兼容 Electron 多窗口、透明层、自绘 Canvas 和跨 API 标题/几何差异，执行链不再因临时 focused 标记、窗口标题、window ID、像素级几何漂移或单应用 AX 枚举失败而中止；截图与输入可用时继续视觉坐标闭环，PID、敏感目标和会话取消仍持续校验。发布 Host 已迁到 `Contents/Helpers/native-host`，减少 TCC 在升级包中的责任路径漂移。macOS 14+ 且真实权限可用时开放对应能力；macOS 13 只枚举窗口且关闭 capture/control。最终 Developer ID 包和真实应用矩阵仍是发布阻断门槛。
+实施状态（2026-07-29）：Swift Package、ScreenCaptureKit、AXUIElement full/diff tree、视觉空树兜底、secure field redaction、版本化 element refs、语义动作、受限 CGEvent、稳定应用身份复核、取消、Screen Recording/Accessibility/Input 权限、签名/公证接线均已落地。为兼容 Electron 多窗口、透明层、自绘 Canvas 和跨 API 标题/几何差异，执行链不再因临时 focused 标记、窗口标题、window ID、像素级几何漂移或单应用 AX 枚举失败而中止；截图与输入可用时继续视觉坐标闭环，PID、敏感目标和会话取消仍持续校验。发布 Host 可执行文件位于 `Contents/Helpers/SparkComputerHost`，manifest 独立存放在 `Contents/Resources/native-host`，既稳定 TCC 责任路径，也避免非代码文件破坏嵌套代码签名。macOS 14+ 且真实权限可用时开放对应能力；macOS 13 只枚举窗口且关闭 capture/control。最终 Developer ID 包和真实应用矩阵仍是发布阻断门槛。
 
 - Swift 实现。
 - ScreenCaptureKit 获取 displays/apps/windows 和单窗口截图。
@@ -851,7 +851,7 @@ app_snapshot_deleted
 
 ### CU-03 macOS Native Host（3.5 周，依赖 CU-00）
 
-实施状态：**代码闭环已完成，签名包实机验收待执行（2026-07-29）**。最终 wire framing、可信进程生命周期、父应用 Team ID/PID start token 绑定、Host identifier/hash/manifest/握手验证、崩溃重连、ScreenCaptureKit、AX full/diff tree、无 AX 视觉坐标兜底、secure field 过滤、语义动作、受限 CGEvent、权限刷新、Retina 映射、`Contents/Helpers` afterPack 独立签名及 notarization 接线已落地。capability 按真实 Screen/AX/PostEvent 权限开放；AX 缺失不再关闭已经可用的截图坐标控制，最终 Developer ID `.app` 的 AX/CGEvent 与真实应用矩阵仍需验收。
+实施状态：**代码闭环已完成，签名包实机验收待执行（2026-07-29）**。最终 wire framing、可信进程生命周期、父应用 Team ID/PID start token 绑定、Host identifier/hash/manifest/握手验证、崩溃重连、ScreenCaptureKit、AX full/diff tree、无 AX 视觉坐标兜底、secure field 过滤、语义动作、受限 CGEvent、权限刷新、Retina 映射、`Contents/Helpers/SparkComputerHost` afterPack 独立签名及 notarization 接线已落地。capability 按真实 Screen/AX/PostEvent 权限开放；AX 缺失不再关闭已经可用的截图坐标控制，最终 Developer ID `.app` 的 AX/CGEvent 与真实应用矩阵仍需验收。
 
 负责人：macOS 原生开发。
 

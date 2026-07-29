@@ -56,12 +56,15 @@ export function createDefaultComputerUseBackend(
   const root =
     options.resourcesPath ??
     (typeof process.resourcesPath === 'string' ? process.resourcesPath : process.cwd())
-  const artifactRoot = nativePlatform === 'macos' && packaged ? join(root, '..', 'Helpers') : root
-  const artifactDirectory = join(
-    artifactRoot,
-    'native-host',
-    `${nativePlatform}-${nativeArchitecture}`,
-  )
+  const artifactDirectory = join(root, 'native-host', `${nativePlatform}-${nativeArchitecture}`)
+  const executablePath =
+    nativePlatform === 'macos' && packaged
+      ? join(root, '..', 'Helpers', 'SparkComputerHost')
+      : join(
+          artifactDirectory,
+          nativePlatform === 'macos' ? 'SparkComputerHost' : 'SparkComputerHost.exe',
+        )
+  const manifestPath = join(artifactDirectory, 'manifest.json')
   const verifyArtifact = options.verifyArtifact ?? verifyNativeHostArtifact
   const verifyWindowsArtifact = options.verifyWindowsArtifact ?? verifyWindowsNativeHostArtifact
   const verifyLocalArtifact = options.verifyLocalArtifact ?? verifyLocalNativeHostArtifact
@@ -78,11 +81,6 @@ export function createDefaultComputerUseBackend(
     platform: nativePlatform,
     ...(options.evidenceSink == null ? {} : { evidenceSink: options.evidenceSink }),
     connect: async () => {
-      const executablePath = join(
-        artifactDirectory,
-        nativePlatform === 'macos' ? 'SparkComputerHost' : 'SparkComputerHost.exe',
-      )
-      const manifestPath = join(artifactDirectory, 'manifest.json')
       const trustMode = await readArtifactTrustMode(manifestPath)
       const artifact =
         trustMode === 'local'
@@ -136,8 +134,8 @@ export function createDefaultComputerUseBackend(
   async function verifyMacArtifact(): Promise<VerifiedNativeHostArtifact> {
     const appSignature = await inspectAppCodeSignature(appExecutablePath)
     return verifyArtifact({
-      executablePath: join(artifactDirectory, 'SparkComputerHost'),
-      manifestPath: join(artifactDirectory, 'manifest.json'),
+      executablePath,
+      manifestPath,
       platform: 'macos',
       architecture: nativeArchitecture,
       expectedTeamIdentifier: appSignature.teamIdentifier,

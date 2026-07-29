@@ -2,7 +2,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const { pruneMacElectronLocales, hardenElectronFuses } =
   require('../../../../scripts/after-pack.js') as {
@@ -19,7 +19,7 @@ const {
   createLocalNativeHostManifest,
   parseCodeSignatureOutput,
   resolveMacNativeHostTrustMode,
-  macNativeHostDestinationDirectory,
+  macNativeHostDestinationPaths,
 } = require('../../../../scripts/package-native-host.js') as {
   createNativeHostManifest: (input: {
     executable: Buffer
@@ -35,7 +35,10 @@ const {
     teamIdentifier: string
   }
   resolveMacNativeHostTrustMode: (environment: NodeJS.ProcessEnv) => 'signed' | 'local' | 'auto'
-  macNativeHostDestinationDirectory: (appPath: string, architecture: 'arm64' | 'x64') => string
+  macNativeHostDestinationPaths: (
+    appPath: string,
+    architecture: 'arm64' | 'x64',
+  ) => { destinationExecutable: string; manifestPath: string }
 }
 const { Arch } = require('builder-util') as { Arch: Record<string | number, string | number> }
 const { FuseV1Options } = require('@electron/fuses') as {
@@ -46,6 +49,7 @@ const {
   createLocalWindowsNativeHostManifest,
   normalizePublisherThumbprint,
   resolveWindowsNativeHostTrustMode,
+  signWindowsNativeHost,
 } = require('../../../../scripts/package-windows-native-host.js') as {
   createWindowsNativeHostManifest: (input: {
     executable: Buffer
@@ -58,6 +62,10 @@ const {
   }) => Record<string, unknown>
   normalizePublisherThumbprint: (value: string) => string
   resolveWindowsNativeHostTrustMode: (environment: NodeJS.ProcessEnv) => 'signed' | 'local'
+  signWindowsNativeHost: (
+    packager: { signIf?: (path: string) => Promise<boolean> },
+    executablePath: string,
+  ) => Promise<void>
 }
 const { verifyWindowsPackageSigners } = require('../../../../scripts/notarize.js') as {
   verifyWindowsPackageSigners: (
@@ -139,10 +147,12 @@ describe('after-pack Electron fuses', () => {
 })
 
 describe('after-pack Native Host artifact manifest', () => {
-  it('places the macOS executable in the canonical Helpers code location', () => {
-    expect(macNativeHostDestinationDirectory('/Applications/SparkWork.app', 'arm64')).toBe(
-      '/Applications/SparkWork.app/Contents/Helpers/native-host/macos-arm64',
-    )
+  it('keeps the macOS executable in Helpers and its manifest out of the nested code tree', () => {
+    expect(macNativeHostDestinationPaths('/Applications/SparkWork.app', 'arm64')).toEqual({
+      destinationExecutable: '/Applications/SparkWork.app/Contents/Helpers/SparkComputerHost',
+      manifestPath:
+        '/Applications/SparkWork.app/Contents/Resources/native-host/macos-arm64/manifest.json',
+    })
   })
 
   it('packages a separate Node executable instead of reusing the Electron app binary', async () => {
@@ -287,6 +297,21 @@ TeamIdentifier=ABCDE12345
     expect(releaseScript).toContain('ComputeHash($certificate.RawData)')
     expect(prepareIndex).toBeGreaterThan(-1)
     expect(deriveIndex).toBeGreaterThan(prepareIndex)
+  })
+
+  it('uses the electron-builder 26 signIf API for the Windows Native Host', async () => {
+    const signIf = vi.fn(async () => true)
+
+    await expect(
+      signWindowsNativeHost({ signIf }, 'C:\\SparkComputerHost.exe'),
+    ).resolves.toBeUndefined()
+    expect(signIf).toHaveBeenCalledWith('C:\\SparkComputerHost.exe')
+  })
+
+  it('fails closed when electron-builder skips Windows Native Host signing', async () => {
+    await expect(
+      signWindowsNativeHost({ signIf: async () => false }, 'C:\\SparkComputerHost.exe'),
+    ).rejects.toThrow('electron-builder did not sign the Windows Native Host executable')
   })
 
   it('publishes only supported desktop runner and architecture pairs', () => {

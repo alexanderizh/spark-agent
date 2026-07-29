@@ -65,9 +65,6 @@ async function packageWindowsNativeHost(context) {
   const configuredThumbprint = process.env.SPARK_WINDOWS_PUBLISHER_THUMBPRINT
   const localTrust = resolveWindowsNativeHostTrustMode(process.env) === 'local'
   const publisherThumbprint = localTrust ? null : normalizePublisherThumbprint(configuredThumbprint)
-  if (!localTrust && typeof context.packager.sign !== 'function') {
-    throw new Error('electron-builder Windows signer is unavailable for Native Host packaging')
-  }
 
   const packageRoot = path.resolve(__dirname, '../native/windows/spark-computer-host')
   const rustTarget = architecture === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc'
@@ -106,7 +103,7 @@ async function packageWindowsNativeHost(context) {
   if (localTrust) {
     manifest = createLocalWindowsNativeHostManifest({ executable, architecture })
   } else {
-    await context.packager.sign(destinationExecutable)
+    await signWindowsNativeHost(context.packager, destinationExecutable)
     const signature = await inspectWindowsAuthenticode(destinationExecutable)
     if (signature.publisherThumbprint !== publisherThumbprint) {
       throw new Error('Windows Native Host signer differs from SPARK_WINDOWS_PUBLISHER_THUMBPRINT')
@@ -128,6 +125,16 @@ async function packageWindowsNativeHost(context) {
     `[after-pack] Windows Native Host: packaged ${architecture}, trust=${localTrust ? 'local' : 'signed'}, sha256=${manifest.sha256}`,
   )
   return { packaged: true, destinationExecutable, manifestPath, manifest }
+}
+
+async function signWindowsNativeHost(packager, executablePath) {
+  if (typeof packager?.signIf !== 'function') {
+    throw new Error('electron-builder Windows signer is unavailable for Native Host packaging')
+  }
+  const signed = await packager.signIf(executablePath)
+  if (signed !== true) {
+    throw new Error('electron-builder did not sign the Windows Native Host executable')
+  }
 }
 
 function resolveWindowsNativeHostTrustMode(environment = process.env) {
@@ -238,4 +245,5 @@ module.exports = {
   normalizePublisherThumbprint,
   packageWindowsNativeHost,
   resolveWindowsNativeHostTrustMode,
+  signWindowsNativeHost,
 }

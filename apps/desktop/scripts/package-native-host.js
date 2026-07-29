@@ -105,9 +105,12 @@ async function packageMacNativeHost(context) {
   )
   const appName = context.packager.appInfo.productFilename
   const appPath = path.join(context.appOutDir, `${appName}.app`)
-  const destinationDirectory = macNativeHostDestinationDirectory(appPath, architecture)
-  const destinationExecutable = path.join(destinationDirectory, EXECUTABLE_NAME)
-  await fs.mkdir(destinationDirectory, { recursive: true, mode: 0o755 })
+  const { destinationExecutable, manifestPath } = macNativeHostDestinationPaths(
+    appPath,
+    architecture,
+  )
+  await fs.mkdir(path.dirname(destinationExecutable), { recursive: true, mode: 0o755 })
+  await fs.mkdir(path.dirname(manifestPath), { recursive: true, mode: 0o755 })
   await fs.copyFile(sourceExecutable, destinationExecutable)
   await fs.chmod(destinationExecutable, 0o755)
 
@@ -145,7 +148,6 @@ async function packageMacNativeHost(context) {
     }
     manifest = createNativeHostManifest({ executable, architecture, signature })
   }
-  const manifestPath = path.join(destinationDirectory, 'manifest.json')
   await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
   console.log(
     `[after-pack] Native Host: packaged ${architecture}, trust=${localTrust ? 'local' : 'signed'}, sha256=${manifest.sha256}`,
@@ -153,11 +155,21 @@ async function packageMacNativeHost(context) {
   return { packaged: true, destinationExecutable, manifestPath, manifest }
 }
 
-function macNativeHostDestinationDirectory(appPath, architecture) {
+function macNativeHostDestinationPaths(appPath, architecture) {
   if (architecture !== 'arm64' && architecture !== 'x64') {
     throw new Error(`Unsupported Native Host architecture: ${architecture}`)
   }
-  return path.join(appPath, 'Contents', 'Helpers', 'native-host', `macos-${architecture}`)
+  return {
+    destinationExecutable: path.join(appPath, 'Contents', 'Helpers', EXECUTABLE_NAME),
+    manifestPath: path.join(
+      appPath,
+      'Contents',
+      'Resources',
+      'native-host',
+      `macos-${architecture}`,
+      'manifest.json',
+    ),
+  }
 }
 
 function resolveMacNativeHostTrustMode(environment = process.env) {
@@ -228,5 +240,5 @@ module.exports = {
   packageMacNativeHost,
   parseCodeSignatureOutput,
   resolveMacNativeHostTrustMode,
-  macNativeHostDestinationDirectory,
+  macNativeHostDestinationPaths,
 }
