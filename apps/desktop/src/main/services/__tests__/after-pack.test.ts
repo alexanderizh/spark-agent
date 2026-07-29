@@ -305,10 +305,14 @@ TeamIdentifier=ABCDE12345
     )
     const prepareIndex = releaseScript.lastIndexOf('\nprepare_windows_signing\n')
     const deriveIndex = releaseScript.lastIndexOf('\nderive_windows_publisher_thumbprint\n')
+    const trustIndex = releaseScript.lastIndexOf('\ntrust_windows_signing_certificate\n')
 
     expect(releaseScript).toContain('ComputeHash($certificate.RawData)')
+    expect(releaseScript).toContain('WINDOWS_ROOT_CERT_ADDED="1"')
+    expect(releaseScript).toContain('Removed the temporary Windows root certificate')
     expect(prepareIndex).toBeGreaterThan(-1)
     expect(deriveIndex).toBeGreaterThan(prepareIndex)
+    expect(trustIndex).toBeGreaterThan(deriveIndex)
   })
 
   it('uses the electron-builder 26 signIf API for the Windows Native Host', async () => {
