@@ -100,7 +100,7 @@ capability manifest 只在 AX 信任真实存在时声明 `axui_element/fullTree
 `afterPack` 对当前 Electron arch 执行：
 
 1. `swift build -c release --arch arm64|x86_64`。
-2. 复制到标准代码位置 `Contents/Helpers/native-host/macos-<arch>/SparkComputerHost`。
+2. 可执行文件复制到标准代码位置 `Contents/Helpers/SparkComputerHost`；manifest 存放在 `Contents/Resources/native-host/macos-<arch>/manifest.json`，不把 JSON 放进嵌套代码目录。
 3. 使用 Developer ID Application、hardened runtime、固定 identifier 独立签名。
 4. 校验签名/Team ID，对最终签名字节生成 manifest SHA-256。
 5. `signIgnore` 阻止 electron-builder 再次签 Host 改变 hash；随后外层 `.app` 签名封存 Host 与 manifest，afterSign 公证整个应用。
