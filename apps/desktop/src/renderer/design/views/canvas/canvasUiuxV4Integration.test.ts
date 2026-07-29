@@ -146,7 +146,7 @@ describe('canvas cinematic integration', () => {
       '.app.sidebar-hidden.platform-darwin & > .canvas-workspace-header',
     )
     expect(shellStyles).toMatch(
-      /platform-darwin[^{}]*& > \.canvas-workspace-header\s*\{[^}]*padding-left:\s*92px/s,
+      /platform-darwin[^{}]*& > \.canvas-workspace-header\s*\{[^}]*padding-left:\s*var\(--window-titlebar-safe-left\)/s,
     )
     expect(shellStyles).toContain('padding: 0 14px 0 16px')
   })
@@ -231,9 +231,23 @@ describe('canvas cinematic integration', () => {
     expect(workspace).toContain("snapshot.nodes.length === 0 ? ' is-empty' : ''")
     expect(emptyState).toContain('今天想创造怎样的世界？')
     expect(emptyState).toContain('onStartWithAgent')
+    expect(emptyState).toContain('onSubmitAgentPrompt')
+    expect(emptyState).toContain('<form className="canvas-cinematic-command"')
+    expect(emptyState).toContain('aria-label="向画布 Agent 发送消息"')
     expect(emptyState).toContain('onOpenWorkflowLibrary')
     expect(shell).toContain('.canvas-cinematic-empty')
     expect(shell).toContain('pointer-events: none')
+  })
+
+  it('lays out node footer metadata and the edit action on opposite sides', () => {
+    const nodeStyles = readCanvasSource('./cinematic/nodes.less')
+
+    expect(nodeStyles).toMatch(
+      /\.canvas-node-quick-footer\s*\{[\s\S]*?display:\s*flex;[\s\S]*?justify-content:\s*space-between;/,
+    )
+    expect(nodeStyles).toMatch(
+      /\.canvas-node-quick-footer button\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;/,
+    )
   })
 
   it('keeps portal modal styling isolated to canvas business classes', () => {
@@ -291,12 +305,12 @@ describe('canvas cinematic integration', () => {
     expect(workbenchStyles).toContain('&.platform-darwin-safe-area')
     expect(workbenchStyles).toContain('background: var(--stage3d-topbar-bg)')
     expect(workbenchStyles).toMatch(
-      /\.app\.platform-darwin \.stage3d-modal-overlay[^{}]*\{[^}]*padding-left:\s*92px/s,
+      /\.app\.platform-darwin \.stage3d-modal-overlay[^{}]*\{[^}]*padding-left:\s*var\(--window-titlebar-safe-left\)/s,
     )
     expect(videoWorkbench).toContain('.vwb-shell')
     expect(videoWorkbench).toContain('&.darwin')
     expect(annotationStyles).toMatch(
-      /\.canvas-image-annotation-workspace\.is-mac \.canvas-annotation-topbar\s*\{[^}]*padding-left:\s*92px/s,
+      /\.canvas-image-annotation-workspace\.is-mac \.canvas-annotation-topbar\s*\{[^}]*padding-left:\s*var\(--window-titlebar-safe-left\)/s,
     )
   })
 })

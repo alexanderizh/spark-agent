@@ -70,6 +70,7 @@ import {
   setMainWindow,
   sendToMainWindow,
 } from './windows/index.js'
+import { buildWindowChromeOptions } from './window-chrome.js'
 import { getFileWatcherService } from './services/FileWatcherService.js'
 import { getTerminalService } from './services/TerminalService.js'
 import { getUpdateService } from './services/UpdateService.js'
@@ -533,10 +534,10 @@ function buildNativeSplashOptions(
 function createWindow(): BrowserWindow {
   const iconPath = getResourcePath(process.platform === 'win32' ? 'taskbarIcon.png' : 'icon.png')
 
-  // macOS: hiddenInset + trafficLightPosition places native traffic lights
-  // inside the floating sidebar panel area (top-left corner).
-  // The Panel sits at left:12px, so traffic lights at x:22 land inside it.
-  // Windows & Linux: frameless window with custom HTML title bar and window controls.
+  // macOS: the native Window Controls Overlay publishes the usable titlebar
+  // rectangle through env(titlebar-area-*), so the renderer can align floating
+  // and flat sidebar chrome without guessing traffic-light coordinates.
+  // Windows & Linux keep their custom HTML title bar and window controls.
   const isDarwin = process.platform === 'darwin'
 
   const mainWindow = new BrowserWindow({
@@ -548,8 +549,7 @@ function createWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     hasShadow: true,
-    titleBarStyle: isDarwin ? 'hiddenInset' : 'hidden',
-    ...(isDarwin ? { trafficLightPosition: { x: 22, y: 20 } } : {}),
+    ...buildWindowChromeOptions(process.platform),
     icon: iconPath,
     // 启动页原生毛玻璃 / 深浅底色（平台分流，见 buildNativeSplashOptions）。
     ...buildNativeSplashOptions(isDarwin),

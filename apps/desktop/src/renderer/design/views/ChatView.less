@@ -746,9 +746,8 @@
 }
 
 .git-branch-section + .git-branch-section {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid var(--divider);
+  margin-top: 4px;
+  padding-top: 2px;
 }
 
 .git-branch-section-title {
@@ -801,7 +800,7 @@
   margin-top: 6px;
   padding: 6px 8px;
   border: 0;
-  border-top: 1px solid var(--divider);
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -824,7 +823,8 @@
   min-height: 34px;
   margin-top: 6px;
   padding: 0 4px 0 8px;
-  border-top: 1px solid var(--divider);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
 }
 
 .git-create-branch-inline-input {
@@ -1912,16 +1912,13 @@ body.git-review-tree-resizing {
   }
 }
 
-/* 空会话底部：纵向轮播提示（快捷键 / 功能 / 小技巧）。淡色、单行、5s 切换；
-   挂在 .chat-main-empty 直接子级、绝对定位贴容器底边，不参与 flex 居中流；
-   鼠标悬停暂停；每次切换由组件 key 变化触发 hero-tip-in 进入动画。 */
+/* 空会话输入区提示：纵向轮播快捷键 / 功能 / 小技巧。
+   作为底部 dock 的第一项排在 composer 上方；鼠标悬停暂停。 */
 .hero-tips-wrap {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 18px;
+  position: relative;
   z-index: 1;
   display: flex;
+  width: 100%;
   justify-content: center;
   margin-top: 0;
   overflow: hidden;
@@ -2556,9 +2553,10 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   gap: 8px;
   height: 36px;
   flex-shrink: 0;
-  margin: -6px -6px 4px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--divider);
+  margin: 0 0 4px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
   color: var(--text-faint);
 }
 
@@ -2975,12 +2973,6 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   font-weight: 400;
 }
 
-.composer-agent-menu .composer-menu-divider {
-  height: 1px;
-  background: var(--divider);
-  margin: 6px 8px;
-}
-
 .composer-agent-picker .composer-select-icon .composer-agent-picker-avatar,
 .composer-agent-picker .composer-select-icon .spark-avatar-fallback {
   width: 18px;
@@ -3034,8 +3026,8 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   z-index: 2;
   margin-top: -6px;
   padding-top: 9px;
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--danger) 8%, var(--panel));
-  border-bottom: 1px solid var(--divider);
   color: var(--danger);
   font-weight: 400;
 }
@@ -3292,9 +3284,22 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   white-space: nowrap;
 }
 
+.composer-reasoning-menu.is-fast .composer-reasoning-title strong,
+.composer-reasoning-select.is-fast .composer-select-label-ticker-item.is-current {
+  color: color-mix(in srgb, var(--primary) 82%, var(--text));
+}
+
 .composer-reasoning-menu.is-max .composer-reasoning-title strong {
   color: color-mix(in srgb, var(--primary) 78%, var(--panel));
   text-shadow: none;
+}
+
+.composer-reasoning-description {
+  min-height: 30px;
+  margin: -2px 0 9px;
+  color: var(--text-faint);
+  font-size: var(--font-xs);
+  line-height: 1.45;
 }
 
 .composer-reasoning-select.is-max .composer-select-label-ticker-item.is-current {

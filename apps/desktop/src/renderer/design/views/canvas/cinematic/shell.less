@@ -1,8 +1,8 @@
 .canvas-workspace.canvas-cinematic {
   .canvas-workspace-header {
     display: flex;
-    min-height: 52px;
-    height: 52px;
+    min-height: var(--window-titlebar-height);
+    height: var(--window-titlebar-height);
     align-items: center;
     gap: 16px;
     padding: 0 14px 0 16px;
@@ -11,11 +11,10 @@
     box-shadow: 0 1px rgba(0, 0, 0, 0.55);
   }
 
-  // macOS hiddenInset 会把原生红黄绿按钮覆盖在 Web 内容之上。侧栏隐藏时，
-  // 标题栏从窗口最左侧开始，必须在同一高优先级 owner 内重新声明安全区；
-  // 否则本层的 16px 基础 padding 会覆盖 legacy 层原有的 macOS 预留。
+  // 独立画布仍保留自己的业务 Header，只消费系统发布的标题栏安全区；
+  // 本层的 16px 基础 padding 不应覆盖该安全区。
   .app.sidebar-hidden.platform-darwin & > .canvas-workspace-header {
-    padding-left: 92px;
+    padding-left: var(--window-titlebar-safe-left);
   }
 
   .canvas-workspace-header-row {
@@ -414,10 +413,34 @@
     transform: translateY(-1px);
   }
 
-  .canvas-cinematic-command > span:nth-child(2) {
+  .canvas-cinematic-command > textarea {
     flex: 1;
+    min-width: 0;
+    min-height: 18px;
+    max-height: 44px;
+    field-sizing: content;
+    resize: none;
+    border: 0;
+    outline: 0;
+    background: transparent;
     color: var(--canvas-cinema-text-faint);
+    cursor: text;
+    font: inherit;
     font-size: 11px;
+    line-height: 1.6;
+  }
+
+  .canvas-cinematic-command > textarea::placeholder {
+    color: var(--canvas-cinema-text-faint);
+    opacity: 1;
+  }
+
+  .canvas-cinematic-command:focus-within {
+    border-color: rgba(145, 137, 255, 0.58);
+    box-shadow:
+      0 26px 72px rgba(0, 0, 0, 0.38),
+      0 0 0 3px rgba(119, 108, 246, 0.1),
+      inset 0 1px rgba(255, 255, 255, 0.035);
   }
 
   .canvas-cinematic-command-send {
@@ -429,6 +452,12 @@
     border-radius: 10px;
     background: #f1f2f5;
     color: #111318;
+    cursor: pointer;
+  }
+
+  .canvas-cinematic-command-send:disabled {
+    cursor: default;
+    opacity: 0.45;
   }
 
   .canvas-cinematic-starters {

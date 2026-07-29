@@ -37,6 +37,8 @@ import {
   isProviderCompatibleWithAdapter,
 } from './utils/provider-adapter'
 import { sortSessionsByPinned, toTime } from './sidebar-session-sort'
+import { isCanvasWorkspace } from './workspace-visibility'
+import { listAllWorkspaces } from './services/list-all-workspaces'
 
 // 供 SidebarSessionList 等消费方在本地排序时复用（与后端 listSessions 排序对齐）。
 export { sortSessionsByPinned }
@@ -230,7 +232,9 @@ export function buildProjectGroups(
   workspaces: WorkspaceInfo[],
   sessions: SessionSummary[],
 ): ProjectGroup[] {
-  const visible = workspaces.filter((w) => w.name !== NO_PROJECT_WORKSPACE_NAME && !w.archivedAt)
+  const visible = workspaces.filter(
+    (w) => w.name !== NO_PROJECT_WORKSPACE_NAME && !w.archivedAt && !isCanvasWorkspace(w),
+  )
   const byId = new Map(visible.map((w) => [w.id, w] as const))
   // 普通（基）项目构成分组；worktree workspace 不单独成组，其会话归并到 base 项目。
   const baseWorkspaces = visible.filter((w) => w.worktreeMeta == null)
@@ -486,7 +490,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     try {
       const [workspaceRes, sessionRes, currentRes, providerRes, agentRes, sidebarOrderRes] =
         await Promise.all([
-          listWorkspaces({ limit: 100 }),
+          listAllWorkspaces(listWorkspaces),
           listSessions({ limit: 200 }),
           getCurrentWorkspace({}),
           listProviders({}),

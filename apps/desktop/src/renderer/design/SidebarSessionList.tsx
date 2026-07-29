@@ -6,7 +6,8 @@ import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffe
 import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
 import { ActionIcon, Button, Dropdown, Input, Modal } from '@lobehub/ui'
-import { Maximize2, Minimize2, Pin, PinOff } from 'lucide-react'
+import { Archive, Maximize2, Minimize2, Pin, PinOff } from 'lucide-react'
+import { Popover } from 'antd'
 import {
   closestCenter,
   DndContext,
@@ -55,6 +56,7 @@ import {
   resolveSpecialSidebarGroupWorkspaceId,
 } from './sidebar-session-routing'
 import { moveItem, sortByManualOrder } from './sidebar-manual-order'
+import { filterCanvasSessions, isCanvasWorkspace } from './workspace-visibility'
 
 const projectSortableId = (projectId: string): string => `project:${projectId}`
 const sessionSortableId = (projectId: string, sessionId: string): string =>
@@ -395,6 +397,17 @@ function formatRelativeTime(value: string): string {
   return `time.weeks:${Math.floor(diffMs / week)}`
 }
 
+/** 悬浮面板用的绝对时间：YYYY-MM-DD HH:mm（本地时区） */
+function formatAbsoluteDateTime(value: string): string {
+  const date = new Date(value)
+  const time = date.getTime()
+  if (!Number.isFinite(time)) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`
+}
+
 function getSessionLocalDateKey(value: string): string | null {
   const date = new Date(value)
   const time = date.getTime()
@@ -573,6 +586,58 @@ function ActionMenu({
 
 // 注:ActionMenu 在 antd Dropdown 下通过 popupRender 注入 JSX 内容
 
+/* ─── SessionHoverCard — 会话行悬浮信息面板（扁平简约卡片） ─── */
+function SessionHoverCard({
+  title,
+  projectName,
+  branch,
+  absoluteTime,
+  relativeTime,
+}: {
+  title: string
+  projectName: string | null
+  branch?: string | undefined
+  absoluteTime: string
+  relativeTime: string
+}) {
+  const rows: ReactNode[] = []
+  if (projectName != null) {
+    rows.push(
+      <div className="session-hover-card-row" key="project">
+        <Icons.FolderClosed size={13} />
+        <span>{projectName}</span>
+      </div>,
+    )
+  }
+  if (branch != null && branch !== '') {
+    rows.push(
+      <div className="session-hover-card-row" key="branch">
+        <Icons.GitBranch size={13} />
+        <span className="is-branch">{branch}</span>
+      </div>,
+    )
+  }
+  if (absoluteTime !== '' || relativeTime !== '') {
+    rows.push(
+      <div className="session-hover-card-row" key="time">
+        <Icons.Clock size={13} />
+        <span>
+          {absoluteTime}
+          {relativeTime !== '' ? (
+            <span className="session-hover-card-time-rel"> · {relativeTime}</span>
+          ) : null}
+        </span>
+      </div>,
+    )
+  }
+  return (
+    <div className="session-hover-card">
+      <div className="session-hover-card-title">{title}</div>
+      <div className="session-hover-card-rows">{rows}</div>
+    </div>
+  )
+}
+
 /* ─── ChatListItem ─── */
 function ChatListItem({
   session: s,
@@ -604,31 +669,63 @@ function ChatListItem({
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
   const [contextOpen, setContextOpen] = useState(false)
-  const { workspaces } = useSessionSidebar()
-  // 该会话若运行在隔离 worktree 中，取其分支名用于显示分支图标指示符
-  const worktreeBranch = useMemo(() => {
+  const { workspaces, noProjectWorkspace } = useSessionSidebar()
+  // 该会话关联的 workspace：用于解析项目名、worktree 分支等悬浮面板信息
+  const sessionWorkspace = useMemo(() => {
     const wsId = s.workspaceIds[0]
-    if (wsId == null) return undefined
-    return workspaces.find((w) => w.id === wsId)?.worktreeMeta?.branch
+    return wsId == null ? undefined : workspaces.find((w) => w.id === wsId)
   }, [s.workspaceIds, workspaces])
+  // 该会话若运行在隔离 worktree 中，取其分支名用于显示分支图标指示符
+  const worktreeBranch = sessionWorkspace?.worktreeMeta?.branch
   const displayStatus = useMemo(
     () => getSessionDisplayStatus(s.status, agentStatus),
     [s.status, agentStatus],
   )
   const badgeInfo = useMemo(() => getStatusBadgeInfo(displayStatus), [displayStatus])
-  const formatSidebarTime = (value: string) => {
-    const formatted = formatRelativeTime(value)
-    const [key, count] = formatted.split(':')
-    return t(key ?? '', count != null ? { count } : undefined)
-  }
+  // 悬浮信息面板：项目名（临时会话单独标注）、分支（仅 worktree）、绝对时间 + 相对时间
+  const projectLabel = useMemo(() => {
+    if (sessionWorkspace == null) return null
+    if (noProjectWorkspace != null && sessionWorkspace.id === noProjectWorkspace.id) {
+      return t('sidebar.noProjectChats')
+    }
+    return sessionWorkspace.name || null
+  }, [sessionWorkspace, noProjectWorkspace, t])
+  const hoverContent = useMemo(() => {
+    const absoluteTime = formatAbsoluteDateTime(s.updatedAt)
+    const formatted = formatRelativeTime(s.updatedAt)
+    const [timeKey, timeCount] = formatted.split(':')
+    const relativeTime = t(
+      timeKey ?? '',
+      timeCount != null ? { count: timeCount } : undefined,
+    )
+    return (
+      <SessionHoverCard
+        title={s.title || t('sidebar.newSession')}
+        projectName={projectLabel}
+        branch={worktreeBranch}
+        absoluteTime={absoluteTime}
+        relativeTime={relativeTime}
+      />
+    )
+  }, [s.title, s.updatedAt, t, projectLabel, worktreeBranch])
 
   const statusClass = displayStatus !== 'idle' ? `is-${displayStatus}` : ''
   const terminalRunningCount = terminalActivity?.running ?? 0
 
   return (
-    <div
-      className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${contextOpen ? 'is-context-open' : ''} ${statusClass}`}
-      {...dragActivatorProps}
+    <Popover
+      trigger="hover"
+      placement="right"
+      mouseEnterDelay={0.4}
+      mouseLeaveDelay={0.12}
+      destroyOnHidden
+      // overlayClassName="session-hover-card-popover"
+      content={hoverContent}
+      align={{ offset: [-1, 0], overflow: { adjustY: true, shiftY: true } }}
+    >
+      <div
+        className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${contextOpen ? 'is-context-open' : ''} ${statusClass}`}
+        {...dragActivatorProps}
       onClick={() => onClick(s.id)}
       onContextMenu={(e) => {
         e.preventDefault()
@@ -692,13 +789,11 @@ function ChatListItem({
             {badgeInfo.icon}
             <span className="session-status-label">{t(badgeInfo.title)}</span>
           </span>
-        ) : (
-          <span className="chat-item-time-compact">{formatSidebarTime(s.updatedAt)}</span>
-        )}
+        ) : null}
         <div className={`session-item-actions${menuOpen ? ' menu-open' : ''}`}>
           <button
             type="button"
-            className="icon-btn session-row-action-btn session-archive-btn"
+            className="icon-btn item-menu-btn session-row-action-btn session-archive-btn"
             title={t('sidebar.session.archive')}
             aria-label={t('sidebar.session.archive')}
             onPointerDown={(e) => e.stopPropagation()}
@@ -707,7 +802,7 @@ function ChatListItem({
               onArchive?.(s)
             }}
           >
-            <Icons.Box size={15} />
+            <Archive size={13} strokeWidth={1.35} />
           </button>
           <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
             <Dropdown
@@ -760,6 +855,7 @@ function ChatListItem({
         </div>
       </div>
     </div>
+    </Popover>
   )
 }
 
@@ -915,7 +1011,7 @@ export function ProjectSessionGroup({
                     onClick: () => onRenameProject(group.workspace),
                   },
                   {
-                    icon: <Icons.Box size={14} />,
+                    icon: <Archive size={14} />,
                     label: t('sidebar.project.archive'),
                     onClick: () => onArchiveProject(group.workspace),
                   },
@@ -1363,6 +1459,15 @@ export function SidebarSessionList() {
     writeSidebarFilter(cleared)
   }, [])
 
+  // 升级前可能已把某个画布 workspace 存成项目筛选条件；标记加载后自动回到全部项目，
+  // 避免普通会话栏因一个已隐藏的筛选项而呈现空白。
+  useEffect(() => {
+    if (filter.projectId === 'all') return
+    const selected = ctx.workspaces.find((workspace) => workspace.id === filter.projectId)
+    if (selected == null || !isCanvasWorkspace(selected)) return
+    handleFilterChange({ ...filter, projectId: 'all' })
+  }, [ctx.workspaces, filter, handleFilterChange])
+
   // Notice
   const [notice, setNotice] = useState('')
 
@@ -1464,10 +1569,11 @@ export function SidebarSessionList() {
   // Apply status / project / lastActivity filters
   const filteredSessions = useMemo(() => {
     const source = searchVisible && searchQuery.trim() ? searchResultSessions : ctx.sessions
+    const visibleSource = filterCanvasSessions(source, ctx.workspaces)
     // 与后端 SQL 对齐：置顶在前、未置顶按 updatedAt 倒序。
     // 乐观更新 pinnedAt 后由这里即时重排，覆盖 date/state/none 分组及 noProject/ungrouped。
-    return sortSessionsByPinned(applySessionFilters(source, filter))
-  }, [ctx.sessions, filter, searchQuery, searchResultSessions, searchVisible])
+    return sortSessionsByPinned(applySessionFilters(visibleSource, filter))
+  }, [ctx.sessions, ctx.workspaces, filter, searchQuery, searchResultSessions, searchVisible])
 
   const hideEmptyProjectGroups =
     filter.status !== DEFAULT_SIDEBAR_FILTER.status ||

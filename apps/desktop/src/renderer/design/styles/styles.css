@@ -401,12 +401,17 @@ summary:focus {
 }
 
 .window {
+  /* Window Controls Overlay is the authoritative macOS titlebar geometry.
+     Fallbacks keep browser previews and non-overlay platforms deterministic. */
+  --window-titlebar-height: env(titlebar-area-height, 52px);
+  --window-titlebar-safe-left: env(titlebar-area-x, 90px);
+  --sidebar-frame-inset: 6px;
   width: 100%;
   height: 100vh;
   height: 100dvh;
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--bg);
+  background: var(--bg-soft);
   color: var(--text);
   overflow: hidden;
   font-weight: 500;
@@ -426,9 +431,9 @@ summary:focus {
    ============================================================ */
 .floating-sidebar {
   position: absolute;
-  top: 6px;
-  left: 6px;
-  bottom: 6px;
+  top: var(--sidebar-frame-inset);
+  left: var(--sidebar-frame-inset);
+  bottom: var(--sidebar-frame-inset);
   width: var(--sidebar-w, 210px);
   z-index: 50;
   display: flex;
@@ -500,6 +505,7 @@ html[data-theme='dark'][data-backdrop-blur='1']
    (no floating design, no rounded corners, no shadow). Its background can
    still use the shared backdrop-blur preference for a frosted menu surface. */
 .sidebar-style-flat .floating-sidebar {
+  --sidebar-frame-inset: 0px;
   top: 0;
   left: 0;
   bottom: 0;
@@ -558,7 +564,14 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   -webkit-app-region: drag;
 }
 .platform-darwin .floating-sidebar-header {
-  padding-top: 0px;
+  /* The floating panel starts below the viewport origin. Pull only its chrome
+     row back into the window coordinate system so native traffic lights and
+     sidebar actions share the same vertical center. The page body still begins
+     at the bottom of the titlebar because the negative margin participates in
+     flex layout. */
+  height: var(--window-titlebar-height);
+  margin-top: calc(0px - var(--sidebar-frame-inset));
+  padding: 0 10px;
 }
 .sidebar-hide-btn {
   -webkit-app-region: no-drag;
@@ -1160,6 +1173,10 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
   border-radius: var(--r-md);
   box-shadow: var(--shadow-md);
 }
+.ant-dropdown-menu.user-menu {
+  width: 100%;
+  min-width: 0;
+}
 .ant-dropdown-menu.user-menu .ant-dropdown-menu-item,
 .ant-dropdown-menu.user-menu .ant-dropdown-menu-submenu-title {
   display: flex;
@@ -1188,6 +1205,28 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
 .ant-dropdown-menu.user-menu .ant-dropdown-menu-item:hover,
 .ant-dropdown-menu.user-menu .ant-dropdown-menu-submenu-title:hover {
   background: var(--hover);
+}
+.user-menu-expand-icon {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  color: var(--text-faint);
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+.user-menu-expand-icon svg {
+  display: block;
+}
+.ant-dropdown-menu-submenu-title:hover > .user-menu-expand-icon {
+  color: var(--text);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  transform: translateX(1px);
 }
 
 /* ─── User menu — Contact QQ QR modal ─── */
@@ -1363,19 +1402,19 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
   --integrated-titlebar-right-reserve: 138px;
 }
 .platform-darwin.titlebar-integrated {
-  --integrated-titlebar-height: 48px;
+  --integrated-titlebar-height: var(--window-titlebar-height);
   --integrated-titlebar-right-reserve: 0px;
 }
 .platform-darwin.sidebar-hidden.titlebar-integrated {
-  --integrated-titlebar-left-reserve: 70px;
+  --integrated-titlebar-left-reserve: var(--window-titlebar-safe-left);
 }
 
 /* ─── macOS / Linux Shell Title Bar (sidebar hidden) ─── */
 .shell-titlebar {
   position: relative;
   display: flex;
-  align-items: end;
-  height: 42px;
+  align-items: center;
+  height: var(--window-titlebar-height);
   flex-shrink: 0;
   padding: 0 var(--pad-md) 0 20px;
   gap: 8px;
@@ -1392,9 +1431,9 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
 .shell-titlebar textarea {
   -webkit-app-region: no-drag;
 }
-/* macOS hiddenInset: traffic lights at x≈22, ~60px wide — keep content clear */
+/* macOS: keep controls inside the usable rectangle published by the overlay. */
 .shell-titlebar-darwin {
-  padding-left: 90px;
+  padding-left: var(--window-titlebar-safe-left);
 }
 
 /* canvas / canvas-workflows view 自带 header 承担窗口拖拽
@@ -1413,11 +1452,9 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
 .canvas-view-titlebar .ant-dropdown-trigger {
   -webkit-app-region: no-drag;
 }
-/* macOS 侧栏折叠时，红绿灯（traffic lights）压到 main-content-area 左上角，
-   view header 需预留红绿灯空间（红绿灯 x≈22, 宽约 60px，与 shell-titlebar
-   的 90px 预留一致），否则标题/按钮会被遮挡。 */
+/* macOS 侧栏折叠时，页面自有 Header 消费系统发布的左侧安全区。 */
 .platform-darwin.app.sidebar-hidden .canvas-view-titlebar {
-  padding-left: 90px;
+  padding-left: var(--window-titlebar-safe-left);
 }
 /* canvas-projects-header 用 space-between，侧栏折叠时多出 SidebarExpandButton，
    让 heading 占满中间，避免标题居中错位、actions 始终靠右。 */

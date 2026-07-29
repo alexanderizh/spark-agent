@@ -39,6 +39,67 @@ describe('ApplicationSnapshotPreviewCard', () => {
     expect(html).toContain('Editor')
     expect(html).toContain('Document')
     expect(html).toContain('应用快照')
+    expect(html).toContain('application-snapshot-card')
+    expect(html).toContain('打开 Document 应用快照预览')
+    expect(html).toContain(
+      '<span class="application-snapshot-card-title" title="Document">Document</span>',
+    )
+    expect(html).not.toContain('<strong')
+  })
+
+  it('opens a lightbox and closes it when the backdrop is clicked', async () => {
+    const previewUrl = `spark-snapshot://snapshot/snapshot-1/preview?cap=${'a'.repeat(43)}`
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ApplicationSnapshotPreviewCard
+          snapshotId="snapshot-1"
+          previewUrl={previewUrl}
+          appName="Editor"
+          windowTitle="Document"
+          capturedAt="2026-07-28T00:00:00.000Z"
+        />,
+      )
+    })
+
+    await act(async () => {
+      requireCardTrigger(container).click()
+    })
+    const dialog = requireDialog()
+    expect(dialog.getAttribute('aria-label')).toContain('Document')
+
+    await act(async () => {
+      dialog.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('keeps the preview open when the image itself is clicked', async () => {
+    const previewUrl = `spark-snapshot://snapshot/snapshot-1/preview?cap=${'a'.repeat(43)}`
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        <ApplicationSnapshotPreviewCard
+          snapshotId="snapshot-1"
+          previewUrl={previewUrl}
+          appName="Editor"
+          windowTitle="Document"
+          capturedAt="2026-07-28T00:00:00.000Z"
+        />,
+      )
+    })
+
+    await act(async () => {
+      requireCardTrigger(container).click()
+    })
+    const dialog = requireDialog()
+    const previewImage = dialog.querySelector('img')
+    if (previewImage == null) throw new Error('Expected preview image')
+
+    await act(async () => {
+      previewImage.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(document.body.querySelector('[role="dialog"]')).toBe(dialog)
   })
 
   it('renews an expired preview capability through governed snapshot IPC', async () => {
@@ -168,4 +229,16 @@ function requireImage(container: HTMLElement): HTMLImageElement {
   const image = container.querySelector('img')
   if (image == null) throw new Error('Expected application snapshot image')
   return image
+}
+
+function requireCardTrigger(container: HTMLElement): HTMLButtonElement {
+  const trigger = container.querySelector<HTMLButtonElement>('.application-snapshot-card-trigger')
+  if (trigger == null) throw new Error('Expected application snapshot card trigger')
+  return trigger
+}
+
+function requireDialog(): HTMLElement {
+  const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
+  if (dialog == null) throw new Error('Expected application snapshot preview dialog')
+  return dialog
 }

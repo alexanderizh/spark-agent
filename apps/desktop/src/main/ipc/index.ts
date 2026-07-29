@@ -11,6 +11,7 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
+import { createWorkspaceInfoMapper } from './workspace-info.js'
 import {
   buildCanvasMediaProviderPrompt,
   buildCanvasRuntimeRequest,
@@ -162,7 +163,6 @@ import type {
   SessionAgentAdapter,
   SessionPermissionMode,
   SessionReasoningEffort,
-  WorkspaceInfo,
   HookNode,
   PlaywrightInstallProgress,
   ManagedAgent,
@@ -2670,7 +2670,7 @@ async function executeRemoteCommand(
     if (blocked != null) return blocked
     const list = getWorkspaceService()
       .listWorkspaces(12, 0, { includeArchived: false })
-      .map(toWorkspaceInfo)
+      .map(createWorkspaceInfoMapper(getCanvasProjectRepo().list(0, true)))
     const rows = list.map((item) => ({ id: item.id, label: item.name, meta: item.rootPath }))
     cacheRemoteSelection(connection.id, 'workspaces', rows)
     return {
@@ -2688,7 +2688,7 @@ async function executeRemoteCommand(
     if (workspaceInput.length > 0) {
       const rows = getWorkspaceService()
         .listWorkspaces(12, 0, { includeArchived: false })
-        .map(toWorkspaceInfo)
+        .map(createWorkspaceInfoMapper(getCanvasProjectRepo().list(0, true)))
         .map((item) => ({ id: item.id, label: item.name, meta: item.rootPath }))
       const resolved = resolveRemoteSelection(workspaceInput, rows, {
         kindLabel: '工作区',
@@ -5019,8 +5019,9 @@ export function registerAllIpcHandlers(): void {
     const workspace = await getWorkspaceService().openWorkspace(rootPath, req.create?.name, {
       create: req.create != null,
     })
+    const mapWorkspaceInfo = createWorkspaceInfoMapper(getCanvasProjectRepo().list(0, true))
     return {
-      workspace: toWorkspaceInfo(workspace),
+      workspace: mapWorkspaceInfo(workspace),
     }
   })
 
@@ -5032,7 +5033,8 @@ export function registerAllIpcHandlers(): void {
     }
     const refreshed =
       workspace == null ? null : new WorkspaceRepository(getDatabase()).get(workspace.id)
-    return { workspace: refreshed == null ? null : toWorkspaceInfo(refreshed) }
+    const mapWorkspaceInfo = createWorkspaceInfoMapper(getCanvasProjectRepo().list(0, true))
+    return { workspace: refreshed == null ? null : mapWorkspaceInfo(refreshed) }
   })
 
   typedIpcHandle('workspace:list', async (req) => {
@@ -5043,8 +5045,9 @@ export function registerAllIpcHandlers(): void {
     const listed = service.listWorkspaces(req.limit, req.offset, listParams)
     await Promise.all(listed.map((workspace) => ensureNoProjectWorkspacePath(workspace.id)))
     const refreshed = service.listWorkspaces(req.limit, req.offset, listParams)
+    const mapWorkspaceInfo = createWorkspaceInfoMapper(getCanvasProjectRepo().list(0, true))
     return {
-      workspaces: refreshed.map(toWorkspaceInfo),
+      workspaces: refreshed.map(mapWorkspaceInfo),
       total: service.countWorkspaces(listParams),
     }
   })
@@ -5060,7 +5063,8 @@ export function registerAllIpcHandlers(): void {
         ? { archivedAt: req.archived ? new Date().toISOString() : null }
         : {}),
     })
-    return { workspace: toWorkspaceInfo(workspace) }
+    const mapWorkspaceInfo = createWorkspaceInfoMapper(getCanvasProjectRepo().list(0, true))
+    return { workspace: mapWorkspaceInfo(workspace) }
   })
 
   typedIpcHandle('workspace:delete', async (req) => {
@@ -5321,7 +5325,8 @@ export function registerAllIpcHandlers(): void {
       branch,
       ...(req.baseBranch !== undefined && { baseBranch: req.baseBranch }),
     })
-    return { workspace: toWorkspaceInfo(workspace) }
+    const mapWorkspaceInfo = createWorkspaceInfoMapper(getCanvasProjectRepo().list(0, true))
+    return { workspace: mapWorkspaceInfo(workspace) }
   })
 
   typedIpcHandle('workspace:remove-worktree', async (req) => {
@@ -8498,40 +8503,6 @@ export function registerAllIpcHandlers(): void {
   registerSidebarOrderIpc()
 
   log.info('All IPC handlers registered')
-}
-
-function toWorkspaceInfo(workspace: {
-  id: string
-  name: string
-  root_path: string
-  created_at: string
-  updated_at: string
-  pinned_at: string | null
-  archived_at: string | null
-  worktree_meta_json?: string | null
-}): WorkspaceInfo {
-  return {
-    id: workspace.id,
-    name: workspace.name,
-    rootPath: workspace.root_path,
-    pinnedAt: workspace.pinned_at,
-    archivedAt: workspace.archived_at,
-    createdAt: workspace.created_at,
-    updatedAt: workspace.updated_at,
-    worktreeMeta: (() => {
-      if (workspace.worktree_meta_json == null) return null
-      try {
-        return JSON.parse(workspace.worktree_meta_json) as {
-          baseRepoRoot: string
-          branch: string
-          baseBranch: string
-          baseWorkspaceId?: string
-        }
-      } catch {
-        return null
-      }
-    })(),
-  }
 }
 
 function toManagedAgent(agent: StorageAgentItem): ManagedAgent {

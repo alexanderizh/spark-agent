@@ -3,6 +3,7 @@ import type { BrowserWindowConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { createLogger, SparkError } from '@spark/shared'
 import { registerAppWindow } from '../windows/index.js'
+import { buildWindowChromeOptions } from '../window-chrome.js'
 import { openExternalUrlSafely } from './ExternalUrlPolicy.js'
 
 const log = createLogger('canvas-window')
@@ -176,7 +177,6 @@ function hasPreventDefault(event: unknown): event is { preventDefault: () => voi
 }
 
 function createCanvasBrowserWindow(): CanvasBrowserWindow {
-  const isDarwin = process.platform === 'darwin'
   const options: BrowserWindowConstructorOptions = {
     width: 1440,
     height: 920,
@@ -187,8 +187,7 @@ function createCanvasBrowserWindow(): CanvasBrowserWindow {
     autoHideMenuBar: true,
     backgroundColor: '#111113',
     hasShadow: true,
-    titleBarStyle: isDarwin ? 'hiddenInset' : 'hidden',
-    ...(isDarwin ? { trafficLightPosition: { x: 22, y: 20 } } : {}),
+    ...buildWindowChromeOptions(process.platform),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

@@ -661,3 +661,79 @@
   font-size: 10px;
   line-height: 1.2;
 }
+
+/* ─── 会话行悬浮信息面板（扁平简约卡片，右侧浮出） ─── */
+.session-hover-card-popover {
+  .ant-popover-inner {
+    padding: 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    box-shadow: 0 6px 18px color-mix(in srgb, #000 28%, transparent);
+  }
+
+  .ant-popover-inner-content {
+    padding: 0;
+  }
+
+  /* 扁平化：隐藏默认箭头 */
+  .ant-popover-arrow {
+    display: none;
+  }
+}
+
+.session-hover-card {
+  min-width: 176px;
+  max-width: 244px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.session-hover-card-title {
+  margin-bottom: 4px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.session-hover-card-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.session-hover-card-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+
+  > svg {
+    flex-shrink: 0;
+    color: var(--text-faint);
+  }
+
+  > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .is-branch {
+    color: var(--color-primary-6, #4a8cff);
+  }
+}
+
+.session-hover-card-time-rel {
+  color: var(--text-faint);
+}

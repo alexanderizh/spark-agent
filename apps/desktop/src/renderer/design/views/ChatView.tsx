@@ -2082,22 +2082,25 @@ export function ChatView({
             onManageTeams={openTeamManager}
           />
         )}
-        {showEmptyHero && teamConfig.enabled ? (
-          <TeamModeEmptyHero
-            agents={agents}
-            hostAgentId={effectiveHostAgentId ?? teamConfig.hostAgentId}
-            memberAgentIds={teamConfig.memberAgentIds}
-            runningAgentIds={runningTeamAgentIds}
-            teamName={activeTeamName}
-            onOpenTeamInspector={openInspector}
-          />
-        ) : (
-          showEmptyHero && (
-            <SingleAgentEmptyHero
-              themeId={t.emptyHeroTheme}
-              onSelectPrompt={handleHeroPromptSelect}
-            />
-          )
+        {showEmptyHero && (
+          <div className="chat-empty-content">
+            {teamConfig.enabled ? (
+              <TeamModeEmptyHero
+                agents={agents}
+                hostAgentId={effectiveHostAgentId ?? teamConfig.hostAgentId}
+                memberAgentIds={teamConfig.memberAgentIds}
+                runningAgentIds={runningTeamAgentIds}
+                teamName={activeTeamName}
+                onOpenTeamInspector={openInspector}
+              />
+            ) : (
+              <SingleAgentEmptyHero
+                themeId={t.emptyHeroTheme}
+                onSelectPrompt={handleHeroPromptSelect}
+                onSelectTheme={(themeId) => setTweak('emptyHeroTheme', themeId)}
+              />
+            )}
+          </div>
         )}
         {active != null && (
           <Fragment key="active-session-content">
@@ -2220,9 +2223,14 @@ export function ChatView({
           />
         )}
 
-        {composerNode}
-
-        {showEmptyHero && <HeroTipsTicker />}
+        {showEmptyHero ? (
+          <div className="chat-empty-composer-dock">
+            <HeroTipsTicker />
+            {composerNode}
+          </div>
+        ) : (
+          composerNode
+        )}
       </div>
 
       {showInspector && (

@@ -686,9 +686,21 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
           placement="topRight"
           mouseEnterDelay={0.2}
           mouseLeaveDelay={0.2}
+          styles={{
+            root: {
+              width: 216,
+              minWidth: 216,
+              maxWidth: 'calc(100vw - 24px)',
+            },
+          }}
           menu={
             {
               className: 'user-menu',
+              expandIcon: (
+                <span className="user-menu-expand-icon" aria-hidden="true">
+                  <Icons.ChevronRight size={10} strokeWidth={2.2} />
+                </span>
+              ),
               items: [
                 ...(auth.isAuthenticated
                   ? [
@@ -696,18 +708,16 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                         key: 'account',
                         label: menuLabel(<Icons.User size={14} />, tr('app.user.accountRecharge')),
                       },
-                      { type: 'divider' as const },
                     ]
                   : [
                       {
                         key: 'login',
                         label: menuLabel(<Icons.User size={14} />, tr('app.user.login')),
                       },
-                      { type: 'divider' as const },
                     ]),
                 {
                   key: 'theme',
-                  label: menuLabel(<Icons.Sun size={14} />, 'Theme'),
+                  label: menuLabel(<Icons.Brush size={14} />, 'Theme'),
                   children: [
                     {
                       key: 'theme-light',
@@ -721,10 +731,9 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                       key: 'theme-system',
                       label: menuLabel(<Icons.Monitor size={14} />, 'System', t.theme === 'system'),
                     },
-                    { type: 'divider' as const },
                     {
                       key: 'empty-hero-theme',
-                      label: menuLabel(<Icons.Sparkles size={14} />, '会话主题'),
+                      label: menuLabel(<Icons.Layers size={14} />, '会话主题'),
                       children: EMPTY_HERO_THEMES.map((theme) => ({
                         key: `empty-hero-theme-${theme.id}`,
                         title: theme.description,
@@ -738,7 +747,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                         ),
                       })),
                     },
-                    { type: 'divider' as const },
                     {
                       key: 'accent',
                       label: menuLabel(
@@ -757,7 +765,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                         ),
                       })),
                     },
-                    { type: 'divider' as const },
                     {
                       key: 'sidebar-style',
                       label: menuLabel(<Icons.PanelLeft size={14} />, tr('app.sidebar.style')),
@@ -782,7 +789,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                     },
                   ],
                 },
-                { type: 'divider' as const },
                 {
                   key: 'remote',
                   label: menuLabel(<Icons.Globe size={14} />, tr('app.nav.remote')),

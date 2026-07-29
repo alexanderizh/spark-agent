@@ -273,9 +273,13 @@
   }
 
   .canvas-node-quick-footer {
+    display: flex;
     height: 34px;
     min-height: 34px;
     flex-basis: 34px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     padding: 0 9px;
     border-top: 1px solid var(--canvas-cinema-border);
     background: var(--canvas-cinema-surface-2);
@@ -284,6 +288,25 @@
   .canvas-node-quick-footer > span {
     color: var(--canvas-cinema-text-faint);
     font-size: 8px;
+  }
+
+  .canvas-node-quick-footer button {
+    min-height: auto;
+    flex: 0 0 auto;
+    padding: 2px 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--canvas-cinema-text-muted);
+    cursor: pointer;
+    font-size: 8px;
+    font-weight: 560;
+    transition: color var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-node-quick-footer button:hover {
+    background: transparent;
+    color: var(--canvas-cinema-accent-bright);
   }
 
   .canvas-node.canvas-node-group {
@@ -367,11 +390,34 @@
   }
 
   .canvas-node-handle {
-    width: 9px;
-    height: 9px;
+    // 直接用真实 Handle 绘制圆点，并让自身中心落在节点边界上。这样不再受
+    // React Flow 默认 min-size 与零尺寸伪元素定位共同计算造成的水平偏移影响。
+    width: 13px;
+    min-width: 13px;
+    height: 13px;
+    min-height: 13px;
+    box-sizing: border-box;
     border: 2px solid var(--canvas-cinema-surface-2);
     background: #69727d;
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.13);
+  }
+
+  .canvas-node-handle::after {
+    content: none;
+  }
+
+  .canvas-node-handle::before {
+    right: auto;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .canvas-node-handle.react-flow__handle-left {
+    transform: translate(-50%, -50%);
+  }
+
+  .canvas-node-handle.react-flow__handle-right {
+    transform: translate(50%, -50%);
   }
 
   .canvas-node-selected .canvas-node-handle,
