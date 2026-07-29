@@ -15,6 +15,6 @@ describe('canvas image node stage integration', () => {
   })
 
   it('does not reserve an auto-layout header for full-bleed image nodes', () => {
-    expect(stageSource).toContain('isFullBleedCanvasImageNode(node.data.canvasNode)')
+    expect(stageSource).toContain('canvasNodeUsesFlatMediaFrame(node.data.canvasNode)')
   })
 })

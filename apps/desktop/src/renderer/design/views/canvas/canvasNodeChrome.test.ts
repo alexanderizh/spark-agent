@@ -36,16 +36,20 @@ function createNode(overrides: Partial<CanvasNode> = {}): CanvasNode {
 }
 
 describe('canvasNodeChromeExtraHeight', () => {
-  it('includes the content title and footer for media and regular text nodes', () => {
+  it('keeps regular text nodes on the structured card frame', () => {
     const expected = CANVAS_NODE_CONTENT_TITLE_HEIGHT + CANVAS_NODE_QUICK_FOOTER_HEIGHT
-    expect(canvasNodeChromeExtraHeight(createNode())).toBe(expected)
     expect(canvasNodeChromeExtraHeight(createNode({ type: 'text' }))).toBe(expected)
   })
 
-  it('does not add layout chrome to an image node with loaded content', () => {
+  it('keeps loaded and empty image/video nodes on the same flat media frame', () => {
+    expect(canvasNodeChromeExtraHeight(createNode())).toBe(0)
+    expect(
+      canvasNodeChromeExtraHeight(createNode({ data: { url: 'safe-file://image.png' } })),
+    ).toBe(0)
+    expect(canvasNodeChromeExtraHeight(createNode({ type: 'video' }))).toBe(0)
     expect(
       canvasNodeChromeExtraHeight(
-        createNode({ type: 'image', data: { url: 'safe-file://character.png' } }),
+        createNode({ type: 'video', data: { url: 'safe-file://clip.mp4' } }),
       ),
     ).toBe(0)
   })

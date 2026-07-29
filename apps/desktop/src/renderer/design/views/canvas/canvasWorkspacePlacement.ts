@@ -1,10 +1,16 @@
 import type { CSSProperties } from 'react'
 import type { CanvasStageViewport } from './CanvasStage'
 import { fitMediaNodeSize, fitTextNodeSize, readAssetTextForNode } from './canvas.api'
-import { fitCanvasImageNodeSize } from './canvasNodeSize'
+import { fitCanvasGroupedImageNodeSize, fitCanvasImageNodeSize } from './canvasNodeSize'
 import type { CanvasAsset, CanvasNode } from './canvas.types'
 
 export type CanvasWorkspacePoint = { x: number; y: number }
+export type CanvasWorkspaceBounds = {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
 export type PreparedImageUpload = {
   file: File
   filePath: string
@@ -21,11 +27,15 @@ const GROUP_IMAGE_HEADER_HEIGHT = 56
 export const GROUP_IMAGE_PADDING_BOTTOM = 28
 export { GROUP_IMAGE_HEADER_HEIGHT }
 
-export function fitImageNodeSize(
+export function fitImageNodeSize(width: number, height: number): { width: number; height: number } {
+  return fitCanvasImageNodeSize(width, height)
+}
+
+export function fitGroupedImageNodeSize(
   width: number,
   height: number,
 ): { width: number; height: number } {
-  return fitCanvasImageNodeSize(width, height)
+  return fitCanvasGroupedImageNodeSize(width, height)
 }
 
 export function getImageGridMetrics(items: { width: number; height: number }[]): {
@@ -176,6 +186,38 @@ export function placeNodeRightOfNodes(
     x: Math.round(right + gap),
     y: Math.round(top),
   }
+}
+
+export function mergeWorkspaceBounds(bounds: CanvasWorkspaceBounds[]): CanvasWorkspaceBounds {
+  return bounds.reduce(
+    (result, item) => ({
+      left: Math.min(result.left, item.left),
+      top: Math.min(result.top, item.top),
+      right: Math.max(result.right, item.right),
+      bottom: Math.max(result.bottom, item.bottom),
+    }),
+    bounds[0] ?? { left: 0, top: 0, right: 0, bottom: 0 },
+  )
+}
+
+export function workspaceBoundsForPlacements(
+  placements: CanvasWorkspacePoint[],
+  size: { width: number; height: number },
+): CanvasWorkspaceBounds {
+  return mergeWorkspaceBounds(
+    placements.map((item) => ({
+      left: item.x,
+      top: item.y,
+      right: item.x + size.width,
+      bottom: item.y + size.height,
+    })),
+  )
+}
+
+export function nextOriginAfterWorkspaceBounds(
+  bounds: CanvasWorkspaceBounds,
+): CanvasWorkspacePoint {
+  return { x: bounds.left, y: bounds.bottom + 72 }
 }
 
 function getImageGridColumns(count: number): number {

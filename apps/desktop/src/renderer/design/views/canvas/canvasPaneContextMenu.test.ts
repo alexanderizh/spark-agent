@@ -6,12 +6,13 @@ const stageSource = readFileSync(
   fileURLToPath(new URL('./CanvasStage.tsx', import.meta.url)),
   'utf8',
 )
-const nodeSource = readFileSync(
-  fileURLToPath(new URL('./CanvasNode.tsx', import.meta.url)),
-  'utf8',
-)
+const nodeSource = readFileSync(fileURLToPath(new URL('./CanvasNode.tsx', import.meta.url)), 'utf8')
 const workspaceSource = readFileSync(
   fileURLToPath(new URL('./CanvasWorkspaceView.tsx', import.meta.url)),
+  'utf8',
+)
+const floatingToolbarSource = readFileSync(
+  fileURLToPath(new URL('./CanvasFloatingNodeToolbar.tsx', import.meta.url)),
   'utf8',
 )
 const addNodeMenuSource = readFileSync(
@@ -29,12 +30,8 @@ const contextMenuStyles = readFileSync(
 
 describe('canvas pane context menu', () => {
   it('keeps lock and front actions for a single selection only', () => {
-    expect(stageSource).toContain(
-      'selectedNodeIds.length === 1 && onToggleLockSelectedNodes &&',
-    )
-    expect(stageSource).toContain(
-      'selectedNodeIds.length === 1 && onBringSelectedNodesToFront &&',
-    )
+    expect(stageSource).toContain('selectedNodeIds.length === 1 && onToggleLockSelectedNodes &&')
+    expect(stageSource).toContain('selectedNodeIds.length === 1 && onBringSelectedNodesToFront &&')
   })
 
   it('renders deletion with the danger color for single and multi selection', () => {
@@ -90,9 +87,9 @@ describe('canvas pane context menu', () => {
   it('uses the same categorized task menus for content and functional nodes with outputs', () => {
     expect(nodeSource).toContain('CANVAS_PIPELINE_MENU_GROUPS.flatMap')
     expect(nodeSource).toContain('CANVAS_BASE_CREATE_OPERATION_GROUPS.map')
-    expect(workspaceSource).toContain('CANVAS_PIPELINE_MENU_GROUPS.map')
-    expect(workspaceSource).toContain('!isGroup && hasResource')
-    expect(workspaceSource).not.toContain('!isGroup && !isOperation')
+    expect(floatingToolbarSource).toContain('CANVAS_PIPELINE_MENU_GROUPS.map')
+    expect(floatingToolbarSource).toContain('pipelineActionGroups.map')
+    expect(workspaceSource).toContain('<CanvasFloatingNodeToolbar')
   })
 
   it('keeps text as the only direct text-like node creation entry', () => {

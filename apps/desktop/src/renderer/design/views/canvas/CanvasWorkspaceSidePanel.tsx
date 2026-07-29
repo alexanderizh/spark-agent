@@ -6,12 +6,17 @@ import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasInspector } from './CanvasInspector'
 import { CanvasProjectInfoPanel } from './CanvasProjectInfoPanel'
 import { CanvasTaskQueue, type CanvasTaskRetryRuntimeSource } from './CanvasTaskQueue'
-import type { CanvasNode, CanvasProjectSettings } from './canvas.types'
+import type {
+  CanvasNode,
+  CanvasNodeData,
+  CanvasProjectSettings,
+  CanvasSnapshot,
+} from './canvas.types'
 
 export type CanvasSidePanelTab = 'details' | 'tasks' | 'assets' | 'project'
 
 type CanvasWorkspaceSidePanelProps = {
-  snapshot: any
+  snapshot: CanvasSnapshot
   selectedNodes: CanvasNode[]
   sidePanelCollapsed: boolean
   sidePanelWidth: number
@@ -42,6 +47,7 @@ type CanvasWorkspaceSidePanelProps = {
   onRemoveFromGroup: () => void
   onDissolveGroup: () => void
   onPatchNode: (node: CanvasNode, patch: Partial<CanvasNode>) => void
+  onPatchNodeData: (node: CanvasNode, data: Partial<CanvasNodeData>) => void
   onCancelTask: (taskId: string) => void
   onClearTasks: (scope: any) => void
   onDeleteTasks: (taskIds: string[]) => void
@@ -85,6 +91,7 @@ export function CanvasWorkspaceSidePanel({
   onRemoveFromGroup,
   onDissolveGroup,
   onPatchNode,
+  onPatchNodeData,
   onCancelTask,
   onClearTasks,
   onDeleteTasks,
@@ -176,6 +183,7 @@ export function CanvasWorkspaceSidePanel({
                 canRemoveFromGroup={canRemoveFromGroup}
                 canDissolveGroup={canDissolveGroup}
                 onPatchNode={onPatchNode}
+                onPatchNodeData={onPatchNodeData}
               />
             </div>
           )}

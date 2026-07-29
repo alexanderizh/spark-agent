@@ -32,7 +32,6 @@ import {
   type Viewport,
   type XYPosition,
 } from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
 import { Icons } from '../../Icons'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
 import { CanvasZoomControls } from './CanvasZoomControls'
@@ -48,9 +47,8 @@ import {
 } from './canvasAutoLayout'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import { isOperationNode } from './canvas.capabilities'
-import { canvasNodeChromeExtraHeight } from './canvasNodeChrome'
+import { canvasNodeChromeExtraHeight, canvasNodeUsesFlatMediaFrame } from './canvasNodeChrome'
 import {
-  isFullBleedCanvasImageNode,
   resolveCanvasImageNodePresentationSize,
   type CanvasImageSourceDimensions,
 } from './canvasImageNodePresentation'
@@ -73,6 +71,7 @@ import { getOperationVisual } from './canvasOperationIcons'
 import { readCharacterSubviews } from './canvasCharacterLibrary'
 import { readAssetKind } from './canvasFilmAssets'
 import { dispatchCanvasStageDrop } from './canvasWorkflowDrag'
+import { resolveCanvasZoomLod } from './canvasZoomLod'
 import type { CanvasPipelineAssetKind } from './canvasPipelineOps'
 import {
   buildCanvasOperationRunViews,
@@ -468,7 +467,7 @@ function flowNodeToAutoLayoutNode(node: Node<CanvasFlowNodeData>): CanvasAutoLay
         ? node.height
         : node.data.canvasNode.height
   const hasInlineExtension = Boolean(node.data.inlineToolbar || node.data.inlinePanel)
-  const hasOverlayChrome = isFullBleedCanvasImageNode(node.data.canvasNode)
+  const hasOverlayChrome = canvasNodeUsesFlatMediaFrame(node.data.canvasNode)
   return {
     id: node.id,
     x: node.position.x,
@@ -1030,7 +1029,7 @@ function CanvasStageInner({
       )
     }
     const contentNode = isOperationNode(sourceNode)
-      ? resolveCanvasOperationResourceNode(sourceNode, snapshot) ?? sourceNode
+      ? (resolveCanvasOperationResourceNode(sourceNode, snapshot) ?? sourceNode)
       : sourceNode
     return getNodePipelineActions(contentNode, {
       assetKinds: assetKindsByNodeId.get(sourceNode.id) ?? [],
@@ -1055,6 +1054,7 @@ function CanvasStageInner({
   const notifyViewportChange = useCallback(
     (viewport = latestViewportRef.current) => {
       latestViewportRef.current = viewport
+      stageRef.current?.setAttribute('data-zoom-lod', resolveCanvasZoomLod(viewport.zoom))
       pendingViewportNotificationRef.current = viewport
       if (viewportNotifyFrameRef.current != null) return
       viewportNotifyFrameRef.current = window.requestAnimationFrame(() => {
@@ -1402,19 +1402,16 @@ function CanvasStageInner({
     [notifyViewportChange],
   )
 
-  const handleMinimapClick = useCallback(
-    (_event: ReactMouseEvent, position: XYPosition) => {
-      const instance = flowInstanceRef.current
-      if (!instance) return
-      setPaneContextMenu(null)
-      setEdgeContextMenu(null)
-      void instance.setCenter(position.x, position.y, {
-        zoom: latestViewportRef.current.zoom,
-        duration: 160,
-      })
-    },
-    [],
-  )
+  const handleMinimapClick = useCallback((_event: ReactMouseEvent, position: XYPosition) => {
+    const instance = flowInstanceRef.current
+    if (!instance) return
+    setPaneContextMenu(null)
+    setEdgeContextMenu(null)
+    void instance.setCenter(position.x, position.y, {
+      zoom: latestViewportRef.current.zoom,
+      duration: 160,
+    })
+  }, [])
 
   const handleInit = useCallback(
     (instance: ReactFlowInstance<Node<CanvasFlowNodeData>, Edge>) => {
@@ -2265,6 +2262,7 @@ function CanvasStageInner({
         className={`canvas-stage canvas-stage-tool-${activeTool === 'pan' ? 'pan' : 'select'}${
           snapshot.board.settings.grid === true ? '' : ' canvas-stage-grid-off'
         }${dropActive ? ' canvas-stage-drop-active' : ''}`}
+        data-zoom-lod={resolveCanvasZoomLod(boardViewport.zoom)}
         ref={stageRef}
         onPointerMove={handleStagePointerMove}
         onPointerLeave={handleStagePointerLeave}
@@ -2651,9 +2649,7 @@ function CanvasStageInner({
                 <CanvasPaneResourceNodeActions
                   onAddImage={handleAddImageFromPane}
                   onAddDirectorStage3D={
-                    onAddDirectorStage3DAtPosition
-                      ? handleAddDirectorStage3DFromPane
-                      : undefined
+                    onAddDirectorStage3DAtPosition ? handleAddDirectorStage3DFromPane : undefined
                   }
                   onAddVideoWorkbench={
                     onAddVideoWorkbenchAtPosition ? handleAddVideoWorkbenchFromPane : undefined

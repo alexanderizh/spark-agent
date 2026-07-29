@@ -1,5 +1,4 @@
 import {
-  memo,
   startTransition,
   useCallback,
   useEffect,
@@ -8,23 +7,21 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Button, Empty, Segmented, Tag } from '@lobehub/ui'
-import { Drawer, Input, Modal, Popover, Select, Spin, Tooltip, message } from 'antd'
+import { Button, Empty } from '@lobehub/ui'
+import { Drawer, Modal, Spin, message } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasInlineAiComposer } from './CanvasInlineAiComposer'
-import { CanvasPromptEditor } from './CanvasPromptEditor'
-import { CanvasInspector } from './CanvasInspector'
 import {
   CanvasStage,
   type CanvasStageViewport,
   type CanvasStageViewportControls,
 } from './CanvasStage'
 import type { PendingCanvasConnection } from './canvasPendingConnection'
-import { CanvasTaskQueue, type CanvasTaskRetryRuntimeSource } from './CanvasTaskQueue'
-import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
+import type { CanvasTaskRetryRuntimeSource } from './CanvasTaskQueue'
+import type { CanvasTool } from './CanvasToolbar'
 import { downloadCanvasResource } from './CanvasAssetsPanel'
-import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
+import { CanvasCinematicEmptyState } from './CanvasCinematicEmptyState'
 import { CanvasWorkflowDrawer } from './CanvasWorkflowDrawer'
 import { CanvasWorkflowExtractDialog } from './CanvasWorkflowExtractDialog'
 import { useCanvasReload } from './useCanvasReload'
@@ -37,7 +34,6 @@ import { executeCanvasWorkflowPlan } from './canvasWorkflowRunner'
 import { executeCanvasWorkflowCanvasStep } from './canvasWorkflowCanvasExecutor'
 import { waitForCanvasWorkflowTask } from './canvasWorkflowTaskAdapter'
 import { extractCanvasWorkflowDraft, type CanvasWorkflowDraft } from './canvasWorkflowExtraction'
-import { CanvasInlineNodeTitleEditor } from './CanvasInlineNodeTitleEditor'
 import { canvasNodeDownloadName } from './canvasNodeNaming'
 import { CanvasCharacterLibraryPanel } from './CanvasCharacterLibraryPanel'
 import { CanvasCharacterSubviewEditor } from './CanvasCharacterSubviewEditor'
@@ -58,7 +54,6 @@ import { resolveCanvasAssetFocusNodeIds } from './canvasAssetFocus'
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel, buildOperationPanelSnapshotSignature } from './CanvasOperationPanel'
 import { CanvasPromptNodePickerBanner } from './CanvasPromptNodePickerBanner'
-import { CanvasShotScriptEditor } from './CanvasShotScriptEditor'
 import { useCanvasPromptNodePicker } from './useCanvasPromptNodePicker'
 import { CanvasBatchTaskPanel } from './CanvasBatchTaskPanel'
 import { useCanvasBatchTasks } from './useCanvasBatchTasks'
@@ -88,7 +83,41 @@ import {
 import { CanvasGridSplitModal, type CanvasGridSplitTile } from './CanvasGridSplitModal'
 import { useFloatingViewportGeometry } from './useFloatingViewportGeometry'
 import { CanvasPresetHubEntry } from './CanvasPresetHubEntry'
-import { CanvasProjectInfoPanel } from './CanvasProjectInfoPanel'
+import { CanvasWorkspaceSidePanel } from './CanvasWorkspaceSidePanel'
+import { CanvasWorkspaceChrome } from './CanvasWorkspaceChrome'
+import { CanvasOverlayBoundary } from './CanvasOverlayBoundary'
+import { CanvasNodeEditModal } from './CanvasNodeEditModal'
+import { CanvasFloatingNodeToolbar } from './CanvasFloatingNodeToolbar'
+import {
+  buildCanvasSnapshotFileName,
+  canvasTaskFailureMessage,
+  collectGroupDescendantNodes,
+  cssEscape,
+  findLatestCreatedOperationNode,
+  isRecord,
+  nextFrame,
+  normalizeColorsForHtml2Canvas,
+  readShotDirectorDraft,
+} from './canvasWorkspaceSnapshot'
+import {
+  fitGroupedImageNodeSize,
+  fitImageNodeSize,
+  GROUP_IMAGE_HEADER_HEIGHT,
+  GROUP_IMAGE_PADDING_BOTTOM,
+  GROUP_IMAGE_PADDING_X,
+  getFloatingEditorGeometry,
+  getImageGridMetrics,
+  layoutGroupedImages,
+  mergeWorkspaceBounds as mergeBounds,
+  nextOriginAfterWorkspaceBounds as nextOriginAfterBounds,
+  placeNodeRightOfNodes,
+  positionNodeInViewport,
+  resolveAssetInsertSize,
+  workspaceBoundsForPlacements as boundsForPlacements,
+  type CanvasWorkspaceBounds as LayoutBounds,
+  type CanvasWorkspacePoint as CanvasPoint,
+  type PreparedImageUpload,
+} from './canvasWorkspacePlacement'
 import {
   CanvasShotDirectorPanel,
   type CanvasShotDirectorDraft,
@@ -116,55 +145,51 @@ import type { FilmReferenceKind } from './canvasFilmTypes'
 import {
   buildCharacterSheetPrompt,
   getCharacterSheetTemplate,
-  type CharacterPromptFields,
   type CharacterSheetAspect,
 } from './canvasCharacterSheetPrompts'
 import {
   collectDownstream,
   buildProductionBiblePrompt,
-  getNodePipelineActions,
   readStylePresets,
-  readStyleBible,
   upsertStylePreset,
   writeProductionBible,
   writeStyleBible,
 } from './canvasPipeline'
 import { applyCanvasStyleToTask, buildCanvasStyleContext } from './canvasStyleContext'
-import { buildStoryboardGridPrompt, buildStoryboardNodePrompt } from './canvasStoryboardGrid'
-import { isShotScriptText, parseShotTable, type ParsedShotRow } from './canvasShotTableParse'
+import { buildStoryboardGridPrompt } from './canvasStoryboardGrid'
+import { isShotScriptText, parseShotTable } from './canvasShotTableParse'
 import {
+  buildCloudTaskInputFiles,
   buildCanvasInputBindingsForRoles,
+  buildStoryboardReferenceInputRoles,
+  expandCanvasInputNodes,
+  fallbackPromptForOperation,
+  hydrateTextInputNodes,
+  resolveCanvasInputNodes,
   resolveCanvasPipelineTextSource,
 } from './canvasWorkspaceTaskInput'
 import {
+  assetToCharacterFields,
+  buildFilmAssetReferencePrompt,
   buildChapterToScreenplayInstruction,
+  buildScriptBreakdownDraft,
   buildShotNodeText,
   buildShotSegmentKeyframePrompt,
   buildShotSegmentVideoPrompt,
+  filmKindToPipelineRole,
+  findSegmentStyleFragments,
   resolveShotSegmentContext,
+  type ScriptBreakdownDraft,
 } from './canvasWorkspaceFilm'
-import {
-  formatStoryboardRowsAsMarkdown,
-  resolveStoryboardRowsForEditing,
-} from './canvasTextInputPresentation'
+import { buildPromptOptimizationInstruction } from './canvasPromptEditing'
 import { resolveStoryboardSplitSourceNode, splitStoryboardNode } from './canvasStoryboardNodeSplit'
-import {
-  buildOpPrompt,
-  CANVAS_PIPELINE_MENU_GROUPS,
-  CANVAS_PIPELINE_OPS,
-} from './canvasPipelineOps'
+import { buildOpPrompt, CANVAS_PIPELINE_OPS } from './canvasPipelineOps'
 import {
   planCanvasPipelineTaskPositions,
   resolveCanvasPipelineAssetTargets,
   type CanvasPipelineAssetTarget,
 } from './canvasPipelineActionBatch'
 import { buildCanvasPipelineOperationDraft } from './canvasPipelineActionContracts'
-import {
-  CANVAS_BASE_CREATE_OPERATION_GROUPS,
-  CANVAS_BASE_TASK_MENU_LABEL,
-  CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
-  CANVAS_FUNCTIONAL_MENU_LABEL,
-} from './canvasNodeGenerationMenu'
 import {
   buildEntityExtractionPrompt,
   extractEntityKindLabel,
@@ -205,23 +230,12 @@ import {
   OPERATION_NODE_DEFAULT_SIZE,
   TEXT_NODE_DEFAULT_SIZE,
   VIDEO_NODE_DEFAULT_SIZE,
-  fitCanvasGroupedImageNodeSize,
-  fitCanvasImageNodeSize,
 } from './canvasNodeSize'
 import type { TabKind as FilmCenterTab } from './CanvasFilmAssetCenter'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace } from './canvas.store'
-import {
-  canvasApi,
-  fitMediaNodeSize,
-  fitTextNodeSize,
-  isCanvasDirty,
-  operationLabel,
-  readAssetTextForNode,
-  revertProject,
-  saveCanvas,
-} from './canvas.api'
+import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
 import { buildTaskInputFiles, type CanvasTaskInputRoleSelection } from './canvasTaskInputFiles'
 import { pickCanvasPromptTaskFields } from './canvasPromptTaskFields'
 import {
@@ -248,7 +262,6 @@ import {
   writeCanvasLastUsedPresetTarget,
 } from './canvasOperationPresets'
 import { useApp } from '../../AppContext'
-import { SidebarExpandButton } from '../../SidebarExpandButton'
 import type {
   CanvasInputTransport,
   CanvasAsset,
@@ -256,9 +269,6 @@ import type {
   CanvasNode,
   CanvasOperationType,
   CanvasPipelineRole,
-  CanvasProductionState,
-  CanvasProject,
-  CanvasProjectSettings,
   CanvasTask,
   ShotScriptConfig,
 } from './canvas.types'
@@ -276,27 +286,13 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from 'react'
-import './CanvasWorkspaceView.less'
-// CanvasWorkflowDrawer、CanvasWorkflowRunPanel 和 CanvasWorkflowExtractDialog
-// 都在画布工作区内渲染；工作流样式不能只由工作流库页面按路由加载。
-import './canvas-workflow.less'
-import './uiux-v4/index.less'
+import './cinematic/index.less'
 
-type CanvasPoint = { x: number; y: number }
 type TrackedCanvasWorkflowResult = CanvasTrackedWorkflowDiagnostics & {
   count?: number
   outputNodeIds?: string[]
   outputAssetIds?: string[]
   message?: string
-}
-type PreparedImageUpload = {
-  file: File
-  filePath: string
-  width: number
-  height: number
-  imageWidth: number
-  imageHeight: number
-  title?: string
 }
 type PreparedMediaUpload = {
   kind: 'video' | 'audio'
@@ -308,12 +304,6 @@ type PreparedMediaUpload = {
   mediaWidth?: number
   mediaHeight?: number
   durationMs?: number
-}
-type LayoutBounds = {
-  left: number
-  top: number
-  right: number
-  bottom: number
 }
 type InsertPreparedImagesResult = {
   createdNodeCount: number
@@ -333,308 +323,6 @@ type CharacterSubviewEditorContext = {
 }
 type CanvasSaveMode = 'manual' | 'auto'
 type CanvasPersistResult = 'saved' | 'failed' | 'skipped'
-
-function findLatestCreatedOperationNode(
-  nodes: CanvasNode[],
-  operation: CanvasOperationType,
-  existingNodeIds: Set<string>,
-): CanvasNode | null {
-  const candidates = nodes.filter(
-    (item) =>
-      !existingNodeIds.has(item.id) && item.data?.operation === operation && isOperationNode(item),
-  )
-  if (candidates.length === 0) return null
-  return (
-    [...candidates].sort((left, right) => {
-      const timeDelta = Date.parse(right.createdAt) - Date.parse(left.createdAt)
-      if (timeDelta !== 0) return timeDelta
-      return right.zIndex - left.zIndex
-    })[0] ?? null
-  )
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function readShotDirectorDraft(
-  metadata: Record<string, unknown> | undefined,
-  boardId: string,
-): Partial<CanvasShotDirectorDraft> | null {
-  const shotDirector = metadata?.shotDirector
-  if (!isRecord(shotDirector)) return null
-  const boards = shotDirector.boards
-  if (!isRecord(boards)) return null
-  const draft = boards[boardId]
-  return isRecord(draft) ? (draft as Partial<CanvasShotDirectorDraft>) : null
-}
-
-function cssEscape(value: string): string {
-  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(value)
-  return value.replace(/["\\]/g, '\\$&')
-}
-
-function canvasTaskFailureMessage(task: CanvasTask): string {
-  const detail = (task.errorDetail ?? task.errorMsg ?? '').trim()
-  return detail ? `任务失败：${detail}` : '任务失败，请检查任务详情后重试'
-}
-
-// html2canvas 1.4.1 只认 hsl/hsla/rgb/rgba 颜色函数，遇到 color()/oklch()/oklab()/color-mix()
-// 等现代颜色函数会抛 "Attempting to parse an unsupported color function"。这里在截图前把目标
-// 子树里所有用到这些函数的颜色相关样式，改写成浏览器规范化后的 rgb()/rgba() 等价值。
-const HTML2CANVAS_UNSUPPORTED_COLOR = /(color-mix|color|oklch|oklab|hwb|lab|lch)\s*\(/i
-const HTML2CANVAS_COLOR_PROPS = [
-  'color',
-  'backgroundColor',
-  'borderColor',
-  'borderTopColor',
-  'borderRightColor',
-  'borderBottomColor',
-  'borderLeftColor',
-  'outlineColor',
-  'textDecorationColor',
-  'fill',
-  'stroke',
-  'caretColor',
-  'columnRuleColor',
-  'boxShadow',
-  'background',
-  'backgroundImage',
-  'border',
-  'outline',
-  'textDecoration',
-  'textShadow',
-  'filter',
-]
-
-let html2canvasColorNormalizersCanvas: HTMLCanvasElement | null = null
-let html2canvasColorNormalizerElement: HTMLElement | null = null
-
-function clampColorChannel(value: number): number {
-  if (!Number.isFinite(value)) return 0
-  return Math.max(0, Math.min(255, Math.round(value)))
-}
-
-function parseCssColorNumber(value: string): number | undefined {
-  const trimmed = value.trim()
-  if (!trimmed || trimmed.toLowerCase() === 'none') return undefined
-  const number = Number.parseFloat(trimmed)
-  if (!Number.isFinite(number)) return undefined
-  return trimmed.endsWith('%') ? number / 100 : number
-}
-
-function parseCssAlpha(value: string | undefined): number {
-  if (!value) return 1
-  const parsed = parseCssColorNumber(value)
-  if (parsed === undefined) return 1
-  return Math.max(0, Math.min(1, parsed))
-}
-
-function formatCssRgbColor(channels: number[], alpha: number): string {
-  const [red, green, blue] = channels.map((channel) => clampColorChannel(channel * 255))
-  if (alpha >= 1) return `rgb(${red}, ${green}, ${blue})`
-  return `rgba(${red}, ${green}, ${blue}, ${Number(alpha.toFixed(3))})`
-}
-
-function normalizeCssColorFunctionToken(rawValue: string): string | undefined {
-  const match = rawValue.match(/^color\(\s*([a-z0-9-]+)\s+(.+)\)$/i)
-  if (!match) return undefined
-  const colorSpace = match[1]?.toLowerCase()
-  const supportedColorSpaces = ['srgb', 'srgb-linear', 'display-p3', 'a98-rgb', 'prophoto-rgb']
-  if (!colorSpace || !supportedColorSpaces.includes(colorSpace)) {
-    return undefined
-  }
-  const [channelText = '', alphaText] = (match[2] ?? '').split(/\s*\/\s*/, 2)
-  const channels = channelText.trim().split(/\s+/).slice(0, 3).map(parseCssColorNumber)
-
-  if (channels.length < 3 || channels.some((channel) => channel === undefined)) return undefined
-  return formatCssRgbColor(channels as number[], parseCssAlpha(alphaText))
-}
-
-function normalizeCssColorWithBrowser(rawValue: string): string | undefined {
-  if (typeof document === 'undefined') return undefined
-  if (!html2canvasColorNormalizerElement) {
-    html2canvasColorNormalizerElement = document.createElement('span')
-    html2canvasColorNormalizerElement.style.cssText =
-      'position:absolute;left:-99999px;top:-99999px;visibility:hidden;pointer-events:none;'
-    document.documentElement.appendChild(html2canvasColorNormalizerElement)
-  }
-  const element = html2canvasColorNormalizerElement
-  element.style.color = ''
-  element.style.color = rawValue
-  if (!element.style.color) return undefined
-
-  const normalized = window.getComputedStyle(element).color
-  const parsed = normalizeCssColorFunctionToken(normalized)
-  return parsed ?? normalized
-}
-
-function normalizeCssColorWithBrowserForHtml2Canvas(rawValue: string): string | undefined {
-  const normalized = normalizeCssColorWithBrowser(rawValue)
-  if (!normalized || HTML2CANVAS_UNSUPPORTED_COLOR.test(normalized)) return undefined
-  return normalized
-}
-
-function normalizeSingleCssColorToken(rawValue: string): string {
-  const parsedColorFunction = normalizeCssColorFunctionToken(rawValue)
-  if (parsedColorFunction) return parsedColorFunction
-
-  // 浏览器 canvas 的 fillStyle 赋值会自动把任何合法颜色值规范化为 rgb()/rgba()/#hex，
-  // 是最权威的颜色降级方式（支持 color()/oklch()/color-mix() 等所有现代写法）。
-  if (!html2canvasColorNormalizersCanvas) {
-    html2canvasColorNormalizersCanvas = document.createElement('canvas')
-  }
-  const ctx = html2canvasColorNormalizersCanvas.getContext('2d')
-  if (!ctx) return normalizeCssColorWithBrowserForHtml2Canvas(rawValue) ?? rawValue
-  try {
-    const sentinel = '#010203'
-    ctx.fillStyle = sentinel
-    ctx.fillStyle = rawValue
-    const normalized = ctx.fillStyle
-    // 若浏览器无法识别该值，fillStyle 会回落为上一个有效值，此时继续尝试 DOM computed style。
-    if (normalized.toLowerCase() === sentinel) {
-      return normalizeCssColorWithBrowserForHtml2Canvas(rawValue) ?? rawValue
-    }
-    if (HTML2CANVAS_UNSUPPORTED_COLOR.test(normalized)) {
-      return normalizeCssColorWithBrowserForHtml2Canvas(rawValue) ?? rawValue
-    }
-    if (/^(rgb|rgba|#)/i.test(normalized)) return normalized
-  } catch {
-    // 继续尝试 DOM computed style 兜底。
-  }
-
-  return normalizeCssColorWithBrowserForHtml2Canvas(rawValue) ?? rawValue
-}
-
-function findCssFunctionEnd(value: string, openParenIndex: number): number {
-  let depth = 0
-  for (let index = openParenIndex; index < value.length; index += 1) {
-    const char = value[index]
-    if (char === '(') depth += 1
-    if (char === ')') {
-      depth -= 1
-      if (depth === 0) return index
-    }
-  }
-  return -1
-}
-
-function normalizeCssColorForSnapshot(rawValue: string): string {
-  if (!rawValue || !HTML2CANVAS_UNSUPPORTED_COLOR.test(rawValue)) return rawValue
-
-  let output = ''
-  let cursor = 0
-  let changed = false
-
-  while (cursor < rawValue.length) {
-    const rest = rawValue.slice(cursor)
-    const match = rest.match(HTML2CANVAS_UNSUPPORTED_COLOR)
-    if (!match || match.index === undefined) {
-      output += rest
-      break
-    }
-
-    const functionStart = cursor + match.index
-    const functionOpen = rawValue.indexOf('(', functionStart)
-    if (functionOpen < 0) {
-      output += rawValue.slice(cursor)
-      break
-    }
-    const functionEnd = findCssFunctionEnd(rawValue, functionOpen)
-    if (functionEnd < 0) {
-      output += rawValue.slice(cursor)
-      break
-    }
-
-    const token = rawValue.slice(functionStart, functionEnd + 1)
-    const normalized = normalizeSingleCssColorToken(token)
-    output += rawValue.slice(cursor, functionStart) + normalized
-    changed = changed || normalized !== token
-    cursor = functionEnd + 1
-  }
-
-  return changed ? output : rawValue
-}
-
-function normalizeColorsForHtml2Canvas(
-  root: HTMLElement,
-  targetWindow: Window = window,
-): (() => void) | undefined {
-  const elements: HTMLElement[] = [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))]
-  const restores: Array<() => void> = []
-
-  for (const element of elements) {
-    const computed = targetWindow.getComputedStyle(element)
-    const inlineStyle = element.style
-    const cssProps = new Set(
-      HTML2CANVAS_COLOR_PROPS.map((prop) => prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)),
-    )
-    for (let index = 0; index < computed.length; index += 1) {
-      const cssProp = computed.item(index)
-      if (!cssProp) continue
-      const value = computed.getPropertyValue(cssProp)
-      if (HTML2CANVAS_UNSUPPORTED_COLOR.test(value)) cssProps.add(cssProp)
-    }
-
-    for (const cssProp of cssProps) {
-      const value = computed.getPropertyValue(cssProp)
-      if (typeof value !== 'string' || !HTML2CANVAS_UNSUPPORTED_COLOR.test(value)) continue
-      const normalized = normalizeCssColorForSnapshot(value)
-      if (normalized === value) continue
-      const previous = inlineStyle.getPropertyValue(cssProp)
-      const previousPriority = inlineStyle.getPropertyPriority(cssProp)
-      const hadPrevious = previous !== '' || previousPriority !== ''
-      restores.push(() => {
-        if (hadPrevious) {
-          inlineStyle.setProperty(cssProp, previous, previousPriority)
-        } else {
-          inlineStyle.removeProperty(cssProp)
-        }
-      })
-      // 用 !important 覆盖计算值，保证 html2canvas 在克隆阶段拿到的是 rgb()/rgba()。
-      inlineStyle.setProperty(cssProp, normalized, 'important')
-    }
-  }
-
-  if (restores.length === 0) return undefined
-  return () => {
-    while (restores.length > 0) {
-      const restore = restores.pop()
-      restore?.()
-    }
-  }
-}
-
-function buildCanvasSnapshotFileName(title: string | undefined): string {
-  const safeTitle = (title || 'group')
-    .trim()
-    .replace(/[^\p{L}\p{N}_-]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48)
-  return `${safeTitle || 'group'}-merged-${Date.now()}.png`
-}
-
-function collectGroupDescendantNodes(nodes: CanvasNode[], groupId: string): CanvasNode[] {
-  const descendants: CanvasNode[] = []
-  const queue = nodes.filter((node) => node.parentNodeId === groupId)
-
-  while (queue.length > 0) {
-    const node = queue.shift()
-    if (!node) continue
-    descendants.push(node)
-    if (node.type === 'group') {
-      queue.push(...nodes.filter((candidate) => candidate.parentNodeId === node.id))
-    }
-  }
-
-  return descendants
-}
-
-function nextFrame(): Promise<void> {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => resolve())
-  })
-}
 
 const CANVAS_SIDE_PANEL_WIDTH_KEY = 'spark-canvas:side-panel-width'
 const CANVAS_AUTO_SAVE_STORAGE_KEY_PREFIX = 'spark-canvas:auto-save:'
@@ -659,10 +347,6 @@ const CANVAS_AUTO_SAVE_THROTTLE_MS = 30_000
 const CANVAS_AUTO_SAVE_BACKOFF_BASE_MS = CANVAS_AUTO_SAVE_DEBOUNCE_MS
 const CANVAS_AUTO_SAVE_BACKOFF_MAX_MS = CANVAS_AUTO_SAVE_THROTTLE_MS
 const CANVAS_AUTO_SAVE_MAX_FAILS = 5
-const GROUP_IMAGE_GAP = 18
-const GROUP_IMAGE_PADDING_X = 28
-const GROUP_IMAGE_HEADER_HEIGHT = 56
-const GROUP_IMAGE_PADDING_BOTTOM = 28
 
 function clampSidePanelWidth(width: number): number {
   return Math.min(Math.max(width, CANVAS_SIDE_PANEL_MIN_WIDTH), CANVAS_SIDE_PANEL_MAX_WIDTH)
@@ -740,803 +424,6 @@ function writeCanvasAutoSaveEnabled(projectId: string, enabled: boolean): void {
   } catch {
     // Ignore storage failures; the current session still respects the in-memory toggle.
   }
-}
-
-function fitImageNodeSize(width: number, height: number): { width: number; height: number } {
-  return fitCanvasImageNodeSize(width, height)
-}
-
-function fitGroupedImageNodeSize(width: number, height: number): { width: number; height: number } {
-  return fitCanvasGroupedImageNodeSize(width, height)
-}
-
-function getImageGridColumns(count: number): number {
-  if (count <= 1) return 1
-  return Math.min(3, Math.ceil(Math.sqrt(count)))
-}
-
-function getImageGridMetrics(items: { width: number; height: number }[]): {
-  columns: number
-  columnWidths: number[]
-  rowHeights: number[]
-  width: number
-  height: number
-} {
-  const columns = getImageGridColumns(items.length)
-  const rows = Math.ceil(items.length / columns)
-  const columnWidths = Array.from({ length: columns }, () => 0)
-  const rowHeights = Array.from({ length: rows }, () => 0)
-
-  items.forEach((item, index) => {
-    const column = index % columns
-    const row = Math.floor(index / columns)
-    columnWidths[column] = Math.max(columnWidths[column] ?? 0, item.width)
-    rowHeights[row] = Math.max(rowHeights[row] ?? 0, item.height)
-  })
-
-  return {
-    columns,
-    columnWidths,
-    rowHeights,
-    width:
-      columnWidths.reduce((total, width) => total + width, 0) +
-      Math.max(0, columns - 1) * GROUP_IMAGE_GAP,
-    height:
-      rowHeights.reduce((total, height) => total + height, 0) +
-      Math.max(0, rows - 1) * GROUP_IMAGE_GAP,
-  }
-}
-
-function layoutGroupedImages(
-  items: PreparedImageUpload[],
-  groupPosition: CanvasPoint,
-): (PreparedImageUpload & CanvasPoint)[] {
-  const metrics = getImageGridMetrics(items)
-  const columnOffsets = metrics.columnWidths.map(
-    (_, index) =>
-      metrics.columnWidths.slice(0, index).reduce((total, width) => total + width, 0) +
-      index * GROUP_IMAGE_GAP,
-  )
-  const rowOffsets = metrics.rowHeights.map(
-    (_, index) =>
-      metrics.rowHeights.slice(0, index).reduce((total, height) => total + height, 0) +
-      index * GROUP_IMAGE_GAP,
-  )
-
-  return items.map((item, index) => {
-    const column = index % metrics.columns
-    const row = Math.floor(index / metrics.columns)
-    return {
-      ...item,
-      x: Math.round(groupPosition.x + GROUP_IMAGE_PADDING_X + (columnOffsets[column] ?? 0)),
-      y: Math.round(groupPosition.y + GROUP_IMAGE_HEADER_HEIGHT + (rowOffsets[row] ?? 0)),
-    }
-  })
-}
-
-function mergeBounds(bounds: LayoutBounds[]): LayoutBounds {
-  return {
-    left: Math.min(...bounds.map((item) => item.left)),
-    top: Math.min(...bounds.map((item) => item.top)),
-    right: Math.max(...bounds.map((item) => item.right)),
-    bottom: Math.max(...bounds.map((item) => item.bottom)),
-  }
-}
-
-function boundsForPlacements(
-  positions: Array<{ x: number; y: number }>,
-  size: { width: number; height: number },
-): LayoutBounds {
-  return {
-    left: Math.min(...positions.map((position) => position.x)),
-    top: Math.min(...positions.map((position) => position.y)),
-    right: Math.max(...positions.map((position) => position.x + size.width)),
-    bottom: Math.max(...positions.map((position) => position.y + size.height)),
-  }
-}
-
-function nextOriginAfterBounds(bounds: LayoutBounds): CanvasPoint {
-  return {
-    x: Math.round(bounds.right + 72),
-    y: Math.round(bounds.top),
-  }
-}
-
-function clampPosition(value: number, min: number, max: number): number {
-  if (max < min) return min
-  return Math.min(Math.max(value, min), max)
-}
-
-function positionNodeInViewport(
-  viewport: CanvasStageViewport | null,
-  size: { width: number; height: number },
-  fallback: { x: number; y: number },
-): { x: number; y: number } {
-  if (!viewport || viewport.width <= 0 || viewport.height <= 0 || viewport.zoom <= 0) {
-    return fallback
-  }
-
-  const visibleLeft = -viewport.x / viewport.zoom
-  const visibleTop = -viewport.y / viewport.zoom
-  const visibleRight = (viewport.width - viewport.x) / viewport.zoom
-  const visibleBottom = (viewport.height - viewport.y) / viewport.zoom
-  const centerX = visibleLeft + (visibleRight - visibleLeft) / 2
-  const centerY = visibleTop + (visibleBottom - visibleTop) / 2
-
-  return {
-    x: Math.round(
-      clampPosition(centerX - size.width / 2, visibleLeft + 24, visibleRight - size.width - 24),
-    ),
-    y: Math.round(
-      clampPosition(centerY - size.height / 2, visibleTop + 24, visibleBottom - size.height - 24),
-    ),
-  }
-}
-
-/**
- * 计算资产插入画布后节点的真实尺寸。
- *
- * 必须与 `canvasApi.insertAssetToBoard` 内部的尺寸逻辑完全一致——
- * 两者用同样的分支（媒体按比例拟合 / 文本按字数拟合），否则居中位置会
- * 因尺寸偏差而落点不准。这里复用 canvas.api 导出的拟合函数，保证同步。
- */
-function resolveAssetInsertSize(asset: CanvasAsset): { width: number; height: number } {
-  if (asset.type === 'text' || asset.type === 'prompt') {
-    return fitTextNodeSize(readAssetTextForNode(asset))
-  }
-  return fitMediaNodeSize(asset.type, asset.width, asset.height)
-}
-
-function getFloatingEditorGeometry(
-  node: CanvasNode,
-  viewport: CanvasStageViewport | null,
-): { toolbar: CSSProperties; panel: CSSProperties } | null {
-  const effectiveViewport: CanvasStageViewport =
-    viewport && viewport.width > 0 && viewport.height > 0 && viewport.zoom > 0
-      ? viewport
-      : {
-          x: viewport?.x ?? 0,
-          y: viewport?.y ?? 0,
-          zoom: viewport?.zoom && viewport.zoom > 0 ? viewport.zoom : 1,
-          width: typeof window === 'undefined' ? 1024 : Math.max(640, window.innerWidth || 1024),
-          height: typeof window === 'undefined' ? 720 : Math.max(480, window.innerHeight || 720),
-        }
-
-  const nodeLeft = effectiveViewport.x + node.x * effectiveViewport.zoom
-  const nodeTop = effectiveViewport.y + node.y * effectiveViewport.zoom
-  const nodeRight = effectiveViewport.x + (node.x + node.width) * effectiveViewport.zoom
-  const nodeBottom = effectiveViewport.y + (node.y + node.height) * effectiveViewport.zoom
-  const nodeCenterX = nodeLeft + (nodeRight - nodeLeft) / 2
-  const floatingWidth = Math.min(920, Math.max(480, effectiveViewport.width - 96))
-  const toolbarLeft = clampPosition(nodeCenterX, 180, effectiveViewport.width - 180)
-  const panelLeft = clampPosition(
-    nodeCenterX,
-    floatingWidth / 2 + 16,
-    effectiveViewport.width - floatingWidth / 2 - 16,
-  )
-  const toolbarTop = clampPosition(nodeTop - 68, 14, Math.max(14, effectiveViewport.height - 160))
-  const panelTop = clampPosition(
-    nodeBottom + 18,
-    112,
-    Math.max(112, effectiveViewport.height - 250),
-  )
-
-  return {
-    toolbar: { left: toolbarLeft, top: toolbarTop },
-    panel: {
-      left: panelLeft,
-      top: panelTop,
-      width: floatingWidth,
-    },
-  }
-}
-
-const FLOATING_IMAGE_STYLE_EXTRACTION_PROMPT =
-  '请分析输入图片的视觉风格，并输出可复用的中文风格描述。重点包括：画面题材、艺术媒介、色彩倾向、光影氛围、构图镜头、材质细节、时代/类型气质，以及适合作为后续生成提示词的风格关键词。'
-
-function readCanvasNodeSourceText(node: CanvasNode): string {
-  return (node.data.text ?? node.data.prompt ?? node.title ?? '').trim()
-}
-
-function buildFloatingImageOutpaintPrompt(node: CanvasNode): string {
-  const source = readCanvasNodeSourceText(node)
-  return [
-    '请基于输入图片进行自然扩图，将画面扩展为默认 2:1 横向比例。',
-    '保持主体身份、造型、场景透视、光影方向、材质纹理、镜头语言和整体风格一致。',
-    '扩展区域需要像原图真实延伸出来，避免重复主体、变形、黑边、文字、水印、拼接痕迹或明显 AI 边缘。',
-    source ? `补充要求：${source}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n')
-}
-
-function buildFloatingDetailSheetNineGridPrompt(node: CanvasNode): string {
-  const source = readCanvasNodeSourceText(node)
-  const sourceIntro =
-    node.type === 'image'
-      ? '请以输入图片为核心参考，保留主体/场景的身份一致性和视觉风格。'
-      : '请根据输入内容进行视觉扩散设计。'
-  return [
-    sourceIntro,
-    '生成一张 2:1 横向画布的九宫格设定拆分图，3x3 排列，每格是同一主题的不同角度、距离或细节变化。',
-    '如果主题是场景：包含远景建立、正面、侧面、俯视/高角度、低角度、入口/出口、关键道具、材质细节、光影氛围等变化。',
-    '如果主题是人物：包含正面、侧面、背面、半身、全身、表情、服装细节、道具细节、动态姿态等变化。',
-    '如果主题是道具/物体：包含正视、侧视、背视、打开/使用状态、局部材质、尺寸关系、环境中的摆放、功能细节等变化。',
-    '九格之间保持同一世界观与设计语言，画面干净，不要文字标签、水印、边框说明或 UI 元素。',
-    source ? `输入内容：${source}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n')
-}
-
-function buildStoryboardReferenceInputRoles(
-  nodes: CanvasNode[],
-  inputRoles?: Record<string, CanvasTaskInputRoleSelection>,
-): Record<string, CanvasTaskInputRoleSelection> {
-  const roles: Record<string, CanvasTaskInputRoleSelection> = { ...(inputRoles ?? {}) }
-  for (const node of nodes) {
-    if (node.type === 'image' && node.data.url) roles[node.id] = 'reference'
-  }
-  return roles
-}
-
-async function buildCloudTaskInputFiles(
-  nodes: CanvasNode[],
-  inputTransport: CanvasInputTransport | undefined,
-  inputRoles?: Record<string, CanvasTaskInputRoleSelection>,
-): Promise<CanvasMediaTaskInputFile[]> {
-  const files = buildTaskInputFiles(nodes, inputRoles)
-  if (files.length === 0) return files
-  if (inputTransport === 'base64') {
-    return Promise.all(files.map(materializeBase64Input))
-  }
-  if (inputTransport !== 'cloud_url') {
-    // auto / undefined：不强制按配置转换，但 safe-file:// 本地协议地址第三方 API
-    // 永远无法访问，必须兜底转成 base64（项目「优先 base64」原则）。其余照原样透传。
-    // 兜底是防御性的，转换失败时回退原样透传（与改前行为一致），不因读取异常阻断任务。
-    return Promise.all(
-      files.map(async (file) => {
-        if (file.type !== 'image' || file.dataUrl || !file.url?.startsWith('safe-file://'))
-          return file
-        try {
-          return await materializeBase64Input(file)
-        } catch {
-          return file
-        }
-      }),
-    )
-  }
-  return Promise.all(
-    files.map(async (file, index) => {
-      if (file.type !== 'image') return file
-      if (file.url && /^https?:\/\//i.test(file.url)) return file
-      const filePath = file.url ? decodeSafeFileUrl(file.url) : null
-      try {
-        const uploaded = await window.spark.invoke('auth:upload-file', {
-          ...(file.dataUrl ? { dataUrl: file.dataUrl } : {}),
-          ...(filePath ? { filePath } : {}),
-          fileName: `canvas-input-${index + 1}.${extensionFromMime(file.mimeType)}`,
-          ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-        })
-        return {
-          type: file.type,
-          ...(file.role ? { role: file.role } : {}),
-          url: uploaded.aiUrl,
-          ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-        }
-      } catch (uploadError) {
-        try {
-          const fallback = await materializeBase64Input(file)
-          if (fallback !== file) {
-            console.warn(
-              '[CanvasTaskInput] auth:upload-file failed; falling back to base64 input',
-              {
-                index,
-                role: file.role,
-                mimeType: file.mimeType,
-                uploadError,
-              },
-            )
-            return fallback
-          }
-        } catch (fallbackError) {
-          console.error(
-            '[CanvasTaskInput] Failed to materialize local input after upload failure',
-            {
-              index,
-              role: file.role,
-              mimeType: file.mimeType,
-              uploadError,
-              fallbackError,
-            },
-          )
-        }
-        console.error('[CanvasTaskInput] Failed to upload input file for cloud_url transport', {
-          index,
-          role: file.role,
-          mimeType: file.mimeType,
-          uploadError,
-        })
-        throw uploadError
-      }
-    }),
-  )
-}
-
-/**
- * 把 safe-file:// 图片转成 base64 dataUrl。
- *
- * 必须丢弃原来的 url：下游 adapter（如 xAI editImage 的取值）可能用 `file.url ?? file.dataUrl`，
- * 若保留旧 safe-file url，它会胜过刚转换出来的 dataUrl，导致转换白做、本地协议仍泄漏给第三方。
- */
-async function materializeBase64Input(
-  file: CanvasMediaTaskInputFile,
-): Promise<CanvasMediaTaskInputFile> {
-  if (file.type !== 'image' || file.dataUrl || !file.url?.startsWith('safe-file://')) return file
-  const dataUrl = await readUrlAsDataUrl(file.url)
-  // 显式重构造，丢掉旧 url（与 cloud_url 分支写法一致，避免保留本地协议地址）
-  return {
-    type: file.type,
-    ...(file.role ? { role: file.role } : {}),
-    dataUrl,
-    ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-  }
-}
-
-function readUrlAsDataUrl(url: string): Promise<string> {
-  return fetch(url)
-    .then((response) => response.blob())
-    .then(
-      (blob) =>
-        new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onerror = () => reject(reader.error ?? new Error('Failed to read image'))
-          reader.onload = () => resolve(String(reader.result ?? ''))
-          reader.readAsDataURL(blob)
-        }),
-    )
-}
-
-function extensionFromMime(mimeType: string | undefined): string {
-  const mime = (mimeType ?? '').toLowerCase()
-  if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg'
-  if (mime.includes('webp')) return 'webp'
-  return 'png'
-}
-
-function decodeSafeFileUrl(safeFileUrl: string): string | null {
-  try {
-    if (!safeFileUrl.startsWith('safe-file://')) return null
-    const rest = safeFileUrl.slice('safe-file://'.length)
-    const slashIndex = rest.indexOf('/')
-    if (slashIndex < 0) return null
-    const encoded = rest.slice(slashIndex + 1)
-    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/')
-    const padding = base64.length % 4 === 0 ? '' : '='.repeat(4 - (base64.length % 4))
-    return decodeURIComponent(escape(atob(base64 + padding)))
-  } catch {
-    return null
-  }
-}
-
-function hydrateTextInputNodes(nodes: CanvasNode[], assets: CanvasAsset[]): CanvasNode[] {
-  const assetTextById = new Map(
-    assets
-      .filter((asset) => asset.type === 'text' || asset.type === 'prompt')
-      .map((asset) => [asset.id, asset.contentText?.trim() ?? '']),
-  )
-  return nodes.map((node) => {
-    if (node.type !== 'text' && node.type !== 'prompt') return node
-    const text = node.data.text?.trim() || (node.assetId ? assetTextById.get(node.assetId) : '')
-    if (!text || text === node.data.text) return node
-    return { ...node, data: { ...node.data, text } }
-  })
-}
-
-function placeNodeRightOfNodes(
-  nodes: CanvasNode[],
-  fallback: { x: number; y: number },
-  gap = 80,
-): { x: number; y: number } {
-  if (nodes.length === 0) return fallback
-  const right = Math.max(...nodes.map((node) => node.x + node.width))
-  const top = Math.min(...nodes.map((node) => node.y))
-  return {
-    x: Math.round(right + gap),
-    y: Math.round(top),
-  }
-}
-
-function expandCanvasInputNodes(selectedNodes: CanvasNode[], allNodes: CanvasNode[]): CanvasNode[] {
-  const byId = new Map(allNodes.map((node) => [node.id, node]))
-  const result: CanvasNode[] = []
-  const seen = new Set<string>()
-  const pushNode = (node: CanvasNode) => {
-    if (node.hidden || seen.has(node.id)) return
-    seen.add(node.id)
-    result.push(node)
-  }
-
-  for (const node of selectedNodes) {
-    if (node.type !== 'group') {
-      pushNode(node)
-      continue
-    }
-    const members = allNodes
-      .filter((item) => item.parentNodeId === node.id && !item.hidden)
-      .sort((left, right) => {
-        const leftX = node.x + left.x
-        const rightX = node.x + right.x
-        const leftY = node.y + left.y
-        const rightY = node.y + right.y
-        return leftX - rightX || leftY - rightY || left.zIndex - right.zIndex
-      })
-    if (members.length === 0) {
-      pushNode(node)
-      continue
-    }
-    for (const member of members) {
-      const latest = byId.get(member.id) ?? member
-      pushNode(latest)
-    }
-  }
-
-  return result
-}
-
-function resolveCanvasInputNodes(
-  nodeIds: string[] | undefined,
-  allNodes: CanvasNode[],
-): CanvasNode[] {
-  if (!nodeIds || nodeIds.length === 0) return []
-  const byId = new Map(allNodes.map((node) => [node.id, node]))
-  const orderedNodes = nodeIds
-    .map((id) => byId.get(id))
-    .filter((node): node is CanvasNode => Boolean(node))
-  return expandCanvasInputNodes(orderedNodes, allNodes)
-}
-
-function fallbackPromptForOperation(operation: CanvasOperationType): string {
-  return readBuiltinCanvasOperationPreset(operation).prompt
-}
-
-type ScriptBreakdownDraft = {
-  characters: Array<{ name: string; description: string }>
-  scenes: Array<{ name: string; description: string }>
-  props: Array<{ name: string; description: string }>
-  segments: Array<{
-    groupName?: string
-    title: string
-    description: string
-    dialogue?: string
-    characterNames: string[]
-    sceneName?: string
-    shotPrompt?: string
-  }>
-}
-
-function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
-  const title = asset.title?.trim() || '未命名剧本'
-  const text = asset.contentText?.trim() ?? ''
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-  const characterMap = new Map<string, { name: string; description: string }>()
-  const sceneMap = new Map<string, { name: string; description: string }>()
-  const propMap = new Map<string, { name: string; description: string }>()
-  const segments: ScriptBreakdownDraft['segments'] = []
-  let currentSceneName = ''
-  let currentGroupName = `${title} - 自动分镜`
-
-  const pushScene = (name: string, description: string) => {
-    const normalized = name
-      .replace(/^#+\s*/, '')
-      .trim()
-      .slice(0, 40)
-    if (!normalized || sceneMap.has(normalized)) return
-    sceneMap.set(normalized, { name: normalized, description })
-  }
-
-  const pushCharacter = (name: string, line: string) => {
-    const normalized = name
-      .trim()
-      .replace(/[（）()【】[\]\s]/g, '')
-      .slice(0, 16)
-    if (!normalized || normalized.length < 2 || characterMap.has(normalized)) return
-    characterMap.set(normalized, {
-      name: normalized,
-      description: `从剧本「${title}」自动抽取。代表台词/动作：${line.slice(0, 80)}`,
-    })
-  }
-
-  const pushProp = (name: string, line: string) => {
-    const normalized = name
-      .trim()
-      .replace(/[（）()【】[\]\s]/g, '')
-      .slice(0, 16)
-    if (!normalized || normalized.length < 2 || propMap.has(normalized)) return
-    propMap.set(normalized, {
-      name: normalized,
-      description: `从剧本「${title}」自动抽取的道具。出现语境：${line.slice(0, 80)}`,
-    })
-  }
-
-  for (const line of lines.slice(0, 160)) {
-    // 显式道具标注：「道具：X、Y」/「【道具】X」（仅在明确标注时抽取，避免误判）
-    const propLine = line.match(/^[【[]?\s*道具\s*[】\]]?\s*[:：]\s*(.+)$/)
-    if (propLine && propLine[1]) {
-      for (const part of propLine[1].split(/[、,，;；/]/)) pushProp(part, line)
-      continue
-    }
-    const episodeLike = /^(第.{1,8}集|EP\s*\d+|Episode\s*\d+)/i.test(line)
-    if (episodeLike && line.length <= 48) {
-      currentGroupName = line.replace(/^#+\s*/, '').trim()
-      continue
-    }
-
-    const sceneLike =
-      /^(第.{1,8}[场幕集]|场景|内景|外景|INT\.|EXT\.)/i.test(line) ||
-      /(?:室内|室外|街|房间|宫殿|教室|办公室|森林|海边|夜|日|黄昏|清晨)/.test(line)
-    if (sceneLike && line.length <= 48) {
-      currentSceneName = line.replace(/^场景[:：]?\s*/, '')
-      pushScene(currentSceneName, line)
-      continue
-    }
-
-    const dialogue = line.match(/^([^：:]{2,16})[：:]\s*(.+)$/)
-    const characterNames: string[] = []
-    let dialogueText = ''
-    if (dialogue) {
-      const name = dialogue[1]?.trim() ?? ''
-      dialogueText = dialogue[2]?.trim() ?? ''
-      pushCharacter(name, dialogueText)
-      characterNames.push(name.replace(/[（）()【】[\]\s]/g, '').slice(0, 16))
-    }
-
-    if (segments.length < 24 && (dialogueText || line.length >= 8)) {
-      const summary = dialogueText || line
-      segments.push({
-        groupName: currentGroupName,
-        title: `镜${segments.length + 1} - ${summary.slice(0, 18)}`,
-        description: dialogueText ? `${characterNames[0] ?? '角色'}说：${dialogueText}` : line,
-        ...(dialogueText ? { dialogue: dialogueText } : {}),
-        characterNames,
-        ...(currentSceneName ? { sceneName: currentSceneName } : {}),
-        shotPrompt: '电影感构图，主体清晰，动作自然，镜头连贯。',
-      })
-    }
-  }
-
-  if (sceneMap.size === 0) {
-    pushScene(
-      `${title} - 默认场景`,
-      '根据剧本文本自动生成的默认场景，请后续补充地点、光线和美术风格。',
-    )
-  }
-
-  return {
-    characters: [...characterMap.values()].slice(0, 16),
-    scenes: [...sceneMap.values()].slice(0, 12),
-    props: [...propMap.values()].slice(0, 16),
-    segments:
-      segments.length > 0
-        ? segments
-        : [
-            {
-              groupName: currentGroupName,
-              title: '镜1 - 剧情开场',
-              description: text.slice(0, 160) || '请补充分镜画面描述。',
-              characterNames: [],
-              shotPrompt: '电影感开场镜头，建立场景氛围。',
-            },
-          ],
-  }
-}
-
-/** 影视资产种类 → 流水线节点角色（设计 §6），用于插入画布时打标 */
-function filmKindToPipelineRole(
-  kind: ReturnType<typeof readAssetKind>,
-): import('./canvas.types').CanvasPipelineRole | undefined {
-  switch (kind) {
-    case 'chapter':
-      return 'chapter'
-    case 'script':
-      return 'screenplay'
-    case 'character':
-      return 'character'
-    case 'scene':
-      return 'scene'
-    case 'prop':
-      return 'prop'
-    case 'effect':
-      return 'effect'
-    default:
-      return undefined
-  }
-}
-
-/** 把抽取得到的结构化属性拆成数组（中英顿号/逗号/分号分隔） */
-function splitAttrList(value: string | undefined): string[] | undefined {
-  if (!value || !value.trim()) return undefined
-  const items = value
-    .split(/[、,，;；]/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-  return items.length > 0 ? items : undefined
-}
-
-/**
- * 把角色资产（contentText + metadata.attributes）映射为角色图提示词字段（设计 §S4）。
- * 优先把抽取出的结构化属性（身高/肤色/五官/眼睛/配饰/标志特征/气质…）逐项映射到
- * CharacterPromptFields，让角色卡拿到精细字段；未识别属性与正文设定汇入 appearance 补充。
- */
-function assetToCharacterFields(asset: CanvasAsset): CharacterPromptFields {
-  const attrs = (asset.metadata?.attributes as Record<string, string> | undefined) ?? {}
-  const get = (key: string): string | undefined => {
-    const value = attrs[key]
-    return value && value.trim() ? value.trim() : undefined
-  }
-  const fields: CharacterPromptFields = {}
-  if (asset.title) fields.name = asset.title
-  const gender = get('gender')
-  if (gender) fields.gender = gender
-  const age = get('age')
-  if (age) fields.ageStage = age
-  const occupation = get('occupation')
-  if (occupation) fields.occupation = occupation
-  const height = get('height')
-  if (height) fields.height = height
-  const skin = get('skin')
-  if (skin) fields.skinTone = skin
-  const face = get('face')
-  if (face) fields.facialFeatures = face
-  const eyes = get('eyes')
-  if (eyes) fields.eyeColor = eyes
-  const hair = get('hair')
-  if (hair) fields.hairstyle = hair
-  const costume = get('costume')
-  if (costume) fields.costume = costume
-  const accessories = splitAttrList(get('accessories'))
-  if (accessories) fields.accessories = accessories
-  const signatureProps = splitAttrList(get('signatureProp'))
-  if (signatureProps) fields.signatureProps = signatureProps
-  const marks = get('marks')
-  if (marks) fields.distinguishingMarks = marks
-  const temperament = get('temperament')
-  if (temperament) fields.temperament = temperament
-  const personality = splitAttrList(get('personality'))
-  if (personality) fields.personalityKeywords = personality
-
-  // 已映射的结构化 key 之外的属性 + 正文设定，汇入 appearance 作为补充视觉要点
-  const mappedKeys = new Set([
-    'gender',
-    'age',
-    'occupation',
-    'height',
-    'skin',
-    'face',
-    'eyes',
-    'hair',
-    'costume',
-    'accessories',
-    'signatureProp',
-    'marks',
-    'temperament',
-    'personality',
-    'appearance',
-  ])
-  const appearanceParts = [
-    get('appearance') ?? '',
-    asset.contentText ?? '',
-    ...Object.entries(attrs)
-      .filter(([key, value]) => !mappedKeys.has(key) && value && value.trim())
-      .map(([key, value]) => `${key}: ${value.trim()}`),
-  ]
-    .map((part) => part.trim())
-    .filter(Boolean)
-  if (appearanceParts.length > 0) fields.appearance = appearanceParts.join(', ')
-  return fields
-}
-
-/** 设定文本摘要上限：参考图 prompt 只需要视觉要点，整段原文既浪费 token 又稀释画面重点 */
-const REFERENCE_SETTING_MAX = 240
-
-/** 把可能很长的设定文本压成一句视觉摘要：去多余空白、取要点、截断 */
-function condenseSettingText(text?: string | null): string {
-  if (!text) return ''
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  if (!normalized) return ''
-  if (normalized.length <= REFERENCE_SETTING_MAX) return normalized
-  // 优先在句末标点处截断，读起来更完整
-  const head = normalized.slice(0, REFERENCE_SETTING_MAX)
-  const lastStop = Math.max(head.lastIndexOf('。'), head.lastIndexOf('，'), head.lastIndexOf('；'))
-  return (lastStop > REFERENCE_SETTING_MAX * 0.6 ? head.slice(0, lastStop + 1) : head) + '…'
-}
-
-function buildFilmAssetReferencePrompt(asset: CanvasAsset, styleBible?: string): string {
-  const kind = readAssetKind(asset)
-  const subject =
-    kind === 'character'
-      ? '角色定妆/设定'
-      : kind === 'scene'
-        ? '场景概念'
-        : kind === 'prop'
-          ? '道具设定'
-          : kind === 'effect'
-            ? '特效视觉设定'
-            : '视觉参考'
-  const attrs = asset.metadata?.attributes as Record<string, string> | undefined
-  // 结构化属性优先（性别/年龄/外貌/材质…），它们才是出图最该锚定的视觉锚点
-  const attrText = attrs
-    ? Object.entries(attrs)
-        .filter(([, value]) => value && value.trim())
-        .map(([key, value]) => `${key}: ${value.trim()}`)
-        .join('；')
-    : ''
-  const setting = condenseSettingText(asset.contentText)
-  const stylePrompt = typeof asset.metadata?.prompt === 'string' ? asset.metadata.prompt.trim() : ''
-
-  // 只喂结构化视觉要点 + 截断后的设定摘要，避免把整章/整段原文丢给模型
-  const detailDirective =
-    kind === 'scene'
-      ? `${SCENE_NO_PEOPLE_PROMPT} 输出一张大画幅「场景概念设计板」：以低机位广角建立镜头呈现完整空间，明确前景/中景/背景的纵深层次与遮挡关系；标注主光源位置、光影走向、整体色调与色温；体现关键陈设、标志物与材质质感（墙面/地面/家具的材料及新旧磨损）；再补充 2-3 个细节插图（入口出口、标志物特写、材质特写）并配简短文字标签；保证空间布局可被后续镜头复用的一致性。`
-      : kind === 'prop'
-        ? '输出一张「道具设定板」：正面/侧面/背面与 3/4 视角并列，附手持或参照物比例；材质、工艺与磨损特写；功能结构拆解与可动部件；颜色、纹理、编号或机关等细节标注；附 1-2 个使用场景小图；强调可被后续分镜复用的一致性锚点。'
-        : kind === 'effect'
-          ? '输出一张「特效视觉设定板」：分起势/峰值/消散三阶段排列展示；标注运动轨迹与扩散方向；刻画粒子/烟雾/能量膜/光晕的质感细节；体现自发光及其对角色与环境的照明交互；提供近景细节与中景应用示例；统一色彩与氛围。'
-          : '输出一张清晰「设定板」：主体居中并给出多视角，补充近景/中景与关键细节插图并配简短标签，便于作为后续分镜与视频生成的一致性参考。'
-
-  const base = [
-    `为影视项目生成一张「${asset.title ?? '未命名'}」的${subject}参考图。`,
-    attrText ? `视觉要点：${attrText}` : '',
-    setting ? `设定摘要：${setting}` : '',
-    stylePrompt ? `风格要求：${stylePrompt}` : '',
-    styleBible && styleBible.trim() ? `统一视觉基调：${styleBible.trim()}` : '',
-    `画面要求：电影级质感，层次丰富、光影考究、细节精致、构图专业；${detailDirective}`,
-    '负面要求：避免畸变、糊面、错误解剖、杂乱水印与无意义文字。',
-  ].filter(Boolean)
-  return base.join('\n')
-}
-
-function findSegmentStyleFragments(
-  segment: ShotSegment,
-  presets: ReturnType<typeof readStylePresets>,
-): string[] {
-  const ids = [segment.cameraDesignId, segment.frameDesignId, segment.actionDesignId].filter(
-    (id): id is string => Boolean(id),
-  )
-  return ids
-    .map((id) => presets.find((preset) => preset.id === id)?.promptFragment?.trim())
-    .filter((fragment): fragment is string => Boolean(fragment))
-}
-
-function buildPromptOptimizationInstruction(
-  prompt: string,
-  negativePrompt: string,
-  requirement?: string,
-): string {
-  const sections = [
-    '请把下面的提示词优化为适合影视/多媒体生成模型使用的专业提示词。',
-    '要求：保留原意，直接输出优化后的提示词本身，不要解释过程，不要加多余的前后缀说明。',
-  ]
-  if (requirement?.trim()) {
-    sections.push(`本次优化的具体要求：${requirement.trim()}`)
-  } else {
-    sections.push('补充主体、场景、镜头语言、光影、风格、质量要求。')
-  }
-  sections.push(`原提示词：\n${prompt.trim()}`)
-  if (negativePrompt.trim()) {
-    sections.push(`反向提示词：\n${negativePrompt.trim()}`)
-  }
-  return sections.join('\n\n')
-}
-
-function appendPromptFragment(current: string, fragment: string): string {
-  const clean = fragment.trim()
-  if (!clean) return current
-  const base = current.trimEnd()
-  return base ? `${base}\n${clean}` : clean
 }
 
 function areNodeIdsEqual(left: string[], right: string[]): boolean {
@@ -1970,7 +857,7 @@ export function CanvasWorkspaceView({
       // 用 capture 阶段监听，避免被内部 section 的 stopPropagation 拦截
       const handlePointerMove = (moveEvent: PointerEvent) => {
         moveEvent.preventDefault()
-        updateAgentPanelWidth(startWidth + moveEvent.clientX - startX)
+        updateAgentPanelWidth(startWidth + startX - moveEvent.clientX)
       }
 
       const handlePointerUp = () => {
@@ -2322,8 +1209,8 @@ export function CanvasWorkspaceView({
     [selectedNodeIds, snapshotNodeById],
   )
   const aiInputNodes = useMemo(
-    () => expandCanvasInputNodes(selectedNodes, snapshot?.nodes ?? []),
-    [selectedNodes, snapshot?.nodes],
+    () => (snapshot ? expandCanvasInputNodes(selectedNodes, snapshot) : []),
+    [selectedNodes, snapshot],
   )
   const editingNode = useMemo(
     () => snapshot?.nodes.find((node) => node.id === editingNodeId) ?? null,
@@ -2715,12 +1602,9 @@ export function CanvasWorkspaceView({
   )
 
   // CanvasStage 上报鼠标的画布坐标；粘贴等无坐标事件就近落点用。
-  const handlePointerFlowPositionChange = useCallback(
-    (position: CanvasPoint | null) => {
-      pointerFlowPositionRef.current = position
-    },
-    [],
-  )
+  const handlePointerFlowPositionChange = useCallback((position: CanvasPoint | null) => {
+    pointerFlowPositionRef.current = position
+  }, [])
 
   const handleFitCanvasView = useCallback(() => {
     canvasViewportControlsRef.current?.fitView()
@@ -3414,13 +2298,10 @@ export function CanvasWorkspaceView({
       if (primaryHit) {
         // primaryOutputId 是 optional 字段；updateManyNodeData 的清理逻辑（canvas.api.ts:4125-4129）
         // 会删除值为 undefined 的 key，借此清除悬空指针。exactOptionalPropertyTypes 下用双重断言表达删除语义。
-        await updateNodeData(
-          operationNodeId,
-          {
-            primaryOutputId: undefined,
-            primaryOutputSelection: 'auto_latest',
-          } as unknown as Partial<CanvasNode['data']>,
-        )
+        await updateNodeData(operationNodeId, {
+          primaryOutputId: undefined,
+          primaryOutputSelection: 'auto_latest',
+        } as unknown as Partial<CanvasNode['data']>)
       }
       if (emptyTaskIds.length > 0) {
         await deleteTasks(emptyTaskIds)
@@ -3478,13 +2359,10 @@ export function CanvasWorkspaceView({
       if (nodeIds.length > 0) await deleteNodes(nodeIds)
       await deleteTasks([run.taskId])
       if (primaryHit) {
-        await updateNodeData(
-          operationNodeId,
-          {
-            primaryOutputId: undefined,
-            primaryOutputSelection: 'auto_latest',
-          } as unknown as Partial<CanvasNode['data']>,
-        )
+        await updateNodeData(operationNodeId, {
+          primaryOutputId: undefined,
+          primaryOutputSelection: 'auto_latest',
+        } as unknown as Partial<CanvasNode['data']>)
       }
 
       message.success('已删除该运行记录')
@@ -5181,9 +4059,7 @@ export function CanvasWorkspaceView({
     const viewportBeforeCreate = await persistCurrentCanvasViewport()
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
     const taskInputNodes =
-      inputNodeIds !== undefined
-        ? resolveCanvasInputNodes(inputNodeIds, snapshot.nodes)
-        : aiInputNodes
+      inputNodeIds !== undefined ? resolveCanvasInputNodes(inputNodeIds, snapshot) : aiInputNodes
     const lineageInputNodeIds = inputNodeIds ?? aiInputNodes.map((node) => node.id)
     const hydratedTaskInputNodes = hydrateTextInputNodes(taskInputNodes, snapshot.assets)
     const effectiveInputRoles =
@@ -6904,7 +5780,13 @@ export function CanvasWorkspaceView({
 
     window.addEventListener('paste', handler)
     return () => window.removeEventListener('paste', handler)
-  }, [createTextNode, insertPreparedImages, prepareCanvasImageUpload, prepareCanvasMediaUpload, createMediaNode])
+  }, [
+    createTextNode,
+    insertPreparedImages,
+    prepareCanvasImageUpload,
+    prepareCanvasMediaUpload,
+    createMediaNode,
+  ])
 
   /**
    * 拖入外部文件到画布：按类型路由成节点。
@@ -7899,7 +6781,7 @@ export function CanvasWorkspaceView({
     const viewportBeforeRetry = await persistCurrentCanvasViewport()
     const inputNodes = expandCanvasInputNodes(
       snapshot.nodes.filter((node) => task.inputNodeIds.includes(node.id)),
-      snapshot.nodes,
+      snapshot,
     )
     const inputFiles = await buildCloudTaskInputFiles(
       inputNodes,
@@ -8021,10 +6903,7 @@ export function CanvasWorkspaceView({
                   }}
                   onRun={async (params) => {
                     const viewportBeforeRun = await persistCurrentCanvasViewport()
-                    const taskInputNodes = resolveCanvasInputNodes(
-                      params.inputNodeIds,
-                      snapshot.nodes,
-                    )
+                    const taskInputNodes = resolveCanvasInputNodes(params.inputNodeIds, snapshot)
                     const hydratedTaskInputNodes = hydrateTextInputNodes(
                       taskInputNodes,
                       snapshot.assets,
@@ -8227,9 +7106,7 @@ export function CanvasWorkspaceView({
                           ? { negativePrompt: styledTask.negativePrompt }
                           : {}),
                         ...(params.inputNodeIds ? { inputNodeIds: params.inputNodeIds } : {}),
-                        ...(params.mediaInputMode
-                          ? { mediaInputMode: params.mediaInputMode }
-                          : {}),
+                        ...(params.mediaInputMode ? { mediaInputMode: params.mediaInputMode } : {}),
                         ...(params.capabilityId ? { capabilityId: params.capabilityId } : {}),
                         inputAssetIds: taskInputNodes
                           .map((item) => item.assetId)
@@ -8298,9 +7175,7 @@ export function CanvasWorkspaceView({
                       ...opNode.data,
                       ...(params.promptDocument ? { promptDocument: params.promptDocument } : {}),
                       ...(params.inputBindings ? { inputBindings: params.inputBindings } : {}),
-                      ...(params.mediaInputMode
-                        ? { mediaInputMode: params.mediaInputMode }
-                        : {}),
+                      ...(params.mediaInputMode ? { mediaInputMode: params.mediaInputMode } : {}),
                       ...(params.capabilityId ? { capabilityId: params.capabilityId } : {}),
                       ...(params.systemPrompt
                         ? {
@@ -8366,7 +7241,7 @@ export function CanvasWorkspaceView({
 
   if (loading) {
     return (
-      <div className="canvas-workspace canvas-uiux-v4 canvas-workspace-loading">
+      <div className="canvas-workspace canvas-cinematic canvas-workspace-loading">
         <Spin description="正在加载画布..." />
       </div>
     )
@@ -8374,63 +7249,38 @@ export function CanvasWorkspaceView({
 
   if (!snapshot) {
     return (
-      <div className="canvas-workspace canvas-uiux-v4 canvas-workspace-loading">
+      <div className="canvas-workspace canvas-cinematic canvas-workspace-loading">
         <Empty description="画布不存在" />
       </div>
     )
   }
 
   return (
-    <div
-      className={`canvas-workspace canvas-uiux-v4${promptNodePickerOwnerId ? ' is-picking-prompt-node' : ''}`}
+    <CanvasOverlayBoundary
+      className={`canvas-workspace canvas-cinematic${snapshot.nodes.length === 0 ? ' is-empty' : ''}${promptNodePickerOwnerId ? ' is-picking-prompt-node' : ''}`}
     >
-      <header
-        className="canvas-workspace-header"
-        onDoubleClick={() => {
-          if (window.spark?.platform === 'darwin') {
-            window.spark?.invoke('window:maximize', {}).catch(() => {})
-          }
+      <CanvasWorkspaceChrome
+        title={snapshot.project.title}
+        nodeCount={snapshot.nodes.length}
+        assetCount={snapshot.assets.length}
+        taskCount={snapshot.tasks.length}
+        showSidebarExpandButton={showSidebarExpandButton}
+        saveState={{ dirty, saving, autoSaving, autoSaveEnabled }}
+        selectedCount={selectedNodeIds.length}
+        arranging={arrangingCanvas}
+        refreshing={refreshingCanvas}
+        onBack={() => void handleBackWithGuard()}
+        onArrange={handleArrangeCanvas}
+        onSave={() => void doSave()}
+        onRefresh={() => void reloadCanvas()}
+        onAutoSaveChange={handleAutoSaveToggle}
+        onExport={() => void handleExportProject()}
+        onUploadFiles={() => uploadFilesInputRef.current?.click()}
+        onOpenAgent={() => {
+          closeCanvasFloatPanels('agent')
+          setAgentOpen(true)
         }}
-      >
-        <div className="canvas-workspace-header-row">
-          <div className="canvas-workspace-title">
-            {/* 菜单隐藏时取代 shell-titlebar 的恢复按钮，与 header 共用同一条拖拽区。
-                显隐由 CSS 根据根节点的 .sidebar-hidden 状态控制，画布组件不耦合 sidebar 逻辑。 */}
-            {showSidebarExpandButton && (
-              <span className="canvas-workspace-sidebar-expand">
-                <SidebarExpandButton />
-              </span>
-            )}
-            <Button
-              size="middle"
-              type="text"
-              icon={<Icons.ArrowLeft size={15} />}
-              onClick={() => void handleBackWithGuard()}
-            >
-              项目
-            </Button>
-            <div className="canvas-workspace-heading">
-              <h2>{snapshot.project.title}</h2>
-              <span className="canvas-workspace-meta">
-                {snapshot.nodes.length} 节点 / {snapshot.assets.length} 素材 /{' '}
-                {snapshot.tasks.length} 任务
-              </span>
-            </div>
-          </div>
-        </div>
-        <CanvasToolbar
-          saveState={{ dirty, saving, autoSaving, autoSaveEnabled }}
-          selectedCount={selectedNodeIds.length}
-          arranging={arrangingCanvas}
-          onArrange={handleArrangeCanvas}
-          onSave={() => void doSave()}
-          onRefresh={() => void reloadCanvas()}
-          refreshing={refreshingCanvas}
-          onAutoSaveChange={handleAutoSaveToggle}
-          onExport={() => void handleExportProject()}
-          onUploadFiles={() => uploadFilesInputRef.current?.click()}
-        />
-      </header>
+      />
 
       <div className="canvas-workspace-body" style={sidePanelStyle}>
         <button
@@ -8440,7 +7290,7 @@ export function CanvasWorkspaceView({
           aria-label={agentOpen ? '折叠画布助手' : '展开画布助手'}
           title={agentOpen ? '折叠画布助手' : '展开画布助手'}
         >
-          {agentOpen ? <Icons.ChevronLeft size={16} /> : <Icons.ChevronRight size={16} />}
+          {agentOpen ? <Icons.ChevronRight size={16} /> : <Icons.ChevronLeft size={16} />}
         </button>
         <aside className={`canvas-agent-side-panel${agentOpen ? '' : ' is-collapsed'}`}>
           <div
@@ -8563,6 +7413,20 @@ export function CanvasWorkspaceView({
             visible={Boolean(promptNodePickerOwnerId)}
             onCancel={() => cancelPromptNodePicker()}
           />
+          {snapshot.nodes.length === 0 && (
+            <CanvasCinematicEmptyState
+              onStartWithAgent={() => {
+                closeCanvasFloatPanels('agent')
+                setAgentOpen(true)
+              }}
+              onOpenInlineAi={() => handleOpenInlineAi()}
+              onUploadFiles={() => uploadFilesInputRef.current?.click()}
+              onOpenWorkflowLibrary={() => {
+                closeCanvasFloatPanels('workflow')
+                setWorkflowDrawerOpen(true)
+              }}
+            />
+          )}
           <CanvasStage
             snapshot={snapshot}
             activeTool={activeTool === 'pan' ? 'pan' : 'select'}
@@ -8962,168 +7826,68 @@ export function CanvasWorkspaceView({
             onUpdateCharacterSubviews={handleUpdateCharacterSubviews}
           />
         </div>
-        <button
-          type="button"
-          className={`canvas-side-panel-collapse-toggle${sidePanelCollapsed ? ' is-collapsed' : ''}`}
-          onClick={() => setSidePanelCollapsed((current) => !current)}
-          aria-label={sidePanelCollapsed ? '展开右侧面板' : '折叠右侧面板'}
-          title={sidePanelCollapsed ? '展开右侧面板' : '折叠右侧面板'}
-          aria-keyshortcuts="Meta+Backslash Control+Backslash"
-        >
-          {sidePanelCollapsed ? <Icons.ChevronLeft size={16} /> : <Icons.ChevronRight size={16} />}
-        </button>
-        {!sidePanelCollapsed && (
-          <aside className="canvas-side-panel" style={{ width: sidePanelWidth }}>
-            <div
-              aria-label="调整右侧面板宽度"
-              aria-orientation="vertical"
-              aria-valuemax={CANVAS_SIDE_PANEL_MAX_WIDTH}
-              aria-valuemin={CANVAS_SIDE_PANEL_MIN_WIDTH}
-              aria-valuenow={sidePanelWidth}
-              className="canvas-side-panel-resize-handle"
-              onDoubleClick={() => updateSidePanelWidth(CANVAS_SIDE_PANEL_DEFAULT_WIDTH)}
-              onKeyDown={handleSidePanelResizeKeyDown}
-              onPointerDown={handleSidePanelResizeStart}
-              role="separator"
-              tabIndex={0}
-              title="拖拽调整面板宽度"
-            />
-            <div className="canvas-side-tabs">
-              <Segmented
-                value={sidePanelTab}
-                onChange={(value) =>
-                  setSidePanelTab(value as 'details' | 'tasks' | 'assets' | 'project')
-                }
-                options={[
-                  { label: '属性', value: 'details' },
-                  { label: '任务', value: 'tasks' },
-                  { label: '资产', value: 'assets' },
-                  { label: '项目信息', value: 'project' },
-                ]}
-              />
-            </div>
-            <div className="canvas-side-panel-footer">
-              <button
-                type="button"
-                className="canvas-side-utility-btn"
-                onClick={() => {
-                  closeCanvasFloatPanels()
-                  setHistoryOpen(true)
-                }}
-              >
-                <Icons.Clock size={16} />
-                <span>历史</span>
-              </button>
-              <button
-                type="button"
-                className="canvas-side-utility-btn"
-                onClick={() => void handleOpenProjectFolder()}
-              >
-                <Icons.Folder size={16} />
-                <span>目录</span>
-              </button>
-              <button
-                type="button"
-                className="canvas-side-utility-btn"
-                onClick={() => {
-                  closeCanvasFloatPanels()
-                  setTemplateOpen(true)
-                }}
-              >
-                <Icons.Layers size={16} />
-                <span>模板</span>
-              </button>
-            </div>
-            {sidePanelTab === 'details' && (
-              <div className="canvas-side-panel-content">
-                <CanvasInspector
-                  selectedNodes={selectedNodes}
-                  nodes={snapshot.nodes}
-                  edges={snapshot.edges}
-                  assets={snapshot.assets}
-                  tasks={snapshot.tasks}
-                  onDuplicate={() => void duplicateNodes(selectedNodeIds)}
-                  onToggleLock={() => void handleToggleLock()}
-                  onBringToFront={() => void handleBringToFront()}
-                  onCreateGroup={handleCreateGroup}
-                  onAddToGroup={() => handleAddSelectionToGroup()}
-                  onRemoveFromGroup={() => handleRemoveFromGroup()}
-                  onDissolveGroup={() => handleDissolveGroup()}
-                  canCreateGroup={canCreateGroup}
-                  canAddToGroup={canAddToGroup}
-                  canRemoveFromGroup={canRemoveFromGroup}
-                  canDissolveGroup={canDissolveGroup}
-                  onPatchNode={(node, patch) => {
-                    void patchNodes([node.id], patch)
-                  }}
-                  onPatchNodeData={(node, data) => {
-                    void updateNodeData(node.id, data)
-                  }}
-                />
-              </div>
-            )}
-            {sidePanelTab === 'tasks' && (
-              <div className="canvas-side-panel-content">
-                <CanvasTaskQueue
-                  boardId={snapshot.board.id}
-                  tasks={snapshot.tasks}
-                  nodes={snapshot.nodes}
-                  assets={snapshot.assets}
-                  onCancelTask={(taskId) => void cancelTask(taskId)}
-                  onClearTasks={(scope) => void clearTasks(scope)}
-                  onDeleteTasks={(taskIds) => void deleteTasks(taskIds)}
-                  onRetryTask={(task, runtimeSource) => void handleRetryTask(task, runtimeSource)}
-                  onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
-                />
-              </div>
-            )}
-            {sidePanelTab === 'assets' && (
-              <div className="canvas-side-panel-content">
-                <CanvasAssetManagerPanel
-                  assets={snapshot.assets}
-                  nodes={snapshot.nodes}
-                  tasks={snapshot.tasks}
-                  onInsertAssets={(assetIds) => {
-                    for (const assetId of assetIds) void handleInsertAsset(assetId)
-                  }}
-                  onInsertOne={(assetId) => void handleInsertAsset(assetId)}
-                  onInsertSubview={(ownerAsset, sourceImageAsset, subview) =>
-                    void handleApplyCharacterSubview(ownerAsset, sourceImageAsset, subview)
-                  }
-                  onDownloadOne={(resource) => downloadCanvasResource(resource)}
-                  detailResetKey={assetDetailResetKey}
-                  onOpenDetail={() => closeCanvasFloatPanels('asset-detail')}
-                  onRemoveReferences={async (assetIds) => {
-                    const targetAssetSet = new Set(assetIds)
-                    const nodeIds = snapshot.nodes
-                      .filter((node) => node.assetId && targetAssetSet.has(node.assetId))
-                      .map((node) => node.id)
-                    if (nodeIds.length > 0) {
-                      await deleteNodes(nodeIds)
-                    }
-                  }}
-                />
-              </div>
-            )}
-            {sidePanelTab === 'project' && (
-              <div className="canvas-side-panel-content">
-                <CanvasProjectInfoPanel
-                  key={`${snapshot.project.id}:${snapshot.project.updatedAt}:project-info`}
-                  project={snapshot.project}
-                  configuredPresetCount={configuredPresetCount}
-                  onOpenProjectFolder={handleOpenProjectFolder}
-                  onOpenPresetCenter={() => setPresetModalOpen(true)}
-                  onSave={(settings) => updateProjectSettings(settings)}
-                  onSaveStyleBible={async (styleBible) => {
-                    await updateProjectMetadata(
-                      writeStyleBible(snapshot.project.metadata, styleBible),
-                    )
-                  }}
-                />
-              </div>
-            )}
-          </aside>
-        )}
+        <CanvasWorkspaceSidePanel
+          snapshot={snapshot}
+          selectedNodes={selectedNodes}
+          sidePanelCollapsed={sidePanelCollapsed}
+          sidePanelWidth={sidePanelWidth}
+          limits={{
+            minWidth: CANVAS_SIDE_PANEL_MIN_WIDTH,
+            maxWidth: CANVAS_SIDE_PANEL_MAX_WIDTH,
+          }}
+          sidePanelTab={sidePanelTab}
+          assetDetailResetKey={assetDetailResetKey}
+          configuredPresetCount={configuredPresetCount}
+          canCreateGroup={canCreateGroup}
+          canAddToGroup={canAddToGroup}
+          canRemoveFromGroup={canRemoveFromGroup}
+          canDissolveGroup={canDissolveGroup}
+          onToggleCollapsed={() => setSidePanelCollapsed((current) => !current)}
+          onResizeDefault={() => updateSidePanelWidth(CANVAS_SIDE_PANEL_DEFAULT_WIDTH)}
+          onResizeKeyDown={handleSidePanelResizeKeyDown}
+          onResizePointerDown={handleSidePanelResizeStart}
+          onTabChange={setSidePanelTab}
+          onOpenHistory={() => {
+            closeCanvasFloatPanels()
+            setHistoryOpen(true)
+          }}
+          onOpenProjectFolder={handleOpenProjectFolder}
+          onOpenTemplate={() => {
+            closeCanvasFloatPanels()
+            setTemplateOpen(true)
+          }}
+          onDuplicateSelected={() => void duplicateNodes(selectedNodeIds)}
+          onToggleLock={() => void handleToggleLock()}
+          onBringToFront={() => void handleBringToFront()}
+          onCreateGroup={handleCreateGroup}
+          onAddToGroup={() => handleAddSelectionToGroup()}
+          onRemoveFromGroup={() => handleRemoveFromGroup()}
+          onDissolveGroup={() => handleDissolveGroup()}
+          onPatchNode={(node, patch) => void patchNodes([node.id], patch)}
+          onPatchNodeData={(node, data) => void updateNodeData(node.id, data)}
+          onCancelTask={(taskId) => void cancelTask(taskId)}
+          onClearTasks={(scope) => void clearTasks(scope)}
+          onDeleteTasks={(taskIds) => void deleteTasks(taskIds)}
+          onRetryTask={(task, runtimeSource) => void handleRetryTask(task, runtimeSource)}
+          onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
+          onInsertAsset={(assetId) => void handleInsertAsset(assetId)}
+          onInsertSubview={(ownerAsset, sourceImageAsset, subview) =>
+            void handleApplyCharacterSubview(ownerAsset, sourceImageAsset, subview)
+          }
+          onOpenAssetDetail={() => closeCanvasFloatPanels('asset-detail')}
+          onRemoveAssetReferences={async (assetIds) => {
+            const targetAssetSet = new Set(assetIds)
+            const nodeIds = snapshot.nodes
+              .filter((node) => node.assetId && targetAssetSet.has(node.assetId))
+              .map((node) => node.id)
+            if (nodeIds.length > 0) await deleteNodes(nodeIds)
+          }}
+          onOpenPresetCenter={() => setPresetModalOpen(true)}
+          onSaveProjectSettings={updateProjectSettings}
+          onSaveStyleBible={async (styleBible) => {
+            await updateProjectMetadata(writeStyleBible(snapshot.project.metadata, styleBible))
+          }}
+        />
       </div>
       <Drawer
         title="历史记录"
@@ -9254,7 +8018,7 @@ export function CanvasWorkspaceView({
       >
         离开前是否保存当前画布？未保存的改动不会写入应用数据库，离开后即丢失。
       </Modal>
-    </div>
+    </CanvasOverlayBoundary>
   )
 }
 
@@ -9278,865 +8042,4 @@ function pickInlineEditorFocusPadding(isOperation: boolean): {
     bottom: isOperation ? 640 : 560,
     left: 48,
   }
-}
-
-const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar({
-  node,
-  resourceNode,
-  isOperation,
-  onRenameNode,
-  onClose,
-  onFocus,
-  onDuplicate,
-  onToggleLock,
-  onBringToFront,
-  onSaveToLibrary,
-  onDownload,
-  onAnnotate,
-  onSplitGrid,
-  onReplaceImage,
-  onExtractCharacterSubview,
-  onPreviewPanorama,
-  onOpenInlineAi,
-  onEditNode,
-  onDelete,
-  onPipelineAction,
-  onCreateOperationChild,
-  onSetProductionState,
-  onMergeGroup,
-  onDissolveGroup,
-  operationFullscreen = false,
-  onOperationFullscreenChange,
-}: {
-  node: CanvasNode
-  /** 操作节点当前主产物；资源动作作用于它，节点管理仍作用于稳定步骤节点。 */
-  resourceNode?: CanvasNode | undefined
-  isOperation: boolean
-  onRenameNode: (title: string | null) => Promise<void> | void
-  onClose: () => void
-  onFocus: () => void
-  onDuplicate: () => void
-  onToggleLock: () => void
-  onBringToFront: () => void
-  onSaveToLibrary: () => void
-  onDownload: () => void
-  onAnnotate: () => void
-  onSplitGrid: () => void
-  onReplaceImage: () => void
-  onExtractCharacterSubview: () => void
-  onPreviewPanorama: () => void
-  onOpenInlineAi: () => void
-  onEditNode: () => void
-  onDelete: () => void
-  onPipelineAction: (actionId: string) => void
-  onCreateOperationChild: (
-    operation: CanvasOperationType,
-    options?: { title?: string; prompt?: string; modelParams?: Record<string, unknown> },
-  ) => void
-  onSetProductionState: (state: CanvasProductionState) => void
-  onMergeGroup: () => void
-  onDissolveGroup: () => void
-  operationFullscreen?: boolean
-  onOperationFullscreenChange?: (nextFullscreen: boolean) => void
-}) {
-  const contentNode = resourceNode ?? node
-  const hasResource = !isOperation || Boolean(resourceNode)
-  const isMedia = contentNode.type === 'image' || contentNode.type === 'video'
-  const isImage = isCanvasImageContentNode(contentNode)
-  const isGroup = node.type === 'group'
-  const isPanorama360 = Boolean(contentNode.data.panorama360)
-  const pipelineActions = hasResource ? getNodePipelineActions(contentNode) : []
-  const canEditNode = contentNode.type !== 'image' || isOperation
-  const title =
-    node.title ??
-    (isOperation
-      ? operationLabel((node.data.operation ?? node.type) as CanvasOperationType)
-      : node.type)
-  const operationTitle = isOperation
-    ? operationLabel((node.data.operation ?? node.type) as CanvasOperationType)
-    : title
-  const operationStatus = node.data.status ?? 'pending'
-  const operationStatusColor =
-    operationStatus === 'completed'
-      ? 'green'
-      : operationStatus === 'failed'
-        ? 'red'
-        : operationStatus === 'running'
-          ? 'blue'
-          : 'default'
-  const createImageOutpaintTask = () =>
-    onCreateOperationChild('image_edit', {
-      title: '图片扩图',
-      prompt: buildFloatingImageOutpaintPrompt(contentNode),
-      modelParams: { aspect_ratio: '2:1' },
-    })
-  const createDetailSheetTask = () =>
-    onCreateOperationChild(contentNode.type === 'image' ? 'image_edit' : 'text_to_image', {
-      title: '细节设定图（九宫格）',
-      prompt: buildFloatingDetailSheetNineGridPrompt(contentNode),
-      modelParams: { aspect_ratio: '2:1' },
-    })
-  const createStyleExtractionTask = () =>
-    onCreateOperationChild('text_generate', {
-      title: '风格提取',
-      prompt: FLOATING_IMAGE_STYLE_EXTRACTION_PROMPT,
-    })
-  const contextualAiActions = [
-    ...(isImage && hasResource
-      ? [
-          {
-            key: 'outpaint-image',
-            label: '图片扩图',
-            icon: <Icons.Crop size={14} />,
-            onClick: createImageOutpaintTask,
-          },
-          {
-            key: 'extract-style',
-            label: '提取风格',
-            icon: <Icons.Sparkles size={14} />,
-            onClick: createStyleExtractionTask,
-          },
-        ]
-      : []),
-    ...((contentNode.type === 'image' ||
-      contentNode.type === 'text' ||
-      contentNode.type === 'prompt') &&
-    hasResource
-      ? [
-          {
-            key: 'detail-sheet-nine-grid',
-            label: '细节设定图（九宫格）',
-            icon: <Icons.Grid size={14} />,
-            onClick: createDetailSheetTask,
-          },
-        ]
-      : []),
-  ]
-  const pipelineActionGroups = CANVAS_PIPELINE_MENU_GROUPS.map((group) => ({
-    ...group,
-    actions: pipelineActions.filter((action) => action.kind === group.id),
-  })).filter((group) => group.actions.length > 0)
-  const menuButton = (
-    label: string,
-    icon: React.ReactNode,
-    onClick: () => void,
-    options?: { danger?: boolean; disabled?: boolean },
-  ) => (
-    <Button
-      block
-      size="middle"
-      type="text"
-      icon={icon}
-      onClick={onClick}
-      {...(options?.danger ? { className: 'canvas-floating-menu-danger' } : {})}
-      {...(options?.disabled ? { disabled: true } : {})}
-    >
-      {label}
-    </Button>
-  )
-  const aiOperationMenu = (
-    <div className="canvas-floating-menu">
-      <div className="canvas-floating-menu-title">{CANVAS_BASE_TASK_MENU_LABEL}</div>
-      {menuButton('打开 AI 面板', <Icons.Sparkles size={14} />, onOpenInlineAi)}
-      <div className="canvas-floating-menu-divider" />
-      {CANVAS_BASE_CREATE_OPERATION_GROUPS.map((group) => (
-        <div key={group.id} className="canvas-floating-menu-section">
-          <div className="canvas-floating-menu-section-title">{group.label}</div>
-          {group.items.map((item) => (
-            <div key={item.operation}>
-              {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
-                onCreateOperationChild(item.operation),
-              )}
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  )
-
-  return (
-    <div className="canvas-floating-toolbar-shell" role="toolbar" aria-label={`${title} 编辑工具`}>
-      <div className="canvas-floating-toolbar-title">
-        {isOperation ? <Icons.Sparkles size={14} /> : <Icons.Edit size={14} />}
-        {isOperation ? (
-          <span>{operationTitle}</span>
-        ) : (
-          <CanvasInlineNodeTitleEditor
-            nodeId={node.id}
-            title={node.title}
-            fallbackTitle={title}
-            onRename={onRenameNode}
-          />
-        )}
-        {isOperation && (
-          <Tag color={operationStatusColor} bordered>
-            {floatingOperationStatusLabel(operationStatus)}
-          </Tag>
-        )}
-      </div>
-      <div className="canvas-floating-toolbar-divider" />
-      <Tooltip title="聚焦节点">
-        <Button size="middle" type="text" icon={<Icons.Crosshair size={14} />} onClick={onFocus}>
-          聚焦
-        </Button>
-      </Tooltip>
-      {!isGroup && hasResource && (
-        <Popover
-          trigger="hover"
-          mouseEnterDelay={0.08}
-          mouseLeaveDelay={0.18}
-          placement="bottomLeft"
-          arrow={false}
-          overlayClassName="canvas-floating-toolbar-popover"
-          content={aiOperationMenu}
-        >
-          <Button size="middle" type="text" icon={<Icons.Sparkles size={14} />}>
-            {CANVAS_BASE_TASK_MENU_LABEL}
-          </Button>
-        </Popover>
-      )}
-      {!isGroup && hasResource && (
-        <Popover
-          trigger="hover"
-          mouseEnterDelay={0.08}
-          mouseLeaveDelay={0.18}
-          placement="bottom"
-          content={
-            <div className="canvas-floating-menu">
-              <div className="canvas-floating-menu-title">{CANVAS_FUNCTIONAL_MENU_LABEL}</div>
-              {pipelineActionGroups.map((group) => (
-                <div key={group.id} className="canvas-floating-menu-section">
-                  <div className="canvas-floating-menu-section-title">{group.label}</div>
-                  {group.actions.map((action) => (
-                    <div key={action.id}>
-                      {menuButton(action.label, resolveCanvasFloatingIcon(action.icon, 14), () =>
-                        onPipelineAction(action.id),
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ))}
-              {pipelineActionGroups.length > 0 && <div className="canvas-floating-menu-divider" />}
-              {contextualAiActions.map((action) => (
-                <div key={action.key}>{menuButton(action.label, action.icon, action.onClick)}</div>
-              ))}
-              {contextualAiActions.length > 0 && <div className="canvas-floating-menu-divider" />}
-              {CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => (
-                <div key={item.operation}>
-                  {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
-                    onCreateOperationChild(item.operation),
-                  )}
-                </div>
-              ))}
-              <div className="canvas-floating-menu-divider" />
-              {menuButton('确认采用', <Icons.Check size={14} />, () =>
-                onSetProductionState('confirmed'),
-              )}
-              {menuButton('标记待更新', <Icons.RotateCcw size={14} />, () =>
-                onSetProductionState('stale'),
-              )}
-            </div>
-          }
-        >
-          <Button size="middle" type="text" icon={<Icons.Workflow size={14} />}>
-            {CANVAS_FUNCTIONAL_MENU_LABEL}
-          </Button>
-        </Popover>
-      )}
-      {hasResource && (
-        <Popover
-          trigger="hover"
-          mouseEnterDelay={0.08}
-          mouseLeaveDelay={0.18}
-          placement="bottom"
-          content={
-            <div className="canvas-floating-menu">
-              <div className="canvas-floating-menu-title">媒体 / 素材</div>
-              {isMedia && menuButton('下载到本地', <Icons.Download size={14} />, onDownload)}
-              {isImage && (
-                <>
-                  {menuButton('替换图片', <Icons.Refresh size={14} />, onReplaceImage)}
-                  {menuButton('提取子视图', <Icons.Crop size={14} />, onExtractCharacterSubview)}
-                  {menuButton('图片标注', <Icons.Crop size={14} />, onAnnotate)}
-                  {menuButton('宫格切分', <Icons.Grid size={14} />, onSplitGrid)}
-                </>
-              )}
-              {isPanorama360 &&
-                menuButton('全景预览', <Icons.Globe size={14} />, onPreviewPanorama)}
-              {node.type === 'group' && (
-                <>
-                  {menuButton('多图合并', <Icons.Image size={14} />, onMergeGroup)}
-                  {menuButton('解散组', <Icons.FolderOpen size={14} />, onDissolveGroup)}
-                </>
-              )}
-              {menuButton('保存到资源库', <Icons.Folder size={14} />, onSaveToLibrary)}
-            </div>
-          }
-        >
-          <Button size="middle" type="text" icon={<Icons.Folder size={14} />}>
-            素材
-          </Button>
-        </Popover>
-      )}
-      <div className="canvas-floating-toolbar-spacer" />
-      {isOperation && (
-        <Tooltip title={operationFullscreen ? '退出全屏' : '全屏展示'}>
-          <Button
-            size="middle"
-            type="text"
-            icon={operationFullscreen ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
-            onClick={() => onOperationFullscreenChange?.(!operationFullscreen)}
-          >
-            {operationFullscreen ? '退出全屏' : '全屏'}
-          </Button>
-        </Tooltip>
-      )}
-      <Popover
-        trigger="hover"
-        mouseEnterDelay={0.08}
-        mouseLeaveDelay={0.18}
-        placement="bottom"
-        content={
-          <div className="canvas-floating-menu">
-            <div className="canvas-floating-menu-title">节点管理</div>
-            {menuButton('复制节点', <Icons.Copy size={14} />, onDuplicate)}
-            {menuButton(
-              node.locked ? '解锁节点' : '锁定节点',
-              <Icons.Lock size={14} />,
-              onToggleLock,
-            )}
-            {menuButton('置于顶层', <Icons.Layers size={14} />, onBringToFront)}
-            {canEditNode &&
-              !isOperation &&
-              menuButton('编辑节点', <Icons.Edit size={14} />, onEditNode)}
-            <div className="canvas-floating-menu-divider" />
-            {menuButton('删除节点', <Icons.Trash size={14} />, onDelete, { danger: true })}
-          </div>
-        }
-      >
-        <Button size="middle" type="text" icon={<Icons.More size={14} />}>
-          更多
-        </Button>
-      </Popover>
-      <div className="canvas-floating-toolbar-divider" />
-      <Tooltip title="关闭编辑">
-        <Button size="middle" type="text" icon={<Icons.X size={14} />} onClick={onClose} />
-      </Tooltip>
-    </div>
-  )
-})
-
-function floatingOperationStatusLabel(status: CanvasTask['status']): string {
-  if (status === 'completed') return '已完成'
-  if (status === 'failed') return '失败'
-  if (status === 'cancelled') return '已取消'
-  if (status === 'running') return '运行中'
-  return '待提交'
-}
-
-function resolveCanvasFloatingIcon(iconKey: string | undefined, size = 14): React.ReactNode {
-  const map = Icons as unknown as Record<string, (p: { size?: number }) => React.ReactNode>
-  const IconFn = (iconKey && map[iconKey]) || Icons.Workflow
-  return <IconFn size={size} />
-}
-
-function CanvasNodeEditModal({
-  node,
-  open,
-  assets,
-  tasks,
-  nodes,
-  placement = 'floating',
-  onClose,
-  onSave,
-}: {
-  node: CanvasNode | null
-  open: boolean
-  assets: CanvasAsset[]
-  tasks: CanvasTask[]
-  nodes: CanvasNode[]
-  placement?: 'floating' | 'inline'
-  onClose: () => void
-  onSave: (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => Promise<void>
-}) {
-  const [saving, setSaving] = useState(false)
-  const [title, setTitle] = useState('')
-  const [text, setText] = useState('')
-  const [prompt, setPrompt] = useState('')
-  const [negativePrompt, setNegativePrompt] = useState('')
-  const [messageText, setMessageText] = useState('')
-  const [url, setUrl] = useState('')
-  const [editFullscreen, setEditFullscreen] = useState(false)
-  const [shotRows, setShotRows] = useState<ParsedShotRow[]>([])
-  const [optimizeModalOpen, setOptimizeModalOpen] = useState(false)
-  const [optimizeRequirement, setOptimizeRequirement] = useState('')
-  const [optimizing, setOptimizing] = useState(false)
-  const isTextLike = node?.type === 'text' || node?.type === 'prompt'
-  const isShotScriptNode =
-    node?.type === 'text' &&
-    isShotScriptText(node.data.text) &&
-    parseShotTable(node.data.text ?? '').length > 0
-
-  useEffect(() => {
-    if (!node) return
-    setSaving(false)
-    setTitle(node.title ?? '')
-    setText(node.data.text ?? '')
-    setPrompt(node.data.prompt ?? '')
-    setNegativePrompt('')
-    setMessageText(node.data.message ?? '')
-    setUrl(node.data.url ?? '')
-    setShotRows(resolveStoryboardRowsForEditing(node.data.text ?? '', nodes))
-    setOptimizeModalOpen(false)
-    setOptimizeRequirement('')
-  }, [node, nodes])
-
-  useEffect(() => {
-    if (!editFullscreen) return
-    const handleFullscreenKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      setEditFullscreen(false)
-    }
-    window.addEventListener('keydown', handleFullscreenKeyDown)
-    return () => window.removeEventListener('keydown', handleFullscreenKeyDown)
-  }, [editFullscreen])
-
-  const insertPromptText = (fragment: string) => {
-    setText((current) => appendPromptFragment(current, fragment))
-  }
-
-  const openOptimizeModal = () => {
-    const source = text.trim()
-    if (!source) {
-      message.warning('请先输入需要优化的文本或 Prompt')
-      return
-    }
-    setOptimizeRequirement('')
-    setOptimizeModalOpen(true)
-  }
-
-  const confirmPromptOptimize = async () => {
-    const source = text.trim()
-    if (!source) {
-      message.warning('请先输入需要优化的文本或 Prompt')
-      return
-    }
-    setOptimizing(true)
-    try {
-      const runtimeTask = node?.taskId ? tasks.find((task) => task.id === node.taskId) : undefined
-      const response = await window.spark.invoke('canvas:task:generate-text', {
-        operation: 'prompt_optimize',
-        prompt: buildPromptOptimizationInstruction(source, negativePrompt, optimizeRequirement),
-        ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
-        ...(runtimeTask?.agentId ? { agentId: runtimeTask.agentId } : {}),
-        ...(runtimeTask?.providerProfileId
-          ? { providerProfileId: runtimeTask.providerProfileId }
-          : {}),
-        ...(runtimeTask?.modelId ? { modelId: runtimeTask.modelId } : {}),
-        ...(runtimeTask?.reasoningEffort ? { reasoningEffort: runtimeTask.reasoningEffort } : {}),
-        ...(runtimeTask?.skillIds && runtimeTask.skillIds.length > 0
-          ? { skillIds: runtimeTask.skillIds }
-          : {}),
-      })
-      if (response.status !== 'succeeded' || !response.text.trim()) {
-        throw new Error(response.error?.message ?? 'AI 优化失败')
-      }
-      setText(response.text.trim())
-      setOptimizeModalOpen(false)
-      message.success('已应用 AI 优化结果')
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : 'AI 优化失败')
-    } finally {
-      setOptimizing(false)
-    }
-  }
-
-  const save = async () => {
-    if (!node) return
-    setSaving(true)
-    try {
-      const nextData: CanvasNode['data'] = { ...node.data }
-      if (node.type === 'text' || node.type === 'prompt' || node.type === 'group') {
-        nextData.text = isShotScriptNode ? formatStoryboardRowsAsMarkdown(shotRows) : text
-      }
-      if (node.type === 'text' || node.type === 'prompt') {
-        nextData.format = node.type === 'prompt' ? 'prompt' : 'markdown'
-      }
-      if (node.type === 'task') {
-        nextData.prompt = prompt
-      }
-      if (node.type === 'image' || node.type === 'video' || node.type === 'audio') {
-        nextData.url = url.trim()
-      }
-      if (node.type !== 'text' && node.type !== 'prompt') {
-        nextData.message = messageText
-      }
-
-      await onSave(
-        node,
-        {
-          title: title.trim().length > 0 ? title.trim() : null,
-        },
-        nextData,
-      )
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存节点失败')
-      setSaving(false)
-    }
-  }
-
-  if (!open || !node) return null
-  const fullscreenLabel = editFullscreen ? '退出全屏' : '全屏编辑'
-  const fullscreenIcon = editFullscreen ? (
-    <Icons.Minimize size={14} />
-  ) : (
-    <Icons.Maximize size={14} />
-  )
-  const toggleFullscreen = () => setEditFullscreen((current) => !current)
-
-  const optimizeModal = (
-    <Modal
-      title="AI 优化提示词"
-      open={optimizeModalOpen}
-      onCancel={() => setOptimizeModalOpen(false)}
-      onOk={() => void confirmPromptOptimize()}
-      okText="开始优化"
-      cancelText="取消"
-      confirmLoading={optimizing}
-      destroyOnHidden
-    >
-      <div className="canvas-node-edit-optimize-modal-body">
-        <p>请输入本次优化的具体要求，AI 将基于当前提示词生成新版本并直接替换。</p>
-        <Input.TextArea
-          value={optimizeRequirement}
-          rows={4}
-          placeholder="例如：增强镜头语言和光影描写、更简洁、突出角色情绪…（可留空，使用默认优化策略）"
-          onChange={(event) => setOptimizeRequirement(event.target.value)}
-          autoFocus
-        />
-      </div>
-    </Modal>
-  )
-
-  if (isShotScriptNode && placement === 'inline') {
-    return (
-      <div
-        className={`canvas-bottom-floating-panel canvas-node-edit-bottom-panel canvas-shot-script-edit-panel is-inline${editFullscreen ? ' is-fullscreen' : ''}`}
-        onMouseDown={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <div className="canvas-bottom-floating-head canvas-node-edit-bottom-head">
-          <div>
-            <strong>编辑分镜脚本</strong>
-            <span>{shotRows.length} 个镜头 · 专业分镜配置</span>
-          </div>
-          <div className="canvas-node-edit-bottom-actions">
-            <Tooltip title={fullscreenLabel}>
-              <Button
-                size="middle"
-                type="text"
-                icon={fullscreenIcon}
-                aria-label={fullscreenLabel}
-                onClick={toggleFullscreen}
-              />
-            </Tooltip>
-            <Button size="middle" type="primary" loading={saving} onClick={() => void save()}>
-              保存
-            </Button>
-          </div>
-        </div>
-        <div className="canvas-bottom-floating-body canvas-node-edit-bottom-body">
-          <CanvasShotScriptEditor
-            rows={shotRows}
-            characterAssets={assets.filter((asset) => readAssetKind(asset) === 'character')}
-            onRowsChange={setShotRows}
-          />
-        </div>
-      </div>
-    )
-  }
-
-  if (isTextLike && placement === 'inline' && !editFullscreen) {
-    return (
-      <>
-        <div
-          className="canvas-bottom-floating-panel canvas-node-edit-bottom-panel is-inline is-composer"
-          onMouseDown={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <div className="canvas-node-text-composer-top">
-            <div className="canvas-node-text-composer-title">
-              <Tag color="default" bordered>
-                {node.type === 'prompt' ? 'Prompt' : 'Text'}
-              </Tag>
-              <label className="canvas-node-text-composer-title-input">
-                <span>标题</span>
-                <Input
-                  size="middle"
-                  value={title}
-                  placeholder="节点标题"
-                  onChange={(event) => setTitle(event.target.value)}
-                />
-              </label>
-              <div className="canvas-node-text-composer-file">
-                <Icons.File size={13} />
-                <span>{node.id}</span>
-              </div>
-            </div>
-            <div className="canvas-node-text-composer-actions">
-              <Tooltip title="全屏编辑">
-                <Button
-                  size="middle"
-                  type="text"
-                  icon={<Icons.Maximize size={15} />}
-                  aria-label="全屏编辑"
-                  onClick={() => setEditFullscreen(true)}
-                />
-              </Tooltip>
-            </div>
-          </div>
-
-          <div className="canvas-node-text-composer-main">
-            <Input.TextArea
-              className="canvas-node-text-composer-textarea"
-              value={text}
-              rows={4}
-              placeholder="输入文本、剧情段落、生成提示词或需要 agent 改写的要求"
-              onChange={(event) => setText(event.target.value)}
-            />
-          </div>
-
-          <div className="canvas-node-text-composer-bottom">
-            <div className="canvas-node-text-composer-params">
-              <Popover
-                trigger="hover"
-                mouseEnterDelay={0.08}
-                mouseLeaveDelay={0.22}
-                placement="top"
-                content={
-                  <div className="canvas-node-text-composer-library-popover">
-                    <CanvasPromptLibraryPanel
-                      assets={assets}
-                      className="canvas-node-edit-prompt-library canvas-node-edit-prompt-library-compact"
-                      limit={24}
-                      onApply={(entry) => insertPromptText(entry.text)}
-                    />
-                  </div>
-                }
-              >
-                <Button size="middle" icon={<Icons.Folder size={13} />}>
-                  提示词库
-                </Button>
-              </Popover>
-              <Popover
-                trigger="hover"
-                mouseEnterDelay={0.08}
-                mouseLeaveDelay={0.22}
-                placement="top"
-                content={
-                  <div className="canvas-node-text-composer-popover">
-                    <div className="canvas-node-text-composer-popover-title">反向提示词</div>
-                    <Input.TextArea
-                      value={negativePrompt}
-                      rows={5}
-                      placeholder="可选：输入不希望出现的内容，AI 优化时会一并参考"
-                      onChange={(event) => setNegativePrompt(event.target.value)}
-                    />
-                  </div>
-                }
-              >
-                <Button size="middle" type={negativePrompt.trim() ? 'primary' : 'default'}>
-                  反向提示词
-                </Button>
-              </Popover>
-              <Button
-                size="middle"
-                icon={<Icons.Sparkles size={13} />}
-                disabled={text.trim().length === 0}
-                onClick={openOptimizeModal}
-              >
-                AI 优化
-              </Button>
-            </div>
-            <div className="canvas-node-text-composer-save">
-              <span>{text.trim().length} 字符</span>
-              <Button size="middle" type="primary" loading={saving} onClick={() => void save()}>
-                保存
-              </Button>
-            </div>
-          </div>
-        </div>
-        {optimizeModal}
-      </>
-    )
-  }
-
-  const content = (
-    <div className="canvas-node-edit-dialog">
-      <div className="canvas-node-edit-dialog-head">
-        <Tag color="default" bordered>
-          {node.type}
-        </Tag>
-        <span>{node.id}</span>
-      </div>
-      <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-        <span>标题</span>
-        <Input
-          value={title}
-          placeholder="节点标题"
-          onChange={(event) => setTitle(event.target.value)}
-        />
-      </label>
-      {isTextLike && (
-        <div className="canvas-node-edit-prompt-layout">
-          <div className="canvas-node-edit-prompt-main">
-            <CanvasPromptEditor
-              prompt={text}
-              negativePrompt={negativePrompt}
-              promptPlaceholder="输入文本、剧情段落、生成提示词或需要 agent 改写的要求"
-              negativePlaceholder="可选：输入不希望出现的内容，AI 优化时会一并参考"
-              optimizeDisabled={text.trim().length === 0}
-              onPromptChange={setText}
-              onNegativePromptChange={setNegativePrompt}
-              onOptimizePrompt={openOptimizeModal}
-            />
-          </div>
-          <CanvasPromptLibraryPanel
-            assets={assets}
-            className="canvas-node-edit-prompt-library"
-            onApply={(entry) => insertPromptText(entry.text)}
-          />
-        </div>
-      )}
-      {node.type === 'group' && (
-        <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-          <span>组说明</span>
-          <Input.TextArea
-            value={text}
-            rows={5}
-            placeholder="输入节点内容"
-            onChange={(event) => setText(event.target.value)}
-          />
-        </label>
-      )}
-      {node.type === 'task' && (
-        <div className="canvas-node-edit-task-prompt">
-          <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-            <span>任务指令</span>
-            <Input.TextArea
-              value={prompt}
-              rows={6}
-              placeholder="任务使用的 prompt"
-              onChange={(event) => setPrompt(event.target.value)}
-            />
-          </label>
-          <CanvasPromptLibraryPanel
-            assets={assets}
-            className="canvas-node-edit-prompt-library canvas-node-edit-prompt-library-compact"
-            limit={24}
-            onApply={(entry) => setPrompt((current) => appendPromptFragment(current, entry.text))}
-          />
-        </div>
-      )}
-      {(node.type === 'image' || node.type === 'video' || node.type === 'audio') && (
-        <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-          <span>媒体 URL</span>
-          <Input
-            value={url}
-            placeholder="https:// 或 data: URL"
-            onChange={(event) => setUrl(event.target.value)}
-          />
-        </label>
-      )}
-      {node.type !== 'text' && node.type !== 'prompt' && (
-        <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-          <span>备注 / 展示文本</span>
-          <Input.TextArea
-            value={messageText}
-            rows={5}
-            placeholder="节点内展示的辅助文本"
-            onChange={(event) => setMessageText(event.target.value)}
-          />
-        </label>
-      )}
-    </div>
-  )
-
-  if (isTextLike || placement === 'inline') {
-    return (
-      <>
-        <div
-          className={`canvas-bottom-floating-panel canvas-node-edit-bottom-panel${placement === 'inline' ? ' is-inline' : ''}${editFullscreen ? ' is-fullscreen' : ''}`}
-          onMouseDown={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <div className="canvas-bottom-floating-head canvas-node-edit-bottom-head">
-            <div>
-              <strong>{isTextLike ? '编辑文本 / Prompt 节点' : '编辑节点'}</strong>
-              <span>
-                {placement === 'inline'
-                  ? '在节点内部直接调整，保持画布上下文'
-                  : '统一在底部工具栏上方编辑，避免遮挡画布上下文'}
-              </span>
-            </div>
-            <div className="canvas-node-edit-bottom-actions">
-              <Tooltip title={fullscreenLabel}>
-                <Button
-                  size="middle"
-                  type="text"
-                  icon={fullscreenIcon}
-                  aria-label={fullscreenLabel}
-                  onClick={toggleFullscreen}
-                />
-              </Tooltip>
-              {placement !== 'inline' && (
-                <Button size="middle" onClick={onClose}>
-                  取消
-                </Button>
-              )}
-              <Button size="middle" type="primary" loading={saving} onClick={() => void save()}>
-                保存
-              </Button>
-            </div>
-          </div>
-          <div className="canvas-bottom-floating-body canvas-node-edit-bottom-body">{content}</div>
-        </div>
-        {optimizeModal}
-      </>
-    )
-  }
-
-  return (
-    <>
-      <Modal
-        className={`canvas-node-edit-modal${editFullscreen ? ' canvas-node-edit-modal-fullscreen' : ''}`}
-        title={
-          <div className="canvas-node-edit-modal-title">
-            <span>编辑节点</span>
-            <Tooltip title={fullscreenLabel}>
-              <Button
-                size="middle"
-                type="text"
-                icon={fullscreenIcon}
-                aria-label={fullscreenLabel}
-                onClick={toggleFullscreen}
-              />
-            </Tooltip>
-          </div>
-        }
-        open={open}
-        width={editFullscreen ? 'calc(100vw - 24px)' : 560}
-        destroyOnHidden
-        confirmLoading={saving}
-        okText="保存"
-        cancelText="取消"
-        onOk={() => void save()}
-        onCancel={onClose}
-      >
-        {content}
-      </Modal>
-      {optimizeModal}
-    </>
-  )
 }

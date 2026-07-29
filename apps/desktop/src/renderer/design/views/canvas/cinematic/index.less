@@ -1,0 +1,20 @@
+// Cinematic is the only style entry loaded by CanvasWorkspaceView.
+// Legacy structural CSS is isolated in a lower cascade layer while migrated owners live in the
+// higher cinematic layer. The root intentionally omits the deprecated variant class,
+// so obsolete selectors cannot match it.
+@layer canvas-legacy, canvas-cinematic;
+
+@layer canvas-legacy {
+  @import (less) '../CanvasWorkspaceView.less';
+  @import (less) '../canvas-workflow.less';
+  @import (less) '../canvasContextMenus.less';
+}
+
+@layer canvas-cinematic {
+  @import './tokens.less';
+  @import './vendor.less';
+  @import './shell.less';
+  @import './nodes.less';
+  @import './agent.less';
+  @import './overlays.less';
+}
