@@ -17,6 +17,7 @@ import React, {
 } from 'react'
 import './ChatView.less'
 import './ToolDropdown.less'
+import './chat/ChatEmptyThemes.less'
 import type { ReactNode, RefObject } from 'react'
 import { Button } from '@lobehub/ui'
 import {
@@ -1990,6 +1991,7 @@ export function ChatView({
         className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}${
           !showEmptyHero && showGitEnvPanel ? ' git-env-panel-open' : ''
         }`}
+        data-empty-theme={showEmptyHero ? t.emptyHeroTheme : undefined}
         ref={chatAreaRef}
       >
         {showEmptyHero && (
@@ -2088,7 +2090,12 @@ export function ChatView({
             onOpenTeamInspector={openInspector}
           />
         ) : (
-          showEmptyHero && <SingleAgentEmptyHero onSelectPrompt={handleHeroPromptSelect} />
+          showEmptyHero && (
+            <SingleAgentEmptyHero
+              themeId={t.emptyHeroTheme}
+              onSelectPrompt={handleHeroPromptSelect}
+            />
+          )
         )}
         {active != null && (
           <Fragment key="active-session-content">

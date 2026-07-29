@@ -9,6 +9,11 @@ import { ConfirmDialog } from './components/ConfirmDialog'
 import { useGlobalDialogEnterConfirm } from './hooks/useAppDialogKeyboard'
 import { PromptDialog } from './components/PromptDialog'
 import { applyArcoTheme } from './arcoTheme'
+import {
+  DEFAULT_EMPTY_HERO_THEME,
+  isEmptyHeroThemeId,
+  type EmptyHeroThemeId,
+} from './views/chat/emptyHeroThemes'
 
 export type NavGuard = () => boolean | Promise<boolean>
 
@@ -53,6 +58,8 @@ export type PromptOptions = {
 
 export type Tweaks = {
   theme: ThemeMode
+  /** 空会话页的视觉主题；与全局 light/dark 模式独立。 */
+  emptyHeroTheme: EmptyHeroThemeId
   primary: string
   density: Density
   sidebar: SidebarState
@@ -84,6 +91,7 @@ export type Tweaks = {
 
 export const DEFAULT_TWEAKS: Tweaks = {
   theme: 'system',
+  emptyHeroTheme: DEFAULT_EMPTY_HERO_THEME,
   primary: '#6366f1',
   density: 'regular',
   sidebar: 'collapsed',
@@ -124,7 +132,9 @@ const WORKSPACE_MODE_KEY = 'spark-agent:workspace-mode'
 export const BROWSER_PANEL_WIDTH_MIN = 280
 export const BROWSER_PANEL_WIDTH_MAX = 1200
 
-type PersistedVisualTweaks = Partial<Pick<Tweaks, 'theme' | 'primary' | 'density'>>
+type PersistedVisualTweaks = Partial<
+  Pick<Tweaks, 'theme' | 'emptyHeroTheme' | 'primary' | 'density'>
+>
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value)
@@ -155,6 +165,9 @@ function pickVisualTweaks(value: unknown): PersistedVisualTweaks {
   const next: PersistedVisualTweaks = {}
   if (value.theme === 'light' || value.theme === 'dark' || value.theme === 'system') {
     next.theme = value.theme
+  }
+  if (isEmptyHeroThemeId(value.emptyHeroTheme)) {
+    next.emptyHeroTheme = value.emptyHeroTheme
   }
   if (typeof value.primary === 'string' && PRIMARIES[value.primary] != null) {
     next.primary = value.primary
@@ -344,6 +357,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       window.localStorage.setItem(THEME_STORAGE_KEY, val as ThemeMode)
       hasUserVisualChangeRef.current = true
       persistVisualTweaks({ theme: val as ThemeMode })
+    } else if (key === 'emptyHeroTheme') {
+      hasUserVisualChangeRef.current = true
+      persistVisualTweaks({ emptyHeroTheme: val as EmptyHeroThemeId })
     } else if (key === 'primary') {
       hasUserVisualChangeRef.current = true
       persistVisualTweaks({ primary: val as string })
