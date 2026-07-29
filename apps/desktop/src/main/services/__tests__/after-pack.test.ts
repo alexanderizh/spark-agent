@@ -50,6 +50,7 @@ const {
   normalizePublisherThumbprint,
   resolveWindowsNativeHostTrustMode,
   signWindowsNativeHost,
+  inspectWindowsAuthenticode,
 } = require('../../../../scripts/package-windows-native-host.js') as {
   createWindowsNativeHostManifest: (input: {
     executable: Buffer
@@ -66,6 +67,17 @@ const {
     packager: { signIf?: (path: string) => Promise<boolean> },
     executablePath: string,
   ) => Promise<void>
+  inspectWindowsAuthenticode: (
+    executablePath: string,
+    options: {
+      environment: NodeJS.ProcessEnv
+      runCommand: (
+        command: string,
+        args: string[],
+        options: { env: NodeJS.ProcessEnv },
+      ) => Promise<{ stdout: string; stderr: string }>
+    },
+  ) => Promise<{ publisherThumbprint: string; timestamped: boolean }>
 }
 const { verifyWindowsPackageSigners } = require('../../../../scripts/notarize.js') as {
   verifyWindowsPackageSigners: (
@@ -312,6 +324,30 @@ TeamIdentifier=ABCDE12345
     await expect(
       signWindowsNativeHost({ signIf: async () => false }, 'C:\\SparkComputerHost.exe'),
     ).rejects.toThrow('electron-builder did not sign the Windows Native Host executable')
+  })
+
+  it('passes the Windows Authenticode path through the PowerShell environment', async () => {
+    const runCommand = vi.fn(async () => ({
+      stdout: `${Buffer.alloc(32, 0xdd).toString('base64')}\n1\n`,
+      stderr: '',
+    }))
+
+    await expect(
+      inspectWindowsAuthenticode('D:\\SparkComputerHost.exe', {
+        environment: { SystemRoot: 'C:\\Windows' },
+        runCommand,
+      }),
+    ).resolves.toEqual({ publisherThumbprint: 'dd'.repeat(32), timestamped: true })
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.stringMatching(/WindowsPowerShell[\\/]v1\.0[\\/]powershell\.exe$/),
+      expect.arrayContaining(['-Command', expect.stringContaining('$env:SPARK_AUTHENTICODE_PATH')]),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          SPARK_AUTHENTICODE_PATH: 'D:\\SparkComputerHost.exe',
+        }),
+      }),
+    )
+    expect(runCommand.mock.calls[0]?.[1]).not.toContain('D:\\SparkComputerHost.exe')
   })
 
   it('publishes only supported desktop runner and architecture pairs', () => {
