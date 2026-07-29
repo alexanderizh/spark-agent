@@ -11,8 +11,8 @@ import {
 } from './emptyHeroThemes'
 
 describe('empty conversation themes', () => {
-  it('does not apply an empty conversation theme by default', () => {
-    expect(DEFAULT_EMPTY_HERO_THEME).toBe('none')
+  it('applies the celestial (星图工作台) theme by default', () => {
+    expect(DEFAULT_EMPTY_HERO_THEME).toBe('celestial')
   })
 
   it('defines six unique selectable themes', () => {

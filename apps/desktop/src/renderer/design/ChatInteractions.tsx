@@ -889,7 +889,6 @@ export function SubagentCard({
           >
             {status === 'done' ? <Icons.Check size={11} /> : <Icons.AlertTriangle size={11} />}
             {statusLabel}
-            {tokens ? ` · ${t('chat.subagent.tokenUsage', { tokens })}` : ''}
           </span>
         )}
       </div>

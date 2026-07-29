@@ -333,14 +333,18 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
           <Icon />
         </span>
         <span className="nav-label">{title}</span>
-        <span
-          className={`nav-pin-btn${isPinned ? ' is-pinned' : ''}`}
-          onClick={togglePin}
+        <Tooltip
           title={isPinned ? tr('app.nav.unpin') : tr('app.nav.pinTop')}
-          aria-label={isPinned ? tr('app.nav.unpin') : tr('app.nav.pinTop')}
+          mouseEnterDelay={0.05}
         >
-          {isPinned ? <Pin size={12} fill="currentColor" /> : <PinOff size={12} />}
-        </span>
+          <span
+            className={`nav-pin-btn${isPinned ? ' is-pinned' : ''}`}
+            onClick={togglePin}
+            aria-label={isPinned ? tr('app.nav.unpin') : tr('app.nav.pinTop')}
+          >
+            {isPinned ? <Pin size={12} fill="currentColor" /> : <PinOff size={12} />}
+          </span>
+        </Tooltip>
       </button>
     )
   }
@@ -530,13 +534,15 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               <Icons.Search size={15} />
             </button>
           </Tooltip>
-          <button
-            className="icon-btn sidebar-hide-btn"
-            onClick={handleHideSidebar}
-            title={tr('app.sidebar.hide')}
-          >
-            <Icons.SidebarHide size={15} />
-          </button>
+          <Tooltip title={tr('app.sidebar.hide')} mouseEnterDelay={0.05}>
+            <button
+              className="icon-btn sidebar-hide-btn"
+              onClick={handleHideSidebar}
+              aria-label={tr('app.sidebar.hide')}
+            >
+              <Icons.SidebarHide size={15} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -663,7 +669,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         aria-label={tr('nav.group.shared')}
       >
         {pickNavItems(SHARED_RESOURCE_IDS).map((item) => (
-          <Tooltip key={item.id} title={tr(item.labelKey)} mouseEnterDelay={0.3}>
+          <Tooltip key={item.id} title={tr(item.labelKey)} mouseEnterDelay={0.05}>
             <button
               type="button"
               className={`shared-resource-btn${t.view === item.id ? ' active' : ''}`}
@@ -907,14 +913,15 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
           </button>
         </Dropdown>
-        <button
-          className="sidebar-user-settings"
-          aria-label={tr('app.user.settings')}
-          title={tr('app.user.settings')}
-          onClick={() => setTweak('view', 'settings')}
-        >
-          <Icons.Settings size={13} />
-        </button>
+        <Tooltip title={tr('app.user.settings')} mouseEnterDelay={0.05}>
+          <button
+            className="sidebar-user-settings"
+            aria-label={tr('app.user.settings')}
+            onClick={() => setTweak('view', 'settings')}
+          >
+            <Icons.Settings size={13} />
+          </button>
+        </Tooltip>
         </div>
         {/* Linux: custom HTML controls in sidebar. Windows/macOS use their own title bars. */}
         {!isPlatformDarwin && !isPlatformWin32 && <WindowControls />}

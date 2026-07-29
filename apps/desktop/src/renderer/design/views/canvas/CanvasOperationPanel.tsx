@@ -3,6 +3,7 @@ import { Input, InputNumber, Popover, Select, Tag, Tooltip, message } from 'antd
 import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { isProviderVisibleInUi } from '../../utils/auto-router-ui'
+import { useProviderConfigVersion } from '../../hooks/useProviderConfigVersion'
 import {
   capabilitySupportsFrameRoles,
   capabilitySupportsImageRoles,
@@ -495,6 +496,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   fullscreen?: boolean
   onFullscreenChange?: (nextFullscreen: boolean) => void
 }) {
+  const providerConfigVersion = useProviderConfigVersion()
   const operation = nodeOperation(node) ?? 'text_generate'
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
@@ -834,7 +836,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [providerConfigVersion])
 
   useEffect(() => {
     if (!isTextOperation) return
@@ -865,7 +867,7 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     return () => {
       cancelled = true
     }
-  }, [isTextOperation])
+  }, [isTextOperation, providerConfigVersion])
 
   // 输入节点内容带入 prompt（首次打开时如果 prompt 为空）
   useEffect(() => {

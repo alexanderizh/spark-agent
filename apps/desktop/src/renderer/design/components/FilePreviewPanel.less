@@ -3,11 +3,15 @@
 .file-preview-panel {
   position: relative;
   flex: 0 0 auto;
-  width: min(var(--file-preview-width, 760px), calc(100vw - 24px));
-  min-width: min(420px, calc(100vw - 24px));
-  max-width: min(1200px, calc(100vw - 24px));
+  width: min(
+    var(--file-preview-width, 760px),
+    calc(100% - max(24px, var(--chat-main-min-width, 566px)))
+  );
+  min-width: min(420px, calc(100% - max(24px, var(--chat-main-min-width, 566px))));
+  max-width: min(1200px, calc(100% - max(24px, var(--chat-main-min-width, 566px))));
   height: 100vh;
   min-height: 0;
+  box-sizing: border-box;
   background: var(--panel, #fff);
   border-left: 1px solid var(--color-border-2);
   display: flex;
@@ -25,6 +29,14 @@
   height: calc(100vh - 40px);
 }
 
+@media (max-width: 900px) {
+  .file-preview-panel {
+    width: min(var(--file-preview-width, 760px), calc(100% - 24px));
+    min-width: min(420px, calc(100% - 24px));
+    max-width: min(1200px, calc(100% - 24px));
+  }
+}
+
 .file-preview-resize-handle {
   position: absolute;
   top: 0;
@@ -35,6 +47,7 @@
   cursor: col-resize;
   touch-action: none;
   outline: none;
+  -webkit-app-region: no-drag;
 
   &::before {
     content: '';
@@ -88,8 +101,8 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   position: relative;
   z-index: 5;
   flex-shrink: 0;
-  /* 侧栏顶栏在窗口最上方，需显式脱离 macOS 隐形拖拽区，否则头部按钮无法点击 */
-  -webkit-app-region: no-drag;
+  /* 作为预览态的系统标题栏：空白区域支持拖拽，并沿用系统双击标题栏行为。 */
+  -webkit-app-region: drag;
 }
 
 .file-preview-title {
@@ -98,6 +111,11 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   gap: 8px;
   min-width: 0;
   flex: 1;
+  -webkit-app-region: drag;
+}
+
+.file-preview-title * {
+  -webkit-app-region: drag;
 }
 
 .file-preview-icon {
@@ -245,10 +263,29 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   border: none;
   border-radius: 0;
   background: var(--panel, #fff);
+  container-name: file-preview-viewer;
+  container-type: inline-size;
 
   &,
   > * {
     background: var(--panel, #fff) !important;
+  }
+
+  > * {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  > *::part(toolbar) {
+    max-width: calc(100% - 20px);
+    flex-wrap: nowrap;
+  }
+
+  > *::part(input) {
+    width: clamp(92px, 16vw, 140px);
   }
 
   iframe,
@@ -263,5 +300,11 @@ body.file-preview-resizing .file-preview-resize-handle::before {
   [class*='statusbar'],
   [class*='StatusBar'] {
     display: none !important;
+  }
+}
+
+@container file-preview-viewer (max-width: 680px) {
+  .file-preview-flyfish > *::part(toolbar) {
+    display: none;
   }
 }

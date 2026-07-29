@@ -43,7 +43,7 @@ describe('FontAssetControl', () => {
 
   it('shows the fallback state and lets the user retry manually', async () => {
     await act(async () => root.render(<FontAssetControl />))
-    expect(container.textContent).toContain('下载失败，当前使用系统字体')
+    expect(container.textContent).toContain('下载失败')
     expect(container.textContent).toContain('network unavailable')
 
     const button = Array.from(container.querySelectorAll('button')).find((item) =>

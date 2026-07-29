@@ -36,6 +36,7 @@ import { ProviderLogo } from '../../components/ProviderLogo'
 import { ChatPanel, type ChatPanelNodeReference } from '../../components/ChatPanel'
 import { SkillsPickerModal, type SkillItemForPicker } from '../../components/SkillsPickerModal'
 import { getAgentAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../../avatar'
+import { useProviderConfigVersion } from '../../hooks/useProviderConfigVersion'
 import { useCanvasToolHost } from './canvas-tool-host'
 import { isRunningAgentStatus } from '../chat-session-status'
 import './CanvasAgentPicker.less'
@@ -354,6 +355,7 @@ export function CanvasAgentModal({
   onWideModeChange,
   externalSubmitRequest,
 }: Props) {
+  const providerConfigVersion = useProviderConfigVersion()
   const projectId = snapshot.project.id
   const [fullscreen, setFullscreen] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -661,7 +663,7 @@ export function CanvasAgentModal({
     return () => {
       cancelled = true
     }
-  }, [open, projectId])
+  }, [open, projectId, providerConfigVersion])
 
   useEffect(() => {
     if (open) return

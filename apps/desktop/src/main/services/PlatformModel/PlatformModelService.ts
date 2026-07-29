@@ -73,7 +73,8 @@ export class PlatformModelService {
         })
     } else if (options.refreshCatalogOnStart !== false) {
       // AuthService.start() 已恢复本地登录态。后台同步目录可把旧版本误存进
-      // modelIds 的图片模型迁移到 mediaModelRefs，并通过配置事件刷新聊天与画布。
+      // modelIds 的图片模型迁移到 mediaModelRefs，并通过配置事件刷新聊天与画布；
+      // ProviderService 会同时保留用户手动设置的全局停用状态。
       queueMicrotask(() => {
         void this.refreshModelCatalog(false).catch((error) => {
           log.warn(`startup platform model catalog refresh failed: ${(error as Error).message}`)

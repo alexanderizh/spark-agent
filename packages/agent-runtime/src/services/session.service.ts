@@ -1952,6 +1952,9 @@ export class SessionService {
       if (row == null) {
         throw new Error(`Provider profile not found: ${providerProfileId}`)
       }
+      if (row.enabled === 0) {
+        throw new Error(`Provider profile is disabled: ${providerProfileId}`)
+      }
       return row
     }
     const autoRouterAdapter = getAutoRouterAdapterForProviderId(effectiveRuntimeProviderProfileId)
@@ -6201,6 +6204,7 @@ export class SessionService {
     const loadProvider = (id: string) => {
       const row = providerRepo.get(id)
       if (row == null) throw new Error(`Member provider profile not found: ${id}`)
+      if (row.enabled === 0) throw new Error(`Member provider profile is disabled: ${id}`)
       return row
     }
     const memberRouteMessage = buildMemberUserMessage(task)
@@ -9614,9 +9618,9 @@ function getLocalCliDefaultModel(provider: { id: string }): string {
 }
 
 function providerRowsForModelRouter(
-  rows: Array<{ id: string; provider_type: string; config_json: string }>,
+  rows: Array<{ id: string; provider_type: string; config_json: string; enabled: number }>,
 ): ModelRouterProvider[] {
-  return rows.map((row) => {
+  return rows.filter((row) => row.enabled !== 0).map((row) => {
     const config = parseProviderConfigForModelRouter(row.config_json)
     return {
       id: row.id,

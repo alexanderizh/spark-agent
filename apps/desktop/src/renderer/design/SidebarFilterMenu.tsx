@@ -5,7 +5,7 @@
  * 作用:筛选/分组整个会话栏列表
  */
 import { useMemo, useState } from 'react'
-import { Dropdown } from '@lobehub/ui'
+import { Dropdown, Tooltip } from '@lobehub/ui'
 import { ListFilter } from 'lucide-react'
 import './SidebarFilterMenu.less'
 import { Icons } from './Icons'
@@ -281,16 +281,18 @@ export function SidebarFilterMenu({
         />
       )}
     >
-      <button
-        type="button"
-        className={`icon-btn sidebar-filter-btn${active ? ' is-active' : ''}${open ? ' is-open' : ''}`}
-        title={t('sidebar.filterSessions')}
-        onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        <ListFilter size={16} />
-        {active && <span className="sidebar-filter-btn-dot" />}
-      </button>
+      <Tooltip title={t('sidebar.filterSessions')} mouseEnterDelay={0.05}>
+        <button
+          type="button"
+          className={`icon-btn sidebar-filter-btn${active ? ' is-active' : ''}${open ? ' is-open' : ''}`}
+          aria-label={t('sidebar.filterSessions')}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <ListFilter size={16} />
+          {active && <span className="sidebar-filter-btn-dot" />}
+        </button>
+      </Tooltip>
     </Dropdown>
   )
 }

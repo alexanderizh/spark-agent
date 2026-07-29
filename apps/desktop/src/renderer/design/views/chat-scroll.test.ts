@@ -108,7 +108,12 @@ describe('chat scroll controls', () => {
     expect(sharedContainerBlock).toContain('width: min(100%, 900px)')
     expect(sharedContainerBlock).toContain('var(--chat-turn-nav-content-inset, 0px)')
     expect(sharedContainerBlock).toMatch(/padding-right:\s*\d+px/)
-    expect(turnNavigatorStylesheet).toContain('.chat-stream-viewport:has(> .chat-turn-navigator)')
+    expect(turnNavigatorStylesheet).toContain(
+      '.chat-main-active:has(.chat-stream-viewport > .chat-turn-navigator)',
+    )
+    expect(turnNavigatorStylesheet).not.toContain(
+      '.chat-stream-viewport:has(> .chat-turn-navigator)',
+    )
     expect(turnNavigatorStylesheet).toContain('--chat-turn-nav-content-inset: 52px')
     expect(gitGutterBlocks.some((block) => /--git-gutter-base:\s*\d+px/.test(block))).toBe(true)
     expect(
