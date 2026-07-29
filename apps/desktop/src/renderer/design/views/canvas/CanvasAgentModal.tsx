@@ -78,6 +78,8 @@ interface Props {
   revealNodes?: CanvasToolHostOptions['revealNodes']
   /** 宽屏切换回调：父组件据此时将侧栏宽度设为屏幕一半 / 恢复原宽 */
   onWideModeChange?: (wide: boolean) => void
+  /** 空画布中央输入框提交的消息，交给侧栏 ChatPanel 走同一发送链路。 */
+  externalSubmitRequest?: { id: number; text: string } | null
 }
 
 type CanvasAgentComposerMenu = 'session' | 'agent' | 'model'
@@ -350,6 +352,7 @@ export function CanvasAgentModal({
   getViewport,
   revealNodes,
   onWideModeChange,
+  externalSubmitRequest,
 }: Props) {
   const projectId = snapshot.project.id
   const [fullscreen, setFullscreen] = useState(false)
@@ -1241,6 +1244,7 @@ export function CanvasAgentModal({
           onSend={handleSend}
           initialInput={draftInput}
           onDraftChange={setDraftInput}
+          {...(externalSubmitRequest !== undefined ? { externalSubmitRequest } : {})}
           composerBelow={composerBelowBar}
           agents={agents}
           fallbackAssistant={fallbackAssistant}

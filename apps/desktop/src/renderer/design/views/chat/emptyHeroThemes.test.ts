@@ -11,6 +11,10 @@ import {
 } from './emptyHeroThemes'
 
 describe('empty conversation themes', () => {
+  it('does not apply an empty conversation theme by default', () => {
+    expect(DEFAULT_EMPTY_HERO_THEME).toBe('none')
+  })
+
   it('defines six unique selectable themes', () => {
     expect(EMPTY_HERO_THEMES).toHaveLength(6)
     expect(new Set(EMPTY_HERO_THEMES.map((theme) => theme.id)).size).toBe(6)

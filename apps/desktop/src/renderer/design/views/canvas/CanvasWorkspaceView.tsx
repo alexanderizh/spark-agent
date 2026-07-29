@@ -719,6 +719,11 @@ export function CanvasWorkspaceView({
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true)
   const [agentPanelWidth, setAgentPanelWidth] = useState(readAgentPanelWidth)
+  const [agentSubmitRequest, setAgentSubmitRequest] = useState<{
+    id: number
+    text: string
+  } | null>(null)
+  const agentSubmitRequestIdRef = useRef(0)
   /** 用户显式「添加到 Agent 对话」的引用节点；与画布选区解耦，发送时以这里为准 */
   const [agentNodeRefs, setAgentNodeRefs] = useState<CanvasNode[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -7327,6 +7332,7 @@ export function CanvasWorkspaceView({
           />
           <CanvasAgentModal
             open={agentOpen}
+            externalSubmitRequest={agentSubmitRequest}
             onClose={() => setAgentOpen(false)}
             snapshot={snapshot}
             selectedNodes={selectedNodes}
@@ -7444,6 +7450,12 @@ export function CanvasWorkspaceView({
               onStartWithAgent={() => {
                 closeCanvasFloatPanels('agent')
                 openAgentPanel()
+              }}
+              onSubmitAgentPrompt={(text) => {
+                closeCanvasFloatPanels('agent')
+                openAgentPanel()
+                agentSubmitRequestIdRef.current += 1
+                setAgentSubmitRequest({ id: agentSubmitRequestIdRef.current, text })
               }}
               onOpenInlineAi={() => handleOpenInlineAi()}
               onUploadFiles={() => uploadFilesInputRef.current?.click()}

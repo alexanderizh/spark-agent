@@ -24,6 +24,10 @@ describe('canvas node handle styles', () => {
       fileURLToPath(new URL('./CanvasStage.tsx', import.meta.url)),
       'utf8',
     )
+    const cinematicNodeStyles = readFileSync(
+      fileURLToPath(new URL('./cinematic/nodes.less', import.meta.url)),
+      'utf8',
+    )
     const flowNodeRule = stylesheet.match(/\.canvas-stage \.react-flow__node\s*\{([^}]*)\}/)?.[1]
     const shellRule = stylesheet.match(/\.canvas-node-shell\s*\{([^}]*)\}/)?.[1]
     const coreRule = stylesheet.match(/\.canvas-node-core\s*\{([^}]*)\}/)?.[1]
@@ -46,6 +50,19 @@ describe('canvas node handle styles', () => {
     expect(nodeSource).toContain('onResizeStart={() => setResizing(true)}')
     expect(stageSource).toContain('interactionWidth: 36')
     expect(stageSource).toContain('connectionRadius={32}')
+    expect(stageSource).toContain("target.closest('.react-flow__pane')")
+    expect(stageSource).toContain('onAddTextAtPosition(position)')
+    expect(cinematicNodeStyles).toMatch(
+      /\.canvas-node-handle\s*\{[\s\S]*?width:\s*13px;[\s\S]*?min-width:\s*13px;[\s\S]*?box-sizing:\s*border-box;/,
+    )
+    expect(cinematicNodeStyles).toMatch(/\.canvas-node-handle::after\s*\{[\s\S]*?content:\s*none;/)
+    expect(cinematicNodeStyles).toMatch(
+      /\.canvas-node-handle\.react-flow__handle-left\s*\{[\s\S]*?transform:\s*translate\(-50%, -50%\);/,
+    )
+    expect(cinematicNodeStyles).toMatch(
+      /\.canvas-node-handle\.react-flow__handle-right\s*\{[\s\S]*?transform:\s*translate\(50%, -50%\);/,
+    )
+    expect(cinematicNodeStyles).toContain('.canvas-node-selected .canvas-node-handle')
     expect(v4StageStyles).toMatch(
       /\.react-flow__edge-interaction\s*\{[\s\S]*?stroke-width:\s*36px\s*;/,
     )

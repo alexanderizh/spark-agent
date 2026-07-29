@@ -87,13 +87,13 @@
   display: inline-flex;
   align-items: center;
 }
-// macOS：菜单隐藏时，header 左侧需为红绿灯留出空间（与 shell-titlebar-darwin 一致，约 90px）。
+// macOS：菜单隐藏时直接消费 Window Controls Overlay 提供的安全区。
 .app.sidebar-hidden.platform-darwin .canvas-workspace-header {
-  padding-left: 90px;
+  padding-left: var(--window-titlebar-safe-left);
 }
-// 菜单隐藏时（合并 shell-titlebar 后）拉高 header 至 65px；展开时保持原高度不变。
+// 菜单隐藏时由页面自己的 header 承担窗口 chrome，但不接管页面业务结构。
 .app.sidebar-hidden .canvas-workspace-header {
-  height: 52px;
+  height: var(--window-titlebar-height);
 }
 
 .canvas-workspace-header-row {

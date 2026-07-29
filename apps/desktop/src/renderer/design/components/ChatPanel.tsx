@@ -79,6 +79,8 @@ export interface ChatPanelProps {
   initialInput?: string
   /** 可选：输入文本变化通知（父组件据此持久化草稿） */
   onDraftChange?: (text: string) => void
+  /** 可选：宿主提供的一次性发送请求，复用本输入区的建会、乐观消息和错误恢复流程。 */
+  externalSubmitRequest?: { id: number; text: string } | null
   /** 可选：输入区上方的配置条（agent/provider/model/权限选择器等） */
   composer?: React.ReactNode
   /** 可选：输入框下方的参数行（会话/Agent/模型/技能选择器 + 附件按钮） */
@@ -137,6 +139,7 @@ export function ChatPanel({
   onSend,
   initialInput,
   onDraftChange,
+  externalSubmitRequest,
   composer,
   composerBelow,
   nodeReferences,
@@ -616,6 +619,30 @@ export function ChatPanel({
     },
     [applyInput, attachments, nodeReferences, onAfterSend, onSend, sessionId, status],
   )
+
+  const lastExternalSubmitIdRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (
+      externalSubmitRequest == null ||
+      externalSubmitRequest.id === lastExternalSubmitIdRef.current ||
+      loading ||
+      error ||
+      status !== 'idle'
+    ) {
+      return
+    }
+    const text = externalSubmitRequest.text.trim()
+    if (!text) return
+    let cancelled = false
+    void Promise.resolve().then(() => {
+      if (cancelled) return
+      lastExternalSubmitIdRef.current = externalSubmitRequest.id
+      void submitTurn(text, [], text)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [error, externalSubmitRequest, loading, status, submitTurn])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()

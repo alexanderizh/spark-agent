@@ -997,12 +997,13 @@ body.sidebar-resizing {
   height: calc(100vh - 45px);
 }
 
-/* macOS/Linux: subtract shell title bar when sidebar is collapsed */
+/* macOS/Linux: subtract the native-overlay-backed shell title bar when the
+   sidebar is collapsed. */
 .app.sidebar-hidden:not(.platform-win32) .chat-main {
-  height: calc(100vh - 40px);
+  height: calc(100vh - var(--window-titlebar-height));
 }
 .app.sidebar-hidden:not(.platform-win32) .chat-layout > .inspector {
-  height: calc(100vh - 40px);
+  height: calc(100vh - var(--window-titlebar-height));
 }
 .app.titlebar-integrated .chat-main,
 .app.titlebar-integrated.platform-win32 .chat-main,
@@ -1826,10 +1827,9 @@ body.sidebar-resizing {
   -webkit-app-region: drag;
 }
 
-/* macOS hiddenInset 标题栏的红黄绿按钮在 x=22 起、约 60px 宽；
-   预览层通过 portal 挂到 body，需要由组件自身显式带上安全区类。 */
+/* 预览层通过 portal 挂到 body，需要由组件自身显式消费系统标题栏安全区。 */
 .image-lightbox-topbar.platform-darwin-safe-area {
-  padding-left: 80px;
+  padding-left: var(--window-titlebar-safe-left);
   padding-top: 14px;
 }
 
@@ -2896,10 +2896,11 @@ body.sidebar-resizing {
 }
 
 /* ---------- EMPTY CHAT HERO ---------- */
-/* 空对话欢迎页 — 渐变消失的网格背景 + 居中品牌 + 居中输入区 */
+/* 空对话欢迎页 — 渐变消失的网格背景 + 自增内容区 + 底部输入区 */
 /* hero 模式（active 为 null 或消息为空）整体布局：
    - 网格背景铺满 chat-main
-   - 标题 + composer 垂直水平居中
+   - 欢迎内容在剩余空间内居中
+   - tips + composer 组成底部 dock，避免空态与消息态切换时输入框跳位
    - ChatStream 仍然 mount 保持 event 订阅，但视觉上完全隐藏 */
 .chat-main-empty {
   position: relative;
@@ -2908,14 +2909,40 @@ body.sidebar-resizing {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 18px;
-  padding: 48px 24px 32px;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 48px 24px 16px;
 }
 
 /* hero 模式下：把 ChatStream 整个从视觉上移除 —— Migrated to ChatView.less. */
 
-/* hero 模式下：把 composer 容器居中（不再贴底） */
+/* 欢迎内容只占用输入区以外的剩余空间。 */
+.chat-empty-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 18px 0;
+}
+
+/* 空态底部 dock：tips 在上，composer 在下。 */
+.chat-empty-composer-dock {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* hero 模式下：composer 保持居中宽度并贴在内容区底部。 */
 .chat-main-empty .chat-hero-composer,
 .chat-main-empty .composer-wrap {
   width: 100%;
@@ -4391,9 +4418,7 @@ body.sidebar-resizing {
   color: currentColor;
 }
 .composer-model-group + .composer-model-group {
-  border-top: 1px solid var(--divider);
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: 4px;
 }
 .composer-model-group-title,
 .composer-menu-empty {
@@ -4414,7 +4439,7 @@ body.sidebar-resizing {
 .composer-dropdown-menu .composer-menu-item.active {
   background: color-mix(in srgb, var(--text) 5%, transparent);
 }
-/* group 间分隔线让出容器新内边距 */
+/* 分组标题和留白已经足以表达层级，不再叠加横向分割线。 */
 .composer-dropdown-menu .composer-model-group + .composer-model-group {
   margin-left: 0;
   margin-right: 0;
@@ -4451,8 +4476,23 @@ body.sidebar-resizing {
   white-space: nowrap;
 }
 .composer-project-menu {
+  display: flex;
+  flex-direction: column;
   min-width: 220px;
+  max-height: min(420px, calc(100vh - 72px));
+  overflow: hidden;
   padding: 4px;
+}
+.composer-project-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.composer-project-actions {
+  flex: 0 0 auto;
+  margin-top: 4px;
+  padding-top: 4px;
+  background: var(--panel);
 }
 .composer-project-group-header {
   padding: 8px 12px 4px;
@@ -4462,11 +4502,6 @@ body.sidebar-resizing {
   letter-spacing: 0.06em;
   color: var(--text-faint);
   user-select: none;
-}
-.composer-project-divider {
-  height: 1px;
-  background: var(--divider);
-  margin: 4px 6px;
 }
 .composer-project-picker .composer-menu-item .composer-menu-item-label {
   gap: 8px;

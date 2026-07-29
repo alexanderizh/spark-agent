@@ -945,6 +945,13 @@ export interface WorkspaceInfo {
   id: string
   name: string
   rootPath: string
+  /**
+   * 关联的画布项目 ID。普通代码项目为 null；旧版本或外部调用方未提供时可能缺省。
+   *
+   * 该标记由主进程根据 canvas_projects.root_path 与 workspace.root_path 的关联生成，
+   * UI 不应通过目录名或项目名称猜测画布项目。
+   */
+  canvasProjectId?: string | null
   pinnedAt: string | null
   archivedAt: string | null
   createdAt: string

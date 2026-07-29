@@ -113,6 +113,7 @@ import type { UIMessage } from '../../services/event-mapper'
 import { formatTokenCount } from './ChatViewUtils'
 import { scrollTextareaCaretIntoView } from './composer-caret-scroll'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
+import { isCanvasWorkspace, listSelectableWorkspaces } from '../../workspace-visibility'
 
 type ContextUsageState = {
   estimatedTokens: number
@@ -3686,7 +3687,11 @@ function ComposerReasoningSlider({
   onChange,
 }: {
   value: SessionReasoningEffort
-  options: Array<{ value: SessionReasoningEffort; label: string }>
+  options: Array<{
+    value: SessionReasoningEffort
+    label: string
+    description: string
+  }>
   disabled?: boolean
   onChange: (value: SessionReasoningEffort) => void | Promise<void>
 }) {
@@ -3700,6 +3705,7 @@ function ComposerReasoningSlider({
   )
   const activeOption = options[activeIndex] ?? options[0]
   const maxIndex = Math.max(1, options.length - 1)
+  const isFast = value === 'medium'
   const isMax = value === 'max'
   const edgeInset = 8
   const getInsetPosition = (index: number) => {
@@ -3729,8 +3735,12 @@ function ComposerReasoningSlider({
   return (
     <div
       ref={rootRef}
-      className={`composer-select composer-menu-select composer-reasoning-select variant-enriched ${disabled ? ' is-disabled' : ''}${open ? ' is-open' : ''}${isMax ? ' is-max' : ''}`}
-      title={disabled ? '会话运行中不可切换' : '推理强度'}
+      className={`composer-select composer-menu-select composer-reasoning-select variant-enriched ${disabled ? ' is-disabled' : ''}${open ? ' is-open' : ''}${isFast ? ' is-fast' : ''}${isMax ? ' is-max' : ''}`}
+      title={
+        disabled
+          ? '会话运行中不可切换'
+          : `推理强度：${activeOption?.description ?? activeOption?.label ?? value}`
+      }
     >
       <span className="composer-select-icon">
         <Icons.Brain size={14} />
@@ -3753,8 +3763,11 @@ function ComposerReasoningSlider({
               <strong>{activeOption?.label ?? value}</strong>
             </div>
           </div>
+          <div className="composer-reasoning-description">
+            {activeOption?.description ?? '调整模型用于分析和推理的强度'}
+          </div>
           <div className="composer-reasoning-axis" aria-hidden="true">
-            <span>更快</span>
+            <span>响应更快</span>
             <span>更强</span>
           </div>
           <div
@@ -3811,7 +3824,7 @@ function ComposerReasoningSlider({
                     '--reasoning-step-left': getInsetPosition(index),
                   } as React.CSSProperties
                 }
-                title={option.label}
+                title={`${option.label} · ${option.description}`}
                 aria-label={option.label}
                 onClick={() => commitValue(option.value)}
               >
@@ -3833,7 +3846,7 @@ function ComposerReasoningSlider({
  * ProjectPicker — 项目选择器（下拉）
  * 位置：输入框内部右下角，靠近发送按钮
  * 下拉内容：
- *   - "最近" 分组：用户最近的项目（最多 5 个），当前选中的打勾
+ *   - "项目"分组：用户的全部普通项目，当前选中的打勾
  *   - "选择新项目"：从文件夹选择
  *   - "不需要项目"：使用临时会话目录（"不使用项目" workspace）
  * 显示：
@@ -3858,24 +3871,20 @@ function ProjectPicker({
   const rootRef = useRef<HTMLDivElement | null>(null)
   useCloseOnOutside(rootRef, () => setOpen(false), open)
 
-  // 最近项目：按更新时间倒序，最多 5 个，排除 "不使用项目" 与 worktree（worktree 不是可选项目）
-  const recent = useMemo(() => {
-    return workspaces
-      .filter((w) => w.name !== NO_PROJECT_WORKSPACE_NAME && w.worktreeMeta == null)
-      .sort((a, b) => {
-        const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime()
-        const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime()
-        return tb - ta
-      })
-      .slice(0, 5)
-  }, [workspaces])
+  // 全部普通项目：按更新时间倒序，排除临时项目、画布项目与 worktree。
+  const projects = useMemo(
+    () => listSelectableWorkspaces(workspaces, NO_PROJECT_WORKSPACE_NAME),
+    [workspaces],
+  )
 
   const noProjectWorkspace = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME) ?? null
   const isNoProject = activeWorkspaceId != null && noProjectWorkspace?.id === activeWorkspaceId
   // 若当前活动 workspace 恰是 worktree（理论上不应发生），显示其 base 项目，避免误导
-  const rawSelected = isNoProject
-    ? null
-    : (workspaces.find((w) => w.id === activeWorkspaceId) ?? null)
+  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null
+  const rawSelected =
+    isNoProject || activeWorkspace == null || isCanvasWorkspace(activeWorkspace)
+      ? null
+      : activeWorkspace
   const selectedProject =
     rawSelected?.worktreeMeta?.baseWorkspaceId != null
       ? (workspaces.find((w) => w.id === rawSelected.worktreeMeta?.baseWorkspaceId) ?? rawSelected)
@@ -3908,62 +3917,65 @@ function ProjectPicker({
       </button>
       {open && (
         <div className="composer-menu composer-project-menu right">
-          {recent.length > 0 && (
-            <>
-              <div className="composer-project-group-header">最近</div>
-              {recent.map((w) => (
-                <button
-                  key={w.id}
-                  type="button"
-                  className={`composer-menu-item${selectedProject?.id === w.id ? ' active' : ''}`}
-                  onClick={() => {
-                    setOpen(false)
-                    onSwitchWorkspace?.(w.id)
-                  }}
-                >
-                  <span className="composer-menu-item-copy">
-                    <span className="composer-menu-item-label">
-                      <Icons.Folder size={13} />
-                      <span>{w.name}</span>
+          <div className="composer-project-list">
+            {projects.length > 0 && (
+              <>
+                <div className="composer-project-group-header">项目</div>
+                {projects.map((w) => (
+                  <button
+                    key={w.id}
+                    type="button"
+                    className={`composer-menu-item${selectedProject?.id === w.id ? ' active' : ''}`}
+                    onClick={() => {
+                      setOpen(false)
+                      onSwitchWorkspace?.(w.id)
+                    }}
+                  >
+                    <span className="composer-menu-item-copy">
+                      <span className="composer-menu-item-label">
+                        <Icons.Folder size={13} />
+                        <span>{w.name}</span>
+                      </span>
                     </span>
-                  </span>
-                  {selectedProject?.id === w.id && <Icons.Check size={14} />}
-                </button>
-              ))}
-              <div className="composer-project-divider" />
-            </>
-          )}
-          <button
-            type="button"
-            className="composer-menu-item"
-            onClick={() => {
-              setOpen(false)
-              onPickProject?.()
-            }}
-          >
-            <span className="composer-menu-item-copy">
-              <span className="composer-menu-item-label">
-                <Icons.FolderPlus size={13} />
-                <span>选择新项目</span>
+                    {selectedProject?.id === w.id && <Icons.Check size={14} />}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+          <div className="composer-project-actions">
+            <button
+              type="button"
+              className="composer-menu-item"
+              onClick={() => {
+                setOpen(false)
+                onPickProject?.()
+              }}
+            >
+              <span className="composer-menu-item-copy">
+                <span className="composer-menu-item-label">
+                  <Icons.FolderPlus size={13} />
+                  <span>选择新项目</span>
+                </span>
               </span>
-            </span>
-          </button>
-          <button
-            type="button"
-            className={`composer-menu-item${isNoProject ? ' active' : ''}`}
-            onClick={() => {
-              setOpen(false)
-              onUseNoProject?.()
-            }}
-          >
-            <span className="composer-menu-item-copy">
-              <span className="composer-menu-item-label">
-                <Icons.FolderX size={13} />
-                <span>不需要项目</span>
+            </button>
+            <button
+              type="button"
+              className={`composer-menu-item${isNoProject ? ' active' : ''}`}
+              onClick={() => {
+                setOpen(false)
+                onUseNoProject?.()
+              }}
+            >
+              <span className="composer-menu-item-copy">
+                <span className="composer-menu-item-label">
+                  <Icons.FolderX size={13} />
+                  <span>不需要项目</span>
+                </span>
               </span>
-            </span>
-            {isNoProject && <Icons.Check size={14} />}
-          </button>
+              {isNoProject && <Icons.Check size={14} />}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -4170,7 +4182,6 @@ function AgentPicker({
                 </span>
                 {activeTeam?.builtIn && <span className="composer-menu-item-tag">内置</span>}
               </div>
-              <div className="composer-menu-divider" />
               <div className="composer-menu-group-title">
                 成员 · {rosterMembers.length + (hostAgent ? 1 : 0)}
               </div>
@@ -4219,7 +4230,6 @@ function AgentPicker({
               <div className="composer-roster-locked-hint">
                 <Icons.Lock size={11} /> 会话进行中，团队成员已锁定，仅可切换主持人或退出团队
               </div>
-              <div className="composer-menu-divider" />
               <button
                 type="button"
                 className="composer-menu-item team-mode-entry team-mode-exit"
@@ -4326,7 +4336,6 @@ function AgentPicker({
                   })}
                 </>
               )}
-              <div className="composer-menu-divider" />
               <div className="composer-menu-group-title">
                 {teamMode ? '主持人 Agent' : '选择 Agent'}
               </div>
@@ -5271,23 +5280,31 @@ function isRoutingModelCard(model: ModelProfile): boolean {
 
 function getReasoningOptions(
   adapter: AgentAdapter,
-): Array<{ value: SessionReasoningEffort; label: string }> {
+): Array<{ value: SessionReasoningEffort; label: string; description: string }> {
   if (isClaudeAdapter(adapter)) {
     return [
-      { value: 'minimal', label: '极低' },
-      { value: 'low', label: '低' },
-      { value: 'medium', label: '中' },
-      { value: 'high', label: '高' },
-      { value: 'xhigh', label: '超高' },
-      { value: 'max', label: 'Max' },
+      { value: 'minimal', label: '极低', description: '最低推理强度，优先缩短响应时间' },
+      { value: 'low', label: '低', description: '减少推理开销，适合明确而简单的任务' },
+      {
+        value: 'medium',
+        label: '快速',
+        description: '速度与质量均衡，适合大多数日常任务',
+      },
+      { value: 'high', label: '高', description: '加强分析，适合有一定复杂度的任务' },
+      { value: 'xhigh', label: '超高', description: '进行更深入的推理，响应时间会更长' },
+      { value: 'max', label: 'Max', description: '使用最高推理强度处理最复杂的任务' },
     ]
   }
   return [
-    { value: 'minimal', label: '极低' },
-    { value: 'low', label: '低' },
-    { value: 'medium', label: '中' },
-    { value: 'high', label: '高' },
-    { value: 'xhigh', label: '超高' },
-    { value: 'max', label: 'Max' },
+    { value: 'minimal', label: '极低', description: '最低推理强度，优先缩短响应时间' },
+    { value: 'low', label: '低', description: '减少推理开销，适合明确而简单的任务' },
+    {
+      value: 'medium',
+      label: '快速',
+      description: '速度与质量均衡，适合大多数日常任务',
+    },
+    { value: 'high', label: '高', description: '加强分析，适合有一定复杂度的任务' },
+    { value: 'xhigh', label: '超高', description: '进行更深入的推理，响应时间会更长' },
+    { value: 'max', label: 'Max', description: '使用最高推理强度处理最复杂的任务' },
   ]
 }

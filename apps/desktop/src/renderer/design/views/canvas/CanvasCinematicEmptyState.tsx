@@ -1,16 +1,33 @@
+import { useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Icons } from '../../Icons'
 
 export function CanvasCinematicEmptyState({
   onStartWithAgent,
+  onSubmitAgentPrompt,
   onOpenInlineAi,
   onUploadFiles,
   onOpenWorkflowLibrary,
 }: {
   onStartWithAgent: () => void
+  onSubmitAgentPrompt: (prompt: string) => void
   onOpenInlineAi: () => void
   onUploadFiles: () => void
   onOpenWorkflowLibrary: () => void
 }) {
+  const [prompt, setPrompt] = useState('')
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    submitPrompt()
+  }
+
+  const submitPrompt = () => {
+    const text = prompt.trim()
+    if (!text) return
+    onSubmitAgentPrompt(text)
+    setPrompt('')
+  }
+
   return (
     <section className="canvas-cinematic-empty" aria-label="空画布创作引导">
       <div className="canvas-cinematic-empty-inner">
@@ -21,13 +38,36 @@ export function CanvasCinematicEmptyState({
         <h1>今天想创造怎样的世界？</h1>
         <p>Agent 会把故事拆成角色、场景、分镜和生成任务，并在画布中保留完整创作脉络。</p>
 
-        <button type="button" className="canvas-cinematic-command" onClick={onStartWithAgent}>
+        <form className="canvas-cinematic-command" onSubmit={handleSubmit}>
           <Icons.Sparkles size={17} />
-          <span>描述故事、粘贴剧本，或输入 / 调用一个创作工作流…</span>
-          <span className="canvas-cinematic-command-send" aria-hidden="true">
+          <textarea
+            aria-label="向画布 Agent 发送消息"
+            autoComplete="off"
+            rows={1}
+            value={prompt}
+            placeholder="描述故事、粘贴剧本，或输入 / 调用一个创作工作流…"
+            onChange={(event) => setPrompt(event.target.value)}
+            onFocus={onStartWithAgent}
+            onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+              const nativeEvent = event.nativeEvent as globalThis.KeyboardEvent & {
+                isComposing?: boolean
+              }
+              if (nativeEvent.isComposing || event.keyCode === 229) return
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                submitPrompt()
+              }
+            }}
+          />
+          <button
+            type="submit"
+            className="canvas-cinematic-command-send"
+            aria-label="发送给画布 Agent"
+            disabled={!prompt.trim()}
+          >
             <Icons.ArrowRight size={16} />
-          </span>
-        </button>
+          </button>
+        </form>
 
         <div className="canvas-cinematic-starters">
           <button type="button" onClick={onOpenInlineAi}>

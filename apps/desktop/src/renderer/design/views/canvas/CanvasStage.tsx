@@ -2136,12 +2136,23 @@ function CanvasStageInner({
       if (!(target instanceof Element)) return
       const nodeElement = target.closest<HTMLElement>('[data-canvas-node-id]')
       const nodeId = nodeElement?.dataset.canvasNodeId
-      if (!nodeId) return
+      if (nodeId) {
+        event.preventDefault()
+        event.stopPropagation()
+        onEditNode(nodeId)
+        return
+      }
+      if (!target.closest('.react-flow__pane')) return
+      const instance = flowInstanceRef.current
+      if (!instance) return
       event.preventDefault()
       event.stopPropagation()
-      onEditNode(nodeId)
+      const position = instance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+      void Promise.resolve(onAddTextAtPosition(position)).then((created) => {
+        if (created && typeof created === 'object' && created.id) onEditNode(created.id)
+      })
     },
-    [onEditNode],
+    [onAddTextAtPosition, onEditNode],
   )
 
   const handleSelectionChange = useCallback(

@@ -19,7 +19,7 @@ export type EmptyHeroTheme = {
   preview: string
 }
 
-export const DEFAULT_EMPTY_HERO_THEME: EmptyHeroThemeId = 'celestial'
+export const DEFAULT_EMPTY_HERO_THEME: EmptyHeroThemeId = 'none'
 
 export const EMPTY_HERO_THEMES: readonly EmptyHeroTheme[] = [
   {

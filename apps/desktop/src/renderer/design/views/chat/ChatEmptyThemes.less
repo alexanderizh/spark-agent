@@ -5,6 +5,126 @@
  * empty-state surface; conversation views and composer behavior remain shared.
  */
 
+.single-empty-title-row {
+  display: flex;
+  max-width: 100%;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.empty-hero-theme-trigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 520;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  opacity: 0.72;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    opacity 160ms ease;
+}
+
+.empty-hero-theme-trigger:hover,
+.empty-hero-theme-trigger[aria-expanded='true'] {
+  background: var(--primary-soft);
+  color: var(--primary);
+  opacity: 1;
+}
+
+.empty-hero-theme-trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 52%, transparent);
+  outline-offset: 2px;
+}
+
+.empty-hero-theme-trigger-separator {
+  opacity: 0.48;
+}
+
+.empty-hero-theme-menu {
+  width: min(230px, calc(100vw - 24px));
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-elev);
+  box-shadow: var(--shadow-lg);
+}
+
+.empty-hero-theme-menu button {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  grid-template-columns: 24px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.empty-hero-theme-menu button:hover,
+.empty-hero-theme-menu button.is-active {
+  background: var(--hover);
+}
+
+.empty-hero-theme-menu button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 42%, transparent);
+  outline-offset: -2px;
+}
+
+.empty-hero-theme-swatch {
+  width: 24px;
+  height: 24px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 42%, transparent);
+}
+
+.empty-hero-theme-option-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.empty-hero-theme-option-copy strong,
+.empty-hero-theme-option-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-hero-theme-option-copy strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.empty-hero-theme-option-copy > span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.empty-hero-theme-menu button > svg {
+  color: var(--primary);
+}
+
 /*
  * Empty-session atmosphere belongs to the application shell, not to the chat
  * pane. Keeping the full backdrop here lets the floating sidebar, its outer
@@ -105,9 +225,8 @@
   --text-2: var(--eh-muted);
   --fill-2: color-mix(in srgb, var(--eh-accent) 8%, transparent);
   --fill-3: color-mix(in srgb, var(--eh-accent) 13%, transparent);
-  gap: 14px;
   isolation: isolate;
-  padding: clamp(80px, 10vh, 112px) clamp(18px, 3vw, 44px) 48px;
+  padding: clamp(80px, 10vh, 112px) clamp(18px, 3vw, 44px) clamp(16px, 2.5vh, 24px);
   transition:
     background 240ms ease,
     color 180ms ease;
@@ -148,6 +267,28 @@
 .chat-main-empty[data-empty-theme] .single-empty-copy {
   align-items: flex-start;
   gap: 9px;
+}
+
+.chat-main-empty[data-empty-theme] .single-empty-title-row {
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+.chat-main-empty[data-empty-theme] .empty-hero-theme-trigger {
+  background: color-mix(in srgb, var(--eh-surface-strong) 38%, transparent);
+  color: var(--eh-muted);
+}
+
+.chat-main-empty[data-empty-theme] .empty-hero-theme-trigger:hover,
+.chat-main-empty[data-empty-theme] .empty-hero-theme-trigger[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--eh-accent) 10%, var(--eh-surface-strong));
+  color: var(--eh-accent);
+}
+
+.chat-main-empty[data-empty-theme] .empty-hero-theme-menu {
+  border-color: var(--eh-line);
+  background: var(--eh-popup-surface);
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--eh-shadow) 92%, transparent);
 }
 
 .single-empty-eyebrow {
@@ -1099,10 +1240,14 @@
 
 @media (max-width: 720px) {
   .chat-main-empty[data-empty-theme] {
-    justify-content: flex-start;
-    gap: 14px;
-    padding: 118px 12px 48px;
+    padding: 118px 12px 12px;
     overflow-y: auto;
+  }
+
+  .chat-main-empty[data-empty-theme] .chat-empty-content {
+    min-height: auto;
+    flex: 1 0 auto;
+    padding-bottom: 14px;
   }
 
   .chat-main-empty[data-empty-theme] .single-empty-hero {
@@ -1160,9 +1305,8 @@
 
 @media (max-height: 760px) and (min-width: 721px) {
   .chat-main-empty[data-empty-theme] {
-    gap: 12px;
     padding-top: 82px;
-    padding-bottom: 34px;
+    padding-bottom: 12px;
   }
 
   .chat-main-empty[data-empty-theme] .single-empty-hero {
@@ -1189,10 +1333,6 @@
   .chat-main-empty[data-empty-theme] .single-empty-action {
     min-height: 72px;
     padding: 12px;
-  }
-
-  .hero-tips-wrap {
-    bottom: 8px;
   }
 }
 

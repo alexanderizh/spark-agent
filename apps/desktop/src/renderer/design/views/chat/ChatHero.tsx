@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import type { ManagedAgent } from '@spark/protocol'
+import { Dropdown } from 'antd'
 import { Icons } from '../../Icons'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../../avatar'
 import { AvatarImage } from '../../components/AvatarImage'
 import { formatShortcut } from '../../hooks/useKeyboard'
 import {
+  EMPTY_HERO_THEMES,
   getClassicEmptyHeroTitle,
   getEmptyHeroTheme,
   getEmptyHeroTitleLines,
@@ -85,6 +87,15 @@ const SINGLE_AGENT_HERO_ACTIONS = [
 const SINGLE_AGENT_HERO_VISIBLE_COUNT = 4
 /** 轮换间隔，参考底部 hero-tips 节奏（5s）。 */
 const SINGLE_AGENT_HERO_ROTATE_MS = 5000
+
+const EMPTY_HERO_THEME_SHORT_LABELS: Record<EmptyHeroThemeId, string> = {
+  none: '经典',
+  celestial: '星图',
+  studio: '灵感',
+  midnight: '午夜',
+  moss: '苔原',
+  geometry: '几何',
+}
 
 /* 空会话底部：纵向轮播的功能 / 快捷键 / 小技巧提示（淡色，5s 切换，悬停暂停）。 */
 type HeroTipKind = 'shortcut' | 'feature' | 'tip'
@@ -184,12 +195,85 @@ export function HeroTipsTicker() {
   )
 }
 
+function EmptyHeroThemeSwitcher({
+  themeId,
+  onSelectTheme,
+}: {
+  themeId: EmptyHeroThemeId
+  onSelectTheme: (themeId: EmptyHeroThemeId) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const theme = getEmptyHeroTheme(themeId)
+
+  return (
+    <Dropdown
+      menu={{ items: [] }}
+      open={open}
+      trigger={['click']}
+      placement="bottomLeft"
+      autoAdjustOverflow
+      onOpenChange={setOpen}
+      overlayClassName="empty-hero-theme-dropdown"
+      getPopupContainer={(triggerNode) =>
+        triggerNode.closest<HTMLElement>('.chat-main-empty') ?? document.body
+      }
+      popupRender={() => (
+        <div className="empty-hero-theme-menu" role="menu" aria-label="选择会话主题">
+          {EMPTY_HERO_THEMES.map((option) => {
+            const selected = option.id === theme.id
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                className={selected ? 'is-active' : ''}
+                onClick={() => {
+                  setOpen(false)
+                  if (!selected) onSelectTheme(option.id)
+                }}
+              >
+                <span
+                  className="empty-hero-theme-swatch"
+                  style={{ background: option.preview }}
+                  aria-hidden="true"
+                />
+                <span className="empty-hero-theme-option-copy">
+                  <strong>{option.name}</strong>
+                  <span>{option.description}</span>
+                </span>
+                {selected && <Icons.Check size={13} aria-hidden="true" />}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    >
+      <button
+        type="button"
+        className="empty-hero-theme-trigger"
+        aria-label={`切换会话主题，当前为${theme.name}`}
+        aria-expanded={open}
+      >
+        <span>主题</span>
+        <span className="empty-hero-theme-trigger-separator" aria-hidden="true">
+          ·
+        </span>
+        <span>{EMPTY_HERO_THEME_SHORT_LABELS[theme.id]}</span>
+        <Icons.ChevronDown size={11} aria-hidden="true" />
+      </button>
+    </Dropdown>
+  )
+}
+
 export function SingleAgentEmptyHero({
   themeId,
   onSelectPrompt,
+  onSelectTheme,
 }: {
   themeId: EmptyHeroThemeId
   onSelectPrompt: (prompt: string) => void
+  onSelectTheme: (themeId: EmptyHeroThemeId) => void
 }) {
   const theme = getEmptyHeroTheme(themeId)
   const isClassicTheme = theme.id === 'none'
@@ -293,19 +377,25 @@ export function SingleAgentEmptyHero({
     >
       {isClassicTheme ? (
         <div className="single-empty-copy">
-          <h1 className="chat-hero-title single-empty-title">
-            {getClassicEmptyHeroTitle(localHour)}
-          </h1>
+          <div className="single-empty-title-row">
+            <h1 className="chat-hero-title single-empty-title">
+              {getClassicEmptyHeroTitle(localHour)}
+            </h1>
+            <EmptyHeroThemeSwitcher themeId={theme.id} onSelectTheme={onSelectTheme} />
+          </div>
         </div>
       ) : (
         <div className="single-empty-heading">
           <div className="single-empty-copy">
             <span className="single-empty-eyebrow">{theme.eyebrow}</span>
-            <h1 className="chat-hero-title single-empty-title">
-              {titleLines.map((line) => (
-                <span key={line}>{line}</span>
-              ))}
-            </h1>
+            <div className="single-empty-title-row">
+              <h1 className="chat-hero-title single-empty-title">
+                {titleLines.map((line) => (
+                  <span key={line}>{line}</span>
+                ))}
+              </h1>
+              <EmptyHeroThemeSwitcher themeId={theme.id} onSelectTheme={onSelectTheme} />
+            </div>
             <p className="single-empty-body">{theme.body}</p>
           </div>
           <div className="single-empty-art" aria-hidden="true">

@@ -74,17 +74,16 @@
     gap: 8px;
   }
 
-  // macOS hiddenInset 红绿灯位于左上角，overlay 顶栏靠上时给标题区留出安全边距，
-  // 避免标题被红绿灯压住（与 image-lightbox-topbar.platform-darwin-safe-area 同款）。
+  // overlay 顶栏靠上时消费系统标题栏安全区，避免标题被原生按钮压住。
   &.platform-darwin-safe-area {
-    padding-left: 92px;
+    padding-left: var(--window-titlebar-safe-left);
   }
 }
 
 // 平台类是窗口初始化时的稳定信号，可兜底模块加载阶段 window.spark 尚未就绪、
 // JSX 未附加 platform-darwin-safe-area 的情况；姿势编辑全屏页也复用同一安全区。
 .app.platform-darwin .stage3d-modal-overlay > .stage3d-shell > .stage3d-topbar {
-  padding-left: 92px;
+  padding-left: var(--window-titlebar-safe-left);
 }
 
 .stage3d-body {
