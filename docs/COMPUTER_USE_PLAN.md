@@ -506,7 +506,7 @@ export interface ComputerActionEnvelope {
 - UI Automation 获取 full/diff tree、pattern、bounds 和 password 属性；旧 tree/element ref 拒绝；password/provider-secure 节点的 value 与 provider-controlled name 都在 Host 内替换。
 - 语义操作优先使用 Invoke/Value/SelectionItem/Scroll/Focus/ExpandCollapse，SendInput 负责受限坐标、拖拽、滚动、按键和 UTF-16 文本。
 - 每个输入动作前后复核前台 HWND、PID、规范化 executable path SHA-256（inventory、capture 与 SendInput 使用同一身份算法）；secure desktop、取消 session、焦点漂移和身份变化 fail-closed。
-- Host、SparkWork.exe 与独立 Node runtime 必须使用同一 Authenticode publisher 并带时间戳；运行时 publisher 比较只读取 WinVerifyTrust 已验证 signer chain 的 leaf certificate，不扫描 PKCS#7 附带证书包；发布 CI 缺证书直接失败。自签名发布证书只允许在 SHA-256 publisher 指纹与 PFX 完全匹配后，于单次 Windows 打包进程内临时加入 CurrentUser Root，并由退出清理钩子删除，避免对每个产物重复建立证书链。
+- Host、SparkWork.exe 与独立 Node runtime 必须使用同一 Authenticode publisher 并带时间戳；运行时 publisher 比较只读取 WinVerifyTrust 已验证 signer chain 的 leaf certificate，不扫描 PKCS#7 附带证书包；发布 CI 缺证书直接失败。发布 CI 不修改 runner 的根证书存储：公有证书链必须为 `Valid`；自签名证书只允许 `NotTrusted`/`UnknownError`，且 signer 必须自签名、SHA-256 publisher 指纹必须与 PFX 精确一致、RFC 3161 时间戳必须存在，`HashMismatch` 等完整性错误一律失败。
 
 ### 8.4 Linux
 

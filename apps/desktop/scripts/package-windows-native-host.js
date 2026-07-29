@@ -198,42 +198,13 @@ if (
 ) {
   throw "Authenticode signer differs from the configured publisher"
 }
-if (
+$expectedSelfSignedPublisher = (
+  -not [string]::IsNullOrWhiteSpace($expectedPublisher) -and
+  $encoded -ceq $expectedPublisher -and
   ($signature.Status -eq "UnknownError" -or $signature.Status -eq "NotTrusted") -and
   $certificate.Subject -eq $certificate.Issuer
-) {
-  $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-    [System.Security.Cryptography.X509Certificates.StoreName]::Root,
-    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-  )
-  $certificateAdded = $false
-  try {
-    $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-    $existing = $store.Certificates.Find(
-      [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-      $certificate.Thumbprint,
-      $false
-    )
-    if ($existing.Count -eq 0) {
-      $store.Add($certificate)
-      $certificateAdded = $true
-    }
-    $store.Close()
-    $signature = Get-AuthenticodeSignature -LiteralPath $path
-  }
-  finally {
-    try {
-      if ($certificateAdded) {
-        $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-        $store.Remove($certificate)
-      }
-    }
-    finally {
-      $store.Close()
-    }
-  }
-}
-if ($signature.Status -ne "Valid") {
+)
+if ($signature.Status -ne "Valid" -and -not $expectedSelfSignedPublisher) {
   throw "Authenticode signature verification failed: $($signature.Status) - $($signature.StatusMessage)"
 }
 $encoded
