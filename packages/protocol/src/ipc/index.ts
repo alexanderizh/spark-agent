@@ -59,6 +59,7 @@ import type {
   GitHubConnectorConnection,
 } from '../connectors.js'
 import type { ProviderFilesIpcChannelMap } from '../provider-files.js'
+import type { SidebarOrderIpcChannelMap } from '../sidebar-order.js'
 import type {
   ApplicationSnapshotIpcChannelMap,
   ComputerUseIpcChannelMap,
@@ -5268,7 +5269,11 @@ export interface CanvasProjectCleanupOrphansResponse {
  * //    ^-- 类型自动推断为 SessionCreateResponse
  */
 export interface IpcChannelMap
-  extends ProviderFilesIpcChannelMap, ComputerUseIpcChannelMap, ApplicationSnapshotIpcChannelMap {
+  extends
+    ProviderFilesIpcChannelMap,
+    ComputerUseIpcChannelMap,
+    ApplicationSnapshotIpcChannelMap,
+    SidebarOrderIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]

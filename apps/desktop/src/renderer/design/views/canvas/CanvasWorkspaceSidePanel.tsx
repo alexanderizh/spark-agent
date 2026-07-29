@@ -31,7 +31,6 @@ type CanvasWorkspaceSidePanelProps = {
   canAddToGroup: boolean
   canRemoveFromGroup: boolean
   canDissolveGroup: boolean
-  onToggleCollapsed: () => void
   onResizeDefault: () => void
   onResizeKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void
   onResizePointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void
@@ -75,7 +74,6 @@ export function CanvasWorkspaceSidePanel({
   canAddToGroup,
   canRemoveFromGroup,
   canDissolveGroup,
-  onToggleCollapsed,
   onResizeDefault,
   onResizeKeyDown,
   onResizePointerDown,
@@ -107,16 +105,6 @@ export function CanvasWorkspaceSidePanel({
 }: CanvasWorkspaceSidePanelProps) {
   return (
     <>
-      <button
-        type="button"
-        className={`canvas-side-panel-collapse-toggle${sidePanelCollapsed ? ' is-collapsed' : ''}`}
-        onClick={onToggleCollapsed}
-        aria-label={sidePanelCollapsed ? '展开右侧面板' : '折叠右侧面板'}
-        title={sidePanelCollapsed ? '展开右侧面板' : '折叠右侧面板'}
-        aria-keyshortcuts="Meta+Backslash Control+Backslash"
-      >
-        {sidePanelCollapsed ? <Icons.ChevronLeft size={16} /> : <Icons.ChevronRight size={16} />}
-      </button>
       {!sidePanelCollapsed && (
         <aside className="canvas-side-panel" style={{ width: sidePanelWidth }}>
           <div

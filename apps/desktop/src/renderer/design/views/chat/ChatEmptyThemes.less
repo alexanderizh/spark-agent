@@ -22,13 +22,6 @@
     radial-gradient(ellipse at 83% 38%, rgba(169, 139, 242, 0.13), transparent 24%), #fbf7ef;
 }
 
-.app:has(.chat-main-empty[data-empty-theme='luminous']) {
-  --empty-session-backdrop:
-    radial-gradient(circle at 79% 14%, rgba(111, 191, 255, 0.24), transparent 28%),
-    radial-gradient(circle at 61% 44%, rgba(128, 109, 245, 0.14), transparent 32%),
-    linear-gradient(145deg, #f7f9ff, #eef4ff 64%, #f8f9ff);
-}
-
 .app:has(.chat-main-empty[data-empty-theme='midnight']) {
   --empty-session-backdrop:
     radial-gradient(circle at 73% 17%, rgba(112, 99, 220, 0.2), transparent 29%),
@@ -64,13 +57,6 @@
     linear-gradient(150deg, #181411, #201915 56%, #171419);
 }
 
-.app.theme-dark:has(.chat-main-empty[data-empty-theme='luminous']) {
-  --empty-session-backdrop:
-    radial-gradient(circle at 79% 14%, rgba(74, 158, 220, 0.22), transparent 30%),
-    radial-gradient(circle at 61% 44%, rgba(104, 88, 218, 0.18), transparent 34%),
-    linear-gradient(145deg, #101521, #11192b 64%, #141525);
-}
-
 .app.theme-dark:has(.chat-main-empty[data-empty-theme='midnight']) {
   --empty-session-backdrop:
     radial-gradient(circle at 73% 17%, rgba(101, 88, 238, 0.2), transparent 29%),
@@ -96,6 +82,7 @@
   --eh-muted: #686b78;
   --eh-surface: rgba(255, 255, 255, 0.78);
   --eh-surface-strong: rgba(255, 255, 255, 0.94);
+  --eh-popup-surface: color-mix(in srgb, var(--eh-accent) 3%, #fff);
   --eh-line: rgba(91, 82, 175, 0.18);
   --eh-shadow: rgba(54, 45, 115, 0.12);
   --primary: var(--eh-accent);
@@ -111,11 +98,7 @@
   --panel-elev: var(--eh-surface-strong);
   --bg-soft: color-mix(in srgb, var(--eh-accent) 5%, var(--eh-surface-strong));
   --bg-sunken: color-mix(in srgb, var(--eh-accent) 6%, var(--eh-surface-strong));
-  --composer-toolbar-bg: color-mix(
-    in srgb,
-    var(--eh-accent) 3%,
-    var(--eh-surface-strong)
-  );
+  --composer-toolbar-bg: color-mix(in srgb, var(--eh-accent) 3%, var(--eh-surface-strong));
   --hover: color-mix(in srgb, var(--eh-accent) 9%, transparent);
   --active: color-mix(in srgb, var(--eh-accent) 13%, transparent);
   --text-1: var(--eh-ink);
@@ -423,9 +406,7 @@
   color: var(--eh-muted);
 }
 
-.chat-main-empty[data-empty-theme]
-  .composer-param-bar
-  .composer-select:not(.is-disabled),
+.chat-main-empty[data-empty-theme] .composer-param-bar .composer-select:not(.is-disabled),
 .chat-main-empty[data-empty-theme]
   .composer-param-bar
   .composer-select:not(.is-disabled)
@@ -442,13 +423,41 @@
   color: var(--eh-ink);
 }
 
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-menu-select.variant-permission.tone-danger,
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-menu-select.variant-permission.tone-danger
+  .composer-select-icon,
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-menu-select.variant-permission.tone-danger
+  .composer-select-trigger {
+  color: var(--danger);
+}
+
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-menu-select.variant-permission.tone-danger:hover,
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-menu-select.variant-permission.tone-danger.is-open,
+.chat-main-empty[data-empty-theme]
+  .composer-param-bar
+  .composer-menu-select.variant-permission.tone-danger:focus-within {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
 /* Inline composer menus must form the top interaction layer of the empty page. */
 .chat-main-empty[data-empty-theme] .composer-menu,
+.chat-main-empty[data-empty-theme] .composer-dropdown-menu,
 .chat-main-empty[data-empty-theme] .composer-actions-popup,
 .chat-main-empty[data-empty-theme] .composer-actions-sub {
   z-index: 60;
   border: 1px solid var(--eh-line);
-  background: var(--eh-surface-strong);
+  background: var(--eh-popup-surface);
   box-shadow: 0 14px 42px color-mix(in srgb, var(--eh-shadow) 94%, transparent);
   color: var(--eh-ink);
 }
@@ -457,6 +466,30 @@
 .chat-main-empty[data-empty-theme] .composer-menu-item-label,
 .chat-main-empty[data-empty-theme] .composer-actions-item {
   color: var(--eh-ink);
+}
+
+.chat-main-empty[data-empty-theme] .composer-menu.permission-menu .permission-menu-item.tone-danger,
+.chat-main-empty[data-empty-theme]
+  .composer-menu.permission-menu
+  .permission-menu-item.tone-danger
+  .composer-menu-item-label {
+  color: var(--danger);
+}
+
+.chat-main-empty[data-empty-theme]
+  .composer-menu.permission-menu
+  .permission-menu-item.tone-danger:hover,
+.chat-main-empty[data-empty-theme]
+  .composer-menu.permission-menu
+  .permission-menu-item.tone-danger.active {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.chat-main-empty[data-empty-theme]
+  .composer-menu.permission-menu
+  .permission-menu-item.tone-danger
+  .composer-menu-check {
+  color: var(--danger);
 }
 
 .chat-main-empty[data-empty-theme] .composer-menu-item-desc,
@@ -569,80 +602,6 @@
 .chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(4) {
   margin-top: 5px;
   background: rgba(131, 203, 180, 0.16);
-}
-
-/* Luminous control deck */
-.chat-main-empty[data-empty-theme='luminous'] {
-  --eh-accent: #6e68f4;
-  --eh-accent-2: #55c7ee;
-  --eh-ink: #171a34;
-  --eh-muted: #626a83;
-  --eh-line: rgba(102, 110, 224, 0.2);
-  --eh-shadow: rgba(67, 78, 168, 0.15);
-  background:
-    radial-gradient(circle at 79% 14%, rgba(111, 191, 255, 0.24), transparent 28%),
-    radial-gradient(circle at 61% 44%, rgba(128, 109, 245, 0.14), transparent 32%),
-    linear-gradient(145deg, #f7f9ff, #eef4ff 64%, #f8f9ff);
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .chat-hero-grid {
-  background:
-    repeating-conic-gradient(
-      from 210deg at 78% 13%,
-      rgba(112, 142, 245, 0.08) 0 1deg,
-      transparent 1deg 7deg
-    ),
-    radial-gradient(circle at 78% 13%, rgba(255, 255, 255, 0.75), transparent 21%);
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-heading {
-  border-radius: 24px;
-  background: linear-gradient(110deg, rgba(38, 35, 94, 0.96) 0 54%, transparent 54%);
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-copy {
-  padding-left: 26px;
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-eyebrow,
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-title.chat-hero-title,
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-body {
-  color: #fff;
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-body {
-  opacity: 0.72;
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-art-orb {
-  width: 106px;
-  height: 106px;
-  background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.86),
-    rgba(115, 104, 246, 0.35) 48%,
-    rgba(91, 211, 255, 0.52)
-  );
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-action:nth-child(2) {
-  margin-top: 10px;
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-action:nth-child(3) {
-  margin-top: 20px;
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-action:nth-child(4) {
-  margin-top: 30px;
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .composer.composer-v2 {
-  border-color: rgba(114, 114, 239, 0.28);
-  box-shadow:
-    0 24px 70px rgba(67, 78, 168, 0.16),
-    0 0 0 3px rgba(126, 108, 245, 0.05),
-    inset 0 1px 0 #fff;
 }
 
 /* Midnight harbor */
@@ -913,29 +872,11 @@
  */
 .chat-main-empty[data-empty-theme] .single-empty-heading,
 .chat-main-empty[data-empty-theme='studio'] .single-empty-heading,
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-heading,
 .chat-main-empty[data-empty-theme='moss'] .single-empty-heading,
 .chat-main-empty[data-empty-theme='geometry'] .single-empty-heading {
   min-height: 108px;
   grid-template-columns: minmax(0, 1fr) minmax(160px, 240px);
   background: transparent;
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-copy {
-  padding-left: 0;
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-eyebrow {
-  color: var(--eh-accent);
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-title.chat-hero-title {
-  color: var(--eh-ink);
-}
-
-.chat-main-empty[data-empty-theme='luminous'] .single-empty-body {
-  color: var(--eh-muted);
-  opacity: 1;
 }
 
 .chat-main-empty[data-empty-theme='geometry'] .single-empty-title.chat-hero-title {
@@ -976,6 +917,7 @@
   --eh-muted: #a9a7b3;
   --eh-surface: rgba(22, 23, 31, 0.78);
   --eh-surface-strong: rgba(19, 20, 28, 0.94);
+  --eh-popup-surface: color-mix(in srgb, var(--eh-accent) 4%, #15161d);
   --eh-line: rgba(235, 232, 255, 0.15);
   --eh-shadow: rgba(0, 0, 0, 0.36);
   --bg-soft: color-mix(in srgb, var(--eh-accent) 9%, #11131a);
@@ -990,6 +932,7 @@
   --eh-muted: #a7acc4;
   --eh-surface: rgba(15, 21, 43, 0.78);
   --eh-surface-strong: rgba(12, 18, 37, 0.94);
+  --eh-popup-surface: color-mix(in srgb, var(--eh-accent) 5%, #0c1225);
   --eh-line: rgba(147, 135, 255, 0.24);
   --eh-shadow: rgba(0, 0, 0, 0.38);
   --bg-soft: #11182e;
@@ -1066,15 +1009,6 @@
 
 .app.theme-dark .chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(4) {
   background: rgba(66, 126, 108, 0.25);
-}
-
-.app.theme-dark .chat-main-empty[data-empty-theme='luminous'] {
-  --eh-accent: #9690ff;
-  --eh-accent-2: #6bdcff;
-  background:
-    radial-gradient(circle at 79% 14%, rgba(74, 158, 220, 0.22), transparent 30%),
-    radial-gradient(circle at 61% 44%, rgba(104, 88, 218, 0.18), transparent 34%),
-    linear-gradient(145deg, #101521, #11192b 64%, #141525);
 }
 
 .app.theme-dark .chat-main-empty[data-empty-theme='moss'] {
@@ -1157,12 +1091,10 @@
     min-height: 82px;
   }
 
-  .chat-main-empty[data-empty-theme='luminous'] .single-empty-action:nth-child(n),
   .chat-main-empty[data-empty-theme='studio'] .single-empty-action:nth-child(n),
   .chat-main-empty[data-empty-theme='moss'] .single-empty-action:nth-child(n) {
     margin-top: 0;
   }
-
 }
 
 @media (max-width: 720px) {
@@ -1179,7 +1111,6 @@
 
   .single-empty-heading,
   .chat-main-empty[data-empty-theme='studio'] .single-empty-heading,
-  .chat-main-empty[data-empty-theme='luminous'] .single-empty-heading,
   .chat-main-empty[data-empty-theme='moss'] .single-empty-heading,
   .chat-main-empty[data-empty-theme='geometry'] .single-empty-heading {
     min-height: 0;
@@ -1199,15 +1130,6 @@
   .single-empty-art,
   .chat-main-empty[data-empty-theme='moss'] .single-empty-art {
     display: none;
-  }
-
-  .chat-main-empty[data-empty-theme='luminous'] .single-empty-heading {
-    padding: 18px;
-    background: rgba(38, 35, 94, 0.94);
-  }
-
-  .chat-main-empty[data-empty-theme='luminous'] .single-empty-copy {
-    padding-left: 0;
   }
 
   .chat-main-empty[data-empty-theme] .single-empty-title.chat-hero-title {

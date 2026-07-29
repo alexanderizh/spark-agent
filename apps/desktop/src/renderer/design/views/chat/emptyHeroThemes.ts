@@ -1,7 +1,7 @@
 export const EMPTY_HERO_THEME_IDS = [
+  'none',
   'celestial',
   'studio',
-  'luminous',
   'midnight',
   'moss',
   'geometry',
@@ -23,6 +23,15 @@ export const DEFAULT_EMPTY_HERO_THEME: EmptyHeroThemeId = 'celestial'
 
 export const EMPTY_HERO_THEMES: readonly EmptyHeroTheme[] = [
   {
+    id: 'none',
+    name: '不应用主题',
+    description: '恢复经典空会话样式',
+    eyebrow: '',
+    titleLines: [],
+    body: '',
+    preview: 'linear-gradient(135deg, #f5f5f5 0%, #ffffff 100%)',
+  },
+  {
     id: 'celestial',
     name: '星图工作台',
     description: '轻盈星轨与通透卡片',
@@ -39,15 +48,6 @@ export const EMPTY_HERO_THEMES: readonly EmptyHeroTheme[] = [
     titleLines: ['把今天，变成进展'],
     body: '挑一个起点，或者直接告诉我你想完成什么。',
     preview: 'linear-gradient(135deg, #fff8ed 0%, #ff8a72 52%, #a78bfa 100%)',
-  },
-  {
-    id: 'luminous',
-    name: '光场控制台',
-    description: '冰川玻璃与阶梯卡片',
-    eyebrow: 'READY · 04 TOOLS',
-    titleLines: ['从一个指令，抵达结果'],
-    body: '选择快捷入口，或直接开始一段新任务。',
-    preview: 'linear-gradient(135deg, #f4f8ff 0%, #7c8cff 55%, #64d9ff 100%)',
   },
   {
     id: 'midnight',
@@ -85,7 +85,25 @@ export function isEmptyHeroThemeId(value: unknown): value is EmptyHeroThemeId {
 export function getEmptyHeroTheme(id: EmptyHeroThemeId): EmptyHeroTheme {
   const selected = EMPTY_HERO_THEMES.find((theme) => theme.id === id)
   if (selected != null) return selected
-  const fallback = EMPTY_HERO_THEMES[0]
+  const fallback = EMPTY_HERO_THEMES.find((theme) => theme.id === DEFAULT_EMPTY_HERO_THEME)
   if (fallback == null) throw new Error('Empty hero theme registry must not be empty')
   return fallback
+}
+
+export function getLocalTimeGreeting(hour = new Date().getHours()): string {
+  if (hour >= 5 && hour < 12) return '早上好'
+  if (hour >= 12 && hour < 18) return '下午好'
+  return '晚上好'
+}
+
+export function getClassicEmptyHeroTitle(hour = new Date().getHours()): string {
+  if (hour < 5) return '稳步推进当前任务'
+  if (hour < 11) return '早安，准备开始'
+  if (hour < 18) return '下午好，继续推进'
+  return '晚上好，整理下一步'
+}
+
+export function getEmptyHeroTitleLines(theme: EmptyHeroTheme, localHour?: number): string[] {
+  if (theme.id !== 'celestial') return theme.titleLines
+  return [`${getLocalTimeGreeting(localHour)}，继续推进`]
 }

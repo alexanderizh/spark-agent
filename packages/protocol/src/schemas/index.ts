@@ -22,6 +22,7 @@ import {
   CODEX_AUTO_ROUTER_PROVIDER_ID,
 } from '../auto-router-provider.js'
 import { ProviderFilesIpcSchemaRegistry } from '../provider-files.js'
+import { SidebarOrderIpcSchemaRegistry } from '../sidebar-order.js'
 import { CanvasWorkflowIpcSchemaRegistry } from '../canvas-workflow.js'
 import { CanvasWorkflowRuntimeIpcSchemaRegistry } from '../canvas-workflow-runtime.js'
 import {
@@ -823,6 +824,7 @@ export const IpcSchemaRegistry = {
   ...CanvasWorkflowRuntimeIpcSchemaRegistry,
   ...ComputerUseIpcSchemaRegistry,
   ...ApplicationSnapshotIpcSchemaRegistry,
+  ...SidebarOrderIpcSchemaRegistry,
   'session:create': SessionCreateRequestSchema,
   'session:send-turn': SessionSendTurnRequestSchema,
   'session:submit-turn': SessionSendTurnRequestSchema,

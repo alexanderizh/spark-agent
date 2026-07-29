@@ -99,6 +99,8 @@ export interface ChatPanelProps {
   agents?: ManagedAgent[]
   /** 可选：assistant 回退身份（用于首条 loading / 无 agent snapshot 的气泡） */
   fallbackAssistant?: { agentId: string; agentName: string }
+  /** 真实的用户头像节点；未提供时不渲染用户头像区域。 */
+  userAvatar?: React.ReactNode
 }
 
 type AssistantStatus = 'idle' | 'sending' | 'streaming'
@@ -145,6 +147,7 @@ export function ChatPanel({
   onUndoTurn,
   agents = [],
   fallbackAssistant,
+  userAvatar,
   persistedSessionStatus,
 }: ChatPanelProps): React.ReactElement {
   const resolvedToolCallDisplay =
@@ -771,6 +774,7 @@ export function ChatPanel({
                   {...(fallbackAssistant != null ? { fallbackAssistant } : {})}
                   {...(toolNamePrefixFilter !== undefined ? { toolNamePrefixFilter } : {})}
                   toolCallDisplay={resolvedToolCallDisplay}
+                  userAvatar={userAvatar}
                   {...(hideToolInputOutput ? { hideToolInputOutput } : {})}
                   {...(onFocusNodeReference ? { onFocusNode: onFocusNodeReference } : {})}
                 />
@@ -820,6 +824,7 @@ export function ChatPanel({
             text={pendingUserText}
             attachments={pendingUserAttachments}
             nodeReferences={pendingUserNodeReferences}
+            userAvatar={userAvatar}
             {...(onFocusNodeReference ? { onFocusNode: onFocusNodeReference } : {})}
           />
         )}
@@ -950,6 +955,7 @@ function MessageView({
   toolNamePrefixFilter,
   toolCallDisplay,
   hideToolInputOutput,
+  userAvatar,
   onFocusNode,
   onQuestionAnswered,
 }: {
@@ -960,6 +966,7 @@ function MessageView({
   toolNamePrefixFilter?: string
   toolCallDisplay: 'hidden' | 'summary' | 'full'
   hideToolInputOutput?: boolean
+  userAvatar?: React.ReactNode
   onFocusNode?: (nodeId: string) => void
   onQuestionAnswered: (
     questions: UserQuestionPrompt[],
@@ -975,17 +982,19 @@ function MessageView({
   })
   return (
     <div className={`chat-panel-message chat-panel-message-${message.role}`}>
-      <div className="chat-panel-message-avatar">
-        {message.role === 'user' ? (
-          <Icons.MousePointer size={14} />
-        ) : (
+      {message.role === 'user' ? (
+        userAvatar != null ? (
+          <div className="chat-panel-message-avatar">{userAvatar}</div>
+        ) : null
+      ) : (
+        <div className="chat-panel-message-avatar">
           <AssistantAvatar
             agentId={assistantIdentity.id}
             agentName={assistantIdentity.name}
             avatarSrc={assistantIdentity.avatarSrc}
           />
-        )}
-      </div>
+        </div>
+      )}
       <div className="chat-panel-message-body">
         {nodeReferences.length > 0 && (
           <MessageNodeReferencesView
@@ -1538,18 +1547,18 @@ function PendingUserMessageView({
   text,
   attachments,
   nodeReferences,
+  userAvatar,
   onFocusNode,
 }: {
   text: string
   attachments: ChatPanelDisplayAttachment[]
   nodeReferences: ChatPanelNodeReference[]
+  userAvatar?: React.ReactNode
   onFocusNode?: (nodeId: string) => void
 }) {
   return (
     <div className="chat-panel-message chat-panel-message-user chat-panel-message-pending">
-      <div className="chat-panel-message-avatar">
-        <Icons.MousePointer size={14} />
-      </div>
+      {userAvatar != null && <div className="chat-panel-message-avatar">{userAvatar}</div>}
       <div className="chat-panel-message-body">
         {nodeReferences.length > 0 && (
           <MessageNodeReferencesView

@@ -59,6 +59,9 @@
   }
 
   .canvas-toolbar {
+    // 工具栏不应建立高于内容区的独立层叠层；否则内容区内的全屏工作台
+    // （3D 导演台、视频工作台）会被工具栏穿透覆盖。
+    z-index: auto;
     overflow: visible;
   }
 
@@ -74,8 +77,11 @@
 
   .canvas-toolbar-savetag {
     position: relative;
+    box-sizing: border-box;
+    min-width: 74px;
     height: 27px;
     margin: 0 4px 0 0;
+    flex: 0 0 auto;
     gap: 6px;
     padding: 0 7px 0 15px;
     border: 0;
@@ -83,6 +89,7 @@
     background: transparent;
     color: var(--canvas-cinema-success);
     font-size: 9px;
+    white-space: nowrap;
   }
 
   .canvas-toolbar-savetag::before {
@@ -133,8 +140,7 @@
   }
 
   .canvas-toolbar .canvas-toolbar-agent-button {
-    margin-left: 4px;
-    padding-inline: 11px;
+    padding-inline: 8px;
     border-color: rgba(119, 108, 246, 0.38);
     background: var(--canvas-cinema-accent-soft);
     color: #cecaff;
@@ -254,8 +260,80 @@
   }
 
   .canvas-controls {
-    left: 12px;
-    bottom: 12px;
+    // React Flow Panel 默认带 15px margin；必须显式清除，才能与外层的小地图按钮底边对齐。
+    left: auto !important;
+    right: 66px !important;
+    bottom: 12px !important;
+    margin: 0 !important;
+    gap: 2px;
+    padding: 4px;
+    border-color: var(--canvas-cinema-border-strong);
+    border-radius: 10px;
+    background: rgba(14, 17, 21, 0.9);
+    box-shadow:
+      0 10px 28px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.035);
+    backdrop-filter: blur(14px) saturate(1.08);
+    -webkit-backdrop-filter: blur(14px) saturate(1.08);
+  }
+
+  .canvas-controls .canvas-controls-button {
+    display: inline-grid;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 7px;
+    outline: none;
+    background: transparent;
+    color: var(--canvas-cinema-text-muted);
+    box-shadow: none;
+    cursor: pointer;
+    transition:
+      color var(--canvas-cinema-motion-fast) ease,
+      background var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-controls .canvas-controls-button:hover:not(:disabled) {
+    background: var(--canvas-cinema-surface-3);
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .canvas-controls .canvas-controls-button:focus-visible {
+    outline: 1px solid var(--canvas-cinema-accent-bright);
+    outline-offset: -1px;
+    color: var(--canvas-cinema-text-strong);
+  }
+
+  .canvas-controls .canvas-controls-button:disabled {
+    background: transparent;
+    color: var(--canvas-cinema-text-faint);
+    cursor: not-allowed;
+    opacity: 0.42;
+  }
+
+  .canvas-controls .canvas-controls-button svg {
+    width: 16px;
+    height: 16px;
+    stroke-width: 1.8;
+  }
+
+  .canvas-controls .canvas-controls-interactive.is-locked {
+    background: var(--canvas-cinema-accent-soft);
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-controls-zoom-label {
+    min-width: 42px;
+    height: 32px;
+    padding: 0 4px;
+    color: var(--canvas-cinema-text);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 32px;
+    letter-spacing: 0.01em;
   }
 
   .canvas-minimap,

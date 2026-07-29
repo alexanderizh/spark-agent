@@ -15,6 +15,7 @@ describe('canvas cinematic integration', () => {
       'shell.less',
       'nodes.less',
       'agent.less',
+      'panel-rail.less',
       'overlays.less',
     ]
 
@@ -54,7 +55,7 @@ describe('canvas cinematic integration', () => {
     expect(nodeStyles).toContain('flex-basis: 34px')
     expect(legacyStyles).not.toMatch(/\.canvas-node-task\s*\{[^}]*padding:\s*12px/s)
     expect(panelStyles).toContain('grid-column: 2')
-    expect(panelStyles).toContain('.canvas-agent-side-panel-collapse-toggle.is-collapsed')
+    expect(panelStyles).toContain('.canvas-agent-side-panel.is-collapsed')
     expect(addMenu).toContain('canvas-dock-labeled-action')
     expect(dock).toContain('aria-label="全部节点类型"')
     expect(dock).not.toContain('shortLabel="资源"')
@@ -70,6 +71,7 @@ describe('canvas cinematic integration', () => {
     expect(workspace).toContain(
       "import { CanvasWorkspaceSidePanel } from './CanvasWorkspaceSidePanel'",
     )
+    expect(workspace).toContain("import { CanvasRightPanelRail } from './CanvasRightPanelRail'")
     expect(workspace).toContain("import { CanvasNodeEditModal } from './CanvasNodeEditModal'")
     expect(workspace).toContain(
       "import { CanvasFloatingNodeToolbar } from './CanvasFloatingNodeToolbar'",
@@ -79,6 +81,62 @@ describe('canvas cinematic integration', () => {
     expect(floatingToolbar).toContain('onRenameNode')
     expect(floatingToolbar).toContain("menuButton('替换图片'")
     expect(overlayBoundary).toContain('data-canvas-overlay-host')
+  })
+
+  it('uses one flat, persistent and mutually exclusive control rail for both right-side panels', () => {
+    const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
+    const sidePanel = readCanvasSource('./CanvasWorkspaceSidePanel.tsx')
+    const rail = readCanvasSource('./CanvasRightPanelRail.tsx')
+    const railStyles = readCanvasSource('./cinematic/panel-rail.less')
+
+    expect(workspace).toContain('<CanvasRightPanelRail')
+    expect(sidePanel).not.toContain('canvas-side-panel-collapse-toggle')
+    expect(rail).toContain('aria-label="右侧面板控制"')
+    expect(rail).toContain('aria-pressed={open}')
+    expect(rail).not.toContain('canvas-right-panel-switch-label')
+    expect(rail).not.toContain('canvas-right-panel-switch-state')
+    expect(workspace).toContain('setSidePanelCollapsed(true)')
+    expect(workspace).toContain('setAgentOpen(false)')
+    expect(railStyles).toContain('var(--canvas-agent-panel-width) + var(--canvas-side-panel-width)')
+    expect(railStyles).toMatch(/\.canvas-right-panel-switch\s*\{[^}]*border:\s*0/s)
+    expect(railStyles).toContain('.canvas-right-panel-switch.is-agent.is-open')
+    expect(railStyles).toContain('.canvas-right-panel-switch.is-workspace.is-open')
+  })
+
+  it('uses a compact Agent width for new canvases and control-rail expansion', () => {
+    const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
+
+    expect(workspace).toContain('const CANVAS_AGENT_PANEL_DEFAULT_WIDTH = 420')
+    expect(workspace).toContain(
+      'setAgentPanelWidth((current) => Math.min(current, CANVAS_AGENT_PANEL_DEFAULT_WIDTH))',
+    )
+    expect(workspace).toContain('openAgentPanel({ constrainOversizedWidth: true })')
+    expect(workspace).toMatch(
+      /const toggleAgentPanel = useCallback\(\(\) => \{[\s\S]*openAgentPanel\(\{ constrainOversizedWidth: true \}\)/,
+    )
+  })
+
+  it('removes the fake pointer avatar from canvas user messages while keeping agent identity', () => {
+    const agentPanel = readCanvasSource('./CanvasAgentModal.tsx')
+    const chatPanel = readCanvasSource('../../components/ChatPanel.tsx')
+    const agentStyles = readCanvasSource('./cinematic/agent.less')
+
+    expect(agentPanel).not.toContain('userAvatar=')
+    expect(chatPanel).toContain('userAvatar != null')
+    expect(chatPanel).toContain('未提供时不渲染用户头像区域')
+    expect(chatPanel).not.toContain('<Icons.MousePointer size={14} />')
+    expect(agentStyles).not.toMatch(/\.chat-panel-message-avatar\s*\{[^}]*display:\s*none/s)
+  })
+
+  it('makes the preset center a single full-bleed modal surface without a gray inner gutter', () => {
+    const presetModal = readCanvasSource('./CanvasOperationPresetModal.tsx')
+    const presetStyles = readCanvasSource('./CanvasPresetCenter.less')
+
+    expect(presetModal).toContain("body: { height: '100%', padding: 0 }")
+    expect(presetModal).toContain("container: { overflow: 'hidden', padding: 0 }")
+    expect(presetStyles).toMatch(
+      /\.canvas-operation-preset-modal-shell\s*\{[^}]*height:\s*100%[^}]*max-height:\s*none/s,
+    )
   })
 
   it('reserves the native traffic-light safe area in standalone macOS canvas windows', () => {
@@ -91,6 +149,50 @@ describe('canvas cinematic integration', () => {
       /platform-darwin[^{}]*& > \.canvas-workspace-header\s*\{[^}]*padding-left:\s*92px/s,
     )
     expect(shellStyles).toContain('padding: 0 14px 0 16px')
+  })
+
+  it('keeps the save status readable and the Agent action at the standard control size', () => {
+    const toolbar = readCanvasSource('./CanvasToolbar.tsx')
+    const shellStyles = readCanvasSource('./cinematic/shell.less')
+
+    expect(toolbar).toContain('Agent模式')
+    expect(shellStyles).toMatch(
+      /\.canvas-toolbar-savetag\s*\{[^}]*min-width:\s*74px[^}]*flex:\s*0 0 auto[^}]*white-space:\s*nowrap/s,
+    )
+    expect(shellStyles).toMatch(
+      /\.canvas-toolbar \.canvas-toolbar-agent-button\s*\{[^}]*padding-inline:\s*8px/s,
+    )
+  })
+
+  it('uses one Agent glyph across canvas entry points', () => {
+    const icons = readCanvasSource('../../Icons.tsx')
+    const toolbar = readCanvasSource('./CanvasToolbar.tsx')
+    const dock = readCanvasSource('./CanvasBottomDock.tsx')
+    const rail = readCanvasSource('./CanvasRightPanelRail.tsx')
+
+    expect(icons).toContain('Agent: (p: IconProps)')
+    expect(toolbar).toContain('icon={<Icons.Agent size={15} />}')
+    expect(dock).toContain('icon={<Icons.Agent size={15} />}')
+    expect(rail).toContain("accent === 'agent' ? Icons.Agent : Icons.PanelRight")
+  })
+
+  it('owns zoom controls with canvas-scoped flat styling instead of React Flow theme classes', () => {
+    const controls = readCanvasSource('./CanvasZoomControls.tsx')
+    const shellStyles = readCanvasSource('./cinematic/shell.less')
+
+    expect(controls).toContain('className="canvas-controls-button"')
+    expect(controls).not.toContain('react-flow__controls-button')
+    expect(controls).toContain('aria-pressed={!isInteractive}')
+    expect(shellStyles).toMatch(
+      /\.canvas-controls \.canvas-controls-button\s*\{[^}]*background:\s*transparent[^}]*color:\s*var\(--canvas-cinema-text-muted\)/s,
+    )
+    expect(shellStyles).toMatch(
+      /\.canvas-controls \.canvas-controls-button:disabled\s*\{[^}]*background:\s*transparent/s,
+    )
+    expect(shellStyles).toContain('.canvas-controls .canvas-controls-interactive.is-locked')
+    expect(shellStyles).toMatch(
+      /\.canvas-controls\s*\{[^}]*right:\s*66px !important[^}]*bottom:\s*12px !important[^}]*margin:\s*0 !important/s,
+    )
   })
 
   it('uses one flat media frame for loaded and empty image/video nodes', () => {
@@ -177,12 +279,24 @@ describe('canvas cinematic integration', () => {
   })
 
   it('keeps dedicated workbench owners and their macOS title-bar safe areas', () => {
+    const shellStyles = readCanvasSource('./cinematic/shell.less')
     const workbenchStyles = readCanvasSource('./stage3d/stage3d.less')
     const videoWorkbench = readCanvasSource('./videoWorkbench/videoWorkbench.less')
+    const annotationStyles = readCanvasSource(
+      './image-annotation/CanvasImageAnnotationWorkspace.less',
+    )
 
+    expect(shellStyles).toMatch(/\.canvas-toolbar\s*\{[^}]*z-index:\s*auto/s)
     expect(workbenchStyles).toContain('.stage3d-field')
     expect(workbenchStyles).toContain('&.platform-darwin-safe-area')
+    expect(workbenchStyles).toContain('background: var(--stage3d-topbar-bg)')
+    expect(workbenchStyles).toMatch(
+      /\.app\.platform-darwin \.stage3d-modal-overlay[^{}]*\{[^}]*padding-left:\s*92px/s,
+    )
     expect(videoWorkbench).toContain('.vwb-shell')
     expect(videoWorkbench).toContain('&.darwin')
+    expect(annotationStyles).toMatch(
+      /\.canvas-image-annotation-workspace\.is-mac \.canvas-annotation-topbar\s*\{[^}]*padding-left:\s*92px/s,
+    )
   })
 })

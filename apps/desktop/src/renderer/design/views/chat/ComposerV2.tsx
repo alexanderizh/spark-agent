@@ -4531,6 +4531,9 @@ function ProviderModelPicker({
       open={open}
       trigger={['click']}
       placement={placement}
+      getPopupContainer={(triggerNode) =>
+        triggerNode.closest<HTMLElement>('.chat-main-empty[data-empty-theme]') ?? document.body
+      }
       onOpenChange={(nextOpen) => {
         if (disabled || conversationalProviders.length === 0) {
           setOpen(false)

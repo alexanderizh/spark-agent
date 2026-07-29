@@ -7,6 +7,24 @@ import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
 import { ActionIcon, Button, Dropdown, Input, Modal } from '@lobehub/ui'
 import { Maximize2, Minimize2, Pin, PinOff } from 'lucide-react'
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
+import { CSS } from '@dnd-kit/utilities'
 import { Icons } from './Icons'
 import {
   useSessionSidebar,
@@ -36,6 +54,89 @@ import {
   resolveSidebarActiveWorkspaceId,
   resolveSpecialSidebarGroupWorkspaceId,
 } from './sidebar-session-routing'
+import { moveItem, sortByManualOrder } from './sidebar-manual-order'
+
+const projectSortableId = (projectId: string): string => `project:${projectId}`
+const sessionSortableId = (projectId: string, sessionId: string): string =>
+  `session:${projectId}:${sessionId}`
+
+type ParsedSortableId =
+  | { type: 'project'; projectId: string }
+  | { type: 'session'; projectId: string; sessionId: string }
+  | null
+
+function parseSortableId(value: string | number): ParsedSortableId {
+  const [type, projectId, sessionId] = String(value).split(':')
+  if (type === 'project' && projectId) return { type, projectId }
+  if (type === 'session' && projectId && sessionId) return { type, projectId, sessionId }
+  return null
+}
+
+const sidebarCollisionDetection: CollisionDetection = (args) => {
+  const activeItem = parseSortableId(args.active.id)
+  if (activeItem == null) return []
+  return closestCenter({
+    ...args,
+    droppableContainers:
+      activeItem.type === 'project'
+        ? args.droppableContainers.filter(
+            (container) => parseSortableId(container.id)?.type === 'project',
+          )
+        : args.droppableContainers,
+  })
+}
+
+function SortableProjectContainer({
+  id,
+  disabled,
+  children,
+}: {
+  id: string
+  disabled: boolean
+  children: (dragActivatorProps?: React.HTMLAttributes<HTMLDivElement>) => ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled,
+  })
+  const dragActivatorProps = disabled
+    ? undefined
+    : ({ ...attributes, ...listeners } as React.HTMLAttributes<HTMLDivElement>)
+  return (
+    <div
+      ref={setNodeRef}
+      className={`sidebar-sortable-project${isDragging ? ' is-dragging' : ''}`}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+    >
+      {children(dragActivatorProps)}
+    </div>
+  )
+}
+
+function SortableSessionContainer({
+  id,
+  children,
+}: {
+  id: string
+  children: (dragActivatorProps: React.HTMLAttributes<HTMLDivElement>) => ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+  })
+  const dragActivatorProps = {
+    ...attributes,
+    ...listeners,
+  } as React.HTMLAttributes<HTMLDivElement>
+  return (
+    <div
+      ref={setNodeRef}
+      className={`sidebar-sortable-session${isDragging ? ' is-dragging' : ''}`}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+    >
+      {children(dragActivatorProps)}
+    </div>
+  )
+}
 
 /* ─── Project collapsed state persistence ─── */
 const PROJECT_COLLAPSED_KEY = 'spark-agent:project-collapsed'
@@ -178,6 +279,15 @@ type DisplayGroup = {
   label: string
   sessions: SessionSummary[]
   workspace?: WorkspaceInfo
+}
+
+function getDisplayGroupProjectId(
+  group: DisplayGroup,
+  noProjectWorkspaceId: string | null,
+): string | null {
+  if (group.workspace != null) return group.workspace.id
+  if (group.id === 'project:no-project') return noProjectWorkspaceId
+  return null
 }
 
 const DATE_GROUP_ORDER = [
@@ -476,6 +586,7 @@ function ChatListItem({
   onTogglePinned,
   onArchive,
   onDelete,
+  dragActivatorProps,
 }: {
   session: SessionSummary
   active: SessionId | null
@@ -488,6 +599,7 @@ function ChatListItem({
   onTogglePinned?: (session: SessionSummary) => void
   onArchive?: (session: SessionSummary) => void
   onDelete?: (session: SessionSummary) => void
+  dragActivatorProps?: React.HTMLAttributes<HTMLDivElement> | undefined
 }) {
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -516,6 +628,7 @@ function ChatListItem({
   return (
     <div
       className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${contextOpen ? 'is-context-open' : ''} ${statusClass}`}
+      {...dragActivatorProps}
       onClick={() => onClick(s.id)}
       onContextMenu={(e) => {
         e.preventDefault()
@@ -675,6 +788,8 @@ export function ProjectSessionGroup({
   onToggleSessionPinned,
   onArchiveSession,
   onDeleteSession,
+  projectDragActivatorProps,
+  sessionSortProjectId,
 }: {
   group: ProjectGroup
   activeSessionId: SessionId | null
@@ -696,6 +811,8 @@ export function ProjectSessionGroup({
   onToggleSessionPinned: (session: SessionSummary) => void
   onArchiveSession: (session: SessionSummary) => void
   onDeleteSession: (session: SessionSummary) => void
+  projectDragActivatorProps?: React.HTMLAttributes<HTMLDivElement> | undefined
+  sessionSortProjectId?: string
 }) {
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -711,6 +828,7 @@ export function ProjectSessionGroup({
     <div className={`proj-group ${isActiveProject ? 'active-project' : ''}`}>
       <div
         className="proj-head"
+        {...projectDragActivatorProps}
         onClick={() => {
           onOpenChange(!open)
           void onSelectWorkspace(group.workspace)
@@ -741,6 +859,7 @@ export function ProjectSessionGroup({
           aria-label={
             group.workspace.pinnedAt != null ? t('sidebar.project.unpin') : t('sidebar.project.pin')
           }
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation()
             onToggleProjectPinned(group.workspace)
@@ -756,6 +875,7 @@ export function ProjectSessionGroup({
         <button
           className="icon-btn proj-add-session-btn"
           title={t('sidebar.project.newSession')}
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation()
             onNewSession(group.workspace.id)
@@ -829,32 +949,58 @@ export function ProjectSessionGroup({
             </button>
           ) : (
             <>
-              {visibleSessions.map((session, index) => {
-                const dateMarker = shouldShowSessionDateMarker(session, visibleSessions[index - 1])
-                  ? formatSessionDateMarker(session.updatedAt)
-                  : null
-                return (
-                  <React.Fragment key={session.id}>
-                    {dateMarker != null && (
-                      <div className="session-date-marker" aria-label={`会话日期 ${dateMarker}`}>
-                        {dateMarker}
-                      </div>
-                    )}
-                    <ChatListItem
-                      session={session}
-                      active={activeSessionId}
-                      agentStatus={sessionAgentStatuses[session.id]}
-                      terminalActivity={sessionTerminalActivity[session.id]}
-                      unreviewed={unreviewedCompletedSessions.has(session.id)}
-                      onClick={() => onSelectSession(session)}
-                      onRename={onRenameSession}
-                      onTogglePinned={onToggleSessionPinned}
-                      onArchive={onArchiveSession}
-                      onDelete={onDeleteSession}
-                    />
-                  </React.Fragment>
-                )
-              })}
+              <SortableContext
+                items={
+                  sessionSortProjectId == null
+                    ? []
+                    : visibleSessions.map((session) =>
+                        sessionSortableId(sessionSortProjectId, session.id),
+                      )
+                }
+                strategy={verticalListSortingStrategy}
+              >
+                {visibleSessions.map((session, index) => {
+                  const dateMarker =
+                    sessionSortProjectId == null &&
+                    shouldShowSessionDateMarker(session, visibleSessions[index - 1])
+                      ? formatSessionDateMarker(session.updatedAt)
+                      : null
+                  const renderSession = (
+                    dragActivatorProps?: React.HTMLAttributes<HTMLDivElement>,
+                  ) => (
+                    <React.Fragment key={session.id}>
+                      {dateMarker != null && (
+                        <div className="session-date-marker" aria-label={`会话日期 ${dateMarker}`}>
+                          {dateMarker}
+                        </div>
+                      )}
+                      <ChatListItem
+                        session={session}
+                        active={activeSessionId}
+                        agentStatus={sessionAgentStatuses[session.id]}
+                        terminalActivity={sessionTerminalActivity[session.id]}
+                        unreviewed={unreviewedCompletedSessions.has(session.id)}
+                        onClick={() => onSelectSession(session)}
+                        onRename={onRenameSession}
+                        onTogglePinned={onToggleSessionPinned}
+                        onArchive={onArchiveSession}
+                        onDelete={onDeleteSession}
+                        dragActivatorProps={dragActivatorProps}
+                      />
+                    </React.Fragment>
+                  )
+                  return sessionSortProjectId == null ? (
+                    renderSession()
+                  ) : (
+                    <SortableSessionContainer
+                      key={session.id}
+                      id={sessionSortableId(sessionSortProjectId, session.id)}
+                    >
+                      {(dragActivatorProps) => renderSession(dragActivatorProps)}
+                    </SortableSessionContainer>
+                  )
+                })}
+              </SortableContext>
               {(hasMoreSessions || canCollapseSessions) && (
                 <button
                   className="proj-show-more-btn"
@@ -912,6 +1058,8 @@ function FlatGroup({
   open,
   onOpenChange,
   actions,
+  projectDragActivatorProps,
+  sessionSortProjectId,
 }: {
   groupId: string
   label: string
@@ -933,17 +1081,20 @@ function FlatGroup({
     onClick: () => void
   }>
   actions: FlatGroupActions
+  projectDragActivatorProps?: React.HTMLAttributes<HTMLDivElement> | undefined
+  sessionSortProjectId?: string
 }) {
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
   const smallTitle = groupId === 'project:no-project' || groupId === 'project:ungrouped'
   const isActiveProject = groupWorkspaceId != null && activeWorkspaceId === groupWorkspaceId
 
-  if (sessions.length === 0) return null
+  if (sessions.length === 0 && onNewSession == null) return null
   return (
     <div className={`proj-group flat-group${isActiveProject ? ' active-project' : ''}`}>
       <div
         className="proj-head flat-group-head"
+        {...projectDragActivatorProps}
         onClick={() => {
           onOpenChange(!open)
           onSelectGroup?.()
@@ -973,6 +1124,7 @@ function FlatGroup({
             title={
               groupId === 'project:no-project' ? '新建临时会话' : t('sidebar.project.newSession')
             }
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation()
               void onNewSession()
@@ -1010,22 +1162,44 @@ function FlatGroup({
       </div>
       {open && (
         <div className="proj-sessions">
-          {sessions.map((session) => (
-            <ChatListItem
-              key={session.id}
-              session={session}
-              active={activeSessionId}
-              agentStatus={sessionAgentStatuses[session.id]}
-              terminalActivity={sessionTerminalActivity[session.id]}
-              unreviewed={unreviewedCompletedSessions.has(session.id)}
-              smallTitle={smallTitle}
-              onClick={() => actions.onSelectSession(session)}
-              onRename={actions.onRenameSession}
-              onTogglePinned={actions.onToggleSessionPinned}
-              onArchive={actions.onArchiveSession}
-              onDelete={actions.onDeleteSession}
-            />
-          ))}
+          <SortableContext
+            items={
+              sessionSortProjectId == null
+                ? []
+                : sessions.map((session) => sessionSortableId(sessionSortProjectId, session.id))
+            }
+            strategy={verticalListSortingStrategy}
+          >
+            {sessions.map((session) => {
+              const renderSession = (dragActivatorProps?: React.HTMLAttributes<HTMLDivElement>) => (
+                <ChatListItem
+                  key={session.id}
+                  session={session}
+                  active={activeSessionId}
+                  agentStatus={sessionAgentStatuses[session.id]}
+                  terminalActivity={sessionTerminalActivity[session.id]}
+                  unreviewed={unreviewedCompletedSessions.has(session.id)}
+                  smallTitle={smallTitle}
+                  onClick={() => actions.onSelectSession(session)}
+                  onRename={actions.onRenameSession}
+                  onTogglePinned={actions.onToggleSessionPinned}
+                  onArchive={actions.onArchiveSession}
+                  onDelete={actions.onDeleteSession}
+                  dragActivatorProps={dragActivatorProps}
+                />
+              )
+              return sessionSortProjectId == null ? (
+                renderSession()
+              ) : (
+                <SortableSessionContainer
+                  key={session.id}
+                  id={sessionSortableId(sessionSortProjectId, session.id)}
+                >
+                  {(dragActivatorProps) => renderSession(dragActivatorProps)}
+                </SortableSessionContainer>
+              )
+            })}
+          </SortableContext>
         </div>
       )}
     </div>
@@ -1332,27 +1506,110 @@ export function SidebarSessionList() {
     const list: DisplayGroup[] = projectGroups.map((g) => ({
       id: `project:${g.workspace.id}`,
       label: g.workspace.name,
-      sessions: g.sessions,
+      sessions: sortByManualOrder(
+        g.sessions,
+        ctx.sidebarOrder.sessionIdsByProject[g.workspace.id],
+        (session) => session.id,
+      ),
       workspace: g.workspace,
     }))
-    if (noProject.length > 0) {
-      list.push({ id: 'project:no-project', label: 'sidebar.noProjectChats', sessions: noProject })
+    if (noProjectWorkspace != null && (!hideEmptyProjectGroups || noProject.length > 0)) {
+      list.push({
+        id: 'project:no-project',
+        label: 'sidebar.noProjectChats',
+        sessions: sortByManualOrder(
+          noProject,
+          ctx.sidebarOrder.sessionIdsByProject[noProjectWorkspace.id],
+          (session) => session.id,
+        ),
+      })
     }
     if (ungrouped.length > 0) {
       list.push({ id: 'project:ungrouped', label: 'sidebar.ungroupedChats', sessions: ungrouped })
     }
-    return list
+    const reorderableProjects = list.filter((group) => group.id !== 'project:ungrouped')
+    const orderedProjects = sortByManualOrder(
+      reorderableProjects,
+      ctx.sidebarOrder.projectIds,
+      (group) => group.workspace?.id ?? noProjectWorkspace?.id ?? group.id,
+    )
+    return [...orderedProjects, ...list.filter((group) => group.id === 'project:ungrouped')]
   }, [
     filter.groupBy,
     filter.projectId,
     filteredSessions,
     ctx.workspaces,
     ctx.noProjectWorkspace,
+    ctx.sidebarOrder,
     ctx.sessionAgentStatuses,
     hideEmptyProjectGroups,
   ])
 
   const noProjectWorkspace = ctx.noProjectWorkspace
+  const canReorderSessions =
+    filter.groupBy === 'project' &&
+    filter.status === DEFAULT_SIDEBAR_FILTER.status &&
+    filter.projectId === DEFAULT_SIDEBAR_FILTER.projectId &&
+    filter.lastActivity === DEFAULT_SIDEBAR_FILTER.lastActivity &&
+    !(searchVisible && searchQuery.trim().length > 0)
+  const canReorderProjects = canReorderSessions
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  const sortableProjectIds = useMemo(
+    () =>
+      canReorderProjects
+        ? displayGroups.flatMap((group) => {
+            const projectId = getDisplayGroupProjectId(group, noProjectWorkspace?.id ?? null)
+            return projectId == null ? [] : [projectSortableId(projectId)]
+          })
+        : [],
+    [canReorderProjects, displayGroups, noProjectWorkspace?.id],
+  )
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      if (event.over == null || event.active.id === event.over.id) return
+      const activeItem = parseSortableId(event.active.id)
+      const overItem = parseSortableId(event.over.id)
+      if (activeItem == null || overItem == null || activeItem.type !== overItem.type) return
+
+      if (activeItem.type === 'project' && overItem.type === 'project' && canReorderProjects) {
+        const projectIds = displayGroups.flatMap((group) => {
+          const projectId = getDisplayGroupProjectId(group, noProjectWorkspace?.id ?? null)
+          return projectId == null ? [] : [projectId]
+        })
+        const next = moveItem(
+          projectIds,
+          projectIds.indexOf(activeItem.projectId),
+          projectIds.indexOf(overItem.projectId),
+        )
+        void ctx.handleReorderProjects(next)
+        return
+      }
+
+      if (activeItem.type !== 'session' || overItem.type !== 'session' || !canReorderSessions) {
+        return
+      }
+      if (activeItem.projectId !== overItem.projectId) {
+        setNotice(t('sidebar.drag.sameProjectOnly'))
+        return
+      }
+      const group = displayGroups.find(
+        (item) =>
+          getDisplayGroupProjectId(item, noProjectWorkspace?.id ?? null) === activeItem.projectId,
+      )
+      if (group == null) return
+      const sessionIds: string[] = group.sessions.map((session) => session.id)
+      const next = moveItem(
+        sessionIds,
+        sessionIds.indexOf(activeItem.sessionId),
+        sessionIds.indexOf(overItem.sessionId),
+      )
+      void ctx.handleReorderSessions(activeItem.projectId, next)
+    },
+    [canReorderProjects, canReorderSessions, ctx, displayGroups, noProjectWorkspace?.id, t],
+  )
   const filterSlot = (
     <SidebarFilterMenu
       state={filter}
@@ -1476,139 +1733,178 @@ export function SidebarSessionList() {
             <div className="empty-desc">{t('sidebar.empty.noMatchesDesc')}</div>
           </div>
         ) : (
-          <>
-            {displayGroups.map((group) => {
-              if (group.workspace) {
-                const workspace = group.workspace
-                return (
-                  <ProjectSessionGroup
+          <DndContext
+            sensors={sensors}
+            collisionDetection={sidebarCollisionDetection}
+            modifiers={[restrictToVerticalAxis]}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={sortableProjectIds} strategy={verticalListSortingStrategy}>
+              {displayGroups.map((group) => {
+                if (group.workspace) {
+                  const workspace = group.workspace
+                  return (
+                    <SortableProjectContainer
+                      key={group.id}
+                      id={projectSortableId(workspace.id)}
+                      disabled={!canReorderProjects}
+                    >
+                      {(projectDragActivatorProps) => (
+                        <ProjectSessionGroup
+                          group={{ workspace, sessions: group.sessions }}
+                          activeSessionId={effectiveActiveSessionId}
+                          activeWorkspaceId={effectiveActiveWorkspaceId}
+                          sessionAgentStatuses={ctx.sessionAgentStatuses}
+                          sessionTerminalActivity={ctx.sessionTerminalActivity}
+                          unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
+                          open={!collapsedProjectIds.has(workspace.id)}
+                          onOpenChange={(nextOpen) =>
+                            handleProjectOpenChange(workspace.id, nextOpen)
+                          }
+                          onSelectWorkspace={async (workspace) => {
+                            ctx.setActiveWorkspace(workspace.id)
+                            await ctx.handleOpenWorkspace(workspace)
+                            setTweak('view', 'chat')
+                          }}
+                          onSelectSession={(session) => {
+                            ctx.setActiveSession(session.id)
+                            ctx.setActiveWorkspace(workspace.id)
+                            setTweak('view', 'chat')
+                          }}
+                          onNewSession={async (workspaceId) => {
+                            const id = await ctx.handleNewSession(workspaceId)
+                            if (id != null) setTweak('view', 'chat')
+                          }}
+                          onRenameProject={ctx.handleRenameProject}
+                          onToggleProjectPinned={ctx.handleToggleProjectPinned}
+                          onArchiveProject={ctx.handleArchiveProject}
+                          onDeleteProject={ctx.handleDeleteProject}
+                          onOpenProjectFolder={ctx.handleOpenProjectFolder}
+                          onRenameSession={ctx.handleRenameSession}
+                          onToggleSessionPinned={ctx.handleToggleSessionPinned}
+                          onArchiveSession={ctx.handleArchiveSession}
+                          onDeleteSession={ctx.handleDeleteSession}
+                          projectDragActivatorProps={projectDragActivatorProps}
+                          {...(canReorderSessions ? { sessionSortProjectId: workspace.id } : {})}
+                        />
+                      )}
+                    </SortableProjectContainer>
+                  )
+                }
+                const flatGroup = (
+                  <FlatGroup
                     key={group.id}
-                    group={{ workspace, sessions: group.sessions }}
+                    groupId={group.id}
+                    label={group.label}
+                    sessions={group.sessions}
                     activeSessionId={effectiveActiveSessionId}
                     activeWorkspaceId={effectiveActiveWorkspaceId}
+                    groupWorkspaceId={resolveSpecialSidebarGroupWorkspaceId(
+                      group.id,
+                      noProjectWorkspace?.id ?? null,
+                    )}
                     sessionAgentStatuses={ctx.sessionAgentStatuses}
                     sessionTerminalActivity={ctx.sessionTerminalActivity}
                     unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
-                    open={!collapsedProjectIds.has(workspace.id)}
-                    onOpenChange={(nextOpen) => handleProjectOpenChange(workspace.id, nextOpen)}
-                    onSelectWorkspace={async (workspace) => {
-                      ctx.setActiveWorkspace(workspace.id)
-                      await ctx.handleOpenWorkspace(workspace)
-                      setTweak('view', 'chat')
-                    }}
-                    onSelectSession={(session) => {
-                      ctx.setActiveSession(session.id)
-                      ctx.setActiveWorkspace(workspace.id)
-                      setTweak('view', 'chat')
-                    }}
-                    onNewSession={async (workspaceId) => {
-                      const id = await ctx.handleNewSession(workspaceId)
-                      if (id != null) setTweak('view', 'chat')
-                    }}
-                    onRenameProject={ctx.handleRenameProject}
-                    onToggleProjectPinned={ctx.handleToggleProjectPinned}
-                    onArchiveProject={ctx.handleArchiveProject}
-                    onDeleteProject={ctx.handleDeleteProject}
-                    onOpenProjectFolder={ctx.handleOpenProjectFolder}
-                    onRenameSession={ctx.handleRenameSession}
-                    onToggleSessionPinned={ctx.handleToggleSessionPinned}
-                    onArchiveSession={ctx.handleArchiveSession}
-                    onDeleteSession={ctx.handleDeleteSession}
-                  />
-                )
-              }
-              return (
-                <FlatGroup
-                  key={group.id}
-                  groupId={group.id}
-                  label={group.label}
-                  sessions={group.sessions}
-                  activeSessionId={effectiveActiveSessionId}
-                  activeWorkspaceId={effectiveActiveWorkspaceId}
-                  groupWorkspaceId={resolveSpecialSidebarGroupWorkspaceId(
-                    group.id,
-                    noProjectWorkspace?.id ?? null,
-                  )}
-                  sessionAgentStatuses={ctx.sessionAgentStatuses}
-                  sessionTerminalActivity={ctx.sessionTerminalActivity}
-                  unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
-                  open={!collapsedFlatGroupIds.has(group.id)}
-                  onOpenChange={(nextOpen) => handleFlatGroupOpenChange(group.id, nextOpen)}
-                  onSelectGroup={
-                    group.id === 'project:no-project'
-                      ? () => {
-                          ctx.setActiveWorkspace(noProjectWorkspace?.id ?? null)
-                          setTweak('view', 'chat')
-                        }
-                      : group.id === 'project:ungrouped'
+                    open={!collapsedFlatGroupIds.has(group.id)}
+                    onOpenChange={(nextOpen) => handleFlatGroupOpenChange(group.id, nextOpen)}
+                    onSelectGroup={
+                      group.id === 'project:no-project'
                         ? () => {
-                            ctx.setActiveWorkspace(null)
+                            ctx.setActiveWorkspace(noProjectWorkspace?.id ?? null)
                             setTweak('view', 'chat')
                           }
+                        : group.id === 'project:ungrouped'
+                          ? () => {
+                              ctx.setActiveWorkspace(null)
+                              setTweak('view', 'chat')
+                            }
+                          : undefined
+                    }
+                    onNewSession={
+                      group.id === 'project:no-project'
+                        ? async () => {
+                            const targetWorkspaceId = noProjectWorkspace?.id ?? null
+                            const id = await ctx.handleNewSession(targetWorkspaceId)
+                            if (id != null) setTweak('view', 'chat')
+                          }
                         : undefined
-                  }
-                  onNewSession={
-                    group.id === 'project:no-project'
-                      ? async () => {
-                          const targetWorkspaceId = noProjectWorkspace?.id ?? null
-                          const id = await ctx.handleNewSession(targetWorkspaceId)
-                          if (id != null) setTweak('view', 'chat')
-                        }
-                      : undefined
-                  }
-                  menuItems={[
-                    ...(group.id === 'project:no-project' && noProjectWorkspace != null
-                      ? [
-                          {
-                            icon: <Icons.Chat size={14} />,
-                            label: '新建临时会话',
-                            onClick: () => {
-                              void (async () => {
-                                const id = await ctx.handleNewSession(noProjectWorkspace.id)
-                                if (id != null) setTweak('view', 'chat')
-                              })()
+                    }
+                    menuItems={[
+                      ...(group.id === 'project:no-project' && noProjectWorkspace != null
+                        ? [
+                            {
+                              icon: <Icons.Chat size={14} />,
+                              label: '新建临时会话',
+                              onClick: () => {
+                                void (async () => {
+                                  const id = await ctx.handleNewSession(noProjectWorkspace.id)
+                                  if (id != null) setTweak('view', 'chat')
+                                })()
+                              },
                             },
-                          },
-                          {
-                            icon: <Icons.Folder size={14} />,
-                            label: '打开临时目录',
-                            onClick: () => {
-                              void ctx.handleOpenProjectFolder(noProjectWorkspace)
+                            {
+                              icon: <Icons.Folder size={14} />,
+                              label: '打开临时目录',
+                              onClick: () => {
+                                void ctx.handleOpenProjectFolder(noProjectWorkspace)
+                              },
                             },
-                          },
-                        ]
-                      : []),
-                    {
-                      icon: <Icons.Trash size={14} />,
-                      label: t('session.clearAll'),
-                      onClick: () => {
-                        void ctx.handleClearSessions(group.sessions)
+                          ]
+                        : []),
+                      {
+                        icon: <Icons.Trash size={14} />,
+                        label: t('session.clearAll'),
+                        onClick: () => {
+                          void ctx.handleClearSessions(group.sessions)
+                        },
                       },
-                    },
-                  ]}
-                  actions={{
-                    onSelectSession: (session) => {
-                      ctx.setActiveSession(session.id)
-                      const specialWorkspaceId = resolveSpecialSidebarGroupWorkspaceId(
-                        group.id,
-                        noProjectWorkspace?.id ?? null,
-                      )
-                      ctx.setActiveWorkspace(
-                        specialWorkspaceId !== undefined
-                          ? specialWorkspaceId
-                          : resolveSidebarActiveWorkspaceId(session, ctx.workspaces),
-                      )
-                      setTweak('view', 'chat')
-                    },
-                    onRenameSession: ctx.handleRenameSession,
-                    onToggleSessionPinned: ctx.handleToggleSessionPinned,
-                    onArchiveSession: ctx.handleArchiveSession,
-                    onDeleteSession: ctx.handleDeleteSession,
-                  }}
-                />
-              )
-            })}
-          </>
+                    ]}
+                    actions={{
+                      onSelectSession: (session) => {
+                        ctx.setActiveSession(session.id)
+                        const specialWorkspaceId = resolveSpecialSidebarGroupWorkspaceId(
+                          group.id,
+                          noProjectWorkspace?.id ?? null,
+                        )
+                        ctx.setActiveWorkspace(
+                          specialWorkspaceId !== undefined
+                            ? specialWorkspaceId
+                            : resolveSidebarActiveWorkspaceId(session, ctx.workspaces),
+                        )
+                        setTweak('view', 'chat')
+                      },
+                      onRenameSession: ctx.handleRenameSession,
+                      onToggleSessionPinned: ctx.handleToggleSessionPinned,
+                      onArchiveSession: ctx.handleArchiveSession,
+                      onDeleteSession: ctx.handleDeleteSession,
+                    }}
+                    {...(canReorderSessions &&
+                    group.id === 'project:no-project' &&
+                    noProjectWorkspace != null
+                      ? { sessionSortProjectId: noProjectWorkspace.id }
+                      : {})}
+                  />
+                )
+                const flatProjectId = getDisplayGroupProjectId(
+                  group,
+                  noProjectWorkspace?.id ?? null,
+                )
+                if (flatProjectId == null) return flatGroup
+                return (
+                  <SortableProjectContainer
+                    key={group.id}
+                    id={projectSortableId(flatProjectId)}
+                    disabled={!canReorderProjects}
+                  >
+                    {(projectDragActivatorProps) =>
+                      React.cloneElement(flatGroup, { projectDragActivatorProps })
+                    }
+                  </SortableProjectContainer>
+                )
+              })}
+            </SortableContext>
+          </DndContext>
         )}
       </div>
 

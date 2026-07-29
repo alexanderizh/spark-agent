@@ -92,7 +92,7 @@ export function CanvasToolbar({
         </div>
         <Tooltip title="从已保存数据重新加载画布">
           <Button
-            size="middle"
+            size="small"
             type="text"
             className="canvas-toolbar-refresh-button"
             icon={<Icons.Refresh size={15} />}
@@ -103,7 +103,7 @@ export function CanvasToolbar({
           />
         </Tooltip>
         <Button
-          size="middle"
+          size="small"
           className="canvas-toolbar-save-button"
           icon={<Icons.Check size={15} />}
           disabled={saveState.saving || !saveState.dirty}
@@ -112,7 +112,7 @@ export function CanvasToolbar({
           保存
         </Button>
         <Button
-          size="middle"
+          size="small"
           className="canvas-toolbar-export-button"
           icon={<Icons.Download size={15} />}
           onClick={onExport}
@@ -121,7 +121,7 @@ export function CanvasToolbar({
         </Button>
         <Tooltip title="从本地选择文件（图片 / 视频 / 音频 / 文本 / 代码 / CSV 等）导入画布，可多选">
           <Button
-            size="middle"
+            size="small"
             className="canvas-toolbar-upload-button"
             icon={<Icons.Upload size={15} />}
             disabled={!onUploadFiles}
@@ -181,7 +181,7 @@ export function CanvasToolbar({
           }
         >
           <Button
-            size="middle"
+            size="small"
             className="canvas-toolbar-arrange-button"
             loading={arranging}
             icon={<Icons.Grid size={15} />}
@@ -191,14 +191,14 @@ export function CanvasToolbar({
           </Button>
         </Popover>
         <Button
-          size="middle"
+          size="small"
           type="primary"
           className="canvas-toolbar-agent-button"
-          icon={<Icons.Sparkles size={15} />}
+          icon={<Icons.Agent size={15} />}
           disabled={!onOpenAgent}
           onClick={onOpenAgent}
         >
-          交给 Agent
+          Agent模式
         </Button>
       </div>
     </div>

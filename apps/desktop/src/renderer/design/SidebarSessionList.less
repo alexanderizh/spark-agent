@@ -8,6 +8,40 @@
   position: relative;
 }
 
+.sidebar-sortable-project,
+.sidebar-sortable-session {
+  position: relative;
+  z-index: 0;
+}
+
+.sidebar-sortable-project > .proj-group > .proj-head,
+.sidebar-sortable-session > .chat-item-compact {
+  cursor: grab;
+  touch-action: none;
+}
+
+.sidebar-sortable-project.is-dragging,
+.sidebar-sortable-session.is-dragging {
+  z-index: 10;
+}
+
+.sidebar-sortable-project.is-dragging > .proj-group > .proj-head,
+.sidebar-sortable-session.is-dragging > .chat-item-compact {
+  position: relative;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 14%, var(--bg-elevated));
+  cursor: grabbing;
+  opacity: 0.92;
+  box-shadow:
+    0 8px 22px color-mix(in srgb, #000 22%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 38%, transparent);
+}
+
+.sidebar-sortable-project:active > .proj-group > .proj-head,
+.sidebar-sortable-session:active > .chat-item-compact {
+  cursor: grabbing;
+}
+
 .session-status-dot {
   position: absolute;
   left: 8px;
@@ -468,7 +502,7 @@
   cursor: pointer;
   transition:
     color 0.16s ease,
-  border-color 0.16s ease;
+    border-color 0.16s ease;
 }
 
 .sidebar-empty-state .empty-inline-action svg {
