@@ -22,6 +22,7 @@ export function CanvasToolbar({
   onAutoSaveChange,
   onExport,
   onUploadFiles,
+  onOpenAgent,
   selectedCount = 0,
   arranging = false,
   onArrange,
@@ -48,11 +49,12 @@ export function CanvasToolbar({
     autoSaveEnabled: boolean
   }
   onSave: () => void
-  onAutoSaveChange: (enabled: boolean) => void
   onRefresh: () => void
   refreshing?: boolean
+  onAutoSaveChange: (enabled: boolean) => void
   onExport: () => void
   onUploadFiles?: () => void
+  onOpenAgent?: () => void
   arranging?: boolean
   onArrange: (options: {
     mode: CanvasAutoLayoutMode
@@ -85,17 +87,14 @@ export function CanvasToolbar({
         <div className="canvas-toolbar-autosave">
           <span className="canvas-toolbar-autosave-label">自动保存</span>
           <Tooltip title="开启后，画布变更会在用户停手后自动落库，并限制为最多每 30 秒一次。">
-            <Switch
-              size="middle"
-              checked={saveState.autoSaveEnabled}
-              onChange={onAutoSaveChange}
-            />
+            <Switch size="middle" checked={saveState.autoSaveEnabled} onChange={onAutoSaveChange} />
           </Tooltip>
         </div>
         <Tooltip title="从已保存数据重新加载画布">
           <Button
             size="middle"
             type="text"
+            className="canvas-toolbar-refresh-button"
             icon={<Icons.Refresh size={15} />}
             aria-label="刷新画布"
             loading={refreshing}
@@ -105,18 +104,25 @@ export function CanvasToolbar({
         </Tooltip>
         <Button
           size="middle"
+          className="canvas-toolbar-save-button"
           icon={<Icons.Check size={15} />}
           disabled={saveState.saving || !saveState.dirty}
           onClick={onSave}
         >
           保存
         </Button>
-        <Button size="middle" icon={<Icons.Download size={15} />} onClick={onExport}>
+        <Button
+          size="middle"
+          className="canvas-toolbar-export-button"
+          icon={<Icons.Download size={15} />}
+          onClick={onExport}
+        >
           导出
         </Button>
         <Tooltip title="从本地选择文件（图片 / 视频 / 音频 / 文本 / 代码 / CSV 等）导入画布，可多选">
           <Button
             size="middle"
+            className="canvas-toolbar-upload-button"
             icon={<Icons.Upload size={15} />}
             disabled={!onUploadFiles}
             onClick={onUploadFiles}
@@ -176,6 +182,7 @@ export function CanvasToolbar({
         >
           <Button
             size="middle"
+            className="canvas-toolbar-arrange-button"
             loading={arranging}
             icon={<Icons.Grid size={15} />}
             aria-label="自动整理画布"
@@ -183,6 +190,16 @@ export function CanvasToolbar({
             自动整理
           </Button>
         </Popover>
+        <Button
+          size="middle"
+          type="primary"
+          className="canvas-toolbar-agent-button"
+          icon={<Icons.Sparkles size={15} />}
+          disabled={!onOpenAgent}
+          onClick={onOpenAgent}
+        >
+          交给 Agent
+        </Button>
       </div>
     </div>
   )

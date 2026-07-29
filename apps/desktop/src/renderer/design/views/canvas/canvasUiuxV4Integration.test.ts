@@ -5,25 +5,33 @@ import { describe, expect, it } from 'vitest'
 const readCanvasSource = (relativePath: string) =>
   readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8')
 
-describe('canvas UI/UX V4 integration', () => {
-  it('loads the modular V4 stylesheet from the real workspace and scopes it locally', () => {
+describe('canvas cinematic integration', () => {
+  it('loads one cinematic stylesheet entry from the real workspace and scopes it locally', () => {
     const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
-    const stylesheetEntry = readCanvasSource('./uiux-v4/index.less')
+    const stylesheetEntry = readCanvasSource('./cinematic/index.less')
     const scopedModules = [
-      'theme.less',
-      'stage.less',
+      'tokens.less',
+      'vendor.less',
+      'shell.less',
       'nodes.less',
-      'panels.less',
-      'workbenches.less',
-      'form-controls.less',
+      'agent.less',
+      'overlays.less',
     ]
 
-    expect(workspace).toContain("import './uiux-v4/index.less'")
-    expect(workspace).toContain('canvas-workspace canvas-uiux-v4')
+    expect(workspace).toContain("import './cinematic/index.less'")
+    expect(workspace).not.toContain("import './CanvasWorkspaceView.less'")
+    expect(workspace).not.toContain("import './canvas-workflow.less'")
+    expect(workspace).not.toContain("import './uiux-v4/index.less'")
+    expect(workspace).toContain('canvas-workspace canvas-cinematic')
+    expect(workspace).not.toContain('canvas-workspace canvas-uiux-v4 canvas-cinematic')
+    expect(stylesheetEntry).toContain('@layer canvas-legacy, canvas-cinematic;')
+    expect(stylesheetEntry).toContain("@import (less) '../CanvasWorkspaceView.less';")
+    expect(stylesheetEntry).toContain("@import (less) '../canvasContextMenus.less';")
+    expect(stylesheetEntry).not.toContain('uiux-v4/index.less')
     for (const moduleName of scopedModules) {
       expect(stylesheetEntry).toContain(`@import './${moduleName}';`)
-      expect(readCanvasSource(`./uiux-v4/${moduleName}`)).toContain(
-        '.canvas-workspace.canvas-uiux-v4',
+      expect(readCanvasSource(`./cinematic/${moduleName}`)).toContain(
+        '.canvas-workspace.canvas-cinematic',
       )
     }
   })
@@ -33,11 +41,8 @@ describe('canvas UI/UX V4 integration', () => {
     const addMenu = readCanvasSource('./CanvasAddNodeMenu.tsx')
     const dock = readCanvasSource('./CanvasBottomDock.tsx')
     const legacyStyles = readCanvasSource('./CanvasWorkspaceView.less')
-    const nodeStyles = readCanvasSource('./uiux-v4/nodes.less')
-    const panelStyles = readCanvasSource('./uiux-v4/panels.less')
-    const placeholderStyleBlock = nodeStyles.match(
-      /\.canvas-node-image-placeholder,[\s\S]*?\.canvas-node-group-body\s*\{([\s\S]*?)\n {2}\}/,
-    )?.[1]
+    const nodeStyles = readCanvasSource('./cinematic/nodes.less')
+    const panelStyles = readCanvasSource('./cinematic/agent.less')
 
     expect(node).toContain('canvas-node-content-title')
     expect(node).toContain('<div className="canvas-node-meta-bar">')
@@ -45,46 +50,105 @@ describe('canvas UI/UX V4 integration', () => {
     expect(node).toContain('shouldShowOutputNavigation')
     expect(node).not.toContain('双击可快速打开')
     expect(nodeStyles).toContain('.canvas-node-body > .canvas-node-operation')
-    expect(nodeStyles).toContain('flex: 0 0 35px')
-    expect(placeholderStyleBlock).toBeDefined()
-    expect(placeholderStyleBlock).not.toContain('padding: 20px;')
+    expect(nodeStyles).toContain(".canvas-stage[data-zoom-lod='overview']")
+    expect(nodeStyles).toContain('flex-basis: 34px')
     expect(legacyStyles).not.toMatch(/\.canvas-node-task\s*\{[^}]*padding:\s*12px/s)
+    expect(panelStyles).toContain('grid-column: 2')
     expect(panelStyles).toContain('.canvas-agent-side-panel-collapse-toggle.is-collapsed')
-    expect(panelStyles).toContain('display: none')
     expect(addMenu).toContain('canvas-dock-labeled-action')
     expect(dock).toContain('aria-label="全部节点类型"')
     expect(dock).not.toContain('shortLabel="资源"')
     expect(dock).not.toContain('shortLabel="任务"')
   })
 
-  it('uses full-bleed overlays only for image nodes with loaded content', () => {
+  it('keeps workspace chrome, side panel, overlays and node editors in dedicated owners', () => {
+    const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
+    const floatingToolbar = readCanvasSource('./CanvasFloatingNodeToolbar.tsx')
+    const overlayBoundary = readCanvasSource('./CanvasOverlayBoundary.tsx')
+
+    expect(workspace).toContain("import { CanvasWorkspaceChrome } from './CanvasWorkspaceChrome'")
+    expect(workspace).toContain(
+      "import { CanvasWorkspaceSidePanel } from './CanvasWorkspaceSidePanel'",
+    )
+    expect(workspace).toContain("import { CanvasNodeEditModal } from './CanvasNodeEditModal'")
+    expect(workspace).toContain(
+      "import { CanvasFloatingNodeToolbar } from './CanvasFloatingNodeToolbar'",
+    )
+    expect(workspace).not.toContain('function CanvasNodeEditModal(')
+    expect(workspace).not.toContain('const CanvasFloatingNodeToolbar = memo')
+    expect(floatingToolbar).toContain('onRenameNode')
+    expect(floatingToolbar).toContain("menuButton('替换图片'")
+    expect(overlayBoundary).toContain('data-canvas-overlay-host')
+  })
+
+  it('reserves the native traffic-light safe area in standalone macOS canvas windows', () => {
+    const shellStyles = readCanvasSource('./cinematic/shell.less')
+
+    expect(shellStyles).toContain(
+      '.app.sidebar-hidden.platform-darwin & > .canvas-workspace-header',
+    )
+    expect(shellStyles).toMatch(
+      /platform-darwin[^{}]*& > \.canvas-workspace-header\s*\{[^}]*padding-left:\s*92px/s,
+    )
+    expect(shellStyles).toContain('padding: 0 14px 0 16px')
+  })
+
+  it('uses one flat media frame for loaded and empty image/video nodes', () => {
     const node = readCanvasSource('./CanvasNode.tsx')
-    const nodeStyles = readCanvasSource('./uiux-v4/nodes.less')
+    const nodeStyles = readCanvasSource('./cinematic/nodes.less')
 
     expect(node).toContain('isFullBleedCanvasImageNode(node)')
+    expect(node).toContain('canvasNodeUsesFlatMediaFrame(node)')
+    expect(node).toContain('canvas-node-media-full-bleed')
     expect(node).toContain('canvas-node-image-full-bleed')
+    expect(node).toContain('canvas-node-video-full-bleed')
     expect(node).toContain('canvas-node-image-overlay-footer')
-    expect(nodeStyles).toContain('.canvas-node-image-full-bleed')
+    expect(nodeStyles).toContain('.canvas-node-media-full-bleed')
     expect(nodeStyles).toContain('.canvas-node-image-overlay-footer')
-    expect(nodeStyles).toContain('backdrop-filter: blur(10px)')
+    expect(nodeStyles).toContain('background: linear-gradient(transparent, rgba(5, 7, 9, 0.84))')
+  })
+
+  it('keeps readable inset spacing on text nodes without affecting flat media frames', () => {
+    const nodeStyles = readCanvasSource('./cinematic/nodes.less')
+
+    expect(nodeStyles).toMatch(/\.canvas-node-text\s*\{[^}]*padding:\s*14px 16px 18px/s)
+    expect(nodeStyles).toMatch(
+      /\.canvas-node-text\.canvas-node-text-long\s*\{[^}]*padding:\s*18px 20px 22px/s,
+    )
+    expect(nodeStyles).toMatch(
+      /\.canvas-node-media-full-bleed \.canvas-node-body\s*\{[^}]*inset:\s*0/s,
+    )
+  })
+
+  it('renders a functional empty-canvas creation surface', () => {
+    const workspace = readCanvasSource('./CanvasWorkspaceView.tsx')
+    const emptyState = readCanvasSource('./CanvasCinematicEmptyState.tsx')
+    const shell = readCanvasSource('./cinematic/shell.less')
+
+    expect(workspace).toContain('<CanvasCinematicEmptyState')
+    expect(workspace).toContain("snapshot.nodes.length === 0 ? ' is-empty' : ''")
+    expect(emptyState).toContain('今天想创造怎样的世界？')
+    expect(emptyState).toContain('onStartWithAgent')
+    expect(emptyState).toContain('onOpenWorkflowLibrary')
+    expect(shell).toContain('.canvas-cinematic-empty')
+    expect(shell).toContain('pointer-events: none')
   })
 
   it('keeps portal modal styling isolated to canvas business classes', () => {
-    const modals = readCanvasSource('./uiux-v4/modals.less')
+    const legacyStyles = readCanvasSource('./CanvasWorkspaceView.less')
 
-    expect(modals).toContain('.canvas-operation-preset-dialog')
-    expect(modals).toContain('.canvas-node-edit-modal')
-    expect(modals).not.toMatch(/(^|\n)\s*\.ant-modal\s*\{/)
+    expect(legacyStyles).toContain('.canvas-operation-preset-dialog .ant-modal-content')
+    expect(legacyStyles).toContain('.canvas-node-edit-modal .ant-modal-body')
   })
 
   it('gives composite form controls a single visual surface owner', () => {
-    const controls = readCanvasSource('./uiux-v4/form-controls.less')
+    const legacyStyles = readCanvasSource('./CanvasWorkspaceView.less')
     const storyboard = readCanvasSource('./CanvasShotScriptEditor.less')
 
-    expect(controls).toContain('.ant-input-affix-wrapper > input.ant-input')
-    expect(controls).toContain('.ant-input-number input.ant-input-number-input')
-    expect(controls).toContain('background: transparent !important')
-    expect(controls).toContain('box-shadow: none !important')
+    expect(legacyStyles).toContain('.canvas-operation-preset-dialog .ant-input-affix-wrapper')
+    expect(legacyStyles).toContain(
+      '.canvas-operation-preset-dialog .ant-input-affix-wrapper-focused',
+    )
     expect(storyboard).not.toContain('.ant-input-affix-wrapper-focused')
   })
 
@@ -112,10 +176,13 @@ describe('canvas UI/UX V4 integration', () => {
     expect(stage3dModal).toContain("colorText: '#e4e4e7'")
   })
 
-  it('keeps selected values readable in the 3D director stage side forms', () => {
-    const workbenchStyles = readCanvasSource('./uiux-v4/workbenches.less')
+  it('keeps dedicated workbench owners and their macOS title-bar safe areas', () => {
+    const workbenchStyles = readCanvasSource('./stage3d/stage3d.less')
+    const videoWorkbench = readCanvasSource('./videoWorkbench/videoWorkbench.less')
 
-    expect(workbenchStyles).toContain('input:not(.ant-select-input)')
-    expect(workbenchStyles).not.toMatch(/\.stage3d-field\s*\{[\s\S]*?\n\s+input,/)
+    expect(workbenchStyles).toContain('.stage3d-field')
+    expect(workbenchStyles).toContain('&.platform-darwin-safe-area')
+    expect(videoWorkbench).toContain('.vwb-shell')
+    expect(videoWorkbench).toContain('&.darwin')
   })
 })

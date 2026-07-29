@@ -117,4 +117,16 @@ describe('CanvasToolbar', () => {
       true,
     )
   })
+
+  it('opens the cinematic Agent dock from the project toolbar', async () => {
+    const onOpenAgent = vi.fn()
+    const { container } = await renderToolbar({ onOpenAgent })
+    const agentButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('交给 Agent'),
+    )
+
+    expect(agentButton).toBeDefined()
+    await act(async () => agentButton?.click())
+    expect(onOpenAgent).toHaveBeenCalledTimes(1)
+  })
 })

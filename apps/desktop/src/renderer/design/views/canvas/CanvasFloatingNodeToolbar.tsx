@@ -2,15 +2,17 @@ import { memo } from 'react'
 import { Button, Tag, Tooltip } from '@lobehub/ui'
 import { Popover } from 'antd'
 import { Icons } from '../../Icons'
+import { CanvasInlineNodeTitleEditor } from './CanvasInlineNodeTitleEditor'
 import { operationLabel } from './canvas.api'
 import { isCanvasImageContentNode } from './canvas.capabilities'
 import { getNodePipelineActions } from './canvasPipeline'
 import {
+  CANVAS_BASE_CREATE_OPERATION_GROUPS,
   CANVAS_BASE_TASK_MENU_LABEL,
   CANVAS_FUNCTIONAL_CREATE_OPERATIONS,
   CANVAS_FUNCTIONAL_MENU_LABEL,
-  canvasBaseCreateOperations,
 } from './canvasNodeGenerationMenu'
+import { CANVAS_PIPELINE_MENU_GROUPS } from './canvasPipelineOps'
 import type {
   CanvasNode,
   CanvasOperationType,
@@ -71,6 +73,7 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
   node,
   resourceNode,
   isOperation,
+  onRenameNode,
   onClose,
   onFocus,
   onDuplicate,
@@ -80,6 +83,7 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
   onDownload,
   onAnnotate,
   onSplitGrid,
+  onReplaceImage,
   onExtractCharacterSubview,
   onPreviewPanorama,
   onOpenInlineAi,
@@ -95,8 +99,9 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
 }: {
   node: CanvasNode
   /** 操作节点当前主产物；资源动作作用于它，节点管理仍作用于稳定步骤节点。 */
-  resourceNode?: CanvasNode
+  resourceNode?: CanvasNode | undefined
   isOperation: boolean
+  onRenameNode: (title: string | null) => Promise<void> | void
   onClose: () => void
   onFocus: () => void
   onDuplicate: () => void
@@ -106,6 +111,7 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
   onDownload: () => void
   onAnnotate: () => void
   onSplitGrid: () => void
+  onReplaceImage: () => void
   onExtractCharacterSubview: () => void
   onPreviewPanorama: () => void
   onOpenInlineAi: () => void
@@ -208,7 +214,10 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
         ]
       : []),
   ]
-  const baseTaskOperations = canvasBaseCreateOperations()
+  const pipelineActionGroups = CANVAS_PIPELINE_MENU_GROUPS.map((group) => ({
+    ...group,
+    actions: pipelineActions.filter((action) => action.kind === group.id),
+  })).filter((group) => group.actions.length > 0)
   const menuButton = (
     label: string,
     icon: React.ReactNode,
@@ -231,12 +240,17 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
     <div className="canvas-floating-menu">
       <div className="canvas-floating-menu-title">{CANVAS_BASE_TASK_MENU_LABEL}</div>
       {menuButton('打开 AI 面板', <Icons.Sparkles size={14} />, onOpenInlineAi)}
-      {baseTaskOperations.length > 0 && <div className="canvas-floating-menu-divider" />}
-      {baseTaskOperations.map((item) => (
-        <div key={item.operation}>
-          {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
-            onCreateOperationChild(item.operation),
-          )}
+      <div className="canvas-floating-menu-divider" />
+      {CANVAS_BASE_CREATE_OPERATION_GROUPS.map((group) => (
+        <div key={group.id} className="canvas-floating-menu-section">
+          <div className="canvas-floating-menu-section-title">{group.label}</div>
+          {group.items.map((item) => (
+            <div key={item.operation}>
+              {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
+                onCreateOperationChild(item.operation),
+              )}
+            </div>
+          ))}
         </div>
       ))}
     </div>
@@ -246,7 +260,16 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
     <div className="canvas-floating-toolbar-shell" role="toolbar" aria-label={`${title} 编辑工具`}>
       <div className="canvas-floating-toolbar-title">
         {isOperation ? <Icons.Sparkles size={14} /> : <Icons.Edit size={14} />}
-        <span>{isOperation ? operationTitle : title}</span>
+        {isOperation ? (
+          <span>{operationTitle}</span>
+        ) : (
+          <CanvasInlineNodeTitleEditor
+            nodeId={node.id}
+            title={node.title}
+            fallbackTitle={title}
+            onRename={onRenameNode}
+          />
+        )}
         {isOperation && (
           <Tag color={operationStatusColor} bordered>
             {floatingOperationStatusLabel(operationStatus)}
@@ -283,15 +306,19 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
           content={
             <div className="canvas-floating-menu">
               <div className="canvas-floating-menu-title">{CANVAS_FUNCTIONAL_MENU_LABEL}</div>
-              {pipelineActions.length > 0 &&
-                pipelineActions.map((action) => (
-                  <div key={action.id}>
-                    {menuButton(action.label, resolveCanvasFloatingIcon(action.icon, 14), () =>
-                      onPipelineAction(action.id),
-                    )}
-                  </div>
-                ))}
-              {pipelineActions.length > 0 && <div className="canvas-floating-menu-divider" />}
+              {pipelineActionGroups.map((group) => (
+                <div key={group.id} className="canvas-floating-menu-section">
+                  <div className="canvas-floating-menu-section-title">{group.label}</div>
+                  {group.actions.map((action) => (
+                    <div key={action.id}>
+                      {menuButton(action.label, resolveCanvasFloatingIcon(action.icon, 14), () =>
+                        onPipelineAction(action.id),
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {pipelineActionGroups.length > 0 && <div className="canvas-floating-menu-divider" />}
               {contextualAiActions.map((action) => (
                 <div key={action.key}>{menuButton(action.label, action.icon, action.onClick)}</div>
               ))}
@@ -330,6 +357,7 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
               {isMedia && menuButton('下载到本地', <Icons.Download size={14} />, onDownload)}
               {isImage && (
                 <>
+                  {menuButton('替换图片', <Icons.Refresh size={14} />, onReplaceImage)}
                   {menuButton('提取子视图', <Icons.Crop size={14} />, onExtractCharacterSubview)}
                   {menuButton('图片标注', <Icons.Crop size={14} />, onAnnotate)}
                   {menuButton('宫格切分', <Icons.Grid size={14} />, onSplitGrid)}

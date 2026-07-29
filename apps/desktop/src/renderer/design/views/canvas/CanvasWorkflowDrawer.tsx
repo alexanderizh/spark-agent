@@ -47,6 +47,7 @@ export function CanvasWorkflowDrawer({
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [busy, setBusy] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -56,43 +57,53 @@ export function CanvasWorkflowDrawer({
   const loadSequenceRef = useRef(0)
   useCanvasWorkflowDialogFocus(dialogRef, open)
 
-  const load = useCallback(async (offset = 0) => {
-    const reset = offset === 0
-    const sequence = ++loadSequenceRef.current
-    if (reset) setLoading(true)
-    else setLoadingMore(true)
-    setError('')
-    try {
-      const response = await canvasWorkflowApi.listPage({
-        ...(scope !== 'all' ? { scope } : {}),
-        ...(scope === 'project' ? { projectId } : {}),
-        ...(query.trim() ? { query: query.trim() } : {}),
-        includeArchived: false,
-        limit: DRAWER_PAGE_SIZE,
-        offset,
-      })
-      if (sequence !== loadSequenceRef.current) return
-      setWorkflows((current) => {
-        if (reset) return response.workflows
-        const byId = new Map(current.map((workflow) => [workflow.id, workflow]))
-        for (const workflow of response.workflows) byId.set(workflow.id, workflow)
-        return [...byId.values()]
-      })
-      setTotal(response.total)
-      setHasMore(response.hasMore)
-    } catch (loadError) {
-      if (sequence !== loadSequenceRef.current) return
-      setError(loadError instanceof Error ? loadError.message : '加载画布工作流失败')
-    } finally {
-      if (sequence === loadSequenceRef.current) {
-        setLoading(false)
-        setLoadingMore(false)
+  const load = useCallback(
+    async (offset = 0) => {
+      const reset = offset === 0
+      const sequence = ++loadSequenceRef.current
+      if (reset) {
+        setLoading(true)
+        setHasLoaded(false)
+      } else setLoadingMore(true)
+      setError('')
+      try {
+        const response = await canvasWorkflowApi.listPage({
+          ...(scope !== 'all' ? { scope } : {}),
+          ...(scope === 'project' ? { projectId } : {}),
+          ...(query.trim() ? { query: query.trim() } : {}),
+          includeArchived: false,
+          limit: DRAWER_PAGE_SIZE,
+          offset,
+        })
+        if (sequence !== loadSequenceRef.current) return
+        setWorkflows((current) => {
+          if (reset) return response.workflows
+          const byId = new Map(current.map((workflow) => [workflow.id, workflow]))
+          for (const workflow of response.workflows) byId.set(workflow.id, workflow)
+          return [...byId.values()]
+        })
+        setTotal(response.total)
+        setHasMore(response.hasMore)
+      } catch (loadError) {
+        if (sequence !== loadSequenceRef.current) return
+        setError(loadError instanceof Error ? loadError.message : '加载画布工作流失败')
+      } finally {
+        if (sequence === loadSequenceRef.current) {
+          setLoading(false)
+          setLoadingMore(false)
+          if (reset) setHasLoaded(true)
+        }
       }
-    }
-  }, [projectId, query, scope])
+    },
+    [projectId, query, scope],
+  )
 
   useEffect(() => {
-    if (open) void load()
+    if (open) {
+      void load()
+      return
+    }
+    setHasLoaded(false)
   }, [load, open])
 
   const visible = workflows
@@ -168,7 +179,13 @@ export function CanvasWorkflowDrawer({
             <h2 id="canvas-workflow-drawer-title">画布工作流</h2>
             <p>{projectName}</p>
           </div>
-          <button ref={closeButtonRef} data-dialog-initial-focus type="button" aria-label="关闭画布工作流" onClick={onClose}>
+          <button
+            ref={closeButtonRef}
+            data-dialog-initial-focus
+            type="button"
+            aria-label="关闭画布工作流"
+            onClick={onClose}
+          >
             <Icons.X size={16} />
           </button>
         </header>
@@ -229,7 +246,10 @@ export function CanvasWorkflowDrawer({
           </div>
         )}
 
-        <div className="canvas-workflow-drawer-list">
+        <div
+          className="canvas-workflow-drawer-list"
+          data-load-state={loading ? 'loading' : hasLoaded ? 'ready' : 'idle'}
+        >
           {loading ? (
             <div className="canvas-workflow-drawer-empty">正在加载…</div>
           ) : visible.length === 0 ? (
@@ -271,7 +291,9 @@ export function CanvasWorkflowDrawer({
                 </button>
               ))}
               <div className="canvas-workflow-drawer-pagination">
-                <span>{visible.length} / {total}</span>
+                <span>
+                  {visible.length} / {total}
+                </span>
                 {hasMore && (
                   <button
                     type="button"

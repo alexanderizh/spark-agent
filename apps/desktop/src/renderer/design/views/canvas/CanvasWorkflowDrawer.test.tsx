@@ -33,12 +33,7 @@ function workflow(
   return {
     id,
     projectId,
-    name:
-      id === 'personal'
-        ? '个人镜头模板'
-        : id === 'builtin'
-          ? '内置分镜模板'
-          : '项目工作流',
+    name: id === 'personal' ? '个人镜头模板' : id === 'builtin' ? '内置分镜模板' : '项目工作流',
     description: null,
     scope,
     status: 'draft',
@@ -129,6 +124,9 @@ describe('CanvasWorkflowDrawer', () => {
   it('shows project, personal, and builtin workflows by default', async () => {
     const { container } = await renderDrawer()
 
+    expect(
+      container.querySelector('.canvas-workflow-drawer-list')?.getAttribute('data-load-state'),
+    ).toBe('ready')
     expect(container.textContent).toContain('项目工作流')
     expect(container.textContent).toContain('个人镜头模板')
     expect(container.textContent).toContain('内置分镜模板')

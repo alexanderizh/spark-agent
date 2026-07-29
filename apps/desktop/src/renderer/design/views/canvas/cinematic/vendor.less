@@ -1,0 +1,24 @@
+@import (less) '@xyflow/react/dist/style.css';
+
+.canvas-workspace.canvas-cinematic {
+  .react-flow__edge-path {
+    stroke: rgba(165, 176, 190, 0.2);
+    stroke-linecap: round;
+    stroke-width: 1.25;
+    transition:
+      stroke var(--canvas-cinema-motion-fast) ease,
+      opacity var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .react-flow__edge.selected .react-flow__edge-path,
+  .react-flow__edge:focus .react-flow__edge-path {
+    stroke: rgba(145, 137, 255, 0.82);
+    stroke-width: 1.7;
+    filter: drop-shadow(0 0 5px rgba(119, 108, 246, 0.42));
+  }
+
+  [data-canvas-overlay-host] :where(.ant-dropdown, .ant-select-dropdown, .ant-popover) {
+    color: var(--canvas-cinema-text);
+    font-family: inherit;
+  }
+}

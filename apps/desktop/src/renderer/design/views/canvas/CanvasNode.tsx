@@ -29,6 +29,7 @@ import {
 import { operationLabel } from './canvas.api'
 import { isCanvasImageContentNode, isOperationNode, nodeOperation } from './canvas.capabilities'
 import { isFullBleedCanvasImageNode } from './canvasImageNodePresentation'
+import { canvasNodeUsesFlatMediaFrame } from './canvasNodeChrome'
 import {
   isLongText,
   keepsCanvasMediaNodeAspectRatio,
@@ -604,11 +605,11 @@ export const CanvasNode = memo(function CanvasNode({
   const showResizer = !locked && (selected || resizeHovered || resizing)
   const imageSrc = node.data.thumbnailUrl ?? node.data.url
   const isFullBleedImageNode = isFullBleedCanvasImageNode(node)
-  // 空图片节点也走 full-bleed 布局（圆角 + 内容铺满 + 头尾浮叠），与有图状态结构一致。
-  // 不修改 isFullBleedCanvasImageNode：它被 CanvasStage(hasOverlayChrome) / canvasNodeChrome
-  // 高度计算 / 尺寸计算 / 单测共用，改语义会破坏舞台 chrome 与测试；仅在渲染层扩展。
+  // 图片与视频无论 loaded / empty 都使用同一个扁平媒体 Frame，避免资源加载前后
+  // 因标题栏、footer 切换导致节点尺寸跳动。图片的源比例修正仍由 presentation helper 负责。
+  const useFlatMediaFrame = canvasNodeUsesFlatMediaFrame(node)
   const isEmptyImageNode = node.type === 'image' && !isFullBleedImageNode
-  const useImageFullBleedLayout = isFullBleedImageNode || isEmptyImageNode
+  const isEmptyVideoNode = node.type === 'video' && !node.data.url
   const normalizedImageSrc = imageSrc ? normalizeEduAssetUrl(imageSrc) : ''
   const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
   const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
@@ -1290,7 +1291,7 @@ export const CanvasNode = memo(function CanvasNode({
       >
         <div
           data-canvas-node-id={node.id}
-          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && operationStatus === 'running' ? ' canvas-node-task-running' : ''}${isTask && operationStatus === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}${useImageFullBleedLayout ? ' canvas-node-image-full-bleed' : ''}${isEmptyImageNode ? ' canvas-node-image-empty' : ''}${connectionTargetsNode ? ' canvas-node-connection-target' : ''}${connectionTargetIsValid ? ' canvas-node-connection-valid' : ''}`}
+          className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}${roleMeta ? ' canvas-node-has-role' : ''}${hasInlineExtension ? ' canvas-node-inline-expanded' : ''}${isTask && operationStatus === 'running' ? ' canvas-node-task-running' : ''}${isTask && operationStatus === 'failed' ? ' canvas-node-task-failed' : ''}${renderShotTable ? ' canvas-node-shot-script' : ''}${isResourceOutput ? ' canvas-node-resource-output' : ''}${useFlatMediaFrame ? ' canvas-node-media-full-bleed' : ''}${isFullBleedImageNode || isEmptyImageNode ? ' canvas-node-image-full-bleed' : ''}${node.type === 'video' && useFlatMediaFrame ? ' canvas-node-video-full-bleed' : ''}${isEmptyImageNode ? ' canvas-node-image-empty canvas-node-media-empty' : ''}${isEmptyVideoNode ? ' canvas-node-video-empty canvas-node-media-empty' : ''}${connectionTargetsNode ? ' canvas-node-connection-target' : ''}${connectionTargetIsValid ? ' canvas-node-connection-valid' : ''}`}
           style={nodeStyle}
           onPointerEnter={() => setResizeHovered(true)}
           onPointerLeave={() => setResizeHovered(false)}
@@ -1519,12 +1520,12 @@ export const CanvasNode = memo(function CanvasNode({
                 两种情况都不需要这条 media 标题栏（会多出一条 surface 栏 + 分隔线，
                 在空状态被夹在 placeholder 与 quick-footer 之间，形成“两层边框 / footer 错位”）。
                 content-title-media 仅留给 audio/video。 */}
-            {shouldShowContentTitle && isMediaContentNode && !isFullBleedImageNode && node.type !== 'image' ? (
+            {shouldShowContentTitle && isMediaContentNode && !useFlatMediaFrame ? (
               <div className="canvas-node-content-title canvas-node-content-title-media">
                 <strong title={title}>{title}</strong>
               </div>
             ) : null}
-            {useImageFullBleedLayout ? (
+            {useFlatMediaFrame ? (
               <div className="canvas-node-image-overlay-footer nodrag nopan">
                 <span className="canvas-node-image-overlay-copy">
                   <strong title={title}>{title}</strong>

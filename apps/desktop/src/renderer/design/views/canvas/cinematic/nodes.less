@@ -1,0 +1,480 @@
+.canvas-workspace.canvas-cinematic {
+  .canvas-node-shell {
+    border-radius: var(--canvas-cinema-radius-md);
+  }
+
+  .canvas-node {
+    --canvas-node-meta-height: 32px;
+    overflow: visible;
+    border: 1px solid var(--canvas-cinema-border);
+    border-radius: var(--canvas-cinema-radius-md);
+    background: var(--canvas-cinema-surface-2);
+    box-shadow:
+      0 18px 38px rgba(0, 0, 0, 0.26),
+      inset 0 1px rgba(255, 255, 255, 0.025);
+    transition:
+      border-color var(--canvas-cinema-motion-fast) ease,
+      box-shadow var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-node:hover {
+    border-color: var(--canvas-cinema-border-strong);
+    box-shadow:
+      0 22px 44px rgba(0, 0, 0, 0.34),
+      inset 0 1px rgba(255, 255, 255, 0.04);
+    transform: none;
+  }
+
+  .canvas-node.canvas-node-selected {
+    border-color: var(--canvas-cinema-accent-bright);
+    box-shadow:
+      0 0 0 3px rgba(119, 108, 246, 0.15),
+      0 26px 52px rgba(0, 0, 0, 0.44);
+  }
+
+  .canvas-node.canvas-node-task-running {
+    position: relative;
+    isolation: isolate;
+    border-color: rgba(119, 108, 246, 0.56);
+  }
+
+  .canvas-node.canvas-node-task-running::before {
+    position: absolute;
+    z-index: var(--z-canvas-selection);
+    inset: -1px;
+    padding: 2px;
+    border-radius: inherit;
+    background: conic-gradient(
+      from var(--canvas-cinema-running-angle, 0deg),
+      transparent 0 13%,
+      #a49dff 21%,
+      transparent 31% 60%,
+      #7065ef 69%,
+      transparent 81%
+    );
+    content: '';
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+    animation: canvas-cinema-running-border 1.4s linear infinite;
+  }
+
+  .canvas-node.canvas-node-task-running::after {
+    position: absolute;
+    z-index: var(--z-canvas-selection);
+    inset: 0;
+    border-radius: inherit;
+    box-shadow:
+      inset 0 0 0 1px rgba(145, 137, 255, 0.28),
+      0 0 20px rgba(119, 108, 246, 0.12);
+    content: '';
+    pointer-events: none;
+    animation: canvas-cinema-running-breathe 1.2s ease-in-out infinite alternate;
+  }
+
+  .canvas-node.canvas-node-task-failed {
+    border-color: rgba(239, 107, 118, 0.62);
+  }
+
+  .canvas-node-meta-bar {
+    height: 32px;
+    min-height: 32px;
+    flex: 0 0 32px;
+    gap: 7px;
+    padding: 0 9px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-node-meta-title {
+    gap: 6px;
+    color: var(--canvas-cinema-text-muted);
+  }
+
+  .canvas-node-meta-icon {
+    width: 13px;
+    height: 13px;
+    flex-basis: 13px;
+    color: var(--canvas-cinema-text-faint);
+  }
+
+  .canvas-node-kind-label {
+    color: var(--canvas-cinema-text);
+    font-size: 10px;
+    font-weight: 610;
+  }
+
+  .canvas-node-meta-chip {
+    min-height: 18px;
+    color: var(--canvas-cinema-text-faint);
+    font-family: 'DIN Alternate', 'Avenir Next', sans-serif;
+    font-size: 8px;
+    line-height: 18px;
+  }
+
+  .canvas-node-meta-chip-status.is-running {
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-node-meta-chip-status.is-completed,
+  .canvas-node-meta-chip-state.is-approved,
+  .canvas-node-meta-chip-state.is-locked {
+    color: var(--canvas-cinema-success);
+  }
+
+  .canvas-node-core,
+  .canvas-node-body {
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-node-core {
+    overflow: hidden;
+    border-radius: 0 0 10px 10px;
+  }
+
+  .canvas-node.canvas-node-media-full-bleed {
+    overflow: hidden;
+    border-color: rgba(255, 255, 255, 0.09);
+    background: #07090b;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.26);
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-meta-bar {
+    position: absolute;
+    z-index: var(--z-canvas-chrome);
+    top: 0;
+    right: 0;
+    left: 0;
+    border: 0;
+    background: linear-gradient(180deg, rgba(5, 7, 9, 0.82), rgba(5, 7, 9, 0));
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-core {
+    position: relative;
+    height: 100%;
+    flex: 1 1 100%;
+    border-radius: inherit;
+    background: #07090b;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-body {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: #07090b;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-wrap,
+  .canvas-node-media-full-bleed .canvas-node-image {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-placeholder {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: inherit;
+    padding: 46px 16px 58px;
+    background:
+      radial-gradient(circle at 50% 38%, rgba(119, 108, 246, 0.13), transparent 38%), #101319;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-placeholder > svg {
+    color: rgba(145, 137, 255, 0.74);
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-placeholder strong {
+    color: var(--canvas-cinema-text);
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-placeholder span {
+    color: var(--canvas-cinema-text-faint);
+  }
+
+  .canvas-node-image,
+  .canvas-operation-output-media :is(img, video) {
+    object-fit: cover;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-body,
+  .canvas-node-media-full-bleed .canvas-node-image-wrap {
+    background: #07090b;
+  }
+
+  .canvas-node-image-overlay-footer {
+    position: absolute;
+    z-index: var(--z-canvas-chrome);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    box-sizing: border-box;
+    min-height: 42px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 9px;
+    border: 0;
+    background: linear-gradient(transparent, rgba(5, 7, 9, 0.84));
+    backdrop-filter: none;
+  }
+
+  .canvas-node-image-overlay-copy strong {
+    color: var(--canvas-cinema-text-strong);
+    font-size: 10px;
+    font-weight: 620;
+  }
+
+  .canvas-node-image-overlay-copy small {
+    color: rgba(203, 209, 216, 0.64);
+    font-size: 8px;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-overlay-copy small {
+    display: none;
+  }
+
+  .canvas-node-image-overlay-footer button,
+  .canvas-node-quick-footer button {
+    min-height: 24px;
+    padding: 0 7px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: var(--canvas-cinema-radius-xs);
+    background: rgba(9, 11, 14, 0.68);
+    color: var(--canvas-cinema-text-muted);
+    font-size: 8px;
+  }
+
+  .canvas-node-media-full-bleed .canvas-node-image-chips,
+  .canvas-node-media-full-bleed .canvas-node-image-overlay-footer > button {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(3px);
+    transition:
+      opacity var(--canvas-cinema-motion-fast) ease,
+      transform var(--canvas-cinema-motion-fast) ease;
+  }
+
+  .canvas-node-media-full-bleed:hover .canvas-node-image-chips,
+  .canvas-node-media-full-bleed:hover .canvas-node-image-overlay-footer > button,
+  .canvas-node-media-full-bleed.canvas-node-selected .canvas-node-image-chips,
+  .canvas-node-media-full-bleed.canvas-node-selected .canvas-node-image-overlay-footer > button,
+  .canvas-node-media-full-bleed:focus-within .canvas-node-image-chips,
+  .canvas-node-media-full-bleed:focus-within .canvas-node-image-overlay-footer > button {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .canvas-node-quick-footer {
+    height: 34px;
+    min-height: 34px;
+    flex-basis: 34px;
+    padding: 0 9px;
+    border-top: 1px solid var(--canvas-cinema-border);
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-node-quick-footer > span {
+    color: var(--canvas-cinema-text-faint);
+    font-size: 8px;
+  }
+
+  .canvas-node.canvas-node-group {
+    border-color: rgba(255, 255, 255, 0.11);
+    background: rgba(15, 18, 22, 0.62);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.018);
+  }
+
+  .canvas-node-group .canvas-node-core,
+  .canvas-node-group .canvas-node-body {
+    background: transparent;
+  }
+
+  // 分组的正文只复述“包含 N 个节点”，会与真实子节点叠在一起；结构信息由顶部
+  // 类型/状态和底部组操作承担，中间区域完整留给成员素材。
+  .canvas-node-group .canvas-node-group-body {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .canvas-node-group .canvas-node-quick-footer {
+    background: rgba(13, 16, 20, 0.9);
+  }
+
+  .canvas-node-content-title {
+    height: 40px;
+    min-height: 40px;
+    flex-basis: 40px;
+    padding: 8px 10px;
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-node-content-title strong {
+    color: var(--canvas-cinema-text-strong);
+    font-size: 11px;
+  }
+
+  .canvas-node-content-title span {
+    color: var(--canvas-cinema-text-faint);
+    font-size: 8px;
+  }
+
+  // 媒体节点用满铺突出内容，文本节点则需要稳定的阅读留白。这里由 Cinematic
+  // owner 明确接管正文间距，避免历史样式里被注释的 padding 再次造成贴边。
+  .canvas-node-text {
+    box-sizing: border-box;
+    padding: 14px 16px 18px;
+  }
+
+  .canvas-node-text.canvas-node-text-long {
+    padding: 18px 20px 22px;
+  }
+
+  .canvas-node-body > .canvas-node-operation,
+  .canvas-operation-output-deck,
+  .canvas-operation-output-nav {
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-operation-empty-state {
+    gap: 9px;
+    padding: 12px;
+    background: var(--canvas-cinema-surface-2);
+  }
+
+  .canvas-operation-empty-icon {
+    color: var(--canvas-cinema-accent-bright);
+  }
+
+  .canvas-node-task-msg,
+  .canvas-node-task-meta {
+    color: var(--canvas-cinema-text-muted);
+    font-size: 9px;
+    line-height: 1.6;
+  }
+
+  .canvas-operation-param-summary > span {
+    border-color: var(--canvas-cinema-border);
+    border-radius: var(--canvas-cinema-radius-xs);
+    background: var(--canvas-cinema-surface-1);
+  }
+
+  .canvas-node-handle {
+    width: 9px;
+    height: 9px;
+    border: 2px solid var(--canvas-cinema-surface-2);
+    background: #69727d;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.13);
+  }
+
+  .canvas-node-selected .canvas-node-handle,
+  .canvas-node-handle:hover,
+  .canvas-node-handle.connectingto.valid {
+    background: var(--canvas-cinema-accent-bright);
+    box-shadow: 0 0 10px rgba(119, 108, 246, 0.7);
+  }
+
+  .canvas-floating-toolbar-shell {
+    min-height: 36px;
+    padding: 3px;
+    border-color: var(--canvas-cinema-border-strong);
+    border-radius: 9px;
+    background: rgba(22, 26, 31, 0.96);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38);
+    backdrop-filter: blur(12px);
+  }
+
+  .canvas-floating-toolbar-shell .ant-btn {
+    height: 28px;
+    min-width: 28px;
+    border-radius: var(--canvas-cinema-radius-xs);
+    color: var(--canvas-cinema-text-muted);
+    font-size: 9px;
+  }
+
+  .canvas-floating-toolbar-shell .ant-btn:hover {
+    background: var(--canvas-cinema-accent-soft);
+    color: #cbc7ff;
+  }
+
+  .canvas-stage[data-zoom-lod='compact'] {
+    .canvas-node-meta-chip-state,
+    .canvas-node-content-title span,
+    .canvas-node-quick-footer button {
+      display: none;
+    }
+
+    .canvas-node-content-title {
+      height: 32px;
+      min-height: 32px;
+      flex-basis: 32px;
+      justify-content: center;
+      padding-block: 4px;
+    }
+  }
+
+  .canvas-stage[data-zoom-lod='overview'] {
+    .canvas-node-meta-tags,
+    .canvas-node-content-title,
+    .canvas-node-quick-footer,
+    .canvas-node-image-overlay-copy small,
+    .canvas-node-image-overlay-footer button,
+    .canvas-operation-param-summary,
+    .canvas-node-task-msg {
+      display: none;
+    }
+
+    .canvas-node-meta-bar {
+      height: 26px;
+      min-height: 26px;
+      flex-basis: 26px;
+      padding-inline: 7px;
+    }
+
+    .canvas-node-kind-label {
+      font-size: 9px;
+    }
+
+    .canvas-node-image-overlay-footer {
+      min-height: 28px;
+      padding: 5px 7px;
+    }
+  }
+}
+
+@property --canvas-cinema-running-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes canvas-cinema-running-border {
+  to {
+    --canvas-cinema-running-angle: 360deg;
+  }
+}
+
+@keyframes canvas-cinema-running-breathe {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-workspace.canvas-cinematic {
+    .canvas-node.canvas-node-task-running::before,
+    .canvas-node.canvas-node-task-running::after {
+      animation: none;
+    }
+  }
+}
