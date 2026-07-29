@@ -5,6 +5,11 @@
   --stage3d-panel-bg-strong: color-mix(in srgb, var(--panel-elev, #383838) 92%, transparent);
   --stage3d-panel-hover: color-mix(in srgb, var(--panel-elev, #383838) 96%, transparent);
   --stage3d-panel-border: color-mix(in srgb, var(--border, #3d3d3d) 78%, transparent);
+  --stage3d-topbar-bg: color-mix(
+    in srgb,
+    var(--panel-elev, #383838) 82%,
+    var(--bg-sunken, #1a1a1a)
+  );
   --stage3d-viewport-bg: var(--canvas-edit-bg, var(--bg-sunken, #1a1a1a));
   --stage3d-title: var(--text-strong, #fafafa);
   --stage3d-text: var(--text, #e4e4e7);
@@ -43,12 +48,7 @@
   justify-content: space-between;
   padding: 4px 16px;
   border-bottom: 1px solid var(--stage3d-panel-border);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--panel-elev, #383838) 94%, transparent),
-    color-mix(in srgb, var(--panel, #303030) 72%, transparent)
-  );
-  padding-left: 85px;
+  background: var(--stage3d-topbar-bg);
   -webkit-app-region: drag;
   // 无边框窗口下让顶栏可拖动窗口（Windows/macOS 一致），但内部按钮必须 no-drag，
   // 否则落在窗口拖拽条区域的按钮点击会被吞（问题 0）。子元素全部禁用拖拽。
@@ -77,8 +77,14 @@
   // macOS hiddenInset 红绿灯位于左上角，overlay 顶栏靠上时给标题区留出安全边距，
   // 避免标题被红绿灯压住（与 image-lightbox-topbar.platform-darwin-safe-area 同款）。
   &.platform-darwin-safe-area {
-    padding-left: 78px;
+    padding-left: 92px;
   }
+}
+
+// 平台类是窗口初始化时的稳定信号，可兜底模块加载阶段 window.spark 尚未就绪、
+// JSX 未附加 platform-darwin-safe-area 的情况；姿势编辑全屏页也复用同一安全区。
+.app.platform-darwin .stage3d-modal-overlay > .stage3d-shell > .stage3d-topbar {
+  padding-left: 92px;
 }
 
 .stage3d-body {

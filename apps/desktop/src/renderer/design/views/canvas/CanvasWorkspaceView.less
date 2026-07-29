@@ -659,25 +659,34 @@
   backdrop-filter: blur(18px) saturate(1.04);
 }
 
-.canvas-controls .react-flow__controls-button {
+.canvas-controls .canvas-controls-button {
+  display: inline-grid;
   width: 34px;
   height: 32px;
+  place-items: center;
+  padding: 0;
   border: 0;
   border-radius: var(--r-xs);
   background: transparent;
   color: var(--canvas-float-icon);
   box-shadow: none;
+  cursor: pointer;
 }
 
-.canvas-controls .react-flow__controls-button:hover {
+.canvas-controls .canvas-controls-button:hover:not(:disabled) {
   background: var(--canvas-float-hover);
   color: var(--canvas-float-icon-strong);
 }
 
-.canvas-controls .react-flow__controls-button svg {
+.canvas-controls .canvas-controls-button svg {
   width: 17px;
   height: 17px;
   stroke-width: 1.9;
+}
+
+.canvas-controls .canvas-controls-button:disabled {
+  color: color-mix(in srgb, var(--canvas-float-icon) 42%, transparent);
+  cursor: not-allowed;
 }
 
 /* 放大 / 缩小按钮之间的缩放比例显示（只读，与按钮同高，等宽避免抖动） */
@@ -3330,37 +3339,6 @@ body.canvas-agent-panel-resizing {
 body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   background: var(--primary);
 }
-// Agent 面板折叠/展开按钮（canvas-workspace-body 子元素，不受 aside overflow 裁切）
-// 面板 left:8px，展开态按钮 = 面板左偏移 + 面板宽度；折叠态 = 面板左偏移
-.canvas-agent-side-panel-collapse-toggle {
-  position: absolute;
-  z-index: 51;
-  top: 50%;
-  left: calc(8px + var(--canvas-agent-panel-width, 0px));
-  display: inline-flex;
-  width: 28px;
-  height: 48px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-left: 0;
-  border-radius: 0 14px 14px 0;
-  background: color-mix(in srgb, var(--panel-elev) 92%, transparent);
-  color: var(--text-muted);
-  cursor: pointer;
-  transform: translateY(-50%);
-  transition:
-    color 0.15s ease,
-    background 0.15s ease;
-}
-.canvas-agent-side-panel-collapse-toggle:hover {
-  color: var(--primary);
-  background: var(--panel);
-}
-.canvas-agent-side-panel-collapse-toggle.is-collapsed {
-  left: 0px;
-}
-
 .canvas-node-edit-bottom-panel {
   width: 900px;
 }
@@ -12808,35 +12786,6 @@ body.canvas-agent-panel-resizing {
 .canvas-production-stage[role='button']:focus-visible {
   outline: 2px solid color-mix(in srgb, #8b5cf6 60%, transparent);
   outline-offset: 1px;
-}
-
-.canvas-side-panel-collapse-toggle {
-  position: absolute;
-  z-index: 8;
-  top: 50%;
-  right: var(--canvas-side-panel-width);
-  display: inline-flex;
-  width: 28px;
-  height: 48px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-right: 0;
-  border-radius: 14px 0 0 14px;
-  background: color-mix(in srgb, var(--panel-elev) 92%, transparent);
-  color: var(--text-muted);
-  cursor: pointer;
-  transform: translateY(-50%);
-  box-shadow: var(--shadow-sm);
-}
-
-.canvas-side-panel-collapse-toggle:hover {
-  color: var(--primary);
-  background: var(--panel);
-}
-
-.canvas-side-panel-collapse-toggle.is-collapsed {
-  right: 0;
 }
 
 .canvas-side-tabs {

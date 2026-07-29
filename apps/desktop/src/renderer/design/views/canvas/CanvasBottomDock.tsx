@@ -178,7 +178,7 @@ export function CanvasBottomDock({
             <Button
               size="middle"
               type="text"
-              icon={<Icons.Bot size={15} />}
+              icon={<Icons.Agent size={15} />}
               aria-label="画布 Agent 助手"
               onClick={() => closeAddMenuAndRun(onOpenAgent)}
             />

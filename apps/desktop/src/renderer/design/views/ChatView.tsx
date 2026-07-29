@@ -1991,7 +1991,9 @@ export function ChatView({
         className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}${
           !showEmptyHero && showGitEnvPanel ? ' git-env-panel-open' : ''
         }`}
-        data-empty-theme={showEmptyHero ? t.emptyHeroTheme : undefined}
+        data-empty-theme={
+          showEmptyHero && t.emptyHeroTheme !== 'none' ? t.emptyHeroTheme : undefined
+        }
         ref={chatAreaRef}
       >
         {showEmptyHero && (

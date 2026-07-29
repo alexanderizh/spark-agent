@@ -35,31 +35,6 @@
     width: 1px;
   }
 
-  .canvas-agent-side-panel-collapse-toggle {
-    z-index: calc(var(--z-canvas-panel) + 1);
-    right: calc(var(--canvas-side-panel-width) + var(--canvas-agent-panel-width) - 1px);
-    left: auto;
-    display: inline-flex;
-    width: 24px;
-    height: 42px;
-    border: 1px solid var(--canvas-cinema-border);
-    border-right: 0;
-    border-radius: 10px 0 0 10px;
-    background: var(--canvas-cinema-surface-2);
-    color: var(--canvas-cinema-text-faint);
-    box-shadow: -8px 0 18px rgba(0, 0, 0, 0.18);
-  }
-
-  .canvas-agent-side-panel-collapse-toggle:hover {
-    background: var(--canvas-cinema-surface-3);
-    color: var(--canvas-cinema-accent-bright);
-  }
-
-  .canvas-agent-side-panel-collapse-toggle.is-collapsed {
-    right: var(--canvas-side-panel-width);
-    left: auto;
-  }
-
   .canvas-agent-side-panel-inner .canvas-bottom-floating-head {
     min-height: 54px;
     gap: 8px;
@@ -128,10 +103,6 @@
     gap: 15px;
     padding: 15px 13px 18px;
     background: var(--canvas-cinema-surface-1);
-  }
-
-  .canvas-agent-modal .chat-panel-message-avatar {
-    display: none;
   }
 
   .canvas-agent-modal .chat-panel-message-body {

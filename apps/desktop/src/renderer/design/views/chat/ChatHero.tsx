@@ -4,7 +4,12 @@ import { Icons } from '../../Icons'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../../avatar'
 import { AvatarImage } from '../../components/AvatarImage'
 import { formatShortcut } from '../../hooks/useKeyboard'
-import { getEmptyHeroTheme, type EmptyHeroThemeId } from './emptyHeroThemes'
+import {
+  getClassicEmptyHeroTitle,
+  getEmptyHeroTheme,
+  getEmptyHeroTitleLines,
+  type EmptyHeroThemeId,
+} from './emptyHeroThemes'
 
 export function resolveAgentDisplay(agents: ManagedAgent[], agentId: string | null | undefined) {
   if (agentId == null || agentId.length === 0) return null
@@ -187,13 +192,25 @@ export function SingleAgentEmptyHero({
   onSelectPrompt: (prompt: string) => void
 }) {
   const theme = getEmptyHeroTheme(themeId)
+  const isClassicTheme = theme.id === 'none'
+  const [localHour, setLocalHour] = useState(() => new Date().getHours())
+
+  useEffect(() => {
+    if (theme.id !== 'celestial' && !isClassicTheme) return
+    const timer = window.setInterval(() => setLocalHour(new Date().getHours()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [isClassicTheme, theme.id])
+
+  const titleLines = getEmptyHeroTitleLines(theme, localHour)
 
   // 推荐卡片按窗口宽度决定每页展示几张；移动端 grid 会塌成单列（见 .less），
   // 用 matchMedia 跟 grid 列数同步：宽屏 4 列、中等窗口 2 列、窄屏 1 列。
   // 双层 cross-fade 用一个 phase state 描述：activePage 是当前渲染页；
   // outgoingPage 是正在淡出的旧页（动画完成前为非 null）。
   // 用 setState callback 在 setInterval 回调里推进，避免 effect 同步 setState。
-  const [visibleCount, setVisibleCount] = useState(SINGLE_AGENT_HERO_VISIBLE_COUNT)
+  const [visibleCount, setVisibleCount] = useState(
+    isClassicTheme ? 3 : SINGLE_AGENT_HERO_VISIBLE_COUNT,
+  )
   const [paused, setPaused] = useState(false)
   const [phase, setPhase] = useState<{ activePage: number; outgoingPage: number | null }>({
     activePage: 0,
@@ -207,7 +224,13 @@ export function SingleAgentEmptyHero({
     const apply = () => {
       // 列数变化时同步重置 phase（避免越界）。回调里 setState 是合法的。
       setVisibleCount(
-        narrowMql.matches ? 1 : mediumMql.matches ? 2 : SINGLE_AGENT_HERO_VISIBLE_COUNT,
+        narrowMql.matches
+          ? 1
+          : isClassicTheme
+            ? 3
+            : mediumMql.matches
+              ? 2
+              : SINGLE_AGENT_HERO_VISIBLE_COUNT,
       )
       setPhase({ activePage: 0, outgoingPage: null })
     }
@@ -227,7 +250,7 @@ export function SingleAgentEmptyHero({
       narrowMql.removeListener(apply)
       mediumMql.removeListener(apply)
     }
-  }, [])
+  }, [isClassicTheme])
 
   const totalActions = SINGLE_AGENT_HERO_ACTIONS.length
   const pageCount = Math.max(1, Math.ceil(totalActions / visibleCount))
@@ -262,29 +285,39 @@ export function SingleAgentEmptyHero({
 
   return (
     <section
-      className={`single-empty-hero single-empty-hero-${theme.id}`}
-      data-empty-theme={theme.id}
-      aria-label={`${theme.name}空会话欢迎提示`}
+      className={
+        isClassicTheme ? 'single-empty-hero' : `single-empty-hero single-empty-hero-${theme.id}`
+      }
+      data-empty-theme={isClassicTheme ? undefined : theme.id}
+      aria-label={isClassicTheme ? '空会话欢迎提示' : `${theme.name}空会话欢迎提示`}
     >
-      <div className="single-empty-heading">
+      {isClassicTheme ? (
         <div className="single-empty-copy">
-          <span className="single-empty-eyebrow">{theme.eyebrow}</span>
           <h1 className="chat-hero-title single-empty-title">
-            {theme.titleLines.map((line) => (
-              <span key={line}>{line}</span>
-            ))}
+            {getClassicEmptyHeroTitle(localHour)}
           </h1>
-          <p className="single-empty-body">{theme.body}</p>
         </div>
-        <div className="single-empty-art" aria-hidden="true">
-          <span className="single-empty-art-orb" />
-          <span className="single-empty-art-ring ring-one" />
-          <span className="single-empty-art-ring ring-two" />
-          <span className="single-empty-art-spark" />
-          <span className="single-empty-art-dot dot-one" />
-          <span className="single-empty-art-dot dot-two" />
+      ) : (
+        <div className="single-empty-heading">
+          <div className="single-empty-copy">
+            <span className="single-empty-eyebrow">{theme.eyebrow}</span>
+            <h1 className="chat-hero-title single-empty-title">
+              {titleLines.map((line) => (
+                <span key={line}>{line}</span>
+              ))}
+            </h1>
+            <p className="single-empty-body">{theme.body}</p>
+          </div>
+          <div className="single-empty-art" aria-hidden="true">
+            <span className="single-empty-art-orb" />
+            <span className="single-empty-art-ring ring-one" />
+            <span className="single-empty-art-ring ring-two" />
+            <span className="single-empty-art-spark" />
+            <span className="single-empty-art-dot dot-one" />
+            <span className="single-empty-art-dot dot-two" />
+          </div>
         </div>
-      </div>
+      )}
       <div
         className="single-empty-actions"
         onMouseEnter={() => setPaused(true)}
@@ -334,9 +367,11 @@ export function SingleAgentEmptyHero({
                 <strong>{title}</strong>
                 <span>{desc}</span>
               </span>
-              <span className="single-empty-action-arrow" aria-hidden="true">
-                →
-              </span>
+              {!isClassicTheme && (
+                <span className="single-empty-action-arrow" aria-hidden="true">
+                  →
+                </span>
+              )}
             </button>
           ))}
         </div>

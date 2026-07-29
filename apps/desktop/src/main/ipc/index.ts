@@ -232,6 +232,7 @@ import { registerVoiceIpc } from './registerVoiceIpc.js'
 import { registerCanvasWorkflowIpc } from './registerCanvasWorkflowIpc.js'
 import { registerComputerUseIpc } from './registerComputerUseIpc.js'
 import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc.js'
+import { registerSidebarOrderIpc } from './registerSidebarOrderIpc.js'
 import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
 import { ComputerUseAgentController } from '../services/computer-use/ComputerUseAgentController.js'
 import { getComputerUseServices } from '../services/computer-use/ComputerUseServices.js'
@@ -8494,6 +8495,7 @@ export function registerAllIpcHandlers(): void {
   // ─── Governed Computer Use and encrypted application snapshots ───────────
   registerComputerUseIpc()
   registerApplicationSnapshotIpc()
+  registerSidebarOrderIpc()
 
   log.info('All IPC handlers registered')
 }

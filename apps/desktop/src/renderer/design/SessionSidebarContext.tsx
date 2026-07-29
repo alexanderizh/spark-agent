@@ -27,8 +27,10 @@ import type {
   TeamModeConfig,
   TerminalSessionActivity,
   TerminalStreamEvent,
+  SidebarOrderState,
 } from '@spark/protocol'
 import { isAutoRouterProvider } from '@spark/protocol'
+import { SerialTaskQueue } from './sidebar-manual-order'
 import {
   getPreferredProviderForAdapter,
   getProviderAdapterKind,
@@ -155,6 +157,28 @@ function resolveNewSessionTeamConfig(teamConfig: unknown, hostAgentId: string): 
 
 function getBasename(path: string): string {
   return path.split(/[/\\]/).pop() ?? ''
+}
+
+function normalizeSidebarOrder(value: unknown): SidebarOrderState {
+  const candidate = value as Partial<SidebarOrderState> | null
+  const sessionIdsByProject: Record<string, string[]> = {}
+  if (candidate?.sessionIdsByProject != null) {
+    for (const [projectId, sessionIds] of Object.entries(candidate.sessionIdsByProject)) {
+      if (Array.isArray(sessionIds)) {
+        sessionIdsByProject[projectId] = sessionIds.filter(
+          (sessionId): sessionId is string => typeof sessionId === 'string',
+        )
+      }
+    }
+  }
+  return {
+    projectIds: Array.isArray(candidate?.projectIds)
+      ? candidate.projectIds.filter(
+          (projectId): projectId is string => typeof projectId === 'string',
+        )
+      : [],
+    sessionIdsByProject,
+  }
 }
 
 export function filterSessionsByTime(
@@ -284,6 +308,7 @@ type SessionSidebarCtx = {
   noProjectWorkspace: WorkspaceInfo | null
   noProjectSessions: SessionSummary[]
   ungroupedSessions: SessionSummary[]
+  sidebarOrder: SidebarOrderState
 
   // Actions
   refreshData: () => Promise<void>
@@ -309,6 +334,8 @@ type SessionSidebarCtx = {
   handleDeleteProject: (workspace: WorkspaceInfo) => Promise<void>
   handleOpenProjectFolder: (workspace: WorkspaceInfo) => Promise<void>
   handleOpenWorkspace: (workspace: WorkspaceInfo) => Promise<void>
+  handleReorderProjects: (projectIds: string[]) => Promise<void>
+  handleReorderSessions: (projectId: string, sessionIds: string[]) => Promise<void>
 
   // Create project dialog
   handleCreateProject: (useTempDir?: boolean) => Promise<void>
@@ -375,6 +402,14 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   >({})
   // Sessions that just completed but the user hasn't viewed yet — used for the blue "unread" dot
   const [unreviewedCompleted, setUnreviewedCompleted] = useState<Set<string>>(() => new Set())
+  const [sidebarOrder, setSidebarOrder] = useState<SidebarOrderState>({
+    projectIds: [],
+    sessionIdsByProject: {},
+  })
+  const projectOrderMutationRef = useRef(0)
+  const sessionOrderMutationRef = useRef(new Map<string, number>())
+  const projectOrderWriteQueueRef = useRef(new SerialTaskQueue())
+  const sessionOrderWriteQueuesRef = useRef(new Map<string, SerialTaskQueue>())
   const justCreatedSessionRef = useRef<SessionId | null>(null)
   const pendingCreatedWorkspaceIdsRef = useRef(new Map<SessionId, string | null>())
   const pinMutationsRef = useRef(
@@ -432,6 +467,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
   const { invoke: getTempProjectDir } = useIpcInvoke('app:get-temp-project-dir')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+  const { invoke: listSidebarOrder } = useIpcInvoke('sidebar-order:list')
+  const { invoke: updateSidebarOrder } = useIpcInvoke('sidebar-order:update')
 
   const refreshTerminalActivity = useCallback(async () => {
     try {
@@ -447,17 +484,20 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
 
   const performRefresh = useCallback(async () => {
     try {
-      const [workspaceRes, sessionRes, currentRes, providerRes, agentRes] = await Promise.all([
-        listWorkspaces({ limit: 100 }),
-        listSessions({ limit: 200 }),
-        getCurrentWorkspace({}),
-        listProviders({}),
-        listAgents({}).catch(() => ({ agents: [] as ManagedAgent[] })),
-      ])
+      const [workspaceRes, sessionRes, currentRes, providerRes, agentRes, sidebarOrderRes] =
+        await Promise.all([
+          listWorkspaces({ limit: 100 }),
+          listSessions({ limit: 200 }),
+          getCurrentWorkspace({}),
+          listProviders({}),
+          listAgents({}).catch(() => ({ agents: [] as ManagedAgent[] })),
+          listSidebarOrder({}).catch(() => ({ projectIds: [], sessionIdsByProject: {} })),
+        ])
       setWorkspaces(workspaceRes.workspaces)
       setSessions(sessionRes.sessions)
       setProviders(providerRes.profiles)
       setAgents(Array.isArray(agentRes.agents) ? agentRes.agents : [])
+      setSidebarOrder(normalizeSidebarOrder(sidebarOrderRes))
       setSelectedProviderId(
         (prev) =>
           prev ||
@@ -475,6 +515,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     listAgents,
     listProviders,
     listSessions,
+    listSidebarOrder,
     listWorkspaces,
     refreshTerminalActivity,
   ])
@@ -1411,6 +1452,76 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     [openWorkspaceFolder, toast],
   )
 
+  const handleReorderProjects = useCallback(
+    async (projectIds: string[]) => {
+      const mutation = projectOrderMutationRef.current + 1
+      projectOrderMutationRef.current = mutation
+      let previous: string[] = []
+      setSidebarOrder((current) => {
+        previous = current.projectIds
+        return { ...current, projectIds }
+      })
+      try {
+        await projectOrderWriteQueueRef.current.run(async () => {
+          await updateSidebarOrder({ scope: 'projects', itemIds: projectIds })
+        })
+      } catch (err) {
+        if (projectOrderMutationRef.current === mutation) {
+          const persisted = await listSidebarOrder({}).catch(() => null)
+          if (projectOrderMutationRef.current !== mutation) return
+          setSidebarOrder((current) => ({
+            ...current,
+            projectIds: persisted == null ? previous : normalizeSidebarOrder(persisted).projectIds,
+          }))
+          toast.error(err instanceof Error ? err.message : t('sidebar.drag.saveProjectFailed'))
+        }
+      }
+    },
+    [listSidebarOrder, t, toast, updateSidebarOrder],
+  )
+
+  const handleReorderSessions = useCallback(
+    async (projectId: string, sessionIds: string[]) => {
+      const mutation = (sessionOrderMutationRef.current.get(projectId) ?? 0) + 1
+      sessionOrderMutationRef.current.set(projectId, mutation)
+      let previous: string[] = []
+      setSidebarOrder((current) => {
+        previous = current.sessionIdsByProject[projectId] ?? []
+        return {
+          ...current,
+          sessionIdsByProject: { ...current.sessionIdsByProject, [projectId]: sessionIds },
+        }
+      })
+      try {
+        let queue = sessionOrderWriteQueuesRef.current.get(projectId)
+        if (queue == null) {
+          queue = new SerialTaskQueue()
+          sessionOrderWriteQueuesRef.current.set(projectId, queue)
+        }
+        await queue.run(async () => {
+          await updateSidebarOrder({ scope: 'sessions', projectId, itemIds: sessionIds })
+        })
+      } catch (err) {
+        if (sessionOrderMutationRef.current.get(projectId) === mutation) {
+          const persisted = await listSidebarOrder({}).catch(() => null)
+          if (sessionOrderMutationRef.current.get(projectId) !== mutation) return
+          setSidebarOrder((current) => ({
+            ...current,
+            sessionIdsByProject: {
+              ...current.sessionIdsByProject,
+              [projectId]:
+                persisted == null
+                  ? previous
+                  : (normalizeSidebarOrder(persisted).sessionIdsByProject[projectId] ?? []),
+            },
+          }))
+          toast.error(err instanceof Error ? err.message : t('sidebar.drag.saveSessionFailed'))
+        }
+      }
+    },
+    [listSidebarOrder, t, toast, updateSidebarOrder],
+  )
+
   // Computed
   const projectGroups = useMemo(
     () => buildProjectGroups(workspaces, sessions),
@@ -1452,6 +1563,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       noProjectWorkspace,
       noProjectSessions,
       ungroupedSessions,
+      sidebarOrder,
       refreshData,
       updateSessionInList,
       bumpSessionMessageCount,
@@ -1468,6 +1580,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       handleDeleteProject,
       handleOpenProjectFolder,
       handleOpenWorkspace,
+      handleReorderProjects,
+      handleReorderSessions,
       handleCreateProject,
       handlePickProjectPath,
       projectDialog,
@@ -1500,6 +1614,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       noProjectWorkspace,
       noProjectSessions,
       ungroupedSessions,
+      sidebarOrder,
       refreshData,
       updateSessionInList,
       bumpSessionMessageCount,
@@ -1516,6 +1631,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       handleDeleteProject,
       handleOpenProjectFolder,
       handleOpenWorkspace,
+      handleReorderProjects,
+      handleReorderSessions,
       handleCreateProject,
       handlePickProjectPath,
       projectDialog,

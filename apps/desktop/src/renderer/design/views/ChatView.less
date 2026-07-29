@@ -2271,33 +2271,6 @@ body.git-review-tree-resizing {
 
 .chat-main-active {
   padding-bottom: 14px;
-  // background:
-  //   radial-gradient(
-  //     circle 210px at calc(100% + 54px) 72px,
-  //     color-mix(in srgb, var(--primary, #5876d8) 7%, transparent) 0 99%,
-  //     transparent 100%
-  //   ),
-  //   radial-gradient(
-  //     circle 240px at -84px calc(100% - 96px),
-  //     color-mix(in srgb, var(--danger, #df5965) 5%, transparent) 0 99%,
-  //     transparent 100%
-  //   ),
-  //   var(--bg);
-}
-
-.app.theme-dark .chat-main-active {
-  background:
-    radial-gradient(
-      circle 210px at calc(100% + 54px) 72px,
-      color-mix(in srgb, var(--primary, #7f9cff) 5%, transparent) 0 99%,
-      transparent 100%
-    ),
-    radial-gradient(
-      circle 240px at -84px calc(100% - 96px),
-      color-mix(in srgb, var(--danger, #ef7a84) 4%, transparent) 0 99%,
-      transparent 100%
-    ),
-    var(--bg);
 }
 
 .chat-main-active .composer-inner {
@@ -3155,17 +3128,25 @@ html[data-theme='dark'] .composer-file-drop-overlay {
 
 .composer-menu.permission-menu .composer-menu-item.permission-menu-item:hover,
 .composer-menu.permission-menu .composer-menu-item.permission-menu-item.active,
-.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-auto.active,
-.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-danger:hover,
-.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-danger.active {
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-auto.active {
   background: var(--hover);
 }
 
 .composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-auto,
-.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-danger,
-.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-auto .composer-menu-item-label,
-.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-danger .composer-menu-item-label {
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-auto .composer-menu-item-label {
   color: var(--text);
+}
+
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-danger,
+.composer-menu.permission-menu
+  .composer-menu-item.permission-menu-item.tone-danger
+  .composer-menu-item-label {
+  color: var(--danger);
+}
+
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-danger:hover,
+.composer-menu.permission-menu .composer-menu-item.permission-menu-item.tone-danger.active {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 .composer-menu.permission-menu .composer-menu-item-label {
@@ -3198,7 +3179,7 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   .permission-menu-item.tone-danger
   .composer-permission-menu-meta
   .composer-menu-check {
-  color: var(--text-muted);
+  color: var(--danger);
 }
 
 /* 权限选择器 trigger 内「滚动切换」标签（仅 ChatView ComposerMenuSelect 使用）

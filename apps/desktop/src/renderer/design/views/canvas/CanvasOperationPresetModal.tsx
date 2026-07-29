@@ -835,7 +835,10 @@ export function CanvasOperationPresetModal({
       closable={false}
       footer={null}
       centered
-      styles={{ body: { padding: 0 } }}
+      styles={{
+        body: { height: '100%', padding: 0 },
+        container: { overflow: 'hidden', padding: 0 },
+      }}
       onCancel={requestClose}
     >
       <div className="canvas-operation-preset-modal-shell">

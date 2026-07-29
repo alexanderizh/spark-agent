@@ -31,11 +31,7 @@ function readAllTsUnder(dir: string): string {
 
 function extractIpcMapChannels(src: string): string[] {
   const matches = src.matchAll(/^\s*'([a-z][a-z-]*(?::[a-z][a-z-]*)+)'\s*:\s*\[/gm)
-  return [
-    ...new Set(
-      [...matches].flatMap((match) => (match[1] === undefined ? [] : [match[1]])),
-    ),
-  ]
+  return [...new Set([...matches].flatMap((match) => (match[1] === undefined ? [] : [match[1]])))]
 }
 
 function extractRegisteredChannels(src: string): string[] {
@@ -103,6 +99,7 @@ describe('IPC handler registration completeness', () => {
         'sdk',
         'session',
         'settings',
+        'sidebar-order',
         'skill',
         'skill-config',
         'skill-registry',

@@ -276,10 +276,113 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
     })
     await expect(page.getByRole('region', { name: '空画布创作引导' })).toBeVisible()
     await expect(page.locator('.canvas-agent-side-panel:not(.is-collapsed)')).toBeVisible()
+    const rightPanelRail = page.getByRole('toolbar', { name: '右侧面板控制' })
+    const settleRightPanelRail = () =>
+      rightPanelRail.evaluate(async (element) => {
+        await Promise.all(
+          element
+            .getAnimations({ subtree: true })
+            .map((animation) => animation.finished.catch(() => undefined)),
+        )
+      })
+    await expect(rightPanelRail).toBeVisible()
+    await expect(rightPanelRail.getByRole('button')).toHaveCount(2)
+    await expect(rightPanelRail.getByRole('button', { name: '收起画布助手' })).toBeVisible()
+    await expect(rightPanelRail.getByRole('button', { name: '展开工作面板' })).toBeVisible()
     await page.screenshot({
-      path: testInfo.outputPath('canvas-cinematic-empty.png'),
+      path: testInfo.outputPath('canvas-right-panel-rail-assistant-only.png'),
       fullPage: true,
     })
+    await rightPanelRail.screenshot({
+      path: testInfo.outputPath('canvas-right-panel-rail-assistant-control.png'),
+    })
+
+    await rightPanelRail.getByRole('button', { name: '展开工作面板' }).click()
+    await expect(rightPanelRail.getByRole('button', { name: '收起工作面板' })).toBeVisible()
+    await expect(rightPanelRail.getByRole('button', { name: '展开画布助手' })).toBeVisible()
+    await expect(page.locator('.canvas-agent-side-panel:not(.is-collapsed)')).toHaveCount(0)
+    await settleRightPanelRail()
+    await page.screenshot({
+      path: testInfo.outputPath('canvas-right-panel-rail-workspace-only.png'),
+      fullPage: true,
+    })
+    await rightPanelRail.screenshot({
+      path: testInfo.outputPath('canvas-right-panel-rail-workspace-control.png'),
+    })
+
+    await rightPanelRail.getByRole('button', { name: '收起工作面板' }).click()
+    await expect(rightPanelRail.getByRole('button', { name: '展开工作面板' })).toBeVisible()
+    await settleRightPanelRail()
+    await page.screenshot({
+      path: testInfo.outputPath('canvas-right-panel-rail-both-closed.png'),
+      fullPage: true,
+    })
+    await rightPanelRail.screenshot({
+      path: testInfo.outputPath('canvas-right-panel-rail-closed-control.png'),
+    })
+    await rightPanelRail.getByRole('button', { name: '展开画布助手' }).click()
+    await expect(rightPanelRail.getByRole('button', { name: '收起画布助手' })).toBeVisible()
+    await expect(page.locator('.canvas-side-panel')).toHaveCount(0)
+    await settleRightPanelRail()
+
+    await page.getByRole('button', { name: /打开节点预设中心/ }).click()
+    const presetDialog = page.locator('.canvas-operation-preset-dialog')
+    const presetContent = page.locator('.ant-modal-container', {
+      has: page.locator('.canvas-operation-preset-modal-shell'),
+    })
+    await expect(presetDialog).toBeVisible()
+    const presetInnerGutter = await presetContent.evaluate((content, shellSelector) => {
+      const shell = content.querySelector<HTMLElement>(shellSelector)
+      if (shell == null) throw new Error('Preset modal shell is missing')
+      const contentRect = content.getBoundingClientRect()
+      const shellRect = shell.getBoundingClientRect()
+      return {
+        top: Math.abs(shellRect.top - contentRect.top),
+        right: Math.abs(contentRect.right - shellRect.right),
+        bottom: Math.abs(contentRect.bottom - shellRect.bottom),
+        left: Math.abs(shellRect.left - contentRect.left),
+      }
+    }, '.canvas-operation-preset-modal-shell')
+    expect(Math.max(...Object.values(presetInnerGutter))).toBeLessThanOrEqual(1)
+    await presetContent.screenshot({
+      path: testInfo.outputPath('canvas-preset-center-full-bleed.png'),
+    })
+    await presetDialog.getByRole('button', { name: '关闭画布默认设置' }).click()
+    await expect(presetDialog).not.toBeVisible()
+
+    const zoomControls = page.locator('.canvas-controls')
+    const zoomControlButtons = zoomControls.locator('.canvas-controls-button')
+    await expect(zoomControls).toBeVisible()
+    await expect(zoomControlButtons).toHaveCount(4)
+    const zoomControlPalette = await zoomControls.evaluate((controls) => {
+      const firstButton = controls.querySelector<HTMLElement>('.canvas-controls-button')
+      if (firstButton == null) throw new Error('Canvas zoom control button is missing')
+      const groupStyle = getComputedStyle(controls)
+      const buttonStyle = getComputedStyle(firstButton)
+      return {
+        groupBackground: groupStyle.backgroundColor,
+        buttonBackground: buttonStyle.backgroundColor,
+        buttonColor: buttonStyle.color,
+      }
+    })
+    expect(zoomControlPalette.groupBackground).not.toBe('rgba(0, 0, 0, 0)')
+    expect(zoomControlPalette.buttonBackground).toBe('rgba(0, 0, 0, 0)')
+    expect(zoomControlPalette.buttonColor).not.toBe('rgb(255, 255, 255)')
+    await zoomControls.screenshot({
+      path: testInfo.outputPath('canvas-zoom-controls-flat-dark.png'),
+    })
+
+    await zoomControls.getByRole('button', { name: '锁定画布元素' }).click()
+    const lockedCanvasControl = zoomControls.getByRole('button', { name: '解锁画布元素' })
+    await expect(lockedCanvasControl).toHaveAttribute('aria-pressed', 'true')
+    await zoomControls.screenshot({
+      path: testInfo.outputPath('canvas-zoom-controls-locked-state.png'),
+    })
+    await lockedCanvasControl.click()
+    await expect(zoomControls.getByRole('button', { name: '锁定画布元素' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
 
     await page.locator('input[type="file"]:not([accept])').setInputFiles(CANVAS_VISUAL_ASSETS)
     await expect(page.locator('.canvas-stage .canvas-node.canvas-node-image')).toHaveCount(3)
@@ -392,6 +495,30 @@ test.describe.serial('SparkWork Electron release acceptance', () => {
     await page.screenshot({
       path: testInfo.outputPath('canvas-workflow-drawer.png'),
       fullPage: true,
+    })
+
+    await workflowDrawer.getByRole('button', { name: '关闭画布工作流' }).click()
+    await expect(workflowDrawer).not.toBeVisible()
+    await rightPanelRail.getByRole('button', { name: '展开画布助手' }).click()
+    await expect(rightPanelRail.getByRole('button', { name: '收起画布助手' })).toBeVisible()
+    await page.evaluate(() => {
+      const sparkWindow = window as Window & {
+        spark: { invoke: (...args: unknown[]) => unknown }
+      }
+      const originalInvoke = sparkWindow.spark.invoke.bind(sparkWindow.spark)
+      sparkWindow.spark.invoke = (...args: unknown[]) => {
+        if (args[0] === 'workspace:open') return new Promise(() => undefined)
+        return originalInvoke(...args)
+      }
+    })
+    const canvasAgentComposer = page.getByPlaceholder('输入消息，让 agent 操作画布...')
+    await canvasAgentComposer.fill('验证用户消息不再显示指针图标头像')
+    await canvasAgentComposer.press('Enter')
+    const canvasUserMessage = page.locator('.canvas-agent-modal .chat-panel-message-user')
+    await expect(canvasUserMessage).toBeVisible()
+    await expect(canvasUserMessage.locator('.chat-panel-message-avatar')).toHaveCount(0)
+    await page.locator('.canvas-agent-side-panel').screenshot({
+      path: testInfo.outputPath('canvas-agent-user-message-without-fake-avatar.png'),
     })
     expect(pageErrors).toEqual([])
   })

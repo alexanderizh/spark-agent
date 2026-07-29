@@ -248,6 +248,13 @@ export const Icons = {
       <path d="M19 14l.7 2 2 .7-2 .7L19 19.4 18.3 17.4l-2-.7 2-.7L19 14z" />
     </IconBase>
   ),
+  /** 画布 Agent — Lucide wand-sparkles */
+  Agent: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72" />
+      <path d="m14 7 3 3M5 6v4M19 14v4M10 2v2M7 8H3M21 16h-4M11 3H9" />
+    </IconBase>
+  ),
   Code: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M8 6l-6 6 6 6M16 6l6 6-6 6" />

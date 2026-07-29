@@ -83,6 +83,7 @@ import {
 import { CanvasGridSplitModal, type CanvasGridSplitTile } from './CanvasGridSplitModal'
 import { useFloatingViewportGeometry } from './useFloatingViewportGeometry'
 import { CanvasPresetHubEntry } from './CanvasPresetHubEntry'
+import { CanvasRightPanelRail } from './CanvasRightPanelRail'
 import { CanvasWorkspaceSidePanel } from './CanvasWorkspaceSidePanel'
 import { CanvasWorkspaceChrome } from './CanvasWorkspaceChrome'
 import { CanvasOverlayBoundary } from './CanvasOverlayBoundary'
@@ -332,12 +333,11 @@ const CANVAS_SIDE_PANEL_MAX_WIDTH = 640
 const CANVAS_SIDE_PANEL_KEYBOARD_STEP = 24
 const CANVAS_AGENT_PANEL_WIDTH_KEY = 'spark-canvas:agent-panel-width'
 const CANVAS_AGENT_PANEL_OPEN_KEY = 'spark-canvas:agent-panel-open'
-// 旧实现会在 mount 时把"默认折叠 / 旧默认宽度"持久化进 localStorage，污染所有老用户的偏好，
-// 导致即便改了默认常量，老用户也始终拿到旧的窄值/折叠态。用版本标记做一次性迁移：
-// 迁移后老用户也回到新的默认（展开 + 更宽），用户后续显式折叠/调窄仍被保留。
+// 旧实现会在 mount 时把"默认折叠 / 旧默认宽度"持久化进 localStorage，污染所有老用户的偏好。
+// 用版本标记完成旧值迁移，用户后续显式折叠/调整仍会持久化。
 const CANVAS_AGENT_PANEL_OPEN_DEFAULT_VERSION_KEY = 'spark-canvas:agent-panel-open-default-v2'
 const CANVAS_AGENT_PANEL_WIDTH_MIGRATED_KEY = 'spark-canvas:agent-panel-width-migrated-v2'
-const CANVAS_AGENT_PANEL_DEFAULT_WIDTH = 560
+const CANVAS_AGENT_PANEL_DEFAULT_WIDTH = 420
 const CANVAS_AGENT_PANEL_MIN_WIDTH = 400
 const CANVAS_AGENT_PANEL_MAX_WIDTH = 1200
 const CANVAS_AUTO_SAVE_DEBOUNCE_MS = 1200
@@ -763,6 +763,31 @@ export function CanvasWorkspaceView({
     [sidePanelCollapsed, sidePanelWidth, agentOpen, agentPanelWidth],
   )
 
+  const openAgentPanel = useCallback((options?: { constrainOversizedWidth?: boolean }) => {
+    if (options?.constrainOversizedWidth) {
+      setAgentPanelWidth((current) => Math.min(current, CANVAS_AGENT_PANEL_DEFAULT_WIDTH))
+    }
+    setSidePanelCollapsed(true)
+    setAgentOpen(true)
+  }, [])
+
+  const toggleAgentPanel = useCallback(() => {
+    if (agentOpen) {
+      setAgentOpen(false)
+      return
+    }
+    openAgentPanel({ constrainOversizedWidth: true })
+  }, [agentOpen, openAgentPanel])
+
+  const toggleWorkspacePanel = useCallback(() => {
+    if (!sidePanelCollapsed) {
+      setSidePanelCollapsed(true)
+      return
+    }
+    setAgentOpen(false)
+    setSidePanelCollapsed(false)
+  }, [sidePanelCollapsed])
+
   useEffect(() => {
     try {
       window.localStorage.setItem(CANVAS_SIDE_PANEL_WIDTH_KEY, String(sidePanelWidth))
@@ -787,14 +812,18 @@ export function CanvasWorkspaceView({
     }
   }, [agentOpen])
 
-  // 进入「新建空画布」（首次加载即无节点）时强制展开 Agent 面板，方便用户立即开始对话；
-  // 已有内容的老画布尊重用户上次的展开/折叠偏好。useLayoutEffect 在浏览器绘制前定稿，避免一帧闪烁。
+  // 进入「新建空画布」（首次加载即无节点）时强制展开 Agent 面板，方便用户立即开始对话。
+  // 全局持久化宽度可能来自上一个画布的宽屏/拖拽操作；空画布只收敛过宽值到默认宽度，
+  // 避免挤压主要创作区，同时保留用户主动设置的更窄宽度。已有内容的老画布继续尊重偏好。
+  // useLayoutEffect 在浏览器绘制前定稿，避免一帧闪烁。
   useLayoutEffect(() => {
     if (forceExpandAgentOnEmptyCheckedRef.current) return
     if (loading || !snapshot) return
     forceExpandAgentOnEmptyCheckedRef.current = true
-    if (snapshot.nodes.length === 0) setAgentOpen(true)
-  }, [loading, snapshot])
+    if (snapshot.nodes.length === 0) {
+      openAgentPanel({ constrainOversizedWidth: true })
+    }
+  }, [loading, openAgentPanel, snapshot])
 
   useEffect(
     () => () => {
@@ -1090,11 +1119,11 @@ export function CanvasWorkspaceView({
       if (isEditableKeyboardTarget(event.target)) return
       event.preventDefault()
       event.stopPropagation()
-      setSidePanelCollapsed((current) => !current)
+      toggleWorkspacePanel()
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [toggleWorkspacePanel])
 
   // 离开确认：返回用户选择（'save' 表示弹窗内已完成落库）
   const askLeave = useCallback((): Promise<'save' | 'discard' | 'cancel'> => {
@@ -1698,7 +1727,7 @@ export function CanvasWorkspaceView({
   const handleAddSelectedToAgent = useCallback(() => {
     if (selectedNodes.length === 0) return
     // 先关掉其他浮层但放过 agent（与 onOpenAgent 一致），避免菜单关闭流程里的
-    // closeCanvasFloatPanels() 把刚 setAgentOpen(true) 的面板又关回去。
+    // closeCanvasFloatPanels() 把刚打开的 Agent 面板又关回去。
     closeCanvasFloatPanels('agent')
     setAgentNodeRefs((prev) => {
       const existing = new Set(prev.map((node) => node.id))
@@ -1711,8 +1740,8 @@ export function CanvasWorkspaceView({
       }
       return merged
     })
-    setAgentOpen(true)
-  }, [closeCanvasFloatPanels, selectedNodes])
+    openAgentPanel()
+  }, [closeCanvasFloatPanels, openAgentPanel, selectedNodes])
 
   /** 单节点右键「添加到 Agent 对话」：把指定节点合并进引用列表并展开 Agent 面板。
    *  即使节点一时找不到（snapshot 尚未刷新），也保证面板展开，给用户即时反馈。 */
@@ -1720,7 +1749,7 @@ export function CanvasWorkspaceView({
     (nodeId: string) => {
       // 同上：先以 'agent' 例外关闭其他浮层，确保面板稳定展开。
       closeCanvasFloatPanels('agent')
-      setAgentOpen(true)
+      openAgentPanel()
       const node =
         snapshotNodeById.get(nodeId) ?? snapshotRef.current?.nodes.find((n) => n.id === nodeId)
       if (!node) return
@@ -1729,7 +1758,7 @@ export function CanvasWorkspaceView({
         return [...prev, node]
       })
     },
-    [closeCanvasFloatPanels, snapshotNodeById],
+    [closeCanvasFloatPanels, openAgentPanel, snapshotNodeById],
   )
 
   /** 宽屏切换：展开到屏幕一半宽度 / 恢复之前的宽度 */
@@ -7278,20 +7307,17 @@ export function CanvasWorkspaceView({
         onUploadFiles={() => uploadFilesInputRef.current?.click()}
         onOpenAgent={() => {
           closeCanvasFloatPanels('agent')
-          setAgentOpen(true)
+          openAgentPanel()
         }}
       />
 
       <div className="canvas-workspace-body" style={sidePanelStyle}>
-        <button
-          type="button"
-          className={`canvas-agent-side-panel-collapse-toggle${agentOpen ? '' : ' is-collapsed'}`}
-          onClick={() => setAgentOpen((current) => !current)}
-          aria-label={agentOpen ? '折叠画布助手' : '展开画布助手'}
-          title={agentOpen ? '折叠画布助手' : '展开画布助手'}
-        >
-          {agentOpen ? <Icons.ChevronRight size={16} /> : <Icons.ChevronLeft size={16} />}
-        </button>
+        <CanvasRightPanelRail
+          agentOpen={agentOpen}
+          workspacePanelOpen={!sidePanelCollapsed}
+          onToggleAgent={toggleAgentPanel}
+          onToggleWorkspacePanel={toggleWorkspacePanel}
+        />
         <aside className={`canvas-agent-side-panel${agentOpen ? '' : ' is-collapsed'}`}>
           <div
             aria-label="调整助手面板宽度"
@@ -7417,7 +7443,7 @@ export function CanvasWorkspaceView({
             <CanvasCinematicEmptyState
               onStartWithAgent={() => {
                 closeCanvasFloatPanels('agent')
-                setAgentOpen(true)
+                openAgentPanel()
               }}
               onOpenInlineAi={() => handleOpenInlineAi()}
               onUploadFiles={() => uploadFilesInputRef.current?.click()}
@@ -7589,7 +7615,7 @@ export function CanvasWorkspaceView({
             }}
             onOpenAgent={() => {
               closeCanvasFloatPanels('agent')
-              setAgentOpen(true)
+              openAgentPanel()
             }}
             onUndo={() => void handleUndoCanvasChange()}
             onRedo={() => void handleRedoCanvasChange()}
@@ -7842,7 +7868,6 @@ export function CanvasWorkspaceView({
           canAddToGroup={canAddToGroup}
           canRemoveFromGroup={canRemoveFromGroup}
           canDissolveGroup={canDissolveGroup}
-          onToggleCollapsed={() => setSidePanelCollapsed((current) => !current)}
           onResizeDefault={() => updateSidePanelWidth(CANVAS_SIDE_PANEL_DEFAULT_WIDTH)}
           onResizeKeyDown={handleSidePanelResizeKeyDown}
           onResizePointerDown={handleSidePanelResizeStart}
