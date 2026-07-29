@@ -289,6 +289,7 @@ function rowToProfile(row: {
   provider_type: string
   name: string
   config_json: string
+  enabled: number
   keystore_ref: string | null
   is_default: number
   created_at: string
@@ -311,6 +312,7 @@ function rowToProfile(row: {
     id: row.id,
     name,
     provider: normalizeProviderType(row.provider_type),
+    enabled: row.enabled === 1,
     defaultModel: config.defaultModel,
     modelIds: config.modelIds,
     ...(config.availableModelIds !== undefined && { availableModelIds: config.availableModelIds }),
@@ -348,6 +350,7 @@ function createAutoRouterProvider(adapter: 'claude' | 'codex'): ProviderProfile 
     id: isClaude ? CLAUDE_AUTO_ROUTER_PROVIDER_ID : CODEX_AUTO_ROUTER_PROVIDER_ID,
     name: isClaude ? CLAUDE_AUTO_ROUTER_PROVIDER_NAME : CODEX_AUTO_ROUTER_PROVIDER_NAME,
     provider: isClaude ? 'anthropic' : 'openai',
+    enabled: true,
     defaultModel: '',
     modelIds: [],
     ...(isClaude ? {} : { codexApiKind: 'responses' as const }),
@@ -364,6 +367,7 @@ function hasRouteableTextProvider(
   adapter: RoutingAdapter,
 ): boolean {
   return profiles.some((profile) => {
+    if (!profile.enabled) return false
     if (isBuiltInLocalCliProvider(profile) || isAutoRouterProvider(profile)) return false
     if (profile.codexApiKind === 'embedding') return false
     if (!isProviderAllowedForRouterAdapter(adapter, profile)) return false
@@ -379,13 +383,14 @@ function providerModelIds(profile: ProviderProfile): string[] {
 export class ProviderService {
   constructor(private readonly repo: ProviderProfileRepository) {}
 
-  async listProviders(): Promise<ProviderProfile[]> {
+  async listProviders(options: { includeDisabled?: boolean } = {}): Promise<ProviderProfile[]> {
     const profiles = this.repo.listAll().map(rowToProfile)
     const [claudeAvailable, codexAvailable] = await Promise.all([
       this.isLocalCliAvailable(),
       this.isLocalCodexCliAvailable(),
     ])
     const visibleProfiles = profiles.filter((profile) => {
+      if (options.includeDisabled !== true && profile.enabled === false) return false
       if (profile.id === LOCAL_CLI_PROVIDER_ID) return claudeAvailable
       if (profile.id === LOCAL_CODEX_CLI_PROVIDER_ID) return codexAvailable
       if (profile.managed === true && profile.credentialState === 'unavailable') return false
@@ -672,10 +677,14 @@ export class ProviderService {
     mediaModelRefs?: ProviderMediaModelRef[]
     apiKey?: string
     isDefault?: boolean
+    enabled?: boolean
   }): Promise<ProviderProfile> {
     const existing = this.repo.get(params.id)
     if (!existing) throw new Error(`Provider not found: ${params.id}`)
-    if (isManagedProviderRow(existing)) {
+    if (
+      isManagedProviderRow(existing) &&
+      Object.keys(params).some((key) => key !== 'id' && key !== 'enabled')
+    ) {
       throw new Error('平台官方 Provider 由系统管理，不能手动编辑')
     }
 
@@ -815,6 +824,7 @@ export class ProviderService {
     }
 
     this.repo.update(params.id, {
+      ...(params.enabled !== undefined && { enabled: params.enabled }),
       ...(params.name !== undefined && { name: params.name }),
       ...(newConfig !== undefined && { config: newConfig }),
       ...(updatedKeystoreRef !== undefined && { keystoreRef: updatedKeystoreRef }),
@@ -1092,7 +1102,8 @@ export class ProviderService {
         providerType: 'anthropic',
         name: 'Spark 平台模型',
         config,
-        enabled: true,
+        // 登录后的 unavailable 状态需要恢复；用户在 ready 状态手动禁用则保持禁用。
+        enabled: existingConfig?.credentialState === 'unavailable' ? true : existing.enabled === 1,
         keystoreRef,
       })
       const updated = this.repo.get(PLATFORM_NEWAPI_PROVIDER_ID)
@@ -1289,6 +1300,7 @@ export class ProviderService {
           this.repo.update(match.id, {
             name: profile.name,
             config: buildConfigFromExport(profile),
+            enabled: profile.enabled !== false,
           })
           result.imported += 1
           continue
@@ -1307,7 +1319,7 @@ export class ProviderService {
           log.info(`Imported provider without API key for id=${newId} name=${profile.name}`)
         }
 
-        this.repo.create({
+        const created = this.repo.create({
           id: newId,
           providerType,
           name: profile.name,
@@ -1316,6 +1328,7 @@ export class ProviderService {
           // 导入时强制非默认，避免覆盖本地默认设置
           isDefault: false,
         })
+        if (!profile.enabled) this.repo.update(created.id, { enabled: false })
         result.imported += 1
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
@@ -1841,6 +1854,7 @@ function rowToExportProfile(
     provider_type: string
     name: string
     config_json: string
+    enabled: number
     is_default: number
   },
   apiKey?: string,
@@ -1853,6 +1867,7 @@ function rowToExportProfile(
     id: row.id,
     name: row.name,
     provider: normalizeProviderType(row.provider_type),
+    enabled: row.enabled === 1,
     apiEndpoint: config.apiEndpoint ?? null,
     defaultModel: config.defaultModel,
     modelIds: config.modelIds,

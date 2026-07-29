@@ -11,6 +11,7 @@ import {
 
 import { Icons } from '../../Icons'
 import { isProviderVisibleInUi } from '../../utils/auto-router-ui'
+import { useProviderConfigVersion } from '../../hooks/useProviderConfigVersion'
 import { AgentPickerInline, ProviderModelPickerInline } from './CanvasAgentModal'
 import { CanvasOperationParameterControls } from './CanvasOperationParameterControls'
 import { CanvasPresetNodeOverrides } from './CanvasPresetNodeOverrides'
@@ -101,6 +102,7 @@ export function CanvasOperationPresetModal({
   onClose: () => void
   onPresetCountChange?: (count: number) => void
 }) {
+  const providerConfigVersion = useProviderConfigVersion()
   const [activeTargetId, setActiveTargetId] = useState<CanvasPresetTargetId>(INITIAL_TARGET)
   const [viewMode, setViewMode] = useState<PresetCenterMode>('tasks')
   const [drafts, setDrafts] = useState<Record<string, CanvasOperationPreset>>({})
@@ -193,7 +195,7 @@ export function CanvasOperationPresetModal({
     return () => {
       cancelled = true
     }
-  }, [open])
+  }, [open, providerConfigVersion])
 
   useEffect(() => {
     if (!open) return
@@ -226,7 +228,7 @@ export function CanvasOperationPresetModal({
     return () => {
       cancelled = true
     }
-  }, [open])
+  }, [open, providerConfigVersion])
 
   const mediaCapabilityIds = useMemo(
     () => capabilityForOperation(activeOperation),

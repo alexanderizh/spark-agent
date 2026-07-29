@@ -442,7 +442,7 @@ summary:focus {
   /* Sidebar nav / session labels — slightly softer than main body text */
   --sidebar-text: color-mix(in srgb, var(--text) 90%, var(--text-muted));
   border: 1px solid transparent;
-  border-radius: var(--r-xl);
+  border-radius: var(--r-md);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   backdrop-filter: none;
@@ -1167,11 +1167,19 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
    via `.user-menu .ant-dropdown-menu` (descendant) instead. */
 .ant-dropdown-menu.user-menu,
 .ant-dropdown-menu.user-menu .ant-dropdown-menu {
-  min-width: 180px;
+  min-width: 200px;
   padding: 4px;
   background: var(--panel-elev);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-md);
+}
+/* antd 把二级子菜单渲染成独立的 .ant-dropdown-menu-submenu-popup portal，
+   它不在根菜单 .ant-dropdown-menu.user-menu 的 DOM 树内，所以上方的后代选择器
+   命中不到二级菜单 —— 这是「会话主题」等较长项与右侧展开箭头重叠的根因
+   （宽度回落到 antd 默认）。这里按 portal 单独兜底 min-width；只补宽度，
+   视觉样式走 antd 默认 / 各菜单自有覆盖，避免波及画布右键等其他子菜单。 */
+.ant-dropdown-menu-submenu-popup .ant-dropdown-menu {
+  min-width: 200px;
 }
 .ant-dropdown-menu.user-menu {
   width: 100%;

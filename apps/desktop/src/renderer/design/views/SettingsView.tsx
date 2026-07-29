@@ -1657,7 +1657,9 @@ function AppearanceSection() {
         />
 
         <label>字体</label>
-        <div className="control" style={{ display: 'block' }}>
+        {/* height:auto 覆盖 .form-grid > .control 的 height:36px：
+            本行纵向堆叠 Select + 字体资产控件，36px 会裁切内容并侵入下一行 */}
+        <div className="control" style={{ display: 'block', height: 'auto' }}>
           <Select
             value={a.font}
             onChange={(v) => setA({ font: v })}

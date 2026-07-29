@@ -14,9 +14,9 @@
   animation: chat-turn-navigator-enter 160ms ease-out both;
 }
 
-.chat-stream-viewport:has(> .chat-turn-navigator) {
+.chat-main-active:has(.chat-stream-viewport > .chat-turn-navigator) {
   /* 12px 左偏移 + 32px 标记宽度 + 8px 间隔 = 52px；
-     用绝对正文内缩避免依赖不同布局下的基础 padding。 */
+     从消息区与 Composer 的共同祖先下发，保证两者左侧基线一致。 */
   --chat-turn-nav-content-inset: 52px;
 }
 

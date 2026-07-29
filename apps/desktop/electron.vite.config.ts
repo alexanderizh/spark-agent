@@ -102,7 +102,9 @@ function dropWoffPlugin() {
 export default defineConfig({
   main: {
     plugins: [
-      externalizeDepsPlugin({ exclude: ['@spark/protocol', '@spark/storage', '@spark/shared', '@spark/agent-runtime'] }),
+      externalizeDepsPlugin({
+        exclude: ['@spark/protocol', '@spark/storage', '@spark/shared', '@spark/agent-runtime'],
+      }),
       copyMigrationsPlugin(),
       copyRuntimeToolsPlugin(),
     ],
@@ -126,7 +128,11 @@ export default defineConfig({
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@spark/protocol', '@spark/storage', '@spark/shared', '@spark/agent-runtime'] })],
+    plugins: [
+      externalizeDepsPlugin({
+        exclude: ['@spark/protocol', '@spark/storage', '@spark/shared', '@spark/agent-runtime'],
+      }),
+    ],
     resolve: {
       alias: {
         '@preload': resolve('src/preload'),
@@ -141,6 +147,7 @@ export default defineConfig({
     },
   },
   renderer: {
+    publicDir: resolve(__dirname, 'public'),
     // exceljs / mammoth 都是 CJS 包，在 renderer（浏览器上下文）动态 import 需预打包，
     // 否则首次加载会因 CJS/ESM interop 报错。仅在画布拖入富文档时懒加载，不进初始 bundle。
     optimizeDeps: {

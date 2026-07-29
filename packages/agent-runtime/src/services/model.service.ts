@@ -102,6 +102,9 @@ export class ModelService {
       if (provider == null) {
         return { available: false, reason: `embedding provider not found: ${providerId}` }
       }
+      if (provider.enabled === 0) {
+        return { available: false, reason: `embedding provider disabled: ${providerId}` }
+      }
 
       const apiKey = await resolveProviderApiKey(provider)
 
@@ -257,6 +260,10 @@ export class ModelService {
       if (provider == null) {
         log.info(`【抽取LLM调用】跳过：provider 不存在 providerId=${providerId}`)
         return { available: false, reason: `extraction provider not found: ${providerId}` }
+      }
+      if (provider.enabled === 0) {
+        log.info(`【抽取LLM调用】跳过：provider 已禁用 providerId=${providerId}`)
+        return { available: false, reason: `extraction provider disabled: ${providerId}` }
       }
 
       const apiKey = await resolveProviderApiKey(provider)

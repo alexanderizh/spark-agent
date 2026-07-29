@@ -46,6 +46,8 @@ export const ProviderExportProfileSchema = z.object({
   id: z.string().min(1).max(200),
   name: z.string().min(1).max(100),
   provider: z.enum(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible']),
+  /** 全局可用状态；旧版导出文件缺省时按启用处理。 */
+  enabled: z.boolean().optional(),
   /** 自定义 API Endpoint；null 表示使用默认 */
   apiEndpoint: z.string().min(1).max(500).nullable(),
   defaultModel: z.string().min(1).max(200),

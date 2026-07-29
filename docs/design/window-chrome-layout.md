@@ -26,7 +26,9 @@ Header 属于业务层。三者可以共享几何安全区，但不能互相拥�
 - `env(titlebar-area-width)`
 - `env(titlebar-area-height)`
 
-主进程不再通过 `trafficLightPosition` 猜测按钮坐标。
+Window Controls Overlay 只负责发布可用区域，不保证 `hiddenInset` 灯组随自定义高度
+自动垂直居中。主进程因此仍设置 `trafficLightPosition`，但其纵坐标由统一的
+`WINDOW_CHROME_HEIGHT` 和 macOS 原生按钮直径推导，不再与页面 Header 分别调参。
 
 ### Shell 层
 

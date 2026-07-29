@@ -24,7 +24,7 @@ export async function loadEditableProviderSnapshot(
   getProviderApiKey: IpcInvoker<ProviderGetApiKeyRequest, ProviderGetApiKeyResponse>,
 ): Promise<EditableProviderSnapshot> {
   const [providerResult, apiKeyResult] = await Promise.all([
-    listProviders({}),
+    listProviders({ includeDisabled: true }),
     getProviderApiKey({ id: profileId }).then(
       ({ apiKey }) => ({ apiKey, error: null }),
       (error: unknown) => ({ apiKey: '', error }),

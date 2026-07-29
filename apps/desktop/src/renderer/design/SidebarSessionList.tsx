@@ -5,7 +5,7 @@
 import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffect } from 'react'
 import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
-import { ActionIcon, Button, Dropdown, Input, Modal } from '@lobehub/ui'
+import { ActionIcon, Button, Dropdown, Input, Modal, Tooltip } from '@lobehub/ui'
 import { Archive, Maximize2, Minimize2, Pin, PinOff } from 'lucide-react'
 import { Popover } from 'antd'
 import {
@@ -791,19 +791,20 @@ function ChatListItem({
           </span>
         ) : null}
         <div className={`session-item-actions${menuOpen ? ' menu-open' : ''}`}>
-          <button
-            type="button"
-            className="icon-btn item-menu-btn session-row-action-btn session-archive-btn"
-            title={t('sidebar.session.archive')}
-            aria-label={t('sidebar.session.archive')}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation()
-              onArchive?.(s)
-            }}
-          >
-            <Archive size={13} strokeWidth={1.35} />
-          </button>
+          <Tooltip title={t('sidebar.session.archive')} mouseEnterDelay={0.05}>
+            <button
+              type="button"
+              className="icon-btn item-menu-btn session-row-action-btn session-archive-btn"
+              aria-label={t('sidebar.session.archive')}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                onArchive?.(s)
+              }}
+            >
+              <Archive size={13} strokeWidth={1.35} />
+            </button>
+          </Tooltip>
           <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
             <Dropdown
               menu={{ items: [] }}
@@ -840,16 +841,17 @@ function ChatListItem({
                 />
               )}
             >
-              <button
-                type="button"
-                className="icon-btn item-menu-btn session-row-action-btn"
-                title={t('sidebar.session.actions')}
-                aria-label={t('sidebar.session.actions')}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Icons.More size={15} />
-              </button>
+              <Tooltip title={t('sidebar.session.actions')} mouseEnterDelay={0.05}>
+                <button
+                  type="button"
+                  className="icon-btn item-menu-btn session-row-action-btn"
+                  aria-label={t('sidebar.session.actions')}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Icons.More size={15} />
+                </button>
+              </Tooltip>
             </Dropdown>
           </div>
         </div>
@@ -930,55 +932,67 @@ export function ProjectSessionGroup({
           void onSelectWorkspace(group.workspace)
         }}
       >
-        <span
-          className="proj-toggle"
-          onClick={(e) => {
-            e.stopPropagation()
-            onOpenChange(!open)
-          }}
-          role="button"
-          aria-label={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
+        <Tooltip
           title={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
+          mouseEnterDelay={0.05}
         >
-          {open ? (
-            <Icons.FolderOpen className="chev" size={15} />
-          ) : (
-            <Icons.FolderClosed className="chev" size={15} />
-          )}
-        </span>
+          <span
+            className="proj-toggle"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenChange(!open)
+            }}
+            role="button"
+            aria-label={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
+          >
+            {open ? (
+              <Icons.FolderOpen className="chev" size={15} />
+            ) : (
+              <Icons.FolderClosed className="chev" size={15} />
+            )}
+          </span>
+        </Tooltip>
         <span className="proj-name">{group.workspace.name}</span>
-        <button
-          className={`proj-pin-btn${group.workspace.pinnedAt != null ? ' is-pinned' : ''}`}
+        <Tooltip
           title={
             group.workspace.pinnedAt != null ? t('sidebar.project.unpin') : t('sidebar.project.pin')
           }
-          aria-label={
-            group.workspace.pinnedAt != null ? t('sidebar.project.unpin') : t('sidebar.project.pin')
-          }
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggleProjectPinned(group.workspace)
-          }}
+          mouseEnterDelay={0.05}
         >
-          {group.workspace.pinnedAt != null ? (
-            <Pin size={13} fill="currentColor" />
-          ) : (
-            <PinOff size={13} />
-          )}
-        </button>
+          <button
+            className={`proj-pin-btn${group.workspace.pinnedAt != null ? ' is-pinned' : ''}`}
+            aria-label={
+              group.workspace.pinnedAt != null
+                ? t('sidebar.project.unpin')
+                : t('sidebar.project.pin')
+            }
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggleProjectPinned(group.workspace)
+            }}
+          >
+            {group.workspace.pinnedAt != null ? (
+              <Pin size={11} fill="currentColor" />
+            ) : (
+              <PinOff size={11} />
+            )}
+          </button>
+        </Tooltip>
         <span className="proj-count">{group.sessions.length}</span>
-        <button
-          className="icon-btn proj-add-session-btn"
-          title={t('sidebar.project.newSession')}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation()
-            onNewSession(group.workspace.id)
-          }}
-        >
-          <Icons.Plus size={15} />
-        </button>
+        <Tooltip title={t('sidebar.project.newSession')} mouseEnterDelay={0.05}>
+          <button
+            className="icon-btn proj-add-session-btn"
+            aria-label={t('sidebar.project.newSession')}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation()
+              onNewSession(group.workspace.id)
+            }}
+          >
+            <Icons.Plus size={15} />
+          </button>
+        </Tooltip>
         <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
           <Dropdown
             menu={{ items: [] }}
@@ -1025,14 +1039,16 @@ export function ProjectSessionGroup({
               />
             )}
           >
-            <button
-              className="icon-btn item-menu-btn"
-              title={t('sidebar.project.actions')}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Icons.More size={15} />
-            </button>
+            <Tooltip title={t('sidebar.project.actions')} mouseEnterDelay={0.05}>
+              <button
+                className="icon-btn item-menu-btn"
+                aria-label={t('sidebar.project.actions')}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Icons.More size={15} />
+              </button>
+            </Tooltip>
           </Dropdown>
         </div>
       </div>
@@ -1196,38 +1212,51 @@ function FlatGroup({
           onSelectGroup?.()
         }}
       >
-        <span
-          className="proj-toggle"
-          onClick={(e) => {
-            e.stopPropagation()
-            onOpenChange(!open)
-          }}
-          role="button"
-          aria-label={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
+        <Tooltip
           title={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
+          mouseEnterDelay={0.05}
         >
-          {open ? (
-            <Icons.FolderOpen className="chev" size={15} />
-          ) : (
-            <Icons.FolderClosed className="chev" size={15} />
-          )}
-        </span>
+          <span
+            className="proj-toggle"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenChange(!open)
+            }}
+            role="button"
+            aria-label={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
+          >
+            {open ? (
+              <Icons.FolderOpen className="chev" size={15} />
+            ) : (
+              <Icons.FolderClosed className="chev" size={15} />
+            )}
+          </span>
+        </Tooltip>
         <span className="proj-name">{t(label)}</span>
         <span className="proj-count">{sessions.length}</span>
         {onNewSession != null && (
-          <button
-            className="icon-btn proj-add-session-btn"
+          <Tooltip
             title={
               groupId === 'project:no-project' ? '新建临时会话' : t('sidebar.project.newSession')
             }
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation()
-              void onNewSession()
-            }}
+            mouseEnterDelay={0.05}
           >
-            <Icons.Plus size={15} />
-          </button>
+            <button
+              className="icon-btn proj-add-session-btn"
+              aria-label={
+                groupId === 'project:no-project'
+                  ? '新建临时会话'
+                  : t('sidebar.project.newSession')
+              }
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                void onNewSession()
+              }}
+            >
+              <Icons.Plus size={15} />
+            </button>
+          </Tooltip>
         )}
         {menuItems.length > 0 && (
           <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
@@ -1242,16 +1271,25 @@ function FlatGroup({
                 <ActionMenu onAction={() => setMenuOpen(false)} items={menuItems} />
               )}
             >
-              <button
-                className="icon-btn item-menu-btn"
+              <Tooltip
                 title={
                   groupId === 'project:no-project' ? '临时会话操作' : t('sidebar.project.actions')
                 }
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
+                mouseEnterDelay={0.05}
               >
-                <Icons.More size={15} />
-              </button>
+                <button
+                  className="icon-btn item-menu-btn"
+                  aria-label={
+                    groupId === 'project:no-project'
+                      ? '临时会话操作'
+                      : t('sidebar.project.actions')
+                  }
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Icons.More size={15} />
+                </button>
+              </Tooltip>
             </Dropdown>
           </div>
         )}
@@ -1405,34 +1443,37 @@ export function SidebarProjectToolbar({
         <span>{t('sidebar.projectsToolbar.title')}</span>
       </div>
       <div className="sidebar-project-toolbar-actions">
-        <button
-          type="button"
-          className="icon-btn sidebar-project-toolbar-btn"
-          title={t('sidebar.importHistory')}
-          aria-label={t('sidebar.importHistory')}
-          onClick={onImportHistory}
-        >
-          <Icons.Upload />
-        </button>
-        <ActionIcon
-          className="sidebar-project-toolbar-btn sidebar-project-toolbar-collapse-btn"
-          icon={allCollapsed ? Maximize2 : Minimize2}
-          size="small"
-          variant="borderless"
-          title={toggleTitle}
-          aria-label={toggleTitle}
-          onClick={onToggleAll}
-        />
+        <Tooltip title={t('sidebar.importHistory')} mouseEnterDelay={0.05}>
+          <button
+            type="button"
+            className="icon-btn sidebar-project-toolbar-btn"
+            aria-label={t('sidebar.importHistory')}
+            onClick={onImportHistory}
+          >
+            <Icons.Upload />
+          </button>
+        </Tooltip>
+        <Tooltip title={toggleTitle} mouseEnterDelay={0.05}>
+          <ActionIcon
+            className="sidebar-project-toolbar-btn sidebar-project-toolbar-collapse-btn"
+            icon={allCollapsed ? Maximize2 : Minimize2}
+            size="small"
+            variant="borderless"
+            aria-label={toggleTitle}
+            onClick={onToggleAll}
+          />
+        </Tooltip>
         {filterSlot}
-        <button
-          type="button"
-          className="icon-btn sidebar-project-toolbar-btn"
-          title={t('sidebar.addProject')}
-          aria-label={t('sidebar.addProject')}
-          onClick={onAddProject}
-        >
-          <Icons.FolderPlus />
-        </button>
+        <Tooltip title={t('sidebar.addProject')} mouseEnterDelay={0.05}>
+          <button
+            type="button"
+            className="icon-btn sidebar-project-toolbar-btn"
+            aria-label={t('sidebar.addProject')}
+            onClick={onAddProject}
+          >
+            <Icons.FolderPlus />
+          </button>
+        </Tooltip>
       </div>
     </div>
   )
@@ -1777,9 +1818,15 @@ export function SidebarSessionList() {
           <div className="session-notice">
             <Icons.AlertTriangle size={12} />
             <span>{notice}</span>
-            <button className="icon-btn" onClick={() => setNotice('')}>
-              <Icons.X size={10} />
-            </button>
+            <Tooltip title={t('common.cancel')} mouseEnterDelay={0.05}>
+              <button
+                className="icon-btn"
+                aria-label={t('common.cancel')}
+                onClick={() => setNotice('')}
+              >
+                <Icons.X size={10} />
+              </button>
+            </Tooltip>
           </div>
         )}
 
@@ -1797,14 +1844,16 @@ export function SidebarSessionList() {
                 placeholder={t('sidebar.search.placeholder')}
               />
               {searchLoading ? <Icons.Spinner size={12} className="animate-spin" /> : null}
-              <button
-                type="button"
-                className="icon-btn sidebar-search-close"
-                title={t('common.cancel')}
-                onClick={closeSearch}
-              >
-                <Icons.X size={11} />
-              </button>
+              <Tooltip title={t('common.cancel')} mouseEnterDelay={0.05}>
+                <button
+                  type="button"
+                  className="icon-btn sidebar-search-close"
+                  aria-label={t('common.cancel')}
+                  onClick={closeSearch}
+                >
+                  <Icons.X size={11} />
+                </button>
+              </Tooltip>
             </div>
             {searchQuery.trim() && (
               <div className="sidebar-search-count">

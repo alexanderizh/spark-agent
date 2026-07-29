@@ -96,6 +96,29 @@ describe('ModelService.complete', () => {
     if (!r.available) expect(r.reason).toMatch(/provider not found/)
   })
 
+  it('does not call a disabled extraction provider', async () => {
+    const fetchMock = vi.fn()
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
+    const { svc } = makeService({}, fetchMock, {
+      providers: {
+        'prov-1': {
+          id: 'prov-1',
+          enabled: 0,
+          provider_type: 'openai-compatible',
+          config_json: '{}',
+        },
+      },
+    })
+
+    const result = await svc.complete('prompt')
+
+    expect(result).toEqual({
+      available: false,
+      reason: 'extraction provider disabled: prov-1',
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('unavailable on HTTP error (never throws)', async () => {
     globalThis.fetch = vi.fn(
       async () => new Response('rate limited', { status: 429 }),

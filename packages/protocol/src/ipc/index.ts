@@ -562,6 +562,8 @@ export interface ProviderProfile {
   id: string
   name: string
   provider: string
+  /** Provider 是否参与会话、画布和多媒体工具的模型解析；旧数据缺省时按启用处理。 */
+  enabled?: boolean
   defaultModel: string
   modelIds: string[]
   /** 受管 Provider 从服务端同步到的完整模型清单；modelIds 仅表示本机启用项。 */
@@ -725,7 +727,10 @@ export interface PlatformModelUsage {
   logs: PlatformModelUsageLog[]
 }
 
-export interface ProviderListRequest {}
+export interface ProviderListRequest {
+  /** 管理页面使用；普通模型选择器只返回已启用 Provider。 */
+  includeDisabled?: boolean
+}
 
 export interface ProviderListResponse {
   profiles: ProviderProfile[]
@@ -790,6 +795,8 @@ export interface ProviderCreateResponse {
 
 export interface ProviderUpdateRequest {
   id: string
+  /** 全局可用状态；false 时从会话、画布和多媒体工具中排除。 */
+  enabled?: boolean
   name?: string
   defaultModel?: string
   modelIds?: string[]
@@ -4016,6 +4023,18 @@ export interface FileReadResponse {
   error?: string
 }
 
+export interface FileReadBinaryRequest {
+  /** Absolute path to the file to read. */
+  filePath: string
+}
+
+export interface FileReadBinaryResponse {
+  /** File content transferred through Electron IPC without text decoding. */
+  content?: ArrayBuffer
+  /** Populated with the error message when the read failed. */
+  error?: string
+}
+
 // ─── File Save / Download Channels ────────────────────────────────────────────
 
 /**
@@ -5620,6 +5639,8 @@ export interface IpcChannelMap
 
   // File Read — read a file's content as UTF-8 text
   'file:read': [FileReadRequest, FileReadResponse]
+  // File Read Binary — read an allowed local file for in-app preview
+  'file:read-binary': [FileReadBinaryRequest, FileReadBinaryResponse]
 
   // File Save Image — show save dialog and copy a local image to the user's chosen path
   'file:save-image': [FileSaveImageRequest, FileSaveImageResponse]

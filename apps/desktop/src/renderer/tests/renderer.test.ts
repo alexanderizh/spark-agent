@@ -2122,7 +2122,7 @@ describe('Renderer Smoke Tests', () => {
     if (toolbarNode == null) throw new Error('Project toolbar did not render')
     const chatListNode = container.querySelector<HTMLElement>('.chat-list')
     expect(chatListNode?.contains(toolbarNode)).toBe(false)
-    const addButton = toolbarNode.querySelector<HTMLButtonElement>('[title="添加项目"]')
+    const addButton = toolbarNode.querySelector<HTMLButtonElement>('[aria-label="添加项目"]')
     expect(addButton).not.toBeNull()
     if (addButton == null) throw new Error('Add project button did not render')
 
@@ -2133,7 +2133,8 @@ describe('Renderer Smoke Tests', () => {
 
     expect(container.textContent).toContain('创建项目')
 
-    const collapseButton = toolbarNode.querySelector<HTMLButtonElement>('[title="折叠所有项目"]')
+    const collapseButton =
+      toolbarNode.querySelector<HTMLButtonElement>('[aria-label="折叠所有项目"]')
     expect(collapseButton).not.toBeNull()
     if (collapseButton == null) throw new Error('Collapse all projects button did not render')
 

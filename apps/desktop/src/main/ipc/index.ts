@@ -233,6 +233,7 @@ import { registerCanvasWorkflowIpc } from './registerCanvasWorkflowIpc.js'
 import { registerComputerUseIpc } from './registerComputerUseIpc.js'
 import { registerApplicationSnapshotIpc } from './registerApplicationSnapshotIpc.js'
 import { registerSidebarOrderIpc } from './registerSidebarOrderIpc.js'
+import { registerFilePreviewIpc } from './registerFilePreviewIpc.js'
 import { createComputerUseMcpProvider } from '../services/computer-use/ComputerUseMcpProvider.js'
 import { ComputerUseAgentController } from '../services/computer-use/ComputerUseAgentController.js'
 import { getComputerUseServices } from '../services/computer-use/ComputerUseServices.js'
@@ -2999,6 +3000,7 @@ async function handleRemoteInboundMessage(
 
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
+  registerFilePreviewIpc()
   registerFontAssetIpc()
   registerVoiceIpc()
   registerCanvasWorkflowIpc()
@@ -3277,7 +3279,7 @@ export function registerAllIpcHandlers(): void {
   // ─── Provider Handlers ─────────────────────────────────────────────────
   // P1-09 完整实现，当前为骨架
 
-  typedIpcHandle('provider:list', async (_req) => {
+  typedIpcHandle('provider:list', async (req) => {
     const svc = getProviderService()
     if (await svc.isLocalCliAvailable()) {
       await svc.ensureLocalCliProvider()
@@ -3285,7 +3287,7 @@ export function registerAllIpcHandlers(): void {
     if (await svc.isLocalCodexCliAvailable()) {
       await svc.ensureLocalCodexCliProvider()
     }
-    const profiles = await svc.listProviders()
+    const profiles = await svc.listProviders({ includeDisabled: req.includeDisabled === true })
     return { profiles }
   })
 
@@ -3302,7 +3304,7 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('provider:update', async (req) => {
-    log.info(`provider:update requested, id=${req.id}`)
+    log.info(`provider:update requested, id=${req.id}, enabled=${String(req.enabled)}`)
     const profile = await getProviderService().updateProvider(req)
     getCanvasTextOutputCapabilityCache().clearProvider(req.id)
     pushConfigChanged('provider', 'update', profile.id)

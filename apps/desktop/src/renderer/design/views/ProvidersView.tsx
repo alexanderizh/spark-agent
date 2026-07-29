@@ -22,6 +22,7 @@ import { ProviderFilesPanel } from './provider/ProviderFilesPanel'
 import { ProviderConversationProtocolFields } from './provider/ProviderConversationProtocolFields'
 import { ProviderMediaRoutingFields } from './provider/ProviderMediaRoutingFields'
 import { ProviderMediaModelCatalog } from './provider/ProviderMediaModelCatalog'
+import { ProviderEnabledSwitch } from './provider/ProviderEnabledSwitch'
 import {
   MEDIA_CAPABILITY_LABELS,
   MEDIA_PROVIDER_LABELS,
@@ -981,7 +982,7 @@ function ProvidersView() {
   }, [])
 
   const refresh = useCallback(() => {
-    Promise.all([listProviders({}), listModels({})])
+    Promise.all([listProviders({ includeDisabled: true }), listModels({})])
       .then(([providerRes, modelRes]) => {
         setProfiles(providerRes.profiles)
         setModelProfiles(modelRes.models)
@@ -1471,6 +1472,7 @@ function ProvidersView() {
                 return (
                   <ProviderCardX
                     key={p.id}
+                    providerId={p.id}
                     vendor={vendor}
                     icon={p.managed ? null : resolveProviderIconForProfile(p, vendor)}
                     name={p.name}
@@ -1483,16 +1485,21 @@ function ProvidersView() {
                             ? `${mediaProviderDisplayName(p.mediaProvider ?? p.imageProvider ?? undefined)} · 默认 ${p.defaultModel}`
                             : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
                     }
-                    status={status}
+                    status={p.enabled !== false ? status : 'off'}
                     modelIds={builtin ? [] : cardModelIds}
                     defaultModel={p.defaultModel}
                     isBuiltin={builtin}
                     isManaged={p.managed === true}
                     isDefault={p.isDefault}
+                    enabled={p.enabled !== false}
+                    canToggleEnabled={!isAutoRouterProvider(p)}
                     cardKind={resolveProviderCardKind(p)}
                     multiSelect={multiSelect && !builtin && p.managed !== true}
                     selected={selectedIds.has(p.id)}
-                    canHealthCheck={canHealthCheckProviderCardKind(resolveProviderCardKind(p))}
+                    canHealthCheck={
+                      p.enabled !== false &&
+                      canHealthCheckProviderCardKind(resolveProviderCardKind(p))
+                    }
                     onToggleSelect={() => toggleSelected(p.id)}
                     onEdit={() => {
                       if (p.managed) setManagedEditingProfile(p)
@@ -1503,6 +1510,14 @@ function ProvidersView() {
                     }}
                     onDelete={() => void handleDelete(p.id)}
                     onHealthCheck={() => void handleHealthCheck(p.id)}
+                    onEnabledChanged={(enabled) => {
+                      setProfiles((current) =>
+                        current.map((profile) =>
+                          profile.id === p.id ? { ...profile, enabled } : profile,
+                        ),
+                      )
+                      refresh()
+                    }}
                   />
                 )
               })}
@@ -1782,6 +1797,7 @@ function VendorPresetCard({
 }
 
 function ProviderCardX({
+  providerId,
   vendor,
   icon,
   name,
@@ -1792,6 +1808,8 @@ function ProviderCardX({
   isBuiltin = false,
   isManaged = false,
   isDefault = false,
+  enabled = true,
+  canToggleEnabled = true,
   cardKind,
   multiSelect = false,
   selected = false,
@@ -1800,7 +1818,9 @@ function ProviderCardX({
   onEdit,
   onDelete,
   onHealthCheck,
+  onEnabledChanged,
 }: {
+  providerId: string
   vendor: VendorMeta | null
   icon?: ProviderIconConfig | null
   name: string
@@ -1814,6 +1834,10 @@ function ProviderCardX({
   isManaged?: boolean
   /** 默认 Provider：用更明显的标签提示 */
   isDefault?: boolean
+  /** 全局 Provider 可用状态。 */
+  enabled?: boolean
+  /** 自动路由等虚拟 Provider 不支持持久化开关。 */
+  canToggleEnabled?: boolean
   /** 卡片类型（名称行 tag + 筛选用）；多选模式下隐藏 tag */
   cardKind: ProviderCardKind
   /** 多选模式：true 时显示复选框 + 点击行切换选择 */
@@ -1826,6 +1850,7 @@ function ProviderCardX({
   onEdit: () => void
   onDelete: () => void
   onHealthCheck: () => void
+  onEnabledChanged?: (enabled: boolean) => void | Promise<void>
 }) {
   const { visibleModelIds, hiddenModelIds } = limitProviderCardModelIds(modelIds)
 
@@ -1868,7 +1893,7 @@ function ProviderCardX({
 
   return (
     <div
-      className={`pv_card${multiSelect ? ' pv_multi_mode' : ''}${selected ? ' pv_selected' : ''}`}
+      className={`pv_card${enabled ? '' : ' pv_disabled'}${multiSelect ? ' pv_multi_mode' : ''}${selected ? ' pv_selected' : ''}`}
       onClick={multiSelect ? handleCardClick : undefined}
       role={multiSelect ? 'button' : undefined}
       tabIndex={multiSelect ? 0 : undefined}
@@ -1984,6 +2009,14 @@ function ProviderCardX({
           </span>
           {!multiSelect && (
             <div className="pv_card_actions" onClick={(e) => e.stopPropagation()}>
+              {canToggleEnabled && (
+                <ProviderEnabledSwitch
+                  providerId={providerId}
+                  providerName={name}
+                  enabled={enabled}
+                  onChanged={onEnabledChanged}
+                />
+              )}
               {!isBuiltin && !isManaged && (
                 <ActionIcon
                   icon={Icons.Trash}

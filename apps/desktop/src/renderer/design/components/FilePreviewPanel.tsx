@@ -23,8 +23,13 @@ import { MarkdownText } from '../views/ChatView'
 import { MarkdownImage } from './MarkdownImage'
 import type { PreviewFileType } from './ClickableFilePath'
 import { FileTypeIcon } from './FileDisplay'
+import {
+  isRemotePreviewUrl,
+  resolveViewerLoadSource,
+  type ViewerLoadSource,
+} from './filePreviewSource'
 
-const FlyfishFileViewer = lazy(() => import('@file-viewer/react'))
+const FlyfishFileViewer = lazy(() => import('./OfficeFileViewer'))
 
 type FileType = PreviewFileType
 
@@ -39,18 +44,10 @@ type Props = {
   onClose: () => void
 }
 
-/** safe-file 协议前缀 */
-const SAFE_FILE_SCHEME = 'safe-file'
-
-/**
- * 把本地文件路径转成 safe-file:// URL（与 MarkdownImage 保持一致）
- */
-function encodeToSafeFileUrl(absolutePath: string): string {
-  const encoded = btoa(unescape(encodeURIComponent(absolutePath)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '')
-  return `${SAFE_FILE_SCHEME}://x/${encoded}`
+type ViewerLoadState = {
+  filePath: string
+  source?: ViewerLoadSource
+  error?: string
 }
 
 /**
@@ -92,12 +89,14 @@ function resolvePreviewPath(filePath: string, workspaceRootPath?: string): strin
   return `${workspaceRootPath.replace(/[\\/]+$/, '')}${separator}${normalized}`
 }
 
-const FLYFISH_VIEWER_ASSET_BASE = '/file-viewer'
 const FILE_PREVIEW_WIDTH_KEY = 'spark.filePreviewPanel.width'
 const FILE_PREVIEW_DEFAULT_WIDTH = 760
 const FILE_PREVIEW_MIN_WIDTH = 420
 const FILE_PREVIEW_MAX_WIDTH = 1200
 const FILE_PREVIEW_KEYBOARD_STEP = 32
+const FILE_PREVIEW_COMPACT_BREAKPOINT = 900
+const FILE_PREVIEW_CHAT_RESERVE = 566
+const FILE_PREVIEW_VIEWPORT_GUTTER = 24
 
 const HTML_PREVIEW_CONTAINMENT_STYLE = `
 html {
@@ -123,11 +122,17 @@ img, video, canvas, svg, iframe, table {
 `
 
 function clampPanelWidth(width: number): number {
-  const viewportMax =
-    typeof window === 'undefined'
-      ? FILE_PREVIEW_MAX_WIDTH
-      : Math.max(FILE_PREVIEW_MIN_WIDTH, window.innerWidth - 280)
-  return Math.min(Math.max(width, FILE_PREVIEW_MIN_WIDTH), FILE_PREVIEW_MAX_WIDTH, viewportMax)
+  if (typeof window === 'undefined') {
+    return Math.min(Math.max(width, FILE_PREVIEW_MIN_WIDTH), FILE_PREVIEW_MAX_WIDTH)
+  }
+
+  const viewportReserve =
+    window.innerWidth <= FILE_PREVIEW_COMPACT_BREAKPOINT
+      ? FILE_PREVIEW_VIEWPORT_GUTTER
+      : FILE_PREVIEW_CHAT_RESERVE
+  const viewportMax = Math.max(0, window.innerWidth - viewportReserve)
+  const responsiveMin = Math.min(FILE_PREVIEW_MIN_WIDTH, viewportMax)
+  return Math.min(Math.max(width, responsiveMin), FILE_PREVIEW_MAX_WIDTH, viewportMax)
 }
 
 function readPreviewPanelWidth(): number {
@@ -147,35 +152,13 @@ function buildHtmlPreviewDocument(content: string): string {
   }
 
   if (/<html[\s>]/i.test(content)) {
-    return content.replace(/<html(\s[^>]*)?>/i, (match) => `${match}<head>${containmentStyle}</head>`)
+    return content.replace(
+      /<html(\s[^>]*)?>/i,
+      (match) => `${match}<head>${containmentStyle}</head>`,
+    )
   }
 
   return `<!doctype html><html><head>${containmentStyle}</head><body>${content}</body></html>`
-}
-
-const flyfishViewerOptions = {
-  theme: 'system' as const,
-  toolbar: { position: 'bottom-right' as const },
-  archive: {
-    workerUrl: `${FLYFISH_VIEWER_ASSET_BASE}/vendor/libarchive/worker-bundle.js`,
-    wasmUrl: `${FLYFISH_VIEWER_ASSET_BASE}/vendor/libarchive/libarchive.wasm`,
-  },
-  cad: {
-    wasmPath: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/cad/`,
-    workerUrl: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/cad/dwg-worker.js`,
-    dwfWasmUrl: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/cad/dwfv-render.wasm`,
-  },
-  data: { sqlWasmUrl: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/data/sql-wasm.wasm` },
-  // @file-viewer/core 默认把 PDF worker 指向外部 CDN（npm.onmicrosoft.cn），
-  // 叠加 index.html 的 CSP（script-src/connect-src 仅 'self'）会拦截该 CDN，导致 PDF 完全打不开。
-  // 这里指向由 copy-file-viewer-assets.mjs 复制到本地的同源 worker，dev server 与打包后 file:// 都能加载。
-  pdf: { workerUrl: `${FLYFISH_VIEWER_ASSET_BASE}/vendor/pdf/pdf.worker.mjs` },
-  docx: { workerUrl: `${FLYFISH_VIEWER_ASSET_BASE}/vendor/docx/docx.worker.js` },
-  spreadsheet: { workerUrl: `${FLYFISH_VIEWER_ASSET_BASE}/vendor/xlsx/sheet.worker.js` },
-  typst: {
-    compilerWasmUrl: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/typst/typst_ts_web_compiler_bg.wasm`,
-    rendererWasmUrl: `${FLYFISH_VIEWER_ASSET_BASE}/wasm/typst/typst_ts_renderer_bg.wasm`,
-  },
 }
 
 export function FilePreviewPanel({
@@ -185,15 +168,26 @@ export function FilePreviewPanel({
   onClose,
 }: Props): ReactNode {
   const [content, setContent] = useState<string | null>(null)
+  const [viewerLoadState, setViewerLoadState] = useState<ViewerLoadState | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [openingExternal, setOpeningExternal] = useState(false)
   const [panelWidth, setPanelWidth] = useState(readPreviewPanelWidth)
   const { invoke: readFile } = useIpcInvoke('file:read')
+  const { invoke: readBinaryFile } = useIpcInvoke('file:read-binary')
   const { toast } = useToast()
   const resolvedFilePath = resolvePreviewPath(filePath, workspaceRootPath)
   const htmlPreviewDocument =
     fileType === 'html' && content !== null ? buildHtmlPreviewDocument(content) : null
+  const activeViewerLoadState =
+    viewerLoadState?.filePath === resolvedFilePath ? viewerLoadState : null
+  const viewerSource =
+    fileType === 'universal' && isRemotePreviewUrl(resolvedFilePath)
+      ? ({ kind: 'remote', url: resolvedFilePath } satisfies ViewerLoadSource)
+      : (activeViewerLoadState?.source ?? null)
+  const previewError = fileType === 'universal' ? (activeViewerLoadState?.error ?? null) : error
+  const previewLoading =
+    fileType === 'universal' ? viewerSource === null && previewError === null : loading
 
   // 读取文件内容
   useEffect(() => {
@@ -231,6 +225,31 @@ export function FilePreviewPanel({
       cancelled = true
     }
   }, [fileType, readFile, resolvedFilePath])
+
+  useEffect(() => {
+    if (fileType !== 'universal' || isRemotePreviewUrl(resolvedFilePath)) return
+
+    let cancelled = false
+
+    const loadViewerSource = async () => {
+      try {
+        const source = await resolveViewerLoadSource(resolvedFilePath, readBinaryFile)
+        if (!cancelled) setViewerLoadState({ filePath: resolvedFilePath, source })
+      } catch (err) {
+        if (!cancelled) {
+          setViewerLoadState({
+            filePath: resolvedFilePath,
+            error: err instanceof Error ? err.message : '读取预览文件失败',
+          })
+        }
+      }
+    }
+
+    void loadViewerSource()
+    return () => {
+      cancelled = true
+    }
+  }, [fileType, readBinaryFile, resolvedFilePath])
 
   // ESC 关闭
   useEffect(() => {
@@ -346,7 +365,15 @@ export function FilePreviewPanel({
         tabIndex={0}
         title="拖拽调整预览宽度"
       />
-      <div className="file-preview-header">
+      <div
+        className="file-preview-header"
+        onDoubleClick={(event) => {
+          if (event.target instanceof Element && event.target.closest('.file-preview-actions')) {
+            return
+          }
+          window.spark?.invoke('window:maximize', {}).catch(() => {})
+        }}
+      >
         <div className="file-preview-title">
           <span className="file-preview-icon">
             <FileTypeIcon filePath={filePath} size={18} />
@@ -371,24 +398,24 @@ export function FilePreviewPanel({
         </div>
       </div>
       <div className="file-preview-content">
-        {loading && (
+        {previewLoading && (
           <div className="file-preview-loading">
             <Icons.Spinner size={20} />
             <span>加载中...</span>
           </div>
         )}
-        {error && (
+        {previewError && (
           <div className="file-preview-error">
             <Icons.AlertTriangle size={20} />
-            <span>{error}</span>
+            <span>{previewError}</span>
           </div>
         )}
-        {!loading && !error && fileType === 'image' && (
+        {!previewLoading && !previewError && fileType === 'image' && (
           <div className="file-preview-image">
             <MarkdownImage src={resolvedFilePath} alt={fileName} />
           </div>
         )}
-        {!loading && !error && fileType === 'universal' && (
+        {!previewLoading && !previewError && fileType === 'universal' && viewerSource !== null && (
           <div className="file-preview-flyfish">
             <Suspense
               fallback={
@@ -400,26 +427,26 @@ export function FilePreviewPanel({
             >
               <FlyfishFileViewer
                 key={filePath}
-                url={
-                  isLocalPath(resolvedFilePath)
-                    ? encodeToSafeFileUrl(resolvedFilePath)
-                    : resolvedFilePath
-                }
+                {...(viewerSource.kind === 'remote'
+                  ? { url: viewerSource.url }
+                  : { buffer: viewerSource.buffer })}
                 filename={fileName}
-                options={flyfishViewerOptions}
                 onStateChange={(state) => {
                   if (state.error != null) {
-                    setError(
-                      formatViewerError(state.error) ??
+                    setViewerLoadState({
+                      filePath: resolvedFilePath,
+                      source: viewerSource,
+                      error:
+                        formatViewerError(state.error) ??
                         'Flyfish Viewer 无法预览该文件，可尝试用外部应用打开',
-                    )
+                    })
                   }
                 }}
               />
             </Suspense>
           </div>
         )}
-        {!loading && !error && fileType === 'html' && content !== null && (
+        {!previewLoading && !previewError && fileType === 'html' && content !== null && (
           <iframe
             className="file-preview-html"
             srcDoc={htmlPreviewDocument ?? ''}
@@ -427,12 +454,12 @@ export function FilePreviewPanel({
             title={`${fileName} 预览`}
           />
         )}
-        {!loading && !error && fileType === 'markdown' && content !== null && (
+        {!previewLoading && !previewError && fileType === 'markdown' && content !== null && (
           <div className="file-preview-markdown">
             <MarkdownText content={content} />
           </div>
         )}
-        {!loading && !error && fileType === 'text' && content !== null && (
+        {!previewLoading && !previewError && fileType === 'text' && content !== null && (
           <pre className="file-preview-text">{content}</pre>
         )}
       </div>

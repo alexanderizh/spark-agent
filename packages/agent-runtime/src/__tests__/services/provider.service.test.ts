@@ -134,6 +134,37 @@ describe('ProviderService', () => {
     expect(profile.modelIds).toEqual(['gpt-4o-mini'])
   })
 
+  it('persists the global enabled state and excludes disabled providers by default', async () => {
+    const profile = await service.createProvider({
+      name: 'Toggleable Provider',
+      provider: 'openai',
+      defaultModel: 'gpt-toggle',
+      apiKey: 'sk-toggle',
+    })
+
+    const disabled = await service.updateProvider({ id: profile.id, enabled: false })
+
+    expect(disabled.enabled).toBe(false)
+    expect(repo.update).toHaveBeenCalledWith(
+      profile.id,
+      expect.objectContaining({ enabled: false }),
+    )
+    expect((await service.listProviders()).some((item) => item.id === profile.id)).toBe(false)
+    expect(
+      (await service.listProviders({ includeDisabled: true })).find(
+        (item) => item.id === profile.id,
+      )?.enabled,
+    ).toBe(false)
+
+    const exported = await service.exportProviders([profile.id])
+    expect(exported.profiles[0]?.enabled).toBe(false)
+
+    const importedRepo = makeRepo()
+    const importedService = new ProviderService(importedRepo as never)
+    await importedService.importProviders(exported, 'merge')
+    expect([...importedRepo.rows.values()][0]?.enabled).toBe(0)
+  })
+
   it('preserves providerIcon through create, export, and import', async () => {
     const profile = await service.createProvider({
       name: 'Iconic Provider',

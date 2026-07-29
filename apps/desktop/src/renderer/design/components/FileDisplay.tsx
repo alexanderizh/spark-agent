@@ -492,7 +492,8 @@ export function decodeFileUrl(value: string): string | null {
   try {
     const url = new URL(value)
     if (url.protocol !== 'file:') return null
-    return decodeURIComponent(url.pathname)
+    const pathname = decodeURIComponent(url.pathname)
+    return /^\/[A-Za-z]:\//.test(pathname) ? pathname.slice(1) : pathname
   } catch {
     return null
   }

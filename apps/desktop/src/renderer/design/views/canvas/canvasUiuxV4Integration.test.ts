@@ -37,6 +37,19 @@ describe('canvas cinematic integration', () => {
     }
   })
 
+  it('uses a lifted blue-grey dark palette instead of near-black canvas surfaces', () => {
+    const tokens = readCanvasSource('./cinematic/tokens.less')
+    const shell = readCanvasSource('./cinematic/shell.less')
+
+    expect(tokens).toContain('--canvas-cinema-bg: #11161d;')
+    expect(tokens).toContain('--canvas-cinema-stage: #121820;')
+    expect(tokens).toContain('--canvas-cinema-surface-1: #171e27;')
+    expect(tokens).toContain('--canvas-cinema-surface-2: #1d2631;')
+    expect(tokens).not.toMatch(/--canvas-cinema-(?:bg|stage):\s*#0[0-9a-f]{5};/i)
+    expect(shell).toContain('background: rgba(17, 22, 29, 0.97);')
+    expect(shell).toContain('background: rgba(23, 30, 39, 0.94);')
+  })
+
   it('renders the product node chrome and labeled primary creation actions', () => {
     const node = readCanvasSource('./CanvasNode.tsx')
     const addMenu = readCanvasSource('./CanvasAddNodeMenu.tsx')

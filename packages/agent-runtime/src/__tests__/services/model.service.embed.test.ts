@@ -33,11 +33,12 @@ const PROVIDER_ID = 'prov-1'
 const MODEL = 'embedding-3'
 const API_KEY = 'test-key'
 
-function makeService() {
+function makeService(enabled = 1) {
   // providerRepo.get(id) 返回带 keystore_ref + config_json 的 row
   const providerRepo = {
     get: vi.fn(() => ({
       id: PROVIDER_ID,
+      enabled,
       keystore_ref: 'keychain:zhipu',
       config_json: JSON.stringify({ apiEndpoint: 'https://open.bigmodel.cn/api/paas/v4' }),
     })),
@@ -96,6 +97,19 @@ describe('ModelService.embed — embeddings response parsing', () => {
     // 确认请求体使用 array input
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string)
     expect(body.input).toEqual(['hello', 'world'])
+  })
+
+  it('禁用 Provider 后不再调用 Embedding 接口', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const { svc } = makeService(0)
+
+    const result = await svc.embed(['hello'])
+
+    expect(result).toEqual({
+      available: false,
+      reason: `embedding provider disabled: ${PROVIDER_ID}`,
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('OpenAI 格式按 index 排序对齐输入顺序', async () => {
