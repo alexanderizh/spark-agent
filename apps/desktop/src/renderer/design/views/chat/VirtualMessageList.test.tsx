@@ -108,7 +108,16 @@ describe('VirtualMessageList', () => {
     })
     act(() => handleRef.current?.scrollToIndex(37, 'center'))
 
-    expect(virtualMocks.scrollToIndex).toHaveBeenCalledWith(37, { align: 'center' })
+    expect(virtualMocks.scrollToIndex).toHaveBeenCalledWith(37, {
+      align: 'center',
+      behavior: 'smooth',
+    })
+
+    act(() => handleRef.current?.scrollToIndex(20, 'start', 'auto'))
+    expect(virtualMocks.scrollToIndex).toHaveBeenLastCalledWith(20, {
+      align: 'start',
+      behavior: 'auto',
+    })
   })
 
   it('does not add an empty list before the chat empty state', () => {

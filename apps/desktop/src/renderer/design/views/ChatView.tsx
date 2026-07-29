@@ -88,6 +88,8 @@ import { buildErrorRetryPayload } from './chat/ChatErrorRetry'
 import { getRecentAssistantMessageIds } from './chat/recent-assistant-messages'
 import { EmptySessionModeLauncher } from './chat/EmptySessionModeLauncher'
 import { ChatOverlayScrollbar } from './chat/ChatOverlayScrollbar'
+import { ChatTurnNavigator } from './chat/ChatTurnNavigator'
+import { buildChatTurnNavItems, type ChatTurnNavItem } from './chat/chat-turn-navigation'
 import { ApplicationSnapshotPreviewCard } from './chat/ApplicationSnapshotPreviewCard'
 import {
   persistThenSyncTeamSelection,
@@ -2176,6 +2178,7 @@ export function ChatView({
               onLoadingChange={setActiveSessionLoading}
               emptyStateVariant="loading"
               modelSwitchMarkers={modelSwitchMarkers}
+              showTurnNavigator
             />
             {userQuestion != null && (
               <UserQuestionDock
@@ -2493,6 +2496,7 @@ function ChatStream({
   onLoadingChange,
   emptyStateVariant = 'hint',
   modelSwitchMarkers = [],
+  showTurnNavigator = false,
 }: {
   sessionId: SessionId
   /** 当前会话工作区 ID。非 null 时用于过滤 turn_file_summary 中被 .gitignore 忽略的路径 */
@@ -2543,11 +2547,14 @@ function ChatStream({
    */
   emptyStateVariant?: 'hint' | 'loading'
   modelSwitchMarkers?: ModelSwitchMarker[]
+  /** 仅主会话启用；侧聊和窄内容区保持原布局。 */
+  showTurnNavigator?: boolean
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const streamId = useId()
   const virtualMessageListRef = useRef<VirtualMessageListHandle | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
+  const turnNavItems = useMemo(() => buildChatTurnNavItems(messages), [messages])
   const messagesRef = useRef<UIMessage[]>([])
   const [agentIsRunning, setAgentIsRunning] = useState(false)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
@@ -3471,6 +3478,12 @@ function ChatStream({
     setShowScrollToBottom(false)
   }, [])
 
+  const handleNavigateToTurn = useCallback((item: ChatTurnNavItem, behavior: ScrollBehavior) => {
+    userScrolledRef.current = true
+    setShowScrollToBottom(true)
+    virtualMessageListRef.current?.scrollToIndex(item.startMessageIndex, 'start', behavior)
+  }, [])
+
   useEffect(() => {
     const handleScrollToRunningAgent = (event: Event) => {
       const agentId = (event as CustomEvent<{ agentId?: string }>).detail?.agentId
@@ -3725,6 +3738,16 @@ function ChatStream({
         >
           <Icons.ArrowDown size={16} />
         </button>
+      )}
+      {showTurnNavigator && (
+        <ChatTurnNavigator
+          items={turnNavItems}
+          scrollRef={streamRef}
+          hasMoreHistory={hasMoreHistory}
+          isLoadingOlder={isLoadingOlder}
+          onLoadOlder={() => loadOlderRef.current()}
+          onNavigate={handleNavigateToTurn}
+        />
       )}
       <ChatOverlayScrollbar scrollRef={streamRef} controlsId={streamId} />
     </div>
