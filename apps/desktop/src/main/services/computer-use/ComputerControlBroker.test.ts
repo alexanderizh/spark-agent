@@ -347,6 +347,21 @@ describe('ComputerControlBroker', () => {
     expect(actions.get('action-1')).toMatchObject({ status: 'failed', error_code: 'action_noop' })
   })
 
+  it('keeps the session runnable after a recoverable native execution error', async () => {
+    const executor: ComputerExecutorBackend = {
+      execute: vi.fn(async () => {
+        throw new ComputerUseBrokerError('stale_frame', 'The native frame changed')
+      }),
+      cancelSession: vi.fn(async () => undefined),
+    }
+    const { broker, sessions, actions } = createHarness({ executor })
+    await broker.observe(session.id, true)
+
+    await expect(broker.dispatch(envelope())).rejects.toMatchObject({ code: 'stale_frame' })
+    expect(sessions.current.status).toBe('observing')
+    expect(actions.get('action-1')).toMatchObject({ status: 'failed', error_code: 'stale_frame' })
+  })
+
   it('never allows two actions to execute concurrently in one session', async () => {
     let finishFirst:
       | ((value: { observation: ComputerObservation; noop: boolean }) => void)

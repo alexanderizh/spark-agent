@@ -152,6 +152,40 @@ describe('NativeHostClient', () => {
     await client.close()
   })
 
+  it('refreshes cached permissions after the bounded capability interval', async () => {
+    vi.useFakeTimers()
+    try {
+      const process = new FakeNativeHostProcess()
+      const requests = observeRequests(process)
+      const connecting = NativeHostClient.connect({
+        artifact: ARTIFACT,
+        spawnProcess: () => process,
+      })
+      await completeHandshake(process, requests)
+      const client = await connecting
+      await vi.advanceTimersByTimeAsync(1_001)
+
+      const refreshing = client.getCapabilities()
+      const request = requireRequest(await requests.next())
+      expect(request).toMatchObject({ type: 'get_capabilities' })
+      const refreshed = {
+        ...CAPABILITIES,
+        permissions: { ...CAPABILITIES.permissions, accessibility: 'granted' as const },
+      }
+      process.send({
+        protocolVersion: 1,
+        requestId: request.requestId,
+        type: 'capabilities',
+        manifest: refreshed,
+      })
+
+      await expect(refreshing).resolves.toEqual(refreshed)
+      await client.close()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('terminates the host and rejects a capture whose binary digest is invalid', async () => {
     const process = new FakeNativeHostProcess()
     const requests = observeRequests(process)

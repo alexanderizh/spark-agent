@@ -865,24 +865,41 @@ export class SessionService {
     if (providerId == null || providerId.trim().length === 0) {
       throw new Error('Computer decision provider is not configured')
     }
-    const provider = new ProviderProfileRepository(this.db).get(providerId)
-    if (provider == null) throw new Error('Computer decision provider does not exist')
-    const providerConfig = JSON.parse(provider.config_json) as {
-      defaultModel?: unknown
-      model?: unknown
+    const providers = new ProviderProfileRepository(this.db)
+    const selected = providers.get(providerId)
+    if (selected == null) throw new Error('Computer decision provider does not exist')
+    const candidates = [selected, providers.getDefault(), ...providers.listAll()].filter(
+      (provider, index, values): provider is ProviderProfileRow =>
+        provider != null &&
+        provider.enabled === 1 &&
+        !isBuiltInLocalCliProvider(provider) &&
+        values.findIndex((candidate) => candidate?.id === provider.id) === index,
+    )
+    let lastError: unknown
+    for (const provider of candidates) {
+      try {
+        const providerConfig = JSON.parse(provider.config_json) as {
+          defaultModel?: unknown
+          model?: unknown
+        }
+        const fallbackModel =
+          typeof providerConfig.defaultModel === 'string'
+            ? providerConfig.defaultModel
+            : typeof providerConfig.model === 'string'
+              ? providerConfig.model
+              : ''
+        const selectedModel =
+          provider.id === selected.id ? (active?.model ?? session.model_id) : undefined
+        return buildComputerDecisionModelConfig({
+          provider,
+          model: selectedModel ?? fallbackModel,
+          apiKey: await resolveProviderApiKey(provider),
+        })
+      } catch (error) {
+        lastError = error
+      }
     }
-    const fallbackModel =
-      typeof providerConfig.defaultModel === 'string'
-        ? providerConfig.defaultModel
-        : typeof providerConfig.model === 'string'
-          ? providerConfig.model
-          : ''
-    const model = active?.model ?? session.model_id ?? fallbackModel
-    return buildComputerDecisionModelConfig({
-      provider,
-      model,
-      apiKey: await resolveProviderApiKey(provider),
-    })
+    throw lastError ?? new Error('No vision-capable Computer decision provider is configured')
   }
 
   /**

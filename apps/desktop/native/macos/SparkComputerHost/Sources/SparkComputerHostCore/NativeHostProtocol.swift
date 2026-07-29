@@ -241,7 +241,7 @@ public struct NativeCapabilityManifest: Codable, Equatable, Sendable {
         maxMessageBytes: maxNativeHostFramePayloadBytes,
         maxScreenshotWidth: 16_384,
         maxScreenshotHeight: 16_384,
-        maxTreeElements: 100_000
+        maxTreeElements: maxNativeTreeElements
       )
     )
   }

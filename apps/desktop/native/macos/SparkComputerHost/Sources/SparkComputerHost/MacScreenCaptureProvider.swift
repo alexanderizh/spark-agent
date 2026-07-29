@@ -8,6 +8,7 @@ import ScreenCaptureKit
 import Security
 import SparkComputerHostCore
 import UniformTypeIdentifiers
+import Vision
 
 actor MacScreenCaptureProvider: NativeHostPlatformProviding {
   private static let hostVersion = "0.1.0"
@@ -27,7 +28,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     } else {
       permission = "not_determined"
     }
-    let controlObservationAvailable = captureIsSupported && accessibility.isAvailable
+    let accessibilityAvailable = captureIsSupported && accessibility.isAvailable
     return .macosScreenCapture(
       hostVersion: Self.hostVersion,
       architecture: hostArchitecture,
@@ -35,8 +36,8 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       accessibilityPermission: accessibilityPermission,
       inputPermission: inputPermission,
       captureWindowSupported: captureIsSupported,
-      accessibilityAvailable: controlObservationAvailable,
-      inputAvailable: controlObservationAvailable && MacCGEventController.isAvailable
+      accessibilityAvailable: accessibilityAvailable,
+      inputAvailable: captureIsSupported && MacCGEventController.isAvailable
     )
   }
 
@@ -163,21 +164,18 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     previousTreeVersion: String?,
     fullTree: Bool
   ) async throws -> NativeObservedWindow {
-    guard accessibility.isAvailable else {
-      throw NativeHostPlatformError.accessibilityPermissionDenied
-    }
     observation = nil
     let before = try await focusedTarget(appID: appID, windowID: windowID)
     let captured = try await captureWindow(id: windowID)
-    let tree = try accessibility.observe(
+    let tree = accessibilityOrVisualTree(
       processID: before.processID,
-      expectedBounds: before.descriptor.window.bounds,
-      expectedTitle: before.descriptor.window.title,
+      captured: captured,
       previousTreeVersion: previousTreeVersion,
       fullTree: fullTree
     )
     let after = try await focusedTarget(appID: appID, windowID: windowID)
-    try NativeInputPolicy.validateIdentity(expected: before.identity, current: after.identity)
+    try NativeInputPolicy.validateApplicationIdentity(
+      expected: before.identity, current: after.identity)
     let capturedAt = ISO8601DateFormatter().string(from: Date())
     var frameHasher = SHA256()
     frameHasher.update(data: captured.bytes)
@@ -228,7 +226,12 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     defer { invalidateObservation(preserveAccessibilityBaseline: true) }
     let before = try await focusedTarget(
       appID: envelope.targetAppID, windowID: envelope.targetWindowID)
-    try NativeInputPolicy.validateIdentity(expected: binding.target, current: before.identity)
+    try NativeInputPolicy.validateApplicationIdentity(
+      expected: binding.target, current: before.identity)
+    if !before.descriptor.focused {
+      _ = try focusWindow(processID: before.processID)
+      try await Task.sleep(for: .milliseconds(100))
+    }
     if let elementID = envelope.action.elementID,
       !accessibility.contains(
         elementID: elementID, treeVersion: envelope.observedTreeVersion)
@@ -271,7 +274,8 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
           }
           let current = try await self.focusedTarget(
             appID: envelope.targetAppID, windowID: envelope.targetWindowID)
-          try NativeInputPolicy.validateIdentity(expected: binding.target, current: current.identity)
+          try NativeInputPolicy.validateApplicationIdentity(
+            expected: binding.target, current: current.identity)
         })
     case .focusWindow(let windowID):
       guard windowID == envelope.targetWindowID else {
@@ -291,7 +295,8 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     }
     let after = try await focusedTarget(
       appID: envelope.targetAppID, windowID: envelope.targetWindowID)
-    try NativeInputPolicy.validateIdentity(expected: binding.target, current: after.identity)
+    try NativeInputPolicy.validateApplicationIdentity(
+      expected: binding.target, current: after.identity)
     return status
   }
 
@@ -302,13 +307,10 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
 
   private func focusedTarget(appID: String, windowID: String) async throws -> FocusedTarget {
     let matches = try await listWindows().filter {
-      $0.focused && !$0.minimized && $0.app.id == appID && $0.window.id == windowID
+      !$0.minimized && $0.app.id == appID && $0.window.id == windowID
     }
     guard matches.count == 1, let descriptor = matches.first,
-      let processID = descriptor.app.processId, processID > 0,
-      descriptor.app.bundleId != nil,
-      descriptor.app.executableIdentity != nil,
-      descriptor.app.signingIdentity != nil
+      let processID = descriptor.app.processId, processID > 0
     else { throw NativeHostPlatformError.focusMismatch }
     guard
       !NativeInputPolicy.isSensitiveTarget(
@@ -329,14 +331,48 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     )
   }
 
+  private func accessibilityOrVisualTree(
+    processID: pid_t,
+    captured: NativeCapturedWindow,
+    previousTreeVersion: String?,
+    fullTree: Bool
+  ) -> NativeAXTreeSnapshot {
+    if accessibility.isAvailable,
+      let snapshot = try? accessibility.observe(
+        processID: processID,
+        previousTreeVersion: previousTreeVersion,
+        fullTree: fullTree
+      )
+    {
+      return snapshot
+    }
+
+    // Electron, Canvas and custom-rendered applications frequently expose no
+    // usable AX window. Keep the screenshot-coordinate control path available
+    // with an empty tree instead of failing the entire task.
+    let digest = SHA256.hash(data: captured.bytes).prefix(16).map {
+      String(format: "%02x", $0)
+    }.joined()
+    let version = "visual-\(digest)"
+    let canDiff = !fullTree && previousTreeVersion == version
+    let visualText = recognizeVisibleText(captured.bytes)
+    return NativeAXTreeSnapshot(
+      treeVersion: version,
+      mode: canDiff ? .diff : .full,
+      text: canDiff ? #"{"changed":[],"removed":[]}"# : visualText,
+      elements: [],
+      sensitiveRegions: []
+    )
+  }
+
   private func focusWindow(processID: pid_t) throws -> NativeActionStatus {
     guard let application = NSRunningApplication(processIdentifier: processID),
       application.activate(options: [.activateAllWindows])
     else { throw NativeHostPlatformError.actionNoop }
     let axApplication = AXUIElementCreateApplication(processID)
-    guard let window: AXUIElement = copyAXAttribute(axApplication, kAXFocusedWindowAttribute),
-      AXUIElementPerformAction(window, kAXRaiseAction as CFString) == .success
-    else { throw NativeHostPlatformError.actionNoop }
+    if let window: AXUIElement = copyAXAttribute(axApplication, kAXFocusedWindowAttribute) {
+      _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+    }
     return .executed
   }
 
@@ -372,9 +408,10 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
         elementID: elementID, treeVersion: envelope.observedTreeVersion)
     case .windowFocused(let windowID):
       guard windowID == envelope.targetWindowID else { return false }
-      return
-        (try? await focusedTarget(
-          appID: envelope.targetAppID, windowID: envelope.targetWindowID)) != nil
+      return try await listWindows().contains {
+        $0.focused && !$0.minimized && $0.app.id == envelope.targetAppID
+          && $0.window.id == envelope.targetWindowID
+      }
     case .snapshotChanged(let previousFrameID):
       guard let observation else { return true }
       if observation.frameID != previousFrameID { return true }
@@ -521,6 +558,22 @@ private func encodePNG(_ image: CGImage) throws -> Data {
     throw NativeHostPlatformError.captureFailed
   }
   return data as Data
+}
+
+private func recognizeVisibleText(_ png: Data) -> String {
+  guard let source = CGImageSourceCreateWithData(png as CFData, nil),
+    let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+  else { return "[]" }
+  let request = VNRecognizeTextRequest()
+  request.recognitionLevel = .fast
+  request.usesLanguageCorrection = false
+  request.minimumTextHeight = 0.01
+  let handler = VNImageRequestHandler(cgImage: image, options: [:])
+  guard (try? handler.perform([request])) != nil else { return "[]" }
+  let text = (request.results ?? [])
+    .compactMap { $0.topCandidates(1).first?.string }
+    .joined(separator: "\n")
+  return text.isEmpty ? "[]" : String(text.prefix(200_000))
 }
 
 private func copyAXAttribute<Value>(

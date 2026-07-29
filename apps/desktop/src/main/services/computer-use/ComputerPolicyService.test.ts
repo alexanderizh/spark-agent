@@ -145,9 +145,26 @@ describe('ComputerPolicyService', () => {
     ).toMatchObject({ riskLevel: 'L4', decision: 'require_handoff' })
   })
 
-  it('denies actions outside app, action and data scopes', () => {
+  it('escalates newly observed apps but still denies identity mismatches and scope violations', () => {
     expect(
       policy.evaluate(envelope({ targetAppId: 'com.unapproved.App' }), taskContract),
+    ).toMatchObject({ decision: 'require_approval', reasonCode: 'approval_required' })
+    policy.markAppObservedByExecutedAction('computer-session-1', {
+      id: 'com.unapproved.App',
+      name: 'New App',
+    })
+    expect(
+      policy.evaluate(
+        envelope({ actionId: 'action-2', targetAppId: 'com.unapproved.App' }),
+        taskContract,
+      ),
+    ).toMatchObject({ decision: 'allow', reasonCode: 'read_only_action' })
+
+    expect(
+      policy.evaluate(envelope({ targetAppId: 'com.unapproved.App' }), taskContract, {
+        id: 'com.different.App',
+        name: 'Different App',
+      }),
     ).toMatchObject({ decision: 'deny', reasonCode: 'app_not_allowed' })
 
     expect(
@@ -183,7 +200,7 @@ describe('ComputerPolicyService', () => {
     ).toMatchObject({ riskLevel: 'L2', decision: 'require_approval' })
   })
 
-  it('never lets provider policy annotations lower the broker action baseline', () => {
+  it('allows reversible pointer navigation while preserving elevated data risk', () => {
     expect(
       policy.evaluate(
         envelope({
@@ -196,7 +213,7 @@ describe('ComputerPolicyService', () => {
         }),
         taskContract,
       ),
-    ).toMatchObject({ riskLevel: 'L2', decision: 'require_approval' })
+    ).toMatchObject({ riskLevel: 'L1', decision: 'allow' })
 
     expect(
       policy.evaluate(
@@ -210,7 +227,7 @@ describe('ComputerPolicyService', () => {
         }),
         taskContract,
       ),
-    ).toMatchObject({ riskLevel: 'L2', decision: 'require_approval' })
+    ).toMatchObject({ riskLevel: 'L1', decision: 'allow' })
 
     expect(
       policy.evaluate(
@@ -282,8 +299,8 @@ describe('ComputerPolicyService', () => {
     }
 
     expect(policy.evaluate(envelope(), signingContract)).toMatchObject({
-      decision: 'deny',
-      reasonCode: 'app_not_allowed',
+      decision: 'require_approval',
+      reasonCode: 'approval_required',
     })
     expect(
       policy.evaluate(envelope(), signingContract, {

@@ -301,7 +301,7 @@ public actor NativeHostRequestHandler {
       validOptionalIdentifier(app.signingIdentity),
       validWireIdentifier(window.id), validMetadata(window.title, min: 0, max: 2_000),
       validWireRect(window.bounds),
-      value.elements.count <= 100_000, value.treeText.utf16.count <= 2_000_000,
+      value.elements.count <= maxNativeTreeElements, value.treeText.utf16.count <= 2_000_000,
       value.sensitiveRegions.count <= 10_000,
       value.sensitiveRegions.allSatisfy(validWireRect),
       value.elements.allSatisfy({ element in

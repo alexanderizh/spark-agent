@@ -104,6 +104,27 @@ describe('ComputerVerificationEngine', () => {
     ).toMatchObject({ passed: true })
   })
 
+  it('accepts model visual evidence only when the application exposes no accessibility evidence', () => {
+    const visualOnly = {
+      ...OBSERVATION,
+      tree: { mode: 'full' as const, text: '[]', elementCount: 0 },
+      elements: [],
+    }
+    const criteria: VerificationSpec[] = [
+      { kind: 'visual', assertion: { operator: 'text_present', expected: 'ComfyUI' } },
+    ]
+    const engine = new ComputerVerificationEngine()
+
+    expect(engine.verify(criteria, visualOnly, { modelVisualApproval: true })).toMatchObject({
+      passed: true,
+      results: [{ reason: 'model_visual_assertion' }],
+    })
+    expect(engine.verify(criteria, OBSERVATION, { modelVisualApproval: true })).toMatchObject({
+      passed: false,
+      results: [{ reason: 'assertion_failed' }],
+    })
+  })
+
   it('requires a process/window inventory for running and window-exists assertions', () => {
     const criteria: VerificationSpec[] = [
       {

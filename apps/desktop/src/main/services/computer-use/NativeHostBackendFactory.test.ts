@@ -16,6 +16,7 @@ describe('createDefaultComputerUseBackend', () => {
       resourcesPath: '/Applications/SparkWork.app/Contents/Resources',
       platform: 'darwin',
       architecture: 'arm64',
+      packaged: true,
       verifyArtifact,
       readArtifactTrustMode: async () => 'signed',
       connectClient,
@@ -30,9 +31,9 @@ describe('createDefaultComputerUseBackend', () => {
     expect(verifyArtifact).toHaveBeenCalledWith(
       expect.objectContaining({
         executablePath:
-          '/Applications/SparkWork.app/Contents/Resources/native-host/macos-arm64/SparkComputerHost',
+          '/Applications/SparkWork.app/Contents/Helpers/native-host/macos-arm64/SparkComputerHost',
         manifestPath:
-          '/Applications/SparkWork.app/Contents/Resources/native-host/macos-arm64/manifest.json',
+          '/Applications/SparkWork.app/Contents/Helpers/native-host/macos-arm64/manifest.json',
         platform: 'macos',
         architecture: 'arm64',
         expectedTeamIdentifier: 'ABCDE12345',

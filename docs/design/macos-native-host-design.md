@@ -1,8 +1,8 @@
 # macOS Native Host、AX/CGEvent 与应用快照设计
 
-> 状态: 实施中 | 最后核对: 2026-07-28
+> 状态: 实施中 | 最后核对: 2026-07-29
 
-本文是 CU-03 macOS Native Host 的可直接开发规格，记录已经落地的生产边界、wire、signed/local 打包、故障恢复、ScreenCaptureKit、AXUIElement 和 CGEvent 控制闭环。当前代码可交付可信 Host 能力探测、窗口列表、前台单窗口 PNG、full/diff AX tree、语义动作、受限前台键鼠和加密应用快照；最终实体机矩阵仍是发布门槛。
+本文是 CU-03 macOS Native Host 的可直接开发规格，记录已经落地的生产边界、wire、signed/local 打包、故障恢复、ScreenCaptureKit、AXUIElement 和 CGEvent 控制闭环。当前代码可交付可信 Host 能力探测、窗口列表、单窗口 PNG、full/diff AX tree、无 AX 时视觉空树与坐标兜底、语义动作、受限键鼠和加密应用快照；最终实体机矩阵仍是发布门槛。
 
 ## 1. 代码边界
 
@@ -67,19 +67,19 @@ Runtime 只接受 manifest 明确声明的两种模式：
 
 - `SCShareableContent` 枚举 displays/windows/applications。
 - 使用 bundle ID、PID、应用名、Security signing identifier/Team ID 构造应用身份。
-- 使用 CGWindow 前后顺序与 frontmost PID 选出唯一 focused window；多焦点在 Electron 层按协议矛盾拒绝。
+- 使用 CGWindow 前后顺序与 frontmost PID 选择任务起始窗口；任务开始后允许同一稳定应用身份内的 focused 标记、标题、window ID 和几何差异，不因 Electron 临时子窗口或透明层误报 `focus_mismatch`。
 - 按窗口与 display 最大交叠面积选择显示器；`pixelWidth / pointWidth` 计算 DPR，覆盖负坐标、多显示器和 Retina。
 - macOS 14+ 使用 `SCScreenshotManager` + `SCContentFilter(desktopIndependentWindow:)` 捕获单窗口，编码 PNG，经 descriptor + binary frame 返回。
 - macOS 13 manifest 诚实关闭 `captureWindow`，保留窗口枚举；不伪造兼容截图。
 - `request_permissions` 仅接受去重后的 `screen|accessibility`，分别调用系统 TCC API。
-- AXUIElement 从绑定 PID 的 focused window 生成最多 100,000 项、80 层的 full/diff tree；element ref 绑定 tree version，下一次观察后旧引用失效。
+- AXUIElement 从绑定 PID 的 focused window 生成最多 2,000 项、48 层的 full/diff tree；达到边界时截断而不是让整个任务失败。不再要求 AX 与 ScreenCaptureKit 的窗口标题和边界完全一致；单个应用拒绝或无法提供 AX 树时返回截图绑定的视觉 tree，使用系统 Vision OCR 提取可见文本并让视觉模型继续使用坐标。element ref 绑定 tree version，下一次观察后旧引用失效。
 - `AXSecureTextField` 不返回 value，不声明 `set_value`，并形成 `sensitiveRegions`；名称、value、role、action 和 geometry 全部本地有界清洗。
 - 语义动作支持 Invoke/Confirm、Focus、Select、Expand/Collapse、SetValue 和 SelectText；元素 Scroll 当前仍按元素 bounds 经受管 CGEvent 执行，不伪装成 AX 语义动作。不支持或未产生效果返回稳定 `action_noop|action_not_allowed`。
-- CGEvent 支持归一化窗口坐标 click/move/drag/scroll、组合键和 UTF-16 文本；长拖拽、组合键和文本输入在注入过程中持续重读前台 window/app/PID/bundle/executable/signing identity，身份漂移或取消立即停止，drag 通过兜底 mouse-up 避免遗留按下状态。安全输入框拒绝文本及可修改值的 keypress。
+- CGEvent 支持归一化窗口坐标 click/move/drag/scroll、组合键和 UTF-16 文本；长拖拽、组合键和文本输入在注入过程中持续复核 PID/bundle/executable/signing identity，稳定应用身份漂移或取消立即停止，不再校验临时 window/focused/geometry。drag 通过兜底 mouse-up 避免遗留按下状态。安全输入框拒绝文本及可修改值的 keypress。
 - `execute_action` 只返回严格 `action_result`；Electron 随后重新 `observe`。动作前后原图仅驻留有界内存，持久层只接收敏感区域脱敏后的缩略图并设置 24 小时 TTL；noop 使用感知图像指纹与无版本语义元素摘要，`wait_for` 则以 Host 条件结果为准。
 - cancel session 会使旧 observation 和 element refs 失效，并拒绝该 session 的后续动作。
 
-capability manifest 只在 AX 信任真实存在时声明 `axui_element/fullTree/diffTree/semanticActions`，只在 AX 信任和 CGEvent source 均可用时声明 `cg_event/absolutePointer/keyboard`；权限未授予时保持 unavailable，不伪造能力。`clipboard` 继续固定 false。
+capability manifest 只在 AX 信任真实存在时声明 `axui_element/fullTree/diffTree/semanticActions`；`cg_event/absolutePointer/keyboard` 按 PostEvent 与截图能力独立声明，不再被 AX 树可用性连带关闭。权限状态由 Host 定期重新读取，`clipboard` 继续固定 false。
 
 ## 5. 应用快照落库
 
@@ -87,7 +87,7 @@ capability manifest 只在 AX 信任真实存在时声明 `axui_element/fullTree
 
 1. 校验 Host 声明 list/capture 且 Screen Recording 为 granted。
 2. `app_exposed` 在 AX/fullTree 未落地时返回 `environment_unavailable`，不能静默降为 visible-only。
-3. 原生窗口列表必须恰有一个 focused 且非 minimized 的窗口。
+3. 优先选择 focused 且非 minimized 的最大窗口；短暂无 focused 标记时复用上一绑定窗口，再退到最大可见窗口，不因多个辅助窗口中断任务。
 4. 以服务生成的 snapshot ID 请求 Host 捕获；复核 ID、PNG kind、字节长度和 SHA-256。
 5. Electron `nativeImage` 解码并复核像素尺寸，生成最大宽度 1200 的 PNG preview。
 6. Vault 先以 AES-256-GCM 写 image/preview；Repository 在回调中同事务注册 blob 与 snapshot。数据库失败时 Vault 删除本次全部新密文。
@@ -100,7 +100,7 @@ capability manifest 只在 AX 信任真实存在时声明 `axui_element/fullTree
 `afterPack` 对当前 Electron arch 执行：
 
 1. `swift build -c release --arch arm64|x86_64`。
-2. 复制到 `Contents/Resources/native-host/macos-<arch>/SparkComputerHost`。
+2. 复制到标准代码位置 `Contents/Helpers/native-host/macos-<arch>/SparkComputerHost`。
 3. 使用 Developer ID Application、hardened runtime、固定 identifier 独立签名。
 4. 校验签名/Team ID，对最终签名字节生成 manifest SHA-256。
 5. `signIgnore` 阻止 electron-builder 再次签 Host 改变 hash；随后外层 `.app` 签名封存 Host 与 manifest，afterSign 公证整个应用。
@@ -110,7 +110,7 @@ CI 缺少 Developer ID 时构建必须失败；本地无证书时明确省略 Ho
 ## 7. 剩余发布门槛
 
 1. 在最终 Developer ID `.app` 中验证 Host handshake、AX full/diff、语义动作、CGEvent、Kill Switch、未授权父进程拒绝和公证安装。
-2. 覆盖 TextEdit、Safari/Chrome、Finder、Office/WPS、Electron、SwiftUI/AppKit 样本，以及 SecureTextField、Retina/多显示器、窗口移动/缩放、焦点漂移和 Host crash/restart。
+2. 覆盖 TextEdit、Safari/Chrome、Finder、Office/WPS、哔哩哔哩等 Electron 多窗口应用、SwiftUI/AppKit 样本，以及 SecureTextField、Retina/多显示器、窗口移动/缩放、焦点变化和 Host crash/restart。
 3. 记录 Stop/Kill Switch 到停止后续动作派发 P99，必须不高于 300ms。
 4. `app_exposed` 快照文本、本地图像脱敏与会话 hydration 另按 CU-04 验收，不得因为 Computer observation 已有 AX tree 就自动开放。
 

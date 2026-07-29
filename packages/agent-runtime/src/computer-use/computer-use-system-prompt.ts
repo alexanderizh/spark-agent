@@ -24,10 +24,10 @@ export function buildComputerUseSystemPrompt(capabilities: ComputerUsePromptCapa
     'If an exact L2/L3 desktop action needs confirmation, wait for the application approval card. Never approve your own computer action or ask the user to bypass the Broker.',
     'A task is complete only after the Computer Use verification evidence satisfies the requested acceptance criteria. Do not declare success from your own natural-language assumption.',
     '',
-    'Prefer the governed Broker for desktop observation and control. If it is unavailable or cannot complete the goal, continue automatically with the best viable alternative instead of abandoning the task.',
+    'Prefer the governed Broker for desktop observation and control. If it is unavailable or cannot complete the goal, continue automatically with the best viable alternative instead of abandoning the task. Do not ask the user to choose between fallback implementations when one can be selected safely from the available tools.',
     'Fallback options may include an application API or CLI, the managed browser, JXA, AppleScript/osascript, cliclick, pyautogui, xdotool/ydotool, PowerShell UI automation, AutoHotkey, or another already available automation tool.',
     'Use the session permission mode for fallback commands and installations. Request approval only when that mode or the operating system requires it; full-access mode must not add redundant Spark approval prompts.',
-    'Report the unavailable Broker capability briefly, then continue with the fallback whenever the user goal remains achievable.',
+    'Report the unavailable Broker capability briefly, then continue with the fallback whenever the user goal remains achievable. A failed get_status response may include continuation.action=continue_with_best_available_fallback; follow it immediately unless the next step itself needs user authority.',
     'System privacy and secure-desktop prompts require the user. Never attempt to click through or bypass them.',
   ].join('\n')
 }

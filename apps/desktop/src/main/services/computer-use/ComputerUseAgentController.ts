@@ -133,9 +133,18 @@ export class ComputerUseAgentController {
       }
       case 'get_status': {
         const computerSession = this.requireOwnedSession(services, sessionId, args)
+        const operator = this.runs.get(computerSession.id) ?? { status: 'not_running' as const }
         return {
           computerSession,
-          operator: this.runs.get(computerSession.id) ?? { status: 'not_running' },
+          operator,
+          ...(operator.status === 'failed'
+            ? {
+                continuation: {
+                  action: 'continue_with_best_available_fallback',
+                  askUserToChooseFallback: false,
+                },
+              }
+            : {}),
         }
       }
       case 'pause': {
@@ -237,9 +246,9 @@ export class ComputerUseAgentController {
           allowedDomains: [],
           allowedDataClasses: ['public', 'internal', 'personal'],
           forbiddenActions: [],
-          maxSteps: 50,
-          maxRuntimeMs: 10 * 60_000,
-          maxConsecutiveNoops: 3,
+          maxSteps: 100,
+          maxRuntimeMs: 20 * 60_000,
+          maxConsecutiveNoops: 8,
           userPresence: 'required',
         })
         const computerSession = services.sessions.createSession({
@@ -293,13 +302,18 @@ export class ComputerUseAgentController {
         this.runs.set(session.id, { status: result.status, result })
         this.trimRunStates()
       },
-      () => {
+      (error) => {
         if (this.runTokens.get(session.id) !== token) return
         this.runTokens.delete(session.id)
         services.evidence?.clearSession(session.id)
         const result: ComputerTaskOperatorResult = {
           status: 'failed',
-          reason: 'operator_failed',
+          reason:
+            error instanceof ComputerUseBrokerError
+              ? error.code
+              : error instanceof Error && error.message.trim().length > 0
+                ? error.message.slice(0, 500)
+                : 'operator_failed',
         }
         this.runs.set(session.id, { status: result.status, result })
         this.trimRunStates()
@@ -386,11 +400,12 @@ function deriveSuccessCriteria(
     .map((match) => (match[1] ?? match[2] ?? '').trim())
     .filter((value) => value.length > 0)
     .sort((left, right) => right.length - left.length)[0]
-  if (quotedText != null) {
+  const expectedText = quotedText ?? inferExpectedVisibleText(goal)
+  if (expectedText != null) {
     return [
       {
         kind: 'visual',
-        assertion: { operator: 'text_present', expected: quotedText },
+        assertion: { operator: 'text_present', expected: expectedText },
       },
     ]
   }
@@ -403,17 +418,33 @@ function deriveSuccessCriteria(
   ]
 }
 
+function inferExpectedVisibleText(goal: string): string | null {
+  const candidates = [
+    /(?:输入|键入|填写|选择)\s*[:：]?\s*([\p{L}\p{N}][^，。！？,!?\n]{0,199})/u,
+    /(?:搜索|查找)(?!框|栏|按钮)\s*[:：]?\s*([\p{L}\p{N}][^，。！？,!?\n]{0,199})/u,
+    /\b(?:search(?:\s+for)?|find|type|enter|fill(?:\s+in)?)\s+(.{1,200}?)(?=\s+(?:in|on|into)\b|[.!?\n]|$)/iu,
+  ]
+  for (const pattern of candidates) {
+    const value = pattern.exec(goal)?.[1]?.trim().replace(/\s+/g, ' ')
+    if (value != null && value.length > 0) return value.slice(0, 200)
+  }
+  return null
+}
+
 function requireFocusedWindow(windows: NativeWindowDescriptor[]): NativeWindowDescriptor {
   const focused = windows.filter((window) => window.focused && !window.minimized)
-  if (focused.length !== 1 || focused[0] == null) {
-    throw new ComputerUseBrokerError(
-      focused.length === 0 ? 'focus_mismatch' : 'native_host_incompatible',
-      focused.length === 0
-        ? 'No focused controllable window was found'
-        : 'Native Host returned more than one focused window',
-    )
-  }
-  return focused[0]
+  if (focused[0] != null) return largestWindow(focused)
+  const visible = windows.filter((window) => !window.minimized)
+  if (visible.length > 0) return largestWindow(visible)
+  throw new ComputerUseBrokerError('focus_mismatch', 'No controllable window was found')
+}
+
+function largestWindow(windows: NativeWindowDescriptor[]): NativeWindowDescriptor {
+  return [...windows].sort(
+    (left, right) =>
+      right.window.bounds.width * right.window.bounds.height -
+      left.window.bounds.width * left.window.bounds.height,
+  )[0] as NativeWindowDescriptor
 }
 
 function strongestAppRule(
@@ -448,15 +479,17 @@ function allowedAppRules(
 
 function supportsExecution(capabilities: ComputerUseCapabilitySummary): boolean {
   const features = capabilities.nativeHost?.features
-  const semanticExecution = features?.semanticActions === true
+  const screenAvailable =
+    capabilities.permissions.screen === 'granted' && features?.captureWindow === true
+  const semanticExecution = features?.fullTree === true && features.semanticActions === true
   const coordinateExecution =
     capabilities.permissions.input === 'granted' && features?.absolutePointer === true
   const keyboardExecution =
     capabilities.permissions.input === 'granted' && features?.keyboard === true
   return (
     capabilities.available &&
+    screenAvailable &&
     features != null &&
-    features.fullTree &&
     (semanticExecution || coordinateExecution || keyboardExecution)
   )
 }

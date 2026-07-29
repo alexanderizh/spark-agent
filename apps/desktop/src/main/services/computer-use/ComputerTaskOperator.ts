@@ -15,6 +15,9 @@ import { ComputerVerificationEngine } from './ComputerVerificationEngine.js'
 
 const APPROVAL_POLL_MS = 250
 const MAX_APPROVAL_POLLS = 1_200
+const MAX_TRANSIENT_RECOVERIES = 8
+const MAX_DECISION_RECOVERIES = 2
+const MAX_MODEL_HANDOFF_REPLANS = 2
 
 interface OperatorSessions {
   heartbeatLease(input: {
@@ -133,8 +136,11 @@ export class ComputerTaskOperator {
   }): Promise<ComputerTaskOperatorResult> {
     let observation: ComputerObservation
     let consecutiveNoops = 0
+    let consecutiveTransientFailures = 0
+    let modelHandoffReplans = 0
+    let successfulActions = 0
     try {
-      observation = await this.broker.observe(input.session.id, true)
+      observation = await this.observeWithRecovery(input.session.id, true)
       for (let stepIndex = 0; stepIndex < input.session.taskContract.maxSteps; stepIndex += 1) {
         if (
           this.now() - Date.parse(input.session.createdAt) >=
@@ -149,27 +155,57 @@ export class ComputerTaskOperator {
           observation.screenshot.snapshotId,
         )
         this.sessions.setPhase(input.session.id, 'planning')
-        const decision = await input.adapter.decide({
-          objective: input.session.taskContract.objective,
-          successCriteria: input.session.taskContract.successCriteria,
-          observation,
-          screenshot,
-          stepIndex,
-        })
+        let decision: ComputerDecision
+        try {
+          decision = await input.adapter.decide({
+            objective: input.session.taskContract.objective,
+            successCriteria: input.session.taskContract.successCriteria,
+            observation,
+            screenshot,
+            stepIndex,
+          })
+          consecutiveTransientFailures = 0
+        } catch (error) {
+          consecutiveTransientFailures += 1
+          if (consecutiveTransientFailures > MAX_DECISION_RECOVERIES) throw error
+          await this.wait(recoveryDelay(consecutiveTransientFailures))
+          observation = await this.observeWithRecovery(input.session.id, true)
+          continue
+        }
         if (decision.type === 'handoff') {
+          if (
+            modelHandoffReplans < MAX_MODEL_HANDOFF_REPLANS &&
+            !requiresImmediateHandoff(decision.reason)
+          ) {
+            modelHandoffReplans += 1
+            await this.wait(recoveryDelay(modelHandoffReplans))
+            observation = await this.observeWithRecovery(input.session.id, true)
+            continue
+          }
           this.sessions.setPhase(input.session.id, 'handoff_required')
           return { status: 'handoff_required', reason: decision.reason }
         }
+        modelHandoffReplans = 0
         if (decision.type === 'ready_for_verification') {
+          if (
+            successfulActions === 0 &&
+            requiresObservableProgress(input.session.taskContract.successCriteria)
+          ) {
+            observation = await this.observeWithRecovery(input.session.id, true)
+            continue
+          }
           this.sessions.setPhase(input.session.id, 'verifying')
           if (observation.tree.mode !== 'full') {
-            observation = await this.broker.observe(input.session.id, true)
+            observation = await this.observeWithRecovery(input.session.id, true)
           }
           const windows = await this.windowInventory?.listWindows()
           const verification = this.verification.verify(
             input.session.taskContract.successCriteria,
             observation,
-            { ...(windows == null ? {} : { windows }) },
+            {
+              ...(windows == null ? {} : { windows }),
+              modelVisualApproval: successfulActions > 0,
+            },
           )
           const verificationId = this.createId()
           const completedAt = new Date(this.now()).toISOString()
@@ -209,17 +245,27 @@ export class ComputerTaskOperator {
             input.permissionMode ?? 'claude-ask',
           )
           consecutiveNoops = 0
+          consecutiveTransientFailures = 0
+          successfulActions += 1
           observation = result.observation
         } catch (error) {
-          if (!(error instanceof ComputerUseBrokerError) || error.code !== 'action_noop') {
+          if (!(error instanceof ComputerUseBrokerError)) {
             throw error
           }
-          consecutiveNoops += 1
-          if (consecutiveNoops >= input.session.taskContract.maxConsecutiveNoops) {
-            this.sessions.fail(input.session.id)
-            return { status: 'failed', reason: 'maximum_consecutive_noops_reached' }
+          if (error.code === 'action_noop') {
+            consecutiveNoops += 1
+            if (consecutiveNoops >= input.session.taskContract.maxConsecutiveNoops) {
+              this.sessions.fail(input.session.id)
+              return { status: 'failed', reason: 'maximum_consecutive_noops_reached' }
+            }
+          } else if (isRecoverableExecutionError(error)) {
+            consecutiveTransientFailures += 1
+            if (consecutiveTransientFailures > MAX_TRANSIENT_RECOVERIES) throw error
+            await this.wait(recoveryDelay(consecutiveTransientFailures))
+          } else {
+            throw error
           }
-          observation = await this.broker.observe(input.session.id, true)
+          observation = await this.observeWithRecovery(input.session.id, true)
         }
       }
       this.sessions.fail(input.session.id)
@@ -235,6 +281,29 @@ export class ComputerTaskOperator {
         reason: error instanceof ComputerUseBrokerError ? error.code : 'operator_failed',
       }
     }
+  }
+
+  private async observeWithRecovery(
+    computerSessionId: string,
+    fullTree: boolean,
+  ): Promise<ComputerObservation> {
+    let lastError: unknown
+    for (let attempt = 0; attempt <= MAX_TRANSIENT_RECOVERIES; attempt += 1) {
+      try {
+        return await this.broker.observe(computerSessionId, fullTree)
+      } catch (error) {
+        lastError = error
+        if (
+          !(error instanceof ComputerUseBrokerError) ||
+          !isRecoverableExecutionError(error) ||
+          attempt === MAX_TRANSIENT_RECOVERIES
+        ) {
+          throw error
+        }
+        await this.wait(recoveryDelay(attempt + 1))
+      }
+    }
+    throw lastError
   }
 
   private async dispatchWithApproval(
@@ -289,6 +358,39 @@ export class ComputerTaskOperator {
   }
 }
 
+function isRecoverableExecutionError(error: ComputerUseBrokerError): boolean {
+  return new Set([
+    'action_noop',
+    'action_timeout',
+    'stale_frame',
+    'stale_tree',
+    'focus_mismatch',
+    'native_host_incompatible',
+    'environment_unavailable',
+  ]).has(error.code)
+}
+
+function recoveryDelay(attempt: number): number {
+  return Math.min(2_000, 150 * 2 ** Math.max(0, attempt - 1))
+}
+
+function requiresImmediateHandoff(reason: string): boolean {
+  return /(credential|password|secure|privacy|system prompt|系统权限|密码|凭据|用户确认|user confirmation)/iu.test(
+    reason,
+  )
+}
+
+function requiresObservableProgress(
+  criteria: ComputerSession['taskContract']['successCriteria'],
+): boolean {
+  return criteria.every(
+    (criterion) =>
+      criterion.kind === 'application_state' &&
+      criterion.assertion.operator === 'frontmost' &&
+      criterion.assertion.expected === true,
+  )
+}
+
 function createEnvelope(
   session: ComputerSession,
   lease: ComputerActuatorLease,
@@ -305,7 +407,7 @@ function createEnvelope(
     targetAppId: observation.foreground.app.id,
     targetWindowId: observation.foreground.window.id,
     action: decision.action,
-    policyContext: policyContextFor(decision.action, observation),
+    policyContext: policyContextFor(decision.action, observation, decision.intent),
     intent: decision.intent,
   }
 }
@@ -313,6 +415,7 @@ function createEnvelope(
 function policyContextFor(
   action: ComputerAction,
   observation: ComputerObservation,
+  intent: string,
 ): ComputerPolicyContext {
   const elementId =
     'elementId' in action && typeof action.elementId === 'string' ? action.elementId : null
@@ -322,17 +425,30 @@ function policyContextFor(
     action.type === 'scroll' ||
     action.type === 'wait_for'
   const localWrite = action.type === 'type_text' || action.type === 'set_value'
+  const committingIntent =
+    /\b(send|submit|publish|post|purchase|buy|pay|delete|remove|confirm|book|order)\b|发送|提交|发布|购买|支付|删除|确认|预订|下单/iu.test(
+      intent,
+    )
   const reversibleLocal =
     localWrite ||
     action.type === 'focus_window' ||
     action.type === 'select_text' ||
+    action.type === 'click' ||
+    action.type === 'drag' ||
+    action.type === 'keypress' ||
     (action.type === 'invoke_element' && action.action != null && action.action !== 'invoke')
   const sensitive = localWrite && action.sensitive === true
   return {
-    effect: readOnly ? 'read_only' : reversibleLocal ? 'reversible_local' : 'external_write',
+    effect: readOnly
+      ? 'read_only'
+      : committingIntent
+        ? 'external_write'
+        : reversibleLocal
+          ? 'reversible_local'
+          : 'external_write',
     target: elementId
       ? { kind: 'element', id: elementId }
       : { kind: 'window', id: observation.foreground.window.id },
-    dataClasses: localWrite ? (sensitive ? ['credential'] : ['personal']) : [],
+    dataClasses: localWrite ? (sensitive ? ['credential'] : ['public']) : [],
   }
 }

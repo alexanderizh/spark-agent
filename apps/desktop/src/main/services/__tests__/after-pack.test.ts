@@ -19,6 +19,7 @@ const {
   createLocalNativeHostManifest,
   parseCodeSignatureOutput,
   resolveMacNativeHostTrustMode,
+  macNativeHostDestinationDirectory,
 } = require('../../../../scripts/package-native-host.js') as {
   createNativeHostManifest: (input: {
     executable: Buffer
@@ -34,6 +35,7 @@ const {
     teamIdentifier: string
   }
   resolveMacNativeHostTrustMode: (environment: NodeJS.ProcessEnv) => 'signed' | 'local' | 'auto'
+  macNativeHostDestinationDirectory: (appPath: string, architecture: 'arm64' | 'x64') => string
 }
 const { Arch } = require('builder-util') as { Arch: Record<string | number, string | number> }
 const { FuseV1Options } = require('@electron/fuses') as {
@@ -137,6 +139,12 @@ describe('after-pack Electron fuses', () => {
 })
 
 describe('after-pack Native Host artifact manifest', () => {
+  it('places the macOS executable in the canonical Helpers code location', () => {
+    expect(macNativeHostDestinationDirectory('/Applications/SparkWork.app', 'arm64')).toBe(
+      '/Applications/SparkWork.app/Contents/Helpers/native-host/macos-arm64',
+    )
+  })
+
   it('packages a separate Node executable instead of reusing the Electron app binary', async () => {
     const root = mkdtempSync(join(tmpdir(), 'spark-node-runtime-'))
     const source = join(root, 'node-source')

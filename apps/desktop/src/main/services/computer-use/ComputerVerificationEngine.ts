@@ -7,7 +7,11 @@ import type {
 
 export interface ComputerVerificationResult {
   passed: boolean
-  reason: 'assertion_passed' | 'assertion_failed' | 'unsupported_evidence'
+  reason:
+    | 'assertion_passed'
+    | 'assertion_failed'
+    | 'unsupported_evidence'
+    | 'model_visual_assertion'
   snapshotId: string
 }
 
@@ -15,7 +19,11 @@ export class ComputerVerificationEngine {
   verify(
     criteria: VerificationSpec[],
     observation: ComputerObservation,
-    evidence: { windows?: NativeWindowDescriptor[]; visualText?: string } = {},
+    evidence: {
+      windows?: NativeWindowDescriptor[]
+      visualText?: string
+      modelVisualApproval?: boolean
+    } = {},
   ): { passed: boolean; results: ComputerVerificationResult[] } {
     const results = criteria.map((criterion) => verifyCriterion(criterion, observation, evidence))
     return { passed: results.length > 0 && results.every((result) => result.passed), results }
@@ -25,7 +33,11 @@ export class ComputerVerificationEngine {
 function verifyCriterion(
   criterion: VerificationSpec,
   observation: ComputerObservation,
-  evidence: { windows?: NativeWindowDescriptor[]; visualText?: string },
+  evidence: {
+    windows?: NativeWindowDescriptor[]
+    visualText?: string
+    modelVisualApproval?: boolean
+  },
 ): ComputerVerificationResult {
   let passed: boolean | null = null
   if (criterion.kind === 'accessibility') {
@@ -43,6 +55,17 @@ function verifyCriterion(
       passed = currentText?.includes(criterion.assertion.expected) ?? null
     } else if (criterion.assertion.operator === 'text_absent') {
       passed = currentText == null ? null : !currentText.includes(criterion.assertion.expected)
+    }
+    const hasAccessibilityEvidence =
+      !observation.treeVersion.startsWith('visual-') &&
+      (observation.elements.length > 0 ||
+        !['', '[]', '{"changed":[],"removed":[]}'].includes(observation.tree.text.trim()))
+    if (passed !== true && evidence.modelVisualApproval === true && !hasAccessibilityEvidence) {
+      return {
+        passed: true,
+        reason: 'model_visual_assertion',
+        snapshotId: observation.screenshot.snapshotId,
+      }
     }
   } else if (criterion.kind === 'application_state') {
     const appMatches = observation.foreground.app.id === criterion.appId
