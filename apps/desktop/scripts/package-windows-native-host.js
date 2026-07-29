@@ -149,8 +149,9 @@ function resolveWindowsNativeHostTrustMode(environment = process.env) {
   return thumbprint && certificate && password ? 'signed' : 'local'
 }
 
-async function inspectWindowsAuthenticode(executablePath) {
-  const systemRoot = process.env.SystemRoot
+async function inspectWindowsAuthenticode(executablePath, options = {}) {
+  const environment = options.environment ?? process.env
+  const systemRoot = environment.SystemRoot
   if (systemRoot == null || !/^[A-Za-z]:\\Windows$/i.test(systemRoot)) {
     throw new Error('Windows system directory is unavailable for Authenticode verification')
   }
@@ -163,14 +164,16 @@ async function inspectWindowsAuthenticode(executablePath) {
   )
   const script = [
     '$ErrorActionPreference = "Stop"',
-    '$signature = Get-AuthenticodeSignature -LiteralPath $args[0]',
+    '$path = $env:SPARK_AUTHENTICODE_PATH',
+    'if ([string]::IsNullOrWhiteSpace($path)) { throw "SPARK_AUTHENTICODE_PATH is empty" }',
+    '$signature = Get-AuthenticodeSignature -LiteralPath $path',
     'if ($signature.Status -ne "Valid" -or $null -eq $signature.SignerCertificate) { exit 3 }',
     '$sha = [System.Security.Cryptography.SHA256]::Create()',
     'try { $hash = $sha.ComputeHash($signature.SignerCertificate.RawData) } finally { $sha.Dispose() }',
     '[Convert]::ToBase64String($hash)',
     'if ($null -eq $signature.TimeStamperCertificate) { "0" } else { "1" }',
   ].join('; ')
-  const result = await runCommand(
+  const result = await (options.runCommand ?? runCommand)(
     powershell,
     [
       '-NoLogo',
@@ -180,9 +183,10 @@ async function inspectWindowsAuthenticode(executablePath) {
       'Bypass',
       '-Command',
       script,
-      executablePath,
     ],
-    {},
+    {
+      env: { ...environment, SPARK_AUTHENTICODE_PATH: executablePath },
+    },
   )
   const [encoded, timestamped] = result.stdout.trim().split(/\r?\n/)
   if (encoded == null || (timestamped !== '0' && timestamped !== '1')) {
