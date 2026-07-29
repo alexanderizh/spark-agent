@@ -70,8 +70,6 @@ interface ObservationSessionState {
   windowId: string
   frameId: string
   treeVersion: string
-  visualFingerprint: string
-  semanticFingerprint: string
 }
 
 export class NativeHostComputerUseBackend
@@ -146,27 +144,22 @@ export class NativeHostComputerUseBackend
     fullTree: boolean
     signal: AbortSignal
   }): Promise<ComputerObservation> {
-    const connection = await this.getControlConnection('observation')
-    const target = await requireFocusedWindow(await connection.listWindows(input.signal))
-    const previous = this.observationSessions.get(input.computerSessionId)
-    if (
-      previous != null &&
-      (previous.appId !== target.app.id || previous.windowId !== target.window.id)
-    ) {
-      throw new ComputerUseBrokerError(
-        'focus_mismatch',
-        'The focused application or window changed since the previous observation',
+    return this.runControlOperation('observation', undefined, async (connection) => {
+      const previous = this.observationSessions.get(input.computerSessionId)
+      const target = selectControllableWindow(
+        await connection.listWindows(input.signal),
+        previous == null ? undefined : { appId: previous.appId, windowId: previous.windowId },
       )
-    }
-    return this.captureObservation({
-      connection,
-      computerSessionId: input.computerSessionId,
-      appId: target.app.id,
-      windowId: target.window.id,
-      previousTreeVersion: previous?.treeVersion ?? null,
-      fullTree: input.fullTree || previous == null,
-      kind: 'execution_before',
-      signal: input.signal,
+      return this.captureObservation({
+        connection,
+        computerSessionId: input.computerSessionId,
+        appId: target.app.id,
+        windowId: target.window.id,
+        previousTreeVersion: previous?.treeVersion ?? null,
+        fullTree: input.fullTree || previous == null,
+        kind: 'execution_before',
+        signal: input.signal,
+      })
     })
   }
 
@@ -175,7 +168,6 @@ export class NativeHostComputerUseBackend
     observation: ComputerObservation
     signal: AbortSignal
   }): Promise<{ observation: ComputerObservation; noop: boolean }> {
-    const connection = await this.getControlConnection('execution', input.envelope.action)
     const state = this.observationSessions.get(input.envelope.computerSessionId)
     if (
       state == null ||
@@ -189,31 +181,31 @@ export class NativeHostComputerUseBackend
         'Native Host action does not match the latest persisted observation',
       )
     }
-    const beforeEvidence = state
-    const actionResult = await connection.executeAction(input.envelope, input.signal)
-    const target =
-      input.envelope.action.type === 'focus_window'
-        ? await requireFocusedWindow(await connection.listWindows(input.signal))
-        : { app: input.observation.foreground.app, window: input.observation.foreground.window }
-    const observation = await this.captureObservation({
-      connection,
-      computerSessionId: input.envelope.computerSessionId,
-      appId: target.app.id,
-      windowId: target.window.id,
-      previousTreeVersion: input.observation.treeVersion,
-      fullTree: false,
-      kind: 'execution_after',
-      signal: input.signal,
+    return this.runControlOperation('execution', input.envelope.action, async (connection) => {
+      const actionResult = await connection.executeAction(input.envelope, input.signal)
+      const target = selectControllableWindow(await connection.listWindows(input.signal), {
+        appId: input.observation.foreground.app.id,
+        windowId: input.observation.foreground.window.id,
+      })
+      const observation = await this.captureObservation({
+        connection,
+        computerSessionId: input.envelope.computerSessionId,
+        appId: target.app.id,
+        windowId: target.window.id,
+        previousTreeVersion: input.observation.treeVersion,
+        fullTree: false,
+        kind: 'execution_after',
+        signal: input.signal,
+      })
+      return {
+        observation,
+        // The Host knows whether it actually emitted an input/semantic action. Visual
+        // similarity is deliberately not used as a hard interruption signal because
+        // video and animated applications change without the action, while successful
+        // focus/caret actions may make only a tiny pixel-level change.
+        noop: actionResult.status === 'noop',
+      }
     })
-    const afterEvidence = this.observationSessions.get(input.envelope.computerSessionId)
-    return {
-      observation,
-      noop:
-        actionResult.status === 'noop' ||
-        (input.envelope.action.type !== 'wait_for' &&
-          afterEvidence != null &&
-          evidenceEquivalent(beforeEvidence, afterEvidence)),
-    }
   }
 
   async cancelSession(computerSessionId: string): Promise<void> {
@@ -268,12 +260,29 @@ export class NativeHostComputerUseBackend
     const manifest = await connection.getCapabilities()
     const supported =
       operation === 'observation'
-        ? manifest.features.fullTree && manifest.backends.accessibility !== 'unavailable'
+        ? manifest.features.captureWindow &&
+          manifest.backends.screen !== 'unavailable' &&
+          manifest.permissions.screen === 'granted'
         : action != null && actionSupportedByManifest(action, manifest)
     if (!supported) {
       throw operation === 'observation' ? observationUnavailable() : executionUnavailable()
     }
     return connection
+  }
+
+  private async runControlOperation<T>(
+    operation: 'observation' | 'execution',
+    action: ComputerActionEnvelope['action'] | undefined,
+    callback: (connection: NativeHostConnection) => Promise<T>,
+  ): Promise<T> {
+    const connection = await this.getControlConnection(operation, action)
+    try {
+      return await callback(connection)
+    } catch (error) {
+      const normalized = normalizeBackendError(error)
+      if (shouldInvalidateConnection(normalized)) await this.invalidateConnection(connection)
+      throw normalized
+    }
   }
 
   private async captureObservation(input: {
@@ -309,7 +318,7 @@ export class NativeHostComputerUseBackend
       )
     }
     if (input.signal.aborted) throw sessionCanceled()
-    const persistedEvidence = await this.evidenceSink?.persist({
+    await this.evidenceSink?.persist({
       computerSessionId: input.computerSessionId,
       kind: input.kind,
       observation,
@@ -322,8 +331,6 @@ export class NativeHostComputerUseBackend
       windowId: observation.foreground.window.id,
       frameId: observation.frameId,
       treeVersion: observation.treeVersion,
-      visualFingerprint: persistedEvidence?.visualFingerprint ?? result.response.payload.sha256,
-      semanticFingerprint: semanticEvidenceFingerprint(observation),
     })
     return observation
   }
@@ -354,38 +361,6 @@ export class NativeHostComputerUseBackend
     this.connectionPromise = pending
     return pending
   }
-}
-
-function semanticEvidenceFingerprint(observation: ComputerObservation): string {
-  return JSON.stringify({
-    display: observation.display,
-    foreground: observation.foreground,
-    elements: observation.elements.map(({ treeVersion: _, ...element }) => element),
-    loading: observation.loading,
-    sensitiveRegions: observation.sensitiveRegions,
-  })
-}
-
-function evidenceEquivalent(
-  before: ObservationSessionState,
-  after: ObservationSessionState,
-): boolean {
-  return (
-    before.semanticFingerprint === after.semanticFingerprint &&
-    perceptuallySimilar(before.visualFingerprint, after.visualFingerprint)
-  )
-}
-
-function perceptuallySimilar(left: string, right: string): boolean {
-  if (left === right) return true
-  if (!/^[a-f0-9]+$/iu.test(left) || left.length !== right.length) return false
-  let distance = 0
-  let bits = BigInt(`0x${left}`) ^ BigInt(`0x${right}`)
-  while (bits > 0n) {
-    distance += Number(bits & 1n)
-    bits >>= 1n
-  }
-  return distance <= Math.max(1, Math.floor((left.length * 4) / 10))
 }
 
 function actionSupportedByManifest(
@@ -458,16 +433,28 @@ function sessionCanceled(): ComputerUseBrokerError {
   return new ComputerUseBrokerError('session_canceled', 'Computer session is canceled')
 }
 
-function requireFocusedWindow(windows: NativeWindowDescriptor[]): NativeWindowDescriptor {
+function selectControllableWindow(
+  windows: NativeWindowDescriptor[],
+  previous?: { appId: string; windowId: string },
+): NativeWindowDescriptor {
   const focused = windows.filter((window) => window.focused && !window.minimized)
-  if (focused.length === 0) {
-    throw new ComputerUseBrokerError('focus_mismatch', 'No focused controllable window was found')
-  }
-  if (focused.length !== 1) {
-    throw new ComputerUseBrokerError(
-      'native_host_incompatible',
-      'Native Host returned more than one focused window',
-    )
-  }
-  return focused[0] as NativeWindowDescriptor
+  if (focused.length > 0) return largestWindow(focused)
+  const previousWindow = windows.find(
+    (window) =>
+      !window.minimized &&
+      window.app.id === previous?.appId &&
+      window.window.id === previous.windowId,
+  )
+  if (previousWindow != null) return previousWindow
+  const visible = windows.filter((window) => !window.minimized)
+  if (visible.length > 0) return largestWindow(visible)
+  throw new ComputerUseBrokerError('focus_mismatch', 'No controllable window was found')
+}
+
+function largestWindow(windows: NativeWindowDescriptor[]): NativeWindowDescriptor {
+  return [...windows].sort(
+    (left, right) =>
+      right.window.bounds.width * right.window.bounds.height -
+      left.window.bounds.width * left.window.bounds.height,
+  )[0] as NativeWindowDescriptor
 }

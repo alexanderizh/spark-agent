@@ -5,8 +5,8 @@ import Foundation
 import SparkComputerHostCore
 
 final class MacAccessibilityController {
-  private static let maxDepth = 80
-  private static let maxElements = 100_000
+  private static let maxDepth = 48
+  private static let maxElements = maxNativeTreeElements
 
   private var tree = NativeAXTreeState()
   private var elementsByRuntimeID: [String: AXUIElement] = [:]
@@ -18,8 +18,6 @@ final class MacAccessibilityController {
 
   func observe(
     processID: pid_t,
-    expectedBounds: NativeRect,
-    expectedTitle: String,
     previousTreeVersion: String?,
     fullTree: Bool
   ) throws -> NativeAXTreeSnapshot {
@@ -32,11 +30,6 @@ final class MacAccessibilityController {
     guard AXUIElementGetPid(focusedWindow, &actualPID) == .success, actualPID == processID else {
       throw NativeHostPlatformError.focusMismatch
     }
-    let actualBounds = elementBounds(focusedWindow)
-    guard approximatelyEqual(actualBounds, expectedBounds),
-      expectedTitle.isEmpty
-        || (copyAttribute(focusedWindow, kAXTitleAttribute) as String?) == expectedTitle
-    else { throw NativeHostPlatformError.focusMismatch }
 
     var raw: [NativeAXRawElement] = []
     var elements: [String: AXUIElement] = [:]
@@ -141,9 +134,7 @@ final class MacAccessibilityController {
     output: inout [NativeAXRawElement],
     elements: inout [String: AXUIElement]
   ) throws {
-    guard depth <= Self.maxDepth, output.count < Self.maxElements else {
-      throw NativeHostPlatformError.resourceLimitExceeded
-    }
+    guard depth <= Self.maxDepth, output.count < Self.maxElements else { return }
     let role: String = copyAttribute(element, kAXRoleAttribute) ?? "unknown"
     let subrole: String = copyAttribute(element, kAXSubroleAttribute) ?? ""
     let identifier: String = copyAttribute(element, kAXIdentifierAttribute) ?? ""
@@ -179,6 +170,7 @@ final class MacAccessibilityController {
     elements[runtimeID] = element
     let children: [AXUIElement] = copyAttribute(element, kAXChildrenAttribute) ?? []
     for (index, child) in children.enumerated() {
+      if output.count >= Self.maxElements { break }
       try collect(
         child, path: "\(path).\(index)", depth: depth + 1, output: &output,
         elements: &elements)
@@ -333,11 +325,6 @@ private func isSecure(
   let protected = (copyAttribute(element, "AXProtectedContent") as NSNumber?)?.boolValue ?? false
   let marker = "\(role) \(subrole)".lowercased()
   return protected || marker.contains("securetextfield") || marker.contains("password")
-}
-
-private func approximatelyEqual(_ left: NativeRect, _ right: NativeRect) -> Bool {
-  abs(left.x - right.x) <= 2 && abs(left.y - right.y) <= 2
-    && abs(left.width - right.width) <= 2 && abs(left.height - right.height) <= 2
 }
 
 enum MacCGEventController {
@@ -505,9 +492,20 @@ enum MacCGEventController {
   private static func postText(
     _ text: String, validateTarget: @escaping @Sendable () async throws -> Void
   ) async throws {
-    for character in text {
+    var chunk = ""
+    for scalar in text.unicodeScalars {
+      let value = String(scalar)
+      if chunk.utf16.count + value.utf16.count > 32 {
+        try await validateTarget()
+        try postUnicode(chunk, flags: [])
+        try await Task.sleep(for: .milliseconds(2))
+        chunk = ""
+      }
+      chunk.append(value)
+    }
+    if !chunk.isEmpty {
       try await validateTarget()
-      try postUnicode(String(character), flags: [])
+      try postUnicode(chunk, flags: [])
     }
   }
 

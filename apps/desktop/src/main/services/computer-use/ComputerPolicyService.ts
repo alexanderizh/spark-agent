@@ -32,13 +32,15 @@ const ACTION_BASELINE_RISK: Record<ComputerActionEnvelope['action']['type'], Com
   select_text: 'L1',
   set_value: 'L1',
   type_text: 'L1',
-  invoke_element: 'L2',
-  click: 'L2',
-  drag: 'L2',
-  keypress: 'L2',
+  invoke_element: 'L1',
+  click: 'L1',
+  drag: 'L1',
+  keypress: 'L1',
 }
 
 export class ComputerPolicyService {
+  private readonly dynamicallyObservedApps = new Map<string, Set<string>>()
+
   evaluate(
     envelope: ComputerActionEnvelope,
     taskContract: ComputerTaskContract,
@@ -47,12 +49,16 @@ export class ComputerPolicyService {
       name: envelope.targetAppId,
     },
   ): ComputerPolicyDecision {
-    if (
-      observedApp.id !== envelope.targetAppId ||
-      !taskContract.allowedApps.some((rule) => appRuleMatches(rule, observedApp))
-    ) {
+    if (observedApp.id !== envelope.targetAppId) {
       return decision(envelope.actionId, 'L1', 'deny', 'app_not_allowed', false)
     }
+    const dynamicAppKey = appIdentityKey(observedApp)
+    const previouslyObserved = this.dynamicallyObservedApps
+      .get(envelope.computerSessionId)
+      ?.has(dynamicAppKey)
+    const newlyObservedApp =
+      !previouslyObserved &&
+      !taskContract.allowedApps.some((rule) => appRuleMatches(rule, observedApp))
 
     if (
       envelope.policyContext.target.kind === 'domain' &&
@@ -77,6 +83,12 @@ export class ComputerPolicyService {
       actionBaselineRisk(envelope.action),
     )
     if (envelope.policyContext.target.kind === 'unknown') {
+      riskLevel = maxRisk(riskLevel, 'L2')
+    }
+    if (newlyObservedApp) {
+      // A task may legitimately open a new application after its initial window inventory.
+      // Elevate only its first action; subsequent navigation in that live identity stays
+      // low-friction, while committing actions remain governed by their effect/data risk.
       riskLevel = maxRisk(riskLevel, 'L2')
     }
     if (
@@ -112,6 +124,29 @@ export class ComputerPolicyService {
       false,
     )
   }
+
+  markAppObservedByExecutedAction(computerSessionId: string, app: ComputerAppIdentity): void {
+    const apps = this.dynamicallyObservedApps.get(computerSessionId) ?? new Set<string>()
+    apps.add(appIdentityKey(app))
+    while (apps.size > 200) {
+      const oldest = apps.values().next().value
+      if (oldest == null) break
+      apps.delete(oldest)
+    }
+    this.dynamicallyObservedApps.delete(computerSessionId)
+    this.dynamicallyObservedApps.set(computerSessionId, apps)
+    while (this.dynamicallyObservedApps.size > 1_000) {
+      const oldest = this.dynamicallyObservedApps.keys().next().value
+      if (oldest == null) break
+      this.dynamicallyObservedApps.delete(oldest)
+    }
+  }
+}
+
+function appIdentityKey(app: ComputerAppIdentity): string {
+  return [app.id, app.bundleId ?? '', app.executableIdentity ?? '', app.signingIdentity ?? ''].join(
+    '\u0000',
+  )
 }
 
 function actionBaselineRisk(action: ComputerActionEnvelope['action']): ComputerRiskLevel {

@@ -1,6 +1,6 @@
 # Computer Use 与应用快照生产级开发计划
 
-> 状态: 实施中 | 最后核对: 2026-07-28
+> 状态: 实施中 | 最后核对: 2026-07-29
 
 本文是 Spark Agent Computer Use、应用快照（App Snapshot）和自主验收能力的开发规格与交付计划。目标读者是产品负责人、架构师、Electron/Agent Runtime/原生端开发、测试和发布工程师。本文中的模块边界、数据契约、安全规则、工作包和验收门槛应作为实现时的共同基线。
 
@@ -21,7 +21,7 @@ Spark Agent 应实现一个“受治理的本地电脑操作平台”，而不�
 - 模型只提出动作，永远不直接拥有操作系统权限。
 - MCP 是能力入口，不是安全边界；所有动作在主进程 Broker 再次校验。
 - API、文件和 DOM 能完成的任务不使用桌面坐标操作。
-- Accessibility 元素操作优先于截图坐标。
+- Accessibility 元素操作优先于截图坐标；应用未暴露可用 AX/UIA 树时，只要截图与输入能力可用，就自动降级为视觉坐标闭环，不中断任务。
 - 同一真实桌面同一时间只允许一个 Operator 持有执行租约。
 - 无人值守场景下审批必须 fail-closed，不允许自动批准高风险动作。
 - 每个动作绑定观察版本，过期画面上的动作不得执行。
@@ -66,19 +66,19 @@ Appshots 的官方产品语义是“前台单个应用窗口的图像 + 应用�
 
 ### 2.2 当前代码完成度
 
-| 能力域              | 当前状态 | 已落地内容                                                                        | 仍需发布/后续门槛                                       |
-| ------------------- | -------- | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Playwright 自动化   | 已落地   | managed MCP、headful/headless、独立 Node runtime、Electron fuses                  | Safe Browser 与桌面任务的统一持久化时间线               |
-| `spark_browser`     | 已落地   | BrowserWindow、截图、console/network、profile                                     | 保持与 Native Host 隔离，不能复用 SID/CORS/eval 边界    |
-| Agent 默认能力      | 已落地   | Claude SDK/Codex 每轮默认挂载 `spark_computer`、任务级工具和 capability 提示      | CLI 无受认证桥时继续明确 unavailable                    |
-| PermissionService   | 已落地   | Computer 工具独立分类、未知/低层动作拒绝、pause/stop/takeover 安全放行            | Workflow Computer 节点仍需独立产品化                    |
-| 应用快照            | 部分落地 | Agent 捕获、Vault、短期预览 capability、真实聊天图片卡、删除/保留期               | Composer draft、`appSnapshotIds` hydration、AX 屏外文本 |
-| 多媒体交付          | 已落地   | 提示词要求 `present_files`，Runtime 在终态前自动补发 `presented_files`            | 继续扩展新媒体工具的 structured result 识别             |
-| macOS Native Host   | 已实现   | ScreenCaptureKit、AX full/diff、语义动作、CGEvent、signed/local 双信任、严格 wire | Developer ID 安装包与真实应用矩阵                       |
-| Windows Native Host | 已实现   | Rust、WGC、UIA full/diff、SendInput、signed/local 双信任、无签名打包              | Windows 10/11 实体机矩阵                                |
-| 模型操作 loop       | 已落地   | Generic vision decision adapter、Broker-only 动作、审批重放、noop/超时预算        | OpenAI/Claude 原生 computer adapter 可作为后续增强      |
-| Computer 验收       | 部分落地 | full-tree accessibility/visual text、独立窗口清单、持久 verification record       | 文件/DOM/external readback 与完整 timeline              |
-| Linux/远程/VM       | 待开发   | 能力协议与 fail-closed 后端                                                       | AT-SPI/Portal、Remote Monitor、Safe Desktop             |
+| 能力域              | 当前状态 | 已落地内容                                                                                | 仍需发布/后续门槛                                       |
+| ------------------- | -------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Playwright 自动化   | 已落地   | managed MCP、headful/headless、独立 Node runtime、Electron fuses                          | Safe Browser 与桌面任务的统一持久化时间线               |
+| `spark_browser`     | 已落地   | BrowserWindow、截图、console/network、profile                                             | 保持与 Native Host 隔离，不能复用 SID/CORS/eval 边界    |
+| Agent 默认能力      | 已落地   | Claude SDK/Codex 每轮默认挂载 `spark_computer`、任务级工具和 capability 提示              | CLI 无受认证桥时继续明确 unavailable                    |
+| PermissionService   | 已落地   | Computer 工具独立分类、未知/低层动作拒绝、pause/stop/takeover 安全放行                    | Workflow Computer 节点仍需独立产品化                    |
+| 应用快照            | 部分落地 | Agent 捕获、Vault、短期预览 capability、真实聊天图片卡、删除/保留期                       | Composer draft、`appSnapshotIds` hydration、AX 屏外文本 |
+| 多媒体交付          | 已落地   | 提示词要求 `present_files`，Runtime 在终态前自动补发 `presented_files`                    | 继续扩展新媒体工具的 structured result 识别             |
+| macOS Native Host   | 已实现   | ScreenCaptureKit、AX full/diff、语义动作、CGEvent、signed/local 双信任、严格 wire         | Developer ID 安装包与真实应用矩阵                       |
+| Windows Native Host | 已实现   | Rust、WGC、UIA full/diff、SendInput、signed/local 双信任、无签名打包                      | Windows 10/11 实体机矩阵                                |
+| 模型操作 loop       | 已落地   | Generic vision adapter、模型/观察重试、焦点恢复、等待、跨窗口继续、Broker-only 动作       | OpenAI/Claude 原生 computer adapter 可作为后续增强      |
+| Computer 验收       | 部分落地 | AX/UIA 文本、macOS Vision OCR、无树时视觉模型证据、目标文本推导、持久 verification record | 文件/DOM/external readback 与完整 timeline              |
+| Linux/远程/VM       | 待开发   | 能力协议与 fail-closed 后端                                                               | AT-SPI/Portal、Remote Monitor、Safe Desktop             |
 
 当前已经具备 Agent 默认发现、任务级启动、Broker 治理、模型决策、macOS/Windows 原生动作、动作后重观察和证据验收的正式主链。Native Host 不可用时，Agent 会按用户目标自动选择浏览器、API/CLI 或平台自动化回退，并沿用会话权限模式。整体文档仍保持“实施中”，原因是 macOS/Windows 实体机矩阵，以及完整 Appshots/Monitor/Linux/远程等 GA 门槛尚未全部完成。
 
@@ -486,13 +486,13 @@ export interface ComputerActionEnvelope {
 
 ### 8.2 macOS
 
-实施状态（2026-07-28）：Swift Package、ScreenCaptureKit、AXUIElement full/diff tree、secure field redaction、版本化 element refs、语义动作、受限 CGEvent、动作前后前台/进程身份复核、取消、Screen Recording/Accessibility/Input 权限、签名/公证接线均已落地。macOS 14+ 且真实权限可用时 manifest 才声明观察和执行能力；macOS 13 只枚举窗口且关闭 capture/control。最终 Developer ID 包和真实应用矩阵仍是发布阻断门槛。
+实施状态（2026-07-29）：Swift Package、ScreenCaptureKit、AXUIElement full/diff tree、视觉空树兜底、secure field redaction、版本化 element refs、语义动作、受限 CGEvent、稳定应用身份复核、取消、Screen Recording/Accessibility/Input 权限、签名/公证接线均已落地。为兼容 Electron 多窗口、透明层、自绘 Canvas 和跨 API 标题/几何差异，执行链不再因临时 focused 标记、窗口标题、window ID、像素级几何漂移或单应用 AX 枚举失败而中止；截图与输入可用时继续视觉坐标闭环，PID、敏感目标和会话取消仍持续校验。发布 Host 已迁到 `Contents/Helpers/native-host`，减少 TCC 在升级包中的责任路径漂移。macOS 14+ 且真实权限可用时开放对应能力；macOS 13 只枚举窗口且关闭 capture/control。最终 Developer ID 包和真实应用矩阵仍是发布阻断门槛。
 
 - Swift 实现。
 - ScreenCaptureKit 获取 displays/apps/windows 和单窗口截图。
 - AXUIElement 获取 role/name/value/bounds/focus/actions；secure field 不返回 value。
 - 优先执行 AXPress、AXSetValue、AXConfirm 等语义动作。
-- 坐标输入使用 CGEvent，仅在前台独占模式下执行。
+- 坐标输入使用 CGEvent，并绑定当前任务观察到的应用与窗口坐标；Electron 临时子窗口或焦点标记差异不会阻断执行。
 - 使用 bundle ID、PID、代码签名信息识别应用。
 - 增加 `NSScreenCaptureUsageDescription`，提供 Screen Recording 与 Accessibility 状态检测和设置页跳转。
 - Electron 动作后重新观察并以截图 SHA-256 + 无版本语义元素摘要识别真实 noop，不能把 CGEvent 成功投递等同于界面变化。
@@ -582,7 +582,7 @@ mcp__spark_computer__takeover
 mcp__spark_computer__capture_app_snapshot
 ```
 
-Claude SDK 与 Codex 本地 turn 默认装配同一进程内 `spark_computer` provider、全部任务级 allowedTools 和 capability-aware 系统提示词。提示词要求先调用 `get_capabilities`；Host/Broker/权限暂时不可用时，Agent 继续选择浏览器、API/CLI、AppleScript/JXA/cliclick/pyautogui/xdotool/PowerShell UI/AutoHotkey 等可行回退，并沿用当前权限模式。所有权限模式均可直接调用 `start_task`/`resume`，普通模式在 Broker 到达具体 L2/L3 动作时申请精确审批；`claude-bypass` 与 `codex-full-access` 由本地运行时直接签发 ticket，不重复弹出 Spark 审批。`start_task` 最小参数为 `goal` 与 `environment: "my_desktop"`，验收条件可省略并由引号文本/前台应用状态生成。MCP transport 是主进程内 loopback Bearer server，token 绑定 Agent session；低层动作只存在于受管 Operator loop。
+Claude SDK 与 Codex 本地 turn 默认装配同一进程内 `spark_computer` provider、全部任务级 allowedTools 和 capability-aware 系统提示词。提示词要求先调用 `get_capabilities`；Host/Broker/权限暂时不可用时，Agent 不询问用户选择实现，直接继续浏览器、API/CLI、AppleScript/JXA/cliclick/pyautogui/xdotool/PowerShell UI/AutoHotkey 等可行回退，并沿用当前权限模式。Operator 对模型响应、观察、旧帧、旧树、焦点漂移和短暂 Host 错误执行有界重试；普通导航、点击、按键和非敏感文本输入不重复弹出低价值审批，外部提交、敏感数据和高影响动作仍升级审批或接管。`start_task` 最小参数为 `goal` 与 `environment: "my_desktop"`，验收条件可省略并优先由引号或搜索/输入目标文本生成；仅剩前台状态时必须先产生可观察动作，不能空跑即完成。MCP transport 是主进程内 loopback Bearer server，token 绑定 Agent session；低层动作只存在于受管 Operator loop。
 
 ## 10. 安全与审批
 
@@ -851,7 +851,7 @@ app_snapshot_deleted
 
 ### CU-03 macOS Native Host（3.5 周，依赖 CU-00）
 
-实施状态：**代码闭环已完成，签名包实机验收待执行（2026-07-28）**。最终 wire framing、可信进程生命周期、父应用 Team ID/PID start token 绑定、Host identifier/hash/manifest/握手验证、崩溃重连、ScreenCaptureKit、AX full/diff tree、secure field 过滤、语义动作、受限 CGEvent、动作前后身份复核、权限请求、Retina 映射、afterPack 独立签名及 notarization 接线已落地。capability 只按真实 Screen/AX/PostEvent 权限开放；Kill Switch 快捷键不再作为执行硬门槛，最终 Developer ID `.app` 的 AX/CGEvent 与真实应用矩阵仍需验收。
+实施状态：**代码闭环已完成，签名包实机验收待执行（2026-07-29）**。最终 wire framing、可信进程生命周期、父应用 Team ID/PID start token 绑定、Host identifier/hash/manifest/握手验证、崩溃重连、ScreenCaptureKit、AX full/diff tree、无 AX 视觉坐标兜底、secure field 过滤、语义动作、受限 CGEvent、权限刷新、Retina 映射、`Contents/Helpers` afterPack 独立签名及 notarization 接线已落地。capability 按真实 Screen/AX/PostEvent 权限开放；AX 缺失不再关闭已经可用的截图坐标控制，最终 Developer ID `.app` 的 AX/CGEvent 与真实应用矩阵仍需验收。
 
 负责人：macOS 原生开发。
 

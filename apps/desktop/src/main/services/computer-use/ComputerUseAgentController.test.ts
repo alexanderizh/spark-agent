@@ -142,7 +142,7 @@ describe('ComputerUseAgentController', () => {
 
     await expect(
       controller.invoke('session-1', 'start_task', {
-        goal: 'Search for "ComfyUI latest tutorial"',
+        goal: '点击搜索框，输入 comfyui',
         environment: 'my_desktop',
       }),
     ).resolves.toMatchObject({
@@ -154,7 +154,7 @@ describe('ComputerUseAgentController', () => {
         sessionId: 'session-1',
         turnId: 'turn-1',
         taskContract: expect.objectContaining({
-          objective: 'Search for "ComfyUI latest tutorial"',
+          objective: '点击搜索框，输入 comfyui',
           allowedApps: [
             { kind: 'executable_identity', value: 'signed:publisher/editor.exe' },
             { kind: 'bundle_id', value: 'tv.danmaku.bilianime' },
@@ -162,9 +162,12 @@ describe('ComputerUseAgentController', () => {
           successCriteria: [
             {
               kind: 'visual',
-              assertion: { operator: 'text_present', expected: 'ComfyUI latest tutorial' },
+              assertion: { operator: 'text_present', expected: 'comfyui' },
             },
           ],
+          maxSteps: 100,
+          maxRuntimeMs: 1_200_000,
+          maxConsecutiveNoops: 8,
         }),
       }),
     )
@@ -262,6 +265,35 @@ describe('ComputerUseAgentController', () => {
         permissions: { ...CAPABILITIES.nativeHost!.permissions, input: 'denied' },
       },
       permissions: { ...CAPABILITIES.permissions, input: 'denied' },
+    }
+    const controller = new ComputerUseAgentController({
+      getServices: () =>
+        ({
+          backend: { getCapabilities: vi.fn(async () => capabilities) },
+          killSwitch: { isArmed: vi.fn(() => true) },
+        }) as never,
+    })
+
+    await expect(controller.invoke('session-1', 'get_capabilities', {})).resolves.toMatchObject({
+      executionAvailable: true,
+    })
+  })
+
+  it('advertises screenshot-coordinate execution when an application exposes no accessibility tree', async () => {
+    const capabilities: ComputerUseCapabilitySummary = {
+      ...CAPABILITIES,
+      nativeHost: {
+        ...CAPABILITIES.nativeHost!,
+        backends: { ...CAPABILITIES.nativeHost!.backends, accessibility: 'unavailable' },
+        features: {
+          ...CAPABILITIES.nativeHost!.features,
+          fullTree: false,
+          diffTree: false,
+          semanticActions: false,
+        },
+        permissions: { ...CAPABILITIES.nativeHost!.permissions, accessibility: 'denied' },
+      },
+      permissions: { ...CAPABILITIES.permissions, accessibility: 'denied' },
     }
     const controller = new ComputerUseAgentController({
       getServices: () =>

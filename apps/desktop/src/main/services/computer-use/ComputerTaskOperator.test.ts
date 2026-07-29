@@ -233,6 +233,7 @@ describe('ComputerTaskOperator', () => {
       approvals: { takeApprovedTicket: vi.fn(() => null) },
       evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
       verifications: verificationStore(),
+      wait: vi.fn(async () => undefined),
       now: () => Date.parse(SESSION.createdAt),
     })
 
@@ -258,6 +259,7 @@ describe('ComputerTaskOperator', () => {
       approvals: { takeApprovedTicket: vi.fn(() => null) },
       evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
       verifications: verificationStore(),
+      wait: vi.fn(async () => undefined),
       now: () => Date.parse(SESSION.createdAt),
     })
 
@@ -321,6 +323,48 @@ describe('ComputerTaskOperator', () => {
     ).resolves.toMatchObject({ status: 'completed' })
     expect(observe).toHaveBeenCalledTimes(2)
     expect(dispatch).toHaveBeenCalledTimes(2)
+  })
+
+  it('recovers from a stale frame by re-observing and replanning instead of ending the task', async () => {
+    const decisions = [
+      {
+        type: 'action' as const,
+        intent: 'Use the current search field',
+        action: { type: 'type_text' as const, text: 'comfyui' },
+      },
+      {
+        type: 'action' as const,
+        intent: 'Use the refreshed search field',
+        action: { type: 'type_text' as const, text: 'comfyui' },
+      },
+      { type: 'ready_for_verification' as const, reason: 'The query is visible' },
+    ]
+    const observe = vi.fn(async () => BEFORE)
+    const dispatch = vi
+      .fn()
+      .mockRejectedValueOnce(new ComputerUseBrokerError('stale_frame', 'The frame changed'))
+      .mockResolvedValueOnce({ observation: AFTER, noop: false })
+    const sessions = sessionController()
+    const operator = new ComputerTaskOperator({
+      sessions,
+      broker: { observe, dispatch },
+      approvals: { takeApprovedTicket: vi.fn(() => null) },
+      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+      verifications: verificationStore(),
+      wait: vi.fn(async () => undefined),
+      now: () => Date.parse(SESSION.createdAt),
+    })
+
+    await expect(
+      operator.run({
+        session: SESSION,
+        lease: LEASE,
+        adapter: { decide: vi.fn(async () => decisions.shift()!) },
+      }),
+    ).resolves.toMatchObject({ status: 'completed' })
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    expect(observe).toHaveBeenCalledTimes(2)
+    expect(sessions.fail).not.toHaveBeenCalled()
   })
 
   it('fails after the task contract consecutive noop limit is reached', async () => {
@@ -427,7 +471,7 @@ describe('ComputerTaskOperator', () => {
     )
   })
 
-  it('classifies unlabeled text entry as personal data instead of trusting the model to mark it sensitive', async () => {
+  it('keeps ordinary non-sensitive text entry in the low-friction public tier', async () => {
     const decisions = [
       {
         type: 'action' as const,
@@ -454,7 +498,7 @@ describe('ComputerTaskOperator', () => {
 
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        policyContext: expect.objectContaining({ dataClasses: ['personal'] }),
+        policyContext: expect.objectContaining({ dataClasses: ['public'] }),
       }),
     )
   })

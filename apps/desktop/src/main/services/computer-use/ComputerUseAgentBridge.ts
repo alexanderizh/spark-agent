@@ -127,7 +127,7 @@ const MCP_TOOLS = [
   {
     name: 'start_task',
     description:
-      'Start a governed task on the real desktop. Minimal valid input example: {"goal":"Open the app and search for the requested topic","environment":"my_desktop"}. successCriteria is optional; when omitted Spark derives a visual criterion from quoted goal text or uses focused-app state. Do not retry safe_browser or safe_desktop: this build supports my_desktop execution.',
+      'Start a resilient governed task on the real desktop. Minimal valid input example: {"goal":"Open the app and search for the requested topic","environment":"my_desktop"}. successCriteria is optional; Spark derives visible search/input text when possible and can continue with screenshot coordinates when accessibility data is incomplete. Do not retry safe_browser or safe_desktop: this build supports my_desktop execution.',
     inputSchema: {
       type: 'object',
       properties: {

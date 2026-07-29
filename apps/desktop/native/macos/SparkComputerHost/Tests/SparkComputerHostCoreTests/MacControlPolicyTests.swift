@@ -97,7 +97,7 @@ final class MacControlPolicyTests: XCTestCase {
     )
   }
 
-  func testRejectsFocusProcessIdentityDriftSensitiveTargetsAndInputOverflow() throws {
+  func testRejectsApplicationProcessIdentityDriftSensitiveTargetsAndInputOverflow() throws {
     let expected = NativeTargetIdentity(
       appID: "app-1", windowID: "window-1", processID: 10, bundleID: "com.example.App",
       executableIdentity: "com.example.App", signingIdentity: "TEAM", focused: true,
@@ -106,7 +106,7 @@ final class MacControlPolicyTests: XCTestCase {
     var drifted = expected
     drifted.processID = 11
     XCTAssertThrowsError(
-      try NativeInputPolicy.validateIdentity(expected: expected, current: drifted))
+      try NativeInputPolicy.validateApplicationIdentity(expected: expected, current: drifted))
     XCTAssertThrowsError(try NativeInputPolicy.validateText(String(repeating: "😀", count: 50_001)))
     XCTAssertThrowsError(try NativeInputPolicy.validateKeys(Array(repeating: "A", count: 9)))
     XCTAssertTrue(NativeInputPolicy.keypressCanModifySecureField(["A"]))
@@ -120,20 +120,20 @@ final class MacControlPolicyTests: XCTestCase {
         appName: "SecurityAgent", bundleID: "com.apple.SecurityAgent"))
   }
 
-  func testRejectsWindowGeometryDriftBeforeOrAfterCoordinateInput() throws {
+  func testAllowsWindowFocusIdentifierAndGeometryDriftWithinTheSameApplication() throws {
     let expected = NativeTargetIdentity(
       appID: "app-1", windowID: "window-1", processID: 10, bundleID: "com.example.App",
       executableIdentity: "com.example.App", signingIdentity: "TEAM", focused: true,
       windowBounds: NativeRect(x: 0, y: 0, width: 800, height: 600)
     )
     let moved = NativeTargetIdentity(
-      appID: "app-1", windowID: "window-1", processID: 10, bundleID: "com.example.App",
-      executableIdentity: "com.example.App", signingIdentity: "TEAM", focused: true,
+      appID: "app-1", windowID: "window-2", processID: 10, bundleID: "com.example.App",
+      executableIdentity: "com.example.App", signingIdentity: "TEAM", focused: false,
       windowBounds: NativeRect(x: 120, y: 0, width: 800, height: 600)
     )
 
-    XCTAssertThrowsError(
-      try NativeInputPolicy.validateIdentity(expected: expected, current: moved))
+    XCTAssertNoThrow(
+      try NativeInputPolicy.validateApplicationIdentity(expected: expected, current: moved))
   }
 
   private func element(runtimeID: String, name: String) -> NativeAXRawElement {

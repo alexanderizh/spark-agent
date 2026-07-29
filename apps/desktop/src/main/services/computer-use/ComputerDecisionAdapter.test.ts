@@ -87,4 +87,42 @@ describe('GenericComputerDecisionAdapter', () => {
       }),
     ).rejects.toMatchObject({ code: 'action_not_allowed' })
   })
+
+  it('repairs an invalid provider response and supports explicit window recovery actions', async () => {
+    const generate = vi
+      .fn()
+      .mockResolvedValueOnce({ text: 'not-json' })
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          type: 'action',
+          intent: 'Restore the task window',
+          action: { type: 'focus_window', windowId: 'window-1' },
+        }),
+      })
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+      wait: vi.fn(async () => undefined),
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Continue in the task window',
+        successCriteria: [] as ComputerTaskContract['successCriteria'],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 1,
+      }),
+    ).resolves.toMatchObject({
+      type: 'action',
+      action: { type: 'focus_window', windowId: 'window-1' },
+    })
+    expect(generate).toHaveBeenCalledTimes(2)
+    expect(generate.mock.calls[1]?.[0].prompt).toContain('previous provider response failed')
+  })
 })

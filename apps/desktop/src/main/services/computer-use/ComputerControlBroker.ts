@@ -203,7 +203,13 @@ export class ComputerControlBroker {
         errorCode: brokerError.code,
         completedAt: this.now().toISOString(),
       })
-      if (!context.signal.aborted) this.sessions.pause(envelope.computerSessionId)
+      if (!context.signal.aborted) {
+        if (isRecoverableExecutionError(brokerError)) {
+          this.sessions.setPhase(envelope.computerSessionId, 'observing')
+        } else {
+          this.sessions.pause(envelope.computerSessionId)
+        }
+      }
       throw brokerError
     }
 
@@ -231,6 +237,10 @@ export class ComputerControlBroker {
         'Computer action completion could not be persisted',
       )
     }
+    this.policy.markAppObservedByExecutedAction(
+      envelope.computerSessionId,
+      observation.foreground.app,
+    )
     this.sessions.setPhase(envelope.computerSessionId, 'observing')
     return result
   }
@@ -336,6 +346,17 @@ export class ComputerControlBroker {
       completedAt: this.now().toISOString(),
     })
   }
+}
+
+function isRecoverableExecutionError(error: ComputerUseBrokerError): boolean {
+  return new Set([
+    'action_timeout',
+    'stale_frame',
+    'stale_tree',
+    'focus_mismatch',
+    'native_host_incompatible',
+    'environment_unavailable',
+  ]).has(error.code)
 }
 
 function persistedActionPayload(envelope: ComputerActionEnvelope): Record<string, unknown> {

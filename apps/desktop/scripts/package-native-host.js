@@ -105,13 +105,7 @@ async function packageMacNativeHost(context) {
   )
   const appName = context.packager.appInfo.productFilename
   const appPath = path.join(context.appOutDir, `${appName}.app`)
-  const destinationDirectory = path.join(
-    appPath,
-    'Contents',
-    'Resources',
-    'native-host',
-    `macos-${architecture}`,
-  )
+  const destinationDirectory = macNativeHostDestinationDirectory(appPath, architecture)
   const destinationExecutable = path.join(destinationDirectory, EXECUTABLE_NAME)
   await fs.mkdir(destinationDirectory, { recursive: true, mode: 0o755 })
   await fs.copyFile(sourceExecutable, destinationExecutable)
@@ -157,6 +151,13 @@ async function packageMacNativeHost(context) {
     `[after-pack] Native Host: packaged ${architecture}, trust=${localTrust ? 'local' : 'signed'}, sha256=${manifest.sha256}`,
   )
   return { packaged: true, destinationExecutable, manifestPath, manifest }
+}
+
+function macNativeHostDestinationDirectory(appPath, architecture) {
+  if (architecture !== 'arm64' && architecture !== 'x64') {
+    throw new Error(`Unsupported Native Host architecture: ${architecture}`)
+  }
+  return path.join(appPath, 'Contents', 'Helpers', 'native-host', `macos-${architecture}`)
 }
 
 function resolveMacNativeHostTrustMode(environment = process.env) {
@@ -227,4 +228,5 @@ module.exports = {
   packageMacNativeHost,
   parseCodeSignatureOutput,
   resolveMacNativeHostTrustMode,
+  macNativeHostDestinationDirectory,
 }

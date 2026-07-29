@@ -56,7 +56,12 @@ export function createDefaultComputerUseBackend(
   const root =
     options.resourcesPath ??
     (typeof process.resourcesPath === 'string' ? process.resourcesPath : process.cwd())
-  const artifactDirectory = join(root, 'native-host', `${nativePlatform}-${nativeArchitecture}`)
+  const artifactRoot = nativePlatform === 'macos' && packaged ? join(root, '..', 'Helpers') : root
+  const artifactDirectory = join(
+    artifactRoot,
+    'native-host',
+    `${nativePlatform}-${nativeArchitecture}`,
+  )
   const verifyArtifact = options.verifyArtifact ?? verifyNativeHostArtifact
   const verifyWindowsArtifact = options.verifyWindowsArtifact ?? verifyWindowsNativeHostArtifact
   const verifyLocalArtifact = options.verifyLocalArtifact ?? verifyLocalNativeHostArtifact

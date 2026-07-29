@@ -15,6 +15,7 @@ import {
 } from '@spark/protocol'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import type { VerifiedNativeHostArtifact } from './NativeHostArtifact.js'
+import { createLogger } from '@spark/shared'
 import {
   MAX_NATIVE_HOST_FRAME_PAYLOAD_BYTES,
   NativeHostFrameDecoder,
@@ -23,10 +24,12 @@ import {
 } from './NativeHostFrameCodec.js'
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 20_000
+const CAPABILITY_REFRESH_INTERVAL_MS = 1_000
 const ACTION_TIMEOUT_GRACE_MS = 5_000
 const MAX_REQUEST_TIMEOUT_MS = 180_000
 const INPUT_RELEASE_GRACE_MS = 300
 const MAX_PENDING_REQUESTS = 64
+const log = createLogger('computer-use-native-host')
 
 export interface NativeHostChildProcess extends EventEmitter {
   readonly stdin: Writable
@@ -88,6 +91,7 @@ export class NativeHostClient {
   private readonly decoder = new NativeHostFrameDecoder()
   private readonly pending = new Map<string, PendingRequest>()
   private capabilities: NativeHostCapabilityManifest | null = null
+  private capabilitiesFetchedAt = 0
   private awaitingBinary: AwaitingBinary | null = null
   private terminalError: ComputerUseBrokerError | null = null
   private maxMessageBytes = MAX_NATIVE_HOST_FRAME_PAYLOAD_BYTES
@@ -152,6 +156,7 @@ export class NativeHostClient {
       const response = result.response as Extract<NativeHostResponse, { type: 'capabilities' }>
       client.assertHandshake(response.manifest)
       client.capabilities = response.manifest
+      client.capabilitiesFetchedAt = Date.now()
       client.maxMessageBytes = response.manifest.limits.maxMessageBytes
       return client
     } catch (error) {
@@ -162,6 +167,13 @@ export class NativeHostClient {
 
   async getCapabilities(): Promise<NativeHostCapabilityManifest> {
     this.assertConnected()
+    if (Date.now() - this.capabilitiesFetchedAt >= CAPABILITY_REFRESH_INTERVAL_MS) {
+      const result = await this.sendTypedRequest({ type: 'get_capabilities' }, 'capabilities')
+      this.assertHandshake(result.response.manifest)
+      this.capabilities = result.response.manifest
+      this.capabilitiesFetchedAt = Date.now()
+      this.maxMessageBytes = result.response.manifest.limits.maxMessageBytes
+    }
     return this.capabilities as NativeHostCapabilityManifest
   }
 
@@ -179,6 +191,7 @@ export class NativeHostClient {
     )
     this.assertHandshake(result.response.manifest)
     this.capabilities = result.response.manifest
+    this.capabilitiesFetchedAt = Date.now()
     this.maxMessageBytes = result.response.manifest.limits.maxMessageBytes
     return result.response.manifest
   }
@@ -360,7 +373,10 @@ export class NativeHostClient {
         this.terminate(normalizeClientError(error), 'SIGKILL')
       }
     })
-    this.child.stderr.on('data', () => undefined)
+    this.child.stderr.on('data', (chunk: Buffer) => {
+      const message = chunk.toString('utf8').trim().slice(0, 2_000)
+      if (message.length > 0) log.warn(`Native Host stderr: ${message}`)
+    })
     this.child.once('error', () => {
       this.terminate(
         new ComputerUseBrokerError('native_host_incompatible', 'Native Host process failed'),

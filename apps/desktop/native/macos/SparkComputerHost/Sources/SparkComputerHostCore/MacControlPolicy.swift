@@ -1,6 +1,8 @@
 import CryptoKit
 import Foundation
 
+public let maxNativeTreeElements = 2_000
+
 public enum NativeControlPolicyError: Error, Equatable, Sendable {
   case staleTree
   case elementNotFound
@@ -47,17 +49,14 @@ public struct NativeTargetIdentity: Equatable, Sendable {
 }
 
 public enum NativeInputPolicy {
-  public static func validateIdentity(
+  public static func validateApplicationIdentity(
     expected: NativeTargetIdentity, current: NativeTargetIdentity
   ) throws {
-    guard current.focused,
-      expected.appID == current.appID,
-      expected.windowID == current.windowID,
+    guard expected.appID == current.appID,
       expected.processID == current.processID,
       expected.bundleID == current.bundleID,
       expected.executableIdentity == current.executableIdentity,
-      expected.signingIdentity == current.signingIdentity,
-      sameGeometry(expected.windowBounds, current.windowBounds)
+      expected.signingIdentity == current.signingIdentity
     else { throw NativeControlPolicyError.focusMismatch }
   }
 
@@ -93,11 +92,13 @@ public enum NativeInputPolicy {
   public static func keypressCanModifySecureField(_ keys: [String]) -> Bool {
     let modifiers = Set(["Meta", "Control", "Alt", "Shift"])
     return keys.contains { key in
-      !modifiers.contains(key) &&
-        !["Escape", "Tab", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp", "F1", "F2",
+      !modifiers.contains(key)
+        && ![
+          "Escape", "Tab", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp", "F1", "F2",
           "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "F13",
           "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23",
-          "F24"].contains(key)
+          "F24",
+        ].contains(key)
     }
   }
 
@@ -111,12 +112,6 @@ public enum NativeInputPolicy {
     return blocked.contains { value.contains($0) }
   }
 
-  private static func sameGeometry(_ left: NativeRect, _ right: NativeRect) -> Bool {
-    let tolerance = 0.5
-    return abs(left.x - right.x) <= tolerance && abs(left.y - right.y) <= tolerance
-      && abs(left.width - right.width) <= tolerance
-      && abs(left.height - right.height) <= tolerance
-  }
 }
 
 public struct NativeAXRawElement: Equatable, Sendable {
@@ -169,6 +164,20 @@ public struct NativeAXTreeSnapshot: Equatable, Sendable {
   public let text: String
   public let elements: [NativeAXElementRef]
   public let sensitiveRegions: [NativeRect]
+
+  public init(
+    treeVersion: String,
+    mode: NativeAXTreeMode,
+    text: String,
+    elements: [NativeAXElementRef],
+    sensitiveRegions: [NativeRect]
+  ) {
+    self.treeVersion = treeVersion
+    self.mode = mode
+    self.text = text
+    self.elements = elements
+    self.sensitiveRegions = sensitiveRegions
+  }
 }
 
 public struct NativeAXTreeState: Sendable {
@@ -184,7 +193,7 @@ public struct NativeAXTreeState: Sendable {
     elements rawElements: [NativeAXRawElement], previousTreeVersion: String?, fullTree: Bool
   ) -> NativeAXTreeSnapshot {
     generation &+= 1
-    let bounded = rawElements.prefix(100_000).map(sanitize)
+    let bounded = rawElements.prefix(maxNativeTreeElements).map(sanitize)
     let fingerprint = bounded.map {
       "\($0.runtimeID)|\($0.role)|\($0.name)|\($0.value ?? "")|\($0.bounds)|\($0.enabled)|\($0.focused)|\($0.actions)"
     }.joined(separator: "\n")

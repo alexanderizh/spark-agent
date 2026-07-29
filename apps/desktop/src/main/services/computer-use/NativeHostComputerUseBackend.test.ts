@@ -215,6 +215,48 @@ describe('NativeHostComputerUseBackend', () => {
     )
   })
 
+  it('continues observation when an Electron app replaces its focused window', async () => {
+    const replacementWindow = {
+      ...FOCUSED_WINDOW,
+      window: { ...FOCUSED_WINDOW.window, id: 'window-2', title: 'Search overlay' },
+    }
+    const replacementObservation = {
+      ...OBSERVATION,
+      frameId: 'frame-2',
+      treeVersion: 'tree-2',
+      foreground: { app: FOCUSED_WINDOW.app, window: replacementWindow.window },
+      screenshot: { ...OBSERVATION.screenshot, snapshotId: 'snapshot-2' },
+    }
+    const connection = createControlConnection([OBSERVATION, replacementObservation])
+    vi.mocked(connection.listWindows)
+      .mockResolvedValueOnce([FOCUSED_WINDOW])
+      .mockResolvedValueOnce([replacementWindow])
+    const ids = ['snapshot-1', 'snapshot-2']
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect: async () => connection,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+      createId: () => ids.shift() ?? 'unexpected',
+    })
+    const signal = new AbortController().signal
+
+    await expect(
+      backend.observe({ computerSessionId: 'computer-1', fullTree: true, signal }),
+    ).resolves.toEqual(OBSERVATION)
+    await expect(
+      backend.observe({ computerSessionId: 'computer-1', fullTree: false, signal }),
+    ).resolves.toEqual(replacementObservation)
+
+    expect(connection.observe).toHaveBeenLastCalledWith({
+      snapshotId: 'snapshot-2',
+      appId: 'app-1',
+      windowId: 'window-2',
+      previousTreeVersion: 'tree-1',
+      fullTree: false,
+      signal,
+    })
+  })
+
   it('executes through the native host and captures a post-action diff observation', async () => {
     const after = {
       ...OBSERVATION,
@@ -260,7 +302,7 @@ describe('NativeHostComputerUseBackend', () => {
     )
   })
 
-  it('classifies an accepted input as noop when post-action visual and semantic evidence is unchanged', async () => {
+  it('trusts an executed Host action even when its immediate visual evidence is unchanged', async () => {
     const unchanged = {
       ...OBSERVATION,
       frameId: 'frame-2',
@@ -299,7 +341,7 @@ describe('NativeHostComputerUseBackend', () => {
 
     await expect(backend.execute({ envelope, observation: OBSERVATION, signal })).resolves.toEqual({
       observation: unchanged,
-      noop: true,
+      noop: false,
     })
   })
 
@@ -375,7 +417,7 @@ describe('NativeHostComputerUseBackend', () => {
     ).resolves.toBeDefined()
   })
 
-  it('uses a stable perceptual image fingerprint so dynamic PNG bytes do not mask a noop', async () => {
+  it('does not let dynamic PNG fingerprints interrupt an executed Host action', async () => {
     const changedMetadata = {
       ...OBSERVATION,
       frameId: 'frame-2',
@@ -411,7 +453,7 @@ describe('NativeHostComputerUseBackend', () => {
     await expect(
       backend.execute({ envelope, observation: OBSERVATION, signal }),
     ).resolves.toMatchObject({
-      noop: true,
+      noop: false,
     })
   })
 
@@ -429,6 +471,48 @@ describe('NativeHostComputerUseBackend', () => {
 
     expect(connect).toHaveBeenCalledTimes(2)
     expect(first.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('reconnects the Host after a recoverable execution timeout', async () => {
+    const first = createControlConnection([OBSERVATION])
+    vi.mocked(first.executeAction).mockRejectedValueOnce(
+      new ComputerUseBrokerError('action_timeout', 'Host timed out'),
+    )
+    const reconnectedObservation = {
+      ...OBSERVATION,
+      frameId: 'frame-2',
+      screenshot: { ...OBSERVATION.screenshot, snapshotId: 'snapshot-2' },
+    }
+    const second = createControlConnection([reconnectedObservation])
+    const connect = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    const ids = ['snapshot-1', 'snapshot-2']
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+      createId: () => ids.shift() ?? 'unexpected',
+    })
+    const signal = new AbortController().signal
+    await backend.observe({ computerSessionId: 'computer-1', fullTree: true, signal })
+
+    await expect(
+      backend.execute({
+        envelope: {
+          computerSessionId: 'computer-1',
+          actionId: 'action-1',
+          targetAppId: 'app-1',
+          targetWindowId: 'window-1',
+          action: { type: 'keypress', keys: ['Meta', 'K'] },
+        } as ComputerActionEnvelope,
+        observation: OBSERVATION,
+        signal,
+      }),
+    ).rejects.toMatchObject({ code: 'action_timeout' })
+    await expect(
+      backend.observe({ computerSessionId: 'computer-1', fullTree: true, signal }),
+    ).resolves.toEqual(reconnectedObservation)
+    expect(first.close).toHaveBeenCalledOnce()
+    expect(connect).toHaveBeenCalledTimes(2)
   })
 })
 
