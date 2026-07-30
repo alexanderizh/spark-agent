@@ -4368,27 +4368,25 @@ body.side-chat-resizing {
   background: color-mix(in srgb, var(--panel) 96%, var(--bg));
 }
 
-// 当窗口窄到连「主区最小宽 + 面板最小宽」也放不下时，主区继续收缩；
 // 横向滚动会导致整个应用内容左右漂移，因此统一侧面板打开时禁止该方向溢出。
+// 面板可以优先收缩，但会话内容区必须保留可读宽度，避免被拖成狭长的一条。
 .chat-layout:has(> .unified-side-panel) {
   overflow-x: hidden;
 }
 
 .chat-layout:has(> .unified-side-panel) > .chat-main {
   flex-shrink: 1;
-  min-width: 0;
+  min-width: max(400px, var(--chat-main-min-width));
 }
 
-// 配置面板（独立侧栏）：窄窗口下与统一侧面板同样优先压缩自身 + 关闭横向滚动。
-// 否则 .inspector-frame 默认 flex-shrink:0 会撑宽 chat-layout 触发滚动条，
-// 用户看到的就是「面板右侧被截断 + 整个聊天区能横向滚到最右」。
+// 配置面板（独立侧栏）：窄窗口下与统一侧面板采用相同策略。
 .chat-layout:has(> .config-panel-frame) {
   overflow-x: hidden;
 }
 
 .chat-layout:has(> .config-panel-frame) > .chat-main {
   flex-shrink: 1;
-  min-width: 0;
+  min-width: max(400px, var(--chat-main-min-width));
 }
 
 .config-panel-frame {
