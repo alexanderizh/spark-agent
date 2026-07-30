@@ -92,6 +92,97 @@ describe('ComputerTaskOperator', () => {
     expect(sessions.completeVerified).toHaveBeenCalledWith('computer-1')
   })
 
+  it('executes every action in a batch decision sequentially and then verifies', async () => {
+    const decisions = [
+      {
+        type: 'actions' as const,
+        intent: 'Click the field and type the sign-off',
+        actions: [
+          { type: 'click' as const, x: 10, y: 20 },
+          { type: 'type_text' as const, text: 'Thanks' },
+        ],
+      },
+      { type: 'ready_for_verification' as const, reason: 'Saved status is visible' },
+    ]
+    const broker = {
+      observe: vi.fn(async () => BEFORE),
+      dispatch: vi.fn(async () => ({ observation: AFTER, noop: false })),
+    }
+    let sequence = 0
+    const operator = new ComputerTaskOperator({
+      sessions: sessionController(),
+      broker,
+      approvals: { takeApprovedTicket: vi.fn(() => null) },
+      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+      verifications: verificationStore(),
+      createId: () => `action-${(sequence += 1)}`,
+      now: () => Date.parse(SESSION.createdAt),
+    })
+
+    const result = await operator.run({
+      session: SESSION,
+      lease: LEASE,
+      adapter: { decide: vi.fn(async () => decisions.shift()!) },
+    })
+    expect(result).toEqual({
+      status: 'completed',
+      verification: expect.objectContaining({ passed: true }),
+    })
+    expect(broker.dispatch).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops a batch when a later step noops and re-plans against fresh state', async () => {
+    const decisions = [
+      {
+        type: 'actions' as const,
+        intent: 'Two clicks',
+        actions: [
+          { type: 'click' as const, x: 1, y: 1 },
+          { type: 'click' as const, x: 2, y: 2 },
+        ],
+      },
+      {
+        type: 'action' as const,
+        intent: 'Single retry',
+        action: { type: 'click' as const, x: 3, y: 3 },
+      },
+      { type: 'ready_for_verification' as const, reason: 'Saved status is visible' },
+    ]
+    const broker = {
+      observe: vi.fn(async () => BEFORE),
+      dispatch: vi
+        .fn()
+        // first batch step ok, second batch step noops → batch stops
+        .mockResolvedValueOnce({ observation: AFTER, noop: false })
+        .mockRejectedValueOnce(new ComputerUseBrokerError('action_noop', 'nothing changed'))
+        // single retry after re-plan succeeds
+        .mockResolvedValueOnce({ observation: AFTER, noop: false }),
+    }
+    let sequence = 0
+    const operator = new ComputerTaskOperator({
+      sessions: sessionController(),
+      broker,
+      approvals: { takeApprovedTicket: vi.fn(() => null) },
+      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+      verifications: verificationStore(),
+      createId: () => `action-${(sequence += 1)}`,
+      now: () => Date.parse(SESSION.createdAt),
+    })
+
+    const result = await operator.run({
+      session: SESSION,
+      lease: LEASE,
+      adapter: { decide: vi.fn(async () => decisions.shift()!) },
+    })
+    expect(result).toEqual({
+      status: 'completed',
+      verification: expect.objectContaining({ passed: true }),
+    })
+    // The no-op second batch step stopped the batch; the model re-planned and the
+    // third decision (single action) ran to completion.
+    expect(broker.dispatch).toHaveBeenCalledTimes(3)
+  })
+
   it('locally recovers a stale frame on a non-approval action instead of re-querying the model', async () => {
     const decisions = [
       {

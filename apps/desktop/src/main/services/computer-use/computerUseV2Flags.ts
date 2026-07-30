@@ -31,3 +31,13 @@ export function isHostSupervisorEnabled(env: NodeJS.ProcessEnv = process.env): b
 export function isIncrementalTreeEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return isEnabled(env.SPARK_COMPUTER_USE_V2_INCREMENTAL_TREE)
 }
+
+/**
+ * WP6/Phase 3 — allow the decision model to return a short batch of actions
+ * (2–8) per round-trip. The operator executes them sequentially, re-checking
+ * the target before each step and stopping the batch the moment a target goes
+ * stale. Off = the model is asked for exactly one action per decision.
+ */
+export function isActionBatchEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isEnabled(env.SPARK_COMPUTER_USE_V2_ACTION_BATCH)
+}

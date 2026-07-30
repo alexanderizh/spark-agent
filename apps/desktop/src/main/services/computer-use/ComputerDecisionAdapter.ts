@@ -17,6 +17,8 @@ const MAX_TREE_PROMPT_CHARS = 200_000
 const MAX_ELEMENT_PROMPT_CHARS = 100_000
 const MAX_ELEMENT_PROMPT_COUNT = 2_000
 const MAX_DECISION_ATTEMPTS = 3
+export const MIN_BATCH_ACTIONS = 2
+export const MAX_BATCH_ACTIONS = 8
 const SUPPORTED_ACTIONS = new Set<ComputerAction['type']>([
   'invoke_element',
   'set_value',
@@ -32,6 +34,7 @@ const SUPPORTED_ACTIONS = new Set<ComputerAction['type']>([
 
 export type ComputerDecision =
   | { type: 'action'; action: ComputerAction; intent: string }
+  | { type: 'actions'; actions: ComputerAction[]; intent: string }
   | { type: 'ready_for_verification'; reason: string }
   | { type: 'handoff'; reason: string }
 
@@ -41,6 +44,13 @@ export interface ComputerDecisionInput {
   observation: ComputerObservation
   screenshot: Buffer
   stepIndex: number
+  /**
+   * When true, the prompt also offers a batch `actions` decision so the model
+   * can plan a short sequence in one round-trip (codex-style). Off = the model
+   * is asked for exactly one action (current behaviour). The operator handles
+   * a batch decision defensively regardless of this flag.
+   */
+  allowBatch?: boolean
 }
 
 type GenerateDecision = (
@@ -77,7 +87,7 @@ export class GenericComputerDecisionAdapter {
           maxTokens: Math.min(this.model.maxTokens ?? 4_096, 8_192),
           temperature: 0,
           responseFormat: 'json',
-          system: DECISION_SYSTEM_PROMPT,
+          system: input.allowBatch === true ? BATCH_DECISION_SYSTEM_PROMPT : DECISION_SYSTEM_PROMPT,
           prompt: buildDecisionPrompt(input, attempt),
           images: [
             {
@@ -103,6 +113,11 @@ Return exactly one JSON object. Choose either:
 {"type":"ready_for_verification","reason":"why the criteria now appear satisfied"}
 {"type":"handoff","reason":"why safe autonomous progress is impossible"}
 Supported actions are invoke_element, set_value, click, move, drag, scroll, keypress, type_text, focus_window, and wait_for. Prefer semantic element actions when reliable, but use screenshot-relative coordinate actions when the accessibility tree is empty or incomplete. Use focus_window to recover window focus and wait_for for loading or visible state changes. Do not repeat an unchanged action indefinitely. Never emit shell commands, scripts, AppleScript, JXA, PowerShell UI automation, pyautogui, xdotool, or external automation tools. Do not claim completion; only request verification.`
+
+const BATCH_DECISION_SYSTEM_PROMPT = `${DECISION_SYSTEM_PROMPT}
+You may also return a short batch of actions that you expect to remain valid when executed in sequence:
+{"type":"actions","intent":"short reason for the whole sequence","actions":[<2 to 8 supported actions in order>]}
+Only use a batch for a sequence whose later steps stay valid after the earlier ones run (for example a series of keypresses, typing, scrolls, waits, or clicks on stable targets). The host re-checks the target before every step and stops the batch the moment a target becomes stale, so prefer a single "action" whenever a step depends on the result of the previous one. Never use a batch to bypass the one-action-per-decision discipline for risky or unrelated actions; when unsure, return a single action.`
 
 function buildDecisionPrompt(input: ComputerDecisionInput, attempt: number): string {
   const tree = input.observation.tree.text.slice(0, MAX_TREE_PROMPT_CHARS)
@@ -156,6 +171,25 @@ function parseDecision(text: string): ComputerDecision {
       throw invalidDecision()
     }
     return { type: 'action', action: action.data, intent: record.intent.trim() }
+  }
+  if (record.type === 'actions') {
+    if (!Array.isArray(record.actions)) throw invalidDecision()
+    if (
+      record.actions.length < MIN_BATCH_ACTIONS ||
+      record.actions.length > MAX_BATCH_ACTIONS ||
+      typeof record.intent !== 'string' ||
+      record.intent.trim().length < 1 ||
+      record.intent.length > 4_000
+    ) {
+      throw invalidDecision()
+    }
+    const actions: ComputerAction[] = []
+    for (const raw of record.actions) {
+      const parsed = ComputerActionSchema.safeParse(raw)
+      if (!parsed.success || !SUPPORTED_ACTIONS.has(parsed.data.type)) throw invalidDecision()
+      actions.push(parsed.data)
+    }
+    return { type: 'actions', actions, intent: (record.intent as string).trim() }
   }
   if (
     (record.type === 'ready_for_verification' || record.type === 'handoff') &&
