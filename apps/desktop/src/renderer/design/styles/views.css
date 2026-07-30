@@ -2964,8 +2964,7 @@ body.sidebar-resizing {
     0 0 0 1px rgba(0, 0, 0, 0.025),
     0 8px 32px rgba(0, 0, 0, 0.05);
 } */
-/* 空态 hero：输入区更大更舒展。通过覆盖 .composer-input-shell 的共享变量实现，
-   textarea 与 highlights 层同步生效 —— 之前只覆盖 textarea 导致两层错位。 */
+/* 空态 hero：输入区更大更舒展。通过覆盖 .composer-input-shell 的变量统一调整。 */
 .chat-main-empty .composer-v2 .composer-input-shell {
   --cp-font-size: 14px;
   --cp-line-height: 1.6;
@@ -3692,22 +3691,15 @@ body.sidebar-resizing {
 }
 
 /* ============================================================
-   Composer v2 输入区（可选透明 textarea + 绝对定位 highlights 层）
+   Composer v2 输入区
    ------------------------------------------------------------
-   仅当输入含 @agent / /skill 等待高亮 token 时启用叠加层；普通文本直接在 textarea 渲染，
-   避免两层字体度量不一致导致光标随字符数累积错位。
-   叠加模式下 textarea 文字透明，可见文字由 .composer-input-highlights 层渲染。
-   因此两层【必须逐像素对齐】：padding / 字号 / 行高 / min-height / max-height
-   必须完全一致，否则光标（在 textarea 里）与可见文字（在 highlights 层）会错位。
-
-   做法：在 .composer-input-shell 上声明一组共享 CSS 变量，
-   textarea 与 highlights 层【共同引用同一组变量】。
-   各状态（默认 / has-workspace-picks / 空态 hero / 移动端）只改这组变量，
-   不再各自写 textarea 规则 —— 从根上消除"两层各被不同规则覆盖"的冲突。
+   textarea 自己负责文字、选区和光标绘制。不要再用透明 textarea 叠加镜像文字层：
+   浏览器会在选区中重新绘制透明文字，且 div 与 textarea 对中日韩字体的度量和换行
+   并不完全一致，会分别造成选中文字重影和长文本光标累积偏移。
    ============================================================ */
 .composer-input-shell {
   position: relative;
-  /* 输入区几何变量：textarea 与 highlights 层共用，保证逐像素对齐 */
+  /* 各状态通过这些变量统一调整输入区几何。 */
   --cp-pad-top: 10px;
   --cp-pad-right: 60px;   /* 右侧给展开按钮 + 发送区留位 */
   --cp-pad-bottom: 48px;  /* 底部给发送区(模型选择/发送按钮)留位 */
@@ -3758,69 +3750,9 @@ body.sidebar-resizing {
   color: var(--text);
   caret-color: var(--text);
 }
-/* 叠加高亮模式：textarea 文字透明，可见文字由 highlights 层渲染；光标仍在本层 */
-.composer-v2 .composer-input-shell.has-input-highlights {
-  /* OpenType 特性 / optimizeLegibility 在 textarea 与 div 间度量不一致，会随字符累积错位 */
-  --cp-font-feature-settings: normal;
-  --cp-text-rendering: auto;
-}
-.composer-v2 .composer-input-shell.has-input-highlights textarea.composer-input {
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-}
-.composer-v2 .composer-input-shell.has-input-highlights textarea.composer-input,
-.composer-v2 .composer-input-shell.has-input-highlights .composer-input-highlights {
-  font-variant-ligatures: none;
-  font-variant-numeric: normal;
-}
 .composer-v2 .composer-input-shell textarea.composer-input::placeholder {
   color: var(--text-faint);
   -webkit-text-fill-color: var(--text-faint);
-}
-/* highlights 层：与 textarea 引用【同一组】变量，保证 padding/字号/行高/尺寸完全一致 */
-.composer-input-highlights {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-width: none;
-  box-sizing: border-box;
-  white-space: var(--cp-white-space);
-  word-break: var(--cp-word-break);
-  overflow-wrap: var(--cp-overflow-wrap);
-  padding:
-    var(--cp-pad-top) var(--cp-pad-right) var(--cp-pad-bottom) var(--cp-pad-left);
-  font-family: var(--cp-font-family);
-  font-size: var(--cp-font-size);
-  font-style: var(--cp-font-style);
-  font-weight: var(--cp-font-weight);
-  letter-spacing: var(--cp-letter-spacing);
-  font-feature-settings: var(--cp-font-feature-settings);
-  line-height: var(--cp-line-height);
-  text-rendering: var(--cp-text-rendering);
-  tab-size: var(--cp-tab-size);
-  min-height: var(--cp-min-height);
-  max-height: var(--cp-max-height);
-  color: var(--text);
-}
-.composer-input-highlights::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
-}
-.composer-input-token {
-  border-radius: 3px;
-  font-weight: inherit;
-}
-.composer-input-token-agent {
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-}
-.composer-input-token-skill {
-  /* padding: 0 4px; */
-  color: var(--warning);
 }
 /* 展开态：放宽 max-height，让 JS 里的 520px 能真正生效（默认 320px 会反向 cap 住） */
 .composer.composer-v2.expanded .composer-input-shell {
@@ -3884,8 +3816,7 @@ body.sidebar-resizing {
 .composer-submit-picks .composer-select-trigger span {
   max-width: 120px;
 }
-/* has-workspace-picks：发送区只露一行（无展开按钮），收紧右侧/底部留白。
-   改变量而非单独写 textarea —— highlights 层同步生效，两层继续对齐。 */
+/* has-workspace-picks：发送区只露一行（无展开按钮），收紧右侧/底部留白。 */
 .composer-v2.has-workspace-picks .composer-input-shell {
   --cp-pad-right: 36px;
   --cp-pad-bottom: 40px;

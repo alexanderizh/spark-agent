@@ -35,12 +35,4 @@ export function scrollTextareaCaretIntoView(
   if (clampedScrollTop === textarea.scrollTop) return
 
   textarea.scrollTop = clampedScrollTop
-  const highlightLayer = textarea.previousElementSibling
-  if (
-    highlightLayer instanceof HTMLElement &&
-    highlightLayer.classList.contains('composer-input-highlights')
-  ) {
-    highlightLayer.scrollTop = clampedScrollTop
-    highlightLayer.scrollLeft = textarea.scrollLeft
-  }
 }
