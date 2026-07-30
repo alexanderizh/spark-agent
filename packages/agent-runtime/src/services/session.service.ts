@@ -1909,11 +1909,26 @@ export class SessionService {
     const explicitProviderProfileId = isMentionTurn
       ? undefined
       : runtimePatch?.providerProfileId?.trim()
+    const runtimeAgentProviderProfileId = runtimeAgent.providerProfileId?.trim()
+    const runtimeAgentProviderIsStale =
+      !isMentionTurn &&
+      runtimeAgentProviderProfileId != null &&
+      runtimeAgentProviderProfileId.length > 0 &&
+      providerRepo.get(runtimeAgentProviderProfileId) == null
+    if (runtimeAgentProviderIsStale) {
+      log.warn('agent provider profile is missing; falling back to session provider', {
+        sessionId,
+        agentId: runtimeAgent.id,
+        providerProfileId: runtimeAgentProviderProfileId,
+        fallbackProviderProfileId: session.provider_profile_id,
+      })
+    }
     const effectiveProviderProfileId =
       explicitProviderProfileId ||
       (isMentionTurn
         ? agent.providerProfileId?.trim() || session.provider_profile_id
-        : runtimeAgent.providerProfileId?.trim() || session.provider_profile_id)
+        : (!runtimeAgentProviderIsStale && runtimeAgentProviderProfileId) ||
+          session.provider_profile_id)
     if (effectiveProviderProfileId == null) {
       throw new Error(`Session ${sessionId} has no provider profile`)
     }
@@ -1946,7 +1961,7 @@ export class SessionService {
       explicitModelId ||
       (isMentionTurn
         ? agent.modelId?.trim() || session.model_id
-        : runtimeAgent.modelId?.trim() || session.model_id)
+        : (!runtimeAgentProviderIsStale && runtimeAgent.modelId?.trim()) || session.model_id)
     const loadProvider = (providerProfileId: string) => {
       const row = providerRepo.get(providerProfileId)
       if (row == null) {
@@ -2014,7 +2029,12 @@ export class SessionService {
       isLocalCli = isBuiltInLocalCliProvider(provider)
       config = JSON.parse(provider.config_json) as typeof config
       const configuredAgentModel =
-        (isMentionTurn ? agent.modelId : runtimeAgent.modelId)?.trim() ?? ''
+        (isMentionTurn
+          ? agent.modelId
+          : runtimeAgentProviderIsStale
+            ? null
+            : runtimeAgent.modelId
+        )?.trim() ?? ''
       const sessionModel = session.model_id?.trim() ?? ''
       const configuredModels = Array.isArray(config.modelIds)
         ? config.modelIds.filter((item): item is string => typeof item === 'string')
