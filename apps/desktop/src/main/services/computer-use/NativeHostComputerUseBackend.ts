@@ -18,6 +18,7 @@ import type {
 } from './ComputerUseBackend.js'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import { NativeHostArtifactError } from './NativeHostArtifact.js'
+import { NativeHostSupervisor } from './NativeHostSupervisor.js'
 
 const log = createLogger('computer-use-native-host')
 
@@ -96,6 +97,7 @@ export class NativeHostComputerUseBackend
   private readonly evidenceSink: NativeObservationEvidenceSink | null
   private readonly createId: () => string
   private readonly observationSessions = new Map<string, ObservationSessionState>()
+  private readonly supervisor: NativeHostSupervisor | null
   private connectionPromise: Promise<NativeHostConnection> | null = null
   private connection: NativeHostConnection | null = null
   private disposed = false
@@ -105,11 +107,42 @@ export class NativeHostComputerUseBackend
     connect: () => Promise<NativeHostConnection>
     evidenceSink?: NativeObservationEvidenceSink
     createId?: () => string
+    /**
+     * Inject a pre-built supervisor (tests). Mutually exclusive with
+     * {@link enableHostSupervisor}.
+     */
+    supervisor?: NativeHostSupervisor
+    /**
+     * Construct the supervisor internally so its {@code onRebound} callback can
+     * clear this backend's cached observations. Production path, gated by the
+     * factory feature flag.
+     */
+    enableHostSupervisor?: boolean
   }) {
     this.platform = options.platform
     this.connect = options.connect
     this.evidenceSink = options.evidenceSink ?? null
     this.createId = options.createId ?? randomUUID
+    if (options.supervisor != null && options.enableHostSupervisor === true) {
+      throw new Error(
+        'NativeHostComputerUseBackend: pass either supervisor or enableHostSupervisor, not both',
+      )
+    }
+    this.supervisor =
+      options.supervisor ??
+      (options.enableHostSupervisor === true
+        ? new NativeHostSupervisor({
+            connect: () => this.connect(),
+            probe: async (connection) => {
+              await connection.getCapabilities()
+            },
+            onRebound: () => {
+              // The new host process lost all session state — every cached
+              // observation is now stale. Force callers to re-bind + re-observe.
+              this.observationSessions.clear()
+            },
+          })
+        : null)
   }
 
   async getCapabilities(): Promise<ComputerUseCapabilitySummary> {
@@ -226,6 +259,26 @@ export class NativeHostComputerUseBackend
 
   async cancelSession(computerSessionId: string): Promise<void> {
     this.observationSessions.delete(computerSessionId)
+    if (this.supervisor != null) {
+      let connection: NativeHostConnection
+      try {
+        connection = await this.supervisor.acquire()
+      } catch (error) {
+        // The supervisor has no live connection to cancel on; the local session
+        // is already cleared. Surface the underlying error for observability.
+        throw normalizeBackendError(error)
+      }
+      try {
+        await connection.cancelSession(computerSessionId)
+      } catch (error) {
+        const normalized = normalizeBackendError(error)
+        if (shouldInvalidateConnection(normalized)) {
+          await this.invalidateConnection(connection, normalized)
+        }
+        throw normalized
+      }
+      return
+    }
     if (this.connectionPromise == null) return
     try {
       const connection = await this.connectionPromise
@@ -233,7 +286,7 @@ export class NativeHostComputerUseBackend
     } catch (error) {
       const normalized = normalizeBackendError(error)
       if (shouldInvalidateConnection(normalized) && this.connection != null) {
-        await this.invalidateConnection(this.connection)
+        await this.invalidateConnection(this.connection, normalized)
       }
       throw normalized
     }
@@ -243,6 +296,10 @@ export class NativeHostComputerUseBackend
     if (this.disposed) return
     this.disposed = true
     this.observationSessions.clear()
+    if (this.supervisor != null) {
+      await this.supervisor.dispose()
+      return
+    }
     if (this.connectionPromise == null) return
     try {
       await (await this.connectionPromise).close()
@@ -262,7 +319,7 @@ export class NativeHostComputerUseBackend
         return await operation(connection)
       } catch (error) {
         const normalized = normalizeBackendError(error)
-        if (shouldInvalidateConnection(normalized)) await this.invalidateConnection(connection)
+        if (shouldInvalidateConnection(normalized)) await this.invalidateConnection(connection, normalized)
         throw normalized
       }
     })
@@ -333,7 +390,7 @@ export class NativeHostComputerUseBackend
         return await callback(connection)
       } catch (error) {
         const normalized = normalizeBackendError(error)
-        if (shouldInvalidateConnection(normalized)) await this.invalidateConnection(connection)
+        if (shouldInvalidateConnection(normalized)) await this.invalidateConnection(connection, normalized)
         throw normalized
       }
     })
@@ -389,7 +446,16 @@ export class NativeHostComputerUseBackend
     return observation
   }
 
-  private async invalidateConnection(connection: NativeHostConnection): Promise<void> {
+  private async invalidateConnection(
+    connection: NativeHostConnection,
+    error?: unknown,
+  ): Promise<void> {
+    if (this.supervisor != null) {
+      const brokerError =
+        error instanceof ComputerUseBrokerError ? error : normalizeBackendError(error)
+      await this.supervisor.reportTerminalFailure(connection, brokerError)
+      return
+    }
     if (this.connection !== connection) return
     this.connection = null
     this.connectionPromise = null
@@ -402,6 +468,7 @@ export class NativeHostComputerUseBackend
         new ComputerUseBrokerError('session_canceled', 'Native Host backend is disposed'),
       )
     }
+    if (this.supervisor != null) return this.supervisor.acquire()
     if (this.connectionPromise != null) return this.connectionPromise
     const pending = this.connect()
       .then((connection) => {

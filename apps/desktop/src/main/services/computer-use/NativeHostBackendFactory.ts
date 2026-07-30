@@ -19,6 +19,7 @@ import {
   type NativeHostConnection,
   type NativeObservationEvidenceSink,
 } from './NativeHostComputerUseBackend.js'
+import { isHostSupervisorEnabled } from './computerUseV2Flags.js'
 
 export type DefaultComputerUseBackend = UnavailableComputerUseBackend | NativeHostComputerUseBackend
 
@@ -39,6 +40,8 @@ export function createDefaultComputerUseBackend(
       executablePath: string,
     ) => Promise<WindowsNativeHostCodeSignature>
     evidenceSink?: NativeObservationEvidenceSink
+    /** Override the V2 host-supervisor flag (tests). Production reads the env. */
+    hostSupervisorEnabled?: boolean
   } = {},
 ): DefaultComputerUseBackend {
   const platform = options.platform ?? process.platform
@@ -80,6 +83,7 @@ export function createDefaultComputerUseBackend(
   return new NativeHostComputerUseBackend({
     platform: nativePlatform,
     ...(options.evidenceSink == null ? {} : { evidenceSink: options.evidenceSink }),
+    enableHostSupervisor: options.hostSupervisorEnabled ?? isHostSupervisorEnabled(),
     connect: async () => {
       const trustMode = await readArtifactTrustMode(manifestPath)
       const artifact =
