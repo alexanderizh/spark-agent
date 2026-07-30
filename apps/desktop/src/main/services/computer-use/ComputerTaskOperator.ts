@@ -12,9 +12,24 @@ import type {
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import type { ComputerDecision, GenericComputerDecisionAdapter } from './ComputerDecisionAdapter.js'
 import { ComputerVerificationEngine } from './ComputerVerificationEngine.js'
+import { reconcileObservationTree } from './NativeHostTreeReconciler.js'
+import { isIncrementalTreeEnabled } from './computerUseV2Flags.js'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('computer-use-operator')
+
+/**
+ * When the V2 incremental-tree flag is on, decision steps request a diff tree
+ * and the client-side reconciler (NativeHostTreeReconciler) rebuilds the full
+ * tree text from the always-complete `elements` array — model input is
+ * equivalent to a full request while saving the `tree.text` wire bytes. Off =
+ * current behaviour (always request the full tree). The Host itself refuses to
+ * diff when the previous treeVersion is stale, so recovery/first steps still
+ * receive a full tree regardless of this flag.
+ */
+function shouldRequestFullDecisionTree(): boolean {
+  return !isIncrementalTreeEnabled()
+}
 
 const APPROVAL_POLL_MS = 250
 const MAX_APPROVAL_POLLS = 1_200
@@ -147,7 +162,7 @@ export class ComputerTaskOperator {
     let successfulActions = 0
     const abortSignal = this.getAbortSignal?.(input.session.id)
     try {
-      observation = await this.observeWithRecovery(input.session.id, true)
+      observation = await this.observeWithRecovery(input.session.id, shouldRequestFullDecisionTree())
       for (let stepIndex = 0; stepIndex < input.session.taskContract.maxSteps; stepIndex += 1) {
         if (abortSignal?.aborted) {
           return { status: 'failed', reason: 'session_canceled' }
@@ -179,7 +194,7 @@ export class ComputerTaskOperator {
           consecutiveTransientFailures += 1
           if (consecutiveTransientFailures > MAX_DECISION_RECOVERIES) throw error
           await this.wait(recoveryDelay(consecutiveTransientFailures))
-          observation = await this.observeWithRecovery(input.session.id, true)
+          observation = await this.observeWithRecovery(input.session.id, shouldRequestFullDecisionTree())
           continue
         }
         if (decision.type === 'handoff') {
@@ -189,7 +204,7 @@ export class ComputerTaskOperator {
           ) {
             modelHandoffReplans += 1
             await this.wait(recoveryDelay(modelHandoffReplans))
-            observation = await this.observeWithRecovery(input.session.id, true)
+            observation = await this.observeWithRecovery(input.session.id, shouldRequestFullDecisionTree())
             continue
           }
           this.sessions.setPhase(input.session.id, 'handoff_required')
@@ -201,12 +216,12 @@ export class ComputerTaskOperator {
             successfulActions === 0 &&
             requiresObservableProgress(input.session.taskContract.successCriteria)
           ) {
-            observation = await this.observeWithRecovery(input.session.id, true)
+            observation = await this.observeWithRecovery(input.session.id, shouldRequestFullDecisionTree())
             continue
           }
           this.sessions.setPhase(input.session.id, 'verifying')
           if (observation.tree.mode !== 'full') {
-            observation = await this.observeWithRecovery(input.session.id, true)
+            observation = await this.observeWithRecovery(input.session.id, shouldRequestFullDecisionTree())
           }
           const windows = await this.windowInventory?.listWindows()
           const verification = this.verification.verify(
@@ -281,7 +296,7 @@ export class ComputerTaskOperator {
           } else {
             throw error
           }
-          observation = await this.observeWithRecovery(input.session.id, true)
+          observation = await this.observeWithRecovery(input.session.id, shouldRequestFullDecisionTree())
         }
       }
       this.sessions.fail(input.session.id)
@@ -312,7 +327,14 @@ export class ComputerTaskOperator {
     let lastError: unknown
     for (let attempt = 0; attempt <= MAX_TRANSIENT_RECOVERIES; attempt += 1) {
       try {
-        return await this.broker.observe(computerSessionId, fullTree)
+        const observation = await this.broker.observe(computerSessionId, fullTree)
+        // Reconcile a diff tree into a full tree before any decision/verification
+        // consumer sees it. When the incremental-tree flag is off the Host always
+        // returns full mode, so this is a no-op; when it is on, the diff response
+        // is rebuilt from the always-complete `elements` array (see
+        // NativeHostTreeReconciler), keeping model input equivalent to a full
+        // request while saving the `tree.text` wire bytes.
+        return reconcileObservationTree(observation)
       } catch (error) {
         lastError = error
         if (
