@@ -204,10 +204,20 @@ describe('ChatTurnNavigator', () => {
     expect(document.body.textContent).toContain('新的流式回答片段')
   })
 
-  it('stays visible with the compact 28px content gutter', () => {
-    contentLeft = 28
+  it('stays visible without a dedicated content gutter', () => {
+    contentLeft = 0
     act(() => root.render(<Harness onNavigate={vi.fn()} onLoadOlder={vi.fn()} />))
 
     expect(container.querySelector('[aria-label="对话轮次导航"]')).not.toBeNull()
+  })
+
+  it('stays hidden when there is only one turn to navigate', () => {
+    act(() =>
+      root.render(
+        <Harness onNavigate={vi.fn()} onLoadOlder={vi.fn()} navItems={items.slice(0, 1)} />,
+      ),
+    )
+
+    expect(container.querySelector('[aria-label="对话轮次导航"]')).toBeNull()
   })
 })

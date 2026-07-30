@@ -13,9 +13,6 @@ import { createPortal } from 'react-dom'
 import type { ChatTurnNavItem } from './chat-turn-navigation'
 import './ChatTurnNavigator.less'
 
-// 展开后的最长线到滚动区左侧约 44px；正文自身另有 16px 内边距，
-// 因此 28px 的外侧留白已经足够避免与正文重叠。
-const MIN_LEFT_GUTTER = 28
 const PREVIEW_OPEN_DELAY_MS = 100
 const PREVIEW_CLOSE_DELAY_MS = 80
 const PREVIEW_EDGE_GAP = 10
@@ -47,7 +44,6 @@ export function ChatTurnNavigator({
   const closeTimerRef = useRef<number | null>(null)
   const pulseTimerRef = useRef<number | null>(null)
   const frameRef = useRef<number | null>(null)
-  const [visible, setVisible] = useState(false)
   const [activeKey, setActiveKey] = useState<string | null>(() => items.at(-1)?.key ?? null)
   const [rovingKey, setRovingKey] = useState<string | null>(() => items.at(-1)?.key ?? null)
   const [preview, setPreview] = useState<PreviewState | null>(null)
@@ -82,44 +78,6 @@ export function ChatTurnNavigator({
       delay,
     )
   }, [])
-
-  const measureLayout = useCallback(() => {
-    const scrollElement = scrollRef.current
-    const viewport = scrollElement?.parentElement
-    const content = scrollElement?.querySelector<HTMLElement>('.chat-stream-inner')
-    if (!scrollElement || !viewport || !content) return
-    const viewportRect = viewport.getBoundingClientRect()
-    const contentRect = content.getBoundingClientRect()
-    const leftGutter = contentRect.left - viewportRect.left
-    const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches === true
-    const nextVisible = items.length >= 2 && leftGutter >= MIN_LEFT_GUTTER && !coarsePointer
-    setVisible((previous) => (previous === nextVisible ? previous : nextVisible))
-  }, [items.length, scrollRef])
-
-  useLayoutEffect(() => {
-    measureLayout()
-    const scrollElement = scrollRef.current
-    const viewport = scrollElement?.parentElement
-    const content = scrollElement?.querySelector<HTMLElement>('.chat-stream-inner')
-    if (!scrollElement || !viewport || !content || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(measureLayout)
-    observer.observe(viewport)
-    observer.observe(content)
-    window.addEventListener('resize', measureLayout)
-    const classObserver =
-      typeof MutationObserver === 'undefined' ? null : new MutationObserver(measureLayout)
-    if (viewport.parentElement != null) {
-      classObserver?.observe(viewport.parentElement, {
-        attributes: true,
-        attributeFilter: ['class', 'style'],
-      })
-    }
-    return () => {
-      observer.disconnect()
-      classObserver?.disconnect()
-      window.removeEventListener('resize', measureLayout)
-    }
-  }, [measureLayout, scrollRef])
 
   const updateActiveTurn = useCallback(() => {
     const scrollElement = scrollRef.current
@@ -245,7 +203,7 @@ export function ChatTurnNavigator({
     markerRefs.current.get(next.key)?.focus()
   }
 
-  if (!visible) return null
+  if (items.length < 2) return null
 
   return (
     <>
