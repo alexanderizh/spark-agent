@@ -98,10 +98,18 @@ describe('chat scroll controls', () => {
         /\.chat-main-active\.git-env-panel-open \.chat-stream-inner,\s*\.chat-main-active\.git-env-panel-open \.composer-inner\s*\{[^}]*\}/g,
       ),
     ].map((match) => match[0])
+    const gitPanelLayoutBlock =
+      stylesheet.match(/\.chat-main-active\.git-env-panel-open\s*\{[^}]*\}/)?.[0] ?? ''
 
     expect(sharedContainerBlock).toContain('width: min(100%, 900px)')
     expect(sharedContainerBlock).toContain('padding-inline: 16px')
     expect(gitGutterBlocks.some((block) => block.includes('--git-gutter-base: 16px'))).toBe(true)
+    expect(gitPanelLayoutBlock).toContain('--git-turn-nav-reserve: 28px')
+    expect(
+      gitGutterBlocks.some((block) =>
+        block.includes('calc(var(--git-center-free) - var(--git-turn-nav-reserve))'),
+      ),
+    ).toBe(true)
   })
 
   it('keeps the scroll-to-bottom button free of hover effects and shadows', () => {

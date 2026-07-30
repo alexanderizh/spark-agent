@@ -92,6 +92,7 @@
 .chat-main-active.git-env-panel-open {
   --git-content-max: 900px;
   --git-gutter-min: 16px;
+  --git-turn-nav-reserve: 28px;
   --git-panel-want: 300px; /* 280px 面板 + 右侧偏移与间距 */
 }
 
@@ -102,7 +103,11 @@
   --git-padding-free: max(0px, calc(var(--git-gutter-base) - var(--git-gutter-min)));
   /* 右侧还需补多少才够面板宽度；已够则 need=0，不再从左侧补贴 */
   --git-right-need: max(0px, calc(var(--git-panel-want) - var(--git-center-free)));
-  --git-shift-margin: min(var(--git-center-free), var(--git-right-need));
+  /* 退让不能吃掉轮次导航所需的全部左侧留白。 */
+  --git-shift-margin: min(
+    max(0px, calc(var(--git-center-free) - var(--git-turn-nav-reserve))),
+    var(--git-right-need)
+  );
   --git-shift-padding: min(
     var(--git-padding-free),
     max(0px, calc(var(--git-right-need) - var(--git-shift-margin)))
