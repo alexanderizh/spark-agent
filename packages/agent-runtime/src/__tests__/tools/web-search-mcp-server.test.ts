@@ -8,7 +8,11 @@ const SERVER = path.resolve('src/tools/web-search-mcp-server.mjs')
 describe('spark_search MCP server', () => {
   let server: Server
   let baseUrl = ''
-  let lastRequest: { url: string | undefined; headers: Record<string, unknown>; body: unknown } | null = null
+  let lastRequest: {
+    url: string | undefined
+    headers: Record<string, unknown>
+    body: unknown
+  } | null = null
   let child: ChildProcessWithoutNullStreams | null = null
 
   beforeEach(async () => {
@@ -18,23 +22,43 @@ describe('spark_search MCP server', () => {
       req.on('data', (c) => chunks.push(Buffer.from(c)))
       req.on('end', () => {
         const raw = Buffer.concat(chunks).toString('utf8')
-        lastRequest = { url: req.url, headers: req.headers as Record<string, unknown>, body: raw ? JSON.parse(raw) : null }
+        lastRequest = {
+          url: req.url,
+          headers: req.headers as Record<string, unknown>,
+          body: raw ? JSON.parse(raw) : null,
+        }
         // Serper-shaped keyed provider mock
         if (req.url === '/search') {
           res.writeHead(200, { 'content-type': 'application/json' })
-          res.end(JSON.stringify({
-            organic: [
-              { title: 'First Result', link: 'https://example.com/a', snippet: 'snippet a' },
-              { title: 'Second Result', link: 'https://example.com/b', snippet: 'snippet b' },
-            ],
-            answerBox: { answer: '42' },
-          }))
+          res.end(
+            JSON.stringify({
+              organic: [
+                { title: 'First Result', link: 'https://example.com/a', snippet: 'snippet a' },
+                { title: 'Second Result', link: 'https://example.com/b', snippet: 'snippet b' },
+              ],
+              answerBox: { answer: '42' },
+            }),
+          )
+          return
+        }
+        if (req.url?.startsWith('/bing?')) {
+          res.writeHead(200, { 'content-type': 'text/html' })
+          res.end(`
+            <ol>
+              <li class="b_algo">
+                <h2 class=""><a href="https://example.com/bing-result">Bing Result</a></h2>
+                <p class="b_lineclamp">Bing snippet</p>
+              </li>
+            </ol>
+          `)
           return
         }
         // HTML page for fetch_url
         if (req.url === '/page') {
           res.writeHead(200, { 'content-type': 'text/html' })
-          res.end('<html><head><title>Hello Title</title></head><body><script>var x=1</script><article><p>Para one.</p><p>Para two.</p></article></body></html>')
+          res.end(
+            '<html><head><title>Hello Title</title></head><body><script>var x=1</script><article><p>Para one.</p><p>Para two.</p></article></body></html>',
+          )
           return
         }
         res.writeHead(404)
@@ -73,7 +97,9 @@ describe('spark_search MCP server', () => {
       SPARK_SEARCH_BASE_URL: baseUrl,
     })
     const res = await callMcp(child, {
-      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
       params: { name: 'web_search', arguments: { query: 'meaning of life', count: 2 } },
     })
     expect(res.error).toBeUndefined()
@@ -81,15 +107,64 @@ describe('spark_search MCP server', () => {
     expect(data.provider).toBe('serper')
     expect(data.answer).toBe('42')
     expect(data.results).toHaveLength(2)
-    expect(data.results[0]).toMatchObject({ title: 'First Result', url: 'https://example.com/a', snippet: 'snippet a' })
+    expect(data.results[0]).toMatchObject({
+      title: 'First Result',
+      url: 'https://example.com/a',
+      snippet: 'snippet a',
+    })
     expect(lastRequest?.headers['x-api-key']).toBe('test-key')
     expect(lastRequest?.body).toMatchObject({ q: 'meaning of life', num: 2 })
+  })
+
+  it('parses current Bing result markup with attributes on h2', async () => {
+    child = start({
+      SPARK_SEARCH_PROVIDER: 'bing',
+      SPARK_SEARCH_BING_URL: `${baseUrl}/bing`,
+    })
+    const res = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: { name: 'web_search', arguments: { query: 'bing parser', count: 1 } },
+    })
+    expect(res.error).toBeUndefined()
+    expect(res.result.structuredContent).toMatchObject({
+      provider: 'bing',
+      results: [
+        {
+          title: 'Bing Result',
+          url: 'https://example.com/bing-result',
+          snippet: 'Bing snippet',
+        },
+      ],
+    })
+  })
+
+  it('falls back to a keyless engine when a configured keyed provider fails', async () => {
+    child = start({
+      SPARK_SEARCH_PROVIDER: 'serper',
+      SPARK_SEARCH_API_KEY: 'invalid-key',
+      SPARK_SEARCH_BASE_URL: `${baseUrl}/missing`,
+      SPARK_SEARCH_BING_URL: `${baseUrl}/bing`,
+    })
+    const res = await callMcp(child, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: { name: 'web_search', arguments: { query: 'fallback', count: 1 } },
+    })
+    expect(res.error).toBeUndefined()
+    expect(res.result.structuredContent.provider).toBe('bing')
+    expect(res.result.structuredContent.results).toHaveLength(1)
+    expect(res.result.structuredContent.warnings[0]).toContain('serper: HTTP 404')
   })
 
   it('fetch_url strips HTML to readable text and extracts the title', async () => {
     child = start()
     const res = await callMcp(child, {
-      jsonrpc: '2.0', id: 3, method: 'tools/call',
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
       params: { name: 'fetch_url', arguments: { url: `${baseUrl}/page` } },
     })
     expect(res.error).toBeUndefined()
@@ -101,7 +176,10 @@ describe('spark_search MCP server', () => {
   })
 })
 
-function callMcp(child: ChildProcessWithoutNullStreams, request: Record<string, unknown>): Promise<any> {
+function callMcp(
+  child: ChildProcessWithoutNullStreams,
+  request: Record<string, unknown>,
+): Promise<any> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('MCP call timed out')), 8_000)
     let buffer = ''

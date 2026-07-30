@@ -1,6 +1,6 @@
 # 结构化提问可靠性设计
 
-> 状态: 已落地 | 最后核对: 2026-07-16
+> 状态: 已落地 | 最后核对: 2026-07-30
 
 ## 目标
 
@@ -22,7 +22,8 @@
 
 ## 依赖基线
 
-- `@anthropic-ai/claude-agent-sdk`: `0.3.211`，包括所有平台内置包。
-- `@openai/codex-sdk`: `0.144.5`。
+- `@anthropic-ai/claude-agent-sdk`: `0.3.220`，包括所有平台内置包。
+- `@anthropic-ai/sdk`: `0.115.0`。
+- `@openai/codex-sdk`: `0.146.0`。
 
 版本升级只解决 SDK 自身缺陷，不能替代宿主层的问答闸门和 detached recovery；两层必须同时保留。

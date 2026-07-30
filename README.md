@@ -251,17 +251,17 @@ graph LR
 
 ### 内置 MCP / 工具
 
-| 命名空间 | 能力 |
-| --- | --- |
-| `spark_search` | 供应商无关联网搜索（web_search / fetch_url），免密默认链 + keyed 后端（Bing / 百度 / DuckDuckGo / 博查 / Tavily / Serper）。 |
-| `spark_media` / `spark_image` | 图片 / 视频 / 语音生成与编辑，统一路由到 Provider 适配器（APIMart / xAI / 火山 / 百炼 / 可灵 / Hailuo 等）。 |
-| `spark_canvas` | 无限画布节点、任务、产物与项目上下文操作；lineage 派生边回写。 |
-| `spark_team` | A2A 团队成员调度、事件流、嵌套调用、成员级预算与超时。 |
-| `spark_debug` | 调试模式插桩、日志收集与分析。 |
-| `spark_platform` | 平台管理：Agent / Skill / Provider / Rules / Permissions CRUD。 |
-| `spark_board`（任务面板） | 看板任务增删改、状态流转、回收站与多维筛选，支持 Agent 自动操作。 |
-| `spark_web`（spark-web-tool） | HTML 在线幻灯片与定制网页生成，支持导出 PPTX / DOCX / Markdown。 |
-| `playwright` + `spark_browser` | `playwright` 负责标准网页自动化；`spark_browser` 提供应用内可见浏览器窗口、console/network 观测、元素读取与 profile 管理。 |
+| 命名空间                       | 能力                                                                                                                         |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `spark_search`                 | 供应商无关联网搜索（web_search / fetch_url），免密默认链 + keyed 后端（Bing / DuckDuckGo / 百度 / 博查 / Tavily / Serper）。 |
+| `spark_media` / `spark_image`  | 图片 / 视频 / 语音生成与编辑，统一路由到 Provider 适配器（APIMart / xAI / 火山 / 百炼 / 可灵 / Hailuo 等）。                 |
+| `spark_canvas`                 | 无限画布节点、任务、产物与项目上下文操作；lineage 派生边回写。                                                               |
+| `spark_team`                   | A2A 团队成员调度、事件流、嵌套调用、成员级预算与超时。                                                                       |
+| `spark_debug`                  | 调试模式插桩、日志收集与分析。                                                                                               |
+| `spark_platform`               | 平台管理：Agent / Skill / Provider / Rules / Permissions CRUD。                                                              |
+| `spark_board`（任务面板）      | 看板任务增删改、状态流转、回收站与多维筛选，支持 Agent 自动操作。                                                            |
+| `spark_web`（spark-web-tool）  | HTML 在线幻灯片与定制网页生成，支持导出 PPTX / DOCX / Markdown。                                                             |
+| `playwright` + `spark_browser` | `playwright` 负责标准网页自动化；`spark_browser` 提供应用内可见浏览器窗口、console/network 观测、元素读取与 profile 管理。   |
 
 ## 仓库结构
 

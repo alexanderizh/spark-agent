@@ -57,7 +57,7 @@ import com.anthropic.models.beta.sessions.SessionCreateParams;
 // 1. Create the agent (reusable, versioned)
 var agent = client.beta().agents().create(AgentCreateParams.builder()
     .name("Coding Assistant")
-    .model("claude-opus-4-7")
+    .model("claude-opus-5")
     .system("You are a helpful coding assistant.")
     .addTool(BetaManagedAgentsAgentToolset20260401Params.builder()
         .type(BetaManagedAgentsAgentToolset20260401Params.Type.AGENT_TOOLSET_20260401)
@@ -116,7 +116,7 @@ client.beta().sessions().events().send(session.id(), EventSendParams.builder()
     .build());
 ```
 
-> 💡 **Stream-first:** Open the stream *before* (or concurrently with) sending the message. The stream only delivers events that occur after it opens — stream-after-send means early events arrive buffered in one batch. See [Steering Patterns](../../shared/managed-agents-events.md#steering-patterns).
+> 💡 **Stream-first:** Open the stream _before_ (or concurrently with) sending the message. The stream only delivers events that occur after it opens — stream-after-send means early events arrive buffered in one batch. See [Steering Patterns](../../shared/managed-agents-events.md#steering-patterns).
 
 ---
 
@@ -295,7 +295,7 @@ import com.anthropic.models.beta.agents.BetaManagedAgentsUrlmcpServerParams;
 // Agent declares MCP server (no auth here — auth goes in a vault)
 var agent = client.beta().agents().create(AgentCreateParams.builder()
     .name("GitHub Assistant")
-    .model("claude-opus-4-7")
+    .model("claude-opus-5")
     .addMcpServer(BetaManagedAgentsUrlmcpServerParams.builder()
         .type(BetaManagedAgentsUrlmcpServerParams.Type.URL)
         .name("github")

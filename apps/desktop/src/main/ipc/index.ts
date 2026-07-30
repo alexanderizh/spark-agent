@@ -362,7 +362,8 @@ const browserAutomationMcpProvider: BrowserAutomationMcpProvider = async (
 
 const computerUseMcpProvider: ComputerUseMcpProvider = createComputerUseMcpProvider({
   controller: new ComputerUseAgentController({
-    resolveDecisionModel: (sessionId) => getSessionService().resolveComputerDecisionModel(sessionId),
+    resolveDecisionModel: (sessionId) =>
+      getSessionService().resolveComputerDecisionModel(sessionId),
     requestActionApproval: createComputerActionApprovalPresenter({
       getApprovals: () => getComputerUseServices().approvals,
       requestExactApproval: createNativeComputerActionApprovalPrompt(),
@@ -964,7 +965,7 @@ async function resolveCanvasMediaProviders(): Promise<MediaProviderProfileRuntim
         name: profile.name,
         defaultModel: profile.defaultModel,
         ...(profile.modelIds ? { modelIds: profile.modelIds } : {}),
-        ...(profile.mediaApiEndpoint ?? profile.apiEndpoint
+        ...((profile.mediaApiEndpoint ?? profile.apiEndpoint)
           ? { apiEndpoint: profile.mediaApiEndpoint ?? profile.apiEndpoint }
           : {}),
         mediaProvider: profile.mediaProvider ?? null,
@@ -1981,11 +1982,14 @@ async function recoverExistingDetachedQuestionAttachments(
       recoverDetachedQuestionAttachments(history.events, sourceTurnId),
     )
   } catch (error) {
-    log.warn('Failed to recover attachments for detached question answer; continuing without them', {
-      sessionId,
-      sourceTurnId,
-      error: error instanceof Error ? error.message : String(error),
-    })
+    log.warn(
+      'Failed to recover attachments for detached question answer; continuing without them',
+      {
+        sessionId,
+        sourceTurnId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    )
     return undefined
   }
 }
@@ -6596,7 +6600,9 @@ export function registerAllIpcHandlers(): void {
   // ─── Command Handlers ───────────────────────────────────────────────────────
 
   typedIpcHandle('command:execute', async (req) => {
-    log.info(`command:execute requested, sessionId=${req.sessionId}, messageLength=${req.message.length}`)
+    log.info(
+      `command:execute requested, sessionId=${req.sessionId}, messageLength=${req.message.length}`,
+    )
     const cmdResult = await getSessionService().executeCommandAsEvents({
       sessionId: req.sessionId,
       message: req.message,

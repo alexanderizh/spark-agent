@@ -95,7 +95,7 @@ export function readComposerDrafts(): ComposerDraftMap {
 
 /** 把旧的全量字典迁移成 per-bucket key，然后删掉旧 key */
 function migrateLegacyDrafts(into: ComposerDraftMap): void {
-  let legacyRaw: string | null = null
+  let legacyRaw: string | null
   try {
     legacyRaw = window.localStorage.getItem(COMPOSER_DRAFTS_LEGACY_KEY)
   } catch {
@@ -162,9 +162,10 @@ export function removeComposerDraftBucket(bucket: string): void {
  *
  * @returns 被删除的 bucket 列表（供调用方同步内存 state）
  */
-export function gcComposerDraftBuckets(
-  liveSessionIds: ReadonlySet<string> | null,
-): { removed: string[]; kept: ComposerDraftMap } {
+export function gcComposerDraftBuckets(liveSessionIds: ReadonlySet<string> | null): {
+  removed: string[]
+  kept: ComposerDraftMap
+} {
   const removed: string[] = []
   const kept: ComposerDraftMap = {}
   if (typeof window === 'undefined') return { removed, kept }

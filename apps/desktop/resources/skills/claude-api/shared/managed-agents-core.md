@@ -4,12 +4,12 @@
 
 Managed Agents is built around four core concepts:
 
-| Concept | Endpoint | What it is |
-|---|---|---|
-| **Agent** | `/v1/agents` | A persisted, versioned object defining the agent's capabilities and persona: model, system prompt, tools, MCP servers, skills. **Must be created before starting a session.** See the Agents section below. |
-| **Session** | `/v1/sessions` | A stateful interaction with an agent. References a pre-created agent by ID + an environment + initial instructions. Produces an event stream. |
-| **Environment** | `/v1/environments` | A template defining the configuration for container provisioning. |
-| **Container** | N/A | An isolated compute instance where the agent's **tools** execute (bash, file ops, code). The agent loop does not run here — it runs on Anthropic's orchestration layer and acts on the container via tool calls. |
+| Concept         | Endpoint           | What it is                                                                                                                                                                                                       |
+| --------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Agent**       | `/v1/agents`       | A persisted, versioned object defining the agent's capabilities and persona: model, system prompt, tools, MCP servers, skills. **Must be created before starting a session.** See the Agents section below.      |
+| **Session**     | `/v1/sessions`     | A stateful interaction with an agent. References a pre-created agent by ID + an environment + initial instructions. Produces an event stream.                                                                    |
+| **Environment** | `/v1/environments` | A template defining the configuration for container provisioning.                                                                                                                                                |
+| **Container**   | N/A                | An isolated compute instance where the agent's **tools** execute (bash, file ops, code). The agent loop does not run here — it runs on Anthropic's orchestration layer and acts on the container via tool calls. |
 
 ```
                        ┌─────────────────────────────────────┐
@@ -21,7 +21,7 @@ Agent (config) ───────▶│  (agent loop: Claude + tool calls)  �
 Environment (template) ──▶ Container (tool execution workspace)
                                  │
                          Session ─┤
-                                 ├── Resources (files, repos — mounted at startup)
+                                 ├── Resources (files, repos, memory stores — attached at startup)
                                  ├── Vault IDs (MCP credential references)
                                  └── Conversation (event stream in/out)
 ```
@@ -36,12 +36,12 @@ Environment (template) ──▶ Container (tool execution workspace)
 rescheduling → running ↔ idle → terminated
 ```
 
-| Status         | Description                                                        |
-| -------------- | ------------------------------------------------------------------ |
-| `idle` | Agent has finished the current task, and is awaiting input. It's either waiting for input to continue working via a `user.message` or blocked awaiting a `user.custom_tool_result` or `user.tool_confirmation`. The `stop_reason` attached contains more information about why the Agent has stopped working. |
-| `running` | Session has starting running, and the Agent is actively doing work. |
-| `rescheduling` | Session is (re)scheduling after a retryable error has occurred, ready to be picked up by the orchestration system. |
-| `terminated` | Session has terminated, entering an irreversible and unusable state.  |
+| Status         | Description                                                                                                                                                                                                                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `idle`         | Agent has finished the current task, and is awaiting input. It's either waiting for input to continue working via a `user.message` or blocked awaiting a `user.custom_tool_result` or `user.tool_confirmation`. The `stop_reason` attached contains more information about why the Agent has stopped working. |
+| `running`      | Session has starting running, and the Agent is actively doing work.                                                                                                                                                                                                                                           |
+| `rescheduling` | Session is (re)scheduling after a retryable error has occurred, ready to be picked up by the orchestration system.                                                                                                                                                                                            |
+| `terminated`   | Session has terminated, entering an irreversible and unusable state.                                                                                                                                                                                                                                          |
 
 - Events can be sent when the session is `running` or `idle`. Messages are queued and processed in order.
 - The agent transitions `idle → running` when it receives a new event, then back to `idle` when done.
@@ -55,12 +55,12 @@ rescheduling → running ↔ idle → terminated
 
 ### Session operations
 
-| Operation | Notes |
-|---|---|
-| List / fetch | Paginated list or single resource by ID |
-| Update | Only `title` is updatable |
-| Archive | Session becomes **read-only**. Not reversible. |
-| Delete | Permanently deletes session, event history, container, and checkpoints. |
+| Operation    | Notes                                                                   |
+| ------------ | ----------------------------------------------------------------------- |
+| List / fetch | Paginated list or single resource by ID                                 |
+| Update       | Only `title` is updatable                                               |
+| Archive      | Session becomes **read-only**. Not reversible.                          |
+| Delete       | Permanently deletes session, event history, container, and checkpoints. |
 
 ---
 
@@ -72,20 +72,20 @@ A session is a running agent instance inside an environment.
 
 Key fields returned by the API:
 
-| Field           | Type     | Description                                         |
-| --------------- | -------- | --------------------------------------------------- |
-| `type` | string | Always `"session"` |
-| `id` | string | Unique session ID |
-| `title` | string | Human-readable title |
-| `status` | string | `idle`, `running`, `rescheduling`, `terminated` |
-| `created_at` | string | ISO 8601 timestamp |
-| `updated_at` | string | ISO 8601 timestamp |
-| `archived_at` | string | ISO 8601 timestamp (nullable) |
-| `environment_id` | string | Environment ID |
-| `agent` | object | Agent configuration |
-| `resources` | array | Attached files and repos |
-| `metadata` | object | User-provided key-value pairs (max 8 keys) |
-| `usage` | object | Token usage statistics |
+| Field            | Type   | Description                                     |
+| ---------------- | ------ | ----------------------------------------------- |
+| `type`           | string | Always `"session"`                              |
+| `id`             | string | Unique session ID                               |
+| `title`          | string | Human-readable title                            |
+| `status`         | string | `idle`, `running`, `rescheduling`, `terminated` |
+| `created_at`     | string | ISO 8601 timestamp                              |
+| `updated_at`     | string | ISO 8601 timestamp                              |
+| `archived_at`    | string | ISO 8601 timestamp (nullable)                   |
+| `environment_id` | string | Environment ID                                  |
+| `agent`          | object | Agent configuration                             |
+| `resources`      | array  | Attached files, repos, and memory stores        |
+| `metadata`       | object | User-provided key-value pairs (max 8 keys)      |
+| `usage`          | object | Token usage statistics                          |
 
 ### Creating a session
 
@@ -93,48 +93,45 @@ Key fields returned by the API:
 
 ```ts
 // 1. Create the agent (reusable, versioned)
-const agent = await client.beta.agents.create(
-  {
-    name: "Coding Assistant",
-    model: "claude-opus-4-7",
-    system: "You are a helpful coding agent.",
-    tools: [{ type: "agent_toolset_20260401"}],
-  },
-);
+const agent = await client.beta.agents.create({
+  name: 'Coding Assistant',
+  model: 'claude-opus-5',
+  system: 'You are a helpful coding agent.',
+  tools: [{ type: 'agent_toolset_20260401' }],
+})
 
 // 2. Start a session that references it
-const session = await client.beta.sessions.create(
-  {
-    agent: agent.id,  // string shorthand → latest version. Or: { type: "agent", id: agent.id, version: agent.version }
-    environment_id: environmentId,
-    title: "Hello World Session",
-  },
-);
+const session = await client.beta.sessions.create({
+  agent: agent.id, // string shorthand → latest version. Or: { type: "agent", id: agent.id, version: agent.version }
+  environment_id: environmentId,
+  title: 'Hello World Session',
+})
 ```
 
 **Session creation parameters:**
 
-| Field           | Type     | Required | Description                                    |
-| --------------- | -------- | -------- | ---------------------------------------------- |
-| `agent`         | string or object | **Yes** | String shorthand `"agent_abc123"` (latest version) or `{type: "agent", id, version}` |
-| `environment_id`| string   | **Yes**  | Environment ID                                 |
-| `title`         | string   | No       | Human-readable name (appears in logs/dashboards) |
-| `resources`     | array    | No       | Files or GitHub repos, mounted to the container at startup |
-| `vault_ids`     | array    | No       | Vault IDs (`vlt_*`) — MCP credentials with auto-refresh. See `shared/managed-agents-tools.md` → Vaults. |
-| `metadata`      | object   | No       | User-provided key-value pairs                  |
+| Field            | Type             | Required | Description                                                                                                                                             |
+| ---------------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent`          | string or object | **Yes**  | String shorthand `"agent_abc123"` (latest version) or `{type: "agent", id, version}`                                                                    |
+| `environment_id` | string           | **Yes**  | Environment ID                                                                                                                                          |
+| `title`          | string           | No       | Human-readable name (appears in logs/dashboards)                                                                                                        |
+| `resources`      | array            | No       | Files, GitHub repos, or memory stores, attached to the container at startup. Memory stores are session-create-only (not addable via `resources.add()`). |
+| `vault_ids`      | array            | No       | Vault IDs (`vlt_*`) — MCP credentials with auto-refresh. See `shared/managed-agents-tools.md` → Vaults.                                                 |
+| `metadata`       | object           | No       | User-provided key-value pairs                                                                                                                           |
 
 **Agent configuration fields** (passed to `agents.create()`, not `sessions.create()`):
 
-| Field         | Type     | Required | Description                                    |
-| ------------- | -------- | -------- | ---------------------------------------------- |
-| `name`        | string   | **Yes**  | Human-readable name (1-256 chars)              |
-| `model`       | string or object | **Yes** | Claude model ID (bare string, or `{id, speed}` object). All Claude 4.5+ models supported. |
-| `system`      | string   | No       | System prompt — defines the agent's behavior (up to 100K chars) |
-| `tools`       | array    | No       | Encompasses three kinds: (1) pre-built Claude Agent tools (`agent_toolset_20260401`), (2) MCP tools (`mcp_toolset`), and (3) custom client-side tools. Max 128. |
-| `mcp_servers` | array    | No       | MCP server connections — standardized third-party capabilities (e.g. GitHub, Asana). Max 20, unique names. See `shared/managed-agents-tools.md` → MCP Servers. |
-| `skills`      | array    | No       | Customized "best-practices" context with progressive disclosure. Max 64. See `shared/managed-agents-tools.md` → Skills. |
-| `description` | string   | No       | Description of the agent (up to 2048 chars)    |
-| `metadata`    | object   | No       | Arbitrary key-value pairs (max 16, keys ≤64 chars, values ≤512 chars) |
+| Field         | Type             | Required | Description                                                                                                                                                     |
+| ------------- | ---------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`        | string           | **Yes**  | Human-readable name (1-256 chars)                                                                                                                               |
+| `model`       | string or object | **Yes**  | Claude model ID (bare string, or `{id, speed}` object). All Claude 4.5+ models supported.                                                                       |
+| `system`      | string           | No       | System prompt — defines the agent's behavior (up to 100K chars)                                                                                                 |
+| `tools`       | array            | No       | Encompasses three kinds: (1) pre-built Claude Agent tools (`agent_toolset_20260401`), (2) MCP tools (`mcp_toolset`), and (3) custom client-side tools. Max 128. |
+| `mcp_servers` | array            | No       | MCP server connections — standardized third-party capabilities (e.g. GitHub, Asana). Max 20, unique names. See `shared/managed-agents-tools.md` → MCP Servers.  |
+| `skills`      | array            | No       | Customized "best-practices" context with progressive disclosure. Max 20. See `shared/managed-agents-tools.md` → Skills.                                         |
+| `description` | string           | No       | Description of the agent (up to 2048 chars)                                                                                                                     |
+| `multiagent`  | object           | No       | `{type: "coordinator", agents: [...]}` — roster this agent may delegate to. See `shared/managed-agents-multiagent.md`.                                          |
+| `metadata`    | object           | No       | Arbitrary key-value pairs (max 16, keys ≤64 chars, values ≤512 chars)                                                                                           |
 
 ---
 
@@ -146,16 +143,17 @@ const session = await client.beta.sessions.create(
 
 The API is **flat** — `model`, `system`, `tools` etc. are top-level fields, not wrapped in an `agent:{}` sub-object.
 
-| Field              | Type     | Required | Description                                        |
-| ------------------ | -------- | -------- | -------------------------------------------------- |
-| `name`             | string   | Yes      | Human-readable name                                |
-| `model`            | string   | Yes      | Claude model ID                                    |
-| `system`           | string   | No       | System prompt                                      |
-| `tools`            | array    | No       | Agent toolset / MCP toolset / custom tools         |
-| `mcp_servers`      | array    | No       | MCP server connections                             |
-| `skills`           | array    | No       | Skill references (max 64)                          |
-| `description`      | string   | No       | Description of the agent                           |
-| `metadata`         | object   | No       | Arbitrary key-value pairs                          |
+| Field         | Type   | Required | Description                                                    |
+| ------------- | ------ | -------- | -------------------------------------------------------------- |
+| `name`        | string | Yes      | Human-readable name                                            |
+| `model`       | string | Yes      | Claude model ID                                                |
+| `system`      | string | No       | System prompt                                                  |
+| `tools`       | array  | No       | Agent toolset / MCP toolset / custom tools                     |
+| `mcp_servers` | array  | No       | MCP server connections                                         |
+| `skills`      | array  | No       | Skill references (max 20)                                      |
+| `description` | string | No       | Description of the agent                                       |
+| `multiagent`  | object | No       | Coordinator roster — see `shared/managed-agents-multiagent.md` |
+| `metadata`    | object | No       | Arbitrary key-value pairs                                      |
 
 ### Lifecycle: create once, run many, update in place
 
@@ -176,6 +174,7 @@ The agent is a **persistent resource**, not a per-run parameter. The intended pa
 Each `POST /v1/agents/{id}` (update) creates a new immutable version (numeric timestamp, e.g. `1772585501101368014`). The agent's history is append-only — you can't edit a past version.
 
 **Why version:**
+
 - **Reproducibility** — pin a session to a known-good config: `{type: "agent", id, version: 3}`
 - **Safe iteration** — update the agent without breaking sessions already running on the old version
 - **Rollback** — if a new system prompt regresses, pin new sessions back to the prior version while you debug
@@ -188,13 +187,13 @@ Each `POST /v1/agents/{id}` (update) creates a new immutable version (numeric ti
 
 ### Agent Endpoints
 
-| Operation        | Method   | Path                                  |
-| ---------------- | -------- | ------------------------------------- |
-| Create           | `POST`   | `/v1/agents`                          |
-| List             | `GET`    | `/v1/agents`                          |
-| Get              | `GET`    | `/v1/agents/{id}`                     |
-| Update           | `POST`   | `/v1/agents/{id}`                     |
-| Archive          | `POST`   | `/v1/agents/{id}/archive`             |
+| Operation | Method | Path                      |
+| --------- | ------ | ------------------------- |
+| Create    | `POST` | `/v1/agents`              |
+| List      | `GET`  | `/v1/agents`              |
+| Get       | `GET`  | `/v1/agents/{id}`         |
+| Update    | `POST` | `/v1/agents/{id}`         |
+| Archive   | `POST` | `/v1/agents/{id}/archive` |
 
 > ⚠️ **Archive is permanent.** Archiving makes the agent read-only: existing sessions continue to run, but **new sessions cannot reference it**, and there is no unarchive. Since agents have no `delete`, this is the terminal lifecycle state. Never archive a production agent as routine cleanup — confirm with the user first.
 
@@ -215,4 +214,3 @@ session = client.beta.sessions.create(
     environment_id=environment_id,
 )
 ```
-

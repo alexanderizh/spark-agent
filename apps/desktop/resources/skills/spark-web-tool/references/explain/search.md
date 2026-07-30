@@ -14,15 +14,12 @@
 
 **建议使用 multi-search-engine skill 进行联网搜索**：
 
-```bash
-# 搜索
-bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/search.sh "查询词" --limit 8
-
-# 抓取详情页
-bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/fetch.sh "https://..." --max-chars 5000
-```
+- 搜索：调用 `mcp__spark_search__web_search`，传入 `query` 和合适的 `count`。
+- 抓取详情页：调用 `mcp__spark_search__fetch_url`，传入结果 URL；需要控制长度时设置
+  `max_chars`。
 
 搜索策略（建议进行 **5-8 次**搜索，逐步深化）：
+
 - 第1-2次：搜索核心概念的定义、定理、公式的权威来源
 - 第3-4次：搜索具体解法、经典例题、应用场景
 - 第5-6次：搜索常见误区、易错点、边界条件、特殊情况
@@ -60,6 +57,7 @@ bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/fetch.sh "https://..." --
    - 验证后在对应步骤标注 `✓ 已验证` 或 `⚠ 注意：...`
 
 **Bash 验证示例（数学题）**：
+
 ```bash
 python3 -c "
 import math
@@ -74,6 +72,7 @@ print(f'sin(60°) = {result:.6f}')  # 预期 0.866025
 ## 阶段三：知识质量自检
 
 在写入文件前，逐项确认：
+
 - [ ] 所有出现的公式均有完整表达式（不只是名称）
 - [ ] 关键计算步骤已通过工具验证，非凭记忆
 - [ ] 已识别至少 1 个常见误区

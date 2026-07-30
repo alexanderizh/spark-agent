@@ -128,7 +128,7 @@ function addFilePath(
   resolveFilePath: FilePathResolver,
 ): void {
   if (file == null) return
-  let resolved = ''
+  let resolved: string
   try {
     resolved = resolveFilePath(file)
   } catch {

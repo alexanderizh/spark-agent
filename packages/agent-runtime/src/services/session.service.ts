@@ -4653,7 +4653,7 @@ export class SessionService {
   /**
    * 解析内置联网搜索 MCP server（spark_search），对所有 session 默认挂载。
    *
-   * 免密默认链（cn.bing → 百度 → DuckDuckGo）零配置可用；若 app_settings 的
+   * 免密默认链（Bing → DuckDuckGo → 百度）零配置可用；若 app_settings 的
    * `webSearch` 分类配置了 keyed provider（bocha/tavily/serper）+ apiKey，则
    * 自动优先走它。key 仅注入子进程环境变量，不外泄。
    */
@@ -9640,26 +9640,31 @@ function getLocalCliDefaultModel(provider: { id: string }): string {
 function providerRowsForModelRouter(
   rows: Array<{ id: string; provider_type: string; config_json: string; enabled: number }>,
 ): ModelRouterProvider[] {
-  return rows.filter((row) => row.enabled !== 0).map((row) => {
-    const config = parseProviderConfigForModelRouter(row.config_json)
-    return {
-      id: row.id,
-      provider: row.provider_type,
-      defaultModel: stringConfigValue(config.defaultModel) ?? stringConfigValue(config.model) ?? '',
-      modelIds: Array.isArray(config.modelIds)
-        ? config.modelIds.filter((item): item is string => typeof item === 'string')
-        : [],
-      ...(isKnownModelType(config.modelType) ? { modelType: config.modelType } : {}),
-      ...(typeof config.mediaProvider === 'string' ? { mediaProvider: config.mediaProvider } : {}),
-      ...(Array.isArray(config.mediaCapabilities)
-        ? {
-            mediaCapabilities: config.mediaCapabilities.filter(
-              (item): item is string => typeof item === 'string',
-            ),
-          }
-        : {}),
-    }
-  })
+  return rows
+    .filter((row) => row.enabled !== 0)
+    .map((row) => {
+      const config = parseProviderConfigForModelRouter(row.config_json)
+      return {
+        id: row.id,
+        provider: row.provider_type,
+        defaultModel:
+          stringConfigValue(config.defaultModel) ?? stringConfigValue(config.model) ?? '',
+        modelIds: Array.isArray(config.modelIds)
+          ? config.modelIds.filter((item): item is string => typeof item === 'string')
+          : [],
+        ...(isKnownModelType(config.modelType) ? { modelType: config.modelType } : {}),
+        ...(typeof config.mediaProvider === 'string'
+          ? { mediaProvider: config.mediaProvider }
+          : {}),
+        ...(Array.isArray(config.mediaCapabilities)
+          ? {
+              mediaCapabilities: config.mediaCapabilities.filter(
+                (item): item is string => typeof item === 'string',
+              ),
+            }
+          : {}),
+      }
+    })
 }
 
 function parseProviderConfigForModelRouter(configJson: string): Record<string, unknown> {

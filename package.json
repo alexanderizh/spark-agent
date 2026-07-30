@@ -14,9 +14,13 @@
     "dev": "cd apps/desktop && pnpm run dev",
     "dev:rebuild": "cd apps/desktop && pnpm run dev:rebuild",
     "build": "pnpm --filter @spark/desktop build",
+    "artifacts:codex": "node scripts/prepare-codex-runtime-artifacts.mjs",
+    "artifacts:audit": "node scripts/audit-artifact-repository.mjs",
+    "artifacts:publish-codex": "node scripts/publish-codex-runtime-to-minio.mjs",
     "test": "pnpm -r run test",
     "test:unit": "pnpm -r run test:unit",
     "test:e2e": "pnpm --filter @spark/desktop test:e2e",
+    "validate:skills": "node scripts/validate-builtin-skills.mjs",
     "lint": "pnpm -r run lint",
     "typecheck": "pnpm -r run typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\" --ignore-path .gitignore",
@@ -24,6 +28,7 @@
     "clean": "pnpm -r run clean && rm -rf node_modules"
   },
   "devDependencies": {
+    "aws4": "1.13.2",
     "prettier": "^3.3.0",
     "typescript": "^5.5.0"
   }

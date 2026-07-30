@@ -62,6 +62,7 @@
 - **Pexels** (https://www.pexels.com)：免费高清图片和视频，适合通用场景
 
 也可使用其他合规的免费图片资源网站。获取图片时应注意：
+
 1. 优先选择免费的素材
 2. 图片应与内容相关，风格统一
 3. 注意图片尺寸和清晰度，确保在最终产物中有良好的显示效果
@@ -108,31 +109,28 @@
 
 ### 搜索工具优先级与组合使用（建议执行）
 
-**核心原则**：建议优先使用 multi-search-engine skill，WebSearch/WebFetch 仅作为辅助补充，不建议单独使用。
+**核心原则**：建议优先使用 multi-search-engine skill 提供的 `spark_search` MCP 工具；
+SDK 自带 WebSearch/WebFetch 仅在确认当前供应商支持时作为补充。
 
 #### 推荐搜索组合
 
 1. **首选组合 — multi-search-engine skill**
-   ```bash
-   # 第一步：使用 skill 脚本搜索（建议）
-   bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/search.sh "查询词" --limit 8
-   
-   # 第二步：使用 skill 脚本抓取详情页（建议）
-   bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/fetch.sh "https://..." --max-chars 5000
-   ```
-   - 该技能内置两级降级（API → 无头浏览器），覆盖国内外搜索引擎
-   - 输出：JSON `{ok, source, count, results: [{title, url, snippet}]}`
-   - 成功返回 `ok: true` 后，取 3-5 条 URL 用 fetch.sh 抓详情
+   - 第一步：调用 `mcp__spark_search__web_search` 搜索查询词。
+   - 第二步：从结果中选择 3–5 条权威来源，调用 `mcp__spark_search__fetch_url` 阅读正文。
+   - 免密后端按 Bing → DuckDuckGo → 百度自动降级；配置 keyed provider 后优先使用，
+     失败时回退免密链并返回 `warnings`。
+   - 搜索结果结构包含 `provider`、`query`、`results: [{title, url, snippet}]`，
+     发生回退时还包含 `warnings`。
 
 2. **辅助补充 — MCP 工具（可选）**
    - 如果已配置 MCP 搜索服务（如 brave-search、tavily），可通过 MCP 工具补充搜索
-   - MCP 工具不可用时，不要重复尝试，继续使用 skill 脚本
+   - 补充 MCP 工具不可用时，不要重复尝试，继续使用 `spark_search`
 
 3. **最后补充 — WebSearch / WebFetch（仅作补充，不建议单独使用）**
    - ⚠️ 在 SDK 环境中，WebSearch/WebFetch 通常不可用
-   - 仅当 skill 脚本返回结果不足时，可尝试 WebSearch 补充
+   - 仅当 `spark_search` 返回结果不足时，可尝试 WebSearch 补充
    - WebFetch 抓取搜索引擎结果页会 403，不建议尝试
-   - 如果 WebSearch/WebFetch 不可用，不要重复尝试，回到 skill 脚本
+   - 如果 WebSearch/WebFetch 不可用，不要重复尝试，回到 `spark_search`
 
 4. **`edu-authoritative-research` skill（学术研究专用，可叠加）**
    - 学术、研究、专业内容研究时建议使用
@@ -141,7 +139,8 @@
 
 #### 推荐做法
 
-- ✅ 建议使用 multi-search-engine skill 的 search.sh/fetch.sh 脚本
+- ✅ 建议使用 multi-search-engine skill 的 `mcp__spark_search__web_search` /
+  `mcp__spark_search__fetch_url`
 - ✅ 搜索次数：一般主题 3-5 次，专题/出题/分析 ≥5-8 次
 - ❌ 不建议单独只使用 WebSearch 或 WebFetch
 - ❌ 不建议使用 WebFetch 抓取搜索引擎结果页（会 403）

@@ -10,7 +10,7 @@ Code samples are TypeScript — Python and cURL follow the same shape; see `pyth
 
 **Problem:** SSE has no replay. If the connection drops mid-session, a naive reconnect re-opens the stream from "now" and you silently miss every event emitted in between.
 
-**Solution:** on reconnect, fetch the full event history via `events.list()` *before* consuming the live stream, and dedupe on event ID as the live stream catches up.
+**Solution:** on reconnect, fetch the full event history via `events.list()` _before_ consuming the live stream, and dedupe on event ID as the live stream catches up.
 
 ```ts
 const seenEventIds = new Set<string>()
@@ -66,10 +66,7 @@ await client.beta.sessions.events.send(session.id, {
 // Drain until the session is truly done — see Pattern 5 for the full gate.
 for await (const event of stream) {
   if (event.type === 'session.status_terminated') break
-  if (
-    event.type === 'session.status_idle' &&
-    event.stop_reason.type !== 'requires_action'
-  ) break
+  if (event.type === 'session.status_idle' && event.stop_reason.type !== 'requires_action') break
 }
 ```
 
@@ -85,20 +82,23 @@ When the agent has `permission_policy: { type: 'always_ask' }`, any call to that
 for await (const event of stream) {
   if (event.type === 'agent.tool_use' && event.evaluated_permission === 'ask') {
     await client.beta.sessions.events.send(session.id, {
-      events: [{
-        type: 'user.tool_confirmation',
-        tool_use_id: event.id,         // not a toolu_ id — use event.id
-        result: 'allow',               // or 'deny'
-        // deny_message: '...',        // optional, only with result: 'deny'
-      }],
+      events: [
+        {
+          type: 'user.tool_confirmation',
+          tool_use_id: event.id, // not a toolu_ id — use event.id
+          result: 'allow', // or 'deny'
+          // deny_message: '...',        // optional, only with result: 'deny'
+        },
+      ],
     })
   }
 }
 ```
 
 Key points:
+
 - `tool_use_id` is `event.id` (typically `sevt_...`), **not** a `toolu_...` ID.
-- `result` is `'allow' | 'deny'`. Use `deny_message` to tell the model *why* you denied — it gets surfaced back to the agent.
+- `result` is `'allow' | 'deny'`. Use `deny_message` to tell the model _why_ you denied — it gets surfaced back to the agent.
 - Multiple pending tools: respond once per `agent.tool_use` event with `evaluated_permission === 'ask'`.
 
 Reference: `tool-permissions.ts`.
@@ -121,6 +121,7 @@ for await (const event of stream) {
 ```
 
 `stop_reason.type` values on `session.status_idle`:
+
 - `requires_action` — agent is waiting on a client-side event (tool confirmation, custom tool result). Handle it, don't break.
 - `retries_exhausted` — terminal failure. Break, then check `sessions.retrieve()` for the error state.
 - `end_turn` — normal completion.
@@ -138,7 +139,7 @@ let s
 for (let i = 0; i < 10; i++) {
   s = await client.beta.sessions.retrieve(session.id)
   if (s.status !== 'running') break
-  await new Promise(r => setTimeout(r, 200))
+  await new Promise((r) => setTimeout(r, 200))
 }
 if (s?.status !== 'running') {
   await client.beta.sessions.archive(session.id)
@@ -156,7 +157,9 @@ const stream = await client.beta.sessions.events.stream(session.id)
 await client.beta.sessions.events.send(session.id, {
   events: [{ type: 'user.message', content: [{ type: 'text', text: 'Hello' }] }],
 })
-for await (const event of stream) { /* ... */ }
+for await (const event of stream) {
+  /* ... */
+}
 ```
 
 The `Promise.all([stream, send])` shape works too, but stream-first is simpler and has the same effect — the stream starts buffering the moment it's opened.
@@ -168,7 +171,7 @@ The `Promise.all([stream, send])` shape works too, but stream-first is simpler a
 **The mounted resource has a different `file_id` than the file you uploaded.** Session creation makes a session-scoped copy.
 
 ```ts
-const uploaded = await client.beta.files.upload({ file, purpose: 'agent_resource' })
+const uploaded = await client.beta.files.upload({ file })
 // uploaded.id         → the original file
 const session = await client.beta.sessions.create({
   /* ... */
@@ -189,7 +192,15 @@ Delete the original via `files.delete(uploaded.id)`; the session-scoped copy is 
 
 ```ts
 // Agent template: declare the tool, no credentials
-tools: [{ type: 'custom', name: 'linear_graphql', input_schema: { /* query, vars */ } }]
+tools: [
+  {
+    type: 'custom',
+    name: 'linear_graphql',
+    input_schema: {
+      /* query, vars */
+    },
+  },
+]
 
 // Orchestrator: handle the call with host-side creds
 for await (const event of stream) {

@@ -14,7 +14,7 @@
  *   fetch_url   — 抓取网页正文并清洗为可读文本（替代失效的 WebFetch）
  *
  * 搜索后端（多后端自动降级，国内优先）：
- *   ① 免密默认链（零 key 零配置）：cn.bing.com → 百度 → DuckDuckGo
+ *   ① 免密默认链（零 key 零配置）：Bing → DuckDuckGo → 百度
  *   ② 填 key 增强（自动优先）：bocha(博查) / tavily / serper(Google)
  *
  * 配置全部来自环境变量（API key 仅在本子进程内存内，不外泄）：
@@ -25,6 +25,7 @@
  *   SPARK_SEARCH_FETCH_MAX_CHARS fetch_url 默认正文上限，默认 8000
  */
 import readline from 'node:readline'
+import { URL } from 'node:url'
 
 const env = process.env
 
@@ -33,6 +34,11 @@ const API_KEY = (env.SPARK_SEARCH_API_KEY || '').trim()
 const BASE_URL = (env.SPARK_SEARCH_BASE_URL || '').trim()
 const TIMEOUT_MS = Number.parseInt(env.SPARK_SEARCH_TIMEOUT_MS || '', 10) || 15000
 const FETCH_MAX_CHARS = Number.parseInt(env.SPARK_SEARCH_FETCH_MAX_CHARS || '', 10) || 8000
+const BING_SEARCH_URL = (env.SPARK_SEARCH_BING_URL || 'https://www.bing.com/search').trim()
+const BAIDU_SEARCH_URL = (env.SPARK_SEARCH_BAIDU_URL || 'https://www.baidu.com/s').trim()
+const DUCKDUCKGO_SEARCH_URL = (
+  env.SPARK_SEARCH_DUCKDUCKGO_URL || 'https://html.duckduckgo.com/html/'
+).trim()
 
 const KEYED = new Set(['bocha', 'tavily', 'serper'])
 const KEYLESS = new Set(['bing', 'baidu', 'duckduckgo'])
@@ -90,9 +96,21 @@ async function httpJson(url, options) {
 
 // ── HTML utilities (no deps) ───────────────────────────────────────────────
 const ENTITIES = {
-  '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'",
-  '&apos;': "'", '&nbsp;': ' ', '&middot;': '·', '&hellip;': '…', '&mdash;': '—',
-  '&ndash;': '–', '&rsquo;': '’', '&lsquo;': '‘', '&ldquo;': '“', '&rdquo;': '”',
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&apos;': "'",
+  '&nbsp;': ' ',
+  '&middot;': '·',
+  '&hellip;': '…',
+  '&mdash;': '—',
+  '&ndash;': '–',
+  '&rsquo;': '’',
+  '&lsquo;': '‘',
+  '&ldquo;': '“',
+  '&rdquo;': '”',
 }
 function decodeEntities(str) {
   if (!str) return ''
@@ -110,7 +128,9 @@ function safeCodePoint(cp) {
 }
 function stripTags(html) {
   if (!html) return ''
-  return decodeEntities(html.replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim()
+  return decodeEntities(html.replace(/<[^>]*>/g, ''))
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 /** 抽取整页可读文本：去脚本/样式，块级标签转换行，去标签，归一空白。 */
@@ -127,7 +147,12 @@ function htmlToText(html) {
   s = decodeEntities(s)
   s = s.replace(/[ \t\u00a0]+/g, ' ')
   s = s.replace(/\n{3,}/g, '\n\n')
-  return s.split('\n').map((line) => line.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  return s
+    .split('\n')
+    .map((line) => line.trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 function buildQuery(query, site) {
@@ -137,13 +162,14 @@ function buildQuery(query, site) {
 // ── 免密引擎：HTML 抓取 ─────────────────────────────────────────────────────
 async function searchBing(query, count, site) {
   const q = encodeURIComponent(buildQuery(query, site))
-  const html = await httpText(`https://cn.bing.com/search?q=${q}&setlang=zh-CN&ensearch=0`)
+  const separator = BING_SEARCH_URL.includes('?') ? '&' : '?'
+  const html = await httpText(`${BING_SEARCH_URL}${separator}q=${q}&setlang=zh-CN`)
   const out = []
   const blocks = html.split(/<li class="b_algo"/i).slice(1)
   for (const block of blocks) {
-    const a = block.match(/<h2>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i)
+    const a = block.match(/<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i)
     if (!a) continue
-    const url = decodeEntities(a[1])
+    const url = decodeBingResultUrl(decodeEntities(a[1]))
     const title = stripTags(a[2])
     if (!url || !title || !/^https?:/i.test(url)) continue
     const p =
@@ -155,11 +181,32 @@ async function searchBing(query, count, site) {
   return out
 }
 
+function decodeBingResultUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl)
+    const encoded = parsed.searchParams.get('u')
+    if (!encoded?.startsWith('a1')) return rawUrl
+    const base64url = encoded.slice(2).replace(/-/g, '+').replace(/_/g, '/')
+    const padding = '='.repeat((4 - (base64url.length % 4)) % 4)
+    const decoded = Buffer.from(`${base64url}${padding}`, 'base64').toString('utf8')
+    return /^https?:\/\//i.test(decoded) ? decoded : rawUrl
+  } catch {
+    return rawUrl
+  }
+}
+
 async function searchBaidu(query, count, site) {
   const q = encodeURIComponent(buildQuery(query, site))
-  const html = await httpText(`https://www.baidu.com/s?wd=${q}&rn=${Math.min(count * 2, 50)}`, {
-    headers: { Referer: 'https://www.baidu.com/' },
-  })
+  const separator = BAIDU_SEARCH_URL.includes('?') ? '&' : '?'
+  const html = await httpText(
+    `${BAIDU_SEARCH_URL}${separator}wd=${q}&rn=${Math.min(count * 2, 50)}`,
+    {
+      headers: { Referer: 'https://www.baidu.com/' },
+    },
+  )
+  if (/百度安全验证|网络不给力，请稍后重试/.test(html)) {
+    throw new Error('Baidu returned an anti-bot verification page')
+  }
   const out = []
   const blocks = html.split(/<div[^>]*class="[^"]*result[^"]*c-container[^"]*"/i).slice(1)
   for (const block of blocks) {
@@ -180,12 +227,17 @@ async function searchBaidu(query, count, site) {
 
 async function searchDuckDuckGo(query, count, site) {
   const q = encodeURIComponent(buildQuery(query, site))
-  const html = await httpText(`https://html.duckduckgo.com/html/?q=${q}&kl=wt-wt`)
+  const separator = DUCKDUCKGO_SEARCH_URL.includes('?') ? '&' : '?'
+  const html = await httpText(`${DUCKDUCKGO_SEARCH_URL}${separator}q=${q}&kl=wt-wt`)
   const decodeUddg = (href) => {
     let url = decodeEntities(href)
     const uddg = url.match(/[?&]uddg=([^&]+)/) // DDG 跳转链接：//duckduckgo.com/l/?uddg=<encoded>
     if (uddg) {
-      try { url = decodeURIComponent(uddg[1]) } catch { /* keep raw */ }
+      try {
+        url = decodeURIComponent(uddg[1])
+      } catch {
+        /* keep raw */
+      }
     }
     return url
   }
@@ -207,11 +259,16 @@ async function searchDuckDuckGo(query, count, site) {
 // ── Keyed providers：JSON API ───────────────────────────────────────────────
 function bochaFreshness(timeRange) {
   switch (timeRange) {
-    case 'day': return 'oneDay'
-    case 'week': return 'oneWeek'
-    case 'month': return 'oneMonth'
-    case 'year': return 'oneYear'
-    default: return 'noLimit'
+    case 'day':
+      return 'oneDay'
+    case 'week':
+      return 'oneWeek'
+    case 'month':
+      return 'oneMonth'
+    case 'year':
+      return 'oneYear'
+    default:
+      return 'noLimit'
   }
 }
 async function searchBocha(query, count, site, timeRange) {
@@ -240,7 +297,8 @@ async function searchBocha(query, count, site, timeRange) {
 async function searchTavily(query, count, site, timeRange) {
   if (!API_KEY) throw new Error('tavily provider requires SPARK_SEARCH_API_KEY')
   const base = BASE_URL || 'https://api.tavily.com'
-  const days = timeRange === 'day' ? 1 : timeRange === 'week' ? 7 : timeRange === 'month' ? 30 : undefined
+  const days =
+    timeRange === 'day' ? 1 : timeRange === 'week' ? 7 : timeRange === 'month' ? 30 : undefined
   const data = await httpJson(`${base.replace(/\/+$/, '')}/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -265,12 +323,24 @@ async function searchTavily(query, count, site, timeRange) {
 async function searchSerper(query, count, site, timeRange) {
   if (!API_KEY) throw new Error('serper provider requires SPARK_SEARCH_API_KEY')
   const base = BASE_URL || 'https://google.serper.dev'
-  const tbs = timeRange === 'day' ? 'qdr:d' : timeRange === 'week' ? 'qdr:w'
-    : timeRange === 'month' ? 'qdr:m' : timeRange === 'year' ? 'qdr:y' : undefined
+  const tbs =
+    timeRange === 'day'
+      ? 'qdr:d'
+      : timeRange === 'week'
+        ? 'qdr:w'
+        : timeRange === 'month'
+          ? 'qdr:m'
+          : timeRange === 'year'
+            ? 'qdr:y'
+            : undefined
   const data = await httpJson(`${base.replace(/\/+$/, '')}/search`, {
     method: 'POST',
     headers: { 'X-API-KEY': API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q: buildQuery(query, site), num: Math.min(count, 20), ...(tbs ? { tbs } : {}) }),
+    body: JSON.stringify({
+      q: buildQuery(query, site),
+      num: Math.min(count, 20),
+      ...(tbs ? { tbs } : {}),
+    }),
   })
   const results = (data?.organic ?? []).slice(0, count).map((r) => ({
     title: r.title ?? '',
@@ -278,22 +348,23 @@ async function searchSerper(query, count, site, timeRange) {
     snippet: r.snippet ?? '',
     ...(r.date ? { date: r.date } : {}),
   }))
-  const answer = data?.answerBox?.answer || data?.answerBox?.snippet || data?.knowledgeGraph?.description
+  const answer =
+    data?.answerBox?.answer || data?.answerBox?.snippet || data?.knowledgeGraph?.description
   return { results, ...(answer ? { answer } : {}) }
 }
 
 // ── 后端选择 + 免密链降级 ───────────────────────────────────────────────────
-async function runKeylessChain(query, count, site) {
+async function runKeylessChain(query, count, site, initialErrors = []) {
   const chain = [
     ['bing', searchBing],
-    ['baidu', searchBaidu],
     ['duckduckgo', searchDuckDuckGo],
+    ['baidu', searchBaidu],
   ]
-  const errors = []
+  const errors = [...initialErrors]
   for (const [name, fn] of chain) {
     try {
       const results = await fn(query, count, site)
-      if (results.length > 0) return { provider: name, results }
+      if (results.length > 0) return { provider: name, results, warnings: errors }
       errors.push(`${name}: 0 results`)
     } catch (err) {
       errors.push(`${name}: ${err instanceof Error ? err.message : String(err)}`)
@@ -313,26 +384,51 @@ async function webSearch(args) {
   const wantsKeyed = KEYED.has(PROVIDER) || (PROVIDER === 'auto' && API_KEY)
   if (wantsKeyed) {
     const keyedProvider = KEYED.has(PROVIDER) ? PROVIDER : 'bocha'
-    let payload
-    if (keyedProvider === 'bocha') payload = { results: await searchBocha(query, count, site, timeRange) }
-    else if (keyedProvider === 'tavily') payload = await searchTavily(query, count, site, timeRange)
-    else payload = await searchSerper(query, count, site, timeRange)
-    const results = Array.isArray(payload) ? payload : payload.results
-    if (results && results.length > 0) {
-      return { provider: keyedProvider, query, results, ...(payload.answer ? { answer: payload.answer } : {}) }
+    try {
+      let payload
+      if (keyedProvider === 'bocha')
+        payload = { results: await searchBocha(query, count, site, timeRange) }
+      else if (keyedProvider === 'tavily')
+        payload = await searchTavily(query, count, site, timeRange)
+      else payload = await searchSerper(query, count, site, timeRange)
+      const results = Array.isArray(payload) ? payload : payload.results
+      if (results && results.length > 0) {
+        return {
+          provider: keyedProvider,
+          query,
+          results,
+          ...(payload.answer ? { answer: payload.answer } : {}),
+        }
+      }
+      const fallback = await runKeylessChain(query, count, site, [`${keyedProvider}: 0 results`])
+      return {
+        provider: fallback.provider,
+        query,
+        results: fallback.results,
+        warnings: fallback.warnings,
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const fallback = await runKeylessChain(query, count, site, [`${keyedProvider}: ${message}`])
+      return {
+        provider: fallback.provider,
+        query,
+        results: fallback.results,
+        warnings: fallback.warnings,
+      }
     }
-    // keyed 无结果 → 降级到免密链兜底
   }
 
   // 显式单一免密引擎
   if (KEYLESS.has(PROVIDER)) {
-    const fn = PROVIDER === 'bing' ? searchBing : PROVIDER === 'baidu' ? searchBaidu : searchDuckDuckGo
+    const fn =
+      PROVIDER === 'bing' ? searchBing : PROVIDER === 'baidu' ? searchBaidu : searchDuckDuckGo
     const results = await fn(query, count, site)
     return { provider: PROVIDER, query, results }
   }
 
-  const { provider, results } = await runKeylessChain(query, count, site)
-  return { provider, query, results }
+  const { provider, results, warnings } = await runKeylessChain(query, count, site)
+  return { provider, query, results, ...(warnings.length > 0 ? { warnings } : {}) }
 }
 
 async function fetchUrl(args) {
@@ -362,7 +458,9 @@ async function fetchUrl(args) {
     contentType,
     truncated,
     chars: Math.min(text.length, maxChars),
-    text: truncated ? `${text.slice(0, maxChars)}\n\n…[truncated, ${text.length} chars total]` : text,
+    text: truncated
+      ? `${text.slice(0, maxChars)}\n\n…[truncated, ${text.length} chars total]`
+      : text,
   }
 }
 
@@ -375,10 +473,21 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Search query. Supports operators like site:, quotes, OR.' },
+        query: {
+          type: 'string',
+          description: 'Search query. Supports operators like site:, quotes, OR.',
+        },
         count: { type: 'number', description: 'Number of results to return (1-20, default 8).' },
-        time_range: { type: 'string', enum: ['day', 'week', 'month', 'year', 'all'], description: 'Restrict to recent results. Default all. Only honored by keyed providers (bocha/tavily/serper).' },
-        site: { type: 'string', description: 'Optional domain to restrict results to, e.g. "github.com".' },
+        time_range: {
+          type: 'string',
+          enum: ['day', 'week', 'month', 'year', 'all'],
+          description:
+            'Restrict to recent results. Default all. Only honored by keyed providers (bocha/tavily/serper).',
+        },
+        site: {
+          type: 'string',
+          description: 'Optional domain to restrict results to, e.g. "github.com".',
+        },
       },
       required: ['query'],
     },
@@ -391,7 +500,10 @@ const TOOLS = [
       type: 'object',
       properties: {
         url: { type: 'string', description: 'Absolute http(s) URL to fetch.' },
-        max_chars: { type: 'number', description: 'Max characters of body text to return (default 8000, max 50000).' },
+        max_chars: {
+          type: 'number',
+          description: 'Max characters of body text to return (default 8000, max 50000).',
+        },
       },
       required: ['url'],
     },
@@ -400,9 +512,12 @@ const TOOLS = [
 
 function summarize(data) {
   if (Array.isArray(data.results)) {
-    const lines = data.results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ''}`)
+    const lines = data.results.map(
+      (r, i) => `${i + 1}. ${r.title}\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ''}`,
+    )
     return [
       `Search (${data.provider}) — ${data.results.length} results for "${data.query}":`,
+      ...(data.warnings?.length ? [`Fallbacks: ${data.warnings.join(' | ')}`] : []),
       ...(data.answer ? [`\nAnswer: ${data.answer}\n`] : []),
       ...lines,
     ].join('\n')
@@ -414,7 +529,11 @@ async function handle(request) {
   const id = request.id
   try {
     if (request.method === 'initialize') {
-      result(id, { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'spark-search', version: '0.1.0' } })
+      result(id, {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'spark-search', version: '0.2.0' },
+      })
       return
     }
     if (request.method === 'tools/list') {

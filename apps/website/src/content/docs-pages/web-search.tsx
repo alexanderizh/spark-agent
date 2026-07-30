@@ -4,58 +4,115 @@ const Body = () => (
   <>
     <p>
       SDK 自带的 <code>WebSearch</code> / <code>WebFetch</code> 是 Anthropic 第一方服务端工具 —
-      一旦会话走第三方 OpenAI 兼容供应商就会被剥离失效。为了让 Agent 在任意供应商下都能联网，
-      Spark Work 内置了独立的 <code>spark_search</code> MCP server，它在本地子进程内自己发 HTTP，
+      一旦会话走第三方 OpenAI 兼容供应商就会被剥离失效。为了让 Agent 在任意供应商下都能联网， Spark
+      Work 内置了独立的 <code>spark_search</code> MCP server，它在本地子进程内自己发 HTTP，
       与模型供应商完全解耦，<strong>所有 session / 所有 Agent（含团队成员）默认挂载</strong>。
     </p>
 
-    <h2 id="tools">1. 工具（命名空间 <code>mcp__spark_search__</code>）</h2>
+    <h2 id="tools">
+      1. 工具（命名空间 <code>mcp__spark_search__</code>）
+    </h2>
     <table>
       <thead>
-        <tr><th>工具</th><th>说明</th><th>参数</th></tr>
+        <tr>
+          <th>工具</th>
+          <th>说明</th>
+          <th>参数</th>
+        </tr>
       </thead>
       <tbody>
         <tr>
-          <td><code>web_search</code></td>
-          <td>联网搜索，返回排序结果 <code>[&#123;title, url, snippet&#125;]</code></td>
-          <td><code>query</code>(必填) · <code>count</code>(1-20, 默认 8) · <code>time_range</code>(<code>day/week/month/year/all</code>) · <code>site</code></td>
+          <td>
+            <code>web_search</code>
+          </td>
+          <td>
+            联网搜索，返回排序结果 <code>[&#123;title, url, snippet&#125;]</code>
+          </td>
+          <td>
+            <code>query</code>(必填) · <code>count</code>(1-20, 默认 8) · <code>time_range</code>(
+            <code>day/week/month/year/all</code>) · <code>site</code>
+          </td>
         </tr>
         <tr>
-          <td><code>fetch_url</code></td>
+          <td>
+            <code>fetch_url</code>
+          </td>
           <td>抓取网页并返回清洗后的正文（替代失效的 WebFetch）</td>
-          <td><code>url</code>(必填) · <code>max_chars</code>(默认 8000, 最大 50000)</td>
+          <td>
+            <code>url</code>(必填) · <code>max_chars</code>(默认 8000, 最大 50000)
+          </td>
         </tr>
       </tbody>
     </table>
 
     <h2 id="backends">2. 搜索后端（多后端自动降级，国内优先）</h2>
-    <p><strong>① 免密默认链</strong>（零 key 零配置，国内裸网可用）：</p>
+    <p>
+      <strong>① 免密默认链</strong>（零 key 零配置，国内裸网可用）：
+    </p>
     <ol>
-      <li><code>cn.bing.com</code></li>
-      <li>百度</li>
+      <li>
+        <code>www.bing.com</code>
+      </li>
       <li>DuckDuckGo</li>
+      <li>百度（作为末级回退；触发反爬时会返回明确警告）</li>
     </ol>
     <p>任一引擎被限流 / 改版时自动降级到下一个。</p>
-    <p><strong>② 填 key 增强</strong>（配置后自动优先，质量更高）：</p>
+    <p>
+      <strong>② 填 key 增强</strong>（配置后自动优先，质量更高）：
+    </p>
     <ol>
-      <li><code>bocha</code>（博查，国产 RAG 搜索，推荐）</li>
-      <li><code>tavily</code></li>
-      <li><code>serper</code>（Google）</li>
+      <li>
+        <code>bocha</code>（博查，国产 RAG 搜索，推荐）
+      </li>
+      <li>
+        <code>tavily</code>
+      </li>
+      <li>
+        <code>serper</code>（Google）
+      </li>
     </ol>
 
     <h2 id="config">3. 可选配置：启用 keyed 搜索后端</h2>
     <p>
-      写入 <code>app_settings</code> 的 <code>webSearch</code> 分类即可（用户在设置里填，或 Agent 通过
+      写入 <code>app_settings</code> 的 <code>webSearch</code> 分类即可（用户在设置里填，或 Agent
+      通过
       <code>mcp__spark_platform__settings_set</code> 写入）：
     </p>
     <table>
       <thead>
-        <tr><th>key</th><th>取值</th><th>说明</th></tr>
+        <tr>
+          <th>key</th>
+          <th>取值</th>
+          <th>说明</th>
+        </tr>
       </thead>
       <tbody>
-        <tr><td><code>provider</code></td><td><code>auto</code>(默认) / <code>bocha</code> / <code>tavily</code> / <code>serper</code> / <code>bing</code> / <code>baidu</code> / <code>duckduckgo</code></td><td><code>auto</code> = 有 key 走 keyed、否则走免密链</td></tr>
-        <tr><td><code>apiKey</code></td><td>string</td><td>keyed provider 的 API key（仅 bocha/tavily/serper 需要）</td></tr>
-        <tr><td><code>baseUrl</code></td><td>string</td><td>可选 keyed provider 的 base url 覆盖（如自建代理）</td></tr>
+        <tr>
+          <td>
+            <code>provider</code>
+          </td>
+          <td>
+            <code>auto</code>(默认) / <code>bocha</code> / <code>tavily</code> / <code>serper</code>{' '}
+            / <code>bing</code> / <code>baidu</code> / <code>duckduckgo</code>
+          </td>
+          <td>
+            <code>auto</code> = 有 key 走 keyed、否则走免密链
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <code>apiKey</code>
+          </td>
+          <td>string</td>
+          <td>keyed provider 的 API key（仅 bocha/tavily/serper 需要）</td>
+        </tr>
+        <tr>
+          <td>
+            <code>baseUrl</code>
+          </td>
+          <td>string</td>
+          <td>可选 keyed provider 的 base url 覆盖（如自建代理）</td>
+        </tr>
       </tbody>
     </table>
     <p>
@@ -72,13 +129,23 @@ const Body = () => (
 
     <h2 id="implementation">5. 实现位置</h2>
     <ul>
-      <li>MCP server：<code>packages/agent-runtime/src/tools/web-search-mcp-server.mjs</code></li>
-      <li>挂载接线：<code>SessionService.resolveWebSearchMcpServer()</code> 与各 turn 的
-          <code>mcpServers.spark_search</code> / <code>allowedTools</code> 合并
-          （<code>session.service.ts</code>）</li>
-      <li>提示词注入：<code>WEB_SEARCH_SYSTEM_PROMPT</code>（同文件）</li>
-      <li>伴随技能：<code>apps/desktop/resources/skills/multi-search-engine/SKILL.md</code></li>
-      <li>测试：<code>web-search-mcp-server.test.ts</code></li>
+      <li>
+        MCP server：<code>packages/agent-runtime/src/tools/web-search-mcp-server.mjs</code>
+      </li>
+      <li>
+        挂载接线：<code>SessionService.resolveWebSearchMcpServer()</code> 与各 turn 的
+        <code>mcpServers.spark_search</code> / <code>allowedTools</code> 合并 （
+        <code>session.service.ts</code>）
+      </li>
+      <li>
+        提示词注入：<code>WEB_SEARCH_SYSTEM_PROMPT</code>（同文件）
+      </li>
+      <li>
+        伴随技能：<code>apps/desktop/resources/skills/multi-search-engine/SKILL.md</code>
+      </li>
+      <li>
+        测试：<code>web-search-mcp-server.test.ts</code>
+      </li>
     </ul>
   </>
 )
@@ -114,7 +181,7 @@ export const webSearch: DocsPageContent = {
   quickReference: [
     { key: 'MCP 名称', value: 'spark_search' },
     { key: '工具', value: 'mcp__spark_search__web_search / fetch_url' },
-    { key: '免密默认链', value: 'cn.bing.com → 百度 → DuckDuckGo' },
+    { key: '免密默认链', value: 'www.bing.com → DuckDuckGo → 百度' },
     { key: 'keyed 后端', value: 'bocha / tavily / serper' },
     { key: '默认 provider', value: 'auto（有 key 走 keyed，否则走免密链）' },
     { key: '凭据注入', value: '仅 SPARK_SEARCH_* 环境变量，不入 prompt' },
@@ -135,7 +202,7 @@ export const webSearch: DocsPageContent = {
     'Spark Work 内置联网搜索 spark_search：解决 Anthropic WebSearch/WebFetch 在第三方供应商下失效的问题，' +
     '本地子进程发 HTTP 与供应商解耦，所有 session / Agent（含 team member）默认挂载。' +
     '工具：mcp__spark_search__web_search（query, count 1-20, time_range day/week/month/year/all, site）、' +
-    'mcp__spark_search__fetch_url（url, max_chars 默认 8000 最大 50000）。后端：免密默认链 cn.bing.com → 百度 → DuckDuckGo（自动降级）；' +
+    'mcp__spark_search__fetch_url（url, max_chars 默认 8000 最大 50000）。后端：免密默认链 www.bing.com → DuckDuckGo → 百度（自动降级并返回 warnings）；' +
     'keyed 后端 bocha / tavily / serper。配置：app_settings.webSearch.{provider: auto/bocha/tavily/serper/bing/baidu/duckduckgo, apiKey, baseUrl}，' +
     'key 只注入 SPARK_SEARCH_* 环境变量。实现：packages/agent-runtime/src/tools/web-search-mcp-server.mjs，伴随 multi-search-engine Skill。',
   Body,
