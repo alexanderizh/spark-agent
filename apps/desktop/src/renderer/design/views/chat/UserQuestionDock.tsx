@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Input as LobeInput, TextArea as LobeTextArea } from '@lobehub/ui'
 import type { UserQuestionOption, UserQuestionPrompt } from '@spark/protocol'
 import { Icons } from '../../Icons'
+import { isOptionalUserQuestion } from '../../utils/user-question-readiness'
 import type { UserQuestionData } from './UserQuestionUtils'
 
 type UserQuestionDraft = {
@@ -341,6 +342,7 @@ function isQuestionReadyForSubmit(
   draft: UserQuestionDraft | undefined,
 ): boolean {
   if (draft?.skipped) return true
+  if (isOptionalUserQuestion(question)) return true
   return isQuestionAnswered(question, draft)
 }
 
