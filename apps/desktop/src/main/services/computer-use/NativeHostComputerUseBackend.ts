@@ -10,12 +10,28 @@ import type {
   NativeWindowDescriptor,
 } from '@spark/protocol'
 import { ComputerObservationSchema } from '@spark/protocol'
+import { createLogger } from '@spark/shared'
 import type {
   ComputerExecutorBackend,
   ComputerHostBackend,
   ComputerObserverBackend,
 } from './ComputerUseBackend.js'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
+import { NativeHostArtifactError } from './NativeHostArtifact.js'
+
+const log = createLogger('computer-use-native-host')
+
+// Idempotent operations (observe / list_windows / capabilities) are transparently retried when
+// the Host reports a recoverable (retryable) failure on an otherwise healthy connection. The
+// connection is only invalidated for hard failures (see shouldInvalidateConnection), so a
+// retryable hit reuses the same live connection instead of bouncing the whole turn on a hiccup.
+const IDEMPOTENT_RETRY_MAX_ATTEMPTS = 3
+const IDEMPOTENT_RETRY_BASE_DELAY_MS = 50
+
+function delayForIdempotentRetry(attempt: number): Promise<void> {
+  const delayMs = IDEMPOTENT_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)
+  return new Promise((resolve) => setTimeout(resolve, delayMs))
+}
 
 export interface NativeHostConnection {
   getCapabilities(): Promise<NativeHostCapabilityManifest>
@@ -122,7 +138,7 @@ export class NativeHostComputerUseBackend
   }
 
   async listWindows(): Promise<NativeWindowDescriptor[]> {
-    return this.withConnection((connection) => connection.listWindows())
+    return this.withConnection((connection) => connection.listWindows(), { idempotent: true })
   }
 
   async requestPermissions(
@@ -160,7 +176,7 @@ export class NativeHostComputerUseBackend
         kind: 'execution_before',
         signal: input.signal,
       })
-    })
+    }, { idempotent: true })
   }
 
   async execute(input: {
@@ -238,15 +254,50 @@ export class NativeHostComputerUseBackend
 
   private async withConnection<T>(
     operation: (connection: NativeHostConnection) => Promise<T>,
+    options?: { idempotent?: boolean },
   ): Promise<T> {
-    const connection = await this.getConnection()
-    try {
-      return await operation(connection)
-    } catch (error) {
-      const normalized = normalizeBackendError(error)
-      if (shouldInvalidateConnection(normalized)) await this.invalidateConnection(connection)
-      throw normalized
+    return this.runIdempotentRetry(options?.idempotent === true, async () => {
+      const connection = await this.getConnection()
+      try {
+        return await operation(connection)
+      } catch (error) {
+        const normalized = normalizeBackendError(error)
+        if (shouldInvalidateConnection(normalized)) await this.invalidateConnection(connection)
+        throw normalized
+      }
+    })
+  }
+
+  /**
+   * Bounds transparent retry to idempotent operations whose failure the Host flagged as
+   * recoverable. Non-idempotent operations (execute_action / capture_window) and any
+   * non-retryable error propagate on the first attempt; `fn` itself only invalidates the
+   * connection for hard failures (see shouldInvalidateConnection), so a retryable hit on an
+   * idempotent operation reuses the same still-healthy connection instead of bouncing the turn.
+   */
+  private async runIdempotentRetry<T>(idempotent: boolean, fn: () => Promise<T>): Promise<T> {
+    const maxAttempts = idempotent ? IDEMPOTENT_RETRY_MAX_ATTEMPTS : 1
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (attempt > 0) await delayForIdempotentRetry(attempt)
+      try {
+        return await fn()
+      } catch (error) {
+        if (
+          !idempotent ||
+          attempt >= maxAttempts - 1 ||
+          !(error instanceof ComputerUseBrokerError) ||
+          !error.retryable
+        ) {
+          throw error
+        }
+        log.warn('Retrying idempotent Native Host operation after a recoverable failure', {
+          attempt: attempt + 1,
+          code: error.code,
+        })
+      }
     }
+    // Unreachable: every iteration either returns on success or throws on the terminal attempt.
+    throw new ComputerUseBrokerError('native_host_incompatible', 'Native Host retry loop exhausted')
   }
 
   private async getControlConnection(
@@ -274,15 +325,18 @@ export class NativeHostComputerUseBackend
     operation: 'observation' | 'execution',
     action: ComputerActionEnvelope['action'] | undefined,
     callback: (connection: NativeHostConnection) => Promise<T>,
+    options?: { idempotent?: boolean },
   ): Promise<T> {
-    const connection = await this.getControlConnection(operation, action)
-    try {
-      return await callback(connection)
-    } catch (error) {
-      const normalized = normalizeBackendError(error)
-      if (shouldInvalidateConnection(normalized)) await this.invalidateConnection(connection)
-      throw normalized
-    }
+    return this.runIdempotentRetry(options?.idempotent === true, async () => {
+      const connection = await this.getControlConnection(operation, action)
+      try {
+        return await callback(connection)
+      } catch (error) {
+        const normalized = normalizeBackendError(error)
+        if (shouldInvalidateConnection(normalized)) await this.invalidateConnection(connection)
+        throw normalized
+      }
+    })
   }
 
   private async captureObservation(input: {
@@ -400,14 +454,12 @@ function shouldInvalidateConnection(error: ComputerUseBrokerError): boolean {
 
 function normalizeBackendError(error: unknown): ComputerUseBrokerError {
   if (error instanceof ComputerUseBrokerError) return error
-  if (
-    error instanceof Error &&
-    'code' in error &&
-    (error.code === 'native_host_missing' ||
-      error.code === 'native_host_untrusted' ||
-      error.code === 'native_host_incompatible')
-  ) {
-    return new ComputerUseBrokerError(error.code, error.message)
+  if (error instanceof NativeHostArtifactError) {
+    // Preserve the structured diagnostic so the actionable repair hint (reinstall /
+    // update_app / grant_permission) survives the boundary into the broker error and
+    // reaches the renderer via safeComputerUseIpc instead of being flattened away.
+    const options = error.diagnostic != null ? { diagnostic: error.diagnostic } : undefined
+    return new ComputerUseBrokerError(error.code, error.message, undefined, options)
   }
   return new ComputerUseBrokerError(
     'native_host_incompatible',

@@ -151,6 +151,49 @@ describe('NativeHostComputerUseBackend', () => {
     expect(connection.close).toHaveBeenCalledTimes(1)
   })
 
+  it('transparently retries idempotent listWindows when the Host reports a recoverable failure', async () => {
+    const windows = [{ window: { id: 'window-1' } }] as NativeWindowDescriptor[]
+    const connection = createConnection(windows)
+    let attempts = 0
+    vi.mocked(connection.listWindows).mockImplementation(async () => {
+      attempts += 1
+      if (attempts === 1) {
+        throw new ComputerUseBrokerError(
+          'native_host_incompatible',
+          'transient host hiccup',
+          undefined,
+          { retryable: true },
+        )
+      }
+      return windows
+    })
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect: async () => connection,
+    })
+
+    await expect(backend.listWindows()).resolves.toBe(windows)
+    expect(attempts).toBe(2)
+  })
+
+  it('does not retry a non-retryable failure', async () => {
+    const connection = createConnection()
+    let attempts = 0
+    vi.mocked(connection.listWindows).mockImplementation(async () => {
+      attempts += 1
+      throw new ComputerUseBrokerError('native_host_incompatible', 'hard failure')
+    })
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect: async () => connection,
+    })
+
+    await expect(backend.listWindows()).rejects.toMatchObject({
+      code: 'native_host_incompatible',
+    })
+    expect(attempts).toBe(1)
+  })
+
   it('shares the trusted connection for permission refresh and digest-verified captures', async () => {
     const connection = createConnection()
     const backend = new NativeHostComputerUseBackend({

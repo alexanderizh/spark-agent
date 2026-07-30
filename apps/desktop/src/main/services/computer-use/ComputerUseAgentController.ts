@@ -76,6 +76,8 @@ export class ComputerUseAgentController {
           evidence: services.evidence,
           verifications: services.verifications,
           windowInventory: services.backend,
+          getAbortSignal: (computerSessionId) =>
+            services.sessions.getAbortSignal(computerSessionId),
           ...(this.requestActionApproval == null
             ? {}
             : { requestApproval: this.requestActionApproval }),

@@ -12,6 +12,9 @@ import type {
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import type { ComputerDecision, GenericComputerDecisionAdapter } from './ComputerDecisionAdapter.js'
 import { ComputerVerificationEngine } from './ComputerVerificationEngine.js'
+import { createLogger } from '@spark/shared'
+
+const log = createLogger('computer-use-operator')
 
 const APPROVAL_POLL_MS = 250
 const MAX_APPROVAL_POLLS = 1_200
@@ -97,6 +100,7 @@ export class ComputerTaskOperator {
   private readonly requestApproval:
     | ((request: ComputerActionApprovalRequest) => Promise<ComputerApprovalTicket | null>)
     | undefined
+  private readonly getAbortSignal: ((computerSessionId: string) => AbortSignal) | undefined
 
   constructor(options: {
     sessions: OperatorSessions
@@ -112,6 +116,7 @@ export class ComputerTaskOperator {
     requestApproval?: (
       request: ComputerActionApprovalRequest,
     ) => Promise<ComputerApprovalTicket | null>
+    getAbortSignal?: (computerSessionId: string) => AbortSignal
   }) {
     this.sessions = options.sessions
     this.broker = options.broker
@@ -126,6 +131,7 @@ export class ComputerTaskOperator {
       ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)))
     this.now = options.now ?? Date.now
     this.requestApproval = options.requestApproval
+    this.getAbortSignal = options.getAbortSignal
   }
 
   async run(input: {
@@ -139,9 +145,13 @@ export class ComputerTaskOperator {
     let consecutiveTransientFailures = 0
     let modelHandoffReplans = 0
     let successfulActions = 0
+    const abortSignal = this.getAbortSignal?.(input.session.id)
     try {
       observation = await this.observeWithRecovery(input.session.id, true)
       for (let stepIndex = 0; stepIndex < input.session.taskContract.maxSteps; stepIndex += 1) {
+        if (abortSignal?.aborted) {
+          return { status: 'failed', reason: 'session_canceled' }
+        }
         if (
           this.now() - Date.parse(input.session.createdAt) >=
           input.session.taskContract.maxRuntimeMs
@@ -222,7 +232,12 @@ export class ComputerTaskOperator {
             confidence: verification.passed ? 1 : 0,
             completedAt,
           })
-          if (record == null) throw new Error('Verification record did not complete')
+          if (record == null) {
+            // The verification record could not be persisted, but the verification outcome
+            // is valid in-memory. Surface the storage fault for observability and proceed on
+            // the outcome instead of killing the whole turn over a non-action disk error.
+            log.warn('Computer verification record could not be persisted', { verificationId })
+          }
           if (verification.passed) {
             this.sessions.completeVerified(input.session.id)
             return { status: 'completed', verification }
@@ -243,6 +258,7 @@ export class ComputerTaskOperator {
             envelope,
             input.lease,
             input.permissionMode ?? 'claude-ask',
+            abortSignal,
           )
           consecutiveNoops = 0
           consecutiveTransientFailures = 0
@@ -271,6 +287,12 @@ export class ComputerTaskOperator {
       this.sessions.fail(input.session.id)
       return { status: 'failed', reason: 'maximum_steps_reached' }
     } catch (error) {
+      // A session_canceled error means an external authority (user stop / pause) already
+      // settled the session; do not re-mark it failed. Surface it with a distinct reason so the
+      // caller can present "canceled" rather than a generic operator failure.
+      if (error instanceof ComputerUseBrokerError && error.code === 'session_canceled') {
+        return { status: 'failed', reason: 'session_canceled' }
+      }
       try {
         this.sessions.fail(input.session.id)
       } catch {
@@ -311,10 +333,21 @@ export class ComputerTaskOperator {
     envelope: ComputerActionEnvelope,
     lease: ComputerActuatorLease,
     permissionMode: string,
+    abortSignal?: AbortSignal,
   ): Promise<{ observation: ComputerObservation; noop: boolean }> {
     try {
       return await this.broker.dispatch(envelope)
     } catch (error) {
+      // L0/L1 path: the action was dispatched without an approval ticket. A stale_frame here
+      // usually means the decision-time frame drifted while the target window stayed put, so
+      // try one local re-observe + retry with the refreshed frame before bubbling the
+      // recoverable error up to the model loop. This stays safe precisely because there is no
+      // approval ticket: the refreshed observedFrameId changes actionDigest (which covers
+      // observedFrameId), which would invalidate an L2/L3 ticket — but this branch has none.
+      if (error instanceof ComputerUseBrokerError && error.code === 'stale_frame') {
+        const relocated = await this.relocateStaleFrame(envelope)
+        if (relocated != null) return relocated
+      }
       if (!(error instanceof ComputerUseBrokerError) || error.code !== 'approval_required') {
         throw error
       }
@@ -324,13 +357,21 @@ export class ComputerTaskOperator {
         throw error
       }
       if (this.requestApproval != null) {
-        const ticket = await this.requestApproval({
-          session,
-          envelope,
-          approvalId,
-          riskLevel,
-          permissionMode,
-        })
+        // Race the (possibly blocking, native-dialog-backed) approval await against the session
+        // abort signal so a user-initiated stop can interrupt the wait. Interrupting here stays
+        // fail-closed: the action has NOT been dispatched yet, so no L2/L3 effect occurs — the
+        // user declines-by-cancelling instead of being trapped on the dialog with no way out.
+        if (abortSignal?.aborted) throw sessionCanceled()
+        const ticket = await raceApprovalAgainstAbort(
+          this.requestApproval({
+            session,
+            envelope,
+            approvalId,
+            riskLevel,
+            permissionMode,
+          }),
+          abortSignal,
+        )
         if (ticket == null) {
           throw new ComputerUseBrokerError(
             'action_not_allowed',
@@ -349,6 +390,33 @@ export class ComputerTaskOperator {
     }
   }
 
+  /**
+   * Local deterministic recovery for a stale frame on a non-approval-bound action. Re-observes
+   * the same window; if the foreground app/window identity is unchanged it rebuilds the envelope
+   * against the refreshed frame and retries the exact same action once. If the foreground
+   * navigated away (real window change) it gives up and returns null so the caller re-throws
+   * stale_frame for the model loop to re-decide. The caller guarantees this only runs on the
+   * L0/L1 dispatch path, so the refreshed observedFrameId (which mutates actionDigest) cannot
+   * invalidate any approval ticket.
+   */
+  private async relocateStaleFrame(
+    envelope: ComputerActionEnvelope,
+  ): Promise<{ observation: ComputerObservation; noop: boolean } | null> {
+    const observation = await this.broker.observe(envelope.computerSessionId, false)
+    if (
+      observation.foreground.app.id !== envelope.targetAppId ||
+      observation.foreground.window.id !== envelope.targetWindowId
+    ) {
+      return null
+    }
+    const refreshedEnvelope: ComputerActionEnvelope = {
+      ...envelope,
+      observedFrameId: observation.frameId,
+      observedTreeVersion: observation.treeVersion,
+    }
+    return this.broker.dispatch(refreshedEnvelope)
+  }
+
   private heartbeat(computerSessionId: string, lease: ComputerActuatorLease): void {
     this.sessions.heartbeatLease({
       computerSessionId,
@@ -356,6 +424,38 @@ export class ComputerTaskOperator {
       operatorId: lease.operatorId,
     })
   }
+}
+
+function sessionCanceled(): ComputerUseBrokerError {
+  return new ComputerUseBrokerError('session_canceled', 'Computer session was canceled')
+}
+
+/**
+ * Resolves with the approval result, or rejects with session_canceled the instant the abort
+ * signal fires. Lets a user-initiated stop interrupt a blocking approval dialog await without
+ * first resolving the dialog. The approval promise itself is never cancelled — its eventual
+ * resolution is simply ignored once the session has been aborted.
+ */
+function raceApprovalAgainstAbort<T>(
+  approval: Promise<T>,
+  signal: AbortSignal | undefined,
+): Promise<T> {
+  if (signal == null) return approval
+  if (signal.aborted) throw sessionCanceled()
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(sessionCanceled())
+    signal.addEventListener('abort', onAbort, { once: true })
+    approval.then(
+      (result) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(result)
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(error)
+      },
+    )
+  })
 }
 
 function isRecoverableExecutionError(error: ComputerUseBrokerError): boolean {

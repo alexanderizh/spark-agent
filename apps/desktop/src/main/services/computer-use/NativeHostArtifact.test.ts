@@ -85,6 +85,30 @@ describe('verifyNativeHostArtifact', () => {
     expect(inspectCodeSignature).toHaveBeenCalledWith(fixture.executablePath)
   })
 
+  it('skips redundant code-signature inspection when an unchanged artifact is re-verified', async () => {
+    const fixture = await createArtifactFixture()
+    const inspectCodeSignature = vi.fn(async () => ({
+      identifier: 'com.spark-agent.desktop.computer-host',
+      teamIdentifier: 'ABCDE12345',
+    }))
+    const verifyOnce = () =>
+      verifyNativeHostArtifact({
+        executablePath: fixture.executablePath,
+        manifestPath: fixture.manifestPath,
+        platform: 'macos',
+        architecture: 'arm64',
+        expectedTeamIdentifier: 'ABCDE12345',
+        inspectCodeSignature,
+      })
+
+    await verifyOnce()
+    await verifyOnce()
+
+    // The first call runs the full sha256 + codesign inspection; the second call hits the
+    // process-local cache (same path/inode/mtime/size/identity) and skips inspection entirely.
+    expect(inspectCodeSignature).toHaveBeenCalledTimes(1)
+  })
+
   it('rejects a symlink even when it resolves to bytes with the expected hash', async () => {
     const fixture = await createArtifactFixture()
     const linkedPath = join(fixture.directory, 'LinkedComputerHost')
@@ -156,22 +180,33 @@ describe('verifyNativeHostArtifact', () => {
     ).rejects.toThrowError('Native Host signing team does not match the SparkWork application')
   })
 
-  it('rejects a correctly signed Host below the minimum trusted security version', async () => {
+  it('rejects a correctly signed Host below the minimum trusted security version and surfaces an actionable diagnostic', async () => {
     const fixture = await createArtifactFixture('ABCDE12345', '0.0.9')
 
-    await expect(
-      verifyNativeHostArtifact({
-        executablePath: fixture.executablePath,
-        manifestPath: fixture.manifestPath,
-        platform: 'macos',
-        architecture: 'arm64',
-        expectedTeamIdentifier: 'ABCDE12345',
-        inspectCodeSignature: async () => ({
-          identifier: 'com.spark-agent.desktop.computer-host',
-          teamIdentifier: 'ABCDE12345',
-        }),
+    const error = await verifyNativeHostArtifact({
+      executablePath: fixture.executablePath,
+      manifestPath: fixture.manifestPath,
+      platform: 'macos',
+      architecture: 'arm64',
+      expectedTeamIdentifier: 'ABCDE12345',
+      inspectCodeSignature: async () => ({
+        identifier: 'com.spark-agent.desktop.computer-host',
+        teamIdentifier: 'ABCDE12345',
       }),
-    ).rejects.toThrowError('Native Host version is below the minimum trusted release')
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+
+    expect(error).toBeInstanceOf(NativeHostArtifactError)
+    expect((error as Error).message).toBe(
+      'Native Host version is below the minimum trusted release',
+    )
+    expect((error as NativeHostArtifactError).diagnostic).toMatchObject({
+      diagnosticCode: 'artifact_version_too_low',
+      stage: 'verify',
+      repairAction: 'update_app',
+    })
   })
 })
 
