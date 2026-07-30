@@ -102,14 +102,32 @@ describe('chat scroll controls', () => {
       stylesheet.match(/\.chat-main-active\.git-env-panel-open\s*\{[^}]*\}/)?.[0] ?? ''
 
     expect(sharedContainerBlock).toContain('width: min(100%, 900px)')
-    expect(sharedContainerBlock).toContain('padding-inline: 16px')
-    expect(gitGutterBlocks.some((block) => block.includes('--git-gutter-base: 16px'))).toBe(true)
+    expect(sharedContainerBlock).toMatch(/padding-inline:\s*\d+px/)
+    expect(gitGutterBlocks.some((block) => /--git-gutter-base:\s*\d+px/.test(block))).toBe(true)
     expect(gitPanelLayoutBlock).toContain('--git-turn-nav-reserve: 28px')
+    expect(gitPanelLayoutBlock).toContain(
+      'calc(100% - var(--git-turn-nav-reserve) - var(--git-turn-nav-reserve))',
+    )
+    expect(
+      gitGutterBlocks.some((block) => block.includes('width: min(100%, var(--git-content-max))')),
+    ).toBe(true)
     expect(
       gitGutterBlocks.some((block) =>
         block.includes('calc(var(--git-center-free) - var(--git-turn-nav-reserve))'),
       ),
     ).toBe(true)
+  })
+
+  it('uses width transitions so expanded turn markers keep round caps', () => {
+    const stylesheet = readFileSync(
+      fileURLToPath(new URL('./chat/ChatTurnNavigator.less', import.meta.url)),
+      'utf8',
+    )
+
+    expect(stylesheet).toContain('border-radius: 999px')
+    expect(stylesheet).toContain('width: 28px')
+    expect(stylesheet).toContain('width 160ms ease-out')
+    expect(stylesheet).not.toContain('scaleX(')
   })
 
   it('keeps the scroll-to-bottom button free of hover effects and shadows', () => {

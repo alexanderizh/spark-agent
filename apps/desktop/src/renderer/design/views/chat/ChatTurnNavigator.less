@@ -83,7 +83,7 @@
   width: 6px;
   background: var(--chat-turn-line);
   transition:
-    transform 160ms ease-out,
+    width 160ms ease-out,
     background-color 160ms ease-out,
     opacity 120ms ease-out;
 }
@@ -94,12 +94,12 @@
   background: color-mix(in srgb, var(--text) 94%, transparent);
   box-shadow: 0 0 10px color-mix(in srgb, var(--text) 12%, transparent);
   transition:
-    transform 160ms ease-out,
+    width 160ms ease-out,
     background-color 160ms ease-out;
 }
 
 /* 悬浮时按距离展开相邻轮次，形成参考产品里的紧凑“扇形”反馈。
-   所有长度变化只用 scaleX，不改变按钮尺寸和轨道布局。 */
+   直接过渡绝对定位线条的宽度，既不改变按钮布局，也能保持两端为真实半圆。 */
 .chat-turn-marker:hover
   + .chat-turn-marker
   + .chat-turn-marker
@@ -114,7 +114,7 @@
   :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
 .chat-turn-marker:has(+ .chat-turn-marker + .chat-turn-marker + .chat-turn-marker:focus-visible)
   :is(.chat-turn-marker-line, .chat-turn-marker-active-line) {
-  transform: translateY(-50%) scaleX(1.65);
+  width: 10px;
 }
 
 .chat-turn-marker:hover
@@ -129,7 +129,7 @@
   :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
 .chat-turn-marker:has(+ .chat-turn-marker + .chat-turn-marker:focus-visible)
   :is(.chat-turn-marker-line, .chat-turn-marker-active-line) {
-  transform: translateY(-50%) scaleX(2.4);
+  width: 14px;
 }
 
 .chat-turn-marker:hover
@@ -142,13 +142,13 @@
   :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
 .chat-turn-marker:has(+ .chat-turn-marker:focus-visible)
   :is(.chat-turn-marker-line, .chat-turn-marker-active-line) {
-  transform: translateY(-50%) scaleX(3.4);
+  width: 20px;
 }
 
 .chat-turn-marker:hover :is(.chat-turn-marker-line, .chat-turn-marker-active-line),
 .chat-turn-marker:focus-visible :is(.chat-turn-marker-line, .chat-turn-marker-active-line) {
   background: color-mix(in srgb, var(--text) 94%, transparent);
-  transform: translateY(-50%) scaleX(4.65);
+  width: 28px;
 }
 
 .chat-turn-marker.is-pulsing .chat-turn-marker-active-line {
@@ -267,6 +267,7 @@
   }
 
   .chat-turn-marker-line,
+  .chat-turn-marker-active-line,
   .chat-turn-more-dots i {
     transition-duration: 0.06s;
   }
