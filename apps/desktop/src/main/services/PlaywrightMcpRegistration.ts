@@ -16,8 +16,10 @@
  * configJson. The "reset config" IPC handler delegates here.
  */
 
+import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
+import { app } from 'electron'
 import type { SparkDatabase } from '@spark/storage'
 import { McpServerRepository } from '@spark/storage'
 import { MANAGED_MCP_SCOPE, PLAYWRIGHT_MCP_NAME } from '@spark/agent-runtime'
@@ -100,7 +102,18 @@ export function buildPlaywrightConfig(
   return config
 }
 
+export function resolvePackagedPlaywrightMcpCliPath(resourcesPath: string): string {
+  return join(resourcesPath, 'playwright-mcp', 'node_modules', '@playwright', 'mcp', 'cli.js')
+}
+
 function resolvePlaywrightMcpCliPath(): string {
+  if (app.isPackaged) {
+    const packagedPath = resolvePackagedPlaywrightMcpCliPath(process.resourcesPath)
+    if (!existsSync(packagedPath)) {
+      throw new Error(`Packaged Playwright MCP CLI not found: ${packagedPath}`)
+    }
+    return packagedPath
+  }
   const require = createRequire(import.meta.url)
   const packageJsonPath = require.resolve('@playwright/mcp/package.json')
   return join(dirname(packageJsonPath), 'cli.js')
@@ -140,7 +153,9 @@ export function ensureRegistered(
       configJson,
       enabled: true,
     })
-    log.info(`Registered managed MCP server: ${PLAYWRIGHT_MCP_NAME} (id=${row.id}, enabled=true, mode=${targetMode})`)
+    log.info(
+      `Registered managed MCP server: ${PLAYWRIGHT_MCP_NAME} (id=${row.id}, enabled=true, mode=${targetMode})`,
+    )
     return { id: row.id, enabled: true, mode: targetMode, configJson }
   }
 
@@ -192,9 +207,7 @@ function parseModeFromConfig(configJson: string): PlaywrightMode | null {
  */
 export function setEnabled(db: SparkDatabase, enabled: boolean): void {
   const repo = new McpServerRepository(db)
-  const row = repo
-    .findByScope(MANAGED_MCP_SCOPE)
-    .find((r) => r.name === PLAYWRIGHT_MCP_NAME)
+  const row = repo.findByScope(MANAGED_MCP_SCOPE).find((r) => r.name === PLAYWRIGHT_MCP_NAME)
   if (row == null) {
     log.warn(`Cannot toggle: managed MCP server "${PLAYWRIGHT_MCP_NAME}" not registered`)
     return
@@ -212,9 +225,7 @@ export function readRegistration(db: SparkDatabase): {
   registered: boolean
 } {
   const repo = new McpServerRepository(db)
-  const row = repo
-    .findByScope(MANAGED_MCP_SCOPE)
-    .find((r) => r.name === PLAYWRIGHT_MCP_NAME)
+  const row = repo.findByScope(MANAGED_MCP_SCOPE).find((r) => r.name === PLAYWRIGHT_MCP_NAME)
   if (row == null) {
     return { id: null, enabled: false, mode: 'headful', registered: false }
   }

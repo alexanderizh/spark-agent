@@ -4,7 +4,12 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE, HWND, STILL_ACTIVE};
+use windows::Win32::Foundation::{
+    CERT_E_UNTRUSTEDROOT, CloseHandle, FILETIME, HANDLE, HWND, STILL_ACTIVE,
+};
+use windows::Win32::Security::Cryptography::{
+    CERT_QUERY_ENCODING_TYPE, CertCompareCertificateName, PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
+};
 use windows::Win32::Security::WinTrust::{
     WINTRUST_ACTION_GENERIC_VERIFY_V2, WINTRUST_DATA, WINTRUST_DATA_0, WINTRUST_FILE_INFO,
     WTD_CHOICE_FILE, WTD_REVOKE_WHOLECHAIN, WTD_SAFER_FLAG, WTD_STATEACTION_CLOSE,
@@ -225,7 +230,13 @@ fn verified_signer_thumbprint(path: &Path) -> Result<String, RuntimeAuthorizatio
         // Use the leaf certificate from WinVerifyTrust's verified signer chain. Never
         // scan the unauthenticated PKCS#7 certificate bag: an attacker can append a
         // public Spark certificate while signing the executable with another key.
-        verified_leaf_thumbprint(trust_data.hWVTStateData)
+        verified_leaf_thumbprint(trust_data.hWVTStateData, false)
+    } else if status == CERT_E_UNTRUSTEDROOT.0 {
+        // A self-signed Spark development publisher is cryptographically valid but
+        // intentionally absent from another machine's root store. Accept only a
+        // self-issued leaf; its SHA-256 fingerprint is still matched to the release
+        // identity embedded at build time below.
+        verified_leaf_thumbprint(trust_data.hWVTStateData, true)
     } else {
         Err(RuntimeAuthorizationError::AuthenticodeInvalid)
     };
@@ -240,7 +251,10 @@ fn verified_signer_thumbprint(path: &Path) -> Result<String, RuntimeAuthorizatio
     result
 }
 
-fn verified_leaf_thumbprint(state: HANDLE) -> Result<String, RuntimeAuthorizationError> {
+fn verified_leaf_thumbprint(
+    state: HANDLE,
+    require_self_signed: bool,
+) -> Result<String, RuntimeAuthorizationError> {
     let provider = unsafe { WTHelperProvDataFromStateData(state) };
     if provider.is_null() {
         return Err(RuntimeAuthorizationError::AuthenticodeInvalid);
@@ -256,6 +270,23 @@ fn verified_leaf_thumbprint(state: HANDLE) -> Result<String, RuntimeAuthorizatio
     let certificate = unsafe { (*provider_certificate).pCert };
     if certificate.is_null() {
         return Err(RuntimeAuthorizationError::AuthenticodeInvalid);
+    }
+    let certificate_info = unsafe { (*certificate).pCertInfo };
+    if certificate_info.is_null() {
+        return Err(RuntimeAuthorizationError::AuthenticodeInvalid);
+    }
+    if require_self_signed {
+        let encoding = CERT_QUERY_ENCODING_TYPE(X509_ASN_ENCODING.0 | PKCS_7_ASN_ENCODING.0);
+        let self_signed = unsafe {
+            CertCompareCertificateName(
+                encoding,
+                &raw const (*certificate_info).Subject,
+                &raw const (*certificate_info).Issuer,
+            )
+        };
+        if !self_signed.as_bool() {
+            return Err(RuntimeAuthorizationError::AuthenticodeInvalid);
+        }
     }
     let encoded = unsafe {
         std::slice::from_raw_parts(

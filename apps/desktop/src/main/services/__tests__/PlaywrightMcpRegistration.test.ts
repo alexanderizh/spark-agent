@@ -20,7 +20,10 @@ vi.mock('electron', () => ({
   },
 }))
 
-import { buildPlaywrightConfig } from '../PlaywrightMcpRegistration.js'
+import {
+  buildPlaywrightConfig,
+  resolvePackagedPlaywrightMcpCliPath,
+} from '../PlaywrightMcpRegistration.js'
 
 describe('buildPlaywrightConfig', () => {
   it('always produces a stdio config using a standalone Node runtime', () => {
@@ -39,6 +42,16 @@ describe('buildPlaywrightConfig', () => {
     if (firstFlagIdx >= 0) {
       expect(firstFlagIdx).toBeGreaterThan(0)
     }
+  })
+
+  it('resolves packaged MCP CLI outside app.asar for standalone Node', () => {
+    const cliPath = resolvePackagedPlaywrightMcpCliPath(
+      '/Applications/Spark Agent.app/Contents/Resources',
+    )
+    expect(cliPath).toBe(
+      '/Applications/Spark Agent.app/Contents/Resources/playwright-mcp/node_modules/@playwright/mcp/cli.js',
+    )
+    expect(cliPath).not.toContain('app.asar')
   })
 
   it('omits --browser when bundled chromium is selected (or accepts a valid channel)', () => {
