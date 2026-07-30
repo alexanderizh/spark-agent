@@ -1,6 +1,6 @@
 # Agent Computer Use、媒体交付与 Windows Host 设计
 
-> 状态: 实施中 | 最后核对: 2026-07-28
+> 状态: 实施中 | 最后核对: 2026-07-30
 
 ## 目标
 
@@ -64,6 +64,11 @@ Rust workspace 位于 `apps/desktop/native/windows/spark-computer-host/`，模�
 Electron 打包按 `windows-x64`、`windows-arm64` 复制 Host 与 manifest，GitHub Release matrix 同时构建两种架构。发布流水线要求 Authenticode 签名、时间戳、SHA-256、固定产品标识和外层 SparkWork signer 一致；Host 运行时从 WinVerifyTrust state 读取实际 leaf signer，附带证书包中的非 signer 证书不能满足 publisher 绑定；无正式证书的 CI release 直接失败。
 
 发布包还携带匹配平台/架构的独立 Node runtime，Playwright 与内置 MCP 不再使用 Electron executable + `ELECTRON_RUN_AS_NODE`。afterPack 关闭 RunAsNode、Node options 和 CLI inspect fuses，启用 embedded ASAR integrity 与 `OnlyLoadAppFromAsar`；afterSign 强制 SparkWork.exe、Native Host 和 `runtime/node/node.exe` 使用同一 publisher thumbprint 且均有时间戳。
+
+使用 Spark 自签名开发发布者构建的安装包在另一台 Windows 上会呈现 `NotTrusted` /
+`UnknownError`，但 Authenticode 签名本身仍可验证。运行时仅对“leaf 的 Subject 与 Issuer
+一致”的自签名证书接受该链状态，并继续强制 SparkWork.exe、Native Host、构建期嵌入身份和
+manifest 使用同一个证书 SHA-256 指纹；无签名、非自签名的坏链和发布者不匹配仍然拒绝。
 
 ## 安全与验收
 

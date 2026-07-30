@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   NativeHostArtifactError,
+  buildWindowsCodeSignatureInspectionScript,
   createMacCodeRequirement,
   readNativeHostArtifactTrustMode,
   verifyLocalNativeHostArtifact,
@@ -175,6 +176,17 @@ describe('verifyNativeHostArtifact', () => {
 })
 
 describe('verifyWindowsNativeHostArtifact', () => {
+  it('only permits a valid chain or an explicitly self-signed untrusted publisher', () => {
+    const script = buildWindowsCodeSignatureInspectionScript()
+
+    expect(script).toContain('$signature.Status -eq "UnknownError"')
+    expect(script).toContain('$signature.Status -eq "NotTrusted"')
+    expect(script).toContain(
+      '$signature.SignerCertificate.Subject -eq $signature.SignerCertificate.Issuer',
+    )
+    expect(script).toContain('$signature.Status -ne "Valid" -and -not $selfSignedPublisher')
+  })
+
   it('binds the EXE hash and WinVerifyTrust publisher thumbprint to the outer application signer', async () => {
     const fixture = await createWindowsArtifactFixture()
     const inspectCodeSignature = vi.fn(async () => ({ publisherThumbprint: 'd'.repeat(64) }))

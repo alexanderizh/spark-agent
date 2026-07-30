@@ -1,6 +1,6 @@
 # 桌面端按需 Runtime 与远程静态资源设计
 
-> 状态: 已落地 | 最后核对: 2026-07-18
+> 状态: 已落地 | 最后核对: 2026-07-30
 
 ## 目标
 
@@ -102,6 +102,13 @@ renderer 的 `devDependencies`。它们仍会被 Vite 打入 renderer（3D、doc
 但不会再被 electron-builder 当作 main 进程生产依赖收集。`npm`、Playwright、SQLite、keytar、
 node-pty 和 Claude/Codex JS SDK 保留在生产依赖闭包中；npm 仍用于 npm/npx 类 Skill 和环境检测。
 
+Playwright managed MCP 与 `spark_browser` 都由独立 Node runtime 执行，不能把 Electron
+能够访问的 `app.asar` 虚拟路径直接交给普通 Node。发布包因此把 `@playwright/mcp` 及其匹配的
+`playwright-core` 复制到 `Resources/playwright-mcp/node_modules/`，把内置浏览器桥脚本复制到
+`Resources/tools/`；packaged 模式的路径解析只允许命中这两个真实目录。应用启动时自动注册并
+启用 Playwright MCP，本地会话每轮默认注入 `spark_browser`，设置页的安装操作仅用于修复损坏
+或补装浏览器，不再是首次安装后的必经步骤。
+
 ## Electron 语言包与 FFmpeg
 
 macOS 的 electron-builder 24 只会按 `electronLanguages` 清理应用层 `Contents/Resources`，
@@ -122,7 +129,8 @@ Windows/Linux 使用 `en-US`、`zh-CN`、`zh-TW`。钩子会校验三种目录�
 - 最终包内 Codex vendor 文件为 0；Claude native runtime 文件仍存在。
 - 最终包内 `@napi-rs/canvas` 文件为 0；远程化的 onboarding / Canvas prompt 图片为 0。
 - renderer-only 的 `three` / React Three Fiber / Drei / ExcelJS / Mammoth 在 `app.asar` 中均为 0 份，功能仍由 Vite bundle 提供。
-- Playwright、Playwright Core 与测试工具统一到 `1.54.1`，与 `@playwright/mcp@0.0.30` 的依赖一致。
+- managed MCP 使用 `@playwright/mcp@0.0.78` 自带的 Playwright 依赖闭包，应用测试工具使用
+  `playwright@1.62.0`；外置运行时避免了安装包中“配置存在但子进程无法读取 ASAR”的断连。
 - agent-runtime / protocol / desktop typecheck、字体与 locale 针对性测试、Vite production build 和 Electron unpacked pack 均通过。
 
 ## 构建内存与 CI

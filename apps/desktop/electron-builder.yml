@@ -116,6 +116,16 @@ files:
   # Codex JS SDK 保留，但 native vendor runtime 改由完整性页按平台按需下载。
   - '!**/node_modules/@openai/codex-*/vendor/**'
 extraResources:
+  # @playwright/mcp 由独立 standalone Node 子进程执行。外部 Node 无法读取 app.asar，
+  # 因此把 CLI、其内嵌 playwright 以及匹配的 playwright-core 复制到真实文件系统。
+  - from: ../../node_modules/@playwright/mcp
+    to: playwright-mcp/node_modules/@playwright/mcp
+    filter:
+      - '**/*'
+  - from: ../../node_modules/playwright-core
+    to: playwright-mcp/node_modules/playwright-core
+    filter:
+      - '**/*'
   - from: out/main/migrations
     to: migrations
     filter:

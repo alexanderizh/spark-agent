@@ -358,14 +358,7 @@ export async function inspectWindowsCodeSignature(
     throw untrusted('Windows system directory is unavailable')
   }
   const powershell = join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-  const script = [
-    '$ErrorActionPreference = "Stop"',
-    '$signature = Get-AuthenticodeSignature -LiteralPath $args[0]',
-    'if ($signature.Status -ne "Valid" -or $null -eq $signature.SignerCertificate) { exit 3 }',
-    '$sha = [System.Security.Cryptography.SHA256]::Create()',
-    'try { $hash = $sha.ComputeHash($signature.SignerCertificate.RawData) } finally { $sha.Dispose() }',
-    '[Convert]::ToBase64String($hash)',
-  ].join('; ')
+  const script = buildWindowsCodeSignatureInspectionScript()
   const result = await execFileAsync(
     powershell,
     [
@@ -386,6 +379,25 @@ export async function inspectWindowsCodeSignature(
     throw untrusted('Windows Authenticode signer certificate is invalid')
   }
   return { publisherThumbprint: digest.toString('hex') }
+}
+
+/**
+ * Self-signed Spark development releases remain cryptographically signed after
+ * installation on another Windows machine even though their chain is not in
+ * that machine's trust store. This only extracts the signer identity; callers
+ * still bind the app, Host and manifest to the same SHA-256 certificate digest.
+ */
+export function buildWindowsCodeSignatureInspectionScript(): string {
+  return [
+    '$ErrorActionPreference = "Stop"',
+    '$signature = Get-AuthenticodeSignature -LiteralPath $args[0]',
+    'if ($null -eq $signature.SignerCertificate) { exit 3 }',
+    '$selfSignedPublisher = (($signature.Status -eq "UnknownError" -or $signature.Status -eq "NotTrusted") -and $signature.SignerCertificate.Subject -eq $signature.SignerCertificate.Issuer)',
+    'if ($signature.Status -ne "Valid" -and -not $selfSignedPublisher) { exit 3 }',
+    '$sha = [System.Security.Cryptography.SHA256]::Create()',
+    'try { $hash = $sha.ComputeHash($signature.SignerCertificate.RawData) } finally { $sha.Dispose() }',
+    '[Convert]::ToBase64String($hash)',
+  ].join('; ')
 }
 
 export function createMacCodeRequirement(signature: NativeHostCodeSignature): string {

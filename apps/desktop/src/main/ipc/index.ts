@@ -66,7 +66,6 @@ import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import {
   createLogger,
@@ -271,6 +270,7 @@ import {
   setEnabled as setPlaywrightEnabled,
 } from '../services/PlaywrightMcpRegistration.js'
 import { getBrowserBridgeServer } from '../services/BrowserBridgeServer.js'
+import { resolveBrowserAutomationMcpServerPath } from '../services/BrowserAutomationMcpRuntime.js'
 import { resolveStandaloneNodeRuntimePath } from '../services/StandaloneNodeRuntime.js'
 import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
 import type { RemoteInboundMessage } from '../services/RemoteConnectionService.js'
@@ -325,28 +325,6 @@ function updateSkillInstallProgress(
     ...(existing?.skillId ? { skillId: existing.skillId } : {}),
     ...(existing?.skillName ? { skillName: existing.skillName } : {}),
   })
-}
-
-function resolveBrowserAutomationMcpServerPath(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(here, 'tools/browser-automation-mcp-server.mjs'),
-    path.resolve(here, '../tools/browser-automation-mcp-server.mjs'),
-    path.resolve(
-      here,
-      '../../../../packages/agent-runtime/src/tools/browser-automation-mcp-server.mjs',
-    ),
-    path.resolve(
-      process.cwd(),
-      'packages/agent-runtime/src/tools/browser-automation-mcp-server.mjs',
-    ),
-    path.resolve(
-      process.cwd(),
-      '../packages/agent-runtime/src/tools/browser-automation-mcp-server.mjs',
-    ),
-    path.resolve(process.resourcesPath ?? '', 'tools/browser-automation-mcp-server.mjs'),
-  ]
-  return candidates.find((candidate) => existsSync(candidate)) ?? null
 }
 
 const browserAutomationMcpProvider: BrowserAutomationMcpProvider = async (
