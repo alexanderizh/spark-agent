@@ -13,7 +13,7 @@ import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import type { ComputerDecision, GenericComputerDecisionAdapter } from './ComputerDecisionAdapter.js'
 import { ComputerVerificationEngine } from './ComputerVerificationEngine.js'
 import { reconcileObservationTree } from './NativeHostTreeReconciler.js'
-import { isIncrementalTreeEnabled } from './computerUseV2Flags.js'
+import { isActionBatchEnabled, isIncrementalTreeEnabled } from './computerUseV2Flags.js'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('computer-use-operator')
@@ -188,6 +188,7 @@ export class ComputerTaskOperator {
             observation,
             screenshot,
             stepIndex,
+            allowBatch: isActionBatchEnabled(),
           })
           consecutiveTransientFailures = 0
         } catch (error) {
@@ -256,6 +257,78 @@ export class ComputerTaskOperator {
           if (verification.passed) {
             this.sessions.completeVerified(input.session.id)
             return { status: 'completed', verification }
+          }
+          continue
+        }
+
+        if (decision.type === 'actions') {
+          // codex-style batch: execute the planned actions sequentially, re-checking the
+          // target before every step (dispatchWithApproval re-validates the envelope against
+          // the latest observation). Element ids are globally unique per element, so a later
+          // step's id either still resolves to the intended element or fails cleanly — it can
+          // never collide with a different element. Any step failure stops the batch and lets
+          // the outer loop re-observe + re-plan against fresh state.
+          let stopped = false
+          for (const action of decision.actions) {
+            if (abortSignal?.aborted) {
+              return { status: 'failed', reason: 'session_canceled' }
+            }
+            const stepDecision: ComputerDecision = {
+              type: 'action',
+              action,
+              intent: decision.intent,
+            }
+            const stepEnvelope = createEnvelope(
+              input.session,
+              input.lease,
+              observation,
+              stepDecision,
+              this.createId(),
+            )
+            try {
+              const stepResult = await this.dispatchWithApproval(
+                input.session,
+                stepEnvelope,
+                input.lease,
+                input.permissionMode ?? 'claude-ask',
+                abortSignal,
+              )
+              consecutiveNoops = 0
+              consecutiveTransientFailures = 0
+              successfulActions += 1
+              observation = stepResult.observation
+            } catch (error) {
+              if (!(error instanceof ComputerUseBrokerError)) throw error
+              if (error.code === 'session_canceled') throw error
+              if (error.code === 'action_noop') {
+                consecutiveNoops += 1
+                if (consecutiveNoops >= input.session.taskContract.maxConsecutiveNoops) {
+                  this.sessions.fail(input.session.id)
+                  return { status: 'failed', reason: 'maximum_consecutive_noops_reached' }
+                }
+                stopped = true
+                break
+              }
+              if (error.code === 'stale_frame') {
+                // A later step's target drifted. Stop and re-plan — do not retry the stale step.
+                stopped = true
+                break
+              }
+              if (isRecoverableExecutionError(error)) {
+                consecutiveTransientFailures += 1
+                if (consecutiveTransientFailures > MAX_TRANSIENT_RECOVERIES) throw error
+                await this.wait(recoveryDelay(consecutiveTransientFailures))
+                stopped = true
+                break
+              }
+              throw error
+            }
+          }
+          if (stopped) {
+            observation = await this.observeWithRecovery(
+              input.session.id,
+              shouldRequestFullDecisionTree(),
+            )
           }
           continue
         }

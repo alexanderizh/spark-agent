@@ -125,4 +125,134 @@ describe('GenericComputerDecisionAdapter', () => {
     expect(generate).toHaveBeenCalledTimes(2)
     expect(generate.mock.calls[1]?.[0].prompt).toContain('previous provider response failed')
   })
+
+  it('parses a valid batch of actions when allowBatch is on', async () => {
+    const generate = vi.fn(async () => ({
+      text: JSON.stringify({
+        type: 'actions',
+        intent: 'Type the sign-off',
+        actions: [
+          { type: 'click', point: { x: 0.1, y: 0.2 } },
+          { type: 'type_text', text: 'Thanks' },
+        ],
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Sign off',
+        successCriteria: [] as ComputerTaskContract['successCriteria'],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+        allowBatch: true,
+      }),
+    ).resolves.toEqual({
+      type: 'actions',
+      intent: 'Type the sign-off',
+      actions: [
+        { type: 'click', point: { x: 0.1, y: 0.2 } },
+        { type: 'type_text', text: 'Thanks' },
+      ],
+    })
+    // allowBatch must switch the system prompt to the batch variant.
+    expect(generate.mock.calls[0]?.[0].system).toContain('"type":"actions"')
+  })
+
+  it('keeps the single-action system prompt when allowBatch is off', async () => {
+    const generate = vi.fn(async () => ({
+      text: JSON.stringify({
+        type: 'action',
+        intent: 'Save',
+        action: { type: 'invoke_element', elementId: 'button-1', action: 'invoke' },
+      }),
+    }))
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate,
+    })
+
+    await adapter.decide({
+      objective: 'Save',
+      successCriteria: [] as ComputerTaskContract['successCriteria'],
+      observation: OBSERVATION,
+      screenshot: Buffer.from('png'),
+      stepIndex: 0,
+    })
+
+    expect(generate.mock.calls[0]?.[0].system).not.toContain('"type":"actions"')
+  })
+
+  it('rejects a batch below the minimum size', async () => {
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate: async () => ({
+        text: JSON.stringify({
+          type: 'actions',
+          intent: 'One',
+          actions: [{ type: 'click', x: 1, y: 1 }],
+        }),
+      }),
+    })
+    await expect(
+      adapter.decide({
+        objective: 'x',
+        successCriteria: [] as ComputerTaskContract['successCriteria'],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+        allowBatch: true,
+      }),
+    ).rejects.toMatchObject({ code: 'action_not_allowed' })
+  })
+
+  it('rejects a batch containing an unsupported action', async () => {
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate: async () => ({
+        text: JSON.stringify({
+          type: 'actions',
+          intent: 'Risky',
+          actions: [
+            { type: 'click', x: 1, y: 1 },
+            { type: 'shell' },
+          ],
+        }),
+      }),
+    })
+    await expect(
+      adapter.decide({
+        objective: 'x',
+        successCriteria: [] as ComputerTaskContract['successCriteria'],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+        allowBatch: true,
+      }),
+    ).rejects.toMatchObject({ code: 'action_not_allowed' })
+  })
 })
