@@ -2523,13 +2523,14 @@ describe('Renderer Smoke Tests', () => {
     })
   })
 
-  it('places the composer caret at the end of a restored session draft', async () => {
+  it('renders a command draft natively and places the caret at the end', async () => {
+    const commandDraft = '/goal 全部完成，一边完成一边更新文档，并完成每个阶段和总体的审查'
     localStorage.setItem('spark-agent:last-active-session', 'session-1')
     localStorage.setItem(
       'spark-agent:composer-drafts',
       JSON.stringify({
         'session-1': {
-          value: 'restored draft text',
+          value: commandDraft,
           attachments: [],
           manualExpanded: false,
         },
@@ -2640,9 +2641,13 @@ describe('Renderer Smoke Tests', () => {
     await vi.waitFor(() => {
       const textarea = container.querySelector<HTMLTextAreaElement>('.composer-input')
       expect(textarea).not.toBeNull()
-      expect(textarea?.value).toBe('restored draft text')
-      expect(textarea?.selectionStart).toBe('restored draft text'.length)
-      expect(textarea?.selectionEnd).toBe('restored draft text'.length)
+      expect(textarea?.value).toBe(commandDraft)
+      expect(textarea?.selectionStart).toBe(commandDraft.length)
+      expect(textarea?.selectionEnd).toBe(commandDraft.length)
+      expect(container.querySelector('.composer-input-highlights')).toBeNull()
+      expect(container.querySelector('.composer-input-shell')?.classList).not.toContain(
+        'has-input-highlights',
+      )
     })
   }, 15_000)
 
