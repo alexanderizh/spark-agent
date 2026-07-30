@@ -21,3 +21,13 @@ function isEnabled(variable: string | undefined): boolean {
 export function isHostSupervisorEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return isEnabled(env.SPARK_COMPUTER_USE_V2_HOST_SUPERVISOR)
 }
+
+/**
+ * WP6/Phase 2.2 — request incremental (diff) AX trees on decision steps. The
+ * client-side reconciler (see NativeHostTreeReconciler) rebuilds the full tree
+ * text from the always-complete `elements` array, so the model input is
+ * equivalent to a full request while saving the `tree.text` wire bytes.
+ */
+export function isIncrementalTreeEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isEnabled(env.SPARK_COMPUTER_USE_V2_INCREMENTAL_TREE)
+}
