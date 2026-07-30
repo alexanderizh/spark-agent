@@ -2720,6 +2720,35 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(mockState.sdkConfigs[0]?.mcpServers).toHaveProperty('global_search')
   })
 
+  it('falls back to the session provider when the Agent provider binding is stale', async () => {
+    mockState.agents.set(
+      'stale-provider-agent',
+      makeAgent({
+        id: 'stale-provider-agent',
+        name: 'Stale Provider Agent',
+        providerProfileId: 'deleted-on-another-device',
+        modelId: 'stale-agent-model',
+      }),
+    )
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      agentId: 'stale-provider-agent',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Cross-device stale provider binding',
+    })
+
+    await service.sendTurn({ sessionId, message: 'draft the goal contract' })
+
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+    expect(mockState.sdkConfigs[0]).toMatchObject({
+      model: 'glm-5',
+      apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+    })
+  })
+
   it('uses the team Host Agent model over the previous solo-session model', async () => {
     seedProvider({
       id: 'team-host-provider',
