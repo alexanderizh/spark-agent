@@ -3094,7 +3094,6 @@ body.sidebar-resizing {
 /* Tabbar helpers */
 .tabbar-actions {
   gap: 4px;
-      background: var(--bg);
 }
 
 /* Composer helpers */

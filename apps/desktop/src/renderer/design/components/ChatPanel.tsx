@@ -40,6 +40,7 @@ import { useToast } from '../components/Toast'
 import { MarkdownText } from '../views/ChatView'
 import { resolveComposerImageSrc } from '../views/chat/ComposerV2'
 import { getLatestAgentStatus, isRunningAgentStatus } from '../views/chat-session-status'
+import { isOptionalUserQuestion } from '../utils/user-question-readiness'
 import './ChatPanel.less'
 
 export interface ChatPanelProps {
@@ -2077,6 +2078,7 @@ function isQuestionReadyForSubmit(
   draft: UserQuestionDraft | undefined,
 ): boolean {
   if (draft?.skipped) return true
+  if (isOptionalUserQuestion(question)) return true
   return isQuestionAnswered(question, draft)
 }
 
