@@ -8,15 +8,12 @@
 
 在开始审核前，建议使用 multi-search-engine skill 对解法中的关键知识点进行独立验证：
 
-```bash
-# 搜索验证
-bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/search.sh "定理/公式/概念" --limit 8
-
-# 抓取权威来源详情
-bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/fetch.sh "https://权威来源URL" --max-chars 5000
-```
+- 搜索验证：调用 `mcp__spark_search__web_search` 检索“定理/公式/概念”，并优先选择权威来源。
+- 抓取权威来源详情：调用 `mcp__spark_search__fetch_url` 阅读权威来源正文，必要时设置
+  `max_chars: 5000`。
 
 建议进行 **3-5 次**搜索验证：
+
 - 搜索关键公式的标准表述和适用条件
 - 搜索数值结果是否合理（如物理量级、数学结果范围）
 - 搜索相关概念的权威定义，与解法中的表述对比
@@ -37,6 +34,7 @@ bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/fetch.sh "https://权威�
 4. **单位/量纲**（理科题）：单位处理是否正确？
 
 **验证示例**：
+
 ```bash
 python3 -c "
 # 重新计算 solutions.json 中第N步的结果
@@ -58,6 +56,7 @@ print(f'x1={x1}, x2={x2}')
 ### 三、生成修订建议
 
 对发现的每个问题，给出：
+
 - 问题所在位置（第几步）
 - 问题描述
 - 修正方案
@@ -85,9 +84,7 @@ print(f'x1={x1}, x2={x2}')
       "bash_output": "若执行了验证代码，粘贴输出结果"
     }
   ],
-  "missing_knowledge": [
-    "遗漏的重要知识点或前提条件"
-  ],
+  "missing_knowledge": ["遗漏的重要知识点或前提条件"],
   "enriched_concepts": [
     {
       "concept": "需要补充的概念",
@@ -100,9 +97,7 @@ print(f'x1={x1}, x2={x2}')
     "summary": "如有修正，描述修正内容；无修正则填 '原解法经审核准确无误'",
     "corrected_steps": []
   },
-  "teaching_insights": [
-    "基于审核过程发现的、有价值的分析洞察（如：读者可能在哪一步卡住、为什么）"
-  ]
+  "teaching_insights": ["基于审核过程发现的、有价值的分析洞察（如：读者可能在哪一步卡住、为什么）"]
 }
 ```
 

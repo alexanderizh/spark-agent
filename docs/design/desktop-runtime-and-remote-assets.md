@@ -1,6 +1,6 @@
 # 桌面端按需 Runtime 与远程静态资源设计
 
-> 状态: 已落地 | 最后核对: 2026-07-30
+> 状态: 已落地 | 最后核对: 2026-07-31
 
 ## 目标
 
@@ -44,9 +44,12 @@ Claude JS SDK 和各平台 native runtime 仍随应用安装包保留。
 本地完整性页仍然有用：它既能安装缺失 runtime，也能升级云端发布的新 runtime；云端
 维护者只需上传新归档并追加 manifest artifact，旧版本仍可保留用于失败回滚。
 
-MinIO manifest 当前已发布 Codex `0.144.5` 的六个平台包：macOS / Linux / Windows
-的 x64 与 arm64。每个平台 artifact 都声明 target triple、SDK 兼容版本、SHA256、体积和
-归档内容根，完整性服务只会选择与当前 `process.platform` / `process.arch` 同时匹配的条目。
+应用内 Codex SDK 已升级到 `0.146.0`。仓库中的
+`docs/release-manifests/codex-runtime-0.146.0.json` 记录了 macOS / Linux / Windows
+的 x64 与 arm64 六个平台归档、SHA256 和体积，可由 `pnpm artifacts:codex 0.146.0 <目录>`
+重复生成。线上 MinIO manifest 已于 2026-07-31 发布 `0.146.0` 六个平台归档，同时保留
+`0.144.5` 用于回滚；完整性服务只会选择与当前 `process.platform` / `process.arch`
+同时匹配、且 `sdkPackage` 与应用内 SDK 一致的条目。
 
 点击「检查版本更新」时只比较与应用内 Codex JS SDK 兼容、且与当前平台完全匹配的 runtime。
 发现新版后「更新」仍走 staging 下载、SHA256 校验和 `active.json` 原子切换；失败不会覆盖

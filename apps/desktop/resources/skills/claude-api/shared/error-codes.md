@@ -76,11 +76,11 @@ This file documents HTTP error codes returned by the Claude API, their common ca
 
 **Causes:**
 
-- Typo in model ID (e.g., `claude-sonnet-4.6` instead of `claude-sonnet-4-6`)
+- Typo in model ID (e.g., `claude-sonnet-4.6` instead of `claude-sonnet-5`)
 - Using deprecated model ID
 - Invalid API endpoint
 
-**Fix:** Use exact model IDs from the models documentation. You can use aliases (e.g., `claude-opus-4-7`).
+**Fix:** Use exact model IDs from the models documentation. You can use aliases (e.g., `claude-opus-5`).
 
 ---
 
@@ -164,16 +164,16 @@ thinking: budget_tokens=10000, max_tokens=16000
 
 ## Common Mistakes and Fixes
 
-| Mistake                         | Error            | Fix                                                     |
-| ------------------------------- | ---------------- | ------------------------------------------------------- |
-| `temperature`/`top_p`/`top_k` on Opus 4.7 | 400    | Remove the parameter (see `shared/model-migration.md`)  |
-| `budget_tokens` on Opus 4.7     | 400              | Use `thinking: {type: "adaptive"}`                      |
-| `budget_tokens` >= `max_tokens` (older models) | 400 | Ensure `budget_tokens` < `max_tokens`                  |
-| Typo in model ID                | 404              | Use valid model ID like `claude-opus-4-7`               |
-| First message is `assistant`    | 400              | First message must be `user`                            |
-| Consecutive same-role messages  | 400              | Alternate `user` and `assistant`                        |
-| API key in code                 | 401 (leaked key) | Use environment variable                                |
-| Custom retry needs              | 429/5xx          | SDK retries automatically; customize with `max_retries` |
+| Mistake                                        | Error            | Fix                                                     |
+| ---------------------------------------------- | ---------------- | ------------------------------------------------------- |
+| `temperature`/`top_p`/`top_k` on Opus 4.7      | 400              | Remove the parameter (see `shared/model-migration.md`)  |
+| `budget_tokens` on Opus 4.7                    | 400              | Use `thinking: {type: "adaptive"}`                      |
+| `budget_tokens` >= `max_tokens` (older models) | 400              | Ensure `budget_tokens` < `max_tokens`                   |
+| Typo in model ID                               | 404              | Use valid model ID like `claude-opus-5`                 |
+| First message is `assistant`                   | 400              | First message must be `user`                            |
+| Consecutive same-role messages                 | 400              | Alternate `user` and `assistant`                        |
+| API key in code                                | 401 (leaked key) | Use environment variable                                |
+| Custom retry needs                             | 429/5xx          | SDK retries automatically; customize with `max_retries` |
 
 ## Typed Exceptions in SDKs
 

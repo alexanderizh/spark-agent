@@ -1,7 +1,7 @@
 ---
 name: multi-search-engine
-description: "联网搜索与网页阅读技能：使用内置的 spark_search 工具检索网络信息、抓取网页正文，综合比对多来源结果给出有出处的答案。适用于任何模型供应商（含第三方 OpenAI 兼容 API）。"
-version: 2.0.0
+description: '联网搜索与网页阅读技能：使用内置的 spark_search 工具检索网络信息、抓取网页正文，综合比对多来源结果给出有出处的答案。适用于任何模型供应商（含第三方 OpenAI 兼容 API）。'
+version: 2.1.0
 author: Spark AI
 category: utility
 tags: [search, web-search, fetch, research, 信息检索, 搜索, 联网, 调研]
@@ -9,9 +9,9 @@ tags: [search, web-search, fetch, research, 信息检索, 搜索, 联网, 调研
 
 # 联网搜索 (Web Search & Fetch)
 
-你具备始终可用的联网搜索与网页阅读能力。当用户需要搜索、查询、调研、核实信息，或需要读取某个网页时，使用内置 `mcp__spark_search__*` 工具。
+你具备内置联网搜索与网页阅读能力。当用户需要搜索、查询、调研、核实信息，或需要读取某个网页时，优先使用 `mcp__spark_search__*` 工具。
 
-> **为什么用 spark_search 而不是 WebSearch/WebFetch**：SDK 自带的 `WebSearch` / `WebFetch` 是 Anthropic 第一方服务端工具，一旦本会话走第三方 OpenAI 兼容供应商就会失效。`spark_search` 在本地子进程内自己发请求，**与模型供应商解耦，任何供应商下都能用**，已对所有 Agent 默认挂载。
+> **为什么用 spark_search 而不是 WebSearch/WebFetch**：SDK 自带的 `WebSearch` / `WebFetch` 是 Anthropic 第一方服务端工具，一旦本会话走第三方 OpenAI 兼容供应商就会失效。`spark_search` 在本地子进程内发请求，与模型供应商解耦，并对普通 Host/Team Agent 默认挂载。只读原子节点、网络被系统策略禁用或所有搜索后端均不可达时，工具仍可能不可用，应如实报告并给出配置建议。
 
 ## 可用工具（命名空间 `mcp__spark_search__`）
 
@@ -37,7 +37,7 @@ tags: [search, web-search, fetch, research, 信息检索, 搜索, 联网, 调研
 
 ## 搜索后端（自动选择，无需用户操心）
 
-- **免密默认链**（零配置开箱即用，国内优先）：cn.bing.com → 百度 → DuckDuckGo。
+- **免密默认链**（零配置开箱即用）：Bing → DuckDuckGo → 百度。单个 HTML 搜索站点可能改版或触发反爬，服务会自动降级并返回 `warnings`。
 - **填 key 增强**（自动优先）：在「设置 → webSearch」配置 `provider`（`bocha` 博查 / `tavily` / `serper`）+ `apiKey` 后，自动走更高质量的搜索 API。
 
 ## 注意事项

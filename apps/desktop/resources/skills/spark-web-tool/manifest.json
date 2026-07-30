@@ -1,7 +1,13 @@
 {
   "id": "builtin:spark-web-tool",
   "category": "writing",
-  "requiredTools": ["Read", "Write", "Bash", "WebSearch", "WebFetch"],
+  "requiredTools": [
+    "Read",
+    "Write",
+    "Bash",
+    "mcp__spark_search__web_search",
+    "mcp__spark_search__fetch_url"
+  ],
   "parameters": [
     {
       "name": "taskType",

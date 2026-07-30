@@ -194,7 +194,7 @@ export const docsTopics: DocsTopicMeta[] = [
     title: '联网搜索',
     detail: 'spark_search MCP、免密链与 keyed 后端',
     description:
-      'Spark Work 内置联网搜索 spark_search：web_search / fetch_url 工具、免密默认链（Bing / 百度 / DuckDuckGo）、keyed 后端（博查 / Tavily / Serper）、配置项与降级策略。',
+      'Spark Work 内置联网搜索 spark_search：web_search / fetch_url 工具、免密默认链（Bing / DuckDuckGo / 百度）、keyed 后端（博查 / Tavily / Serper）、配置项与降级策略。',
     category: 'mcp',
     level: 'beginner',
     keywords: ['搜索', 'web_search', 'fetch_url', 'Bing', 'DuckDuckGo', 'bocha', 'tavily', '联网'],

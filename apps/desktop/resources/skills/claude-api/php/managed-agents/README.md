@@ -48,7 +48,7 @@ use Anthropic\Beta\Agents\BetaManagedAgentsAgentToolset20260401Params;
 // 1. Create the agent (reusable, versioned)
 $agent = $client->beta->agents->create(
     name: 'Coding Assistant',
-    model: 'claude-opus-4-7',
+    model: 'claude-opus-5',
     system: 'You are a helpful coding assistant.',
     tools: [
         BetaManagedAgentsAgentToolset20260401Params::with(
@@ -104,7 +104,7 @@ $client->beta->sessions->events->send(
 );
 ```
 
-> 💡 **Stream-first:** Open the stream *before* (or concurrently with) sending the message. The stream only delivers events that occur after it opens — stream-after-send means early events arrive buffered in one batch. See [Steering Patterns](../../shared/managed-agents-events.md#steering-patterns).
+> 💡 **Stream-first:** Open the stream _before_ (or concurrently with) sending the message. The stream only delivers events that occur after it opens — stream-after-send means early events arrive buffered in one batch. See [Steering Patterns](../../shared/managed-agents-events.md#steering-patterns).
 
 ---
 
@@ -299,7 +299,7 @@ use Anthropic\Beta\Sessions\BetaManagedAgentsAgentParams;
 // Agent declares MCP server (no auth here — auth goes in a vault)
 $agent = $client->beta->agents->create(
     name: 'GitHub Assistant',
-    model: 'claude-opus-4-7',
+    model: 'claude-opus-5',
     mcpServers: [
         BetaManagedAgentsUrlmcpServerParams::with(
             type: 'url',

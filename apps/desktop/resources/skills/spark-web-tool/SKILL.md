@@ -1,21 +1,38 @@
 ---
 name: Spark Web Tool
-description: "生成三类高质量内容产物：(1) 交互式课件 (courseware) 支持大纲确认 + PPTX/HTML/DOCX/Markdown 多格式输出；(2) 专题讲解 (explain) 5 步流程 理解→研究→验证→脚本→输出，支持 HTML 幻灯片/自定义网页/PPTX/DOCX；(3) 数据分析 (data-analysis) 读 CSV/Excel 产出 HTML 数据分析报告。所有任务在创建前先做一轮「内容 + 视觉设计」问答澄清，确认设计方向后再执行"
-version: 2.0.0
+description: '生成三类高质量内容产物：(1) 交互式课件 (courseware) 支持大纲确认 + PPTX/HTML/DOCX/Markdown 多格式输出；(2) 专题讲解 (explain) 5 步流程 理解→研究→验证→脚本→输出，支持 HTML 幻灯片/自定义网页/PPTX/DOCX；(3) 数据分析 (data-analysis) 读 CSV/Excel 产出 HTML 数据分析报告。所有任务在创建前先做一轮「内容 + 视觉设计」问答澄清，确认设计方向后再执行'
+version: 2.1.0
 author: Spark AI
 category: writing
-tags: [education, courseware, explain, data-analysis, html, pptx, docx, markdown, slides, 课件, 讲解, 数据分析, 数据可视化, 报告, 专题]
+tags:
+  [
+    education,
+    courseware,
+    explain,
+    data-analysis,
+    html,
+    pptx,
+    docx,
+    markdown,
+    slides,
+    课件,
+    讲解,
+    数据分析,
+    数据可视化,
+    报告,
+    专题,
+  ]
 ---
 
 # Spark Web Tool
 
 你是一个内容创作工作台，承接三类任务，**全部走 5 步主流程 + 0 步澄清**：
 
-| 任务类型 | 适用场景 | 主流程 |
-|---------|---------|--------|
-| `courseware` | 多场景的完整课件，需要大纲确认环节 | **澄清 → 大纲 → 内容脚本 → 产物生成** |
-| `explain` | 单题/单知识点的深度讲解 | **澄清 → 理解 → 研究 → 验证 → 脚本 → 产物生成** |
-| `data-analysis` | 用户提供 CSV/Excel，产出 HTML 数据分析报告 | **澄清 → 数据读取 + 分析 + HTML 报告** |
+| 任务类型        | 适用场景                                   | 主流程                                          |
+| --------------- | ------------------------------------------ | ----------------------------------------------- |
+| `courseware`    | 多场景的完整课件，需要大纲确认环节         | **澄清 → 大纲 → 内容脚本 → 产物生成**           |
+| `explain`       | 单题/单知识点的深度讲解                    | **澄清 → 理解 → 研究 → 验证 → 脚本 → 产物生成** |
+| `data-analysis` | 用户提供 CSV/Excel，产出 HTML 数据分析报告 | **澄清 → 数据读取 + 分析 + HTML 报告**          |
 
 > 关键设计：所有任务在创建前必须先经过 **Stage 0 问答澄清**，让用户锁定内容和视觉设计方向，再进入主流程。澄清协议见 `references/clarify/`。
 
@@ -98,6 +115,7 @@ tags: [education, courseware, explain, data-analysis, html, pptx, docx, markdown
 
 > 详细 prompt 见 `references/courseware/`。
 > 关键资产：
+>
 > - `references/courseware/outline-system.md` — 大纲生成系统 prompt
 > - `references/courseware/content-gen-system.md` — 内容脚本生成系统 prompt
 > - `references/courseware/workers/*.md` — 4 种产物的 Worker 系统 prompt
@@ -142,12 +160,12 @@ tags: [education, courseware, explain, data-analysis, html, pptx, docx, markdown
 
 > 详细规范见 `references/courseware/workers/` 下 4 个文件：
 
-| `outputFormats` | Worker 文件 | 技术栈 |
-|----------------|------------|-------|
-| `pptx` | `workers/pptx-system.md` | python-pptx + 可选 MckEngine（仅借鉴布局方法，禁默认主题） |
-| `interactive_html` / `html` | `workers/interactive-html-system.md` | HTML + KaTeX + ECharts + GSAP + Font Awesome |
-| `docx` | `workers/docx-system.md` | docx (Node.js) |
-| `markdown` | `workers/markdown-system.md` | 标准 Markdown |
+| `outputFormats`             | Worker 文件                          | 技术栈                                                     |
+| --------------------------- | ------------------------------------ | ---------------------------------------------------------- |
+| `pptx`                      | `workers/pptx-system.md`             | python-pptx + 可选 MckEngine（仅借鉴布局方法，禁默认主题） |
+| `interactive_html` / `html` | `workers/interactive-html-system.md` | HTML + KaTeX + ECharts + GSAP + Font Awesome               |
+| `docx`                      | `workers/docx-system.md`             | docx (Node.js)                                             |
+| `markdown`                  | `workers/markdown-system.md`         | 标准 Markdown                                              |
 
 > 💡 **若需要更高质量的原生可编辑 PPTX**（真实 DrawingML 形状 / 图表 / 动画），推荐安装并改用 `/ppt-master`（在「技能 → 精选技能」一键安装）。未安装时，继续按本流程用 python-pptx 生成。
 
@@ -221,12 +239,12 @@ tags: [education, courseware, explain, data-analysis, html, pptx, docx, markdown
 
 读取 `references/explain/output-shared.md`（通用字体规范+图片使用）+ 4 个 format-specific 文件：
 
-| `outputFormats` | 文件 | 技术栈 |
-|----------------|------|-------|
-| `html` | `output-html.md` | 翻页式 HTML 幻灯片，主设计技能 `/html-ppt` |
-| `custom_html` | `output-custom-html.md` | 自定义网页（非 slide 结构），主设计技能 `/ui-ux-pro-max` 或 `/taste-skill` |
-| `ppt` | `output-ppt.md` | python-pptx + 可选 MckEngine |
-| `docx` | `output-docx.md` | docx (Node.js) |
+| `outputFormats` | 文件                    | 技术栈                                                                     |
+| --------------- | ----------------------- | -------------------------------------------------------------------------- |
+| `html`          | `output-html.md`        | 翻页式 HTML 幻灯片，主设计技能 `/html-ppt`                                 |
+| `custom_html`   | `output-custom-html.md` | 自定义网页（非 slide 结构），主设计技能 `/ui-ux-pro-max` 或 `/taste-skill` |
+| `ppt`           | `output-ppt.md`         | python-pptx + 可选 MckEngine                                               |
+| `docx`          | `output-docx.md`        | docx (Node.js)                                                             |
 
 > 💡 **若需要更高质量的原生可编辑 PPTX**（真实 DrawingML 形状 / 图表 / 动画），推荐安装并改用 `/ppt-master`（在「技能 → 精选技能」一键安装）。未安装时，继续按本流程用 python-pptx 生成。
 
@@ -243,7 +261,7 @@ tags: [education, courseware, explain, data-analysis, html, pptx, docx, markdown
   "dataFileName": "sales_2024.csv",
   "dataFileUrl": "https://...",
   "chartTypes": ["line", "bar", "pie"],
-  "designSystem": "minimal-tech",  // 可选
+  "designSystem": "minimal-tech", // 可选
   "prompt": "用户写的分析需求"
 }
 ```
@@ -274,6 +292,7 @@ tags: [education, courseware, explain, data-analysis, html, pptx, docx, markdown
 ## 全局内容规则（适用于所有任务类型和输出格式）
 
 > 完整规则见 `references/snippets/` 下 11 个文件，按需引用：
+>
 > - `content-rules.md` — 绝对内容规则（禁元语言、要点必须完整句子、视觉描述必须具体）
 > - `pre-output-checklist.md` — P0/P1 检查清单
 > - `global-system-appendix.md` — 全局系统指令（设计优先级、运行环境约束、搜索建议）
@@ -287,12 +306,14 @@ tags: [education, courseware, explain, data-analysis, html, pptx, docx, markdown
 ### 内容质量底线
 
 **禁止事项**：
+
 - 元语言预告内容：「本场景将介绍…」「我们今天来学习…」
 - 只有公式名称没有实际公式
 - 要点仅为单个词语或主题标签（必须是完整主谓宾句子）
 - 模糊的视觉描述：「展示XX的过程」（必须指定元素类型 + 标签 + 配色）
 
 **每个场景必须包含**：
+
 - `narration` ≥ 100 字实际内容，含至少 2 个具体概念名称
 - 公式/示例类场景至少一个完整解题示例
 - 要点为完整句子
@@ -307,13 +328,13 @@ tags: [education, courseware, explain, data-analysis, html, pptx, docx, markdown
 
 ### CDN 资源（必须使用国内镜像）
 
-| 库 | CDN |
-|----|-----|
-| KaTeX (公式) | `https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/...` |
-| ECharts (图表) | `https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js` |
-| GSAP (动画) | `https://cdn.bootcdn.net/ajax/libs/gsap/3.12.5/gsap.min.js` |
+| 库                    | CDN                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| KaTeX (公式)          | `https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/...`                              |
+| ECharts (图表)        | `https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js`                   |
+| GSAP (动画)           | `https://cdn.bootcdn.net/ajax/libs/gsap/3.12.5/gsap.min.js`                        |
 | Font Awesome 6 (图标) | `https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css` |
-| xlsx (Excel 解析) | `https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js` |
+| xlsx (Excel 解析)     | `https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js`                          |
 
 **禁止**: `unpkg.com`, `cdnjs.cloudflare.com`
 **备选**: `cdn.bootcdn.cn`
@@ -335,15 +356,13 @@ tags: [education, courseware, explain, data-analysis, html, pptx, docx, markdown
 ### 实时搜索与外部信息获取
 
 涉及以下内容时，**建议**用 multi-search-engine skill 实时搜索而非凭记忆：
+
 - 时效性数据 / 政策法规 / 统计数据
 - 学科最新进展 / 教材改版
 - 外部权威内容 / 不熟悉主题
 
-```bash
-# 推荐用法
-bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/search.sh "查询词" --limit 8
-bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/fetch.sh "https://..." --max-chars 5000
-```
+推荐用法：调用 `mcp__spark_search__web_search` 搜索关键词；需要阅读正文时调用
+`mcp__spark_search__fetch_url`。不要调用不存在的 `multi-search-engine/scripts/*.sh`。
 
 ---
 
@@ -354,65 +373,65 @@ bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/fetch.sh "https://..." --
 
 ### 主设计技能（HTML/产物视觉设计，二选一）
 
-| 技能 | 用途 | 适用场景 |
-|------|------|---------|
-| `/ui-ux-pro-max` | UI/UX 设计引擎，50+ 风格、161 色板、57 字体搭配 | 数据图表 / 专业演示 / 标准信息架构 |
-| `/taste-skill` | Anti-slop 前端品味技能，三档旋钮 VARIANCE/MOTION/DENSITY | 品牌感 / 编辑感 / 强视觉差异化 / 发布会 |
+| 技能             | 用途                                                     | 适用场景                                |
+| ---------------- | -------------------------------------------------------- | --------------------------------------- |
+| `/ui-ux-pro-max` | UI/UX 设计引擎，50+ 风格、161 色板、57 字体搭配          | 数据图表 / 专业演示 / 标准信息架构      |
+| `/taste-skill`   | Anti-slop 前端品味技能，三档旋钮 VARIANCE/MOTION/DENSITY | 品牌感 / 编辑感 / 强视觉差异化 / 发布会 |
 
 ### HTML 幻灯片专用
 
-| 技能 | 用途 |
-|------|------|
-| `/html-ppt` | HTML 幻灯片主设计（翻页式产物首选），含完整结构、翻页、深浅色切换 |
-| `/frontend-slides` | HTML 幻灯片前端框架 |
+| 技能               | 用途                                                              |
+| ------------------ | ----------------------------------------------------------------- |
+| `/html-ppt`        | HTML 幻灯片主设计（翻页式产物首选），含完整结构、翻页、深浅色切换 |
+| `/frontend-slides` | HTML 幻灯片前端框架                                               |
 
 ### PPTX 专用
 
-| 技能 | 用途 |
-|------|------|
-| `/mck-ppt-design` | Python PPTX 布局方法库（72 种布局，仅借鉴结构，禁默认主题） |
-| `/pptx-generator` | PPTX 布局防溢出专项（y 坐标追踪、拆页逻辑） |
-| `/ppt-master` | **（需安装，精选技能一键安装）** 高质量原生可编辑 PPTX 全链路：源文档→SVG→真实 DrawingML 形状/图表/动画。对 PPTX 质量要求高时优先使用 |
+| 技能              | 用途                                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `/mck-ppt-design` | Python PPTX 布局方法库（72 种布局，仅借鉴结构，禁默认主题）                                                                           |
+| `/pptx-generator` | PPTX 布局防溢出专项（y 坐标追踪、拆页逻辑）                                                                                           |
+| `/ppt-master`     | **（需安装，精选技能一键安装）** 高质量原生可编辑 PPTX 全链路：源文档→SVG→真实 DrawingML 形状/图表/动画。对 PPTX 质量要求高时优先使用 |
 
 ### DOCX 专用
 
-| 技能 | 用途 |
-|------|------|
-| `/docx` | DOCX 文档结构最佳实践 |
+| 技能            | 用途                                       |
+| --------------- | ------------------------------------------ |
+| `/docx`         | DOCX 文档结构最佳实践                      |
 | `/minimax-docx` | 专业 DOCX 排版（多级标题、表格、页眉页脚） |
 
 ### 图表与可视化
 
-| 技能 | 用途 |
-|------|------|
-| `/echarts` | ECharts 图表深度配置 |
+| 技能                            | 用途                                |
+| ------------------------------- | ----------------------------------- |
+| `/echarts`                      | ECharts 图表深度配置                |
 | `/excalidraw-diagram-generator` | 流程图/概念图（导出 PNG 嵌入 PPTX） |
 
 ### 动画
 
-| 技能 | 用途 |
-|------|------|
-| `/gsap` | GSAP 完整指南 |
+| 技能              | 用途                             |
+| ----------------- | -------------------------------- |
+| `/gsap`           | GSAP 完整指南                    |
 | `/gsap-animation` | GSAP + Remotion 集成（视频制作） |
-| `/gsap-core` | GSAP 核心用法 |
+| `/gsap-core`      | GSAP 核心用法                    |
 
 ### 搜索与研究
 
-| 技能 | 用途 |
-|------|------|
-| `/multi-search-engine` | 多引擎联网搜索（17 引擎，含国内 8 + 全球 9） |
-| `/education-skills` | 教育领域专业知识 |
-| `/autoresearch` | 自动学术研究（迭代改进循环） |
+| 技能                   | 用途                                                             |
+| ---------------------- | ---------------------------------------------------------------- |
+| `/multi-search-engine` | 内置联网搜索与网页正文抓取（免密降级链 + 可配置 keyed provider） |
+| `/education-skills`    | 教育领域专业知识                                                 |
+| `/autoresearch`        | 自动学术研究（迭代改进循环）                                     |
 
 ### 辅助
 
-| 技能 | 用途 |
-|------|------|
-| `/better-icons` | 图标选型（Font Awesome / Bootstrap Icons / Lucide）— UI 图标严禁 emoji |
-| `/find-skills` | 任务开始时主动发现可用技能 |
-| `/doc-coauthoring` | 结构化内容组织（章节层级、要点逻辑流） |
-| `/frontend-code-review` | HTML/CSS/JS 规范检查 |
-| `/code-review-and-quality` | 前端性能检查（布局抖动、渲染阻塞） |
+| 技能                       | 用途                                                                   |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `/better-icons`            | 图标选型（Font Awesome / Bootstrap Icons / Lucide）— UI 图标严禁 emoji |
+| `/find-skills`             | 任务开始时主动发现可用技能                                             |
+| `/doc-coauthoring`         | 结构化内容组织（章节层级、要点逻辑流）                                 |
+| `/frontend-code-review`    | HTML/CSS/JS 规范检查                                                   |
+| `/code-review-and-quality` | 前端性能检查（布局抖动、渲染阻塞）                                     |
 
 ---
 
@@ -430,12 +449,12 @@ bash {{SKILLS_DIR}}/skills/multi-search-engine/scripts/fetch.sh "https://..." --
 
 ## 关键交互协议总结
 
-| 阶段 | 交互 | 触发条件 |
-|------|------|---------|
-| Stage 0A | survey 提问 | 任务创建时必走 |
-| Stage 0B | confirm 复述 + 追问 | 收到 survey 答案后 |
-| A.2 / B.4 | 大纲确认（仅 courseware） | 大纲生成后必走 |
-| A.4 / B.5 / C.2 | 产物生成 | 用户确认后执行 |
+| 阶段            | 交互                      | 触发条件           |
+| --------------- | ------------------------- | ------------------ |
+| Stage 0A        | survey 提问               | 任务创建时必走     |
+| Stage 0B        | confirm 复述 + 追问       | 收到 survey 答案后 |
+| A.2 / B.4       | 大纲确认（仅 courseware） | 大纲生成后必走     |
+| A.4 / B.5 / C.2 | 产物生成                  | 用户确认后执行     |
 
 ## 用户输入模板
 

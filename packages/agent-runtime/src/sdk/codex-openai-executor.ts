@@ -10,7 +10,7 @@ type EventBase = { id: string; sessionId: string; turnId: string; timestamp: str
 /**
  * Direct OpenAI-compatible Chat Completions executor.
  *
- * Codex CLI 0.144.5 removed `wire_api = "chat"`, so Chat providers must not be
+ * Codex CLI 0.144.5+ removed `wire_api = "chat"`, so Chat providers must not be
  * sent through CodexSdkExecutor (which starts that CLI internally). Responses
  * providers continue to use CodexSdkExecutor and retain the full Codex tool
  * runtime.

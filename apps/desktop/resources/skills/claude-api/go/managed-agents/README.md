@@ -63,7 +63,7 @@ fmt.Println(environment.ID) // env_...
 agent, err := client.Beta.Agents.New(ctx, anthropic.BetaAgentNewParams{
     Name: "Coding Assistant",
     Model: anthropic.BetaManagedAgentsModelConfigParams{
-        ID:   "claude-opus-4-7",
+        ID:   "claude-opus-5",
         Type: anthropic.BetaManagedAgentsModelConfigParamsTypeModelConfig,
     },
     System: anthropic.String("You are a helpful coding assistant."),
@@ -149,7 +149,7 @@ if err != nil {
 }
 ```
 
-> 💡 **Stream-first:** Open the stream *before* (or concurrently with) sending the message. The stream only delivers events that occur after it opens — stream-after-send means early events arrive buffered in one batch. See [Steering Patterns](../../shared/managed-agents-events.md#steering-patterns).
+> 💡 **Stream-first:** Open the stream _before_ (or concurrently with) sending the message. The stream only delivers events that occur after it opens — stream-after-send means early events arrive buffered in one batch. See [Steering Patterns](../../shared/managed-agents-events.md#steering-patterns).
 
 ---
 
@@ -380,7 +380,7 @@ if err != nil {
 agent, err := client.Beta.Agents.New(ctx, anthropic.BetaAgentNewParams{
     Name: "GitHub Assistant",
     Model: anthropic.BetaManagedAgentsModelConfigParams{
-        ID:   "claude-opus-4-7",
+        ID:   "claude-opus-5",
         Type: anthropic.BetaManagedAgentsModelConfigParamsTypeModelConfig,
     },
     MCPServers: []anthropic.BetaManagedAgentsUrlmcpServerParams{{

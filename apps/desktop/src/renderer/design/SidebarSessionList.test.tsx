@@ -166,7 +166,8 @@ describe('ProjectSessionGroup pagination', () => {
 
     const actions = container.querySelector('.session-item-actions')
     const archiveButton = actions?.querySelector<HTMLButtonElement>('.session-archive-btn')
-    const moreButton = actions?.querySelector<HTMLButtonElement>('.item-menu-btn')
+    const moreButton =
+      actions?.querySelector<HTMLButtonElement>('.item-menu-wrap .item-menu-btn') ?? null
 
     if (archiveButton == null || moreButton == null) {
       throw new Error('Missing session row actions')
@@ -215,7 +216,7 @@ describe('SidebarProjectToolbar', () => {
 
     const actions = container.querySelector('.sidebar-project-toolbar-actions')
     const importButton = actions?.querySelector<HTMLButtonElement>(
-      '[title="「从Claude、Codex」导入继续会话"]',
+      '[aria-label="「从Claude、Codex」导入继续会话"]',
     )
     expect(importButton).not.toBeNull()
     expect(actions?.querySelector('button')).toBe(importButton)
