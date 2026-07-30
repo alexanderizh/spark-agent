@@ -92,6 +92,58 @@ describe('ComputerTaskOperator', () => {
     expect(sessions.completeVerified).toHaveBeenCalledWith('computer-1')
   })
 
+  it('locally recovers a stale frame on a non-approval action instead of re-querying the model', async () => {
+    const decisions = [
+      {
+        type: 'action' as const,
+        intent: 'Save through the exposed button',
+        action: {
+          type: 'invoke_element' as const,
+          elementId: 'save-button',
+          action: 'invoke' as const,
+        },
+      },
+      { type: 'ready_for_verification' as const, reason: 'Saved status is visible' },
+    ]
+    const broker = {
+      observe: vi.fn().mockResolvedValueOnce(BEFORE).mockResolvedValue(AFTER),
+      dispatch: vi
+        .fn()
+        .mockRejectedValueOnce(new ComputerUseBrokerError('stale_frame', 'frame drifted'))
+        .mockResolvedValueOnce({ observation: AFTER, noop: false }),
+    }
+    const operator = new ComputerTaskOperator({
+      sessions: sessionController(),
+      broker,
+      approvals: { takeApprovedTicket: vi.fn(() => null) },
+      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+      verifications: verificationStore(),
+      createId: () => 'action-1',
+      now: () => Date.parse(SESSION.createdAt),
+    })
+
+    const result = await operator.run({
+      session: SESSION,
+      lease: LEASE,
+      adapter: { decide: vi.fn(async () => decisions.shift()!) },
+    })
+    expect(result).toEqual({
+      status: 'completed',
+      verification: expect.objectContaining({ passed: true }),
+    })
+
+    // The stale frame was recovered locally: dispatch retried once with a refreshed envelope
+    // (observedFrameId advanced to the re-observed frame) and the model decided exactly twice
+    // (action + verification). Had recovery fallen back to the model loop, decide would have
+    // been called a third time and the decisions array would have shifted past its end.
+    expect(broker.dispatch).toHaveBeenCalledTimes(2)
+    expect(broker.dispatch).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ observedFrameId: 'frame-2', observedTreeVersion: 'tree-2' }),
+    )
+    expect(broker.observe).toHaveBeenCalledTimes(2)
+  })
+
   it('waits for the exact approval id and replays the unchanged governed envelope', async () => {
     const decisions = [
       {
@@ -154,6 +206,56 @@ describe('ComputerTaskOperator', () => {
     expect(dispatch.mock.calls[1]?.[0]).toBe(dispatch.mock.calls[0]?.[0])
     expect(dispatch.mock.calls[1]?.[1]).toBe(ticket)
     expect(sessions.heartbeatLease).toHaveBeenCalled()
+  })
+
+  it('interrupts a blocking approval await when the session abort signal fires', async () => {
+    const decisions = [
+      {
+        type: 'action' as const,
+        intent: 'Send the prepared message',
+        action: {
+          type: 'invoke_element' as const,
+          elementId: 'send-button',
+          action: 'invoke' as const,
+        },
+      },
+    ]
+    const dispatch = vi.fn(async () => {
+      throw new ComputerUseBrokerError('approval_required', 'Approval required', {
+        approvalId: 'approval-3',
+        riskLevel: 'L2',
+      })
+    })
+    const abortController = new AbortController()
+    // Never resolves — simulates a native approval dialog the user has not answered.
+    const requestApproval = vi.fn(() => new Promise<null>(() => {}))
+    const operator = new ComputerTaskOperator({
+      sessions: sessionController(),
+      broker: { observe: vi.fn(async () => BEFORE), dispatch },
+      approvals: { takeApprovedTicket: vi.fn(() => null) },
+      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+      verifications: verificationStore(),
+      requestApproval,
+      getAbortSignal: () => abortController.signal,
+      createId: () => 'action-1',
+      now: () => Date.parse(SESSION.createdAt),
+    })
+
+    const runPromise = operator.run({
+      session: SESSION,
+      lease: LEASE,
+      permissionMode: 'codex-full-access',
+      adapter: { decide: vi.fn(async () => decisions.shift()!) },
+    })
+    // Wait until the operator reaches the blocking approval await, then abort the session. The
+    // action must NOT be dispatched — interrupting before dispatch is fail-closed.
+    await vi.waitFor(() => expect(requestApproval).toHaveBeenCalled())
+    abortController.abort()
+    await expect(runPromise).resolves.toMatchObject({
+      status: 'failed',
+      reason: 'session_canceled',
+    })
+    expect(dispatch).toHaveBeenCalledTimes(1)
   })
 
   it('presents an exact action approval and dispatches only the returned one-time ticket', async () => {
@@ -325,7 +427,7 @@ describe('ComputerTaskOperator', () => {
     expect(dispatch).toHaveBeenCalledTimes(2)
   })
 
-  it('recovers from a stale frame by re-observing and replanning instead of ending the task', async () => {
+  it('falls back to re-observing and replanning when a stale frame cannot be locally relocated', async () => {
     const decisions = [
       {
         type: 'action' as const,
@@ -339,7 +441,20 @@ describe('ComputerTaskOperator', () => {
       },
       { type: 'ready_for_verification' as const, reason: 'The query is visible' },
     ]
-    const observe = vi.fn(async () => BEFORE)
+    // The re-observe during local stale recovery sees a different foreground window, so the
+    // operator cannot safely relocate the action and must fall back to model replanning.
+    const movedWindow = {
+      ...BEFORE,
+      foreground: {
+        ...BEFORE.foreground,
+        window: { ...BEFORE.foreground.window, id: 'window-9' },
+      },
+    }
+    const observe = vi
+      .fn()
+      .mockResolvedValueOnce(BEFORE)
+      .mockResolvedValueOnce(movedWindow)
+      .mockResolvedValue(BEFORE)
     const dispatch = vi
       .fn()
       .mockRejectedValueOnce(new ComputerUseBrokerError('stale_frame', 'The frame changed'))
@@ -363,7 +478,7 @@ describe('ComputerTaskOperator', () => {
       }),
     ).resolves.toMatchObject({ status: 'completed' })
     expect(dispatch).toHaveBeenCalledTimes(2)
-    expect(observe).toHaveBeenCalledTimes(2)
+    expect(observe).toHaveBeenCalledTimes(3)
     expect(sessions.fail).not.toHaveBeenCalled()
   })
 
@@ -469,6 +584,45 @@ describe('ComputerTaskOperator', () => {
     expect(verifications.complete.mock.invocationCallOrder[0]).toBeLessThan(
       sessions.completeVerified.mock.invocationCallOrder[0]!,
     )
+  })
+
+  it('completes the turn even when the verification record cannot be persisted', async () => {
+    const sessions = sessionController()
+    const verifications = {
+      create: vi.fn(() => ({ id: 'verification-1', status: 'pending' })),
+      complete: vi.fn(() => null),
+    }
+    const operator = new ComputerTaskOperator({
+      sessions,
+      broker: { observe: vi.fn(async () => AFTER), dispatch: vi.fn() },
+      approvals: { takeApprovedTicket: vi.fn(() => null) },
+      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+      verifications,
+      windowInventory: { listWindows: vi.fn(async () => []) },
+      createId: () => 'verification-1',
+      now: () => Date.parse(SESSION.createdAt),
+    })
+
+    await expect(
+      operator.run({
+        session: SESSION,
+        lease: LEASE,
+        adapter: {
+          decide: vi.fn(async () => ({
+            type: 'ready_for_verification' as const,
+            reason: 'Saved status is visible',
+          })),
+        },
+      }),
+    ).resolves.toMatchObject({ status: 'completed' })
+    expect(verifications.complete).toHaveBeenCalledWith(
+      'verification-1',
+      expect.objectContaining({ status: 'passed' }),
+    )
+    // A storage fault on the verification record must not fail the whole turn once the
+    // verification outcome itself is valid in-memory.
+    expect(sessions.completeVerified).toHaveBeenCalledWith(SESSION.id)
+    expect(sessions.fail).not.toHaveBeenCalled()
   })
 
   it('keeps ordinary non-sensitive text entry in the low-friction public tier', async () => {

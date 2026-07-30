@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { ComputerObservation, NativeBinaryPayloadDescriptor } from '@spark/protocol'
 import type { ApplicationSnapshotRepository } from '@spark/storage'
+import { createLogger } from '@spark/shared'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import type { NativeObservationEvidenceSink } from './NativeHostComputerUseBackend.js'
 import type { SnapshotVault, SnapshotVaultBlobRecord } from './SnapshotVault.js'
+
+const log = createLogger('computer-use-evidence')
 
 const MAX_EVIDENCE_IMAGE_BYTES = 67_108_864
 const MAX_EVIDENCE_PIXELS = 50_000_000
@@ -26,6 +29,12 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
   private readonly maxCachedBytes: number
   private readonly latestImages = new Map<string, { snapshotId: string; bytes: Buffer }>()
   private cachedBytes = 0
+  /**
+   * Per-session serialized durable-write chains. The expensive encrypted-vault + SQLite
+   * write happens here, ordered within a session so audit replay stays chronological.
+   * Failures are swallowed and logged so a storage fault can never fail the live action.
+   */
+  private readonly pendingWrites = new Map<string, Promise<void>>()
 
   constructor(options: {
     repository: EvidenceRepository
@@ -63,12 +72,81 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
     const imageSha256 = sha256(processed.bytes)
     const expiresAt = new Date(this.now().getTime() + EXECUTION_EVIDENCE_TTL_MS).toISOString()
 
+    // Fire-and-forget: the expensive encrypted-vault + SQLite write runs on the per-session
+    // serial chain without blocking the live action. `cacheLatest` above already made this
+    // frame available to `readLatestImage`, and the wire layer has already validated the
+    // payload, so a storage fault must never fail the observation that produced it.
+    void this.scheduleDurableWrite({
+      computerSessionId: input.computerSessionId,
+      kind: input.kind,
+      observation: input.observation,
+      processed,
+      imageBlobId,
+      imageSha256,
+      expiresAt,
+    })
+    return { visualFingerprint: processed.perceptualHash }
+  }
+
+  /**
+   * Waits for every queued durable write to settle. The live action never awaits this — it
+   * exists so tests and graceful shutdown can assert/flush the background chain. Failures
+   * are already swallowed inside {@link scheduleDurableWrite}, so this never rejects.
+   */
+  async flushPendingWrites(): Promise<void> {
+    const pending = [...this.pendingWrites.values()]
+    if (pending.length === 0) return
+    await Promise.allSettled(pending)
+  }
+
+  /**
+   * Queues the encrypted-vault + SQLite write on the per-session serial chain. Callers do
+   * NOT await settlement (see {@link persist}); the chain only serializes writes within a
+   * session so audit replay stays chronological and SQLite never sees concurrent writers.
+   * A durable-write failure is logged and swallowed: the live action has already been
+   * validated at the wire layer, and the in-memory cache (`cacheLatest`, run synchronously
+   * in `persist`) is what feeds the decision model.
+   */
+  private scheduleDurableWrite(input: {
+    computerSessionId: string
+    kind: 'execution_before' | 'execution_after'
+    observation: ComputerObservation
+    processed: { bytes: Buffer; perceptualHash: string }
+    imageBlobId: string
+    imageSha256: string
+    expiresAt: string
+  }): Promise<void> {
+    const previous = this.pendingWrites.get(input.computerSessionId) ?? Promise.resolve()
+    const next = previous
+      .catch(() => undefined)
+      .then(() => this.writeDurableEvidence(input))
+      .catch((error: unknown) => {
+        log.warn('Computer observation evidence could not be persisted', error)
+      })
+    this.pendingWrites.set(input.computerSessionId, next)
+    void next.then(() => {
+      if (this.pendingWrites.get(input.computerSessionId) === next) {
+        this.pendingWrites.delete(input.computerSessionId)
+      }
+    })
+    return next
+  }
+
+  private async writeDurableEvidence(input: {
+    computerSessionId: string
+    kind: 'execution_before' | 'execution_after'
+    observation: ComputerObservation
+    processed: { bytes: Buffer; perceptualHash: string }
+    imageBlobId: string
+    imageSha256: string
+    expiresAt: string
+  }): Promise<void> {
     await this.vault.writeManyRegistered(
-      [{ blobId: imageBlobId, kind: 'image', plaintext: processed.bytes }],
+      [{ blobId: input.imageBlobId, kind: 'image', plaintext: input.processed.bytes }],
       (records) => {
         const recordById = new Map(records.map((record) => [record.blobId, record]))
-        const image = requireBlob(recordById, imageBlobId, 'image')
-        if (image.plaintextSha256 !== imageSha256) {
+        const image = requireBlob(recordById, input.imageBlobId, 'image')
+        if (image.plaintextSha256 !== input.imageSha256) {
           throw incompatibleEvidence()
         }
         this.repository.createWithBlobs({
@@ -84,11 +162,11 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
             windowTitle: input.observation.foreground.window.title,
             bounds: input.observation.foreground.window.bounds,
             display: input.observation.display,
-            imageBlobId,
+            imageBlobId: input.imageBlobId,
             textBlobId: null,
             previewBlobId: null,
-            imageSha256,
-            perceptualHash: processed.perceptualHash,
+            imageSha256: input.imageSha256,
+            perceptualHash: input.processed.perceptualHash,
             treeVersion: input.observation.treeVersion,
             accessibleTextMode: 'app_exposed',
             redaction: {
@@ -97,14 +175,13 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
                 input.observation.sensitiveRegions.length > 0 ? ['sensitive_region'] : [],
               regionCount: input.observation.sensitiveRegions.length,
             },
-            retention: { mode: 'ttl', expiresAt },
+            retention: { mode: 'ttl', expiresAt: input.expiresAt },
             createdAt: input.observation.capturedAt,
           },
           blobs: [toCreateBlob(image, input.observation.capturedAt)],
         })
       },
     )
-    return { visualFingerprint: processed.perceptualHash }
   }
 
   private cacheLatest(computerSessionId: string, snapshotId: string, bytes: Buffer): void {

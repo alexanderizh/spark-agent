@@ -242,6 +242,35 @@ describe('NativeHostClient', () => {
     }
   })
 
+  it('forwards the Host-declared retryable flag on a recoverable error response', async () => {
+    const process = new FakeNativeHostProcess()
+    const requests = observeRequests(process)
+    const connecting = NativeHostClient.connect({
+      artifact: ARTIFACT,
+      spawnProcess: () => process,
+    })
+    await completeHandshake(process, requests)
+    const client = await connecting
+
+    const ping = client.ping()
+    const request = requireRequest(await requests.next())
+    process.send({
+      protocolVersion: 1,
+      requestId: request.requestId,
+      type: 'error',
+      error: {
+        code: 'native_host_incompatible',
+        message: 'transient hiccup',
+        retryable: true,
+      },
+    })
+
+    await expect(ping).rejects.toMatchObject({
+      code: 'native_host_incompatible',
+      retryable: true,
+    })
+  })
+
   it('extends the request deadline for a bounded native action instead of killing it mid-input', async () => {
     vi.useFakeTimers()
     try {

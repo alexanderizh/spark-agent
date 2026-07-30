@@ -424,7 +424,16 @@ export class NativeHostClient {
     if (pending == null) throw new Error('Native Host sent an unsolicited or duplicate response')
     if (response.type === 'error') {
       this.finishPending(response.requestId, pending)
-      pending.reject(new ComputerUseBrokerError(response.error.code, response.error.message))
+      // Surface the Host-declared `retryable` flag so callers can transparently retry
+      // idempotent operations (observe/list_windows/ping) on a transient failure without
+      // tearing down an otherwise healthy connection. The connection is still alive here —
+      // the Host reported a recoverable error, not a crash — so the decision to retry sits
+      // with the backend, not with this transport client.
+      pending.reject(
+        new ComputerUseBrokerError(response.error.code, response.error.message, undefined, {
+          retryable: response.error.retryable === true,
+        }),
+      )
       return
     }
     if (response.type !== pending.expectedType) {

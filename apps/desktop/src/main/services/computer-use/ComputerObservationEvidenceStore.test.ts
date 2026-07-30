@@ -63,6 +63,7 @@ describe('ComputerObservationEvidenceStore', () => {
       payload: { kind: 'image_png', byteLength: 3, sha256: PNG_SHA256 },
       bytes: Buffer.from('png'),
     })
+    await store.flushPendingWrites()
 
     expect(vault.writeManyRegistered).toHaveBeenCalledWith(
       [expect.objectContaining({ kind: 'image', plaintext: preview })],
@@ -124,6 +125,7 @@ describe('ComputerObservationEvidenceStore', () => {
         bytes: Buffer.from('png'),
       }),
     ).resolves.toEqual({ visualFingerprint: 'f'.repeat(16) })
+    await store.flushPendingWrites()
 
     expect(imageProcessor).toHaveBeenCalledWith(Buffer.from('png'), sensitiveObservation)
     expect(vault.writeManyRegistered).toHaveBeenCalledWith(
