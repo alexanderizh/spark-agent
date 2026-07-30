@@ -1394,7 +1394,7 @@ describe('Renderer Smoke Tests', () => {
       expect(historyRequests[0]).toEqual(
         expect.objectContaining({
           sessionId: 'session-1',
-          turnLimit: 6,
+          turnLimit: 12,
           eventLimit: 1200,
         }),
       )

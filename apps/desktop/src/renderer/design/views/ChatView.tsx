@@ -3785,7 +3785,7 @@ type GetSessionHistory = (request: {
  * Agentic 会话里一个轮次可能有上千条事件，按事件数会把单个轮次切碎成「一条消息」；
  * 按轮次分页则每页都是完整对话。后端已排除流式 delta 行，单页载荷大幅缩小。
  */
-const SESSION_HISTORY_TURN_PAGE = 6
+const SESSION_HISTORY_TURN_PAGE = 12
 const SESSION_HISTORY_EVENT_PAGE = 1200
 
 /**
