@@ -1,0 +1,39 @@
+import { describe, expect, it } from 'vitest'
+import { resolveCanvasOperationPanelMode } from './canvasOperationPanelMode'
+
+describe('resolveCanvasOperationPanelMode', () => {
+  it('uses a vision-only runtime for image prompt reverse', () => {
+    expect(resolveCanvasOperationPanelMode('image_prompt_reverse')).toEqual({
+      executionKind: 'text',
+      runtimeKind: 'vision_model',
+      showPromptEditor: false,
+      showCustomParams: false,
+      showLocalDepthNotice: false,
+      submitLabel: '生成提示词',
+    })
+  })
+
+  it('uses local-only controls for depth video', () => {
+    expect(resolveCanvasOperationPanelMode('video_depth_map')).toEqual({
+      executionKind: 'local_media',
+      runtimeKind: 'none',
+      showPromptEditor: false,
+      showCustomParams: false,
+      showLocalDepthNotice: true,
+      submitLabel: '生成深度视频',
+    })
+  })
+
+  it('keeps existing text and cloud media panel behavior', () => {
+    expect(resolveCanvasOperationPanelMode('text_generate')).toMatchObject({
+      runtimeKind: 'text_full',
+      showPromptEditor: true,
+      showCustomParams: true,
+    })
+    expect(resolveCanvasOperationPanelMode('image_to_video')).toMatchObject({
+      runtimeKind: 'none',
+      showPromptEditor: true,
+      showCustomParams: false,
+    })
+  })
+})
