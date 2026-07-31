@@ -18,6 +18,7 @@ import {
 import { ComputerPolicyService } from './ComputerPolicyService.js'
 import { ComputerSessionManager } from './ComputerSessionManager.js'
 import { ComputerObservationEvidenceStore } from './ComputerObservationEvidenceStore.js'
+import { ComputerUseTimelineStore } from './ComputerUseTimelineStore.js'
 import {
   type ComputerExecutorBackend,
   type ComputerHostBackend,
@@ -43,6 +44,8 @@ export interface ComputerUseServices {
   readonly approvals: ComputerApprovalService
   readonly verifications: ComputerVerificationRepository
   readonly broker: ComputerControlBroker
+  /** Live in-memory timeline of action lifecycle events per computer session. */
+  readonly timeline: ComputerUseTimelineStore
   readonly backend: TrustedComputerUseBackend
   readonly killSwitch: ComputerKillSwitchService
   readonly evidence?: NativeObservationEvidenceSink & {
@@ -88,6 +91,7 @@ export function createComputerUseServices(
     repository: new ComputerApprovalRepository(database),
   })
   const verifications = new ComputerVerificationRepository(database)
+  const timeline = new ComputerUseTimelineStore()
   const broker = new ComputerControlBroker({
     sessions,
     policy,
@@ -95,6 +99,7 @@ export function createComputerUseServices(
     actions: new ComputerActionRepository(database),
     observer: backend,
     executor: backend,
+    timeline,
   })
   const killSwitch = new ComputerKillSwitchService(
     options.shortcutRegistrar ?? FAIL_CLOSED_SHORTCUT_REGISTRAR,
@@ -115,6 +120,7 @@ export function createComputerUseServices(
     approvals,
     verifications,
     broker,
+    timeline,
     backend,
     killSwitch,
     ...(usableEvidence == null ? {} : { evidence: usableEvidence }),
@@ -140,6 +146,7 @@ export function createComputerUseServices(
           .listActiveSessionIds()
           .map(async (computerSessionId) => broker.killSwitch(computerSessionId)),
       )
+      timeline.clear()
       if (isDisposableBackend(backend)) await backend.dispose()
     },
   }
