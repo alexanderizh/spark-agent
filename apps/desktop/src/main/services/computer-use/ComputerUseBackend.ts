@@ -40,11 +40,7 @@ export interface ComputerHostBackend {
     permissions: Array<'screen' | 'accessibility'>,
   ): Promise<NativeHostCapabilityManifest>
   listWindows(): Promise<NativeWindowDescriptor[]>
-  bindSessionTarget?(input: {
-    computerSessionId: string
-    appId: string
-    windowId: string
-  }): void
+  bindSessionTarget?(input: { computerSessionId: string; appId: string; windowId: string }): void
 }
 
 export class UnavailableComputerUseBackend

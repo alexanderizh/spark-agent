@@ -235,6 +235,57 @@ describe('ComputerUseAgentController', () => {
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ session: resumed, lease }))
   })
 
+  it('explicitly rebinds an owned task only to a window allowed by its app provenance', async () => {
+    const session = computerSession('paused')
+    const bindSessionTarget = vi.fn()
+    const services = {
+      sessions: { getSession: vi.fn(() => session) },
+      backend: {
+        listWindows: vi.fn(async () => [
+          {
+            app: { id: 'app-1', name: 'Editor' },
+            window: {
+              id: 'window-2',
+              title: 'New document',
+              bounds: { x: 0, y: 0, width: 800, height: 600 },
+            },
+            display: { id: 'display-1', width: 1920, height: 1080, scaleFactor: 1 },
+            focused: false,
+            minimized: false,
+          },
+        ]),
+        bindSessionTarget,
+      },
+    }
+    const controller = new ComputerUseAgentController({
+      getServices: () => services as never,
+      resolveDecisionModel: vi.fn(),
+      createAdapter: vi.fn(),
+      createOperator: vi.fn(),
+    })
+
+    await expect(
+      controller.invoke('session-1', 'bind_target', {
+        computerSessionId: session.id,
+        targetWindowId: 'window-2',
+      }),
+    ).resolves.toMatchObject({ targetWindowId: 'window-2' })
+    expect(bindSessionTarget).toHaveBeenCalledWith({
+      computerSessionId: session.id,
+      appId: 'app-1',
+      windowId: 'window-2',
+    })
+    services.sessions.getSession.mockReturnValue({ ...session, status: 'observing' })
+    bindSessionTarget.mockClear()
+    await expect(
+      controller.invoke('session-1', 'bind_target', {
+        computerSessionId: session.id,
+        targetWindowId: 'window-2',
+      }),
+    ).rejects.toMatchObject({ code: 'action_not_allowed' })
+    expect(bindSessionTarget).not.toHaveBeenCalled()
+  })
+
   it('reports native execution as available when the optional emergency shortcut is not armed', async () => {
     const services = {
       backend: {

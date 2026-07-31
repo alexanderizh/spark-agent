@@ -485,7 +485,7 @@ Windows：
 
 **目标**：用户操作其他应用时，不影响 Agent 操作其目标应用。
 
-> 实施进度（2026-07-31）：execution lane 协议与 macOS 输入冲突切片已落地；AX 语义动作不再激活目标应用，CGEvent 动作等待 300 ms 全局输入空闲、短时聚焦并恢复原前台应用/指针，Host 注入事件带来源标记且不会被误判为用户输入。真实用户点击绑定窗口（包括观察后、首次动作前的点击）会 fail-closed 返回 `handoff_required`，Operator 转入接管态而非任务失败。系统 Tray 已实时投影实际 Computer Session 状态，并通过 Broker 提供暂停、立即接管和停止。AppControlBridge 已以白名单 `set_theme/navigate` 接入 Broker、受信主 Renderer 回执和动作后重观察，并显示操作 toast；不提供通用 eval/selector/任意 IPC。300 ms P99 真机指标、目标 picker/new-window provenance、表单类白名单 command 与 Windows 对等实现仍在实施。
+> 实施进度（2026-07-31）：execution lane 协议与 macOS 输入冲突切片已落地；AX 语义动作不再激活目标应用，CGEvent 动作等待 300 ms 全局输入空闲、短时聚焦并恢复原前台应用/指针，Host 注入事件带来源标记且不会被误判为用户输入。真实用户点击绑定窗口（包括观察后、首次动作前的点击）会 fail-closed 返回 `handoff_required`，Operator 转入接管态而非任务失败。系统 Tray 已实时投影实际 Computer Session 状态，并通过 Broker 提供暂停、立即接管和停止。AppControlBridge 已以白名单 `set_theme/navigate` 接入 Broker、受信主 Renderer 回执和动作后重观察，并显示操作 toast；不提供通用 eval/selector/任意 IPC。目标选择已支持 `list_windows → targetWindowId`，会话按 `appId + windowId` 精确绑定且不会跟随其他前台窗口；新窗口只能由会话所有者显式加入，并重新通过任务契约中的最强应用身份规则。300 ms P99 真机指标、产品 picker UI/控制标签、表单类白名单 command 与 Windows 对等实现仍在实施。
 
 #### 4.1 目标绑定
 

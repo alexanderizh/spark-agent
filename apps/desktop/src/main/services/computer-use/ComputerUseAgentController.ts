@@ -2,6 +2,7 @@ import type { ComputerDecisionModelConfig } from '@spark/agent-runtime'
 import {
   ComputerTaskContractSchema,
   VerificationSpecSchema,
+  type ComputerAppIdentity,
   type ComputerApprovalTicket,
   type ComputerActuatorLease,
   type ComputerSession,
@@ -133,6 +134,7 @@ export class ComputerUseAgentController {
             'resume',
             'stop',
             'takeover',
+            'bind_target',
           ],
         }
       }
@@ -153,6 +155,27 @@ export class ComputerUseAgentController {
               }
             : {}),
         }
+      }
+      case 'bind_target': {
+        const computerSession = this.requireOwnedSession(services, sessionId, args)
+        if (computerSession.status !== 'paused') {
+          throw new ComputerUseBrokerError(
+            'action_not_allowed',
+            'Pause the Computer Use task before changing its bound target window',
+          )
+        }
+        const targetWindowId = readTargetWindowId(args)
+        const target = requireAllowedTargetWindow(
+          await services.backend.listWindows(),
+          targetWindowId,
+          computerSession.taskContract,
+        )
+        services.backend.bindSessionTarget?.({
+          computerSessionId: computerSession.id,
+          appId: target.app.id,
+          windowId: target.window.id,
+        })
+        return { computerSession, targetWindowId: target.window.id }
       }
       case 'pause': {
         const computerSession = this.requireOwnedSession(services, sessionId, args)
@@ -397,9 +420,7 @@ function parseStartTask(args: unknown): {
   return {
     goal: parsed.data.goal,
     environment: parsed.data.environment,
-    ...(parsed.data.targetWindowId == null
-      ? {}
-      : { targetWindowId: parsed.data.targetWindowId }),
+    ...(parsed.data.targetWindowId == null ? {} : { targetWindowId: parsed.data.targetWindowId }),
     successCriteria:
       parsed.data.successCriteria ??
       (parsed.data.acceptanceCriteria ?? []).map((expected) => ({
@@ -464,6 +485,38 @@ function requireTargetWindow(
   const visible = windows.filter((window) => !window.minimized)
   if (visible.length > 0) return largestWindow(visible)
   throw new ComputerUseBrokerError('focus_mismatch', 'No controllable window was found')
+}
+
+function requireAllowedTargetWindow(
+  windows: NativeWindowDescriptor[],
+  targetWindowId: string,
+  taskContract: ComputerSession['taskContract'],
+): NativeWindowDescriptor {
+  const target = windows.find((window) => window.window.id === targetWindowId && !window.minimized)
+  if (target == null) throw unavailable('The selected target window is unavailable')
+  if (!taskContract.allowedApps.some((rule) => appRuleMatches(rule, target.app))) {
+    throw new ComputerUseBrokerError(
+      'app_not_allowed',
+      'The selected target window is outside the task application allowlist',
+    )
+  }
+  return target
+}
+
+function appRuleMatches(
+  rule: ComputerSession['taskContract']['allowedApps'][number],
+  app: ComputerAppIdentity,
+): boolean {
+  switch (rule.kind) {
+    case 'app_id':
+      return app.id === rule.value
+    case 'bundle_id':
+      return app.bundleId === rule.value
+    case 'executable_identity':
+      return app.executableIdentity === rule.value
+    case 'signing_identity':
+      return app.signingIdentity === rule.value
+  }
 }
 
 function largestWindow(windows: NativeWindowDescriptor[]): NativeWindowDescriptor {
@@ -536,6 +589,15 @@ function readComputerSessionId(args: unknown): string {
   if (args == null || typeof args !== 'object' || Array.isArray(args)) throw invalidArguments()
   const value = (args as Record<string, unknown>).computerSessionId
   if (typeof value !== 'string' || value.trim() === '' || value.length > 200) {
+    throw invalidArguments()
+  }
+  return value
+}
+
+function readTargetWindowId(args: unknown): string {
+  if (args == null || typeof args !== 'object' || Array.isArray(args)) throw invalidArguments()
+  const value = (args as Record<string, unknown>).targetWindowId
+  if (typeof value !== 'string' || value.trim() === '' || value.length > 256) {
     throw invalidArguments()
   }
   return value

@@ -136,6 +136,10 @@ describe('ComputerUseAgentBridge', () => {
     expect(startTask.description).toContain('successCriteria is optional')
     expect(startTask.description).toContain('"environment":"my_desktop"')
     expect(startTask.inputSchema.properties.environment.enum).toEqual(['my_desktop'])
+    expect(startTask.inputSchema.properties.targetWindowId).toMatchObject({
+      type: 'string',
+      minLength: 1,
+    })
     expect(startTask.inputSchema.required).toEqual(['goal', 'environment'])
     expect(startTask.inputSchema.properties.successCriteria.items).toMatchObject({
       oneOf: expect.arrayContaining([

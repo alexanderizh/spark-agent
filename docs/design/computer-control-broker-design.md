@@ -15,6 +15,7 @@
 - `ComputerKillSwitchService.ts`：全局快捷键注册、注册失败 fail-closed、重复触发合并和全部活动会话停止。
 - `ComputerUseServices.ts`：使用真实 Storage Repository 的主进程 composition root。
 - `AppControlBridge.ts` / `AppControlExecutorBackend.ts`：SparkWork 自身的会话绑定白名单 command 通道；生产默认只匹配固定 bundle id `com.spark-agent.desktop`，只接受协议枚举的主题/导航命令，仍先经过 Broker policy/lease，主 Renderer 回执精确 `computerSessionId + actionId + commandId + uiRevision` 后重新观察，不提供 eval、selector、URL、shell 或任意 IPC。
+- `NativeHostComputerUseBackend.bindSessionTarget()`：把会话绑定到精确 `appId + windowId`；绑定存在时观察和动作后观察都不得跟随其他前台窗口。首次选择和后续新窗口加入均须经主进程校验任务契约中的最强应用身份规则；后续加入必须先暂停会话并由会话所有者显式请求。
 - `computer-permission-action.ts`：`spark_computer` 任务级 MCP 权限映射；未知工具和低层动作永久拒绝。
 
 主进程启动完成数据库迁移后初始化这些服务。默认 factory 在支持的 macOS 架构上尝试连接受信 Host；缺失、ad-hoc/异团队签名、hash/manifest/握手不符或 Host 未声明所需能力时保持 unavailable。在任何平台都不会退化成坐标脚本、BrowserBridge 或其他假执行器。

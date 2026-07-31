@@ -152,6 +152,7 @@ function createServices(overrides: Record<string, unknown> = {}) {
   const backend = {
     getCapabilities: vi.fn(async () => CAPABILITIES),
     listWindows: vi.fn(async () => [WINDOW]),
+    bindSessionTarget: vi.fn(),
   }
   return {
     sessions,
@@ -234,6 +235,7 @@ describe('registerComputerUseIpc', () => {
         'computer-use:resume',
         'computer-use:stop',
         'computer-use:takeover',
+        'computer-use:bind-target',
         'computer-use:resolve-app-command',
         'computer-use:approve-action',
         'computer-use:deny-action',
@@ -412,6 +414,116 @@ describe('registerComputerUseIpc', () => {
       ),
     ).resolves.toMatchObject({ computerSession: { id: SESSION.id } })
     expect(services.sessions.createSession).toHaveBeenCalledOnce()
+  })
+
+  it('binds an explicitly selected window only when its strong app identity is allowed', async () => {
+    const services = createServices()
+    const enabled = {
+      ...DEFAULT_SETTINGS,
+      enabled: true,
+      environments: { ...DEFAULT_SETTINGS.environments, myDesktop: true },
+    }
+    register({ settings: createSettingsStore(enabled), services })
+
+    await expect(
+      harness.handlers.get('computer-use:start')!(
+        {
+          sessionId: SESSION.sessionId,
+          turnId: SESSION.turnId,
+          workflowRunId: null,
+          environment: SESSION.environment,
+          providerProfileId: SESSION.providerProfileId,
+          modelId: SESSION.modelId,
+          taskContract: SESSION.taskContract,
+          targetWindowId: WINDOW.window.id,
+        },
+        event(),
+      ),
+    ).resolves.toMatchObject({ computerSession: { id: SESSION.id } })
+    expect(services.backend.bindSessionTarget).toHaveBeenCalledWith({
+      computerSessionId: SESSION.id,
+      appId: WINDOW.app.id,
+      windowId: WINDOW.window.id,
+    })
+  })
+
+  it('rejects a selected window outside the task application allowlist before session creation', async () => {
+    const services = createServices()
+    services.backend.listWindows.mockResolvedValue([
+      {
+        ...WINDOW,
+        app: { id: 'app-2', name: 'Other App', bundleId: 'com.other.App' },
+        window: { ...WINDOW.window, id: 'window-2' },
+      },
+    ])
+    const enabled = {
+      ...DEFAULT_SETTINGS,
+      enabled: true,
+      environments: { ...DEFAULT_SETTINGS.environments, myDesktop: true },
+    }
+    register({ settings: createSettingsStore(enabled), services })
+
+    await expect(
+      harness.handlers.get('computer-use:start')!(
+        {
+          sessionId: SESSION.sessionId,
+          turnId: SESSION.turnId,
+          workflowRunId: null,
+          environment: SESSION.environment,
+          providerProfileId: SESSION.providerProfileId,
+          modelId: SESSION.modelId,
+          taskContract: SESSION.taskContract,
+          targetWindowId: 'window-2',
+        },
+        event(),
+      ),
+    ).rejects.toMatchObject({ code: 'app_not_allowed' })
+    expect(services.sessions.createSession).not.toHaveBeenCalled()
+  })
+
+  it('allows only the owning renderer to explicitly join a new window with matching provenance', async () => {
+    const services = createServices()
+    const enabled = {
+      ...DEFAULT_SETTINGS,
+      enabled: true,
+      environments: { ...DEFAULT_SETTINGS.environments, myDesktop: true },
+    }
+    register({ settings: createSettingsStore(enabled), services })
+    const owner = event()
+    await harness.handlers.get('computer-use:start')!(
+      {
+        sessionId: SESSION.sessionId,
+        turnId: SESSION.turnId,
+        workflowRunId: null,
+        environment: SESSION.environment,
+        providerProfileId: SESSION.providerProfileId,
+        modelId: SESSION.modelId,
+        taskContract: SESSION.taskContract,
+      },
+      owner,
+    )
+    services.backend.listWindows.mockResolvedValue([
+      { ...WINDOW, window: { ...WINDOW.window, id: 'window-2', title: 'New window' } },
+    ])
+    services.sessions.getSession.mockReturnValue({ ...SESSION, status: 'paused' })
+
+    await expect(
+      harness.handlers.get('computer-use:bind-target')!(
+        { computerSessionId: SESSION.id, targetWindowId: 'window-2' },
+        owner,
+      ),
+    ).resolves.toMatchObject({ targetWindowId: 'window-2' })
+    expect(services.backend.bindSessionTarget).toHaveBeenCalledWith({
+      computerSessionId: SESSION.id,
+      appId: WINDOW.app.id,
+      windowId: 'window-2',
+    })
+    await expect(
+      harness.handlers.get('computer-use:bind-target')!(
+        { computerSessionId: SESSION.id, targetWindowId: 'window-2' },
+        event(999),
+      ),
+    ).rejects.toMatchObject({ code: 'action_not_allowed' })
   })
 
   it('preflights the native host before creating and leasing a session', async () => {

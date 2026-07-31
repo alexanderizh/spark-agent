@@ -73,29 +73,29 @@ flowchart LR
 
 ## 4. 威胁与强制控制
 
-| 编号 | 威胁/攻击路径                                | 影响                     | 强制控制                                                                                             | 验证方式               |
-| ---- | -------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------- |
-| T01  | 页面或邮件中的 prompt injection 要求扩大权限 | 数据泄露、外部副作用     | 非用户内容标记为不可信；任务契约不可由模型扩大；可疑注入暂停                                         | 对抗任务集、策略单测   |
-| T02  | 模型在旧截图上点击                           | 错误目标、误提交         | action 绑定 `observedFrameId` 和 `observedTreeVersion`；Broker 执行前重读焦点                        | stale frame 集成测试   |
-| T03  | 窗口焦点或应用身份在审批后改变               | 跨应用误操作             | ticket 绑定 action/target/data digest；app/window identity 再校验                                    | focus drift 测试       |
-| T04  | 两个 Agent 同时操作真实桌面                  | 动作交叉、不可恢复状态   | 全局 actuator lease、心跳、抢占与崩溃释放                                                            | lease 竞争测试         |
-| T05  | Renderer/MCP 直接调用 Native Host            | 绕过策略与审计           | Native Host pipe 仅由主进程持有；不监听本地端口                                                      | 进程权限与负向测试     |
-| T06  | 复用 BrowserBridge SID/CORS/eval             | 本地代码或页面执行       | Computer Host 使用独立 wire；禁止 HTTP/CORS/eval                                                     | 架构测试、代码扫描     |
-| T07  | 审批 ticket 重放或参数替换                   | 未授权高风险动作         | nonce、短 TTL、单次使用、全参数 digest、事务消费                                                     | replay/TOCTOU 测试     |
-| T08  | 远程设备越权批准 L3/L4                       | 高影响副作用             | capability 独立开关；远程只允许 L2；本地可随时撤销                                                   | 远程权限矩阵测试       |
-| T09  | 快照文件路径或明文落库                       | 隐私泄露                 | AES-256-GCM、钥匙串密钥、ID 协议、SQLite 只存元数据                                                  | 密文篡改与磁盘扫描测试 |
-| T10  | SecureTextField/密码模式进入模型             | 凭据泄露                 | AX/UIA secure 属性过滤、本地模式检测、用户敏感区域                                                   | 平台 secure field 样本 |
-| T11  | Native Host 被替换或降级                     | 任意输入、虚假观察       | signed 模式校验签名/公证/hash；local 模式校验固定目录、文件权限/hash；两者均校验严格 manifest 和协议 | 安装/升级完整性测试    |
-| T12  | Native Host 伪报能力                         | 调用不安全或不存在的后端 | capability manifest 平台/后端/feature 自洽校验                                                       | contract test          |
-| T13  | 坐标、DPR 或多屏映射错误                     | 点击错误区域             | 归一化坐标；显示拓扑版本；动作前后校验                                                               | Retina/多 DPI/双屏矩阵 |
-| T14  | 无限循环、noop 或恶意超大消息                | DoS、失控操作            | maxSteps/runtime/noops；消息、树、图像和数组上限；Kill Switch                                        | fuzz/预算测试          |
-| T15  | Stop/用户接管只取消模型，不停止动作队列       | 停止后仍操作             | Stop 撤销 lease、清队列、取消 Provider、通知 Host；macOS Event Tap 区分 Host 注入与真实输入，点击绑定窗口即 handoff，前台输入持续复核接管状态 | P99 停止/接管时延测试  |
-| T16  | Verifier 为了通过而修改状态                  | 虚假完成                 | Verifier 只读且无 lease；关键任务双证据                                                              | 权限负向测试           |
-| T17  | 远程 `/screen` 返回原图或 AX 全文            | 大范围信息泄露           | 最大 960px 脱敏预览；不返回路径/全文                                                                 | API 响应快照测试       |
-| T18  | 日志或崩溃报告包含输入、路径和截图           | 持久隐私泄露             | 结构化 error code；日志字段 allowlist；崩溃前清洗                                                    | 日志扫描测试           |
-| T19  | 签名 Electron 被当作通用 Node 运行时复用     | 绕过 Host 父进程信任     | 关闭 RunAsNode/NodeOptions/inspect fuses；ASAR integrity + OnlyLoadAppFromAsar                       | afterPack fuse 测试    |
-| T20  | iframe、辅助窗口或伪造 Renderer 读取快照     | 越权预览、隐私泄露       | app-snapshot IPC 仅主窗口 mainFrame；短期 capability 绑定归属                                        | IPC 来源负向测试       |
-| T21  | AppControlBridge 被扩展成通用 Renderer 后门   | 绕过 UI/Host 策略、任意执行 | 仅协议枚举 `set_theme/navigate`；请求绑定 session/action/command；回执仅主窗口 mainFrame；禁止 eval/selector/URL/shell/任意 IPC；执行后重新观察 | schema/IPC/bridge 负向测试 |
+| 编号 | 威胁/攻击路径                                | 影响                        | 强制控制                                                                                                                                        | 验证方式                                |
+| ---- | -------------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| T01  | 页面或邮件中的 prompt injection 要求扩大权限 | 数据泄露、外部副作用        | 非用户内容标记为不可信；任务契约不可由模型扩大；可疑注入暂停                                                                                    | 对抗任务集、策略单测                    |
+| T02  | 模型在旧截图上点击                           | 错误目标、误提交            | action 绑定 `observedFrameId` 和 `observedTreeVersion`；Broker 执行前重读焦点                                                                   | stale frame 集成测试                    |
+| T03  | 窗口焦点或应用身份在审批后改变               | 跨应用误操作                | ticket 绑定 action/target/data digest；会话精确绑定 app/window；窗口消失 fail-closed；新窗口须所有者显式加入并复核最强应用身份                  | focus drift/绑定窗口消失/跨身份加入测试 |
+| T04  | 两个 Agent 同时操作真实桌面                  | 动作交叉、不可恢复状态      | 全局 actuator lease、心跳、抢占与崩溃释放                                                                                                       | lease 竞争测试                          |
+| T05  | Renderer/MCP 直接调用 Native Host            | 绕过策略与审计              | Native Host pipe 仅由主进程持有；不监听本地端口                                                                                                 | 进程权限与负向测试                      |
+| T06  | 复用 BrowserBridge SID/CORS/eval             | 本地代码或页面执行          | Computer Host 使用独立 wire；禁止 HTTP/CORS/eval                                                                                                | 架构测试、代码扫描                      |
+| T07  | 审批 ticket 重放或参数替换                   | 未授权高风险动作            | nonce、短 TTL、单次使用、全参数 digest、事务消费                                                                                                | replay/TOCTOU 测试                      |
+| T08  | 远程设备越权批准 L3/L4                       | 高影响副作用                | capability 独立开关；远程只允许 L2；本地可随时撤销                                                                                              | 远程权限矩阵测试                        |
+| T09  | 快照文件路径或明文落库                       | 隐私泄露                    | AES-256-GCM、钥匙串密钥、ID 协议、SQLite 只存元数据                                                                                             | 密文篡改与磁盘扫描测试                  |
+| T10  | SecureTextField/密码模式进入模型             | 凭据泄露                    | AX/UIA secure 属性过滤、本地模式检测、用户敏感区域                                                                                              | 平台 secure field 样本                  |
+| T11  | Native Host 被替换或降级                     | 任意输入、虚假观察          | signed 模式校验签名/公证/hash；local 模式校验固定目录、文件权限/hash；两者均校验严格 manifest 和协议                                            | 安装/升级完整性测试                     |
+| T12  | Native Host 伪报能力                         | 调用不安全或不存在的后端    | capability manifest 平台/后端/feature 自洽校验                                                                                                  | contract test                           |
+| T13  | 坐标、DPR 或多屏映射错误                     | 点击错误区域                | 归一化坐标；显示拓扑版本；动作前后校验                                                                                                          | Retina/多 DPI/双屏矩阵                  |
+| T14  | 无限循环、noop 或恶意超大消息                | DoS、失控操作               | maxSteps/runtime/noops；消息、树、图像和数组上限；Kill Switch                                                                                   | fuzz/预算测试                           |
+| T15  | Stop/用户接管只取消模型，不停止动作队列      | 停止后仍操作                | Stop 撤销 lease、清队列、取消 Provider、通知 Host；macOS Event Tap 区分 Host 注入与真实输入，点击绑定窗口即 handoff，前台输入持续复核接管状态   | P99 停止/接管时延测试                   |
+| T16  | Verifier 为了通过而修改状态                  | 虚假完成                    | Verifier 只读且无 lease；关键任务双证据                                                                                                         | 权限负向测试                            |
+| T17  | 远程 `/screen` 返回原图或 AX 全文            | 大范围信息泄露              | 最大 960px 脱敏预览；不返回路径/全文                                                                                                            | API 响应快照测试                        |
+| T18  | 日志或崩溃报告包含输入、路径和截图           | 持久隐私泄露                | 结构化 error code；日志字段 allowlist；崩溃前清洗                                                                                               | 日志扫描测试                            |
+| T19  | 签名 Electron 被当作通用 Node 运行时复用     | 绕过 Host 父进程信任        | 关闭 RunAsNode/NodeOptions/inspect fuses；ASAR integrity + OnlyLoadAppFromAsar                                                                  | afterPack fuse 测试                     |
+| T20  | iframe、辅助窗口或伪造 Renderer 读取快照     | 越权预览、隐私泄露          | app-snapshot IPC 仅主窗口 mainFrame；短期 capability 绑定归属                                                                                   | IPC 来源负向测试                        |
+| T21  | AppControlBridge 被扩展成通用 Renderer 后门  | 绕过 UI/Host 策略、任意执行 | 仅协议枚举 `set_theme/navigate`；请求绑定 session/action/command；回执仅主窗口 mainFrame；禁止 eval/selector/URL/shell/任意 IPC；执行后重新观察 | schema/IPC/bridge 负向测试              |
 
 ## 5. 审批与 TOCTOU 规则
 
