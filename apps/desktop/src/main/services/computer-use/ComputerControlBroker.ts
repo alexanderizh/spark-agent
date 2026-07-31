@@ -71,6 +71,8 @@ export interface ComputerControlBrokerOptions {
   executor: ComputerExecutorBackend
   /** Optional live timeline sink. Absent keeps broker behavior unchanged. */
   timeline?: ComputerUseTimelineSink
+  /** Flushes the current before-frame only for L2/L3 actions before ticket consumption. */
+  flushHighRiskEvidence?: (computerSessionId: string) => Promise<void>
   now?: () => Date
 }
 
@@ -82,6 +84,7 @@ export class ComputerControlBroker {
   private readonly observer: ComputerObserverBackend
   private readonly executor: ComputerExecutorBackend
   private readonly timeline: ComputerUseTimelineSink | undefined
+  private readonly flushHighRiskEvidence: ((computerSessionId: string) => Promise<void>) | undefined
   private readonly now: () => Date
   private readonly observations = new Map<string, ComputerObservation>()
   private readonly activeDispatches = new Set<string>()
@@ -94,6 +97,7 @@ export class ComputerControlBroker {
     this.observer = options.observer
     this.executor = options.executor
     this.timeline = options.timeline
+    this.flushHighRiskEvidence = options.flushHighRiskEvidence
     this.now = options.now ?? (() => new Date())
   }
 
@@ -215,6 +219,35 @@ export class ComputerControlBroker {
           'Computer action requires exact user approval',
           { approvalId: approval.id, riskLevel },
         )
+      }
+      try {
+        await this.flushHighRiskEvidence?.(envelope.computerSessionId)
+      } catch (error) {
+        const evidenceError =
+          error instanceof ComputerUseBrokerError
+            ? error
+            : new ComputerUseBrokerError(
+                'environment_unavailable',
+                'High-risk computer action evidence could not be persisted',
+                undefined,
+                {
+                  diagnostic: {
+                    diagnosticCode: 'high_risk_evidence_persist_failed',
+                    stage: 'persist',
+                    repairAction: 'Check available disk space and retry the action',
+                  },
+                },
+              )
+        this.blockAction(actionRow.id, evidenceError.code)
+        this.timeline?.record({
+          type: 'computer_action_blocked',
+          sessionId: context.session.sessionId,
+          turnId: context.session.turnId,
+          computerSessionId: envelope.computerSessionId,
+          actionId: envelope.actionId,
+          errorCode: evidenceError.code,
+        })
+        throw evidenceError
       }
       this.approvals.consume(ticket, envelope, riskLevel)
       approvalTicketId = ticket.id

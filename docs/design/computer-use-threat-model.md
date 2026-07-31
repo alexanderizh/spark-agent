@@ -1,6 +1,6 @@
 # Computer Use 安全威胁模型
 
-> 状态: 实施中 | 最后核对: 2026-07-31
+> 状态: 实施中 | 最后核对: 2026-08-01
 
 本文定义 Spark Agent Computer Use、应用快照、远程看护和自主验收的安全边界。它是 `CU-00` 的发布基线；后续 Broker、Native Host、Snapshot Vault、Provider Adapter、Renderer 和 Remote Gateway 的实现不得弱化本文约束。
 
@@ -70,12 +70,13 @@ flowchart LR
 10. `completed` 只能由 Verification Engine 在存在 verification record 时写入。
 11. 快照预览必须持有短期、随机、绑定 snapshot/session/turn 的 capability；snapshot ID 本身不是读取凭据。
 12. Native Host 认可的 Electron 父进程不得被 RunAsNode、Node options、inspect 或可注入动态库重新用途化。
+13. L2/L3 动作执行前，其当前 before-frame 必须完成脱敏加密落盘；失败时不得消费 ticket 或调用 backend。L0/L1 保持异步审计，不把普通动作阻塞在磁盘 I/O 上。
 
 ## 4. 威胁与强制控制
 
 | 编号 | 威胁/攻击路径                                | 影响                        | 强制控制                                                                                                                                                                                                  | 验证方式                                |
 | ---- | -------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| T01  | 页面或邮件中的 prompt injection 要求扩大权限 | 数据泄露、外部副作用        | 非用户内容标记为不可信；任务契约不可由模型扩大；可疑注入暂停                                                                                                                                              | 对抗任务集、策略单测                    |
+| T01  | 页面或邮件中的 prompt injection 要求扩大权限 | 数据泄露、外部副作用        | 非用户内容标记为不可信；任务契约、绑定应用/窗口和数据类别不可由模型扩大；提交/发送/支付/删除 intent 升 L2，未知目标与首次动态应用至少 L2，可疑注入暂停                                                     | 对抗任务集、策略单测                    |
 | T02  | 模型在旧截图上点击                           | 错误目标、误提交            | action 绑定 `observedFrameId` 和 `observedTreeVersion`；Broker 执行前重读焦点                                                                                                                             | stale frame 集成测试                    |
 | T03  | 窗口焦点或应用身份在审批后改变               | 跨应用误操作                | ticket 绑定 action/target/data digest；会话精确绑定 app/window；窗口消失 fail-closed；新窗口须所有者显式加入并复核最强应用身份                                                                            | focus drift/绑定窗口消失/跨身份加入测试 |
 | T04  | 两个 Agent 同时操作真实桌面                  | 动作交叉、不可恢复状态      | 全局 actuator lease、心跳、抢占与崩溃释放                                                                                                                                                                 | lease 竞争测试                          |
@@ -89,7 +90,8 @@ flowchart LR
 | T12  | Native Host 伪报能力                         | 调用不安全或不存在的后端    | capability manifest 平台/后端/feature 自洽校验                                                                                                                                                            | contract test                           |
 | T13  | 坐标、DPR 或多屏映射错误                     | 点击错误区域                | 归一化坐标；显示拓扑版本；动作前后校验                                                                                                                                                                    | Retina/多 DPI/双屏矩阵                  |
 | T14  | 无限循环、noop 或恶意超大消息                | DoS、失控操作               | maxSteps/runtime/noops；消息、树、图像和数组上限；Kill Switch                                                                                                                                             | fuzz/预算测试                           |
-| T15  | Stop/用户接管只取消模型，不停止动作队列      | 停止后仍操作                | Stop 撤销 lease、清队列、取消 Provider、通知 Host；macOS Event Tap 区分 Host 注入与真实输入，点击绑定窗口即 handoff，前台输入持续复核接管状态                                                             | P99 停止/接管时延测试                   |
+| T15  | Stop/用户接管只取消模型，不停止动作队列      | 停止后仍操作                | Stop 撤销 lease、清队列、取消 Provider、通知 Host；macOS Event Tap 与 Windows 低级键鼠 Hook 均区分 Host 注入与真实输入，点击绑定窗口即 handoff，前台输入持续复核接管状态                                  | P99 停止/接管时延测试                   |
+| T22  | 高风险动作先执行、before-frame 后台落盘失败   | 高风险动作缺少可审计证据    | L2/L3 在 ticket 消费和 backend 执行前 flush 当前会话证据链；失败标记 action blocked 并返回可修复诊断；L0/L1 仍异步                                                                                         | EvidenceStore/Broker 顺序与失败测试     |
 | T16  | Verifier 为了通过而修改状态                  | 虚假完成                    | Verifier 只读且无 lease；关键任务双证据                                                                                                                                                                   | 权限负向测试                            |
 | T17  | 远程 `/screen` 返回原图或 AX 全文            | 大范围信息泄露              | 最大 960px 脱敏预览；不返回路径/全文                                                                                                                                                                      | API 响应快照测试                        |
 | T18  | 日志或崩溃报告包含输入、路径和截图           | 持久隐私泄露                | 结构化 error code；日志字段 allowlist；崩溃前清洗                                                                                                                                                         | 日志扫描测试                            |

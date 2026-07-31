@@ -168,6 +168,42 @@ describe('ComputerObservationEvidenceStore', () => {
     expect(vault.writeManyRegistered).not.toHaveBeenCalled()
   })
 
+  it('keeps low-risk persistence asynchronous but fails closed when high-risk evidence is flushed', async () => {
+    const store = new ComputerObservationEvidenceStore({
+      repository: { createWithBlobs: vi.fn(() => undefined as never) },
+      vault: {
+        writeManyRegistered: vi.fn(async () => {
+          throw new Error('disk full')
+        }),
+      },
+      imageProcessor: vi.fn(() => ({
+        bytes: Buffer.from('preview'),
+        perceptualHash: 'a'.repeat(16),
+      })),
+    })
+
+    await expect(
+      store.persist({
+        computerSessionId: 'computer-1',
+        kind: 'execution_before',
+        observation: OBSERVATION,
+        payload: { kind: 'image_png', byteLength: 3, sha256: PNG_SHA256 },
+        bytes: Buffer.from('png'),
+      }),
+    ).resolves.toEqual({ visualFingerprint: 'a'.repeat(16) })
+
+    await expect(store.flushPendingWrites()).resolves.toBeUndefined()
+    await expect(store.flushPendingWritesOrThrow('computer-1')).rejects.toMatchObject({
+      code: 'environment_unavailable',
+      diagnostic: {
+        diagnosticCode: 'high_risk_evidence_persist_failed',
+        stage: 'persist',
+      },
+    })
+    store.clearSession('computer-1')
+    await expect(store.flushPendingWritesOrThrow('computer-1')).resolves.toBeUndefined()
+  })
+
   it('evicts old in-memory raw frames when the byte budget is reached', async () => {
     const store = new ComputerObservationEvidenceStore({
       repository: { createWithBlobs: vi.fn(() => undefined as never) },

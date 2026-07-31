@@ -250,6 +250,7 @@ function createHarness(
     executor?: ComputerExecutorBackend
     observer?: ComputerObserverBackend
     timeline?: ComputerUseTimelineSink
+    flushHighRiskEvidence?: (computerSessionId: string) => Promise<void>
   } = {},
 ) {
   const actions = new MemoryActionStore()
@@ -276,6 +277,9 @@ function createHarness(
     observer,
     executor,
     ...(options.timeline == null ? {} : { timeline: options.timeline }),
+    ...(options.flushHighRiskEvidence == null
+      ? {}
+      : { flushHighRiskEvidence: options.flushHighRiskEvidence }),
     now: () => new Date('2026-07-28T05:00:02.000Z'),
   })
   return {
@@ -291,7 +295,8 @@ function createHarness(
 
 describe('ComputerControlBroker', () => {
   it('executes only against the broker-owned observation and persists the after frame', async () => {
-    const { broker, actions, executor } = createHarness()
+    const flushHighRiskEvidence = vi.fn(async () => undefined)
+    const { broker, actions, executor } = createHarness({ flushHighRiskEvidence })
     await expect(broker.observe(session.id, true)).resolves.toEqual(beforeObservation)
 
     await expect(broker.dispatch(envelope())).resolves.toEqual({
@@ -309,6 +314,7 @@ describe('ComputerControlBroker', () => {
       after_frame_id: 'frame-2',
       risk_level: 'L1',
     })
+    expect(flushHighRiskEvidence).not.toHaveBeenCalled()
   })
 
   it('rejects stale frames, stale trees and foreground window drift before execution', async () => {
@@ -328,7 +334,10 @@ describe('ComputerControlBroker', () => {
   })
 
   it('persists an approval request and consumes its exact ticket before execution', async () => {
-    const { broker, approvals, actions, sessions } = createHarness()
+    const flushHighRiskEvidence = vi.fn(async () => undefined)
+    const { broker, approvals, actions, sessions, executor } = createHarness({
+      flushHighRiskEvidence,
+    })
     await broker.observe(session.id, true)
     const governed = envelope({
       policyContext: {
@@ -349,7 +358,39 @@ describe('ComputerControlBroker', () => {
     const ticket = { id: 'approval-1' } as ComputerApprovalTicket
     await expect(broker.dispatch(governed, ticket)).resolves.toMatchObject({ noop: false })
     expect(sessions.current.status).toBe('observing')
+    expect(flushHighRiskEvidence).toHaveBeenCalledWith(session.id)
     expect(approvals.consume).toHaveBeenCalledWith(ticket, governed, 'L2')
+    expect(flushHighRiskEvidence.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(approvals.consume).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    )
+    expect(flushHighRiskEvidence.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(executor.execute).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    )
+  })
+
+  it('blocks an approved high-risk action when its before-frame cannot be persisted', async () => {
+    const flushHighRiskEvidence = vi.fn(async () => {
+      throw new ComputerUseBrokerError('environment_unavailable', 'disk full')
+    })
+    const { broker, approvals, actions, executor } = createHarness({ flushHighRiskEvidence })
+    await broker.observe(session.id, true)
+    const governed = envelope({
+      policyContext: {
+        effect: 'external_write',
+        target: { kind: 'recipient', id: 'recipient-alice' },
+        dataClasses: ['internal'],
+      },
+    })
+
+    await expect(
+      broker.dispatch(governed, { id: 'approval-1' } as ComputerApprovalTicket),
+    ).rejects.toMatchObject({ code: 'environment_unavailable' })
+    expect(actions.get(governed.actionId)).toMatchObject({
+      status: 'blocked',
+      error_code: 'environment_unavailable',
+    })
+    expect(approvals.consume).not.toHaveBeenCalled()
+    expect(executor.execute).not.toHaveBeenCalled()
   })
 
   it('records the action lifecycle on the timeline sink when executed', async () => {
