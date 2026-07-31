@@ -567,7 +567,12 @@ export const DEBUG_TOOL_NAMES: string[] = [
  */
 export const DEBUG_MODE_SYSTEM_PROMPT = [
   '## Debug Mode (enabled for this session)',
-  'You are in interactive debug mode. A local log server is running; instrumentation you',
+  'The user deliberately enabled interactive debug mode. When the user reports a bug, defect,',
+  'crash, unexpected behavior, or asks you to investigate, troubleshoot, or reproduce one,',
+  'you MUST call `mcp__spark_debug__begin` before editing code and start the debug loop below.',
+  'Do not fall back to the ordinary diagnose-and-fix workflow unless the user explicitly asks',
+  'you to skip interactive debugging and fix directly.',
+  'A local log server is running; instrumentation you',
   'add reports back to it (browser/webview logs included — CORS is handled). Use the',
   '`mcp__spark_debug__*` tools to run a hypothesis-driven loop WITH the user in the loop:',
   '1. `begin` to get the session id + ready-to-paste instrumentation snippets.',

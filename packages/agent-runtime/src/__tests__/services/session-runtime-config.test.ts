@@ -229,6 +229,10 @@ vi.mock('@spark/shared/keystore', () => ({
   maskSecret: (secret: string) => `${secret.slice(0, 4)}****`,
 }))
 
+vi.mock('../../services/debug-log-server.service.js', () => ({
+  getDebugLogServer: () => ({ start: async () => 43123 }),
+}))
+
 vi.mock('@spark/storage', () => {
   const now = () => '2026-05-28T00:00:00.000Z'
 
@@ -296,6 +300,14 @@ vi.mock('@spark/storage', () => {
       } catch {
         return {}
       }
+    }
+
+    patchMetadata(id: string, patch: Record<string, unknown>): Record<string, unknown> {
+      const row = this.findByIdOrFail(id)
+      const next = { ...this.getMetadata(id), ...patch }
+      row.metadata_json = JSON.stringify(next)
+      row.updated_at = now()
+      return next
     }
 
     updateTitle(id: string, title: string): void {
@@ -1204,6 +1216,40 @@ describe('SessionService runtime provider/model resolution', () => {
       expect(String(config?.skillSystemPrompt ?? '')).toContain('GOVERNED COMPUTER USE PROMPT')
     },
   )
+
+  it('enables the debug MCP server and mandatory workflow prompt on the first turn', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId, session } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      debugMode: true,
+      title: 'Debug mode session',
+    })
+
+    expect(session.debugMode).toBe(true)
+    expect(mockState.sessions.get(sessionId)?.metadata_json).toBe(
+      JSON.stringify({ debugMode: true }),
+    )
+
+    await service.sendTurn({ sessionId, message: 'The save button does not work' })
+    await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(1))
+
+    const config = mockState.sdkConfigs[0]
+    expect(config?.mcpServers).toMatchObject({
+      spark_debug: expect.objectContaining({
+        type: 'stdio',
+        env: expect.objectContaining({ SPARK_DEBUG_SID: sessionId }),
+      }),
+    })
+    expect(config?.allowedTools).toEqual(
+      expect.arrayContaining(['mcp__spark_debug__begin', 'mcp__spark_debug__read']),
+    )
+    expect(String(config?.skillSystemPrompt ?? '')).toContain(
+      'MUST call `mcp__spark_debug__begin` before editing code',
+    )
+  })
 
   it('persists a terminal error when a provider credential cannot be resolved before start', async () => {
     vi.mocked(keystore.getSecret).mockResolvedValueOnce(null)

@@ -882,6 +882,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           optionAgentId ?? nonEmptyString(selectedAgent?.id) ?? 'platform-manager-agent'
         const reasoningEffort =
           (options.reasoningEffort as SessionReasoningEffort) ?? prefs.reasoningEffort ?? 'medium'
+        const debugMode =
+          typeof options.debugMode === 'boolean' ? options.debugMode : undefined
 
         // 如果该项目下有未使用的会话（没有消息、未归档），直接复用。
         // 复用前必须把 provider/model/agent 等运行时同步到该空会话，否则 UI label
@@ -907,6 +909,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
               ? { chatMode: options.chatMode as SessionChatMode }
               : {}),
             reasoningEffort,
+            ...(debugMode !== undefined ? { debugMode } : {}),
           })
           await persistTeamConfig({
             sessionId: unusedSession.id,
@@ -944,6 +947,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
             ? { chatMode: options.chatMode as SessionChatMode }
             : {}),
           reasoningEffort,
+          ...(debugMode !== undefined ? { debugMode } : {}),
           workspaceId: wsId,
         })
         if (res.session != null) upsertSessionInList(res.session)

@@ -195,6 +195,8 @@ export interface SessionCreateRequest {
   permissionMode?: SessionPermissionMode
   chatMode?: SessionChatMode
   reasoningEffort?: SessionReasoningEffort
+  /** Whether the session should start with the interactive debug workflow enabled. */
+  debugMode?: boolean
   /** 会话标题（可选，默认自动生成）*/
   title?: string
   /** 关联的 Workspace ID（可选）*/

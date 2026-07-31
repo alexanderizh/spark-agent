@@ -215,6 +215,7 @@ export const SessionCreateRequestSchema = z.object({
   permissionMode: SessionPermissionModeSchema.optional(),
   chatMode: SessionChatModeSchema.optional().default('agent'),
   reasoningEffort: SessionReasoningEffortSchema.optional().default('max'),
+  debugMode: z.boolean().optional(),
   title: z.string().max(200).optional(),
   workspaceId: z.string().uuid().optional(),
 })
