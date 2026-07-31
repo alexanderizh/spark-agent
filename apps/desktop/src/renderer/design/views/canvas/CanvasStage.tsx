@@ -46,6 +46,12 @@ import {
   type CanvasAutoLayoutNode,
   type CanvasAutoLayoutSpacing,
 } from './canvasAutoLayout'
+import { alignCanvasNodes, type CanvasAlignmentMode, type CanvasAlignmentNode } from './canvasAlignment'
+import {
+  absoluteToRelativeFor,
+  resolveFlowNodeAbsoluteOrigin,
+} from './canvasFlowNodeCoordinates'
+import { CanvasMultiSelectToolbar } from './CanvasMultiSelectToolbar'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import { isOperationNode } from './canvas.capabilities'
 import { canvasNodeChromeExtraHeight, canvasNodeUsesFlatMediaFrame } from './canvasNodeChrome'
@@ -448,7 +454,9 @@ export type CanvasStageViewportControls = {
     mode: CanvasAutoLayoutMode
     spacing: CanvasAutoLayoutSpacing
     nodeIds?: string[]
+    columns?: number
   }) => Promise<boolean>
+  alignNodes: (options: { mode: CanvasAlignmentMode; nodeIds?: string[] }) => Promise<boolean>
   centerNodes: (nodeIds: string[]) => boolean
   focusNodes: (
     nodeIds: string[],
@@ -725,6 +733,9 @@ function CanvasStageInner({
   onAddVideoWorkbenchAtPosition,
   onInsertAssetFromPane,
   onDeleteSelectedNodes,
+  onAlignSelected,
+  onArrangeGridSelection,
+  arranging,
   onCreateOperationAtPosition,
   onCreatePipelineAtPosition,
   onNodeSelectIntent,
@@ -810,6 +821,12 @@ function CanvasStageInner({
   ) => void
   /** 空白右键：删除当前选中的节点 */
   onDeleteSelectedNodes?: () => void
+  /** 多选浮动工具栏：对齐选中节点 */
+  onAlignSelected?: (mode: CanvasAlignmentMode) => void
+  /** 多选浮动工具栏：按每排 N 个网格排列选中节点 */
+  onArrangeGridSelection?: (columns: number) => void
+  /** 是否正在整理（多选工具栏网格应用按钮 loading） */
+  arranging?: boolean
   /** 空白右键：创建 AI 操作节点（无上游，由用户后续连线） */
   onCreateOperationAtPosition?: (
     operation: CanvasOperationType,
@@ -923,6 +940,29 @@ function CanvasStageInner({
       ),
     [selectedNodeIdSet, snapshotNodeById],
   )
+
+  // 多选浮动工具栏：跟随选区包围盒上方的屏幕坐标 anchor，viewport 变化时 rAF 节流重算
+  const [multiSelectToolbarTick, setMultiSelectToolbarTick] = useState(0)
+  const multiSelectToolbarRafRef = useRef<number | null>(null)
+  const scheduleMultiSelectToolbarUpdate = useCallback(() => {
+    if (selectedNodeIds.length < 2) return
+    if (multiSelectToolbarRafRef.current != null) return
+    multiSelectToolbarRafRef.current = window.requestAnimationFrame(() => {
+      multiSelectToolbarRafRef.current = null
+      setMultiSelectToolbarTick((value) => value + 1)
+    })
+  }, [selectedNodeIds.length])
+  useEffect(() => {
+    setMultiSelectToolbarTick((value) => value + 1)
+  }, [selectedNodeIds])
+  useEffect(
+    () => () => {
+      if (multiSelectToolbarRafRef.current != null) {
+        window.cancelAnimationFrame(multiSelectToolbarRafRef.current)
+      }
+    },
+    [],
+  )
   const lineageSummaries = useMemo(
     () => buildLineageSummaries(operationProjection.visibleEdges),
     [operationProjection.visibleEdges],
@@ -1029,6 +1069,33 @@ function CanvasStageInner({
   const paneContextMenuRef = useRef<HTMLDivElement>(null)
   const edgeContextMenuRef = useRef<HTMLDivElement>(null)
   const flowInstanceRef = useRef<ReactFlowInstance<Node<CanvasFlowNodeData>, Edge> | null>(null)
+  // 多选浮动工具栏：跟随选区包围盒上方的屏幕坐标 anchor，viewport/拖动变化时 rAF 节流重算。
+  // 必须在 flowInstanceRef 之后声明 —— useMemo factory 同步读取 flowInstanceRef.current，
+  // 声明在前会触发 TDZ ReferenceError（选第 2 个节点即白屏）。
+  const multiSelectToolbarGeometry = useMemo(() => {
+    void multiSelectToolbarTick
+    if (selectedNodeIds.length < 2) return null
+    if (!onAlignSelected && !onArrangeGridSelection) return null
+    const instance = flowInstanceRef.current
+    if (!instance) return null
+    const internalNodes = Array.from(selectedNodeIdSet)
+      .map((nodeId) => instance.getInternalNode(nodeId))
+      .filter((node): node is NonNullable<typeof node> => Boolean(node))
+    if (internalNodes.length < 2) return null
+    const bounds = instance.getNodesBounds(internalNodes)
+    if (!bounds || (bounds.width === 0 && bounds.height === 0)) return null
+    const topCenter = instance.flowToScreenPosition({
+      x: bounds.x + bounds.width / 2,
+      y: bounds.y,
+    })
+    return { left: topCenter.x, top: topCenter.y }
+  }, [
+    multiSelectToolbarTick,
+    selectedNodeIds,
+    selectedNodeIdSet,
+    onAlignSelected,
+    onArrangeGridSelection,
+  ])
   const flowNodesRef = useRef(flowNodes)
   const latestViewportRef = useRef<Viewport>(boardViewport)
   const appliedBoardViewportRef = useRef(boardId)
@@ -1184,7 +1251,7 @@ function CanvasStageInner({
         void instance.setViewport(viewport, options)
         notifyViewportChange(viewport)
       },
-      arrangeNodes: async ({ mode, spacing, nodeIds }) => {
+      arrangeNodes: async ({ mode, spacing, nodeIds, columns }) => {
         if (!nodesInitialized) return false
 
         const currentFlowNodes = flowNodesRef.current
@@ -1228,6 +1295,7 @@ function CanvasStageInner({
           const positions = arrangeCanvasNodes(nodesInScope.map(flowNodeToAutoLayoutNode), {
             mode,
             spacing,
+            ...(typeof columns === 'number' ? { columns } : {}),
             links: linksInScope,
             obstacles: obstacles.map(flowNodeToAutoLayoutNode),
           })
@@ -1266,6 +1334,73 @@ function CanvasStageInner({
             minZoom: CANVAS_FIT_MIN_ZOOM,
             maxZoom: CANVAS_FIT_MAX_ZOOM,
             duration: 260,
+          })
+        })
+        return true
+      },
+      alignNodes: async ({ mode, nodeIds }) => {
+        if (!nodesInitialized) return false
+
+        const currentFlowNodes = flowNodesRef.current
+        const liveSelectedIds = new Set(
+          currentFlowNodes.filter((node) => node.selected).map((node) => node.id),
+        )
+        const requestedIds = new Set(nodeIds ?? [])
+        const partialAlign = requestedIds.size > 0
+        const targetIds = partialAlign && liveSelectedIds.size > 1 ? liveSelectedIds : requestedIds
+        if (targetIds.size < 2) return false
+
+        const movableNodes = currentFlowNodes.filter(
+          (node) => targetIds.has(node.id) && !node.data.canvasNode.locked,
+        )
+        if (movableNodes.length < 2) return false
+
+        const nodeById = new Map(currentFlowNodes.map((node) => [node.id, node]))
+
+        // 相对坐标 → 绝对坐标：对齐是跨 parent 的几何操作，需统一到绝对坐标系
+        const algorithmInputs = movableNodes.map((node): CanvasAlignmentNode => {
+          const base = flowNodeToAutoLayoutNode(node)
+          const origin = resolveFlowNodeAbsoluteOrigin(node, nodeById)
+          return { ...base, x: origin.x, y: origin.y }
+        })
+
+        const absolutePositions = alignCanvasNodes(algorithmInputs, { mode })
+        if (absolutePositions.length === 0) return false
+
+        // 绝对坐标 → 相对坐标写回（保留各节点 parent 链语义）
+        const positionsById = new Map<string, { x: number; y: number }>()
+        for (const position of absolutePositions) {
+          const node = nodeById.get(position.id)
+          if (!node) continue
+          positionsById.set(
+            position.id,
+            absoluteToRelativeFor({ x: position.x, y: position.y }, node, nodeById),
+          )
+        }
+
+        const nextFlowNodes = currentFlowNodes.map((node) => {
+          const position = positionsById.get(node.id)
+          return position ? { ...node, position: { x: position.x, y: position.y } } : node
+        })
+        const nextPersistedNodes = snapshot.nodes.map((node) => {
+          const position = positionsById.get(node.id)
+          return position ? { ...node, x: position.x, y: position.y } : node
+        })
+
+        flowNodesRef.current = nextFlowNodes
+        setFlowNodes(nextFlowNodes)
+        await onNodesPersist(nextPersistedNodes)
+
+        const alignedIds = movableNodes.map((node) => node.id)
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            void flowInstanceRef.current?.fitView({
+              nodes: alignedIds.map((id) => ({ id })),
+              padding: 0.24,
+              minZoom: CANVAS_FIT_MIN_ZOOM,
+              maxZoom: CANVAS_FIT_MAX_ZOOM,
+              duration: 280,
+            })
           })
         })
         return true
@@ -1454,8 +1589,9 @@ function CanvasStageInner({
   const handleViewportMove = useCallback(
     (_event: MouseEvent | TouchEvent | null, viewport: Viewport) => {
       notifyViewportChange(viewport)
+      scheduleMultiSelectToolbarUpdate()
     },
-    [notifyViewportChange],
+    [notifyViewportChange, scheduleMultiSelectToolbarUpdate],
   )
 
   const handleMinimapClick = useCallback((_event: ReactMouseEvent, position: XYPosition) => {
@@ -2044,6 +2180,7 @@ function CanvasStageInner({
       node: Node<CanvasFlowNodeData>,
       draggedNodes: Node<CanvasFlowNodeData>[],
     ) => {
+      scheduleMultiSelectToolbarUpdate()
       pendingGuideDragRef.current = draggedNodes.length > 0 ? draggedNodes : [node]
       if (guideFrameRef.current != null) return
       guideFrameRef.current = window.requestAnimationFrame(() => {
@@ -2059,7 +2196,7 @@ function CanvasStageInner({
         setAlignmentGuides(computeCanvasAlignmentGuides(nextNodes, movingNodes))
       })
     },
-    [],
+    [scheduleMultiSelectToolbarUpdate],
   )
 
   const handleNodeDragStart = useCallback(
@@ -2478,6 +2615,30 @@ function CanvasStageInner({
               <Icons.Trash size={14} />
               <span>删除连线</span>
             </button>
+          </div>
+        )}
+        {selectedNodeIds.length >= 2 && multiSelectToolbarGeometry && (
+          <div
+            className="canvas-multi-select-toolbar-anchor"
+            style={{
+              position: 'absolute',
+              left: multiSelectToolbarGeometry.left,
+              top: Math.max(12, multiSelectToolbarGeometry.top - 52),
+              transform: 'translateX(-50%)',
+              zIndex: 'var(--z-canvas-context, 30)',
+              pointerEvents: 'auto',
+            }}
+          >
+            <CanvasMultiSelectToolbar
+              selectedCount={selectedNodeIds.length}
+              canCreateGroup={selectedContext.canCreateGroup}
+              arranging={arranging ?? false}
+              onCreateGroup={() => onCreateGroupFromSelection()}
+              onAlign={(mode) => onAlignSelected?.(mode)}
+              onArrangeGrid={(columns) => onArrangeGridSelection?.(columns)}
+              onDuplicate={() => onDuplicateSelectedNodes?.()}
+              onDelete={() => onDeleteSelectedNodes?.()}
+            />
           </div>
         )}
         {paneContextMenu && (

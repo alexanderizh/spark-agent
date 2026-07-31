@@ -1,0 +1,192 @@
+import { useEffect, useState, type ComponentType } from 'react'
+import { Tooltip } from '@lobehub/ui'
+import { Popover } from 'antd'
+import { Icons } from '../../Icons'
+import { CanvasGridArrangePanel } from './CanvasGridArrangePanel'
+import type { CanvasAlignmentMode } from './canvasAlignment'
+import './CanvasMultiSelectToolbar.less'
+
+type IconComponent = ComponentType<{ size?: number }>
+type AlignItem = { mode: CanvasAlignmentMode; Icon: IconComponent; label: string }
+
+const HORIZONTAL_ALIGN: AlignItem[] = [
+  { mode: 'left', Icon: Icons.AlignLeft, label: '左对齐' },
+  { mode: 'center-horizontal', Icon: Icons.AlignCenterHorizontal, label: '水平居中' },
+  { mode: 'right', Icon: Icons.AlignRight, label: '右对齐' },
+  { mode: 'distribute-horizontal', Icon: Icons.DistributeHorizontal, label: '水平等距分布' },
+]
+
+const VERTICAL_ALIGN: AlignItem[] = [
+  { mode: 'top', Icon: Icons.AlignTop, label: '顶对齐' },
+  { mode: 'center-vertical', Icon: Icons.AlignVerticalCenter, label: '垂直居中' },
+  { mode: 'bottom', Icon: Icons.AlignBottom, label: '底对齐' },
+  { mode: 'distribute-vertical', Icon: Icons.DistributeVertical, label: '垂直等距分布' },
+]
+
+export type CanvasMultiSelectToolbarProps = {
+  selectedCount: number
+  canCreateGroup: boolean
+  arranging: boolean
+  onCreateGroup: () => void
+  onAlign: (mode: CanvasAlignmentMode) => void
+  onArrangeGrid: (columns: number) => void
+  onDuplicate: () => void
+  onDelete: () => void
+}
+
+function autoColumnCount(count: number): number {
+  return Math.max(1, Math.ceil(Math.sqrt(Math.max(1, count))))
+}
+
+/**
+ * 多选节点浮动工具栏（编组 / 对齐 / 网格排列 / 复制 / 删除）。
+ * 组件本身只渲染内容；定位（跟随选区包围盒）由父容器通过 style 控制。
+ */
+export function CanvasMultiSelectToolbar({
+  selectedCount,
+  canCreateGroup,
+  arranging,
+  onCreateGroup,
+  onAlign,
+  onArrangeGrid,
+  onDuplicate,
+  onDelete,
+}: CanvasMultiSelectToolbarProps) {
+  const [alignOpen, setAlignOpen] = useState(false)
+  const [gridOpen, setGridOpen] = useState(false)
+  const [gridColumns, setGridColumns] = useState(() => autoColumnCount(selectedCount))
+
+  // 选区节点数变化时，仅在当前列数超出新选区可容纳范围 [1, selectedCount] 时收窄，
+  // 不强制重置为 sqrt —— 保留用户手动设定的列数。
+  useEffect(() => {
+    setGridColumns((prev) => {
+      const maxColumns = Math.max(1, selectedCount)
+      if (prev < 1) return 1
+      if (prev > maxColumns) return maxColumns
+      return prev
+    })
+  }, [selectedCount])
+
+  const handleAlignClick = (mode: CanvasAlignmentMode) => {
+    setAlignOpen(false)
+    onAlign(mode)
+  }
+
+  const handleApplyGrid = () => {
+    setGridOpen(false)
+    onArrangeGrid(Math.max(1, Math.round(gridColumns) || 1))
+  }
+
+  const renderAlignRow = (label: string, items: AlignItem[]) => (
+    <div className="canvas-multi-select-align-row" key={label}>
+      <span className="canvas-multi-select-align-label">{label}</span>
+      <div className="canvas-multi-select-align-buttons">
+        {items.map((item) => (
+          <Tooltip key={item.mode} title={item.label}>
+            <button
+              type="button"
+              className="canvas-multi-select-align-btn"
+              aria-label={item.label}
+              onClick={() => handleAlignClick(item.mode)}
+            >
+              <item.Icon size={15} />
+            </button>
+          </Tooltip>
+        ))}
+      </div>
+    </div>
+  )
+
+  const alignContent = (
+    <div className="canvas-multi-select-align-panel" role="dialog" aria-label="对齐与分布">
+      {renderAlignRow('水平', HORIZONTAL_ALIGN)}
+      {renderAlignRow('垂直', VERTICAL_ALIGN)}
+    </div>
+  )
+
+  const gridContent = (
+    <CanvasGridArrangePanel
+      nodeCount={selectedCount}
+      columns={gridColumns}
+      onColumnsChange={setGridColumns}
+      onApply={handleApplyGrid}
+      applying={arranging}
+    />
+  )
+
+  return (
+    <div className="canvas-multi-select-toolbar" role="toolbar" aria-label="多选节点工具栏">
+      <Tooltip title={canCreateGroup ? '创建组' : '选中 2 个以上未分组节点以创建组'}>
+        <button
+          type="button"
+          className="canvas-multi-select-toolbar-btn"
+          aria-label="创建组"
+          disabled={!canCreateGroup}
+          onClick={onCreateGroup}
+        >
+          <Icons.Group size={15} />
+        </button>
+      </Tooltip>
+
+      <span className="canvas-multi-select-toolbar-divider" />
+
+      <Popover
+        trigger="click"
+        placement="bottomLeft"
+        open={alignOpen}
+        onOpenChange={(open) => !arranging && setAlignOpen(open)}
+        content={alignContent}
+      >
+        <button
+          type="button"
+          className={`canvas-multi-select-toolbar-btn${alignOpen ? ' is-active' : ''}`}
+          aria-label="对齐与分布"
+          data-hint="对齐与分布"
+        >
+          <Icons.AlignCenterHorizontal size={15} />
+        </button>
+      </Popover>
+
+      <Popover
+        trigger="click"
+        placement="bottom"
+        open={gridOpen}
+        onOpenChange={(open) => !arranging && setGridOpen(open)}
+        content={gridContent}
+      >
+        <button
+          type="button"
+          className={`canvas-multi-select-toolbar-btn${gridOpen ? ' is-active' : ''}`}
+          aria-label="网格排列"
+          data-hint="网格排列"
+        >
+          <Icons.Grid size={15} />
+        </button>
+      </Popover>
+
+      <span className="canvas-multi-select-toolbar-divider" />
+
+      <Tooltip title="复制选中节点">
+        <button
+          type="button"
+          className="canvas-multi-select-toolbar-btn"
+          aria-label="复制选中节点"
+          onClick={onDuplicate}
+        >
+          <Icons.Copy size={15} />
+        </button>
+      </Tooltip>
+
+      <Tooltip title="删除选中节点">
+        <button
+          type="button"
+          className="canvas-multi-select-toolbar-btn canvas-multi-select-toolbar-btn-danger"
+          aria-label="删除选中节点"
+          onClick={onDelete}
+        >
+          <Icons.Trash size={15} />
+        </button>
+      </Tooltip>
+    </div>
+  )
+}

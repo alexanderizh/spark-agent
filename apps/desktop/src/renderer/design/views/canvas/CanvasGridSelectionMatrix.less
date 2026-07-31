@@ -1,0 +1,47 @@
+.canvas-grid-selection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+
+  .canvas-grid-selection-matrix {
+    display: grid;
+    gap: 3px;
+    padding: 6px;
+    border-radius: var(--canvas-cinema-radius-sm, 8px);
+    background: var(--canvas-cinema-surface-1, #191919);
+    border: 1px solid var(--canvas-cinema-border, rgba(255, 255, 255, 0.08));
+    user-select: none;
+    // 阻止拖拽时文本选中
+    -webkit-user-select: none;
+  }
+
+  .canvas-grid-selection-cell {
+    width: var(--canvas-grid-cell, 18px);
+    height: var(--canvas-grid-cell, 18px);
+    border-radius: 3px;
+    background: var(--canvas-cinema-surface-3, #292929);
+    border: 1px solid var(--canvas-cinema-border, rgba(255, 255, 255, 0.08));
+    cursor: pointer;
+    transition:
+      background-color var(--canvas-cinema-motion-fast, 160ms) ease,
+      border-color var(--canvas-cinema-motion-fast, 160ms) ease;
+
+    &:hover {
+      background: var(--canvas-cinema-surface-4, #343434);
+    }
+
+    &.is-active {
+      background: var(--canvas-cinema-accent, #776cf6);
+      border-color: var(--canvas-cinema-accent, #776cf6);
+    }
+  }
+
+  .canvas-grid-selection-hint {
+    font-size: 11px;
+    color: var(--canvas-cinema-text-muted, #8a8a8a);
+    text-align: center;
+    min-height: 14px;
+    line-height: 14px;
+  }
+}

@@ -225,6 +225,7 @@ import {
   stackAutoNodesToRight,
 } from './canvasAutoPlacement'
 import type { CanvasAutoLayoutMode, CanvasAutoLayoutSpacing } from './canvasAutoLayout'
+import type { CanvasAlignmentMode } from './canvasAlignment'
 import {
   GROUP_NODE_DEFAULT_SIZE,
   IMAGE_NODE_DEFAULT_SIZE,
@@ -1679,6 +1680,64 @@ export function CanvasWorkspaceView({
         message.error(error instanceof Error ? error.message : '整理画布失败')
       } finally {
         setArrangingCanvas(false)
+      }
+    },
+    [selectedNodeIds],
+  )
+
+  const handleArrangeGridSelection = useCallback(
+    async (columns: number) => {
+      const controls = canvasViewportControlsRef.current
+      if (!controls) {
+        message.warning('画布仍在初始化，请稍后重试')
+        return
+      }
+      if (selectedNodeIds.length < 2) {
+        message.info('请先选中至少 2 个节点')
+        return
+      }
+      setArrangingCanvas(true)
+      try {
+        const arranged = await controls.arrangeNodes({
+          mode: 'grid',
+          spacing: 'medium',
+          columns,
+          nodeIds: selectedNodeIds,
+        })
+        if (!arranged) {
+          message.info('没有可整理的节点')
+          return
+        }
+        message.success(`已按每排 ${columns} 个整理所选 ${selectedNodeIds.length} 个节点`)
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '整理画布失败')
+      } finally {
+        setArrangingCanvas(false)
+      }
+    },
+    [selectedNodeIds],
+  )
+
+  const handleAlignSelected = useCallback(
+    async (mode: CanvasAlignmentMode) => {
+      const controls = canvasViewportControlsRef.current
+      if (!controls) {
+        message.warning('画布仍在初始化，请稍后重试')
+        return
+      }
+      if (selectedNodeIds.length < 2) {
+        message.info('请先选中至少 2 个节点')
+        return
+      }
+      try {
+        const aligned = await controls.alignNodes({ mode, nodeIds: selectedNodeIds })
+        if (!aligned) {
+          message.info('当前选择不支持该对齐')
+          return
+        }
+        message.success(`已对齐所选 ${selectedNodeIds.length} 个节点`)
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '对齐节点失败')
       }
     },
     [selectedNodeIds],
@@ -7530,6 +7589,9 @@ export function CanvasWorkspaceView({
             onViewportControlsChange={handleCanvasViewportControlsChange}
             onPointerFlowPositionChange={handlePointerFlowPositionChange}
             onDeleteSelectedNodes={handleDeleteSelectedNodes}
+            onAlignSelected={handleAlignSelected}
+            onArrangeGridSelection={handleArrangeGridSelection}
+            arranging={arrangingCanvas}
           />
           <CanvasBatchTaskPanel
             state={batchTasks.state}

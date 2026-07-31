@@ -713,6 +713,67 @@ export const Icons = {
       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </IconBase>
   ),
+  /** 多选浮动工具栏：编组 */
+  Group: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="7" y="7" width="13" height="13" rx="2" />
+      <rect x="4" y="4" width="13" height="13" rx="2" />
+    </IconBase>
+  ),
+  /** 对齐：左对齐 */
+  AlignLeft: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M4 3v18" />
+      <path d="M4 7h12M4 12h16M4 17h10" />
+    </IconBase>
+  ),
+  /** 对齐：水平居中 */
+  AlignCenterHorizontal: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M12 3v18" />
+      <path d="M6 7h12M8 12h8M7 17h10" />
+    </IconBase>
+  ),
+  /** 对齐：右对齐 */
+  AlignRight: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M20 3v18" />
+      <path d="M8 7h12M4 12h16M10 17h10" />
+    </IconBase>
+  ),
+  /** 对齐：顶对齐 */
+  AlignTop: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M3 4h18" />
+      <path d="M7 4v12M12 4v16M17 4v10" />
+    </IconBase>
+  ),
+  /** 对齐：垂直居中 */
+  AlignVerticalCenter: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M3 12h18" />
+      <path d="M6 6v12M10 8v8M14 6v12" />
+    </IconBase>
+  ),
+  /** 对齐：底对齐 */
+  AlignBottom: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M3 20h18" />
+      <path d="M7 20V8M12 20V4M17 20V10" />
+    </IconBase>
+  ),
+  /** 对齐：水平等距分布 */
+  DistributeHorizontal: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M5 4v16M12 4v16M19 4v16" />
+    </IconBase>
+  ),
+  /** 对齐：垂直等距分布 */
+  DistributeVertical: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M4 5h16M4 12h16M4 19h16" />
+    </IconBase>
+  ),
   Edit: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
