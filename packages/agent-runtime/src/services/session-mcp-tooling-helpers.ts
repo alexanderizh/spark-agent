@@ -462,6 +462,20 @@ export function resolvePresentFilesMcpServer(workspaceRootPath: string): SDKMcpS
   }
 }
 
+export function resolveQuickRepliesMcpServer(workspaceRootPath: string): SDKMcpServerConfig | null {
+  const serverPath = resolveRuntimeToolPath('quick-replies-mcp-server.mjs')
+  if (serverPath == null) {
+    log.warn('Quick replies MCP server script not found')
+    return null
+  }
+  return {
+    type: 'stdio',
+    command: resolveMcpNodeRuntimeExecutable(),
+    args: [serverPath],
+    cwd: workspaceRootPath,
+  }
+}
+
 export function resolveDebugMcpServerPath(): string | null {
   return resolveRuntimeToolPath('debug-mode-mcp-server.mjs')
 }
@@ -476,6 +490,8 @@ export const PRESENT_FILES_TOOL_NAMES = [
   'mcp__spark_files__present_files',
   'mcp__spark_files__report_file_changes',
 ]
+
+export const QUICK_REPLIES_TOOL_NAMES = ['mcp__spark_ui__suggest_replies']
 
 export const VALIDATION_SUGGESTION_TOOL_NAMES = ['mcp__spark_verify__suggest_validation']
 
@@ -502,6 +518,17 @@ export const PRESENT_FILES_SYSTEM_PROMPT = [
   'Do not call the tool when there are no user-facing files to present.',
   'The tool call controls the app file cards; mentioning a path in prose does not add it to that list.',
   'After calling the tool, do not repeat the same paths as standalone file links in the final response.',
+].join('\n')
+
+export const QUICK_REPLIES_SYSTEM_PROMPT = [
+  '## Optional quick replies',
+  'You may call `mcp__spark_ui__suggest_replies` immediately before your final response when a few short, ordinary-text replies would make it easier for the user to answer.',
+  'You decide whether the tool is useful. Do not call it on every turn, for rhetorical questions, or when the task is already complete and no response is needed.',
+  'Provide 1-4 distinct, self-contained user messages. Each reply must be at most 40 characters and will be displayed and sent verbatim when clicked.',
+  'Use it for simple confirmation or direction choices such as whether to proceed, revise, pause, or choose one lightweight next step.',
+  'The quick-reply tool and structured question tools are mutually exclusive: if you call AskUserQuestion or request_user_input in a turn, do not call suggest_replies, and vice versa.',
+  'Never use quick replies to request filesystem, command, network, account, payment, deletion, or other security-sensitive approval; use the native permission or structured question flow instead.',
+  'The tool is non-blocking. After calling it, write the matching question or invitation in your final response and end the turn so the user can answer.',
 ].join('\n')
 
 /**

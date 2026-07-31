@@ -112,6 +112,8 @@ import {
 import type { UIMessage } from '../../services/event-mapper'
 import { formatTokenCount } from './ChatViewUtils'
 import { scrollTextareaCaretIntoView } from './composer-caret-scroll'
+import { resolvePendingQuickReplies } from '../../services/quick-reply-suggestions'
+import { QuickReplySuggestions } from './QuickReplySuggestions'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 import { isCanvasWorkspace, listSelectableWorkspaces } from '../../workspace-visibility'
 
@@ -997,6 +999,13 @@ export function ComposerV2({
   const value = draftState.value
   const attachments = draftState.attachments
   const manualExpanded = draftState.manualExpanded
+  const pendingQuickReplies = useMemo(() => resolvePendingQuickReplies(messages), [messages])
+  const [dismissedQuickReplyKey, setDismissedQuickReplyKey] = useState<string | null>(null)
+  useEffect(() => setDismissedQuickReplyKey(null), [session?.id])
+  const activeQuickReplies =
+    pendingQuickReplies != null && pendingQuickReplies.key !== dismissedQuickReplyKey
+      ? pendingQuickReplies
+      : null
   // 已使用 token 优先采用 context_ledger 的完整分段总和（含对话历史 / 项目上下文 / 附件），
   // 它比 context_usage.estimatedTokens（仅统计本轮系统提示 + 用户消息）更准确。
   const contextUsedTokens =
@@ -1462,6 +1471,8 @@ export function ComposerV2({
       turnAttachments: ComposerAttachment[],
       replySnapshot?: ReplyToState | null,
     ) => {
+      // 用户选择快捷回复或自行发送后立即隐藏建议，不等待事件流回写 user_message。
+      if (activeQuickReplies != null) setDismissedQuickReplyKey(activeQuickReplies.key)
       const requestAttachments = toSessionAttachments(turnAttachments)
       // 斜杠命令拦截：以 / 开头的消息走 command:execute
       if (text.startsWith('/')) {
@@ -1662,6 +1673,7 @@ export function ComposerV2({
       teamConfig,
       toast,
       pendingMention,
+      activeQuickReplies,
     ],
   )
 
@@ -2999,6 +3011,15 @@ export function ComposerV2({
             </div>
           </div>
         )}
+        {activeQuickReplies != null &&
+          !isBusy &&
+          value.trim().length === 0 &&
+          attachments.length === 0 && (
+            <QuickReplySuggestions
+              replies={activeQuickReplies.replies}
+              onSelect={(reply) => void dispatchMessage(reply, [], null)}
+            />
+          )}
         <div
           className={`composer composer-v2 has-workspace-picks ${teamConfig.enabled ? 'composer-team-mode' : ''} ${manualExpanded ? 'expanded' : ''}`}
         >

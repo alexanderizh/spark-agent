@@ -1025,6 +1025,29 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('maps spark_ui suggest_replies to a hidden quick-replies block', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'quick-1',
+      toolName: 'mcp__spark_ui__suggest_replies',
+      toolInput: {
+        replies: [' 确认无误 ', '需要调整', '先暂停', '继续讨论', '不会显示'],
+      },
+      source: 'mcp',
+    })
+
+    expect(builder.getAllMessages()[0]?.blocks).toEqual([
+      {
+        kind: 'quick_replies',
+        toolCallId: 'quick-1',
+        replies: ['确认无误', '需要调整', '先暂停', '继续讨论'],
+      },
+    ])
+  })
+
   it('keeps a failed AskUserQuestion unresolved and exposes its transport error', () => {
     const builder = new MessageBuilder()
     builder.processEvent({
