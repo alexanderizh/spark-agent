@@ -20,6 +20,7 @@ import {
   Menu,
   Notification,
   Tray,
+  type MenuItemConstructorOptions,
   dialog,
   globalShortcut,
   nativeImage,
@@ -59,8 +60,10 @@ import { startBackgroundMaintenanceWorker } from './services/background-maintena
 import { startSnapshotVaultMaintenance } from './services/computer-use/SnapshotVaultMaintenance.js'
 import {
   disposeComputerUseServices,
+  getComputerUseServices,
   initializeComputerUseServices,
 } from './services/computer-use/ComputerUseServices.js'
+import { ComputerControlTrayService } from './services/computer-use/ComputerControlTrayService.js'
 import { disposeComputerUseMcpProvider } from './services/computer-use/ComputerUseMcpProvider.js'
 import { registerAllIpcHandlers, ensureNoProjectDirectoryExists } from './ipc/index.js'
 import {
@@ -123,6 +126,9 @@ import {
 
 const log = createLogger('main')
 let tray: Tray | null = null
+let computerControlTray: ComputerControlTrayService | null = null
+let unsubscribeComputerControlStatus: (() => void) | null = null
+let computerControlTrayRefreshTimer: ReturnType<typeof setTimeout> | null = null
 let isQuitting = false
 let downloadedPromptVersion: string | null = null
 const BROWSER_ZOOM_CHANGED_EVENT = 'spark:browser-zoom-changed'
@@ -144,6 +150,10 @@ registerEmergencySessionShutdown(process, disposeSessionServiceForShutdown)
 // preventDefault + hide()，退出被吞，应用无法真正退出。
 app.on('before-quit', () => {
   isQuitting = true
+  unsubscribeComputerControlStatus?.()
+  unsubscribeComputerControlStatus = null
+  if (computerControlTrayRefreshTimer != null) clearTimeout(computerControlTrayRefreshTimer)
+  computerControlTrayRefreshTimer = null
 })
 
 // ─── Custom protocol registration ───────────────────────────────────────────
@@ -390,6 +400,11 @@ function createTray(): void {
 
   tray = new Tray(image)
   attachAppUnreadBadgeTray(tray)
+  const computerUse = getComputerUseServices()
+  computerControlTray = new ComputerControlTrayService(computerUse.sessions, computerUse.broker)
+  unsubscribeComputerControlStatus ??= computerUse.sessions.subscribeStatus(
+    scheduleComputerControlTrayRefresh,
+  )
   refreshTrayMenu().catch((err) => log.warn('Failed to refresh tray menu on init', err))
   tray.on('click', () => {
     // 每次点击前刷新菜单（最近会话变化），再展示主窗口
@@ -425,6 +440,7 @@ async function refreshTrayMenu(): Promise<void> {
       }))
 
   const canvasWindowAvailable = getCanvasWindowService().getWindow() != null
+  const computerControlSubmenu = buildComputerControlSubmenu()
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '打开主窗口', click: showMainWindow },
     {
@@ -445,6 +461,10 @@ async function refreshTrayMenu(): Promise<void> {
     {
       label: '最近会话',
       submenu: recentSubmenu,
+    },
+    {
+      label: 'Computer Use',
+      submenu: computerControlSubmenu,
     },
     { type: 'separator' },
     {
@@ -468,6 +488,73 @@ async function refreshTrayMenu(): Promise<void> {
       },
     },
   ]))
+}
+
+function scheduleComputerControlTrayRefresh(): void {
+  if (computerControlTrayRefreshTimer != null) return
+  computerControlTrayRefreshTimer = setTimeout(() => {
+    computerControlTrayRefreshTimer = null
+    void refreshTrayMenu().catch((error) =>
+      log.warn('Failed to refresh Computer Use tray status', error),
+    )
+  }, 100)
+  computerControlTrayRefreshTimer.unref()
+}
+
+function buildComputerControlSubmenu(): MenuItemConstructorOptions[] {
+  const sessions = computerControlTray?.list() ?? []
+  if (sessions.length === 0) return [{ label: '（未在控制）', enabled: false }]
+  return sessions.map((session) => ({
+    label: `正在控制：${session.label} · ${formatComputerStatus(session.status)}`,
+    submenu: [
+      {
+        label: '暂停 Agent',
+        enabled: session.canPause,
+        click: () =>
+          runComputerControlAction('pause', () =>
+            computerControlTray?.pause(session.computerSessionId),
+          ),
+      },
+      {
+        label: '立即接管',
+        enabled: session.canPause,
+        click: () =>
+          runComputerControlAction('takeover', () =>
+            computerControlTray?.takeover(session.computerSessionId),
+          ),
+      },
+      {
+        label: '停止控制',
+        click: () =>
+          runComputerControlAction('stop', () =>
+            computerControlTray?.stop(session.computerSessionId),
+          ),
+      },
+    ],
+  }))
+}
+
+function runComputerControlAction(
+  action: string,
+  operation: () => Promise<void> | undefined,
+): void {
+  void Promise.resolve(operation())
+    .then(() => refreshTrayMenu())
+    .catch((error) => log.warn(`Computer Use tray ${action} failed`, error))
+}
+
+function formatComputerStatus(status: string): string {
+  switch (status) {
+    case 'paused':
+    case 'handoff_required':
+      return '已暂停'
+    case 'waiting_approval':
+      return '等待确认'
+    case 'verifying':
+      return '正在验证'
+    default:
+      return '运行中'
+  }
 }
 
 function formatSessionLabel(title: string, status: string, messageCount: number): string {
