@@ -14,6 +14,10 @@ import {
   type ComputerSessionController,
 } from './ComputerControlBroker.js'
 import {
+  ComputerUseTimelineStore,
+  type ComputerUseTimelineSink,
+} from './ComputerUseTimelineStore.js'
+import {
   UnavailableComputerUseBackend,
   type ComputerExecutorBackend,
   type ComputerObserverBackend,
@@ -242,7 +246,11 @@ function createSessionController(): ComputerSessionController & {
 }
 
 function createHarness(
-  options: { executor?: ComputerExecutorBackend; observer?: ComputerObserverBackend } = {},
+  options: {
+    executor?: ComputerExecutorBackend
+    observer?: ComputerObserverBackend
+    timeline?: ComputerUseTimelineSink
+  } = {},
 ) {
   const actions = new MemoryActionStore()
   const sessions = createSessionController()
@@ -267,9 +275,18 @@ function createHarness(
     actions,
     observer,
     executor,
+    ...(options.timeline == null ? {} : { timeline: options.timeline }),
     now: () => new Date('2026-07-28T05:00:02.000Z'),
   })
-  return { broker, actions, sessions, approvals, observer, executor }
+  return {
+    broker,
+    actions,
+    sessions,
+    approvals,
+    observer,
+    executor,
+    ...(options.timeline == null ? {} : { timeline: options.timeline }),
+  }
 }
 
 describe('ComputerControlBroker', () => {
@@ -333,6 +350,80 @@ describe('ComputerControlBroker', () => {
     await expect(broker.dispatch(governed, ticket)).resolves.toMatchObject({ noop: false })
     expect(sessions.current.status).toBe('observing')
     expect(approvals.consume).toHaveBeenCalledWith(ticket, governed, 'L2')
+  })
+
+  it('records the action lifecycle on the timeline sink when executed', async () => {
+    const timeline = new ComputerUseTimelineStore({
+      createId: () => 'ev',
+      now: () => new Date('2026-07-28T05:00:02.000Z'),
+    })
+    const { broker } = createHarness({ timeline })
+    await broker.observe(session.id, true)
+
+    await broker.dispatch(envelope())
+
+    const { events } = timeline.read(session.id)
+    expect(events.map((event) => event.type)).toEqual([
+      'computer_action_requested',
+      'computer_action_executed',
+    ])
+    expect(events[0]).toMatchObject({ actionId: 'action-1', riskLevel: 'L1' })
+    expect(events[1]).toMatchObject({
+      actionId: 'action-1',
+      beforeFrameId: 'frame-1',
+      afterFrameId: 'frame-2',
+    })
+  })
+
+  it('records an approval request on the timeline before the ticket is presented', async () => {
+    const timeline = new ComputerUseTimelineStore({
+      createId: () => 'ev',
+      now: () => new Date('2026-07-28T05:00:02.000Z'),
+    })
+    const { broker } = createHarness({ timeline })
+    await broker.observe(session.id, true)
+    const governed = envelope({
+      policyContext: {
+        effect: 'external_write',
+        target: { kind: 'recipient', id: 'recipient-alice' },
+        dataClasses: ['internal'],
+      },
+    })
+
+    await expect(broker.dispatch(governed)).rejects.toMatchObject({ code: 'approval_required' })
+
+    const { events } = timeline.read(session.id)
+    expect(events.map((event) => event.type)).toEqual([
+      'computer_action_requested',
+      'computer_approval_requested',
+    ])
+    expect(events[1]).toMatchObject({
+      approvalId: 'approval-1',
+      actionId: governed.actionId,
+      riskLevel: 'L2',
+    })
+  })
+
+  it('records a noop as a failed action on the timeline', async () => {
+    const executor: ComputerExecutorBackend = {
+      execute: vi.fn(async () => ({ observation: beforeObservation, noop: true })),
+      cancelSession: vi.fn(async () => undefined),
+    }
+    const timeline = new ComputerUseTimelineStore({
+      createId: () => 'ev',
+      now: () => new Date('2026-07-28T05:00:02.000Z'),
+    })
+    const { broker } = createHarness({ executor, timeline })
+    await broker.observe(session.id, true)
+
+    await expect(broker.dispatch(envelope())).rejects.toMatchObject({ code: 'action_noop' })
+
+    const { events } = timeline.read(session.id)
+    expect(events.map((event) => event.type)).toEqual([
+      'computer_action_requested',
+      'computer_action_failed',
+    ])
+    expect(events[1]).toMatchObject({ actionId: 'action-1', errorCode: 'action_noop' })
   })
 
   it('marks noop execution as failed instead of claiming completion', async () => {

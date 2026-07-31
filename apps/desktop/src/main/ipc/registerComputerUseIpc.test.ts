@@ -24,6 +24,7 @@ vi.mock('../db.js', () => ({
 }))
 
 import { registerComputerUseIpc } from './registerComputerUseIpc.js'
+import { ComputerUseTimelineStore } from '../services/computer-use/ComputerUseTimelineStore.js'
 
 const DEFAULT_SETTINGS: ComputerUseSettings = {
   enabled: false,
@@ -154,6 +155,7 @@ function createServices(overrides: Record<string, unknown> = {}) {
     killSwitch: { isArmed: vi.fn(() => true), disarm: vi.fn() },
     armKillSwitch: vi.fn(() => true),
     verifications: { get: vi.fn(() => null) },
+    timeline: new ComputerUseTimelineStore(),
     ...overrides,
   }
 }
@@ -546,15 +548,56 @@ describe('registerComputerUseIpc', () => {
     ).resolves.toEqual({ windows: [WINDOW] })
   })
 
-  it('fails closed for timeline until the durable audit store is installed', async () => {
+  it('returns the live action timeline with cursor pagination', async () => {
+    const services = createServices()
+    register({ services })
+
+    services.timeline.record({
+      type: 'computer_action_requested',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      computerSessionId: SESSION.id,
+      actionId: 'action-1',
+      riskLevel: 'L1',
+    })
+    services.timeline.record({
+      type: 'computer_action_executed',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      computerSessionId: SESSION.id,
+      actionId: 'action-1',
+      beforeFrameId: 'frame-1',
+      afterFrameId: 'frame-2',
+    })
+
+    const first = await harness.handlers.get('computer-use:get-timeline')!(
+      { computerSessionId: SESSION.id, limit: 1 },
+      event(),
+    )
+    expect(first.events).toHaveLength(1)
+    expect(first.events[0].type).toBe('computer_action_requested')
+    expect(first.events[0].seq).toBe(0)
+    expect(first.nextSeq).toBe(0)
+
+    const second = await harness.handlers.get('computer-use:get-timeline')!(
+      { computerSessionId: SESSION.id, afterSeq: first.nextSeq! },
+      event(),
+    )
+    expect(second.events).toHaveLength(1)
+    expect(second.events[0].type).toBe('computer_action_executed')
+    expect(second.events[0].seq).toBe(1)
+    expect(second.nextSeq).toBe(1)
+  })
+
+  it('returns an empty timeline for a session with no recorded events', async () => {
     register()
 
     await expect(
       harness.handlers.get('computer-use:get-timeline')!(
-        { computerSessionId: SESSION.id },
+        { computerSessionId: 'never-started' },
         event(),
       ),
-    ).rejects.toMatchObject({ code: 'environment_unavailable' })
+    ).resolves.toEqual({ events: [], nextSeq: null })
   })
 
   it('returns only session-bound, internally consistent verification records', async () => {

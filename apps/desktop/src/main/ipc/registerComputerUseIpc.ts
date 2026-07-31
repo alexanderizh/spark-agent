@@ -255,14 +255,13 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
     }),
   )
 
-  typedIpcHandle('computer-use:get-timeline', async (_request, event) =>
-    safeComputerUseIpc(() => {
-      assertRenderer(event)
-      throw new ComputerUseBrokerError(
-        'environment_unavailable',
-        'Durable Computer Use timeline storage is not installed',
-      )
-    }),
+  typedIpcHandle(
+    'computer-use:get-timeline',
+    async ({ computerSessionId, afterSeq, limit }, event) =>
+      safeComputerUseIpc(() => {
+        assertRenderer(event)
+        return services().timeline.read(computerSessionId, afterSeq, limit)
+      }),
   )
 
   typedIpcHandle(

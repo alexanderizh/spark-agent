@@ -18,6 +18,7 @@ import type { ComputerSessionManager } from './ComputerSessionManager.js'
 import type { ManagedComputerSessionPhase } from './ComputerSessionManager.js'
 import type { ComputerExecutorBackend, ComputerObserverBackend } from './ComputerUseBackend.js'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
+import type { ComputerUseTimelineSink } from './ComputerUseTimelineStore.js'
 
 export interface ComputerSessionController {
   assertDispatchAllowed(envelope: ComputerActionEnvelope): {
@@ -68,6 +69,8 @@ export interface ComputerControlBrokerOptions {
   actions: ComputerActionStore
   observer: ComputerObserverBackend
   executor: ComputerExecutorBackend
+  /** Optional live timeline sink. Absent keeps broker behavior unchanged. */
+  timeline?: ComputerUseTimelineSink
   now?: () => Date
 }
 
@@ -78,6 +81,7 @@ export class ComputerControlBroker {
   private readonly actions: ComputerActionStore
   private readonly observer: ComputerObserverBackend
   private readonly executor: ComputerExecutorBackend
+  private readonly timeline?: ComputerUseTimelineSink
   private readonly now: () => Date
   private readonly observations = new Map<string, ComputerObservation>()
   private readonly activeDispatches = new Set<string>()
@@ -89,6 +93,7 @@ export class ComputerControlBroker {
     this.actions = options.actions
     this.observer = options.observer
     this.executor = options.executor
+    this.timeline = options.timeline
     this.now = options.now ?? (() => new Date())
   }
 
@@ -148,14 +153,37 @@ export class ComputerControlBroker {
       observation.foreground.app,
     )
     const actionRow = this.persistRequestedAction(envelope, policyDecision)
+    this.timeline?.record({
+      type: 'computer_action_requested',
+      sessionId: context.session.sessionId,
+      turnId: context.session.turnId,
+      computerSessionId: envelope.computerSessionId,
+      actionId: envelope.actionId,
+      riskLevel: policyDecision.riskLevel,
+    })
     if (policyDecision.decision === 'deny') {
       const errorCode = toComputerUseErrorCode(policyDecision.reasonCode)
       this.blockAction(actionRow.id, errorCode)
+      this.timeline?.record({
+        type: 'computer_action_blocked',
+        sessionId: context.session.sessionId,
+        turnId: context.session.turnId,
+        computerSessionId: envelope.computerSessionId,
+        actionId: envelope.actionId,
+        errorCode,
+      })
       throw new ComputerUseBrokerError(errorCode, 'Computer action was denied by policy')
     }
     if (policyDecision.decision === 'require_handoff') {
       this.blockAction(actionRow.id, 'handoff_required')
       this.sessions.setPhase(envelope.computerSessionId, 'handoff_required')
+      this.timeline?.record({
+        type: 'computer_handoff_required',
+        sessionId: context.session.sessionId,
+        turnId: context.session.turnId,
+        computerSessionId: envelope.computerSessionId,
+        errorCode: 'handoff_required',
+      })
       throw new ComputerUseBrokerError('handoff_required', 'Computer action requires user takeover')
     }
 
@@ -165,6 +193,15 @@ export class ComputerControlBroker {
       if (ticket == null) {
         const approval = this.approvals.request(envelope, riskLevel)
         this.sessions.setPhase(envelope.computerSessionId, 'waiting_approval')
+        this.timeline?.record({
+          type: 'computer_approval_requested',
+          sessionId: context.session.sessionId,
+          turnId: context.session.turnId,
+          computerSessionId: envelope.computerSessionId,
+          approvalId: approval.id,
+          actionId: envelope.actionId,
+          riskLevel,
+        })
         throw new ComputerUseBrokerError(
           'approval_required',
           'Computer action requires exact user approval',
@@ -204,6 +241,14 @@ export class ComputerControlBroker {
         completedAt: this.now().toISOString(),
       })
       if (!context.signal.aborted) {
+        this.timeline?.record({
+          type: 'computer_action_failed',
+          sessionId: context.session.sessionId,
+          turnId: context.session.turnId,
+          computerSessionId: envelope.computerSessionId,
+          actionId: envelope.actionId,
+          errorCode: brokerError.code,
+        })
         if (isRecoverableExecutionError(brokerError)) {
           this.sessions.setPhase(envelope.computerSessionId, 'observing')
         } else {
@@ -221,6 +266,14 @@ export class ComputerControlBroker {
         errorCode: 'action_noop',
         completedAt: this.now().toISOString(),
       })
+      this.timeline?.record({
+        type: 'computer_action_failed',
+        sessionId: context.session.sessionId,
+        turnId: context.session.turnId,
+        computerSessionId: envelope.computerSessionId,
+        actionId: envelope.actionId,
+        errorCode: 'action_noop',
+      })
       this.sessions.setPhase(envelope.computerSessionId, 'observing')
       throw new ComputerUseBrokerError('action_noop', 'Computer action made no observable change')
     }
@@ -237,6 +290,15 @@ export class ComputerControlBroker {
         'Computer action completion could not be persisted',
       )
     }
+    this.timeline?.record({
+      type: 'computer_action_executed',
+      sessionId: context.session.sessionId,
+      turnId: context.session.turnId,
+      computerSessionId: envelope.computerSessionId,
+      actionId: envelope.actionId,
+      beforeFrameId: envelope.observedFrameId,
+      afterFrameId: result.observation.frameId,
+    })
     this.policy.markAppObservedByExecutedAction(
       envelope.computerSessionId,
       observation.foreground.app,

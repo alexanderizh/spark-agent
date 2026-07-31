@@ -12,14 +12,14 @@
 | Phase 2.1 Host Supervisor 状态机 | `4731233b7` | +8 | 心跳 5s/3 连败重启、有界重启(1)、onRebound 强制重绑、flag `SPARK_COMPUTER_USE_V2_HOST_SUPERVISOR` |
 | Phase 2.2 增量 AX 树（tree-diff 客户端切片） | `f03dd85a8` | +5 | NativeHostTreeReconciler diff→full 重建、决策步可请求 diff、flag `SPARK_COMPUTER_USE_V2_INCREMENTAL_TREE` |
 | Phase 3 动作批处理 | `458e82a3c` | +7 | ComputerDecision `actions` 变体(2-8)、逐动作审批、stale/noop 即停重规划、flag `SPARK_COMPUTER_USE_V2_ACTION_BATCH` |
+| Phase 5 Timeline 实时链路 | `本轮` | +8 | ComputerUseTimelineStore 内存事件存储、broker 7 转换点 emit、`get-timeline` 游标分页变活（MVP，session/observation/verification 事件留 follow-up） |
 
-computer-use 测试套件当前：**30 文件 / 199 测试全过**；`tsc -p apps/desktop` exit 0。
+computer-use 测试套件当前：**32 文件 / 212 测试全过**；`tsc -p apps/desktop` exit 0。
 
 ## 进行中 / 待办
 
 | 阶段 | 类型 | 说明 |
 | --- | --- | --- |
-| Phase 5 Timeline | 纯 TS | 内存事件存储 + `get-timeline` 变活 + broker 关键转换点发事件 |
 | Phase 0 指标基线 | 纯 TS | SLO 计时/计数（Host 崩溃率、incompatible/untrusted 率、接管停止 P99） |
 | Phase 7 灰度/迁移 | 纯 TS | 统一 flag 框架 + 回退条件（依赖 Phase 0 指标） |
 | Phase 4 人机协同 | 纯 TS | 目标绑定、输入冲突规则、SparkWork 内部应用桥 |
