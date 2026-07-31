@@ -3,6 +3,12 @@ export type SchemaField = {
   title: string
   type: string
   enumValues: string[]
+  /**
+   * enum 值 → 展示名的映射。manifest paramSchema 可通过自定义关键字
+   * `x-template-labels` 注入（如 MiniMax 视频 Agent 的 11 个模板 id → 中文名），
+   * 让下拉显示人类可读名称而非裸枚举值。缺失时回退到 enum 值本身。
+   */
+  enumLabels?: Record<string, string>
   minimum?: number
   maximum?: number
   allowCustom?: boolean

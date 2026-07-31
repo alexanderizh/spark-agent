@@ -1479,11 +1479,23 @@ export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
         typeof spec.minimum === 'number' && Number.isFinite(spec.minimum) ? spec.minimum : undefined
       const maximum =
         typeof spec.maximum === 'number' && Number.isFinite(spec.maximum) ? spec.maximum : undefined
+      // manifest paramSchema 可标记 `x-template-labels: { id: 名称 }` 让前端下拉显示
+      // 人类可读名（如 MiniMax 视频 Agent 模板的数字 id → 中文名）。仅保留 string 值。
+      const rawLabels = spec['x-template-labels']
+      const enumLabels =
+        rawLabels && typeof rawLabels === 'object' && !Array.isArray(rawLabels)
+          ? Object.fromEntries(
+              Object.entries(rawLabels as Record<string, unknown>)
+                .filter(([, label]) => typeof label === 'string')
+                .map(([id, label]) => [String(id), label as string]),
+            )
+          : undefined
       return {
         name,
         title: typeof spec.title === 'string' ? spec.title : name,
         type,
         enumValues,
+        ...(enumLabels ? { enumLabels } : {}),
         ...(minimum !== undefined ? { minimum } : {}),
         ...(maximum !== undefined ? { maximum } : {}),
         ...(allowCustom ? { allowCustom: true } : {}),
