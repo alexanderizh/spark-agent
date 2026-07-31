@@ -266,6 +266,12 @@ export const minimaxMusicSchema = {
   },
 }
 
+/**
+ * MiniMax Hailuo 2.3 / 2.3-Fast 视频生成（v1，POST /v1/video_generation）参数 schema。
+ * 首/尾帧由画布 inputFiles 的 role(first_frame/last_frame) 驱动，不是 API 参数，
+ * 因此不再暴露 useFirstFrame/useLastFrame（无对应官方字段，曾误导表单）。
+ * 来源：docs/integrations/minimax/video-models.md §5.1-5.2
+ */
 export const minimaxHailuoVideoSchema = {
   type: 'object',
   additionalProperties: true,
@@ -275,8 +281,134 @@ export const minimaxHailuoVideoSchema = {
     prompt_optimizer: { type: 'boolean', title: '提示词优化', default: true },
     fast_pretreatment: { type: 'boolean', title: '快速预处理', default: false },
     aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
-    useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
-    useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
+  },
+}
+
+/**
+ * image-01-live 画风增强 schema。与 image-01 的差异（来源 image-models.md §3）：
+ *   - 不暴露 width / height（官方仅 image-01 生效）；
+ *   - aspect_ratio 排除 21:9（官方仅 image-01 支持）；
+ *   - 新增 style_type / style_weight 顶层参数，adapter 在 model=image-01-live 时
+ *     组装成官方嵌套 { style: { style_type, style_weight } }（style 仅 image-01-live 生效）。
+ */
+export const minimaxImage01LiveSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    aspectRatio: {
+      type: 'string',
+      title: '比例',
+      enum: ['1:1', '16:9', '4:3', '3:2', '2:3', '3:4', '9:16'],
+      default: '1:1',
+    },
+    response_format: { type: 'string', title: '响应格式', enum: ['url', 'base64'], default: 'url' },
+    seed: { type: 'integer', title: '随机种子' },
+    n: { type: 'integer', title: '数量', minimum: 1, maximum: 9, default: 1 },
+    prompt_optimizer: { type: 'boolean', title: '提示词优化', default: false },
+    aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
+    style_type: {
+      type: 'string',
+      title: '画风类型',
+      enum: ['漫画', '元气', '中世纪', '水彩'],
+      description: '仅 image-01-live 生效',
+    },
+    style_weight: { type: 'number', title: '画风权重', minimum: 0, maximum: 1, default: 0.8 },
+  },
+}
+
+/**
+ * MiniMax-H3 视频生成 V2（POST /v2/video_generation，content[] 多模态数组）参数 schema。
+ * 用于 i2v / r2v 场景：ratio 含 adaptive（由输入图或参考决定时用 adaptive）；t2v 用
+ * minimaxH3VideoT2VSchema（ratio 必填且不含 adaptive）。resolution 官方当前固定 2K，
+ * adapter 恒发 '2K'，不在 UI 暴露。
+ * 来源：docs/integrations/minimax/video-models-v2.md §4
+ */
+export const minimaxH3VideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    duration: { type: 'integer', title: '时长(秒)', minimum: 4, maximum: 15, default: 5 },
+    ratio: {
+      type: 'string',
+      title: '画幅',
+      enum: ['adaptive', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+      default: 'adaptive',
+    },
+    aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
+  },
+}
+
+/**
+ * H3 文生视频（t2v, video.generate）专用比例 schema：ratio 必填且不能为 adaptive，
+ * 故 enum 不含 adaptive（与 validator 约束一致）。来源：video-models-v2.md §4.3。
+ */
+export const minimaxH3VideoT2VSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    duration: { type: 'integer', title: '时长(秒)', minimum: 4, maximum: 15, default: 5 },
+    ratio: {
+      type: 'string',
+      title: '画幅',
+      enum: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+      default: '16:9',
+    },
+    aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
+  },
+}
+
+/**
+ * 视频 Agent 模板 id 清单（11 个，2026-07-31 抓取自官方 FAQ）。
+ * 来源：docs/integrations/minimax/video-templates.md §4
+ * https://platform.minimaxi.com/docs/faq/video-agent-templates
+ */
+export const MINIMAX_VIDEO_TEMPLATE_IDS = [
+  '392753057216684038',
+  '393881433990066176',
+  '393769180141805569',
+  '394246956137422856',
+  '393879757702918151',
+  '393766210733957121',
+  '394125185182695432',
+  '393857704283172864',
+  '398574688191234048',
+  '393866076583718914',
+  '393876118804459526',
+] as const
+
+/** template_id → 中文模板名（供画布下拉渲染）。来源同上。 */
+export const MINIMAX_VIDEO_TEMPLATE_LABELS: Record<string, string> = {
+  '392753057216684038': '跳水',
+  '393881433990066176': '吊环',
+  '393769180141805569': '绝地求生',
+  '394246956137422856': '万物皆可 labubu',
+  '393879757702918151': '麦当劳宠物外卖员',
+  '393766210733957121': '藏族风写真',
+  '394125185182695432': '生无可恋',
+  '393857704283172864': '情书写真',
+  '398574688191234048': '四季写真',
+  '393866076583718914': '女模特试穿广告',
+  '393876118804459526': '男模特试穿广告',
+}
+
+/**
+ * 视频 Agent（POST /v1/video_template_generation）参数 schema。templateId 作为 enum 字段，
+ * 画布 CanvasParameterControl 自动渲染下拉（Path 1，零画布层改动）；中文名通过自定义
+ * 关键字 x-template-labels 注入。media_inputs / text_inputs 由画布 inputFiles / prompt 驱动。
+ * 来源：docs/integrations/minimax/video-templates.md §2-4
+ */
+export const minimaxVideoTemplateSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    templateId: {
+      type: 'string',
+      title: '模板',
+      enum: [...MINIMAX_VIDEO_TEMPLATE_IDS],
+      'x-template-labels': MINIMAX_VIDEO_TEMPLATE_LABELS,
+      description: '视频 Agent 模板，清单见 docs/integrations/minimax/video-templates.md §4',
+    },
+    callbackUrl: { type: 'string', title: '回调地址（可选）' },
   },
 }
 

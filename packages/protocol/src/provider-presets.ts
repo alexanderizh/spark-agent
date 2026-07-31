@@ -2323,32 +2323,20 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     imageApiType: 'sync',
     mediaProvider: 'minimax-hailuo',
     mediaApiType: 'sync',
-    mediaCapabilities: ['image.generate'],
-    mediaModelRefs: [{ manifestId: 'minimax:image-01', modelId: 'image-01', enabled: true }],
+    mediaCapabilities: ['image.generate', 'image.edit'],
+    mediaModelRefs: [
+      { manifestId: 'minimax:image-01', modelId: 'image-01', enabled: true },
+      { manifestId: 'minimax:image-01-live', modelId: 'image-01-live', enabled: true },
+    ],
     mediaDefaults: { image: { aspectRatio: '1:1', n: 1, responseFormat: 'url' } },
-    sourceUrls: ['https://platform.minimaxi.com/document/image_generation'],
+    sourceUrls: [
+      'https://platform.minimaxi.com/docs/api-reference/image-generation-t2i',
+      'https://platform.minimaxi.com/docs/api-reference/image-generation-i2i',
+    ],
   },
 
-  /* ─── MiniMax 语音 ─── */
-  {
-    id: 'minimax-speech',
-    vendorId: 'minimax',
-    name: 'MiniMax',
-    provider: 'openai',
-    apiEndpoint: 'https://api.minimaxi.com',
-    defaultModel: 'speech-2.8-turbo',
-    modelIds: ['speech-2.8-turbo', 'speech-2.8-hd'],
-    modelType: 'voice',
-    mediaProvider: 'minimax-hailuo',
-    mediaApiType: 'sync',
-    mediaCapabilities: ['audio.speech'],
-    mediaModelRefs: [
-      { manifestId: 'minimax:speech-2.8-turbo', modelId: 'speech-2.8-turbo', enabled: true },
-      { manifestId: 'minimax:speech-2.8-hd', modelId: 'speech-2.8-hd', enabled: true },
-    ],
-    mediaDefaults: { audio: { format: 'mp3', speed: 1 } },
-    sourceUrls: ['https://platform.minimaxi.com/document/text-to-speech'],
-  },
+  /* ─── MiniMax 语音（本轮不开发；manifest 骨架见 media-model-manifest.ts，文档见 docs/integrations/minimax/speech-music.md）─── */
+  /* 按「语音/音乐仅文档不开发」指令移除 preset：错误归一不完整的 template 兜底路径（base_resp 失败检测不到）不应暴露给用户；恢复时从 git 历史取回 minimax-speech preset。 */
 
   /* ─── MiniMax Hailuo 视频 ─── */
   {
@@ -2358,20 +2346,73 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'openai',
     apiEndpoint: 'https://api.minimaxi.com',
     defaultModel: 'MiniMax-Hailuo-2.3',
-    modelIds: ['MiniMax-Hailuo-2.3'],
+    modelIds: ['MiniMax-Hailuo-2.3', 'MiniMax-Hailuo-2.3-Fast'],
     modelType: 'video',
     mediaProvider: 'minimax-hailuo',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
+    mediaCapabilities: ['video.generate', 'video.image_to_video'],
     mediaModelRefs: [
       { manifestId: 'minimax:hailuo-2.3', modelId: 'MiniMax-Hailuo-2.3', enabled: true },
+      { manifestId: 'minimax:hailuo-2.3-fast', modelId: 'MiniMax-Hailuo-2.3-Fast', enabled: true },
     ],
     mediaDefaults: {
       video: { durationSeconds: 6, resolution: '768P' },
       timeoutMs: 1_800_000,
       polling: { intervalMs: 5000 },
     },
-    sourceUrls: ['https://platform.minimaxi.com/document/video_generation'],
+    sourceUrls: [
+      'https://platform.minimaxi.com/docs/api-reference/video-generation-t2v',
+      'https://platform.minimaxi.com/docs/api-reference/video-generation-i2v',
+    ],
+  },
+
+  /* ─── MiniMax H3 视频（V2，最新主推，content[] 多模态）─── */
+  {
+    id: 'minimax-h3-video',
+    vendorId: 'minimax',
+    name: 'MiniMax H3 视频',
+    provider: 'openai',
+    apiEndpoint: 'https://api.minimaxi.com',
+    defaultModel: 'MiniMax-H3',
+    modelIds: ['MiniMax-H3'],
+    modelType: 'video',
+    mediaProvider: 'minimax-hailuo',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.reference_to_video'],
+    mediaModelRefs: [{ manifestId: 'minimax:v2-h3', modelId: 'MiniMax-H3', enabled: true }],
+    mediaDefaults: {
+      video: { durationSeconds: 5 },
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 5000 },
+    },
+    sourceUrls: [
+      'https://platform.minimaxi.com/docs/api-reference/video-generation-v2-create',
+      'https://platform.minimaxi.com/docs/api-reference/video-generation-v2-query',
+    ],
+  },
+
+  /* ─── MiniMax 视频 Agent（模板化生成，11 个官方模板）─── */
+  {
+    id: 'minimax-video-agent',
+    vendorId: 'minimax',
+    name: 'MiniMax 视频 Agent',
+    provider: 'openai',
+    apiEndpoint: 'https://api.minimaxi.com',
+    defaultModel: 'video-agent',
+    modelIds: ['video-agent'],
+    modelType: 'video',
+    mediaProvider: 'minimax-hailuo',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.generate'],
+    mediaModelRefs: [{ manifestId: 'minimax:hailuo-template', modelId: 'video-agent', enabled: true }],
+    mediaDefaults: {
+      timeoutMs: 1_800_000,
+      polling: { intervalMs: 5000 },
+    },
+    sourceUrls: [
+      'https://platform.minimaxi.com/docs/api-reference/video-agent-create',
+      'https://platform.minimaxi.com/docs/faq/video-agent-templates',
+    ],
   },
 
   /* ─── 腾讯云 TokenHub 多媒体（图片 + 视频）─── */

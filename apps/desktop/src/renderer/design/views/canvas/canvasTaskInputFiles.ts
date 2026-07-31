@@ -11,7 +11,10 @@ export function buildTaskInputFiles(
   let imageIndex = 0
   return nodes.flatMap((node) => {
     const url = node.data.url
-    if (!url) return []
+    const fileId = node.data.fileId
+    // provider 文件节点（来自「素材中心 → Files」）只有 fileId、没有本地 url；
+    // 命中 fileId 即透传，由 adapter 上传短路（MiniMax H3 用 mm_file://{id}）。
+    if (!url && !fileId) return []
     const type =
       node.type === 'image'
         ? ('image' as const)
@@ -37,7 +40,13 @@ export function buildTaskInputFiles(
     return roles.map((role) => ({
       type,
       role,
-      ...(url.startsWith('data:') ? { dataUrl: url } : { url }),
+      ...(fileId
+        ? { fileId }
+        : url
+          ? url.startsWith('data:')
+            ? { dataUrl: url }
+            : { url }
+          : {}),
       ...(node.data.mimeType ? { mimeType: node.data.mimeType } : {}),
     }))
   })

@@ -1,10 +1,23 @@
 import { z } from 'zod'
 
-export const ProviderFilesApiKindSchema = z.enum(['xai', 'volcengine-ark', 'bailian'])
+export const ProviderFilesApiKindSchema = z.enum(['xai', 'volcengine-ark', 'bailian', 'minimax-hailuo'])
 export type ProviderFilesApiKind = z.infer<typeof ProviderFilesApiKindSchema>
 
 export const BailianFilePurposeSchema = z.enum(['fine-tune', 'file-extract', 'batch'])
 export type BailianFilePurpose = z.infer<typeof BailianFilePurposeSchema>
+
+/**
+ * MiniMax Files 上传 purpose 枚举（来源 docs/integrations/minimax/files-api.md §2）。
+ * 画布 Files tab 仅暴露 video_generation_input（H3 视频素材）；其余 purpose 留作未来语音/音乐通道。
+ */
+export const MinimaxUploadPurposeSchema = z.enum([
+  'voice_clone',
+  'prompt_audio',
+  't2a_async_input',
+  'video_understanding',
+  'video_generation_input',
+])
+export type MinimaxUploadPurpose = z.infer<typeof MinimaxUploadPurposeSchema>
 
 export const VolcengineFileStatusSchema = z.enum(['processing', 'active', 'failed'])
 export type VolcengineFileStatus = z.infer<typeof VolcengineFileStatusSchema>
@@ -69,7 +82,7 @@ export interface ProviderFilesUploadRequest {
   providerProfileId: string
   filePath?: string
   url?: string
-  purpose?: 'user_data' | BailianFilePurpose
+  purpose?: 'user_data' | BailianFilePurpose | MinimaxUploadPurpose
   description?: string
   expireAt?: number
   tos?: { bucket: string; prefix: string }
@@ -144,7 +157,9 @@ export const ProviderFilesIpcSchemaRegistry = {
         .max(10_000)
         .regex(/^(?:https?:\/\/|tos:\/\/)/i, 'url must use http://, https://, or tos://')
         .optional(),
-      purpose: z.union([z.literal('user_data'), BailianFilePurposeSchema]).optional(),
+      purpose: z
+        .union([z.literal('user_data'), BailianFilePurposeSchema, MinimaxUploadPurposeSchema])
+        .optional(),
       description: z.string().trim().max(2_000).optional(),
       expireAt: z.number().int().positive().optional(),
       tos: z

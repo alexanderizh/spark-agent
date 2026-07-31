@@ -530,6 +530,7 @@ export function CanvasWorkspaceView({
     createImageNode,
     createEmptyImageNode,
     createMediaNode,
+    createProviderFileNode,
     uploadImageAsset,
     createGroupNode,
     dissolveGroupNode,
@@ -2801,6 +2802,44 @@ export function CanvasWorkspaceView({
       await handleInsertAsset(assetId)
     },
     [handleInsertAsset],
+  )
+
+  const handleInsertProviderFile = useCallback(
+    async (input: {
+      providerProfileId: string
+      fileId: string
+      fileName?: string
+      mimeType?: string
+      kind?: 'image' | 'video' | 'audio'
+    }) => {
+      if (!snapshot) return
+      // 从 mimeType 推断节点类型（video→video / audio→audio / 其余→image），
+      // 让 MiniMax Files 上传的图片/视频素材落到对应类型节点。
+      const kind =
+        input.kind ??
+        (input.mimeType?.startsWith('video/')
+          ? 'video'
+          : input.mimeType?.startsWith('audio/')
+            ? 'audio'
+            : 'image')
+      const nodeSize =
+        kind === 'image' ? IMAGE_NODE_DEFAULT_SIZE : VIDEO_NODE_DEFAULT_SIZE
+      const position = positionNodeInViewport(canvasViewportRef.current, nodeSize, {
+        x: 220,
+        y: 180,
+      })
+      await createProviderFileNode({
+        providerProfileId: input.providerProfileId,
+        fileId: input.fileId,
+        ...(input.fileName ? { fileName: input.fileName } : {}),
+        ...(input.mimeType ? { mimeType: input.mimeType } : {}),
+        kind,
+        x: position.x,
+        y: position.y,
+      })
+      message.success('已加入画布，可作为视频生成输入')
+    },
+    [createProviderFileNode, snapshot],
   )
 
   const handleApplyCharacterSubview = useCallback(
@@ -7827,6 +7866,7 @@ export function CanvasWorkspaceView({
               hasPromptCanvasTarget: () => selectedNodes.length > 0,
               onApplyPromptEntryToCanvas: handleApplyPromptEntryBesideSelection,
               onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
+              onInsertProviderFileToCanvas: (input) => void handleInsertProviderFile(input),
               onLocateAsset: (assetId) => {
                 const nodeId = resolveCanvasAssetFocusNodeIds(snapshot, assetId)[0]
                 if (!nodeId) {

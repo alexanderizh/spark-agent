@@ -104,6 +104,9 @@ export async function materializeCanvasTaskInputFiles(
   }
   return Promise.all(
     files.map(async (file, index) => {
+      // provider 文件（已有 provider 侧 fileId）不经 auth:upload-file 物质化：
+      // adapter 直接用 provider 引用（如 MiniMax H3 的 mm_file://{id}），短路返回。
+      if (file.fileId) return file
       if (file.type !== 'image') return file
       if (file.url && /^https?:\/\//i.test(file.url)) return file
       const filePath = file.url ? decodeSafeFileUrl(file.url) : null

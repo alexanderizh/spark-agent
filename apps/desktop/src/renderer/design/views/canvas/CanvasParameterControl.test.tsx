@@ -156,4 +156,24 @@ describe('CanvasParameterControl', () => {
     const numeric = await renderControl(field('seed', [], 'integer'), '12')
     expect(numeric.container.querySelector('input')?.type).toBe('number')
   })
+
+  it('renders enumLabels as option labels for opaque enum values', async () => {
+    // MiniMax 视频 Agent 的 templateId 是不透明数字 id，manifest 通过
+    // x-template-labels 注入中文名；下拉应显示中文名而非裸 id。
+    const { container } = await renderControl(
+      field('templateId', ['392753057216684038', '398574688191234048'], 'string', {
+        enumLabels: {
+          '392753057216684038': '跳水',
+          '398574688191234048': '四季写真',
+        },
+      }),
+      '392753057216684038',
+    )
+    const options = container.querySelectorAll('option')
+    const labels = Array.from(options).map((option) => option.textContent ?? '')
+    expect(labels).toContain('跳水')
+    expect(labels).toContain('四季写真')
+    // 不应把裸 id 当标签回退显示
+    expect(labels.some((label) => label.includes('392753057216684038'))).toBe(false)
+  })
 })
