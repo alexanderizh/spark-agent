@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { join, resolve, sep } from 'node:path'
+import { join } from 'node:path'
 import { app } from 'electron'
 import type { CanvasMediaTaskCreateResponse, CanvasMediaTaskStreamPayload } from '@spark/protocol'
 import {
@@ -10,7 +10,7 @@ import {
   DepthVideoRunner,
   type DepthVideoProgress,
 } from '../services/depth-video/DepthVideoRunner.js'
-import { getSafeFileAllowedRoots } from '../services/SafeFileProtocol.js'
+import { isSafeFilePathAllowed } from '../services/SafeFileProtocol.js'
 import { pushStreamEvent, typedIpcHandle } from './typed-ipc.js'
 
 type IntegrityService = Pick<DepthModelIntegrityService, 'inspect' | 'install'>
@@ -203,10 +203,7 @@ function depthStageMessage(stage: DepthVideoProgress['stage']): string {
 }
 
 function assertAllowedInputPath(inputPath: string): void {
-  const absolutePath = resolve(inputPath)
-  const allowed = getSafeFileAllowedRoots().some((root) => {
-    const absoluteRoot = resolve(root)
-    return absolutePath === absoluteRoot || absolutePath.startsWith(absoluteRoot + sep)
-  })
-  if (!allowed) throw new Error('深度视频输入路径不在允许的画布或工作区目录内')
+  if (!isSafeFilePathAllowed(inputPath)) {
+    throw new Error('深度视频输入路径不在允许的画布或工作区目录内')
+  }
 }
