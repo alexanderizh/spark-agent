@@ -177,8 +177,9 @@ describe('ComputerUseTimelineStore', () => {
     const first = store.read('cs-1', undefined, 2)
     expect(first.events.map(actionId)).toEqual(['a-1', 'a-2'])
     expect(first.nextSeq).toBe(1)
+    if (first.nextSeq == null) throw new Error('Expected a pagination cursor')
 
-    const second = store.read('cs-1', first.nextSeq!, 2)
+    const second = store.read('cs-1', first.nextSeq, 2)
     expect(second.events.map(actionId)).toEqual(['a-3'])
     expect(second.nextSeq).toBe(2)
   })
