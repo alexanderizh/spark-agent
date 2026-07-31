@@ -48,6 +48,63 @@ describe('arrangeCanvasNodes', () => {
     ])
   })
 
+  it('honors a custom column count for grid layout', () => {
+    const result = arrangeCanvasNodes(nodes, { mode: 'grid', spacing: 'large', columns: 3 })
+
+    expect(result).toEqual([
+      { id: 'a', x: 20, y: 40 },
+      { id: 'b', x: 356, y: 40 },
+      { id: 'd', x: 612, y: 40 },
+      { id: 'c', x: 20, y: 340 },
+    ])
+  })
+
+  it('falls back to a single column when columns is 1', () => {
+    const result = arrangeCanvasNodes(nodes, { mode: 'grid', spacing: 'large', columns: 1 })
+
+    expect(result).toEqual([
+      { id: 'a', x: 20, y: 40 },
+      { id: 'b', x: 20, y: 280 },
+      { id: 'd', x: 20, y: 580 },
+      { id: 'c', x: 20, y: 840 },
+    ])
+  })
+
+  it('lays nodes in a single row when columns exceeds node count', () => {
+    const result = arrangeCanvasNodes(nodes, { mode: 'grid', spacing: 'large', columns: 10 })
+
+    expect(result).toEqual([
+      { id: 'a', x: 20, y: 40 },
+      { id: 'b', x: 316, y: 40 },
+      { id: 'd', x: 572, y: 40 },
+      { id: 'c', x: 848, y: 40 },
+    ])
+  })
+
+  it('ignores invalid columns and falls back to sqrt', () => {
+    const sqrtResult = arrangeCanvasNodes(nodes, { mode: 'grid', spacing: 'large' })
+    const zeroColumns = arrangeCanvasNodes(nodes, { mode: 'grid', spacing: 'large', columns: 0 })
+    const negativeColumns = arrangeCanvasNodes(nodes, {
+      mode: 'grid',
+      spacing: 'large',
+      columns: -2,
+    })
+    expect(zeroColumns).toEqual(sqrtResult)
+    expect(negativeColumns).toEqual(sqrtResult)
+  })
+
+  it('ignores columns in horizontal mode', () => {
+    const horizontal = arrangeCanvasNodes(nodes.slice(0, 2), {
+      mode: 'horizontal',
+      spacing: 'medium',
+      columns: 5,
+    })
+    expect(horizontal).toEqual([
+      { id: 'a', x: 20, y: 40 },
+      { id: 'b', x: 284, y: 40 },
+    ])
+  })
+
   it('moves a partial layout past unselected obstacle nodes', () => {
     const result = arrangeCanvasNodes(nodes.slice(0, 2), {
       mode: 'horizontal',

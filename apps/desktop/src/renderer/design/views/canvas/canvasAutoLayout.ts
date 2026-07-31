@@ -59,6 +59,11 @@ export function arrangeCanvasNodes(
     spacing: CanvasAutoLayoutSpacing
     links?: readonly CanvasAutoLayoutLink[]
     obstacles?: readonly CanvasAutoLayoutNode[]
+    /**
+     * 网格模式下每排的列数。仅 mode==='grid' 生效；缺省时按 sqrt(n) 自动计算
+     * （保持与历史行为一致）。horizontal/vertical 忽略该参数。
+     */
+    columns?: number
   },
 ): CanvasAutoLayoutPosition[] {
   if (nodes.length === 0) return []
@@ -68,10 +73,24 @@ export function arrangeCanvasNodes(
   const anchorLeft = Math.min(...ordered.map((node) => node.x))
   const anchorTop = Math.min(...ordered.map((node) => node.y - (node.headerHeight ?? 0)))
   const links = normalizeLayoutLinks(ordered, options.links ?? [])
+  const gridColumns =
+    typeof options.columns === 'number' &&
+    Number.isFinite(options.columns) &&
+    options.columns >= 1
+      ? Math.max(1, Math.floor(options.columns))
+      : undefined
   const positions =
     links.length > 0
-      ? buildHierarchicalPositions(ordered, links, options.mode, gap, anchorLeft, anchorTop)
-      : buildPositions(ordered, options.mode, gap, anchorLeft, anchorTop)
+      ? buildHierarchicalPositions(
+          ordered,
+          links,
+          options.mode,
+          gap,
+          anchorLeft,
+          anchorTop,
+          gridColumns,
+        )
+      : buildPositions(ordered, options.mode, gap, anchorLeft, anchorTop, gridColumns)
   const obstacleRects = (options.obstacles ?? []).map(nodeRect)
 
   if (obstacleRects.length === 0) return positions
@@ -85,6 +104,7 @@ function buildPositions(
   gap: number,
   anchorLeft: number,
   anchorTop: number,
+  gridColumns?: number,
 ): CanvasAutoLayoutPosition[] {
   if (mode === 'horizontal') {
     let cursorX = anchorLeft
@@ -113,7 +133,7 @@ function buildPositions(
     })
   }
 
-  const columnCount = Math.max(1, Math.ceil(Math.sqrt(nodes.length)))
+  const columnCount = gridColumns ?? Math.max(1, Math.ceil(Math.sqrt(nodes.length)))
   const rowCount = Math.ceil(nodes.length / columnCount)
   const columnWidths = Array.from({ length: columnCount }, () => 0)
   const rowHeights = Array.from({ length: rowCount }, () => 0)
@@ -164,16 +184,18 @@ function buildHierarchicalPositions(
   gap: number,
   anchorLeft: number,
   anchorTop: number,
+  gridColumns?: number,
 ): CanvasAutoLayoutPosition[] {
   const roots = buildLayoutForest(nodes, links, mode)
-  if (roots.length === 0) return buildPositions(nodes, mode, gap, anchorLeft, anchorTop)
+  if (roots.length === 0) return buildPositions(nodes, mode, gap, anchorLeft, anchorTop, gridColumns)
 
   if (mode === 'horizontal') {
     return arrangeHorizontalForest(roots, gap, anchorLeft, anchorTop)
   }
 
   const blocks = roots.map((root) => arrangeVerticalTree(root, gap, 0, 0))
-  if (mode === 'grid') return arrangeTreeBlocksInGrid(blocks, gap, anchorLeft, anchorTop)
+  if (mode === 'grid')
+    return arrangeTreeBlocksInGrid(blocks, gap, anchorLeft, anchorTop, gridColumns)
 
   let cursorTop = anchorTop
   const positions: CanvasAutoLayoutPosition[] = []
@@ -362,8 +384,9 @@ function arrangeTreeBlocksInGrid(
   gap: number,
   anchorLeft: number,
   anchorTop: number,
+  gridColumns?: number,
 ): CanvasAutoLayoutPosition[] {
-  const columnCount = Math.max(1, Math.ceil(Math.sqrt(blocks.length)))
+  const columnCount = gridColumns ?? Math.max(1, Math.ceil(Math.sqrt(blocks.length)))
   const rowCount = Math.ceil(blocks.length / columnCount)
   const columnWidths = Array.from({ length: columnCount }, () => 0)
   const rowHeights = Array.from({ length: rowCount }, () => 0)
