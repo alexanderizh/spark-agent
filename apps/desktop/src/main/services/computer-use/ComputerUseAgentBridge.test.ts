@@ -127,6 +127,7 @@ describe('ComputerUseAgentBridge', () => {
       result: {
         tools: expect.arrayContaining([
           expect.objectContaining({ name: 'get_capabilities' }),
+          expect.objectContaining({ name: 'diagnose_native_host' }),
           expect.objectContaining({ name: 'start_task' }),
         ]),
       },

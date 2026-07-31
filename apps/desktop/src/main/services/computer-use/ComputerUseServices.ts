@@ -19,6 +19,8 @@ import { ComputerPolicyService } from './ComputerPolicyService.js'
 import { ComputerSessionManager } from './ComputerSessionManager.js'
 import { ComputerObservationEvidenceStore } from './ComputerObservationEvidenceStore.js'
 import { ComputerUseTimelineStore } from './ComputerUseTimelineStore.js'
+import { ComputerUseMetricsCollector } from './ComputerUseMetricsCollector.js'
+import { ComputerUseNativeHostDiagnostics } from './ComputerUseNativeHostDiagnostics.js'
 import {
   type ComputerExecutorBackend,
   type ComputerHostBackend,
@@ -46,6 +48,8 @@ export interface ComputerUseServices {
   readonly broker: ComputerControlBroker
   /** Live in-memory timeline of action lifecycle events per computer session. */
   readonly timeline: ComputerUseTimelineStore
+  readonly metrics: ComputerUseMetricsCollector
+  readonly diagnostics: ComputerUseNativeHostDiagnostics
   readonly backend: TrustedComputerUseBackend
   readonly killSwitch: ComputerKillSwitchService
   readonly evidence?: NativeObservationEvidenceSink & {
@@ -75,12 +79,18 @@ export function createComputerUseServices(
 ): ComputerUseServices {
   const evidence =
     options.evidenceSink ?? (options.backend == null ? createDefaultEvidenceSink(database) : null)
+  const metrics = new ComputerUseMetricsCollector()
   const backend =
     options.backend ??
     (
       options.createBackend ??
       ((evidenceSink) =>
-        createDefaultComputerUseBackend({ evidenceSink, packaged: app.isPackaged }))
+        createDefaultComputerUseBackend({
+          evidenceSink,
+          packaged: app.isPackaged,
+          metrics,
+          appVersion: app.getVersion(),
+        }))
     )(evidence as NativeObservationEvidenceSink)
   const sessions = new ComputerSessionManager({
     sessions: new ComputerSessionRepository(database),
@@ -92,6 +102,12 @@ export function createComputerUseServices(
   })
   const verifications = new ComputerVerificationRepository(database)
   const timeline = new ComputerUseTimelineStore()
+  const diagnostics = new ComputerUseNativeHostDiagnostics({
+    backend,
+    metrics,
+    appVersion: () => app.getVersion(),
+    isPackaged: () => app.isPackaged,
+  })
   const broker = new ComputerControlBroker({
     sessions,
     policy,
@@ -121,6 +137,8 @@ export function createComputerUseServices(
     verifications,
     broker,
     timeline,
+    metrics,
+    diagnostics,
     backend,
     killSwitch,
     ...(usableEvidence == null ? {} : { evidence: usableEvidence }),
@@ -147,6 +165,7 @@ export function createComputerUseServices(
           .map(async (computerSessionId) => broker.killSwitch(computerSessionId)),
       )
       timeline.clear()
+      metrics.clear()
       if (isDisposableBackend(backend)) await backend.dispose()
     },
   }

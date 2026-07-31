@@ -5,6 +5,7 @@ import { getSnapshotPreviewCapabilityService } from './SnapshotPreviewCapability
 
 export const COMPUTER_USE_AGENT_TOOL_NAMES = [
   'mcp__spark_computer__get_capabilities',
+  'mcp__spark_computer__diagnose_native_host',
   'mcp__spark_computer__capture_app_snapshot',
   'mcp__spark_computer__start_task',
   'mcp__spark_computer__get_status',

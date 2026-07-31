@@ -119,10 +119,12 @@ export class ComputerUseAgentController {
         const capabilities = await services.backend.getCapabilities()
         return {
           ...capabilities,
+          releaseChannel: 'beta',
           executionAvailable: supportsExecution(capabilities),
           killSwitchArmed: services.killSwitch.isArmed(),
           taskTools: [
             'get_capabilities',
+            'diagnose_native_host',
             'capture_app_snapshot',
             'start_task',
             'get_status',
@@ -133,6 +135,8 @@ export class ComputerUseAgentController {
           ],
         }
       }
+      case 'diagnose_native_host':
+        return services.diagnostics.collect()
       case 'get_status': {
         const computerSession = this.requireOwnedSession(services, sessionId, args)
         const operator = this.runs.get(computerSession.id) ?? { status: 'not_running' as const }

@@ -72,6 +72,7 @@ export type ComputerUseStartRequest = z.infer<typeof ComputerUseStartRequestSche
 
 export const ComputerUseIpcSchemaRegistry = {
   'computer-use:get-capabilities': EmptyRequestSchema,
+  'computer-use:diagnose-native-host': EmptyRequestSchema,
   'computer-use:get-settings': EmptyRequestSchema,
   'computer-use:update-settings': ComputerUseSettingsPatchSchema,
   'computer-use:start': ComputerUseStartRequestSchema,
@@ -130,6 +131,43 @@ export interface ComputerUseCapabilitySummary {
   unavailableReason?: string
 }
 
+export interface ComputerUseNativeHostDiagnosticReport {
+  generatedAt: string
+  correlationId: string
+  app: {
+    version: string
+    packaged: boolean
+  }
+  runtime: {
+    platform: NativeHostPlatform
+    architecture: string
+    osRelease: string
+  }
+  host: {
+    available: boolean
+    version: string | null
+    protocolVersion: number | null
+    platform: NativeHostPlatform | null
+    architecture: string | null
+    permissions: ComputerUseCapabilitySummary['permissions']
+  }
+  result: {
+    diagnosticCode: string
+    stage: string
+    repairAction: string | null
+    errorCode: string | null
+    message: string
+  }
+  metrics: Array<{
+    name: string
+    count: number
+    failures: number
+    averageMs: number
+    p95Ms: number
+    p99Ms: number
+  }>
+}
+
 export interface ComputerVerificationRecord {
   id: string
   computerSessionId: string
@@ -143,6 +181,7 @@ export interface ComputerVerificationRecord {
 
 export interface ComputerUseIpcChannelMap {
   'computer-use:get-capabilities': [void, ComputerUseCapabilitySummary]
+  'computer-use:diagnose-native-host': [void, ComputerUseNativeHostDiagnosticReport]
   'computer-use:get-settings': [void, ComputerUseSettings]
   'computer-use:update-settings': [Partial<ComputerUseSettings>, ComputerUseSettings]
   'computer-use:start': [ComputerUseStartRequest, { computerSession: ComputerSession }]

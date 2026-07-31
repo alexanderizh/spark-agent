@@ -7,6 +7,14 @@ import type {
   NativeWindowDescriptor,
 } from '@spark/protocol'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
+import type { ComputerUseDiagnostic } from './ComputerUseDiagnostic.js'
+
+export interface NativeHostDiagnosticProbe {
+  readonly capabilities: ComputerUseCapabilitySummary
+  readonly diagnostic: ComputerUseDiagnostic
+  readonly errorCode: string | null
+  readonly message: string
+}
 
 export interface ComputerObserverBackend {
   observe(input: {
@@ -27,6 +35,7 @@ export interface ComputerExecutorBackend {
 
 export interface ComputerHostBackend {
   getCapabilities(): Promise<ComputerUseCapabilitySummary>
+  diagnoseNativeHost?(): Promise<NativeHostDiagnosticProbe>
   requestPermissions?(
     permissions: Array<'screen' | 'accessibility'>,
   ): Promise<NativeHostCapabilityManifest>
@@ -47,6 +56,19 @@ export class UnavailableComputerUseBackend
         input: 'unsupported',
       },
       unavailableReason: 'trusted_native_host_missing',
+    }
+  }
+
+  async diagnoseNativeHost(): Promise<NativeHostDiagnosticProbe> {
+    return {
+      capabilities: await this.getCapabilities(),
+      diagnostic: {
+        diagnosticCode: 'native_host_missing',
+        stage: 'discover',
+        repairAction: 'reinstall',
+      },
+      errorCode: 'native_host_missing',
+      message: 'A trusted Computer Use native backend is not installed',
     }
   }
 

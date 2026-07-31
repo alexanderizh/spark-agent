@@ -6,6 +6,7 @@ import type {
 } from '@spark/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
+import { ComputerUseMetricsCollector } from './ComputerUseMetricsCollector.js'
 import {
   NativeHostComputerUseBackend,
   type NativeHostConnection,
@@ -117,6 +118,55 @@ describe('NativeHostComputerUseBackend', () => {
       },
     ])
     expect(connect).toHaveBeenCalledTimes(1)
+  })
+
+  it('records content-free capability latency dimensions', async () => {
+    const metrics = new ComputerUseMetricsCollector()
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect: async () => createConnection(),
+      metrics,
+      metricDimensions: () => ({
+        platform: 'macos',
+        architecture: 'arm64',
+        appVersion: '0.8.14',
+        hostVersion: '0.1.0',
+        trustMode: 'signed',
+      }),
+    })
+
+    await backend.getCapabilities()
+
+    expect(metrics.snapshot()).toEqual([
+      expect.objectContaining({
+        name: 'native_host_capability_ms',
+        count: 1,
+        failures: 0,
+        dimensions: expect.objectContaining({ appVersion: '0.8.14', trustMode: 'signed' }),
+      }),
+    ])
+  })
+
+  it('preserves exact trust diagnostics separately from handshake failures', async () => {
+    const diagnostic = {
+      diagnosticCode: 'artifact_digest_mismatch',
+      stage: 'verify' as const,
+      repairAction: 'reinstall',
+    }
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'macos',
+      connect: async () => {
+        throw new ComputerUseBrokerError('native_host_untrusted', 'digest mismatch', undefined, {
+          diagnostic,
+        })
+      },
+    })
+
+    await expect(backend.diagnoseNativeHost()).resolves.toMatchObject({
+      diagnostic,
+      errorCode: 'native_host_untrusted',
+      message: 'digest mismatch',
+    })
   })
 
   it('reports a missing or untrusted host honestly and keeps control unavailable', async () => {
