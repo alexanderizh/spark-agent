@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const harness = vi.hoisted(() => ({
   handlers: new Map<string, (request: any) => Promise<any>>(),
   events: [] as Array<{ channel: string; payload: any }>,
+  inputPathAllowed: true,
 }))
 
 vi.mock('./typed-ipc.js', () => ({
@@ -17,7 +18,7 @@ vi.mock('electron', () => ({
 }))
 
 vi.mock('../services/SafeFileProtocol.js', () => ({
-  getSafeFileAllowedRoots: () => ['/canvas'],
+  isSafeFilePathAllowed: () => harness.inputPathAllowed,
 }))
 
 import { registerCanvasDepthTaskIpc } from './registerCanvasDepthTaskIpc.js'
@@ -26,6 +27,7 @@ describe('registerCanvasDepthTaskIpc', () => {
   beforeEach(() => {
     harness.handlers.clear()
     harness.events.length = 0
+    harness.inputPathAllowed = true
   })
 
   it('installs the model, runs local depth inference, and streams a media result', async () => {
@@ -92,5 +94,23 @@ describe('registerCanvasDepthTaskIpc', () => {
         durationMs: 4000,
       }),
     ])
+  })
+
+  it('rejects input paths outside the canonical safe-file roots', async () => {
+    harness.inputPathAllowed = false
+    registerCanvasDepthTaskIpc({
+      integrityService: {
+        inspect: vi.fn(),
+        install: vi.fn(),
+      } as never,
+    })
+
+    await expect(
+      harness.handlers.get('canvas:task:create-depth-video')!({
+        projectId: 'project-1',
+        clientTaskId: 'canvas-task-1',
+        inputPath: '/canvas/link-to-private-video.mp4',
+      }),
+    ).rejects.toThrow('不在允许的画布或工作区目录内')
   })
 })
