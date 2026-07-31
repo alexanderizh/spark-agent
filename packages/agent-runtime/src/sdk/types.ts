@@ -714,6 +714,8 @@ export interface SDKExecutorConfig {
   webSearchMcpServer?: SDKMcpServerConfig | undefined
   /** Built-in user-facing file presentation MCP server (spark_files). */
   presentFilesMcpServer?: SDKMcpServerConfig | undefined
+  /** Optional user-facing quick reply MCP server (spark_ui). */
+  quickRepliesMcpServer?: SDKMcpServerConfig | undefined
   /** Debug mode MCP server (spark_debug) — only injected when the session has debugMode enabled */
   debugMcpServer?: SDKMcpServerConfig | undefined
   /** Visible in-app browser MCP server (spark_browser) — provided by the desktop main process. */

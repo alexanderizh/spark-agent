@@ -15,6 +15,7 @@ import {
   type TurnFileChangeCollectionSource,
   type TurnFileSummaryGeneratedGroup,
 } from './turn-file-summary'
+import { isQuickReplySuggestionsTool, parseQuickReplies } from './quick-reply-suggestions'
 
 export interface UIMessage {
   id: string
@@ -119,6 +120,7 @@ export type UIBlock =
       changedFiles: string[]
       commands: Array<{ id: string; label: string; command: string; reason: string }>
     }
+  | { kind: 'quick_replies'; toolCallId: string; replies: string[] }
   | {
       kind: 'terminal'
       toolCallId: string
@@ -579,6 +581,15 @@ export class MessageBuilder {
             questions,
             answered: false,
           })
+        } else if (isQuickReplySuggestionsTool(event.toolName)) {
+          const replies = parseQuickReplies(event.toolInput)
+          if (replies.length > 0) {
+            msg.blocks.push({
+              kind: 'quick_replies',
+              toolCallId: event.toolCallId,
+              replies,
+            })
+          }
         } else {
           msg.blocks.push({
             kind: 'tool_call',

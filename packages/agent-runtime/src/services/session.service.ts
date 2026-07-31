@@ -119,6 +119,8 @@ import {
   SEARCH_TOOL_NAMES,
   PRESENT_FILES_TOOL_NAMES,
   PRESENT_FILES_SYSTEM_PROMPT,
+  QUICK_REPLIES_TOOL_NAMES,
+  QUICK_REPLIES_SYSTEM_PROMPT,
   WEB_SEARCH_SYSTEM_PROMPT,
   SPARK_WEB_TOOL_SYSTEM_PROMPT,
   VALIDATION_SUGGESTION_TOOL_NAMES,
@@ -134,6 +136,7 @@ import {
   resolveMcpNodeRuntimeExecutable,
   resolvePlatformManagementMcpServerPath,
   resolvePresentFilesMcpServer,
+  resolveQuickRepliesMcpServer,
   resolveSparkCanvasMcpServerPath,
   resolveSparkMemoryMcpServerPath,
   resolveWebSearchMcpServerPath,
@@ -2298,6 +2301,7 @@ export class SessionService {
     const platformMcpServer = await this.resolvePlatformManagementMcpServer(sessionId)
     const webSearchMcpServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
     const presentFilesMcpServer = resolvePresentFilesMcpServer(workspaceRootPath)
+    const quickRepliesMcpServer = resolveQuickRepliesMcpServer(workspaceRootPath)
     // 调试模式（per-session 能力开关）：开启时挂载 spark_debug + 注入状态机 prompt。
     const debugModeEnabled = getDebugModeFromMetadata(session.metadata_json)
     const debugMcpServer = debugModeEnabled
@@ -2599,6 +2603,7 @@ export class SessionService {
       platformMcpServer != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
       webSearchMcpServer != null ? WEB_SEARCH_SYSTEM_PROMPT : undefined,
       presentFilesMcpServer != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
+      quickRepliesMcpServer != null ? QUICK_REPLIES_SYSTEM_PROMPT : undefined,
       browserAutomationMcpServer != null ? BROWSER_AUTOMATION_SYSTEM_PROMPT : undefined,
       computerUseMcp?.systemPrompt,
       debugMcpServer != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
@@ -2848,6 +2853,7 @@ export class SessionService {
         ...(platformMcpServer != null ? { platformManagementMcpServer: platformMcpServer } : {}),
         ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
         ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
+        ...(quickRepliesMcpServer != null ? { quickRepliesMcpServer } : {}),
         ...(browserAutomationMcpServer != null ? { browserAutomationMcpServer } : {}),
         ...(computerUseMcp != null
           ? {
@@ -2988,6 +2994,7 @@ export class SessionService {
       ...(platformMcpServer != null ? { platformManagementMcpServer: platformMcpServer } : {}),
       ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
       ...(presentFilesMcpServer != null ? { presentFilesMcpServer } : {}),
+      ...(quickRepliesMcpServer != null ? { quickRepliesMcpServer } : {}),
       ...(browserAutomationMcpServer != null ? { browserAutomationMcpServer } : {}),
       ...(computerUseMcp != null
         ? {
@@ -3218,6 +3225,9 @@ export class SessionService {
     }
     if (config.presentFilesMcpServer != null) {
       mcpServers.spark_files = config.presentFilesMcpServer
+    }
+    if (config.quickRepliesMcpServer != null) {
+      mcpServers.spark_ui = config.quickRepliesMcpServer
     }
 
     // Visible in-app browser MCP server (spark_browser) — desktop main process bridge.
@@ -3518,6 +3528,9 @@ export class SessionService {
     if (config.presentFilesMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PRESENT_FILES_TOOL_NAMES)
     }
+    if (config.quickRepliesMcpServer != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, QUICK_REPLIES_TOOL_NAMES)
+    }
     if (config.browserAutomationMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, BROWSER_TOOL_NAMES)
     }
@@ -3734,6 +3747,9 @@ export class SessionService {
     }
     if (config.presentFilesMcpServer != null) {
       mcpServers.spark_files = config.presentFilesMcpServer
+    }
+    if (config.quickRepliesMcpServer != null) {
+      mcpServers.spark_ui = config.quickRepliesMcpServer
     }
     if (config.browserAutomationMcpServer != null) {
       mcpServers.spark_browser = config.browserAutomationMcpServer

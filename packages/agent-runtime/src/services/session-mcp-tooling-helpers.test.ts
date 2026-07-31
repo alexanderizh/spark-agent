@@ -10,6 +10,7 @@ import {
   PRESENT_FILES_SYSTEM_PROMPT,
   resolveMediaGenerationMcpServerPath,
   resolveRuntimeToolPath,
+  QUICK_REPLIES_SYSTEM_PROMPT,
   WEB_SEARCH_SYSTEM_PROMPT,
 } from './session-mcp-tooling-helpers.js'
 
@@ -117,6 +118,17 @@ describe('WEB_SEARCH_SYSTEM_PROMPT', () => {
     expect(WEB_SEARCH_SYSTEM_PROMPT).toContain('Fetch the underlying page')
     expect(WEB_SEARCH_SYSTEM_PROMPT).toContain('reconcile material conflicts')
     expect(WEB_SEARCH_SYSTEM_PROMPT).toContain('absence of a search result')
+  })
+})
+
+describe('QUICK_REPLIES_SYSTEM_PROMPT', () => {
+  it('keeps the tool optional, short, capped, and mutually exclusive with question tools', () => {
+    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('You decide whether the tool is useful')
+    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('1-4')
+    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('at most 40 characters')
+    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('mutually exclusive')
+    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('AskUserQuestion')
+    expect(QUICK_REPLIES_SYSTEM_PROMPT).toContain('request_user_input')
   })
 })
 
