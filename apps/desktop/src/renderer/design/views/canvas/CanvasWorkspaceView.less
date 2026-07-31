@@ -6494,6 +6494,13 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   font-size: 12px;
 }
 
+/* lobehub Button 把 label 文字包在内层 > span:not(.ant-btn-icon)，
+   仅 .ant-btn 的 justify-content 不够——lobehub 给该 span 默认 text-align: center，
+   视觉上仍像居中。强制贴左以与图标对齐。 */
+.canvas-floating-menu .ant-btn > span:not(.ant-btn-icon) {
+  text-align: left;
+}
+
 .canvas-floating-menu .ant-btn:hover {
   background: color-mix(in srgb, var(--text) 7%, transparent);
   color: var(--text-strong);
