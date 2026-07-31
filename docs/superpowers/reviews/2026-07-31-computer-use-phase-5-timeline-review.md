@@ -44,9 +44,9 @@
 
 ### 第三遍：并行改动与交付边界
 
-- Renderer 共享文件存在其他功能改动；本阶段只对 `ChatView.tsx` 增加一个 import 和一个组件入口，提交前必须以 index patch 精确暂存这两个 hunk。
-- `packages/protocol/src/ipc/index.ts` 同样存在未提交的 unread-badge 改动；Computer Use 的 import/stream hunk必须单独暂存。
-- 其他 Sidebar、Canvas、Unread Badge 等改动不属于本阶段，不得进入提交。
+- Renderer 共享文件中的 Computer Use 变更只包含独立组件和 `ChatView` 接入口，未覆盖其他 Agent 的逻辑。
+- 验证期间外部流程把本阶段与 Unread Badge、Sidebar 等并行改动共同提交为 `a97adb8cf`。代码内容通过回归，但该 commit 不是 Phase 5 独立回滚单元。
+- 未经用户明确授权不重写共享 master 历史；若需要只回滚 Timeline，应从 `a97adb8cf` 按本审查“实现范围”制作反向 path patch，不能直接 revert 整个 commit。
 
 ## 验证证据
 
@@ -67,4 +67,4 @@
 
 ## 回滚
 
-迁移为纯新增表；Timeline 注入为旁路。回滚代码后旧表可保留不读取，也可在后续兼容迁移中清理，不应直接破坏性删除用户数据。
+迁移为纯新增表；Timeline 注入为旁路。回滚代码后旧表可保留不读取，也可在后续兼容迁移中清理，不应直接破坏性删除用户数据。由于外部流程生成了混合 commit `a97adb8cf`，不得直接 revert 该 commit 以免撤销其他功能。
