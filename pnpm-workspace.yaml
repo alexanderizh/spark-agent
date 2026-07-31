@@ -49,7 +49,9 @@ allowBuilds:
   keytar: true
   lzma-native: true
   node-pty: true
+  onnxruntime-node: true
   protobufjs: true
+  sharp: true
 minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk'
   - '@anthropic-ai/claude-agent-sdk-darwin-arm64'
