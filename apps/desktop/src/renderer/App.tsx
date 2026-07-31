@@ -27,6 +27,7 @@ import type {
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
 import { isModalOverlayVisible } from './design/hooks/useAppDialogKeyboard'
 import { useAppearanceEffects } from './design/hooks/useAppearance'
+import { applyAppControlCommand } from './design/app-control-client'
 import { useResolvedTheme } from './design/hooks/useResolvedTheme'
 
 import { shouldShowOnboardingAsync } from './design/views/onboarding-state'
@@ -1022,6 +1023,39 @@ function Shell() {
   const sessionCtx = useSessionSidebar()
   const activeSessionRef = useRef(sessionCtx.activeSessionId)
   const viewRef = useRef(t.view)
+  const appControlRevisionRef = useRef(0)
+  useEffect(() => {
+    const unsubscribe = window.spark?.on('stream:computer-use:app-command', (request) => {
+      void (async () => {
+        const status = await applyAppControlCommand(request.command, {
+          hasDialogOpen,
+          setTheme: (theme) => setTweak('theme', theme),
+          setView: (view) => setTweak('view', view),
+          currentView: () => viewRef.current,
+          waitForRender: nextAnimationFrame,
+        })
+        if (status === 'applied') appControlRevisionRef.current += 1
+        if (status === 'applied') {
+          toast.info(
+            request.command.name === 'set_theme'
+              ? 'Agent 已通过应用内控制切换主题'
+              : 'Agent 已通过应用内控制切换页面',
+            { duration: 3000 },
+          )
+        }
+        await window.spark.invoke('computer-use:resolve-app-command', {
+          commandId: request.commandId,
+          computerSessionId: request.computerSessionId,
+          actionId: request.actionId,
+          status,
+          uiRevision: appControlRevisionRef.current,
+        })
+      })().catch(() => {
+        // The main-process timeout remains fail-closed if the acknowledgement cannot be sent.
+      })
+    })
+    return unsubscribe
+  }, [hasDialogOpen, setTweak, toast])
   const chatModeRef = useRef(t.chatMode)
 
   useEffect(() => {
@@ -1815,6 +1849,10 @@ export function App() {
       </LobeThemeBridge>
     </AppProvider>
   )
+}
+
+function nextAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => window.requestAnimationFrame(() => resolve()))
 }
 
 /**

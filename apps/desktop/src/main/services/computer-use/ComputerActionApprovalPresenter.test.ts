@@ -9,6 +9,7 @@ const REQUEST = {
   session: {
     id: 'computer-1',
     sessionId: 'session-1',
+    turnId: 'turn-1',
   },
   envelope: {
     computerSessionId: 'computer-1',

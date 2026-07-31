@@ -68,6 +68,20 @@ describe('ComputerPolicyService', () => {
       decision: 'allow',
       reasonCode: 'within_task_scope',
     })
+
+    expect(
+      policy.evaluate(
+        envelope({
+          action: { type: 'app_command', command: { name: 'navigate', view: 'settings' } },
+          policyContext: {
+            effect: 'reversible_local',
+            target: { kind: 'window', id: 'window-1' },
+            dataClasses: [],
+          },
+        }),
+        taskContract,
+      ),
+    ).toMatchObject({ riskLevel: 'L1', decision: 'allow' })
   })
 
   it('requires exact approval for external writes and high-impact actions', () => {

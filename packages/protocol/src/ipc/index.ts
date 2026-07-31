@@ -66,6 +66,7 @@ import type {
   ComputerUseIpcChannelMap,
 } from '../computer-use/ipc.js'
 import type { ComputerUseEvent } from '../computer-use/events.js'
+import type { AppControlCommandRequest } from '../computer-use/action.js'
 import type {
   FontAssetsInstallRequest,
   FontAssetsInstallResponse,
@@ -5930,6 +5931,8 @@ export interface IpcStreamChannelMap {
   'stream:session:agent-event': AgentEvent
   /** Computer Use 操作时间线（回放与实时事件按 computerSessionId + seq 合并） */
   'stream:computer-use:activity-event': ComputerUseEvent
+  /** Authenticated main-process request for a whitelisted SparkWork UI command. */
+  'stream:computer-use:app-command': AppControlCommandRequest
   /** Session 后端排队状态变化 */
   'stream:session:queue-changed': SessionGetQueueResponse
   /** Session 标题被异步重命名（首轮完成后 LLM 总结）*/

@@ -14,6 +14,7 @@ Phase 4 的 execution lane 与 macOS 输入冲突/用户接管切片已经落地
 - 用户点击绑定窗口时会话进入接管态；观察后、首次动作前发生的点击通过最近点击记录补偿绑定竞态。
 - `handoff_required` 从 Swift wire 映射到 Broker error，Operator 转入 `handoff_required/user_takeover`，不把主动接管误记为任务失败。
 - 主进程 Tray 实时投影实际 Computer Session 状态，只显示绑定应用标识而不泄露 objective/input，并通过 Broker 提供暂停、立即接管、停止控制。
+- AppControlBridge 仅支持 `set_theme/navigate` 两类协议枚举命令；命令经过 Broker L1/intent 升档，精确绑定 session/action/command，只有受信主 Renderer 可回执，成功后重新观察并显示操作 toast。
 
 ## 三遍审查
 
@@ -37,6 +38,8 @@ Phase 4 的 execution lane 与 macOS 输入冲突/用户接管切片已经落地
 - 聚焦 Vitest：3 文件 46 项通过，新增 Native Host 接管后 Operator handoff 且不 fail 的断言。
 - `tsc -p apps/desktop/tsconfig.node.json --noEmit`：exit 0。
 - Tray/Session 聚焦 Vitest：2 文件 11 项通过；状态订阅 listener 失败不会反向破坏会话状态转换。
+- AppControlBridge/协议/IPC/策略/Renderer 聚焦 Vitest：11 文件 79 项通过；任意 eval command、跨会话回执、非 SparkWork 目标、取消/无 Renderer 均 fail-closed。
+- Computer Use 全量回归共 43 文件 285 项：普通沙箱先通过 277 项，7 项回环 HTTP 因 `listen EPERM` 在允许监听 `127.0.0.1` 的环境复跑通过；审批审计夹具补齐缺失的 `turnId` 后通过。desktop node/renderer 双 tsconfig 均 exit 0。
 - click/type L1、T01 intent 升档、unknown→L2、unattended/sensitive handoff、approval ticket、digest/timeout fail-closed 等治理路径未修改。
 
 ## 剩余验收

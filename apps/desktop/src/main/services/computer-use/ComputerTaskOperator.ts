@@ -676,6 +676,7 @@ function policyContextFor(
     )
   const reversibleLocal =
     localWrite ||
+    action.type === 'app_command' ||
     action.type === 'focus_window' ||
     action.type === 'select_text' ||
     action.type === 'click' ||
