@@ -1322,18 +1322,32 @@ export interface AppGetStorageStatsResponse {
   cacheBytes: number
   projectsBytes: number
   canvasProjectsBytes: number
+  /** 本地文件日志目录（app.getPath('logs')）大小 */
+  logsPath: string
+  logsBytes: number
   totalBytes: number
 }
 
 export interface AppClearCacheRequest {
   /** 是否同时清空临时项目目录下不再被任何 workspace 引用的孤儿目录。默认 false */
   pruneOrphanProjects?: boolean
+  /** 是否清空本地文件日志（main.log 及轮转文件）。默认 false */
+  clearLogs?: boolean
+  /**
+   * 是否清除已累积的 turn_prompt_snapshot 大字段（systemPromptSections /
+   * userMessage / runtimeLoadStatus），仅保留续会话所需元数据。默认 false。
+   */
+  clearRuntimeSnapshots?: boolean
 }
 
 export interface AppClearCacheResponse {
   clearedBytes: number
   clearedCache: boolean
   clearedOrphanProjects: boolean
+  /** 是否已清空本地文件日志 */
+  clearedLogs: boolean
+  /** 本次清除的 turn_prompt_snapshot 事件行数（仅大字段被清空，行本身保留） */
+  prunedSnapshotRows: number
 }
 
 export interface AppOpenDataDirRequest {}

@@ -213,6 +213,8 @@ type GeneralSettings = {
 
 type TelemetrySettings = {
   logLevel: 'debug' | 'info' | 'warn' | 'error'
+  /** 运行时日志开关：是否记录每轮白盒提示词快照。默认关闭以节省存储。 */
+  runtimeLogEnabled: boolean
 }
 
 type UpdatesSettings = {
@@ -261,6 +263,7 @@ const DEFAULT_GENERAL: GeneralSettings = {
 
 const DEFAULT_TELEMETRY: TelemetrySettings = {
   logLevel: 'warn',
+  runtimeLogEnabled: false,
 }
 
 const DEFAULT_UPDATES: UpdatesSettings = {
@@ -4116,6 +4119,19 @@ function TelemetrySection() {
         />
       </div>
 
+      {/* ── 运行时日志开关 ── */}
+      <div className="form-grid">
+        <label>
+          记录运行时日志
+          <span className="sub">每轮保存白盒提示词快照（侧栏「运行时日志」面板），关闭可显著节省存储</span>
+        </label>
+        <Switch
+          size="middle"
+          checked={s.runtimeLogEnabled}
+          onChange={(v) => set({ runtimeLogEnabled: v })}
+        />
+      </div>
+
       <SettingsLogViewer />
     </div>
   )
@@ -4408,12 +4424,16 @@ function StorageSection() {
     cacheBytes: number
     projectsBytes: number
     canvasProjectsBytes: number
+    logsPath: string
+    logsBytes: number
     totalBytes: number
   } | null>(null)
   const [canvasProjectsRoot, setCanvasProjectsRoot] = useState('')
   const [statsLoading, setStatsLoading] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [canvasMaintaining, setCanvasMaintaining] = useState(false)
+  const [clearingLogs, setClearingLogs] = useState(false)
+  const [clearingSnapshots, setClearingSnapshots] = useState(false)
   const { toast } = useToast()
   const { requestConfirm } = useApp()
   const { t: tr } = useI18n()
@@ -4487,6 +4507,55 @@ function StorageSection() {
       toast.error(err instanceof Error ? err.message : '清空缓存失败')
     } finally {
       setClearing(false)
+    }
+  }
+
+  const handleClearLogs = async () => {
+    const confirmed = await requestConfirm({
+      title: '清空文件日志？',
+      description: '将清空 main.log 及轮转文件内容，不影响会话与业务数据。',
+      confirmText: '清空',
+      danger: true,
+    })
+    if (!confirmed) return
+    setClearingLogs(true)
+    try {
+      const res = await clearCache({ clearLogs: true })
+      if (res.clearedLogs) {
+        toast.success('文件日志已清空')
+      } else {
+        toast.error('清空文件日志失败')
+      }
+      await refreshStats()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '清空文件日志失败')
+    } finally {
+      setClearingLogs(false)
+    }
+  }
+
+  const handleClearRuntimeSnapshots = async () => {
+    const confirmed = await requestConfirm({
+      title: '清除历史运行时快照？',
+      description:
+        '将清除已累积的每轮提示词快照大文本（保留会话续接所需元数据），并执行 VACUUM 压缩数据库。大库可能阻塞数秒。',
+      confirmText: '清除',
+      danger: true,
+    })
+    if (!confirmed) return
+    setClearingSnapshots(true)
+    try {
+      const res = await clearCache({ clearRuntimeSnapshots: true })
+      if (res.prunedSnapshotRows > 0) {
+        toast.success(`已清除 ${res.prunedSnapshotRows} 条历史运行时快照`)
+      } else {
+        toast.info('没有可清除的历史快照')
+      }
+      await refreshStats()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '清除运行时快照失败')
+    } finally {
+      setClearingSnapshots(false)
     }
   }
 
@@ -4702,6 +4771,11 @@ function StorageSection() {
               used={formatBytes(stats.cacheBytes)}
               pct={percent(stats.cacheBytes, stats.totalBytes)}
             />
+            <UsageRow
+              label="文件日志 (logs/)"
+              used={formatBytes(stats.logsBytes)}
+              pct={percent(stats.logsBytes, stats.totalBytes)}
+            />
             <div className="usage-total-hint">
               合计：{formatBytes(stats.totalBytes)} · 数据库位置：{stats.databasePath}
             </div>
@@ -4762,6 +4836,40 @@ function StorageSection() {
               disabled={clearing}
             >
               清空
+            </Button>
+          }
+        />
+        <SettingsRow
+          title="清空文件日志"
+          desc={`清空 main.log 及轮转文件内容${
+            stats ? `（当前占用 ${formatBytes(stats.logsBytes)}）` : ''
+          }。不影响会话与业务数据。`}
+          right={
+            <Button
+              size="middle"
+              type="text"
+              danger
+              loading={clearingLogs}
+              onClick={() => void handleClearLogs()}
+              disabled={clearingLogs}
+            >
+              清空
+            </Button>
+          }
+        />
+        <SettingsRow
+          title="清除历史运行时快照"
+          desc="清除已累积的每轮提示词快照大文本（保留会话续接所需元数据），并 VACUUM 压缩数据库。关闭运行时日志后建议执行一次以回收空间。"
+          right={
+            <Button
+              size="middle"
+              type="text"
+              danger
+              loading={clearingSnapshots}
+              onClick={() => void handleClearRuntimeSnapshots()}
+              disabled={clearingSnapshots}
+            >
+              清除
             </Button>
           }
         />

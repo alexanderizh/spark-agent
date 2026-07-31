@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import type { ReactNode } from 'react'
 import { CheckCircle, Save } from 'lucide-react'
 import { Popover } from '@lobehub/ui'
+import { Switch } from 'antd'
 import { Icons } from '../../Icons'
 import { SkillsPickerModal } from '../../components/SkillsPickerModal'
 import { TeamInspectorSection } from '../../components/TeamInspectorSection'
@@ -1164,23 +1165,97 @@ function truncateText(text: string, maxLen: number): string {
   return text.slice(0, maxLen) + '…'
 }
 
+const TELEMETRY_LS_KEY = 'spark-settings-telemetry'
+
+/**
+ * 运行时日志开关：与「设置 → 本地日志」共用 telemetry.data.runtimeLogEnabled。
+ * 双层持久化（localStorage + IPC）保持两处入口同步；默认关闭以节省存储。
+ */
+function useRuntimeLogEnabled(): {
+  enabled: boolean
+  toggle: (v: boolean) => Promise<void>
+} {
+  const [enabled, setEnabled] = useState<boolean>(() => {
+    try {
+      const raw = window.localStorage.getItem(TELEMETRY_LS_KEY)
+      if (!raw) return false
+      return (JSON.parse(raw) as { runtimeLogEnabled?: unknown }).runtimeLogEnabled === true
+    } catch {
+      return false
+    }
+  })
+  const { invoke: getSetting } = useIpcInvoke('settings:get')
+  const { invoke: setSetting } = useIpcInvoke('settings:set')
+  const { toast } = useToast()
+
+  // mount 时以 IPC 为权威源校正（localStorage 可能滞后于其它入口的写入）
+  useEffect(() => {
+    getSetting({ category: 'telemetry', key: 'data' })
+      .then((res) => {
+        const val = res.value as { runtimeLogEnabled?: unknown } | null
+        setEnabled(val?.runtimeLogEnabled === true)
+      })
+      .catch(() => undefined)
+  }, [getSetting])
+
+  const toggle = useCallback(
+    async (v: boolean) => {
+      const prev = enabled
+      setEnabled(v)
+      try {
+        const res = await getSetting({ category: 'telemetry', key: 'data' })
+        const current = (res.value ?? {}) as Record<string, unknown>
+        const next = { ...current, runtimeLogEnabled: v }
+        window.localStorage.setItem(TELEMETRY_LS_KEY, JSON.stringify(next))
+        await setSetting({ category: 'telemetry', key: 'data', value: next })
+      } catch (err) {
+        setEnabled(prev)
+        toast.error(err instanceof Error ? err.message : '切换运行时日志失败')
+      }
+    },
+    [enabled, getSetting, setSetting, toast],
+  )
+
+  return { enabled, toggle }
+}
+
 /** PromptInspectorSection — 白盒提示词、运行时日志检查器 */
 function PromptInspectorSection({ snapshots }: { snapshots: TurnPromptSnapshotEvent[] }) {
+  const { enabled: runtimeLogEnabled, toggle: setRuntimeLogEnabled } = useRuntimeLogEnabled()
   return (
     <div className="inspector-section">
       <h4>
-        <Icons.Eye size={11} /> 运行时日志
+        <span>运行时日志</span>
+        <Switch
+          size="small"
+          checked={runtimeLogEnabled}
+          onChange={(v) => void setRuntimeLogEnabled(v)}
+          style={{ marginLeft: 'auto' }}
+        />
         <span className="inspector-count">{snapshots.length} 轮</span>
       </h4>
-      <div className="prompt-snapshot-list">
-        {[...snapshots].reverse().map((snapshot, idx) => (
-          <TurnPromptRow
-            key={snapshot.turnId}
-            snapshot={snapshot}
-            turnNumber={snapshots.length - idx}
-          />
-        ))}
-      </div>
+      {runtimeLogEnabled ? (
+        <div className="prompt-snapshot-list">
+          {[...snapshots].reverse().map((snapshot, idx) => (
+            <TurnPromptRow
+              key={snapshot.turnId}
+              snapshot={snapshot}
+              turnNumber={snapshots.length - idx}
+            />
+          ))}
+        </div>
+      ) : (
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--text-muted)',
+            padding: '8px 4px',
+            lineHeight: 1.5,
+          }}
+        >
+          运行时日志已关闭，仅保留会话续接所需元数据。开启后才会记录每轮提示词快照。
+        </div>
+      )}
     </div>
   )
 }

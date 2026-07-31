@@ -5570,6 +5570,16 @@ export function registerAllIpcHandlers(): void {
     const projectsBytes = await dirSize(projectsDir)
     const canvasProjectsBytes = await dirSize(canvasProjectsRoot)
 
+    // 文件日志目录（main.log 及轮转文件），独立统计便于单独清理
+    const logsPath = (() => {
+      try {
+        return app.getPath('logs')
+      } catch {
+        return path.join(userDataPath, 'logs')
+      }
+    })()
+    const logsBytes = await dirSize(logsPath)
+
     return {
       userDataPath,
       projectsDir,
@@ -5579,7 +5589,9 @@ export function registerAllIpcHandlers(): void {
       cacheBytes,
       projectsBytes,
       canvasProjectsBytes,
-      totalBytes: databaseBytes + cacheBytes + projectsBytes + canvasProjectsBytes,
+      logsPath,
+      logsBytes,
+      totalBytes: databaseBytes + cacheBytes + projectsBytes + canvasProjectsBytes + logsBytes,
     }
   })
 
@@ -5668,7 +5680,39 @@ export function registerAllIpcHandlers(): void {
       }
     }
 
-    return { clearedBytes, clearedCache: true, clearedOrphanProjects }
+    // 3) 可选：清空本地文件日志（main.log 及轮转文件）
+    let clearedLogs = false
+    if (req.clearLogs === true) {
+      try {
+        clearedLogs = clearLogFile()
+      } catch (err) {
+        log.warn(`clearLogFile failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    // 4) 可选：清除历史 turn_prompt_snapshot 大字段（保留续会话元数据）并 VACUUM 回收空间
+    let prunedSnapshotRows = 0
+    if (req.clearRuntimeSnapshots === true) {
+      try {
+        const eventRepo = new EventRepository(getDatabase())
+        prunedSnapshotRows = eventRepo.pruneTurnPromptSnapshotPayloads()
+        if (prunedSnapshotRows > 0) {
+          eventRepo.vacuum()
+        }
+      } catch (err) {
+        log.warn(
+          `prune runtime snapshots failed: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    }
+
+    return {
+      clearedBytes,
+      clearedCache: true,
+      clearedOrphanProjects,
+      clearedLogs,
+      prunedSnapshotRows,
+    }
   })
 
   typedIpcHandle('app:open-data-dir', async () => {
