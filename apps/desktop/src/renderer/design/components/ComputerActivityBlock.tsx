@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ComputerUseEvent, SessionId } from '@spark/protocol'
+import { useI18n } from '../i18n'
 import {
   groupComputerActivityEvents,
   isTerminalComputerActivityEvent,
@@ -10,13 +11,16 @@ import './ComputerActivityBlock.less'
 const PAGE_SIZE = 500
 
 export function ComputerActivityBlock({ sessionId }: { sessionId: SessionId }) {
+  return <ComputerActivitySession key={sessionId} sessionId={sessionId} />
+}
+
+function ComputerActivitySession({ sessionId }: { sessionId: SessionId }) {
   const [events, setEvents] = useState<ComputerUseEvent[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
+  const { lang, t } = useI18n()
 
   useEffect(() => {
     let canceled = false
-    setEvents([])
-    setLoadError(null)
 
     const unsubscribe = window.spark.on('stream:computer-use:activity-event', (event) => {
       if (event.sessionId !== sessionId) return
@@ -29,26 +33,28 @@ export function ComputerActivityBlock({ sessionId }: { sessionId: SessionId }) {
       })
       .catch((error: unknown) => {
         if (!canceled)
-          setLoadError(error instanceof Error ? error.message : 'Computer Use 日志加载失败')
+          setLoadError(error instanceof Error ? error.message : t('computerActivity.loadFailed'))
       })
 
     return () => {
       canceled = true
       unsubscribe()
     }
-  }, [sessionId])
+  }, [sessionId, t])
 
   const timelines = useMemo(() => groupComputerActivityEvents(events), [events])
   if (timelines.length === 0 && loadError == null) return null
 
   return (
-    <section className="computer-activity-list" aria-label="Computer Use 操作日志">
+    <section className="computer-activity-list" aria-label={t('computerActivity.ariaLabel')}>
       {loadError != null && <div className="computer-activity-load-error">{loadError}</div>}
       {timelines.map((timeline) => (
         <ComputerActivityCard
           key={timeline.computerSessionId}
           computerSessionId={timeline.computerSessionId}
           events={timeline.events}
+          lang={lang}
+          t={t}
         />
       ))}
     </section>
@@ -82,29 +88,33 @@ async function loadTimeline(computerSessionId: string): Promise<ComputerUseEvent
 function ComputerActivityCard({
   computerSessionId,
   events,
+  lang,
+  t,
 }: {
   computerSessionId: string
   events: ComputerUseEvent[]
+  lang: 'zh' | 'en'
+  t: Translate
 }) {
   const latest = events.at(-1)
   const terminal = isTerminalComputerActivityEvent(latest)
-  const status = activityStatus(latest)
+  const status = activityStatus(latest, t)
   const visibleEvents = events.filter((event) => event.type !== 'computer_observation_created')
-  const elapsed = elapsedLabel(events)
+  const elapsed = elapsedLabel(events, t)
 
   return (
     <details className={`computer-activity-card is-${status.kind}`} open={!terminal}>
       <summary>
         <span className="computer-activity-status-dot" aria-hidden="true" />
-        <span className="computer-activity-title">电脑操作</span>
+        <span className="computer-activity-title">{t('computerActivity.title')}</span>
         <span className="computer-activity-status">{status.label}</span>
         {elapsed != null && <span className="computer-activity-elapsed">{elapsed}</span>}
       </summary>
       <ol className="computer-activity-events">
         {visibleEvents.map((event) => (
           <li key={`${computerSessionId}:${event.seq}`} className={eventClassName(event)}>
-            <span>{eventLabel(event)}</span>
-            <time>{formatTime(event.timestamp)}</time>
+            <span>{eventLabel(event, t)}</span>
+            <time>{formatTime(event.timestamp, lang)}</time>
           </li>
         ))}
       </ol>
@@ -112,13 +122,23 @@ function ComputerActivityCard({
   )
 }
 
-function activityStatus(event: ComputerUseEvent | undefined): { kind: string; label: string } {
-  if (event?.type === 'computer_session_completed') return { kind: 'success', label: '已完成' }
-  if (event?.type === 'computer_session_failed') return { kind: 'error', label: '失败' }
-  if (event?.type === 'computer_session_canceled') return { kind: 'muted', label: '已停止' }
-  if (event?.type === 'computer_handoff_required') return { kind: 'warning', label: '需要接管' }
-  if (event?.type === 'computer_approval_requested') return { kind: 'warning', label: '等待确认' }
-  return { kind: 'running', label: '进行中' }
+type Translate = ReturnType<typeof useI18n>['t']
+
+function activityStatus(
+  event: ComputerUseEvent | undefined,
+  t: Translate,
+): { kind: string; label: string } {
+  if (event?.type === 'computer_session_completed')
+    return { kind: 'success', label: t('computerActivity.status.completed') }
+  if (event?.type === 'computer_session_failed')
+    return { kind: 'error', label: t('computerActivity.status.failed') }
+  if (event?.type === 'computer_session_canceled')
+    return { kind: 'muted', label: t('computerActivity.status.stopped') }
+  if (event?.type === 'computer_handoff_required')
+    return { kind: 'warning', label: t('computerActivity.status.handoff') }
+  if (event?.type === 'computer_approval_requested')
+    return { kind: 'warning', label: t('computerActivity.status.approval') }
+  return { kind: 'running', label: t('computerActivity.status.running') }
 }
 
 function eventClassName(event: ComputerUseEvent): string {
@@ -129,71 +149,81 @@ function eventClassName(event: ComputerUseEvent): string {
       : ''
 }
 
-function eventLabel(event: ComputerUseEvent): string {
+function eventLabel(event: ComputerUseEvent, t: Translate): string {
   switch (event.type) {
     case 'computer_session_started':
-      return `已连接 ${environmentLabel(event.environment)}`
+      return t('computerActivity.event.sessionStarted', {
+        environment: environmentLabel(event.environment, t),
+      })
     case 'computer_action_requested':
-      return `准备执行操作（${event.riskLevel}）`
+      return t('computerActivity.event.actionRequested', { riskLevel: event.riskLevel })
     case 'computer_action_blocked':
-      return `操作被阻止：${repairLabel(event.errorCode)}`
+      return t('computerActivity.event.actionBlocked', { reason: repairLabel(event.errorCode, t) })
     case 'computer_action_executed':
-      return '操作已执行并重新观察界面'
+      return t('computerActivity.event.actionExecuted')
     case 'computer_action_failed':
-      return `操作失败：${repairLabel(event.errorCode)}`
+      return t('computerActivity.event.actionFailed', { reason: repairLabel(event.errorCode, t) })
     case 'computer_approval_requested':
-      return `等待用户确认（${event.riskLevel}）`
+      return t('computerActivity.event.approvalRequested', { riskLevel: event.riskLevel })
     case 'computer_approval_resolved':
-      return event.decision === 'approved' ? '用户已允许操作' : '用户未允许操作'
+      return t(
+        event.decision === 'approved'
+          ? 'computerActivity.event.approvalApproved'
+          : 'computerActivity.event.approvalDenied',
+      )
     case 'computer_verification_started':
-      return '正在校验操作结果'
+      return t('computerActivity.event.verificationStarted')
     case 'computer_verification_completed':
-      return `结果校验：${event.status === 'passed' ? '通过' : event.status === 'failed' ? '未通过' : '无法确认'}`
+      return t('computerActivity.event.verificationCompleted', {
+        status: t(`computerActivity.verification.${event.status}`),
+      })
     case 'computer_handoff_required':
-      return `需要用户接管：${repairLabel(event.errorCode)}`
+      return t('computerActivity.event.handoffRequired', {
+        reason: repairLabel(event.errorCode, t),
+      })
     case 'computer_session_completed':
-      return '电脑操作已完成'
+      return t('computerActivity.event.sessionCompleted')
     case 'computer_session_failed':
-      return `任务失败：${repairLabel(event.errorCode)}`
+      return t('computerActivity.event.sessionFailed', { reason: repairLabel(event.errorCode, t) })
     case 'computer_session_canceled':
-      return '电脑操作已停止'
+      return t('computerActivity.event.sessionCanceled')
     case 'computer_observation_created':
-      return '已获取最新界面'
+      return t('computerActivity.event.observationCreated')
   }
 }
 
-function repairLabel(errorCode: string): string {
+function repairLabel(errorCode: string, t: Translate): string {
   const labels: Record<string, string> = {
-    permission_denied: '请在系统设置中开启屏幕录制与辅助功能权限',
-    native_host_not_found: '请修复或重新安装 Native Host',
-    native_host_incompatible: '请更新 SparkWork 与 Native Host',
-    target_lost: '目标窗口已关闭或切换，请重新选择',
-    stale_frame: '界面已变化，正在重新定位',
-    approval_required: '需要确认后才能继续',
-    session_canceled: '会话已取消',
+    permission_denied: t('computerActivity.repair.permissionDenied'),
+    native_host_not_found: t('computerActivity.repair.nativeHostNotFound'),
+    native_host_incompatible: t('computerActivity.repair.nativeHostIncompatible'),
+    target_lost: t('computerActivity.repair.targetLost'),
+    stale_frame: t('computerActivity.repair.staleFrame'),
+    approval_required: t('computerActivity.repair.approvalRequired'),
+    session_canceled: t('computerActivity.repair.sessionCanceled'),
   }
   return labels[errorCode] ?? errorCode
 }
 
-function environmentLabel(environment: string): string {
-  if (environment === 'my_desktop') return '我的桌面'
-  if (environment === 'safe_desktop') return '隔离桌面'
-  return '安全浏览器'
+function environmentLabel(environment: string, t: Translate): string {
+  if (environment === 'my_desktop') return t('computerActivity.environment.myDesktop')
+  if (environment === 'safe_desktop') return t('computerActivity.environment.safeDesktop')
+  return t('computerActivity.environment.safeBrowser')
 }
 
-function elapsedLabel(events: ComputerUseEvent[]): string | null {
+function elapsedLabel(events: ComputerUseEvent[], t: Translate): string | null {
   const first = events[0]
   const last = events.at(-1)
   if (first == null || last == null) return null
   const elapsed = Date.parse(last.timestamp) - Date.parse(first.timestamp)
   if (!Number.isFinite(elapsed) || elapsed < 1_000) return null
   return elapsed < 60_000
-    ? `${Math.round(elapsed / 1_000)} 秒`
-    : `${Math.round(elapsed / 60_000)} 分钟`
+    ? t('computerActivity.elapsed.seconds', { count: Math.round(elapsed / 1_000) })
+    : t('computerActivity.elapsed.minutes', { count: Math.round(elapsed / 60_000) })
 }
 
-function formatTime(timestamp: string): string {
-  return new Intl.DateTimeFormat('zh-CN', {
+function formatTime(timestamp: string, lang: 'zh' | 'en'): string {
+  return new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en-US', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
