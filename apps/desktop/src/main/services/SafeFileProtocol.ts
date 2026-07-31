@@ -14,17 +14,18 @@
  * - 协议 URL 必须是 base64 编码的绝对路径，避免编码歧义。
  * - 路径必须落在白名单目录（userData、临时目录、已登记 workspace / canvas 项目根目录）下，
  *   防止越权读用户项目之外的 home/系统盘文件。
- * - 协议在 `registerSafeFileSchemes()` 阶段被声明为 `standard/secure/supportFetchAPI`，
+ * - 协议在统一的 `registerPrivilegedProtocolSchemes()` 阶段被声明为
+ *   `standard/secure/supportFetchAPI`，
  *   与 `file://` 同等安全等级。
  *
  * 调用流程
  * ────────
- * 1. 应用启动时（`app.whenReady()` 之前）调用 `registerSafeFileSchemes()`
+ * 1. 应用启动时（`app.whenReady()` 之前）统一注册全部特权协议
  * 2. 启动后调用 `registerSafeFileProtocol()` 接管所有 `safe-file://` 请求
  * 3. 渲染进程拿到路径后，构造 `safe-file://<base64(path)>` 给 `<img src>` 使用
  */
 
-import { app, protocol } from 'electron'
+import { app, protocol, type CustomScheme } from 'electron'
 import { createLogger } from '@spark/shared'
 import { createReadStream, existsSync, realpathSync, statSync } from 'node:fs'
 import { resolve as resolvePath, isAbsolute, sep, extname } from 'node:path'
@@ -147,25 +148,18 @@ function getCanvasProjectRoots(): string[] {
   return roots
 }
 
-/**
- * 在 `app.whenReady()` 之前调用，告知 Electron 把 `safe-file` 视为
- * 与 `file://` 等价的特权协议（支持 fetch API、绕过 CSP/CORS）。
- */
-export function registerSafeFileSchemes(): void {
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: SAFE_FILE_SCHEME,
-      privileges: {
-        standard: true,
-        secure: true,
-        supportFetchAPI: true,
-        corsEnabled: true,
-        stream: true,
-        // 不需要 bypassCSP — 我们的 CSP 允许 safe-file: 资源
-        // 不需要 codeCache — 静态图片资源
-      },
-    },
-  ])
+/** Electron 启动前由应用级统一注册器一次性声明。 */
+export const SAFE_FILE_PRIVILEGED_SCHEME: CustomScheme = {
+  scheme: SAFE_FILE_SCHEME,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    corsEnabled: true,
+    stream: true,
+    // 不需要 bypassCSP — 我们的 CSP 允许 safe-file: 资源
+    // 不需要 codeCache — 静态图片资源
+  },
 }
 
 /**

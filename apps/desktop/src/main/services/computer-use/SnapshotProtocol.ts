@@ -1,4 +1,4 @@
-import { app, protocol } from 'electron'
+import { app, protocol, type CustomScheme } from 'electron'
 import { join } from 'node:path'
 import { ApplicationSnapshotRepository } from '@spark/storage'
 import { createLogger } from '@spark/shared'
@@ -30,19 +30,16 @@ export interface SnapshotProtocolDependencies {
   readPreview(record: SnapshotVaultBlobRecord): Uint8Array | Promise<Uint8Array>
 }
 
-export function registerSnapshotSchemes(): void {
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: SNAPSHOT_SCHEME,
-      privileges: {
-        standard: true,
-        secure: true,
-        corsEnabled: true,
-        supportFetchAPI: true,
-        stream: true,
-      },
-    },
-  ])
+/** Electron 启动前由应用级统一注册器一次性声明。 */
+export const SNAPSHOT_PRIVILEGED_SCHEME: CustomScheme = {
+  scheme: SNAPSHOT_SCHEME,
+  privileges: {
+    standard: true,
+    secure: true,
+    corsEnabled: true,
+    supportFetchAPI: true,
+    stream: true,
+  },
 }
 
 export function createSnapshotProtocolHandler(
