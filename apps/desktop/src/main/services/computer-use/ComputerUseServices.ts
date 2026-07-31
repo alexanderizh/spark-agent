@@ -60,6 +60,7 @@ export interface ComputerUseServices {
   readonly evidence?: NativeObservationEvidenceSink & {
     readLatestImage(computerSessionId: string, snapshotId: string): Promise<Buffer>
     clearSession(computerSessionId: string): void
+    flushPendingWritesOrThrow?(computerSessionId: string): Promise<void>
   }
   readonly snapshots?: Pick<
     NativeApplicationSnapshotCaptureService,
@@ -133,19 +134,6 @@ export function createComputerUseServices(
     appVersion: () => app.getVersion(),
     isPackaged: () => app.isPackaged,
   })
-  const broker = new ComputerControlBroker({
-    sessions,
-    policy,
-    approvals,
-    actions: new ComputerActionRepository(database),
-    observer: backend,
-    executor,
-    timeline,
-  })
-  const killSwitch = new ComputerKillSwitchService(
-    options.shortcutRegistrar ?? FAIL_CLOSED_SHORTCUT_REGISTRAR,
-    options.onKillSwitchError,
-  )
   const usableEvidence =
     evidence != null &&
     'readLatestImage' in evidence &&
@@ -154,6 +142,24 @@ export function createComputerUseServices(
     typeof evidence.clearSession === 'function'
       ? (evidence as NonNullable<ComputerUseServices['evidence']>)
       : null
+  const broker = new ComputerControlBroker({
+    sessions,
+    policy,
+    approvals,
+    actions: new ComputerActionRepository(database),
+    observer: backend,
+    executor,
+    timeline,
+    ...(usableEvidence?.flushPendingWritesOrThrow == null
+      ? {}
+      : {
+          flushHighRiskEvidence: usableEvidence.flushPendingWritesOrThrow.bind(usableEvidence),
+        }),
+  })
+  const killSwitch = new ComputerKillSwitchService(
+    options.shortcutRegistrar ?? FAIL_CLOSED_SHORTCUT_REGISTRAR,
+    options.onKillSwitchError,
+  )
   const snapshotCapture = options.snapshotCapture ?? createDefaultSnapshotCapture(database, backend)
   return {
     sessions,

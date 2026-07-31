@@ -35,6 +35,7 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
    * Failures are swallowed and logged so a storage fault can never fail the live action.
    */
   private readonly pendingWrites = new Map<string, Promise<void>>()
+  private readonly durableWriteFailures = new Map<string, unknown>()
 
   constructor(options: {
     repository: EvidenceRepository
@@ -100,6 +101,28 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
   }
 
   /**
+   * High-risk actions call this before execution so their current before-frame is durably
+   * available for audit. Low-risk actions never call it and retain the fire-and-forget path.
+   */
+  async flushPendingWritesOrThrow(computerSessionId: string): Promise<void> {
+    const pending = this.pendingWrites.get(computerSessionId)
+    if (pending != null) await pending
+    if (!this.durableWriteFailures.has(computerSessionId)) return
+    throw new ComputerUseBrokerError(
+      'environment_unavailable',
+      'High-risk computer action evidence could not be persisted',
+      undefined,
+      {
+        diagnostic: {
+          diagnosticCode: 'high_risk_evidence_persist_failed',
+          stage: 'persist',
+          repairAction: 'Check available disk space and retry the action',
+        },
+      },
+    )
+  }
+
+  /**
    * Queues the encrypted-vault + SQLite write on the per-session serial chain. Callers do
    * NOT await settlement (see {@link persist}); the chain only serializes writes within a
    * session so audit replay stays chronological and SQLite never sees concurrent writers.
@@ -120,7 +143,11 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
     const next = previous
       .catch(() => undefined)
       .then(() => this.writeDurableEvidence(input))
+      .then(() => {
+        this.durableWriteFailures.delete(input.computerSessionId)
+      })
       .catch((error: unknown) => {
+        this.durableWriteFailures.set(input.computerSessionId, error)
         log.warn('Computer observation evidence could not be persisted', error)
       })
     this.pendingWrites.set(input.computerSessionId, next)
@@ -216,6 +243,11 @@ export class ComputerObservationEvidenceStore implements NativeObservationEviden
   clearSession(computerSessionId: string): void {
     this.cachedBytes -= this.latestImages.get(computerSessionId)?.bytes.length ?? 0
     this.latestImages.delete(computerSessionId)
+    this.durableWriteFailures.delete(computerSessionId)
+    const pending = this.pendingWrites.get(computerSessionId)
+    if (pending != null) {
+      void pending.then(() => this.durableWriteFailures.delete(computerSessionId))
+    }
   }
 }
 

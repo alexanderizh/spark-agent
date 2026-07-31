@@ -593,6 +593,8 @@ Windows：
 
 **目标**：安全能力保留，但不拖慢普通操作。
 
+> 实施进度（2026-08-01）：会话任务合同与精确 app/window 绑定承载 L0/L1 会话授权，普通导航/输入不创建审批；L2/L3 继续使用 digest-bound 单次 ticket，L4/unattended 继续 handoff，Full Access 也不绕过目标、敏感数据和可见状态。低风险证据保持异步，高风险动作在 ticket 消费和 backend 执行前同步 flush 当前 before-frame；落盘失败 action blocked、ticket 不消费。对抗测试与五轴安全审查已完成，阶段代码待独立提交。
+
 #### 新策略
 
 | 风险 | 示例                                 | 默认处理                 |

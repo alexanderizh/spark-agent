@@ -1,6 +1,6 @@
 # Computer Control Broker、租约与审批设计
 
-> 状态: 已落地 | 最后核对: 2026-07-31
+> 状态: 已落地 | 最后核对: 2026-08-01
 
 本文记录 CU-02 已落地的主进程电脑控制安全边界。后续 Native Host、Provider Adapter、Monitor、Workflow、远程控制和 Verification Engine 必须调用本 Broker，不得建立第二条键鼠、Accessibility 或截图执行路径。
 
@@ -48,12 +48,12 @@ Provider 或页面内容不能用该字段把风险降到 Broker 已知的动作
 
 - `observe`、`move`、`scroll`、`wait_for` 的动作下限为 L0；
 - `focus_window`、`select_text`、`set_value`、`type_text` 的动作下限为 L1；
-- `invoke_element`、`click`、`drag`、`keypress` 在缺少可信语义证明时下限为 L2；
+- `invoke_element`、`click`、`drag`、`keypress` 在已绑定任务/应用/窗口的会话中下限为 L1；提交/发送/支付/删除等意图仍由 `effect=external_write` 升到 L2；
 - `unknown` 目标至少为 L2；
 - `type_text`、`set_value` 携带非 public 数据类别时至少为 L2；
 - credential 敏感输入和 `restricted` 副作用为 L4，只能接管。
 
-因此，即使模型把“提交”按钮标注成 `reversible_local`，Broker 仍会按 click/invoke 的 L2 下限要求精确审批。后续 CU-05 若增加可信 DOM/AX 语义分类，也只能通过主进程受控分类器提高证明强度，不能让 Provider 自行声明降级。
+因此，普通导航点击在会话范围内不产生逐动作审批；模型 intent 命中提交/发送/支付/删除等外部副作用，未知目标、首次动态应用、非 public 数据或敏感字段仍会升档。Provider 不能扩大任务合同、目标应用或窗口，主进程继续取 effect、动作下限、目标与数据类别的最高风险。若后续加入可信 DOM/AX 语义分类，也只能由主进程受控分类器提高证明强度，不能让 Provider 自行降低已计算风险。
 
 ## 3. 派发顺序
 
@@ -65,7 +65,7 @@ Provider 或页面内容不能用该字段把风险降到 Broker 已知的动作
 4. 校验任务最大运行时间、最大步数、允许应用、允许域名、禁止动作和数据类别。bundle/executable/signing allowlist 只能匹配 Native Host Observation 提供的对应身份字段，不能回退为字符串相等的 app ID。
 5. 计算风险；L4/无人值守 L2-L3 进入 handoff，越权动作 deny。
 6. 持久化 requested action。审批请求按 session/action 幂等复用。
-7. L2/L3 校验一次性 ticket；消费成功后 Storage 才允许 action 进入 `executing`。
+7. L2/L3 在消费一次性 ticket 前同步等待当前会话的 before-frame 证据链；落盘失败将 action 标为 blocked，ticket 不消费、backend 不执行。证据就绪后再消费 ticket，Storage 才允许 action 进入 `executing`。
 8. 调用可信 backend；backend 必须接受同一个 AbortSignal。
 9. 严格解析执行后的 Observation，持久化 after frame；noop 记录为失败。
 10. 会话回到 observing。Native Host 或协议执行失败时暂停会话并释放 lease。
@@ -123,4 +123,4 @@ Renderer 提交批准时必须回传它展示的 action/target/data-class digest
 - CU-05 Provider Adapter 不能直接获得 backend 或 pipe，只能提交 normalized action。
 - CU-06 IPC/Monitor 使用 `ComputerUseServices` 单例；批准必须携带 UI 展示的三个 digest。
 - CU-07 只能根据持久化 action/observation/verification 记录完成 session，不能把模型 `done` 当成功。
-- 需要让 click/invoke 低于 L2 时，必须新增可信语义证明协议、对抗测试和安全评审；不得直接修改动作下限表。
+- 调整 L0/L1 动作下限、intent 升档、动态应用首动作或敏感数据规则时，必须同步更新威胁模型、对抗测试和阶段安全审查；不得只改常量表。
