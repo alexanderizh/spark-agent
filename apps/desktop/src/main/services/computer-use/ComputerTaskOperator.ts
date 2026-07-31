@@ -9,6 +9,7 @@ import type {
   ComputerSession,
   NativeWindowDescriptor,
 } from '@spark/protocol'
+import { computerExecutionLaneForAction } from '@spark/protocol'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import type { ComputerDecision, GenericComputerDecisionAdapter } from './ComputerDecisionAdapter.js'
 import { ComputerVerificationEngine } from './ComputerVerificationEngine.js'
@@ -639,6 +640,7 @@ function createEnvelope(
     targetAppId: observation.foreground.app.id,
     targetWindowId: observation.foreground.window.id,
     action: decision.action,
+    executionLane: computerExecutionLaneForAction(decision.action),
     policyContext: policyContextFor(decision.action, observation, decision.intent),
     intent: decision.intent,
   }

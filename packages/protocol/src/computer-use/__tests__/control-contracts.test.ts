@@ -119,6 +119,12 @@ describe('computer action contract', () => {
     }
 
     expect(schema.parse(envelope)).toEqual(envelope)
+    expect(
+      schema.safeParse({ ...envelope, executionLane: 'background_semantic' }).success,
+    ).toBe(true)
+    expect(schema.safeParse({ ...envelope, executionLane: 'foreground_input' }).success).toBe(
+      false,
+    )
     const { observedFrameId: _frame, ...withoutFrame } = envelope
     expect(schema.safeParse(withoutFrame).success).toBe(false)
 

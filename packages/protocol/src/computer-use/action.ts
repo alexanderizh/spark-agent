@@ -173,6 +173,25 @@ export const ComputerActionSchema = ComputerActionBaseSchema.superRefine((value,
 })
 export type ComputerAction = z.infer<typeof ComputerActionSchema>
 
+export const ComputerExecutionLaneSchema = z.enum([
+  'background_semantic',
+  'foreground_input',
+  'passive',
+])
+export type ComputerExecutionLane = z.infer<typeof ComputerExecutionLaneSchema>
+
+export function computerExecutionLaneForAction(action: ComputerAction): ComputerExecutionLane {
+  if (
+    action.type === 'invoke_element' ||
+    action.type === 'set_value' ||
+    action.type === 'select_text'
+  ) {
+    return 'background_semantic'
+  }
+  if (action.type === 'observe' || action.type === 'wait_for') return 'passive'
+  return 'foreground_input'
+}
+
 export const ComputerActionEnvelopeSchema = z
   .object({
     computerSessionId: ComputerUseIdentifierSchema,
@@ -183,9 +202,20 @@ export const ComputerActionEnvelopeSchema = z
     targetAppId: ComputerUseIdentifierSchema,
     targetWindowId: ComputerUseIdentifierSchema,
     action: ComputerActionSchema,
+    executionLane: ComputerExecutionLaneSchema.optional(),
     policyContext: ComputerPolicyContextSchema,
     intent: z.string().trim().min(1).max(4_000),
     expectedPostcondition: VerificationSpecSchema.optional(),
   })
   .strict()
+  .superRefine((value, context) => {
+    const expected = computerExecutionLaneForAction(value.action)
+    if (value.executionLane != null && value.executionLane !== expected) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `executionLane must be ${expected} for ${value.action.type}`,
+        path: ['executionLane'],
+      })
+    }
+  })
 export type ComputerActionEnvelope = z.infer<typeof ComputerActionEnvelopeSchema>

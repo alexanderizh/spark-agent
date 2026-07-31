@@ -86,6 +86,7 @@ describe('ComputerTaskOperator', () => {
         observedFrameId: 'frame-1',
         observedTreeVersion: 'tree-1',
         actuatorLeaseId: 'lease-1',
+        executionLane: 'background_semantic',
         policyContext: expect.objectContaining({ target: { kind: 'element', id: 'save-button' } }),
       }),
     )

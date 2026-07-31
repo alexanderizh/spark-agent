@@ -1,6 +1,6 @@
 # macOS Native Host、AX/CGEvent 与应用快照设计
 
-> 状态: 实施中 | 最后核对: 2026-07-29
+> 状态: 实施中 | 最后核对: 2026-07-31
 
 本文是 CU-03 macOS Native Host 的可直接开发规格，记录已经落地的生产边界、wire、signed/local 打包、故障恢复、ScreenCaptureKit、AXUIElement 和 CGEvent 控制闭环。当前代码可交付可信 Host 能力探测、窗口列表、单窗口 PNG、full/diff AX tree、无 AX 时视觉空树与坐标兜底、语义动作、受限键鼠和加密应用快照；最终实体机矩阵仍是发布门槛。
 
@@ -74,8 +74,9 @@ Runtime 只接受 manifest 明确声明的两种模式：
 - `request_permissions` 仅接受去重后的 `screen|accessibility`，分别调用系统 TCC API。
 - AXUIElement 从绑定 PID 的 focused window 生成最多 2,000 项、48 层的 full/diff tree；达到边界时截断而不是让整个任务失败。不再要求 AX 与 ScreenCaptureKit 的窗口标题和边界完全一致；单个应用拒绝或无法提供 AX 树时返回截图绑定的视觉 tree，使用系统 Vision OCR 提取可见文本并让视觉模型继续使用坐标。element ref 绑定 tree version，下一次观察后旧引用失效。
 - `AXSecureTextField` 不返回 value，不声明 `set_value`，并形成 `sensitiveRegions`；名称、value、role、action 和 geometry 全部本地有界清洗。
-- 语义动作支持 Invoke/Confirm、Focus、Select、Expand/Collapse、SetValue 和 SelectText；元素 Scroll 当前仍按元素 bounds 经受管 CGEvent 执行，不伪装成 AX 语义动作。不支持或未产生效果返回稳定 `action_noop|action_not_allowed`。
-- CGEvent 支持归一化窗口坐标 click/move/drag/scroll、组合键和 UTF-16 文本；长拖拽、组合键和文本输入在注入过程中持续复核 PID/bundle/executable/signing identity，稳定应用身份漂移或取消立即停止，不再校验临时 window/focused/geometry。drag 通过兜底 mouse-up 避免遗留按下状态。安全输入框拒绝文本及可修改值的 keypress。
+- action envelope 带可验证 execution lane：Invoke/SetValue/SelectText 固定为 `background_semantic`，observe/wait 固定为 `passive`，CGEvent/focus/scroll 固定为 `foreground_input`。旧 App 未携带 lane 时 Host 按动作安全推导；显式 lane 与动作不匹配时 App Zod 与 Swift decoder 双端 fail-closed。
+- 后台语义动作直接对绑定 PID 的 AX 元素执行，不激活目标应用；元素 Scroll 当前仍按元素 bounds 经受管 CGEvent 执行，不伪装成 AX 语义动作。不支持或未产生效果返回稳定 `action_noop|action_not_allowed`。
+- CGEvent 支持归一化窗口坐标 click/move/drag/scroll、组合键和 UTF-16 文本；仅 `foreground_input` 会短时激活目标窗口，并在动作退出路径恢复原前台应用和指针位置。长拖拽、组合键和文本输入在注入过程中持续复核 PID/bundle/executable/signing identity，稳定应用身份漂移或取消立即停止。drag 通过兜底 mouse-up 避免遗留按下状态。安全输入框拒绝文本及可修改值的 keypress。
 - `execute_action` 只返回严格 `action_result`；Electron 随后重新 `observe`。动作前后原图仅驻留有界内存，持久层只接收敏感区域脱敏后的缩略图并设置 24 小时 TTL；noop 使用感知图像指纹与无版本语义元素摘要，`wait_for` 则以 Host 条件结果为准。
 - cancel session 会使旧 observation 和 element refs 失效，并拒绝该 session 的后续动作。
 

@@ -485,6 +485,8 @@ Windows：
 
 **目标**：用户操作其他应用时，不影响 Agent 操作其目标应用。
 
+> 实施进度（2026-07-31）：execution lane 协议与 macOS 首个切片已落地；AX 语义动作不再激活目标应用，CGEvent 动作短时聚焦并恢复原前台应用/指针，lane 伪造双端拒绝。用户点击目标应用的主动接管检测、300 ms 指标实测、跨平台 Overlay 与 AppControlBridge 仍在实施。
+
 #### 4.1 目标绑定
 
 - 用户首次授权时通过系统 picker 或产品窗口选择器绑定 `app identity + window identity`。
