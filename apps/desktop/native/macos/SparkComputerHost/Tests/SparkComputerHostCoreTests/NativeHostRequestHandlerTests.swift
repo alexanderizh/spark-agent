@@ -151,6 +151,12 @@ final class NativeHostRequestHandlerTests: XCTestCase {
     let limitReply = try await NativeHostRequestHandler(provider: limitProvider)
       .handle(try executeActionRequest())
     XCTAssertEqual(try responseErrorCode(limitReply.json), "action_not_allowed")
+
+    let takeoverProvider = FakePlatformProvider(
+      controlAvailable: true, actionError: .userTakeover)
+    let takeoverReply = try await NativeHostRequestHandler(provider: takeoverProvider)
+      .handle(try executeActionRequest())
+    XCTAssertEqual(try responseErrorCode(takeoverReply.json), "handoff_required")
   }
 
   func testRejectsSchemaInvalidObservationBeforeWritingWireJSON() async throws {

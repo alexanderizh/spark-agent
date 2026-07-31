@@ -485,7 +485,7 @@ Windows：
 
 **目标**：用户操作其他应用时，不影响 Agent 操作其目标应用。
 
-> 实施进度（2026-07-31）：execution lane 协议与 macOS 首个切片已落地；AX 语义动作不再激活目标应用，CGEvent 动作短时聚焦并恢复原前台应用/指针，lane 伪造双端拒绝。用户点击目标应用的主动接管检测、300 ms 指标实测、跨平台 Overlay 与 AppControlBridge 仍在实施。
+> 实施进度（2026-07-31）：execution lane 协议与 macOS 输入冲突切片已落地；AX 语义动作不再激活目标应用，CGEvent 动作等待 300 ms 全局输入空闲、短时聚焦并恢复原前台应用/指针，Host 注入事件带来源标记且不会被误判为用户输入。真实用户点击绑定窗口（包括观察后、首次动作前的点击）会 fail-closed 返回 `handoff_required`，Operator 转入接管态而非任务失败。300 ms P99 真机指标、跨平台 Overlay、目标 picker/new-window provenance 与 AppControlBridge 仍在实施。
 
 #### 4.1 目标绑定
 

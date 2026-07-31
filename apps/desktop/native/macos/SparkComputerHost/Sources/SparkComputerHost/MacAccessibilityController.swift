@@ -356,8 +356,8 @@ enum MacCGEventController {
         else { throw NativeHostPlatformError.actionNoop }
         down.setIntegerValueField(.mouseEventClickState, value: Int64(index + 1))
         up.setIntegerValueField(.mouseEventClickState, value: Int64(index + 1))
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
+        postTagged(down)
+        postTagged(up)
       }
     case .move(let normalized):
       try await validateTarget()
@@ -367,7 +367,7 @@ enum MacCGEventController {
           mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point,
           mouseButton: .left)
       else { throw NativeHostPlatformError.actionNoop }
-      event.post(tap: .cghidEventTap)
+      postTagged(event)
     case .drag(let from, let to, let durationMs):
       let start = try map(from, bounds: windowBounds)
       let end = try map(to, bounds: windowBounds)
@@ -409,7 +409,7 @@ enum MacCGEventController {
           scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
           wheel1: Int32((-deltaY).rounded()), wheel2: Int32((-deltaX).rounded()), wheel3: 0)
       else { throw NativeHostPlatformError.actionNoop }
-      event.post(tap: .cghidEventTap)
+      postTagged(event)
     case .keypress(let keys):
       try NativeInputPolicy.validateKeys(keys)
       try await postKeyChord(keys, validateTarget: validateTarget)
@@ -439,7 +439,7 @@ enum MacCGEventController {
       let event = CGEvent(
         mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: button)
     else { throw NativeHostPlatformError.actionNoop }
-    event.post(tap: .cghidEventTap)
+    postTagged(event)
   }
 
   private static func cgButton(_ value: String?) -> CGMouseButton {
@@ -481,8 +481,8 @@ enum MacCGEventController {
         else { throw NativeHostPlatformError.actionNoop }
         down.flags = flags
         up.flags = flags
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
+        postTagged(down)
+        postTagged(up)
       } else {
         throw NativeHostPlatformError.actionNotAllowed
       }
@@ -521,8 +521,13 @@ enum MacCGEventController {
     }
     down.flags = flags
     up.flags = flags
-    down.post(tap: .cghidEventTap)
-    up.post(tap: .cghidEventTap)
+    postTagged(down)
+    postTagged(up)
+  }
+
+  private static func postTagged(_ event: CGEvent) {
+    event.setIntegerValueField(.eventSourceUserData, value: sparkComputerInjectedEventTag)
+    event.post(tap: .cghidEventTap)
   }
 
   private static func keyCode(_ value: String) -> CGKeyCode? {

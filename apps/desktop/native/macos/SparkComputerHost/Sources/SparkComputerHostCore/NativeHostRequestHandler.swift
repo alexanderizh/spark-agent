@@ -27,6 +27,7 @@ public enum NativeHostPlatformError: Error, Equatable, Sendable {
   case actionNotAllowed
   case actionNoop
   case sessionCanceled
+  case userTakeover
 }
 
 public enum NativeActionStatus: String, Equatable, Sendable {
@@ -276,6 +277,10 @@ public actor NativeHostRequestHandler {
       return try NativeHostResponseEncoder.error(
         requestID: requestID, code: "session_canceled",
         message: "The computer session was canceled", retryable: false)
+    case .userTakeover:
+      return try NativeHostResponseEncoder.error(
+        requestID: requestID, code: "handoff_required",
+        message: "The user took control of the target window", retryable: false)
     }
   }
 

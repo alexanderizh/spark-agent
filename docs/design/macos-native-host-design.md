@@ -76,7 +76,7 @@ Runtime 只接受 manifest 明确声明的两种模式：
 - `AXSecureTextField` 不返回 value，不声明 `set_value`，并形成 `sensitiveRegions`；名称、value、role、action 和 geometry 全部本地有界清洗。
 - action envelope 带可验证 execution lane：Invoke/SetValue/SelectText 固定为 `background_semantic`，observe/wait 固定为 `passive`，CGEvent/focus/scroll 固定为 `foreground_input`。旧 App 未携带 lane 时 Host 按动作安全推导；显式 lane 与动作不匹配时 App Zod 与 Swift decoder 双端 fail-closed。
 - 后台语义动作直接对绑定 PID 的 AX 元素执行，不激活目标应用；元素 Scroll 当前仍按元素 bounds 经受管 CGEvent 执行，不伪装成 AX 语义动作。不支持或未产生效果返回稳定 `action_noop|action_not_allowed`。
-- CGEvent 支持归一化窗口坐标 click/move/drag/scroll、组合键和 UTF-16 文本；仅 `foreground_input` 会短时激活目标窗口，并在动作退出路径恢复原前台应用和指针位置。长拖拽、组合键和文本输入在注入过程中持续复核 PID/bundle/executable/signing identity，稳定应用身份漂移或取消立即停止。drag 通过兜底 mouse-up 避免遗留按下状态。安全输入框拒绝文本及可修改值的 keypress。
+- CGEvent 支持归一化窗口坐标 click/move/drag/scroll、组合键和 UTF-16 文本；仅 `foreground_input` 会等待 300 ms 全局输入空闲、短时激活目标窗口，并在动作退出路径恢复原前台应用和指针位置。所有 Host 注入事件写入进程专属来源标记；listen-only Event Tap 只把真实用户输入计入冲突检测。用户点击绑定窗口（含 observation 与首次 execute 之间的点击）立即把会话标记为接管，后续动作返回 `handoff_required`；用户在其他应用移动鼠标或键入只延后前台输入，不阻断后台 AX 语义动作。长拖拽、组合键和文本输入在注入过程中持续复核 PID/bundle/executable/signing identity、取消与接管状态，稳定应用身份漂移、取消或接管立即停止。drag 通过兜底 mouse-up 避免遗留按下状态。安全输入框拒绝文本及可修改值的 keypress。
 - `execute_action` 只返回严格 `action_result`；Electron 随后重新 `observe`。动作前后原图仅驻留有界内存，持久层只接收敏感区域脱敏后的缩略图并设置 24 小时 TTL；noop 使用感知图像指纹与无版本语义元素摘要，`wait_for` 则以 Host 条件结果为准。
 - cancel session 会使旧 observation 和 element refs 失效，并拒绝该 session 的后续动作。
 
