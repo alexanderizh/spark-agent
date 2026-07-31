@@ -13,6 +13,7 @@ import {
   message,
 } from 'antd'
 import { Button, Dropdown, Segmented } from '@lobehub/ui'
+import type { ProviderFileObject } from '@spark/protocol'
 import { Icons } from '../../Icons'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import { ShotSegmentTable } from './CanvasShotSegmentTable'
@@ -176,6 +177,17 @@ export type FilmCenterHandlers = {
   hasPromptCanvasTarget?: () => boolean
   onApplyPromptEntryToCanvas?: (entry: CanvasPromptLibraryEntry) => Promise<boolean>
   onInsertAssetToCanvas: (assetId: string) => void
+  /**
+   * 把「素材中心 → Files」里的 provider 文件（如 MiniMax）作为节点加入画布。
+   * 节点持有 fileId（无本地 url），提交任务时命中 adapter 上传短路（mm_file://{id}）。
+   */
+  onInsertProviderFileToCanvas?: (input: {
+    providerProfileId: string
+    fileId: string
+    fileName?: string
+    mimeType?: string
+    kind?: 'image' | 'video' | 'audio'
+  }) => void
   /** 定位资产对应的画布节点，并将其聚焦到画布中心 */
   onLocateAsset?: (assetId: string) => void
   /** 查询资源被谁引用（分镜片段 + 画布节点） */
@@ -232,6 +244,18 @@ export function CanvasFilmAssetCenter({
     if (open && initialTab) setActiveTab(initialTab)
   }, [open, initialTab])
 
+  const handleAddProviderFileToCanvas = useCallback(
+    (file: ProviderFileObject, providerProfileId: string) => {
+      handlers.onInsertProviderFileToCanvas?.({
+        providerProfileId,
+        fileId: file.id,
+        ...(file.filename ? { fileName: file.filename } : {}),
+        ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+      })
+    },
+    [handlers.onInsertProviderFileToCanvas],
+  )
+
   if (!open) return null
 
   return createPortal(
@@ -279,7 +303,11 @@ export function CanvasFilmAssetCenter({
             ) : activeTab === 'prompt_library' ? (
               <CanvasFilmPromptLibraryTab snapshot={snapshot} handlers={handlers} />
             ) : activeTab === 'files' ? (
-              <CanvasProviderFilesTab />
+              <CanvasProviderFilesTab
+                {...(handlers.onInsertProviderFileToCanvas
+                  ? { onAddToCanvas: handleAddProviderFileToCanvas }
+                  : {})}
+              />
             ) : activeTab === 'manuscript' ? (
               <ManuscriptTab snapshot={snapshot} handlers={handlers} />
             ) : (

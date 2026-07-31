@@ -1,0 +1,759 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { rmSync, mkdirSync, existsSync } from 'node:fs'
+import path from 'node:path'
+import os from 'node:os'
+import { MinimaxHailuoMediaAdapter } from '../../../services/media/adapters/minimax-hailuo-media.adapter.js'
+import { MediaRouterService } from '../../../services/media/media-router.service.js'
+import { validateMediaRequest } from '../../../services/media/media-request-validator.js'
+import type {
+  MediaGenerateInput,
+  MediaInputFile,
+  MediaProviderContext,
+} from '../../../services/media/media-adapter.types.js'
+import { MediaProviderError } from '../../../services/media/media-adapter.types.js'
+import {
+  BUILTIN_MEDIA_MODEL_MANIFESTS,
+  type MediaCapabilityId,
+  type MediaModelManifest,
+} from '@spark/protocol'
+
+const ENDPOINT = 'https://api.minimaxi.com'
+
+type FetchHandler = (url: string, init?: RequestInit) => Promise<Response>
+type FetchMock = typeof globalThis.fetch & {
+  mock: { calls: Array<[string, RequestInit | undefined]> }
+}
+
+function mockFetch(handler: FetchHandler): FetchMock {
+  return vi.fn(handler) as unknown as FetchMock
+}
+
+function findManifest(id: string): MediaModelManifest {
+  const m = BUILTIN_MEDIA_MODEL_MANIFESTS.find((x) => x.id === id)
+  if (!m) throw new Error(`manifest ${id} not found`)
+  return m
+}
+
+function jsonRes(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: () => Promise.resolve(JSON.stringify(body)),
+    arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+  } as Response
+}
+
+function rawJsonRes(body: string, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: () => Promise.resolve(body),
+    arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+  } as Response
+}
+
+function binaryRes(buf: Buffer): Response {
+  return {
+    ok: true,
+    status: 200,
+    text: () => Promise.resolve(''),
+    arrayBuffer: () =>
+      Promise.resolve(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)),
+  } as Response
+}
+
+const FAKE_MP4 = Buffer.from([
+  0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
+])
+const FAKE_PNG = Buffer.from(
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  ),
+)
+
+function makeContext(overrides: Partial<MediaProviderContext>): MediaProviderContext {
+  return {
+    apiKey: 'sk-test',
+    apiEndpoint: ENDPOINT,
+    defaultModel: 'image-01',
+    mediaProvider: 'minimax-hailuo',
+    mediaApiType: 'sync',
+    ...overrides,
+  }
+}
+
+function makeInput(overrides: Partial<MediaGenerateInput>): MediaGenerateInput {
+  return {
+    operation: 'text_to_image',
+    capability: 'image.generate',
+    prompt: '雨中竹林',
+    outputDir: '',
+    ...overrides,
+  }
+}
+
+function manifestContext(
+  id: string,
+  capabilityId: string,
+  overrides: Partial<MediaProviderContext> = {},
+): MediaProviderContext {
+  const manifest = findManifest(id)
+  const capability = manifest.capabilities.find((item) => item.id === capabilityId)
+  if (!capability) throw new Error(`${id} capability ${capabilityId} not found`)
+  return makeContext({
+    defaultModel: manifest.modelId,
+    mediaManifest: manifest,
+    mediaManifestCapability: capability,
+    ...overrides,
+  })
+}
+
+describe('MinimaxHailuoMediaAdapter', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `minimax-test-${Math.random().toString(36).slice(2)}`)
+    mkdirSync(tmpDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('本轮开发的 6 个 manifest 已注册且 router 已挂 minimax-hailuo adapter', () => {
+    const ids = BUILTIN_MEDIA_MODEL_MANIFESTS.filter((m) => m.providerKind === 'minimax-hailuo').map(
+      (m) => m.id,
+    )
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        'minimax:image-01',
+        'minimax:image-01-live',
+        'minimax:hailuo-2.3',
+        'minimax:hailuo-2.3-fast',
+        'minimax:v2-h3',
+        'minimax:hailuo-template',
+      ]),
+    )
+    // video.edit 已从 hailuo-2.3 移除（文档无独立 edit 端点）
+    const hailuo23 = findManifest('minimax:hailuo-2.3')
+    expect(hailuo23.capabilities.map((c) => c.id)).toEqual([
+      'video.generate',
+      'video.image_to_video',
+    ])
+    // image.edit 已加入 image-01
+    expect(findManifest('minimax:image-01').capabilities.map((c) => c.id)).toEqual([
+      'image.generate',
+      'image.edit',
+    ])
+    expect(new MediaRouterService().listAdapters()).toContain('minimax-hailuo')
+  })
+
+  it('image.generate 同步: POST /v1/image_generation，取 data.image_urls[] 落盘', async () => {
+    const manifest = findManifest('minimax:image-01')
+    const cap = manifest.capabilities.find((c) => c.id === 'image.generate')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/image_generation')) {
+        return jsonRes({
+          id: 'img-1',
+          data: { image_urls: ['https://cdn/img.png'] },
+          metadata: { success_count: 1, failed_count: '0' },
+          base_resp: { status_code: 0, status_msg: 'success' },
+        })
+      }
+      if (url === 'https://cdn/img.png') return binaryRes(FAKE_PNG)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const out = await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({ outputDir: tmpDir }),
+      makeContext({ fetch: fetchImpl, mediaManifest: manifest, mediaManifestCapability: cap }),
+    )
+    expect(out.mode).toBe('sync')
+    expect(out.assets).toHaveLength(1)
+    expect(existsSync(out.assets[0]?.filePath ?? '')).toBe(true)
+    const post = fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/image_generation'))?.[1]
+    expect(JSON.parse(post?.body as string)).toMatchObject({ model: 'image-01', prompt: '雨中竹林' })
+  })
+
+  it('image-01-live 把 style_type/style_weight 组装成嵌套 style，且仅该模型生效', async () => {
+    const manifest = findManifest('minimax:image-01-live')
+    const cap = manifest.capabilities.find((c) => c.id === 'image.generate')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/image_generation')) {
+        return jsonRes({ data: { image_urls: ['https://cdn/live.png'] }, base_resp: { status_code: 0 } })
+      }
+      if (url === 'https://cdn/live.png') return binaryRes(FAKE_PNG)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        outputDir: tmpDir,
+        modelParams: { styleType: '漫画', style_type: '漫画', style_weight: 0.6 },
+      }),
+      makeContext({ fetch: fetchImpl, mediaManifest: manifest, mediaManifestCapability: cap }),
+    )
+    const body = JSON.parse(
+      fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/image_generation'))?.[1]?.body as string,
+    )
+    expect(body.style).toEqual({ style_type: '漫画', style_weight: 0.6 })
+  })
+
+  it('image.edit 图生图: 组装 subject_reference[image_file]（公网 URL 直传）', async () => {
+    const manifest = findManifest('minimax:image-01')
+    const cap = manifest.capabilities.find((c) => c.id === 'image.edit')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/image_generation')) {
+        return jsonRes({ data: { image_urls: ['https://cdn/o.png'] }, base_resp: { status_code: 0 } })
+      }
+      if (url === 'https://cdn/o.png') return binaryRes(FAKE_PNG)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'image_to_image',
+        capability: 'image.edit',
+        prompt: '同一个人在咖啡馆',
+        inputFiles: [{ type: 'image', url: 'https://cdn/ref.jpg', role: 'reference' }],
+        outputDir: tmpDir,
+      }),
+      makeContext({ fetch: fetchImpl, mediaManifest: manifest, mediaManifestCapability: cap }),
+    )
+    const body = JSON.parse(
+      fetchImpl.mock.calls.find(([u]) => u.endsWith('/v1/image_generation'))?.[1]?.body as string,
+    )
+    expect(body.subject_reference).toEqual([
+      { type: 'character', image_file: 'https://cdn/ref.jpg' },
+    ])
+  })
+
+  it('v1 视频 generate: create→poll(Success)→file_id→retrieve(download_url)→下载', async () => {
+    const manifest = findManifest('minimax:hailuo-2.3')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.generate')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url.endsWith('/v1/video_generation') && !url.includes('query') && !url.includes('template')) {
+        return jsonRes({ task_id: 't-1', base_resp: { status_code: 0, status_msg: 'success' } })
+      }
+      if (url.includes('/v1/query/video_generation')) {
+        return jsonRes({
+          task_id: 't-1',
+          status: 'Success',
+          file_id: '176844028768320',
+          base_resp: { status_code: 0 },
+        })
+      }
+      if (url.includes('/v1/files/retrieve')) {
+        return jsonRes({
+          file: { file_id: 176844028768320, download_url: 'https://cdn/v.mp4' },
+          base_resp: { status_code: 0 },
+        })
+      }
+      if (url === 'https://cdn/v.mp4') return binaryRes(FAKE_MP4)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const onTaskSubmitted = vi.fn()
+    const out = await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        prompt: '小河流水',
+        modelParams: { durationSeconds: 6, resolution: '1080P' },
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        defaultModel: 'MiniMax-Hailuo-2.3',
+        mediaApiType: 'async',
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+        mediaDefaults: { polling: { intervalMs: 1 } },
+        onTaskSubmitted,
+      }),
+    )
+    expect(onTaskSubmitted).toHaveBeenCalledWith(expect.objectContaining({ requestId: 't-1' }))
+    expect(out.mode).toBe('async')
+    expect(out.assets).toHaveLength(1)
+    expect(existsSync(out.assets[0]?.filePath ?? '')).toBe(true)
+    const createBody = JSON.parse(
+      fetchImpl.mock.calls.find(
+        ([u]) => u === `${ENDPOINT}/v1/video_generation`,
+      )?.[1]?.body as string,
+    )
+    expect(createBody).toMatchObject({ model: 'MiniMax-Hailuo-2.3', duration: 6, resolution: '1080P' })
+  })
+
+  it('v1 错误归一: HTTP 200 + base_resp.status_code=1026 → normalized.content_policy_blocked', async () => {
+    const manifest = findManifest('minimax:image-01')
+    const cap = manifest.capabilities.find((c) => c.id === 'image.generate')!
+    const fetchImpl = mockFetch(async () =>
+      jsonRes({
+        base_resp: { status_code: 1026, status_msg: '图片描述涉及敏感内容' },
+      }),
+    )
+    await expect(
+      new MinimaxHailuoMediaAdapter().invoke(
+        makeInput({ outputDir: tmpDir }),
+        makeContext({ fetch: fetchImpl, mediaManifest: manifest, mediaManifestCapability: cap }),
+      ),
+    ).rejects.toMatchObject({
+      name: 'MediaProviderError',
+      normalized: { code: 'content_policy_blocked', providerCode: '1026' },
+    })
+  })
+
+  it('V2 H3 generate(t2v): content[] 仅 text + resolution=2K + ratio 必填', async () => {
+    const manifest = findManifest('minimax:v2-h3')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.generate')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url === `${ENDPOINT}/v2/video_generation`) return jsonRes({ task_id: 'h3-1' })
+      if (url.includes('/v2/query/video_generation/')) {
+        return jsonRes({
+          task: { id: 'h3-1', status: 'succeeded', content: { url: 'https://cdn/h3.mp4' } },
+        })
+      }
+      if (url === 'https://cdn/h3.mp4') return binaryRes(FAKE_MP4)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const out = await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        prompt: '男孩海边打篮球',
+        modelParams: { duration: 5, ratio: '16:9' },
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        defaultModel: 'MiniMax-H3',
+        mediaApiType: 'async',
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+        mediaDefaults: { polling: { intervalMs: 1 } },
+      }),
+    )
+    expect(out.mode).toBe('async')
+    expect(existsSync(out.assets[0]?.filePath ?? '')).toBe(true)
+    const body = JSON.parse(
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+    )
+    expect(body).toMatchObject({
+      model: 'MiniMax-H3',
+      resolution: '2K',
+      duration: 5,
+      ratio: '16:9',
+      content: [{ type: 'text', text: '男孩海边打篮球' }],
+    })
+  })
+
+  it('V2 H3 i2v: content[] 含 first_frame image_url，本地 file 不走 mm_file 时用 URL', async () => {
+    const manifest = findManifest('minimax:v2-h3')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.image_to_video')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url === `${ENDPOINT}/v2/video_generation`) return jsonRes({ task_id: 'h3-2' })
+      if (url.includes('/v2/query/video_generation/')) {
+        return jsonRes({ task: { status: 'succeeded', content: { url: 'https://cdn/h3i.mp4' } } })
+      }
+      if (url === 'https://cdn/h3i.mp4') return binaryRes(FAKE_MP4)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        prompt: '镜头推进',
+        inputFiles: [{ type: 'image', url: 'https://cdn/first.png', role: 'first_frame' }],
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        defaultModel: 'MiniMax-H3',
+        mediaApiType: 'async',
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+        mediaDefaults: { polling: { intervalMs: 1 } },
+      }),
+    )
+    const body = JSON.parse(
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+    )
+    expect(body.content).toEqual([
+      { type: 'text', text: '镜头推进' },
+      { type: 'image_url', image_url: { url: 'https://cdn/first.png' }, role: 'first_frame' },
+    ])
+    expect(body.ratio).toBe('adaptive')
+  })
+
+  it('V2 错误归一: HTTP 422 + OAI error.type=unprocessable_entity_error → content_policy_blocked', async () => {
+    const manifest = findManifest('minimax:v2-h3')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.generate')!
+    const fetchImpl = mockFetch(async () =>
+      jsonRes(
+        {
+          type: 'error',
+          error: { type: 'unprocessable_entity_error', message: 'sensitive content (1026)', http_code: '422' },
+          request_id: 'req-h3',
+        },
+        422,
+      ),
+    )
+    await expect(
+      new MinimaxHailuoMediaAdapter().invoke(
+        makeInput({
+          operation: 'text_to_video',
+          capability: 'video.generate',
+          modelParams: { ratio: '16:9' },
+          outputDir: tmpDir,
+        }),
+        makeContext({
+          defaultModel: 'MiniMax-H3',
+          mediaApiType: 'async',
+          fetch: fetchImpl,
+          mediaManifest: manifest,
+          mediaManifestCapability: cap,
+        }),
+      ),
+    ).rejects.toMatchObject({
+      name: 'MediaProviderError',
+      statusCode: 422,
+      normalized: expect.objectContaining({ code: 'content_policy_blocked' }),
+    })
+  })
+
+  it('视频 Agent 模板: template_id 分流到 /v1/video_template_generation，取 video_url', async () => {
+    const manifest = findManifest('minimax:hailuo-template')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.generate')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url === `${ENDPOINT}/v1/video_template_generation`) {
+        return jsonRes({ task_id: 'tpl-1', base_resp: { status_code: 0 } })
+      }
+      if (url.includes('/v1/query/video_template_generation')) {
+        return jsonRes({
+          task_id: 'tpl-1',
+          status: 'Success',
+          video_url: 'https://cdn/tpl.mp4',
+          base_resp: { status_code: 0 },
+        })
+      }
+      if (url === 'https://cdn/tpl.mp4') return binaryRes(FAKE_MP4)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const out = await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'text_to_video',
+        capability: 'video.generate',
+        prompt: '狮子',
+        inputFiles: [{ type: 'image', url: 'https://cdn/pet.jpeg', role: 'reference' }],
+        modelParams: { templateId: '393769180141805569' },
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        defaultModel: 'video-agent',
+        mediaApiType: 'async',
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+        mediaDefaults: { polling: { intervalMs: 1 } },
+      }),
+    )
+    expect(out.mode).toBe('async')
+    expect(existsSync(out.assets[0]?.filePath ?? '')).toBe(true)
+    const body = JSON.parse(
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v1/video_template_generation`)?.[1]
+        ?.body as string,
+    )
+    expect(body).toEqual({
+      template_id: '393769180141805569',
+      media_inputs: [{ value: 'https://cdn/pet.jpeg' }],
+      text_inputs: [{ value: '狮子' }],
+    })
+  })
+
+  it('validator: image.edit 缺参考图 / 2.3-Fast 禁 t2v / V2 t2v ratio=adaptive / V2 r2v 仅音频 / 模板非法 id', () => {
+    // image.edit 缺参考图
+    const editCtx = manifestContext('minimax:image-01', 'image.edit')
+    expect(
+      validateMediaRequest({
+        input: makeInput({ operation: 'image_to_image', capability: 'image.edit' }),
+        providerKind: 'minimax-hailuo',
+        modelId: editCtx.defaultModel,
+        capability: 'image.edit',
+        manifest: editCtx.mediaManifest,
+        manifestCapability: editCtx.mediaManifestCapability,
+        mode: 'adapter',
+      }).blockingIssues,
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'missing_required' })]))
+
+    // 2.3-Fast 禁止 t2v
+    const fastCtx = manifestContext('minimax:hailuo-2.3-fast', 'video.image_to_video')
+    expect(
+      validateMediaRequest({
+        input: makeInput({ operation: 'text_to_video', capability: 'video.generate' }),
+        providerKind: 'minimax-hailuo',
+        modelId: fastCtx.defaultModel,
+        capability: 'video.generate',
+        manifest: findManifest('minimax:hailuo-2.3-fast'),
+        manifestCapability: undefined,
+        mode: 'adapter',
+      }).blockingIssues,
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'forbidden_param' })]))
+
+    // V2 t2v ratio=adaptive 阻断
+    const h3GenCtx = manifestContext('minimax:v2-h3', 'video.generate')
+    expect(
+      validateMediaRequest({
+        input: makeInput({
+          operation: 'text_to_video',
+          capability: 'video.generate',
+          modelParams: { ratio: 'adaptive' },
+        }),
+        providerKind: 'minimax-hailuo',
+        modelId: h3GenCtx.defaultModel,
+        capability: 'video.generate',
+        manifest: h3GenCtx.mediaManifest,
+        manifestCapability: h3GenCtx.mediaManifestCapability,
+        mode: 'adapter',
+      }).blockingIssues,
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'invalid_enum' })]))
+
+    // V2 r2v 仅音频阻断
+    const h3RefCtx = manifestContext('minimax:v2-h3', 'video.reference_to_video')
+    expect(
+      validateMediaRequest({
+        input: makeInput({
+          operation: 'text_to_video',
+          capability: 'video.reference_to_video',
+          inputFiles: [{ type: 'audio', url: 'https://cdn/a.mp3', role: 'reference' }],
+        }),
+        providerKind: 'minimax-hailuo',
+        modelId: h3RefCtx.defaultModel,
+        capability: 'video.reference_to_video',
+        manifest: h3RefCtx.mediaManifest,
+        manifestCapability: h3RefCtx.mediaManifestCapability,
+        mode: 'adapter',
+      }).blockingIssues,
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'missing_required' })]))
+
+    // 模板非法 templateId
+    const tplCtx = manifestContext('minimax:hailuo-template', 'video.generate')
+    expect(
+      validateMediaRequest({
+        input: makeInput({
+          operation: 'text_to_video',
+          capability: 'video.generate',
+          prompt: 'x',
+          modelParams: { templateId: 'not-a-real-template' },
+        }),
+        providerKind: 'minimax-hailuo',
+        modelId: tplCtx.defaultModel,
+        capability: 'video.generate',
+        manifest: tplCtx.mediaManifest,
+        manifestCapability: tplCtx.mediaManifestCapability,
+        mode: 'adapter',
+      }).blockingIssues,
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'invalid_enum' })]))
+  })
+
+  it('validator: v1 枚举组合、H3 必需输入和模板空输入均被阻断', () => {
+    const validate = (
+      manifestId: string,
+      capability: MediaCapabilityId,
+      input: Partial<MediaGenerateInput>,
+    ) => {
+      const context = manifestContext(manifestId, capability)
+      return validateMediaRequest({
+        input: makeInput({ capability, ...input }),
+        providerKind: 'minimax-hailuo',
+        modelId: context.defaultModel,
+        capability,
+        manifest: context.mediaManifest,
+        manifestCapability: context.mediaManifestCapability,
+        mode: 'adapter',
+      }).blockingIssues
+    }
+
+    expect(
+      validate('minimax:hailuo-2.3', 'video.generate', {
+        operation: 'text_to_video',
+        prompt: '测试',
+        modelParams: { durationSeconds: 7, resolution: '768P' },
+      }),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'out_of_range' })]))
+
+    expect(
+      validate('minimax:hailuo-2.3', 'video.generate', {
+        operation: 'text_to_video',
+        prompt: '测试',
+        modelParams: { durationSeconds: 10, resolution: '1080P' },
+      }),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'conflicting_params' })]))
+
+    expect(
+      validate('minimax:v2-h3', 'video.image_to_video', {
+        operation: 'image_to_video',
+        prompt: '测试',
+        inputFiles: [],
+      }),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'missing_required' })]))
+
+    expect(
+      validate('minimax:hailuo-template', 'video.generate', {
+        operation: 'text_to_video',
+        prompt: '',
+        modelParams: { templateId: '393769180141805569' },
+        inputFiles: [],
+      }),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'missing_required' })]))
+  })
+
+  it('v1 视频 task failed: query 返回 Fail → 抛 MediaProviderError(task_failed)', async () => {
+    const manifest = findManifest('minimax:hailuo-2.3')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.generate')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url === `${ENDPOINT}/v1/video_generation`) {
+        return jsonRes({ task_id: 't-fail', base_resp: { status_code: 0 } })
+      }
+      if (url.includes('/v1/query/video_generation')) {
+        return jsonRes({ task_id: 't-fail', status: 'Fail', base_resp: { status_code: 0 } })
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    await expect(
+      new MinimaxHailuoMediaAdapter().invoke(
+        makeInput({
+          operation: 'text_to_video',
+          capability: 'video.generate',
+          outputDir: tmpDir,
+        }),
+        makeContext({
+          defaultModel: 'MiniMax-Hailuo-2.3',
+          mediaApiType: 'async',
+          fetch: fetchImpl,
+          mediaManifest: manifest,
+          mediaManifestCapability: cap,
+          mediaDefaults: { polling: { intervalMs: 1 } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(MediaProviderError)
+  })
+
+  it('V2 本地文件链路: dataUrl 图 → Files upload → content[].image_url.url = mm_file://{file_id}', async () => {
+    const manifest = findManifest('minimax:v2-h3')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.image_to_video')!
+    const fetchImpl = mockFetch(async (url) => {
+      // 本地图（dataUrl）→ media-input 走 upload → mm_file://
+      if (url === `${ENDPOINT}/v1/files/upload`) {
+        return rawJsonRes(
+          '{\u0022file\u0022:{\u0022file_id\u0022:398574688191234048,\u0022bytes\u0022:100,\u0022filename\u0022:\u0022in.png\u0022,\u0022purpose\u0022:\u0022video_generation_input\u0022},\u0022base_resp\u0022:{\u0022status_code\u0022:0,\u0022status_msg\u0022:\u0022success\u0022}}',
+        )
+      }
+      if (url === `${ENDPOINT}/v2/video_generation`) return jsonRes({ task_id: 'h3-up' })
+      if (url.includes('/v2/query/video_generation/')) {
+        return jsonRes({ task: { status: 'succeeded', content: { url: 'https://cdn/up.mp4' } } })
+      }
+      if (url === 'https://cdn/up.mp4') return binaryRes(FAKE_MP4)
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    await new MinimaxHailuoMediaAdapter().invoke(
+      makeInput({
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        prompt: '动起来',
+        inputFiles: [
+          {
+            type: 'image',
+            role: 'first_frame',
+            dataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+            mimeType: 'image/png',
+          },
+        ],
+        outputDir: tmpDir,
+      }),
+      makeContext({
+        defaultModel: 'MiniMax-H3',
+        mediaApiType: 'async',
+        fetch: fetchImpl,
+        mediaManifest: manifest,
+        mediaManifestCapability: cap,
+        mediaDefaults: { polling: { intervalMs: 1 } },
+      }),
+    )
+    const uploadCall = fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v1/files/upload`)
+    expect(uploadCall).toBeTruthy()
+    const createBody = JSON.parse(
+      fetchImpl.mock.calls.find(([u]) => u === `${ENDPOINT}/v2/video_generation`)?.[1]?.body as string,
+    )
+    // file_id(int64) 经 files client 字符串透传后拼成 mm_file://，避免 JS number 精度丢失
+    expect(createBody.content).toEqual([
+      { type: 'text', text: '动起来' },
+      {
+        type: 'image_url',
+        image_url: { url: 'mm_file://398574688191234048' },
+        role: 'first_frame',
+      },
+    ])
+  })
+
+  it('V2 H3 cancelled 终态: query 返回 cancelled → 立即抛错（不轮询到超时）', async () => {
+    const manifest = findManifest('minimax:v2-h3')
+    const cap = manifest.capabilities.find((c) => c.id === 'video.generate')!
+    const fetchImpl = mockFetch(async (url) => {
+      if (url === `${ENDPOINT}/v2/video_generation`) return jsonRes({ task_id: 'h3-c' })
+      if (url.includes('/v2/query/video_generation/')) {
+        return jsonRes({ task: { id: 'h3-c', status: 'cancelled' } })
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    await expect(
+      new MinimaxHailuoMediaAdapter().invoke(
+        makeInput({
+          operation: 'text_to_video',
+          capability: 'video.generate',
+          modelParams: { ratio: '16:9' },
+          outputDir: tmpDir,
+        }),
+        makeContext({
+          defaultModel: 'MiniMax-H3',
+          mediaApiType: 'async',
+          fetch: fetchImpl,
+          mediaManifest: manifest,
+          mediaManifestCapability: cap,
+          mediaDefaults: { polling: { intervalMs: 1 } },
+        }),
+      ),
+    ).rejects.toThrow(/Task failed/)
+  })
+
+  it('validator: V2 H3 单文件超限阻断（图>30MB / 视频>50MB / 音频>15MB）', () => {
+    const refCtx = manifestContext('minimax:v2-h3', 'video.reference_to_video')
+    const mkIssues = (files: MediaInputFile[]) =>
+      validateMediaRequest({
+        input: makeInput({
+          operation: 'text_to_video',
+          capability: 'video.reference_to_video',
+          prompt: '参考生成',
+          inputFiles: files,
+        }),
+        providerKind: 'minimax-hailuo',
+        modelId: refCtx.defaultModel,
+        capability: 'video.reference_to_video',
+        manifest: refCtx.mediaManifest,
+        manifestCapability: refCtx.mediaManifestCapability,
+        mode: 'adapter',
+      }).blockingIssues
+
+    // 图片 >30MB
+    expect(
+      mkIssues([{ type: 'image', url: 'https://cdn/a.png', role: 'reference', sizeBytes: 31 * 1024 * 1024 }]),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'out_of_range' })]))
+    // 视频 >50MB
+    expect(
+      mkIssues([{ type: 'video', url: 'https://cdn/a.mp4', role: 'reference', sizeBytes: 51 * 1024 * 1024 }]),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'out_of_range' })]))
+    // 音频 >15MB（需配一张合法参考图，否则先触发 r2v"仅音频"missing_required）
+    expect(
+      mkIssues([
+        { type: 'image', url: 'https://cdn/ok.png', role: 'reference' },
+        { type: 'audio', url: 'https://cdn/a.mp3', role: 'reference', sizeBytes: 16 * 1024 * 1024 },
+      ]),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'out_of_range' })]))
+  })
+})

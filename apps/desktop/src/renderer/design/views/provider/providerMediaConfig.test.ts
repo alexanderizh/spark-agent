@@ -34,6 +34,14 @@ describe('provider media configuration', () => {
     }
   })
 
+  it('exposes MiniMax Hailuo for image and video profiles', () => {
+    // 守护 SUPPORTED_IMAGE_VIDEO_MEDIA_PROVIDERS 白名单含 minimax-hailuo：
+    // 缺失会导致 ProvidersView 模板下拉不显示 + mediaProvider 被强制重置。
+    for (const modelType of ['image', 'video'] as const) {
+      expect(mediaProviderOptionsForModelType(modelType)).toContain('minimax-hailuo')
+    }
+  })
+
   it('exposes Lyria music capability in voice profiles', () => {
     expect(capabilitiesForModelType('voice')).toContain('audio.music')
     expect(MEDIA_CAPABILITY_LABELS['audio.music']).toBe('音乐生成')

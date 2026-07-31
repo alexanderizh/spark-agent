@@ -247,6 +247,12 @@ export type CanvasNodeData = {
   /** 可继续编辑的图片标注侧车文档；实际场景不直接写入项目节点快照。 */
   imageAnnotation?: CanvasImageAnnotationRef
   mimeType?: string
+  /**
+   * Provider 文件 id（如 MiniMax Files 的 file_id）。来自「素材中心 → Files」
+   * 上传的文件节点：无本地 url，仅持有 provider 侧 file_id。提交任务时透传到
+   * CanvasMediaTaskInputFile.fileId，命中 adapter 上传短路（H3 用 mm_file://{id}）。
+   */
+  fileId?: string
   operation?: CanvasOperationType
   /** 单产物 / 候选 / 集合 / 角色包；缺省时由工作流和最近一次运行自动推断。 */
   outputMode?: CanvasOperationOutputMode
