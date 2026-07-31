@@ -27,6 +27,7 @@ describe('canvasTaskDefaults', () => {
     expect(canvasTaskDefaultKindForOperation('text_generate', { hasImageInput: true })).toBe(
       'image_understanding',
     )
+    expect(canvasTaskDefaultKindForOperation('image_prompt_reverse')).toBe('image_understanding')
     expect(canvasTaskDefaultKindForOperation('image_edit')).toBe('image_generation')
     expect(canvasTaskDefaultKindForOperation('video_extend')).toBe('video_generation')
     expect(canvasTaskDefaultKindForOperation('audio_transcribe')).toBeNull()

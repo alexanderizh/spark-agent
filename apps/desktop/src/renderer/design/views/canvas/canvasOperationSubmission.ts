@@ -11,6 +11,7 @@ import {
   validateCanvasTextTaskSubmission,
 } from './canvasTaskSubmissionValidation'
 import { fallbackPromptForOperation } from './canvasWorkspaceTaskInput'
+import { canvasOperationKind } from './canvasOperationKind'
 import type {
   CanvasNode,
   CanvasOperationType,
@@ -151,7 +152,7 @@ export async function prepareSavedCanvasOperationSubmission(
   }
   const validated = options?.skipParameterValidation
     ? request
-    : isTextOperation(operation)
+    : canvasOperationKind(operation) === 'text'
       ? dependencies.validateText(request)
       : await dependencies.validateMedia(request)
   const params = omitOperation({
@@ -167,14 +168,6 @@ export async function prepareSavedCanvasOperationSubmission(
     title: node.title?.trim() || node.id,
     params,
   }
-}
-
-function isTextOperation(operation: CanvasOperationType): boolean {
-  return (
-    operation === 'text_generate' ||
-    operation === 'text_rewrite' ||
-    operation === 'prompt_optimize'
-  )
 }
 
 function omitOperation(request: SubmissionValidationRequest): SavedCanvasOperationRunParams {

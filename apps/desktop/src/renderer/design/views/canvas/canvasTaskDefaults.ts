@@ -115,6 +115,7 @@ export function canvasTaskDefaultKindForOperation(
   operation: CanvasOperationType,
   context: CanvasTaskDefaultContext = {},
 ): CanvasTaskDefaultKind | null {
+  if (operation === 'image_prompt_reverse') return 'image_understanding'
   if (TEXT_OPERATIONS.has(operation)) {
     return context.hasImageInput ? 'image_understanding' : 'text'
   }

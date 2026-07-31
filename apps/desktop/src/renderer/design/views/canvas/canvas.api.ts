@@ -127,6 +127,7 @@ import {
   type CanvasNodeLayoutUpdate,
 } from './canvasNodeLayoutPersistence'
 import { canvasNodeTypeLabel, createCanvasNodeNaming, renameCanvasNode } from './canvasNodeNaming'
+import { canvasOperationKind } from './canvasOperationKind'
 
 const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
@@ -468,35 +469,12 @@ function buildProjectMeta(project: CanvasProject): NonNullable<CanvasSnapshotSav
   return meta
 }
 
-/** 需要真实平台 adapter 的多媒体 operation（其余走 demo / 文本模型） */
-const MEDIA_OPERATIONS = new Set<CanvasOperationType>([
-  'text_to_image',
-  'image_to_image',
-  'image_edit',
-  'image_compose',
-  'storyboard_grid',
-  'panorama_360',
-  'text_to_audio',
-  'audio_transcribe',
-  'text_to_video',
-  'image_to_video',
-  'video_edit',
-  'video_extend',
-])
-
 export function isMediaOperation(operation: CanvasOperationType): boolean {
-  return MEDIA_OPERATIONS.has(operation)
+  return canvasOperationKind(operation) === 'cloud_media'
 }
 
-/** 走真实文本模型的 operation（text_generate / text_rewrite / prompt_optimize） */
-const TEXT_MODEL_OPERATIONS = new Set<CanvasOperationType>([
-  'text_generate',
-  'text_rewrite',
-  'prompt_optimize',
-])
-
 export function isTextModelOperation(operation: CanvasOperationType): boolean {
-  return TEXT_MODEL_OPERATIONS.has(operation)
+  return canvasOperationKind(operation) === 'text'
 }
 
 const CANVAS_TEXT_CONTROL_MODEL_PARAM_NAMES = new Set([
