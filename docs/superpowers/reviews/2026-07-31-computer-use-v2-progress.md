@@ -24,7 +24,7 @@ Computer Use 相关回归：**41 文件 / 277 测试全过**（其中 7 个回�
 | Phase 0 真实基线样本           | 发布/真机签收 | macOS/Windows 失败安装包、冷启动/首次权限/四步任务真实样本           |
 | Phase 5.1/5.3 控制状态与去轮询 | 原生 + 纯 TS  | 系统 Overlay/托盘状态并入 Phase 4；Orchestrator 事件等待并入 Phase 7 |
 | Phase 7 灰度/迁移              | 纯 TS         | 统一 flag 框架 + 回退条件（依赖 Phase 0 指标）                       |
-| Phase 4 人机协同               | Swift + TS    | execution lane 与 macOS 输入冲突/用户接管已落地；300 ms P99 真机证据、Overlay、目标 picker/new-window provenance、AppControlBridge 待完成 |
+| Phase 4 人机协同               | Swift + TS    | execution lane、macOS 输入冲突/用户接管、系统 Tray 状态与暂停/接管/停止已落地；300 ms P99 真机证据、目标 picker/new-window provenance、AppControlBridge 待完成 |
 | Phase 6 会话级授权             | 安全评审门禁  | 动 T01 注入防御，需独立安全评审；做到交付物+签收清单                 |
 | Phase 1 原生打包               | 原生/基建签收 | DMG/NSIS 握手、CI VM 矩阵、签名、干净 VM 黄金任务 100 次——需发布基建 |
 | Phase 2.2 持久捕获（原生切片） | 原生签收      | SCStream/AXObserver/SCContentSharingPicker——macOS Swift/Windows Rust |

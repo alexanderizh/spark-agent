@@ -106,6 +106,7 @@ export class ComputerSessionManager {
   private readonly leaseTtlMs: number
   private readonly timeline: ComputerUseTimelineSink | undefined
   private readonly runtime = new Map<string, SessionRuntimeState>()
+  private readonly statusListeners = new Set<(session: ComputerSession) => void>()
 
   constructor(options: ComputerSessionManagerOptions) {
     this.sessions = options.sessions
@@ -142,7 +143,12 @@ export class ComputerSessionManager {
       computerSessionId: session.id,
       environment: session.environment,
     })
-    return session
+    return this.publishStatus(session)
+  }
+
+  subscribeStatus(listener: (session: ComputerSession) => void): () => void {
+    this.statusListeners.add(listener)
+    return () => this.statusListeners.delete(listener)
   }
 
   getSession(computerSessionId: string): ComputerSession | null {
@@ -176,7 +182,7 @@ export class ComputerSessionManager {
       phase === 'failed' ? updatedAt : null,
     )
     if (updated == null) throw sessionCanceled()
-    return toComputerSession(updated)
+    return this.publishStatus(toComputerSession(updated))
   }
 
   acquireLease(input: {
@@ -310,7 +316,7 @@ export class ComputerSessionManager {
     this.releaseRuntimeLease(runtime, now)
     const updated = this.sessions.updateStatus(computerSessionId, 'paused', now)
     if (updated == null) throw sessionCanceled()
-    return toComputerSession(updated)
+    return this.publishStatus(toComputerSession(updated))
   }
 
   resume(computerSessionId: string): ComputerSession {
@@ -326,7 +332,7 @@ export class ComputerSessionManager {
       this.now().toISOString(),
     )
     if (updated == null) throw sessionCanceled()
-    return toComputerSession(updated)
+    return this.publishStatus(toComputerSession(updated))
   }
 
   cancel(computerSessionId: string): ComputerSession {
@@ -347,7 +353,7 @@ export class ComputerSessionManager {
       computerSessionId: canceled.id,
       errorCode: 'session_canceled',
     })
-    return canceled
+    return this.publishStatus(canceled)
   }
 
   completeVerified(computerSessionId: string, verificationIds: string[] = []): ComputerSession {
@@ -369,7 +375,7 @@ export class ComputerSessionManager {
         verificationIds,
       })
     }
-    return completed
+    return this.publishStatus(completed)
   }
 
   fail(
@@ -398,7 +404,18 @@ export class ComputerSessionManager {
       computerSessionId: failed.id,
       errorCode,
     })
-    return failed
+    return this.publishStatus(failed)
+  }
+
+  private publishStatus(session: ComputerSession): ComputerSession {
+    for (const listener of this.statusListeners) {
+      try {
+        listener(session)
+      } catch {
+        // Status projections must never change the governed session transition result.
+      }
+    }
+    return session
   }
 
   private requireSessionRow(computerSessionId: string): ComputerSessionRow {

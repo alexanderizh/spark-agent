@@ -219,6 +219,22 @@ function createSession(manager: ComputerSessionManager, id: string) {
 }
 
 describe('ComputerSessionManager', () => {
+  it('publishes actual session status transitions without letting listeners break control flow', () => {
+    const { manager } = createHarness()
+    const statuses: string[] = []
+    manager.subscribeStatus((session) => statuses.push(session.status))
+    manager.subscribeStatus(() => {
+      throw new Error('projection failed')
+    })
+
+    const session = createSession(manager, 'computer-session-status')
+    manager.pause(session.id)
+    manager.resume(session.id)
+    manager.cancel(session.id)
+
+    expect(statuses).toEqual(['preflighting', 'paused', 'observing', 'canceled'])
+  })
+
   it('emits durable session lifecycle events with chat provenance', () => {
     const record = vi.fn()
     const { manager } = createHarness({ record })

@@ -13,6 +13,7 @@ Phase 4 的 execution lane 与 macOS 输入冲突/用户接管切片已经落地
 - Host 注入的鼠标、滚轮和键盘事件统一写入来源标记，listen-only Event Tap 不把它们误判为用户操作。
 - 用户点击绑定窗口时会话进入接管态；观察后、首次动作前发生的点击通过最近点击记录补偿绑定竞态。
 - `handoff_required` 从 Swift wire 映射到 Broker error，Operator 转入 `handoff_required/user_takeover`，不把主动接管误记为任务失败。
+- 主进程 Tray 实时投影实际 Computer Session 状态，只显示绑定应用标识而不泄露 objective/input，并通过 Broker 提供暂停、立即接管、停止控制。
 
 ## 三遍审查
 
@@ -35,11 +36,12 @@ Phase 4 的 execution lane 与 macOS 输入冲突/用户接管切片已经落地
 - `swift test`：42 项通过，新增 `userTakeover → handoff_required` wire 映射断言。
 - 聚焦 Vitest：3 文件 46 项通过，新增 Native Host 接管后 Operator handoff 且不 fail 的断言。
 - `tsc -p apps/desktop/tsconfig.node.json --noEmit`：exit 0。
+- Tray/Session 聚焦 Vitest：2 文件 11 项通过；状态订阅 listener 失败不会反向破坏会话状态转换。
 - click/type L1、T01 intent 升档、unknown→L2、unattended/sensitive handoff、approval ticket、digest/timeout fail-closed 等治理路径未修改。
 
 ## 剩余验收
 
 1. 在真实签名 App 上采集用户点击目标窗口到 Host 停止输入的 P50/P95/P99，P99 必须小于 300 ms。
 2. 用 20 个后台 AX 语义动作跑跨应用连续输入，确认无焦点跳转和字符串串入。
-3. 完成系统状态/产品状态/实际会话状态的一致性链路。
+3. 补齐目标窗口内的控制标签/入口，并做系统 Tray、产品状态与实际会话状态的真实界面联测。
 4. 完成 picker、new-window provenance、AppControlBridge 与 Windows 对等方案后，再出 Phase 4 最终审查。
