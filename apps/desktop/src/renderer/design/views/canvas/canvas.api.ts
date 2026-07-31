@@ -56,6 +56,7 @@ import {
 } from './canvasNodeSize'
 import { pruneModelParamsForCanvas } from './canvasMediaContract'
 import {
+  validateCanvasLocalTaskSubmission,
   validateCanvasMediaTaskSubmission,
   validateCanvasTextTaskSubmission,
 } from './canvasTaskSubmissionValidation'
@@ -4954,9 +4955,12 @@ export const canvasApi = {
       ...(retrySystemPrompt ? { systemPrompt: retrySystemPrompt } : {}),
     }
     // 重试：绑定到原操作节点，不新建节点
-    return isTextModelOperation(request.operation)
+    const executionKind = canvasOperationKind(request.operation)
+    return executionKind === 'text'
       ? this.createTextTask(projectId, request, { bindToNodeId: nodeId })
-      : this.createMediaTask(projectId, request, { bindToNodeId: nodeId })
+      : executionKind === 'local_media'
+        ? this.createLocalDepthTask(projectId, request, { bindToNodeId: nodeId })
+        : this.createMediaTask(projectId, request, { bindToNodeId: nodeId })
   },
 
   /**
@@ -5076,6 +5080,8 @@ export const canvasApi = {
         // The user explicitly accepted the warning or disabled future renderer preflight.
       } else if (isTextModelOperation(request.operation)) {
         request = validateCanvasTextTaskSubmission(request)
+      } else if (canvasOperationKind(request.operation) === 'local_media') {
+        request = validateCanvasLocalTaskSubmission(request)
       } else {
         request = await validateCanvasMediaTaskSubmission(request)
       }
@@ -5095,7 +5101,8 @@ export const canvasApi = {
       }
       writeDb(db)
     }
-    return isTextModelOperation(request.operation)
+    const executionKind = canvasOperationKind(request.operation)
+    return executionKind === 'text'
       ? this.createTextTask(
           projectId,
           { ...request, boardId: node.boardId },
@@ -5105,7 +5112,16 @@ export const canvasApi = {
             ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
           },
         )
-      : this.createMediaTask(
+      : executionKind === 'local_media'
+        ? this.createLocalDepthTask(
+            projectId,
+            { ...request, boardId: node.boardId },
+            {
+              bindToNodeId: nodeId,
+              ...(params.inputNodeIds ? { validationToken: CANVAS_TASK_VALIDATION_TOKEN } : {}),
+            },
+          )
+        : this.createMediaTask(
           projectId,
           { ...request, boardId: node.boardId },
           {
@@ -5132,9 +5148,15 @@ export const canvasApi = {
     // 否则 runtime 返回 failed/succeeded 时提前 return 会让本地 task 永远停在 running。
     if (task.requestId) {
       try {
-        await window.spark.invoke('canvas:task:cancel-media', {
-          runtimeTaskId: task.requestId,
-        })
+        if (task.operation === 'video_depth_map') {
+          await window.spark.invoke('canvas:task:cancel-depth-video', {
+            runtimeTaskId: task.requestId,
+          })
+        } else {
+          await window.spark.invoke('canvas:task:cancel-media', {
+            runtimeTaskId: task.requestId,
+          })
+        }
       } catch {
         // runtime 可能已随重启消失，忽略，仍走本地强制取消。
       }
@@ -5193,6 +5215,87 @@ export const canvasApi = {
     db.tasks = db.tasks.filter((task) => !(task.projectId === projectId && idSet.has(task.id)))
     updateProjectCounts(db, projectId)
     writeDb(db)
+  },
+
+  async createLocalDepthTask(
+    projectId: string,
+    requestInput: CreateCanvasTaskRequest & { inputFiles?: CanvasMediaTaskInputFile[] },
+    options?: {
+      bindToNodeId?: string
+      validationToken?: typeof CANVAS_TASK_VALIDATION_TOKEN
+    },
+  ): Promise<CanvasSnapshot> {
+    const request =
+      requestInput.skipParameterValidation === true ||
+      options?.validationToken === CANVAS_TASK_VALIDATION_TOKEN
+        ? requestInput
+        : validateCanvasLocalTaskSubmission(requestInput)
+    const inputFile = request.inputFiles?.[0]
+    const inputPath = inputFile?.path?.trim()
+    if (!inputPath) throw new Error('深度视频需要可读取的本地视频路径')
+
+    const started = await this.startWorkflowTask(projectId, {
+      boardId: request.boardId,
+      operation: 'video_depth_map',
+      title: request.taskTitle ?? '深度视频',
+      prompt: '',
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      ...(options?.bindToNodeId ? { bindToNodeId: options.bindToNodeId } : {}),
+      ...(request.outputPlacement ? { outputPlacement: request.outputPlacement } : {}),
+      provider: 'local_depth',
+      modelId: 'depth-anything-v2-small-int8',
+      progress: 1,
+      message: '准备本地深度模型',
+    })
+
+    let response: CanvasMediaTaskCreateResponse
+    try {
+      response = await window.spark.invoke('canvas:task:create-depth-video', {
+        projectId,
+        clientTaskId: started.taskId,
+        inputPath,
+      })
+    } catch (error) {
+      response = {
+        status: 'failed',
+        providerProfileId: '',
+        provider: 'local_depth',
+        model: 'depth-anything-v2-small-int8',
+        mode: 'async',
+        assets: [],
+        error: {
+          code: 'ipc_error',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }
+    }
+    if (response.status !== 'running') {
+      return this.applyMediaTaskResult(projectId, started.taskId, response)
+    }
+
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === started.taskId && item.projectId === projectId)
+    const taskNode = task?.operationNodeId
+      ? db.nodes.find((item) => item.id === task.operationNodeId && item.projectId === projectId)
+      : null
+    if (task) {
+      task.requestId = response.runtimeTaskId ?? response.requestId ?? null
+      task.progress = response.progress ?? task.progress
+      task.inputFileDiagnostics = summarizeCanvasTaskInputFiles(request.inputFiles ?? [])
+      task.updatedAt = now()
+    }
+    if (taskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'running',
+        progress: response.progress ?? 1,
+        message: response.message ?? '本地深度任务已创建',
+      }
+      taskNode.updatedAt = now()
+    }
+    writeDb(db)
+    return this.openSnapshot(projectId, request.boardId)
   },
 
   /**
@@ -5882,7 +5985,7 @@ export const canvasApi = {
       return this.openSnapshot(projectId, task.boardId)
     }
     task.status = 'running'
-    task.progress = Math.max(task.progress, 35)
+    task.progress = Math.max(task.progress, response.progress ?? 35)
     task.requestId = response.requestId ?? task.requestId ?? response.runtimeTaskId ?? null
     task.providerProfileId = response.providerProfileId || task.providerProfileId || null
     task.provider = response.provider || task.provider || null
@@ -5891,18 +5994,21 @@ export const canvasApi = {
     if (response.submitResponse !== undefined) task.submitResponse = response.submitResponse
     const at = now()
     task.updatedAt = at
-    appendCanvasTaskRuntimeEvent(task, {
-      at,
-      kind: 'submitted',
-      label: 'Provider 已接受后台任务',
-      ...(task.requestId ? { detail: `Request ${task.requestId}` } : {}),
-    })
+    const stageChanged = Boolean(response.message && taskNode.data.message !== response.message)
+    if (stageChanged || (task.runtimeEvents?.length ?? 0) === 0) {
+      appendCanvasTaskRuntimeEvent(task, {
+        at,
+        kind: 'submitted',
+        label: response.message ?? 'Provider 已接受后台任务',
+        ...(task.requestId ? { detail: `Request ${task.requestId}` } : {}),
+      })
+    }
     if (patchTaskNode) {
       taskNode.data = {
         ...taskNode.data,
         status: 'running',
         progress: task.progress,
-        message: '后台任务已提交，等待 provider 返回产物',
+        message: response.message ?? '后台任务已提交，等待 provider 返回产物',
       }
       syncCanvasTaskRuntimeToNode(task, taskNode.data)
       taskNode.updatedAt = at

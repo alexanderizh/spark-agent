@@ -6,6 +6,7 @@ import {
   mergeCanvasBackgroundTaskSnapshot,
   mergeCanvasMutationSnapshot,
   mergeCanvasTaskSnapshot,
+  resolveCanvasTaskExecutionMethod,
   shouldRefreshCanvasProjectsForTaskStream,
 } from './canvas.store'
 import type { CanvasProject, CanvasSnapshot } from './canvas.types'
@@ -487,5 +488,16 @@ describe('shouldRefreshCanvasProjectsForTaskStream', () => {
         response: {} as never,
       }),
     ).toBe(true)
+  })
+})
+
+describe('resolveCanvasTaskExecutionMethod', () => {
+  it('routes local depth video tasks to the local runner', () => {
+    expect(resolveCanvasTaskExecutionMethod('video_depth_map')).toBe('local_depth')
+  })
+
+  it('preserves the existing text and cloud media routes', () => {
+    expect(resolveCanvasTaskExecutionMethod('image_prompt_reverse')).toBe('text')
+    expect(resolveCanvasTaskExecutionMethod('image_to_video')).toBe('cloud_media')
   })
 })

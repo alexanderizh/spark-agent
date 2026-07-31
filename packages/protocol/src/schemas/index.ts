@@ -1233,6 +1233,16 @@ export const IpcSchemaRegistry = {
     outputDir: z.string().max(2000).optional(),
     ...CanvasPromptTaskFieldsSchema,
   }),
+  'canvas:depth-model:status': z.object({}),
+  'canvas:depth-model:install': z.object({}),
+  'canvas:task:create-depth-video': z.object({
+    projectId: z.string().min(1).max(200),
+    clientTaskId: z.string().min(1).max(200),
+    inputPath: z.string().min(1).max(4096),
+  }),
+  'canvas:task:cancel-depth-video': z.object({
+    runtimeTaskId: z.string().min(1).max(200),
+  }),
   'canvas:task:cancel-media': z.object({
     runtimeTaskId: z.string().min(1).max(200),
   }),

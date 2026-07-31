@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { canvasApi, isMediaOperation, isTextModelOperation } from './canvas.api'
+import { canvasApi } from './canvas.api'
 import type {
   CanvasBoard,
   CanvasEdge,
@@ -25,8 +25,21 @@ import {
   type CanvasNodeLayoutUpdate,
 } from './canvasNodeLayoutPersistence'
 import { buildCanvasWorkflowTemplateBlueprint } from './canvasWorkflowMaterialization'
+import { canvasOperationKind } from './canvasOperationKind'
 
 export type CanvasViewMode = { mode: 'projects' } | { mode: 'workspace'; projectId: string }
+
+export type CanvasTaskExecutionMethod = 'text' | 'cloud_media' | 'local_depth' | 'deferred'
+
+export function resolveCanvasTaskExecutionMethod(
+  operation: CreateCanvasTaskRequest['operation'],
+): CanvasTaskExecutionMethod {
+  const kind = canvasOperationKind(operation)
+  if (kind === 'text') return 'text'
+  if (kind === 'cloud_media') return 'cloud_media'
+  if (kind === 'local_media') return 'local_depth'
+  return 'deferred'
+}
 
 const CANVAS_HISTORY_LIMIT = 50
 
@@ -649,14 +662,19 @@ export function useCanvasWorkspace(projectId: string) {
       if (!current) return
       const existingTaskIds = new Set(current.tasks.map((task) => task.id))
       let next: CanvasSnapshot
-      // 多媒体 operation 走真实平台 adapter；文本 operation 走真实文本模型；其余记录为待接入执行器的任务。
-      if (isMediaOperation(request.operation)) {
+      // 云媒体走平台 adapter，文本走模型，本地深度视频走受管本地推理器。
+      const executionMethod = resolveCanvasTaskExecutionMethod(request.operation)
+      if (executionMethod === 'cloud_media') {
         next = await applyTaskSnapshot(
           canvasApi.createMediaTask(projectId, { ...request, boardId: current.board.id }),
         )
-      } else if (isTextModelOperation(request.operation)) {
+      } else if (executionMethod === 'text') {
         next = await applyTaskSnapshot(
           canvasApi.createTextTask(projectId, { ...request, boardId: current.board.id }),
+        )
+      } else if (executionMethod === 'local_depth') {
+        next = await applyTaskSnapshot(
+          canvasApi.createLocalDepthTask(projectId, { ...request, boardId: current.board.id }),
         )
       } else {
         next = await applyTaskSnapshot(
