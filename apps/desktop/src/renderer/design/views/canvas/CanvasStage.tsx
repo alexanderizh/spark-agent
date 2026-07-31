@@ -2723,6 +2723,7 @@ function CanvasStageInner({
                         <Button
                           key={item.operation}
                           type="text"
+                          role="menuitem"
                           size='small'
                           style={{display: 'flex', alignItems: 'center', justifyContent: 'flex-start'}}
                           className={`canvas-pane-context-op ${visual.colorClass}`}
