@@ -110,6 +110,13 @@ export const AppControlCommandSchema = z.discriminatedUnion('name', [
       ]),
     })
     .strict(),
+  z
+    .object({
+      name: z.literal('prefill_composer'),
+      text: z.string().min(1).max(4_000),
+      sensitive: z.boolean().optional(),
+    })
+    .strict(),
 ])
 export type AppControlCommand = z.infer<typeof AppControlCommandSchema>
 

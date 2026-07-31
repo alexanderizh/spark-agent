@@ -806,6 +806,48 @@ describe('ComputerTaskOperator', () => {
     )
   })
 
+  it('classifies sensitive composer prefill as credential data before broker dispatch', async () => {
+    const decisions = [
+      {
+        type: 'action' as const,
+        intent: 'Prefill the chat draft',
+        action: {
+          type: 'app_command' as const,
+          command: {
+            name: 'prefill_composer' as const,
+            text: 'secret',
+            sensitive: true,
+          },
+        },
+      },
+      { type: 'ready_for_verification' as const, reason: 'Draft is visible' },
+    ]
+    const dispatch = vi.fn(async () => ({ observation: AFTER, noop: false }))
+    const operator = new ComputerTaskOperator({
+      sessions: sessionController(),
+      broker: { observe: vi.fn(async () => BEFORE), dispatch },
+      approvals: { takeApprovedTicket: vi.fn(() => null) },
+      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+      verifications: verificationStore(),
+      now: () => Date.parse(SESSION.createdAt),
+    })
+
+    await operator.run({
+      session: SESSION,
+      lease: LEASE,
+      adapter: { decide: vi.fn(async () => decisions.shift()!) },
+    })
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        policyContext: expect.objectContaining({
+          effect: 'reversible_local',
+          dataClasses: ['credential'],
+        }),
+      }),
+    )
+  })
+
   it('marks non-committing semantic navigation as reversible local activity', async () => {
     const decisions = [
       {

@@ -8,6 +8,7 @@ export async function applyAppControlCommand(
     setTheme(theme: ThemeMode): void
     setView(view: ViewId): void
     currentView(): ViewId
+    prefillComposer(text: string): Promise<boolean>
     waitForRender(): Promise<void>
   },
 ): Promise<'applied' | 'rejected'> {
@@ -17,8 +18,28 @@ export async function applyAppControlCommand(
     await context.waitForRender()
     return 'applied'
   }
+  if (command.name === 'prefill_composer') {
+    context.setView('chat')
+    await context.waitForRender()
+    await context.waitForRender()
+    if (!(await context.prefillComposer(command.text))) return 'rejected'
+    await context.waitForRender()
+    await context.waitForRender()
+    return 'applied'
+  }
   context.setView(command.view)
   await context.waitForRender()
   await context.waitForRender()
   return context.currentView() === command.view ? 'applied' : 'rejected'
+}
+
+export function appliedAppControlMessage(command: AppControlCommand): string {
+  switch (command.name) {
+    case 'set_theme':
+      return 'Agent 已通过应用内控制切换主题'
+    case 'navigate':
+      return 'Agent 已通过应用内控制切换页面'
+    case 'prefill_composer':
+      return 'Agent 已通过应用内控制填写草稿（未发送）'
+  }
 }

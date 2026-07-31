@@ -119,12 +119,10 @@ describe('computer action contract', () => {
     }
 
     expect(schema.parse(envelope)).toEqual(envelope)
-    expect(
-      schema.safeParse({ ...envelope, executionLane: 'background_semantic' }).success,
-    ).toBe(true)
-    expect(schema.safeParse({ ...envelope, executionLane: 'foreground_input' }).success).toBe(
-      false,
+    expect(schema.safeParse({ ...envelope, executionLane: 'background_semantic' }).success).toBe(
+      true,
     )
+    expect(schema.safeParse({ ...envelope, executionLane: 'foreground_input' }).success).toBe(false)
     const { observedFrameId: _frame, ...withoutFrame } = envelope
     expect(schema.safeParse(withoutFrame).success).toBe(false)
 
@@ -162,6 +160,18 @@ describe('computer action contract', () => {
         command: { name: 'set_theme', theme: 'dark' },
       }).success,
     ).toBe(true)
+    expect(
+      schema.safeParse({
+        type: 'app_command',
+        command: { name: 'prefill_composer', text: 'Draft only' },
+      }).success,
+    ).toBe(true)
+    expect(
+      schema.safeParse({
+        type: 'app_command',
+        command: { name: 'prefill_composer', text: 'x'.repeat(4_001) },
+      }).success,
+    ).toBe(false)
     expect(
       schema.safeParse({
         type: 'app_command',

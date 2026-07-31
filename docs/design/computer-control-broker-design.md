@@ -14,7 +14,7 @@
 - `NativeHostArtifact.ts` / `NativeHostClient.ts` / `NativeHostComputerUseBackend.ts`：校验父应用与 Host 签名主体、最终字节 hash、manifest 和 wire 握手，管理长度前缀 pipe、按操作预算的超时、崩溃重连、窗口列表、捕获、full/diff observation 与动作后证据持久化。macOS/Windows Host 只在真实权限与后端可用时声明 AX/UIA/input；缺少任一能力时对应 observe/execute 继续 fail-closed。
 - `ComputerKillSwitchService.ts`：全局快捷键注册、注册失败 fail-closed、重复触发合并和全部活动会话停止。
 - `ComputerUseServices.ts`：使用真实 Storage Repository 的主进程 composition root。
-- `AppControlBridge.ts` / `AppControlExecutorBackend.ts`：SparkWork 自身的会话绑定白名单 command 通道；生产默认只匹配固定 bundle id `com.spark-agent.desktop`，只接受协议枚举的主题/导航命令，仍先经过 Broker policy/lease，主 Renderer 回执精确 `computerSessionId + actionId + commandId + uiRevision` 后重新观察，不提供 eval、selector、URL、shell 或任意 IPC。
+- `AppControlBridge.ts` / `AppControlExecutorBackend.ts`：SparkWork 自身的会话绑定白名单 command 通道；生产默认只匹配固定 bundle id `com.spark-agent.desktop`，只接受协议枚举的主题、导航与空草稿填写命令，仍先经过 Broker policy/lease，主 Renderer 回执精确 `computerSessionId + actionId + commandId + uiRevision` 后重新观察。草稿填写不发送、不覆盖已有输入，敏感文本按 credential/L4 handoff；不提供 eval、selector、URL、shell 或任意 IPC。
 - `NativeHostComputerUseBackend.bindSessionTarget()`：把会话绑定到精确 `appId + windowId`；绑定存在时观察和动作后观察都不得跟随其他前台窗口。首次选择和后续新窗口加入均须经主进程校验任务契约中的最强应用身份规则；后续加入必须先暂停会话并由会话所有者显式请求。
 - `computer-permission-action.ts`：`spark_computer` 任务级 MCP 权限映射；未知工具和低层动作永久拒绝。
 
