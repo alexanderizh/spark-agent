@@ -94,6 +94,13 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
     }),
   )
 
+  typedIpcHandle('computer-use:diagnose-native-host', async (_request, event) =>
+    safeComputerUseIpc(() => {
+      assertRenderer(event)
+      return services().diagnostics.collect()
+    }),
+  )
+
   typedIpcHandle('computer-use:get-settings', async (_request, event) => {
     assertRenderer(event)
     return loadSettings(settingsStore)

@@ -251,6 +251,20 @@ describe('ComputerUseAgentController', () => {
     })
   })
 
+  it('returns the copyable native host diagnostic report through the Agent tool', async () => {
+    const report = {
+      correlationId: 'diagnostic-1',
+      result: { diagnosticCode: 'native_host_ready', stage: 'handshake' },
+    }
+    const collect = vi.fn(async () => report)
+    const controller = new ComputerUseAgentController({
+      getServices: () => ({ diagnostics: { collect } }) as never,
+    })
+
+    await expect(controller.invoke('session-1', 'diagnose_native_host', {})).resolves.toBe(report)
+    expect(collect).toHaveBeenCalledOnce()
+  })
+
   it('advertises governed execution when semantic actions work without coordinate input permission', async () => {
     const capabilities: ComputerUseCapabilitySummary = {
       ...CAPABILITIES,

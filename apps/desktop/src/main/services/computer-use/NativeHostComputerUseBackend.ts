@@ -15,10 +15,16 @@ import type {
   ComputerExecutorBackend,
   ComputerHostBackend,
   ComputerObserverBackend,
+  NativeHostDiagnosticProbe,
 } from './ComputerUseBackend.js'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import { NativeHostArtifactError } from './NativeHostArtifact.js'
 import { NativeHostSupervisor } from './NativeHostSupervisor.js'
+import type {
+  ComputerUseMetricDimensions,
+  ComputerUseMetricName,
+  ComputerUseMetricsCollector,
+} from './ComputerUseMetricsCollector.js'
 
 const log = createLogger('computer-use-native-host')
 
@@ -98,6 +104,8 @@ export class NativeHostComputerUseBackend
   private readonly createId: () => string
   private readonly observationSessions = new Map<string, ObservationSessionState>()
   private readonly supervisor: NativeHostSupervisor | null
+  private readonly metrics: ComputerUseMetricsCollector | null
+  private readonly metricDimensions: () => ComputerUseMetricDimensions
   private connectionPromise: Promise<NativeHostConnection> | null = null
   private connection: NativeHostConnection | null = null
   private disposed = false
@@ -118,11 +126,23 @@ export class NativeHostComputerUseBackend
      * factory feature flag.
      */
     enableHostSupervisor?: boolean
+    metrics?: ComputerUseMetricsCollector
+    metricDimensions?: () => ComputerUseMetricDimensions
   }) {
     this.platform = options.platform
     this.connect = options.connect
     this.evidenceSink = options.evidenceSink ?? null
     this.createId = options.createId ?? randomUUID
+    this.metrics = options.metrics ?? null
+    this.metricDimensions =
+      options.metricDimensions ??
+      (() => ({
+        platform: this.platform,
+        architecture: process.arch,
+        appVersion: 'unknown',
+        hostVersion: 'unknown',
+        trustMode: 'unknown',
+      }))
     if (options.supervisor != null && options.enableHostSupervisor === true) {
       throw new Error(
         'NativeHostComputerUseBackend: pass either supervisor or enableHostSupervisor, not both',
@@ -146,17 +166,20 @@ export class NativeHostComputerUseBackend
   }
 
   async getCapabilities(): Promise<ComputerUseCapabilitySummary> {
+    const startedAt = performance.now()
     try {
       const manifest = await this.withConnection((connection) => connection.getCapabilities())
-      return {
+      const capabilities: ComputerUseCapabilitySummary = {
         available: true,
         platform: this.platform,
         nativeHost: manifest,
         permissions: manifest.permissions,
       }
+      this.recordMetric('native_host_capability_ms', startedAt, true)
+      return capabilities
     } catch (error) {
       const brokerError = normalizeBackendError(error)
-      return {
+      const capabilities: ComputerUseCapabilitySummary = {
         available: false,
         platform: this.platform,
         nativeHost: null,
@@ -166,6 +189,38 @@ export class NativeHostComputerUseBackend
           input: 'unsupported',
         },
         unavailableReason: brokerError.code,
+      }
+      this.recordMetric('native_host_capability_ms', startedAt, false)
+      return capabilities
+    }
+  }
+
+  async diagnoseNativeHost(): Promise<NativeHostDiagnosticProbe> {
+    try {
+      const manifest = await this.withConnection((connection) => connection.getCapabilities(), {
+        idempotent: true,
+      })
+      return {
+        capabilities: {
+          available: true,
+          platform: this.platform,
+          nativeHost: manifest,
+          permissions: manifest.permissions,
+        },
+        diagnostic: {
+          diagnosticCode: 'native_host_ready',
+          stage: 'handshake',
+        },
+        errorCode: null,
+        message: 'Trusted Native Host verification and handshake succeeded',
+      }
+    } catch (error) {
+      const brokerError = normalizeBackendError(error)
+      return {
+        capabilities: unavailableCapabilities(this.platform, brokerError.code),
+        diagnostic: brokerError.diagnostic ?? fallbackNativeHostDiagnostic(brokerError.code),
+        errorCode: brokerError.code,
+        message: brokerError.message,
       }
     }
   }
@@ -177,7 +232,9 @@ export class NativeHostComputerUseBackend
   async requestPermissions(
     permissions: Array<'screen' | 'accessibility'>,
   ): Promise<NativeHostCapabilityManifest> {
-    return this.withConnection((connection) => connection.requestPermissions(permissions))
+    return this.measure('permission_request_ms', () =>
+      this.withConnection((connection) => connection.requestPermissions(permissions)),
+    )
   }
 
   async captureWindow(input: {
@@ -193,23 +250,30 @@ export class NativeHostComputerUseBackend
     fullTree: boolean
     signal: AbortSignal
   }): Promise<ComputerObservation> {
-    return this.runControlOperation('observation', undefined, async (connection) => {
-      const previous = this.observationSessions.get(input.computerSessionId)
-      const target = selectControllableWindow(
-        await connection.listWindows(input.signal),
-        previous == null ? undefined : { appId: previous.appId, windowId: previous.windowId },
-      )
-      return this.captureObservation({
-        connection,
-        computerSessionId: input.computerSessionId,
-        appId: target.app.id,
-        windowId: target.window.id,
-        previousTreeVersion: previous?.treeVersion ?? null,
-        fullTree: input.fullTree || previous == null,
-        kind: 'execution_before',
-        signal: input.signal,
-      })
-    }, { idempotent: true })
+    return this.measure('observation_ms', () =>
+      this.runControlOperation(
+        'observation',
+        undefined,
+        async (connection) => {
+          const previous = this.observationSessions.get(input.computerSessionId)
+          const target = selectControllableWindow(
+            await connection.listWindows(input.signal),
+            previous == null ? undefined : { appId: previous.appId, windowId: previous.windowId },
+          )
+          return this.captureObservation({
+            connection,
+            computerSessionId: input.computerSessionId,
+            appId: target.app.id,
+            windowId: target.window.id,
+            previousTreeVersion: previous?.treeVersion ?? null,
+            fullTree: input.fullTree || previous == null,
+            kind: 'execution_before',
+            signal: input.signal,
+          })
+        },
+        { idempotent: true },
+      ),
+    )
   }
 
   async execute(input: {
@@ -230,31 +294,33 @@ export class NativeHostComputerUseBackend
         'Native Host action does not match the latest persisted observation',
       )
     }
-    return this.runControlOperation('execution', input.envelope.action, async (connection) => {
-      const actionResult = await connection.executeAction(input.envelope, input.signal)
-      const target = selectControllableWindow(await connection.listWindows(input.signal), {
-        appId: input.observation.foreground.app.id,
-        windowId: input.observation.foreground.window.id,
-      })
-      const observation = await this.captureObservation({
-        connection,
-        computerSessionId: input.envelope.computerSessionId,
-        appId: target.app.id,
-        windowId: target.window.id,
-        previousTreeVersion: input.observation.treeVersion,
-        fullTree: false,
-        kind: 'execution_after',
-        signal: input.signal,
-      })
-      return {
-        observation,
-        // The Host knows whether it actually emitted an input/semantic action. Visual
-        // similarity is deliberately not used as a hard interruption signal because
-        // video and animated applications change without the action, while successful
-        // focus/caret actions may make only a tiny pixel-level change.
-        noop: actionResult.status === 'noop',
-      }
-    })
+    return this.measure('action_ms', () =>
+      this.runControlOperation('execution', input.envelope.action, async (connection) => {
+        const actionResult = await connection.executeAction(input.envelope, input.signal)
+        const target = selectControllableWindow(await connection.listWindows(input.signal), {
+          appId: input.observation.foreground.app.id,
+          windowId: input.observation.foreground.window.id,
+        })
+        const observation = await this.captureObservation({
+          connection,
+          computerSessionId: input.envelope.computerSessionId,
+          appId: target.app.id,
+          windowId: target.window.id,
+          previousTreeVersion: input.observation.treeVersion,
+          fullTree: false,
+          kind: 'execution_after',
+          signal: input.signal,
+        })
+        return {
+          observation,
+          // The Host knows whether it actually emitted an input/semantic action. Visual
+          // similarity is deliberately not used as a hard interruption signal because
+          // video and animated applications change without the action, while successful
+          // focus/caret actions may make only a tiny pixel-level change.
+          noop: actionResult.status === 'noop',
+        }
+      }),
+    )
   }
 
   async cancelSession(computerSessionId: string): Promise<void> {
@@ -309,6 +375,22 @@ export class NativeHostComputerUseBackend
     }
   }
 
+  private async measure<T>(name: ComputerUseMetricName, operation: () => Promise<T>): Promise<T> {
+    const startedAt = performance.now()
+    try {
+      const result = await operation()
+      this.recordMetric(name, startedAt, true)
+      return result
+    } catch (error) {
+      this.recordMetric(name, startedAt, false)
+      throw error
+    }
+  }
+
+  private recordMetric(name: ComputerUseMetricName, startedAt: number, succeeded: boolean): void {
+    this.metrics?.record(name, performance.now() - startedAt, this.metricDimensions(), succeeded)
+  }
+
   private async withConnection<T>(
     operation: (connection: NativeHostConnection) => Promise<T>,
     options?: { idempotent?: boolean },
@@ -319,7 +401,8 @@ export class NativeHostComputerUseBackend
         return await operation(connection)
       } catch (error) {
         const normalized = normalizeBackendError(error)
-        if (shouldInvalidateConnection(normalized)) await this.invalidateConnection(connection, normalized)
+        if (shouldInvalidateConnection(normalized))
+          await this.invalidateConnection(connection, normalized)
         throw normalized
       }
     })
@@ -390,7 +473,8 @@ export class NativeHostComputerUseBackend
         return await callback(connection)
       } catch (error) {
         const normalized = normalizeBackendError(error)
-        if (shouldInvalidateConnection(normalized)) await this.invalidateConnection(connection, normalized)
+        if (shouldInvalidateConnection(normalized))
+          await this.invalidateConnection(connection, normalized)
         throw normalized
       }
     })
@@ -532,6 +616,41 @@ function normalizeBackendError(error: unknown): ComputerUseBrokerError {
     'native_host_incompatible',
     'Trusted Native Host backend failed',
   )
+}
+
+function unavailableCapabilities(
+  platform: NativeHostPlatform,
+  unavailableReason: string,
+): ComputerUseCapabilitySummary {
+  return {
+    available: false,
+    platform,
+    nativeHost: null,
+    permissions: {
+      screen: 'unsupported',
+      accessibility: 'unsupported',
+      input: 'unsupported',
+    },
+    unavailableReason,
+  }
+}
+
+function fallbackNativeHostDiagnostic(code: ComputerUseBrokerError['code']): {
+  diagnosticCode: string
+  stage: 'discover' | 'verify' | 'handshake'
+  repairAction: string
+} {
+  if (code === 'native_host_missing') {
+    return { diagnosticCode: 'native_host_missing', stage: 'discover', repairAction: 'reinstall' }
+  }
+  if (code === 'native_host_untrusted') {
+    return { diagnosticCode: 'native_host_untrusted', stage: 'verify', repairAction: 'reinstall' }
+  }
+  return {
+    diagnosticCode: code === 'action_timeout' ? 'host_handshake_timeout' : 'host_handshake_failed',
+    stage: 'handshake',
+    repairAction: 'restart_app',
+  }
 }
 
 function observationUnavailable(): ComputerUseBrokerError {

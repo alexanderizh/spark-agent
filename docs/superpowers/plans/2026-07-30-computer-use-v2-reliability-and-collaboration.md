@@ -288,6 +288,8 @@ interface ComputerActivityEvent {
 
 **目标**：在不知道真实根因时，不继续用零散补丁发布。
 
+> 实施进度（2026-07-31）：只读诊断 IPC/MCP、Beta 标识、细粒度阶段归因与无内容指标采集已落地；macOS/Windows 失败安装包样本和真实四步任务基线仍等待 Phase 1 发布基建签收，不能以单元测试数据冒充真实基线。
+
 #### 任务
 
 1. 收集一份 macOS 失败包和一份 Windows 失败包的：
@@ -305,6 +307,15 @@ interface ComputerActivityEvent {
 - 同一个失败能稳定定位到一个 `diagnosticCode + stage`。
 - 日志可以区分“产物不可信”和“Host 已可信但握手失败”。
 - 不需要用户打开开发者工具才能获取诊断。
+
+#### 已落地的基线采集口径
+
+- `native_host_capability_ms`：从首次请求到可信 Host capability handshake 完成；失败同样计数。
+- `permission_request_ms`：首次屏幕录制/辅助功能权限请求耗时。
+- `observation_ms`：观察链路（窗口选择、Host 观察、证据内存可见）耗时。
+- `action_ms`：单动作执行与 after observation 总耗时。
+- 预留 `takeover_stop_ms`、`four_step_task_ms`，由 Phase 4/5 的真实转换点写入。
+- 所有指标只按 platform、architecture、App version、Host version、trust mode 分桶，不采集截图、输入文本、目标内容或用户数据。
 
 ### Phase 1：P0 正式安装包可靠性
 

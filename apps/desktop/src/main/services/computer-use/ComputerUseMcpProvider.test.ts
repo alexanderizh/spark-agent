@@ -40,6 +40,7 @@ describe('createComputerUseMcpProvider', () => {
     expect(config?.server).not.toHaveProperty('command')
     expect(config?.server).not.toHaveProperty('env')
     expect(config?.allowedTools).toContain('mcp__spark_computer__get_capabilities')
+    expect(config?.allowedTools).toContain('mcp__spark_computer__diagnose_native_host')
     expect(config?.allowedTools).toContain('mcp__spark_computer__stop')
     expect(config?.allowedTools).toContain('mcp__spark_computer__start_task')
     expect(config?.allowedTools).toContain('mcp__spark_computer__resume')

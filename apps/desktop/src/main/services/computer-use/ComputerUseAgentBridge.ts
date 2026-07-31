@@ -110,7 +110,13 @@ const MCP_TOOLS = [
   {
     name: 'get_capabilities',
     description:
-      'Read trusted Computer Use permissions, feature flags, and governed task availability. Call this before claiming computer-control ability.',
+      'Read trusted Computer Use Beta permissions, feature flags, and governed task availability. Call this before claiming computer-control ability; use diagnose_native_host when unavailable.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'diagnose_native_host',
+    description:
+      'Return a copyable, content-free Native Host diagnostic report with diagnosticCode, stage, repair action, runtime versions, permissions, and latency baselines.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {

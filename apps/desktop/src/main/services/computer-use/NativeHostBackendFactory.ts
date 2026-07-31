@@ -20,6 +20,7 @@ import {
   type NativeObservationEvidenceSink,
 } from './NativeHostComputerUseBackend.js'
 import { isHostSupervisorEnabled } from './computerUseV2Flags.js'
+import type { ComputerUseMetricsCollector } from './ComputerUseMetricsCollector.js'
 
 export type DefaultComputerUseBackend = UnavailableComputerUseBackend | NativeHostComputerUseBackend
 
@@ -42,6 +43,8 @@ export function createDefaultComputerUseBackend(
     evidenceSink?: NativeObservationEvidenceSink
     /** Override the V2 host-supervisor flag (tests). Production reads the env. */
     hostSupervisorEnabled?: boolean
+    metrics?: ComputerUseMetricsCollector
+    appVersion?: string
   } = {},
 ): DefaultComputerUseBackend {
   const platform = options.platform ?? process.platform
@@ -79,13 +82,24 @@ export function createDefaultComputerUseBackend(
   const connectClient =
     options.connectClient ??
     ((artifact: VerifiedNativeHostArtifact) => NativeHostClient.connect({ artifact }))
+  let activeTrustMode = 'unknown'
+  let activeHostVersion = 'unknown'
 
   return new NativeHostComputerUseBackend({
     platform: nativePlatform,
     ...(options.evidenceSink == null ? {} : { evidenceSink: options.evidenceSink }),
     enableHostSupervisor: options.hostSupervisorEnabled ?? isHostSupervisorEnabled(),
+    ...(options.metrics == null ? {} : { metrics: options.metrics }),
+    metricDimensions: () => ({
+      platform: nativePlatform,
+      architecture: nativeArchitecture,
+      appVersion: options.appVersion ?? 'unknown',
+      hostVersion: activeHostVersion,
+      trustMode: activeTrustMode,
+    }),
     connect: async () => {
       const trustMode = await readArtifactTrustMode(manifestPath)
+      activeTrustMode = trustMode
       const artifact =
         trustMode === 'local'
           ? await verifyLocalArtifactAfterAppTrustCheck()
@@ -100,6 +114,7 @@ export function createDefaultComputerUseBackend(
                   await inspectWindowsAppCodeSignature(appExecutablePath)
                 ).publisherThumbprint,
               })
+      activeHostVersion = artifact.manifest.hostVersion
       return connectClient(artifact)
 
       async function verifyLocalArtifactAfterAppTrustCheck(): Promise<VerifiedNativeHostArtifact> {

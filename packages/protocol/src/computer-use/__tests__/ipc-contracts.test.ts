@@ -57,6 +57,7 @@ describe('computer use IPC schemas', () => {
     expect(Object.keys(registry).sort()).toEqual(
       [
         'computer-use:approve-action',
+        'computer-use:diagnose-native-host',
         'computer-use:deny-action',
         'computer-use:get-capabilities',
         'computer-use:get-settings',

@@ -156,6 +156,30 @@ function createServices(overrides: Record<string, unknown> = {}) {
     armKillSwitch: vi.fn(() => true),
     verifications: { get: vi.fn(() => null) },
     timeline: new ComputerUseTimelineStore(),
+    diagnostics: {
+      collect: vi.fn(async () => ({
+        generatedAt: '2026-07-31T00:00:00.000Z',
+        correlationId: 'diagnostic-1',
+        app: { version: '0.8.14', packaged: true },
+        runtime: { platform: 'macos', architecture: 'arm64', osRelease: '25.0.0' },
+        host: {
+          available: true,
+          version: '1.0.0',
+          protocolVersion: 1,
+          platform: 'macos',
+          architecture: 'arm64',
+          permissions: NATIVE_HOST.permissions,
+        },
+        result: {
+          diagnosticCode: 'native_host_ready',
+          stage: 'handshake',
+          repairAction: null,
+          errorCode: null,
+          message: 'Trusted Native Host verification and handshake succeeded',
+        },
+        metrics: [],
+      })),
+    },
     ...overrides,
   }
 }
@@ -194,6 +218,7 @@ describe('registerComputerUseIpc', () => {
     expect([...harness.handlers.keys()].sort()).toEqual(
       [
         'computer-use:get-capabilities',
+        'computer-use:diagnose-native-host',
         'computer-use:get-settings',
         'computer-use:update-settings',
         'computer-use:start',
@@ -210,6 +235,18 @@ describe('registerComputerUseIpc', () => {
         'computer-use:get-verification',
       ].sort(),
     )
+  })
+
+  it('returns a copyable native host diagnostic report to the trusted renderer', async () => {
+    const { services } = register()
+
+    await expect(
+      harness.handlers.get('computer-use:diagnose-native-host')!({}, event()),
+    ).resolves.toMatchObject({
+      correlationId: 'diagnostic-1',
+      result: { diagnosticCode: 'native_host_ready', stage: 'handshake' },
+    })
+    expect(services.diagnostics.collect).toHaveBeenCalledOnce()
   })
 
   it('rejects every privileged Computer Use channel from an untrusted renderer', async () => {
