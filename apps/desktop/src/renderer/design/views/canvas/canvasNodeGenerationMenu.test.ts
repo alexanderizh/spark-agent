@@ -31,27 +31,25 @@ describe('canvasNodeGenerationMenu', () => {
     expect(new Set(allOperationIds).size).toBe(allOperationIds.length)
   })
 
-  it('retains image, text, video, and audio groups', () => {
+  it('removes the general text group while retaining image, video, and audio groups', () => {
     expect(CANVAS_BASE_CREATE_OPERATION_GROUPS.map((group) => group.id)).toEqual([
       'image',
-      'text',
       'video',
       'audio',
     ])
   })
 
-  it('exposes all twelve base operations without functional operations', () => {
+  it('replaces the three general text entries with image prompt reverse and depth video', () => {
     expect(canvasBaseCreateOperations().map((item) => item.operation)).toEqual([
       'text_to_image',
       'image_edit',
       'image_compose',
-      'text_generate',
-      'text_rewrite',
-      'prompt_optimize',
+      'image_prompt_reverse',
       'text_to_video',
       'image_to_video',
       'video_edit',
       'video_extend',
+      'video_depth_map',
       'text_to_audio',
       'audio_transcribe',
     ])

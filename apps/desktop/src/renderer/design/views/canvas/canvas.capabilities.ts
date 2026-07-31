@@ -7,11 +7,29 @@ import type {
 
 export const CANVAS_CAPABILITIES: CanvasCapability[] = [
   {
+    id: 'canvas.image-prompt-reverse',
+    label: '图片反推',
+    operation: 'image_prompt_reverse',
+    inputTypes: ['image'],
+    outputTypes: ['text'],
+    enabled: true,
+    paramsSchema: {},
+  },
+  {
     id: 'canvas.text-to-image',
     label: '文生图',
     operation: 'text_to_image',
     inputTypes: ['text', 'prompt'],
     outputTypes: ['image'],
+    enabled: true,
+    paramsSchema: {},
+  },
+  {
+    id: 'canvas.video-depth-map',
+    label: '深度视频',
+    operation: 'video_depth_map',
+    inputTypes: ['video'],
+    outputTypes: ['video'],
     enabled: true,
     paramsSchema: {},
   },
@@ -153,10 +171,12 @@ export const OPERATION_NODE_TYPES: ReadonlySet<string> = new Set<CanvasNodeType>
   'text_generate',
   'text_rewrite',
   'prompt_optimize',
+  'image_prompt_reverse',
   'text_to_video',
   'image_to_video',
   'video_edit',
   'video_extend',
+  'video_depth_map',
   'text_to_audio',
   'audio_transcribe',
 ])
@@ -208,6 +228,8 @@ export function operationNodeIcon(op: CanvasOperationType | null): string {
       return '✍️'
     case 'prompt_optimize':
       return '✨'
+    case 'image_prompt_reverse':
+      return '🔎'
     case 'text_to_video':
       return '🎬'
     case 'image_to_video':
@@ -216,6 +238,8 @@ export function operationNodeIcon(op: CanvasOperationType | null): string {
       return '🎞️'
     case 'video_extend':
       return '⏩'
+    case 'video_depth_map':
+      return '◐'
     case 'text_to_audio':
       return '🎵'
     case 'audio_transcribe':
