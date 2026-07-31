@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId, WorkspaceInfo } from '@spark/protocol'
 import type { SessionSummary } from './SessionSidebarContext'
-import { ProjectSessionGroup, SidebarProjectToolbar } from './SidebarSessionList'
+import { FlatGroup, ProjectSessionGroup, SidebarProjectToolbar } from './SidebarSessionList'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('./SessionSidebarContext', async (importOriginal) => ({
@@ -89,6 +89,7 @@ describe('ProjectSessionGroup pagination', () => {
           onDeleteProject={() => undefined}
           onOpenProjectFolder={() => undefined}
           onRenameSession={() => undefined}
+          onCommitSessionTitle={async () => undefined}
           onToggleSessionPinned={() => undefined}
           onArchiveSession={() => undefined}
           onDeleteSession={() => undefined}
@@ -157,6 +158,7 @@ describe('ProjectSessionGroup pagination', () => {
           onDeleteProject={() => undefined}
           onOpenProjectFolder={() => undefined}
           onRenameSession={() => undefined}
+          onCommitSessionTitle={async () => undefined}
           onToggleSessionPinned={() => undefined}
           onArchiveSession={onArchiveSession}
           onDeleteSession={() => undefined}
@@ -181,6 +183,76 @@ describe('ProjectSessionGroup pagination', () => {
     expect(onArchiveSession).toHaveBeenCalledOnce()
     expect(onArchiveSession).toHaveBeenCalledWith(sessions[0])
     expect(document.querySelector('.action-menu')).toBeNull()
+  })
+})
+
+describe('FlatGroup temporary session pagination', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('uses the same incremental pagination and collapse behavior for temporary sessions', () => {
+    const sessions = createSessions(29)
+
+    act(() => {
+      root.render(
+        <FlatGroup
+          groupId="project:no-project"
+          label="sidebar.noProjectChats"
+          sessions={sessions}
+          activeSessionId={null}
+          activeWorkspaceId={null}
+          sessionAgentStatuses={{}}
+          sessionTerminalActivity={{}}
+          unreviewedCompletedSessions={new Set()}
+          open
+          onOpenChange={() => undefined}
+          actions={{
+            onSelectSession: () => undefined,
+            onRenameSession: async () => undefined,
+            onCommitSessionTitle: async () => undefined,
+            onToggleSessionPinned: async () => undefined,
+            onArchiveSession: async () => undefined,
+            onDeleteSession: async () => undefined,
+          }}
+        />,
+      )
+    })
+
+    const visibleSessionCount = () => container.querySelectorAll('.proj-session').length
+    const paginationButton = () => {
+      const button = container.querySelector<HTMLButtonElement>('.proj-show-more-btn')
+      if (button == null) throw new Error('Missing temporary session pagination button')
+      return button
+    }
+
+    expect(visibleSessionCount()).toBe(8)
+    expect(paginationButton().textContent).toBe('显示更多21')
+
+    act(() => paginationButton().click())
+    expect(visibleSessionCount()).toBe(18)
+    expect(paginationButton().textContent).toBe('显示更多11')
+
+    act(() => paginationButton().click())
+    expect(visibleSessionCount()).toBe(28)
+    expect(paginationButton().textContent).toBe('显示更多1')
+
+    act(() => paginationButton().click())
+    expect(visibleSessionCount()).toBe(29)
+    expect(paginationButton().textContent).toBe('收起')
+
+    act(() => paginationButton().click())
+    expect(visibleSessionCount()).toBe(8)
   })
 })
 

@@ -281,6 +281,13 @@
   border-radius: var(--r-sm);
 }
 
+/* 隐藏 assistant 头像时（hideAssistantAvatar，画布等窄面板）：
+   内容占满整行，不再为头像预留 22% 空间。由组件按 prop 追加修饰类，
+   不依赖外层 .canvas-agent-modal 等主题选择器命中。 */
+.chat-panel-message-assistant-no-avatar .chat-panel-message-body {
+  max-width: 100%;
+}
+
 .chat-panel-message-attachments,
 .chat-panel-message-node-refs,
 .chat-panel-composer-attachments {
@@ -533,6 +540,22 @@
     padding-block: 10px;
     border-left-color: color-mix(in srgb, var(--primary) 52%, transparent);
     box-shadow: inset 0 1px color-mix(in srgb, var(--text) 3%, transparent);
+  }
+}
+
+/* 画布 Agent 弹窗样式：助手正文气泡不带背景，纯文本流。
+   间距由 .chat-panel-messages/turn 的 gap 控制，无需内 padding。
+   不影响主对话等其它 ChatPanel 场景。 */
+.canvas-agent-modal .chat-panel-message-assistant .chat-panel-text {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  border-left: none;
+
+  &.chat-panel-text-group.is-multi-segment {
+    padding-block: 0;
+    border-left: none;
+    box-shadow: none;
   }
 }
 

@@ -190,11 +190,14 @@ export function ChatTabbar({
             </span>
             <button
               className="btn ghost sm clear-confirm-cancel"
+              style={{background: 'none'}}
               onClick={() => setShowClearConfirm(false)}
             >
               取消
             </button>
-            <button className="btn sm danger-btn" onClick={handleClearConfirm}>
+            <button
+              style={{background: 'none', border: 0}}
+              className="btn sm danger-btn" onClick={handleClearConfirm}>
               清空
             </button>
           </div>

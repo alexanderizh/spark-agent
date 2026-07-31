@@ -46,6 +46,12 @@ export type NativeHostSupervisorState =
   | 'restarting'
   | 'failed'
 
+export interface NativeHostHealthController {
+  start(): void
+  stop(): void
+  reset(): void
+}
+
 export interface NativeHostSupervisorDeps {
   /** Produce a fresh, handshaked Native Host connection. */
   connect: () => Promise<NativeHostConnection>
@@ -61,7 +67,7 @@ export interface NativeHostSupervisorDeps {
   heartbeatIntervalMs?: number
   heartbeatFailureThreshold?: number
   /** Test injection for a deterministic clock/timer. */
-  createHealthService?: (options: NativeHostHealthServiceOptions) => NativeHostHealthService
+  createHealthService?: (options: NativeHostHealthServiceOptions) => NativeHostHealthController
 }
 
 const DEFAULT_MAX_RESTARTS_PER_SESSION = 1
@@ -71,7 +77,7 @@ export class NativeHostSupervisor {
   private readonly probeConnection: (connection: NativeHostConnection) => Promise<void>
   private readonly onRebound: (() => void) | null
   private readonly maxRestartsPerSession: number
-  private readonly health: NativeHostHealthService
+  private readonly health: NativeHostHealthController
 
   private state: NativeHostSupervisorState = 'absent'
   private current: NativeHostConnection | null = null

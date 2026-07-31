@@ -1,0 +1,90 @@
+.computer-activity-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+
+.computer-activity-load-error {
+  color: var(--c-err, #ef4444);
+  font-size: 12px;
+}
+
+.computer-activity-card {
+  border: 1px solid var(--border-subtle, rgb(128 128 128 / 20%));
+  border-radius: 10px;
+  background: var(--fill-tsp-gray-main, rgb(128 128 128 / 6%));
+  overflow: hidden;
+}
+
+.computer-activity-card summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.computer-activity-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--c-brand, #2563eb);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-brand, #2563eb) 18%, transparent);
+}
+
+.computer-activity-card.is-success .computer-activity-status-dot {
+  background: var(--c-ok, #22c55e);
+}
+.computer-activity-card.is-error .computer-activity-status-dot {
+  background: var(--c-err, #ef4444);
+}
+.computer-activity-card.is-warning .computer-activity-status-dot {
+  background: var(--c-warn, #f59e0b);
+}
+.computer-activity-card.is-muted .computer-activity-status-dot {
+  background: var(--text-faint, #94a3b8);
+}
+
+.computer-activity-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.computer-activity-status {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.computer-activity-elapsed {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.computer-activity-events {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 4px 12px 12px 34px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.computer-activity-events li {
+  padding-left: 2px;
+}
+.computer-activity-events li::marker {
+  color: var(--text-faint);
+}
+.computer-activity-events li.is-success::marker {
+  color: var(--c-ok, #22c55e);
+}
+.computer-activity-events li.is-error::marker {
+  color: var(--c-err, #ef4444);
+}
+.computer-activity-events time {
+  float: right;
+  margin-left: 12px;
+  color: var(--text-faint);
+  font-size: 11px;
+}

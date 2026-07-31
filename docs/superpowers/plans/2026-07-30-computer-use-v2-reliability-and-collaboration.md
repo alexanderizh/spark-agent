@@ -525,6 +525,8 @@ Windows：
 
 **目标**：达到“系统知道正在被控制、应用知道正在被控制、用户知道 Agent 正在做什么”的体验。
 
+> 实施进度（2026-07-31）：5.2 会话日志链路已完成持久化 Event Store、14 类生命周期事件、实时推送、Renderer 重启回放、`computerSessionId + seq` 去重排序与独立 `ComputerActivityBlock`；5.1 系统级状态/Overlay 和 5.3 上层去轮询仍随 Phase 4/7 推进，因此 Phase 5 整体保持实施中。
+
 #### 5.1 系统级状态
 
 macOS：

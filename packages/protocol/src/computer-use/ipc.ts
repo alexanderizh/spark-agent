@@ -104,6 +104,12 @@ export const ComputerUseIpcSchemaRegistry = {
     .strict(),
   'computer-use:list-apps': EmptyRequestSchema,
   'computer-use:list-windows': z.object({ appId: ComputerUseIdentifierSchema.optional() }).strict(),
+  'computer-use:list-sessions': z
+    .object({
+      sessionId: ComputerUseIdentifierSchema,
+      limit: z.number().int().min(1).max(100).optional(),
+    })
+    .strict(),
   'computer-use:get-timeline': z
     .object({
       computerSessionId: ComputerUseIdentifierSchema,
@@ -212,6 +218,10 @@ export interface ComputerUseIpcChannelMap {
   ]
   'computer-use:list-apps': [void, { apps: ComputerAppIdentity[] }]
   'computer-use:list-windows': [{ appId?: string }, { windows: NativeWindowDescriptor[] }]
+  'computer-use:list-sessions': [
+    { sessionId: string; limit?: number },
+    { computerSessions: ComputerSession[] },
+  ]
   'computer-use:get-timeline': [
     { computerSessionId: string; afterSeq?: number; limit?: number },
     { events: ComputerUseEvent[]; nextSeq: number | null },

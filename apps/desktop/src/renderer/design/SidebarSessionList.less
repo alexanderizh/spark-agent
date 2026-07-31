@@ -16,7 +16,7 @@
 
 .sidebar-sortable-project > .proj-group > .proj-head,
 .sidebar-sortable-session > .chat-item-compact {
-  cursor: grab;
+  cursor: pointer;
   touch-action: none;
 }
 
@@ -37,9 +37,11 @@
     0 0 0 1px color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 38%, transparent);
 }
 
-.sidebar-sortable-project:active > .proj-group > .proj-head,
-.sidebar-sortable-session:active > .chat-item-compact {
-  cursor: grabbing;
+/* 拖拽进行中，落在另一区（置顶↔普通跨界）的会话项：降低不透明度并提示不可放置，
+   表明跨区边界。仅在拖拽时挂载该 class（dragActivePinned 非 null），非拖拽时不生效。 */
+.sidebar-sortable-session.is-cross-zone > .chat-item-compact {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .session-status-dot {
@@ -58,7 +60,7 @@
 }
 
 .chat-item-compact:has(.session-status-dot) .chat-item-row {
-  padding-left: 19px;
+  padding-left: 22px;
 }
 
 /* Completed but user hasn't opened yet — static theme-accent dot */
@@ -309,7 +311,7 @@
   align-items: center;
   justify-content: space-between;
   min-height: 28px;
-  padding: 2px 8px 2px 6px;
+  padding: 0px 8px 0px 6px;
   margin: 0 3px 1px 6px;
   color: var(--text-muted);
   background: transparent;
@@ -695,11 +697,42 @@
   font-size: 12px;
   font-weight: 600;
   line-height: 1.3;
-  word-break: break-word;
+  min-width: 0;
+}
+
+.session-hover-card-title-text {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  word-break: break-word;
+  cursor: text; // 暗示双击可改名
+}
+
+// 编辑态：紧凑输入框，继承标题字号字重，聚焦时主色高亮（容器前缀提优先级覆盖 antd 默认）
+.session-hover-card .session-hover-card-title-input {
+  width: 100%;
+  min-width: 0;
+  padding: 1px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--color-primary-5, rgba(74, 140, 255, 0.55));
+  border-radius: 6px;
+  outline: none;
+  box-shadow: none;
+
+  &:focus,
+  &:focus-visible {
+    border-color: var(--color-primary-6, #4a8cff);
+    box-shadow: 0 0 0 2px var(--color-primary-2, rgba(74, 140, 255, 0.18));
+  }
+}
+
+.session-hover-card.is-editing {
+  min-width: 200px;
 }
 
 .session-hover-card-rows {

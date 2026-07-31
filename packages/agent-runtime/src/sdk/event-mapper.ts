@@ -1253,7 +1253,6 @@ function mapContentBlock(
       const content =
         typeof block.content === 'string' ? block.content : flattenContentBlocks(block.content)
       const toolName = ctx.toolNamesById?.get(block.tool_use_id) ?? 'unknown'
-
       // 存储工具结果供后续提取 diff 使用
       if (!isError && content) {
         getToolResults(ctx).set(block.tool_use_id, content)

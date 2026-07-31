@@ -21,11 +21,21 @@ export const SidebarOrderUpdateRequestSchema = z.discriminatedUnion('scope', [
     projectId: z.string().uuid(),
     itemIds: UniqueIdListSchema,
   }),
+  z.object({
+    scope: z.literal('pinned-sessions'),
+    projectId: z.string().uuid(),
+    itemIds: UniqueIdListSchema,
+  }),
 ])
 
 export interface SidebarOrderState {
   projectIds: string[]
   sessionIdsByProject: Record<string, string[]>
+  /**
+   * 置顶会话的手动排序，与 sessionIdsByProject（普通区）分离存储。
+   * 渲染时置顶段独立套用此顺序，避免与普通区秩互相污染；toggle 置顶时在两套数组间搬运 id。
+   */
+  pinnedSessionIdsByProject: Record<string, string[]>
 }
 
 export type SidebarOrderListRequest = z.infer<typeof SidebarOrderListRequestSchema>

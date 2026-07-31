@@ -525,6 +525,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               </button>
             </Tooltip>
           )}
+          {import.meta.env.DEV && (
+            <span className="sidebar-dev-badge" title="开发模式" aria-label="开发模式">
+              DEV
+            </span>
+          )}
           <Tooltip title={tr('app.sidebar.searchHint')} mouseEnterDelay={0.05}>
             <button
               className="icon-btn sidebar-search-btn"
@@ -980,6 +985,31 @@ function Shell() {
   const lastSidebarViewportWidthRef = useRef<number | null>(null)
   // 用 ref 同步 floatingSidebarWidth，避免在 syncSidebarForViewport 内部依赖 React state。
   const floatingSidebarWidthRef = useRef(t.floatingSidebarWidth)
+  // 浮动菜单栏模式下，当用户焦点落在右侧内容区（main-content-area）时，让侧栏
+  // 背景轻微加深，营造"侧栏退后、内容区为焦点"的视觉层次。仅 floating + 侧栏
+  // 可见时挂 .content-focused（见根 className 与 styles.css 的对应规则），
+  // flat / hidden 完全不受影响。
+  const mainContentRef = useRef<HTMLDivElement>(null)
+  const [contentFocused, setContentFocused] = useState(false)
+  useEffect(() => {
+    const main = mainContentRef.current
+    if (!main) return
+    const sync = () => {
+      const active = document.activeElement
+      setContentFocused(!!active && main.contains(active))
+    }
+    // focusin 冒泡，覆盖键盘 Tab 与点击 focusable 元素；点侧栏时焦点转入侧栏，
+    // sync 会算出 contains=false，自动恢复原底色。
+    document.addEventListener('focusin', sync)
+    // 点击内容区非 focusable 元素（空白/画布）也计入聚焦态，避免点了没反应。
+    const onMainMouseDown = () => setContentFocused(true)
+    main.addEventListener('mousedown', onMainMouseDown)
+    sync()
+    return () => {
+      document.removeEventListener('focusin', sync)
+      main.removeEventListener('mousedown', onMainMouseDown)
+    }
+  }, [])
   useEffect(() => {
     floatingSidebarWidthRef.current = t.floatingSidebarWidth
   }, [t.floatingSidebarWidth])
@@ -1580,7 +1610,7 @@ function Shell() {
     <ErrorBoundary level="global" name="Shell">
       <div
         ref={scaleRef}
-        className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${sidebarHidden ? ' sidebar-hidden' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}${usesSettingsTitlebarSurface ? ' titlebar-surface-settings' : ''}${usesAuthTitlebarSurface ? ' titlebar-surface-auth' : ''}`}
+        className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'} sidebar-style-${t.sidebarStyle}${sidebarHidden ? ' sidebar-hidden' : ''}${useIntegratedTitlebar ? ' titlebar-integrated' : ''}${usesSettingsTitlebarSurface ? ' titlebar-surface-settings' : ''}${usesAuthTitlebarSurface ? ' titlebar-surface-auth' : ''}${contentFocused && t.sidebarStyle === 'floating' && !sidebarHidden ? ' content-focused' : ''}`}
         style={
           {
             '--primary': primary,
@@ -1621,6 +1651,7 @@ function Shell() {
                 </div>
               )}
             <div
+              ref={mainContentRef}
               className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}
             >
               {/* Windows: custom title bar spanning full width with drag region.

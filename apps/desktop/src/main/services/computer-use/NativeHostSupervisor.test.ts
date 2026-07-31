@@ -154,7 +154,9 @@ describe('NativeHostSupervisor', () => {
     const b = supervisor.acquire()
     expect(connectCalls).toBe(1)
 
-    resolveConnect?.(createFakeConnection('shared'))
+    const resolvePending = resolveConnect as ((value: FakeConnection) => void) | null
+    if (resolvePending == null) throw new Error('connect resolver was not installed')
+    resolvePending(createFakeConnection('shared'))
     await expect(a).resolves.toBe(await b)
   })
 
@@ -220,7 +222,7 @@ describe('NativeHostSupervisor', () => {
     health.current?.triggerUnhealthy()
     await flushMicrotasks()
 
-    expect(first.closed).toBe(true)
+    expect(connections[0]?.closed).toBe(true)
     expect(supervisor.getState()).toBe('ready')
     expect(connections).toHaveLength(2)
     expect(rebound.count).toBe(1)
@@ -260,11 +262,11 @@ describe('NativeHostSupervisor', () => {
     const { supervisor, connections, health } = buildSupervisor()
 
     await supervisor.acquire()
-    expect(connections[0].closed).toBe(false)
+    expect(connections[0]?.closed).toBe(false)
 
     await supervisor.dispose()
 
-    expect(connections[0].closed).toBe(true)
+    expect(connections[0]?.closed).toBe(true)
     expect(health.current?.stoppedCount).toBeGreaterThanOrEqual(1)
     expect(supervisor.getState()).toBe('failed')
     await expect(supervisor.acquire()).rejects.toMatchObject({ code: 'session_canceled' })

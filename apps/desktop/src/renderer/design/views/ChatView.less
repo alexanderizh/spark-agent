@@ -2628,6 +2628,16 @@ html[data-theme='dark'] .composer-file-drop-overlay {
       line-height: 0;
     }
 
+    &.composer-reasoning-select .composer-select-icon {
+      width: 18px;
+      height: 18px;
+
+      > svg {
+        width: 14px;
+        height: 14px;
+      }
+    }
+
     .composer-select-trigger {
       height: 18px;
       min-height: 18px;
@@ -3293,6 +3303,10 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   color: color-mix(in srgb, var(--primary) 82%, var(--text));
 }
 
+.composer-reasoning-select.is-fast .composer-select-icon {
+  color: color-mix(in srgb, var(--primary) 82%, var(--text));
+}
+
 .composer-reasoning-menu.is-max .composer-reasoning-title strong {
   color: color-mix(in srgb, var(--primary) 78%, var(--panel));
   text-shadow: none;
@@ -3323,6 +3337,10 @@ html[data-theme='dark'] .composer-file-drop-overlay {
   animation:
     composer-label-ticker-in 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both,
     composer-reasoning-max-label-flow 5.2s ease-in-out 0.24s infinite;
+}
+
+.composer-reasoning-select.is-max .composer-select-icon {
+  color: var(--primary);
 }
 
 .composer-reasoning-axis {
@@ -4356,11 +4374,27 @@ body.side-chat-resizing {
 
 /* Unified session side panel: terminal / review / side-chat share one tabbed dock. */
 .unified-side-panel {
-  width: var(--side-chat-width, min(44vw, 620px));
-  min-width: 360px;
-  max-width: min(1200px, 72vw);
+  /*
+   * viewport 自适应：与 .inspector-frame / FilePreviewPanel 采用同一套
+   *   min(目标值, calc(100% - max(gutter, chat-main 最小宽)))
+   * 公式。原先 min-width:360px 为硬下限，窄窗口下与 chat-main 的 min-width
+   * 相加后撑破布局。套公式后面板会在空间不足时主动从 360px 向下收缩。
+   * width / max-width 保留原有 vw 语义，再叠加 viewport 上限。
+   */
+  width: min(
+    var(--side-chat-width, min(44vw, 620px)),
+    calc(100% - max(24px, var(--chat-main-min-width, 566px)))
+  );
+  min-width: min(
+    360px,
+    calc(100% - max(24px, var(--chat-main-min-width, 566px)))
+  );
+  max-width: min(
+    1200px,
+    72vw,
+    calc(100% - max(24px, var(--chat-main-min-width, 566px)))
+  );
   height: 100vh;
-  // 窄窗口下优先压缩到 360px 下限，避免与主聊天区的最小宽度相加后撑宽整个布局。
   flex: 0 1 var(--side-chat-width, min(44vw, 620px));
   position: relative;
   display: flex;
@@ -4376,7 +4410,21 @@ body.side-chat-resizing {
 
 .chat-layout:has(> .unified-side-panel) > .chat-main {
   flex-shrink: 1;
-  min-width: max(400px, var(--chat-main-min-width));
+  // 修正：原 max(400px, var) 在 --chat-main-min-width:566px 时恒等于 566，
+  // chat-main 永不让步，400 形同虚设。改为 min() 让 chat-main 在面板打开时
+  // 真正能从 566 塌缩到 400，把空间让给面板（二道防线，配合面板侧公式）。
+  min-width: min(400px, var(--chat-main-min-width));
+}
+
+// 会话信息检查器：与统一侧面板采用完全相同的策略
+// （原先完全没有 :has() 保护 + min-width:300px 硬顶，是右侧截断的重灾区）。
+.chat-layout:has(> .inspector-frame) {
+  overflow-x: hidden;
+}
+
+.chat-layout:has(> .inspector-frame) > .chat-main {
+  flex-shrink: 1;
+  min-width: min(400px, var(--chat-main-min-width));
 }
 
 // 配置面板（独立侧栏）：窄窗口下与统一侧面板采用相同策略。
@@ -4386,7 +4434,7 @@ body.side-chat-resizing {
 
 .chat-layout:has(> .config-panel-frame) > .chat-main {
   flex-shrink: 1;
-  min-width: max(400px, var(--chat-main-min-width));
+  min-width: min(400px, var(--chat-main-min-width));
 }
 
 .config-panel-frame {
@@ -4398,7 +4446,7 @@ body.side-chat-resizing {
 // }
 
 .unified-side-panel-tabbar {
-  flex: 0 0 36px;
+  flex: 0 0 38px;
   display: flex;
   align-items: center;
   gap: 6px;

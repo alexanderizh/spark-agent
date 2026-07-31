@@ -23,7 +23,12 @@ export interface SDKAssistantMessage {
     role: 'assistant'
     content: SDKContentBlock[]
     model?: string
-    usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
+    usage?: {
+      input_tokens: number
+      output_tokens: number
+      cache_read_input_tokens?: number
+      cache_creation_input_tokens?: number
+    }
   }
   parent_tool_use_id: string | null
   error?: SDKAssistantMessageError
@@ -66,13 +71,16 @@ export interface SDKResultMessage {
     cache_read_input_tokens: number
     cache_creation_input_tokens: number
   }
-  modelUsage?: Record<string, {
-    inputTokens: number
-    outputTokens: number
-    cacheReadInputTokens: number
-    cacheCreationInputTokens: number
-    costUSD: number
-  }>
+  modelUsage?: Record<
+    string,
+    {
+      inputTokens: number
+      outputTokens: number
+      cacheReadInputTokens: number
+      cacheCreationInputTokens: number
+      costUSD: number
+    }
+  >
   errors?: string[]
   checkpoint?: SDKCheckpointInfo
 }
@@ -355,7 +363,12 @@ export type SDKContentBlock =
   | { type: 'text'; text: string; citations?: unknown[] }
   | { type: 'thinking'; thinking: string; signature?: string }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
-  | { type: 'tool_result'; tool_use_id: string; content: string | SDKContentBlock[]; is_error?: boolean }
+  | {
+      type: 'tool_result'
+      tool_use_id: string
+      content: string | SDKContentBlock[]
+      is_error?: boolean
+    }
 
 export type SDKMessage =
   | SDKAssistantMessage
@@ -474,12 +487,14 @@ export interface SDKToolConfig {
 export interface SDKSettings {
   model?: string | undefined
   env?: Record<string, string> | undefined
-  permissions?: {
-    defaultMode?: SDKPermissionMode | undefined
-    allow?: string[] | undefined
-    deny?: string[] | undefined
-    ask?: string[] | undefined
-  } | undefined
+  permissions?:
+    | {
+        defaultMode?: SDKPermissionMode | undefined
+        allow?: string[] | undefined
+        deny?: string[] | undefined
+        ask?: string[] | undefined
+      }
+    | undefined
   [key: string]: unknown
 }
 
@@ -520,12 +535,17 @@ export interface SDKQueryOptions {
   disableWorkflows?: boolean | undefined
   workflowKeywordTriggerEnabled?: boolean | undefined
   hooks?: Partial<Record<SDKHookEvent, SDKHookCallbackMatcher[]>> | undefined
-  onElicitation?: ((
-    request: SDKElicitationRequest,
-    options: { signal: AbortSignal },
-  ) => Promise<SDKElicitationResult>) | undefined
+  onElicitation?:
+    | ((
+        request: SDKElicitationRequest,
+        options: { signal: AbortSignal },
+      ) => Promise<SDKElicitationResult>)
+    | undefined
   skills?: string[] | 'all' | undefined
-  systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string | undefined } | undefined
+  systemPrompt?:
+    | string
+    | { type: 'preset'; preset: 'claude_code'; append?: string | undefined }
+    | undefined
   toolConfig?: SDKToolConfig | undefined
   maxTurns?: number | undefined
   maxBudgetUsd?: number | undefined
@@ -540,18 +560,25 @@ export interface SDKQueryOptions {
   stderr?: ((data: string) => void) | undefined
   includePartialMessages?: boolean | undefined
   enableFileCheckpointing?: boolean | undefined
-  canUseTool?: ((
-    toolName: string,
-    input: Record<string, unknown>,
-    options: SDKPermissionRequestContext,
-  ) => Promise<SDKPermissionResult | null>) | undefined
-  agents?: Record<string, {
-    description: string
-    prompt: string
-    tools?: string[] | undefined
-    model?: string | undefined
-    maxTurns?: number | undefined
-  }> | undefined
+  canUseTool?:
+    | ((
+        toolName: string,
+        input: Record<string, unknown>,
+        options: SDKPermissionRequestContext,
+      ) => Promise<SDKPermissionResult | null>)
+    | undefined
+  agents?:
+    | Record<
+        string,
+        {
+          description: string
+          prompt: string
+          tools?: string[] | undefined
+          model?: string | undefined
+          maxTurns?: number | undefined
+        }
+      >
+    | undefined
 }
 
 export type SDKHookEvent = 'PermissionRequest'
@@ -742,32 +769,46 @@ export interface SDKExecutorConfig {
   sdkSessionId?: string | undefined
   continueSession?: boolean | undefined
   invocationObserver?: ((snapshot: SDKInvocationSnapshot) => void) | undefined
-  approvalCallback?: ((
-    sessionId: string,
-    toolName: string,
-    toolInput: Record<string, unknown>,
-    context: SDKPermissionRequestContext,
-  ) => Promise<boolean | SDKApprovalResult>) | undefined
+  approvalCallback?:
+    | ((
+        sessionId: string,
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        context: SDKPermissionRequestContext,
+      ) => Promise<boolean | SDKApprovalResult>)
+    | undefined
   /** Callback for AskUserQuestion tool - returns user's answers to the questions */
-  questionCallback?: ((
-    sessionId: string,
-    questions: UserQuestionPrompt[],
-    context: SDKQuestionRequestContext,
-  ) => Promise<Record<string, unknown>>) | undefined
+  questionCallback?:
+    | ((
+        sessionId: string,
+        questions: UserQuestionPrompt[],
+        context: SDKQuestionRequestContext,
+      ) => Promise<Record<string, unknown>>)
+    | undefined
   /** Bridge for the small set of application notification hooks Spark exposes. */
-  applicationHookCallback?: ((
-    sessionId: string,
-    node: Extract<HookNode, 'permission_request'>,
-    context: { title?: string; body?: string },
-  ) => void | Promise<void>) | undefined
-  goal?: {
-    id: string
-    objective: string
-    mode: 'spark-loop' | 'codex-native'
-    control?: 'start' | 'pause' | 'resume' | 'clear'
-    successCriteria?: string[]
-    progressLog?: Array<{ iteration: number; phase: string; status: string; summary: string; nextStep?: string }>
-  } | undefined
+  applicationHookCallback?:
+    | ((
+        sessionId: string,
+        node: Extract<HookNode, 'permission_request'>,
+        context: { title?: string; body?: string },
+      ) => void | Promise<void>)
+    | undefined
+  goal?:
+    | {
+        id: string
+        objective: string
+        mode: 'spark-loop' | 'codex-native'
+        control?: 'start' | 'pause' | 'resume' | 'clear'
+        successCriteria?: string[]
+        progressLog?: Array<{
+          iteration: number
+          phase: string
+          status: string
+          summary: string
+          nextStep?: string
+        }>
+      }
+    | undefined
 }
 
 // ── Resume Recovery ──────────────────────────────────────────────────────────

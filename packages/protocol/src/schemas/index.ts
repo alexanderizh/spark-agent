@@ -23,6 +23,7 @@ import {
 } from '../auto-router-provider.js'
 import { ProviderFilesIpcSchemaRegistry } from '../provider-files.js'
 import { SidebarOrderIpcSchemaRegistry } from '../sidebar-order.js'
+import { AppUnreadBadgeIpcSchemaRegistry } from '../app-unread-badge.js'
 import { CanvasWorkflowIpcSchemaRegistry } from '../canvas-workflow.js'
 import { CanvasWorkflowRuntimeIpcSchemaRegistry } from '../canvas-workflow-runtime.js'
 import {
@@ -827,6 +828,7 @@ export const IpcSchemaRegistry = {
   ...CanvasWorkflowRuntimeIpcSchemaRegistry,
   ...ComputerUseIpcSchemaRegistry,
   ...ApplicationSnapshotIpcSchemaRegistry,
+  ...AppUnreadBadgeIpcSchemaRegistry,
   ...SidebarOrderIpcSchemaRegistry,
   'session:create': SessionCreateRequestSchema,
   'session:send-turn': SessionSendTurnRequestSchema,

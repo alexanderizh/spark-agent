@@ -86,6 +86,11 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
   const owners = new Map<string, string>()
 
   reconcilePersistedKillSwitch(settingsStore, services)
+  services().timeline.subscribe((activityEvent) => {
+    const mainWindow = getMainWindow()
+    if (mainWindow == null || mainWindow.isDestroyed()) return
+    mainWindow.webContents.send('stream:computer-use:activity-event', activityEvent)
+  })
 
   typedIpcHandle('computer-use:get-capabilities', async (_request, event) =>
     safeComputerUseIpc(() => {
@@ -228,9 +233,27 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
   typedIpcHandle('computer-use:deny-action', async (request, event) =>
     safeComputerUseIpc(() => {
       assertRenderer(event)
-      return {
-        accepted: services().approvals.deny(request.approvalId, request.computerSessionId),
+      const runtime = services()
+      const approval = runtime.approvals.get(request.approvalId)
+      const accepted = runtime.approvals.deny(request.approvalId, request.computerSessionId)
+      const session = runtime.sessions.getSession(request.computerSessionId)
+      if (
+        accepted &&
+        approval != null &&
+        approval.computer_session_id === request.computerSessionId &&
+        session != null
+      ) {
+        runtime.timeline.record({
+          type: 'computer_approval_resolved',
+          sessionId: session.sessionId,
+          turnId: session.turnId,
+          computerSessionId: session.id,
+          approvalId: approval.id,
+          actionId: approval.action_id,
+          decision: 'denied',
+        })
       }
+      return { accepted }
     }),
   )
 
@@ -259,6 +282,13 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
       assertRenderer(event)
       const windows = await validatedWindows(services())
       return { windows: appId == null ? windows : windows.filter((item) => item.app.id === appId) }
+    }),
+  )
+
+  typedIpcHandle('computer-use:list-sessions', async ({ sessionId, limit }, event) =>
+    safeComputerUseIpc(() => {
+      assertRenderer(event)
+      return { computerSessions: services().sessions.listBySession(sessionId, limit) }
     }),
   )
 

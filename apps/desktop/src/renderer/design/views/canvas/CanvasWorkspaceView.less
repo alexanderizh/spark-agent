@@ -1996,7 +1996,7 @@
 }
 
 .canvas-pane-context-section-title {
-  margin: 4px 6px 2px;
+  margin: 8px 6px ;
   color: var(--text-tertiary, var(--text-secondary));
   font-size: 11px;
   font-weight: 600;
@@ -2051,7 +2051,7 @@
   position: fixed;
   z-index: 1001;
   display: flex;
-  min-width: 220px;
+  min-width: 180px;
   max-width: 300px;
   max-height: min(440px, calc(100vh - 24px));
   flex-direction: column;
@@ -6450,6 +6450,8 @@ body.canvas-agent-panel-resizing .canvas-agent-side-panel-resize-handle::after {
   flex-direction: column;
   gap: 3px;
   padding: 4px;
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .canvas-floating-menu-title {

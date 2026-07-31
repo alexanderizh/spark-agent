@@ -67,6 +67,7 @@ import {
 import { MarkdownText } from './chat/ChatMarkdown'
 import { VirtualMessageList, type VirtualMessageListHandle } from './chat/VirtualMessageList'
 import { ModelSwitchNotice } from './chat/ModelSwitchNotice'
+import { ComputerActivityBlock } from '../components/ComputerActivityBlock'
 import {
   readModelSwitchMarkers,
   saveModelSwitchMarker,
@@ -840,6 +841,12 @@ export function ChatView({
     requestId: number
     payload: ComposerPrefillPayload
   } | null>(null)
+  // resendRequest 的 requestId 单调计数器：独立于 resendRequest state 本身。
+  // 必要性：onResendConsumed 在 effect 消费后会清空 resendRequest=null，若 requestId
+  // 仍按 (prev?.requestId ?? 0)+1 生成，prev=null 会导致 requestId 回退到 1，撞上
+  // ComposerV2 的 consumedResendIdRef 去重，使"同一会话内连续重发第二条"失效。
+  // 用独立计数器保证 requestId 在 ChatView 生命周期内严格单调递增。
+  const resendRequestIdRef = useRef(0)
   const chatLayoutRef = useRef<HTMLDivElement | null>(null)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
@@ -1019,11 +1026,14 @@ export function ChatView({
 
   // 用户点了「发送」：立刻贴底 + 维护 session running 状态 + 会话列表计数。
   // 单独抽出回调，给两个 ComposerV2 分支共用，保证 scrollToBottomTrigger 一定 bump。
+  // 同时清空 resendRequest：发送意味着此前的"重发/预填"已完成其使命，必须清掉脏数据，
+  // 防止 resendRequest 残留 + 后续 ComposerV2 重建导致旧 payload 被重新应用到别的会话。
   const handleUserSent = useCallback(
     (sessionId: SessionId) => {
       setSessionStatus(sessionId, 'running')
       sessionCtx.bumpSessionMessageCount(sessionId)
       setScrollToBottomTrigger((n) => n + 1)
+      setResendRequest(null)
     },
     [setSessionStatus, sessionCtx],
   )
@@ -1656,23 +1666,33 @@ export function ChatView({
    * ComposerV2 通过 useEffect 监听 requestId 变化把内容写入当前会话草稿并自动 focus。
    */
   const handleResendMessage = useCallback((payload: ComposerPrefillPayload) => {
-    setResendRequest((prev) => ({
-      requestId: (prev?.requestId ?? 0) + 1,
+    resendRequestIdRef.current += 1
+    setResendRequest({
+      requestId: resendRequestIdRef.current,
       payload,
-    }))
+    })
     // 顺手让输入区获得焦点
     setComposerFocusTrigger((n) => n + 1)
   }, [])
 
+  // ComposerV2 的 resend effect 消费完 resendRequest 后回调此函数，立即清空 resendRequest。
+  // 否则 resendRequest 会一直残留 in state，一旦 ComposerV2 因 showEmptyHero 翻转而卸载
+  // 重建（consumedResendIdRef 重置为 null），旧 payload 会被重新应用到切进来的会话草稿，
+  // 表现为"重发内容跨会话残留、清空后切换又出现"。详见 ComposerV2 onResendConsumed 注释。
+  const handleResendConsumed = useCallback(() => {
+    setResendRequest(null)
+  }, [])
+
   const handleHeroPromptSelect = useCallback((text: string) => {
-    setResendRequest((prev) => ({
-      requestId: (prev?.requestId ?? 0) + 1,
+    resendRequestIdRef.current += 1
+    setResendRequest({
+      requestId: resendRequestIdRef.current,
       payload: {
         text,
         attachments: [],
         agentId: 'platform-manager-agent',
       },
-    }))
+    })
     setComposerFocusTrigger((n) => n + 1)
   }, [])
 
@@ -1902,6 +1922,7 @@ export function ChatView({
         preferSelectedWorkspace
         focusTrigger={composerFocusTrigger}
         resendRequest={resendRequest}
+        onResendConsumed={handleResendConsumed}
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspaceId}
         onPickProject={pickProjectFolder}
@@ -1956,6 +1977,7 @@ export function ChatView({
         preferSelectedWorkspace={showEmptyHero}
         focusTrigger={composerFocusTrigger}
         resendRequest={resendRequest}
+        onResendConsumed={handleResendConsumed}
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspaceId}
         onPickProject={pickProjectFolder}
@@ -2059,7 +2081,9 @@ export function ChatView({
               </button>
               <button
                 className={`icon-btn ${unifiedPanelOpen ? 'active' : ''}`}
-                title={activeWorkspace ? '统一侧边面板（终端/侧聊/审查/计划）' : '请先选择项目文件夹'}
+                title={
+                  activeWorkspace ? '统一侧边面板（终端/侧聊/审查/计划）' : '请先选择项目文件夹'
+                }
                 aria-label="统一侧边面板"
                 disabled={!activeWorkspace}
                 onClick={toggleUnifiedPanel}
@@ -3139,6 +3163,20 @@ function ChatStream({
     loadOlderRef.current = loadOlderHistory
   }, [loadOlderHistory])
 
+  // 视口未满兜底：当容器内容不足以撑满视口（scrollHeight ≤ clientHeight，不可滚动，
+  // 浏览器不派发 scroll 事件）时，主动补载更早一页，直到内容溢出变为可滚动、或 hasMore 耗尽。
+  // 与 handleScroll 的 distanceFromBottom>0 分支互补，修复「切到不足一屏的会话时上翻加载无入口」。
+  // 仅读取 ref（[] deps 闭包固定亦可拿到最新值），与 handleScroll 同一模式。
+  const maybeFillViewport = useCallback(() => {
+    if (!initialScrollDoneRef.current) return
+    if (!hasMoreHistoryRef.current) return
+    if (loadingOlderRef.current || userScrolledRef.current) return
+    const el = streamRef.current
+    if (el && el.scrollHeight <= el.clientHeight) {
+      loadOlderRef.current()
+    }
+  }, [])
+
   // 外部触发清空消息
   useEffect(() => {
     if (clearTrigger === undefined || clearTrigger === 0) return
@@ -3254,6 +3292,9 @@ function ChatStream({
             pin()
             // 解锁懒加载（略延后，避免贴底过程中的 scroll 事件误触发翻页）
             initialScrollDoneRef.current = true
+            // 种子触发：贴底刚解锁，若首屏历史不足一屏（不可滚动、scroll 事件永不派发），
+            // 立即补载一页更早历史，由 MutationObserver 串行接力直到可滚动。
+            maybeFillViewport()
           }, 120)
         })
       })
@@ -3295,6 +3336,8 @@ function ChatStream({
         // 初始贴底进行中、或用户已上滚，则不跟随
         if (scrollToBottomPendingRef.current || userScrolledRef.current) return
         el.scrollTop = el.scrollHeight
+        // 视口未满兜底：内容不足以撑满视口时 scroll 事件不会派发，这里接力补载更早历史。
+        maybeFillViewport()
       })
     })
     observer.observe(el, {
@@ -3578,6 +3621,7 @@ function ChatStream({
               <span className="chat-loading-spinner" />
             </div>
           )}
+          <ComputerActivityBlock sessionId={sessionId} />
           <VirtualMessageList
             ref={virtualMessageListRef}
             items={messages}
@@ -4150,6 +4194,10 @@ function renderBlocks(
             />
           </div>
         )
+      }
+      case 'quick_replies': {
+        // 快捷回复只在 Composer 上方渲染，时间线中不重复展示工具卡。
+        return null
       }
       case 'context_ledger': {
         // Context Ledger 不在消息流中渲染 — 上下文信息已在底部 ComposerV2 的 ContextMeterWithPopup 中显示

@@ -364,11 +364,12 @@ describe('ComputerControlBroker', () => {
 
     const { events } = timeline.read(session.id)
     expect(events.map((event) => event.type)).toEqual([
+      'computer_observation_created',
       'computer_action_requested',
       'computer_action_executed',
     ])
-    expect(events[0]).toMatchObject({ actionId: 'action-1', riskLevel: 'L1' })
-    expect(events[1]).toMatchObject({
+    expect(events[1]).toMatchObject({ actionId: 'action-1', riskLevel: 'L1' })
+    expect(events[2]).toMatchObject({
       actionId: 'action-1',
       beforeFrameId: 'frame-1',
       afterFrameId: 'frame-2',
@@ -394,10 +395,11 @@ describe('ComputerControlBroker', () => {
 
     const { events } = timeline.read(session.id)
     expect(events.map((event) => event.type)).toEqual([
+      'computer_observation_created',
       'computer_action_requested',
       'computer_approval_requested',
     ])
-    expect(events[1]).toMatchObject({
+    expect(events[2]).toMatchObject({
       approvalId: 'approval-1',
       actionId: governed.actionId,
       riskLevel: 'L2',
@@ -420,10 +422,11 @@ describe('ComputerControlBroker', () => {
 
     const { events } = timeline.read(session.id)
     expect(events.map((event) => event.type)).toEqual([
+      'computer_observation_created',
       'computer_action_requested',
       'computer_action_failed',
     ])
-    expect(events[1]).toMatchObject({ actionId: 'action-1', errorCode: 'action_noop' })
+    expect(events[2]).toMatchObject({ actionId: 'action-1', errorCode: 'action_noop' })
   })
 
   it('marks noop execution as failed instead of claiming completion', async () => {

@@ -446,7 +446,7 @@ body.sidebar-resizing {
 .chat-list {
   flex: 1;
   overflow: auto;
-  padding: 6px 3px 6px 6px;
+  padding: 2px 3px 6px 6px;
 }
 
 /* 滚动条样式交由全局规则统一处理（styles.css 顶部的 `::-webkit-scrollbar*` 经典路径：
@@ -689,7 +689,7 @@ body.sidebar-resizing {
   padding: 4px 22px;
   border: none;
   border-radius: var(--r-sm);
-  background: transparent;
+  background: none;
   color: var(--text-muted);
   font-size: var(--font-xs);
   cursor: pointer;
@@ -699,7 +699,7 @@ body.sidebar-resizing {
 }
 .proj-show-more-btn:hover {
   color: var(--primary);
-  background: var(--primary-soft);
+  background: none;
 }
 .proj-show-more-label {
   font-weight: 400;
@@ -1641,7 +1641,6 @@ body.sidebar-resizing {
 }
 .md-surface hr {
   border: 0;
-  border-top: 1px solid var(--md-divider);
   margin: 16px 0;
 }
 .md-surface a {
@@ -2129,7 +2128,7 @@ body.sidebar-resizing {
   border: none;
   background: transparent;
   color: var(--text-faint);
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   font-weight: 400;
   cursor: pointer;
   width: fit-content;
@@ -2377,7 +2376,7 @@ body.sidebar-resizing {
   background: transparent !important;
   color: var(--text-faint) !important;
   font: inherit;
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   font-weight: 400;
   cursor: pointer;
   user-select: none;
@@ -2446,7 +2445,7 @@ body.sidebar-resizing {
   min-width: 0;
   margin-bottom: 6px;
   color: var(--text-muted);
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
 }
 .tool-log-entry-title {
   min-width: 0;
@@ -3944,8 +3943,8 @@ body.sidebar-resizing {
   height: 18px;
 }
 .composer-menu-select.variant-permission .composer-select-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 .composer-select.tone-danger {
   color: color-mix(in srgb, var(--danger) 82%, var(--text));
@@ -5106,9 +5105,31 @@ body.sidebar-resizing {
 
 /* Inspector panel (right side) */
 .inspector-frame {
-  width: var(--inspector-width, 360px);
-  min-width: 300px;
-  max-width: 620px;
+  /*
+   * viewport 自适应：面板的 width / min-width / max-width 都套上
+   *   min(目标值, calc(100% - max(gutter, chat-main 最小宽)))
+   * 公式（与 FilePreviewPanel.less 完全一致）。
+   *
+   * 根因：chat-main 的 min-width 默认 566px 且 flex-shrink:0，本面板原先
+   * min-width:300px 同样 flex-shrink:0，两者都不让步，在 900px < 窗口 < 1130px
+   * 区间（900px 以下媒体查询才会把 chat-main 置 0）相加后撑破窗口、右侧被截断。
+   *
+   * 套公式后，当容器放不下「chat-main 最小宽 + 面板目标宽」时，面板的 min-width
+   * 会主动从 300px 向下收缩，把空间让给主聊天区，而不是硬顶溢出。
+   * 宽窗口下 min() 取原值，行为与原先完全一致。
+   */
+  width: min(
+    var(--inspector-width, 360px),
+    calc(100% - max(24px, var(--chat-main-min-width, 566px)))
+  );
+  min-width: min(
+    300px,
+    calc(100% - max(24px, var(--chat-main-min-width, 566px)))
+  );
+  max-width: min(
+    620px,
+    calc(100% - max(24px, var(--chat-main-min-width, 566px)))
+  );
   flex-shrink: 0;
   position: relative;
   display: flex;
@@ -5159,7 +5180,7 @@ body.inspector-resizing {
   user-select: none;
 }
 .inspector-section {
-  padding: var(--pad-sm) var(--pad-sm);
+  padding: var(--pad-md) var(--pad-md);
 }
 /* 板块分割线:相邻兄弟选择器,首个 section 顶部无线、末个底部无线,避免首尾出现多余边框 */
 .inspector-section + .inspector-section {
@@ -5172,6 +5193,7 @@ body.inspector-resizing {
   text-transform: uppercase;
   color: var(--text-faint);
   margin: 0 0 10px;
+  height: 30px;
   display: flex;
   align-items: center;
 }

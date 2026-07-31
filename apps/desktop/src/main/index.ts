@@ -81,6 +81,8 @@ import { ensureRegistered as ensurePlaywrightRegistered, readRegistration as rea
 import { detectIntegrity as detectPlaywrightIntegrity } from './services/PlaywrightIntegrityService.js'
 import { getInternalBrowserService } from './services/InternalBrowserService.js'
 import { getCanvasWindowService } from './services/CanvasWindowService.js'
+import { attachAppUnreadBadgeTray } from './services/AppUnreadBadgeService.js'
+import { registerAppUnreadBadgeIpc } from './ipc/registerAppUnreadBadgeIpc.js'
 import { ensureBundledBrowserEnv } from './services/PlaywrightEnvironment.js'
 import { detectFfmpegIntegrity } from './services/FfmpegIntegrityService.js'
 import { updateManagedFontAssetsInBackground } from './services/FontAssetService.js'
@@ -387,7 +389,7 @@ function createTray(): void {
   }
 
   tray = new Tray(image)
-  tray.setToolTip('SparkWork')
+  attachAppUnreadBadgeTray(tray)
   refreshTrayMenu().catch((err) => log.warn('Failed to refresh tray menu on init', err))
   tray.on('click', () => {
     // 每次点击前刷新菜单（最近会话变化），再展示主窗口
@@ -816,6 +818,7 @@ async function initializeApp(): Promise<void> {
 
   // 2. 注册 IPC handlers
   registerAllIpcHandlers()
+  registerAppUnreadBadgeIpc()
 
   // 2.05 初始化 Cloud Auth（对接 spark-edugen/edu-server）
   // 默认 base URL：生产环境 https://spark.yiqibyte.com/；本地开发可通过

@@ -76,14 +76,25 @@ describe('ComputerActionApprovalPresenter', () => {
 
   it('denies the pending Broker approval when the local user rejects it', async () => {
     const approvals = { approve: vi.fn(), deny: vi.fn(() => true) }
+    const timeline = { record: vi.fn() }
     const presenter = createComputerActionApprovalPresenter({
       getApprovals: () => approvals as never,
       requestExactApproval: vi.fn(async () => false),
+      timeline,
     })
 
     await expect(presenter(REQUEST)).resolves.toBeNull()
     expect(approvals.deny).toHaveBeenCalledWith('approval-1', 'computer-1')
     expect(approvals.approve).not.toHaveBeenCalled()
+    expect(timeline.record).toHaveBeenCalledWith({
+      type: 'computer_approval_resolved',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      computerSessionId: 'computer-1',
+      approvalId: 'approval-1',
+      actionId: 'action-1',
+      decision: 'denied',
+    })
   })
 
   it('mints the exact Broker ticket without prompting in full-access mode', async () => {

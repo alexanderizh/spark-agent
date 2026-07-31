@@ -65,6 +65,7 @@ describe('computer use IPC schemas', () => {
         'computer-use:get-timeline',
         'computer-use:get-verification',
         'computer-use:list-apps',
+        'computer-use:list-sessions',
         'computer-use:list-windows',
         'computer-use:pause',
         'computer-use:resume',

@@ -226,10 +226,11 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
   ) => (
     <Button
       block
-      size="middle"
+      size="small"
       type="text"
       icon={icon}
       onClick={onClick}
+      style={{display: "flex", alignItems:'center', justifyContent: 'flex-start'}}
       {...(options?.danger ? { className: 'canvas-floating-menu-danger' } : {})}
       {...(options?.disabled ? { disabled: true } : {})}
     >

@@ -36,7 +36,7 @@ import {
   getProviderAdapterKind,
   isProviderCompatibleWithAdapter,
 } from './utils/provider-adapter'
-import { sortSessionsByPinned, toTime } from './sidebar-session-sort'
+import { resolveSessionGroupId, sortSessionsByPinned, toTime } from './sidebar-session-sort'
 import { isCanvasWorkspace } from './workspace-visibility'
 import { listAllWorkspaces } from './services/list-all-workspaces'
 
@@ -161,25 +161,30 @@ function getBasename(path: string): string {
   return path.split(/[/\\]/).pop() ?? ''
 }
 
-function normalizeSidebarOrder(value: unknown): SidebarOrderState {
-  const candidate = value as Partial<SidebarOrderState> | null
-  const sessionIdsByProject: Record<string, string[]> = {}
-  if (candidate?.sessionIdsByProject != null) {
-    for (const [projectId, sessionIds] of Object.entries(candidate.sessionIdsByProject)) {
+function normalizeIdMap(value: unknown): Record<string, string[]> {
+  const result: Record<string, string[]> = {}
+  if (value != null && typeof value === 'object') {
+    for (const [projectId, sessionIds] of Object.entries(value as Record<string, unknown>)) {
       if (Array.isArray(sessionIds)) {
-        sessionIdsByProject[projectId] = sessionIds.filter(
+        result[projectId] = sessionIds.filter(
           (sessionId): sessionId is string => typeof sessionId === 'string',
         )
       }
     }
   }
+  return result
+}
+
+function normalizeSidebarOrder(value: unknown): SidebarOrderState {
+  const candidate = value as Partial<SidebarOrderState> | null
   return {
     projectIds: Array.isArray(candidate?.projectIds)
       ? candidate.projectIds.filter(
           (projectId): projectId is string => typeof projectId === 'string',
         )
       : [],
-    sessionIdsByProject,
+    sessionIdsByProject: normalizeIdMap(candidate?.sessionIdsByProject),
+    pinnedSessionIdsByProject: normalizeIdMap(candidate?.pinnedSessionIdsByProject),
   }
 }
 
@@ -325,6 +330,7 @@ type SessionSidebarCtx = {
     options?: Record<string, unknown>,
   ) => Promise<SessionId | null>
   handleToggleSessionPinned: (session: SessionSummary) => Promise<void>
+  commitSessionTitle: (session: SessionSummary, title: string) => Promise<void>
   handleRenameSession: (session: SessionSummary) => Promise<void>
   handleDeleteSession: (session: SessionSummary) => Promise<void>
   handleClearSessions: (sessions: SessionSummary[]) => Promise<void>
@@ -340,6 +346,7 @@ type SessionSidebarCtx = {
   handleOpenWorkspace: (workspace: WorkspaceInfo) => Promise<void>
   handleReorderProjects: (projectIds: string[]) => Promise<void>
   handleReorderSessions: (projectId: string, sessionIds: string[]) => Promise<void>
+  handleReorderPinnedSessions: (projectId: string, sessionIds: string[]) => Promise<void>
 
   // Create project dialog
   handleCreateProject: (useTempDir?: boolean) => Promise<void>
@@ -406,14 +413,29 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   >({})
   // Sessions that just completed but the user hasn't viewed yet — used for the blue "unread" dot
   const [unreviewedCompleted, setUnreviewedCompleted] = useState<Set<string>>(() => new Set())
+  const unreadSessionCount = unreviewedCompleted.size
+
+  useEffect(() => {
+    void window.spark
+      ?.invoke('app:set-unread-count', { count: unreadSessionCount })
+      .catch(() => undefined)
+  }, [unreadSessionCount])
+
   const [sidebarOrder, setSidebarOrder] = useState<SidebarOrderState>({
     projectIds: [],
     sessionIdsByProject: {},
+    pinnedSessionIdsByProject: {},
   })
   const projectOrderMutationRef = useRef(0)
   const sessionOrderMutationRef = useRef(new Map<string, number>())
   const projectOrderWriteQueueRef = useRef(new SerialTaskQueue())
   const sessionOrderWriteQueuesRef = useRef(new Map<string, SerialTaskQueue>())
+  const pinnedSessionOrderMutationRef = useRef(new Map<string, number>())
+  const pinnedSessionOrderWriteQueuesRef = useRef(new Map<string, SerialTaskQueue>())
+  // 打破 handleToggleSessionPinned → moveSessionOrderZone → handleReorder* 的声明顺序依赖。
+  const moveSessionOrderZoneRef = useRef<
+    ((sessionId: string, projectId: string | null, toPinned: boolean) => void) | null
+  >(null)
   const justCreatedSessionRef = useRef<SessionId | null>(null)
   const pendingCreatedWorkspaceIdsRef = useRef(new Map<SessionId, string | null>())
   const pinMutationsRef = useRef(
@@ -495,10 +517,26 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           getCurrentWorkspace({}),
           listProviders({}),
           listAgents({}).catch(() => ({ agents: [] as ManagedAgent[] })),
-          listSidebarOrder({}).catch(() => ({ projectIds: [], sessionIdsByProject: {} })),
+          listSidebarOrder({}).catch(() => ({
+            projectIds: [],
+            sessionIdsByProject: {},
+            pinnedSessionIdsByProject: {},
+          })),
         ])
       setWorkspaces(workspaceRes.workspaces)
       setSessions(sessionRes.sessions)
+      // 收敛未读 Set：丢弃已不存在的会话 id，避免 dock 徽章因会话被删除/归档而永久虚高
+      setUnreviewedCompleted((prev) => {
+        if (prev.size === 0) return prev
+        const liveIds = new Set<string>(sessionRes.sessions.map((s) => s.id))
+        let changed = false
+        const next = new Set<string>()
+        for (const id of prev) {
+          if (liveIds.has(id)) next.add(id)
+          else changed = true
+        }
+        return changed ? next : prev
+      })
       setProviders(providerRes.profiles)
       setAgents(Array.isArray(agentRes.agents) ? agentRes.agents : [])
       setSidebarOrder(normalizeSidebarOrder(sidebarOrderRes))
@@ -1239,6 +1277,12 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         updateSessionInList(session.id, {
           pinnedAt: existing.desiredPinned ? new Date().toISOString() : null,
         })
+        // 乐观搬运 id 到目标区头部；幂等（先两边都删再 unshift），连点安全。
+        moveSessionOrderZoneRef.current?.(
+          session.id,
+          resolveSessionGroupId(session, workspaces),
+          existing.desiredPinned,
+        )
         return
       }
 
@@ -1251,6 +1295,11 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       updateSessionInList(session.id, {
         pinnedAt: state.desiredPinned ? new Date().toISOString() : null,
       })
+      moveSessionOrderZoneRef.current?.(
+        session.id,
+        resolveSessionGroupId(session, workspaces),
+        state.desiredPinned,
+      )
 
       while (state.running) {
         const requestedPinned = state.desiredPinned
@@ -1273,7 +1322,22 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [toast, updateSession, updateSessionInList],
+    [toast, updateSession, updateSessionInList, workspaces],
+  )
+
+  // 纯保存逻辑：弹窗改名与悬浮卡 inline 改名共用，避免两处重复实现
+  const commitSessionTitle = useCallback(
+    async (session: SessionSummary, title: string) => {
+      const trimmed = title.trim()
+      if (!trimmed || trimmed === (session.title ?? '')) return
+      try {
+        const updated = await updateSession({ sessionId: session.id, title: trimmed })
+        updateSessionInList(session.id, updated.session)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t('session.renameFailed'))
+      }
+    },
+    [t, toast, updateSession, updateSessionInList],
   )
 
   const handleRenameSession = useCallback(
@@ -1286,15 +1350,10 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           confirmText: t('common.rename'),
         })
       )?.trim()
-      if (!title || title === (session.title ?? '')) return
-      try {
-        const updated = await updateSession({ sessionId: session.id, title })
-        updateSessionInList(session.id, updated.session)
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : t('session.renameFailed'))
-      }
+      if (!title) return
+      await commitSessionTitle(session, title)
     },
-    [requestPrompt, toast, updateSession, updateSessionInList],
+    [commitSessionTitle, requestPrompt, t],
   )
 
   const handleDeleteSession = useCallback(
@@ -1342,6 +1401,12 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         if (active === session.id) setActive(null)
         if (shouldClearActiveWorkspace) setActiveWorkspaceId(null)
         await deleteSession({ sessionId: session.id })
+        setUnreviewedCompleted((prev) => {
+          if (!prev.has(session.id)) return prev
+          const next = new Set(prev)
+          next.delete(session.id)
+          return next
+        })
         if (cleanupWorktree && wsId != null) {
           await removeWorktree({ workspaceId: wsId, force: true }).catch((err) => {
             toast.error(err instanceof Error ? err.message : t('worktree.deleteFailed'))
@@ -1395,6 +1460,15 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       })
       if (active != null && deletedIds.has(active)) setActive(null)
       setSessions((current) => current.filter((session) => !deletedIds.has(session.id)))
+      setUnreviewedCompleted((prev) => {
+        if (prev.size === 0) return prev
+        let changed = false
+        const next = new Set(prev)
+        for (const id of deletedIds) {
+          if (next.delete(id)) changed = true
+        }
+        return changed ? next : prev
+      })
       if (failed === 0) {
         toast.success(t('session.clearAllDone', { count: targets.length }))
       } else if (failed === targets.length) {
@@ -1414,6 +1488,12 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       try {
         await updateSession({ sessionId: session.id, archived: true })
         setSessions((current) => current.filter((item) => item.id !== session.id))
+        setUnreviewedCompleted((prev) => {
+          if (!prev.has(session.id)) return prev
+          const next = new Set(prev)
+          next.delete(session.id)
+          return next
+        })
 
         let undoStarted = false
         let archiveToastId = ''
@@ -1530,6 +1610,74 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     [listSidebarOrder, t, toast, updateSidebarOrder],
   )
 
+  const handleReorderPinnedSessions = useCallback(
+    async (projectId: string, sessionIds: string[]) => {
+      const mutation = (pinnedSessionOrderMutationRef.current.get(projectId) ?? 0) + 1
+      pinnedSessionOrderMutationRef.current.set(projectId, mutation)
+      let previous: string[] = []
+      setSidebarOrder((current) => {
+        previous = current.pinnedSessionIdsByProject[projectId] ?? []
+        return {
+          ...current,
+          pinnedSessionIdsByProject: {
+            ...current.pinnedSessionIdsByProject,
+            [projectId]: sessionIds,
+          },
+        }
+      })
+      try {
+        let queue = pinnedSessionOrderWriteQueuesRef.current.get(projectId)
+        if (queue == null) {
+          queue = new SerialTaskQueue()
+          pinnedSessionOrderWriteQueuesRef.current.set(projectId, queue)
+        }
+        await queue.run(async () => {
+          await updateSidebarOrder({ scope: 'pinned-sessions', projectId, itemIds: sessionIds })
+        })
+      } catch (err) {
+        if (pinnedSessionOrderMutationRef.current.get(projectId) === mutation) {
+          const persisted = await listSidebarOrder({}).catch(() => null)
+          if (pinnedSessionOrderMutationRef.current.get(projectId) !== mutation) return
+          setSidebarOrder((current) => ({
+            ...current,
+            pinnedSessionIdsByProject: {
+              ...current.pinnedSessionIdsByProject,
+              [projectId]:
+                persisted == null
+                  ? previous
+                  : (normalizeSidebarOrder(persisted).pinnedSessionIdsByProject[projectId] ?? []),
+            },
+          }))
+          toast.error(err instanceof Error ? err.message : t('sidebar.drag.saveSessionFailed'))
+        }
+      }
+    },
+    [listSidebarOrder, t, toast, updateSidebarOrder],
+  )
+
+  /**
+   * toggle 置顶时在 pinned / normal 两套手动顺序之间幂等搬运 id：
+   * 先从两个数组都移除该 id，再 unshift 到目标区头部（新置顶/新取消置顶都排该区最前）。
+   * 持久化交给两个 reorder handler 各自的乐观 + SerialTaskQueue + 回滚流程。
+   */
+  const moveSessionOrderZone = useCallback(
+    (sessionId: string, projectId: string | null, toPinned: boolean) => {
+      if (projectId == null) return
+      const normal = (sidebarOrder.sessionIdsByProject[projectId] ?? []).filter(
+        (id) => id !== sessionId,
+      )
+      const pinned = (sidebarOrder.pinnedSessionIdsByProject[projectId] ?? []).filter(
+        (id) => id !== sessionId,
+      )
+      if (toPinned) pinned.unshift(sessionId)
+      else normal.unshift(sessionId)
+      void handleReorderSessions(projectId, normal)
+      void handleReorderPinnedSessions(projectId, pinned)
+    },
+    [handleReorderPinnedSessions, handleReorderSessions, sidebarOrder],
+  )
+  moveSessionOrderZoneRef.current = moveSessionOrderZone
+
   // Computed
   const projectGroups = useMemo(
     () => buildProjectGroups(workspaces, sessions),
@@ -1577,6 +1725,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       bumpSessionMessageCount,
       handleNewSession,
       handleToggleSessionPinned,
+      commitSessionTitle,
       handleRenameSession,
       handleDeleteSession,
       handleClearSessions,
@@ -1590,6 +1739,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       handleOpenWorkspace,
       handleReorderProjects,
       handleReorderSessions,
+      handleReorderPinnedSessions,
       handleCreateProject,
       handlePickProjectPath,
       projectDialog,
@@ -1628,6 +1778,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       bumpSessionMessageCount,
       handleNewSession,
       handleToggleSessionPinned,
+      commitSessionTitle,
       handleRenameSession,
       handleDeleteSession,
       handleClearSessions,
@@ -1641,6 +1792,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       handleOpenWorkspace,
       handleReorderProjects,
       handleReorderSessions,
+      handleReorderPinnedSessions,
       handleCreateProject,
       handlePickProjectPath,
       projectDialog,

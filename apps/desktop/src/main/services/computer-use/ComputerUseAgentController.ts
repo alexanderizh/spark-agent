@@ -78,6 +78,7 @@ export class ComputerUseAgentController {
           windowInventory: services.backend,
           getAbortSignal: (computerSessionId) =>
             services.sessions.getAbortSignal(computerSessionId),
+          timeline: services.timeline,
           ...(this.requestActionApproval == null
             ? {}
             : { requestApproval: this.requestActionApproval }),
