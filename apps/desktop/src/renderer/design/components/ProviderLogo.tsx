@@ -405,6 +405,7 @@ const VENDOR_ICON_MAP: Record<string, string> = {
   'qwen-standard': 'qwen',
   'deepseek-api': 'deepseek',
   minimax: 'minimax',
+  'minimax-hailuo': 'minimax',
   kimi: 'kimi',
   siliconflow: 'siliconcloud',
   openrouter: 'openrouter',

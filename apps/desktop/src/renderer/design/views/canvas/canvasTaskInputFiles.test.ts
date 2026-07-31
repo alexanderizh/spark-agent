@@ -27,6 +27,15 @@ function imageNode(id: string, url = `safe-file:///tmp/${id}.png`): CanvasNode {
   }
 }
 
+/** Provider 文件节点：只有 fileId（MiniMax Files 上传），无本地 url。 */
+function providerFileNode(id: string, fileId: string): CanvasNode {
+  return {
+    ...imageNode(id, ''),
+    title: id,
+    data: { fileId, mimeType: 'image/png' },
+  }
+}
+
 describe('canvasTaskInputFiles', () => {
   it('expands one selected image into multiple role-specific input files', () => {
     expect(
@@ -77,6 +86,24 @@ describe('canvasTaskInputFiles', () => {
         type: 'image',
         role: 'reference',
         url: 'safe-file:///tmp/img-b.png',
+        mimeType: 'image/png',
+      },
+    ])
+  })
+
+  it('threads fileId for provider-file nodes without a local url (MiniMax mm_file short-circuit)', () => {
+    // MiniMax「素材中心 → Files」上传的文件节点只有 provider 侧 fileId、无本地 url；
+    // buildTaskInputFiles 必须把它纳入 inputFiles 并透传 fileId（不输出 url），
+    // 以命中 adapter 的上传短路（H3 用 mm_file://{fileId}）。
+    expect(
+      buildTaskInputFiles([providerFileNode('mm-file', '398574688191234048')], {
+        'mm-file': 'reference',
+      }),
+    ).toEqual([
+      {
+        type: 'image',
+        role: 'reference',
+        fileId: '398574688191234048',
         mimeType: 'image/png',
       },
     ])

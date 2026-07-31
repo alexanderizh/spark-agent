@@ -31,7 +31,12 @@ const MAX_LOCAL_UPLOADS = 20
 type FileStatusFilter = 'all' | 'processing' | 'active' | 'failed'
 type UploadSource = 'local' | 'url'
 
-export function CanvasProviderFilesTab() {
+export function CanvasProviderFilesTab({
+  onAddToCanvas,
+}: {
+  /** 把该 provider 文件作为节点加入画布（命中 adapter fileId 短路）。 */
+  onAddToCanvas?: (file: ProviderFileObject, providerProfileId: string) => void
+}) {
   const { invoke: listProviders, loading: providersLoading } = useIpcInvoke('provider:list')
   const { invoke: listFiles, loading: filesLoading } = useIpcInvoke('provider:files:list')
   const { invoke: getFile, loading: getFileLoading } = useIpcInvoke('provider:files:get')
@@ -51,14 +56,21 @@ export function CanvasProviderFilesTab() {
   const pollingRef = useRef(false)
   const loadSequenceRef = useRef(0)
   const providerProfileIdRef = useRef(providerProfileId)
-  const providerKind = useMemo<Extract<ProviderFilesApiKind, 'bailian' | 'volcengine-ark'> | null>(
+  const providerKind = useMemo<
+    Extract<ProviderFilesApiKind, 'bailian' | 'volcengine-ark' | 'minimax-hailuo'> | null
+  >(
     () =>
       providerFilesApiKindForProfile(
         providers.find((profile) => profile.id === providerProfileId) ?? {},
       ),
     [providerProfileId, providers],
   )
-  const providerLabel = providerKind === 'bailian' ? '阿里云百炼' : '火山方舟'
+  const providerLabel =
+    providerKind === 'bailian'
+      ? '阿里云百炼'
+      : providerKind === 'minimax-hailuo'
+        ? 'MiniMax'
+        : '火山方舟'
 
   useEffect(() => {
     providerProfileIdRef.current = providerProfileId
@@ -228,7 +240,7 @@ export function CanvasProviderFilesTab() {
           {providerLabel}
         </button>
         <span className="canvas-provider-files-note">
-          已支持火山方舟与百炼 DashScope 原生 Files；文件 ID 不会跨渠道或自动注入多媒体素材。
+          已支持火山方舟、百炼 DashScope 与 MiniMax 原生 Files；MiniMax 文件可经 mm_file:// 供 H3 视频引用。
         </span>
       </div>
 
@@ -237,7 +249,9 @@ export function CanvasProviderFilesTab() {
         message={
           providerKind === 'bailian'
             ? '百炼 DashScope Files 仅用于文件解析、Batch 和模型微调；官方未声明 file_id 可直接传给万相图片或视频生成，因此画布不会自动引用它。该 API 仅在北京 Region 开放。'
-            : 'Files API 用于 Chat / Responses 的图片、视频、音频和 PDF 输入；文件必须为 active 才能引用。远端文件属于所选 Provider 项目，不随当前画布复制或导出；Seedance 视频生成不使用 file_id。'
+            : providerKind === 'minimax-hailuo'
+              ? 'MiniMax Files 以 mm_file://{file_id} 供 H3 视频生成引用（首帧 / 参考图 / 参考视频 / 参考音频）。purpose 固定为 video_generation_input，文件保留 7 天；file_id 按 int64 字符串透传。'
+              : 'Files API 用于 Chat / Responses 的图片、视频、音频和 PDF 输入；文件必须为 active 才能引用。远端文件属于所选 Provider 项目，不随当前画布复制或导出；Seedance 视频生成不使用 file_id。'
         }
       />
       {errorMessage && (
@@ -370,6 +384,15 @@ export function CanvasProviderFilesTab() {
                   <Button size="small" onClick={() => void copyFileId(file.id)}>
                     复制 ID
                   </Button>
+                  {providerKind === 'minimax-hailuo' && file.status === 'active' && onAddToCanvas && (
+                    <Button
+                      size="small"
+                      type="primary"
+                      onClick={() => onAddToCanvas(file, providerProfileId)}
+                    >
+                      加入视频生成
+                    </Button>
+                  )}
                   <Button
                     size="small"
                     loading={getFileLoading && file.status === 'processing'}
@@ -428,6 +451,38 @@ export function CanvasProviderFilesTab() {
               )
             } else {
               message.success(`已上传 ${succeeded} 个百炼文件`)
+              setUploadOpen(false)
+            }
+          }}
+        />
+      ) : providerKind === 'minimax-hailuo' ? (
+        <MinimaxFileUploadModal
+          open={uploadOpen}
+          providerProfileId={providerProfileId}
+          uploading={uploadLoading}
+          onClose={() => setUploadOpen(false)}
+          onUpload={async (requests) => {
+            const requestedProviderProfileId = requests[0]?.providerProfileId ?? ''
+            let succeeded = 0
+            const failures: string[] = []
+            for (const request of requests) {
+              try {
+                const result = await uploadFile(request)
+                if (providerProfileIdRef.current === requestedProviderProfileId) {
+                  setFiles((current) => mergeFiles([result.file], current))
+                }
+                succeeded += 1
+              } catch (error) {
+                failures.push(filesErrorMessage(error, 'MiniMax'))
+              }
+            }
+            if (providerProfileIdRef.current !== requestedProviderProfileId) return
+            if (failures.length > 0) {
+              setErrorMessage(
+                `${succeeded} 个文件已上传，${failures.length} 个失败：${failures[0]}`,
+              )
+            } else {
+              message.success(`已上传 ${succeeded} 个 MiniMax 文件`)
               setUploadOpen(false)
             }
           }}
@@ -571,6 +626,85 @@ function BailianFileUploadModal({
               placeholder="将随 descriptions 字段上传"
             />
           </label>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function MinimaxFileUploadModal({
+  open,
+  providerProfileId,
+  uploading,
+  onClose,
+  onUpload,
+}: {
+  open: boolean
+  providerProfileId: string
+  uploading: boolean
+  onClose: () => void
+  onUpload: (requests: Array<IpcRequest<'provider:files:upload'>>) => Promise<void>
+}) {
+  const [filePaths, setFilePaths] = useState<string[]>([])
+
+  const pickFiles = async () => {
+    const picked = await window.spark.invoke('dialog:open-file', {
+      title: '选择上传到 MiniMax Files 的素材',
+      multiple: true,
+    })
+    if (picked.canceled) return
+    const paths = (picked.filePaths ?? (picked.filePath ? [picked.filePath] : [])).slice(
+      0,
+      MAX_LOCAL_UPLOADS,
+    )
+    setFilePaths(paths)
+    if ((picked.filePaths?.length ?? 0) > MAX_LOCAL_UPLOADS) {
+      message.warning(`单次最多选择 ${MAX_LOCAL_UPLOADS} 个文件`)
+    }
+  }
+
+  const submit = async () => {
+    if (!providerProfileId) return
+    if (filePaths.length === 0) {
+      message.warning('请先选择本地文件')
+      return
+    }
+    await onUpload(
+      filePaths.map((filePath) => ({
+        providerProfileId,
+        filePath,
+        purpose: 'video_generation_input',
+      })),
+    )
+  }
+
+  return (
+    <Modal
+      open={open}
+      title="上传到 MiniMax Files"
+      width={620}
+      okText="开始上传"
+      cancelText="取消"
+      confirmLoading={uploading}
+      onCancel={onClose}
+      onOk={() => void submit()}
+      destroyOnClose={false}
+      zIndex={1500}
+    >
+      <div className="canvas-provider-files-upload-form">
+        <Alert
+          type="info"
+          message="上传的素材以 mm_file://{file_id} 供 H3 视频生成引用（首帧 / 参考图 / 参考视频 / 参考音频）。支持图片（JPG/PNG/WebP/HEIC ≤30MB）、参考视频（MP4/MOV ≤50MB）、参考音频（WAV/MP3 ≤15MB）；文件保留 7 天。"
+        />
+        <div className="canvas-provider-files-upload-row">
+          <Button icon={<Icons.FolderOpen size={13} />} onClick={() => void pickFiles()}>
+            选择文件
+          </Button>
+          <span className="canvas-provider-files-note">
+            {filePaths.length > 0
+              ? `已选择 ${filePaths.length} 个：${filePaths.map(fileNameFromPath).join('、')}`
+              : '可多选，单次最多 20 个'}
+          </span>
         </div>
       </div>
     </Modal>
