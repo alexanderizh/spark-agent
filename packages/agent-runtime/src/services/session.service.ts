@@ -2617,8 +2617,13 @@ export class SessionService {
     )
 
     // ── 白盒提示词快照 ─────────────────────────────────────────────────────
-    // 捕获本轮完整提示词组成，发送到 Renderer 供审计面板展示
+    // 捕获本轮完整提示词组成，发送到 Renderer 供审计面板展示。
+    // 运行时日志开关（telemetry.runtimeLogEnabled，默认关闭）：关闭时仅保留续会话
+    // 所需元数据，丢弃 systemPromptSections / userMessage / runtimeLoadStatus 三大
+    // 文本块，避免每轮几十 KB 的提示词快照长期累积撑大 spark.db。
     {
+      const runtimeLogEnabled =
+        new SettingsRepository(this.db).get('telemetry', 'runtimeLogEnabled') === true
       const promptSections: Array<{ label: string; content: string; charCount: number }> = []
       if (composedSkillSystemPrompt && composedSkillSystemPrompt.trim().length > 0) {
         promptSections.push({
@@ -2708,15 +2713,17 @@ export class SessionService {
           turnId,
           timestamp: new Date().toISOString(),
           seq: 0,
-          userMessage: buildUserMessageSnapshot(message, turnAttachments),
-          systemPromptSections: promptSections,
+          userMessage: runtimeLogEnabled
+            ? buildUserMessageSnapshot(message, turnAttachments)
+            : '',
+          systemPromptSections: runtimeLogEnabled ? promptSections : [],
           model,
           providerProfileId: effectiveRuntimeProviderProfileId,
           adapterKind,
           permissionMode,
           toolCount: toolCountEstimate,
           sdkSessionId,
-          runtimeLoadStatus,
+          ...(runtimeLogEnabled ? { runtimeLoadStatus } : {}),
           ...(agentAdapter === 'claude-sdk' || agentAdapter === 'claude'
             ? { sdkPreset: 'claude_code' }
             : {}),

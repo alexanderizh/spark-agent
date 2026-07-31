@@ -627,6 +627,73 @@ export class EventRepository extends BaseRepository {
     return result.changes
   }
 
+  /**
+   * 清除 turn_prompt_snapshot 事件中的大文本字段（systemPromptSections /
+   * userMessage / runtimeLoadStatus），仅保留续会话所需的元数据。
+   *
+   * 用于「设置 → 存储与备份」的历史运行时快照清理：把长期累积的庞大提示词
+   * 快照瘦身为元数据，回收 spark.db 空间。续会话判定（getLatestMatchingTurnPromptSnapshot）
+   * 只读 model / providerProfileId / adapterKind / sdkSessionId，完全不依赖这些文本块，
+   * 因此清理后老会话仍可正常 resume。
+   *
+   * 在 SQL 层用 json_remove 直接改写 event_json，分批执行避免单个大事务长时间占住
+   * Electron main 进程；每批 UPDATE 后这些字段变为不存在，下一轮 SELECT 自然不再命中，
+   * 循环收敛。返回累计清理的行数（配合外部 VACUUM 才能真正回收磁盘空间）。
+   */
+  pruneTurnPromptSnapshotPayloads(batchSize: number = 1000): number {
+    const safeBatchSize = Math.max(1, Math.min(5000, Math.floor(batchSize)))
+    let totalRows = 0
+    for (;;) {
+      const rows = this.raw
+        .prepare(
+          `SELECT rowid
+           FROM agent_events
+           WHERE event_type = 'turn_prompt_snapshot'
+             AND json_valid(event_json) = 1
+             AND (
+               json_extract(event_json, '$.systemPromptSections') IS NOT NULL
+               OR json_extract(event_json, '$.userMessage') IS NOT NULL
+               OR json_extract(event_json, '$.runtimeLoadStatus') IS NOT NULL
+             )
+           LIMIT ?`,
+        )
+        .all(safeBatchSize) as Array<{ rowid: number }>
+      if (rows.length === 0) break
+      const placeholders = rows.map(() => '?').join(',')
+      this.raw
+        .prepare(
+          `UPDATE agent_events
+             SET event_json = json_remove(
+               event_json,
+               '$.systemPromptSections',
+               '$.userMessage',
+               '$.runtimeLoadStatus'
+             )
+           WHERE rowid IN (${placeholders})`,
+        )
+        .run(...rows.map((row) => row.rowid))
+      totalRows += rows.length
+    }
+    return totalRows
+  }
+
+  /**
+   * 重建数据库文件（VACUUM），把已删除/改写数据留下的空闲页真正还给文件系统。
+   *
+   * pruneTurnPromptSnapshotPayloads 只是把 event_json 改短，SQLite 不会自动缩小
+   * 数据库文件；配合 VACUUM 才能让 spark.db 在磁盘上实际变小。WAL 模式下先
+   * checkpoint(TRUNCATE) 把 WAL 内容并入主库再 VACUUM。仅在用户主动清理时调用，
+   * 大库可能阻塞 main 进程数秒。
+   */
+  vacuum(): void {
+    try {
+      this.raw.pragma('wal_checkpoint(TRUNCATE)')
+    } catch {
+      // 非 WAL 模式或 checkpoint 失败时忽略，VACUUM 仍可继续
+    }
+    this.raw.exec('VACUUM')
+  }
+
   /** 按 ID 列表批量删除事件 */
   deleteEventsByIds(ids: string[]): number {
     if (ids.length === 0) return 0
