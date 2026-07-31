@@ -2,6 +2,7 @@ import { composeCanvasMediaProviderPrompt, type MediaContractIssue } from '@spar
 import type { CanvasMediaTaskInputFile } from '@spark/protocol'
 import type { CanvasOperationType, CreateCanvasTaskRequest } from './canvas.types'
 import { pruneModelParamsForCanvas } from './canvasMediaContract'
+import { IMAGE_PROMPT_REVERSE_PROMPT } from './canvasOperationPresets'
 
 type CanvasTaskSubmissionRequest = Omit<CreateCanvasTaskRequest, 'boardId'> & {
   inputFiles?: CanvasMediaTaskInputFile[]
@@ -81,9 +82,34 @@ export function validateCanvasTextTaskSubmission(
   request: CanvasTaskSubmissionRequest,
 ): CanvasTaskSubmissionRequest {
   const issues: MediaContractIssue[] = []
-  const prompt = (request.compiledUserText ?? request.prompt ?? '').trim()
-  if (!prompt) {
+  const isImagePromptReverse = request.operation === 'image_prompt_reverse'
+  const files = request.inputFiles ?? []
+  const imageCount = files.filter((file) => matchesMediaKind(file, 'image')).length
+  const prompt = isImagePromptReverse
+    ? IMAGE_PROMPT_REVERSE_PROMPT
+    : (request.compiledUserText ?? request.prompt ?? '').trim()
+
+  if (isImagePromptReverse && imageCount === 0) {
+    issues.push(issue('missing_required', '请连接一张输入图片', ['inputFiles']))
+  } else if (isImagePromptReverse && (imageCount !== 1 || files.length !== 1)) {
+    issues.push(issue('out_of_range', '图片反推仅支持一张输入图片', ['inputFiles']))
+  }
+  if (!isImagePromptReverse && !prompt) {
     issues.push(issue('missing_required', '请输入提示词或待处理文本', ['prompt']))
+  }
+
+  if (isImagePromptReverse) {
+    for (const [index, file] of files.entries()) {
+      if (file.dataUrl && !/^data:image\/[^;,]+;base64,.+$/is.test(file.dataUrl)) {
+        issues.push(
+          issue('invalid_type', `第 ${index + 1} 张输入图片的 dataUrl 格式无效`, [
+            'inputFiles',
+            index,
+            'dataUrl',
+          ]),
+        )
+      }
+    }
   }
 
   const params = request.modelParams ?? {}
@@ -97,7 +123,7 @@ export function validateCanvasTextTaskSubmission(
   )
 
   if (issues.length > 0) throw new CanvasTaskValidationError(issues)
-  return request
+  return isImagePromptReverse ? { ...request, prompt: IMAGE_PROMPT_REVERSE_PROMPT } : request
 }
 
 function validateOptionalEnum(

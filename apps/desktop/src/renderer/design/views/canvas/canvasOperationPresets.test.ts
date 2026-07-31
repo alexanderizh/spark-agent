@@ -51,6 +51,13 @@ describe('canvasOperationPresets', () => {
     )
   })
 
+  it('builds a fixed direct-output instruction for image prompt reverse', () => {
+    const prompt = buildCanvasOperationPrompt('image_prompt_reverse', '')
+    expect(prompt).toContain('只输出一段中文完整提示词')
+    expect(prompt).toContain('主体、环境、构图、镜头、光影、色彩、材质与风格')
+    expect(prompt).not.toContain('入参/场景要求：')
+  })
+
   it('exposes readonly system prompt prefixes and builds final prompts from them', () => {
     expect(readCanvasOperationPresetPromptPrefix('panorama_360')).toContain(
       '可用于 360° 全景查看器的完整场景全景图',

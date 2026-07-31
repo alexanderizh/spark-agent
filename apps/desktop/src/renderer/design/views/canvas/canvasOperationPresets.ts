@@ -18,6 +18,7 @@ export const CANVAS_OPERATION_PRESET_OPERATIONS: readonly CanvasOperationType[] 
   'text_generate',
   'text_rewrite',
   'prompt_optimize',
+  'image_prompt_reverse',
   'text_to_audio',
   'audio_transcribe',
   'text_to_video',
@@ -151,6 +152,13 @@ type CanvasOperationPresetStore = Partial<Record<CanvasOperationType, StoredCanv
 type CanvasPresetStore = Partial<Record<CanvasPresetTargetId, StoredCanvasOperationPreset>>
 type CanvasLastUsedStore = Partial<Record<CanvasPresetTargetId, StoredCanvasOperationPreset>>
 
+export const IMAGE_PROMPT_REVERSE_PROMPT = [
+  '请分析输入图片，并反推出可直接用于文生图或图生视频的一段中文完整提示词。',
+  '提示词必须覆盖主体、环境、构图、镜头、光影、色彩、材质与风格。',
+  '只输出一段中文完整提示词，不输出分析过程、标题、Markdown、代码块或额外解释。',
+  '无法从画面可靠判断的细节不要虚构为事实。',
+].join('\n')
+
 const BUILTIN_PROMPTS: Partial<Record<CanvasOperationType, string>> = {
   text_to_image: '请基于输入内容生成一张高质量图片。',
   image_to_image: '请基于输入图片生成一个高质量变体。',
@@ -161,6 +169,7 @@ const BUILTIN_PROMPTS: Partial<Record<CanvasOperationType, string>> = {
   text_generate: '请基于输入内容生成结构清晰、信息完整的文本。',
   text_rewrite: '请基于输入内容进行改写，保持原意并提升表达质量。',
   prompt_optimize: '请优化提示词，使其更清晰、可执行，并保留用户原始意图。',
+  image_prompt_reverse: IMAGE_PROMPT_REVERSE_PROMPT,
   text_to_audio: '请基于输入文本生成一段自然清晰的音频。',
   audio_transcribe: '请转写输入音频内容。',
   text_to_video: '请基于输入文本生成一段自然流畅的视频。',
@@ -468,6 +477,7 @@ export function buildCanvasOperationPrompt(
   operation: CanvasOperationType,
   prompt: string | undefined,
 ): string | undefined {
+  if (operation === 'image_prompt_reverse') return IMAGE_PROMPT_REVERSE_PROMPT
   const prefix = readCanvasOperationPresetPromptPrefix(operation).trim()
   const body = unwrapCanvasOperationPromptBody(prefix, prompt)
   if (!prefix) return body || undefined

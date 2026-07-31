@@ -191,6 +191,28 @@ describe('canvasOperationSubmission', () => {
     })
   })
 
+  it('routes image prompt reverse through text validation with its image input', async () => {
+    const node = operationNode({
+      type: 'image_prompt_reverse',
+      data: { operation: 'image_prompt_reverse' },
+    })
+    const current = snapshot(node)
+    const deps = dependencies()
+
+    await prepareSavedCanvasOperationSubmission(
+      { snapshot: current, node },
+      deps,
+    )
+
+    expect(deps.validateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'image_prompt_reverse',
+        inputFiles: [expect.objectContaining({ type: 'image' })],
+      }),
+    )
+    expect(deps.validateMedia).not.toHaveBeenCalled()
+  })
+
   it('uses the bound task runtime when the node has no saved override', async () => {
     const current = snapshot(
       operationNode({

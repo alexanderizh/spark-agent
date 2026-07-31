@@ -237,6 +237,40 @@ describe('canvasTaskSubmissionValidation', () => {
     ).toThrow(CanvasTaskValidationError)
   })
 
+  it('requires exactly one image for image prompt reverse', () => {
+    expect(() =>
+      validateCanvasTextTaskSubmission({
+        operation: 'image_prompt_reverse',
+        prompt: '',
+        inputFiles: [],
+      }),
+    ).toThrow('请连接一张输入图片')
+
+    expect(() =>
+      validateCanvasTextTaskSubmission({
+        operation: 'image_prompt_reverse',
+        prompt: '',
+        inputFiles: [
+          { type: 'image', url: 'https://example.com/one.png' },
+          { type: 'image', url: 'https://example.com/two.png' },
+        ],
+      }),
+    ).toThrow('图片反推仅支持一张输入图片')
+  })
+
+  it('injects the fixed prompt for a valid image prompt reverse request', () => {
+    expect(
+      validateCanvasTextTaskSubmission({
+        operation: 'image_prompt_reverse',
+        prompt: '',
+        inputFiles: [{ type: 'image', dataUrl: 'data:image/png;base64,AAAA' }],
+      }),
+    ).toMatchObject({
+      operation: 'image_prompt_reverse',
+      prompt: expect.stringContaining('只输出一段中文完整提示词'),
+    })
+  })
+
   it('accepts compiled text from a prompt document', () => {
     expect(() =>
       validateCanvasTextTaskSubmission({
