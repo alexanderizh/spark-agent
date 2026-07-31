@@ -1,6 +1,6 @@
 # Agent Computer Use、媒体交付与 Windows Host 设计
 
-> 状态: 实施中 | 最后核对: 2026-07-30
+> 状态: 实施中 | 最后核对: 2026-08-01
 
 ## 目标
 
@@ -57,9 +57,12 @@ Rust workspace 位于 `apps/desktop/native/windows/spark-computer-host/`，模�
 - `capture`：Windows Graphics Capture；不可用时不伪装成功，不以 GDI 临时截图作为正式降级。
 - `uia`：full/diff tree、secure/password 元素过滤、runtime element reference。
 - `input`：SendInput 与 UIA Invoke/Value/Selection/Scroll pattern；执行前后复核前台窗口和进程身份。
+- `user_input`：低级键鼠 Hook 只记录非 injected 的真实输入；目标窗口输入触发接管，其他应用输入只影响前台输入空闲窗口。
 - `handler`：wire request、取消、稳定错误和 binary descriptor。
 
 当前实现已经落地上述正式路径：WGC 负责无光标窗口捕获并在前后复核 HWND/PID/executable identity；inventory 与 SendInput/capture 统一使用规范化 executable path SHA-256，不使用易碰撞的进程名；UIA 生成 full/diff tree 和 Host 内稳定 runtime element reference，secure 节点同时替换 value 与 provider-controlled name；Invoke/Value/SelectionItem/Scroll/Focus/ExpandCollapse 走语义 pattern，坐标、最长 5 秒拖拽、滚动、组合键和最长 20,000 UTF-16 units 文本走受限 SendInput。mouse/key down 使用释放守卫，拖拽每步复核前台身份，Client watchdog 按动作时长增加清理余量。Host 拒绝 secure desktop、过期 frame/tree/element、焦点漂移、取消后的 session 和越界 wire 数据。动作响应只返回严格 `action_result`；Electron Backend 随后执行新的 `observe`，Verification 前强制 full observation，因此不会用 diff patch 证明全局文本存在/不存在。
+
+Windows 与共享 action contract 使用相同 execution lane：Invoke/SetValue/SelectText 为 `background_semantic`，Observe/Wait 为 `passive`，其余原生动作均为 `foreground_input`。旧 App 缺省 lane 时 Host 从动作安全推导；显式 lane 不匹配时在 wire 边界拒绝。低级键鼠 Hook 忽略 `LLMHF_INJECTED`/`LLKHF_INJECTED`，观察后首次动作前的真实目标窗口输入也会触发接管；前台动作等待连续 300 ms 输入空闲，长拖拽、组合键和文本在每个有界步骤检查接管并由释放守卫避免遗留按下状态。Hook 无法安装时不宣传输入能力。
 
 Electron 打包按 `windows-x64`、`windows-arm64` 复制 Host 与 manifest，GitHub Release matrix 同时构建两种架构。发布流水线要求 Authenticode 签名、时间戳、SHA-256、固定产品标识和外层 SparkWork signer 一致；Host 运行时从 WinVerifyTrust state 读取实际 leaf signer，附带证书包中的非 signer 证书不能满足 publisher 绑定；无正式证书的 CI release 直接失败。
 
@@ -81,6 +84,6 @@ manifest 使用同一个证书 SHA-256 指纹；无签名、非自签名的坏�
 
 ## 当前验收状态
 
-- Rust protocol/UIA/input/security policy 共 17 项测试通过，`cargo fmt --check` 与 `cargo clippy --all-targets -- -D warnings` 通过。
-- `x86_64-pc-windows-msvc` 与 `aarch64-pc-windows-msvc` 均通过交叉 `cargo check`；Desktop artifact/fuse/afterSign contract tests 通过。
+- Rust protocol/UIA/input/security policy 共 22 项测试通过，`cargo fmt --check` 与 `cargo clippy --all-targets -- -D warnings` 通过；新增 lane mismatch、scroll/observe 共享映射和旧 envelope lane 推导回归。
+- `x86_64-pc-windows-msvc` 与 `aarch64-pc-windows-msvc` 均通过含测试目标的交叉 `cargo check --tests`；Desktop artifact/fuse/afterSign contract tests 通过。
 - 当前 macOS 开发机没有 Windows 正式发布证书，也不能替代真实 Windows 桌面，因此 Windows 10/11 签名安装、WGC/UIA/SendInput 实机矩阵、UWP/Win32/WPF 样本和最终 signer/timestamp smoke 必须由发布 Windows CI/实体机完成。该门槛未通过前本文保持“实施中”，不能对外声称 Windows 发布包已完成实机验收。

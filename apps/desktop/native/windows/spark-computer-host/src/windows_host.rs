@@ -9,7 +9,7 @@ use crate::frame_codec::{FrameDecoder, FrameKind, MAX_FRAME_PAYLOAD_BYTES, encod
 use crate::input_policy::{
     InputAction, InputPolicy, InputPolicyError, TargetWindow, secure_field_allows,
 };
-use crate::protocol::ComputerAction;
+use crate::protocol::{ComputerAction, ExecutionLane};
 use crate::protocol::{HostRequest, PROTOCOL_VERSION, encode_error};
 
 mod capture;
@@ -17,6 +17,7 @@ mod input;
 mod inventory;
 mod runtime_auth;
 mod uia;
+mod user_input;
 
 const MAX_SCREENSHOT_DIMENSION: u32 = 32_768;
 
@@ -78,6 +79,7 @@ struct ObservationBinding {
     app_id: String,
     window_id: String,
     target: TargetWindow,
+    observed_at: std::time::Instant,
 }
 
 struct HostState {
@@ -85,15 +87,18 @@ struct HostState {
     input_available: bool,
     observation: Option<ObservationBinding>,
     canceled_sessions: CanceledSessionRegistry,
+    user_input: Option<user_input::WindowsUserInputMonitor>,
 }
 
 impl HostState {
     fn new() -> Self {
+        let user_input = user_input::WindowsUserInputMonitor::new();
         Self {
             uia: uia::UiaRuntime::new().ok(),
-            input_available: input::is_available(),
+            input_available: input::is_available() && user_input.is_some(),
             observation: None,
             canceled_sessions: CanceledSessionRegistry::default(),
+            user_input,
         }
     }
 
@@ -101,7 +106,7 @@ impl HostState {
         if self.uia.is_none() {
             self.uia = uia::UiaRuntime::new().ok();
         }
-        self.input_available = input::is_available();
+        self.input_available = input::is_available() && self.user_input.is_some();
     }
 }
 
@@ -262,6 +267,9 @@ fn handle_request(
             ..
         } => {
             state.observation = None;
+            if let Some(monitor) = state.user_input {
+                monitor.clear_session(&computer_session_id);
+            }
             state.canceled_sessions.cancel(computer_session_id);
             write_value(
                 output,
@@ -343,6 +351,7 @@ fn observe(
         previous_tree_version,
         full_tree,
     } = input;
+    let observed_at = std::time::Instant::now();
     let Some(uia) = state.uia.as_mut() else {
         return write_platform_error(
             output,
@@ -510,6 +519,7 @@ fn observe(
         app_id: app_id.to_owned(),
         window_id: window_id.to_owned(),
         target: before,
+        observed_at,
     });
     Ok(())
 }
@@ -586,6 +596,49 @@ fn execute_action(
     {
         return write_input_policy_error(output, request_id, error);
     }
+    let session_id = envelope.computer_session_id.as_str();
+    let Some(user_input) = state.user_input else {
+        return write_platform_error(
+            output,
+            request_id,
+            "environment_unavailable",
+            "Windows user-input monitoring is unavailable",
+            false,
+        );
+    };
+    user_input.bind_session(session_id, expected.hwnd, binding.observed_at);
+    if user_input.takeover_detected(session_id) {
+        return write_platform_error(
+            output,
+            request_id,
+            "handoff_required",
+            "The user took over the target window",
+            false,
+        );
+    }
+    if envelope.effective_execution_lane() == ExecutionLane::ForegroundInput {
+        match user_input.wait_for_idle(session_id) {
+            Ok(()) => {}
+            Err(user_input::UserInputError::Takeover) => {
+                return write_platform_error(
+                    output,
+                    request_id,
+                    "handoff_required",
+                    "The user took over the target window",
+                    false,
+                );
+            }
+            Err(user_input::UserInputError::Busy) => {
+                return write_platform_error(
+                    output,
+                    request_id,
+                    "action_timeout",
+                    "User input did not become idle before the action deadline",
+                    true,
+                );
+            }
+        }
+    }
     if matches!(
         envelope.action,
         ComputerAction::TypeText { .. } | ComputerAction::Keypress { .. }
@@ -624,7 +677,10 @@ fn execute_action(
         if !state.input_available {
             Err(ActionExecutionError::Input(input::InputError::Unsupported))
         } else {
-            input::execute(&envelope.action, &expected).map_err(ActionExecutionError::Input)
+            input::execute(&envelope.action, &expected, || {
+                user_input.takeover_detected(session_id)
+            })
+            .map_err(ActionExecutionError::Input)
         }
     };
     if let Err(error) = result {
@@ -708,6 +764,13 @@ fn write_action_error(
             "focus_mismatch",
             "The target window is unavailable",
             true,
+        ),
+        ActionExecutionError::Input(input::InputError::UserTakeover) => write_platform_error(
+            output,
+            request_id,
+            "handoff_required",
+            "The user took over the target window",
+            false,
         ),
         ActionExecutionError::Input(input::InputError::InjectionFailed)
         | ActionExecutionError::Uia(uia::UiaError::Unavailable)

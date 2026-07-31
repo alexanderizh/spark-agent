@@ -39,6 +39,8 @@ pub enum InputError {
     WindowUnavailable,
     #[error("SendInput did not inject the complete action")]
     InjectionFailed,
+    #[error("the user took over the target window")]
+    UserTakeover,
 }
 
 pub fn is_available() -> bool {
@@ -74,7 +76,12 @@ pub fn target_window(window_id: &str) -> Result<TargetWindow, InputError> {
     })
 }
 
-pub fn execute(action: &ComputerAction, expected: &TargetWindow) -> Result<(), InputError> {
+pub fn execute(
+    action: &ComputerAction,
+    expected: &TargetWindow,
+    should_stop: impl Fn() -> bool,
+) -> Result<(), InputError> {
+    stop_if_requested(&should_stop)?;
     let current = target_window(&expected.hwnd.to_string())?;
     let desktop = virtual_desktop()?;
     let rect = window_rect(expected.hwnd)?;
@@ -90,9 +97,11 @@ pub fn execute(action: &ComputerAction, expected: &TargetWindow) -> Result<(), I
                 y: point.y,
             };
             InputPolicy::validate_for_desktop(&policy_action, expected, &current, &desktop)?;
+            stop_if_requested(&should_stop)?;
             move_pointer(point, desktop)?;
             let (down, up) = mouse_button_flags(button.unwrap_or(MouseButton::Left));
             for _ in 0..*count {
+                stop_if_requested(&should_stop)?;
                 validate_live_foreground(expected, true)?;
                 send_one(mouse_event(0, 0, 0, down))?;
                 let mut releases = InputReleaseGuard::default();
@@ -107,6 +116,7 @@ pub fn execute(action: &ComputerAction, expected: &TargetWindow) -> Result<(), I
                 y: point.y,
             };
             InputPolicy::validate_for_desktop(&policy_action, expected, &current, &desktop)?;
+            stop_if_requested(&should_stop)?;
             move_pointer(point, desktop)?;
         }
         ComputerAction::Drag {
@@ -118,6 +128,7 @@ pub fn execute(action: &ComputerAction, expected: &TargetWindow) -> Result<(), I
             let to = screen_point(*to, rect)?;
             let policy_action = InputAction::Drag { from, to };
             InputPolicy::validate_for_desktop(&policy_action, expected, &current, &desktop)?;
+            stop_if_requested(&should_stop)?;
             move_pointer(from, desktop)?;
             send_one(mouse_event(0, 0, 0, MOUSEEVENTF_LEFTDOWN))?;
             let mut releases = InputReleaseGuard::default();
@@ -125,6 +136,7 @@ pub fn execute(action: &ComputerAction, expected: &TargetWindow) -> Result<(), I
             let duration = duration_ms.unwrap_or(250);
             let steps = (duration / 16).clamp(1, 120);
             for step in 1..=steps {
+                stop_if_requested(&should_stop)?;
                 let current = target_window(&expected.hwnd.to_string())?;
                 InputPolicy::validate_for_desktop(&policy_action, expected, &current, &desktop)?;
                 let ratio = f64::from(step) / f64::from(steps);
@@ -153,6 +165,7 @@ pub fn execute(action: &ComputerAction, expected: &TargetWindow) -> Result<(), I
                 y: point.y,
             };
             InputPolicy::validate_for_desktop(&policy_action, expected, &current, &desktop)?;
+            stop_if_requested(&should_stop)?;
             move_pointer(point, desktop)?;
             let mut events = Vec::with_capacity(2);
             if *delta_y != 0.0 {
@@ -184,6 +197,7 @@ pub fn execute(action: &ComputerAction, expected: &TargetWindow) -> Result<(), I
             InputPolicy::validate(&policy_action, expected, &current)?;
             let mut releases = InputReleaseGuard::default();
             for key in &virtual_keys {
+                stop_if_requested(&should_stop)?;
                 validate_live_foreground(expected, true)?;
                 send_one(key_event(*key, KEYBD_EVENT_FLAGS(0)))?;
                 releases.arm(key_event(*key, KEYEVENTF_KEYUP));
@@ -195,6 +209,7 @@ pub fn execute(action: &ComputerAction, expected: &TargetWindow) -> Result<(), I
             InputPolicy::validate(&policy_action, expected, &current)?;
             let mut releases = InputReleaseGuard::default();
             for (index, unit) in text.encode_utf16().enumerate() {
+                stop_if_requested(&should_stop)?;
                 validate_live_foreground(expected, index % 64 == 0)?;
                 send_one(unicode_event(unit, KEYBD_EVENT_FLAGS(0)))?;
                 releases.arm(unicode_event(unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP));
@@ -203,9 +218,18 @@ pub fn execute(action: &ComputerAction, expected: &TargetWindow) -> Result<(), I
         }
         _ => return Err(InputError::Unsupported),
     }
+    stop_if_requested(&should_stop)?;
     let after = target_window(&expected.hwnd.to_string())?;
     InputPolicy::validate(&InputAction::Move { x: 0, y: 0 }, expected, &after)?;
     Ok(())
+}
+
+fn stop_if_requested(should_stop: &impl Fn() -> bool) -> Result<(), InputError> {
+    if should_stop() {
+        Err(InputError::UserTakeover)
+    } else {
+        Ok(())
+    }
 }
 
 fn virtual_desktop() -> Result<VirtualDesktop, InputError> {

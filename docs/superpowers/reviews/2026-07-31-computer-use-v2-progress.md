@@ -1,6 +1,6 @@
 # Computer Use V2 · 实施进度总览
 
-> 最后更新: 2026-07-31 | 关联计划: `docs/superpowers/plans/2026-07-30-computer-use-v2-reliability-and-collaboration.md`（状态: 实施中）
+> 最后更新: 2026-08-01 | 关联计划: `docs/superpowers/plans/2026-07-30-computer-use-v2-reliability-and-collaboration.md`（状态: 实施中）
 
 本文档是 V2 计划各阶段的运行中进度追踪。每阶段落地后追加一行；详细审查见同目录 `2026-07-31-computer-use-phase-*.md`。
 
@@ -24,7 +24,7 @@ Computer Use 最新主进程/协议/Renderer 回归：**45 文件 / 297 测试�
 | Phase 0 真实基线样本           | 发布/真机签收 | macOS/Windows 失败安装包、冷启动/首次权限/四步任务真实样本                                                                                                        |
 | Phase 5.1/5.3 控制状态与去轮询 | 原生 + 纯 TS  | 系统 Overlay/托盘状态并入 Phase 4；Orchestrator 事件等待并入 Phase 7                                                                                              |
 | Phase 7 灰度/迁移              | 纯 TS         | 统一 flag 框架 + 回退条件（依赖 Phase 0 指标）                                                                                                                    |
-| Phase 4 人机协同               | Swift + TS    | execution lane、macOS 接管、Tray/产品控制卡、AppControlBridge（含空草稿填写）、精确窗口绑定/picker 与显式同源新窗口加入已落地；300 ms P99、Windows 对等实现待完成 |
+| Phase 4 人机协同               | 原生 + TS     | macOS/Windows 对等代码、Tray/产品控制卡、AppControlBridge、精确窗口绑定/picker 已落地；真实签名桌面的 20 动作、状态一致性与 300 ms P99 待发布签收             |
 | Phase 6 会话级授权             | 安全评审门禁  | 动 T01 注入防御，需独立安全评审；做到交付物+签收清单                                                                                                              |
 | Phase 1 原生打包               | 原生/基建签收 | DMG/NSIS 握手、CI VM 矩阵、签名、干净 VM 黄金任务 100 次——需发布基建                                                                                              |
 | Phase 2.2 持久捕获（原生切片） | 原生签收      | SCStream/AXObserver/SCContentSharingPicker——macOS Swift/Windows Rust                                                                                              |
