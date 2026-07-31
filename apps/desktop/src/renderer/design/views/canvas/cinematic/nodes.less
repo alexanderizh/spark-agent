@@ -135,7 +135,8 @@
   }
 
   .canvas-node.canvas-node-media-full-bleed {
-    overflow: hidden;
+    // Handle 与 NodeResizer 会跨出节点边界；媒体内容仍由 .canvas-node-core 裁切。
+    overflow: visible;
     border-color: rgba(255, 255, 255, 0.09);
     background: #07090b;
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.26);

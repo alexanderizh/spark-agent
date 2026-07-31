@@ -37,17 +37,16 @@ describe('canvas cinematic integration', () => {
     }
   })
 
-  it('uses a lifted blue-grey dark palette instead of near-black canvas surfaces', () => {
+  it('uses a neutral charcoal palette aligned with the creative workbench', () => {
     const tokens = readCanvasSource('./cinematic/tokens.less')
     const shell = readCanvasSource('./cinematic/shell.less')
 
-    expect(tokens).toContain('--canvas-cinema-bg: #11161d;')
-    expect(tokens).toContain('--canvas-cinema-stage: #121820;')
-    expect(tokens).toContain('--canvas-cinema-surface-1: #171e27;')
-    expect(tokens).toContain('--canvas-cinema-surface-2: #1d2631;')
-    expect(tokens).not.toMatch(/--canvas-cinema-(?:bg|stage):\s*#0[0-9a-f]{5};/i)
-    expect(shell).toContain('background: rgba(17, 22, 29, 0.97);')
-    expect(shell).toContain('background: rgba(23, 30, 39, 0.94);')
+    expect(tokens).toContain('--canvas-cinema-bg: #141414;')
+    expect(tokens).toContain('--canvas-cinema-stage: #101010;')
+    expect(tokens).toContain('--canvas-cinema-surface-1: #191919;')
+    expect(tokens).toContain('--canvas-cinema-surface-2: #202020;')
+    expect(shell).toContain('background: rgba(20, 20, 20, 0.97);')
+    expect(shell).toContain('background: rgba(25, 25, 25, 0.94);')
   })
 
   it('renders the product node chrome and labeled primary creation actions', () => {
@@ -196,6 +195,8 @@ describe('canvas cinematic integration', () => {
     expect(controls).toContain('className="canvas-controls-button"')
     expect(controls).not.toContain('react-flow__controls-button')
     expect(controls).toContain('aria-pressed={!isInteractive}')
+    expect(controls).toContain('canvas-controls-minimap')
+    expect(controls).toContain('onClick={onToggleMinimap}')
     expect(shellStyles).toMatch(
       /\.canvas-controls \.canvas-controls-button\s*\{[^}]*background:\s*transparent[^}]*color:\s*var\(--canvas-cinema-text-muted\)/s,
     )
@@ -204,7 +205,7 @@ describe('canvas cinematic integration', () => {
     )
     expect(shellStyles).toContain('.canvas-controls .canvas-controls-interactive.is-locked')
     expect(shellStyles).toMatch(
-      /\.canvas-controls\s*\{[^}]*right:\s*66px !important[^}]*bottom:\s*12px !important[^}]*margin:\s*0 !important/s,
+      /\.canvas-controls\s*\{[^}]*right:\s*14px !important[^}]*bottom:\s*10px !important[^}]*background:\s*transparent[^}]*box-shadow:\s*none/s,
     )
   })
 

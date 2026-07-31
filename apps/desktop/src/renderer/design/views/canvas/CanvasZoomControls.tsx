@@ -38,9 +38,13 @@ const interactiveSelector = (s: {
 export function CanvasZoomControls({
   className,
   style,
+  minimapOpen,
+  onToggleMinimap,
 }: {
   className?: string
   style?: CSSProperties
+  minimapOpen: boolean
+  onToggleMinimap: () => void
 }) {
   const store = useStoreApi()
   const { zoomIn, zoomOut, fitView } = useReactFlow()
@@ -111,6 +115,17 @@ export function CanvasZoomControls({
         onClick={handleToggleInteractivity}
       >
         {isInteractive ? <UnlockIcon /> : <Icons.Lock size={16} strokeWidth={1.8} />}
+      </button>
+      <span className="canvas-controls-divider" aria-hidden />
+      <button
+        type="button"
+        className={`canvas-controls-button canvas-controls-minimap${minimapOpen ? ' is-open' : ''}`}
+        aria-label={minimapOpen ? '收起小地图' : '展开小地图'}
+        title={minimapOpen ? '收起小地图' : '展开小地图'}
+        aria-pressed={minimapOpen}
+        onClick={onToggleMinimap}
+      >
+        {minimapOpen ? <Icons.Minimize size={16} /> : <Icons.Map size={16} />}
       </button>
     </Panel>
   )

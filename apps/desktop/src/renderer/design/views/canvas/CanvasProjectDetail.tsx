@@ -423,9 +423,9 @@ export function CanvasProjectDetail({
       <div className="canvas-detail-stats">
         {stats.map((s) => (
           <div key={s.label} className="canvas-detail-stat">
-            <span className="canvas-detail-stat-icon">{s.icon}</span>
+            <span className="canvas-detail-stat-icon">{s.icon}  <p>{s.label}</p></span>
             <span className="canvas-detail-stat-value">{s.value}</span>
-            <span className="canvas-detail-stat-label">{s.label}</span>
+            {/* <span className="canvas-detail-stat-label">{s.label}</span> */}
           </div>
         ))}
       </div>

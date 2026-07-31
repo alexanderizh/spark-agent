@@ -7,7 +7,7 @@
     gap: 16px;
     padding: 0 14px 0 16px;
     border-bottom: 1px solid var(--canvas-cinema-border);
-    background: rgba(17, 22, 29, 0.97);
+    background: rgba(20, 20, 20, 0.97);
     box-shadow: 0 1px rgba(0, 0, 0, 0.55);
   }
 
@@ -168,12 +168,12 @@
     --canvas-dot-grid-size: 18px;
     --canvas-dot-grid-offset: 9px;
     background:
-      radial-gradient(circle at 58% 42%, rgba(119, 108, 246, 0.055), transparent 34%),
+      radial-gradient(circle at 58% 42%, rgba(255, 255, 255, 0.018), transparent 36%),
       var(--canvas-cinema-stage);
   }
 
   .canvas-stage::before {
-    background-image: radial-gradient(circle, rgba(162, 171, 184, 0.17) 0 0.7px, transparent 0.8px);
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0 0.7px, transparent 0.8px);
   }
 
   .canvas-stage-quick-actions {
@@ -196,7 +196,7 @@
     padding: 4px;
     border: 1px solid var(--canvas-cinema-border);
     border-radius: 12px;
-    background: rgba(23, 30, 39, 0.94);
+    background: rgba(25, 25, 25, 0.94);
     box-shadow: 0 16px 38px rgba(0, 0, 0, 0.34);
     overflow-x: hidden;
     overflow-y: auto;
@@ -248,32 +248,28 @@
     display: none;
   }
 
-  .canvas-controls,
-  .canvas-minimap,
-  .canvas-minimap-toggle {
+  .canvas-minimap {
     border-color: var(--canvas-cinema-border);
     border-radius: var(--canvas-cinema-radius-sm);
-    background: rgba(15, 18, 22, 0.92);
+    background: rgba(20, 20, 20, 0.92);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
     backdrop-filter: blur(12px);
   }
 
   .canvas-controls {
-    // React Flow Panel 默认带 15px margin；必须显式清除，才能与外层的小地图按钮底边对齐。
+    // 与创作工作台一致：控制项聚合悬浮，但不再使用包裹整组的盒状底板。
     left: auto !important;
-    right: 66px !important;
-    bottom: 12px !important;
+    right: 14px !important;
+    bottom: 10px !important;
     margin: 0 !important;
-    gap: 2px;
-    padding: 4px;
-    border-color: var(--canvas-cinema-border-strong);
-    border-radius: 10px;
-    background: rgba(14, 17, 21, 0.9);
-    box-shadow:
-      0 10px 28px rgba(0, 0, 0, 0.3),
-      inset 0 1px 0 rgba(255, 255, 255, 0.035);
-    backdrop-filter: blur(14px) saturate(1.08);
-    -webkit-backdrop-filter: blur(14px) saturate(1.08);
+    gap: 3px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .canvas-controls .canvas-controls-button {
@@ -296,7 +292,7 @@
   }
 
   .canvas-controls .canvas-controls-button:hover:not(:disabled) {
-    background: var(--canvas-cinema-surface-3);
+    background: rgba(255, 255, 255, 0.07);
     color: var(--canvas-cinema-text-strong);
   }
 
@@ -324,6 +320,17 @@
     color: var(--canvas-cinema-accent-bright);
   }
 
+  .canvas-controls-divider {
+    width: 1px;
+    height: 18px;
+    margin: 7px 3px;
+    background: var(--canvas-cinema-border-strong);
+  }
+
+  .canvas-controls .canvas-controls-minimap.is-open {
+    color: var(--canvas-cinema-text-strong);
+  }
+
   .canvas-controls-zoom-label {
     min-width: 42px;
     height: 32px;
@@ -335,10 +342,9 @@
     letter-spacing: 0.01em;
   }
 
-  .canvas-minimap,
-  .canvas-minimap-toggle {
-    right: 12px;
-    bottom: 12px;
+  .canvas-minimap {
+    right: 14px;
+    bottom: 52px;
   }
 
   .canvas-cinematic-empty {

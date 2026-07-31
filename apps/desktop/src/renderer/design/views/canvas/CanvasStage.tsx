@@ -345,34 +345,89 @@ function CanvasPaneResourceNodeActions({
   return (
     <>
       {onAddText && (
-        <button type="button" role="menuitem" onClick={onAddText}>
+        <Button
+          type="text"
+          role="menuitem"
+          size="middle"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            minHeight: 36
+          }}
+          onClick={onAddText}
+        >
           <Icons.File size={14} />
           <span>添加文本</span>
-        </button>
+        </Button>
       )}
       {onAddImage && (
-        <button type="button" role="menuitem" onClick={onAddImage}>
+        <Button
+          type="text"
+          role="menuitem"
+          size="middle"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            minHeight: 36
+          }}
+          onClick={onAddImage}
+        >
           <Icons.Image size={14} />
           <span>图片节点</span>
-        </button>
+        </Button>
       )}
       {onAddDirectorStage3D && (
-        <button type="button" role="menuitem" onClick={onAddDirectorStage3D}>
+        <Button
+          type="text"
+          role="menuitem"
+          size="middle"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            minHeight: 36
+          }}
+          onClick={onAddDirectorStage3D}
+        >
           <Icons.Box size={14} />
           <span>新建 3D 导演台</span>
-        </button>
+        </Button>
       )}
       {onAddVideoWorkbench && (
-        <button type="button" role="menuitem" onClick={onAddVideoWorkbench}>
+        <Button
+          type="text"
+          role="menuitem"
+          size="middle"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            minHeight: 36
+          }}
+          onClick={onAddVideoWorkbench}
+        >
           <Icons.Video size={14} />
           <span>新建视频工作台</span>
-        </button>
+        </Button>
       )}
       {onInsertAsset && (
-        <button type="button" role="menuitem" onClick={onInsertAsset}>
+        <Button
+          type="text"
+          role="menuitem"
+          size="middle"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            minHeight: 36
+          }}
+          onClick={onInsertAsset}
+        >
           <Icons.Folder size={14} />
           <span>从资产选择</span>
-        </button>
+        </Button>
       )}
     </>
   )
@@ -2387,17 +2442,12 @@ function CanvasStageInner({
               maskStrokeWidth={1}
             />
           )}
-          <CanvasZoomControls className="canvas-controls" />
+          <CanvasZoomControls
+            className="canvas-controls"
+            minimapOpen={minimapOpen}
+            onToggleMinimap={() => setMinimapOpen((open) => !open)}
+          />
         </ReactFlow>
-        <button
-          type="button"
-          className={`canvas-minimap-toggle${minimapOpen ? ' is-open' : ''}`}
-          aria-label={minimapOpen ? '收起小地图' : '展开小地图'}
-          title={minimapOpen ? '收起小地图' : '展开小地图'}
-          onClick={() => setMinimapOpen((open) => !open)}
-        >
-          {minimapOpen ? <Icons.Minimize size={18} /> : <Icons.Map size={18} />}
-        </button>
         {selectedEdgeIds.length > 0 && (
           <button type="button" className="canvas-edge-delete-button" onClick={deleteSelectedEdges}>
             删除连线
@@ -2677,8 +2727,12 @@ function CanvasStageInner({
                         key={op.id}
                         type="text"
                         role="menuitem"
-                        size='small'
-                        style={{display: 'flex', alignItems: 'center', justifyContent: 'flex-start'}}
+                        size="middle"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-start',
+                        }}
                         onClick={() => handleCreatePipelineFromPane(op.id)}
                       >
                         <Icons.Workflow size={14} />
@@ -2691,16 +2745,23 @@ function CanvasStageInner({
                 {CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => {
                   const visual = getOperationVisual(item.operation)
                   return (
-                    <button
+                    <Button
                       key={item.operation}
-                      type="button"
+                      size="middle"
+                      type="text"
                       role="menuitem"
+                      style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-start',
+                          minHeight: 36
+                        }}
                       className={`canvas-pane-context-op ${visual.colorClass}`}
                       onClick={() => handleCreateOperationFromPane(item.operation)}
                     >
                       <span className="canvas-pane-context-op-icon">{visual.icon}</span>
                       <span>{item.label}</span>
-                    </button>
+                    </Button>
                   )
                 })}
               </CanvasPaneContextSubmenu>
@@ -2721,11 +2782,15 @@ function CanvasStageInner({
                       const visual = getOperationVisual(item.operation)
                       return (
                         <Button
-                          key={item.operation}
                           type="text"
                           role="menuitem"
-                          size='small'
-                          style={{display: 'flex', alignItems: 'center', justifyContent: 'flex-start'}}
+                          size="middle"
+                          key={item.operation}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'flex-start',
+                          }}
                           className={`canvas-pane-context-op ${visual.colorClass}`}
                           onClick={() => handleCreateOperationFromPane(item.operation)}
                         >

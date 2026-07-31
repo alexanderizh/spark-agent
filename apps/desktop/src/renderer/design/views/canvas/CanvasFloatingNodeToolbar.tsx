@@ -283,69 +283,7 @@ export const CanvasFloatingNodeToolbar = memo(function CanvasFloatingNodeToolbar
           聚焦
         </Button>
       </Tooltip>
-      {!isGroup && hasResource && (
-        <Popover
-          trigger="hover"
-          mouseEnterDelay={0.08}
-          mouseLeaveDelay={0.18}
-          placement="bottomLeft"
-          arrow={false}
-          overlayClassName="canvas-floating-toolbar-popover"
-          content={aiOperationMenu}
-        >
-          <Button size="middle" type="text" icon={<Icons.Sparkles size={14} />}>
-            {CANVAS_BASE_TASK_MENU_LABEL}
-          </Button>
-        </Popover>
-      )}
-      {!isGroup && hasResource && (
-        <Popover
-          trigger="hover"
-          mouseEnterDelay={0.08}
-          mouseLeaveDelay={0.18}
-          placement="bottom"
-          content={
-            <div className="canvas-floating-menu">
-              <div className="canvas-floating-menu-title">{CANVAS_FUNCTIONAL_MENU_LABEL}</div>
-              {pipelineActionGroups.map((group) => (
-                <div key={group.id} className="canvas-floating-menu-section">
-                  <div className="canvas-floating-menu-section-title">{group.label}</div>
-                  {group.actions.map((action) => (
-                    <div key={action.id}>
-                      {menuButton(action.label, resolveCanvasFloatingIcon(action.icon, 14), () =>
-                        onPipelineAction(action.id),
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ))}
-              {pipelineActionGroups.length > 0 && <div className="canvas-floating-menu-divider" />}
-              {contextualAiActions.map((action) => (
-                <div key={action.key}>{menuButton(action.label, action.icon, action.onClick)}</div>
-              ))}
-              {contextualAiActions.length > 0 && <div className="canvas-floating-menu-divider" />}
-              {CANVAS_FUNCTIONAL_CREATE_OPERATIONS.map((item) => (
-                <div key={item.operation}>
-                  {menuButton(item.label, resolveCanvasFloatingIcon(item.icon, 14), () =>
-                    onCreateOperationChild(item.operation),
-                  )}
-                </div>
-              ))}
-              <div className="canvas-floating-menu-divider" />
-              {menuButton('确认采用', <Icons.Check size={14} />, () =>
-                onSetProductionState('confirmed'),
-              )}
-              {menuButton('标记待更新', <Icons.RotateCcw size={14} />, () =>
-                onSetProductionState('stale'),
-              )}
-            </div>
-          }
-        >
-          <Button size="middle" type="text" icon={<Icons.Workflow size={14} />}>
-            {CANVAS_FUNCTIONAL_MENU_LABEL}
-          </Button>
-        </Popover>
-      )}
+
       {hasResource && (
         <Popover
           trigger="hover"
