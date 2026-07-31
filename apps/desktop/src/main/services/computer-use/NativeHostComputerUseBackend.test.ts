@@ -607,6 +607,68 @@ describe('NativeHostComputerUseBackend', () => {
     expect(first.close).toHaveBeenCalledOnce()
     expect(connect).toHaveBeenCalledTimes(2)
   })
+
+  it('observes the explicitly bound window instead of following a newly focused window', async () => {
+    const boundWindow = { ...FOCUSED_WINDOW, focused: false }
+    const otherWindow = {
+      ...FOCUSED_WINDOW,
+      app: { ...FOCUSED_WINDOW.app, id: 'app-2', name: 'Other' },
+      window: { ...FOCUSED_WINDOW.window, id: 'window-2', title: 'Other document' },
+      focused: true,
+    }
+    const connection = createControlConnection([OBSERVATION])
+    vi.mocked(connection.listWindows).mockResolvedValue([otherWindow, boundWindow])
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'windows',
+      connect: async () => connection,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+      createId: () => 'snapshot-1',
+    })
+    backend.bindSessionTarget({
+      computerSessionId: 'computer-1',
+      appId: 'app-1',
+      windowId: 'window-1',
+    })
+
+    await backend.observe({
+      computerSessionId: 'computer-1',
+      fullTree: true,
+      signal: new AbortController().signal,
+    })
+
+    expect(connection.observe).toHaveBeenCalledWith(
+      expect.objectContaining({ appId: 'app-1', windowId: 'window-1' }),
+    )
+  })
+
+  it('fails closed when the explicitly bound window disappears', async () => {
+    const otherWindow = {
+      ...FOCUSED_WINDOW,
+      app: { ...FOCUSED_WINDOW.app, id: 'app-2', name: 'Other' },
+      window: { ...FOCUSED_WINDOW.window, id: 'window-2', title: 'Other document' },
+    }
+    const connection = createControlConnection([OBSERVATION])
+    vi.mocked(connection.listWindows).mockResolvedValue([otherWindow])
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'windows',
+      connect: async () => connection,
+      evidenceSink: { persist: vi.fn(async () => undefined) },
+    })
+    backend.bindSessionTarget({
+      computerSessionId: 'computer-1',
+      appId: 'app-1',
+      windowId: 'window-1',
+    })
+
+    await expect(
+      backend.observe({
+        computerSessionId: 'computer-1',
+        fullTree: true,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toMatchObject({ code: 'focus_mismatch' })
+    expect(connection.observe).not.toHaveBeenCalled()
+  })
 })
 
 function createConnection(windows: NativeWindowDescriptor[] = []): NativeHostConnection {

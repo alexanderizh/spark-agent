@@ -240,7 +240,7 @@ export class ComputerUseAgentController {
           throw unavailable('This build currently provides governed execution only on My Desktop')
         }
         const windows = await services.backend.listWindows()
-        const target = requireFocusedWindow(windows)
+        const target = requireTargetWindow(windows, request.targetWindowId)
         const model = await this.resolveDecisionModel(sessionId)
         const successCriteria =
           request.successCriteria.length > 0
@@ -249,7 +249,7 @@ export class ComputerUseAgentController {
         const taskContract = ComputerTaskContractSchema.parse({
           objective: request.goal,
           successCriteria,
-          allowedApps: allowedAppRules(target, windows),
+          allowedApps: [strongestAppRule(target)],
           allowedDomains: [],
           allowedDataClasses: ['public', 'internal', 'personal'],
           forbiddenActions: [],
@@ -266,6 +266,11 @@ export class ComputerUseAgentController {
           providerProfileId: model.providerProfileId,
           modelId: model.model,
           taskContract,
+        })
+        services.backend.bindSessionTarget?.({
+          computerSessionId: computerSession.id,
+          appId: target.app.id,
+          windowId: target.window.id,
         })
         const lease = services.sessions.acquireLease({
           computerSessionId: computerSession.id,
@@ -365,6 +370,7 @@ const StartTaskSchema = z
     environment: z.literal('my_desktop'),
     successCriteria: z.array(VerificationSpecSchema).min(1).max(100).optional(),
     acceptanceCriteria: z.array(z.string().trim().min(1).max(1_000)).min(1).max(50).optional(),
+    targetWindowId: z.string().trim().min(1).max(256).optional(),
   })
   .strict()
 
@@ -384,12 +390,16 @@ function parseStartTask(args: unknown): {
   goal: string
   environment: 'safe_browser' | 'safe_desktop' | 'my_desktop'
   successCriteria: z.infer<typeof VerificationSpecSchema>[]
+  targetWindowId?: string
 } {
   const parsed = StartTaskSchema.safeParse(args)
   if (!parsed.success) throw invalidArguments()
   return {
     goal: parsed.data.goal,
     environment: parsed.data.environment,
+    ...(parsed.data.targetWindowId == null
+      ? {}
+      : { targetWindowId: parsed.data.targetWindowId }),
     successCriteria:
       parsed.data.successCriteria ??
       (parsed.data.acceptanceCriteria ?? []).map((expected) => ({
@@ -438,7 +448,17 @@ function inferExpectedVisibleText(goal: string): string | null {
   return null
 }
 
-function requireFocusedWindow(windows: NativeWindowDescriptor[]): NativeWindowDescriptor {
+function requireTargetWindow(
+  windows: NativeWindowDescriptor[],
+  targetWindowId?: string,
+): NativeWindowDescriptor {
+  if (targetWindowId != null) {
+    const target = windows.find(
+      (window) => window.window.id === targetWindowId && !window.minimized,
+    )
+    if (target != null) return target
+    throw unavailable('The selected target window is unavailable')
+  }
   const focused = windows.filter((window) => window.focused && !window.minimized)
   if (focused[0] != null) return largestWindow(focused)
   const visible = windows.filter((window) => !window.minimized)
@@ -465,23 +485,6 @@ function strongestAppRule(
     return { kind: 'executable_identity', value: target.app.executableIdentity }
   }
   return { kind: 'app_id', value: target.app.id }
-}
-
-function allowedAppRules(
-  focused: NativeWindowDescriptor,
-  windows: NativeWindowDescriptor[],
-): ComputerSession['taskContract']['allowedApps'] {
-  const rules: ComputerSession['taskContract']['allowedApps'] = []
-  const seen = new Set<string>()
-  for (const window of [focused, ...windows]) {
-    const rule = strongestAppRule(window)
-    const key = `${rule.kind}:${rule.value}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    rules.push(rule)
-    if (rules.length >= 200) break
-  }
-  return rules
 }
 
 function supportsExecution(capabilities: ComputerUseCapabilitySummary): boolean {

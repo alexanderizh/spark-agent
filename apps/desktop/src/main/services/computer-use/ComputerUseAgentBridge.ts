@@ -149,6 +149,13 @@ const MCP_TOOLS = [
           description: "Use exactly my_desktop for the user's local Mac or Windows desktop.",
           enum: ['my_desktop'],
         },
+        targetWindowId: {
+          type: 'string',
+          description:
+            'Optional exact window id returned by list_windows. When supplied, Spark binds the task to that window and will not follow another foreground window.',
+          minLength: 1,
+          maxLength: 256,
+        },
         acceptanceCriteria: {
           type: 'array',
           description:
