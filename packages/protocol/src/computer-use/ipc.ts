@@ -68,6 +68,7 @@ export const ComputerUseStartRequestSchema = z
     providerProfileId: ComputerUseIdentifierSchema,
     modelId: ComputerUseIdentifierSchema,
     taskContract: ComputerTaskContractSchema,
+    targetWindowId: ComputerUseIdentifierSchema.optional(),
   })
   .strict()
 export type ComputerUseStartRequest = z.infer<typeof ComputerUseStartRequestSchema>

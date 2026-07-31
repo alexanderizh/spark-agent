@@ -103,6 +103,7 @@ export class NativeHostComputerUseBackend
   private readonly evidenceSink: NativeObservationEvidenceSink | null
   private readonly createId: () => string
   private readonly observationSessions = new Map<string, ObservationSessionState>()
+  private readonly targetBindings = new Map<string, { appId: string; windowId: string }>()
   private readonly supervisor: NativeHostSupervisor | null
   private readonly metrics: ComputerUseMetricsCollector | null
   private readonly metricDimensions: () => ComputerUseMetricDimensions
@@ -229,6 +230,14 @@ export class NativeHostComputerUseBackend
     return this.withConnection((connection) => connection.listWindows(), { idempotent: true })
   }
 
+  bindSessionTarget(input: { computerSessionId: string; appId: string; windowId: string }): void {
+    this.targetBindings.set(input.computerSessionId, {
+      appId: input.appId,
+      windowId: input.windowId,
+    })
+    this.observationSessions.delete(input.computerSessionId)
+  }
+
   async requestPermissions(
     permissions: Array<'screen' | 'accessibility'>,
   ): Promise<NativeHostCapabilityManifest> {
@@ -256,9 +265,13 @@ export class NativeHostComputerUseBackend
         undefined,
         async (connection) => {
           const previous = this.observationSessions.get(input.computerSessionId)
+          const targetBinding = this.targetBindings.get(input.computerSessionId)
           const target = selectControllableWindow(
             await connection.listWindows(input.signal),
-            previous == null ? undefined : { appId: previous.appId, windowId: previous.windowId },
+            previous == null
+              ? targetBinding
+              : { appId: previous.appId, windowId: previous.windowId },
+            targetBinding != null,
           )
           return this.captureObservation({
             connection,
@@ -300,7 +313,7 @@ export class NativeHostComputerUseBackend
         const target = selectControllableWindow(await connection.listWindows(input.signal), {
           appId: input.observation.foreground.app.id,
           windowId: input.observation.foreground.window.id,
-        })
+        }, this.targetBindings.has(input.envelope.computerSessionId))
         const observation = await this.captureObservation({
           connection,
           computerSessionId: input.envelope.computerSessionId,
@@ -325,6 +338,7 @@ export class NativeHostComputerUseBackend
 
   async cancelSession(computerSessionId: string): Promise<void> {
     this.observationSessions.delete(computerSessionId)
+    this.targetBindings.delete(computerSessionId)
     if (this.supervisor != null) {
       let connection: NativeHostConnection
       try {
@@ -362,6 +376,7 @@ export class NativeHostComputerUseBackend
     if (this.disposed) return
     this.disposed = true
     this.observationSessions.clear()
+    this.targetBindings.clear()
     if (this.supervisor != null) {
       await this.supervisor.dispose()
       return
@@ -674,9 +689,12 @@ function sessionCanceled(): ComputerUseBrokerError {
 function selectControllableWindow(
   windows: NativeWindowDescriptor[],
   previous?: { appId: string; windowId: string },
+  requireExactTarget = false,
 ): NativeWindowDescriptor {
-  const focused = windows.filter((window) => window.focused && !window.minimized)
-  if (focused.length > 0) return largestWindow(focused)
+  if (!requireExactTarget) {
+    const focused = windows.filter((window) => window.focused && !window.minimized)
+    if (focused.length > 0) return largestWindow(focused)
+  }
   const previousWindow = windows.find(
     (window) =>
       !window.minimized &&
@@ -684,6 +702,9 @@ function selectControllableWindow(
       window.window.id === previous.windowId,
   )
   if (previousWindow != null) return previousWindow
+  if (previous != null && requireExactTarget) {
+    throw new ComputerUseBrokerError('focus_mismatch', 'The bound target window is unavailable')
+  }
   const visible = windows.filter((window) => !window.minimized)
   if (visible.length > 0) return largestWindow(visible)
   throw new ComputerUseBrokerError('focus_mismatch', 'No controllable window was found')

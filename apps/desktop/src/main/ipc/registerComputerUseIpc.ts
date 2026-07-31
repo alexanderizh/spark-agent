@@ -7,7 +7,9 @@ import {
   VerificationSpecSchema,
 } from '@spark/protocol'
 import type {
+  ComputerAppIdentity,
   ComputerEnvironment,
+  ComputerTaskContract,
   ComputerUseSettings,
   NativeWindowDescriptor,
 } from '@spark/protocol'
@@ -140,8 +142,24 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
       const manifest = requireUsableNativeHost(capabilities)
       requireComputerPermissions(manifest.permissions)
 
+      const target =
+        request.targetWindowId == null
+          ? null
+          : requireAllowedTargetWindow(
+              await validatedWindows(runtime),
+              request.targetWindowId,
+              request.taskContract,
+            )
+
       const input: CreateManagedComputerSessionInput = request
       const created = runtime.sessions.createSession(input)
+      if (target != null) {
+        runtime.backend.bindSessionTarget?.({
+          computerSessionId: created.id,
+          appId: target.app.id,
+          windowId: target.window.id,
+        })
+      }
       const operatorId = rendererOperatorId(event.sender.id)
       try {
         runtime.sessions.acquireLease({
@@ -436,6 +454,42 @@ async function validatedWindows(services: ComputerUseServices): Promise<NativeWi
     )
   }
   return parsed.data
+}
+
+function requireAllowedTargetWindow(
+  windows: NativeWindowDescriptor[],
+  targetWindowId: string,
+  taskContract: ComputerTaskContract,
+): NativeWindowDescriptor {
+  const target = windows.find(
+    (window) => window.window.id === targetWindowId && !window.minimized,
+  )
+  if (target == null) {
+    throw new ComputerUseBrokerError('focus_mismatch', 'The selected target window is unavailable')
+  }
+  if (!taskContract.allowedApps.some((rule) => appRuleMatches(rule, target.app))) {
+    throw new ComputerUseBrokerError(
+      'app_not_allowed',
+      'The selected target window is outside the task application allowlist',
+    )
+  }
+  return target
+}
+
+function appRuleMatches(
+  rule: ComputerTaskContract['allowedApps'][number],
+  app: ComputerAppIdentity,
+): boolean {
+  switch (rule.kind) {
+    case 'app_id':
+      return app.id === rule.value
+    case 'bundle_id':
+      return app.bundleId === rule.value
+    case 'executable_identity':
+      return app.executableIdentity === rule.value
+    case 'signing_identity':
+      return app.signingIdentity === rule.value
+  }
 }
 
 function requireUsableNativeHost(

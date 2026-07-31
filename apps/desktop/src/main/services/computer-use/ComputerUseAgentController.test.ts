@@ -83,6 +83,7 @@ describe('ComputerUseAgentController', () => {
     const services = {
       backend: {
         getCapabilities: vi.fn(async () => CAPABILITIES),
+        bindSessionTarget: vi.fn(),
         listWindows: vi.fn(async () => [
           {
             app: {
@@ -144,6 +145,7 @@ describe('ComputerUseAgentController', () => {
       controller.invoke('session-1', 'start_task', {
         goal: '点击搜索框，输入 comfyui',
         environment: 'my_desktop',
+        targetWindowId: 'window-bilibili',
       }),
     ).resolves.toMatchObject({
       computerSession: { id: 'computer-1' },
@@ -155,10 +157,7 @@ describe('ComputerUseAgentController', () => {
         turnId: 'turn-1',
         taskContract: expect.objectContaining({
           objective: '点击搜索框，输入 comfyui',
-          allowedApps: [
-            { kind: 'executable_identity', value: 'signed:publisher/editor.exe' },
-            { kind: 'bundle_id', value: 'tv.danmaku.bilianime' },
-          ],
+          allowedApps: [{ kind: 'bundle_id', value: 'tv.danmaku.bilianime' }],
           successCriteria: [
             {
               kind: 'visual',
@@ -171,6 +170,11 @@ describe('ComputerUseAgentController', () => {
         }),
       }),
     )
+    expect(services.backend.bindSessionTarget).toHaveBeenCalledWith({
+      computerSessionId: 'computer-1',
+      appId: 'app-bilibili',
+      windowId: 'window-bilibili',
+    })
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ session: computerSession, lease }))
   })
 
