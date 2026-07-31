@@ -1,35 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { hydrateTurnFileStats, prepareTurnFileSummary } from '../design/services/turn-file-summary'
+import { prepareTurnFileSummary } from '../design/services/turn-file-summary'
+import { isNestedAgentWorktreeSummaryPath } from '../design/services/turn-summary-filter'
 
 function file(
   path: string,
-  collectionSource: 'agent' | 'workspace_snapshot' | 'git_fallback' = 'agent',
+  collectionSource: 'agent' | 'agent_manifest' | 'workspace_snapshot' | 'git_fallback' = 'agent',
 ) {
   return { path, changeType: 'modify' as const, adds: 1, dels: 0, collectionSource }
 }
 
 describe('prepareTurnFileSummary', () => {
-  it('hydrates zero-stat events from the workspace Git status', () => {
-    const files = [
-      { path: '/workspace/src/index.ts', changeType: 'modify' as const, adds: 0, dels: 0 },
-      { path: '/workspace/README.md', changeType: 'modify' as const, adds: 2, dels: 1 },
-    ]
-
-    expect(
-      hydrateTurnFileStats(files, [
-        { path: 'src/index.ts', additions: 7, deletions: 3 },
-        { path: 'README.md', additions: 99, deletions: 99 },
-      ]),
-    ).toEqual([
-      { path: '/workspace/src/index.ts', changeType: 'modify', adds: 7, dels: 3 },
-      { path: '/workspace/README.md', changeType: 'modify', adds: 2, dels: 1 },
-    ])
-  })
-
   it('keeps direct edits visible even when they are under a generated directory', () => {
     const result = prepareTurnFileSummary([file('dist/index.html')])
 
     expect(result.files).toHaveLength(1)
+    expect(result.generatedGroups).toHaveLength(0)
+  })
+
+  it('keeps the agent turn manifest visible without consulting workspace Git state', () => {
+    const result = prepareTurnFileSummary([file('/workspace/src/reported.ts', 'agent_manifest')])
+
+    expect(result.files).toHaveLength(1)
+    expect(result.files[0]?.collectionSource).toBe('agent_manifest')
     expect(result.generatedGroups).toHaveLength(0)
   })
 
@@ -92,5 +84,23 @@ describe('prepareTurnFileSummary', () => {
       '/workspace/styles.css',
     ])
     expect(result.generatedGroups).toHaveLength(0)
+  })
+
+  it('filters nested agent worktrees relative to the active workspace only', () => {
+    expect(
+      isNestedAgentWorktreeSummaryPath(
+        '/workspace/.claude/worktrees/agent-1/src/app.ts',
+        '/workspace',
+      ),
+    ).toBe(true)
+    expect(
+      isNestedAgentWorktreeSummaryPath(
+        '/workspace/.claude/worktrees/agent-1/src/app.ts',
+        '/workspace/.claude/worktrees/agent-1',
+      ),
+    ).toBe(false)
+    expect(isNestedAgentWorktreeSummaryPath('.worktrees/review/src/app.ts', '/workspace')).toBe(
+      true,
+    )
   })
 })

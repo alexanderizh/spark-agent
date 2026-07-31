@@ -365,10 +365,16 @@ export function Checkpoint({
 
 export interface FileChangeSummaryItem {
   path: string
-  changeType: 'create' | 'modify' | 'delete'
+  changeType: 'create' | 'modify' | 'delete' | 'rename'
   adds: number
   dels: number
-  collectionSource?: 'agent' | 'checkpoint' | 'workspace_snapshot' | 'git_fallback'
+  diff?: string
+  collectionSource?:
+    | 'agent'
+    | 'agent_manifest'
+    | 'checkpoint'
+    | 'workspace_snapshot'
+    | 'git_fallback'
 }
 
 export function getTurnSummaryFileType(filePath: string): FileTypeBadge {
@@ -524,6 +530,7 @@ export function TurnFileSummaryCard({
               const canOpen = file.changeType !== 'delete'
               const fileType = getTurnSummaryFileType(file.path)
               const displayPath = getTurnSummaryDisplayPath(file.path, workspaceRootPath)
+              const hasFileStats = file.adds !== 0 || file.dels !== 0 || file.diff != null
               return (
                 <div
                   key={i}
@@ -540,7 +547,7 @@ export function TurnFileSummaryCard({
                   <code className="file-path" title={file.path}>
                     {displayPath}
                   </code>
-                  {hasSummaryStats && (
+                  {hasFileStats && (
                     <span className="file-stats">
                       <span className="add">+{file.adds}</span>
                       <span className="del">−{file.dels}</span>

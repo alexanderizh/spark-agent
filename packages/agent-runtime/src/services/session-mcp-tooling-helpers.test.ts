@@ -1,8 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { AgentEvent } from '@spark/protocol'
 import {
+  extractReportedFileChanges,
+  isNestedAgentWorktreePath,
+  PRESENT_FILES_SYSTEM_PROMPT,
   resolveMediaGenerationMcpServerPath,
   resolveRuntimeToolPath,
   WEB_SEARCH_SYSTEM_PROMPT,
@@ -104,5 +108,55 @@ describe('WEB_SEARCH_SYSTEM_PROMPT', () => {
     expect(WEB_SEARCH_SYSTEM_PROMPT).toContain('Fetch the underlying page')
     expect(WEB_SEARCH_SYSTEM_PROMPT).toContain('reconcile material conflicts')
     expect(WEB_SEARCH_SYSTEM_PROMPT).toContain('absence of a search result')
+  })
+})
+
+describe('turn-scoped file change journal', () => {
+  let root = ''
+
+  afterEach(() => {
+    if (root) rmSync(root, { recursive: true, force: true })
+    root = ''
+  })
+
+  it('validates reported changes and rejects nested worktree pollution', () => {
+    root = mkdtempSync(join(tmpdir(), 'spark-change-journal-'))
+    const changedFile = join(root, 'src', 'app.ts')
+    const nestedWorktreeFile = join(root, '.claude', 'worktrees', 'agent-1', 'src', 'app.ts')
+    mkdirSync(join(root, 'src'), { recursive: true })
+    mkdirSync(dirname(nestedWorktreeFile), { recursive: true })
+    writeFileSync(changedFile, 'changed\n')
+    writeFileSync(nestedWorktreeFile, 'copy\n')
+
+    const event = {
+      id: 'tool-result-1',
+      type: 'tool_result',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      timestamp: new Date().toISOString(),
+      seq: 1,
+      toolCallId: 'tool-1',
+      toolName: 'mcp__spark_files__report_file_changes',
+      status: 'success',
+      output: {
+        changes: [
+          { path: changedFile, changeType: 'modify' },
+          { path: join(root, 'removed.ts'), changeType: 'delete' },
+          { path: nestedWorktreeFile, changeType: 'modify' },
+        ],
+      },
+    } as AgentEvent
+
+    expect(extractReportedFileChanges(event, root)).toEqual([
+      { path: realpathSync(changedFile), changeType: 'modify' },
+      { path: join(realpathSync(root), 'removed.ts'), changeType: 'delete' },
+    ])
+    expect(isNestedAgentWorktreePath(root, nestedWorktreeFile)).toBe(true)
+  })
+
+  it('instructs agents to report only current-turn owned files', () => {
+    expect(PRESENT_FILES_SYSTEM_PROMPT).toContain('report_file_changes')
+    expect(PRESENT_FILES_SYSTEM_PROMPT).toContain('another session')
+    expect(PRESENT_FILES_SYSTEM_PROMPT).toContain('nested agent worktrees')
   })
 })

@@ -1,5 +1,6 @@
 export type TurnFileChangeCollectionSource =
   | 'agent'
+  | 'agent_manifest'
   | 'checkpoint'
   | 'workspace_snapshot'
   | 'git_fallback'
@@ -19,12 +20,6 @@ type TurnFileCandidate = {
   dels: number
   collectionSource?: TurnFileChangeCollectionSource
   diff?: string
-}
-
-export type TurnFileGitStats = {
-  path: string
-  additions: number
-  deletions: number
 }
 
 type PreparedTurnFileSummary<T extends TurnFileCandidate> = {
@@ -70,34 +65,6 @@ const EXAMPLE_LIMIT = 3
 
 function normalizePath(filePath: string): string {
   return filePath.replace(/\\/g, '/').replace(/\/+$/, '')
-}
-
-function matchesGitPath(filePath: string, gitPath: string): boolean {
-  const normalizedFilePath = normalizePath(filePath)
-  const normalizedGitPath = normalizePath(gitPath).replace(/^\/+/, '')
-  if (normalizedFilePath === normalizedGitPath) return true
-  return normalizedFilePath.endsWith(`/${normalizedGitPath}`)
-}
-
-/**
- * 用工作区 Git 状态补齐没有 unified diff 的文件事件（例如 Codex file_change 事件）。
- * 只补齐当前仍为 0 的条目，已有 diff 统计始终保持原值。
- */
-export function hydrateTurnFileStats<T extends TurnFileCandidate>(
-  files: T[],
-  gitStats: readonly TurnFileGitStats[],
-): T[] {
-  if (files.length === 0 || gitStats.length === 0) return files
-
-  let changed = false
-  const hydrated = files.map((file) => {
-    if (file.adds !== 0 || file.dels !== 0) return file
-    const stats = gitStats.find((item) => matchesGitPath(file.path, item.path))
-    if (stats == null || (stats.additions === 0 && stats.deletions === 0)) return file
-    changed = true
-    return { ...file, adds: stats.additions, dels: stats.deletions }
-  })
-  return changed ? hydrated : files
 }
 
 function parentDirectory(filePath: string): string {
