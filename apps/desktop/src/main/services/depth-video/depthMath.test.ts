@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { detectRgbSceneCut, normalizeInverseDepth, smoothDepthFrame } from './depthMath'
+import {
+  detectRgbSceneCut,
+  normalizeInverseDepth,
+  resizeGrayFrame,
+  smoothDepthFrame,
+} from './depthMath'
 
 describe('depthMath', () => {
   it('normalizes higher inverse-depth values to near-white pixels', () => {
@@ -22,5 +27,11 @@ describe('depthMath', () => {
     const light = new Uint8Array([255, 255, 255, 245, 245, 245])
     expect(detectRgbSceneCut(light, dark)).toBe(true)
     expect(detectRgbSceneCut(dark, dark)).toBe(false)
+  })
+
+  it('resizes grayscale depth frames back to the source dimensions', () => {
+    expect(Array.from(resizeGrayFrame(new Uint8Array([0, 255]), 2, 1, 4, 1))).toEqual([
+      0, 0, 255, 255,
+    ])
   })
 })

@@ -43,6 +43,34 @@ export function detectRgbSceneCut(
   return samples > 0 && totalDifference / samples / 255 >= threshold
 }
 
+export function resizeGrayFrame(
+  source: Uint8Array,
+  sourceWidth: number,
+  sourceHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+): Uint8Array {
+  if (sourceWidth === targetWidth && sourceHeight === targetHeight) return source
+  if (
+    sourceWidth <= 0 ||
+    sourceHeight <= 0 ||
+    targetWidth <= 0 ||
+    targetHeight <= 0 ||
+    source.length !== sourceWidth * sourceHeight
+  ) {
+    throw new Error('深度帧尺寸无效')
+  }
+  const output = new Uint8Array(targetWidth * targetHeight)
+  for (let y = 0; y < targetHeight; y += 1) {
+    const sourceY = Math.min(sourceHeight - 1, Math.floor((y * sourceHeight) / targetHeight))
+    for (let x = 0; x < targetWidth; x += 1) {
+      const sourceX = Math.min(sourceWidth - 1, Math.floor((x * sourceWidth) / targetWidth))
+      output[y * targetWidth + x] = source[sourceY * sourceWidth + sourceX]!
+    }
+  }
+  return output
+}
+
 function percentile(sorted: number[], ratio: number): number {
   if (sorted.length === 1) return sorted[0]!
   const position = ratio * (sorted.length - 1)
