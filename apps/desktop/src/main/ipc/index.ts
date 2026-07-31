@@ -367,7 +367,9 @@ const computerUseMcpProvider: ComputerUseMcpProvider = createComputerUseMcpProvi
     requestActionApproval: createComputerActionApprovalPresenter({
       getApprovals: () => getComputerUseServices().approvals,
       requestExactApproval: createNativeComputerActionApprovalPrompt(),
-      timeline: getComputerUseServices().timeline,
+      timeline: {
+        record: (event) => getComputerUseServices().timeline.record(event),
+      },
     }),
   }),
 })
