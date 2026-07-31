@@ -3943,9 +3943,12 @@ export function registerAllIpcHandlers(): void {
 
     const runTextGeneration = async (): Promise<CanvasTextTaskCreateResponse> => {
       const profiles = await getProviderService().listProviders()
+      const requiresVision = req.operation === 'image_prompt_reverse'
       // 候选文本 provider：有密钥(keystoreRef + secret)，且非纯媒体(image/voice/video)
       const isTextProvider = (p: (typeof profiles)[number]) =>
-        p.modelType === undefined || p.modelType === 'text' || p.modelType === 'multimodal'
+        requiresVision
+          ? p.modelType === 'multimodal'
+          : p.modelType === undefined || p.modelType === 'text' || p.modelType === 'multimodal'
       // 专属 agent：命中时用其人设 prompt 作 system，并在未显式指定 provider/model 时沿用 agent 绑定值
       const agent = req.agentId ? getAgentRepository().get(req.agentId) : null
       const agentPersona =
@@ -4086,7 +4089,7 @@ export function registerAllIpcHandlers(): void {
       }
       let chosen: { profile: (typeof profiles)[number]; apiKey: string } | null = null
       for (const profile of ordered) {
-        if (preferredProviderId == null && !isTextProvider(profile)) continue
+        if (!isTextProvider(profile)) continue
         if (!profile.keystoreRef) continue
         try {
           const apiKey = await resolveProviderApiKeyForProfile(profile)
@@ -4101,7 +4104,9 @@ export function registerAllIpcHandlers(): void {
       if (!chosen) {
         return fail(
           'provider_not_configured',
-          '未找到可用的文本模型 Provider（需要已配置 API Key 的文本/通用模型）',
+          requiresVision
+            ? '图片反推需要已配置 API Key 的视觉理解（多模态）模型 Provider'
+            : '未找到可用的文本模型 Provider（需要已配置 API Key 的文本/通用模型）',
         )
       }
       const model = resolveCanvasTextModel(req.modelId, agent?.modelId, chosen.profile.defaultModel)

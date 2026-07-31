@@ -45,12 +45,9 @@ describe('DepthVideoRunner', () => {
     const decoder = new FakeProcess()
     const encoder = new FakeProcess()
     const spawnProcess = vi.fn().mockReturnValueOnce(decoder).mockReturnValueOnce(encoder)
-    const estimator = {
-      estimate: vi.fn(async () => ({
-        values: new Float32Array([1, 2]),
-        width: 2,
-        height: 1,
-      })),
+    const frameProcessor = {
+      process: vi.fn(async () => new Uint8Array([0, 255])),
+      dispose: vi.fn(async () => undefined),
     }
     const runner = new DepthVideoRunner({
       probe: async () => ({
@@ -66,7 +63,7 @@ describe('DepthVideoRunner', () => {
       }),
       resolveBins: async () => ({ ffmpeg: '/managed/ffmpeg', ffprobe: '/managed/ffprobe' }),
       spawnProcess,
-      createEstimator: () => estimator,
+      createFrameProcessor: () => frameProcessor,
       finalizeOutput: vi.fn(async () => undefined),
       removeOutput: vi.fn(async () => undefined),
       ensureOutputDir: vi.fn(async () => undefined),
@@ -87,7 +84,8 @@ describe('DepthVideoRunner', () => {
     const result = await pending
 
     expect(Buffer.concat(encoded)).toEqual(Buffer.from([0, 255]))
-    expect(estimator.estimate).toHaveBeenCalledTimes(1)
+    expect(frameProcessor.process).toHaveBeenCalledTimes(1)
+    expect(frameProcessor.dispose).toHaveBeenCalledTimes(1)
     expect(result).toMatchObject({ width: 2, height: 1, fps: 1, durationSec: 1 })
   })
 
@@ -110,7 +108,10 @@ describe('DepthVideoRunner', () => {
       }),
       resolveBins: async () => ({ ffmpeg: '/managed/ffmpeg', ffprobe: '/managed/ffprobe' }),
       spawnProcess,
-      createEstimator: () => ({ estimate: vi.fn() }),
+      createFrameProcessor: () => ({
+        process: vi.fn(),
+        dispose: vi.fn(async () => undefined),
+      }),
       finalizeOutput: vi.fn(async () => undefined),
       removeOutput,
       ensureOutputDir: vi.fn(async () => undefined),

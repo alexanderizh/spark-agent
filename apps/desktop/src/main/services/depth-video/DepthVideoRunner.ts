@@ -5,21 +5,16 @@ import { dirname, extname, join } from 'node:path'
 import { once } from 'node:events'
 import { probeVideo, type VideoProbeInfo } from '../FfmpegRunner.js'
 import { resolveFfmpegBin } from '../FfmpegIntegrityService.js'
-import { DepthFrameEstimator, type DepthEstimate } from './DepthFrameEstimator.js'
-import {
-  detectRgbSceneCut,
-  normalizeInverseDepth,
-  resizeGrayFrame,
-  smoothDepthFrame,
-} from './depthMath.js'
+import { DepthInferenceWorker } from './DepthInferenceWorker.js'
 
 type SpawnedProcess = Pick<
   ChildProcessWithoutNullStreams,
   'stdin' | 'stdout' | 'stderr' | 'on' | 'once' | 'off' | 'kill'
 >
 
-type FrameEstimator = {
-  estimate(frame: { rgb: Uint8Array; width: number; height: number }): Promise<DepthEstimate>
+type FrameProcessor = {
+  process(frame: { rgb: Uint8Array; width: number; height: number }): Promise<Uint8Array>
+  dispose(): Promise<void> | void
 }
 
 export type DepthVideoProgressStage = 'decoding' | 'estimating_depth' | 'encoding'
@@ -52,7 +47,7 @@ type DepthVideoRunnerDependencies = {
   probe: typeof probeVideo
   resolveBins: typeof resolveFfmpegBin
   spawnProcess: (executable: string, args: string[]) => SpawnedProcess
-  createEstimator: (modelDir: string) => FrameEstimator
+  createFrameProcessor: (modelDir: string) => FrameProcessor
   ensureOutputDir: (directory: string) => Promise<void>
   finalizeOutput: (temporaryPath: string, outputPath: string) => Promise<void>
   removeOutput: (filePath: string) => Promise<void>
@@ -67,7 +62,7 @@ const DEFAULT_DEPENDENCIES: DepthVideoRunnerDependencies = {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     }),
-  createEstimator: (modelDir) => new DepthFrameEstimator({ modelDir }),
+  createFrameProcessor: (modelDir) => new DepthInferenceWorker({ modelDir }),
   ensureOutputDir: async (directory) => {
     await mkdir(directory, { recursive: true })
   },
@@ -106,21 +101,21 @@ export class DepthVideoRunner {
     // Attach rejection handlers immediately: cancellation can terminate both processes at once,
     // while the main flow only awaits them sequentially.
     void Promise.allSettled([decoderExit, encoderExit])
+    let frameProcessor: FrameProcessor | null = null
     const abort = () => {
       decoder.kill('SIGTERM')
       encoder.kill('SIGTERM')
+      void frameProcessor?.dispose()
     }
     request.signal?.addEventListener('abort', abort, { once: true })
 
     try {
       if (request.signal?.aborted) throw new Error('cancelled')
-      const estimator = this.dependencies.createEstimator(request.modelDir)
+      frameProcessor = this.dependencies.createFrameProcessor(request.modelDir)
       const frameBytes = probe.width * probe.height * 3
       const totalFrames = Math.max(1, Math.round(probe.durationSec * probe.fps))
       let frameCount = 0
       let pending = Buffer.alloc(0)
-      let previousRgb: Uint8Array | null = null
-      let previousDepth: Uint8Array | null = null
       request.onProgress?.({ stage: 'decoding', percent: 0, frame: 0, totalFrames })
 
       for await (const chunk of decoder.stdout) {
@@ -129,23 +124,12 @@ export class DepthVideoRunner {
         while (pending.length >= frameBytes) {
           const rgb = Uint8Array.from(pending.subarray(0, frameBytes))
           pending = pending.subarray(frameBytes)
-          const estimate = await estimator.estimate({
+          const depth = await frameProcessor.process({
             rgb,
             width: probe.width,
             height: probe.height,
           })
-          const normalized = resizeGrayFrame(
-            normalizeInverseDepth(estimate.values),
-            estimate.width,
-            estimate.height,
-            probe.width,
-            probe.height,
-          )
-          const sceneCut = detectRgbSceneCut(rgb, previousRgb)
-          const depth = smoothDepthFrame(normalized, previousDepth, 0.25, sceneCut)
           await writeWithBackpressure(encoder, depth)
-          previousRgb = rgb
-          previousDepth = depth
           frameCount += 1
           request.onProgress?.({
             stage: 'estimating_depth',
@@ -179,10 +163,11 @@ export class DepthVideoRunner {
     } catch (error) {
       abort()
       await this.dependencies.removeOutput(temporaryPath).catch(() => undefined)
-      if (request.signal?.aborted) throw new Error('cancelled')
+      if (request.signal?.aborted) throw new Error('cancelled', { cause: error })
       throw error
     } finally {
       request.signal?.removeEventListener('abort', abort)
+      await Promise.resolve(frameProcessor?.dispose()).catch(() => undefined)
     }
   }
 }

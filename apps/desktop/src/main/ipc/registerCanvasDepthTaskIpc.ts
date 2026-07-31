@@ -65,6 +65,9 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
 
   typedIpcHandle('canvas:task:create-depth-video', async (request) => {
     assertAllowedInputPath(request.inputPath)
+    if (runningTasks.size >= 1) {
+      throw new Error('已有深度视频任务正在运行，请等待完成或先取消当前任务')
+    }
     const runtimeTaskId = createRuntimeTaskId()
     const outputPath = createOutputPath(runtimeTaskId)
     const controller = new AbortController()
@@ -84,6 +87,7 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
     void (async () => {
       try {
         const model = await integrityService.install((downloaded, total) => {
+          if (controller.signal.aborted) return
           pushResponse(
             runningResponse(runtimeTaskId, {
               stage: 'installing_model',

@@ -5225,11 +5225,7 @@ export const canvasApi = {
       validationToken?: typeof CANVAS_TASK_VALIDATION_TOKEN
     },
   ): Promise<CanvasSnapshot> {
-    const request =
-      requestInput.skipParameterValidation === true ||
-      options?.validationToken === CANVAS_TASK_VALIDATION_TOKEN
-        ? requestInput
-        : validateCanvasLocalTaskSubmission(requestInput)
+    const request = validateCanvasLocalTaskSubmission(requestInput)
     const inputFile = request.inputFiles?.[0]
     const inputPath = inputFile?.path?.trim()
     if (!inputPath) throw new Error('深度视频需要可读取的本地视频路径')
@@ -5554,10 +5550,12 @@ export const canvasApi = {
     const project = db.projects.find((item) => item.id === projectId)
     if (!board || !project) throw new Error('Canvas board not found')
     const request =
-      requestInput.skipParameterValidation === true ||
-      options?.validationToken === CANVAS_TASK_VALIDATION_TOKEN
-        ? requestInput
-        : validateCanvasTextTaskSubmission(requestInput)
+      requestInput.operation === 'image_prompt_reverse'
+        ? validateCanvasTextTaskSubmission(requestInput)
+        : requestInput.skipParameterValidation === true ||
+            options?.validationToken === CANVAS_TASK_VALIDATION_TOKEN
+          ? requestInput
+          : validateCanvasTextTaskSubmission(requestInput)
     const at = now()
     const taskId = uid('canvas_task')
     const taskNodeSize = pickOperationNodeInitialSize(
