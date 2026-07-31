@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -104,8 +104,42 @@ describe('DepthModelIntegrityService', () => {
       expect.objectContaining({
         url: expect.stringContaining('depth-anything-v2-small-int8-1.0.0.tar.gz'),
         sha256: 'a'.repeat(64),
-        destDir: join(root, 'models', 'depth-anything-v2-small-int8'),
+        destDir: expect.stringContaining('depth-anything-v2-small-int8.staging-'),
       }),
+    )
+  })
+
+  it('keeps the active model directory when a staged package fails verification', async () => {
+    const fixture = await modelFixture()
+    await writeFile(join(fixture.modelDir, 'onnx/model_int8.onnx'), 'existing-corrupt-model')
+    const service = new DepthModelIntegrityService({
+      userDataDir: fixture.root,
+      fetchManifest: async () => ({
+        schemaVersion: 1,
+        updatedAt: '2026-08-01',
+        artifacts: [
+          {
+            id: 'model.depth-anything-v2-small-int8-1.0.0',
+            type: 'model',
+            name: 'Depth Anything V2 Small INT8',
+            version: '1.0.0',
+            url: 'models/depth.tar.gz',
+            sha256: 'a'.repeat(64),
+            size: 123,
+            archive: { format: 'tar.gz' },
+          },
+        ],
+      }),
+      installArchive: async ({ destDir }) => {
+        await mkdir(destDir, { recursive: true })
+        await writeFile(join(destDir, 'model-package.json'), '{}')
+        return { destPath: destDir, entries: [], fileCount: 1 }
+      },
+    })
+
+    await expect(service.install()).rejects.toThrow('model-package.json')
+    await expect(readFile(join(fixture.modelDir, 'onnx/model_int8.onnx'), 'utf8')).resolves.toBe(
+      'existing-corrupt-model',
     )
   })
 })

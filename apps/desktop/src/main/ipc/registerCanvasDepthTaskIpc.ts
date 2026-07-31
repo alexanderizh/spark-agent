@@ -43,6 +43,10 @@ export function registerCanvasDepthTaskIpc(options: RegisterCanvasDepthTaskIpcOp
         `${runtimeTaskId}.mp4`,
       ))
   const runningTasks = new Map<string, AbortController>()
+  app.once('before-quit', () => {
+    for (const controller of runningTasks.values()) controller.abort()
+    runningTasks.clear()
+  })
 
   typedIpcHandle('canvas:depth-model:status', async () => {
     const state = await integrityService.inspect()

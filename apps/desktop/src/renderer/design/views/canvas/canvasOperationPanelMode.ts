@@ -2,6 +2,7 @@ import type { CanvasOperationType } from './canvas.types'
 import { canvasOperationKind, type CanvasOperationExecutionKind } from './canvasOperationKind'
 
 export type CanvasOperationRuntimeKind = 'text_full' | 'vision_model' | 'none'
+export type CanvasDepthModelState = 'missing' | 'installing' | 'ready' | 'error' | 'unknown'
 
 export type CanvasOperationPanelMode = {
   executionKind: CanvasOperationExecutionKind
@@ -54,4 +55,10 @@ export function resolveCanvasOperationPanelMode(
     showLocalDepthNotice: false,
     submitLabel: '提交任务',
   }
+}
+
+export function resolveCanvasDepthSubmitLabel(state: CanvasDepthModelState): string {
+  if (state === 'missing') return '下载模型并运行'
+  if (state === 'installing') return '正在下载深度模型'
+  return '生成深度视频'
 }
