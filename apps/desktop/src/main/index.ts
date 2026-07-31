@@ -63,6 +63,7 @@ import {
   getComputerUseServices,
   initializeComputerUseServices,
 } from './services/computer-use/ComputerUseServices.js'
+import { runComputerUsePackagedSmoke } from './services/computer-use/ComputerUsePackagedSmoke.js'
 import { ComputerControlTrayService } from './services/computer-use/ComputerControlTrayService.js'
 import { disposeComputerUseMcpProvider } from './services/computer-use/ComputerUseMcpProvider.js'
 import { registerAllIpcHandlers, ensureNoProjectDirectoryExists } from './ipc/index.js'
@@ -161,7 +162,6 @@ function getResourcePath(fileName: string): string {
     ? join(__dirname, '../../resources', fileName)
     : join(process.resourcesPath, fileName)
 }
-
 function showMainWindow(): void {
   if (revealAppWindow(getMainWindow())) return
   createWindow()
@@ -799,6 +799,15 @@ async function initializeApp(): Promise<void> {
         log.error(`Computer Use kill switch failed: ${String(error)}`)
       },
     })
+    const packagedSmoke = await runComputerUsePackagedSmoke({
+      services: getComputerUseServices(),
+    })
+    if (packagedSmoke.requested) {
+      await disposeComputerUseServices()
+      closeDatabase()
+      app.exit(packagedSmoke.exitCode)
+      return
+    }
     const backgroundMaintenanceWorker = startBackgroundMaintenanceWorker(dbPath)
     const snapshotVaultMaintenance = startSnapshotVaultMaintenance(db)
     log.info('Database initialized successfully')

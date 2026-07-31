@@ -3,8 +3,13 @@ const { createHash } = require('crypto')
 const fs = require('fs/promises')
 const path = require('path')
 const { Arch } = require('builder-util')
+const {
+  NATIVE_HOST_PROTOCOL_VERSION,
+  NATIVE_HOST_VERSION,
+  createNativeHostBuildInfo,
+  resolveBuildCommit,
+} = require('./native-host-build-info.js')
 
-const HOST_VERSION = '0.1.0'
 const SIGNING_IDENTIFIER = 'com.spark-agent.desktop.computer-host'
 const EXECUTABLE_NAME = 'SparkComputerHost'
 const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024
@@ -37,8 +42,8 @@ function createNativeHostManifest({ executable, architecture, signature }) {
   }
   return {
     schemaVersion: 1,
-    protocolVersion: 1,
-    hostVersion: HOST_VERSION,
+    protocolVersion: NATIVE_HOST_PROTOCOL_VERSION,
+    hostVersion: NATIVE_HOST_VERSION,
     platform: 'macos',
     architecture,
     executableFileName: EXECUTABLE_NAME,
@@ -57,8 +62,8 @@ function createLocalNativeHostManifest({ executable, architecture }) {
   }
   return {
     schemaVersion: 1,
-    protocolVersion: 1,
-    hostVersion: HOST_VERSION,
+    protocolVersion: NATIVE_HOST_PROTOCOL_VERSION,
+    hostVersion: NATIVE_HOST_VERSION,
     trustMode: 'local',
     platform: 'macos',
     architecture,
@@ -149,10 +154,18 @@ async function packageMacNativeHost(context) {
     manifest = createNativeHostManifest({ executable, architecture, signature })
   }
   await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
+  const buildInfoPath = path.join(path.dirname(manifestPath), 'native-host-build.json')
+  const buildInfo = createNativeHostBuildInfo({
+    platform: 'macos',
+    architecture,
+    trustMode: localTrust ? 'local' : 'signed',
+    commit: resolveBuildCommit(process.env),
+  })
+  await fs.writeFile(buildInfoPath, `${JSON.stringify(buildInfo, null, 2)}\n`, { mode: 0o644 })
   console.log(
     `[after-pack] Native Host: packaged ${architecture}, trust=${localTrust ? 'local' : 'signed'}, sha256=${manifest.sha256}`,
   )
-  return { packaged: true, destinationExecutable, manifestPath, manifest }
+  return { packaged: true, destinationExecutable, manifestPath, manifest, buildInfoPath, buildInfo }
 }
 
 function macNativeHostDestinationPaths(appPath, architecture) {

@@ -25,6 +25,8 @@
     "download-browser": "node scripts/download-browser.js",
     "rebuild:native": "bash scripts/rebuild-native-for-electron.sh",
     "native:verify": "electron scripts/verify-native-electron-abi.cjs",
+    "native:verify:packaged:mac": "node scripts/verify-packaged-native-host-macos.js",
+    "native:verify:packaged:win": "node scripts/verify-packaged-native-host-windows.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",

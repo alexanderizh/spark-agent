@@ -96,7 +96,7 @@ pnpm exec electron-builder --mac "--$ARCH" "$@"
 ok "打包完成"
 
 # ============ 4. 定位产物 ============
-step "6/6 验证签名 + 公证状态"
+step "6/6 验证签名 + 公证 + Native Host 最终握手"
 
 # 找 .app 和 .dmg
 APP_PATH="$(find dist/mac* -maxdepth 1 -name "*.app" 2>/dev/null | head -1)"
@@ -108,6 +108,11 @@ DMG_PATH="$(find dist -maxdepth 1 -name "*.dmg" 2>/dev/null | head -1)"
 echo ""
 echo "  📦 APP: $APP_PATH"
 [ -n "$DMG_PATH" ] && echo "  📦 DMG: $DMG_PATH"
+
+# 独立发布门禁：复算 Native Host 最终字节、核对 build provenance、验证
+# App/Host 签名与公证，并由最终 App 进程完成一次真实受信任父进程握手。
+node scripts/verify-packaged-native-host-macos.js --app "$APP_PATH" --arch "$ARCH"
+ok "Native Host 最终产物与 App-owned handshake 验证通过"
 
 # ---- 验证 .app 代码签名 ----
 echo ""

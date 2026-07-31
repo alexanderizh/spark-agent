@@ -387,6 +387,20 @@ ok "Windows package complete"
 
 verify_windows_signature
 
+if [ "$ARCH" = "arm64" ]; then
+  UNPACKED_APP_DIR="dist/win-arm64-unpacked"
+else
+  UNPACKED_APP_DIR="dist/win-unpacked"
+fi
+[ -d "$UNPACKED_APP_DIR" ] || fail "No unpacked Windows application found at $UNPACKED_APP_DIR"
+
+VERIFY_ARGS=(--app-dir "$UNPACKED_APP_DIR" --arch "$ARCH")
+if [ "$WINDOWS_SIGNING_MODE" != "signed" ]; then
+  VERIFY_ARGS+=(--allow-local)
+fi
+node scripts/verify-packaged-native-host-windows.js "${VERIFY_ARGS[@]}"
+ok "Native Host final artifact and App-owned handshake verified"
+
 echo ""
 echo -e "${GREEN}========================================================${NC}"
 if [ "$WINDOWS_SIGNING_MODE" = "signed" ]; then

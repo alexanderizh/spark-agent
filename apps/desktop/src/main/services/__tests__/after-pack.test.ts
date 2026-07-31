@@ -91,7 +91,14 @@ const {
     },
   ) => Promise<{ publisherThumbprint: string; timestamped: boolean }>
 }
-const { verifyWindowsPackageSigners } = require('../../../../scripts/notarize.js') as {
+const afterSign = require('../../../../scripts/notarize.js') as {
+  (
+    context: unknown,
+    options: {
+      verifyWindowsPackageSigners: (context: unknown) => Promise<void>
+      verifyPackagedWindowsNativeHost: (options: object) => Promise<void>
+    },
+  ): Promise<void>
   verifyWindowsPackageSigners: (
     context: unknown,
     options: {
@@ -100,6 +107,7 @@ const { verifyWindowsPackageSigners } = require('../../../../scripts/notarize.js
     },
   ) => Promise<void>
 }
+const { verifyWindowsPackageSigners } = afterSign
 const { packageStandaloneNodeRuntime } =
   require('../../../../scripts/package-standalone-node.js') as {
     packageStandaloneNodeRuntime: (
@@ -110,6 +118,18 @@ const { packageStandaloneNodeRuntime } =
         hostArch: string
       },
     ) => Promise<{ executablePath: string }>
+  }
+const { NATIVE_HOST_PROTOCOL_VERSION, NATIVE_HOST_VERSION, createNativeHostBuildInfo } =
+  require('../../../../scripts/native-host-build-info.js') as {
+    NATIVE_HOST_PROTOCOL_VERSION: number
+    NATIVE_HOST_VERSION: string
+    createNativeHostBuildInfo: (input: {
+      platform: 'macos' | 'windows'
+      architecture: 'arm64' | 'x64'
+      trustMode: 'local' | 'signed'
+      commit: string
+      generatedAt: Date
+    }) => Record<string, unknown>
   }
 
 describe('after-pack locale pruning', () => {
@@ -171,6 +191,45 @@ describe('after-pack Electron fuses', () => {
 })
 
 describe('after-pack Native Host artifact manifest', () => {
+  it('uses one Native Host version contract for manifests and build provenance', () => {
+    expect(
+      createNativeHostBuildInfo({
+        platform: 'windows',
+        architecture: 'x64',
+        trustMode: 'signed',
+        commit: 'a'.repeat(40),
+        generatedAt: new Date('2026-08-01T00:00:00.000Z'),
+      }),
+    ).toEqual({
+      schemaVersion: 1,
+      platform: 'windows',
+      architecture: 'x64',
+      protocol: {
+        minimum: NATIVE_HOST_PROTOCOL_VERSION,
+        maximum: NATIVE_HOST_PROTOCOL_VERSION,
+      },
+      hostVersion: NATIVE_HOST_VERSION,
+      commit: 'a'.repeat(40),
+      buildMode: 'signed',
+      generatedAt: '2026-08-01T00:00:00.000Z',
+    })
+    expect(
+      createLocalNativeHostManifest({ executable: Buffer.from('mac-host'), architecture: 'arm64' }),
+    ).toMatchObject({
+      protocolVersion: NATIVE_HOST_PROTOCOL_VERSION,
+      hostVersion: NATIVE_HOST_VERSION,
+    })
+    expect(
+      createLocalWindowsNativeHostManifest({
+        executable: Buffer.from('windows-host'),
+        architecture: 'x64',
+      }),
+    ).toMatchObject({
+      protocolVersion: NATIVE_HOST_PROTOCOL_VERSION,
+      hostVersion: NATIVE_HOST_VERSION,
+    })
+  })
+
   it('keeps the macOS executable in Helpers and its manifest out of the nested code tree', () => {
     expect(macNativeHostDestinationPaths('/Applications/SparkWork.app', 'arm64')).toEqual({
       destinationExecutable: '/Applications/SparkWork.app/Contents/Helpers/SparkComputerHost',
@@ -486,5 +545,44 @@ TeamIdentifier=ABCDE12345
     } finally {
       rmSync(windowsRoot, { recursive: true, force: true })
     }
+  })
+
+  it('blocks Windows artifact creation until final App-owned handshake verification passes', async () => {
+    const sequence: string[] = []
+    await expect(
+      afterSign(
+        {
+          electronPlatformName: 'win32',
+          arch: Arch.x64,
+          appOutDir: 'C:\\release\\win-unpacked',
+        },
+        {
+          verifyWindowsPackageSigners: async () => {
+            sequence.push('signatures')
+          },
+          verifyPackagedWindowsNativeHost: async (options) => {
+            sequence.push('handshake')
+            expect(options).toEqual({
+              appDirectory: 'C:\\release\\win-unpacked',
+              architecture: 'x64',
+              allowLocal: false,
+            })
+          },
+        },
+      ),
+    ).resolves.toBeUndefined()
+    expect(sequence).toEqual(['signatures', 'handshake'])
+
+    await expect(
+      afterSign(
+        { electronPlatformName: 'win32', arch: Arch.x64, appOutDir: 'C:\\release' },
+        {
+          verifyWindowsPackageSigners: async () => undefined,
+          verifyPackagedWindowsNativeHost: async () => {
+            throw new Error('handshake failed')
+          },
+        },
+      ),
+    ).rejects.toThrow('handshake failed')
   })
 })

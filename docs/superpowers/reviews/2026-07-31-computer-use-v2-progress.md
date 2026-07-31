@@ -14,22 +14,26 @@
 | Phase 3 动作批处理                           | `458e82a3c`               | +7   | ComputerDecision `actions` 变体(2-8)、逐动作审批、stale/noop 即停重规划、flag `SPARK_COMPUTER_USE_V2_ACTION_BATCH` |
 | Phase 5.2 Timeline 产品链路                  | `a253f90c1` + `a97adb8cf` | +25  | 从内存 MVP 升级为 migration 064 持久化、14 类事件、实时流、Renderer 回放/去重卡片；5.1/5.3 仍待后续阶段            |
 | Phase 0 诊断与指标代码切片                   | `f4d1c41b1`               | +7   | 只读 IPC/MCP 诊断、Beta 标识、内容无关指标采集；真实失败包与性能样本待 Phase 1 签收                                |
-| Phase 6 治理瘦身                            | 本阶段提交                | +2   | L0/L1 无审批热路径保持异步；L2/L3 执行前同步固化 before-frame，失败不消费 ticket、不执行 backend                  |
-| Phase 7 灰度与去轮询                        | 本阶段提交                | +6   | 统一 flag store、有界指标回退、Supervisor→基础连接回退、事件驱动 `wait_for_completion`                            |
+| Phase 4 人机协同自主代码                     | `3b8084dc1`               | +22  | macOS/Windows 输入接管对等、execution lane、Tray/产品控制卡、窗口绑定/picker；真实桌面 P99 待签收                  |
+| Phase 6 治理瘦身                             | `8549cc324`               | +4   | L0/L1 无审批热路径保持异步；L2/L3 执行前同步固化 before-frame，失败不消费 ticket、不执行 backend                   |
+| Phase 7 灰度与去轮询                         | `2b57e7f87`               | +61  | 统一 flag store、有界指标回退、Supervisor→基础连接回退、事件驱动 `wait_for_completion`                             |
+| Phase 1 原生打包自主门禁                     | 本阶段提交                | +13  | 共享版本/provenance、最终字节/签名/架构验证、afterSign 阻断与最终 App-owned handshake；安装 VM 矩阵待签收          |
 
 Computer Use 最新主进程/协议/Renderer 回归：**45 文件 / 297 测试全过**（回环 HTTP 用例在允许监听 `127.0.0.1` 的测试环境运行）；storage **20 文件 / 226 测试全过**，迁移 064 已真实执行。desktop renderer/node、protocol 与 storage typecheck 均 exit 0；此前 Phase 2/3/5 严格测试类型债已清零。
 
+Phase 1 收口复核（2026-08-01）：desktop Computer Use/打包门禁 **44 文件 / 308 测试全过**（其中 7 项回环 HTTP 在允许监听环境重跑），protocol **5 文件 / 32 测试全过**，agent-runtime Computer Use **2 文件 / 4 测试全过**；Phase 1 聚焦测试 35 项、desktop node typecheck、protocol/agent-runtime typecheck与完整 desktop build 均通过。共享工作树中的 depth worker 暂有 1 项 `Transferable` 类型错误，由对应并行任务收口，不属于 Computer Use 改动或提交范围。
+
 ## 进行中 / 待办
 
-| 阶段                           | 类型          | 说明                                                                                                                                                              |
-| ------------------------------ | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phase 0 真实基线样本           | 发布/真机签收 | macOS/Windows 失败安装包、冷启动/首次权限/四步任务真实样本                                                                                                        |
-| Phase 5.1/5.3 控制状态与去轮询 | 原生 + 纯 TS  | 托盘/产品状态与事件等待已落地；原生透明 Overlay 仍需平台发布签收                                                                                                  |
-| Phase 7 发布灰度               | 发布运营签收  | 5%→25%→100% 百分比放量与连续两个稳定版本后删旧路径需跨版本数据                                                                                                    |
-| Phase 4 人机协同               | 原生 + TS     | macOS/Windows 对等代码、Tray/产品控制卡、AppControlBridge、精确窗口绑定/picker 已落地；真实签名桌面的 20 动作、状态一致性与 300 ms P99 待发布签收             |
-| Phase 6 会话级授权             | 安全评审      | 自主代码与五轴/对抗审查完成；外部发布复核随总体签收执行                                                                                                           |
-| Phase 1 原生打包               | 原生/基建签收 | DMG/NSIS 握手、CI VM 矩阵、签名、干净 VM 黄金任务 100 次——需发布基建                                                                                              |
-| Phase 2.2 持久捕获（原生切片） | 原生签收      | SCStream/AXObserver/SCContentSharingPicker——macOS Swift/Windows Rust                                                                                              |
+| 阶段                           | 类型          | 说明                                                                                                                                              |
+| ------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 0 真实基线样本           | 发布/真机签收 | macOS/Windows 失败安装包、冷启动/首次权限/四步任务真实样本                                                                                        |
+| Phase 5.1/5.3 控制状态与去轮询 | 原生 + 纯 TS  | 托盘/产品状态与事件等待已落地；原生透明 Overlay 仍需平台发布签收                                                                                  |
+| Phase 7 发布灰度               | 发布运营签收  | 5%→25%→100% 百分比放量与连续两个稳定版本后删旧路径需跨版本数据                                                                                    |
+| Phase 4 人机协同               | 原生 + TS     | macOS/Windows 对等代码、Tray/产品控制卡、AppControlBridge、精确窗口绑定/picker 已落地；真实签名桌面的 20 动作、状态一致性与 300 ms P99 待发布签收 |
+| Phase 6 会话级授权             | 安全评审      | 自主代码与五轴/对抗审查完成；外部发布复核随总体签收执行                                                                                           |
+| Phase 1 安装包真机矩阵         | 原生/基建签收 | 自主门禁代码已落地；DMG 挂载安装、NSIS 静默安装、CI VM/签名证书、升级卸载与干净 VM 黄金任务 100 次需发布基建                                      |
+| Phase 2.2 持久捕获（原生切片） | 原生签收      | SCStream/AXObserver/SCContentSharingPicker——macOS Swift/Windows Rust                                                                              |
 
 ## 安全不变量（贯穿所有阶段，零回归）
 

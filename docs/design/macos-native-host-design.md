@@ -1,6 +1,6 @@
 # macOS Native Host、AX/CGEvent 与应用快照设计
 
-> 状态: 实施中 | 最后核对: 2026-07-31
+> 状态: 实施中 | 最后核对: 2026-08-01
 
 本文是 CU-03 macOS Native Host 的可直接开发规格，记录已经落地的生产边界、wire、signed/local 打包、故障恢复、ScreenCaptureKit、AXUIElement 和 CGEvent 控制闭环。当前代码可交付可信 Host 能力探测、窗口列表、单窗口 PNG、full/diff AX tree、无 AX 时视觉空树与坐标兜底、语义动作、受限键鼠和加密应用快照；最终实体机矩阵仍是发布门槛。
 
@@ -105,6 +105,8 @@ capability manifest 只在 AX 信任真实存在时声明 `axui_element/fullTree
 3. 使用 Developer ID Application、hardened runtime、固定 identifier 独立签名。
 4. 校验签名/Team ID，对最终签名字节生成 manifest SHA-256。
 5. `signIgnore` 阻止 electron-builder 再次签 Host 改变 hash；随后外层 `.app` 签名封存 Host 与 manifest，afterSign 公证整个应用。
+6. `native-host-build.json` 与 manifest 使用共享版本源；`afterSign` 在 DMG 生成/上传前执行独立验证器，复算最终 hash、核对单架构 slice、0755、identifier、Team ID、hardened runtime、Gatekeeper 与 stapled ticket。
+7. 验证器用 `ditto` 把最终 `.app` 安装到隔离的临时 Applications 目录，再由最终 App 父进程完成一次真实 Host handshake；普通 Node 进程不能替代该信任链测试。
 
 CI 缺少 Developer ID 时构建必须失败；本地无证书时明确省略 Host，不能生成“看似可用”的 ad-hoc artifact。
 
