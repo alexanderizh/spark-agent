@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentEvent } from '@spark/protocol'
 import {
+  DEBUG_MODE_SYSTEM_PROMPT,
   extractReportedFileChanges,
   isNestedAgentWorktreePath,
   PRESENT_FILES_SYSTEM_PROMPT,
@@ -11,6 +12,14 @@ import {
   resolveRuntimeToolPath,
   WEB_SEARCH_SYSTEM_PROMPT,
 } from './session-mcp-tooling-helpers.js'
+
+describe('DEBUG_MODE_SYSTEM_PROMPT', () => {
+  it('forces bug reports to enter the interactive loop before code edits', () => {
+    expect(DEBUG_MODE_SYSTEM_PROMPT).toContain('MUST call `mcp__spark_debug__begin`')
+    expect(DEBUG_MODE_SYSTEM_PROMPT).toContain('before editing code')
+    expect(DEBUG_MODE_SYSTEM_PROMPT).toContain('explicitly asks')
+  })
+})
 
 describe('resolveRuntimeToolPath', () => {
   let root = ''

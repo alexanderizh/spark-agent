@@ -444,6 +444,7 @@ function ContextMeterWithPopup({
   effectiveModelId,
   adapter,
   effectivePermissionMode,
+  effectiveDebugMode,
   onSent,
   toast,
 }: {
@@ -462,12 +463,14 @@ function ContextMeterWithPopup({
     permissionMode?: PermissionModeChoice
     chatMode?: SessionChatMode
     reasoningEffort?: SessionReasoningEffort
+    debugMode?: boolean
     activate?: boolean
   }) => Promise<SessionId | null>
   selectedProvider: ProviderProfile | undefined
   effectiveModelId: string
   adapter: AgentAdapter
   effectivePermissionMode: PermissionModeChoice
+  effectiveDebugMode: boolean
   onSent: (sessionId: SessionId) => void
   toast: ReturnType<typeof useToast>['toast']
 }) {
@@ -497,6 +500,7 @@ function ContextMeterWithPopup({
           modelId: effectiveModelId,
           agentAdapter: adapter,
           permissionMode: effectivePermissionMode,
+          debugMode: effectiveDebugMode,
         })
         if (sid == null) {
           toast.error('创建会话失败。')
@@ -524,6 +528,7 @@ function ContextMeterWithPopup({
     effectiveModelId,
     adapter,
     effectivePermissionMode,
+    effectiveDebugMode,
     onCreateSession,
     onSent,
     toast,
@@ -746,6 +751,7 @@ export function ComposerV2({
     permissionMode?: PermissionModeChoice
     chatMode?: SessionChatMode
     reasoningEffort?: SessionReasoningEffort
+    debugMode?: boolean
     activate?: boolean
     createWorktree?: boolean
     worktreeBranch?: string
@@ -1499,6 +1505,7 @@ export function ComposerV2({
               agentId: effectiveAgentId,
               agentAdapter: selectedProviderAdapter,
               permissionMode: effectivePermissionMode,
+              debugMode: effectiveDebugMode,
               ...(teamConfig.enabled ? { teamConfig } : {}),
               ...(createWorktree
                 ? {
@@ -1580,6 +1587,7 @@ export function ComposerV2({
             permissionMode: effectivePermissionMode,
             chatMode: effectiveMode,
             reasoningEffort: effectiveReasoning,
+            debugMode: effectiveDebugMode,
             ...(teamConfig.enabled ? { teamConfig } : {}),
             ...(createWorktree
               ? {
@@ -3391,6 +3399,7 @@ export function ComposerV2({
               effectiveModelId={effectiveModelId}
               adapter={adapter}
               effectivePermissionMode={effectivePermissionMode}
+              effectiveDebugMode={effectiveDebugMode}
               onSent={onSent}
               toast={toast}
             />

@@ -1178,6 +1178,7 @@ export class SessionService {
     permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
     reasoningEffort?: SparkReasoningEffort
+    debugMode?: boolean
     title?: string
     workspaceId?: string
   }): Promise<SessionCreateResponse> {
@@ -1203,6 +1204,9 @@ export class SessionService {
       ...(params.chatMode !== undefined ? { chatMode: params.chatMode } : {}),
       reasoningEffort: params.reasoningEffort ?? normalizeReasoningEffort(agent.reasoningEffort),
     })
+    if (params.debugMode !== undefined) {
+      sessionRepo.patchMetadata(row.id, { debugMode: params.debugMode })
+    }
     const { session } = await this.updateSession({ sessionId: row.id })
     return { sessionId: row.id as SessionId, createdAt: row.created_at, session }
   }
