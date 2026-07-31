@@ -167,6 +167,14 @@ pub struct PolicyContext {
     pub data_classes: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionLane {
+    BackgroundSemantic,
+    ForegroundInput,
+    Passive,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ComputerActionEnvelope {
@@ -197,6 +205,8 @@ pub struct ComputerActionEnvelope {
     #[serde(rename = "targetWindowId", deserialize_with = "deserialize_identifier")]
     pub target_window_id: String,
     pub action: ComputerAction,
+    #[serde(rename = "executionLane", default)]
+    pub execution_lane: Option<ExecutionLane>,
     #[serde(rename = "policyContext")]
     pub policy_context: PolicyContext,
     pub intent: String,
@@ -416,11 +426,31 @@ impl ComputerActionEnvelope {
         {
             return Err(ProtocolError::Invalid("policy context"));
         }
+        if self
+            .execution_lane
+            .is_some_and(|lane| lane != self.action.execution_lane())
+        {
+            return Err(ProtocolError::Invalid("execution lane"));
+        }
         self.action.validate()
+    }
+
+    pub fn effective_execution_lane(&self) -> ExecutionLane {
+        self.action.execution_lane()
     }
 }
 
 impl ComputerAction {
+    pub fn execution_lane(&self) -> ExecutionLane {
+        match self {
+            Self::InvokeElement { .. } | Self::SetValue { .. } | Self::SelectText { .. } => {
+                ExecutionLane::BackgroundSemantic
+            }
+            Self::Observe { .. } | Self::WaitFor { .. } => ExecutionLane::Passive,
+            _ => ExecutionLane::ForegroundInput,
+        }
+    }
+
     fn validate(&self) -> Result<(), ProtocolError> {
         match self {
             Self::SetValue { value, .. } => {

@@ -6,6 +6,11 @@ fn request(value: Value) -> Vec<u8> {
 }
 
 fn valid_envelope(action: Value) -> Value {
+    let execution_lane = match action.get("type").and_then(Value::as_str) {
+        Some("invoke_element" | "set_value" | "select_text") => "background_semantic",
+        Some("observe" | "wait_for") => "passive",
+        _ => "foreground_input",
+    };
     json!({
         "computerSessionId": "session-1",
         "actionId": "action-1",
@@ -15,6 +20,7 @@ fn valid_envelope(action: Value) -> Value {
         "targetAppId": "app-1",
         "targetWindowId": "100",
         "action": action,
+        "executionLane": execution_lane,
         "policyContext": {
             "effect": "reversible_local",
             "target": { "kind": "window", "id": "100" },
@@ -22,6 +28,77 @@ fn valid_envelope(action: Value) -> Value {
         },
         "intent": "Click the requested control"
     })
+}
+
+#[test]
+fn rejects_execution_lane_mismatches() {
+    let mut envelope = valid_envelope(json!({
+        "type": "click",
+        "point": { "x": 0.5, "y": 0.5 }
+    }));
+    envelope["executionLane"] = json!("background_semantic");
+    assert!(
+        HostRequest::parse(&request(json!({
+            "protocolVersion": 1,
+            "requestId": "request-lane",
+            "type": "execute_action",
+            "envelope": envelope
+        })))
+        .is_err()
+    );
+}
+
+#[test]
+fn matches_shared_execution_lane_rules_for_scroll_and_observe() {
+    for (request_id, action) in [
+        (
+            "request-scroll-lane",
+            json!({
+                "type": "scroll",
+                "elementId": "list-1",
+                "deltaX": 0.0,
+                "deltaY": 120.0
+            }),
+        ),
+        (
+            "request-observe-lane",
+            json!({
+                "type": "observe",
+                "fullTree": false
+            }),
+        ),
+    ] {
+        assert!(
+            HostRequest::parse(&request(json!({
+                "protocolVersion": 1,
+                "requestId": request_id,
+                "type": "execute_action",
+                "envelope": valid_envelope(action)
+            })))
+            .is_ok()
+        );
+    }
+}
+
+#[test]
+fn infers_execution_lane_for_legacy_envelopes() {
+    let mut envelope = valid_envelope(json!({
+        "type": "click",
+        "point": { "x": 0.5, "y": 0.5 }
+    }));
+    envelope.as_object_mut().unwrap().remove("executionLane");
+    let parsed = HostRequest::parse(&request(json!({
+        "protocolVersion": 1,
+        "requestId": "request-legacy-lane",
+        "type": "execute_action",
+        "envelope": envelope
+    })))
+    .unwrap();
+    assert!(matches!(
+        parsed,
+        HostRequest::ExecuteAction { envelope, .. }
+            if envelope.effective_execution_lane() == spark_computer_host::protocol::ExecutionLane::ForegroundInput
+    ));
 }
 
 #[test]

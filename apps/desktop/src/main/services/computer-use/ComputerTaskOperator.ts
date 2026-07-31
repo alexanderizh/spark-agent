@@ -687,7 +687,9 @@ function policyContextFor(
   const sensitive =
     action.type === 'type_text' || action.type === 'set_value'
       ? action.sensitive === true
-      : appPrefill && action.command.sensitive === true
+      : action.type === 'app_command' &&
+          action.command.name === 'prefill_composer' &&
+          action.command.sensitive === true
   return {
     effect: readOnly
       ? 'read_only'

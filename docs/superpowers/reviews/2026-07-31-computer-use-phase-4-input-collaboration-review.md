@@ -4,7 +4,7 @@
 
 ## 结论
 
-Phase 4 的 execution lane、macOS 输入冲突/用户接管、系统 Tray/产品控制卡、AppControlBridge 与精确目标窗口绑定/picker 切片已经落地并通过聚焦回归；Phase 4 整体仍处于实施中，不能以本报告代替最终阶段验收。未完成项为 300 ms P99 真机测量与 Windows 对等实现。
+Phase 4 的自主代码范围已经落地：execution lane、macOS/Windows 输入冲突与用户接管、系统 Tray/产品控制卡、AppControlBridge、精确目标窗口绑定/picker 均通过源码、测试与双 Windows 架构编译审查。Phase 4 的发布签收仍未完成：必须在真实签名 Windows/macOS 桌面执行 20 个后台动作、状态一致性和接管延迟矩阵，P99 小于 300 ms 后才能对外宣称完整验收。
 
 ## 本切片覆盖
 
@@ -18,6 +18,8 @@ Phase 4 的 execution lane、macOS 输入冲突/用户接管、系统 Tray/产�
 - Agent 工具与 Renderer IPC 都可用 `targetWindowId` 绑定 `list_windows` 返回的精确窗口；绑定后前台切换不会改变目标，窗口消失时以 `focus_mismatch` fail-closed。
 - 新窗口必须先暂停会话，再由拥有该会话的 Agent/Renderer 显式调用 `bind_target`/`computer-use:bind-target` 加入，并重新匹配任务契约中的 signing/bundle/executable/app identity；不允许在动作执行中换绑，也不允许仅凭标题或当前焦点加入。
 - Timeline 产品卡显示绑定应用规则和实际会话状态，暂停/接管/停止继续走 Broker IPC；暂停后才展示同源窗口 picker，Renderer 过滤仅用于 UX，Main 仍执行最终所有权与身份校验。
+- Windows Host 使用 `WH_MOUSE_LL`/`WH_KEYBOARD_LL` 监控真实输入并忽略 injected 标记；目标窗口输入触发 `handoff_required`，其他应用输入只延后 `foreground_input`，后台 UIA 语义通道不主动抢焦点。
+- Windows wire 的 execution lane 与共享 TypeScript contract 逐项一致；旧 envelope 可由 Host 推导 lane，显式错误 lane fail-closed。拖拽、组合键和长文本在有界步骤持续检查接管，既有 input release guard 保留。
 
 ## 三遍审查
 
@@ -45,12 +47,15 @@ Phase 4 的 execution lane、macOS 输入冲突/用户接管、系统 Tray/产�
 - 目标绑定聚焦 Vitest：普通沙箱 4 文件 63 项通过，MCP Bridge 回环测试 4 项在允许监听 `127.0.0.1` 的环境通过；desktop node 与 protocol typecheck 均 exit 0。
 - 表单白名单 command 聚焦 Vitest：8 文件 53 项通过；覆盖 schema 长度上限、空草稿写入、已有用户输入/错误会话拒绝、敏感草稿 data class 与 L4 handoff；desktop renderer/node 与 protocol typecheck 均 exit 0。
 - 产品控制卡/picker 聚焦 Vitest：3 文件 33 项通过；覆盖暂停后显示 picker、同源窗口绑定、协议与 Main IPC 回归；desktop renderer typecheck exit 0。
-- Computer Use 全量回归共 43 文件 285 项：普通沙箱先通过 277 项，7 项回环 HTTP 因 `listen EPERM` 在允许监听 `127.0.0.1` 的环境复跑通过；审批审计夹具补齐缺失的 `turnId` 后通过。desktop node/renderer 双 tsconfig 均 exit 0。
+- Computer Use 当前全量回归共 43 文件 293 项：普通沙箱先通过 286 项，7 项回环 HTTP 因 `listen EPERM` 在允许监听 `127.0.0.1` 的环境复跑通过。desktop node typecheck 的 Computer Use 范围无错误；全量命令当前仅被并行 `depth-video` 未完成文件阻断，未将其误记为本阶段失败或通过。
 - click/type L1、T01 intent 升档、unknown→L2、unattended/sensitive handoff、approval ticket、digest/timeout fail-closed 等治理路径未修改。
+- Windows Rust `cargo test`：22 项通过；`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings` 通过。
+- Windows `aarch64-pc-windows-msvc` 与 `x86_64-pc-windows-msvc`：`cargo check --tests` 均 exit 0。
+- 共享协议与 Operator 聚焦 Vitest：2 文件 25 项通过；Phase 4 联合类型收窄错误已修复且不改变敏感数据分类语义。
 
 ## 剩余验收
 
 1. 在真实签名 App 上采集用户点击目标窗口到 Host 停止输入的 P50/P95/P99，P99 必须小于 300 ms。
 2. 用 20 个后台 AX 语义动作跑跨应用连续输入，确认无焦点跳转和字符串串入。
 3. 在真实桌面联测系统 Tray、产品卡与实际会话状态一致性。
-4. 完成 Windows 对等方案后，再出 Phase 4 最终审查。
+4. Windows 对等代码已完成；在 Windows 10/11 x64/arm64 签名安装包上执行 WGC/UIA/SendInput、真实目标点击、全局停止与输入释放矩阵，并附日志、版本和 P50/P95/P99。

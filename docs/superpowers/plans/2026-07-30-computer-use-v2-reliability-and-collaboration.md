@@ -1,6 +1,6 @@
 # Computer Use V2：可靠安装、实时控制与人机协同升级计划
 
-> 状态: 实施中 | 最后核对: 2026-07-31
+> 状态: 实施中 | 最后核对: 2026-08-01
 
 ## 1. 文档目标
 
@@ -485,7 +485,7 @@ Windows：
 
 **目标**：用户操作其他应用时，不影响 Agent 操作其目标应用。
 
-> 实施进度（2026-07-31）：execution lane 协议与 macOS 输入冲突切片已落地；AX 语义动作不再激活目标应用，CGEvent 动作等待 300 ms 全局输入空闲、短时聚焦并恢复原前台应用/指针，Host 注入事件带来源标记且不会被误判为用户输入。真实用户点击绑定窗口（包括观察后、首次动作前的点击）会 fail-closed 返回 `handoff_required`，Operator 转入接管态而非任务失败。系统 Tray 已实时投影实际 Computer Session 状态，并通过 Broker 提供暂停、立即接管和停止。聊天 Timeline 卡片同步显示“Agent 控制中”目标标签与暂停/接管/停止入口，并在暂停后提供同源窗口 picker。AppControlBridge 已以白名单 `set_theme/navigate/prefill_composer` 接入 Broker、受信主 Renderer 回执和动作后重观察，并显示操作 toast；草稿填写仅允许空草稿、不自动发送、不覆盖用户输入，敏感文本沿用 credential/L4 handoff；不提供通用 eval/selector/任意 IPC。目标选择已支持 `list_windows → targetWindowId`，会话按 `appId + windowId` 精确绑定且不会跟随其他前台窗口；新窗口只能由会话所有者显式加入，并重新通过任务契约中的最强应用身份规则。300 ms P99 真机指标与 Windows 对等实现仍在实施。
+> 实施进度（2026-08-01）：execution lane、macOS/Windows 输入冲突、系统 Tray/产品控制卡、AppControlBridge、精确窗口绑定/picker 与显式同源新窗口加入均已落地。Windows Host 使用低级键鼠 Hook 区分真实输入与 SendInput 注入，目标窗口真实输入 fail-closed 为 `handoff_required`，其他应用输入只延后前台输入；拖拽、组合键与长文本逐步复核接管状态并由释放守卫清理按键。Windows 严格 wire 与共享协议一致：旧 envelope 缺省 lane 时由 Host 安全推导，显式 lane 不匹配时拒绝。代码/交叉编译验收完成；真实签名 Windows 桌面的 20 个后台动作、状态一致性与接管 P50/P95/P99（P99 < 300 ms）仍列为发布签收门禁。
 
 #### 4.1 目标绑定
 
