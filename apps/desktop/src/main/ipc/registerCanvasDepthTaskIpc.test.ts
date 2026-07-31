@@ -4,6 +4,7 @@ const harness = vi.hoisted(() => ({
   handlers: new Map<string, (request: any) => Promise<any>>(),
   events: [] as Array<{ channel: string; payload: any }>,
   inputPathAllowed: true,
+  beforeQuit: undefined as (() => void) | undefined,
 }))
 
 vi.mock('./typed-ipc.js', () => ({
@@ -14,7 +15,12 @@ vi.mock('./typed-ipc.js', () => ({
 }))
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '/tmp/spark-user-data' },
+  app: {
+    getPath: () => '/tmp/spark-user-data',
+    once: (event: string, callback: () => void) => {
+      if (event === 'before-quit') harness.beforeQuit = callback
+    },
+  },
 }))
 
 vi.mock('../services/SafeFileProtocol.js', () => ({
@@ -28,6 +34,7 @@ describe('registerCanvasDepthTaskIpc', () => {
     harness.handlers.clear()
     harness.events.length = 0
     harness.inputPathAllowed = true
+    harness.beforeQuit = undefined
   })
 
   it('installs the model, runs local depth inference, and streams a media result', async () => {
@@ -112,5 +119,13 @@ describe('registerCanvasDepthTaskIpc', () => {
         inputPath: '/canvas/link-to-private-video.mp4',
       }),
     ).rejects.toThrow('不在允许的画布或工作区目录内')
+  })
+
+  it('registers cleanup for application shutdown', () => {
+    registerCanvasDepthTaskIpc({
+      integrityService: { inspect: vi.fn(), install: vi.fn() } as never,
+    })
+
+    expect(harness.beforeQuit).toBeTypeOf('function')
   })
 })

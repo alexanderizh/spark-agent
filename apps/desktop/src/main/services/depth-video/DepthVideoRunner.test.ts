@@ -5,6 +5,8 @@ import {
   buildDepthVideoDecoderArgs,
   buildDepthVideoEncoderArgs,
   DepthVideoRunner,
+  resolveDepthVideoDimensions,
+  terminateDepthProcess,
 } from './DepthVideoRunner'
 
 class FakeProcess extends EventEmitter {
@@ -21,9 +23,10 @@ class FakeProcess extends EventEmitter {
 
 describe('DepthVideoRunner', () => {
   it('uses the FFmpeg 8 frame sync option for raw-video decoding', () => {
-    const args = buildDepthVideoDecoderArgs('/tmp/source.mp4')
+    const args = buildDepthVideoDecoderArgs('/tmp/source.mp4', 24)
     expect(args).toContain('-fps_mode')
     expect(args).toContain('passthrough')
+    expect(args).toContain('fps=24')
     expect(args).not.toContain('-vsync')
   })
 
@@ -39,6 +42,36 @@ describe('DepthVideoRunner', () => {
     expect(args).toContain('libx264')
     expect(args).toContain('yuv420p')
     expect(args).toContain('-an')
+  })
+
+  it('preserves odd dimensions with an H.264-compatible non-subsampled pixel format', () => {
+    const args = buildDepthVideoEncoderArgs({
+      width: 641,
+      height: 359,
+      fps: 24,
+      outputPath: '/tmp/depth.mp4',
+    })
+    expect(args).toContain('641x359')
+    expect(args).toContain('yuv444p')
+  })
+
+  it('uses display geometry for auto-rotated portrait videos', () => {
+    expect(resolveDepthVideoDimensions({ width: 1920, height: 1080, rotation: 90 })).toEqual({
+      width: 1080,
+      height: 1920,
+    })
+  })
+
+  it('escalates a stuck FFmpeg process from SIGTERM to SIGKILL', () => {
+    vi.useFakeTimers()
+    const process = new FakeProcess()
+    process.kill.mockImplementation(() => true)
+
+    terminateDepthProcess(process as never, 50)
+    expect(process.kill).toHaveBeenCalledWith('SIGTERM')
+    vi.advanceTimersByTime(50)
+    expect(process.kill).toHaveBeenCalledWith('SIGKILL')
+    vi.useRealTimers()
   })
 
   it('processes chunked RGB frames with backpressure and reports source metadata', async () => {

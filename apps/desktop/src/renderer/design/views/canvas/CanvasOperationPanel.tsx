@@ -75,7 +75,11 @@ import {
 import { mediaModelKey } from './canvasModelPickerModel'
 import { CanvasOperationParameterControls } from './CanvasOperationParameterControls'
 import { CanvasMediaInputConfigurator } from './CanvasMediaInputConfigurator'
-import { resolveCanvasOperationPanelMode } from './canvasOperationPanelMode'
+import {
+  resolveCanvasDepthSubmitLabel,
+  resolveCanvasOperationPanelMode,
+  type CanvasDepthModelState,
+} from './canvasOperationPanelMode'
 import { isImageUnderstandingProvider } from './canvasPresetCenterModel'
 import {
   applyCanvasMediaInputModeToBindings,
@@ -503,7 +507,31 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
   const panelMode = resolveCanvasOperationPanelMode(operation)
+  const [depthModelState, setDepthModelState] = useState<CanvasDepthModelState>('unknown')
+  const [depthModelError, setDepthModelError] = useState('')
   const isTextOperation = panelMode.executionKind === 'text'
+  useEffect(() => {
+    if (!panelMode.showLocalDepthNotice) return
+    let active = true
+    void window.spark
+      .invoke('canvas:depth-model:status', {})
+      .then((status) => {
+        if (!active) return
+        setDepthModelState(status.state)
+        setDepthModelError(status.error ?? '')
+      })
+      .catch((error) => {
+        if (!active) return
+        setDepthModelState('error')
+        setDepthModelError(error instanceof Error ? error.message : String(error))
+      })
+    return () => {
+      active = false
+    }
+  }, [panelMode.showLocalDepthNotice])
+  const submitLabel = panelMode.showLocalDepthNotice
+    ? resolveCanvasDepthSubmitLabel(depthModelState)
+    : panelMode.submitLabel
   // 分镜脚本任务节点（带结构化时长配置）才渲染「每镜时长 / 平均镜时」控件。
   const isShotScriptNode =
     node.data.operation === 'text_generate' && node.data.shotScriptConfig != null
@@ -2453,8 +2481,11 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
           <div className="canvas-operation-panel-section canvas-operation-panel-section-runtime">
             <div className="canvas-operation-panel-section-label">本地深度模型</div>
             <div className="canvas-operation-panel-hint">
-              使用本地 Depth Anything V2
-              生成近白远黑的深度视频；首次运行会下载模型，之后可离线使用。
+              {depthModelState === 'ready'
+                ? '本地 Depth Anything V2 模型已就绪；运行时不会调用云端模型。'
+                : depthModelState === 'error'
+                  ? `深度模型状态读取失败：${depthModelError || '未知错误'}`
+                  : '使用本地 Depth Anything V2 生成近白远黑的深度视频；首次运行会下载模型，之后可离线使用。'}
             </div>
           </div>
         )}
@@ -2752,14 +2783,14 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         <Tooltip
           title={
             selectedMediaInputIssue ??
-            (node.data.status === 'running' ? '运行中' : panelMode.submitLabel)
+            (node.data.status === 'running' ? '运行中' : submitLabel)
           }
         >
           <Button
             size="middle"
             type="primary"
             className="canvas-operation-composer-submit"
-            aria-label={panelMode.submitLabel}
+            aria-label={submitLabel}
             icon={<Icons.Send size={14} />}
             loading={running || submitting || node.data.status === 'running'}
             disabled={

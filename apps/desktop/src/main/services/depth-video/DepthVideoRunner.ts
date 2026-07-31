@@ -80,19 +80,21 @@ export class DepthVideoRunner {
   async run(request: DepthVideoRunRequest): Promise<DepthVideoRunResult> {
     const probe = await this.dependencies.probe(request.inputPath)
     validateProbe(probe)
+    const dimensions = resolveDepthVideoDimensions(probe)
+    const processingFps = probe.averageFps && probe.averageFps > 0 ? probe.averageFps : probe.fps
     await this.dependencies.ensureOutputDir(dirname(request.outputPath))
     const { ffmpeg } = await this.dependencies.resolveBins()
     const temporaryPath = temporaryOutputPath(request.outputPath)
     const decoder = this.dependencies.spawnProcess(
       ffmpeg,
-      buildDepthVideoDecoderArgs(request.inputPath),
+      buildDepthVideoDecoderArgs(request.inputPath, processingFps),
     )
     const encoder = this.dependencies.spawnProcess(
       ffmpeg,
       buildDepthVideoEncoderArgs({
-        width: probe.width,
-        height: probe.height,
-        fps: probe.fps,
+        width: dimensions.width,
+        height: dimensions.height,
+        fps: processingFps,
         outputPath: temporaryPath,
       }),
     )
@@ -103,8 +105,8 @@ export class DepthVideoRunner {
     void Promise.allSettled([decoderExit, encoderExit])
     let frameProcessor: FrameProcessor | null = null
     const abort = () => {
-      decoder.kill('SIGTERM')
-      encoder.kill('SIGTERM')
+      terminateDepthProcess(decoder)
+      terminateDepthProcess(encoder)
       void frameProcessor?.dispose()
     }
     request.signal?.addEventListener('abort', abort, { once: true })
@@ -112,8 +114,8 @@ export class DepthVideoRunner {
     try {
       if (request.signal?.aborted) throw new Error('cancelled')
       frameProcessor = this.dependencies.createFrameProcessor(request.modelDir)
-      const frameBytes = probe.width * probe.height * 3
-      const totalFrames = Math.max(1, Math.round(probe.durationSec * probe.fps))
+      const frameBytes = dimensions.width * dimensions.height * 3
+      const totalFrames = Math.max(1, Math.round(probe.durationSec * processingFps))
       let frameCount = 0
       let pending = Buffer.alloc(0)
       request.onProgress?.({ stage: 'decoding', percent: 0, frame: 0, totalFrames })
@@ -126,8 +128,8 @@ export class DepthVideoRunner {
           pending = pending.subarray(frameBytes)
           const depth = await frameProcessor.process({
             rgb,
-            width: probe.width,
-            height: probe.height,
+            width: dimensions.width,
+            height: dimensions.height,
           })
           await writeWithBackpressure(encoder, depth)
           frameCount += 1
@@ -152,12 +154,14 @@ export class DepthVideoRunner {
       await encoderExit
       if (request.signal?.aborted) throw new Error('cancelled')
       await this.dependencies.finalizeOutput(temporaryPath, request.outputPath)
+      const outputProbe = await this.dependencies.probe(request.outputPath)
+      validateProbe(outputProbe)
       return {
         path: request.outputPath,
-        width: probe.width,
-        height: probe.height,
-        fps: probe.fps,
-        durationSec: probe.durationSec,
+        width: outputProbe.width,
+        height: outputProbe.height,
+        fps: outputProbe.fps,
+        durationSec: outputProbe.durationSec,
         frameCount,
       }
     } catch (error) {
@@ -172,7 +176,16 @@ export class DepthVideoRunner {
   }
 }
 
-export function buildDepthVideoDecoderArgs(inputPath: string): string[] {
+export function terminateDepthProcess(process: SpawnedProcess, graceMs = 2_000): void {
+  if (!process.kill('SIGTERM')) return
+  const timer = setTimeout(() => {
+    process.kill('SIGKILL')
+  }, graceMs)
+  timer.unref()
+  process.once('close', () => clearTimeout(timer))
+}
+
+export function buildDepthVideoDecoderArgs(inputPath: string, fps?: number): string[] {
   return [
     '-i',
     inputPath,
@@ -180,6 +193,7 @@ export function buildDepthVideoDecoderArgs(inputPath: string): string[] {
     'rawvideo',
     '-pix_fmt',
     'rgb24',
+    ...(fps && fps > 0 ? ['-vf', `fps=${fps}`] : []),
     '-fps_mode',
     'passthrough',
     'pipe:1',
@@ -192,6 +206,7 @@ export function buildDepthVideoEncoderArgs(input: {
   fps: number
   outputPath: string
 }): string[] {
+  const pixelFormat = input.width % 2 === 0 && input.height % 2 === 0 ? 'yuv420p' : 'yuv444p'
   return [
     '-f',
     'rawvideo',
@@ -207,12 +222,23 @@ export function buildDepthVideoEncoderArgs(input: {
     '-c:v',
     'libx264',
     '-pix_fmt',
-    'yuv420p',
+    pixelFormat,
     '-movflags',
     '+faststart',
     '-y',
     input.outputPath,
   ]
+}
+
+export function resolveDepthVideoDimensions(input: {
+  width: number
+  height: number
+  rotation?: number
+}): { width: number; height: number } {
+  const normalizedRotation = Math.abs(input.rotation ?? 0) % 180
+  return normalizedRotation === 90
+    ? { width: input.height, height: input.width }
+    : { width: input.width, height: input.height }
 }
 
 function validateProbe(probe: VideoProbeInfo): void {

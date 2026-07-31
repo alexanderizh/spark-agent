@@ -292,6 +292,9 @@ export interface VideoProbeInfo {
   width: number
   height: number
   fps: number
+  averageFps?: number
+  /** Display rotation from stream metadata; FFmpeg auto-rotation applies this while decoding. */
+  rotation?: number
   videoCodec: string
   audioCodec: string | null
   bitrate: number
@@ -323,6 +326,8 @@ export async function probeVideo(input: string): Promise<VideoProbeInfo> {
       height?: number
       r_frame_rate?: string
       avg_frame_rate?: string
+      tags?: { rotate?: string }
+      side_data_list?: Array<{ rotation?: number }>
     }>
   }
 
@@ -337,12 +342,23 @@ export async function probeVideo(input: string): Promise<VideoProbeInfo> {
       fps = Math.round((num / den) * 100) / 100
     }
   }
+  let averageFps = 0
+  if (videoStream?.avg_frame_rate) {
+    const [num, den] = videoStream.avg_frame_rate.split('/').map(Number)
+    if (num !== undefined && den && !Number.isNaN(num)) averageFps = num / den
+  }
+  const rawRotation =
+    videoStream?.side_data_list?.find((item) => typeof item.rotation === 'number')?.rotation ??
+    Number(videoStream?.tags?.rotate ?? 0)
+  const rotation = Number.isFinite(rawRotation) ? rawRotation : 0
 
   return {
     durationSec: parseFloat(data.format?.duration ?? '0') || 0,
     width: videoStream?.width ?? 0,
     height: videoStream?.height ?? 0,
     fps,
+    ...(averageFps > 0 ? { averageFps } : {}),
+    ...(rotation !== 0 ? { rotation } : {}),
     videoCodec: videoStream?.codec_name ?? 'unknown',
     audioCodec: audioStream?.codec_name ?? null,
     hasAudio: audioStream != null,

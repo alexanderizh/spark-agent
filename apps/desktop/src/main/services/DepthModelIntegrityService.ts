@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { access, readFile } from 'node:fs/promises'
+import { access, readFile, rename, rm } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import {
   fetchSparkInstallManifest,
@@ -51,11 +51,15 @@ export class DepthModelIntegrityService {
   }
 
   async inspect(): Promise<DepthModelIntegrityState> {
-    const packagePath = join(this.modelDir, 'model-package.json')
+    return this.inspectDirectory(this.modelDir)
+  }
+
+  private async inspectDirectory(modelDir: string): Promise<DepthModelIntegrityState> {
+    const packagePath = join(modelDir, 'model-package.json')
     try {
       await access(packagePath)
     } catch {
-      return { state: 'missing', modelDir: this.modelDir }
+      return { state: 'missing', modelDir }
     }
 
     try {
@@ -77,18 +81,18 @@ export class DepthModelIntegrityService {
         if (typeof expectedHash !== 'string' || !/^[a-f0-9]{64}$/i.test(expectedHash)) {
           throw new Error(`模型包缺少文件哈希：${relativePath}`)
         }
-        const filePath = safeModelFilePath(this.modelDir, relativePath)
+        const filePath = safeModelFilePath(modelDir, relativePath)
         const actualHash = await sha256File(filePath)
         if (actualHash !== expectedHash.toLowerCase()) {
           throw new Error(`模型文件 SHA-256 校验失败：${relativePath}`)
         }
       }
 
-      return { state: 'ready', version: packageJson.version, modelDir: this.modelDir }
+      return { state: 'ready', version: packageJson.version, modelDir }
     } catch (error) {
       return {
         state: 'error',
-        modelDir: this.modelDir,
+        modelDir,
         error: error instanceof Error ? error.message : String(error),
       }
     }
@@ -124,35 +128,56 @@ export class DepthModelIntegrityService {
     if (!Number.isSafeInteger(artifact.size) || (artifact.size ?? 0) <= 0) {
       throw new Error('深度模型制品缺少有效的归档大小')
     }
-    await this.installArchive({
-      url: resolveArtifactUrl(manifest, artifact),
-      ...(artifact.fallbackUrls?.length
-        ? {
-            fallbackUrls: artifact.fallbackUrls.map((url) =>
-              resolveArtifactUrlString(manifest, url),
-            ),
-          }
-        : {}),
-      sha256: artifact.sha256,
-      ...(artifact.archive?.format ? { format: artifact.archive.format } : {}),
-      ...(artifact.archive?.contentRoot != null
-        ? { contentRoot: artifact.archive.contentRoot }
-        : {}),
-      destDir: this.modelDir,
-      ...(onProgress ? { onProgress } : {}),
-    })
-    const installed = await this.inspect()
-    if (installed.state !== 'ready') {
-      throw new Error(
-        installed.state === 'error' ? installed.error : '模型归档安装完成但必需文件缺失',
-      )
+    const stagingDir = `${this.modelDir}.staging-${randomUUID()}`
+    const backupDir = `${this.modelDir}.backup-${randomUUID()}`
+    let backedUp = false
+    try {
+      await this.installArchive({
+        url: resolveArtifactUrl(manifest, artifact),
+        ...(artifact.fallbackUrls?.length
+          ? {
+              fallbackUrls: artifact.fallbackUrls.map((url) =>
+                resolveArtifactUrlString(manifest, url),
+              ),
+            }
+          : {}),
+        sha256: artifact.sha256,
+        ...(artifact.archive?.format ? { format: artifact.archive.format } : {}),
+        ...(artifact.archive?.contentRoot != null
+          ? { contentRoot: artifact.archive.contentRoot }
+          : {}),
+        destDir: stagingDir,
+        ...(onProgress ? { onProgress } : {}),
+      })
+      const staged = await this.inspectDirectory(stagingDir)
+      if (staged.state !== 'ready') {
+        throw new Error(
+          staged.state === 'error' ? staged.error : '模型归档安装完成但必需文件缺失',
+        )
+      }
+      if (staged.version !== artifact.version) {
+        throw new Error(`模型包版本与制品清单不一致：${staged.version} != ${artifact.version}`)
+      }
+      try {
+        await access(this.modelDir)
+        await rename(this.modelDir, backupDir)
+        backedUp = true
+      } catch {
+        // No active model to preserve.
+      }
+      await rename(stagingDir, this.modelDir)
+      await rm(backupDir, { recursive: true, force: true })
+      return { ...staged, modelDir: this.modelDir }
+    } catch (error) {
+      if (backedUp) {
+        await rm(this.modelDir, { recursive: true, force: true }).catch(() => undefined)
+        await rename(backupDir, this.modelDir).catch(() => undefined)
+      }
+      throw error
+    } finally {
+      await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined)
+      await rm(backupDir, { recursive: true, force: true }).catch(() => undefined)
     }
-    if (installed.version !== artifact.version) {
-      throw new Error(
-        `模型包版本与制品清单不一致：${installed.version} != ${artifact.version}`,
-      )
-    }
-    return installed
   }
 }
 

@@ -38,6 +38,10 @@
 - 验收期间发现 FFmpeg 8 不再接受 `-vsync 0`，已改用 `-fps_mode passthrough` 并补充回归测试。
 - 深度任务 IPC 复用 `safe-file` 的 canonical-path 校验，拒绝通过符号链接逃逸画布、工作区、临时目录和应用数据目录的输入。
 - 深度任务限制为单任务执行，取消时会终止推理 worker 与 FFmpeg；结构输入契约不会被“跳过 Provider 参数警告”绕过。
+- FFmpeg 取消先发送 `SIGTERM`，进程未退出时升级为 `SIGKILL`；应用退出时统一中止仍在运行的深度任务。
+- VFR 输入在解码端依据时间戳转换为源平均帧率的 CFR，再进入 rawvideo 管线；旋转视频按 display geometry 处理，奇数尺寸改用 H.264 `yuv444p` 保持原尺寸。
+- 模型归档先安装并校验到 staging 目录，验证通过后再原子替换活动模型；失败时保留旧目录。
+- 节点面板会读取本地模型状态，首次使用明确显示“下载模型并运行”。
 
 可重复执行：设置 `SPARK_DEPTH_ACCEPTANCE_USER_DATA`、`SPARK_DEPTH_ACCEPTANCE_MODEL_DIR`、`SPARK_DEPTH_ACCEPTANCE_INPUT`、`SPARK_DEPTH_ACCEPTANCE_OUTPUT` 后运行 `DepthVideoRunner.acceptance.test.ts`。未提供这些变量时测试默认跳过，不触发模型下载或本地推理。
 
