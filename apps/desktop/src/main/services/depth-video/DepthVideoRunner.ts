@@ -188,7 +188,17 @@ export class DepthVideoRunner {
 }
 
 export function buildDepthVideoDecoderArgs(inputPath: string): string[] {
-  return ['-i', inputPath, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-vsync', '0', 'pipe:1']
+  return [
+    '-i',
+    inputPath,
+    '-f',
+    'rawvideo',
+    '-pix_fmt',
+    'rgb24',
+    '-fps_mode',
+    'passthrough',
+    'pipe:1',
+  ]
 }
 
 export function buildDepthVideoEncoderArgs(input: {
