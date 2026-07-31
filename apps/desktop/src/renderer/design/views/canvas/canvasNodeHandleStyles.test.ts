@@ -55,6 +55,9 @@ describe('canvas node handle styles', () => {
     expect(cinematicNodeStyles).toMatch(
       /\.canvas-node-handle\s*\{[\s\S]*?width:\s*13px;[\s\S]*?min-width:\s*13px;[\s\S]*?box-sizing:\s*border-box;/,
     )
+    expect(cinematicNodeStyles).toMatch(
+      /\.canvas-node\.canvas-node-media-full-bleed\s*\{[^}]*overflow:\s*visible;/s,
+    )
     expect(cinematicNodeStyles).toMatch(/\.canvas-node-handle::after\s*\{[\s\S]*?content:\s*none;/)
     expect(cinematicNodeStyles).toMatch(
       /\.canvas-node-handle\.react-flow__handle-left\s*\{[\s\S]*?transform:\s*translate\(-50%, -50%\);/,
