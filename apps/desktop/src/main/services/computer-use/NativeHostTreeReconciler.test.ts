@@ -76,14 +76,17 @@ describe('reconcileObservationTree', () => {
     // Host shape: sorted keys, bounds sorted (height,width,x,y), value only when present.
     const parsed = JSON.parse(reconciled.tree.text) as Array<Record<string, unknown>>
     expect(parsed).toHaveLength(2)
-    expect(Object.keys(parsed[0])).toEqual(
+    const first = parsed[0]
+    const second = parsed[1]
+    if (first == null || second == null) throw new Error('expected two reconciled elements')
+    expect(Object.keys(first)).toEqual(
       ['actions', 'bounds', 'enabled', 'focused', 'id', 'name', 'role', 'treeVersion'].sort(),
     )
-    expect(Object.keys(parsed[0].bounds as Record<string, unknown>)).toEqual(
+    expect(Object.keys(first.bounds as Record<string, unknown>)).toEqual(
       ['height', 'width', 'x', 'y'].sort(),
     )
-    expect(parsed[1].value).toBe('a@b.c')
-    expect(parsed[0].value).toBeUndefined()
+    expect(second.value).toBe('a@b.c')
+    expect(first.value).toBeUndefined()
   })
 
   it('preserves every non-tree field on the observation', () => {

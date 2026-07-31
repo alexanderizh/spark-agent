@@ -12,6 +12,7 @@ import { typedIpcHandle } from './typed-ipc.js'
 const SETTINGS_CATEGORY = 'sidebar-order'
 const PROJECTS_KEY = 'projects'
 const SESSIONS_KEY_PREFIX = 'sessions:'
+const PINNED_SESSIONS_KEY_PREFIX = 'pinned-sessions:'
 
 interface SidebarOrderSettingsStore {
   getByCategory(category: string): Record<string, unknown>
@@ -47,14 +48,20 @@ export class SidebarOrderController {
   list(): SidebarOrderState {
     const stored = this.stores.settings.getByCategory(SETTINGS_CATEGORY)
     const sessionIdsByProject: Record<string, string[]> = {}
+    const pinnedSessionIdsByProject: Record<string, string[]> = {}
     for (const [key, value] of Object.entries(stored)) {
-      if (!key.startsWith(SESSIONS_KEY_PREFIX)) continue
-      const projectId = key.slice(SESSIONS_KEY_PREFIX.length)
-      if (projectId.length > 0) sessionIdsByProject[projectId] = normalizeIdList(value)
+      if (key.startsWith(SESSIONS_KEY_PREFIX)) {
+        const projectId = key.slice(SESSIONS_KEY_PREFIX.length)
+        if (projectId.length > 0) sessionIdsByProject[projectId] = normalizeIdList(value)
+      } else if (key.startsWith(PINNED_SESSIONS_KEY_PREFIX)) {
+        const projectId = key.slice(PINNED_SESSIONS_KEY_PREFIX.length)
+        if (projectId.length > 0) pinnedSessionIdsByProject[projectId] = normalizeIdList(value)
+      }
     }
     return {
       projectIds: normalizeIdList(stored[PROJECTS_KEY]),
       sessionIdsByProject,
+      pinnedSessionIdsByProject,
     }
   }
 
@@ -65,12 +72,11 @@ export class SidebarOrderController {
       return request.itemIds
     }
 
+    // sessions 与 pinned-sessions 共用「会话必须在所属项目内」的校验，仅落库 key 前缀不同。
+    const keyPrefix =
+      request.scope === 'pinned-sessions' ? PINNED_SESSIONS_KEY_PREFIX : SESSIONS_KEY_PREFIX
     this.assertSessionOrder(request.projectId, request.itemIds)
-    this.stores.settings.set(
-      SETTINGS_CATEGORY,
-      `${SESSIONS_KEY_PREFIX}${request.projectId}`,
-      request.itemIds,
-    )
+    this.stores.settings.set(SETTINGS_CATEGORY, `${keyPrefix}${request.projectId}`, request.itemIds)
     return request.itemIds
   }
 

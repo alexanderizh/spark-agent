@@ -3,6 +3,7 @@
  * React / UI 副作用依赖。排序规则与后端 SessionRepository.list 的 SQL 逐字对齐。
  */
 import type { SessionListResponse } from '@spark/protocol'
+import { sortByManualOrder } from './sidebar-manual-order'
 
 export type SessionSummary = SessionListResponse['sessions'][number]
 
@@ -30,4 +31,47 @@ export function sortSessionsByPinned(sessions: SessionSummary[]): SessionSummary
     }
     return toTime(b.updatedAt) - toTime(a.updatedAt)
   })
+}
+
+/**
+ * 解析会话所属的展示分组 project id（worktree 归并到 base workspace），
+ * 口径与 SessionSidebarContext.buildProjectGroups 的 effectiveWorkspaceId 一致：
+ * worktree 若其 base 存在则归并到 base，孤儿 worktree / 普通 workspace 取自身。
+ * 供 toggle 置顶时在 pinnedSessionIdsByProject / sessionIdsByProject 之间搬运 id 定位分组。
+ */
+export function resolveSessionGroupId(
+  session: SessionSummary,
+  workspaces: ReadonlyArray<{
+    id: string
+    worktreeMeta?: { baseWorkspaceId?: string | null } | null
+  }>,
+): string | null {
+  for (const wsId of session.workspaceIds) {
+    const ws = workspaces.find((w) => w.id === wsId)
+    if (ws == null) continue
+    const baseId = ws.worktreeMeta?.baseWorkspaceId
+    if (baseId != null && workspaces.some((w) => w.id === baseId)) return baseId
+    return wsId
+  }
+  return session.workspaceIds[0] ?? null
+}
+
+/**
+ * 组装 project 分组的展示顺序：置顶段在前、普通段在后，各自独立套手动顺序。
+ * 进入前 sessions 已被 sortSessionsByPinned 预排（pinned 段 pinnedAt 倒序、普通段 updatedAt 倒序），
+ * 因此 sortByManualOrder 的 fallback「无秩项浮到该段最前、无秩项之间保持预排」
+ * 恰好让新会话/新置顶落在该段顶部，符合自然顺序；有秩则按拖拽顺序。
+ * 两段 manualOrder 独立，避免互相污染。
+ */
+export function composeProjectGroupSessions(
+  sessions: readonly SessionSummary[],
+  normalIds: readonly string[] | undefined,
+  pinnedIds: readonly string[] | undefined,
+): SessionSummary[] {
+  const pinned = sessions.filter((session) => session.pinnedAt != null)
+  const normal = sessions.filter((session) => session.pinnedAt == null)
+  return [
+    ...sortByManualOrder(pinned, pinnedIds, (session) => session.id),
+    ...sortByManualOrder(normal, normalIds, (session) => session.id),
+  ]
 }

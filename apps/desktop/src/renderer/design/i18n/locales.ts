@@ -33,6 +33,7 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'sidebar.session.delete': '删除会话',
     'sidebar.session.actions': '会话操作',
     'sidebar.drag.sameProjectOnly': '会话只能在同一个项目内拖拽排序',
+    'sidebar.drag.pinnedZoneOnly': '置顶会话只能在置顶区内排序，普通会话只能在非置顶区排序',
     'sidebar.drag.saveProjectFailed': '项目排序保存失败',
     'sidebar.drag.saveSessionFailed': '会话排序保存失败',
     'sidebar.project.collapse': '折叠项目',
@@ -347,6 +348,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'sidebar.session.delete': 'Delete session',
     'sidebar.session.actions': 'Session actions',
     'sidebar.drag.sameProjectOnly': 'Sessions can only be reordered within the same project',
+    'sidebar.drag.pinnedZoneOnly':
+      'Pinned sessions can only be reordered within the pinned zone, and others outside it',
     'sidebar.drag.saveProjectFailed': 'Failed to save project order',
     'sidebar.drag.saveSessionFailed': 'Failed to save session order',
     'sidebar.project.collapse': 'Collapse project',

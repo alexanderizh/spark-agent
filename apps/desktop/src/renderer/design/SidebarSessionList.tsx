@@ -2,7 +2,16 @@
  * SidebarSessionList — Complete conversation list extracted from ChatView.
  * Renders search, time filter, project groups, session items, and all context menus.
  */
-import React, { useRef, useState, useCallback, useMemo, useEffect, useLayoutEffect } from 'react'
+import React, {
+  createContext,
+  useContext,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useLayoutEffect,
+} from 'react'
 import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
 import { ActionIcon, Button, Dropdown, Input, Modal, Tooltip } from '@lobehub/ui'
@@ -16,7 +25,9 @@ import {
   useSensor,
   useSensors,
   type CollisionDetection,
+  type DragCancelEvent,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -56,6 +67,7 @@ import {
   resolveSpecialSidebarGroupWorkspaceId,
 } from './sidebar-session-routing'
 import { moveItem, sortByManualOrder } from './sidebar-manual-order'
+import { composeProjectGroupSessions } from './sidebar-session-sort'
 import { filterCanvasSessions, isCanvasWorkspace } from './workspace-visibility'
 
 const projectSortableId = (projectId: string): string => `project:${projectId}`
@@ -72,20 +84,6 @@ function parseSortableId(value: string | number): ParsedSortableId {
   if (type === 'project' && projectId) return { type, projectId }
   if (type === 'session' && projectId && sessionId) return { type, projectId, sessionId }
   return null
-}
-
-const sidebarCollisionDetection: CollisionDetection = (args) => {
-  const activeItem = parseSortableId(args.active.id)
-  if (activeItem == null) return []
-  return closestCenter({
-    ...args,
-    droppableContainers:
-      activeItem.type === 'project'
-        ? args.droppableContainers.filter(
-            (container) => parseSortableId(container.id)?.type === 'project',
-          )
-        : args.droppableContainers,
-  })
 }
 
 function SortableProjectContainer({
@@ -115,16 +113,26 @@ function SortableProjectContainer({
   )
 }
 
+/**
+ * 拖拽进行中记录「被拖项是否置顶」，供 SortableSessionContainer 判断自身是否处于另一区，
+ * 从而在拖拽时给另一区项加 is-cross-zone 禁用态。null 表示当前未拖拽会话。
+ */
+const SidebarDragContext = createContext<boolean | null>(null)
+
 function SortableSessionContainer({
   id,
+  pinned,
   children,
 }: {
   id: string
+  pinned: boolean
   children: (dragActivatorProps: React.HTMLAttributes<HTMLDivElement>) => ReactNode
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
   })
+  const dragActivePinned = useContext(SidebarDragContext)
+  const crossZone = dragActivePinned != null && dragActivePinned !== pinned
   const dragActivatorProps = {
     ...attributes,
     ...listeners,
@@ -132,7 +140,9 @@ function SortableSessionContainer({
   return (
     <div
       ref={setNodeRef}
-      className={`sidebar-sortable-session${isDragging ? ' is-dragging' : ''}`}
+      className={`sidebar-sortable-session${isDragging ? ' is-dragging' : ''}${
+        crossZone ? ' is-cross-zone' : ''
+      }`}
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
       {children(dragActivatorProps)}
@@ -593,13 +603,44 @@ function SessionHoverCard({
   branch,
   absoluteTime,
   relativeTime,
+  editing,
+  onEnterEdit,
+  onExitEdit,
+  onCommitTitle,
 }: {
   title: string
   projectName: string | null
   branch?: string | undefined
   absoluteTime: string
   relativeTime: string
+  editing: boolean
+  onEnterEdit: () => void
+  onExitEdit: () => void
+  onCommitTitle?: (title: string) => Promise<void>
 }) {
+  const { t } = useI18n()
+  const [draft, setDraft] = useState(title)
+  // 本次编辑是否已结算（commit/cancel），防止 onBlur 在回车/Esc 卸载时二次触发
+  const settledRef = useRef(false)
+  useEffect(() => {
+    if (editing) {
+      setDraft(title)
+      settledRef.current = false
+    }
+  }, [editing, title])
+
+  const finish = async (mode: 'commit' | 'cancel') => {
+    if (settledRef.current) return
+    settledRef.current = true
+    if (mode === 'commit') {
+      const trimmed = draft.trim()
+      if (trimmed !== '' && trimmed !== title) {
+        await onCommitTitle?.(trimmed)
+      }
+    }
+    onExitEdit()
+  }
+
   const rows: ReactNode[] = []
   if (projectName != null) {
     rows.push(
@@ -631,8 +672,42 @@ function SessionHoverCard({
     )
   }
   return (
-    <div className="session-hover-card">
-      <div className="session-hover-card-title">{title}</div>
+    <div className={`session-hover-card${editing ? ' is-editing' : ''}`}>
+      <div className="session-hover-card-title">
+        {editing ? (
+          <Input
+            value={draft}
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => {
+              void finish('commit')
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                void finish('commit')
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                void finish('cancel')
+              }
+            }}
+            placeholder={t('session.titlePlaceholder')}
+            className="session-hover-card-title-input"
+          />
+        ) : (
+          <span
+            className="session-hover-card-title-text"
+            title={t('sidebar.session.rename')}
+            onDoubleClick={(e) => {
+              e.stopPropagation()
+              onEnterEdit()
+            }}
+          >
+            {title}
+          </span>
+        )}
+      </div>
       <div className="session-hover-card-rows">{rows}</div>
     </div>
   )
@@ -648,6 +723,7 @@ function ChatListItem({
   smallTitle,
   onClick,
   onRename,
+  onCommitTitle,
   onTogglePinned,
   onArchive,
   onDelete,
@@ -661,6 +737,7 @@ function ChatListItem({
   smallTitle?: boolean
   onClick: (id: SessionId) => void
   onRename?: (session: SessionSummary) => void
+  onCommitTitle?: (session: SessionSummary, title: string) => Promise<void>
   onTogglePinned?: (session: SessionSummary) => void
   onArchive?: (session: SessionSummary) => void
   onDelete?: (session: SessionSummary) => void
@@ -669,6 +746,9 @@ function ChatListItem({
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
   const [contextOpen, setContextOpen] = useState(false)
+  // 悬浮卡 hover 开合（受控）；editing 时锁定不关，避免输入中被中断
+  const [hoverOpen, setHoverOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
   const { workspaces, noProjectWorkspace } = useSessionSidebar()
   // 该会话关联的 workspace：用于解析项目名、worktree 分支等悬浮面板信息
   const sessionWorkspace = useMemo(() => {
@@ -690,24 +770,12 @@ function ChatListItem({
     }
     return sessionWorkspace.name || null
   }, [sessionWorkspace, noProjectWorkspace, t])
-  const hoverContent = useMemo(() => {
-    const absoluteTime = formatAbsoluteDateTime(s.updatedAt)
-    const formatted = formatRelativeTime(s.updatedAt)
-    const [timeKey, timeCount] = formatted.split(':')
-    const relativeTime = t(
-      timeKey ?? '',
-      timeCount != null ? { count: timeCount } : undefined,
-    )
-    return (
-      <SessionHoverCard
-        title={s.title || t('sidebar.newSession')}
-        projectName={projectLabel}
-        branch={worktreeBranch}
-        absoluteTime={absoluteTime}
-        relativeTime={relativeTime}
-      />
-    )
-  }, [s.title, s.updatedAt, t, projectLabel, worktreeBranch])
+  // 悬浮卡时间信息（hover 态才渲染，普通计算即可，无需 useMemo 缓存）
+  const hoverTitle = s.title || t('sidebar.newSession')
+  const absoluteTime = formatAbsoluteDateTime(s.updatedAt)
+  const formatted = formatRelativeTime(s.updatedAt)
+  const [timeKey, timeCount] = formatted.split(':')
+  const relativeTime = t(timeKey ?? '', timeCount != null ? { count: timeCount } : undefined)
 
   const statusClass = displayStatus !== 'idle' ? `is-${displayStatus}` : ''
   const terminalRunningCount = terminalActivity?.running ?? 0
@@ -719,144 +787,166 @@ function ChatListItem({
       mouseEnterDelay={0.4}
       mouseLeaveDelay={0.12}
       destroyOnHidden
+      open={hoverOpen || editing}
+      onOpenChange={(open) => {
+        if (!editing) setHoverOpen(open)
+      }}
       // overlayClassName="session-hover-card-popover"
-      content={hoverContent}
+      content={
+        <SessionHoverCard
+          title={hoverTitle}
+          projectName={projectLabel}
+          branch={worktreeBranch}
+          absoluteTime={absoluteTime}
+          relativeTime={relativeTime}
+          editing={editing}
+          onEnterEdit={() => setEditing(true)}
+          onExitEdit={() => setEditing(false)}
+          onCommitTitle={async (title) => {
+            await onCommitTitle?.(s, title)
+          }}
+        />
+      }
       align={{ offset: [-1, 0], overflow: { adjustY: true, shiftY: true } }}
     >
       <div
         className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${contextOpen ? 'is-context-open' : ''} ${statusClass}`}
         {...dragActivatorProps}
-      onClick={() => onClick(s.id)}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        setContextOpen(true)
-        setMenuOpen(true)
-      }}
-    >
-      <div className="chat-item-row">
-        <div className={`chat-item-title-compact${smallTitle ? ' session-title-small' : ''}`}>
-          {(() => {
-            const dotStatus =
-              displayStatus === 'waiting_permission' || displayStatus === 'waiting_user'
-                ? displayStatus
-                : displayStatus === 'error'
-                  ? 'error'
-                  : unreviewed
-                    ? 'completed'
-                    : null
-            return dotStatus ? (
+        onClick={() => onClick(s.id)}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setContextOpen(true)
+          setMenuOpen(true)
+        }}
+      >
+        <div className="chat-item-row">
+          <div className={`chat-item-title-compact${smallTitle ? ' session-title-small' : ''}`}>
+            {(() => {
+              const dotStatus =
+                displayStatus === 'waiting_permission' || displayStatus === 'waiting_user'
+                  ? displayStatus
+                  : displayStatus === 'error'
+                    ? 'error'
+                    : unreviewed
+                      ? 'completed'
+                      : null
+              return dotStatus ? (
+                <span
+                  className={`session-status-dot session-status-dot-${dotStatus}`}
+                  title={
+                    dotStatus === 'completed'
+                      ? t('sidebar.status.newCompleted')
+                      : t(badgeInfo.title)
+                  }
+                  aria-hidden
+                >
+                  {dotStatus === 'error' && <Icons.AlertTriangle size={12} />}
+                </span>
+              ) : null
+            })()}
+            {s.pinnedAt != null && <Pin size={11} fill="currentColor" className="pinned-icon" />}
+            {worktreeBranch != null && (
               <span
-                className={`session-status-dot session-status-dot-${dotStatus}`}
-                title={
-                  dotStatus === 'completed' ? t('sidebar.status.newCompleted') : t(badgeInfo.title)
-                }
-                aria-hidden
+                className="worktree-branch-icon"
+                title={t('sidebar.worktreeBranchWithName', { branch: worktreeBranch })}
+                aria-label={t('sidebar.worktreeBranch')}
               >
-                {dotStatus === 'error' && <Icons.AlertTriangle size={12} />}
+                <Icons.GitBranch size={11} />
               </span>
-            ) : null
-          })()}
-          {s.pinnedAt != null && <Pin size={11} fill="currentColor" className="pinned-icon" />}
-          {worktreeBranch != null && (
+            )}
+            <span className="truncate">{s.title || t('sidebar.newSession')}</span>
+          </div>
+          {terminalRunningCount > 0 && (
             <span
-              className="worktree-branch-icon"
-              title={t('sidebar.worktreeBranchWithName', { branch: worktreeBranch })}
-              aria-label={t('sidebar.worktreeBranch')}
+              className="session-terminal-indicator"
+              title={`终端运行中 (${terminalRunningCount})`}
+              aria-label="终端运行中"
             >
-              <Icons.GitBranch size={11} />
+              <Icons.Terminal size={12} strokeWidth={1.7} />
+              {terminalRunningCount > 1 && (
+                <span className="session-terminal-count">{terminalRunningCount}</span>
+              )}
             </span>
           )}
-          <span className="truncate">{s.title || t('sidebar.newSession')}</span>
-        </div>
-        {terminalRunningCount > 0 && (
-          <span
-            className="session-terminal-indicator"
-            title={`终端运行中 (${terminalRunningCount})`}
-            aria-label="终端运行中"
-          >
-            <Icons.Terminal size={12} strokeWidth={1.7} />
-            {terminalRunningCount > 1 && (
-              <span className="session-terminal-count">{terminalRunningCount}</span>
-            )}
-          </span>
-        )}
-        {displayStatus !== 'idle' && badgeInfo.icon ? (
-          <span
-            className={`session-status-badge ${badgeInfo.className}`}
-            title={t(badgeInfo.title)}
-          >
-            {badgeInfo.icon}
-            <span className="session-status-label">{t(badgeInfo.title)}</span>
-          </span>
-        ) : null}
-        <div className={`session-item-actions${menuOpen ? ' menu-open' : ''}`}>
-          <Tooltip title={t('sidebar.session.archive')} mouseEnterDelay={0.05}>
-            <button
-              type="button"
-              className="icon-btn item-menu-btn session-row-action-btn session-archive-btn"
-              aria-label={t('sidebar.session.archive')}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation()
-                onArchive?.(s)
-              }}
+          {displayStatus !== 'idle' && badgeInfo.icon ? (
+            <span
+              className={`session-status-badge ${badgeInfo.className}`}
+              title={t(badgeInfo.title)}
             >
-              <Archive size={13} strokeWidth={1.35} />
-            </button>
-          </Tooltip>
-          <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
-            <Dropdown
-              menu={{ items: [] }}
-              open={menuOpen}
-              onOpenChange={(open) => {
-                setMenuOpen(open)
-                if (!open) setContextOpen(false)
-              }}
-              trigger={['click']}
-              placement="topRight"
-              align={{ overflow: { shiftX: true, adjustY: true } }}
-              popupRender={() => (
-                <ActionMenu
-                  onAction={() => setMenuOpen(false)}
-                  items={[
-                    {
-                      icon: s.pinnedAt == null ? <Pin size={14} /> : <PinOff size={14} />,
-                      label:
-                        s.pinnedAt == null ? t('sidebar.session.pin') : t('sidebar.session.unpin'),
-                      onClick: () => onTogglePinned?.(s),
-                    },
-                    {
-                      icon: <Icons.Edit size={14} />,
-                      label: t('sidebar.session.rename'),
-                      onClick: () => onRename?.(s),
-                    },
-                    {
-                      icon: <Icons.Trash size={14} />,
-                      label: t('sidebar.session.delete'),
-                      danger: true,
-                      onClick: () => onDelete?.(s),
-                    },
-                  ]}
-                />
-              )}
-            >
-              <Tooltip title={t('sidebar.session.actions')} mouseEnterDelay={0.05}>
-                <button
-                  type="button"
-                  className="icon-btn item-menu-btn session-row-action-btn"
-                  aria-label={t('sidebar.session.actions')}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Icons.More size={15} />
-                </button>
-              </Tooltip>
-            </Dropdown>
+              {badgeInfo.icon}
+              <span className="session-status-label">{t(badgeInfo.title)}</span>
+            </span>
+          ) : null}
+          <div className={`session-item-actions${menuOpen ? ' menu-open' : ''}`}>
+            <Tooltip title={t('sidebar.session.archive')} mouseEnterDelay={0.05}>
+              <button
+                type="button"
+                className="icon-btn item-menu-btn session-row-action-btn session-archive-btn"
+                aria-label={t('sidebar.session.archive')}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onArchive?.(s)
+                }}
+              >
+                <Archive size={13} strokeWidth={1.35} />
+              </button>
+            </Tooltip>
+            <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
+              <Dropdown
+                menu={{ items: [] }}
+                open={menuOpen}
+                onOpenChange={(open) => {
+                  setMenuOpen(open)
+                  if (!open) setContextOpen(false)
+                }}
+                trigger={['click']}
+                placement="topRight"
+                align={{ overflow: { shiftX: true, adjustY: true } }}
+                popupRender={() => (
+                  <ActionMenu
+                    onAction={() => setMenuOpen(false)}
+                    items={[
+                      {
+                        icon: s.pinnedAt == null ? <Pin size={14} /> : <PinOff size={14} />,
+                        label:
+                          s.pinnedAt == null
+                            ? t('sidebar.session.pin')
+                            : t('sidebar.session.unpin'),
+                        onClick: () => onTogglePinned?.(s),
+                      },
+                      {
+                        icon: <Icons.Edit size={14} />,
+                        label: t('sidebar.session.rename'),
+                        onClick: () => onRename?.(s),
+                      },
+                      {
+                        icon: <Icons.Trash size={14} />,
+                        label: t('sidebar.session.delete'),
+                        danger: true,
+                        onClick: () => onDelete?.(s),
+                      },
+                    ]}
+                  />
+                )}
+              >
+                <Tooltip title={t('sidebar.session.actions')} mouseEnterDelay={0.05}>
+                  <button
+                    type="button"
+                    className="icon-btn item-menu-btn session-row-action-btn"
+                    aria-label={t('sidebar.session.actions')}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Icons.More size={15} />
+                  </button>
+                </Tooltip>
+              </Dropdown>
+            </div>
           </div>
         </div>
       </div>
-    </div>
     </Popover>
   )
 }
@@ -883,6 +973,7 @@ export function ProjectSessionGroup({
   onDeleteProject,
   onOpenProjectFolder,
   onRenameSession,
+  onCommitSessionTitle,
   onToggleSessionPinned,
   onArchiveSession,
   onDeleteSession,
@@ -906,6 +997,7 @@ export function ProjectSessionGroup({
   onDeleteProject: (workspace: WorkspaceInfo) => void
   onOpenProjectFolder: (workspace: WorkspaceInfo) => void
   onRenameSession: (session: SessionSummary) => void
+  onCommitSessionTitle: (session: SessionSummary, title: string) => Promise<void>
   onToggleSessionPinned: (session: SessionSummary) => void
   onArchiveSession: (session: SessionSummary) => void
   onDeleteSession: (session: SessionSummary) => void
@@ -1094,6 +1186,7 @@ export function ProjectSessionGroup({
                         unreviewed={unreviewedCompletedSessions.has(session.id)}
                         onClick={() => onSelectSession(session)}
                         onRename={onRenameSession}
+                        onCommitTitle={onCommitSessionTitle}
                         onTogglePinned={onToggleSessionPinned}
                         onArchive={onArchiveSession}
                         onDelete={onDeleteSession}
@@ -1107,6 +1200,7 @@ export function ProjectSessionGroup({
                     <SortableSessionContainer
                       key={session.id}
                       id={sessionSortableId(sessionSortProjectId, session.id)}
+                      pinned={session.pinnedAt != null}
                     >
                       {(dragActivatorProps) => renderSession(dragActivatorProps)}
                     </SortableSessionContainer>
@@ -1149,12 +1243,13 @@ export function ProjectSessionGroup({
 type FlatGroupActions = {
   onSelectSession: (session: SessionSummary) => void
   onRenameSession: (session: SessionSummary) => Promise<void>
+  onCommitSessionTitle: (session: SessionSummary, title: string) => Promise<void>
   onToggleSessionPinned: (session: SessionSummary) => Promise<void>
   onArchiveSession: (session: SessionSummary) => Promise<void>
   onDeleteSession: (session: SessionSummary) => Promise<void>
 }
 
-function FlatGroup({
+export function FlatGroup({
   groupId,
   label,
   sessions,
@@ -1198,8 +1293,14 @@ function FlatGroup({
 }) {
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [visibleSessionCount, setVisibleSessionCount] = useState(PROJECT_SESSION_INITIAL_VISIBLE)
   const smallTitle = groupId === 'project:no-project' || groupId === 'project:ungrouped'
   const isActiveProject = groupWorkspaceId != null && activeWorkspaceId === groupWorkspaceId
+  const paginateSessions = groupId === 'project:no-project'
+  const visibleSessions = paginateSessions ? sessions.slice(0, visibleSessionCount) : sessions
+  const hasMoreSessions = paginateSessions && sessions.length > visibleSessionCount
+  const canCollapseSessions =
+    paginateSessions && visibleSessionCount > PROJECT_SESSION_INITIAL_VISIBLE
 
   if (sessions.length === 0 && onNewSession == null) return null
   return (
@@ -1244,9 +1345,7 @@ function FlatGroup({
             <button
               className="icon-btn proj-add-session-btn"
               aria-label={
-                groupId === 'project:no-project'
-                  ? '新建临时会话'
-                  : t('sidebar.project.newSession')
+                groupId === 'project:no-project' ? '新建临时会话' : t('sidebar.project.newSession')
               }
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
@@ -1280,9 +1379,7 @@ function FlatGroup({
                 <button
                   className="icon-btn item-menu-btn"
                   aria-label={
-                    groupId === 'project:no-project'
-                      ? '临时会话操作'
-                      : t('sidebar.project.actions')
+                    groupId === 'project:no-project' ? '临时会话操作' : t('sidebar.project.actions')
                   }
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
@@ -1300,11 +1397,13 @@ function FlatGroup({
             items={
               sessionSortProjectId == null
                 ? []
-                : sessions.map((session) => sessionSortableId(sessionSortProjectId, session.id))
+                : visibleSessions.map((session) =>
+                    sessionSortableId(sessionSortProjectId, session.id),
+                  )
             }
             strategy={verticalListSortingStrategy}
           >
-            {sessions.map((session) => {
+            {visibleSessions.map((session) => {
               const renderSession = (dragActivatorProps?: React.HTMLAttributes<HTMLDivElement>) => (
                 <ChatListItem
                   key={session.id}
@@ -1316,6 +1415,7 @@ function FlatGroup({
                   smallTitle={smallTitle}
                   onClick={() => actions.onSelectSession(session)}
                   onRename={actions.onRenameSession}
+                  onCommitTitle={actions.onCommitSessionTitle}
                   onTogglePinned={actions.onToggleSessionPinned}
                   onArchive={actions.onArchiveSession}
                   onDelete={actions.onDeleteSession}
@@ -1328,12 +1428,37 @@ function FlatGroup({
                 <SortableSessionContainer
                   key={session.id}
                   id={sessionSortableId(sessionSortProjectId, session.id)}
+                  pinned={session.pinnedAt != null}
                 >
                   {(dragActivatorProps) => renderSession(dragActivatorProps)}
                 </SortableSessionContainer>
               )
             })}
           </SortableContext>
+          {(hasMoreSessions || canCollapseSessions) && (
+            <button
+              className="proj-show-more-btn"
+              aria-expanded={canCollapseSessions}
+              onClick={() => {
+                setVisibleSessionCount((current) =>
+                  hasMoreSessions
+                    ? Math.min(current + PROJECT_SESSION_PAGE_SIZE, sessions.length)
+                    : PROJECT_SESSION_INITIAL_VISIBLE,
+                )
+              }}
+            >
+              {hasMoreSessions ? (
+                <>
+                  <span className="proj-show-more-label">{t('sidebar.showMore')}</span>
+                  <span className="proj-show-more-count">
+                    {sessions.length - visibleSessionCount}
+                  </span>
+                </>
+              ) : (
+                <span className="proj-show-more-label">{t('sidebar.showLess')}</span>
+              )}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -1653,10 +1778,10 @@ export function SidebarSessionList() {
     const list: DisplayGroup[] = projectGroups.map((g) => ({
       id: `project:${g.workspace.id}`,
       label: g.workspace.name,
-      sessions: sortByManualOrder(
+      sessions: composeProjectGroupSessions(
         g.sessions,
         ctx.sidebarOrder.sessionIdsByProject[g.workspace.id],
-        (session) => session.id,
+        ctx.sidebarOrder.pinnedSessionIdsByProject[g.workspace.id],
       ),
       workspace: g.workspace,
     }))
@@ -1664,10 +1789,10 @@ export function SidebarSessionList() {
       list.push({
         id: 'project:no-project',
         label: 'sidebar.noProjectChats',
-        sessions: sortByManualOrder(
+        sessions: composeProjectGroupSessions(
           noProject,
           ctx.sidebarOrder.sessionIdsByProject[noProjectWorkspace.id],
-          (session) => session.id,
+          ctx.sidebarOrder.pinnedSessionIdsByProject[noProjectWorkspace.id],
         ),
       })
     }
@@ -1714,8 +1839,61 @@ export function SidebarSessionList() {
         : [],
     [canReorderProjects, displayGroups, noProjectWorkspace?.id],
   )
+  const pinnedSessionIdSet = useMemo(
+    () =>
+      new Set<string>(
+        ctx.sessions.filter((session) => session.pinnedAt != null).map((session) => session.id),
+      ),
+    [ctx.sessions],
+  )
+  // session 拖拽时只允许落在同区（pinned 状态一致）的 session 上，跨区根本拖不动。
+  const sidebarCollisionDetection = useCallback<CollisionDetection>(
+    (args) => {
+      const activeItem = parseSortableId(args.active.id)
+      if (activeItem == null) return []
+      if (activeItem.type === 'project') {
+        return closestCenter({
+          ...args,
+          droppableContainers: args.droppableContainers.filter(
+            (container) => parseSortableId(container.id)?.type === 'project',
+          ),
+        })
+      }
+      const activePinned = pinnedSessionIdSet.has(activeItem.sessionId)
+      return closestCenter({
+        ...args,
+        droppableContainers: args.droppableContainers.filter((container) => {
+          const item = parseSortableId(container.id)
+          if (item?.type !== 'session') return false
+          return pinnedSessionIdSet.has(item.sessionId) === activePinned
+        }),
+      })
+    },
+    [pinnedSessionIdSet],
+  )
+  const [dragActivePinned, setDragActivePinned] = useState<boolean | null>(null)
+  // 拖拽项目分组期间的临时折叠态：被拖分组强制收起，避免带着一长串会话拖动。
+  // 纯内存态，不写 localStorage；拖拽结束清空即恢复用户持久的折叠偏好（原本展开的恢复展开、原本折叠的仍折叠）。
+  // key 用 sortableId 维度（project:${projectId}），统一覆盖真实项目与临时会话组。
+  const [autoCollapsedProjectIds, setAutoCollapsedProjectIds] = useState<Set<string>>(new Set())
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
+      const item = parseSortableId(event.active.id)
+      setDragActivePinned(item?.type === 'session' ? pinnedSessionIdSet.has(item.sessionId) : null)
+      if (item?.type === 'project') {
+        setAutoCollapsedProjectIds(new Set([projectSortableId(item.projectId)]))
+      }
+    },
+    [pinnedSessionIdSet],
+  )
+  const handleDragCancel = useCallback(() => {
+    setDragActivePinned(null)
+    setAutoCollapsedProjectIds(new Set())
+  }, [])
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
+      setDragActivePinned(null)
+      setAutoCollapsedProjectIds(new Set())
       if (event.over == null || event.active.id === event.over.id) return
       const activeItem = parseSortableId(event.active.id)
       const overItem = parseSortableId(event.over.id)
@@ -1747,15 +1925,35 @@ export function SidebarSessionList() {
           getDisplayGroupProjectId(item, noProjectWorkspace?.id ?? null) === activeItem.projectId,
       )
       if (group == null) return
-      const sessionIds: string[] = group.sessions.map((session) => session.id)
+      const activePinned = pinnedSessionIdSet.has(activeItem.sessionId)
+      // 跨区理论上已被 collisionDetection 拦截；这里做防御性兜底。
+      if (pinnedSessionIdSet.has(overItem.sessionId) !== activePinned) {
+        setNotice(t('sidebar.drag.pinnedZoneOnly'))
+        return
+      }
+      const zoneIds: string[] = group.sessions
+        .filter((session) => (session.pinnedAt != null) === activePinned)
+        .map((session) => session.id)
       const next = moveItem(
-        sessionIds,
-        sessionIds.indexOf(activeItem.sessionId),
-        sessionIds.indexOf(overItem.sessionId),
+        zoneIds,
+        zoneIds.indexOf(activeItem.sessionId),
+        zoneIds.indexOf(overItem.sessionId),
       )
-      void ctx.handleReorderSessions(activeItem.projectId, next)
+      if (activePinned) {
+        void ctx.handleReorderPinnedSessions(activeItem.projectId, next)
+      } else {
+        void ctx.handleReorderSessions(activeItem.projectId, next)
+      }
     },
-    [canReorderProjects, canReorderSessions, ctx, displayGroups, noProjectWorkspace?.id, t],
+    [
+      canReorderProjects,
+      canReorderSessions,
+      ctx,
+      displayGroups,
+      noProjectWorkspace?.id,
+      pinnedSessionIdSet,
+      t,
+    ],
   )
   const filterSlot = (
     <SidebarFilterMenu
@@ -1888,178 +2086,193 @@ export function SidebarSessionList() {
             <div className="empty-desc">{t('sidebar.empty.noMatchesDesc')}</div>
           </div>
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={sidebarCollisionDetection}
-            modifiers={[restrictToVerticalAxis]}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext items={sortableProjectIds} strategy={verticalListSortingStrategy}>
-              {displayGroups.map((group) => {
-                if (group.workspace) {
-                  const workspace = group.workspace
+          <SidebarDragContext.Provider value={dragActivePinned}>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={sidebarCollisionDetection}
+              modifiers={[restrictToVerticalAxis]}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
+              <SortableContext items={sortableProjectIds} strategy={verticalListSortingStrategy}>
+                {displayGroups.map((group) => {
+                  if (group.workspace) {
+                    const workspace = group.workspace
+                    return (
+                      <SortableProjectContainer
+                        key={group.id}
+                        id={projectSortableId(workspace.id)}
+                        disabled={!canReorderProjects}
+                      >
+                        {(projectDragActivatorProps) => (
+                          <ProjectSessionGroup
+                            group={{ workspace, sessions: group.sessions }}
+                            activeSessionId={effectiveActiveSessionId}
+                            activeWorkspaceId={effectiveActiveWorkspaceId}
+                            sessionAgentStatuses={ctx.sessionAgentStatuses}
+                            sessionTerminalActivity={ctx.sessionTerminalActivity}
+                            unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
+                            open={
+                              !collapsedProjectIds.has(workspace.id) &&
+                              !autoCollapsedProjectIds.has(projectSortableId(workspace.id))
+                            }
+                            onOpenChange={(nextOpen) =>
+                              handleProjectOpenChange(workspace.id, nextOpen)
+                            }
+                            onSelectWorkspace={async (workspace) => {
+                              ctx.setActiveWorkspace(workspace.id)
+                              await ctx.handleOpenWorkspace(workspace)
+                              setTweak('view', 'chat')
+                            }}
+                            onSelectSession={(session) => {
+                              ctx.setActiveSession(session.id)
+                              ctx.setActiveWorkspace(workspace.id)
+                              setTweak('view', 'chat')
+                            }}
+                            onNewSession={async (workspaceId) => {
+                              const id = await ctx.handleNewSession(workspaceId)
+                              if (id != null) setTweak('view', 'chat')
+                            }}
+                            onRenameProject={ctx.handleRenameProject}
+                            onToggleProjectPinned={ctx.handleToggleProjectPinned}
+                            onArchiveProject={ctx.handleArchiveProject}
+                            onDeleteProject={ctx.handleDeleteProject}
+                            onOpenProjectFolder={ctx.handleOpenProjectFolder}
+                            onRenameSession={ctx.handleRenameSession}
+                            onCommitSessionTitle={ctx.commitSessionTitle}
+                            onToggleSessionPinned={ctx.handleToggleSessionPinned}
+                            onArchiveSession={ctx.handleArchiveSession}
+                            onDeleteSession={ctx.handleDeleteSession}
+                            projectDragActivatorProps={projectDragActivatorProps}
+                            {...(canReorderSessions ? { sessionSortProjectId: workspace.id } : {})}
+                          />
+                        )}
+                      </SortableProjectContainer>
+                    )
+                  }
+                  const flatProjectId = getDisplayGroupProjectId(
+                    group,
+                    noProjectWorkspace?.id ?? null,
+                  )
+                  const flatDragSortableId =
+                    flatProjectId == null ? null : projectSortableId(flatProjectId)
+                  const flatGroup = (
+                    <FlatGroup
+                      key={group.id}
+                      groupId={group.id}
+                      label={group.label}
+                      sessions={group.sessions}
+                      activeSessionId={effectiveActiveSessionId}
+                      activeWorkspaceId={effectiveActiveWorkspaceId}
+                      groupWorkspaceId={resolveSpecialSidebarGroupWorkspaceId(
+                        group.id,
+                        noProjectWorkspace?.id ?? null,
+                      )}
+                      sessionAgentStatuses={ctx.sessionAgentStatuses}
+                      sessionTerminalActivity={ctx.sessionTerminalActivity}
+                      unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
+                      open={
+                        !collapsedFlatGroupIds.has(group.id) &&
+                        (flatDragSortableId == null ||
+                          !autoCollapsedProjectIds.has(flatDragSortableId))
+                      }
+                      onOpenChange={(nextOpen) => handleFlatGroupOpenChange(group.id, nextOpen)}
+                      onSelectGroup={
+                        group.id === 'project:no-project'
+                          ? () => {
+                              ctx.setActiveWorkspace(noProjectWorkspace?.id ?? null)
+                              setTweak('view', 'chat')
+                            }
+                          : group.id === 'project:ungrouped'
+                            ? () => {
+                                ctx.setActiveWorkspace(null)
+                                setTweak('view', 'chat')
+                              }
+                            : undefined
+                      }
+                      onNewSession={
+                        group.id === 'project:no-project'
+                          ? async () => {
+                              const targetWorkspaceId = noProjectWorkspace?.id ?? null
+                              const id = await ctx.handleNewSession(targetWorkspaceId)
+                              if (id != null) setTweak('view', 'chat')
+                            }
+                          : undefined
+                      }
+                      menuItems={[
+                        ...(group.id === 'project:no-project' && noProjectWorkspace != null
+                          ? [
+                              {
+                                icon: <Icons.Chat size={14} />,
+                                label: '新建临时会话',
+                                onClick: () => {
+                                  void (async () => {
+                                    const id = await ctx.handleNewSession(noProjectWorkspace.id)
+                                    if (id != null) setTweak('view', 'chat')
+                                  })()
+                                },
+                              },
+                              {
+                                icon: <Icons.Folder size={14} />,
+                                label: '打开临时目录',
+                                onClick: () => {
+                                  void ctx.handleOpenProjectFolder(noProjectWorkspace)
+                                },
+                              },
+                            ]
+                          : []),
+                        {
+                          icon: <Icons.Trash size={14} />,
+                          label: t('session.clearAll'),
+                          onClick: () => {
+                            void ctx.handleClearSessions(group.sessions)
+                          },
+                        },
+                      ]}
+                      actions={{
+                        onSelectSession: (session) => {
+                          ctx.setActiveSession(session.id)
+                          const specialWorkspaceId = resolveSpecialSidebarGroupWorkspaceId(
+                            group.id,
+                            noProjectWorkspace?.id ?? null,
+                          )
+                          ctx.setActiveWorkspace(
+                            specialWorkspaceId !== undefined
+                              ? specialWorkspaceId
+                              : resolveSidebarActiveWorkspaceId(session, ctx.workspaces),
+                          )
+                          setTweak('view', 'chat')
+                        },
+                        onRenameSession: ctx.handleRenameSession,
+                        onCommitSessionTitle: ctx.commitSessionTitle,
+                        onToggleSessionPinned: ctx.handleToggleSessionPinned,
+                        onArchiveSession: ctx.handleArchiveSession,
+                        onDeleteSession: ctx.handleDeleteSession,
+                      }}
+                      {...(canReorderSessions &&
+                      group.id === 'project:no-project' &&
+                      noProjectWorkspace != null
+                        ? { sessionSortProjectId: noProjectWorkspace.id }
+                        : {})}
+                    />
+                  )
+                  if (flatProjectId == null) return flatGroup
                   return (
                     <SortableProjectContainer
                       key={group.id}
-                      id={projectSortableId(workspace.id)}
+                      id={projectSortableId(flatProjectId)}
                       disabled={!canReorderProjects}
                     >
-                      {(projectDragActivatorProps) => (
-                        <ProjectSessionGroup
-                          group={{ workspace, sessions: group.sessions }}
-                          activeSessionId={effectiveActiveSessionId}
-                          activeWorkspaceId={effectiveActiveWorkspaceId}
-                          sessionAgentStatuses={ctx.sessionAgentStatuses}
-                          sessionTerminalActivity={ctx.sessionTerminalActivity}
-                          unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
-                          open={!collapsedProjectIds.has(workspace.id)}
-                          onOpenChange={(nextOpen) =>
-                            handleProjectOpenChange(workspace.id, nextOpen)
-                          }
-                          onSelectWorkspace={async (workspace) => {
-                            ctx.setActiveWorkspace(workspace.id)
-                            await ctx.handleOpenWorkspace(workspace)
-                            setTweak('view', 'chat')
-                          }}
-                          onSelectSession={(session) => {
-                            ctx.setActiveSession(session.id)
-                            ctx.setActiveWorkspace(workspace.id)
-                            setTweak('view', 'chat')
-                          }}
-                          onNewSession={async (workspaceId) => {
-                            const id = await ctx.handleNewSession(workspaceId)
-                            if (id != null) setTweak('view', 'chat')
-                          }}
-                          onRenameProject={ctx.handleRenameProject}
-                          onToggleProjectPinned={ctx.handleToggleProjectPinned}
-                          onArchiveProject={ctx.handleArchiveProject}
-                          onDeleteProject={ctx.handleDeleteProject}
-                          onOpenProjectFolder={ctx.handleOpenProjectFolder}
-                          onRenameSession={ctx.handleRenameSession}
-                          onToggleSessionPinned={ctx.handleToggleSessionPinned}
-                          onArchiveSession={ctx.handleArchiveSession}
-                          onDeleteSession={ctx.handleDeleteSession}
-                          projectDragActivatorProps={projectDragActivatorProps}
-                          {...(canReorderSessions ? { sessionSortProjectId: workspace.id } : {})}
-                        />
-                      )}
+                      {(projectDragActivatorProps) =>
+                        React.cloneElement(flatGroup, { projectDragActivatorProps })
+                      }
                     </SortableProjectContainer>
                   )
-                }
-                const flatGroup = (
-                  <FlatGroup
-                    key={group.id}
-                    groupId={group.id}
-                    label={group.label}
-                    sessions={group.sessions}
-                    activeSessionId={effectiveActiveSessionId}
-                    activeWorkspaceId={effectiveActiveWorkspaceId}
-                    groupWorkspaceId={resolveSpecialSidebarGroupWorkspaceId(
-                      group.id,
-                      noProjectWorkspace?.id ?? null,
-                    )}
-                    sessionAgentStatuses={ctx.sessionAgentStatuses}
-                    sessionTerminalActivity={ctx.sessionTerminalActivity}
-                    unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
-                    open={!collapsedFlatGroupIds.has(group.id)}
-                    onOpenChange={(nextOpen) => handleFlatGroupOpenChange(group.id, nextOpen)}
-                    onSelectGroup={
-                      group.id === 'project:no-project'
-                        ? () => {
-                            ctx.setActiveWorkspace(noProjectWorkspace?.id ?? null)
-                            setTweak('view', 'chat')
-                          }
-                        : group.id === 'project:ungrouped'
-                          ? () => {
-                              ctx.setActiveWorkspace(null)
-                              setTweak('view', 'chat')
-                            }
-                          : undefined
-                    }
-                    onNewSession={
-                      group.id === 'project:no-project'
-                        ? async () => {
-                            const targetWorkspaceId = noProjectWorkspace?.id ?? null
-                            const id = await ctx.handleNewSession(targetWorkspaceId)
-                            if (id != null) setTweak('view', 'chat')
-                          }
-                        : undefined
-                    }
-                    menuItems={[
-                      ...(group.id === 'project:no-project' && noProjectWorkspace != null
-                        ? [
-                            {
-                              icon: <Icons.Chat size={14} />,
-                              label: '新建临时会话',
-                              onClick: () => {
-                                void (async () => {
-                                  const id = await ctx.handleNewSession(noProjectWorkspace.id)
-                                  if (id != null) setTweak('view', 'chat')
-                                })()
-                              },
-                            },
-                            {
-                              icon: <Icons.Folder size={14} />,
-                              label: '打开临时目录',
-                              onClick: () => {
-                                void ctx.handleOpenProjectFolder(noProjectWorkspace)
-                              },
-                            },
-                          ]
-                        : []),
-                      {
-                        icon: <Icons.Trash size={14} />,
-                        label: t('session.clearAll'),
-                        onClick: () => {
-                          void ctx.handleClearSessions(group.sessions)
-                        },
-                      },
-                    ]}
-                    actions={{
-                      onSelectSession: (session) => {
-                        ctx.setActiveSession(session.id)
-                        const specialWorkspaceId = resolveSpecialSidebarGroupWorkspaceId(
-                          group.id,
-                          noProjectWorkspace?.id ?? null,
-                        )
-                        ctx.setActiveWorkspace(
-                          specialWorkspaceId !== undefined
-                            ? specialWorkspaceId
-                            : resolveSidebarActiveWorkspaceId(session, ctx.workspaces),
-                        )
-                        setTweak('view', 'chat')
-                      },
-                      onRenameSession: ctx.handleRenameSession,
-                      onToggleSessionPinned: ctx.handleToggleSessionPinned,
-                      onArchiveSession: ctx.handleArchiveSession,
-                      onDeleteSession: ctx.handleDeleteSession,
-                    }}
-                    {...(canReorderSessions &&
-                    group.id === 'project:no-project' &&
-                    noProjectWorkspace != null
-                      ? { sessionSortProjectId: noProjectWorkspace.id }
-                      : {})}
-                  />
-                )
-                const flatProjectId = getDisplayGroupProjectId(
-                  group,
-                  noProjectWorkspace?.id ?? null,
-                )
-                if (flatProjectId == null) return flatGroup
-                return (
-                  <SortableProjectContainer
-                    key={group.id}
-                    id={projectSortableId(flatProjectId)}
-                    disabled={!canReorderProjects}
-                  >
-                    {(projectDragActivatorProps) =>
-                      React.cloneElement(flatGroup, { projectDragActivatorProps })
-                    }
-                  </SortableProjectContainer>
-                )
-              })}
-            </SortableContext>
-          </DndContext>
+                })}
+              </SortableContext>
+            </DndContext>
+          </SidebarDragContext.Provider>
         )}
       </div>
 

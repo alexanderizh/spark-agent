@@ -95,6 +95,8 @@ type CanvasAgentProjectCache = {
   draftProviderId?: string
   draftModelId?: string
   selectedExtraSkillIds?: string[]
+  panelWidth?: number
+  panelHeight?: number
 }
 
 const REQUIRED_CANVAS_SKILL_ID = 'builtin:canvas-studio'
@@ -148,6 +150,12 @@ function readCanvasAgentPrefs(): Omit<CanvasAgentProjectCache, 'sessionId' | 'fi
               (skillId): skillId is string => typeof skillId === 'string' && skillId.length > 0,
             ),
           }
+        : {}),
+      ...(typeof parsed.panelWidth === 'number' && Number.isFinite(parsed.panelWidth)
+        ? { panelWidth: clampPanelWidth(parsed.panelWidth) }
+        : {}),
+      ...(typeof parsed.panelHeight === 'number' && Number.isFinite(parsed.panelHeight)
+        ? { panelHeight: clampPanelHeight(parsed.panelHeight) }
         : {}),
     }
   } catch {
@@ -377,8 +385,15 @@ export function CanvasAgentModal({
   const [creating, setCreating] = useState(false)
   const [running, setRunning] = useState(false)
   const [openMenu, setOpenMenu] = useState<CanvasAgentComposerMenu | null>(null)
-  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
-  const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT)
+  const [panelWidth, setPanelWidth] = useState(
+    () => readCanvasAgentPrefs().panelWidth ?? DEFAULT_PANEL_WIDTH,
+  )
+  const [panelHeight, setPanelHeight] = useState(
+    () => readCanvasAgentPrefs().panelHeight ?? DEFAULT_PANEL_HEIGHT,
+  )
+  // 拖拽结束时需要拿到最终值写回 prefs；setState 是异步的，这里用 ref 同步最新值避免 closure 陷阱
+  const panelSizeRef = useRef({ width: panelWidth, height: panelHeight })
+  panelSizeRef.current = { width: panelWidth, height: panelHeight }
   const [resizing, setResizing] = useState(false)
   const [turnCheckpoints, setTurnCheckpoints] = useState<Record<string, string>>({})
   const firstTurnRef = useRef(true)
@@ -964,6 +979,10 @@ export function CanvasAgentModal({
         window.removeEventListener('pointermove', handlePointerMove)
         window.removeEventListener('pointerup', handlePointerUp)
         window.removeEventListener('pointercancel', handlePointerUp)
+        writeCanvasAgentPrefs({
+          panelWidth: panelSizeRef.current.width,
+          panelHeight: panelSizeRef.current.height,
+        })
       }
 
       window.addEventListener('pointermove', handlePointerMove)
@@ -1240,6 +1259,7 @@ export function CanvasAgentModal({
 
       <div className="canvas-agent-modal">
         <ChatPanel
+          hideAssistantAvatar
           sessionId={sessionId}
           loading={loadingConfig}
           error={error}

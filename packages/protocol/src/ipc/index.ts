@@ -60,10 +60,12 @@ import type {
 } from '../connectors.js'
 import type { ProviderFilesIpcChannelMap } from '../provider-files.js'
 import type { SidebarOrderIpcChannelMap } from '../sidebar-order.js'
+import type { AppUnreadBadgeIpcChannelMap } from '../app-unread-badge.js'
 import type {
   ApplicationSnapshotIpcChannelMap,
   ComputerUseIpcChannelMap,
 } from '../computer-use/ipc.js'
+import type { ComputerUseEvent } from '../computer-use/events.js'
 import type {
   FontAssetsInstallRequest,
   FontAssetsInstallResponse,
@@ -5315,6 +5317,7 @@ export interface IpcChannelMap
     ProviderFilesIpcChannelMap,
     ComputerUseIpcChannelMap,
     ApplicationSnapshotIpcChannelMap,
+    AppUnreadBadgeIpcChannelMap,
     SidebarOrderIpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
@@ -5925,6 +5928,8 @@ export type IpcResponse<C extends IpcChannel> = IpcChannelMap[C][1]
 export interface IpcStreamChannelMap {
   /** Agent 事件流（主进程推送，渲染进程监听驱动 Timeline UI）*/
   'stream:session:agent-event': AgentEvent
+  /** Computer Use 操作时间线（回放与实时事件按 computerSessionId + seq 合并） */
+  'stream:computer-use:activity-event': ComputerUseEvent
   /** Session 后端排队状态变化 */
   'stream:session:queue-changed': SessionGetQueueResponse
   /** Session 标题被异步重命名（首轮完成后 LLM 总结）*/

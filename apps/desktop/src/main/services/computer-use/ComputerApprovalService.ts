@@ -162,6 +162,10 @@ export class ComputerApprovalService {
     return ticket
   }
 
+  get(approvalId: string): ComputerApprovalRow | null {
+    return this.repository.get(approvalId)
+  }
+
   consume(
     ticketInput: ComputerApprovalTicket,
     envelope: ComputerActionEnvelope,

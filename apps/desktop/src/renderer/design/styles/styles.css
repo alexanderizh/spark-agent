@@ -471,6 +471,7 @@ summary:focus {
    the glass material is enabled only when the appearance preference allows it. */
 .sidebar-style-floating .floating-sidebar {
   background: var(--panel-elev);
+  transition: background-color 0.2s ease;
   /* border-color: color-mix(in srgb, var(--border-strong) 38%, transparent); */
   /* box-shadow:
     0 18px 48px rgba(30, 27, 48, 0.13),
@@ -500,6 +501,37 @@ html[data-theme='dark'][data-backdrop-blur='1']
     0 20px 52px rgba(0, 0, 0, 0.34),
     0 3px 12px rgba(0, 0, 0, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+/* 内容区聚焦时（根 .app 挂 .content-focused，仅 floating + 侧栏可见 + 焦点落在
+   main-content-area 时触发），浮动侧栏背景轻微加深，营造"侧栏退后、内容区为
+   焦点"的层次感。比上方原规则多一个 .content-focused 类，特异性更高，无需
+   !important。加深量用 --sidebar-focus-darken 统一控制（默认 9%），嫌过深可在
+   :root 调小；light 主题白底混黑易发灰，已单独压到 6%。transition 由基础
+   .sidebar-style-floating .floating-sidebar 规则提供，进出均平滑。 */
+.sidebar-style-floating.content-focused .floating-sidebar {
+  background: color-mix(in srgb, var(--panel-elev), #000 var(--sidebar-focus-darken, 6%));
+}
+html[data-backdrop-blur='1'] .sidebar-style-floating.content-focused .floating-sidebar {
+  background: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--panel-elev) 80%, transparent),
+    #000 var(--sidebar-focus-darken, 6%)
+  );
+}
+html[data-theme='light'][data-backdrop-blur='1']
+  .sidebar-style-floating.theme-light.content-focused
+  .floating-sidebar {
+  background: color-mix(in srgb, color-mix(in srgb, #fff 78%, transparent), #000 6%);
+}
+html[data-theme='dark'][data-backdrop-blur='1']
+  .sidebar-style-floating.theme-dark.content-focused
+  .floating-sidebar {
+  background: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--panel-elev) 84%, transparent),
+    #000 var(--sidebar-focus-darken, 6%)
+  );
 }
 /* 'flat' mirrors the Windows look: sidebar is flush to the window edges
    (no floating design, no rounded corners, no shadow). Its background can
@@ -757,7 +789,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   background: var(--selected);
   color: var(--primary);
 }
-.nav-item.active .nav-icon { color: var(--primary); }
+.nav-item.active .nav-icon { color: var(--sidebar-text, var(--text)); }
 .nav-item .nav-icon {
   width: 16px; height: 16px; flex-shrink: 0;
   color: var(--sidebar-text, var(--text));
@@ -1718,6 +1750,43 @@ html[data-theme="dark"][data-backdrop-blur="1"] .spark-lobe-toast-host {
 .icon-btn:disabled:hover,
 .icon-btn[disabled]:hover { background: transparent; color: var(--text-muted); }
 .icon-btn svg { width: 16px; height: 16px; }
+
+/* 导航栏、会话头部和会话侧面板的交互图标使用统一前景色。 */
+.chat-layout .tabbar-actions .icon-btn,
+.chat-layout .chat-sidebar-topbar-actions .icon-btn,
+.chat-layout .tabbar-actions .git-session-trigger {
+  color: var(--sidebar-text, var(--text));
+}
+.chat-layout .tabbar-actions .icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.chat-layout .tabbar-actions .icon-btn:hover,
+.chat-layout .tabbar-actions .icon-btn.active,
+.chat-layout .chat-sidebar-topbar-actions .icon-btn:hover,
+.chat-layout .chat-sidebar-topbar-actions .icon-btn.active,
+.chat-layout .tabbar-actions .git-session-trigger:hover,
+.chat-layout .tabbar-actions .git-session-trigger.active {
+  color: var(--sidebar-text, var(--text));
+}
+.chat-layout
+  :is(.unified-side-panel, .inspector-frame, .config-panel-frame, .side-chat-panel, .git-review-frame)
+  :is(.icon-btn, .unified-side-panel-shortcut, .unified-side-panel-add) {
+  color: var(--sidebar-text, var(--text));
+}
+.chat-layout
+  :is(.unified-side-panel, .inspector-frame, .config-panel-frame, .side-chat-panel, .git-review-frame)
+  :is(.icon-btn, .unified-side-panel-shortcut, .unified-side-panel-add):is(:hover, .active) {
+  color: var(--sidebar-text, var(--text));
+}
+.chat-layout .unified-side-panel :is(.unified-side-panel-tab-close, .unified-side-panel-empty-card-icon),
+.chat-layout
+  .unified-side-panel
+  .unified-side-panel-menu.compact
+  .unified-side-panel-menu-item
+  :is(.chat-view-icon, svg) {
+  color: var(--sidebar-text, var(--text));
+}
 
 /* Search input */
 .search-input {

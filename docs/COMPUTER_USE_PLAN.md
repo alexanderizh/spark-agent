@@ -1,6 +1,6 @@
 # Computer Use 与应用快照生产级开发计划
 
-> 状态: 实施中 | 最后核对: 2026-07-30
+> 状态: 实施中 | 最后核对: 2026-07-31
 
 本文是 Spark Agent Computer Use、应用快照（App Snapshot）和自主验收能力的开发规格与交付计划。目标读者是产品负责人、架构师、Electron/Agent Runtime/原生端开发、测试和发布工程师。本文中的模块边界、数据契约、安全规则、工作包和验收门槛应作为实现时的共同基线。
 
@@ -77,7 +77,7 @@ Appshots 的官方产品语义是“前台单个应用窗口的图像 + 应用�
 | macOS Native Host   | 已实现   | ScreenCaptureKit、AX full/diff、语义动作、CGEvent、signed/local 双信任、严格 wire         | Developer ID 安装包与真实应用矩阵                       |
 | Windows Native Host | 已实现   | Rust、WGC、UIA full/diff、SendInput、signed/local 双信任、无签名打包                      | Windows 10/11 实体机矩阵                                |
 | 模型操作 loop       | 已落地   | Generic vision adapter、模型/观察重试、焦点恢复、等待、跨窗口继续、Broker-only 动作       | OpenAI/Claude 原生 computer adapter 可作为后续增强      |
-| Computer 验收       | 部分落地 | AX/UIA 文本、macOS Vision OCR、无树时视觉模型证据、目标文本推导、持久 verification record | 文件/DOM/external readback 与完整 timeline              |
+| Computer 验收       | 部分落地 | AX/UIA 文本、macOS Vision OCR、无树时视觉模型证据、目标文本推导、持久 verification record 与生命周期 timeline | 文件/DOM/external readback 与 evidence quorum              |
 | Linux/远程/VM       | 待开发   | 能力协议与 fail-closed 后端                                                               | AT-SPI/Portal、Remote Monitor、Safe Desktop             |
 
 当前已经具备 Agent 默认发现、任务级启动、Broker 治理、模型决策、macOS/Windows 原生动作、动作后重观察和证据验收的正式主链。Native Host 不可用时，Agent 会按用户目标自动选择浏览器、API/CLI 或平台自动化回退，并沿用会话权限模式。整体文档仍保持“实施中”，原因是 macOS/Windows 实体机矩阵，以及完整 Appshots/Monitor/Linux/远程等 GA 门槛尚未全部完成。
@@ -836,7 +836,7 @@ app_snapshot_deleted
 
 ### CU-02 主进程 Broker 与租约（2.5 周，依赖 CU-00）
 
-实施状态：**已完成（2026-07-28）**。Broker、会话阶段、独占租约、心跳、结构化风险下限、精确审批摘要、幂等 pending approval、批准票据一次性交接、Pause/Stop/Kill Switch、真实 Storage 装配、15 个主进程 IPC 和 PermissionService 独立映射均已落地。设置默认关闭；禁用环境会先停止受影响 session；Kill Switch 为 best-effort 辅助停止通道，注册失败不再把可执行 Host 降成只读或关闭 My Desktop。默认 backend 支持 signed/local 两种显式 artifact：开发模式和无签名安装包使用固定路径、非 symlink、权限与 SHA-256 约束的 local Host；有有效外层发布者身份的签名包拒绝替换的 local manifest，并继续使用发布者绑定。Host 不可用时 Broker 诚实返回 unavailable，Agent 层自动选择其他可行执行方案。由于当前迁移尚无 durable Computer Use event 表，timeline 通道明确返回 unavailable，不能伪造空审计记录。
+实施状态：**已完成并持续增强（最后核对 2026-07-31）**。Broker、会话阶段、独占租约、心跳、结构化风险下限、精确审批摘要、幂等 pending approval、批准票据一次性交接、Pause/Stop/Kill Switch、真实 Storage 装配和 PermissionService 独立映射均已落地。设置默认关闭；禁用环境会先停止受影响 session；Kill Switch 为 best-effort 辅助停止通道，注册失败不再把可执行 Host 降成只读或关闭 My Desktop。默认 backend 支持 signed/local 两种显式 artifact：开发模式和无签名安装包使用固定路径、非 symlink、权限与 SHA-256 约束的 local Host；有有效外层发布者身份的签名包拒绝替换的 local manifest，并继续使用发布者绑定。Host 不可用时 Broker 诚实返回 unavailable，Agent 层自动选择其他可行执行方案。迁移 064 已提供 durable Computer Use activity event 表，`get-timeline` 支持游标回放，实时流与 Renderer 卡片按 `computerSessionId + seq` 去重排序。
 
 负责人：Electron Main/Security。
 
@@ -910,7 +910,7 @@ app_snapshot_deleted
 
 ### CU-07 Verification Engine（3 周，依赖 CU-01、CU-02、CU-05）
 
-实施状态：**部分完成（2026-07-28）**。Verification Engine 已支持 accessibility、visual `text_present|text_absent` 与 application state 断言，Operator 只有全部 criteria 通过才调用 `completeVerified`；Verifier 不持有 lease。DOM、文件、external readback、evidence quorum 和 durable verification timeline 仍未完成。
+实施状态：**部分完成（最后核对 2026-07-31）**。Verification Engine 已支持 accessibility、visual `text_present|text_absent` 与 application state 断言，Operator 只有全部 criteria 通过才调用 `completeVerified`；Verifier 不持有 lease。verification started/completed 与 session terminal 事件已进入 durable timeline。DOM、文件、external readback 和 evidence quorum 仍未完成。
 
 负责人：Runtime/QA。
 

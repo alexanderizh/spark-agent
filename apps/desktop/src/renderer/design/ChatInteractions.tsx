@@ -587,7 +587,7 @@ export function TurnFileSummaryCard({
               </button>
             </div>
           )}
-          {generatedGroups.length > 0 && (
+          {/* {generatedGroups.length > 0 && (
             <div className="turn-summary-generated-groups">
               {generatedGroups.map((group) => (
                 <div
@@ -613,7 +613,7 @@ export function TurnFileSummaryCard({
                 </div>
               ))}
             </div>
-          )}
+          )} */}
         </div>
       )}
     </div>

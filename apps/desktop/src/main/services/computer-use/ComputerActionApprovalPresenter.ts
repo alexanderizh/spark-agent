@@ -2,6 +2,7 @@ import type { ComputerActionEnvelope, ComputerApprovalTicket } from '@spark/prot
 import { computeComputerApprovalDigests } from './ComputerApprovalService.js'
 import type { ComputerApprovalService } from './ComputerApprovalService.js'
 import type { ComputerActionApprovalRequest } from './ComputerTaskOperator.js'
+import type { ComputerUseTimelineSink } from './ComputerUseTimelineStore.js'
 
 export interface ExactComputerActionApprovalPrompt {
   sessionId: string
@@ -13,6 +14,7 @@ export interface ExactComputerActionApprovalPrompt {
 export function createComputerActionApprovalPresenter(options: {
   getApprovals: () => Pick<ComputerApprovalService, 'approve' | 'deny'>
   requestExactApproval: (input: ExactComputerActionApprovalPrompt) => Promise<boolean>
+  timeline?: ComputerUseTimelineSink
 }): (request: ComputerActionApprovalRequest) => Promise<ComputerApprovalTicket | null> {
   return async (request) => {
     const fullAccess = isFullAccess(request.permissionMode)
@@ -27,6 +29,15 @@ export function createComputerActionApprovalPresenter(options: {
     const approvals = options.getApprovals()
     if (!allowed) {
       approvals.deny(request.approvalId, request.session.id)
+      options.timeline?.record({
+        type: 'computer_approval_resolved',
+        sessionId: request.session.sessionId,
+        turnId: request.session.turnId,
+        computerSessionId: request.session.id,
+        approvalId: request.approvalId,
+        actionId: request.envelope.actionId,
+        decision: 'denied',
+      })
       return null
     }
     return approvals.approve({

@@ -21,6 +21,7 @@ describe('SparkWork application foundation prompt', () => {
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('observed evidence')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('distinct from assistant proposals')
     expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('Lead with the outcome')
+    expect(CORE_AGENT_BEHAVIOR_SYSTEM_PROMPT).toContain('Format responses for readability')
   })
 
   it('stays compact and does not impersonate a model provider', () => {

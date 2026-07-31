@@ -1,4 +1,5 @@
 import type { ComputerObservation, ComputerTaskContract } from '@spark/protocol'
+import type { GenerateCanvasTextParams } from '@spark/agent-runtime'
 import { describe, expect, it, vi } from 'vitest'
 import { GenericComputerDecisionAdapter } from './ComputerDecisionAdapter.js'
 
@@ -24,7 +25,7 @@ const OBSERVATION = {
 
 describe('GenericComputerDecisionAdapter', () => {
   it('sends the persisted screenshot and untrusted UI tree to the current Agent model', async () => {
-    const generate = vi.fn(async () => ({
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
       text: JSON.stringify({
         type: 'action',
         intent: 'Save the document',
@@ -127,7 +128,7 @@ describe('GenericComputerDecisionAdapter', () => {
   })
 
   it('parses a valid batch of actions when allowBatch is on', async () => {
-    const generate = vi.fn(async () => ({
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
       text: JSON.stringify({
         type: 'actions',
         intent: 'Type the sign-off',
@@ -169,7 +170,7 @@ describe('GenericComputerDecisionAdapter', () => {
   })
 
   it('keeps the single-action system prompt when allowBatch is off', async () => {
-    const generate = vi.fn(async () => ({
+    const generate = vi.fn(async (_params: GenerateCanvasTextParams) => ({
       text: JSON.stringify({
         type: 'action',
         intent: 'Save',

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import {
   ApplicationSnapshotRepository,
   ComputerActionRepository,
+  ComputerActivityEventRepository,
   ComputerActuatorLeaseRepository,
   ComputerApprovalRepository,
   ComputerSessionRepository,
@@ -92,16 +93,19 @@ export function createComputerUseServices(
           appVersion: app.getVersion(),
         }))
     )(evidence as NativeObservationEvidenceSink)
+  const timeline = new ComputerUseTimelineStore({
+    repository: new ComputerActivityEventRepository(database),
+  })
   const sessions = new ComputerSessionManager({
     sessions: new ComputerSessionRepository(database),
     leases: new ComputerActuatorLeaseRepository(database),
+    timeline,
   })
   const policy = new ComputerPolicyService()
   const approvals = new ComputerApprovalService({
     repository: new ComputerApprovalRepository(database),
   })
   const verifications = new ComputerVerificationRepository(database)
-  const timeline = new ComputerUseTimelineStore()
   const diagnostics = new ComputerUseNativeHostDiagnostics({
     backend,
     metrics,

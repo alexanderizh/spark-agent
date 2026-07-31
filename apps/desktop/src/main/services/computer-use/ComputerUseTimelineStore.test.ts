@@ -1,17 +1,29 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { ComputerUseTimelineStore } from './ComputerUseTimelineStore.js'
+import {
+  ComputerUseTimelineStore,
+  type ComputerUseTimelineRepository,
+} from './ComputerUseTimelineStore.js'
 
-function createStore(options?: { maxEventsPerSession?: number }) {
+function createStore(options?: {
+  maxEventsPerSession?: number
+  repository?: ComputerUseTimelineRepository
+}) {
   let counter = 0
   return new ComputerUseTimelineStore({
     createId: () => `id-${counter++}`,
     now: () => new Date('2026-07-31T00:00:00Z'),
-    ...(options?.maxEventsPerSession == null ? {} : { maxEventsPerSession: options.maxEventsPerSession }),
+    ...(options?.maxEventsPerSession == null
+      ? {}
+      : { maxEventsPerSession: options.maxEventsPerSession }),
+    ...(options?.repository == null ? {} : { repository: options.repository }),
   })
 }
 
-function actionRequested(overrides: Partial<Parameters<ComputerUseTimelineStore['record']>[0]> = {}) {
+type TimelineInput = Parameters<ComputerUseTimelineStore['record']>[0]
+type ActionRequestedInput = Extract<TimelineInput, { type: 'computer_action_requested' }>
+
+function actionRequested(overrides: Partial<ActionRequestedInput> = {}): ActionRequestedInput {
   return {
     type: 'computer_action_requested' as const,
     sessionId: 'session-1',
@@ -52,11 +64,11 @@ describe('ComputerUseTimelineStore', () => {
     store.record(actionRequested({ actionId: 'a-3' }))
 
     const page1 = store.read('cs-1', undefined, 2)
-    expect(page1.events.map((e) => e.actionId)).toEqual(['a-1', 'a-2'])
+    expect(page1.events.map(actionId)).toEqual(['a-1', 'a-2'])
     expect(page1.nextSeq).toBe(1)
 
     const page2 = store.read('cs-1', page1.nextSeq!)
-    expect(page2.events.map((e) => e.actionId)).toEqual(['a-3'])
+    expect(page2.events.map(actionId)).toEqual(['a-3'])
     expect(page2.nextSeq).toBe(2)
 
     const page3 = store.read('cs-1', page2.nextSeq!)
@@ -76,7 +88,7 @@ describe('ComputerUseTimelineStore', () => {
     store.record(actionRequested({ actionId: 'a-3' }))
 
     const all = store.read('cs-1')
-    expect(all.events.map((e) => e.actionId)).toEqual(['a-2', 'a-3'])
+    expect(all.events.map(actionId)).toEqual(['a-2', 'a-3'])
   })
 
   it('clears a single session without touching others', () => {
@@ -88,4 +100,57 @@ describe('ComputerUseTimelineStore', () => {
     expect(store.read('cs-1')).toEqual({ events: [], nextSeq: null })
     expect(store.read('cs-2').events).toHaveLength(1)
   })
+
+  it('replays durable events and continues the sequence after a process restart', () => {
+    const rows: Array<{ event_json: string }> = []
+    const repository: ComputerUseTimelineRepository = {
+      create: vi.fn((input) => {
+        rows.push({ event_json: JSON.stringify(input.event) })
+        return input
+      }),
+      listAfter: vi.fn((_sessionId, afterSeq, limit) =>
+        rows
+          .filter((row) => (JSON.parse(row.event_json) as { seq: number }).seq > afterSeq)
+          .slice(0, limit),
+      ),
+      nextSeq: vi.fn(() => rows.length),
+    }
+    createStore({ repository }).record(actionRequested({ actionId: 'a-1' }))
+
+    const restarted = createStore({ repository })
+    expect(restarted.read('cs-1').events).toEqual([
+      expect.objectContaining({ actionId: 'a-1', seq: 0 }),
+    ])
+    expect(restarted.record(actionRequested({ actionId: 'a-2' })).seq).toBe(1)
+  })
+
+  it('publishes live events once and degrades to memory when persistence fails', () => {
+    const listener = vi.fn()
+    const store = createStore({
+      repository: {
+        create: () => {
+          throw new Error('database busy')
+        },
+        listAfter: () => {
+          throw new Error('database busy')
+        },
+        nextSeq: () => {
+          throw new Error('database busy')
+        },
+      },
+    })
+    const unsubscribe = store.subscribe(listener)
+
+    const event = store.record(actionRequested())
+    expect(listener).toHaveBeenCalledWith(event)
+    expect(store.read('cs-1').events).toEqual([event])
+
+    unsubscribe()
+    store.record(actionRequested({ actionId: 'a-2' }))
+    expect(listener).toHaveBeenCalledOnce()
+  })
 })
+
+function actionId(event: { type: string; actionId?: string }): string | undefined {
+  return event.actionId
+}

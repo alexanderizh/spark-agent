@@ -31,6 +31,7 @@ type CanvasBrowserWindow = {
   isVisible: () => boolean
   show: () => void
   focus: () => void
+  maximize: () => void
   loadURL: (url: string) => Promise<unknown>
   loadFile: (filePath: string, options?: { query?: Record<string, string> }) => Promise<unknown>
   once: (event: string, listener: (...args: unknown[]) => void) => void
@@ -197,7 +198,11 @@ function createCanvasBrowserWindow(): CanvasBrowserWindow {
       allowRunningInsecureContent: false,
     },
   }
-  return new ElectronBrowserWindow(options) as CanvasBrowserWindow
+  // 打开即「最大化」(非全屏):撑满屏幕工作区、保留标题栏/Dock、不进 fullscreen,
+  // 用户仍可手动还原。窗口 show:false 创建,最大化发生在显示之前,show 时无闪烁。
+  const win = new ElectronBrowserWindow(options) as CanvasBrowserWindow
+  win.maximize()
+  return win
 }
 
 let singleton: CanvasWindowService | null = null

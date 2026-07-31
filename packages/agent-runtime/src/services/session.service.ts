@@ -2738,9 +2738,7 @@ export class SessionService {
           turnId,
           timestamp: new Date().toISOString(),
           seq: 0,
-          userMessage: runtimeLogEnabled
-            ? buildUserMessageSnapshot(message, turnAttachments)
-            : '',
+          userMessage: runtimeLogEnabled ? buildUserMessageSnapshot(message, turnAttachments) : '',
           systemPromptSections: runtimeLogEnabled ? promptSections : [],
           model,
           providerProfileId: effectiveRuntimeProviderProfileId,

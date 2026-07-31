@@ -81,7 +81,7 @@ export class ComputerControlBroker {
   private readonly actions: ComputerActionStore
   private readonly observer: ComputerObserverBackend
   private readonly executor: ComputerExecutorBackend
-  private readonly timeline?: ComputerUseTimelineSink
+  private readonly timeline: ComputerUseTimelineSink | undefined
   private readonly now: () => Date
   private readonly observations = new Map<string, ComputerObservation>()
   private readonly activeDispatches = new Set<string>()
@@ -112,7 +112,15 @@ export class ComputerControlBroker {
     const observation = parsedObservation.data
     if (signal.aborted) throw sessionCanceled()
     this.observations.set(computerSessionId, observation)
-    this.sessions.setPhase(computerSessionId, 'observing')
+    const session = this.sessions.setPhase(computerSessionId, 'observing')
+    this.timeline?.record({
+      type: 'computer_observation_created',
+      sessionId: session.sessionId,
+      turnId: session.turnId,
+      computerSessionId,
+      frameId: observation.frameId,
+      treeVersion: observation.treeVersion,
+    })
     return observation
   }
 
@@ -210,6 +218,15 @@ export class ComputerControlBroker {
       }
       this.approvals.consume(ticket, envelope, riskLevel)
       approvalTicketId = ticket.id
+      this.timeline?.record({
+        type: 'computer_approval_resolved',
+        sessionId: context.session.sessionId,
+        turnId: context.session.turnId,
+        computerSessionId: envelope.computerSessionId,
+        approvalId: ticket.id,
+        actionId: envelope.actionId,
+        decision: 'approved',
+      })
     }
 
     if (this.actions.startExecuting(envelope.actionId, approvalTicketId) == null) {

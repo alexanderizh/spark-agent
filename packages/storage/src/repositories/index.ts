@@ -21,6 +21,11 @@ export type {
   CreateComputerActionParams,
   StoredComputerActionStatus,
 } from './computer-action.repository.js'
+export { ComputerActivityEventRepository } from './computer-activity-event.repository.js'
+export type {
+  ComputerActivityEventRow,
+  CreateComputerActivityEventParams,
+} from './computer-activity-event.repository.js'
 export { ComputerApprovalRepository } from './computer-approval.repository.js'
 export type {
   ComputerApprovalRow,

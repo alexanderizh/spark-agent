@@ -5,7 +5,8 @@ import type {
   CreateComputerSessionParams,
   StoredComputerSessionStatus,
 } from '@spark/storage'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import type { ComputerUseTimelineSink } from './ComputerUseTimelineStore.js'
 import {
   ComputerSessionManager,
   type ComputerActuatorLeaseStore,
@@ -62,6 +63,13 @@ class MemorySessionStore implements ComputerSessionStore {
     return [...this.rows.values()]
       .filter((row) => !['completed', 'failed', 'canceled'].includes(row.status))
       .sort((left, right) => left.created_at.localeCompare(right.created_at))
+      .slice(0, limit)
+  }
+
+  listBySession(sessionId: string, limit = 100): ComputerSessionRow[] {
+    return [...this.rows.values()]
+      .filter((row) => row.session_id === sessionId)
+      .sort((left, right) => right.created_at.localeCompare(left.created_at))
       .slice(0, limit)
   }
 
@@ -174,7 +182,7 @@ function actionEnvelope(sessionId: string, leaseId: string): ComputerActionEnvel
   }
 }
 
-function createHarness() {
+function createHarness(timeline?: ComputerUseTimelineSink) {
   let nowMs = Date.parse('2026-07-28T05:00:00.000Z')
   let nextId = 1
   const sessions = new MemorySessionStore()
@@ -185,6 +193,7 @@ function createHarness() {
     now: () => new Date(nowMs),
     createId: () => `generated-${nextId++}`,
     leaseTtlMs: 10_000,
+    ...(timeline == null ? {} : { timeline }),
   })
   return {
     manager,
@@ -210,6 +219,35 @@ function createSession(manager: ComputerSessionManager, id: string) {
 }
 
 describe('ComputerSessionManager', () => {
+  it('emits durable session lifecycle events with chat provenance', () => {
+    const record = vi.fn()
+    const { manager } = createHarness({ record })
+    const session = createSession(manager, 'computer-session-1')
+
+    manager.acquireLease({
+      computerSessionId: session.id,
+      environmentKey: 'my-desktop:local',
+      operatorId: 'agent-1',
+    })
+    manager.setPhase(session.id, 'verifying')
+    manager.completeVerified(session.id, ['verification-1'])
+
+    expect(record).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        type: 'computer_session_started',
+        sessionId: `chat-${session.id}`,
+        turnId: `turn-${session.id}`,
+      }),
+    )
+    expect(record).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        type: 'computer_session_completed',
+        verificationIds: ['verification-1'],
+      }),
+    )
+  })
   it('enforces one active operator lease per environment', () => {
     const { manager, sessions } = createHarness()
     createSession(manager, 'computer-session-1')

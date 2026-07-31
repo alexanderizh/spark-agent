@@ -129,6 +129,7 @@ function createServices(overrides: Record<string, unknown> = {}) {
     acquireLease: vi.fn(() => ({ id: 'lease-1' })),
     getSession: vi.fn(() => SESSION),
     listActiveSessionIds: vi.fn((): string[] => []),
+    listBySession: vi.fn(() => [SESSION]),
   }
   const broker = {
     pause: vi.fn(async () => ({ ...SESSION, status: 'paused', actuatorLeaseId: null })),
@@ -136,6 +137,11 @@ function createServices(overrides: Record<string, unknown> = {}) {
     stop: vi.fn(async () => ({ ...SESSION, status: 'canceled', actuatorLeaseId: null })),
   }
   const approvals = {
+    get: vi.fn(() => ({
+      id: 'approval-1',
+      computer_session_id: SESSION.id,
+      action_id: 'action-1',
+    })),
     approve: vi.fn(() => ({
       id: 'approval-1',
       computerSessionId: SESSION.id,
@@ -231,6 +237,7 @@ describe('registerComputerUseIpc', () => {
         'computer-use:deny-action',
         'computer-use:list-apps',
         'computer-use:list-windows',
+        'computer-use:list-sessions',
         'computer-use:get-timeline',
         'computer-use:get-verification',
       ].sort(),
@@ -624,6 +631,19 @@ describe('registerComputerUseIpc', () => {
     expect(second.events[0].type).toBe('computer_action_executed')
     expect(second.events[0].seq).toBe(1)
     expect(second.nextSeq).toBe(1)
+  })
+
+  it('lists the computer sessions attached to a chat session for timeline replay', async () => {
+    const services = createServices()
+    register({ services })
+
+    await expect(
+      harness.handlers.get('computer-use:list-sessions')!(
+        { sessionId: 'session-1', limit: 20 },
+        event(),
+      ),
+    ).resolves.toEqual({ computerSessions: [SESSION] })
+    expect(services.sessions.listBySession).toHaveBeenCalledWith('session-1', 20)
   })
 
   it('returns an empty timeline for a session with no recorded events', async () => {

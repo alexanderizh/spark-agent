@@ -89,7 +89,7 @@ describe('ComputerTaskOperator', () => {
         policyContext: expect.objectContaining({ target: { kind: 'element', id: 'save-button' } }),
       }),
     )
-    expect(sessions.completeVerified).toHaveBeenCalledWith('computer-1')
+    expect(sessions.completeVerified).toHaveBeenCalledWith('computer-1', [expect.any(String)])
   })
 
   it('executes every action in a batch decision sequentially and then verifies', async () => {
@@ -98,7 +98,7 @@ describe('ComputerTaskOperator', () => {
         type: 'actions' as const,
         intent: 'Click the field and type the sign-off',
         actions: [
-          { type: 'click' as const, x: 10, y: 20 },
+          { type: 'click' as const, point: { x: 10, y: 20 } },
           { type: 'type_text' as const, text: 'Thanks' },
         ],
       },
@@ -137,14 +137,14 @@ describe('ComputerTaskOperator', () => {
         type: 'actions' as const,
         intent: 'Two clicks',
         actions: [
-          { type: 'click' as const, x: 1, y: 1 },
-          { type: 'click' as const, x: 2, y: 2 },
+          { type: 'click' as const, point: { x: 1, y: 1 } },
+          { type: 'click' as const, point: { x: 2, y: 2 } },
         ],
       },
       {
         type: 'action' as const,
         intent: 'Single retry',
-        action: { type: 'click' as const, x: 3, y: 3 },
+        action: { type: 'click' as const, point: { x: 3, y: 3 } },
       },
       { type: 'ready_for_verification' as const, reason: 'Saved status is visible' },
     ]
@@ -642,6 +642,7 @@ describe('ComputerTaskOperator', () => {
   it('persists completed verification evidence before transitioning the session to completed', async () => {
     const sessions = sessionController()
     const verifications = verificationStore()
+    const timeline = { record: vi.fn() }
     const operator = new ComputerTaskOperator({
       sessions,
       broker: { observe: vi.fn(async () => AFTER), dispatch: vi.fn() },
@@ -651,6 +652,7 @@ describe('ComputerTaskOperator', () => {
       windowInventory: { listWindows: vi.fn(async () => []) },
       createId: () => 'verification-1',
       now: () => Date.parse(SESSION.createdAt),
+      timeline,
     })
 
     await expect(
@@ -675,6 +677,20 @@ describe('ComputerTaskOperator', () => {
     expect(verifications.complete.mock.invocationCallOrder[0]).toBeLessThan(
       sessions.completeVerified.mock.invocationCallOrder[0]!,
     )
+    expect(timeline.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'computer_verification_started',
+        verificationId: 'verification-1',
+      }),
+    )
+    expect(timeline.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'computer_verification_completed',
+        verificationId: 'verification-1',
+        status: 'passed',
+      }),
+    )
+    expect(sessions.completeVerified).toHaveBeenCalledWith(SESSION.id, ['verification-1'])
   })
 
   it('completes the turn even when the verification record cannot be persisted', async () => {
@@ -712,7 +728,7 @@ describe('ComputerTaskOperator', () => {
     )
     // A storage fault on the verification record must not fail the whole turn once the
     // verification outcome itself is valid in-memory.
-    expect(sessions.completeVerified).toHaveBeenCalledWith(SESSION.id)
+    expect(sessions.completeVerified).toHaveBeenCalledWith(SESSION.id, ['verification-1'])
     expect(sessions.fail).not.toHaveBeenCalled()
   })
 

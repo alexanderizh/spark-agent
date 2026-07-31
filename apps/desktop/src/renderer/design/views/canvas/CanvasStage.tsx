@@ -32,6 +32,7 @@ import {
   type Viewport,
   type XYPosition,
 } from '@xyflow/react'
+import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
 import { CanvasZoomControls } from './CanvasZoomControls'
@@ -306,7 +307,7 @@ function CanvasPaneContextSubmenu({
               left: position?.left ?? 0,
               top: position?.top ?? 0,
               maxHeight: position?.maxHeight,
-              maxWidth: position?.maxWidth,
+              maxWidth: 180,
               visibility: position ? 'visible' : 'hidden',
             }}
             onMouseEnter={cancelClose}
@@ -2672,15 +2673,17 @@ function CanvasStageInner({
                   <div key={group.id} className="canvas-pane-context-group">
                     <div className="canvas-pane-context-section-title">{group.label}</div>
                     {group.actions.map((op) => (
-                      <button
+                      <Button
                         key={op.id}
-                        type="button"
+                        type="text"
                         role="menuitem"
+                        size='small'
+                        style={{display: 'flex', alignItems: 'center', justifyContent: 'flex-start'}}
                         onClick={() => handleCreatePipelineFromPane(op.id)}
                       >
                         <Icons.Workflow size={14} />
                         <span>{op.label}</span>
-                      </button>
+                      </Button>
                     ))}
                   </div>
                 ))}
@@ -2717,16 +2720,17 @@ function CanvasStageInner({
                     {group.items.map((item) => {
                       const visual = getOperationVisual(item.operation)
                       return (
-                        <button
+                        <Button
                           key={item.operation}
-                          type="button"
-                          role="menuitem"
+                          type="text"
+                          size='small'
+                          style={{display: 'flex', alignItems: 'center', justifyContent: 'flex-start'}}
                           className={`canvas-pane-context-op ${visual.colorClass}`}
                           onClick={() => handleCreateOperationFromPane(item.operation)}
                         >
                           <span className="canvas-pane-context-op-icon">{visual.icon}</span>
                           <span>{item.label}</span>
-                        </button>
+                        </Button>
                       )
                     })}
                   </div>

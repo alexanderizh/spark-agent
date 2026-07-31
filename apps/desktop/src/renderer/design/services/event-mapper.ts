@@ -1834,10 +1834,9 @@ function formatToolOutput(output: unknown): string | undefined {
   }
 }
 
-function extractApplicationSnapshotPreview(output: unknown): Omit<
-  Extract<UIBlock, { kind: 'application_snapshot' }>,
-  'kind'
-> | null {
+function extractApplicationSnapshotPreview(
+  output: unknown,
+): Omit<Extract<UIBlock, { kind: 'application_snapshot' }>, 'kind'> | null {
   const candidates: unknown[] = [output]
   for (let index = 0; index < candidates.length && index < 12; index += 1) {
     let candidate = candidates[index]

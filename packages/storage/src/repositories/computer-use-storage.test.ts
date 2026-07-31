@@ -104,6 +104,7 @@ describe('Computer Use storage migration', () => {
       [
         'application_snapshots',
         'computer_actions',
+        'computer_use_activity_events',
         'computer_actuator_leases',
         'computer_approvals',
         'computer_sessions',
@@ -370,6 +371,72 @@ describe('Computer Use storage migration', () => {
     )
     expect(actions.startExecuting('action-1', null)).toBeNull()
     expect(sessions.get('computer-session-1')?.status).toBe('preflighting')
+  })
+
+  it('persists and pages Computer Use activity events by session sequence', () => {
+    new SessionRepository(database).create({
+      id: 'session-1',
+      kind: 'chat',
+      title: 'Computer activity',
+      status: 'idle',
+      projectId: 'default',
+    })
+    const sessions = exportedRepository<{
+      create(input: Record<string, unknown>): Record<string, unknown>
+    }>('ComputerSessionRepository', database)
+    sessions.create({
+      id: 'computer-session-1',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      workflowRunId: null,
+      environment: 'my_desktop',
+      providerProfileId: 'provider-1',
+      modelId: 'model-1',
+      taskContract: { objective: 'Save the document' },
+      createdAt,
+    })
+    const events = exportedRepository<{
+      create(input: Record<string, unknown>): Record<string, unknown>
+      listAfter(
+        computerSessionId: string,
+        afterSeq: number,
+        limit: number,
+      ): Array<{
+        seq: number
+        event_json: string
+      }>
+      nextSeq(computerSessionId: string): number
+    }>('ComputerActivityEventRepository', database)
+
+    for (const seq of [0, 1, 2]) {
+      events.create({
+        id: `event-${seq}`,
+        computerSessionId: 'computer-session-1',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        seq,
+        eventType: 'computer_action_requested',
+        event: { id: `event-${seq}`, seq },
+        createdAt,
+      })
+    }
+
+    expect(events.nextSeq('computer-session-1')).toBe(3)
+    expect(events.listAfter('computer-session-1', 0, 1)).toEqual([
+      expect.objectContaining({ seq: 1 }),
+    ])
+    expect(() =>
+      events.create({
+        id: 'event-duplicate-seq',
+        computerSessionId: 'computer-session-1',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        seq: 1,
+        eventType: 'computer_action_requested',
+        event: {},
+        createdAt,
+      }),
+    ).toThrow()
   })
 
   it('consumes an approved ticket exactly once and rejects digest mismatches', () => {

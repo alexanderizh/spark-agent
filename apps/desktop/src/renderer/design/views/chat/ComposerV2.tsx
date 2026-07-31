@@ -716,6 +716,7 @@ export function ComposerV2({
   onClearReply,
   focusTrigger = 0,
   resendRequest = null,
+  onResendConsumed,
   onDispatchStateChange,
   onModelSwitch,
   paletteCommandRequest = null,
@@ -798,6 +799,12 @@ export function ComposerV2({
     requestId: number
     payload: ComposerPrefillPayload
   } | null
+  // resend effect 消费完 resendRequest 后回调父组件，让父组件立即清空 resendRequest。
+  // 必要性：ComposerV2 在 showEmptyHero 翻转时会卸载重建（ChatView 两分支根元素类型不同），
+  // 重建后 consumedResendIdRef 回到 null，若 resendRequest 仍残留，旧 payload 会被重新
+  // 应用到切进来的会话草稿（文本+图片），表现为"重发内容像狗皮膏药跨会话残留"。
+  // 父组件在此回调里 setResendRequest(null) 即可彻底切断残留链。
+  onResendConsumed?: () => void
   // 暴露发送中状态给父组件。父组件用它在发送期间抑制 hero，
   // 覆盖 createSession→sendTurn→status=running 之间 hero 闪现的窗口。
   onDispatchStateChange?: (dispatching: boolean) => void
@@ -2023,7 +2030,9 @@ export function ComposerV2({
     const commonCmds = remaining.filter(
       (c) => COMMON_COMMAND_NAMES.has(c.name) || c.layer === 'custom',
     )
-    const restCmds = remaining.filter((c) => !COMMON_COMMAND_NAMES.has(c.name) && c.layer !== 'custom')
+    const restCmds = remaining.filter(
+      (c) => !COMMON_COMMAND_NAMES.has(c.name) && c.layer !== 'custom',
+    )
 
     // 3) 其余：按原 SLASH_GROUP_ORDER 分组
     const restMap = new Map<string, CommandListItem[]>()
@@ -2063,13 +2072,33 @@ export function ComposerV2({
     setSlashIndex(0)
   }, [])
 
-  /** 选中命令：填充到输入框并关闭弹窗，不立即执行 */
+  /** 选中命令：替换当前 /<filter> 片段；无法匹配时在当前选区插入。 */
   const selectSlashCmd = useCallback(
     (cmd: CommandListItem) => {
+      const currentValue = value
+      const el = textareaRef.current
+      const selectionStart = el?.selectionStart ?? currentValue.length
+      const selectionEnd = el?.selectionEnd ?? selectionStart
+      const inserted = `/${cmd.name} `
+      const filterText = `/${slashFilter}`
+      const filterStart = currentValue.lastIndexOf(filterText, selectionStart)
+      const canReplaceFilter =
+        filterStart >= 0 && filterStart + filterText.length === selectionStart
+      const replaceStart = canReplaceFilter ? filterStart : selectionStart
+      const nextValue =
+        currentValue.slice(0, replaceStart) + inserted + currentValue.slice(selectionEnd)
+      const newCaret = replaceStart + inserted.length
+
       closeSlashPopup()
-      setValue(`/${cmd.name} `)
+      setValue(nextValue)
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current
+        if (textarea == null) return
+        textarea.focus()
+        textarea.setSelectionRange(newCaret, newCaret)
+      })
     },
-    [closeSlashPopup, setValue],
+    [closeSlashPopup, setValue, slashFilter, value],
   )
 
   // 持久化置顶命令 id 列表（settings IPC → SQLite）
@@ -2355,8 +2384,7 @@ export function ComposerV2({
   })
 
   // 录音时把实时 partial 叠加到输入框末尾（整体替换式展示）；停止后回落到正式草稿值
-  const voiceDisplayValue =
-    voice.status === 'recording' ? value + voice.partialText : value
+  const voiceDisplayValue = voice.status === 'recording' ? value + voice.partialText : value
 
   /** 用户选中候选 Agent：用 `@<name> ` 替换 `@<query>` 段，并记录 pendingMention */
   const handleMentionSelect = useCallback(
@@ -2564,7 +2592,7 @@ export function ComposerV2({
   }
 
   // Command palette can be opened from the chat composer with Cmd/Ctrl+F; selecting
-  // a session command should fill the composer instead of executing immediately.
+  // a session command should insert at the cursor instead of clearing the existing input.
   const lastPaletteCommandRequestIdRef = useRef<number | null>(null)
   useEffect(() => {
     if (paletteCommandRequest == null) return
@@ -2572,19 +2600,26 @@ export function ComposerV2({
     lastPaletteCommandRequestIdRef.current = paletteCommandRequest.id
 
     const { commandText } = paletteCommandRequest
-    setValue(commandText)
+    const el = textareaRef.current
+    // 读取当前选区；如果 textarea 不在 DOM 中，则退化为追加到末尾
+    const selectionStart = el?.selectionStart ?? value.length
+    const selectionEnd = el?.selectionEnd ?? selectionStart
+    const currentValue = value
+    const next =
+      currentValue.slice(0, selectionStart) + commandText + currentValue.slice(selectionEnd)
+    setValue(next)
     setSlashOpen(false)
     setSlashFilter('')
     setSlashIndex(0)
     setTextEditMenu(null)
     requestAnimationFrame(() => {
-      const el = textareaRef.current
-      if (el == null) return
-      el.focus()
-      const caret = commandText.length
-      el.setSelectionRange(caret, caret)
+      const ta = textareaRef.current
+      if (ta == null) return
+      ta.focus()
+      const newCaret = selectionStart + commandText.length
+      ta.setSelectionRange(newCaret, newCaret)
     })
-  }, [paletteCommandRequest, setValue])
+  }, [paletteCommandRequest, setValue, value])
 
   // Auto-dismiss Escape confirmation after 3 seconds
   useEffect(() => {
@@ -2724,7 +2759,9 @@ export function ComposerV2({
     const configuredModel = agent.modelId?.trim() ?? ''
     const previousSessionModel = session?.modelId?.trim() || draftModelId.trim()
     const inheritedModel =
-      provider != null && previousSessionModel.length > 0 && providerSupportsModel(provider, previousSessionModel)
+      provider != null &&
+      previousSessionModel.length > 0 &&
+      providerSupportsModel(provider, previousSessionModel)
         ? previousSessionModel
         : ''
     const model =
@@ -2777,6 +2814,12 @@ export function ComposerV2({
     // effect 重跑，把已发送过的重发内容再次写进别的会话草稿。
     if (consumedResendIdRef.current === current.requestId) return
     consumedResendIdRef.current = current.requestId
+    // 已标记本次 requestId 为已消费，立即通知父组件清空 resendRequest。
+    // 这样即使后续 ComposerV2 因 showEmptyHero 翻转而卸载重建（consumedResendIdRef 重置），
+    // resendRequest 也已是 null，effect 会在 current == null 时直接 return，不会把旧
+    // payload 重新写进切进来的会话草稿。setValue/setAttachments 在下方同步调用，
+    // setState 会被批处理到下一次渲染，不受此回调触发的父组件重渲染抢占。
+    onResendConsumed?.()
     const { payload } = current
 
     if (payload.agentId != null) {
@@ -2831,7 +2874,7 @@ export function ComposerV2({
     })
 
     textareaRef.current?.focus()
-  }, [resendRequest, setValue, setAttachments, prepareImagePreview])
+  }, [resendRequest, setValue, setAttachments, prepareImagePreview, onResendConsumed])
 
   const handleAgentChange = (agentId: string) => applyAgentRuntime(agentId)
 
@@ -3301,9 +3344,21 @@ export function ComposerV2({
             onOpenSkillStore={onOpenSkillStore}
             onAddContextFiles={() => void handleAddContextFiles()}
             onInsertSlashCommand={() => {
-              // 等同键入 `/`：经 handleValueChange 触发斜杠命令弹窗
-              handleValueChange('/')
-              requestAnimationFrame(() => textareaRef.current?.focus())
+              // 打开斜杠命令面板：保留已有输入，不覆盖 value。
+              // 弹窗以全量列表呈现；选中命令后由 selectSlashCmd 在当前光标处增量插入。
+              // 需按字符筛选时，直接在输入框键入 `/xxx`（走 inline 触发路径）。
+              setSlashFilter('')
+              void openSlashPopup()
+              requestAnimationFrame(() => {
+                const el = textareaRef.current
+                if (el == null) return
+                el.focus()
+                // 无选区时光标移到末尾，便于随后增量插入命令；有选区时保持，选中命令时替换选区。
+                if (el.selectionStart === el.selectionEnd) {
+                  const end = el.value.length
+                  el.setSelectionRange(end, end)
+                }
+              })
             }}
             // 仅在发送瞬间禁用（防重复提交）；任务执行中允许继续挂附件/插技能（只改下一轮草稿，不影响运行中的会话）
             disabled={sending}

@@ -13,7 +13,7 @@
   margin-left: auto;
   flex-shrink: 0;
   border-radius: var(--r-sm, 4px);
-  color: var(--text-faint);
+  color: var(--sidebar-text, var(--text));
   opacity: 0;
   cursor: pointer;
   transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
@@ -23,13 +23,13 @@
 }
 .nav-pin-btn:hover {
   background: var(--hover);
-  color: var(--text);
+  color: var(--sidebar-text, var(--text));
 }
 .nav-pin-btn.is-pinned {
-  color: var(--primary);
+  color: var(--sidebar-text, var(--text));
 }
 .nav-pin-btn.is-pinned:hover {
-  color: var(--primary-hover, var(--primary));
+  color: var(--sidebar-text, var(--text));
   background: var(--primary-soft);
 }
 
@@ -146,6 +146,26 @@
   word-break: break-word;
 }
 
+// ─── 开发模式标识 ─────────────────────────────────────────────────────────
+
+.sidebar-dev-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
 // ─── 模式切换器（工作台 / 画布）────────────────────────────────────────────
 // 顶部段控件：两大平级主功能的入口。激活态用 panel-elev 浮起 + 自适应 inset
 // 边框（color-mix 让 light/dark 都可见），避免某一种主题下边界消失。
@@ -179,11 +199,11 @@
 }
 .mode-switcher-btn:hover:not(.active) {
   background: var(--hover);
-  color: var(--text);
+  color: var(--sidebar-text, var(--text));
 }
 .mode-switcher-btn.active {
   background: var(--panel-elev);
-  color: var(--text);
+  color: var(--sidebar-text, var(--text));
   // light 下 shadow 提供浮起感；inset border 用 color-mix 让 dark 下也可见
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08),
     inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
@@ -232,11 +252,11 @@
 }
 .shared-resource-btn:hover {
   background: var(--hover);
-  color: var(--text);
+  color: var(--sidebar-text, var(--text));
 }
 .shared-resource-btn.active {
   background: var(--selected);
-  color: var(--primary);
+  color: var(--sidebar-text, var(--text));
 }
 .shared-resource-btn:focus-visible {
   outline: 2px solid var(--primary);
@@ -285,7 +305,7 @@
     color: var(--primary);
   }
   .canvas-sidebar-item-icon {
-    color: var(--primary);
+    color: var(--sidebar-text, var(--text));
   }
   // 左侧 2px 主色条作为「当前选中」的强标记
   &::before {
@@ -341,7 +361,7 @@
   transition: color 0.12s ease;
 }
 .canvas-sidebar-item-pin {
-  color: var(--primary);
+  color: var(--sidebar-text, var(--text));
   opacity: 0.8;
   flex-shrink: 0;
 }

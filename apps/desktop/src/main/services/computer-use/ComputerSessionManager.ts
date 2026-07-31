@@ -2,6 +2,7 @@ import type {
   ComputerActionEnvelope,
   ComputerActuatorLease,
   ComputerEnvironment,
+  ComputerUseErrorCode,
   ComputerSession,
   ComputerTaskContract,
 } from '@spark/protocol'
@@ -18,6 +19,7 @@ import type {
 } from '@spark/storage'
 import { randomUUID } from 'node:crypto'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
+import type { ComputerUseTimelineSink } from './ComputerUseTimelineStore.js'
 
 const DEFAULT_LEASE_TTL_MS = 10_000
 export const MY_DESKTOP_ENVIRONMENT_KEY = 'my-desktop:local'
@@ -48,6 +50,7 @@ export interface ComputerSessionStore {
   create(params: CreateComputerSessionParams): ComputerSessionRow
   get(id: string): ComputerSessionRow | null
   listActive(limit?: number): ComputerSessionRow[]
+  listBySession(sessionId: string, limit?: number): ComputerSessionRow[]
   updateStatus(
     id: string,
     status: StoredComputerSessionStatus,
@@ -92,6 +95,7 @@ export interface ComputerSessionManagerOptions {
   now?: () => Date
   createId?: () => string
   leaseTtlMs?: number
+  timeline?: ComputerUseTimelineSink
 }
 
 export class ComputerSessionManager {
@@ -100,6 +104,7 @@ export class ComputerSessionManager {
   private readonly now: () => Date
   private readonly createId: () => string
   private readonly leaseTtlMs: number
+  private readonly timeline: ComputerUseTimelineSink | undefined
   private readonly runtime = new Map<string, SessionRuntimeState>()
 
   constructor(options: ComputerSessionManagerOptions) {
@@ -108,6 +113,7 @@ export class ComputerSessionManager {
     this.now = options.now ?? (() => new Date())
     this.createId = options.createId ?? randomUUID
     this.leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS
+    this.timeline = options.timeline
     if (!Number.isSafeInteger(this.leaseTtlMs) || this.leaseTtlMs < 1_000) {
       throw new RangeError('Computer actuator lease TTL must be at least one second')
     }
@@ -128,7 +134,15 @@ export class ComputerSessionManager {
       createdAt,
     })
     this.runtime.set(row.id, createRuntimeState())
-    return toComputerSession(row)
+    const session = toComputerSession(row)
+    this.timeline?.record({
+      type: 'computer_session_started',
+      sessionId: session.sessionId,
+      turnId: session.turnId,
+      computerSessionId: session.id,
+      environment: session.environment,
+    })
+    return session
   }
 
   getSession(computerSessionId: string): ComputerSession | null {
@@ -138,6 +152,10 @@ export class ComputerSessionManager {
 
   listActiveSessionIds(): string[] {
     return this.sessions.listActive().map((session) => session.id)
+  }
+
+  listBySession(sessionId: string, limit = 100): ComputerSession[] {
+    return this.sessions.listBySession(sessionId, limit).map(toComputerSession)
   }
 
   setPhase(computerSessionId: string, phase: ManagedComputerSessionPhase): ComputerSession {
@@ -321,10 +339,18 @@ export class ComputerSessionManager {
     const runtime = this.ensureRuntime(computerSessionId)
     runtime.controller.abort('computer_session_canceled')
     this.releaseRuntimeLease(runtime, now)
-    return toComputerSession(this.requireSessionRow(computerSessionId))
+    const canceled = toComputerSession(this.requireSessionRow(computerSessionId))
+    this.timeline?.record({
+      type: 'computer_session_canceled',
+      sessionId: canceled.sessionId,
+      turnId: canceled.turnId,
+      computerSessionId: canceled.id,
+      errorCode: 'session_canceled',
+    })
+    return canceled
   }
 
-  completeVerified(computerSessionId: string): ComputerSession {
+  completeVerified(computerSessionId: string, verificationIds: string[] = []): ComputerSession {
     const session = this.requireSessionRow(computerSessionId)
     if (session.status !== 'verifying') throw sessionCanceled()
     const now = this.now().toISOString()
@@ -333,10 +359,23 @@ export class ComputerSessionManager {
     this.releaseRuntimeLease(runtime, now)
     const updated = this.sessions.updateStatus(computerSessionId, 'completed', now, now)
     if (updated == null) throw sessionCanceled()
-    return toComputerSession(updated)
+    const completed = toComputerSession(updated)
+    if (verificationIds.length > 0) {
+      this.timeline?.record({
+        type: 'computer_session_completed',
+        sessionId: completed.sessionId,
+        turnId: completed.turnId,
+        computerSessionId: completed.id,
+        verificationIds,
+      })
+    }
+    return completed
   }
 
-  fail(computerSessionId: string): ComputerSession {
+  fail(
+    computerSessionId: string,
+    errorCode: ComputerUseErrorCode = 'environment_unavailable',
+  ): ComputerSession {
     const session = this.requireSessionRow(computerSessionId)
     if (
       session.status === 'completed' ||
@@ -351,7 +390,15 @@ export class ComputerSessionManager {
     this.releaseRuntimeLease(runtime, now)
     const updated = this.sessions.updateStatus(computerSessionId, 'failed', now, now)
     if (updated == null) throw sessionCanceled()
-    return toComputerSession(updated)
+    const failed = toComputerSession(updated)
+    this.timeline?.record({
+      type: 'computer_session_failed',
+      sessionId: failed.sessionId,
+      turnId: failed.turnId,
+      computerSessionId: failed.id,
+      errorCode,
+    })
+    return failed
   }
 
   private requireSessionRow(computerSessionId: string): ComputerSessionRow {

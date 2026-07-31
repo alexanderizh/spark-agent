@@ -15,6 +15,7 @@ import { ComputerVerificationEngine } from './ComputerVerificationEngine.js'
 import { reconcileObservationTree } from './NativeHostTreeReconciler.js'
 import { isActionBatchEnabled, isIncrementalTreeEnabled } from './computerUseV2Flags.js'
 import { createLogger } from '@spark/shared'
+import type { ComputerUseTimelineSink } from './ComputerUseTimelineStore.js'
 
 const log = createLogger('computer-use-operator')
 
@@ -44,8 +45,8 @@ interface OperatorSessions {
     operatorId: string
   }): ComputerActuatorLease
   setPhase(computerSessionId: string, phase: 'planning' | 'verifying' | 'handoff_required'): unknown
-  completeVerified(computerSessionId: string): unknown
-  fail(computerSessionId: string): unknown
+  completeVerified(computerSessionId: string, verificationIds?: string[]): unknown
+  fail(computerSessionId: string, errorCode?: 'environment_unavailable'): unknown
 }
 
 interface OperatorBroker {
@@ -116,6 +117,7 @@ export class ComputerTaskOperator {
     | ((request: ComputerActionApprovalRequest) => Promise<ComputerApprovalTicket | null>)
     | undefined
   private readonly getAbortSignal: ((computerSessionId: string) => AbortSignal) | undefined
+  private readonly timeline: ComputerUseTimelineSink | undefined
 
   constructor(options: {
     sessions: OperatorSessions
@@ -132,6 +134,7 @@ export class ComputerTaskOperator {
       request: ComputerActionApprovalRequest,
     ) => Promise<ComputerApprovalTicket | null>
     getAbortSignal?: (computerSessionId: string) => AbortSignal
+    timeline?: ComputerUseTimelineSink
   }) {
     this.sessions = options.sessions
     this.broker = options.broker
@@ -147,6 +150,7 @@ export class ComputerTaskOperator {
     this.now = options.now ?? Date.now
     this.requestApproval = options.requestApproval
     this.getAbortSignal = options.getAbortSignal
+    this.timeline = options.timeline
   }
 
   async run(input: {
@@ -162,7 +166,10 @@ export class ComputerTaskOperator {
     let successfulActions = 0
     const abortSignal = this.getAbortSignal?.(input.session.id)
     try {
-      observation = await this.observeWithRecovery(input.session.id, shouldRequestFullDecisionTree())
+      observation = await this.observeWithRecovery(
+        input.session.id,
+        shouldRequestFullDecisionTree(),
+      )
       for (let stepIndex = 0; stepIndex < input.session.taskContract.maxSteps; stepIndex += 1) {
         if (abortSignal?.aborted) {
           return { status: 'failed', reason: 'session_canceled' }
@@ -195,7 +202,10 @@ export class ComputerTaskOperator {
           consecutiveTransientFailures += 1
           if (consecutiveTransientFailures > MAX_DECISION_RECOVERIES) throw error
           await this.wait(recoveryDelay(consecutiveTransientFailures))
-          observation = await this.observeWithRecovery(input.session.id, shouldRequestFullDecisionTree())
+          observation = await this.observeWithRecovery(
+            input.session.id,
+            shouldRequestFullDecisionTree(),
+          )
           continue
         }
         if (decision.type === 'handoff') {
@@ -205,7 +215,10 @@ export class ComputerTaskOperator {
           ) {
             modelHandoffReplans += 1
             await this.wait(recoveryDelay(modelHandoffReplans))
-            observation = await this.observeWithRecovery(input.session.id, shouldRequestFullDecisionTree())
+            observation = await this.observeWithRecovery(
+              input.session.id,
+              shouldRequestFullDecisionTree(),
+            )
             continue
           }
           this.sessions.setPhase(input.session.id, 'handoff_required')
@@ -217,12 +230,18 @@ export class ComputerTaskOperator {
             successfulActions === 0 &&
             requiresObservableProgress(input.session.taskContract.successCriteria)
           ) {
-            observation = await this.observeWithRecovery(input.session.id, shouldRequestFullDecisionTree())
+            observation = await this.observeWithRecovery(
+              input.session.id,
+              shouldRequestFullDecisionTree(),
+            )
             continue
           }
           this.sessions.setPhase(input.session.id, 'verifying')
           if (observation.tree.mode !== 'full') {
-            observation = await this.observeWithRecovery(input.session.id, shouldRequestFullDecisionTree())
+            observation = await this.observeWithRecovery(
+              input.session.id,
+              shouldRequestFullDecisionTree(),
+            )
           }
           const windows = await this.windowInventory?.listWindows()
           const verification = this.verification.verify(
@@ -235,6 +254,13 @@ export class ComputerTaskOperator {
           )
           const verificationId = this.createId()
           const completedAt = new Date(this.now()).toISOString()
+          this.timeline?.record({
+            type: 'computer_verification_started',
+            sessionId: input.session.sessionId,
+            turnId: input.session.turnId,
+            computerSessionId: input.session.id,
+            verificationId,
+          })
           this.verifications.create({
             id: verificationId,
             computerSessionId: input.session.id,
@@ -254,8 +280,16 @@ export class ComputerTaskOperator {
             // the outcome instead of killing the whole turn over a non-action disk error.
             log.warn('Computer verification record could not be persisted', { verificationId })
           }
+          this.timeline?.record({
+            type: 'computer_verification_completed',
+            sessionId: input.session.sessionId,
+            turnId: input.session.turnId,
+            computerSessionId: input.session.id,
+            verificationId,
+            status: verification.passed ? 'passed' : 'failed',
+          })
           if (verification.passed) {
-            this.sessions.completeVerified(input.session.id)
+            this.sessions.completeVerified(input.session.id, [verificationId])
             return { status: 'completed', verification }
           }
           continue
@@ -369,7 +403,10 @@ export class ComputerTaskOperator {
           } else {
             throw error
           }
-          observation = await this.observeWithRecovery(input.session.id, shouldRequestFullDecisionTree())
+          observation = await this.observeWithRecovery(
+            input.session.id,
+            shouldRequestFullDecisionTree(),
+          )
         }
       }
       this.sessions.fail(input.session.id)

@@ -104,6 +104,10 @@ export interface ChatPanelProps {
   fallbackAssistant?: { agentId: string; agentName: string }
   /** 真实的用户头像节点；未提供时不渲染用户头像区域。 */
   userAvatar?: React.ReactNode
+  /** 可选：隐藏 assistant 消息头像，让内容占满整行（画布等窄面板场景）。
+   *  用户消息头像不受影响；开启后 DOM 不渲染 assistant 头像，且不再受主题 CSS
+   *  「.canvas-agent-modal .chat-panel-message-avatar { display:none }」选择器是否命中的影响。 */
+  hideAssistantAvatar?: boolean
 }
 
 type AssistantStatus = 'idle' | 'sending' | 'streaming'
@@ -152,6 +156,7 @@ export function ChatPanel({
   agents = [],
   fallbackAssistant,
   userAvatar,
+  hideAssistantAvatar = false,
   persistedSessionStatus,
 }: ChatPanelProps): React.ReactElement {
   const resolvedToolCallDisplay =
@@ -803,6 +808,7 @@ export function ChatPanel({
                   {...(toolNamePrefixFilter !== undefined ? { toolNamePrefixFilter } : {})}
                   toolCallDisplay={resolvedToolCallDisplay}
                   userAvatar={userAvatar}
+                  {...(hideAssistantAvatar ? { hideAssistantAvatar } : {})}
                   {...(hideToolInputOutput ? { hideToolInputOutput } : {})}
                   {...(onFocusNodeReference ? { onFocusNode: onFocusNodeReference } : {})}
                 />
@@ -860,6 +866,7 @@ export function ChatPanel({
           <PendingAssistantMessageView
             agents={agents}
             {...(fallbackAssistant != null ? { fallbackAssistant } : {})}
+            {...(hideAssistantAvatar ? { hideAssistantAvatar } : {})}
           />
         )}
         {showScrollToBottom && (
@@ -984,6 +991,7 @@ function MessageView({
   toolCallDisplay,
   hideToolInputOutput,
   userAvatar,
+  hideAssistantAvatar = false,
   onFocusNode,
   onQuestionAnswered,
 }: {
@@ -995,6 +1003,7 @@ function MessageView({
   toolCallDisplay: 'hidden' | 'summary' | 'full'
   hideToolInputOutput?: boolean
   userAvatar?: React.ReactNode
+  hideAssistantAvatar?: boolean
   onFocusNode?: (nodeId: string) => void
   onQuestionAnswered: (
     questions: UserQuestionPrompt[],
@@ -1009,12 +1018,18 @@ function MessageView({
     ...(toolNamePrefixFilter != null ? { toolNamePrefix: toolNamePrefixFilter } : {}),
   })
   return (
-    <div className={`chat-panel-message chat-panel-message-${message.role}`}>
+    <div
+      className={`chat-panel-message chat-panel-message-${message.role}${
+        message.role === 'assistant' && hideAssistantAvatar
+          ? ' chat-panel-message-assistant-no-avatar'
+          : ''
+      }`}
+    >
       {message.role === 'user' ? (
         userAvatar != null ? (
           <div className="chat-panel-message-avatar">{userAvatar}</div>
         ) : null
-      ) : (
+      ) : hideAssistantAvatar ? null : (
         <div className="chat-panel-message-avatar">
           <AssistantAvatar
             agentId={assistantIdentity.id}
@@ -1606,21 +1621,29 @@ function PendingUserMessageView({
 function PendingAssistantMessageView({
   agents,
   fallbackAssistant,
+  hideAssistantAvatar = false,
 }: {
   agents: ManagedAgent[]
   fallbackAssistant?: { agentId: string; agentName: string }
+  hideAssistantAvatar?: boolean
 }) {
   const identity = resolveAssistantIdentity(null, agents, fallbackAssistant)
   return (
-    <div className="chat-panel-message chat-panel-message-assistant chat-panel-message-pending">
-      <div className="chat-panel-message-avatar">
-        <AssistantAvatar
-          agentId={identity.id}
-          agentName={identity.name}
-          avatarSrc={identity.avatarSrc}
-          pending
-        />
-      </div>
+    <div
+      className={`chat-panel-message chat-panel-message-assistant chat-panel-message-pending${
+        hideAssistantAvatar ? ' chat-panel-message-assistant-no-avatar' : ''
+      }`}
+    >
+      {hideAssistantAvatar ? null : (
+        <div className="chat-panel-message-avatar">
+          <AssistantAvatar
+            agentId={identity.id}
+            agentName={identity.name}
+            avatarSrc={identity.avatarSrc}
+            pending
+          />
+        </div>
+      )}
       <div className="chat-panel-message-body">
         <div className="chat-panel-assistant-loading">
           <Spin size="small" />
