@@ -152,13 +152,16 @@ export async function prepareSavedCanvasOperationSubmission(
     userPrompt,
   }
   const executionKind = canvasOperationKind(operation)
-  const validated = options?.skipParameterValidation
-    ? request
-    : executionKind === 'text'
-      ? dependencies.validateText(request)
-      : executionKind === 'local_media'
-        ? validateCanvasLocalTaskSubmission(request)
-        : await dependencies.validateMedia(request)
+  const validated =
+    executionKind === 'local_media'
+      ? validateCanvasLocalTaskSubmission(request)
+      : operation === 'image_prompt_reverse'
+        ? dependencies.validateText(request)
+        : options?.skipParameterValidation
+          ? request
+          : executionKind === 'text'
+            ? dependencies.validateText(request)
+            : await dependencies.validateMedia(request)
   const params = omitOperation({
     ...request,
     ...validated,

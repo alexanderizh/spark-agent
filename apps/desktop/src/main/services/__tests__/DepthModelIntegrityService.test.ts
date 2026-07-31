@@ -87,6 +87,7 @@ describe('DepthModelIntegrityService', () => {
             version: '1.0.0',
             url: 'models/depth-anything-v2/depth-anything-v2-small-int8-1.0.0.tar.gz',
             sha256: 'a'.repeat(64),
+            size: 123,
             archive: { format: 'tar.gz' },
           },
         ],

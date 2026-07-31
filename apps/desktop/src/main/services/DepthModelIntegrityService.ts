@@ -10,6 +10,7 @@ import {
 import { installBinaryArchive } from '../../../../../packages/agent-runtime/src/services/skill-registry/tarball-installer.js'
 
 export const DEPTH_MODEL_PACKAGE_ID = 'depth-anything-v2-small-int8'
+export const DEPTH_MODEL_ARTIFACT_ID = 'model.depth-anything-v2-small-int8-1.0.0'
 
 type DepthModelPackage = {
   schemaVersion: 1
@@ -110,16 +111,18 @@ export class DepthModelIntegrityService {
     onProgress?: (downloaded: number, total: number) => void,
   ): Promise<Extract<DepthModelIntegrityState, { state: 'ready' }>> {
     const manifest = await this.fetchManifest()
-    const artifact = manifest.artifacts
-      .filter(
-        (candidate) =>
-          candidate.type === 'model' && candidate.id.startsWith(`model.${DEPTH_MODEL_PACKAGE_ID}-`),
-      )
-      .sort((left, right) =>
-        right.version.localeCompare(left.version, undefined, { numeric: true }),
-      )[0]
+    const artifact = manifest.artifacts.find(
+      (candidate) =>
+        candidate.type === 'model' && candidate.id === DEPTH_MODEL_ARTIFACT_ID,
+    )
     if (!artifact) {
-      throw new Error('Spark 制品仓库中没有可用的 Depth Anything V2 模型')
+      throw new Error(`Spark 制品仓库缺少受支持的深度模型：${DEPTH_MODEL_ARTIFACT_ID}`)
+    }
+    if (!artifact.sha256 || !/^[a-f0-9]{64}$/i.test(artifact.sha256)) {
+      throw new Error('深度模型制品缺少有效的归档 SHA-256')
+    }
+    if (!Number.isSafeInteger(artifact.size) || (artifact.size ?? 0) <= 0) {
+      throw new Error('深度模型制品缺少有效的归档大小')
     }
     await this.installArchive({
       url: resolveArtifactUrl(manifest, artifact),
@@ -130,7 +133,7 @@ export class DepthModelIntegrityService {
             ),
           }
         : {}),
-      ...(artifact.sha256 ? { sha256: artifact.sha256 } : {}),
+      sha256: artifact.sha256,
       ...(artifact.archive?.format ? { format: artifact.archive.format } : {}),
       ...(artifact.archive?.contentRoot != null
         ? { contentRoot: artifact.archive.contentRoot }
@@ -142,6 +145,11 @@ export class DepthModelIntegrityService {
     if (installed.state !== 'ready') {
       throw new Error(
         installed.state === 'error' ? installed.error : '模型归档安装完成但必需文件缺失',
+      )
+    }
+    if (installed.version !== artifact.version) {
+      throw new Error(
+        `模型包版本与制品清单不一致：${installed.version} != ${artifact.version}`,
       )
     }
     return installed

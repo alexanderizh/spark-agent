@@ -123,6 +123,10 @@ export default defineConfig({
             __dirname,
             'src/main/workers/background-maintenance.worker.ts',
           ),
+          'depth-inference-worker': resolve(
+            __dirname,
+            'src/main/workers/depth-inference.worker.ts',
+          ),
         },
       },
     },

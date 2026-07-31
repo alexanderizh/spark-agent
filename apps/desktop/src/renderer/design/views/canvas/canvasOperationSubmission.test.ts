@@ -243,6 +243,21 @@ describe('canvasOperationSubmission', () => {
     expect(deps.validateMedia).not.toHaveBeenCalled()
   })
 
+  it('does not let skipped provider warnings bypass depth input contracts', async () => {
+    const node = operationNode({
+      type: 'video_depth_map',
+      data: { operation: 'video_depth_map' },
+    })
+
+    await expect(
+      prepareSavedCanvasOperationSubmission(
+        { snapshot: snapshot(node), node },
+        dependencies(),
+        { skipParameterValidation: true },
+      ),
+    ).rejects.toThrow('请连接一段输入视频')
+  })
+
   it('uses the bound task runtime when the node has no saved override', async () => {
     const current = snapshot(
       operationNode({
