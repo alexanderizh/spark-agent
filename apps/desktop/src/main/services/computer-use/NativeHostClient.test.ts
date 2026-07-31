@@ -271,6 +271,33 @@ describe('NativeHostClient', () => {
     })
   })
 
+  it('sends the persistent-capture extension only when explicitly requested', async () => {
+    const process = new FakeNativeHostProcess()
+    const requests = observeRequests(process)
+    const connecting = NativeHostClient.connect({ artifact: ARTIFACT, spawnProcess: () => process })
+    await completeHandshake(process, requests)
+    const client = await connecting
+
+    const observing = client.observe({
+      snapshotId: 'snapshot-1',
+      appId: 'app-1',
+      windowId: 'window-1',
+      previousTreeVersion: null,
+      fullTree: true,
+      persistentCapture: true,
+    })
+    const request = requireRequest(await requests.next())
+    expect(request).toMatchObject({ type: 'observe', persistentCapture: true })
+    process.send({
+      protocolVersion: 1,
+      requestId: request.requestId,
+      type: 'error',
+      error: { code: 'environment_unavailable', message: 'test stop', retryable: false },
+    })
+    await expect(observing).rejects.toMatchObject({ code: 'environment_unavailable' })
+    await client.close()
+  })
+
   it('extends the request deadline for a bounded native action instead of killing it mid-input', async () => {
     vi.useFakeTimers()
     try {

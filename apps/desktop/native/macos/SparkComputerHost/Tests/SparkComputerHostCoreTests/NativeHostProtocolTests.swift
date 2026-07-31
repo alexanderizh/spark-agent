@@ -26,6 +26,17 @@ final class NativeHostProtocolTests: XCTestCase {
         )),
       .requestPermissions(requestID: "request-3", permissions: [.screen, .accessibility])
     )
+    XCTAssertEqual(
+      try decoder.decode(
+        json(
+          #"{"protocolVersion":1,"requestId":"request-observe","type":"observe","snapshotId":"snapshot-1","appId":"app-1","windowId":"window-1","previousTreeVersion":null,"fullTree":false,"persistentCapture":true}"#
+        )),
+      .observe(
+        requestID: "request-observe", snapshotID: "snapshot-1", appID: "app-1",
+        windowID: "window-1", previousTreeVersion: nil, fullTree: false,
+        persistentCapture: true
+      )
+    )
     XCTAssertThrowsError(
       try decoder.decode(
         json(

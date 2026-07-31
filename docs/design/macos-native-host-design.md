@@ -108,6 +108,10 @@ capability manifest 只在 AX 信任真实存在时声明 `axui_element/fullTree
 6. `native-host-build.json` 与 manifest 使用共享版本源；`afterSign` 在 DMG 生成/上传前执行独立验证器，复算最终 hash、核对单架构 slice、0755、identifier、Team ID、hardened runtime、Gatekeeper 与 stapled ticket。
 7. 验证器用 `ditto` 把最终 `.app` 安装到隔离的临时 Applications 目录，再由最终 App 父进程完成一次真实 Host handshake；普通 Node 进程不能替代该信任链测试。
 
+### 持久视觉捕获（V2 flag）
+
+`SPARK_COMPUTER_USE_V2_PERSISTENT_CAPTURE` 开启时，Electron 仅对 `observe` 发送可选 `persistentCapture=true`；旧 Host/flag 关闭路径不带该字段。Host 按 app/window/PID/代码身份创建单个 `SCStream`，100ms 最小帧间隔、queueDepth=2，只接收 `.complete` screen frame。每次 observe 丢弃请求单调时钟之前的缓存帧，最多等待 2 秒新帧；超时/stream failure 停流并只回退一次 `SCScreenshotManager`。目标变化、取消及 flag rollback 后的下一次 observe 都先 stop 并清空缓存，动作后证据不会复用动作前帧。
+
 CI 缺少 Developer ID 时构建必须失败；本地无证书时明确省略 Host，不能生成“看似可用”的 ad-hoc artifact。
 
 ## 7. 剩余发布门槛
@@ -119,7 +123,7 @@ CI 缺少 Developer ID 时构建必须失败；本地无证书时明确省略 Ho
 
 ## 8. 当前验收证据
 
-- Swift 41 项 unit 覆盖 frame、完整 action envelope 严格解码、handler/稳定错误映射、AX tree/diff/secure redaction、输入/坐标/身份策略、窗口几何漂移、cancel registry fail-closed、DPR/window mapper、长连接非 EOF 读取，以及 host/parent identifier、Team ID、PID start token 和 Apple anchor 信任策略。
+- Swift 42 项 unit 覆盖 frame、持久捕获可选 wire、完整 action envelope 严格解码、handler/稳定错误映射、AX tree/diff/secure redaction、输入/坐标/身份策略、窗口几何漂移、cancel registry fail-closed、DPR/window mapper、长连接非 EOF 读取，以及 host/parent identifier、Team ID、PID start token 和 Apple anchor 信任策略。
 - TypeScript unit 覆盖 framing、artifact/team trust、握手、binary hash、timeout、崩溃重连、动作后观察、跨平台 evidence noop、前台快照和 Vault 注册。
 - 本机真实 release Host 已在保持 stdin 打开的同一进程内完成 `list_windows -> capture_window`；PNG magic、byteLength 和 SHA-256 全部匹配。
 - 完整 Developer ID `.app` 的最终签名/公证验收必须由具有发布证书的 CI 执行，不能以本地 ad-hoc 构建替代。

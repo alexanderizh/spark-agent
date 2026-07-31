@@ -62,6 +62,8 @@ Rust workspace 位于 `apps/desktop/native/windows/spark-computer-host/`，模�
 
 当前实现已经落地上述正式路径：WGC 负责无光标窗口捕获并在前后复核 HWND/PID/executable identity；inventory 与 SendInput/capture 统一使用规范化 executable path SHA-256，不使用易碰撞的进程名；UIA 生成 full/diff tree 和 Host 内稳定 runtime element reference，secure 节点同时替换 value 与 provider-controlled name；Invoke/Value/SelectionItem/Scroll/Focus/ExpandCollapse 走语义 pattern，坐标、最长 5 秒拖拽、滚动、组合键和最长 20,000 UTF-16 units 文本走受限 SendInput。mouse/key down 使用释放守卫，拖拽每步复核前台身份，Client watchdog 按动作时长增加清理余量。Host 拒绝 secure desktop、过期 frame/tree/element、焦点漂移、取消后的 session 和越界 wire 数据。动作响应只返回严格 `action_result`；Electron Backend 随后执行新的 `observe`，Verification 前强制 full observation，因此不会用 diff patch 证明全局文本存在/不存在。
 
+V2 持久视觉捕获由同一统一 flag 控制：App 仅在启用时发送可选 `persistentCapture=true`，Windows Host 按 HWND 与完整 `TargetWindow` 身份维持单个 WGC free-threaded session，100ms 最小帧间隔、2 帧 channel。每次 observe 先清除请求前队列帧，只接受本次单调时钟起点之后的新帧；2 秒无新帧或 capture thread 错误会 stop 并只回退一次 one-frame WGC。目标变化、cancel session 及 flag rollback 后的下一次 observe 均释放 capture control。该切片不把缓存帧视为新的 after evidence，也不改变 UIA/SendInput 安全门禁。
+
 Windows 与共享 action contract 使用相同 execution lane：Invoke/SetValue/SelectText 为 `background_semantic`，Observe/Wait 为 `passive`，其余原生动作均为 `foreground_input`。旧 App 缺省 lane 时 Host 从动作安全推导；显式 lane 不匹配时在 wire 边界拒绝。低级键鼠 Hook 忽略 `LLMHF_INJECTED`/`LLKHF_INJECTED`，观察后首次动作前的真实目标窗口输入也会触发接管；前台动作等待连续 300 ms 输入空闲，长拖拽、组合键和文本在每个有界步骤检查接管并由释放守卫避免遗留按下状态。Hook 无法安装时不宣传输入能力。
 
 Electron 打包按 `windows-x64`、`windows-arm64` 复制 Host 与 manifest，GitHub Release matrix 同时构建两种架构。发布流水线要求 Authenticode 签名、时间戳、SHA-256、固定产品标识和外层 SparkWork signer 一致；Host 运行时从 WinVerifyTrust state 读取实际 leaf signer，附带证书包中的非 signer 证书不能满足 publisher 绑定；无正式证书的 CI release 直接失败。

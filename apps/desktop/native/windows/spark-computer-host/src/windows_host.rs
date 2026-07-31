@@ -88,6 +88,7 @@ struct HostState {
     observation: Option<ObservationBinding>,
     canceled_sessions: CanceledSessionRegistry,
     user_input: Option<user_input::WindowsUserInputMonitor>,
+    persistent_capture: Option<capture::PersistentCaptureSession>,
 }
 
 impl HostState {
@@ -99,6 +100,7 @@ impl HostState {
             observation: None,
             canceled_sessions: CanceledSessionRegistry::default(),
             user_input,
+            persistent_capture: None,
         }
     }
 
@@ -243,6 +245,7 @@ fn handle_request(
             window_id,
             previous_tree_version,
             full_tree,
+            persistent_capture,
             ..
         } => observe(
             output,
@@ -254,6 +257,7 @@ fn handle_request(
                 window_id: &window_id,
                 previous_tree_version: previous_tree_version.as_deref(),
                 full_tree,
+                persistent_capture,
             },
         ),
         HostRequest::ExecuteAction {
@@ -267,6 +271,7 @@ fn handle_request(
             ..
         } => {
             state.observation = None;
+            state.persistent_capture = None;
             if let Some(monitor) = state.user_input {
                 monitor.clear_session(&computer_session_id);
             }
@@ -336,6 +341,7 @@ struct ObserveInput<'a> {
     window_id: &'a str,
     previous_tree_version: Option<&'a str>,
     full_tree: bool,
+    persistent_capture: bool,
 }
 
 fn observe(
@@ -350,6 +356,7 @@ fn observe(
         window_id,
         previous_tree_version,
         full_tree,
+        persistent_capture,
     } = input;
     let observed_at = std::time::Instant::now();
     let Some(uia) = state.uia.as_mut() else {
@@ -394,7 +401,12 @@ fn observe(
             );
         }
     };
-    let captured = match capture::capture_focused_window(window_id, &before) {
+    let captured = match capture::capture_focused_window_with_session(
+        &mut state.persistent_capture,
+        window_id,
+        &before,
+        persistent_capture,
+    ) {
         Ok(captured) => captured,
         Err(capture::CaptureError::FocusMismatch | capture::CaptureError::WindowNotFound) => {
             return write_platform_error(

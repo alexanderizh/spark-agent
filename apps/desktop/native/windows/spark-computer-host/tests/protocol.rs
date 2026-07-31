@@ -133,6 +133,26 @@ fn parses_all_control_requests_with_strict_shapes() {
         observe,
         HostRequest::Observe {
             full_tree: true,
+            persistent_capture: false,
+            ..
+        }
+    ));
+    let persistent_observe = HostRequest::parse(&request(json!({
+        "protocolVersion": 1,
+        "requestId": "request-persistent-observe",
+        "type": "observe",
+        "snapshotId": "snapshot-1",
+        "appId": "app-1",
+        "windowId": "100",
+        "previousTreeVersion": null,
+        "fullTree": false,
+        "persistentCapture": true
+    })))
+    .unwrap();
+    assert!(matches!(
+        persistent_observe,
+        HostRequest::Observe {
+            persistent_capture: true,
             ..
         }
     ));

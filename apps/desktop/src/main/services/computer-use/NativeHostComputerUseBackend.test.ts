@@ -308,6 +308,30 @@ describe('NativeHostComputerUseBackend', () => {
     )
   })
 
+  it('requests persistent capture only while the rollout flag remains enabled', async () => {
+    const connection = createControlConnection()
+    let enabled = true
+    const backend = new NativeHostComputerUseBackend({
+      platform: 'windows',
+      connect: async () => connection,
+      createId: () => 'snapshot-1',
+      evidenceSink: { persist: async () => undefined },
+      persistentCaptureEnabled: () => enabled,
+    })
+    const signal = new AbortController().signal
+
+    await backend.observe({ computerSessionId: 'computer-1', fullTree: true, signal })
+    expect(connection.observe).toHaveBeenLastCalledWith(
+      expect.objectContaining({ persistentCapture: true }),
+    )
+
+    enabled = false
+    await backend.observe({ computerSessionId: 'computer-1', fullTree: false, signal })
+    expect(connection.observe).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ persistentCapture: expect.anything() }),
+    )
+  })
+
   it('continues observation when an Electron app replaces its focused window', async () => {
     const replacementWindow = {
       ...FOCUSED_WINDOW,

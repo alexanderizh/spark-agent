@@ -81,7 +81,7 @@ public protocol NativeHostPlatformProviding: Sendable {
   func captureWindow(id: String) async throws -> NativeCapturedWindow
   func observe(
     snapshotID: String, appID: String, windowID: String,
-    previousTreeVersion: String?, fullTree: Bool
+    previousTreeVersion: String?, fullTree: Bool, persistentCapture: Bool
   ) async throws -> NativeObservedWindow
   func executeAction(_ envelope: NativeComputerActionEnvelope) async throws -> NativeActionStatus
   func cancelSession(id: String) async
@@ -96,7 +96,7 @@ extension NativeHostPlatformProviding {
 
   public func observe(
     snapshotID: String, appID: String, windowID: String,
-    previousTreeVersion: String?, fullTree: Bool
+    previousTreeVersion: String?, fullTree: Bool, persistentCapture: Bool
   ) async throws -> NativeObservedWindow {
     throw NativeHostPlatformError.environmentUnavailable
   }
@@ -177,11 +177,12 @@ public actor NativeHostRequestHandler {
         return NativeHostReply(json: try NativeHostResponseEncoder.pong(requestID: requestID))
       case .observe(
         let requestID, let snapshotID, let appID, let windowID,
-        let previousTreeVersion, let fullTree
+        let previousTreeVersion, let fullTree, let persistentCapture
       ):
         let observed = try await provider.observe(
           snapshotID: snapshotID, appID: appID, windowID: windowID,
-          previousTreeVersion: previousTreeVersion, fullTree: fullTree
+          previousTreeVersion: previousTreeVersion, fullTree: fullTree,
+          persistentCapture: persistentCapture
         )
         guard observed.snapshotID == snapshotID, observed.app.id == appID,
           observed.window.id == windowID

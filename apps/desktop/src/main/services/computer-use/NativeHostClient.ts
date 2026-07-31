@@ -224,6 +224,7 @@ export class NativeHostClient {
     windowId: string
     previousTreeVersion: string | null
     fullTree: boolean
+    persistentCapture?: boolean
     signal?: AbortSignal
   }): Promise<NativeHostBinaryResponse<Extract<NativeHostResponse, { type: 'observation' }>>> {
     const result = await this.sendTypedRequest(
@@ -234,6 +235,7 @@ export class NativeHostClient {
         windowId: input.windowId,
         previousTreeVersion: input.previousTreeVersion,
         fullTree: input.fullTree,
+        ...(input.persistentCapture === true ? { persistentCapture: true } : {}),
       },
       'observation',
       input.signal,
