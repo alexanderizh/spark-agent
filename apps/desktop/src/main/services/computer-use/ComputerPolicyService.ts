@@ -92,17 +92,14 @@ export class ComputerPolicyService {
       // low-friction, while committing actions remain governed by their effect/data risk.
       riskLevel = maxRisk(riskLevel, 'L2')
     }
-    if (
-      (envelope.action.type === 'type_text' || envelope.action.type === 'set_value') &&
-      envelope.action.sensitive === true
-    ) {
+    if (isSensitiveTextWrite(envelope.action)) {
       riskLevel = maxRisk(
         riskLevel,
         envelope.policyContext.dataClasses.includes('credential') ? 'L4' : 'L2',
       )
     }
     if (
-      (envelope.action.type === 'type_text' || envelope.action.type === 'set_value') &&
+      isLocalTextWrite(envelope.action) &&
       envelope.policyContext.dataClasses.some((dataClass) => dataClass !== 'public')
     ) {
       riskLevel = maxRisk(riskLevel, 'L2')
@@ -142,6 +139,23 @@ export class ComputerPolicyService {
       this.dynamicallyObservedApps.delete(oldest)
     }
   }
+}
+
+function isLocalTextWrite(action: ComputerActionEnvelope['action']): boolean {
+  return (
+    action.type === 'type_text' ||
+    action.type === 'set_value' ||
+    (action.type === 'app_command' && action.command.name === 'prefill_composer')
+  )
+}
+
+function isSensitiveTextWrite(action: ComputerActionEnvelope['action']): boolean {
+  if (action.type === 'type_text' || action.type === 'set_value') return action.sensitive === true
+  return (
+    action.type === 'app_command' &&
+    action.command.name === 'prefill_composer' &&
+    action.command.sensitive === true
+  )
 }
 
 function appIdentityKey(app: ComputerAppIdentity): string {

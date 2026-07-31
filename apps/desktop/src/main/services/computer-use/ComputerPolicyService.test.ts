@@ -157,6 +157,23 @@ describe('ComputerPolicyService', () => {
         { ...taskContract, allowedDataClasses: [...taskContract.allowedDataClasses, 'credential'] },
       ),
     ).toMatchObject({ riskLevel: 'L4', decision: 'require_handoff' })
+
+    expect(
+      policy.evaluate(
+        envelope({
+          action: {
+            type: 'app_command',
+            command: { name: 'prefill_composer', text: 'secret', sensitive: true },
+          },
+          policyContext: {
+            effect: 'reversible_local',
+            target: { kind: 'window', id: 'window-1' },
+            dataClasses: ['credential'],
+          },
+        }),
+        { ...taskContract, allowedDataClasses: [...taskContract.allowedDataClasses, 'credential'] },
+      ),
+    ).toMatchObject({ riskLevel: 'L4', decision: 'require_handoff' })
   })
 
   it('escalates newly observed apps but still denies identity mismatches and scope violations', () => {

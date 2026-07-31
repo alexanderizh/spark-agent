@@ -669,7 +669,8 @@ function policyContextFor(
     action.type === 'move' ||
     action.type === 'scroll' ||
     action.type === 'wait_for'
-  const localWrite = action.type === 'type_text' || action.type === 'set_value'
+  const appPrefill = action.type === 'app_command' && action.command.name === 'prefill_composer'
+  const localWrite = action.type === 'type_text' || action.type === 'set_value' || appPrefill
   const committingIntent =
     /\b(send|submit|publish|post|purchase|buy|pay|delete|remove|confirm|book|order)\b|发送|提交|发布|购买|支付|删除|确认|预订|下单/iu.test(
       intent,
@@ -683,7 +684,10 @@ function policyContextFor(
     action.type === 'drag' ||
     action.type === 'keypress' ||
     (action.type === 'invoke_element' && action.action != null && action.action !== 'invoke')
-  const sensitive = localWrite && action.sensitive === true
+  const sensitive =
+    action.type === 'type_text' || action.type === 'set_value'
+      ? action.sensitive === true
+      : appPrefill && action.command.sensitive === true
   return {
     effect: readOnly
       ? 'read_only'

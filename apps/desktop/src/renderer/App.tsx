@@ -27,7 +27,8 @@ import type {
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
 import { isModalOverlayVisible } from './design/hooks/useAppDialogKeyboard'
 import { useAppearanceEffects } from './design/hooks/useAppearance'
-import { applyAppControlCommand } from './design/app-control-client'
+import { appliedAppControlMessage, applyAppControlCommand } from './design/app-control-client'
+import { requestComposerPrefill } from './design/views/chat/composerAppControl'
 import { useResolvedTheme } from './design/hooks/useResolvedTheme'
 
 import { shouldShowOnboardingAsync } from './design/views/onboarding-state'
@@ -1032,16 +1033,12 @@ function Shell() {
           setTheme: (theme) => setTweak('theme', theme),
           setView: (view) => setTweak('view', view),
           currentView: () => viewRef.current,
+          prefillComposer: (text) => requestComposerPrefill(text, activeSessionRef.current),
           waitForRender: nextAnimationFrame,
         })
         if (status === 'applied') appControlRevisionRef.current += 1
         if (status === 'applied') {
-          toast.info(
-            request.command.name === 'set_theme'
-              ? 'Agent 已通过应用内控制切换主题'
-              : 'Agent 已通过应用内控制切换页面',
-            { duration: 3000 },
-          )
+          toast.info(appliedAppControlMessage(request.command), { duration: 3000 })
         }
         await window.spark.invoke('computer-use:resolve-app-command', {
           commandId: request.commandId,

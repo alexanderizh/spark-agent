@@ -12,6 +12,7 @@ describe('applyAppControlCommand', () => {
           setTheme,
           setView: vi.fn(),
           currentView: () => 'chat',
+          prefillComposer: vi.fn(async () => false),
           waitForRender: async () => undefined,
         },
       ),
@@ -28,6 +29,7 @@ describe('applyAppControlCommand', () => {
           setTheme: vi.fn(),
           setView: vi.fn(),
           currentView: () => 'chat',
+          prefillComposer: vi.fn(async () => false),
           waitForRender: async () => undefined,
         },
       ),
@@ -44,10 +46,46 @@ describe('applyAppControlCommand', () => {
           setTheme: vi.fn(),
           setView,
           currentView: () => 'chat',
+          prefillComposer: vi.fn(async () => false),
           waitForRender: async () => undefined,
         },
       ),
     ).resolves.toBe('rejected')
     expect(setView).not.toHaveBeenCalled()
+  })
+
+  it('prefills an empty composer without submitting or accepting a rejected draft write', async () => {
+    const setView = vi.fn()
+    const prefillComposer = vi.fn(async () => true)
+    await expect(
+      applyAppControlCommand(
+        { name: 'prefill_composer', text: 'Review this change' },
+        {
+          hasDialogOpen: false,
+          setTheme: vi.fn(),
+          setView,
+          currentView: () => 'chat',
+          prefillComposer,
+          waitForRender: async () => undefined,
+        },
+      ),
+    ).resolves.toBe('applied')
+    expect(setView).toHaveBeenCalledWith('chat')
+    expect(prefillComposer).toHaveBeenCalledWith('Review this change')
+
+    prefillComposer.mockResolvedValue(false)
+    await expect(
+      applyAppControlCommand(
+        { name: 'prefill_composer', text: 'Do not overwrite' },
+        {
+          hasDialogOpen: false,
+          setTheme: vi.fn(),
+          setView,
+          currentView: () => 'chat',
+          prefillComposer,
+          waitForRender: async () => undefined,
+        },
+      ),
+    ).resolves.toBe('rejected')
   })
 })

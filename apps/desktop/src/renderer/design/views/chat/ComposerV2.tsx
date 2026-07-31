@@ -113,6 +113,7 @@ import type { UIMessage } from '../../services/event-mapper'
 import { formatTokenCount } from './ChatViewUtils'
 import { scrollTextareaCaretIntoView } from './composer-caret-scroll'
 import { resolvePendingQuickReplies } from '../../services/quick-reply-suggestions'
+import { useAppControlComposerPrefill } from './composerAppControl'
 import { QuickReplySuggestions } from './QuickReplySuggestions'
 import { CODEX_PERMISSION_MODE_OPTIONS as SHARED_CODEX_PERMISSION_MODE_OPTIONS } from '../../utils/permission-options'
 import { isCanvasWorkspace, listSelectableWorkspaces } from '../../workspace-visibility'
@@ -1130,6 +1131,7 @@ export function ComposerV2({
     },
     [updateDraft],
   )
+  useAppControlComposerPrefill({ sessionId: session?.id ?? null, value, setValue })
 
   const setAttachments = useCallback(
     (next: React.SetStateAction<ComposerAttachment[]>) => {
