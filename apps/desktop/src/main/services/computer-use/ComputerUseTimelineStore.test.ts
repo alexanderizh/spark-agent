@@ -149,6 +149,39 @@ describe('ComputerUseTimelineStore', () => {
     store.record(actionRequested({ actionId: 'a-2' }))
     expect(listener).toHaveBeenCalledOnce()
   })
+
+  it('merges live-only events into successful durable replay without breaking pagination', () => {
+    const rows: Array<{ event_json: string }> = []
+    let failNextCreate = false
+    const repository: ComputerUseTimelineRepository = {
+      create: (input) => {
+        if (failNextCreate) {
+          failNextCreate = false
+          throw new Error('database busy')
+        }
+        rows.push({ event_json: JSON.stringify(input.event) })
+        return input
+      },
+      listAfter: (_sessionId, afterSeq, limit) =>
+        rows
+          .filter((row) => (JSON.parse(row.event_json) as { seq: number }).seq > afterSeq)
+          .slice(0, limit),
+      nextSeq: () => rows.length,
+    }
+    const store = createStore({ repository })
+    store.record(actionRequested({ actionId: 'a-1' }))
+    failNextCreate = true
+    store.record(actionRequested({ actionId: 'a-2' }))
+    store.record(actionRequested({ actionId: 'a-3' }))
+
+    const first = store.read('cs-1', undefined, 2)
+    expect(first.events.map(actionId)).toEqual(['a-1', 'a-2'])
+    expect(first.nextSeq).toBe(1)
+
+    const second = store.read('cs-1', first.nextSeq!, 2)
+    expect(second.events.map(actionId)).toEqual(['a-3'])
+    expect(second.nextSeq).toBe(2)
+  })
 })
 
 function actionId(event: { type: string; actionId?: string }): string | undefined {

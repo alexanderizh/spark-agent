@@ -131,14 +131,12 @@ export class ComputerUseTimelineStore implements ComputerUseTimelineSink {
     afterSeq?: number,
     limit?: number,
   ): { events: ComputerUseEvent[]; nextSeq: number | null } {
+    const cursor = afterSeq ?? -1
+    const pageLimit = limit ?? this.maxEventsPerSession
     if (this.repository != null) {
       try {
-        const rows = this.repository.listAfter(
-          computerSessionId,
-          afterSeq ?? -1,
-          limit ?? this.maxEventsPerSession,
-        )
-        const events = rows.flatMap((row) => {
+        const rows = this.repository.listAfter(computerSessionId, cursor, pageLimit)
+        const durableEvents = rows.flatMap((row) => {
           try {
             const parsed = ComputerUseEventSchema.safeParse(JSON.parse(row.event_json))
             return parsed.success ? [parsed.data] : []
@@ -146,6 +144,12 @@ export class ComputerUseTimelineStore implements ComputerUseTimelineSink {
             return []
           }
         })
+        const events = this.mergePageWithLiveCache(
+          computerSessionId,
+          durableEvents,
+          cursor,
+          pageLimit,
+        )
         return {
           events,
           nextSeq: events.at(-1)?.seq ?? null,
@@ -160,12 +164,11 @@ export class ComputerUseTimelineStore implements ComputerUseTimelineSink {
     const session = this.timelines.get(computerSessionId)
     if (session == null) return { events: [], nextSeq: null }
 
-    const cursor = afterSeq ?? -1
     const results: ComputerUseEvent[] = []
     for (const [seq, event] of session.events) {
       if (seq <= cursor) continue
       results.push(event)
-      if (limit != null && results.length >= limit) break
+      if (results.length >= pageLimit) break
     }
     const nextSeq = results.at(-1)?.seq ?? null
     return { events: results, nextSeq }
@@ -211,5 +214,24 @@ export class ComputerUseTimelineStore implements ComputerUseTimelineSink {
       if (oldest.done === true) break
       session.events.delete(oldest.value)
     }
+  }
+
+  private mergePageWithLiveCache(
+    computerSessionId: string,
+    durableEvents: ComputerUseEvent[],
+    afterSeq: number,
+    limit: number,
+  ): ComputerUseEvent[] {
+    const merged = new Map<number, ComputerUseEvent>()
+    for (const event of durableEvents) merged.set(event.seq, event)
+
+    const liveEvents = this.timelines.get(computerSessionId)?.events
+    if (liveEvents != null) {
+      for (const [seq, event] of liveEvents) {
+        if (seq > afterSeq) merged.set(seq, event)
+      }
+    }
+
+    return [...merged.values()].sort((left, right) => left.seq - right.seq).slice(0, limit)
   }
 }
