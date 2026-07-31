@@ -13,6 +13,7 @@ function toolBlock(
     toolCallId?: string
     output?: string
     teamMember?: boolean
+    status?: Extract<UIBlock, { kind: 'tool_call' }>['status']
   } = {},
 ): Extract<UIBlock, { kind: 'tool_call' }> {
   return {
@@ -20,7 +21,7 @@ function toolBlock(
     toolCallId: options.toolCallId ?? `${toolName}-1`,
     toolName,
     toolInput,
-    status: 'success',
+    status: options.status ?? 'success',
     output: options.output,
     error: undefined,
     durationMs: undefined,
@@ -114,6 +115,60 @@ describe('chat inspector task progress', () => {
       ['定位链路', 'completed'],
       ['完成修复', 'completed'],
     ])
+  })
+
+  it('treats an empty todo_write snapshot as an explicit clear operation', () => {
+    const previous = toolBlock('todo_write', {
+      todos: [{ content: '旧任务', status: 'completed', activeForm: '正在处理旧任务' }],
+    })
+    const clear = toolBlock('todo_write', { todos: [] }, { toolCallId: 'clear-todos' })
+
+    expect(
+      extractSessionProgressTasks([
+        assistantMessage('completed', [previous], 'assistant-1'),
+        assistantMessage('completed', [clear], 'assistant-2'),
+      ]),
+    ).toEqual([])
+  })
+
+  it('uses a successful empty todo_read snapshot to clear stale progress', () => {
+    const previous = toolBlock('todo_write', {
+      todos: [{ content: '旧任务', status: 'completed', activeForm: '正在处理旧任务' }],
+    })
+    const read = toolBlock('todo_read', {}, { toolCallId: 'read-todos', output: '' })
+
+    expect(
+      extractSessionProgressTasks([
+        assistantMessage('completed', [previous], 'assistant-1'),
+        assistantMessage('completed', [read], 'assistant-2'),
+      ]),
+    ).toEqual([])
+  })
+
+  it('does not clear stale progress for an unfinished todo_read call', () => {
+    const previous = toolBlock('todo_write', {
+      todos: [{ content: '保留任务', status: 'completed', activeForm: '正在处理保留任务' }],
+    })
+    const pendingRead = toolBlock('todo_read', {}, { status: 'pending' })
+
+    expect(
+      extractSessionProgressTasks([
+        assistantMessage('completed', [previous], 'assistant-1'),
+        assistantMessage('streaming', [pendingRead], 'assistant-2'),
+      ]),
+    ).toEqual([expect.objectContaining({ subject: '保留任务', status: 'completed' })])
+  })
+
+  it('reads Claude TodoWrite newTodos as the final snapshot', () => {
+    expect(
+      parseTodosFromInputOrOutput(
+        { todos: [{ content: '旧状态', status: 'pending', activeForm: '正在处理旧状态' }] },
+        JSON.stringify({
+          oldTodos: [{ content: '旧状态', status: 'pending', activeForm: '正在处理旧状态' }],
+          newTodos: [],
+        }),
+      ),
+    ).toEqual([])
   })
 
   it('replays the final Codex todo result into a completed session progress snapshot', () => {

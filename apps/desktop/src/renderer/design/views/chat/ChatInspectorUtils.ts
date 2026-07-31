@@ -106,23 +106,70 @@ export function parseTodosFromInputOrOutput(
   input: Record<string, unknown>,
   output: string | undefined,
 ): ParsedTodo[] {
-  if (output != null) {
-    try {
-      const cleaned = output
-        .replace(/^```json\n?/, '')
-        .replace(/\n?```$/, '')
-        .trim()
-      const parsed = JSON.parse(cleaned) as { todos?: unknown }
-      if (Array.isArray(parsed.todos)) {
-        const normalized = normalizeTodos(parsed.todos)
-        if (normalized.length > 0 || parsed.todos.length === 0) return normalized
-      }
-    } catch {
-      // Fall through to the input payload when the tool output is not JSON.
-    }
-  }
+  const outputSnapshot = parseTodosFromOutput(output)
+  if (outputSnapshot != null) return outputSnapshot
   const todos = input['todos']
   return Array.isArray(todos) ? normalizeTodos(todos) : []
+}
+
+/**
+ * Parse an authoritative todo snapshot from a completed tool result.
+ *
+ * Providers currently expose several shapes:
+ * - Claude TodoWrite: { oldTodos, newTodos }
+ * - legacy/normalized TodoRead or TodoWrite: { todos }
+ * - some adapters: a bare todo array
+ *
+ * `null` means the output did not contain a recognizable snapshot. An empty
+ * array is deliberately distinct: it is a valid snapshot that clears stale UI.
+ */
+function parseTodosFromOutput(output: string | undefined): ParsedTodo[] | null {
+  if (output == null) return null
+
+  try {
+    const cleaned = output
+      .replace(/^```json\n?/, '')
+      .replace(/\n?```$/, '')
+      .trim()
+    const parsed = JSON.parse(cleaned) as unknown
+    if (Array.isArray(parsed)) return normalizeRecognizedTodoArray(parsed)
+    if (!isRecord(parsed)) return null
+
+    // newTodos is the post-write state and must win over oldTodos.
+    for (const key of ['newTodos', 'todos'] as const) {
+      const values = parsed[key]
+      if (Array.isArray(values)) return normalizeRecognizedTodoArray(values)
+    }
+  } catch {
+    // The caller may still fall back to a todo_write input snapshot.
+  }
+
+  return null
+}
+
+function parseTodosFromReadOutput(output: string | undefined): ParsedTodo[] | null {
+  const snapshot = parseTodosFromOutput(output)
+  if (snapshot != null) return snapshot
+  if (output == null) return null
+
+  const normalized = output.trim().toLowerCase()
+  if (
+    normalized.length === 0 ||
+    normalized === 'no todos' ||
+    normalized === 'no todos found' ||
+    normalized === 'todo list is empty' ||
+    normalized === '暂无待办' ||
+    normalized === '待办列表为空'
+  ) {
+    return []
+  }
+
+  return null
+}
+
+function normalizeRecognizedTodoArray(values: unknown[]): ParsedTodo[] | null {
+  const normalized = normalizeTodos(values)
+  return normalized.length > 0 || values.length === 0 ? normalized : null
 }
 
 function normalizeTodos(values: unknown[]): ParsedTodo[] {
@@ -309,15 +356,27 @@ function extractLatestTodoProgressTasks(messages: UIMessage[]): SessionProgressS
 
   for (const message of messages) {
     for (const block of message.blocks) {
+      const isTodoWrite = block.kind === 'tool_call' && block.toolName === 'todo_write'
+      const isSuccessfulTodoRead =
+        block.kind === 'tool_call' && block.toolName === 'todo_read' && block.status === 'success'
       if (
         block.kind !== 'tool_call' ||
-        block.toolName !== 'todo_write' ||
+        (!isTodoWrite && !isSuccessfulTodoRead) ||
         block.teamMemberContext != null
       ) {
         continue
       }
-      const todos = parseTodosFromInputOrOutput(block.toolInput, block.output)
-      if (todos.length === 0) continue
+      const outputSnapshot = isTodoWrite
+        ? parseTodosFromOutput(block.output)
+        : parseTodosFromReadOutput(block.output)
+      const inputSnapshot = block.toolInput['todos']
+      const todos = isTodoWrite
+        ? (outputSnapshot ?? (Array.isArray(inputSnapshot) ? normalizeTodos(inputSnapshot) : null))
+        : outputSnapshot
+      // A read only becomes authoritative when its result contains a recognized
+      // snapshot. In contrast, todo_write's input contract always carries the
+      // full list, including [] as an explicit clear operation.
+      if (todos == null) continue
 
       latest = {
         tasks: todos.map((todo, index) => ({
