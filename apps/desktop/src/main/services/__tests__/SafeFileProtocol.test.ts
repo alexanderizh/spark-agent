@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os'
 const workspaceRoot = join('G:', 'spark', 'spark-agent')
 
 const electronMocks = vi.hoisted(() => ({
-  registerSchemesAsPrivileged: vi.fn(),
   paths: {
     userData: 'C:/Users/Test/AppData/Roaming/SparkAgent',
     temp: 'C:/Users/Test/AppData/Local/Temp',
@@ -26,7 +25,6 @@ vi.mock('electron', () => ({
   },
   protocol: {
     handle: vi.fn(),
-    registerSchemesAsPrivileged: electronMocks.registerSchemesAsPrivileged,
   },
 }))
 
@@ -44,19 +42,21 @@ import {
   createSafeFileResponse,
   getSafeFileAllowedRoots,
   isSafeFilePathAllowed,
-  registerSafeFileSchemes,
+  SAFE_FILE_PRIVILEGED_SCHEME,
 } from '../SafeFileProtocol.js'
 
 describe('SafeFileProtocol', () => {
   it('enables CORS and streaming for local canvas, WebGL, audio, and video assets', () => {
-    registerSafeFileSchemes()
-
-    expect(electronMocks.registerSchemesAsPrivileged).toHaveBeenCalledWith([
+    expect(SAFE_FILE_PRIVILEGED_SCHEME).toEqual(
       expect.objectContaining({
         scheme: 'safe-file',
-        privileges: expect.objectContaining({ corsEnabled: true, stream: true }),
+        privileges: expect.objectContaining({
+          corsEnabled: true,
+          supportFetchAPI: true,
+          stream: true,
+        }),
       }),
-    ])
+    )
   })
 
   it('allows generated artifacts under registered workspaces', () => {

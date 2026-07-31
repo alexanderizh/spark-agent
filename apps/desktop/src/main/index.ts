@@ -89,14 +89,9 @@ import { registerAppUnreadBadgeIpc } from './ipc/registerAppUnreadBadgeIpc.js'
 import { ensureBundledBrowserEnv } from './services/PlaywrightEnvironment.js'
 import { detectFfmpegIntegrity } from './services/FfmpegIntegrityService.js'
 import { updateManagedFontAssetsInBackground } from './services/FontAssetService.js'
-import {
-  registerSafeFileProtocol,
-  registerSafeFileSchemes,
-} from './services/SafeFileProtocol.js'
-import {
-  registerSnapshotProtocol,
-  registerSnapshotSchemes,
-} from './services/computer-use/SnapshotProtocol.js'
+import { registerSafeFileProtocol } from './services/SafeFileProtocol.js'
+import { registerSnapshotProtocol } from './services/computer-use/SnapshotProtocol.js'
+import { registerPrivilegedProtocolSchemes } from './services/PrivilegedProtocolSchemes.js'
 import { isWebviewSourceAllowed, openExternalUrlSafely } from './services/ExternalUrlPolicy.js'
 import { ensurePreMigrationBackup, restoreDatabaseBackup } from './services/DatabaseBackupService.js'
 import { installSingleInstanceLock } from './single-instance.js'
@@ -157,10 +152,9 @@ app.on('before-quit', () => {
 })
 
 // ─── Custom protocol registration ───────────────────────────────────────────
-// `safe-file://` 让渲染进程能读取 userData 下的本地图片（生成的图、附件等），
-// 必须在 app.whenReady() 之前调用，否则特权声明会失效。
-registerSafeFileSchemes()
-registerSnapshotSchemes()
+// 所有特权协议必须在 app.whenReady() 之前通过 Electron 唯一允许的一次调用注册，
+// 否则较晚的调用会使较早协议丢失 fetch/CORS 等权限。
+registerPrivilegedProtocolSchemes()
 
 function getResourcePath(fileName: string): string {
   return is.dev

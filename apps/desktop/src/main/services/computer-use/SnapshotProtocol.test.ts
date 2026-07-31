@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const electronMocks = vi.hoisted(() => ({
   handle: vi.fn(),
-  registerSchemesAsPrivileged: vi.fn(),
   userData: '/private/spark-agent',
 }))
 
@@ -10,7 +9,6 @@ vi.mock('electron', () => ({
   app: { getPath: () => electronMocks.userData },
   protocol: {
     handle: electronMocks.handle,
-    registerSchemesAsPrivileged: electronMocks.registerSchemesAsPrivileged,
   },
 }))
 
@@ -20,7 +18,7 @@ vi.mock('../../db.js', () => ({
 
 import {
   createSnapshotProtocolHandler,
-  registerSnapshotSchemes,
+  SNAPSHOT_PRIVILEGED_SCHEME,
   snapshotPreviewUrl,
 } from './SnapshotProtocol.js'
 
@@ -32,9 +30,7 @@ describe('SnapshotProtocol', () => {
   })
 
   it('registers a dedicated secure streaming scheme that renderer images may load', () => {
-    registerSnapshotSchemes()
-
-    expect(electronMocks.registerSchemesAsPrivileged).toHaveBeenCalledWith([
+    expect(SNAPSHOT_PRIVILEGED_SCHEME).toEqual(
       {
         scheme: 'spark-snapshot',
         privileges: {
@@ -45,7 +41,7 @@ describe('SnapshotProtocol', () => {
           stream: true,
         },
       },
-    ])
+    )
   })
 
   it('builds preview URLs from snapshot IDs rather than paths', () => {
