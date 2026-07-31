@@ -68,6 +68,8 @@ Electron 打包按 `windows-x64`、`windows-arm64` 复制 Host 与 manifest，Gi
 
 发布包还携带匹配平台/架构的独立 Node runtime，Playwright 与内置 MCP 不再使用 Electron executable + `ELECTRON_RUN_AS_NODE`。afterPack 关闭 RunAsNode、Node options 和 CLI inspect fuses，启用 embedded ASAR integrity 与 `OnlyLoadAppFromAsar`；afterSign 强制 SparkWork.exe、Native Host 和 `runtime/node/node.exe` 使用同一 publisher thumbprint 且均有时间戳。
 
+`native-host-build.json` 记录共享协议/Host 版本、平台、架构、commit 与 trust mode。独立 Windows 验证器解析 App/Host PE machine、复算最终 Host hash、拒绝 symlink/版本漂移，并在 `afterSign` 阶段由最终 `SparkWork.exe` 以隔离 user-data 完成一次受信任父进程 handshake；失败会在 NSIS 生成/上传前阻断。release wrapper 在 electron-builder 返回后再执行一次相同验证。NSIS 静默安装、Windows Sandbox/VM、Defender/SmartScreen、非 ASCII 标准用户、升级/卸载与残留进程检查仍由发布矩阵签收。
+
 使用 Spark 自签名开发发布者构建的安装包在另一台 Windows 上会呈现 `NotTrusted` /
 `UnknownError`，但 Authenticode 签名本身仍可验证。运行时仅对“leaf 的 Subject 与 Issuer
 一致”的自签名证书接受该链状态，并继续强制 SparkWork.exe、Native Host、构建期嵌入身份和

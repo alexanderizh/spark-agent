@@ -24,6 +24,12 @@ const {
   inspectWindowsAuthenticode,
   normalizePublisherThumbprint,
 } = require('./package-windows-native-host.js');
+const {
+  verifyPackagedMacNativeHost,
+} = require('./verify-packaged-native-host-macos.js');
+const {
+  verifyPackagedWindowsNativeHost,
+} = require('./verify-packaged-native-host-windows.js');
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const INITIAL_RETRY_DELAY_MS = 30000;
@@ -282,9 +288,14 @@ async function verifyWindowsPackageSigners(params, options = {}) {
   }
 }
 
-module.exports = async function (params) {
+async function afterSign(params, options = {}) {
   if (params.electronPlatformName === 'win32') {
-    await verifyWindowsPackageSigners(params);
+    await (options.verifyWindowsPackageSigners || verifyWindowsPackageSigners)(params);
+    await (options.verifyPackagedWindowsNativeHost || verifyPackagedWindowsNativeHost)({
+      appDirectory: params.appOutDir,
+      architecture: Arch[params.arch],
+      allowLocal: false,
+    });
     return;
   }
   // 仅处理 macOS 产物
@@ -312,7 +323,7 @@ module.exports = async function (params) {
   console.log(`[notarize]   Team ID  : ${teamId}\n`);
 
   try {
-    await notarizeApp({
+    await (options.notarizeApp || notarizeApp)({
       appPath,
       credentials: {
         appleId,
@@ -320,11 +331,18 @@ module.exports = async function (params) {
         teamId,
       },
     });
+    await (options.verifyPackagedMacNativeHost || verifyPackagedMacNativeHost)({
+      appPath,
+      architecture: Arch[params.arch],
+      allowLocal: false,
+    });
     console.log('[notarize] ✅ 公证完成，票据已 staple 到 .app\n');
   } catch (err) {
     console.error('[notarize] ❌ 公证失败：', err);
     throw err;
   }
-};
+}
+
+module.exports = afterSign;
 
 module.exports.verifyWindowsPackageSigners = verifyWindowsPackageSigners;

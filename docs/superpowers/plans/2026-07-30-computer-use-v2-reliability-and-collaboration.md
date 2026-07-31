@@ -321,6 +321,8 @@ interface ComputerActivityEvent {
 
 **目标**：macOS/Windows 正式安装后 Native Host 启动成功率达到 99.9%，否则禁止发布。
 
+> 实施进度（2026-08-01）：自主发布门禁代码已落地。App wire、macOS/Windows manifest 与 `native-host-build.json` 共用 `packages/protocol/src/computer-use/native-version.json`；build provenance 记录平台、架构、协议范围、Host 版本、commit、trust mode 与生成时间。两平台独立验证器会复算最终 Host bytes、拒绝 symlink/架构/版本漂移，校验签名身份与时间戳/公证，并由最终 Electron App 在隔离 user-data 下完成受信任父进程 `get_capabilities` handshake。验证器同时接入 `afterSign`（安装器生成/上传前硬阻断）与 release wrapper（二次防线）。macOS 还会通过 `ditto` 安装到临时 Applications 目录后再次验证。真实 DMG 挂载安装、NSIS 静默安装、干净 VM/非 ASCII 用户/Defender/SmartScreen/升级卸载与 100 次黄金任务仍须发布 CI/真机执行，不以本机或 mock 结果代替。
+
 #### 1.1 统一版本与产物布局
 
 修改：

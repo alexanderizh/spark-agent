@@ -9,8 +9,8 @@ import {
 } from './common.js'
 import { ComputerUseErrorCodeSchema } from './errors.js'
 import { ComputerObservationSchema } from './observation.js'
+import { NATIVE_HOST_PROTOCOL_VERSION } from './native-version.js'
 
-export const NATIVE_HOST_PROTOCOL_VERSION = 1 as const
 const NativeProtocolVersionSchema = z.literal(NATIVE_HOST_PROTOCOL_VERSION)
 
 export const NativeHostPlatformSchema = z.enum(['macos', 'windows', 'linux'])
