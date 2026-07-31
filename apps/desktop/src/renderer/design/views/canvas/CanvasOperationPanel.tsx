@@ -75,6 +75,8 @@ import {
 import { mediaModelKey } from './canvasModelPickerModel'
 import { CanvasOperationParameterControls } from './CanvasOperationParameterControls'
 import { CanvasMediaInputConfigurator } from './CanvasMediaInputConfigurator'
+import { resolveCanvasOperationPanelMode } from './canvasOperationPanelMode'
+import { isImageUnderstandingProvider } from './canvasPresetCenterModel'
 import {
   applyCanvasMediaInputModeToBindings,
   canvasInputRolesFromBindings,
@@ -500,7 +502,8 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
   const operation = nodeOperation(node) ?? 'text_generate'
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
-  const isTextOperation = isTextModelOperation(operation)
+  const panelMode = resolveCanvasOperationPanelMode(operation)
+  const isTextOperation = panelMode.executionKind === 'text'
   // 分镜脚本任务节点（带结构化时长配置）才渲染「每镜时长 / 平均镜时」控件。
   const isShotScriptNode =
     node.data.operation === 'text_generate' && node.data.shotScriptConfig != null
@@ -910,8 +913,13 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
     [selectedModelKey, supportedMediaModels],
   )
   const textProviders = useMemo(
-    () => providers.filter((provider) => isTextProviderProfile(provider)),
-    [providers],
+    () =>
+      providers.filter((provider) =>
+        panelMode.runtimeKind === 'vision_model'
+          ? isImageUnderstandingProvider(provider)
+          : isTextProviderProfile(provider),
+      ),
+    [panelMode.runtimeKind, providers],
   )
   const selectedAgent = useMemo(
     () => agents.find((agent) => agent.id === selectedAgentId) ?? null,
@@ -2313,14 +2321,15 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
               )}
             <Tooltip
               title={
-                selectedMediaInputIssue ?? (node.data.status === 'running' ? '运行中' : '提交任务')
+                selectedMediaInputIssue ??
+                (node.data.status === 'running' ? '运行中' : panelMode.submitLabel)
               }
             >
               <Button
                 size="middle"
                 type="primary"
                 className="canvas-operation-composer-submit"
-                aria-label="提交任务"
+                aria-label={panelMode.submitLabel}
                 icon={<Icons.Send size={14} />}
                 loading={running || submitting || node.data.status === 'running'}
                 disabled={
@@ -2389,20 +2398,24 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         {isTextOperation && (
           <div className="canvas-operation-panel-section canvas-operation-panel-section-runtime">
             <div className="canvas-operation-panel-section-title-row">
-              <div className="canvas-operation-panel-section-label">Agent / 文本模型</div>
+              <div className="canvas-operation-panel-section-label">
+                {panelMode.runtimeKind === 'vision_model' ? '图片理解模型' : 'Agent / 文本模型'}
+              </div>
               <Tag bordered color="blue">
                 应用配置
               </Tag>
             </div>
             <div className="canvas-operation-panel-runtime-card">
-              <AgentPickerInline
-                agents={agents}
-                selectedId={selectedAgentId}
-                disabled={running || runtimeLoading || agents.length === 0}
-                open={openRuntimeMenu === 'agent'}
-                onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'agent' : null)}
-                onChange={handleTextAgentChange}
-              />
+              {panelMode.runtimeKind === 'text_full' && (
+                <AgentPickerInline
+                  agents={agents}
+                  selectedId={selectedAgentId}
+                  disabled={running || runtimeLoading || agents.length === 0}
+                  open={openRuntimeMenu === 'agent'}
+                  onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'agent' : null)}
+                  onChange={handleTextAgentChange}
+                />
+              )}
               <ProviderModelPickerInline
                 providers={textProviders}
                 selectedProviderId={selectedTextProvider?.id ?? ''}
@@ -2412,24 +2425,36 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
                 onOpenChange={(nextOpen) => setOpenRuntimeMenu(nextOpen ? 'model' : null)}
                 onChange={handleTextProviderModelChange}
               />
-              <Select
-                mode="multiple"
-                size="middle"
-                allowClear
-                showSearch
-                className="canvas-operation-panel-skill-select"
-                value={selectedSkillIds}
-                placeholder="选择 Skills"
-                optionFilterProp="label"
-                maxTagCount="responsive"
-                options={skills.map((skill) => ({ value: skill.id, label: skill.name }))}
-                disabled={running || runtimeLoading || skills.length === 0}
-                onChange={(value) => handleSkillIdsChange(value.map(String))}
-              />
+              {panelMode.runtimeKind === 'text_full' && (
+                <Select
+                  mode="multiple"
+                  size="middle"
+                  allowClear
+                  showSearch
+                  className="canvas-operation-panel-skill-select"
+                  value={selectedSkillIds}
+                  placeholder="选择 Skills"
+                  optionFilterProp="label"
+                  maxTagCount="responsive"
+                  options={skills.map((skill) => ({ value: skill.id, label: skill.name }))}
+                  disabled={running || runtimeLoading || skills.length === 0}
+                  onChange={(value) => handleSkillIdsChange(value.map(String))}
+                />
+              )}
             </div>
             <div className="canvas-operation-panel-runtime-summary">
               <Icons.Bot size={13} />
               <span>{runtimeSummary}</span>
+            </div>
+          </div>
+        )}
+
+        {panelMode.showLocalDepthNotice && (
+          <div className="canvas-operation-panel-section canvas-operation-panel-section-runtime">
+            <div className="canvas-operation-panel-section-label">本地深度模型</div>
+            <div className="canvas-operation-panel-hint">
+              使用本地 Depth Anything V2
+              生成近白远黑的深度视频；首次运行会下载模型，之后可离线使用。
             </div>
           </div>
         )}
@@ -2564,33 +2589,35 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         )}
 
         {/* Prompt 编辑 */}
-        <div className="canvas-operation-panel-section canvas-operation-panel-section-prompt">
-          <div className="canvas-operation-panel-section-label">提示词</div>
-          <div className="canvas-operation-prompt-count-wrap">
-            <CanvasPromptMentionTextArea
-              className="canvas-operation-panel-prompt-input"
-              rows={4}
-              value={prompt}
-              document={promptDocument}
-              placeholder={`输入${operationText}的提示词...`}
-              mentionNodes={promptCandidateNodes}
-              presentationNodeBySourceId={promptPresentationNodeBySourceId}
-              connectionNodes={promptConnectionNodes}
-              assets={snapshot.assets}
-              onChange={handlePromptChange}
-              onDocumentChange={setPromptDocument}
-              onMentionSelect={handlePromptMentionSelect}
-              {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
-              {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
-              disabled={running}
-            />
-            <span className="canvas-operation-prompt-count">
-              {promptCharCount.toLocaleString()} 字符
-            </span>
+        {panelMode.showPromptEditor && (
+          <div className="canvas-operation-panel-section canvas-operation-panel-section-prompt">
+            <div className="canvas-operation-panel-section-label">提示词</div>
+            <div className="canvas-operation-prompt-count-wrap">
+              <CanvasPromptMentionTextArea
+                className="canvas-operation-panel-prompt-input"
+                rows={4}
+                value={prompt}
+                document={promptDocument}
+                placeholder={`输入${operationText}的提示词...`}
+                mentionNodes={promptCandidateNodes}
+                presentationNodeBySourceId={promptPresentationNodeBySourceId}
+                connectionNodes={promptConnectionNodes}
+                assets={snapshot.assets}
+                onChange={handlePromptChange}
+                onDocumentChange={setPromptDocument}
+                onMentionSelect={handlePromptMentionSelect}
+                {...(onRequestCanvasNodePick ? { onRequestCanvasNodePick } : {})}
+                {...(onUploadLocalFile ? { onUploadLocalFile } : {})}
+                disabled={running}
+              />
+              <span className="canvas-operation-prompt-count">
+                {promptCharCount.toLocaleString()} 字符
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
-        {mediaCapabilityIds.length === 0 && (
+        {panelMode.showCustomParams && mediaCapabilityIds.length === 0 && (
           <div className="canvas-operation-panel-section canvas-operation-panel-section-custom">
             <div className="canvas-operation-panel-section-title-row">
               <div className="canvas-operation-panel-section-label">自定义参数</div>
@@ -2724,14 +2751,15 @@ export const CanvasOperationPanel = memo(function CanvasOperationPanel({
         )}
         <Tooltip
           title={
-            selectedMediaInputIssue ?? (node.data.status === 'running' ? '运行中' : '提交任务')
+            selectedMediaInputIssue ??
+            (node.data.status === 'running' ? '运行中' : panelMode.submitLabel)
           }
         >
           <Button
             size="middle"
             type="primary"
             className="canvas-operation-composer-submit"
-            aria-label="提交任务"
+            aria-label={panelMode.submitLabel}
             icon={<Icons.Send size={14} />}
             loading={running || submitting || node.data.status === 'running'}
             disabled={
@@ -2753,12 +2781,6 @@ function isSupportedMediaInputNode(node: CanvasNode, inputTypes: readonly string
   if (node.type === 'video') return inputTypes.includes('video')
   if (node.type === 'audio') return inputTypes.includes('audio')
   return false
-}
-
-function isTextModelOperation(operation: CanvasOperationType): boolean {
-  return (
-    operation === 'text_generate' || operation === 'text_rewrite' || operation === 'prompt_optimize'
-  )
 }
 
 function isTextProviderProfile(provider: ProviderProfile): boolean {
