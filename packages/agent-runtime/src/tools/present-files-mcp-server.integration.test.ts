@@ -46,7 +46,11 @@ describe('present-files MCP server', () => {
   beforeAll(async () => {
     workspace = await mkdtemp(path.join(os.tmpdir(), 'spark-present-files-'))
     await mkdir(path.join(workspace, 'output'))
+    await mkdir(path.join(workspace, '.claude', 'worktrees', 'agent-1', 'src'), {
+      recursive: true,
+    })
     await writeFile(path.join(workspace, 'output', 'report.pdf'), 'report')
+    await writeFile(path.join(workspace, '.claude', 'worktrees', 'agent-1', 'src', 'app.ts'), 'x')
     await writeFile(path.join(workspace, '..notes.txt'), 'notes')
     outsideFile = path.join(os.tmpdir(), `spark-outside-${Date.now()}.txt`)
     await writeFile(outsideFile, 'outside')
@@ -66,9 +70,12 @@ describe('present-files MCP server', () => {
     child?.kill()
   })
 
-  it('lists the explicit presentation tool', async () => {
+  it('lists presentation and turn change journal tools', async () => {
     const response = await rpc.call('tools/list')
-    expect(response.tools).toMatchObject([{ name: 'present_files' }])
+    expect(response.tools).toMatchObject([
+      { name: 'present_files' },
+      { name: 'report_file_changes' },
+    ])
   })
 
   it('accepts workspace files and rejects paths outside the workspace', async () => {
@@ -92,5 +99,29 @@ describe('present-files MCP server', () => {
       { path: await realpath(path.join(workspace, '..notes.txt')) },
     ])
     expect(payload.rejected).toHaveLength(requestedFiles.length - 2)
+  })
+
+  it('reports only turn-owned workspace changes and accepts deleted paths', async () => {
+    const response = await rpc.call('tools/call', {
+      name: 'report_file_changes',
+      arguments: {
+        changes: [
+          { path: 'output/report.pdf', changeType: 'modify' },
+          { path: 'removed.txt', changeType: 'delete' },
+          {
+            path: '.claude/worktrees/agent-1/src/app.ts',
+            changeType: 'modify',
+          },
+          { path: outsideFile, changeType: 'modify' },
+        ],
+      },
+    })
+    const payload = JSON.parse(response.content[0].text)
+
+    expect(payload.changes).toEqual([
+      { path: await realpath(path.join(workspace, 'output', 'report.pdf')), changeType: 'modify' },
+      { path: path.join(await realpath(workspace), 'removed.txt'), changeType: 'delete' },
+    ])
+    expect(payload.rejected).toHaveLength(2)
   })
 })

@@ -584,6 +584,32 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('keeps checkpoint file paths out of the turn change summary', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('checkpoint'),
+      type: 'checkpoint',
+      checkpointId: 'checkpoint-with-worktree-files',
+      filePaths: [
+        '/workspace/.claude/worktrees/agent-1/src/app.ts',
+        '/workspace/src/pre-existing.ts',
+      ],
+    })
+    builder.processEvent({
+      ...baseEvent('agent_status'),
+      type: 'agent_status',
+      status: 'completed',
+    })
+
+    expect(
+      builder
+        .getAllMessages()
+        .flatMap((message) => message.blocks)
+        .some((block) => block.kind === 'turn_file_summary'),
+    ).toBe(false)
+  })
+
   it('keeps a non-final complete assistant segment streaming until agent status completes', () => {
     const builder = new MessageBuilder()
 

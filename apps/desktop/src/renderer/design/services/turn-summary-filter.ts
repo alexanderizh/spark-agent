@@ -1,79 +1,73 @@
-import type { UIMessage } from './event-mapper'
-import { hydrateTurnFileStats, type TurnFileGitStats } from './turn-file-summary'
+import type { UIBlock, UIMessage } from './event-mapper'
+
+const INTERNAL_WORKTREE_PREFIXES = ['.claude/worktrees', '.worktrees', '.spark/worktrees']
+
+function normalizePath(value: string): string {
+  return value.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
+function isAbsolutePath(value: string): boolean {
+  return value.startsWith('/') || /^[A-Za-z]:\//.test(value)
+}
+
+export function isNestedAgentWorktreeSummaryPath(
+  filePath: string,
+  workspaceRootPath: string | null,
+): boolean {
+  const normalizedPath = normalizePath(filePath)
+  const normalizedRoot = workspaceRootPath == null ? '' : normalizePath(workspaceRootPath)
+  let relativePath = normalizedPath.replace(/^\.\//, '')
+
+  if (normalizedRoot.length > 0 && isAbsolutePath(normalizedPath)) {
+    if (normalizedPath === normalizedRoot) return false
+    if (!normalizedPath.startsWith(`${normalizedRoot}/`)) return false
+    relativePath = normalizedPath.slice(normalizedRoot.length + 1)
+  }
+
+  return INTERNAL_WORKTREE_PREFIXES.some(
+    (prefix) => relativePath === prefix || relativePath.startsWith(`${prefix}/`),
+  )
+}
 
 /**
- * 过滤 messages 中所有 turn_file_summary 块里被 .gitignore 忽略的文件路径。
- *
- * 调用主进程 `workspace:git-check-ignore`（内部跑 `git check-ignore`）做权威判断。
- * 非 git 仓库 / git 未安装 / IPC 失败 → 跳过对应的过滤或统计兜底（保持向后兼容）。
- *
- * 返回值语义：若没有任何变化，返回原 messages 引用（避免无谓 re-render）；
- * 否则返回浅拷贝（messages 数组浅拷贝，改动的 block 用新对象，其它块引用保持）。
+ * 清理旧历史中由全工作区快照/Git fallback 误收集的嵌套 Agent worktree。
+ * 新事件由 turn-scoped journal 保证归属；这里不再查询 Git，避免并发会话互相污染。
+ * 当会话本身以某个 worktree 为 workspace root 时，合法文件相对该 root 计算，不会被过滤。
  */
-export async function filterTurnSummaryIgnoredPaths(
+export async function sanitizeTurnFileSummaries(
   messages: UIMessage[],
-  workspaceId: string,
+  workspaceRootPath: string | null,
 ): Promise<UIMessage[]> {
-  const allPaths: string[] = []
-  for (const msg of messages) {
-    for (const block of msg.blocks) {
-      if (block.kind === 'turn_file_summary') {
-        for (const f of block.files) allPaths.push(f.path)
-      }
-    }
-  }
-  if (allPaths.length === 0) return messages
-
-  let ignoredPaths: string[]
-  try {
-    const res = await window.spark.invoke('workspace:git-check-ignore', {
-      workspaceId,
-      paths: allPaths,
-    })
-    ignoredPaths = Array.isArray(res?.ignoredPaths) ? res.ignoredPaths : []
-  } catch {
-    // Ignore filtering is optional; continue so line statistics can still be hydrated.
-    ignoredPaths = []
-  }
-
-  const ignoredSet = new Set(ignoredPaths)
-  let gitStats: TurnFileGitStats[] = []
-  try {
-    const status = await window.spark.invoke('workspace:git-status', { workspaceId })
-    gitStats = Array.isArray(status?.files)
-      ? status.files
-          .filter((file) => file.staged || file.unstaged || file.untracked)
-          .map((file) => ({
-            path: file.path,
-            additions: file.additions,
-            deletions: file.deletions,
-          }))
-      : []
-  } catch {
-    // Git status is only a statistics fallback; filtering still works without it.
-  }
-
   let mutated = false
-  const nextMessages = messages.map((msg) => {
-    let msgTouched = false
-    const nextBlocks = msg.blocks.map((block) => {
-      if (block.kind !== 'turn_file_summary') return block
-      const keptFiles = block.files.filter((f) => !ignoredSet.has(f.path))
-      const hydratedFiles = hydrateTurnFileStats(keptFiles, gitStats)
-      const filesChanged = keptFiles.length !== block.files.length || hydratedFiles !== keptFiles
-      if (!filesChanged) return block
-      msgTouched = true
+  const nextMessages = messages.map((message) => {
+    let messageTouched = false
+    const nextBlocks = message.blocks.flatMap<UIBlock>((block): UIBlock[] => {
+      if (block.kind !== 'turn_file_summary') return [block]
+
+      const files = block.files.filter(
+        (file) => !isNestedAgentWorktreeSummaryPath(file.path, workspaceRootPath),
+      )
+      const generatedGroups = block.generatedGroups?.filter(
+        (group) => !isNestedAgentWorktreeSummaryPath(group.directory, workspaceRootPath),
+      )
+      const filesChanged = files.length !== block.files.length
+      const groupsChanged = generatedGroups?.length !== block.generatedGroups?.length
+      if (!filesChanged && !groupsChanged) return [block]
+
       mutated = true
-      const totalAdds = hydratedFiles.reduce((s, f) => s + f.adds, 0)
-      const totalDels = hydratedFiles.reduce((s, f) => s + f.dels, 0)
-      return {
-        ...block,
-        files: hydratedFiles,
-        totalAdds,
-        totalDels,
-      }
+      messageTouched = true
+      if (files.length === 0 && (generatedGroups?.length ?? 0) === 0) return []
+      return [
+        {
+          ...block,
+          files,
+          totalAdds: files.reduce((sum, file) => sum + file.adds, 0),
+          totalDels: files.reduce((sum, file) => sum + file.dels, 0),
+          ...(generatedGroups != null ? { generatedGroups } : {}),
+        },
+      ]
     })
-    return msgTouched ? { ...msg, blocks: nextBlocks } : msg
+    return messageTouched ? { ...message, blocks: nextBlocks } : message
   })
 
   return mutated ? nextMessages : messages

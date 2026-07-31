@@ -213,7 +213,7 @@ import {
   createAgentEventIdSet,
   mergeAgentEvents,
 } from '../services/live-agent-event-buffer'
-import { filterTurnSummaryIgnoredPaths } from '../services/turn-summary-filter'
+import { sanitizeTurnFileSummaries } from '../services/turn-summary-filter'
 import {
   isComposerSessionWorking,
   resolveComposerRunningAgentIds,
@@ -2516,9 +2516,9 @@ function ChatStream({
   showTurnNavigator = false,
 }: {
   sessionId: SessionId
-  /** 当前会话工作区 ID。非 null 时用于过滤 turn_file_summary 中被 .gitignore 忽略的路径 */
+  /** 当前会话工作区 ID。 */
   workspaceId: string | null
-  /** 当前会话工作区根目录，仅用于把汇总卡中的绝对路径显示为项目内相对路径。 */
+  /** 当前会话工作区根目录，用于路径展示与旧汇总中的嵌套 worktree 清理。 */
   workspaceRootPath: string | null
   onStatusChange: (s: string) => void
   onUsageChange: (tokens: number) => void
@@ -2740,13 +2740,9 @@ function ChatStream({
           event.status === 'cancelled' ||
           event.status === 'idle'
         ) {
-          const wsId = workspaceIdRef.current
           const snapshot = builderRef.current.getAllMessages()
-          if (
-            wsId != null &&
-            snapshot.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))
-          ) {
-            void filterTurnSummaryIgnoredPaths(snapshot, wsId).then((filtered) => {
+          if (snapshot.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))) {
+            void sanitizeTurnFileSummaries(snapshot, workspaceRootPath).then((filtered) => {
               if (filtered === snapshot) return
               setMessages(filtered)
               callbacks.onMessagesChange(filtered)
@@ -2917,14 +2913,10 @@ function ChatStream({
       const nextMessages = builder.getAllMessages()
       setMessages(nextMessages)
       callbacks.onMessagesChange(nextMessages)
-      // 历史加载后批量过滤 turn_file_summary 中被 .gitignore 忽略的路径（编译产物等噪音）。
-      // fire-and-forget：无变化时 filter 函数返回原引用，setMessages 不会被触发。
-      const wsId = workspaceIdRef.current
-      if (
-        wsId != null &&
-        nextMessages.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))
-      ) {
-        void filterTurnSummaryIgnoredPaths(nextMessages, wsId).then((filtered) => {
+      // 历史加载后清理旧采集逻辑误收集的嵌套 Agent worktree。
+      // fire-and-forget：无变化时 sanitizer 返回原引用，setMessages 不会被触发。
+      if (nextMessages.some((m) => m.blocks.some((b) => b.kind === 'turn_file_summary'))) {
+        void sanitizeTurnFileSummaries(nextMessages, workspaceRootPath).then((filtered) => {
           if (filtered === nextMessages) return
           setMessages(filtered)
           callbacks.onMessagesChange(filtered)

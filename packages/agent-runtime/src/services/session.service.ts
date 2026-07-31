@@ -125,6 +125,8 @@ import {
   VALIDATION_SUGGESTION_TOOL_DESCRIPTION,
   buildImageGenerationSystemPrompt,
   extractPresentedFiles,
+  extractReportedFileChanges,
+  workspaceRelativeChangeKey,
   mergeUniqueStrings,
   resolveDebugMcpServerPath,
   resolveImageGenerationMcpServerPath,
@@ -212,7 +214,6 @@ import {
   type NormalizedWorkflowGraph,
   type WorkflowDispatchAttachment,
 } from './workflow-executor.js'
-import { WorkspaceSnapshotService, type FileSnapshot } from './workspace-snapshot.service.js'
 import { CheckpointGitService } from './checkpoint-git.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
 import {
@@ -706,6 +707,8 @@ export class SessionService {
   private readonly teamMcpToolNames = new WeakMap<object, ReadonlySet<string>>()
   /** FR-0b 修复（审查 B-1）：turnId → 该 turn 创建的 codex HTTP 桥接 handle；turn 结束统一 close 防 leak。 */
   private readonly teamMcpHandlesByTurn = new Map<string, Set<TeamMcpBridgeHandle>>()
+  /** sessionId:turnId → Host 与所有成员共享的文件变更路径键，避免同轮重复归因。 */
+  private readonly fileChangeKeysByTurn = new Map<string, Set<string>>()
   /** checkpoint git 服务（lazy；基于 git 仓库做还原点，尊重 .gitignore，还原非破坏性）。 */
   private checkpointGitService: CheckpointGitService | null = null
   /** 每会话保留的最近 checkpoint 数。 */
@@ -739,6 +742,19 @@ export class SessionService {
       )
     }
     return this.teamDispatchService
+  }
+
+  private getTurnFileChangeKeys(sessionId: string, turnId: string): Set<string> {
+    const key = `${sessionId}:${turnId}`
+    const existing = this.fileChangeKeysByTurn.get(key)
+    if (existing != null) return existing
+    const created = new Set<string>()
+    this.fileChangeKeysByTurn.set(key, created)
+    return created
+  }
+
+  private clearTurnFileChangeKeys(sessionId: string, turnId: string): void {
+    this.fileChangeKeysByTurn.delete(`${sessionId}:${turnId}`)
   }
 
   private getTeamDiscussionRepository(): TeamDiscussionRepository {
@@ -3254,14 +3270,8 @@ export class SessionService {
 
     const executor = new ClaudeSDKExecutor()
     const changedFiles = new Set<string>()
-    // 工作目录快照：turn 开始前捕获一次，turn 完成后再捕获一次，diff 出
-    // Bash/MCP 等间接产生但未被 edit_file/write_file 捕获的文件（PDF/DOCX/XLSX/PPTX 等产物）。
-    // 合成 file_change 事件 emit，让 turn 文件变更卡片能完整展示。
     const workspaceRootPath = config.workspaceRootPath
-    const snapshotService =
-      workspaceRootPath != null && workspaceRootPath.length > 0
-        ? new WorkspaceSnapshotService()
-        : null
+    const observedFileChangeKeys = this.getTurnFileChangeKeys(sessionId, turnId)
     const mediaPresentationCollector = new MediaPresentationCollector(workspaceRootPath)
     const emitUnpresentedMedia = (): void => {
       const files = mediaPresentationCollector.takeUnpresented()
@@ -3273,15 +3283,6 @@ export class SessionService {
         eventRepo,
       )
     }
-    const snapshotBeforePromise: Promise<FileSnapshot | null> =
-      snapshotService != null && workspaceRootPath != null
-        ? snapshotService.snapshot(workspaceRootPath).catch((err) => {
-            log.warn('workspace snapshot before failed', {
-              err: err instanceof Error ? err.message : String(err),
-            })
-            return null
-          })
-        : Promise.resolve(null)
     // 验证建议卡不再固定在轮末自动弹出——改为下面注册的 spark_verify 工具，
     // 由 agent 自主判断本轮是否值得建议验证后主动调用。
     let validationSuggestionEmitted = false
@@ -3399,7 +3400,11 @@ export class SessionService {
         return
       }
       mediaPresentationCollector.observe(event)
-      if (event.type === 'file_change') changedFiles.add(event.path)
+      if (event.type === 'file_change') {
+        changedFiles.add(event.path)
+        const key = workspaceRelativeChangeKey(workspaceRootPath, event.path)
+        if (key != null) observedFileChangeKeys.add(key)
+      }
       let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
       if (mentionAgentId != null) {
         if (event.type === 'assistant_message' && typeof event.content === 'string') {
@@ -3430,6 +3435,26 @@ export class SessionService {
         }
       }
       this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
+      const reportedChanges = extractReportedFileChanges(event, workspaceRootPath)
+      if (reportedChanges != null) {
+        for (const change of reportedChanges) {
+          const key = workspaceRelativeChangeKey(workspaceRootPath, change.path)
+          if (key == null || observedFileChangeKeys.has(key)) continue
+          observedFileChangeKeys.add(key)
+          changedFiles.add(change.path)
+          const fileChangeEvent: AgentEvent = {
+            ...makeBase(),
+            type: 'file_change',
+            path: change.path,
+            changeType: change.changeType,
+            ...(change.oldPath != null ? { oldPath: change.oldPath } : {}),
+            collectionSource: 'agent_manifest',
+            ...(mentionMemberContext != null ? { teamMemberContext: mentionMemberContext } : {}),
+          }
+          mediaPresentationCollector.observe(fileChangeEvent)
+          this.emitAndPersist(sessionId, turnId, fileChangeEvent, eventRepo)
+        }
+      }
       const presentedFiles = extractPresentedFiles(event, workspaceRootPath)
       if (presentedFiles != null) {
         this.emitAndPersist(
@@ -3534,6 +3559,7 @@ export class SessionService {
       }
       this.teamDispatchService?.clearTurn(turnId)
       this.closeTeamMcpHandlesForTurn(turnId)
+      this.clearTurnFileChangeKeys(sessionId, turnId)
       return
     }
 
@@ -3588,49 +3614,6 @@ export class SessionService {
           /* swallow — never affect main flow */
         })
 
-        // ── 工作目录快照 diff：合成 file_change 事件 ──
-        // 仅为 SDK 自身工具（edit/write/multi_edit）遗漏的产物文件（如 Bash 跑
-        // python 生成的 pdf/docx/xlsx/pptx，或 MCP image_generation 产出的图）兜底。
-        // 与现有 changedFiles 集合去重，避免重复 emit。
-        if (snapshotService != null && workspaceRootPath != null) {
-          try {
-            const [before, after] = await Promise.all([
-              snapshotBeforePromise,
-              snapshotService.snapshot(workspaceRootPath),
-            ])
-            if (before != null && after != null) {
-              const diffResult = snapshotService.diff(before, after)
-              const emitFrom = (
-                paths: string[],
-                changeType: 'create' | 'modify' | 'delete',
-              ): void => {
-                for (const relPath of paths) {
-                  const abs = path.isAbsolute(relPath)
-                    ? relPath
-                    : path.join(workspaceRootPath, relPath)
-                  if (changedFiles.has(abs) || changedFiles.has(relPath)) continue
-                  changedFiles.add(abs)
-                  const fileChangeEvent: AgentEvent = {
-                    ...makeBase(),
-                    type: 'file_change',
-                    changeType,
-                    path: abs,
-                    collectionSource: 'workspace_snapshot',
-                  }
-                  mediaPresentationCollector.observe(fileChangeEvent)
-                  this.emitAndPersist(sessionId, turnId, fileChangeEvent, eventRepo)
-                }
-              }
-              emitFrom(diffResult.added, 'create')
-              emitFrom(diffResult.modified, 'modify')
-              emitFrom(diffResult.deleted, 'delete')
-            }
-          } catch (err) {
-            log.warn('workspace snapshot diff failed', {
-              err: err instanceof Error ? err.message : String(err),
-            })
-          }
-        }
         emitUnpresentedMedia()
         this.revokeComputerUseSession(sessionId)
         const ownsSession = this.activeLoops.get(sessionId) === executor
@@ -3657,6 +3640,7 @@ export class SessionService {
         this.activeExecutionPromises.delete(executor)
         // 清理本 turn 的 dispatch 预算计数，避免长生命周期进程内存增长
         this.teamDispatchService?.clearTurn(turnId)
+        this.clearTurnFileChangeKeys(sessionId, turnId)
         // FR-0b：claude Host 本身不用桥接，但本 turn 内 dispatch 的 codex 成员
         // （嵌套/peer messaging）会创建桥接 handle，这里与 codex 路径对称回收。
         this.closeTeamMcpHandlesForTurn(turnId)
@@ -3827,8 +3811,7 @@ export class SessionService {
         ? { dispatchId: `mention:${turnId}`, memberAgentId: mentionAgentId }
         : undefined
     const turnAgent = this.resolveAgent(options.agentId)
-    const initialWorkspaceChangesPromise = collectWorkspaceChangeSnapshot(config.workspaceRootPath)
-    const observedFileChangePaths = new Set<string>()
+    const observedFileChangeKeys = this.getTurnFileChangeKeys(sessionId, turnId)
     const mediaPresentationCollector = new MediaPresentationCollector(config.workspaceRootPath)
     const emitUnpresentedMedia = (): void => {
       const files = mediaPresentationCollector.takeUnpresented()
@@ -3841,26 +3824,6 @@ export class SessionService {
       )
     }
     let pendingTerminalStatus: AgentStatusEvent | null = null
-    const emitDiscoveredWorkspaceChanges = async (): Promise<void> => {
-      const initialWorkspaceChanges = await initialWorkspaceChangesPromise
-      const discovered = await collectWorkspaceFileChangesSince(
-        config.workspaceRootPath,
-        initialWorkspaceChanges,
-      )
-      for (const change of discovered) {
-        if (observedFileChangePaths.has(change.path)) continue
-        observedFileChangePaths.add(change.path)
-        const fileChangeEvent: AgentEvent = {
-          ...makeBase(),
-          type: 'file_change',
-          changeType: change.changeType,
-          path: change.path,
-          collectionSource: 'git_fallback',
-        }
-        mediaPresentationCollector.observe(fileChangeEvent)
-        this.emitAndPersist(sessionId, turnId, fileChangeEvent, eventRepo)
-      }
-    }
     const emitPendingTerminalStatus = (): AgentStatusEvent['status'] | null => {
       if (pendingTerminalStatus == null) return null
       const status = pendingTerminalStatus.status
@@ -3883,7 +3846,10 @@ export class SessionService {
         return
       }
       mediaPresentationCollector.observe(event)
-      if (event.type === 'file_change') observedFileChangePaths.add(event.path)
+      if (event.type === 'file_change') {
+        const key = workspaceRelativeChangeKey(config.workspaceRootPath, event.path)
+        if (key != null) observedFileChangeKeys.add(key)
+      }
       let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
       if (mentionAgentId != null) {
         if (event.type === 'assistant_message' && typeof event.content === 'string') {
@@ -3914,6 +3880,25 @@ export class SessionService {
         }
       }
       this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
+      const reportedChanges = extractReportedFileChanges(event, config.workspaceRootPath)
+      if (reportedChanges != null) {
+        for (const change of reportedChanges) {
+          const key = workspaceRelativeChangeKey(config.workspaceRootPath, change.path)
+          if (key == null || observedFileChangeKeys.has(key)) continue
+          observedFileChangeKeys.add(key)
+          const fileChangeEvent: AgentEvent = {
+            ...makeBase(),
+            type: 'file_change',
+            path: change.path,
+            changeType: change.changeType,
+            ...(change.oldPath != null ? { oldPath: change.oldPath } : {}),
+            collectionSource: 'agent_manifest',
+            ...(mentionMemberContext != null ? { teamMemberContext: mentionMemberContext } : {}),
+          }
+          mediaPresentationCollector.observe(fileChangeEvent)
+          this.emitAndPersist(sessionId, turnId, fileChangeEvent, eventRepo)
+        }
+      }
       const presentedFiles = extractPresentedFiles(event, config.workspaceRootPath)
       if (presentedFiles != null) {
         this.emitAndPersist(
@@ -3961,6 +3946,7 @@ export class SessionService {
       }
       this.teamDispatchService?.clearTurn(turnId)
       this.closeTeamMcpHandlesForTurn(turnId)
+      this.clearTurnFileChangeKeys(sessionId, turnId)
       return
     }
 
@@ -3983,7 +3969,6 @@ export class SessionService {
           }
           return
         }
-        await emitDiscoveredWorkspaceChanges()
         emitUnpresentedMedia()
         this.revokeComputerUseSession(sessionId)
         const assistantTurnText = collectCompleteAssistantTurnText(completeAssistantEvents)
@@ -4009,8 +3994,7 @@ export class SessionService {
           /* swallow — never affect main flow */
         })
       })
-      .catch(async () => {
-        await emitDiscoveredWorkspaceChanges().catch(() => undefined)
+      .catch(() => {
         emitUnpresentedMedia()
         this.revokeComputerUseSession(sessionId)
         const ownsSession = this.activeLoops.get(sessionId) === executor
@@ -4022,6 +4006,7 @@ export class SessionService {
       .finally(() => {
         this.activeExecutionPromises.delete(executor)
         this.teamDispatchService?.clearTurn(turnId)
+        this.clearTurnFileChangeKeys(sessionId, turnId)
         // FR-0b 修复（审查 B-1）：回收本 turn 创建的 codex HTTP 桥接 handle（Host 主循环路径）。
         this.closeTeamMcpHandlesForTurn(turnId)
         if (this.activeLoops.get(sessionId) === executor) {
@@ -6556,6 +6541,8 @@ export class SessionService {
         memberMemoryBlock,
         memberMcpServers.spark_memory != null ? MEMORY_BEHAVIOR_SYSTEM_PROMPT : undefined,
         memberMcpServers.spark_memory != null ? MEMORY_PROVENANCE_SYSTEM_PROMPT : undefined,
+        memberMcpServers.spark_files != null ? PRESENT_FILES_SYSTEM_PROMPT : undefined,
+        memberMcpServers.spark_debug != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
       ) ?? ''
 
     const sdkConfig: SDKExecutorConfig = {
@@ -6680,6 +6667,7 @@ export class SessionService {
     let inputTokens: number | undefined
     let outputTokens: number | undefined
     let memberError: string | undefined
+    const memberObservedFileChangeKeys = this.getTurnFileChangeKeys(sessionId, turnId)
     const makeBase = () => ({
       id: crypto.randomUUID(),
       sessionId,
@@ -6688,6 +6676,10 @@ export class SessionService {
       seq: 0,
     })
     executor.onEvent((event) => {
+      if (event.type === 'file_change') {
+        const key = workspaceRelativeChangeKey(workspaceRootPath, event.path)
+        if (key != null) memberObservedFileChangeKeys.add(key)
+      }
       if (event.type === 'assistant_message') {
         this.emitAndPersist(
           sessionId,
@@ -6746,6 +6738,28 @@ export class SessionService {
           },
           eventRepo,
         )
+      }
+      const reportedChanges = extractReportedFileChanges(event, workspaceRootPath)
+      if (reportedChanges != null) {
+        for (const change of reportedChanges) {
+          const key = workspaceRelativeChangeKey(workspaceRootPath, change.path)
+          if (key == null || memberObservedFileChangeKeys.has(key)) continue
+          memberObservedFileChangeKeys.add(key)
+          this.emitAndPersist(
+            sessionId,
+            turnId,
+            {
+              ...makeBase(),
+              type: 'file_change',
+              path: change.path,
+              changeType: change.changeType,
+              ...(change.oldPath != null ? { oldPath: change.oldPath } : {}),
+              collectionSource: 'agent_manifest',
+              teamMemberContext: { dispatchId, memberAgentId: member.id },
+            },
+            eventRepo,
+          )
+        }
       }
     })
 
@@ -9976,9 +9990,6 @@ function trimHistoryEvent(event: AgentEvent): AgentEvent {
   return { ...event, systemPromptSections: trimmedSections }
 }
 
-type WorkspaceFileChangeSnapshot = Set<string>
-type WorkspaceDetectedFileChange = { path: string; changeType: 'create' | 'modify' | 'delete' }
-
 function normalizeCustomCommandConfig(value: unknown): CustomCommandConfig | null {
   if (value == null || typeof value !== 'object') return null
   const record = value as Record<string, unknown>
@@ -9994,64 +10005,4 @@ function normalizeCustomCommandConfig(value: unknown): CustomCommandConfig | nul
     scriptLanguage: record.scriptLanguage === 'python' ? 'python' : 'javascript',
     enabled: record.enabled !== false,
   }
-}
-
-async function collectWorkspaceChangeSnapshot(
-  workspaceRootPath: string,
-): Promise<WorkspaceFileChangeSnapshot> {
-  try {
-    const changes = await collectWorkspaceFileChanges(workspaceRootPath)
-    return new Set(changes.map((change) => `${change.path}::${change.changeType}`))
-  } catch (err) {
-    log.warn(
-      `Failed to collect workspace change snapshot: ${err instanceof Error ? err.message : String(err)}`,
-    )
-    return new Set()
-  }
-}
-
-async function collectWorkspaceFileChangesSince(
-  workspaceRootPath: string,
-  initial: WorkspaceFileChangeSnapshot,
-): Promise<WorkspaceDetectedFileChange[]> {
-  try {
-    const changes = await collectWorkspaceFileChanges(workspaceRootPath)
-    return changes.filter((change) => !initial.has(`${change.path}::${change.changeType}`))
-  } catch (err) {
-    log.warn(
-      `Failed to collect workspace file changes: ${err instanceof Error ? err.message : String(err)}`,
-    )
-    return []
-  }
-}
-
-async function collectWorkspaceFileChanges(
-  workspaceRootPath: string,
-): Promise<WorkspaceDetectedFileChange[]> {
-  const { execFile } = await import('node:child_process')
-  const { promisify } = await import('node:util')
-  const execFileAsync = promisify(execFile)
-  const { stdout } = await execFileAsync(
-    'git',
-    ['-C', workspaceRootPath, 'status', '--porcelain', '--untracked-files=all'],
-    {
-      maxBuffer: 1024 * 1024,
-    },
-  )
-  return stdout
-    .split(/\r?\n/)
-    .map(parseGitStatusPorcelainLine)
-    .filter((change): change is WorkspaceDetectedFileChange => change != null)
-}
-
-function parseGitStatusPorcelainLine(line: string): WorkspaceDetectedFileChange | null {
-  if (line.length < 4) return null
-  const status = line.slice(0, 2)
-  const rawPath = line.slice(3).trim()
-  if (!rawPath || rawPath.startsWith('.spark/') || rawPath.startsWith('.spark-artifacts/'))
-    return null
-  const filePath = rawPath.includes(' -> ') ? rawPath.split(' -> ').pop()!.trim() : rawPath
-  if (status === '??' || status.includes('A')) return { path: filePath, changeType: 'create' }
-  if (status.includes('D')) return { path: filePath, changeType: 'delete' }
-  return { path: filePath, changeType: 'modify' }
 }

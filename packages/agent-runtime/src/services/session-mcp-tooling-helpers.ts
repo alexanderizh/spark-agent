@@ -169,22 +169,155 @@ export function extractPresentedFiles(
   return files
 }
 
+export type ReportedFileChange = {
+  path: string
+  changeType: 'create' | 'modify' | 'delete' | 'rename'
+  oldPath?: string
+}
+
+const REPORTED_CHANGE_TYPES = new Set<ReportedFileChange['changeType']>([
+  'create',
+  'modify',
+  'delete',
+  'rename',
+])
+const INTERNAL_WORKTREE_PREFIXES = ['.claude/worktrees', '.worktrees', '.spark/worktrees']
+
+function isInsideWorkspace(workspaceRoot: string, candidate: string): boolean {
+  const relative = path.relative(workspaceRoot, candidate)
+  return (
+    relative === '' ||
+    (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+  )
+}
+
+function resolveWorkspaceCandidate(
+  workspaceRootPath: string,
+  canonicalWorkspaceRoot: string,
+  filePath: string,
+): string {
+  const configuredRoot = path.resolve(workspaceRootPath)
+  const resolved = path.isAbsolute(filePath)
+    ? path.resolve(filePath)
+    : path.resolve(configuredRoot, filePath)
+  if (isInsideWorkspace(configuredRoot, resolved)) {
+    return path.resolve(canonicalWorkspaceRoot, path.relative(configuredRoot, resolved))
+  }
+  return resolved
+}
+
+export function workspaceRelativeChangeKey(
+  workspaceRootPath: string,
+  filePath: string,
+): string | null {
+  let workspaceRoot = path.resolve(workspaceRootPath)
+  try {
+    workspaceRoot = realpathSync(workspaceRoot)
+  } catch {
+    // 尚不存在的 workspace 不应出现在运行中会话；保留词法路径用于安全降级。
+  }
+  const resolved = resolveWorkspaceCandidate(workspaceRootPath, workspaceRoot, filePath)
+  if (!isInsideWorkspace(workspaceRoot, resolved)) return null
+  return path.relative(workspaceRoot, resolved).replace(/\\/g, '/')
+}
+
+export function isNestedAgentWorktreePath(workspaceRootPath: string, filePath: string): boolean {
+  const key = workspaceRelativeChangeKey(workspaceRootPath, filePath)
+  if (key == null) return true
+  return INTERNAL_WORKTREE_PREFIXES.some((prefix) => key === prefix || key.startsWith(`${prefix}/`))
+}
+
+/**
+ * 将 report_file_changes 的不可信工具结果校验为当前工作区内的 turn 级变更清单。
+ * create/modify/rename 的目标必须仍是普通文件；delete 允许目标已不存在。
+ */
+export function extractReportedFileChanges(
+  event: AgentEvent,
+  workspaceRootPath: string,
+): ReportedFileChange[] | null {
+  if (
+    event.type !== 'tool_result' ||
+    event.status !== 'success' ||
+    !event.toolName.toLowerCase().endsWith('report_file_changes')
+  ) {
+    return null
+  }
+
+  const payload = parseToolPayload(event.output)
+  if (payload == null || !Array.isArray(payload.changes)) return null
+
+  let workspaceRoot: string
+  try {
+    workspaceRoot = realpathSync(workspaceRootPath)
+  } catch {
+    return null
+  }
+
+  const changes: ReportedFileChange[] = []
+  const seen = new Set<string>()
+  for (const item of payload.changes.slice(0, 200)) {
+    if (item == null || typeof item !== 'object' || Array.isArray(item)) continue
+    const record = item as Record<string, unknown>
+    const rawPath = typeof record.path === 'string' ? record.path.trim() : ''
+    const changeType = record.changeType
+    if (!rawPath || typeof changeType !== 'string') continue
+    if (!REPORTED_CHANGE_TYPES.has(changeType as ReportedFileChange['changeType'])) continue
+
+    try {
+      const lexicalPath = resolveWorkspaceCandidate(workspaceRootPath, workspaceRoot, rawPath)
+      if (!isInsideWorkspace(workspaceRoot, lexicalPath)) continue
+      if (isNestedAgentWorktreePath(workspaceRoot, lexicalPath)) continue
+
+      const resolvedPath = changeType === 'delete' ? lexicalPath : realpathSync(lexicalPath)
+      if (!isInsideWorkspace(workspaceRoot, resolvedPath)) continue
+      if (isNestedAgentWorktreePath(workspaceRoot, resolvedPath)) continue
+      if (changeType !== 'delete' && !statSync(resolvedPath).isFile()) continue
+
+      let oldPath: string | undefined
+      if (changeType === 'rename') {
+        const rawOldPath = typeof record.oldPath === 'string' ? record.oldPath.trim() : ''
+        if (!rawOldPath) continue
+        oldPath = resolveWorkspaceCandidate(workspaceRootPath, workspaceRoot, rawOldPath)
+        if (!isInsideWorkspace(workspaceRoot, oldPath)) continue
+        if (isNestedAgentWorktreePath(workspaceRoot, oldPath)) continue
+      }
+
+      const key = `${changeType}:${resolvedPath}:${oldPath ?? ''}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      changes.push({
+        path: resolvedPath,
+        changeType: changeType as ReportedFileChange['changeType'],
+        ...(oldPath != null ? { oldPath } : {}),
+      })
+    } catch {
+      // 工具结果不可信；文件消失、越界或软链接逃逸时直接丢弃。
+    }
+  }
+  return changes
+}
+
 export function parsePresentedFilesPayload(output: unknown): Record<string, unknown> | null {
+  const payload = parseToolPayload(output)
+  return payload != null && Array.isArray(payload.files) ? payload : null
+}
+
+function parseToolPayload(output: unknown): Record<string, unknown> | null {
   if (output != null && typeof output === 'object' && !Array.isArray(output)) {
     const record = output as Record<string, unknown>
-    if (Array.isArray(record.files)) return record
+    if (Array.isArray(record.files) || Array.isArray(record.changes)) return record
     if (Array.isArray(record.content)) {
       for (const block of record.content) {
-        const parsed = parsePresentedFilesPayload(block)
+        const parsed = parseToolPayload(block)
         if (parsed != null) return parsed
       }
     }
-    if (typeof record.text === 'string') return parsePresentedFilesPayload(record.text)
+    if (typeof record.text === 'string') return parseToolPayload(record.text)
   }
   if (typeof output !== 'string') return null
   try {
     const parsed = JSON.parse(output) as unknown
-    return parsePresentedFilesPayload(parsed)
+    return parseToolPayload(parsed)
   } catch {
     return null
   }
@@ -339,7 +472,10 @@ export const SEARCH_TOOL_NAMES: string[] = [
   'mcp__spark_search__fetch_url',
 ]
 
-export const PRESENT_FILES_TOOL_NAMES = ['mcp__spark_files__present_files']
+export const PRESENT_FILES_TOOL_NAMES = [
+  'mcp__spark_files__present_files',
+  'mcp__spark_files__report_file_changes',
+]
 
 export const VALIDATION_SUGGESTION_TOOL_NAMES = ['mcp__spark_verify__suggest_validation']
 
@@ -351,6 +487,12 @@ export const VALIDATION_SUGGESTION_TOOL_DESCRIPTION = [
 ].join('\n')
 
 export const PRESENT_FILES_SYSTEM_PROMPT = [
+  '## Turn-scoped file change journal',
+  'When this turn creates, modifies, deletes, or renames workspace files, call `mcp__spark_files__report_file_changes` once after the work is complete and immediately before the final response.',
+  'Report only files changed by you or by agents you dispatched for this current turn. Never include pre-existing workspace changes, changes owned by another session, dependencies, caches, generated build trees, or nested agent worktrees.',
+  'Include source files and user-facing artifacts that were genuinely changed. Use the actual create/modify/delete/rename operation and provide oldPath for a rename.',
+  'Do not call the tool when this turn made no file changes. The runtime merges this manifest with direct edit events and removes duplicates.',
+  '',
   '## User-facing file cards',
   'When this turn produces or identifies files that should be delivered to the user, call `mcp__spark_files__present_files` immediately before the final response.',
   'This is mandatory for generated or edited images, screenshots, audio, video, documents, slides, spreadsheets, PDFs, and exported visual assets. Returning only a path or address is not complete.',

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fileURLToPath } from 'node:url'
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { AgentEvent } from '@spark/protocol'
@@ -193,9 +193,7 @@ const mockState = vi.hoisted(() => ({
   >(),
   nextSdkTurnErrors: [] as string[],
   nextSdkTurnStatuses: [] as Array<'completed' | 'cancelled' | 'error'>,
-  nextSdkUsageEvents: [] as Array<
-    Array<Extract<AgentEvent, { type: 'usage_update' }>>
-  >,
+  nextSdkUsageEvents: [] as Array<Array<Extract<AgentEvent, { type: 'usage_update' }>>>,
   nextSdkTurnEvents: [] as AgentEvent[][],
   turnRequests: new Map<
     string,
@@ -1179,10 +1177,7 @@ describe('SessionService runtime provider/model resolution', () => {
           args: ['/resources/tools/computer-use-mcp-server.mjs'],
           env: { SPARK_COMPUTER_SESSION_ID: sessionId },
         },
-        allowedTools: [
-          'mcp__spark_computer__get_capabilities',
-          'mcp__spark_computer__start_task',
-        ],
+        allowedTools: ['mcp__spark_computer__get_capabilities', 'mcp__spark_computer__start_task'],
         systemPrompt: 'GOVERNED COMPUTER USE PROMPT',
       }))
       const { sessionId } = await service.createSession({
@@ -1206,9 +1201,7 @@ describe('SessionService runtime provider/model resolution', () => {
           'mcp__spark_computer__start_task',
         ]),
       )
-      expect(String(config?.skillSystemPrompt ?? '')).toContain(
-        'GOVERNED COMPUTER USE PROMPT',
-      )
+      expect(String(config?.skillSystemPrompt ?? '')).toContain('GOVERNED COMPUTER USE PROMPT')
     },
   )
 
@@ -1257,11 +1250,13 @@ describe('SessionService runtime provider/model resolution', () => {
     })
     expect(service.getQueueState({ sessionId }).running).toBe(false)
     expect(mockState.sessions.get(sessionId)?.status).toBe('error')
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'agent_status',
-      turnId: result.turnId,
-      status: 'error',
-    }))
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'agent_status',
+        turnId: result.turnId,
+        status: 'error',
+      }),
+    )
   })
 
   it('releases the active loop when turn startup fails after executor registration', async () => {
@@ -1700,8 +1695,9 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(runtimeConfig.providers[0]).not.toHaveProperty('apiKey')
     expect(runtimeConfig.provider).toBe('agnes')
     expect(runtimeConfig.model).toBe('agnes-2.0-flash')
-    expect(runtimeConfig.providers.flatMap((provider) => provider.manifests.map((item) => item.id)))
-      .toEqual(expect.arrayContaining(['agnes:agnes-image-2.0-flash', 'agnes:agnes-video-v2.0']))
+    expect(
+      runtimeConfig.providers.flatMap((provider) => provider.manifests.map((item) => item.id)),
+    ).toEqual(expect.arrayContaining(['agnes:agnes-image-2.0-flash', 'agnes:agnes-video-v2.0']))
   })
 
   it('emits a real presented_files event at turn end when a media tool forgot present_files', async () => {
@@ -1761,6 +1757,94 @@ describe('SessionService runtime provider/model resolution', () => {
     }
   })
 
+  it('merges the agent turn manifest with direct edits without workspace-wide discovery', async () => {
+    const workspaceRoot = mkdtempSync(path.join(tmpdir(), 'spark-turn-journal-'))
+    const directPath = path.join(workspaceRoot, 'src', 'direct.ts')
+    const shellPath = path.join(workspaceRoot, 'src', 'from-shell.ts')
+    const nestedWorktreePath = path.join(
+      workspaceRoot,
+      '.claude',
+      'worktrees',
+      'agent-1',
+      'src',
+      'copy.ts',
+    )
+    mkdirSync(path.dirname(directPath), { recursive: true })
+    mkdirSync(path.dirname(nestedWorktreePath), { recursive: true })
+    writeFileSync(directPath, 'direct\n')
+    writeFileSync(shellPath, 'shell\n')
+    writeFileSync(nestedWorktreePath, 'copy\n')
+    try {
+      mockState.workspaces.set('journal-workspace', {
+        id: 'journal-workspace',
+        name: 'journal-workspace',
+        root_path: workspaceRoot,
+        project_kind: 'node',
+        worktree_meta_json: null,
+      })
+      mockState.nextSdkTurnEvents.push([
+        {
+          id: 'direct-change',
+          sessionId: 'placeholder-session',
+          turnId: 'placeholder-turn',
+          timestamp: '2026-05-28T00:00:00.000Z',
+          seq: 0,
+          type: 'file_change',
+          path: 'src/direct.ts',
+          changeType: 'modify',
+        },
+        {
+          id: 'reported-changes',
+          sessionId: 'placeholder-session',
+          turnId: 'placeholder-turn',
+          timestamp: '2026-05-28T00:00:00.000Z',
+          seq: 1,
+          type: 'tool_result',
+          toolCallId: 'report-call-1',
+          toolName: 'mcp__spark_files__report_file_changes',
+          status: 'success',
+          output: {
+            changes: [
+              { path: directPath, changeType: 'modify' },
+              { path: shellPath, changeType: 'create' },
+              { path: nestedWorktreePath, changeType: 'modify' },
+            ],
+          },
+        },
+      ])
+      const service = new SessionService({} as never, (event) => events.push(event))
+      const { sessionId } = await service.createSession({
+        providerProfileId: 'tencent-provider',
+        agentAdapter: 'claude-sdk',
+        permissionMode: 'claude-plan',
+        title: 'Turn journal session',
+        workspaceId: 'journal-workspace',
+      })
+
+      await service.sendTurn({ sessionId, message: 'change two files' })
+
+      await vi.waitFor(() => {
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            type: 'file_change',
+            path: realpathSync(shellPath),
+            changeType: 'create',
+            collectionSource: 'agent_manifest',
+          }),
+        )
+      })
+      const fileChanges = events.filter((event) => event.type === 'file_change')
+      expect(fileChanges.filter((event) => event.path.endsWith('direct.ts'))).toHaveLength(1)
+      expect(fileChanges.some((event) => event.path.includes('.claude/worktrees'))).toBe(false)
+      expect(fileChanges.some((event) => event.collectionSource === 'git_fallback')).toBe(false)
+      expect(fileChanges.some((event) => event.collectionSource === 'workspace_snapshot')).toBe(
+        false,
+      )
+    } finally {
+      rmSync(workspaceRoot, { recursive: true, force: true })
+    }
+  })
+
   it('injects platform image aliases as manifest-routed spark_media models', async () => {
     seedProvider({
       id: 'spark-platform-newapi',
@@ -1773,13 +1857,15 @@ describe('SessionService runtime provider/model resolution', () => {
         mediaApiEndpoint: 'https://newapi.example/v1',
         modelType: 'text',
         managedType: 'newapi',
-        mediaModelRefs: [{
-          manifestId: 'platform:spark-img:test',
-          modelId: 'spark-img',
-          templateManifestId: 'openai-images:gpt-image-2',
-          displayName: 'spark-img',
-          enabled: true,
-        }],
+        mediaModelRefs: [
+          {
+            manifestId: 'platform:spark-img:test',
+            modelId: 'spark-img',
+            templateManifestId: 'openai-images:gpt-image-2',
+            displayName: 'spark-img',
+            enabled: true,
+          },
+        ],
       }),
       keystore_ref: 'key-platform',
       is_default: 0,
@@ -1819,11 +1905,13 @@ describe('SessionService runtime provider/model resolution', () => {
       model: 'spark-img',
       baseUrl: 'https://newapi.example/v1',
       adapterFromManifest: true,
-      manifests: [expect.objectContaining({
-        modelId: 'spark-img',
-        adapterModelId: 'gpt-image-2',
-        providerKind: 'openai-images',
-      })],
+      manifests: [
+        expect.objectContaining({
+          modelId: 'spark-img',
+          adapterModelId: 'gpt-image-2',
+          providerKind: 'openai-images',
+        }),
+      ],
     })
   })
 
@@ -1981,9 +2069,7 @@ describe('SessionService runtime provider/model resolution', () => {
         modelType: 'image',
         mediaProvider: 'custom',
         mediaCapabilities: ['image.generate'],
-        mediaModelRefs: [
-          { manifestId: 'custom:broken-image', modelId: 'broken-image', manifest },
-        ],
+        mediaModelRefs: [{ manifestId: 'custom:broken-image', modelId: 'broken-image', manifest }],
       }),
       keystore_ref: 'key-broken-image',
       is_default: 0,
@@ -1997,9 +2083,7 @@ describe('SessionService runtime provider/model resolution', () => {
         modelType: 'image',
         mediaProvider: 'custom',
         mediaCapabilities: ['image.generate'],
-        mediaModelRefs: [
-          { manifestId: manifest.id, modelId: manifest.modelId, manifest },
-        ],
+        mediaModelRefs: [{ manifestId: manifest.id, modelId: manifest.modelId, manifest }],
       }),
       keystore_ref: 'key-working-image',
       is_default: 0,
@@ -2818,7 +2902,10 @@ describe('SessionService runtime provider/model resolution', () => {
     ).spark_team
     const dispatchTool = teamServer.instance.tools.find((tool) => tool.name === 'agent_dispatch')
     if (dispatchTool == null) throw new Error('expected agent_dispatch tool')
-    await dispatchTool.handler({ targetAgentId: 'team-member', instruction: 'inherit the session model' })
+    await dispatchTool.handler({
+      targetAgentId: 'team-member',
+      instruction: 'inherit the session model',
+    })
     await vi.waitFor(() => expect(mockState.sdkConfigs).toHaveLength(2))
     expect(mockState.sdkConfigs[1]).toMatchObject({
       model: 'glm-5',
