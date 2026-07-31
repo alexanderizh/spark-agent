@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ComputerUseEvent, SessionId } from '@spark/protocol'
+import type {
+  ComputerSession,
+  ComputerUseEvent,
+  NativeWindowDescriptor,
+  SessionId,
+} from '@spark/protocol'
 import { useI18n } from '../i18n'
 import {
   groupComputerActivityEvents,
@@ -16,6 +21,7 @@ export function ComputerActivityBlock({ sessionId }: { sessionId: SessionId }) {
 
 function ComputerActivitySession({ sessionId }: { sessionId: SessionId }) {
   const [events, setEvents] = useState<ComputerUseEvent[]>([])
+  const [sessions, setSessions] = useState<ComputerSession[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const { lang, t } = useI18n()
 
@@ -27,9 +33,12 @@ function ComputerActivitySession({ sessionId }: { sessionId: SessionId }) {
       setEvents((current) => mergeComputerActivityEvents(current, [event]))
     })
 
-    void loadSessionTimelines(sessionId)
-      .then((history) => {
-        if (!canceled) setEvents((current) => mergeComputerActivityEvents(history, current))
+    void loadSessionActivity(sessionId)
+      .then((loaded) => {
+        if (!canceled) {
+          setSessions(loaded.sessions)
+          setEvents((current) => mergeComputerActivityEvents(loaded.events, current))
+        }
       })
       .catch((error: unknown) => {
         if (!canceled)
@@ -52,6 +61,7 @@ function ComputerActivitySession({ sessionId }: { sessionId: SessionId }) {
         <ComputerActivityCard
           key={timeline.computerSessionId}
           computerSessionId={timeline.computerSessionId}
+          session={sessions.find((item) => item.id === timeline.computerSessionId) ?? null}
           events={timeline.events}
           lang={lang}
           t={t}
@@ -61,13 +71,15 @@ function ComputerActivitySession({ sessionId }: { sessionId: SessionId }) {
   )
 }
 
-async function loadSessionTimelines(sessionId: SessionId): Promise<ComputerUseEvent[]> {
+async function loadSessionActivity(
+  sessionId: SessionId,
+): Promise<{ sessions: ComputerSession[]; events: ComputerUseEvent[] }> {
   const { computerSessions } = await window.spark.invoke('computer-use:list-sessions', {
     sessionId,
     limit: 100,
   })
   const pages = await Promise.all(computerSessions.map((session) => loadTimeline(session.id)))
-  return pages.flat()
+  return { sessions: computerSessions, events: pages.flat() }
 }
 
 async function loadTimeline(computerSessionId: string): Promise<ComputerUseEvent[]> {
@@ -87,11 +99,13 @@ async function loadTimeline(computerSessionId: string): Promise<ComputerUseEvent
 
 function ComputerActivityCard({
   computerSessionId,
+  session,
   events,
   lang,
   t,
 }: {
   computerSessionId: string
+  session: ComputerSession | null
   events: ComputerUseEvent[]
   lang: 'zh' | 'en'
   t: Translate
@@ -101,6 +115,68 @@ function ComputerActivityCard({
   const status = activityStatus(latest, t)
   const visibleEvents = events.filter((event) => event.type !== 'computer_observation_created')
   const elapsed = elapsedLabel(events, t)
+  const [controlStatus, setControlStatus] = useState(session?.status ?? null)
+  const [windows, setWindows] = useState<NativeWindowDescriptor[] | null>(null)
+  const [selectedWindowId, setSelectedWindowId] = useState('')
+  const [controlError, setControlError] = useState<string | null>(null)
+  const [controlBusy, setControlBusy] = useState(false)
+
+  useEffect(() => setControlStatus(session?.status ?? null), [session?.status])
+
+  const control = async (action: 'pause' | 'takeover' | 'stop'): Promise<void> => {
+    setControlBusy(true)
+    setControlError(null)
+    try {
+      const response =
+        action === 'pause'
+          ? await window.spark.invoke('computer-use:pause', { computerSessionId })
+          : action === 'takeover'
+            ? await window.spark.invoke('computer-use:takeover', { computerSessionId })
+            : await window.spark.invoke('computer-use:stop', { computerSessionId })
+      setControlStatus(response.computerSession.status)
+      if (action !== 'pause') setWindows(null)
+    } catch (error) {
+      setControlError(error instanceof Error ? error.message : t('computerActivity.control.failed'))
+    } finally {
+      setControlBusy(false)
+    }
+  }
+
+  const openTargetPicker = async (): Promise<void> => {
+    setControlBusy(true)
+    setControlError(null)
+    try {
+      const response = await window.spark.invoke('computer-use:list-windows', {})
+      const allowed = response.windows.filter(
+        (window) =>
+          !window.minimized &&
+          session?.taskContract.allowedApps.some((rule) => appRuleMatches(rule, window)) === true,
+      )
+      setWindows(allowed)
+      setSelectedWindowId(allowed[0]?.window.id ?? '')
+    } catch (error) {
+      setControlError(error instanceof Error ? error.message : t('computerActivity.control.failed'))
+    } finally {
+      setControlBusy(false)
+    }
+  }
+
+  const bindTarget = async (): Promise<void> => {
+    if (selectedWindowId === '') return
+    setControlBusy(true)
+    setControlError(null)
+    try {
+      await window.spark.invoke('computer-use:bind-target', {
+        computerSessionId,
+        targetWindowId: selectedWindowId,
+      })
+      setWindows(null)
+    } catch (error) {
+      setControlError(error instanceof Error ? error.message : t('computerActivity.control.failed'))
+    } finally {
+      setControlBusy(false)
+    }
+  }
 
   return (
     <details className={`computer-activity-card is-${status.kind}`} open={!terminal}>
@@ -118,8 +194,78 @@ function ComputerActivityCard({
           </li>
         ))}
       </ol>
+      {session != null && !terminal && (
+        <div className="computer-activity-controls">
+          <span className="computer-activity-target">
+            {t('computerActivity.control.target', {
+              target: appRuleLabel(session.taskContract.allowedApps[0]),
+            })}
+          </span>
+          <div className="computer-activity-control-actions">
+            {controlStatus !== 'paused' && (
+              <button type="button" disabled={controlBusy} onClick={() => void control('pause')}>
+                {t('computerActivity.control.pause')}
+              </button>
+            )}
+            {controlStatus === 'paused' && (
+              <button type="button" disabled={controlBusy} onClick={() => void openTargetPicker()}>
+                {t('computerActivity.control.changeTarget')}
+              </button>
+            )}
+            {controlStatus !== 'paused' && (
+              <button type="button" disabled={controlBusy} onClick={() => void control('takeover')}>
+                {t('computerActivity.control.takeover')}
+              </button>
+            )}
+            <button type="button" disabled={controlBusy} onClick={() => void control('stop')}>
+              {t('computerActivity.control.stop')}
+            </button>
+          </div>
+          {windows != null && (
+            <div className="computer-activity-target-picker">
+              <select
+                aria-label={t('computerActivity.control.window')}
+                value={selectedWindowId}
+                onChange={(event) => setSelectedWindowId(event.target.value)}
+              >
+                {windows.map((window) => (
+                  <option key={`${window.app.id}:${window.window.id}`} value={window.window.id}>
+                    {window.app.name} — {window.window.title}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={controlBusy || selectedWindowId === ''}
+                onClick={() => void bindTarget()}
+              >
+                {t('computerActivity.control.bind')}
+              </button>
+            </div>
+          )}
+          {controlError != null && (
+            <div className="computer-activity-control-error">{controlError}</div>
+          )}
+        </div>
+      )}
     </details>
   )
+}
+
+function appRuleMatches(
+  rule: ComputerSession['taskContract']['allowedApps'][number],
+  window: NativeWindowDescriptor,
+): boolean {
+  if (rule.kind === 'app_id') return window.app.id === rule.value
+  if (rule.kind === 'bundle_id') return window.app.bundleId === rule.value
+  if (rule.kind === 'executable_identity') return window.app.executableIdentity === rule.value
+  return window.app.signingIdentity === rule.value
+}
+
+function appRuleLabel(
+  rule: ComputerSession['taskContract']['allowedApps'][number] | undefined,
+): string {
+  return rule?.value ?? '—'
 }
 
 type Translate = ReturnType<typeof useI18n>['t']
