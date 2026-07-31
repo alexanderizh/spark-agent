@@ -310,10 +310,14 @@ export class NativeHostComputerUseBackend
     return this.measure('action_ms', () =>
       this.runControlOperation('execution', input.envelope.action, async (connection) => {
         const actionResult = await connection.executeAction(input.envelope, input.signal)
-        const target = selectControllableWindow(await connection.listWindows(input.signal), {
-          appId: input.observation.foreground.app.id,
-          windowId: input.observation.foreground.window.id,
-        }, this.targetBindings.has(input.envelope.computerSessionId))
+        const target = selectControllableWindow(
+          await connection.listWindows(input.signal),
+          {
+            appId: input.observation.foreground.app.id,
+            windowId: input.observation.foreground.window.id,
+          },
+          this.targetBindings.has(input.envelope.computerSessionId),
+        )
         const observation = await this.captureObservation({
           connection,
           computerSessionId: input.envelope.computerSessionId,

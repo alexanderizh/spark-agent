@@ -89,6 +89,12 @@ export const ComputerUseIpcSchemaRegistry = {
     })
     .strict(),
   'computer-use:takeover': ComputerSessionIdRequestSchema,
+  'computer-use:bind-target': z
+    .object({
+      computerSessionId: ComputerUseIdentifierSchema,
+      targetWindowId: ComputerUseIdentifierSchema,
+    })
+    .strict(),
   'computer-use:approve-action': z
     .object({
       computerSessionId: ComputerUseIdentifierSchema,
@@ -206,6 +212,10 @@ export interface ComputerUseIpcChannelMap {
     { computerSession: ComputerSession },
   ]
   'computer-use:takeover': [{ computerSessionId: string }, { computerSession: ComputerSession }]
+  'computer-use:bind-target': [
+    { computerSessionId: string; targetWindowId: string },
+    { computerSession: ComputerSession; targetWindowId: string },
+  ]
   'computer-use:approve-action': [
     {
       computerSessionId: string

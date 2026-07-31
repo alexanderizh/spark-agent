@@ -44,6 +44,7 @@ describe('computer use IPC schemas', () => {
       providerProfileId: 'provider-1',
       modelId: 'gpt-computer',
       taskContract,
+      targetWindowId: 'window-1',
     }
 
     expect(registry['computer-use:start']?.parse(request)).toEqual(request)
@@ -57,6 +58,7 @@ describe('computer use IPC schemas', () => {
     expect(Object.keys(registry).sort()).toEqual(
       [
         'computer-use:approve-action',
+        'computer-use:bind-target',
         'computer-use:diagnose-native-host',
         'computer-use:deny-action',
         'computer-use:get-capabilities',

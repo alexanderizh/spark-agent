@@ -237,6 +237,41 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
     }),
   )
 
+  typedIpcHandle('computer-use:bind-target', async ({ computerSessionId, targetWindowId }, event) =>
+    safeComputerUseIpc(async () => {
+      assertRenderer(event)
+      const runtime = services()
+      const operatorId = rendererOperatorId(event.sender.id)
+      if (owners.get(computerSessionId) !== operatorId) {
+        throw new ComputerUseBrokerError(
+          'action_not_allowed',
+          'Only the owning renderer can change the bound target window',
+        )
+      }
+      const session = runtime.sessions.getSession(computerSessionId)
+      if (session == null) {
+        throw new ComputerUseBrokerError('session_canceled', 'Computer session not found')
+      }
+      if (session.status !== 'paused') {
+        throw new ComputerUseBrokerError(
+          'action_not_allowed',
+          'Pause the Computer Use session before changing its bound target window',
+        )
+      }
+      const target = requireAllowedTargetWindow(
+        await validatedWindows(runtime),
+        targetWindowId,
+        session.taskContract,
+      )
+      runtime.backend.bindSessionTarget?.({
+        computerSessionId,
+        appId: target.app.id,
+        windowId: target.window.id,
+      })
+      return { computerSession: session, targetWindowId: target.window.id }
+    }),
+  )
+
   typedIpcHandle('computer-use:resolve-app-command', async (result, event) =>
     safeComputerUseIpc(() => {
       assertRenderer(event)
@@ -461,9 +496,7 @@ function requireAllowedTargetWindow(
   targetWindowId: string,
   taskContract: ComputerTaskContract,
 ): NativeWindowDescriptor {
-  const target = windows.find(
-    (window) => window.window.id === targetWindowId && !window.minimized,
-  )
+  const target = windows.find((window) => window.window.id === targetWindowId && !window.minimized)
   if (target == null) {
     throw new ComputerUseBrokerError('focus_mismatch', 'The selected target window is unavailable')
   }

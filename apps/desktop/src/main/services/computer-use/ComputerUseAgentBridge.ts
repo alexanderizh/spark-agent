@@ -15,6 +15,7 @@ const ALLOWED_TOOLS = new Set([
   'resume',
   'stop',
   'takeover',
+  'bind_target',
 ])
 
 const VERIFICATION_SPEC_INPUT_SCHEMA = {
@@ -186,6 +187,20 @@ const MCP_TOOLS = [
       additionalProperties: false,
     },
   })),
+  {
+    name: 'bind_target',
+    description:
+      'Explicitly bind an owned Computer Use task to a new window whose strong application identity is already allowed by the task contract.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        computerSessionId: { type: 'string', minLength: 1, maxLength: 200 },
+        targetWindowId: { type: 'string', minLength: 1, maxLength: 256 },
+      },
+      required: ['computerSessionId', 'targetWindowId'],
+      additionalProperties: false,
+    },
+  },
 ] as const
 
 interface SessionGrant {

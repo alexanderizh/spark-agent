@@ -6,28 +6,28 @@
 
 ## 已落地（已提交、已测试、已审查）
 
-| 阶段                                         | Commit         | 测试 | 说明                                                                                                               |
-| -------------------------------------------- | -------------- | ---- | ------------------------------------------------------------------------------------------------------------------ |
-| Wave 1（Phase 2.3 异步证据 + 部分 2.1）      | `352028245`    | 183  | 异步证据、Host 自愈 Stage A、codesign 缓存、诊断码、审批可中断、stale_frame 本地恢复                               |
-| Phase 2.1 Host Supervisor 状态机             | `4731233b7`    | +8   | 心跳 5s/3 连败重启、有界重启(1)、onRebound 强制重绑、flag `SPARK_COMPUTER_USE_V2_HOST_SUPERVISOR`                  |
-| Phase 2.2 增量 AX 树（tree-diff 客户端切片） | `f03dd85a8`    | +5   | NativeHostTreeReconciler diff→full 重建、决策步可请求 diff、flag `SPARK_COMPUTER_USE_V2_INCREMENTAL_TREE`          |
-| Phase 3 动作批处理                           | `458e82a3c`    | +7   | ComputerDecision `actions` 变体(2-8)、逐动作审批、stale/noop 即停重规划、flag `SPARK_COMPUTER_USE_V2_ACTION_BATCH` |
-| Phase 5.2 Timeline 产品链路                  | `a253f90c1` + `a97adb8cf` | +25  | 从内存 MVP 升级为 migration 064 持久化、14 类事件、实时流、Renderer 回放/去重卡片；5.1/5.3 仍待后续阶段 |
-| Phase 0 诊断与指标代码切片                   | `本提交`       | +7   | 只读 IPC/MCP 诊断、Beta 标识、内容无关指标采集；真实失败包与性能样本待 Phase 1 签收                                |
+| 阶段                                         | Commit                    | 测试 | 说明                                                                                                               |
+| -------------------------------------------- | ------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------ |
+| Wave 1（Phase 2.3 异步证据 + 部分 2.1）      | `352028245`               | 183  | 异步证据、Host 自愈 Stage A、codesign 缓存、诊断码、审批可中断、stale_frame 本地恢复                               |
+| Phase 2.1 Host Supervisor 状态机             | `4731233b7`               | +8   | 心跳 5s/3 连败重启、有界重启(1)、onRebound 强制重绑、flag `SPARK_COMPUTER_USE_V2_HOST_SUPERVISOR`                  |
+| Phase 2.2 增量 AX 树（tree-diff 客户端切片） | `f03dd85a8`               | +5   | NativeHostTreeReconciler diff→full 重建、决策步可请求 diff、flag `SPARK_COMPUTER_USE_V2_INCREMENTAL_TREE`          |
+| Phase 3 动作批处理                           | `458e82a3c`               | +7   | ComputerDecision `actions` 变体(2-8)、逐动作审批、stale/noop 即停重规划、flag `SPARK_COMPUTER_USE_V2_ACTION_BATCH` |
+| Phase 5.2 Timeline 产品链路                  | `a253f90c1` + `a97adb8cf` | +25  | 从内存 MVP 升级为 migration 064 持久化、14 类事件、实时流、Renderer 回放/去重卡片；5.1/5.3 仍待后续阶段            |
+| Phase 0 诊断与指标代码切片                   | `f4d1c41b1`               | +7   | 只读 IPC/MCP 诊断、Beta 标识、内容无关指标采集；真实失败包与性能样本待 Phase 1 签收                                |
 
-Computer Use 相关回归：**41 文件 / 277 测试全过**（其中 7 个回环 HTTP 用例在允许监听 `127.0.0.1` 的测试环境运行）；storage **20 文件 / 226 测试全过**，迁移 064 已真实执行。desktop renderer/node 与 storage typecheck 均 exit 0；此前 Phase 2/3/5 严格测试类型债已清零。
+Computer Use 最新主进程/协议回归：**42 文件 / 288 测试全过**（回环 HTTP 用例在允许监听 `127.0.0.1` 的测试环境运行）；storage **20 文件 / 226 测试全过**，迁移 064 已真实执行。desktop renderer/node、protocol 与 storage typecheck 均 exit 0；此前 Phase 2/3/5 严格测试类型债已清零。
 
 ## 进行中 / 待办
 
-| 阶段                           | 类型          | 说明                                                                 |
-| ------------------------------ | ------------- | -------------------------------------------------------------------- |
-| Phase 0 真实基线样本           | 发布/真机签收 | macOS/Windows 失败安装包、冷启动/首次权限/四步任务真实样本           |
-| Phase 5.1/5.3 控制状态与去轮询 | 原生 + 纯 TS  | 系统 Overlay/托盘状态并入 Phase 4；Orchestrator 事件等待并入 Phase 7 |
-| Phase 7 灰度/迁移              | 纯 TS         | 统一 flag 框架 + 回退条件（依赖 Phase 0 指标）                       |
-| Phase 4 人机协同               | Swift + TS    | execution lane、macOS 接管、Tray 控制、AppControlBridge 主题/导航白名单已落地；300 ms P99、picker/new-window provenance、表单 command、Windows 对等实现待完成 |
-| Phase 6 会话级授权             | 安全评审门禁  | 动 T01 注入防御，需独立安全评审；做到交付物+签收清单                 |
-| Phase 1 原生打包               | 原生/基建签收 | DMG/NSIS 握手、CI VM 矩阵、签名、干净 VM 黄金任务 100 次——需发布基建 |
-| Phase 2.2 持久捕获（原生切片） | 原生签收      | SCStream/AXObserver/SCContentSharingPicker——macOS Swift/Windows Rust |
+| 阶段                           | 类型          | 说明                                                                                                                                                             |
+| ------------------------------ | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 0 真实基线样本           | 发布/真机签收 | macOS/Windows 失败安装包、冷启动/首次权限/四步任务真实样本                                                                                                       |
+| Phase 5.1/5.3 控制状态与去轮询 | 原生 + 纯 TS  | 系统 Overlay/托盘状态并入 Phase 4；Orchestrator 事件等待并入 Phase 7                                                                                             |
+| Phase 7 灰度/迁移              | 纯 TS         | 统一 flag 框架 + 回退条件（依赖 Phase 0 指标）                                                                                                                   |
+| Phase 4 人机协同               | Swift + TS    | execution lane、macOS 接管、Tray、AppControlBridge、精确窗口绑定与显式同源新窗口加入已落地；300 ms P99、picker UI/控制标签、表单 command、Windows 对等实现待完成 |
+| Phase 6 会话级授权             | 安全评审门禁  | 动 T01 注入防御，需独立安全评审；做到交付物+签收清单                                                                                                             |
+| Phase 1 原生打包               | 原生/基建签收 | DMG/NSIS 握手、CI VM 矩阵、签名、干净 VM 黄金任务 100 次——需发布基建                                                                                             |
+| Phase 2.2 持久捕获（原生切片） | 原生签收      | SCStream/AXObserver/SCContentSharingPicker——macOS Swift/Windows Rust                                                                                             |
 
 ## 安全不变量（贯穿所有阶段，零回归）
 
