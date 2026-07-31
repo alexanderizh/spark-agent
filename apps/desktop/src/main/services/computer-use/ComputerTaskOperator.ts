@@ -413,6 +413,17 @@ export class ComputerTaskOperator {
       this.sessions.fail(input.session.id)
       return { status: 'failed', reason: 'maximum_steps_reached' }
     } catch (error) {
+      if (error instanceof ComputerUseBrokerError && error.code === 'handoff_required') {
+        this.sessions.setPhase(input.session.id, 'handoff_required')
+        this.timeline?.record({
+          type: 'computer_handoff_required',
+          sessionId: input.session.sessionId,
+          turnId: input.session.turnId,
+          computerSessionId: input.session.id,
+          errorCode: 'handoff_required',
+        })
+        return { status: 'handoff_required', reason: 'user_takeover' }
+      }
       // A session_canceled error means an external authority (user stop / pause) already
       // settled the session; do not re-mark it failed. Surface it with a distinct reason so the
       // caller can present "canceled" rather than a generic operator failure.

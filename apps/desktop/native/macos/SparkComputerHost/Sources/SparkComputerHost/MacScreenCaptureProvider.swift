@@ -16,6 +16,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
   private var accessibilityPermissionWasDenied = false
   private var inputPermissionWasDenied = false
   private let accessibility = MacAccessibilityController()
+  private let userInput = MacUserInputMonitor()
   private var observation: ObservationBinding?
   private var canceledSessions: Set<String> = []
 
@@ -37,7 +38,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       inputPermission: inputPermission,
       captureWindowSupported: captureIsSupported,
       accessibilityAvailable: accessibilityAvailable,
-      inputAvailable: captureIsSupported && MacCGEventController.isAvailable
+      inputAvailable: captureIsSupported && MacCGEventController.isAvailable && userInput.isAvailable
     )
   }
 
@@ -57,6 +58,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
         inputPermissionWasDenied = !CGRequestPostEventAccess()
       }
     }
+    userInput.ensureStarted()
     return capabilityManifest()
   }
 
@@ -165,6 +167,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     fullTree: Bool
   ) async throws -> NativeObservedWindow {
     observation = nil
+    let observationStartedAt = Date.timeIntervalSinceReferenceDate
     let before = try await focusedTarget(appID: appID, windowID: windowID)
     let captured = try await captureWindow(id: windowID)
     let tree = accessibilityOrVisualTree(
@@ -176,7 +179,8 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
     let after = try await focusedTarget(appID: appID, windowID: windowID)
     try NativeInputPolicy.validateApplicationIdentity(
       expected: before.identity, current: after.identity)
-    let capturedAt = ISO8601DateFormatter().string(from: Date())
+    let capturedDate = Date()
+    let capturedAt = ISO8601DateFormatter().string(from: capturedDate)
     var frameHasher = SHA256()
     frameHasher.update(data: captured.bytes)
     frameHasher.update(data: Data(tree.treeVersion.utf8))
@@ -188,6 +192,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       }.joined()
     observation = ObservationBinding(
       frameID: frameID, treeVersion: tree.treeVersion, target: before.identity,
+      capturedAt: observationStartedAt,
       screenshotDigest: SHA256.hash(data: captured.bytes).map { String(format: "%02x", $0) }
         .joined())
     return NativeObservedWindow(
@@ -228,6 +233,18 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
       appID: envelope.targetAppID, windowID: envelope.targetWindowID)
     try NativeInputPolicy.validateApplicationIdentity(
       expected: binding.target, current: before.identity)
+    if !binding.target.focused && before.descriptor.focused {
+      throw NativeHostPlatformError.userTakeover
+    }
+    userInput.bind(
+      sessionID: envelope.computerSessionID, bounds: before.identity.windowBounds,
+      observedAt: binding.capturedAt)
+    if userInput.takeoverDetected(sessionID: envelope.computerSessionID) {
+      throw NativeHostPlatformError.userTakeover
+    }
+    if envelope.executionLane == .foregroundInput {
+      try await userInput.waitForUserInputIdle(sessionID: envelope.computerSessionID)
+    }
     let foregroundContext =
       envelope.executionLane == .foregroundInput
       ? ForegroundInteractionContext.capture() : nil
@@ -282,6 +299,9 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
           guard !(await self.canceledSessions.contains(envelope.computerSessionID)) else {
             throw NativeHostPlatformError.sessionCanceled
           }
+          guard !self.userInput.takeoverDetected(sessionID: envelope.computerSessionID) else {
+            throw NativeHostPlatformError.userTakeover
+          }
           let current = try await self.focusedTarget(
             appID: envelope.targetAppID, windowID: envelope.targetWindowID)
           try NativeInputPolicy.validateApplicationIdentity(
@@ -321,6 +341,7 @@ actor MacScreenCaptureProvider: NativeHostPlatformProviding {
 
   func cancelSession(id: String) async {
     canceledSessions.insert(id)
+    userInput.unbind(sessionID: id)
     invalidateObservation()
   }
 
@@ -480,6 +501,7 @@ private struct ObservationBinding {
   let frameID: String
   let treeVersion: String
   let target: NativeTargetIdentity
+  let capturedAt: TimeInterval
   let screenshotDigest: String
 }
 
@@ -510,8 +532,13 @@ private struct ForegroundInteractionContext {
     if let processID, let application = NSRunningApplication(processIdentifier: processID) {
       _ = application.activate(options: [.activateAllWindows])
     }
-    if let pointer {
-      CGWarpMouseCursorPosition(pointer)
+    if let pointer,
+      let event = CGEvent(
+        mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: pointer,
+        mouseButton: .left)
+    {
+      event.setIntegerValueField(.eventSourceUserData, value: sparkComputerInjectedEventTag)
+      event.post(tap: .cghidEventTap)
     }
   }
 }

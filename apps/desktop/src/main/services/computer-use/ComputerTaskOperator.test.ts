@@ -445,6 +445,47 @@ describe('ComputerTaskOperator', () => {
     expect(sessions.completeVerified).not.toHaveBeenCalled()
   })
 
+  it('hands control to the user when the native host detects real user input', async () => {
+    const sessions = sessionController()
+    const timeline = { record: vi.fn() }
+    const dispatch = vi.fn(async () => {
+      throw new ComputerUseBrokerError('handoff_required', 'The user took control')
+    })
+    const operator = new ComputerTaskOperator({
+      sessions,
+      broker: { observe: vi.fn(async () => BEFORE), dispatch },
+      approvals: { takeApprovedTicket: vi.fn(() => null) },
+      evidence: { readLatestImage: vi.fn(async () => Buffer.from('png')) },
+      verifications: verificationStore(),
+      timeline,
+      createId: () => 'action-1',
+      now: () => Date.parse(SESSION.createdAt),
+    })
+
+    await expect(
+      operator.run({
+        session: SESSION,
+        lease: LEASE,
+        adapter: {
+          decide: vi.fn(async () => ({
+            type: 'action' as const,
+            intent: 'Click the save button',
+            action: { type: 'click' as const, point: { x: 10, y: 10 } },
+          })),
+        },
+      }),
+    ).resolves.toEqual({ status: 'handoff_required', reason: 'user_takeover' })
+    expect(sessions.setPhase).toHaveBeenCalledWith(SESSION.id, 'handoff_required')
+    expect(sessions.fail).not.toHaveBeenCalled()
+    expect(timeline.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'computer_handoff_required',
+        computerSessionId: SESSION.id,
+        errorCode: 'handoff_required',
+      }),
+    )
+  })
+
   it('fails closed when the decision provider throws', async () => {
     const sessions = sessionController()
     const operator = new ComputerTaskOperator({

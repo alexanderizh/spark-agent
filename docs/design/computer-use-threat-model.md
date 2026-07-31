@@ -1,6 +1,6 @@
 # Computer Use 安全威胁模型
 
-> 状态: 实施中 | 最后核对: 2026-07-28
+> 状态: 实施中 | 最后核对: 2026-07-31
 
 本文定义 Spark Agent Computer Use、应用快照、远程看护和自主验收的安全边界。它是 `CU-00` 的发布基线；后续 Broker、Native Host、Snapshot Vault、Provider Adapter、Renderer 和 Remote Gateway 的实现不得弱化本文约束。
 
@@ -89,7 +89,7 @@ flowchart LR
 | T12  | Native Host 伪报能力                         | 调用不安全或不存在的后端 | capability manifest 平台/后端/feature 自洽校验                                                       | contract test          |
 | T13  | 坐标、DPR 或多屏映射错误                     | 点击错误区域             | 归一化坐标；显示拓扑版本；动作前后校验                                                               | Retina/多 DPI/双屏矩阵 |
 | T14  | 无限循环、noop 或恶意超大消息                | DoS、失控操作            | maxSteps/runtime/noops；消息、树、图像和数组上限；Kill Switch                                        | fuzz/预算测试          |
-| T15  | Stop 只取消模型，不停止动作队列              | 停止后仍操作             | Stop 撤销 lease、清队列、取消 Provider、通知 Host                                                    | P99 停止时延测试       |
+| T15  | Stop/用户接管只取消模型，不停止动作队列       | 停止后仍操作             | Stop 撤销 lease、清队列、取消 Provider、通知 Host；macOS Event Tap 区分 Host 注入与真实输入，点击绑定窗口即 handoff，前台输入持续复核接管状态 | P99 停止/接管时延测试  |
 | T16  | Verifier 为了通过而修改状态                  | 虚假完成                 | Verifier 只读且无 lease；关键任务双证据                                                              | 权限负向测试           |
 | T17  | 远程 `/screen` 返回原图或 AX 全文            | 大范围信息泄露           | 最大 960px 脱敏预览；不返回路径/全文                                                                 | API 响应快照测试       |
 | T18  | 日志或崩溃报告包含输入、路径和截图           | 持久隐私泄露             | 结构化 error code；日志字段 allowlist；崩溃前清洗                                                    | 日志扫描测试           |
