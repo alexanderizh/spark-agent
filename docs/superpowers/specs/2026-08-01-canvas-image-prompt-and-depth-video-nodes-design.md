@@ -1,6 +1,6 @@
 # 无限画布图片反推与深度视频节点设计
 
-> 状态: 实施中 | 最后核对: 2026-08-01
+> 状态: 已落地 | 最后核对: 2026-08-01
 
 ## 1. 背景与目标
 
@@ -37,7 +37,7 @@
 ### 2.3 MinIO 制品
 
 - 使用 Apache-2.0 许可的 Depth Anything V2 Small ONNX 量化模型。
-- 将推理所需的模型、配置和许可证打成版本化归档，发布到 `artifact-repository/v1/models/depth-anything-v2/`。
+- 将推理所需的模型、配置和许可证打成版本化归档，发布到 `artifact-repository/v1/dependencies/models/depth-anything-v2/`。
 - 在线 `index.json` 增加带版本、大小和 SHA-256 的模型条目；发布前备份现有清单，发布后从公网地址回读并校验。
 - 发布脚本只从环境变量读取 MinIO 凭据，不把凭据写进仓库、命令输出或文档。
 
