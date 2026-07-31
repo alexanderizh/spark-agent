@@ -88,3 +88,56 @@
   color: var(--text-faint);
   font-size: 11px;
 }
+
+.computer-activity-controls {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-subtle, rgb(128 128 128 / 20%));
+}
+
+.computer-activity-target {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.computer-activity-control-actions,
+.computer-activity-target-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.computer-activity-controls button,
+.computer-activity-target-picker select {
+  min-height: 28px;
+  border: 1px solid var(--border-subtle, rgb(128 128 128 / 25%));
+  border-radius: 7px;
+  background: var(--fill-tsp-gray-main, rgb(128 128 128 / 8%));
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.computer-activity-controls button {
+  padding: 0 9px;
+  cursor: pointer;
+}
+
+.computer-activity-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.computer-activity-target-picker select {
+  min-width: 0;
+  flex: 1 1 220px;
+  padding: 0 8px;
+}
+
+.computer-activity-control-error {
+  color: var(--c-err, #ef4444);
+  font-size: 12px;
+}
