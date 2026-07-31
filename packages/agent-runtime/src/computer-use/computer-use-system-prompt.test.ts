@@ -31,6 +31,8 @@ describe('buildComputerUseSystemPrompt', () => {
     })
 
     expect(prompt).toContain('mcp__spark_computer__start_task')
+    expect(prompt).toContain('wait_for_completion')
+    expect(prompt).toContain('do not poll')
     expect(prompt).toContain('"environment":"my_desktop"')
     expect(prompt).toContain('successCriteria` is optional')
     expect(prompt).toContain('all permission modes')

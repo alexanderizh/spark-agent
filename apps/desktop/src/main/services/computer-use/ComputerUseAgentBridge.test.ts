@@ -87,6 +87,14 @@ describe('ComputerUseAgentBridge', () => {
       'content-type': 'application/json',
     }
 
+    const diagnostics = await fetch(`http://127.0.0.1:${binding.port}/invoke`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ toolName: 'diagnose_native_host', args: {} }),
+    })
+    expect(diagnostics.status).toBe(200)
+    invoke.mockClear()
+
     const unknown = await fetch(`http://127.0.0.1:${binding.port}/invoke`, {
       method: 'POST',
       headers,

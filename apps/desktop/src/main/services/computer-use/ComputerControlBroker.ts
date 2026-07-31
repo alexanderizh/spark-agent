@@ -19,6 +19,7 @@ import type { ManagedComputerSessionPhase } from './ComputerSessionManager.js'
 import type { ComputerExecutorBackend, ComputerObserverBackend } from './ComputerUseBackend.js'
 import { ComputerUseBrokerError } from './ComputerUseBrokerError.js'
 import type { ComputerUseTimelineSink } from './ComputerUseTimelineStore.js'
+import type { ComputerUseV2RolloutController } from './ComputerUseV2RolloutController.js'
 
 export interface ComputerSessionController {
   assertDispatchAllowed(envelope: ComputerActionEnvelope): {
@@ -73,6 +74,7 @@ export interface ComputerControlBrokerOptions {
   timeline?: ComputerUseTimelineSink
   /** Flushes the current before-frame only for L2/L3 actions before ticket consumption. */
   flushHighRiskEvidence?: (computerSessionId: string) => Promise<void>
+  rollout?: Pick<ComputerUseV2RolloutController, 'recordAction' | 'recordTakeoverStop'>
   now?: () => Date
 }
 
@@ -85,6 +87,9 @@ export class ComputerControlBroker {
   private readonly executor: ComputerExecutorBackend
   private readonly timeline: ComputerUseTimelineSink | undefined
   private readonly flushHighRiskEvidence: ((computerSessionId: string) => Promise<void>) | undefined
+  private readonly rollout:
+    | Pick<ComputerUseV2RolloutController, 'recordAction' | 'recordTakeoverStop'>
+    | undefined
   private readonly now: () => Date
   private readonly observations = new Map<string, ComputerObservation>()
   private readonly activeDispatches = new Set<string>()
@@ -98,6 +103,7 @@ export class ComputerControlBroker {
     this.executor = options.executor
     this.timeline = options.timeline
     this.flushHighRiskEvidence = options.flushHighRiskEvidence
+    this.rollout = options.rollout
     this.now = options.now ?? (() => new Date())
   }
 
@@ -284,6 +290,9 @@ export class ComputerControlBroker {
       }
     } catch (error) {
       const brokerError = normalizeExecutionError(error)
+      if (brokerError.code !== 'session_canceled' && brokerError.code !== 'handoff_required') {
+        this.rollout?.recordAction(true)
+      }
       this.actions.complete(envelope.actionId, {
         status: context.signal.aborted ? 'canceled' : 'failed',
         afterFrameId: null,
@@ -310,6 +319,7 @@ export class ComputerControlBroker {
 
     this.observations.set(envelope.computerSessionId, result.observation)
     if (result.noop) {
+      this.rollout?.recordAction(true)
       this.actions.complete(envelope.actionId, {
         status: 'failed',
         afterFrameId: result.observation.frameId,
@@ -353,6 +363,7 @@ export class ComputerControlBroker {
       envelope.computerSessionId,
       observation.foreground.app,
     )
+    this.rollout?.recordAction(false)
     this.sessions.setPhase(envelope.computerSessionId, 'observing')
     return result
   }
@@ -379,7 +390,12 @@ export class ComputerControlBroker {
   }
 
   async killSwitch(computerSessionId: string): Promise<ComputerSession> {
-    return this.stop(computerSessionId)
+    const startedAt = this.now().getTime()
+    try {
+      return await this.stop(computerSessionId)
+    } finally {
+      this.rollout?.recordTakeoverStop(Math.max(0, this.now().getTime() - startedAt))
+    }
   }
 
   private requireCurrentObservation(envelope: ComputerActionEnvelope): ComputerObservation {

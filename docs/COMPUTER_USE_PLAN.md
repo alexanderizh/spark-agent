@@ -1,6 +1,6 @@
 # Computer Use 与应用快照生产级开发计划
 
-> 状态: 实施中 | 最后核对: 2026-07-31
+> 状态: 实施中 | 最后核对: 2026-08-01
 
 本文是 Spark Agent Computer Use、应用快照（App Snapshot）和自主验收能力的开发规格与交付计划。目标读者是产品负责人、架构师、Electron/Agent Runtime/原生端开发、测试和发布工程师。本文中的模块边界、数据契约、安全规则、工作包和验收门槛应作为实现时的共同基线。
 
@@ -836,7 +836,7 @@ app_snapshot_deleted
 
 ### CU-02 主进程 Broker 与租约（2.5 周，依赖 CU-00）
 
-实施状态：**已完成并持续增强（最后核对 2026-07-31）**。Broker、会话阶段、独占租约、心跳、结构化风险下限、精确审批摘要、幂等 pending approval、批准票据一次性交接、Pause/Stop/Kill Switch、真实 Storage 装配和 PermissionService 独立映射均已落地。设置默认关闭；禁用环境会先停止受影响 session；Kill Switch 为 best-effort 辅助停止通道，注册失败不再把可执行 Host 降成只读或关闭 My Desktop。默认 backend 支持 signed/local 两种显式 artifact：开发模式和无签名安装包使用固定路径、非 symlink、权限与 SHA-256 约束的 local Host；有有效外层发布者身份的签名包拒绝替换的 local manifest，并继续使用发布者绑定。Host 不可用时 Broker 诚实返回 unavailable，Agent 层自动选择其他可行执行方案。迁移 064 已提供 durable Computer Use activity event 表，`get-timeline` 支持游标回放，实时流与 Renderer 卡片按 `computerSessionId + seq` 去重排序。
+实施状态：**已完成并持续增强（最后核对 2026-08-01）**。Broker、会话阶段、独占租约、心跳、结构化风险下限、精确审批摘要、幂等 pending approval、批准票据一次性交接、Pause/Stop/Kill Switch、真实 Storage 装配和 PermissionService 独立映射均已落地。L0/L1 证据异步落盘，L2/L3 在 ticket 消费与执行前同步固化当前 before-frame。设置默认关闭；禁用环境会先停止受影响 session；Kill Switch 为 best-effort 辅助停止通道，注册失败不再把可执行 Host 降成只读或关闭 My Desktop。默认 backend 支持 signed/local 两种显式 artifact：开发模式和无签名安装包使用固定路径、非 symlink、权限与 SHA-256 约束的 local Host；有有效外层发布者身份的签名包拒绝替换的 local manifest，并继续使用发布者绑定。Host 不可用时 Broker 诚实返回 unavailable，Agent 层自动选择其他可行执行方案。迁移 064 已提供 durable Computer Use activity event 表，`get-timeline` 支持游标回放，实时流与 Renderer 卡片按 `computerSessionId + seq` 去重排序。Phase 7 统一 flag store 与有界自动回退已接线，Agent 使用 `wait_for_completion` 订阅状态而不是轮询 `get_status`。
 
 负责人：Electron Main/Security。
 

@@ -40,6 +40,36 @@ const CAPABILITIES: ComputerUseCapabilitySummary = {
 }
 
 describe('ComputerUseAgentController', () => {
+  it('waits on session status events instead of polling get_status', async () => {
+    let current = computerSession('observing')
+    let listener: ((session: ComputerSession) => void) | undefined
+    const unsubscribe = vi.fn()
+    const services = {
+      sessions: {
+        getSession: vi.fn(() => current),
+        subscribeStatus: vi.fn((next: (session: ComputerSession) => void) => {
+          listener = next
+          return unsubscribe
+        }),
+      },
+    }
+    const controller = new ComputerUseAgentController({ getServices: () => services as never })
+
+    const waiting = controller.invoke('session-1', 'wait_for_completion', {
+      computerSessionId: current.id,
+      timeoutMs: 1_000,
+    })
+    current = computerSession('completed')
+    listener?.(current)
+
+    await expect(waiting).resolves.toMatchObject({
+      computerSession: { status: 'completed' },
+      operator: { status: 'not_running' },
+    })
+    expect(services.sessions.subscribeStatus).toHaveBeenCalledTimes(1)
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
+  })
+
   it('requests missing operating-system permissions before declaring execution unavailable', async () => {
     const unavailable = {
       ...CAPABILITIES,

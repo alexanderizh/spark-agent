@@ -1,13 +1,17 @@
 const COMPUTER_TOOL_PREFIXES = ['mcp__spark_computer__', 'mcp:spark_computer:'] as const
 
 const COMPUTER_TASK_ACTIONS: Readonly<Record<string, string>> = {
+  get_capabilities: 'computer_observe',
+  diagnose_native_host: 'computer_observe',
   get_status: 'computer_observe',
+  wait_for_completion: 'computer_observe',
   capture_app_snapshot: 'computer_observe',
   start_task: 'computer_task_start',
   pause: 'computer_pause',
   resume: 'computer_resume',
   stop: 'computer_stop',
   takeover: 'computer_takeover',
+  bind_target: 'computer_resume',
 }
 
 const LOW_LEVEL_ACTIONS = new Set([

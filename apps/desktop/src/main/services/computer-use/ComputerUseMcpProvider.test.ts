@@ -43,7 +43,9 @@ describe('createComputerUseMcpProvider', () => {
     expect(config?.allowedTools).toContain('mcp__spark_computer__diagnose_native_host')
     expect(config?.allowedTools).toContain('mcp__spark_computer__stop')
     expect(config?.allowedTools).toContain('mcp__spark_computer__start_task')
+    expect(config?.allowedTools).toContain('mcp__spark_computer__wait_for_completion')
     expect(config?.allowedTools).toContain('mcp__spark_computer__resume')
+    expect(config?.allowedTools).toContain('mcp__spark_computer__bind_target')
 
     const headers = {
       ...(config?.server.type === 'http' ? config.server.headers : {}),

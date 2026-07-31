@@ -8,9 +8,11 @@ const SESSION_TOKEN_TTL_MS = 15 * 60 * 1_000
 
 const ALLOWED_TOOLS = new Set([
   'get_capabilities',
+  'diagnose_native_host',
   'capture_app_snapshot',
   'start_task',
   'get_status',
+  'wait_for_completion',
   'pause',
   'resume',
   'stop',
@@ -187,6 +189,20 @@ const MCP_TOOLS = [
       additionalProperties: false,
     },
   })),
+  {
+    name: 'wait_for_completion',
+    description:
+      'Wait on the Computer Use session event stream until it completes, fails, pauses, needs approval/user takeover, or the bounded timeout expires. Prefer this over polling get_status.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        computerSessionId: { type: 'string', minLength: 1, maxLength: 200 },
+        timeoutMs: { type: 'integer', minimum: 100, maximum: 300_000, default: 120_000 },
+      },
+      required: ['computerSessionId'],
+      additionalProperties: false,
+    },
+  },
   {
     name: 'bind_target',
     description:

@@ -21,6 +21,7 @@ import {
 } from './NativeHostComputerUseBackend.js'
 import { isHostSupervisorEnabled } from './computerUseV2Flags.js'
 import type { ComputerUseMetricsCollector } from './ComputerUseMetricsCollector.js'
+import { computerUseV2RolloutController } from './ComputerUseV2RolloutController.js'
 
 export type DefaultComputerUseBackend = UnavailableComputerUseBackend | NativeHostComputerUseBackend
 
@@ -98,22 +99,31 @@ export function createDefaultComputerUseBackend(
       trustMode: activeTrustMode,
     }),
     connect: async () => {
-      const trustMode = await readArtifactTrustMode(manifestPath)
-      activeTrustMode = trustMode
-      const artifact =
-        trustMode === 'local'
-          ? await verifyLocalArtifactAfterAppTrustCheck()
-          : nativePlatform === 'macos'
-            ? await verifyMacArtifact()
-            : await verifyWindowsArtifact({
-                executablePath,
-                manifestPath,
-                platform: 'windows',
-                architecture: nativeArchitecture,
-                expectedPublisherThumbprint: (
-                  await inspectWindowsAppCodeSignature(appExecutablePath)
-                ).publisherThumbprint,
-              })
+      let artifact: VerifiedNativeHostArtifact
+      try {
+        const trustMode = await readArtifactTrustMode(manifestPath)
+        activeTrustMode = trustMode
+        artifact =
+          trustMode === 'local'
+            ? await verifyLocalArtifactAfterAppTrustCheck()
+            : nativePlatform === 'macos'
+              ? await verifyMacArtifact()
+              : await verifyWindowsArtifact({
+                  executablePath,
+                  manifestPath,
+                  platform: 'windows',
+                  architecture: nativeArchitecture,
+                  expectedPublisherThumbprint: (
+                    await inspectWindowsAppCodeSignature(appExecutablePath)
+                  ).publisherThumbprint,
+                })
+        computerUseV2RolloutController.recordInstalledArtifactCheck(false)
+      } catch (error) {
+        if (error instanceof NativeHostArtifactError) {
+          computerUseV2RolloutController.recordInstalledArtifactCheck(true)
+        }
+        throw error
+      }
       activeHostVersion = artifact.manifest.hostVersion
       return connectClient(artifact)
 
