@@ -16,6 +16,22 @@ export type SparkInstallArtifactType =
   | 'archive'
   | 'binary'
   | 'voice'
+  | 'model'
+
+const SPARK_INSTALL_ARTIFACT_TYPES = new Set<SparkInstallArtifactType>([
+  'skill',
+  'runtime',
+  'python-wheelhouse',
+  'npm-store',
+  'archive',
+  'binary',
+  'voice',
+  'model',
+])
+
+export function isSparkInstallArtifactType(value: unknown): value is SparkInstallArtifactType {
+  return typeof value === 'string' && SPARK_INSTALL_ARTIFACT_TYPES.has(value as SparkInstallArtifactType)
+}
 
 export interface SparkInstallArtifact {
   id: string
