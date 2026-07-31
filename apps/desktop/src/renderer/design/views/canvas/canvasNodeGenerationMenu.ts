@@ -16,7 +16,7 @@ export type CanvasNodeGenerationMenuItem = {
 }
 
 export type CanvasNodeGenerationMenuGroup = {
-  id: 'image' | 'text' | 'video' | 'audio'
+  id: 'image' | 'video' | 'audio'
   label: string
   items: CanvasNodeGenerationMenuItem[]
 }
@@ -37,15 +37,7 @@ export const CANVAS_BASE_CREATE_OPERATION_GROUPS: CanvasNodeGenerationMenuGroup[
       { operation: 'text_to_image', label: '文生图', icon: 'Image' },
       { operation: 'image_edit', label: '图生图 / 编辑', icon: 'Edit' },
       { operation: 'image_compose', label: '多图合成', icon: 'Grid' },
-    ],
-  },
-  {
-    id: 'text',
-    label: '文本',
-    items: [
-      { operation: 'text_generate', label: '文本生成', icon: 'FileText' },
-      { operation: 'text_rewrite', label: '文本改写', icon: 'Edit' },
-      { operation: 'prompt_optimize', label: 'Prompt 优化', icon: 'FileText' },
+      { operation: 'image_prompt_reverse', label: '图片反推', icon: 'FileText' },
     ],
   },
   {
@@ -56,6 +48,7 @@ export const CANVAS_BASE_CREATE_OPERATION_GROUPS: CanvasNodeGenerationMenuGroup[
       { operation: 'image_to_video', label: '图生视频', icon: 'Video' },
       { operation: 'video_edit', label: '视频编辑', icon: 'Video' },
       { operation: 'video_extend', label: '视频扩展', icon: 'Video' },
+      { operation: 'video_depth_map', label: '深度视频', icon: 'Video' },
     ],
   },
   {

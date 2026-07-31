@@ -275,12 +275,14 @@ export const CanvasOperationTypeSchema = z.enum([
   'text_generate',
   'text_rewrite',
   'prompt_optimize',
+  'image_prompt_reverse',
   'text_to_audio',
   'audio_transcribe',
   'text_to_video',
   'image_to_video',
   'video_edit',
   'video_extend',
+  'video_depth_map',
 ])
 export type CanvasOperationType = z.infer<typeof CanvasOperationTypeSchema>
 
@@ -311,10 +313,13 @@ export function capabilityForOperation(operation: CanvasOperationType): MediaCap
       return ['video.edit']
     case 'video_extend':
       return ['video.extend']
-    // text_generate / text_rewrite / prompt_optimize 走文本模型，不经过 media adapter
+    // 文本/图片理解操作走文本模型，不经过 media adapter。
     case 'text_generate':
     case 'text_rewrite':
     case 'prompt_optimize':
+    case 'image_prompt_reverse':
+    // 深度视频走本地 ONNX 推理，不经过云端 media adapter。
+    case 'video_depth_map':
       return []
     default:
       return []
