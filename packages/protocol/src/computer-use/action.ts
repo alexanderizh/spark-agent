@@ -16,6 +16,7 @@ export const ComputerActionKindSchema = z.enum([
   'type_text',
   'wait_for',
   'focus_window',
+  'app_command',
 ])
 export type ComputerActionKind = z.infer<typeof ComputerActionKindSchema>
 
@@ -86,6 +87,52 @@ export const WaitConditionSchema = z.discriminatedUnion('kind', [
     .strict(),
 ])
 export type WaitCondition = z.infer<typeof WaitConditionSchema>
+
+export const AppControlCommandSchema = z.discriminatedUnion('name', [
+  z.object({ name: z.literal('set_theme'), theme: z.enum(['light', 'dark', 'system']) }).strict(),
+  z
+    .object({
+      name: z.literal('navigate'),
+      view: z.enum([
+        'chat',
+        'workflows',
+        'agents',
+        'board',
+        'canvas',
+        'canvas-workflows',
+        'scheduled-tasks',
+        'skills',
+        'providers',
+        'mcp',
+        'memory',
+        'settings',
+        'account-center',
+      ]),
+    })
+    .strict(),
+])
+export type AppControlCommand = z.infer<typeof AppControlCommandSchema>
+
+export const AppControlCommandRequestSchema = z
+  .object({
+    commandId: ComputerUseIdentifierSchema,
+    computerSessionId: ComputerUseIdentifierSchema,
+    actionId: ComputerUseIdentifierSchema,
+    command: AppControlCommandSchema,
+  })
+  .strict()
+export type AppControlCommandRequest = z.infer<typeof AppControlCommandRequestSchema>
+
+export const AppControlCommandResultSchema = z
+  .object({
+    commandId: ComputerUseIdentifierSchema,
+    computerSessionId: ComputerUseIdentifierSchema,
+    actionId: ComputerUseIdentifierSchema,
+    status: z.enum(['applied', 'rejected']),
+    uiRevision: z.number().int().nonnegative(),
+  })
+  .strict()
+export type AppControlCommandResult = z.infer<typeof AppControlCommandResultSchema>
 
 const ComputerActionBaseSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('observe'), fullTree: z.boolean().optional() }).strict(),
@@ -160,6 +207,7 @@ const ComputerActionBaseSchema = z.discriminatedUnion('type', [
     })
     .strict(),
   z.object({ type: z.literal('focus_window'), windowId: ComputerUseIdentifierSchema }).strict(),
+  z.object({ type: z.literal('app_command'), command: AppControlCommandSchema }).strict(),
 ])
 
 export const ComputerActionSchema = ComputerActionBaseSchema.superRefine((value, context) => {
@@ -184,7 +232,8 @@ export function computerExecutionLaneForAction(action: ComputerAction): Computer
   if (
     action.type === 'invoke_element' ||
     action.type === 'set_value' ||
-    action.type === 'select_text'
+    action.type === 'select_text' ||
+    action.type === 'app_command'
   ) {
     return 'background_semantic'
   }

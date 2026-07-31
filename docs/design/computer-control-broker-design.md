@@ -14,6 +14,7 @@
 - `NativeHostArtifact.ts` / `NativeHostClient.ts` / `NativeHostComputerUseBackend.ts`：校验父应用与 Host 签名主体、最终字节 hash、manifest 和 wire 握手，管理长度前缀 pipe、按操作预算的超时、崩溃重连、窗口列表、捕获、full/diff observation 与动作后证据持久化。macOS/Windows Host 只在真实权限与后端可用时声明 AX/UIA/input；缺少任一能力时对应 observe/execute 继续 fail-closed。
 - `ComputerKillSwitchService.ts`：全局快捷键注册、注册失败 fail-closed、重复触发合并和全部活动会话停止。
 - `ComputerUseServices.ts`：使用真实 Storage Repository 的主进程 composition root。
+- `AppControlBridge.ts` / `AppControlExecutorBackend.ts`：SparkWork 自身的会话绑定白名单 command 通道；生产默认只匹配固定 bundle id `com.spark-agent.desktop`，只接受协议枚举的主题/导航命令，仍先经过 Broker policy/lease，主 Renderer 回执精确 `computerSessionId + actionId + commandId + uiRevision` 后重新观察，不提供 eval、selector、URL、shell 或任意 IPC。
 - `computer-permission-action.ts`：`spark_computer` 任务级 MCP 权限映射；未知工具和低层动作永久拒绝。
 
 主进程启动完成数据库迁移后初始化这些服务。默认 factory 在支持的 macOS 架构上尝试连接受信 Host；缺失、ad-hoc/异团队签名、hash/manifest/握手不符或 Host 未声明所需能力时保持 unavailable。在任何平台都不会退化成坐标脚本、BrowserBridge 或其他假执行器。
@@ -111,7 +112,7 @@ Renderer 提交批准时必须回传它展示的 action/target/data-class digest
 
 ## 7. 主进程 IPC 与可用性门禁
 
-主进程已通过独立 `registerComputerUseIpc.ts` 注册协议声明的 15 个 Computer Use 通道，并由 `registerAllIpcHandlers()` 薄接线。IPC 设置默认关闭；My Desktop 只有在全局 Kill Switch 注册成功后才能持久化启用。禁用总开关或某一执行环境时，先停止受影响的活动 session，再更新设置；另一个 Renderer 必须显式 takeover 才能恢复会话。`start` 在创建 session 之前完成可信 Host 预检，生产默认不会生成不可执行的占位 session。
+主进程已通过独立 `registerComputerUseIpc.ts` 注册协议声明的 Computer Use 通道，并由 `registerAllIpcHandlers()` 薄接线。IPC 设置默认关闭；My Desktop 只有在全局 Kill Switch 注册成功后才能持久化启用。禁用总开关或某一执行环境时，先停止受影响的活动 session，再更新设置；另一个 Renderer 必须显式 takeover 才能恢复会话。`start` 在创建 session 之前完成可信 Host 预检，生产默认不会生成不可执行的占位 session。App command 回执额外要求主窗口 mainFrame，iframe/辅助窗口不能确认执行。
 
 `list-apps` 从严格校验的原生窗口描述中去重，冲突身份按 `native_host_incompatible` 拒绝；`get-verification` 只返回 session 匹配且可通过协议解析的持久化记录。迁移 064 提供 durable Computer Use activity event 表，Broker、SessionManager、Operator 与审批路径发射完整生命周期事件；`get-timeline` 按 `computerSessionId + seq` 游标回放，实时流使用相同事件契约。事件仅包含 ID、状态、风险和诊断码，不写截图、输入正文或 AX 文本；存储失败降级为内存实时流，不反向判死已通过治理的动作。
 

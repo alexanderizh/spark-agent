@@ -89,6 +89,37 @@ describe('GenericComputerDecisionAdapter', () => {
     ).rejects.toMatchObject({ code: 'action_not_allowed' })
   })
 
+  it('accepts only a typed allowlisted SparkWork app command', async () => {
+    const adapter = new GenericComputerDecisionAdapter({
+      model: {
+        providerProfileId: 'provider-1',
+        providerType: 'openai',
+        apiKey: 'secret',
+        model: 'vision-model',
+      },
+      generate: async () => ({
+        text: JSON.stringify({
+          type: 'action',
+          intent: 'Open SparkWork settings',
+          action: { type: 'app_command', command: { name: 'navigate', view: 'settings' } },
+        }),
+      }),
+    })
+
+    await expect(
+      adapter.decide({
+        objective: 'Open settings',
+        successCriteria: [],
+        observation: OBSERVATION,
+        screenshot: Buffer.from('png'),
+        stepIndex: 0,
+      }),
+    ).resolves.toMatchObject({
+      type: 'action',
+      action: { type: 'app_command', command: { name: 'navigate', view: 'settings' } },
+    })
+  })
+
   it('repairs an invalid provider response and supports explicit window recovery actions', async () => {
     const generate = vi
       .fn()

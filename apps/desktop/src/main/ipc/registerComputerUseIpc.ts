@@ -219,6 +219,13 @@ export function registerComputerUseIpc(options: RegisterComputerUseIpcOptions = 
     }),
   )
 
+  typedIpcHandle('computer-use:resolve-app-command', async (result, event) =>
+    safeComputerUseIpc(() => {
+      assertRenderer(event)
+      return { accepted: services().appControlBridge.resolve(result) }
+    }),
+  )
+
   typedIpcHandle('computer-use:approve-action', async (request, event) =>
     safeComputerUseIpc(() => {
       assertRenderer(event)

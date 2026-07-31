@@ -95,6 +95,7 @@ flowchart LR
 | T18  | 日志或崩溃报告包含输入、路径和截图           | 持久隐私泄露             | 结构化 error code；日志字段 allowlist；崩溃前清洗                                                    | 日志扫描测试           |
 | T19  | 签名 Electron 被当作通用 Node 运行时复用     | 绕过 Host 父进程信任     | 关闭 RunAsNode/NodeOptions/inspect fuses；ASAR integrity + OnlyLoadAppFromAsar                       | afterPack fuse 测试    |
 | T20  | iframe、辅助窗口或伪造 Renderer 读取快照     | 越权预览、隐私泄露       | app-snapshot IPC 仅主窗口 mainFrame；短期 capability 绑定归属                                        | IPC 来源负向测试       |
+| T21  | AppControlBridge 被扩展成通用 Renderer 后门   | 绕过 UI/Host 策略、任意执行 | 仅协议枚举 `set_theme/navigate`；请求绑定 session/action/command；回执仅主窗口 mainFrame；禁止 eval/selector/URL/shell/任意 IPC；执行后重新观察 | schema/IPC/bridge 负向测试 |
 
 ## 5. 审批与 TOCTOU 规则
 

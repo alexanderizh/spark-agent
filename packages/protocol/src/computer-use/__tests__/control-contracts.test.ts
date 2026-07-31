@@ -156,6 +156,18 @@ describe('computer action contract', () => {
     expect(schema.safeParse({ type: 'click', point: { x: 0.5, y: 0.25 } }).success).toBe(true)
     expect(schema.safeParse({ type: 'click', point: { x: 1.01, y: 0.25 } }).success).toBe(false)
     expect(schema.safeParse({ type: 'scroll', deltaX: 0, deltaY: 0 }).success).toBe(false)
+    expect(
+      schema.safeParse({
+        type: 'app_command',
+        command: { name: 'set_theme', theme: 'dark' },
+      }).success,
+    ).toBe(true)
+    expect(
+      schema.safeParse({
+        type: 'app_command',
+        command: { name: 'eval', script: 'document.cookie' },
+      }).success,
+    ).toBe(false)
     expect(schema.safeParse({ type: 'shell', command: 'rm -rf /' }).success).toBe(false)
     expect(
       schema.safeParse({

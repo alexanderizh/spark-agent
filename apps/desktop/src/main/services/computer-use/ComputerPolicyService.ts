@@ -36,6 +36,7 @@ const ACTION_BASELINE_RISK: Record<ComputerActionEnvelope['action']['type'], Com
   click: 'L1',
   drag: 'L1',
   keypress: 'L1',
+  app_command: 'L1',
 }
 
 export class ComputerPolicyService {

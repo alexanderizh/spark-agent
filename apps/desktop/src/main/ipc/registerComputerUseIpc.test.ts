@@ -162,6 +162,7 @@ function createServices(overrides: Record<string, unknown> = {}) {
     armKillSwitch: vi.fn(() => true),
     verifications: { get: vi.fn(() => null) },
     timeline: new ComputerUseTimelineStore(),
+    appControlBridge: { resolve: vi.fn(() => true) },
     diagnostics: {
       collect: vi.fn(async () => ({
         generatedAt: '2026-07-31T00:00:00.000Z',
@@ -233,6 +234,7 @@ describe('registerComputerUseIpc', () => {
         'computer-use:resume',
         'computer-use:stop',
         'computer-use:takeover',
+        'computer-use:resolve-app-command',
         'computer-use:approve-action',
         'computer-use:deny-action',
         'computer-use:list-apps',
@@ -559,6 +561,23 @@ describe('registerComputerUseIpc', () => {
       environmentKey: 'my-desktop:local',
       operatorId: 'renderer:99',
     })
+  })
+
+  it('accepts an app-command acknowledgement only through the trusted renderer IPC', async () => {
+    const services = createServices()
+    register({ services })
+    const result = {
+      commandId: 'command-1',
+      computerSessionId: SESSION.id,
+      actionId: 'action-1',
+      status: 'applied' as const,
+      uiRevision: 1,
+    }
+
+    await expect(
+      harness.handlers.get('computer-use:resolve-app-command')!(result, event()),
+    ).resolves.toEqual({ accepted: true })
+    expect(services.appControlBridge.resolve).toHaveBeenCalledWith(result)
   })
 
   it('never treats an ordinary Renderer IPC call as trusted local-user approval', async () => {

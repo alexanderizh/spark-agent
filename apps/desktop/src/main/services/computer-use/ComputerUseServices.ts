@@ -36,6 +36,9 @@ import {
   type NativeSnapshotCaptureBackend,
 } from './NativeApplicationSnapshotCaptureService.js'
 import { ElectronSnapshotImageProcessor } from './ElectronSnapshotImageProcessor.js'
+import { getMainWindow } from '../../windows/index.js'
+import { AppControlBridge } from './AppControlBridge.js'
+import { AppControlExecutorBackend } from './AppControlExecutorBackend.js'
 
 export type TrustedComputerUseBackend = ComputerObserverBackend &
   ComputerExecutorBackend &
@@ -53,6 +56,7 @@ export interface ComputerUseServices {
   readonly diagnostics: ComputerUseNativeHostDiagnostics
   readonly backend: TrustedComputerUseBackend
   readonly killSwitch: ComputerKillSwitchService
+  readonly appControlBridge: AppControlBridge
   readonly evidence?: NativeObservationEvidenceSink & {
     readLatestImage(computerSessionId: string, snapshotId: string): Promise<Buffer>
     clearSession(computerSessionId: string): void
@@ -76,6 +80,7 @@ export function createComputerUseServices(
     evidenceSink?: NativeObservationEvidenceSink
     createBackend?: (evidenceSink: NativeObservationEvidenceSink) => TrustedComputerUseBackend
     snapshotCapture?: ComputerUseServices['snapshots']
+    appControlBridge?: AppControlBridge
   } = {},
 ): ComputerUseServices {
   const evidence =
@@ -106,6 +111,22 @@ export function createComputerUseServices(
     repository: new ComputerApprovalRepository(database),
   })
   const verifications = new ComputerVerificationRepository(database)
+  const appControlBridge =
+    options.appControlBridge ??
+    new AppControlBridge({
+      send: (request) => {
+        const window = getMainWindow()
+        if (window == null || window.isDestroyed()) return false
+        window.webContents.send('stream:computer-use:app-command', request)
+        return true
+      },
+    })
+  const executor = new AppControlExecutorBackend(
+    backend,
+    backend,
+    appControlBridge,
+    new Set(['com.spark-agent.desktop']),
+  )
   const diagnostics = new ComputerUseNativeHostDiagnostics({
     backend,
     metrics,
@@ -118,7 +139,7 @@ export function createComputerUseServices(
     approvals,
     actions: new ComputerActionRepository(database),
     observer: backend,
-    executor: backend,
+    executor,
     timeline,
   })
   const killSwitch = new ComputerKillSwitchService(
@@ -145,6 +166,7 @@ export function createComputerUseServices(
     diagnostics,
     backend,
     killSwitch,
+    appControlBridge,
     ...(usableEvidence == null ? {} : { evidence: usableEvidence }),
     ...(snapshotCapture == null ? {} : { snapshots: snapshotCapture }),
     armKillSwitch: (accelerator) =>

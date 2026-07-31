@@ -30,6 +30,7 @@ const SUPPORTED_ACTIONS = new Set<ComputerAction['type']>([
   'type_text',
   'focus_window',
   'wait_for',
+  'app_command',
 ])
 
 export type ComputerDecision =
@@ -112,7 +113,7 @@ Return exactly one JSON object. Choose either:
 {"type":"action","intent":"short reason","action":<one supported action>}
 {"type":"ready_for_verification","reason":"why the criteria now appear satisfied"}
 {"type":"handoff","reason":"why safe autonomous progress is impossible"}
-Supported actions are invoke_element, set_value, click, move, drag, scroll, keypress, type_text, focus_window, and wait_for. Prefer semantic element actions when reliable, but use screenshot-relative coordinate actions when the accessibility tree is empty or incomplete. Use focus_window to recover window focus and wait_for for loading or visible state changes. Do not repeat an unchanged action indefinitely. Never emit shell commands, scripts, AppleScript, JXA, PowerShell UI automation, pyautogui, xdotool, or external automation tools. Do not claim completion; only request verification.`
+Supported actions are invoke_element, set_value, click, move, drag, scroll, keypress, type_text, focus_window, wait_for, and app_command. app_command is allowed only when the foreground app id is SparkWork itself and supports exactly set_theme or navigate; never invent another command. Prefer semantic element actions when reliable, but use screenshot-relative coordinate actions when the accessibility tree is empty or incomplete. Use focus_window to recover window focus and wait_for for loading or visible state changes. Do not repeat an unchanged action indefinitely. Never emit shell commands, scripts, AppleScript, JXA, PowerShell UI automation, pyautogui, xdotool, or external automation tools. Do not claim completion; only request verification.`
 
 const BATCH_DECISION_SYSTEM_PROMPT = `${DECISION_SYSTEM_PROMPT}
 You may also return a short batch of actions that you expect to remain valid when executed in sequence:

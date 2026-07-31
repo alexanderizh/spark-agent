@@ -5,6 +5,8 @@ import {
   Sha256Schema,
 } from './common.js'
 import type { ComputerAppIdentity } from './common.js'
+import { AppControlCommandResultSchema } from './action.js'
+import type { AppControlCommandResult } from './action.js'
 import type { ComputerUseEvent } from './events.js'
 import { NativeHostPermissionStateSchema } from './native-wire.js'
 import type {
@@ -123,6 +125,7 @@ export const ComputerUseIpcSchemaRegistry = {
       verificationId: ComputerUseIdentifierSchema,
     })
     .strict(),
+  'computer-use:resolve-app-command': AppControlCommandResultSchema,
 } as const
 
 export interface ComputerUseCapabilitySummary {
@@ -230,6 +233,7 @@ export interface ComputerUseIpcChannelMap {
     { computerSessionId: string; verificationId: string },
     { verification: ComputerVerificationRecord | null },
   ]
+  'computer-use:resolve-app-command': [AppControlCommandResult, { accepted: boolean }]
 }
 
 export const ApplicationSnapshotRetentionPolicySchema = z
