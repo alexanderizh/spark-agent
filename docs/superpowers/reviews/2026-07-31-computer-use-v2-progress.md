@@ -12,7 +12,7 @@
 | Phase 2.1 Host Supervisor 状态机             | `4731233b7`    | +8   | 心跳 5s/3 连败重启、有界重启(1)、onRebound 强制重绑、flag `SPARK_COMPUTER_USE_V2_HOST_SUPERVISOR`                  |
 | Phase 2.2 增量 AX 树（tree-diff 客户端切片） | `f03dd85a8`    | +5   | NativeHostTreeReconciler diff→full 重建、决策步可请求 diff、flag `SPARK_COMPUTER_USE_V2_INCREMENTAL_TREE`          |
 | Phase 3 动作批处理                           | `458e82a3c`    | +7   | ComputerDecision `actions` 变体(2-8)、逐动作审批、stale/noop 即停重规划、flag `SPARK_COMPUTER_USE_V2_ACTION_BATCH` |
-| Phase 5.2 Timeline 产品链路                  | `a253f90c1` + 本阶段提交 | +25  | 从内存 MVP 升级为 migration 064 持久化、14 类事件、实时流、Renderer 回放/去重卡片；5.1/5.3 仍待后续阶段 |
+| Phase 5.2 Timeline 产品链路                  | `a253f90c1` + `a97adb8cf` | +25  | 从内存 MVP 升级为 migration 064 持久化、14 类事件、实时流、Renderer 回放/去重卡片；5.1/5.3 仍待后续阶段 |
 | Phase 0 诊断与指标代码切片                   | `本提交`       | +7   | 只读 IPC/MCP 诊断、Beta 标识、内容无关指标采集；真实失败包与性能样本待 Phase 1 签收                                |
 
 Computer Use 相关回归：**41 文件 / 277 测试全过**（其中 7 个回环 HTTP 用例在允许监听 `127.0.0.1` 的测试环境运行）；storage **20 文件 / 226 测试全过**，迁移 064 已真实执行。desktop renderer/node 与 storage typecheck 均 exit 0；此前 Phase 2/3/5 严格测试类型债已清零。
