@@ -36,14 +36,15 @@ const Body = () => (
     <h2 id="ai-ops">3. AI 操作</h2>
     <ul>
       <li><strong>文生图 / 图生图 / 图片编辑 / 多图合成</strong>：基于 spark_media / spark_image MCP。</li>
-      <li><strong>文本生成 / 改写 / Prompt 优化</strong>：调用文本模型，文本类节点可叠加 Skills。</li>
-      <li><strong>图片转视频</strong>：基于 spark_media 视频能力。</li>
+      <li><strong>图片反推</strong>：把一张输入图片交给已配置的视觉理解模型，输出可直接复用的中文提示词。</li>
+      <li><strong>图片转视频 / 视频编辑 / 视频扩展</strong>：基于 spark_media 视频能力。</li>
+      <li><strong>深度视频</strong>：使用本机 Depth Anything V2 Small INT8 模型逐帧生成近白远黑的 MP4 深度视频。</li>
       <li><strong>扩图（九宫格）</strong>：图片 / 文本 / Prompt 节点右键创建的操作节点。菜单里以「扩图（九宫格）」呈现，与图片节点自带的本地「宫格切分」区分开。</li>
       <li><strong>360 全景图</strong>：生成 2:1 等距圆柱投影（equirectangular）图，可沉浸预览与环视。</li>
     </ul>
     <p>
-      文本类操作节点的运行配置支持选 Agent、文本模型和多选 Skills；图片 / 视频类操作只暴露媒体模型
-      和参数，避免把文本 Skill 注入媒体任务。
+      通用文本生成、文本改写和 Prompt 优化不再出现在基础任务菜单，但旧画布和影视专用流程仍可继续运行。
+      图片反推只显示视觉理解模型，不显示 Prompt、Agent 或 Skills；深度视频不显示云端 Provider 或模型参数。
     </p>
 
     <h3 id="node-menu">3.1 节点菜单与 AI 操作菜单</h3>
@@ -65,7 +66,7 @@ const Body = () => (
     </p>
     <ul>
       <li><strong>上下文专属</strong>：图片节点有「图片扩图」「提取风格」「扩图（九宫格）」；文本 / Prompt 节点只有「扩图（九宫格）」。</li>
-      <li><strong>泛化能力</strong>：文生图、图生图、多图合成、360 全景图、文本生成、文本改写、Prompt 优化、文生视频、图生视频、文生音频、语音转写。</li>
+      <li><strong>泛化能力</strong>：文生图、图生图、多图合成、图片反推、360 全景图、文生视频、图生视频、视频编辑、视频扩展、深度视频、文生音频、语音转写。</li>
     </ul>
     <p>
       <img
@@ -83,7 +84,19 @@ const Body = () => (
       </ul>
     </div>
 
-    <h3 id="panorama">3.2 360 全景图：保持场景一致性的利器</h3>
+    <h3 id="prompt-and-depth">3.2 图片反推与深度视频</h3>
+    <p>
+      图片反推要求恰好连接一张图片，输出一段覆盖主体、环境、构图、镜头、光影、色彩、材质和风格的中文提示词。
+      它会调用用户配置的图片理解模型，因此首次使用前仍需配置一个支持视觉输入的文本 Provider。
+    </p>
+    <p>
+      深度视频要求恰好连接一段本地视频，不调用云端大模型。首次运行会从 Spark 制品库下载并校验约 21 MB 的
+      Depth Anything V2 Small INT8 ONNX 归档；安装完成后推理、解码和编码均可离线执行。
+      输出保持原尺寸、帧率和时长，使用 H.264 编码并移除音轨。依赖 Spark 管理的 FFmpeg，模型许可证为 Apache-2.0，
+      制品 ID 为 <code>model.depth-anything-v2-small-int8-1.0.0</code>。
+    </p>
+
+    <h3 id="panorama">3.3 360 全景图：保持场景一致性的利器</h3>
     <p>
       360 全景图（equirectangular / 等距圆柱投影，2:1 比例）是无限画布里
       <strong>保持多个镜头场景一致性</strong>的关键节点类型。
@@ -154,9 +167,10 @@ const Body = () => (
     <h2 id="media-flow">6. 媒体任务链路</h2>
     <pre>
 {`Renderer (localStorage hot store)
-   │ canvas:task:create-media
+   ├─ canvas:task:create-media ─────── MediaRouterService ── cloud media adapters
+   └─ canvas:task:create-depth-video ─ DepthVideoRunner ── local ONNX + FFmpeg
    ▼
-Main Process ── MediaRouterService ── Manifest / APIMart / xAI / Volcengine adapter ── .spark-artifacts/media/*
+Main Process ──────────────────────────────────────────────────────────────── .spark-artifacts/media/*
    │ canvas:snapshot:save (debounced 500ms)                                          │
    ▼                                                                                   ▼
 SQLite canvas_projects + canvas_snapshots                              safe-file:// protocol
@@ -186,6 +200,7 @@ SQLite canvas_projects + canvas_snapshots                              safe-file
       <li><code>task_failed</code></li>
       <li><code>task_timeout</code></li>
       <li><code>artifact_download_failed</code></li>
+      <li><code>local_depth_failed</code></li>
     </ul>
     <p>失败任务停留在画布，状态 <code>failed</code>，节点 + Inspector 展示错误码与消息。异步任务超时返回 <code>task_timeout</code>。</p>
 
@@ -209,7 +224,8 @@ export const canvasMvp: DocsPageContent = {
     { id: 'node-types', title: '2. 节点类型', level: 2 },
     { id: 'ai-ops', title: '3. AI 操作', level: 2 },
     { id: 'node-menu', title: '   3.1 节点菜单与 AI 操作菜单', level: 3 },
-    { id: 'panorama', title: '   3.2 360 全景图：保持场景一致性', level: 3 },
+    { id: 'prompt-and-depth', title: '   3.2 图片反推与深度视频', level: 3 },
+    { id: 'panorama', title: '   3.3 360 全景图：保持场景一致性', level: 3 },
     { id: 'tasks', title: '4. 任务与结果', level: 2 },
     { id: 'assets', title: '5. 资产管理', level: 2 },
     { id: 'media-flow', title: '6. 媒体任务链路', level: 2 },
@@ -223,7 +239,7 @@ export const canvasMvp: DocsPageContent = {
     },
     {
       question: '生成的图 / 视频存在哪里？',
-      answer: 'userData/.spark-artifacts/media/{images,audio,videos}。',
+      answer: '云端生成产物位于 userData/.spark-artifacts/media/{images,audio,videos}；本地深度视频位于同一受管媒体目录。',
     },
     {
       question: '画布任务和会话任务有什么区别？',
@@ -237,7 +253,7 @@ export const canvasMvp: DocsPageContent = {
   quickReference: [
     { key: '项目管理入口', value: '项目管理页 → 项目列表 / 新建 / 最近' },
     { key: '节点类型', value: 'image / text / video / task / group / panorama' },
-    { key: 'AI 操作', value: '文生图 / 图生图 / 编辑 / 多图合成 / 文本生成 / 图生视频 / 九宫格' },
+    { key: 'AI 操作', value: '文生图 / 图生图 / 编辑 / 多图合成 / 图片反推 / 图生视频 / 深度视频 / 九宫格' },
     { key: '产物目录', value: '.spark-artifacts/media/{images,audio,videos}' },
     { key: '持久化', value: 'SQLite canvas_projects + canvas_snapshots（migration 027）' },
     { key: '安全协议', value: 'safe-file://x/<base64>（CSP 允许 media-src safe-file:）' },
@@ -256,9 +272,9 @@ export const canvasMvp: DocsPageContent = {
   },
   aiSummary:
     'Spark Work 无限画布（Infinite Canvas）核心：项目管理页 + 节点画布，节点类型（image / text / video / task / group / panorama），' +
-    'AI 操作（文生图 / 图生图 / 编辑 / 多图合成 / 文本生成 / 图生视频 / 九宫格），任务状态机（pending/running/completed/failed/cancelled）与 lineage 边，' +
+    'AI 操作（文生图 / 图生图 / 编辑 / 多图合成 / 图片反推 / 图生视频 / 深度视频 / 九宫格），任务状态机（pending/running/completed/failed/cancelled）与 lineage 边，' +
     '资产管理（按类型/状态/关键词筛选）。媒体任务链路：localStorage 热存储 + 500ms debounce 的 canvas:snapshot:save 写入 SQLite（canvas_projects + canvas_snapshots），' +
-    '.spark-artifacts/media/{images,audio,videos} 产物，safe-file:// 协议，MediaRouterService + Manifest / APIMart / xAI / Volcengine 适配器，' +
+    '.spark-artifacts/media/{images,audio,videos} 产物，safe-file:// 协议，云端 MediaRouterService 适配器 + 本地 Depth Anything V2 INT8/FFmpeg，' +
     '统一错误码（provider_not_configured / capability_not_supported / api_key_missing / invalid_input / provider_http_error / task_failed / task_timeout / artifact_download_failed）。',
   Body,
 }
